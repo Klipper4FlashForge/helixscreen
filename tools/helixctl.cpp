@@ -13,6 +13,7 @@
  *   helixctl navigate controls
  *   helixctl screenshot
  *   helixctl status
+ *   helixctl repl                  # Interactive REPL with line editing
  */
 
 #include <cerrno>
@@ -20,15 +21,24 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "hv/json.hpp"
 
-// POSIX socket headers
+// POSIX headers
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 
+// Line editing for REPL
+#include "linenoise.h"
+
 static const char* PROGRAM_NAME = "helixctl";
+
+// ---------------------------------------------------------------------------
+// Help text
+// ---------------------------------------------------------------------------
 
 static void print_usage() {
     printf("Usage: %s [options] <command> [args...]\n", PROGRAM_NAME);
@@ -52,6 +62,8 @@ static void print_usage() {
     printf("\nScenarios:\n");
     printf("  scenario <name>         Apply named mock scenario\n");
     printf("  list_scenarios          List available mock scenarios\n");
+    printf("\nInteractive:\n");
+    printf("  repl                    Interactive REPL with line editing and history\n");
     printf("\nOptions:\n");
     printf("  -s, --socket <path>     Socket path (default: auto-detect)\n");
     printf("  -h, --help              Show this help\n");
@@ -60,6 +72,10 @@ static void print_usage() {
     printf("  2. $XDG_RUNTIME_DIR/helixscreen-control.sock\n");
     printf("  3. /tmp/helixscreen-control.sock\n");
 }
+
+// ---------------------------------------------------------------------------
+// Socket helpers
+// ---------------------------------------------------------------------------
 
 static std::string resolve_socket_path(const std::string& override_path) {
     if (!override_path.empty()) {
@@ -132,13 +148,13 @@ static bool send_request(int fd, const nlohmann::json& request) {
     return true;
 }
 
-static std::string read_response(int fd) {
+static std::string read_response(int fd, int timeout_sec = 30) {
     std::string buffer;
     char chunk[4096];
 
     // Set a read timeout
     struct timeval tv;
-    tv.tv_sec = 30;
+    tv.tv_sec = timeout_sec;
     tv.tv_usec = 0;
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
@@ -164,12 +180,20 @@ static std::string read_response(int fd) {
     return buffer;
 }
 
+// ---------------------------------------------------------------------------
+// JSON-RPC helpers
+// ---------------------------------------------------------------------------
+
+static int g_request_id = 1;
+
 static nlohmann::json build_request(const std::string& method,
                                     const nlohmann::json& params = nlohmann::json::object()) {
-    return {{"jsonrpc", "2.0"}, {"method", method}, {"params", params}, {"id", 1}};
+    return {{"jsonrpc", "2.0"}, {"method", method}, {"params", params}, {"id", g_request_id++}};
 }
 
-static int handle_response(const std::string& raw_response) {
+/// Handle a JSON-RPC response. Returns 0 on success, 1 on error.
+/// If out_result is provided, stores the result JSON there instead of printing.
+static int handle_response(const std::string& raw_response, nlohmann::json* out_result = nullptr) {
     if (raw_response.empty()) {
         fprintf(stderr, "Error: Empty response from server\n");
         return 1;
@@ -186,11 +210,15 @@ static int handle_response(const std::string& raw_response) {
         }
 
         if (response.contains("result")) {
-            auto& result = response["result"];
-            if (result.is_string()) {
-                printf("%s\n", result.get<std::string>().c_str());
+            if (out_result) {
+                *out_result = response["result"];
             } else {
-                printf("%s\n", result.dump(2).c_str());
+                auto& result = response["result"];
+                if (result.is_string()) {
+                    printf("%s\n", result.get<std::string>().c_str());
+                } else {
+                    printf("%s\n", result.dump(2).c_str());
+                }
             }
             return 0;
         }
@@ -203,6 +231,417 @@ static int handle_response(const std::string& raw_response) {
         return 1;
     }
 }
+
+// ---------------------------------------------------------------------------
+// Command building from tokens (shared by CLI and REPL)
+// ---------------------------------------------------------------------------
+
+/// Try to parse a string as int, return JSON int on success, JSON string otherwise
+static nlohmann::json parse_value(const std::string& val_str) {
+    try {
+        return std::stoi(val_str);
+    } catch (...) {
+        return val_str;
+    }
+}
+
+/// Build a JSON-RPC request from a command + args vector.
+/// Returns empty json on parse error (with error printed to stderr).
+static nlohmann::json build_request_from_tokens(const std::vector<std::string>& tokens) {
+    if (tokens.empty())
+        return {};
+
+    const auto& cmd = tokens[0];
+
+    if (cmd == "ping") {
+        return build_request("ping");
+    } else if (cmd == "navigate") {
+        if (tokens.size() < 2) {
+            fprintf(stderr, "Error: navigate requires a panel name\n");
+            return {};
+        }
+        return build_request("navigate", {{"panel", tokens[1]}});
+    } else if (cmd == "go_back") {
+        return build_request("go_back");
+    } else if (cmd == "list_panels") {
+        return build_request("list_panels");
+    } else if (cmd == "current") {
+        return build_request("get_current");
+    } else if (cmd == "screenshot") {
+        return build_request("screenshot");
+    } else if (cmd == "status") {
+        return build_request("status");
+    } else if (cmd == "get") {
+        if (tokens.size() < 2) {
+            fprintf(stderr, "Error: get requires a subject name\n");
+            return {};
+        }
+        return build_request("get", {{"name", tokens[1]}});
+    } else if (cmd == "set") {
+        if (tokens.size() < 3) {
+            fprintf(stderr, "Error: set requires a subject name and value\n");
+            return {};
+        }
+        return build_request("set", {{"name", tokens[1]}, {"value", parse_value(tokens[2])}});
+    } else if (cmd == "list_subjects") {
+        return build_request("list_subjects");
+    } else if (cmd == "wait_for") {
+        if (tokens.size() < 3) {
+            fprintf(stderr, "Error: wait_for requires a subject name and value\n");
+            return {};
+        }
+        nlohmann::json params = {{"name", tokens[1]}, {"value", tokens[2]}};
+        for (size_t i = 3; i < tokens.size(); i++) {
+            if ((tokens[i] == "--timeout" || tokens[i] == "-t") && i + 1 < tokens.size()) {
+                params["timeout"] = std::atoi(tokens[i + 1].c_str());
+                i++;
+            }
+        }
+        return build_request("wait_for", params);
+    } else if (cmd == "click") {
+        if (tokens.size() < 2) {
+            fprintf(stderr, "Error: click requires a widget name\n");
+            return {};
+        }
+        return build_request("click", {{"name", tokens[1]}});
+    } else if (cmd == "set_value") {
+        if (tokens.size() < 3) {
+            fprintf(stderr, "Error: set_value requires a widget name and value\n");
+            return {};
+        }
+        return build_request("set_widget_value",
+                             {{"name", tokens[1]}, {"value", parse_value(tokens[2])}});
+    } else if (cmd == "scenario") {
+        if (tokens.size() < 2) {
+            fprintf(stderr, "Error: scenario requires a name\n");
+            return {};
+        }
+        return build_request("scenario", {{"name", tokens[1]}});
+    } else if (cmd == "list_scenarios") {
+        return build_request("list_scenarios");
+    }
+
+    fprintf(stderr, "Unknown command: %s\n", cmd.c_str());
+    return {};
+}
+
+// ---------------------------------------------------------------------------
+// REPL
+// ---------------------------------------------------------------------------
+
+// All known commands for tab completion
+static const char* REPL_COMMANDS[] = {"ping",      "navigate",      "go_back",        "list_panels",
+                                      "current",   "screenshot",    "status",         "get",
+                                      "set",       "list_subjects", "wait_for",       "click",
+                                      "set_value", "scenario",      "list_scenarios", "help",
+                                      "refresh",   "quit",          "exit",           nullptr};
+
+// Cached subject names for tab completion (populated lazily)
+static std::vector<std::string> g_cached_subjects;
+static std::vector<std::string> g_cached_scenarios;
+static std::vector<std::string> g_cached_panels;
+
+static void repl_completion(const char* buf, linenoiseCompletions* lc) {
+    std::string input(buf);
+
+    // Find the first space to determine if we're completing a command or an argument
+    size_t space_pos = input.find(' ');
+
+    if (space_pos == std::string::npos) {
+        // Completing a command name
+        for (int i = 0; REPL_COMMANDS[i]; i++) {
+            if (strncmp(buf, REPL_COMMANDS[i], input.length()) == 0) {
+                linenoiseAddCompletion(lc, REPL_COMMANDS[i]);
+            }
+        }
+    } else {
+        // Completing an argument
+        std::string cmd = input.substr(0, space_pos);
+        std::string partial = input.substr(space_pos + 1);
+
+        // Strip leading spaces from partial
+        while (!partial.empty() && partial[0] == ' ')
+            partial.erase(0, 1);
+
+        const std::vector<std::string>* candidates = nullptr;
+
+        if (cmd == "get" || cmd == "set" || cmd == "wait_for") {
+            candidates = &g_cached_subjects;
+        } else if (cmd == "scenario") {
+            candidates = &g_cached_scenarios;
+        } else if (cmd == "navigate") {
+            candidates = &g_cached_panels;
+        }
+
+        if (candidates) {
+            for (const auto& c : *candidates) {
+                if (c.compare(0, partial.length(), partial) == 0) {
+                    std::string completion = cmd + " " + c;
+                    linenoiseAddCompletion(lc, completion.c_str());
+                }
+            }
+        }
+    }
+}
+
+static char* repl_hints(const char* buf, int* color, int* bold) {
+    std::string input(buf);
+    *color = 90; // dark gray
+    *bold = 0;
+
+    if (input == "navigate")
+        return strdup(" <panel>");
+    if (input == "get")
+        return strdup(" <subject>");
+    if (input == "set")
+        return strdup(" <subject> <value>");
+    if (input == "click")
+        return strdup(" <widget>");
+    if (input == "set_value")
+        return strdup(" <widget> <value>");
+    if (input == "scenario")
+        return strdup(" <name>");
+    if (input == "wait_for")
+        return strdup(" <subject> <value> [--timeout N]");
+
+    return nullptr;
+}
+
+static void repl_free_hints(void* ptr) {
+    free(ptr);
+}
+
+/// Split a string into tokens by whitespace
+static std::vector<std::string> tokenize(const std::string& line) {
+    std::vector<std::string> tokens;
+    std::string token;
+    bool in_quotes = false;
+    char quote_char = 0;
+
+    for (char c : line) {
+        if (in_quotes) {
+            if (c == quote_char) {
+                in_quotes = false;
+            } else {
+                token += c;
+            }
+        } else if (c == '"' || c == '\'') {
+            in_quotes = true;
+            quote_char = c;
+        } else if (c == ' ' || c == '\t') {
+            if (!token.empty()) {
+                tokens.push_back(token);
+                token.clear();
+            }
+        } else {
+            token += c;
+        }
+    }
+    if (!token.empty()) {
+        tokens.push_back(token);
+    }
+    return tokens;
+}
+
+/// Send a request and get the parsed result. Returns true on success.
+static bool repl_rpc(int fd, const std::string& method, const nlohmann::json& params,
+                     nlohmann::json& result) {
+    auto request = build_request(method, params);
+    if (!send_request(fd, request))
+        return false;
+    auto raw = read_response(fd, 30);
+    return handle_response(raw, &result) == 0;
+}
+
+/// Populate tab-completion caches by querying the server
+static void repl_populate_caches(int fd) {
+    nlohmann::json result;
+
+    // Cache subject names
+    if (repl_rpc(fd, "list_subjects", {}, result) && result.is_array()) {
+        g_cached_subjects.clear();
+        for (const auto& entry : result) {
+            if (entry.contains("name")) {
+                g_cached_subjects.push_back(entry["name"].get<std::string>());
+            }
+        }
+    }
+
+    // Cache scenario names
+    if (repl_rpc(fd, "list_scenarios", {}, result) && result.is_array()) {
+        g_cached_scenarios.clear();
+        for (const auto& entry : result) {
+            if (entry.contains("name")) {
+                g_cached_scenarios.push_back(entry["name"].get<std::string>());
+            } else if (entry.is_string()) {
+                g_cached_scenarios.push_back(entry.get<std::string>());
+            }
+        }
+    }
+
+    // Cache panel names
+    if (repl_rpc(fd, "list_panels", {}, result) && result.is_array()) {
+        g_cached_panels.clear();
+        for (const auto& entry : result) {
+            if (entry.is_string()) {
+                g_cached_panels.push_back(entry.get<std::string>());
+            }
+        }
+    }
+}
+
+static void repl_print_help() {
+    printf("Commands:\n");
+    printf("  ping                      Health check\n");
+    printf("  navigate <panel>          Switch to panel/overlay\n");
+    printf("  go_back                   Pop current overlay\n");
+    printf("  list_panels               List available panels\n");
+    printf("  current                   Show current panel and overlay stack\n");
+    printf("  screenshot                Take a screenshot\n");
+    printf("  status                    Full status summary\n");
+    printf("  get <subject>             Read subject value\n");
+    printf("  set <subject> <value>     Set subject value\n");
+    printf("  list_subjects             List all subjects\n");
+    printf("  wait_for <s> <v> [-t N]   Wait for subject to match value\n");
+    printf("  click <widget>            Click a named widget\n");
+    printf("  set_value <widget> <v>    Set widget value\n");
+    printf("  scenario <name>           Apply mock scenario\n");
+    printf("  list_scenarios            List available scenarios\n");
+    printf("\n");
+    printf("  refresh                   Reload tab-completion caches\n");
+    printf("  help                      Show this help\n");
+    printf("  quit, exit, Ctrl-D        Exit REPL\n");
+    printf("\nTab completion works for commands, subjects, panels, and scenarios.\n");
+    printf("Emacs keybindings: Ctrl-A/E, Ctrl-B/F, Ctrl-K/U, Ctrl-W, Ctrl-D, etc.\n");
+}
+
+/// Resolve history file path: $XDG_DATA_HOME/helixscreen/helixctl_history
+/// or ~/.local/share/helixscreen/helixctl_history
+static std::string resolve_history_path() {
+    std::string dir;
+    const char* xdg_data = getenv("XDG_DATA_HOME");
+    if (xdg_data && xdg_data[0] != '\0') {
+        dir = std::string(xdg_data) + "/helixscreen";
+    } else {
+        const char* home = getenv("HOME");
+        if (home) {
+            dir = std::string(home) + "/.local/share/helixscreen";
+        } else {
+            return ""; // Can't determine home
+        }
+    }
+    return dir + "/helixctl_history";
+}
+
+static int run_repl(const std::string& socket_path) {
+    // We reconnect for each command for simplicity — avoids handling connection
+    // loss mid-session and keeps the REPL stateless. The server does support
+    // multiple requests per connection if we want to optimize later.
+
+    printf("helixctl REPL — type 'help' for commands, Tab for completion, Ctrl-D to quit\n");
+
+    // Set up linenoise
+    linenoiseSetCompletionCallback(repl_completion);
+    linenoiseSetHintsCallback(repl_hints);
+    linenoiseSetFreeHintsCallback(repl_free_hints);
+    linenoiseHistorySetMaxLen(500);
+
+    // Load history
+    std::string history_path = resolve_history_path();
+    if (!history_path.empty()) {
+        linenoiseHistoryLoad(history_path.c_str());
+    }
+
+    // Populate completion caches
+    {
+        int fd = connect_to_server(socket_path);
+        if (fd < 0) {
+            return 1;
+        }
+        repl_populate_caches(fd);
+        close(fd);
+    }
+
+    int last_result = 0;
+    char* line;
+
+    while ((line = linenoise("helixctl> ")) != nullptr) {
+        std::string input(line);
+        linenoiseFree(line);
+
+        // Skip empty lines
+        auto tokens = tokenize(input);
+        if (tokens.empty())
+            continue;
+
+        // Add to history
+        linenoiseHistoryAdd(input.c_str());
+
+        // Handle REPL-only commands
+        if (tokens[0] == "quit" || tokens[0] == "exit") {
+            break;
+        }
+        if (tokens[0] == "help") {
+            repl_print_help();
+            continue;
+        }
+        if (tokens[0] == "refresh") {
+            int fd = connect_to_server(socket_path);
+            if (fd >= 0) {
+                repl_populate_caches(fd);
+                close(fd);
+                printf("Caches refreshed (%zu subjects, %zu scenarios, %zu panels)\n",
+                       g_cached_subjects.size(), g_cached_scenarios.size(), g_cached_panels.size());
+            }
+            continue;
+        }
+
+        // Build and send request
+        auto request = build_request_from_tokens(tokens);
+        if (request.is_null())
+            continue;
+
+        int fd = connect_to_server(socket_path);
+        if (fd < 0) {
+            fprintf(stderr, "Connection lost. Is HelixScreen still running?\n");
+            continue;
+        }
+
+        if (!send_request(fd, request)) {
+            close(fd);
+            continue;
+        }
+
+        // Use longer timeout for wait_for
+        int timeout = (tokens[0] == "wait_for") ? 120 : 30;
+        auto raw = read_response(fd, timeout);
+        close(fd);
+
+        last_result = handle_response(raw);
+    }
+
+    // Save history
+    if (!history_path.empty()) {
+        // Ensure parent directories exist (simple recursive mkdir)
+        std::string dir = history_path.substr(0, history_path.rfind('/'));
+        for (size_t i = 1; i < dir.size(); i++) {
+            if (dir[i] == '/') {
+                dir[i] = '\0';
+                mkdir(dir.c_str(), 0755);
+                dir[i] = '/';
+            }
+        }
+        mkdir(dir.c_str(), 0755);
+        linenoiseHistorySave(history_path.c_str());
+    }
+
+    printf("\n");
+    return last_result;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
 
 int main(int argc, char** argv) {
     std::string socket_path;
@@ -233,97 +672,20 @@ int main(int argc, char** argv) {
 
     std::string command = argv[arg_start];
 
-    // Build JSON-RPC request
-    nlohmann::json request;
+    // REPL mode
+    if (command == "repl") {
+        std::string resolved_path = resolve_socket_path(socket_path);
+        return run_repl(resolved_path);
+    }
 
-    if (command == "ping") {
-        request = build_request("ping");
-    } else if (command == "navigate") {
-        if (arg_start + 1 >= argc) {
-            fprintf(stderr, "Error: navigate requires a panel name\n");
-            return 1;
-        }
-        request = build_request("navigate", {{"panel", argv[arg_start + 1]}});
-    } else if (command == "go_back") {
-        request = build_request("go_back");
-    } else if (command == "list_panels") {
-        request = build_request("list_panels");
-    } else if (command == "current") {
-        request = build_request("get_current");
-    } else if (command == "screenshot") {
-        request = build_request("screenshot");
-    } else if (command == "status") {
-        request = build_request("status");
-    } else if (command == "get") {
-        if (arg_start + 1 >= argc) {
-            fprintf(stderr, "Error: get requires a subject name\n");
-            return 1;
-        }
-        request = build_request("get", {{"name", argv[arg_start + 1]}});
-    } else if (command == "set") {
-        if (arg_start + 2 >= argc) {
-            fprintf(stderr, "Error: set requires a subject name and value\n");
-            return 1;
-        }
-        // Try to parse value as integer, fall back to string
-        std::string val_str = argv[arg_start + 2];
-        nlohmann::json val;
-        try {
-            val = std::stoi(val_str);
-        } catch (...) {
-            val = val_str;
-        }
-        request = build_request("set", {{"name", argv[arg_start + 1]}, {"value", val}});
-    } else if (command == "list_subjects") {
-        request = build_request("list_subjects");
-    } else if (command == "wait_for") {
-        if (arg_start + 2 >= argc) {
-            fprintf(stderr, "Error: wait_for requires a subject name and value\n");
-            return 1;
-        }
-        nlohmann::json wait_params = {{"name", argv[arg_start + 1]},
-                                      {"value", argv[arg_start + 2]}};
+    // Single-command mode — build tokens from argv
+    std::vector<std::string> tokens;
+    for (int i = arg_start; i < argc; i++) {
+        tokens.push_back(argv[i]);
+    }
 
-        // Check for --timeout
-        for (int i = arg_start + 3; i < argc; i++) {
-            if ((strcmp(argv[i], "--timeout") == 0 || strcmp(argv[i], "-t") == 0) && i + 1 < argc) {
-                wait_params["timeout"] = std::atoi(argv[i + 1]);
-                i++;
-            }
-        }
-        request = build_request("wait_for", wait_params);
-    } else if (command == "click") {
-        if (arg_start + 1 >= argc) {
-            fprintf(stderr, "Error: click requires a widget name\n");
-            return 1;
-        }
-        request = build_request("click", {{"name", argv[arg_start + 1]}});
-    } else if (command == "set_value") {
-        if (arg_start + 2 >= argc) {
-            fprintf(stderr, "Error: set_value requires a widget name and value\n");
-            return 1;
-        }
-        // Try to parse as number, fall back to string
-        std::string val_str = argv[arg_start + 2];
-        nlohmann::json val;
-        try {
-            val = std::stoi(val_str);
-        } catch (...) {
-            val = val_str;
-        }
-        request =
-            build_request("set_widget_value", {{"name", argv[arg_start + 1]}, {"value", val}});
-    } else if (command == "scenario") {
-        if (arg_start + 1 >= argc) {
-            fprintf(stderr, "Error: scenario requires a name\n");
-            return 1;
-        }
-        request = build_request("scenario", {{"name", argv[arg_start + 1]}});
-    } else if (command == "list_scenarios") {
-        request = build_request("list_scenarios");
-    } else {
-        fprintf(stderr, "Unknown command: %s\n", command.c_str());
-        print_usage();
+    auto request = build_request_from_tokens(tokens);
+    if (request.is_null()) {
         return 1;
     }
 
@@ -339,7 +701,9 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::string response = read_response(fd);
+    // Use longer timeout for wait_for
+    int timeout = (command == "wait_for") ? 120 : 30;
+    std::string response = read_response(fd, timeout);
     close(fd);
 
     return handle_response(response);
