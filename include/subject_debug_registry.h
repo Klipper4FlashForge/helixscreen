@@ -19,6 +19,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 /**
  * @brief Debug information for a registered subject
@@ -79,6 +80,19 @@ class SubjectDebugRegistry {
     void dump_all_subjects();
 
     /**
+     * @brief Look up a subject by its registered name
+     * @param name The human-readable name used during registration
+     * @return Pointer to the subject, or nullptr if not found
+     */
+    lv_subject_t* lookup_by_name(const std::string& name);
+
+    /**
+     * @brief List all registered subjects with their debug info
+     * @return Vector of (name, info) pairs
+     */
+    std::vector<std::pair<std::string, SubjectDebugInfo>> list_all();
+
+    /**
      * @brief Clear all registrations
      *
      * Primarily for testing. Removes all registered subjects.
@@ -93,5 +107,6 @@ class SubjectDebugRegistry {
     SubjectDebugRegistry& operator=(const SubjectDebugRegistry&) = delete;
 
     std::unordered_map<lv_subject_t*, SubjectDebugInfo> subjects_;
-    mutable std::mutex mutex_; ///< Protects subjects_ map
+    std::unordered_map<std::string, lv_subject_t*> name_to_subject_; ///< Reverse lookup by name
+    mutable std::mutex mutex_;                                       ///< Protects both maps
 };

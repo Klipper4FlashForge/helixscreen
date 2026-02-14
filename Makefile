@@ -1002,6 +1002,7 @@ include mk/tests.mk
 include mk/images.mk
 include mk/format.mk
 include mk/tools.mk
+include mk/helixctl.mk
 include mk/display-lib.mk
 include mk/bluetooth.mk
 include mk/splash.mk

@@ -145,6 +145,10 @@ struct CliArgs {
     std::string detect_host = "127.0.0.1";
     int detect_port = 7125;
 
+    // Remote control server
+    bool remote_control = false; // --remote: enable remote control server
+    std::string remote_socket;   // --remote-socket: override socket path
+
     /** @brief Check if any panels/overlays requiring Moonraker are requested */
     bool needs_moonraker_data() const {
         return overlays.needs_moonraker() || initial_panel >= 0;

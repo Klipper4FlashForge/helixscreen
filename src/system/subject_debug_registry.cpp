@@ -18,6 +18,7 @@ void SubjectDebugRegistry::register_subject(lv_subject_t* subject, const std::st
     }
     std::lock_guard<std::mutex> lock(mutex_);
     subjects_[subject] = SubjectDebugInfo{name, type, file, line};
+    name_to_subject_[name] = subject;
 }
 
 const SubjectDebugInfo* SubjectDebugRegistry::lookup(lv_subject_t* subject) {
@@ -56,6 +57,25 @@ std::string SubjectDebugRegistry::type_name(lv_subject_type_t type) {
     }
 }
 
+lv_subject_t* SubjectDebugRegistry::lookup_by_name(const std::string& name) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = name_to_subject_.find(name);
+    if (it == name_to_subject_.end()) {
+        return nullptr;
+    }
+    return it->second;
+}
+
+std::vector<std::pair<std::string, SubjectDebugInfo>> SubjectDebugRegistry::list_all() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<std::pair<std::string, SubjectDebugInfo>> result;
+    result.reserve(subjects_.size());
+    for (const auto& [ptr, info] : subjects_) {
+        result.emplace_back(info.name, info);
+    }
+    return result;
+}
+
 void SubjectDebugRegistry::dump_all_subjects() {
     std::lock_guard<std::mutex> lock(mutex_);
     spdlog::debug("[SubjectDebugRegistry] Registered subjects: {}", subjects_.size());
@@ -69,4 +89,5 @@ void SubjectDebugRegistry::dump_all_subjects() {
 void SubjectDebugRegistry::clear() {
     std::lock_guard<std::mutex> lock(mutex_);
     subjects_.clear();
+    name_to_subject_.clear();
 }

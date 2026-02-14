@@ -140,6 +140,8 @@ static void print_help(const char* program_name) {
     printf("  --moonraker <url>    Override Moonraker URL (e.g., ws://192.168.1.112:7125)\n");
     printf("  --detect-printer     Detect printer via Moonraker REST, print JSON, exit\n");
     printf("                       (use with --host/--port; default 127.0.0.1:7125)\n");
+    printf("  --remote             Enable remote control server (auto in --test mode)\n");
+    printf("  --remote-socket <p>  Override remote control socket path\n");
     printf("  --rotate <degrees>   Display rotation: 0, 90, 180, 270\n");
     printf("  --layout <type>      Override auto-detected layout (auto, standard, ultrawide, "
            "portrait, micro, micro-portrait, tiny, tiny-portrait)\n");
@@ -765,6 +767,23 @@ bool parse_cli_args(int argc, char** argv, CliArgs& args, int& screen_width, int
             if (args.moonraker_url.find("/websocket") == std::string::npos) {
                 args.moonraker_url += "/websocket";
             }
+        }
+        // Remote control
+        else if (strcmp(argv[i], "--remote") == 0) {
+            args.remote_control = true;
+        } else if (strcmp(argv[i], "--remote-socket") == 0 ||
+                   strncmp(argv[i], "--remote-socket=", 16) == 0) {
+            const char* value = nullptr;
+            if (strncmp(argv[i], "--remote-socket=", 16) == 0) {
+                value = argv[i] + 16;
+            } else if (i + 1 < argc) {
+                value = argv[++i];
+            } else {
+                printf("Error: --remote-socket requires a path argument\n");
+                return false;
+            }
+            args.remote_socket = value;
+            args.remote_control = true; // Implies --remote
         }
         // Log destination
         else if (strcmp(argv[i], "--log-dest") == 0 || strncmp(argv[i], "--log-dest=", 11) == 0) {
