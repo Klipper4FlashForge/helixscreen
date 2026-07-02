@@ -4098,9 +4098,18 @@ void Application::tear_down_printer_state() {
     KeyboardManager::instance().reset();
 
     // 20. Delete LVGL widget tree (panels already released references)
-    //     DO NOT call lv_deinit() — display stays alive
+    //     DO NOT call lv_deinit() — display stays alive.
+    //     On the cancel_add_printer_wizard() soft-restart path this runs inside a
+    //     queue_update() batch, so a synchronous lv_obj_del() would delete inside
+    //     UpdateQueue::process_pending() and can corrupt LVGL's global event list
+    //     alongside other batched deletions (#776/#190/#80). m_app_layout is also
+    //     the Home widget grid — a #983-prone structure where a relayout racing
+    //     teardown could iterate a freed container. safe_delete_subtree() detaches
+    //     the tree off-screen synchronously (so the immediate init_printer_state()
+    //     rebuild sees a clean m_screen), forces LV_LAYOUT_NONE, and frees it on
+    //     the async path outside the batch.
     if (m_app_layout) {
-        lv_obj_del(m_app_layout);
+        helix::ui::safe_delete_subtree(m_app_layout);
         m_app_layout = nullptr;
     }
     m_overlay_panels = {};
