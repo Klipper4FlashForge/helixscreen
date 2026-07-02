@@ -67,6 +67,19 @@ void PerformanceState::deinit_subjects() {
         std::lock_guard<std::mutex> lk(history_mu_);
         history_.clear();
     }
+    // LATENT: the per-MCU subjects in mcu_subjects_ were registered into the
+    // GLOBAL XML scope by update_mcu_subjects() (apply_sample runs with no active
+    // scope override, so register_subject_in_current_scope() targets "globals").
+    // clear() frees them but there is no lv_xml_unregister_subject() primitive in
+    // this helix-xml build, so the global scope keeps dangling perf_mcu_* nodes.
+    // Benign TODAY: deinit_subjects() only runs at lv_deinit shutdown (no
+    // mid-session re-init path exists), lv_subject_deinit detaches observers from
+    // both sides, and the next lazy recreate re-points the stale node in place.
+    // It becomes a real UAF the moment a runtime re-init path (the "printer
+    // switch" the header anticipates) is wired: a name lookup between this clear()
+    // and the next sample would deref freed memory. Before adding such a path,
+    // add lv_xml_unregister_subject() to lib/helix-xml and unregister each
+    // perf_mcu_<safe>_{load_pct,retrans,present,text} name HERE, before clear().
     mcu_subjects_.clear();
     // Signal subject death to observers (e.g. HelixSparkline) BEFORE freeing the
     // subjects. Flipping the bool false makes every ObserverGuard holding this
