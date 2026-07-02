@@ -147,6 +147,15 @@ std::string format_unit_only(const nlohmann::json& values) {
     return " on unit " + std::to_string(unit);
 }
 
+/// True when a per-slot `vender` string carries no occupancy signal. The box
+/// reports one of these for an empty bay; `"none"` (lowercase) is also the
+/// synthetic default when the array is short. A REAL vendor name or the
+/// present-but-unresolved `"unknown"` marker are NOT sentinels — both mean a
+/// spool is seated. Kept in one place so every comparison site stays in sync.
+bool is_vender_sentinel(const std::string& v) {
+    return v.empty() || v == "none" || v == "None" || v == "-1";
+}
+
 } // namespace
 
 struct CfsErrorEntry {
@@ -635,17 +644,28 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
                 }
             }
 
-            // Brand fallback: the CFS material-DB lookup above populates
-            // slot.brand for known Creality material codes. For RFID spools
-            // whose code isn't in our DB, fall back to the box's own per-slot
-            // "vender" string when it carries a real value (hardware reports
-            // the sentinel "unknown"/"-1" when no RFID vendor data is present).
-            if (slot.brand.empty() && i < static_cast<int>(vender_arr.size()) &&
-                vender_arr[i].is_string()) {
-                std::string vender = vender_arr[i].get<std::string>();
-                if (!vender.empty() && vender != "unknown" && vender != "-1" && vender != "None") {
-                    slot.brand = vender;
-                }
+            // Per-slot vendor string. Unlike color_value/material_type — which
+            // are LATCHED RFID data that stay pinned to the last spool after
+            // removal and thus fake "ghost" slots — `vender` reads a real vendor
+            // name or the present-but-unresolved "unknown" when a spool is
+            // seated, and a sentinel ("none"/"None"/"-1") when the bay is empty
+            // (verified against K2 Plus hardware; prestonbrown/helixscreen#1077).
+            std::string vender_str = "none";
+            if (i < static_cast<int>(vender_arr.size()) && vender_arr[i].is_string()) {
+                vender_str = vender_arr[i].get<std::string>();
+            }
+            const bool vender_occupied = !is_vender_sentinel(vender_str);
+
+            // Brand fallback for RFID spools whose material code isn't in our
+            // DB (the DB lookup above already sets slot.brand for known codes).
+            // Priority for a vendor-occupied bay:
+            //   1. a real vendor name reported by the box, else
+            //   2. "Creality" when the tag is present but the vendor is
+            //      "unknown" — CFS RFID tags are Creality's proprietary
+            //      ecosystem, so a present-but-unresolved tag is a Creality
+            //      spool. A user override still wins over this.
+            if (slot.brand.empty() && vender_occupied) {
+                slot.brand = (vender_str == "unknown") ? "Creality" : vender_str;
             }
 
             // Remaining length
@@ -661,18 +681,29 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
                 }
             }
 
-            // Derive status. color_value is latched RFID data: it reads the
-            // sentinel "-1"/"None"/"unknown" for a removed spool or a
-            // physically-present untagged (3rd-party) spool. Treat all three as
-            // "no RFID presence" so a stale/untagged color doesn't fake an
-            // AVAILABLE bay. A user override later promotes assigned bays back
-            // to AVAILABLE (see apply_overrides).
-            if (color_str == "-1" || color_str == "None" || color_str == "unknown") {
-                slot.status = SlotStatus::EMPTY;
-            } else if (slot.remaining_length_m <= 0.0f && remain_str != "-1") {
-                slot.status = SlotStatus::EMPTY;
-            } else {
+            // Presence uses a COMBINED signal, not `vender` alone: an untagged
+            // 3rd-party spool has no RFID vendor (sentinel `vender`) yet reports
+            // a real `remain_len` from the measuring wheel — keying purely on
+            // `vender` would wrongly parse it EMPTY (the mirror of the ghost-slot
+            // bug). A bay is present when EITHER the vendor signal OR a positive
+            // remaining length says so; only when they BOTH read empty do we
+            // treat it as EMPTY. color_value/material_type are deliberately NOT
+            // consulted (they latch). A user override can still promote a
+            // firmware-EMPTY bay (see apply_overrides).
+            const bool remain_present = slot.remaining_length_m > 0.0f;
+            if (vender_occupied || remain_present) {
                 slot.status = SlotStatus::AVAILABLE;
+            } else {
+                slot.status = SlotStatus::EMPTY;
+                // Scrub the latched display fields parse populated so a removed
+                // spool's stale color/material doesn't render on the empty bay.
+                // This resets only PARSED firmware fields — not the persistent
+                // user override, which apply_overrides/clear_override_locked own.
+                slot.brand.clear();
+                slot.material.clear();
+                slot.color_name.clear();
+                slot.color_rgb = CfsMaterialDb::parse_color("-1");
+                slot.remaining_length_m = 0.0f;
             }
 
             // CFS slots map 1:1 to tools (slot 0 = tool 0, etc.)

@@ -413,7 +413,7 @@ static nlohmann::json make_cfs_status_json() {
                 "version": "1.1.3",
                 "sn": "10000882925L125DBZC",
                 "mode": "0",
-                "vender": ["-1", "-1", "-1", "-1"],
+                "vender": ["unknown", "unknown", "unknown", "unknown"],
                 "remain_len": ["35", "57", "52", "52"],
                 "color_value": ["0000000", "0FFFFFF", "00A2989", "0C12E1F"],
                 "material_type": ["101001", "101001", "101001", "101001"],
@@ -467,13 +467,33 @@ static json make_single_unit_box(const std::vector<std::string>& material_types,
             "dry_and_humidity": "48",
             "version": "1.1.3",
             "sn": "SERIAL",
-            "vender": ["-1", "-1", "-1", "-1"],
-            "remain_len": ["35", "57", "52", "52"],
             "change_color_num": ["-1", "-1", "-1", "-1"]
         }
     })");
     box["T1"]["material_type"] = material_types;
     box["T1"]["color_value"] = color_values;
+
+    // Presence on real hardware comes from `vender` OR a positive `remain_len`,
+    // NOT from color/material (which stay latched after a spool is removed).
+    // Synthesize realistic per-slot vender AND remain_len that match the
+    // occupancy each test expresses through its material/color arrays: a spool
+    // with any non-sentinel material OR color reports vender "unknown" (present,
+    // RFID vendor unresolved) and a real length; an all-sentinel slot reports
+    // vender "none" and remain_len "-1" (empty bay).
+    auto is_sentinel = [](const std::string& v) {
+        return v.empty() || v == "-1" || v == "None" || v == "unknown";
+    };
+    json vender = json::array();
+    json remain_len = json::array();
+    for (size_t i = 0; i < 4; ++i) {
+        const bool mat_present = i < material_types.size() && !is_sentinel(material_types[i]);
+        const bool col_present = i < color_values.size() && !is_sentinel(color_values[i]);
+        const bool present = mat_present || col_present;
+        vender.push_back(present ? "unknown" : "none");
+        remain_len.push_back(present ? "52" : "-1");
+    }
+    box["T1"]["vender"] = vender;
+    box["T1"]["remain_len"] = remain_len;
     return box;
 }
 
@@ -529,6 +549,66 @@ TEST_CASE("CFS backend status parsing", "[ams][cfs]") {
 
     SECTION("topology is HUB") {
         REQUIRE(info.units[0].topology == PathTopology::HUB);
+    }
+}
+
+// Presence regression (prestonbrown/helixscreen#1077). Covers the three cases
+// CFS presence has to get right, all in one fixture:
+//   A = tagged spool present  (vender set, RFID vendor unresolved → "unknown")
+//   B = UNTAGGED spool present (vender sentinel, but a real remain_len)
+//   C = genuinely empty bay    (vender sentinel, no length, but color/material
+//                               still LATCHED from the last spool)
+//   D = empty bay, zero length (remain_len "0" must not count as present)
+// color_value/material_type latch after removal, so they must NOT drive
+// presence (that faked the ghost slots); vender OR a positive remain_len does.
+TEST_CASE("CFS presence: vender + remain_len combined signal (#1077)", "[ams][cfs]") {
+    json box = json::parse(R"({
+        "state": "connect", "filament": 1, "auto_refill": 1, "enable": 1, "filament_useup": 0,
+        "map": {"T1A": "T1A", "T1B": "T1B", "T1C": "T1C", "T1D": "T1D"},
+        "T1": {
+            "state": "connect", "filament": "None", "temperature": "27", "dry_and_humidity": "40",
+            "version": "1.1.3", "sn": "SERIAL", "mode": "0",
+            "vender": ["unknown", "none", "none", "none"],
+            "remain_len": ["-1", "42", "-1", "0"],
+            "color_value": ["0FFFFFF", "0FF0000", "0C12E1F", "00A2989"],
+            "material_type": ["unknown", "-1", "101001", "101001"],
+            "change_color_num": ["-1", "-1", "-1", "-1"]
+        }
+    })");
+    auto info = AmsBackendCfs::parse_box_status(box);
+    REQUIRE(info.units.size() == 1);
+    const auto& slots = info.units[0].slots;
+
+    SECTION("tagged spool present (A)") {
+        REQUIRE(slots[0].status == SlotStatus::AVAILABLE);
+    }
+
+    SECTION("untagged spool with remaining length is present, not empty (B)") {
+        // The key case: vender is a sentinel ("none") but remain_len is real, so
+        // an untagged 3rd-party spool must NOT parse EMPTY.
+        REQUIRE(slots[1].status == SlotStatus::AVAILABLE);
+        REQUIRE(slots[1].remaining_length_m == 42.0f);
+    }
+
+    SECTION("genuinely empty bay is EMPTY despite latched color/material (C, D)") {
+        REQUIRE(slots[2].status == SlotStatus::EMPTY); // vender none, remain -1
+        REQUIRE(slots[3].status == SlotStatus::EMPTY); // vender none, remain "0"
+    }
+
+    SECTION("empty bay scrubs latched color/material so no ghost renders (C)") {
+        // Slot 2 carries a fully-latched color (0xC12E1F) and a resolvable
+        // Creality material code (101001) — both cleared once the bay reads
+        // empty (scrubbed color resolves to the 0x808080 sentinel).
+        REQUIRE(slots[2].color_rgb == CfsMaterialDb::parse_color("-1"));
+        REQUIRE(slots[2].material.empty());
+        REQUIRE(slots[2].brand.empty());
+    }
+
+    SECTION("present bay with unresolved RFID vendor defaults brand to Creality (A)") {
+        // Slot 0: vender "unknown" (tag present, vendor unresolved) + unmapped
+        // material code. CFS RFID tags are Creality-only → brand resolves to
+        // Creality rather than staying blank.
+        REQUIRE(slots[0].brand == "Creality");
     }
 }
 
@@ -1188,8 +1268,11 @@ TEST_CASE("CFS segment returns HUB for available slots", "[ams][cfs]") {
     }
 
     SECTION("empty slots have EMPTY status") {
-        // Modify a slot to have no color
-        status["box"]["T1"]["color_value"][0] = "-1";
+        // Presence tracks `vender` + `remain_len`, not color: clear both signals
+        // for the bay. The latched color_value stays populated, proving it is
+        // not consulted.
+        status["box"]["T1"]["vender"][0] = "none";
+        status["box"]["T1"]["remain_len"][0] = "-1";
         auto info2 = AmsBackendCfs::parse_box_status(status["box"]);
         REQUIRE(info2.units[0].slots[0].status == SlotStatus::EMPTY);
     }
