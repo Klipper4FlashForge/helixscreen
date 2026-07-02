@@ -88,6 +88,21 @@ class CfsTestAccess {
     static void set_macro_variant_k1(AmsBackendCfs& b) {
         b.macro_variant_ = helix::printer::CfsMacroVariant::K1;
     }
+    // Seed N connected CFS units (unit_index 0..N-1) so device-action code that
+    // iterates system_info_.units (e.g. refresh_rfid → BOX_INFO_REFRESH) has
+    // addressable units without a live Moonraker parse.
+    static void set_connected_units(AmsBackendCfs& b, int count) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        b.system_info_.units.clear();
+        for (int u = 0; u < count; ++u) {
+            AmsUnit unit;
+            unit.unit_index = u;
+            unit.connected = true;
+            unit.slot_count = 4;
+            unit.first_slot_global_index = u * 4;
+            b.system_info_.units.push_back(std::move(unit));
+        }
+    }
 };
 
 namespace {
@@ -1140,6 +1155,45 @@ TEST_CASE("CFS set_tool_mapping emits BOX_MODIFY_TN with TNN keys/values", "[ams
         REQUIRE(helper.set_tool_mapping(2, 7).result == AmsResult::SUCCESS);
         REQUIRE(helper.captured ==
                 std::vector<std::string>{"BOX_MODIFY_TN T1A=T1B", "BOX_MODIFY_TN T1C=T2D"});
+    }
+}
+
+// =============================================================================
+// CFS refresh_rfid → BOX_INFO_REFRESH RFID probe (prestonbrown/helixscreen#1077)
+// =============================================================================
+//
+// Inserting a spool does not auto-read its RFID tag; the box reports sentinel
+// vender/color/material until BOX_INFO_REFRESH scans it. The "Refresh RFID"
+// device action probes every connected unit: ADDR = 1-based unit index, NUM=15
+// (0b1111) = all four slots. Verified on K2 Plus.
+TEST_CASE("CFS refresh_rfid probes each connected unit via BOX_INFO_REFRESH",
+          "[ams][cfs][refresh]") {
+    // Neutralize on_started() — its printer.objects.query needs a live client.
+    struct Helper : CfsRemapHelper {
+        void on_started() override {}
+    };
+    Helper h;
+
+    SECTION("single connected unit → ADDR=1 NUM=15") {
+        CfsTestAccess::set_connected_units(h, 1);
+        auto err = h.execute_device_action("refresh_rfid", std::any{});
+        REQUIRE(err.result == AmsResult::SUCCESS);
+        REQUIRE(h.captured == std::vector<std::string>{"BOX_INFO_REFRESH ADDR=1 NUM=15"});
+    }
+
+    SECTION("two connected units → one probe each, ADDR follows unit index") {
+        CfsTestAccess::set_connected_units(h, 2);
+        auto err = h.execute_device_action("refresh_rfid", std::any{});
+        REQUIRE(err.result == AmsResult::SUCCESS);
+        REQUIRE(h.captured == std::vector<std::string>{"BOX_INFO_REFRESH ADDR=1 NUM=15",
+                                                       "BOX_INFO_REFRESH ADDR=2 NUM=15"});
+    }
+
+    SECTION("no connected units → no gcode emitted") {
+        CfsTestAccess::set_connected_units(h, 0);
+        auto err = h.execute_device_action("refresh_rfid", std::any{});
+        REQUIRE(err.result == AmsResult::SUCCESS);
+        REQUIRE(h.captured.empty());
     }
 }
 

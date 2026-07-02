@@ -1849,8 +1849,29 @@ std::vector<helix::printer::DeviceAction> AmsBackendCfs::get_device_actions() co
 AmsError AmsBackendCfs::execute_device_action(const std::string& action_id,
                                               const std::any& /*value*/) {
     if (action_id == "refresh_rfid") {
-        // Re-query box state from Moonraker (the box module polls CFS automatically)
-        on_started(); // Triggers printer.objects.query for box state
+        // Probe every connected CFS unit's RFID tags. Inserting a spool does NOT
+        // auto-read its tag: the box reports vender/color/material as sentinels
+        // until BOX_INFO_REFRESH scans them (spool then shows as "unknown"/empty
+        // in the UI until refreshed). ADDR is the 1-based unit index; NUM is a
+        // per-slot bitflag (A=1, B=2, C=4, D=8), so NUM=15 (0b1111) refreshes all
+        // four slots of the unit. Sent verbatim on both K2 and K1 macro variants,
+        // like the other BOX_* control commands. (prestonbrown/helixscreen#1077,
+        // workflow reported by cubewhy.)
+        std::vector<int> unit_addrs;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (const auto& unit : system_info_.units) {
+                if (unit.connected) {
+                    unit_addrs.push_back(unit.unit_index + 1);
+                }
+            }
+        }
+        for (int addr : unit_addrs) {
+            execute_gcode("BOX_INFO_REFRESH ADDR=" + std::to_string(addr) + " NUM=15");
+        }
+        // Re-query box state so the freshly-probed RFID/length values land in the
+        // UI. The box module publishes the updated `box` object after the scan.
+        on_started();
         return AmsErrorHelper::success();
     }
 
