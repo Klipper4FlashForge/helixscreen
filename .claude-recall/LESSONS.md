@@ -92,8 +92,8 @@
 - **Uses**: 1 | **Velocity**: 0 | **Learned**: 2026-01-14 | **Last**: 2026-01-16 | **Category**: gotcha | **Type**: constraint
 > Classes owning `lv_subject_t` members must call `lv_subject_deinit()` in dtor. Else observers leak and fire on freed subject → UAF.
 
-### [L059] [*----|*----] LVGL object deletion: pick the RIGHT strategy
-- **Uses**: 4 | **Velocity**: 0.142578125 | **Learned**: 2026-01-20 | **Last**: 2026-05-23 | **Category**: pattern | **Type**: constraint
+### [L059] [**---|***--] LVGL object deletion: pick the RIGHT strategy
+- **Uses**: 5 | **Velocity**: 1.142578125 | **Learned**: 2026-01-20 | **Last**: 2026-07-01 | **Category**: pattern | **Type**: constraint
 > Pick by scenario:
 > 1. `safe_delete(obj)` — sync, shutdown-safe, auto-nulls. Use in dtors/teardown when NOT inside an UpdateQueue/async batch.
 > 2. `safe_delete_deferred(obj)` — UpdateQueue-deferred. Use inside async cbs (timers, network responses). Nulls now, deletes next drain.
@@ -166,12 +166,12 @@
 - **Uses**: 3 | **Velocity**: 0.220703125 | **Learned**: 2026-02-22 | **Last**: 2026-05-19 | **Category**: gotcha | **Type**: constraint
 > Before `lv_obj_find_by_name()` / `lv_obj_get_child()` / `lv_obj_get_child_count()` on a cached pointer: null-check + `AsyncLifetimeGuard` token check. NOT `lv_obj_is_valid()` (O(n), stack-overflows on Pi — see [L076]). Use `safe_delete_obj()` to null pointers post-delete. For async cbs detecting panel destruction: capture `tok = lifetime_.token()` and gate with `tok.defer(...)` (CLAUDE.md § Threading); older `weak_ptr<bool>` alive-guard pattern is deprecated.
 
-### [L076] [***--|*----] NEVER use lv_obj_is_valid() in hot paths or async guards
-- **Uses**: 13 | **Velocity**: 0.29296875 | **Learned**: 2026-02-22 | **Last**: 2026-05-21 | **Category**: gotcha
+### [L076] [***--|*****] NEVER use lv_obj_is_valid() in hot paths or async guards
+- **Uses**: 21 | **Velocity**: 8.29296875 | **Learned**: 2026-02-22 | **Last**: 2026-07-01 | **Category**: gotcha
 > `lv_obj_is_valid()` does a recursive O(n) walk of all screens + children (`obj_valid_child`). On Pi with thousands of widgets → stack overflow SIGSEGV. NEVER in: observer cbs, anim cbs (pulse_anim_cb), timer cbs, loops, dtor paths, `safe_delete_obj()`, async deletion guards. Use null checks. For deferred deletion guards: app-level tracking (ModalStack membership) or `lv_obj_delete_async()` (self-cancels). It can return TRUE on recycled memory → if LVGL reuses the address you delete a live obj (#399). Only safe in one-shot user click handlers (tree stable, called once).
 
-### [L077] [*----|*----] Dynamic subject observers MUST use SubjectLifetime tokens
-- **Uses**: 1 | **Velocity**: 0.140625 | **Learned**: 2026-02-22 | **Last**: 2026-05-22 | **Category**: gotcha
+### [L077] [**---|*****] Dynamic subject observers MUST use SubjectLifetime tokens
+- **Uses**: 6 | **Velocity**: 5.140625 | **Learned**: 2026-02-22 | **Last**: 2026-07-02 | **Category**: gotcha
 > Observing dynamic subjects (per-fan/per-sensor/per-extruder): always use the `get_*_subject(name, lifetime)` overload and pass the token to the observer factory. Without it, `lv_subject_deinit()` frees the observer; `ObserverGuard::reset()` then calls `lv_observer_remove()` on freed memory → SEGV. Static singleton subjects don't need tokens.
 
 ### [L078] [-----|-----] lv_obj transform_scale invisible without background
@@ -186,8 +186,8 @@
 - **Uses**: 33 | **Velocity**: 2.03125 | **Learned**: 2026-04-16 | **Last**: 2026-06-16 | **Category**: gotcha
 > Before asking user to interact on-device, verify in one pass: (1) NEW binary running (PID start time / version in log), (2) logs land where you expect (journalctl/file/console), (3) required state on (telemetry, debug level in helixscreen.env), (4) logs reachable via SSH. Each failed round-trip burns user patience. Pi: systemctl → journalctl; `deploy-pi-fg` uses `ssh -t` (console only); nohup drops output. Production log capture: systemd + journalctl.
 
-### [L081] [***--|**---] lifetime_.defer does NOT escape UpdateQueue batch
-- **Uses**: 24 | **Velocity**: 0.98828125 | **Learned**: 2026-04-18 | **Last**: 2026-06-14 | **Category**: gotcha | **Type**: constraint
+### [L081] [***--|****-] lifetime_.defer does NOT escape UpdateQueue batch
+- **Uses**: 26 | **Velocity**: 2.98828125 | **Learned**: 2026-04-18 | **Last**: 2026-07-01 | **Category**: gotcha | **Type**: constraint
 > `lifetime_.defer` / `tok.defer` / our `helix::ui::async_call` are thin wrappers over `queue_update` — the cb fires in the next `process_pending` tick, still inside a UpdateQueue batch with other sync deletions. AsyncLifetimeGuard's gen counter only protects `this`, not LVGL event-list. Any comment claiming "defer is outside process_pending" is wrong — fix it. Observer cbs (`observe_int_sync`, `observe_string`) are also queued since #82, same batch. BANNED inside any queued/deferred cb: `safe_delete(ptr)`, `lv_obj_delete(obj)`, `lv_obj_clean(container)`. INSTEAD: `safe_delete_deferred(ptr)`, `lv_obj_delete_async(obj)`, `helix::ui::safe_clean_children(container)` — all route through LVGL's async list, outside our batch. Multiple sync deletes in one batch → SIGSEGV in `lv_event_mark_deleted` (#776, #190, #80). CLAUDE.md § "No sync widget deletion in queued callbacks", `include/ui_utils.h`.
 
 ### [L082] [**---|**---] Percent size inside LV_SIZE_CONTENT parent collapses to 0
@@ -202,8 +202,8 @@
 > **Member `std::thread` joined in dtor** (WifiBackendNetworkManager::connect_thread_, CameraStream::stream_thread_) is fine — the issue is one-shot detached spawns under load.
 > Before adding a new `std::thread`, check if HttpExecutor or another managed pool already owns that domain.
 
-### [L084] [**---|*----] SubjectLifetime must be a member, never a local
-- **Uses**: 6 | **Velocity**: 0.3359375 | **Learned**: 2026-04-22 | **Last**: 2026-05-17 | **Category**: gotcha | **Type**: constraint
+### [L084] [**---|***--] SubjectLifetime must be a member, never a local
+- **Uses**: 7 | **Velocity**: 1.3359375 | **Learned**: 2026-04-22 | **Last**: 2026-07-01 | **Category**: gotcha | **Type**: constraint
 > Observing a dynamic subject (per-fan/per-sensor/per-extruder): the `SubjectLifetime` token MUST outlive the observer → it MUST be a member, never a local. A local `SubjectLifetime lt;` paired with a member `ObserverGuard` is a UAF: when `lt` falls off the stack, the observer's weak_ptr is dead but the observer is still registered against the (possibly recreated) subject. Companion to [L077].
 > Rule: every member `ObserverGuard` on a dynamic subject needs a paired member `SubjectLifetime` next to it in the header. Same for vector members.
 > Per-item collections (carousel pages, slot lists) → parallel vectors, kept in lockstep, lifetimes cleared BEFORE observers (#705):
@@ -237,16 +237,16 @@
 - **Uses**: 1 | **Velocity**: 0.25 | **Learned**: 2026-05-22 | **Last**: 2026-06-11 | **Category**: gotcha
 > After registering a new widget via lv_xml_register_widget() in src/ui/*.cpp (custom widgets like helix_sparkline, ui_card, helix_3d_viewer), run 'make regen-xml-schema' and commit tools/xml-linter/schema/schema.json. The linter auto-discovers from C++ source at schema-generation time but reads the *committed* schema in CI — forgetting this fails the XML Lint workflow with 'unknown-widget'. Analogous to L064 (translation artifacts).
 
-### [L090] [*----|**---] resolve-backtrace.sh orphans addr2line against the big pi DWARF
-- **Uses**: 3 | **Velocity**: 0.75 | **Learned**: 2026-06-12 | **Last**: 2026-06-16 | **Category**: gotcha
+### [L090] [*----|***--] resolve-backtrace.sh orphans addr2line against the big pi DWARF
+- **Uses**: 4 | **Velocity**: 1.75 | **Learned**: 2026-06-12 | **Last**: 2026-07-02 | **Category**: gotcha
 > scripts/resolve-backtrace.sh forks one aarch64-linux-gnu-addr2line PER backtrace address against the multi-GB DWARF (pi.debug ~2.6G). addr2line loads DWARF lazily so each child GROWS over time (4G->8G+). If the harness auto-backgrounds the resolver and you 'kill' it, the script's subshell+addr2line children ORPHAN and keep grinding -> RAM erodes with ever-new PIDs invisible to 'pkill -f addr2line' / 'ps -C addr2line' (binary name truncates to 'aarch64-linux-g'). Three parallel YA2GVVXT resolves once ate ~26G+ while a build ran, nearly OOMing the box. RULES: (1) run resolve-backtrace.sh with run_in_background:true from the START so the harness owns the whole process tree; (2) NEVER hand-fork addr2line in a chained shell that can be backgrounded; (3) let ONE resolver finish, don't launch parallel retries; (4) to clean up, kill the PARENT resolve-backtrace.sh PIDs (find via 'pgrep -af resolve-backtrace'), not just children; identify the big procs via /proc/PID/cmdline since the name truncates. The resolver's reliable-frames block prints quickly; the slow part is the stack-scan over all addresses.
 
 ### [L091] [*----|***--] Stale-but-200 R2 manifest silently suppresses updates fleet-wide
 - **Uses**: 4 | **Velocity**: 1.25 | **Learned**: 2026-06-12 | **Last**: 2026-06-18 | **Category**: gotcha
 > If 'new version not showing in check-for-updates on ANY device', it's the source of truth, not per-device: the in-app updater fetches https://releases.helixscreen.org/<channel>/manifest.json FIRST and trusts any HTTP-200 unconditionally (update_checker.cpp fetch_stable_release) -- it only falls back to GitHub on FETCH FAILURE, never on staleness. Root cause of v0.99.76 not appearing: the release.yml 'Upload to R2' job is non-blocking AND its monolithic set -e upload step put the manifest AFTER the large .zip artifacts; a transient 504 on k2.zip aborted the step before the manifest uploaded, so R2 stayed pinned at .75 while the run still showed green. Diagnose: curl the live manifest .version vs the tag; check the 'Upload to R2' job (not just run status). Fix shipped (942bcbd51,d0034b282): upload referenced .tar.gz -> publish manifest -> then zips/symbols, all via s3cp() retry wrapper, then read the manifest back and assert .version==tag so a bad publish fails the release loudly. Lesson: verify the SERVED artifact, never trust upload success; a non-blocking CI job that publishes the source-of-truth is a silent-failure trap.
 
-### [L092] [**---|****-] make | tail masks exit code; -j hides the real build error
-- **Uses**: 7 | **Velocity**: 2.5 | **Learned**: 2026-06-12 | **Last**: 2026-06-18 | **Category**: gotcha
+### [L092] [***--|*****] make | tail masks exit code; -j hides the real build error
+- **Uses**: 11 | **Velocity**: 6.5 | **Learned**: 2026-06-12 | **Last**: 2026-07-02 | **Category**: gotcha
 > Piping make through tail/head makes the Bash step report exit 0 even when make failed (the exit code is tail's). Capture it separately: 'make ...; echo $? > /tmp/exit'. When a (cross-)build dies with NO 'error:' line and a DIFFERENT failure point each run, suspect interleaved parallel output hiding the real first error OR resource contention (check 'free -h' and 'pgrep -af cc1plus' for a sibling session building on the same box) — drop to -j2 to serialize and surface the true first error before concluding root cause. Bit me triaging a worktree snapmaker-u1 cross-build; real cause was missing $(LV_CONF) in the splash/display/watchdog sub-builds, invisible under -j.
 
 ### [L093] [-----|-----] Pure-decision-function tests need input realism
@@ -257,7 +257,11 @@
 - **Uses**: 0 | **Velocity**: 0 | **Learned**: 2026-06-16 | **Last**: 2026-06-16 | **Category**: gotcha
 > Gating a load decision on a state that only updates AFTER the load completes deadlocks. The print-status gcode download was gated on the view-mode subject being 3D/2D, but that subject only becomes 3D/2D once gcode is loaded -> gcode never downloads, mode never leaves thumbnail, 3D render never appears (user saw 'thumbnail not 3D'). Gate loads on intent/settings (want_viewer + render-mode setting), never on the rendered result. Found in PrintStatusPanel preview unification.
 
-### [L095] [-----|-----] Verify feature existence in code, not from issue phrasing + commit messages
-- **Uses**: 0 | **Velocity**: 0 | **Learned**: 2026-07-01 | **Last**: 2026-07-01 | **Category**: correction
+### [L095] [*----|****-] Verify feature existence in code, not from issue phrasing + commit messages
+- **Uses**: 2 | **Velocity**: 2 | **Learned**: 2026-07-01 | **Last**: 2026-07-01 | **Category**: correction
 > I claimed the Spoolman spool picker "wasn't implemented" based on the reporter's wording and the six fix-commit messages, without reading the modal. It existed the whole time (AmsEditModal picker view, behind a "Choose Spool" button). When asserting a capability is absent, grep/read the actual UI code first — a reporter not finding a feature usually means a discoverability gap, not a missing feature. Corollary: don't inherit a sub-agent's "race" claim from a stale code comment (#311 was already fixed by a synchronous subject read) — verify current code. Found triaging #1071.
+
+### [L096] [-----|-----] queue_prev tag-ring names the victim, not the crash — resolve real frames first
+- **Uses**: 0 | **Velocity**: 0 | **Learned**: 2026-07-02 | **Last**: 2026-07-02 | **Category**: correction
+> The crash-handler dumps queue_prev/queue_prev2... = the last N *completed* UpdateQueue callbacks (victim context), NOT a call stack. Do NOT investigate the callback named there. Run 'scripts/resolve-backtrace.sh --crash-file <f> <platform>' FIRST for the real PC/RA + FP-walk app-code spine. Signature shortcuts (arch-independent): LV_COORD_MAX 0x1FFFFFFF live in a register + fault_addr == heap_end+1 (check the [heap] map range) + deep layout_update_core/grid_update recursion (same addr repeated) = #983 grid walk-off. #983 generic guard landed v0.99.76; the PrinterImageWidget-attach arm (lv_image_set_src->update_align->layout recursion) fixed v0.99.78 (#1025). Burned twice: PerformanceState::apply_sample (was just the last cb before a timer HomePanel rebuild) and TSM::update_subjects both sent investigation down dead ends. Companion to L090/L095.
 
