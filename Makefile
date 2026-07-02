@@ -1074,12 +1074,14 @@ install:
 		\( -name '*.c' -o -name '*.h' -o -name 'CMakeLists.txt' -o -name '*.cmake' \) \
 		-type f -delete
 	@echo "  → ui_xml/"
-	@# assets: fonts, images, sounds, config
+	@# assets: fonts, images, sounds, config, plus root-level runtime files
 	@install -d "$(DESTDIR)/opt/helixscreen/assets"
 	@if [ -d assets/fonts ]; then cp -a assets/fonts "$(DESTDIR)/opt/helixscreen/assets/"; fi
 	@if [ -d assets/images ]; then cp -a assets/images "$(DESTDIR)/opt/helixscreen/assets/"; fi
 	@if [ -d assets/sounds ]; then cp -a assets/sounds "$(DESTDIR)/opt/helixscreen/assets/"; fi
 	@if [ -d assets/config ]; then cp -a assets/config "$(DESTDIR)/opt/helixscreen/assets/"; fi
+	@# cfs_materials.json: CFS RFID material DB, loaded at runtime by ams_backend_cfs.cpp
+	@if [ -f assets/cfs_materials.json ]; then cp -a assets/cfs_materials.json "$(DESTDIR)/opt/helixscreen/assets/"; fi
 	@echo "  → assets/"
 	@# certs (optional — only present after `make ad5m-docker` fetched them)
 	@if [ -f "$(BUILD_DIR)/certs/ca-certificates.crt" ]; then \
