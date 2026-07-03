@@ -360,7 +360,7 @@ Add to `scripts/test_import_orca_filaments.py`:
 def test_build_catalog_unions_orca_and_seed():
     seed = [{"id": "creality-hyper-pla", "brand": "Creality", "name": "Hyper PLA",
              "type": "PLA", "nozzle": 215, "codes": {"cfs": "01001"}, "source": "cfs-seed"}]
-    cat = imp.build_catalog(FIX, seed, type_ranges={"ABS": (245, 265)})
+    cat = imp.build_catalog(FIX, seed, type_ranges={"ABS": (245, 265)}, library_marker="")
     ids = {p["id"] for p in cat}
     assert "creality-hyper-pla" in ids                 # seed preserved
     assert any(p["brand"] == "Polymaker" for p in cat)  # orca product present
@@ -369,8 +369,8 @@ def test_build_catalog_unions_orca_and_seed():
 
 def test_build_catalog_is_deterministic():
     seed = []
-    a = imp.build_catalog(FIX, seed, type_ranges={"ABS": (245, 265)})
-    b = imp.build_catalog(FIX, seed, type_ranges={"ABS": (245, 265)})
+    a = imp.build_catalog(FIX, seed, type_ranges={"ABS": (245, 265)}, library_marker="")
+    b = imp.build_catalog(FIX, seed, type_ranges={"ABS": (245, 265)}, library_marker="")
     assert json.dumps(a) == json.dumps(b)               # stable order + shape
 ```
 
@@ -379,9 +379,15 @@ def test_build_catalog_is_deterministic():
 Run: `python3 -m pytest scripts/test_import_orca_filaments.py -k build_catalog -v`
 Expected: FAIL — `AttributeError: module 'import_orca_filaments' has no attribute 'build_catalog'`
 
-- [ ] **Step 4: Add `build_catalog` + CLI**
+- [ ] **Step 4: Scope-tag profiles, add `build_catalog` + CLI**
 
-Append to `scripts/import_orca_filaments.py`:
+First, modify `load_profiles` (created in Task 1) to record each profile's source directory so `build_catalog` can restrict products to the vendor-agnostic library. Inside the loop, right after `p = json.load(f)`, add:
+```python
+            p["_src"] = dirpath  # remember source dir for library-scope filtering
+```
+(This is backward-compatible with the Task 1 tests — they never assert on the resolved key set.)
+
+Then append to `scripts/import_orca_filaments.py`:
 ```python
 import argparse
 import sys
@@ -397,13 +403,18 @@ def _display_name(profile_name: str, brand: str) -> str:
     return name or profile_name
 
 
-def build_catalog(orca_root, cfs_seed, type_ranges):
+def build_catalog(orca_root, cfs_seed, type_ranges, library_marker="OrcaFilamentLibrary"):
+    # Load the WHOLE tree (bases from BBL/ etc. are needed to resolve inherits),
+    # but emit products ONLY from the vendor-agnostic library, not the ~6,550
+    # printer-specific profiles. Tests pass library_marker="" to accept fixtures.
     by_name = load_profiles(orca_root)
     products = []
     seen = set()
     for pname, profile in by_name.items():
         if profile.get("instantiation") != "true":
             continue  # templates, not user-facing products
+        if library_marker and library_marker not in profile.get("_src", ""):
+            continue  # skip printer-specific profiles outside the library
         resolved = resolve_inherits(profile, by_name)
         brand = first_scalar(resolved.get("filament_vendor")) or "Generic"
         resolved["_product_name"] = _display_name(pname, brand)
@@ -499,7 +510,7 @@ Generate `scripts/fixtures/type_ranges.json` once from the current `filament_dat
 make regen-filaments
 git rm assets/cfs_materials.json android/app/src/main/assets/assets/cfs_materials.json
 ```
-Verify `assets/filaments.json` exists, has an `_attribution` field, a `filaments` array containing Creality/eSUN seed entries (with `codes.cfs`) and Orca-derived products, and **no** `P100x` ids. Confirm the Android mirror is byte-identical: `diff assets/filaments.json android/app/src/main/assets/assets/filaments.json && echo IDENTICAL`.
+Verify `assets/filaments.json` exists, has an `_attribution` field, a `filaments` array containing Creality/eSUN seed entries (with `codes.cfs`) and Orca-derived products, and **no** `P100x` ids. **Sanity-check the count** (`python3 -c "import json;print(len(json.load(open('assets/filaments.json'))['filaments']))"`): expect on the order of a few hundred products (the vendor-agnostic library collapsed by product). If it is in the thousands, the `library_marker` scoping failed (printer-specific profiles leaked in) — fix before committing. Confirm the Android mirror is byte-identical: `diff assets/filaments.json android/app/src/main/assets/assets/filaments.json && echo IDENTICAL`.
 
 - [ ] **Step 8: Commit**
 
