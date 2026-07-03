@@ -4,7 +4,7 @@
 #pragma once
 
 #include "ui_ams_edit_modal.h"
-#include "ui_material_picker_menu.h"
+#include "ui_filament_catalog_picker.h"
 #include "ui_observer_guard.h"
 #include "ui_panel_base.h"
 
@@ -287,8 +287,8 @@ class FilamentPanel : public PanelBase {
     lv_subject_t preset_name_subjects_[4];
     char preset_name_bufs_[4][24];
 
-    // Anchored material picker shown on long-press.
-    helix::ui::MaterialPickerMenu material_picker_;
+    // Offline branded-filament catalog picker shown on preset long-press.
+    helix::ui::FilamentCatalogPickerModal catalog_picker_;
 
     // Subject storage buffers
     char temp_display_buf_[32];
@@ -412,6 +412,10 @@ class FilamentPanel : public PanelBase {
     void update_preset_button_temps();   ///< Update preset button labels from filament DB
     void update_preset_button_labels();  ///< Update preset button NAME labels from preset_materials_
     void check_and_auto_select_preset(); ///< Auto-select preset if targets match
+    /// Apply a branded product picked from the catalog picker to a preset slot:
+    /// updates the plain type (reassign_preset), attaches the exact branded product
+    /// (set_preset_filament), then refreshes labels/temps/highlight to reflect it.
+    void apply_preset_pick(int slot, const helix::printer::EffectiveFilament& ef);
     void update_all_temps();             ///< Unified handler for temp observer bundle
     void check_pending_preheat();        ///< Called from update_all_temps()
     void cancel_pending_preheat();       ///< Reset preheat state + notify

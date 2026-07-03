@@ -177,10 +177,42 @@ def build_catalog(orca_root, cfs_seed, type_ranges, library_marker="OrcaFilament
             continue  # collapse per-color duplicates
         seen.add(key)
         products.append(product)
-    products.extend(cfs_seed)
+    _merge_cfs_seed(products, cfs_seed)
     _dedupe_ids(products)
     products.sort(key=lambda p: (p.get("source", ""), p["brand"].lower(), p["name"].lower(), p["id"]))
     return products
+
+
+def _merge_cfs_seed(products, cfs_seed):
+    """Fold the CFS seed into the Orca products instead of appending it wholesale.
+
+    The seed exists to carry per-material CFS codes (used to match a physical CFS
+    spool by its embedded code), but it names its generics "Generic TPU" while the
+    Orca library names the same material "TPU". Appended as-is, the two surface as
+    duplicate picker rows with conflicting temps (the seed generics are nozzle-only).
+
+    So: normalize each seed entry's display name to Orca convention (strip a leading
+    brand prefix, e.g. "Generic TPU" -> "TPU"), then look for an Orca product of the
+    same (brand, type, name). If found, move the seed's codes onto that richer Orca
+    product (Orca temps win) and drop the seed copy. Seed entries with no Orca match
+    (CFS-only variants like "Generic TPU 64D", or Creality "CR-*") are kept as
+    standalone products, still carrying their codes.
+    """
+    def _name_key(s):
+        return re.sub(r"[^a-z0-9]+", "", s.lower())  # fold "PLA-Silk" == "PLA Silk"
+
+    orca_by_key = {(p["brand"], p.get("type"), _name_key(p["name"])): p for p in products}
+    for entry in cfs_seed:
+        merged = dict(entry)
+        merged["name"] = _display_name(entry.get("name", ""), entry.get("brand", ""))
+        merged["id"] = _slug(entry.get("brand", ""), merged["name"])
+        match = orca_by_key.get((entry.get("brand"), entry.get("type"), _name_key(merged["name"])))
+        if match is not None:
+            codes = match.setdefault("codes", {})
+            for scheme, code in (entry.get("codes") or {}).items():
+                codes.setdefault(scheme, code)  # don't clobber an existing Orca code
+        else:
+            products.append(merged)
 
 
 def _dedupe_ids(products):

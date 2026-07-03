@@ -221,6 +221,12 @@ void XMLTestFixture::setup_global_xml_registrations_once() {
     lv_xml_register_component_from_file("A:ui_xml/modal_header.xml");
     lv_xml_register_component_from_file("A:ui_xml/favorite_macro_config_modal.xml");
 
+    // Register components used by filament_catalog_picker (Modal subclass, no
+    // pre-registered app-wide entry point yet — Task 5/7 wires that up).
+    lv_xml_register_component_from_file("A:ui_xml/divider_vertical.xml");
+    lv_xml_register_component_from_file("A:ui_xml/modal_button_row.xml");
+    lv_xml_register_component_from_file("A:ui_xml/components/filament_catalog_picker.xml");
+
     s_global_registered = true;
 }
 

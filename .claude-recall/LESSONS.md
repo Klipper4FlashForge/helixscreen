@@ -37,7 +37,7 @@
 > Text-only buttons: `align="center"` on child. Icon+text with `flex_flow="row"` need all three: `style_flex_main_place="center"` (horiz), `style_flex_cross_place="center"` (cross), `style_flex_track_place="center"` (row position). Without track_place content sits at top.
 
 ### [L031] [*****|****-] XML no recompile
-- **Uses**: 100 | **Velocity**: 2.1269677734375 | **Learned**: 2025-12-27 | **Last**: 2026-06-18 | **Category**: gotcha | **Type**: constraint
+- **Uses**: 100 | **Velocity**: 3.1269677734375 | **Learned**: 2025-12-27 | **Last**: 2026-07-03 | **Category**: gotcha | **Type**: constraint
 > ui_xml/*.xml loads at RUNTIME — never rebuild for XML-only changes (layout, styling, bindings, event cbs). Just relaunch. Rebuild only for C++ changes.
 
 ### [L039] [**---|*----] Unique XML callback names
@@ -233,8 +233,8 @@
 - **Uses**: 2 | **Velocity**: 1.25 | **Learned**: 2026-05-22 | **Last**: 2026-07-03 | **Category**: pattern
 > tests/shell/test_code_lint.bats forbids _for_testing suffix methods in include/*.h or src/*.cpp. Pattern: declare 'friend class FooTestAccess;' on the production class, define FooTestAccess in tests/test_helpers/foo_test_access.h with static methods that access private members (e.g., 'static void apply_sample(PerformanceState& ps, const PerfSample& s) { ps.apply_sample(s); }'). Mocks (*_mock.h) are exempt — whole file is test infra. Template: tests/test_helpers/update_queue_test_access.h.
 
-### [L089] [*----|*----] Regen XML linter schema after adding C++ widget
-- **Uses**: 1 | **Velocity**: 0.25 | **Learned**: 2026-05-22 | **Last**: 2026-06-11 | **Category**: gotcha
+### [L089] [*----|***--] Regen XML linter schema after adding C++ widget
+- **Uses**: 2 | **Velocity**: 1.25 | **Learned**: 2026-05-22 | **Last**: 2026-07-03 | **Category**: gotcha
 > After registering a new widget via lv_xml_register_widget() in src/ui/*.cpp (custom widgets like helix_sparkline, ui_card, helix_3d_viewer), run 'make regen-xml-schema' and commit tools/xml-linter/schema/schema.json. The linter auto-discovers from C++ source at schema-generation time but reads the *committed* schema in CI — forgetting this fails the XML Lint workflow with 'unknown-widget'. Analogous to L064 (translation artifacts).
 
 ### [L090] [*----|***--] resolve-backtrace.sh orphans addr2line against the big pi DWARF
