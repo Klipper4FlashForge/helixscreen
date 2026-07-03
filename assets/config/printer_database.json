@@ -3162,6 +3162,112 @@
       ]
     },
     {
+      "id": "qidi_max_4",
+      "name": "Qidi Max 4",
+      "manufacturer": "Qidi",
+      "image": "qidi-max-4.png",
+      "preset": "qidi_max4",
+      "print_start_profile": "qidi",
+      "ams_type": "qidi_box",
+      "notes": "Linux framebuffer display. Compatible with the QIDI Box filament changer; Max 4 hub mechanics differ from Q2/Plus 4, but stock firmware exposes the same Klipper/Moonraker control surface.",
+      "heuristics": [
+        {
+          "type": "hostname_match",
+          "field": "hostname",
+          "pattern": "max4",
+          "confidence": 95,
+          "reason": "Hostname contains 'max4'"
+        },
+        {
+          "type": "hostname_match",
+          "field": "hostname",
+          "pattern": "max-4",
+          "confidence": 95,
+          "reason": "Hostname contains 'max-4'"
+        },
+        {
+          "type": "build_volume_range",
+          "field": "bed_mesh",
+          "min_x": 370,
+          "max_x": 410,
+          "min_y": 390,
+          "max_y": 420,
+          "confidence": 90,
+          "reason": "Build volume ~385x405mm (Max 4 size)"
+        },
+        {
+          "type": "object_exists",
+          "field": "printer_objects",
+          "pattern": "probe_air",
+          "confidence": 85,
+          "reason": "probe_air object (QIDI Max 4 stock probe)"
+        },
+        {
+          "type": "fan_match",
+          "field": "fans",
+          "pattern": "auxiliary_cooling_fan2",
+          "confidence": 80,
+          "reason": "Second auxiliary cooling fan (Max 4 dual-aux fan layout)"
+        },
+        {
+          "type": "object_exists",
+          "field": "printer_objects",
+          "pattern": "multi_color_controller",
+          "confidence": 70,
+          "reason": "QIDI multi-color controller object"
+        },
+        {
+          "type": "macro_match",
+          "field": "macros",
+          "pattern": "M4029",
+          "confidence": 65,
+          "reason": "M4029 calibration macro (QIDI Max 4 stock firmware)"
+        },
+        {
+          "type": "object_exists",
+          "field": "printer_objects",
+          "pattern": "heater_generic chamber",
+          "confidence": 55,
+          "reason": "Active chamber heater (QIDI enclosed printer)"
+        },
+        {
+          "type": "sensor_match",
+          "field": "sensors",
+          "pattern": "Chamber_Thermal_Protection",
+          "confidence": 50,
+          "reason": "Chamber thermal protection sensor (QIDI Max 4 stock config)"
+        },
+        {
+          "type": "hostname_match",
+          "field": "hostname",
+          "pattern": "qidi",
+          "confidence": 50,
+          "reason": "Hostname contains 'qidi'"
+        },
+        {
+          "type": "macro_match",
+          "field": "macros",
+          "pattern": "CLEAR_NOZZLE",
+          "confidence": 45,
+          "reason": "CLEAR_NOZZLE macro (common on QIDI printers)"
+        },
+        {
+          "type": "kinematics_match",
+          "field": "kinematics",
+          "pattern": "corexy",
+          "confidence": 40,
+          "reason": "CoreXY kinematics"
+        },
+        {
+          "type": "mcu_match",
+          "field": "mcu",
+          "pattern": "STM32F407",
+          "confidence": 35,
+          "reason": "STM32F407 main MCU (QIDI new-generation board)"
+        }
+      ]
+    },
+    {
       "id": "qidi_q2",
       "name": "Qidi Q2",
       "manufacturer": "Qidi",
@@ -5150,6 +5256,13 @@
       "print_start_profile": "artillery_m1",
       "z_offset_calibration_strategy": "firmware_managed",
       "heuristics": [
+        {
+          "type": "macro_exclude",
+          "field": "macros",
+          "pattern": "M4029",
+          "confidence": 0,
+          "reason": "Exclude QIDI Max 4/Plus 4 firmware (M4029 calibration macro)"
+        },
         {
           "type": "kinematics_match",
           "field": "kinematics",

@@ -2420,6 +2420,37 @@ TEST_CASE_METHOD(PrinterDetectorFixture,
 
     // The bug: linaro-alip pulled this to Artillery M1 Pro. It must not.
     REQUIRE(result.type_name != "Artillery M1 Pro");
+    REQUIRE(result.type_name != "Qidi Max 4");
+}
+
+TEST_CASE_METHOD(PrinterDetectorFixture,
+                 "PrinterDetector: stock Max 4 fingerprint detects Qidi Max 4",
+                 "[printer][qidi][max4]") {
+    PrinterHardwareData hardware{
+        .heaters = {"extruder", "heater_bed", "heater_generic chamber"},
+        .sensors = {"temperature_sensor Chamber_Thermal_Protection_Sensor"},
+        .fans = {"fan_generic cooling_fan", "heater_fan hotend_fan",
+                 "controller_fan chamber_fan", "controller_fan board_fan",
+                 "fan_generic chamber_circulation_fan", "fan_generic auxiliary_cooling_fan",
+                 "fan_generic auxiliary_cooling_fan2"},
+        .leds = {"output_pin caselight", "neopixel RGB"},
+        .hostname = "linaro-alip",
+        .printer_objects = {"heater_generic chamber", "probe_air", "z_tilt", "bed_mesh",
+                            "multi_color_controller", "gcode_macro M4029",
+                            "gcode_macro CLEAR_NOZZLE"},
+        .steppers = {"stepper_x", "stepper_y", "stepper_z", "stepper_z1"},
+        .kinematics = "corexy",
+        .mcu = "STM32F407",
+        .mcu_list = {"STM32F407"},
+        .build_volume = {.x_min = -2, .x_max = 392, .y_min = -5, .y_max = 410, .z_max = 342},
+    };
+
+    auto result = PrinterDetector::detect(hardware);
+
+    REQUIRE(result.detected());
+    REQUIRE(result.type_name == "Qidi Max 4");
+    REQUIRE(result.type_name != "Artillery M1 Pro");
+    REQUIRE(result.confidence >= 90);
 }
 
 // ============================================================================
@@ -3858,10 +3889,11 @@ TEST_CASE("PrinterDetector: get_preset_for_name resolves DB name field",
     REQUIRE(PrinterDetector::get_preset_for_name("FlashForge Adventurer 5X") == "ad5x");
     REQUIRE(PrinterDetector::get_preset_for_name("FlashForge Adventurer 5M Pro") == "ad5m_pro");
 
-    // Qidi Q2 (+ QIDI Box / Happy Hare) preset wiring — applied by the wizard on
-    // network detection (assets/config/presets/qidi_q2.json).
+    // Qidi presets applied by the wizard on network detection.
     REQUIRE(PrinterDetector::get_preset_for_name("Qidi Q2") == "qidi_q2");
     REQUIRE(PrinterDetector::get_name_for_preset("qidi_q2") == "Qidi Q2");
+    REQUIRE(PrinterDetector::get_preset_for_name("Qidi Max 4") == "qidi_max4");
+    REQUIRE(PrinterDetector::get_name_for_preset("qidi_max4") == "Qidi Max 4");
 
     // Round-trip: name → preset → name should be stable
     std::string name = PrinterDetector::get_name_for_preset("ad5x");
