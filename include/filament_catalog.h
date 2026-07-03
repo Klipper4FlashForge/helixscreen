@@ -27,6 +27,12 @@ struct EffectiveFilament {
 /// static loader, query, then let it fall out of scope (frees all parsed data).
 class FilamentCatalog {
   public:
+    FilamentCatalog() = default;
+    FilamentCatalog(const FilamentCatalog&) = delete;
+    FilamentCatalog& operator=(const FilamentCatalog&) = delete;
+    FilamentCatalog(FilamentCatalog&&) = default;
+    FilamentCatalog& operator=(FilamentCatalog&&) = default;
+
     /// Whole catalog (built-in + user overlay). For the picker.
     static FilamentCatalog load_full();
     /// Only products carrying a code in `scheme`. For CFS decode (small slice).
@@ -45,6 +51,10 @@ class FilamentCatalog {
     std::vector<const EffectiveFilament*> products_for_brand(const std::string& brand) const;
     std::vector<std::string> all_brands() const;
     std::vector<const EffectiveFilament*> all_products() const;
+    std::vector<std::string> types_for_brand(const std::string& brand) const;
+    std::vector<std::string> brands_for_type(const std::string& type) const;
+    std::vector<const EffectiveFilament*> products_for(const std::string& brand,
+                                                       const std::string& type) const;
 
   private:
     std::vector<EffectiveFilament> products_;

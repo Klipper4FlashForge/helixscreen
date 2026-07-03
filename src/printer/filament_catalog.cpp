@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <set>
 
 #include "hv/json.hpp"
 
@@ -202,17 +203,50 @@ FilamentCatalog::products_for_brand(const std::string& brand) const {
 }
 
 std::vector<std::string> FilamentCatalog::all_brands() const {
-    std::vector<std::string> out;
-    for (const auto& e : products_)
-        if (std::find(out.begin(), out.end(), e.brand) == out.end())
-            out.push_back(e.brand);
-    return out;
+    std::set<std::string> seen;
+    for (const auto& p : products_) seen.insert(p.brand);
+    return {seen.begin(), seen.end()};  // sorted + deduped
 }
 
 std::vector<const EffectiveFilament*> FilamentCatalog::all_products() const {
     std::vector<const EffectiveFilament*> out;
     for (const auto& e : products_)
         out.push_back(&e);
+    return out;
+}
+
+std::vector<std::string> FilamentCatalog::types_for_brand(const std::string& brand) const {
+    std::vector<std::string> out;
+    std::set<std::string> seen;
+    for (const auto& p : products_) {
+        if (p.brand == brand && seen.insert(p.type).second) {
+            out.push_back(p.type);
+        }
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+std::vector<std::string> FilamentCatalog::brands_for_type(const std::string& type) const {
+    std::vector<std::string> out;
+    std::set<std::string> seen;
+    for (const auto& p : products_) {
+        if (p.type == type && seen.insert(p.brand).second) {
+            out.push_back(p.brand);
+        }
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+std::vector<const EffectiveFilament*> FilamentCatalog::products_for(
+    const std::string& brand, const std::string& type) const {
+    std::vector<const EffectiveFilament*> out;
+    for (const auto& p : products_) {
+        if (p.brand == brand && p.type == type) {
+            out.push_back(&p);
+        }
+    }
     return out;
 }
 
