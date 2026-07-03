@@ -110,7 +110,11 @@ TEST_CASE_METHOD(MigrationV19Fixture,
 TEST_CASE_METHOD(MigrationV19Fixture,
                  "Config migration v19: idempotent on already-object preset_materials",
                  "[config][migration]") {
-    json v19 = {{"config_version", CURRENT_CONFIG_VERSION},
+    // Seed at v18 (NOT CURRENT_CONFIG_VERSION) so run_versioned_migrations' `version < 19`
+    // gate actually fires and migrate_v18_to_v19 runs against already-object data. This is
+    // the only way to exercise its is_string() skip-guard for real: seeding at v19 would
+    // never call the migration at all, making the test a no-op that proves nothing.
+    json v18 = {{"config_version", 18},
                 {"active_printer_id", "default"},
                 {"preset_materials",
                  json::array({{{"type", "PLA"}},
@@ -122,13 +126,23 @@ TEST_CASE_METHOD(MigrationV19Fixture,
                                {"bed", 55}},
                               {{"type", "ABS"}},
                               {{"type", "TPU"}}})}};
-    write_and_init(v19);
+    write_and_init(v18);
 
     REQUIRE(config.get<int>("/config_version") == CURRENT_CONFIG_VERSION);
     auto& arr = config.get_json("/preset_materials");
+    REQUIRE(arr.is_array());
+    REQUIRE(arr.size() == 4);
+    for (size_t i = 0; i < arr.size(); ++i) {
+        REQUIRE(arr[i].is_object());
+    }
+    // Branded slot (index 1) must survive untouched -- migrate_v18_to_v19's is_string()
+    // guard should skip objects entirely rather than clobbering or re-wrapping them.
+    REQUIRE(arr[1]["type"] == "PLA");
     REQUIRE(arr[1]["filament_id"] == "orca_bambu_pla_matte");
     REQUIRE(arr[1]["brand"] == "Bambu Lab");
+    REQUIRE(arr[1]["name"] == "PLA Matte");
     REQUIRE(arr[1]["nozzle"] == 220);
+    REQUIRE(arr[1]["bed"] == 55);
 }
 
 // ============================================================================
