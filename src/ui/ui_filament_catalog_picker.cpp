@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui_filament_catalog_picker.h"
 
+#include "theme_manager.h"
+#include "ui_icon_codepoints.h"
+#include "ui_utils.h"
+
 #include <spdlog/spdlog.h>
 
 #include "lvgl.h"
+
+#include <algorithm>
+#include <cstdio>
 
 namespace helix::ui {
 
@@ -85,12 +92,111 @@ void FilamentCatalogPickerModal::populate_vendor_dropdown() {
     lv_dropdown_set_selected(dd, 0);  // Generic
 }
 
-// populate_type_dropdown / rebuild_product_list / handle_* stubbed here, filled in Task 3-4.
-void FilamentCatalogPickerModal::populate_type_dropdown() {}
-void FilamentCatalogPickerModal::rebuild_product_list() {}
-void FilamentCatalogPickerModal::handle_vendor_changed() {}
-void FilamentCatalogPickerModal::handle_type_changed() {}
-void FilamentCatalogPickerModal::handle_row_selected(const std::string&) {}
+void FilamentCatalogPickerModal::populate_type_dropdown() {
+    lv_obj_t* dd = lv_obj_find_by_name(dialog(), "type_dropdown");
+    if (!dd) return;
+    std::vector<std::string> types = catalog_.types_for_brand(current_vendor());
+    if (allowed_types_) {
+        std::vector<std::string> filtered;
+        for (const auto& t : types) {
+            if (std::find(allowed_types_->begin(), allowed_types_->end(), t) != allowed_types_->end())
+                filtered.push_back(t);
+        }
+        types.swap(filtered);
+    }
+    std::string options;
+    int seed_idx = 0;
+    for (size_t i = 0; i < types.size(); ++i) {
+        if (i) options += "\n";
+        options += types[i];
+        if (seed_type_ && types[i] == *seed_type_) seed_idx = static_cast<int>(i);
+    }
+    lv_dropdown_set_options(dd, options.empty() ? "" : options.c_str());
+    lv_dropdown_set_selected(dd, seed_idx);
+}
+
+void FilamentCatalogPickerModal::rebuild_product_list() {
+    lv_obj_t* list = lv_obj_find_by_name(dialog(), "product_list");
+    if (!list) return;
+    helix::ui::safe_clean_children(list);
+
+    lv_color_t accent = theme_manager_get_color("primary");
+    lv_color_t text_color = theme_manager_get_color("text");
+    const char* body_font_name = lv_xml_get_const(nullptr, "font_body");
+    const lv_font_t* body_font =
+        body_font_name ? lv_xml_get_font(nullptr, body_font_name) : lv_font_get_default();
+    const char* icon_font_name = lv_xml_get_const(nullptr, "icon_font_xs");
+    const lv_font_t* icon_font =
+        icon_font_name ? lv_xml_get_font(nullptr, icon_font_name) : body_font;
+    const char* check_codepoint = ui_icon::lookup_codepoint("check");
+
+    auto products = catalog_.products_for(current_vendor(), current_type());
+    for (const auto* p : products) {
+        bool is_current = (highlighted_id_ == p->id);
+        lv_obj_t* row = lv_obj_create(list);
+        lv_obj_remove_style_all(row);
+        lv_obj_set_width(row, LV_PCT(100));
+        lv_obj_set_height(row, LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_hor(row, 10, 0);
+        lv_obj_set_style_pad_ver(row, 8, 0);
+        lv_obj_set_style_pad_gap(row, 8, 0);
+        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_bg_color(row, accent, LV_STATE_PRESSED);
+        lv_obj_set_style_bg_opa(row, LV_OPA_30, LV_STATE_PRESSED);
+        lv_obj_set_style_radius(row, 4, 0);
+        lv_obj_set_name(row, p->id.c_str());  // identity for click handler (L069)
+
+        lv_obj_t* indicator = lv_label_create(row);
+        lv_obj_set_style_text_font(indicator, icon_font, 0);
+        lv_obj_set_style_min_width(indicator, 16, 0);
+        if (is_current && check_codepoint) {
+            lv_label_set_text(indicator, check_codepoint);
+            lv_obj_set_style_text_color(indicator, accent, 0);
+        } else {
+            lv_label_set_text(indicator, "");
+        }
+        lv_obj_remove_flag(indicator, LV_OBJ_FLAG_CLICKABLE);
+
+        lv_obj_t* name_lbl = lv_label_create(row);
+        lv_label_set_text(name_lbl, p->name.c_str());
+        lv_obj_set_style_text_font(name_lbl, body_font, 0);
+        lv_obj_set_style_text_color(name_lbl, is_current ? accent : text_color, 0);
+        lv_obj_set_flex_grow(name_lbl, 1);
+        lv_obj_remove_flag(name_lbl, LV_OBJ_FLAG_CLICKABLE);
+
+        char temps[32];
+        snprintf(temps, sizeof(temps), "%d\xC2\xB0 / %d\xC2\xB0", p->nozzle_recommended, p->bed_temp);
+        lv_obj_t* temp_lbl = lv_label_create(row);
+        lv_label_set_text(temp_lbl, temps);
+        lv_obj_set_style_text_font(temp_lbl, body_font, 0);
+        lv_obj_set_style_text_color(temp_lbl, text_color, 0);
+        lv_obj_remove_flag(temp_lbl, LV_OBJ_FLAG_CLICKABLE);
+
+        lv_obj_add_event_cb(row, [](lv_event_t* e) {
+            lv_obj_t* row = lv_event_get_current_target_obj(e);
+            if (!row || !active_instance_) return;
+            const char* id = lv_obj_get_name(row);
+            if (id) active_instance_->handle_row_selected(id);
+        }, LV_EVENT_CLICKED, nullptr);
+    }
+}
+
+void FilamentCatalogPickerModal::handle_vendor_changed() {
+    populate_type_dropdown();  // vendor changed -> types change
+    rebuild_product_list();
+}
+
+void FilamentCatalogPickerModal::handle_type_changed() {
+    rebuild_product_list();
+}
+
+void FilamentCatalogPickerModal::handle_row_selected(const std::string& product_id) {
+    highlighted_id_ = product_id;
+    rebuild_product_list();  // redraw to move the checkmark
+}
+
 void FilamentCatalogPickerModal::handle_select_button() {}
 
 }  // namespace helix::ui
