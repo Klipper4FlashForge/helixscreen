@@ -88,12 +88,24 @@ TEST_CASE_METHOD(PresetResetFixture,
     auto& mgr = MaterialSettingsManager::instance();
 
     auto before = mgr.get_preset_materials();
-    // FilamentPanel::reassign_preset() returns early without ever calling
-    // set_preset_material() when validate_reassignment() fails -- that
-    // early-return is exactly what's under test here.
-    REQUIRE_FALSE(validate_reassignment(0, "NOT_A_REAL_MATERIAL"));
 
+    // Mirrors FilamentPanel::reassign_preset()'s guard verbatim: only
+    // persist when validate_reassignment() accepts. If this guard were
+    // missing (or if set_preset_material() were called unconditionally),
+    // the CHECK below would fail -- unlike the old version of this test,
+    // set_preset_material() is actually reachable here.
+    if (validate_reassignment(0, "NOT_A_REAL_MATERIAL")) {
+        mgr.set_preset_material(0, "NOT_A_REAL_MATERIAL");
+    }
     CHECK(mgr.get_preset_materials() == before);
+
+    // Positive half, same guarded pattern: proves the guard -- not simply
+    // "nothing ever gets written" -- is what gated the rejection above.
+    REQUIRE(validate_reassignment(1, "PETG"));
+    if (validate_reassignment(1, "PETG")) {
+        mgr.set_preset_material(1, "PETG");
+    }
+    CHECK(mgr.get_preset_materials()[1] == "PETG");
 }
 
 // Mirrors FilamentPanel::reset_presets_to_defaults(), a thin wrapper around
