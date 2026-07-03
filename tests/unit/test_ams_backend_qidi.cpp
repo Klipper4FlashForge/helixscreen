@@ -762,6 +762,75 @@ TEST_CASE("QIDI Box [force_move] disabled keeps lane eject off", "[ams][qidi_box
     REQUIRE_FALSE(backend.supports_lane_eject());
 }
 
+// ---------------------------------------------------------------------------
+// Max 4 dialect (multi_color_controller): the Max 4 box rejects the Q2
+// box_stepper FORCE_MOVE with "Invalid pin value" and drives eject/unload
+// through the multi_color_controller command surface instead. Presence of a
+// [multi_color_controller] config section is the dialect discriminator; the
+// Q2/Plus 4 box has box_stepper/box_extras but no multi_color_controller.
+// (prestonbrown/helixscreen#1083)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("QIDI Box Max 4 dialect ejects via MULTI_COLOR_BOX_UNLOAD",
+          "[ams][qidi_box][write_path][max4]") {
+    RecordingQidiBackend backend;
+    // [multi_color_controller] present, force_move absent — the Max 4 shape.
+    QidiBoxTestAccess::apply_config_settings(backend,
+                                             json{{"multi_color_controller", json::object()}});
+
+    // Eject is available on the Max 4 without [force_move] enable_force_move.
+    REQUIRE(backend.supports_lane_eject());
+
+    auto err = backend.eject_lane(1);
+    REQUIRE(err.success());
+    REQUIRE(backend.sent.size() == 1);
+    REQUIRE(backend.sent[0] == "MULTI_COLOR_BOX_UNLOAD SLOT=slot1");
+}
+
+TEST_CASE("QIDI Box Max 4 dialect is detected from an instanced section key",
+          "[ams][qidi_box][write_path][max4]") {
+    RecordingQidiBackend backend;
+    // Some configs instance the section (e.g. "[multi_color_controller box0]").
+    QidiBoxTestAccess::apply_config_settings(
+        backend, json{{"multi_color_controller box0", json::object()}});
+
+    REQUIRE(backend.supports_lane_eject());
+    auto err = backend.eject_lane(0);
+    REQUIRE(err.success());
+    REQUIRE(backend.sent.size() == 1);
+    REQUIRE(backend.sent[0] == "MULTI_COLOR_BOX_UNLOAD SLOT=slot0");
+}
+
+TEST_CASE("QIDI Box Max 4 dialect takes precedence over box_stepper FORCE_MOVE",
+          "[ams][qidi_box][write_path][max4]") {
+    RecordingQidiBackend backend;
+    // Even if force_move is also enabled, a multi_color_controller printer must
+    // use MULTI_COLOR_BOX_UNLOAD, never the FORCE_MOVE that errors on the Max 4.
+    QidiBoxTestAccess::apply_config_settings(
+        backend, json{{"multi_color_controller", json::object()},
+                      {"force_move", {{"enable_force_move", true}}}});
+
+    auto err = backend.eject_lane(2);
+    REQUIRE(err.success());
+    REQUIRE(backend.sent.size() == 1);
+    REQUIRE(backend.sent[0] == "MULTI_COLOR_BOX_UNLOAD SLOT=slot2");
+    REQUIRE(backend.sent[0].find("FORCE_MOVE") == std::string::npos);
+}
+
+TEST_CASE("QIDI Box Max 4 dialect still rejects an out-of-range slot",
+          "[ams][qidi_box][write_path][max4]") {
+    // The slot-range guard must run before the dialect branch — a bad index must
+    // never reach MULTI_COLOR_BOX_UNLOAD. With no unit configured, any index is
+    // out of range.
+    RecordingQidiBackend backend;
+    QidiBoxTestAccess::apply_config_settings(backend,
+                                             json{{"multi_color_controller", json::object()}});
+
+    auto err = backend.eject_lane(99);
+    REQUIRE_FALSE(err.success());
+    REQUIRE(backend.sent.empty());
+}
+
 // =====================================================================
 // Full-stack integration: on_started actually fires the bootstrap query
 // =====================================================================

@@ -294,8 +294,15 @@ void AmsBackendQidi::apply_box_extras(const nlohmann::json& box_extras) {
 
 void AmsBackendQidi::apply_config_settings(const nlohmann::json& settings) {
     std::optional<float> settable_max;
+    bool has_multi_color = false;
     for (auto it = settings.begin(); it != settings.end(); ++it) {
         const std::string& key = it.key();
+        // Max 4 dialect marker: a "[multi_color_controller]" section (bare or
+        // instanced, e.g. "multi_color_controller box0") is Max 4-only. #1083
+        if (key == "multi_color_controller" ||
+            key.rfind("multi_color_controller ", 0) == 0) {
+            has_multi_color = true;
+        }
         if (!it->is_object()) {
             continue;
         }
@@ -326,8 +333,10 @@ void AmsBackendQidi::apply_config_settings(const nlohmann::json& settings) {
         }
     }
     fw_force_move_enabled_ = force_move;
-    spdlog::info("{} Lane eject {} (force_move {})", backend_log_tag(),
-                 force_move ? "available" : "unavailable",
+    box_uses_multi_color_ = has_multi_color;
+    spdlog::info("{} Lane eject {} (multi_color_controller {}, force_move {})", backend_log_tag(),
+                 (has_multi_color || force_move) ? "available" : "unavailable",
+                 has_multi_color ? "present -> Max 4 dialect" : "absent",
                  force_move ? "enabled" : "disabled/absent");
 }
 
@@ -1079,6 +1088,13 @@ AmsError AmsBackendQidi::eject_lane(int slot_index) {
         if (slot_index < 0 || static_cast<size_t>(slot_index) >= slots.size()) {
             return AmsErrorHelper::not_supported("QIDI Box: slot index out of range");
         }
+    }
+    // Max 4 dialect: the multi_color_controller state machine owns filament ops and
+    // rejects the Q2 box_stepper FORCE_MOVE with "Invalid pin value". Eject via the
+    // public MULTI_COLOR_BOX_UNLOAD command instead — no [force_move] required, and it
+    // must win over the FORCE_MOVE path even if force_move happens to be enabled. #1083
+    if (box_uses_multi_color_) {
+        return execute_gcode("MULTI_COLOR_BOX_UNLOAD SLOT=slot" + std::to_string(slot_index));
     }
     if (!fw_force_move_enabled_) {
         return AmsErrorHelper::not_supported(
