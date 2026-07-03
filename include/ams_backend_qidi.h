@@ -111,11 +111,14 @@ class AmsBackendQidi : public AmsSubscriptionBackend {
 
     [[nodiscard]] std::optional<helix::ErrorEvent> current_error() const override;
 
-    // Per-lane eject for non-loaded lanes via FORCE_MOVE on the box_stepper
-    // (#1041). Gated on [force_move] enable_force_move being set in the config.
+    // Per-lane eject for non-loaded lanes. Q2/Plus 4: FORCE_MOVE on the box_stepper
+    // (#1041), gated on [force_move] enable_force_move. Max 4: MULTI_COLOR_BOX_UNLOAD
+    // via the multi_color_controller dialect, no [force_move] needed (#1083).
     AmsError eject_lane(int slot_index) override;
     [[nodiscard]] bool supports_lane_eject() const override {
-        return fw_force_move_enabled_;
+        // Max 4 (multi_color_controller) ejects via MULTI_COLOR_BOX_UNLOAD, which
+        // needs no [force_move]; the Q2/Plus 4 box_stepper FORCE_MOVE path does. #1083
+        return box_uses_multi_color_ || fw_force_move_enabled_;
     }
 
     AmsError set_slot_info(int slot_index, const SlotInfo& info, bool persist = true) override;
@@ -186,6 +189,10 @@ class AmsBackendQidi : public AmsSubscriptionBackend {
     bool fw_has_m603_ = true;            ///< M603 stock unload macro present
     bool fw_has_clear_nozzle_ = true;    ///< CLEAR_NOZZLE post-load wipe macro present
     bool fw_force_move_enabled_ = false; ///< [force_move] enable_force_move -> lane eject
+    /// [multi_color_controller] config section present -> Max 4 box dialect: eject/
+    /// unload go through MULTI_COLOR_* commands, not the box_stepper FORCE_MOVE that
+    /// the Max 4 rejects with "Invalid pin value". Set in apply_config_settings. #1083
+    bool box_uses_multi_color_ = false;
 
     /// Raw RFID indices read from save_variables. Per-slot side-table so we
     /// don't pollute SlotInfo with backend-specific fields. Resolution to
