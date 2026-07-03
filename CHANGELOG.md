@@ -5,6 +5,25 @@ All notable changes to HelixScreen will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.99.87] - 2026-07-03
+
+### Added
+
+- **Reassign a preset's filament type by long-press** — long-pressing a filament preset button opens an anchored material picker to change its assigned type, and the choice persists per button.
+- **Unified filament catalog** — material data (types, temperatures, densities) now comes from a single OrcaSlicer-derived catalog, with PET-CF and PET-GF added and material families sorted sensibly. A user overlay lets edited or custom materials override and extend the catalog.
+- **Qidi Max 4 support** — auto-detection and a matching preset for the Qidi Max 4, including its `MULTI_COLOR_BOX_UNLOAD` box-eject dialect.
+- **Touch-calibration press marker** (prestonbrown/helixscreen#1082) — the alignment phase shows a persistent dot where you last pressed, so it's clear each point registered.
+- **On-demand RFID refresh** (prestonbrown/helixscreen#1077) — the CFS "Refresh RFID" action re-probes tags via `BOX_INFO_REFRESH`.
+
+### Fixed
+
+- **A Qidi Max 4 is no longer confused with a large Creality printer** — printer auto-detection now treats kinematics as a hard rule (every Qidi is corexy), so a cartesian machine such as an Ender 5 Max is never matched to a Qidi Max 4, and an Ender 5 Max is recognized from an `ender5-max` hostname. Detection had been overweighting build volume.
+- **CFS slot presence reflects the physical spool** (prestonbrown/helixscreen#1077) — a slot shows as loaded based on the vendor and remaining-length signals rather than a latched RFID color, so a removed spool no longer lingers as present.
+- **WiFi connection state stays in sync** (prestonbrown/helixscreen#1059) — CONNECTED/DISCONNECTED events fire on status-poll transitions, with the transition handling hardened, so the WiFi status and icon no longer go stale.
+- **Taps during a scroll no longer fire a button** (prestonbrown/helixscreen#1074) — press-lock is released while scrolling, on both themed and XML switches.
+- **Soft-restart teardown crash fixed** (prestonbrown/helixscreen#1073) — the app layout is detached safely during a soft restart.
+- **Performance graph no longer risks a use-after-free** — the per-MCU name observer holds a lifetime token.
+
 ## [0.99.86] - 2026-07-01
 
 ### Fixed
@@ -4186,6 +4205,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.87]: https://github.com/prestonbrown/helixscreen/compare/v0.99.86...v0.99.87
 [0.99.86]: https://github.com/prestonbrown/helixscreen/compare/v0.99.85...v0.99.86
 [0.99.85]: https://github.com/prestonbrown/helixscreen/compare/v0.99.84...v0.99.85
 [0.99.84]: https://github.com/prestonbrown/helixscreen/compare/v0.99.82...v0.99.84
