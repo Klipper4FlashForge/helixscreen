@@ -431,22 +431,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "esun-esun-petg",
+      "id": "esun-petg-plus-hs",
       "brand": "eSUN",
-      "name": "eSUN PETG",
-      "type": "PETG",
-      "nozzle": 245,
-      "nozzle_min": 230,
-      "nozzle_max": 260,
-      "codes": {
-        "cfs": "E2001"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "esun-esun-petg-plus-hs",
-      "brand": "eSUN",
-      "name": "eSUN PETG+HS",
+      "name": "PETG+HS",
       "type": "PETG",
       "nozzle": 240,
       "nozzle_min": 220,
@@ -457,22 +444,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "esun-esun-pla-plus",
+      "id": "esun-pla-cf",
       "brand": "eSUN",
-      "name": "eSUN PLA+",
-      "type": "PLA",
-      "nozzle": 220,
-      "nozzle_min": 210,
-      "nozzle_max": 230,
-      "codes": {
-        "cfs": "E1001"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "esun-esun-pla-cf",
-      "brand": "eSUN",
-      "name": "eSUN PLA-CF",
+      "name": "PLA-CF",
       "type": "PLA-CF",
       "nozzle": 235,
       "nozzle_min": 220,
@@ -483,9 +457,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "esun-esun-pla-hs",
+      "id": "esun-pla-hs",
       "brand": "eSUN",
-      "name": "eSUN PLA-HS",
+      "name": "PLA-HS",
       "type": "PLA",
       "nozzle": 220,
       "nozzle_min": 210,
@@ -496,9 +470,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "esun-esun-pla-lite",
+      "id": "esun-pla-lite",
       "brand": "eSUN",
-      "name": "eSUN PLA-Lite",
+      "name": "PLA-Lite",
       "type": "PLA",
       "nozzle": 220,
       "nozzle_min": 210,
@@ -509,9 +483,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "esun-esun-pla-lw",
+      "id": "esun-pla-lw",
       "brand": "eSUN",
-      "name": "eSUN PLA-LW",
+      "name": "PLA-LW",
       "type": "PLA",
       "nozzle": 230,
       "nozzle_min": 190,
@@ -522,22 +496,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "esun-esun-pla-matte",
+      "id": "esun-pla-silk",
       "brand": "eSUN",
-      "name": "eSUN PLA-Matte",
-      "type": "PLA",
-      "nozzle": 220,
-      "nozzle_min": 210,
-      "nozzle_max": 230,
-      "codes": {
-        "cfs": "E1003"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "esun-esun-pla-silk",
-      "brand": "eSUN",
-      "name": "eSUN PLA-Silk",
+      "name": "PLA-Silk",
       "type": "PLA",
       "nozzle": 220,
       "nozzle_min": 210,
@@ -548,35 +509,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "generic-generic-abs",
+      "id": "generic-asa-cf",
       "brand": "Generic",
-      "name": "Generic ABS",
-      "type": "ABS",
-      "nozzle": 260,
-      "nozzle_min": 240,
-      "nozzle_max": 280,
-      "codes": {
-        "cfs": "00004"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "generic-generic-asa",
-      "brand": "Generic",
-      "name": "Generic ASA",
-      "type": "ASA",
-      "nozzle": 260,
-      "nozzle_min": 240,
-      "nozzle_max": 280,
-      "codes": {
-        "cfs": "00007"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "generic-generic-asa-cf",
-      "brand": "Generic",
-      "name": "Generic ASA-CF",
+      "name": "ASA-CF",
       "type": "ASA-CF",
       "nozzle": 265,
       "nozzle_min": 250,
@@ -587,61 +522,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "generic-generic-bvoh",
+      "id": "generic-pa12-cf",
       "brand": "Generic",
-      "name": "Generic BVOH",
-      "type": "BVOH",
-      "nozzle": 210,
-      "nozzle_min": 200,
-      "nozzle_max": 220,
-      "codes": {
-        "cfs": "00010"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "generic-generic-hips",
-      "brand": "Generic",
-      "name": "Generic HIPS",
-      "type": "HIPS",
-      "nozzle": 235,
-      "nozzle_min": 220,
-      "nozzle_max": 250,
-      "codes": {
-        "cfs": "00012"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "generic-generic-pa",
-      "brand": "Generic",
-      "name": "Generic PA",
-      "type": "PA",
-      "nozzle": 250,
-      "nozzle_min": 240,
-      "nozzle_max": 260,
-      "codes": {
-        "cfs": "00008"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "generic-generic-pa-cf",
-      "brand": "Generic",
-      "name": "Generic PA-CF",
-      "type": "PA-CF",
-      "nozzle": 280,
-      "nozzle_min": 260,
-      "nozzle_max": 300,
-      "codes": {
-        "cfs": "00009"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "generic-generic-pa12-cf",
-      "brand": "Generic",
-      "name": "Generic PA12-CF",
+      "name": "PA12-CF",
       "type": "PA-CF",
       "nozzle": 290,
       "nozzle_min": 270,
@@ -652,9 +535,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "generic-generic-pa6-cf",
+      "id": "generic-pa6-cf",
       "brand": "Generic",
-      "name": "Generic PA6-CF",
+      "name": "PA6-CF",
       "type": "PA-CF",
       "nozzle": 290,
       "nozzle_min": 280,
@@ -665,9 +548,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "generic-generic-pa6-gf",
+      "id": "generic-pa6-gf",
       "brand": "Generic",
-      "name": "Generic PA6-GF",
+      "name": "PA6-GF",
       "type": "PA-GF",
       "nozzle": 270,
       "nozzle_min": 250,
@@ -678,9 +561,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "generic-generic-pa612-cf",
+      "id": "generic-pa612-cf",
       "brand": "Generic",
-      "name": "Generic PA612-CF",
+      "name": "PA612-CF",
       "type": "PA-CF",
       "nozzle": 290,
       "nozzle_min": 270,
@@ -691,9 +574,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "generic-generic-paht-cf",
+      "id": "generic-paht-cf",
       "brand": "Generic",
-      "name": "Generic PAHT-CF",
+      "name": "PAHT-CF",
       "type": "PA-CF",
       "nozzle": 310,
       "nozzle_min": 300,
@@ -704,35 +587,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "generic-generic-pc",
+      "id": "generic-pet",
       "brand": "Generic",
-      "name": "Generic PC",
-      "type": "PC",
-      "nozzle": 260,
-      "nozzle_min": 250,
-      "nozzle_max": 270,
-      "codes": {
-        "cfs": "00021"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "generic-generic-pctg",
-      "brand": "Generic",
-      "name": "Generic PCTG",
-      "type": "PCTG",
-      "nozzle": 260,
-      "nozzle_min": 250,
-      "nozzle_max": 270,
-      "codes": {
-        "cfs": "00032"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "generic-generic-pet",
-      "brand": "Generic",
-      "name": "Generic PET",
+      "name": "PET",
       "type": "PET",
       "nozzle": 260,
       "nozzle_min": 250,
@@ -743,9 +600,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "generic-generic-pet-cf",
+      "id": "generic-pet-cf",
       "brand": "Generic",
-      "name": "Generic PET-CF",
+      "name": "PET-CF",
       "type": "PET-CF",
       "nozzle": 300,
       "nozzle_min": 280,
@@ -756,22 +613,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "generic-generic-petg",
+      "id": "generic-petg-cf-2",
       "brand": "Generic",
-      "name": "Generic PETG",
-      "type": "PETG",
-      "nozzle": 245,
-      "nozzle_min": 220,
-      "nozzle_max": 270,
-      "codes": {
-        "cfs": "00003"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "generic-generic-petg-cf",
-      "brand": "Generic",
-      "name": "Generic PETG-CF",
+      "name": "PETG-CF",
       "type": "PETG-CF",
       "nozzle": 250,
       "nozzle_min": 240,
@@ -782,9 +626,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "generic-generic-petg-gf",
+      "id": "generic-petg-gf",
       "brand": "Generic",
-      "name": "Generic PETG-GF",
+      "name": "PETG-GF",
       "type": "PETG-GF",
       "nozzle": 260,
       "nozzle_min": 240,
@@ -795,74 +639,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "generic-generic-pla",
+      "id": "generic-pps",
       "brand": "Generic",
-      "name": "Generic PLA",
-      "type": "PLA",
-      "nozzle": 215,
-      "nozzle_min": 190,
-      "nozzle_max": 240,
-      "codes": {
-        "cfs": "00001"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "generic-generic-pla-cf",
-      "brand": "Generic",
-      "name": "Generic PLA-CF",
-      "type": "PLA-CF",
-      "nozzle": 215,
-      "nozzle_min": 190,
-      "nozzle_max": 240,
-      "codes": {
-        "cfs": "00006"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "generic-generic-pla-silk",
-      "brand": "Generic",
-      "name": "Generic PLA-Silk",
-      "type": "PLA",
-      "nozzle": 215,
-      "nozzle_min": 190,
-      "nozzle_max": 240,
-      "codes": {
-        "cfs": "00002"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "generic-generic-pp",
-      "brand": "Generic",
-      "name": "Generic PP",
-      "type": "PP",
-      "nozzle": 240,
-      "nozzle_min": 220,
-      "nozzle_max": 260,
-      "codes": {
-        "cfs": "00019"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "generic-generic-pp-cf",
-      "brand": "Generic",
-      "name": "Generic PP-CF",
-      "type": "PP-CF",
-      "nozzle": 245,
-      "nozzle_min": 220,
-      "nozzle_max": 270,
-      "codes": {
-        "cfs": "00031"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "generic-generic-pps",
-      "brand": "Generic",
-      "name": "Generic PPS",
+      "name": "PPS",
       "type": "PPS",
       "nozzle": 335,
       "nozzle_min": 320,
@@ -873,9 +652,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "generic-generic-pps-cf",
+      "id": "generic-pps-cf",
       "brand": "Generic",
-      "name": "Generic PPS-CF",
+      "name": "PPS-CF",
       "type": "PPS-CF",
       "nozzle": 325,
       "nozzle_min": 300,
@@ -886,22 +665,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "generic-generic-pva",
+      "id": "generic-support-for-pa",
       "brand": "Generic",
-      "name": "Generic PVA",
-      "type": "PVA",
-      "nozzle": 220,
-      "nozzle_min": 215,
-      "nozzle_max": 225,
-      "codes": {
-        "cfs": "00011"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "generic-generic-support-for-pa",
-      "brand": "Generic",
-      "name": "Generic Support for PA",
+      "name": "Support for PA",
       "type": "PA",
       "nozzle": 280,
       "nozzle_min": 260,
@@ -912,9 +678,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "generic-generic-support-for-pla",
+      "id": "generic-support-for-pla",
       "brand": "Generic",
-      "name": "Generic Support for PLA",
+      "name": "Support for PLA",
       "type": "PLA",
       "nozzle": 215,
       "nozzle_min": 190,
@@ -925,22 +691,9 @@
       "source": "cfs-seed"
     },
     {
-      "id": "generic-generic-tpu",
+      "id": "generic-tpu-64d",
       "brand": "Generic",
-      "name": "Generic TPU",
-      "type": "TPU",
-      "nozzle": 225,
-      "nozzle_min": 210,
-      "nozzle_max": 240,
-      "codes": {
-        "cfs": "00005"
-      },
-      "source": "cfs-seed"
-    },
-    {
-      "id": "generic-generic-tpu-64d",
-      "brand": "Generic",
-      "name": "Generic TPU 64D",
+      "name": "TPU 64D",
       "type": "TPU",
       "nozzle": 225,
       "nozzle_min": 210,
@@ -2434,7 +2187,10 @@
       "nozzle_min": 230,
       "nozzle_max": 250,
       "density": 1.27,
-      "orca_id": "ESN03"
+      "orca_id": "ESN03",
+      "codes": {
+        "cfs": "E2001"
+      }
     },
     {
       "id": "esun-pla-plus",
@@ -2447,7 +2203,10 @@
       "nozzle_min": 190,
       "nozzle_max": 240,
       "density": 1.25,
-      "orca_id": "OGFL03"
+      "orca_id": "OGFL03",
+      "codes": {
+        "cfs": "E1001"
+      }
     },
     {
       "id": "esun-pla-basic",
@@ -2486,7 +2245,10 @@
       "nozzle_min": 190,
       "nozzle_max": 240,
       "density": 1.32,
-      "orca_id": "OGFL05"
+      "orca_id": "OGFL05",
+      "codes": {
+        "cfs": "E1003"
+      }
     },
     {
       "id": "fdplast-abs",
@@ -3461,7 +3223,10 @@
       "nozzle_min": 240,
       "nozzle_max": 280,
       "density": 1.04,
-      "orca_id": "OGFB99"
+      "orca_id": "OGFB99",
+      "codes": {
+        "cfs": "00004"
+      }
     },
     {
       "id": "generic-asa",
@@ -3474,7 +3239,10 @@
       "nozzle_min": 240,
       "nozzle_max": 280,
       "density": 1.04,
-      "orca_id": "OGFB98"
+      "orca_id": "OGFB98",
+      "codes": {
+        "cfs": "00007"
+      }
     },
     {
       "id": "generic-bvoh",
@@ -3487,7 +3255,10 @@
       "nozzle_min": 190,
       "nozzle_max": 240,
       "density": 1.13,
-      "orca_id": "OGFS97"
+      "orca_id": "OGFS97",
+      "codes": {
+        "cfs": "00010"
+      }
     },
     {
       "id": "generic-cope",
@@ -3525,7 +3296,10 @@
       "nozzle_min": 220,
       "nozzle_max": 270,
       "density": 1.06,
-      "orca_id": "OGFS98"
+      "orca_id": "OGFS98",
+      "codes": {
+        "cfs": "00012"
+      }
     },
     {
       "id": "generic-pa",
@@ -3538,7 +3312,10 @@
       "nozzle_min": 260,
       "nozzle_max": 300,
       "density": 1.04,
-      "orca_id": "OGFN99"
+      "orca_id": "OGFN99",
+      "codes": {
+        "cfs": "00008"
+      }
     },
     {
       "id": "generic-pa-cf",
@@ -3551,7 +3328,10 @@
       "nozzle_min": 260,
       "nozzle_max": 300,
       "density": 1.04,
-      "orca_id": "OGFN98"
+      "orca_id": "OGFN98",
+      "codes": {
+        "cfs": "00009"
+      }
     },
     {
       "id": "generic-pc",
@@ -3564,7 +3344,10 @@
       "nozzle_min": 260,
       "nozzle_max": 290,
       "density": 1.04,
-      "orca_id": "OGFC99"
+      "orca_id": "OGFC99",
+      "codes": {
+        "cfs": "00021"
+      }
     },
     {
       "id": "generic-pctg",
@@ -3577,7 +3360,10 @@
       "nozzle_min": 220,
       "nozzle_max": 260,
       "density": 1.27,
-      "orca_id": "OGFG97"
+      "orca_id": "OGFG97",
+      "codes": {
+        "cfs": "00032"
+      }
     },
     {
       "id": "generic-pe",
@@ -3616,7 +3402,10 @@
       "nozzle_min": 220,
       "nozzle_max": 260,
       "density": 1.27,
-      "orca_id": "OGFG99"
+      "orca_id": "OGFG99",
+      "codes": {
+        "cfs": "00003"
+      }
     },
     {
       "id": "generic-petg-hf",
@@ -3668,7 +3457,10 @@
       "nozzle_min": 190,
       "nozzle_max": 240,
       "density": 1.24,
-      "orca_id": "OGFL99"
+      "orca_id": "OGFL99",
+      "codes": {
+        "cfs": "00001"
+      }
     },
     {
       "id": "generic-pla-high-speed",
@@ -3707,7 +3499,10 @@
       "nozzle_min": 190,
       "nozzle_max": 240,
       "density": 1.24,
-      "orca_id": "OGFL96"
+      "orca_id": "OGFL96",
+      "codes": {
+        "cfs": "00002"
+      }
     },
     {
       "id": "generic-pla-cf",
@@ -3720,7 +3515,10 @@
       "nozzle_min": 190,
       "nozzle_max": 240,
       "density": 1.24,
-      "orca_id": "OGFL98"
+      "orca_id": "OGFL98",
+      "codes": {
+        "cfs": "00006"
+      }
     },
     {
       "id": "generic-pp",
@@ -3733,7 +3531,10 @@
       "nozzle_min": 220,
       "nozzle_max": 250,
       "density": 0.93,
-      "orca_id": "OGFP97"
+      "orca_id": "OGFP97",
+      "codes": {
+        "cfs": "00019"
+      }
     },
     {
       "id": "generic-pp-cf",
@@ -3746,7 +3547,10 @@
       "nozzle_min": 220,
       "nozzle_max": 250,
       "density": 1.01,
-      "orca_id": "OGFP97"
+      "orca_id": "OGFP97",
+      "codes": {
+        "cfs": "00031"
+      }
     },
     {
       "id": "generic-pp-gf",
@@ -3798,7 +3602,10 @@
       "nozzle_min": 190,
       "nozzle_max": 240,
       "density": 1.24,
-      "orca_id": "OGFS99"
+      "orca_id": "OGFS99",
+      "codes": {
+        "cfs": "00011"
+      }
     },
     {
       "id": "generic-sbs",
@@ -3824,7 +3631,10 @@
       "nozzle_min": 200,
       "nozzle_max": 250,
       "density": 1.24,
-      "orca_id": "OGFU99"
+      "orca_id": "OGFU99",
+      "codes": {
+        "cfs": "00005"
+      }
     },
     {
       "id": "greengate3d-petg",
