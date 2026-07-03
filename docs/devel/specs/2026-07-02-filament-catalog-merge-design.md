@@ -165,7 +165,8 @@ Only the 4 fake `P100x` Polymaker placeholders are dropped, replaced by real Orc
 ### 5.3 Mechanics (from verified schema)
 
 - Every Orca value is a per-extruder **string array** → take `[0]`, parse to number; treat sentinel `"nil"` as inherit/unset.
-- Resolve `inherits` **by profile `name`** up the chain (typically `product @printer → product @base → fdm_filament_<type> → fdm_filament_common`), deep-merging child-over-parent. Base profiles (`instantiation:false`) are templates, not products, and live in vendor packs (`BBL/`), not the library dir — so the importer needs the full profile set, not only `OrcaFilamentLibrary/`.
+- Resolve `inherits` **by profile `name`** up the chain (typically `product @base → fdm_filament_<type> → fdm_filament_common`), deep-merging child-over-parent. Base profiles (`instantiation:false`) are templates, not products.
+- **Scope resolution to `OrcaFilamentLibrary/filament/` ONLY.** The library is self-contained: it ships its own canonical bases under `OrcaFilamentLibrary/filament/base/fdm_filament_*.json`, and every library profile's `inherits` chain resolves within that subtree (verified: 0 missing targets). **Do NOT load the ~30 other vendor packs** — each ships its own same-named `fdm_filament_*` (e.g. 24 copies of `fdm_filament_pc`), and a flat name→profile map lets whichever loaded last clobber the library's base, corrupting the inherited vendor + temperatures (a library "Generic PC" wrongly inheriting a vendor's PC base → wrong brand/temps, mostly lint-invisible). This was a real bug; the importer keys resolution to the library subtree and a regression test (`scripts/fixtures/orca_collision/`) guards it.
 - **Scope:** the ~482 `OrcaFilamentLibrary/` profiles (28 `Generic … @System` + per-brand), **not** the ~6,550 printer-specific ones. Collapse per-color leaves to one product (dedup by `orca_id` / brand+product).
 - **Determinism:** stable sort + canonical formatting → clean regen diffs.
 
