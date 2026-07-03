@@ -337,8 +337,7 @@ TEST_CASE_METHOD(PresetConfigFixture,
                        {"c", 0.0},
                        {"d", 0.0},
                        {"e", 1.76},
-                       {"f", 0.0},
-                       {"swap_axes", false}}}}}};
+                       {"f", 0.0}}}}}};
     write_preset("input_preset", preset);
 
     REQUIRE(config.apply_preset_file("input_preset") == true);
@@ -346,7 +345,6 @@ TEST_CASE_METHOD(PresetConfigFixture,
     REQUIRE(config.get<bool>("/input/calibration/valid", false) == true);
     REQUIRE(config.get<double>("/input/calibration/a", 0.0) == Catch::Approx(1.66));
     REQUIRE(config.get<double>("/input/calibration/e", 0.0) == Catch::Approx(1.76));
-    REQUIRE(config.get<bool>("/input/calibration/swap_axes", true) == false);
 
     TearDown();
 }

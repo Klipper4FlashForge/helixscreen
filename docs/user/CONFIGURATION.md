@@ -390,7 +390,7 @@ This setting can also be changed via the Printer Manager overlay (tap the printe
 ### `calibration`
 **Type:** object
 **Default:** `{"valid": false}`
-**Description:** Touch calibration coefficients. Set by the calibration wizard or manually. Contains calibration matrix values (`a` through `f`) when valid. If the wizard auto-detects that the touchscreen's X/Y axes are swapped relative to the display, it also saves `"swap_axes": true` — this is applied automatically on startup.
+**Description:** Touch calibration coefficients. Set by the calibration wizard or manually. Contains calibration matrix values (`a` through `f`) when valid. If the wizard detects that the touchscreen's X/Y axes are swapped relative to the display, it bakes that correction directly into the `a`–`f` coefficients — there is no separate setting to configure.
 
 ---
 
