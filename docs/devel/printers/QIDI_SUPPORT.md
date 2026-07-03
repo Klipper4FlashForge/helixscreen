@@ -224,7 +224,7 @@ HelixScreen ships a **Q2 Happy Hare preset** (`presets/qidi_q2.json`) for exactl
 - **Q2 resolution is very small** -- The Q2's 480x272 display uses the MICRO layout. Some UI elements may be cramped but the layout is functional.
 - **Q2 has limited RAM** -- ~498 MB total. HelixScreen must be memory-conscious on this device.
 - **Max 4 untested** -- Detection heuristics and display rendering for this model are based on specs. Community testers welcome.
-- **No MMU heater control UI** -- The Qidi Box has a dedicated MMU heater, but HelixScreen doesn't yet have a dedicated MMU heater control panel. Note that the Happy Hare drying screen is a separate feature — it controls dryer heaters exposed through Happy Hare, not the native Qidi Box heater.
+- **No standalone box-heater panel** -- The QIDI Box's PTC dryer heater (`heater_generic heater_box<N>`) *is* controllable today through the shared AMS drying screen (Start/Stop drying, target temp/duration), which drives the native `heater_box<N>` for the stock QIDI backend and `MMU_HEATER` for a Happy-Hare-flashed box (Bunny Box). What's missing is a *dedicated* box-heater temperature panel like the chamber temperature panel — the heater is reachable only via the drying flow, not as a standalone control.
 
 ## Q2 Hardware Details
 
