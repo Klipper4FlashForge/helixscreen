@@ -424,8 +424,17 @@ void set_moonraker_client(MoonrakerClient* client) {
     g_test_moonraker_client = client;
 }
 
+// Settable global API pointer — mirrors set_moonraker_client() above. Defaults
+// to nullptr; tests that exercise gcode emission (e.g. per-tool spool_id sync)
+// swap in a MoonrakerAPI over a MoonrakerClientMock and restore nullptr after.
+static MoonrakerAPI* g_test_moonraker_api = nullptr;
+
 MoonrakerAPI* get_moonraker_api() {
-    return nullptr;
+    return g_test_moonraker_api;
+}
+
+void set_moonraker_api(MoonrakerAPI* api) {
+    g_test_moonraker_api = api;
 }
 
 PrinterState& get_printer_state() {

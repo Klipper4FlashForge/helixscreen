@@ -196,6 +196,13 @@ class ToolState {
     std::vector<int> ams_topology_tool_to_slot_;
     std::string ams_topology_tool_name_prefix_ = "T";
 
+    /// Emit gcode to push a tool's spool_id into the printer's macros / saved
+    /// variables (#1079). Each half is independently detection-gated so Klipper
+    /// never throws: SET_GCODE_VARIABLE only when `gcode_macro t<n>` declares
+    /// variable_spool_id, SAVE_VARIABLE only when [save_variables] is configured.
+    /// Fire-and-forget via get_moonraker_api(); no-op when no API is connected.
+    void push_spool_id_to_printer(int tool_index, int spoolman_id);
+
     /// Save spool assignments to local JSON file
     void save_spool_json() const;
 
