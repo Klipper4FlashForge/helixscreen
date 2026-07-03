@@ -184,11 +184,13 @@ void FilamentCatalogPickerModal::rebuild_product_list() {
 }
 
 void FilamentCatalogPickerModal::handle_vendor_changed() {
+    highlighted_id_.clear();    // stale row no longer visible under the new vendor
     populate_type_dropdown();  // vendor changed -> types change
     rebuild_product_list();
 }
 
 void FilamentCatalogPickerModal::handle_type_changed() {
+    highlighted_id_.clear();    // stale row no longer visible under the new type
     rebuild_product_list();
 }
 
@@ -197,6 +199,17 @@ void FilamentCatalogPickerModal::handle_row_selected(const std::string& product_
     rebuild_product_list();  // redraw to move the checkmark
 }
 
-void FilamentCatalogPickerModal::handle_select_button() {}
+void FilamentCatalogPickerModal::handle_select_button() {
+    if (highlighted_id_.empty()) {
+        spdlog::debug("[FilamentCatalogPicker] Select pressed with no product highlighted");
+        return;  // no-op; user must pick a row first
+    }
+    const helix::printer::EffectiveFilament* ef = catalog_.resolve_id(highlighted_id_);
+    if (ef && on_select_) {
+        helix::printer::EffectiveFilament copy = *ef;  // by value — nothing dangles after catalog_ reloads
+        on_select_(copy);
+    }
+    hide();
+}
 
 }  // namespace helix::ui

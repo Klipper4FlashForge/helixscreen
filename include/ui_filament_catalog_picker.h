@@ -49,6 +49,8 @@ class FilamentCatalogPickerModal : public Modal {
     std::string current_vendor() const; // reads vendor_dropdown selected string
     std::string current_type() const;   // reads type_dropdown selected string
 
+    friend struct FilamentPickerTestAccess;
+
     static void register_callbacks();
     static bool callbacks_registered_;
     static FilamentCatalogPickerModal* active_instance_;
