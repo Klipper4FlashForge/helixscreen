@@ -9,6 +9,7 @@
 
 #include "filament_database.h"
 #include "theme_manager.h"
+#include "ui_icon_codepoints.h"
 
 #include <spdlog/spdlog.h>
 
@@ -80,8 +81,21 @@ void MaterialPickerMenu::populate_material_list(const std::string& current_mater
     lv_color_t accent = theme_manager_get_color("primary");
     lv_color_t text_color = theme_manager_get_color("text");
 
+    // Resolve fonts via the XML token system (same pattern as PrinterSwitchMenu). The
+    // check indicator MUST use the icon font — LV_SYMBOL_OK isn't in the body font and
+    // renders as a missing-glyph box.
+    const char* body_font_name = lv_xml_get_const(nullptr, "font_body");
+    const lv_font_t* body_font =
+        body_font_name ? lv_xml_get_font(nullptr, body_font_name) : lv_font_get_default();
+    const char* icon_font_name = lv_xml_get_const(nullptr, "icon_font_xs");
+    const lv_font_t* icon_font =
+        icon_font_name ? lv_xml_get_font(nullptr, icon_font_name) : body_font;
+    const char* check_codepoint = ui_icon::lookup_codepoint("check");
+
     // Iterate the database in its native (logical-group) order — do NOT sort.
     for (const char* name : filament::get_all_material_names()) {
+        bool is_current = (current_material == name);
+
         lv_obj_t* row = lv_obj_create(list);
         lv_obj_remove_style_all(row);
         lv_obj_set_width(row, LV_PCT(100));
@@ -97,18 +111,24 @@ void MaterialPickerMenu::populate_material_list(const std::string& current_mater
         lv_obj_set_style_radius(row, 4, 0);
         lv_obj_set_name(row, name); // stash the material name for the click handler
 
+        // Check indicator (current material) or blank spacer — fixed width keeps the
+        // material names aligned in a column.
+        lv_obj_t* indicator = lv_label_create(row);
+        lv_obj_set_style_text_font(indicator, icon_font, 0);
+        lv_obj_set_style_min_width(indicator, 16, 0);
+        if (is_current && check_codepoint) {
+            lv_label_set_text(indicator, check_codepoint);
+            lv_obj_set_style_text_color(indicator, accent, 0);
+        } else {
+            lv_label_set_text(indicator, "");
+        }
+        lv_obj_remove_flag(indicator, LV_OBJ_FLAG_CLICKABLE);
+
         lv_obj_t* lbl = lv_label_create(row);
         lv_label_set_text(lbl, name); // material names are not translated [L070]
-        lv_obj_set_style_text_color(lbl, text_color, 0);
+        lv_obj_set_style_text_font(lbl, body_font, 0);
+        lv_obj_set_style_text_color(lbl, is_current ? accent : text_color, 0);
         lv_obj_remove_flag(lbl, LV_OBJ_FLAG_CLICKABLE); // click lands on the row
-
-        if (current_material == name) {
-            lv_obj_set_style_text_color(lbl, accent, 0);
-            lv_obj_t* check = lv_label_create(row);
-            lv_label_set_text(check, LV_SYMBOL_OK);
-            lv_obj_set_style_text_color(check, accent, 0);
-            lv_obj_remove_flag(check, LV_OBJ_FLAG_CLICKABLE);
-        }
 
         lv_obj_add_event_cb(row, on_material_row_cb, LV_EVENT_CLICKED, nullptr);
     }
