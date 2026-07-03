@@ -232,7 +232,11 @@ Phase 1 deliverable here: `codes` is the open scheme-map, so `snapmaker` (and `r
 
 ## 11. Out of Scope (future phases)
 
-- **Phase 2 — Offline picker UI:** browse-by-brand/type selection for non-Spoolman users, wired into the AMS edit modal / spool wizard, sourced from `FilamentCatalog::load_full()`, active as a Spoolman fallback.
+- **Phase 2 — Offline picker UI:** branded-filament selection for non-Spoolman users, wired to the filament-panel preset buttons (and/or AMS edit modal / spool wizard), sourced from `FilamentCatalog`, active as a Spoolman fallback.
+  - **Design constraint (MUST): no flat all-products list.** The catalog is 356 products / 21 brands / 35 types, and **PLA alone is 168** (one brand has 46 PLA products) — a single scrollable list is unusable.
+  - **Target shape: a 2-stage modal — vendor → product — with the material *type* pre-scoped by the launching preset button** (so it's 2 taps, not vendor→type→product). Stage 1 lists vendors (incl. "Generic"); Stage 2 lists that vendor's products *in that type*.
+  - **Stage 1 MUST be filtered to vendors that actually carry the selected type** (`products_for_type()` + `brand`), so niche types (PA-CF, PC) show a short vendor list. Pin "Generic" + recently-used/favorites on top; show a per-vendor product-count badge. The only long view is a big brand's PLA (~46) — acceptable single-vendor scroll, add an in-stage filter later if needed.
+  - Open interaction detail for the Phase-2 brainstorm: whether picking a product updates the preset's displayed type; how brand+temps are written to the slot via `EffectiveFilament`; the entry point when a type has no preset button.
 - **Phase 3 — User editability UI:** edit built-ins + add custom entries; the read-write `config/user_filaments.json` overlay authored via UI. (Phase 1 already builds the load/merge path.)
 - **Snapmaker U1 `codes.snapmaker` decode** (§7) — parse `filament_sku` + build the SKU seed table.
 - **Bambu tag decode** (`codes.bambu` from `orca_id`).
