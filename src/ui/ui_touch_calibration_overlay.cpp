@@ -609,7 +609,10 @@ void TouchCalibrationOverlay::handle_screen_touched(lv_event_t* e) {
             }
         }
 
-        // Draw ripple on the top layer so coordinates are SCREEN-ABSOLUTE.
+        // Verify phase: a transient ripple is enough — the user is just checking
+        // that touches track. No lingering dot here (that's only useful in the
+        // alignment phase, to see where each target press landed) (#1082).
+        // Drawn on the top layer so its coordinates are SCREEN-ABSOLUTE.
         create_ripple(lv_layer_top(), ripple_pt.x, ripple_pt.y);
 
         bool on_screen = dm && ripple_pt.x >= 0 && ripple_pt.x < dm->width() && ripple_pt.y >= 0 &&
@@ -632,6 +635,12 @@ void TouchCalibrationOverlay::handle_screen_touched(lv_event_t* e) {
          state_after == helix::TouchCalibrationPanel::State::POINT_2 ||
          state_after == helix::TouchCalibrationPanel::State::POINT_3)) {
         flash_object(crosshair_, 200, true);
+
+        // Drop a touch marker (ripple + lingering dot) at the finger's raw
+        // landing point so the user can compare where they actually touched
+        // against the target crosshair (#1082). Capture runs with the affine
+        // transform disabled, so `point` is the physical touch location.
+        create_touch_marker(lv_layer_top(), point.x, point.y);
     }
 
     // VERIFY entry (re-enabling the original calibration) is handled by the
