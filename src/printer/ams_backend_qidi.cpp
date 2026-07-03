@@ -907,6 +907,12 @@ std::string AmsBackendQidi::build_unload_gcode(int slot_index, int temp) const {
 
 AmsError AmsBackendQidi::load_filament(int slot_index) {
     spdlog::info("{} load_filament(slot={})", backend_log_tag(), slot_index);
+    // Block toolhead-motion filament ops during an active print (collision risk;
+    // see AmsSubscriptionBackend::refuse_if_printing). QIDI doesn't use the
+    // running_/busy gate in check_preconditions(), so guard directly here.
+    if (auto e = refuse_if_printing(); !e.success()) {
+        return e;
+    }
     int load_temp = QIDI_DEFAULT_LOAD_TEMP_C;
     int loaded_other = -1; // slot in the extruder that must be retracted first
     int unload_temp = QIDI_DEFAULT_LOAD_TEMP_C;
@@ -962,6 +968,10 @@ AmsError AmsBackendQidi::load_filament(int slot_index) {
 
 AmsError AmsBackendQidi::unload_filament(int slot_index) {
     spdlog::info("{} unload_filament(slot={})", backend_log_tag(), slot_index);
+    // Block toolhead-motion filament ops during an active print (collision risk).
+    if (auto e = refuse_if_printing(); !e.success()) {
+        return e;
+    }
     int unload_temp = QIDI_DEFAULT_LOAD_TEMP_C;
     int target_slot = slot_index; // for the EXTRUDER_UNLOAD fallback
     {
@@ -1007,6 +1017,11 @@ AmsError AmsBackendQidi::select_slot(int /*slot_index*/) {
 
 AmsError AmsBackendQidi::change_tool(int tool_number) {
     spdlog::info("{} change_tool(tool={})", backend_log_tag(), tool_number);
+    // Guard explicitly (before the tool->slot mapping lookup) even though the
+    // delegated load_filament() also guards — fail fast during an active print.
+    if (auto e = refuse_if_printing(); !e.success()) {
+        return e;
+    }
     if (tool_number < 0) {
         return AmsErrorHelper::not_supported("QIDI Box: tool number out of range");
     }

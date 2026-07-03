@@ -4,6 +4,7 @@
 #include "ams_subscription_backend.h"
 
 #include "moonraker_error.h"
+#include "printer_state.h"
 
 #include "hv/json.hpp"
 
@@ -138,13 +139,39 @@ bool AmsSubscriptionBackend::is_filament_loaded() const {
     return system_info_.filament_loaded;
 }
 
-AmsError AmsSubscriptionBackend::check_preconditions() const {
+AmsError AmsSubscriptionBackend::check_preconditions(bool requires_toolhead_motion) const {
     if (!running_) {
         return AmsErrorHelper::not_connected(std::string(backend_log_tag()) +
                                              " backend not started");
     }
     if (system_info_.is_busy()) {
         return AmsErrorHelper::busy(ams_action_to_string(system_info_.action));
+    }
+    // Toolhead-motion ops (load/unload/tool-change) additionally refuse while a
+    // print is active — no-motion ops (eject_lane, select, unlock) pass false.
+    if (requires_toolhead_motion) {
+        if (auto e = refuse_if_printing(); !e.success()) {
+            return e;
+        }
+    }
+    return AmsErrorHelper::success();
+}
+
+AmsError AmsSubscriptionBackend::refuse_if_printing() const {
+    // Refuse toolhead-motion filament ops while a print is active. Some backends
+    // (AD5X IFS) unload via a firmware macro that self-homes (G28) internally, so
+    // Layer 1's gcode-send guard cannot see the buried _G28 — the collision must be
+    // prevented here, before the op begins. "Active" = PRINTING or PAUSED.
+    // api_ can be null in unit tests / cold-boot; when it is, print state is
+    // unknown and we do not block (mirrors ensure_homed_then's null-client path).
+    if (!api_) {
+        return AmsErrorHelper::success();
+    }
+    const helix::PrintJobState pstate = api_->printer_state().get_print_job_state();
+    if (pstate == helix::PrintJobState::PRINTING || pstate == helix::PrintJobState::PAUSED) {
+        spdlog::warn("{} Refusing filament operation while a print is active (state={})",
+                     backend_log_tag(), static_cast<int>(pstate));
+        return AmsErrorHelper::print_active();
     }
     return AmsErrorHelper::success();
 }

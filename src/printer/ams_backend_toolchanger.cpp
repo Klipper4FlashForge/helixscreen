@@ -355,7 +355,7 @@ AmsError AmsBackendToolChanger::unload_filament(int slot_index) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
-        AmsError precondition = check_preconditions();
+        AmsError precondition = check_preconditions(true);
         if (!precondition) {
             return precondition;
         }
@@ -389,7 +389,7 @@ AmsError AmsBackendToolChanger::change_tool(int tool_number) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
-        AmsError precondition = check_preconditions();
+        AmsError precondition = check_preconditions(true);
         if (!precondition) {
             return precondition;
         }

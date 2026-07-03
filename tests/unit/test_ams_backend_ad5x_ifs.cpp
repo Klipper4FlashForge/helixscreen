@@ -12,6 +12,8 @@
 #include "moonraker_client_mock.h"
 #include "printer_state.h"
 
+#include "../lvgl_test_fixture.h"
+
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -7046,4 +7048,123 @@ TEST_CASE("AMS base slot_unloads_to_toolhead defaults to the loaded hint (no AD5
     AmsBackendAfc afc(nullptr, nullptr);
     CHECK(afc.slot_unloads_to_toolhead(0, /*loaded_hint=*/true));
     CHECK_FALSE(afc.slot_unloads_to_toolhead(0, /*loaded_hint=*/false));
+}
+
+// ============================================================================
+// Layer 2 homing guard: refuse toolhead-motion filament ops during a print.
+//
+// AD5X's _IFS_REMOVE_CURRENT_PRUTOK (unload) self-homes (G28) INSIDE the ZMOD
+// firmware macro. Layer 1 (the gcode-send guard) never sees that buried _G28, so
+// load/unload/change_tool must be refused before they start whenever a print is
+// PRINTING or PAUSED. No-motion ops (eject_lane, select_slot) stay allowed.
+// ============================================================================
+
+namespace {
+
+// Backend double that keeps a real (mock) api_ so check_preconditions() can read
+// the print-job state via api_->printer_state(), while still capturing any gcode
+// the action path would emit (so "sent nothing" is verifiable).
+class Ad5xHomingGuardBackend : public AmsBackendAd5xIfs {
+  public:
+    Ad5xHomingGuardBackend(MoonrakerAPI* api, helix::MoonrakerClient* client)
+        : AmsBackendAd5xIfs(api, client) {}
+
+    std::vector<std::string> captured_gcodes;
+    AmsError execute_gcode(const std::string& gcode) override {
+        captured_gcodes.push_back(gcode);
+        return AmsErrorHelper::success();
+    }
+    AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+        captured_gcodes.push_back(gcode);
+        (void)on_complete;
+        return AmsErrorHelper::success();
+    }
+};
+
+struct Ad5xHomingGuardFixture : public LVGLTestFixture {
+    Ad5xHomingGuardFixture() : mock_client(MoonrakerClientMock::PrinterType::VORON_24) {
+        state.init_subjects(false);
+        api = std::make_unique<MoonrakerAPIMock>(mock_client, state);
+        backend = std::make_unique<Ad5xHomingGuardBackend>(api.get(), &mock_client);
+        // check_preconditions() short-circuits on a stopped backend; flip running_
+        // so the print-active gate is actually reached.
+        Ad5xIfsTestAccess::set_running(*backend, true);
+    }
+    void set_print_state(helix::PrintJobState s) {
+        lv_subject_set_int(state.get_print_state_enum_subject(), static_cast<int>(s));
+    }
+    MoonrakerClientMock mock_client;
+    helix::PrinterState state;
+    std::unique_ptr<MoonrakerAPIMock> api;
+    std::unique_ptr<Ad5xHomingGuardBackend> backend;
+};
+
+} // namespace
+
+TEST_CASE_METHOD(Ad5xHomingGuardFixture,
+                 "check_preconditions gates toolhead motion on active print",
+                 "[ams][ad5x_ifs][homing_guard]") {
+    SECTION("PRINTING refuses motion ops but allows no-motion ops") {
+        set_print_state(helix::PrintJobState::PRINTING);
+        AmsError motion = backend->check_preconditions(/*requires_toolhead_motion=*/true);
+        CHECK_FALSE(motion.success());
+        CHECK(motion.result == AmsResult::WRONG_STATE);
+        CHECK(motion.user_msg == "Cannot run filament operation while printing");
+        // Case 7: no-motion ops (eject_lane / select / unlock) are NOT blocked.
+        CHECK(backend->check_preconditions(/*requires_toolhead_motion=*/false).success());
+    }
+
+    SECTION("PAUSED refuses motion ops (head parked over the print)") {
+        set_print_state(helix::PrintJobState::PAUSED);
+        CHECK_FALSE(backend->check_preconditions(true).success());
+    }
+
+    SECTION("STANDBY allows motion ops") {
+        set_print_state(helix::PrintJobState::STANDBY);
+        CHECK(backend->check_preconditions(true).success());
+    }
+
+    SECTION("COMPLETE allows motion ops") {
+        set_print_state(helix::PrintJobState::COMPLETE);
+        CHECK(backend->check_preconditions(true).success());
+    }
+}
+
+TEST_CASE_METHOD(Ad5xHomingGuardFixture,
+                 "load/unload/change_tool refuse and emit nothing while printing",
+                 "[ams][ad5x_ifs][homing_guard]") {
+    set_print_state(helix::PrintJobState::PRINTING);
+
+    SECTION("unload_filament refused, no gcode/macro emitted") {
+        AmsError err = backend->unload_filament(0);
+        CHECK_FALSE(err.success());
+        CHECK(err.result == AmsResult::WRONG_STATE);
+        CHECK(backend->captured_gcodes.empty());
+    }
+
+    SECTION("load_filament refused, no gcode/macro emitted") {
+        AmsError err = backend->load_filament(0);
+        CHECK_FALSE(err.success());
+        CHECK(err.result == AmsResult::WRONG_STATE);
+        CHECK(backend->captured_gcodes.empty());
+    }
+
+    SECTION("change_tool refused, no gcode/macro emitted") {
+        AmsError err = backend->change_tool(0);
+        CHECK_FALSE(err.success());
+        CHECK(err.result == AmsResult::WRONG_STATE);
+        CHECK(backend->captured_gcodes.empty());
+    }
+}
+
+TEST_CASE_METHOD(Ad5xHomingGuardFixture,
+                 "eject_lane is not blocked by an active print",
+                 "[ams][ad5x_ifs][homing_guard]") {
+    // eject_lane is a cold, lane-only op (no toolhead motion) — it must remain
+    // available during a print. Whatever its outcome, it must NOT be refused
+    // *because* a print is active.
+    set_print_state(helix::PrintJobState::PRINTING);
+    Ad5xIfsTestAccess::set_zcolor_supported(*backend, false);
+    AmsError err = backend->eject_lane(0);
+    CHECK(err.user_msg != "Cannot run filament operation while printing");
 }

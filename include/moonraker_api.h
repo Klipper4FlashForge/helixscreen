@@ -714,6 +714,18 @@ class MoonrakerAPI : public IMoonrakerAPI {
     }
 
     /**
+     * @brief Access the PrinterState this API reads/writes.
+     *
+     * Exposed so collaborators that hold a MoonrakerAPI* (e.g. AMS backends) can
+     * consult live printer state — used by the homing guard to refuse toolhead-
+     * motion filament ops while a print is active. The reference is valid for the
+     * API's lifetime.
+     */
+    helix::PrinterState& printer_state() {
+        return state_;
+    }
+
+    /**
      * @brief Get REST API for generic REST endpoint and WLED operations
      *
      * All REST methods (call_rest_get, call_rest_post, wled_get_strips,

@@ -29,7 +29,7 @@ MoonrakerAPI::MoonrakerAPI(MoonrakerClient& client, PrinterState& state)
     file_transfer_api_ = std::make_unique<MoonrakerFileTransferAPI>(client, http_base_url_);
     history_api_ = std::make_unique<MoonrakerHistoryAPI>(client);
     job_api_ = std::make_unique<MoonrakerJobAPI>(client);
-    motion_api_ = std::make_unique<MoonrakerMotionAPI>(client, safety_limits_);
+    motion_api_ = std::make_unique<MoonrakerMotionAPI>(client, state, safety_limits_);
     queue_api_ = std::make_unique<MoonrakerQueueAPI>(client);
     rest_api_ = std::make_unique<MoonrakerRestAPI>(client, http_base_url_);
     spoolman_api_ = std::make_unique<MoonrakerSpoolmanAPI>(client);

@@ -272,7 +272,7 @@ PathSegment AmsBackendAce::infer_error_segment() const {
 // ============================================================================
 
 AmsError AmsBackendAce::load_filament(int slot_index) {
-    auto err = check_preconditions();
+    auto err = check_preconditions(true);
     if (!err.success()) {
         return err;
     }
@@ -343,7 +343,7 @@ AmsError AmsBackendAce::load_filament(int slot_index) {
 }
 
 AmsError AmsBackendAce::unload_filament(int /*slot_index*/) {
-    auto err = check_preconditions();
+    auto err = check_preconditions(true);
     if (!err.success()) {
         return err;
     }

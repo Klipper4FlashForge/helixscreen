@@ -1090,7 +1090,7 @@ AmsError AmsBackendAd5xIfs::load_filament(int slot_index) {
     if (!validate_slot_index(slot_index)) {
         return AmsErrorHelper::invalid_slot(slot_index, NUM_PORTS - 1);
     }
-    auto err = check_preconditions();
+    auto err = check_preconditions(true);
     if (!err.success())
         return err;
 
@@ -1122,7 +1122,7 @@ AmsError AmsBackendAd5xIfs::load_filament(int slot_index) {
 }
 
 AmsError AmsBackendAd5xIfs::unload_filament(int slot_index) {
-    auto err = check_preconditions();
+    auto err = check_preconditions(true);
     if (!err.success())
         return err;
 
@@ -1314,7 +1314,7 @@ AmsError AmsBackendAd5xIfs::change_tool(int tool_number) {
     if (tool_number < 0 || tool_number >= TOOL_MAP_SIZE) {
         return AmsErrorHelper::invalid_slot(tool_number, TOOL_MAP_SIZE - 1);
     }
-    auto err = check_preconditions();
+    auto err = check_preconditions(true);
     if (!err.success())
         return err;
 

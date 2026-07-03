@@ -996,7 +996,7 @@ PathSegment AmsBackendCfs::infer_error_segment() const {
 // --- Operations ---
 
 AmsError AmsBackendCfs::load_filament(int slot_index) {
-    auto err = check_preconditions();
+    auto err = check_preconditions(true);
     if (err.result != AmsResult::SUCCESS)
         return err;
     auto gcode = load_gcode(slot_index, macro_variant_);
@@ -1014,7 +1014,7 @@ AmsError AmsBackendCfs::load_filament(int slot_index) {
 }
 
 AmsError AmsBackendCfs::unload_filament(int) {
-    auto err = check_preconditions();
+    auto err = check_preconditions(true);
     if (err.result != AmsResult::SUCCESS)
         return err;
     {
@@ -1031,7 +1031,7 @@ AmsError AmsBackendCfs::select_slot(int) {
 }
 
 AmsError AmsBackendCfs::change_tool(int tool) {
-    auto err = check_preconditions();
+    auto err = check_preconditions(true);
     if (err.result != AmsResult::SUCCESS)
         return err;
 

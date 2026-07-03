@@ -8,6 +8,8 @@
 #include "printer_state.h"
 #include "settings_manager.h"
 
+#include "../lvgl_test_fixture.h"
+
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -1656,4 +1658,106 @@ TEST_CASE("QIDI Box blocked lane sets action to ERROR so AmsErrorBridge fires",
                                                {"slot3", 1},
                                            });
     REQUIRE(backend.get_system_info().action != AmsAction::ERROR);
+}
+
+// =====================================================================
+// Homing guard (Layer 2): refuse toolhead-motion filament ops while a
+// print is active. QIDI gates via refuse_if_printing() directly (it does
+// NOT use check_preconditions()'s running_/busy checks). A mid-print
+// load/unload moves the toolhead and can collide with the part.
+// =====================================================================
+
+namespace {
+
+// RecordingQidiBackend variant that keeps a real (mock) api_ so
+// refuse_if_printing() can read the live print-job state, while still capturing
+// emitted gcode so "sent nothing" is verifiable.
+class RecordingQidiWithApi : public AmsBackendQidi {
+  public:
+    RecordingQidiWithApi(MoonrakerAPI* api, helix::MoonrakerClient* client)
+        : AmsBackendQidi(api, client) {}
+    AmsError execute_gcode(const std::string& gcode) override {
+        sent.push_back(gcode);
+        return AmsErrorHelper::success();
+    }
+    AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+        sent.push_back(gcode);
+        (void)on_complete;
+        return AmsErrorHelper::success();
+    }
+    std::vector<std::string> sent;
+};
+
+struct QidiHomingGuardFixture : public LVGLTestFixture {
+    QidiHomingGuardFixture() : mock_client(MoonrakerClientMock::PrinterType::VORON_24) {
+        state.init_subjects(false);
+        api = std::make_unique<MoonrakerAPIMock>(mock_client, state);
+        backend = std::make_unique<RecordingQidiWithApi>(api.get(), &mock_client);
+        // Force the synchronous execute_gcode() path (no CLEAR_NOZZLE wipe →
+        // no ensure_homed_then() async query), so a STANDBY load emits gcode
+        // synchronously and `sent` is deterministic. M603 keeps unload one-line.
+        QidiBoxTestAccess::set_fw_caps(*backend, /*m603=*/true, /*clear_nozzle=*/false);
+    }
+    void set_print_state(helix::PrintJobState s) {
+        lv_subject_set_int(state.get_print_state_enum_subject(), static_cast<int>(s));
+    }
+    MoonrakerClientMock mock_client;
+    helix::PrinterState state;
+    std::unique_ptr<MoonrakerAPIMock> api;
+    std::unique_ptr<RecordingQidiWithApi> backend;
+};
+
+} // namespace
+
+TEST_CASE_METHOD(QidiHomingGuardFixture,
+                 "QIDI load/unload/change_tool refuse and emit nothing while printing",
+                 "[ams][qidi_box][homing_guard]") {
+    auto check_refused = [](AmsError err, const std::vector<std::string>& sent) {
+        CHECK_FALSE(err.success());
+        CHECK(err.result == AmsResult::WRONG_STATE);
+        CHECK(err.user_msg == "Cannot run filament operation while printing");
+        CHECK(sent.empty());
+    };
+
+    SECTION("PRINTING blocks all three ops") {
+        set_print_state(helix::PrintJobState::PRINTING);
+        check_refused(backend->load_filament(2), backend->sent);
+        check_refused(backend->unload_filament(1), backend->sent);
+        check_refused(backend->change_tool(0), backend->sent);
+    }
+
+    SECTION("PAUSED blocks all three ops") {
+        set_print_state(helix::PrintJobState::PAUSED);
+        check_refused(backend->load_filament(2), backend->sent);
+        check_refused(backend->unload_filament(1), backend->sent);
+        check_refused(backend->change_tool(0), backend->sent);
+    }
+}
+
+TEST_CASE_METHOD(QidiHomingGuardFixture,
+                 "QIDI load/unload/change_tool proceed to gcode-emit when not printing",
+                 "[ams][qidi_box][homing_guard]") {
+    SECTION("STANDBY: load_filament emits gcode") {
+        set_print_state(helix::PrintJobState::STANDBY);
+        REQUIRE(backend->load_filament(2).success());
+        CHECK_FALSE(backend->sent.empty());
+    }
+
+    SECTION("STANDBY: unload_filament emits gcode") {
+        set_print_state(helix::PrintJobState::STANDBY);
+        REQUIRE(backend->unload_filament(1).success());
+        CHECK_FALSE(backend->sent.empty());
+    }
+
+    SECTION("STANDBY: change_tool emits gcode (delegates to load)") {
+        set_print_state(helix::PrintJobState::STANDBY);
+        REQUIRE(backend->change_tool(0).success());
+        CHECK_FALSE(backend->sent.empty());
+    }
+
+    SECTION("COMPLETE: load_filament emits gcode") {
+        set_print_state(helix::PrintJobState::COMPLETE);
+        REQUIRE(backend->load_filament(2).success());
+        CHECK_FALSE(backend->sent.empty());
+    }
 }

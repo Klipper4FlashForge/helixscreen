@@ -270,6 +270,21 @@ class AmsErrorHelper {
     }
 
     /**
+     * @brief Create a "print in progress" refusal for toolhead-motion ops.
+     *
+     * Load/unload/tool-change move the toolhead and can self-home (G28) inside
+     * firmware macros; running them mid-print collides with the part. Blocked
+     * while PRINTING or PAUSED.
+     * @return AmsError configured for UI display
+     */
+    static AmsError print_active() {
+        return AmsError(AmsResult::WRONG_STATE, "Filament operation blocked: print in progress",
+                        "Cannot run filament operation while printing",
+                        "Finish or cancel the print before loading, unloading, or changing "
+                        "filament");
+    }
+
+    /**
      * @brief Create a "not loaded" error (no filament/tool active)
      * @return AmsError configured for UI display
      */
