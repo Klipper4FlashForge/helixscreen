@@ -322,7 +322,8 @@ void FilamentPanel::init_subjects() {
         for (int i = 0; i < PRESET_COUNT; i++) {
             preset_name_bufs_[i][0] = '\0';
             UI_MANAGED_SUBJECT_STRING(preset_name_subjects_[i], preset_name_bufs_[i],
-                                      preset_name_bufs_[i], preset_name_subject_names[i], subjects_);
+                                      preset_name_bufs_[i], preset_name_subject_names[i],
+                                      subjects_);
         }
 
         // Card title subject (dynamic: "Multi-Filament" or "External Spool")
@@ -798,7 +799,7 @@ void FilamentPanel::reassign_preset(int slot, const std::string& material) {
     update_preset_button_labels();
     update_preset_button_temps();
     check_and_auto_select_preset(); // refresh CHECKED highlight vs current targets
-    update_spool_preset(); // refresh 5th (dynamic spool) button visibility
+    update_spool_preset();          // refresh 5th (dynamic spool) button visibility
     spdlog::info("[{}] Preset slot {} reassigned to {}", get_name(), slot, material);
 }
 
@@ -831,6 +832,14 @@ void FilamentPanel::handle_preset_longpress(int slot) {
                          [slot](const helix::printer::EffectiveFilament& ef) {
                              get_global_filament_panel().apply_preset_pick(slot, ef);
                          });
+
+    // The long-press that opened the picker is still an active press. Without this, the
+    // eventual release lands on whatever widget now sits under the finger — the Type
+    // dropdown, which appears roughly where the preset button was — and auto-opens it.
+    // Make the input device swallow events until the physical release.
+    if (lv_indev_t* indev = lv_indev_active()) {
+        lv_indev_wait_release(indev);
+    }
 }
 
 void FilamentPanel::apply_preset_pick(int slot, const helix::printer::EffectiveFilament& ef) {
