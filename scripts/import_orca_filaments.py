@@ -4,9 +4,11 @@
 
 Facts only (temps/densities); no OrcaSlicer profile files are copied or shipped.
 """
+import argparse
 import json
 import os
 import re
+import sys
 
 # Orca filament_type (open enum) -> our filament_database.h type name.
 # Only entries that differ or need pinning are listed; unknown types fall back
@@ -30,6 +32,7 @@ def load_profiles(root: str) -> dict:
                 continue
             with open(os.path.join(dirpath, fn), encoding="utf-8") as f:
                 p = json.load(f)
+            p["_src"] = dirpath  # remember source dir for library-scope filtering
             if p.get("type") == "filament" and "name" in p:
                 by_name[p["name"]] = p
     return by_name
@@ -89,6 +92,7 @@ def collapse_bed(resolved: dict):
 
 def _slug(brand: str, name: str) -> str:
     raw = f"{brand}-{name}".lower()
+    raw = raw.replace("+", "-plus-")  # preserve meaningful suffix, e.g. PLA+ vs PLA
     return re.sub(r"[^a-z0-9]+", "-", raw).strip("-")
 
 
@@ -123,3 +127,106 @@ def build_product(resolved: dict, base_type_range):
     if orca_id:
         product["orca_id"] = orca_id
     return product
+
+
+# @System / @<printer> / @base suffixes to strip from profile names for display.
+_SUFFIX_RE = re.compile(r"\s*@.*$")
+
+
+def _display_name(profile_name: str, brand: str) -> str:
+    name = _SUFFIX_RE.sub("", profile_name).strip()
+    if brand and name.lower().startswith(brand.lower() + " "):
+        name = name[len(brand) + 1:]
+    return name or profile_name
+
+
+def build_catalog(orca_root, cfs_seed, type_ranges, library_marker="OrcaFilamentLibrary"):
+    # Load the WHOLE tree (bases from BBL/ etc. are needed to resolve inherits),
+    # but emit products ONLY from the vendor-agnostic library, not the ~6,550
+    # printer-specific profiles. Tests pass library_marker="" to accept fixtures.
+    by_name = load_profiles(orca_root)
+    products = []
+    seen = set()
+    for pname, profile in by_name.items():
+        if profile.get("instantiation") != "true":
+            continue  # templates, not user-facing products
+        if library_marker and library_marker not in profile.get("_src", ""):
+            continue  # skip printer-specific profiles outside the library
+        resolved = resolve_inherits(profile, by_name)
+        brand = first_scalar(resolved.get("filament_vendor")) or "Generic"
+        resolved["_product_name"] = _display_name(pname, brand)
+        orca_type = first_scalar(resolved.get("filament_type")) or ""
+        base_range = type_ranges.get(map_type(orca_type))
+        product = build_product(resolved, base_range)
+        key = (product["brand"], product["name"])
+        if key in seen:
+            continue  # collapse per-color duplicates
+        seen.add(key)
+        products.append(product)
+    products.extend(cfs_seed)
+    _dedupe_ids(products)
+    products.sort(key=lambda p: (p.get("source", ""), p["brand"].lower(), p["name"].lower(), p["id"]))
+    return products
+
+
+def _dedupe_ids(products):
+    """Disambiguate duplicate `id`s in place with a `-2`, `-3`, ... suffix.
+
+    Safety net for the union of Orca-derived products and cfs_seed: no matter
+    the source, a duplicate id would silently shadow an earlier product in any
+    id-keyed consumer. Logs a warning naming every colliding id.
+    """
+    seen_ids = {}
+    collided = set()
+    for product in products:
+        base_id = product["id"]
+        count = seen_ids.get(base_id, 0)
+        if count:
+            collided.add(base_id)
+            new_id = f"{base_id}-{count + 1}"
+            while new_id in seen_ids:
+                count += 1
+                new_id = f"{base_id}-{count + 1}"
+            product["id"] = new_id
+            seen_ids[new_id] = 1
+        seen_ids[base_id] = count + 1
+    if collided:
+        print(f"WARNING: duplicate filament ids disambiguated: {sorted(collided)}",
+              file=sys.stderr)
+
+
+def _load_type_ranges(path):
+    if not path:
+        return {}
+    with open(path, encoding="utf-8") as f:
+        raw = json.load(f)
+    return {k: tuple(v) for k, v in raw.items()}
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Derive filaments.json from OrcaSlicer.")
+    ap.add_argument("--orca", required=True, help="OrcaSlicer resources/profiles root")
+    ap.add_argument("--cfs-seed", required=True)
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--type-ranges", default="")
+    ap.add_argument("--orca-tag", default="unknown")
+    args = ap.parse_args(argv)
+
+    with open(args.cfs_seed, encoding="utf-8") as f:
+        seed = json.load(f)
+    catalog = build_catalog(args.orca, seed, _load_type_ranges(args.type_ranges))
+    doc = {
+        "_attribution": ("Factual filament data derived from OrcaSlicer "
+                         f"(github.com/SoftFever/OrcaSlicer, tag {args.orca_tag}, "
+                         "AGPL-3.0). No OrcaSlicer profile files are shipped."),
+        "filaments": catalog,
+    }
+    with open(args.out, "w", encoding="utf-8") as f:
+        json.dump(doc, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    print(f"Wrote {len(catalog)} filaments to {args.out}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
