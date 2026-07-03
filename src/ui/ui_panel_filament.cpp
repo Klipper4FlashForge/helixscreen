@@ -817,6 +817,12 @@ void FilamentPanel::handle_preset_longpress(int slot) {
         return;
     }
     lv_obj_t* screen = lv_obj_get_screen(preset_buttons_[slot]);
+    // Reset-to-defaults affordance is preset-editing-only — gated purely on whether
+    // this callback is set before show() (matches the retired MaterialPickerMenu's
+    // reset_callback_ gate). The AMS slot-assignment picker never calls this, so its
+    // instance keeps the row hidden.
+    catalog_picker_.set_reset_callback(
+        []() { get_global_filament_panel().reset_presets_to_defaults(); });
     // Fires synchronously on the main thread from the modal's Select button click —
     // same threading context the old material_picker_ callback ran in — so call
     // straight through get_global_filament_panel() (singleton, lives for process

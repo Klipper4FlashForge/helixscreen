@@ -27,7 +27,18 @@ void FilamentCatalogPickerModal::register_callbacks() {
         [](lv_event_t*) { if (active_instance_) active_instance_->handle_type_changed(); });
     lv_xml_register_event_cb(nullptr, "catalog_picker_select_cb",
         [](lv_event_t*) { if (active_instance_) active_instance_->handle_select_button(); });
+    lv_xml_register_event_cb(nullptr, "catalog_picker_reset_cb",
+        [](lv_event_t*) {
+            if (!active_instance_) return;
+            FilamentCatalogPickerModal* self = active_instance_;
+            if (self->reset_callback_) self->reset_callback_();
+            self->hide();
+        });
     callbacks_registered_ = true;
+}
+
+void FilamentCatalogPickerModal::set_reset_callback(std::function<void()> cb) {
+    reset_callback_ = std::move(cb);
 }
 
 void FilamentCatalogPickerModal::show(lv_obj_t* parent, std::optional<std::string> seed_type,
@@ -52,6 +63,17 @@ void FilamentCatalogPickerModal::on_show() {
     populate_vendor_dropdown();
     populate_type_dropdown();
     rebuild_product_list();
+
+    // Reset row is gated purely on whether a reset callback was set before show()
+    // (preset-editing context) — same gate the retired MaterialPickerMenu used.
+    lv_obj_t* reset_btn = lv_obj_find_by_name(dialog(), "catalog_picker_reset_btn");
+    if (reset_btn) {
+        if (reset_callback_) {
+            lv_obj_remove_flag(reset_btn, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(reset_btn, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
 }
 
 void FilamentCatalogPickerModal::on_hide() {

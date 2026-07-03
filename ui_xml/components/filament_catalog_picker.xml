@@ -34,6 +34,13 @@
       <lv_obj name="product_list" width="100%" height="200" style_pad_all="0"
               flex_flow="column" style_pad_gap="#space_xxs"/>
     </lv_obj>
+    <!-- Reset-to-defaults row: shown only when a reset callback was set before show()
+         (preset-editing context). Hidden by default for other pickers (e.g. AMS slot
+         assignment), where a reset-to-defaults action makes no sense. -->
+    <ui_button name="catalog_picker_reset_btn" width="100%" text="Reset to defaults"
+               translation_tag="Reset to defaults" variant="ghost" hidden="true">
+      <event_cb trigger="clicked" callback="catalog_picker_reset_cb"/>
+    </ui_button>
     <modal_button_row primary_text="Select" primary_tag="Select"
                       primary_callback="catalog_picker_select_cb"
                       secondary_text="Cancel" secondary_tag="Cancel"

@@ -30,6 +30,12 @@ class FilamentCatalogPickerModal : public Modal {
     void show(lv_obj_t* parent, std::optional<std::string> seed_type,
               std::optional<std::vector<std::string>> allowed_types, SelectCallback on_select);
 
+    /// Set before calling show() to reveal a "Reset to defaults" row (preset-editing
+    /// context only). Not cleared by show()/hide() — each consumer owns its own picker
+    /// instance, so there's no cross-context leakage risk. Leave unset (default) for
+    /// contexts where a reset affordance makes no sense (e.g. AMS slot assignment).
+    void set_reset_callback(std::function<void()> cb);
+
     [[nodiscard]] const char* get_name() const override { return "Filament Catalog Picker"; }
     [[nodiscard]] const char* component_name() const override { return "filament_catalog_picker"; }
 
@@ -63,6 +69,7 @@ class FilamentCatalogPickerModal : public Modal {
     std::optional<std::string> seed_type_;
     std::optional<std::vector<std::string>> allowed_types_;
     SelectCallback on_select_;
+    std::function<void()> reset_callback_;  // set -> show "Reset to defaults" row
     std::string highlighted_id_;        // currently-selected product row id
     std::vector<std::string> vendor_order_;  // dropdown index -> brand (Generic pinned first)
 };

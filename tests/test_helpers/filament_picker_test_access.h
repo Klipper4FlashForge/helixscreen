@@ -34,6 +34,19 @@ struct FilamentPickerTestAccess {
     static const std::string& highlighted_id(const FilamentCatalogPickerModal& m) {
         return m.highlighted_id_;
     }
+
+    // Returns true if the "Reset to defaults" row is currently hidden.
+    static bool reset_button_hidden(const FilamentCatalogPickerModal& m) {
+        lv_obj_t* btn = lv_obj_find_by_name(m.dialog(), "catalog_picker_reset_btn");
+        if (!btn) return true;
+        return lv_obj_has_flag(btn, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    // Invokes the reset callback the same way the registered XML click handler would.
+    static void press_reset(FilamentCatalogPickerModal& m) {
+        if (m.reset_callback_) m.reset_callback_();
+        m.hide();
+    }
 };
 
 } // namespace helix::ui

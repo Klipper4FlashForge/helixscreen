@@ -65,3 +65,41 @@ TEST_CASE_METHOD(XMLTestFixture, "picker Select with no highlight is a graceful 
 
     REQUIRE_FALSE(got.has_value());
 }
+
+TEST_CASE_METHOD(XMLTestFixture, "picker reset row hidden when no reset callback set",
+                 "[filament_picker]") {
+    FilamentCatalogPickerModal modal;
+    modal.show(lv_screen_active(), std::string("PLA"),
+               [](const EffectiveFilament&) {});
+    helix::ui::UpdateQueue::instance().drain();
+
+    REQUIRE(FilamentPickerTestAccess::reset_button_hidden(modal));
+}
+
+TEST_CASE_METHOD(XMLTestFixture, "picker reset row shown when reset callback set before show",
+                 "[filament_picker]") {
+    FilamentCatalogPickerModal modal;
+    modal.set_reset_callback([]() {});
+    modal.show(lv_screen_active(), std::string("PLA"),
+               [](const EffectiveFilament&) {});
+    helix::ui::UpdateQueue::instance().drain();
+
+    REQUIRE_FALSE(FilamentPickerTestAccess::reset_button_hidden(modal));
+}
+
+TEST_CASE_METHOD(XMLTestFixture, "picker reset invokes stored reset callback",
+                 "[filament_picker]") {
+    FilamentCatalogPickerModal modal;
+    bool reset_invoked = false;
+    modal.set_reset_callback([&]() { reset_invoked = true; });
+    modal.show(lv_screen_active(), std::string("PLA"),
+               [](const EffectiveFilament&) {});
+    helix::ui::UpdateQueue::instance().drain();
+
+    REQUIRE_FALSE(FilamentPickerTestAccess::reset_button_hidden(modal));
+
+    FilamentPickerTestAccess::press_reset(modal);
+    helix::ui::UpdateQueue::instance().drain();
+
+    REQUIRE(reset_invoked);
+}
