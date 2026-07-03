@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include "ui_modal.h"
+
+#include "filament_catalog.h"
+
 #include <functional>
 #include <optional>
 #include <string>
 #include <vector>
-
-#include "filament_catalog.h"
-#include "ui_modal.h"
 
 namespace helix::ui {
 
@@ -36,8 +37,12 @@ class FilamentCatalogPickerModal : public Modal {
     /// contexts where a reset affordance makes no sense (e.g. AMS slot assignment).
     void set_reset_callback(std::function<void()> cb);
 
-    [[nodiscard]] const char* get_name() const override { return "Filament Catalog Picker"; }
-    [[nodiscard]] const char* component_name() const override { return "filament_catalog_picker"; }
+    [[nodiscard]] const char* get_name() const override {
+        return "Filament Catalog Picker";
+    }
+    [[nodiscard]] const char* component_name() const override {
+        return "filament_catalog_picker";
+    }
 
   protected:
     void on_show() override;
@@ -45,12 +50,13 @@ class FilamentCatalogPickerModal : public Modal {
 
   private:
     void populate_vendor_dropdown();
-    void populate_type_dropdown();      // from current vendor (+ allowed_types filter)
-    void rebuild_product_list();        // from current vendor+type
+    void populate_type_dropdown(); // from current vendor (+ allowed_types filter)
+    void rebuild_product_list();   // from current vendor+type
+    void apply_input_surface();    // re-assert dropdown input-surface after palette reapply
     void handle_vendor_changed();
     void handle_type_changed();
     void handle_row_selected(const std::string& product_id);
-    void handle_select_button();        // confirm current highlighted row
+    void handle_select_button(); // confirm current highlighted row
 
     std::string current_vendor() const; // reads vendor_dropdown selected string
     std::string current_type() const;   // reads type_dropdown selected string
@@ -70,8 +76,8 @@ class FilamentCatalogPickerModal : public Modal {
     std::optional<std::vector<std::string>> allowed_types_;
     SelectCallback on_select_;
     std::function<void()> reset_callback_;  // set -> show "Reset to defaults" row
-    std::string highlighted_id_;        // currently-selected product row id
-    std::vector<std::string> vendor_order_;  // dropdown index -> brand (Generic pinned first)
+    std::string highlighted_id_;            // currently-selected product row id
+    std::vector<std::string> vendor_order_; // dropdown index -> brand (Generic pinned first)
 };
 
-}  // namespace helix::ui
+} // namespace helix::ui

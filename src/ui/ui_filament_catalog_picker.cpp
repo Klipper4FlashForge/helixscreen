@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ui_filament_catalog_picker.h"
 
-#include "theme_manager.h"
 #include "ui_icon_codepoints.h"
 #include "ui_utils.h"
 
-#include <spdlog/spdlog.h>
-
 #include "lvgl.h"
+#include "theme_manager.h"
+
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -18,22 +18,32 @@ bool FilamentCatalogPickerModal::callbacks_registered_ = false;
 FilamentCatalogPickerModal* FilamentCatalogPickerModal::active_instance_ = nullptr;
 
 void FilamentCatalogPickerModal::register_callbacks() {
-    if (callbacks_registered_) return;
-    lv_xml_register_event_cb(nullptr, "catalog_picker_close_cb",
-        [](lv_event_t*) { if (active_instance_) active_instance_->hide(); });
-    lv_xml_register_event_cb(nullptr, "catalog_picker_vendor_changed_cb",
-        [](lv_event_t*) { if (active_instance_) active_instance_->handle_vendor_changed(); });
-    lv_xml_register_event_cb(nullptr, "catalog_picker_type_changed_cb",
-        [](lv_event_t*) { if (active_instance_) active_instance_->handle_type_changed(); });
-    lv_xml_register_event_cb(nullptr, "catalog_picker_select_cb",
-        [](lv_event_t*) { if (active_instance_) active_instance_->handle_select_button(); });
-    lv_xml_register_event_cb(nullptr, "catalog_picker_reset_cb",
-        [](lv_event_t*) {
-            if (!active_instance_) return;
-            FilamentCatalogPickerModal* self = active_instance_;
-            if (self->reset_callback_) self->reset_callback_();
-            self->hide();
-        });
+    if (callbacks_registered_)
+        return;
+    lv_xml_register_event_cb(nullptr, "catalog_picker_close_cb", [](lv_event_t*) {
+        if (active_instance_)
+            active_instance_->hide();
+    });
+    lv_xml_register_event_cb(nullptr, "catalog_picker_vendor_changed_cb", [](lv_event_t*) {
+        if (active_instance_)
+            active_instance_->handle_vendor_changed();
+    });
+    lv_xml_register_event_cb(nullptr, "catalog_picker_type_changed_cb", [](lv_event_t*) {
+        if (active_instance_)
+            active_instance_->handle_type_changed();
+    });
+    lv_xml_register_event_cb(nullptr, "catalog_picker_select_cb", [](lv_event_t*) {
+        if (active_instance_)
+            active_instance_->handle_select_button();
+    });
+    lv_xml_register_event_cb(nullptr, "catalog_picker_reset_cb", [](lv_event_t*) {
+        if (!active_instance_)
+            return;
+        FilamentCatalogPickerModal* self = active_instance_;
+        if (self->reset_callback_)
+            self->reset_callback_();
+        self->hide();
+    });
     callbacks_registered_ = true;
 }
 
@@ -50,12 +60,12 @@ void FilamentCatalogPickerModal::show(lv_obj_t* parent, std::optional<std::strin
                                       std::optional<std::vector<std::string>> allowed_types,
                                       SelectCallback on_select) {
     register_callbacks();
-    catalog_ = helix::printer::FilamentCatalog::load_full();  // fresh load per open
+    catalog_ = helix::printer::FilamentCatalog::load_full(); // fresh load per open
     seed_type_ = std::move(seed_type);
     allowed_types_ = std::move(allowed_types);
     on_select_ = std::move(on_select);
     highlighted_id_.clear();
-    Modal::show(parent);   // triggers on_show()
+    Modal::show(parent); // triggers on_show()
 }
 
 void FilamentCatalogPickerModal::on_show() {
@@ -63,34 +73,65 @@ void FilamentCatalogPickerModal::on_show() {
     populate_vendor_dropdown();
     populate_type_dropdown();
     rebuild_product_list();
+    apply_input_surface();
 
-    // Reset row is gated purely on whether a reset callback was set before show()
-    // (preset-editing context) — same gate the retired MaterialPickerMenu used.
-    lv_obj_t* reset_btn = lv_obj_find_by_name(dialog(), "catalog_picker_reset_btn");
-    if (reset_btn) {
-        if (reset_callback_) {
-            lv_obj_remove_flag(reset_btn, LV_OBJ_FLAG_HIDDEN);
+    // "Reset to defaults" is the leading (tertiary) action in the button row; gate it and
+    // its divider on whether a reset callback was set before show() (preset-editing
+    // context) — same gate the retired MaterialPickerMenu used.
+    const bool show_reset = (reset_callback_ != nullptr);
+    for (const char* n : {"btn_tertiary", "div_tertiary"}) {
+        lv_obj_t* o = lv_obj_find_by_name(dialog(), n);
+        if (!o)
+            continue;
+        if (show_reset) {
+            lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(reset_btn, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
         }
     }
 }
 
+void FilamentCatalogPickerModal::apply_input_surface() {
+    if (!dialog())
+        return;
+    // The theme's dialog-input contrast (dropdowns adopt overlay_bg on an elevated dialog
+    // surface) does not land here: theme_apply_current_palette_to_tree() runs inside
+    // Modal::show *before* the picker subtree is fully assembled, so is_on_elevated_surface()
+    // can't yet see the USER_1 dialog ancestor and leaves both dropdowns (and their popup
+    // lists) at elevated_bg — the exact color of the dialog. By on_show the tree is stable,
+    // so re-assert the darker input surface here via the theme token (stays theme-reactive).
+    // The dropdown's list is created in its constructor and persists across open/close, so
+    // styling it now sticks. Mirrors BufferStatusModal's post-reapply fixup.
+    lv_color_t input_bg = theme_manager_get_color("overlay_bg");
+    for (const char* n : {"vendor_dropdown", "type_dropdown"}) {
+        lv_obj_t* dd = lv_obj_find_by_name(dialog(), n);
+        if (!dd)
+            continue;
+        lv_obj_set_style_bg_color(dd, input_bg, LV_PART_MAIN);
+        if (lv_obj_t* list = lv_dropdown_get_list(dd))
+            lv_obj_set_style_bg_color(list, input_bg, LV_PART_MAIN);
+    }
+}
+
 void FilamentCatalogPickerModal::on_hide() {
-    if (active_instance_ == this) active_instance_ = nullptr;
-    catalog_ = helix::printer::FilamentCatalog{};  // free the 356-product catalog; reloaded on next show()
+    if (active_instance_ == this)
+        active_instance_ = nullptr;
+    catalog_ =
+        helix::printer::FilamentCatalog{}; // free the 356-product catalog; reloaded on next show()
 }
 
 std::string FilamentCatalogPickerModal::current_vendor() const {
     lv_obj_t* dd = lv_obj_find_by_name(dialog(), "vendor_dropdown");
-    if (!dd) return {};
+    if (!dd)
+        return {};
     uint32_t sel = lv_dropdown_get_selected(dd);
     return sel < vendor_order_.size() ? vendor_order_[sel] : std::string{};
 }
 
 std::string FilamentCatalogPickerModal::current_type() const {
     lv_obj_t* dd = lv_obj_find_by_name(dialog(), "type_dropdown");
-    if (!dd) return {};
+    if (!dd)
+        return {};
     char buf[64] = {};
     lv_dropdown_get_selected_str(dd, buf, sizeof(buf));
     return buf;
@@ -98,30 +139,35 @@ std::string FilamentCatalogPickerModal::current_type() const {
 
 void FilamentCatalogPickerModal::populate_vendor_dropdown() {
     lv_obj_t* dd = lv_obj_find_by_name(dialog(), "vendor_dropdown");
-    if (!dd) return;
+    if (!dd)
+        return;
     // "Generic" pinned first, then the rest (all_brands() is already sorted+deduped).
     vendor_order_.clear();
     vendor_order_.push_back("Generic");
     for (const auto& b : catalog_.all_brands()) {
-        if (b != "Generic") vendor_order_.push_back(b);
+        if (b != "Generic")
+            vendor_order_.push_back(b);
     }
     std::string options;
     for (size_t i = 0; i < vendor_order_.size(); ++i) {
-        if (i) options += "\n";
+        if (i)
+            options += "\n";
         options += vendor_order_[i];
     }
     lv_dropdown_set_options(dd, options.c_str());
-    lv_dropdown_set_selected(dd, 0);  // Generic
+    lv_dropdown_set_selected(dd, 0); // Generic
 }
 
 void FilamentCatalogPickerModal::populate_type_dropdown() {
     lv_obj_t* dd = lv_obj_find_by_name(dialog(), "type_dropdown");
-    if (!dd) return;
+    if (!dd)
+        return;
     std::vector<std::string> types = catalog_.types_for_brand(current_vendor());
     if (allowed_types_) {
         std::vector<std::string> filtered;
         for (const auto& t : types) {
-            if (std::find(allowed_types_->begin(), allowed_types_->end(), t) != allowed_types_->end())
+            if (std::find(allowed_types_->begin(), allowed_types_->end(), t) !=
+                allowed_types_->end())
                 filtered.push_back(t);
         }
         types.swap(filtered);
@@ -129,9 +175,11 @@ void FilamentCatalogPickerModal::populate_type_dropdown() {
     std::string options;
     int seed_idx = 0;
     for (size_t i = 0; i < types.size(); ++i) {
-        if (i) options += "\n";
+        if (i)
+            options += "\n";
         options += types[i];
-        if (seed_type_ && types[i] == *seed_type_) seed_idx = static_cast<int>(i);
+        if (seed_type_ && types[i] == *seed_type_)
+            seed_idx = static_cast<int>(i);
     }
     lv_dropdown_set_options(dd, options.empty() ? "" : options.c_str());
     lv_dropdown_set_selected(dd, seed_idx);
@@ -139,7 +187,8 @@ void FilamentCatalogPickerModal::populate_type_dropdown() {
 
 void FilamentCatalogPickerModal::rebuild_product_list() {
     lv_obj_t* list = lv_obj_find_by_name(dialog(), "product_list");
-    if (!list) return;
+    if (!list)
+        return;
     helix::ui::safe_clean_children(list);
 
     lv_color_t accent = theme_manager_get_color("primary");
@@ -168,7 +217,7 @@ void FilamentCatalogPickerModal::rebuild_product_list() {
         lv_obj_set_style_bg_color(row, accent, LV_STATE_PRESSED);
         lv_obj_set_style_bg_opa(row, LV_OPA_30, LV_STATE_PRESSED);
         lv_obj_set_style_radius(row, 4, 0);
-        lv_obj_set_name(row, p->id.c_str());  // identity for click handler (L069)
+        lv_obj_set_name(row, p->id.c_str()); // identity for click handler (L069)
 
         lv_obj_t* indicator = lv_label_create(row);
         lv_obj_set_style_text_font(indicator, icon_font, 0);
@@ -189,49 +238,56 @@ void FilamentCatalogPickerModal::rebuild_product_list() {
         lv_obj_remove_flag(name_lbl, LV_OBJ_FLAG_CLICKABLE);
 
         char temps[32];
-        snprintf(temps, sizeof(temps), "%d\xC2\xB0 / %d\xC2\xB0", p->nozzle_recommended, p->bed_temp);
+        snprintf(temps, sizeof(temps), "%d\xC2\xB0 / %d\xC2\xB0", p->nozzle_recommended,
+                 p->bed_temp);
         lv_obj_t* temp_lbl = lv_label_create(row);
         lv_label_set_text(temp_lbl, temps);
         lv_obj_set_style_text_font(temp_lbl, body_font, 0);
         lv_obj_set_style_text_color(temp_lbl, text_color, 0);
         lv_obj_remove_flag(temp_lbl, LV_OBJ_FLAG_CLICKABLE);
 
-        lv_obj_add_event_cb(row, [](lv_event_t* e) {
-            lv_obj_t* row = lv_event_get_current_target_obj(e);
-            if (!row || !active_instance_) return;
-            const char* id = lv_obj_get_name(row);
-            if (id) active_instance_->handle_row_selected(id);
-        }, LV_EVENT_CLICKED, nullptr);
+        lv_obj_add_event_cb(
+            row,
+            [](lv_event_t* e) {
+                lv_obj_t* row = lv_event_get_current_target_obj(e);
+                if (!row || !active_instance_)
+                    return;
+                const char* id = lv_obj_get_name(row);
+                if (id)
+                    active_instance_->handle_row_selected(id);
+            },
+            LV_EVENT_CLICKED, nullptr);
     }
 }
 
 void FilamentCatalogPickerModal::handle_vendor_changed() {
-    highlighted_id_.clear();    // stale row no longer visible under the new vendor
-    populate_type_dropdown();  // vendor changed -> types change
+    highlighted_id_.clear();  // stale row no longer visible under the new vendor
+    populate_type_dropdown(); // vendor changed -> types change
     rebuild_product_list();
 }
 
 void FilamentCatalogPickerModal::handle_type_changed() {
-    highlighted_id_.clear();    // stale row no longer visible under the new type
+    highlighted_id_.clear(); // stale row no longer visible under the new type
     rebuild_product_list();
 }
 
 void FilamentCatalogPickerModal::handle_row_selected(const std::string& product_id) {
     highlighted_id_ = product_id;
-    rebuild_product_list();  // redraw to move the checkmark
+    rebuild_product_list(); // redraw to move the checkmark
 }
 
 void FilamentCatalogPickerModal::handle_select_button() {
     if (highlighted_id_.empty()) {
         spdlog::debug("[FilamentCatalogPicker] Select pressed with no product highlighted");
-        return;  // no-op; user must pick a row first
+        return; // no-op; user must pick a row first
     }
     const helix::printer::EffectiveFilament* ef = catalog_.resolve_id(highlighted_id_);
     if (ef && on_select_) {
-        helix::printer::EffectiveFilament copy = *ef;  // by value — nothing dangles after catalog_ reloads
+        helix::printer::EffectiveFilament copy =
+            *ef; // by value — nothing dangles after catalog_ reloads
         on_select_(copy);
     }
     hide();
 }
 
-}  // namespace helix::ui
+} // namespace helix::ui
