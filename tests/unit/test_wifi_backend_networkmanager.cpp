@@ -42,6 +42,12 @@ class TestableNMBackend : public WifiBackendNetworkManager {
 
     // Friend access allows TestableNMBackend to reach private members.
 
+    /// Reset the connection-transition latch, mirroring what start() does on a
+    /// reused backend (wifi_backend_networkmanager.cpp) so the next poll re-fires
+    /// CONNECTED even if the system was already connected (#1059). Exposed as a
+    /// public hook because free TEST_CASE bodies aren't covered by friendship.
+    void reset_prev_connected() { prev_connected_.store(false); }
+
     /// Simulate one status-poll cycle: update the cached status, then detect
     /// and fire the CONNECTED / DISCONNECTED event if the connection state
     /// transitioned — exactly what status_thread_func() does on each tick.
@@ -667,7 +673,7 @@ TEST_CASE("NM backend: start() resets prev_connected_ so next poll re-detects",
         connect_count = 0;
 
         // Reproduce what start() does on the reused object after a stop/start.
-        backend.prev_connected_.store(false);
+        backend.reset_prev_connected();
 
         backend.simulate_status_poll(true);  // false→true: CONNECTED fires again
         CHECK(connect_count == 1);
