@@ -56,7 +56,7 @@ void FilamentCatalogPickerModal::on_show() {
 
 void FilamentCatalogPickerModal::on_hide() {
     if (active_instance_ == this) active_instance_ = nullptr;
-    // catalog_ stays until next show() reloads it; memory is bounded to one catalog.
+    catalog_ = helix::printer::FilamentCatalog{};  // free the 356-product catalog; reloaded on next show()
 }
 
 std::string FilamentCatalogPickerModal::current_vendor() const {
