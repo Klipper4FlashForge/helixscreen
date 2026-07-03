@@ -17,7 +17,6 @@
 #include "ui_icon_codepoints.h"
 #include "ui_lock_screen.h"
 #include "ui_markdown.h"
-#include "ui_material_picker_menu.h"
 #include "ui_notification_badge.h"
 #include "ui_overlay_temp_graph.h"
 #include "ui_panel_home.h"
@@ -443,8 +442,6 @@ void register_xml_components() {
     register_xml("favorite_macro_config_modal.xml");
     helix::ui::PrinterSwitchMenu::register_callbacks();
     register_xml("printer_switch_menu.xml");
-    helix::ui::MaterialPickerMenu::register_callbacks();
-    register_xml("material_picker_menu.xml");
     register_xml("macro_param_modal.xml");
 
     // Main navigation and panels
@@ -593,7 +590,6 @@ void register_xml_components() {
     register_xml("printer_image_overlay.xml");
     register_xml("hidden_network_modal.xml");
     register_xml("network_test_modal.xml");
-    register_xml("filament_preset_edit_modal.xml");
     register_xml("wifi_network_item.xml");
     register_xml("telemetry_data_overlay.xml");
     register_xml("about_settings_overlay.xml");
