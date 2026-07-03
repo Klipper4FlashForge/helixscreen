@@ -28,7 +28,9 @@
 #include "printer_state.h"
 #include "spoolman_slot_saver.h"
 #include "spoolman_types.h"
+#include "theme_manager.h"
 #include "tool_state.h"
+#include "ui_breakpoint.h"
 
 #include <spdlog/spdlog.h>
 
@@ -629,9 +631,21 @@ void AmsEditModal::render_spool_list(const std::string& filter) {
     // Get spool IDs assigned to other tools (exclude current slot's tool)
     auto in_use = ToolState::instance().assigned_spool_ids(slot_index_);
 
+    // Compact single-line rows on short panels (more rows visible). Keyed on the
+    // same responsive breakpoint the design tokens use (VERTICAL resolution).
+    // Medium (≤550px, e.g. 800x480) and below get compact; Large+ keep the rich
+    // two-line layout. Computed once — the breakpoint is constant per render.
+    lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
+    UiBreakpoint bp =
+        bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj)) : UiBreakpoint::Medium;
+    const bool is_compact = bp <= UiBreakpoint::Medium;
+    const char* attrs[] = {"compact",     is_compact ? "true" : "false",
+                           "detail_flow", is_compact ? "row" : "column",
+                           nullptr,       nullptr};
+
     for (const auto& spool : filtered) {
         lv_obj_t* item =
-            static_cast<lv_obj_t*>(lv_xml_create(spool_list, "spoolman_spool_item", nullptr));
+            static_cast<lv_obj_t*>(lv_xml_create(spool_list, "spoolman_spool_item", attrs));
         if (!item) {
             continue;
         }
