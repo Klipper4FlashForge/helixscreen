@@ -32,12 +32,10 @@ Every task implicitly includes these (from CLAUDE.md + spec, verbatim values):
 
 ---
 
-## Decisions needing confirmation at review
+## Decisions — RESOLVED (Preston, 2026-07-03)
 
-Two spots where implementation reality diverged from the spec's wording — resolve before/at Task 5 & 6:
-
-1. **AMS entry point (Task 5).** The AMS edit modal already has *both* a `vendor_dropdown` and a `material_dropdown` (type), and is a live-edit model. Spec §6 said "replace the material dropdown with a tappable field opening the picker." Plan implements exactly that (honors "still choose type" — the material control *becomes* the richer picker), and adds an optional allowed-types filter so the picker respects the backend material whitelist (`material_list_`). Alternative (lower-touch): keep both dropdowns, add the picker as an additive button. **Recommend the spec approach; flag for confirmation.**
-2. **Preset persistence (Task 6).** Spec §7.2 called for an in-place config migration of `/preset_materials` (string→struct). Plan instead uses an **additive `/preset_filaments` key** (null=generic, object=branded) — old configs load as all-generic with **no migration**, sidestepping the §10 highest-risk item. `/preset_materials` (the 4 type strings) is unchanged. **Recommend additive; flag for confirmation.**
+1. **AMS entry point (Task 5) → DEFERRED.** Keep the existing AMS `material_dropdown` + `vendor_dropdown` as-is for now; do NOT wire the picker into the AMS edit modal this phase. The picker ships via the preset flow (Tasks 6-7). AMS catalog integration becomes a documented Phase-2 follow-up. **Task 5 is not implemented — see its section for the deferral note.**
+2. **Preset persistence (Task 6) → CONFIG MIGRATION** (spec §7.2 as written), not the additive key. Grow `/preset_materials` from a 4-string array to a 4-object array via a versioned migration (`CURRENT_CONFIG_VERSION` 18→19, `migrate_v18_to_v19`). One key, cleaner long-term. **Task 6 rewritten below for the migration approach.**
 
 ---
 
@@ -745,7 +743,7 @@ git commit -m "feat(filament): picker Select emits EffectiveFilament"
 - Consumes: `FilamentCatalogPickerModal` (Task 4), `AmsEditModal::working_info_` (`SlotInfo`), `handle_spool_selected` pattern (`ui_ams_edit_modal.cpp:693-732`).
 - Produces: tapping the material control opens the picker; selecting populates `working_info_` and refreshes via `update_ui()`.
 
-> **Confirm at review:** entry-point approach (see "Decisions needing confirmation" #1). This task implements: make `material_dropdown` a tappable field that opens the picker, seeded with the current material and filtered to `material_list_`. If review prefers keeping the dropdown + adding a button, adjust the XML/handler accordingly — the C++ population logic is identical.
+> **⛔ DEFERRED (Preston, 2026-07-03) — NOT implemented this phase.** Keep the existing AMS `material_dropdown` + `vendor_dropdown` as-is for now. The picker ships via the preset flow (Tasks 6-7); wiring it into the AMS edit modal is a Phase-2 follow-up. The steps below are retained as the reference design for that follow-up — **do not execute them now.** (The picker already carries the `allowed_types` param needed for the AMS whitelist, so no rework of the picker is required when this is picked up.)
 
 - [ ] **Step 1: Add the picker member + a handler to the header**
 
@@ -849,39 +847,50 @@ git add include/ui_ams_edit_modal.h src/ui/ui_ams_edit_modal.cpp ui_xml/ams_edit
 git commit -m "feat(filament): wire catalog picker into AMS slot edit"
 ```
 
-**End of Stage 2a — a working offline branded picker for AMS slots.**
+**End of Stage 2a — the reusable picker core (Tasks 1-4) is complete. AMS integration (Task 5) is deferred to a Phase-2 follow-up per Preston's decision; the picker ships this phase via the preset flow (Stage 2b).**
 
 ---
 
 # STAGE 2b — Preset branded upgrade
 
-## Task 6: `MaterialSettingsManager` branded preset persistence (additive key)
+## Task 6: `MaterialSettingsManager` branded preset persistence (config migration)
+
+**Approach (Preston's decision):** Grow the single `/preset_materials` key from a 4-string array to a 4-object array via a **versioned config migration** (`migrate_v18_to_v19`). No second key. In memory, keep `preset_materials_` (the 4 type strings — `get_preset_materials()` and existing callers stay working) and add a parallel `preset_filaments_` array for branding; both serialize together into the object array.
+
+**On-disk format after migration** (`/preset_materials`):
+```jsonc
+[ { "type": "PLA" },                         // generic slot
+  { "type": "PLA", "filament_id": "orca_bambu_pla_matte",
+    "brand": "Bambu Lab", "name": "PLA Matte", "nozzle": 220, "bed": 55 },  // branded
+  { "type": "ABS" }, { "type": "TPU" } ]
+```
 
 **Files:**
-- Modify: `include/material_settings_manager.h`, `src/system/material_settings_manager.cpp`
+- Modify: `include/material_settings_manager.h`, `src/system/material_settings_manager.cpp`, `include/config.h` (version bump), `src/system/config.cpp` (migration)
 - Test: `tests/unit/test_preset_filament_persistence.cpp` (new)
 
-**Interfaces:**
-- Consumes: `Config` singleton (`/preset_filaments`), `EffectiveFilament`.
-- Produces:
-  - `struct PresetFilament { std::string filament_id, brand, name; int nozzle = 0; int bed = 0; bool is_branded() const { return !filament_id.empty(); } };`
-  - `std::optional<PresetFilament> get_preset_filament(int index) const;`
-  - `void set_preset_filament(int index, const helix::printer::EffectiveFilament& ef);`
-  - `void clear_preset_filament(int index);` (revert a preset to generic)
-  - Existing `set_preset_material(int, string)` also clears the branded entry for that slot.
+**Interfaces produced (Task 7 depends on these exact signatures):**
+- `struct PresetFilament { std::string filament_id, brand, name; int nozzle = 0; int bed = 0; bool is_branded() const { return !filament_id.empty(); } };` (public nested in `MaterialSettingsManager`)
+- `std::optional<PresetFilament> get_preset_filament(int index) const;`
+- `void set_preset_filament(int index, const helix::printer::EffectiveFilament& ef);`
+- `void clear_preset_filament(int index);`
+- `get_preset_materials()` **unchanged** — still returns `std::array<std::string,4>` of types.
+- `set_preset_material(int, string)` also clears that slot's branded entry.
 
-> **Confirm at review:** additive-key approach vs in-place migration (see "Decisions needing confirmation" #2). No config migration is added.
+**Reference (exact current code — from a verified read):**
+- `/preset_materials` today: 4-string array. Load `material_settings_manager.cpp:124-149` (`load_presets_from_config`), save `:151-162` (`save_presets_to_config`), setter `set_preset_material` `:164-171`, defaults `DEFAULT_PRESET_MATERIALS` (`.h:14`), member `preset_materials_` (`.h:77`). `init()` calls `load_presets_from_config()`.
+- Migration: `CURRENT_CONFIG_VERSION = 18` (`config.h:58`). Chain in `run_versioned_migrations()` (`config.cpp:799-844`), each `static void migrate_vN_to_vN1(json&)` in the anon namespace, registered as `if (version < N1) migrate_vN_to_vN1(config);` before the final `config["config_version"] = CURRENT_CONFIG_VERSION;` (`config.cpp:843`). Template to mirror: `migrate_v17_to_v18` (`config.cpp:774-797`) — guards with `contains()`/type checks, logs `spdlog::info("[Config] Migration vN: ...")`, idempotent. Migration test template: `tests/unit/test_config_migration_v18.cpp`.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing tests**
 
-Create `tests/unit/test_preset_filament_persistence.cpp`:
+Create `tests/unit/test_preset_filament_persistence.cpp`. **Use the repo's Catch include `"../catch_amalgamated.hpp"` (NOT `<catch2/...>`)** — verify against a sibling test's first lines:
 ```cpp
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "material_settings_manager.h"
 #include "filament_catalog.h"
 #include "config.h"
 #include "helix_test_fixture.h"
-#include <catch2/catch_test_macros.hpp>
+#include "../catch_amalgamated.hpp"
 
 using helix::MaterialSettingsManager;
 
@@ -899,39 +908,49 @@ TEST_CASE_METHOD(HelixTestFixture, "preset filament round-trips via config", "[m
     REQUIRE(got->brand == "Bambu Lab");
     REQUIRE(got->nozzle == 220);
     REQUIRE(got->bed == 55);
-    // slot 0 stays generic
+    // type kept in lockstep, slot 0 stays generic
+    REQUIRE(mgr.get_preset_materials()[1] == "PLA");
     REQUIRE_FALSE(mgr.get_preset_filament(0).has_value());
 }
 
-TEST_CASE_METHOD(HelixTestFixture, "clearing a preset filament reverts to generic", "[material_settings]") {
+TEST_CASE_METHOD(HelixTestFixture, "set_preset_material clears branding for that slot", "[material_settings]") {
     auto& mgr = MaterialSettingsManager::instance();
     mgr.init();
     helix::printer::EffectiveFilament ef;
     ef.id = "x"; ef.brand = "B"; ef.name = "N"; ef.type = "PETG"; ef.nozzle_recommended = 240; ef.bed_temp = 70;
     mgr.set_preset_filament(2, ef);
     REQUIRE(mgr.get_preset_filament(2).has_value());
-    mgr.clear_preset_filament(2);
+    mgr.set_preset_material(2, "ABS");     // plain type-swap reverts to generic
     REQUIRE_FALSE(mgr.get_preset_filament(2).has_value());
+    REQUIRE(mgr.get_preset_materials()[2] == "ABS");
 }
 
-TEST_CASE_METHOD(HelixTestFixture, "absent /preset_filaments key = all generic", "[material_settings]") {
-    // Fresh config with no /preset_filaments: every slot reads generic (nullopt).
+TEST_CASE_METHOD(HelixTestFixture, "load tolerates legacy bare-string preset_materials", "[material_settings]") {
+    // Defensive: if /preset_materials still holds bare strings (pre-migration or hand-edit),
+    // load must treat each string as {type: string}, not crash.
+    Config* config = Config::get_instance();
+    REQUIRE(config != nullptr);
+    config->get_json("/preset_materials") = nlohmann::json::array({"PLA", "PETG", "ABS", "TPU"});
     auto& mgr = MaterialSettingsManager::instance();
     mgr.init();
+    REQUIRE(mgr.get_preset_materials()[0] == "PLA");
+    REQUIRE(mgr.get_preset_materials()[3] == "TPU");
     for (int i = 0; i < 4; ++i) REQUIRE_FALSE(mgr.get_preset_filament(i).has_value());
 }
 ```
 
+**Also add a migration test** — mirror `tests/unit/test_config_migration_v18.cpp` exactly (same harness for invoking the versioned migration on a hand-built `config_version:18` JSON). Assert: a v18 config whose `/preset_materials` is `["PLA","PETG","ABS","TPU"]` becomes, after migration, an array of 4 OBJECTS each with `type` set to the original string (`[{ "type":"PLA" }, ...]`), and `config_version` becomes 19. Add an idempotency assertion: running it again (or on an already-object array) leaves it unchanged. Put this in the same test file under tag `[material_settings]` (or `[config]` to match the sibling — follow the sibling's tag).
+
 - [ ] **Step 2: Run to confirm failure**
 ```bash
-make test 2>&1 | tail -20
-./build/bin/helix-tests "[material_settings]" 2>&1 | tail -20
+make test; echo "make exit: $?"
+./build/bin/helix-tests "[material_settings]"
 ```
-Expected: FAIL — `set_preset_filament`/`get_preset_filament` don't exist.
+Expected: FAIL/compile-error — `set_preset_filament`/`get_preset_filament`/`PresetFilament` and the migration don't exist. (Do NOT pipe `make` through `tail` — that masks the exit code; L092.)
 
 - [ ] **Step 3: Add the struct + members + declarations to the header**
 
-In `include/material_settings_manager.h`, add near the top of the class (after includes add `#include <optional>`, `#include <array>`, and forward-declare or include `filament_catalog.h`):
+In `include/material_settings_manager.h`, add (`#include <optional>`, `#include <array>`; include or forward-declare `helix::printer::EffectiveFilament` — a forward decl in the `helix::printer` namespace avoids a heavy include). In the public section:
 ```cpp
     struct PresetFilament {
         std::string filament_id;
@@ -946,61 +965,77 @@ In `include/material_settings_manager.h`, add near the top of the class (after i
     void set_preset_filament(int index, const helix::printer::EffectiveFilament& ef);
     void clear_preset_filament(int index);
 ```
-Add the parallel member (next to `preset_materials_`, `.h:77`):
+Parallel member next to `preset_materials_` (`.h:77`):
 ```cpp
     std::array<std::optional<PresetFilament>, 4> preset_filaments_{};
 ```
-And private helpers:
-```cpp
-    void load_preset_filaments_from_config();
-    void save_preset_filaments_to_config();
-```
 
-- [ ] **Step 4: Implement load/save/set/get/clear in the .cpp**
+- [ ] **Step 4: Rewrite load/save for the object format + add set/get/clear**
 
-Model the sparse serialization on `save_to_config()`/`load_from_config()` (`material_settings_manager.cpp:54-116`). Add:
+Replace `load_presets_from_config()` (`material_settings_manager.cpp:124-149`) so it reads the **object** format, tolerating legacy bare strings, and populates BOTH `preset_materials_` (type) and `preset_filaments_` (branding):
 ```cpp
-void MaterialSettingsManager::load_preset_filaments_from_config() {
+void MaterialSettingsManager::load_presets_from_config() {
+    assign_defaults();                       // preset_materials_ = DEFAULT_PRESET_MATERIALS
     for (auto& e : preset_filaments_) e.reset();
     Config* config = Config::get_instance();
-    if (!config || !config->exists("/preset_filaments")) return;  // absent -> all generic
+    if (!config || !config->exists("/preset_materials")) return;
     try {
-        auto& arr = config->get_json("/preset_filaments");
-        if (!arr.is_array()) return;
-        for (int i = 0; i < 4 && i < static_cast<int>(arr.size()); ++i) {
+        auto& arr = config->get_json("/preset_materials");
+        if (!arr.is_array() || arr.size() != 4) return;   // malformed -> keep defaults
+        for (int i = 0; i < 4; ++i) {
             const auto& v = arr[i];
-            if (!v.is_object()) continue;  // null slot = generic
-            PresetFilament pf;
-            if (v.contains("filament_id") && v["filament_id"].is_string())
+            if (v.is_string()) {                          // legacy / defensive
+                std::string s = v.get<std::string>();
+                if (!s.empty()) preset_materials_[i] = s;
+                continue;
+            }
+            if (!v.is_object()) continue;
+            if (v.contains("type") && v["type"].is_string()) {
+                std::string t = v["type"].get<std::string>();
+                if (!t.empty()) preset_materials_[i] = t;
+            }
+            if (v.contains("filament_id") && v["filament_id"].is_string() &&
+                !v["filament_id"].get<std::string>().empty()) {
+                PresetFilament pf;
                 pf.filament_id = v["filament_id"].get<std::string>();
-            if (v.contains("brand") && v["brand"].is_string()) pf.brand = v["brand"].get<std::string>();
-            if (v.contains("name") && v["name"].is_string()) pf.name = v["name"].get<std::string>();
-            if (v.contains("nozzle") && v["nozzle"].is_number_integer()) pf.nozzle = v["nozzle"].get<int>();
-            if (v.contains("bed") && v["bed"].is_number_integer()) pf.bed = v["bed"].get<int>();
-            if (pf.is_branded()) preset_filaments_[i] = pf;
+                if (v.contains("brand") && v["brand"].is_string()) pf.brand = v["brand"].get<std::string>();
+                if (v.contains("name") && v["name"].is_string()) pf.name = v["name"].get<std::string>();
+                if (v.contains("nozzle") && v["nozzle"].is_number_integer()) pf.nozzle = v["nozzle"].get<int>();
+                if (v.contains("bed") && v["bed"].is_number_integer()) pf.bed = v["bed"].get<int>();
+                preset_filaments_[i] = pf;
+            }
         }
     } catch (const std::exception& e) {
-        spdlog::warn("[MaterialSettingsManager] Failed to load preset filaments: {}", e.what());
+        spdlog::warn("[MaterialSettingsManager] Failed to load presets: {}", e.what());
+        assign_defaults();
     }
 }
-
-void MaterialSettingsManager::save_preset_filaments_to_config() {
+```
+Replace `save_presets_to_config()` (`:151-162`) to write the object array:
+```cpp
+void MaterialSettingsManager::save_presets_to_config() {
     Config* config = Config::get_instance();
     if (!config) return;
     nlohmann::json arr = nlohmann::json::array();
     for (int i = 0; i < 4; ++i) {
+        nlohmann::json entry = nlohmann::json::object();
+        entry["type"] = preset_materials_[i];
         if (preset_filaments_[i] && preset_filaments_[i]->is_branded()) {
             const auto& pf = *preset_filaments_[i];
-            arr.push_back({{"filament_id", pf.filament_id}, {"brand", pf.brand},
-                           {"name", pf.name}, {"nozzle", pf.nozzle}, {"bed", pf.bed}});
-        } else {
-            arr.push_back(nullptr);  // generic slot
+            entry["filament_id"] = pf.filament_id;
+            entry["brand"] = pf.brand;
+            entry["name"] = pf.name;
+            entry["nozzle"] = pf.nozzle;
+            entry["bed"] = pf.bed;
         }
+        arr.push_back(entry);
     }
-    config->get_json("/preset_filaments") = arr;
+    config->get_json("/preset_materials") = arr;
     config->save();
 }
-
+```
+Add the new accessors/mutators:
+```cpp
 std::optional<MaterialSettingsManager::PresetFilament>
 MaterialSettingsManager::get_preset_filament(int index) const {
     if (index < 0 || index >= 4) return std::nullopt;
@@ -1014,31 +1049,56 @@ void MaterialSettingsManager::set_preset_filament(
     pf.filament_id = ef.id; pf.brand = ef.brand; pf.name = ef.name;
     pf.nozzle = ef.nozzle_recommended; pf.bed = ef.bed_temp;
     preset_filaments_[index] = pf;
-    preset_materials_[index] = ef.type;   // keep the type string in lockstep
-    save_preset_filaments_to_config();
+    if (!ef.type.empty()) preset_materials_[index] = ef.type;  // type in lockstep
     save_presets_to_config();
 }
 
 void MaterialSettingsManager::clear_preset_filament(int index) {
     if (index < 0 || index >= 4) return;
     preset_filaments_[index].reset();
-    save_preset_filaments_to_config();
+    save_presets_to_config();
 }
 ```
-Call `load_preset_filaments_from_config()` from `init()` (right after `load_presets_from_config()`). In `set_preset_material()` (`:164`) add `preset_filaments_[index].reset(); save_preset_filaments_to_config();` so a plain type-swap reverts to generic. In `reset_preset_materials()` clear all `preset_filaments_` too.
+In `set_preset_material()` (`:164-171`) add `preset_filaments_[index].reset();` before the existing `save_presets_to_config()` call (plain type-swap reverts to generic). In `reset_preset_materials()` (`:173-177`) clear all `preset_filaments_` before saving. (No `preset_filaments_`-specific load/save helpers are needed — everything rides in `load_presets_from_config`/`save_presets_to_config`.)
 
-- [ ] **Step 5: Run tests**
-```bash
-make test 2>&1 | tail -20
-./build/bin/helix-tests "[material_settings]" 2>&1 | tail -20
+- [ ] **Step 5: Add the config migration `v18 → v19`**
+
+In `include/config.h:58` bump `CURRENT_CONFIG_VERSION` to `19`. In `src/system/config.cpp`, add to the anon namespace (mirror `migrate_v17_to_v18` at `:774-797`):
+```cpp
+static void migrate_v18_to_v19(json& config) {
+    // /preset_materials: 4-string array -> 4-object array {"type": <string>}.
+    // Idempotent: skip elements already objects. Never overwrite branding.
+    if (!config.contains("preset_materials") || !config["preset_materials"].is_array()) return;
+    json& arr = config["preset_materials"];
+    for (auto& el : arr) {
+        if (el.is_string()) {
+            json obj = json::object();
+            obj["type"] = el.get<std::string>();
+            el = obj;
+        }
+    }
+    spdlog::info("[Config] Migration v19: preset_materials strings -> objects ({} entries)",
+                 arr.size());
+}
 ```
-Expected: all 3 PASS.
+Register it in `run_versioned_migrations()` before the final `config["config_version"] = CURRENT_CONFIG_VERSION;` line (`:843`):
+```cpp
+    if (version < 19)
+        migrate_v18_to_v19(config);
+```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Run tests**
+```bash
+make test; echo "make exit: $?"
+./build/bin/helix-tests "[material_settings]"
+```
+Expected: all preset + migration tests PASS. Also run `[config]` to confirm no migration-chain regression: `./build/bin/helix-tests "[config]"`.
+
+- [ ] **Step 7: Commit**
 ```bash
 git add include/material_settings_manager.h src/system/material_settings_manager.cpp \
-        tests/unit/test_preset_filament_persistence.cpp
-git commit -m "feat(filament): branded preset persistence (/preset_filaments additive key)"
+        include/config.h src/system/config.cpp tests/unit/test_preset_filament_persistence.cpp
+git commit -m "feat(filament): branded preset persistence via /preset_materials object migration (v18->v19)"
 ```
 
 ---
