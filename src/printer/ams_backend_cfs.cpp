@@ -5,6 +5,7 @@
 
 #include "ui_temperature_utils.h"
 
+#include "filament_catalog.h"
 #include "filament_slot_override.h"
 #include "filament_slot_override_store.h"
 #include "moonraker_error.h"
@@ -13,55 +14,11 @@
 
 #include <spdlog/spdlog.h>
 
-#include <fstream>
-
 #include "hv/json.hpp"
 
 namespace helix::printer {
 
 using json = nlohmann::json;
-
-const CfsMaterialDb& CfsMaterialDb::instance() {
-    static CfsMaterialDb db;
-    return db;
-}
-
-CfsMaterialDb::CfsMaterialDb() {
-    load_database();
-}
-
-void CfsMaterialDb::load_database() {
-    for (const auto& path : {"assets/cfs_materials.json", "../assets/cfs_materials.json",
-                             "/opt/helixscreen/assets/cfs_materials.json"}) {
-        std::ifstream f(path);
-        if (!f.is_open())
-            continue;
-
-        try {
-            auto j = nlohmann::json::parse(f);
-            for (auto& [id, entry] : j.items()) {
-                CfsMaterialInfo info;
-                info.id = id;
-                info.brand = entry.value("brand", "");
-                info.name = entry.value("name", "");
-                info.material_type = entry.value("type", "");
-                info.min_temp = entry.value("min_temp", 0);
-                info.max_temp = entry.value("max_temp", 0);
-                materials_[id] = std::move(info);
-            }
-            spdlog::info("[AMS CFS] Loaded {} materials from {}", materials_.size(), path);
-            return;
-        } catch (const std::exception& e) {
-            spdlog::warn("[AMS CFS] Failed to parse {}: {}", path, e.what());
-        }
-    }
-    spdlog::warn("[AMS CFS] Material database not found");
-}
-
-const CfsMaterialInfo* CfsMaterialDb::lookup(const std::string& id) const {
-    auto it = materials_.find(id);
-    return it != materials_.end() ? &it->second : nullptr;
-}
 
 std::string CfsMaterialDb::strip_code(const std::string& code) {
     if (code == "-1" || code == "None" || code.empty())
@@ -547,7 +504,8 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
         }
     }
 
-    const auto& db = CfsMaterialDb::instance();
+    // Transient: materialize ONLY the cfs-coded slice for this parse pass.
+    const auto cfs_catalog = FilamentCatalog::load_codes("cfs");
 
     // Loop over T1-T4 units
     for (int n = 1; n <= 4; ++n) {
@@ -629,12 +587,12 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
             }
             std::string mat_id = CfsMaterialDb::strip_code(mat_code_raw);
             if (!mat_id.empty()) {
-                auto* mat_info = db.lookup(mat_id);
+                const auto* mat_info = cfs_catalog.resolve_code("cfs", mat_id);
                 if (mat_info) {
-                    slot.material = mat_info->material_type;
+                    slot.material = mat_info->type;
                     slot.brand = mat_info->brand;
-                    slot.nozzle_temp_min = mat_info->min_temp;
-                    slot.nozzle_temp_max = mat_info->max_temp;
+                    slot.nozzle_temp_min = mat_info->nozzle_min;
+                    slot.nozzle_temp_max = mat_info->nozzle_max;
                 } else {
                     // Fallback: check same_material for a human-readable name
                     auto it = same_material_names.find(mat_code_raw);
@@ -1991,8 +1949,9 @@ void AmsBackendCfs::clear_override_locked(int slot_index, SlotInfo& slot) {
     // no-op for this slot afterwards).
     //
     // CFS field policy: brand / color_name / total_weight_g come from the
-    // RFID material database (CfsMaterialInfo lookup in parse_box_status) —
-    // the parse has already written firmware truth for the current spool, so
+    // RFID material database (FilamentCatalog::resolve_code lookup in
+    // parse_box_status) — the parse has already written firmware truth for
+    // the current spool, so
     // we must NOT re-zero those fields. The override's copies disappear with
     // the erase; firmware's copies stay. Matches Snapmaker policy.
     overrides_.erase(slot_index);

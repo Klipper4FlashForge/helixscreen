@@ -3,6 +3,7 @@
 #include "ams_backend_cfs.h"
 #include "ams_types.h"
 #include "config.h"
+#include "filament_catalog.h"
 #include "filament_database.h"
 #include "filament_slot_override.h"
 #include "filament_slot_override_store.h"
@@ -241,20 +242,23 @@ TEST_CASE("CFS data model extensions", "[ams][cfs]") {
 using helix::printer::CfsMaterialDb;
 
 TEST_CASE("CFS material database", "[ams][cfs]") {
-    const auto& db = CfsMaterialDb::instance();
+    // Material resolution now goes through FilamentCatalog's transient
+    // "cfs"-coded slice (Task 5, filament-catalog merge) rather than the
+    // retired CfsMaterialDb::instance()/lookup() material table.
+    const auto catalog = FilamentCatalog::load_codes("cfs");
 
     SECTION("known material lookup") {
-        auto info = db.lookup("01001");
+        const auto* info = catalog.resolve_code("cfs", "01001");
         REQUIRE(info != nullptr);
         REQUIRE(info->brand == "Creality");
         REQUIRE(info->name == "Hyper PLA");
-        REQUIRE(info->material_type == "PLA");
-        REQUIRE(info->min_temp == 190);
-        REQUIRE(info->max_temp == 240);
+        REQUIRE(info->type == "PLA");
+        REQUIRE(info->nozzle_min == 190);
+        REQUIRE(info->nozzle_max == 240);
     }
 
     SECTION("unknown material returns nullptr") {
-        auto info = db.lookup("99999");
+        const auto* info = catalog.resolve_code("cfs", "99999");
         REQUIRE(info == nullptr);
     }
 
@@ -549,8 +553,16 @@ TEST_CASE("CFS backend status parsing", "[ams][cfs]") {
     }
 
     SECTION("slot materials resolved from database") {
+        // material_type[0] == "101001" -> strip_code -> "01001", which
+        // resolves in assets/filaments.json to Creality "Hyper PLA"
+        // (type=PLA, nozzle_min=190, nozzle_max=240). Parity test for the
+        // CfsMaterialDb -> FilamentCatalog decode-path migration (Task 5).
         REQUIRE(info.units[0].slots[0].material == "PLA");
         REQUIRE(info.units[0].slots[0].brand == "Creality");
+        REQUIRE(info.units[0].slots[0].nozzle_temp_min > 0);
+        REQUIRE(info.units[0].slots[0].nozzle_temp_max >= info.units[0].slots[0].nozzle_temp_min);
+        REQUIRE(info.units[0].slots[0].nozzle_temp_min == 190);
+        REQUIRE(info.units[0].slots[0].nozzle_temp_max == 240);
     }
 
     SECTION("slot remaining length") {
