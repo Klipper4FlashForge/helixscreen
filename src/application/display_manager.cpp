@@ -1117,6 +1117,11 @@ bool DisplayManager::has_dimming_control() const {
     return m_backlight && m_backlight->supports_dimming();
 }
 
+bool DisplayManager::is_software_rotated() const {
+    return m_display && m_backend && m_backend->type() == DisplayBackendType::FBDEV &&
+           lv_display_get_rotation(m_display) != LV_DISPLAY_ROTATION_0;
+}
+
 // ============================================================================
 // Touch Calibration
 // ============================================================================

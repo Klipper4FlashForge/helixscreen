@@ -217,9 +217,18 @@ void DisplaySettingsManager::init_subjects() {
     UI_MANAGED_SUBJECT_INT(sleep_while_printing_subject_, sleep_while_printing ? 1 : 0,
                            "settings_sleep_while_printing", subjects_);
 
-    // Animations enabled (default: based on platform capability)
-    bool anim_default = PlatformCapabilities::detect().supports_animations;
-    bool animations = config->get<bool>("/display/animations_enabled", anim_default);
+    // Animations enabled. Default from platform tier, but software-rotated
+    // displays (fbdev + rotation) can't animate smoothly, so the default is
+    // forced off there (#986). An explicit user setting always wins.
+    bool software_rotated = false;
+    if (auto* dm = DisplayManager::instance()) {
+        software_rotated = dm->is_software_rotated();
+    }
+    bool anim_default =
+        animations_default(PlatformCapabilities::detect().supports_animations, software_rotated);
+    bool animations = config->exists("/display/animations_enabled")
+                          ? config->get<bool>("/display/animations_enabled", anim_default)
+                          : anim_default;
     UI_MANAGED_SUBJECT_INT(animations_enabled_subject_, animations ? 1 : 0,
                            "settings_animations_enabled", subjects_);
 

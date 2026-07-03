@@ -303,6 +303,22 @@ class DisplaySettingsManager {
         return &animations_enabled_subject_;
     }
 
+    /**
+     * @brief Resolve the default for the animations_enabled setting.
+     *
+     * Software-rotated displays (fbdev + non-zero rotation) repaint through a
+     * per-frame CPU rotate that makes transition animations jerky, so the
+     * default is forced off there regardless of platform tier (#986). Only a
+     * default — an explicit user setting always wins (see init_subjects()).
+     *
+     * @param platform_supports_animations PlatformCapabilities tier result
+     * @param software_rotated             DisplayManager::is_software_rotated()
+     * @return the default value for animations_enabled
+     */
+    static bool animations_default(bool platform_supports_animations, bool software_rotated) {
+        return software_rotated ? false : platform_supports_animations;
+    }
+
     /** @brief System keyboard subject (integer: 0=built-in, 1=system) */
     lv_subject_t* subject_use_system_keyboard() {
         return &use_system_keyboard_subject_;

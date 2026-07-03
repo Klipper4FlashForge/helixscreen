@@ -297,6 +297,18 @@ class DisplayManager : public helix::ICalibrationSink {
     bool has_dimming_control() const;
 
     /**
+     * @brief Whether the framebuffer is being rotated in software
+     *
+     * True when the active backend is fbdev and a non-zero rotation is applied,
+     * so every flush pays a per-frame CPU rotate over the dirty rect (boards
+     * without a hardware rotation plane). Used to lower the animations default
+     * on those panels, where transitions are otherwise jerky (#986).
+     *
+     * @return true if rotation is done in software on the fbdev backend
+     */
+    bool is_software_rotated() const;
+
+    /**
      * @brief Check if hardware blanking is used for display sleep
      *
      * When true, sleep uses FBIOBLANK + backlight off (AD5M/Allwinner).
