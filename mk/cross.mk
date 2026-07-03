@@ -2438,11 +2438,11 @@ RELEASE_ASSETS := $(filter-out $(RELEASE_ASSETS_EXCLUDE),$(RELEASE_ASSETS_ALL))
 
 # Root-level asset FILES (directly under assets/, not in a subdirectory). The
 # RELEASE_ASSETS dir loop only copies directories, so any loose file must be
-# listed here explicitly. cfs_materials.json is the CFS RFID material database,
-# loaded at runtime by src/printer/ams_backend_cfs.cpp. (mdi-icon-metadata.json.gz
-# is intentionally NOT shipped — dev-only icon-search tooling, see
-# release-clean-assets below.)
-RELEASE_ASSET_FILES := assets/cfs_materials.json
+# listed here explicitly. filaments.json is the unified filament catalog,
+# loaded on demand by FilamentCatalog (src/printer/filament_catalog.cpp).
+# (mdi-icon-metadata.json.gz is intentionally NOT shipped — dev-only
+# icon-search tooling, see release-clean-assets below.)
+RELEASE_ASSET_FILES := assets/filaments.json
 
 # Clean up release assets: remove files that are compiled into the binary or dev-only
 # .c font files are compiled into the binary at build time
