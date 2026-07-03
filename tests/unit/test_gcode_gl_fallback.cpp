@@ -18,6 +18,7 @@
 #include "../catch_amalgamated.hpp"
 
 using helix::gcode::gl_draw_error_is_fatal;
+using helix::gcode::gl_renderer_is_denylisted;
 using helix::gcode::kGLInvalidOperation;
 using helix::gcode::kGLOutOfMemory;
 
@@ -55,4 +56,49 @@ TEST_CASE("gl_draw_error_is_fatal constants match OpenGL ES values", "[gcode][gl
     // numbers so a typo can never silently disable the guard.
     REQUIRE(kGLOutOfMemory == 0x0505u);
     REQUIRE(kGLInvalidOperation == 0x0502u);
+}
+
+// ---------------------------------------------------------------------------
+// Layer 1: proactive GL_RENDERER denylist (issues #966 / #1084 / #1085)
+//
+// The reactive glGetError() guard above cannot catch an in-driver SIGSEGV:
+// control never returns from glDrawArrays, so glGetError() never runs. The
+// denylist gates the GPU path BEFORE the first draw, keying off the
+// GL_RENDERER string that Panfrost/Mali drivers report. These tests FAIL if
+// the predicate is weakened or removed.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("gl_renderer_is_denylisted matches known-bad Panfrost GPUs", "[gcode][gl_fallback]") {
+    // The exact GL_RENDERER strings from the crash reports.
+    REQUIRE(gl_renderer_is_denylisted("Mali-G52 (Panfrost)"));
+    REQUIRE(gl_renderer_is_denylisted("Mali-G31 (Panfrost)"));
+}
+
+TEST_CASE("gl_renderer_is_denylisted is case-insensitive", "[gcode][gl_fallback]") {
+    // Driver casing varies across Mesa versions — the match must not depend on it.
+    REQUIRE(gl_renderer_is_denylisted("PANFROST"));
+    REQUIRE(gl_renderer_is_denylisted("panfrost"));
+}
+
+TEST_CASE("gl_renderer_is_denylisted rejects null and empty", "[gcode][gl_fallback]") {
+    // glGetString(GL_RENDERER) can return nullptr on a broken context.
+    REQUIRE_FALSE(gl_renderer_is_denylisted(nullptr));
+    REQUIRE_FALSE(gl_renderer_is_denylisted(""));
+}
+
+TEST_CASE("gl_renderer_is_denylisted allows known-good GPUs", "[gcode][gl_fallback]") {
+    // Software rasterizer and desktop GPUs render the 3D preview fine.
+    REQUIRE_FALSE(gl_renderer_is_denylisted("llvmpipe (LLVM 15.0.0, 128 bits)"));
+    REQUIRE_FALSE(gl_renderer_is_denylisted("Mesa Intel(R) UHD Graphics (ADL GT2)"));
+    REQUIRE_FALSE(gl_renderer_is_denylisted("Apple M1"));
+}
+
+TEST_CASE("gl_renderer_is_denylisted does not match bare Mali without Panfrost",
+          "[gcode][gl_fallback]") {
+    // A bare "Mali-G52" (proprietary blob driver, not Panfrost) is intentionally
+    // NOT denylisted — some Mali blobs render fine, and over-blocking would
+    // needlessly force 2D. The crash-loop breaker (Layer 2) is the backstop for
+    // any GPU the denylist misses: it promotes to a persistent block after one
+    // real hard-fault, so we don't have to predict every bad string here.
+    REQUIRE_FALSE(gl_renderer_is_denylisted("Mali-G52"));
 }

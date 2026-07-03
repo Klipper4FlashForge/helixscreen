@@ -241,6 +241,18 @@ const std::string& crash_marker_path() {
     return p;
 }
 
+// GPU 3D crash-loop guard file (issues #966 / #1084 / #1085). The 3D GLES
+// renderer writes this immediately before its first GPU draw and removes it
+// after the first successful frame. If the driver hard-faults inside the draw
+// the process dies with the file still present; finding it here at startup
+// means the last session crashed in the GPU path, so we promote it to a
+// persistent block. Routed through the writable config dir like the other
+// markers so it survives RO-rootfs platforms.
+const std::string& gpu_3d_guard_path() {
+    static const std::string p = helix::writable_path("gpu_3d_guard");
+    return p;
+}
+
 // Safe-mode marker written by the watchdog when it detects a deterministic
 // crash loop (CRASH_LOOP_MAX_CRASHES same-signature crashes within the
 // CRASH_LOOP_WINDOW_SEC window). When present at startup, the application
@@ -487,6 +499,22 @@ int Application::run(int argc, char** argv) {
                 out << ts << "\n";
             }
             out << now_epoch << "\n";
+        }
+    }
+
+    // Promote a surviving GPU 3D crash-loop guard to a persistent block. The
+    // guard file only survives if the last session died inside the GPU driver
+    // mid-draw (the renderer clears it after the first successful frame). Set
+    // /display/gpu_3d_blocked so the gcode viewer uses the pure-CPU 2D path,
+    // then remove the guard so a subsequent clean run can re-arm it.
+    {
+        std::error_code ec;
+        if (std::filesystem::exists(gpu_3d_guard_path(), ec)) {
+            spdlog::warn("[Application] GPU 3D crash-loop guard survived — last session likely "
+                         "faulted inside the GPU driver; blocking 3D gcode preview");
+            Config::get_instance()->set<bool>("/display/gpu_3d_blocked", true);
+            Config::get_instance()->save();
+            std::filesystem::remove(gpu_3d_guard_path(), ec);
         }
     }
 

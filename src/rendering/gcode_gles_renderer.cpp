@@ -5,10 +5,14 @@
 
 #ifdef ENABLE_GLES_3D
 
+#include "data_root_resolver.h"
 #include "gcode_gl_fallback.h"
 #include "runtime_config.h"
 
 #include <spdlog/spdlog.h>
+
+#include <filesystem>
+#include <fstream>
 
 // GL backend selection: SDL_GL on desktop (LV_USE_SDL), EGL+GBM on embedded
 #if LV_USE_SDL
@@ -1036,6 +1040,12 @@ void GCodeGLESRenderer::render(lv_layer_t* layer, const ParsedGCodeFile& gcode,
         }
     }
 
+    // Sticky bail: once a fatal GL error or a denylisted GPU has disabled the
+    // GPU path this session, never issue another draw. The viewer polls
+    // render_failed() and falls back to the pure-CPU 2D renderer.
+    if (gl_render_failed_)
+        return;
+
     // No geometry loaded
     if (!geometry_)
         return;
@@ -1048,6 +1058,23 @@ void GCodeGLESRenderer::render(lv_layer_t* layer, const ParsedGCodeFile& gcode,
 #endif
     if (!guard.ok())
         return;
+
+    // Layer 1 — proactive GL_RENDERER denylist (issues #966 / #1084 / #1085).
+    // Evaluated exactly once, now that the GL context is current so GL_RENDERER
+    // is valid. Known-bad Mali/Panfrost GPUs SIGSEGV inside glDrawArrays, which
+    // the reactive glGetError() guard cannot catch — bail before the first draw.
+    if (!gpu_checked_) {
+        gpu_checked_ = true;
+        const char* renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+        spdlog::info("[GCode GLES] GL_RENDERER: {}", renderer ? renderer : "(null)");
+        if (gl_renderer_is_denylisted(renderer)) {
+            spdlog::error("[GCode GLES] GPU '{}' is denylisted (known to fault inside the driver) "
+                          "— disabling GPU rendering, falling back to 2D",
+                          renderer ? renderer : "(null)");
+            gl_render_failed_ = true;
+            return;
+        }
+    }
 
     // Incremental VBO upload: upload a time-budgeted batch of layers per frame
     if (!geometry_uploaded_ && geometry_) {
@@ -1131,6 +1158,12 @@ void GCodeGLESRenderer::render(lv_layer_t* layer, const ParsedGCodeFile& gcode,
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
+    // Layer 2 — crash-loop breaker. Arm the guard file immediately before the
+    // real GPU draw; if the driver hard-faults inside render_to_fbo the process
+    // dies with the file still present and the next startup promotes it to a
+    // persistent block. Cleared right after the first successful blit.
+    arm_gpu_guard();
+
     // Render to FBO
     render_to_fbo(gcode, camera);
 
@@ -1138,6 +1171,8 @@ void GCodeGLESRenderer::render(lv_layer_t* layer, const ParsedGCodeFile& gcode,
 
     // Read pixels from FBO and blit to LVGL
     blit_to_lvgl(layer, widget_coords);
+
+    clear_gpu_guard();
 
     auto t2 = std::chrono::high_resolution_clock::now();
 
@@ -1147,6 +1182,41 @@ void GCodeGLESRenderer::render(lv_layer_t* layer, const ParsedGCodeFile& gcode,
     auto blit_ms = std::chrono::duration<float, std::milli>(t2 - t1).count();
     spdlog::trace("[GCode GLES] gpu={:.1f}ms, blit={:.1f}ms, triangles={}", gpu_ms, blit_ms,
                   triangles_rendered_);
+}
+
+// ============================================================
+// GPU crash-loop breaker (Layer 2, issues #966 / #1084 / #1085)
+// ============================================================
+
+void GCodeGLESRenderer::arm_gpu_guard() {
+    if (gpu_guard_armed_)
+        return;
+    gpu_guard_armed_ = true;
+
+    const std::string path = helix::writable_path("gpu_3d_guard");
+    std::ofstream guard(path, std::ios::out | std::ios::trunc);
+    if (guard.is_open()) {
+        guard << "1";
+        spdlog::debug("[GCode GLES] Armed GPU crash-loop guard: {}", path);
+    } else {
+        spdlog::warn("[GCode GLES] Could not write GPU crash-loop guard: {}", path);
+    }
+}
+
+void GCodeGLESRenderer::clear_gpu_guard() {
+    if (!gpu_guard_armed_ || gpu_guard_cleared_)
+        return;
+    gpu_guard_cleared_ = true;
+
+    const std::string path = helix::writable_path("gpu_3d_guard");
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    if (ec) {
+        spdlog::warn("[GCode GLES] Could not remove GPU crash-loop guard {}: {}", path,
+                     ec.message());
+    } else {
+        spdlog::debug("[GCode GLES] Cleared GPU crash-loop guard after first successful frame");
+    }
 }
 
 // ============================================================

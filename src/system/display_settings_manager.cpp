@@ -703,6 +703,10 @@ void DisplaySettingsManager::set_gcode_render_mode(int mode) {
 
     Config* config = Config::get_instance();
     config->set<int>("/display/gcode_render_mode", clamped);
+    // An explicit user render-mode pick re-enables the GPU path: clear the
+    // persistent crash-loop block (issues #966 / #1084 / #1085) so the user can
+    // retry 3D even after a prior driver crash promoted /display/gpu_3d_blocked.
+    config->set<bool>("/display/gpu_3d_blocked", false);
     config->save();
 
     static const char* MODE_NAMES[] = {"Auto", "3D", "2D", "Thumbnail Only"};
