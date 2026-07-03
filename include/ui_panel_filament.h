@@ -4,6 +4,7 @@
 #pragma once
 
 #include "ui_ams_edit_modal.h"
+#include "ui_material_picker_menu.h"
 #include "ui_observer_guard.h"
 #include "ui_panel_base.h"
 
@@ -14,8 +15,16 @@
 #include "subject_managed_panel.h"
 #include "ui/temperature_observer_bundle.h"
 
+#include <array>
+#include <string>
+
 // Forward declarations
 class TemperatureService;
+
+namespace helix::filament_presets {
+// Pure validation for a preset reassignment: slot in [0,4), non-empty name, known material.
+bool validate_reassignment(int slot, const std::string& material);
+} // namespace helix::filament_presets
 
 /**
  * @file ui_panel_filament.h
@@ -167,6 +176,24 @@ class FilamentPanel : public PanelBase {
         temp_control_panel_ = tcp;
     }
 
+    /**
+     * @brief Reassign the material a preset slot represents
+     * @param slot Preset slot index (0=PLA-position, 1=PETG-position, 2=ABS-position, 3=TPU-position)
+     * @param material Material name (must exist in the filament database)
+     */
+    void reassign_preset(int slot, const std::string& material);
+
+    /**
+     * @brief Restore all 4 preset slots to the default PLA/PETG/ABS/TPU materials
+     */
+    void reset_presets_to_defaults();
+
+    /**
+     * @brief Handle a long-press on a preset button: opens the material picker
+     * @param slot Preset slot index that was long-pressed
+     */
+    void handle_preset_longpress(int slot);
+
   private:
     //
     // === Subjects (owned by this panel) ===
@@ -252,6 +279,16 @@ class FilamentPanel : public PanelBase {
     // Preset button temperature label subjects (e.g., "210°C / 60°C")
     lv_subject_t preset_temps_subjects_[4];
     char preset_temps_bufs_[4][24];
+
+    // Runtime-reassignable preset material per button (default PLA/PETG/ABS/TPU).
+    std::array<std::string, 4> preset_materials_ = {"PLA", "PETG", "ABS", "TPU"};
+
+    // Preset button NAME label subjects (e.g. "PLA"); parallel to preset_temps_subjects_.
+    lv_subject_t preset_name_subjects_[4];
+    char preset_name_bufs_[4][24];
+
+    // Anchored material picker shown on long-press.
+    helix::ui::MaterialPickerMenu material_picker_;
 
     // Subject storage buffers
     char temp_display_buf_[32];
@@ -373,6 +410,7 @@ class FilamentPanel : public PanelBase {
     void update_safety_state();
     void update_preset_buttons_visual();
     void update_preset_button_temps();   ///< Update preset button labels from filament DB
+    void update_preset_button_labels();  ///< Update preset button NAME labels from preset_materials_
     void check_and_auto_select_preset(); ///< Auto-select preset if targets match
     void update_all_temps();             ///< Unified handler for temp observer bundle
     void check_pending_preheat();        ///< Called from update_all_temps()
@@ -447,6 +485,12 @@ class FilamentPanel : public PanelBase {
     static void on_preset_abs_clicked(lv_event_t* e);
     static void on_preset_tpu_clicked(lv_event_t* e);
     static void on_preset_spool_clicked(lv_event_t* e);
+
+    // Material preset long-press callbacks (XML event_cb) — opens the material picker
+    static void on_preset_pla_hold(lv_event_t* e);
+    static void on_preset_petg_hold(lv_event_t* e);
+    static void on_preset_abs_hold(lv_event_t* e);
+    static void on_preset_tpu_hold(lv_event_t* e);
 
     // Temperature tap callbacks (XML event_cb)
     static void on_nozzle_temp_tap_clicked(lv_event_t* e);
