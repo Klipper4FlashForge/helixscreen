@@ -15,6 +15,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -222,7 +223,12 @@ class WifiBackendNetworkManager : public WifiBackend {
 
     // Status polling
     void status_thread_func();
-    ConnectionStatus poll_status_now(); // Actual nmcli calls (background thread only)
+    // Actual nmcli calls (background thread only). Returns nullopt when the
+    // underlying `device show` query fails/returns nothing — a transient nmcli
+    // or popen error, distinct from a genuine disconnected state — so callers
+    // can keep the last-known status instead of reporting a false disconnect
+    // (prestonbrown/helixscreen#1059).
+    std::optional<ConnectionStatus> poll_status_now();
     void request_status_refresh();      // Wake status thread for immediate poll
 };
 

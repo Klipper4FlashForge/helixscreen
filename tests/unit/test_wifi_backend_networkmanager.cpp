@@ -59,8 +59,11 @@ class TestableNMBackend : public WifiBackendNetworkManager {
             cached_status_ = st;
         }
 
+        // prev_connected_ is maintained inside fire_event() (single source of
+        // truth), so compare against a plain load and let fire_event() do the
+        // store — mirroring production status_thread_func().
         bool now = st.connected;
-        bool was = prev_connected_.exchange(now);
+        bool was = prev_connected_.load();
         std::string event;
         if (now && !was) {
             event = "CONNECTED";
@@ -644,25 +647,26 @@ TEST_CASE("NM backend: status poll fires CONNECTED/DISCONNECTED on transitions",
 // Status poll transition detection — prev_connected_ reset on stop
 // ============================================================================
 
-TEST_CASE("NM backend: stop resets prev_connected_ so next start re-detects",
+TEST_CASE("NM backend: start() resets prev_connected_ so next poll re-detects",
           "[network][nm][status][events]") {
-    // When the backend is stopped and restarted, prev_connected_ resets to
-    // false (via member initializer), ensuring the first poll after restart
-    // fires CONNECTED if the system is still connected (no stale state).
+    // The backend object is REUSED across a WiFi off/on toggle
+    // (WiFiManager::set_enabled calls backend_->stop() then backend_->start()
+    // on the same instance) — the member is NOT recreated. start() therefore
+    // explicitly resets prev_connected_ to false, so the first poll after a
+    // restart re-fires CONNECTED if the system is still connected and re-notifies
+    // observers (fixes the stale-icon-after-toggle bug, #1059). Here we drive
+    // that reset directly since start() needs a live NetworkManager.
     TestableNMBackend backend;
 
     int connect_count = 0;
     backend.register_event_callback("CONNECTED",
                                     [&](const std::string&) { connect_count++; });
 
-    SECTION("stop + simulate_poll fires CONNECTED on next disconnected->connected") {
+    SECTION("reset + simulate_poll fires CONNECTED on next disconnected->connected") {
         backend.simulate_status_poll(true);  // CONNECTED fires, prev_=true
         connect_count = 0;
 
-        // Simulate stop: prev_connected_ is default-initialised to false on
-        // the next backend instance. The real WifiBackendNetworkManager::stop()
-        // destroys the status thread; the member is recreated on next start.
-        // For this test we manually reset.
+        // Reproduce what start() does on the reused object after a stop/start.
         backend.prev_connected_.store(false);
 
         backend.simulate_status_poll(true);  // false→true: CONNECTED fires again

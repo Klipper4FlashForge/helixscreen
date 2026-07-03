@@ -226,7 +226,14 @@ void NetworkWidget::detect_network_type(bool force) {
     // CONNECTED/DISCONNECTED events are reflected even when current_network_
     // is already Wifi — fixes stale connected icon after disconnect and delayed
     // initial connection detection (prestonbrown/helixscreen#1059).
-    if (force || current_network_ == NetworkType::Unknown ||
+    //
+    // But do NOT force when we're already on Ethernet: Ethernet is the highest
+    // priority state, and synchronously applying the WiFi/Disconnected fallback
+    // would flip the icon away from Ethernet until the async probe re-upgrades
+    // it — a visible Ethernet -> (WiFi/Disconnected) -> Ethernet flicker on
+    // every WiFi event. The async probe below still keeps Ethernet current.
+    if ((force && current_network_ != NetworkType::Ethernet) ||
+        current_network_ == NetworkType::Unknown ||
         (backend_ready_ && current_network_ == NetworkType::Disconnected)) {
         apply_wifi_fallback();
     }
