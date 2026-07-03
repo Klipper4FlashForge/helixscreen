@@ -5,10 +5,13 @@
 
 #include "filament_database.h"
 
+#include <array>
 #include <string>
 #include <unordered_map>
 
 namespace helix {
+
+inline constexpr std::array<const char*, 4> DEFAULT_PRESET_MATERIALS{"PLA", "PETG", "ABS", "TPU"};
 
 /**
  * @brief Manages user overrides for material temperature settings
@@ -47,6 +50,17 @@ class MaterialSettingsManager {
         return overrides_;
     }
 
+    /** @brief Get the 4 preset materials assigned to the quick-material buttons */
+    std::array<std::string, 4> get_preset_materials() const {
+        return preset_materials_;
+    }
+
+    /** @brief Assign a material name to a preset slot (0-3); saves to config */
+    void set_preset_material(int index, const std::string& material);
+
+    /** @brief Restore all preset slots to DEFAULT_PRESET_MATERIALS; saves to config */
+    void reset_preset_materials();
+
   private:
     friend class TestAccess;
     MaterialSettingsManager() = default;
@@ -54,8 +68,11 @@ class MaterialSettingsManager {
 
     void load_from_config();
     void save_to_config();
+    void load_presets_from_config();
+    void save_presets_to_config();
 
     std::unordered_map<std::string, filament::MaterialOverride> overrides_;
+    std::array<std::string, 4> preset_materials_ = {"PLA", "PETG", "ABS", "TPU"};
     bool initialized_ = false;
 };
 

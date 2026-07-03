@@ -13,6 +13,7 @@ class TestAccess {
   public:
     static void reset(MaterialSettingsManager& mgr) {
         mgr.overrides_.clear();
+        mgr.preset_materials_ = {"PLA", "PETG", "ABS", "TPU"};
         mgr.initialized_ = false;
     }
 };
@@ -371,4 +372,64 @@ TEST_CASE_METHOD(MaterialSettingsFixture, "get_all_overrides returns all set ove
     // Clean up
     MaterialSettingsManager::instance().clear_override("PLA");
     MaterialSettingsManager::instance().clear_override("ABS");
+}
+
+// ============================================================================
+// Preset materials tests
+// ============================================================================
+
+TEST_CASE_METHOD(MaterialSettingsFixture, "MaterialSettingsManager preset defaults when unset",
+                 "[material_settings][presets]") {
+    Config::get_instance()->get_json("/preset_materials") =
+        nlohmann::json(); // null → no valid presets
+    MaterialSettingsManager::instance().init();
+    auto p = MaterialSettingsManager::instance().get_preset_materials();
+    CHECK(p[0] == "PLA");
+    CHECK(p[1] == "PETG");
+    CHECK(p[2] == "ABS");
+    CHECK(p[3] == "TPU");
+}
+
+TEST_CASE_METHOD(MaterialSettingsFixture, "MaterialSettingsManager preset set/get and persistence",
+                 "[material_settings][presets]") {
+    Config::get_instance()->get_json("/preset_materials") = nlohmann::json(); // start clean
+    MaterialSettingsManager::instance().init();
+
+    MaterialSettingsManager::instance().set_preset_material(1, "PC");
+    CHECK(MaterialSettingsManager::instance().get_preset_materials()[1] == "PC");
+
+    // out-of-range and empty are no-ops
+    MaterialSettingsManager::instance().set_preset_material(99, "PA");
+    MaterialSettingsManager::instance().set_preset_material(0, "");
+    CHECK(MaterialSettingsManager::instance().get_preset_materials()[0] == "PLA");
+
+    // Simulate a fresh process: reset the singleton, reload from persisted config
+    TestAccess::reset(MaterialSettingsManager::instance());
+    MaterialSettingsManager::instance().init();
+    CHECK(MaterialSettingsManager::instance().get_preset_materials()[1] == "PC");
+}
+
+TEST_CASE_METHOD(MaterialSettingsFixture, "MaterialSettingsManager preset reset restores defaults",
+                 "[material_settings][presets]") {
+    Config::get_instance()->get_json("/preset_materials") = nlohmann::json();
+    MaterialSettingsManager::instance().init();
+    MaterialSettingsManager::instance().set_preset_material(0, "PA");
+    MaterialSettingsManager::instance().reset_preset_materials();
+    auto p = MaterialSettingsManager::instance().get_preset_materials();
+    CHECK(p[0] == "PLA");
+    CHECK(p[3] == "TPU");
+}
+
+TEST_CASE_METHOD(MaterialSettingsFixture,
+                 "MaterialSettingsManager preset malformed config falls back to defaults",
+                 "[material_settings][presets]") {
+    // Non-string / wrong-size array must not throw and must yield defaults.
+    Config::get_instance()->get_json("/preset_materials") = nlohmann::json::array({1, 2});
+    TestAccess::reset(MaterialSettingsManager::instance());
+    MaterialSettingsManager::instance().init();
+    auto p = MaterialSettingsManager::instance().get_preset_materials();
+    CHECK(p[0] == "PLA");
+    CHECK(p[1] == "PETG");
+    CHECK(p[2] == "ABS");
+    CHECK(p[3] == "TPU");
 }

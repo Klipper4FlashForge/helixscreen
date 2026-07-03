@@ -19,6 +19,7 @@ void MaterialSettingsManager::init() {
         return;
     }
     load_from_config();
+    load_presets_from_config();
     initialized_ = true;
     spdlog::info("[MaterialSettingsManager] Initialized with {} override(s)", overrides_.size());
 }
@@ -112,6 +113,67 @@ void MaterialSettingsManager::save_to_config() {
 
     config->get_json("/material_overrides") = overrides_json;
     config->save();
+}
+
+void MaterialSettingsManager::load_presets_from_config() {
+    // Start from defaults; only override slots the stored config validly provides.
+    for (int i = 0; i < 4; ++i) {
+        preset_materials_[i] = DEFAULT_PRESET_MATERIALS[i];
+    }
+
+    Config* config = Config::get_instance();
+    if (!config || !config->exists("/preset_materials")) {
+        return;
+    }
+    try {
+        auto& arr = config->get_json("/preset_materials");
+        if (!arr.is_array() || arr.size() != 4) {
+            return; // malformed → keep defaults
+        }
+        for (int i = 0; i < 4; ++i) {
+            if (arr[i].is_string()) {
+                std::string v = arr[i].get<std::string>();
+                if (!v.empty()) {
+                    preset_materials_[i] = v;
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        spdlog::warn("[MaterialSettingsManager] Failed to load presets: {}", e.what());
+        for (int i = 0; i < 4; ++i) {
+            preset_materials_[i] = DEFAULT_PRESET_MATERIALS[i];
+        }
+    }
+}
+
+void MaterialSettingsManager::save_presets_to_config() {
+    Config* config = Config::get_instance();
+    if (!config) {
+        return;
+    }
+    nlohmann::json arr = nlohmann::json::array();
+    for (int i = 0; i < 4; ++i) {
+        arr.push_back(preset_materials_[i]);
+    }
+    config->get_json("/preset_materials") = arr;
+    config->save();
+}
+
+void MaterialSettingsManager::set_preset_material(int index, const std::string& material) {
+    if (index < 0 || index >= 4 || material.empty()) {
+        return;
+    }
+    preset_materials_[index] = material;
+    save_presets_to_config();
+    spdlog::info("[MaterialSettingsManager] Preset slot {} set to {}", index, material);
+}
+
+void MaterialSettingsManager::reset_preset_materials() {
+    for (int i = 0; i < 4; ++i) {
+        preset_materials_[i] = DEFAULT_PRESET_MATERIALS[i];
+    }
+    save_presets_to_config();
+    spdlog::info("[MaterialSettingsManager] Presets reset to defaults");
 }
 
 } // namespace helix
