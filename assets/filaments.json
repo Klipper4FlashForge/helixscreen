@@ -1134,7 +1134,7 @@
       "nozzle": 250,
       "bed": 100,
       "source": "orca",
-      "nozzle_min": 260,
+      "nozzle_min": 250,
       "nozzle_max": 290,
       "density": 1.04,
       "orca_id": "OGFC00"
@@ -1147,7 +1147,7 @@
       "nozzle": 250,
       "bed": 100,
       "source": "orca",
-      "nozzle_min": 260,
+      "nozzle_min": 250,
       "nozzle_max": 290,
       "density": 1.19,
       "orca_id": "OGFC01"
@@ -1595,7 +1595,7 @@
       "bed": 80,
       "source": "orca",
       "nozzle_min": 220,
-      "nozzle_max": 260,
+      "nozzle_max": 275,
       "density": 1.27,
       "orca_id": "CXPCTB15"
     },
@@ -2485,7 +2485,7 @@
       "bed": 90,
       "source": "orca",
       "nozzle_min": 245,
-      "nozzle_max": 260,
+      "nozzle_max": 270,
       "density": 1.24,
       "orca_id": "FDPLAST01"
     },
@@ -3408,7 +3408,7 @@
       "bed": 55,
       "source": "orca",
       "nozzle_min": 220,
-      "nozzle_max": 250,
+      "nozzle_max": 300,
       "density": 0.93,
       "orca_id": "FILL3D004"
     },
@@ -3421,7 +3421,7 @@
       "bed": 55,
       "source": "orca",
       "nozzle_min": 220,
-      "nozzle_max": 250,
+      "nozzle_max": 300,
       "density": 0.97,
       "orca_id": "FILL3D005"
     },
@@ -4115,6 +4115,8 @@
       "nozzle": 200,
       "bed": 60,
       "source": "orca",
+      "nozzle_min": 200,
+      "nozzle_max": 200,
       "orca_id": "OGFR99"
     },
     {
@@ -4164,7 +4166,7 @@
       "nozzle": 250,
       "bed": 100,
       "source": "orca",
-      "nozzle_min": 260,
+      "nozzle_min": 250,
       "nozzle_max": 290,
       "density": 1.04,
       "orca_id": "OGFC99"

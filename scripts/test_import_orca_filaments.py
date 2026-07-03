@@ -51,6 +51,43 @@ def test_build_product_thin_when_range_matches_type():
     assert p["source"] == "orca"
 
 
+def test_build_product_widens_range_when_nozzle_outside_recommended_range():
+    # Some upstream Orca profiles set nozzle_temperature outside their own
+    # range_low/range_high (e.g. a "recommended" temp bumped up without the
+    # range being updated). The emitted product must stay internally coherent.
+    resolved = {
+        "filament_type": ["PLA"],
+        "filament_vendor": ["Acme"],
+        "filament_id": "ACMEPLAHOT",
+        "_product_name": "PLA Hot",
+        "nozzle_temperature": ["275"],
+        "nozzle_temperature_range_low": ["220"],
+        "nozzle_temperature_range_high": ["260"],
+    }
+    p = imp.build_product(resolved, base_type_range=(190, 220))
+    assert p["nozzle"] == 275
+    assert "nozzle_min" in p and "nozzle_max" in p
+    assert p["nozzle_min"] <= 275 <= p["nozzle_max"]
+    assert p["nozzle_max"] >= 275  # widened, not left at the stale 260
+
+
+def test_build_product_emits_range_for_unmapped_type_with_no_base_range():
+    # An unmapped filament type (e.g. EVA) has no base_type_range entry, and
+    # this profile also has no explicit nozzle_temperature_range_*. The
+    # product must still get an explicit, coherent nozzle_min/nozzle_max.
+    resolved = {
+        "filament_type": ["EVA"],
+        "filament_vendor": ["Qidi"],
+        "filament_id": "QIDIEVA",
+        "_product_name": "Generic EVA",
+        "nozzle_temperature": ["230"],
+    }
+    p = imp.build_product(resolved, base_type_range=None)
+    assert p["nozzle"] == 230
+    assert "nozzle_min" in p and "nozzle_max" in p
+    assert p["nozzle_min"] <= 230 <= p["nozzle_max"]
+
+
 def test_build_catalog_unions_orca_and_seed():
     seed = [{"id": "creality-hyper-pla", "brand": "Creality", "name": "Hyper PLA",
              "type": "PLA", "nozzle": 215, "codes": {"cfs": "01001"}, "source": "cfs-seed"}]

@@ -116,10 +116,21 @@ def build_product(resolved: dict, base_type_range):
         "bed": collapse_bed(resolved),
         "source": "orca",
     }
-    # Emit explicit range only when it differs from the base type's range.
-    if nmin is not None and nmax is not None and (nmin, nmax) != base_type_range:
-        product["nozzle_min"] = nmin
-        product["nozzle_max"] = nmax
+    # Reconcile so nozzle_min <= nozzle <= nozzle_max ALWAYS. Orca's
+    # nozzle_temperature is the real print temp; range_low/high are soft hints
+    # that some upstream profiles set inconsistently (recommended outside range),
+    # and unmapped types have no base range at all.
+    lo, hi = nmin, nmax
+    if base_type_range is not None:
+        lo = base_type_range[0] if lo is None else lo
+        hi = base_type_range[1] if hi is None else hi
+    if nozzle is not None:
+        lo = nozzle if lo is None else min(lo, nozzle)
+        hi = nozzle if hi is None else max(hi, nozzle)
+    # Emit an explicit range unless it exactly matches the base type range (thin).
+    if lo is not None and hi is not None and (lo, hi) != base_type_range:
+        product["nozzle_min"] = lo
+        product["nozzle_max"] = hi
     density = resolved.get("filament_density")
     dval = first_scalar(density)
     if dval and float(dval) > 0:
