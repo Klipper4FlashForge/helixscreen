@@ -21,6 +21,7 @@
 #include "ui_overlay_qr_scanner.h"
 #include "ui_panel_common.h"
 #include "ui_spool_canvas.h"
+#include "ui_swatch.h"
 #include "ui_utils.h"
 
 #include "ams_backend.h"
@@ -1027,12 +1028,14 @@ void AmsPanel::update_slot_colors() {
         lv_subject_t* color_subject = AmsState::instance().get_slot_color_subject(backend_idx, i);
         if (color_subject) {
             uint32_t rgb = static_cast<uint32_t>(lv_subject_get_int(color_subject));
-            lv_color_t color = lv_color_hex(rgb);
 
-            // Find color swatch within slot
+            // Find color swatch within slot. Multi-color spools render as
+            // diagonal chunks; single-color falls back to a solid fill.
             lv_obj_t* swatch = lv_obj_find_by_name(slot_widgets_[i], "color_swatch");
             if (swatch) {
-                lv_obj_set_style_bg_color(swatch, color, 0);
+                std::string multi =
+                    backend ? backend->get_slot_info(i).multi_color_hexes : std::string();
+                helix::ui::apply_swatch_color(swatch, rgb, multi);
             }
         }
 

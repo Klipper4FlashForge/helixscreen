@@ -218,25 +218,8 @@
     <px name="header_height_xlarge" value="68"/>
     <px name="header_height_xxlarge" value="80"/>
 
-    <!-- Spoolman spool-picker row (AmsEditModal filament picker) -->
-    <!-- spool_row_min_height: touch-target min height. _small=44 is the hard
-         floor for a reliable touch target; scales up on larger panels. -->
-    <px name="spool_row_min_height_micro" value="40"/>
-    <px name="spool_row_min_height_tiny" value="42"/>
-    <px name="spool_row_min_height_small" value="44"/>
-    <px name="spool_row_min_height_medium" value="52"/>
-    <px name="spool_row_min_height_large" value="60"/>
-    <px name="spool_row_min_height_xlarge" value="68"/>
-    <px name="spool_row_min_height_xxlarge" value="76"/>
-
-    <!-- spool_swatch_size: color swatch square edge. -->
-    <px name="spool_swatch_size_micro" value="20"/>
-    <px name="spool_swatch_size_tiny" value="22"/>
-    <px name="spool_swatch_size_small" value="22"/>
-    <px name="spool_swatch_size_medium" value="28"/>
-    <px name="spool_swatch_size_large" value="32"/>
-    <px name="spool_swatch_size_xlarge" value="36"/>
-    <px name="spool_swatch_size_xxlarge" value="40"/>
+    <!-- NOTE: spool_row_min_height_* and spool_swatch_size_* are component-scoped
+         in ui_xml/spoolman_spool_item.xml (their only consumer). -->
 
     <!-- ===================================================================== -->
     <!-- Responsive Panel Heights (print status, file detail, history)         -->

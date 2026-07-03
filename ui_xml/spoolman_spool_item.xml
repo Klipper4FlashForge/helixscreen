@@ -10,6 +10,27 @@
     <prop name="compact" type="boolean" default="false"/>
     <prop name="detail_flow" type="string" default="column"/>
   </api>
+  <consts>
+    <!-- Picker-row sizing. Component-scoped (only this component uses them),
+         resolved responsively as #spool_row_min_height / #spool_swatch_size. -->
+    <!-- spool_row_min_height: touch-target min height. _small=44 is the hard
+         floor for a reliable touch target; scales up on larger panels. -->
+    <px name="spool_row_min_height_micro" value="40"/>
+    <px name="spool_row_min_height_tiny" value="42"/>
+    <px name="spool_row_min_height_small" value="44"/>
+    <px name="spool_row_min_height_medium" value="46"/>
+    <px name="spool_row_min_height_large" value="60"/>
+    <px name="spool_row_min_height_xlarge" value="68"/>
+    <px name="spool_row_min_height_xxlarge" value="76"/>
+    <!-- spool_swatch_size: color swatch square edge. -->
+    <px name="spool_swatch_size_micro" value="20"/>
+    <px name="spool_swatch_size_tiny" value="22"/>
+    <px name="spool_swatch_size_small" value="22"/>
+    <px name="spool_swatch_size_medium" value="28"/>
+    <px name="spool_swatch_size_large" value="32"/>
+    <px name="spool_swatch_size_xlarge" value="36"/>
+    <px name="spool_swatch_size_xxlarge" value="40"/>
+  </consts>
   <styles>
     <!-- Checked state: left border highlight + elevated background (matches spoolman_spool_row) -->
     <style name="checked_style"

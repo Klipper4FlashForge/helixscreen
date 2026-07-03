@@ -7,6 +7,7 @@
 #include "ui_callback_helpers.h"
 #include "ui_error_reporting.h"
 #include "ui_split_button.h"
+#include "ui_swatch.h"
 #include "ui_update_queue.h"
 #include "ui_utils.h"
 
@@ -21,6 +22,7 @@
 #include "label_printer_settings.h"
 #include "label_printer_utils.h"
 #endif
+#include "ui_breakpoint.h"
 #include "ui_overlay_qr_scanner.h"
 #include "ui_toast_manager.h"
 
@@ -30,7 +32,6 @@
 #include "spoolman_types.h"
 #include "theme_manager.h"
 #include "tool_state.h"
-#include "ui_breakpoint.h"
 
 #include <spdlog/spdlog.h>
 
@@ -636,8 +637,7 @@ void AmsEditModal::render_spool_list(const std::string& filter) {
     // Medium (≤550px, e.g. 800x480) and below get compact; Large+ keep the rich
     // two-line layout. Computed once — the breakpoint is constant per render.
     lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
-    UiBreakpoint bp =
-        bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj)) : UiBreakpoint::Medium;
+    UiBreakpoint bp = bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj)) : UiBreakpoint::Medium;
     const bool is_compact = bp <= UiBreakpoint::Medium;
     const char* attrs[] = {"compact",     is_compact ? "true" : "false",
                            "detail_flow", is_compact ? "row" : "column",
@@ -672,15 +672,9 @@ void AmsEditModal::render_spool_list(const std::string& filter) {
         }
 
         lv_obj_t* swatch = lv_obj_find_by_name(item, "spool_swatch");
-        if (swatch && !spool.color_hex.empty()) {
-            const char* hex = spool.color_hex.c_str();
-            if (hex[0] == '#') {
-                hex++;
-            }
-            uint32_t hex_val = static_cast<uint32_t>(strtoul(hex, nullptr, 16));
-            lv_color_t color = lv_color_hex(hex_val);
-            lv_obj_set_style_bg_color(swatch, color, 0);
-            lv_obj_set_style_border_color(swatch, color, 0);
+        if (swatch) {
+            uint32_t rgb = helix::parse_hex_color(spool.color_hex).value_or(0x808080);
+            helix::ui::apply_swatch_color(swatch, rgb, spool.multi_color_hexes);
         }
 
         // Mark current spool as checked (matching spoolman list view pattern)
@@ -715,6 +709,7 @@ void AmsEditModal::handle_spool_selected(int spool_id) {
             working_info_.spoolman_filament_id = spool.filament_id;
             working_info_.spoolman_vendor_id = spool.vendor_id;
             working_info_.color_name = spool.color_name;
+            working_info_.multi_color_hexes = spool.multi_color_hexes;
             working_info_.material = spool.material;
             working_info_.brand = spool.vendor;
             working_info_.spool_name = spool.vendor + " " + spool.material;
@@ -1186,7 +1181,8 @@ void AmsEditModal::update_ui() {
     // Update color swatch
     lv_obj_t* color_swatch = find_widget("color_swatch");
     if (color_swatch) {
-        lv_obj_set_style_bg_color(color_swatch, lv_color_hex(working_info_.color_rgb), 0);
+        helix::ui::apply_swatch_color(color_swatch, working_info_.color_rgb,
+                                      working_info_.multi_color_hexes);
     }
 
     // Update color name label via subject
@@ -1400,13 +1396,15 @@ void AmsEditModal::show_color_picker() {
         // Update the working slot info with selected color
         working_info_.color_rgb = color_rgb;
         working_info_.color_name = color_name;
+        // A hand-picked single color replaces any inherited multi-color swatch.
+        working_info_.multi_color_hexes.clear();
         filament_user_edited_ = true; // genuine user edit gates new-spool create (#1071)
 
         // Update the edit modal's color swatch to show new selection
         if (dialog_) {
             lv_obj_t* swatch = find_widget("color_swatch");
             if (swatch) {
-                lv_obj_set_style_bg_color(swatch, lv_color_hex(color_rgb), 0);
+                helix::ui::apply_swatch_color(swatch, color_rgb, working_info_.multi_color_hexes);
             }
 
             // Update color name label via subject
