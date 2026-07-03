@@ -115,11 +115,15 @@ void MaterialSettingsManager::save_to_config() {
     config->save();
 }
 
-void MaterialSettingsManager::load_presets_from_config() {
-    // Start from defaults; only override slots the stored config validly provides.
+void MaterialSettingsManager::assign_defaults() {
     for (int i = 0; i < 4; ++i) {
         preset_materials_[i] = DEFAULT_PRESET_MATERIALS[i];
     }
+}
+
+void MaterialSettingsManager::load_presets_from_config() {
+    // Start from defaults; only override slots the stored config validly provides.
+    assign_defaults();
 
     Config* config = Config::get_instance();
     if (!config || !config->exists("/preset_materials")) {
@@ -140,9 +144,7 @@ void MaterialSettingsManager::load_presets_from_config() {
         }
     } catch (const std::exception& e) {
         spdlog::warn("[MaterialSettingsManager] Failed to load presets: {}", e.what());
-        for (int i = 0; i < 4; ++i) {
-            preset_materials_[i] = DEFAULT_PRESET_MATERIALS[i];
-        }
+        assign_defaults();
     }
 }
 
@@ -169,9 +171,7 @@ void MaterialSettingsManager::set_preset_material(int index, const std::string& 
 }
 
 void MaterialSettingsManager::reset_preset_materials() {
-    for (int i = 0; i < 4; ++i) {
-        preset_materials_[i] = DEFAULT_PRESET_MATERIALS[i];
-    }
+    assign_defaults();
     save_presets_to_config();
     spdlog::info("[MaterialSettingsManager] Presets reset to defaults");
 }

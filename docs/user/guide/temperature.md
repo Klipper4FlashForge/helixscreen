@@ -43,14 +43,13 @@ them at a different filament type from the built-in materials database.
 
 ![Choosing a filament type for a preset button](../../images/user/filament-preset-picker.png)
 
-1. **Press and hold** a preset button until the material picker appears.
+1. **Long-press** a preset button until the material picker appears.
 2. Scroll the list and tap the filament type you want. The button's label and its
    temperatures update immediately, and the choice is remembered across restarts.
-3. To undo all changes, press and hold any preset button and tap **Reset all to
+3. To undo all changes, long-press any preset button and tap **Reset all to
    defaults** at the top of the list — this restores PLA / PETG / ABS / TPU.
 
-> **Tip:** A short tap still just applies the button's temperatures. Only a long
-> press opens the picker.
+> **Tip:** A short tap still just applies the button's temperatures. Only a long-press opens the picker.
 
 ### Spool Preset
 

@@ -120,6 +120,7 @@ void MaterialPickerMenu::populate_material_list(const std::string& current_mater
 
 void MaterialPickerMenu::dispatch_select(const std::string& material) {
     SelectCallback cb = select_cb_; // copy before hide() tears us down
+    s_active_instance_ = nullptr;
     hide();
     if (cb) {
         std::string m = material;
@@ -129,6 +130,7 @@ void MaterialPickerMenu::dispatch_select(const std::string& material) {
 
 void MaterialPickerMenu::dispatch_reset() {
     ResetCallback cb = reset_cb_;
+    s_active_instance_ = nullptr;
     hide();
     if (cb) {
         helix::ui::queue_update([cb]() { cb(); });
@@ -142,7 +144,9 @@ void MaterialPickerMenu::dispatch_reset() {
 void MaterialPickerMenu::on_backdrop_cb(lv_event_t* /*e*/) {
     LVGL_SAFE_EVENT_CB_BEGIN("[MaterialPickerMenu] on_backdrop_cb");
     if (s_active_instance_) {
-        s_active_instance_->hide();
+        MaterialPickerMenu* self = s_active_instance_;
+        s_active_instance_ = nullptr;
+        self->hide();
     }
     LVGL_SAFE_EVENT_CB_END();
 }

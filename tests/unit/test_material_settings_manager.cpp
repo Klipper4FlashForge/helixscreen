@@ -433,3 +433,19 @@ TEST_CASE_METHOD(MaterialSettingsFixture,
     CHECK(p[2] == "ABS");
     CHECK(p[3] == "TPU");
 }
+
+TEST_CASE_METHOD(MaterialSettingsFixture,
+                 "MaterialSettingsManager preset non-string element skipped, default retained",
+                 "[material_settings][presets]") {
+    // Correctly-sized 4-element array with a non-string element must not throw; the
+    // non-string slot keeps its default while valid string slots are applied.
+    Config::get_instance()->get_json("/preset_materials") =
+        nlohmann::json::array({"PC", 5, "ABS", "TPU"});
+    TestAccess::reset(MaterialSettingsManager::instance());
+    MaterialSettingsManager::instance().init();
+    auto p = MaterialSettingsManager::instance().get_preset_materials();
+    CHECK(p[0] == "PC");
+    CHECK(p[1] == "PETG"); // non-string element skipped → default retained
+    CHECK(p[2] == "ABS");
+    CHECK(p[3] == "TPU");
+}

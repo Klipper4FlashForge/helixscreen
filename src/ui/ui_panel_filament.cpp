@@ -753,6 +753,7 @@ void FilamentPanel::reassign_preset(int slot, const std::string& material) {
     update_preset_button_labels();
     update_preset_button_temps();
     check_and_auto_select_preset(); // refresh CHECKED highlight vs current targets
+    update_spool_preset(); // refresh 5th (dynamic spool) button visibility
     spdlog::info("[{}] Preset slot {} reassigned to {}", get_name(), slot, material);
 }
 
@@ -762,6 +763,7 @@ void FilamentPanel::reset_presets_to_defaults() {
     update_preset_button_labels();
     update_preset_button_temps();
     check_and_auto_select_preset();
+    update_spool_preset(); // refresh 5th (dynamic spool) button visibility
     spdlog::info("[{}] Presets reset to defaults", get_name());
 }
 

@@ -70,6 +70,8 @@ class MaterialSettingsManager {
     void save_to_config();
     void load_presets_from_config();
     void save_presets_to_config();
+    /** @brief Reset all 4 preset slots (in memory only) to DEFAULT_PRESET_MATERIALS */
+    void assign_defaults();
 
     std::unordered_map<std::string, filament::MaterialOverride> overrides_;
     std::array<std::string, 4> preset_materials_ = {"PLA", "PETG", "ABS", "TPU"};
