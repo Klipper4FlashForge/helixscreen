@@ -21,7 +21,6 @@
 #include <algorithm>
 #include <cctype>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -252,11 +251,6 @@ class PrinterDiscovery {
                 has_timelapse_ = true;
             } else if (name == "exclude_object") {
                 has_exclude_object_ = true;
-            } else if (name == "save_variables") {
-                // [save_variables] persistent store — gates SAVE_VARIABLE emits
-                // for per-tool spool_id sync (#1079). Also confirmed in
-                // parse_config_keys() as a fallback.
-                has_save_variables_ = true;
             } else if (name == "screws_tilt_adjust") {
                 has_screws_tilt_ = true;
             }
@@ -625,32 +619,6 @@ class PrinterDiscovery {
                 has_screws_tilt_ = true;
                 spdlog::debug("[PrinterDiscovery] screws_tilt_adjust detected from config");
             }
-
-            // [save_variables] persistent store — belt-and-suspenders alongside the
-            // objects.list detection in parse_objects(). Gates SAVE_VARIABLE emits
-            // for the per-tool spool_id sync (#1079).
-            if (key == "save_variables") {
-                has_save_variables_ = true;
-            }
-
-            // Record each gcode_macro's declared `variable_*` keys so callers can
-            // gate SET_GCODE_VARIABLE emits on the *variable* being declared, not
-            // just the macro existing (SET_GCODE_VARIABLE throws "Unknown
-            // gcode_macro variable" otherwise). Stored lowercase, prefix stripped
-            // (e.g. "gcode_macro T0" with "variable_spool_id" → t0 → {spool_id}).
-            // (#1079)
-            static const std::string kMacroPrefix = "gcode_macro ";
-            if (key.rfind(kMacroPrefix, 0) == 0 && value.is_object()) {
-                std::string macro_lower = to_lower(key.substr(kMacroPrefix.size()));
-                auto& vars = macro_variables_[macro_lower];
-                static const std::string kVarPrefix = "variable_";
-                for (const auto& [subkey, subval] : value.items()) {
-                    (void)subval;
-                    if (subkey.rfind(kVarPrefix, 0) == 0) {
-                        vars.insert(to_lower(subkey.substr(kVarPrefix.size())));
-                    }
-                }
-            }
         }
     }
 
@@ -711,8 +679,6 @@ class PrinterDiscovery {
         has_firmware_retraction_ = false;
         has_timelapse_ = false;
         has_exclude_object_ = false;
-        has_save_variables_ = false;
-        macro_variables_.clear();
         has_screws_tilt_ = false;
         has_klippain_shaketune_ = false;
         has_speaker_ = false;
@@ -871,37 +837,6 @@ class PrinterDiscovery {
 
     [[nodiscard]] bool has_exclude_object() const {
         return has_exclude_object_;
-    }
-
-    /**
-     * @brief True if a [save_variables] persistent store is configured.
-     *
-     * Gates SAVE_VARIABLE emits — writing a new key to an existing store is
-     * always valid, so section presence is a sufficient signal (#1079).
-     */
-    [[nodiscard]] bool has_save_variables() const {
-        return has_save_variables_;
-    }
-
-    /**
-     * @brief True if the gcode_macro @p macro declares a `variable_<var>` key.
-     *
-     * Case-insensitive. Distinct from has_macro(): this confirms the *variable*
-     * is declared in the macro's config section, which SET_GCODE_VARIABLE
-     * requires (it throws "Unknown gcode_macro variable" if the macro exists but
-     * doesn't declare that variable). Populated from configfile.config in
-     * parse_config_keys() (#1079).
-     *
-     * @param macro Macro name (e.g. "T0"); matched case-insensitively.
-     * @param var   Variable name without the `variable_` prefix (e.g. "spool_id").
-     */
-    [[nodiscard]] bool macro_declares_variable(const std::string& macro,
-                                               const std::string& var) const {
-        auto it = macro_variables_.find(to_lower(macro));
-        if (it == macro_variables_.end()) {
-            return false;
-        }
-        return it->second.count(to_lower(var)) > 0;
     }
 
     [[nodiscard]] bool has_screws_tilt() const {
@@ -1265,14 +1200,6 @@ class PrinterDiscovery {
         return result;
     }
 
-    // Helper: convert string to lowercase
-    static std::string to_lower(const std::string& str) {
-        std::string result = str;
-        std::transform(result.begin(), result.end(), result.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
-        return result;
-    }
-
     // Chamber/enclosure keyword scoring for sensor, fan, and heater object
     // names. Vendors diverge: Creality uses "chamber", Snapmaker uses "cavity",
     // Elegoo COSMOS uses literal "box", modders often use "enclosure".
@@ -1454,11 +1381,6 @@ class PrinterDiscovery {
     bool has_firmware_retraction_ = false;
     bool has_timelapse_ = false;
     bool has_exclude_object_ = false;
-    bool has_save_variables_ = false; ///< [save_variables] store present (#1079)
-    /// Per-macro declared `variable_*` keys. Key: lowercase macro name (e.g. "t0");
-    /// value: lowercase variable names with the `variable_` prefix stripped
-    /// (e.g. {"spool_id"}). Populated from configfile.config (#1079).
-    std::unordered_map<std::string, std::unordered_set<std::string>> macro_variables_;
     bool has_screws_tilt_ = false;
     int qidi_box_slot_count_ = 0; ///< Count of `box_stepper slot<N>` objects (QIDI Box)
     bool has_klippain_shaketune_ = false;

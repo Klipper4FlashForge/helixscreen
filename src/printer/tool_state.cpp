@@ -14,13 +14,11 @@
 #include "ui_update_queue.h"
 
 #include "ams_state.h"
-#include "app_globals.h"
 #include "data_root_resolver.h"
 #include "json_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
 #include "printer_discovery.h"
-#include "printer_state.h"
 #include "state/subject_macros.h"
 #include "static_subject_registry.h"
 
@@ -528,8 +526,6 @@ void ToolState::assign_spool(int tool_index, int spoolman_id, const std::string&
         return;
     }
 
-    const int old_spool_id = tool.spoolman_id;
-
     tool.spoolman_id = spoolman_id;
     tool.spool_name = spool_name;
     tool.remaining_weight_g = remaining_g;
@@ -543,55 +539,6 @@ void ToolState::assign_spool(int tool_index, int spoolman_id, const std::string&
     if (subjects_initialized_) {
         int version = lv_subject_get_int(&tools_version_) + 1;
         lv_subject_set_int(&tools_version_, version);
-    }
-
-    // Push the spool_id into the printer's gcode macros / saved variables so
-    // Fluidd/Mainsail and per-tool macro logic see the assignment (#1079). Only
-    // when the spool_id itself changed — a weight/name-only sync must not re-emit.
-    // An unassign (spoolman_id == 0) still emits VALUE=0 so downstream state clears.
-    if (old_spool_id != spoolman_id) {
-        push_spool_id_to_printer(tool_index, spoolman_id);
-    }
-}
-
-void ToolState::push_spool_id_to_printer(int tool_index, int spoolman_id) {
-    MoonrakerAPI* api = get_moonraker_api();
-    if (!api) {
-        return;
-    }
-
-    const helix::PrinterDiscovery& hw = get_printer_state().get_discovery();
-
-    // Klipper macro names are case-insensitive; config sections and save-variable
-    // keys are conventionally lowercase (t0), while SET_GCODE_VARIABLE MACRO= uses
-    // the reporter's uppercase convention (T0).
-    const std::string macro_upper = ::fmt::format("T{}", tool_index);
-    const std::string tag_lower = ::fmt::format("t{}", tool_index);
-
-    // Fire-and-forget: execute_gcode callbacks run on the WebSocket background
-    // thread, so the error callback captures nothing but the gcode string by
-    // value (no `this` / member access — L072/L081). Success is a no-op.
-    auto emit = [api](std::string gcode) {
-        api->execute_gcode(
-            gcode, nullptr,
-            [gcode](const MoonrakerError& err) {
-                spdlog::warn("[ToolState] spool_id sync gcode failed: '{}' ({})", gcode,
-                             err.user_message());
-            },
-            MoonrakerAPI::MACRO_TIMEOUT_MS);
-    };
-
-    // Runtime value: only valid if the macro actually declares variable_spool_id,
-    // otherwise SET_GCODE_VARIABLE throws "Unknown gcode_macro variable".
-    if (hw.macro_declares_variable(tag_lower, "spool_id")) {
-        emit(::fmt::format("SET_GCODE_VARIABLE MACRO={} VARIABLE=spool_id VALUE={}", macro_upper,
-                           spoolman_id));
-    }
-
-    // Persistent value: writing a new key to an existing [save_variables] store is
-    // always valid, so section presence is a sufficient gate.
-    if (hw.has_save_variables()) {
-        emit(::fmt::format("SAVE_VARIABLE VARIABLE={}__spool_id VALUE={}", tag_lower, spoolman_id));
     }
 }
 
