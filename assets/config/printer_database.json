@@ -3205,10 +3205,10 @@
           "field": "bed_mesh",
           "min_x": 370,
           "max_x": 410,
-          "min_y": 390,
-          "max_y": 420,
+          "min_y": 370,
+          "max_y": 410,
           "confidence": 70,
-          "reason": "Build volume ~385x405mm (Max 4 size)"
+          "reason": "Build volume ~390x390mm (Max 4 size)"
         },
         {
           "type": "object_exists",

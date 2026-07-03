@@ -1086,6 +1086,32 @@ TEST_CASE_METHOD(PrinterDetectorFixture,
     }
 }
 
+// The physical Max 4 bed is 390x390 (confirmed on-device, #1068). The bed_mesh a
+// printer reports covers only the probed area, a few mm inside the physical bed,
+// so the Y span commonly lands just under 390. An earlier build_volume window of
+// min_y=390 rejected exactly that case; the window now mirrors X at [370, 410].
+TEST_CASE_METHOD(PrinterDetectorFixture,
+                 "PrinterDetector: Qidi Max 4 build_volume matches inset 390x390 mesh",
+                 "[printer][build_volume]") {
+    // Mesh probed a few mm inside the 390x390 bed; Y span 380 would have failed
+    // the old min_y=390 window. Generic hostname + no probe_air so the build
+    // volume heuristic is the load-bearing signal.
+    PrinterHardwareData hardware{
+        .heaters = {"extruder", "heater_bed"},
+        .sensors = {},
+        .fans = {},
+        .leds = {},
+        .hostname = "myprinter",
+        .printer_objects = {},
+        .steppers = {},
+        .kinematics = "corexy",
+        .build_volume = {.x_min = 5, .x_max = 387, .y_min = 5, .y_max = 385, .z_max = 340}};
+
+    auto result = PrinterDetector::detect(hardware);
+    REQUIRE(result.detected());
+    REQUIRE(result.type_name == "Qidi Max 4");
+}
+
 // ============================================================================
 // Enhanced Detection Tests - Macro Match
 // ============================================================================
