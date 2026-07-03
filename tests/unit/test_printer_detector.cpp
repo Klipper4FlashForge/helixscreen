@@ -1044,9 +1044,46 @@ TEST_CASE_METHOD(PrinterDetectorFixture,
     auto result = PrinterDetector::detect(hardware);
 
     REQUIRE(result.detected());
-    REQUIRE(result.type_name == "Creality Ender 5"); // Database doesn't distinguish Max variant
-    // Build volume + hostname + kinematics match
+    // The dedicated Ender 5 Max entry wins: hostname 'ender5-max' + large build
+    // volume + cartesian kinematics. Qidi Max 4 (same ~400mm footprint) is ruled
+    // out by its kinematics_exclude on cartesian, so it can't shadow the Ender.
+    REQUIRE(result.type_name == "Creality Ender 5 Max");
     REQUIRE(result.confidence >= 70);
+}
+
+// A corexy printer with the Qidi Max 4 footprint detects as Qidi Max 4, but the
+// same footprint on a cartesian machine must NOT — kinematics_exclude encodes the
+// hard rule that every Qidi is corexy (telemetry-confirmed). Guards against build
+// volume alone shadowing another brand (regression: Qidi Max 4 vs Ender 5 Max).
+TEST_CASE_METHOD(PrinterDetectorFixture,
+                 "PrinterDetector: Qidi Max 4 excluded on cartesian kinematics",
+                 "[printer][build_volume][kinematics]") {
+    PrinterHardwareData base{
+        .heaters = {"extruder", "heater_bed"},
+        .sensors = {},
+        .fans = {},
+        .leds = {},
+        .hostname = "qidi-max4",
+        .printer_objects = {"probe_air"},
+        .steppers = {},
+        .kinematics = "corexy",
+        .build_volume = {.x_min = 0, .x_max = 400, .y_min = 0, .y_max = 400, .z_max = 400}};
+
+    SECTION("corexy Qidi footprint detects as Qidi Max 4") {
+        auto result = PrinterDetector::detect(base);
+        REQUIRE(result.detected());
+        REQUIRE(result.type_name == "Qidi Max 4");
+    }
+
+    SECTION("cartesian machine with same footprint is never a Qidi Max 4") {
+        PrinterHardwareData hardware = base;
+        hardware.hostname = "myprinter"; // generic; no brand hint
+        hardware.printer_objects = {};
+        hardware.kinematics = "cartesian";
+
+        auto result = PrinterDetector::detect(hardware);
+        REQUIRE(result.type_name != "Qidi Max 4");
+    }
 }
 
 // ============================================================================
