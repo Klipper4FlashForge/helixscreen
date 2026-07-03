@@ -3169,7 +3169,7 @@
       "preset": "qidi_max4",
       "print_start_profile": "qidi",
       "ams_type": "qidi_box",
-      "notes": "Linux framebuffer display. Compatible with the QIDI Box filament changer; Max 4 hub mechanics differ from Q2/Plus 4, but stock firmware exposes the same Klipper/Moonraker control surface.",
+      "notes": "Linux framebuffer display. Detection + preset are community-tested on-device; the QIDI Box is detected/read via the qidi_box backend, but Max 4 box CONTROL diverges from the Q2/Plus 4 -- box unload/eject uses SLOT_UNLOAD / MULTI_COLOR_BOX_UNLOAD, not the shared box_stepper FORCE_MOVE primitive (rejected as 'Invalid pin value'). Per-model box dispatch tracked in prestonbrown/helixscreen#1070.",
       "heuristics": [
         {
           "type": "hostname_match",
