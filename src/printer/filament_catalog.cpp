@@ -103,6 +103,36 @@ FilamentCatalog FilamentCatalog::load_from_file(const std::string& path, bool co
     return cat;
 }
 
+FilamentCatalog FilamentCatalog::load_with_overlay(const std::string& builtin_path,
+                                                   const std::string& overlay_path) {
+    const char* bpaths[] = {builtin_path.c_str()};
+    const char* opaths[] = {overlay_path.c_str()};
+
+    // Raw product JSON keyed by id, so overlay can override before resolution.
+    std::unordered_map<std::string, nlohmann::json> merged;
+    std::vector<std::string> order;
+    for (const auto& jp : read_products(bpaths, 1)) {
+        std::string id = jp.value("id", "");
+        if (merged.find(id) == merged.end())
+            order.push_back(id);
+        merged[id] = jp;
+    }
+    for (const auto& jp : read_products(opaths, 1)) {
+        std::string id = jp.value("id", "");
+        if (merged.find(id) == merged.end()) {
+            order.push_back(id);
+            merged[id] = jp;
+        } else {
+            merged[id].merge_patch(jp);  // field-level override
+        }
+    }
+    FilamentCatalog cat;
+    for (const auto& id : order)
+        cat.products_.push_back(to_effective(merged[id]));
+    cat.index();
+    return cat;
+}
+
 FilamentCatalog FilamentCatalog::load_codes(const std::string& scheme) {
     FilamentCatalog cat;
     for (const auto& jp : read_products(kBuiltinPaths, std::size(kBuiltinPaths))) {
@@ -120,13 +150,23 @@ FilamentCatalog FilamentCatalog::load_codes(const std::string& scheme) {
     return cat;
 }
 
+namespace {
+
+/// First path in the list that exists on disk, or "" if none do.
+std::string first_existing(const char* const* paths, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        std::ifstream f(paths[i]);
+        if (f.is_open())
+            return paths[i];
+    }
+    return "";
+}
+
+}  // namespace
+
 FilamentCatalog FilamentCatalog::load_full() {
-    FilamentCatalog cat;
-    for (const auto& jp : read_products(kBuiltinPaths, std::size(kBuiltinPaths)))
-        cat.products_.push_back(to_effective(jp));
-    // Overlay handled in Task 4.
-    cat.index();
-    return cat;
+    return load_with_overlay(first_existing(kBuiltinPaths, std::size(kBuiltinPaths)),
+                             first_existing(kUserPaths, std::size(kUserPaths)));
 }
 
 const EffectiveFilament* FilamentCatalog::resolve_code(const std::string& scheme,

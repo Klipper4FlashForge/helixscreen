@@ -48,3 +48,16 @@ TEST_CASE_METHOD(HelixTestFixture, "queries by brand and type", "[filament_catal
     CHECK(cat.products_for_brand("Polymaker").size() == 2);
     CHECK(cat.products_for_type("PLA").size() == 2);
 }
+
+TEST_CASE_METHOD(HelixTestFixture, "user overlay overrides and adds", "[filament_catalog]") {
+    auto cat = FilamentCatalog::load_with_overlay(
+        "tests/fixtures/filaments_test.json", "tests/fixtures/user_filaments_test.json");
+    const auto* abs = cat.resolve_id("polymaker-abs-pro");
+    REQUIRE(abs != nullptr);
+    CHECK(abs->nozzle_min == 265);   // overridden by user
+    CHECK(abs->nozzle_max == 285);
+    const auto* added = cat.resolve_id("acme-custom-petg");
+    REQUIRE(added != nullptr);       // new user product
+    CHECK(added->brand == "Acme");
+    CHECK(added->bed_temp == 80);    // inherited from PETG type
+}

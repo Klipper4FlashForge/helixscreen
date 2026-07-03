@@ -34,6 +34,9 @@ class FilamentCatalog {
     /// Explicit path (tests / non-default locations).
     static FilamentCatalog load_from_file(const std::string& path, bool codes_only,
                                           const std::string& scheme);
+    /// Explicit built-in + overlay paths; overlay overrides existing ids and adds new ones.
+    static FilamentCatalog load_with_overlay(const std::string& builtin_path,
+                                             const std::string& overlay_path);
 
     const EffectiveFilament* resolve_code(const std::string& scheme,
                                           const std::string& code) const;
