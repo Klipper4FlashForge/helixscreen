@@ -152,10 +152,13 @@ def _display_name(profile_name: str, brand: str) -> str:
 
 
 def build_catalog(orca_root, cfs_seed, type_ranges, library_marker="OrcaFilamentLibrary"):
-    # Load the WHOLE tree (bases from BBL/ etc. are needed to resolve inherits),
-    # but emit products ONLY from the vendor-agnostic library, not the ~6,550
-    # printer-specific profiles. Tests pass library_marker="" to accept fixtures.
-    by_name = load_profiles(orca_root)
+    # The OrcaFilamentLibrary is self-contained (its own base/ dir). Resolve
+    # inheritance ONLY within it: loading the ~30 other vendor packs clobbers
+    # same-named bases (e.g. fdm_filament_pc) in the flat name->profile map and
+    # corrupts inherited vendor + temperature values. See the collision test.
+    lib_root = os.path.join(orca_root, "OrcaFilamentLibrary", "filament")
+    load_root = lib_root if os.path.isdir(lib_root) else orca_root
+    by_name = load_profiles(load_root)
     products = []
     seen = set()
     for pname, profile in by_name.items():

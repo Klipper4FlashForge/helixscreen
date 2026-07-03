@@ -5,6 +5,7 @@ import os
 import import_orca_filaments as imp
 
 FIX = os.path.join(os.path.dirname(__file__), "fixtures", "orca")
+FIX_COLLISION = os.path.join(os.path.dirname(__file__), "fixtures", "orca_collision")
 
 
 def load_fixtures():
@@ -122,6 +123,19 @@ def test_dedupe_ids_disambiguates_collisions():
     ids = [p["id"] for p in products]
     assert len(ids) == len(set(ids))                    # every id now unique
     assert ids == ["acme-widget", "acme-widget-2", "acme-widget-3"]
+
+
+def test_build_catalog_scopes_inherits_to_library_avoiding_vendor_base_collision():
+    # Regression for the vendor-base collision bug: a same-named base profile
+    # (fdm_filament_pc) exists both inside OrcaFilamentLibrary (Generic, 280)
+    # and under a sibling vendor pack (Qidi, 250). Inheritance resolution for
+    # library products must use ONLY the library's own base, not whichever
+    # vendor copy happened to load last into the flat name->profile map.
+    cat = imp.build_catalog(FIX_COLLISION, [], type_ranges={})
+    assert len(cat) == 1
+    product = cat[0]
+    assert product["brand"] == "Generic"
+    assert product["nozzle"] == 280
 
 
 def test_build_catalog_guards_against_id_collisions():
