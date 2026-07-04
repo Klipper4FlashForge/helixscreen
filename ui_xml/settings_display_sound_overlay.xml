@@ -75,6 +75,13 @@
                           description_tag="Show text labels on icon-only home screen widgets"
                           subject="show_widget_labels"
                           callback="on_widget_labels_changed"/>
+      <!-- Page-scroll buttons: reserved-gutter chevrons for touch-drag-poor screens -->
+      <setting_toggle_row name="row_page_scroll_buttons"
+                          label="Scroll Buttons" label_tag="Scroll Buttons" icon="swap_vertical"
+                          description="Show up/down buttons on long lists"
+                          description_tag="Show up/down buttons on long lists"
+                          subject="settings_page_scroll_buttons"
+                          callback="on_page_scroll_buttons_changed"/>
       <!-- Bed Mesh Render Mode -->
       <setting_dropdown_row name="row_bed_mesh_mode"
                             label="Bed Mesh Render" label_tag="Bed Mesh Render" icon="grid_large"
