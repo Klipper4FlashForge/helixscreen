@@ -18,6 +18,14 @@ bool PageScrollController::attach(lv_obj_t* container) {
     if (container == nullptr) {
         return false;
     }
+    if (attached()) {
+        // Double-attach without an intervening detach() would orphan the
+        // previous gutter + its still-registered event callbacks. One-shot
+        // usage is the intended contract — reject instead of silently
+        // leaking.
+        spdlog::error("[PageScroll] attach() called while already attached; call detach() first");
+        return false;
+    }
     container_ = container;
     saved_pad_right_ = lv_obj_get_style_pad_right(container_, LV_PART_MAIN);
     saved_scrollbar_mode_ = lv_obj_get_scrollbar_mode(container_);
@@ -136,10 +144,13 @@ void PageScrollController::detach() {
 void PageScrollController::on_container_deleted() {
     // Container (and its gutter child) are being destroyed by LVGL. Do NOT touch
     // LVGL objects — just null out and notify the owner to prune us.
+    // All pointer-nulling MUST happen before on_deleted_() runs (see warning below).
     gutter_ = up_btn_ = down_btn_ = nullptr;
     container_ = nullptr;
     pad_applied_ = false;
     if (on_deleted_) {
+        // WARNING: on_deleted_() may synchronously destroy *this (owner prune).
+        // Nothing may run after it.
         on_deleted_();
     }
 }
@@ -152,6 +163,8 @@ void PageScrollController::container_event_cb(lv_event_t* e) {
         self->refresh_reach_state();
         break;
     case LV_EVENT_DELETE:
+        // self may be destroyed synchronously inside on_container_deleted()
+        // (owner-prune callback) — do not touch self after this call.
         self->on_container_deleted();
         break;
     default:

@@ -92,3 +92,25 @@ TEST_CASE_METHOD(LVGLUITestFixture, "PageScrollController restores container on 
     CHECK(lv_obj_get_style_pad_right(c, LV_PART_MAIN) == 0);
     CHECK(lv_obj_get_scrollbar_mode(c) == original);
 }
+
+TEST_CASE_METHOD(LVGLUITestFixture, "PageScrollController survives container deletion",
+                 "[page_scroll_buttons][ui]") {
+    lv_obj_t* c = make_scroll_container(test_screen(), 20, 60);
+
+    // ctl must outlive the container deletion below so its destructor runs
+    // (safely, since container_ is already null) after the container is gone.
+    PageScrollController ctl;
+    REQUIRE(ctl.attach(c));
+
+    bool deleted_fired = false;
+    ctl.set_on_container_deleted([&deleted_fired]() { deleted_fired = true; });
+
+    // LV_EVENT_DELETE fires synchronously within lv_obj_delete, which invokes
+    // container_event_cb -> on_container_deleted() before this call returns.
+    lv_obj_delete(c);
+    process_lvgl(20); // flush any async gutter deletion from LVGL's own teardown
+
+    CHECK_FALSE(ctl.alive());
+    CHECK(ctl.gutter() == nullptr);
+    CHECK(deleted_fired);
+}
