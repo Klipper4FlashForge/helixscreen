@@ -26,3 +26,28 @@ TEST_CASE_METHOD(SettingGroupFixture, "setting_group: applies card shell", "[set
     // Group is a fixed container, not a scroll area.
     REQUIRE_FALSE(lv_obj_has_flag(group, LV_OBJ_FLAG_SCROLLABLE));
 }
+
+TEST_CASE_METHOD(SettingGroupFixture, "setting_group: divider count skips hidden children",
+                 "[setting_group]") {
+    auto* group = static_cast<lv_obj_t*>(lv_xml_create(test_screen(), "setting_group", nullptr));
+    REQUIRE(group != nullptr);
+
+    // Three visible children -> two dividers (one above each after the first).
+    lv_obj_t* a = lv_obj_create(group);
+    lv_obj_t* b = lv_obj_create(group);
+    lv_obj_t* c = lv_obj_create(group);
+    (void)a;
+    (void)c;
+    process_lvgl(50);
+    REQUIRE(setting_group_divider_count(group) == 2);
+
+    // Hide the middle child -> one divider.
+    lv_obj_add_flag(b, LV_OBJ_FLAG_HIDDEN);
+    process_lvgl(50);
+    REQUIRE(setting_group_divider_count(group) == 1);
+
+    // Hide all but one -> zero dividers.
+    lv_obj_add_flag(c, LV_OBJ_FLAG_HIDDEN);
+    process_lvgl(50);
+    REQUIRE(setting_group_divider_count(group) == 0);
+}

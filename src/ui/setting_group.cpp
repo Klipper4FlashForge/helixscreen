@@ -10,10 +10,59 @@
 
 #include <spdlog/spdlog.h>
 
-// Divider logic + draw callback are added in Task 2.
+static uint32_t setting_group_visible_child_count(lv_obj_t* group) {
+    uint32_t count = 0;
+    uint32_t n = lv_obj_get_child_count(group);
+    for (uint32_t i = 0; i < n; i++) {
+        if (!lv_obj_has_flag(lv_obj_get_child(group, i), LV_OBJ_FLAG_HIDDEN))
+            count++;
+    }
+    return count;
+}
+
 uint32_t setting_group_divider_count(lv_obj_t* group) {
-    LV_UNUSED(group);
-    return 0;
+    if (!group)
+        return 0;
+    uint32_t visible = setting_group_visible_child_count(group);
+    return visible > 0 ? visible - 1 : 0;
+}
+
+// Pure render: draws a 1px border-colored line at the top edge of every visible
+// child except the first visible one. Read-only over the child list — never
+// mutates state (threading-safe inside the draw pipeline).
+static void setting_group_draw_dividers(lv_event_t* e) {
+    lv_obj_t* group = lv_event_get_target_obj(e);
+    lv_layer_t* layer = lv_event_get_layer(e);
+    if (!group || !layer)
+        return;
+
+    lv_area_t coords;
+    lv_obj_get_coords(group, &coords);
+
+    lv_draw_line_dsc_t dsc;
+    lv_draw_line_dsc_init(&dsc);
+    dsc.color = theme_manager_get_color("border");
+    dsc.width = 1;
+    dsc.opa = LV_OPA_COVER;
+
+    uint32_t n = lv_obj_get_child_count(group);
+    bool seen_visible = false;
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t* child = lv_obj_get_child(group, i);
+        if (lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN))
+            continue;
+        if (!seen_visible) {
+            seen_visible = true; // no line above the first visible child
+            continue;
+        }
+        lv_area_t c;
+        lv_obj_get_coords(child, &c);
+        dsc.p1.x = coords.x1;
+        dsc.p1.y = c.y1;
+        dsc.p2.x = coords.x2;
+        dsc.p2.y = c.y1;
+        lv_draw_line(layer, &dsc);
+    }
 }
 
 static void* setting_group_xml_create(lv_xml_parser_state_t* state, const char** attrs) {
@@ -55,6 +104,10 @@ static void* setting_group_xml_create(lv_xml_parser_state_t* state, const char**
     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
 
     spdlog::trace("[SettingGroup] Created <setting_group> with card shell");
+
+    // Auto-managed dividers between visible children (pure render).
+    lv_obj_add_event_cb(obj, setting_group_draw_dividers, LV_EVENT_DRAW_POST, nullptr);
+
     return (void*)obj;
 }
 
