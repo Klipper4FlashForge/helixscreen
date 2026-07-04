@@ -33,6 +33,7 @@
 #include "ui_z_offset_indicator.h"
 
 #include "layout_manager.h"
+#include "page_scroll_auto_inject.h"
 #include "static_subject_registry.h"
 #include "theme_manager.h"
 
@@ -641,6 +642,10 @@ void register_xml_components() {
     // attaches an instance to lv_layer_top during Application::init and
     // toggles visibility based on UpgradeNudge state).
     register_xml("components/upgrade_banner.xml");
+
+    // Page-scroll-buttons policy: observes the display setting and injects
+    // chevron gutters into overflowing scrollable containers on panel/overlay show.
+    helix::ui::PageScrollAutoInject::instance().init();
 
     spdlog::trace("[XML Registration] XML component registration complete");
 }

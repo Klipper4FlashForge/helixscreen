@@ -40,6 +40,7 @@
 #include "led/led_auto_state.h"
 #include "led/led_controller.h"
 #include "moonraker_manager.h"
+#include "page_scroll_auto_inject.h"
 #include "panel_factory.h"
 #include "panel_widget_manager.h"
 #include "pending_startup_warnings.h"
@@ -4298,6 +4299,12 @@ void Application::shutdown() {
 
     // Deactivate UI and clear navigation registries
     NavigationManager::instance().shutdown();
+
+    // Detach page-scroll-buttons controllers (removes gutters + observers) while
+    // panel widgets are still alive — must run before m_panels.reset() /
+    // StaticPanelRegistry::destroy_all() below tear down the containers it holds
+    // pointers to.
+    helix::ui::PageScrollAutoInject::instance().shutdown();
 
     // Tear down the upgrade banner before UpdateChecker so its observers
     // release cleanly (subject-lifetime-before-observer per #705).
