@@ -1,11 +1,26 @@
 // Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include "../ui_test_utils.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "lvgl/lvgl.h"
 #include "setting_group.h"
 #include "test_fixtures.h"
 
 #include "../catch_amalgamated.hpp"
+
+// Recursively find the first lv_label descendant whose text equals `text`.
+// Type-guards the get_text() call so non-label nodes don't emit warnings.
+static lv_obj_t* find_label_with_text(lv_obj_t* obj, const std::string& text) {
+    if (lv_obj_check_type(obj, &lv_label_class) && UITest::get_text(obj) == text)
+        return obj;
+    uint32_t n = lv_obj_get_child_count(obj);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t* found = find_label_with_text(lv_obj_get_child(obj, i), text);
+        if (found)
+            return found;
+    }
+    return nullptr;
+}
 
 // Fixture that registers the setting_group widget (mirrors SplitButtonXmlFixture).
 class SettingGroupFixture : public XMLTestFixture {
@@ -50,4 +65,16 @@ TEST_CASE_METHOD(SettingGroupFixture, "setting_group: divider count skips hidden
     lv_obj_add_flag(c, LV_OBJ_FLAG_HIDDEN);
     process_lvgl(50);
     REQUIRE(setting_group_divider_count(group) == 0);
+}
+
+TEST_CASE_METHOD(SettingGroupFixture, "setting_group_header: renders title text",
+                 "[setting_group]") {
+    REQUIRE(register_component("setting_group_header"));
+    const char* attrs[] = {"title", "DISPLAY", nullptr};
+    auto* header = create_component("setting_group_header", attrs);
+    REQUIRE(header != nullptr);
+    process_lvgl(50);
+
+    // The section title is rendered as a label carrying the passed text.
+    REQUIRE(find_label_with_text(header, "DISPLAY") != nullptr);
 }
