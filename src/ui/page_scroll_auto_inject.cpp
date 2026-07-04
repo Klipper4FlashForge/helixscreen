@@ -19,17 +19,19 @@ void PageScrollAutoInject::init() {
     }
     initialized_ = true;
     auto& dsm = helix::DisplaySettingsManager::instance();
-    enabled_ = dsm.get_page_scroll_buttons();
     // observe_int_sync defers to the main thread (safe for widget mutation).
     setting_observer_ = observe_int_sync<PageScrollAutoInject>(
         dsm.subject_page_scroll_buttons(), this, [](PageScrollAutoInject* self, int value) {
-            self->enabled_ = (value != 0);
-            if (self->enabled_) {
+            if (value != 0) {
                 self->on_root_shown(lv_screen_active()); // inject into current screen
             } else {
                 self->detach_all();
             }
         });
+}
+
+bool PageScrollAutoInject::enabled() const {
+    return helix::DisplaySettingsManager::instance().get_page_scroll_buttons();
 }
 
 void PageScrollAutoInject::shutdown() {
@@ -52,8 +54,12 @@ void PageScrollAutoInject::walk_and_attach(lv_obj_t* obj, bool ancestor_managed)
     if (lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) {
         return; // don't inject into hidden/stacked panels
     }
-    bool claimed = ancestor_managed;
-    if (!ancestor_managed && controllers_.find(obj) == controllers_.end() && qualifies(obj)) {
+    // A container already managed from an earlier on_root_shown() pass must
+    // still propagate the claim to its subtree on a repeated walk over a
+    // persistent tree — otherwise a nested qualifying container underneath it
+    // wrongly gets its own controller (double/nested gutters).
+    bool claimed = ancestor_managed || (controllers_.count(obj) > 0);
+    if (!claimed && qualifies(obj)) {
         auto ctl = std::make_unique<PageScrollController>();
         if (ctl->attach(obj)) {
             lv_obj_t* key = obj;
@@ -69,6 +75,8 @@ void PageScrollAutoInject::walk_and_attach(lv_obj_t* obj, bool ancestor_managed)
             });
             controllers_.emplace(key, std::move(ctl));
             claimed = true;
+        } else {
+            spdlog::debug("[PageScroll] attach failed for container {}", static_cast<void*>(obj));
         }
     }
     uint32_t n = lv_obj_get_child_count(obj);
@@ -78,15 +86,14 @@ void PageScrollAutoInject::walk_and_attach(lv_obj_t* obj, bool ancestor_managed)
 }
 
 void PageScrollAutoInject::on_root_shown(lv_obj_t* root) {
-    // Read the setting live rather than trusting the cached enabled_ flag:
-    // observe_int_sync defers its callback via queue_update, so enabled_ can
-    // lag the subject's synchronous value by one process_lvgl tick (e.g. a
-    // caller that flips the setting and immediately shows a panel in the same
-    // frame). This class is main-thread-only, so a direct subject read here
-    // is safe and keeps on_root_shown() correct without waiting for the
-    // deferred observer to catch up.
-    enabled_ = helix::DisplaySettingsManager::instance().get_page_scroll_buttons();
-    if (!enabled_ || root == nullptr) {
+    // Read the setting live rather than trusting a cached flag: observe_int_sync
+    // defers its callback via queue_update, so a member cache could lag the
+    // subject's synchronous value by one process_lvgl tick (e.g. a caller that
+    // flips the setting and immediately shows a panel in the same frame). This
+    // class is main-thread-only, so a direct subject read here (via enabled(),
+    // which itself reads live) is safe and keeps on_root_shown() correct
+    // without waiting for the deferred observer to catch up.
+    if (!enabled() || root == nullptr) {
         return;
     }
     prune_dead();

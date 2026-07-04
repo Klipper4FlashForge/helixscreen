@@ -73,3 +73,40 @@ TEST_CASE_METHOD(LVGLUITestFixture, "AutoInject skips nested scrollables",
     inj.shutdown();
     process_lvgl(20);
 }
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "AutoInject propagates managed-ancestor claim across repeated on_root_shown",
+                 "[page_scroll_buttons][ui]") {
+    auto& dsm = helix::DisplaySettingsManager::instance();
+    dsm.init_subjects();
+    auto& inj = PageScrollAutoInject::instance();
+    inj.shutdown(); // clean slate
+    inj.init();
+    dsm.set_page_scroll_buttons(true);
+
+    lv_obj_t* root = test_screen();
+    lv_obj_t* outer = add_vscroll(root, 5);   // A: qualifies
+    lv_obj_t* inner = add_vscroll(outer, 20); // B: nested inside A; also qualifies alone
+    lv_obj_update_layout(root);
+
+    // First pass: A gets attached, B is skipped as a fresh nested descendant.
+    inj.on_root_shown(root);
+    process_lvgl(20);
+    CHECK(inj.managed_count() == 1);
+    CHECK(lv_obj_find_by_name(outer, "up") != nullptr);
+    CHECK(lv_obj_find_by_name(inner, "up") == nullptr);
+
+    // Second pass over the SAME persistent tree (simulates navigate-away and
+    // back to a cached panel). A is already in controllers_, so the fresh-attach
+    // branch is skipped for it — but the ancestor claim must still propagate to
+    // B. Without Fix 1, `claimed` stays false for A's subtree walk and B wrongly
+    // qualifies for its own controller, producing nested gutters.
+    inj.on_root_shown(root);
+    process_lvgl(20);
+    CHECK(inj.managed_count() == 1); // still just A; without Fix 1 this is 2
+    CHECK(lv_obj_find_by_name(outer, "up") != nullptr);
+    CHECK(lv_obj_find_by_name(inner, "up") == nullptr);
+
+    inj.shutdown();
+    process_lvgl(20);
+}

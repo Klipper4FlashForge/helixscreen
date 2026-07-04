@@ -25,9 +25,9 @@ class PageScrollAutoInject {
     void detach_all();
     void prune_dead(); ///< erase controllers whose container died
 
-    bool enabled() const {
-        return enabled_;
-    }
+    /// Live setting value (no cache) — see on_root_shown() for why this class
+    /// never trusts a stale copy of the observed value.
+    bool enabled() const;
     std::size_t managed_count() const {
         return controllers_.size();
     }
@@ -39,7 +39,6 @@ class PageScrollAutoInject {
 
     std::unordered_map<lv_obj_t*, std::unique_ptr<PageScrollController>> controllers_;
     ObserverGuard setting_observer_;
-    bool enabled_ = false;
     bool initialized_ = false;
 };
 
