@@ -239,6 +239,8 @@ void register_xml_components() {
     ui_carousel_init();           // <ui_carousel> horizontal scroll-snap carousel
     register_xml("carousel.xml"); // <carousel> XML component wrapping ui_carousel
     ui_confetti_init();           // <ui_confetti> celebration animation canvas
+    register_xml(
+        "components/page_scroll_gutter.xml"); // <page_scroll_gutter> page scroll chevron column
 
     // Register no-op callback and subject for optional handlers in XML components
     // This silences warnings when components use callback/subject props with default=""
