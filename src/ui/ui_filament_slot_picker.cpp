@@ -3,6 +3,7 @@
 #include "ui_filament_slot_picker.h"
 
 #include "ui_fonts.h"
+#include "ui_swatch.h"
 #include "ui_utils.h"
 
 #include "lvgl/src/others/translation/lv_translation.h"
@@ -152,7 +153,7 @@ void FilamentSlotPicker::create_slot_row(lv_obj_t* list, int index,
             lv_obj_set_style_border_color(swatch, theme_manager_get_color("warning"), 0);
             lv_obj_set_style_border_opa(swatch, LV_OPA_COVER, 0);
         } else {
-            lv_obj_set_style_bg_color(swatch, lv_color_hex(slot.color_rgb), 0);
+            helix::ui::apply_swatch_color(swatch, slot.color_rgb, slot.multi_color_hexes);
         }
     }
 

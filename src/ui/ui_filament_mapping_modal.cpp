@@ -3,6 +3,7 @@
 #include "ui_filament_mapping_modal.h"
 
 #include "ui_fonts.h"
+#include "ui_swatch.h"
 #include "ui_utils.h"
 
 #include "lvgl/src/others/translation/lv_translation.h"
@@ -154,7 +155,8 @@ lv_obj_t* FilamentMappingModal::create_tool_row(int tool_index) {
 
     if (auto* chosen_swatch = lv_obj_find_by_name(row, "chosen_swatch")) {
         if (mapped && !mapped->is_empty) {
-            lv_obj_set_style_bg_color(chosen_swatch, lv_color_hex(mapped->color_rgb), 0);
+            helix::ui::apply_swatch_color(chosen_swatch, mapped->color_rgb,
+                                          mapped->multi_color_hexes);
             lv_obj_remove_flag(chosen_swatch, LV_OBJ_FLAG_HIDDEN);
         } else if (mapped && mapped->is_empty) {
             lv_obj_set_style_bg_opa(chosen_swatch, LV_OPA_TRANSP, 0);
