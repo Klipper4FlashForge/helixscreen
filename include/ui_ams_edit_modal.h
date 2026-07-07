@@ -4,6 +4,7 @@
 #pragma once
 
 #include "ui_color_picker.h"
+#include "ui_filament_catalog_picker.h"
 #include "ui_modal.h"
 #include "ui_spoolman_edit_modal.h"
 
@@ -120,6 +121,12 @@ class AmsEditModal : public Modal {
     // === Spoolman spool detail editor ===
     SpoolEditModal spool_edit_modal_;
 
+    // === Offline branded-filament picker (Spoolman-absent dual mode) ===
+    // Reused by btn_change_spool when Spoolman is not configured; member so it is
+    // destroyed with the modal. The Select callback fires synchronously on the main
+    // thread (mirrors FilamentPanel's preset picker) — no AsyncLifetimeGuard needed.
+    FilamentCatalogPickerModal catalog_picker_;
+
     // === Subjects for XML binding ===
     SubjectManager subjects_;
     lv_subject_t slot_indicator_subject_;
@@ -184,12 +191,15 @@ class AmsEditModal : public Modal {
     void switch_to_form();                             ///< Show form view
     void populate_picker();                            ///< Async spool fetch and list population
     void render_spool_list(const std::string& filter); ///< Render filtered spool items
-    void handle_spool_selected(int spool_id);    ///< Auto-fill working_info_ from selected spool
-    void handle_manual_entry();                  ///< Switch from picker to form
-    void handle_change_spool();                  ///< Switch from form to picker
-    void handle_unlink();                        ///< Clear spoolman_id from working slot
-    void handle_picker_search(const char* text); ///< Filter picker list by search text
-    void update_spoolman_button_state();         ///< Show/hide change/unlink buttons
+    void handle_spool_selected(int spool_id); ///< Auto-fill working_info_ from selected spool
+    void handle_manual_entry();               ///< Switch from picker to form
+    void handle_change_spool();               ///< Switch from form to picker / branded catalog
+    void open_branded_catalog_picker();       ///< Spoolman-absent: open offline branded picker
+    void apply_branded_pick(
+        const helix::printer::EffectiveFilament& ef); ///< Fill working_info_ from branded pick
+    void handle_unlink();                             ///< Clear spoolman_id from working slot
+    void handle_picker_search(const char* text);      ///< Filter picker list by search text
+    void update_spoolman_button_state();              ///< Show/hide change/unlink buttons
 
     // === Save orchestration ===
     void fire_completion(bool saved); ///< Common exit path for save/cancel

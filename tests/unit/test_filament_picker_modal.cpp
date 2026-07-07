@@ -7,9 +7,9 @@
 
 #include "../catch_amalgamated.hpp"
 
+using helix::printer::EffectiveFilament;
 using helix::ui::FilamentCatalogPickerModal;
 using helix::ui::FilamentPickerTestAccess;
-using helix::printer::EffectiveFilament;
 
 TEST_CASE_METHOD(XMLTestFixture, "picker emits selected EffectiveFilament", "[filament_picker]") {
     FilamentCatalogPickerModal modal;
@@ -69,8 +69,7 @@ TEST_CASE_METHOD(XMLTestFixture, "picker Select with no highlight is a graceful 
 TEST_CASE_METHOD(XMLTestFixture, "picker reset row hidden when no reset callback set",
                  "[filament_picker]") {
     FilamentCatalogPickerModal modal;
-    modal.show(lv_screen_active(), std::string("PLA"),
-               [](const EffectiveFilament&) {});
+    modal.show(lv_screen_active(), std::string("PLA"), [](const EffectiveFilament&) {});
     helix::ui::UpdateQueue::instance().drain();
 
     REQUIRE(FilamentPickerTestAccess::reset_button_hidden(modal));
@@ -80,11 +79,87 @@ TEST_CASE_METHOD(XMLTestFixture, "picker reset row shown when reset callback set
                  "[filament_picker]") {
     FilamentCatalogPickerModal modal;
     modal.set_reset_callback([]() {});
-    modal.show(lv_screen_active(), std::string("PLA"),
-               [](const EffectiveFilament&) {});
+    modal.show(lv_screen_active(), std::string("PLA"), [](const EffectiveFilament&) {});
     helix::ui::UpdateQueue::instance().drain();
 
     REQUIRE_FALSE(FilamentPickerTestAccess::reset_button_hidden(modal));
+}
+
+namespace {
+// Split a newline-separated dropdown options string into individual entries.
+std::vector<std::string> split_lines(const std::string& s) {
+    std::vector<std::string> out;
+    std::string cur;
+    for (char c : s) {
+        if (c == '\n') {
+            out.push_back(cur);
+            cur.clear();
+        } else {
+            cur += c;
+        }
+    }
+    if (!cur.empty())
+        out.push_back(cur);
+    return out;
+}
+} // namespace
+
+TEST_CASE_METHOD(XMLTestFixture, "picker allowed_types full match keeps every vendor type",
+                 "[filament_picker]") {
+    // Capture the UNFILTERED Type dropdown for the default (Generic) vendor.
+    FilamentCatalogPickerModal ref;
+    ref.show(lv_screen_active(), std::nullopt, [](const EffectiveFilament&) {});
+    std::string unfiltered = FilamentPickerTestAccess::type_options(ref);
+    ref.hide();
+    helix::ui::UpdateQueue::instance().drain();
+
+    REQUIRE_FALSE(unfiltered.empty());
+
+    // allowed_types = the exact full type set -> a superset that must not drop anything.
+    std::vector<std::string> allowed = split_lines(unfiltered);
+    FilamentCatalogPickerModal modal;
+    modal.show(lv_screen_active(), std::nullopt, allowed, [](const EffectiveFilament&) {});
+    helix::ui::UpdateQueue::instance().drain();
+
+    REQUIRE(FilamentPickerTestAccess::type_options(modal) == unfiltered);
+}
+
+TEST_CASE_METHOD(XMLTestFixture, "picker allowed_types partial match keeps only the subset",
+                 "[filament_picker]") {
+    // PLA and PETG both exist for Generic; the dropdown is alphabetically sorted, so the
+    // filtered order is PETG then PLA.
+    std::vector<std::string> allowed = {"PLA", "PETG"};
+    FilamentCatalogPickerModal modal;
+    modal.show(lv_screen_active(), std::nullopt, allowed, [](const EffectiveFilament&) {});
+    helix::ui::UpdateQueue::instance().drain();
+
+    REQUIRE(FilamentPickerTestAccess::type_options(modal) == "PETG\nPLA");
+}
+
+TEST_CASE_METHOD(XMLTestFixture,
+                 "picker allowed_types with no matching product yields empty type list",
+                 "[filament_picker]") {
+    // A type Generic has no product for -> filter drops everything, dropdown empties.
+    std::vector<std::string> allowed = {"NONEXISTENT_TYPE"};
+    FilamentCatalogPickerModal modal;
+    modal.show(lv_screen_active(), std::nullopt, allowed, [](const EffectiveFilament&) {});
+    helix::ui::UpdateQueue::instance().drain();
+
+    // Must not crash; the Type dropdown is empty.
+    REQUIRE(FilamentPickerTestAccess::type_options(modal).empty());
+}
+
+TEST_CASE_METHOD(XMLTestFixture, "picker allowed_types filter is case-insensitive",
+                 "[filament_picker]") {
+    // The AMS material dropdown is case-insensitive; a backend whitelist entry spelled
+    // "pla" must still surface the catalog's "PLA" type. A case-sensitive filter would
+    // wrongly hide it (a real UX gap), so populate_type_dropdown() lowercases both sides.
+    std::vector<std::string> allowed = {"pla"};
+    FilamentCatalogPickerModal modal;
+    modal.show(lv_screen_active(), std::nullopt, allowed, [](const EffectiveFilament&) {});
+    helix::ui::UpdateQueue::instance().drain();
+
+    REQUIRE(FilamentPickerTestAccess::type_options(modal) == "PLA");
 }
 
 TEST_CASE_METHOD(XMLTestFixture, "picker reset invokes stored reset callback",
@@ -92,8 +167,7 @@ TEST_CASE_METHOD(XMLTestFixture, "picker reset invokes stored reset callback",
     FilamentCatalogPickerModal modal;
     bool reset_invoked = false;
     modal.set_reset_callback([&]() { reset_invoked = true; });
-    modal.show(lv_screen_active(), std::string("PLA"),
-               [](const EffectiveFilament&) {});
+    modal.show(lv_screen_active(), std::string("PLA"), [](const EffectiveFilament&) {});
     helix::ui::UpdateQueue::instance().drain();
 
     REQUIRE_FALSE(FilamentPickerTestAccess::reset_button_hidden(modal));

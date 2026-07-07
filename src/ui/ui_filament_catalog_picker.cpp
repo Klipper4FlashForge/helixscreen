@@ -10,6 +10,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 
 namespace helix::ui {
@@ -164,10 +165,22 @@ void FilamentCatalogPickerModal::populate_type_dropdown() {
         return;
     std::vector<std::string> types = catalog_.types_for_brand(current_vendor());
     if (allowed_types_) {
+        // Case-insensitive match: a backend whitelist may spell a type differently
+        // than the catalog ("pla" vs "PLA"). The AMS material dropdown is already
+        // case-insensitive, so dropping a case-mismatched-but-valid type here would
+        // be a UX gap — compare lowercased on both sides.
+        auto to_lower = [](std::string s) {
+            std::transform(s.begin(), s.end(), s.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            return s;
+        };
+        std::vector<std::string> allowed_lc;
+        allowed_lc.reserve(allowed_types_->size());
+        for (const auto& a : *allowed_types_)
+            allowed_lc.push_back(to_lower(a));
         std::vector<std::string> filtered;
         for (const auto& t : types) {
-            if (std::find(allowed_types_->begin(), allowed_types_->end(), t) !=
-                allowed_types_->end())
+            if (std::find(allowed_lc.begin(), allowed_lc.end(), to_lower(t)) != allowed_lc.end())
                 filtered.push_back(t);
         }
         types.swap(filtered);

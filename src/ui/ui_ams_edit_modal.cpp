@@ -746,8 +746,52 @@ void AmsEditModal::handle_manual_entry() {
 }
 
 void AmsEditModal::handle_change_spool() {
-    spdlog::debug("[AmsEditModal] Change spool requested - switching to picker");
-    switch_to_picker();
+    // Dual-mode control: with Spoolman configured, open the Spoolman spool list;
+    // without it, open the offline branded-filament catalog picker.
+    auto* subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    bool has_spoolman = subj && lv_subject_get_int(subj) == 1;
+    if (has_spoolman) {
+        spdlog::debug("[AmsEditModal] Change spool requested - switching to Spoolman picker");
+        switch_to_picker();
+        return;
+    }
+    spdlog::debug("[AmsEditModal] Choose filament requested - opening branded catalog picker");
+    open_branded_catalog_picker();
+}
+
+void AmsEditModal::open_branded_catalog_picker() {
+    // Restrict the picker's Type dropdown to the backend's accepted materials (nullopt
+    // = any). Seed the Type from the slot's current material so the user lands on a
+    // relevant list.
+    auto* backend = AmsState::instance().get_backend();
+    auto allowed = backend ? backend->get_supported_materials() : std::nullopt;
+    std::optional<std::string> seed = working_info_.material.empty()
+                                          ? std::nullopt
+                                          : std::optional<std::string>(working_info_.material);
+    catalog_picker_.show(
+        dialog_, seed, allowed,
+        [this](const helix::printer::EffectiveFilament& ef) { apply_branded_pick(ef); });
+}
+
+void AmsEditModal::apply_branded_pick(const helix::printer::EffectiveFilament& ef) {
+    // Map the branded catalog product onto the working slot. No color fields (the
+    // offline catalog has no per-spool color) and no spoolman_id (this is the
+    // Spoolman-absent path).
+    working_info_.material = ef.type;
+    working_info_.brand = ef.brand;
+    working_info_.nozzle_temp_min = ef.nozzle_min;
+    working_info_.nozzle_temp_max = ef.nozzle_max;
+    working_info_.bed_temp = ef.bed_temp;
+    // Gates new-spool creation (#1071) — same flag handle_material_changed sets on a
+    // genuine user filament edit.
+    filament_user_edited_ = true;
+    switch_to_form();
+    update_ui();
+    update_temp_display();
+    update_sync_button_state();
+    update_spoolman_button_state();
+    spdlog::info("[AmsEditModal] Slot {} assigned branded filament '{} {}' ({}-{}/{}°C)",
+                 slot_index_, ef.brand, ef.type, ef.nozzle_min, ef.nozzle_max, ef.bed_temp);
 }
 
 void AmsEditModal::handle_picker_search(const char* text) {
@@ -956,27 +1000,44 @@ void AmsEditModal::update_spoolman_button_state() {
         return;
     }
 
-    // Ensure the spoolman_actions container visibility matches the current subject value.
-    // The XML bind_flag_if_eq fires asynchronously, so when the modal opens before Spoolman
-    // detection completes, the container stays hidden even after the subject becomes 1.
-    // Reading the subject synchronously here closes that race window (#311).
+    // Read Spoolman availability synchronously — the XML binding fires asynchronously,
+    // so a fresh read here closes the race window when the modal opens before Spoolman
+    // detection completes (#311).
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    bool has_spoolman = spoolman_subj && lv_subject_get_int(spoolman_subj) == 1;
+
+    // The filament-actions row is ALWAYS shown now: btn_change_spool is a dual-mode
+    // control ("Choose Spool" with Spoolman, "Choose Filament" without).
     lv_obj_t* actions_container = find_widget("spoolman_actions");
     if (actions_container) {
-        auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
-        bool has_spoolman = spoolman_subj && lv_subject_get_int(spoolman_subj) == 1;
-        if (has_spoolman) {
-            lv_obj_remove_flag(actions_container, LV_OBJ_FLAG_HIDDEN);
-            // Retry vendor fetch if it was skipped due to the race (#311)
-            if (!vendors_loaded_) {
-                fetch_vendors_from_spoolman();
-            }
-        } else {
-            lv_obj_add_flag(actions_container, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(actions_container, LV_OBJ_FLAG_HIDDEN);
+        // Retry vendor fetch if it was skipped due to the race (#311)
+        if (has_spoolman && !vendors_loaded_) {
+            fetch_vendors_from_spoolman();
         }
+    }
+
+    // Dual-mode label on the shared button.
+    lv_obj_t* btn_change = find_widget("btn_change_spool");
+    if (btn_change) {
+        ui_button_set_text(btn_change,
+                           has_spoolman ? lv_tr("Choose Spool") : lv_tr("Choose Filament"));
     }
 
     lv_obj_t* btn_actions = find_widget("btn_spool_actions");
     lv_obj_t* btn_scan_qr = find_widget("btn_scan_qr_code");
+
+    if (!has_spoolman) {
+        // Spoolman absent: only the dual-mode Choose Filament button is meaningful —
+        // QR scan and the spool-actions split button have no offline analogue.
+        if (btn_scan_qr) {
+            lv_obj_add_flag(btn_scan_qr, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (btn_actions) {
+            lv_obj_add_flag(btn_actions, LV_OBJ_FLAG_HIDDEN);
+        }
+        return;
+    }
 
     if (working_info_.spoolman_id > 0) {
         // Linked: show split button with all spool actions

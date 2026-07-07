@@ -13,7 +13,8 @@ struct FilamentPickerTestAccess {
     // user had tapped that row.
     static void select_first_product(FilamentCatalogPickerModal& m) {
         auto products = m.catalog_.products_for(m.current_vendor(), m.current_type());
-        if (products.empty()) return;
+        if (products.empty())
+            return;
         m.highlighted_id_ = products.front()->id;
         m.rebuild_product_list();
     }
@@ -26,7 +27,8 @@ struct FilamentPickerTestAccess {
     // "value_changed" event would trigger (types/list rebuild + highlighted_id_ reset).
     static void change_vendor(FilamentCatalogPickerModal& m, uint32_t index) {
         lv_obj_t* dd = lv_obj_find_by_name(m.dialog(), "vendor_dropdown");
-        if (!dd) return;
+        if (!dd)
+            return;
         lv_dropdown_set_selected(dd, index);
         m.handle_vendor_changed();
     }
@@ -35,16 +37,26 @@ struct FilamentPickerTestAccess {
         return m.highlighted_id_;
     }
 
+    // Returns the Type dropdown's newline-separated options string, reflecting any
+    // allowed_types_ filtering applied by populate_type_dropdown(). Empty when the
+    // dropdown could not be found or no types passed the filter.
+    static std::string type_options(const FilamentCatalogPickerModal& m) {
+        lv_obj_t* dd = lv_obj_find_by_name(m.dialog(), "type_dropdown");
+        return dd ? std::string(lv_dropdown_get_options(dd)) : std::string();
+    }
+
     // Returns true if the "Reset to defaults" row is currently hidden.
     static bool reset_button_hidden(const FilamentCatalogPickerModal& m) {
-        lv_obj_t* btn = lv_obj_find_by_name(m.dialog(), "catalog_picker_reset_btn");
-        if (!btn) return true;
+        lv_obj_t* btn = lv_obj_find_by_name(m.dialog(), "btn_tertiary");
+        if (!btn)
+            return true;
         return lv_obj_has_flag(btn, LV_OBJ_FLAG_HIDDEN);
     }
 
     // Invokes the reset callback the same way the registered XML click handler would.
     static void press_reset(FilamentCatalogPickerModal& m) {
-        if (m.reset_callback_) m.reset_callback_();
+        if (m.reset_callback_)
+            m.reset_callback_();
         m.hide();
     }
 };

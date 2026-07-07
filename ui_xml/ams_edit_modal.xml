@@ -220,13 +220,15 @@
           </lv_obj>
         </lv_obj>
       </lv_obj>
-      <!-- Spoolman actions: full width, only shown when Spoolman is available -->
+      <!-- Filament actions: full width, always shown. btn_change_spool is a dual-mode
+           control — "Choose Spool" (Spoolman spool list) when Spoolman is configured,
+           "Choose Filament" (offline branded catalog) when it is not. Visibility of the
+           QR/split-button actions is managed in update_spoolman_button_state(). -->
       <lv_obj name="spoolman_actions"
               width="100%" height="content" style_pad_left="#space_md" style_pad_right="#space_md"
               style_pad_top="0" style_pad_bottom="#space_sm"
               flex_flow="row_wrap" style_flex_main_place="center" style_pad_gap="#space_sm"
-              scrollable="false" hidden="true">
-        <bind_flag_if_eq subject="printer_has_spoolman" flag="hidden" ref_value="0"/>
+              scrollable="false">
         <ui_button name="btn_change_spool"
                    height="#button_height" text="Choose Spool"
                    translation_tag="Choose Spool" variant="secondary">
