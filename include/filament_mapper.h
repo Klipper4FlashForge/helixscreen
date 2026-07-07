@@ -31,6 +31,10 @@ struct AvailableSlot {
     int unit_index = 0;            ///< Unit index within the backend
     int local_slot_index = 0;      ///< Slot index within its unit (for display labels)
     std::string unit_display_name; ///< Unit name for display (empty = single-unit backend)
+    /// Comma-separated hex codes for multi-color spools (companion to color_rgb;
+    /// empty = single-color). Mirrors SlotInfo::multi_color_hexes. Kept last so
+    /// existing positional aggregate initializers stay valid.
+    std::string multi_color_hexes;
 
     /// Unique key for this slot across all backends
     SlotKey key() const {

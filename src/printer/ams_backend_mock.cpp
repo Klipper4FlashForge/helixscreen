@@ -897,6 +897,7 @@ AmsError AmsBackendMock::set_slot_info(int slot_index, const SlotInfo& info, boo
         // Update filament info
         entry->info.color_name = info.color_name;
         entry->info.color_rgb = info.color_rgb;
+        entry->info.multi_color_hexes = info.multi_color_hexes;
         entry->info.material = info.material;
         entry->info.brand = info.brand;
         entry->info.spoolman_id = info.spoolman_id;
