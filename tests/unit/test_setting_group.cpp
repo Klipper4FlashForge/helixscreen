@@ -78,3 +78,32 @@ TEST_CASE_METHOD(SettingGroupFixture, "setting_group_header: renders title text"
     // The section title is rendered as a label carrying the passed text.
     REQUIRE(find_label_with_text(header, "DISPLAY") != nullptr);
 }
+
+TEST_CASE_METHOD(SettingGroupFixture, "setting_group_header: icon visibility follows hide_icon",
+                 "[setting_group]") {
+    REQUIRE(register_component("setting_group_header"));
+
+    // hide_icon="false" -> the section icon is visible (no HIDDEN flag).
+    {
+        const char* attrs[] = {"title", "DISPLAY", "icon", "light", "hide_icon", "false", nullptr};
+        auto* header = create_component("setting_group_header", attrs);
+        REQUIRE(header != nullptr);
+        process_lvgl(50);
+
+        lv_obj_t* icon = lv_obj_find_by_name(header, "section_icon");
+        REQUIRE(icon != nullptr);
+        REQUIRE_FALSE(lv_obj_has_flag(icon, LV_OBJ_FLAG_HIDDEN));
+    }
+
+    // hide_icon="true" -> the section icon is hidden (HIDDEN flag set).
+    {
+        const char* attrs[] = {"title", "DISPLAY", "icon", "light", "hide_icon", "true", nullptr};
+        auto* header = create_component("setting_group_header", attrs);
+        REQUIRE(header != nullptr);
+        process_lvgl(50);
+
+        lv_obj_t* icon = lv_obj_find_by_name(header, "section_icon");
+        REQUIRE(icon != nullptr);
+        REQUIRE(lv_obj_has_flag(icon, LV_OBJ_FLAG_HIDDEN));
+    }
+}
