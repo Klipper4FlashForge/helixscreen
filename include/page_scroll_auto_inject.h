@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
-#include "ui_observer_guard.h"
-
 #include "lvgl/lvgl.h"
 #include "page_scroll_controller.h"
 
@@ -19,9 +17,12 @@ class PageScrollAutoInject {
   public:
     static PageScrollAutoInject& instance();
 
-    void init();     ///< register setting observer (idempotent)
-    void shutdown(); ///< detach all + drop observer
+    void init();     ///< lifecycle hook (idempotent); see .cpp for why no observer
+    void shutdown(); ///< detach all controllers
     void on_root_shown(lv_obj_t* root);
+    /// Apply a runtime change to the setting (called from the Display-settings
+    /// toggle callback): inject into the current screen when enabled, else detach all.
+    void on_setting_toggled(bool enabled);
     void detach_all();
     void prune_dead(); ///< erase controllers whose container died
 
@@ -38,7 +39,6 @@ class PageScrollAutoInject {
     static bool qualifies(lv_obj_t* obj);
 
     std::unordered_map<lv_obj_t*, std::unique_ptr<PageScrollController>> controllers_;
-    ObserverGuard setting_observer_;
     bool initialized_ = false;
 };
 

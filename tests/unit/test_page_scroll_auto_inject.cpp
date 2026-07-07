@@ -44,9 +44,12 @@ TEST_CASE_METHOD(LVGLUITestFixture, "AutoInject attaches only to overflowing ver
     CHECK(lv_obj_find_by_name(fits, "up") == nullptr);
     CHECK(lv_obj_find_by_name(horizontal, "up") == nullptr);
 
-    // Disabling the setting detaches everything.
+    // Disabling the setting detaches everything. The toggle callback drives this
+    // via on_setting_toggled() (there is no subject observer — see
+    // PageScrollAutoInject::init); replicate that call here.
     dsm.set_page_scroll_buttons(false);
-    process_lvgl(20); // observer is queued; flush it + async gutter deletes
+    inj.on_setting_toggled(false);
+    process_lvgl(20); // flush async gutter deletes
     CHECK(inj.managed_count() == 0);
 
     inj.shutdown();

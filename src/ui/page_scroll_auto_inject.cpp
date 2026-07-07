@@ -2,7 +2,6 @@
 #include "page_scroll_auto_inject.h"
 
 #include "display_settings_manager.h"
-#include "observer_factory.h"
 
 #include <spdlog/spdlog.h>
 
@@ -14,20 +13,27 @@ PageScrollAutoInject& PageScrollAutoInject::instance() {
 }
 
 void PageScrollAutoInject::init() {
-    if (initialized_) {
-        return;
-    }
+    // Intentionally NOT a subject observer. DisplaySettingsManager's setting subject
+    // is (re)initialized lazily when the Settings panel is first built — AFTER this
+    // runs during xml registration — and that re-init wipes any observer registered
+    // here (same subject address, cleared observer list), so an observer would never
+    // fire. Instead, runtime toggles are driven directly from the Display-settings
+    // callback via on_setting_toggled(), and default-on-at-startup is handled by the
+    // NavigationManager on_root_shown() hooks. Kept as a lifecycle hook for symmetry
+    // with shutdown().
     initialized_ = true;
-    auto& dsm = helix::DisplaySettingsManager::instance();
-    // observe_int_sync defers to the main thread (safe for widget mutation).
-    setting_observer_ = observe_int_sync<PageScrollAutoInject>(
-        dsm.subject_page_scroll_buttons(), this, [](PageScrollAutoInject* self, int value) {
-            if (value != 0) {
-                self->on_root_shown(lv_screen_active()); // inject into current screen
-            } else {
-                self->detach_all();
-            }
-        });
+}
+
+void PageScrollAutoInject::on_setting_toggled(bool enabled) {
+    if (enabled) {
+        // Panels live on the active screen, overlays on the top layer — walk both so
+        // enabling the setting while already on a scrollable screen injects
+        // immediately. on_root_shown is idempotent.
+        on_root_shown(lv_screen_active());
+        on_root_shown(lv_layer_top());
+    } else {
+        detach_all();
+    }
 }
 
 bool PageScrollAutoInject::enabled() const {
@@ -35,7 +41,6 @@ bool PageScrollAutoInject::enabled() const {
 }
 
 void PageScrollAutoInject::shutdown() {
-    setting_observer_.reset();
     detach_all();
     initialized_ = false;
 }
@@ -99,9 +104,12 @@ void PageScrollAutoInject::on_root_shown(lv_obj_t* root) {
     prune_dead();
     lv_obj_update_layout(root); // overflow must be measurable
     walk_and_attach(root, /*ancestor_managed=*/false);
+    spdlog::debug("[PageScroll] on_root_shown root={} -> managed={}", static_cast<void*>(root),
+                  controllers_.size());
 }
 
 void PageScrollAutoInject::detach_all() {
+    spdlog::debug("[PageScroll] detach_all: detaching {} controller(s)", controllers_.size());
     for (auto& [key, ctl] : controllers_) {
         ctl->set_on_container_deleted(nullptr); // avoid erase-during-iteration
         ctl->detach();

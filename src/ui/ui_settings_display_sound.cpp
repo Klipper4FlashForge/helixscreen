@@ -24,6 +24,7 @@
 #include "display_settings_manager.h"
 #include "format_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
+#include "page_scroll_auto_inject.h"
 #include "settings_manager.h"
 #include "sound_manager.h"
 #include "static_panel_registry.h"
@@ -655,6 +656,9 @@ void DisplaySoundSettingsOverlay::handle_widget_labels_changed(bool enabled) {
 void DisplaySoundSettingsOverlay::handle_page_scroll_buttons_changed(bool enabled) {
     spdlog::info("[{}] Page scroll buttons toggled: {}", get_name(), enabled ? "ON" : "OFF");
     DisplaySettingsManager::instance().set_page_scroll_buttons(enabled);
+    // Apply immediately to the current screen — this callback is the authoritative
+    // user-toggle signal (a subject observer can't be used; see PageScrollAutoInject::init).
+    helix::ui::PageScrollAutoInject::instance().on_setting_toggled(enabled);
 }
 
 void DisplaySoundSettingsOverlay::handle_bed_mesh_mode_changed(int mode) {
