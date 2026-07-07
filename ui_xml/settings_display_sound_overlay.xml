@@ -193,6 +193,7 @@
       <!-- SOUND SECTION -->
       <!-- ================================================================== -->
       <setting_group>
+        <bind_flag_if_eq subject="printer_has_speaker" flag="hidden" ref_value="0"/>
         <setting_group_header title="SOUND" title_tag="SOUND" icon="notifications" hide_icon="false"/>
       <!-- Master Sounds Toggle -->
       <lv_obj name="container_sounds" width="100%" style_pad_all="0" scrollable="false">

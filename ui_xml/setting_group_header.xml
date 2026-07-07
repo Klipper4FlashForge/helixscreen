@@ -8,6 +8,7 @@
     <prop name="title" type="string" default="Section"/>
     <prop name="title_tag" type="string" default=""/>
     <prop name="icon" type="string" default=""/>
+    <!-- Group headers default to text-only (no icon) for a cleaner grouped-list look; pass hide_icon="false" to show an icon. -->
     <prop name="hide_icon" type="string" default="true"/>
   </api>
   <styles>
