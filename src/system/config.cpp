@@ -87,9 +87,8 @@ json get_default_printer_config(const std::string& moonraker_host) {
 /// Default display configuration section
 /// Used for both new configs and ensuring display section exists with defaults
 json get_default_display_config() {
-    return {{"sleep_sec", 1200},        {"dim_sec", 600},
-            {"dim_brightness", 30},      {"drm_device", ""},
-            {"gcode_render_mode", 0},    {"bed_mesh_render_mode", 0},
+    return {{"sleep_sec", 1200},      {"dim_sec", 600},         {"dim_brightness", 30},
+            {"drm_device", ""},       {"gcode_render_mode", 0}, {"bed_mesh_render_mode", 0},
             {"gpu_3d_blocked", false}};
 }
 
@@ -808,15 +807,17 @@ static void migrate_v18_to_v19(json& config) {
         return;
     }
     json& arr = config["preset_materials"];
+    int converted = 0;
     for (auto& el : arr) {
         if (el.is_string()) {
             json obj = json::object();
             obj["type"] = el.get<std::string>();
             el = obj;
+            ++converted;
         }
     }
-    spdlog::info("[Config] Migration v19: preset_materials strings -> objects ({} entries)",
-                 arr.size());
+    spdlog::info("[Config] Migration v19: preset_materials strings -> objects ({} converted)",
+                 converted);
 }
 
 /// Run all versioned migrations in sequence from current version to CURRENT_CONFIG_VERSION

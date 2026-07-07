@@ -178,7 +178,8 @@ class FilamentPanel : public PanelBase {
 
     /**
      * @brief Reassign the material a preset slot represents
-     * @param slot Preset slot index (0=PLA-position, 1=PETG-position, 2=ABS-position, 3=TPU-position)
+     * @param slot Preset slot index (0=PLA-position, 1=PETG-position, 2=ABS-position,
+     * 3=TPU-position)
      * @param material Material name (must exist in the filament database)
      */
     void reassign_preset(int slot, const std::string& material);
@@ -284,8 +285,10 @@ class FilamentPanel : public PanelBase {
     std::array<std::string, 4> preset_materials_ = {"PLA", "PETG", "ABS", "TPU"};
 
     // Preset button NAME label subjects (e.g. "PLA"); parallel to preset_temps_subjects_.
+    // Wide enough for a branded "%s %s" (brand + type) without truncation (e.g. "Bambu Lab
+    // PETG-CF").
     lv_subject_t preset_name_subjects_[4];
-    char preset_name_bufs_[4][24];
+    char preset_name_bufs_[4][48];
 
     // Offline branded-filament catalog picker shown on preset long-press.
     helix::ui::FilamentCatalogPickerModal catalog_picker_;
@@ -409,16 +412,16 @@ class FilamentPanel : public PanelBase {
     void update_warning_text();
     void update_safety_state();
     void update_preset_buttons_visual();
-    void update_preset_button_temps();   ///< Update preset button labels from filament DB
-    void update_preset_button_labels();  ///< Update preset button NAME labels from preset_materials_
+    void update_preset_button_temps();  ///< Update preset button labels from filament DB
+    void update_preset_button_labels(); ///< Update preset button NAME labels from preset_materials_
     void check_and_auto_select_preset(); ///< Auto-select preset if targets match
     /// Apply a branded product picked from the catalog picker to a preset slot:
     /// updates the plain type (reassign_preset), attaches the exact branded product
     /// (set_preset_filament), then refreshes labels/temps/highlight to reflect it.
     void apply_preset_pick(int slot, const helix::printer::EffectiveFilament& ef);
-    void update_all_temps();             ///< Unified handler for temp observer bundle
-    void check_pending_preheat();        ///< Called from update_all_temps()
-    void cancel_pending_preheat();       ///< Reset preheat state + notify
+    void update_all_temps();       ///< Unified handler for temp observer bundle
+    void check_pending_preheat();  ///< Called from update_all_temps()
+    void cancel_pending_preheat(); ///< Reset preheat state + notify
     struct PreheatTempResult {
         int temp = 0;
         std::string material_name;
