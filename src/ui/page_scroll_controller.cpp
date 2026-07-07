@@ -133,6 +133,15 @@ void PageScrollController::detach() {
         return;
     }
     lv_obj_remove_event_cb_with_user_data(container_, container_event_cb, this);
+    // Remove the button click cbs too (they carry `this`) before async-deleting the
+    // gutter, so no orphaned callback can reference this controller — makes teardown
+    // self-evidently safe rather than relying on async-delete timing.
+    if (up_btn_ != nullptr) {
+        lv_obj_remove_event_cb_with_user_data(up_btn_, up_clicked_cb, this);
+    }
+    if (down_btn_ != nullptr) {
+        lv_obj_remove_event_cb_with_user_data(down_btn_, down_clicked_cb, this);
+    }
     remove_reserved_padding();
     lv_obj_set_scrollbar_mode(container_, saved_scrollbar_mode_);
     if (gutter_ != nullptr) {

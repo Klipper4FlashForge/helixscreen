@@ -19,9 +19,8 @@ void PageScrollAutoInject::init() {
     // here (same subject address, cleared observer list), so an observer would never
     // fire. Instead, runtime toggles are driven directly from the Display-settings
     // callback via on_setting_toggled(), and default-on-at-startup is handled by the
-    // NavigationManager on_root_shown() hooks. Kept as a lifecycle hook for symmetry
-    // with shutdown().
-    initialized_ = true;
+    // NavigationManager on_root_shown() hooks. Retained as an explicit lifecycle
+    // hook (paired with shutdown()) and a home for this rationale.
 }
 
 void PageScrollAutoInject::on_setting_toggled(bool enabled) {
@@ -42,7 +41,6 @@ bool PageScrollAutoInject::enabled() const {
 
 void PageScrollAutoInject::shutdown() {
     detach_all();
-    initialized_ = false;
 }
 
 bool PageScrollAutoInject::qualifies(lv_obj_t* obj) {
@@ -118,6 +116,10 @@ void PageScrollAutoInject::detach_all() {
 }
 
 void PageScrollAutoInject::prune_dead() {
+    // Defensive belt-and-suspenders: normally a controller is erased eagerly the
+    // instant its container fires LV_EVENT_DELETE (the set_on_container_deleted
+    // callback), so no !alive() entry survives to here. This reaps any that could
+    // linger if a future caller nulls that callback without clearing the map.
     for (auto it = controllers_.begin(); it != controllers_.end();) {
         if (!it->second->alive()) {
             it = controllers_.erase(it);

@@ -39,7 +39,6 @@ class PageScrollAutoInject {
     static bool qualifies(lv_obj_t* obj);
 
     std::unordered_map<lv_obj_t*, std::unique_ptr<PageScrollController>> controllers_;
-    bool initialized_ = false;
 };
 
 } // namespace helix::ui

@@ -643,8 +643,10 @@ void register_xml_components() {
     // toggles visibility based on UpgradeNudge state).
     register_xml("components/upgrade_banner.xml");
 
-    // Page-scroll-buttons policy: observes the display setting and injects
-    // chevron gutters into overflowing scrollable containers on panel/overlay show.
+    // Page-scroll-buttons policy: injects chevron gutters into overflowing
+    // scrollable containers. Driven by the NavigationManager on_root_shown() hooks
+    // and the Display-settings toggle callback — NOT a subject observer (see
+    // PageScrollAutoInject::init). This call is the lifecycle setup hook.
     helix::ui::PageScrollAutoInject::instance().init();
 
     spdlog::trace("[XML Registration] XML component registration complete");
