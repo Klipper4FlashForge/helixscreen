@@ -287,6 +287,7 @@ Located in the `display` section:
     "gcode_3d_enabled": true,
     "bed_mesh_render_mode": 0,
     "bed_mesh_show_zero_plane": true,
+    "page_scroll_buttons": false,
     "printer_image": ""
   }
 }
@@ -374,6 +375,11 @@ Can also be overridden via `HELIX_GCODE_MODE` env var (`3D` or `2D`).
 **Type:** boolean
 **Default:** `true`
 **Description:** Show translucent reference plane at Z=0 in bed mesh 3D view. Helps visualize where the nozzle touches the bed.
+
+### `page_scroll_buttons`
+**Type:** boolean
+**Default:** `false`
+**Description:** Show up/down scroll buttons on long lists throughout the app. Useful on small screens or displays where drag-to-scroll feels unresponsive. See [Display & Sound Settings](guide/settings/display-sound.md#scroll-buttons) for details.
 
 ### `printer_image`
 **Type:** string
@@ -1480,6 +1486,7 @@ Environment="HELIX_TOUCH_DEVICE=/dev/input/event0"
     "gcode_3d_enabled": true,
     "bed_mesh_render_mode": 0,
     "bed_mesh_show_zero_plane": true,
+    "page_scroll_buttons": false,
     "printer_image": ""
   },
 
