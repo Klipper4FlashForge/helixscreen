@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "page_scroll_controller.h"
 
+#include "display_settings_manager.h"
 #include "page_scroll_math.h"
 
 #include <spdlog/spdlog.h>
@@ -110,11 +111,13 @@ void PageScrollController::scroll_by_page(int32_t direction) {
         return;
     }
     int32_t step = page_scroll_step(lv_obj_get_content_height(container_));
-    // LV_ANIM_OFF keeps scroll position deterministic for tests; production feel
-    // is still smooth because presses are discrete. (Switch to LV_ANIM_ON here if
-    // the on-device review prefers animation — reach-state is recomputed via the
-    // SCROLL event either way.)
-    lv_obj_scroll_by(container_, 0, -direction * step, LV_ANIM_OFF);
+    // Animate the page scroll when the user's Animations setting is on; otherwise
+    // jump instantly. reach-state is recomputed from the SCROLL event as the
+    // animation runs, so the dim/disable end-states stay correct either way.
+    lv_anim_enable_t anim = helix::DisplaySettingsManager::instance().get_animations_enabled()
+                                ? LV_ANIM_ON
+                                : LV_ANIM_OFF;
+    lv_obj_scroll_by(container_, 0, -direction * step, anim);
     refresh_reach_state();
 }
 

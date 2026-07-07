@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "../lvgl_ui_test_fixture.h"
+#include "display_settings_manager.h"
 #include "page_scroll_controller.h"
 
 #include "../catch_amalgamated.hpp"
@@ -43,6 +44,11 @@ TEST_CASE_METHOD(LVGLUITestFixture, "PageScrollController attaches gutter to ove
 TEST_CASE_METHOD(LVGLUITestFixture, "PageScrollController disables up at top and pages down",
                  "[page_scroll_buttons][ui]") {
     lv_obj_t* c = make_scroll_container(test_screen(), 20, 60);
+    // page_down() animates when the Animations setting is on; force it off so the
+    // scroll offset is deterministic immediately after the call.
+    helix::DisplaySettingsManager::instance().init_subjects();
+    helix::DisplaySettingsManager::instance().set_animations_enabled(false);
+
     PageScrollController ctl;
     REQUIRE(ctl.attach(c));
 
@@ -51,7 +57,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "PageScrollController disables up at top and
     CHECK_FALSE(lv_obj_has_state(ctl.down_button(), LV_STATE_DISABLED));
 
     int32_t before = lv_obj_get_scroll_y(c);
-    ctl.page_down(); // animated=off internally for determinism? see impl
+    ctl.page_down(); // LV_ANIM_OFF here since Animations is disabled above
     lv_obj_update_layout(c);
     CHECK(lv_obj_get_scroll_y(c) > before);
 
