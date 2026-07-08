@@ -788,22 +788,28 @@ void AmsEditOverlay::handle_spool_edit_save() {
         working_info_.spool_name.clear();
     }
 
+    // --- Read + validate quantity/logistics fields BEFORE detaching the
+    //     catalog selector. Every early return that keeps the user on this
+    //     view (the negative-value check below) must leave brand/material
+    //     selection intact, so this has to run ahead of detach()/
+    //     clear_catalog() — an early return after detaching left the
+    //     selector inert while the user was still on the view.
+    read_detail_fields();
+
+    // Reject negative numerics (same rule as SpoolEditModal::validate_fields).
+    if (detail_working_.remaining_weight_g < 0 || detail_working_.spool_weight_g < 0 ||
+        detail_working_.price < 0) {
+        ToastManager::instance().show(ToastSeverity::ERROR,
+                                      lv_tr("Values must not be negative"), 3000);
+        return; // stay on the spool-edit view so the user can fix it
+    }
+
     details_selector_.detach();
     details_selector_.clear_catalog();
 
     // --- Logistics two-PATCH for slots that stay managed (merged from the old
     //     spool-details save path) ---
     if (working_info_.spoolman_id > 0) {
-        read_detail_fields();
-
-        // Reject negative numerics (same rule as SpoolEditModal::validate_fields).
-        if (detail_working_.remaining_weight_g < 0 || detail_working_.spool_weight_g < 0 ||
-            detail_working_.price < 0) {
-            ToastManager::instance().show(ToastSeverity::ERROR,
-                                          lv_tr("Values must not be negative"), 3000);
-            return; // stay on the spool-edit view so the user can fix it
-        }
-
         nlohmann::json spool_patch;
         nlohmann::json filament_patch;
         build_spool_patches(detail_original_, detail_working_, spool_patch, filament_patch);
@@ -878,6 +884,19 @@ void AmsEditOverlay::handle_spool_edit_save() {
                 }
             }
         }
+    } else {
+        // Untracked slot: Remaining/Spool-weight are local overrides — there
+        // is no Spoolman record to PATCH, so commit them straight into
+        // working_info_ the way the rest of spool-edit's fields already do.
+        // The overview header Save is the existing commit path for
+        // working_info_ (this handler doesn't write settings directly).
+        working_info_.remaining_weight_g = static_cast<float>(detail_working_.remaining_weight_g);
+        working_info_.total_weight_g = static_cast<float>(detail_working_.spool_weight_g);
+        // Keep the pre-save baseline in sync (same idiom as the tracked
+        // async path above) so the header Save dirty state doesn't light up
+        // just from having visited spool-edit.
+        original_info_.remaining_weight_g = working_info_.remaining_weight_g;
+        original_info_.total_weight_g = working_info_.total_weight_g;
     }
 
     // --- No logistics write (untracked, unchanged, or API missing): return now ---
@@ -937,10 +956,21 @@ void AmsEditOverlay::populate_detail_fields() {
         std::string value;
     };
     char buf[16];
-    snprintf(buf, sizeof(buf), "%.0f", detail_working_.remaining_weight_g);
-    std::string remaining = buf;
-    snprintf(buf, sizeof(buf), "%.0f", detail_working_.spool_weight_g);
-    std::string spool_wt = buf;
+    // Negative values are the "unknown" sentinel (SlotInfo/SpoolInfo default
+    // -1) — render blank rather than a literal "-1" (matches the
+    // display-only unknown rendering already used for the overview's weight
+    // input). A blank field also can't trip the negative-value Save
+    // validation on an untouched, weight-unknown untracked slot.
+    std::string remaining;
+    if (detail_working_.remaining_weight_g >= 0) {
+        snprintf(buf, sizeof(buf), "%.0f", detail_working_.remaining_weight_g);
+        remaining = buf;
+    }
+    std::string spool_wt;
+    if (detail_working_.spool_weight_g >= 0) {
+        snprintf(buf, sizeof(buf), "%.0f", detail_working_.spool_weight_g);
+        spool_wt = buf;
+    }
     std::string price;
     if (detail_working_.price > 0) {
         snprintf(buf, sizeof(buf), "%.2f", detail_working_.price);

@@ -421,6 +421,70 @@ TEST_CASE_METHOD(LVGLUITestFixture, "unified spool-edit view shows logistics onl
     close_editor_overlay();
 }
 
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "untracked spool-edit Save commits Remaining/Spool-weight into working_info_",
+                 "[ams_edit_overlay][spool_edit]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    show_overlay_for_mock_untracked_slot(*this);
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* remaining = access.widget("detail_field_remaining");
+    lv_obj_t* spool_weight = access.widget("detail_field_spool_weight");
+    REQUIRE(remaining != nullptr);
+    REQUIRE(spool_weight != nullptr);
+
+    lv_textarea_set_text(remaining, "321");
+    lv_textarea_set_text(spool_weight, "987");
+
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.view() == AmsEditOverlay::kViewOverview);
+    CHECK(access.working_info().spoolman_id == 0); // still untracked, no PATCH
+    CHECK(access.working_info().remaining_weight_g == Catch::Approx(321.0f));
+    CHECK(access.working_info().total_weight_g == Catch::Approx(987.0f));
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "untracked spool-edit Save rejects a negative weight and leaves working_info_ "
+                 "untouched",
+                 "[ams_edit_overlay][spool_edit]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    show_overlay_for_mock_untracked_slot(*this);
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* remaining = access.widget("detail_field_remaining");
+    REQUIRE(remaining != nullptr);
+    lv_textarea_set_text(remaining, "-50");
+
+    float before_remaining = access.working_info().remaining_weight_g;
+    float before_total = access.working_info().total_weight_g;
+
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Validation toast fired and returned early -> still on spool-edit view,
+    // working_info_ untouched, and the catalog selector stays attached (the
+    // early return happens before detach()/clear_catalog()).
+    CHECK(access.view() == AmsEditOverlay::kViewSpoolEdit);
+    CHECK(access.working_info().remaining_weight_g == before_remaining);
+    CHECK(access.working_info().total_weight_g == before_total);
+
+    close_editor_overlay();
+}
+
 namespace {
 std::vector<SpoolInfo> two_spools() {
     SpoolInfo a;
