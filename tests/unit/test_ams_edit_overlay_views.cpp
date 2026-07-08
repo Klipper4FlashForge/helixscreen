@@ -58,6 +58,9 @@ class AmsEditOverlayViewTestAccess {
     SlotInfo working_info() {
         return overlay_.working_info_;
     }
+    bool is_dirty() {
+        return overlay_.is_dirty();
+    }
     bool save_opt_in() {
         return overlay_.save_to_spoolman_opt_in_;
     }
@@ -110,6 +113,27 @@ SlotInfo tracked_slot() {
     info.color_rgb = 0x8A949E;
     info.color_name = "Gray ASA";
     return info;
+}
+
+// Copy of untracked_slot() with weights explicitly marked unknown (-1
+// sentinel, also SlotInfo's default) — models a slot with no Spoolman/manual
+// weight data on record.
+SlotInfo untracked_slot_without_weights() {
+    SlotInfo info = untracked_slot();
+    info.total_weight_g = -1.0f;
+    info.remaining_weight_g = -1.0f;
+    return info;
+}
+
+// Mirrors the show_for_slot() + drain + process_lvgl sequence used by every
+// test in this file, seeded with a weightless slot. Takes the fixture so it
+// can reach test_screen()/process_lvgl() (both LVGLUITestFixture members).
+void show_overlay_for_mock_slot_without_weights(LVGLUITestFixture& fixture) {
+    auto& overlay = get_ams_edit_overlay();
+    REQUIRE(
+        overlay.show_for_slot(fixture.test_screen(), 0, untracked_slot_without_weights(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    fixture.process_lvgl(10);
 }
 
 } // namespace
@@ -435,6 +459,24 @@ TEST_CASE_METHOD(LVGLUITestFixture, "header Save hides on non-overview views",
     REQUIRE(lv_subject_get_int(hide_subj) == 1);
     access.call_set_view(AmsEditOverlay::kViewOverview);
     REQUIRE(lv_subject_get_int(hide_subj) == 0);
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "weightless slot opens clean — no fabricated weights",
+                 "[ams_edit_overlay][dirty]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    show_overlay_for_mock_slot_without_weights(*this); // SlotInfo with total/remaining = -1
+    access.call_update_ui();
+
+    REQUIRE_FALSE(access.is_dirty());
+    auto* save_dis = lv_xml_get_subject(nullptr, "ams_edit_save_disabled");
+    REQUIRE(save_dis != nullptr);
+    REQUIRE(lv_subject_get_int(save_dis) == 1);          // Save stays disabled
+    REQUIRE(access.working_info().total_weight_g <= 0);  // untouched
+    REQUIRE(access.working_info().remaining_weight_g <= 0); // untouched
 
     close_editor_overlay();
 }

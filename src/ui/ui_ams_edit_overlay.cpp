@@ -1193,15 +1193,18 @@ void AmsEditOverlay::update_ui() {
     }
     lv_subject_copy_string(&spool_name_subject_, spool_name_buf_);
 
-    // Remaining slider and label. Synthetic 1000g total if no weight data.
-    if (working_info_.total_weight_g <= 0) {
-        working_info_.total_weight_g = 1000.0f;
-        working_info_.remaining_weight_g =
-            (working_info_.remaining_weight_g > 0) ? working_info_.remaining_weight_g : 1000.0f;
+    // Remaining slider/progress and label — display-only. Unknown weight data
+    // (total_weight_g <= 0) renders "—" and never mutates working_info_: the
+    // old code fabricated a synthetic 1000g total/remaining here, which made
+    // every weightless slot dirty-on-open and persisted fake 1000/1000g on
+    // Save even when the user made no edits.
+    bool has_weight = working_info_.total_weight_g > 0;
+    int remaining_pct = 0;
+    if (has_weight) {
+        float rem = working_info_.remaining_weight_g >= 0 ? working_info_.remaining_weight_g : 0;
+        remaining_pct = static_cast<int>(std::lround(100.0f * rem / working_info_.total_weight_g));
+        remaining_pct = std::max(0, std::min(100, remaining_pct));
     }
-    int remaining_pct =
-        static_cast<int>(100.0f * working_info_.remaining_weight_g / working_info_.total_weight_g);
-    remaining_pct = std::max(0, std::min(100, remaining_pct));
 
     lv_obj_t* remaining_slider = find_widget("remaining_slider");
     if (remaining_slider) {
@@ -1217,11 +1220,45 @@ void AmsEditOverlay::update_ui() {
         }
     }
 
-    format_remaining_label(remaining_pct);
+    if (has_weight) {
+        float rem = working_info_.remaining_weight_g >= 0 ? working_info_.remaining_weight_g : 0;
+        snprintf(remaining_pct_buf_, sizeof(remaining_pct_buf_), "%.0f / %.0fg (%d%%)", rem,
+                 working_info_.total_weight_g, remaining_pct);
+        lv_subject_copy_string(&remaining_pct_subject_, remaining_pct_buf_);
 
+        // Sync the weight input field text (mirrors format_remaining_label(),
+        // display-only — no working_info_ writes on this path).
+        if (weight_input) {
+            if (working_info_.remaining_weight_g < 0.0f) {
+                lv_textarea_set_text(weight_input, "");
+            } else {
+                char buf[8];
+                snprintf(buf, sizeof(buf), "%d",
+                         static_cast<int>(working_info_.remaining_weight_g));
+                lv_textarea_set_text(weight_input, buf);
+            }
+        }
+    } else {
+        snprintf(remaining_pct_buf_, sizeof(remaining_pct_buf_), "\xE2\x80\x94"); // "—"
+        lv_subject_copy_string(&remaining_pct_subject_, remaining_pct_buf_);
+    }
+
+    // Progress bar row: only meaningful when total weight is known. Hidden
+    // imperatively here (same idiom already used for weight_input above) —
+    // note this only refreshes on update_ui() calls, so it does not fight
+    // the edit_remaining_mode subject binding on remaining_progress_container
+    // while a slider edit is in progress.
+    lv_obj_t* progress_container = find_widget("remaining_progress_container");
     lv_obj_t* progress_fill = find_widget("remaining_progress_fill");
-    if (progress_fill) {
-        lv_obj_set_width(progress_fill, lv_pct(remaining_pct));
+    if (has_weight) {
+        if (progress_container) {
+            lv_obj_remove_flag(progress_container, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (progress_fill) {
+            lv_obj_set_width(progress_fill, lv_pct(remaining_pct));
+        }
+    } else if (progress_container) {
+        lv_obj_add_flag(progress_container, LV_OBJ_FLAG_HIDDEN);
     }
 
     // Temperature display based on material/spool data
