@@ -8,7 +8,6 @@
 #include "ui_error_reporting.h"
 #include "ui_hsv_picker.h"
 #include "ui_nav_manager.h"
-#include "ui_split_button.h"
 #include "ui_swatch.h"
 #include "ui_update_queue.h"
 #include "ui_utils.h"
@@ -269,14 +268,6 @@ lv_obj_t* AmsEditOverlay::create(lv_obj_t* parent) {
     if (chip_label) {
         chip_text_observer_ = lv_label_bind_text(chip_label, &chip_text_subject_, nullptr);
     }
-    // Downscale the 64px Spoolman mark into the 20px chip slot (one source
-    // asset, scaled — review §1.1). Sizing, not styling.
-    lv_obj_t* chip_mark = find_widget("chip_spoolman_mark");
-    if (chip_mark) {
-        lv_image_set_scale(chip_mark, 256 * 20 / 64);
-        lv_image_set_inner_align(chip_mark, LV_IMAGE_ALIGN_CENTER);
-    }
-
     lv_obj_t* hsv = find_widget("ams_color_hsv");
     if (hsv) {
         ui_hsv_picker_set_callback(
@@ -292,6 +283,12 @@ lv_obj_t* AmsEditOverlay::create(lv_obj_t* parent) {
 }
 
 void AmsEditOverlay::on_ui_destroyed() {
+    // The catalog fragment lives in the destroyed tree: detach so the
+    // selector's static registry drops its (now-dangling) widget key. Without
+    // this, the singleton's destructor erases from the registry map during
+    // static destruction — after the map itself is gone — corrupting the heap
+    // at process exit (and leaving a stale key at runtime).
+    details_selector_.detach();
     cached_overlay_widget_ = nullptr;
     slot_indicator_observer_ = nullptr;
     color_name_observer_ = nullptr;
@@ -811,6 +808,21 @@ void AmsEditOverlay::enter_spool_details() {
     }
     detail_working_ = detail_original_;
     populate_detail_fields();
+
+    // Print Label is spool logistics — offer it here, only when configured.
+    if (lv_obj_t* btn_print = find_widget("btn_detail_print_label")) {
+#if HELIX_HAS_LABEL_PRINTER
+        bool printer_ready = helix::LabelPrinterSettingsManager::instance().is_configured();
+#else
+        bool printer_ready = false;
+#endif
+        if (printer_ready) {
+            lv_obj_remove_flag(btn_print, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(btn_print, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
     lv_subject_set_int(&view_mode_subject_, kViewSpoolDetails);
 
     const int spool_id = working_info_.spoolman_id;
@@ -1094,46 +1106,16 @@ void AmsEditOverlay::update_spoolman_button_state() {
     bool has_spoolman = spoolman_subj && lv_subject_get_int(spoolman_subj) == 1;
 
     lv_obj_t* actions_container = find_widget("spoolman_actions");
-    lv_obj_t* btn_actions = find_widget("btn_spool_actions");
-    lv_obj_t* btn_scan_qr = find_widget("btn_scan_qr_code");
 
-    if (!has_spoolman) {
-        // No Spoolman: identity edits go through the chip; QR / spool actions
-        // have no offline analogue.
-        if (actions_container) {
-            lv_obj_add_flag(actions_container, LV_OBJ_FLAG_HIDDEN);
-        }
-        return;
-    }
-
+    // Scan QR is the identity fast path for both linked and unlinked slots;
+    // it has no offline analogue. Unlink lives in the identity picker and
+    // Print Label in the Spool details view, so the container's only content
+    // is the QR button — show/hide the container as a whole.
     if (actions_container) {
-        lv_obj_remove_flag(actions_container, LV_OBJ_FLAG_HIDDEN);
-    }
-
-    if (working_info_.spoolman_id > 0) {
-        // Linked: split button (Scan QR / Unlink / [Print Label]). "Spool
-        // Details" moved to the overview's Spool details › row.
-        if (btn_scan_qr) {
-            lv_obj_add_flag(btn_scan_qr, LV_OBJ_FLAG_HIDDEN);
-        }
-        if (btn_actions) {
-            lv_obj_remove_flag(btn_actions, LV_OBJ_FLAG_HIDDEN);
-            ui_split_button_set_text(btn_actions, lv_tr("Scan QR Code"));
-            std::string options = std::string(lv_tr("Scan QR Code")) + "\n" + lv_tr("Unlink");
-#if HELIX_HAS_LABEL_PRINTER
-            if (helix::LabelPrinterSettingsManager::instance().is_configured()) {
-                options += std::string("\n") + lv_tr("Print Label");
-            }
-#endif
-            ui_split_button_set_options(btn_actions, options.c_str());
-        }
-    } else {
-        // Not linked: standalone "Scan QR Code" button
-        if (btn_scan_qr) {
-            lv_obj_remove_flag(btn_scan_qr, LV_OBJ_FLAG_HIDDEN);
-        }
-        if (btn_actions) {
-            lv_obj_add_flag(btn_actions, LV_OBJ_FLAG_HIDDEN);
+        if (has_spoolman) {
+            lv_obj_remove_flag(actions_container, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(actions_container, LV_OBJ_FLAG_HIDDEN);
         }
     }
 }
@@ -1911,8 +1893,8 @@ void AmsEditOverlay::register_callbacks() {
         {"ams_edit_remaining_accept_cb", on_remaining_accept_cb},
         {"ams_edit_remaining_cancel_cb", on_remaining_cancel_cb},
         {"ams_edit_save_cb", on_save_cb},
-        {"ams_edit_spool_actions_clicked_cb", on_spool_actions_clicked_cb},
-        {"ams_edit_spool_actions_changed_cb", on_spool_actions_changed_cb},
+        {"ams_edit_picker_unlink_cb", on_picker_unlink_cb},
+        {"ams_edit_print_label_cb", on_print_label_cb},
         {"ams_edit_scan_qr_cb", on_scan_qr_cb},
         {"ams_edit_picker_search_cb", on_picker_search_cb},
         {"ams_edit_picker_retry_cb", on_picker_retry_cb},
@@ -2013,40 +1995,21 @@ void AmsEditOverlay::on_save_cb(lv_event_t* e) {
     }
 }
 
-void AmsEditOverlay::on_spool_actions_clicked_cb(lv_event_t* e) {
-    auto* self = get_instance_from_event(e);
-    if (self) {
-        self->handle_scan_qr();
-    }
-}
-
-void AmsEditOverlay::on_spool_actions_changed_cb(lv_event_t* e) {
+void AmsEditOverlay::on_picker_unlink_cb(lv_event_t* e) {
     auto* self = get_instance_from_event(e);
     if (!self)
         return;
+    self->handle_unlink();
+    self->switch_to_form();
+}
 
-    auto* split_btn = self->find_widget("btn_spool_actions");
-    if (!split_btn)
+void AmsEditOverlay::on_print_label_cb(lv_event_t* e) {
+    auto* self = get_instance_from_event(e);
+    if (!self)
         return;
-    uint32_t idx = ui_split_button_get_selected(split_btn);
-    switch (idx) {
-    case 0:
-        self->handle_scan_qr();
-        break;
-    case 1:
-        self->handle_spool_details();
-        break;
-    case 2:
-        self->handle_unlink();
-        break;
 #if HELIX_HAS_LABEL_PRINTER
-    case 3:
-        self->handle_print_label();
-        break;
+    self->handle_print_label();
 #endif
-    default:
-        break;
-    }
 }
 
 void AmsEditOverlay::on_scan_qr_cb(lv_event_t* e) {

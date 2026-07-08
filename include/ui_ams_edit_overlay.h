@@ -271,8 +271,8 @@ class AmsEditOverlay : public OverlayBase {
     static void on_remaining_accept_cb(lv_event_t* e);
     static void on_remaining_cancel_cb(lv_event_t* e);
     static void on_save_cb(lv_event_t* e);
-    static void on_spool_actions_clicked_cb(lv_event_t* e);
-    static void on_spool_actions_changed_cb(lv_event_t* e);
+    static void on_picker_unlink_cb(lv_event_t* e);
+    static void on_print_label_cb(lv_event_t* e);
     static void on_scan_qr_cb(lv_event_t* e);
     static void on_picker_search_cb(lv_event_t* e);
     static void on_picker_retry_cb(lv_event_t* e);
