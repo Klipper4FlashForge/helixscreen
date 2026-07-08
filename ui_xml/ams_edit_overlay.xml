@@ -124,9 +124,9 @@
           <icon src="chevron_right" size="sm" variant="muted" clickable="false"/>
         </lv_obj>
         <!-- Filament actions: Scan QR is the identity fast path for both
-             linked and unlinked slots (Unlink lives in the identity picker;
-             Print Label lives in Spool details). Visibility managed in
-             update_spoolman_button_state(). -->
+             linked and unlinked slots (Unlink and Print Label live in the
+             spool-edit view: toggle Save-to-Spoolman off / btn_detail_print_label).
+             Visibility managed in update_spoolman_button_state(). -->
         <lv_obj name="spoolman_actions"
                 width="100%" height="content" style_pad_left="#space_md" style_pad_right="#space_md"
                 style_pad_top="0" style_pad_bottom="#space_sm"

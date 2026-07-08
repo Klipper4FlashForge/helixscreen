@@ -1138,8 +1138,8 @@ void AmsEditOverlay::update_spoolman_button_state() {
     lv_obj_t* actions_container = find_widget("spoolman_actions");
 
     // Scan QR is the identity fast path for both linked and unlinked slots;
-    // it has no offline analogue. Unlink lives in the identity picker and
-    // Print Label in the Spool details view, so the container's only content
+    // it has no offline analogue. Unlink (Save-to-Spoolman toggle off) and
+    // Print Label live in the spool-edit view, so the container's only content
     // is the QR button — show/hide the container as a whole.
     if (actions_container) {
         if (has_spoolman) {

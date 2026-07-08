@@ -1526,6 +1526,7 @@ translations:
   Not detected: Not detected
   Not found (strobe only): Not found (strobe only)
   Not found (use phone app): Not found (use phone app)
+  Not in your spools? Set it up →: Not in your spools? Set it up →
   Not yet calibrated: Not yet calibrated
   Notes: Notes
   Notes (optional): Notes (optional)
@@ -2006,6 +2007,7 @@ translations:
   Save changes to persist them across restarts?: Save changes to persist them across
     restarts?
   'Save failed: {}': 'Save failed: {}'
+  Save to Spoolman: Save to Spoolman
   Saved Z-Offset: Saved Z-Offset
   Saved to crash_report.txt (QR not available): Saved to crash_report.txt (QR not
     available)
