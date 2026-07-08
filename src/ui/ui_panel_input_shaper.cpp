@@ -5,6 +5,7 @@
 
 #include "ui_callback_helpers.h"
 #include "ui_emergency_stop.h"
+#include "ui_event_safety.h"
 #include "ui_frequency_response_chart.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
@@ -15,11 +16,13 @@
 #include "format_utils.h"
 #include "host_identity.h"
 #include "lvgl/src/others/translation/lv_translation.h"
+#include "memory_utils.h"
 #include "moonraker_api.h"
 #include "moonraker_client.h"
 #include "platform_capabilities.h"
 #include "static_panel_registry.h"
 
+#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -491,6 +494,14 @@ void InputShaperPanel::cleanup() {
     lifetime_.invalidate();
     calibration_lifetime_.invalidate();
 
+    // Dismiss the low-RAM warning modal if still open — its callbacks capture
+    // this panel and would otherwise fire proceed_with_preflight() against a
+    // torn-down overlay.
+    if (low_ram_warn_dialog_) {
+        helix::ui::modal_hide(low_ram_warn_dialog_);
+        low_ram_warn_dialog_ = nullptr;
+    }
+
     // Destroy chart widgets
     if (x_chart_.chart) {
         ui_frequency_response_chart_destroy(x_chart_.chart);
@@ -554,6 +565,48 @@ void InputShaperPanel::start_with_preflight(char axis) {
         return;
     }
 
+    auto mem = helix::get_system_memory_info();
+    if (mem.total_mb() < helix::RESONANCE_LOW_RAM_WARN_MB) {
+        pending_calib_axis_ = axis;
+        std::string msg = fmt::format(
+            lv_tr("This device has only {} MB of RAM. Resonance calibration is "
+                  "memory-intensive and can make the printer firmware report a "
+                  "\"Timer Too Close\" error or restart mid-test. Continue anyway?"),
+            mem.total_mb());
+        low_ram_warn_dialog_ = helix::ui::modal_show_confirmation(
+            lv_tr("Low Memory"), msg.c_str(), ModalSeverity::Warning,
+            lv_tr("Continue"),
+            [](lv_event_t* e) {
+                LVGL_SAFE_EVENT_CB_BEGIN("[InputShaper] low_ram_confirm");
+                auto* self = static_cast<InputShaperPanel*>(lv_event_get_user_data(e));
+                if (self->low_ram_warn_dialog_) {
+                    helix::ui::modal_hide(self->low_ram_warn_dialog_);
+                    self->low_ram_warn_dialog_ = nullptr;
+                }
+                self->proceed_with_preflight(self->pending_calib_axis_);
+                LVGL_SAFE_EVENT_CB_END();
+            },
+            [](lv_event_t* e) {
+                LVGL_SAFE_EVENT_CB_BEGIN("[InputShaper] low_ram_cancel");
+                auto* self = static_cast<InputShaperPanel*>(lv_event_get_user_data(e));
+                if (self->low_ram_warn_dialog_) {
+                    helix::ui::modal_hide(self->low_ram_warn_dialog_);
+                    self->low_ram_warn_dialog_ = nullptr;
+                }
+                self->calibrate_all_mode_ = false; // user backed out before anything started
+                LVGL_SAFE_EVENT_CB_END();
+            },
+            this);
+        if (!low_ram_warn_dialog_) {
+            // Modal failed to build — don't silently block calibration.
+            proceed_with_preflight(axis);
+        }
+        return;
+    }
+    proceed_with_preflight(axis);
+}
+
+void InputShaperPanel::proceed_with_preflight(char axis) {
     current_axis_ = axis;
     last_calibrated_axis_ = axis;
     recommended_type_.clear();

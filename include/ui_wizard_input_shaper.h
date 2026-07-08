@@ -218,6 +218,21 @@ class WizardInputShaperStep : public helix::wizard::Step {
         return screen_root_;
     }
 
+    /**
+     * @brief Low-RAM warning modal handle accessors
+     *
+     * The modal shown before calibration on memory-constrained hosts captures
+     * this step as user_data; the confirm/cancel callbacks use these accessors
+     * to dismiss it. Cleared on cleanup() so a lingering modal never outlives
+     * the step.
+     */
+    lv_obj_t* get_low_ram_warn_dialog() const {
+        return low_ram_warn_dialog_;
+    }
+    void set_low_ram_warn_dialog(lv_obj_t* dialog) {
+        low_ram_warn_dialog_ = dialog;
+    }
+
   private:
     // Screen instance
     lv_obj_t* screen_root_ = nullptr;
@@ -244,6 +259,9 @@ class WizardInputShaperStep : public helix::wizard::Step {
 
     // Lifetime guard for async callback safety
     helix::AsyncLifetimeGuard lifetime_;
+
+    // Low-RAM warning modal shown before calibration (see memory_utils.h)
+    lv_obj_t* low_ram_warn_dialog_ = nullptr;
 };
 
 // ============================================================================
