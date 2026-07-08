@@ -1311,7 +1311,7 @@ void AmsOverviewPanel::show_edit_modal(int slot_index, bool open_on_picker) {
 
     editor.show_for_slot(
         parent_screen_, slot_index, initial_info, api_,
-        [this](const helix::ui::AmsEditOverlay::EditResult& result) {
+        [](const helix::ui::AmsEditOverlay::EditResult& result) {
             if (result.saved && result.slot_index >= 0) {
                 AmsBackend* backend = AmsState::instance().get_backend();
                 if (backend) {

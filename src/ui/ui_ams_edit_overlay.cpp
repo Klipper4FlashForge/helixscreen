@@ -6,14 +6,11 @@
 #include "ui_button.h"
 #include "ui_callback_helpers.h"
 #include "ui_error_reporting.h"
+#include "ui_nav_manager.h"
 #include "ui_split_button.h"
 #include "ui_swatch.h"
 #include "ui_update_queue.h"
 #include "ui_utils.h"
-
-#include "static_panel_registry.h"
-#include "ui/ui_lazy_panel_helper.h"
-#include "ui_nav_manager.h"
 
 #include "ams_state.h"
 #include "app_globals.h"
@@ -21,6 +18,8 @@
 #include "filament_database.h"
 #include "filament_mapper.h"
 #include "format_utils.h"
+#include "static_panel_registry.h"
+#include "ui/ui_lazy_panel_helper.h"
 #if HELIX_HAS_LABEL_PRINTER
 #include "ipp_print_modal.h"
 #include "label_printer_settings.h"
@@ -103,6 +102,15 @@ lv_obj_t* AmsEditOverlay::find_widget(const char* name) const {
 bool AmsEditOverlay::show_for_slot(lv_obj_t* parent, int slot_index, const SlotInfo& initial_info,
                                    MoonrakerAPI* api, CompletionCallback on_complete,
                                    bool open_on_picker) {
+    // A previous widget tree may have died with its screen (display rebuild,
+    // test teardown) without the destroy-on-close path running — drop the
+    // stale cache so lazy_create_and_push_overlay rebuilds from XML.
+    if (cached_overlay_widget_ && !lv_obj_is_valid(cached_overlay_widget_)) {
+        spdlog::debug("[AmsEditOverlay] Cached overlay widget is stale - rebuilding");
+        overlay_root_ = nullptr;
+        on_ui_destroyed();
+    }
+
     // Store per-invocation state (QrScannerOverlay pattern: params + callback
     // stored on the singleton before push)
     slot_index_ = slot_index;
@@ -170,9 +178,9 @@ bool AmsEditOverlay::show_for_slot(lv_obj_t* parent, int slot_index, const SlotI
                     }
                     // Update brand/material from Spoolman (authoritative source)
                     if (!fetched_vendor.empty() && working_info_.brand != fetched_vendor) {
-                        spdlog::debug(
-                            "[AmsEditOverlay] Updating vendor from '{}' to '{}' (Spoolman spool {})",
-                            working_info_.brand, fetched_vendor, spool_id);
+                        spdlog::debug("[AmsEditOverlay] Updating vendor from '{}' to '{}' "
+                                      "(Spoolman spool {})",
+                                      working_info_.brand, fetched_vendor, spool_id);
                         original_info_.brand = fetched_vendor;
                         working_info_.brand = fetched_vendor;
                     }
@@ -202,7 +210,8 @@ bool AmsEditOverlay::show_for_slot(lv_obj_t* parent, int slot_index, const SlotI
                 });
             },
             [spool_id](const MoonrakerError& err) {
-                spdlog::warn("[AmsEditOverlay] Failed to fetch spool {}: {}", spool_id, err.message);
+                spdlog::warn("[AmsEditOverlay] Failed to fetch spool {}: {}", spool_id,
+                             err.message);
             });
     }
 
@@ -256,6 +265,18 @@ lv_obj_t* AmsEditOverlay::create(lv_obj_t* parent) {
             lv_label_bind_text(remaining_pct_label, &remaining_pct_subject_, nullptr);
     }
 
+    lv_obj_t* chip_label = find_widget("chip_label");
+    if (chip_label) {
+        chip_text_observer_ = lv_label_bind_text(chip_label, &chip_text_subject_, nullptr);
+    }
+    // Downscale the 64px Spoolman mark into the 20px chip slot (one source
+    // asset, scaled — review §1.1). Sizing, not styling.
+    lv_obj_t* chip_mark = find_widget("chip_spoolman_mark");
+    if (chip_mark) {
+        lv_image_set_scale(chip_mark, 256 * 20 / 64);
+        lv_image_set_inner_align(chip_mark, LV_IMAGE_ALIGN_CENTER);
+    }
+
     spdlog::info("[AmsEditOverlay] Overlay created");
     return overlay_root_;
 }
@@ -268,13 +289,11 @@ void AmsEditOverlay::on_ui_destroyed() {
     temp_nozzle_observer_ = nullptr;
     temp_bed_observer_ = nullptr;
     remaining_pct_observer_ = nullptr;
+    chip_text_observer_ = nullptr;
 }
 
 void AmsEditOverlay::on_activate() {
     OverlayBase::on_activate();
-
-    // Fetch vendor list from Spoolman (async, will update dropdown when ready)
-    fetch_vendors_from_spoolman();
 
     // Refresh the UI with current slot data
     update_ui();
@@ -344,6 +363,15 @@ void AmsEditOverlay::init_subjects() {
         // Header Save button dirty gate (1=disabled). Starts disabled — nothing
         // is dirty when the editor opens.
         UI_MANAGED_SUBJECT_INT(save_disabled_subject_, 1, "ams_edit_save_disabled", subjects_);
+
+        // Managed-vs-untracked signal: drives the Spoolman mark, the Spool
+        // details row, and (Phase 5) the Save-to-Spoolman toggle default.
+        UI_MANAGED_SUBJECT_INT(is_managed_subject_, 0, "ams_edit_is_managed", subjects_);
+
+        chip_text_buf_[0] = '\0';
+        lv_subject_init_string(&chip_text_subject_, chip_text_buf_, nullptr, sizeof(chip_text_buf_),
+                               "");
+        subjects_.register_subject(&chip_text_subject_);
     });
 }
 
@@ -517,7 +545,8 @@ void AmsEditOverlay::populate_picker() {
             spdlog::debug("[AmsEditOverlay] Spoolman returned {} spools", spools.size());
             token.defer([this, spools]() {
                 if (!overlay_root_) {
-                    spdlog::warn("[AmsEditOverlay] populate_picker callback dropped: overlay_root_ null");
+                    spdlog::warn(
+                        "[AmsEditOverlay] populate_picker callback dropped: overlay_root_ null");
                     return;
                 }
                 if (!subjects_initialized_) {
@@ -635,7 +664,8 @@ void AmsEditOverlay::render_spool_list(const std::string& filter) {
     }
 
     lv_subject_set_int(&picker_state_subject_, filtered.empty() ? 1 : 2);
-    spdlog::debug("[AmsEditOverlay] Rendered {} spool items (filter='{}')", filtered.size(), filter);
+    spdlog::debug("[AmsEditOverlay] Rendered {} spool items (filter='{}')", filtered.size(),
+                  filter);
 }
 
 void AmsEditOverlay::handle_spool_selected(int spool_id) {
@@ -680,17 +710,19 @@ void AmsEditOverlay::handle_spool_selected(int spool_id) {
     update_spoolman_button_state();
 }
 
-void AmsEditOverlay::handle_change_spool() {
-    // Dual-mode control: with Spoolman configured, open the Spoolman spool list;
-    // without it, open the offline branded-filament catalog picker.
+void AmsEditOverlay::handle_chip_clicked() {
+    // Identity chip: with Spoolman, the user's inventory is their spools —
+    // open the picker. Without Spoolman, go straight to filament setup
+    // (Phase 5 routes this to the in-place filament-details view; until then
+    // the stacked branded catalog stands in).
     auto* subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
     bool has_spoolman = subj && lv_subject_get_int(subj) == 1;
     if (has_spoolman) {
-        spdlog::debug("[AmsEditOverlay] Change spool requested - switching to Spoolman picker");
+        spdlog::debug("[AmsEditOverlay] Chip tapped - opening Spoolman picker");
         switch_to_picker();
         return;
     }
-    spdlog::debug("[AmsEditOverlay] Choose filament requested - opening branded catalog picker");
+    spdlog::debug("[AmsEditOverlay] Chip tapped - opening branded catalog (no Spoolman)");
     open_branded_catalog_picker();
 }
 
@@ -935,57 +967,37 @@ void AmsEditOverlay::update_spoolman_button_state() {
         return;
     }
 
-    // Read Spoolman availability synchronously — the XML binding fires asynchronously,
-    // so a fresh read here closes the race window when the modal opens before Spoolman
-    // detection completes (#311).
+    // Fresh synchronous read — the XML binding fires asynchronously (#311).
     auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
     bool has_spoolman = spoolman_subj && lv_subject_get_int(spoolman_subj) == 1;
 
-    // The filament-actions row is ALWAYS shown now: btn_change_spool is a dual-mode
-    // control ("Choose Spool" with Spoolman, "Choose Filament" without).
     lv_obj_t* actions_container = find_widget("spoolman_actions");
-    if (actions_container) {
-        lv_obj_remove_flag(actions_container, LV_OBJ_FLAG_HIDDEN);
-        // Retry vendor fetch if it was skipped due to the race (#311)
-        if (has_spoolman && !vendors_loaded_) {
-            fetch_vendors_from_spoolman();
-        }
-    }
-
-    // Dual-mode label on the shared button.
-    lv_obj_t* btn_change = find_widget("btn_change_spool");
-    if (btn_change) {
-        ui_button_set_text(btn_change,
-                           has_spoolman ? lv_tr("Choose Spool") : lv_tr("Choose Filament"));
-    }
-
     lv_obj_t* btn_actions = find_widget("btn_spool_actions");
     lv_obj_t* btn_scan_qr = find_widget("btn_scan_qr_code");
 
     if (!has_spoolman) {
-        // Spoolman absent: only the dual-mode Choose Filament button is meaningful —
-        // QR scan and the spool-actions split button have no offline analogue.
-        if (btn_scan_qr) {
-            lv_obj_add_flag(btn_scan_qr, LV_OBJ_FLAG_HIDDEN);
-        }
-        if (btn_actions) {
-            lv_obj_add_flag(btn_actions, LV_OBJ_FLAG_HIDDEN);
+        // No Spoolman: identity edits go through the chip; QR / spool actions
+        // have no offline analogue.
+        if (actions_container) {
+            lv_obj_add_flag(actions_container, LV_OBJ_FLAG_HIDDEN);
         }
         return;
     }
 
+    if (actions_container) {
+        lv_obj_remove_flag(actions_container, LV_OBJ_FLAG_HIDDEN);
+    }
+
     if (working_info_.spoolman_id > 0) {
-        // Linked: show split button with all spool actions
+        // Linked: split button (Scan QR / Unlink / [Print Label]). "Spool
+        // Details" moved to the overview's Spool details › row.
         if (btn_scan_qr) {
             lv_obj_add_flag(btn_scan_qr, LV_OBJ_FLAG_HIDDEN);
         }
         if (btn_actions) {
             lv_obj_remove_flag(btn_actions, LV_OBJ_FLAG_HIDDEN);
             ui_split_button_set_text(btn_actions, lv_tr("Scan QR Code"));
-
-            // Build options list with translated strings
-            std::string options = std::string(lv_tr("Scan QR Code")) + "\n" +
-                                  lv_tr("Spool Details") + "\n" + lv_tr("Unlink");
+            std::string options = std::string(lv_tr("Scan QR Code")) + "\n" + lv_tr("Unlink");
 #if HELIX_HAS_LABEL_PRINTER
             if (helix::LabelPrinterSettingsManager::instance().is_configured()) {
                 options += std::string("\n") + lv_tr("Print Label");
@@ -994,7 +1006,7 @@ void AmsEditOverlay::update_spoolman_button_state() {
             ui_split_button_set_options(btn_actions, options.c_str());
         }
     } else {
-        // Not linked: show standalone "Scan QR Code" button, hide split button
+        // Not linked: standalone "Scan QR Code" button
         if (btn_scan_qr) {
             lv_obj_remove_flag(btn_scan_qr, LV_OBJ_FLAG_HIDDEN);
         }
@@ -1013,7 +1025,7 @@ void AmsEditOverlay::update_ui() {
         return;
     }
 
-    // Update slot indicator via subject (used in header)
+    // Header title via subject
     if (slot_index_ < 0) {
         snprintf(slot_indicator_buf_, sizeof(slot_indicator_buf_), "%s",
                  lv_tr("External Filament"));
@@ -1023,165 +1035,30 @@ void AmsEditOverlay::update_ui() {
     }
     lv_subject_copy_string(&slot_indicator_subject_, slot_indicator_buf_);
 
-    // Update Spoolman ID label in header
-    lv_obj_t* spoolman_label = find_widget("spoolman_id_label");
-    if (spoolman_label) {
-        if (working_info_.spoolman_id > 0) {
-            char spoolman_text[32];
-            snprintf(spoolman_text, sizeof(spoolman_text), "(Spoolman #%d)",
-                     working_info_.spoolman_id);
-            lv_label_set_text(spoolman_label, spoolman_text);
-            lv_obj_remove_flag(spoolman_label, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(spoolman_label, LV_OBJ_FLAG_HIDDEN);
-        }
+    // Managed-vs-untracked signal (drives mark, details row, toggle default)
+    const bool managed = working_info_.spoolman_id > 0;
+    lv_subject_set_int(&is_managed_subject_, managed ? 1 : 0);
+
+    // Identity chip: tracked = spool name (+ mark via binding);
+    // untracked = "Brand · Material" (spec §3.8 locked format).
+    if (managed && !working_info_.spool_name.empty()) {
+        snprintf(chip_text_buf_, sizeof(chip_text_buf_), "%s", working_info_.spool_name.c_str());
+    } else {
+        const char* brand = working_info_.brand.empty() ? "Generic" : working_info_.brand.c_str();
+        const char* material =
+            working_info_.material.empty() ? "—" : working_info_.material.c_str();
+        snprintf(chip_text_buf_, sizeof(chip_text_buf_), "%s \xC2\xB7 %s", brand, material);
     }
+    lv_subject_copy_string(&chip_text_subject_, chip_text_buf_);
 
-    // Build material options from filament database (if not already built).
-    // When the active backend advertises a firmware whitelist (e.g., AD5X IFS
-    // accepts only PLA / PLA-CF / SILK / TPU / ABS / PETG / PETG-CF), restrict
-    // the dropdown to that set. Whitelist entries not present in the shared
-    // filament DB (e.g., "SILK") are still appended so users aren't silently
-    // locked out of a firmware-supported option.
-    if (material_list_.empty()) {
-        auto* backend = AmsState::instance().get_backend();
-        auto supported = backend ? backend->get_supported_materials() : std::nullopt;
-        const bool filtered = supported.has_value() && !supported->empty();
-
-        auto to_lower = [](std::string s) {
-            std::transform(s.begin(), s.end(), s.begin(),
-                           [](unsigned char c) { return std::tolower(c); });
-            return s;
-        };
-
-        auto is_supported = [&](const char* name) {
-            if (!filtered) {
-                return true;
-            }
-            std::string n_lc = to_lower(name);
-            for (const auto& s : *supported) {
-                if (to_lower(s) == n_lc) {
-                    return true;
-                }
-            }
-            return false;
-        };
-
-        auto all_materials = filament::get_all_material_names();
-        material_list_.reserve(filtered ? supported->size() : all_materials.size());
-        for (const char* mat : all_materials) {
-            if (!is_supported(mat)) {
-                continue;
-            }
-            if (!material_options_.empty()) {
-                material_options_ += '\n';
-            }
-            material_options_ += mat;
-            material_list_.push_back(mat);
-        }
-
-        // Ensure every whitelist entry appears even if the shared DB doesn't
-        // have a case-matching name for it (e.g., AD5X's "SILK" vs DB's "Silk PLA").
-        if (filtered) {
-            for (const auto& s : *supported) {
-                bool found = false;
-                for (const auto& existing : material_list_) {
-                    if (existing == s) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    if (!material_options_.empty()) {
-                        material_options_ += '\n';
-                    }
-                    material_options_ += s;
-                    material_list_.push_back(s);
-                }
-            }
-        }
-
-        spdlog::debug("[AmsEditOverlay] Built material list with {} materials (filtered={})",
-                      material_list_.size(), filtered);
-    }
-
-    // Set up vendor dropdown (use cached vendors from Spoolman, or fallback)
-    lv_obj_t* vendor_dropdown = find_widget("vendor_dropdown");
-    if (vendor_dropdown) {
-        if (!vendor_options_.empty()) {
-            // Use vendors from Spoolman
-            lv_dropdown_set_options(vendor_dropdown, vendor_options_.c_str());
-        } else {
-            // Fallback: static vendor list while Spoolman query is pending
-            static const char* fallback_vendors =
-                "Generic\nPolymaker\nBambu\neSUN\nOverture\nPrusa\nHatchbox";
-            lv_dropdown_set_options(vendor_dropdown, fallback_vendors);
-
-            // Build fallback vendor_list_ for index lookup (id=0 for static entries)
-            if (vendor_list_.empty()) {
-                for (const auto& name :
-                     {"Generic", "Polymaker", "Bambu", "eSUN", "Overture", "Prusa", "Hatchbox"}) {
-                    VendorInfo vi;
-                    vi.name = name;
-                    vendor_list_.push_back(std::move(vi));
-                }
-            }
-        }
-
-        // Set initial selection based on working_info_.brand, falling back to
-        // "Generic" if the brand is empty or unknown. Normalize both working
-        // and original to "Generic" when empty so the dropdown display matches
-        // state and unchanged saves don't flip-flop the field.
-        int vendor_idx = -1;
-        int generic_idx = 0;
-        for (size_t i = 0; i < vendor_list_.size(); i++) {
-            if (vendor_list_[i].name == "Generic") {
-                generic_idx = static_cast<int>(i);
-            }
-            if (!working_info_.brand.empty() && working_info_.brand == vendor_list_[i].name) {
-                vendor_idx = static_cast<int>(i);
-                break;
-            }
-        }
-        if (vendor_idx < 0) {
-            vendor_idx = generic_idx;
-            if (working_info_.brand.empty())
-                working_info_.brand = "Generic";
-            if (original_info_.brand.empty())
-                original_info_.brand = "Generic";
-        }
-        lv_dropdown_set_selected(vendor_dropdown, vendor_idx);
-    }
-
-    // Set up material dropdown from filament database
-    lv_obj_t* material_dropdown = find_widget("material_dropdown");
-    if (material_dropdown) {
-        lv_dropdown_set_options(material_dropdown, material_options_.c_str());
-
-        // Set initial selection based on working_info_.material
-        int material_idx = 0; // Default to first (PLA)
-        for (size_t i = 0; i < material_list_.size(); i++) {
-            if (working_info_.material == material_list_[i]) {
-                material_idx = static_cast<int>(i);
-                break;
-            }
-        }
-        lv_dropdown_set_selected(material_dropdown, material_idx);
-
-        // Sync working_info_ when dropdown defaults to first entry
-        if (working_info_.material.empty() && !material_list_.empty()) {
-            working_info_.material = material_list_[material_idx];
-        }
-    }
-
-    // Update color swatch
+    // Color swatch
     lv_obj_t* color_swatch = find_widget("color_swatch");
     if (color_swatch) {
         helix::ui::apply_swatch_color(color_swatch, working_info_.color_rgb,
                                       working_info_.multi_color_hexes);
     }
 
-    // Update color name label via subject
+    // Color name label via subject
     if (!working_info_.color_name.empty()) {
         snprintf(color_name_buf_, sizeof(color_name_buf_), "%s", working_info_.color_name.c_str());
     } else {
@@ -1189,8 +1066,7 @@ void AmsEditOverlay::update_ui() {
     }
     lv_subject_copy_string(&color_name_subject_, color_name_buf_);
 
-    // Update filament/spool product-line label. Hidden when empty so it
-    // doesn't leave a blank row on backends/slots that don't populate it.
+    // Filament/spool product-line label under the swatch (hidden when empty)
     lv_obj_t* spool_name_label = find_widget("spool_name_label");
     if (!working_info_.spool_name.empty()) {
         snprintf(spool_name_buf_, sizeof(spool_name_buf_), "%s", working_info_.spool_name.c_str());
@@ -1203,8 +1079,7 @@ void AmsEditOverlay::update_ui() {
     }
     lv_subject_copy_string(&spool_name_subject_, spool_name_buf_);
 
-    // Update remaining slider and label
-    // Use synthetic 1000g total if no weight data (manual spool without Spoolman)
+    // Remaining slider and label. Synthetic 1000g total if no weight data.
     if (working_info_.total_weight_g <= 0) {
         working_info_.total_weight_g = 1000.0f;
         working_info_.remaining_weight_g =
@@ -1219,7 +1094,6 @@ void AmsEditOverlay::update_ui() {
         lv_slider_set_value(remaining_slider, remaining_pct, LV_ANIM_OFF);
     }
 
-    // Show/hide weight input based on whether we have real weight data
     lv_obj_t* weight_input = find_widget("remaining_weight_input");
     if (weight_input) {
         if (original_info_.total_weight_g > 0) {
@@ -1229,21 +1103,17 @@ void AmsEditOverlay::update_ui() {
         }
     }
 
-    // Update remaining label: "/ 1000g (75%)" or "75%" if no weight data
     format_remaining_label(remaining_pct);
 
-    // Update progress bar fill width (shown in view mode)
-    // Use percentage width to avoid layout timing issues
     lv_obj_t* progress_fill = find_widget("remaining_progress_fill");
     if (progress_fill) {
         lv_obj_set_width(progress_fill, lv_pct(remaining_pct));
     }
 
-    // Update temperature display based on material
+    // Temperature display based on material/spool data
     update_temp_display();
 
-    // Populate tool dropdown with available tools
-    // Show tool remap dropdown only for backends that support it
+    // Tool remap dropdown (backends that support it)
     lv_obj_t* tool_remap_row = find_widget("tool_remap_row");
     lv_obj_t* tool_dropdown = find_widget("tool_dropdown");
     auto* backend = AmsState::instance().get_backend();
@@ -1268,8 +1138,6 @@ void AmsEditOverlay::update_ui() {
         }
         lv_dropdown_set_options(tool_dropdown, tool_options.c_str());
 
-        // Set initial selection: T0 → index 0, T1 → index 1, etc.
-        // Default to T0 if mapped_tool is -1 (shouldn't happen for remappable backends)
         int tool_idx = std::max(0, working_info_.mapped_tool);
         tool_idx = std::min(tool_idx, tool_count - 1);
         lv_dropdown_set_selected(tool_dropdown, tool_idx);
@@ -1457,34 +1325,6 @@ void AmsEditOverlay::handle_back() {
     }
 }
 
-void AmsEditOverlay::handle_vendor_changed(int index) {
-    if (index >= 0 && index < static_cast<int>(vendor_list_.size())) {
-        working_info_.brand = vendor_list_[index].name;
-        working_info_.spoolman_vendor_id = vendor_list_[index].id;
-        filament_user_edited_ = true; // genuine user edit gates new-spool create (#1071)
-        spdlog::debug("[AmsEditOverlay] Vendor changed to: {} (vendor_id={})", working_info_.brand,
-                      working_info_.spoolman_vendor_id);
-        update_sync_button_state();
-    }
-}
-
-void AmsEditOverlay::handle_material_changed(int index) {
-    if (index >= 0 && index < static_cast<int>(material_list_.size())) {
-        working_info_.material = material_list_[index];
-        filament_user_edited_ = true; // genuine user edit gates new-spool create (#1071)
-        spdlog::debug("[AmsEditOverlay] Material changed to: {}", working_info_.material);
-
-        // Clear existing temp values so update_temp_display uses material-based defaults
-        working_info_.nozzle_temp_min = 0;
-        working_info_.nozzle_temp_max = 0;
-        working_info_.bed_temp = 0;
-
-        // Update temperature display based on new material
-        update_temp_display();
-        update_sync_button_state();
-    }
-}
-
 void AmsEditOverlay::handle_color_clicked() {
     spdlog::info("[AmsEditOverlay] Opening color picker");
     show_color_picker();
@@ -1586,7 +1426,8 @@ void AmsEditOverlay::handle_remaining_edit() {
 
     // Enter edit mode - subject binding will show slider/accept/cancel, hide progress/edit button
     lv_subject_set_int(&remaining_mode_subject_, 1);
-    spdlog::debug("[AmsEditOverlay] Entered remaining edit mode (was {}%)", remaining_pre_edit_pct_);
+    spdlog::debug("[AmsEditOverlay] Entered remaining edit mode (was {}%)",
+                  remaining_pre_edit_pct_);
 }
 
 void AmsEditOverlay::handle_remaining_accept() {
@@ -1646,7 +1487,7 @@ void AmsEditOverlay::handle_tool_changed(int index) {
 }
 
 bool AmsEditOverlay::should_create_new_spool(const SlotInfo& working_info,
-                                           bool filament_user_edited) {
+                                             bool filament_user_edited) {
     // Unlinked + a genuine user edit + complete metadata. The user-edit term is
     // the #1071 Symptom C fix: an unedited open auto-defaults brand="Generic",
     // which alone satisfies is_filament_complete() and would otherwise spawn a
@@ -1796,7 +1637,8 @@ void AmsEditOverlay::prompt_identity_change_then_save() {
     if (!dlg) {
         // Couldn't show the dialog — fall back to the pre-gate behavior rather
         // than stranding the save (which would never fire_completion).
-        spdlog::warn("[AmsEditOverlay] identity-change confirmation failed to show; updating anyway");
+        spdlog::warn(
+            "[AmsEditOverlay] identity-change confirmation failed to show; updating anyway");
         do_spoolman_save();
     }
 }
@@ -1827,15 +1669,14 @@ void AmsEditOverlay::register_callbacks() {
 
     register_xml_callbacks({
         {"ams_edit_back_cb", on_back_cb},
-        {"ams_edit_vendor_changed_cb", on_vendor_changed_cb},
-        {"ams_edit_material_changed_cb", on_material_changed_cb},
+        {"ams_edit_chip_clicked_cb", on_chip_clicked_cb},
+        {"ams_edit_spool_details_cb", on_spool_details_cb},
         {"ams_edit_color_clicked_cb", on_color_clicked_cb},
         {"ams_edit_remaining_changed_cb", on_remaining_changed_cb},
         {"ams_edit_remaining_edit_cb", on_remaining_edit_cb},
         {"ams_edit_remaining_accept_cb", on_remaining_accept_cb},
         {"ams_edit_remaining_cancel_cb", on_remaining_cancel_cb},
         {"ams_edit_save_cb", on_save_cb},
-        {"ams_edit_change_spool_cb", on_change_spool_cb},
         {"ams_edit_spool_actions_clicked_cb", on_spool_actions_clicked_cb},
         {"ams_edit_spool_actions_changed_cb", on_spool_actions_changed_cb},
         {"ams_edit_scan_qr_cb", on_scan_qr_cb},
@@ -1867,21 +1708,17 @@ void AmsEditOverlay::on_back_cb(lv_event_t* e) {
     }
 }
 
-void AmsEditOverlay::on_vendor_changed_cb(lv_event_t* e) {
+void AmsEditOverlay::on_chip_clicked_cb(lv_event_t* e) {
     auto* self = get_instance_from_event(e);
     if (self) {
-        auto* dropdown = static_cast<lv_obj_t*>(lv_event_get_target(e));
-        int index = lv_dropdown_get_selected(dropdown);
-        self->handle_vendor_changed(index);
+        self->handle_chip_clicked();
     }
 }
 
-void AmsEditOverlay::on_material_changed_cb(lv_event_t* e) {
+void AmsEditOverlay::on_spool_details_cb(lv_event_t* e) {
     auto* self = get_instance_from_event(e);
     if (self) {
-        auto* dropdown = static_cast<lv_obj_t*>(lv_event_get_target(e));
-        int index = lv_dropdown_get_selected(dropdown);
-        self->handle_material_changed(index);
+        self->handle_spool_details();
     }
 }
 
@@ -1926,13 +1763,6 @@ void AmsEditOverlay::on_save_cb(lv_event_t* e) {
     auto* self = get_instance_from_event(e);
     if (self) {
         self->handle_save();
-    }
-}
-
-void AmsEditOverlay::on_change_spool_cb(lv_event_t* e) {
-    auto* self = get_instance_from_event(e);
-    if (self) {
-        self->handle_change_spool();
     }
 }
 

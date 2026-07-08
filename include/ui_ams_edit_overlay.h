@@ -19,6 +19,7 @@
 
 class MoonrakerAPI;
 class AmsEditOverlayTestAccess;
+class AmsEditOverlayViewTestAccess;
 
 namespace helix::ui {
 
@@ -135,6 +136,9 @@ class AmsEditOverlay : public OverlayBase {
     lv_subject_t view_mode_subject_;      ///< kView* ("ams_edit_view")
     lv_subject_t picker_state_subject_;   ///< 0=loading, 1=empty, 2=content
     lv_subject_t save_disabled_subject_;  ///< 1=Save disabled ("ams_edit_save_disabled")
+    lv_subject_t is_managed_subject_;     ///< 1=linked Spoolman spool ("ams_edit_is_managed")
+    lv_subject_t chip_text_subject_;      ///< identity chip label text
+    char chip_text_buf_[96] = {0};
 
     char slot_indicator_buf_[32] = {0};
     char color_name_buf_[32] = {0};
@@ -150,6 +154,7 @@ class AmsEditOverlay : public OverlayBase {
     lv_observer_t* temp_nozzle_observer_ = nullptr;
     lv_observer_t* temp_bed_observer_ = nullptr;
     lv_observer_t* remaining_pct_observer_ = nullptr;
+    lv_observer_t* chip_text_observer_ = nullptr;
 
     // === Dropdown data (removed in Phase 3/8 with the dropdowns) ===
     std::string material_options_;
@@ -179,7 +184,6 @@ class AmsEditOverlay : public OverlayBase {
     void populate_picker();
     void render_spool_list(const std::string& filter);
     void handle_spool_selected(int spool_id);
-    void handle_change_spool();
     void open_branded_catalog_picker();
     void apply_branded_pick(const helix::printer::EffectiveFilament& ef);
     void handle_unlink();
@@ -191,11 +195,11 @@ class AmsEditOverlay : public OverlayBase {
     void close_editor(bool saved);    ///< fire_completion + NavigationManager go_back
 
     friend class ::AmsEditOverlayTestAccess;
+    friend class ::AmsEditOverlayViewTestAccess;
 
     // === Event Handlers ===
     void handle_back(); ///< Header back: per-view routing (cancel on overview)
-    void handle_vendor_changed(int index);
-    void handle_material_changed(int index);
+    void handle_chip_clicked();
     void handle_color_clicked();
     void handle_remaining_changed(int percent);
     void handle_remaining_edit();
@@ -223,15 +227,14 @@ class AmsEditOverlay : public OverlayBase {
 
     // === Static Callbacks ===
     static void on_back_cb(lv_event_t* e);
-    static void on_vendor_changed_cb(lv_event_t* e);
-    static void on_material_changed_cb(lv_event_t* e);
+    static void on_chip_clicked_cb(lv_event_t* e);
+    static void on_spool_details_cb(lv_event_t* e);
     static void on_color_clicked_cb(lv_event_t* e);
     static void on_remaining_changed_cb(lv_event_t* e);
     static void on_remaining_edit_cb(lv_event_t* e);
     static void on_remaining_accept_cb(lv_event_t* e);
     static void on_remaining_cancel_cb(lv_event_t* e);
     static void on_save_cb(lv_event_t* e);
-    static void on_change_spool_cb(lv_event_t* e);
     static void on_spool_actions_clicked_cb(lv_event_t* e);
     static void on_spool_actions_changed_cb(lv_event_t* e);
     static void on_scan_qr_cb(lv_event_t* e);
