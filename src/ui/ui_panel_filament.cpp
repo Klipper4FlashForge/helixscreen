@@ -24,6 +24,7 @@
 #include "app_globals.h"
 #include "config.h"
 #include "filament_database.h"
+#include "filament_op_slot_resolver.h"
 #include "filament_sensor_manager.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "macro_executor.h"
@@ -1727,22 +1728,18 @@ void FilamentPanel::update_filament_op_buttons() {
     }
 
     // Map the selected tool (dropdown index == tool index) to a global slot.
-    // Fall back to the dropdown index itself when no explicit map exists
-    // (toolchangers report tool index == slot index), then to current_slot.
+    // resolve_op_button_slot() prefers an explicit tool→slot map, then falls
+    // back by topology: tool index == slot index on a multi-tool toolchanger,
+    // but current_slot on a single-extruder multi-lane AMS (AD5X IFS), where
+    // the loaded lane is NOT the tool index (prestonbrown/helixscreen#1065).
     AmsSystemInfo sys = backend->get_system_info();
     int selected_tool = helix::ToolState::instance().active_tool_index();
     if (extruder_dropdown_) {
         selected_tool = static_cast<int>(lv_dropdown_get_selected(extruder_dropdown_));
     }
 
-    int slot = -1;
-    if (selected_tool >= 0 && selected_tool < static_cast<int>(sys.tool_to_slot_map.size())) {
-        slot = sys.tool_to_slot_map[selected_tool];
-    }
-    if (slot < 0)
-        slot = selected_tool; // toolchanger: tool index == slot index
-    if (slot < 0)
-        slot = sys.current_slot;
+    int slot = helix::ui::resolve_op_button_slot(sys, selected_tool,
+                                                 helix::ToolState::instance().tool_count());
 
     bool is_loaded = false;
     if (slot >= 0) {
