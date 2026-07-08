@@ -561,7 +561,13 @@ static CrashInfo run_child_process(const WatchdogArgs& args, pid_t splash_pid) {
                     // Watchdog is shutting down, kill child
                     spdlog::info("[Watchdog] Shutting down, terminating child");
                     kill(child_pid, SIGTERM);
-                    waitpid(child_pid, &status, 0);
+                    // Reap across further signals. Handlers are installed
+                    // without SA_RESTART, so a second SIGTERM/SIGINT during
+                    // shutdown (e.g. start-stop-daemon -K's TERM-then-KILL
+                    // retry) would otherwise return EINTR and leave helix-screen
+                    // unreaped, holding RAM through calibration.
+                    while (waitpid(child_pid, &status, 0) < 0 && errno == EINTR) {
+                    }
                     crash.exit_code = 0;
                     crash.was_signaled = false;
                     return crash;

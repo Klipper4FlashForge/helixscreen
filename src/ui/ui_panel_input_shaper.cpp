@@ -22,7 +22,6 @@
 #include "platform_capabilities.h"
 #include "static_panel_registry.h"
 
-#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -483,6 +482,14 @@ void InputShaperPanel::on_deactivate() {
         set_state(State::IDLE);
     }
 
+    // Dismiss the low-RAM warning modal if still open. The panel is a persistent
+    // singleton, so hiding it while the modal is open would otherwise leak an
+    // orphaned warning modal whose callbacks capture this panel.
+    if (low_ram_warn_dialog_) {
+        helix::ui::modal_hide(low_ram_warn_dialog_);
+        low_ram_warn_dialog_ = nullptr;
+    }
+
     // Call base class
     OverlayBase::on_deactivate();
 }
@@ -493,14 +500,6 @@ void InputShaperPanel::cleanup() {
     // Expire all outstanding async tokens
     lifetime_.invalidate();
     calibration_lifetime_.invalidate();
-
-    // Dismiss the low-RAM warning modal if still open — its callbacks capture
-    // this panel and would otherwise fire proceed_with_preflight() against a
-    // torn-down overlay.
-    if (low_ram_warn_dialog_) {
-        helix::ui::modal_hide(low_ram_warn_dialog_);
-        low_ram_warn_dialog_ = nullptr;
-    }
 
     // Destroy chart widgets
     if (x_chart_.chart) {
@@ -567,18 +566,17 @@ void InputShaperPanel::start_with_preflight(char axis) {
 
     auto mem = helix::get_system_memory_info();
     if (mem.total_mb() < helix::RESONANCE_LOW_RAM_WARN_MB) {
+        // Re-entry guard: a second entry while the warning modal is open is a no-op.
+        if (low_ram_warn_dialog_)
+            return;
         pending_calib_axis_ = axis;
-        std::string msg = fmt::format(
-            lv_tr("This device has only {} MB of RAM. Resonance calibration is "
-                  "memory-intensive and can make the printer firmware report a "
-                  "\"Timer Too Close\" error or restart mid-test. Continue anyway?"),
-            mem.total_mb());
-        low_ram_warn_dialog_ = helix::ui::modal_show_confirmation(
-            lv_tr("Low Memory"), msg.c_str(), ModalSeverity::Warning,
-            lv_tr("Continue"),
+        low_ram_warn_dialog_ = helix::ui::show_low_ram_resonance_warning(
+            mem.total_mb(),
             [](lv_event_t* e) {
                 LVGL_SAFE_EVENT_CB_BEGIN("[InputShaper] low_ram_confirm");
                 auto* self = static_cast<InputShaperPanel*>(lv_event_get_user_data(e));
+                if (!self)
+                    return;
                 if (self->low_ram_warn_dialog_) {
                     helix::ui::modal_hide(self->low_ram_warn_dialog_);
                     self->low_ram_warn_dialog_ = nullptr;
@@ -589,6 +587,8 @@ void InputShaperPanel::start_with_preflight(char axis) {
             [](lv_event_t* e) {
                 LVGL_SAFE_EVENT_CB_BEGIN("[InputShaper] low_ram_cancel");
                 auto* self = static_cast<InputShaperPanel*>(lv_event_get_user_data(e));
+                if (!self)
+                    return;
                 if (self->low_ram_warn_dialog_) {
                     helix::ui::modal_hide(self->low_ram_warn_dialog_);
                     self->low_ram_warn_dialog_ = nullptr;

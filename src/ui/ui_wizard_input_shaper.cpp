@@ -19,7 +19,6 @@
 #include "printer_state.h"
 #include "static_panel_registry.h"
 
-#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
 #include <cstring>
@@ -286,20 +285,19 @@ static void on_start_calibration_clicked(lv_event_t* e) {
     // the wizard doesn't flip its visuals if the user cancels.
     auto mem = helix::get_system_memory_info();
     if (mem.total_mb() < helix::RESONANCE_LOW_RAM_WARN_MB) {
-        std::string msg = fmt::format(
-            lv_tr("This device has only {} MB of RAM. Resonance calibration is "
-                  "memory-intensive and can make the printer firmware report a "
-                  "\"Timer Too Close\" error or restart mid-test. Continue anyway?"),
-            mem.total_mb());
-        lv_obj_t* dialog = helix::ui::modal_show_confirmation(
-            lv_tr("Low Memory"), msg.c_str(), ModalSeverity::Warning,
-            lv_tr("Continue"),
+        // Re-entry guard: a second entry while the warning modal is open is a no-op.
+        if (step->low_ram_warn_dialog_)
+            return;
+        step->low_ram_warn_dialog_ = helix::ui::show_low_ram_resonance_warning(
+            mem.total_mb(),
             [](lv_event_t* ev) {
                 LVGL_SAFE_EVENT_CB_BEGIN("[Wizard Input Shaper] low_ram_confirm");
                 auto* self = static_cast<WizardInputShaperStep*>(lv_event_get_user_data(ev));
-                if (self->get_low_ram_warn_dialog()) {
-                    helix::ui::modal_hide(self->get_low_ram_warn_dialog());
-                    self->set_low_ram_warn_dialog(nullptr);
+                if (!self)
+                    return;
+                if (self->low_ram_warn_dialog_) {
+                    helix::ui::modal_hide(self->low_ram_warn_dialog_);
+                    self->low_ram_warn_dialog_ = nullptr;
                 }
                 begin_is_calibration_flow(self);
                 LVGL_SAFE_EVENT_CB_END();
@@ -307,16 +305,17 @@ static void on_start_calibration_clicked(lv_event_t* e) {
             [](lv_event_t* ev) {
                 LVGL_SAFE_EVENT_CB_BEGIN("[Wizard Input Shaper] low_ram_cancel");
                 auto* self = static_cast<WizardInputShaperStep*>(lv_event_get_user_data(ev));
-                if (self->get_low_ram_warn_dialog()) {
-                    helix::ui::modal_hide(self->get_low_ram_warn_dialog());
-                    self->set_low_ram_warn_dialog(nullptr);
+                if (!self)
+                    return;
+                if (self->low_ram_warn_dialog_) {
+                    helix::ui::modal_hide(self->low_ram_warn_dialog_);
+                    self->low_ram_warn_dialog_ = nullptr;
                 }
                 // User backed out — leave the wizard step as-is (Start still visible).
                 LVGL_SAFE_EVENT_CB_END();
             },
             step);
-        step->set_low_ram_warn_dialog(dialog);
-        if (!dialog) {
+        if (!step->low_ram_warn_dialog_) {
             // Modal failed to build — don't silently block calibration.
             begin_is_calibration_flow(step);
         }
