@@ -449,6 +449,85 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     CHECK(access.working_info().remaining_weight_g == Catch::Approx(321.0f));
     CHECK(access.working_info().total_weight_g == Catch::Approx(987.0f));
 
+    // The commit path must be LIVE: staging into working_info_ without
+    // re-syncing original_info_ leaves is_dirty() true, so the overview
+    // header Save (the ONLY commit path) is enabled. A prior fix synced
+    // original_info_ here and blinded is_dirty() -> Save disabled -> the
+    // edit staged but could never commit.
+    CHECK(access.is_dirty());
+    auto* save_dis = lv_xml_get_subject(nullptr, "ams_edit_save_disabled");
+    REQUIRE(save_dis != nullptr);
+    CHECK(lv_subject_get_int(save_dis) == 0); // Save enabled
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "untracked spool-edit Save with a spool-weight-only edit lights the header Save",
+                 "[ams_edit_overlay][spool_edit][dirty]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    show_overlay_for_mock_untracked_slot(*this);
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* spool_weight = access.widget("detail_field_spool_weight");
+    REQUIRE(spool_weight != nullptr);
+    // Edit ONLY the spool weight — remaining stays blank (unchanged).
+    lv_textarea_set_text(spool_weight, "144");
+
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.view() == AmsEditOverlay::kViewOverview);
+    CHECK(access.working_info().total_weight_g == Catch::Approx(144.0f));
+    // The new total_weight_g term in is_dirty() must light Save even when
+    // remaining is untouched.
+    CHECK(access.is_dirty());
+    auto* save_dis = lv_xml_get_subject(nullptr, "ams_edit_save_disabled");
+    REQUIRE(save_dis != nullptr);
+    CHECK(lv_subject_get_int(save_dis) == 0); // Save enabled
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "untracked spool-edit Save with blank fields preserves the unknown sentinel",
+                 "[ams_edit_overlay][spool_edit][dirty]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    // Unknown-weight untracked slot: both weights are the -1 sentinel, so
+    // populate_detail_fields() renders both quantity fields blank.
+    show_overlay_for_mock_slot_without_weights(*this);
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* remaining = access.widget("detail_field_remaining");
+    lv_obj_t* spool_weight = access.widget("detail_field_spool_weight");
+    REQUIRE(remaining != nullptr);
+    REQUIRE(spool_weight != nullptr);
+    CHECK(std::string(lv_textarea_get_text(remaining)).empty());
+    CHECK(std::string(lv_textarea_get_text(spool_weight)).empty());
+
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Blank == unchanged: the -1 sentinel is preserved (NOT overwritten with
+    // 0), so the slot stays clean and Save does not light up.
+    CHECK(access.view() == AmsEditOverlay::kViewOverview);
+    CHECK(access.working_info().remaining_weight_g <= 0);
+    CHECK(access.working_info().total_weight_g <= 0);
+    CHECK_FALSE(access.is_dirty());
+    auto* save_dis = lv_xml_get_subject(nullptr, "ams_edit_save_disabled");
+    REQUIRE(save_dis != nullptr);
+    CHECK(lv_subject_get_int(save_dis) == 1); // Save stays disabled
+
     close_editor_overlay();
 }
 

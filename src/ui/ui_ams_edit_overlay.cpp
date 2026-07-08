@@ -697,6 +697,14 @@ void AmsEditOverlay::enter_spool_edit() {
     detail_original_.color_name = working_info_.color_name;
     detail_original_.remaining_weight_g = working_info_.remaining_weight_g;
     detail_original_.initial_weight_g = working_info_.total_weight_g;
+    // The untracked "Spool weight" field maps to working_info_.total_weight_g on
+    // save (see handle_spool_edit_save's untracked branch), so seed it from the
+    // same source. Without this it defaults to 0 and renders "0" instead of
+    // blank for an unknown-weight slot — which would stage 0 over the -1
+    // sentinel on Save and make the open->save round-trip lossy. (Tracked slots
+    // overwrite detail_original_/detail_working_ wholesale from the Spoolman
+    // record below, so this seed is untracked-only.)
+    detail_original_.spool_weight_g = working_info_.total_weight_g;
     if (working_info_.color_rgb != 0) {
         char hex_buf[8];
         snprintf(hex_buf, sizeof(hex_buf), "#%06X", working_info_.color_rgb);
@@ -889,14 +897,27 @@ void AmsEditOverlay::handle_spool_edit_save() {
         // is no Spoolman record to PATCH, so commit them straight into
         // working_info_ the way the rest of spool-edit's fields already do.
         // The overview header Save is the existing commit path for
-        // working_info_ (this handler doesn't write settings directly).
-        working_info_.remaining_weight_g = static_cast<float>(detail_working_.remaining_weight_g);
-        working_info_.total_weight_g = static_cast<float>(detail_working_.spool_weight_g);
-        // Keep the pre-save baseline in sync (same idiom as the tracked
-        // async path above) so the header Save dirty state doesn't light up
-        // just from having visited spool-edit.
-        original_info_.remaining_weight_g = working_info_.remaining_weight_g;
-        original_info_.total_weight_g = working_info_.total_weight_g;
+        // working_info_ (this handler doesn't write settings directly) — so
+        // we must NOT sync original_info_ here, or is_dirty() would go blind
+        // and the header Save (the only commit path) would never light up.
+        //
+        // Blank-means-unchanged: read the textareas' emptiness directly
+        // (read_detail_fields() collapses blank -> 0, which is a legitimate
+        // explicit value we can't distinguish after the fact). A blank field
+        // leaves the existing value — possibly the -1 "unknown" sentinel —
+        // untouched: this both keeps an untouched unknown-weight slot from
+        // going spuriously dirty (-1 -> 0) and preserves the sentinel.
+        lv_obj_t* remaining_w = find_widget("detail_field_remaining");
+        lv_obj_t* spool_wt_w = find_widget("detail_field_spool_weight");
+        const char* remaining_t = remaining_w ? lv_textarea_get_text(remaining_w) : nullptr;
+        const char* spool_wt_t = spool_wt_w ? lv_textarea_get_text(spool_wt_w) : nullptr;
+        if (remaining_t && remaining_t[0] != '\0') {
+            working_info_.remaining_weight_g =
+                static_cast<float>(detail_working_.remaining_weight_g);
+        }
+        if (spool_wt_t && spool_wt_t[0] != '\0') {
+            working_info_.total_weight_g = static_cast<float>(detail_working_.spool_weight_g);
+        }
     }
 
     // --- No logistics write (untracked, unchanged, or API missing): return now ---
@@ -1399,7 +1420,8 @@ bool AmsEditOverlay::is_dirty() const {
            working_info_.brand != original_info_.brand ||
            working_info_.spoolman_id != original_info_.spoolman_id ||
            working_info_.mapped_tool != original_info_.mapped_tool ||
-           std::abs(working_info_.remaining_weight_g - original_info_.remaining_weight_g) > 0.1f;
+           std::abs(working_info_.remaining_weight_g - original_info_.remaining_weight_g) > 0.1f ||
+           std::abs(working_info_.total_weight_g - original_info_.total_weight_g) > 0.1f;
 }
 
 void AmsEditOverlay::update_sync_button_state() {
