@@ -180,6 +180,7 @@ void PrinterPrintState::reset_for_new_print() {
     // reprint (whose metadata callback won't re-fire).
     have_gcode_z_ = false;
     last_gcode_z_mm_ = 0.0;
+    layer_z_derived_ = false;
     slicer_progress_ = 0.0;
     slicer_progress_active_ = false;
     lv_subject_copy_string(&display_message_, "");
@@ -729,6 +730,8 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
                         if (estimated > total)
                             estimated = total;
                         int current = lv_subject_get_int(&print_layer_current_);
+                        // Progress-fraction guess — the display marks this "~".
+                        layer_z_derived_ = false;
                         if (estimated != current) {
                             spdlog::debug("[LayerTracker] Estimated layer {}/{} from progress {}%",
                                           estimated, total, file_progress_pct);
@@ -753,9 +756,11 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
     //
     // Gated on the STICKY printer_reports_layers_ (a printer that ever reports a
     // real layer field must never fabricate one), known geometry, and a cached
-    // Z. This stays an ESTIMATE: has_real_layer_data_ / printer_reports_layers_
-    // are deliberately NOT set, so the UI keeps its "~" derived-value prefix and
-    // the pre-print completion gate (should_complete_preprint) is unaffected.
+    // Z. has_real_layer_data_ / printer_reports_layers_ are deliberately NOT set
+    // (this is not a slicer-reported field, so the pre-print completion gate
+    // should_complete_preprint stays unaffected). It IS flagged layer_z_derived_,
+    // which marks the value display-accurate (Mainsail parity) so the label drops
+    // the "~" estimate prefix — the derivation tracks real commanded geometry.
     if (!printer_reports_layers_ && layer_height_ > 0.0 && have_gcode_z_) {
         auto current_state = static_cast<PrintJobState>(lv_subject_get_int(&print_state_enum_));
         bool is_terminal_state =
@@ -770,6 +775,9 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
                 derived = 1;
             if (derived > total)
                 derived = total;
+            // Mark the source BEFORE writing the subject so the label observer
+            // reads the correct accuracy state on the change it triggers.
+            layer_z_derived_ = true;
             if (derived != lv_subject_get_int(&print_layer_current_)) {
                 spdlog::debug("[LayerTracker] Derived layer {}/{} from Z={:.3f}mm "
                               "(first={:.3f}, height={:.3f})",

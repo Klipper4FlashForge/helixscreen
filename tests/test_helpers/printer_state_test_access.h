@@ -20,6 +20,7 @@ class PrinterPrintStateTestAccess {
         pps.first_layer_height_ = 0.0;
         pps.last_gcode_z_mm_ = 0.0;
         pps.have_gcode_z_ = false;
+        pps.layer_z_derived_ = false;
         pps.has_real_layer_data_ = false;
         // Sticky printer capability — session-scoped in production (survives
         // reset_for_new_print, cleared only on a fresh session). The test

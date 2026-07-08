@@ -681,9 +681,11 @@ TEST_CASE("Layer tracking: Z-height derivation for non-reporting slicer",
         state.update_from_status(status);
 
         REQUIRE(lv_subject_get_int(state.get_print_layer_current_subject()) == 5);
-        // Still an estimate — the "~" prefix must stay.
+        // Not a slicer-reported field (pre-print gate must stay unaffected)...
         REQUIRE_FALSE(state.has_real_layer_data());
         REQUIRE_FALSE(state.printer_reports_layers());
+        // ...but display-accurate (Mainsail parity) — the label drops the "~".
+        REQUIRE(state.layer_is_accurate());
     }
 
     SECTION("first layer: Z at first_layer_height derives layer 1") {
@@ -727,6 +729,7 @@ TEST_CASE("Layer tracking: real info.current_layer still wins over Z derivation"
     REQUIRE(lv_subject_get_int(state.get_print_layer_current_subject()) == 5);
     REQUIRE(state.has_real_layer_data());
     REQUIRE(state.printer_reports_layers());
+    REQUIRE(state.layer_is_accurate());
 }
 
 TEST_CASE("Layer tracking: progress estimate preserved when slice geometry unknown",
@@ -749,4 +752,6 @@ TEST_CASE("Layer tracking: progress estimate preserved when slice geometry unkno
     // round(0.12 * 75) = 9 — the historical progress-fraction behavior.
     REQUIRE(lv_subject_get_int(state.get_print_layer_current_subject()) == 9);
     REQUIRE_FALSE(state.has_real_layer_data());
+    // Progress-fraction guess is NOT accurate — the label keeps the "~".
+    REQUIRE_FALSE(state.layer_is_accurate());
 }

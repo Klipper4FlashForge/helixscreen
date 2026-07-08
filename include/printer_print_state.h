@@ -328,6 +328,22 @@ class PrinterPrintState {
     }
 
     /**
+     * @brief Is the displayed current layer trustworthy (not a progress guess)?
+     *
+     * True when the layer came from a real slicer/Moonraker field
+     * (has_real_layer_data_) OR from the Z-height derivation, which tracks actual
+     * commanded geometry and matches Mainsail. False only when the value is the
+     * byte/time progress-fraction estimate (which drifts high early in a print).
+     * The print-status label uses this to decide whether to prefix "~".
+     * Distinct from has_real_layer_data() on purpose: Z-derived layers are
+     * accurate for display but must NOT satisfy has_real_layer_data() (that flag
+     * gates pre-print completion — see printer_reports_layers_).
+     */
+    bool layer_is_accurate() const {
+        return has_real_layer_data_ || layer_z_derived_;
+    }
+
+    /**
      * @brief Sticky: has this printer EVER reported a real layer field this session?
      *
      * True once any of print_stats.info.current_layer, print_stats.info.total_layer,
@@ -572,6 +588,15 @@ class PrinterPrintState {
     // re-observed. Do NOT use it to decide whether a printer reports layers at
     // all; use printer_reports_layers_ for that (see below).
     std::atomic<bool> has_real_layer_data_{false};
+
+    // True when the current layer value came from the Z-height derivation (tier
+    // 3) rather than the progress-fraction estimate (tier 4). Drives the display
+    // "accurate" decision (layer_is_accurate()) WITHOUT satisfying
+    // has_real_layer_data_ — Z-derived layers are display-accurate but must never
+    // flip the pre-print completion gate. Per-print (cleared by
+    // reset_for_new_print). Atomic: written on the status-update path, read from
+    // the main thread by the label formatter.
+    std::atomic<bool> layer_z_derived_{false};
 
     // STICKY printer capability: true once ANY real layer field
     // (print_stats.info.current_layer, print_stats.info.total_layer, or

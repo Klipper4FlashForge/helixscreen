@@ -641,6 +641,17 @@ class PrinterState {
     }
 
     /**
+     * @brief Is the displayed current layer trustworthy (not a progress guess)?
+     *
+     * True for real slicer/Moonraker layer fields AND for Z-height-derived
+     * layers; false only for the progress-fraction estimate. The print-status
+     * label uses this to decide whether to show the "~" estimate prefix.
+     */
+    bool layer_is_accurate() const {
+        return print_domain_.layer_is_accurate();
+    }
+
+    /**
      * @brief Sticky: has this printer EVER reported a real layer field this session?
      *
      * Delegated to PrinterPrintState. NOT reset between prints. Used by the
