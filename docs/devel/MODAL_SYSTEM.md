@@ -431,10 +431,13 @@ class SpoolEditModal : public Modal {
 ```
 
 > **Note:** The AMS slot editor is NOT a modal anymore — it is `AmsEditOverlay`,
-> a NavigationManager overlay hosting five internal views selected by the
-> `ams_edit_view` subject. `SpoolEditModal`, `ColorPicker`, and
-> `FilamentCatalogPickerModal` remain standalone modals for their other
-> consumers (SpoolmanPanel, LED/theme pickers, FilamentPanel presets).
+> a NavigationManager overlay hosting four internal views selected by the
+> `ams_edit_view` subject: overview (spool card + "Change filament" row),
+> Spoolman spool picker, a unified spool-edit view (identity + color +
+> logistics, `kViewSpoolEdit`), and the color view. `SpoolEditModal`,
+> `ColorPicker`, and `FilamentCatalogPickerModal` remain standalone modals for
+> their other consumers (SpoolmanPanel, LED/theme pickers, FilamentPanel
+> presets).
 
 ### Modals with Many Buttons (RunoutGuidanceModal)
 

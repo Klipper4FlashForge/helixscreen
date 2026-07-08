@@ -408,6 +408,7 @@ translations:
   Change LED color based on printer state: Change LED color based on printer state
   Change PIN: Change PIN
   Change Printer Host: Change Printer Host
+  Change filament: Change filament
   Changes apply immediately. Adjust during print for tuning.: Changes apply immediately.
     Adjust during print for tuning.
   Changes are temporary and reset on printer reboot: Changes are temporary and reset
