@@ -1371,7 +1371,7 @@
   <translation tag="Not detected" de="Nicht erkannt" en="Not detected" es="No detectado" fr="Non détecté" it="Non rilevato" ja="検出されません" pt="Não detectado" ru="Не обнаружено" zh="未检测到"/>
   <translation tag="Not found (strobe only)" de="Nicht gefunden (nur Stroboskop)" en="Not found (strobe only)" es="No encontrado (solo estroboscópico)" fr="Introuvable (stroboscope uniquement)" it="Non trovato (solo stroboscopio)" ja="見つかりません (ストロボのみ)" pt="Não encontrado (apenas estroboscópico)" ru="Не найдено (только стробоскоп)" zh="未找到 (仅频闪)"/>
   <translation tag="Not found (use phone app)" de="Nicht gefunden (Telefon-App verwenden)" en="Not found (use phone app)" es="No encontrado (usa la app del teléfono)" fr="Introuvable (utilisez lapplication mobile)" it="Non trovato (usa l’app del telefono)" ja="見つかりません (スマホアプリを使用)" pt="Não encontrado (use o app do celular)" ru="Не найдено (используйте приложение на телефоне)" zh="未找到 (使用手机应用)"/>
-  <translation tag="Not in your spools? Set it up →" en="Not in your spools? Set it up →"/>
+  <translation tag="Not in your spools? Set it up" en="Not in your spools? Set it up"/>
   <translation tag="Not yet calibrated" de="Noch nicht kalibriert" en="Not yet calibrated" es="Aún no calibrado" fr="Pas encore calibré" it="Non ancora calibrato" ja="未キャリブレーション" pt="Ainda não calibrado" ru="Ещё не откалибровано" zh="尚未校准"/>
   <translation tag="Notes" de="Notizen" en="Notes" es="Notas" fr="Notes" it="Note" ja="メモ" pt="Notas" ru="Заметки" zh="备注"/>
   <translation tag="Notes (optional)" de="Notizen (optional)" en="Notes (optional)" es="Notas (opcional)" fr="Notes (facultatif)" it="Note (facoltativo)" ja="メモ（オプション）" pt="Notas (opcional)" ru="Заметки (необязательно)" zh="备注（可选）"/>

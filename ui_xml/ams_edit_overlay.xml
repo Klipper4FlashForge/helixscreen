@@ -43,6 +43,18 @@
       <lv_obj name="form_view" width="100%" flex_grow="1" flex_flow="column" style_pad_gap="0"
               style_flex_main_place="center" scrollable="false">
         <bind_flag_if_not_eq subject="ams_edit_view" flag="hidden" ref_value="0"/>
+        <!-- Change filament: navigation row — opens the Spoolman picker
+             (connected) or the spool-edit view (no Spoolman). Sits above the
+             spool card so the primary "swap filament" action reads first. -->
+        <lv_obj name="change_filament_row" width="100%" height="content"
+                style_pad_left="#space_lg" style_pad_right="#space_lg"
+                style_pad_top="#space_xs" style_pad_bottom="#space_xs"
+                flex_flow="row" style_flex_main_place="space_between"
+                style_flex_cross_place="center" clickable="true" scrollable="false">
+          <event_cb trigger="clicked" callback="ams_edit_change_filament_cb"/>
+          <text_body text="Change filament" translation_tag="Change filament" clickable="false"/>
+          <icon src="chevron_right" size="sm" variant="muted" clickable="false"/>
+        </lv_obj>
         <!-- Content area - HORIZONTAL layout with side-by-side sections -->
         <lv_obj width="100%"
                 height="content" style_pad_all="#space_lg" flex_flow="row" style_pad_gap="#space_xl" scrollable="false">
@@ -66,7 +78,7 @@
                Every child is clickable="false" event_bubble="true" so taps reach
                the card [L071]. -->
           <lv_obj name="spool_card" flex_grow="1" height="content"
-                  style_bg_color="#card_bg" style_bg_opa="255" style_radius="#border_radius"
+                  style_bg_color="#elevated_bg" style_bg_opa="255" style_radius="#border_radius"
                   style_pad_all="#space_md" flex_flow="column" style_pad_gap="#space_sm"
                   clickable="true" scrollable="false">
             <event_cb trigger="clicked" callback="ams_edit_card_clicked_cb"/>
@@ -111,17 +123,6 @@
               <text_small name="temp_bed_label" text="" clickable="false" event_bubble="true"/>
             </lv_obj>
           </lv_obj>
-        </lv_obj>
-        <!-- Change filament: navigation row — opens the Spoolman picker
-             (connected) or the spool-edit view (no Spoolman). -->
-        <lv_obj name="change_filament_row" width="100%" height="content"
-                style_pad_left="#space_lg" style_pad_right="#space_lg"
-                style_pad_top="#space_xs" style_pad_bottom="#space_xs"
-                flex_flow="row" style_flex_main_place="space_between"
-                style_flex_cross_place="center" clickable="true" scrollable="false">
-          <event_cb trigger="clicked" callback="ams_edit_change_filament_cb"/>
-          <text_body text="Change filament" translation_tag="Change filament" clickable="false"/>
-          <icon src="chevron_right" size="sm" variant="muted" clickable="false"/>
         </lv_obj>
         <!-- Filament actions: Scan QR is the identity fast path for both
              linked and unlinked slots (Unlink and Print Label live in the
@@ -192,8 +193,9 @@
                 style_pad_all="#space_sm" flex_flow="row" style_flex_main_place="center"
                 clickable="true" scrollable="false">
           <event_cb trigger="clicked" callback="ams_edit_setup_entry_cb"/>
-          <text_body text="Not in your spools? Set it up →"
-                     translation_tag="Not in your spools? Set it up →" clickable="false"/>
+          <text_body text="Not in your spools? Set it up"
+                     translation_tag="Not in your spools? Set it up" clickable="false"/>
+          <icon src="chevron_right" size="sm" variant="muted" clickable="false"/>
         </lv_obj>
 
       </lv_obj>
