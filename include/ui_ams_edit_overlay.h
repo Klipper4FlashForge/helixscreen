@@ -132,8 +132,7 @@ class AmsEditOverlay : public OverlayBase {
     uint32_t details_color_ = 0;     ///< pending color chosen in the details view
     bool details_color_set_ = false; ///< true once the user picked a color there
 
-    // === Color view (kViewColor) ===
-    lv_subject_t color_mode_subject_; ///< 0=presets, 1=custom ("ams_edit_color_mode")
+    // === Color view (kViewColor): one screen, presets + custom HSV ===
     int return_view_ = kViewOverview; ///< where the color view pops back to
     uint32_t custom_color_ = 0x808080;
 
@@ -144,8 +143,6 @@ class AmsEditOverlay : public OverlayBase {
     void handle_color_hex_changed();
     void handle_color_apply();
     static void on_color_swatch_cb(lv_event_t* e);
-    static void on_color_mode_presets_cb(lv_event_t* e);
-    static void on_color_mode_custom_cb(lv_event_t* e);
     static void on_color_apply_cb(lv_event_t* e);
     static void on_color_hex_changed_cb(lv_event_t* e);
 

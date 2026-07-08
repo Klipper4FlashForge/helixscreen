@@ -124,6 +124,15 @@ std::string FilamentCatalogSelector::type_options() const {
     return dd ? std::string(lv_dropdown_get_options(dd)) : std::string();
 }
 
+void FilamentCatalogSelector::preselect_first() {
+    if (!highlighted_id_.empty())
+        return; // keep an existing selection
+    auto products = catalog_.products_for(current_vendor(), current_type());
+    if (products.empty())
+        return;
+    handle_row_selected(products.front()->id);
+}
+
 void FilamentCatalogSelector::select_first_product_for_test() {
     auto products = catalog_.products_for(current_vendor(), current_type());
     if (products.empty())

@@ -378,8 +378,6 @@ void AmsEditOverlay::init_subjects() {
         // details row, and (Phase 5) the Save-to-Spoolman toggle default.
         UI_MANAGED_SUBJECT_INT(is_managed_subject_, 0, "ams_edit_is_managed", subjects_);
 
-        UI_MANAGED_SUBJECT_INT(color_mode_subject_, 0, "ams_edit_color_mode", subjects_);
-
         chip_text_buf_[0] = '\0';
         lv_subject_init_string(&chip_text_subject_, chip_text_buf_, nullptr, sizeof(chip_text_buf_),
                                "");
@@ -665,6 +663,9 @@ void AmsEditOverlay::enter_filament_details() {
     details_selector_.attach(fragment);
     details_selector_.configure(std::move(seed), std::move(allowed));
     details_selector_.populate();
+    // An already-defined filament should show its matching variant checked;
+    // a fresh list pre-checks the first product so Select is one tap.
+    details_selector_.preselect_first();
 
     // Seed the pending color from the working slot so Select without a color
     // tap keeps the current color.
@@ -1383,7 +1384,6 @@ void AmsEditOverlay::open_color_view(int return_view) {
         snprintf(buf, sizeof(buf), "#%06X", custom_color_);
         lv_textarea_set_text(hex_input, buf);
     }
-    lv_subject_set_int(&color_mode_subject_, 0); // land on presets
     lv_subject_set_int(&view_mode_subject_, kViewColor);
     spdlog::debug("[AmsEditOverlay] Color view opened (return_view={})", return_view);
 }
@@ -1462,20 +1462,6 @@ void AmsEditOverlay::on_color_swatch_cb(lv_event_t* e) {
     auto* self = get_instance_from_event(e);
     if (self) {
         self->handle_color_swatch(static_cast<lv_obj_t*>(lv_event_get_target(e)));
-    }
-}
-
-void AmsEditOverlay::on_color_mode_presets_cb(lv_event_t* e) {
-    auto* self = get_instance_from_event(e);
-    if (self) {
-        lv_subject_set_int(&self->color_mode_subject_, 0);
-    }
-}
-
-void AmsEditOverlay::on_color_mode_custom_cb(lv_event_t* e) {
-    auto* self = get_instance_from_event(e);
-    if (self) {
-        lv_subject_set_int(&self->color_mode_subject_, 1);
     }
 }
 
@@ -1914,8 +1900,6 @@ void AmsEditOverlay::register_callbacks() {
         {"ams_edit_quick_swatch_cb", on_quick_swatch_cb},
         {"ams_edit_custom_color_cb", on_custom_color_cb},
         {"ams_edit_color_swatch_cb", on_color_swatch_cb},
-        {"ams_edit_color_mode_presets_cb", on_color_mode_presets_cb},
-        {"ams_edit_color_mode_custom_cb", on_color_mode_custom_cb},
         {"ams_edit_color_apply_cb", on_color_apply_cb},
         {"ams_edit_color_hex_changed_cb", on_color_hex_changed_cb},
         {"ams_edit_detail_save_cb", on_detail_save_cb},

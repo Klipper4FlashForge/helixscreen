@@ -75,3 +75,28 @@ TEST_CASE_METHOD(XMLTestFixture, "selector clears highlight when vendor changes"
 
     sel.detach();
 }
+
+TEST_CASE_METHOD(XMLTestFixture, "preselect_first checks the first product but keeps a prior pick",
+                 "[filament_picker][catalog_selector]") {
+    lv_obj_t* root = make_fragment();
+    REQUIRE(root != nullptr);
+
+    FilamentCatalogSelector sel;
+    sel.attach(root);
+    sel.configure(std::string("ABS"), std::nullopt);
+    sel.populate();
+    REQUIRE(sel.highlighted() == nullptr);
+
+    sel.preselect_first();
+    const EffectiveFilament* first = sel.highlighted();
+    REQUIRE(first != nullptr);
+    CHECK(first->type == "ABS");
+
+    // Idempotent: a second call must not clobber the existing selection.
+    std::string kept_id = first->id;
+    sel.preselect_first();
+    REQUIRE(sel.highlighted() != nullptr);
+    CHECK(sel.highlighted()->id == kept_id);
+
+    sel.detach();
+}

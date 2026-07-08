@@ -54,6 +54,11 @@ class FilamentCatalogSelector {
     /// next populate()/clear_catalog().
     [[nodiscard]] const helix::printer::EffectiveFilament* highlighted() const;
 
+    /// Highlight the first product of the current vendor+type if nothing is
+    /// highlighted yet (hosts that show an already-defined filament want its
+    /// matching variant pre-checked rather than an unchecked list).
+    void preselect_first();
+
     void set_selection_changed(SelectionChangedCallback cb);
 
     // === Introspection (tests + hosts) ===
