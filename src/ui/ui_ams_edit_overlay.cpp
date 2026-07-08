@@ -604,9 +604,17 @@ void AmsEditOverlay::render_spool_list(const std::string& filter) {
     lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
     UiBreakpoint bp = bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj)) : UiBreakpoint::Medium;
     const bool is_compact = bp <= UiBreakpoint::Medium;
-    const char* attrs[] = {"compact",     is_compact ? "true" : "false",
-                           "detail_flow", is_compact ? "row" : "column",
-                           nullptr,       nullptr};
+    const char* attrs_plain[] = {"compact",     is_compact ? "true" : "false",
+                                 "detail_flow", is_compact ? "row" : "column",
+                                 nullptr,       nullptr};
+    const char* attrs_current[] = {"compact",
+                                   is_compact ? "true" : "false",
+                                   "detail_flow",
+                                   is_compact ? "row" : "column",
+                                   "hide_edit_pencil",
+                                   "false",
+                                   nullptr,
+                                   nullptr};
 
     // Pre-selection (spec §3.2, resolution §2.5): the current spool if linked,
     // otherwise the FIRST selectable row — so a single-candidate list is one
@@ -614,8 +622,10 @@ void AmsEditOverlay::render_spool_list(const std::string& filter) {
     bool have_preselection = false;
 
     for (const auto& spool : filtered) {
-        lv_obj_t* item =
-            static_cast<lv_obj_t*>(lv_xml_create(spool_list, "spoolman_spool_item", attrs));
+        const bool is_current_spool =
+            (working_info_.spoolman_id > 0 && spool.id == working_info_.spoolman_id);
+        lv_obj_t* item = static_cast<lv_obj_t*>(lv_xml_create(
+            spool_list, "spoolman_spool_item", is_current_spool ? attrs_current : attrs_plain));
         if (!item) {
             continue;
         }
@@ -1768,6 +1778,7 @@ void AmsEditOverlay::register_callbacks() {
         {"ams_edit_picker_retry_cb", on_picker_retry_cb},
         // Shared spool_item component uses this callback name
         {"spoolman_spool_item_clicked_cb", on_spool_item_cb},
+        {"spoolman_spool_item_edit_cb", on_spool_item_edit_cb},
         {"ams_edit_tool_changed_cb", on_tool_changed_cb},
         {"ams_edit_weight_changed_cb", on_weight_changed_cb},
     });
@@ -1935,6 +1946,16 @@ void AmsEditOverlay::on_weight_changed_cb(lv_event_t* e) {
     auto* self = get_instance_from_event(e);
     if (self) {
         self->handle_weight_input_changed();
+    }
+}
+
+void AmsEditOverlay::on_spool_item_edit_cb(lv_event_t* e) {
+    // Pencil on the current spool's row: edit THIS filament's identity
+    // (spec §3.3 reachability) instead of picking a different spool.
+    auto* self = get_instance_from_event(e);
+    if (self) {
+        spdlog::debug("[AmsEditOverlay] Edit pencil tapped - editing current spool identity");
+        self->enter_filament_details();
     }
 }
 

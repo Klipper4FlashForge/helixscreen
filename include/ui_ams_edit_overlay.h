@@ -260,6 +260,7 @@ class AmsEditOverlay : public OverlayBase {
     static void on_picker_search_cb(lv_event_t* e);
     static void on_picker_retry_cb(lv_event_t* e);
     static void on_spool_item_cb(lv_event_t* e);
+    static void on_spool_item_edit_cb(lv_event_t* e);
     static void on_tool_changed_cb(lv_event_t* e);
     static void on_weight_changed_cb(lv_event_t* e);
 

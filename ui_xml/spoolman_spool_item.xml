@@ -9,6 +9,9 @@
          details column flows as a row and the color name is hidden. -->
     <prop name="compact" type="boolean" default="false"/>
     <prop name="detail_flow" type="string" default="column"/>
+    <!-- Opt-in identity-edit pencil (AMS editor's picker only; the AMS panel
+         list keeps it hidden). Shown on the highlighted/current row. -->
+    <prop name="hide_edit_pencil" type="boolean" default="true"/>
   </api>
   <consts>
     <!-- Picker-row sizing. Component-scoped (only this component uses them),
@@ -64,6 +67,10 @@
         <text_small name="spool_weight" text="" clickable="false"/>
       </lv_obj>
     </lv_obj>
+    <icon name="edit_pencil" src="pencil" size="sm" variant="muted"
+          hidden="$hide_edit_pencil" clickable="true">
+      <event_cb trigger="clicked" callback="spoolman_spool_item_edit_cb"/>
+    </icon>
     <!-- Checkmark for current selection (hidden by default) -->
     <icon name="selected_icon" src="check_circle" size="sm" variant="success" hidden="true" clickable="false"/>
   </view>
