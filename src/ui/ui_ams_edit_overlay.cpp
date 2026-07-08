@@ -120,7 +120,6 @@ bool AmsEditOverlay::show_for_slot(lv_obj_t* parent, int slot_index, const SlotI
     api_ = api ? api : get_moonraker_api();
     completion_callback_ = std::move(on_complete);
     completion_fired_ = false;
-    remaining_pre_edit_pct_ = 0;
     cached_spools_.clear();
 
     // Always prefer the active screen so the overlay renders above everything
@@ -141,7 +140,6 @@ bool AmsEditOverlay::show_for_slot(lv_obj_t* parent, int slot_index, const SlotI
 
     // Reset per-session view state HERE (covered-safe — on_deactivate must not
     // touch it, since it also fires when the QR scanner merely covers us).
-    lv_subject_set_int(&remaining_mode_subject_, 0);
     set_view(open_on_picker ? kViewSpoolPicker : kViewOverview);
     if (open_on_picker) {
         populate_picker();
@@ -237,16 +235,6 @@ lv_obj_t* AmsEditOverlay::create(lv_obj_t* parent) {
             lv_label_bind_text(header_title, &slot_indicator_subject_, nullptr);
     }
 
-    lv_obj_t* color_name_label = find_widget("color_name_label");
-    if (color_name_label) {
-        color_name_observer_ = lv_label_bind_text(color_name_label, &color_name_subject_, nullptr);
-    }
-
-    lv_obj_t* spool_name_label = find_widget("spool_name_label");
-    if (spool_name_label) {
-        spool_name_observer_ = lv_label_bind_text(spool_name_label, &spool_name_subject_, nullptr);
-    }
-
     lv_obj_t* temp_nozzle_label = find_widget("temp_nozzle_label");
     if (temp_nozzle_label) {
         temp_nozzle_observer_ =
@@ -264,9 +252,9 @@ lv_obj_t* AmsEditOverlay::create(lv_obj_t* parent) {
             lv_label_bind_text(remaining_pct_label, &remaining_pct_subject_, nullptr);
     }
 
-    lv_obj_t* chip_label = find_widget("chip_label");
-    if (chip_label) {
-        chip_text_observer_ = lv_label_bind_text(chip_label, &chip_text_subject_, nullptr);
+    lv_obj_t* card_identity_label = find_widget("card_identity_label");
+    if (card_identity_label) {
+        chip_text_observer_ = lv_label_bind_text(card_identity_label, &chip_text_subject_, nullptr);
     }
     lv_obj_t* hsv = find_widget("ams_color_hsv");
     if (hsv) {
@@ -291,8 +279,6 @@ void AmsEditOverlay::on_ui_destroyed() {
     details_selector_.detach();
     cached_overlay_widget_ = nullptr;
     slot_indicator_observer_ = nullptr;
-    color_name_observer_ = nullptr;
-    spool_name_observer_ = nullptr;
     temp_nozzle_observer_ = nullptr;
     temp_bed_observer_ = nullptr;
     remaining_pct_observer_ = nullptr;
@@ -328,38 +314,25 @@ void AmsEditOverlay::init_subjects() {
         slot_indicator_buf_[0] = '-';
         slot_indicator_buf_[1] = '-';
         slot_indicator_buf_[2] = '\0';
-        color_name_buf_[0] = '\0';
-        spool_name_buf_[0] = '\0';
-        snprintf(temp_nozzle_buf_, sizeof(temp_nozzle_buf_), "200-230°C");
-        snprintf(temp_bed_buf_, sizeof(temp_bed_buf_), "60°C");
-        snprintf(remaining_pct_buf_, sizeof(remaining_pct_buf_), "100%%");
+        temp_nozzle_buf_[0] = '\0';
+        temp_bed_buf_[0] = '\0';
+        snprintf(remaining_pct_buf_, sizeof(remaining_pct_buf_), "\xE2\x80\x94"); // "—"
 
         lv_subject_init_string(&slot_indicator_subject_, slot_indicator_buf_, nullptr,
                                sizeof(slot_indicator_buf_), "--");
         subjects_.register_subject(&slot_indicator_subject_);
 
-        lv_subject_init_string(&color_name_subject_, color_name_buf_, nullptr,
-                               sizeof(color_name_buf_), "");
-        subjects_.register_subject(&color_name_subject_);
-
-        lv_subject_init_string(&spool_name_subject_, spool_name_buf_, nullptr,
-                               sizeof(spool_name_buf_), "");
-        subjects_.register_subject(&spool_name_subject_);
-
         lv_subject_init_string(&temp_nozzle_subject_, temp_nozzle_buf_, nullptr,
-                               sizeof(temp_nozzle_buf_), "200-230°C");
+                               sizeof(temp_nozzle_buf_), "");
         subjects_.register_subject(&temp_nozzle_subject_);
 
         lv_subject_init_string(&temp_bed_subject_, temp_bed_buf_, nullptr, sizeof(temp_bed_buf_),
-                               "60°C");
+                               "");
         subjects_.register_subject(&temp_bed_subject_);
 
         lv_subject_init_string(&remaining_pct_subject_, remaining_pct_buf_, nullptr,
-                               sizeof(remaining_pct_buf_), "100%");
+                               sizeof(remaining_pct_buf_), "\xE2\x80\x94");
         subjects_.register_subject(&remaining_pct_subject_);
-
-        // Remaining mode (0=view, 1=edit) - registered globally for XML binding
-        UI_MANAGED_SUBJECT_INT(remaining_mode_subject_, 0, "edit_remaining_mode", subjects_);
 
         // View state (kViewOverview..kViewColor) - registered globally
         UI_MANAGED_SUBJECT_INT(view_mode_subject_, 0, "ams_edit_view", subjects_);
@@ -636,19 +609,25 @@ void AmsEditOverlay::handle_spool_selected(int spool_id) {
     update_spoolman_button_state();
 }
 
-void AmsEditOverlay::handle_chip_clicked() {
-    // Identity chip: with Spoolman, the user's inventory is their spools —
-    // open the picker. Without Spoolman, go straight to filament setup
-    // (Phase 5 routes this to the in-place filament-details view; until then
-    // the stacked branded catalog stands in).
+void AmsEditOverlay::handle_card_clicked() {
+    // The current-spool card is the direct edit affordance — tap opens the
+    // unified spool-edit view (identity + color + logistics).
+    spdlog::debug("[AmsEditOverlay] Spool card tapped - opening spool-edit");
+    enter_spool_edit();
+}
+
+void AmsEditOverlay::handle_change_filament() {
+    // "Change filament" row: with Spoolman, the user's inventory is their
+    // spools — open the picker. Without Spoolman, go straight to spool-edit
+    // (untracked setup) since there is no inventory to pick from.
     auto* subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
     bool has_spoolman = subj && lv_subject_get_int(subj) == 1;
     if (has_spoolman) {
-        spdlog::debug("[AmsEditOverlay] Chip tapped - opening Spoolman picker");
+        spdlog::debug("[AmsEditOverlay] Change filament tapped - opening Spoolman picker");
         switch_to_picker();
         return;
     }
-    spdlog::debug("[AmsEditOverlay] Chip tapped - opening spool-edit (no Spoolman)");
+    spdlog::debug("[AmsEditOverlay] Change filament tapped - opening spool-edit (no Spoolman)");
     enter_spool_edit();
 }
 
@@ -960,7 +939,7 @@ void AmsEditOverlay::on_quick_swatch_cb(lv_event_t* e) {
 void AmsEditOverlay::on_custom_color_cb(lv_event_t* e) {
     auto* self = get_instance_from_event(e);
     if (self) {
-        self->open_color_view(kViewSpoolEdit);
+        self->open_color_view();
     }
 }
 
@@ -1206,35 +1185,15 @@ void AmsEditOverlay::update_ui() {
     }
     lv_subject_copy_string(&chip_text_subject_, chip_text_buf_);
 
-    // Color swatch
-    lv_obj_t* color_swatch = find_widget("color_swatch");
-    if (color_swatch) {
-        helix::ui::apply_swatch_color(color_swatch, working_info_.color_rgb,
+    // Card color swatch (grandfathered dynamic bg-color write, same as the old
+    // big overview swatch).
+    lv_obj_t* card_color_swatch = find_widget("card_color_swatch");
+    if (card_color_swatch) {
+        helix::ui::apply_swatch_color(card_color_swatch, working_info_.color_rgb,
                                       working_info_.multi_color_hexes);
     }
 
-    // Color name label via subject
-    if (!working_info_.color_name.empty()) {
-        snprintf(color_name_buf_, sizeof(color_name_buf_), "%s", working_info_.color_name.c_str());
-    } else {
-        color_name_buf_[0] = '\0';
-    }
-    lv_subject_copy_string(&color_name_subject_, color_name_buf_);
-
-    // Filament/spool product-line label under the swatch (hidden when empty)
-    lv_obj_t* spool_name_label = find_widget("spool_name_label");
-    if (!working_info_.spool_name.empty()) {
-        snprintf(spool_name_buf_, sizeof(spool_name_buf_), "%s", working_info_.spool_name.c_str());
-        if (spool_name_label)
-            lv_obj_remove_flag(spool_name_label, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        spool_name_buf_[0] = '\0';
-        if (spool_name_label)
-            lv_obj_add_flag(spool_name_label, LV_OBJ_FLAG_HIDDEN);
-    }
-    lv_subject_copy_string(&spool_name_subject_, spool_name_buf_);
-
-    // Remaining slider/progress and label — display-only. Unknown weight data
+    // Remaining bar + label — display-only. Unknown weight data
     // (total_weight_g <= 0) renders "—" and never mutates working_info_: the
     // old code fabricated a synthetic 1000g total/remaining here, which made
     // every weightless slot dirty-on-open and persisted fake 1000/1000g on
@@ -1245,50 +1204,17 @@ void AmsEditOverlay::update_ui() {
         float rem = working_info_.remaining_weight_g >= 0 ? working_info_.remaining_weight_g : 0;
         remaining_pct = static_cast<int>(std::lround(100.0f * rem / working_info_.total_weight_g));
         remaining_pct = std::max(0, std::min(100, remaining_pct));
-    }
-
-    lv_obj_t* remaining_slider = find_widget("remaining_slider");
-    if (remaining_slider) {
-        lv_slider_set_value(remaining_slider, remaining_pct, LV_ANIM_OFF);
-    }
-
-    lv_obj_t* weight_input = find_widget("remaining_weight_input");
-    if (weight_input) {
-        if (original_info_.total_weight_g > 0) {
-            lv_obj_remove_flag(weight_input, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(weight_input, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
-
-    if (has_weight) {
-        float rem = working_info_.remaining_weight_g >= 0 ? working_info_.remaining_weight_g : 0;
         snprintf(remaining_pct_buf_, sizeof(remaining_pct_buf_), "%.0f / %.0fg (%d%%)", rem,
                  working_info_.total_weight_g, remaining_pct);
-        lv_subject_copy_string(&remaining_pct_subject_, remaining_pct_buf_);
-
-        // Sync the weight input field text (mirrors format_remaining_label(),
-        // display-only — no working_info_ writes on this path).
-        if (weight_input) {
-            if (working_info_.remaining_weight_g < 0.0f) {
-                lv_textarea_set_text(weight_input, "");
-            } else {
-                char buf[8];
-                snprintf(buf, sizeof(buf), "%d",
-                         static_cast<int>(working_info_.remaining_weight_g));
-                lv_textarea_set_text(weight_input, buf);
-            }
-        }
     } else {
         snprintf(remaining_pct_buf_, sizeof(remaining_pct_buf_), "\xE2\x80\x94"); // "—"
-        lv_subject_copy_string(&remaining_pct_subject_, remaining_pct_buf_);
     }
+    lv_subject_copy_string(&remaining_pct_subject_, remaining_pct_buf_);
 
-    // Progress bar row: only meaningful when total weight is known. Hidden
-    // imperatively here (same idiom already used for weight_input above) —
-    // note this only refreshes on update_ui() calls, so it does not fight
-    // the edit_remaining_mode subject binding on remaining_progress_container
-    // while a slider edit is in progress.
+    // Progress bar (inside the card): only meaningful when total weight is
+    // known. This imperative hide is the SOLE writer of the container's hidden
+    // state — the XML edit_remaining_mode binding was retired with the inline
+    // remaining editor.
     lv_obj_t* progress_container = find_widget("remaining_progress_container");
     lv_obj_t* progress_fill = find_widget("remaining_progress_fill");
     if (has_weight) {
@@ -1374,43 +1300,14 @@ void AmsEditOverlay::update_temp_display() {
         }
     }
 
-    // Update nozzle temp label via subject
-    snprintf(temp_nozzle_buf_, sizeof(temp_nozzle_buf_), "%d-%d°C", nozzle_min, nozzle_max);
+    // Full label strings (prefix included) — the card temps row has no separate
+    // caption labels. En-dash between the nozzle range.
+    snprintf(temp_nozzle_buf_, sizeof(temp_nozzle_buf_), "%s %d\xE2\x80\x93%d°C", lv_tr("Nozzle"),
+             nozzle_min, nozzle_max);
     lv_subject_copy_string(&temp_nozzle_subject_, temp_nozzle_buf_);
 
-    // Update bed temp label via subject
-    snprintf(temp_bed_buf_, sizeof(temp_bed_buf_), "%d°C", bed_temp);
+    snprintf(temp_bed_buf_, sizeof(temp_bed_buf_), "%s %d°C", lv_tr("Bed"), bed_temp);
     lv_subject_copy_string(&temp_bed_subject_, temp_bed_buf_);
-}
-
-void AmsEditOverlay::format_remaining_label(int pct) {
-    bool has_weight = original_info_.total_weight_g > 0;
-
-    if (has_weight) {
-        // Weight input field shows the remaining grams — label shows "/ Xg (Y%)"
-        int total_g = static_cast<int>(working_info_.total_weight_g);
-        snprintf(remaining_pct_buf_, sizeof(remaining_pct_buf_), "/ %dg (%d%%)", total_g, pct);
-    } else {
-        helix::format::format_percent(pct, remaining_pct_buf_, sizeof(remaining_pct_buf_));
-    }
-    lv_subject_copy_string(&remaining_pct_subject_, remaining_pct_buf_);
-
-    // Sync the weight input field if it exists and we have weight data
-    if (has_weight) {
-        lv_obj_t* weight_input = find_widget("remaining_weight_input");
-        if (weight_input) {
-            if (working_info_.remaining_weight_g < 0.0f) {
-                // Sentinel: remaining weight unknown. Show blank rather than "-1"
-                // (which is an internal sentinel, not a user-facing value).
-                lv_textarea_set_text(weight_input, "");
-            } else {
-                char buf[8];
-                snprintf(buf, sizeof(buf), "%d",
-                         static_cast<int>(working_info_.remaining_weight_g));
-                lv_textarea_set_text(weight_input, buf);
-            }
-        }
-    }
 }
 
 bool AmsEditOverlay::is_dirty() const {
@@ -1433,10 +1330,10 @@ void AmsEditOverlay::update_sync_button_state() {
     lv_subject_set_int(&save_disabled_subject_, is_dirty() ? 0 : 1);
 }
 
-void AmsEditOverlay::open_color_view(int return_view) {
-    return_view_ = return_view;
-    // Seed custom sub-state from the color the opener is editing.
-    custom_color_ = (return_view == kViewSpoolEdit) ? details_color_ : working_info_.color_rgb;
+void AmsEditOverlay::open_color_view() {
+    // Seed custom sub-state from the spool-edit view's pending color (the only
+    // entry point).
+    custom_color_ = details_color_;
     if (custom_color_ == 0) {
         custom_color_ = 0x808080;
     }
@@ -1455,29 +1352,20 @@ void AmsEditOverlay::open_color_view(int return_view) {
         lv_textarea_set_text(hex_input, buf);
     }
     set_view(kViewColor);
-    spdlog::debug("[AmsEditOverlay] Color view opened (return_view={})", return_view);
+    spdlog::debug("[AmsEditOverlay] Color view opened (returns to spool-edit)");
 }
 
 void AmsEditOverlay::apply_color(uint32_t rgb) {
-    if (return_view_ == kViewSpoolEdit) {
-        // Stage as the spool-edit view's pending color — committed on Save.
-        details_color_ = rgb;
-        details_color_set_ = true;
-        lv_obj_t* preview = find_widget("details_color_preview");
-        if (preview) {
-            helix::ui::apply_swatch_color(preview, rgb, {});
-        }
-    } else {
-        // Direct slot color edit (in-place replacement for the old stacked
-        // ColorPicker — spec §3.5). Nearest-name so the chip/label always
-        // have a display name (resolution §2.9).
-        working_info_.color_rgb = rgb;
-        working_info_.color_name = helix::get_color_name_from_hex(rgb);
-        working_info_.multi_color_hexes.clear();
-        update_ui();
-        update_sync_button_state();
+    // Color staging always goes to the spool-edit working state — committed on
+    // the spool-edit Save. The overview swatch entry point was retired, so
+    // there is no direct-slot color edit path anymore.
+    details_color_ = rgb;
+    details_color_set_ = true;
+    lv_obj_t* preview = find_widget("details_color_preview");
+    if (preview) {
+        helix::ui::apply_swatch_color(preview, rgb, {});
     }
-    set_view(return_view_);
+    set_view(kViewSpoolEdit);
 }
 
 void AmsEditOverlay::handle_color_swatch(lv_obj_t* swatch) {
@@ -1591,9 +1479,9 @@ void AmsEditOverlay::handle_back() {
         switch_to_form();
         break;
     case kViewColor:
-        // Leave without applying; pop to whichever view opened the color view
-        // (now only overview or spool-edit).
-        set_view(return_view_);
+        // Leave without applying; the color view is only reachable from
+        // spool-edit, so it always pops back there.
+        set_view(kViewSpoolEdit);
         break;
     case kViewOverview:
     default:
@@ -1603,158 +1491,6 @@ void AmsEditOverlay::handle_back() {
         close_editor(false);
         break;
     }
-}
-
-void AmsEditOverlay::handle_color_clicked() {
-    spdlog::info("[AmsEditOverlay] Opening in-place color view (from overview)");
-    open_color_view(kViewOverview);
-}
-
-void AmsEditOverlay::handle_remaining_changed(int percent) {
-    if (!overlay_root_) {
-        return;
-    }
-
-    // Update the remaining label via format_remaining_label
-    format_remaining_label(percent);
-
-    // Update slot info remaining weight based on percentage
-    // Use synthetic 1000g total if no weight data (manual spool without Spoolman)
-    if (working_info_.total_weight_g <= 0) {
-        working_info_.total_weight_g = 1000.0f;
-    }
-    working_info_.remaining_weight_g =
-        working_info_.total_weight_g * static_cast<float>(percent) / 100.0f;
-
-    update_sync_button_state();
-    spdlog::trace("[AmsEditOverlay] Remaining changed to {}%", percent);
-}
-
-void AmsEditOverlay::handle_weight_input_changed() {
-    if (!overlay_root_) {
-        return;
-    }
-
-    lv_obj_t* weight_input = find_widget("remaining_weight_input");
-    if (!weight_input) {
-        return;
-    }
-
-    const char* text = lv_textarea_get_text(weight_input);
-    if (!text || text[0] == '\0') {
-        // Blank field: treat as "unknown weight" sentinel so save preserves -1
-        // rather than coercing blank to 0. Reset the label to a plain percentage
-        // display and leave the slider where it is.
-        working_info_.remaining_weight_g = -1.0f;
-        int total = static_cast<int>(working_info_.total_weight_g);
-        if (total > 0) {
-            snprintf(remaining_pct_buf_, sizeof(remaining_pct_buf_), "/ %dg", total);
-        } else {
-            remaining_pct_buf_[0] = '\0';
-        }
-        lv_subject_copy_string(&remaining_pct_subject_, remaining_pct_buf_);
-        update_sync_button_state();
-        return;
-    }
-
-    int grams = std::atoi(text);
-    if (grams < 0) {
-        grams = 0;
-    }
-    int total_g = static_cast<int>(working_info_.total_weight_g);
-    if (total_g > 0 && grams > total_g) {
-        grams = total_g;
-    }
-
-    working_info_.remaining_weight_g = static_cast<float>(grams);
-
-    // Recalculate percentage and update slider + label
-    int pct = (working_info_.total_weight_g > 0)
-                  ? static_cast<int>(100.0f * grams / working_info_.total_weight_g)
-                  : 0;
-    pct = std::max(0, std::min(100, pct));
-
-    lv_obj_t* slider = find_widget("remaining_slider");
-    if (slider) {
-        lv_slider_set_value(slider, pct, LV_ANIM_OFF);
-    }
-
-    lv_obj_t* progress_fill = find_widget("remaining_progress_fill");
-    if (progress_fill) {
-        lv_obj_set_width(progress_fill, lv_pct(pct));
-    }
-
-    // Update the info label ("/ 1000g (75%)") without re-setting the input text
-    int total = static_cast<int>(working_info_.total_weight_g);
-    snprintf(remaining_pct_buf_, sizeof(remaining_pct_buf_), "/ %dg (%d%%)", total, pct);
-    lv_subject_copy_string(&remaining_pct_subject_, remaining_pct_buf_);
-
-    update_sync_button_state();
-    spdlog::trace("[AmsEditOverlay] Weight input changed to {}g ({}%)", grams, pct);
-}
-
-void AmsEditOverlay::handle_remaining_edit() {
-    if (!overlay_root_) {
-        return;
-    }
-
-    // Store current remaining percentage before entering edit mode
-    lv_obj_t* slider = find_widget("remaining_slider");
-    if (slider) {
-        remaining_pre_edit_pct_ = lv_slider_get_value(slider);
-    }
-
-    // Enter edit mode - subject binding will show slider/accept/cancel, hide progress/edit button
-    lv_subject_set_int(&remaining_mode_subject_, 1);
-    spdlog::debug("[AmsEditOverlay] Entered remaining edit mode (was {}%)",
-                  remaining_pre_edit_pct_);
-}
-
-void AmsEditOverlay::handle_remaining_accept() {
-    if (!overlay_root_) {
-        return;
-    }
-
-    // Get the current slider value
-    lv_obj_t* slider = find_widget("remaining_slider");
-    int new_pct = slider ? lv_slider_get_value(slider) : remaining_pre_edit_pct_;
-
-    // Update the progress bar fill to match
-    lv_obj_t* progress_fill = find_widget("remaining_progress_fill");
-    if (progress_fill) {
-        lv_obj_set_width(progress_fill, lv_pct(new_pct));
-    }
-
-    // Exit edit mode - subject binding will show progress/edit button, hide slider/accept/cancel
-    lv_subject_set_int(&remaining_mode_subject_, 0);
-    spdlog::debug("[AmsEditOverlay] Accepted remaining edit: {}%", new_pct);
-}
-
-void AmsEditOverlay::handle_remaining_cancel() {
-    if (!overlay_root_) {
-        return;
-    }
-
-    // Revert slider to pre-edit value
-    lv_obj_t* slider = find_widget("remaining_slider");
-    if (slider) {
-        lv_slider_set_value(slider, remaining_pre_edit_pct_, LV_ANIM_OFF);
-    }
-
-    // Revert the remaining weight in working_info_ before updating label
-    if (working_info_.total_weight_g > 0) {
-        working_info_.remaining_weight_g =
-            working_info_.total_weight_g * static_cast<float>(remaining_pre_edit_pct_) / 100.0f;
-    }
-
-    // Revert the remaining label via subject
-    format_remaining_label(remaining_pre_edit_pct_);
-
-    // Exit edit mode
-    lv_subject_set_int(&remaining_mode_subject_, 0);
-    update_sync_button_state();
-    spdlog::debug("[AmsEditOverlay] Cancelled remaining edit (reverted to {}%)",
-                  remaining_pre_edit_pct_);
 }
 
 void AmsEditOverlay::handle_tool_changed(int index) {
@@ -1962,7 +1698,8 @@ void AmsEditOverlay::register_callbacks() {
 
     register_xml_callbacks({
         {"ams_edit_back_cb", on_back_cb},
-        {"ams_edit_chip_clicked_cb", on_chip_clicked_cb},
+        {"ams_edit_card_clicked_cb", on_card_clicked_cb},
+        {"ams_edit_change_filament_cb", on_change_filament_cb},
         {"ams_edit_setup_entry_cb", on_setup_entry_cb},
         {"ams_edit_spool_edit_save_cb", on_spool_edit_save_cb},
         {"ams_edit_quick_swatch_cb", on_quick_swatch_cb},
@@ -1971,11 +1708,6 @@ void AmsEditOverlay::register_callbacks() {
         {"ams_edit_color_apply_cb", on_color_apply_cb},
         {"ams_edit_color_hex_changed_cb", on_color_hex_changed_cb},
         {"ams_edit_detail_field_changed_cb", on_detail_field_changed_cb},
-        {"ams_edit_color_clicked_cb", on_color_clicked_cb},
-        {"ams_edit_remaining_changed_cb", on_remaining_changed_cb},
-        {"ams_edit_remaining_edit_cb", on_remaining_edit_cb},
-        {"ams_edit_remaining_accept_cb", on_remaining_accept_cb},
-        {"ams_edit_remaining_cancel_cb", on_remaining_cancel_cb},
         {"ams_edit_save_cb", on_save_cb},
         {"ams_edit_print_label_cb", on_print_label_cb},
         {"ams_edit_scan_qr_cb", on_scan_qr_cb},
@@ -1985,7 +1717,6 @@ void AmsEditOverlay::register_callbacks() {
         {"spoolman_spool_item_clicked_cb", on_spool_item_cb},
         {"spoolman_spool_item_edit_cb", on_spool_item_edit_cb},
         {"ams_edit_tool_changed_cb", on_tool_changed_cb},
-        {"ams_edit_weight_changed_cb", on_weight_changed_cb},
     });
 
     callbacks_registered_ = true;
@@ -2020,47 +1751,17 @@ void AmsEditOverlay::on_setup_entry_cb(lv_event_t* e) {
     }
 }
 
-void AmsEditOverlay::on_chip_clicked_cb(lv_event_t* e) {
+void AmsEditOverlay::on_card_clicked_cb(lv_event_t* e) {
     auto* self = get_instance_from_event(e);
     if (self) {
-        self->handle_chip_clicked();
+        self->handle_card_clicked();
     }
 }
 
-void AmsEditOverlay::on_color_clicked_cb(lv_event_t* e) {
+void AmsEditOverlay::on_change_filament_cb(lv_event_t* e) {
     auto* self = get_instance_from_event(e);
     if (self) {
-        self->handle_color_clicked();
-    }
-}
-
-void AmsEditOverlay::on_remaining_changed_cb(lv_event_t* e) {
-    auto* self = get_instance_from_event(e);
-    if (self) {
-        auto* slider = static_cast<lv_obj_t*>(lv_event_get_target(e));
-        int value = lv_slider_get_value(slider);
-        self->handle_remaining_changed(value);
-    }
-}
-
-void AmsEditOverlay::on_remaining_edit_cb(lv_event_t* e) {
-    auto* self = get_instance_from_event(e);
-    if (self) {
-        self->handle_remaining_edit();
-    }
-}
-
-void AmsEditOverlay::on_remaining_accept_cb(lv_event_t* e) {
-    auto* self = get_instance_from_event(e);
-    if (self) {
-        self->handle_remaining_accept();
-    }
-}
-
-void AmsEditOverlay::on_remaining_cancel_cb(lv_event_t* e) {
-    auto* self = get_instance_from_event(e);
-    if (self) {
-        self->handle_remaining_cancel();
+        self->handle_change_filament();
     }
 }
 
@@ -2110,13 +1811,6 @@ void AmsEditOverlay::on_tool_changed_cb(lv_event_t* e) {
         auto* dropdown = static_cast<lv_obj_t*>(lv_event_get_target(e));
         int index = lv_dropdown_get_selected(dropdown);
         self->handle_tool_changed(index);
-    }
-}
-
-void AmsEditOverlay::on_weight_changed_cb(lv_event_t* e) {
-    auto* self = get_instance_from_event(e);
-    if (self) {
-        self->handle_weight_input_changed();
     }
 }
 

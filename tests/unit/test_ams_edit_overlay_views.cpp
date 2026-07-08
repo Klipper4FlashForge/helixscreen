@@ -54,6 +54,9 @@ class AmsEditOverlayViewTestAccess {
     void call_switch_to_picker() {
         overlay_.switch_to_picker();
     }
+    void call_switch_to_form() {
+        overlay_.switch_to_form();
+    }
     void set_details_color(uint32_t rgb) {
         overlay_.details_color_ = rgb;
         overlay_.details_color_set_ = true;
@@ -67,8 +70,8 @@ class AmsEditOverlayViewTestAccess {
     bool save_opt_in() {
         return overlay_.save_to_spoolman_opt_in_;
     }
-    void call_open_color_view(int return_view) {
-        overlay_.open_color_view(return_view);
+    void call_open_color_view() {
+        overlay_.open_color_view();
     }
     void call_apply_color(uint32_t rgb) {
         overlay_.apply_color(rgb);
@@ -156,8 +159,47 @@ void show_overlay_for_mock_untracked_slot(LVGLUITestFixture& fixture) {
 
 } // namespace
 
-TEST_CASE_METHOD(LVGLUITestFixture, "identity chip shows Brand · Material for untracked slots",
-                 "[ams_edit_overlay][chip]") {
+TEST_CASE_METHOD(LVGLUITestFixture, "card tap opens spool-edit; change-filament row opens picker",
+                 "[ams_edit_overlay][card]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    // Change-filament routes to the picker only when Spoolman is connected.
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    show_overlay_for_mock_tracked_slot(*this);
+
+    lv_obj_t* card = access.widget("spool_card");
+    REQUIRE(card != nullptr);
+    lv_obj_send_event(card, LV_EVENT_CLICKED, nullptr);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    auto* view_subj = lv_xml_get_subject(nullptr, "ams_edit_view");
+    REQUIRE(view_subj != nullptr);
+    CHECK(lv_subject_get_int(view_subj) == AmsEditOverlay::kViewSpoolEdit);
+
+    access.call_switch_to_form();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    lv_obj_t* row = access.widget("change_filament_row");
+    REQUIRE(row != nullptr);
+    lv_obj_send_event(row, LV_EVENT_CLICKED, nullptr);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    CHECK(lv_subject_get_int(view_subj) == AmsEditOverlay::kViewSpoolPicker);
+
+    // Retired widgets: chip, details row, inline remaining slider.
+    CHECK(access.widget("identity_chip") == nullptr);
+    CHECK(access.widget("spool_details_row") == nullptr);
+    CHECK(access.widget("remaining_slider") == nullptr);
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "spool card shows Brand · Material for untracked slots",
+                 "[ams_edit_overlay][card]") {
     auto& overlay = get_ams_edit_overlay();
     AmsEditOverlayViewTestAccess access(overlay);
 
@@ -165,25 +207,25 @@ TEST_CASE_METHOD(LVGLUITestFixture, "identity chip shows Brand · Material for u
     UpdateQueue::instance().drain();
     process_lvgl(10);
 
-    lv_obj_t* chip_label = access.widget("chip_label");
-    REQUIRE(chip_label != nullptr);
+    lv_obj_t* label = access.widget("card_identity_label");
+    REQUIRE(label != nullptr);
     // Locked naming (spec §3.8): "Generic · PETG" — brand · material.
-    CHECK(std::string(lv_label_get_text(chip_label)) == "Generic \xC2\xB7 PETG");
+    CHECK(std::string(lv_label_get_text(label)) == "Generic \xC2\xB7 PETG");
     CHECK(access.is_managed() == 0);
 
     lv_obj_t* mark = access.widget("chip_spoolman_mark");
     REQUIRE(mark != nullptr);
     CHECK(lv_obj_has_flag(mark, LV_OBJ_FLAG_HIDDEN));
 
-    lv_obj_t* details_row = access.widget("spool_details_row");
-    REQUIRE(details_row != nullptr);
-    CHECK(lv_obj_has_flag(details_row, LV_OBJ_FLAG_HIDDEN));
+    // Chip + details row retired in favor of the card.
+    CHECK(access.widget("identity_chip") == nullptr);
+    CHECK(access.widget("spool_details_row") == nullptr);
 
     close_editor_overlay();
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "identity chip shows spool name + mark for tracked slots",
-                 "[ams_edit_overlay][chip]") {
+TEST_CASE_METHOD(LVGLUITestFixture, "spool card shows spool name + mark for tracked slots",
+                 "[ams_edit_overlay][card]") {
     auto& overlay = get_ams_edit_overlay();
     AmsEditOverlayViewTestAccess access(overlay);
 
@@ -192,18 +234,16 @@ TEST_CASE_METHOD(LVGLUITestFixture, "identity chip shows spool name + mark for t
     UpdateQueue::instance().drain();
     process_lvgl(10);
 
-    lv_obj_t* chip_label = access.widget("chip_label");
-    REQUIRE(chip_label != nullptr);
-    CHECK(std::string(lv_label_get_text(chip_label)) == "Bambu Lab ASA");
+    lv_obj_t* label = access.widget("card_identity_label");
+    REQUIRE(label != nullptr);
+    CHECK(std::string(lv_label_get_text(label)) == "Bambu Lab ASA");
     CHECK(access.is_managed() == 1);
 
     lv_obj_t* mark = access.widget("chip_spoolman_mark");
     REQUIRE(mark != nullptr);
     CHECK_FALSE(lv_obj_has_flag(mark, LV_OBJ_FLAG_HIDDEN));
 
-    lv_obj_t* details_row = access.widget("spool_details_row");
-    REQUIRE(details_row != nullptr);
-    CHECK_FALSE(lv_obj_has_flag(details_row, LV_OBJ_FLAG_HIDDEN));
+    CHECK(access.widget("spool_details_row") == nullptr);
 
     // No "(Spoolman #N)" label anywhere anymore.
     CHECK(access.widget("spoolman_id_label") == nullptr);
@@ -337,31 +377,6 @@ TEST_CASE_METHOD(LVGLUITestFixture, "picker no longer offers a standalone unlink
     close_editor_overlay();
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "color view applies to the slot and returns to overview",
-                 "[ams_edit_overlay][color_view]") {
-    auto& overlay = get_ams_edit_overlay();
-    AmsEditOverlayViewTestAccess access(overlay);
-
-    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr, nullptr));
-    UpdateQueue::instance().drain();
-    process_lvgl(10);
-
-    access.call_open_color_view(AmsEditOverlay::kViewOverview);
-    UpdateQueue::instance().drain();
-    process_lvgl(10);
-    CHECK(access.view() == AmsEditOverlay::kViewColor);
-
-    access.call_apply_color(0xE53935);
-    UpdateQueue::instance().drain();
-    process_lvgl(10);
-
-    CHECK(access.view() == AmsEditOverlay::kViewOverview);
-    CHECK(access.working_info().color_rgb == 0xE53935);
-    CHECK_FALSE(access.working_info().color_name.empty());
-
-    close_editor_overlay();
-}
-
 TEST_CASE_METHOD(LVGLUITestFixture,
                  "color view from spool-edit stages the pending color and returns there",
                  "[ams_edit_overlay][color_view]") {
@@ -376,7 +391,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     UpdateQueue::instance().drain();
     process_lvgl(10);
 
-    access.call_open_color_view(AmsEditOverlay::kViewSpoolEdit);
+    access.call_open_color_view();
     UpdateQueue::instance().drain();
     process_lvgl(10);
     CHECK(access.view() == AmsEditOverlay::kViewColor);

@@ -110,7 +110,6 @@ class AmsEditOverlay : public OverlayBase {
     MoonrakerAPI* api_ = nullptr;
     CompletionCallback completion_callback_;
     bool completion_fired_ = false;  ///< Guards single-fire completion
-    int remaining_pre_edit_pct_ = 0; ///< Remaining % before edit mode
 
     /// Cached overlay widget for lazy_create_and_push_overlay
     lv_obj_t* cached_overlay_widget_ = nullptr;
@@ -129,10 +128,12 @@ class AmsEditOverlay : public OverlayBase {
     bool details_color_set_ = false; ///< true once the user picked a color there
 
     // === Color view (kViewColor): one screen, presets + custom HSV ===
-    int return_view_ = kViewOverview; ///< where the color view pops back to
+    // Always returns to the spool-edit view — the only entry point is the
+    // spool-edit "custom color" pencil (the overview swatch was retired in
+    // Task 6), so there is no return-view state to track.
     uint32_t custom_color_ = 0x808080;
 
-    void open_color_view(int return_view);
+    void open_color_view();
     void apply_color(uint32_t rgb);
     void handle_color_swatch(lv_obj_t* swatch);
     void handle_custom_color_changed(uint32_t rgb);
@@ -145,31 +146,24 @@ class AmsEditOverlay : public OverlayBase {
     // === Subjects for XML binding ===
     SubjectManager subjects_;
     lv_subject_t slot_indicator_subject_;
-    lv_subject_t color_name_subject_;
-    lv_subject_t spool_name_subject_;
     lv_subject_t temp_nozzle_subject_;
     lv_subject_t temp_bed_subject_;
     lv_subject_t remaining_pct_subject_;
-    lv_subject_t remaining_mode_subject_; ///< 0=view, 1=edit ("edit_remaining_mode")
     lv_subject_t view_mode_subject_;      ///< kView* ("ams_edit_view")
     lv_subject_t picker_state_subject_;   ///< 0=loading, 1=empty, 2=content
     lv_subject_t save_disabled_subject_;  ///< 1=Save disabled ("ams_edit_save_disabled")
     lv_subject_t save_hidden_subject_;    ///< 1=header Save hidden ("ams_edit_save_hidden")
     lv_subject_t is_managed_subject_;     ///< 1=linked Spoolman spool ("ams_edit_is_managed")
-    lv_subject_t chip_text_subject_;      ///< identity chip label text
+    lv_subject_t chip_text_subject_;      ///< card identity label text
     char chip_text_buf_[96] = {0};
 
     char slot_indicator_buf_[32] = {0};
-    char color_name_buf_[32] = {0};
-    char spool_name_buf_[64] = {0};
-    char temp_nozzle_buf_[16] = {0};
-    char temp_bed_buf_[16] = {0};
+    char temp_nozzle_buf_[32] = {0};
+    char temp_bed_buf_[24] = {0};
     char remaining_pct_buf_[48] = {0};
 
     // === Observer tracking for cleanup [L020] ===
     lv_observer_t* slot_indicator_observer_ = nullptr;
-    lv_observer_t* color_name_observer_ = nullptr;
-    lv_observer_t* spool_name_observer_ = nullptr;
     lv_observer_t* temp_nozzle_observer_ = nullptr;
     lv_observer_t* temp_bed_observer_ = nullptr;
     lv_observer_t* remaining_pct_observer_ = nullptr;
@@ -182,7 +176,6 @@ class AmsEditOverlay : public OverlayBase {
     void deinit_subjects();
     void update_ui();
     void update_temp_display();
-    void format_remaining_label(int pct);
     bool is_dirty() const;
     void update_sync_button_state();
     lv_obj_t* find_widget(const char* name) const;
@@ -209,13 +202,9 @@ class AmsEditOverlay : public OverlayBase {
 
     // === Event Handlers ===
     void handle_back(); ///< Header back: per-view routing (cancel on overview)
-    void handle_chip_clicked();
+    void handle_card_clicked();      ///< Card tap: opens the spool-edit view
+    void handle_change_filament();   ///< Row tap: picker (Spoolman) or spool-edit
     void handle_setup_entry();
-    void handle_color_clicked();
-    void handle_remaining_changed(int percent);
-    void handle_remaining_edit();
-    void handle_remaining_accept();
-    void handle_remaining_cancel();
     void handle_save();
 
     // Pure decision for whether handle_save() should create a NEW Spoolman
@@ -248,23 +237,18 @@ class AmsEditOverlay : public OverlayBase {
 #endif
     void handle_scan_qr();
     void handle_tool_changed(int index);
-    void handle_weight_input_changed();
 
     // === Static Callback Registration ===
     static bool callbacks_registered_;
 
     // === Static Callbacks ===
     static void on_back_cb(lv_event_t* e);
-    static void on_chip_clicked_cb(lv_event_t* e);
+    static void on_card_clicked_cb(lv_event_t* e);
+    static void on_change_filament_cb(lv_event_t* e);
     static void on_setup_entry_cb(lv_event_t* e);
     static void on_spool_edit_save_cb(lv_event_t* e);
     static void on_quick_swatch_cb(lv_event_t* e);
     static void on_custom_color_cb(lv_event_t* e);
-    static void on_color_clicked_cb(lv_event_t* e);
-    static void on_remaining_changed_cb(lv_event_t* e);
-    static void on_remaining_edit_cb(lv_event_t* e);
-    static void on_remaining_accept_cb(lv_event_t* e);
-    static void on_remaining_cancel_cb(lv_event_t* e);
     static void on_save_cb(lv_event_t* e);
     static void on_print_label_cb(lv_event_t* e);
     static void on_scan_qr_cb(lv_event_t* e);
@@ -273,7 +257,6 @@ class AmsEditOverlay : public OverlayBase {
     static void on_spool_item_cb(lv_event_t* e);
     static void on_spool_item_edit_cb(lv_event_t* e);
     static void on_tool_changed_cb(lv_event_t* e);
-    static void on_weight_changed_cb(lv_event_t* e);
 
     /**
      * @brief Resolve the editor instance for a static XML callback.
