@@ -9,11 +9,17 @@
     <prop name="swatch_callback" type="string" default="ams_edit_color_swatch_cb"/>
   </api>
   <consts>
+    <!-- Fallback values. Overridden at runtime by
+         register_color_swatch_grid_constants() (xml_registration.cpp):
+         swatch 24/28/32 by screen height, width computed as 6 columns so the
+         30 swatches always form 5 even rows at every breakpoint. -->
     <px name="grid_swatch_size" value="32"/>
+    <px name="grid_gap" value="8"/>
+    <px name="grid_width" value="232"/>
   </consts>
   <view name="color_swatch_grid"
-        extends="lv_obj" width="100%" height="content" style_pad_all="0"
-        flex_flow="row_wrap" style_pad_gap="#space_xs" style_flex_main_place="center"
+        extends="lv_obj" width="#grid_width" height="content" style_pad_all="0"
+        flex_flow="row_wrap" style_pad_gap="#grid_gap" style_flex_main_place="center"
         scrollable="false">
     <!-- Row 1: Grays -->
     <lv_obj width="#grid_swatch_size" height="#grid_swatch_size" style_radius="#border_radius_small"
