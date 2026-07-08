@@ -17,6 +17,8 @@
 #include <string>
 #include <vector>
 
+#include "hv/json.hpp"
+
 class MoonrakerAPI;
 class AmsEditOverlayTestAccess;
 class AmsEditOverlayViewTestAccess;
@@ -237,6 +239,12 @@ class AmsEditOverlay : public OverlayBase {
     // on a slot that stays linked. Generalized to ALL Spoolman backends
     // (spec §6; formerly AD5X-only).
     static bool needs_identity_confirmation(const SlotInfo& original, const SlotInfo& edited);
+
+    // Pure: split spool edits into the two Spoolman PATCH bodies — per-spool
+    // fields vs shared-filament fields (same split as SpoolEditModal, which
+    // stays standalone for SpoolmanPanel; review §1.2).
+    static void build_spool_patches(const SpoolInfo& original, const SpoolInfo& edited,
+                                    nlohmann::json& spool_patch, nlohmann::json& filament_patch);
 
     void do_spoolman_save();
     void prompt_identity_change_then_save();

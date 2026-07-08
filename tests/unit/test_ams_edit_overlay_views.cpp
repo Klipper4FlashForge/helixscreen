@@ -12,6 +12,7 @@
 #include "../lvgl_ui_test_fixture.h"
 
 #include "../catch_amalgamated.hpp"
+#include "hv/json.hpp"
 
 using namespace helix;
 using namespace helix::ui;
@@ -68,6 +69,10 @@ class AmsEditOverlayViewTestAccess {
     }
     bool details_color_set() {
         return overlay_.details_color_set_;
+    }
+    static void build_spool_patches(const SpoolInfo& original, const SpoolInfo& edited,
+                                    nlohmann::json& spool_patch, nlohmann::json& filament_patch) {
+        AmsEditOverlay::build_spool_patches(original, edited, spool_patch, filament_patch);
     }
 
   private:
@@ -408,4 +413,51 @@ TEST_CASE_METHOD(LVGLUITestFixture, "picker pre-selects the current spool when l
     CHECK(lv_obj_has_state(lv_obj_get_child(list, 1), LV_STATE_CHECKED));
 
     close_editor_overlay();
+}
+
+TEST_CASE("build_spool_patches splits spool-level vs filament-level fields",
+          "[ams_edit_overlay][spool_details]") {
+    SpoolInfo original;
+    original.id = 42;
+    original.filament_id = 7;
+    original.remaining_weight_g = 500.0;
+    original.spool_weight_g = 140.0;
+    original.price = 19.99;
+    original.lot_nr = "LOT-A";
+    original.location = "Shelf A";
+    original.comment = "";
+    original.color_hex = "#FF0000";
+
+    SpoolInfo edited = original;
+    edited.remaining_weight_g = 450.0;
+    edited.spool_weight_g = 200.0;
+    edited.price = 24.99;
+    edited.lot_nr = "LOT-B";
+    edited.location = "Shelf B";
+    edited.comment = "dried 4h";
+    edited.color_hex = "#00FF00";
+
+    nlohmann::json spool_patch;
+    nlohmann::json filament_patch;
+    AmsEditOverlayViewTestAccess::build_spool_patches(original, edited, spool_patch,
+                                                      filament_patch);
+
+    CHECK(spool_patch["remaining_weight"] == Catch::Approx(450.0));
+    CHECK(spool_patch["price"] == Catch::Approx(24.99));
+    CHECK(spool_patch["lot_nr"] == "LOT-B");
+    CHECK(spool_patch["location"] == "Shelf B");
+    CHECK(spool_patch["comment"] == "dried 4h");
+    CHECK(spool_patch.count("spool_weight") == 0);
+
+    CHECK(filament_patch["spool_weight"] == Catch::Approx(200.0));
+    CHECK(filament_patch["color_hex"] == "#00FF00");
+    CHECK(filament_patch.count("remaining_weight") == 0);
+
+    // No changes -> both empty
+    nlohmann::json empty_spool;
+    nlohmann::json empty_filament;
+    AmsEditOverlayViewTestAccess::build_spool_patches(original, original, empty_spool,
+                                                      empty_filament);
+    CHECK(empty_spool.empty());
+    CHECK(empty_filament.empty());
 }
