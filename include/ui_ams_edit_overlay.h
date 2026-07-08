@@ -158,6 +158,7 @@ class AmsEditOverlay : public OverlayBase {
     lv_subject_t view_mode_subject_;      ///< kView* ("ams_edit_view")
     lv_subject_t picker_state_subject_;   ///< 0=loading, 1=empty, 2=content
     lv_subject_t save_disabled_subject_;  ///< 1=Save disabled ("ams_edit_save_disabled")
+    lv_subject_t save_hidden_subject_;    ///< 1=header Save hidden ("ams_edit_save_hidden")
     lv_subject_t is_managed_subject_;     ///< 1=linked Spoolman spool ("ams_edit_is_managed")
     lv_subject_t chip_text_subject_;      ///< identity chip label text
     char chip_text_buf_[96] = {0};
@@ -191,6 +192,7 @@ class AmsEditOverlay : public OverlayBase {
     lv_obj_t* find_widget(const char* name) const;
 
     // === View switching ===
+    void set_view(int view); ///< Sole writer of view_mode_subject_; also drives save_hidden_subject_
     void switch_to_picker();
     void switch_to_form();
     void populate_picker();

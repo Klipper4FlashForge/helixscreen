@@ -33,6 +33,9 @@ class AmsEditOverlayViewTestAccess {
     int view() {
         return lv_subject_get_int(&overlay_.view_mode_subject_);
     }
+    void call_set_view(int v) {
+        overlay_.set_view(v);
+    }
     int is_managed() {
         return lv_subject_get_int(&overlay_.is_managed_subject_);
     }
@@ -411,6 +414,27 @@ TEST_CASE_METHOD(LVGLUITestFixture, "picker pre-selects the current spool when l
     REQUIRE(lv_obj_get_child_count(list) == 2);
     CHECK_FALSE(lv_obj_has_state(lv_obj_get_child(list, 0), LV_STATE_CHECKED));
     CHECK(lv_obj_has_state(lv_obj_get_child(list, 1), LV_STATE_CHECKED));
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "header Save hides on non-overview views",
+                 "[ams_edit_overlay][views]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    auto* hide_subj = lv_xml_get_subject(nullptr, "ams_edit_save_hidden");
+    REQUIRE(hide_subj != nullptr);
+    REQUIRE(lv_subject_get_int(hide_subj) == 0); // overview: visible
+
+    access.call_set_view(AmsEditOverlay::kViewSpoolPicker);
+    REQUIRE(lv_subject_get_int(hide_subj) == 1);
+    access.call_set_view(AmsEditOverlay::kViewOverview);
+    REQUIRE(lv_subject_get_int(hide_subj) == 0);
 
     close_editor_overlay();
 }

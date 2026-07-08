@@ -142,7 +142,7 @@ bool AmsEditOverlay::show_for_slot(lv_obj_t* parent, int slot_index, const SlotI
     // Reset per-session view state HERE (covered-safe — on_deactivate must not
     // touch it, since it also fires when the QR scanner merely covers us).
     lv_subject_set_int(&remaining_mode_subject_, 0);
-    lv_subject_set_int(&view_mode_subject_, open_on_picker ? kViewSpoolPicker : kViewOverview);
+    set_view(open_on_picker ? kViewSpoolPicker : kViewOverview);
     if (open_on_picker) {
         populate_picker();
     }
@@ -371,6 +371,11 @@ void AmsEditOverlay::init_subjects() {
         // is dirty when the editor opens.
         UI_MANAGED_SUBJECT_INT(save_disabled_subject_, 1, "ams_edit_save_disabled", subjects_);
 
+        // Header Save button visibility gate (1=hidden). Save only applies to
+        // the overview form; non-overview views (picker, details, color) hide
+        // it entirely. Written exclusively from set_view().
+        UI_MANAGED_SUBJECT_INT(save_hidden_subject_, 0, "ams_edit_save_hidden", subjects_);
+
         // Managed-vs-untracked signal: drives the Spoolman mark, the Spool
         // details row, and (Phase 5) the Save-to-Spoolman toggle default.
         UI_MANAGED_SUBJECT_INT(is_managed_subject_, 0, "ams_edit_is_managed", subjects_);
@@ -390,6 +395,11 @@ void AmsEditOverlay::deinit_subjects() {
 // View Switching
 // ============================================================================
 
+void AmsEditOverlay::set_view(int view) {
+    lv_subject_set_int(&view_mode_subject_, view);
+    lv_subject_set_int(&save_hidden_subject_, view == kViewOverview ? 0 : 1);
+}
+
 void AmsEditOverlay::switch_to_picker() {
     if (!subjects_initialized_) {
         spdlog::warn("[AmsEditOverlay] switch_to_picker() aborted: subjects not initialized");
@@ -397,7 +407,7 @@ void AmsEditOverlay::switch_to_picker() {
     }
     spdlog::debug("[AmsEditOverlay] Switching to picker view (overlay_root_={}, api_={})",
                   static_cast<void*>(overlay_root_), static_cast<void*>(api_));
-    lv_subject_set_int(&view_mode_subject_, kViewSpoolPicker);
+    set_view(kViewSpoolPicker);
     populate_picker();
 }
 
@@ -405,7 +415,7 @@ void AmsEditOverlay::switch_to_form() {
     if (!subjects_initialized_) {
         return;
     }
-    lv_subject_set_int(&view_mode_subject_, kViewOverview);
+    set_view(kViewOverview);
     spdlog::debug("[AmsEditOverlay] Switched to form view");
 }
 
@@ -673,7 +683,7 @@ void AmsEditOverlay::enter_filament_details() {
         helix::ui::apply_swatch_color(preview, details_color_, {});
     }
 
-    lv_subject_set_int(&view_mode_subject_, kViewFilamentDetails);
+    set_view(kViewFilamentDetails);
     spdlog::debug("[AmsEditOverlay] Entered filament-details view");
 }
 
@@ -823,7 +833,7 @@ void AmsEditOverlay::enter_spool_details() {
         }
     }
 
-    lv_subject_set_int(&view_mode_subject_, kViewSpoolDetails);
+    set_view(kViewSpoolDetails);
 
     const int spool_id = working_info_.spoolman_id;
     auto token = lifetime_.token();
@@ -1366,7 +1376,7 @@ void AmsEditOverlay::open_color_view(int return_view) {
         snprintf(buf, sizeof(buf), "#%06X", custom_color_);
         lv_textarea_set_text(hex_input, buf);
     }
-    lv_subject_set_int(&view_mode_subject_, kViewColor);
+    set_view(kViewColor);
     spdlog::debug("[AmsEditOverlay] Color view opened (return_view={})", return_view);
 }
 
@@ -1389,7 +1399,7 @@ void AmsEditOverlay::apply_color(uint32_t rgb) {
         update_ui();
         update_sync_button_state();
     }
-    lv_subject_set_int(&view_mode_subject_, return_view_);
+    set_view(return_view_);
 }
 
 void AmsEditOverlay::handle_color_swatch(lv_obj_t* swatch) {
@@ -1504,7 +1514,7 @@ void AmsEditOverlay::handle_back() {
         break;
     case kViewColor:
         // Leave without applying; pop to whichever view opened the color view.
-        lv_subject_set_int(&view_mode_subject_, return_view_);
+        set_view(return_view_);
         break;
     case kViewSpoolDetails:
         switch_to_form(); // leave without writing
