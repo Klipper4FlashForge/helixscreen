@@ -241,6 +241,19 @@
           <bind_flag_if_not_eq subject="edit_picker_state" flag="hidden" ref_value="2"/>
         </lv_obj>
 
+        <!-- Escape hatch to untracked setup — locked naming (spec §3.8).
+             Outlined (border) row, visually distinct from spool rows; always
+             visible, including the empty state (resolution §2.4). -->
+        <lv_obj name="picker_setup_entry" width="100%" height="content"
+                style_bg_opa="0" style_border_width="1" style_border_color="#text_muted"
+                style_border_opa="120" style_radius="#border_radius"
+                style_pad_all="#space_sm" flex_flow="row" style_flex_main_place="center"
+                clickable="true" scrollable="false">
+          <event_cb trigger="clicked" callback="ams_edit_setup_entry_cb"/>
+          <text_body text="Not in your spools? Set it up →"
+                     translation_tag="Not in your spools? Set it up →" clickable="false"/>
+        </lv_obj>
+
       </lv_obj>
 
     </lv_obj>

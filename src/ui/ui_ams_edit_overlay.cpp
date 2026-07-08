@@ -1680,6 +1680,7 @@ void AmsEditOverlay::register_callbacks() {
     register_xml_callbacks({
         {"ams_edit_back_cb", on_back_cb},
         {"ams_edit_chip_clicked_cb", on_chip_clicked_cb},
+        {"ams_edit_setup_entry_cb", on_setup_entry_cb},
         {"ams_edit_spool_details_cb", on_spool_details_cb},
         {"ams_edit_color_clicked_cb", on_color_clicked_cb},
         {"ams_edit_remaining_changed_cb", on_remaining_changed_cb},
@@ -1715,6 +1716,20 @@ void AmsEditOverlay::on_back_cb(lv_event_t* e) {
     auto* self = get_instance_from_event(e);
     if (self) {
         self->handle_back();
+    }
+}
+
+void AmsEditOverlay::handle_setup_entry() {
+    // Interim (Phase 4): stacked branded catalog. Phase 5 replaces this with
+    // the in-place filament-details view.
+    spdlog::debug("[AmsEditOverlay] Setup entry tapped");
+    open_branded_catalog_picker();
+}
+
+void AmsEditOverlay::on_setup_entry_cb(lv_event_t* e) {
+    auto* self = get_instance_from_event(e);
+    if (self) {
+        self->handle_setup_entry();
     }
 }
 

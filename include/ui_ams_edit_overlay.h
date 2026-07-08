@@ -200,6 +200,7 @@ class AmsEditOverlay : public OverlayBase {
     // === Event Handlers ===
     void handle_back(); ///< Header back: per-view routing (cancel on overview)
     void handle_chip_clicked();
+    void handle_setup_entry();
     void handle_color_clicked();
     void handle_remaining_changed(int percent);
     void handle_remaining_edit();
@@ -229,6 +230,7 @@ class AmsEditOverlay : public OverlayBase {
     static void on_back_cb(lv_event_t* e);
     static void on_chip_clicked_cb(lv_event_t* e);
     static void on_spool_details_cb(lv_event_t* e);
+    static void on_setup_entry_cb(lv_event_t* e);
     static void on_color_clicked_cb(lv_event_t* e);
     static void on_remaining_changed_cb(lv_event_t* e);
     static void on_remaining_edit_cb(lv_event_t* e);

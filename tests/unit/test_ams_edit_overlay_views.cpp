@@ -176,6 +176,26 @@ TEST_CASE_METHOD(LVGLUITestFixture, "picker pre-selects the first row for unlink
     close_editor_overlay();
 }
 
+TEST_CASE_METHOD(LVGLUITestFixture, "picker always offers the setup entry",
+                 "[ams_edit_overlay][picker][setup_entry]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr, nullptr,
+                                  /*open_on_picker=*/true));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* entry = access.widget("picker_setup_entry");
+    REQUIRE(entry != nullptr);
+    // Present regardless of picker fetch state (loading/empty/content) —
+    // it is the only path forward when the spool list is empty.
+    CHECK_FALSE(lv_obj_has_flag(entry, LV_OBJ_FLAG_HIDDEN));
+    CHECK(lv_obj_has_flag(entry, LV_OBJ_FLAG_CLICKABLE));
+
+    close_editor_overlay();
+}
+
 TEST_CASE_METHOD(LVGLUITestFixture, "picker pre-selects the current spool when linked",
                  "[ams_edit_overlay][picker][preselect]") {
     auto& overlay = get_ams_edit_overlay();
