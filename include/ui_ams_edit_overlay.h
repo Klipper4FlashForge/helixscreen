@@ -5,7 +5,7 @@
 
 #include "ui_color_picker.h"
 #include "ui_filament_catalog_selector.h"
-#include "ui_spoolman_edit_modal.h"
+#include "ui_modal.h"
 
 #include "ams_types.h"
 #include "overlay_base.h"
@@ -116,8 +116,16 @@ class AmsEditOverlay : public OverlayBase {
     /// Cached overlay widget for lazy_create_and_push_overlay
     lv_obj_t* cached_overlay_widget_ = nullptr;
 
-    // === Spoolman spool detail editor (stacked modal until Phase 7) ===
-    SpoolEditModal spool_edit_modal_;
+    // === Spool-details view (kViewSpoolDetails) ===
+    SpoolInfo detail_original_; ///< as fetched on view entry
+    SpoolInfo detail_working_;  ///< live field edits
+
+    void enter_spool_details();
+    void populate_detail_fields();
+    void read_detail_fields();
+    void handle_detail_save();
+    static void on_detail_save_cb(lv_event_t* e);
+    static void on_detail_field_changed_cb(lv_event_t* e);
 
     // === Filament-details view (kViewFilamentDetails) ===
     FilamentCatalogSelector details_selector_;

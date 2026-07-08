@@ -891,77 +891,198 @@ void AmsEditOverlay::handle_unlink() {
 }
 
 void AmsEditOverlay::handle_spool_details() {
-    if (working_info_.spoolman_id <= 0 || !api_) {
+    enter_spool_details();
+}
+
+void AmsEditOverlay::enter_spool_details() {
+    if (working_info_.spoolman_id <= 0) {
+        return; // untracked slots have no logistics (spec §3.6)
+    }
+    if (!api_) {
+        api_ = get_moonraker_api();
+    }
+    if (!api_) {
         return;
     }
 
-    // Find the SpoolInfo in our cache, or build a minimal one
-    SpoolInfo spool_info;
-    bool found = false;
-    for (const auto& spool : cached_spools_) {
-        if (spool.id == working_info_.spoolman_id) {
-            spool_info = spool;
-            found = true;
-            break;
-        }
+    // Seed fields from what we know, then refresh from Spoolman (fresh data on
+    // view entry rather than trusting cached_spools_ — review §3).
+    detail_original_ = SpoolInfo{};
+    detail_original_.id = working_info_.spoolman_id;
+    detail_original_.filament_id = working_info_.spoolman_filament_id;
+    detail_original_.vendor = working_info_.brand;
+    detail_original_.material = working_info_.material;
+    detail_original_.color_name = working_info_.color_name;
+    detail_original_.remaining_weight_g = working_info_.remaining_weight_g;
+    detail_original_.initial_weight_g = working_info_.total_weight_g;
+    if (working_info_.color_rgb != 0) {
+        char hex_buf[8];
+        snprintf(hex_buf, sizeof(hex_buf), "#%06X", working_info_.color_rgb);
+        detail_original_.color_hex = hex_buf;
     }
+    detail_working_ = detail_original_;
+    populate_detail_fields();
+    lv_subject_set_int(&view_mode_subject_, kViewSpoolDetails);
 
-    if (!found) {
-        spool_info.id = working_info_.spoolman_id;
-        spool_info.filament_id = working_info_.spoolman_filament_id;
-        spool_info.vendor = working_info_.brand;
-        spool_info.material = working_info_.material;
-        spool_info.color_name = working_info_.color_name;
-        spool_info.remaining_weight_g = working_info_.remaining_weight_g;
-        spool_info.initial_weight_g = working_info_.total_weight_g;
-        if (working_info_.color_rgb != 0) {
-            char hex_buf[8];
-            snprintf(hex_buf, sizeof(hex_buf), "#%06X", working_info_.color_rgb);
-            spool_info.color_hex = hex_buf;
-        }
-    }
-
-    // When spool details are saved, re-fetch the spool data to update our form
+    const int spool_id = working_info_.spoolman_id;
     auto token = lifetime_.token();
-    spool_edit_modal_.set_completion_callback([this, token](bool saved) {
-        if (!saved || token.expired() || !api_) {
-            return;
-        }
-        // Re-fetch the spool to pick up any changes (color, weight, etc.)
-        int spool_id = working_info_.spoolman_id;
-        api_->spoolman().get_spoolman_spool(
-            spool_id,
-            [this, token, spool_id](const std::optional<SpoolInfo>& spool) {
-                if (token.expired() || !spool.has_value()) {
-                    return;
-                }
-                token.defer([this, spool = *spool]() {
-                    // Update working_info_ from refreshed spool data
-                    working_info_.brand = spool.vendor;
-                    working_info_.material = spool.material;
-                    working_info_.color_name = spool.color_name;
-                    if (!spool.color_hex.empty()) {
-                        uint32_t rgb = 0;
-                        if (helix::parse_hex_color(spool.color_hex.c_str(), rgb)) {
-                            working_info_.color_rgb = rgb;
-                        }
-                    }
-                    if (spool.remaining_weight_g > 0 && spool.initial_weight_g > 0) {
-                        working_info_.remaining_weight_g =
-                            static_cast<float>(spool.remaining_weight_g);
-                        working_info_.total_weight_g = static_cast<float>(spool.initial_weight_g);
-                    }
-                    update_ui();
-                });
-            },
-            [spool_id](const MoonrakerError& err) {
-                spdlog::warn("[AmsEditOverlay] Failed to refresh spool {} after edit: {}", spool_id,
-                             err.message);
+    api_->spoolman().get_spoolman_spool(
+        spool_id,
+        [this, token, spool_id](const std::optional<SpoolInfo>& spool) {
+            if (!spool || token.expired()) {
+                return;
+            }
+            token.defer([this, spool = *spool]() {
+                detail_original_ = spool;
+                detail_working_ = spool;
+                populate_detail_fields();
             });
-    });
+        },
+        [spool_id](const MoonrakerError& err) {
+            spdlog::warn("[AmsEditOverlay] Spool-details fetch for {} failed: {}", spool_id,
+                         err.message);
+        });
+}
 
-    lv_obj_t* parent = overlay_root_ ? lv_obj_get_parent(overlay_root_) : lv_screen_active();
-    spool_edit_modal_.show_for_spool(parent, spool_info, api_);
+void AmsEditOverlay::populate_detail_fields() {
+    struct FieldMap {
+        const char* widget;
+        std::string value;
+    };
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%.0f", detail_working_.remaining_weight_g);
+    std::string remaining = buf;
+    snprintf(buf, sizeof(buf), "%.0f", detail_working_.spool_weight_g);
+    std::string spool_wt = buf;
+    std::string price;
+    if (detail_working_.price > 0) {
+        snprintf(buf, sizeof(buf), "%.2f", detail_working_.price);
+        price = buf;
+    }
+    const FieldMap fields[] = {
+        {"detail_field_remaining", remaining},
+        {"detail_field_spool_weight", spool_wt},
+        {"detail_field_price", price},
+        {"detail_field_location", detail_working_.location},
+        {"detail_field_lot_nr", detail_working_.lot_nr},
+        {"detail_field_comment", detail_working_.comment},
+    };
+    for (const auto& f : fields) {
+        lv_obj_t* w = find_widget(f.widget);
+        if (w) {
+            lv_textarea_set_text(w, f.value.c_str());
+        }
+    }
+}
+
+void AmsEditOverlay::read_detail_fields() {
+    auto text_of = [this](const char* name) -> std::string {
+        lv_obj_t* w = find_widget(name);
+        const char* t = w ? lv_textarea_get_text(w) : nullptr;
+        return t ? t : "";
+    };
+    std::string s = text_of("detail_field_remaining");
+    detail_working_.remaining_weight_g = s.empty() ? 0 : std::atof(s.c_str());
+    s = text_of("detail_field_spool_weight");
+    detail_working_.spool_weight_g = s.empty() ? 0 : std::atof(s.c_str());
+    s = text_of("detail_field_price");
+    detail_working_.price = s.empty() ? 0 : std::atof(s.c_str());
+    detail_working_.location = text_of("detail_field_location");
+    detail_working_.lot_nr = text_of("detail_field_lot_nr");
+    detail_working_.comment = text_of("detail_field_comment");
+}
+
+void AmsEditOverlay::handle_detail_save() {
+    read_detail_fields();
+
+    // Reject negative numerics (same rule as SpoolEditModal::validate_fields).
+    if (detail_working_.remaining_weight_g < 0 || detail_working_.spool_weight_g < 0 ||
+        detail_working_.price < 0) {
+        ToastManager::instance().show(ToastSeverity::ERROR, lv_tr("Values must not be negative"),
+                                      3000);
+        return;
+    }
+
+    nlohmann::json spool_patch;
+    nlohmann::json filament_patch;
+    build_spool_patches(detail_original_, detail_working_, spool_patch, filament_patch);
+
+    if (spool_patch.empty() && filament_patch.empty()) {
+        switch_to_form(); // nothing changed
+        return;
+    }
+    if (!api_) {
+        ToastManager::instance().show(ToastSeverity::ERROR, lv_tr("API not available"), 3000);
+        return;
+    }
+
+    const int spool_id = detail_working_.id;
+    const int filament_id = detail_working_.filament_id;
+    auto token = lifetime_.token();
+
+    // Immediate Spoolman write on the view's own Save (resolution §2.3), then
+    // return to the overview with refreshed working_info_. The overview's
+    // Back does NOT roll these writes back — identical to SpoolEditModal.
+    auto on_all_saved = [this, token, spool_id]() {
+        token.defer("AmsEditOverlay::on_detail_saved", [this]() {
+            ToastManager::instance().show(ToastSeverity::SUCCESS, lv_tr("Spool saved"), 2000);
+            working_info_.remaining_weight_g =
+                static_cast<float>(detail_working_.remaining_weight_g);
+            if (detail_working_.initial_weight_g > 0) {
+                working_info_.total_weight_g = static_cast<float>(detail_working_.initial_weight_g);
+            }
+            // Keep the pre-save baseline in sync so the header Save button's
+            // dirty state doesn't light up from a spool-details-only edit.
+            original_info_.remaining_weight_g = working_info_.remaining_weight_g;
+            original_info_.total_weight_g = working_info_.total_weight_g;
+            switch_to_form();
+            update_ui();
+            update_sync_button_state();
+        });
+    };
+    auto on_error = [token, spool_id](const MoonrakerError& err) {
+        spdlog::error("[AmsEditOverlay] Failed to save spool {}: {}", spool_id, err.message);
+        token.defer("AmsEditOverlay::on_detail_save_error", []() {
+            ToastManager::instance().show(ToastSeverity::ERROR, lv_tr("Failed to save spool"),
+                                          3000);
+        });
+    };
+
+    if (!spool_patch.empty()) {
+        api_->spoolman().update_spoolman_spool(
+            spool_id, spool_patch,
+            [this, token, filament_id, filament_patch, on_all_saved, on_error]() {
+                token.defer("AmsEditOverlay::after_spool_patch",
+                            [this, filament_id, filament_patch, on_all_saved, on_error]() {
+                                if (!filament_patch.empty() && filament_id > 0) {
+                                    api_->spoolman().update_spoolman_filament(
+                                        filament_id, filament_patch, on_all_saved, on_error);
+                                } else {
+                                    on_all_saved();
+                                }
+                            });
+            },
+            on_error);
+    } else if (!filament_patch.empty() && filament_id > 0) {
+        api_->spoolman().update_spoolman_filament(filament_id, filament_patch, on_all_saved,
+                                                  on_error);
+    } else {
+        switch_to_form();
+    }
+}
+
+void AmsEditOverlay::on_detail_save_cb(lv_event_t* e) {
+    auto* self = get_instance_from_event(e);
+    if (self) {
+        self->handle_detail_save();
+    }
+}
+
+void AmsEditOverlay::on_detail_field_changed_cb(lv_event_t* e) {
+    auto* self = get_instance_from_event(e);
+    if (self) {
+        self->read_detail_fields();
+    }
 }
 
 void AmsEditOverlay::handle_scan_qr() {
@@ -1530,6 +1651,9 @@ void AmsEditOverlay::handle_back() {
         // Leave without applying; pop to whichever view opened the color view.
         lv_subject_set_int(&view_mode_subject_, return_view_);
         break;
+    case kViewSpoolDetails:
+        switch_to_form(); // leave without writing
+        break;
     case kViewOverview:
     default:
         // Back on the overview = Cancel: discard changes, close (spec §13.3)
@@ -1907,6 +2031,8 @@ void AmsEditOverlay::register_callbacks() {
         {"ams_edit_color_mode_custom_cb", on_color_mode_custom_cb},
         {"ams_edit_color_apply_cb", on_color_apply_cb},
         {"ams_edit_color_hex_changed_cb", on_color_hex_changed_cb},
+        {"ams_edit_detail_save_cb", on_detail_save_cb},
+        {"ams_edit_detail_field_changed_cb", on_detail_field_changed_cb},
         {"ams_edit_spool_details_cb", on_spool_details_cb},
         {"ams_edit_color_clicked_cb", on_color_clicked_cb},
         {"ams_edit_remaining_changed_cb", on_remaining_changed_cb},
