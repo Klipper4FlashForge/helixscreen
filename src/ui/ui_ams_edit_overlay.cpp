@@ -116,7 +116,7 @@ bool AmsEditOverlay::show_for_slot(lv_obj_t* parent, int slot_index, const SlotI
     slot_index_ = slot_index;
     original_info_ = initial_info;
     working_info_ = initial_info;
-    filament_user_edited_ = false; // no user edit yet this session (#1071)
+    save_to_spoolman_opt_in_ = false; // explicit toggle decides Spoolman writes
     api_ = api ? api : get_moonraker_api();
     completion_callback_ = std::move(on_complete);
     completion_fired_ = false;
@@ -759,9 +759,6 @@ void AmsEditOverlay::apply_branded_pick(const helix::printer::EffectiveFilament&
     working_info_.nozzle_temp_min = ef.nozzle_min;
     working_info_.nozzle_temp_max = ef.nozzle_max;
     working_info_.bed_temp = ef.bed_temp;
-    // Gates new-spool creation (#1071) — same flag handle_material_changed sets on a
-    // genuine user filament edit.
-    filament_user_edited_ = true;
     switch_to_form();
     update_ui();
     update_temp_display();
@@ -1268,7 +1265,6 @@ void AmsEditOverlay::show_color_picker() {
         working_info_.color_name = color_name;
         // A hand-picked single color replaces any inherited multi-color swatch.
         working_info_.multi_color_hexes.clear();
-        filament_user_edited_ = true; // genuine user edit gates new-spool create (#1071)
 
         // Update the edit modal's color swatch to show new selection
         if (overlay_root_) {
@@ -1496,31 +1492,32 @@ void AmsEditOverlay::handle_tool_changed(int index) {
     update_sync_button_state();
 }
 
-bool AmsEditOverlay::should_create_new_spool(const SlotInfo& working_info,
-                                             bool filament_user_edited) {
-    // Unlinked + a genuine user edit + complete metadata. The user-edit term is
-    // the #1071 Symptom C fix: an unedited open auto-defaults brand="Generic",
-    // which alone satisfies is_filament_complete() and would otherwise spawn a
-    // phantom spool on save.
-    return working_info.spoolman_id == 0 && filament_user_edited &&
+bool AmsEditOverlay::should_create_new_spool(const SlotInfo& working_info, bool save_to_spoolman) {
+    return working_info.spoolman_id == 0 && save_to_spoolman &&
            helix::SpoolmanSlotSaver::is_filament_complete(working_info);
+}
+
+bool AmsEditOverlay::needs_identity_confirmation(const SlotInfo& original, const SlotInfo& edited) {
+    if (edited.spoolman_id <= 0) {
+        return false; // nothing linked to clobber
+    }
+    auto changes = helix::SpoolmanSlotSaver::detect_changes(original, edited);
+    if (!changes.any()) {
+        return false;
+    }
+    return is_material_identity_change(original, edited);
 }
 
 void AmsEditOverlay::handle_save() {
     spdlog::info("[AmsEditOverlay] Saving edits for slot {}", slot_index_);
 
-    // Resolve API: prefer stored api_, fall back to global
     if (!api_) {
         api_ = get_moonraker_api();
     }
 
-    // Sync active spool with Moonraker on every save — covers assignment changes
-    // AND re-saves of an already-linked slot whose state Moonraker has lost
-    // (e.g. after a Moonraker restart, a Spoolman outage, or an earlier create
-    // path that didn't propagate the new ID). The underlying POST is idempotent
-    // when the ID is unchanged. Fire-and-forget: local save proceeds regardless
-    // of server response. Skipped for the new-spool-on-save path (working.id=0
-    // until creation); that case re-syncs from the create callback below.
+    // Sync active spool with Moonraker on every save (idempotent POST; see
+    // Phase-1 notes). Skipped for the new-spool-on-save path (id still 0);
+    // that case re-syncs from the create callback in do_spoolman_save().
     if (api_ && working_info_.spoolman_id > 0) {
         sync_active_spool(api_, working_info_.spoolman_id);
     } else if (api_ && original_info_.spoolman_id > 0 && working_info_.spoolman_id == 0) {
@@ -1528,46 +1525,25 @@ void AmsEditOverlay::handle_save() {
         sync_active_spool(api_, 0);
     }
 
-    // Delegate to SpoolmanSlotSaver whenever either:
-    //   - There's a linked spool with pending edits (update filament/weight), OR
-    //   - There's no linked spool but the user entered complete manual metadata
-    //     (brand + material + non-default color) — create a new Spoolman spool.
-    // SpoolmanSlotSaver::save() contains its own internal gates, so this is just
-    // the outer guard that decides whether to invoke the async path at all.
-    // Skip entirely if Spoolman isn't available on this printer — otherwise every
-    // save would emit a "server.spoolman.proxy Method not found" error toast.
     if (api_ && get_printer_state().is_spoolman_available()) {
         const bool has_linked_spool = working_info_.spoolman_id > 0;
         auto changes = helix::SpoolmanSlotSaver::detect_changes(original_info_, working_info_);
-        // Require an explicit user filament edit before creating a new Spoolman
-        // spool. update_vendor_dropdown auto-defaults brand="Generic" on an
-        // unedited open, which alone makes is_filament_complete() true; without
-        // this gate an open+save with no edits spawns a phantom "Generic" spool
-        // (#1071 Symptom C). Editing fields routes through handle_vendor_changed /
-        // handle_material_changed / the color picker, which set the flag; picking
-        // an existing spool (handle_spool_selected) does NOT — it takes the
-        // has_linked_spool branch instead.
-        const bool can_create_new = should_create_new_spool(working_info_, filament_user_edited_);
 
-        // #1071 Symptom B: updating a LINKED spool whose filament identity changed
-        // (different material, or color past the match tolerance) probably
-        // clobbers a DIFFERENT physical spool's Spoolman definition. Confirm
-        // first; "Update anyway" writes Spoolman, "Cancel" keeps the linked spool
-        // untouched and saves the slot locally, tapping outside aborts back to the
-        // editor. Scoped to AD5X IFS — the only backend where #1071's
-        // keep-the-link-across-eject policy makes a silent identity swap likely;
-        // other backends keep the prior straight-to-update behavior.
-        auto* active_backend = AmsState::instance().get_backend();
-        const bool is_ad5x = active_backend && active_backend->get_type() == AmsType::AD5X_IFS;
-        if (has_linked_spool && changes.any() && is_ad5x &&
-            is_material_identity_change(original_info_, working_info_)) {
+        // Explicit opt-in replaces the silent auto-create (spec §4.2): an
+        // untracked filament stays local unless the toggle said otherwise.
+        const bool can_create_new =
+            should_create_new_spool(working_info_, save_to_spoolman_opt_in_);
+
+        // §6: identity change on a linked spool confirms on EVERY Spoolman
+        // backend now (the AD5X-only gate is gone).
+        if (needs_identity_confirmation(original_info_, working_info_)) {
             prompt_identity_change_then_save();
             return;
         }
 
         if ((has_linked_spool && changes.any()) || can_create_new) {
             do_spoolman_save();
-            return; // Async path - fire_completion called from callback
+            return; // Async path - close_editor called from callback
         }
     }
 

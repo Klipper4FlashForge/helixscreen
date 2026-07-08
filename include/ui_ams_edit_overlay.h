@@ -103,10 +103,9 @@ class AmsEditOverlay : public OverlayBase {
     int slot_index_ = -1;
     SlotInfo original_info_; ///< Original info for dirty comparison
     SlotInfo working_info_;  ///< Working copy being edited
-    // Set true only when the user actually edits a filament field (vendor,
-    // material, or color) in this session. Gates new-Spoolman-spool creation
-    // (#1071 Symptom C) until Phase 5 replaces it with the explicit toggle.
-    bool filament_user_edited_ = false;
+    // Explicit "Save to Spoolman" opt-in captured from the filament-details
+    // toggle (spec §3.3). Reset per show_for_slot; false = local-only save.
+    bool save_to_spoolman_opt_in_ = false;
     MoonrakerAPI* api_ = nullptr;
     CompletionCallback completion_callback_;
     bool completion_fired_ = false;  ///< Guards single-fire completion
@@ -208,8 +207,20 @@ class AmsEditOverlay : public OverlayBase {
     void handle_remaining_cancel();
     void handle_save();
 
-    static bool should_create_new_spool(const SlotInfo& working_info, bool filament_user_edited);
+    // Pure decision for whether handle_save() should create a NEW Spoolman
+    // spool from the working slot: only for an unlinked slot, only when the
+    // user explicitly opted in via the "Save to Spoolman" toggle (spec §3.3 —
+    // replaces the silent auto-create / filament_user_edited_ heuristic,
+    // #1071), and only when the metadata is complete.
+    static bool should_create_new_spool(const SlotInfo& working_info, bool save_to_spoolman);
+
     static bool is_material_identity_change(const SlotInfo& original, const SlotInfo& edited);
+
+    // Pure: true when saving would push a changed filament identity onto a
+    // LINKED Spoolman spool — material change or color beyond match tolerance
+    // on a slot that stays linked. Generalized to ALL Spoolman backends
+    // (spec §6; formerly AD5X-only).
+    static bool needs_identity_confirmation(const SlotInfo& original, const SlotInfo& edited);
 
     void do_spoolman_save();
     void prompt_identity_change_then_save();

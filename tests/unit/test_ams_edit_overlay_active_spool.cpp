@@ -36,8 +36,8 @@ class AmsEditOverlayTestAccess {
     void set_slot_index(int idx) {
         overlay_.slot_index_ = idx;
     }
-    void set_filament_user_edited(bool edited) {
-        overlay_.filament_user_edited_ = edited;
+    void set_save_to_spoolman_opt_in(bool opt_in) {
+        overlay_.save_to_spoolman_opt_in_ = opt_in;
     }
     void set_completion_callback(AmsEditOverlay::CompletionCallback cb) {
         overlay_.completion_callback_ = std::move(cb);
@@ -63,11 +63,14 @@ class AmsEditOverlayTestAccess {
     }
 
     // Forward the private static create-gate predicate (friend access).
-    static bool should_create_new_spool(const SlotInfo& working_info, bool filament_user_edited) {
-        return AmsEditOverlay::should_create_new_spool(working_info, filament_user_edited);
+    static bool should_create_new_spool(const SlotInfo& working_info, bool save_to_spoolman) {
+        return AmsEditOverlay::should_create_new_spool(working_info, save_to_spoolman);
     }
     static bool is_material_identity_change(const SlotInfo& original, const SlotInfo& edited) {
         return AmsEditOverlay::is_material_identity_change(original, edited);
+    }
+    static bool needs_identity_confirmation(const SlotInfo& original, const SlotInfo& edited) {
+        return AmsEditOverlay::needs_identity_confirmation(original, edited);
     }
 
   private:
@@ -283,8 +286,10 @@ TEST_CASE_METHOD(LVGLTestFixture, "fire_completion is idempotent via completion_
 // in this phase — Phase 5 rewrites the gate to the Save-to-Spoolman toggle)
 // ============================================================================
 
-TEST_CASE("AmsEditOverlay::should_create_new_spool gates new-spool creation on a real edit (#1071)",
-          "[ams_edit_overlay][spoolman][1071]") {
+TEST_CASE("AmsEditOverlay::should_create_new_spool is gated by the Save-to-Spoolman toggle",
+          "[ams_edit_overlay][spoolman][toggle]") {
+    // Complete untracked metadata — creation now requires the EXPLICIT opt-in
+    // (spec §3.3 replaces the silent auto-create / user-edit heuristic).
     SlotInfo working;
     working.spoolman_id = 0;
     working.brand = "Generic";
@@ -292,18 +297,57 @@ TEST_CASE("AmsEditOverlay::should_create_new_spool gates new-spool creation on a
     working.color_rgb = 0xFF0000;
     REQUIRE(helix::SpoolmanSlotSaver::is_filament_complete(working));
 
-    CHECK_FALSE(AmsEditOverlayTestAccess::should_create_new_spool(working, /*edited=*/false));
-    CHECK(AmsEditOverlayTestAccess::should_create_new_spool(working, /*edited=*/true));
+    // Toggle off -> never create, no matter how complete the fields are.
+    CHECK_FALSE(AmsEditOverlayTestAccess::should_create_new_spool(working,
+                                                                  /*save_to_spoolman=*/false));
 
+    // Toggle on + complete + unlinked -> create.
+    CHECK(AmsEditOverlayTestAccess::should_create_new_spool(working, /*save_to_spoolman=*/true));
+
+    // Already linked -> update path, never create.
     SlotInfo linked = working;
     linked.spoolman_id = 99;
-    CHECK_FALSE(AmsEditOverlayTestAccess::should_create_new_spool(linked, /*edited=*/true));
+    CHECK_FALSE(AmsEditOverlayTestAccess::should_create_new_spool(linked, true));
 
+    // Incomplete metadata never creates, even opted-in.
     SlotInfo incomplete;
     incomplete.spoolman_id = 0;
     incomplete.material = "PLA"; // no brand, default color
     REQUIRE_FALSE(helix::SpoolmanSlotSaver::is_filament_complete(incomplete));
-    CHECK_FALSE(AmsEditOverlayTestAccess::should_create_new_spool(incomplete, /*edited=*/true));
+    CHECK_FALSE(AmsEditOverlayTestAccess::should_create_new_spool(incomplete, true));
+}
+
+TEST_CASE("AmsEditOverlay::needs_identity_confirmation applies to ALL Spoolman backends (§6)",
+          "[ams_edit_overlay][spoolman][identity_confirm]") {
+    SlotInfo original;
+    original.spoolman_id = 42;
+    original.material = "PLA";
+    original.color_rgb = 0xFF0000;
+    original.remaining_weight_g = 500.0f;
+
+    // Linked + material identity change -> confirm (no AD5X gate anymore).
+    SlotInfo diff_mat = original;
+    diff_mat.material = "PETG";
+    CHECK(AmsEditOverlayTestAccess::needs_identity_confirmation(original, diff_mat));
+
+    // Linked + far-apart color -> confirm.
+    SlotInfo diff_color = original;
+    diff_color.color_rgb = 0x0000FF;
+    CHECK(AmsEditOverlayTestAccess::needs_identity_confirmation(original, diff_color));
+
+    // Linked + same identity (weight-only edit) -> no confirm.
+    SlotInfo weight_only = original;
+    weight_only.remaining_weight_g = 400.0f;
+    CHECK_FALSE(AmsEditOverlayTestAccess::needs_identity_confirmation(original, weight_only));
+
+    // Unlinked working slot -> no linked spool to clobber, no confirm.
+    SlotInfo unlinked = diff_mat;
+    unlinked.spoolman_id = 0;
+    CHECK_FALSE(AmsEditOverlayTestAccess::needs_identity_confirmation(original, unlinked));
+
+    // No changes at all -> no confirm.
+    SlotInfo same = original;
+    CHECK_FALSE(AmsEditOverlayTestAccess::needs_identity_confirmation(original, same));
 }
 
 TEST_CASE("AmsEditOverlay::is_material_identity_change flags different-spool edits (#1071)",
