@@ -30,9 +30,9 @@ namespace helix::ui {
  * @brief NavigationManager overlay for editing AMS filament slot properties
  *
  * Single overlay hosting internal views selected by the ams_edit_view int
- * subject (spec §13): 0=overview, 1=Spoolman spool picker (2-4 added by later
- * redesign phases). Header back button routes per-view; header Save action is
- * dirty-gated via the ams_edit_save_disabled subject.
+ * subject (spec §13): 0=overview, 1=Spoolman spool picker, 2=unified spool-edit
+ * (identity + color + logistics), 3=color. Header back button routes per-view;
+ * header Save action is dirty-gated via the ams_edit_save_disabled subject.
  *
  * Lifecycle: on_deactivate() fires both when the overlay is POPPED and when it
  * is merely COVERED (e.g. QR scanner pushed on top). Completion therefore
@@ -64,9 +64,8 @@ class AmsEditOverlay : public OverlayBase {
     // View states for the ams_edit_view subject (spec §13 / review §3)
     static constexpr int kViewOverview = 0;
     static constexpr int kViewSpoolPicker = 1;
-    static constexpr int kViewFilamentDetails = 2; // Phase 5
-    static constexpr int kViewColor = 3;           // Phase 6
-    static constexpr int kViewSpoolDetails = 4;    // Phase 7
+    static constexpr int kViewSpoolEdit = 2; // unified identity + color + logistics
+    static constexpr int kViewColor = 3;
 
     AmsEditOverlay();
     ~AmsEditOverlay() override;
@@ -116,18 +115,15 @@ class AmsEditOverlay : public OverlayBase {
     /// Cached overlay widget for lazy_create_and_push_overlay
     lv_obj_t* cached_overlay_widget_ = nullptr;
 
-    // === Spool-details view (kViewSpoolDetails) ===
+    // === Spool logistics (managed-slot fields inside kViewSpoolEdit) ===
     SpoolInfo detail_original_; ///< as fetched on view entry
     SpoolInfo detail_working_;  ///< live field edits
 
-    void enter_spool_details();
     void populate_detail_fields();
     void read_detail_fields();
-    void handle_detail_save();
-    static void on_detail_save_cb(lv_event_t* e);
     static void on_detail_field_changed_cb(lv_event_t* e);
 
-    // === Filament-details view (kViewFilamentDetails) ===
+    // === Spool-edit view (kViewSpoolEdit): identity + color + logistics ===
     FilamentCatalogSelector details_selector_;
     uint32_t details_color_ = 0;     ///< pending color chosen in the details view
     bool details_color_set_ = false; ///< true once the user picked a color there
@@ -198,10 +194,9 @@ class AmsEditOverlay : public OverlayBase {
     void populate_picker();
     void render_spool_list(const std::string& filter);
     void handle_spool_selected(int spool_id);
-    void enter_filament_details();
-    void handle_details_select();
+    void enter_spool_edit();
+    void handle_spool_edit_save();
     void handle_quick_swatch(lv_obj_t* swatch);
-    void handle_unlink();
     void handle_picker_search(const char* text);
     void update_spoolman_button_state();
 
@@ -252,7 +247,6 @@ class AmsEditOverlay : public OverlayBase {
     void handle_print_label();
 #endif
     void handle_scan_qr();
-    void handle_spool_details();
     void handle_tool_changed(int index);
     void handle_weight_input_changed();
 
@@ -262,9 +256,8 @@ class AmsEditOverlay : public OverlayBase {
     // === Static Callbacks ===
     static void on_back_cb(lv_event_t* e);
     static void on_chip_clicked_cb(lv_event_t* e);
-    static void on_spool_details_cb(lv_event_t* e);
     static void on_setup_entry_cb(lv_event_t* e);
-    static void on_details_select_cb(lv_event_t* e);
+    static void on_spool_edit_save_cb(lv_event_t* e);
     static void on_quick_swatch_cb(lv_event_t* e);
     static void on_custom_color_cb(lv_event_t* e);
     static void on_color_clicked_cb(lv_event_t* e);
@@ -273,7 +266,6 @@ class AmsEditOverlay : public OverlayBase {
     static void on_remaining_accept_cb(lv_event_t* e);
     static void on_remaining_cancel_cb(lv_event_t* e);
     static void on_save_cb(lv_event_t* e);
-    static void on_picker_unlink_cb(lv_event_t* e);
     static void on_print_label_cb(lv_event_t* e);
     static void on_scan_qr_cb(lv_event_t* e);
     static void on_picker_search_cb(lv_event_t* e);

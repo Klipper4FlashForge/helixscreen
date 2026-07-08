@@ -120,7 +120,10 @@
                     style_flex_cross_place="center" clickable="true" scrollable="false"
                     hidden="true">
               <bind_flag_if_eq subject="ams_edit_is_managed" flag="hidden" ref_value="0"/>
-              <event_cb trigger="clicked" callback="ams_edit_spool_details_cb"/>
+              <!-- Opens the unified spool-edit view (identity + color + logistics).
+                   Reuses the setup-entry callback (both enter_spool_edit()); this
+                   whole row is retired in Task 6 for the overview card. -->
+              <event_cb trigger="clicked" callback="ams_edit_setup_entry_cb"/>
               <text_body text="Edit spool details" translation_tag="Edit spool details" clickable="false"/>
               <icon src="chevron_right" size="sm" variant="muted" clickable="false"/>
             </lv_obj>
@@ -273,31 +276,19 @@
                      translation_tag="Not in your spools? Set it up →" clickable="false"/>
         </lv_obj>
 
-        <!-- Unlink: identity change to untracked — only offered while the
-             slot is linked. Same outlined treatment as the setup entry. -->
-        <lv_obj name="picker_unlink_entry" width="100%" height="content"
-                style_bg_opa="0" style_border_width="1" style_border_color="#text_muted"
-                style_border_opa="120" style_radius="#border_radius"
-                style_pad_all="#space_sm" flex_flow="row" style_flex_main_place="center"
-                clickable="true" scrollable="false" hidden="true">
-          <bind_flag_if_eq subject="ams_edit_is_managed" flag="hidden" ref_value="0"/>
-          <event_cb trigger="clicked" callback="ams_edit_picker_unlink_cb"/>
-          <text_body text="Unlink from Spoolman"
-                     translation_tag="Unlink from Spoolman" clickable="false"/>
-        </lv_obj>
-
       </lv_obj>
 
       <!-- ============================================================ -->
-      <!-- FILAMENT DETAILS VIEW (ams_edit_view=2): untracked setup AND -->
-      <!-- identity editing for the current filament (spec §3.3)        -->
+      <!-- SPOOL EDIT VIEW (ams_edit_view=2): unified identity + color + -->
+      <!-- logistics. Untracked setup AND editing the current filament  -->
+      <!-- (spec §3.3); logistics section shows for managed slots only.  -->
       <!-- ============================================================ -->
       <lv_obj name="details_view"
               width="100%" height="content" flex_flow="column" style_pad_all="#space_md"
               style_pad_gap="#space_md" scrollable="false" hidden="true">
         <bind_flag_if_not_eq subject="ams_edit_view" flag="hidden" ref_value="2"/>
 
-        <text_heading text="Filament details" translation_tag="Filament details"/>
+        <text_heading text="Spool" translation_tag="Spool"/>
 
         <!-- Brand / Material / product — shared catalog selector fragment -->
         <filament_catalog_selector name="details_catalog_selector"/>
@@ -323,6 +314,73 @@
           <color_swatch_grid swatch_callback="ams_edit_quick_swatch_cb"/>
         </lv_obj>
 
+        <!-- Quantity: remaining + spool weight. Applies to tracked AND
+             untracked slots (local weight overrides), so it stays OUTSIDE the
+             logistics wrapper. Moved from the retired spool-details view. -->
+        <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row"
+                style_pad_gap="#space_md" scrollable="false">
+          <lv_obj height="content" flex_grow="1" style_pad_all="0" flex_flow="column"
+                  style_pad_gap="#space_xxs" scrollable="false">
+            <text_small text="Remaining (g)" translation_tag="Remaining (g)"/>
+            <text_input name="detail_field_remaining" width="100%" keyboard_hint="numeric"
+                        placeholder="1000" max_length="8">
+              <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
+            </text_input>
+          </lv_obj>
+          <lv_obj height="content" flex_grow="1" style_pad_all="0" flex_flow="column"
+                  style_pad_gap="#space_xxs" scrollable="false">
+            <text_small text="Spool wt (g)" translation_tag="Spool wt (g)"/>
+            <text_input name="detail_field_spool_weight" width="100%" keyboard_hint="numeric"
+                        placeholder="0" max_length="8">
+              <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
+            </text_input>
+          </lv_obj>
+        </lv_obj>
+
+        <!-- Logistics: Spoolman-only spool metadata (price/location/lot/notes).
+             Hidden for untracked slots (ams_edit_is_managed==0). Moved verbatim
+             from the retired spool-details view. -->
+        <lv_obj name="spool_edit_logistics" width="100%" height="content" style_pad_all="0"
+                flex_flow="column" style_pad_gap="#space_sm" scrollable="false" hidden="true">
+          <bind_flag_if_eq subject="ams_edit_is_managed" flag="hidden" ref_value="0"/>
+          <!-- Row: Price | Location | Lot -->
+          <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row"
+                  style_pad_gap="#space_md" scrollable="false">
+            <lv_obj height="content" flex_grow="1" style_pad_all="0" flex_flow="column"
+                    style_pad_gap="#space_xxs" scrollable="false">
+              <text_small text="Price" translation_tag="Price"/>
+              <text_input name="detail_field_price" width="100%" keyboard_hint="numeric"
+                          placeholder="0.00" max_length="10">
+                <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
+              </text_input>
+            </lv_obj>
+            <lv_obj height="content" flex_grow="1" style_pad_all="0" flex_flow="column"
+                    style_pad_gap="#space_xxs" scrollable="false">
+              <text_small text="Location" translation_tag="Location"/>
+              <text_input name="detail_field_location" width="100%" placeholder="Shelf A"
+                          placeholder_tag="Shelf A" max_length="64">
+                <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
+              </text_input>
+            </lv_obj>
+            <lv_obj height="content" flex_grow="1" style_pad_all="0" flex_flow="column"
+                    style_pad_gap="#space_xxs" scrollable="false">
+              <text_small text="Lot/Batch Nr" translation_tag="Lot/Batch Nr"/>
+              <text_input name="detail_field_lot_nr" width="100%" placeholder="" max_length="32">
+                <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
+              </text_input>
+            </lv_obj>
+          </lv_obj>
+          <!-- Notes (full width) -->
+          <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="column"
+                  style_pad_gap="#space_xxs" scrollable="false">
+            <text_small text="Notes" translation_tag="Notes"/>
+            <text_input name="detail_field_comment" width="100%" height="#notes_height"
+                        placeholder="" max_length="256" multiline="true">
+              <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
+            </text_input>
+          </lv_obj>
+        </lv_obj>
+
         <!-- Save to Spoolman toggle — locked naming (spec §3.8). Absent when
              Spoolman is disconnected; defaults to the slot's managed state. -->
         <lv_obj name="save_to_spoolman_row" width="100%" height="content" style_pad_all="0"
@@ -335,10 +393,19 @@
           </ui_switch>
         </lv_obj>
 
-        <!-- Select: apply to the working slot and return to the overview -->
-        <ui_button name="btn_details_select" width="100%" height="#button_height"
-                   text="Select" translation_tag="Select" variant="primary">
-          <event_cb trigger="clicked" callback="ams_edit_details_select_cb"/>
+        <!-- Save: apply identity/color to the working slot, push logistics to
+             Spoolman (managed slots), and return to the overview. -->
+        <ui_button name="btn_spool_edit_save" width="100%" height="#button_height"
+                   text="Save" translation_tag="Save" variant="primary">
+          <event_cb trigger="clicked" callback="ams_edit_spool_edit_save_cb"/>
+        </ui_button>
+
+        <!-- Spool-logistics action: revealed by enter_spool_edit() only when a
+             label printer is configured. -->
+        <ui_button name="btn_detail_print_label" width="100%" height="#button_height"
+                   text="Print Label" translation_tag="Print Label" variant="secondary"
+                   icon="printer" hidden="true">
+          <event_cb trigger="clicked" callback="ams_edit_print_label_cb"/>
         </ui_button>
       </lv_obj>
 
@@ -384,89 +451,6 @@
             </ui_button>
           </lv_obj>
         </lv_obj>
-      </lv_obj>
-
-      <!-- ============================================================ -->
-      <!-- SPOOL DETAILS VIEW (ams_edit_view=4): spool-attribute layer  -->
-      <!-- for managed spools only (spec §3.6). Immediate Spoolman      -->
-      <!-- write on its own Save; Back returns without writing.         -->
-      <!-- ============================================================ -->
-      <lv_obj name="spool_details_view"
-              width="100%" height="content" flex_flow="column" style_pad_all="#space_md"
-              style_pad_gap="#space_sm" scrollable="false" hidden="true">
-        <bind_flag_if_not_eq subject="ams_edit_view" flag="hidden" ref_value="4"/>
-
-        <text_heading text="Spool details" translation_tag="Spool details"/>
-
-        <!-- Row 1: Remaining (g) | Spool wt (g) | Price -->
-        <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row"
-                style_pad_gap="#space_md" scrollable="false">
-          <lv_obj height="content" flex_grow="1" style_pad_all="0" flex_flow="column"
-                  style_pad_gap="#space_xxs" scrollable="false">
-            <text_small text="Remaining (g)" translation_tag="Remaining (g)"/>
-            <text_input name="detail_field_remaining" width="100%" keyboard_hint="numeric"
-                        placeholder="1000" max_length="8">
-              <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
-            </text_input>
-          </lv_obj>
-          <lv_obj height="content" flex_grow="1" style_pad_all="0" flex_flow="column"
-                  style_pad_gap="#space_xxs" scrollable="false">
-            <text_small text="Spool wt (g)" translation_tag="Spool wt (g)"/>
-            <text_input name="detail_field_spool_weight" width="100%" keyboard_hint="numeric"
-                        placeholder="0" max_length="8">
-              <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
-            </text_input>
-          </lv_obj>
-          <lv_obj height="content" flex_grow="1" style_pad_all="0" flex_flow="column"
-                  style_pad_gap="#space_xxs" scrollable="false">
-            <text_small text="Price" translation_tag="Price"/>
-            <text_input name="detail_field_price" width="100%" keyboard_hint="numeric"
-                        placeholder="0.00" max_length="10">
-              <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
-            </text_input>
-          </lv_obj>
-        </lv_obj>
-        <!-- Row 2: Location | Lot/Batch Nr -->
-        <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row"
-                style_pad_gap="#space_md" scrollable="false">
-          <lv_obj height="content" flex_grow="1" style_pad_all="0" flex_flow="column"
-                  style_pad_gap="#space_xxs" scrollable="false">
-            <text_small text="Location" translation_tag="Location"/>
-            <text_input name="detail_field_location" width="100%" placeholder="Shelf A"
-                        placeholder_tag="Shelf A" max_length="64">
-              <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
-            </text_input>
-          </lv_obj>
-          <lv_obj height="content" flex_grow="1" style_pad_all="0" flex_flow="column"
-                  style_pad_gap="#space_xxs" scrollable="false">
-            <text_small text="Lot/Batch Nr" translation_tag="Lot/Batch Nr"/>
-            <text_input name="detail_field_lot_nr" width="100%" placeholder="" max_length="32">
-              <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
-            </text_input>
-          </lv_obj>
-        </lv_obj>
-        <!-- Row 3: Notes (full width) -->
-        <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="column"
-                style_pad_gap="#space_xxs" scrollable="false">
-          <text_small text="Notes" translation_tag="Notes"/>
-          <text_input name="detail_field_comment" width="100%" height="#notes_height"
-                      placeholder="" max_length="256" multiline="true">
-            <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
-          </text_input>
-        </lv_obj>
-
-        <ui_button name="btn_detail_save" width="100%" height="#button_height"
-                   text="Save" translation_tag="Save" variant="primary">
-          <event_cb trigger="clicked" callback="ams_edit_detail_save_cb"/>
-        </ui_button>
-
-        <!-- Spool-logistics action: revealed by enter_spool_details() only
-             when a label printer is configured. -->
-        <ui_button name="btn_detail_print_label" width="100%" height="#button_height"
-                   text="Print Label" translation_tag="Print Label" variant="secondary"
-                   icon="printer" hidden="true">
-          <event_cb trigger="clicked" callback="ams_edit_print_label_cb"/>
-        </ui_button>
       </lv_obj>
 
     </lv_obj>

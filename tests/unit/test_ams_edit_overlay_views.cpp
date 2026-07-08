@@ -45,11 +45,14 @@ class AmsEditOverlayViewTestAccess {
     void call_render_spool_list(const std::string& filter) {
         overlay_.render_spool_list(filter);
     }
-    void call_enter_filament_details() {
-        overlay_.enter_filament_details();
+    void call_enter_spool_edit() {
+        overlay_.enter_spool_edit();
     }
-    void call_handle_details_select() {
-        overlay_.handle_details_select();
+    void call_handle_spool_edit_save() {
+        overlay_.handle_spool_edit_save();
+    }
+    void call_switch_to_picker() {
+        overlay_.switch_to_picker();
     }
     void set_details_color(uint32_t rgb) {
         overlay_.details_color_ = rgb;
@@ -136,6 +139,21 @@ void show_overlay_for_mock_slot_without_weights(LVGLUITestFixture& fixture) {
     fixture.process_lvgl(10);
 }
 
+void show_overlay_for_mock_tracked_slot(LVGLUITestFixture& fixture) {
+    auto& overlay = get_ams_edit_overlay();
+    // api=nullptr keeps the async Spoolman re-fetch out of the picture.
+    REQUIRE(overlay.show_for_slot(fixture.test_screen(), 0, tracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    fixture.process_lvgl(10);
+}
+
+void show_overlay_for_mock_untracked_slot(LVGLUITestFixture& fixture) {
+    auto& overlay = get_ams_edit_overlay();
+    REQUIRE(overlay.show_for_slot(fixture.test_screen(), 0, untracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    fixture.process_lvgl(10);
+}
+
 } // namespace
 
 TEST_CASE_METHOD(LVGLUITestFixture, "identity chip shows Brand · Material for untracked slots",
@@ -213,10 +231,10 @@ TEST_CASE_METHOD(LVGLUITestFixture, "filament-details view: toggle hidden withou
     UpdateQueue::instance().drain();
     process_lvgl(10);
 
-    access.call_enter_filament_details();
+    access.call_enter_spool_edit();
     UpdateQueue::instance().drain();
     process_lvgl(10);
-    CHECK(access.view() == AmsEditOverlay::kViewFilamentDetails);
+    CHECK(access.view() == AmsEditOverlay::kViewSpoolEdit);
 
     lv_obj_t* toggle_row = access.widget("save_to_spoolman_row");
     REQUIRE(toggle_row != nullptr);
@@ -230,8 +248,8 @@ TEST_CASE_METHOD(LVGLUITestFixture, "filament-details view: toggle hidden withou
     close_editor_overlay();
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "details Select applies color locally with toggle off",
-                 "[ams_edit_overlay][details][toggle]") {
+TEST_CASE_METHOD(LVGLUITestFixture, "spool-edit Save applies color locally with toggle off",
+                 "[ams_edit_overlay][spool_edit][toggle]") {
     auto& overlay = get_ams_edit_overlay();
     AmsEditOverlayViewTestAccess access(overlay);
 
@@ -243,7 +261,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "details Select applies color locally with t
     UpdateQueue::instance().drain();
     process_lvgl(10);
 
-    access.call_enter_filament_details();
+    access.call_enter_spool_edit();
     UpdateQueue::instance().drain();
     process_lvgl(10);
 
@@ -253,7 +271,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "details Select applies color locally with t
     CHECK_FALSE(lv_obj_has_state(toggle, LV_STATE_CHECKED));
 
     access.set_details_color(0xE53935);
-    access.call_handle_details_select();
+    access.call_handle_spool_edit_save();
     UpdateQueue::instance().drain();
     process_lvgl(10);
 
@@ -265,8 +283,8 @@ TEST_CASE_METHOD(LVGLUITestFixture, "details Select applies color locally with t
     close_editor_overlay();
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "details Select with toggle off unlinks a managed slot",
-                 "[ams_edit_overlay][details][toggle]") {
+TEST_CASE_METHOD(LVGLUITestFixture, "spool-edit Save with toggle off unlinks a managed slot",
+                 "[ams_edit_overlay][spool_edit][toggle]") {
     auto& overlay = get_ams_edit_overlay();
     AmsEditOverlayViewTestAccess access(overlay);
 
@@ -278,7 +296,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "details Select with toggle off unlinks a ma
     UpdateQueue::instance().drain();
     process_lvgl(10);
 
-    access.call_enter_filament_details();
+    access.call_enter_spool_edit();
     UpdateQueue::instance().drain();
     process_lvgl(10);
 
@@ -287,16 +305,34 @@ TEST_CASE_METHOD(LVGLUITestFixture, "details Select with toggle off unlinks a ma
     REQUIRE(toggle != nullptr);
     CHECK(lv_obj_has_state(toggle, LV_STATE_CHECKED));
 
-    // User switches it off -> unlink on Select (resolution §2.1): id -> 0,
-    // identity kept locally, no Spoolman write.
+    // User switches it off -> unlink on Save (resolution §2.1): id -> 0,
+    // identity kept locally, no Spoolman write. This is the SOLE unlink path
+    // now that the picker's unlink entry is retired.
     lv_obj_remove_state(toggle, LV_STATE_CHECKED);
-    access.call_handle_details_select();
+    access.call_handle_spool_edit_save();
     UpdateQueue::instance().drain();
     process_lvgl(10);
 
     CHECK(access.working_info().spoolman_id == 0);
     CHECK(access.working_info().material == "ASA"); // identity preserved
     CHECK_FALSE(access.save_opt_in());
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "picker no longer offers a standalone unlink entry",
+                 "[ams_edit_overlay][spool_edit][picker]") {
+    // The picker_unlink_entry is retired — the single unlink path is spool-edit
+    // Save with the toggle off (covered above).
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    show_overlay_for_mock_tracked_slot(*this);
+    access.call_switch_to_picker();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.widget("picker_unlink_entry") == nullptr);
 
     close_editor_overlay();
 }
@@ -327,7 +363,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "color view applies to the slot and returns 
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture,
-                 "color view from filament-details stages the pending color and returns there",
+                 "color view from spool-edit stages the pending color and returns there",
                  "[ams_edit_overlay][color_view]") {
     auto& overlay = get_ams_edit_overlay();
     AmsEditOverlayViewTestAccess access(overlay);
@@ -336,11 +372,11 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     UpdateQueue::instance().drain();
     process_lvgl(10);
 
-    access.call_enter_filament_details();
+    access.call_enter_spool_edit();
     UpdateQueue::instance().drain();
     process_lvgl(10);
 
-    access.call_open_color_view(AmsEditOverlay::kViewFilamentDetails);
+    access.call_open_color_view(AmsEditOverlay::kViewSpoolEdit);
     UpdateQueue::instance().drain();
     process_lvgl(10);
     CHECK(access.view() == AmsEditOverlay::kViewColor);
@@ -350,11 +386,38 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     UpdateQueue::instance().drain();
     process_lvgl(10);
 
-    CHECK(access.view() == AmsEditOverlay::kViewFilamentDetails);
+    CHECK(access.view() == AmsEditOverlay::kViewSpoolEdit);
     CHECK(access.details_color() == 0x1E88E5);
     CHECK(access.details_color_set());
-    CHECK(access.working_info().color_rgb == before); // slot untouched until Select
+    CHECK(access.working_info().color_rgb == before); // slot untouched until Save
 
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "unified spool-edit view shows logistics only when tracked",
+                 "[ams_edit_overlay][spool_edit]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    // Tracked slot: is_managed==1 -> logistics section visible.
+    show_overlay_for_mock_tracked_slot(*this);
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    CHECK(access.view() == AmsEditOverlay::kViewSpoolEdit);
+    lv_obj_t* logistics = access.widget("spool_edit_logistics");
+    REQUIRE(logistics != nullptr);
+    CHECK_FALSE(lv_obj_has_flag(logistics, LV_OBJ_FLAG_HIDDEN));
+    close_editor_overlay();
+
+    // Untracked slot: is_managed==0 -> logistics section hidden.
+    show_overlay_for_mock_untracked_slot(*this);
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    logistics = access.widget("spool_edit_logistics");
+    REQUIRE(logistics != nullptr);
+    CHECK(lv_obj_has_flag(logistics, LV_OBJ_FLAG_HIDDEN));
     close_editor_overlay();
 }
 

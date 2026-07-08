@@ -361,7 +361,7 @@ void AmsEditOverlay::init_subjects() {
         // Remaining mode (0=view, 1=edit) - registered globally for XML binding
         UI_MANAGED_SUBJECT_INT(remaining_mode_subject_, 0, "edit_remaining_mode", subjects_);
 
-        // View state (kViewOverview..kViewSpoolDetails) - registered globally
+        // View state (kViewOverview..kViewColor) - registered globally
         UI_MANAGED_SUBJECT_INT(view_mode_subject_, 0, "ams_edit_view", subjects_);
 
         // Picker state (0=loading, 1=empty, 2=content) - registered globally
@@ -648,18 +648,18 @@ void AmsEditOverlay::handle_chip_clicked() {
         switch_to_picker();
         return;
     }
-    spdlog::debug("[AmsEditOverlay] Chip tapped - opening filament details (no Spoolman)");
-    enter_filament_details();
+    spdlog::debug("[AmsEditOverlay] Chip tapped - opening spool-edit (no Spoolman)");
+    enter_spool_edit();
 }
 
-void AmsEditOverlay::enter_filament_details() {
-    // Single identity editor for BOTH cases (spec §3.3): fresh untracked setup
+void AmsEditOverlay::enter_spool_edit() {
+    // Single identity+color+logistics editor (spec §3.3): fresh untracked setup
     // and editing the current filament. Pre-fill from the working slot; the
-    // toggle default (off=untracked / on=managed) rides ams_edit_is_managed
-    // via bind_state_if_eq.
+    // toggle default (off=untracked / on=managed) rides ams_edit_is_managed via
+    // bind_state_if_eq, and the logistics section hides for untracked slots.
     lv_obj_t* fragment = find_widget("details_catalog_selector");
     if (!fragment) {
-        spdlog::warn("[AmsEditOverlay] details view fragment missing");
+        spdlog::warn("[AmsEditOverlay] spool-edit view fragment missing");
         return;
     }
     auto* backend = AmsState::instance().get_backend();
@@ -671,11 +671,11 @@ void AmsEditOverlay::enter_filament_details() {
     details_selector_.configure(std::move(seed), std::move(allowed));
     details_selector_.populate();
     // An already-defined filament should show its matching variant checked;
-    // a fresh list pre-checks the first product so Select is one tap.
+    // a fresh list pre-checks the first product so Save is one tap.
     details_selector_.preselect_first();
 
-    // Seed the pending color from the working slot so Select without a color
-    // tap keeps the current color.
+    // Seed the pending color from the working slot so Save without a color tap
+    // keeps the current color.
     details_color_ = working_info_.color_rgb;
     details_color_set_ = false;
     lv_obj_t* preview = find_widget("details_color_preview");
@@ -683,126 +683,12 @@ void AmsEditOverlay::enter_filament_details() {
         helix::ui::apply_swatch_color(preview, details_color_, {});
     }
 
-    set_view(kViewFilamentDetails);
-    spdlog::debug("[AmsEditOverlay] Entered filament-details view");
-}
-
-void AmsEditOverlay::handle_details_select() {
-    // Apply catalog pick (if any) — brand/material/temps from the branded
-    // catalog (spec §5: EffectiveFilament -> slot mapping reused).
-    const helix::printer::EffectiveFilament* ef = details_selector_.highlighted();
-    if (ef) {
-        working_info_.material = ef->type;
-        working_info_.brand = ef->brand;
-        working_info_.nozzle_temp_min = ef->nozzle_min;
-        working_info_.nozzle_temp_max = ef->nozzle_max;
-        working_info_.bed_temp = ef->bed_temp;
-        spdlog::info("[AmsEditOverlay] Details pick: '{} {}' ({}-{}/{}°C)", ef->brand, ef->type,
-                     ef->nozzle_min, ef->nozzle_max, ef->bed_temp);
-    }
-
-    // Apply pending color (catalog carries no color — spec §3.3).
-    if (details_color_set_) {
-        working_info_.color_rgb = details_color_;
-        working_info_.color_name = helix::get_color_name_from_hex(details_color_);
-        working_info_.multi_color_hexes.clear();
-    }
-
-    // Capture the explicit tracking decision.
-    auto* subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
-    const bool has_spoolman = subj && lv_subject_get_int(subj) == 1;
-    lv_obj_t* toggle = find_widget("save_to_spoolman_switch");
-    const bool opted_in = toggle && lv_obj_has_state(toggle, LV_STATE_CHECKED);
-    save_to_spoolman_opt_in_ = has_spoolman && opted_in;
-
-    if (has_spoolman && !opted_in && working_info_.spoolman_id > 0) {
-        // Toggle off on a managed slot = unlink: spoolman_id -> 0, identity
-        // kept as local slot values; no Spoolman delete/write (resolution §2.1).
-        spdlog::info("[AmsEditOverlay] Save-to-Spoolman off — unlinking spool {}",
-                     working_info_.spoolman_id);
-        working_info_.spoolman_id = 0;
-        working_info_.spool_name.clear();
-    }
-
-    details_selector_.detach();
-    details_selector_.clear_catalog();
-
-    switch_to_form();
-    update_ui();
-    update_temp_display();
-    update_sync_button_state();
-    update_spoolman_button_state();
-}
-
-void AmsEditOverlay::handle_quick_swatch(lv_obj_t* swatch) {
-    if (!swatch) {
-        return;
-    }
-    lv_color_t c = lv_obj_get_style_bg_color(swatch, LV_PART_MAIN);
-    details_color_ = (static_cast<uint32_t>(c.red) << 16) | (static_cast<uint32_t>(c.green) << 8) |
-                     static_cast<uint32_t>(c.blue);
-    details_color_set_ = true;
-    lv_obj_t* preview = find_widget("details_color_preview");
-    if (preview) {
-        helix::ui::apply_swatch_color(preview, details_color_, {});
-    }
-    spdlog::debug("[AmsEditOverlay] Quick swatch picked: {:#08x}", details_color_);
-}
-
-void AmsEditOverlay::on_details_select_cb(lv_event_t* e) {
-    auto* self = get_instance_from_event(e);
-    if (self) {
-        self->handle_details_select();
-    }
-}
-
-void AmsEditOverlay::on_quick_swatch_cb(lv_event_t* e) {
-    auto* self = get_instance_from_event(e);
-    if (self) {
-        self->handle_quick_swatch(static_cast<lv_obj_t*>(lv_event_get_target(e)));
-    }
-}
-
-void AmsEditOverlay::on_custom_color_cb(lv_event_t* e) {
-    auto* self = get_instance_from_event(e);
-    if (self) {
-        self->open_color_view(kViewFilamentDetails);
-    }
-}
-
-void AmsEditOverlay::handle_picker_search(const char* text) {
-    if (cached_spools_.empty()) {
-        return;
-    }
-    render_spool_list(text ? text : "");
-}
-
-void AmsEditOverlay::handle_unlink() {
-    spdlog::info("[AmsEditOverlay] Unlink requested for slot {}", slot_index_);
-    working_info_.spoolman_id = 0;
-    working_info_.spool_name.clear();
-    update_ui();
-    update_sync_button_state();
-    update_spoolman_button_state();
-}
-
-void AmsEditOverlay::handle_spool_details() {
-    enter_spool_details();
-}
-
-void AmsEditOverlay::enter_spool_details() {
-    if (working_info_.spoolman_id <= 0) {
-        return; // untracked slots have no logistics (spec §3.6)
-    }
     if (!api_) {
         api_ = get_moonraker_api();
     }
-    if (!api_) {
-        return;
-    }
 
-    // Seed fields from what we know, then refresh from Spoolman (fresh data on
-    // view entry rather than trusting cached_spools_ — review §3).
+    // Seed the logistics fields from what we know. Meaningful only for managed
+    // slots (the section is hidden otherwise), but seeding is harmless.
     detail_original_ = SpoolInfo{};
     detail_original_.id = working_info_.spoolman_id;
     detail_original_.filament_id = working_info_.spoolman_filament_id;
@@ -833,26 +719,216 @@ void AmsEditOverlay::enter_spool_details() {
         }
     }
 
-    set_view(kViewSpoolDetails);
+    set_view(kViewSpoolEdit);
 
-    const int spool_id = working_info_.spoolman_id;
-    auto token = lifetime_.token();
-    api_->spoolman().get_spoolman_spool(
-        spool_id,
-        [this, token, spool_id](const std::optional<SpoolInfo>& spool) {
-            if (!spool || token.expired()) {
-                return;
-            }
-            token.defer([this, spool = *spool]() {
-                detail_original_ = spool;
-                detail_working_ = spool;
-                populate_detail_fields();
+    // Managed slots: refresh logistics from Spoolman (fresh data on view entry
+    // rather than trusting cached_spools_ — review §3). Untracked slots skip the
+    // fetch but still enter the view.
+    if (working_info_.spoolman_id > 0 && api_) {
+        const int spool_id = working_info_.spoolman_id;
+        auto token = lifetime_.token();
+        api_->spoolman().get_spoolman_spool(
+            spool_id,
+            [this, token, spool_id](const std::optional<SpoolInfo>& spool) {
+                if (!spool || token.expired()) {
+                    return;
+                }
+                token.defer([this, spool = *spool]() {
+                    detail_original_ = spool;
+                    detail_working_ = spool;
+                    populate_detail_fields();
+                });
+            },
+            [spool_id](const MoonrakerError& err) {
+                spdlog::warn("[AmsEditOverlay] Spool-details fetch for {} failed: {}", spool_id,
+                             err.message);
             });
-        },
-        [spool_id](const MoonrakerError& err) {
-            spdlog::warn("[AmsEditOverlay] Spool-details fetch for {} failed: {}", spool_id,
-                         err.message);
-        });
+    }
+
+    spdlog::debug("[AmsEditOverlay] Entered spool-edit view");
+}
+
+void AmsEditOverlay::handle_spool_edit_save() {
+    // --- Identity + color + toggle -> working_info_ (merged from the old
+    //     filament-details apply path) ---
+    // Apply catalog pick (if any) — brand/material/temps from the branded
+    // catalog (spec §5: EffectiveFilament -> slot mapping reused).
+    const helix::printer::EffectiveFilament* ef = details_selector_.highlighted();
+    if (ef) {
+        working_info_.material = ef->type;
+        working_info_.brand = ef->brand;
+        working_info_.nozzle_temp_min = ef->nozzle_min;
+        working_info_.nozzle_temp_max = ef->nozzle_max;
+        working_info_.bed_temp = ef->bed_temp;
+        spdlog::info("[AmsEditOverlay] Spool-edit pick: '{} {}' ({}-{}/{}°C)", ef->brand, ef->type,
+                     ef->nozzle_min, ef->nozzle_max, ef->bed_temp);
+    }
+
+    // Apply pending color (catalog carries no color — spec §3.3).
+    if (details_color_set_) {
+        working_info_.color_rgb = details_color_;
+        working_info_.color_name = helix::get_color_name_from_hex(details_color_);
+        working_info_.multi_color_hexes.clear();
+    }
+
+    // Capture the explicit tracking decision.
+    auto* subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    const bool has_spoolman = subj && lv_subject_get_int(subj) == 1;
+    lv_obj_t* toggle = find_widget("save_to_spoolman_switch");
+    const bool opted_in = toggle && lv_obj_has_state(toggle, LV_STATE_CHECKED);
+    save_to_spoolman_opt_in_ = has_spoolman && opted_in;
+
+    if (has_spoolman && !opted_in && working_info_.spoolman_id > 0) {
+        // Toggle off on a managed slot = unlink: spoolman_id -> 0, identity kept
+        // as local slot values; no Spoolman delete/write (resolution §2.1). This
+        // is the single unlink path (the picker's unlink entry was retired).
+        spdlog::info("[AmsEditOverlay] Save-to-Spoolman off — unlinking spool {}",
+                     working_info_.spoolman_id);
+        working_info_.spoolman_id = 0;
+        working_info_.spool_name.clear();
+    }
+
+    details_selector_.detach();
+    details_selector_.clear_catalog();
+
+    // --- Logistics two-PATCH for slots that stay managed (merged from the old
+    //     spool-details save path) ---
+    if (working_info_.spoolman_id > 0) {
+        read_detail_fields();
+
+        // Reject negative numerics (same rule as SpoolEditModal::validate_fields).
+        if (detail_working_.remaining_weight_g < 0 || detail_working_.spool_weight_g < 0 ||
+            detail_working_.price < 0) {
+            ToastManager::instance().show(ToastSeverity::ERROR,
+                                          lv_tr("Values must not be negative"), 3000);
+            return; // stay on the spool-edit view so the user can fix it
+        }
+
+        nlohmann::json spool_patch;
+        nlohmann::json filament_patch;
+        build_spool_patches(detail_original_, detail_working_, spool_patch, filament_patch);
+
+        if (!spool_patch.empty() || !filament_patch.empty()) {
+            if (!api_) {
+                api_ = get_moonraker_api();
+            }
+            if (!api_) {
+                ToastManager::instance().show(ToastSeverity::ERROR, lv_tr("API not available"),
+                                              3000);
+            } else {
+                const int spool_id = detail_working_.id;
+                const int filament_id = detail_working_.filament_id;
+                auto token = lifetime_.token();
+
+                // Immediate Spoolman write on Save, then return to the overview
+                // with refreshed working_info_. The overview's Back does NOT roll
+                // these writes back — identical to SpoolEditModal.
+                auto on_all_saved = [this, token]() {
+                    token.defer("AmsEditOverlay::on_logistics_saved", [this]() {
+                        ToastManager::instance().show(ToastSeverity::SUCCESS, lv_tr("Spool saved"),
+                                                      2000);
+                        working_info_.remaining_weight_g =
+                            static_cast<float>(detail_working_.remaining_weight_g);
+                        if (detail_working_.initial_weight_g > 0) {
+                            working_info_.total_weight_g =
+                                static_cast<float>(detail_working_.initial_weight_g);
+                        }
+                        // Keep the pre-save baseline in sync so the header Save
+                        // dirty state doesn't light up from a logistics-only edit.
+                        original_info_.remaining_weight_g = working_info_.remaining_weight_g;
+                        original_info_.total_weight_g = working_info_.total_weight_g;
+                        switch_to_form();
+                        update_ui();
+                        update_temp_display();
+                        update_sync_button_state();
+                        update_spoolman_button_state();
+                    });
+                };
+                auto on_error = [token, spool_id](const MoonrakerError& err) {
+                    spdlog::error("[AmsEditOverlay] Failed to save spool {}: {}", spool_id,
+                                  err.message);
+                    token.defer("AmsEditOverlay::on_logistics_save_error", []() {
+                        ToastManager::instance().show(ToastSeverity::ERROR,
+                                                      lv_tr("Failed to save spool"), 3000);
+                    });
+                };
+
+                if (!spool_patch.empty()) {
+                    api_->spoolman().update_spoolman_spool(
+                        spool_id, spool_patch,
+                        [this, token, filament_id, filament_patch, on_all_saved, on_error]() {
+                            token.defer(
+                                "AmsEditOverlay::after_spool_patch",
+                                [this, filament_id, filament_patch, on_all_saved, on_error]() {
+                                    if (!filament_patch.empty() && filament_id > 0) {
+                                        api_->spoolman().update_spoolman_filament(
+                                            filament_id, filament_patch, on_all_saved, on_error);
+                                    } else {
+                                        on_all_saved();
+                                    }
+                                });
+                        },
+                        on_error);
+                    return; // async path returns to overview from the callback
+                }
+                if (!filament_patch.empty() && filament_id > 0) {
+                    api_->spoolman().update_spoolman_filament(filament_id, filament_patch,
+                                                              on_all_saved, on_error);
+                    return; // async path
+                }
+            }
+        }
+    }
+
+    // --- No logistics write (untracked, unchanged, or API missing): return now ---
+    switch_to_form();
+    update_ui();
+    update_temp_display();
+    update_sync_button_state();
+    update_spoolman_button_state();
+}
+
+void AmsEditOverlay::handle_quick_swatch(lv_obj_t* swatch) {
+    if (!swatch) {
+        return;
+    }
+    lv_color_t c = lv_obj_get_style_bg_color(swatch, LV_PART_MAIN);
+    details_color_ = (static_cast<uint32_t>(c.red) << 16) | (static_cast<uint32_t>(c.green) << 8) |
+                     static_cast<uint32_t>(c.blue);
+    details_color_set_ = true;
+    lv_obj_t* preview = find_widget("details_color_preview");
+    if (preview) {
+        helix::ui::apply_swatch_color(preview, details_color_, {});
+    }
+    spdlog::debug("[AmsEditOverlay] Quick swatch picked: {:#08x}", details_color_);
+}
+
+void AmsEditOverlay::on_spool_edit_save_cb(lv_event_t* e) {
+    auto* self = get_instance_from_event(e);
+    if (self) {
+        self->handle_spool_edit_save();
+    }
+}
+
+void AmsEditOverlay::on_quick_swatch_cb(lv_event_t* e) {
+    auto* self = get_instance_from_event(e);
+    if (self) {
+        self->handle_quick_swatch(static_cast<lv_obj_t*>(lv_event_get_target(e)));
+    }
+}
+
+void AmsEditOverlay::on_custom_color_cb(lv_event_t* e) {
+    auto* self = get_instance_from_event(e);
+    if (self) {
+        self->open_color_view(kViewSpoolEdit);
+    }
+}
+
+void AmsEditOverlay::handle_picker_search(const char* text) {
+    if (cached_spools_.empty()) {
+        return;
+    }
+    render_spool_list(text ? text : "");
 }
 
 void AmsEditOverlay::populate_detail_fields() {
@@ -901,92 +977,6 @@ void AmsEditOverlay::read_detail_fields() {
     detail_working_.location = text_of("detail_field_location");
     detail_working_.lot_nr = text_of("detail_field_lot_nr");
     detail_working_.comment = text_of("detail_field_comment");
-}
-
-void AmsEditOverlay::handle_detail_save() {
-    read_detail_fields();
-
-    // Reject negative numerics (same rule as SpoolEditModal::validate_fields).
-    if (detail_working_.remaining_weight_g < 0 || detail_working_.spool_weight_g < 0 ||
-        detail_working_.price < 0) {
-        ToastManager::instance().show(ToastSeverity::ERROR, lv_tr("Values must not be negative"),
-                                      3000);
-        return;
-    }
-
-    nlohmann::json spool_patch;
-    nlohmann::json filament_patch;
-    build_spool_patches(detail_original_, detail_working_, spool_patch, filament_patch);
-
-    if (spool_patch.empty() && filament_patch.empty()) {
-        switch_to_form(); // nothing changed
-        return;
-    }
-    if (!api_) {
-        ToastManager::instance().show(ToastSeverity::ERROR, lv_tr("API not available"), 3000);
-        return;
-    }
-
-    const int spool_id = detail_working_.id;
-    const int filament_id = detail_working_.filament_id;
-    auto token = lifetime_.token();
-
-    // Immediate Spoolman write on the view's own Save (resolution §2.3), then
-    // return to the overview with refreshed working_info_. The overview's
-    // Back does NOT roll these writes back — identical to SpoolEditModal.
-    auto on_all_saved = [this, token, spool_id]() {
-        token.defer("AmsEditOverlay::on_detail_saved", [this]() {
-            ToastManager::instance().show(ToastSeverity::SUCCESS, lv_tr("Spool saved"), 2000);
-            working_info_.remaining_weight_g =
-                static_cast<float>(detail_working_.remaining_weight_g);
-            if (detail_working_.initial_weight_g > 0) {
-                working_info_.total_weight_g = static_cast<float>(detail_working_.initial_weight_g);
-            }
-            // Keep the pre-save baseline in sync so the header Save button's
-            // dirty state doesn't light up from a spool-details-only edit.
-            original_info_.remaining_weight_g = working_info_.remaining_weight_g;
-            original_info_.total_weight_g = working_info_.total_weight_g;
-            switch_to_form();
-            update_ui();
-            update_sync_button_state();
-        });
-    };
-    auto on_error = [token, spool_id](const MoonrakerError& err) {
-        spdlog::error("[AmsEditOverlay] Failed to save spool {}: {}", spool_id, err.message);
-        token.defer("AmsEditOverlay::on_detail_save_error", []() {
-            ToastManager::instance().show(ToastSeverity::ERROR, lv_tr("Failed to save spool"),
-                                          3000);
-        });
-    };
-
-    if (!spool_patch.empty()) {
-        api_->spoolman().update_spoolman_spool(
-            spool_id, spool_patch,
-            [this, token, filament_id, filament_patch, on_all_saved, on_error]() {
-                token.defer("AmsEditOverlay::after_spool_patch",
-                            [this, filament_id, filament_patch, on_all_saved, on_error]() {
-                                if (!filament_patch.empty() && filament_id > 0) {
-                                    api_->spoolman().update_spoolman_filament(
-                                        filament_id, filament_patch, on_all_saved, on_error);
-                                } else {
-                                    on_all_saved();
-                                }
-                            });
-            },
-            on_error);
-    } else if (!filament_patch.empty() && filament_id > 0) {
-        api_->spoolman().update_spoolman_filament(filament_id, filament_patch, on_all_saved,
-                                                  on_error);
-    } else {
-        switch_to_form();
-    }
-}
-
-void AmsEditOverlay::on_detail_save_cb(lv_event_t* e) {
-    auto* self = get_instance_from_event(e);
-    if (self) {
-        self->handle_detail_save();
-    }
 }
 
 void AmsEditOverlay::on_detail_field_changed_cb(lv_event_t* e) {
@@ -1394,8 +1384,7 @@ void AmsEditOverlay::update_sync_button_state() {
 void AmsEditOverlay::open_color_view(int return_view) {
     return_view_ = return_view;
     // Seed custom sub-state from the color the opener is editing.
-    custom_color_ =
-        (return_view == kViewFilamentDetails) ? details_color_ : working_info_.color_rgb;
+    custom_color_ = (return_view == kViewSpoolEdit) ? details_color_ : working_info_.color_rgb;
     if (custom_color_ == 0) {
         custom_color_ = 0x808080;
     }
@@ -1418,8 +1407,8 @@ void AmsEditOverlay::open_color_view(int return_view) {
 }
 
 void AmsEditOverlay::apply_color(uint32_t rgb) {
-    if (return_view_ == kViewFilamentDetails) {
-        // Stage as the details view's pending color — committed on Select.
+    if (return_view_ == kViewSpoolEdit) {
+        // Stage as the spool-edit view's pending color — committed on Save.
         details_color_ = rgb;
         details_color_set_ = true;
         lv_obj_t* preview = find_widget("details_color_preview");
@@ -1543,18 +1532,16 @@ void AmsEditOverlay::handle_back() {
     case kViewSpoolPicker:
         switch_to_form();
         break;
-    case kViewFilamentDetails:
-        // Leave without applying (Select is the apply path)
+    case kViewSpoolEdit:
+        // Leave without applying (Save is the apply path)
         details_selector_.detach();
         details_selector_.clear_catalog();
         switch_to_form();
         break;
     case kViewColor:
-        // Leave without applying; pop to whichever view opened the color view.
+        // Leave without applying; pop to whichever view opened the color view
+        // (now only overview or spool-edit).
         set_view(return_view_);
-        break;
-    case kViewSpoolDetails:
-        switch_to_form(); // leave without writing
         break;
     case kViewOverview:
     default:
@@ -1925,22 +1912,19 @@ void AmsEditOverlay::register_callbacks() {
         {"ams_edit_back_cb", on_back_cb},
         {"ams_edit_chip_clicked_cb", on_chip_clicked_cb},
         {"ams_edit_setup_entry_cb", on_setup_entry_cb},
-        {"ams_edit_details_select_cb", on_details_select_cb},
+        {"ams_edit_spool_edit_save_cb", on_spool_edit_save_cb},
         {"ams_edit_quick_swatch_cb", on_quick_swatch_cb},
         {"ams_edit_custom_color_cb", on_custom_color_cb},
         {"ams_edit_color_swatch_cb", on_color_swatch_cb},
         {"ams_edit_color_apply_cb", on_color_apply_cb},
         {"ams_edit_color_hex_changed_cb", on_color_hex_changed_cb},
-        {"ams_edit_detail_save_cb", on_detail_save_cb},
         {"ams_edit_detail_field_changed_cb", on_detail_field_changed_cb},
-        {"ams_edit_spool_details_cb", on_spool_details_cb},
         {"ams_edit_color_clicked_cb", on_color_clicked_cb},
         {"ams_edit_remaining_changed_cb", on_remaining_changed_cb},
         {"ams_edit_remaining_edit_cb", on_remaining_edit_cb},
         {"ams_edit_remaining_accept_cb", on_remaining_accept_cb},
         {"ams_edit_remaining_cancel_cb", on_remaining_cancel_cb},
         {"ams_edit_save_cb", on_save_cb},
-        {"ams_edit_picker_unlink_cb", on_picker_unlink_cb},
         {"ams_edit_print_label_cb", on_print_label_cb},
         {"ams_edit_scan_qr_cb", on_scan_qr_cb},
         {"ams_edit_picker_search_cb", on_picker_search_cb},
@@ -1973,8 +1957,8 @@ void AmsEditOverlay::on_back_cb(lv_event_t* e) {
 }
 
 void AmsEditOverlay::handle_setup_entry() {
-    spdlog::debug("[AmsEditOverlay] Setup entry tapped - opening filament details");
-    enter_filament_details();
+    spdlog::debug("[AmsEditOverlay] Setup entry tapped - opening spool-edit");
+    enter_spool_edit();
 }
 
 void AmsEditOverlay::on_setup_entry_cb(lv_event_t* e) {
@@ -1988,13 +1972,6 @@ void AmsEditOverlay::on_chip_clicked_cb(lv_event_t* e) {
     auto* self = get_instance_from_event(e);
     if (self) {
         self->handle_chip_clicked();
-    }
-}
-
-void AmsEditOverlay::on_spool_details_cb(lv_event_t* e) {
-    auto* self = get_instance_from_event(e);
-    if (self) {
-        self->handle_spool_details();
     }
 }
 
@@ -2040,14 +2017,6 @@ void AmsEditOverlay::on_save_cb(lv_event_t* e) {
     if (self) {
         self->handle_save();
     }
-}
-
-void AmsEditOverlay::on_picker_unlink_cb(lv_event_t* e) {
-    auto* self = get_instance_from_event(e);
-    if (!self)
-        return;
-    self->handle_unlink();
-    self->switch_to_form();
 }
 
 void AmsEditOverlay::on_print_label_cb(lv_event_t* e) {
@@ -2105,7 +2074,7 @@ void AmsEditOverlay::on_spool_item_edit_cb(lv_event_t* e) {
     auto* self = get_instance_from_event(e);
     if (self) {
         spdlog::debug("[AmsEditOverlay] Edit pencil tapped - editing current spool identity");
-        self->enter_filament_details();
+        self->enter_spool_edit();
     }
 }
 
