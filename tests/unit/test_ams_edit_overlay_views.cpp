@@ -136,3 +136,67 @@ TEST_CASE_METHOD(LVGLUITestFixture, "identity chip shows spool name + mark for t
 
     close_editor_overlay();
 }
+
+namespace {
+std::vector<SpoolInfo> two_spools() {
+    SpoolInfo a;
+    a.id = 11;
+    a.vendor = "Polymaker";
+    a.material = "PLA";
+    a.color_hex = "1A1A2E";
+    SpoolInfo b;
+    b.id = 22;
+    b.vendor = "eSUN";
+    b.material = "PETG";
+    b.color_hex = "00FF00";
+    return {a, b};
+}
+} // namespace
+
+TEST_CASE_METHOD(LVGLUITestFixture, "picker pre-selects the first row for unlinked slots",
+                 "[ams_edit_overlay][picker][preselect]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.set_cached_spools(two_spools());
+    access.call_render_spool_list("");
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* list = access.widget("picker_spool_list");
+    REQUIRE(list != nullptr);
+    REQUIRE(lv_obj_get_child_count(list) == 2);
+    CHECK(lv_obj_has_state(lv_obj_get_child(list, 0), LV_STATE_CHECKED));
+    CHECK_FALSE(lv_obj_has_state(lv_obj_get_child(list, 1), LV_STATE_CHECKED));
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "picker pre-selects the current spool when linked",
+                 "[ams_edit_overlay][picker][preselect]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    SlotInfo linked = tracked_slot();
+    linked.spoolman_id = 22;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, linked, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.set_cached_spools(two_spools());
+    access.call_render_spool_list("");
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* list = access.widget("picker_spool_list");
+    REQUIRE(list != nullptr);
+    REQUIRE(lv_obj_get_child_count(list) == 2);
+    CHECK_FALSE(lv_obj_has_state(lv_obj_get_child(list, 0), LV_STATE_CHECKED));
+    CHECK(lv_obj_has_state(lv_obj_get_child(list, 1), LV_STATE_CHECKED));
+
+    close_editor_overlay();
+}

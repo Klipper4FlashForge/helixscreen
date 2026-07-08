@@ -591,8 +591,7 @@ void AmsEditOverlay::render_spool_list(const std::string& filter) {
     }
 
     // Invoked from a token.defer() callback (UpdateQueue batch). Sync
-    // lv_obj_clean in that context corrupts LVGL's event linked list →
-    // SIGSEGV in lv_event_mark_deleted (#776).
+    // lv_obj_clean in that context corrupts LVGL's event linked list (#776).
     helix::ui::safe_clean_children(spool_list);
 
     // Reuse shared filter_spools() from spoolman_types
@@ -601,16 +600,18 @@ void AmsEditOverlay::render_spool_list(const std::string& filter) {
     // Get spool IDs assigned to other tools (exclude current slot's tool)
     auto in_use = ToolState::instance().assigned_spool_ids(slot_index_);
 
-    // Compact single-line rows on short panels (more rows visible). Keyed on the
-    // same responsive breakpoint the design tokens use (VERTICAL resolution).
-    // Medium (≤550px, e.g. 800x480) and below get compact; Large+ keep the rich
-    // two-line layout. Computed once — the breakpoint is constant per render.
+    // Compact single-line rows on short panels (more rows visible)
     lv_subject_t* bp_subj = theme_manager_get_breakpoint_subject();
     UiBreakpoint bp = bp_subj ? as_breakpoint(lv_subject_get_int(bp_subj)) : UiBreakpoint::Medium;
     const bool is_compact = bp <= UiBreakpoint::Medium;
     const char* attrs[] = {"compact",     is_compact ? "true" : "false",
                            "detail_flow", is_compact ? "row" : "column",
                            nullptr,       nullptr};
+
+    // Pre-selection (spec §3.2, resolution §2.5): the current spool if linked,
+    // otherwise the FIRST selectable row — so a single-candidate list is one
+    // tap. Purely visual (LV_STATE_CHECKED); tapping a row selects it.
+    bool have_preselection = false;
 
     for (const auto& spool : filtered) {
         lv_obj_t* item =
@@ -646,20 +647,29 @@ void AmsEditOverlay::render_spool_list(const std::string& filter) {
             helix::ui::apply_swatch_color(swatch, rgb, spool.multi_color_hexes);
         }
 
-        // Mark current spool as checked (matching spoolman list view pattern)
-        bool is_selected = (spool.id == working_info_.spoolman_id);
-        lv_obj_set_state(item, LV_STATE_CHECKED, is_selected);
+        // Disable spools already assigned to other tools
+        const bool disabled = in_use.count(spool.id) > 0;
+        if (disabled) {
+            lv_obj_add_state(item, LV_STATE_DISABLED);
+            lv_obj_remove_flag(item, LV_OBJ_FLAG_CLICKABLE);
+        }
+
+        // Selection highlight: linked spool wins; else first selectable row.
+        bool is_selected = false;
+        if (working_info_.spoolman_id > 0) {
+            is_selected = (spool.id == working_info_.spoolman_id);
+        } else if (!have_preselection && !disabled) {
+            is_selected = true;
+        }
         if (is_selected) {
+            have_preselection = true;
+            lv_obj_set_state(item, LV_STATE_CHECKED, true);
             lv_obj_t* check_icon = lv_obj_find_by_name(item, "selected_icon");
             if (check_icon) {
                 lv_obj_remove_flag(check_icon, LV_OBJ_FLAG_HIDDEN);
             }
-        }
-
-        // Disable spools already assigned to other tools
-        if (in_use.count(spool.id)) {
-            lv_obj_add_state(item, LV_STATE_DISABLED);
-            lv_obj_remove_flag(item, LV_OBJ_FLAG_CLICKABLE);
+        } else {
+            lv_obj_set_state(item, LV_STATE_CHECKED, false);
         }
     }
 
