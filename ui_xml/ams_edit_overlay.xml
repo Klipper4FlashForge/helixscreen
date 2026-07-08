@@ -212,28 +212,37 @@
 
         <text_heading text="Spool" translation_tag="Spool"/>
 
-        <!-- Brand / Material / product — shared catalog selector fragment -->
-        <filament_catalog_selector name="details_catalog_selector"/>
-
-        <!-- Inline color: shared full preset palette (one palette everywhere)
-             + custom-hue affordance (✎ opens the color view: swatches + HSV) -->
-        <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="column"
-                style_pad_gap="#space_xs" scrollable="false">
-          <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row"
-                  style_pad_gap="#space_sm" style_flex_cross_place="center" scrollable="false">
-            <text_small text="Color" translation_tag="Color"/>
-            <!-- Selected-color preview -->
-            <lv_obj name="details_color_preview" width="28" height="28"
-                    style_radius="#border_radius_small" style_bg_color="#card_bg" style_bg_opa="255"
-                    style_border_width="2" style_border_color="#text_muted" style_border_opa="80"
-                    scrollable="false"/>
-            <!-- Custom-hue escape hatch: opens the color view (swatches + HSV) -->
-            <ui_button name="btn_details_custom_color" width="28" height="28"
-                       icon="pencil" variant="ghost">
-              <event_cb trigger="clicked" callback="ams_edit_custom_color_cb"/>
-            </ui_button>
+        <!-- Identity + color side by side: the color palette (LEFT) fits the
+             fixed-width swatch grid; the catalog identity (RIGHT) takes the
+             remaining width. Horizontal space is plentiful here, vertical is
+             scarce — so the two stacks share a row instead of stacking. -->
+        <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row"
+                style_pad_gap="#space_lg" style_flex_cross_place="start" scrollable="false">
+          <!-- LEFT: inline color — shared full preset palette (one palette
+               everywhere) + custom-hue affordance (✎ opens the color view). -->
+          <lv_obj width="content" height="content" style_pad_all="0" flex_flow="column"
+                  style_pad_gap="#space_xs" scrollable="false">
+            <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row"
+                    style_pad_gap="#space_sm" style_flex_cross_place="center" scrollable="false">
+              <text_small text="Color" translation_tag="Color"/>
+              <!-- Selected-color preview -->
+              <lv_obj name="details_color_preview" width="28" height="28"
+                      style_radius="#border_radius_small" style_bg_color="#card_bg" style_bg_opa="255"
+                      style_border_width="2" style_border_color="#text_muted" style_border_opa="80"
+                      scrollable="false"/>
+              <!-- Custom-hue escape hatch: opens the color view (swatches + HSV) -->
+              <ui_button name="btn_details_custom_color" width="28" height="28"
+                         icon="pencil" variant="ghost">
+                <event_cb trigger="clicked" callback="ams_edit_custom_color_cb"/>
+              </ui_button>
+            </lv_obj>
+            <color_swatch_grid swatch_callback="ams_edit_quick_swatch_cb"/>
           </lv_obj>
-          <color_swatch_grid swatch_callback="ams_edit_quick_swatch_cb"/>
+          <!-- RIGHT: Brand / Material / product — shared catalog selector -->
+          <lv_obj flex_grow="1" height="content" style_pad_all="0" flex_flow="column"
+                  style_pad_gap="#space_xs" scrollable="false">
+            <filament_catalog_selector name="details_catalog_selector"/>
+          </lv_obj>
         </lv_obj>
 
         <!-- Quantity: remaining + spool weight. Applies to tracked AND
@@ -315,12 +324,9 @@
           </ui_switch>
         </lv_obj>
 
-        <!-- Save: apply identity/color to the working slot, push logistics to
-             Spoolman (managed slots), and return to the overview. -->
-        <ui_button name="btn_spool_edit_save" width="100%" height="#button_height"
-                   text="Save" translation_tag="Save" variant="primary">
-          <event_cb trigger="clicked" callback="ams_edit_spool_edit_save_cb"/>
-        </ui_button>
+        <!-- Save lives in the header bar on this view (visible on overview AND
+             spool-edit); it applies identity/color/logistics, then finishes and
+             closes the editor. The former in-content Save button was retired. -->
 
         <!-- Spool-logistics action: revealed by enter_spool_edit() only when a
              label printer is configured. -->

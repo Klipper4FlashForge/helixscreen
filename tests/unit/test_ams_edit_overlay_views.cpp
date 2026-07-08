@@ -51,6 +51,9 @@ class AmsEditOverlayViewTestAccess {
     void call_handle_spool_edit_save() {
         overlay_.handle_spool_edit_save();
     }
+    void call_handle_save() {
+        overlay_.handle_save();
+    }
     void call_switch_to_picker() {
         overlay_.switch_to_picker();
     }
@@ -486,6 +489,8 @@ TEST_CASE_METHOD(LVGLUITestFixture, "unified spool-edit view shows logistics onl
     lv_obj_t* logistics = access.widget("spool_edit_logistics");
     REQUIRE(logistics != nullptr);
     CHECK_FALSE(lv_obj_has_flag(logistics, LV_OBJ_FLAG_HIDDEN));
+    // The in-content Save button was retired — Save lives in the header bar now.
+    CHECK(access.widget("btn_spool_edit_save") == nullptr);
     close_editor_overlay();
 
     // Untracked slot: is_managed==0 -> logistics section hidden.
@@ -726,7 +731,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "picker pre-selects the current spool when l
     close_editor_overlay();
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "header Save hides on non-overview views",
+TEST_CASE_METHOD(LVGLUITestFixture, "header Save shows on overview + spool-edit, hides on picker/color",
                  "[ams_edit_overlay][views]") {
     auto& overlay = get_ams_edit_overlay();
     AmsEditOverlayViewTestAccess access(overlay);
@@ -737,14 +742,81 @@ TEST_CASE_METHOD(LVGLUITestFixture, "header Save hides on non-overview views",
 
     auto* hide_subj = lv_xml_get_subject(nullptr, "ams_edit_save_hidden");
     REQUIRE(hide_subj != nullptr);
+    auto* save_dis = lv_xml_get_subject(nullptr, "ams_edit_save_disabled");
+    REQUIRE(save_dis != nullptr);
     REQUIRE(lv_subject_get_int(hide_subj) == 0); // overview: visible
 
     access.call_set_view(AmsEditOverlay::kViewSpoolPicker);
-    REQUIRE(lv_subject_get_int(hide_subj) == 1);
+    REQUIRE(lv_subject_get_int(hide_subj) == 1); // picker: hidden
+
+    // Spool-edit: Save is VISIBLE and ENABLED even though nothing is dirty
+    // (edits live in widgets, not staged into working_info_).
+    access.call_set_view(AmsEditOverlay::kViewSpoolEdit);
+    REQUIRE(lv_subject_get_int(hide_subj) == 0);
+    REQUIRE_FALSE(access.is_dirty());
+    CHECK(lv_subject_get_int(save_dis) == 0);
+
+    access.call_set_view(AmsEditOverlay::kViewColor);
+    REQUIRE(lv_subject_get_int(hide_subj) == 1); // color: hidden
+
     access.call_set_view(AmsEditOverlay::kViewOverview);
     REQUIRE(lv_subject_get_int(hide_subj) == 0);
+    // Overview: dirty-gated — a clean slot keeps Save disabled.
+    CHECK(lv_subject_get_int(save_dis) == 1);
 
     close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "header Save on spool-edit finishes and closes for an untracked slot",
+                 "[ams_edit_overlay][spool_edit][header_save]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    // No Spoolman -> the commit path skips any remote save and closes locally.
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 0);
+
+    bool fired = false;
+    AmsEditOverlay::EditResult captured;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr,
+                                  [&](const AmsEditOverlay::EditResult& r) {
+                                      fired = true;
+                                      captured = r;
+                                  }));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolEdit);
+
+    // Stage a color + weight edit in the spool-edit widgets.
+    access.set_details_color(0x123456);
+    lv_obj_t* remaining = access.widget("detail_field_remaining");
+    lv_obj_t* spool_weight = access.widget("detail_field_spool_weight");
+    REQUIRE(remaining != nullptr);
+    REQUIRE(spool_weight != nullptr);
+    lv_textarea_set_text(remaining, "654");
+    lv_textarea_set_text(spool_weight, "987");
+
+    // Header Save on spool-edit: applies the staged edits, then finishes + closes.
+    access.call_handle_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(fired);
+    CHECK(captured.saved);
+    CHECK(captured.slot_info.color_rgb == 0x123456);
+    CHECK(captured.slot_info.remaining_weight_g == Catch::Approx(654.0f));
+    CHECK(captured.slot_info.total_weight_g == Catch::Approx(987.0f));
+    CHECK(captured.slot_info.spoolman_id == 0); // stayed untracked
+
+    // Editor closed itself (go_back inside close_editor) — just settle the queue.
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture, "weightless slot opens clean — no fabricated weights",

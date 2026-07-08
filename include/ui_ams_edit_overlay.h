@@ -195,7 +195,10 @@ class AmsEditOverlay : public OverlayBase {
     void render_spool_list(const std::string& filter);
     void handle_spool_selected(int spool_id);
     void enter_spool_edit();
-    void handle_spool_edit_save();
+    // Apply the spool-edit view's identity/color/logistics edits to the slot.
+    // finish=true (header Save) completes + closes the editor on a successful
+    // apply; finish=false returns to the overview (tests / non-terminal calls).
+    void handle_spool_edit_save(bool finish = false);
     void handle_quick_swatch(lv_obj_t* swatch);
     void handle_picker_search(const char* text);
     void update_spoolman_button_state();
@@ -203,6 +206,10 @@ class AmsEditOverlay : public OverlayBase {
     // === Completion / close orchestration ===
     void fire_completion(bool saved); ///< Idempotent; does NOT pop the overlay
     void close_editor(bool saved);    ///< fire_completion + NavigationManager go_back
+    // The overview Save commit path: sync active spool, push Spoolman changes
+    // (SpoolmanSlotSaver), then fire_completion + close. Shared by the header
+    // Save on the overview AND the spool-edit "finish" path.
+    void commit_and_close();
 
     friend class ::AmsEditOverlayTestAccess;
     friend class ::AmsEditOverlayViewTestAccess;
@@ -253,7 +260,6 @@ class AmsEditOverlay : public OverlayBase {
     static void on_card_clicked_cb(lv_event_t* e);
     static void on_change_filament_cb(lv_event_t* e);
     static void on_setup_entry_cb(lv_event_t* e);
-    static void on_spool_edit_save_cb(lv_event_t* e);
     static void on_quick_swatch_cb(lv_event_t* e);
     static void on_custom_color_cb(lv_event_t* e);
     static void on_save_cb(lv_event_t* e);

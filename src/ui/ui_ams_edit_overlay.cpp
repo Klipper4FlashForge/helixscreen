@@ -370,7 +370,15 @@ void AmsEditOverlay::deinit_subjects() {
 
 void AmsEditOverlay::set_view(int view) {
     lv_subject_set_int(&view_mode_subject_, view);
-    lv_subject_set_int(&save_hidden_subject_, view == kViewOverview ? 0 : 1);
+    // Header Save is visible on the overview AND the spool-edit view (where it
+    // finishes the whole edit and closes). The picker and color views hide it.
+    lv_subject_set_int(&save_hidden_subject_,
+                       (view == kViewOverview || view == kViewSpoolEdit) ? 0 : 1);
+    // Refresh the enabled/disabled gate for the new view: spool-edit forces it
+    // enabled (edits live in widgets, not yet staged); the overview keeps the
+    // is_dirty() gating. update_sync_button_state() reads the view subject we
+    // just wrote, so this stays the sole writer of save_disabled_subject_.
+    update_sync_button_state();
 }
 
 void AmsEditOverlay::switch_to_picker() {
@@ -741,7 +749,13 @@ void AmsEditOverlay::enter_spool_edit() {
     spdlog::debug("[AmsEditOverlay] Entered spool-edit view");
 }
 
-void AmsEditOverlay::handle_spool_edit_save() {
+void AmsEditOverlay::handle_spool_edit_save(bool finish) {
+    // finish=true (header Save on spool-edit): on a successful apply, finish the
+    // whole edit via commit_and_close() instead of returning to the overview.
+    // finish=false: apply the edits and return to the overview (used by tests
+    // and any non-terminal caller). A validation failure stays on the view and
+    // a tracked-slot PATCH error returns to the overview WITHOUT closing in both
+    // modes.
     // --- Identity + color + toggle -> working_info_ (merged from the old
     //     filament-details apply path) ---
     // Apply catalog pick (if any) — brand/material/temps from the branded
@@ -822,8 +836,8 @@ void AmsEditOverlay::handle_spool_edit_save() {
                 // Immediate Spoolman write on Save, then return to the overview
                 // with refreshed working_info_. The overview's Back does NOT roll
                 // these writes back — identical to SpoolEditModal.
-                auto on_all_saved = [this, token]() {
-                    token.defer("AmsEditOverlay::on_logistics_saved", [this]() {
+                auto on_all_saved = [this, token, finish]() {
+                    token.defer("AmsEditOverlay::on_logistics_saved", [this, finish]() {
                         ToastManager::instance().show(ToastSeverity::SUCCESS, lv_tr("Spool saved"),
                                                       2000);
                         working_info_.remaining_weight_g =
@@ -836,6 +850,11 @@ void AmsEditOverlay::handle_spool_edit_save() {
                         // dirty state doesn't light up from a logistics-only edit.
                         original_info_.remaining_weight_g = working_info_.remaining_weight_g;
                         original_info_.total_weight_g = working_info_.total_weight_g;
+                        if (finish) {
+                            // Header Save: finish the whole edit and close.
+                            commit_and_close();
+                            return;
+                        }
                         switch_to_form();
                         update_ui();
                         update_temp_display();
@@ -926,7 +945,13 @@ void AmsEditOverlay::handle_spool_edit_save() {
         }
     }
 
-    // --- No logistics write (untracked, unchanged, or API missing): return now ---
+    // --- No logistics write (untracked, unchanged, or API missing) ---
+    if (finish) {
+        // Header Save: identity/color/weights are staged into working_info_;
+        // finish the whole edit through the overview commit path and close.
+        commit_and_close();
+        return;
+    }
     switch_to_form();
     update_ui();
     update_temp_display();
@@ -947,13 +972,6 @@ void AmsEditOverlay::handle_quick_swatch(lv_obj_t* swatch) {
         helix::ui::apply_swatch_color(preview, details_color_, {});
     }
     spdlog::debug("[AmsEditOverlay] Quick swatch picked: {:#08x}", details_color_);
-}
-
-void AmsEditOverlay::on_spool_edit_save_cb(lv_event_t* e) {
-    auto* self = get_instance_from_event(e);
-    if (self) {
-        self->handle_spool_edit_save();
-    }
 }
 
 void AmsEditOverlay::on_quick_swatch_cb(lv_event_t* e) {
@@ -1352,9 +1370,13 @@ void AmsEditOverlay::update_sync_button_state() {
     if (!subjects_initialized_) {
         return;
     }
-    // Header Save action is disabled until something is dirty (replaces the
-    // modal's Save/Close text morph).
-    lv_subject_set_int(&save_disabled_subject_, is_dirty() ? 0 : 1);
+    // Spool-edit view: Save is always enabled — the edits live in the on-screen
+    // widgets and aren't staged into working_info_ until Save runs, so is_dirty()
+    // can't see them. Overview: dirty-gated (replaces the modal's Save/Close text
+    // morph). Reads (never writes) the view subject.
+    const int view = lv_subject_get_int(&view_mode_subject_);
+    const bool disabled = (view == kViewSpoolEdit) ? false : !is_dirty();
+    lv_subject_set_int(&save_disabled_subject_, disabled ? 1 : 0);
 }
 
 void AmsEditOverlay::open_color_view() {
@@ -1575,6 +1597,18 @@ bool AmsEditOverlay::needs_identity_confirmation(const SlotInfo& original, const
 }
 
 void AmsEditOverlay::handle_save() {
+    // Header Save on the spool-edit view finishes the whole edit: apply the
+    // view's identity/color/logistics edits first (may go async for a tracked
+    // slot's two-PATCH), then the apply path routes into commit_and_close().
+    // Validation failure keeps the user on the view.
+    if (lv_subject_get_int(&view_mode_subject_) == kViewSpoolEdit) {
+        handle_spool_edit_save(/*finish=*/true);
+        return;
+    }
+    commit_and_close();
+}
+
+void AmsEditOverlay::commit_and_close() {
     spdlog::info("[AmsEditOverlay] Saving edits for slot {}", slot_index_);
 
     if (!api_) {
@@ -1728,7 +1762,6 @@ void AmsEditOverlay::register_callbacks() {
         {"ams_edit_card_clicked_cb", on_card_clicked_cb},
         {"ams_edit_change_filament_cb", on_change_filament_cb},
         {"ams_edit_setup_entry_cb", on_setup_entry_cb},
-        {"ams_edit_spool_edit_save_cb", on_spool_edit_save_cb},
         {"ams_edit_quick_swatch_cb", on_quick_swatch_cb},
         {"ams_edit_custom_color_cb", on_custom_color_cb},
         {"ams_edit_color_swatch_cb", on_color_swatch_cb},
