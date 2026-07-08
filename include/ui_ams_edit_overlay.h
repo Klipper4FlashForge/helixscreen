@@ -107,6 +107,13 @@ class AmsEditOverlay : public OverlayBase {
     // Explicit "Save to Spoolman" opt-in captured from the filament-details
     // toggle (spec §3.3). Reset per show_for_slot; false = local-only save.
     bool save_to_spoolman_opt_in_ = false;
+    // Whether the slot was Spoolman-tracked when the spool-edit view was
+    // entered. Captured in enter_spool_edit() before any unlink zeroes
+    // spoolman_id, so handle_spool_edit_save() can tell a genuine untracked
+    // slot (commit local weight overrides) apart from a just-unlinked one
+    // (skip weight staging — the on-screen fields were Spoolman's, and the
+    // slot's weights are already correct). See Finding 1.
+    bool spool_edit_entered_tracked_ = false;
     MoonrakerAPI* api_ = nullptr;
     CompletionCallback completion_callback_;
     bool completion_fired_ = false;  ///< Guards single-fire completion

@@ -332,8 +332,8 @@
       <!-- ============================================================ -->
       <!-- COLOR VIEW (ams_edit_view=3): one screen — preset grid AND   -->
       <!-- custom HSV side by side. A preset tap applies immediately;   -->
-      <!-- HSV/hex + Select applies a custom color. Returns to          -->
-      <!-- return_view_ (overview or filament-details).                 -->
+      <!-- HSV/hex + Select applies a custom color. Returns to the      -->
+      <!-- spool-edit view (its sole entry point).                      -->
       <!-- ============================================================ -->
       <lv_obj name="color_view"
               width="100%" flex_grow="1" flex_flow="row" style_pad_all="#space_lg"

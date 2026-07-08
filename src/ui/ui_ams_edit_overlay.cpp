@@ -636,6 +636,12 @@ void AmsEditOverlay::enter_spool_edit() {
     // and editing the current filament. Pre-fill from the working slot; the
     // toggle default (off=untracked / on=managed) rides ams_edit_is_managed via
     // bind_state_if_eq, and the logistics section hides for untracked slots.
+    // Record tracked-ness at entry, before any unlink on Save can zero
+    // spoolman_id. The untracked weight-commit branch in
+    // handle_spool_edit_save() keys off this so a just-unlinked slot doesn't
+    // stage Spoolman's core spool-weight over the real total (Finding 1).
+    spool_edit_entered_tracked_ = working_info_.spoolman_id > 0;
+
     lv_obj_t* fragment = find_widget("details_catalog_selector");
     if (!fragment) {
         spdlog::warn("[AmsEditOverlay] spool-edit view fragment missing");
@@ -837,12 +843,23 @@ void AmsEditOverlay::handle_spool_edit_save() {
                         update_spoolman_button_state();
                     });
                 };
-                auto on_error = [token, spool_id](const MoonrakerError& err) {
+                auto on_error = [this, token, spool_id](const MoonrakerError& err) {
                     spdlog::error("[AmsEditOverlay] Failed to save spool {}: {}", spool_id,
                                   err.message);
-                    token.defer("AmsEditOverlay::on_logistics_save_error", []() {
+                    // Toast + return to the overview. The catalog selector was
+                    // already detached above, so staying on the now-inert
+                    // spool-edit view would strand the user with a dead
+                    // brand/material selector — land somewhere coherent, matching
+                    // the old view-4 behavior (Finding 2). Runs on a bg thread;
+                    // the switch must go through token.defer like on_all_saved.
+                    token.defer("AmsEditOverlay::on_logistics_save_error", [this]() {
                         ToastManager::instance().show(ToastSeverity::ERROR,
                                                       lv_tr("Failed to save spool"), 3000);
+                        switch_to_form();
+                        update_ui();
+                        update_temp_display();
+                        update_sync_button_state();
+                        update_spoolman_button_state();
                     });
                 };
 
@@ -886,16 +903,26 @@ void AmsEditOverlay::handle_spool_edit_save() {
         // leaves the existing value — possibly the -1 "unknown" sentinel —
         // untouched: this both keeps an untouched unknown-weight slot from
         // going spuriously dirty (-1 -> 0) and preserves the sentinel.
-        lv_obj_t* remaining_w = find_widget("detail_field_remaining");
-        lv_obj_t* spool_wt_w = find_widget("detail_field_spool_weight");
-        const char* remaining_t = remaining_w ? lv_textarea_get_text(remaining_w) : nullptr;
-        const char* spool_wt_t = spool_wt_w ? lv_textarea_get_text(spool_wt_w) : nullptr;
-        if (remaining_t && remaining_t[0] != '\0') {
-            working_info_.remaining_weight_g =
-                static_cast<float>(detail_working_.remaining_weight_g);
-        }
-        if (spool_wt_t && spool_wt_t[0] != '\0') {
-            working_info_.total_weight_g = static_cast<float>(detail_working_.spool_weight_g);
+        //
+        // Guard: only a GENUINE untracked slot commits these. If this Save
+        // just unlinked a formerly-tracked slot (toggle off above), the
+        // logistics fields on screen came from the async Spoolman fetch —
+        // detail_working_.spool_weight_g is the empty-spool CORE weight, not
+        // the filament total — so staging it would clobber the correct
+        // total_weight_g. The unlinked slot's weights are already right; skip
+        // the staging entirely (Finding 1).
+        if (!spool_edit_entered_tracked_) {
+            lv_obj_t* remaining_w = find_widget("detail_field_remaining");
+            lv_obj_t* spool_wt_w = find_widget("detail_field_spool_weight");
+            const char* remaining_t = remaining_w ? lv_textarea_get_text(remaining_w) : nullptr;
+            const char* spool_wt_t = spool_wt_w ? lv_textarea_get_text(spool_wt_w) : nullptr;
+            if (remaining_t && remaining_t[0] != '\0') {
+                working_info_.remaining_weight_g =
+                    static_cast<float>(detail_working_.remaining_weight_g);
+            }
+            if (spool_wt_t && spool_wt_t[0] != '\0') {
+                working_info_.total_weight_g = static_cast<float>(detail_working_.spool_weight_g);
+            }
         }
     }
 

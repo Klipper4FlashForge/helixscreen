@@ -64,6 +64,15 @@ class AmsEditOverlayViewTestAccess {
     SlotInfo working_info() {
         return overlay_.working_info_;
     }
+    // Simulate the async Spoolman fetch in enter_spool_edit() that overwrites
+    // detail_original_/detail_working_ wholesale with the fetched record
+    // (spool_weight_g = empty-spool CORE weight, not the filament total) and
+    // repopulates the on-screen fields — exactly what the fetch callback does.
+    void seed_detail_fetch(const SpoolInfo& spool) {
+        overlay_.detail_original_ = spool;
+        overlay_.detail_working_ = spool;
+        overlay_.populate_detail_fields();
+    }
     bool is_dirty() {
         return overlay_.is_dirty();
     }
@@ -356,6 +365,60 @@ TEST_CASE_METHOD(LVGLUITestFixture, "spool-edit Save with toggle off unlinks a m
     CHECK(access.working_info().spoolman_id == 0);
     CHECK(access.working_info().material == "ASA"); // identity preserved
     CHECK_FALSE(access.save_opt_in());
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool-edit Save unlinking a tracked slot keeps the local total weight",
+                 "[ams_edit_overlay][spool_edit][toggle]") {
+    // Regression (Finding 1): unlinking a tracked slot must NOT stage the
+    // fetched empty-spool core weight over the real total. Before the fix the
+    // unlink zeroed spoolman_id, control fell into the untracked weight-commit
+    // branch, and detail_working_.spool_weight_g (the 216g core weight from the
+    // async fetch) clobbered total_weight_g (1000).
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    SlotInfo slot = tracked_slot();
+    slot.total_weight_g = 1000.0f;
+    slot.remaining_weight_g = 1000.0f;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Simulate the async fetch that overwrote the detail buffers with the
+    // Spoolman record: spool_weight_g here is the empty-spool CORE weight.
+    SpoolInfo fetched;
+    fetched.id = 7;
+    fetched.filament_id = 3;
+    fetched.spool_weight_g = 216.0; // core weight, NOT the filament total
+    fetched.remaining_weight_g = 1000.0;
+    fetched.initial_weight_g = 1000.0;
+    access.seed_detail_fetch(fetched);
+
+    // User turns the toggle off -> unlink on Save.
+    lv_obj_t* toggle = access.widget("save_to_spoolman_switch");
+    REQUIRE(toggle != nullptr);
+    lv_obj_remove_state(toggle, LV_STATE_CHECKED);
+
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.view() == AmsEditOverlay::kViewOverview);
+    CHECK(access.working_info().spoolman_id == 0); // unlink still happened
+    // The core weight (216) must NOT have overwritten the real total (1000).
+    CHECK(access.working_info().total_weight_g == Catch::Approx(1000.0f));
+    CHECK(access.working_info().remaining_weight_g == Catch::Approx(1000.0f));
 
     close_editor_overlay();
 }
