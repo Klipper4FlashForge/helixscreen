@@ -123,7 +123,6 @@ bool AmsEditOverlay::show_for_slot(lv_obj_t* parent, int slot_index, const SlotI
     completion_fired_ = false;
     remaining_pre_edit_pct_ = 0;
     cached_spools_.clear();
-    vendors_loaded_ = false;
 
     // Always prefer the active screen so the overlay renders above everything
     lv_obj_t* screen = lv_screen_active();
@@ -390,117 +389,6 @@ void AmsEditOverlay::init_subjects() {
 
 void AmsEditOverlay::deinit_subjects() {
     deinit_subjects_base(subjects_);
-}
-
-void AmsEditOverlay::fetch_vendors_from_spoolman() {
-    // Resolve API: prefer stored api_, fall back to global
-    if (!api_) {
-        api_ = get_moonraker_api();
-    }
-    if (!api_ || vendors_loaded_) {
-        return;
-    }
-
-    // Skip Spoolman API call if not configured (avoids "method not found" toast)
-    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
-    if (spoolman_subj && lv_subject_get_int(spoolman_subj) != 1) {
-        return;
-    }
-
-    auto token = lifetime_.token();
-
-    // Use dedicated vendor endpoint instead of downloading all spools
-    api_->spoolman().get_spoolman_vendors(
-        [this, token](const std::vector<VendorInfo>& vendors_result) {
-            if (token.expired())
-                return;
-            // Build vendor list on background thread, then marshal to main
-            std::set<std::string> unique_vendors;
-            unique_vendors.insert("Generic"); // Always have Generic as first option
-            for (const auto& vendor : vendors_result) {
-                if (!vendor.name.empty()) {
-                    unique_vendors.insert(vendor.name);
-                }
-            }
-
-            // Build vendor list with IDs and options string (local copies, no member access)
-            // Build a name→id map for lookup
-            std::map<std::string, int> vendor_id_map;
-            for (const auto& vendor : vendors_result) {
-                if (!vendor.name.empty()) {
-                    vendor_id_map[vendor.name] = vendor.id;
-                }
-            }
-
-            std::vector<VendorInfo> vendors;
-            std::string options;
-            for (const auto& name : unique_vendors) {
-                if (!options.empty()) {
-                    options += '\n';
-                }
-                options += name;
-                VendorInfo vi;
-                vi.name = name;
-                auto it = vendor_id_map.find(name);
-                vi.id = (it != vendor_id_map.end()) ? it->second : 0;
-                vendors.push_back(std::move(vi));
-            }
-
-            // Marshal member writes to main thread
-            token.defer(
-                [this, vendors = std::move(vendors), options = std::move(options)]() mutable {
-                    vendor_list_ = std::move(vendors);
-                    vendor_options_ = std::move(options);
-                    vendors_loaded_ = true;
-                    spdlog::debug("[AmsEditOverlay] Loaded {} vendors from Spoolman",
-                                  vendor_list_.size());
-                    update_vendor_dropdown();
-                });
-        },
-        [](const MoonrakerError& err) {
-            spdlog::warn("[AmsEditOverlay] Failed to fetch Spoolman vendors: {}", err.message);
-            // Keep using fallback vendors
-        });
-}
-
-void AmsEditOverlay::update_vendor_dropdown() {
-    if (!overlay_root_ || vendor_options_.empty()) {
-        return;
-    }
-
-    lv_obj_t* vendor_dropdown = find_widget("vendor_dropdown");
-    if (!vendor_dropdown) {
-        return;
-    }
-
-    lv_dropdown_set_options(vendor_dropdown, vendor_options_.c_str());
-
-    // Set selection based on working_info_.brand, and populate vendor_id if missing.
-    // Default to "Generic" (not necessarily index 0 since the list is alphabetical).
-    int vendor_idx = -1;
-    int generic_idx = 0;
-    for (size_t i = 0; i < vendor_list_.size(); i++) {
-        if (vendor_list_[i].name == "Generic") {
-            generic_idx = static_cast<int>(i);
-        }
-        if (!working_info_.brand.empty() && working_info_.brand == vendor_list_[i].name) {
-            vendor_idx = static_cast<int>(i);
-            if (working_info_.spoolman_vendor_id == 0 && vendor_list_[i].id > 0) {
-                working_info_.spoolman_vendor_id = vendor_list_[i].id;
-                spdlog::debug("[AmsEditOverlay] Resolved vendor_id={} from vendor list for '{}'",
-                              vendor_list_[i].id, vendor_list_[i].name);
-            }
-            break;
-        }
-    }
-    if (vendor_idx < 0) {
-        vendor_idx = generic_idx;
-        if (working_info_.brand.empty())
-            working_info_.brand = "Generic";
-        if (original_info_.brand.empty())
-            original_info_.brand = "Generic";
-    }
-    lv_dropdown_set_selected(vendor_dropdown, vendor_idx);
 }
 
 // ============================================================================

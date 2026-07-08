@@ -181,19 +181,10 @@ class AmsEditOverlay : public OverlayBase {
     lv_observer_t* remaining_pct_observer_ = nullptr;
     lv_observer_t* chip_text_observer_ = nullptr;
 
-    // === Dropdown data (removed in Phase 3/8 with the dropdowns) ===
-    std::string material_options_;
-    std::vector<std::string> material_list_;
-    std::string vendor_options_;
-    std::vector<VendorInfo> vendor_list_;
-    bool vendors_loaded_ = false;
-
     // === Picker state (Spoolman spool selection) ===
     std::vector<SpoolInfo> cached_spools_;
 
     // === Internal Methods ===
-    void fetch_vendors_from_spoolman();
-    void update_vendor_dropdown();
     void deinit_subjects();
     void update_ui();
     void update_temp_display();

@@ -406,18 +406,18 @@ You should not interact with `ModalStack` directly. Use the `Modal` class API in
 
 ## Advanced Patterns
 
-### Modals with Dynamic Content (AmsEditModal)
+### Modals with Dynamic Content (SpoolEditModal)
 
 For modals that manage their own subjects and complex state:
 
 ```cpp
-class AmsEditModal : public Modal {
+class SpoolEditModal : public Modal {
     SubjectManager subjects_;       // RAII subject lifecycle
     lv_subject_t color_subject_;    // Bound to XML elements
     char color_buf_[32] = {0};      // String buffer for subject
 
-    const char* get_name() const override { return "Edit Filament Modal"; }
-    const char* component_name() const override { return "ams_edit_modal"; }
+    const char* get_name() const override { return "Edit Spool Modal"; }
+    const char* component_name() const override { return "spoolman_edit_modal"; }
 
     void on_show() override {
         init_subjects();
@@ -429,6 +429,12 @@ class AmsEditModal : public Modal {
     }
 };
 ```
+
+> **Note:** The AMS slot editor is NOT a modal anymore — it is `AmsEditOverlay`,
+> a NavigationManager overlay hosting five internal views selected by the
+> `ams_edit_view` subject. `SpoolEditModal`, `ColorPicker`, and
+> `FilamentCatalogPickerModal` remain standalone modals for their other
+> consumers (SpoolmanPanel, LED/theme pickers, FilamentPanel presets).
 
 ### Modals with Many Buttons (RunoutGuidanceModal)
 
