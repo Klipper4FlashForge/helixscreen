@@ -613,6 +613,16 @@ class PrinterState {
     }
 
     /**
+     * @brief Set slice layer heights from file metadata (for Z-height derivation)
+     *
+     * Enables the Z-height current-layer fallback for printers whose slicer never
+     * reports a layer number. Thread-safe (marshals internally).
+     */
+    void set_print_layer_heights(double layer_height, double first_layer_height) {
+        print_domain_.set_print_layer_heights(layer_height, first_layer_height);
+    }
+
+    /**
      * @brief Set current layer number (gcode response fallback)
      *
      * Thread-safe. Called from gcode response parser when

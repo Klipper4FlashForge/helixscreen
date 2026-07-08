@@ -18,6 +18,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace helix {
@@ -173,6 +174,12 @@ void PrinterPrintState::reset_for_new_print() {
     lv_subject_set_int(&print_progress_, 0);
     lv_subject_set_int(&print_layer_current_, 0);
     has_real_layer_data_ = false;
+    // Commanded Z belongs to the print run, not the file — clear it. Do NOT
+    // clear layer_height_/first_layer_height_: like print_layer_total_ and
+    // estimated_print_time_ they belong to the file and must survive a same-file
+    // reprint (whose metadata callback won't re-fire).
+    have_gcode_z_ = false;
+    last_gcode_z_mm_ = 0.0;
     slicer_progress_ = 0.0;
     slicer_progress_active_ = false;
     lv_subject_copy_string(&display_message_, "");
@@ -598,6 +605,20 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
         }
     }
 
+    // Cache commanded Z (mm) from gcode_move for Z-height layer derivation.
+    // gcode_position is [X, Y, Z, E] in raw mm (NOT centimm — only motion_state
+    // converts). This lives at the top level of the status payload, so it may
+    // arrive on an update that carries no virtual_sdcard. Cache it here so the
+    // derivation below can run regardless of which fields this update carries.
+    if (auto gm_it = status.find("gcode_move"); gm_it != status.end() && gm_it->is_object()) {
+        if (auto pos_it = gm_it->find("gcode_position");
+            pos_it != gm_it->end() && pos_it->is_array() && pos_it->size() >= 3 &&
+            (*pos_it)[2].is_number()) {
+            last_gcode_z_mm_ = (*pos_it)[2].get<double>();
+            have_gcode_z_ = true;
+        }
+    }
+
     // Update print progress (virtual_sdcard) - processed AFTER print_stats
     if (status.contains("virtual_sdcard")) {
         const auto& sdcard = status["virtual_sdcard"];
@@ -688,7 +709,12 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
             // through pre-print) and only a genuine info.current_layer>=1
             // advances it. Estimation remains available for printers that never
             // report any real layer data (printer_reports_layers_ stays false).
-            if (!printer_reports_layers_) {
+            // Additionally require unknown slice geometry (layer_height_ <= 0):
+            // when the layer height IS known, the Z-height derivation block below
+            // owns the estimate (it tracks real geometry instead of the byte/time
+            // progress fraction, which drifts high early in a print). This tier
+            // stays for non-sliced jobs / prints with no height metadata.
+            if (!printer_reports_layers_ && layer_height_ <= 0.0) {
                 auto current_state =
                     static_cast<PrintJobState>(lv_subject_get_int(&print_state_enum_));
                 bool is_terminal_state = (current_state == PrintJobState::COMPLETE ||
@@ -710,6 +736,45 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // Z-height current-layer derivation (Mainsail/Fluidd parity) — tier 3.
+    //
+    // For printers whose slicer never reports a layer number, derive the layer
+    // from commanded Z instead of the byte/time progress fraction. Progress is
+    // unrelated to layer count and drifts high early (12% of 75 layers => ~9
+    // while the true layer is 5). Formula:
+    //   round((z - first_layer_height) / layer_height) + 1
+    // While printing layer N the commanded Z sits at first + (N-1)*height, so
+    // rel = (z-first)/height = N-1 and round(rel)+1 = N. round() (not ceil)
+    // tolerates +-1/2 layer of commanded-Z float noise / z-hop symmetrically.
+    //
+    // Gated on the STICKY printer_reports_layers_ (a printer that ever reports a
+    // real layer field must never fabricate one), known geometry, and a cached
+    // Z. This stays an ESTIMATE: has_real_layer_data_ / printer_reports_layers_
+    // are deliberately NOT set, so the UI keeps its "~" derived-value prefix and
+    // the pre-print completion gate (should_complete_preprint) is unaffected.
+    if (!printer_reports_layers_ && layer_height_ > 0.0 && have_gcode_z_) {
+        auto current_state = static_cast<PrintJobState>(lv_subject_get_int(&print_state_enum_));
+        bool is_terminal_state =
+            (current_state == PrintJobState::COMPLETE ||
+             current_state == PrintJobState::CANCELLED || current_state == PrintJobState::ERROR);
+        int total = lv_subject_get_int(&print_layer_total_);
+        if (!is_terminal_state && total > 0) {
+            int derived = static_cast<int>(std::lround((last_gcode_z_mm_ - first_layer_height_) /
+                                                       layer_height_)) +
+                          1;
+            if (derived < 1)
+                derived = 1;
+            if (derived > total)
+                derived = total;
+            if (derived != lv_subject_get_int(&print_layer_current_)) {
+                spdlog::debug("[LayerTracker] Derived layer {}/{} from Z={:.3f}mm "
+                              "(first={:.3f}, height={:.3f})",
+                              derived, total, last_gcode_z_mm_, first_layer_height_, layer_height_);
+                lv_subject_set_int(&print_layer_current_, derived);
             }
         }
     }
@@ -783,6 +848,13 @@ void PrinterPrintState::set_print_layer_total(int total) {
         if (lv_subject_get_int(&print_layer_total_) != total) {
             lv_subject_set_int(&print_layer_total_, total);
         }
+    });
+}
+
+void PrinterPrintState::set_print_layer_heights(double layer_height, double first_layer_height) {
+    helix::ui::queue_update([this, layer_height, first_layer_height]() {
+        layer_height_ = layer_height;
+        first_layer_height_ = (first_layer_height > 0.0) ? first_layer_height : layer_height;
     });
 }
 

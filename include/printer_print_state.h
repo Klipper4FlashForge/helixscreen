@@ -297,6 +297,19 @@ class PrinterPrintState {
     void set_print_layer_total(int total);
 
     /**
+     * @brief Set slice layer heights from file metadata (for Z-height derivation)
+     *
+     * Thread-safe: marshals via helix::ui::queue_update() because the metadata
+     * callback runs on a background/HttpExecutor thread, while update_from_status
+     * reads these members on the main thread. When first_layer_height <= 0 it
+     * falls back to layer_height.
+     *
+     * @param layer_height Slice per-layer height in mm
+     * @param first_layer_height Slice first-layer height in mm (may differ)
+     */
+    void set_print_layer_heights(double layer_height, double first_layer_height);
+
+    /**
      * @brief Set current layer number (gcode response fallback)
      *
      * Thread-safe: Uses helix::ui::queue_update() for main-thread execution.
@@ -491,6 +504,19 @@ class PrinterPrintState {
     // Layer tracking subjects
     lv_subject_t print_layer_current_{}; // Current layer (0-based)
     lv_subject_t print_layer_total_{};   // Total layers
+
+    // Slice geometry from file metadata, used for Z-height layer derivation when
+    // the slicer never reports a layer number (no print_stats.info.current_layer,
+    // no virtual_sdcard.layer). These belong to the FILE, not the session: like
+    // print_layer_total_ they survive reset_for_new_print() so same-file reprints
+    // (whose metadata callback won't re-fire) keep working.
+    double layer_height_ = 0.0;       // slice layer height (mm)
+    double first_layer_height_ = 0.0; // slice first-layer height (mm)
+    // Last commanded Z (mm) from gcode_move.gcode_position, cached each status
+    // update so the Z-derivation can run on any update (even one that only
+    // carries virtual_sdcard). Reset per-print (motion belongs to the print).
+    double last_gcode_z_mm_ = 0.0;
+    bool have_gcode_z_ = false;
 
     // Print time tracking subjects (in seconds)
     lv_subject_t print_duration_{};      // Extrusion-only elapsed time (Moonraker print_duration)

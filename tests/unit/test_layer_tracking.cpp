@@ -641,3 +641,112 @@ TEST_CASE("Layer tracking: never-reporting printer keeps sticky false (fallback 
         /*printer_reports_layers=*/state.printer_reports_layers(),
         /*current_layer=*/0, /*print_duration=*/5, /*seen_layer_zero=*/false));
 }
+
+// ============================================================================
+// Z-height current-layer derivation (issue kostake#4542)
+//
+// For printers whose slicer never reports a layer number (no
+// print_stats.info.current_layer, no virtual_sdcard.layer — printer_reports_layers
+// stays false), HelixScreen used to fall back straight to a progress-fraction
+// estimate round(progress% * total). Progress is byte/time based and drifts high
+// early in a print: at 12% of 75 layers it yields ~9 while the true layer is 5.
+//
+// The fix inserts a Z-height derivation tier between the real-layer sources and
+// the progress estimate. When slice geometry (layer_height) is known and a
+// commanded Z is available, the layer is derived as
+//   round((z - first_layer_height) / layer_height) + 1, clamped [1, total].
+// This matches Mainsail/Fluidd. It remains an ESTIMATE: has_real_layer_data and
+// printer_reports_layers stay false (the UI "~" prefix honestly signals derived).
+// ============================================================================
+
+TEST_CASE("Layer tracking: Z-height derivation for non-reporting slicer",
+          "[layer_tracking][zheight]") {
+    lv_init_safe();
+
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    // Non-reporting printer: state=printing, no layer field anywhere.
+    state.update_from_status({{"print_stats", {{"state", "printing"}}}});
+    state.set_print_layer_total(75);
+    state.set_print_layer_heights(0.2, 0.2);
+    UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    SECTION("kostake#4542: derives 5 from Z, not 9 from progress fraction") {
+        // 12% progress of 75 layers = 9 via progress estimate; Z=1.0mm with
+        // 0.2mm layers = round((1.0-0.2)/0.2)+1 = round(4)+1 = 5.
+        json status = {{"virtual_sdcard", {{"progress", 0.12}}},
+                       {"gcode_move", {{"gcode_position", {10.0, 10.0, 1.0, 0.0}}}}};
+        state.update_from_status(status);
+
+        REQUIRE(lv_subject_get_int(state.get_print_layer_current_subject()) == 5);
+        // Still an estimate — the "~" prefix must stay.
+        REQUIRE_FALSE(state.has_real_layer_data());
+        REQUIRE_FALSE(state.printer_reports_layers());
+    }
+
+    SECTION("first layer: Z at first_layer_height derives layer 1") {
+        json status = {{"virtual_sdcard", {{"progress", 0.05}}},
+                       {"gcode_move", {{"gcode_position", {10.0, 10.0, 0.2, 0.0}}}}};
+        state.update_from_status(status);
+
+        // round((0.2-0.2)/0.2)+1 = 1.
+        REQUIRE(lv_subject_get_int(state.get_print_layer_current_subject()) == 1);
+    }
+
+    SECTION("clamps to total when Z runs past the model") {
+        json status = {{"virtual_sdcard", {{"progress", 0.99}}},
+                       {"gcode_move", {{"gcode_position", {10.0, 10.0, 100.0, 0.0}}}}};
+        state.update_from_status(status);
+
+        // round((100-0.2)/0.2)+1 = 500, clamped to total 75.
+        REQUIRE(lv_subject_get_int(state.get_print_layer_current_subject()) == 75);
+    }
+}
+
+TEST_CASE("Layer tracking: real info.current_layer still wins over Z derivation",
+          "[layer_tracking][zheight]") {
+    lv_init_safe();
+
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    state.update_from_status({{"print_stats", {{"state", "printing"}}}});
+    state.set_print_layer_total(75);
+    state.set_print_layer_heights(0.2, 0.2);
+    UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    // Real layer 5 AND a gcode Z (2.8mm) that would derive 15. Real value wins,
+    // and printer_reports_layers latches true so Z-derivation is suppressed.
+    json status = {{"print_stats", {{"info", {{"current_layer", 5}}}}},
+                   {"gcode_move", {{"gcode_position", {10.0, 10.0, 2.8, 0.0}}}}};
+    state.update_from_status(status);
+
+    REQUIRE(lv_subject_get_int(state.get_print_layer_current_subject()) == 5);
+    REQUIRE(state.has_real_layer_data());
+    REQUIRE(state.printer_reports_layers());
+}
+
+TEST_CASE("Layer tracking: progress estimate preserved when slice geometry unknown",
+          "[layer_tracking][zheight]") {
+    lv_init_safe();
+
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    // Non-reporting printer with NO heights set (e.g. non-sliced job) — tier 4
+    // (progress fraction) must still apply.
+    state.update_from_status({{"print_stats", {{"state", "printing"}}}});
+    state.set_print_layer_total(75);
+    UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    json status = {{"virtual_sdcard", {{"progress", 0.12}}}};
+    state.update_from_status(status);
+
+    // round(0.12 * 75) = 9 — the historical progress-fraction behavior.
+    REQUIRE(lv_subject_get_int(state.get_print_layer_current_subject()) == 9);
+    REQUIRE_FALSE(state.has_real_layer_data());
+}
