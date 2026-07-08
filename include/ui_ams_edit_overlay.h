@@ -227,8 +227,8 @@ class AmsEditOverlay : public OverlayBase {
     // Pure decision for whether handle_save() should create a NEW Spoolman
     // spool from the working slot: only for an unlinked slot, only when the
     // user explicitly opted in via the "Save to Spoolman" toggle (spec §3.3 —
-    // replaces the silent auto-create / filament_user_edited_ heuristic,
-    // #1071), and only when the metadata is complete.
+    // replaces the silent auto-create / user-edit heuristic, #1071), and only
+    // when the metadata is complete.
     static bool should_create_new_spool(const SlotInfo& working_info, bool save_to_spoolman);
 
     static bool is_material_identity_change(const SlotInfo& original, const SlotInfo& edited);
