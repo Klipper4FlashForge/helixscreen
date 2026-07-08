@@ -199,6 +199,8 @@ void AssetManager::register_images() {
     lv_xml_register_image(nullptr, "A:assets/images/printer_400.png",
                           "A:assets/images/printer_400.png");
     lv_xml_register_image(nullptr, "filament_spool", "A:assets/images/filament_spool.png");
+    // Tintable Spoolman mark (AMS editor identity chip)
+    lv_xml_register_image(nullptr, "spoolman_mark", "A:assets/images/ams/spoolman_24.png");
     lv_xml_register_image(nullptr, "A:assets/images/placeholder_thumb_centered.png",
                           "A:assets/images/placeholder_thumb_centered.png");
     lv_xml_register_image(nullptr, "A:assets/images/thumbnail-gradient-bg.png",
