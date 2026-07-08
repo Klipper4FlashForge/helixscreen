@@ -17,9 +17,11 @@
 #include "system/crash_handler.h"
 #include "theme_manager.h"
 
+#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <string>
 
 using namespace helix;
 
@@ -1159,4 +1161,24 @@ lv_obj_t* helix::ui::modal_show_alert(const char* title, const char* message,
 
     spdlog::debug("[Modal] Alert dialog shown: '{}'", title);
     return dialog;
+}
+
+lv_obj_t* helix::ui::show_low_ram_resonance_warning(size_t total_mb, lv_event_cb_t on_confirm,
+                                                    lv_event_cb_t on_cancel, void* user_data) {
+    std::string msg;
+    try {
+        msg = fmt::format(
+            lv_tr("This device has only {} MB of RAM. Resonance calibration is "
+                  "memory-intensive and can make the printer firmware report a "
+                  "\"Timer Too Close\" error or restart mid-test. Continue anyway?"),
+            total_mb);
+    } catch (const std::exception& e) {
+        // A mistranslated {} must never abort through the LVGL C dispatch frame.
+        spdlog::warn("[Modal] low-RAM warning format failed: {}", e.what());
+        msg = lv_tr("This device has very little RAM. Resonance calibration is "
+                    "memory-intensive and may cause a \"Timer Too Close\" error. "
+                    "Continue anyway?");
+    }
+    return modal_show_confirmation(lv_tr("Low Memory"), msg.c_str(), ModalSeverity::Warning,
+                                   lv_tr("Continue"), on_confirm, on_cancel, user_data);
 }

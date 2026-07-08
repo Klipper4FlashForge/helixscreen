@@ -120,6 +120,12 @@ struct MemoryInfo {
  */
 MemoryInfo get_system_memory_info();
 
+// Below this total RAM, warn before resonance/input-shaper calibration: klippy
+// buffers accelerometer samples and runs an FFT that overcommits tiny hosts
+// (e.g. the 128 MB Elegoo CC1) into swap thrash, surfacing as klippy
+// "Timer Too Close" errors. Threshold chosen by the maintainer (200 MB).
+inline constexpr size_t RESONANCE_LOW_RAM_WARN_MB = 200;
+
 /**
  * @brief Memory thresholds for G-code 3D rendering decisions
  */
