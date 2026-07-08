@@ -1088,64 +1088,63 @@ void AmsEditOverlay::on_detail_field_changed_cb(lv_event_t* e) {
 void AmsEditOverlay::handle_scan_qr() {
     spdlog::info("[AmsEditOverlay] Scan QR requested for slot {}", slot_index_);
 
-    int slot = slot_index_;
-    auto* api = api_ ? api_ : get_moonraker_api();
-
-    // Phase-1 parity with the modal: dismiss the editor silently (no
-    // completion) and let the QR result write directly to the backend.
-    // Phase 8 upgrades this to scanner-over-editor with live repopulation.
-    completion_fired_ = true; // suppress the close-callback safety net
-    NavigationManager::instance().go_back();
-
+    // The scanner overlay pushes ON TOP of the editor (spec §13.5). Our
+    // on_deactivate treats that as "covered": session state and the view
+    // subject survive; on_activate refreshes the widgets when we resurface.
     auto& scanner = helix::ui::get_qr_scanner_overlay();
-    scanner.show(lv_screen_active(), slot, [slot, api](const SpoolInfo& spool) {
-        // QR scan result: apply spool data directly.
-        SlotInfo info;
-        info.slot_index = slot;
-        info.global_index = slot;
-        info.spoolman_id = spool.id;
-        info.spoolman_filament_id = spool.filament_id;
-        info.spoolman_vendor_id = spool.vendor_id;
-        info.color_name = spool.color_name;
-        info.material = spool.material;
-        info.brand = spool.vendor;
-        info.spool_name = spool.vendor + " " + spool.material;
-        info.remaining_weight_g = static_cast<float>(spool.remaining_weight_g);
-        info.total_weight_g = static_cast<float>(spool.initial_weight_g);
-        info.nozzle_temp_min = spool.nozzle_temp_min;
-        info.nozzle_temp_max = spool.nozzle_temp_max;
-        info.bed_temp = spool.bed_temp_recommended;
-        if (!spool.color_hex.empty()) {
-            uint32_t rgb = 0;
-            if (helix::parse_hex_color(spool.color_hex.c_str(), rgb)) {
-                info.color_rgb = rgb;
-            }
-        }
-
-        if (slot == -2) {
-            AmsState::instance().set_external_spool_info(info);
-            spdlog::info("[AmsEditOverlay] QR scan auto-saved spool #{} to external spool",
-                         spool.id);
-        } else {
-            AmsBackend* be = AmsState::instance().get_backend();
-            if (be) {
-                AmsError err = be->set_slot_info(slot, info);
-                if (err.success()) {
-                    AmsState::instance().sync_from_backend();
-                    spdlog::info("[AmsEditOverlay] QR scan auto-saved spool #{} to slot {}",
-                                 spool.id, slot);
-                } else {
-                    spdlog::error("[AmsEditOverlay] QR scan save failed: {}", err.user_msg);
+    scanner.show(
+        lv_screen_active(), slot_index_,
+        [](const SpoolInfo& spool) {
+            // Scanner result arrives outside our activation (we were covered;
+            // lifetime_ was invalidated on cover) — so a pre-cover token would
+            // be expired by design. Instead marshal via the queue and
+            // re-validate on the singleton, which lives for the process. No
+            // direct backend write anymore: the live form repopulates and the
+            // user confirms with Save.
+            SlotInfo scanned;
+            scanned.spoolman_id = spool.id;
+            scanned.spoolman_filament_id = spool.filament_id;
+            scanned.spoolman_vendor_id = spool.vendor_id;
+            scanned.color_name = spool.color_name;
+            scanned.material = spool.material;
+            scanned.brand = spool.vendor;
+            scanned.spool_name = spool.vendor + " " + spool.material;
+            scanned.remaining_weight_g = static_cast<float>(spool.remaining_weight_g);
+            scanned.total_weight_g = static_cast<float>(spool.initial_weight_g);
+            scanned.nozzle_temp_min = spool.nozzle_temp_min;
+            scanned.nozzle_temp_max = spool.nozzle_temp_max;
+            scanned.bed_temp = spool.bed_temp_recommended;
+            if (!spool.color_hex.empty()) {
+                uint32_t rgb = 0;
+                if (helix::parse_hex_color(spool.color_hex.c_str(), rgb)) {
+                    scanned.color_rgb = rgb;
                 }
             }
-        }
-
-        if (api && spool.id > 0) {
-            sync_active_spool(api, spool.id);
-        }
-
-        NOTIFY_INFO("{} {} assigned via QR scan", spool.vendor, spool.material);
-    });
+            helix::ui::queue_update([scanned = std::move(scanned)]() {
+                auto& editor = get_ams_edit_overlay();
+                if (!editor.get_root()) {
+                    return; // editor tree gone (shutdown) — drop silently
+                }
+                int keep_slot = editor.working_info_.slot_index;
+                int keep_global = editor.working_info_.global_index;
+                int keep_tool = editor.working_info_.mapped_tool;
+                editor.working_info_ = scanned;
+                editor.working_info_.slot_index = keep_slot;
+                editor.working_info_.global_index = keep_global;
+                editor.working_info_.mapped_tool = keep_tool;
+                editor.switch_to_form();
+                editor.update_ui();
+                editor.update_temp_display();
+                editor.update_sync_button_state();
+                editor.update_spoolman_button_state();
+                NOTIFY_INFO("{} {} scanned — review and Save", scanned.brand, scanned.material);
+            });
+        },
+        []() {
+            // Cancel: scanner pops, editor resurfaces via on_activate. Nothing
+            // to do — session state was never torn down.
+            spdlog::debug("[AmsEditOverlay] QR scan cancelled - editor resumes");
+        });
 }
 
 #if HELIX_HAS_LABEL_PRINTER
