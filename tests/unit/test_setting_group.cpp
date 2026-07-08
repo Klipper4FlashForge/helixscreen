@@ -1,5 +1,7 @@
 // Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include "ui_status_pill.h"
+
 #include "../ui_test_utils.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "lvgl/lvgl.h"
@@ -27,6 +29,9 @@ class SettingGroupFixture : public XMLTestFixture {
   public:
     SettingGroupFixture() : XMLTestFixture() {
         setting_group_register();
+        // setting_group_header renders a status_pill badge; register the widget
+        // so it instantiates in the header component under test.
+        ui_status_pill_register_widget();
     }
 };
 
@@ -105,5 +110,36 @@ TEST_CASE_METHOD(SettingGroupFixture, "setting_group_header: icon visibility fol
         lv_obj_t* icon = lv_obj_find_by_name(header, "section_icon");
         REQUIRE(icon != nullptr);
         REQUIRE(lv_obj_has_flag(icon, LV_OBJ_FLAG_HIDDEN));
+    }
+}
+
+TEST_CASE_METHOD(SettingGroupFixture, "setting_group_header: badge visibility follows hide_badge",
+                 "[setting_group]") {
+    REQUIRE(register_component("setting_group_header"));
+
+    // hide_badge="false" with a badge_name -> the named count pill is visible.
+    {
+        const char* attrs[] = {"title",           "FANS",       "badge_name",
+                               "fan_count_badge", "badge_text", "3",
+                               "hide_badge",      "false",      nullptr};
+        auto* header = create_component("setting_group_header", attrs);
+        REQUIRE(header != nullptr);
+        process_lvgl(50);
+
+        lv_obj_t* badge = lv_obj_find_by_name(header, "fan_count_badge");
+        REQUIRE(badge != nullptr);
+        REQUIRE_FALSE(lv_obj_has_flag(badge, LV_OBJ_FLAG_HIDDEN));
+    }
+
+    // Default (hide_badge omitted -> "true") -> the pill is hidden.
+    {
+        const char* attrs[] = {"title", "FANS", "badge_name", "fan_count_badge_hidden", nullptr};
+        auto* header = create_component("setting_group_header", attrs);
+        REQUIRE(header != nullptr);
+        process_lvgl(50);
+
+        lv_obj_t* badge = lv_obj_find_by_name(header, "fan_count_badge_hidden");
+        REQUIRE(badge != nullptr);
+        REQUIRE(lv_obj_has_flag(badge, LV_OBJ_FLAG_HIDDEN));
     }
 }
