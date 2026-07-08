@@ -36,6 +36,17 @@ PreflightResult PreflightValidator::validate(const std::vector<GcodeToolInfo>& t
                                              const std::vector<AvailableSlot>& slots,
                                              const std::vector<ToolMapping>& mapping) {
     PreflightResult out;
+
+    // No multi-material/AMS system: an empty slot list means there is no AMS
+    // hardware at all (a present AMS always reports one slot per physical bay,
+    // empty or not). There is nothing to map tools to, so the slot-based checks
+    // don't apply — filament presence is the physical runout sensor's job,
+    // surfaced separately. Returning an empty result avoids a false
+    // "T0 has no filament loaded" block on single-extruder printers.
+    if (slots.empty()) {
+        return out;
+    }
+
     for (const auto& t : tools) {
         ToolCheck c;
         c.tool_index = t.tool_index;
