@@ -108,8 +108,13 @@ void WizardConnectionStep::init_subjects() {
         std::string default_port = "7125"; // Default Moonraker port
 
         try {
-            default_ip =
+            // A factory reset or --wizard re-run persists an empty host string;
+            // Config::get returns it verbatim, so resolve an empty stored host back
+            // to the localhost default rather than leaving the field blank (users
+            // report 127.0.0.1 not pre-filled).
+            std::string stored_ip =
                 config->get<std::string>(config->df() + helix::wizard::MOONRAKER_HOST, default_ip);
+            default_ip = resolve_moonraker_host_default(stored_ip, helix::is_android_platform());
             int port_num = config->get<int>(config->df() + helix::wizard::MOONRAKER_PORT, 7125);
             default_port = std::to_string(port_num);
 
