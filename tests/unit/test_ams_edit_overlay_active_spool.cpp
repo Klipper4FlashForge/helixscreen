@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "ui_ams_edit_modal.h"
+#include "ui_ams_edit_overlay.h"
+#include "ui_nav_manager.h"
 #include "ui_update_queue.h"
 
 #include "../lvgl_test_fixture.h"
@@ -16,55 +17,61 @@ using namespace helix;
 using namespace helix::ui;
 
 // ============================================================================
-// TestAccess helper — exposes AmsEditModal internals for white-box testing
+// TestAccess helper — exposes AmsEditOverlay internals for white-box testing
 // ============================================================================
 
-class AmsEditModalTestAccess {
+class AmsEditOverlayTestAccess {
   public:
-    explicit AmsEditModalTestAccess(AmsEditModal& modal) : modal_(modal) {}
+    explicit AmsEditOverlayTestAccess(AmsEditOverlay& overlay) : overlay_(overlay) {}
 
     void set_original_info(const SlotInfo& info) {
-        modal_.original_info_ = info;
+        overlay_.original_info_ = info;
     }
     void set_working_info(const SlotInfo& info) {
-        modal_.working_info_ = info;
+        overlay_.working_info_ = info;
     }
     void set_api(MoonrakerAPI* api) {
-        modal_.api_ = api;
+        overlay_.api_ = api;
     }
     void set_slot_index(int idx) {
-        modal_.slot_index_ = idx;
+        overlay_.slot_index_ = idx;
     }
     void set_filament_user_edited(bool edited) {
-        modal_.filament_user_edited_ = edited;
+        overlay_.filament_user_edited_ = edited;
+    }
+    void set_completion_callback(AmsEditOverlay::CompletionCallback cb) {
+        overlay_.completion_callback_ = std::move(cb);
+        overlay_.completion_fired_ = false;
     }
 
     void init_subjects() {
-        modal_.init_subjects();
+        overlay_.init_subjects();
     }
 
-    // View mode subject: 0 = form view, 1 = Spoolman picker view.
+    // View subject: 0 = overview/form, 1 = Spoolman picker (kView* constants).
     int get_view_mode() {
-        return lv_subject_get_int(&modal_.view_mode_subject_);
+        return lv_subject_get_int(&overlay_.view_mode_subject_);
     }
     void call_handle_save() {
-        modal_.handle_save();
+        overlay_.handle_save();
     }
-
-    void set_completion_callback(AmsEditModal::CompletionCallback cb) {
-        modal_.completion_callback_ = std::move(cb);
+    void call_handle_back() {
+        overlay_.handle_back();
+    }
+    bool completion_fired() const {
+        return overlay_.completion_fired_;
     }
 
     // Forward the private static create-gate predicate (friend access).
     static bool should_create_new_spool(const SlotInfo& working_info, bool filament_user_edited) {
-        return AmsEditModal::should_create_new_spool(working_info, filament_user_edited);
+        return AmsEditOverlay::should_create_new_spool(working_info, filament_user_edited);
     }
     static bool is_material_identity_change(const SlotInfo& original, const SlotInfo& edited) {
-        return AmsEditModal::is_material_identity_change(original, edited);
+        return AmsEditOverlay::is_material_identity_change(original, edited);
     }
 
   private:
-    AmsEditModal& modal_;
+    AmsEditOverlay& overlay_;
 };
 
 // ============================================================================
@@ -72,7 +79,7 @@ class AmsEditModalTestAccess {
 // ============================================================================
 
 TEST_CASE_METHOD(LVGLTestFixture, "handle_save sets active spool when spool assigned (0 -> N)",
-                 "[ams_edit_modal][spoolman][active_spool]") {
+                 "[ams_edit_overlay][spoolman][active_spool]") {
     PrinterState state;
     MoonrakerClientMock client;
     MoonrakerAPIMock api(client, state);
@@ -80,8 +87,8 @@ TEST_CASE_METHOD(LVGLTestFixture, "handle_save sets active spool when spool assi
     api.spoolman_mock().set_active_spool(0, nullptr, nullptr);
     REQUIRE(api.spoolman_mock().get_mock_active_spool_id() == 0);
 
-    AmsEditModal modal;
-    AmsEditModalTestAccess access(modal);
+    AmsEditOverlay overlay;
+    AmsEditOverlayTestAccess access(overlay);
     access.init_subjects();
 
     SlotInfo original;
@@ -96,7 +103,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "handle_save sets active spool when spool assi
     access.set_slot_index(-2);
 
     bool completion_fired = false;
-    access.set_completion_callback([&](const AmsEditModal::EditResult& result) {
+    access.set_completion_callback([&](const AmsEditOverlay::EditResult& result) {
         completion_fired = true;
         REQUIRE(result.saved);
     });
@@ -109,15 +116,15 @@ TEST_CASE_METHOD(LVGLTestFixture, "handle_save sets active spool when spool assi
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "handle_save sets active spool when spool changed (N -> M)",
-                 "[ams_edit_modal][spoolman][active_spool]") {
+                 "[ams_edit_overlay][spoolman][active_spool]") {
     PrinterState state;
     MoonrakerClientMock client;
     MoonrakerAPIMock api(client, state);
 
     api.spoolman_mock().set_active_spool(42, nullptr, nullptr);
 
-    AmsEditModal modal;
-    AmsEditModalTestAccess access(modal);
+    AmsEditOverlay overlay;
+    AmsEditOverlayTestAccess access(overlay);
     access.init_subjects();
 
     SlotInfo original;
@@ -133,7 +140,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "handle_save sets active spool when spool chan
 
     bool completion_fired = false;
     access.set_completion_callback(
-        [&](const AmsEditModal::EditResult&) { completion_fired = true; });
+        [&](const AmsEditOverlay::EditResult&) { completion_fired = true; });
 
     access.call_handle_save();
     UpdateQueue::instance().drain();
@@ -143,15 +150,15 @@ TEST_CASE_METHOD(LVGLTestFixture, "handle_save sets active spool when spool chan
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "handle_save clears active spool when spool unlinked (N -> 0)",
-                 "[ams_edit_modal][spoolman][active_spool]") {
+                 "[ams_edit_overlay][spoolman][active_spool]") {
     PrinterState state;
     MoonrakerClientMock client;
     MoonrakerAPIMock api(client, state);
 
     api.spoolman_mock().set_active_spool(42, nullptr, nullptr);
 
-    AmsEditModal modal;
-    AmsEditModalTestAccess access(modal);
+    AmsEditOverlay overlay;
+    AmsEditOverlayTestAccess access(overlay);
     access.init_subjects();
 
     SlotInfo original;
@@ -167,7 +174,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "handle_save clears active spool when spool un
 
     bool completion_fired = false;
     access.set_completion_callback(
-        [&](const AmsEditModal::EditResult&) { completion_fired = true; });
+        [&](const AmsEditOverlay::EditResult&) { completion_fired = true; });
 
     access.call_handle_save();
     UpdateQueue::instance().drain();
@@ -177,7 +184,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "handle_save clears active spool when spool un
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "handle_save re-syncs active spool on unchanged linked save",
-                 "[ams_edit_modal][spoolman][active_spool]") {
+                 "[ams_edit_overlay][spoolman][active_spool]") {
     PrinterState state;
     MoonrakerClientMock client;
     MoonrakerAPIMock api(client, state);
@@ -185,8 +192,8 @@ TEST_CASE_METHOD(LVGLTestFixture, "handle_save re-syncs active spool on unchange
     // Simulate Moonraker having lost the active-spool state (e.g. after restart).
     api.spoolman_mock().set_active_spool(7, nullptr, nullptr);
 
-    AmsEditModal modal;
-    AmsEditModalTestAccess access(modal);
+    AmsEditOverlay overlay;
+    AmsEditOverlayTestAccess access(overlay);
     access.init_subjects();
 
     SlotInfo original;
@@ -202,7 +209,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "handle_save re-syncs active spool on unchange
 
     bool completion_fired = false;
     access.set_completion_callback(
-        [&](const AmsEditModal::EditResult&) { completion_fired = true; });
+        [&](const AmsEditOverlay::EditResult&) { completion_fired = true; });
 
     access.call_handle_save();
     UpdateQueue::instance().drain();
@@ -213,9 +220,9 @@ TEST_CASE_METHOD(LVGLTestFixture, "handle_save re-syncs active spool on unchange
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "handle_save does NOT crash when no API available",
-                 "[ams_edit_modal][spoolman][active_spool]") {
-    AmsEditModal modal;
-    AmsEditModalTestAccess access(modal);
+                 "[ams_edit_overlay][spoolman][active_spool]") {
+    AmsEditOverlay overlay;
+    AmsEditOverlayTestAccess access(overlay);
     access.init_subjects();
 
     SlotInfo original;
@@ -230,7 +237,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "handle_save does NOT crash when no API availa
     access.set_slot_index(-2);
 
     bool completion_fired = false;
-    access.set_completion_callback([&](const AmsEditModal::EditResult& result) {
+    access.set_completion_callback([&](const AmsEditOverlay::EditResult& result) {
         completion_fired = true;
         REQUIRE(result.saved);
     });
@@ -241,18 +248,43 @@ TEST_CASE_METHOD(LVGLTestFixture, "handle_save does NOT crash when no API availa
 }
 
 // ============================================================================
-// Tests: #1071 create-gate — should_create_new_spool() must block a new spool
-// on an unedited open+save (the auto-defaulted "Generic") while still allowing
-// one after a genuine user filament edit. Tested as a pure predicate; the
-// surrounding is_spoolman_available() gate + Spoolman create chain are not
-// unit-harnessable here, but this predicate is the sole decision they consume.
+// Tests: completion is fired exactly once (covered-vs-dismissed correctness)
 // ============================================================================
 
-TEST_CASE("AmsEditModal::should_create_new_spool gates new-spool creation on a real edit (#1071)",
-          "[ams_edit_modal][spoolman][1071]") {
-    // Unlinked slot whose fields look complete only because update_vendor_dropdown
-    // auto-defaulted brand="Generic" — exactly the unedited open the bug created a
-    // phantom spool from.
+TEST_CASE_METHOD(LVGLTestFixture, "fire_completion is idempotent via completion_fired_",
+                 "[ams_edit_overlay][lifecycle]") {
+    AmsEditOverlay overlay;
+    AmsEditOverlayTestAccess access(overlay);
+    access.init_subjects();
+
+    SlotInfo info;
+    access.set_original_info(info);
+    access.set_working_info(info);
+    access.set_api(nullptr);
+    access.set_slot_index(0);
+
+    int fire_count = 0;
+    access.set_completion_callback([&](const AmsEditOverlay::EditResult&) { fire_count++; });
+
+    // Save fires completion; the overlay-close safety net firing afterwards
+    // (backdrop tap path) must be a no-op.
+    access.call_handle_save();
+    UpdateQueue::instance().drain();
+    REQUIRE(fire_count == 1);
+    REQUIRE(access.completion_fired());
+
+    access.call_handle_back(); // back after completion: must not re-fire
+    UpdateQueue::instance().drain();
+    REQUIRE(fire_count == 1);
+}
+
+// ============================================================================
+// Tests: #1071 create-gate + identity-change predicates (unchanged semantics
+// in this phase — Phase 5 rewrites the gate to the Save-to-Spoolman toggle)
+// ============================================================================
+
+TEST_CASE("AmsEditOverlay::should_create_new_spool gates new-spool creation on a real edit (#1071)",
+          "[ams_edit_overlay][spoolman][1071]") {
     SlotInfo working;
     working.spoolman_id = 0;
     working.brand = "Generic";
@@ -260,93 +292,88 @@ TEST_CASE("AmsEditModal::should_create_new_spool gates new-spool creation on a r
     working.color_rgb = 0xFF0000;
     REQUIRE(helix::SpoolmanSlotSaver::is_filament_complete(working));
 
-    // No user edit -> NO new spool (the #1071 Symptom C fix).
-    CHECK_FALSE(AmsEditModalTestAccess::should_create_new_spool(working, /*edited=*/false));
+    CHECK_FALSE(AmsEditOverlayTestAccess::should_create_new_spool(working, /*edited=*/false));
+    CHECK(AmsEditOverlayTestAccess::should_create_new_spool(working, /*edited=*/true));
 
-    // Genuine user edit on the same complete fields -> create allowed (the gate
-    // must not block a legitimate manual entry).
-    CHECK(AmsEditModalTestAccess::should_create_new_spool(working, /*edited=*/true));
-
-    // A slot already linked to Spoolman never takes the create path, edit or not
-    // (it updates the linked spool instead).
     SlotInfo linked = working;
     linked.spoolman_id = 99;
-    CHECK_FALSE(AmsEditModalTestAccess::should_create_new_spool(linked, /*edited=*/true));
+    CHECK_FALSE(AmsEditOverlayTestAccess::should_create_new_spool(linked, /*edited=*/true));
 
-    // Incomplete metadata never creates, even after an edit.
     SlotInfo incomplete;
     incomplete.spoolman_id = 0;
     incomplete.material = "PLA"; // no brand, default color
     REQUIRE_FALSE(helix::SpoolmanSlotSaver::is_filament_complete(incomplete));
-    CHECK_FALSE(AmsEditModalTestAccess::should_create_new_spool(incomplete, /*edited=*/true));
+    CHECK_FALSE(AmsEditOverlayTestAccess::should_create_new_spool(incomplete, /*edited=*/true));
 }
 
-TEST_CASE("AmsEditModal::is_material_identity_change flags different-spool edits (#1071)",
-          "[ams_edit_modal][spoolman][1071]") {
+TEST_CASE("AmsEditOverlay::is_material_identity_change flags different-spool edits (#1071)",
+          "[ams_edit_overlay][spoolman][1071]") {
     SlotInfo original;
     original.material = "PLA";
     original.color_rgb = 0xFF0000;
 
-    // Same material + same color: a plain re-save, NOT an identity change.
     SlotInfo same = original;
-    CHECK_FALSE(AmsEditModalTestAccess::is_material_identity_change(original, same));
+    CHECK_FALSE(AmsEditOverlayTestAccess::is_material_identity_change(original, same));
 
-    // Tiny color tweak within the match tolerance: still the same spool.
     SlotInfo nudged = original;
     nudged.color_rgb = 0xFE0101;
-    CHECK_FALSE(AmsEditModalTestAccess::is_material_identity_change(original, nudged));
+    CHECK_FALSE(AmsEditOverlayTestAccess::is_material_identity_change(original, nudged));
 
-    // Material comparison is case-insensitive: not a change.
     SlotInfo recased = original;
     recased.material = "pla";
-    CHECK_FALSE(AmsEditModalTestAccess::is_material_identity_change(original, recased));
+    CHECK_FALSE(AmsEditOverlayTestAccess::is_material_identity_change(original, recased));
 
-    // Different material: identity change (confirm before overwriting the link).
     SlotInfo diff_mat = original;
     diff_mat.material = "PETG";
-    CHECK(AmsEditModalTestAccess::is_material_identity_change(original, diff_mat));
+    CHECK(AmsEditOverlayTestAccess::is_material_identity_change(original, diff_mat));
 
-    // Far-apart color (red -> blue): identity change.
     SlotInfo diff_color = original;
     diff_color.color_rgb = 0x0000FF;
-    CHECK(AmsEditModalTestAccess::is_material_identity_change(original, diff_color));
+    CHECK(AmsEditOverlayTestAccess::is_material_identity_change(original, diff_color));
 }
 
 // ============================================================================
-// Tests: #1071 initial-view routing — show_for_slot(..., open_on_picker) must
-// open directly on the Spoolman picker; the default must open on the form.
-// Uses the full-UI fixture so Modal::show() finds the registered
-// ams_edit_modal XML component and the view-mode subject reflects the choice.
+// Tests: #1071 initial-view routing on the singleton overlay. show_for_slot
+// pushes via NavigationManager (async) — drain before asserting, and pop the
+// overlay afterwards so the next test starts clean.
 // ============================================================================
 
 TEST_CASE_METHOD(LVGLUITestFixture,
                  "show_for_slot opens on the Spoolman picker when requested (#1071)",
-                 "[ams_edit_modal][spoolman][ui_integration][1071]") {
-    AmsEditModal modal;
-    AmsEditModalTestAccess access(modal);
+                 "[ams_edit_overlay][spoolman][ui_integration][1071]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayTestAccess access(overlay);
 
     SlotInfo info;
     info.slot_index = 0;
 
-    REQUIRE(modal.show_for_slot(test_screen(), 0, info, api(), /*open_on_picker=*/true));
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, info, api(), nullptr,
+                                  /*open_on_picker=*/true));
+    UpdateQueue::instance().drain();
     process_lvgl(10);
 
-    // Picker view is selected synchronously by switch_to_picker().
-    CHECK(access.get_view_mode() == 1);
+    CHECK(access.get_view_mode() == AmsEditOverlay::kViewSpoolPicker);
+
+    NavigationManager::instance().go_back();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture,
-                 "show_for_slot opens on the form view by default (#1071)",
-                 "[ams_edit_modal][spoolman][ui_integration][1071]") {
-    AmsEditModal modal;
-    AmsEditModalTestAccess access(modal);
+TEST_CASE_METHOD(LVGLUITestFixture, "show_for_slot opens on the overview by default (#1071)",
+                 "[ams_edit_overlay][spoolman][ui_integration][1071]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayTestAccess access(overlay);
 
     SlotInfo info;
     info.slot_index = 0;
 
-    REQUIRE(modal.show_for_slot(test_screen(), 0, info, api()));
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, info, api(), nullptr));
+    UpdateQueue::instance().drain();
     process_lvgl(10);
 
-    // Default path (open_on_picker=false) stays on the form view.
-    CHECK(access.get_view_mode() == 0);
+    CHECK(access.get_view_mode() == AmsEditOverlay::kViewOverview);
+
+    NavigationManager::instance().go_back();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
 }

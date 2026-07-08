@@ -6,6 +6,7 @@
 #include "ui_ams_current_tool.h"
 #include "ui_ams_device_operations_overlay.h"
 #include "ui_ams_device_section_detail_overlay.h"
+#include "ui_ams_edit_overlay.h"
 #include "ui_button.h"
 #include "ui_carousel.h"
 #include "ui_confetti.h"
@@ -268,10 +269,12 @@ void register_xml_components() {
     // NOTE: Other AMS widgets (ams_slot, filament_path_canvas) are
     // registered lazily in ui_panel_ams.cpp when the AMS panel is first accessed
 
-    // AMS edit modal (MUST be after spool_canvas and hsv_picker registration)
+    // AMS slot editor (MUST be after spool_canvas and hsv_picker registration)
     // Registered globally so FilamentPanel can use it without AMS panel lazy init
     register_xml("spoolman_spool_item.xml");
-    register_xml("ams_edit_modal.xml");
+    // AMS slot editor (single overlay, internal views — spec §13)
+    helix::ui::get_ams_edit_overlay().register_callbacks();
+    register_xml("ams_edit_overlay.xml");
 
     // Spoolman components (MUST be after spool_canvas registration)
     register_xml("spoolman_spool_row.xml");

@@ -1,0 +1,248 @@
+<?xml version="1.0"?>
+<!-- Copyright (C) 2025-2026 356C LLC -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- AMS slot editor overlay. One overlay, internal views selected by the
+     ams_edit_view int subject: 0=overview (form), 1=Spoolman spool picker.
+     Header bar: back button (per-view routing via ams_edit_back_cb) and a
+     dirty-gated Save action (ams_edit_save_disabled subject). -->
+<component>
+  <consts>
+    <px name="left_column_width" value="120"/>
+    <!-- Spool-picker list max height: caps the scroll viewport so the picker
+         stays inside the overlay. Tuned to show ~5 rows at each breakpoint. -->
+    <px name="spool_list_max_height_micro" value="130"/>
+    <px name="spool_list_max_height_tiny" value="150"/>
+    <px name="spool_list_max_height_small" value="180"/>
+    <px name="spool_list_max_height_medium" value="250"/>
+    <px name="spool_list_max_height_large" value="330"/>
+    <px name="spool_list_max_height_xlarge" value="420"/>
+    <px name="spool_list_max_height_xxlarge" value="520"/>
+  </consts>
+  <view name="ams_edit_overlay"
+        extends="overlay_panel" width="#overlay_panel_width"
+        title="Edit Slot" title_tag="Edit Slot"
+        hide_action_button="false"
+        action_button_text="Save" action_button_text_tag="Save"
+        action_button_callback="ams_edit_save_cb"
+        action_button_disabled_subject="ams_edit_save_disabled"
+        back_button_callback="ams_edit_back_cb">
+    <lv_obj name="overlay_content"
+            width="100%" flex_grow="1" style_pad_all="0" flex_flow="column"
+            style_pad_gap="0" scrollbar_mode="auto">
+
+      <!-- ============================================================ -->
+      <!-- OVERVIEW VIEW: slot state + manual edit (ams_edit_view=0)    -->
+      <!-- ============================================================ -->
+      <lv_obj name="form_view" width="100%" height="content" flex_flow="column" style_pad_gap="0" scrollable="false">
+        <bind_flag_if_not_eq subject="ams_edit_view" flag="hidden" ref_value="0"/>
+        <!-- Spoolman link indicator (legacy; removed in redesign Phase 3) -->
+        <text_small name="spoolman_id_label" text="" hidden="true"
+                    style_pad_left="#space_md" style_pad_top="#space_xs"/>
+        <!-- Content area - HORIZONTAL layout with side-by-side sections -->
+        <lv_obj width="100%"
+                height="content" style_pad_all="#space_md" flex_flow="row" style_pad_gap="#space_lg" scrollable="false">
+          <!-- LEFT COLUMN: Tool remap + Color preview -->
+          <lv_obj width="#left_column_width"
+                  height="content" style_pad_all="0" flex_flow="column" style_flex_main_place="start"
+                  style_flex_cross_place="center" style_pad_gap="#space_sm" scrollable="false">
+            <!-- Tool assignment dropdown (hidden when backend doesn't support remapping) -->
+            <lv_obj name="tool_remap_row" width="100%" height="content" style_pad_all="0" flex_flow="column"
+                    style_pad_gap="#space_xxs" scrollable="false" hidden="true">
+              <text_small text="Remap Tool" translation_tag="Remap Tool"/>
+              <lv_dropdown name="tool_dropdown"
+                           width="100%" height="content" style_radius="#border_radius"
+                           style_border_width="0" options="None">
+                <event_cb trigger="value_changed" callback="ams_edit_tool_changed_cb"/>
+              </lv_dropdown>
+            </lv_obj>
+            <!-- Large color swatch (tappable to open picker) -->
+            <lv_obj name="color_swatch"
+                    width="#color_preview_size" height="#color_preview_size" style_radius="#border_radius"
+                    style_bg_color="#card_bg" style_bg_opa="255" style_border_width="2" style_border_color="#text_muted"
+                    style_border_opa="80" scrollable="false" clickable="true">
+              <event_cb trigger="clicked" callback="ams_edit_color_clicked_cb"/>
+              <!-- Edit overlay hint -->
+              <icon src="pencil" size="sm" variant="tertiary" align="bottom_right" style_opa="180"/>
+            </lv_obj>
+            <!-- Color name label below swatch -->
+            <text_small name="color_name_label" text="Gray" translation_tag="Gray" width="100%" long_mode="wrap" style_text_align="center"/>
+            <!-- Filament product-line name (e.g. "SnapSpeed", "PolyLite PLA") -->
+            <text_small name="spool_name_label" text="" width="100%" long_mode="wrap" style_text_align="center" style_text_color="#text_muted" hidden="true"/>
+          </lv_obj>
+          <!-- RIGHT COLUMN: Form fields -->
+          <lv_obj flex_grow="1"
+                  style_pad_all="0" flex_flow="column" style_flex_main_place="start" style_flex_cross_place="start"
+                  style_pad_gap="#space_md" scrollable="false">
+            <!-- Vendor + Material row (side by side) -->
+            <lv_obj width="100%"
+                    height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_sm" scrollable="false">
+              <!-- Vendor dropdown -->
+              <lv_obj height="content"
+                      flex_grow="5" style_pad_all="0" flex_flow="column" style_pad_gap="#space_xxs" scrollable="false">
+                <text_small text="Vendor" translation_tag="Vendor"/>
+                <lv_dropdown name="vendor_dropdown"
+                             width="100%" height="content" style_radius="#border_radius" style_border_width="0">
+                  <event_cb trigger="value_changed" callback="ams_edit_vendor_changed_cb"/>
+                </lv_dropdown>
+              </lv_obj>
+              <!-- Material dropdown -->
+              <lv_obj height="content"
+                      flex_grow="3" style_pad_all="0" flex_flow="column" style_pad_gap="#space_xxs" scrollable="false">
+                <text_small text="Material" translation_tag="Material"/>
+                <lv_dropdown name="material_dropdown"
+                             width="100%" height="content" style_radius="#border_radius" style_border_width="0">
+                  <event_cb trigger="value_changed" callback="ams_edit_material_changed_cb"/>
+                </lv_dropdown>
+              </lv_obj>
+            </lv_obj>
+            <!-- Remaining weight section (extra padding for slider handle) -->
+            <lv_obj width="100%"
+                    height="content" style_pad_left="#space_sm" style_pad_right="#space_sm"
+                    style_pad_top="#space_xxs" style_pad_bottom="#space_xxs"
+                    flex_flow="column" style_flex_main_place="start"
+                    style_flex_cross_place="start" style_pad_gap="#space_xxs" scrollable="false">
+              <!-- Header row with label, percentage, and edit button -->
+              <lv_obj width="100%"
+                      height="content" style_pad_all="0" flex_flow="row" style_flex_main_place="space_between"
+                      style_flex_cross_place="center" scrollable="false">
+                <text_small text="Remaining" translation_tag="Remaining"/>
+                <lv_obj height="content"
+                        style_pad_all="0" flex_flow="row" style_flex_cross_place="center" style_pad_gap="#space_xs"
+                        scrollable="false">
+                  <!-- Weight input (shown when weight data available) -->
+                  <text_input name="remaining_weight_input" width="60" max_length="5"
+                              keyboard_hint="numeric" hidden="true">
+                    <event_cb trigger="value_changed" callback="ams_edit_weight_changed_cb"/>
+                  </text_input>
+                  <!-- Info label: "/ 1000g (75%)" or just "100%" when no weight data -->
+                  <text_body name="remaining_pct_label" text="100%"/>
+                  <!-- Edit button (shown when edit_remaining_mode=0) -->
+                  <ui_button name="btn_remaining_edit"
+                             width="#icon_button_size" height="#icon_button_size" icon="tune" variant="ghost">
+                    <bind_flag_if_eq subject="edit_remaining_mode" flag="hidden" ref_value="1"/>
+                    <event_cb trigger="clicked" callback="ams_edit_remaining_edit_cb"/>
+                  </ui_button>
+                  <!-- Accept button (shown when edit_remaining_mode=1) -->
+                  <ui_button name="btn_remaining_accept"
+                             width="#icon_button_size" height="#icon_button_size" icon="check" variant="ghost"
+                             hidden="true">
+                    <bind_flag_if_eq subject="edit_remaining_mode" flag="hidden" ref_value="0"/>
+                    <event_cb trigger="clicked" callback="ams_edit_remaining_accept_cb"/>
+                  </ui_button>
+                  <!-- Cancel button (shown when edit_remaining_mode=1) -->
+                  <ui_button name="btn_remaining_cancel"
+                             width="#icon_button_size" height="#icon_button_size" icon="close" variant="ghost"
+                             hidden="true">
+                    <bind_flag_if_eq subject="edit_remaining_mode" flag="hidden" ref_value="0"/>
+                    <event_cb trigger="clicked" callback="ams_edit_remaining_cancel_cb"/>
+                  </ui_button>
+                </lv_obj>
+              </lv_obj>
+              <!-- Progress bar (shown when edit_remaining_mode=0) -->
+              <lv_obj name="remaining_progress_container"
+                      width="100%" height="#slider_height" style_bg_color="#text_muted" style_bg_opa="38"
+                      style_radius="#border_radius" style_pad_all="0" scrollable="false">
+                <bind_flag_if_eq subject="edit_remaining_mode" flag="hidden" ref_value="1"/>
+                <lv_obj name="remaining_progress_fill"
+                        width="100%" height="100%" style_bg_color="#primary" style_bg_opa="255" style_radius="#border_radius"
+                        style_pad_all="0" scrollable="false"/>
+              </lv_obj>
+              <!-- Slider (shown when edit_remaining_mode=1) -->
+              <lv_slider name="remaining_slider"
+                         width="100%" height="#slider_height" style_radius="#border_radius" value="100" min_value="0"
+                         max_value="100" hidden="true">
+                <bind_flag_if_eq subject="edit_remaining_mode" flag="hidden" ref_value="0"/>
+                <event_cb trigger="value_changed" callback="ams_edit_remaining_changed_cb"/>
+              </lv_slider>
+            </lv_obj>
+            <!-- Temperature display (compact, read-only) -->
+            <lv_obj width="100%"
+                    height="content" style_pad_all="0" flex_flow="row" style_flex_main_place="start"
+                    style_pad_gap="#space_lg" scrollable="false">
+              <lv_obj height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs" scrollable="false">
+                <text_small text="Nozzle:" translation_tag="Nozzle:"/>
+                <text_small name="temp_nozzle_label" text="200-230°C"/>
+              </lv_obj>
+              <lv_obj height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs" scrollable="false">
+                <text_small text="Bed:" translation_tag="Bed:"/>
+                <text_small name="temp_bed_label" text="60°C"/>
+              </lv_obj>
+            </lv_obj>
+          </lv_obj>
+        </lv_obj>
+        <!-- Filament actions: dual-mode btn_change_spool + QR / split-button actions.
+             Visibility managed in update_spoolman_button_state(). -->
+        <lv_obj name="spoolman_actions"
+                width="100%" height="content" style_pad_left="#space_md" style_pad_right="#space_md"
+                style_pad_top="0" style_pad_bottom="#space_sm"
+                flex_flow="row_wrap" style_flex_main_place="center" style_pad_gap="#space_sm"
+                scrollable="false">
+          <ui_button name="btn_change_spool"
+                     height="#button_height" text="Choose Spool"
+                     translation_tag="Choose Spool" variant="secondary">
+            <event_cb trigger="clicked" callback="ams_edit_change_spool_cb"/>
+          </ui_button>
+          <ui_button name="btn_scan_qr_code"
+                     height="#button_height" text="Scan QR Code"
+                     translation_tag="Scan QR Code" variant="secondary"
+                     icon="qrcode_scan" hidden="true">
+            <event_cb trigger="clicked" callback="ams_edit_scan_qr_cb"/>
+          </ui_button>
+          <ui_split_button name="btn_spool_actions"
+                           height="#button_height" variant="secondary"
+                           icon="qrcode_scan" text="Scan QR Code"
+                           options="Scan QR Code&#10;Spool Details&#10;Unlink" options_tag="Scan QR Code&#10;Spool Details&#10;Unlink" show_selection="false"
+                           hidden="true">
+            <event_cb trigger="clicked" callback="ams_edit_spool_actions_clicked_cb"/>
+            <event_cb trigger="value_changed" callback="ams_edit_spool_actions_changed_cb"/>
+          </ui_split_button>
+        </lv_obj>
+      </lv_obj>
+
+      <!-- ============================================================ -->
+      <!-- PICKER VIEW: Spoolman spool selection (ams_edit_view=1)      -->
+      <!-- ============================================================ -->
+      <lv_obj name="picker_view"
+              width="100%" height="content" flex_flow="column" style_pad_all="#space_md" style_pad_gap="#space_sm"
+              scrollable="false" hidden="true">
+        <bind_flag_if_not_eq subject="ams_edit_view" flag="hidden" ref_value="1"/>
+
+        <!-- Search filter -->
+        <text_input name="picker_search"
+                    width="100%" placeholder_text="Search spools..." placeholder_tag="Search spools...">
+          <event_cb trigger="value_changed" callback="ams_edit_picker_search_cb"/>
+        </text_input>
+
+        <!-- Loading state -->
+        <lv_obj name="picker_loading"
+                width="100%" height="120" flex_flow="column" style_flex_main_place="center"
+                style_flex_cross_place="center" style_pad_all="0" scrollable="false">
+          <bind_flag_if_not_eq subject="edit_picker_state" flag="hidden" ref_value="0"/>
+          <lv_spinner width="32"
+                      height="32" style_arc_width-indicator="2" style_arc_color="#primary" style_arc_opa-main="0"/>
+          <text_body text="Loading spools..." translation_tag="Loading spools..." style_pad_top="#space_sm"/>
+        </lv_obj>
+
+        <!-- Empty state -->
+        <lv_obj name="picker_empty" width="100%" height="120" scrollable="false" hidden="true"
+                clickable="true">
+          <bind_flag_if_not_eq subject="edit_picker_state" flag="hidden" ref_value="1"/>
+          <event_cb trigger="clicked" callback="ams_edit_picker_retry_cb"/>
+          <empty_state icon="spoolman" text="No spools found — tap to retry" translation_tag="No spools found — tap to retry"
+                       clickable="false" event_bubble="true"/>
+        </lv_obj>
+
+        <!-- Spool list (populated dynamically by C++) -->
+        <lv_obj name="picker_spool_list"
+                width="100%" height="content" style_max_height="#spool_list_max_height"
+                style_pad_all="#space_xxs" style_radius="#border_radius"
+                style_pad_gap="#space_xxs" flex_flow="column" style_flex_main_place="start" style_flex_cross_place="start"
+                style_bg_color="#card_bg" style_bg_opa="255" scrollable="true" hidden="true">
+          <bind_flag_if_not_eq subject="edit_picker_state" flag="hidden" ref_value="2"/>
+        </lv_obj>
+
+      </lv_obj>
+
+    </lv_obj>
+  </view>
+</component>

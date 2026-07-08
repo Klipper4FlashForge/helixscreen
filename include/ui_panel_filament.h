@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "ui_ams_edit_modal.h"
+#include "ui_ams_edit_overlay.h"
 #include "ui_filament_catalog_picker.h"
 #include "ui_observer_guard.h"
 #include "ui_panel_base.h"
@@ -388,7 +388,6 @@ class FilamentPanel : public PanelBase {
     ObserverGuard external_spool_observer_;
     lv_subject_t card_title_subject_;
     char card_title_buf_[32] = {};
-    std::unique_ptr<helix::ui::AmsEditModal> edit_modal_;
 
     void setup_external_spool_display();
     void update_external_spool_from_state();

@@ -58,10 +58,10 @@ enum class ModalSeverity {
  *
  * ## Usage - Complex Modals (subclass):
  * @code
- * class AmsEditModal : public Modal {
+ * class SpoolEditModal : public Modal {
  * public:
- *     const char* get_name() const override { return "AMS Edit"; }
- *     const char* component_name() const override { return "ams_edit_modal"; }
+ *     const char* get_name() const override { return "Spool Edit"; }
+ *     const char* component_name() const override { return "spoolman_edit_modal"; }
  *
  * protected:
  *     void on_ok() override {
