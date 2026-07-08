@@ -514,6 +514,7 @@ void register_xml_components() {
     register_xml("history_dashboard_panel.xml");
 
     // Settings components (must be registered before settings_panel)
+    register_xml("setting_group_header.xml");
     register_xml("setting_section_header.xml");
     register_xml("setting_toggle_row.xml");
     register_xml("setting_dropdown_row.xml");

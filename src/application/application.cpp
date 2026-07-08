@@ -136,6 +136,7 @@
 #include "data_root_resolver.h"
 #include "display_settings_manager.h"
 #include "helix_sparkline.h"
+#include "setting_group.h"
 #include "temperature_service.h"
 #ifdef HELIX_ENABLE_SCREENSAVER
 #include "screensaver.h"
@@ -1518,6 +1519,7 @@ bool Application::register_widgets() {
     ui_status_pill_register_widget();
     ui_switch_register();
     ui_card_register();
+    setting_group_register();
     ui_temp_display_init();
     ui_ams_mini_status_init();
     ui_severity_card_register();
