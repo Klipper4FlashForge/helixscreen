@@ -7,45 +7,30 @@
 
 namespace helix::ui {
 
-// Test-only accessor for FilamentCatalogPickerModal's private selection state.
+// Test-only accessor for FilamentCatalogPickerModal's selection state (now
+// delegated to the embedded FilamentCatalogSelector).
 struct FilamentPickerTestAccess {
-    // Highlights the first product in the currently selected vendor+type, as if the
-    // user had tapped that row.
     static void select_first_product(FilamentCatalogPickerModal& m) {
-        auto products = m.catalog_.products_for(m.current_vendor(), m.current_type());
-        if (products.empty())
-            return;
-        m.highlighted_id_ = products.front()->id;
-        m.rebuild_product_list();
+        m.selector_.select_first_product_for_test();
     }
 
     static void press_select(FilamentCatalogPickerModal& m) {
         m.handle_select_button();
     }
 
-    // Drives the vendor dropdown to `index` and fires the same change handler the XML
-    // "value_changed" event would trigger (types/list rebuild + highlighted_id_ reset).
     static void change_vendor(FilamentCatalogPickerModal& m, uint32_t index) {
-        lv_obj_t* dd = lv_obj_find_by_name(m.dialog(), "vendor_dropdown");
-        if (!dd)
-            return;
-        lv_dropdown_set_selected(dd, index);
-        m.handle_vendor_changed();
+        m.selector_.change_vendor_for_test(index);
     }
 
-    static const std::string& highlighted_id(const FilamentCatalogPickerModal& m) {
-        return m.highlighted_id_;
+    static std::string highlighted_id(const FilamentCatalogPickerModal& m) {
+        const auto* ef = m.selector_.highlighted();
+        return ef ? ef->id : std::string();
     }
 
-    // Returns the Type dropdown's newline-separated options string, reflecting any
-    // allowed_types_ filtering applied by populate_type_dropdown(). Empty when the
-    // dropdown could not be found or no types passed the filter.
     static std::string type_options(const FilamentCatalogPickerModal& m) {
-        lv_obj_t* dd = lv_obj_find_by_name(m.dialog(), "type_dropdown");
-        return dd ? std::string(lv_dropdown_get_options(dd)) : std::string();
+        return m.selector_.type_options();
     }
 
-    // Returns true if the "Reset to defaults" row is currently hidden.
     static bool reset_button_hidden(const FilamentCatalogPickerModal& m) {
         lv_obj_t* btn = lv_obj_find_by_name(m.dialog(), "btn_tertiary");
         if (!btn)
@@ -53,7 +38,6 @@ struct FilamentPickerTestAccess {
         return lv_obj_has_flag(btn, LV_OBJ_FLAG_HIDDEN);
     }
 
-    // Invokes the reset callback the same way the registered XML click handler would.
     static void press_reset(FilamentCatalogPickerModal& m) {
         if (m.reset_callback_)
             m.reset_callback_();
