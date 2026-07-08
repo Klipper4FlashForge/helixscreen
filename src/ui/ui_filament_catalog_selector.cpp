@@ -191,6 +191,16 @@ void FilamentCatalogSelector::populate_type_dropdown() {
             if (std::find(allowed_lc.begin(), allowed_lc.end(), to_lower(t)) != allowed_lc.end())
                 filtered.push_back(t);
         }
+        // Whitelist entries absent from the catalog (e.g. AD5X "SILK") are still appended
+        // so users aren't locked out of a firmware-supported material just because the
+        // catalog has no product for it yet. Whitelist spelling is preserved for these.
+        for (const auto& allowed : *allowed_types_) {
+            bool present = std::any_of(filtered.begin(), filtered.end(), [&](const std::string& t) {
+                return to_lower(t) == to_lower(allowed);
+            });
+            if (!present)
+                filtered.push_back(allowed);
+        }
         types.swap(filtered);
     }
     std::string options;

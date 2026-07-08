@@ -58,6 +58,27 @@ TEST_CASE_METHOD(XMLTestFixture, "selector allowed_types filter is case-insensit
     sel.detach();
 }
 
+TEST_CASE_METHOD(XMLTestFixture,
+                 "selector allowed_types appends whitelist entries missing from catalog",
+                 "[filament_picker][catalog_selector][whitelist]") {
+    lv_obj_t* root = make_fragment();
+    REQUIRE(root != nullptr);
+
+    FilamentCatalogSelector sel;
+    sel.attach(root);
+    // AD5X-shaped whitelist: SILK has no Generic-vendor catalog product at all, so the old
+    // subtract-only filter silently dropped it, locking users out of a firmware-supported
+    // material. PLA and PETG both exist for Generic and are intersected as before.
+    sel.configure(std::nullopt, std::vector<std::string>{"PLA", "SILK", "PETG"});
+    sel.populate();
+
+    // Sorted catalog intersection (PETG, PLA) first, then whitelist-only entries appended
+    // in whitelist order, preserving whitelist spelling.
+    CHECK(sel.type_options() == "PETG\nPLA\nSILK");
+
+    sel.detach();
+}
+
 TEST_CASE_METHOD(XMLTestFixture, "selector clears highlight when vendor changes",
                  "[filament_picker][catalog_selector]") {
     lv_obj_t* root = make_fragment();

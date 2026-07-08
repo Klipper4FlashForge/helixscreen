@@ -137,16 +137,18 @@ TEST_CASE_METHOD(XMLTestFixture, "picker allowed_types partial match keeps only 
 }
 
 TEST_CASE_METHOD(XMLTestFixture,
-                 "picker allowed_types with no matching product yields empty type list",
+                 "picker allowed_types with no matching product appends the whitelist entry",
                  "[filament_picker]") {
-    // A type Generic has no product for -> filter drops everything, dropdown empties.
+    // A type Generic has no product for -> appended rather than dropped, so a
+    // firmware-supported material (e.g. AD5X "SILK") isn't locked out just because the
+    // catalog has no product for it yet.
     std::vector<std::string> allowed = {"NONEXISTENT_TYPE"};
     FilamentCatalogPickerModal modal;
     modal.show(lv_screen_active(), std::nullopt, allowed, [](const EffectiveFilament&) {});
     helix::ui::UpdateQueue::instance().drain();
 
-    // Must not crash; the Type dropdown is empty.
-    REQUIRE(FilamentPickerTestAccess::type_options(modal).empty());
+    // Must not crash; the Type dropdown offers the whitelist-only entry with no products.
+    REQUIRE(FilamentPickerTestAccess::type_options(modal) == "NONEXISTENT_TYPE");
 }
 
 TEST_CASE_METHOD(XMLTestFixture, "picker allowed_types filter is case-insensitive",
