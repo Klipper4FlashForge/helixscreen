@@ -7168,3 +7168,74 @@ TEST_CASE_METHOD(Ad5xHomingGuardFixture,
     AmsError err = backend->eject_lane(0);
     CHECK(err.user_msg != "Cannot run filament operation while printing");
 }
+
+// ==========================================================================
+// External TYPE-change detection (check_external_type_change)
+// prestonbrown/helixscreen#981 / #1065: a type-only firmware edit (same
+// color) never tripped the color detector, so a non-locked override's baked
+// material went stale and masked firmware truth — color updated on screen,
+// material stuck (e.g. on "PLA"). A firmware type change must now refresh a
+// non-locked override so the new type surfaces, while a user-locked material
+// (#965) is still preserved.
+// ==========================================================================
+
+TEST_CASE("AD5X IFS: firmware type change refreshes a non-locked override (#981)",
+          "[ams][ad5x_ifs][override][981]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    seed_standard_colors(backend); // slot 1: firmware PETG / #00FF00, baselines set
+
+    // Auto-mirror left a non-locked override matching firmware-at-the-time.
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.material = "PETG";
+    ovr.color_rgb = 0x00FF00;
+    ovr.color_set = true;
+    ovr.user_locked_material = false;
+    Ad5xIfsTestAccess::seed_override(backend, 1, ovr);
+
+    // Firmware type changes externally (color unchanged): PETG -> TPU.
+    Ad5xIfsTestAccess::set_material(backend, 1, "TPU");
+
+    // The new firmware type must surface, and the stale override is refreshed.
+    CHECK(backend.get_slot_info(1).material == "TPU");
+    auto after = Ad5xIfsTestAccess::get_override(backend, 1);
+    REQUIRE(after.has_value());
+    CHECK(after->material == "TPU");
+}
+
+TEST_CASE("AD5X IFS: firmware type change does NOT clobber a user-locked material (#965)",
+          "[ams][ad5x_ifs][override][965]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    seed_standard_colors(backend); // slot 1 firmware PETG
+
+    // Genuine user edit — locked, must survive the post-print firmware revert.
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.material = "SILK";
+    ovr.color_rgb = 0x00FF00;
+    ovr.color_set = true;
+    ovr.user_locked_material = true;
+    Ad5xIfsTestAccess::seed_override(backend, 1, ovr);
+
+    Ad5xIfsTestAccess::set_material(backend, 1, "TPU"); // firmware type change
+
+    CHECK(backend.get_slot_info(1).material == "SILK");
+    auto after = Ad5xIfsTestAccess::get_override(backend, 1);
+    REQUIRE(after.has_value());
+    CHECK(after->material == "SILK");
+}
+
+TEST_CASE("AD5X IFS: first material observation is a baseline, not an edit",
+          "[ams][ad5x_ifs][override][981]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    // A pre-existing non-locked override must NOT be disturbed by the very
+    // first firmware observation (startup): baseline only, no sync.
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.material = "ABS";
+    ovr.user_locked_material = false;
+    Ad5xIfsTestAccess::seed_override(backend, 1, ovr);
+
+    // First-ever material reading for slot 1 establishes the baseline.
+    Ad5xIfsTestAccess::set_material(backend, 1, "PETG");
+
+    // Override still wins on the baseline pass (no external edit detected yet).
+    CHECK(backend.get_slot_info(1).material == "ABS");
+}

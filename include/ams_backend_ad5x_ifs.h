@@ -385,6 +385,19 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // lessWaste/bambufy plugin's private save_variables track zmod truth.
     bool check_external_color_change(int slot_index, std::optional<uint32_t> observed_color,
                                      bool slot_has_filament);
+    // Material counterpart to check_external_color_change. A firmware TYPE
+    // change that leaves the color unchanged (user picks a new material on the
+    // zmod COLOR menu / LCD, or an external CHANGE_ZCOLOR ... TYPE=) never
+    // trips the color detector, so a non-locked override's baked material used
+    // to go stale and mask firmware truth forever — color updated, type stuck
+    // (raza616, prestonbrown/helixscreen#981/#1065). Same contract as the
+    // color detector: called BEFORE apply_overrides, first observation is a
+    // baseline, empty material is the "no reading" signal (ignored), and on a
+    // real delta it fires sync_override_to_firmware_locked() which refreshes
+    // the override's material via the OverwriteAlways mirror — user-locked
+    // materials (#965) are still skipped there. Returns true if a sync fired.
+    bool check_external_type_change(int slot_index, const std::string& observed_material,
+                                    std::optional<uint32_t> observed_color, bool slot_has_filament);
     // Sync helper used by check_external_color_change. Caller must hold mutex_.
     // Updates an existing override's color_rgb + material, or creates a
     // minimal one if none exists. Fires save_async to push the result to the
@@ -764,6 +777,11 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // -> check_external_color_change and from set_slot_info's pre-update, all
     // of which run under the lock).
     std::unordered_map<int, uint32_t> last_firmware_color_;
+    // Per-slot previous firmware MATERIAL, mirroring last_firmware_color_.
+    // Drives check_external_type_change so a type-only firmware edit refreshes
+    // a non-locked override. Same lock discipline and baseline semantics as
+    // last_firmware_color_; empty string = first observation / no reading.
+    std::unordered_map<int, std::string> last_firmware_material_;
 
     // Bumped by sync_override_to_firmware_locked on every accepted external
     // edit (color or material delta detected for a present slot, lane_data

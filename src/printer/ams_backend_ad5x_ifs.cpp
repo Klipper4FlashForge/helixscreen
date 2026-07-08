@@ -741,6 +741,10 @@ void AmsBackendAd5xIfs::update_slot_from_state(int slot_index) {
     // when a slot read came back as the empty-placeholder #808080 — the eject
     // path in parse_adventurer_json clears the override explicitly.
     check_external_color_change(slot_index, observed_color, port_presence_[idx]);
+    // Material counterpart: a type-only firmware edit (same color) doesn't trip
+    // the color detector, so a non-locked override's baked material would go
+    // stale and mask firmware truth (#981/#1065 — color updated, type stuck).
+    check_external_type_change(slot_index, materials_[idx], observed_color, port_presence_[idx]);
 
     // Layer user-configured overrides on top of firmware-reported data. Called
     // last so overrides win for any non-default field. Callers hold mutex_,
@@ -859,6 +863,62 @@ bool AmsBackendAd5xIfs::check_external_color_change(int slot_index,
     // now match firmware-truth, that's a no-op for those fields.
     sync_override_to_firmware_locked(slot_index, color,
                                      materials_[static_cast<size_t>(slot_index)]);
+    return true;
+}
+
+bool AmsBackendAd5xIfs::check_external_type_change(int slot_index,
+                                                  const std::string& observed_material,
+                                                  std::optional<uint32_t> observed_color,
+                                                  bool slot_has_filament) {
+    // Empty material is the "no reading" signal (parse hasn't filled
+    // materials_[idx], or firmware reports "?" which maps to ""). Ignore it:
+    // never baseline, never sync — a real material is required to call
+    // something an edit. Mirrors check_external_color_change's nullopt handling.
+    if (observed_material.empty())
+        return false;
+
+    auto it = last_firmware_material_.find(slot_index);
+    if (it == last_firmware_material_.end()) {
+        // First observation — establish baseline, never an edit signal.
+        last_firmware_material_[slot_index] = observed_material;
+        spdlog::debug("{} Slot {} baseline material: {}", backend_log_tag(), slot_index,
+                      observed_material);
+        return false;
+    }
+    if (it->second == observed_material)
+        return false; // unchanged — no edit signal
+
+    const std::string old_material = it->second;
+    it->second = observed_material;
+
+    if (!slot_has_filament) {
+        spdlog::debug("{} Slot {} firmware material changed {} -> {} "
+                      "(slot empty — sync skipped)",
+                      backend_log_tag(), slot_index, old_material, observed_material);
+        return false;
+    }
+
+    // The mirror inside sync_override_to_firmware_locked refreshes BOTH color
+    // and material from the passed values, so we must hand it the real firmware
+    // color — never a phantom — or it could clobber the override's color. On
+    // AD5X ffmColor and ffmType come from the same parse, so a present material
+    // implies a present color; if the color reading is somehow absent, update
+    // the baseline but defer the sync to the next parse when both are readable.
+    if (!observed_color.has_value()) {
+        spdlog::debug("{} Slot {} firmware material changed {} -> {} but no color reading yet — "
+                      "sync deferred",
+                      backend_log_tag(), slot_index, old_material, observed_material);
+        return false;
+    }
+
+    spdlog::info("{} Slot {} firmware material changed {} -> {}, syncing override "
+                 "+ Moonraker DB lane_data (external type edit detected)",
+                 backend_log_tag(), slot_index, old_material, observed_material);
+
+    // OverwriteAlways mirror skips user-locked material (#965), so a genuine
+    // user choice is preserved; a stale auto-mirror material is refreshed so
+    // the new firmware type surfaces on the next apply_overrides().
+    sync_override_to_firmware_locked(slot_index, *observed_color, observed_material);
     return true;
 }
 
