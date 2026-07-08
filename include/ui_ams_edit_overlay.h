@@ -114,9 +114,6 @@ class AmsEditOverlay : public OverlayBase {
     /// Cached overlay widget for lazy_create_and_push_overlay
     lv_obj_t* cached_overlay_widget_ = nullptr;
 
-    // === Owned color picker (stacked modal until Phase 6) ===
-    std::unique_ptr<ColorPicker> color_picker_;
-
     // === Spoolman spool detail editor (stacked modal until Phase 7) ===
     SpoolEditModal spool_edit_modal_;
 
@@ -124,6 +121,23 @@ class AmsEditOverlay : public OverlayBase {
     FilamentCatalogSelector details_selector_;
     uint32_t details_color_ = 0;     ///< pending color chosen in the details view
     bool details_color_set_ = false; ///< true once the user picked a color there
+
+    // === Color view (kViewColor) ===
+    lv_subject_t color_mode_subject_; ///< 0=presets, 1=custom ("ams_edit_color_mode")
+    int return_view_ = kViewOverview; ///< where the color view pops back to
+    uint32_t custom_color_ = 0x808080;
+
+    void open_color_view(int return_view);
+    void apply_color(uint32_t rgb);
+    void handle_color_swatch(lv_obj_t* swatch);
+    void handle_custom_color_changed(uint32_t rgb);
+    void handle_color_hex_changed();
+    void handle_color_apply();
+    static void on_color_swatch_cb(lv_event_t* e);
+    static void on_color_mode_presets_cb(lv_event_t* e);
+    static void on_color_mode_custom_cb(lv_event_t* e);
+    static void on_color_apply_cb(lv_event_t* e);
+    static void on_color_hex_changed_cb(lv_event_t* e);
 
     // === Subjects for XML binding ===
     SubjectManager subjects_;
@@ -176,7 +190,6 @@ class AmsEditOverlay : public OverlayBase {
     void format_remaining_label(int pct);
     bool is_dirty() const;
     void update_sync_button_state();
-    void show_color_picker();
     lv_obj_t* find_widget(const char* name) const;
 
     // === View switching ===

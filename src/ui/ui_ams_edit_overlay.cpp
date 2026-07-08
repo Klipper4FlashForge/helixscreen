@@ -6,6 +6,7 @@
 #include "ui_button.h"
 #include "ui_callback_helpers.h"
 #include "ui_error_reporting.h"
+#include "ui_hsv_picker.h"
 #include "ui_nav_manager.h"
 #include "ui_split_button.h"
 #include "ui_swatch.h"
@@ -277,6 +278,16 @@ lv_obj_t* AmsEditOverlay::create(lv_obj_t* parent) {
         lv_image_set_inner_align(chip_mark, LV_IMAGE_ALIGN_CENTER);
     }
 
+    lv_obj_t* hsv = find_widget("ams_color_hsv");
+    if (hsv) {
+        ui_hsv_picker_set_callback(
+            hsv,
+            [](uint32_t rgb, void* /*user_data*/) {
+                get_ams_edit_overlay().handle_custom_color_changed(rgb);
+            },
+            nullptr);
+    }
+
     spdlog::info("[AmsEditOverlay] Overlay created");
     return overlay_root_;
 }
@@ -367,6 +378,8 @@ void AmsEditOverlay::init_subjects() {
         // Managed-vs-untracked signal: drives the Spoolman mark, the Spool
         // details row, and (Phase 5) the Save-to-Spoolman toggle default.
         UI_MANAGED_SUBJECT_INT(is_managed_subject_, 0, "ams_edit_is_managed", subjects_);
+
+        UI_MANAGED_SUBJECT_INT(color_mode_subject_, 0, "ams_edit_color_mode", subjects_);
 
         chip_text_buf_[0] = '\0';
         lv_subject_init_string(&chip_text_subject_, chip_text_buf_, nullptr, sizeof(chip_text_buf_),
@@ -855,11 +868,9 @@ void AmsEditOverlay::on_quick_swatch_cb(lv_event_t* e) {
 }
 
 void AmsEditOverlay::on_custom_color_cb(lv_event_t* e) {
-    // Phase 6 wires this to the in-place color view; until then it is a
-    // no-op placeholder registered so the XML resolves.
     auto* self = get_instance_from_event(e);
     if (self) {
-        spdlog::debug("[AmsEditOverlay] Custom color requested (wired in color-view phase)");
+        self->open_color_view(kViewFilamentDetails);
     }
 }
 
@@ -1342,42 +1353,136 @@ void AmsEditOverlay::update_sync_button_state() {
     lv_subject_set_int(&save_disabled_subject_, is_dirty() ? 0 : 1);
 }
 
-void AmsEditOverlay::show_color_picker() {
-    if (!parent_screen_) {
-        spdlog::warn("[AmsEditOverlay] No parent for color picker");
+void AmsEditOverlay::open_color_view(int return_view) {
+    return_view_ = return_view;
+    // Seed custom sub-state from the color the opener is editing.
+    custom_color_ =
+        (return_view == kViewFilamentDetails) ? details_color_ : working_info_.color_rgb;
+    if (custom_color_ == 0) {
+        custom_color_ = 0x808080;
+    }
+    lv_obj_t* hsv = find_widget("ams_color_hsv");
+    if (hsv) {
+        ui_hsv_picker_set_color_rgb(hsv, custom_color_);
+    }
+    lv_obj_t* preview = find_widget("ams_color_preview");
+    if (preview) {
+        helix::ui::apply_swatch_color(preview, custom_color_, {});
+    }
+    lv_obj_t* hex_input = find_widget("ams_color_hex_input");
+    if (hex_input) {
+        char buf[10];
+        snprintf(buf, sizeof(buf), "#%06X", custom_color_);
+        lv_textarea_set_text(hex_input, buf);
+    }
+    lv_subject_set_int(&color_mode_subject_, 0); // land on presets
+    lv_subject_set_int(&view_mode_subject_, kViewColor);
+    spdlog::debug("[AmsEditOverlay] Color view opened (return_view={})", return_view);
+}
+
+void AmsEditOverlay::apply_color(uint32_t rgb) {
+    if (return_view_ == kViewFilamentDetails) {
+        // Stage as the details view's pending color — committed on Select.
+        details_color_ = rgb;
+        details_color_set_ = true;
+        lv_obj_t* preview = find_widget("details_color_preview");
+        if (preview) {
+            helix::ui::apply_swatch_color(preview, rgb, {});
+        }
+    } else {
+        // Direct slot color edit (in-place replacement for the old stacked
+        // ColorPicker — spec §3.5). Nearest-name so the chip/label always
+        // have a display name (resolution §2.9).
+        working_info_.color_rgb = rgb;
+        working_info_.color_name = helix::get_color_name_from_hex(rgb);
+        working_info_.multi_color_hexes.clear();
+        update_ui();
+        update_sync_button_state();
+    }
+    lv_subject_set_int(&view_mode_subject_, return_view_);
+}
+
+void AmsEditOverlay::handle_color_swatch(lv_obj_t* swatch) {
+    if (!swatch) {
         return;
     }
+    lv_color_t c = lv_obj_get_style_bg_color(swatch, LV_PART_MAIN);
+    uint32_t rgb = (static_cast<uint32_t>(c.red) << 16) | (static_cast<uint32_t>(c.green) << 8) |
+                   static_cast<uint32_t>(c.blue);
+    apply_color(rgb); // preset tap applies immediately and returns
+}
 
-    // Create picker on first use (lazy initialization)
-    if (!color_picker_) {
-        color_picker_ = std::make_unique<ColorPicker>();
+void AmsEditOverlay::handle_custom_color_changed(uint32_t rgb) {
+    custom_color_ = rgb;
+    lv_obj_t* preview = find_widget("ams_color_preview");
+    if (preview) {
+        helix::ui::apply_swatch_color(preview, rgb, {});
     }
+    lv_obj_t* hex_input = find_widget("ams_color_hex_input");
+    if (hex_input) {
+        char buf[10];
+        snprintf(buf, sizeof(buf), "#%06X", rgb);
+        lv_textarea_set_text(hex_input, buf);
+    }
+}
 
-    // Set callback to update edit modal when color is selected
-    color_picker_->set_color_callback([this](uint32_t color_rgb, const std::string& color_name) {
-        // Update the working slot info with selected color
-        working_info_.color_rgb = color_rgb;
-        working_info_.color_name = color_name;
-        // A hand-picked single color replaces any inherited multi-color swatch.
-        working_info_.multi_color_hexes.clear();
-
-        // Update the edit modal's color swatch to show new selection
-        if (overlay_root_) {
-            lv_obj_t* swatch = find_widget("color_swatch");
-            if (swatch) {
-                helix::ui::apply_swatch_color(swatch, color_rgb, working_info_.multi_color_hexes);
-            }
-
-            // Update color name label via subject
-            snprintf(color_name_buf_, sizeof(color_name_buf_), "%s", color_name.c_str());
-            lv_subject_copy_string(&color_name_subject_, color_name_buf_);
-
-            update_sync_button_state();
+void AmsEditOverlay::handle_color_hex_changed() {
+    lv_obj_t* hex_input = find_widget("ams_color_hex_input");
+    if (!hex_input) {
+        return;
+    }
+    const char* text = lv_textarea_get_text(hex_input);
+    uint32_t rgb = 0;
+    if (text && helix::parse_hex_color(text, rgb)) {
+        custom_color_ = rgb;
+        lv_obj_t* hsv = find_widget("ams_color_hsv");
+        if (hsv) {
+            ui_hsv_picker_set_color_rgb(hsv, rgb);
         }
-    });
+        lv_obj_t* preview = find_widget("ams_color_preview");
+        if (preview) {
+            helix::ui::apply_swatch_color(preview, rgb, {});
+        }
+    }
+}
 
-    // Show with current edit color
-    color_picker_->show_with_color(parent_screen_, working_info_.color_rgb);
+void AmsEditOverlay::handle_color_apply() {
+    apply_color(custom_color_);
+}
+
+void AmsEditOverlay::on_color_swatch_cb(lv_event_t* e) {
+    auto* self = get_instance_from_event(e);
+    if (self) {
+        self->handle_color_swatch(static_cast<lv_obj_t*>(lv_event_get_target(e)));
+    }
+}
+
+void AmsEditOverlay::on_color_mode_presets_cb(lv_event_t* e) {
+    auto* self = get_instance_from_event(e);
+    if (self) {
+        lv_subject_set_int(&self->color_mode_subject_, 0);
+    }
+}
+
+void AmsEditOverlay::on_color_mode_custom_cb(lv_event_t* e) {
+    auto* self = get_instance_from_event(e);
+    if (self) {
+        lv_subject_set_int(&self->color_mode_subject_, 1);
+    }
+}
+
+void AmsEditOverlay::on_color_apply_cb(lv_event_t* e) {
+    auto* self = get_instance_from_event(e);
+    if (self) {
+        self->handle_color_apply();
+    }
+}
+
+void AmsEditOverlay::on_color_hex_changed_cb(lv_event_t* e) {
+    auto* self = get_instance_from_event(e);
+    if (self) {
+        self->handle_color_hex_changed();
+    }
 }
 
 // ============================================================================
@@ -1421,6 +1526,10 @@ void AmsEditOverlay::handle_back() {
         details_selector_.clear_catalog();
         switch_to_form();
         break;
+    case kViewColor:
+        // Leave without applying; pop to whichever view opened the color view.
+        lv_subject_set_int(&view_mode_subject_, return_view_);
+        break;
     case kViewOverview:
     default:
         // Back on the overview = Cancel: discard changes, close (spec §13.3)
@@ -1432,8 +1541,8 @@ void AmsEditOverlay::handle_back() {
 }
 
 void AmsEditOverlay::handle_color_clicked() {
-    spdlog::info("[AmsEditOverlay] Opening color picker");
-    show_color_picker();
+    spdlog::info("[AmsEditOverlay] Opening in-place color view (from overview)");
+    open_color_view(kViewOverview);
 }
 
 void AmsEditOverlay::handle_remaining_changed(int percent) {
@@ -1764,6 +1873,11 @@ void AmsEditOverlay::register_callbacks() {
         {"ams_edit_details_select_cb", on_details_select_cb},
         {"ams_edit_quick_swatch_cb", on_quick_swatch_cb},
         {"ams_edit_custom_color_cb", on_custom_color_cb},
+        {"ams_edit_color_swatch_cb", on_color_swatch_cb},
+        {"ams_edit_color_mode_presets_cb", on_color_mode_presets_cb},
+        {"ams_edit_color_mode_custom_cb", on_color_mode_custom_cb},
+        {"ams_edit_color_apply_cb", on_color_apply_cb},
+        {"ams_edit_color_hex_changed_cb", on_color_hex_changed_cb},
         {"ams_edit_spool_details_cb", on_spool_details_cb},
         {"ams_edit_color_clicked_cb", on_color_clicked_cb},
         {"ams_edit_remaining_changed_cb", on_remaining_changed_cb},

@@ -274,6 +274,7 @@ void register_xml_components() {
     register_xml("spoolman_spool_item.xml");
     // AMS slot editor (single overlay, internal views — spec §13)
     helix::ui::get_ams_edit_overlay().register_callbacks();
+    register_xml("components/color_swatch_grid.xml");
     register_xml("ams_edit_overlay.xml");
 
     // Spoolman components (MUST be after spool_canvas registration)

@@ -57,6 +57,18 @@ class AmsEditOverlayViewTestAccess {
     bool save_opt_in() {
         return overlay_.save_to_spoolman_opt_in_;
     }
+    void call_open_color_view(int return_view) {
+        overlay_.open_color_view(return_view);
+    }
+    void call_apply_color(uint32_t rgb) {
+        overlay_.apply_color(rgb);
+    }
+    uint32_t details_color() {
+        return overlay_.details_color_;
+    }
+    bool details_color_set() {
+        return overlay_.details_color_set_;
+    }
 
   private:
     AmsEditOverlay& overlay_;
@@ -253,6 +265,63 @@ TEST_CASE_METHOD(LVGLUITestFixture, "details Select with toggle off unlinks a ma
     CHECK(access.working_info().spoolman_id == 0);
     CHECK(access.working_info().material == "ASA"); // identity preserved
     CHECK_FALSE(access.save_opt_in());
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "color view applies to the slot and returns to overview",
+                 "[ams_edit_overlay][color_view]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_open_color_view(AmsEditOverlay::kViewOverview);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    CHECK(access.view() == AmsEditOverlay::kViewColor);
+
+    access.call_apply_color(0xE53935);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.view() == AmsEditOverlay::kViewOverview);
+    CHECK(access.working_info().color_rgb == 0xE53935);
+    CHECK_FALSE(access.working_info().color_name.empty());
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "color view from filament-details stages the pending color and returns there",
+                 "[ams_edit_overlay][color_view]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_filament_details();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_open_color_view(AmsEditOverlay::kViewFilamentDetails);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    CHECK(access.view() == AmsEditOverlay::kViewColor);
+
+    uint32_t before = access.working_info().color_rgb;
+    access.call_apply_color(0x1E88E5);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.view() == AmsEditOverlay::kViewFilamentDetails);
+    CHECK(access.details_color() == 0x1E88E5);
+    CHECK(access.details_color_set());
+    CHECK(access.working_info().color_rgb == before); // slot untouched until Select
 
     close_editor_overlay();
 }
