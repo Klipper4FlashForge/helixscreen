@@ -256,6 +256,93 @@
 
       </lv_obj>
 
+      <!-- ============================================================ -->
+      <!-- FILAMENT DETAILS VIEW (ams_edit_view=2): untracked setup AND -->
+      <!-- identity editing for the current filament (spec §3.3)        -->
+      <!-- ============================================================ -->
+      <lv_obj name="details_view"
+              width="100%" height="content" flex_flow="column" style_pad_all="#space_md"
+              style_pad_gap="#space_md" scrollable="false" hidden="true">
+        <bind_flag_if_not_eq subject="ams_edit_view" flag="hidden" ref_value="2"/>
+
+        <text_heading text="Filament details" translation_tag="Filament details"/>
+
+        <!-- Brand / Material / product — shared catalog selector fragment -->
+        <filament_catalog_selector name="details_catalog_selector"/>
+
+        <!-- Inline color: quick-swatch strip + custom-hue affordance (✎ wired
+             to the in-place color view in Phase 6) -->
+        <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="column"
+                style_pad_gap="#space_xs" scrollable="false">
+          <text_small text="Color" translation_tag="Color"/>
+          <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row_wrap"
+                  style_pad_gap="#space_xs" style_flex_cross_place="center" scrollable="false">
+            <!-- Selected-color preview -->
+            <lv_obj name="details_color_preview" width="32" height="32"
+                    style_radius="#border_radius_small" style_bg_color="#card_bg" style_bg_opa="255"
+                    style_border_width="2" style_border_color="#text_muted" style_border_opa="80"
+                    scrollable="false"/>
+            <!-- Quick swatches (common colors) -->
+            <lv_obj width="32" height="32" style_radius="#border_radius_small"
+                    style_bg_color="0x1A1A1A" style_bg_opa="255" clickable="true" scrollable="false">
+              <event_cb trigger="clicked" callback="ams_edit_quick_swatch_cb"/>
+            </lv_obj>
+            <lv_obj width="32" height="32" style_radius="#border_radius_small"
+                    style_bg_color="0xFFFFFF" style_bg_opa="255" style_border_width="1"
+                    style_border_color="#text_muted" clickable="true" scrollable="false">
+              <event_cb trigger="clicked" callback="ams_edit_quick_swatch_cb"/>
+            </lv_obj>
+            <lv_obj width="32" height="32" style_radius="#border_radius_small"
+                    style_bg_color="0x808080" style_bg_opa="255" clickable="true" scrollable="false">
+              <event_cb trigger="clicked" callback="ams_edit_quick_swatch_cb"/>
+            </lv_obj>
+            <lv_obj width="32" height="32" style_radius="#border_radius_small"
+                    style_bg_color="0xE53935" style_bg_opa="255" clickable="true" scrollable="false">
+              <event_cb trigger="clicked" callback="ams_edit_quick_swatch_cb"/>
+            </lv_obj>
+            <lv_obj width="32" height="32" style_radius="#border_radius_small"
+                    style_bg_color="0xFF9800" style_bg_opa="255" clickable="true" scrollable="false">
+              <event_cb trigger="clicked" callback="ams_edit_quick_swatch_cb"/>
+            </lv_obj>
+            <lv_obj width="32" height="32" style_radius="#border_radius_small"
+                    style_bg_color="0xFFEB3B" style_bg_opa="255" clickable="true" scrollable="false">
+              <event_cb trigger="clicked" callback="ams_edit_quick_swatch_cb"/>
+            </lv_obj>
+            <lv_obj width="32" height="32" style_radius="#border_radius_small"
+                    style_bg_color="0x43A047" style_bg_opa="255" clickable="true" scrollable="false">
+              <event_cb trigger="clicked" callback="ams_edit_quick_swatch_cb"/>
+            </lv_obj>
+            <lv_obj width="32" height="32" style_radius="#border_radius_small"
+                    style_bg_color="0x1E88E5" style_bg_opa="255" clickable="true" scrollable="false">
+              <event_cb trigger="clicked" callback="ams_edit_quick_swatch_cb"/>
+            </lv_obj>
+            <!-- Custom-hue escape hatch (wired to the color view in Phase 6) -->
+            <ui_button name="btn_details_custom_color" width="32" height="32"
+                       icon="pencil" variant="ghost">
+              <event_cb trigger="clicked" callback="ams_edit_custom_color_cb"/>
+            </ui_button>
+          </lv_obj>
+        </lv_obj>
+
+        <!-- Save to Spoolman toggle — locked naming (spec §3.8). Absent when
+             Spoolman is disconnected; defaults to the slot's managed state. -->
+        <lv_obj name="save_to_spoolman_row" width="100%" height="content" style_pad_all="0"
+                flex_flow="row" style_flex_main_place="space_between"
+                style_flex_cross_place="center" scrollable="false">
+          <bind_flag_if_eq subject="printer_has_spoolman" flag="hidden" ref_value="0"/>
+          <text_body text="Save to Spoolman" translation_tag="Save to Spoolman"/>
+          <ui_switch name="save_to_spoolman_switch" size="small">
+            <bind_state_if_eq subject="ams_edit_is_managed" state="checked" ref_value="1"/>
+          </ui_switch>
+        </lv_obj>
+
+        <!-- Select: apply to the working slot and return to the overview -->
+        <ui_button name="btn_details_select" width="100%" height="#button_height"
+                   text="Select" translation_tag="Select" variant="primary">
+          <event_cb trigger="clicked" callback="ams_edit_details_select_cb"/>
+        </ui_button>
+      </lv_obj>
+
     </lv_obj>
   </view>
 </component>

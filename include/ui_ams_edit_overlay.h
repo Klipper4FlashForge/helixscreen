@@ -4,7 +4,7 @@
 #pragma once
 
 #include "ui_color_picker.h"
-#include "ui_filament_catalog_picker.h"
+#include "ui_filament_catalog_selector.h"
 #include "ui_spoolman_edit_modal.h"
 
 #include "ams_types.h"
@@ -120,8 +120,10 @@ class AmsEditOverlay : public OverlayBase {
     // === Spoolman spool detail editor (stacked modal until Phase 7) ===
     SpoolEditModal spool_edit_modal_;
 
-    // === Offline branded-filament picker (stacked modal until Phase 5) ===
-    FilamentCatalogPickerModal catalog_picker_;
+    // === Filament-details view (kViewFilamentDetails) ===
+    FilamentCatalogSelector details_selector_;
+    uint32_t details_color_ = 0;     ///< pending color chosen in the details view
+    bool details_color_set_ = false; ///< true once the user picked a color there
 
     // === Subjects for XML binding ===
     SubjectManager subjects_;
@@ -183,8 +185,9 @@ class AmsEditOverlay : public OverlayBase {
     void populate_picker();
     void render_spool_list(const std::string& filter);
     void handle_spool_selected(int spool_id);
-    void open_branded_catalog_picker();
-    void apply_branded_pick(const helix::printer::EffectiveFilament& ef);
+    void enter_filament_details();
+    void handle_details_select();
+    void handle_quick_swatch(lv_obj_t* swatch);
     void handle_unlink();
     void handle_picker_search(const char* text);
     void update_spoolman_button_state();
@@ -242,6 +245,9 @@ class AmsEditOverlay : public OverlayBase {
     static void on_chip_clicked_cb(lv_event_t* e);
     static void on_spool_details_cb(lv_event_t* e);
     static void on_setup_entry_cb(lv_event_t* e);
+    static void on_details_select_cb(lv_event_t* e);
+    static void on_quick_swatch_cb(lv_event_t* e);
+    static void on_custom_color_cb(lv_event_t* e);
     static void on_color_clicked_cb(lv_event_t* e);
     static void on_remaining_changed_cb(lv_event_t* e);
     static void on_remaining_edit_cb(lv_event_t* e);

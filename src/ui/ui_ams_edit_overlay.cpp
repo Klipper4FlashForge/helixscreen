@@ -732,40 +732,125 @@ void AmsEditOverlay::handle_chip_clicked() {
         switch_to_picker();
         return;
     }
-    spdlog::debug("[AmsEditOverlay] Chip tapped - opening branded catalog (no Spoolman)");
-    open_branded_catalog_picker();
+    spdlog::debug("[AmsEditOverlay] Chip tapped - opening filament details (no Spoolman)");
+    enter_filament_details();
 }
 
-void AmsEditOverlay::open_branded_catalog_picker() {
-    // Restrict the picker's Type dropdown to the backend's accepted materials (nullopt
-    // = any). Seed the Type from the slot's current material so the user lands on a
-    // relevant list.
+void AmsEditOverlay::enter_filament_details() {
+    // Single identity editor for BOTH cases (spec §3.3): fresh untracked setup
+    // and editing the current filament. Pre-fill from the working slot; the
+    // toggle default (off=untracked / on=managed) rides ams_edit_is_managed
+    // via bind_state_if_eq.
+    lv_obj_t* fragment = find_widget("details_catalog_selector");
+    if (!fragment) {
+        spdlog::warn("[AmsEditOverlay] details view fragment missing");
+        return;
+    }
     auto* backend = AmsState::instance().get_backend();
     auto allowed = backend ? backend->get_supported_materials() : std::nullopt;
     std::optional<std::string> seed = working_info_.material.empty()
                                           ? std::nullopt
                                           : std::optional<std::string>(working_info_.material);
-    catalog_picker_.show(
-        overlay_root_, seed, allowed,
-        [this](const helix::printer::EffectiveFilament& ef) { apply_branded_pick(ef); });
+    details_selector_.attach(fragment);
+    details_selector_.configure(std::move(seed), std::move(allowed));
+    details_selector_.populate();
+
+    // Seed the pending color from the working slot so Select without a color
+    // tap keeps the current color.
+    details_color_ = working_info_.color_rgb;
+    details_color_set_ = false;
+    lv_obj_t* preview = find_widget("details_color_preview");
+    if (preview) {
+        helix::ui::apply_swatch_color(preview, details_color_, {});
+    }
+
+    lv_subject_set_int(&view_mode_subject_, kViewFilamentDetails);
+    spdlog::debug("[AmsEditOverlay] Entered filament-details view");
 }
 
-void AmsEditOverlay::apply_branded_pick(const helix::printer::EffectiveFilament& ef) {
-    // Map the branded catalog product onto the working slot. No color fields (the
-    // offline catalog has no per-spool color) and no spoolman_id (this is the
-    // Spoolman-absent path).
-    working_info_.material = ef.type;
-    working_info_.brand = ef.brand;
-    working_info_.nozzle_temp_min = ef.nozzle_min;
-    working_info_.nozzle_temp_max = ef.nozzle_max;
-    working_info_.bed_temp = ef.bed_temp;
+void AmsEditOverlay::handle_details_select() {
+    // Apply catalog pick (if any) — brand/material/temps from the branded
+    // catalog (spec §5: EffectiveFilament -> slot mapping reused).
+    const helix::printer::EffectiveFilament* ef = details_selector_.highlighted();
+    if (ef) {
+        working_info_.material = ef->type;
+        working_info_.brand = ef->brand;
+        working_info_.nozzle_temp_min = ef->nozzle_min;
+        working_info_.nozzle_temp_max = ef->nozzle_max;
+        working_info_.bed_temp = ef->bed_temp;
+        spdlog::info("[AmsEditOverlay] Details pick: '{} {}' ({}-{}/{}°C)", ef->brand, ef->type,
+                     ef->nozzle_min, ef->nozzle_max, ef->bed_temp);
+    }
+
+    // Apply pending color (catalog carries no color — spec §3.3).
+    if (details_color_set_) {
+        working_info_.color_rgb = details_color_;
+        working_info_.color_name = helix::get_color_name_from_hex(details_color_);
+        working_info_.multi_color_hexes.clear();
+    }
+
+    // Capture the explicit tracking decision.
+    auto* subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    const bool has_spoolman = subj && lv_subject_get_int(subj) == 1;
+    lv_obj_t* toggle = find_widget("save_to_spoolman_switch");
+    const bool opted_in = toggle && lv_obj_has_state(toggle, LV_STATE_CHECKED);
+    save_to_spoolman_opt_in_ = has_spoolman && opted_in;
+
+    if (has_spoolman && !opted_in && working_info_.spoolman_id > 0) {
+        // Toggle off on a managed slot = unlink: spoolman_id -> 0, identity
+        // kept as local slot values; no Spoolman delete/write (resolution §2.1).
+        spdlog::info("[AmsEditOverlay] Save-to-Spoolman off — unlinking spool {}",
+                     working_info_.spoolman_id);
+        working_info_.spoolman_id = 0;
+        working_info_.spool_name.clear();
+    }
+
+    details_selector_.detach();
+    details_selector_.clear_catalog();
+
     switch_to_form();
     update_ui();
     update_temp_display();
     update_sync_button_state();
     update_spoolman_button_state();
-    spdlog::info("[AmsEditOverlay] Slot {} assigned branded filament '{} {}' ({}-{}/{}°C)",
-                 slot_index_, ef.brand, ef.type, ef.nozzle_min, ef.nozzle_max, ef.bed_temp);
+}
+
+void AmsEditOverlay::handle_quick_swatch(lv_obj_t* swatch) {
+    if (!swatch) {
+        return;
+    }
+    lv_color_t c = lv_obj_get_style_bg_color(swatch, LV_PART_MAIN);
+    details_color_ = (static_cast<uint32_t>(c.red) << 16) | (static_cast<uint32_t>(c.green) << 8) |
+                     static_cast<uint32_t>(c.blue);
+    details_color_set_ = true;
+    lv_obj_t* preview = find_widget("details_color_preview");
+    if (preview) {
+        helix::ui::apply_swatch_color(preview, details_color_, {});
+    }
+    spdlog::debug("[AmsEditOverlay] Quick swatch picked: {:#08x}", details_color_);
+}
+
+void AmsEditOverlay::on_details_select_cb(lv_event_t* e) {
+    auto* self = get_instance_from_event(e);
+    if (self) {
+        self->handle_details_select();
+    }
+}
+
+void AmsEditOverlay::on_quick_swatch_cb(lv_event_t* e) {
+    auto* self = get_instance_from_event(e);
+    if (self) {
+        self->handle_quick_swatch(static_cast<lv_obj_t*>(lv_event_get_target(e)));
+    }
+}
+
+void AmsEditOverlay::on_custom_color_cb(lv_event_t* e) {
+    // Phase 6 wires this to the in-place color view; until then it is a
+    // no-op placeholder registered so the XML resolves.
+    auto* self = get_instance_from_event(e);
+    if (self) {
+        spdlog::debug("[AmsEditOverlay] Custom color requested (wired in color-view phase)");
+    }
 }
 
 void AmsEditOverlay::handle_picker_search(const char* text) {
@@ -1318,7 +1403,12 @@ void AmsEditOverlay::handle_back() {
     int view = lv_subject_get_int(&view_mode_subject_);
     switch (view) {
     case kViewSpoolPicker:
-        // Back from the picker returns to the overview (old "manual entry" path)
+        switch_to_form();
+        break;
+    case kViewFilamentDetails:
+        // Leave without applying (Select is the apply path)
+        details_selector_.detach();
+        details_selector_.clear_catalog();
         switch_to_form();
         break;
     case kViewOverview:
@@ -1653,10 +1743,17 @@ void AmsEditOverlay::register_callbacks() {
         return;
     }
 
+    // The details fragment needs catalog_select_* registered even if the
+    // standalone picker never opened.
+    FilamentCatalogSelector::register_callbacks();
+
     register_xml_callbacks({
         {"ams_edit_back_cb", on_back_cb},
         {"ams_edit_chip_clicked_cb", on_chip_clicked_cb},
         {"ams_edit_setup_entry_cb", on_setup_entry_cb},
+        {"ams_edit_details_select_cb", on_details_select_cb},
+        {"ams_edit_quick_swatch_cb", on_quick_swatch_cb},
+        {"ams_edit_custom_color_cb", on_custom_color_cb},
         {"ams_edit_spool_details_cb", on_spool_details_cb},
         {"ams_edit_color_clicked_cb", on_color_clicked_cb},
         {"ams_edit_remaining_changed_cb", on_remaining_changed_cb},
@@ -1696,10 +1793,8 @@ void AmsEditOverlay::on_back_cb(lv_event_t* e) {
 }
 
 void AmsEditOverlay::handle_setup_entry() {
-    // Interim (Phase 4): stacked branded catalog. Phase 5 replaces this with
-    // the in-place filament-details view.
-    spdlog::debug("[AmsEditOverlay] Setup entry tapped");
-    open_branded_catalog_picker();
+    spdlog::debug("[AmsEditOverlay] Setup entry tapped - opening filament details");
+    enter_filament_details();
 }
 
 void AmsEditOverlay::on_setup_entry_cb(lv_event_t* e) {

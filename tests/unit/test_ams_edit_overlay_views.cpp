@@ -41,6 +41,22 @@ class AmsEditOverlayViewTestAccess {
     void call_render_spool_list(const std::string& filter) {
         overlay_.render_spool_list(filter);
     }
+    void call_enter_filament_details() {
+        overlay_.enter_filament_details();
+    }
+    void call_handle_details_select() {
+        overlay_.handle_details_select();
+    }
+    void set_details_color(uint32_t rgb) {
+        overlay_.details_color_ = rgb;
+        overlay_.details_color_set_ = true;
+    }
+    SlotInfo working_info() {
+        return overlay_.working_info_;
+    }
+    bool save_opt_in() {
+        return overlay_.save_to_spoolman_opt_in_;
+    }
 
   private:
     AmsEditOverlay& overlay_;
@@ -129,10 +145,114 @@ TEST_CASE_METHOD(LVGLUITestFixture, "identity chip shows spool name + mark for t
 
     // No "(Spoolman #N)" label anywhere anymore.
     CHECK(access.widget("spoolman_id_label") == nullptr);
-    // Dropdowns are gone.
-    CHECK(access.widget("vendor_dropdown") == nullptr);
-    CHECK(access.widget("material_dropdown") == nullptr);
+    // Overview dropdowns are gone (the details view's embedded catalog
+    // selector still has its own vendor/type dropdowns — scope to form_view).
+    lv_obj_t* form_view = access.widget("form_view");
+    REQUIRE(form_view != nullptr);
+    CHECK(lv_obj_find_by_name(form_view, "vendor_dropdown") == nullptr);
+    CHECK(lv_obj_find_by_name(form_view, "material_dropdown") == nullptr);
     CHECK(access.widget("btn_change_spool") == nullptr);
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "filament-details view: toggle hidden without Spoolman",
+                 "[ams_edit_overlay][details][toggle]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 0);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_filament_details();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    CHECK(access.view() == AmsEditOverlay::kViewFilamentDetails);
+
+    lv_obj_t* toggle_row = access.widget("save_to_spoolman_row");
+    REQUIRE(toggle_row != nullptr);
+    CHECK(lv_obj_has_flag(toggle_row, LV_OBJ_FLAG_HIDDEN));
+
+    lv_subject_set_int(spoolman_subj, 1);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    CHECK_FALSE(lv_obj_has_flag(toggle_row, LV_OBJ_FLAG_HIDDEN));
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "details Select applies color locally with toggle off",
+                 "[ams_edit_overlay][details][toggle]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_filament_details();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Untracked slot -> toggle defaults OFF (ams_edit_is_managed drives it).
+    lv_obj_t* toggle = access.widget("save_to_spoolman_switch");
+    REQUIRE(toggle != nullptr);
+    CHECK_FALSE(lv_obj_has_state(toggle, LV_STATE_CHECKED));
+
+    access.set_details_color(0xE53935);
+    access.call_handle_details_select();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.view() == AmsEditOverlay::kViewOverview);
+    CHECK(access.working_info().color_rgb == 0xE53935);
+    CHECK(access.working_info().spoolman_id == 0); // stays untracked
+    CHECK_FALSE(access.save_opt_in());             // Save will NOT write Spoolman
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "details Select with toggle off unlinks a managed slot",
+                 "[ams_edit_overlay][details][toggle]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_filament_details();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Managed slot -> toggle defaults ON.
+    lv_obj_t* toggle = access.widget("save_to_spoolman_switch");
+    REQUIRE(toggle != nullptr);
+    CHECK(lv_obj_has_state(toggle, LV_STATE_CHECKED));
+
+    // User switches it off -> unlink on Select (resolution §2.1): id -> 0,
+    // identity kept locally, no Spoolman write.
+    lv_obj_remove_state(toggle, LV_STATE_CHECKED);
+    access.call_handle_details_select();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.working_info().spoolman_id == 0);
+    CHECK(access.working_info().material == "ASA"); // identity preserved
+    CHECK_FALSE(access.save_opt_in());
 
     close_editor_overlay();
 }
