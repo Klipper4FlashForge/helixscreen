@@ -4012,6 +4012,16 @@
           "reason": "4 independent Z steppers (Voron 2.4 style)"
         },
         {
+          "type": "build_volume_range",
+          "field": "bed_mesh",
+          "min_x": 340,
+          "max_x": 380,
+          "min_y": 340,
+          "max_y": 380,
+          "confidence": 40,
+          "reason": "Build volume ~350x350mm (base SV08 size, distinct from SV08 Max ~500)"
+        },
+        {
           "type": "object_exists",
           "field": "printer_objects",
           "pattern": "adxl345",
