@@ -1328,6 +1328,33 @@ TEST_CASE("AD5X IFS phase: load sequence (temp + head sensor)", "[ams][ad5x_ifs]
     REQUIRE_FALSE(Ad5xIfsTestAccess::operation_detail(backend).empty());
 }
 
+TEST_CASE("AD5X IFS get_system_info surfaces the phase machine's operation_phase/detail (#1065 Bug 2)",
+          "[ams][ad5x_ifs][1065]") {
+    // The phase machine writes operation_phase (0/1/2) + operation_detail into
+    // system_info_, but AmsState::sync_from_backend reads them off the
+    // AmsSystemInfo that get_system_info() returns to drive the ams_operation_phase
+    // subject the right-side step tracker observes. If get_system_info() drops
+    // those fields, the steps render but the active one never highlights and the
+    // detail line goes blank (mkleersn v0.99.87: "the 1-2-3 steps show but fail to
+    // launch any of them").
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_head_filament(backend, false);
+    Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/false); // load -> HEATING, phase 0
+
+    REQUIRE(Ad5xIfsTestAccess::operation_phase(backend) == 0);    // internal phase-machine state
+    REQUIRE_FALSE(Ad5xIfsTestAccess::operation_detail(backend).empty());
+
+    // get_system_info() is the UI-facing view — it MUST carry the same values.
+    auto info = backend.get_system_info();
+    CHECK(info.operation_phase == 0);
+    CHECK(info.operation_detail == Ad5xIfsTestAccess::operation_detail(backend));
+
+    // Advance to LOADING (phase 1) and re-check the UI view tracks it.
+    Ad5xIfsTestAccess::handle_status(backend, make_extruder(230.0, 230.0));
+    REQUIRE(Ad5xIfsTestAccess::operation_phase(backend) == 1);
+    CHECK(backend.get_system_info().operation_phase == 1);
+}
+
 TEST_CASE("AD5X IFS phase: RESPOND line sets target before any extruder frame",
           "[ams][ad5x_ifs][phase]") {
     AmsBackendAd5xIfs backend(nullptr, nullptr);

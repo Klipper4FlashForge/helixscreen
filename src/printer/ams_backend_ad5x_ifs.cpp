@@ -1026,6 +1026,13 @@ AmsSystemInfo AmsBackendAd5xIfs::get_system_info() const {
     info.current_slot = system_info_.current_slot;
     info.filament_loaded = system_info_.filament_loaded;
     info.action = system_info_.action;
+    // Surface the phase machine's live sub-phase + detail so
+    // AmsState::sync_from_backend can drive the ams_operation_phase subject and
+    // the operation-detail line. Without this the right-side step tracker renders
+    // the steps but never highlights the active one, and the detail goes blank
+    // (#1065 Bug 2: "the 1-2-3 steps show but fail to launch any of them").
+    info.operation_detail = system_info_.operation_detail;
+    info.operation_phase = system_info_.operation_phase;
     info.supports_bypass = system_info_.supports_bypass;
     info.supports_tool_mapping = system_info_.supports_tool_mapping;
     info.supports_endless_spool = system_info_.supports_endless_spool;
