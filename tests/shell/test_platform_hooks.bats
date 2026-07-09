@@ -290,3 +290,109 @@ INIT_SCRIPT="config/helixscreen.init"
     ! grep -A3 'Pi and other platforms' scripts/install.sh | grep -q 'INSTALL_DIR="/opt/helixscreen"'
     ! grep -A3 'Pi and other platforms' scripts/lib/installer/platform.sh | grep -q 'INSTALL_DIR="/opt/helixscreen"'
 }
+
+# --- Snapmaker U1 remote screen (fb-http) ---
+
+@test "snapmaker-u1 hooks define remote-screen functions" {
+    ( . "$HOOKS_DIR/hooks-snapmaker-u1.sh"
+      for func in _remote_screen_enabled start_remote_screen stop_remote_screen; do
+          type "$func" >/dev/null 2>&1
+      done )
+}
+
+@test "start_remote_screen is a no-op when fb-http is absent" {
+    run sh -c '
+        . "'"$HOOKS_DIR"'/hooks-snapmaker-u1.sh"
+        HELIX_FB_HTTP="/nonexistent/fb-http.py"
+        HELIX_REMOTE_SCREEN_PID="$(mktemp -u)"
+        start_remote_screen
+        rc=$?
+        [ ! -f "$HELIX_REMOTE_SCREEN_PID" ] || echo "PIDFILE-CREATED"
+        exit $rc
+    '
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"PIDFILE-CREATED"* ]]
+}
+
+@test "stop_remote_screen clears a stale pidfile safely" {
+    run sh -c '
+        . "'"$HOOKS_DIR"'/hooks-snapmaker-u1.sh"
+        pf="$(mktemp)"
+        echo 999999 > "$pf"          # a PID that is not running
+        HELIX_REMOTE_SCREEN_PID="$pf"
+        stop_remote_screen
+        rc=$?
+        [ ! -f "$pf" ] || echo "PIDFILE-LEFT"
+        exit $rc
+    '
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"PIDFILE-LEFT"* ]]
+}
+
+@test "platform_pre_start starts remote screen; post_stop stops it" {
+    # Both hooks must reference the remote-screen lifecycle so the feature is
+    # actually wired into HelixScreen's start/stop path.
+    grep -A25 '^platform_pre_start()' "$HOOKS_DIR/hooks-snapmaker-u1.sh" | grep -q 'start_remote_screen'
+    grep -A15 '^platform_post_stop()' "$HOOKS_DIR/hooks-snapmaker-u1.sh" | grep -q 'stop_remote_screen'
+}
+
+@test "start_remote_screen discards fb-http output (no unbounded tmpfs log)" {
+    # Regression guard: fb-http is long-lived and /screen/ is polled continuously,
+    # so its request log is unbounded. On the U1 /tmp is tmpfs, and an unbounded
+    # log there starves Klipper (the 498 MB tmpfs-fill failure). The launch must
+    # discard output to /dev/null, never redirect into a growable /tmp file.
+    ! grep -q '/tmp/fb-http\.log' "$HOOKS_DIR/hooks-snapmaker-u1.sh"
+    grep -A2 '^    start-stop-daemon -S' "$HOOKS_DIR/hooks-snapmaker-u1.sh" | grep -q '>/dev/null 2>&1'
+}
+
+@test "backend probe selects DRM flags when fb-http advertises --backend" {
+    run sh -c '
+        . "'"$HOOKS_DIR"'/hooks-snapmaker-u1.sh"
+        f="$(mktemp)"
+        printf "%s\n" "    parser.add_argument(\"--backend\", default=\"auto\")" > "$f"
+        HELIX_FB_HTTP="$f"
+        _remote_screen_backend_args
+        rm -f "$f"
+    '
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"--backend drm"* ]]
+    [[ "$output" == *"--drm-device /dev/dri/card0"* ]]
+    [[ "$output" == *"--drm-wait 60"* ]]
+}
+
+@test "backend probe emits no DRM flags on a fbdev-only fb-http" {
+    run sh -c '
+        . "'"$HOOKS_DIR"'/hooks-snapmaker-u1.sh"
+        f="$(mktemp)"
+        printf "%s\n" "    parser.add_argument(\"--fb\", default=\"/dev/fb0\")" > "$f"
+        HELIX_FB_HTTP="$f"
+        out="$(_remote_screen_backend_args)"
+        [ -z "$out" ] || echo "UNEXPECTED:$out"
+        rm -f "$f"
+    '
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"--backend"* ]]
+    [[ "$output" != *"UNEXPECTED"* ]]
+}
+
+@test "stop_remote_screen does not signal a recycled unrelated PID" {
+    # If fb-http died and its PID was recycled to an unrelated process, the stale
+    # pidfile must NOT cause that process to be TERM'd. stop_remote_screen verifies
+    # the PID's cmdline references fb-http before signaling.
+    run sh -c '
+        . "'"$HOOKS_DIR"'/hooks-snapmaker-u1.sh"
+        sleep 30 &                   # stand-in for an unrelated, recycled-PID process
+        upid=$!
+        pf="$(mktemp)"
+        echo "$upid" > "$pf"         # pidfile points at the unrelated live PID
+        HELIX_REMOTE_SCREEN_PID="$pf"
+        stop_remote_screen
+        rc=$?
+        if kill -0 "$upid" 2>/dev/null; then echo "SURVIVED"; kill "$upid" 2>/dev/null; fi
+        [ ! -f "$pf" ] || echo "PIDFILE-LEFT"
+        exit $rc
+    '
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"SURVIVED"* ]]      # unrelated process must NOT be killed
+    [[ "$output" != *"PIDFILE-LEFT"* ]]  # stale pidfile is still cleaned up
+}
