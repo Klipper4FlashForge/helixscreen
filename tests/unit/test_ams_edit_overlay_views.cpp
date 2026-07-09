@@ -73,6 +73,9 @@ class AmsEditOverlayViewTestAccess {
     SlotInfo working_info() {
         return overlay_.working_info_;
     }
+    helix::ui::FilamentCatalogSelector& details_selector() {
+        return overlay_.details_selector_;
+    }
     // Simulate the async Spoolman fetch in enter_spool_edit() that overwrites
     // detail_original_/detail_working_ wholesale with the fetched record
     // (spool_weight_g = empty-spool CORE weight, not the filament total) and
@@ -877,6 +880,83 @@ TEST_CASE_METHOD(LVGLUITestFixture, "picker pre-selects the current spool when l
     REQUIRE(lv_obj_get_child_count(list) == 2);
     CHECK_FALSE(lv_obj_has_state(lv_obj_get_child(list, 0), LV_STATE_CHECKED));
     CHECK(lv_obj_has_state(lv_obj_get_child(list, 1), LV_STATE_CHECKED));
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool-edit Save after a type change stages the checked product, not the old identity",
+                 "[ams_edit_overlay][catalog_selector]") {
+    // Regression for the silent-drop bug: user changes the Type dropdown, the
+    // product list rebuilds, then taps header Save. Before the fix the rebuilt
+    // list had nothing highlighted and Save skipped the identity entirely,
+    // saving the OLD brand/material. Now the selector always leaves a product
+    // checked, so Save stages the new identity.
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    SlotInfo slot = untracked_slot(); // Generic PETG
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    auto& sel = access.details_selector();
+    // Constrain the type dropdown for deterministic indices (index 0 = PETG,
+    // 1 = PLA); preselect-on-change was already enabled by enter_spool_edit.
+    sel.set_preselect_on_change(true);
+    sel.configure(std::string("PETG"), std::vector<std::string>{"PETG", "PLA"});
+    sel.populate();
+    sel.preselect_first();
+    REQUIRE(sel.current_type() == "PETG");
+    REQUIRE(sel.highlighted() != nullptr);
+
+    // Change type to PLA — the list must auto-highlight a PLA product.
+    sel.change_type_for_test(1);
+    REQUIRE(sel.current_type() == "PLA");
+    const helix::printer::EffectiveFilament* pla = sel.highlighted();
+    REQUIRE(pla != nullptr);
+    std::string expect_brand = pla->brand;
+
+    access.call_handle_spool_edit_save();
+    CHECK(access.working_info().material == "PLA");
+    CHECK(access.working_info().brand == expect_brand);
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool-edit Save applies Generic identity when a whitelisted type has no catalog product",
+                 "[ams_edit_overlay][catalog_selector]") {
+    // A firmware-whitelisted material with no seeded catalog product yields an
+    // empty (all-unchecked) product list. Save must not silently no-op the
+    // identity change: apply vendor Generic + the selected type string.
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    SlotInfo slot = untracked_slot();
+    slot.brand = "eSUN";     // prove the brand gets forced to Generic
+    slot.material = "PETG";  // differs from the selected SILK
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    auto& sel = access.details_selector();
+    sel.configure(std::nullopt, std::vector<std::string>{"SILK"});
+    sel.populate();
+    REQUIRE(sel.current_type() == "SILK");
+    REQUIRE(sel.highlighted() == nullptr);
+
+    access.call_handle_spool_edit_save();
+    CHECK(access.working_info().material == "SILK");
+    CHECK(access.working_info().brand == "Generic");
 
     close_editor_overlay();
 }

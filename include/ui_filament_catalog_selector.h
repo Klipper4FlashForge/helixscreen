@@ -56,8 +56,19 @@ class FilamentCatalogSelector {
 
     /// Highlight the first product of the current vendor+type if nothing is
     /// highlighted yet (hosts that show an already-defined filament want its
-    /// matching variant pre-checked rather than an unchecked list).
+    /// matching variant pre-checked rather than an unchecked list). Records the
+    /// picked product as the preselect anchor so a later dropdown round-trip can
+    /// restore it (see set_preselect_on_change()).
     void preselect_first();
+
+    /// Opt-in: when enabled, a vendor/type dropdown change auto-highlights a
+    /// product in the rebuilt list instead of leaving it unchecked — the
+    /// anchor product if it survived into the new list, else the first row.
+    /// Guarantees the list always shows a checked row so a host's Save can't
+    /// silently drop an identity change. Empty rebuilt lists stay unchecked
+    /// (host handles that case). Default off preserves the standalone picker's
+    /// "nothing checked until the user taps a row" behavior.
+    void set_preselect_on_change(bool enable);
 
     void set_selection_changed(SelectionChangedCallback cb);
 
@@ -69,6 +80,7 @@ class FilamentCatalogSelector {
     // === Test drivers (mirror the XML event paths) ===
     void select_first_product_for_test();
     void change_vendor_for_test(uint32_t index);
+    void change_type_for_test(uint32_t index);
 
   private:
     void populate_vendor_dropdown();
@@ -77,6 +89,10 @@ class FilamentCatalogSelector {
     void handle_vendor_changed();
     void handle_type_changed();
     void handle_row_selected(const std::string& product_id);
+    /// After a dropdown rebuild with preselect_on_change_ set: highlight the
+    /// anchor product if present in the new list, else the first row; notify
+    /// nullptr only when the list is genuinely empty.
+    void preselect_after_change();
 
     lv_obj_t* find_child(const char* name) const;
 
@@ -89,6 +105,8 @@ class FilamentCatalogSelector {
     std::optional<std::string> seed_type_;
     std::optional<std::vector<std::string>> allowed_types_;
     std::string highlighted_id_;
+    std::string preselect_anchor_id_; // product to restore on a dropdown round-trip
+    bool preselect_on_change_ = false;
     std::vector<std::string> vendor_order_; // dropdown index -> brand
     SelectionChangedCallback on_selection_changed_;
 };

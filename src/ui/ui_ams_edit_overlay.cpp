@@ -39,6 +39,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <map>
 #include <set>
@@ -682,6 +683,11 @@ void AmsEditOverlay::enter_spool_edit() {
                                           : std::optional<std::string>(working_info_.material);
     details_selector_.attach(fragment);
     details_selector_.configure(std::move(seed), std::move(allowed));
+    // A vendor/type dropdown change must always leave a product checked so a
+    // subsequent header Save can't silently drop the identity change (the
+    // rebuilt list would otherwise be all-unchecked and Save would skip
+    // identity). Opt in before populate; the standalone picker stays opt-out.
+    details_selector_.set_preselect_on_change(true);
     details_selector_.populate();
     // An already-defined filament should show its matching variant checked;
     // a fresh list pre-checks the first product so Save is one tap.
@@ -793,6 +799,29 @@ void AmsEditOverlay::handle_spool_edit_save(bool finish) {
         working_info_.bed_temp = ef->bed_temp;
         spdlog::info("[AmsEditOverlay] Spool-edit pick: '{} {}' ({}-{}/{}°C)", ef->brand, ef->type,
                      ef->nozzle_min, ef->nozzle_max, ef->bed_temp);
+    } else {
+        // No product highlighted. With preselect-on-change enabled this only
+        // happens when the rebuilt product list was empty — a type the firmware
+        // whitelists but the catalog has no product for yet. If the user did
+        // change the type, apply a Generic identity so Save doesn't silently
+        // drop it; temps are left as-is (no catalog data to source them from).
+        // When the selected type still equals the slot's material the identity
+        // is unchanged and the old skip behavior is correct.
+        std::string sel_type = details_selector_.current_type();
+        auto iequals = [](const std::string& a, const std::string& b) {
+            if (a.size() != b.size())
+                return false;
+            return std::equal(a.begin(), a.end(), b.begin(), [](unsigned char x, unsigned char y) {
+                return std::tolower(x) == std::tolower(y);
+            });
+        };
+        if (!sel_type.empty() && !iequals(sel_type, working_info_.material)) {
+            working_info_.material = sel_type; // material names are not translated (L070)
+            working_info_.brand = "Generic";
+            spdlog::info("[AmsEditOverlay] Spool-edit type change with no catalog product: "
+                         "'Generic {}'",
+                         sel_type);
+        }
     }
 
     // Apply pending color (catalog carries no color — spec §3.3).

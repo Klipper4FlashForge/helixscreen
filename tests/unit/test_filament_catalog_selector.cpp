@@ -97,6 +97,65 @@ TEST_CASE_METHOD(XMLTestFixture, "selector clears highlight when vendor changes"
     sel.detach();
 }
 
+TEST_CASE_METHOD(XMLTestFixture,
+                 "preselect_on_change keeps a checked product across a type change",
+                 "[filament_picker][catalog_selector][preselect]") {
+    lv_obj_t* root = make_fragment();
+    REQUIRE(root != nullptr);
+
+    FilamentCatalogSelector sel;
+    sel.attach(root);
+    sel.set_preselect_on_change(true);
+    // Constrain the type dropdown to a known, sorted set so indices are stable:
+    // catalog intersection is alphabetical -> "PETG\nPLA" (index 0 = PETG, 1 = PLA).
+    sel.configure(std::string("PLA"), std::vector<std::string>{"PLA", "PETG"});
+    sel.populate();
+    sel.preselect_first();
+    REQUIRE(sel.type_options() == "PETG\nPLA");
+    REQUIRE(sel.current_type() == "PLA");
+    const EffectiveFilament* pla = sel.highlighted();
+    REQUIRE(pla != nullptr);
+    CHECK(pla->type == "PLA");
+    std::string pla_id = pla->id;
+
+    // Change type to PETG: the rebuilt list must auto-highlight a PETG product
+    // (invariant: never an all-unchecked list under preselect_on_change).
+    sel.change_type_for_test(0);
+    CHECK(sel.current_type() == "PETG");
+    const EffectiveFilament* petg = sel.highlighted();
+    REQUIRE(petg != nullptr);
+    CHECK(petg->type == "PETG");
+
+    // Navigate back to PLA: the original (anchor) product is restored, not just
+    // whatever happens to be first.
+    sel.change_type_for_test(1);
+    CHECK(sel.current_type() == "PLA");
+    REQUIRE(sel.highlighted() != nullptr);
+    CHECK(sel.highlighted()->id == pla_id);
+
+    sel.detach();
+    helix::ui::UpdateQueue::instance().drain();
+}
+
+TEST_CASE_METHOD(XMLTestFixture,
+                 "preselect_on_change leaves an empty product list unchecked",
+                 "[filament_picker][catalog_selector][preselect]") {
+    lv_obj_t* root = make_fragment();
+    REQUIRE(root != nullptr);
+
+    FilamentCatalogSelector sel;
+    sel.attach(root);
+    sel.set_preselect_on_change(true);
+    // SILK is whitelisted but has no Generic catalog product -> appended type,
+    // empty product list. Nothing to check; the host decides Save semantics.
+    sel.configure(std::nullopt, std::vector<std::string>{"SILK"});
+    sel.populate();
+    CHECK(sel.current_type() == "SILK");
+    CHECK(sel.highlighted() == nullptr);
+
+    sel.detach();
+}
+
 TEST_CASE_METHOD(XMLTestFixture, "preselect_first checks the first product but keeps a prior pick",
                  "[filament_picker][catalog_selector]") {
     lv_obj_t* root = make_fragment();

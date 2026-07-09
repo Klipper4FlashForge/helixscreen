@@ -73,11 +73,13 @@ void FilamentCatalogSelector::configure(std::optional<std::string> seed_type,
     seed_type_ = std::move(seed_type);
     allowed_types_ = std::move(allowed_types);
     highlighted_id_.clear();
+    preselect_anchor_id_.clear();
 }
 
 void FilamentCatalogSelector::populate() {
     catalog_ = helix::printer::FilamentCatalog::load_full(); // fresh load per open
     highlighted_id_.clear();
+    preselect_anchor_id_.clear();
     populate_vendor_dropdown();
     populate_type_dropdown();
     rebuild_product_list();
@@ -131,6 +133,36 @@ void FilamentCatalogSelector::preselect_first() {
     if (products.empty())
         return;
     handle_row_selected(products.front()->id);
+    // Remember the entry pick so a dropdown round-trip back to this vendor+type
+    // re-checks the same product rather than the first row.
+    preselect_anchor_id_ = highlighted_id_;
+}
+
+void FilamentCatalogSelector::set_preselect_on_change(bool enable) {
+    preselect_on_change_ = enable;
+}
+
+void FilamentCatalogSelector::preselect_after_change() {
+    auto products = catalog_.products_for(current_vendor(), current_type());
+    if (products.empty()) {
+        // Genuinely no product for this vendor+type (e.g. a firmware-whitelisted
+        // material we haven't seeded). Leave unchecked; the host decides what a
+        // Save with no highlight means.
+        if (on_selection_changed_)
+            on_selection_changed_(nullptr);
+        return;
+    }
+    // Prefer the anchor (the identity the host entered with) if it survived into
+    // the rebuilt list — user navigated back to the original type.
+    if (!preselect_anchor_id_.empty()) {
+        for (const auto* p : products) {
+            if (p->id == preselect_anchor_id_) {
+                handle_row_selected(p->id);
+                return;
+            }
+        }
+    }
+    handle_row_selected(products.front()->id);
 }
 
 void FilamentCatalogSelector::select_first_product_for_test() {
@@ -146,6 +178,14 @@ void FilamentCatalogSelector::change_vendor_for_test(uint32_t index) {
         return;
     lv_dropdown_set_selected(dd, index);
     handle_vendor_changed();
+}
+
+void FilamentCatalogSelector::change_type_for_test(uint32_t index) {
+    lv_obj_t* dd = find_child("type_dropdown");
+    if (!dd)
+        return;
+    lv_dropdown_set_selected(dd, index);
+    handle_type_changed();
 }
 
 void FilamentCatalogSelector::populate_vendor_dropdown() {
@@ -295,18 +335,24 @@ void FilamentCatalogSelector::rebuild_product_list() {
 }
 
 void FilamentCatalogSelector::handle_vendor_changed() {
-    highlighted_id_.clear(); // stale row no longer visible under the new vendor
-    if (on_selection_changed_)
-        on_selection_changed_(nullptr);
+    highlighted_id_.clear();  // stale row no longer visible under the new vendor
     populate_type_dropdown(); // vendor changed -> types change
     rebuild_product_list();
+    if (preselect_on_change_) {
+        preselect_after_change(); // keep a checked row (invariant)
+    } else if (on_selection_changed_) {
+        on_selection_changed_(nullptr);
+    }
 }
 
 void FilamentCatalogSelector::handle_type_changed() {
     highlighted_id_.clear(); // stale row no longer visible under the new type
-    if (on_selection_changed_)
-        on_selection_changed_(nullptr);
     rebuild_product_list();
+    if (preselect_on_change_) {
+        preselect_after_change(); // keep a checked row (invariant)
+    } else if (on_selection_changed_) {
+        on_selection_changed_(nullptr);
+    }
 }
 
 void FilamentCatalogSelector::handle_row_selected(const std::string& product_id) {
