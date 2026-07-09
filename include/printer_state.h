@@ -613,6 +613,16 @@ class PrinterState {
     }
 
     /**
+     * @brief Set slice layer heights from file metadata (for Z-height derivation)
+     *
+     * Enables the Z-height current-layer fallback for printers whose slicer never
+     * reports a layer number. Thread-safe (marshals internally).
+     */
+    void set_print_layer_heights(double layer_height, double first_layer_height) {
+        print_domain_.set_print_layer_heights(layer_height, first_layer_height);
+    }
+
+    /**
      * @brief Set current layer number (gcode response fallback)
      *
      * Thread-safe. Called from gcode response parser when
@@ -628,6 +638,17 @@ class PrinterState {
      */
     bool has_real_layer_data() const {
         return print_domain_.has_real_layer_data();
+    }
+
+    /**
+     * @brief Is the displayed current layer trustworthy (not a progress guess)?
+     *
+     * True for real slicer/Moonraker layer fields AND for Z-height-derived
+     * layers; false only for the progress-fraction estimate. The print-status
+     * label uses this to decide whether to show the "~" estimate prefix.
+     */
+    bool layer_is_accurate() const {
+        return print_domain_.layer_is_accurate();
     }
 
     /**

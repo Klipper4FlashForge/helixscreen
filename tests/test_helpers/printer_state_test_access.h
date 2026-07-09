@@ -12,6 +12,15 @@ class PrinterPrintStateTestAccess {
   public:
     static void reset_extra(PrinterPrintState& pps) {
         pps.estimated_print_time_ = 0;
+        // File-scoped slice geometry + per-print Z cache used by the Z-height
+        // layer derivation. Like estimated_print_time_ these survive
+        // reset_for_new_print() in production; the test reset() simulates a fresh
+        // session on the shared singleton, so clear them for cross-test isolation.
+        pps.layer_height_ = 0.0;
+        pps.first_layer_height_ = 0.0;
+        pps.last_gcode_z_mm_ = 0.0;
+        pps.have_gcode_z_ = false;
+        pps.layer_z_derived_ = false;
         pps.has_real_layer_data_ = false;
         // Sticky printer capability — session-scoped in production (survives
         // reset_for_new_print, cleared only on a fresh session). The test

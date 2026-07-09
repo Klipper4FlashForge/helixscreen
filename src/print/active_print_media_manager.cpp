@@ -245,6 +245,18 @@ void ActivePrintMediaManager::load_thumbnail_for_file(const std::string& filenam
                     return;
                 }
 
+                // Slice layer heights power the Z-height current-layer derivation
+                // for printers whose slicer never reports a layer number. Thread
+                // these through independently of layer_count: heights are useful
+                // even when the total came from the gcode-header fallback below.
+                if (metadata.layer_height > 0.0) {
+                    printer_state_.set_print_layer_heights(metadata.layer_height,
+                                                           metadata.first_layer_height);
+                    spdlog::debug("[ActivePrintMediaManager] Set layer heights from metadata: "
+                                  "layer={:.3f}mm first={:.3f}mm",
+                                  metadata.layer_height, metadata.first_layer_height);
+                }
+
                 // Set total layer count from metadata
                 if (metadata.layer_count > 0) {
                     printer_state_.set_print_layer_total(static_cast<int>(metadata.layer_count));
