@@ -387,6 +387,13 @@ void AmsBackendAd5xIfs::handle_status_update(const json& notification) {
             if (system_info_.action == AmsAction::PURGING && detected) {
                 action_start_time_ = std::chrono::steady_clock::now();
             }
+            // Motion-sensor activity means filament is still moving — a genuine
+            // progress signal for the indeterminate detector, for any phase of a
+            // tracked op (#1065 row 14), so a busy-but-moving op never reads as a
+            // frozen "Working…".
+            if (phase_tracker_.active && detected) {
+                note_phase_progress_locked();
+            }
             // Phase tracker (active op WE started) advances the phase on a head
             // transition. detect_load_unload_completion preserves legacy
             // snap-to-IDLE when the tracker is inactive.
@@ -456,12 +463,18 @@ void AmsBackendAd5xIfs::handle_status_update(const json& notification) {
         }
     }
 
-    // Check for stuck operations on every status update
+    // Check for stuck operations on every status update. Capture the
+    // indeterminate flag across the call: a frozen-feed frame that changed
+    // nothing else can still flip "Working…" on/off, and the UI only sees it via
+    // an EVENT_STATE_CHANGED -> sync_from_backend refresh, so treat a toggle as a
+    // state change worth publishing (#1065 row 14).
+    const bool indet_before = system_info_.operation_indeterminate;
     check_action_timeout();
+    const bool indet_toggled = system_info_.operation_indeterminate != indet_before;
 
     lock.unlock();
 
-    if (state_changed) {
+    if (state_changed || indet_toggled) {
         emit_event(EVENT_STATE_CHANGED);
     }
 
@@ -1057,6 +1070,7 @@ AmsSystemInfo AmsBackendAd5xIfs::get_system_info() const {
     // (#1065 Bug 2: "the 1-2-3 steps show but fail to launch any of them").
     info.operation_detail = system_info_.operation_detail;
     info.operation_phase = system_info_.operation_phase;
+    info.operation_indeterminate = system_info_.operation_indeterminate;
     info.supports_bypass = system_info_.supports_bypass;
     info.supports_tool_mapping = system_info_.supports_tool_mapping;
     info.supports_endless_spool = system_info_.supports_endless_spool;
@@ -4044,6 +4058,11 @@ void AmsBackendAd5xIfs::begin_phase_tracking_locked(bool is_unload) {
     phase_tracker_ = IfsPhaseTracker{};
     phase_tracker_.active = true;
     phase_tracker_.is_unload = is_unload;
+    // Seed the indeterminate detector: op just started, so the no-progress clock
+    // starts now and the last-progress temp baseline is cleared so the first real
+    // extruder frame counts as a value change (#1065 row 14).
+    last_progress_temp_deci_ = 0;
+    note_phase_progress_locked();
     // Seed the heat target from the last-known extruder target if we have one;
     // a RESPOND "Heating the nozzle to N degrees" line or an extruder frame can
     // refine it. Fall back to the IFS firmware default (230°C) so the very
@@ -4065,6 +4084,16 @@ void AmsBackendAd5xIfs::end_phase_tracking_locked() {
 void AmsBackendAd5xIfs::on_extruder_temp_locked(int temp_deci, int target_deci) {
     if (!phase_tracker_.active) {
         return;
+    }
+    // A CHANGED extruder temperature is a genuine progress signal — reset the
+    // indeterminate ("Working…") clock. Gating on a value change (not merely on a
+    // frame arriving) is what lets a frozen temp subject trip the detector: when
+    // the feed starves the value stops changing and the clock elapses past the
+    // threshold (#1065 row 14). Healthy heating pushes ~1-4 changing frames/sec,
+    // so a normal heat keeps resetting and never trips.
+    if (temp_deci != last_progress_temp_deci_) {
+        last_progress_temp_deci_ = temp_deci;
+        note_phase_progress_locked();
     }
     // Track the live target if the firmware reports a positive one.
     if (target_deci > 0) {
@@ -4088,6 +4117,9 @@ void AmsBackendAd5xIfs::on_head_transition_locked(bool detected) {
     if (!phase_tracker_.active) {
         return;
     }
+    // A head-sensor transition (cut/retract begun or filament reached nozzle) is
+    // a genuine progress signal for the indeterminate detector (#1065 row 14).
+    note_phase_progress_locked();
     if (!detected) {
         // Head sensor cleared: cut + retract underway (unload) — advance to the
         // retract phase. The toolhead unload (_IFS_REMOVE_CURRENT_PRUTOK) runs
@@ -4198,10 +4230,17 @@ bool AmsBackendAd5xIfs::apply_phase_action_locked() {
         // phase (CUTTING/UNLOADING/LOADING/PURGING) gets its own fresh 90s window
         // rather than inheriting elapsed time from the long heat-up.
         action_start_time_ = std::chrono::steady_clock::now();
+        // A phase transition is a genuine progress signal for the indeterminate
+        // detector (#1065 row 14).
+        note_phase_progress_locked();
         changed = true;
     }
     set_operation_detail_locked(std::move(detail));
     return changed;
+}
+
+void AmsBackendAd5xIfs::note_phase_progress_locked() {
+    last_phase_progress_time_ = std::chrono::steady_clock::now();
 }
 
 void AmsBackendAd5xIfs::set_operation_detail_locked(std::string detail) {
@@ -4294,6 +4333,24 @@ bool AmsBackendAd5xIfs::validate_slot_index(int slot_index) const {
 // ensure_homed_then() provided by AmsSubscriptionBackend
 
 void AmsBackendAd5xIfs::check_action_timeout() {
+    // Indeterminate ("Working…") detector (#1065 row 14). While a phase-tracked
+    // load/unload is in flight, if no genuine progress signal (temp-VALUE change,
+    // head transition, motion, or phase change) has landed within the short
+    // INDETERMINATE_THRESHOLD, the shared main-thread status feed has starved and
+    // the live "Heat 225/230" number is frozen — raise the flag so the UI swaps
+    // the frozen number for an indeterminate busy state instead of showing what
+    // reads as a hang. Gated on phase_tracker_.active (a WE-initiated op with a
+    // live step tracker) so external/firmware actions — whose progress clock we
+    // don't drive — never false-fire. Distinct from the coarse ERROR budgets
+    // below (minutes), which flip a genuinely stuck op to ERROR.
+    if (phase_tracker_.active) {
+        const auto since_progress = std::chrono::steady_clock::now() - last_phase_progress_time_;
+        system_info_.operation_indeterminate =
+            since_progress > std::chrono::seconds(INDETERMINATE_THRESHOLD_SECONDS);
+    } else {
+        system_info_.operation_indeterminate = false;
+    }
+
     const AmsAction a = system_info_.action;
     // Cover every non-idle operation phase: the legacy LOADING/UNLOADING plus
     // the synthesized HEATING/CUTTING/PURGING the phase tracker drives. Without
@@ -4328,6 +4385,8 @@ void AmsBackendAd5xIfs::check_action_timeout() {
                 ? lv_tr("Filament operation timed out")
                 : system_info_.operation_detail + lv_tr(" (timed out)");
         system_info_.action = AmsAction::ERROR;
+        // The op is resolving to ERROR — it is no longer merely "Working…".
+        system_info_.operation_indeterminate = false;
         if (phase_tracker_.active) {
             end_phase_tracking_locked();
         }

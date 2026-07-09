@@ -140,6 +140,13 @@ class AmsOperationSidebar {
     ObserverGuard extruder_temp_observer_;
     ObserverGuard extruder_target_observer_;
     ObserverGuard color_observer_;
+    // Watches AmsState's ams_operation_indeterminate subject (#1065 row 14). When
+    // 1 the live "Heat 225/230" readout is frozen by a starved status feed, so
+    // the Heat step swaps to an indeterminate "Working…" busy label instead of a
+    // number that reads as a hang. Static-lifetime singleton subject (like
+    // ams_operation_phase) — a plain ObserverGuard with no SubjectLifetime is
+    // correct; cleaned up via reset() in cleanup().
+    ObserverGuard indeterminate_observer_;
 
     // Drives the step bar's current step when the active backend supplies a
     // specialized step model (get_operation_step_index_subject). The subject is

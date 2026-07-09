@@ -287,6 +287,18 @@ void AmsOperationSidebar::init_observers() {
             self->refresh_heat_step_display();
         });
 
+    // Indeterminate "Working…" observer: when the backend flags a stalled
+    // progress feed (frozen live-temp number), re-render the Heat step so it
+    // swaps between the live temp readout and the busy "Working…" label
+    // (#1065 row 14). Static singleton subject — plain ObserverGuard.
+    indeterminate_observer_ = observe_int_sync<AmsOperationSidebar>(
+        AmsState::instance().get_ams_operation_indeterminate_subject(), this,
+        [](AmsOperationSidebar* self, int /*indeterminate*/) {
+            if (!self->active_)
+                return;
+            self->refresh_heat_step_display();
+        });
+
     // The backend-driven step-index observer (step_index_observer_) is created
     // lazily in recreate_step_progress_for_operation() once the active backend's
     // step-index subject is known — the subject differs per backend (firmware
@@ -323,6 +335,7 @@ void AmsOperationSidebar::cleanup() {
     step_index_observer_.reset(); // [L085] reset(), never release()
     extruder_temp_observer_.reset();
     extruder_target_observer_.reset();
+    indeterminate_observer_.reset();
 
     // Reset extracted modules AFTER observers — they may have their own observers
     // that reference widget pointers; resetting before our observers could
@@ -631,18 +644,30 @@ void AmsOperationSidebar::refresh_live_temp_step_label(int current_index) {
         return;
     }
     if (current_index == live_temp_step_index_) {
-        int current_deci = lv_subject_get_int(printer_state_.get_active_extruder_temp_subject());
-        int target_deci = lv_subject_get_int(printer_state_.get_active_extruder_target_subject());
-        char temp_buf[32];
-        temperature::format_temperature_pair(temperature::deci_to_degrees(current_deci),
-                                             temperature::deci_to_degrees(target_deci), temp_buf,
-                                             sizeof(temp_buf));
         const char* base_label =
             (live_temp_step_index_ < static_cast<int>(current_step_model_.steps.size()))
                 ? lv_tr(current_step_model_.steps[live_temp_step_index_].label.c_str())
                 : lv_tr("Heat nozzle");
         char label_buf[64];
-        snprintf(label_buf, sizeof(label_buf), "%s %s", base_label, temp_buf);
+        // When the backend flags the operation indeterminate, the live-temp feed
+        // has frozen and the "225/230°C" number reads as a hang — swap it for an
+        // indeterminate "Working…" busy label so it reads BUSY, not STUCK
+        // (#1065 row 14). Restored to the live readout the moment the flag clears.
+        bool indeterminate =
+            lv_subject_get_int(AmsState::instance().get_ams_operation_indeterminate_subject()) != 0;
+        if (indeterminate) {
+            snprintf(label_buf, sizeof(label_buf), "%s %s", base_label, lv_tr("Working..."));
+        } else {
+            int current_deci =
+                lv_subject_get_int(printer_state_.get_active_extruder_temp_subject());
+            int target_deci =
+                lv_subject_get_int(printer_state_.get_active_extruder_target_subject());
+            char temp_buf[32];
+            temperature::format_temperature_pair(temperature::deci_to_degrees(current_deci),
+                                                 temperature::deci_to_degrees(target_deci),
+                                                 temp_buf, sizeof(temp_buf));
+            snprintf(label_buf, sizeof(label_buf), "%s %s", base_label, temp_buf);
+        }
         ui_step_progress_set_label(step_progress_, live_temp_step_index_, label_buf);
         heat_label_showing_temp_ = true;
         spdlog::debug("[AmsSidebar] Live-temp step label: {}", label_buf);

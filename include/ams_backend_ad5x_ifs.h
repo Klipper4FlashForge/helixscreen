@@ -546,6 +546,9 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
   private:
     bool validate_slot_index(int slot_index) const;
     void check_action_timeout();
+    // Reset the indeterminate ("Working…") no-progress clock. Called on every
+    // genuine load/unload progress signal. Caller must hold mutex_.
+    void note_phase_progress_locked();
 
     // Cached state from save_variables
     // Variable prefix: "less_waste" (lessWaste/zmod) or "bambufy" — auto-detected from
@@ -738,6 +741,21 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // never falsely failed, a genuinely stalled one still surfaces ERROR.
     static constexpr int PURGING_TIMEOUT_SECONDS = 240;
     std::chrono::steady_clock::time_point action_start_time_;
+
+    // Indeterminate ("Working…") detector (#1065 row 14). Distinct from the
+    // coarse ERROR budgets above: those flip a stalled op to ERROR after minutes,
+    // this flips a SHORT ~8s no-progress window into a busy indicator so the
+    // frozen live-temp number ("Heat 225/230") doesn't read as a hang while the
+    // shared main-thread status feed is starved on the constrained box.
+    // last_phase_progress_time_ is reset on every genuine progress signal
+    // (temp-VALUE change, head transition, motion, phase change, op start);
+    // when it goes stale past the threshold check_action_timeout raises
+    // system_info_.operation_indeterminate. last_progress_temp_deci_ gates the
+    // temp reset on a value change (not every frame) so a frozen subject — which
+    // stops changing value — lets the clock elapse. Both under mutex_.
+    static constexpr int INDETERMINATE_THRESHOLD_SECONDS = 8;
+    std::chrono::steady_clock::time_point last_phase_progress_time_;
+    int last_progress_temp_deci_ = 0; // deci-degrees of the last progress-noting temp frame
 
     // Rate-limit gate for the JSON-content poll. handle_status_update kicks
     // poll_adventurer_json() if at least kJsonPollInterval has elapsed since
