@@ -1682,6 +1682,24 @@ void AmsEditOverlay::commit_and_close() {
         sync_active_spool(api_, 0);
     }
 
+    // Switching the linked spool (A>0 -> B>0, or 0 -> B>0) is a pure RELINK, not
+    // an edit of the linked spool's record. The newly linked spool already owns
+    // its identity/weight in Spoolman, so there is nothing to confirm and nothing
+    // to PATCH — prompting to "update the linked spool anyway" or repointing a
+    // spool here would corrupt the wrong record (task #16). The new active spool
+    // was already registered by sync_active_spool() above; commit the link
+    // locally and close. Unlink (working id == 0) is intentionally NOT treated as
+    // a relink — it falls through to the existing new-spool / local-close logic.
+    const bool relinked_to_existing_spool =
+        working_info_.spoolman_id > 0 && working_info_.spoolman_id != original_info_.spoolman_id;
+    if (relinked_to_existing_spool) {
+        spdlog::info("[AmsEditOverlay] Relink slot {} to spool {} (was {}) — no identity confirm, "
+                     "no Spoolman PATCH of the old spool",
+                     slot_index_, working_info_.spoolman_id, original_info_.spoolman_id);
+        close_editor(true);
+        return;
+    }
+
     if (api_ && get_printer_state().is_spoolman_available()) {
         const bool has_linked_spool = working_info_.spoolman_id > 0;
         auto changes = helix::SpoolmanSlotSaver::detect_changes(original_info_, working_info_);

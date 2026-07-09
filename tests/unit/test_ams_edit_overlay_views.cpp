@@ -5,7 +5,9 @@
 // view transitions. Uses the full-UI fixture (real XML tree) plus the
 // AmsEditOverlayViewTestAccess friend shim.
 
+#include "app_globals.h"
 #include "ui_ams_edit_overlay.h"
+#include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_update_queue.h"
 
@@ -797,6 +799,213 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     UpdateQueue::instance().drain();
     process_lvgl(10);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "picker-entry relink to a different spool never prompts or PATCHes the old spool",
+                 "[ams_edit_overlay][filament_picker][picker][header_save]") {
+    // Task #16 regression: a slot linked to spool A, opened directly on the
+    // picker, then switched to a DIFFERENT spool B is a pure RELINK — not an
+    // edit of A's identity. The old "Different filament?" confirm + identity
+    // PATCH would clobber the wrong Spoolman record. Assert: no confirm modal,
+    // completion fires once with spool B, and NO spool/filament PATCH is sent.
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    // Seed the currently-linked spool A (id 7) so the open-time re-fetch has an
+    // authoritative record and leaves original_info_ as A's identity.
+    SpoolInfo linked_a;
+    linked_a.id = 7;
+    linked_a.filament_id = 3;
+    linked_a.vendor = "Bambu Lab";
+    linked_a.material = "ASA";
+    linked_a.color_hex = "8A949E";
+    api.spoolman_mock().get_mock_spools().push_back(linked_a);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1); // is_spoolman_available() -> true
+    get_printer_state().set_spoolman_available(true);
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    bool fired = false;
+    AmsEditOverlay::EditResult captured;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api,
+                                  [&](const AmsEditOverlay::EditResult& r) {
+                                      fired = true;
+                                      captured = r;
+                                  },
+                                  /*open_on_picker=*/true));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolPicker);
+
+    access.set_cached_spools(two_spools());
+    access.call_render_spool_list("");
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Switch the link to spool #22 (eSUN PETG) — a different material/color.
+    access.call_handle_spool_selected(22);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // No "Different filament?" confirm modal interposed.
+    CHECK(ModalStack::instance().stack_empty());
+    // Committed + closed in one step with the newly linked spool.
+    CHECK(fired);
+    CHECK(captured.saved);
+    CHECK(captured.slot_info.spoolman_id == 22);
+    CHECK(captured.slot_info.material == "PETG");
+    // The old spool A was never touched: no identity/weight PATCH, no filament
+    // repoint, no new filament created.
+    CHECK(api.spoolman_mock().spool_updates.empty());
+    CHECK(api.spoolman_mock().filament_updates.empty());
+    // The new spool is registered as active on the server.
+    CHECK(api.spoolman_mock().get_mock_active_spool_id() == 22);
+
+    get_printer_state().set_spoolman_available(false); // restore clean slate
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "two-step relink header Save never prompts or PATCHes the old spool",
+                 "[ams_edit_overlay][filament_picker][picker][header_save]") {
+    // Task #16, two-step variant: reach the picker via Change Filament (not the
+    // one-tap entry), pick a different spool, return to the overview, then tap
+    // header Save. Same relink semantics: no confirm, no PATCH of the old spool.
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    SpoolInfo linked_a;
+    linked_a.id = 7;
+    linked_a.filament_id = 3;
+    linked_a.vendor = "Bambu Lab";
+    linked_a.material = "ASA";
+    linked_a.color_hex = "8A949E";
+    api.spoolman_mock().get_mock_spools().push_back(linked_a);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+    get_printer_state().set_spoolman_available(true);
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    bool fired = false;
+    AmsEditOverlay::EditResult captured;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api,
+                                  [&](const AmsEditOverlay::EditResult& r) {
+                                      fired = true;
+                                      captured = r;
+                                  }));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_switch_to_picker(); // Change-Filament entry: clears the shortcut
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolPicker);
+
+    access.set_cached_spools(two_spools());
+    access.call_render_spool_list("");
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_handle_spool_selected(22); // stages the relink, returns to overview
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewOverview);
+    REQUIRE_FALSE(fired); // not committed yet
+    REQUIRE(access.working_info().spoolman_id == 22);
+
+    access.call_handle_save(); // header Save on the overview
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(ModalStack::instance().stack_empty()); // no identity confirm
+    CHECK(fired);
+    CHECK(captured.saved);
+    CHECK(captured.slot_info.spoolman_id == 22);
+    CHECK(api.spoolman_mock().spool_updates.empty());
+    CHECK(api.spoolman_mock().filament_updates.empty());
+    CHECK(api.spoolman_mock().get_mock_active_spool_id() == 22);
+
+    get_printer_state().set_spoolman_available(false); // restore clean slate
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "editing the linked spool's identity (same spool) still prompts to confirm",
+                 "[ams_edit_overlay][filament_picker]") {
+    // Contrast with the relink cases: when spoolman_id is UNCHANGED and the
+    // material identity changes, this is a genuine edit of the linked spool —
+    // the "Different filament?" confirmation MUST still interpose (task #16 must
+    // not swallow it). Completion does not fire until the user answers.
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    // Seed spool 7 so the open-time re-fetch leaves original_info_ as ASA.
+    SpoolInfo linked_a;
+    linked_a.id = 7;
+    linked_a.filament_id = 3;
+    linked_a.vendor = "Bambu Lab";
+    linked_a.material = "ASA";
+    linked_a.color_hex = "8A949E";
+    api.spoolman_mock().get_mock_spools().push_back(linked_a);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+    get_printer_state().set_spoolman_available(true);
+    UpdateQueue::instance().drain(); // flush the queued availability update
+    REQUIRE(get_printer_state().is_spoolman_available());
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    bool fired = false;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api,
+                                  [&](const AmsEditOverlay::EditResult&) { fired = true; }));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Same linked spool (id 7), but change the material identity in place.
+    SlotInfo edited = access.working_info();
+    edited.material = "PLA"; // ASA -> PLA on the SAME spool 7
+    access.set_working_info(edited);
+
+    access.call_handle_save(); // header Save on the overview
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // The relink short-circuit must NOT swallow a same-spool identity edit: it
+    // still routes into the confirm path (no early close). Either the confirm
+    // modal is up (completion pending) or the fallback save fired against the
+    // linked spool — but never a silent no-op relink close.
+    const bool confirm_pending = !ModalStack::instance().stack_empty() && !fired;
+    const bool save_ran = !api.spoolman_mock().spool_updates.empty() ||
+                          !api.spoolman_mock().filament_updates.empty();
+    CHECK((confirm_pending || save_ran));
+
+    // Dismiss any modal so teardown is clean.
+    if (!ModalStack::instance().stack_empty()) {
+        Modal::hide(Modal::get_top());
+        UpdateQueue::instance().drain();
+        process_lvgl(10);
+    }
+    if (!fired) {
+        close_editor_overlay();
+    }
+    get_printer_state().set_spoolman_available(false); // restore clean slate
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture,
