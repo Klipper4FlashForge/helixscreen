@@ -3184,7 +3184,27 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
             const bool chan_lane_empty =
                 (chan > 0 && chan <= NUM_PORTS && result.ifs_ports.has_value() &&
                  !(*result.ifs_ports)[static_cast<size_t>(chan - 1)]);
-            if (chan_lane_empty) {
+
+            // Adventurer5M.json's FFMInfo.channel is the firmware's own persistent
+            // record of the lane currently at the toolhead — the SAME field its
+            // _IFS_REMOVE_CURRENT_PRUTOK unload macro resolves from. It stays put
+            // while idle, unlike IFS_STATUS "Chan", which tracks the LAST lane the
+            // switching mechanism referenced — including a zmod COLOR-menu slot
+            // SELECTION that moves no filament (#1065 Bug 3, mkleersn bundle
+            // ZT8Y9WPM: editing lane 3's colour made Chan=3 while FFMInfo.channel
+            // stayed 2, and Helix wrongly moved current_slot onto lane 3). So a
+            // known FFMInfo.channel is the seated authority and a divergent Chan is
+            // ignored; Chan is only consulted when FFMInfo.channel is absent (0 —
+            // nothing seated yet, or the firmware forgot it across a reboot, where
+            // the persisted-lane floor below takes over).
+            if (ffm_channel_ > 0) {
+                if (seated_chan_ != ffm_channel_ || chan != ffm_channel_) {
+                    spdlog::debug("{} Seated lane from FFMInfo.channel={} (IFS_STATUS Chan={} {})",
+                                  backend_log_tag(), ffm_channel_, chan,
+                                  chan == ffm_channel_ ? "agrees" : "diverges — Chan ignored");
+                }
+                seated_chan_ = ffm_channel_;
+            } else if (chan_lane_empty) {
                 spdlog::debug("{} IFS_STATUS Chan={} ignored as seated: lane empty this "
                               "frame (eject-engaged stale channel); keeping seated_chan_={}",
                               backend_log_tag(), chan, seated_chan_);
@@ -3213,10 +3233,12 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
                 seated_chan_ = chan;
             }
 
-            // A real seated channel (Chan>0) or a confirmed-empty head resolves the
-            // seated state, so any later idle Chan==0 is a genuine clear rather than
-            // post-reboot amnesia — close the cold-boot restore window.
-            if ((chan > 0 && !chan_lane_empty) || (chan == 0 && !head_filament_)) {
+            // A known FFMInfo.channel, a real seated channel (Chan>0), or a
+            // confirmed-empty head resolves the seated state, so any later idle
+            // Chan==0 is a genuine clear rather than post-reboot amnesia — close the
+            // cold-boot restore window.
+            if (ffm_channel_ > 0 || (chan > 0 && !chan_lane_empty) ||
+                (chan == 0 && !head_filament_)) {
                 seated_resolved_since_boot_ = true;
             }
 
@@ -3872,6 +3894,30 @@ void AmsBackendAd5xIfs::parse_adventurer_json(const std::string& content) {
 
             update_slot_from_state(idx);
             ++parsed_count;
+        }
+
+        // FFMInfo.channel is the firmware's own record of the seated toolhead lane
+        // (1-based; 0 = none). It is the seated-lane authority (#1065 Bug 3) — see
+        // the override in apply_zcolor_result, where it beats a dialog-tracked
+        // IFS_STATUS Chan. Read it here so a file poll updates the seated lane
+        // promptly (and remembers it for the post-reboot floor) without waiting for
+        // the next IFS_STATUS frame.
+        auto chan_it = ffm.find("channel");
+        if (chan_it != ffm.end() && chan_it->is_number_integer()) {
+            const int fw_chan = chan_it->get<int>();
+            ffm_channel_ = (fw_chan >= 1 && fw_chan <= NUM_PORTS) ? fw_chan : 0;
+            if (ffm_channel_ > 0 && seated_chan_ != ffm_channel_) {
+                spdlog::info("{} Seated lane from FFMInfo.channel: slot {} (was seated_chan_={})",
+                             backend_log_tag(), ffm_channel_ - 1, seated_chan_);
+                seated_chan_ = ffm_channel_;
+                seated_resolved_since_boot_ = true;
+                recompute_current_slot_locked();
+                const int seated_slot0 = ffm_channel_ - 1;
+                if (persisted_seated_slot_ != std::optional<int>(seated_slot0)) {
+                    persisted_seated_slot_ = seated_slot0;
+                    persist_seated_slot_locked(seated_slot0);
+                }
+            }
         }
 
         // sync_override_to_firmware_locked (called via update_slot_from_state →

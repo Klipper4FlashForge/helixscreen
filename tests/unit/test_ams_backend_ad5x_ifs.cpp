@@ -222,6 +222,17 @@ class Ad5xIfsTestAccess {
     static std::optional<int> persisted_seated_slot(const AmsBackendAd5xIfs& b) {
         return b.persisted_seated_slot_;
     }
+    // Seed / read the firmware's FFMInfo.channel seated authority (1-based; 0 =
+    // none). Production sets this in parse_adventurer_json; tests seed it to drive
+    // the seated-authority override in apply_zcolor_result without a full JSON parse.
+    static void set_ffm_channel(AmsBackendAd5xIfs& b, int chan) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        b.ffm_channel_ = chan;
+    }
+    static int ffm_channel(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.ffm_channel_;
+    }
     // Seed the in-memory overrides map directly (bypasses load_blocking, which
     // requires a live Moonraker connection). on_started() is the only
     // production path that writes this field; tests must use this shim because
@@ -2751,6 +2762,136 @@ TEST_CASE("AD5X IFS cold-lane eject does not pollute seated channel (#1065 Bug 3
     // toolhead Unload, NOT a cold Eject. Channel 1, now empty, stays cold-eject.
     CHECK(backend.slot_unloads_to_toolhead(1, /*loaded_hint=*/true));
     CHECK_FALSE(backend.slot_unloads_to_toolhead(0, /*loaded_hint=*/true));
+}
+
+TEST_CASE("AD5X IFS dialog slot-select does not steal the seated channel (#1065 Bug 3)",
+          "[ams][ad5x_ifs][1065]") {
+    // Field repro (mkleersn v0.99.87 bundle ZT8Y9WPM + 07-07 state table): channel
+    // 2 is physically seated at the toolhead (Adventurer5M.json FFMInfo.channel=2).
+    // The user opens the zmod COLOR menu and merely SELECTS a different lane to edit
+    // its colour/type (RUN_ZCOLOR SLOT=3 / CHANGE_ZCOLOR SLOT=3) — no filament
+    // moves. IFS_STATUS then reports "Chan": 3 (the switching mechanism tracks the
+    // last lane the dialog referenced) while all four ports stay PRESENT, so the
+    // eject-stale guard (which only rejects a Chan pointing at an EMPTY lane) does
+    // not fire. The bundle log caught HelixScreen adopting it: current_slot went
+    // 1 -> 2 (channel 2 -> channel 3) with zero physical motion, so the
+    // genuinely-seated lane 2 offered Eject and lane 3 wrongly offered Unload.
+    //
+    // The seated authority is FFMInfo.channel (which stayed 2 the whole time), NOT
+    // IFS_STATUS Chan. A Chan that diverges from a known FFMInfo.channel must not
+    // move the seated lane. (The GET_ZCOLOR "// Extruder:" line reads "None (3)"
+    // while loaded-idle on this firmware — its paren also chases the dialog — so it
+    // is NOT the authority; verified against the raw bundle.)
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+
+    // Identity tool map so find_first_tool_for_port(N) -> tool N-1.
+    REQUIRE(backend.set_tool_mapping(0, 0).success());
+    REQUIRE(backend.set_tool_mapping(1, 1).success());
+    REQUIRE(backend.set_tool_mapping(2, 2).success());
+    REQUIRE(backend.set_tool_mapping(3, 3).success());
+
+    Ad5xIfsTestAccess::set_head_filament(backend, true);
+    // Firmware's own seated record: channel 2 (as parse_adventurer_json would set
+    // from Adventurer5M.json FFMInfo.channel).
+    Ad5xIfsTestAccess::set_ffm_channel(backend, 2);
+
+    // Channel 2 seated: IFS_STATUS Chan=2 agrees with FFMInfo.channel, all present.
+    AmsBackendAd5xIfs::ZColorSilentResult loaded;
+    loaded.saw_valid_response = true;
+    loaded.ifs_active = true;
+    loaded.ifs_chan = 2;
+    loaded.ifs_ports = std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, true, true};
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, loaded);
+
+    // Baseline: ch2 (slot 1) seated -> Unload; ch3 (slot 2) cold -> Eject.
+    REQUIRE(backend.get_system_info().current_slot == 1);
+    REQUIRE(backend.slot_unloads_to_toolhead(1, /*loaded_hint=*/true));
+    REQUIRE_FALSE(backend.slot_unloads_to_toolhead(2, /*loaded_hint=*/true));
+
+    // Dialog selects slot 3 to edit. FFMInfo.channel UNCHANGED (still 2 — no
+    // filament moved), but IFS_STATUS now reports Chan=3 with lane 3 still present.
+    AmsBackendAd5xIfs::ZColorSilentResult dialog_select;
+    dialog_select.saw_valid_response = true;
+    dialog_select.ifs_active = true;
+    dialog_select.ifs_chan = 3; // dialog-tracked, NOT a physical seating
+    dialog_select.ifs_ports = std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, true, true};
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, dialog_select);
+
+    // Seated lane must still be channel 2. Lane 2 offers Unload; lane 3 stays cold.
+    CHECK(backend.get_system_info().current_slot == 1);
+    CHECK(backend.slot_unloads_to_toolhead(1, /*loaded_hint=*/true));
+    CHECK_FALSE(backend.slot_unloads_to_toolhead(2, /*loaded_hint=*/true));
+}
+
+TEST_CASE("AD5X IFS seated channel follows a moved FFMInfo.channel despite a stale Chan "
+          "(#1065 Bug 3)",
+          "[ams][ad5x_ifs][1065]") {
+    // Counterpart to the dialog-select test: the FFMInfo.channel authority must NOT
+    // freeze the seated lane. When the firmware genuinely moves filament to a new
+    // lane, FFMInfo.channel updates, and the seated lane must follow it — even if
+    // IFS_STATUS Chan still carries a stale value from an earlier dialog reference
+    // (mkleersn 07-07: loading a new channel correctly moved current_slot). This is
+    // what proves the fix tracks real head changes rather than pinning to the
+    // first-seen lane.
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    REQUIRE(backend.set_tool_mapping(0, 0).success());
+    REQUIRE(backend.set_tool_mapping(1, 1).success());
+    REQUIRE(backend.set_tool_mapping(2, 2).success());
+    REQUIRE(backend.set_tool_mapping(3, 3).success());
+    Ad5xIfsTestAccess::set_head_filament(backend, true);
+
+    // Channel 2 seated (FFMInfo.channel=2, Chan 2).
+    Ad5xIfsTestAccess::set_ffm_channel(backend, 2);
+    AmsBackendAd5xIfs::ZColorSilentResult loaded;
+    loaded.saw_valid_response = true;
+    loaded.ifs_active = true;
+    loaded.ifs_chan = 2;
+    loaded.ifs_ports = std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, true, true};
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, loaded);
+    REQUIRE(backend.get_system_info().current_slot == 1);
+
+    // Real load of lane 1: firmware moves FFMInfo.channel to 1. Chan still reads a
+    // stale 3 from an earlier dialog touch. Seated must follow FFMInfo.channel to
+    // channel 1, NOT the stale Chan.
+    Ad5xIfsTestAccess::set_ffm_channel(backend, 1);
+    AmsBackendAd5xIfs::ZColorSilentResult moved;
+    moved.saw_valid_response = true;
+    moved.ifs_active = true;
+    moved.ifs_chan = 3; // stale dialog value, must be ignored
+    moved.ifs_ports = std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, true, true};
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, moved);
+
+    // Seated followed FFMInfo.channel to channel 1 (slot 0).
+    CHECK(backend.get_system_info().current_slot == 0);
+    CHECK(backend.slot_unloads_to_toolhead(0, /*loaded_hint=*/true));
+    CHECK_FALSE(backend.slot_unloads_to_toolhead(2, /*loaded_hint=*/true));
+}
+
+TEST_CASE("AD5X IFS parse_adventurer_json reads FFMInfo.channel as the seated lane (#1065 Bug 3)",
+          "[ams][ad5x_ifs][1065]") {
+    // The seated authority must actually be wired from the file. parse_adventurer_json
+    // must read FFMInfo.channel and set the seated lane (recomputing current_slot),
+    // so a plain file poll — with no IFS_STATUS frame at all — establishes which lane
+    // is seated. FFMInfo.channel is 1-based (channel 2 -> slot 1).
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    REQUIRE(backend.set_tool_mapping(0, 0).success());
+    REQUIRE(backend.set_tool_mapping(1, 1).success());
+    REQUIRE(backend.set_tool_mapping(2, 2).success());
+    REQUIRE(backend.set_tool_mapping(3, 3).success());
+    Ad5xIfsTestAccess::set_head_filament(backend, true);
+
+    // Minimal Adventurer5M.json: FFMInfo with the seated channel + per-port
+    // colour/type (firmware writes channel 2 as seated).
+    const std::string json = R"({"FFMInfo":{"channel":2,)"
+                             R"("ffmColor1":"#161616","ffmColor2":"#FFFFFF",)"
+                             R"("ffmColor3":"#F72224","ffmColor4":"#898989",)"
+                             R"("ffmType1":"PETG","ffmType2":"PETG","ffmType3":"PETG","ffmType4":"PETG"}})";
+    Ad5xIfsTestAccess::parse_adventurer_json(backend, json);
+
+    CHECK(Ad5xIfsTestAccess::ffm_channel(backend) == 2);
+    CHECK(backend.get_system_info().current_slot == 1); // channel 2 -> 0-based slot 1
+    CHECK(backend.slot_unloads_to_toolhead(1, /*loaded_hint=*/true));
+    CHECK_FALSE(backend.slot_unloads_to_toolhead(2, /*loaded_hint=*/true));
 }
 
 // ==========================================================================
