@@ -10,6 +10,9 @@
 #include "ui_update_queue.h"
 
 #include "../lvgl_ui_test_fixture.h"
+#include "moonraker_api_mock.h"
+#include "moonraker_client_mock.h"
+#include "printer_state.h"
 
 #include "../catch_amalgamated.hpp"
 #include "hv/json.hpp"
@@ -908,6 +911,102 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     CHECK(captured.slot_info.spoolman_id == 0); // stayed untracked
 
     // Editor closed itself (go_back inside close_editor) — just settle the queue.
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "tracked spool-edit header Save PATCHes logistics then commits and closes once",
+                 "[ams_edit_overlay][spool_edit][header_save]") {
+    // Task #12 seam: a tracked slot's header Save on the spool-edit view runs
+    // the logistics PATCH (via the MoonrakerAPIMock, whose update callbacks fire
+    // synchronously), then finishes through commit_and_close(). Assert the PATCH
+    // landed and completion fired EXACTLY once — a blocking identity-confirm
+    // modal or a double commit would leave fire_count != 1.
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    // Seed the tracked spool so enter_spool_edit's fetch populates the logistics
+    // fields from a known baseline (price 19.99).
+    SpoolInfo seed;
+    seed.id = 7;
+    seed.filament_id = 3;
+    seed.vendor = "Generic";
+    seed.material = "PLA";
+    seed.color_name = "Navy";
+    seed.color_hex = "#112233";
+    seed.price = 19.99;
+    seed.remaining_weight_g = 500.0;
+    seed.spool_weight_g = 200.0;
+    seed.initial_weight_g = 1000.0;
+    api.spoolman_mock().get_mock_spools().push_back(seed);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    SlotInfo slot;
+    slot.slot_index = 0;
+    slot.spoolman_id = 7;
+    slot.spoolman_filament_id = 3;
+    slot.brand = "Generic";
+    slot.material = "PLA";
+    slot.spool_name = "Generic PLA";
+    slot.color_rgb = 0x112233;
+    slot.color_name = "Navy";
+    slot.total_weight_g = 1000.0f;
+    slot.remaining_weight_g = 500.0f;
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    int fire_count = 0;
+    AmsEditOverlay::EditResult captured;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, &api,
+                                  [&](const AmsEditOverlay::EditResult& r) {
+                                      fire_count++;
+                                      captured = r;
+                                  }));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain(); // applies the async Spoolman logistics fetch
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolEdit);
+
+    // Managed slot -> Save-to-Spoolman toggle defaults ON (stays tracked).
+    lv_obj_t* toggle = access.widget("save_to_spoolman_switch");
+    REQUIRE(toggle != nullptr);
+    REQUIRE(lv_obj_has_state(toggle, LV_STATE_CHECKED));
+
+    // Logistics-only edit: bump the price. Identity (material/color) untouched,
+    // so no identity-confirm modal should interpose.
+    lv_obj_t* price = access.widget("detail_field_price");
+    REQUIRE(price != nullptr);
+    lv_textarea_set_text(price, "29.99");
+
+    access.call_handle_save(); // header Save on spool-edit -> finish=true
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Single completion fire, marked saved.
+    CHECK(fire_count == 1);
+    CHECK(captured.saved);
+    CHECK(captured.slot_info.spoolman_id == 7); // stayed tracked
+
+    // The logistics PATCH reached Spoolman with the new price.
+    const auto& updates = api.spoolman_mock().spool_updates;
+    bool price_patched = false;
+    for (const auto& u : updates) {
+        if (u.patch.contains("price") &&
+            std::abs(u.patch["price"].get<double>() - 29.99) < 0.001) {
+            price_patched = true;
+        }
+    }
+    CHECK(price_patched);
+
     UpdateQueue::instance().drain();
     process_lvgl(10);
 }
