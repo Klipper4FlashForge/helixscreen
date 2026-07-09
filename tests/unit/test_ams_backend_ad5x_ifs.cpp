@@ -233,6 +233,29 @@ class Ad5xIfsTestAccess {
         std::lock_guard<std::mutex> lock(b.mutex_);
         return b.ffm_channel_;
     }
+    // Read the seated channel (1-based; 0 = none). This is the value the
+    // head-gate (#1065 row 28) clears when the toolhead switch reads empty, and
+    // recompute_current_slot_locked derives current_slot from it on the native
+    // path.
+    static int seated_chan(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.seated_chan_;
+    }
+    static bool head_switch_seen(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.head_switch_seen_;
+    }
+    static bool head_switch_present(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.head_switch_present_;
+    }
+    // Drive the belt-and-suspenders eject clear directly (#1065 row 28). Mirrors
+    // what eject_lane() runs in its success block; exposed so the clear can be
+    // tested without a live Moonraker connection (execute_gcode needs the api).
+    static bool clear_seated_if_ejected(AmsBackendAd5xIfs& b, int slot_index) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.clear_seated_if_ejected_locked(slot_index);
+    }
     // Seed the in-memory overrides map directly (bypasses load_blocking, which
     // requires a live Moonraker connection). on_started() is the only
     // production path that writes this field; tests must use this shim because
@@ -2919,6 +2942,187 @@ TEST_CASE("AD5X IFS parse_adventurer_json reads FFMInfo.channel as the seated la
     CHECK(backend.get_system_info().current_slot == 1); // channel 2 -> 0-based slot 1
     CHECK(backend.slot_unloads_to_toolhead(1, /*loaded_hint=*/true));
     CHECK_FALSE(backend.slot_unloads_to_toolhead(2, /*loaded_hint=*/true));
+}
+
+// ==========================================================================
+// #1065 "row 28": sticky FFMInfo.channel + head-switch gate on the seated lane
+//
+// The firmware never blanks FFMInfo.channel / IFS_STATUS Chan on eject (same
+// stickiness as ffmColor/ffmType). After ejecting a cold lane whose stale
+// FFMInfo.channel still points at it, an un-gated adoption re-seats that empty
+// lane, so it keeps offering Unload ("shows loaded"). The fix gates adoption on
+// the toolhead SWITCH sensor: adopt only when it corroborates filament at the
+// head; clear when it authoritatively reads empty. The switch (not the
+// loaded-idle-false-negating motion sensor) is the authority, so a genuinely
+// seated lane is never dropped, and motion-only firmware falls back to the old
+// behaviour.
+// ==========================================================================
+
+TEST_CASE("AD5X IFS stale FFMInfo.channel is dropped when the head switch reads empty "
+          "(#1065 row 28)",
+          "[ams][ad5x_ifs][1065]") {
+    // Post-eject re-poll: a cold lane 3 was ejected but FFMInfo.channel is still 3
+    // (firmware kept it) and the toolhead switch reads EMPTY (nothing seated). The
+    // follow-up IFS_STATUS carries the sticky Chan=3 with port 3 now absent.
+    // Pre-fix, current_slot moved to 2 and lane 3 offered Unload ("shows loaded").
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    REQUIRE(backend.set_tool_mapping(0, 0).success());
+    REQUIRE(backend.set_tool_mapping(1, 1).success());
+    REQUIRE(backend.set_tool_mapping(2, 2).success());
+    REQUIRE(backend.set_tool_mapping(3, 3).success());
+
+    // Toolhead switch authoritatively reads empty (drives head_switch_seen_ +
+    // head_switch_present_=false + head_filament_=false).
+    Ad5xIfsTestAccess::handle_status(backend, make_head_sensor(false));
+    REQUIRE(Ad5xIfsTestAccess::head_switch_seen(backend));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::head_switch_present(backend));
+
+    // Firmware's sticky record still points at lane 3.
+    Ad5xIfsTestAccess::set_ffm_channel(backend, 3);
+
+    // Post-eject IFS_STATUS: Chan=3 (last-engaged, sticky), port 3 empty.
+    AmsBackendAd5xIfs::ZColorSilentResult after_eject;
+    after_eject.saw_valid_response = true;
+    after_eject.ifs_active = true;
+    after_eject.ifs_chan = 3;
+    after_eject.ifs_ports = std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, false, true};
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, after_eject);
+
+    // No lane is seated: the empty head switch rejects the stale channel.
+    CHECK(Ad5xIfsTestAccess::seated_chan(backend) == 0);
+    CHECK(backend.get_system_info().current_slot == -1);
+    CHECK_FALSE(backend.can_unload_from_toolhead(2));
+}
+
+TEST_CASE("AD5X IFS FFMInfo.channel poll is not adopted while the head switch is empty "
+          "(#1065 row 28)",
+          "[ams][ad5x_ifs][1065]") {
+    // Same gate on the plain file-poll path (parse_adventurer_json): a stale
+    // FFMInfo.channel=3 with the toolhead switch empty must not seat lane 3.
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    REQUIRE(backend.set_tool_mapping(0, 0).success());
+    REQUIRE(backend.set_tool_mapping(1, 1).success());
+    REQUIRE(backend.set_tool_mapping(2, 2).success());
+    REQUIRE(backend.set_tool_mapping(3, 3).success());
+
+    Ad5xIfsTestAccess::handle_status(backend, make_head_sensor(false));
+    REQUIRE(Ad5xIfsTestAccess::head_switch_seen(backend));
+
+    const std::string json = R"({"FFMInfo":{"channel":3,)"
+                             R"("ffmColor1":"#161616","ffmColor2":"#FFFFFF",)"
+                             R"("ffmColor3":"#F72224","ffmColor4":"#898989",)"
+                             R"("ffmType1":"PETG","ffmType2":"PETG","ffmType3":"PETG","ffmType4":"PETG"}})";
+    Ad5xIfsTestAccess::parse_adventurer_json(backend, json);
+
+    // ffm_channel_ reflects the file (3), but it is NOT adopted as seated.
+    CHECK(Ad5xIfsTestAccess::ffm_channel(backend) == 3);
+    CHECK(Ad5xIfsTestAccess::seated_chan(backend) == 0);
+    CHECK(backend.get_system_info().current_slot == -1);
+    CHECK_FALSE(backend.can_unload_from_toolhead(2));
+}
+
+TEST_CASE("AD5X IFS loaded-idle lane stays seated when the head switch is present but motion "
+          "reads empty (#1065 row 28)",
+          "[ams][ad5x_ifs][1065]") {
+    // Motion-false-negative guard — MUST pass before AND after the fix. A lane is
+    // genuinely loaded (head SWITCH present=true), but the ifs_motion_sensor reads
+    // filament_detected=false while idle (device-confirmed). That motion frame
+    // clobbers the conflated head_filament_ to false — but the switch authority
+    // still says present, so the head-gate must NOT drop the seated lane.
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    REQUIRE(backend.set_tool_mapping(0, 0).success());
+    REQUIRE(backend.set_tool_mapping(1, 1).success());
+    REQUIRE(backend.set_tool_mapping(2, 2).success());
+    REQUIRE(backend.set_tool_mapping(3, 3).success());
+
+    // Lane 2 genuinely seated: switch reports present.
+    Ad5xIfsTestAccess::handle_status(backend, make_head_sensor(true));
+    Ad5xIfsTestAccess::set_ffm_channel(backend, 2);
+    AmsBackendAd5xIfs::ZColorSilentResult loaded;
+    loaded.saw_valid_response = true;
+    loaded.ifs_active = true;
+    loaded.ifs_chan = 2;
+    loaded.ifs_ports = std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, true, true};
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, loaded);
+    REQUIRE(backend.get_system_info().current_slot == 1);
+
+    // Idle motion frame reads empty and clobbers head_filament_ to false — but the
+    // switch's own last reading (present) is untouched.
+    Ad5xIfsTestAccess::handle_status(backend, make_motion_sensor(false));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::head_filament(backend));      // motion clobbered it
+    REQUIRE(Ad5xIfsTestAccess::head_switch_present(backend));      // switch still present
+
+    // A follow-up IFS_STATUS poll while motion says empty must keep lane 2 seated.
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, loaded);
+    CHECK(Ad5xIfsTestAccess::seated_chan(backend) == 2);
+    CHECK(backend.get_system_info().current_slot == 1);
+    CHECK(backend.can_unload_from_toolhead(1));
+}
+
+TEST_CASE("AD5X IFS motion-only firmware (no switch) still adopts FFMInfo.channel (#1065 row 28)",
+          "[ams][ad5x_ifs][1065]") {
+    // On firmware that publishes ONLY the motion sensor, head_switch_seen_ never
+    // latches, so the head-gate cannot fire. A loaded lane whose motion sensor
+    // false-negates while idle must remain seated — the fix must not regress
+    // switch-less firmwares.
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    REQUIRE(backend.set_tool_mapping(0, 0).success());
+    REQUIRE(backend.set_tool_mapping(1, 1).success());
+    REQUIRE(backend.set_tool_mapping(2, 2).success());
+    REQUIRE(backend.set_tool_mapping(3, 3).success());
+
+    // Only the motion sensor ever reports (reads empty while idle). No switch.
+    Ad5xIfsTestAccess::handle_status(backend, make_motion_sensor(false));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::head_switch_seen(backend));
+
+    Ad5xIfsTestAccess::set_ffm_channel(backend, 3);
+    AmsBackendAd5xIfs::ZColorSilentResult loaded;
+    loaded.saw_valid_response = true;
+    loaded.ifs_active = true;
+    loaded.ifs_chan = 3;
+    loaded.ifs_ports = std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, true, true};
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, loaded);
+
+    // Adopted as before (no switch authority to gate on).
+    CHECK(Ad5xIfsTestAccess::seated_chan(backend) == 3);
+    CHECK(backend.get_system_info().current_slot == 2);
+    CHECK(backend.can_unload_from_toolhead(2));
+}
+
+TEST_CASE("AD5X IFS eject clears a stale seated pointer at the ejected lane (#1065 row 28)",
+          "[ams][ad5x_ifs][1065]") {
+    // Belt-and-suspenders: when a stale seated pointer (seated_chan_ / ffm_channel_)
+    // targets the just-ejected lane, eject must zero BOTH so the Unload affordance
+    // dies at once instead of persisting until the next head-gated poll.
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    REQUIRE(backend.set_tool_mapping(0, 0).success());
+    REQUIRE(backend.set_tool_mapping(1, 1).success());
+    REQUIRE(backend.set_tool_mapping(2, 2).success());
+    REQUIRE(backend.set_tool_mapping(3, 3).success());
+
+    // Seat lane 2 (channel 2) via a corroborated poll.
+    Ad5xIfsTestAccess::handle_status(backend, make_head_sensor(true));
+    Ad5xIfsTestAccess::set_ffm_channel(backend, 2);
+    AmsBackendAd5xIfs::ZColorSilentResult loaded;
+    loaded.saw_valid_response = true;
+    loaded.ifs_active = true;
+    loaded.ifs_chan = 2;
+    loaded.ifs_ports = std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, true, true};
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, loaded);
+    REQUIRE(Ad5xIfsTestAccess::seated_chan(backend) == 2);
+    REQUIRE(Ad5xIfsTestAccess::ffm_channel(backend) == 2);
+    REQUIRE(backend.get_system_info().current_slot == 1);
+
+    // Ejecting a DIFFERENT lane (0) leaves the seated pointer untouched.
+    CHECK_FALSE(Ad5xIfsTestAccess::clear_seated_if_ejected(backend, 0));
+    CHECK(Ad5xIfsTestAccess::seated_chan(backend) == 2);
+    CHECK(backend.get_system_info().current_slot == 1);
+
+    // Ejecting the FFMInfo-pointed lane (1 -> channel 2) zeroes both and recomputes.
+    CHECK(Ad5xIfsTestAccess::clear_seated_if_ejected(backend, 1));
+    CHECK(Ad5xIfsTestAccess::seated_chan(backend) == 0);
+    CHECK(Ad5xIfsTestAccess::ffm_channel(backend) == 0);
+    CHECK(backend.get_system_info().current_slot == -1);
 }
 
 // ==========================================================================

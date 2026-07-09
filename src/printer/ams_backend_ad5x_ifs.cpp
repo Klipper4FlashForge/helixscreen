@@ -412,6 +412,12 @@ void AmsBackendAd5xIfs::handle_status_update(const json& notification) {
             bool detected = head["filament_detected"].get<bool>();
             bool was = head_filament_;
             parse_head_sensor(detected);
+            // Latch the SWITCH sensor's own authority, separate from the conflated
+            // head_filament_ (which the motion sensor also writes, false-negating
+            // while loaded-idle). Only the switch's reading can authoritatively say
+            // the head is empty for the #1065 row 28 head-gate.
+            head_switch_seen_ = true;
+            head_switch_present_ = detected;
             if (phase_tracker_.active && was != detected) {
                 on_head_transition_locked(detected);
             }
@@ -1505,10 +1511,19 @@ AmsError AmsBackendAd5xIfs::eject_lane(int slot_index) {
         bool changed = false;
         {
             std::lock_guard<std::mutex> lock(mutex_);
+            // Belt-and-suspenders (#1065 row 28): the firmware doesn't blank
+            // FFMInfo.channel / IFS_STATUS Chan on eject, so if a stale seated
+            // pointer targets the just-ejected lane, kill the Unload affordance
+            // now instead of waiting for the next head-gated poll.
+            if (clear_seated_if_ejected_locked(slot_index)) {
+                changed = true;
+            }
             if (port_presence_[slot_index]) {
                 port_presence_[slot_index] = false;
-                update_slot_from_state(slot_index);
                 changed = true;
+            }
+            if (changed) {
+                update_slot_from_state(slot_index);
             }
         }
         if (changed) {
@@ -3258,7 +3273,26 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
             // ignored; Chan is only consulted when FFMInfo.channel is absent (0 —
             // nothing seated yet, or the firmware forgot it across a reboot, where
             // the persisted-lane floor below takes over).
-            if (ffm_channel_ > 0) {
+            // Head-gate (#1065 row 28): FFMInfo.channel is sticky — the firmware
+            // does NOT blank it on eject/unload (same as ffmColor/ffmType). After
+            // ejecting a cold lane whose FFMInfo.channel still points at it, an
+            // un-gated adoption re-seats that now-empty lane and keeps offering
+            // Unload ("shows loaded"). Reject the sticky channel ONLY when the
+            // toolhead SWITCH sensor authoritatively reads empty — never on the
+            // ifs_motion_sensor's loaded-idle false-negative — so a genuinely
+            // seated lane is never dropped. On motion-only firmware (no switch
+            // published) head_switch_seen_ stays false and we fall back to
+            // adopting FFMInfo.channel as before.
+            const bool head_empty_authoritative = head_switch_seen_ && !head_switch_present_;
+            if (ffm_channel_ > 0 && head_empty_authoritative) {
+                if (seated_chan_ != 0) {
+                    spdlog::debug("{} FFMInfo.channel={} rejected as seated: toolhead switch "
+                                  "reads empty (sticky/stale channel, #1065 row 28); clearing "
+                                  "seated_chan_ (was {})",
+                                  backend_log_tag(), ffm_channel_, seated_chan_);
+                }
+                seated_chan_ = 0;
+            } else if (ffm_channel_ > 0) {
                 if (seated_chan_ != ffm_channel_ || chan != ffm_channel_) {
                     spdlog::debug("{} Seated lane from FFMInfo.channel={} (IFS_STATUS Chan={} {})",
                                   backend_log_tag(), ffm_channel_, chan,
@@ -3315,10 +3349,17 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
                     persisted_seated_slot_ = seated_slot0;
                     persist_seated_slot_locked(seated_slot0);
                 }
-            } else if (chan == 0 && !head_filament_ && persisted_seated_slot_.has_value()) {
+            } else if (((chan == 0 && !head_filament_) || head_empty_authoritative) &&
+                       persisted_seated_slot_.has_value()) {
+                // Forget the remembered lane on a confirmed-empty head — either a
+                // clean idle Chan==0 clear, or the switch authoritatively empty
+                // while a sticky FFMInfo.channel was just rejected (#1065 row 28) —
+                // so a later boot doesn't resurrect a lane that is no longer loaded.
                 persisted_seated_slot_.reset();
                 persist_seated_slot_locked(-1);
             }
+
+            log_seated_state_locked("apply_zcolor");
 
             // IFS_STATUS "Ports" is the RS-485 silk-sensor presence truth and is
             // the presence authority on native ZMOD. Apply it here — before the
@@ -3967,7 +4008,29 @@ void AmsBackendAd5xIfs::parse_adventurer_json(const std::string& content) {
         if (chan_it != ffm.end() && chan_it->is_number_integer()) {
             const int fw_chan = chan_it->get<int>();
             ffm_channel_ = (fw_chan >= 1 && fw_chan <= NUM_PORTS) ? fw_chan : 0;
-            if (ffm_channel_ > 0 && seated_chan_ != ffm_channel_) {
+            // Head-gate (#1065 row 28): the file's FFMInfo.channel is sticky and
+            // survives an eject, so a plain poll re-reads a stale channel. Adopt it
+            // as seated ONLY when the toolhead SWITCH sensor corroborates filament
+            // at the head; when the switch authoritatively reads empty, treat the
+            // channel as stale and clear the seated lane instead. Motion-only
+            // firmware (head_switch_seen_ == false) falls back to adopting it, since
+            // the motion sensor false-negatives while loaded-idle.
+            const bool head_empty_authoritative = head_switch_seen_ && !head_switch_present_;
+            if (ffm_channel_ > 0 && head_empty_authoritative) {
+                if (seated_chan_ != 0) {
+                    spdlog::info("{} FFMInfo.channel={} rejected as seated (toolhead switch empty, "
+                                 "#1065 row 28); clearing seated_chan_ (was {})",
+                                 backend_log_tag(), ffm_channel_, seated_chan_);
+                    seated_chan_ = 0;
+                    seated_resolved_since_boot_ = true;
+                    recompute_current_slot_locked();
+                    if (persisted_seated_slot_.has_value()) {
+                        persisted_seated_slot_.reset();
+                        persist_seated_slot_locked(-1);
+                    }
+                }
+                log_seated_state_locked("adventurer_json");
+            } else if (ffm_channel_ > 0 && seated_chan_ != ffm_channel_) {
                 spdlog::info("{} Seated lane from FFMInfo.channel: slot {} (was seated_chan_={})",
                              backend_log_tag(), ffm_channel_ - 1, seated_chan_);
                 seated_chan_ = ffm_channel_;
@@ -3978,6 +4041,7 @@ void AmsBackendAd5xIfs::parse_adventurer_json(const std::string& content) {
                     persisted_seated_slot_ = seated_slot0;
                     persist_seated_slot_locked(seated_slot0);
                 }
+                log_seated_state_locked("adventurer_json");
             }
         }
 
@@ -4264,6 +4328,36 @@ void AmsBackendAd5xIfs::recompute_current_slot_locked() {
         }
     }
     system_info_.current_slot = -1;
+}
+
+bool AmsBackendAd5xIfs::clear_seated_if_ejected_locked(int slot_index) {
+    const int ejected_chan = slot_index + 1;
+    if (seated_chan_ != ejected_chan && ffm_channel_ != ejected_chan) {
+        return false;
+    }
+    spdlog::debug("{} Eject lane {}: clearing stale seated pointer "
+                  "(seated_chan_={}, ffm_channel_={}) (#1065 row 28)",
+                  backend_log_tag(), slot_index, seated_chan_, ffm_channel_);
+    seated_chan_ = 0;
+    ffm_channel_ = 0;
+    recompute_current_slot_locked();
+    log_seated_state_locked("eject");
+    return true;
+}
+
+void AmsBackendAd5xIfs::log_seated_state_locked(const char* where) const {
+    std::string ports;
+    for (int i = 0; i < NUM_PORTS; ++i) {
+        ports += (i ? "," : "");
+        ports += port_presence_[static_cast<size_t>(i)] ? "1" : "0";
+    }
+    const bool head_empty_authoritative = head_switch_seen_ && !head_switch_present_;
+    spdlog::debug("{} [seated-trace {}] ffm_channel_={} seated_chan_={} current_slot={} "
+                  "head_filament_={} head_switch_seen_={} head_switch_present_={} "
+                  "head_empty_authoritative={} Ports=[{}]",
+                  backend_log_tag(), where, ffm_channel_, seated_chan_, system_info_.current_slot,
+                  head_filament_, head_switch_seen_, head_switch_present_, head_empty_authoritative,
+                  ports);
 }
 
 void AmsBackendAd5xIfs::persist_seated_slot_locked(int slot0) {

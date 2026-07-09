@@ -543,6 +543,23 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // mutex_; the store call dispatches asynchronously and does not block.
     void persist_seated_slot_locked(int slot0);
 
+    // Belt-and-suspenders for #1065 row 28: the firmware does NOT blank
+    // FFMInfo.channel / IFS_STATUS Chan when a lane is ejected (same stickiness as
+    // ffmColor/ffmType), so a stale seated pointer at the just-ejected lane would
+    // keep offering Unload until the next head-gated poll. If the seated channel
+    // or FFMInfo.channel points at the ejected lane, zero both and recompute so
+    // the affordance dies immediately. Returns true if it changed state. The lane
+    // can't be the genuinely-seated one — eject_lane() refuses that when the head
+    // is loaded. Caller holds mutex_.
+    bool clear_seated_if_ejected_locked(int slot_index);
+
+    // Debug trace of the seated-authority state (#1065 field confirmation): dumps
+    // ffm_channel_ / seated_chan_ / current_slot / head_filament_ / switch
+    // authority / port presence so a debug bundle can confirm whether
+    // FFMInfo.channel stays stale through an eject->poll and whether the head-gate
+    // fired. Debug level, off the hot path. Caller holds mutex_.
+    void log_seated_state_locked(const char* where) const;
+
   private:
     bool validate_slot_index(int slot_index) const;
     void check_action_timeout();
@@ -629,6 +646,22 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     std::atomic<bool> ifs_status_ports_seen_{false};
     bool external_mode_ = false;          // Bypass/external spool mode
     bool head_filament_ = false;          // Head sensor state
+    // Toolhead SWITCH-sensor authority, tracked separately from the conflated
+    // head_filament_. parse_head_sensor() writes head_filament_ from BOTH the
+    // switch AND the ifs_motion_sensor, and the motion sensor is device-confirmed
+    // to read filament_detected=false while a lane is loaded-but-idle (header NOTE
+    // above). So head_filament_==false is NOT trustworthy on its own. The
+    // FFMInfo.channel / IFS_STATUS Chan head-gate (#1065 row 28) must only reject a
+    // sticky seated channel when an AUTHORITATIVE empty-head reading exists — i.e.
+    // the switch sensor itself says empty — never on a motion-only false-negative.
+    // head_switch_seen_ latches true once the filament_switch_sensor /
+    // zmod_ifs_switch_sensor head_switch_sensor namespace reports; head_switch_present_
+    // holds the switch's last reading. The gate authority is
+    // (head_switch_seen_ && !head_switch_present_). When no switch is published
+    // (motion-only firmware), head_switch_seen_ stays false and the gate never
+    // fires — the seated lane is preserved (fall back to prior behaviour).
+    bool head_switch_seen_ = false;
+    bool head_switch_present_ = false;
     std::array<bool, NUM_PORTS> dirty_{}; // Per-slot dirty flag to prevent stale overwrites
 
     helix::printer::SlotRegistry slots_;
