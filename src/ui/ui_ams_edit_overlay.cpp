@@ -117,6 +117,9 @@ bool AmsEditOverlay::show_for_slot(lv_obj_t* parent, int slot_index, const SlotI
     original_info_ = initial_info;
     working_info_ = initial_info;
     save_to_spoolman_opt_in_ = false; // explicit toggle decides Spoolman writes
+    // Picker-entry mode: a selection commits + closes (task #13). Cleared when
+    // the picker is later re-entered via Change Filament (switch_to_picker).
+    opened_on_picker_ = open_on_picker;
     api_ = api ? api : get_moonraker_api();
     completion_callback_ = std::move(on_complete);
     completion_fired_ = false;
@@ -388,6 +391,10 @@ void AmsEditOverlay::switch_to_picker() {
     }
     spdlog::debug("[AmsEditOverlay] Switching to picker view (overlay_root_={}, api_={})",
                   static_cast<void*>(overlay_root_), static_cast<void*>(api_));
+    // Reaching the picker via Change Filament is the normal two-step flow — a
+    // selection returns to the overview for review, so drop the picker-entry
+    // one-tap-commit shortcut (task #13).
+    opened_on_picker_ = false;
     set_view(kViewSpoolPicker);
     populate_picker();
 }
@@ -610,7 +617,20 @@ void AmsEditOverlay::handle_spool_selected(int spool_id) {
         }
     }
 
-    // Switch to form view and refresh UI
+    // Picker-entry shortcut (task #13): when the editor was opened directly on
+    // the picker, a selection is a one-tap commit — apply the spool (done
+    // above), then finish + close the whole overlay via the same commit path
+    // header Save uses. commit_and_close() fires completion with the applied
+    // spool (working_info_) and pops the overlay; the two-step flow's staging
+    // is identical because the picker selection wrote working_info_ directly.
+    if (opened_on_picker_) {
+        spdlog::debug("[AmsEditOverlay] Picker-entry selection - committing and closing");
+        commit_and_close();
+        return;
+    }
+
+    // Normal two-step flow: return to the overview so the user can review, then
+    // commit with the header Save.
     switch_to_form();
     update_ui();
     update_sync_button_state();

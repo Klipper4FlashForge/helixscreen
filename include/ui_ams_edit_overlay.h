@@ -114,6 +114,13 @@ class AmsEditOverlay : public OverlayBase {
     // (skip weight staging — the on-screen fields were Spoolman's, and the
     // slot's weights are already correct). See Finding 1.
     bool spool_edit_entered_tracked_ = false;
+    // True when the editor was opened directly on the Spoolman picker
+    // (context-menu "Select spool", #1071). In that mode a picker selection is
+    // a one-tap commit: apply the spool, then commit_and_close() the whole
+    // overlay instead of returning to the overview (task #13). Cleared once the
+    // picker is re-entered the normal way (Change Filament -> switch_to_picker),
+    // which restores today's return-to-overview behavior.
+    bool opened_on_picker_ = false;
     MoonrakerAPI* api_ = nullptr;
     CompletionCallback completion_callback_;
     bool completion_fired_ = false;  ///< Guards single-fire completion

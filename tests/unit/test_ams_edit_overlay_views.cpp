@@ -57,6 +57,9 @@ class AmsEditOverlayViewTestAccess {
     void call_switch_to_picker() {
         overlay_.switch_to_picker();
     }
+    void call_handle_spool_selected(int spool_id) {
+        overlay_.handle_spool_selected(spool_id);
+    }
     void call_switch_to_form() {
         overlay_.switch_to_form();
     }
@@ -685,6 +688,93 @@ TEST_CASE_METHOD(LVGLUITestFixture, "picker pre-selects the first row for unlink
     REQUIRE(lv_obj_get_child_count(list) == 2);
     CHECK(lv_obj_has_state(lv_obj_get_child(list, 0), LV_STATE_CHECKED));
     CHECK_FALSE(lv_obj_has_state(lv_obj_get_child(list, 1), LV_STATE_CHECKED));
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "picker-entry spool selection commits and closes the editor",
+                 "[ams_edit_overlay][picker][header_save]") {
+    // Task #13: when the editor is opened directly on the picker (context-menu
+    // "Select spool"), choosing a spool is a one-tap commit — apply + close the
+    // whole overlay via the header-Save commit path, firing completion with the
+    // applied spool. Spoolman is left unavailable so commit_and_close takes the
+    // synchronous local-close branch (no async PATCH seam needed here).
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 0);
+
+    bool fired = false;
+    AmsEditOverlay::EditResult captured;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr,
+                                  [&](const AmsEditOverlay::EditResult& r) {
+                                      fired = true;
+                                      captured = r;
+                                  },
+                                  /*open_on_picker=*/true));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolPicker);
+
+    access.set_cached_spools(two_spools());
+    access.call_render_spool_list("");
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Select spool #22 (eSUN PETG) from the picker.
+    access.call_handle_spool_selected(22);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Committed + closed in one step, completion fired with the applied spool.
+    CHECK(fired);
+    CHECK(captured.saved);
+    CHECK(captured.slot_info.spoolman_id == 22);
+    CHECK(captured.slot_info.material == "PETG");
+
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "Change-Filament picker selection returns to overview without closing",
+                 "[ams_edit_overlay][picker]") {
+    // Contrast with the picker-entry shortcut: reaching the picker via Change
+    // Filament (switch_to_picker clears opened_on_picker_) keeps the two-step
+    // flow — a selection returns to the overview for review, no completion.
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    bool fired = false;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr,
+                                  [&](const AmsEditOverlay::EditResult&) { fired = true; }));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_switch_to_picker(); // Change-Filament entry: clears the shortcut
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolPicker);
+
+    access.set_cached_spools(two_spools());
+    access.call_render_spool_list("");
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_handle_spool_selected(22);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.view() == AmsEditOverlay::kViewOverview);
+    CHECK_FALSE(fired); // no commit — the overview header Save commits later
+    CHECK(access.working_info().spoolman_id == 22); // staged, awaiting review
 
     close_editor_overlay();
 }
