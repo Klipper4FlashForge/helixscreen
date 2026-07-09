@@ -44,8 +44,9 @@ std::uint64_t available_space(const std::string& dir);
  * Converges the create+write+remove write-test from
  * input_shaper_cache.cpp / thumbnail_cache.cpp try_create_cache_dir with the
  * statvfs space check. Creates a UNIQUELY-named temp file inside `dir`
- * (".helix_write_test.<pid>", avoiding a fixed name that could collide across
- * concurrent probes), writes a byte, then removes it.
+ * (".helix_write_test.<pid>.<tid>.<counter>", unique per process, per thread,
+ * and per call so concurrent same-process probes of the same dir never collide),
+ * writes a byte, then removes it.
  *
  * Returns false if `dir` is empty, does not exist, has less than
  * @p min_free_bytes free, or cannot be written. When @p min_free_bytes == 0 the

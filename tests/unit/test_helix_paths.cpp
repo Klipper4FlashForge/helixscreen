@@ -191,6 +191,40 @@ TEST_CASE("probe_writable fails on nonexistent dir", "[helix_paths]") {
     CHECK_FALSE(probe_writable("/no/such/path/really/unlikely/xyz", 0));
 }
 
+// GAP 3 (L093 shape): the two cache sites (input_shaper_cache, thumbnail_cache)
+// depend on probe_writable correctly REJECTING an existing-but-unwritable dir —
+// a plain is_writable_dir/exists check would wrongly accept it. This proves the
+// create+write+remove probe actually fails when the dir denies writes.
+TEST_CASE("probe_writable rejects read-only existing dir", "[helix_paths]") {
+    if (::geteuid() == 0) {
+        return; // root bypasses permission bits — the probe would spuriously succeed
+    }
+    fs::path dir = make_tmp_dir("probe_ro");
+    fs::path locked = dir / "locked";
+    fs::create_directories(locked);
+    fs::permissions(locked, fs::perms::none); // no read/write/exec for anyone
+
+    CHECK_FALSE(probe_writable(locked.string(), 0));
+
+    fs::permissions(locked, fs::perms::owner_all); // restore so cleanup works
+    fs::remove_all(dir);
+}
+
+// GAP 4: home() rejects any value containing a control character (heap-corruption
+// guard inherited from sanitize_home). A regression that dropped the control-char
+// scan would return the raw junk path instead of "".
+TEST_CASE("home rejects control characters", "[helix_paths]") {
+    EnvVarGuard home_guard("HOME");
+
+    // Absolute path with an embedded control char (0x01) is rejected.
+    home_guard.set("/home/\x01" "bad");
+    CHECK(home() == "");
+
+    // A clean absolute path is still accepted (guards against over-rejection).
+    home_guard.set("/home/tester");
+    CHECK(home() == "/home/tester");
+}
+
 TEST_CASE("probe_writable fails when space short", "[helix_paths]") {
     fs::path dir = make_tmp_dir("probe_space");
     CHECK_FALSE(probe_writable(dir.string(), UINT64_MAX));

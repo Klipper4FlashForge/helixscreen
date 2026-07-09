@@ -2,11 +2,14 @@
 
 #include "system/helix_paths.h"
 
+#include <atomic>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <system_error>
+#include <thread>
 
 #include <sys/statvfs.h>
 #include <unistd.h>
@@ -44,9 +47,15 @@ bool probe_writable(const std::string& dir, std::uint64_t min_free_bytes) {
         return false;
     }
 
-    // Unique per-process name avoids collisions across concurrent probes.
-    const std::string test_file =
-        strip_trailing_slash(dir) + "/.helix_write_test." + std::to_string(::getpid());
+    // Name is unique per process, per thread, AND per call: getpid() alone is
+    // process-wide, so two threads of the same process probing the same dir
+    // would collide. Appending the thread id plus a monotonic counter makes each
+    // probe file distinct even under concurrent same-process, same-dir probes.
+    static std::atomic<std::uint64_t> probe_counter{0};
+    std::ostringstream name;
+    name << strip_trailing_slash(dir) << "/.helix_write_test." << ::getpid() << '.'
+         << std::this_thread::get_id() << '.' << probe_counter.fetch_add(1);
+    const std::string test_file = name.str();
 
     bool wrote = false;
     {
