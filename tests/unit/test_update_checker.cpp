@@ -794,6 +794,98 @@ TEST_CASE("UpdateChecker get_download_path returns valid path", "[update_checker
     checker.shutdown();
 }
 
+// Helper: assert the staging dir is NOT within-or-equal-to install_root. This
+// is the load-bearing safety invariant — TMP_DIR is rm -rf'd on cleanup AND the
+// installer's --update flow (release.sh) does dotfile `rm -rf` inside INSTALL_DIR
+// and `mv INSTALL_DIR ...` during the atomic swap. A staging dir under
+// INSTALL_DIR would be deleted/relocated out from under the extract → wiped
+// install falsely reported as success, or a rollback.
+static void require_outside_install_root(const std::string& staging,
+                                         const std::string& install_root) {
+    REQUIRE(staging != install_root);
+    REQUIRE(staging.rfind(install_root + "/", 0) != 0);
+}
+
+TEST_CASE("UpdateChecker compute_update_staging_dir derives a safe subdir", "[update_checker]") {
+    using UC = UpdateChecker;
+
+    // COLLISION: download dir == install root (the common self-update case,
+    // e.g. both /home/pi/helixscreen). Staging MUST relocate to a SIBLING of
+    // the install dir, never a subdir of it.
+    {
+        const std::string tarball = "/home/pi/helixscreen/helixscreen-update.tar.gz";
+        const std::string install_root = "/home/pi/helixscreen";
+        auto staging = UC::compute_update_staging_dir(tarball, install_root);
+        REQUIRE(staging == "/home/pi/.helix-update-staging");
+        require_outside_install_root(staging, install_root);
+        REQUIRE(staging.find("/.helix-update-staging") != std::string::npos);
+    }
+
+    // COLLISION with a deeper download dir INSIDE the install root: still
+    // relocate to the install root's parent (sibling of the install dir).
+    {
+        const std::string tarball = "/home/pi/helixscreen/dl/helixscreen-update.tar.gz";
+        const std::string install_root = "/home/pi/helixscreen";
+        auto staging = UC::compute_update_staging_dir(tarball, install_root);
+        REQUIRE(staging == "/home/pi/.helix-update-staging");
+        require_outside_install_root(staging, install_root);
+    }
+
+    // NON-COLLISION: download dir on a different partition than the install
+    // root. Leave the base at the download dir — it's already outside.
+    {
+        const std::string tarball = "/data/helixscreen-update.tar.gz";
+        const std::string install_root = "/home/pi/helixscreen";
+        auto staging = UC::compute_update_staging_dir(tarball, install_root);
+        REQUIRE(staging == "/data/.helix-update-staging");
+        require_outside_install_root(staging, install_root);
+    }
+
+    // ANCESTOR: download dir is the PARENT of the install root. Already a
+    // sibling location of the install dir — must NOT be relocated.
+    {
+        const std::string tarball = "/home/pi/helixscreen-update.tar.gz";
+        const std::string install_root = "/home/pi/helixscreen";
+        auto staging = UC::compute_update_staging_dir(tarball, install_root);
+        REQUIRE(staging == "/home/pi/.helix-update-staging");
+        require_outside_install_root(staging, install_root);
+    }
+
+    // Empty install_root (unknown): fall back to plain dirname behaviour.
+    {
+        const std::string tarball = "/data/helixscreen/helixscreen-update.tar.gz";
+        auto staging = UC::compute_update_staging_dir(tarball, "");
+        REQUIRE(staging == "/data/helixscreen/.helix-update-staging");
+        REQUIRE(staging.find("//") == std::string::npos);
+    }
+
+    // Trailing slashes on install_root must not defeat the within-or-equal
+    // comparison — still a collision, still relocated.
+    {
+        const std::string tarball = "/home/pi/helixscreen/helixscreen-update.tar.gz";
+        auto staging = UC::compute_update_staging_dir(tarball, "/home/pi/helixscreen/");
+        REQUIRE(staging == "/home/pi/.helix-update-staging");
+    }
+
+    // Tarball sitting at filesystem root, unknown install root: the directory
+    // is "/". Result is "/.helix-update-staging" and must NOT equal "/".
+    {
+        const std::string tarball = "/helixscreen-update.tar.gz";
+        auto staging = UC::compute_update_staging_dir(tarball, "");
+        REQUIRE(staging == "/.helix-update-staging");
+        REQUIRE(staging != "/");
+    }
+
+    // Bare filename (no directory component) resolves against "." rather than
+    // producing a bare "/.helix-update-staging" at the root.
+    {
+        const std::string tarball = "helixscreen-update.tar.gz";
+        auto staging = UC::compute_update_staging_dir(tarball, "");
+        REQUIRE(staging == "./.helix-update-staging");
+        REQUIRE(staging != ".");
+    }
+}
+
 TEST_CASE("UpdateChecker required_download_space_bytes scales with download size",
           "[update_checker]") {
     using UC = UpdateChecker;

@@ -608,10 +608,35 @@ detect_tmp_dir() {
     fi
 
     local required_mb=100
+
+    # Prefer install-dir SIBLING / home candidates FIRST, mirroring the running
+    # app's C++ download-path probe. On devices where /tmp is a read-only
+    # filesystem (e.g. OrangePi Zero3) the standard temp candidates below all
+    # fail and the installer would fall back to /tmp and die at mkdir. The
+    # install root partition is writable by definition (the binary lives there)
+    # and usually the largest user partition.
+    #
+    # CRITICAL: these MUST stay OUTSIDE INSTALL_DIR (siblings), matching the
+    # existing /data, /usr/data sibling pattern. TMP_DIR is rm -rf'd on cleanup
+    # AND the --update flow (release.sh) does dotfile `rm -rf` inside INSTALL_DIR
+    # and `mv INSTALL_DIR ...` on the atomic swap — a TMP_DIR under INSTALL_DIR
+    # gets deleted/relocated out from under the extracted tree. So we use the
+    # install dir's PARENT, never INSTALL_DIR itself. Dot-prefixed to stay
+    # hidden and out of the way.
+    local candidates=""
+    if [ -n "${INSTALL_DIR:-}" ]; then
+        local install_parent
+        install_parent=$(dirname "$INSTALL_DIR")
+        candidates="$install_parent/.helixscreen-install"
+    fi
+    if [ -n "${HOME:-}" ]; then
+        candidates="$candidates $HOME/.helixscreen-install"
+    fi
+
     # /user-resource is CC1's large writable partition (4GB+); /data is tiny (~118MB)
     # and often too full once the tarball is downloaded there, so list /user-resource
     # ahead of the smaller candidates.
-    local candidates="/user-resource/helixscreen-install /data/helixscreen-install /mnt/data/helixscreen-install /usr/data/helixscreen-install /var/tmp/helixscreen-install /tmp/helixscreen-install"
+    candidates="$candidates /user-resource/helixscreen-install /data/helixscreen-install /mnt/data/helixscreen-install /usr/data/helixscreen-install /var/tmp/helixscreen-install /tmp/helixscreen-install"
 
     for candidate in $candidates; do
         local check_dir
