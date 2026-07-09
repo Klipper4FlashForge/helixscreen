@@ -317,6 +317,73 @@ TEST_CASE_METHOD(LVGLTestFixture, "Active-loaded subject is the single highlight
 }
 
 // ============================================================================
+// Part 2b — Per-slot FILL subject: sync writes the canonical display_fill_pct
+// ============================================================================
+//
+// The fill subject is the structural fix for spool fill levels: written here by
+// sync_from_backend, observed inside the ams_slot widget, so every panel renders
+// fill from state (the AmsOverviewPanel bug where unit-detail spools showed 100%
+// full came from only AmsPanel ever pushing fill imperatively).
+
+TEST_CASE_METHOD(LVGLTestFixture, "AmsState publishes per-slot fill subject on sync",
+                 "[ams][fill][ams_state]") {
+    auto& ams = AmsState::instance();
+    ams.init_subjects(false);
+
+    auto mock = AmsBackend::create_mock(4);
+    auto* mock_ptr = static_cast<AmsBackendMock*>(mock.get());
+
+    // slot 0: present, real weights 500/1000 → 50%.
+    mock_ptr->force_slot_status(0, SlotStatus::AVAILABLE);
+    SlotInfo s0;
+    s0.slot_index = 0;
+    s0.material = "PLA";
+    s0.color_rgb = 0x00FF00;
+    s0.remaining_weight_g = 500.0f;
+    s0.total_weight_g = 1000.0f;
+    mock_ptr->set_slot_info(0, s0);
+
+    // slot 1: empty lane → 0 (not present).
+    mock_ptr->force_slot_status(1, SlotStatus::EMPTY);
+
+    // slot 2: present, metadata only (no usable weights) → 75% fallback (#1071).
+    mock_ptr->force_slot_status(2, SlotStatus::AVAILABLE);
+    SlotInfo s2;
+    s2.slot_index = 2;
+    s2.material = "PETG";
+    s2.color_rgb = 0x0000FF;
+    mock_ptr->set_slot_info(2, s2); // remaining/total stay -1 (unknown)
+
+    // slot 3: present but zero metadata AND no weights → no data (-1).
+    mock_ptr->force_slot_status(3, SlotStatus::AVAILABLE);
+    SlotInfo s3;
+    s3.slot_index = 3; // material empty, default color, weights -1
+    mock_ptr->set_slot_info(3, s3);
+
+    ams.set_backend(std::move(mock));
+    ams.sync_from_backend();
+    drain();
+
+    CHECK(lv_subject_get_int(ams.get_slot_fill_subject(0)) == 50);
+    CHECK(lv_subject_get_int(ams.get_slot_fill_subject(1)) == 0);
+    CHECK(lv_subject_get_int(ams.get_slot_fill_subject(2)) == 75);
+    CHECK(lv_subject_get_int(ams.get_slot_fill_subject(3)) == -1);
+
+    // Out-of-range → nullptr.
+    CHECK(ams.get_slot_fill_subject(-1) == nullptr);
+    CHECK(ams.get_slot_fill_subject(AmsState::MAX_SLOTS) == nullptr);
+
+    // Token'd overload: backend 0 is a static subject → same pointer, empty token.
+    SubjectLifetime lt;
+    lv_subject_t* fs = ams.get_slot_fill_subject(0, 0, lt);
+    CHECK(fs == ams.get_slot_fill_subject(0));
+    CHECK(lt == nullptr);
+
+    ams.clear_backends();
+    ams.deinit_subjects();
+}
+
+// ============================================================================
 // Part 3a — Op-card current-loaded color matches the loaded slot (not slot+1)
 // ============================================================================
 

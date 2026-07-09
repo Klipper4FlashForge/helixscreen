@@ -435,7 +435,11 @@ void AmsOverviewPanel::create_mini_bars(UnitCard& card, const AmsUnit& unit, int
 
         ams_draw::BarStyleParams params;
         params.color_rgb = slot.color_rgb;
-        params.fill_pct = ams_draw::fill_percent_from_slot(slot);
+        // fill_percent_from_slot returns -1 for "no data" — render an empty bar
+        // (0) rather than a phantom fill; style_slot_bar hides the fill anyway
+        // for a non-present lane.
+        int fp = ams_draw::fill_percent_from_slot(slot);
+        params.fill_pct = fp < 0 ? 0 : fp;
         params.is_present = slot.is_present();
         params.is_loaded = is_loaded;
         params.has_error = (slot.status == SlotStatus::BLOCKED || slot.error.has_value());

@@ -731,6 +731,24 @@ struct SlotInfo {
         }
         return std::nullopt;
     }
+
+    /**
+     * @brief Canonical fill-level as an integer percent for subject transport.
+     *
+     * Encodes display_fill_level() into the 0-100 int convention used by the
+     * per-slot fill subjects (AmsState::get_slot_fill_subject): -1 when
+     * display_fill_level() is nullopt (no data — leave the render untouched),
+     * otherwise the ratio rounded to 0-100 (absent lane -> 0, metadata-only
+     * fallback -> 75, real ratio -> lround(ratio*100)). Implemented in terms of
+     * display_fill_level() so the two never drift.
+     */
+    [[nodiscard]] int display_fill_pct() const {
+        auto lvl = display_fill_level();
+        if (!lvl) {
+            return -1;
+        }
+        return static_cast<int>(std::lround(*lvl * 100.0f));
+    }
 };
 
 /**

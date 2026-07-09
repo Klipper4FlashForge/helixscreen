@@ -1056,7 +1056,11 @@ static void sync_from_ams_state(AmsMiniStatusData* data) {
     int current = lv_subject_get_int(AmsState::instance().get_current_slot_subject());
     for (int i = 0; i < slot_count; ++i) {
         SlotInfo slot = backend->get_slot_info(i);
+        // -1 = "no data" → treat as empty (0) so the bar/spool renders empty
+        // rather than a phantom fill (was 100/full for weightless slots).
         int fill_pct = ams_draw::fill_percent_from_slot(slot, 0);
+        if (fill_pct < 0)
+            fill_pct = 0;
         int rem = -1;
         float p = slot.get_remaining_percent();
         if (p >= 0.0f)

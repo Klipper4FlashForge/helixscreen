@@ -24,6 +24,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <unordered_map>
@@ -48,11 +49,22 @@ struct AmsSlotData {
     // RAII observer handles - automatically removed when this struct is destroyed
     ObserverGuard color_observer;
     ObserverGuard status_observer;
+    ObserverGuard fill_observer; ///< Per-slot fill percent (spool visual fill)
     ObserverGuard current_slot_observer;
     ObserverGuard filament_loaded_observer;
     ObserverGuard active_loaded_observer; ///< Per-slot active-loaded (single highlight source)
     ObserverGuard action_observer;
     ObserverGuard target_slot_observer;
+
+    // Lifetime tokens paired with the observers that bind per-backend subjects.
+    // Secondary-backend (index > 0) color/status/fill subjects are DYNAMIC —
+    // recreated on backend rediscovery — so each such observer needs a token
+    // that expires when AmsState tears the subject down (L084). For backend 0
+    // the accessors return an empty (always-alive) token; harmless. MUST be
+    // reset BEFORE the matching observer (see cleanup paths, #705).
+    SubjectLifetime color_lifetime;
+    SubjectLifetime status_lifetime;
+    SubjectLifetime fill_lifetime;
 
     // Skeuomorphic spool visualization layers (flat style)
     lv_obj_t* spool_container = nullptr; // Container for all spool elements
@@ -125,8 +137,16 @@ static void unregister_slot_data(lv_obj_t* obj) {
             // stale widget pointers, and crash in apply_slot_status (#579).
             // Note: cleanup_all_slot_data() uses release() for pre-deinit when
             // subjects may already be destroyed — that path is correct.
+            //
+            // Reset the dynamic-subject lifetimes BEFORE their observers so the
+            // observer's weak_ptr is already expired (secondary-backend subjects
+            // are dynamic; wrong order = remove on a freed subject, #705).
+            data->color_lifetime.reset();
+            data->status_lifetime.reset();
+            data->fill_lifetime.reset();
             data->color_observer.reset();
             data->status_observer.reset();
+            data->fill_observer.reset();
             data->current_slot_observer.reset();
             data->filament_loaded_observer.reset();
             data->active_loaded_observer.reset();
@@ -149,9 +169,14 @@ static void cleanup_all_slot_data() {
         if (!data)
             continue;
 
-        // Release ObserverGuards while global subjects are still alive
+        // Release ObserverGuards while global subjects are still alive. Reset the
+        // dynamic-subject lifetimes first (same #705 ordering as above).
+        data->color_lifetime.reset();
+        data->status_lifetime.reset();
+        data->fill_lifetime.reset();
         data->color_observer.release();
         data->status_observer.release();
+        data->fill_observer.release();
         data->current_slot_observer.release();
         data->filament_loaded_observer.release();
         data->active_loaded_observer.release();
@@ -185,6 +210,20 @@ static void update_filament_ring_size(AmsSlotData* data) {
     sv.spool_hub = data->spool_hub;
     sv.container = data->spool_container;
     ams_draw::spool_visual_set_fill(sv, data->fill_level);
+}
+
+/**
+ * @brief Store a fill percent (0-100) on the slot and re-render the spool.
+ *
+ * Shared by the fill-subject observer and ui_ams_slot_set_fill_level() so the
+ * clamp-and-store logic lives in exactly one place.
+ */
+static void apply_slot_fill_pct(AmsSlotData* data, int pct) {
+    if (!data)
+        return;
+    pct = std::clamp(pct, 0, 100);
+    data->fill_level = static_cast<float>(pct) / 100.0f;
+    update_filament_ring_size(data);
 }
 
 // ============================================================================
@@ -579,10 +618,21 @@ static void setup_slot_observers(AmsSlotData* data) {
     using helix::ui::observe_int_sync;
     AmsState& state = AmsState::instance();
 
-    // Get per-slot subjects (using active backend for multi-backend systems)
+    // Get per-slot subjects (using active backend for multi-backend systems).
+    // color/status/fill go through the token'd overloads: for secondary backends
+    // these subjects are dynamic (recreated on rediscovery), so the paired
+    // SubjectLifetime members keep the observers from firing on a freed subject.
+    // Reset the lifetimes BEFORE rebinding (the accessor overwrites them).
     int backend_idx = state.active_backend_index();
-    lv_subject_t* color_subject = state.get_slot_color_subject(backend_idx, data->slot_index);
-    lv_subject_t* status_subject = state.get_slot_status_subject(backend_idx, data->slot_index);
+    data->color_lifetime.reset();
+    data->status_lifetime.reset();
+    data->fill_lifetime.reset();
+    lv_subject_t* color_subject =
+        state.get_slot_color_subject(backend_idx, data->slot_index, data->color_lifetime);
+    lv_subject_t* status_subject =
+        state.get_slot_status_subject(backend_idx, data->slot_index, data->status_lifetime);
+    lv_subject_t* fill_subject =
+        state.get_slot_fill_subject(backend_idx, data->slot_index, data->fill_lifetime);
     lv_subject_t* current_slot_subject = state.get_current_slot_subject();
     lv_subject_t* filament_loaded_subject = state.get_filament_loaded_subject();
 
@@ -591,8 +641,9 @@ static void setup_slot_observers(AmsSlotData* data) {
     // The registry lookup acts as a validity check. (fixes #83)
     lv_obj_t* obj = data->container;
     if (color_subject) {
-        data->color_observer =
-            observe_int_sync<lv_obj_t>(color_subject, obj, [](lv_obj_t* o, int color_int) {
+        data->color_observer = observe_int_sync<lv_obj_t>(
+            color_subject, obj,
+            [](lv_obj_t* o, int color_int) {
                 auto* d = get_slot_data(o);
                 if (!d)
                     return;
@@ -608,15 +659,32 @@ static void setup_slot_observers(AmsSlotData* data) {
                                           slot.material.empty() ? "--" : slot.material.c_str());
                     }
                 }
-            });
+            },
+            data->color_lifetime);
     }
     if (status_subject) {
-        data->status_observer =
-            observe_int_sync<lv_obj_t>(status_subject, obj, [](lv_obj_t* o, int status_int) {
+        data->status_observer = observe_int_sync<lv_obj_t>(
+            status_subject, obj,
+            [](lv_obj_t* o, int status_int) {
                 auto* d = get_slot_data(o);
                 if (d)
                     apply_slot_status(d, status_int);
-            });
+            },
+            data->status_lifetime);
+    }
+    if (fill_subject) {
+        // Per-slot fill observer: the STRUCTURAL fix. The ams_slot widget owns
+        // its fill rendering — no panel has to call ui_ams_slot_set_fill_level.
+        // pct < 0 means "no data" → leave the current render untouched.
+        data->fill_observer = observe_int_sync<lv_obj_t>(
+            fill_subject, obj,
+            [](lv_obj_t* o, int pct) {
+                auto* d = get_slot_data(o);
+                if (!d || pct < 0)
+                    return;
+                apply_slot_fill_pct(d, pct);
+            },
+            data->fill_lifetime);
     }
     if (current_slot_subject) {
         data->current_slot_observer = observe_int_sync<lv_obj_t>(
@@ -693,6 +761,12 @@ static void setup_slot_observers(AmsSlotData* data) {
     }
     if (status_subject && data->status_observer) {
         apply_slot_status(data, lv_subject_get_int(status_subject));
+    }
+    if (fill_subject && data->fill_observer) {
+        int pct = lv_subject_get_int(fill_subject);
+        if (pct >= 0) {
+            apply_slot_fill_pct(data, pct);
+        }
     }
     if (current_slot_subject && data->current_slot_observer) {
         apply_current_slot_highlight(data, lv_subject_get_int(current_slot_subject));

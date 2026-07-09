@@ -180,6 +180,41 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: fill_level clamps to 0.0-1.0 rang
     lv_obj_delete(slot);
 }
 
+// Structural regression guard for the "spool always 100% full" bug: the widget
+// must render fill from its per-slot subject WITHOUT any panel calling
+// ui_ams_slot_set_fill_level(). This is what makes AmsOverviewPanel's unit-detail
+// spools correct — they never pushed fill imperatively.
+TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: fill renders from subject without panel push",
+                 "[ui][ams_slot][fill]") {
+    ui_ams_slot_register();
+    // init_subjects is idempotent on the shared singleton; register_xml=false is
+    // fine because the widget observes via the C++ accessor, not an XML name.
+    AmsState::instance().init_subjects(false);
+
+    // Write the per-slot fill subject exactly as sync_from_backend would (50%).
+    lv_subject_t* fill = AmsState::instance().get_slot_fill_subject(0);
+    REQUIRE(fill != nullptr);
+    lv_subject_set_int(fill, 50);
+
+    // Creating the widget runs setup_slot_observers, which applies the CURRENT
+    // subject value synchronously — no panel touches the fill level.
+    lv_obj_t* slot = create_ams_slot(test_screen(), 0);
+    REQUIRE(slot != nullptr);
+    CHECK(ui_ams_slot_get_fill_level(slot) == Catch::Approx(0.50f));
+
+    // A later change flows through the observer (deferred via queue_update, #82).
+    lv_subject_set_int(fill, 25);
+    process_lvgl(50);
+    CHECK(ui_ams_slot_get_fill_level(slot) == Catch::Approx(0.25f));
+
+    // -1 ("no data") must leave the current fill untouched.
+    lv_subject_set_int(fill, -1);
+    process_lvgl(50);
+    CHECK(ui_ams_slot_get_fill_level(slot) == Catch::Approx(0.25f));
+
+    lv_obj_delete(slot);
+}
+
 TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: set_layout_info does not crash",
                  "[ui][ams_slot][api]") {
     ui_ams_slot_register();

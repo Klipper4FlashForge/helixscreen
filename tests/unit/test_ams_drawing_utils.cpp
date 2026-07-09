@@ -144,6 +144,9 @@ TEST_CASE("ams_draw::worst_unit_severity finds ERROR among warnings", "[ams_draw
 
 TEST_CASE("ams_draw::fill_percent_from_slot with known weight", "[ams_draw][fill]") {
     SlotInfo slot;
+    // Now sourced from SlotInfo::display_fill_pct, which gates on presence — set
+    // a present status so the real remaining/total ratio is used.
+    slot.status = SlotStatus::AVAILABLE;
     slot.remaining_weight_g = 500.0f;
     slot.total_weight_g = 1000.0f;
     REQUIRE(ams_draw::fill_percent_from_slot(slot) == 50);
@@ -151,20 +154,45 @@ TEST_CASE("ams_draw::fill_percent_from_slot with known weight", "[ams_draw][fill
 
 TEST_CASE("ams_draw::fill_percent_from_slot clamps to min_pct", "[ams_draw][fill]") {
     SlotInfo slot;
+    slot.status = SlotStatus::AVAILABLE;
     slot.remaining_weight_g = 1.0f;
     slot.total_weight_g = 1000.0f;
     REQUIRE(ams_draw::fill_percent_from_slot(slot) == 5);
 }
 
-TEST_CASE("ams_draw::fill_percent_from_slot returns 100 for unknown weight", "[ams_draw][fill]") {
+TEST_CASE("ams_draw::fill_percent_from_slot returns -1 for no-data slot", "[ams_draw][fill]") {
+    // Rewritten: the old contract returned 100 (FULL) for a weightless slot,
+    // which made every backend without weights render full. A present slot with
+    // no weights AND no filament metadata now has no fill data → -1 (caller
+    // skips) instead of a phantom full bar.
     SlotInfo slot;
+    slot.status = SlotStatus::AVAILABLE; // present, but no weights, no metadata
     slot.remaining_weight_g = -1.0f;
     slot.total_weight_g = 0.0f;
-    REQUIRE(ams_draw::fill_percent_from_slot(slot) == 100);
+    REQUIRE(ams_draw::fill_percent_from_slot(slot) == -1);
+}
+
+TEST_CASE("ams_draw::fill_percent_from_slot metadata-only falls back to 75",
+          "[ams_draw][fill]") {
+    // Present + material set but no usable weights → 75% fallback (#1071).
+    SlotInfo slot;
+    slot.status = SlotStatus::AVAILABLE;
+    slot.material = "PLA";
+    REQUIRE(ams_draw::fill_percent_from_slot(slot) == 75);
+}
+
+TEST_CASE("ams_draw::fill_percent_from_slot empty lane renders empty",
+          "[ams_draw][fill]") {
+    // Not-present lane → 0 ratio, clamped up to min_pct (matches prior behavior
+    // for a 0% present slot; style_slot_bar gates the bar on is_present anyway).
+    SlotInfo slot;
+    slot.status = SlotStatus::EMPTY;
+    REQUIRE(ams_draw::fill_percent_from_slot(slot, 0) == 0);
 }
 
 TEST_CASE("ams_draw::fill_percent_from_slot custom min_pct", "[ams_draw][fill]") {
     SlotInfo slot;
+    slot.status = SlotStatus::AVAILABLE;
     slot.remaining_weight_g = 0.0f;
     slot.total_weight_g = 1000.0f;
     REQUIRE(ams_draw::fill_percent_from_slot(slot, 0) == 0);

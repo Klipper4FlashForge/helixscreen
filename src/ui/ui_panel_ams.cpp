@@ -1058,15 +1058,13 @@ void AmsPanel::update_slot_colors() {
                 }
             }
 
-            // Set fill level from the slot's display policy (see
-            // SlotInfo::display_fill_level): real ratio when both weights are
-            // known, 75% fallback when only metadata is present, and an empty
-            // bar for a not-present/ghost lane — which a retained Spoolman link
-            // across an eject would otherwise render as ~75% full (#1071 BUG-1).
-            // nullopt means leave the bar untouched.
-            if (auto fill = slot_info.display_fill_level()) {
-                ui_ams_slot_set_fill_level(slot_widgets_[i], *fill);
-            }
+            // Fill level is no longer pushed here: the ams_slot widget observes
+            // its own per-slot fill subject (AmsState::get_slot_fill_subject),
+            // written by sync_from_backend with the same SlotInfo::display_fill*
+            // policy (real ratio / 75% metadata fallback / empty ghost lane,
+            // #1071 BUG-1). Observing in the widget means every panel that hosts
+            // an ams_slot renders fill from state — the AmsOverviewPanel bug where
+            // unit-detail spools showed 100% full is fixed structurally.
 
             // Refresh slot to update tool badge and other dynamic state
             ui_ams_slot_refresh(slot_widgets_[i]);

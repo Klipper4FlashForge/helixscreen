@@ -811,6 +811,16 @@ class AmsState {
     [[nodiscard]] lv_subject_t* get_slot_color_subject(int backend_index, int slot_index);
 
     /**
+     * @brief Token'd overload of get_slot_color_subject for observer safety.
+     *
+     * For secondary backends the returned subject is DYNAMIC (recreated on
+     * backend rediscovery), so observers MUST hold the lifetime token. For
+     * backend 0 the subject is static and the token is emptied (always-alive).
+     */
+    [[nodiscard]] lv_subject_t* get_slot_color_subject(int backend_index, int slot_index,
+                                                       SubjectLifetime& lifetime);
+
+    /**
      * @brief Get slot status subject for a specific backend and slot
      *
      * For backend_index 0, delegates to existing flat slot subjects.
@@ -823,6 +833,13 @@ class AmsState {
     [[nodiscard]] lv_subject_t* get_slot_status_subject(int backend_index, int slot_index);
 
     /**
+     * @brief Token'd overload of get_slot_status_subject for observer safety.
+     * @see get_slot_color_subject(int, int, SubjectLifetime&)
+     */
+    [[nodiscard]] lv_subject_t* get_slot_status_subject(int backend_index, int slot_index,
+                                                        SubjectLifetime& lifetime);
+
+    /**
      * @brief Get remaining filament subject for a specific slot
      *
      * Holds formatted remaining amount string ("52m", "432g", or "").
@@ -831,6 +848,31 @@ class AmsState {
      * @return Subject pointer or nullptr if out of range
      */
     [[nodiscard]] lv_subject_t* get_slot_remaining_subject(int slot_index);
+
+    /**
+     * @brief Get per-slot fill-level subject (primary backend).
+     *
+     * Holds the fill percent as an int using the SlotInfo::display_fill_pct
+     * encoding: 0-100 real fill, or -1 when there is no data (observer should
+     * leave the render untouched). Written by the sync loop, observed inside the
+     * ams_slot widget so the spool fill renders from state on EVERY panel — no
+     * panel has to push fill imperatively.
+     *
+     * @param slot_index Slot index (0 to MAX_SLOTS-1)
+     * @return Subject pointer or nullptr if out of range
+     */
+    [[nodiscard]] lv_subject_t* get_slot_fill_subject(int slot_index);
+
+    /**
+     * @brief Get per-slot fill-level subject for a specific backend and slot.
+     *
+     * For backend 0 the subject is static and the token is emptied. For
+     * secondary backends the subject is DYNAMIC and observers MUST hold the
+     * lifetime token.
+     * @see get_slot_color_subject(int, int, SubjectLifetime&)
+     */
+    [[nodiscard]] lv_subject_t* get_slot_fill_subject(int backend_index, int slot_index,
+                                                      SubjectLifetime& lifetime);
 
     // ========================================================================
     // Per-Slot LIVE State Subject Accessors
@@ -1174,7 +1216,13 @@ class AmsState {
     struct BackendSlotSubjects {
         std::vector<lv_subject_t> colors;
         std::vector<lv_subject_t> statuses;
+        std::vector<lv_subject_t> fills; // int: fill percent 0-100, -1 = unknown
         int slot_count = 0;
+        /// Lifetime token shared by every subject in this struct. These subjects
+        /// are DYNAMIC (destroyed in deinit() on backend rediscovery), so any
+        /// observer bound to them MUST hold a copy of this token — the token'd
+        /// accessor overloads hand it out. deinit() invalidates it.
+        SubjectLifetime lifetime;
         void init(int count);
         void deinit();
     };
@@ -1347,6 +1395,8 @@ class AmsState {
     lv_subject_t slot_statuses_[MAX_SLOTS];
     lv_subject_t slot_remaining_[MAX_SLOTS]; // string: "52m" or "432g" or ""
     char slot_remaining_buf_[MAX_SLOTS][16]; // buffers for remaining strings
+    lv_subject_t slot_fills_[MAX_SLOTS];     // int: fill percent 0-100, -1 = unknown/no-data
+                                             // (SlotInfo::display_fill_pct encoding)
 
     // Per-slot LIVE state subjects — the panel observes these to redraw the path
     // and active-lane highlight in real time as Moonraker sensor data arrives.
