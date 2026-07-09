@@ -842,6 +842,83 @@ uint64_t UpdateChecker::required_download_space_bytes(uint64_t download_bytes) {
     return need < DOWNLOAD_SPACE_FLOOR_BYTES ? DOWNLOAD_SPACE_FLOOR_BYTES : need;
 }
 
+namespace {
+
+// dirname() without POSIX dirname(3) (which mutates its argument and isn't
+// reentrant). Strips trailing slashes first, keeps a lone "/" as the root,
+// returns "." for a bare filename. Matches the std::string path handling used
+// in get_download_path().
+std::string path_dirname(const std::string& in) {
+    std::string path = in;
+    while (path.size() > 1 && path.back() == '/') {
+        path.pop_back();
+    }
+    const auto slash = path.find_last_of('/');
+    if (slash == std::string::npos) {
+        return "."; // bare filename → current working directory
+    }
+    if (slash == 0) {
+        return "/"; // sits at the filesystem root
+    }
+    return path.substr(0, slash);
+}
+
+// Strip trailing slashes for comparison, but keep a lone "/" intact.
+std::string strip_trailing_slashes(const std::string& in) {
+    std::string s = in;
+    while (s.size() > 1 && s.back() == '/') {
+        s.pop_back();
+    }
+    return s;
+}
+
+// True if `child` is within-or-equal-to `parent` (both already stripped of
+// trailing slashes): child == parent, or child starts with parent + "/".
+bool is_within_or_equal(const std::string& child, const std::string& parent) {
+    if (parent.empty()) {
+        return false;
+    }
+    if (child == parent) {
+        return true;
+    }
+    return child.rfind(parent + "/", 0) == 0;
+}
+
+} // namespace
+
+std::string UpdateChecker::compute_update_staging_dir(const std::string& tarball_path,
+                                                      const std::string& install_root) {
+    std::string base = path_dirname(tarball_path);
+
+    // SAFETY: the staging dir must live OUTSIDE install_root. TMP_DIR is
+    // rm -rf'd on installer cleanup, and the installer's --update flow does
+    // dotfile `rm -rf` inside INSTALL_DIR plus `mv INSTALL_DIR ...` on the
+    // atomic-swap path — a staging dir under INSTALL_DIR would be deleted or
+    // relocated out from under the extracted new tree. When the download dir
+    // sits within-or-equal-to the install root (the common self-update case
+    // where both are e.g. /home/pi/helixscreen), relocate the base to the
+    // install root's PARENT — a sibling of the install dir on the same
+    // partition. The ancestor case (base is already a parent of install_root)
+    // is left untouched: it's already a sibling location.
+    const std::string norm_root = strip_trailing_slashes(install_root);
+    const std::string norm_base = strip_trailing_slashes(base);
+    if (!norm_root.empty() && is_within_or_equal(norm_base, norm_root)) {
+        base = path_dirname(norm_root);
+        if (base.empty()) {
+            base = ".";
+        }
+    }
+
+    // ALWAYS a dot-prefixed subdir — never the bare dir. TMP_DIR is rm -rf'd on
+    // installer cleanup; handing it a bare mount/install dir would wipe live
+    // data (past incident wiped a device partition passed as TMP_DIR).
+    static constexpr const char* kStagingName = ".helix-update-staging";
+    if (base == "/") {
+        return std::string("/") + kStagingName;
+    }
+    return base + "/" + kStagingName;
+}
+
 std::string UpdateChecker::get_download_path(DownloadPathDiag* diag,
                                              uint64_t threshold_bytes) const {
     if (threshold_bytes == 0) {
@@ -1522,6 +1599,27 @@ void UpdateChecker::do_install(const std::string& tarball_path) {
         }
     }
 
+    // Hand our already-probed staging dir to install.sh via TMP_DIR so it does
+    // NOT re-probe its own hardcoded candidate list (which omits the install
+    // dir and dies at mkdir on read-only-/tmp boxes like the OrangePi Zero3).
+    // compute_update_staging_dir() guarantees a dot-prefixed dir OUTSIDE the
+    // install root — never under INSTALL_DIR, which the installer's --update
+    // flow rm -rf's (dotfile loop) and mv's (atomic swap). Only hand it off
+    // when its parent is actually writable; otherwise leave TMP_DIR unset and
+    // let install.sh's own (hardened) detect_tmp_dir probe take over. Computed
+    // + logged on the parent side because logging may not flush from the child
+    // after fork().
+    const std::string staging_dir = compute_update_staging_dir(tarball_path, install_root);
+    const std::string staging_parent = path_dirname(staging_dir);
+    const bool staging_writable = is_writable_dir(staging_parent);
+    if (staging_writable) {
+        flog_info("[UpdateChecker] Handing staging dir to installer: TMP_DIR={}", staging_dir);
+    } else {
+        flog_info("[UpdateChecker] Staging parent {} not writable; leaving TMP_DIR unset for "
+                  "installer to probe",
+                  staging_parent);
+    }
+
     // Fork install.sh with its output redirected to a persistent log file.
     // Using a file instead of a pipe means we get the full output even if this
     // process is killed by systemd's stop_service during the install step.
@@ -1561,6 +1659,11 @@ void UpdateChecker::do_install(const std::string& tarball_path) {
             // Tell install.sh this is an in-app self-update so it skips
             // stop_service/start_service on SysV — the watchdog handles restart.
             setenv("HELIX_SELF_UPDATE", "1", 1);
+            // Pass the app-validated staging dir (computed on the parent above)
+            // only when its parent is writable; else let the installer probe.
+            if (staging_writable) {
+                setenv("TMP_DIR", staging_dir.c_str(), 1);
+            }
             const char* argv[] = {install_script.c_str(), "--local", tarball_path.c_str(),
                                   "--update", nullptr};
             execv(install_script.c_str(), const_cast<char**>(argv));

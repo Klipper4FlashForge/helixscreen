@@ -210,6 +210,25 @@ class UpdateChecker {
     /// safety floor.
     static uint64_t required_download_space_bytes(uint64_t download_bytes);
 
+    /**
+     * @brief Derive the installer staging dir handed to install.sh via TMP_DIR.
+     * @param tarball_path Path to the downloaded update tarball.
+     * @param install_root Resolved install root (app_get_install_root()), or ""
+     *        if unknown.
+     * @return A dot-prefixed staging dir guaranteed OUTSIDE install_root.
+     *
+     * Base is dirname(tarball_path). If that base is within-or-equal-to
+     * install_root, the base is relocated to install_root's PARENT (a sibling
+     * of the install dir). This is load-bearing: TMP_DIR is `rm -rf`'d on
+     * cleanup AND the installer's --update flow (release.sh) does dotfile
+     * `rm -rf` inside INSTALL_DIR and `mv INSTALL_DIR ...` during the atomic
+     * swap — a staging dir under INSTALL_DIR would be deleted/relocated out
+     * from under the extracted tree. Pure + static so the safety invariant is
+     * unit-testable without running the installer.
+     */
+    static std::string compute_update_staging_dir(const std::string& tarball_path,
+                                                  const std::string& install_root);
+
     std::string get_platform_asset_name() const;
 
     /** @brief Get the configured update channel */
