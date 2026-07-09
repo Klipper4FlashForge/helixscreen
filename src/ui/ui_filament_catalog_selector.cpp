@@ -129,7 +129,7 @@ std::string FilamentCatalogSelector::type_options() const {
 void FilamentCatalogSelector::preselect_first() {
     if (!highlighted_id_.empty())
         return; // keep an existing selection
-    auto products = catalog_.products_for(current_vendor(), current_type());
+    auto products = ordered_products_for(current_vendor(), current_type());
     if (products.empty())
         return;
     handle_row_selected(products.front()->id);
@@ -143,7 +143,7 @@ void FilamentCatalogSelector::set_preselect_on_change(bool enable) {
 }
 
 void FilamentCatalogSelector::preselect_after_change() {
-    auto products = catalog_.products_for(current_vendor(), current_type());
+    auto products = ordered_products_for(current_vendor(), current_type());
     if (products.empty()) {
         // Genuinely no product for this vendor+type (e.g. a firmware-whitelisted
         // material we haven't seeded). Leave unchecked; the host decides what a
@@ -166,10 +166,17 @@ void FilamentCatalogSelector::preselect_after_change() {
 }
 
 void FilamentCatalogSelector::select_first_product_for_test() {
-    auto products = catalog_.products_for(current_vendor(), current_type());
+    auto products = ordered_products_for(current_vendor(), current_type());
     if (products.empty())
         return;
     handle_row_selected(products.front()->id);
+}
+
+std::vector<std::string> FilamentCatalogSelector::product_names_for_test() const {
+    std::vector<std::string> names;
+    for (const auto* p : ordered_products_for(current_vendor(), current_type()))
+        names.push_back(p->name);
+    return names;
 }
 
 void FilamentCatalogSelector::change_vendor_for_test(uint32_t index) {
@@ -256,6 +263,41 @@ void FilamentCatalogSelector::populate_type_dropdown() {
     lv_dropdown_set_selected(dd, seed_idx);
 }
 
+std::vector<const helix::printer::EffectiveFilament*>
+FilamentCatalogSelector::ordered_products_for(const std::string& vendor,
+                                              const std::string& type) const {
+    auto products = catalog_.products_for(vendor, type);
+    auto to_lower = [](std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return s;
+    };
+    const std::string type_lc = to_lower(type);
+    // 0 = plain material matching the selected type, 1 = everything else
+    // (alphabetical within this rank), 2 = "Support..." materials (sunk to
+    // the bottom, original/file order preserved).
+    auto rank_of = [&](const helix::printer::EffectiveFilament* p) -> int {
+        std::string name_lc = to_lower(p->name);
+        if (name_lc == type_lc)
+            return 0;
+        if (name_lc.rfind("support", 0) == 0)
+            return 2;
+        return 1;
+    };
+    std::stable_sort(products.begin(), products.end(),
+                      [&](const helix::printer::EffectiveFilament* a,
+                          const helix::printer::EffectiveFilament* b) {
+                          int ra = rank_of(a);
+                          int rb = rank_of(b);
+                          if (ra != rb)
+                              return ra < rb;
+                          if (ra != 1)
+                              return false; // stable within ranks 0 and 2
+                          return to_lower(a->name) < to_lower(b->name);
+                      });
+    return products;
+}
+
 void FilamentCatalogSelector::rebuild_product_list() {
     lv_obj_t* list = find_child("product_list");
     if (!list)
@@ -272,7 +314,7 @@ void FilamentCatalogSelector::rebuild_product_list() {
         icon_font_name ? lv_xml_get_font(nullptr, icon_font_name) : body_font;
     const char* check_codepoint = ui_icon::lookup_codepoint("check");
 
-    auto products = catalog_.products_for(current_vendor(), current_type());
+    auto products = ordered_products_for(current_vendor(), current_type());
     for (const auto* p : products) {
         bool is_current = (highlighted_id_ == p->id);
         lv_obj_t* row = lv_obj_create(list);

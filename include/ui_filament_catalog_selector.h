@@ -81,11 +81,23 @@ class FilamentCatalogSelector {
     void select_first_product_for_test();
     void change_vendor_for_test(uint32_t index);
     void change_type_for_test(uint32_t index);
+    /// Product names in current display order (post display-ranking) for the
+    /// active vendor+type — lets tests assert row order without walking the
+    /// rendered widget tree.
+    [[nodiscard]] std::vector<std::string> product_names_for_test() const;
 
   private:
     void populate_vendor_dropdown();
     void populate_type_dropdown();
     void rebuild_product_list();
+    /// products_for() results ranked for display: the plain material whose
+    /// name equals `type` (case-insensitive) first, "Support…" materials
+    /// last, everything else alphabetical (case-insensitive) in between,
+    /// stable within ranks. Used everywhere the selector renders the product
+    /// list or auto-picks "the first product" so preselect lands on the
+    /// plain material rather than raw catalog/file order.
+    std::vector<const helix::printer::EffectiveFilament*>
+    ordered_products_for(const std::string& vendor, const std::string& type) const;
     void handle_vendor_changed();
     void handle_type_changed();
     void handle_row_selected(const std::string& product_id);
