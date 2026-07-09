@@ -590,6 +590,17 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // unconditionally — independent of has_ifs_vars_ / tool_map_ — because the
     // tool_map_-derived current_slot can disagree with it on the plugin path.
     int seated_chan_ = 0;
+    // Firmware's own record of the seated toolhead lane, parsed from
+    // Adventurer5M.json "FFMInfo.channel" (1-based; 0 = none/absent). This is the
+    // field the firmware's _IFS_REMOVE_CURRENT_PRUTOK unload macro resolves the
+    // seated channel from, and it stays put while idle — unlike IFS_STATUS "Chan",
+    // which tracks the last lane the switching mechanism touched, including a
+    // zmod COLOR-menu slot SELECTION that moves no filament (#1065 Bug 3, bundle
+    // ZT8Y9WPM: editing lane 3 made Chan=3 while FFMInfo.channel stayed 2). When
+    // >0 it is the seated authority, overriding a divergent Chan in
+    // apply_zcolor_result. 0 (nothing seated, or forgotten across a reboot) falls
+    // back to the persisted-lane floor / Chan.
+    int ffm_channel_ = 0;
     // Last lane (0-based slot index) we saw loaded to the toolhead, persisted to
     // the Moonraker "lane_data" DB (sibling "seated" key) so it survives a power
     // cycle. The firmware forgets the seated channel across a reboot — IFS_STATUS
