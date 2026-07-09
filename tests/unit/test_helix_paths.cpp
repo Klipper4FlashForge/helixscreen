@@ -97,22 +97,22 @@ TEST_CASE("home honors absolute HOME only", "[helix_paths]") {
     CHECK(home() == "");
 }
 
-TEST_CASE("xdg_cache_home chain", "[helix_paths]") {
+TEST_CASE("xdg_cache_bases ordered candidates", "[helix_paths]") {
     EnvVarGuard xdg_guard("XDG_CACHE_HOME");
     EnvVarGuard home_guard("HOME");
 
-    // XDG set wins.
+    // XDG set + HOME set -> both candidates, XDG first (the fallback chain).
     xdg_guard.set("/xdg/cache");
     home_guard.set("/home/tester");
-    CHECK(xdg_cache_home() == "/xdg/cache");
+    CHECK(xdg_cache_bases() == std::vector<std::string>{"/xdg/cache", "/home/tester/.cache"});
 
-    // XDG unset -> HOME/.cache.
+    // XDG unset -> only HOME/.cache.
     xdg_guard.unset();
-    CHECK(xdg_cache_home() == "/home/tester/.cache");
+    CHECK(xdg_cache_bases() == std::vector<std::string>{"/home/tester/.cache"});
 
-    // Neither -> "".
+    // Neither -> empty.
     home_guard.unset();
-    CHECK(xdg_cache_home() == "");
+    CHECK(xdg_cache_bases().empty());
 }
 
 TEST_CASE("xdg_data_home chain", "[helix_paths]") {

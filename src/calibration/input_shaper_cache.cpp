@@ -42,10 +42,10 @@ static bool try_create_cache_dir(const std::filesystem::path& path) {
  * @return Path to cache directory for input shaper data
  */
 static std::filesystem::path determine_cache_dir() {
-    // 1/2. XDG cache base: $XDG_CACHE_HOME if set, else $HOME/.cache
-    const std::string xdg_cache_base = helix::paths::xdg_cache_home();
-    if (!xdg_cache_base.empty()) {
-        std::filesystem::path full_path = std::filesystem::path(xdg_cache_base) / "helix";
+    // 1/2. XDG cache base: $XDG_CACHE_HOME then $HOME/.cache (try each in order
+    // so an uncreatable XDG dir still falls through to $HOME/.cache).
+    for (const std::string& base : helix::paths::xdg_cache_bases()) {
+        std::filesystem::path full_path = std::filesystem::path(base) / "helix";
         if (try_create_cache_dir(full_path)) {
             spdlog::debug("[InputShaperCache] Using cache base: {}", full_path.string());
             return full_path;

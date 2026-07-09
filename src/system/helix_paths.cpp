@@ -97,16 +97,17 @@ std::string home() {
     return h;
 }
 
-std::string xdg_cache_home() {
+std::vector<std::string> xdg_cache_bases() {
+    std::vector<std::string> bases;
     const char* xdg = std::getenv("XDG_CACHE_HOME");
     if (xdg && xdg[0] != '\0') {
-        return xdg;
+        bases.emplace_back(xdg);
     }
     const std::string h = home();
     if (!h.empty()) {
-        return h + "/.cache";
+        bases.push_back(h + "/.cache");
     }
-    return "";
+    return bases;
 }
 
 std::string xdg_data_home() {

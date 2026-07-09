@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 /**
  * @file helix_paths.h
@@ -74,13 +75,16 @@ bool ensure_dir(const std::string& path);
 std::string home();
 
 /**
- * @brief $XDG_CACHE_HOME if set and non-empty, else home()+"/.cache", else "".
+ * @brief Ordered cache-base candidates: $XDG_CACHE_HOME (if set), then
+ *        home()+"/.cache" (if home is usable). May be empty.
  *
- * Base directory only — callers append "/helix/<subdir>". Mirrors the chain in
- * app_globals.cpp get_helix_cache_dir and input_shaper_cache.cpp
- * determine_cache_dir (steps 4/5 and 1/2 respectively).
+ * Base directories only — callers append "/helix/<subdir>" and try each in
+ * order. Returning BOTH (rather than just the first) preserves the original
+ * two-step fallback in app_globals.cpp get_helix_cache_dir (steps 4/5) and
+ * input_shaper_cache.cpp determine_cache_dir (steps 1/2): if the XDG dir can't
+ * be created, callers still fall through to $HOME/.cache before the next step.
  */
-std::string xdg_cache_home();
+std::vector<std::string> xdg_cache_bases();
 
 /**
  * @brief $XDG_DATA_HOME if set and non-empty, else home()+"/.local/share",

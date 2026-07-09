@@ -397,10 +397,10 @@ std::string get_helix_cache_dir(const std::string& subdir) {
     }
 #endif
 
-    // 4/5. XDG cache base: $XDG_CACHE_HOME if set, else $HOME/.cache
-    const std::string xdg_cache_base = helix::paths::xdg_cache_home();
-    if (!xdg_cache_base.empty()) {
-        std::string path = xdg_cache_base + "/helix/" + subdir;
+    // 4/5. XDG cache base: $XDG_CACHE_HOME then $HOME/.cache (try each in order
+    // so an uncreatable XDG dir still falls through to $HOME/.cache).
+    for (const std::string& base : helix::paths::xdg_cache_bases()) {
+        std::string path = base + "/helix/" + subdir;
         if (try_create_dir(path)) {
             return path;
         }
