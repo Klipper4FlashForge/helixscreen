@@ -5,6 +5,29 @@ All notable changes to HelixScreen will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.99.88] - 2026-07-08
+
+### Added
+
+- **Offline branded filament catalog picker** — long-pressing a filament preset opens a vendor → product picker backed by an offline OrcaSlicer-derived catalog, applying that product's branded print temperatures. Branded choices persist across restarts.
+- **Grouped settings cards** — settings overlays (Display & Sound, fans, sensors, and the rest of the settings tree) are reorganized into titled group cards, some with a count badge, for a cleaner, more scannable layout.
+- **On-screen scroll buttons** — a new "Scroll Buttons" toggle in Display settings adds chevron controls in a reserved gutter for paging long screens without a swipe, animated when Animations are enabled.
+- **Multi-color filament swatches** — filament-mapper surfaces and the spool picker show multi-color spools as diagonal split swatches.
+- **Resonance-calibration memory warning** — on hosts with under ~200 MB free, HelixScreen warns before starting input-shaper resonance calibration.
+
+### Fixed
+
+- **AD5X IFS seated-lane tracking** (prestonbrown/helixscreen#1065) — the seated lane is derived from the native channel sensor rather than dialog state, ejected lanes clear so the context menu refreshes, the loaded lane resolves via the current slot on single-tool systems, and the operation step tracker highlights the right phase.
+- **AD5X material type refresh** (prestonbrown/helixscreen#981) — a non-locked override material is refreshed when the firmware reports a filament type change.
+- **CC1 resonance calibration no longer thrashes memory** — the COSMOS gui-switcher can quiesce HelixScreen for resonance calibration on low-memory CC1 hosts.
+- **Safer during printing** — app-initiated homing and filament load/unload operations are blocked while a print is active.
+- **3D preview on faulting GPUs** (prestonbrown/helixscreen#966) — the 3D model preview is disabled on GPUs that fault inside their driver, avoiding a crash.
+- **Qidi Max 4 detection and version display** (prestonbrown/helixscreen#1068) — the build-volume window is centered on the 390×390 bed, and a Moonraker "?" version reports as "Unknown".
+- **Single-extruder printing not blocked** — the pre-print check no longer blocks a print on single-extruder printers with no AMS.
+- **Wizard Moonraker host prefill** — the setup wizard pre-fills 127.0.0.1 when the stored Moonraker host is empty.
+- **Spoolman spool parsing** (prestonbrown/helixscreen#1087) — null numeric fields in a spool record are tolerated instead of failing the parse.
+- **Software-rotated panel animations** (prestonbrown/helixscreen#986) — animations default off on software-rotated displays to keep them responsive.
+
 ## [0.99.87] - 2026-07-03
 
 ### Added
@@ -4205,6 +4228,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.88]: https://github.com/prestonbrown/helixscreen/compare/v0.99.87...v0.99.88
 [0.99.87]: https://github.com/prestonbrown/helixscreen/compare/v0.99.86...v0.99.87
 [0.99.86]: https://github.com/prestonbrown/helixscreen/compare/v0.99.85...v0.99.86
 [0.99.85]: https://github.com/prestonbrown/helixscreen/compare/v0.99.84...v0.99.85
