@@ -20,6 +20,7 @@
 #include "../../include/input_shaper_calibrator.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -817,4 +818,52 @@ TEST_CASE("InputShaperCache get_cache_path returns configured path",
     InputShaperCache cache(custom_path);
 
     CHECK(cache.get_cache_path() == custom_path / "input_shaper_cache.json");
+}
+
+// GAP 7: the default constructor runs determine_cache_dir(), the ONE migrated
+// candidate-list site linked into the test binary. It walks
+// helix::paths::xdg_cache_bases() and selects the first base where
+// (ensure_dir && probe_writable) succeeds. Setting XDG_CACHE_HOME to a fresh,
+// writable dir must make the resolved cache path land under <xdg>/helix/ —
+// proving XDG-first ordering + the probe actually SELECT correctly, not just
+// "don't throw". A regression that dropped XDG-first, mis-joined "helix", or let
+// probe_writable pass on the wrong base would move the path out of this subtree.
+TEST_CASE("InputShaperCache default ctor selects writable XDG cache base",
+          "[cache][input_shaper][path]") {
+    // Local RAII save/restore so we don't leak env state into other tests.
+    struct EnvGuard {
+        const char* name;
+        bool had;
+        std::string saved;
+        explicit EnvGuard(const char* n) : name(n) {
+            const char* v = std::getenv(n);
+            had = v != nullptr;
+            if (had) {
+                saved = v;
+            }
+        }
+        ~EnvGuard() {
+            if (had) {
+                ::setenv(name, saved.c_str(), 1);
+            } else {
+                ::unsetenv(name);
+            }
+        }
+    };
+
+    EnvGuard xdg_guard("XDG_CACHE_HOME");
+
+    fs::path xdg = fs::temp_directory_path() /
+                   ("helix_is_xdg_" +
+                    std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    fs::remove_all(xdg);
+    fs::create_directories(xdg);
+    ::setenv("XDG_CACHE_HOME", xdg.string().c_str(), 1);
+
+    InputShaperCache cache; // default ctor -> determine_cache_dir()
+    fs::path expected_dir = xdg / "helix";
+
+    CHECK(cache.get_cache_path() == expected_dir / "input_shaper_cache.json");
+
+    fs::remove_all(xdg);
 }

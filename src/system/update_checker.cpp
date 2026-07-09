@@ -29,6 +29,7 @@
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "printer_state.h"
 #include "spdlog/spdlog.h"
+#include "system/helix_paths.h"
 #include "system/log_path_probe.h"
 #include "system/sha256_util.h"
 #include "system/telemetry_manager.h"
@@ -811,25 +812,6 @@ static constexpr uint64_t DOWNLOAD_SPACE_DEFAULT_BYTES = 120ULL * 1024 * 1024;
 static const char* const DOWNLOAD_FILENAME = "helixscreen-update.tar.gz";
 static const char* const DOWNLOAD_FILENAME_ZIP = "helixscreen-update.zip";
 
-// Check if a directory is writable and return available bytes (0 on failure)
-static uint64_t get_available_space(const std::string& dir) {
-    struct statvfs stat {};
-    if (statvfs(dir.c_str(), &stat) != 0) {
-        return 0;
-    }
-    // Cast BOTH operands to uint64_t before multiplying. On 32-bit platforms
-    // (pi32/armhf, MIPS32, etc.) size_t and unsigned long are 32-bit, and the
-    // product for any filesystem larger than ~4 GiB wraps. Bundle D6LPLAYP
-    // reported "178.3 MB free" across a 60 GiB rootfs because 11.58M blocks ×
-    // 4096 = 47.4 GB wraps mod 2^32 to ~181 MB.
-    return static_cast<uint64_t>(stat.f_bavail) * static_cast<uint64_t>(stat.f_frsize);
-}
-
-// Check if we can actually write to a directory
-static bool is_writable_dir(const std::string& dir) {
-    return access(dir.c_str(), W_OK) == 0;
-}
-
 uint64_t UpdateChecker::required_download_space_bytes(uint64_t download_bytes) {
     // 20% headroom over the wire size + a small fixed buffer for the .partial
     // tail and filesystem overhead. install.sh runs its own ≥100 MB check
@@ -843,34 +825,6 @@ uint64_t UpdateChecker::required_download_space_bytes(uint64_t download_bytes) {
 }
 
 namespace {
-
-// dirname() without POSIX dirname(3) (which mutates its argument and isn't
-// reentrant). Strips trailing slashes first, keeps a lone "/" as the root,
-// returns "." for a bare filename. Matches the std::string path handling used
-// in get_download_path().
-std::string path_dirname(const std::string& in) {
-    std::string path = in;
-    while (path.size() > 1 && path.back() == '/') {
-        path.pop_back();
-    }
-    const auto slash = path.find_last_of('/');
-    if (slash == std::string::npos) {
-        return "."; // bare filename → current working directory
-    }
-    if (slash == 0) {
-        return "/"; // sits at the filesystem root
-    }
-    return path.substr(0, slash);
-}
-
-// Strip trailing slashes for comparison, but keep a lone "/" intact.
-std::string strip_trailing_slashes(const std::string& in) {
-    std::string s = in;
-    while (s.size() > 1 && s.back() == '/') {
-        s.pop_back();
-    }
-    return s;
-}
 
 // True if `child` is within-or-equal-to `parent` (both already stripped of
 // trailing slashes): child == parent, or child starts with parent + "/".
@@ -888,7 +842,7 @@ bool is_within_or_equal(const std::string& child, const std::string& parent) {
 
 std::string UpdateChecker::compute_update_staging_dir(const std::string& tarball_path,
                                                       const std::string& install_root) {
-    std::string base = path_dirname(tarball_path);
+    std::string base = helix::paths::dirname(tarball_path);
 
     // SAFETY: the staging dir must live OUTSIDE install_root. TMP_DIR is
     // rm -rf'd on installer cleanup, and the installer's --update flow does
@@ -900,10 +854,10 @@ std::string UpdateChecker::compute_update_staging_dir(const std::string& tarball
     // install root's PARENT — a sibling of the install dir on the same
     // partition. The ancestor case (base is already a parent of install_root)
     // is left untouched: it's already a sibling location.
-    const std::string norm_root = strip_trailing_slashes(install_root);
-    const std::string norm_base = strip_trailing_slashes(base);
+    const std::string norm_root = helix::paths::strip_trailing_slash(install_root);
+    const std::string norm_base = helix::paths::strip_trailing_slash(base);
     if (!norm_root.empty() && is_within_or_equal(norm_base, norm_root)) {
-        base = path_dirname(norm_root);
+        base = helix::paths::dirname(norm_root);
         if (base.empty()) {
             base = ".";
         }
@@ -985,12 +939,12 @@ std::string UpdateChecker::get_download_path(DownloadPathDiag* diag,
     uint64_t best_space_overall = 0;
 
     for (const auto& dir : candidates) {
-        if (!is_writable_dir(dir)) {
+        if (!helix::paths::is_writable_dir(dir)) {
             spdlog::debug("[UpdateChecker] Skipping {} (not writable)", dir);
             continue;
         }
 
-        auto space = get_available_space(dir);
+        auto space = helix::paths::available_space(dir);
 
         if (space > best_space_overall) {
             best_space_overall = space;
@@ -1610,8 +1564,8 @@ void UpdateChecker::do_install(const std::string& tarball_path) {
     // + logged on the parent side because logging may not flush from the child
     // after fork().
     const std::string staging_dir = compute_update_staging_dir(tarball_path, install_root);
-    const std::string staging_parent = path_dirname(staging_dir);
-    const bool staging_writable = is_writable_dir(staging_parent);
+    const std::string staging_parent = helix::paths::dirname(staging_dir);
+    const bool staging_writable = helix::paths::is_writable_dir(staging_parent);
     if (staging_writable) {
         flog_info("[UpdateChecker] Handing staging dir to installer: TMP_DIR={}", staging_dir);
     } else {
@@ -2007,20 +1961,15 @@ UpdateChecker::find_local_installer(const std::vector<std::string>& extra_search
         search_paths.push_back(p);
     }
 
-    // Try resolving from /proc/self/exe → strip /bin/helix-screen → install root
-    char exe_buf[PATH_MAX] = {};
-    ssize_t exe_len = readlink("/proc/self/exe", exe_buf, sizeof(exe_buf) - 1);
-    if (exe_len > 0) {
-        exe_buf[exe_len] = '\0';
-        std::string exe_dir(exe_buf);
-        auto slash = exe_dir.rfind('/');
-        if (slash != std::string::npos) {
-            exe_dir = exe_dir.substr(0, slash); // strip binary name → bin/
-            if (exe_dir.size() >= 4 && exe_dir.substr(exe_dir.size() - 4) == "/bin") {
-                std::string install_root = exe_dir.substr(0, exe_dir.size() - 4);
-                search_paths.push_back(install_root + "/" + INSTALLER_FILENAME);
-            }
-        }
+    // Resolve the install root via the canonical accessor rather than
+    // re-parsing /proc/self/exe here. app_get_install_root() is the single
+    // source of truth used elsewhere in this file (do_install, get_download_path,
+    // the external-update restart) and additionally handles the /build/bin dev
+    // layout, the " (deleted)" suffix during self-update, and config overrides —
+    // all of which this local readlink block missed.
+    const std::string install_root = app_get_install_root();
+    if (!install_root.empty()) {
+        search_paths.push_back(install_root + "/" + INSTALLER_FILENAME);
     }
 
     // Well-known install locations as fallback
