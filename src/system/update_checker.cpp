@@ -1961,20 +1961,15 @@ UpdateChecker::find_local_installer(const std::vector<std::string>& extra_search
         search_paths.push_back(p);
     }
 
-    // Try resolving from /proc/self/exe → strip /bin/helix-screen → install root
-    char exe_buf[PATH_MAX] = {};
-    ssize_t exe_len = readlink("/proc/self/exe", exe_buf, sizeof(exe_buf) - 1);
-    if (exe_len > 0) {
-        exe_buf[exe_len] = '\0';
-        std::string exe_dir(exe_buf);
-        auto slash = exe_dir.rfind('/');
-        if (slash != std::string::npos) {
-            exe_dir = exe_dir.substr(0, slash); // strip binary name → bin/
-            if (exe_dir.size() >= 4 && exe_dir.substr(exe_dir.size() - 4) == "/bin") {
-                std::string install_root = exe_dir.substr(0, exe_dir.size() - 4);
-                search_paths.push_back(install_root + "/" + INSTALLER_FILENAME);
-            }
-        }
+    // Resolve the install root via the canonical accessor rather than
+    // re-parsing /proc/self/exe here. app_get_install_root() is the single
+    // source of truth used elsewhere in this file (do_install, get_download_path,
+    // the external-update restart) and additionally handles the /build/bin dev
+    // layout, the " (deleted)" suffix during self-update, and config overrides —
+    // all of which this local readlink block missed.
+    const std::string install_root = app_get_install_root();
+    if (!install_root.empty()) {
+        search_paths.push_back(install_root + "/" + INSTALLER_FILENAME);
     }
 
     // Well-known install locations as fallback
