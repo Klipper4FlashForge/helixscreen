@@ -812,25 +812,6 @@ static constexpr uint64_t DOWNLOAD_SPACE_DEFAULT_BYTES = 120ULL * 1024 * 1024;
 static const char* const DOWNLOAD_FILENAME = "helixscreen-update.tar.gz";
 static const char* const DOWNLOAD_FILENAME_ZIP = "helixscreen-update.zip";
 
-// Check if a directory is writable and return available bytes (0 on failure)
-static uint64_t get_available_space(const std::string& dir) {
-    struct statvfs stat {};
-    if (statvfs(dir.c_str(), &stat) != 0) {
-        return 0;
-    }
-    // Cast BOTH operands to uint64_t before multiplying. On 32-bit platforms
-    // (pi32/armhf, MIPS32, etc.) size_t and unsigned long are 32-bit, and the
-    // product for any filesystem larger than ~4 GiB wraps. Bundle D6LPLAYP
-    // reported "178.3 MB free" across a 60 GiB rootfs because 11.58M blocks ×
-    // 4096 = 47.4 GB wraps mod 2^32 to ~181 MB.
-    return static_cast<uint64_t>(stat.f_bavail) * static_cast<uint64_t>(stat.f_frsize);
-}
-
-// Check if we can actually write to a directory
-static bool is_writable_dir(const std::string& dir) {
-    return access(dir.c_str(), W_OK) == 0;
-}
-
 uint64_t UpdateChecker::required_download_space_bytes(uint64_t download_bytes) {
     // 20% headroom over the wire size + a small fixed buffer for the .partial
     // tail and filesystem overhead. install.sh runs its own ≥100 MB check
@@ -958,12 +939,12 @@ std::string UpdateChecker::get_download_path(DownloadPathDiag* diag,
     uint64_t best_space_overall = 0;
 
     for (const auto& dir : candidates) {
-        if (!is_writable_dir(dir)) {
+        if (!helix::paths::is_writable_dir(dir)) {
             spdlog::debug("[UpdateChecker] Skipping {} (not writable)", dir);
             continue;
         }
 
-        auto space = get_available_space(dir);
+        auto space = helix::paths::available_space(dir);
 
         if (space > best_space_overall) {
             best_space_overall = space;
@@ -1584,7 +1565,7 @@ void UpdateChecker::do_install(const std::string& tarball_path) {
     // after fork().
     const std::string staging_dir = compute_update_staging_dir(tarball_path, install_root);
     const std::string staging_parent = helix::paths::dirname(staging_dir);
-    const bool staging_writable = is_writable_dir(staging_parent);
+    const bool staging_writable = helix::paths::is_writable_dir(staging_parent);
     if (staging_writable) {
         flog_info("[UpdateChecker] Handing staging dir to installer: TMP_DIR={}", staging_dir);
     } else {
