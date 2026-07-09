@@ -7434,3 +7434,102 @@ TEST_CASE("AD5X IFS: first material observation is a baseline, not an edit",
     // Override still wins on the baseline pass (no external edit detected yet).
     CHECK(backend.get_slot_info(1).material == "ABS");
 }
+
+// --------------------------------------------------------------------------
+// #1065: insert AFTER an empty lane must refresh a stale non-locked material.
+// Root cause: check_external_type_change early-returned on an empty material
+// observation, so an empty lane never recorded a baseline. The FIRST insert
+// then hit the "first observation" branch (baseline-only, no sync) instead of
+// "changed", so the stale override.material masked firmware truth — color
+// updated on screen, material stuck. The fix baselines the empty state (like
+// the color path's #808080 placeholder), making "" -> PETG a genuine edit.
+// --------------------------------------------------------------------------
+
+TEST_CASE("AD5X IFS: insert after an empty lane refreshes a stale non-locked material "
+          "(empty -> PETG) (#1065)",
+          "[ams][ad5x_ifs][override][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+
+    // A previous spool left a non-locked override baked with the OLD material.
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.material = "PLA";
+    ovr.color_rgb = 0x00FF00;
+    ovr.color_set = true;
+    ovr.user_locked_material = false;
+    Ad5xIfsTestAccess::seed_override(backend, 1, ovr);
+
+    // Firmware reports a color (so the sync's color-availability guard passes),
+    // then the lane goes empty: presence false + empty material. Under the fix
+    // this baselines the material to "".
+    Ad5xIfsTestAccess::set_color(backend, 1, "00FF00");
+    Ad5xIfsTestAccess::set_port_presence(backend, 1, false);
+    Ad5xIfsTestAccess::set_material(backend, 1, "");
+
+    // Sanity: while empty, the retained override still shows (lane keeps its
+    // assignment across eject — #1071).
+    CHECK(backend.get_slot_info(1).material == "PLA");
+
+    // Insert a DIFFERENT material: lane present + firmware PETG. This is now a
+    // genuine "" -> PETG delta and must fire the sync, refreshing the override.
+    Ad5xIfsTestAccess::set_port_presence(backend, 1, true);
+    Ad5xIfsTestAccess::set_material(backend, 1, "PETG");
+
+    CHECK(backend.get_slot_info(1).material == "PETG");
+    auto after = Ad5xIfsTestAccess::get_override(backend, 1);
+    REQUIRE(after.has_value());
+    CHECK(after->material == "PETG");
+}
+
+TEST_CASE("AD5X IFS: insert after an empty lane preserves a user-locked material (#965/#1065)",
+          "[ams][ad5x_ifs][override][965][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+
+    // A deliberate user choice — locked. It must survive the empty->insert path.
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.material = "SILK";
+    ovr.color_rgb = 0x00FF00;
+    ovr.color_set = true;
+    ovr.user_locked_material = true;
+    Ad5xIfsTestAccess::seed_override(backend, 1, ovr);
+
+    Ad5xIfsTestAccess::set_color(backend, 1, "00FF00");
+    Ad5xIfsTestAccess::set_port_presence(backend, 1, false);
+    Ad5xIfsTestAccess::set_material(backend, 1, "");
+
+    // Insert with a different firmware material — the OverwriteAlways mirror
+    // skips the user-locked field, so the locked choice sticks.
+    Ad5xIfsTestAccess::set_port_presence(backend, 1, true);
+    Ad5xIfsTestAccess::set_material(backend, 1, "PETG");
+
+    CHECK(backend.get_slot_info(1).material == "SILK");
+    auto after = Ad5xIfsTestAccess::get_override(backend, 1);
+    REQUIRE(after.has_value());
+    CHECK(after->material == "SILK");
+}
+
+TEST_CASE("AD5X IFS: an empty first material observation is a baseline, not a spurious sync "
+          "(#1065)",
+          "[ams][ad5x_ifs][override][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+
+    // A pre-existing non-locked override must survive the FIRST (empty) firmware
+    // observation untouched — baselining "" must not fire a sync that rewrites
+    // the override.
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.material = "ABS";
+    ovr.color_rgb = 0x00FF00;
+    ovr.color_set = true;
+    ovr.user_locked_material = false;
+    Ad5xIfsTestAccess::seed_override(backend, 1, ovr);
+
+    // First-ever observation for slot 1 is an empty lane: presence false, empty
+    // material. This establishes the "" baseline and must NOT sync.
+    Ad5xIfsTestAccess::set_port_presence(backend, 1, false);
+    Ad5xIfsTestAccess::set_material(backend, 1, "");
+
+    // Override is undisturbed; no external edit was detected.
+    CHECK(backend.get_slot_info(1).material == "ABS");
+    auto after = Ad5xIfsTestAccess::get_override(backend, 1);
+    REQUIRE(after.has_value());
+    CHECK(after->material == "ABS");
+}
