@@ -289,6 +289,14 @@ class MoonrakerSpoolmanAPIMock : public MoonrakerSpoolmanAPI {
     std::map<int, int> slot_spool_map_;
 
     void init_mock_spools();
+
+    /**
+     * @brief Invoke on_error the way the real proxy path fails when Spoolman
+     * is not connected/configured in Moonraker (JSON-RPC error from the
+     * "server.spoolman.proxy" call). Used to keep the mock honest when
+     * mock_spoolman_enabled_ is false instead of silently succeeding.
+     */
+    void fail_spoolman_unavailable(const std::string& method, const ErrorCallback& on_error) const;
 };
 
 /**

@@ -743,9 +743,13 @@ void AmsEditOverlay::enter_spool_edit() {
     set_view(kViewSpoolEdit);
 
     // Managed slots: refresh logistics from Spoolman (fresh data on view entry
-    // rather than trusting cached_spools_ — review §3). Untracked slots skip the
-    // fetch but still enter the view.
-    if (working_info_.spoolman_id > 0 && api_) {
+    // rather than trusting cached_spools_ — review §3). Untracked slots, and
+    // slots with a stale spoolman_id while Spoolman itself is unavailable,
+    // skip the fetch but still enter the view (logistics section stays
+    // hidden via is_managed_subject_, see update_ui()).
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    bool has_spoolman = spoolman_subj && lv_subject_get_int(spoolman_subj) == 1;
+    if (has_spoolman && working_info_.spoolman_id > 0 && api_) {
         const int spool_id = working_info_.spoolman_id;
         auto token = lifetime_.token();
         api_->spoolman().get_spoolman_spool(
@@ -1233,8 +1237,13 @@ void AmsEditOverlay::update_ui() {
     }
     lv_subject_copy_string(&slot_indicator_subject_, slot_indicator_buf_);
 
-    // Managed-vs-untracked signal (drives mark, details row, toggle default)
-    const bool managed = working_info_.spoolman_id > 0;
+    // Managed-vs-untracked signal (drives mark, details row, toggle default).
+    // Fresh synchronous read — the XML binding fires asynchronously (#311);
+    // mirrors update_spoolman_button_state(). A slot can carry a stale
+    // spoolman_id even when Spoolman itself is unavailable, so gate on both.
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    bool has_spoolman = spoolman_subj && lv_subject_get_int(spoolman_subj) == 1;
+    const bool managed = has_spoolman && working_info_.spoolman_id > 0;
     lv_subject_set_int(&is_managed_subject_, managed ? 1 : 0);
 
     // Identity chip: tracked = spool name (+ mark via binding);

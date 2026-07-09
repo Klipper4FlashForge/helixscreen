@@ -250,6 +250,11 @@ TEST_CASE_METHOD(LVGLUITestFixture, "spool card shows spool name + mark for trac
     auto& overlay = get_ams_edit_overlay();
     AmsEditOverlayViewTestAccess access(overlay);
 
+    // Managed state requires Spoolman availability, not just spoolman_id > 0.
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
     // api=nullptr keeps the async Spoolman re-fetch out of the picture.
     REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), nullptr, nullptr));
     UpdateQueue::instance().drain();
@@ -277,6 +282,50 @@ TEST_CASE_METHOD(LVGLUITestFixture, "spool card shows spool name + mark for trac
     CHECK(access.widget("btn_change_spool") == nullptr);
 
     close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "managed state requires Spoolman availability, not just a stale spoolman_id",
+                 "[ams_edit_overlay][card][spoolman]") {
+    // Regression (HELIX_MOCK_SPOOLMAN=0): a slot can carry a stale spoolman_id
+    // from a session where Spoolman was available. Once Spoolman itself is
+    // unavailable, the card mark and spool-edit logistics section must hide —
+    // update_ui() must gate on printer_has_spoolman, not spoolman_id alone.
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+
+    SECTION("Spoolman unavailable -> not managed despite spoolman_id > 0") {
+        lv_subject_set_int(spoolman_subj, 0);
+
+        REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), nullptr, nullptr));
+        UpdateQueue::instance().drain();
+        process_lvgl(10);
+
+        CHECK(access.is_managed() == 0);
+        lv_obj_t* mark = access.widget("chip_spoolman_mark");
+        REQUIRE(mark != nullptr);
+        CHECK(lv_obj_has_flag(mark, LV_OBJ_FLAG_HIDDEN));
+
+        close_editor_overlay();
+    }
+
+    SECTION("Spoolman available -> managed with spoolman_id > 0") {
+        lv_subject_set_int(spoolman_subj, 1);
+
+        REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), nullptr, nullptr));
+        UpdateQueue::instance().drain();
+        process_lvgl(10);
+
+        CHECK(access.is_managed() == 1);
+        lv_obj_t* mark = access.widget("chip_spoolman_mark");
+        REQUIRE(mark != nullptr);
+        CHECK_FALSE(lv_obj_has_flag(mark, LV_OBJ_FLAG_HIDDEN));
+
+        close_editor_overlay();
+    }
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture, "filament-details view: toggle hidden without Spoolman",
@@ -488,6 +537,11 @@ TEST_CASE_METHOD(LVGLUITestFixture, "unified spool-edit view shows logistics onl
                  "[ams_edit_overlay][spool_edit]") {
     auto& overlay = get_ams_edit_overlay();
     AmsEditOverlayViewTestAccess access(overlay);
+
+    // Managed state requires Spoolman availability, not just spoolman_id > 0.
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
 
     // Tracked slot: is_managed==1 -> logistics section visible.
     show_overlay_for_mock_tracked_slot(*this);

@@ -673,6 +673,73 @@ TEST_CASE("MoonrakerAPIMock - update_spoolman_spool", "[filament][mock]") {
     }
 }
 
+TEST_CASE("MoonrakerAPIMock - Spoolman-gated methods fail when disabled", "[filament][mock]") {
+    // Mirrors the real proxy's failure mode when Spoolman isn't connected:
+    // these calls must error out, not silently succeed with mock data — the
+    // slot editor's managed-state gating depends on this (HELIX_MOCK_SPOOLMAN=0
+    // regression, see AmsEditOverlay::update_ui()/enter_spool_edit()).
+    MoonrakerClientMock client;
+    PrinterState state;
+    MoonrakerAPIMock api(client, state);
+    api.spoolman_mock().set_mock_spoolman_enabled(false);
+
+    SECTION("get_spoolman_spool errors, no spool delivered") {
+        bool error_called = false;
+        bool success_called = false;
+        api.spoolman().get_spoolman_spool(
+            1, [&](const std::optional<SpoolInfo>&) { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+    }
+
+    SECTION("get_spoolman_spools errors, no list delivered") {
+        bool error_called = false;
+        bool success_called = false;
+        api.spoolman().get_spoolman_spools(
+            [&](const std::vector<SpoolInfo>&) { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+    }
+
+    SECTION("update_spoolman_spool errors, no write applied") {
+        bool error_called = false;
+        bool success_called = false;
+        nlohmann::json patch;
+        patch["remaining_weight"] = 1.0;
+        api.spoolman().update_spoolman_spool(
+            1, patch, [&]() { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+    }
+
+    SECTION("update_spoolman_filament errors, no write applied") {
+        bool error_called = false;
+        bool success_called = false;
+        nlohmann::json patch;
+        patch["color_hex"] = "00FF00";
+        api.spoolman().update_spoolman_filament(
+            300, patch, [&]() { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+    }
+}
+
 TEST_CASE("SpoolInfo - new fields have defaults", "[filament]") {
     SpoolInfo spool;
 

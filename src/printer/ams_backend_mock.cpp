@@ -1565,14 +1565,16 @@ void AmsBackendMock::set_afc_mode(bool enabled) {
         // Mirrors MoonrakerSpoolmanAPIMock::init_mock_spools() spools 1-7 so a
         // lane's spoolman_id cross-references consistently (spec §9 drift fix).
         // Lane index 3 is deliberately UNLINKED (spoolman_id=0, Generic PETG)
-        // to exercise the untracked-filament path in mock mode.
+        // to exercise the untracked-filament path in mock mode. It also carries
+        // no known weight (remaining=-1 sentinel below), so it's the one mock
+        // lane that exercises the weightless "—"/no-bar display path.
         const SlotData sample_data[] = {
             {"PLA", "Polymaker", 0x1A1A2E, "Jet Black", SlotStatus::LOADED, 1, "Polymaker PLA",
              850.0f},
             {"Silk PLA", "eSUN", 0x26DCD9, "Silk Blue", SlotStatus::AVAILABLE, 2, "eSUN Silk PLA",
              750.0f},
             {"ASA", "Elegoo", 0x00AEFF, "Pop Blue", SlotStatus::AVAILABLE, 3, "Elegoo ASA", 500.0f},
-            {"PETG", "Generic", 0xFF6600, "Orange", SlotStatus::AVAILABLE, 0, "", 200.0f},
+            {"PETG", "Generic", 0xFF6600, "Orange", SlotStatus::AVAILABLE, 0, "", -1.0f},
             {"ABS", "Flashforge", 0xD20000, "Fire Engine Red", SlotStatus::AVAILABLE, 4,
              "Flashforge ABS", 100.0f},
             {"PETG", "Kingroon", 0xF4E111, "Signal Yellow", SlotStatus::AVAILABLE, 5,
@@ -1598,7 +1600,10 @@ void AmsBackendMock::set_afc_mode(bool enabled) {
             entry->info.status = (i == 0) ? SlotStatus::LOADED : d.status;
             entry->info.spoolman_id = d.spoolman_id;
             entry->info.spool_name = d.spool_name;
-            entry->info.total_weight_g = 1000.0f;
+            // Sample data's -1 sentinel (lane 3) means "no known weight" — keep
+            // total unknown too rather than fabricating a 1000g spool (matches
+            // the "unknown weight data renders '—'" contract in AmsEditOverlay).
+            entry->info.total_weight_g = (d.remaining >= 0.0f) ? 1000.0f : -1.0f;
             entry->info.remaining_weight_g = d.remaining;
             auto mat_info = filament::find_material(d.material);
             if (mat_info) {
