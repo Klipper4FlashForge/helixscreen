@@ -870,18 +870,36 @@ bool AmsBackendAd5xIfs::check_external_type_change(int slot_index,
                                                   const std::string& observed_material,
                                                   std::optional<uint32_t> observed_color,
                                                   bool slot_has_filament) {
-    // Empty material is the "no reading" signal (parse hasn't filled
-    // materials_[idx], or firmware reports "?" which maps to ""). Ignore it:
-    // never baseline, never sync — a real material is required to call
-    // something an edit. Mirrors check_external_color_change's nullopt handling.
-    if (observed_material.empty())
+    // Track a material baseline across empty lanes — mirroring
+    // check_external_color_change, which keeps a live baseline over an empty
+    // lane (empty color parses to the #808080 placeholder). The prior top-level
+    // `if (observed_material.empty()) return` bailed BEFORE baselining, so a
+    // lane that was empty at boot never recorded a baseline; the FIRST insert
+    // then hit the "first observation" branch below instead of "changed",
+    // silently swallowing the type delta — color updated on screen, material
+    // stuck on the stale override (#981/#1065 empty->insert). Baselining a
+    // genuinely-empty lane to "" makes a later "" -> PETG a real edit that syncs.
+    //
+    // But an empty observed_material is NOT always an empty lane. It is also the
+    // "no reading yet" signal when the parse hasn't populated materials_[idx]
+    // (pre-GET_ZCOLOR boot) or when a split update sets color before material.
+    // Distinguish them the same way the color path does: an empty material is a
+    // genuine empty-lane reading ONLY when the lane is actually empty
+    // (slot_has_filament == false) AND a firmware reading exists (observed_color
+    // has a value — on a real empty lane that's the #808080 placeholder). When
+    // the lane is present-but-empty-material, or no color reading exists yet,
+    // treat empty as "no reading": skip without baselining, so the first REAL
+    // material observation becomes the baseline (not a bogus "" -> X change that
+    // would fabricate an override on a slot HelixScreen never touched).
+    if (observed_material.empty() && (slot_has_filament || !observed_color.has_value()))
         return false;
 
     auto it = last_firmware_material_.find(slot_index);
     if (it == last_firmware_material_.end()) {
-        // First observation — establish baseline, never an edit signal.
+        // First observation for this slot — establish baseline (may be ""),
+        // never an edit signal.
         last_firmware_material_[slot_index] = observed_material;
-        spdlog::debug("{} Slot {} baseline material: {}", backend_log_tag(), slot_index,
+        spdlog::debug("{} Slot {} baseline material: '{}'", backend_log_tag(), slot_index,
                       observed_material);
         return false;
     }
@@ -889,11 +907,17 @@ bool AmsBackendAd5xIfs::check_external_type_change(int slot_index,
         return false; // unchanged — no edit signal
 
     const std::string old_material = it->second;
-    it->second = observed_material;
+    it->second = observed_material; // update baseline, including a transition to ""
 
-    if (!slot_has_filament) {
-        spdlog::debug("{} Slot {} firmware material changed {} -> {} "
-                      "(slot empty — sync skipped)",
+    // Only a present slot reporting a real (non-empty) material is an external
+    // type edit worth syncing. An empty observation (eject) is baselined above
+    // — so the subsequent insert is a genuine "" -> MATERIAL delta — but it is
+    // not itself sync-worthy. The user-locked-material guard (#965) still lives
+    // inside sync_override_to_firmware_locked's OverwriteAlways mirror, so a
+    // deliberately locked material is preserved through this path too.
+    if (!slot_has_filament || observed_material.empty()) {
+        spdlog::debug("{} Slot {} firmware material changed '{}' -> '{}' "
+                      "(slot empty / no material — baseline updated, sync skipped)",
                       backend_log_tag(), slot_index, old_material, observed_material);
         return false;
     }
@@ -1779,6 +1803,14 @@ AmsError AmsBackendAd5xIfs::set_slot_info(int slot_index, const SlotInfo& info, 
         // gated on != 0 to match the prior 0-as-no-signal contract; that
         // contract was wrong, so its mirror here is wrong too.)
         last_firmware_color_[slot_index] = info.color_rgb;
+
+        // Symmetric material baseline seed: treat the user's chosen material as
+        // the new firmware-truth baseline so the upcoming update_slot_from_state()
+        // -> check_external_type_change() doesn't misread it as a foreign edit
+        // and fire a redundant lane_data sync. Without this seed the material
+        // path lacked the baseline the color path already established above,
+        // reinforcing the missing-baseline gap on empty->insert (#981/#1065).
+        last_firmware_material_[slot_index] = normalized_material;
 
         // Recalculate slot status now that port_presence may have changed.
         // update_slot_from_state() re-applies apply_overrides() from
