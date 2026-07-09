@@ -35,9 +35,11 @@ struct FilamentPickerTestAccess {
         return m.highlighted_id_;
     }
 
-    // Returns true if the "Reset to defaults" row is currently hidden.
+    // Returns true if the "Reset to defaults" affordance is currently hidden. The reset
+    // action is the leading (tertiary) button in modal_button_row, so its widget is
+    // "btn_tertiary" — on_show() toggles its HIDDEN flag on whether a reset callback was set.
     static bool reset_button_hidden(const FilamentCatalogPickerModal& m) {
-        lv_obj_t* btn = lv_obj_find_by_name(m.dialog(), "catalog_picker_reset_btn");
+        lv_obj_t* btn = lv_obj_find_by_name(m.dialog(), "btn_tertiary");
         if (!btn) return true;
         return lv_obj_has_flag(btn, LV_OBJ_FLAG_HIDDEN);
     }
