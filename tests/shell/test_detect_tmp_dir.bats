@@ -151,3 +151,40 @@ echo '/dev/sda1   1048576  0  512000  0% /'
     # And never the /tmp last-resort fallback.
     [[ "$TMP_DIR" != "/tmp/helixscreen-install" ]]
 }
+
+# ===========================================================================
+# End-to-end against a GENUINELY read-only /tmp (bundle W9Q93WXM repro + fix).
+# Runs inside a user+mount namespace so it can mount a real read-only tmpfs
+# over /tmp/var/tmp without root and without touching the host. Proves both
+# that the failure condition is real (mkdir dies on the read-only fs) and that
+# the fix routes a real extraction to the writable sibling staging dir.
+# ===========================================================================
+
+@test "read-only /tmp: repro + fix via sibling staging dir (unshare E2E)" {
+    command -v unshare >/dev/null 2>&1 || skip "unshare not available"
+    unshare --user --map-root-user --mount true 2>/dev/null \
+        || skip "user+mount namespaces not permitted"
+    [ -d /dev/shm ] && [ -w /dev/shm ] || skip "/dev/shm not writable (needed outside the ro /tmp)"
+
+    local scenario="$WORKTREE_ROOT/tests/shell/fixtures/ro_tmp_update_scenario.sh"
+    local platform="$WORKTREE_ROOT/scripts/lib/installer/platform.sh"
+
+    # Work dir on /dev/shm so it survives the read-only remount of /tmp.
+    local shmwork
+    shmwork="$(mktemp -d /dev/shm/helix_ro.XXXXXX)"
+
+    # Minimal fake update payload the extraction must land.
+    mkdir -p "$shmwork/payload/helixscreen"
+    echo "new-binary" > "$shmwork/payload/helixscreen/helix-screen"
+    tar -czf "$shmwork/update.tar.gz" -C "$shmwork/payload" helixscreen
+
+    run unshare --user --map-root-user --mount bash "$scenario" "$shmwork" "$platform"
+    rm -rf "$shmwork"
+
+    # The namespace couldn't mount tmpfs (locked-down CI): don't fail the suite.
+    [[ "$output" == *"MOUNT_TMP_FAIL"* ]] && skip "tmpfs mount not permitted in this environment"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"REPRO_OK"* ]]   # reproduced the bundle mkdir-on-read-only-/tmp failure
+    [[ "$output" == *"FIX_OK"* ]]     # sibling staging dir + real extraction succeeded
+}
