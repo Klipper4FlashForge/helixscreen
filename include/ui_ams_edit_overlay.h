@@ -253,6 +253,15 @@ class AmsEditOverlay : public OverlayBase {
     void prompt_identity_change_then_save();
     static void on_identity_confirm_cb(lv_event_t* e);
     static void on_identity_cancel_cb(lv_event_t* e);
+    // Re-bind + repopulate details_selector_ against the still-open spool-edit
+    // view's fragment. handle_spool_edit_save() unconditionally detaches +
+    // clears the selector before reaching commit_and_close() (needed so the
+    // async Spoolman-write paths and eventual overlay teardown never touch a
+    // dangling registry entry) — safe whenever that flow was going to leave
+    // the view, but the identity-confirm Cancel abort does NOT leave the
+    // view, so the now-inert selector must be brought back to life or
+    // vendor/type/product picking silently stops working.
+    void reattach_details_selector();
 #if HELIX_HAS_LABEL_PRINTER
     void handle_print_label();
 #endif

@@ -1008,6 +1008,122 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     get_printer_state().set_spoolman_available(false); // restore clean slate
 }
 
+TEST_CASE_METHOD(
+    LVGLUITestFixture,
+    "identity-confirm Cancel aborts entirely — no silent local commit, selector stays alive",
+    "[ams_edit_overlay][filament_picker]") {
+    // Regression: Cancel on the "Different filament?" dialog used to hide the
+    // modal and then close_editor(true) — silently committing the staged
+    // identity change to the AMS panel (backend->set_slot_info() +
+    // sync_from_backend() in the panel's completion handler) while leaving
+    // Spoolman untouched. Cancel must be a TRUE ABORT: no completion, no
+    // PATCH, user stays on the spool-edit view with the edit still staged so
+    // they can re-Save (dialog reappears) or Back out.
+    //
+    // Reached via the spool-edit view's header Save (not a direct
+    // working_info_ mutation) so this also exercises the catalog-selector
+    // detach/reattach seam: handle_spool_edit_save()'s finish=true path
+    // unconditionally detaches + clears details_selector_ before reaching
+    // commit_and_close(), which is safe for every OTHER path (close, or
+    // async-error back to the overview) but would strand a dead selector on
+    // Cancel-abort if nothing re-attached it.
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    SpoolInfo linked_a;
+    linked_a.id = 7;
+    linked_a.filament_id = 3;
+    linked_a.vendor = "Bambu Lab";
+    linked_a.material = "ASA";
+    linked_a.color_hex = "8A949E";
+    api.spoolman_mock().get_mock_spools().push_back(linked_a);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+    get_printer_state().set_spoolman_available(true);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE(get_printer_state().is_spoolman_available());
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    int fire_count = 0;
+    AmsEditOverlay::EditResult captured;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api,
+                                  [&](const AmsEditOverlay::EditResult& r) {
+                                      fire_count++;
+                                      captured = r;
+                                  }));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain(); // applies the async Spoolman logistics fetch
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolEdit);
+
+    // Stage a color-only identity change (material stays ASA via the
+    // preselected catalog product) — same-spool edit, no logistics diff, so
+    // Save routes straight into the identity-confirm gate synchronously.
+    access.set_details_color(0x112233);
+
+    access.call_handle_save(); // header Save on spool-edit -> finish=true
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    REQUIRE_FALSE(ModalStack::instance().stack_empty()); // "Different filament?" is up
+    REQUIRE(fire_count == 0);
+
+    lv_obj_t* dlg = ModalStack::instance().top_dialog();
+    REQUIRE(dlg != nullptr);
+    lv_obj_t* cancel_btn = lv_obj_find_by_name(dlg, "btn_secondary");
+    REQUIRE(cancel_btn != nullptr);
+    lv_obj_send_event(cancel_btn, LV_EVENT_CLICKED, nullptr);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // TRUE ABORT: no completion, still on the spool-edit view, nothing sent.
+    CHECK(fire_count == 0);
+    CHECK(access.view() == AmsEditOverlay::kViewSpoolEdit);
+    CHECK(ModalStack::instance().stack_empty());
+    CHECK(api.spoolman_mock().spool_updates.empty());
+    CHECK(api.spoolman_mock().filament_updates.empty());
+    // The staged edit is still there (Cancel didn't discard it).
+    CHECK(access.working_info().color_rgb == 0x112233u);
+    // The catalog selector must still be functional — not stranded inert by
+    // the earlier detach() (the same stranded-selector bug class fixed
+    // twice before this one).
+    CHECK(access.details_selector().highlighted() != nullptr);
+
+    // Save again: same diff, dialog must reappear (state intact).
+    access.call_handle_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE_FALSE(ModalStack::instance().stack_empty());
+    REQUIRE(fire_count == 0);
+
+    // This time, Confirm: PATCH lands and completion fires exactly once.
+    lv_obj_t* dlg2 = ModalStack::instance().top_dialog();
+    REQUIRE(dlg2 != nullptr);
+    lv_obj_t* confirm_btn = lv_obj_find_by_name(dlg2, "btn_primary");
+    REQUIRE(confirm_btn != nullptr);
+    lv_obj_send_event(confirm_btn, LV_EVENT_CLICKED, nullptr);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(fire_count == 1);
+    CHECK(captured.saved);
+    CHECK((!api.spoolman_mock().spool_updates.empty() ||
+          !api.spoolman_mock().filament_updates.empty()));
+
+    get_printer_state().set_spoolman_available(false); // restore clean slate
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+}
+
 TEST_CASE_METHOD(LVGLUITestFixture,
                  "Change-Filament picker selection returns to overview without closing",
                  "[ams_edit_overlay][picker]") {

@@ -1784,15 +1784,18 @@ bool AmsEditOverlay::is_material_identity_change(const SlotInfo& original, const
 }
 
 void AmsEditOverlay::prompt_identity_change_then_save() {
-    // Dismiss-safe binary confirmation. "Update anyway" -> update the linked
-    // spool; "Cancel" -> keep the linked Spoolman spool untouched and save the
-    // slot locally (re-point later via "Choose Spool"); tapping outside aborts
-    // the confirmation and returns to the editor (no save, link untouched). No
-    // path writes a materially-different spool without an explicit confirm.
+    // Dismiss-safe binary confirmation. "Update anyway" -> PATCH the linked
+    // Spoolman spool to match the edited identity, then save+close. "Cancel"
+    // -> TRUE ABORT: nothing is written anywhere, not even locally — a silent
+    // local commit here would show the "different" color/material in the AMS
+    // panel while Spoolman still has the old one, which is worse than either
+    // option this dialog offers. Tapping outside behaves the same as Cancel
+    // (Modal::hide with no completion). No path writes a materially-different
+    // spool, local or remote, without an explicit "Update anyway" confirm.
     lv_obj_t* dlg = modal_show_confirmation(
         lv_tr("Different filament?"),
-        lv_tr("This looks like a different spool than the one linked. Update the linked Spoolman "
-              "spool anyway? Cancel keeps it unchanged."),
+        lv_tr("This looks like a different filament than the linked Spoolman spool. Update the "
+              "Spoolman spool to match?"),
         ModalSeverity::Warning, lv_tr("Update anyway"), on_identity_confirm_cb,
         on_identity_cancel_cb, nullptr);
     if (!dlg) {
@@ -1813,10 +1816,42 @@ void AmsEditOverlay::on_identity_confirm_cb(lv_event_t* /*e*/) {
 }
 
 void AmsEditOverlay::on_identity_cancel_cb(lv_event_t* /*e*/) {
-    // Dismiss the confirmation first, then save the slot locally WITHOUT
-    // touching the linked Spoolman spool (dismiss-safe).
+    // TRUE ABORT: dismiss the confirmation and do NOTHING else — no
+    // close_editor(), no completion. The staged edits (working_info_,
+    // details_color_, ...) stay exactly as they were so the user can tweak
+    // and re-Save (the dialog reappears — same diff) or Back out (Back
+    // already discards via working_info_ = original_info_). Committing the
+    // slot locally here would leak the unconfirmed "different filament"
+    // identity into the AMS panel while Spoolman still shows the old one —
+    // exactly the outcome this confirmation exists to gate.
     Modal::hide(Modal::get_top());
-    get_ams_edit_overlay().close_editor(true);
+    auto& overlay = get_ams_edit_overlay();
+    // handle_spool_edit_save()'s header-Save "finish" path unconditionally
+    // detaches + clears the catalog selector before reaching here (see
+    // reattach_details_selector()'s doc comment for why). Abort leaves the
+    // user ON the spool-edit view, so revive the selector or the vendor/
+    // type/product picker goes dead.
+    if (lv_subject_get_int(&overlay.view_mode_subject_) == kViewSpoolEdit) {
+        overlay.reattach_details_selector();
+    }
+}
+
+void AmsEditOverlay::reattach_details_selector() {
+    lv_obj_t* fragment = find_widget("details_catalog_selector");
+    if (!fragment) {
+        spdlog::warn("[AmsEditOverlay] reattach_details_selector: fragment missing");
+        return;
+    }
+    auto* backend = AmsState::instance().get_backend();
+    auto allowed = backend ? backend->get_supported_materials() : std::nullopt;
+    std::optional<std::string> seed = working_info_.material.empty()
+                                          ? std::nullopt
+                                          : std::optional<std::string>(working_info_.material);
+    details_selector_.attach(fragment);
+    details_selector_.configure(std::move(seed), std::move(allowed));
+    details_selector_.set_preselect_on_change(true);
+    details_selector_.populate();
+    details_selector_.preselect_first();
 }
 
 // ============================================================================
