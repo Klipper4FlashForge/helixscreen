@@ -6082,6 +6082,33 @@ TEST_CASE("AD5X IFS eject_lane issues clamp / retract / unclamp sequence", "[ams
     REQUIRE_FALSE(backend.has_gcode_containing("REMOVE_PRUTOK"));
 }
 
+TEST_CASE("AD5X IFS eject_lane optimistically clears the ejected lane's presence (#1065)",
+          "[ams][ad5x_ifs][1065]") {
+    // Field repro (mkleersn 07-07 table): after ejecting a lane the multi-filament
+    // menu kept showing it loaded and still offered Eject. Cause: eject_lane's only
+    // refresh is schedule_zcolor_query, and that confirming GET_ZCOLOR/IFS_STATUS
+    // poll starves behind the blocking eject gcode on the constrained AD5X, so
+    // presence never updated. The eject physically retracts the filament clear of
+    // the port silk sensor, so the lane IS empty — reflect that locally at once,
+    // without waiting for the poll (SILENT disabled here to model the starved poll).
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false); // confirming poll won't run
+
+    // Lane 3 (slot 2) present with filament -> AVAILABLE (menu offers Eject).
+    Ad5xIfsTestAccess::set_port_presence(backend, 2, true);
+    Ad5xIfsTestAccess::set_color(backend, 2, "F72224");
+    Ad5xIfsTestAccess::set_material(backend, 2, "PETG");
+    REQUIRE(backend.get_slot_info(2).status == SlotStatus::AVAILABLE);
+
+    REQUIRE(backend.eject_lane(2).success());
+
+    // Menu must update immediately: the lane reads empty (offers Load, not Eject)
+    // even though the confirming poll never ran.
+    CHECK_FALSE(Ad5xIfsTestAccess::port_presence(backend, 2));
+    CHECK(backend.get_slot_info(2).status == SlotStatus::EMPTY);
+}
+
 TEST_CASE("AD5X IFS eject_lane port mapping is 1-based", "[ams][ad5x_ifs]") {
     TestableAd5xIfsBackend backend;
     Ad5xIfsTestAccess::set_running(backend, true);

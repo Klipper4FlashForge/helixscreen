@@ -1461,8 +1461,30 @@ AmsError AmsBackendAd5xIfs::eject_lane(int slot_index) {
         return err;
     }
     AmsError err39 = execute_gcode("IFS_F39 PRUTOK=" + port_str);
-    if (err39.success())
+    if (err39.success()) {
+        // Optimistically reflect the eject locally so the menu updates at once,
+        // even if the confirming GET_ZCOLOR/IFS_STATUS poll starves behind the
+        // blocking eject gcode on the constrained AD5X (#1065: the ejected lane
+        // kept showing loaded and still offered Eject). IFS_F11 cold-retracts the
+        // filament clear of the port silk sensor, so the lane is empty; the
+        // scheduled poll re-confirms it when it lands. The lane can't be the
+        // seated one (refused above), so clearing its presence never disturbs the
+        // seated channel. The Spoolman override is retained (#1071) — only
+        // presence drops, mirroring the IFS_STATUS Ports present->absent path.
+        bool changed = false;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (port_presence_[slot_index]) {
+                port_presence_[slot_index] = false;
+                update_slot_from_state(slot_index);
+                changed = true;
+            }
+        }
+        if (changed) {
+            emit_event(EVENT_STATE_CHANGED);
+        }
         schedule_zcolor_query("eject_lane");
+    }
     return err39;
 }
 
