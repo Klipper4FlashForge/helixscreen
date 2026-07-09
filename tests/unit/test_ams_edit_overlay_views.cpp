@@ -195,7 +195,10 @@ TEST_CASE_METHOD(LVGLUITestFixture, "card tap opens spool-edit; change-filament 
     access.call_switch_to_form();
     UpdateQueue::instance().drain();
     process_lvgl(10);
-    lv_obj_t* row = access.widget("change_filament_row");
+    // Change Filament is now a button in the paired action row (design Option 1);
+    // the old link-style change_filament_row was retired.
+    CHECK(access.widget("change_filament_row") == nullptr);
+    lv_obj_t* row = access.widget("btn_change_filament");
     REQUIRE(row != nullptr);
     lv_obj_send_event(row, LV_EVENT_CLICKED, nullptr);
     UpdateQueue::instance().drain();

@@ -1180,17 +1180,16 @@ void AmsEditOverlay::update_spoolman_button_state() {
     auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
     bool has_spoolman = spoolman_subj && lv_subject_get_int(spoolman_subj) == 1;
 
-    lv_obj_t* actions_container = find_widget("spoolman_actions");
-
-    // Scan QR is the identity fast path for both linked and unlinked slots;
-    // it has no offline analogue. Unlink (Save-to-Spoolman toggle off) and
-    // Print Label live in the spool-edit view, so the container's only content
-    // is the QR button — show/hide the container as a whole.
-    if (actions_container) {
+    // The action row itself is always visible — Change Filament works with and
+    // without Spoolman. Only the Scan QR button is gated on Spoolman: it has no
+    // offline analogue. When hidden it drops out of the flex row, leaving the
+    // lone Change Filament button centered.
+    lv_obj_t* scan_btn = find_widget("btn_scan_qr_code");
+    if (scan_btn) {
         if (has_spoolman) {
-            lv_obj_remove_flag(actions_container, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(scan_btn, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(actions_container, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(scan_btn, LV_OBJ_FLAG_HIDDEN);
         }
     }
 }

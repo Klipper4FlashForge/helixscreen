@@ -43,18 +43,6 @@
       <lv_obj name="form_view" width="100%" flex_grow="1" flex_flow="column" style_pad_gap="0"
               style_flex_main_place="center" scrollable="false">
         <bind_flag_if_not_eq subject="ams_edit_view" flag="hidden" ref_value="0"/>
-        <!-- Change filament: navigation row — opens the Spoolman picker
-             (connected) or the spool-edit view (no Spoolman). Sits above the
-             spool card so the primary "swap filament" action reads first. -->
-        <lv_obj name="change_filament_row" width="100%" height="content"
-                style_pad_left="#space_lg" style_pad_right="#space_lg"
-                style_pad_top="#space_xs" style_pad_bottom="#space_xs"
-                flex_flow="row" style_flex_main_place="space_between"
-                style_flex_cross_place="center" clickable="true" scrollable="false">
-          <event_cb trigger="clicked" callback="ams_edit_change_filament_cb"/>
-          <text_body text="Change filament" translation_tag="Change filament" clickable="false"/>
-          <icon src="chevron_right" size="sm" variant="muted" clickable="false"/>
-        </lv_obj>
         <!-- Content area - HORIZONTAL layout with side-by-side sections -->
         <lv_obj width="100%"
                 height="content" style_pad_all="#space_lg" flex_flow="row" style_pad_gap="#space_xl" scrollable="false">
@@ -124,15 +112,27 @@
             </lv_obj>
           </lv_obj>
         </lv_obj>
-        <!-- Filament actions: Scan QR is the identity fast path for both
-             linked and unlinked slots (Unlink and Print Label live in the
-             spool-edit view: toggle Save-to-Spoolman off / btn_detail_print_label).
-             Visibility managed in update_spoolman_button_state(). -->
-        <lv_obj name="spoolman_actions"
+        <!-- Filament actions: paired row under the card (design Option 1).
+             Change Filament is the primary swap action — the Spoolman picker
+             when connected, else the untracked spool-edit setup (routing in
+             handle_change_filament). Scan QR is the identity fast path for both
+             linked and unlinked slots and is gated on Spoolman availability
+             (update_spoolman_button_state toggles btn_scan_qr_code's hidden
+             flag). A hidden flex child drops out of layout, so when Scan QR is
+             hidden the lone Change Filament button stays centered. Unlink and
+             Print Label live in the spool-edit view. -->
+        <lv_obj name="filament_action_row"
                 width="100%" height="content" style_pad_left="#space_md" style_pad_right="#space_md"
                 style_pad_top="0" style_pad_bottom="#space_sm"
-                flex_flow="row_wrap" style_flex_main_place="center" style_pad_gap="#space_sm"
+                flex_flow="row_wrap" style_flex_main_place="center"
+                style_flex_cross_place="center" style_pad_gap="#space_md"
                 scrollable="false">
+          <ui_button name="btn_change_filament"
+                     height="#button_height" text="Change Filament"
+                     translation_tag="Change Filament" variant="secondary"
+                     icon="arrow_left_right">
+            <event_cb trigger="clicked" callback="ams_edit_change_filament_cb"/>
+          </ui_button>
           <ui_button name="btn_scan_qr_code"
                      height="#button_height" text="Scan QR Code"
                      translation_tag="Scan QR Code" variant="secondary"
