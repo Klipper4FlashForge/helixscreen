@@ -1972,6 +1972,29 @@ UpdateChecker::find_local_installer(const std::vector<std::string>& extra_search
         search_paths.push_back(install_root + "/" + INSTALLER_FILENAME);
     }
 
+    // Belt-and-suspenders: also derive the root directly from /proc/self/exe
+    // (strip the binary name and a trailing /bin) WITHOUT the is_valid_data_root()
+    // gate app_get_install_root() applies. This deprioritizes — never removes —
+    // the candidate the pre-refactor code offered, covering a partial install
+    // whose root lacks ui_xml/ (rejected by the canonical resolver) but still has
+    // install.sh. Deduped against the canonical candidate above.
+    char exe_buf[PATH_MAX] = {};
+    ssize_t exe_len = readlink("/proc/self/exe", exe_buf, sizeof(exe_buf) - 1);
+    if (exe_len > 0) {
+        exe_buf[exe_len] = '\0';
+        std::string exe_dir(exe_buf);
+        auto slash = exe_dir.rfind('/');
+        if (slash != std::string::npos) {
+            exe_dir = exe_dir.substr(0, slash); // strip binary name → bin/
+            if (exe_dir.size() >= 4 && exe_dir.substr(exe_dir.size() - 4) == "/bin") {
+                std::string raw_root = exe_dir.substr(0, exe_dir.size() - 4);
+                if (raw_root != install_root) {
+                    search_paths.push_back(raw_root + "/" + INSTALLER_FILENAME);
+                }
+            }
+        }
+    }
+
     // Well-known install locations as fallback
     std::string fname = INSTALLER_FILENAME;
     search_paths.push_back("/opt/helixscreen/" + fname);
