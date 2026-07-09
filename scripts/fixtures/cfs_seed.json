@@ -897,6 +897,18 @@
     "source": "cfs-seed"
   },
   {
+    "id": "generic-generic-silk-pla",
+    "brand": "Generic",
+    "name": "Generic Silk PLA",
+    "type": "SILK",
+    "nozzle": 220,
+    "bed": 55,
+    "nozzle_min": 190,
+    "nozzle_max": 240,
+    "density": 1.24,
+    "source": "cfs-seed"
+  },
+  {
     "id": "generic-generic-support-for-pa",
     "brand": "Generic",
     "name": "Generic Support for PA",
