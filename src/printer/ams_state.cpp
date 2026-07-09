@@ -214,6 +214,7 @@ void AmsState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT(ams_action, static_cast<int>(AmsAction::IDLE), subjects_, register_xml);
     // Granular load/unload sub-phase (Snapmaker U1). -1 = no active step.
     INIT_SUBJECT_INT(ams_operation_phase, -1, subjects_, register_xml);
+    INIT_SUBJECT_INT(ams_operation_indeterminate, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(toolchange_step, -1, subjects_, register_xml);
     INIT_SUBJECT_INT(current_slot, -1, subjects_, register_xml);
     INIT_SUBJECT_INT(pending_target_slot, -1, subjects_, register_xml);
@@ -1084,6 +1085,15 @@ void AmsState::sync_from_backend() {
         spdlog::debug("[AmsState] sync_from_backend: operation_phase changed to {}",
                       info.operation_phase);
         lv_subject_set_int(&ams_operation_phase_, info.operation_phase);
+    }
+    // Indeterminate "Working…" busy flag (AD5X IFS row 14; other backends leave
+    // it 0). Drives the sidebar's frozen-temp -> spinner swap on the live Heat
+    // step. In lockstep with operation_phase above.
+    int new_indet = info.operation_indeterminate ? 1 : 0;
+    if (lv_subject_get_int(&ams_operation_indeterminate_) != new_indet) {
+        spdlog::debug("[AmsState] sync_from_backend: operation_indeterminate changed to {}",
+                      new_indet);
+        lv_subject_set_int(&ams_operation_indeterminate_, new_indet);
     }
 
     // Set system name from backend type_name or fallback to type string

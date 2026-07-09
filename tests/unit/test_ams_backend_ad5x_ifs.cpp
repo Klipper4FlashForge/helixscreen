@@ -142,6 +142,19 @@ class Ad5xIfsTestAccess {
     static void run_action_timeout(AmsBackendAd5xIfs& b) {
         b.check_action_timeout();
     }
+    // Age the indeterminate ("Working…") no-progress clock WITHOUT running the
+    // detector, so a test can simulate a stalled progress feed then check
+    // separately. Distinct from set_action_age (which ages the ERROR-timeout
+    // clock); the indeterminate detector reads last_phase_progress_time_.
+    static void set_progress_age(AmsBackendAd5xIfs& b, std::chrono::seconds elapsed) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        b.last_phase_progress_time_ = std::chrono::steady_clock::now() - elapsed;
+    }
+    // Read the indeterminate ("Working…") busy flag the detector computes.
+    static bool operation_indeterminate(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.system_info_.operation_indeterminate;
+    }
     static std::string var_prefix(const AmsBackendAd5xIfs& b) {
         std::lock_guard<std::mutex> lock(b.mutex_);
         return b.var_prefix_;
@@ -1211,6 +1224,119 @@ TEST_CASE("AD5X IFS motion during PURGING resets the timeout clock (#1065 Bug 2)
         Ad5xIfsTestAccess::run_action_timeout(backend);
         REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::ERROR);
     }
+}
+
+// ==========================================================================
+// Indeterminate ("Working…") detector (#1065 row 14)
+//
+// During a phase-tracked load/unload the constrained AD5X's shared main-thread
+// status feed can starve while klippy runs the blocking macro, freezing the
+// live "Heat 225/230" number so it reads as a hang. The backend raises
+// AmsSystemInfo::operation_indeterminate when no genuine progress signal (a
+// temp-VALUE change, head transition, motion, or phase change) has landed within
+// INDETERMINATE_THRESHOLD_SECONDS (~8s); the sidebar then swaps the frozen number
+// for a "Working…" busy state. Time is INJECTED via set_progress_age (no sleeps),
+// so these stay fast and untagged (L052).
+// ==========================================================================
+
+TEST_CASE("AD5X IFS indeterminate: a stalled progress feed trips the flag (#1065 row 14)",
+          "[ams][ad5x_ifs][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_head_filament(backend, false);
+    Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/false); // load -> HEATING
+
+    // One healthy heat frame — flag stays clear while progress is fresh.
+    Ad5xIfsTestAccess::handle_status(backend, make_extruder(150.0, 230.0));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+
+    // Feed starves: no progress signal for 10s (> 8s threshold).
+    Ad5xIfsTestAccess::set_progress_age(backend, std::chrono::seconds(10));
+    Ad5xIfsTestAccess::run_action_timeout(backend);
+
+    REQUIRE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+    // Still HEATING — this is the busy mitigation, NOT the coarse ERROR timeout
+    // (HEATING's 300s ERROR budget is untouched; only the progress clock aged).
+    REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::HEATING);
+
+    // The UI-facing view carries the flag too.
+    REQUIRE(backend.get_system_info().operation_indeterminate);
+}
+
+TEST_CASE("AD5X IFS indeterminate: a fresh progress signal clears the flag (#1065 row 14)",
+          "[ams][ad5x_ifs][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_head_filament(backend, false);
+    Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/false);
+    Ad5xIfsTestAccess::handle_status(backend, make_extruder(150.0, 230.0));
+
+    // Just under threshold — does not fire.
+    Ad5xIfsTestAccess::set_progress_age(backend, std::chrono::seconds(7));
+    Ad5xIfsTestAccess::run_action_timeout(backend);
+    REQUIRE_FALSE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+
+    // Past threshold — fires.
+    Ad5xIfsTestAccess::set_progress_age(backend, std::chrono::seconds(10));
+    Ad5xIfsTestAccess::run_action_timeout(backend);
+    REQUIRE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+
+    // A temp-VALUE change is a genuine progress signal → clears immediately.
+    Ad5xIfsTestAccess::handle_status(backend, make_extruder(180.0, 230.0));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+}
+
+TEST_CASE("AD5X IFS indeterminate: healthy heat never false-fires; frozen value does "
+          "(#1065 row 14)",
+          "[ams][ad5x_ifs][1065]") {
+    SECTION("rising temps within threshold never trip") {
+        AmsBackendAd5xIfs backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_head_filament(backend, false);
+        Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/false);
+
+        // Each distinct temp frame is a value change that resets the clock, even
+        // with realistic multi-second gaps between frames — so a normal heat-up
+        // never trips the detector.
+        for (double t : {100.0, 130.0, 160.0, 190.0, 220.0, 230.0}) {
+            Ad5xIfsTestAccess::set_progress_age(backend, std::chrono::seconds(6));
+            Ad5xIfsTestAccess::handle_status(backend, make_extruder(t, 230.0));
+            REQUIRE_FALSE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+        }
+    }
+
+    SECTION("identical (frozen) frames do NOT reset — the clock elapses") {
+        AmsBackendAd5xIfs backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_head_filament(backend, false);
+        Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/false);
+
+        Ad5xIfsTestAccess::handle_status(backend, make_extruder(150.0, 230.0));
+        REQUIRE_FALSE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+
+        // The subject is frozen at 150°C: the SAME value keeps (nominally)
+        // arriving but the clock ages past threshold with no VALUE change, so the
+        // detector must fire — this is the exact row-14 behavior.
+        Ad5xIfsTestAccess::set_progress_age(backend, std::chrono::seconds(10));
+        Ad5xIfsTestAccess::handle_status(backend, make_extruder(150.0, 230.0));
+        REQUIRE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+    }
+}
+
+TEST_CASE("AD5X IFS indeterminate: flag clears when the operation completes (#1065 row 14)",
+          "[ams][ad5x_ifs][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_head_filament(backend, false);
+    Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/false);
+    Ad5xIfsTestAccess::handle_status(backend, make_extruder(150.0, 230.0));
+
+    Ad5xIfsTestAccess::set_progress_age(backend, std::chrono::seconds(10));
+    Ad5xIfsTestAccess::run_action_timeout(backend);
+    REQUIRE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+
+    // Operation completes on the macro's gcode ack → IDLE, phase tracker cleared.
+    Ad5xIfsTestAccess::finalize_op_after_macro(backend, /*is_unload=*/false);
+    REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::IDLE);
+
+    // get_system_info() re-runs the detector; with no active op the flag is off.
+    REQUIRE_FALSE(backend.get_system_info().operation_indeterminate);
+    REQUIRE_FALSE(Ad5xIfsTestAccess::operation_indeterminate(backend));
 }
 
 // ==========================================================================

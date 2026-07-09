@@ -930,6 +930,15 @@ struct AmsSystemInfo {
     /// Default -1.
     int operation_phase = -1;
 
+    /// True when an operation is active but no phase-progress signal (temp-value
+    /// change, head transition, motion, or phase change) has arrived within the
+    /// backend's indeterminate threshold (~8s). On constrained backends (AD5X
+    /// IFS) the shared main-thread status feed can starve while klippy runs a
+    /// blocking load/unload macro, freezing the live "Heat 225/230" number so it
+    /// reads as a hang. The UI swaps the frozen number for an indeterminate
+    /// "Working…" busy state while this is true (#1065 row 14). Default false.
+    bool operation_indeterminate = false;
+
     // Units
     std::vector<AmsUnit> units; ///< All AMS units
     int total_slots = 0;        ///< Sum of all slots across units
