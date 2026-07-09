@@ -1628,6 +1628,38 @@ class PrinterState {
     }
 
     /**
+     * @brief Get idle_timeout "Printing" busy subject
+     *
+     * Returns 1 when Klipper's idle_timeout.state == "Printing" (its canonical
+     * busy flag — true for the whole duration of any blocking op or file print),
+     * 0 otherwise. Feeds is_blocking_operation_active().
+     */
+    lv_subject_t* get_idle_timeout_printing_subject() {
+        return calibration_state_.get_idle_timeout_printing_subject();
+    }
+
+    /**
+     * @brief Whether a blocking non-print operation is currently in progress
+     *
+     * True while the printer is executing a blocking operation that holds
+     * Klipper's single-threaded g-code lock but is NOT a normal file print:
+     * homing (G28), BED_MESH_CALIBRATE, QUAD_GANTRY_LEVEL, PROBE_ACCURACY,
+     * an interactive manual probe, or a long macro. Discretionary g-code sent
+     * during such an op just queues until it finishes, then times out — so a
+     * send-boundary guard uses this to refuse it early with a toast.
+     *
+     * Signal =
+     *   (idle_timeout.state == "Printing" AND print_job_state NOT IN {PRINTING, PAUSED})
+     *   OR manual_probe.is_active
+     *
+     * Real file prints (PRINTING/PAUSED) are excluded — mid-print fan/temp tweaks
+     * are legitimate and Klipper handles them between moves.
+     *
+     * @return true if a blocking non-print operation is active
+     */
+    bool is_blocking_operation_active();
+
+    /**
      * @brief Check if printer has a probe configured
      *
      * Used by Z-offset calibration to determine whether to use

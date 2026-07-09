@@ -733,6 +733,28 @@ PrintJobState PrinterState::get_print_job_state() const {
     return print_domain_.get_print_job_state();
 }
 
+bool PrinterState::is_blocking_operation_active() {
+    // Interactive manual probe (PROBE_CALIBRATE / Z_ENDSTOP_CALIBRATE): always
+    // blocking. idle_timeout may bounce to Ready between TESTZ commands, so this
+    // is tracked independently. This deliberately takes precedence over the
+    // file-print exclusion below — a manual probe and a running file print are
+    // mutually exclusive in Klipper, so there is no real case where this would
+    // wrongly block mid-print.
+    if (lv_subject_get_int(calibration_state_.get_manual_probe_active_subject()) != 0) {
+        return true;
+    }
+
+    // idle_timeout.state == "Printing" is Klipper's canonical busy flag. It is
+    // also true during a real file print, so exclude PRINTING/PAUSED — mid-print
+    // fan/temp changes are legitimate and Klipper queues them between moves.
+    if (lv_subject_get_int(calibration_state_.get_idle_timeout_printing_subject()) == 0) {
+        return false;
+    }
+
+    const PrintJobState pstate = get_print_job_state();
+    return pstate != PrintJobState::PRINTING && pstate != PrintJobState::PAUSED;
+}
+
 bool PrinterState::can_start_new_print() const {
     return print_domain_.can_start_new_print();
 }

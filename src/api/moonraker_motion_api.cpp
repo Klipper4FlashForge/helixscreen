@@ -6,6 +6,7 @@
 #include "ui_error_reporting.h"
 #include "ui_notification.h"
 
+#include "gcode_classify.h"
 #include "gcode_homing.h"
 #include "moonraker_client.h"
 #include "moonraker_types.h"
@@ -330,6 +331,26 @@ void MoonrakerMotionAPI::execute_gcode(const std::string& gcode, SuccessCallback
             }
             return;
         }
+    }
+
+    // Refuse discretionary gcode (non-homing jog moves, etc.) while a blocking
+    // non-print operation holds Klipper's single-threaded gcode lock — it would
+    // otherwise queue and time out. Mirrors the guard in
+    // MoonrakerAPI::execute_gcode; homing/recovery/probe-control pass through.
+    if (helix::is_discretionary_gcode(gcode) && state_.is_blocking_operation_active()) {
+        if (!silent) {
+            spdlog::warn("[Motion API] Refusing discretionary G-code while printer is "
+                         "homing/leveling: '{}'",
+                         gcode.substr(0, 60));
+        }
+        if (on_error) {
+            MoonrakerError err;
+            err.type = MoonrakerErrorType::NOT_READY;
+            err.method = "printer.gcode.script";
+            err.message = "Printer is busy — try again in a moment";
+            on_error(err);
+        }
+        return;
     }
 
     std::string annotated = annotate_gcode(gcode);

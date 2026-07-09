@@ -7,6 +7,7 @@
 
 #include "app_globals.h"
 #include "fan_gcode.h"
+#include "gcode_classify.h"
 #include "gcode_homing.h"
 #include "http_executor.h"
 #include "hv/requests.h"
@@ -465,6 +466,30 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
             }
             return;
         }
+    }
+
+    // Refuse discretionary gcode (fan, temp, non-homing moves, LED) while a
+    // blocking non-print operation holds Klipper's single-threaded gcode lock
+    // (homing, BED_MESH_CALIBRATE, QGL, PROBE_ACCURACY, manual probe). Such a
+    // command would otherwise queue behind the op and time out after 60s,
+    // surfacing a stream of "Fan control failed: printer busy" toasts (see debug
+    // bundle 7CT79XXK, Sovol SV08 calibration). Recovery, homing, probe-control
+    // (TESTZ/ACCEPT/ABORT) and macros are never discretionary, so they pass.
+    // Real file prints are excluded by is_blocking_operation_active().
+    if (helix::is_discretionary_gcode(gcode) && state_.is_blocking_operation_active()) {
+        if (!silent) {
+            spdlog::warn("[Moonraker API] Refusing discretionary G-code while printer is "
+                         "homing/leveling: '{}'",
+                         gcode.substr(0, 60));
+        }
+        if (on_error) {
+            MoonrakerError err;
+            err.type = MoonrakerErrorType::NOT_READY;
+            err.method = "printer.gcode.script";
+            err.message = "Printer is busy — try again in a moment";
+            on_error(err);
+        }
+        return;
     }
 
     std::string annotated = annotate_gcode(gcode);
