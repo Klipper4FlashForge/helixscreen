@@ -29,6 +29,7 @@
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "printer_state.h"
 #include "spdlog/spdlog.h"
+#include "system/helix_paths.h"
 #include "system/log_path_probe.h"
 #include "system/sha256_util.h"
 #include "system/telemetry_manager.h"
@@ -844,34 +845,6 @@ uint64_t UpdateChecker::required_download_space_bytes(uint64_t download_bytes) {
 
 namespace {
 
-// dirname() without POSIX dirname(3) (which mutates its argument and isn't
-// reentrant). Strips trailing slashes first, keeps a lone "/" as the root,
-// returns "." for a bare filename. Matches the std::string path handling used
-// in get_download_path().
-std::string path_dirname(const std::string& in) {
-    std::string path = in;
-    while (path.size() > 1 && path.back() == '/') {
-        path.pop_back();
-    }
-    const auto slash = path.find_last_of('/');
-    if (slash == std::string::npos) {
-        return "."; // bare filename → current working directory
-    }
-    if (slash == 0) {
-        return "/"; // sits at the filesystem root
-    }
-    return path.substr(0, slash);
-}
-
-// Strip trailing slashes for comparison, but keep a lone "/" intact.
-std::string strip_trailing_slashes(const std::string& in) {
-    std::string s = in;
-    while (s.size() > 1 && s.back() == '/') {
-        s.pop_back();
-    }
-    return s;
-}
-
 // True if `child` is within-or-equal-to `parent` (both already stripped of
 // trailing slashes): child == parent, or child starts with parent + "/".
 bool is_within_or_equal(const std::string& child, const std::string& parent) {
@@ -888,7 +861,7 @@ bool is_within_or_equal(const std::string& child, const std::string& parent) {
 
 std::string UpdateChecker::compute_update_staging_dir(const std::string& tarball_path,
                                                       const std::string& install_root) {
-    std::string base = path_dirname(tarball_path);
+    std::string base = helix::paths::dirname(tarball_path);
 
     // SAFETY: the staging dir must live OUTSIDE install_root. TMP_DIR is
     // rm -rf'd on installer cleanup, and the installer's --update flow does
@@ -900,10 +873,10 @@ std::string UpdateChecker::compute_update_staging_dir(const std::string& tarball
     // install root's PARENT — a sibling of the install dir on the same
     // partition. The ancestor case (base is already a parent of install_root)
     // is left untouched: it's already a sibling location.
-    const std::string norm_root = strip_trailing_slashes(install_root);
-    const std::string norm_base = strip_trailing_slashes(base);
+    const std::string norm_root = helix::paths::strip_trailing_slash(install_root);
+    const std::string norm_base = helix::paths::strip_trailing_slash(base);
     if (!norm_root.empty() && is_within_or_equal(norm_base, norm_root)) {
-        base = path_dirname(norm_root);
+        base = helix::paths::dirname(norm_root);
         if (base.empty()) {
             base = ".";
         }
@@ -1610,7 +1583,7 @@ void UpdateChecker::do_install(const std::string& tarball_path) {
     // + logged on the parent side because logging may not flush from the child
     // after fork().
     const std::string staging_dir = compute_update_staging_dir(tarball_path, install_root);
-    const std::string staging_parent = path_dirname(staging_dir);
+    const std::string staging_parent = helix::paths::dirname(staging_dir);
     const bool staging_writable = is_writable_dir(staging_parent);
     if (staging_writable) {
         flog_info("[UpdateChecker] Handing staging dir to installer: TMP_DIR={}", staging_dir);

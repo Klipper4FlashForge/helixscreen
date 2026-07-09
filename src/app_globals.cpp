@@ -27,6 +27,7 @@
 #include "panel_widget_manager.h"
 #include "printer_state.h"
 #include "static_subject_registry.h"
+#include "system/helix_paths.h"
 #include "temperature_controller.h"
 
 #include <spdlog/spdlog.h>
@@ -330,9 +331,7 @@ std::function<void()> get_wizard_cancel_callback() {
 // ============================================================================
 
 static bool try_create_dir(const std::string& path) {
-    std::error_code ec;
-    std::filesystem::create_directories(path, ec);
-    return !ec && std::filesystem::exists(path);
+    return helix::paths::ensure_dir(path);
 }
 
 std::string get_helix_cache_dir(const std::string& subdir) {
@@ -398,19 +397,10 @@ std::string get_helix_cache_dir(const std::string& subdir) {
     }
 #endif
 
-    // 4. Check XDG_CACHE_HOME (XDG Base Directory Specification)
-    const char* xdg_cache = std::getenv("XDG_CACHE_HOME");
-    if (xdg_cache && xdg_cache[0] != '\0') {
-        std::string path = std::string(xdg_cache) + "/helix/" + subdir;
-        if (try_create_dir(path)) {
-            return path;
-        }
-    }
-
-    // 5. Try $HOME/.cache/helix (standard Linux location)
-    const char* home = std::getenv("HOME");
-    if (home && home[0] != '\0') {
-        std::string path = std::string(home) + "/.cache/helix/" + subdir;
+    // 4/5. XDG cache base: $XDG_CACHE_HOME if set, else $HOME/.cache
+    const std::string xdg_cache_base = helix::paths::xdg_cache_home();
+    if (!xdg_cache_base.empty()) {
+        std::string path = xdg_cache_base + "/helix/" + subdir;
         if (try_create_dir(path)) {
             return path;
         }

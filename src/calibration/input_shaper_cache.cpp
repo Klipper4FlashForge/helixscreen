@@ -2,6 +2,8 @@
 
 #include "input_shaper_cache.h"
 
+#include "system/helix_paths.h"
+
 #include <spdlog/spdlog.h>
 
 #include <chrono>
@@ -31,25 +33,8 @@ static constexpr int CACHE_VERSION = 1;
  * @return true if directory exists and is writable
  */
 static bool try_create_cache_dir(const std::filesystem::path& path) {
-    try {
-        std::filesystem::create_directories(path);
-        if (!std::filesystem::exists(path)) {
-            return false;
-        }
-
-        // Verify we can write to the created directory
-        std::filesystem::path test_file = path / ".helix_write_test";
-        std::ofstream ofs(test_file);
-        if (!ofs.good()) {
-            return false;
-        }
-        ofs.close();
-        std::filesystem::remove(test_file);
-
-        return true;
-    } catch (...) {
-        return false;
-    }
+    const std::string dir = path.string();
+    return helix::paths::ensure_dir(dir) && helix::paths::probe_writable(dir);
 }
 
 /**
@@ -57,25 +42,15 @@ static bool try_create_cache_dir(const std::filesystem::path& path) {
  * @return Path to cache directory for input shaper data
  */
 static std::filesystem::path determine_cache_dir() {
-    // 1. Check XDG_CACHE_HOME (respects XDG Base Directory Specification)
-    const char* xdg_cache = std::getenv("XDG_CACHE_HOME");
-    if (xdg_cache && xdg_cache[0] != '\0') {
-        std::filesystem::path full_path = std::filesystem::path(xdg_cache) / "helix";
+    // 1/2. XDG cache base: $XDG_CACHE_HOME if set, else $HOME/.cache
+    const std::string xdg_cache_base = helix::paths::xdg_cache_home();
+    if (!xdg_cache_base.empty()) {
+        std::filesystem::path full_path = std::filesystem::path(xdg_cache_base) / "helix";
         if (try_create_cache_dir(full_path)) {
-            spdlog::debug("[InputShaperCache] Using XDG_CACHE_HOME: {}", full_path.string());
+            spdlog::debug("[InputShaperCache] Using cache base: {}", full_path.string());
             return full_path;
         }
-    }
-
-    // 2. Try $HOME/.cache/helix (standard location on Linux/macOS)
-    const char* home = std::getenv("HOME");
-    if (home && home[0] != '\0') {
-        std::filesystem::path cache_base = std::filesystem::path(home) / ".cache" / "helix";
-        if (try_create_cache_dir(cache_base)) {
-            spdlog::debug("[InputShaperCache] Using HOME/.cache: {}", cache_base.string());
-            return cache_base;
-        }
-        spdlog::warn("[InputShaperCache] Cannot use ~/.cache/helix");
+        spdlog::warn("[InputShaperCache] Cannot use cache base {}", full_path.string());
     }
 
     // 3. Try /tmp/helix as fallback
