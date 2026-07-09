@@ -41,6 +41,10 @@ void PrinterCalibrationState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT(motors_enabled, 1, subjects_,
                      register_xml); // 1=enabled (Ready/Printing), 0=disabled (Idle)
 
+    // idle_timeout.state == "Printing" busy flag (default: not busy)
+    INIT_SUBJECT_INT(idle_timeout_printing, 0, subjects_,
+                     register_xml); // 1 if idle_timeout.state == "Printing", else 0
+
     subjects_initialized_ = true;
     spdlog::trace("[PrinterCalibrationState] Subjects initialized successfully");
 }
@@ -81,6 +85,27 @@ void PrinterCalibrationState::update_from_status(const nlohmann::json& status) {
                 lv_subject_set_int(&manual_probe_z_position_, z_microns);
             }
             spdlog::trace("[PrinterCalibrationState] Manual probe Z: {:.3f}mm", z_mm);
+        }
+    }
+
+    // Update idle_timeout "Printing" busy flag. Klipper reports idle_timeout.state
+    // as exactly "Printing" / "Ready" / "Idle"; "Printing" is held for the entire
+    // duration of any blocking operation (G28, BED_MESH_CALIBRATE, QGL,
+    // PROBE_ACCURACY, long macro) or a real file print. Case-sensitive compare.
+    if (status.contains("idle_timeout")) {
+        const auto& it = status["idle_timeout"];
+
+        if (it.contains("state") && it["state"].is_string()) {
+            std::string it_state = it["state"].get<std::string>();
+            int new_printing = (it_state == "Printing") ? 1 : 0;
+            int old_printing = lv_subject_get_int(&idle_timeout_printing_);
+
+            if (old_printing != new_printing) {
+                lv_subject_set_int(&idle_timeout_printing_, new_printing);
+                spdlog::debug("[PrinterCalibrationState] idle_timeout printing: {} -> {} "
+                              "(state='{}')",
+                              old_printing != 0, new_printing != 0, it_state);
+            }
         }
     }
 
