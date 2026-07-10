@@ -262,6 +262,14 @@ class AmsEditOverlay : public OverlayBase {
     // view, so the now-inert selector must be brought back to life or
     // vendor/type/product picking silently stops working.
     void reattach_details_selector();
+    // Bind + configure + populate details_selector_ against the spool-edit
+    // view's fragment (find + attach + configure + preselect). Shared by
+    // enter_spool_edit() and reattach_details_selector(). Returns false (and
+    // logs) when the fragment is missing so the caller can bail. Does NOT
+    // seed the pending color — enter_spool_edit() does that itself, and the
+    // reattach path deliberately must not (re-seeding would make the
+    // "Different filament?" dialog vanish on re-Save).
+    bool setup_details_selector();
 #if HELIX_HAS_LABEL_PRINTER
     void handle_print_label();
 #endif

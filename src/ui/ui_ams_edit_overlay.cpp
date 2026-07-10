@@ -671,27 +671,9 @@ void AmsEditOverlay::enter_spool_edit() {
     // stage Spoolman's core spool-weight over the real total (Finding 1).
     spool_edit_entered_tracked_ = working_info_.spoolman_id > 0;
 
-    lv_obj_t* fragment = find_widget("details_catalog_selector");
-    if (!fragment) {
-        spdlog::warn("[AmsEditOverlay] spool-edit view fragment missing");
+    if (!setup_details_selector()) {
         return;
     }
-    auto* backend = AmsState::instance().get_backend();
-    auto allowed = backend ? backend->get_supported_materials() : std::nullopt;
-    std::optional<std::string> seed = working_info_.material.empty()
-                                          ? std::nullopt
-                                          : std::optional<std::string>(working_info_.material);
-    details_selector_.attach(fragment);
-    details_selector_.configure(std::move(seed), std::move(allowed));
-    // A vendor/type dropdown change must always leave a product checked so a
-    // subsequent header Save can't silently drop the identity change (the
-    // rebuilt list would otherwise be all-unchecked and Save would skip
-    // identity). Opt in before populate; the standalone picker stays opt-out.
-    details_selector_.set_preselect_on_change(true);
-    details_selector_.populate();
-    // An already-defined filament should show its matching variant checked;
-    // a fresh list pre-checks the first product so Save is one tap.
-    details_selector_.preselect_first();
 
     // Seed the pending color from the working slot so Save without a color tap
     // keeps the current color.
@@ -1837,10 +1819,18 @@ void AmsEditOverlay::on_identity_cancel_cb(lv_event_t* /*e*/) {
 }
 
 void AmsEditOverlay::reattach_details_selector() {
+    // Revive the selector after the identity-confirm Cancel abort. Deliberately
+    // does NOT re-seed the pending color (setup_details_selector() leaves color
+    // alone) — re-seeding would clear the staged color diff and make the
+    // "Different filament?" dialog vanish on a subsequent re-Save.
+    setup_details_selector();
+}
+
+bool AmsEditOverlay::setup_details_selector() {
     lv_obj_t* fragment = find_widget("details_catalog_selector");
     if (!fragment) {
-        spdlog::warn("[AmsEditOverlay] reattach_details_selector: fragment missing");
-        return;
+        spdlog::warn("[AmsEditOverlay] details_catalog_selector fragment missing");
+        return false;
     }
     auto* backend = AmsState::instance().get_backend();
     auto allowed = backend ? backend->get_supported_materials() : std::nullopt;
@@ -1849,9 +1839,16 @@ void AmsEditOverlay::reattach_details_selector() {
                                           : std::optional<std::string>(working_info_.material);
     details_selector_.attach(fragment);
     details_selector_.configure(std::move(seed), std::move(allowed));
+    // A vendor/type dropdown change must always leave a product checked so a
+    // subsequent header Save can't silently drop the identity change (the
+    // rebuilt list would otherwise be all-unchecked and Save would skip
+    // identity). Opt in before populate; the standalone picker stays opt-out.
     details_selector_.set_preselect_on_change(true);
     details_selector_.populate();
+    // An already-defined filament should show its matching variant checked;
+    // a fresh list pre-checks the first product so Save is one tap.
     details_selector_.preselect_first();
+    return true;
 }
 
 // ============================================================================
