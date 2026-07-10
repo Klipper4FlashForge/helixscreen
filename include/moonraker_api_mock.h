@@ -206,6 +206,15 @@ class MoonrakerSpoolmanAPIMock : public MoonrakerSpoolmanAPI {
     };
     std::vector<SpoolUpdateRecord> spool_updates;
 
+    /// Captured (spool_id, remaining_weight_g) from update_spoolman_spool_weight()
+    /// calls — the dedicated weight PATCH path. Lets tests count weight PATCHes
+    /// issued via this path separately from update_spoolman_spool() combined PATCHes.
+    struct WeightUpdateRecord {
+        int spool_id = 0;
+        double remaining_weight_g = 0.0;
+    };
+    std::vector<WeightUpdateRecord> weight_updates;
+
     /// Captured POST payloads from create_spoolman_vendor() calls (for test assertions).
     std::vector<nlohmann::json> created_vendors;
 

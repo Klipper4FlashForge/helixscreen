@@ -1699,6 +1699,7 @@ void MoonrakerSpoolmanAPIMock::update_spoolman_spool_weight(int spool_id, double
 
     spdlog::info("[MoonrakerAPIMock] update_spoolman_spool_weight({}, {:.1f}g)", spool_id,
                  remaining_weight_g);
+    weight_updates.push_back({spool_id, remaining_weight_g});
 
     // Find and update the mock spool
     for (auto& spool : mock_spools_) {

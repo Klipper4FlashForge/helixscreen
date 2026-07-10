@@ -1188,6 +1188,89 @@ TEST_CASE_METHOD(
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture,
+                 "combined identity+logistics save issues exactly one weight PATCH",
+                 "[ams_edit_overlay][spoolman][slot_saver]") {
+    // A header Save that changes BOTH the filament identity AND the remaining
+    // weight in one go must PATCH the weight exactly once. The overlay's
+    // logistics PATCH (build_spool_patches -> update_spoolman_spool carrying
+    // remaining_weight) covers it; on_all_saved then syncs the SlotInfo weight
+    // baseline so the follow-on SpoolmanSlotSaver::save() sees no spool-level
+    // delta and does NOT re-PATCH the weight. This locks that single-PATCH
+    // invariant against a redundant idempotent weight re-PATCH regressing.
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    SpoolInfo linked_a;
+    linked_a.id = 7;
+    linked_a.filament_id = 3;
+    linked_a.vendor = "Bambu Lab";
+    linked_a.material = "ASA";
+    linked_a.color_hex = "8A949E";
+    linked_a.remaining_weight_g = 1000.0;
+    api.spoolman_mock().get_mock_spools().push_back(linked_a);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+    get_printer_state().set_spoolman_available(true);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    int fire_count = 0;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api,
+                                  [&](const AmsEditOverlay::EditResult&) { fire_count++; }));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain(); // applies the async Spoolman logistics fetch
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolEdit);
+
+    // Change logistics: remaining weight 1000 -> 750.
+    lv_obj_t* remaining = access.widget("detail_field_remaining");
+    REQUIRE(remaining != nullptr);
+    lv_textarea_set_text(remaining, "750");
+    // Change identity: a color different from the linked spool, so Save routes
+    // through the identity-confirm gate and then SpoolmanSlotSaver.
+    access.set_details_color(0x112233);
+
+    access.call_handle_save(); // header Save on spool-edit -> finish=true
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    REQUIRE_FALSE(ModalStack::instance().stack_empty()); // "Different filament?"
+    lv_obj_t* dlg = ModalStack::instance().top_dialog();
+    REQUIRE(dlg != nullptr);
+    lv_obj_t* confirm_btn = lv_obj_find_by_name(dlg, "btn_primary");
+    REQUIRE(confirm_btn != nullptr);
+    lv_obj_send_event(confirm_btn, LV_EVENT_CLICKED, nullptr);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(fire_count == 1);
+
+    // Count every PATCH that set the remaining weight, across BOTH paths: the
+    // combined update_spoolman_spool() body and the dedicated
+    // update_spoolman_spool_weight() path.
+    int weight_patches = static_cast<int>(api.spoolman_mock().weight_updates.size());
+    for (const auto& rec : api.spoolman_mock().spool_updates) {
+        if (rec.patch.contains("remaining_weight")) {
+            weight_patches++;
+        }
+    }
+    CHECK(weight_patches == 1);
+
+    get_printer_state().set_spoolman_available(false); // restore clean slate
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
                  "Change-Filament picker selection returns to overview without closing",
                  "[ams_edit_overlay][picker]") {
     // Contrast with the picker-entry shortcut: reaching the picker via Change
