@@ -138,34 +138,43 @@ void Fb0MailboxSink::on_frame(const RemoteScreenFrame& f) {
     case RemoteScreenPixelFormat::Unknown:  break;
     }
 
+    // px_map points to the DRAW-BUFFER ORIGIN (0,0), NOT the dirty-area origin.
+    // In LVGL direct/full render mode, lv_refr.c's call_flush_cb passes
+    // layer->draw_buf->data unchanged and only offsets the *area*. So a dirty
+    // rect's pixels live at the rect's ABSOLUTE coordinates within px_map, and
+    // must be read at the same (x,y) they are written to in fb0. Reading
+    // row-relative from px_map[0] copies the buffer's top-left corner to every
+    // rect — which ghosts the nav bar / header across the screen (#1031 doubling).
     int32_t x1 = f.x1;
     int32_t y1 = f.y1;
-    int32_t w  = f.x2 - f.x1 + 1;
-    int32_t h  = f.y2 - f.y1 + 1;
+    int32_t x2 = f.x2;
+    int32_t y2 = f.y2;
 
     // One-shot diagnostics: log exactly what the DRM flush hands us on the first
     // few frames so the on-device layout (area, real stride, format) is
     // observable without a debugger.
     if (log_count_ < 3) {
         ++log_count_;
-        spdlog::info("[RemoteScreen] on_frame ENTER #{}: area=({},{})-({},{}) w={} h={} "
+        spdlog::info("[RemoteScreen] on_frame ENTER #{}: area=({},{})-({},{}) "
                      "disp={}x{} src_stride={} src_bpp={} cf={} fb={}x{} fb_stride={} map_size={}",
-                     log_count_, f.x1, f.y1, f.x2, f.y2, w, h, f.disp_w, f.disp_h,
+                     log_count_, f.x1, f.y1, f.x2, f.y2, f.disp_w, f.disp_h,
                      f.src_stride, src_bpp, f.color_format, fb_w_, fb_h_, fb_stride_,
                      static_cast<unsigned long>(map_size_));
     }
 
-    if (w <= 0 || h <= 0 || f.src_stride == 0 || src_bpp == 0 || fb_bpp_ != 32) {
+    if (f.src_stride == 0 || src_bpp == 0 || fb_bpp_ != 32) {
         return;
     }
 
-    // Clamp the dirty rect into the fb0 mapping; track skipped source pixels/rows.
-    int32_t src_col_skip = 0;
-    int32_t src_row_skip = 0;
-    if (x1 < 0) { src_col_skip = -x1; w += x1; x1 = 0; }
-    if (y1 < 0) { src_row_skip = -y1; h += y1; y1 = 0; }
-    if (x1 + w > fb_w_) { w = fb_w_ - x1; }
-    if (y1 + h > fb_h_) { h = fb_h_ - y1; }
+    // Clamp the dirty rect into the fb0 mapping. Source and destination share the
+    // same coordinate system (px_map is buffer-origin), so no source skip is
+    // needed — clamped x1/y1/x2/y2 index both.
+    if (x1 < 0) { x1 = 0; }
+    if (y1 < 0) { y1 = 0; }
+    if (x2 > fb_w_ - 1) { x2 = fb_w_ - 1; }
+    if (y2 > fb_h_ - 1) { y2 = fb_h_ - 1; }
+    const int32_t w = x2 - x1 + 1;
+    const int32_t h = y2 - y1 + 1;
     if (w <= 0 || h <= 0) {
         return;
     }
@@ -175,13 +184,12 @@ void Fb0MailboxSink::on_frame(const RemoteScreenFrame& f) {
     // read within that bound is safe; anything beyond means our area/stride view
     // disagrees with the renderer, so skip rather than risk a segfault (which on
     // the render thread would wedge the UI -> watchdog kill).
-    const size_t src_stride    = f.src_stride;
-    const size_t src_row_bytes = static_cast<size_t>(w) * static_cast<size_t>(src_bpp);
-    const size_t src_bound =
-        src_stride * static_cast<size_t>(f.disp_h > 0 ? f.disp_h : fb_h_);
-    const size_t last_src =
-        static_cast<size_t>(src_row_skip + h - 1) * src_stride +
-        static_cast<size_t>(src_col_skip + w) * static_cast<size_t>(src_bpp);
+    const size_t  src_stride    = f.src_stride;
+    const size_t  src_row_bytes = static_cast<size_t>(w) * static_cast<size_t>(src_bpp);
+    const int32_t bound_h       = f.disp_h > 0 ? f.disp_h : fb_h_;
+    const size_t  src_bound     = src_stride * static_cast<size_t>(bound_h);
+    const size_t  last_src =
+        static_cast<size_t>(y2) * src_stride + static_cast<size_t>(x2 + 1) * static_cast<size_t>(src_bpp);
     if (src_row_bytes > src_stride || last_src > src_bound) {
         if (!oob_warned_) {
             oob_warned_ = true;
@@ -194,10 +202,11 @@ void Fb0MailboxSink::on_frame(const RemoteScreenFrame& f) {
     }
 
     for (int32_t row = 0; row < h; ++row) {
-        const int32_t dst_y   = y1 + row;
-        const size_t  dst_off = static_cast<size_t>(dst_y) * fb_stride_ + static_cast<size_t>(x1) * 4;
-        const size_t  src_off = static_cast<size_t>(src_row_skip + row) * src_stride +
-                                static_cast<size_t>(src_col_skip) * static_cast<size_t>(src_bpp);
+        const int32_t abs_y   = y1 + row;
+        const size_t  dst_off = static_cast<size_t>(abs_y) * fb_stride_ + static_cast<size_t>(x1) * 4;
+        // Same absolute (x1, abs_y) into the buffer-origin source.
+        const size_t  src_off = static_cast<size_t>(abs_y) * src_stride +
+                                static_cast<size_t>(x1) * static_cast<size_t>(src_bpp);
         uint8_t*       dst = map_ + dst_off;
         const uint8_t* src = f.px_map + src_off;
 
