@@ -4,13 +4,36 @@
 
 ## Help & About
 
-Four items in the Help & About category:
+Five items in the Help & About category:
 
 | Action | What It Does |
 |--------|--------------|
+| **Replay Welcome Tour** | Plays the guided first-run tour again (see below) |
 | **Upload Debug Bundle** | Collects logs and system info for support (see below) |
 | **Discord Community** | Join **discord.gg/helixscreen** for community help and feedback |
 | **Documentation** | Visit **helixscreen.org/docs** for guides and reference |
+| **About** | Version, updates, and printer info (see below) |
+
+### Welcome Tour
+
+The first time you launch HelixScreen (after finishing the setup wizard), a short guided tour walks you through the interface. It's an eight-step overlay that highlights one part of the screen at a time, with a **Skip** button to leave early, a **Next** button to move on (it reads **Done** on the last step), and a step counter so you know how far along you are.
+
+The tour covers:
+
+1. **Welcome to HelixScreen** — a quick hello.
+2. **Your printer at a glance** — tap any home tile to open its full controls or toggle its state.
+3. **Customize your home screen** — long-press any tile to enter edit mode and rearrange, resize, remove, or add widgets.
+4. **Print status** — monitor prints in progress and pause, resume, or cancel the active job.
+5. **Controls** — move the toolhead, home axes, level the bed, and tune temperatures and fans.
+6. **Filament** — load, unload, and swap spools, and monitor your multi-filament system.
+7. **Advanced** — macros, the G-code console, calibration tools, and firmware updates.
+8. **Settings** — network, display, sound, printer setup, and more.
+
+The tour runs on the Home screen; tapping a navigation button to leave Home ends it early. It also reappears automatically after a HelixScreen update introduces new tour content.
+
+### Replaying the Tour
+
+To see it again, tap **Replay Welcome Tour** at the top of **Settings → Help & About**. HelixScreen returns to the Home screen and restarts the tour from the beginning. This row is always available, so you can revisit the tour whenever you like.
 
 ### Debug Bundles
 

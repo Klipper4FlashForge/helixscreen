@@ -180,6 +180,8 @@ In the dialog you get one row per tool in the file:
 
 Tap **Done** to keep your mapping, or **Cancel** to discard it.
 
+> **Tip:** When you actually start the print, HelixScreen re-checks these mappings and stops with a **Check filament** dialog if any required tool points at an empty slot. See [Print Monitoring & Failure Detection](print-monitoring.md#pre-print-filament-check).
+
 > **Note:** The mapping card only appears on backends with editable tool mapping. On fixed 1:1 systems (Snapmaker U1, ACE) tools always map directly to their matching slot, so there's nothing to assign.
 
 ### Syncing with OrcaSlicer (2.3.2 and later, including 2.4.0)
@@ -323,33 +325,13 @@ The U1 tracks filament with a motion sensor per tool. When a runout fires mid-pr
 
 ## Spoolman Integration
 
-![Spoolman](../../images/user/advanced-spoolman.png)
+Spoolman is an optional filament-inventory server. Once it's connected, the AMS panel shows saved spool data on each slot and lets you assign spools straight from your inventory:
 
-When Spoolman is configured:
-
-- Spool name and material type displayed per slot
+- Spool name and material type shown per slot
 - Remaining filament weight shown
-- Tap a slot to open **Spool Picker** and assign a different spool
+- Tap a slot's **Spool Info** or **Select Spool** to assign a saved spool — see [Editing Filament Properties](#editing-filament-properties) and the [Slot Context Menu](#slot-context-menu)
 
-### Spoolman Panel
-
-Access via the **Filament** nav tab. Browse, search, and manage your entire spool inventory:
-
-- **Search** — Filter spools by vendor, material, or color name
-- **Context menu** — Tap a spool to set active, edit, or delete
-- **3D spool visualization** — Color-coded fill level at a glance
-
-### New Spool Wizard
-
-Tap **+ Add** in the Spoolman panel to create a new spool in 3 steps:
-
-1. **Select Vendor** — Search existing vendors or tap **+ New** to add one
-2. **Select Filament** — Pick an existing filament or tap **+ New** to create one with material, color, temperature ranges, and weight
-3. **Spool Details** — Set remaining weight, price, lot number, and notes
-
-The wizard creates all records (vendor, filament, spool) atomically in Spoolman.
-
-> **Tip:** You can print physical spool labels with a QR code linking to Spoolman. See [Label Printing](label-printing.md) for setup instructions.
+Connecting a server, the full spool-inventory panel, the new-spool wizard, and how remaining weight is tracked all live on their own page: **[Filament Tracking & Spoolman](filament-tracking.md)**.
 
 ---
 
@@ -379,7 +361,7 @@ Open the dryer controls from the **multi-filament panel**:
 
 From the dryer panel you can:
 
-- **Set target temperature** — Use the slider or tap the value to type a temperature. The target is automatically clamped to the safe maximum for your unit (typically 65–90 °C depending on firmware).
+- **Set target temperature** — Use the slider or tap the value to type a temperature. The target is automatically clamped to the safe maximum for your unit (typically 55–90 °C depending on your hardware and firmware).
 - **Set duration** — Choose how long to dry, in hours. Some systems accept a custom duration; others offer material-based presets.
 - **Pick a material preset** — If presets are available, tap a material name (PLA, PETG, Nylon, etc.) to fill in the recommended temperature and time automatically.
 - **Start drying** — Tap **Start** to begin. The heater activates and the chamber temperature climbs to your target.
@@ -413,6 +395,7 @@ If you have multiple Box units connected, each unit has its own dryer with indep
 
 ## See Also
 
+- [Filament Tracking & Spoolman](filament-tracking.md) — How remaining weight is tracked, with and without Spoolman, and how to connect a Spoolman server
 - [Temperature Control](temperature.md) — Preheat presets work with spool material info
 - [Bluetooth Setup](bluetooth-setup.md) — Required for Bluetooth-connected AMS and label printers
 - [Label Printing](label-printing.md) — Print physical spool labels with Spoolman data
@@ -420,4 +403,4 @@ If you have multiple Box units connected, each unit has its own dryer with indep
 
 ---
 
-**Next:** [Label Printing](label-printing.md) | **Prev:** [Motion & Positioning](motion.md) | [Back to User Guide](../USER_GUIDE.md)
+**Next:** [Filament Tracking & Spoolman](filament-tracking.md) | **Prev:** [Motion & Positioning](motion.md) | [Back to User Guide](../USER_GUIDE.md)

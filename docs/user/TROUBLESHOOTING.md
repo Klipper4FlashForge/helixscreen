@@ -515,6 +515,38 @@ This lists the resolutions the DRM driver will accept for the `-s` flag.
 
 ---
 
+### UI elements look too large or too small
+
+**Symptoms:**
+- Buttons, text, and spacing look oversized — controls feel cramped or run off the edge of the screen
+- Or the opposite: everything looks tiny with lots of empty space, and touch targets are hard to hit
+- The resolution is correct (the whole screen is used), but the *scale* of the interface looks wrong
+
+**Cause:**
+HelixScreen sizes spacing and padding from the display's DPI (dots per inch). On unusual or high-density panels the auto-detected DPI can be off, so the layout is scaled too large or too small.
+
+**Fix:** Override the DPI in your `helixscreen.env` file (typically `~/helixscreen/config/helixscreen.env`), then restart HelixScreen. The default is `160`; valid range is `50` to `500`.
+
+- **Everything too large / cramped / overflowing** — set a **lower** DPI:
+  ```
+  HELIX_DPI=100
+  ```
+- **Everything too small / lots of empty space** — set a **higher** DPI:
+  ```
+  HELIX_DPI=200
+  ```
+
+Restart after editing:
+```bash
+sudo systemctl restart helixscreen
+```
+
+Adjust in steps (e.g. 110, 100, 90 or 160, 200, 240) until the interface looks right. Lower DPI = tighter/smaller; higher DPI = larger/roomier.
+
+> **Tip:** If instead the *whole layout tier* is wrong — for example a compact phone-style layout on a big screen, or vice versa — the resolution rather than the DPI is being mis-detected. Force a layout size with `HELIX_SCREEN_SIZE` (named preset `micro`/`tiny`/`small`/`medium`/`large`/`xlarge`, or `WxH` like `1024x600`), which is the persistent equivalent of the `-s` flag covered in [Wrong screen size or resolution](#wrong-screen-size-or-resolution).
+
+---
+
 ### Display upside down or rotated
 
 **Symptoms:**
@@ -655,23 +687,63 @@ The screen will stay on continuously. Power the touchscreen off at the wall if y
 This keeps the normal sleep timeout but prevents the backlight from being cut, which avoids the color fill. The screen stays lit showing the last-drawn frame.
 
 1. SSH into your printer (or open a shell on the AD5X directly)
-2. Edit `~/helixscreen/config/helixconfig.json`
+2. Edit `settings.json`. On the AD5X (ZMOD firmware) the install lives under the ZMOD data directory, not `~/helixscreen` — the config file is at something like `/usr/data/.mod/.zmod/srv/helixscreen/config/settings.json` (or `/srv/helixscreen/config/settings.json` from inside the ZMOD chroot).
 3. Find the `"display"` section and set:
 
    ```json
    "sleep_backlight_off": false
    ```
 
-4. Save the file and restart HelixScreen:
+4. Save the file and restart HelixScreen. The AD5X uses ZMOD's SysV init, not systemd:
 
    ```bash
-   sudo systemctl restart helixscreen
+   /etc/init.d/S80helixscreen restart
    ```
+
+   (or restart via the ZMOD launcher / Mainsail if you manage it that way)
 
 Caveat: the panel stays fully lit 24/7 with this option. If long-term backlight wear is a concern, prefer Workaround 1 and manually power off the screen when not needed.
 
 **Helping us fix it:**
 If you are experiencing this and are willing to help, please send a debug bundle from **Settings → Help & About → Send Debug Bundle**. Include a note that mentions the sleep color issue so we can correlate configs and logs.
+
+---
+
+### Brightness slider or screen dimming does nothing
+
+**Symptoms:**
+- Moving the brightness slider in Settings has no visible effect
+- Auto-dim (screen sleep) never dims or blanks the backlight
+- Brightness works in another UI (KlipperScreen, stock screen) but not HelixScreen
+
+**Cause:**
+HelixScreen didn't find a backlight control method it can drive on your hardware. It tries several methods automatically, but some panels — notably certain Creality Sonic Pad firmware variants — expose the backlight through a control path HelixScreen doesn't pick by default.
+
+**Fix:** Force a specific backlight method by adding one line to your `helixscreen.env` file (typically `~/helixscreen/config/helixscreen.env`), then restart HelixScreen.
+
+**Creality Sonic Pad** — if the slider and auto-dim don't respond even though the screen otherwise works, use Creality's `brightness` helper:
+```
+HELIX_BACKLIGHT_DEVICE=brightness
+```
+
+**Other hardware** — try each of these in turn, restarting after each, until the slider works:
+```
+HELIX_BACKLIGHT_DEVICE=sysfs       # standard Linux backlight (Raspberry Pi and most SBCs)
+HELIX_BACKLIGHT_DEVICE=allwinner   # Allwinner-based panels (AD5M and similar)
+```
+
+**External monitor with its own brightness buttons** — if HelixScreen shouldn't touch the backlight at all (e.g. an HDMI monitor you dim with its own controls), disable control entirely:
+```
+HELIX_BACKLIGHT_DEVICE=none
+```
+
+Restart after editing:
+```bash
+sudo systemctl restart helixscreen
+```
+(Use your platform's restart command — see [Quick Debugging Guide](#quick-debugging-guide) for the SysV-init variants.)
+
+> **Note:** Only the values `sysfs`, `allwinner`, `brightness`, and `none` are recognized. Any other value (including a `/sys/class/backlight/...` path) is ignored and HelixScreen falls back to auto-detection.
 
 ---
 
@@ -786,7 +858,7 @@ Three separate settings control the feel of taps vs. scrolls. Match the symptom 
 | Lists feel sluggish — long coast after a flick | Scroll momentum decays too slowly | `scroll_throw` | **Raise** (e.g., 35) |
 | Short flicks never travel far enough — list barely moves | Momentum decays too fast | `scroll_throw` | **Lower** (e.g., 15) |
 
-All four live under `input` in `settings.json` (path varies by platform — see [Config File Locations](guide/touch-calibration.md#config-file-locations)). See [CONFIGURATION.md § Input Configuration](CONFIGURATION.md#input) for the full reference.
+All four live under `input` in `settings.json` (path varies by platform — see [Config File Locations](guide/touch-calibration.md#config-file-locations)). See [CONFIGURATION.md § Input Configuration](CONFIGURATION.md#input-settings) for the full reference.
 
 > **Stop the service before editing `settings.json`** — the daemon rewrites the file periodically and your edits can be clobbered. Stop, edit, start.
 >

@@ -105,6 +105,8 @@ See [Power Device Control](../advanced.md#power-device-control) for full details
 
 Tap to open Spoolman integration settings. HelixScreen connects to your Spoolman server for spool tracking, weight sync, and barcode scanning.
 
+> For the bigger picture — how filament tracking works with and without Spoolman, and how remaining weight is kept current — see [Filament Tracking & Spoolman](../filament-tracking.md).
+
 ### Server Setup
 
 If Spoolman is not yet configured, you'll see a setup screen. Enter the IP address and port of your Spoolman server, then tap **Connect**. HelixScreen verifies the connection and configures Moonraker automatically — no manual editing of `moonraker.conf` needed.

@@ -8,7 +8,7 @@ The Display & Sound category covers visual preferences, display configuration, a
 
 ### Language
 
-Choose the display language for all UI text. Currently English is the only supported language; more translations are planned.
+Choose the display language for all UI text. Nine languages are available: English, German, Spanish, French, Italian, Japanese, Portuguese, Russian, and Chinese.
 
 ### Timezone
 
@@ -60,17 +60,58 @@ Switch between light and dark themes. Disabled when the active theme doesn't sup
 
 Open the theme explorer to browse, preview, and apply color themes.
 
+When you open **Theme Colors**, the theme explorer shows a **Theme Preset** dropdown, a live preview of sample cards, buttons, inputs, and status colors, and — for themes that ship both a light and a dark palette — a **Dark Mode** toggle. Pick a preset and tap **Apply** to switch to it.
+
+### Editing a Custom Theme
+
+Tap **Edit** in the theme explorer to open the theme editor, where you can recolor a palette and adjust its shape and shadow styling. Every change previews live on the surrounding UI as you make it.
+
+The editor is organized into two sections:
+
+**Theme Colors** — a grid of 16 color swatches, each labeled with what it controls (background, text, primary, success, warning, and so on). Tap any swatch to open a color picker with ready-made swatches and a custom color selection; pick a color and the swatch — and the live preview — update immediately.
+
+**Style Properties** — four sliders that shape the overall look:
+
+| Slider | What It Does |
+|--------|--------------|
+| **Border Radius** | Corner roundness, from square to fully rounded |
+| **Border Width** | Default border thickness |
+| **Border Opacity** | Border transparency (0 = invisible, 255 = solid) |
+| **Shadow Intensity** | Drop shadow strength (0 = disabled) |
+
+### Light and Dark Palettes
+
+A theme can carry a separate palette for light mode and dark mode, and the editor works on **one at a time**. Choose which one you're editing *before* you tap **Edit**, using the **Dark Mode** toggle in the theme explorer: turn it on to edit the dark palette, off to edit the light palette. (The toggle only appears for themes that support both modes.) Saving keeps both palettes — the one you didn't touch this session is preserved.
+
+> **Tip:** To give a theme a matching light and dark look, edit one palette and save, then flip the Dark Mode toggle, tap **Edit** again, and adjust the other.
+
+### Saving Your Changes
+
+Three buttons sit at the bottom of the editor:
+
+| Button | What It Does |
+|--------|--------------|
+| **Reset** | For a built-in theme, restores the factory colors. For a theme you created, reverts to its last saved state. |
+| **Save As New** | Creates a new named custom theme, leaving the original untouched. |
+| **Save** | Overwrites the current theme with your changes. Stays disabled until you've made a change. |
+
+Tapping **Save As New** opens a **Save Theme As** dialog. Enter a name (it suggests "<current theme> Copy") and tap **Save**, or **Cancel** to back out. Your new theme is saved, applied immediately, and appears in the Theme Preset dropdown.
+
+Both **Save** and **Save As New** apply the theme live — no restart needed. If you try to leave the editor with unsaved changes, HelixScreen asks **"Discard Changes?"** first so you don't lose your work.
+
+> **Note:** Custom and edited themes are stored on your printer under `~/helixscreen/config/themes/`. They survive updates and are yours to back up or copy between printers.
+
 ### Brightness
 
 Slider from 10–100%. Only shown on hardware with backlight control (hidden on Android).
 
 ### Screen Dim
 
-When the screen dims to lower brightness: Never, 30s, 1m, 2m, or 5m of inactivity.
+When the screen dims to lower brightness: Never, 30s, 1m, 2m, 5m, or 10m of inactivity.
 
 ### Display Sleep
 
-When the screen turns off completely: Never, 1m, 5m, 10m, or 30m of inactivity.
+When the screen turns off completely: Never, 1m, 5m, 10m, 20m, or 30m of inactivity.
 
 ### Screensaver
 
@@ -149,7 +190,7 @@ Custom themes support the full synthesis engine: four waveform types (square, sa
 
 If your custom theme has the same filename as a built-in theme, your version takes priority.
 
-See the [Sound System developer docs](../../devel/SOUND_SYSTEM.md#sound-theme-json-schema) for the complete JSON schema reference.
+See the [Sound System developer docs](../../../devel/SOUND_SYSTEM.md#sound-theme-json-schema) for the complete JSON schema reference.
 
 ### What Sounds When
 

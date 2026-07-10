@@ -18,11 +18,14 @@ These docs are **end-user facing**. They must be written for people who are NOT 
 |-----|----------|
 | `USER_GUIDE.md` | Landing page with links to all guide sub-pages |
 | `guide/getting-started.md` | Navigation, touch gestures, setup wizard, keyboard |
+| `guide/supported-printers.md` | Per-printer feature detail for deeply-integrated models (AD5X IFS, K1/K2 CFS, QIDI Box, Snapmaker U1, ACE), generic auto-detection baseline |
 | `guide/home-panel.md` | Home dashboard, printer manager, custom images |
 | `guide/printing.md` | File selection, printing, tune overlay, Z-offset |
+| `guide/print-monitoring.md` | Pre-print filament check (empty-slot block), camera-based failure detection (Snapmaker U1 dialog, Creality K2 AI toggle) |
 | `guide/temperature.md` | Nozzle/bed temperature panels, presets, reassigning preset filament types, graphs |
 | `guide/motion.md` | Jog pad, homing, distance increments, E-stop |
 | `guide/filament.md` | Extrusion, AMS, CFS, Spoolman, dryer control |
+| `guide/filament-tracking.md` | Filament tracking with/without Spoolman, usage estimation, connecting Spoolman, spool inventory |
 | `guide/bluetooth-setup.md` | Enabling Bluetooth on Raspberry Pi and BTT Pi, UART conflicts, USB dongle setup |
 | `guide/barcode-scanner.md` | USB + Bluetooth barcode scanner setup, keymaps, BT-HID bonded-only workaround |
 | `guide/label-printing.md` | Label printer setup, supported printers (Brother/Phomemo/Niimbot/MakeID), Bluetooth pairing, troubleshooting |

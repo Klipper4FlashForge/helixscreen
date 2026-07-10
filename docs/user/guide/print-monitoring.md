@@ -1,0 +1,94 @@
+# Print Monitoring & Failure Detection
+
+HelixScreen watches over a print in two ways: it checks your filament *before* a multi-color job starts, and — on printers that support it — it reacts when the printer's own camera spots a print going wrong. This page covers both.
+
+---
+
+## Pre-Print Filament Check
+
+When you start a multi-color or multi-tool print, HelixScreen compares what the sliced file expects in each tool against what's actually loaded in your filament system. If a required tool points at an **empty slot**, HelixScreen stops and shows a **Check filament** dialog before anything heats up or moves — so you don't discover the problem halfway through a long print.
+
+This check runs automatically. You don't turn it on; it's part of starting any print on a system with a multi-slot filament backend (AMS, CFS, IFS, Box Turtle, Happy Hare, etc.). On a single-extruder printer with no such system, there are no slots to compare against, so this dialog never appears — filament presence there is handled by your runout sensor instead.
+
+### What the check looks at
+
+For every tool the file uses (T0, T1, T2, …), HelixScreen compares the slot mapped to that tool against the slicer's intent:
+
+| Result | What it means | Row glyph |
+|--------|---------------|-----------|
+| **Match** | The mapped slot has filament, and its material and color line up with the file | Green check (✓) |
+| **Color differs** | Right material, but the loaded color doesn't match the file's color | Amber warning (⚠) |
+| **Material differs** | The loaded material doesn't match what the tool needs | Amber warning (⚠) |
+| **Empty slot** | The tool maps to a slot with no filament in it | Red cross (✗) |
+
+### The Check filament dialog
+
+The dialog appears **only when at least one required tool maps to an empty slot** — that's the one condition serious enough to stop a print. When it opens, you see one row per tool:
+
+- A **`Tx`** label (the tool number)
+- The **slicer's intended color** as a swatch
+- An **arrow**
+- The **actually-loaded color** as a swatch, or an **`EMPTY`** label if that slot has no filament
+- A **severity glyph** (✓ / ⚠ / ✗) on the right
+
+Below the rows, a short explanation calls out the first blocking problem, for example:
+
+> *T1 needs filament in slot 2, which is empty — this print will run out.*
+
+**Buttons:**
+
+| Button | Action |
+|--------|--------|
+| **Remap…** | Opens the tool-to-slot mapping so you can point the tool at a slot that has filament. Only shown when your filament system supports remapping — it's hidden on ACE and single-extruder (no-AMS) systems. |
+| **Cancel** | Backs out without printing. Load or map the missing filament, then start again. |
+| **Print Anyway** | Starts the print despite the warning. Use this only if you know the check is wrong (for example, filament is physically loaded but not yet detected). |
+
+> **Note:** An empty slot is the only thing that raises this dialog. A **material or color mismatch does not stop the print** — those are advisory. They show up as a warning icon on the filament mapping card when you pick the file (see [Tool Mapping](filament.md#tool-mapping)), and if the dialog is already open for an empty slot, mismatched tools show an amber warning glyph on their row too.
+
+> **Tip:** If you meant to load that filament, tap **Cancel**, sort out the slot from the [AMS panel](filament.md#ams--multi-material-systems), and start the print again — the check re-runs each time.
+
+---
+
+## Print-Failure Detection
+
+Some printers include their own camera-based failure detection that watches for problems like spaghetti (a print that has detached and turned into a tangle). When that hardware flags a defect, HelixScreen surfaces it on the touchscreen so you can decide what to do without walking over to a web interface.
+
+**This is hardware-specific.** The interactive on-screen response described below currently applies to the **Snapmaker U1** running its stock firmware, whose defect-detection module reports failures HelixScreen can catch. Creality K2 printers handle AI monitoring differently — see [Creality K2 AI detection](#creality-k2-ai-detection) below.
+
+### What happens on a detection (Snapmaker U1)
+
+When the U1's detector flags a spaghetti-type failure, the printer pauses the print on its own, and HelixScreen pops up a **Print issue detected** dialog describing the problem. You get three choices:
+
+| Button | Action |
+|--------|--------|
+| **Resume** | Continues the paused print. |
+| **Abort** | Cancels the print. |
+| **Reduce Sensitivity** | Tells the printer to be less trigger-happy about flagging issues, and leaves the dialog open so you can then Resume or Abort. Use this if you're getting false alarms. |
+
+> **Note:** Only spaghetti-type failures are surfaced this way today. The U1's other defect codes (dirty bed, residue, dirty nozzle) are recognized internally but don't currently raise this dialog.
+
+> **Note:** A camera-frame preview is designed into this dialog but isn't wired up yet — for now the dialog shows the text description without a live still image.
+
+### Is it always on?
+
+Failure detection is **on by default** on supported hardware, and there's currently no on-screen setting to switch it off or change how it responds. If you're getting false alarms, tap **Reduce Sensitivity** when the dialog appears — that tells the printer to be less aggressive about flagging issues.
+
+### Creality K2 AI detection
+
+Creality's **K2 Plus** and **K2 Pro** have their own camera-based AI print monitoring. HelixScreen doesn't run this detection or show its results in a dialog — instead it lets you **enable the printer's AI monitoring for a print** as a pre-print option.
+
+When you open a file to print on a K2, look in the **Pre-Print Options** for **AI detection** (*"Monitor for print abnormalities (K2 Plus camera-based)"*). It's **off by default**; turn it on and the printer runs its own AI monitoring during that print. From there, Creality's firmware handles any detection — HelixScreen's job is just to switch the feature on when you ask for it.
+
+> **Note:** Because this is handled entirely by the printer, the Resume / Abort / Reduce Sensitivity dialog above does **not** apply to K2 AI detection.
+
+---
+
+## See Also
+
+- [Filament Management](filament.md) — AMS slots, tool mapping, and loading filament
+- [Printing](printing.md) — Starting prints, pre-print options, and monitoring during a print
+- [Supported Printers](supported-printers.md) — Which detection and filament features each model supports
+
+---
+
+**Next:** [Temperature Control](temperature.md) | **Prev:** [Printing](printing.md) | [Back to User Guide](../USER_GUIDE.md)

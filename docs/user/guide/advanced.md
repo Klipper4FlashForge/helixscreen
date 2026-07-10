@@ -91,6 +91,79 @@ These macros show a confirmation dialog before executing:
 
 ---
 
+## Configure PRINT_START
+
+HelixScreen's [pre-print skip toggles](printing.md#pre-print-options) — Auto bed level, Quad gantry level, Z-tilt adjust, Nozzle clean — can only skip a step if that step is written so it can be turned off. When those operations live *inside* your `PRINT_START` (or `START_PRINT`) macro, they run every time and the toggles can't reach them.
+
+**Configure PRINT_START** reads your own macro, finds those operations, and — with your approval — rewrites the macro so each one becomes optional. Afterward, the matching toggle on the print screen actually skips it.
+
+> **Safety:** This feature **edits your Klipper printer configuration** on the printer. It is a deliberate, consent-based action: nothing is changed until you review each operation and tap **Apply Changes**. A backup of your config is saved automatically before anything is written, and Klipper restarts once the changes are applied.
+
+### Opening the wizard
+
+1. Enable **Beta Features** first (see [Beta Features](beta-features.md)) — this tool lives behind the beta flag.
+2. Navigate to **Advanced → Configure PRINT_START**.
+
+HelixScreen may also prompt you on its own: when it notices skippable steps in your macro, a notification reading **"PRINT_START has N skippable operations"** appears with a **Configure** button that opens the same wizard.
+
+If your macro is already set up (or has nothing that can be made optional), you'll see **"Your print start is already fully configured!"** instead, and the wizard won't open.
+
+### Reviewing each operation
+
+The wizard walks you through one operation at a time (a progress counter like **"1 of 3"** shows your place). For each one — Bed Mesh, Quad Gantry Leveling, Z-Tilt Adjustment, or Nozzle Cleaning — it asks **"Make [operation] Optional?"** and explains in plain language what changes.
+
+You have two choices per operation:
+
+| Button | What it does |
+|--------|--------------|
+| **Keep Required** | Leave this operation alone — it will always run |
+| **Make Optional** | Rewrite it so the pre-print toggle can skip it |
+
+> **Note:** Homing is never offered here — it's required for safe printing and can't be made skippable.
+
+### Applying your changes
+
+After the last operation, a **Ready to Apply** summary lists every change you approved under **"Your PRINT_START macro will be updated to give you control over:"**.
+
+- The **"Create backup of printer.cfg before applying"** option is checked by default.
+- A reminder notes that **"Klipper will restart to apply changes"**.
+- Tap **Cancel** to discard everything, or **Apply Changes** to write them.
+
+While applying, the wizard shows its progress (creating the backup, then writing the changes). When it finishes you'll see a **Setup Complete!** confirmation letting you know a backup was saved and the new skip options are now available in the print details before each print. Tap **Close** to finish.
+
+> **Tip:** The changes are reversible. You can undo them later from the Macro Viewer, or re-run the wizard if you edit your macro again.
+
+---
+
+## Interactive Prompts
+
+Some Klipper macros can ask you questions mid-run — "Which lane should I load?", "Purge complete?", "Tip formed cleanly?" — using Klipper's standard prompt protocol. HelixScreen renders these as a native touchscreen dialog automatically. This is common with multi-material systems like Happy Hare / ERCF, and with custom confirmation macros.
+
+You don't configure anything. Any macro that emits the prompt protocol will pop up a dialog on your screen the moment it runs.
+
+**A prompt dialog shows:**
+
+- A **title** at the top (for example, the name of the operation)
+- One or more lines of **explanatory text**
+- **Buttons** you tap to answer — each button runs a G-code command and closes the dialog
+
+Buttons are color-coded by the macro author to signal intent:
+
+| Color | Typical meaning |
+|-------|-----------------|
+| **Blue** (primary) | The main / default action |
+| **Green** | A confirming or "go" action |
+| **Amber** | Caution — think before tapping |
+| **Red** | A stop, cancel, or destructive action |
+
+> **Note:** Colors are chosen by whoever wrote the macro — they're a hint, not a rule. Always read the button label. Macro authors can also specify an exact custom color.
+
+Longer menus wrap onto multiple lines automatically, and some macros place a row of **footer buttons** across the bottom of the dialog (often used for "Cancel" or menu navigation). If a prompt is flagged as an error, a red warning icon appears next to the title.
+
+> **Tip:** Tapping any button sends its command straight to the printer and dismisses the dialog. If you're not sure what a button does, check the macro that produced the prompt — HelixScreen simply displays whatever the macro defines.
+
+---
+
 ## Probe Management
 
 View and control your Z probe. HelixScreen auto-detects your probe type (Cartographer, Beacon, BLTouch, BTT Eddy, Mellow Fly Eddy, Voron Tap, Klicky, or standard probe) and shows type-specific controls.
@@ -198,14 +271,14 @@ Record timelapse videos of your prints automatically using the [moonraker-timela
 
 If the timelapse plugin is not installed, HelixScreen detects this and offers a guided **Install Wizard**:
 
-1. Navigate to **Settings > Timelapse Setup**
+1. Navigate to **Advanced > Timelapse Setup**
 2. Follow the on-screen instructions to install the plugin via SSH
 3. HelixScreen will configure your `moonraker.conf` automatically
 4. After installation, the setup row is replaced by timelapse settings and video browser
 
 ### Settings
 
-Navigate to **Settings > Timelapse** to configure:
+Navigate to **Settings > Printing > Timelapse** to configure:
 
 - **Enable/disable** timelapse recording
 - **Recording mode**: Layer Macro (snapshot at each layer) or Hyperlapse (time-based)
@@ -216,7 +289,7 @@ A quick **toggle button** also appears on the print status panel to enable/disab
 
 ### Video Browser
 
-Navigate to **Settings > Timelapse Videos** to browse your recorded timelapses:
+Navigate to **Advanced > Timelapse Videos** to browse your recorded timelapses:
 
 - **Thumbnail grid** with responsive card sizing that adapts to your screen
 - Each card shows a **video thumbnail**, filename, file size, and date
