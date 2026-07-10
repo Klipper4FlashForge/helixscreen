@@ -52,7 +52,12 @@ void MoonrakerFileTransferAPI::download_file(const std::string& root, const std:
     std::string encoded_path = HUrl::escape(path, "/.-_");
     std::string url = http_base_url_ + "/server/files/" + root + "/" + encoded_path;
 
-    spdlog::debug("[Moonraker API] Downloading file: {}", url);
+    // trace, not debug: the AD5X IFS backend polls Adventurer5M.json through
+    // here every 5s (freshness backstop for zmod's silent on-printer edits), and
+    // at debug these two lines dominate the 2000-line ring buffer — bundle
+    // Z5V4K3NL's ring covered only ~9 minutes. Errors still log via
+    // handle_http_response; callers log their own meaningful events.
+    spdlog::trace("[Moonraker API] Downloading file: {}", url);
 
     // Run HTTP request in a tracked thread to ensure clean shutdown
     helix::http::HttpExecutor::slow().submit([url, path, on_success, on_error]() {
@@ -62,7 +67,7 @@ void MoonrakerFileTransferAPI::download_file(const std::string& root, const std:
             return;
         }
 
-        spdlog::debug("[Moonraker API] Downloaded {} bytes from {}", resp->body.size(), path);
+        spdlog::trace("[Moonraker API] Downloaded {} bytes from {}", resp->body.size(), path);
         helix::MemoryMonitor::log_now("moonraker_download_done");
 
         if (on_success) {
