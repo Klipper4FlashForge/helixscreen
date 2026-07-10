@@ -1763,7 +1763,30 @@ void DisplayManager::install_color_transform_hook() {
                 f.disp_w = lv_display_get_horizontal_resolution(d);
                 f.disp_h = lv_display_get_vertical_resolution(d);
                 f.color_format = (int)cf;
-                f.src_stride = lv_draw_buf_width_to_stride(lv_area_get_width(area), cf);
+                // Use the ACTUAL draw-buffer stride, not width_to_stride(area_w):
+                // the DRM backend renders into dumb buffers whose pitch is aligned
+                // and may exceed the area width (direct/full render mode). Reading
+                // px_map with the wrong stride mis-tracks rows. Fall back to the
+                // computed stride only if the active buffer can't be queried.
+                lv_draw_buf_t* dbuf = lv_display_get_buf_active(d);
+                f.src_stride = (dbuf && dbuf->header.stride > 0)
+                                   ? static_cast<uint32_t>(dbuf->header.stride)
+                                   : lv_draw_buf_width_to_stride(lv_area_get_width(area), cf);
+                // Map the LVGL render format to our LVGL-independent sink enum.
+                // The U1 DRM dumb buffer is RGB565 (16bpp); desktop/other paths
+                // are ARGB8888/XRGB8888 (32bpp, BGRA in memory).
+                switch (cf) {
+                case LV_COLOR_FORMAT_RGB565:
+                    f.src_format = helix::RemoteScreenPixelFormat::RGB565;
+                    break;
+                case LV_COLOR_FORMAT_ARGB8888:
+                case LV_COLOR_FORMAT_XRGB8888:
+                    f.src_format = helix::RemoteScreenPixelFormat::BGRA8888;
+                    break;
+                default:
+                    f.src_format = helix::RemoteScreenPixelFormat::Unknown;
+                    break;
+                }
                 self->m_remote_screen.on_frame(f);
             }
         }

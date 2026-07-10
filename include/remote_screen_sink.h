@@ -8,6 +8,20 @@
 namespace helix {
 
 /**
+ * @brief Source pixel format of a remote-screen frame.
+ *
+ * LVGL-independent so sinks need not include lvgl.h. The flush hook maps
+ * `lv_color_format_t` onto this. `BGRA8888` is LVGL's native ARGB8888 in
+ * little-endian memory (B,G,R,A byte order — matches a 32bpp fbdev directly).
+ * `RGB565` is 2 bytes/pixel little-endian and must be expanded on copy.
+ */
+enum class RemoteScreenPixelFormat {
+    Unknown = 0,
+    BGRA8888, ///< 4 bytes/px, B,G,R,A — straight copy to a 32bpp fbdev.
+    RGB565,   ///< 2 bytes/px, little-endian 0bRRRRRGGGGGGBBBBB.
+};
+
+/**
  * @brief A single dirty-area frame update handed to remote-screen sinks.
  *
  * A non-owning view of the rendered pixels for one LVGL flush area. It is
@@ -27,8 +41,9 @@ struct RemoteScreenFrame {
     int32_t        y2     = 0;       ///< Inclusive bottom of the dirty area.
     int32_t        disp_w = 0;       ///< Full display horizontal resolution.
     int32_t        disp_h = 0;       ///< Full display vertical resolution.
-    int            color_format = 0; ///< lv_color_format_t as int.
+    int            color_format = 0; ///< lv_color_format_t as int (raw, for logging).
     uint32_t       src_stride   = 0; ///< Bytes per row of `px_map`.
+    RemoteScreenPixelFormat src_format = RemoteScreenPixelFormat::Unknown; ///< Pixel layout of px_map.
 };
 
 /**

@@ -55,7 +55,8 @@ std::string make_temp_fb() {
 }
 
 RemoteScreenFrame make_frame(const uint8_t* px, int32_t x1, int32_t y1, int32_t x2, int32_t y2,
-                             uint32_t src_stride) {
+                             uint32_t src_stride,
+                             RemoteScreenPixelFormat fmt = RemoteScreenPixelFormat::BGRA8888) {
     RemoteScreenFrame f;
     f.px_map       = px;
     f.x1           = x1;
@@ -66,6 +67,7 @@ RemoteScreenFrame make_frame(const uint8_t* px, int32_t x1, int32_t y1, int32_t 
     f.disp_h       = kFbH;
     f.color_format = 16;
     f.src_stride   = src_stride;
+    f.src_format   = fmt;
     return f;
 }
 
@@ -206,6 +208,66 @@ TEST_CASE("Fb0MailboxSink: dirty rect past the edge is clamped", "[remote_screen
     const size_t last = static_cast<size_t>(319) * kFbStride + static_cast<size_t>(479) * 4;
     REQUIRE(fb[last + 0] == 0x11);
     REQUIRE(fb[last + 2] == 0x33);
+
+    ::unlink(path.c_str());
+}
+
+TEST_CASE("Fb0MailboxSink: RGB565 source is converted to BGRA", "[remote_screen][fb0]") {
+    std::string path = make_temp_fb();
+
+    Fb0MailboxSink sink(path);
+    sink.configure_geometry(kFbW, kFbH, kFbStride, 32);
+    REQUIRE(sink.start());
+
+    // 16x16 RGB565 source, stride = 16*2 = 32 bytes. Fill with pure red in
+    // RGB565: R=0x1F, G=0, B=0 -> 0xF800 (stored little-endian: 0x00, 0xF8).
+    constexpr int      kW      = 16;
+    constexpr int      kH      = 16;
+    constexpr uint32_t kStride = kW * 2; // 32
+    std::vector<uint8_t> src(static_cast<size_t>(kStride) * kH);
+    for (size_t i = 0; i < src.size(); i += 2) {
+        src[i + 0] = 0x00; // low byte
+        src[i + 1] = 0xF8; // high byte -> 0xF800 = pure red
+    }
+
+    // Dirty area (10,10)..(25,25) inclusive = 16x16.
+    sink.on_frame(make_frame(src.data(), 10, 10, 25, 25, kStride, RemoteScreenPixelFormat::RGB565));
+    sink.stop();
+
+    std::vector<uint8_t> fb = read_file(path);
+    REQUIRE(fb.size() == kFbSize);
+
+    // 0xF800 -> R5=0x1F -> R8 = (0x1F<<3)|(0x1F>>2) = 0xFF, G=0, B=0.
+    // fb0 is BGRA: [B=0x00, G=0x00, R=0xFF, A=0xFF].
+    const size_t off = static_cast<size_t>(12) * kFbStride + static_cast<size_t>(12) * 4;
+    REQUIRE(fb[off + 0] == 0x00); // B
+    REQUIRE(fb[off + 1] == 0x00); // G
+    REQUIRE(fb[off + 2] == 0xFF); // R
+    REQUIRE(fb[off + 3] == 0xFF); // A
+
+    // Outside the rect is untouched.
+    REQUIRE(fb[0] == 0x00);
+    REQUIRE(fb[2] == 0x00);
+
+    ::unlink(path.c_str());
+}
+
+TEST_CASE("Fb0MailboxSink: unknown source format is skipped", "[remote_screen][fb0]") {
+    std::string path = make_temp_fb();
+    Fb0MailboxSink sink(path);
+    sink.configure_geometry(kFbW, kFbH, kFbStride, 32);
+    REQUIRE(sink.start());
+
+    std::vector<uint8_t> src(kFbSize, 0xAB);
+    sink.on_frame(make_frame(src.data(), 0, 0, kFbW - 1, kFbH - 1, kFbStride,
+                             RemoteScreenPixelFormat::Unknown));
+    sink.stop();
+
+    // Nothing written — the fb stays zero.
+    std::vector<uint8_t> fb = read_file(path);
+    REQUIRE(fb.size() == kFbSize);
+    REQUIRE(fb[0] == 0x00);
+    REQUIRE(fb[kFbSize / 2] == 0x00);
 
     ::unlink(path.c_str());
 }

@@ -66,6 +66,11 @@ class Fb0MailboxSink : public RemoteScreenSink {
     bool active_ = false;
     bool warned_ = false;
 
+    // One-shot diagnostics (first few frames + first OOB skip).
+    int  log_count_  = 0;
+    int  log_done_   = 0;
+    bool oob_warned_ = false;
+
     // Configured fallback geometry (used only when ioctls fail).
     bool     has_cfg_    = false;
     int      cfg_w_      = 0;

@@ -129,45 +129,102 @@ void Fb0MailboxSink::on_frame(const RemoteScreenFrame& f) {
         return;
     }
 
+    // Source bytes-per-pixel by format. Unknown formats are skipped rather than
+    // mirrored as garbage.
+    int src_bpp = 0;
+    switch (f.src_format) {
+    case RemoteScreenPixelFormat::BGRA8888: src_bpp = 4; break;
+    case RemoteScreenPixelFormat::RGB565:   src_bpp = 2; break;
+    case RemoteScreenPixelFormat::Unknown:  break;
+    }
+
     int32_t x1 = f.x1;
     int32_t y1 = f.y1;
     int32_t w  = f.x2 - f.x1 + 1;
     int32_t h  = f.y2 - f.y1 + 1;
-    if (w <= 0 || h <= 0) {
+
+    // One-shot diagnostics: log exactly what the DRM flush hands us on the first
+    // few frames so the on-device layout (area, real stride, format) is
+    // observable without a debugger.
+    if (log_count_ < 3) {
+        ++log_count_;
+        spdlog::info("[RemoteScreen] on_frame ENTER #{}: area=({},{})-({},{}) w={} h={} "
+                     "disp={}x{} src_stride={} src_bpp={} cf={} fb={}x{} fb_stride={} map_size={}",
+                     log_count_, f.x1, f.y1, f.x2, f.y2, w, h, f.disp_w, f.disp_h,
+                     f.src_stride, src_bpp, f.color_format, fb_w_, fb_h_, fb_stride_,
+                     static_cast<unsigned long>(map_size_));
+    }
+
+    if (w <= 0 || h <= 0 || f.src_stride == 0 || src_bpp == 0 || fb_bpp_ != 32) {
         return;
     }
 
-    // Track how many source pixels/rows we skip while clamping to the mapping.
+    // Clamp the dirty rect into the fb0 mapping; track skipped source pixels/rows.
     int32_t src_col_skip = 0;
     int32_t src_row_skip = 0;
-
-    if (x1 < 0) {
-        src_col_skip = -x1;
-        w += x1; // shrink width by the clipped amount
-        x1 = 0;
-    }
-    if (y1 < 0) {
-        src_row_skip = -y1;
-        h += y1;
-        y1 = 0;
-    }
-    if (x1 + w > fb_w_) {
-        w = fb_w_ - x1;
-    }
-    if (y1 + h > fb_h_) {
-        h = fb_h_ - y1;
-    }
+    if (x1 < 0) { src_col_skip = -x1; w += x1; x1 = 0; }
+    if (y1 < 0) { src_row_skip = -y1; h += y1; y1 = 0; }
+    if (x1 + w > fb_w_) { w = fb_w_ - x1; }
+    if (y1 + h > fb_h_) { h = fb_h_ - y1; }
     if (w <= 0 || h <= 0) {
         return;
     }
 
-    const size_t row_bytes = static_cast<size_t>(w) * 4;
+    // Hard OOB guard on the SOURCE. We do not own px_map and cannot query its
+    // size, but LVGL's draw buffer is at least (src_stride * disp_h) bytes. Any
+    // read within that bound is safe; anything beyond means our area/stride view
+    // disagrees with the renderer, so skip rather than risk a segfault (which on
+    // the render thread would wedge the UI -> watchdog kill).
+    const size_t src_stride    = f.src_stride;
+    const size_t src_row_bytes = static_cast<size_t>(w) * static_cast<size_t>(src_bpp);
+    const size_t src_bound =
+        src_stride * static_cast<size_t>(f.disp_h > 0 ? f.disp_h : fb_h_);
+    const size_t last_src =
+        static_cast<size_t>(src_row_skip + h - 1) * src_stride +
+        static_cast<size_t>(src_col_skip + w) * static_cast<size_t>(src_bpp);
+    if (src_row_bytes > src_stride || last_src > src_bound) {
+        if (!oob_warned_) {
+            oob_warned_ = true;
+            spdlog::warn("[RemoteScreen] frame out of source bounds "
+                         "(src_row_bytes={} src_stride={} last_src={} bound={}) — skipping mirror",
+                         static_cast<unsigned long>(src_row_bytes), static_cast<unsigned long>(src_stride),
+                         static_cast<unsigned long>(last_src), static_cast<unsigned long>(src_bound));
+        }
+        return;
+    }
+
     for (int32_t row = 0; row < h; ++row) {
-        const int32_t dst_y = y1 + row;
-        const size_t  dst   = static_cast<size_t>(dst_y) * fb_stride_ + static_cast<size_t>(x1) * 4;
-        const size_t  src   = static_cast<size_t>(src_row_skip + row) * f.src_stride +
-                           static_cast<size_t>(src_col_skip) * 4;
-        std::memcpy(map_ + dst, f.px_map + src, row_bytes);
+        const int32_t dst_y   = y1 + row;
+        const size_t  dst_off = static_cast<size_t>(dst_y) * fb_stride_ + static_cast<size_t>(x1) * 4;
+        const size_t  src_off = static_cast<size_t>(src_row_skip + row) * src_stride +
+                                static_cast<size_t>(src_col_skip) * static_cast<size_t>(src_bpp);
+        uint8_t*       dst = map_ + dst_off;
+        const uint8_t* src = f.px_map + src_off;
+
+        if (src_bpp == 4) {
+            // BGRA -> BGRA: straight copy.
+            std::memcpy(dst, src, static_cast<size_t>(w) * 4);
+        } else {
+            // RGB565 (little-endian 0bRRRRRGGGGGGBBBBB) -> BGRA8888.
+            for (int32_t col = 0; col < w; ++col) {
+                const uint16_t p = static_cast<uint16_t>(src[0] | (src[1] << 8));
+                src += 2;
+                const uint8_t r5 = static_cast<uint8_t>((p >> 11) & 0x1F);
+                const uint8_t g6 = static_cast<uint8_t>((p >> 5) & 0x3F);
+                const uint8_t b5 = static_cast<uint8_t>(p & 0x1F);
+                dst[0] = static_cast<uint8_t>((b5 << 3) | (b5 >> 2)); // B
+                dst[1] = static_cast<uint8_t>((g6 << 2) | (g6 >> 4)); // G
+                dst[2] = static_cast<uint8_t>((r5 << 3) | (r5 >> 2)); // R
+                dst[3] = 0xFF;                                        // A
+                dst += 4;
+            }
+        }
+    }
+
+    if (log_count_ <= 3 && log_done_ < 3) {
+        ++log_done_;
+        spdlog::info("[RemoteScreen] on_frame DONE #{} (copied {}x{} at ({},{}) src_bpp={})",
+                     log_done_, w, h, x1, y1, src_bpp);
     }
 }
 
