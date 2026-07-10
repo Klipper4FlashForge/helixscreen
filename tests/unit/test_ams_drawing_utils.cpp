@@ -172,13 +172,13 @@ TEST_CASE("ams_draw::fill_percent_from_slot returns -1 for no-data slot", "[ams_
     REQUIRE(ams_draw::fill_percent_from_slot(slot) == -1);
 }
 
-TEST_CASE("ams_draw::fill_percent_from_slot metadata-only falls back to 75",
+TEST_CASE("ams_draw::fill_percent_from_slot metadata-only falls back to 50",
           "[ams_draw][fill]") {
-    // Present + material set but no usable weights → 75% fallback (#1071).
+    // Present + material set but no usable weights → 50% fallback (#1071).
     SlotInfo slot;
     slot.status = SlotStatus::AVAILABLE;
     slot.material = "PLA";
-    REQUIRE(ams_draw::fill_percent_from_slot(slot) == 75);
+    REQUIRE(ams_draw::fill_percent_from_slot(slot) == 50);
 }
 
 TEST_CASE("ams_draw::fill_percent_from_slot empty lane renders empty",

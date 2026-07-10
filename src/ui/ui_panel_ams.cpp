@@ -1061,7 +1061,7 @@ void AmsPanel::update_slot_colors() {
             // Fill level is no longer pushed here: the ams_slot widget observes
             // its own per-slot fill subject (AmsState::get_slot_fill_subject),
             // written by sync_from_backend with the same SlotInfo::display_fill*
-            // policy (real ratio / 75% metadata fallback / empty ghost lane,
+            // policy (real ratio / 50% metadata fallback / empty ghost lane,
             // #1071 BUG-1). Observing in the widget means every panel that hosts
             // an ams_slot renders fill from state — the AmsOverviewPanel bug where
             // unit-detail spools showed 100% full is fixed structurally.
