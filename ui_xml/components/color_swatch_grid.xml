@@ -6,7 +6,11 @@
 <!-- NOTE: 0x prefix for literal hex colors (# triggers constant lookup) -->
 <component>
   <api>
-    <prop name="swatch_callback" type="string" default="ams_edit_color_swatch_cb"/>
+    <!-- Required: each host names its own click handler. No default on purpose —
+         an implicit AMS-specific default (ams_edit_color_swatch_cb) would
+         silently bind an unrelated screen's swatches to the AMS overlay's
+         handler (get_ams_edit_overlay()), coupling instances across screens. -->
+    <prop name="swatch_callback" type="string"/>
   </api>
   <consts>
     <!-- Fallback values. Overridden at runtime by
