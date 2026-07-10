@@ -28,6 +28,7 @@
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "lvgl_log_handler.h"
 #include "printer_state.h"
+#include "remote_screen_fb0_sink.h"
 #include "runtime_config.h"
 #ifdef HELIX_ENABLE_SCREENSAVER
 #include "ui_nav_manager.h"
@@ -44,6 +45,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <functional>
 #include <string>
 
@@ -508,6 +510,15 @@ bool DisplayManager::init(const Config& config) {
     // Install framebuffer color transform hook AFTER the backend's flush_cb
     // is set, so the splash-suspend path captures our wrapper (#803).
     install_color_transform_hook();
+
+    // Gate the remote-screen fb0 mirror on the platform-hook env export. When set
+    // (Snapmaker U1 fbdev path), attach the fb0 sink so rendered frames also land
+    // in /dev/fb0 for the firmware's fb-http snapshot daemon.
+    if (const char* dev = std::getenv("HELIX_REMOTE_SCREEN_FB0")) {
+        auto sink = std::make_unique<helix::Fb0MailboxSink>(dev);
+        m_remote_screen.add_sink(std::move(sink));
+        m_remote_screen.start();
+    }
     {
         helix::Config* cfg = helix::Config::get_instance();
         float gamma = static_cast<float>(cfg->get<double>("/display/gamma", 1.0));
@@ -540,6 +551,10 @@ void DisplayManager::shutdown() {
     m_shutting_down = true;
     s_instance = nullptr;
     spdlog::debug("[DisplayManager] Shutting down");
+
+    // Stop the remote-screen mirror FIRST so no sink write races a freed
+    // framebuffer during the LVGL/display teardown below.
+    m_remote_screen.stop();
 
     // NOTE: We do NOT call lv_group_delete(m_input_group) here because:
     // 1. Objects in the group may already be freed (panels deleted before display)
@@ -1726,12 +1741,31 @@ void DisplayManager::install_color_transform_hook() {
     }
     lv_display_set_flush_cb(m_display, [](lv_display_t* d, const lv_area_t* area, uint8_t* px_map) {
         DisplayManager* self = DisplayManager::instance();
-        if (self && !self->m_color_transform.is_identity() && area && px_map) {
-            const lv_color_format_t cf = lv_display_get_color_format(d);
-            const int w = lv_area_get_width(area);
-            const int h = lv_area_get_height(area);
-            const int stride = lv_draw_buf_width_to_stride(w, cf);
-            self->m_color_transform.apply(px_map, w, h, stride, cf);
+        if (self && area && px_map) {
+            // Apply the per-channel color transform in place (only when non-identity).
+            if (!self->m_color_transform.is_identity()) {
+                const lv_color_format_t cf = lv_display_get_color_format(d);
+                const int w = lv_area_get_width(area);
+                const int h = lv_area_get_height(area);
+                const int stride = lv_draw_buf_width_to_stride(w, cf);
+                self->m_color_transform.apply(px_map, w, h, stride, cf);
+            }
+            // Mirror the (post-transform) pixels to any remote-screen sink. Runs
+            // on every flush regardless of the color transform (the U1 has none).
+            if (self->m_remote_screen.any_active()) {
+                const lv_color_format_t cf = lv_display_get_color_format(d);
+                helix::RemoteScreenFrame f;
+                f.px_map = px_map;
+                f.x1 = area->x1;
+                f.y1 = area->y1;
+                f.x2 = area->x2;
+                f.y2 = area->y2;
+                f.disp_w = lv_display_get_horizontal_resolution(d);
+                f.disp_h = lv_display_get_vertical_resolution(d);
+                f.color_format = (int)cf;
+                f.src_stride = lv_draw_buf_width_to_stride(lv_area_get_width(area), cf);
+                self->m_remote_screen.on_frame(f);
+            }
         }
         // Forward to the original backend flush
         if (self && self->m_original_flush_cb_for_color) {

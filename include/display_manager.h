@@ -6,6 +6,7 @@
 #include "backlight_backend.h"
 #include "color_transform.h"
 #include "display_backend.h"
+#include "remote_screen_manager.h"
 #include "touch_calibration.h"
 #include "touch_calibration_session.h"
 
@@ -513,6 +514,10 @@ class DisplayManager : public helix::ICalibrationSink {
     helix::ColorTransform m_color_transform;
     lv_display_flush_cb_t m_original_flush_cb_for_color = nullptr;
     void install_color_transform_hook();
+
+    // Remote-screen frame mirror (fb0 sink on the Snapmaker U1). Fed from the
+    // flush hook per dirty area; a cheap early-out when no sinks are attached.
+    helix::RemoteScreenManager m_remote_screen;
 
     // Display sleep state
     bool m_display_sleeping = false;
