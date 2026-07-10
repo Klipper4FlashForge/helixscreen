@@ -946,7 +946,9 @@ else
 	@echo "STRIP_BINARY not set — skipping symbol extraction"
 endif
 
-strip: symbols
+# strip must wait for the aux binaries it strips: under -j, splash/watchdog can
+# still be linking when strip runs. Depend on them (only when actually built).
+strip: symbols $(if $(filter yes,$(STRIP_BINARY)),$(SPLASH_BIN) $(WATCHDOG_BIN))
 ifeq ($(STRIP_BINARY),yes)
 	$(STRIP_CMD) $(TARGET)
 	$(STRIP_CMD) $(SPLASH_BIN)
