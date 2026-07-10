@@ -739,6 +739,199 @@ TEST_CASE("MoonrakerAPIMock - Spoolman-gated methods fail when disabled", "[fila
         CHECK(error_called);
         CHECK_FALSE(success_called);
     }
+
+    SECTION("set_active_spool errors, no active change") {
+        const int before = api.spoolman_mock().get_mock_active_spool_id();
+        bool error_called = false;
+        bool success_called = false;
+        api.spoolman().set_active_spool(
+            9, [&]() { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+        CHECK(api.spoolman_mock().get_mock_active_spool_id() == before);
+    }
+
+    SECTION("update_spoolman_spool_weight errors, no write applied") {
+        bool error_called = false;
+        bool success_called = false;
+        api.spoolman().update_spoolman_spool_weight(
+            1, 500.0, [&]() { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+    }
+
+    SECTION("update_spoolman_filament_color errors, no write applied") {
+        bool error_called = false;
+        bool success_called = false;
+        api.spoolman().update_spoolman_filament_color(
+            300, "00FF00", [&]() { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+    }
+
+    SECTION("get_spoolman_vendors errors, no list delivered") {
+        bool error_called = false;
+        bool success_called = false;
+        api.spoolman().get_spoolman_vendors(
+            [&](const std::vector<VendorInfo>&) { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+    }
+
+    SECTION("get_spoolman_filaments errors, no list delivered") {
+        bool error_called = false;
+        bool success_called = false;
+        api.spoolman().get_spoolman_filaments(
+            [&](const std::vector<FilamentInfo>&) { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+    }
+
+    SECTION("get_spoolman_filaments(vendor_id) errors, no list delivered") {
+        bool error_called = false;
+        bool success_called = false;
+        api.spoolman().get_spoolman_filaments(
+            2, [&](const std::vector<FilamentInfo>&) { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+    }
+
+    SECTION("create_spoolman_vendor errors, no vendor created") {
+        bool error_called = false;
+        bool success_called = false;
+        nlohmann::json vendor;
+        vendor["name"] = "Acme";
+        api.spoolman().create_spoolman_vendor(
+            vendor, [&](const VendorInfo&) { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+        CHECK(api.spoolman_mock().created_vendors.empty());
+    }
+
+    SECTION("create_spoolman_filament errors, no filament created") {
+        bool error_called = false;
+        bool success_called = false;
+        nlohmann::json filament;
+        filament["material"] = "PLA";
+        api.spoolman().create_spoolman_filament(
+            filament, [&](const FilamentInfo&) { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+        CHECK(api.spoolman_mock().created_filaments.empty());
+    }
+
+    SECTION("create_spoolman_spool errors, no spool created") {
+        bool error_called = false;
+        bool success_called = false;
+        nlohmann::json spool;
+        spool["filament_id"] = 1;
+        api.spoolman().create_spoolman_spool(
+            spool, [&](const SpoolInfo&) { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+        CHECK(api.spoolman_mock().created_spools.empty());
+    }
+
+    SECTION("delete_spoolman_spool errors, no delete applied") {
+        bool error_called = false;
+        bool success_called = false;
+        api.spoolman().delete_spoolman_spool(
+            1, [&]() { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+    }
+
+    SECTION("delete_spoolman_vendor errors, no delete applied") {
+        bool error_called = false;
+        bool success_called = false;
+        api.spoolman().delete_spoolman_vendor(
+            1, [&]() { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+    }
+
+    SECTION("delete_spoolman_filament errors, no delete applied") {
+        bool error_called = false;
+        bool success_called = false;
+        api.spoolman().delete_spoolman_filament(
+            1, [&]() { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+    }
+
+    SECTION("get_spoolman_external_vendors errors, no list delivered") {
+        bool error_called = false;
+        bool success_called = false;
+        api.spoolman().get_spoolman_external_vendors(
+            [&](const std::vector<VendorInfo>&) { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+    }
+
+    SECTION("get_spoolman_external_filaments errors, no list delivered") {
+        bool error_called = false;
+        bool success_called = false;
+        api.spoolman().get_spoolman_external_filaments(
+            "Hatchbox", [&](const std::vector<FilamentInfo>&) { success_called = true; },
+            [&](const MoonrakerError& err) {
+                error_called = true;
+                CHECK(err.type == MoonrakerErrorType::JSON_RPC_ERROR);
+            });
+        CHECK(error_called);
+        CHECK_FALSE(success_called);
+    }
 }
 
 TEST_CASE("SpoolInfo - new fields have defaults", "[filament]") {
