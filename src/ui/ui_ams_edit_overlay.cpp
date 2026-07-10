@@ -136,11 +136,24 @@ bool AmsEditOverlay::show_for_slot(lv_obj_t* parent, int slot_index, const SlotI
         return false;
     }
 
-    // Safety net: a dismissal that bypasses our handlers (backdrop tap,
-    // external go_back) must still complete as "not saved". fire_completion is
-    // idempotent, so the Save/back paths that already fired are unaffected.
+    // Safety net + memory reclaim on close. A dismissal that bypasses our
+    // handlers (backdrop tap, external go_back) must still complete as "not
+    // saved" — fire_completion is idempotent, so Save/back paths that already
+    // fired are unaffected. We ALSO tear the widget tree down here: this overlay
+    // is large (~180 widgets — catalog selector + 60 preset swatches + product
+    // list + logistics fields + color view) and is opened only to edit a spool,
+    // so keeping it resident for the whole app lifetime wastes memory on 111MB
+    // devices (CC1, AD5M). Subjects and overlay state survive; the next open
+    // rebuilds via the stale-cache path above + lazy_create_and_push_overlay.
+    // It has to be ONE combined callback: NavigationManager keeps a single close
+    // callback per widget, so a separate destroy_on_close registration would
+    // just overwrite this one (or be overwritten by it).
     NavigationManager::instance().register_overlay_close_callback(
-        cached_overlay_widget_, []() { get_ams_edit_overlay().fire_completion(false); });
+        cached_overlay_widget_, []() {
+            auto& overlay = get_ams_edit_overlay();
+            overlay.fire_completion(false);
+            overlay.destroy_overlay_ui(overlay.cached_overlay_widget_);
+        });
 
     // Reset per-session view state HERE (covered-safe — on_deactivate must not
     // touch it, since it also fires when the QR scanner merely covers us).

@@ -6,6 +6,7 @@
 // AmsEditOverlayViewTestAccess friend shim.
 
 #include "app_globals.h"
+#include "display_settings_manager.h"
 #include "ui_ams_edit_overlay.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
@@ -1679,4 +1680,88 @@ TEST_CASE("build_spool_patches splits spool-level vs filament-level fields",
                                                       empty_filament);
     CHECK(empty_spool.empty());
     CHECK(empty_filament.empty());
+}
+
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "ams edit overlay reclaims its widget tree on close and rebuilds on reopen",
+                 "[ams_edit_overlay][lifecycle]") {
+    // destroy-on-close: the overlay is large (~180 widgets) and opened only to
+    // edit a spool, so its tree is torn down on close and transparently rebuilt
+    // on the next open (memory reclaim for 111MB devices). Exercises a double
+    // open/close cycle and the picker-entry path. Animations off so the close
+    // callback runs synchronously and teardown is deterministic.
+    DisplaySettingsManager::instance().set_animations_enabled(false);
+
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+    SpoolInfo linked;
+    linked.id = 7;
+    linked.filament_id = 3;
+    linked.vendor = "Bambu Lab";
+    linked.material = "ASA";
+    linked.color_hex = "8A949E";
+    api.spoolman_mock().get_mock_spools().push_back(linked);
+
+    auto* subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(subj != nullptr);
+    lv_subject_set_int(subj, 1);
+    get_printer_state().set_spoolman_available(true);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    auto& overlay = get_ams_edit_overlay();
+
+    // --- Cycle 1: open ---
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    lv_obj_t* root1 = overlay.get_root();
+    REQUIRE(root1 != nullptr);
+    REQUIRE(lv_obj_is_valid(root1));
+
+    // --- Cycle 1: close → the widget tree is reclaimed (deferred delete) ---
+    NavigationManager::instance().go_back();
+    UpdateQueue::instance().drain();
+    process_lvgl(60);
+    CHECK_FALSE(lv_obj_is_valid(root1));
+
+    // --- Cycle 2: reopen → a FRESH tree (different root), fully functional ---
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    lv_obj_t* root2 = overlay.get_root();
+    REQUIRE(root2 != nullptr);
+    REQUIRE(lv_obj_is_valid(root2));
+    CHECK(root2 != root1);
+    AmsEditOverlayViewTestAccess access(overlay);
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    CHECK(access.widget("details_catalog_selector") != nullptr);
+
+    // --- Cycle 2: close ---
+    NavigationManager::instance().go_back();
+    UpdateQueue::instance().drain();
+    process_lvgl(60);
+    CHECK_FALSE(lv_obj_is_valid(root2));
+
+    // --- Picker-entry path (opened_on_picker_) opens + reclaims cleanly ---
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api, nullptr,
+                                  /*open_on_picker=*/true));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    lv_obj_t* root3 = overlay.get_root();
+    REQUIRE(root3 != nullptr);
+    REQUIRE(lv_obj_is_valid(root3));
+    NavigationManager::instance().go_back();
+    UpdateQueue::instance().drain();
+    process_lvgl(60);
+    CHECK_FALSE(lv_obj_is_valid(root3));
+
+    DisplaySettingsManager::instance().set_animations_enabled(true);
+    get_printer_state().set_spoolman_available(false);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
 }
