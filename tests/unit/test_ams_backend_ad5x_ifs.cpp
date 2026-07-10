@@ -6724,6 +6724,75 @@ TEST_CASE("AD5X IFS unload_filament with empty toolhead routes to cold lane ejec
     REQUIRE_FALSE(backend.has_gcode_containing("M109"));
 }
 
+TEST_CASE("AD5X IFS load-vs-swap: INSERT_PRUTOK_IFS self-swaps, so no helix unload-before-load",
+          "[ams][ad5x_ifs][load]") {
+    // ZMOD's _INSERT_PRUTOK_IFS runs IFS_REMOVE_CURRENT_PRUTOK itself (no-op on
+    // an empty head sensor, self-heats to the seated lane's temp otherwise), so
+    // the sidebar must dispatch load_filament directly. The unload-first swap
+    // path degraded to eject_lane(-1) when the head sensor read empty and the
+    // requested load was silently dropped — the sidebar froze at "Heat nozzle
+    // 195/200" (Vger1700, bundle Z5V4K3NL).
+    TestableAd5xIfsBackend backend;
+
+    AmsSystemInfo info;
+    info.filament_loaded = true;
+    info.current_slot = 0;
+    REQUIRE_FALSE(backend.needs_unload_before_load(info));
+
+    info.filament_loaded = false;
+    info.current_slot = -1;
+    REQUIRE_FALSE(backend.needs_unload_before_load(info));
+}
+
+TEST_CASE("AD5X IFS load: INSERT_PRUTOK_IFS self-heats, so backend reports auto-heat",
+          "[ams][ad5x_ifs][load]") {
+    // The firmware macro resolves the target lane's configured material temp and
+    // does its own M104 + TEMPERATURE_WAIT. Reporting auto-heat skips the UI
+    // preheat poll (whose completion the sidebar could strand) — the backend
+    // phase tracker still synthesizes the Heat-nozzle step for the step bar.
+    TestableAd5xIfsBackend backend;
+    REQUIRE(backend.supports_auto_heat_on_load());
+}
+
+TEST_CASE("AD5X IFS unload_filament(-1) with empty toolhead resolves the active lane for the "
+          "cold eject",
+          "[ams][ad5x_ifs][unload]") {
+    // "Unload whatever is active" with nothing at the head must eject a concrete
+    // lane, not forward -1 into eject_lane (which fails validate_slot_index and
+    // used to be silently discarded by the sidebar swap path).
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    Ad5xIfsTestAccess::set_current_slot(backend, 1, /*filament_loaded=*/false);
+    Ad5xIfsTestAccess::set_head_filament(backend, false);
+
+    REQUIRE(backend.unload_filament(-1).success());
+
+    // 0-based slot 1 -> 1-based port 2, cold clamp/retract/unclamp.
+    REQUIRE(backend.has_gcode("IFS_F24 PRUTOK=2"));
+    REQUIRE(backend.has_gcode("IFS_F11 PRUTOK=2 LEN=1000 SPEED=1200"));
+    REQUIRE(backend.has_gcode("IFS_F39 PRUTOK=2"));
+    REQUIRE_FALSE(backend.has_gcode_containing("REMOVE_CURRENT_PRUTOK"));
+}
+
+TEST_CASE("AD5X IFS unload_filament(-1) with empty toolhead and no known lane fails loudly",
+          "[ams][ad5x_ifs][unload]") {
+    // Nothing at the head, no seated channel, no active slot: there is nothing
+    // to unload. Return a real error (the sidebar toasts it) instead of
+    // eject_lane(-1)'s invalid-slot, which callers used to swallow.
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    Ad5xIfsTestAccess::set_current_slot(backend, -1, /*filament_loaded=*/false);
+    Ad5xIfsTestAccess::set_head_filament(backend, false);
+
+    AmsError err = backend.unload_filament(-1);
+    REQUIRE_FALSE(err.success());
+    REQUIRE(err.result == AmsResult::WRONG_STATE);
+    REQUIRE_FALSE(err.user_msg.empty());
+    REQUIRE(backend.captured_gcodes.empty());
+}
+
 TEST_CASE("AD5X IFS unload_filament clears toolhead when firmware dropped the active slot (#995)",
           "[ams][ad5x_ifs]") {
     // current_slot == -1 (stock-ZMOD "Extruder: None") but filament is seated at
