@@ -93,3 +93,98 @@ echo "tmpfs       10240     0  10240       0% /tmp"
     detect_tmp_dir
     [[ "$TMP_DIR" == *"helixscreen-install" ]]
 }
+
+# ===========================================================================
+# Runtime handoff contract: app passes its already-validated staging dir via
+# TMP_DIR. When set, detect_tmp_dir must NOT probe at all (df must not run).
+# ===========================================================================
+
+@test "detect_tmp_dir: honors preset TMP_DIR without probing (no df call)" {
+    # Marker file that df writes to if it is ever invoked. Its absence proves
+    # detect_tmp_dir returned early on the user/app override.
+    local marker="$BATS_TEST_TMPDIR/df_was_called"
+    mock_command_script "df" "
+touch \"$marker\"
+echo 'Filesystem  1K-blocks  Used Available Use% Mounted on'
+echo '/dev/sda1   1048576  0  512000  0% /'
+"
+
+    export TMP_DIR="/home/pi/helixscreen/.helix-update-staging"
+    detect_tmp_dir
+
+    # Value preserved exactly — the app's validated dir wins unchanged.
+    [ "$TMP_DIR" = "/home/pi/helixscreen/.helix-update-staging" ]
+    # And detect_tmp_dir short-circuited before any candidate probing.
+    [ ! -f "$marker" ]
+}
+
+# ===========================================================================
+# Fresh curl|sh install on a read-only-/tmp box: an install-dir SIBLING
+# candidate is probed FIRST and selected ahead of /tmp — but NEVER a dir
+# inside INSTALL_DIR (the installer rm -rf's / mv's INSTALL_DIR on --update).
+# ===========================================================================
+
+@test "detect_tmp_dir: selects a SIBLING of INSTALL_DIR, never a dir inside it" {
+    # Real writable parent with an install subdir under it. The parent stands
+    # in for the on-device layout where INSTALL_DIR's parent is the big user
+    # partition (e.g. /data/helixscreen → /data). df/writability checks use the
+    # host filesystem, which reports >100MB free.
+    local parent fake_install
+    parent="$(mktemp -d "$BATS_TEST_TMPDIR/parent.XXXXXX")"
+    fake_install="$parent/helixscreen"
+    mkdir -p "$fake_install"
+    export INSTALL_DIR="$fake_install"
+
+    export TMP_DIR=""
+    detect_tmp_dir
+
+    # The sibling candidate (INSTALL_DIR's parent) must win — prepended ahead
+    # of /var/tmp, /tmp, etc., mirroring the app's C++ probe.
+    [ "$TMP_DIR" = "$parent/.helixscreen-install" ]
+
+    # SAFETY INVARIANT: the selected dir must be OUTSIDE INSTALL_DIR — never
+    # equal to it and never a subdir of it.
+    [ "$TMP_DIR" != "$fake_install" ]
+    case "$TMP_DIR" in
+        "$fake_install"/*) fail "TMP_DIR $TMP_DIR is INSIDE INSTALL_DIR $fake_install" ;;
+    esac
+    # And never the /tmp last-resort fallback.
+    [[ "$TMP_DIR" != "/tmp/helixscreen-install" ]]
+}
+
+# ===========================================================================
+# End-to-end against a GENUINELY read-only /tmp (bundle W9Q93WXM repro + fix).
+# Runs inside a user+mount namespace so it can mount a real read-only tmpfs
+# over /tmp/var/tmp without root and without touching the host. Proves both
+# that the failure condition is real (mkdir dies on the read-only fs) and that
+# the fix routes a real extraction to the writable sibling staging dir.
+# ===========================================================================
+
+@test "read-only /tmp: repro + fix via sibling staging dir (unshare E2E)" {
+    command -v unshare >/dev/null 2>&1 || skip "unshare not available"
+    unshare --user --map-root-user --mount true 2>/dev/null \
+        || skip "user+mount namespaces not permitted"
+    [ -d /dev/shm ] && [ -w /dev/shm ] || skip "/dev/shm not writable (needed outside the ro /tmp)"
+
+    local scenario="$WORKTREE_ROOT/tests/shell/fixtures/ro_tmp_update_scenario.sh"
+    local platform="$WORKTREE_ROOT/scripts/lib/installer/platform.sh"
+
+    # Work dir on /dev/shm so it survives the read-only remount of /tmp.
+    local shmwork
+    shmwork="$(mktemp -d /dev/shm/helix_ro.XXXXXX)"
+
+    # Minimal fake update payload the extraction must land.
+    mkdir -p "$shmwork/payload/helixscreen"
+    echo "new-binary" > "$shmwork/payload/helixscreen/helix-screen"
+    tar -czf "$shmwork/update.tar.gz" -C "$shmwork/payload" helixscreen
+
+    run unshare --user --map-root-user --mount bash "$scenario" "$shmwork" "$platform"
+    rm -rf "$shmwork"
+
+    # The namespace couldn't mount tmpfs (locked-down CI): don't fail the suite.
+    [[ "$output" == *"MOUNT_TMP_FAIL"* ]] && skip "tmpfs mount not permitted in this environment"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"REPRO_OK"* ]]   # reproduced the bundle mkdir-on-read-only-/tmp failure
+    [[ "$output" == *"FIX_OK"* ]]     # sibling staging dir + real extraction succeeded
+}

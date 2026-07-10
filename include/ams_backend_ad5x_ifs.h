@@ -385,6 +385,19 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // lessWaste/bambufy plugin's private save_variables track zmod truth.
     bool check_external_color_change(int slot_index, std::optional<uint32_t> observed_color,
                                      bool slot_has_filament);
+    // Material counterpart to check_external_color_change. A firmware TYPE
+    // change that leaves the color unchanged (user picks a new material on the
+    // zmod COLOR menu / LCD, or an external CHANGE_ZCOLOR ... TYPE=) never
+    // trips the color detector, so a non-locked override's baked material used
+    // to go stale and mask firmware truth forever — color updated, type stuck
+    // (raza616, prestonbrown/helixscreen#981/#1065). Same contract as the
+    // color detector: called BEFORE apply_overrides, first observation is a
+    // baseline, empty material is the "no reading" signal (ignored), and on a
+    // real delta it fires sync_override_to_firmware_locked() which refreshes
+    // the override's material via the OverwriteAlways mirror — user-locked
+    // materials (#965) are still skipped there. Returns true if a sync fired.
+    bool check_external_type_change(int slot_index, const std::string& observed_material,
+                                    std::optional<uint32_t> observed_color, bool slot_has_filament);
     // Sync helper used by check_external_color_change. Caller must hold mutex_.
     // Updates an existing override's color_rgb + material, or creates a
     // minimal one if none exists. Fires save_async to push the result to the
@@ -530,9 +543,29 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // mutex_; the store call dispatches asynchronously and does not block.
     void persist_seated_slot_locked(int slot0);
 
+    // Belt-and-suspenders for #1065 row 28: the firmware does NOT blank
+    // FFMInfo.channel / IFS_STATUS Chan when a lane is ejected (same stickiness as
+    // ffmColor/ffmType), so a stale seated pointer at the just-ejected lane would
+    // keep offering Unload until the next head-gated poll. If the seated channel
+    // or FFMInfo.channel points at the ejected lane, zero both and recompute so
+    // the affordance dies immediately. Returns true if it changed state. The lane
+    // can't be the genuinely-seated one — eject_lane() refuses that when the head
+    // is loaded. Caller holds mutex_.
+    bool clear_seated_if_ejected_locked(int slot_index);
+
+    // Debug trace of the seated-authority state (#1065 field confirmation): dumps
+    // ffm_channel_ / seated_chan_ / current_slot / head_filament_ / switch
+    // authority / port presence so a debug bundle can confirm whether
+    // FFMInfo.channel stays stale through an eject->poll and whether the head-gate
+    // fired. Debug level, off the hot path. Caller holds mutex_.
+    void log_seated_state_locked(const char* where) const;
+
   private:
     bool validate_slot_index(int slot_index) const;
     void check_action_timeout();
+    // Reset the indeterminate ("Working…") no-progress clock. Called on every
+    // genuine load/unload progress signal. Caller must hold mutex_.
+    void note_phase_progress_locked();
 
     // Cached state from save_variables
     // Variable prefix: "less_waste" (lessWaste/zmod) or "bambufy" — auto-detected from
@@ -577,6 +610,17 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // unconditionally — independent of has_ifs_vars_ / tool_map_ — because the
     // tool_map_-derived current_slot can disagree with it on the plugin path.
     int seated_chan_ = 0;
+    // Firmware's own record of the seated toolhead lane, parsed from
+    // Adventurer5M.json "FFMInfo.channel" (1-based; 0 = none/absent). This is the
+    // field the firmware's _IFS_REMOVE_CURRENT_PRUTOK unload macro resolves the
+    // seated channel from, and it stays put while idle — unlike IFS_STATUS "Chan",
+    // which tracks the last lane the switching mechanism touched, including a
+    // zmod COLOR-menu slot SELECTION that moves no filament (#1065 Bug 3, bundle
+    // ZT8Y9WPM: editing lane 3 made Chan=3 while FFMInfo.channel stayed 2). When
+    // >0 it is the seated authority, overriding a divergent Chan in
+    // apply_zcolor_result. 0 (nothing seated, or forgotten across a reboot) falls
+    // back to the persisted-lane floor / Chan.
+    int ffm_channel_ = 0;
     // Last lane (0-based slot index) we saw loaded to the toolhead, persisted to
     // the Moonraker "lane_data" DB (sibling "seated" key) so it survives a power
     // cycle. The firmware forgets the seated channel across a reboot — IFS_STATUS
@@ -605,6 +649,22 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     std::atomic<bool> ifs_status_ports_seen_{false};
     bool external_mode_ = false;          // Bypass/external spool mode
     bool head_filament_ = false;          // Head sensor state
+    // Toolhead SWITCH-sensor authority, tracked separately from the conflated
+    // head_filament_. parse_head_sensor() writes head_filament_ from BOTH the
+    // switch AND the ifs_motion_sensor, and the motion sensor is device-confirmed
+    // to read filament_detected=false while a lane is loaded-but-idle (header NOTE
+    // above). So head_filament_==false is NOT trustworthy on its own. The
+    // FFMInfo.channel / IFS_STATUS Chan head-gate (#1065 row 28) must only reject a
+    // sticky seated channel when an AUTHORITATIVE empty-head reading exists — i.e.
+    // the switch sensor itself says empty — never on a motion-only false-negative.
+    // head_switch_seen_ latches true once the filament_switch_sensor /
+    // zmod_ifs_switch_sensor head_switch_sensor namespace reports; head_switch_present_
+    // holds the switch's last reading. The gate authority is
+    // (head_switch_seen_ && !head_switch_present_). When no switch is published
+    // (motion-only firmware), head_switch_seen_ stays false and the gate never
+    // fires — the seated lane is preserved (fall back to prior behaviour).
+    bool head_switch_seen_ = false;
+    bool head_switch_present_ = false;
     std::array<bool, NUM_PORTS> dirty_{}; // Per-slot dirty flag to prevent stale overwrites
 
     helix::printer::SlotRegistry slots_;
@@ -715,6 +775,21 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     static constexpr int PURGING_TIMEOUT_SECONDS = 240;
     std::chrono::steady_clock::time_point action_start_time_;
 
+    // Indeterminate ("Working…") detector (#1065 row 14). Distinct from the
+    // coarse ERROR budgets above: those flip a stalled op to ERROR after minutes,
+    // this flips a SHORT ~8s no-progress window into a busy indicator so the
+    // frozen live-temp number ("Heat 225/230") doesn't read as a hang while the
+    // shared main-thread status feed is starved on the constrained box.
+    // last_phase_progress_time_ is reset on every genuine progress signal
+    // (temp-VALUE change, head transition, motion, phase change, op start);
+    // when it goes stale past the threshold check_action_timeout raises
+    // system_info_.operation_indeterminate. last_progress_temp_deci_ gates the
+    // temp reset on a value change (not every frame) so a frozen subject — which
+    // stops changing value — lets the clock elapse. Both under mutex_.
+    static constexpr int INDETERMINATE_THRESHOLD_SECONDS = 8;
+    std::chrono::steady_clock::time_point last_phase_progress_time_;
+    int last_progress_temp_deci_ = 0; // deci-degrees of the last progress-noting temp frame
+
     // Rate-limit gate for the JSON-content poll. handle_status_update kicks
     // poll_adventurer_json() if at least kJsonPollInterval has elapsed since
     // the last kick — replaces the old 15s unconditional GET_ZCOLOR backstop.
@@ -764,6 +839,11 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // -> check_external_color_change and from set_slot_info's pre-update, all
     // of which run under the lock).
     std::unordered_map<int, uint32_t> last_firmware_color_;
+    // Per-slot previous firmware MATERIAL, mirroring last_firmware_color_.
+    // Drives check_external_type_change so a type-only firmware edit refreshes
+    // a non-locked override. Same lock discipline and baseline semantics as
+    // last_firmware_color_; empty string = first observation / no reading.
+    std::unordered_map<int, std::string> last_firmware_material_;
 
     // Bumped by sync_override_to_firmware_locked on every accepted external
     // edit (color or material delta detected for a present slot, lane_data

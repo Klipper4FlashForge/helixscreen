@@ -257,7 +257,7 @@ Each CFS unit (T1=unit 1, T2=unit 2, etc.) has:
 | `version` | string | `"1.1.3"` | Firmware version |
 | `sn` | string | `"10000882925..."` | Serial number |
 | `mode` | string | `"0"` | Operating mode |
-| `vender` | array[4] | hex strings | Raw RFID vendor data per slot |
+| `vender` | array[4] | hex strings / `"none"` / `"unknown"` | Raw RFID vendor data per slot: `"none"` if no filament is presented, `"unknown"` if the filament has no RFID tag |
 | `remain_len` | array[4] | `["35","57","52","52"]` | Remaining filament length (meters) per slot |
 | `color_value` | array[4] | `["0000000","0FFFFFF","00A2989","0C12E1F"]` | Filament color hex per slot |
 | `material_type` | array[4] | `["101001","101001","101001","101001"]` | Material type code per slot |
@@ -437,7 +437,24 @@ Because the heater target reads 0 while maintaining, HelixScreen synthesizes a c
 |-------|----------|-------|
 | `BOX_LOAD_MATERIAL TNN=T1A` | Heat → Cut → Retract → Extrude → Flush → Park | **BUG: Missing CR_BOX_PRE_OPT → key60 crash** |
 | `BOX_QUIT_MATERIAL` | Heat → Cut → Retract → Park | Same issue |
-| `BOX_INFO_REFRESH` | Pre-load → Get RFID → Get Remain Len | Safe to use |
+| `BOX_INFO_REFRESH` | Pre-load → Get RFID → Get Remain Len | Safe to use, [usage](#refresh-spool-info) |
+
+#### Refresh Spool Info
+
+```gcode
+; ADDR is the CFS addr (minimum 1, maximum 4)
+; NUM is the operation bitflag (see below)
+BOX_INFO_REFRESH ADDR={} NUM={}
+```
+
+`NUM` is a per-slot bitflag; combine flags to refresh multiple slots at once (e.g. `NUM=15` refreshes all four).
+
+| Spool | Flag |
+|-------|------|
+| A | `0b0001` |
+| B | `0b0010` |
+| C | `0b0100` |
+| D | `0b1000` |
 
 ### Error Codes
 

@@ -147,6 +147,12 @@ class DisplaySettingsManager {
     /** @brief Set system keyboard preference (updates subject + persists) */
     void set_use_system_keyboard(bool enabled);
 
+    /** @brief Page-scroll buttons enabled (auto-injected gutter chevrons) */
+    bool get_page_scroll_buttons() const;
+
+    /** @brief Set page-scroll buttons preference (updates subject + persists) */
+    void set_page_scroll_buttons(bool enabled);
+
     /** @brief Keep Android navigation bar onscreen (issue #908, Android only) */
     bool get_keep_navbar_visible() const;
 
@@ -324,6 +330,11 @@ class DisplaySettingsManager {
         return &use_system_keyboard_subject_;
     }
 
+    /** @brief Page-scroll buttons subject (integer: 0=off, 1=on) */
+    lv_subject_t* subject_page_scroll_buttons() {
+        return &page_scroll_buttons_subject_;
+    }
+
     /** @brief Keep navbar visible subject (integer: 0=immersive, 1=always show) */
     lv_subject_t* subject_keep_navbar_visible() {
         return &keep_navbar_visible_subject_;
@@ -378,6 +389,7 @@ class DisplaySettingsManager {
     lv_subject_t sleep_while_printing_subject_;
     lv_subject_t animations_enabled_subject_;
     lv_subject_t use_system_keyboard_subject_;
+    lv_subject_t page_scroll_buttons_subject_;
     lv_subject_t keep_navbar_visible_subject_;
     lv_subject_t is_android_subject_;
     lv_subject_t bed_mesh_render_mode_subject_;

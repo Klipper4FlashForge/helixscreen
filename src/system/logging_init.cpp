@@ -7,6 +7,7 @@
 #endif
 #include "lvgl_assert_handler.h"
 #include "lvgl_log_handler.h"
+#include "system/helix_paths.h"
 #ifndef HELIX_WATCHDOG
 #include "system/crash_error_log_sink.h"
 #include "system/crash_handler.h"
@@ -113,30 +114,14 @@ bool ring_captures_debug() {
     return true;
 }
 
-/// Check if a path is writable (for file logging location selection)
+/// Check if a path is writable (for file logging location selection).
+/// Probes the parent directory of `path` (the target file may not exist yet)
+/// with a real access(W_OK) check rather than inspecting the owner-write
+/// permission bit, which reports nothing about the current process's access.
 bool is_path_writable(const std::string& path) {
-    // Check parent directory for new files, or file itself if exists
     std::filesystem::path p(path);
     std::filesystem::path dir = p.parent_path();
-
-    if (dir.empty()) {
-        dir = ".";
-    }
-
-    // Check if directory exists and is writable
-    std::error_code ec;
-    if (!std::filesystem::exists(dir, ec)) {
-        return false;
-    }
-
-    // Try to determine write permission
-    auto perms = std::filesystem::status(dir, ec).permissions();
-    if (ec) {
-        return false;
-    }
-
-    // Check owner write permission (simplified check)
-    return (perms & std::filesystem::perms::owner_write) != std::filesystem::perms::none;
+    return helix::paths::is_writable_dir(dir.empty() ? "." : dir.string());
 }
 
 #ifndef HELIX_WATCHDOG
@@ -150,19 +135,13 @@ spdlog::sink_ptr crash_error_log_sink() {
 }
 #endif
 
-/// Get XDG_DATA_HOME or default ~/.local/share
+/// Get XDG_DATA_HOME or default ~/.local/share, with a /tmp last-resort fallback
 std::string get_xdg_data_home() {
-    const char* xdg = std::getenv("XDG_DATA_HOME");
-    if (xdg && xdg[0] != '\0') {
-        return xdg;
+    const std::string base = helix::paths::xdg_data_home();
+    if (!base.empty()) {
+        return base;
     }
-
-    const char* home = std::getenv("HOME");
-    if (home && home[0] != '\0') {
-        return std::string(home) + "/.local/share";
-    }
-
-    return "/tmp"; // Last resort fallback
+    return "/tmp"; // Last resort fallback (module returns "" when HOME is unusable)
 }
 
 /// Resolve log file path with fallback logic

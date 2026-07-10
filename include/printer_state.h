@@ -613,6 +613,16 @@ class PrinterState {
     }
 
     /**
+     * @brief Set slice layer heights from file metadata (for Z-height derivation)
+     *
+     * Enables the Z-height current-layer fallback for printers whose slicer never
+     * reports a layer number. Thread-safe (marshals internally).
+     */
+    void set_print_layer_heights(double layer_height, double first_layer_height) {
+        print_domain_.set_print_layer_heights(layer_height, first_layer_height);
+    }
+
+    /**
      * @brief Set current layer number (gcode response fallback)
      *
      * Thread-safe. Called from gcode response parser when
@@ -628,6 +638,17 @@ class PrinterState {
      */
     bool has_real_layer_data() const {
         return print_domain_.has_real_layer_data();
+    }
+
+    /**
+     * @brief Is the displayed current layer trustworthy (not a progress guess)?
+     *
+     * True for real slicer/Moonraker layer fields AND for Z-height-derived
+     * layers; false only for the progress-fraction estimate. The print-status
+     * label uses this to decide whether to show the "~" estimate prefix.
+     */
+    bool layer_is_accurate() const {
+        return print_domain_.layer_is_accurate();
     }
 
     /**
@@ -1626,6 +1647,38 @@ class PrinterState {
     lv_subject_t* get_motors_enabled_subject() {
         return calibration_state_.get_motors_enabled_subject();
     }
+
+    /**
+     * @brief Get idle_timeout "Printing" busy subject
+     *
+     * Returns 1 when Klipper's idle_timeout.state == "Printing" (its canonical
+     * busy flag — true for the whole duration of any blocking op or file print),
+     * 0 otherwise. Feeds is_blocking_operation_active().
+     */
+    lv_subject_t* get_idle_timeout_printing_subject() {
+        return calibration_state_.get_idle_timeout_printing_subject();
+    }
+
+    /**
+     * @brief Whether a blocking non-print operation is currently in progress
+     *
+     * True while the printer is executing a blocking operation that holds
+     * Klipper's single-threaded g-code lock but is NOT a normal file print:
+     * homing (G28), BED_MESH_CALIBRATE, QUAD_GANTRY_LEVEL, PROBE_ACCURACY,
+     * an interactive manual probe, or a long macro. Discretionary g-code sent
+     * during such an op just queues until it finishes, then times out — so a
+     * send-boundary guard uses this to refuse it early with a toast.
+     *
+     * Signal =
+     *   (idle_timeout.state == "Printing" AND print_job_state NOT IN {PRINTING, PAUSED})
+     *   OR manual_probe.is_active
+     *
+     * Real file prints (PRINTING/PAUSED) are excluded — mid-print fan/temp tweaks
+     * are legitimate and Klipper handles them between moves.
+     *
+     * @return true if a blocking non-print operation is active
+     */
+    bool is_blocking_operation_active();
 
     /**
      * @brief Check if printer has a probe configured

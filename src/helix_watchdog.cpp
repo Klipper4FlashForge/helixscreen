@@ -134,8 +134,23 @@ static void signal_handler(int sig) {
 }
 
 static void setup_signal_handlers() {
-    signal(SIGTERM, signal_handler);
-    signal(SIGINT, signal_handler);
+    // Install SIGTERM/SIGINT WITHOUT SA_RESTART so they interrupt the blocking
+    // waitpid() in run_child_process() with EINTR. glibc's signal() uses BSD
+    // semantics (SA_RESTART set), which silently auto-restarts waitpid() — the
+    // handler sets g_quit but it is never re-checked while the watchdog idles
+    // supervising a healthy child, so a lone SIGTERM to the watchdog is ignored.
+    // That defeats external supervisors that stop us by pidfile (e.g. the CC1
+    // COSMOS gui-switcher's `start-stop-daemon -K`, run by GUI_STOP to free RAM
+    // for resonance calibration). Interrupting waitpid() lets the EINTR path
+    // (see run_child_process) reap helix-screen and exit cleanly.
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0; // no SA_RESTART: blocking syscalls return EINTR
+    sigaction(SIGTERM, &sa, nullptr);
+    sigaction(SIGINT, &sa, nullptr);
+
     // Ignore SIGCHLD - we use waitpid explicitly
     signal(SIGCHLD, SIG_DFL);
 }
@@ -546,7 +561,13 @@ static CrashInfo run_child_process(const WatchdogArgs& args, pid_t splash_pid) {
                     // Watchdog is shutting down, kill child
                     spdlog::info("[Watchdog] Shutting down, terminating child");
                     kill(child_pid, SIGTERM);
-                    waitpid(child_pid, &status, 0);
+                    // Reap across further signals. Handlers are installed
+                    // without SA_RESTART, so a second SIGTERM/SIGINT during
+                    // shutdown (e.g. start-stop-daemon -K's TERM-then-KILL
+                    // retry) would otherwise return EINTR and leave helix-screen
+                    // unreaped, holding RAM through calibration.
+                    while (waitpid(child_pid, &status, 0) < 0 && errno == EINTR) {
+                    }
                     crash.exit_code = 0;
                     crash.was_signaled = false;
                     return crash;
@@ -1300,6 +1321,34 @@ int main(int argc, char** argv) {
         spdlog::info("[Watchdog] Display rotation: {}°", args.rotation);
     }
 
+    // Advertise our PID to an external UI supervisor that stops us by pidfile.
+    // On CC1/COSMOS the platform hook sets HELIX_GUI_PIDFILE=/var/run/gui.pid so
+    // the stock `gui-switcher stop` (start-stop-daemon -K) signals the watchdog —
+    // the one process that supervises the whole launcher->watchdog->helix-screen
+    // tree and reaps it on SIGTERM. Signalling the launcher can't (its cleanup
+    // trap is deferred behind the foreground child), and signalling helix-screen
+    // just makes us respawn it. Opt-in: no-op when the env var is unset.
+    const char* gui_pidfile = getenv("HELIX_GUI_PIDFILE");
+    if (gui_pidfile && gui_pidfile[0] != '\0') {
+        std::ofstream pf(gui_pidfile, std::ios::trunc);
+        if (pf) {
+            pf << getpid() << "\n";
+            pf.close();
+            spdlog::info("[Watchdog] Wrote GUI pidfile {} = {}", gui_pidfile, getpid());
+        } else {
+            spdlog::warn("[Watchdog] Could not write GUI pidfile {}", gui_pidfile);
+        }
+    }
+
     // Run the watchdog
-    return run_watchdog(args);
+    int rc = run_watchdog(args);
+
+    // Remove our GUI pidfile on clean exit so a stale PID can't mislead the
+    // supervisor. A SIGKILL leaves it behind, but the next watchdog start
+    // overwrites it and start-stop-daemon tolerates a stale pidfile.
+    if (gui_pidfile && gui_pidfile[0] != '\0') {
+        std::error_code ec;
+        std::filesystem::remove(gui_pidfile, ec);
+    }
+    return rc;
 }

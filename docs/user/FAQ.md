@@ -43,7 +43,7 @@ HelixScreen works with any Klipper-based printer running Moonraker. Tested and s
 | Zero G Mercury / Nebula / Hydra | **Tested** | Multiple variants supported |
 | Other Klipper printers | **Should work** | Any printer with Moonraker API access |
 
-> **Note:** "Tested" means the HelixScreen team has verified the platform on real hardware. "Community" means a community user has confirmed it working but we haven't tested it ourselves. "Preliminary" means support exists from the printer's published config but has not been verified on hardware. See the [Installation Guide](INSTALL.md) for platform-specific instructions.
+> **Note:** "Tested" means the HelixScreen team has verified the platform on real hardware. "Community" means a community user has confirmed it working but we haven't tested it ourselves. "Preliminary" means support exists from the printer's published config but has not been verified on hardware. See the [Installation Guide](INSTALL.md) for platform-specific instructions, and [Supported Printers](guide/supported-printers.md) for a feature-by-feature breakdown of what works on each specially-integrated model.
 
 ### Can I run HelixScreen on a separate device instead of on my printer?
 
@@ -79,7 +79,7 @@ HelixScreen reads standard G-code, so most slicers work. But support is tiered:
 
 | Slicer | Status | Notes |
 |--------|--------|-------|
-| **OrcaSlicer 2.3.2+** | **Primary** | The slicer we develop and test against. Best experience — including two-way filament preset sync with HelixScreen's filament slots. Recommended for everyone. |
+| **OrcaSlicer 2.3.2+** | **Primary** | The slicer we develop and test against. Best experience — including one-way (HelixScreen → OrcaSlicer) filament preset sync with HelixScreen's filament slots. Recommended for everyone. |
 | Manufacturer slicers (Creality Print, FlashForge Orca, Bambu Studio, etc.) | **Supported** | Most are OrcaSlicer/PrusaSlicer forks and work well. We aim to support them. |
 | PrusaSlicer / SuperSlicer | **Supported** | Fully usable, including exclude-objects and pre-print options. |
 | Cura | **Not targeted** | We don't test against Cura and don't build features for it, but we don't go out of our way to break it. Output generally works; some features (exclude objects, filament sync) need extra setup or aren't available. |
@@ -269,7 +269,7 @@ To customize:
 2. Toggle widgets on or off
 3. Long-press the drag handle to reorder
 
-Up to 10 widgets can be shown. Some widgets (like AMS, humidity sensor, or probe) only appear if the relevant hardware is detected. See the [Home Panel guide](guide/home-panel.md#home-widgets) for the full widget list.
+Up to 10 widgets can be shown. Some widgets (like AMS, humidity sensor, or probe) only appear if the relevant hardware is detected. See the [Home Panel guide](guide/home-panel.md#available-widgets) for the full widget list.
 
 ### Can I customize the colors or layout?
 
@@ -403,7 +403,7 @@ The wizard runs when no valid configuration exists. Causes:
 2. Config file has invalid JSON
 3. Permissions prevent reading config
 
-**Fix:** Check `/opt/helixscreen/config/settings.json` exists and is valid JSON.
+**Fix:** Check `~/helixscreen/config/settings.json` exists and is valid JSON (on installs without a Klipper ecosystem the fallback path is `/opt/helixscreen/config/settings.json`).
 
 ### How do I change the Moonraker address?
 
@@ -411,7 +411,8 @@ There's currently no UI to change this after initial setup. Your options:
 
 **Edit the config file directly:**
 ```bash
-sudo nano /opt/helixscreen/config/settings.json
+sudo nano ~/helixscreen/config/settings.json
+# (fallback path if no Klipper ecosystem: /opt/helixscreen/config/settings.json)
 # Edit moonraker_host and moonraker_port in the "printer" section
 sudo systemctl restart helixscreen
 ```
@@ -419,7 +420,8 @@ sudo systemctl restart helixscreen
 **Or re-run the setup wizard:**
 ```bash
 # Either delete the config to trigger wizard on next start:
-sudo rm /opt/helixscreen/config/settings.json
+# (fallback path if no Klipper ecosystem: /opt/helixscreen/config/settings.json)
+sudo rm ~/helixscreen/config/settings.json
 sudo systemctl restart helixscreen
 
 # Or force wizard with command-line flag:

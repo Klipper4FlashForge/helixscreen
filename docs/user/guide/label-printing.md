@@ -24,9 +24,8 @@ HelixScreen supports five families of label printers:
 
 ### Step 1: Open Label Printer Settings
 
-1. Go to **Settings** (gear icon in the sidebar)
-2. Scroll to **Label Printer**
-3. Tap to open the Label Printer settings overlay
+1. Go to **Settings → Hardware & Devices → Spoolman → Label Printer**
+2. Tap to open the Label Printer settings overlay
 
 ### Step 2: Select Connection Type
 
@@ -80,7 +79,7 @@ Select the label size that matches your loaded label roll:
 |--------|-------------|
 | **Standard** | Full label with spool name, material, color, temps, and QR code |
 | **Compact** | Condensed layout for smaller labels |
-| **Minimal** | Just the essentials — material name and color |
+| **QR Only** | A QR code only — no material or color text |
 
 ---
 
@@ -150,4 +149,4 @@ A toast notification confirms success or shows an error message.
 
 ---
 
-**Next:** [Calibration & Tuning](calibration.md) | **Prev:** [Filament Management](filament.md) | [Back to User Guide](../USER_GUIDE.md)
+**Next:** [Calibration & Tuning](calibration.md) | **Prev:** [Filament Tracking & Spoolman](filament-tracking.md) | [Back to User Guide](../USER_GUIDE.md)

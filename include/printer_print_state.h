@@ -297,6 +297,19 @@ class PrinterPrintState {
     void set_print_layer_total(int total);
 
     /**
+     * @brief Set slice layer heights from file metadata (for Z-height derivation)
+     *
+     * Thread-safe: marshals via helix::ui::queue_update() because the metadata
+     * callback runs on a background/HttpExecutor thread, while update_from_status
+     * reads these members on the main thread. When first_layer_height <= 0 it
+     * falls back to layer_height.
+     *
+     * @param layer_height Slice per-layer height in mm
+     * @param first_layer_height Slice first-layer height in mm (may differ)
+     */
+    void set_print_layer_heights(double layer_height, double first_layer_height);
+
+    /**
      * @brief Set current layer number (gcode response fallback)
      *
      * Thread-safe: Uses helix::ui::queue_update() for main-thread execution.
@@ -312,6 +325,22 @@ class PrinterPrintState {
      */
     bool has_real_layer_data() const {
         return has_real_layer_data_;
+    }
+
+    /**
+     * @brief Is the displayed current layer trustworthy (not a progress guess)?
+     *
+     * True when the layer came from a real slicer/Moonraker field
+     * (has_real_layer_data_) OR from the Z-height derivation, which tracks actual
+     * commanded geometry and matches Mainsail. False only when the value is the
+     * byte/time progress-fraction estimate (which drifts high early in a print).
+     * The print-status label uses this to decide whether to prefix "~".
+     * Distinct from has_real_layer_data() on purpose: Z-derived layers are
+     * accurate for display but must NOT satisfy has_real_layer_data() (that flag
+     * gates pre-print completion — see printer_reports_layers_).
+     */
+    bool layer_is_accurate() const {
+        return has_real_layer_data_ || layer_z_derived_;
     }
 
     /**
@@ -492,6 +521,19 @@ class PrinterPrintState {
     lv_subject_t print_layer_current_{}; // Current layer (0-based)
     lv_subject_t print_layer_total_{};   // Total layers
 
+    // Slice geometry from file metadata, used for Z-height layer derivation when
+    // the slicer never reports a layer number (no print_stats.info.current_layer,
+    // no virtual_sdcard.layer). These belong to the FILE, not the session: like
+    // print_layer_total_ they survive reset_for_new_print() so same-file reprints
+    // (whose metadata callback won't re-fire) keep working.
+    double layer_height_ = 0.0;       // slice layer height (mm)
+    double first_layer_height_ = 0.0; // slice first-layer height (mm)
+    // Last commanded Z (mm) from gcode_move.gcode_position, cached each status
+    // update so the Z-derivation can run on any update (even one that only
+    // carries virtual_sdcard). Reset per-print (motion belongs to the print).
+    double last_gcode_z_mm_ = 0.0;
+    bool have_gcode_z_ = false;
+
     // Print time tracking subjects (in seconds)
     lv_subject_t print_duration_{};      // Extrusion-only elapsed time (Moonraker print_duration)
     lv_subject_t print_elapsed_{};       // Wall-clock elapsed time (Moonraker total_duration)
@@ -546,6 +588,15 @@ class PrinterPrintState {
     // re-observed. Do NOT use it to decide whether a printer reports layers at
     // all; use printer_reports_layers_ for that (see below).
     std::atomic<bool> has_real_layer_data_{false};
+
+    // True when the current layer value came from the Z-height derivation (tier
+    // 3) rather than the progress-fraction estimate (tier 4). Drives the display
+    // "accurate" decision (layer_is_accurate()) WITHOUT satisfying
+    // has_real_layer_data_ — Z-derived layers are display-accurate but must never
+    // flip the pre-print completion gate. Per-print (cleared by
+    // reset_for_new_print). Atomic: written on the status-update path, read from
+    // the main thread by the label formatter.
+    std::atomic<bool> layer_z_derived_{false};
 
     // STICKY printer capability: true once ANY real layer field
     // (print_stats.info.current_layer, print_stats.info.total_layer, or

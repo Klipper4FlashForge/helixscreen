@@ -218,6 +218,16 @@ class WizardInputShaperStep : public helix::wizard::Step {
         return screen_root_;
     }
 
+    /**
+     * @brief Low-RAM warning modal shown before calibration (see memory_utils.h).
+     *
+     * Public because the file-static LVGL trampolines in ui_wizard_input_shaper.cpp
+     * store and dismiss it directly — it's a plain UI handle with no invariant, so
+     * getter/setter ceremony bought nothing. Cleared on cleanup() so a lingering
+     * modal never outlives the step.
+     */
+    lv_obj_t* low_ram_warn_dialog_ = nullptr;
+
   private:
     // Screen instance
     lv_obj_t* screen_root_ = nullptr;

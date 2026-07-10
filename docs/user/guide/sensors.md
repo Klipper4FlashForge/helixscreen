@@ -39,7 +39,7 @@ The remaining sections list sensors for information only — there's nothing to 
 |---------|----------------|-------------------|
 | **Probe Sensors** | Z probes for bed leveling and mesh | BLTouch, Smart Effector, Eddy, Probe |
 | **Width Sensors** | Filament diameter sensors for flow compensation | TSL1401CL, Hall |
-| **Humidity Sensors** | Chamber and dryer humidity monitoring | BME280, HTU21D |
+| **Humidity Sensors** | Chamber and dryer humidity monitoring | BME280, HTU21D, SHT3X, AHT10, AHT20, AHT20-F |
 | **Accelerometers** | Input shaper calibration sensors | ADXL345, LIS2DW, LIS3DH, MPU9250, ICM20948 |
 | **Color Sensors** | TD-1 filament color detection | TD-1 |
 | **Temperature Sensors** | MCU, host, and auxiliary temperature monitoring | MCU, Host, Aux |
@@ -55,7 +55,7 @@ Inside the **Temperature Sensors** section, two dropdowns let you override auto-
 - **Chamber Heater** — pick which generic heater is your chamber heater (or leave on **Auto**, or disable with **None**).
 - **Chamber Sensor** — pick which temperature sensor reports chamber temperature (Auto / a specific sensor / None).
 
-The **Auto** option shows the currently detected name in parentheses, or "none detected" when nothing matched.
+The **Auto** option shows the currently detected name in parentheses, or "(none detected)" when nothing matched.
 
 ---
 

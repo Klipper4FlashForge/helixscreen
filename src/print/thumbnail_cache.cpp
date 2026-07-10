@@ -5,6 +5,7 @@
 
 #include "app_globals.h"
 #include "config.h"
+#include "system/helix_paths.h"
 
 #include <spdlog/spdlog.h>
 
@@ -48,25 +49,7 @@ static size_t calculate_dynamic_max_size(const std::string& cache_dir, size_t co
 
 // Helper to try creating a cache directory and return success
 static bool try_create_cache_dir(const std::string& path) {
-    try {
-        std::filesystem::create_directories(path);
-        if (!std::filesystem::exists(path)) {
-            return false;
-        }
-
-        // Verify we can actually write to the created directory
-        std::string test_file = path + "/.helix_write_test";
-        std::ofstream ofs(test_file);
-        if (!ofs.good()) {
-            return false;
-        }
-        ofs.close();
-        std::filesystem::remove(test_file);
-
-        return true;
-    } catch (...) {
-        return false;
-    }
+    return helix::paths::ensure_dir(path) && helix::paths::probe_writable(path);
 }
 
 std::string ThumbnailCache::determine_cache_dir() {

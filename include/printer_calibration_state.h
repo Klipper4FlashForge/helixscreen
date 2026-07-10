@@ -91,6 +91,21 @@ class PrinterCalibrationState {
     }
 
     /**
+     * @brief Get idle_timeout "Printing" subject
+     *
+     * Returns 1 when Klipper's idle_timeout.state == "Printing" — its canonical
+     * busy flag, true for the full duration of any blocking operation (G28,
+     * BED_MESH_CALIBRATE, QGL, PROBE_ACCURACY, long macro) as well as during a
+     * real file print. 0 for "Ready"/"Idle". Consumers combine this with the
+     * print-job state to isolate blocking non-print operations.
+     *
+     * @return Integer subject: 1 if idle_timeout.state == "Printing", else 0
+     */
+    lv_subject_t* get_idle_timeout_printing_subject() {
+        return &idle_timeout_printing_;
+    }
+
+    /**
      * @brief Get retract length subject
      * @return Integer subject: length in centimillimeters
      */
@@ -141,6 +156,9 @@ class PrinterCalibrationState {
 
     // Motor enabled state (from idle_timeout.state)
     lv_subject_t motors_enabled_{}; // 0=disabled (Idle), 1=enabled (Ready/Printing)
+
+    // idle_timeout.state == "Printing" flag (Klipper's canonical busy indicator)
+    lv_subject_t idle_timeout_printing_{}; // 0=not printing/busy, 1=state == "Printing"
 };
 
 } // namespace helix

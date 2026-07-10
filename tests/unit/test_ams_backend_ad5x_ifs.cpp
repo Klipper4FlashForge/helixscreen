@@ -142,6 +142,19 @@ class Ad5xIfsTestAccess {
     static void run_action_timeout(AmsBackendAd5xIfs& b) {
         b.check_action_timeout();
     }
+    // Age the indeterminate ("Working…") no-progress clock WITHOUT running the
+    // detector, so a test can simulate a stalled progress feed then check
+    // separately. Distinct from set_action_age (which ages the ERROR-timeout
+    // clock); the indeterminate detector reads last_phase_progress_time_.
+    static void set_progress_age(AmsBackendAd5xIfs& b, std::chrono::seconds elapsed) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        b.last_phase_progress_time_ = std::chrono::steady_clock::now() - elapsed;
+    }
+    // Read the indeterminate ("Working…") busy flag the detector computes.
+    static bool operation_indeterminate(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.system_info_.operation_indeterminate;
+    }
     static std::string var_prefix(const AmsBackendAd5xIfs& b) {
         std::lock_guard<std::mutex> lock(b.mutex_);
         return b.var_prefix_;
@@ -221,6 +234,40 @@ class Ad5xIfsTestAccess {
     }
     static std::optional<int> persisted_seated_slot(const AmsBackendAd5xIfs& b) {
         return b.persisted_seated_slot_;
+    }
+    // Seed / read the firmware's FFMInfo.channel seated authority (1-based; 0 =
+    // none). Production sets this in parse_adventurer_json; tests seed it to drive
+    // the seated-authority override in apply_zcolor_result without a full JSON parse.
+    static void set_ffm_channel(AmsBackendAd5xIfs& b, int chan) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        b.ffm_channel_ = chan;
+    }
+    static int ffm_channel(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.ffm_channel_;
+    }
+    // Read the seated channel (1-based; 0 = none). This is the value the
+    // head-gate (#1065 row 28) clears when the toolhead switch reads empty, and
+    // recompute_current_slot_locked derives current_slot from it on the native
+    // path.
+    static int seated_chan(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.seated_chan_;
+    }
+    static bool head_switch_seen(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.head_switch_seen_;
+    }
+    static bool head_switch_present(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.head_switch_present_;
+    }
+    // Drive the belt-and-suspenders eject clear directly (#1065 row 28). Mirrors
+    // what eject_lane() runs in its success block; exposed so the clear can be
+    // tested without a live Moonraker connection (execute_gcode needs the api).
+    static bool clear_seated_if_ejected(AmsBackendAd5xIfs& b, int slot_index) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.clear_seated_if_ejected_locked(slot_index);
     }
     // Seed the in-memory overrides map directly (bypasses load_blocking, which
     // requires a live Moonraker connection). on_started() is the only
@@ -1180,6 +1227,119 @@ TEST_CASE("AD5X IFS motion during PURGING resets the timeout clock (#1065 Bug 2)
 }
 
 // ==========================================================================
+// Indeterminate ("Working…") detector (#1065 row 14)
+//
+// During a phase-tracked load/unload the constrained AD5X's shared main-thread
+// status feed can starve while klippy runs the blocking macro, freezing the
+// live "Heat 225/230" number so it reads as a hang. The backend raises
+// AmsSystemInfo::operation_indeterminate when no genuine progress signal (a
+// temp-VALUE change, head transition, motion, or phase change) has landed within
+// INDETERMINATE_THRESHOLD_SECONDS (~8s); the sidebar then swaps the frozen number
+// for a "Working…" busy state. Time is INJECTED via set_progress_age (no sleeps),
+// so these stay fast and untagged (L052).
+// ==========================================================================
+
+TEST_CASE("AD5X IFS indeterminate: a stalled progress feed trips the flag (#1065 row 14)",
+          "[ams][ad5x_ifs][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_head_filament(backend, false);
+    Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/false); // load -> HEATING
+
+    // One healthy heat frame — flag stays clear while progress is fresh.
+    Ad5xIfsTestAccess::handle_status(backend, make_extruder(150.0, 230.0));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+
+    // Feed starves: no progress signal for 10s (> 8s threshold).
+    Ad5xIfsTestAccess::set_progress_age(backend, std::chrono::seconds(10));
+    Ad5xIfsTestAccess::run_action_timeout(backend);
+
+    REQUIRE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+    // Still HEATING — this is the busy mitigation, NOT the coarse ERROR timeout
+    // (HEATING's 300s ERROR budget is untouched; only the progress clock aged).
+    REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::HEATING);
+
+    // The UI-facing view carries the flag too.
+    REQUIRE(backend.get_system_info().operation_indeterminate);
+}
+
+TEST_CASE("AD5X IFS indeterminate: a fresh progress signal clears the flag (#1065 row 14)",
+          "[ams][ad5x_ifs][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_head_filament(backend, false);
+    Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/false);
+    Ad5xIfsTestAccess::handle_status(backend, make_extruder(150.0, 230.0));
+
+    // Just under threshold — does not fire.
+    Ad5xIfsTestAccess::set_progress_age(backend, std::chrono::seconds(7));
+    Ad5xIfsTestAccess::run_action_timeout(backend);
+    REQUIRE_FALSE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+
+    // Past threshold — fires.
+    Ad5xIfsTestAccess::set_progress_age(backend, std::chrono::seconds(10));
+    Ad5xIfsTestAccess::run_action_timeout(backend);
+    REQUIRE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+
+    // A temp-VALUE change is a genuine progress signal → clears immediately.
+    Ad5xIfsTestAccess::handle_status(backend, make_extruder(180.0, 230.0));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+}
+
+TEST_CASE("AD5X IFS indeterminate: healthy heat never false-fires; frozen value does "
+          "(#1065 row 14)",
+          "[ams][ad5x_ifs][1065]") {
+    SECTION("rising temps within threshold never trip") {
+        AmsBackendAd5xIfs backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_head_filament(backend, false);
+        Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/false);
+
+        // Each distinct temp frame is a value change that resets the clock, even
+        // with realistic multi-second gaps between frames — so a normal heat-up
+        // never trips the detector.
+        for (double t : {100.0, 130.0, 160.0, 190.0, 220.0, 230.0}) {
+            Ad5xIfsTestAccess::set_progress_age(backend, std::chrono::seconds(6));
+            Ad5xIfsTestAccess::handle_status(backend, make_extruder(t, 230.0));
+            REQUIRE_FALSE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+        }
+    }
+
+    SECTION("identical (frozen) frames do NOT reset — the clock elapses") {
+        AmsBackendAd5xIfs backend(nullptr, nullptr);
+        Ad5xIfsTestAccess::set_head_filament(backend, false);
+        Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/false);
+
+        Ad5xIfsTestAccess::handle_status(backend, make_extruder(150.0, 230.0));
+        REQUIRE_FALSE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+
+        // The subject is frozen at 150°C: the SAME value keeps (nominally)
+        // arriving but the clock ages past threshold with no VALUE change, so the
+        // detector must fire — this is the exact row-14 behavior.
+        Ad5xIfsTestAccess::set_progress_age(backend, std::chrono::seconds(10));
+        Ad5xIfsTestAccess::handle_status(backend, make_extruder(150.0, 230.0));
+        REQUIRE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+    }
+}
+
+TEST_CASE("AD5X IFS indeterminate: flag clears when the operation completes (#1065 row 14)",
+          "[ams][ad5x_ifs][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_head_filament(backend, false);
+    Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/false);
+    Ad5xIfsTestAccess::handle_status(backend, make_extruder(150.0, 230.0));
+
+    Ad5xIfsTestAccess::set_progress_age(backend, std::chrono::seconds(10));
+    Ad5xIfsTestAccess::run_action_timeout(backend);
+    REQUIRE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+
+    // Operation completes on the macro's gcode ack → IDLE, phase tracker cleared.
+    Ad5xIfsTestAccess::finalize_op_after_macro(backend, /*is_unload=*/false);
+    REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::IDLE);
+
+    // get_system_info() re-runs the detector; with no active op the flag is off.
+    REQUIRE_FALSE(backend.get_system_info().operation_indeterminate);
+    REQUIRE_FALSE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+}
+
+// ==========================================================================
 // 19. Variable prefix auto-detection (lessWaste vs bambufy)
 // ==========================================================================
 
@@ -1315,6 +1475,33 @@ TEST_CASE("AD5X IFS phase: load sequence (temp + head sensor)", "[ams][ad5x_ifs]
     Ad5xIfsTestAccess::check_action_timeout(backend, std::chrono::seconds(250));
     REQUIRE(Ad5xIfsTestAccess::action(backend) == AmsAction::ERROR);
     REQUIRE_FALSE(Ad5xIfsTestAccess::operation_detail(backend).empty());
+}
+
+TEST_CASE("AD5X IFS get_system_info surfaces the phase machine's operation_phase/detail (#1065 Bug 2)",
+          "[ams][ad5x_ifs][1065]") {
+    // The phase machine writes operation_phase (0/1/2) + operation_detail into
+    // system_info_, but AmsState::sync_from_backend reads them off the
+    // AmsSystemInfo that get_system_info() returns to drive the ams_operation_phase
+    // subject the right-side step tracker observes. If get_system_info() drops
+    // those fields, the steps render but the active one never highlights and the
+    // detail line goes blank (mkleersn v0.99.87: "the 1-2-3 steps show but fail to
+    // launch any of them").
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_head_filament(backend, false);
+    Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/false); // load -> HEATING, phase 0
+
+    REQUIRE(Ad5xIfsTestAccess::operation_phase(backend) == 0);    // internal phase-machine state
+    REQUIRE_FALSE(Ad5xIfsTestAccess::operation_detail(backend).empty());
+
+    // get_system_info() is the UI-facing view — it MUST carry the same values.
+    auto info = backend.get_system_info();
+    CHECK(info.operation_phase == 0);
+    CHECK(info.operation_detail == Ad5xIfsTestAccess::operation_detail(backend));
+
+    // Advance to LOADING (phase 1) and re-check the UI view tracks it.
+    Ad5xIfsTestAccess::handle_status(backend, make_extruder(230.0, 230.0));
+    REQUIRE(Ad5xIfsTestAccess::operation_phase(backend) == 1);
+    CHECK(backend.get_system_info().operation_phase == 1);
 }
 
 TEST_CASE("AD5X IFS phase: RESPOND line sets target before any extruder frame",
@@ -2751,6 +2938,317 @@ TEST_CASE("AD5X IFS cold-lane eject does not pollute seated channel (#1065 Bug 3
     // toolhead Unload, NOT a cold Eject. Channel 1, now empty, stays cold-eject.
     CHECK(backend.slot_unloads_to_toolhead(1, /*loaded_hint=*/true));
     CHECK_FALSE(backend.slot_unloads_to_toolhead(0, /*loaded_hint=*/true));
+}
+
+TEST_CASE("AD5X IFS dialog slot-select does not steal the seated channel (#1065 Bug 3)",
+          "[ams][ad5x_ifs][1065]") {
+    // Field repro (mkleersn v0.99.87 bundle ZT8Y9WPM + 07-07 state table): channel
+    // 2 is physically seated at the toolhead (Adventurer5M.json FFMInfo.channel=2).
+    // The user opens the zmod COLOR menu and merely SELECTS a different lane to edit
+    // its colour/type (RUN_ZCOLOR SLOT=3 / CHANGE_ZCOLOR SLOT=3) — no filament
+    // moves. IFS_STATUS then reports "Chan": 3 (the switching mechanism tracks the
+    // last lane the dialog referenced) while all four ports stay PRESENT, so the
+    // eject-stale guard (which only rejects a Chan pointing at an EMPTY lane) does
+    // not fire. The bundle log caught HelixScreen adopting it: current_slot went
+    // 1 -> 2 (channel 2 -> channel 3) with zero physical motion, so the
+    // genuinely-seated lane 2 offered Eject and lane 3 wrongly offered Unload.
+    //
+    // The seated authority is FFMInfo.channel (which stayed 2 the whole time), NOT
+    // IFS_STATUS Chan. A Chan that diverges from a known FFMInfo.channel must not
+    // move the seated lane. (The GET_ZCOLOR "// Extruder:" line reads "None (3)"
+    // while loaded-idle on this firmware — its paren also chases the dialog — so it
+    // is NOT the authority; verified against the raw bundle.)
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+
+    // Identity tool map so find_first_tool_for_port(N) -> tool N-1.
+    REQUIRE(backend.set_tool_mapping(0, 0).success());
+    REQUIRE(backend.set_tool_mapping(1, 1).success());
+    REQUIRE(backend.set_tool_mapping(2, 2).success());
+    REQUIRE(backend.set_tool_mapping(3, 3).success());
+
+    Ad5xIfsTestAccess::set_head_filament(backend, true);
+    // Firmware's own seated record: channel 2 (as parse_adventurer_json would set
+    // from Adventurer5M.json FFMInfo.channel).
+    Ad5xIfsTestAccess::set_ffm_channel(backend, 2);
+
+    // Channel 2 seated: IFS_STATUS Chan=2 agrees with FFMInfo.channel, all present.
+    AmsBackendAd5xIfs::ZColorSilentResult loaded;
+    loaded.saw_valid_response = true;
+    loaded.ifs_active = true;
+    loaded.ifs_chan = 2;
+    loaded.ifs_ports = std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, true, true};
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, loaded);
+
+    // Baseline: ch2 (slot 1) seated -> Unload; ch3 (slot 2) cold -> Eject.
+    REQUIRE(backend.get_system_info().current_slot == 1);
+    REQUIRE(backend.slot_unloads_to_toolhead(1, /*loaded_hint=*/true));
+    REQUIRE_FALSE(backend.slot_unloads_to_toolhead(2, /*loaded_hint=*/true));
+
+    // Dialog selects slot 3 to edit. FFMInfo.channel UNCHANGED (still 2 — no
+    // filament moved), but IFS_STATUS now reports Chan=3 with lane 3 still present.
+    AmsBackendAd5xIfs::ZColorSilentResult dialog_select;
+    dialog_select.saw_valid_response = true;
+    dialog_select.ifs_active = true;
+    dialog_select.ifs_chan = 3; // dialog-tracked, NOT a physical seating
+    dialog_select.ifs_ports = std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, true, true};
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, dialog_select);
+
+    // Seated lane must still be channel 2. Lane 2 offers Unload; lane 3 stays cold.
+    CHECK(backend.get_system_info().current_slot == 1);
+    CHECK(backend.slot_unloads_to_toolhead(1, /*loaded_hint=*/true));
+    CHECK_FALSE(backend.slot_unloads_to_toolhead(2, /*loaded_hint=*/true));
+}
+
+TEST_CASE("AD5X IFS seated channel follows a moved FFMInfo.channel despite a stale Chan "
+          "(#1065 Bug 3)",
+          "[ams][ad5x_ifs][1065]") {
+    // Counterpart to the dialog-select test: the FFMInfo.channel authority must NOT
+    // freeze the seated lane. When the firmware genuinely moves filament to a new
+    // lane, FFMInfo.channel updates, and the seated lane must follow it — even if
+    // IFS_STATUS Chan still carries a stale value from an earlier dialog reference
+    // (mkleersn 07-07: loading a new channel correctly moved current_slot). This is
+    // what proves the fix tracks real head changes rather than pinning to the
+    // first-seen lane.
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    REQUIRE(backend.set_tool_mapping(0, 0).success());
+    REQUIRE(backend.set_tool_mapping(1, 1).success());
+    REQUIRE(backend.set_tool_mapping(2, 2).success());
+    REQUIRE(backend.set_tool_mapping(3, 3).success());
+    Ad5xIfsTestAccess::set_head_filament(backend, true);
+
+    // Channel 2 seated (FFMInfo.channel=2, Chan 2).
+    Ad5xIfsTestAccess::set_ffm_channel(backend, 2);
+    AmsBackendAd5xIfs::ZColorSilentResult loaded;
+    loaded.saw_valid_response = true;
+    loaded.ifs_active = true;
+    loaded.ifs_chan = 2;
+    loaded.ifs_ports = std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, true, true};
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, loaded);
+    REQUIRE(backend.get_system_info().current_slot == 1);
+
+    // Real load of lane 1: firmware moves FFMInfo.channel to 1. Chan still reads a
+    // stale 3 from an earlier dialog touch. Seated must follow FFMInfo.channel to
+    // channel 1, NOT the stale Chan.
+    Ad5xIfsTestAccess::set_ffm_channel(backend, 1);
+    AmsBackendAd5xIfs::ZColorSilentResult moved;
+    moved.saw_valid_response = true;
+    moved.ifs_active = true;
+    moved.ifs_chan = 3; // stale dialog value, must be ignored
+    moved.ifs_ports = std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, true, true};
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, moved);
+
+    // Seated followed FFMInfo.channel to channel 1 (slot 0).
+    CHECK(backend.get_system_info().current_slot == 0);
+    CHECK(backend.slot_unloads_to_toolhead(0, /*loaded_hint=*/true));
+    CHECK_FALSE(backend.slot_unloads_to_toolhead(2, /*loaded_hint=*/true));
+}
+
+TEST_CASE("AD5X IFS parse_adventurer_json reads FFMInfo.channel as the seated lane (#1065 Bug 3)",
+          "[ams][ad5x_ifs][1065]") {
+    // The seated authority must actually be wired from the file. parse_adventurer_json
+    // must read FFMInfo.channel and set the seated lane (recomputing current_slot),
+    // so a plain file poll — with no IFS_STATUS frame at all — establishes which lane
+    // is seated. FFMInfo.channel is 1-based (channel 2 -> slot 1).
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    REQUIRE(backend.set_tool_mapping(0, 0).success());
+    REQUIRE(backend.set_tool_mapping(1, 1).success());
+    REQUIRE(backend.set_tool_mapping(2, 2).success());
+    REQUIRE(backend.set_tool_mapping(3, 3).success());
+    Ad5xIfsTestAccess::set_head_filament(backend, true);
+
+    // Minimal Adventurer5M.json: FFMInfo with the seated channel + per-port
+    // colour/type (firmware writes channel 2 as seated).
+    const std::string json = R"({"FFMInfo":{"channel":2,)"
+                             R"("ffmColor1":"#161616","ffmColor2":"#FFFFFF",)"
+                             R"("ffmColor3":"#F72224","ffmColor4":"#898989",)"
+                             R"("ffmType1":"PETG","ffmType2":"PETG","ffmType3":"PETG","ffmType4":"PETG"}})";
+    Ad5xIfsTestAccess::parse_adventurer_json(backend, json);
+
+    CHECK(Ad5xIfsTestAccess::ffm_channel(backend) == 2);
+    CHECK(backend.get_system_info().current_slot == 1); // channel 2 -> 0-based slot 1
+    CHECK(backend.slot_unloads_to_toolhead(1, /*loaded_hint=*/true));
+    CHECK_FALSE(backend.slot_unloads_to_toolhead(2, /*loaded_hint=*/true));
+}
+
+// ==========================================================================
+// #1065 "row 28": sticky FFMInfo.channel + head-switch gate on the seated lane
+//
+// The firmware never blanks FFMInfo.channel / IFS_STATUS Chan on eject (same
+// stickiness as ffmColor/ffmType). After ejecting a cold lane whose stale
+// FFMInfo.channel still points at it, an un-gated adoption re-seats that empty
+// lane, so it keeps offering Unload ("shows loaded"). The fix gates adoption on
+// the toolhead SWITCH sensor: adopt only when it corroborates filament at the
+// head; clear when it authoritatively reads empty. The switch (not the
+// loaded-idle-false-negating motion sensor) is the authority, so a genuinely
+// seated lane is never dropped, and motion-only firmware falls back to the old
+// behaviour.
+// ==========================================================================
+
+TEST_CASE("AD5X IFS stale FFMInfo.channel is dropped when the head switch reads empty "
+          "(#1065 row 28)",
+          "[ams][ad5x_ifs][1065]") {
+    // Post-eject re-poll: a cold lane 3 was ejected but FFMInfo.channel is still 3
+    // (firmware kept it) and the toolhead switch reads EMPTY (nothing seated). The
+    // follow-up IFS_STATUS carries the sticky Chan=3 with port 3 now absent.
+    // Pre-fix, current_slot moved to 2 and lane 3 offered Unload ("shows loaded").
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    REQUIRE(backend.set_tool_mapping(0, 0).success());
+    REQUIRE(backend.set_tool_mapping(1, 1).success());
+    REQUIRE(backend.set_tool_mapping(2, 2).success());
+    REQUIRE(backend.set_tool_mapping(3, 3).success());
+
+    // Toolhead switch authoritatively reads empty (drives head_switch_seen_ +
+    // head_switch_present_=false + head_filament_=false).
+    Ad5xIfsTestAccess::handle_status(backend, make_head_sensor(false));
+    REQUIRE(Ad5xIfsTestAccess::head_switch_seen(backend));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::head_switch_present(backend));
+
+    // Firmware's sticky record still points at lane 3.
+    Ad5xIfsTestAccess::set_ffm_channel(backend, 3);
+
+    // Post-eject IFS_STATUS: Chan=3 (last-engaged, sticky), port 3 empty.
+    AmsBackendAd5xIfs::ZColorSilentResult after_eject;
+    after_eject.saw_valid_response = true;
+    after_eject.ifs_active = true;
+    after_eject.ifs_chan = 3;
+    after_eject.ifs_ports = std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, false, true};
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, after_eject);
+
+    // No lane is seated: the empty head switch rejects the stale channel.
+    CHECK(Ad5xIfsTestAccess::seated_chan(backend) == 0);
+    CHECK(backend.get_system_info().current_slot == -1);
+    CHECK_FALSE(backend.can_unload_from_toolhead(2));
+}
+
+TEST_CASE("AD5X IFS FFMInfo.channel poll is not adopted while the head switch is empty "
+          "(#1065 row 28)",
+          "[ams][ad5x_ifs][1065]") {
+    // Same gate on the plain file-poll path (parse_adventurer_json): a stale
+    // FFMInfo.channel=3 with the toolhead switch empty must not seat lane 3.
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    REQUIRE(backend.set_tool_mapping(0, 0).success());
+    REQUIRE(backend.set_tool_mapping(1, 1).success());
+    REQUIRE(backend.set_tool_mapping(2, 2).success());
+    REQUIRE(backend.set_tool_mapping(3, 3).success());
+
+    Ad5xIfsTestAccess::handle_status(backend, make_head_sensor(false));
+    REQUIRE(Ad5xIfsTestAccess::head_switch_seen(backend));
+
+    const std::string json = R"({"FFMInfo":{"channel":3,)"
+                             R"("ffmColor1":"#161616","ffmColor2":"#FFFFFF",)"
+                             R"("ffmColor3":"#F72224","ffmColor4":"#898989",)"
+                             R"("ffmType1":"PETG","ffmType2":"PETG","ffmType3":"PETG","ffmType4":"PETG"}})";
+    Ad5xIfsTestAccess::parse_adventurer_json(backend, json);
+
+    // ffm_channel_ reflects the file (3), but it is NOT adopted as seated.
+    CHECK(Ad5xIfsTestAccess::ffm_channel(backend) == 3);
+    CHECK(Ad5xIfsTestAccess::seated_chan(backend) == 0);
+    CHECK(backend.get_system_info().current_slot == -1);
+    CHECK_FALSE(backend.can_unload_from_toolhead(2));
+}
+
+TEST_CASE("AD5X IFS loaded-idle lane stays seated when the head switch is present but motion "
+          "reads empty (#1065 row 28)",
+          "[ams][ad5x_ifs][1065]") {
+    // Motion-false-negative guard — MUST pass before AND after the fix. A lane is
+    // genuinely loaded (head SWITCH present=true), but the ifs_motion_sensor reads
+    // filament_detected=false while idle (device-confirmed). That motion frame
+    // clobbers the conflated head_filament_ to false — but the switch authority
+    // still says present, so the head-gate must NOT drop the seated lane.
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    REQUIRE(backend.set_tool_mapping(0, 0).success());
+    REQUIRE(backend.set_tool_mapping(1, 1).success());
+    REQUIRE(backend.set_tool_mapping(2, 2).success());
+    REQUIRE(backend.set_tool_mapping(3, 3).success());
+
+    // Lane 2 genuinely seated: switch reports present.
+    Ad5xIfsTestAccess::handle_status(backend, make_head_sensor(true));
+    Ad5xIfsTestAccess::set_ffm_channel(backend, 2);
+    AmsBackendAd5xIfs::ZColorSilentResult loaded;
+    loaded.saw_valid_response = true;
+    loaded.ifs_active = true;
+    loaded.ifs_chan = 2;
+    loaded.ifs_ports = std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, true, true};
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, loaded);
+    REQUIRE(backend.get_system_info().current_slot == 1);
+
+    // Idle motion frame reads empty and clobbers head_filament_ to false — but the
+    // switch's own last reading (present) is untouched.
+    Ad5xIfsTestAccess::handle_status(backend, make_motion_sensor(false));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::head_filament(backend));      // motion clobbered it
+    REQUIRE(Ad5xIfsTestAccess::head_switch_present(backend));      // switch still present
+
+    // A follow-up IFS_STATUS poll while motion says empty must keep lane 2 seated.
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, loaded);
+    CHECK(Ad5xIfsTestAccess::seated_chan(backend) == 2);
+    CHECK(backend.get_system_info().current_slot == 1);
+    CHECK(backend.can_unload_from_toolhead(1));
+}
+
+TEST_CASE("AD5X IFS motion-only firmware (no switch) still adopts FFMInfo.channel (#1065 row 28)",
+          "[ams][ad5x_ifs][1065]") {
+    // On firmware that publishes ONLY the motion sensor, head_switch_seen_ never
+    // latches, so the head-gate cannot fire. A loaded lane whose motion sensor
+    // false-negates while idle must remain seated — the fix must not regress
+    // switch-less firmwares.
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    REQUIRE(backend.set_tool_mapping(0, 0).success());
+    REQUIRE(backend.set_tool_mapping(1, 1).success());
+    REQUIRE(backend.set_tool_mapping(2, 2).success());
+    REQUIRE(backend.set_tool_mapping(3, 3).success());
+
+    // Only the motion sensor ever reports (reads empty while idle). No switch.
+    Ad5xIfsTestAccess::handle_status(backend, make_motion_sensor(false));
+    REQUIRE_FALSE(Ad5xIfsTestAccess::head_switch_seen(backend));
+
+    Ad5xIfsTestAccess::set_ffm_channel(backend, 3);
+    AmsBackendAd5xIfs::ZColorSilentResult loaded;
+    loaded.saw_valid_response = true;
+    loaded.ifs_active = true;
+    loaded.ifs_chan = 3;
+    loaded.ifs_ports = std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, true, true};
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, loaded);
+
+    // Adopted as before (no switch authority to gate on).
+    CHECK(Ad5xIfsTestAccess::seated_chan(backend) == 3);
+    CHECK(backend.get_system_info().current_slot == 2);
+    CHECK(backend.can_unload_from_toolhead(2));
+}
+
+TEST_CASE("AD5X IFS eject clears a stale seated pointer at the ejected lane (#1065 row 28)",
+          "[ams][ad5x_ifs][1065]") {
+    // Belt-and-suspenders: when a stale seated pointer (seated_chan_ / ffm_channel_)
+    // targets the just-ejected lane, eject must zero BOTH so the Unload affordance
+    // dies at once instead of persisting until the next head-gated poll.
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    REQUIRE(backend.set_tool_mapping(0, 0).success());
+    REQUIRE(backend.set_tool_mapping(1, 1).success());
+    REQUIRE(backend.set_tool_mapping(2, 2).success());
+    REQUIRE(backend.set_tool_mapping(3, 3).success());
+
+    // Seat lane 2 (channel 2) via a corroborated poll.
+    Ad5xIfsTestAccess::handle_status(backend, make_head_sensor(true));
+    Ad5xIfsTestAccess::set_ffm_channel(backend, 2);
+    AmsBackendAd5xIfs::ZColorSilentResult loaded;
+    loaded.saw_valid_response = true;
+    loaded.ifs_active = true;
+    loaded.ifs_chan = 2;
+    loaded.ifs_ports = std::array<bool, AmsBackendAd5xIfs::NUM_PORTS>{true, true, true, true};
+    Ad5xIfsTestAccess::apply_zcolor_result(backend, loaded);
+    REQUIRE(Ad5xIfsTestAccess::seated_chan(backend) == 2);
+    REQUIRE(Ad5xIfsTestAccess::ffm_channel(backend) == 2);
+    REQUIRE(backend.get_system_info().current_slot == 1);
+
+    // Ejecting a DIFFERENT lane (0) leaves the seated pointer untouched.
+    CHECK_FALSE(Ad5xIfsTestAccess::clear_seated_if_ejected(backend, 0));
+    CHECK(Ad5xIfsTestAccess::seated_chan(backend) == 2);
+    CHECK(backend.get_system_info().current_slot == 1);
+
+    // Ejecting the FFMInfo-pointed lane (1 -> channel 2) zeroes both and recomputes.
+    CHECK(Ad5xIfsTestAccess::clear_seated_if_ejected(backend, 1));
+    CHECK(Ad5xIfsTestAccess::seated_chan(backend) == 0);
+    CHECK(Ad5xIfsTestAccess::ffm_channel(backend) == 0);
+    CHECK(backend.get_system_info().current_slot == -1);
 }
 
 // ==========================================================================
@@ -5941,6 +6439,33 @@ TEST_CASE("AD5X IFS eject_lane issues clamp / retract / unclamp sequence", "[ams
     REQUIRE_FALSE(backend.has_gcode_containing("REMOVE_PRUTOK"));
 }
 
+TEST_CASE("AD5X IFS eject_lane optimistically clears the ejected lane's presence (#1065)",
+          "[ams][ad5x_ifs][1065]") {
+    // Field repro (mkleersn 07-07 table): after ejecting a lane the multi-filament
+    // menu kept showing it loaded and still offered Eject. Cause: eject_lane's only
+    // refresh is schedule_zcolor_query, and that confirming GET_ZCOLOR/IFS_STATUS
+    // poll starves behind the blocking eject gcode on the constrained AD5X, so
+    // presence never updated. The eject physically retracts the filament clear of
+    // the port silk sensor, so the lane IS empty — reflect that locally at once,
+    // without waiting for the poll (SILENT disabled here to model the starved poll).
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false); // confirming poll won't run
+
+    // Lane 3 (slot 2) present with filament -> AVAILABLE (menu offers Eject).
+    Ad5xIfsTestAccess::set_port_presence(backend, 2, true);
+    Ad5xIfsTestAccess::set_color(backend, 2, "F72224");
+    Ad5xIfsTestAccess::set_material(backend, 2, "PETG");
+    REQUIRE(backend.get_slot_info(2).status == SlotStatus::AVAILABLE);
+
+    REQUIRE(backend.eject_lane(2).success());
+
+    // Menu must update immediately: the lane reads empty (offers Load, not Eject)
+    // even though the confirming poll never ran.
+    CHECK_FALSE(Ad5xIfsTestAccess::port_presence(backend, 2));
+    CHECK(backend.get_slot_info(2).status == SlotStatus::EMPTY);
+}
+
 TEST_CASE("AD5X IFS eject_lane port mapping is 1-based", "[ams][ad5x_ifs]") {
     TestableAd5xIfsBackend backend;
     Ad5xIfsTestAccess::set_running(backend, true);
@@ -7167,4 +7692,174 @@ TEST_CASE_METHOD(Ad5xHomingGuardFixture,
     Ad5xIfsTestAccess::set_zcolor_supported(*backend, false);
     AmsError err = backend->eject_lane(0);
     CHECK(err.user_msg != "Cannot run filament operation while printing");
+}
+
+// ==========================================================================
+// External TYPE-change detection (check_external_type_change)
+// prestonbrown/helixscreen#981 / #1065: a type-only firmware edit (same
+// color) never tripped the color detector, so a non-locked override's baked
+// material went stale and masked firmware truth — color updated on screen,
+// material stuck (e.g. on "PLA"). A firmware type change must now refresh a
+// non-locked override so the new type surfaces, while a user-locked material
+// (#965) is still preserved.
+// ==========================================================================
+
+TEST_CASE("AD5X IFS: firmware type change refreshes a non-locked override (#981)",
+          "[ams][ad5x_ifs][override][981]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    seed_standard_colors(backend); // slot 1: firmware PETG / #00FF00, baselines set
+
+    // Auto-mirror left a non-locked override matching firmware-at-the-time.
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.material = "PETG";
+    ovr.color_rgb = 0x00FF00;
+    ovr.color_set = true;
+    ovr.user_locked_material = false;
+    Ad5xIfsTestAccess::seed_override(backend, 1, ovr);
+
+    // Firmware type changes externally (color unchanged): PETG -> TPU.
+    Ad5xIfsTestAccess::set_material(backend, 1, "TPU");
+
+    // The new firmware type must surface, and the stale override is refreshed.
+    CHECK(backend.get_slot_info(1).material == "TPU");
+    auto after = Ad5xIfsTestAccess::get_override(backend, 1);
+    REQUIRE(after.has_value());
+    CHECK(after->material == "TPU");
+}
+
+TEST_CASE("AD5X IFS: firmware type change does NOT clobber a user-locked material (#965)",
+          "[ams][ad5x_ifs][override][965]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    seed_standard_colors(backend); // slot 1 firmware PETG
+
+    // Genuine user edit — locked, must survive the post-print firmware revert.
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.material = "SILK";
+    ovr.color_rgb = 0x00FF00;
+    ovr.color_set = true;
+    ovr.user_locked_material = true;
+    Ad5xIfsTestAccess::seed_override(backend, 1, ovr);
+
+    Ad5xIfsTestAccess::set_material(backend, 1, "TPU"); // firmware type change
+
+    CHECK(backend.get_slot_info(1).material == "SILK");
+    auto after = Ad5xIfsTestAccess::get_override(backend, 1);
+    REQUIRE(after.has_value());
+    CHECK(after->material == "SILK");
+}
+
+TEST_CASE("AD5X IFS: first material observation is a baseline, not an edit",
+          "[ams][ad5x_ifs][override][981]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    // A pre-existing non-locked override must NOT be disturbed by the very
+    // first firmware observation (startup): baseline only, no sync.
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.material = "ABS";
+    ovr.user_locked_material = false;
+    Ad5xIfsTestAccess::seed_override(backend, 1, ovr);
+
+    // First-ever material reading for slot 1 establishes the baseline.
+    Ad5xIfsTestAccess::set_material(backend, 1, "PETG");
+
+    // Override still wins on the baseline pass (no external edit detected yet).
+    CHECK(backend.get_slot_info(1).material == "ABS");
+}
+
+// --------------------------------------------------------------------------
+// #1065: insert AFTER an empty lane must refresh a stale non-locked material.
+// Root cause: check_external_type_change early-returned on an empty material
+// observation, so an empty lane never recorded a baseline. The FIRST insert
+// then hit the "first observation" branch (baseline-only, no sync) instead of
+// "changed", so the stale override.material masked firmware truth — color
+// updated on screen, material stuck. The fix baselines the empty state (like
+// the color path's #808080 placeholder), making "" -> PETG a genuine edit.
+// --------------------------------------------------------------------------
+
+TEST_CASE("AD5X IFS: insert after an empty lane refreshes a stale non-locked material "
+          "(empty -> PETG) (#1065)",
+          "[ams][ad5x_ifs][override][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+
+    // A previous spool left a non-locked override baked with the OLD material.
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.material = "PLA";
+    ovr.color_rgb = 0x00FF00;
+    ovr.color_set = true;
+    ovr.user_locked_material = false;
+    Ad5xIfsTestAccess::seed_override(backend, 1, ovr);
+
+    // Firmware reports a color (so the sync's color-availability guard passes),
+    // then the lane goes empty: presence false + empty material. Under the fix
+    // this baselines the material to "".
+    Ad5xIfsTestAccess::set_color(backend, 1, "00FF00");
+    Ad5xIfsTestAccess::set_port_presence(backend, 1, false);
+    Ad5xIfsTestAccess::set_material(backend, 1, "");
+
+    // Sanity: while empty, the retained override still shows (lane keeps its
+    // assignment across eject — #1071).
+    CHECK(backend.get_slot_info(1).material == "PLA");
+
+    // Insert a DIFFERENT material: lane present + firmware PETG. This is now a
+    // genuine "" -> PETG delta and must fire the sync, refreshing the override.
+    Ad5xIfsTestAccess::set_port_presence(backend, 1, true);
+    Ad5xIfsTestAccess::set_material(backend, 1, "PETG");
+
+    CHECK(backend.get_slot_info(1).material == "PETG");
+    auto after = Ad5xIfsTestAccess::get_override(backend, 1);
+    REQUIRE(after.has_value());
+    CHECK(after->material == "PETG");
+}
+
+TEST_CASE("AD5X IFS: insert after an empty lane preserves a user-locked material (#965/#1065)",
+          "[ams][ad5x_ifs][override][965][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+
+    // A deliberate user choice — locked. It must survive the empty->insert path.
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.material = "SILK";
+    ovr.color_rgb = 0x00FF00;
+    ovr.color_set = true;
+    ovr.user_locked_material = true;
+    Ad5xIfsTestAccess::seed_override(backend, 1, ovr);
+
+    Ad5xIfsTestAccess::set_color(backend, 1, "00FF00");
+    Ad5xIfsTestAccess::set_port_presence(backend, 1, false);
+    Ad5xIfsTestAccess::set_material(backend, 1, "");
+
+    // Insert with a different firmware material — the OverwriteAlways mirror
+    // skips the user-locked field, so the locked choice sticks.
+    Ad5xIfsTestAccess::set_port_presence(backend, 1, true);
+    Ad5xIfsTestAccess::set_material(backend, 1, "PETG");
+
+    CHECK(backend.get_slot_info(1).material == "SILK");
+    auto after = Ad5xIfsTestAccess::get_override(backend, 1);
+    REQUIRE(after.has_value());
+    CHECK(after->material == "SILK");
+}
+
+TEST_CASE("AD5X IFS: an empty first material observation is a baseline, not a spurious sync "
+          "(#1065)",
+          "[ams][ad5x_ifs][override][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+
+    // A pre-existing non-locked override must survive the FIRST (empty) firmware
+    // observation untouched — baselining "" must not fire a sync that rewrites
+    // the override.
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.material = "ABS";
+    ovr.color_rgb = 0x00FF00;
+    ovr.color_set = true;
+    ovr.user_locked_material = false;
+    Ad5xIfsTestAccess::seed_override(backend, 1, ovr);
+
+    // First-ever observation for slot 1 is an empty lane: presence false, empty
+    // material. This establishes the "" baseline and must NOT sync.
+    Ad5xIfsTestAccess::set_port_presence(backend, 1, false);
+    Ad5xIfsTestAccess::set_material(backend, 1, "");
+
+    // Override is undisturbed; no external edit was detected.
+    CHECK(backend.get_slot_info(1).material == "ABS");
+    auto after = Ad5xIfsTestAccess::get_override(backend, 1);
+    REQUIRE(after.has_value());
+    CHECK(after->material == "ABS");
 }

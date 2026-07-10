@@ -976,8 +976,9 @@ json MoonrakerDiscoverySequence::build_subscription_objects(
     subscription_objects["motion_report"] = json::array({"live_extruder_velocity"});
     subscription_objects["display_status"] = json::array({"message", "progress"});
 
-    // system_stats and idle_timeout were previously subscribed with nullptr but
-    // no parser ever reads them — drop the subscription entirely.
+    // system_stats was previously subscribed with nullptr but no parser ever
+    // reads it — drop the subscription entirely. (idle_timeout IS subscribed
+    // below with a narrowed ["state"] field; PrinterCalibrationState reads it.)
 
     // Klipper firmware state (shutdown/error detection + state_message)
     subscription_objects["webhooks"] = json::array({"state", "state_message"});
@@ -1068,9 +1069,12 @@ json MoonrakerDiscoverySequence::build_subscription_objects(
     // Stepper enable state (for motor enabled/disabled detection on M84).
     subscription_objects["stepper_enable"] = json::array({"steppers"});
 
-    // idle_timeout: previously subscribed with nullptr, but no parser ever
-    // reads it. Skip — the mock generates a `state` field but no production
-    // code consumes the subscription. (system_stats also dropped above.)
+    // idle_timeout (Klipper's canonical busy flag). state == "Printing" for the
+    // full duration of ANY blocking op (G28, BED_MESH_CALIBRATE, QGL,
+    // PROBE_ACCURACY, long macro) issued from idle. PrinterCalibrationState reads
+    // idle_timeout.state to drive the "blocking non-print operation" signal.
+    // Narrowed to the single `state` field to avoid needless notifications.
+    subscription_objects["idle_timeout"] = json::array({"state"});
 
     // Happy Hare MMU object (gate status, colors, materials, filament info)
     // Subscribe to specific fields only — nullptr means ALL fields, which causes

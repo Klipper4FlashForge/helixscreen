@@ -470,16 +470,21 @@ TEST_CASE("Subscription: print-start macros narrow to boolean flags", "[moonrake
     REQUIRE(has_field(subs, "gcode_macro _HELIX_STATE", "print_started"));
 }
 
-TEST_CASE("Subscription: dropped objects (idle_timeout, system_stats) absent",
+TEST_CASE("Subscription: system_stats dropped; idle_timeout narrowed to state",
           "[moonraker][subscription]") {
     DiscoveryFixture fx;
     fx.add("idle_timeout", {});
     fx.add("system_stats", {});
     json subs = fx.build();
 
-    // Both confirmed unread by any production parser; subscription must skip.
-    REQUIRE_FALSE(subs.contains("idle_timeout"));
+    // system_stats is unread by any production parser; subscription must skip it.
     REQUIRE_FALSE(subs.contains("system_stats"));
+
+    // idle_timeout IS subscribed — its state is Klipper's canonical busy flag,
+    // read by PrinterCalibrationState to drive the blocking-non-print-operation
+    // signal. Narrowed to the single "state" field to limit notifications.
+    REQUIRE(subs.contains("idle_timeout"));
+    REQUIRE(has_field(subs, "idle_timeout", "state"));
 }
 
 TEST_CASE("Subscription: fan_feedback subscribed only when present", "[moonraker][subscription]") {

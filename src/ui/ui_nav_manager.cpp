@@ -19,6 +19,7 @@
 #include "moonraker_client.h" // For ConnectionState enum
 #include "observer_factory.h"
 #include "overlay_base.h"
+#include "page_scroll_auto_inject.h"
 #include "printer_state.h" // For KlippyState enum
 #include "sound_manager.h"
 #include "static_subject_registry.h"
@@ -1173,6 +1174,10 @@ void NavigationManager::set_active(PanelId panel_id) {
                       static_cast<int>(panel_id));
         panel_instances_[static_cast<int>(panel_id)]->on_activate();
     }
+
+    if (lv_obj_t* root = get_panel_widget(panel_id)) {
+        helix::ui::PageScrollAutoInject::instance().on_root_shown(root);
+    }
 }
 
 PanelId NavigationManager::get_active() const {
@@ -1374,6 +1379,10 @@ void NavigationManager::activate_initial_panel() {
         spdlog::trace("[NavigationManager] Activating initial panel {}",
                       static_cast<int>(active_panel_));
         panel_instances_[static_cast<int>(active_panel_)]->on_activate();
+    }
+
+    if (lv_obj_t* root = get_panel_widget(active_panel_)) {
+        helix::ui::PageScrollAutoInject::instance().on_root_shown(root);
     }
 }
 
@@ -1608,6 +1617,8 @@ void NavigationManager::push_overlay(lv_obj_t* overlay_panel, bool hide_previous
             lifecycle->on_activate();
         }
 
+        helix::ui::PageScrollAutoInject::instance().on_root_shown(overlay_panel);
+
         SoundManager::instance().play("nav_forward");
         spdlog::trace("[NavigationManager] Pushed overlay {} (stack: {})", (void*)overlay_panel,
                       mgr.panel_stack_.size());
@@ -1711,6 +1722,8 @@ void NavigationManager::push_overlay_zoom_from(lv_obj_t* overlay_panel, lv_area_
         } else {
             lifecycle->on_activate();
         }
+
+        helix::ui::PageScrollAutoInject::instance().on_root_shown(overlay_panel);
 
         SoundManager::instance().play("nav_forward");
         spdlog::trace("[NavigationManager] Pushed overlay {} with zoom (stack: {})",

@@ -34,6 +34,7 @@
 #include "ui_z_offset_indicator.h"
 
 #include "layout_manager.h"
+#include "page_scroll_auto_inject.h"
 #include "static_subject_registry.h"
 #include "theme_manager.h"
 
@@ -275,6 +276,8 @@ void register_xml_components() {
     ui_carousel_init();           // <ui_carousel> horizontal scroll-snap carousel
     register_xml("carousel.xml"); // <carousel> XML component wrapping ui_carousel
     ui_confetti_init();           // <ui_confetti> celebration animation canvas
+    register_xml(
+        "components/page_scroll_gutter.xml"); // <page_scroll_gutter> page scroll chevron column
 
     // Register no-op callback and subject for optional handlers in XML components
     // This silences warnings when components use callback/subject props with default=""
@@ -552,6 +555,7 @@ void register_xml_components() {
     register_xml("history_dashboard_panel.xml");
 
     // Settings components (must be registered before settings_panel)
+    register_xml("setting_group_header.xml");
     register_xml("setting_section_header.xml");
     register_xml("setting_toggle_row.xml");
     register_xml("setting_dropdown_row.xml");
@@ -680,6 +684,12 @@ void register_xml_components() {
     // attaches an instance to lv_layer_top during Application::init and
     // toggles visibility based on UpgradeNudge state).
     register_xml("components/upgrade_banner.xml");
+
+    // Page-scroll-buttons policy: injects chevron gutters into overflowing
+    // scrollable containers. Driven by the NavigationManager on_root_shown() hooks
+    // and the Display-settings toggle callback — NOT a subject observer (see
+    // PageScrollAutoInject::init). This call is the lifecycle setup hook.
+    helix::ui::PageScrollAutoInject::instance().init();
 
     spdlog::trace("[XML Registration] XML component registration complete");
 }

@@ -83,6 +83,22 @@ TEST_CASE("no tools yields empty, non-blocking result", "[preflight_validator]")
     CHECK_FALSE(r.has_advisory());
 }
 
+// Regression: single-extruder printer with NO multi-material/AMS system (e.g. Ender 3 V3 SE).
+// AmsState::collect_available_slots() emits one AvailableSlot per physical AMS slot regardless
+// of its empty status, so an EMPTY slots vector uniquely means "no AMS hardware at all" — never
+// "AMS present with empty slots." In that case there is no slot to map T0 to, filament presence
+// is the physical runout sensor's job (surfaced separately), and pre-flight must NOT block.
+// Without this guard the default mapping yields mapped_slot == -1 → EmptySlot → a false
+// "T0 has no filament loaded" block even though filament is loaded and detected.
+TEST_CASE("no AMS system (empty slots) does not block", "[preflight_validator]") {
+    std::vector<GcodeToolInfo> tools = {{0, 0x2233FF, "PLA"}}; // slicer emitted a T0 color
+    std::vector<AvailableSlot> slots = {};                     // no AMS backend → zero slots
+    auto mapping = helix::FilamentMapper::compute_defaults(tools, slots); // yields slot -1 for T0
+    auto r = PreflightValidator::validate(tools, slots, mapping);
+    CHECK_FALSE(r.has_block());
+    CHECK_FALSE(r.has_advisory());
+}
+
 // Regression: Snapmaker U1 toolchanger — 2-color print uses heads 0 and 2; head 1 is unloaded.
 // Firmware auto-feeds all configured heads, but head 1 is not required by this print.
 // Pre-flight must NOT block when an unrequired head is empty, and MUST block when a required

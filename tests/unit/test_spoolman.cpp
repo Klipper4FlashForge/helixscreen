@@ -6,6 +6,7 @@
 #include "json_utils.h"
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
+#include "moonraker_spoolman_api.h" // For spoolman_detail::parse_spool_info
 #include "printer_state.h"
 #include "spoolman_types.h" // For SpoolInfo, VendorInfo, FilamentInfo
 
@@ -805,6 +806,75 @@ TEST_CASE("Spoolman status - spool_id null handling", "[filament][parsing]") {
         int active_spool_id = result.value("spool_id", 0);
 
         REQUIRE(active_spool_id == 0);
+    }
+}
+
+// ============================================================================
+// parse_spool_info — null numeric field tolerance (#1087)
+//
+// Spoolman serializes optional filament fields (settings_extruder_temp,
+// settings_bed_temp) as present-but-null. A raw json::value("k", def) calls
+// get<int>() on the null and throws type_error.302, which aborted the whole
+// spool-list parse and left the "Choose Spool" picker stuck loading forever.
+// These exercise the REAL parser so a regression to .value() fails the build.
+// ============================================================================
+
+TEST_CASE("parse_spool_info - null recommended temps do not throw (#1087)",
+          "[filament][parsing][spoolman]") {
+    using helix::spoolman_detail::parse_spool_info;
+
+    SECTION("both settings temps null falls back to 0") {
+        auto j = nlohmann::json::parse(R"({
+            "id": 7,
+            "remaining_weight": 800.0,
+            "filament": {
+                "id": 3,
+                "material": "PLA",
+                "name": "Jet Black",
+                "settings_extruder_temp": null,
+                "settings_bed_temp": null
+            }
+        })");
+
+        SpoolInfo info;
+        REQUIRE_NOTHROW(info = parse_spool_info(j));
+        REQUIRE(info.id == 7);
+        REQUIRE(info.material == "PLA");
+        REQUIRE(info.nozzle_temp_recommended == 0);
+        REQUIRE(info.bed_temp_recommended == 0);
+    }
+
+    SECTION("null top-level id and nested filament/vendor ids do not throw") {
+        auto j = nlohmann::json::parse(R"({
+            "id": null,
+            "remaining_weight": 500.0,
+            "filament": {
+                "id": null,
+                "material": "PETG",
+                "vendor": {"id": null, "name": "eSUN"}
+            }
+        })");
+
+        SpoolInfo info;
+        REQUIRE_NOTHROW(info = parse_spool_info(j));
+        REQUIRE(info.id == 0);
+        REQUIRE(info.filament_id == 0);
+        REQUIRE(info.vendor_id == 0);
+        REQUIRE(info.vendor == "eSUN");
+    }
+
+    SECTION("present integer temps still parse correctly") {
+        auto j = nlohmann::json::parse(R"({
+            "id": 12,
+            "filament": {
+                "settings_extruder_temp": 215,
+                "settings_bed_temp": 60
+            }
+        })");
+
+        auto info = parse_spool_info(j);
+        REQUIRE(info.nozzle_temp_recommended == 215);
+        REQUIRE(info.bed_temp_recommended == 60);
     }
 }
 

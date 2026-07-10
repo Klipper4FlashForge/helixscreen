@@ -40,6 +40,7 @@
 #include "led/led_auto_state.h"
 #include "led/led_controller.h"
 #include "moonraker_manager.h"
+#include "page_scroll_auto_inject.h"
 #include "panel_factory.h"
 #include "panel_widget_manager.h"
 #include "pending_startup_warnings.h"
@@ -135,6 +136,7 @@
 #include "data_root_resolver.h"
 #include "display_settings_manager.h"
 #include "helix_sparkline.h"
+#include "setting_group.h"
 #include "temperature_service.h"
 #ifdef HELIX_ENABLE_SCREENSAVER
 #include "screensaver.h"
@@ -1517,6 +1519,7 @@ bool Application::register_widgets() {
     ui_status_pill_register_widget();
     ui_switch_register();
     ui_card_register();
+    setting_group_register();
     ui_temp_display_init();
     ui_ams_mini_status_init();
     ui_severity_card_register();
@@ -4298,6 +4301,12 @@ void Application::shutdown() {
 
     // Deactivate UI and clear navigation registries
     NavigationManager::instance().shutdown();
+
+    // Detach page-scroll-buttons controllers (removes gutters + observers) while
+    // panel widgets are still alive — must run before m_panels.reset() /
+    // StaticPanelRegistry::destroy_all() below tear down the containers it holds
+    // pointers to.
+    helix::ui::PageScrollAutoInject::instance().shutdown();
 
     // Tear down the upgrade banner before UpdateChecker so its observers
     // release cleanly (subject-lifetime-before-observer per #705).

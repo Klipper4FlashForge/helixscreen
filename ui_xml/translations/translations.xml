@@ -2321,6 +2321,7 @@
   <translation tag="Width" de="Breite" en="Width" es="Ancho" fr="Largeur" it="Larghezza" ja="幅" pt="Largura" ru="Ширина" zh="宽度"/>
   <translation tag="Wifi" de="WLAN" en="Wifi" es="Wifi" fr="Wi-Fi" it="Wi-Fi" ja="Wi-Fi" pt="Wi-Fi" ru="Wi-Fi" zh="Wi-Fi"/>
   <translation tag="Wizard Error" de="Assistentenfehler" en="Wizard Error" es="Error del asistente" fr="Erreur de l&apos;assistant" it="Errore procedura guidata" ja="ウィザードエラー" pt="Erro do assistente" ru="Ошибка мастера" zh="向导错误"/>
+  <translation tag="Working..." en="Working..."/>
   <translation tag="Write failed at chunk {}" de="Schreibvorgang bei Block {} fehlgeschlagen" en="Write failed at chunk {}" es="Error de escritura en el fragmento {}" fr="Échec de lécriture au bloc {}" it="Scrittura fallita al chunk {}" ja="チャンク {} で書き込みに失敗しました" pt="Falha na escrita no fragmento {}" ru="Не удалось записать в блоке {}" zh="区块 {} 写入失败"/>
   <translation tag="Wrong PIN" de="Falsche PIN" en="Wrong PIN" es="PIN incorrecto" fr="PIN incorrect" it="PIN errato" ja="PIN が違います" pt="PIN incorreto" ru="Неверный PIN" zh="PIN 错误"/>
   <translation tag="Wrong media" de="Falsches Medium" en="Wrong media" es="Medio incorrecto" fr="Mauvais média" it="Supporto errato" ja="不正なメディア" pt="Mídia incorreta" ru="Неверный носитель" zh="介质错误"/>

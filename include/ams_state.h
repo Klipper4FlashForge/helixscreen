@@ -308,6 +308,22 @@ class AmsState {
     }
 
     /**
+     * @brief Get operation-indeterminate subject (0/1)
+     *
+     * 1 while an operation is active but its phase-progress feed has stalled past
+     * the backend's threshold (~8s), so the live "Heat 225/230" number is frozen
+     * and should be replaced by an indeterminate "Working…" busy state; 0
+     * otherwise. Synced from AmsSystemInfo::operation_indeterminate in
+     * sync_from_backend() (AD5X IFS drives it; other backends leave it 0).
+     * Static-lifetime singleton subject — no SubjectLifetime token needed.
+     *
+     * @return Subject holding the indeterminate busy flag (0/1)
+     */
+    lv_subject_t* get_ams_operation_indeterminate_subject() {
+        return &ams_operation_indeterminate_;
+    }
+
+    /**
      * @brief Get system name subject
      * @return Subject holding AMS system display name (e.g., "Happy Hare", "AFC")
      */
@@ -1253,6 +1269,10 @@ class AmsState {
     /// Granular load/unload sub-phase (-1=none, 0=Home, 1=Select, 2=Heat,
     /// 3=Move). Snapmaker U1 only; static-lifetime singleton subject.
     lv_subject_t ams_operation_phase_;
+    /// 1 while an active op's phase-progress feed has stalled (~8s) so the frozen
+    /// live-temp number should read as "Working…"; 0 otherwise. AD5X IFS only.
+    /// Static-lifetime singleton subject.
+    lv_subject_t ams_operation_indeterminate_;
     lv_subject_t toolchange_step_; ///< current narration phase index (-1 = none/idle)
     /// Active toolchange operation for the narration router to resolve a phase
     /// index without a sidebar pointer. Defaults to a swap (most common case).

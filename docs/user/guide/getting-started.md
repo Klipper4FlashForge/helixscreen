@@ -89,7 +89,7 @@ The first time you launch HelixScreen, a setup wizard guides you through configu
 | **Input Shaper** | An accelerometer is detected on the printer |
 | **Help Improve HelixScreen** | Shown on preset printers in place of the Summary step (see below) |
 
-The **Help Improve HelixScreen** step asks whether to share anonymous usage statistics. No personal data is ever collected, and you can change this choice later in **Settings > System**. For details on what is and isn't collected, see the [Telemetry guide](../../TELEMETRY.md).
+The **Help Improve HelixScreen** step asks whether to share anonymous usage statistics. No personal data is ever collected, and you can change this choice later in **Settings > System**. For details on what is and isn't collected, see the [Telemetry guide](../TELEMETRY.md).
 
 The progress indicator (e.g., "Step 3 of 8") only counts the steps that apply to your setup — skipped steps aren't shown or counted.
 
@@ -140,10 +140,10 @@ If Moonraker is running locally — or your screen is attached directly to the p
 
 The keyboard appears automatically for text input:
 
-- **QWERTY layout** with number row
+- **QWERTY layout** (numbers via long-press on the top letter row)
 - **Long-press** for alternate characters (hold 'a' for '@', etc.)
 - **?123 button**: Switch to symbols
-- **ABC button**: Switch to letters
+- **XYZ button**: Switch to letters
 - **Shift**: Toggle uppercase
 
 ---
@@ -178,9 +178,8 @@ When using the SDL2 desktop simulator:
 | **S** | Take screenshot (saves to /tmp/) |
 | **D** | Toggle dark/light mode |
 | **M** | Toggle memory stats overlay |
-| **Escape** | Exit application |
 | **Cmd+Q** / **Win+Q** | Exit application |
 
 ---
 
-**Next:** [Home Panel](home-panel.md) | [Back to User Guide](../USER_GUIDE.md)
+**Next:** [Supported Printers](supported-printers.md) | [Back to User Guide](../USER_GUIDE.md)

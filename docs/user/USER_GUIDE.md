@@ -35,6 +35,9 @@ Navigation basics, touch gestures, connection status, first-time setup wizard, W
 
 ![Setup Wizard](../images/user/wizard-wifi.png)
 
+### [Supported Printers](guide/supported-printers.md)
+Which printers get deep, model-specific integration — and exactly what works on each. Covers the FlashForge Adventurer 5M/5X (IFS), Creality K1/K2 (CFS), QIDI Box, Snapmaker U1, Anycubic ACE, and how every other Klipper printer is auto-detected.
+
 ### [Home Panel](guide/home-panel.md)
 Your printer dashboard — status area, configurable home widgets (temperature, network, LED, AMS, power, notifications, and more), active tool badge for toolchanger printers, emergency stop, and the Printer Manager with custom images. Customize which widgets appear and their order via **Settings > Home Widgets**. Long-press the lightbulb widget for full LED controls with color, brightness, effects, and WLED presets.
 
@@ -42,6 +45,9 @@ Your printer dashboard — status area, configurable home widgets (temperature, 
 The full printing workflow — file selection, preview, pre-print options, monitoring active prints, tune overlay, Z-offset baby steps, pressure advance, exclude object, and post-print summary.
 
 ![Print File Detail](../images/user/print-detail.png)
+
+### [Print Monitoring & Failure Detection](guide/print-monitoring.md)
+The pre-print filament check that catches an empty slot before a multi-color print starts, and the on-screen response to camera-based print-failure detection on supported printers (Snapmaker U1, Creality K2).
 
 ### [Temperature Control](guide/temperature.md)
 Nozzle and bed temperature panels, multi-extruder selector for printers with multiple extruders, material presets, and live temperature graphs.
@@ -55,6 +61,9 @@ Jog pad controls, homing, distance increments, and emergency stop.
 Extrusion controls, load/unload procedures, AMS multi-material systems with multi-backend support (run Happy Hare, AFC, ACE, or Tool Changer simultaneously), Spoolman integration, and dryer control.
 
 ![AMS Panel](../images/user/ams.png)
+
+### [Filament Tracking & Spoolman](guide/filament-tracking.md)
+How HelixScreen tracks material, color, and remaining weight — with the built-in tracker or a connected Spoolman server. Covers the difference between the two modes, how usage is estimated during a print, connecting a Spoolman server, and browsing your spool inventory on the touchscreen.
 
 ### [Bluetooth Setup](guide/bluetooth-setup.md)
 Enable Bluetooth on Raspberry Pi or BTT Pi when it's disabled for UART, or add a USB Bluetooth dongle when your MCU uses the serial port.

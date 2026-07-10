@@ -1,0 +1,178 @@
+// Copyright (C) 2025-2026 356C LLC
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/**
+ * @file test_gcode_classify.cpp
+ * @brief Tests for the is_discretionary_gcode() default-allow classifier.
+ *
+ * Discretionary = convenience commands (fan, temp, non-homing moves, LED) that
+ * are safe to REFUSE while the printer is busy with a blocking op so they don't
+ * queue and time out. Default-ALLOW: true ONLY for a known discretionary set;
+ * everything else returns false (allowed) so nothing important is ever blocked.
+ */
+
+#include "../../include/gcode_classify.h"
+
+#include "../catch_amalgamated.hpp"
+
+using namespace helix;
+
+// ============================================================================
+// Case 1: is_discretionary_gcode() token matcher
+// ============================================================================
+
+TEST_CASE("is_discretionary_gcode recognizes the discretionary command set",
+          "[gcode][classify]") {
+    SECTION("fan commands are discretionary (upper + lower case)") {
+        CHECK(is_discretionary_gcode("M106"));
+        CHECK(is_discretionary_gcode("m106"));
+        CHECK(is_discretionary_gcode("M106 S255"));
+        CHECK(is_discretionary_gcode("M107"));
+        CHECK(is_discretionary_gcode("m107"));
+        CHECK(is_discretionary_gcode("SET_FAN_SPEED FAN=fan0 SPEED=1.0"));
+        CHECK(is_discretionary_gcode("set_fan_speed FAN=fan0 SPEED=1.0"));
+    }
+
+    SECTION("temp commands are discretionary (upper + lower case)") {
+        CHECK(is_discretionary_gcode("M104 S200"));
+        CHECK(is_discretionary_gcode("m104 s200"));
+        CHECK(is_discretionary_gcode("M140 S60"));
+        CHECK(is_discretionary_gcode("m140 s60"));
+        CHECK(is_discretionary_gcode("M109 S200"));
+        CHECK(is_discretionary_gcode("m109 s200"));
+        CHECK(is_discretionary_gcode("M190 S60"));
+        CHECK(is_discretionary_gcode("m190 s60"));
+        CHECK(is_discretionary_gcode("SET_HEATER_TEMPERATURE HEATER=extruder TARGET=200"));
+        CHECK(is_discretionary_gcode("set_heater_temperature HEATER=extruder TARGET=200"));
+        // Exact strings MoonrakerAPI::set_temperature emits for chamber + temperature_fan
+        // heaters (build_heater_gcode): these also route through the guarded execute_gcode.
+        CHECK(is_discretionary_gcode("M141 S50"));
+        CHECK(is_discretionary_gcode("m141 s50"));
+        CHECK(is_discretionary_gcode("SET_TEMPERATURE_FAN_TARGET TEMPERATURE_FAN=chamber TARGET=40"));
+    }
+
+    SECTION("non-homing moves are discretionary (upper + lower case)") {
+        CHECK(is_discretionary_gcode("G0 X10"));
+        CHECK(is_discretionary_gcode("g0 x10"));
+        CHECK(is_discretionary_gcode("G1 X10 Y10 F3000"));
+        CHECK(is_discretionary_gcode("g1 x10 y10 f3000"));
+    }
+
+    SECTION("LED command is discretionary (upper + lower case)") {
+        CHECK(is_discretionary_gcode("SET_LED LED=my_led RED=1"));
+        CHECK(is_discretionary_gcode("set_led LED=my_led RED=1"));
+    }
+
+    SECTION("positioning-mode sets are discretionary (upper + lower case)") {
+        CHECK(is_discretionary_gcode("G90"));
+        CHECK(is_discretionary_gcode("g90"));
+        CHECK(is_discretionary_gcode("G91"));
+        CHECK(is_discretionary_gcode("g91"));
+    }
+
+    SECTION("wrapped relative jog (as move_axis emits it) is entirely discretionary") {
+        // MoonrakerMotionAPI::move_axis emits G91 / G0 / G90 — all three lines
+        // must be discretionary or the jog would slip past the busy guard.
+        CHECK(is_discretionary_gcode("G91\nG0 X10 F3000\nG90"));
+    }
+}
+
+// ============================================================================
+// Case 2: recovery / critical / probe-control commands are NOT discretionary
+// ============================================================================
+
+TEST_CASE("is_discretionary_gcode never blocks recovery or critical commands",
+          "[gcode][classify]") {
+    SECTION("homing / motor / e-stop") {
+        CHECK_FALSE(is_discretionary_gcode("G28"));
+        CHECK_FALSE(is_discretionary_gcode("g28"));
+        CHECK_FALSE(is_discretionary_gcode("M112"));
+        CHECK_FALSE(is_discretionary_gcode("EMERGENCY_STOP"));
+        CHECK_FALSE(is_discretionary_gcode("M84"));
+        CHECK_FALSE(is_discretionary_gcode("M18"));
+    }
+
+    SECTION("print lifecycle recovery") {
+        CHECK_FALSE(is_discretionary_gcode("PAUSE"));
+        CHECK_FALSE(is_discretionary_gcode("RESUME"));
+        CHECK_FALSE(is_discretionary_gcode("CANCEL_PRINT"));
+        CHECK_FALSE(is_discretionary_gcode("FIRMWARE_RESTART"));
+        CHECK_FALSE(is_discretionary_gcode("RESTART"));
+    }
+
+    SECTION("manual-probe control commands (needed to finish/abort a probe)") {
+        CHECK_FALSE(is_discretionary_gcode("TESTZ"));
+        CHECK_FALSE(is_discretionary_gcode("ACCEPT"));
+        CHECK_FALSE(is_discretionary_gcode("ABORT"));
+        CHECK_FALSE(is_discretionary_gcode("SET_GCODE_OFFSET Z=0.1"));
+    }
+
+    SECTION("calibration commands and arbitrary macros") {
+        CHECK_FALSE(is_discretionary_gcode("BED_MESH_CALIBRATE"));
+        CHECK_FALSE(is_discretionary_gcode("QUAD_GANTRY_LEVEL"));
+        CHECK_FALSE(is_discretionary_gcode("PROBE_ACCURACY"));
+        CHECK_FALSE(is_discretionary_gcode("MY_CUSTOM_MACRO"));
+        CHECK_FALSE(is_discretionary_gcode("START_PRINT"));
+    }
+}
+
+// ============================================================================
+// Case 3: whole-token matching (no substring / prefix false positives)
+// ============================================================================
+
+TEST_CASE("is_discretionary_gcode matches whole tokens only",
+          "[gcode][classify]") {
+    CHECK_FALSE(is_discretionary_gcode("M1090"));    // not M109
+    CHECK_FALSE(is_discretionary_gcode("M1060"));    // not M106
+    CHECK_FALSE(is_discretionary_gcode("G10"));      // not G0/G1
+    CHECK_FALSE(is_discretionary_gcode("M10"));      // not M104/M106/M107
+    CHECK_FALSE(is_discretionary_gcode("SET_FAN_SPEED_EXTRA FAN=x")); // not SET_FAN_SPEED
+    CHECK_FALSE(is_discretionary_gcode("SET_LED_EFFECT EFFECT=x"));   // not SET_LED
+}
+
+// ============================================================================
+// Case 4: empty / blank input is NOT discretionary
+// ============================================================================
+
+TEST_CASE("is_discretionary_gcode returns false for empty or blank scripts",
+          "[gcode][classify]") {
+    CHECK_FALSE(is_discretionary_gcode(""));
+    CHECK_FALSE(is_discretionary_gcode("   "));
+    CHECK_FALSE(is_discretionary_gcode("\n\n"));
+    CHECK_FALSE(is_discretionary_gcode("   \n  \t "));
+    CHECK_FALSE(is_discretionary_gcode("; only a comment"));
+}
+
+// ============================================================================
+// Case 5: multi-line scripts — discretionary ONLY if EVERY line is
+// ============================================================================
+
+TEST_CASE("is_discretionary_gcode requires every non-blank line to be discretionary",
+          "[gcode][classify]") {
+    SECTION("all-discretionary multi-line -> true") {
+        CHECK(is_discretionary_gcode("M106 S255\nM104 S200"));
+        CHECK(is_discretionary_gcode("G1 X10\nG1 Y10\nM106 S128"));
+        // blank lines between discretionary lines are ignored
+        CHECK(is_discretionary_gcode("M106 S255\n\n  \nM104 S200"));
+    }
+
+    SECTION("any non-discretionary line -> false (allow the whole script)") {
+        CHECK_FALSE(is_discretionary_gcode("M106 S255\nG28"));
+        CHECK_FALSE(is_discretionary_gcode("G28\nM106 S255"));
+        CHECK_FALSE(is_discretionary_gcode("M104 S200\nTESTZ\nM106 S128"));
+    }
+}
+
+// ============================================================================
+// Case 6: inline comments are stripped (comment-only line counts as blank)
+// ============================================================================
+
+TEST_CASE("is_discretionary_gcode strips inline comments",
+          "[gcode][classify]") {
+    CHECK(is_discretionary_gcode("M106 S128 ; cool"));
+    CHECK(is_discretionary_gcode("M104 S200 ; set nozzle"));
+    // comment-only line among discretionary lines is treated as blank
+    CHECK(is_discretionary_gcode("M106 S255\n; a note\nM104 S200"));
+    // a non-discretionary line still trips even with a trailing comment
+    CHECK_FALSE(is_discretionary_gcode("G28 ; home first\nM106 S255"));
+}

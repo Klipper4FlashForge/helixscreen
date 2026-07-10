@@ -30,9 +30,9 @@ Built-in presets:
 | Material | Nozzle | Bed | Chamber |
 |----------|--------|-----|---------|
 | Off | 0°C | 0°C | 0°C |
-| PLA | 210°C | 60°C | — |
-| PETG | 240°C | 80°C | — |
-| ABS | 250°C | 100°C | 50°C |
+| PLA | 205°C | 60°C | — |
+| PETG | 245°C | 80°C | — |
+| ABS | 255°C | 100°C | 60°C |
 
 Tap a preset to set the target temperature immediately. If your printer has a chamber heater, presets that include a chamber temperature will set it automatically — materials that don't need an enclosed chamber (PLA, PETG) leave the chamber heater off.
 
@@ -46,7 +46,7 @@ them at a different filament type from the built-in materials database.
 1. **Long-press** a preset button until the material picker appears.
 2. Scroll the list and tap the filament type you want. The button's label and its
    temperatures update immediately, and the choice is remembered across restarts.
-3. To undo all changes, long-press any preset button and tap **Reset all to
+3. To undo all changes, long-press any preset button and tap **Reset to
    defaults** at the top of the list — this restores PLA / PETG / ABS / TPU.
 
 > **Tip:** A short tap still just applies the button's temperatures. Only a long-press opens the picker.
@@ -136,4 +136,4 @@ From the right column:
 
 ---
 
-**Next:** [Motion & Positioning](motion.md) | **Prev:** [Printing](printing.md) | [Back to User Guide](../USER_GUIDE.md)
+**Next:** [Motion & Positioning](motion.md) | **Prev:** [Print Monitoring & Failure Detection](print-monitoring.md) | [Back to User Guide](../USER_GUIDE.md)

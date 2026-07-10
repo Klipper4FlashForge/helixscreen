@@ -151,7 +151,10 @@ Some widgets have settings you can change directly from Edit Mode. When you sele
 | **Temperature Sensors** | Toggles between single-sensor and Carousel display mode |
 | **Fan** | Opens the fan picker — choose which fan to monitor |
 | **Temperature Graph** | Opens a configuration modal — toggle sensors on/off and customize series colors |
-| **Macro Button 1–5** | Opens the macro picker — choose which macro to assign |
+| **Macro Button** | Opens the macro picker — choose which macro to assign |
+| **Print Status** | Opens the section picker — choose which sections to show |
+| **Power** | Opens the device picker — choose which power device to bind |
+| **Camera** | Opens the camera configuration modal — set rotation and flip |
 | **Clog Detection** | Opens the Clog Detection config modal — set detection source, mode, and thresholds |
 
 **To configure a widget:**
@@ -242,12 +245,11 @@ The default layout places:
 
 | Widget | Description | Default | Min | Max | Resizable | Hardware Required |
 |--------|-------------|---------|-----|-----|-----------|-------------------|
-| **Macro Button 1–5** | One-tap buttons to run configured macros. Up to 5 independently configurable slots. Assign a macro to each via the gear icon in Edit Mode. | 1x1 | 1x1 | 2x1 | Horizontal only | — |
+| **Macro Button** | One-tap buttons to run configured macros. Add as many Macro Button widgets as you like, each independently configurable — assign a macro to each via the gear icon in Edit Mode. | 1x1 | 1x1 | 2x1 | Horizontal only | — |
 | **Macros** | One-tap shortcut to open the [Macros](advanced.md#macro-execution) panel for browsing and executing Klipper macros. | 1x1 | 1x1 | 1x1 | No | — |
 | **G-code Console** | One-tap shortcut to open the [G-code Console](advanced.md#g-code-console) overlay for sending commands and viewing Klipper responses. See [G-code Console Widget](#g-code-console-widget) below. | 1x1 | 1x1 | 1x1 | No | — |
 | **Tool Switcher** | Quick tool switching for multi-tool printers (IDEX, toolchangers, multi-head). Shows the available tools and lets you switch the active tool with one tap. See [Tool Switcher Widget](#tool-switcher-widget) below. | 1x1 | 1x1 | 2x2 | Yes | Multi-tool printer |
-| **Power** | Toggle all selected Moonraker power devices (PSU, lights, etc.) with one tap. | 1x1 | 1x1 | 1x1 | No | Power devices |
-| **Power Device** | Toggle an individual Moonraker power device. You can add multiple instances, each bound to a different device. Shows the device name, state, and a customizable icon. | 1x1 | 1x1 | 1x1 | No | Power devices |
+| **Power** | Toggle a Moonraker power device (PSU, lights, etc.) with one tap. You can add multiple instances, each bound to a different device. Shows the device name, state, and a customizable icon. | 1x1 | 1x1 | 1x1 | No | Power devices |
 
 ### System
 
@@ -273,7 +275,7 @@ Some widgets depend on specific hardware being detected by Klipper. If the hardw
 | AMS Status | AMS, AFC (Box Turtle), Happy Hare, ACE (Anycubic ACE Pro), or compatible MMU system |
 | Clog Detection | AMS, AFC, Happy Hare, or compatible MMU with clog/flow detection |
 | LED Light / LED Controls | Any LED strip configured in Klipper (neopixel, dotstar, output_pin) |
-| Power / Power Device | Moonraker power devices (PSU control, smart plugs) |
+| Power | Moonraker power devices (PSU control, smart plugs) |
 | Filament Sensor | `[filament_switch_sensor]` or `[filament_motion_sensor]` in Klipper |
 | Humidity | `[temperature_sensor]` with humidity capability |
 | Width Sensor | `[hall_filament_width_sensor]` in Klipper |
@@ -343,8 +345,7 @@ While **not** in Edit Mode, widgets respond to taps and other gestures:
 | Macros | Opens the Macros panel overlay |
 | G-code Console | Opens the G-code Console overlay |
 | Tool Switcher | Switches the active tool (compact size opens a tool picker; larger sizes show tappable tool pills) |
-| Power | Toggles all selected power devices |
-| Power Device | Toggles the individual power device |
+| Power | Toggles the bound power device |
 | Shutdown/Reboot | Shows confirmation, then shuts down/reboots |
 | Firmware Restart | Restarts Klipper firmware |
 | Lock Screen | Locks the screen immediately; requires PIN to unlock |
@@ -512,13 +513,14 @@ Tapping the tool that's already active does nothing.
 
 ### Grid Dimensions
 
-The grid adapts to your screen size:
+The grid adapts to your screen **height** (not width):
 
-| Screen Width | Grid Size | Total Cells |
+| Screen Height | Grid Size | Total Cells |
 |-------------|-----------|-------------|
-| 480px and below | 6 columns x 4 rows | 24 |
-| 481-700px | 6 columns x 4 rows | 24 |
-| 701px and above | 8 columns x 5 rows | 40 |
+| 550px and below | 6 columns x 4 rows | 24 |
+| 551px and above | 8 columns x 5 rows | 40 |
+
+The choice is driven by height alone. For example, an 800x480 panel gets the 6x4 grid because its height (480) is 550px or less.
 
 ### Auto-Placement
 
@@ -554,7 +556,7 @@ On printers with a toolchanger (IDEX, multi-head, tool-changing systems), the Ho
 
 ## Emergency Stop
 
-The red **Emergency Stop** button in the top bar halts all printer motion immediately. By default, a confirmation dialog appears before executing. You can disable the confirmation in **Settings > Motion > E-Stop Confirmation**.
+The red **Emergency Stop** button in the top bar halts all printer motion immediately. By default, a confirmation dialog appears before executing. You can disable the confirmation in **Settings > Safety & Notifications > E-Stop Confirmation**.
 
 ---
 
@@ -794,4 +796,4 @@ You can also switch printers directly from the **navigation bar**. When multiple
 
 ---
 
-**Next:** [Printing](printing.md) | **Prev:** [Getting Started](getting-started.md) | [Back to User Guide](../USER_GUIDE.md)
+**Next:** [Printing](printing.md) | **Prev:** [Supported Printers](supported-printers.md) | [Back to User Guide](../USER_GUIDE.md)

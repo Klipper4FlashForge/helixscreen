@@ -184,8 +184,8 @@ This is different from `sounds_enabled` — that toggle mutes playback but still
 ### `language`
 **Type:** string
 **Default:** `"en"`
-**Values:** `"en"` (English)
-**Description:** UI language code. Currently only English is supported.
+**Values:** `"en"`, `"de"`, `"es"`, `"fr"`, `"it"`, `"ja"`, `"pt"`, `"ru"`, `"zh"`
+**Description:** UI language code. Nine languages are supported (English, German, Spanish, French, Italian, Japanese, Portuguese, Russian, Chinese). Change via Settings > Display & Sound > Language.
 
 ### `beta_features`
 **Type:** boolean
@@ -210,6 +210,8 @@ Located in the `theme` section:
 **Type:** integer
 **Default:** `0`
 **Description:** Theme accent color preset. **Requires restart to take effect.**
+
+> **Note:** `preset` is a legacy dropdown-index field, and index `0` maps to Ayu — it does **not** reflect the effective default theme. The out-of-the-box default theme is **Nord**. The active theme is set by the `/display/theme` string (a theme name), not by this numeric index.
 
 | Value | Theme |
 |-------|-------|
@@ -287,12 +289,13 @@ Located in the `display` section:
     "gcode_3d_enabled": true,
     "bed_mesh_render_mode": 0,
     "bed_mesh_show_zero_plane": true,
+    "page_scroll_buttons": false,
     "printer_image": ""
   }
 }
 ```
 
-> **Touch calibration data lives under `input.calibration`, not `display.calibration`.** See the [Input Configuration](#input) section below and the [Touch Calibration Guide](guide/touch-calibration.md). Older configs that placed it under `display` are automatically migrated on first load.
+> **Touch calibration data lives under `input.calibration`, not `display.calibration`.** See the [Input Configuration](#input-settings) section below and the [Touch Calibration Guide](guide/touch-calibration.md). Older configs that placed it under `display` are automatically migrated on first load.
 
 ### `animations_enabled`
 **Type:** boolean
@@ -374,6 +377,11 @@ Can also be overridden via `HELIX_GCODE_MODE` env var (`3D` or `2D`).
 **Type:** boolean
 **Default:** `true`
 **Description:** Show translucent reference plane at Z=0 in bed mesh 3D view. Helps visualize where the nozzle touches the bed.
+
+### `page_scroll_buttons`
+**Type:** boolean
+**Default:** `false`
+**Description:** Show up/down scroll buttons on long lists throughout the app. Useful on small screens or displays where drag-to-scroll feels unresponsive. See [Display & Sound Settings](guide/settings/display-sound.md#scroll-buttons) for details.
 
 ### `printer_image`
 **Type:** string
@@ -1344,7 +1352,7 @@ HelixScreen accepts command-line options for overriding configuration and debugg
 
 | Option | Description |
 |--------|-------------|
-| `-s, --size <size>` | Screen size: `tiny` (480×320), `small` (800×480), `medium` (1024×600), `large` (1280×720) |
+| `-s, --size <size>` | Screen size: `tiny` (480×320), `small` (480×400), `medium` (800×480), `large` (1024×600) |
 | `--dpi <n>` | Display DPI (50-500, default: 160) |
 | `--dark` | Use dark theme |
 | `--light` | Use light theme |
@@ -1420,6 +1428,9 @@ These can be set in the systemd service file or before running the binary:
 | `HELIX_DISPLAY_BACKEND` | Override display backend (`drm`, `fbdev`, `sdl`) |
 | `HELIX_DISPLAY_ROTATION` | Override display rotation in degrees (`0`, `90`, `180`, `270`) |
 | `HELIX_COLOR_SWAP_RB` | Swap red/blue channels (`1` to enable) — fixes inverted colors on some displays |
+| `HELIX_BACKLIGHT_DEVICE` | Force the backlight control method: `sysfs`, `allwinner`, `brightness` (Creality Sonic Pad), or `none` to disable. Fixes a brightness slider that does nothing |
+| `HELIX_DPI` | Override display DPI / UI scale (`50`–`500`, default `160`) — lower for oversized UI, higher for cramped UI |
+| `HELIX_SCREEN_SIZE` | Force screen size / layout (`micro`, `tiny`, `small`, `medium`, `large`, `xlarge`, or `WxH`) — persistent equivalent of `-s` |
 | `HELIX_TOUCH_DEVICE` | Override touch input device (e.g., `/dev/input/event1`) |
 | `HELIX_TOUCH_SWAP_AXES` | Swap X/Y touch axes (`1` to enable) |
 | `HELIX_TOUCH_CALIBRATE` | Force touch calibration on next launch (`1` to enable) |
@@ -1480,6 +1491,7 @@ Environment="HELIX_TOUCH_DEVICE=/dev/input/event0"
     "gcode_3d_enabled": true,
     "bed_mesh_render_mode": 0,
     "bed_mesh_show_zero_plane": true,
+    "page_scroll_buttons": false,
     "printer_image": ""
   },
 

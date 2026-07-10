@@ -252,7 +252,7 @@ Use the **Lock A** and **Lock B** buttons to record the resonant frequency you f
 Calibrate temperature controllers for stable heating. HelixScreen supports two calibration methods:
 
 - **PID** — Classic proportional-integral-derivative tuning. Works on all Klipper firmware.
-- **MPC** *(Beta)* — Model Predictive Control. A physics-based thermal model that can provide more stable temperatures. Requires [Kalico](https://github.com/Luro02/klipper) firmware (a Klipper fork with MPC support).
+- **MPC** *(Beta)* — Model Predictive Control. A physics-based thermal model that can provide more stable temperatures. Requires [Kalico](https://github.com/KalicoCrew/kalico) firmware (a Klipper fork with MPC support).
 
 ### PID Calibration
 

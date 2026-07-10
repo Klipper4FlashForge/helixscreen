@@ -346,6 +346,17 @@ static void apply_slot_status(AmsSlotData* data, int status_int) {
     if (data->spool_canvas)
         lv_obj_set_style_opa(data->spool_canvas, spool_opa, LV_PART_MAIN);
 
+    // Ghost the material-type label in lockstep with the spool visual. On an
+    // empty-but-assigned lane spool_opa is LV_OPA_20, so the retained material
+    // (kept intact per #1071 — the override is NOT cleared on eject) renders
+    // dimmed and reads as "assigned, not present" rather than "still loaded"
+    // (#1065). A loaded/available lane leaves spool_opa at LV_OPA_COVER, so the
+    // material stays full-strength. Reuses the color-ghost opacity — no new
+    // token. The unassigned-empty case keeps spool_opa at COVER (spool hidden,
+    // "Empty" placeholder text shown), so its label is not dimmed.
+    if (data->material_label)
+        lv_obj_set_style_text_opa(data->material_label, spool_opa, LV_PART_MAIN);
+
     // Show/hide empty slot placeholder
     if (data->empty_placeholder) {
         if (show_empty_placeholder) {

@@ -1789,6 +1789,10 @@
         }
       },
       "inherits": "lv_obj"
+    },
+    "setting_group": {
+      "attributes": {},
+      "inherits": "lv_obj"
     }
   },
   "enums": {
@@ -2755,7 +2759,8 @@
     "endless_spool_arrows",
     "ui_split_button",
     "z_offset_indicator",
-    "helix_sparkline"
+    "helix_sparkline",
+    "setting_group"
   ],
   "runtime_constants": [
     "accent_bar_gap",
