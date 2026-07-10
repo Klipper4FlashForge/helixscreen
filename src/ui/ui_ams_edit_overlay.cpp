@@ -239,32 +239,31 @@ lv_obj_t* AmsEditOverlay::create(lv_obj_t* parent) {
     // Bind labels to subjects ONCE per widget tree (the tree is cached across
     // opens — binding in on_activate would stack duplicate observers).
     // Header title comes from the shared header_bar ("header_title").
+    // The bindings are owned by their labels and torn down with the widget
+    // tree; no observer handles are retained (LVGL cleans them on delete).
     lv_obj_t* header_title = find_widget("header_title");
     if (header_title) {
-        slot_indicator_observer_ =
-            lv_label_bind_text(header_title, &slot_indicator_subject_, nullptr);
+        lv_label_bind_text(header_title, &slot_indicator_subject_, nullptr);
     }
 
     lv_obj_t* temp_nozzle_label = find_widget("temp_nozzle_label");
     if (temp_nozzle_label) {
-        temp_nozzle_observer_ =
-            lv_label_bind_text(temp_nozzle_label, &temp_nozzle_subject_, nullptr);
+        lv_label_bind_text(temp_nozzle_label, &temp_nozzle_subject_, nullptr);
     }
 
     lv_obj_t* temp_bed_label = find_widget("temp_bed_label");
     if (temp_bed_label) {
-        temp_bed_observer_ = lv_label_bind_text(temp_bed_label, &temp_bed_subject_, nullptr);
+        lv_label_bind_text(temp_bed_label, &temp_bed_subject_, nullptr);
     }
 
     lv_obj_t* remaining_pct_label = find_widget("remaining_pct_label");
     if (remaining_pct_label) {
-        remaining_pct_observer_ =
-            lv_label_bind_text(remaining_pct_label, &remaining_pct_subject_, nullptr);
+        lv_label_bind_text(remaining_pct_label, &remaining_pct_subject_, nullptr);
     }
 
     lv_obj_t* card_identity_label = find_widget("card_identity_label");
     if (card_identity_label) {
-        chip_text_observer_ = lv_label_bind_text(card_identity_label, &chip_text_subject_, nullptr);
+        lv_label_bind_text(card_identity_label, &chip_text_subject_, nullptr);
     }
     lv_obj_t* hsv = find_widget("ams_color_hsv");
     if (hsv) {
@@ -288,11 +287,6 @@ void AmsEditOverlay::on_ui_destroyed() {
     // at process exit (and leaving a stale key at runtime).
     details_selector_.detach();
     cached_overlay_widget_ = nullptr;
-    slot_indicator_observer_ = nullptr;
-    temp_nozzle_observer_ = nullptr;
-    temp_bed_observer_ = nullptr;
-    remaining_pct_observer_ = nullptr;
-    chip_text_observer_ = nullptr;
 }
 
 void AmsEditOverlay::on_activate() {

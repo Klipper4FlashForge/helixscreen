@@ -176,13 +176,6 @@ class AmsEditOverlay : public OverlayBase {
     char temp_bed_buf_[24] = {0};
     char remaining_pct_buf_[48] = {0};
 
-    // === Observer tracking for cleanup [L020] ===
-    lv_observer_t* slot_indicator_observer_ = nullptr;
-    lv_observer_t* temp_nozzle_observer_ = nullptr;
-    lv_observer_t* temp_bed_observer_ = nullptr;
-    lv_observer_t* remaining_pct_observer_ = nullptr;
-    lv_observer_t* chip_text_observer_ = nullptr;
-
     // === Picker state (Spoolman spool selection) ===
     std::vector<SpoolInfo> cached_spools_;
 
