@@ -3169,6 +3169,151 @@ void PrintStatusPanel::load_gcode_for_viewing(const std::string& filename) {
 
     auto token = lifetime_.token();
 
+    auto download_to_viewer = [this, filename, temp_path](const std::string& root,
+                                                          const std::string& download_filename) {
+        if (!temp_gcode_path_.empty() && temp_gcode_path_ != temp_path) {
+            std::remove(temp_gcode_path_.c_str());
+            temp_gcode_path_.clear();
+        }
+
+        auto inner_token = lifetime_.token();
+        api_->transfers().download_file_to_path(
+            root, download_filename, temp_path,
+            [this, inner_token, temp_path](const std::string& path) {
+                inner_token.defer("PrintStatusPanel::gcode_download_ok", [this, path]() {
+                    temp_gcode_path_ = path;
+                    spdlog::debug("[{}] Streamed G-code to disk, loading into viewer: {}",
+                                  get_name(), path);
+                    load_gcode_file(path.c_str());
+                });
+            },
+            [this, inner_token, filename](const MoonrakerError& err) {
+                inner_token.defer("PrintStatusPanel::gcode_download_err", [this, filename, err]() {
+                    spdlog::warn("[{}] Failed to stream G-code for viewing '{}': {}", get_name(),
+                                 filename, err.message);
+                    show_gcode_viewer(false);
+                });
+            });
+    };
+
+    auto load_existing_gcode_path = [this, token, filename, temp_path,
+                                     download_to_viewer](const std::string& metadata_target,
+                                                         const std::string& root,
+                                                         const std::string& download_target) {
+        api_->files().get_file_metadata(
+            metadata_target,
+            [this, token, filename, root, download_target,
+             download_to_viewer](const FileMetadata& metadata) {
+                token.defer("PrintStatusPanel::gcode_metadata_ok",
+                            [this, filename, root, download_target, metadata,
+                             download_to_viewer]() {
+                                if (!helix::is_gcode_2d_streaming_safe(metadata.size)) {
+                                    auto mem = helix::get_system_memory_info();
+                                    spdlog::warn("[{}] G-code too large for 2D streaming: file={} "
+                                                 "bytes, available RAM={}MB - using thumbnail only",
+                                                 get_name(), metadata.size, mem.available_mb());
+                                    show_gcode_viewer(false);
+                                    return;
+                                }
+
+                                spdlog::debug(
+                                    "[{}] G-code size {} bytes - safe to render, streaming to "
+                                    "disk...",
+                                    get_name(), metadata.size);
+
+                                download_to_viewer(root, download_target);
+                            });
+            },
+            [this, token, filename](const MoonrakerError& err) {
+                token.defer("PrintStatusPanel::gcode_metadata_err", [this, filename, err]() {
+                    spdlog::debug(
+                        "[{}] Failed to get G-code metadata for '{}': {} - skipping 3D render",
+                        get_name(), filename, err.message);
+                    show_gcode_viewer(false);
+                });
+            },
+            true // silent - don't trigger RPC_ERROR event/toast
+        );
+    };
+
+    auto use_existing_download_path = [metadata_filename, filename,
+                                       load_existing_gcode_path]() {
+        load_existing_gcode_path(metadata_filename, "gcodes", filename);
+    };
+
+    auto ends_with_3mf = [](const std::string& name) {
+        if (name.size() < 4) {
+            return false;
+        }
+        const size_t pos = name.size() - 4;
+        return (name[pos] == '.' && (name[pos + 1] == '3') &&
+                (name[pos + 2] == 'm' || name[pos + 2] == 'M') &&
+                (name[pos + 3] == 'f' || name[pos + 3] == 'F'));
+    };
+
+    if (ends_with_3mf(filename)) {
+        api_->files().list_files(
+            ".temp", "", false,
+            [this, token, use_existing_download_path,
+             download_to_viewer](const std::vector<FileInfo>& files) {
+                token.defer("PrintStatusPanel::qidi_3mf_shadow_list_ok",
+                            [this, files, use_existing_download_path, download_to_viewer]() {
+                                spdlog::info("[{}] .temp returned {} entries for QIDI native 3MF "
+                                             "preview lookup",
+                                             get_name(), files.size());
+
+                                for (const auto& file : files) {
+                                    const std::string& candidate = file.path;
+                                    constexpr const char* prefix = "shadow_native_plate_";
+                                    constexpr const char* suffix = ".gcode";
+                                    bool match = candidate.rfind(prefix, 0) == 0 &&
+                                                 candidate.size() >
+                                                     std::strlen(prefix) + std::strlen(suffix) &&
+                                                 candidate.compare(candidate.size() -
+                                                                       std::strlen(suffix),
+                                                                   std::strlen(suffix),
+                                                                   suffix) == 0;
+                                    if (match) {
+                                        spdlog::info(
+                                            "[{}] Matched QIDI native 3MF shadow G-code: "
+                                            ".temp/{} ({} bytes)",
+                                            get_name(), file.path, file.size);
+
+                                        if (!helix::is_gcode_2d_streaming_safe(file.size)) {
+                                            auto mem = helix::get_system_memory_info();
+                                            spdlog::warn(
+                                                "[{}] G-code too large for 2D streaming: file={} "
+                                                "bytes, available RAM={}MB - using thumbnail only",
+                                                get_name(), file.size, mem.available_mb());
+                                            show_gcode_viewer(false);
+                                            return;
+                                        }
+
+                                        download_to_viewer(".temp", file.path);
+                                        return;
+                                    }
+                                }
+
+                                spdlog::info(
+                                    "[{}] No QIDI native 3MF shadow G-code found; "
+                                    "falling back to active filename",
+                                    get_name());
+                                use_existing_download_path();
+                            });
+            },
+            [this, token, use_existing_download_path](const MoonrakerError& err) {
+                token.defer("PrintStatusPanel::qidi_3mf_shadow_list_err",
+                            [this, err, use_existing_download_path]() {
+                                spdlog::debug(
+                                    "[{}] Failed to list .temp for QIDI native 3MF preview: {}; "
+                                    "falling back to active filename",
+                                    get_name(), err.message);
+                                use_existing_download_path();
+                            });
+            });
+        return;
+    }
+
     // All four callbacks below fire on background threads — get_file_metadata's
     // success/error cb runs on libhv's WS event loop, download_file_to_path's
     // runs on HttpExecutor::slow(). They MUST marshal to the main thread via
@@ -3178,59 +3323,7 @@ void PrintStatusPanel::load_gcode_for_viewing(const std::string& filename) {
     // HTTP worker, racing the main render loop and producing the L081-cluster
     // heap corruption that surfaces as a SIGSEGV in get_prop_core / layout
     // (#906 family, WKC5J9SK on v0.99.56 ad5x).
-    api_->files().get_file_metadata(
-        metadata_filename,
-        [this, token, filename, temp_path](const FileMetadata& metadata) {
-            token.defer("PrintStatusPanel::gcode_metadata_ok", [this, filename, temp_path,
-                                                                metadata]() {
-                if (!helix::is_gcode_2d_streaming_safe(metadata.size)) {
-                    auto mem = helix::get_system_memory_info();
-                    spdlog::warn("[{}] G-code too large for 2D streaming: file={} bytes, available "
-                                 "RAM={}MB - using thumbnail only",
-                                 get_name(), metadata.size, mem.available_mb());
-                    show_gcode_viewer(false);
-                    return;
-                }
-
-                spdlog::debug("[{}] G-code size {} bytes - safe to render, streaming to disk...",
-                              get_name(), metadata.size);
-
-                if (!temp_gcode_path_.empty() && temp_gcode_path_ != temp_path) {
-                    std::remove(temp_gcode_path_.c_str());
-                    temp_gcode_path_.clear();
-                }
-
-                auto inner_token = lifetime_.token();
-                api_->transfers().download_file_to_path(
-                    "gcodes", filename, temp_path,
-                    [this, inner_token, temp_path](const std::string& path) {
-                        inner_token.defer("PrintStatusPanel::gcode_download_ok", [this, path]() {
-                            temp_gcode_path_ = path;
-                            spdlog::debug("[{}] Streamed G-code to disk, loading into viewer: {}",
-                                          get_name(), path);
-                            load_gcode_file(path.c_str());
-                        });
-                    },
-                    [this, inner_token, filename](const MoonrakerError& err) {
-                        inner_token.defer(
-                            "PrintStatusPanel::gcode_download_err", [this, filename, err]() {
-                                spdlog::warn("[{}] Failed to stream G-code for viewing '{}': {}",
-                                             get_name(), filename, err.message);
-                                show_gcode_viewer(false);
-                            });
-                    });
-            });
-        },
-        [this, token, filename](const MoonrakerError& err) {
-            token.defer("PrintStatusPanel::gcode_metadata_err", [this, filename, err]() {
-                spdlog::debug(
-                    "[{}] Failed to get G-code metadata for '{}': {} - skipping 3D render",
-                    get_name(), filename, err.message);
-                show_gcode_viewer(false);
-            });
-        },
-        true // silent - don't trigger RPC_ERROR event/toast
-    );
+    use_existing_download_path();
 }
 
 // ============================================================================
