@@ -3,6 +3,7 @@
 #pragma once
 
 #include "ams_types.h"
+#include "hv/json.hpp"
 #include "moonraker_error.h"
 #include "spoolman_types.h"
 
@@ -91,6 +92,18 @@ class SpoolmanSlotSaver {
      * (AMS_DEFAULT_SLOT_COLOR gray means "color not set").
      */
     static bool is_filament_complete(const SlotInfo& slot);
+
+    /**
+     * @brief Split spool edits into the two Spoolman PATCH bodies.
+     *
+     * Per-spool fields (remaining_weight, price, lot_nr, comment, location) go
+     * into @p spool_patch; shared-filament fields (spool_weight, color_hex) go
+     * into @p filament_patch. A field is emitted only when it differs from the
+     * original (weights beyond WEIGHT_THRESHOLD, price beyond 0.001). Shared by
+     * the AMS edit overlay's spool-edit save and the standalone SpoolEditModal.
+     */
+    static void build_spool_patches(const SpoolInfo& original, const SpoolInfo& edited,
+                                    nlohmann::json& spool_patch, nlohmann::json& filament_patch);
 
     /**
      * @brief Save slot edits to Spoolman via the API

@@ -854,7 +854,8 @@ void AmsEditOverlay::handle_spool_edit_save(bool finish) {
     if (working_info_.spoolman_id > 0) {
         nlohmann::json spool_patch;
         nlohmann::json filament_patch;
-        build_spool_patches(detail_original_, detail_working_, spool_patch, filament_patch);
+        SpoolmanSlotSaver::build_spool_patches(detail_original_, detail_working_, spool_patch,
+                                               filament_patch);
 
         if (!spool_patch.empty() || !filament_patch.empty()) {
             if (!api_) {
@@ -1593,35 +1594,6 @@ void AmsEditOverlay::handle_tool_changed(int index) {
 bool AmsEditOverlay::should_create_new_spool(const SlotInfo& working_info, bool save_to_spoolman) {
     return working_info.spoolman_id == 0 && save_to_spoolman &&
            helix::SpoolmanSlotSaver::is_filament_complete(working_info);
-}
-
-void AmsEditOverlay::build_spool_patches(const SpoolInfo& original, const SpoolInfo& edited,
-                                         nlohmann::json& spool_patch,
-                                         nlohmann::json& filament_patch) {
-    // Spool-level fields (per-spool in Spoolman API)
-    if (std::abs(edited.remaining_weight_g - original.remaining_weight_g) > 0.1) {
-        spool_patch["remaining_weight"] = edited.remaining_weight_g;
-    }
-    if (std::abs(edited.price - original.price) > 0.001) {
-        spool_patch["price"] = edited.price;
-    }
-    if (edited.lot_nr != original.lot_nr) {
-        spool_patch["lot_nr"] = edited.lot_nr;
-    }
-    if (edited.comment != original.comment) {
-        spool_patch["comment"] = edited.comment;
-    }
-    if (edited.location != original.location) {
-        spool_patch["location"] = edited.location;
-    }
-
-    // Filament-level fields (affect all spools of this filament definition)
-    if (std::abs(edited.spool_weight_g - original.spool_weight_g) > 0.1) {
-        filament_patch["spool_weight"] = edited.spool_weight_g;
-    }
-    if (edited.color_hex != original.color_hex) {
-        filament_patch["color_hex"] = edited.color_hex;
-    }
 }
 
 bool AmsEditOverlay::needs_identity_confirmation(const SlotInfo& original, const SlotInfo& edited) {

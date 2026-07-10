@@ -15,6 +15,7 @@
 #endif
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
+#include "spoolman_slot_saver.h"
 #include "theme_manager.h"
 
 #include <spdlog/fmt/fmt.h>
@@ -473,34 +474,12 @@ void SpoolEditModal::handle_save() {
 
     spdlog::info("[SpoolEditModal] Saving spool {} edits", working_spool_.id);
 
-    // Split changes into spool-level and filament-level PATCHes
+    // Split changes into spool-level and filament-level PATCHes (shared with
+    // the AMS edit overlay's spool-edit save).
     nlohmann::json spool_patch;
     nlohmann::json filament_patch;
-
-    // Spool-level fields (per-spool in Spoolman API)
-    if (std::abs(working_spool_.remaining_weight_g - original_spool_.remaining_weight_g) > 0.1) {
-        spool_patch["remaining_weight"] = working_spool_.remaining_weight_g;
-    }
-    if (std::abs(working_spool_.price - original_spool_.price) > 0.001) {
-        spool_patch["price"] = working_spool_.price;
-    }
-    if (working_spool_.lot_nr != original_spool_.lot_nr) {
-        spool_patch["lot_nr"] = working_spool_.lot_nr;
-    }
-    if (working_spool_.comment != original_spool_.comment) {
-        spool_patch["comment"] = working_spool_.comment;
-    }
-    if (working_spool_.location != original_spool_.location) {
-        spool_patch["location"] = working_spool_.location;
-    }
-
-    // Filament-level fields (affect all spools using this filament definition)
-    if (std::abs(working_spool_.spool_weight_g - original_spool_.spool_weight_g) > 0.1) {
-        filament_patch["spool_weight"] = working_spool_.spool_weight_g;
-    }
-    if (working_spool_.color_hex != original_spool_.color_hex) {
-        filament_patch["color_hex"] = working_spool_.color_hex;
-    }
+    SpoolmanSlotSaver::build_spool_patches(original_spool_, working_spool_, spool_patch,
+                                           filament_patch);
 
     int spool_id = working_spool_.id;
     int filament_id = working_spool_.filament_id;

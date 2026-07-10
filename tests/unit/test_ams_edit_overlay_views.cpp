@@ -15,6 +15,7 @@
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
 #include "printer_state.h"
+#include "spoolman_slot_saver.h"
 
 #include "../catch_amalgamated.hpp"
 #include "hv/json.hpp"
@@ -107,7 +108,7 @@ class AmsEditOverlayViewTestAccess {
     }
     static void build_spool_patches(const SpoolInfo& original, const SpoolInfo& edited,
                                     nlohmann::json& spool_patch, nlohmann::json& filament_patch) {
-        AmsEditOverlay::build_spool_patches(original, edited, spool_patch, filament_patch);
+        SpoolmanSlotSaver::build_spool_patches(original, edited, spool_patch, filament_patch);
     }
 
   private:
