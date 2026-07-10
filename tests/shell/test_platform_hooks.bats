@@ -396,3 +396,48 @@ INIT_SCRIPT="config/helixscreen.init"
     [[ "$output" == *"SURVIVED"* ]]      # unrelated process must NOT be killed
     [[ "$output" != *"PIDFILE-LEFT"* ]]  # stale pidfile is still cleaned up
 }
+
+@test "start_remote_screen exports HELIX_REMOTE_SCREEN_FB0 on the fbdev path" {
+    # On a fbdev-only fb-http (no DRM backend), the hook must export
+    # HELIX_REMOTE_SCREEN_FB0 so helix-screen's in-app fb0 mirror activates and
+    # fb-http serves the live UI instead of a stale /dev/fb0 frame.
+    run sh -c '
+        stubdir="$(mktemp -d)"
+        printf "#!/bin/sh\nexit 0\n" > "$stubdir/start-stop-daemon"
+        chmod +x "$stubdir/start-stop-daemon"
+        PATH="$stubdir:$PATH"
+        . "'"$HOOKS_DIR"'/hooks-snapmaker-u1.sh"
+        _remote_screen_enabled() { return 0; }   # force the toggle on
+        f="$(mktemp)"
+        printf "%s\n" "    parser.add_argument(\"--fb\", default=\"/dev/fb0\")" > "$f"  # fbdev-only, no --backend
+        HELIX_FB_HTTP="$f"
+        HELIX_REMOTE_SCREEN_PID="$(mktemp -u)"
+        start_remote_screen
+        echo "FB0=${HELIX_REMOTE_SCREEN_FB0:-UNSET}"
+        rm -f "$f"; rm -rf "$stubdir"
+    '
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"FB0=/dev/fb0"* ]]
+}
+
+@test "start_remote_screen does NOT export HELIX_REMOTE_SCREEN_FB0 on the DRM path" {
+    # A DRM-capable fb-http captures /dev/dri/card0 directly; the in-app mirror is
+    # unnecessary there, so the env var must stay unset.
+    run sh -c '
+        stubdir="$(mktemp -d)"
+        printf "#!/bin/sh\nexit 0\n" > "$stubdir/start-stop-daemon"
+        chmod +x "$stubdir/start-stop-daemon"
+        PATH="$stubdir:$PATH"
+        . "'"$HOOKS_DIR"'/hooks-snapmaker-u1.sh"
+        _remote_screen_enabled() { return 0; }
+        f="$(mktemp)"
+        printf "%s\n" "    parser.add_argument(\"--backend\", default=\"auto\")" > "$f"  # DRM-capable
+        HELIX_FB_HTTP="$f"
+        HELIX_REMOTE_SCREEN_PID="$(mktemp -u)"
+        start_remote_screen
+        echo "FB0=${HELIX_REMOTE_SCREEN_FB0:-UNSET}"
+        rm -f "$f"; rm -rf "$stubdir"
+    '
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"FB0=UNSET"* ]]
+}
