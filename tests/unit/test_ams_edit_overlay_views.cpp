@@ -1765,3 +1765,67 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     UpdateQueue::instance().drain();
     process_lvgl(10);
 }
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "picker-entry link on an untracked slot with Spoolman available commits cleanly",
+                 "[ams_edit_overlay][filament_picker][picker][spoolman][header_save]") {
+    // Companion to the tracked-relink picker-entry test (8e23fbc23 covers
+    // A>0 -> B>0). This exercises the OTHER relink branch — 0 -> B>0 — with
+    // Spoolman AVAILABLE, so the pick runs through commit_and_close's async
+    // Spoolman seam (sync_active_spool) rather than the synchronous local-close
+    // branch the =0 picker-entry test uses. Assert: one-tap commit + close, slot
+    // linked to B, active spool set on the server, NO identity dialog, and no
+    // spurious identity PATCH (a fresh link is not an edit).
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+    get_printer_state().set_spoolman_available(true);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    bool fired = false;
+    AmsEditOverlay::EditResult captured;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), &api,
+                                  [&](const AmsEditOverlay::EditResult& r) {
+                                      fired = true;
+                                      captured = r;
+                                  },
+                                  /*open_on_picker=*/true));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolPicker);
+
+    access.set_cached_spools(two_spools());
+    access.call_render_spool_list("");
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Link the untracked slot to spool #22 (eSUN PETG).
+    access.call_handle_spool_selected(22);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // No "Different filament?" confirm — a fresh link is a pure link switch.
+    CHECK(ModalStack::instance().stack_empty());
+    // Committed + closed in one step, linked to B.
+    CHECK(fired);
+    CHECK(captured.saved);
+    CHECK(captured.slot_info.spoolman_id == 22);
+    CHECK(captured.slot_info.material == "PETG");
+    // No identity/weight PATCH — linking is not editing.
+    CHECK(api.spoolman_mock().spool_updates.empty());
+    CHECK(api.spoolman_mock().filament_updates.empty());
+    // The newly linked spool is registered active on the server.
+    CHECK(api.spoolman_mock().get_mock_active_spool_id() == 22);
+
+    get_printer_state().set_spoolman_available(false);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+}
