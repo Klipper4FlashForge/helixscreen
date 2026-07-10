@@ -193,11 +193,11 @@ HELIX_KEYBOARD_DEVICE=/dev/input/event5 ./build/bin/helix-screen
 
 ### `HELIX_BACKLIGHT_DEVICE`
 
-Control backlight device path or disable backlight control entirely.
+Force a specific backlight control method, or disable backlight control entirely.
 
 | Property | Value |
 |----------|-------|
-| **Values** | Device path, `sysfs`, `allwinner`, `brightness`, or `"none"` to disable |
+| **Values** | `sysfs`, `allwinner`, `brightness`, or `"none"` to disable. Any other value (including a `/sys/...` device path) is ignored and falls back to auto-detection |
 | **Default** | Auto-detect |
 | **File** | `src/api/backlight_backend.cpp` |
 
@@ -205,8 +205,8 @@ Control backlight device path or disable backlight control entirely.
 # Disable backlight control (e.g., for external displays)
 HELIX_BACKLIGHT_DEVICE=none ./build/bin/helix-screen
 
-# Use specific backlight device
-HELIX_BACKLIGHT_DEVICE=/sys/class/backlight/backlight-lvds ./build/bin/helix-screen
+# Force the standard Linux sysfs backlight (skip auto-detection)
+HELIX_BACKLIGHT_DEVICE=sysfs ./build/bin/helix-screen
 
 # Creality Sonic Pad: drive the `brightness` CLI tool instead of sysfs/ioctl.
 # Use this when the screen brightness/blank doesn't respond on a Sonic Pad even
@@ -313,7 +313,7 @@ Override the display DPI (dots per inch). Useful for screens where spacing looks
 | Property | Value |
 |----------|-------|
 | **Values** | `50` – `500` |
-| **Default** | Auto-detected (LVGL default: `130`) |
+| **Default** | Auto-detected (falls back to `160` — the project's `LV_DPI_DEF` in `lv_conf.h`) |
 | **File** | `scripts/helix-launcher.sh`, `src/system/cli_args.cpp` |
 
 ```bash
@@ -1425,7 +1425,7 @@ HELIX_DRM_DEVICE=/dev/dri/card1 \
 HELIX_TOUCH_DEVICE=/dev/input/event2 \
 HELIX_MOUSE_DEVICE=/dev/input/event4 \
 HELIX_KEYBOARD_DEVICE=/dev/input/event5 \
-HELIX_BACKLIGHT_DEVICE=/sys/class/backlight/lcd \
+HELIX_BACKLIGHT_DEVICE=sysfs \
 ./build/bin/helix-screen
 ```
 

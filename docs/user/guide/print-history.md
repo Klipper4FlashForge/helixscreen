@@ -14,9 +14,9 @@ The dashboard opens with a summary across a selectable time range and two charts
 
 A row of filter buttons sets the time range for the statistics and charts:
 
-**Day · Week · Month · Year · All Time**
+**Day · Week · Month · Year · All**
 
-All Time is the default. For accurate lifetime totals, the All Time view uses Moonraker's server-side history totals rather than the recently cached jobs.
+All is the default (still all-time). For accurate lifetime totals, the All Time view uses Moonraker's server-side history totals rather than the recently cached jobs.
 
 ### Statistics
 
@@ -26,7 +26,7 @@ Four stat cards summarise the selected range:
 |------|---------------|
 | **Total Prints** | Number of jobs in the range |
 | **Print Time** | Total time spent printing |
-| **Filament** | Total filament used (mm, m, or km) |
+| **Filament Used** | Total filament used (mm, m, or km) |
 | **Success Rate** | Percentage of jobs that completed successfully |
 
 The success rate is the share of jobs in the range that finished with a **Completed** status (completed jobs ÷ total jobs).

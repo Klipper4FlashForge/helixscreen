@@ -34,7 +34,7 @@ When beta features are enabled, the following appear in the UI with an orange "B
 | Feature | Location | Description | Status |
 |---------|----------|-------------|--------|
 | **HelixPrint Plugin** | Advanced panel | Install/uninstall the HelixPrint Klipper plugin for advanced print start control | Functional; plugin manages bed mesh, QGL, z-tilt skipping |
-| **Configure PRINT_START** | Advanced panel | Make bed mesh and QGL skippable in your print start macro | Functional; requires HelixPrint plugin installed |
+| **Configure PRINT_START** | Advanced panel | Make bed mesh and QGL skippable in your print start macro | Functional; needs only Beta Features enabled — writes your Klipper config directly via Moonraker, no plugin required |
 | **Sound System** | Settings panel | Sound effects with volume control and theme selection | Functional; multi-backend (SDL/PWM/M300) |
 | **Plugins** | Settings panel | View installed plugins and their status | Functional; plugin system is early-stage |
 | **Update Channel** | Settings panel | Switch between Stable, Beta, and Dev update channels | Functional; Beta/Dev channels may have less-tested releases |

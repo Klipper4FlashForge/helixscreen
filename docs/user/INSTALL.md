@@ -11,7 +11,7 @@ This guide walks you through installing HelixScreen on your 3D printer's touchsc
 - [Quick Start](#quick-start)
 - [Remote Screen Setup (Run on a Separate Device)](#remote-screen-setup-run-on-a-separate-device)
 - [Prerequisites](#prerequisites)
-- [MainsailOS Installation](#mainsailos-installation)
+- [MainsailOS Installation](#raspberry-pi--mainsailos-installation)
 - [Flashforge Adventurer 5M Installation](#flashforge-adventurer-5m-installation)
 - [Creality K1 Installation](#creality-k1-series)
 - [Creality K2 Series](#creality-k2-series)
@@ -731,7 +731,7 @@ The wizard will test the connection before proceeding.
 ### Step 5: Printer Identification
 HelixScreen will try to identify your printer from its configuration. You can:
 - Confirm the detected printer type
-- Select from a database of 50+ printers
+- Select from a database of 80+ printers
 - Enter custom settings
 
 ### Step 6: Heater Selection

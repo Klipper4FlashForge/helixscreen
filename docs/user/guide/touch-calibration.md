@@ -272,7 +272,7 @@ For power users and developers. These override config file settings and are usef
 
 > **Note:** The MIN/MAX variables provide a simple linear calibration that bypasses the 3-point system. Most users should use the built-in calibration instead.
 >
-> **Jitter filter:** If taps are being misread as swipes, the jitter filter suppresses small coordinate noise from the touch controller. The default of 5 pixels is enough for most screens; raise it to 15–25 for very noisy controllers (common on Goodix GT9xx panels), or set to `0` to disable. See also [scroll_limit and scroll_guard](../CONFIGURATION.md#input) for related touch-feel tuning.
+> **Jitter filter:** If taps are being misread as swipes, the jitter filter suppresses small coordinate noise from the touch controller. The default of 5 pixels is enough for most screens; raise it to 15–25 for very noisy controllers (common on Goodix GT9xx panels), or set to `0` to disable. See also [scroll_limit and scroll_guard](../CONFIGURATION.md#input-settings) for related touch-feel tuning.
 
 **Setting environment variables on Raspberry Pi (systemd):**
 

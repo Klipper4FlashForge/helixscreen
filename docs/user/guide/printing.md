@@ -24,12 +24,12 @@ If your printer exposes a USB drive, the top-left of the panel shows **Printer**
 
 List view shows filename, print status, file size, modification date, and estimated print time in a sortable table. Tap any column header to sort.
 
-**Sorting options** (tap the sort button):
+**Sort columns** (tap a column header to sort):
 
-- Name (A-Z or Z-A)
-- Modified date (newest or oldest first)
+- Filename (A-Z or Z-A)
 - Size (largest or smallest)
-- Print time (longest or shortest)
+- Modified (newest or oldest first)
+- Time (longest or shortest)
 
 ---
 
@@ -72,12 +72,14 @@ Before starting, you can enable or disable:
 
 | Option | What It Does |
 |--------|--------------|
-| Auto bed level | Run bed mesh calibration before print |
+| Auto Bed Mesh | Run bed mesh calibration before print |
 | Quad gantry level | Run QGL calibration (for gantry printers) |
 | Z-tilt adjust | Run Z-tilt calibration |
-| Nozzle clean | Execute your cleaning macro |
+| Clean Nozzle | Execute your cleaning macro |
 
-These options modify the G-code on-the-fly — if you disable "Auto bed level" but your G-code contains `BED_MESH_CALIBRATE`, HelixScreen comments it out so it doesn't run.
+These options modify the G-code on-the-fly — if you disable "Auto Bed Mesh" but your G-code contains `BED_MESH_CALIBRATE`, HelixScreen comments it out so it doesn't run.
+
+> **Note:** This only works for operations in the sliced file itself. If a step like bed mesh or QGL lives *inside* your `PRINT_START` macro, HelixScreen can't comment it out — run [Advanced → Configure PRINT_START](advanced.md#configure-print_start) once to make those steps skippable, and then these toggles will control them.
 
 > **Tip:** Pre-print options remember your preferences per slicer. If you always run bed mesh before PrusaSlicer prints, that preference persists.
 
@@ -90,6 +92,8 @@ These options modify the G-code on-the-fly — if you disable "Auto bed level" b
 3. Tap **Start Print**
 
 The UI switches to the Print Status panel automatically.
+
+> **Note:** On a multi-color print, HelixScreen checks your loaded filament before it starts and will stop with a **Check filament** dialog if a required tool maps to an empty slot. On printers with camera-based failure detection, it can also react to a print going wrong mid-job. See [Print Monitoring & Failure Detection](print-monitoring.md).
 
 ---
 
@@ -162,19 +166,18 @@ The overlay also includes Z-Offset / baby-step controls (see below).
 
 Fine-tune your first layer height while printing:
 
-**Adjustment increments:**
+**Adjusting:**
 
-- **-0.05mm / -0.01mm**: Nozzle closer to bed (more squish)
-- **+0.01mm / +0.05mm**: Nozzle further from bed (less squish)
+Choose a step size (0.05 / 0.025 / 0.01 / 0.005 mm), then tap up/down to raise or lower the nozzle.
 
 **Signs you need to adjust:**
 
 | Symptom | Problem | Fix |
 |---------|---------|-----|
-| Lines not sticking, curling up | Nozzle too high | Tap **-0.01** or **-0.05** |
-| Rough first layer, scratching sounds | Nozzle too low | Tap **+0.01** or **+0.05** |
-| Gaps between lines | Nozzle too high | Tap **-0.01** |
-| Elephant foot, ridges | Nozzle too low | Tap **+0.01** or **+0.05** |
+| Lines not sticking, curling up | Nozzle too high | Tap **down** |
+| Rough first layer, scratching sounds | Nozzle too low | Tap **up** |
+| Gaps between lines | Nozzle too high | Tap **down** |
+| Elephant foot, ridges | Nozzle too low | Tap **up** |
 
 **Saving your Z-Offset:**
 
@@ -223,4 +226,4 @@ Once a print has finished — whether it completed, was cancelled, or failed —
 
 ---
 
-**Next:** [Temperature Control](temperature.md) | **Prev:** [Home Panel](home-panel.md) | [Back to User Guide](../USER_GUIDE.md)
+**Next:** [Print Monitoring & Failure Detection](print-monitoring.md) | **Prev:** [Home Panel](home-panel.md) | [Back to User Guide](../USER_GUIDE.md)

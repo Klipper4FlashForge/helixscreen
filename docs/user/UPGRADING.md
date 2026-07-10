@@ -62,9 +62,10 @@ The easiest solution is to delete your config file and let the wizard create a n
 
 **MainsailOS (Pi):**
 ```bash
-sudo rm /opt/helixscreen/config/settings.json
+sudo rm ~/helixscreen/config/settings.json
 sudo systemctl restart helixscreen
 ```
+> If HelixScreen was installed without a Klipper ecosystem present, the config is at the fallback location `/opt/helixscreen/config/settings.json` instead.
 
 **Adventurer 5M (Forge-X):**
 ```bash

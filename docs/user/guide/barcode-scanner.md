@@ -4,6 +4,8 @@ HelixScreen can read Spoolman QR codes from a USB or Bluetooth barcode scanner, 
 
 This guide covers both USB and Bluetooth scanners, and how to fix the most common Bluetooth pairing problem on Raspberry Pi.
 
+Scanning is a shortcut for assigning spools — see [Filament Tracking & Spoolman](filament-tracking.md) for what happens once a spool is linked.
+
 ---
 
 ## USB Scanners
@@ -11,13 +13,13 @@ This guide covers both USB and Bluetooth scanners, and how to fix the most commo
 Most USB barcode scanners present themselves to the Pi as a plain HID keyboard — no driver install needed.
 
 1. Plug the scanner into any USB port.
-2. Open **Settings → Barcode Scanner**.
+2. Open **Settings → Hardware & Devices → Spoolman → Barcode Scanner**.
 3. If the scanner appears under "USB devices", tap it to select. Otherwise "Auto-detect" will pick the first HID keyboard that isn't your physical keyboard.
 4. Open the QR scanner overlay (wherever the app offers it — e.g. from the filament panel) and test by scanning a Spoolman QR code.
 
-### Keymap
+### Keyboard Layout
 
-If scanned text comes out garbled, the scanner is emitting keycodes for a different keyboard layout than the one HelixScreen is decoding. Under **Settings → Barcode Scanner → Keymap** pick the layout your scanner is programmed to use (QWERTY is the default).
+If scanned text comes out garbled, the scanner is emitting keycodes for a different keyboard layout than the one HelixScreen is decoding. Use the **Layout** setting under **Barcode Scanner → Keyboard Layout** to pick the layout your scanner is programmed to use (QWERTY is the default).
 
 ---
 
@@ -28,13 +30,13 @@ HelixScreen supports Bluetooth HID barcode scanners (the kind that pair as a key
 ### Pairing
 
 1. Power on the scanner. Make sure it's in Classic Bluetooth pairing mode (not BLE). The scanner's manual will have a config barcode to select Classic mode if needed — most default to Classic.
-2. Open **Settings → Barcode Scanner → Scan Bluetooth**.
+2. Open **Settings → Hardware & Devices → Spoolman → Barcode Scanner**, then under **Bluetooth Scanners** tap **Scan**.
 3. When your scanner appears in the dropdown, tap **Pair**.
 4. If pairing succeeds, the scanner becomes selected automatically.
 
-### ⚠️ "Paired, but scanner is not usable"
+### ⚠️ Scanner bonded but didn't attach as a keyboard
 
-If you see a warning toast that says pairing worked but the scanner is not usable, your adapter is refusing the HID connection because the scanner didn't perform a **bonded** pair.
+If you see a warning toast that the scanner bonded but didn't attach as a keyboard (it may also suggest adding `ClassicBondedOnly=false`), your adapter is refusing the HID connection because the scanner didn't perform a **bonded** pair.
 
 This is a security default in BlueZ: HID devices must be bonded (cryptographic key exchanged and stored) before the kernel will route their keystrokes. Many inexpensive barcode scanners only support "Just Works" pairing, which produces a paired-but-not-bonded link — and gets rejected.
 
@@ -79,9 +81,9 @@ Some scanners support both Classic and BLE modes. BLE uses different pairing mec
 | No scanner appears in the dropdown | Is Bluetooth enabled on your Pi? See [Bluetooth Setup](bluetooth-setup.md). |
 | "Pairing failed" (Connection timed out) | Scanner isn't in pairable mode. Power-cycle it and scan its Classic-mode config barcode. |
 | "Pairing failed" (Host is down) | Scanner is flashing but refusing Classic connections. Power-cycle and retry; some scanners get stuck between BLE and Classic advertising. |
-| "Paired, but scanner is not usable" | Set `ClassicBondedOnly=false` — see above. |
+| "Scanner bonded but didn't attach as a keyboard" | Set `ClassicBondedOnly=false` — see above. |
 | Scanner pairs, but scanned text types into the app's UI instead of being captured as a QR code | Open the QR scanner overlay before scanning. Outside the overlay, the scanner is just a keyboard. |
-| Scanned text has wrong characters | Set the correct keymap under **Settings → Barcode Scanner**. |
+| Scanned text has wrong characters | Set the correct **Layout** under **Barcode Scanner → Keyboard Layout**. |
 
 ---
 

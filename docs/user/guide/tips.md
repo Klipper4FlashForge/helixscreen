@@ -18,7 +18,7 @@
 
 | Problem | Quick Fix |
 |---------|-----------|
-| Touchscreen taps in wrong spot | **Settings > Touch Calibration** |
+| Touchscreen taps in wrong spot | **Settings > System > Touch & Input** (shown only when recalibration is needed) |
 | Panel shows "Disconnected" | Check Moonraker is running, network is up |
 | Temperature not changing | Verify heater is enabled in Klipper config |
 | Can't extrude | Heat nozzle above minimum temp first |
@@ -36,11 +36,11 @@ For detailed troubleshooting, see [TROUBLESHOOTING.md](../TROUBLESHOOTING.md).
 | Change nozzle temp | Home panel, tap nozzle temp (or Controls) |
 | Move print head | Controls, Motion |
 | Load filament | Controls, Extrusion (single) or Filament (AMS) |
-| Level my bed | Advanced, Screws Tilt |
+| Level my bed | Advanced, Bed Leveling |
 | Run a custom macro | Advanced, Macros |
-| Check print history | Advanced, History |
-| Change theme | Settings, Theme |
-| Fix touch calibration | Settings, Touch Calibration |
+| Check print history | Advanced, Print History |
+| Change theme | Settings > Display & Sound > Theme Colors |
+| Fix touch calibration | Settings > System > Touch & Input (shown only when recalibration is needed) |
 
 ---
 
