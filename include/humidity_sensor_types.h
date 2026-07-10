@@ -4,6 +4,8 @@
 #pragma once
 
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace helix::sensors {
 
@@ -16,9 +18,52 @@ enum class HumiditySensorRole {
 
 /// @brief Type of humidity sensor hardware
 enum class HumiditySensorType {
-    BME280 = 1, ///< BME280 sensor (humidity, pressure, temperature)
-    HTU21D = 2, ///< HTU21D sensor (humidity, temperature)
+    BME280 = 1,  ///< BME280 sensor (humidity, pressure, temperature)
+    HTU21D = 2,  ///< HTU21D sensor (humidity, temperature)
+    SHT3X = 3,   ///< SHT3X sensor (humidity, temperature)
+    AHT10 = 4,   ///< AHT10 sensor (humidity, temperature)
+    AHT20 = 5,   ///< AHT20 sensor (humidity, temperature)
+    AHT20_F = 6, ///< AHT20-F sensor (humidity, temperature)
 };
+
+/// @brief Descriptor for one humidity-capable Klipper sensor chip.
+/// Single source of truth: to support a new humidity chip, add ONE row to
+/// humidity_sensor_chips() and ONE enum value above. Everything else
+/// (discovery whitelist, config persistence, UI label) derives from this table.
+struct HumiditySensorChip {
+    HumiditySensorType type;
+    std::string_view klipper_prefix; ///< object-name token incl. trailing space, e.g. "bme280 "
+    std::string_view config_id;      ///< persisted in settings.json, e.g. "bme280"
+    std::string_view display_name;   ///< shown in the UI, e.g. "BME280"
+    bool reports_pressure;           ///< true only for chips that publish a pressure field (BME280)
+};
+
+/// @brief The set of humidity-capable sensor chips HelixScreen recognizes.
+/// Prefixes carry a trailing space so "aht20 " never matches "aht20_f heater_box1".
+[[nodiscard]] inline const std::vector<HumiditySensorChip>& humidity_sensor_chips() {
+    static const std::vector<HumiditySensorChip> chips = {
+        {HumiditySensorType::BME280, "bme280 ", "bme280", "BME280", true},
+        {HumiditySensorType::HTU21D, "htu21d ", "htu21d", "HTU21D", false},
+        {HumiditySensorType::SHT3X, "sht3x ", "sht3x", "SHT3X", false},
+        {HumiditySensorType::AHT10, "aht10 ", "aht10", "AHT10", false},
+        {HumiditySensorType::AHT20, "aht20 ", "aht20", "AHT20", false},
+        {HumiditySensorType::AHT20_F, "aht20_f ", "aht20_f", "AHT20-F", false},
+    };
+    return chips;
+}
+
+/// @brief Match a Klipper object name against the chip table by prefix.
+/// @return descriptor pointer if the object is a known humidity chip, else nullptr.
+[[nodiscard]] inline const HumiditySensorChip*
+humidity_chip_for_object(const std::string& klipper_name) {
+    for (const auto& c : humidity_sensor_chips()) {
+        if (klipper_name.size() >= c.klipper_prefix.size() &&
+            std::string_view(klipper_name).substr(0, c.klipper_prefix.size()) == c.klipper_prefix) {
+            return &c;
+        }
+    }
+    return nullptr;
+}
 
 /// @brief Configuration for a humidity sensor
 struct HumiditySensorConfig {
@@ -89,25 +134,35 @@ struct HumiditySensorState {
 
 /// @brief Convert type enum to config string
 /// @param type The type to convert
-/// @return Config-safe string
+/// @return Config-safe string (config_id from the chip table), "bme280" if unknown
 [[nodiscard]] inline std::string humidity_type_to_string(HumiditySensorType type) {
-    switch (type) {
-    case HumiditySensorType::BME280:
-        return "bme280";
-    case HumiditySensorType::HTU21D:
-        return "htu21d";
-    default:
-        return "bme280";
+    for (const auto& c : humidity_sensor_chips()) {
+        if (c.type == type)
+            return std::string(c.config_id);
     }
+    return "bme280";
 }
 
 /// @brief Parse type string to enum
-/// @param str The config string to parse
+/// @param str The config string to parse (matched against chip-table config_id)
 /// @return Parsed type, defaults to BME280 if unrecognized
 [[nodiscard]] inline HumiditySensorType humidity_type_from_string(const std::string& str) {
-    if (str == "htu21d")
-        return HumiditySensorType::HTU21D;
+    for (const auto& c : humidity_sensor_chips()) {
+        if (c.config_id == str)
+            return c.type;
+    }
     return HumiditySensorType::BME280;
+}
+
+/// @brief Convert type enum to human-readable display string
+/// @param type The type to convert
+/// @return Display name from the chip table, "Unknown" if unrecognized
+[[nodiscard]] inline std::string humidity_type_to_display_string(HumiditySensorType type) {
+    for (const auto& c : humidity_sensor_chips()) {
+        if (c.type == type)
+            return std::string(c.display_name);
+    }
+    return "Unknown";
 }
 
 } // namespace helix::sensors

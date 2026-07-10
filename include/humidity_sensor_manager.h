@@ -17,7 +17,7 @@
 namespace helix::sensors {
 
 /**
- * @brief Manager for humidity sensors (BME280 and HTU21D)
+ * @brief Manager for humidity sensors (BME280, HTU21D, SHT3X, AHT10/20/20-F)
  *
  * Implements ISensorManager interface for integration with SensorRegistry.
  * Provides:
@@ -28,9 +28,13 @@ namespace helix::sensors {
  *
  * Thread-safe for state updates from Moonraker callbacks.
  *
- * Klipper object names:
- * - bme280 <name>   - BME280 sensor (humidity, pressure, temperature)
- * - htu21d <name>   - HTU21D sensor (humidity, temperature)
+ * The set of recognized chips is the single source-of-truth table
+ * humidity_sensor_chips() in humidity_sensor_types.h. To support a new
+ * humidity chip, add one table row plus one enum value there; discovery,
+ * config persistence, and UI labels all derive from that table.
+ *
+ * Klipper object names (prefix -> chip): "bme280 " (pressure+humidity+temp),
+ * "htu21d ", "sht3x ", "aht10 ", "aht20 ", "aht20_f " (humidity+temp).
  *
  * Status JSON format:
  * @code
@@ -214,7 +218,8 @@ class HumiditySensorManager : public ISensorManager {
     /**
      * @brief Parse Klipper object name to determine if it's a humidity sensor
      *
-     * @param klipper_name Full name like "bme280 chamber" or "htu21d dryer"
+     * Matched against the humidity_sensor_chips() chip table by prefix.
+     * @param klipper_name Full name like "bme280 chamber" or "aht10 dryer"
      * @param[out] sensor_name Extracted short name (e.g., "chamber")
      * @param[out] type Detected sensor type
      * @return true if successfully parsed as humidity sensor

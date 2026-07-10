@@ -142,13 +142,38 @@ TEST_CASE("HumiditySensorTypes - type string conversion", "[humidity][types]") {
     SECTION("humidity_type_to_string") {
         REQUIRE(humidity_type_to_string(HumiditySensorType::BME280) == "bme280");
         REQUIRE(humidity_type_to_string(HumiditySensorType::HTU21D) == "htu21d");
+        REQUIRE(humidity_type_to_string(HumiditySensorType::SHT3X) == "sht3x");
+        REQUIRE(humidity_type_to_string(HumiditySensorType::AHT10) == "aht10");
+        REQUIRE(humidity_type_to_string(HumiditySensorType::AHT20) == "aht20");
+        REQUIRE(humidity_type_to_string(HumiditySensorType::AHT20_F) == "aht20_f");
     }
 
     SECTION("humidity_type_from_string") {
         REQUIRE(humidity_type_from_string("bme280") == HumiditySensorType::BME280);
         REQUIRE(humidity_type_from_string("htu21d") == HumiditySensorType::HTU21D);
+        REQUIRE(humidity_type_from_string("sht3x") == HumiditySensorType::SHT3X);
+        REQUIRE(humidity_type_from_string("aht10") == HumiditySensorType::AHT10);
+        REQUIRE(humidity_type_from_string("aht20") == HumiditySensorType::AHT20);
+        REQUIRE(humidity_type_from_string("aht20_f") == HumiditySensorType::AHT20_F);
         REQUIRE(humidity_type_from_string("invalid") == HumiditySensorType::BME280);
         REQUIRE(humidity_type_from_string("") == HumiditySensorType::BME280);
+    }
+
+    SECTION("humidity_type_to_string / from_string round-trip") {
+        for (auto t : {HumiditySensorType::BME280, HumiditySensorType::HTU21D,
+                       HumiditySensorType::SHT3X, HumiditySensorType::AHT10,
+                       HumiditySensorType::AHT20, HumiditySensorType::AHT20_F}) {
+            REQUIRE(humidity_type_from_string(humidity_type_to_string(t)) == t);
+        }
+    }
+
+    SECTION("humidity_type_to_display_string") {
+        REQUIRE(humidity_type_to_display_string(HumiditySensorType::BME280) == "BME280");
+        REQUIRE(humidity_type_to_display_string(HumiditySensorType::HTU21D) == "HTU21D");
+        REQUIRE(humidity_type_to_display_string(HumiditySensorType::SHT3X) == "SHT3X");
+        REQUIRE(humidity_type_to_display_string(HumiditySensorType::AHT10) == "AHT10");
+        REQUIRE(humidity_type_to_display_string(HumiditySensorType::AHT20) == "AHT20");
+        REQUIRE(humidity_type_to_display_string(HumiditySensorType::AHT20_F) == "AHT20-F");
     }
 }
 
@@ -185,6 +210,82 @@ TEST_CASE_METHOD(HumiditySensorTestFixture, "HumiditySensorManager - discovery",
         REQUIRE(configs[0].klipper_name == "htu21d dryer");
         REQUIRE(configs[0].sensor_name == "dryer");
         REQUIRE(configs[0].type == HumiditySensorType::HTU21D);
+    }
+
+    SECTION("Discovers SHT3X sensor") {
+        std::vector<std::string> sensors = {"sht3x rig"};
+        mgr().discover(sensors);
+
+        REQUIRE(mgr().sensor_count() == 1);
+
+        auto configs = mgr().get_sensors();
+        REQUIRE(configs[0].klipper_name == "sht3x rig");
+        REQUIRE(configs[0].sensor_name == "rig");
+        REQUIRE(configs[0].type == HumiditySensorType::SHT3X);
+    }
+
+    SECTION("Discovers AHT10 sensor") {
+        std::vector<std::string> sensors = {"aht10 chamber"};
+        mgr().discover(sensors);
+
+        REQUIRE(mgr().sensor_count() == 1);
+
+        auto configs = mgr().get_sensors();
+        REQUIRE(configs[0].klipper_name == "aht10 chamber");
+        REQUIRE(configs[0].sensor_name == "chamber");
+        REQUIRE(configs[0].type == HumiditySensorType::AHT10);
+    }
+
+    SECTION("Discovers AHT20 sensor") {
+        std::vector<std::string> sensors = {"aht20 enclosure"};
+        mgr().discover(sensors);
+
+        REQUIRE(mgr().sensor_count() == 1);
+
+        auto configs = mgr().get_sensors();
+        REQUIRE(configs[0].klipper_name == "aht20 enclosure");
+        REQUIRE(configs[0].sensor_name == "enclosure");
+        REQUIRE(configs[0].type == HumiditySensorType::AHT20);
+    }
+
+    SECTION("Discovers AHT20-F sensor") {
+        std::vector<std::string> sensors = {"aht20_f heater_box1"};
+        mgr().discover(sensors);
+
+        REQUIRE(mgr().sensor_count() == 1);
+
+        auto configs = mgr().get_sensors();
+        REQUIRE(configs[0].klipper_name == "aht20_f heater_box1");
+        REQUIRE(configs[0].sensor_name == "heater_box1");
+        REQUIRE(configs[0].type == HumiditySensorType::AHT20_F);
+    }
+
+    SECTION("Regression #1090: AHT10 chamber sensor is surfaced") {
+        // Before the chip-table refactor, only bme280/htu21d prefixes were
+        // whitelisted, so an AHT10 was silently dropped from discovery.
+        mgr().discover({"aht10 chamber"});
+
+        REQUIRE(mgr().has_sensors());
+        REQUIRE(mgr().sensor_count() == 1);
+
+        auto configs = mgr().get_sensors();
+        REQUIRE(configs[0].klipper_name == "aht10 chamber");
+        REQUIRE(configs[0].sensor_name == "chamber");
+        REQUIRE(configs[0].type == HumiditySensorType::AHT10);
+        // discover() auto-assigns CHAMBER role when sensor name contains "chamber"
+        REQUIRE(configs[0].role == HumiditySensorRole::CHAMBER);
+    }
+
+    SECTION("Disambiguation: aht20_f resolves to AHT20_F not AHT20") {
+        // The "aht20 " prefix carries a trailing space so it must NOT swallow
+        // "aht20_f heater_box1" and mislabel it as AHT20.
+        mgr().discover({"aht20_f heater_box1"});
+
+        REQUIRE(mgr().sensor_count() == 1);
+        auto configs = mgr().get_sensors();
+        REQUIRE(configs[0].type == HumiditySensorType::AHT20_F);
+        REQUIRE(configs[0].type != HumiditySensorType::AHT20);
+        REQUIRE(configs[0].sensor_name == "heater_box1");
     }
 
     SECTION("Discovers multiple sensors") {

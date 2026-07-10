@@ -437,24 +437,14 @@ void HumiditySensorManager::update_subjects_on_main_thread() {
 bool HumiditySensorManager::parse_klipper_name(const std::string& klipper_name,
                                                std::string& sensor_name,
                                                HumiditySensorType& type) const {
-    const std::string bme280_prefix = "bme280 ";
-    const std::string htu21d_prefix = "htu21d ";
-
-    if (klipper_name.rfind(bme280_prefix, 0) == 0) {
-        // Starts with "bme280 " - extract the name after the prefix
-        sensor_name = klipper_name.substr(bme280_prefix.length());
-        type = HumiditySensorType::BME280;
-        return true;
-    }
-
-    if (klipper_name.rfind(htu21d_prefix, 0) == 0) {
-        // Starts with "htu21d " - extract the name after the prefix
-        sensor_name = klipper_name.substr(htu21d_prefix.length());
-        type = HumiditySensorType::HTU21D;
-        return true;
-    }
-
-    return false;
+    // Match against the single source-of-truth chip table (humidity_sensor_types.h).
+    // Adding a new humidity chip requires only a new table row, not edits here.
+    const auto* chip = humidity_chip_for_object(klipper_name);
+    if (!chip)
+        return false;
+    sensor_name = klipper_name.substr(chip->klipper_prefix.size());
+    type = chip->type;
+    return true;
 }
 
 HumiditySensorConfig* HumiditySensorManager::find_config(const std::string& klipper_name) {
