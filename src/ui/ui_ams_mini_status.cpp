@@ -1056,6 +1056,11 @@ static void sync_from_ams_state(AmsMiniStatusData* data) {
     int current = lv_subject_get_int(AmsState::instance().get_current_slot_subject());
     for (int i = 0; i < slot_count; ++i) {
         SlotInfo slot = backend->get_slot_info(i);
+        // Fill is read from this slots_version snapshot on purpose. This widget
+        // rebuilds all bars/cells wholesale on every sync; a per-slot fill
+        // subject observer (as in the ams_slot widget) would race that rebuild
+        // and touch just-recreated objects — the #705/#776 family. Semantics are
+        // still unified: fill_percent_from_slot uses SlotInfo::display_fill_pct.
         // -1 = "no data" → treat as empty (0) so the bar/spool renders empty
         // rather than a phantom fill (was 100/full for weightless slots).
         int fill_pct = ams_draw::fill_percent_from_slot(slot, 0);

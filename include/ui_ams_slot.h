@@ -67,17 +67,6 @@ void ui_ams_slot_set_index(lv_obj_t* obj, int slot_index);
 void ui_ams_slot_refresh(lv_obj_t* obj);
 
 /**
- * @brief Set the fill level of the spool visualization
- *
- * Used to show remaining filament when integrated with Spoolman.
- * The filament ring scales from full (near outer edge) to empty (near hub).
- *
- * @param obj        The ams_slot widget
- * @param fill_level Fill level from 0.0 (empty) to 1.0 (full)
- */
-void ui_ams_slot_set_fill_level(lv_obj_t* obj, float fill_level);
-
-/**
  * @brief Get the current fill level of a slot
  *
  * @param obj The ams_slot widget

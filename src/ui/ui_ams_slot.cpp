@@ -215,8 +215,8 @@ static void update_filament_ring_size(AmsSlotData* data) {
 /**
  * @brief Store a fill percent (0-100) on the slot and re-render the spool.
  *
- * Shared by the fill-subject observer and ui_ams_slot_set_fill_level() so the
- * clamp-and-store logic lives in exactly one place.
+ * The single clamp-and-store path for the per-slot fill subject: used by the
+ * fill-subject observer and the initial-value apply in setup_slot_observers().
  */
 static void apply_slot_fill_pct(AmsSlotData* data, int pct) {
     if (!data)
@@ -685,7 +685,7 @@ static void setup_slot_observers(AmsSlotData* data) {
     }
     if (fill_subject) {
         // Per-slot fill observer: the STRUCTURAL fix. The ams_slot widget owns
-        // its fill rendering — no panel has to call ui_ams_slot_set_fill_level.
+        // its fill rendering — no panel has to push fill imperatively.
         // pct < 0 means "no data" → leave the current render untouched.
         data->fill_observer = observe_int_sync<lv_obj_t>(
             fill_subject, obj,
@@ -1007,28 +1007,6 @@ void ui_ams_slot_refresh(lv_obj_t* obj) {
     }
 
     spdlog::trace("[AmsSlot] Refreshed slot {}", data->slot_index);
-}
-
-void ui_ams_slot_set_fill_level(lv_obj_t* obj, float fill_level) {
-    if (!obj) {
-        return;
-    }
-
-    auto* data = get_slot_data(obj);
-    if (!data) {
-        return;
-    }
-
-    // Clamp to valid range
-    if (fill_level < 0.0f)
-        fill_level = 0.0f;
-    if (fill_level > 1.0f)
-        fill_level = 1.0f;
-
-    data->fill_level = fill_level;
-    update_filament_ring_size(data);
-
-    spdlog::trace("[AmsSlot] Slot {} fill_level set to {:.2f}", data->slot_index, fill_level);
 }
 
 float ui_ams_slot_get_fill_level(lv_obj_t* obj) {

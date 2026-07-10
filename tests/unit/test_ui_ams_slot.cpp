@@ -145,45 +145,35 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: get_index returns -1 for non-ams_
     lv_obj_delete(btn);
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: set_fill_level stores value",
-                 "[ui][ams_slot][api]") {
+TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: out-of-range fill subject value clamps to full",
+                 "[ui][ams_slot][fill]") {
+    // The public float set_fill_level() API was removed (dead — the widget
+    // renders fill only from its per-slot subject). The clamp it used to test
+    // now lives on the subject apply path (apply_slot_fill_pct clamps to 0-100),
+    // so exercise it through the subject: a percent above 100 (e.g. a bad
+    // remaining>total ratio) renders full, not overfilled. The empty end and the
+    // -1 "no data" skip are covered by "fill renders from subject without panel
+    // push".
     ui_ams_slot_register();
+    AmsState::instance().init_subjects(false);
+
+    lv_subject_t* fill = AmsState::instance().get_slot_fill_subject(0);
+    REQUIRE(fill != nullptr);
+    lv_subject_set_int(fill, 150); // > 100
 
     lv_obj_t* slot = create_ams_slot(test_screen(), 0);
     REQUIRE(slot != nullptr);
-
-    // Set fill level to 75%
-    ui_ams_slot_set_fill_level(slot, 0.75f);
-
-    // Get should return same value
-    float level = ui_ams_slot_get_fill_level(slot);
-    REQUIRE(level == Catch::Approx(0.75f));
+    // setup_slot_observers applies the current subject value synchronously.
+    CHECK(ui_ams_slot_get_fill_level(slot) == Catch::Approx(1.0f));
 
     lv_obj_delete(slot);
-}
-
-TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: fill_level clamps to 0.0-1.0 range",
-                 "[ui][ams_slot][api]") {
-    ui_ams_slot_register();
-
-    lv_obj_t* slot = create_ams_slot(test_screen(), 0);
-    REQUIRE(slot != nullptr);
-
-    // Set negative value - should clamp to 0
-    ui_ams_slot_set_fill_level(slot, -0.5f);
-    REQUIRE(ui_ams_slot_get_fill_level(slot) >= 0.0f);
-
-    // Set value > 1.0 - should clamp to 1.0
-    ui_ams_slot_set_fill_level(slot, 1.5f);
-    REQUIRE(ui_ams_slot_get_fill_level(slot) <= 1.0f);
-
-    lv_obj_delete(slot);
+    lv_subject_set_int(fill, -1); // leave neutral for other tests
 }
 
 // Structural regression guard for the "spool always 100% full" bug: the widget
-// must render fill from its per-slot subject WITHOUT any panel calling
-// ui_ams_slot_set_fill_level(). This is what makes AmsOverviewPanel's unit-detail
-// spools correct — they never pushed fill imperatively.
+// must render fill from its per-slot subject WITHOUT any panel pushing fill
+// imperatively. This is what makes AmsOverviewPanel's unit-detail spools
+// correct — they never pushed fill imperatively.
 TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: fill renders from subject without panel push",
                  "[ui][ams_slot][fill]") {
     ui_ams_slot_register();

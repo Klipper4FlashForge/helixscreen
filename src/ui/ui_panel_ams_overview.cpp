@@ -435,9 +435,13 @@ void AmsOverviewPanel::create_mini_bars(UnitCard& card, const AmsUnit& unit, int
 
         ams_draw::BarStyleParams params;
         params.color_rgb = slot.color_rgb;
-        // fill_percent_from_slot returns -1 for "no data" — render an empty bar
-        // (0) rather than a phantom fill; style_slot_bar hides the fill anyway
-        // for a non-present lane.
+        // These mini bars are rebuilt wholesale (safe_clean_children) on every
+        // overview refresh, so fill is read from this snapshot rather than via a
+        // per-slot fill subject observer — an observer would race the rebuild
+        // (#705/#776). Semantics stay unified: fill_percent_from_slot uses
+        // SlotInfo::display_fill_pct. -1 = "no data" → render an empty bar (0)
+        // rather than a phantom fill; style_slot_bar hides the fill anyway for a
+        // non-present lane.
         int fp = ams_draw::fill_percent_from_slot(slot);
         params.fill_pct = fp < 0 ? 0 : fp;
         params.is_present = slot.is_present();
