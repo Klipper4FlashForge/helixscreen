@@ -150,8 +150,14 @@ bool AmsEditOverlay::show_for_slot(lv_obj_t* parent, int slot_index, const SlotI
     }
 
     // If linked to Spoolman, fetch authoritative filament data (vendor, material, color)
-    // so the form shows current Spoolman state, not stale backend data
-    if (working_info_.spoolman_id > 0 && api_) {
+    // so the form shows current Spoolman state, not stale backend data. Gate on
+    // Spoolman availability: a slot can carry a stale spoolman_id even when
+    // Spoolman itself is unavailable, and firing the fetch on a Spoolman-less
+    // printer is one doomed RPC + warn log per overlay open (mirrors the
+    // enter_spool_edit() gating).
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    bool has_spoolman = spoolman_subj && lv_subject_get_int(spoolman_subj) == 1;
+    if (has_spoolman && working_info_.spoolman_id > 0 && api_) {
         const int spool_id = working_info_.spoolman_id;
         auto token = lifetime_.token();
         api_->spoolman().get_spoolman_spool(

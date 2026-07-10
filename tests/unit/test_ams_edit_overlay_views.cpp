@@ -333,6 +333,68 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     }
 }
 
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "show_for_slot skips the identity-sync fetch when Spoolman is unavailable",
+                 "[ams_edit_overlay][card][spoolman]") {
+    // A Spoolman-less printer must not fire a doomed identity-sync fetch (one
+    // RPC + warn log) every time the slot editor opens. show_for_slot() gates
+    // the open-time re-fetch on printer_has_spoolman, matching enter_spool_edit.
+    //
+    // The mock is fully ENABLED here, so if the fetch fired it would return
+    // authoritative data and overwrite working_info_ (brand/material). The gate
+    // under test is the UI-side availability subject, not the mock's own flag —
+    // so an untouched working_info_ proves the fetch never ran.
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+    api.spoolman_mock().set_mock_spoolman_enabled(true);
+
+    // Authoritative record whose vendor/material differ from the slot's initial
+    // values, so a fired fetch is observable as a working_info_ change.
+    api.spoolman_mock().get_mock_spools().clear();
+    SpoolInfo authoritative;
+    authoritative.id = 7;
+    authoritative.vendor = "SpoolmanVendor";
+    authoritative.material = "SpoolmanPETG";
+    api.spoolman_mock().get_mock_spools().push_back(authoritative);
+
+    SlotInfo slot = tracked_slot(); // spoolman_id = 7
+    slot.brand = "SlotBrand";
+    slot.material = "SlotPLA";
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    SECTION("Spoolman unavailable -> no fetch, working_info_ untouched") {
+        lv_subject_set_int(spoolman_subj, 0);
+
+        REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, &api, nullptr));
+        UpdateQueue::instance().drain();
+        process_lvgl(10);
+
+        CHECK(access.working_info().brand == "SlotBrand");
+        CHECK(access.working_info().material == "SlotPLA");
+
+        close_editor_overlay();
+    }
+
+    SECTION("Spoolman available -> fetch fires, working_info_ synced") {
+        lv_subject_set_int(spoolman_subj, 1);
+
+        REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, &api, nullptr));
+        UpdateQueue::instance().drain();
+        process_lvgl(10);
+
+        CHECK(access.working_info().brand == "SpoolmanVendor");
+        CHECK(access.working_info().material == "SpoolmanPETG");
+
+        close_editor_overlay();
+    }
+}
+
 TEST_CASE_METHOD(LVGLUITestFixture, "filament-details view: toggle hidden without Spoolman",
                  "[ams_edit_overlay][details][toggle]") {
     auto& overlay = get_ams_edit_overlay();
