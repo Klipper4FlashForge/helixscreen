@@ -56,8 +56,16 @@ MEASUREMENT_PATTERN = re.compile(r'^\d+(\.\d+)?\s*(mm|cm|g|kg|ml|l|s|ms)$')
 # Numeric data placeholders: " 0 / 0", "0 / 0"
 NUMERIC_PLACEHOLDER_PATTERN = re.compile(r'^\s*\d+\s*/\s*\d+\s*$')
 
-# Short tokens and non-translatable exact strings
-NON_TRANSLATABLE = {"true", "false", "xl", "lg", "md", "sm", "xs", "#RRGGBB"}
+# Short tokens and non-translatable exact strings.
+# Fb0MailboxSink is a C++ sink class name returned verbatim by its name() method;
+# the return-literal extraction pattern matches it, but it is an internal
+# identifier, never user-facing text. The `// i18n: do not translate` source
+# comment is documentation only — this extractor does not parse comments — so the
+# exact-match skip set is the mechanism that actually excludes it.
+NON_TRANSLATABLE = {
+    "true", "false", "xl", "lg", "md", "sm", "xs", "#RRGGBB",
+    "Fb0MailboxSink",
+}
 
 # Language names displayed in their native script (never translated)
 LANGUAGE_NAMES = {
