@@ -1333,10 +1333,9 @@ void AmsState::sync_from_backend() {
     }
 
     // Update per-unit environment indicator display subjects (formatted text for XML).
-    // dryer is system-level (applies to all units); fetch once up front so the
-    // indicator can be made reachable for any drying-capable backend, not only when
-    // a live temp/humidity reading is present.
-    const auto& dryer = backend->get_dryer_info();
+    // The dryer is fetched per-unit below so each box's indicator reflects its own
+    // drying state — the indicator can be made reachable for any drying-capable box,
+    // not only when a live temp/humidity reading is present.
     for (const auto& unit : info.units) {
         int idx = unit.unit_index;
         if (idx < 0 || idx >= MAX_UNITS)
@@ -1404,10 +1403,11 @@ void AmsState::sync_from_backend() {
             }
         }
 
-        // Indicator is reachable when there is live environment data OR the
-        // backend supports drying — otherwise a dryer-capable box with no
+        // Indicator is reachable when there is live environment data OR this
+        // unit's dryer is supported — otherwise a dryer-capable box with no
         // temp/humidity sensor would have no way to open the drying controls.
-        const int ind_vis = (has_env || dryer.supported) ? 1 : 0;
+        const bool unit_supports_dryer = backend->get_dryer_info(idx).supported;
+        const int ind_vis = (has_env || unit_supports_dryer) ? 1 : 0;
         if (lv_subject_get_int(&env_ind_visible_[idx]) != ind_vis) {
             lv_subject_set_int(&env_ind_visible_[idx], ind_vis);
         }
@@ -1419,8 +1419,7 @@ void AmsState::sync_from_backend() {
         }
     }
 
-    // Update drying state for indicator (system-level dryer applies to all units).
-    // dryer was fetched above for the visibility gate.
+    // Update drying state for indicator — per-unit dryer.
     for (int i = 0; i < MAX_UNITS; ++i) {
         // Only update drying for units that have environment data visible
         if (lv_subject_get_int(&env_ind_visible_[i]) != 1) {
@@ -1429,6 +1428,7 @@ void AmsState::sync_from_backend() {
             }
             continue;
         }
+        const DryerInfo dryer = backend->get_dryer_info(i);
         if (dryer.supported && dryer.active) {
             if (lv_subject_get_int(&env_ind_drying_active_[i]) != 1) {
                 lv_subject_set_int(&env_ind_drying_active_[i], 1);
