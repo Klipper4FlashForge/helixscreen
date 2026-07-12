@@ -11,6 +11,7 @@
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_print_preparation_manager.h"
+#include "ui_toast_manager.h"
 #include "ui_update_queue.h"
 #include "ui_utils.h"
 
@@ -975,6 +976,18 @@ void PrintSelectDetailView::apply_preview_colors() {
         apply_tool_colors();
         apply_mapped_tool_colors();
     }
+}
+
+void PrintSelectDetailView::set_prefer_sliced_colors(bool prefer_sliced) {
+    lv_subject_set_int(&detail_prefer_sliced_colors_, prefer_sliced ? 1 : 0);
+    apply_preview_colors();
+    if (gcode_viewer_) {
+        lv_obj_invalidate(gcode_viewer_);
+    }
+    ToastManager::instance().show(ToastSeverity::INFO,
+                                  prefer_sliced ? "Showing sliced colors"
+                                                : "Showing loaded colors",
+                                  2000);
 }
 
 void PrintSelectDetailView::apply_sliced_tool_colors() {

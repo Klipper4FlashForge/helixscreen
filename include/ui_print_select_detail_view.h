@@ -204,6 +204,11 @@ class PrintSelectDetailView : public OverlayBase {
      */
     void hide();
 
+    /// Toggle the preview between slicer-intended colors (true) and actual loaded
+    /// AMS slot colors (false). Session-local; the panel's toggle callback calls
+    /// this with the switch's checked state.
+    void set_prefer_sliced_colors(bool prefer_sliced);
+
     /**
      * @brief Whether the current file's gcode has finished parsing.
      *
