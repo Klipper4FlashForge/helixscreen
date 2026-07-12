@@ -6,11 +6,13 @@
 #include "ui_history_list_view.h"
 #include "ui_observer_guard.h"
 
+#include "in_flight_guard.h"
 #include "overlay_base.h"
 #include "print_history_data.h"
 #include "print_history_manager.h"
 #include "subject_managed_panel.h"
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
@@ -235,8 +237,10 @@ class HistoryListPanel : public OverlayBase {
     // Pagination state for infinite scroll
     static constexpr int PAGE_SIZE = 50; ///< Jobs per API request
     uint64_t total_job_count_ = 0;       ///< Total jobs on server (from API)
-    bool is_loading_more_ = false;       ///< True while fetching next page
-    bool has_more_data_ = true;          ///< False when all jobs loaded
+    /// Single-flight guard for the "load next page" fetch, with a 30s self-heal
+    /// so a silently-lost response can't permanently block infinite scroll.
+    helix::InFlightGuard load_more_guard_{std::chrono::milliseconds(30000)};
+    bool has_more_data_ = true; ///< False when all jobs loaded
 
     // Filter/sort state
     std::string search_query_;                                         ///< Current search text

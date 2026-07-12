@@ -467,7 +467,7 @@ void PrintSelectPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
             spdlog::trace("[{}] on_files_ready: applying {} files on main thread",
                           panel->get_name(), c->files.size());
 
-            panel->refresh_in_flight_ = false;
+            panel->refresh_guard_.release();
 
             // Snapshot previous file list (filename + modified time, in sorted
             // order) before replacing — used to skip repopulation when nothing
@@ -670,7 +670,7 @@ void PrintSelectPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
     file_provider_->set_on_error([self, token = self->lifetime_.token()](const std::string& error) {
         LOG_ERROR_INTERNAL("[{}] File list refresh error: {}", self->get_name(), error);
         token.defer([self, error]() {
-            self->refresh_in_flight_ = false;
+            self->refresh_guard_.release();
             if (dir_error_should_reset_to_root(error, self->path_navigator_.is_at_root())) {
                 // The current directory no longer exists on the server (e.g. a
                 // FlashForge path-doubling artifact). Retrying it would wedge the
@@ -953,32 +953,22 @@ void PrintSelectPanel::refresh_files(bool force) {
         return;
     }
 
-    const auto now = std::chrono::steady_clock::now();
-    if (refresh_should_skip(refresh_in_flight_, force, refresh_started_at_, now,
-                            refresh_stuck_threshold_)) {
-        const auto elapsed = now - refresh_started_at_;
-        spdlog::debug("[{}] refresh_files() skipped: previous request still in-flight ({}ms)",
-                      get_name(),
-                      std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
+    const auto acquire = refresh_guard_.try_acquire(force);
+    if (acquire == helix::InFlightGuard::AcquireResult::Skipped) {
+        spdlog::debug("[{}] refresh_files() skipped: previous request still in-flight", get_name());
         return;
     }
-    if (refresh_in_flight_ && !force) {
-        // Self-heal path: predicate returned false because the threshold was
-        // exceeded — treat the prior response as lost and fall through to a
-        // fresh request (the flag is overwritten below).
-        const auto elapsed = now - refresh_started_at_;
+    if (acquire == helix::InFlightGuard::AcquireResult::RecoveredStuck) {
+        // The prior response is presumed lost (threshold exceeded); the guard
+        // has already re-based its timestamp, so fall through to a fresh request.
         spdlog::warn("[{}] refresh_files(): in-flight flag stuck for {}ms — treating prior "
                      "response as lost and retrying",
-                     get_name(),
-                     std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
+                     get_name(), refresh_guard_.stuck_threshold().count());
     }
 
     spdlog::trace("[{}] refresh_files() called for path='{}', existing_count={}{}", get_name(),
                   current_path_.empty() ? "/" : current_path_, file_list_.size(),
                   force ? " (forced)" : "");
-
-    refresh_in_flight_ = true;
-    refresh_started_at_ = std::chrono::steady_clock::now();
 
     // Delegate to file provider - callbacks set in setup() will handle the results
     file_provider_->refresh_files(current_path_, file_list_);

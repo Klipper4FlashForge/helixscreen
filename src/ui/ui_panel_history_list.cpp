@@ -360,7 +360,7 @@ void HistoryListPanel::on_deactivate() {
 
     // Reset pagination state
     total_job_count_ = 0;
-    is_loading_more_ = false;
+    load_more_guard_.release();
     has_more_data_ = true;
 
     // Reset virtual scroll view
@@ -402,7 +402,7 @@ void HistoryListPanel::refresh_from_api() {
     jobs_.clear();
     total_job_count_ = 0;
     has_more_data_ = true;
-    is_loading_more_ = false;
+    load_more_guard_.release();
 
     spdlog::debug("[{}] Fetching first page of history (limit={})", get_name(), PAGE_SIZE);
 
@@ -431,7 +431,9 @@ void HistoryListPanel::refresh_from_api() {
 
 void HistoryListPanel::load_more() {
     MoonrakerAPI* api = get_moonraker_api();
-    if (!api || is_loading_more_ || !has_more_data_) {
+    // A healthy in-flight page load short-circuits; a stuck one (response lost
+    // >30s ago) falls through and is recovered by try_acquire() below.
+    if (!api || (load_more_guard_.active() && !load_more_guard_.is_stuck()) || !has_more_data_) {
         return;
     }
 
@@ -442,7 +444,11 @@ void HistoryListPanel::load_more() {
         return;
     }
 
-    is_loading_more_ = true;
+    if (load_more_guard_.try_acquire() == helix::InFlightGuard::AcquireResult::RecoveredStuck) {
+        spdlog::warn("[{}] load-more in-flight flag stuck for {}ms — treating prior response as "
+                     "lost and retrying",
+                     get_name(), load_more_guard_.stuck_threshold().count());
+    }
     int start_offset = static_cast<int>(jobs_.size());
 
     spdlog::debug("[{}] Loading more jobs (start={}, limit={})", get_name(), start_offset,
@@ -454,7 +460,7 @@ void HistoryListPanel::load_more() {
         0.0,          // since (no filter)
         0.0,          // before (no filter)
         [this](const std::vector<PrintHistoryJob>& new_jobs, uint64_t total) {
-            is_loading_more_ = false;
+            load_more_guard_.release();
             total_job_count_ = total;
 
             if (new_jobs.empty()) {
@@ -479,7 +485,7 @@ void HistoryListPanel::load_more() {
             // For smoother infinite scroll, we could optimize this to only append
         },
         [this](const MoonrakerError& error) {
-            is_loading_more_ = false;
+            load_more_guard_.release();
             spdlog::error("[{}] Failed to load more history: {}", get_name(), error.message);
         });
 }
@@ -1279,7 +1285,7 @@ void HistoryListPanel::on_scroll_update_visible(lv_event_t* e) {
 }
 
 void HistoryListPanel::check_scroll_position() {
-    if (!list_content_ || !has_more_data_ || is_loading_more_) {
+    if (!list_content_ || !has_more_data_ || load_more_guard_.active()) {
         return;
     }
 

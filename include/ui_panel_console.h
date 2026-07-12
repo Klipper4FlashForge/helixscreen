@@ -6,10 +6,12 @@
 #include "ui_observer_guard.h"
 
 #include "console_filter_engine.h"
+#include "in_flight_guard.h"
 #include "lvgl.h"
 #include "overlay_base.h"
 #include "subject_managed_panel.h"
 
+#include <chrono>
 #include <deque>
 #include <memory>
 #include <string>
@@ -138,8 +140,10 @@ class ConsolePanel : public OverlayBase {
     // Real-time subscription state
     std::string gcode_handler_name_; ///< Unique handler name for callback registration
     bool is_subscribed_ = false;     ///< True if subscribed to notify_gcode_response
-    bool fetch_in_flight_ = false;   ///< True while a gcode_store fetch is pending
-    bool user_scrolled_up_ = false;  ///< True if user manually scrolled up
+    /// Single-flight guard for the gcode_store fetch, with a 30s self-heal so a
+    /// silently-lost response can't wedge fetches permanently. See in_flight_guard.h.
+    helix::InFlightGuard fetch_guard_{std::chrono::milliseconds(30000)};
+    bool user_scrolled_up_ = false; ///< True if user manually scrolled up
 
     // Filtering — engine + observers driven by SettingsManager subjects.
     // The engine is rebuilt on every on_activate() so user pattern edits take

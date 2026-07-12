@@ -460,8 +460,10 @@ void ConsolePanel::on_ui_destroyed() {
 // ============================================================================
 
 void ConsolePanel::fetch_history() {
-    // I5: Prevent concurrent fetches (rapid activate/deactivate cycles)
-    if (fetch_in_flight_) {
+    // I5: Prevent concurrent fetches (rapid activate/deactivate cycles). A
+    // healthy in-flight fetch short-circuits here; a stuck one (response lost
+    // >30s ago) falls through and is recovered by try_acquire() below.
+    if (fetch_guard_.active() && !fetch_guard_.is_stuck()) {
         spdlog::debug("[{}] Fetch already in flight, skipping", get_name());
         return;
     }
@@ -475,7 +477,11 @@ void ConsolePanel::fetch_history() {
         return;
     }
 
-    fetch_in_flight_ = true;
+    if (fetch_guard_.try_acquire() == helix::InFlightGuard::AcquireResult::RecoveredStuck) {
+        spdlog::warn("[{}] fetch in-flight flag stuck for {}ms — treating prior response as lost "
+                     "and retrying",
+                     get_name(), fetch_guard_.stuck_threshold().count());
+    }
 
     // Update status while loading
     std::snprintf(status_buf_, sizeof(status_buf_), "%s", lv_tr("Loading..."));
@@ -507,7 +513,7 @@ void ConsolePanel::fetch_history() {
             // expiration check on the main thread (avoids L081 Mechanism C noise).
             auto entries_ptr = std::make_shared<std::vector<GcodeEntry>>(std::move(converted));
             token.defer("ConsolePanel::fetch_done", [this, entries_ptr]() {
-                fetch_in_flight_ = false;
+                fetch_guard_.release();
                 populate_entries(*entries_ptr);
             });
         },
@@ -515,7 +521,7 @@ void ConsolePanel::fetch_history() {
             spdlog::error("[Console] Failed to fetch gcode store: {}", err.message);
 
             token.defer("ConsolePanel::fetch_error", [this]() {
-                fetch_in_flight_ = false;
+                fetch_guard_.release();
                 std::snprintf(status_buf_, sizeof(status_buf_), "%s",
                               lv_tr("Failed to load history"));
                 lv_subject_copy_string(&status_subject_, status_buf_);

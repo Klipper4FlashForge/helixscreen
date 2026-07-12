@@ -18,6 +18,7 @@
 
 #include "async_lifetime_guard.h"
 #include "helix_plugin_installer.h"
+#include "in_flight_guard.h"
 #include "print_file_data.h"
 #include "print_history_manager.h"
 #include "subject_managed_panel.h"
@@ -95,29 +96,6 @@ struct CardDimensions {
     int card_width;
     int card_height;
 };
-
-/**
- * @brief Decide whether to skip a refresh because one is already in flight,
- *        or to fall through (self-heal) because the in-flight flag has been
- *        stuck for longer than the threshold.
- *
- * Extracted as a pure function so it can be tested without the full
- * PrintSelectPanel/LVGL fixture (#911).
- *
- * @return true to skip (existing request still healthy), false to proceed
- */
-inline bool refresh_should_skip(bool in_flight, bool force,
-                                std::chrono::steady_clock::time_point started_at,
-                                std::chrono::steady_clock::time_point now,
-                                std::chrono::milliseconds stuck_threshold) {
-    if (force) {
-        return false;
-    }
-    if (!in_flight) {
-        return false;
-    }
-    return (now - started_at) < stuck_threshold;
-}
 
 /**
  * @brief Decide whether a failed directory refresh should fall back to root.
@@ -612,15 +590,13 @@ class PrintSelectPanel : public PanelBase {
     // Periodic polling timer for file list (fallback when WebSocket notifications are missed)
     lv_timer_t* file_poll_timer_ = nullptr;
     static constexpr uint32_t FILE_POLL_INTERVAL_MS = 5000; ///< 5s polling fallback
-    bool refresh_in_flight_ = false; ///< Guards against overlapping get_directory RPCs
-    std::chrono::steady_clock::time_point refresh_started_at_{};
-    /// If a refresh stays "in-flight" longer than this, treat the response as lost
-    /// and allow a fresh request through. The RPC layer's own 60s timeout normally
-    /// clears the flag via the error callback; this is a panel-level safety net.
-    /// Sits between worst-case slow embedded responses (K1C ~5-8s on large dirs)
-    /// and the RPC layer's 60s ceiling. Non-const so tests can drop it to
-    /// milliseconds via PrintSelectPanelTestAccess (#911).
-    std::chrono::milliseconds refresh_stuck_threshold_{30000};
+    /// Single-flight guard for overlapping get_directory RPCs, with a 30s
+    /// self-heal: if a response is silently lost the flag would otherwise wedge
+    /// forever and the panel would stop refreshing. The threshold sits between
+    /// worst-case slow embedded responses (K1C ~5-8s on large dirs) and the RPC
+    /// layer's 60s ceiling (which normally clears the flag via the error
+    /// callback; this is the panel-level safety net). See in_flight_guard.h.
+    helix::InFlightGuard refresh_guard_{std::chrono::milliseconds(30000)};
 
     // Virtualized view modules (extracted for maintainability)
     std::unique_ptr<helix::ui::PrintSelectCardView> card_view_;
