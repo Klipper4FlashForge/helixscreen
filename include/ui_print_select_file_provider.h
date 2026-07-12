@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <atomic>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -66,11 +68,13 @@ class PrintSelectFileProvider {
     PrintSelectFileProvider() = default;
     ~PrintSelectFileProvider() = default;
 
-    // Non-copyable, movable
+    // Non-copyable, non-movable. The atomic refresh_generation_ member is not
+    // movable; the provider is only ever held via unique_ptr (never moved as a
+    // value), so this costs nothing.
     PrintSelectFileProvider(const PrintSelectFileProvider&) = delete;
     PrintSelectFileProvider& operator=(const PrintSelectFileProvider&) = delete;
-    PrintSelectFileProvider(PrintSelectFileProvider&&) noexcept = default;
-    PrintSelectFileProvider& operator=(PrintSelectFileProvider&&) noexcept = default;
+    PrintSelectFileProvider(PrintSelectFileProvider&&) = delete;
+    PrintSelectFileProvider& operator=(PrintSelectFileProvider&&) = delete;
 
     // === Setup ===
 
@@ -135,6 +139,14 @@ class PrintSelectFileProvider {
 
     // === Internal State ===
     std::string current_path_; ///< Path for current refresh operation
+
+    /// Per-request generation counter. Each refresh_files() bumps this and captures
+    /// the value in its get_directory callbacks; a response whose captured generation
+    /// no longer matches the current one is discarded. This prevents a superseded
+    /// request — e.g. the original response after a 30s stuck self-heal reissued the
+    /// fetch — from firing on_files_ready a second time (extra metadata pass + grid
+    /// flicker). Mirrors ThumbnailLoadContext / GCodeViewer::load_generation_ (#912).
+    std::atomic<uint32_t> refresh_generation_{0};
 
     // === Constants ===
     static constexpr const char* FOLDER_UP_ICON = "A:assets/images/folder-up.png";

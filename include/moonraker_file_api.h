@@ -111,9 +111,13 @@ class MoonrakerFileAPI {
      * @param path Subdirectory path (empty for root)
      * @param on_success Callback with file list (directories have is_dir=true)
      * @param on_error Error callback
+     *
+     * @note virtual so tests can inject a capturing sub-API that defers/records
+     *       the callbacks (the class is already polymorphic via its virtual
+     *       dtor, so this adds no new ABI/vtable cost).
      */
-    void get_directory(const std::string& root, const std::string& path,
-                       FileListCallback on_success, ErrorCallback on_error);
+    virtual void get_directory(const std::string& root, const std::string& path,
+                               FileListCallback on_success, ErrorCallback on_error);
 
     /**
      * @brief Get detailed metadata for a file

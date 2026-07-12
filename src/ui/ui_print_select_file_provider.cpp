@@ -46,8 +46,13 @@ void PrintSelectFileProvider::refresh_files(const std::string& current_path,
 
     current_path_ = current_path;
 
-    spdlog::trace("[FileProvider] Refreshing file list from Moonraker (path: '{}')...",
-                  current_path.empty() ? "/" : current_path);
+    // Per-request generation: a second refresh_files() (e.g. a stuck-refresh
+    // self-heal reissue) bumps this, so a superseded response self-invalidates
+    // in its callback below rather than firing on_files_ready a second time.
+    const uint32_t gen = ++refresh_generation_;
+
+    spdlog::trace("[FileProvider] Refreshing file list from Moonraker (path: '{}', gen={})...",
+                  current_path.empty() ? "/" : current_path, gen);
 
     // Build map of existing file data to preserve thumbnails/metadata
     std::unordered_map<std::string, PrintFileData> existing_data;
@@ -64,8 +69,14 @@ void PrintSelectFileProvider::refresh_files(const std::string& current_path,
     api_->files().get_directory(
         "gcodes", current_path,
         // Success callback
-        [self, existing_data = std::move(existing_data), path_copy, on_ready,
-         on_err](const std::vector<FileInfo>& files) {
+        [self, existing_data = std::move(existing_data), path_copy, on_ready, on_err,
+         gen](const std::vector<FileInfo>& files) {
+            if (gen != self->refresh_generation_.load()) {
+                spdlog::debug(
+                    "[FileProvider] discarding stale get_directory response (gen {} != {})", gen,
+                    self->refresh_generation_.load());
+                return;
+            }
             spdlog::trace("[FileProvider] Moonraker returned {} raw items for path='{}'",
                           files.size(), path_copy.empty() ? "/" : path_copy);
             for (size_t i = 0; i < files.size() && i < 30; ++i) {
@@ -172,7 +183,12 @@ void PrintSelectFileProvider::refresh_files(const std::string& current_path,
             }
         },
         // Error callback
-        [on_err](const MoonrakerError& error) {
+        [self, on_err, gen](const MoonrakerError& error) {
+            if (gen != self->refresh_generation_.load()) {
+                spdlog::debug("[FileProvider] discarding stale get_directory error (gen {} != {})",
+                              gen, self->refresh_generation_.load());
+                return;
+            }
             spdlog::error("[FileProvider] File list refresh error: {} ({})", error.message,
                           error.get_type_string());
             if (on_err) {
