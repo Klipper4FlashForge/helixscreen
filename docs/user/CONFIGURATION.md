@@ -415,6 +415,7 @@ Located in the `input` section:
     "scroll_guard": false,
     "scroll_guard_cooldown_ms": 80,
     "touch_device": "",
+    "device_blacklist": [],
     "force_calibration": false,
     "calibration": {
       "valid": false,
@@ -455,6 +456,14 @@ Matches LVGL's native default of 10.
 **Default:** `""` (auto-detect)
 **Example:** `"/dev/input/event1"`
 **Description:** Override touch/pointer input device. Leave empty for auto-detection. Auto-detection finds touch or pointer capable devices.
+
+### `device_blacklist`
+**Type:** array of strings
+**Default:** `[]` (no blacklist)
+**Example:** `["002c:261a"]`
+**Description:** USB input devices that HelixScreen ignores entirely for keyboard and barcode-scanner input. Each entry is a `"vid:pid"` pair of lowercase 4-digit hex IDs. Use this when a USB barcode scanner enumerates as a plain HID keyboard and HelixScreen keeps claiming it — for example when an external tool like `afc-spool-scan` needs exclusive access to the scanner. A blacklisted device is skipped by both the persistent keyboard binding and the in-app scan overlay, but still appears in the Barcode Scanner settings device list so you can identify it.
+
+**Finding a device's VID:PID:** Open **Settings > Barcode Scanner** — the device list shows each device's VID:PID. Alternatively, run `lsusb` over SSH and read the ID pair after `ID` (e.g. `ID 002c:261a`). See [Sharing a scanner with another tool](guide/barcode-scanner.md#sharing-a-scanner-with-another-tool-device-blacklist) for the full walkthrough.
 
 ### `jitter_threshold`
 **Type:** integer
@@ -1502,6 +1511,7 @@ Environment="HELIX_TOUCH_DEVICE=/dev/input/event0"
     "scroll_guard": false,
     "scroll_guard_cooldown_ms": 80,
     "touch_device": "",
+    "device_blacklist": [],
     "force_calibration": false,
     "calibration": {
       "valid": false,

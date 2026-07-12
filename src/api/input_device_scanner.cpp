@@ -8,6 +8,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
@@ -56,6 +57,23 @@ std::string read_product_id(const std::string& sysfs_base, int event_num) {
 constexpr int BUS_USB = 0x03;
 constexpr int BUS_BLUETOOTH = 0x05;
 
+// Normalize a hex USB VID or PID token for comparison: strip surrounding
+// whitespace, drop a leading "0x"/"0X", and lowercase. So "  0x1A2C " -> "1a2c".
+std::string normalize_hex_id(const std::string& s) {
+    size_t start = 0;
+    size_t end = s.size();
+    while (start < end && std::isspace(static_cast<unsigned char>(s[start])))
+        ++start;
+    while (end > start && std::isspace(static_cast<unsigned char>(s[end - 1])))
+        --end;
+    std::string out = s.substr(start, end - start);
+    if (out.size() >= 2 && out[0] == '0' && (out[1] == 'x' || out[1] == 'X'))
+        out = out.substr(2);
+    std::transform(out.begin(), out.end(), out.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return out;
+}
+
 } // namespace
 
 namespace helix::input {
@@ -103,6 +121,45 @@ bool check_capability_bit(const std::string& hex_bitmask, int bit) {
 
     unsigned long val = std::strtoul(words[array_index].c_str(), nullptr, 16);
     return (val & (1UL << bit_in_word)) != 0;
+}
+
+bool is_vid_pid_blacklisted(const std::string& vendor, const std::string& product,
+                            const std::vector<std::string>& blacklist) {
+    if (blacklist.empty() || vendor.empty() || product.empty())
+        return false;
+
+    std::string want_vendor = normalize_hex_id(vendor);
+    std::string want_product = normalize_hex_id(product);
+
+    for (const auto& entry : blacklist) {
+        auto colon = entry.find(':');
+        if (colon == std::string::npos)
+            continue; // malformed entry — skip gracefully
+        std::string entry_vendor = normalize_hex_id(entry.substr(0, colon));
+        std::string entry_product = normalize_hex_id(entry.substr(colon + 1));
+        if (entry_vendor.empty() || entry_product.empty())
+            continue;
+        if (entry_vendor == want_vendor && entry_product == want_product)
+            return true;
+    }
+    return false;
+}
+
+std::vector<std::string> read_device_blacklist_from_config() {
+    // Read directly from Config (not SettingsManager) because find_keyboard_device()
+    // runs during display backend init, before SettingsManager::init_subjects().
+    try {
+        Config* config = Config::get_instance();
+        if (config) {
+            // Top-level "/input/..." path (not df()/per-printer) to match the
+            // template placement and sibling keys like /input/touch_device.
+            return config->get<std::vector<std::string>>("/input/device_blacklist", {});
+        }
+    } catch (...) {
+        // Config may not be initialized yet during very early startup, or the key
+        // may hold an unexpected type. Treat as no blacklist.
+    }
+    return {};
 }
 
 std::optional<ScannedDevice> find_mouse_device(const std::string& dev_base,
@@ -189,7 +246,8 @@ std::optional<ScannedDevice> find_mouse_device() {
 
 std::optional<ScannedDevice> find_keyboard_device(const std::string& dev_base,
                                                   const std::string& sysfs_base,
-                                                  const std::string& exclude_vendor_product) {
+                                                  const std::string& exclude_vendor_product,
+                                                  const std::vector<std::string>& blacklist) {
     // Parse exclusion vendor:product pair if provided
     std::string exclude_vendor;
     std::string exclude_product;
@@ -237,6 +295,20 @@ std::optional<ScannedDevice> find_keyboard_device(const std::string& dev_base,
 
         std::string name = read_device_name(sysfs_base, event_num);
 
+        // Skip devices whose VID:PID is on the user's blacklist. This is the
+        // general escape hatch for generically-named scanners that slip past the
+        // name/VID:PID heuristics below.
+        if (!blacklist.empty()) {
+            std::string vendor = read_vendor_id(sysfs_base, event_num);
+            std::string product = read_product_id(sysfs_base, event_num);
+            if (is_vid_pid_blacklisted(vendor, product, blacklist)) {
+                spdlog::info("[InputScanner] Skipping blacklisted device for keyboard: {} ({}) "
+                             "vendor={} product={}",
+                             device_path, name, vendor, product);
+                continue;
+            }
+        }
+
         // Skip devices with "barcode" or "scanner" in the name — these are
         // barcode scanners that happen to present as USB HID keyboards.
         std::string lower_name = name;
@@ -280,11 +352,13 @@ std::optional<ScannedDevice> find_keyboard_device() {
     } catch (...) {
         // Config may not be initialized yet during very early startup
     }
-    return find_keyboard_device("/dev/input", "/sys/class/input", exclude_id);
+    return find_keyboard_device("/dev/input", "/sys/class/input", exclude_id,
+                                read_device_blacklist_from_config());
 }
 
 std::vector<ScannedDevice> find_hid_keyboard_devices(const std::string& dev_base,
-                                                     const std::string& sysfs_base) {
+                                                     const std::string& sysfs_base,
+                                                     const std::vector<std::string>& blacklist) {
     std::vector<ScannedDevice> named_scanners;    // "barcode"/"scanner" in name — high priority
     std::vector<ScannedDevice> generic_keyboards; // any other USB HID keyboard
 
@@ -331,6 +405,18 @@ std::vector<ScannedDevice> find_hid_keyboard_devices(const std::string& dev_base
             continue;
         }
 
+        // Skip devices whose VID:PID is on the user's blacklist.
+        if (!blacklist.empty()) {
+            std::string vendor = read_vendor_id(sysfs_base, event_num);
+            std::string product = read_product_id(sysfs_base, event_num);
+            if (is_vid_pid_blacklisted(vendor, product, blacklist)) {
+                spdlog::info("[InputScanner] Skipping blacklisted HID device: {} vendor={} "
+                             "product={}",
+                             device_path, vendor, product);
+                continue;
+            }
+        }
+
         std::string name = read_device_name(sysfs_base, event_num);
         ScannedDevice dev{device_path, name, event_num};
 
@@ -360,14 +446,16 @@ std::vector<ScannedDevice> find_hid_keyboard_devices(const std::string& dev_base
 }
 
 std::vector<ScannedDevice> find_hid_keyboard_devices() {
-    return find_hid_keyboard_devices("/dev/input", "/sys/class/input");
+    return find_hid_keyboard_devices("/dev/input", "/sys/class/input",
+                                     read_device_blacklist_from_config());
 }
 
 std::vector<ScannedDevice> find_hid_keyboard_devices(const std::string& dev_base,
                                                      const std::string& sysfs_base,
-                                                     const std::string& configured_vendor_product) {
+                                                     const std::string& configured_vendor_product,
+                                                     const std::vector<std::string>& blacklist) {
     if (configured_vendor_product.empty()) {
-        return find_hid_keyboard_devices(dev_base, sysfs_base);
+        return find_hid_keyboard_devices(dev_base, sysfs_base, blacklist);
     }
 
     // Parse "vendor:product" string
@@ -375,7 +463,7 @@ std::vector<ScannedDevice> find_hid_keyboard_devices(const std::string& dev_base
     if (colon == std::string::npos) {
         spdlog::warn("[InputScanner] Invalid configured_vendor_product format: {}",
                      configured_vendor_product);
-        return find_hid_keyboard_devices(dev_base, sysfs_base);
+        return find_hid_keyboard_devices(dev_base, sysfs_base, blacklist);
     }
     std::string target_vendor = configured_vendor_product.substr(0, colon);
     std::string target_product = configured_vendor_product.substr(colon + 1);
@@ -383,7 +471,7 @@ std::vector<ScannedDevice> find_hid_keyboard_devices(const std::string& dev_base
     // Scan for the configured device
     auto dir = std::unique_ptr<DIR, decltype(&closedir)>(opendir(dev_base.c_str()), closedir);
     if (!dir)
-        return find_hid_keyboard_devices(dev_base, sysfs_base);
+        return find_hid_keyboard_devices(dev_base, sysfs_base, blacklist);
 
     struct dirent* entry;
     while ((entry = readdir(dir.get())) != nullptr) {
@@ -405,6 +493,11 @@ std::vector<ScannedDevice> find_hid_keyboard_devices(const std::string& dev_base
         std::string vendor = read_vendor_id(sysfs_base, event_num);
         std::string product = read_product_id(sysfs_base, event_num);
 
+        // A blacklisted device is never used, even if it matches the configured
+        // VID:PID — the blacklist is the stronger signal.
+        if (is_vid_pid_blacklisted(vendor, product, blacklist))
+            continue;
+
         if (vendor == target_vendor && product == target_product) {
             std::string name = read_device_name(sysfs_base, event_num);
             spdlog::info("[InputScanner] Found configured scanner device: {} ({}) "
@@ -416,7 +509,7 @@ std::vector<ScannedDevice> find_hid_keyboard_devices(const std::string& dev_base
 
     spdlog::info("[InputScanner] Configured device {}:{} not found, falling back to auto-detect",
                  target_vendor, target_product);
-    return find_hid_keyboard_devices(dev_base, sysfs_base);
+    return find_hid_keyboard_devices(dev_base, sysfs_base, blacklist);
 }
 
 static std::string normalize_mac(const std::string& s) {
