@@ -383,12 +383,18 @@ class TestExtractHonorsDoNotTranslateMarker:
         """)
         assert "After Blank" in result
 
-    def test_universal_marker_is_not_a_suppression_marker(self, tmp_path):
-        """`// i18n: universal` is a distinct note and does not suppress."""
-        result = self._extract(tmp_path, """\
-            void f() { lv_label_set_text(lbl, "Universal Text"); } // i18n: universal
-        """)
-        assert "Universal Text" in result
+    def test_universal_marker_is_a_distinct_suppression_kind(self, tmp_path):
+        """`// i18n: universal` is a separate marker (see TestExtractHonorsUniversal
+        Marker) — the do-not-translate regex must NOT match it, so a comment that
+        only says 'universal' is not caught by the do-not-translate path."""
+        from translations.extractor import I18N_DO_NOT_TRANSLATE_RE
+
+        assert not I18N_DO_NOT_TRANSLATE_RE.search("// i18n: universal")
+        # But a "do not translate" comment that happens to mention "universal"
+        # (e.g. "universal 3D printing term") is still a do-not-translate marker.
+        assert I18N_DO_NOT_TRANSLATE_RE.search(
+            "// i18n: do not translate, universal 3D printing term"
+        )
 
     def test_marker_does_not_override_lv_tr(self, tmp_path):
         """An explicit lv_tr() wins; a marker on its line documents a substring."""
@@ -405,6 +411,73 @@ class TestExtractHonorsDoNotTranslateMarker:
         """)
         assert "Alpha Prod" not in result
         assert "Beta Prod" not in result
+
+
+class TestExtractHonorsUniversalMarker:
+    """`// i18n: universal` suppresses extraction, including on lv_tr() lines."""
+
+    def _extract(self, tmp_path, source):
+        from translations.extractor import extract_strings_from_cpp
+
+        cpp = tmp_path / "sample.cpp"
+        cpp.write_text(dedent(source))
+        return extract_strings_from_cpp(cpp)
+
+    def test_universal_trailing_suppresses_literal(self, tmp_path):
+        result = self._extract(tmp_path, """\
+            const char* a() { return "Marked Universal"; } // i18n: universal
+            const char* b() { return "Kept Literal"; }
+        """)
+        assert "Marked Universal" not in result
+        assert "Kept Literal" in result
+
+    def test_universal_preceding_line_suppresses(self, tmp_path):
+        result = self._extract(tmp_path, """\
+            void f() {
+                // i18n: universal
+                lv_label_set_text(lbl, "Preceding Universal");
+                lv_label_set_text(lbl, "Plain Name");
+            }
+        """)
+        assert "Preceding Universal" not in result
+        assert "Plain Name" in result
+
+    def test_universal_suppresses_lv_tr(self, tmp_path):
+        """The deliberate difference from do-not-translate: universal DOES apply
+        on an lv_tr() line (the string should not be a key at all)."""
+        result = self._extract(tmp_path, """\
+            void f() { lv_tr("Universal On LvTr"); } // i18n: universal
+            void g() { lv_tr("Normal LvTr"); }
+        """)
+        assert "Universal On LvTr" not in result
+        assert "Normal LvTr" in result
+
+    def test_universal_preceding_suppresses_lv_tr(self, tmp_path):
+        result = self._extract(tmp_path, """\
+            void f() {
+                // i18n: universal
+                lv_tr("Universal Below");
+                lv_tr("Kept Below");
+            }
+        """)
+        assert "Universal Below" not in result
+        assert "Kept Below" in result
+
+    def test_universal_does_not_leak_to_next_line(self, tmp_path):
+        result = self._extract(tmp_path, """\
+            const char* a() { return "Marked Uni"; } // i18n: universal
+            const char* b() { return "Next Literal"; }
+        """)
+        assert "Marked Uni" not in result
+        assert "Next Literal" in result
+
+    def test_do_not_translate_still_not_applied_to_lv_tr(self, tmp_path):
+        """Regression: do-not-translate must NOT suppress lv_tr (only universal
+        does). Keeps the spoolman_manager.cpp substring-documentation case working."""
+        result = self._extract(tmp_path, """\
+            void f() { lv_tr("Sentence With Product"); } // i18n: do not translate
+        """)
+        assert "Sentence With Product" in result
 
 
 # =============================================================================

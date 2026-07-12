@@ -59,19 +59,28 @@ NUMERIC_PLACEHOLDER_PATTERN = re.compile(r'^\s*\d+\s*/\s*\d+\s*$')
 # Short tokens and non-translatable exact strings (format/layout tokens).
 NON_TRANSLATABLE = {"true", "false", "xl", "lg", "md", "sm", "xs", "#RRGGBB"}
 
-# A `// i18n: do not translate` source comment suppresses extraction of the
-# string literal(s) it applies to. Two placement conventions are honored (both
-# occur in the codebase): a trailing comment on the same line as the literal,
-# and a standalone comment on the line immediately above it. Only the literal's
-# own line (or the line directly below a standalone marker) is affected — the
-# marker never suppresses beyond that. Matches any i18n comment containing the
-# phrase "do not translate" (e.g. "i18n: do not translate - product name",
-# "i18n: Spoolman is a product name, do not translate"); the distinct
-# "i18n: universal" note is a separate convention and is NOT treated as a
-# suppression marker.
+# Source comments that suppress extraction of the string literal(s) they apply
+# to. Two placement conventions are honored (both occur in the codebase): a
+# trailing comment on the same line as the literal, and a standalone comment on
+# the line immediately above it. Only the literal's own line (or the line
+# directly below a standalone marker) is affected — a marker never suppresses
+# beyond that.
+#
+# Two marker kinds with a deliberate difference on lv_tr() lines:
+#   `// i18n: do not translate` — the string is not user-facing (identifiers,
+#      product names). Matches any i18n comment containing the phrase (e.g.
+#      "i18n: do not translate - product name"). Does NOT override an explicit
+#      lv_tr(): on an lv_tr line it documents a non-translatable *substring* of a
+#      translatable sentence (e.g. a product name inside it), so the sentence is
+#      still extracted.
+#   `// i18n: universal` — the whole string renders identically in every locale,
+#      so it should not be a translation key at all. This DOES apply on lv_tr()
+#      lines: runtime falls back to the tag (the English/universal text) for a
+#      key absent from every pack, so dropping it is safe.
 I18N_DO_NOT_TRANSLATE_RE = re.compile(
     r"//[^\n]*\bi18n:[^\n]*do\s+not\s+translate", re.IGNORECASE
 )
+I18N_UNIVERSAL_RE = re.compile(r"//[^\n]*\bi18n:\s*universal", re.IGNORECASE)
 
 # Language names displayed in their native script (never translated)
 LANGUAGE_NAMES = {
@@ -110,10 +119,10 @@ def _join_adjacent_literals(captured: str) -> str:
     return "".join(pieces)
 
 
-def _has_do_not_translate_marker(content: str, literal_pos: int) -> bool:
+def _marker_applies(content: str, literal_pos: int, marker_re) -> bool:
     """
-    Return True if a `// i18n: do not translate` marker applies to the string
-    literal at ``literal_pos``.
+    Return True if a suppression marker matching ``marker_re`` applies to the
+    string literal at ``literal_pos``.
 
     Trailing form: the marker is a comment on the same line as the literal.
     Preceding form: the marker is a standalone comment (line starts with `//`)
@@ -125,7 +134,7 @@ def _has_do_not_translate_marker(content: str, literal_pos: int) -> bool:
     if line_end == -1:
         line_end = len(content)
     this_line = content[line_start:line_end]
-    if I18N_DO_NOT_TRANSLATE_RE.search(this_line):
+    if marker_re.search(this_line):
         return True
 
     # Preceding standalone marker on the immediately-previous line.
@@ -133,7 +142,7 @@ def _has_do_not_translate_marker(content: str, literal_pos: int) -> bool:
         prev_end = line_start - 1
         prev_start = content.rfind("\n", 0, prev_end) + 1
         prev_line = content[prev_start:prev_end]
-        if prev_line.lstrip().startswith("//") and I18N_DO_NOT_TRANSLATE_RE.search(prev_line):
+        if prev_line.lstrip().startswith("//") and marker_re.search(prev_line):
             return True
 
     return False
@@ -335,19 +344,25 @@ def extract_strings_from_cpp(cpp_path: Path) -> Set[str]:
             if is_adjacent:
                 text = _join_adjacent_literals(text)
 
-            # lv_tr() strings are explicitly marked - always include them.
-            # A `// i18n: do not translate` marker does NOT override lv_tr(): the
-            # explicit call wins, so such a marker on an lv_tr line documents a
-            # non-translatable substring (e.g. a product name inside a sentence)
-            # rather than suppressing the whole string.
+            # lv_tr() strings are explicitly marked - always include them, EXCEPT
+            # when a `// i18n: universal` marker applies (the string renders the
+            # same in every locale, so it should not be a key). A `// i18n: do
+            # not translate` marker does NOT override lv_tr(): the explicit call
+            # wins, so on an lv_tr line it documents a non-translatable substring
+            # (e.g. a product name inside a sentence) rather than the whole string.
             if is_lv_tr:
+                if _marker_applies(content, match.start(1), I18N_UNIVERSAL_RE):
+                    continue
                 if text and text.strip():
                     result.add(text)
                 continue
 
-            # Honor a `// i18n: do not translate` marker on the literal's line
-            # (trailing) or the line directly above it (standalone/preceding).
-            if _has_do_not_translate_marker(content, match.start(1)):
+            # Honor a suppression marker on the literal's line (trailing) or the
+            # line directly above it (standalone/preceding): either kind applies
+            # to a non-lv_tr literal.
+            if _marker_applies(content, match.start(1), I18N_DO_NOT_TRANSLATE_RE) or _marker_applies(
+                content, match.start(1), I18N_UNIVERSAL_RE
+            ):
                 continue
 
             # Get surrounding context to check for skip patterns
