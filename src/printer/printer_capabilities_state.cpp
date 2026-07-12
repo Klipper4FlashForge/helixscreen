@@ -99,13 +99,22 @@ void PrinterCapabilitiesState::set_hardware(const PrinterDiscovery& hardware,
     // AUTO mode: true if hardware beeper detected OR local sound backend exists.
     lv_subject_set_int(&printer_has_speaker_, overrides.has_speaker() ? 1 : 0);
 
-    // Timelapse capability is NOT written here. moonraker-timelapse is a Moonraker
-    // component (moonraker.conf), not a Klipper object, so it never appears in
-    // printer.objects.list and hardware.has_timelapse() is always false. The
-    // authoritative source is component detection, which calls
-    // set_timelapse_available() (see moonraker_discovery_sequence.cpp). Writing the
-    // flag from this hardware batch would clobber that value back to false and hide
-    // the timelapse pre-print option (#1094).
+    // Timelapse capability. moonraker-timelapse is a Moonraker component
+    // (moonraker.conf), not a Klipper object, so it never appears in
+    // printer.objects.list — for that install hardware.has_timelapse() is
+    // false and the authoritative source is component detection via
+    // set_timelapse_available() (see moonraker_discovery_sequence.cpp). OR the
+    // hardware-derived flag with the current value so this batch never clobbers
+    // a component-detected true back to false (which hid the timelapse
+    // pre-print option, #1094). set_timelapse_available(false) is called first
+    // in the discovery sequence, so switching to a printer without timelapse
+    // still clears correctly. A Klipper [timelapse] object, if one ever exists,
+    // still enables it through hardware.has_timelapse().
+    lv_subject_set_int(&printer_has_timelapse_,
+                       (hardware.has_timelapse() ||
+                        lv_subject_get_int(&printer_has_timelapse_) != 0)
+                           ? 1
+                           : 0);
 
     // Firmware retraction capability (for G10/G11 retraction settings)
     lv_subject_set_int(&printer_has_firmware_retraction_,
