@@ -204,8 +204,6 @@ translations:
   Applying...: Aplicando...
   Are you sure you want to cancel this print? All progress will be lost.: Tem certeza
     de que deseja cancelar esta impressão? Todo o progresso será perdido.
-  Are you sure? This will power off or restart the printer host.: Tem certeza? Isso
-    desligará ou reiniciará o host da impressora.
   Are you sure? This will power off or restart this device.: Tem certeza? Isso desligará
     ou reiniciará este dispositivo.
   Assign Klipper macros to control LEDs via on/off, toggle, or presets: Atribuir macros
@@ -265,13 +263,11 @@ translations:
   Bed Temp: Temp. Mesa
   Bed Temp (°C): Temp. Mesa (°C)
   Bed Temperature: Temperatura da Mesa
-  Bed heater turned off: Aquecedor da mesa desligado
   Bed is Level!: Mesa Nivelada!
   Bed mesh operation timed out: Malha da mesa — tempo esgotado
   Bed target set to {}°C: Mesa configurada para {}°C
   Bed temp must be 0-200°C: A temperatura da mesa deve ser 0-200°C
   Bed warming timed out: Aquecimento da mesa — tempo esgotado
-  Bed °C: Mesa °C
   'Bed:': 'Mesa:'
   Belt A frequency locked: Frequência da correia A travada
   Belt B frequency locked: Frequência da correia B travada
@@ -331,7 +327,6 @@ translations:
   CARTOGRAPHER: CARTOGRAPHER
   CHANGED FROM LAST SESSION: ALTERADO DESDE A ÚLTIMA SESSÃO
   COLOR SENSORS: SENSORES DE COR
-  COLORS REQUIRED: CORES NECESSÁRIAS
   CONFIGURATION: CONFIGURAÇÃO
   CONNECTION TYPE: TIPO DE CONEXÃO
   CONTROLLABLE FANS: VENTOINHAS CONTROLÁVEIS
@@ -422,8 +417,6 @@ translations:
   Chamber Temperature: Temperatura da câmara
   Chamber and dryer humidity monitoring: Monitoramento de umidade da câmara e secador
   Chamber at %d°C: Câmara a %d°C
-  Chamber heater not found in printer configuration: Aquecedor da câmara não encontrado
-    na configuração da impressora
   Chamber heating to %d°C...: Aquecendo câmara a %d°C...
   Chamber target set to {}°C: Alvo da câmara definido para {}°C
   Change: Alterar
@@ -462,7 +455,6 @@ translations:
   Checking...: Verificando...
   Choose 12-hour or 24-hour time display: Escolha exibição de hora em 12 ou 24 horas
   Choose Filament: Escolher Filamento
-  Choose Spool: Escolher bobina
   Choose an existing filament, or tap + New to create one.: Escolha um filamento existente
     ou toque em + Novo para criar um.
   Choose display language: Escolha o idioma de exibição
@@ -734,9 +726,7 @@ translations:
   EMPTY: VAZIO
   Each fan can only be selected once: Cada ventoinha só pode ser selecionada uma vez
   Edit: Editar
-  Edit Preset: Editar Predefinição
   Edit Slot: Editar Slot
-  Edit Slot 1: Editar Slot 1
   Edit Spool: Editar Carretel
   'Edit Spool #{}': 'Editar Bobina #{}'
   Edit Theme Colors: Editar Cores do Tema
@@ -756,7 +746,6 @@ translations:
   Emergency stop and print alerts: Parada de emergência e alertas de impressão
   'Emergency stop failed: not connected': 'Parada de emergência falhou: não conectado'
   Empty: Vazio
-  Empty filament slot: Slot de filamento vazio
   Empty slots disable the associated functionality: Slots vazios desabilitam a funcionalidade
     associada
   Enable: Habilitar
@@ -838,7 +827,6 @@ translations:
   Extra prime to compensate ooze: Prime extra para compensar vazamento
   Extrude: Extrudar
   Extrude Speed: Velocidade de extrusão
-  Extrude complete ({}mm): Extrusão completa ({}mm)
   'Extrude failed: {}': 'Falha ao extrudar: {}'
   Extrude may still be running — response timed out: A extrusão pode ainda estar em
     execução — tempo esgotado
@@ -848,7 +836,6 @@ translations:
   Extruder PID Tuning: Ajuste PID do Extrusor
   Extruder heats automatically based on material: O extrusor aquece automaticamente
     com base no material
-  Extruding {}mm...: Extrudando {}mm...
   FAILED: FALHOU
   FILAMENT MAPPING: MAPEAMENTO DE FILAMENTO
   FILAMENTS: FILAMENTOS
@@ -920,7 +907,6 @@ translations:
   Failed to reset theme: Falha ao redefinir o tema
   Failed to restart Moonraker.: Falha ao reiniciar Moonraker.
   'Failed to restart: {}': 'Falha ao reiniciar: {}'
-  'Failed to resume print: {}': 'Falha ao retomar impressão: {}'
   'Failed to resume: {}': 'Falha ao retomar: {}'
   Failed to save LED configuration: Falha ao salvar configuração de LED
   Failed to save config.: Falha ao salvar configuração.
@@ -936,10 +922,7 @@ translations:
   Failed to send print data: Falha ao enviar os dados de impressão
   Failed to send status request: Falha ao enviar a solicitação de status
   Failed to set active spool: Falha ao definir carretel ativo
-  'Failed to set bed temp: {}': 'Falha ao definir temp. da mesa: {}'
-  'Failed to set chamber temp: {}': 'Falha ao definir temp. da câmara: {}'
   'Failed to set flow rate: {}': 'Falha ao definir fluxo: {}'
-  'Failed to set nozzle temp: {}': 'Falha ao definir temp. do bico: {}'
   'Failed to set print speed: {}': 'Falha ao definir velocidade de impressão: {}'
   'Failed to set temperature: {}': 'Falha ao definir temperatura: {}'
   'Failed to set {} temp: {}': 'Falha ao definir temp. de {}: {}'
@@ -1031,7 +1014,6 @@ translations:
   Found %zu printers: '%zu impressoras encontradas'
   Found 1 printer: 1 impressora encontrada
   Framerate: Taxa de Quadros
-  Freq Graph: Gráfico de Freq
   Frequency Delta: Delta de frequência
   ? 'Frequency Delta: Difference between Path A and B. Ideally under 5 Hz; over 15
     Hz needs adjustment.\n\nPath Similarity: How closely the vibration profiles match.
@@ -1100,7 +1082,6 @@ translations:
   Heating Bed...: Aquecendo mesa...
   Heating Nozzle...: Aquecendo bocal...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Aquecendo a %d\xC2\xB0C... %.0f\xC2\xB0C
-  Heating to %d°C...: Aquecendo para %d°C...
   Heating to {}°C for {}...: Aquecendo a {}°C por {}...
   Heating to {}°C...: Aquecendo a {}°C...
   Heating...: Aquecendo...
@@ -1307,7 +1288,6 @@ translations:
   Listen to all theme sounds: Ouvir todos os sons do tema
   Load: Carregar
   Load Filament: Carregar Filamento
-  'Load failed: {}': 'Falha ao carregar: {}'
   Load may still be running — response timed out: A carga pode ainda estar em execução
     — tempo esgotado
   Load the required filaments or start anyway?: Carregar os filamentos necessários
@@ -1319,7 +1299,6 @@ translations:
   Loading Filament...: Carregando Filamento...
   Loading G-code...: Carregando G-code...
   Loading devices...: Carregando dispositivos...
-  Loading filament ({}mm)...: Carregando filamento ({}mm)...
   Loading filament...: Carregando filamento...
   Loading filaments...: Carregando filamentos...
   Loading history...: Carregando histórico...
@@ -1363,7 +1342,6 @@ translations:
   Macro Browser: Navegador de Macros
   Macro Buttons: Botões de Macro
   Macro analysis not initialized: Análise de macro não inicializada
-  Macro complete: Macro concluída
   'Macro failed: {}': 'Falha na macro: {}'
   Macro for bed mesh calibration: Macro para calibração da malha da mesa
   Macro for chamber/bed heat soak: Macro para aquecimento prolongado da câmara/mesa
@@ -1534,8 +1512,6 @@ translations:
   No files available for printing: Nenhum arquivo disponível para impressão
   No images found on USB drive: Nenhuma imagem encontrada na unidade USB
   No jobs in queue: Nenhum trabalho na fila
-  No light configured. Set up in Settings > LED Settings.: Nenhuma luz configurada.
-    Configure em Ajustes > Configuração LED.
   No macro devices configured: Nenhum dispositivo de macro configurado
   No macros available: Nenhuma macro disponível
   No macros found: Nenhuma macro encontrada
@@ -1601,11 +1577,9 @@ translations:
   Nozzle Temp: Temp. Bico
   Nozzle Temperature: Temperatura do Bico
   Nozzle Temps: Temps do bico
-  Nozzle heater turned off: Aquecedor do bico desligado
   Nozzle min cannot exceed max: O mínimo do bico não pode exceder o máximo
   Nozzle target set to {}°C: Bico configurado para {}°C
   Nozzle temp must be 100-500°C: A temperatura do bico deve ser 100-500°C
-  Nozzle °C: Bico °C
   'Nozzle:': 'Bico:'
   OD: OD
   'OFF': 'OFF'
@@ -1625,9 +1599,6 @@ translations:
   On/Off: Liga/Desliga
   On/Off (state-aware): Ligar/Desligar (com estado)
   'On:': 'Ligado:'
-  One or more tools required by this file have no filament loaded. The print will likely fail. Print anyway?: Uma
-    ou mais ferramentas exigidas por este arquivo não têm filamento carregado. A impressão
-    provavelmente falhará. Imprimir mesmo assim?
   Open: Abrir
   Open Source Licenses: Licenças de código aberto
   Operation already in progress: Operação já em andamento
@@ -1662,7 +1633,6 @@ translations:
   PLA: PLA
   PLA - Black: PLA - Preto
   POWER: ENERGIA
-  PRE-PRINT STEPS: ETAPAS PRÉ-IMPRESSÃO
   PRINT OPTIONS: OPÇÕES DE IMPRESSÃO
   PRINTERS: IMPRESSORAS
   PRINT_START has {} skippable operation: PRINT_START tem {} operação opcional
@@ -1783,7 +1753,6 @@ translations:
   Print Hours: Horas de Impressão
   Print Label: Imprimir Etiqueta
   Print Library: Biblioteca de impressão
-  Print Objects: Objetos de Impressão
   Print Outcome: Resultado da Impressão
   Print Paused: Impressão Pausada
   Print Speed: Velocidade de Impressão
@@ -1799,7 +1768,6 @@ translations:
   Print failed: Impressão falhou
   Print issue detected: Problema de impressão detectado
   'Print preparation failed: {}': 'Falha na preparação da impressão: {}'
-  Print quality: Qualidade de impressão
   Print server rejected the job — check printer status: O servidor de impressão rejeitou
     o trabalho — verifique o status da impressora
   Print setup failed: Falha na configuração da impressão
@@ -1881,7 +1849,6 @@ translations:
     — tempo esgotado
   Purging: Purgando
   Purging nozzle: Purgando bico
-  Purging {}mm...: Purgando {}mm...
   Purging...: Purgando...
   QGL: QGL
   'QGL failed: {}': 'Falha no QGL: {}'
@@ -1921,7 +1888,6 @@ translations:
   Reboot failed: Falha ao reiniciar
   Reboot failed — host is still reachable: Falha ao reiniciar — o host ainda está
     acessível
-  Rebooting...: Reiniciando...
   Recalibrate or view detailed results anytime in Settings.: Recalibre ou veja resultados
     detalhados a qualquer momento em Configurações.
   Recent Prints: Impressões recentes
@@ -2011,11 +1977,9 @@ translations:
   Retract Distance: Distância de Retração
   Retract Length: Comprimento de Retração
   Retract Speed: Velocidade de Retração
-  Retract complete ({}mm): Retração completa ({}mm)
   'Retract failed: {}': 'Falha ao retrair: {}'
   Retract may still be running — response timed out: A retração pode ainda estar em
     execução — tempo esgotado
-  Retracting {}mm...: Retraindo {}mm...
   Retraction: Retração
   Retraction Settings: Configurações de Retração
   Retry: Tentar Novamente
@@ -2624,10 +2588,7 @@ translations:
     execução — tempo esgotado
   Unloading: Descarregando
   Unloading before bypass...: Descarregando antes do bypass...
-  Unloading filament ({}mm)...: Descarregando filamento ({}mm)...
   Unloading filament...: Descarregando filamento...
-  Unloading... click again to load slot {}: Descarregando... toque novamente para
-    carregar slot {}
   Unloads After Print: Descarrega após a impressão
   Unlock: Desbloquear
   Unmapped: Não mapeado

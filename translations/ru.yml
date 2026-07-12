@@ -199,8 +199,6 @@ translations:
   Applying...: Применение...
   Are you sure you want to cancel this print? All progress will be lost.: Вы уверены,
     что хотите отменить печать? Весь прогресс будет потерян.
-  Are you sure? This will power off or restart the printer host.: Вы уверены? Это
-    выключит или перезагрузит хост принтера.
   Are you sure? This will power off or restart this device.: Вы уверены? Это выключит
     или перезагрузит данное устройство.
   Assign Klipper macros to control LEDs via on/off, toggle, or presets: Назначьте
@@ -259,13 +257,11 @@ translations:
   Bed Temp: Темп. стола
   Bed Temp (°C): Температура стола (°C)
   Bed Temperature: Температура стола
-  Bed heater turned off: Нагреватель стола выключен
   Bed is Level!: Стол выровнен!
   Bed mesh operation timed out: Сетка стола — время ожидания истекло
   Bed target set to {}°C: Целевая температура стола {}°C
   Bed temp must be 0-200°C: Температура стола должна быть 0-200°C
   Bed warming timed out: Нагрев стола — время ожидания истекло
-  Bed °C: Стол °C
   'Bed:': 'Стол:'
   Belt A frequency locked: Частота ремня A зафиксирована
   Belt B frequency locked: Частота ремня B зафиксирована
@@ -325,7 +321,6 @@ translations:
   CARTOGRAPHER: CARTOGRAPHER
   CHANGED FROM LAST SESSION: ИЗМЕНЕНО С ПРОШЛОЙ СЕССИИ
   COLOR SENSORS: ДАТЧИКИ ЦВЕТА
-  COLORS REQUIRED: ТРЕБУЕМЫЕ ЦВЕТА
   CONFIGURATION: КОНФИГУРАЦИЯ
   CONNECTION TYPE: ТИП ПОДКЛЮЧЕНИЯ
   CONTROLLABLE FANS: УПРАВЛЯЕМЫЕ ВЕНТИЛЯТОРЫ
@@ -414,8 +409,6 @@ translations:
   Chamber Temperature: Температура камеры
   Chamber and dryer humidity monitoring: Мониторинг влажности камеры и сушилки
   Chamber at %d°C: Камера при %d°C
-  Chamber heater not found in printer configuration: Нагреватель камеры не найден
-    в конфигурации принтера
   Chamber heating to %d°C...: Нагрев камеры до %d°C...
   Chamber target set to {}°C: Целевая температура камеры установлена на {}°C
   Change: Изменить
@@ -454,7 +447,6 @@ translations:
   Choose 12-hour or 24-hour time display: Выберите 12-часовой или 24-часовой формат
     времени
   Choose Filament: Выбрать филамент
-  Choose Spool: Выбрать катушку
   Choose an existing filament, or tap + New to create one.: Выберите существующий
     филамент или нажмите + Новый, чтобы создать.
   Choose display language: Выберите язык интерфейса
@@ -721,9 +713,7 @@ translations:
   Each fan can only be selected once: Каждый вентилятор можно выбрать только один
     раз
   Edit: Редактировать
-  Edit Preset: Редактировать пресет
   Edit Slot: Редактировать слот
-  Edit Slot 1: Редактировать слот 1
   Edit Spool: Редактировать катушку
   'Edit Spool #{}': 'Изменить катушку #{}'
   Edit Theme Colors: Редактировать цвета темы
@@ -743,7 +733,6 @@ translations:
   Emergency stop and print alerts: Аварийная остановка и оповещения печати
   'Emergency stop failed: not connected': 'Аварийная остановка не удалась: нет подключения'
   Empty: Пусто
-  Empty filament slot: Пустой слот филамента
   Empty slots disable the associated functionality: Пустые слоты отключают связанный
     функционал
   Enable: Включить
@@ -823,7 +812,6 @@ translations:
   Extra prime to compensate ooze: Дополнительная подача для компенсации вытекания
   Extrude: Экструзия
   Extrude Speed: Скорость экструзии
-  Extrude complete ({}mm): Экструзия завершена ({}мм)
   'Extrude failed: {}': 'Ошибка экструзии: {}'
   Extrude may still be running — response timed out: Экструзия может ещё выполняться
     — время ожидания истекло
@@ -833,7 +821,6 @@ translations:
   Extruder PID Tuning: Настройка PID экструдера
   Extruder heats automatically based on material: Экструдер нагревается автоматически
     в зависимости от материала
-  Extruding {}mm...: Экструзия {}мм...
   FAILED: ОШИБКА
   FILAMENT MAPPING: НАЗНАЧЕНИЕ ФИЛАМЕНТА
   FILAMENTS: ФИЛАМЕНТЫ
@@ -904,7 +891,6 @@ translations:
   Failed to reset theme: Не удалось сбросить тему
   Failed to restart Moonraker.: Не удалось перезапустить Moonraker.
   'Failed to restart: {}': 'Не удалось перезапустить: {}'
-  'Failed to resume print: {}': 'Не удалось возобновить печать: {}'
   'Failed to resume: {}': 'Не удалось возобновить: {}'
   Failed to save LED configuration: Не удалось сохранить настройки LED
   Failed to save config.: Не удалось сохранить конфигурацию.
@@ -920,10 +906,7 @@ translations:
   Failed to send print data: Не удалось отправить данные печати
   Failed to send status request: Не удалось отправить запрос статуса
   Failed to set active spool: Не удалось установить активную катушку
-  'Failed to set bed temp: {}': 'Не удалось задать темп. стола: {}'
-  'Failed to set chamber temp: {}': 'Не удалось установить температуру камеры: {}'
   'Failed to set flow rate: {}': 'Не удалось задать поток: {}'
-  'Failed to set nozzle temp: {}': 'Не удалось задать темп. сопла: {}'
   'Failed to set print speed: {}': 'Не удалось задать скорость печати: {}'
   'Failed to set temperature: {}': 'Не удалось задать температуру: {}'
   'Failed to set {} temp: {}': 'Не удалось задать темп. {}: {}'
@@ -1017,7 +1000,6 @@ translations:
   Found %zu printers: Найдено %zu принтеров
   Found 1 printer: Найден 1 принтер
   Framerate: Частота кадров
-  Freq Graph: График частот
   Frequency Delta: Разница частот
   ? 'Frequency Delta: Difference between Path A and B. Ideally under 5 Hz; over 15
     Hz needs adjustment.\n\nPath Similarity: How closely the vibration profiles match.
@@ -1085,7 +1067,6 @@ translations:
   Heating Bed...: Нагрев стола...
   Heating Nozzle...: Нагрев сопла...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Нагрев до %d\xC2\xB0C... %.0f\xC2\xB0C
-  Heating to %d°C...: Нагрев до %d°C...
   Heating to {}°C for {}...: Нагрев до {}°C в течение {}...
   Heating to {}°C...: Нагрев до {}°C...
   Heating...: Нагрев...
@@ -1289,7 +1270,6 @@ translations:
   Listen to all theme sounds: Прослушать все звуки темы
   Load: Загрузить
   Load Filament: Загрузить филамент
-  'Load failed: {}': 'Ошибка загрузки: {}'
   Load may still be running — response timed out: Загрузка может ещё выполняться —
     время ожидания истекло
   Load the required filaments or start anyway?: Загрузить нужные филаменты или начать
@@ -1301,7 +1281,6 @@ translations:
   Loading Filament...: Загрузка филамента...
   Loading G-code...: Загрузка G-code...
   Loading devices...: Загрузка устройств...
-  Loading filament ({}mm)...: Загрузка филамента ({}мм)...
   Loading filament...: Загрузка филамента...
   Loading filaments...: Загрузка филаментов...
   Loading history...: Загрузка истории...
@@ -1345,7 +1324,6 @@ translations:
   Macro Browser: Обзор макросов
   Macro Buttons: Кнопки макросов
   Macro analysis not initialized: Анализ макросов не инициализирован
-  Macro complete: Макрос выполнен
   'Macro failed: {}': 'Ошибка макроса: {}'
   Macro for bed mesh calibration: Макрос для калибровки сетки стола
   Macro for chamber/bed heat soak: Макрос для прогрева камеры/стола
@@ -1513,8 +1491,6 @@ translations:
   No files available for printing: Нет файлов для печати
   No images found on USB drive: Изображения на USB-накопителе не найдены
   No jobs in queue: Очередь пуста
-  No light configured. Set up in Settings > LED Settings.: Освещение не настроено.
-    Настройте в Настройки > Настройки LED.
   No macro devices configured: Макро-устройства не настроены
   No macros available: Нет доступных макросов
   No macros found: Макросы не найдены
@@ -1580,11 +1556,9 @@ translations:
   Nozzle Temp: Темп. сопла
   Nozzle Temperature: Температура сопла
   Nozzle Temps: Темп. сопел
-  Nozzle heater turned off: Нагреватель сопла выключен
   Nozzle min cannot exceed max: Минимум сопла не может превышать максимум
   Nozzle target set to {}°C: Целевая температура сопла {}°C
   Nozzle temp must be 100-500°C: Температура сопла должна быть 100-500°C
-  Nozzle °C: Сопло °C
   'Nozzle:': 'Сопло:'
   OD: OD
   'OFF': ВЫКЛ
@@ -1603,9 +1577,6 @@ translations:
   On/Off: Вкл/Выкл
   On/Off (state-aware): Вкл/Выкл (с отслеживанием)
   'On:': 'Вкл:'
-  One or more tools required by this file have no filament loaded. The print will likely fail. Print anyway?: В
-    один или несколько инструментов, требуемых этим файлом, не загружен филамент.
-    Печать, скорее всего, завершится сбоем. Всё равно печатать?
   Open: Открыть
   Open Source Licenses: Лицензии с открытым кодом
   Operation already in progress: Операция уже выполняется
@@ -1639,7 +1610,6 @@ translations:
   PLA: PLA
   PLA - Black: PLA - Чёрный
   POWER: ПИТАНИЕ
-  PRE-PRINT STEPS: ЭТАПЫ ПОДГОТОВКИ
   PRINT OPTIONS: ПАРАМЕТРЫ ПЕЧАТИ
   PRINTERS: ПРИНТЕРЫ
   PRINT_START has {} skippable operation: В PRINT_START есть {} пропускаемая операция
@@ -1759,7 +1729,6 @@ translations:
   Print Hours: Часы печати
   Print Label: Печать этикетки
   Print Library: Библиотека печати
-  Print Objects: Объекты печати
   Print Outcome: Результат печати
   Print Paused: Печать приостановлена
   Print Speed: Скорость печати
@@ -1775,7 +1744,6 @@ translations:
   Print failed: Печать не удалась
   Print issue detected: Обнаружена проблема печати
   'Print preparation failed: {}': 'Ошибка подготовки печати: {}'
-  Print quality: Качество печати
   Print server rejected the job — check printer status: Сервер печати отклонил задание
     — проверьте статус принтера
   Print setup failed: Не удалось подготовить печать
@@ -1856,7 +1824,6 @@ translations:
     — время ожидания истекло
   Purging: Продувка
   Purging nozzle: Продувка сопла
-  Purging {}mm...: Прочистка {}мм...
   Purging...: Продувка...
   QGL: QGL
   'QGL failed: {}': 'Ошибка QGL: {}'
@@ -1895,7 +1862,6 @@ translations:
   Reboot: Перезагрузка
   Reboot failed: Ошибка перезагрузки
   Reboot failed — host is still reachable: Ошибка перезагрузки — хост всё ещё доступен
-  Rebooting...: Перезагрузка...
   Recalibrate or view detailed results anytime in Settings.: Перекалибруйте или просмотрите
     подробные результаты в любое время в Настройках.
   Recent Prints: Недавние печати
@@ -1984,11 +1950,9 @@ translations:
   Retract Distance: Расстояние ретракта
   Retract Length: Длина ретракта
   Retract Speed: Скорость ретракта
-  Retract complete ({}mm): Ретракт завершён ({}мм)
   'Retract failed: {}': 'Ошибка ретракта: {}'
   Retract may still be running — response timed out: Ретракт может ещё выполняться
     — время ожидания истекло
-  Retracting {}mm...: Ретракт {}мм...
   Retraction: Ретракт
   Retraction Settings: Настройки ретракта
   Retry: Повторить
@@ -2585,10 +2549,7 @@ translations:
     — время ожидания истекло
   Unloading: Выгрузка
   Unloading before bypass...: Выгрузка перед байпасом...
-  Unloading filament ({}mm)...: Выгрузка филамента ({}мм)...
   Unloading filament...: Выгрузка филамента...
-  Unloading... click again to load slot {}: Выгрузка... нажмите ещё раз для загрузки
-    слота {}
   Unloads After Print: Выгрузка после печати
   Unlock: Разблокировать
   Unmapped: Не назначен

@@ -177,7 +177,6 @@
   <translation tag="Applying Changes" ja="変更を適用中"/>
   <translation tag="Applying..." ja="適用中..."/>
   <translation tag="Are you sure you want to cancel this print? All progress will be lost." ja="この印刷をキャンセルしますか？すべての進行状況が失われます。"/>
-  <translation tag="Are you sure? This will power off or restart the printer host." ja="よろしいですか？プリンターホストの電源がオフまたは再起動されます。"/>
   <translation tag="Are you sure? This will power off or restart this device." ja="よろしいですか？このデバイスの電源がオフまたは再起動されます。"/>
   <translation tag="Assign Klipper macros to control LEDs via on/off, toggle, or presets" ja="Klipper マクロを割り当ててオン/オフ、トグル、プリセットで LED を制御"/>
   <translation tag="Assign a role to enable sensor monitoring" ja="センサー監視を有効にするには役割を割り当ててください"/>
@@ -231,13 +230,11 @@
   <translation tag="Bed Temp" ja="ベッド温度"/>
   <translation tag="Bed Temp (°C)" ja="ベッド温度 (°C)"/>
   <translation tag="Bed Temperature" ja="ベッド温度"/>
-  <translation tag="Bed heater turned off" ja="ベッドヒーターをオフにしました"/>
   <translation tag="Bed is Level!" ja="ベッドが水平です！"/>
   <translation tag="Bed mesh operation timed out" ja="ベッドメッシュ操作がタイムアウトしました"/>
   <translation tag="Bed target set to {}°C" ja="ベッド目標温度を {}°C に設定しました"/>
   <translation tag="Bed temp must be 0-200°C" ja="ベッド温度は 0〜200°C にしてください"/>
   <translation tag="Bed warming timed out" ja="ベッド加熱がタイムアウトしました"/>
-  <translation tag="Bed °C" ja="ベッド °C"/>
   <translation tag="Bed:" ja="ベッド:"/>
   <translation tag="Belt A frequency locked" ja="ベルト A の周波数を固定しました"/>
   <translation tag="Belt B frequency locked" ja="ベルト B の周波数を固定しました"/>
@@ -293,7 +290,6 @@
   <translation tag="CARTOGRAPHER" ja="CARTOGRAPHER"/>
   <translation tag="CHANGED FROM LAST SESSION" ja="前回のセッションから変更"/>
   <translation tag="COLOR SENSORS" ja="カラーセンサー"/>
-  <translation tag="COLORS REQUIRED" ja="必要な色"/>
   <translation tag="CONFIGURATION" ja="設定"/>
   <translation tag="CONNECTION TYPE" ja="接続タイプ"/>
   <translation tag="CONTROLLABLE FANS" ja="制御可能なファン"/>
@@ -361,7 +357,6 @@
   <translation tag="Chamber Temperature" ja="チャンバー温度"/>
   <translation tag="Chamber and dryer humidity monitoring" ja="チャンバーとドライヤーの湿度監視"/>
   <translation tag="Chamber at %d°C" ja="チャンバー温度：%d°C"/>
-  <translation tag="Chamber heater not found in printer configuration" ja="プリンター設定にチャンバーヒーターが見つかりません"/>
   <translation tag="Chamber heating to %d°C..." ja="チャンバーを%d°Cに加熱中..."/>
   <translation tag="Chamber target set to {}°C" ja="チャンバー目標温度を{}°C に設定"/>
   <translation tag="Change" ja="変更"/>
@@ -394,7 +389,6 @@
   <translation tag="Checking..." ja="確認中..."/>
   <translation tag="Choose 12-hour or 24-hour time display" ja="12時間表示または24時間表示を選択"/>
   <translation tag="Choose Filament" ja="フィラメントを選択"/>
-  <translation tag="Choose Spool" ja="スプールを選択"/>
   <translation tag="Choose an existing filament, or tap + New to create one." ja="既存のフィラメントを選択するか、+ 新規をタップして作成してください。"/>
   <translation tag="Choose display language" ja="表示言語を選択"/>
   <translation tag="Choose how frames are captured during printing" ja="印刷中のフレームキャプチャ方法を選択"/>
@@ -636,9 +630,7 @@
   <translation tag="EMPTY" ja="空"/>
   <translation tag="Each fan can only be selected once" ja="各ファンは一度のみ選択できます"/>
   <translation tag="Edit" ja="編集"/>
-  <translation tag="Edit Preset" ja="プリセットを編集"/>
   <translation tag="Edit Slot" ja="スロットを編集"/>
-  <translation tag="Edit Slot 1" ja="スロット1を編集"/>
   <translation tag="Edit Spool" ja="スプールを編集"/>
   <translation tag="Edit Spool #{}" ja="スプール #{} を編集"/>
   <translation tag="Edit Theme Colors" ja="テーマカラーを編集"/>
@@ -657,7 +649,6 @@
   <translation tag="Emergency stop and print alerts" ja="緊急停止と印刷アラート"/>
   <translation tag="Emergency stop failed: not connected" ja="緊急停止に失敗: 未接続"/>
   <translation tag="Empty" ja="空"/>
-  <translation tag="Empty filament slot" ja="空のフィラメントスロット"/>
   <translation tag="Empty slots disable the associated functionality" ja="空のスロットは関連機能を無効にします"/>
   <translation tag="Enable" ja="有効化"/>
   <translation tag="Enable Monitoring" ja="監視を有効化"/>
@@ -731,7 +722,6 @@
   <translation tag="Extra prime to compensate ooze" ja="滲み出しを補正するための追加プライム"/>
   <translation tag="Extrude" ja="押し出し"/>
   <translation tag="Extrude Speed" ja="押し出し速度"/>
-  <translation tag="Extrude complete ({}mm)" ja="押出完了 ({}mm)"/>
   <translation tag="Extrude failed: {}" ja="押出に失敗しました: {}"/>
   <translation tag="Extrude may still be running — response timed out" ja="押出がまだ実行中の可能性があります — 応答タイムアウト"/>
   <translation tag="Extrude/retract feedrate (Saved)" ja="押し出し/引き戻し速度（保存済み）"/>
@@ -739,7 +729,6 @@
   <translation tag="Extruder MPC Calibration" ja="エクストルーダー MPCキャリブレーション"/>
   <translation tag="Extruder PID Tuning" ja="エクストルーダー PID チューニング"/>
   <translation tag="Extruder heats automatically based on material" ja="素材に基づいてエクストルーダーが自動加熱"/>
-  <translation tag="Extruding {}mm..." ja="{}mm 押出中..."/>
   <translation tag="FAILED" ja="失敗"/>
   <translation tag="FILAMENT MAPPING" ja="フィラメントマッピング"/>
   <translation tag="FILAMENTS" ja="フィラメント"/>
@@ -804,7 +793,6 @@
   <translation tag="Failed to reset theme" ja="テーマのリセットに失敗しました"/>
   <translation tag="Failed to restart Moonraker." ja="Moonrakerの再起動に失敗しました。"/>
   <translation tag="Failed to restart: {}" ja="再起動に失敗しました: {}"/>
-  <translation tag="Failed to resume print: {}" ja="印刷の再開に失敗しました: {}"/>
   <translation tag="Failed to resume: {}" ja="再開に失敗しました: {}"/>
   <translation tag="Failed to save LED configuration" ja="LED設定の保存に失敗しました"/>
   <translation tag="Failed to save config." ja="設定の保存に失敗しました。"/>
@@ -820,10 +808,7 @@
   <translation tag="Failed to send print data" ja="印刷データの送信に失敗しました"/>
   <translation tag="Failed to send status request" ja="ステータス要求の送信に失敗しました"/>
   <translation tag="Failed to set active spool" ja="アクティブスプールの設定に失敗しました"/>
-  <translation tag="Failed to set bed temp: {}" ja="ベッド温度の設定に失敗しました: {}"/>
-  <translation tag="Failed to set chamber temp: {}" ja="チャンバー温度の設定に失敗しました: {}"/>
   <translation tag="Failed to set flow rate: {}" ja="フロー率の設定に失敗しました: {}"/>
-  <translation tag="Failed to set nozzle temp: {}" ja="ノズル温度の設定に失敗しました: {}"/>
   <translation tag="Failed to set print speed: {}" ja="印刷速度の設定に失敗しました: {}"/>
   <translation tag="Failed to set temperature: {}" ja="温度の設定に失敗しました: {}"/>
   <translation tag="Failed to set {} temp: {}" ja="{} 温度の設定に失敗しました: {}"/>
@@ -910,7 +895,6 @@
   <translation tag="Found %zu printers" ja="%zu台のプリンターを検出"/>
   <translation tag="Found 1 printer" ja="プリンター1台を検出"/>
   <translation tag="Framerate" ja="フレームレート"/>
-  <translation tag="Freq Graph" ja="周波数グラフ"/>
   <translation tag="Frequency Delta" ja="周波数差"/>
   <translation tag="Frequency Delta: Difference between Path A and B. Ideally under 5 Hz; over 15 Hz needs adjustment.\n\nPath Similarity: How closely the vibration profiles match. Above 90% is excellent; below 70% suggests uneven tension." ja="周波数差: パス A と B の差。理想は 5 Hz 未満で、15 Hz を超える場合は調整が必要です。\n\nパス類似度: 振動プロファイルの一致度。90% を超えれば優秀で、70% を下回ると張力が不均一なことを示します。"/>
   <translation tag="From Buffer" ja="バッファから"/>
@@ -966,7 +950,6 @@
   <translation tag="Heating Bed..." ja="ベッド加熱中..."/>
   <translation tag="Heating Nozzle..." ja="ノズル加熱中..."/>
   <translation tag="Heating to %d\xC2\xB0C... %.0f\xC2\xB0C" ja="%d\xC2\xB0Cに加熱中... %.0f\xC2\xB0C"/>
-  <translation tag="Heating to %d°C..." ja="&quot;%d°Cまで加熱中...&quot;"/>
   <translation tag="Heating to {}°C for {}..." ja="{}°Cに加熱中（{}）..."/>
   <translation tag="Heating to {}°C..." ja="{}°Cに加熱中..."/>
   <translation tag="Heating..." ja="加熱中..."/>
@@ -1131,7 +1114,6 @@
   <translation tag="Listen to all theme sounds" ja="すべてのテーマサウンドを試聴"/>
   <translation tag="Load" ja="装填"/>
   <translation tag="Load Filament" ja="フィラメントを装填"/>
-  <translation tag="Load failed: {}" ja="読み込みに失敗しました: {}"/>
   <translation tag="Load may still be running — response timed out" ja="装填がまだ実行中の可能性があります — 応答タイムアウト"/>
   <translation tag="Load the required filaments or start anyway?" ja="必要なフィラメントを装填しますか？それともこのまま開始しますか？"/>
   <translation tag="Loaded" ja="装填済み"/>
@@ -1141,7 +1123,6 @@
   <translation tag="Loading Filament..." ja="フィラメントを装填中..."/>
   <translation tag="Loading G-code..." ja="G-codeを読み込み中..."/>
   <translation tag="Loading devices..." ja="デバイスを読み込み中..."/>
-  <translation tag="Loading filament ({}mm)..." ja="フィラメントを装填中 ({}mm)..."/>
   <translation tag="Loading filament..." ja="フィラメントを装填中..."/>
   <translation tag="Loading filaments..." ja="フィラメントを読み込み中..."/>
   <translation tag="Loading history..." ja="履歴を読み込み中..."/>
@@ -1183,7 +1164,6 @@
   <translation tag="Macro Browser" ja="マクロブラウザ"/>
   <translation tag="Macro Buttons" ja="マクロボタン"/>
   <translation tag="Macro analysis not initialized" ja="マクロ解析が初期化されていません"/>
-  <translation tag="Macro complete" ja="マクロ完了"/>
   <translation tag="Macro failed: {}" ja="マクロの実行に失敗しました: {}"/>
   <translation tag="Macro for bed mesh calibration" ja="ベッドメッシュキャリブレーション用マクロ"/>
   <translation tag="Macro for chamber/bed heat soak" ja="チャンバー/ベッドヒートソーク用マクロ"/>
@@ -1334,7 +1314,6 @@
   <translation tag="No files available for printing" ja="印刷可能なファイルがありません"/>
   <translation tag="No images found on USB drive" ja="USBドライブに画像が見つかりません"/>
   <translation tag="No jobs in queue" ja="キューにジョブがありません"/>
-  <translation tag="No light configured. Set up in Settings &gt; LED Settings." ja="ライトが未設定です。設定 &gt; LED設定で設定してください。"/>
   <translation tag="No macro devices configured" ja="マクロデバイスが設定されていません"/>
   <translation tag="No macros available" ja="利用可能なマクロがありません"/>
   <translation tag="No macros found" ja="マクロが見つかりません"/>
@@ -1397,11 +1376,9 @@
   <translation tag="Nozzle Temp" ja="ノズル温度"/>
   <translation tag="Nozzle Temperature" ja="ノズル温度"/>
   <translation tag="Nozzle Temps" ja="ノズル温度"/>
-  <translation tag="Nozzle heater turned off" ja="ノズルヒーターをオフにしました"/>
   <translation tag="Nozzle min cannot exceed max" ja="ノズル温度の最小値は最大値を超えられません"/>
   <translation tag="Nozzle target set to {}°C" ja="ノズル目標温度を {}°C に設定しました"/>
   <translation tag="Nozzle temp must be 100-500°C" ja="ノズル温度は 100〜500°C にしてください"/>
-  <translation tag="Nozzle °C" ja="ノズル °C"/>
   <translation tag="Nozzle:" ja="ノズル:"/>
   <translation tag="OD" ja="OD"/>
   <translation tag="OFF" ja="OFF"/>
@@ -1420,7 +1397,6 @@
   <translation tag="On/Off" ja="オン/オフ"/>
   <translation tag="On/Off (state-aware)" ja="オン/オフ（状態追跡）"/>
   <translation tag="On:" ja="オン:"/>
-  <translation tag="One or more tools required by this file have no filament loaded. The print will likely fail. Print anyway?" ja="このファイルに必要なツールの1つ以上にフィラメントが装填されていません。印刷は失敗する可能性があります。それでも印刷しますか？"/>
   <translation tag="Open" ja="開く"/>
   <translation tag="Open Source Licenses" ja="オープンソースライセンス"/>
   <translation tag="Operation already in progress" ja="操作がすでに進行中です"/>
@@ -1451,7 +1427,6 @@
   <translation tag="PLA" ja="PLA"/>
   <translation tag="PLA - Black" ja="PLA - ブラック"/>
   <translation tag="POWER" ja="電源"/>
-  <translation tag="PRE-PRINT STEPS" ja="印刷前の手順"/>
   <translation tag="PRINT OPTIONS" ja="印刷オプション"/>
   <translation tag="PRINTERS" ja="プリンター"/>
   <translation tag="PRINT_START has {} skippable operation" ja="PRINT_START にはスキップ可能な操作が {} 個あります"/>
@@ -1560,7 +1535,6 @@
   <translation tag="Print Hours" ja="印刷時間"/>
   <translation tag="Print Label" ja="ラベルを印刷"/>
   <translation tag="Print Library" ja="印刷ライブラリ"/>
-  <translation tag="Print Objects" ja="印刷オブジェクト"/>
   <translation tag="Print Outcome" ja="印刷結果"/>
   <translation tag="Print Paused" ja="印刷一時停止"/>
   <translation tag="Print Speed" ja="印刷速度"/>
@@ -1574,7 +1548,6 @@
   <translation tag="Print failed" ja="印刷失敗"/>
   <translation tag="Print issue detected" ja="印刷の問題を検出しました"/>
   <translation tag="Print preparation failed: {}" ja="印刷準備に失敗しました: {}"/>
-  <translation tag="Print quality" ja="印刷品質"/>
   <translation tag="Print server rejected the job — check printer status" ja="印刷サーバーがジョブを拒否しました — プリンターの状態を確認してください"/>
   <translation tag="Print setup failed" ja="印刷のセットアップに失敗しました"/>
   <translation tag="Print setup failed: internal error" ja="印刷のセットアップに失敗しました: 内部エラー"/>
@@ -1644,7 +1617,6 @@
   <translation tag="Purge may still be running — response timed out" ja="パージがまだ実行中の可能性があります — 応答タイムアウト"/>
   <translation tag="Purging" ja="パージ中"/>
   <translation tag="Purging nozzle" ja="ノズルをパージ中"/>
-  <translation tag="Purging {}mm..." ja="{}mm パージ中..."/>
   <translation tag="Purging..." ja="パージ中..."/>
   <translation tag="QGL" ja="QGL"/>
   <translation tag="QGL failed: {}" ja="QGL に失敗しました: {}"/>
@@ -1680,7 +1652,6 @@
   <translation tag="Reboot" ja="再起動"/>
   <translation tag="Reboot failed" ja="再起動に失敗しました"/>
   <translation tag="Reboot failed — host is still reachable" ja="再起動に失敗しました — ホストに依然として到達可能です"/>
-  <translation tag="Rebooting..." ja="再起動中..."/>
   <translation tag="Recalibrate or view detailed results anytime in Settings." ja="設定からいつでも再キャリブレーションや詳細結果の確認ができます。"/>
   <translation tag="Recent Prints" ja="最近の印刷"/>
   <translation tag="Recently Printed" ja="最近印刷されたもの"/>
@@ -1764,10 +1735,8 @@
   <translation tag="Retract Distance" ja="リトラクト距離"/>
   <translation tag="Retract Length" ja="リトラクト長"/>
   <translation tag="Retract Speed" ja="リトラクト速度"/>
-  <translation tag="Retract complete ({}mm)" ja="リトラクト完了 ({}mm)"/>
   <translation tag="Retract failed: {}" ja="リトラクトに失敗しました: {}"/>
   <translation tag="Retract may still be running — response timed out" ja="リトラクトがまだ実行中の可能性があります — 応答タイムアウト"/>
-  <translation tag="Retracting {}mm..." ja="{}mm リトラクト中..."/>
   <translation tag="Retraction" ja="リトラクション"/>
   <translation tag="Retraction Settings" ja="リトラクション設定"/>
   <translation tag="Retry" ja="再試行"/>
@@ -2234,9 +2203,7 @@
   <translation tag="Unload may still be running — response timed out" ja="排出がまだ実行中の可能性があります — 応答タイムアウト"/>
   <translation tag="Unloading" ja="アンロード中"/>
   <translation tag="Unloading before bypass..." ja="バイパス前にアンロード中..."/>
-  <translation tag="Unloading filament ({}mm)..." ja="フィラメントを排出中 ({}mm)..."/>
   <translation tag="Unloading filament..." ja="フィラメントを排出中..."/>
-  <translation tag="Unloading... click again to load slot {}" ja="アンロード中... もう一度クリックでスロット {} を装填"/>
   <translation tag="Unloads After Print" ja="印刷後にアンロード"/>
   <translation tag="Unlock" ja="ロック解除"/>
   <translation tag="Unmapped" ja="未割当"/>

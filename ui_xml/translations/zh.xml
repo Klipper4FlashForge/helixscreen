@@ -177,7 +177,6 @@
   <translation tag="Applying Changes" zh="正在应用更改"/>
   <translation tag="Applying..." zh="正在应用..."/>
   <translation tag="Are you sure you want to cancel this print? All progress will be lost." zh="确定要取消此打印吗？所有进度将丢失。"/>
-  <translation tag="Are you sure? This will power off or restart the printer host." zh="确定吗？这将关闭或重启打印机主机。"/>
   <translation tag="Are you sure? This will power off or restart this device." zh="确定吗？这将关闭或重启此设备。"/>
   <translation tag="Assign Klipper macros to control LEDs via on/off, toggle, or presets" zh="分配 Klipper 宏通过开/关、切换或预设控制 LED"/>
   <translation tag="Assign a role to enable sensor monitoring" zh="分配角色以启用传感器监控"/>
@@ -231,13 +230,11 @@
   <translation tag="Bed Temp" zh="热床温度"/>
   <translation tag="Bed Temp (°C)" zh="热床温度 (°C)"/>
   <translation tag="Bed Temperature" zh="热床温度"/>
-  <translation tag="Bed heater turned off" zh="热床加热器已关闭"/>
   <translation tag="Bed is Level!" zh="热床已水平！"/>
   <translation tag="Bed mesh operation timed out" zh="热床网格操作超时"/>
   <translation tag="Bed target set to {}°C" zh="热床目标已设为 {}°C"/>
   <translation tag="Bed temp must be 0-200°C" zh="热床温度必须为 0-200°C"/>
   <translation tag="Bed warming timed out" zh="热床加热超时"/>
-  <translation tag="Bed °C" zh="热床 °C"/>
   <translation tag="Bed:" zh="热床："/>
   <translation tag="Belt A frequency locked" zh="皮带 A 频率已锁定"/>
   <translation tag="Belt B frequency locked" zh="皮带 B 频率已锁定"/>
@@ -293,7 +290,6 @@
   <translation tag="CARTOGRAPHER" zh="CARTOGRAPHER"/>
   <translation tag="CHANGED FROM LAST SESSION" zh="与上次会话相比有更改"/>
   <translation tag="COLOR SENSORS" zh="颜色传感器"/>
-  <translation tag="COLORS REQUIRED" zh="所需颜色"/>
   <translation tag="CONFIGURATION" zh="配置"/>
   <translation tag="CONNECTION TYPE" zh="连接类型"/>
   <translation tag="CONTROLLABLE FANS" zh="可控风扇"/>
@@ -361,7 +357,6 @@
   <translation tag="Chamber Temperature" zh="腔体温度"/>
   <translation tag="Chamber and dryer humidity monitoring" zh="腔体和干燥器湿度监控"/>
   <translation tag="Chamber at %d°C" zh="腔体温度：%d°C"/>
-  <translation tag="Chamber heater not found in printer configuration" zh="打印机配置中未找到腔体加热器"/>
   <translation tag="Chamber heating to %d°C..." zh="腔体加热至 %d°C..."/>
   <translation tag="Chamber target set to {}°C" zh="腔体目标温度设置为 {}°C"/>
   <translation tag="Change" zh="更改"/>
@@ -394,7 +389,6 @@
   <translation tag="Checking..." zh="检查中..."/>
   <translation tag="Choose 12-hour or 24-hour time display" zh="选择 12 小时制或 24 小时制"/>
   <translation tag="Choose Filament" zh="选择耗材"/>
-  <translation tag="Choose Spool" zh="选择线轴"/>
   <translation tag="Choose an existing filament, or tap + New to create one." zh="选择已有耗材，或点击 + 新建来创建。"/>
   <translation tag="Choose display language" zh="选择显示语言"/>
   <translation tag="Choose how frames are captured during printing" zh="选择打印期间的帧捕获方式"/>
@@ -636,9 +630,7 @@
   <translation tag="EMPTY" zh="空"/>
   <translation tag="Each fan can only be selected once" zh="每个风扇只能选择一次"/>
   <translation tag="Edit" zh="编辑"/>
-  <translation tag="Edit Preset" zh="编辑预设"/>
   <translation tag="Edit Slot" zh="编辑料仓"/>
-  <translation tag="Edit Slot 1" zh="编辑料仓 1"/>
   <translation tag="Edit Spool" zh="编辑料盘"/>
   <translation tag="Edit Spool #{}" zh="编辑线轴 #{}"/>
   <translation tag="Edit Theme Colors" zh="编辑主题颜色"/>
@@ -657,7 +649,6 @@
   <translation tag="Emergency stop and print alerts" zh="紧急停止和打印警报"/>
   <translation tag="Emergency stop failed: not connected" zh="紧急停止失败: 未连接"/>
   <translation tag="Empty" zh="空"/>
-  <translation tag="Empty filament slot" zh="清空料仓"/>
   <translation tag="Empty slots disable the associated functionality" zh="空料仓将禁用相关功能"/>
   <translation tag="Enable" zh="启用"/>
   <translation tag="Enable Monitoring" zh="启用监控"/>
@@ -731,7 +722,6 @@
   <translation tag="Extra prime to compensate ooze" zh="额外挤出以补偿溢料"/>
   <translation tag="Extrude" zh="挤出"/>
   <translation tag="Extrude Speed" zh="挤出速度"/>
-  <translation tag="Extrude complete ({}mm)" zh="挤出完成 ({}mm)"/>
   <translation tag="Extrude failed: {}" zh="挤出失败: {}"/>
   <translation tag="Extrude may still be running — response timed out" zh="挤出可能仍在运行 — 响应超时"/>
   <translation tag="Extrude/retract feedrate (Saved)" zh="挤出/回抽速度（已保存）"/>
@@ -739,7 +729,6 @@
   <translation tag="Extruder MPC Calibration" zh="挤出机 MPC 校准"/>
   <translation tag="Extruder PID Tuning" zh="挤出机 PID 调优"/>
   <translation tag="Extruder heats automatically based on material" zh="挤出机根据材料自动加热"/>
-  <translation tag="Extruding {}mm..." zh="正在挤出 {}mm..."/>
   <translation tag="FAILED" zh="失败"/>
   <translation tag="FILAMENT MAPPING" zh="耗材映射"/>
   <translation tag="FILAMENTS" zh="耗材"/>
@@ -804,7 +793,6 @@
   <translation tag="Failed to reset theme" zh="重置主题失败"/>
   <translation tag="Failed to restart Moonraker." zh="重启 Moonraker 失败。"/>
   <translation tag="Failed to restart: {}" zh="重启失败：{}"/>
-  <translation tag="Failed to resume print: {}" zh="恢复打印失败: {}"/>
   <translation tag="Failed to resume: {}" zh="恢复失败: {}"/>
   <translation tag="Failed to save LED configuration" zh="保存 LED 配置失败"/>
   <translation tag="Failed to save config." zh="保存配置失败。"/>
@@ -820,10 +808,7 @@
   <translation tag="Failed to send print data" zh="发送打印数据失败"/>
   <translation tag="Failed to send status request" zh="发送状态请求失败"/>
   <translation tag="Failed to set active spool" zh="设置活动料盘失败"/>
-  <translation tag="Failed to set bed temp: {}" zh="设置热床温度失败: {}"/>
-  <translation tag="Failed to set chamber temp: {}" zh="设置腔体温度失败: {}"/>
   <translation tag="Failed to set flow rate: {}" zh="设置流量失败: {}"/>
-  <translation tag="Failed to set nozzle temp: {}" zh="设置喷嘴温度失败: {}"/>
   <translation tag="Failed to set print speed: {}" zh="设置打印速度失败: {}"/>
   <translation tag="Failed to set temperature: {}" zh="设置温度失败: {}"/>
   <translation tag="Failed to set {} temp: {}" zh="设置 {} 温度失败: {}"/>
@@ -910,7 +895,6 @@
   <translation tag="Found %zu printers" zh="找到 %zu 台打印机"/>
   <translation tag="Found 1 printer" zh="找到 1 台打印机"/>
   <translation tag="Framerate" zh="帧率"/>
-  <translation tag="Freq Graph" zh="频率图"/>
   <translation tag="Frequency Delta" zh="频率差"/>
   <translation tag="Frequency Delta: Difference between Path A and B. Ideally under 5 Hz; over 15 Hz needs adjustment.\n\nPath Similarity: How closely the vibration profiles match. Above 90% is excellent; below 70% suggests uneven tension." zh="频率差: 路径 A 与 B 之间的差异。理想情况下低于 5 Hz;超过 15 Hz 需要调整。\n\n路径相似度: 振动曲线的匹配程度。高于 90% 为优秀;低于 70% 说明张力不均。"/>
   <translation tag="From Buffer" zh="来自缓冲区"/>
@@ -966,7 +950,6 @@
   <translation tag="Heating Bed..." zh="正在加热热床..."/>
   <translation tag="Heating Nozzle..." zh="正在加热喷嘴..."/>
   <translation tag="Heating to %d\xC2\xB0C... %.0f\xC2\xB0C" zh="加热至 %d\xC2\xB0C... %.0f\xC2\xB0C"/>
-  <translation tag="Heating to %d°C..." zh="正在加热至 %d°C..."/>
   <translation tag="Heating to {}°C for {}..." zh="正在加热至{}°C，持续{}..."/>
   <translation tag="Heating to {}°C..." zh="正在加热至{}°C..."/>
   <translation tag="Heating..." zh="正在加热..."/>
@@ -1131,7 +1114,6 @@
   <translation tag="Listen to all theme sounds" zh="试听所有主题声音"/>
   <translation tag="Load" zh="加载"/>
   <translation tag="Load Filament" zh="加载耗材"/>
-  <translation tag="Load failed: {}" zh="加载失败: {}"/>
   <translation tag="Load may still be running — response timed out" zh="加载可能仍在运行 — 响应超时"/>
   <translation tag="Load the required filaments or start anyway?" zh="加载所需耗材还是直接开始？"/>
   <translation tag="Loaded" zh="已加载"/>
@@ -1141,7 +1123,6 @@
   <translation tag="Loading Filament..." zh="正在加载耗材..."/>
   <translation tag="Loading G-code..." zh="正在加载 G-code..."/>
   <translation tag="Loading devices..." zh="正在加载设备..."/>
-  <translation tag="Loading filament ({}mm)..." zh="正在加载耗材 ({}mm)..."/>
   <translation tag="Loading filament..." zh="正在加载耗材..."/>
   <translation tag="Loading filaments..." zh="正在加载耗材..."/>
   <translation tag="Loading history..." zh="正在加载历史..."/>
@@ -1183,7 +1164,6 @@
   <translation tag="Macro Browser" zh="宏浏览器"/>
   <translation tag="Macro Buttons" zh="宏按钮"/>
   <translation tag="Macro analysis not initialized" zh="宏分析未初始化"/>
-  <translation tag="Macro complete" zh="宏执行完成"/>
   <translation tag="Macro failed: {}" zh="宏执行失败: {}"/>
   <translation tag="Macro for bed mesh calibration" zh="热床网格校准宏"/>
   <translation tag="Macro for chamber/bed heat soak" zh="腔体/热床预热浸泡宏"/>
@@ -1334,7 +1314,6 @@
   <translation tag="No files available for printing" zh="没有可用于打印的文件"/>
   <translation tag="No images found on USB drive" zh="USB驱动器上未找到图片"/>
   <translation tag="No jobs in queue" zh="队列中无任务"/>
-  <translation tag="No light configured. Set up in Settings &gt; LED Settings." zh="未配置灯光。请在设置 &gt; LED 设置中配置。"/>
   <translation tag="No macro devices configured" zh="未配置宏设备"/>
   <translation tag="No macros available" zh="无可用宏"/>
   <translation tag="No macros found" zh="未找到宏"/>
@@ -1397,11 +1376,9 @@
   <translation tag="Nozzle Temp" zh="喷嘴温度"/>
   <translation tag="Nozzle Temperature" zh="喷嘴温度"/>
   <translation tag="Nozzle Temps" zh="喷嘴温度"/>
-  <translation tag="Nozzle heater turned off" zh="喷嘴加热器已关闭"/>
   <translation tag="Nozzle min cannot exceed max" zh="喷嘴最低温度不能超过最高温度"/>
   <translation tag="Nozzle target set to {}°C" zh="喷嘴目标已设为 {}°C"/>
   <translation tag="Nozzle temp must be 100-500°C" zh="喷嘴温度必须为 100-500°C"/>
-  <translation tag="Nozzle °C" zh="喷嘴 °C"/>
   <translation tag="Nozzle:" zh="喷嘴："/>
   <translation tag="OD" zh="OD"/>
   <translation tag="OFF" zh="关"/>
@@ -1420,7 +1397,6 @@
   <translation tag="On/Off" zh="开/关"/>
   <translation tag="On/Off (state-aware)" zh="开/关（状态跟踪）"/>
   <translation tag="On:" zh="开:"/>
-  <translation tag="One or more tools required by this file have no filament loaded. The print will likely fail. Print anyway?" zh="此文件所需的一个或多个工具头未加载耗材。打印很可能会失败。仍要打印吗？"/>
   <translation tag="Open" zh="打开"/>
   <translation tag="Open Source Licenses" zh="开源许可证"/>
   <translation tag="Operation already in progress" zh="操作正在进行中"/>
@@ -1451,7 +1427,6 @@
   <translation tag="PLA" zh="PLA"/>
   <translation tag="PLA - Black" zh="PLA - 黑色"/>
   <translation tag="POWER" zh="电源"/>
-  <translation tag="PRE-PRINT STEPS" zh="打印前步骤"/>
   <translation tag="PRINT OPTIONS" zh="打印选项"/>
   <translation tag="PRINTERS" zh="打印机"/>
   <translation tag="PRINT_START has {} skippable operation" zh="PRINT_START 有 {} 项可跳过的操作"/>
@@ -1560,7 +1535,6 @@
   <translation tag="Print Hours" zh="打印时长"/>
   <translation tag="Print Label" zh="打印标签"/>
   <translation tag="Print Library" zh="打印库"/>
-  <translation tag="Print Objects" zh="打印对象"/>
   <translation tag="Print Outcome" zh="打印结果"/>
   <translation tag="Print Paused" zh="打印已暂停"/>
   <translation tag="Print Speed" zh="打印速度"/>
@@ -1574,7 +1548,6 @@
   <translation tag="Print failed" zh="打印失败"/>
   <translation tag="Print issue detected" zh="检测到打印问题"/>
   <translation tag="Print preparation failed: {}" zh="打印准备失败: {}"/>
-  <translation tag="Print quality" zh="打印质量"/>
   <translation tag="Print server rejected the job — check printer status" zh="打印服务器拒绝了任务 — 请检查打印机状态"/>
   <translation tag="Print setup failed" zh="打印设置失败"/>
   <translation tag="Print setup failed: internal error" zh="打印设置失败：内部错误"/>
@@ -1644,7 +1617,6 @@
   <translation tag="Purge may still be running — response timed out" zh="清洗可能仍在运行 — 响应超时"/>
   <translation tag="Purging" zh="正在清料"/>
   <translation tag="Purging nozzle" zh="正在清洗喷嘴"/>
-  <translation tag="Purging {}mm..." zh="正在清洗 {}mm..."/>
   <translation tag="Purging..." zh="正在清料..."/>
   <translation tag="QGL" zh="QGL"/>
   <translation tag="QGL failed: {}" zh="QGL 失败: {}"/>
@@ -1680,7 +1652,6 @@
   <translation tag="Reboot" zh="重启"/>
   <translation tag="Reboot failed" zh="重启失败"/>
   <translation tag="Reboot failed — host is still reachable" zh="重启失败 — 主机仍可访问"/>
-  <translation tag="Rebooting..." zh="正在重启..."/>
   <translation tag="Recalibrate or view detailed results anytime in Settings." zh="可随时在设置中重新校准或查看详细结果。"/>
   <translation tag="Recent Prints" zh="最近打印"/>
   <translation tag="Recently Printed" zh="最近打印过的"/>
@@ -1764,10 +1735,8 @@
   <translation tag="Retract Distance" zh="回抽距离"/>
   <translation tag="Retract Length" zh="回抽长度"/>
   <translation tag="Retract Speed" zh="回抽速度"/>
-  <translation tag="Retract complete ({}mm)" zh="回抽完成 ({}mm)"/>
   <translation tag="Retract failed: {}" zh="回抽失败: {}"/>
   <translation tag="Retract may still be running — response timed out" zh="回抽可能仍在运行 — 响应超时"/>
-  <translation tag="Retracting {}mm..." zh="正在回抽 {}mm..."/>
   <translation tag="Retraction" zh="回抽"/>
   <translation tag="Retraction Settings" zh="回抽设置"/>
   <translation tag="Retry" zh="重试"/>
@@ -2234,9 +2203,7 @@
   <translation tag="Unload may still be running — response timed out" zh="卸载可能仍在运行 — 响应超时"/>
   <translation tag="Unloading" zh="卸载中"/>
   <translation tag="Unloading before bypass..." zh="旁通前正在卸载..."/>
-  <translation tag="Unloading filament ({}mm)..." zh="正在卸载耗材 ({}mm)..."/>
   <translation tag="Unloading filament..." zh="正在卸载耗材..."/>
-  <translation tag="Unloading... click again to load slot {}" zh="正在卸载... 再次点击加载槽位 {}"/>
   <translation tag="Unloads After Print" zh="打印后卸载"/>
   <translation tag="Unlock" zh="解锁"/>
   <translation tag="Unmapped" zh="未映射"/>

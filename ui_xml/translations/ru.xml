@@ -177,7 +177,6 @@
   <translation tag="Applying Changes" ru="Применение изменений"/>
   <translation tag="Applying..." ru="Применение..."/>
   <translation tag="Are you sure you want to cancel this print? All progress will be lost." ru="Вы уверены, что хотите отменить печать? Весь прогресс будет потерян."/>
-  <translation tag="Are you sure? This will power off or restart the printer host." ru="Вы уверены? Это выключит или перезагрузит хост принтера."/>
   <translation tag="Are you sure? This will power off or restart this device." ru="Вы уверены? Это выключит или перезагрузит данное устройство."/>
   <translation tag="Assign Klipper macros to control LEDs via on/off, toggle, or presets" ru="Назначьте макросы Klipper для управления LED через вкл/выкл, переключение или пресеты"/>
   <translation tag="Assign a role to enable sensor monitoring" ru="Назначьте роль для мониторинга датчика"/>
@@ -231,13 +230,11 @@
   <translation tag="Bed Temp" ru="Темп. стола"/>
   <translation tag="Bed Temp (°C)" ru="Температура стола (°C)"/>
   <translation tag="Bed Temperature" ru="Температура стола"/>
-  <translation tag="Bed heater turned off" ru="Нагреватель стола выключен"/>
   <translation tag="Bed is Level!" ru="Стол выровнен!"/>
   <translation tag="Bed mesh operation timed out" ru="Сетка стола — время ожидания истекло"/>
   <translation tag="Bed target set to {}°C" ru="Целевая температура стола {}°C"/>
   <translation tag="Bed temp must be 0-200°C" ru="Температура стола должна быть 0-200°C"/>
   <translation tag="Bed warming timed out" ru="Нагрев стола — время ожидания истекло"/>
-  <translation tag="Bed °C" ru="Стол °C"/>
   <translation tag="Bed:" ru="Стол:"/>
   <translation tag="Belt A frequency locked" ru="Частота ремня A зафиксирована"/>
   <translation tag="Belt B frequency locked" ru="Частота ремня B зафиксирована"/>
@@ -293,7 +290,6 @@
   <translation tag="CARTOGRAPHER" ru="CARTOGRAPHER"/>
   <translation tag="CHANGED FROM LAST SESSION" ru="ИЗМЕНЕНО С ПРОШЛОЙ СЕССИИ"/>
   <translation tag="COLOR SENSORS" ru="ДАТЧИКИ ЦВЕТА"/>
-  <translation tag="COLORS REQUIRED" ru="ТРЕБУЕМЫЕ ЦВЕТА"/>
   <translation tag="CONFIGURATION" ru="КОНФИГУРАЦИЯ"/>
   <translation tag="CONNECTION TYPE" ru="ТИП ПОДКЛЮЧЕНИЯ"/>
   <translation tag="CONTROLLABLE FANS" ru="УПРАВЛЯЕМЫЕ ВЕНТИЛЯТОРЫ"/>
@@ -361,7 +357,6 @@
   <translation tag="Chamber Temperature" ru="Температура камеры"/>
   <translation tag="Chamber and dryer humidity monitoring" ru="Мониторинг влажности камеры и сушилки"/>
   <translation tag="Chamber at %d°C" ru="Камера при %d°C"/>
-  <translation tag="Chamber heater not found in printer configuration" ru="Нагреватель камеры не найден в конфигурации принтера"/>
   <translation tag="Chamber heating to %d°C..." ru="Нагрев камеры до %d°C..."/>
   <translation tag="Chamber target set to {}°C" ru="Целевая температура камеры установлена на {}°C"/>
   <translation tag="Change" ru="Изменить"/>
@@ -394,7 +389,6 @@
   <translation tag="Checking..." ru="Проверка..."/>
   <translation tag="Choose 12-hour or 24-hour time display" ru="Выберите 12-часовой или 24-часовой формат времени"/>
   <translation tag="Choose Filament" ru="Выбрать филамент"/>
-  <translation tag="Choose Spool" ru="Выбрать катушку"/>
   <translation tag="Choose an existing filament, or tap + New to create one." ru="Выберите существующий филамент или нажмите + Новый, чтобы создать."/>
   <translation tag="Choose display language" ru="Выберите язык интерфейса"/>
   <translation tag="Choose how frames are captured during printing" ru="Выберите способ захвата кадров во время печати"/>
@@ -636,9 +630,7 @@
   <translation tag="EMPTY" ru="ПУСТО"/>
   <translation tag="Each fan can only be selected once" ru="Каждый вентилятор можно выбрать только один раз"/>
   <translation tag="Edit" ru="Редактировать"/>
-  <translation tag="Edit Preset" ru="Редактировать пресет"/>
   <translation tag="Edit Slot" ru="Редактировать слот"/>
-  <translation tag="Edit Slot 1" ru="Редактировать слот 1"/>
   <translation tag="Edit Spool" ru="Редактировать катушку"/>
   <translation tag="Edit Spool #{}" ru="Изменить катушку #{}"/>
   <translation tag="Edit Theme Colors" ru="Редактировать цвета темы"/>
@@ -657,7 +649,6 @@
   <translation tag="Emergency stop and print alerts" ru="Аварийная остановка и оповещения печати"/>
   <translation tag="Emergency stop failed: not connected" ru="Аварийная остановка не удалась: нет подключения"/>
   <translation tag="Empty" ru="Пусто"/>
-  <translation tag="Empty filament slot" ru="Пустой слот филамента"/>
   <translation tag="Empty slots disable the associated functionality" ru="Пустые слоты отключают связанный функционал"/>
   <translation tag="Enable" ru="Включить"/>
   <translation tag="Enable Monitoring" ru="Включить мониторинг"/>
@@ -731,7 +722,6 @@
   <translation tag="Extra prime to compensate ooze" ru="Дополнительная подача для компенсации вытекания"/>
   <translation tag="Extrude" ru="Экструзия"/>
   <translation tag="Extrude Speed" ru="Скорость экструзии"/>
-  <translation tag="Extrude complete ({}mm)" ru="Экструзия завершена ({}мм)"/>
   <translation tag="Extrude failed: {}" ru="Ошибка экструзии: {}"/>
   <translation tag="Extrude may still be running — response timed out" ru="Экструзия может ещё выполняться — время ожидания истекло"/>
   <translation tag="Extrude/retract feedrate (Saved)" ru="Скорость экструзии/ретракции (Сохранено)"/>
@@ -739,7 +729,6 @@
   <translation tag="Extruder MPC Calibration" ru="Калибровка MPC экструдера"/>
   <translation tag="Extruder PID Tuning" ru="Настройка PID экструдера"/>
   <translation tag="Extruder heats automatically based on material" ru="Экструдер нагревается автоматически в зависимости от материала"/>
-  <translation tag="Extruding {}mm..." ru="Экструзия {}мм..."/>
   <translation tag="FAILED" ru="ОШИБКА"/>
   <translation tag="FILAMENT MAPPING" ru="НАЗНАЧЕНИЕ ФИЛАМЕНТА"/>
   <translation tag="FILAMENTS" ru="ФИЛАМЕНТЫ"/>
@@ -804,7 +793,6 @@
   <translation tag="Failed to reset theme" ru="Не удалось сбросить тему"/>
   <translation tag="Failed to restart Moonraker." ru="Не удалось перезапустить Moonraker."/>
   <translation tag="Failed to restart: {}" ru="Не удалось перезапустить: {}"/>
-  <translation tag="Failed to resume print: {}" ru="Не удалось возобновить печать: {}"/>
   <translation tag="Failed to resume: {}" ru="Не удалось возобновить: {}"/>
   <translation tag="Failed to save LED configuration" ru="Не удалось сохранить настройки LED"/>
   <translation tag="Failed to save config." ru="Не удалось сохранить конфигурацию."/>
@@ -820,10 +808,7 @@
   <translation tag="Failed to send print data" ru="Не удалось отправить данные печати"/>
   <translation tag="Failed to send status request" ru="Не удалось отправить запрос статуса"/>
   <translation tag="Failed to set active spool" ru="Не удалось установить активную катушку"/>
-  <translation tag="Failed to set bed temp: {}" ru="Не удалось задать темп. стола: {}"/>
-  <translation tag="Failed to set chamber temp: {}" ru="Не удалось установить температуру камеры: {}"/>
   <translation tag="Failed to set flow rate: {}" ru="Не удалось задать поток: {}"/>
-  <translation tag="Failed to set nozzle temp: {}" ru="Не удалось задать темп. сопла: {}"/>
   <translation tag="Failed to set print speed: {}" ru="Не удалось задать скорость печати: {}"/>
   <translation tag="Failed to set temperature: {}" ru="Не удалось задать температуру: {}"/>
   <translation tag="Failed to set {} temp: {}" ru="Не удалось задать темп. {}: {}"/>
@@ -910,7 +895,6 @@
   <translation tag="Found %zu printers" ru="Найдено %zu принтеров"/>
   <translation tag="Found 1 printer" ru="Найден 1 принтер"/>
   <translation tag="Framerate" ru="Частота кадров"/>
-  <translation tag="Freq Graph" ru="График частот"/>
   <translation tag="Frequency Delta" ru="Разница частот"/>
   <translation tag="Frequency Delta: Difference between Path A and B. Ideally under 5 Hz; over 15 Hz needs adjustment.\n\nPath Similarity: How closely the vibration profiles match. Above 90% is excellent; below 70% suggests uneven tension." ru="Разница частот: разница между путями A и B. В идеале менее 5 Гц; более 15 Гц требует регулировки.\n\nСходство путей: насколько близко совпадают профили вибрации. Выше 90% — отлично; ниже 70% указывает на неравномерное натяжение."/>
   <translation tag="From Buffer" ru="Из буфера"/>
@@ -966,7 +950,6 @@
   <translation tag="Heating Bed..." ru="Нагрев стола..."/>
   <translation tag="Heating Nozzle..." ru="Нагрев сопла..."/>
   <translation tag="Heating to %d\xC2\xB0C... %.0f\xC2\xB0C" ru="Нагрев до %d\xC2\xB0C... %.0f\xC2\xB0C"/>
-  <translation tag="Heating to %d°C..." ru="Нагрев до %d°C..."/>
   <translation tag="Heating to {}°C for {}..." ru="Нагрев до {}°C в течение {}..."/>
   <translation tag="Heating to {}°C..." ru="Нагрев до {}°C..."/>
   <translation tag="Heating..." ru="Нагрев..."/>
@@ -1131,7 +1114,6 @@
   <translation tag="Listen to all theme sounds" ru="Прослушать все звуки темы"/>
   <translation tag="Load" ru="Загрузить"/>
   <translation tag="Load Filament" ru="Загрузить филамент"/>
-  <translation tag="Load failed: {}" ru="Ошибка загрузки: {}"/>
   <translation tag="Load may still be running — response timed out" ru="Загрузка может ещё выполняться — время ожидания истекло"/>
   <translation tag="Load the required filaments or start anyway?" ru="Загрузить нужные филаменты или начать без них?"/>
   <translation tag="Loaded" ru="Загружен"/>
@@ -1141,7 +1123,6 @@
   <translation tag="Loading Filament..." ru="Загрузка филамента..."/>
   <translation tag="Loading G-code..." ru="Загрузка G-code..."/>
   <translation tag="Loading devices..." ru="Загрузка устройств..."/>
-  <translation tag="Loading filament ({}mm)..." ru="Загрузка филамента ({}мм)..."/>
   <translation tag="Loading filament..." ru="Загрузка филамента..."/>
   <translation tag="Loading filaments..." ru="Загрузка филаментов..."/>
   <translation tag="Loading history..." ru="Загрузка истории..."/>
@@ -1183,7 +1164,6 @@
   <translation tag="Macro Browser" ru="Обзор макросов"/>
   <translation tag="Macro Buttons" ru="Кнопки макросов"/>
   <translation tag="Macro analysis not initialized" ru="Анализ макросов не инициализирован"/>
-  <translation tag="Macro complete" ru="Макрос выполнен"/>
   <translation tag="Macro failed: {}" ru="Ошибка макроса: {}"/>
   <translation tag="Macro for bed mesh calibration" ru="Макрос для калибровки сетки стола"/>
   <translation tag="Macro for chamber/bed heat soak" ru="Макрос для прогрева камеры/стола"/>
@@ -1334,7 +1314,6 @@
   <translation tag="No files available for printing" ru="Нет файлов для печати"/>
   <translation tag="No images found on USB drive" ru="Изображения на USB-накопителе не найдены"/>
   <translation tag="No jobs in queue" ru="Очередь пуста"/>
-  <translation tag="No light configured. Set up in Settings &gt; LED Settings." ru="Освещение не настроено. Настройте в Настройки &gt; Настройки LED."/>
   <translation tag="No macro devices configured" ru="Макро-устройства не настроены"/>
   <translation tag="No macros available" ru="Нет доступных макросов"/>
   <translation tag="No macros found" ru="Макросы не найдены"/>
@@ -1397,11 +1376,9 @@
   <translation tag="Nozzle Temp" ru="Темп. сопла"/>
   <translation tag="Nozzle Temperature" ru="Температура сопла"/>
   <translation tag="Nozzle Temps" ru="Темп. сопел"/>
-  <translation tag="Nozzle heater turned off" ru="Нагреватель сопла выключен"/>
   <translation tag="Nozzle min cannot exceed max" ru="Минимум сопла не может превышать максимум"/>
   <translation tag="Nozzle target set to {}°C" ru="Целевая температура сопла {}°C"/>
   <translation tag="Nozzle temp must be 100-500°C" ru="Температура сопла должна быть 100-500°C"/>
-  <translation tag="Nozzle °C" ru="Сопло °C"/>
   <translation tag="Nozzle:" ru="Сопло:"/>
   <translation tag="OD" ru="OD"/>
   <translation tag="OFF" ru="ВЫКЛ"/>
@@ -1420,7 +1397,6 @@
   <translation tag="On/Off" ru="Вкл/Выкл"/>
   <translation tag="On/Off (state-aware)" ru="Вкл/Выкл (с отслеживанием)"/>
   <translation tag="On:" ru="Вкл:"/>
-  <translation tag="One or more tools required by this file have no filament loaded. The print will likely fail. Print anyway?" ru="В один или несколько инструментов, требуемых этим файлом, не загружен филамент. Печать, скорее всего, завершится сбоем. Всё равно печатать?"/>
   <translation tag="Open" ru="Открыть"/>
   <translation tag="Open Source Licenses" ru="Лицензии с открытым кодом"/>
   <translation tag="Operation already in progress" ru="Операция уже выполняется"/>
@@ -1451,7 +1427,6 @@
   <translation tag="PLA" ru="PLA"/>
   <translation tag="PLA - Black" ru="PLA - Чёрный"/>
   <translation tag="POWER" ru="ПИТАНИЕ"/>
-  <translation tag="PRE-PRINT STEPS" ru="ЭТАПЫ ПОДГОТОВКИ"/>
   <translation tag="PRINT OPTIONS" ru="ПАРАМЕТРЫ ПЕЧАТИ"/>
   <translation tag="PRINTERS" ru="ПРИНТЕРЫ"/>
   <translation tag="PRINT_START has {} skippable operation" ru="В PRINT_START есть {} пропускаемая операция"/>
@@ -1560,7 +1535,6 @@
   <translation tag="Print Hours" ru="Часы печати"/>
   <translation tag="Print Label" ru="Печать этикетки"/>
   <translation tag="Print Library" ru="Библиотека печати"/>
-  <translation tag="Print Objects" ru="Объекты печати"/>
   <translation tag="Print Outcome" ru="Результат печати"/>
   <translation tag="Print Paused" ru="Печать приостановлена"/>
   <translation tag="Print Speed" ru="Скорость печати"/>
@@ -1574,7 +1548,6 @@
   <translation tag="Print failed" ru="Печать не удалась"/>
   <translation tag="Print issue detected" ru="Обнаружена проблема печати"/>
   <translation tag="Print preparation failed: {}" ru="Ошибка подготовки печати: {}"/>
-  <translation tag="Print quality" ru="Качество печати"/>
   <translation tag="Print server rejected the job — check printer status" ru="Сервер печати отклонил задание — проверьте статус принтера"/>
   <translation tag="Print setup failed" ru="Не удалось подготовить печать"/>
   <translation tag="Print setup failed: internal error" ru="Не удалось подготовить печать: внутренняя ошибка"/>
@@ -1644,7 +1617,6 @@
   <translation tag="Purge may still be running — response timed out" ru="Прочистка может ещё выполняться — время ожидания истекло"/>
   <translation tag="Purging" ru="Продувка"/>
   <translation tag="Purging nozzle" ru="Продувка сопла"/>
-  <translation tag="Purging {}mm..." ru="Прочистка {}мм..."/>
   <translation tag="Purging..." ru="Продувка..."/>
   <translation tag="QGL" ru="QGL"/>
   <translation tag="QGL failed: {}" ru="Ошибка QGL: {}"/>
@@ -1680,7 +1652,6 @@
   <translation tag="Reboot" ru="Перезагрузка"/>
   <translation tag="Reboot failed" ru="Ошибка перезагрузки"/>
   <translation tag="Reboot failed — host is still reachable" ru="Ошибка перезагрузки — хост всё ещё доступен"/>
-  <translation tag="Rebooting..." ru="Перезагрузка..."/>
   <translation tag="Recalibrate or view detailed results anytime in Settings." ru="Перекалибруйте или просмотрите подробные результаты в любое время в Настройках."/>
   <translation tag="Recent Prints" ru="Недавние печати"/>
   <translation tag="Recently Printed" ru="Недавно напечатано"/>
@@ -1764,10 +1735,8 @@
   <translation tag="Retract Distance" ru="Расстояние ретракта"/>
   <translation tag="Retract Length" ru="Длина ретракта"/>
   <translation tag="Retract Speed" ru="Скорость ретракта"/>
-  <translation tag="Retract complete ({}mm)" ru="Ретракт завершён ({}мм)"/>
   <translation tag="Retract failed: {}" ru="Ошибка ретракта: {}"/>
   <translation tag="Retract may still be running — response timed out" ru="Ретракт может ещё выполняться — время ожидания истекло"/>
-  <translation tag="Retracting {}mm..." ru="Ретракт {}мм..."/>
   <translation tag="Retraction" ru="Ретракт"/>
   <translation tag="Retraction Settings" ru="Настройки ретракта"/>
   <translation tag="Retry" ru="Повторить"/>
@@ -2234,9 +2203,7 @@
   <translation tag="Unload may still be running — response timed out" ru="Выгрузка может ещё выполняться — время ожидания истекло"/>
   <translation tag="Unloading" ru="Выгрузка"/>
   <translation tag="Unloading before bypass..." ru="Выгрузка перед байпасом..."/>
-  <translation tag="Unloading filament ({}mm)..." ru="Выгрузка филамента ({}мм)..."/>
   <translation tag="Unloading filament..." ru="Выгрузка филамента..."/>
-  <translation tag="Unloading... click again to load slot {}" ru="Выгрузка... нажмите ещё раз для загрузки слота {}"/>
   <translation tag="Unloads After Print" ru="Выгрузка после печати"/>
   <translation tag="Unlock" ru="Разблокировать"/>
   <translation tag="Unmapped" ru="Не назначен"/>

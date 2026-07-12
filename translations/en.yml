@@ -194,8 +194,6 @@ translations:
   Applying...: Applying...
   Are you sure you want to cancel this print? All progress will be lost.: Are you
     sure you want to cancel this print? All progress will be lost.
-  Are you sure? This will power off or restart the printer host.: Are you sure? This
-    will power off or restart the printer host.
   Are you sure? This will power off or restart this device.: Are you sure? This will
     power off or restart this device.
   Assign Klipper macros to control LEDs via on/off, toggle, or presets: Assign Klipper
@@ -252,13 +250,11 @@ translations:
   Bed Temp: Bed Temp
   Bed Temp (°C): Bed Temp (°C)
   Bed Temperature: Bed Temperature
-  Bed heater turned off: Bed heater turned off
   Bed is Level!: Bed is Level!
   Bed mesh operation timed out: Bed mesh operation timed out
   Bed target set to {}°C: Bed target set to {}°C
   Bed temp must be 0-200°C: Bed temp must be 0-200°C
   Bed warming timed out: Bed warming timed out
-  Bed °C: Bed °C
   'Bed:': 'Bed:'
   Belt A frequency locked: Belt A frequency locked
   Belt B frequency locked: Belt B frequency locked
@@ -318,7 +314,6 @@ translations:
   CARTOGRAPHER: CARTOGRAPHER
   CHANGED FROM LAST SESSION: CHANGED FROM LAST SESSION
   COLOR SENSORS: COLOR SENSORS
-  COLORS REQUIRED: COLORS REQUIRED
   CONFIGURATION: CONFIGURATION
   CONNECTION TYPE: CONNECTION TYPE
   CONTROLLABLE FANS: CONTROLLABLE FANS
@@ -402,8 +397,6 @@ translations:
   Chamber Temperature: Chamber Temperature
   Chamber and dryer humidity monitoring: Chamber and dryer humidity monitoring
   Chamber at %d°C: Chamber at %d°C
-  Chamber heater not found in printer configuration: Chamber heater not found in printer
-    configuration
   Chamber heating to %d°C...: Chamber heating to %d°C...
   Chamber target set to {}°C: Chamber target set to {}°C
   Change: Change
@@ -440,7 +433,6 @@ translations:
   Checking...: Checking...
   Choose 12-hour or 24-hour time display: Choose 12-hour or 24-hour time display
   Choose Filament: Choose Filament
-  Choose Spool: Choose Spool
   Choose an existing filament, or tap + New to create one.: Choose an existing filament,
     or tap + New to create one.
   Choose display language: Choose display language
@@ -703,9 +695,7 @@ translations:
   EMPTY: EMPTY
   Each fan can only be selected once: Each fan can only be selected once
   Edit: Edit
-  Edit Preset: Edit Preset
   Edit Slot: Edit Slot
-  Edit Slot 1: Edit Slot 1
   Edit Spool: Edit Spool
   'Edit Spool #{}': 'Edit Spool #{}'
   Edit Theme Colors: Edit Theme Colors
@@ -725,7 +715,6 @@ translations:
   Emergency stop and print alerts: Emergency stop and print alerts
   'Emergency stop failed: not connected': 'Emergency stop failed: not connected'
   Empty: Empty
-  Empty filament slot: Empty filament slot
   Empty slots disable the associated functionality: Empty slots disable the associated
     functionality
   Enable: Enable
@@ -805,7 +794,6 @@ translations:
   Extra prime to compensate ooze: Extra prime to compensate ooze
   Extrude: Extrude
   Extrude Speed: Extrude Speed
-  Extrude complete ({}mm): Extrude complete ({}mm)
   'Extrude failed: {}': 'Extrude failed: {}'
   Extrude may still be running — response timed out: Extrude may still be running
     — response timed out
@@ -815,7 +803,6 @@ translations:
   Extruder PID Tuning: Extruder PID Tuning
   Extruder heats automatically based on material: Extruder heats automatically based
     on material
-  Extruding {}mm...: Extruding {}mm...
   FAILED: FAILED
   FILAMENT MAPPING: FILAMENT MAPPING
   FILAMENTS: FILAMENTS
@@ -885,7 +872,6 @@ translations:
   Failed to reset theme: Failed to reset theme
   Failed to restart Moonraker.: Failed to restart Moonraker.
   'Failed to restart: {}': 'Failed to restart: {}'
-  'Failed to resume print: {}': 'Failed to resume print: {}'
   'Failed to resume: {}': 'Failed to resume: {}'
   Failed to save LED configuration: Failed to save LED configuration
   Failed to save config.: Failed to save config.
@@ -901,10 +887,7 @@ translations:
   Failed to send print data: Failed to send print data
   Failed to send status request: Failed to send status request
   Failed to set active spool: Failed to set active spool
-  'Failed to set bed temp: {}': 'Failed to set bed temp: {}'
-  'Failed to set chamber temp: {}': 'Failed to set chamber temp: {}'
   'Failed to set flow rate: {}': 'Failed to set flow rate: {}'
-  'Failed to set nozzle temp: {}': 'Failed to set nozzle temp: {}'
   'Failed to set print speed: {}': 'Failed to set print speed: {}'
   'Failed to set temperature: {}': 'Failed to set temperature: {}'
   'Failed to set {} temp: {}': 'Failed to set {} temp: {}'
@@ -996,7 +979,6 @@ translations:
   Found %zu printers: Found %zu printers
   Found 1 printer: Found 1 printer
   Framerate: Framerate
-  Freq Graph: Freq Graph
   Frequency Delta: Frequency Delta
   ? 'Frequency Delta: Difference between Path A and B. Ideally under 5 Hz; over 15
     Hz needs adjustment.\n\nPath Similarity: How closely the vibration profiles match.
@@ -1064,7 +1046,6 @@ translations:
   Heating Bed...: Heating Bed...
   Heating Nozzle...: Heating Nozzle...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Heating to %d\xC2\xB0C... %.0f\xC2\xB0C
-  Heating to %d°C...: Heating to %d°C...
   Heating to {}°C for {}...: Heating to {}°C for {}...
   Heating to {}°C...: Heating to {}°C...
   Heating...: Heating...
@@ -1264,7 +1245,6 @@ translations:
   Listen to all theme sounds: Listen to all theme sounds
   Load: Load
   Load Filament: Load Filament
-  'Load failed: {}': 'Load failed: {}'
   Load may still be running — response timed out: Load may still be running — response
     timed out
   Load the required filaments or start anyway?: Load the required filaments or start
@@ -1276,7 +1256,6 @@ translations:
   Loading Filament...: Loading Filament...
   Loading G-code...: Loading G-code...
   Loading devices...: Loading devices...
-  Loading filament ({}mm)...: Loading filament ({}mm)...
   Loading filament...: Loading filament...
   Loading filaments...: Loading filaments...
   Loading history...: Loading history...
@@ -1319,7 +1298,6 @@ translations:
   Macro Browser: Macro Browser
   Macro Buttons: Macro Buttons
   Macro analysis not initialized: Macro analysis not initialized
-  Macro complete: Macro complete
   'Macro failed: {}': 'Macro failed: {}'
   Macro for bed mesh calibration: Macro for bed mesh calibration
   Macro for chamber/bed heat soak: Macro for chamber/bed heat soak
@@ -1485,8 +1463,6 @@ translations:
   No files available for printing: No files available for printing
   No images found on USB drive: No images found on USB drive
   No jobs in queue: No jobs in queue
-  No light configured. Set up in Settings > LED Settings.: No light configured. Set
-    up in Settings > LED Settings.
   No macro devices configured: No macro devices configured
   No macros available: No macros available
   No macros found: No macros found
@@ -1552,11 +1528,9 @@ translations:
   Nozzle Temp: Nozzle Temp
   Nozzle Temperature: Nozzle Temperature
   Nozzle Temps: Nozzle Temps
-  Nozzle heater turned off: Nozzle heater turned off
   Nozzle min cannot exceed max: Nozzle min cannot exceed max
   Nozzle target set to {}°C: Nozzle target set to {}°C
   Nozzle temp must be 100-500°C: Nozzle temp must be 100-500°C
-  Nozzle °C: Nozzle °C
   'Nozzle:': 'Nozzle:'
   OD: OD
   'OFF': 'OFF'
@@ -1575,9 +1549,6 @@ translations:
   On/Off: On/Off
   On/Off (state-aware): On/Off (state-aware)
   'On:': 'On:'
-  One or more tools required by this file have no filament loaded. The print will likely fail. Print anyway?: One
-    or more tools required by this file have no filament loaded. The print will likely
-    fail. Print anyway?
   Open: Open
   Open Source Licenses: Open Source Licenses
   Operation already in progress: Operation already in progress
@@ -1611,7 +1582,6 @@ translations:
   PLA: PLA
   PLA - Black: PLA - Black
   POWER: POWER
-  PRE-PRINT STEPS: PRE-PRINT STEPS
   PRINT OPTIONS: PRINT OPTIONS
   PRINTERS: PRINTERS
   PRINT_START has {} skippable operation: PRINT_START has {} skippable operation
@@ -1731,7 +1701,6 @@ translations:
   Print Hours: Print Hours
   Print Label: Print Label
   Print Library: Print Library
-  Print Objects: Print Objects
   Print Outcome: Print Outcome
   Print Paused: Print Paused
   Print Speed: Print Speed
@@ -1746,7 +1715,6 @@ translations:
   Print failed: Print failed
   Print issue detected: Print issue detected
   'Print preparation failed: {}': 'Print preparation failed: {}'
-  Print quality: Print quality
   Print server rejected the job — check printer status: Print server rejected the
     job — check printer status
   Print setup failed: Print setup failed
@@ -1825,7 +1793,6 @@ translations:
     timed out
   Purging: Purging
   Purging nozzle: Purging nozzle
-  Purging {}mm...: Purging {}mm...
   Purging...: Purging...
   QGL: QGL
   'QGL failed: {}': 'QGL failed: {}'
@@ -1864,7 +1831,6 @@ translations:
   Reboot: Reboot
   Reboot failed: Reboot failed
   Reboot failed — host is still reachable: Reboot failed — host is still reachable
-  Rebooting...: Rebooting...
   Recalibrate or view detailed results anytime in Settings.: Recalibrate or view detailed
     results anytime in Settings.
   Recent Prints: Recent Prints
@@ -1953,11 +1919,9 @@ translations:
   Retract Distance: Retract Distance
   Retract Length: Retract Length
   Retract Speed: Retract Speed
-  Retract complete ({}mm): Retract complete ({}mm)
   'Retract failed: {}': 'Retract failed: {}'
   Retract may still be running — response timed out: Retract may still be running
     — response timed out
-  Retracting {}mm...: Retracting {}mm...
   Retraction: Retraction
   Retraction Settings: Retraction Settings
   Retry: Retry
@@ -2541,10 +2505,7 @@ translations:
     response timed out
   Unloading: Unloading
   Unloading before bypass...: Unloading before bypass...
-  Unloading filament ({}mm)...: Unloading filament ({}mm)...
   Unloading filament...: Unloading filament...
-  Unloading... click again to load slot {}: Unloading... click again to load slot
-    {}
   Unloads After Print: Unloads After Print
   Unlock: Unlock
   Unmapped: Unmapped

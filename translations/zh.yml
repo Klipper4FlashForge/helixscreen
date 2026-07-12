@@ -180,7 +180,6 @@ translations:
   Applying Changes: 正在应用更改
   Applying...: 正在应用...
   Are you sure you want to cancel this print? All progress will be lost.: 确定要取消此打印吗？所有进度将丢失。
-  Are you sure? This will power off or restart the printer host.: 确定吗？这将关闭或重启打印机主机。
   Are you sure? This will power off or restart this device.: 确定吗？这将关闭或重启此设备。
   Assign Klipper macros to control LEDs via on/off, toggle, or presets: 分配 Klipper
     宏通过开/关、切换或预设控制 LED
@@ -235,13 +234,11 @@ translations:
   Bed Temp: 热床温度
   Bed Temp (°C): 热床温度 (°C)
   Bed Temperature: 热床温度
-  Bed heater turned off: 热床加热器已关闭
   Bed is Level!: 热床已水平！
   Bed mesh operation timed out: 热床网格操作超时
   Bed target set to {}°C: 热床目标已设为 {}°C
   Bed temp must be 0-200°C: 热床温度必须为 0-200°C
   Bed warming timed out: 热床加热超时
-  Bed °C: 热床 °C
   'Bed:': 热床：
   Belt A frequency locked: 皮带 A 频率已锁定
   Belt B frequency locked: 皮带 B 频率已锁定
@@ -298,7 +295,6 @@ translations:
   CARTOGRAPHER: CARTOGRAPHER
   CHANGED FROM LAST SESSION: 与上次会话相比有更改
   COLOR SENSORS: 颜色传感器
-  COLORS REQUIRED: 所需颜色
   CONFIGURATION: 配置
   CONNECTION TYPE: 连接类型
   CONTROLLABLE FANS: 可控风扇
@@ -367,7 +363,6 @@ translations:
   Chamber Temperature: 腔体温度
   Chamber and dryer humidity monitoring: 腔体和干燥器湿度监控
   Chamber at %d°C: 腔体温度：%d°C
-  Chamber heater not found in printer configuration: 打印机配置中未找到腔体加热器
   Chamber heating to %d°C...: 腔体加热至 %d°C...
   Chamber target set to {}°C: 腔体目标温度设置为 {}°C
   Change: 更改
@@ -400,7 +395,6 @@ translations:
   Checking...: 检查中...
   Choose 12-hour or 24-hour time display: 选择 12 小时制或 24 小时制
   Choose Filament: 选择耗材
-  Choose Spool: 选择线轴
   Choose an existing filament, or tap + New to create one.: 选择已有耗材，或点击 + 新建来创建。
   Choose display language: 选择显示语言
   Choose how frames are captured during printing: 选择打印期间的帧捕获方式
@@ -647,9 +641,7 @@ translations:
   EMPTY: 空
   Each fan can only be selected once: 每个风扇只能选择一次
   Edit: 编辑
-  Edit Preset: 编辑预设
   Edit Slot: 编辑料仓
-  Edit Slot 1: 编辑料仓 1
   Edit Spool: 编辑料盘
   'Edit Spool #{}': '编辑线轴 #{}'
   Edit Theme Colors: 编辑主题颜色
@@ -668,7 +660,6 @@ translations:
   Emergency stop and print alerts: 紧急停止和打印警报
   'Emergency stop failed: not connected': '紧急停止失败: 未连接'
   Empty: 空
-  Empty filament slot: 清空料仓
   Empty slots disable the associated functionality: 空料仓将禁用相关功能
   Enable: 启用
   Enable Monitoring: 启用监控
@@ -742,7 +733,6 @@ translations:
   Extra prime to compensate ooze: 额外挤出以补偿溢料
   Extrude: 挤出
   Extrude Speed: 挤出速度
-  Extrude complete ({}mm): 挤出完成 ({}mm)
   'Extrude failed: {}': '挤出失败: {}'
   Extrude may still be running — response timed out: 挤出可能仍在运行 — 响应超时
   Extrude/retract feedrate (Saved): 挤出/回抽速度（已保存）
@@ -750,7 +740,6 @@ translations:
   Extruder MPC Calibration: 挤出机 MPC 校准
   Extruder PID Tuning: 挤出机 PID 调优
   Extruder heats automatically based on material: 挤出机根据材料自动加热
-  Extruding {}mm...: 正在挤出 {}mm...
   FAILED: 失败
   FILAMENT MAPPING: 耗材映射
   FILAMENTS: 耗材
@@ -817,7 +806,6 @@ translations:
   Failed to reset theme: 重置主题失败
   Failed to restart Moonraker.: 重启 Moonraker 失败。
   'Failed to restart: {}': 重启失败：{}
-  'Failed to resume print: {}': '恢复打印失败: {}'
   'Failed to resume: {}': '恢复失败: {}'
   Failed to save LED configuration: 保存 LED 配置失败
   Failed to save config.: 保存配置失败。
@@ -833,10 +821,7 @@ translations:
   Failed to send print data: 发送打印数据失败
   Failed to send status request: 发送状态请求失败
   Failed to set active spool: 设置活动料盘失败
-  'Failed to set bed temp: {}': '设置热床温度失败: {}'
-  'Failed to set chamber temp: {}': '设置腔体温度失败: {}'
   'Failed to set flow rate: {}': '设置流量失败: {}'
-  'Failed to set nozzle temp: {}': '设置喷嘴温度失败: {}'
   'Failed to set print speed: {}': '设置打印速度失败: {}'
   'Failed to set temperature: {}': '设置温度失败: {}'
   'Failed to set {} temp: {}': '设置 {} 温度失败: {}'
@@ -923,7 +908,6 @@ translations:
   Found %zu printers: 找到 %zu 台打印机
   Found 1 printer: 找到 1 台打印机
   Framerate: 帧率
-  Freq Graph: 频率图
   Frequency Delta: 频率差
   ? 'Frequency Delta: Difference between Path A and B. Ideally under 5 Hz; over 15
     Hz needs adjustment.\n\nPath Similarity: How closely the vibration profiles match.
@@ -986,7 +970,6 @@ translations:
   Heating Bed...: 正在加热热床...
   Heating Nozzle...: 正在加热喷嘴...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: 加热至 %d\xC2\xB0C... %.0f\xC2\xB0C
-  Heating to %d°C...: 正在加热至 %d°C...
   Heating to {}°C for {}...: 正在加热至{}°C，持续{}...
   Heating to {}°C...: 正在加热至{}°C...
   Heating...: 正在加热...
@@ -1160,7 +1143,6 @@ translations:
   Listen to all theme sounds: 试听所有主题声音
   Load: 加载
   Load Filament: 加载耗材
-  'Load failed: {}': '加载失败: {}'
   Load may still be running — response timed out: 加载可能仍在运行 — 响应超时
   Load the required filaments or start anyway?: 加载所需耗材还是直接开始？
   Loaded: 已加载
@@ -1170,7 +1152,6 @@ translations:
   Loading Filament...: 正在加载耗材...
   Loading G-code...: 正在加载 G-code...
   Loading devices...: 正在加载设备...
-  Loading filament ({}mm)...: 正在加载耗材 ({}mm)...
   Loading filament...: 正在加载耗材...
   Loading filaments...: 正在加载耗材...
   Loading history...: 正在加载历史...
@@ -1212,7 +1193,6 @@ translations:
   Macro Browser: 宏浏览器
   Macro Buttons: 宏按钮
   Macro analysis not initialized: 宏分析未初始化
-  Macro complete: 宏执行完成
   'Macro failed: {}': '宏执行失败: {}'
   Macro for bed mesh calibration: 热床网格校准宏
   Macro for chamber/bed heat soak: 腔体/热床预热浸泡宏
@@ -1367,7 +1347,6 @@ translations:
   No files available for printing: 没有可用于打印的文件
   No images found on USB drive: USB驱动器上未找到图片
   No jobs in queue: 队列中无任务
-  No light configured. Set up in Settings > LED Settings.: 未配置灯光。请在设置 > LED 设置中配置。
   No macro devices configured: 未配置宏设备
   No macros available: 无可用宏
   No macros found: 未找到宏
@@ -1430,11 +1409,9 @@ translations:
   Nozzle Temp: 喷嘴温度
   Nozzle Temperature: 喷嘴温度
   Nozzle Temps: 喷嘴温度
-  Nozzle heater turned off: 喷嘴加热器已关闭
   Nozzle min cannot exceed max: 喷嘴最低温度不能超过最高温度
   Nozzle target set to {}°C: 喷嘴目标已设为 {}°C
   Nozzle temp must be 100-500°C: 喷嘴温度必须为 100-500°C
-  Nozzle °C: 喷嘴 °C
   'Nozzle:': 喷嘴：
   OD: OD
   'OFF': 关
@@ -1453,7 +1430,6 @@ translations:
   On/Off: 开/关
   On/Off (state-aware): 开/关（状态跟踪）
   'On:': '开:'
-  One or more tools required by this file have no filament loaded. The print will likely fail. Print anyway?: 此文件所需的一个或多个工具头未加载耗材。打印很可能会失败。仍要打印吗？
   Open: 打开
   Open Source Licenses: 开源许可证
   Operation already in progress: 操作正在进行中
@@ -1486,7 +1462,6 @@ translations:
   PLA: PLA
   PLA - Black: PLA - 黑色
   POWER: 电源
-  PRE-PRINT STEPS: 打印前步骤
   PRINT OPTIONS: 打印选项
   PRINTERS: 打印机
   PRINT_START has {} skippable operation: PRINT_START 有 {} 项可跳过的操作
@@ -1599,7 +1574,6 @@ translations:
   Print Hours: 打印时长
   Print Label: 打印标签
   Print Library: 打印库
-  Print Objects: 打印对象
   Print Outcome: 打印结果
   Print Paused: 打印已暂停
   Print Speed: 打印速度
@@ -1614,7 +1588,6 @@ translations:
   Print failed: 打印失败
   Print issue detected: 检测到打印问题
   'Print preparation failed: {}': '打印准备失败: {}'
-  Print quality: 打印质量
   Print server rejected the job — check printer status: 打印服务器拒绝了任务 — 请检查打印机状态
   Print setup failed: 打印设置失败
   'Print setup failed: internal error': 打印设置失败：内部错误
@@ -1685,7 +1658,6 @@ translations:
   Purge may still be running — response timed out: 清洗可能仍在运行 — 响应超时
   Purging: 正在清料
   Purging nozzle: 正在清洗喷嘴
-  Purging {}mm...: 正在清洗 {}mm...
   Purging...: 正在清料...
   QGL: QGL
   'QGL failed: {}': 'QGL 失败: {}'
@@ -1721,7 +1693,6 @@ translations:
   Reboot: 重启
   Reboot failed: 重启失败
   Reboot failed — host is still reachable: 重启失败 — 主机仍可访问
-  Rebooting...: 正在重启...
   Recalibrate or view detailed results anytime in Settings.: 可随时在设置中重新校准或查看详细结果。
   Recent Prints: 最近打印
   Recently Printed: 最近打印过的
@@ -1805,10 +1776,8 @@ translations:
   Retract Distance: 回抽距离
   Retract Length: 回抽长度
   Retract Speed: 回抽速度
-  Retract complete ({}mm): 回抽完成 ({}mm)
   'Retract failed: {}': '回抽失败: {}'
   Retract may still be running — response timed out: 回抽可能仍在运行 — 响应超时
-  Retracting {}mm...: 正在回抽 {}mm...
   Retraction: 回抽
   Retraction Settings: 回抽设置
   Retry: 重试
@@ -2319,9 +2288,7 @@ translations:
   Unload may still be running — response timed out: 卸载可能仍在运行 — 响应超时
   Unloading: 卸载中
   Unloading before bypass...: 旁通前正在卸载...
-  Unloading filament ({}mm)...: 正在卸载耗材 ({}mm)...
   Unloading filament...: 正在卸载耗材...
-  Unloading... click again to load slot {}: 正在卸载... 再次点击加载槽位 {}
   Unloads After Print: 打印后卸载
   Unlock: 解锁
   Unmapped: 未映射

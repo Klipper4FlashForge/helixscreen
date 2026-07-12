@@ -792,6 +792,47 @@ class TestYamlSurgicalDeletion:
         assert "    onto a second physical line\n" in content
         assert "  Zebra: Zebra\n" in content
 
+    def test_delete_round_trip_multi_locale(self, tmp_path):
+        """Deleting confirmed-dead keys across locales leaves each file valid,
+        with equal key counts, the survivors intact, and a re-delete a no-op —
+        the shape of the real obsolete-key cleanup."""
+        from translations.obsolete import delete_obsolete_keys
+        from translations.yaml_manager import load_yaml_file
+
+        yaml_dir = tmp_path / "translations"
+        yaml_dir.mkdir()
+        for loc, tr in (("en", "Keep"), ("de", "Behalten"), ("fr", "Garder")):
+            (yaml_dir / f"{loc}.yml").write_text(
+                f"locale: {loc}\n"
+                "translations:\n"
+                "  Dead One: Value 1\n"
+                f"  Keep Me: {tr}\n"
+                "  Dead Two entry whose value wraps: Value that wraps here\n"
+                "    onto a second physical line\n"
+                "  Zebra: Zebra\n"
+            )
+
+        deleted = delete_obsolete_keys(yaml_dir, {"Dead One", "Dead Two entry whose value wraps"})
+        assert deleted == 6  # 2 keys x 3 locales
+
+        counts = set()
+        for loc in ("en", "de", "fr"):
+            data = load_yaml_file(yaml_dir / f"{loc}.yml")
+            tr = data["translations"]
+            assert "Dead One" not in tr
+            assert "Dead Two entry whose value wraps" not in tr
+            assert "Keep Me" in tr and "Zebra" in tr
+            counts.add(len(tr))
+        assert counts == {2}  # every locale down to the 2 survivors
+
+        # Folded continuation line of the deleted entry is gone, survivors intact.
+        en_text = (yaml_dir / "en.yml").read_text()
+        assert "onto a second physical line" not in en_text
+        assert "  Zebra: Zebra\n" in en_text
+
+        # Re-deleting is a no-op (keys already gone).
+        assert delete_obsolete_keys(yaml_dir, {"Dead One"}) == 0
+
 
 class TestYamlDryRun:
     """Test dry-run mode for YAML operations."""
