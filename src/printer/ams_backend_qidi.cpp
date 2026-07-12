@@ -1330,7 +1330,8 @@ AmsError AmsBackendQidi::disable_bypass() {
 
 // --- Dryer / box-heater control (issue #1019) ---
 
-DryerInfo AmsBackendQidi::get_dryer_info() const {
+DryerInfo AmsBackendQidi::get_dryer_info(int unit) const {
+    (void)unit;
     std::lock_guard<std::mutex> lock(mutex_);
     DryerInfo out = dryer_info_;
     if (dry_end_epoch_ > 0) {

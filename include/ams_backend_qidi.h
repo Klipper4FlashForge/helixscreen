@@ -126,7 +126,7 @@ class AmsBackendQidi : public AmsSubscriptionBackend {
     AmsError disable_bypass() override;
 
     // --- Dryer / box-heater control (issue #1019) ---
-    [[nodiscard]] DryerInfo get_dryer_info() const override;
+    [[nodiscard]] DryerInfo get_dryer_info(int unit = 0) const override;
     AmsError start_drying(float temp_c, int duration_min, int fan_pct = -1, int unit = 0) override;
     AmsError stop_drying(int unit = 0) override;
 

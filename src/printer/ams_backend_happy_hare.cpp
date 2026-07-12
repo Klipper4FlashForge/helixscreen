@@ -2518,7 +2518,8 @@ std::vector<int> AmsBackendHappyHare::get_tool_mapping() const {
 // Dryer Control (v4 - KMS/EMU hardware)
 // ============================================================================
 
-DryerInfo AmsBackendHappyHare::get_dryer_info() const {
+DryerInfo AmsBackendHappyHare::get_dryer_info(int unit) const {
+    (void)unit; // single-unit
     std::lock_guard<std::mutex> lock(mutex_);
     DryerInfo out = dryer_info_;
     if (dry_end_epoch_ > 0) {

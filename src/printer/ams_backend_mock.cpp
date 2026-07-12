@@ -1270,7 +1270,8 @@ void AmsBackendMock::set_dryer_speed(int speed_x) {
     spdlog::info("[AmsBackendMock] Dryer speed set to {}x", dryer_speed_x_);
 }
 
-DryerInfo AmsBackendMock::get_dryer_info() const {
+DryerInfo AmsBackendMock::get_dryer_info(int unit) const {
+    (void)unit; // single-unit
     std::lock_guard<std::mutex> lock(mutex_);
     return dryer_state_;
 }
