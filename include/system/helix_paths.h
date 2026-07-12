@@ -56,6 +56,19 @@ std::uint64_t available_space(const std::string& dir);
 bool probe_writable(const std::string& dir, std::uint64_t min_free_bytes = 0);
 
 /**
+ * @brief First candidate directory that is writable, or "" if none qualify.
+ *
+ * Loops @p candidates in order and returns the first one for which
+ * probe_writable(dir, min_free_bytes) passes (honoring the optional free-space
+ * gate). Does NOT create directories — candidates must already exist. The order
+ * of @p candidates defines preference. Backs app_get_runtime_dir()'s
+ * /tmp-then-cache fallback on ProtectSystem=strict devices where /tmp is
+ * read-only.
+ */
+std::string first_writable_dir(const std::vector<std::string>& candidates,
+                               std::uint64_t min_free_bytes = 0);
+
+/**
  * @brief create_directories(path) and verify the result is a directory.
  *
  * Converges on app_globals.cpp try_create_dir. Swallows std::filesystem

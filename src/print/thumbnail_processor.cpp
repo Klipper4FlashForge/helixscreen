@@ -7,6 +7,7 @@
 
 #include "thumbnail_processor.h"
 
+#include "app_globals.h"
 #include "ui_update_queue.h"
 
 #include "lvgl_image_writer.h"
@@ -55,7 +56,10 @@ ThumbnailProcessor& ThumbnailProcessor::instance() {
 
 ThumbnailProcessor::ThumbnailProcessor()
     : thread_pool_(std::make_unique<HThreadPool>(MIN_WORKER_THREADS, MAX_WORKER_THREADS)),
-      cache_dir_(DEFAULT_CACHE_DIR) {
+      cache_dir_(get_helix_cache_dir("helix_thumbs")) {
+    if (cache_dir_.empty()) {
+        cache_dir_ = DEFAULT_CACHE_DIR; // last-resort; ThumbnailCache re-points later
+    }
     // Ensure cache directory exists
     try {
         std::filesystem::create_directories(cache_dir_);

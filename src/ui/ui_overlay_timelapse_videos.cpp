@@ -3,6 +3,7 @@
 
 #include "ui_overlay_timelapse_videos.h"
 
+#include "app_globals.h"
 #include "ui_callback_helpers.h"
 #include "ui_format_utils.h"
 #include "ui_gradient_canvas.h"
@@ -507,7 +508,7 @@ void TimelapseVideosOverlay::load_thumbnail_for_card(lv_obj_t* card, const std::
     // ".thumbnails/". For timelapse companions we need a direct download approach.
 
     // Download companion to a temp location, then save to cache and pre-scale
-    std::string dest_path = "/tmp/helix_timelapse_thumb_" + companion;
+    std::string dest_path = app_get_runtime_dir() + "/helix_timelapse_thumb_" + companion;
     auto tok = lifetime_.token();
     auto thumb_tok = thumb_lifetime_.token();
 
@@ -720,14 +721,15 @@ void TimelapseVideosOverlay::play_video(const std::string& filename) {
             return;
 
         // Ensure temp directory exists
-        mkdir("/tmp/helix_timelapse", 0755);
+        std::string timelapse_dir = app_get_runtime_dir() + "/helix_timelapse";
+        mkdir(timelapse_dir.c_str(), 0755);
 
         auto tok = lifetime_.token();
         std::string player = player_command_;
 
         spdlog::info("[{}] Downloading remote video '{}' for playback", get_name(), filename);
 
-        std::string dest_path = "/tmp/helix_timelapse/" + filename;
+        std::string dest_path = timelapse_dir + "/" + filename;
 
         api_->transfers().download_file_to_path(
             "timelapse", filename, dest_path,

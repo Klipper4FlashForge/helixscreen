@@ -230,3 +230,51 @@ TEST_CASE("probe_writable fails when space short", "[helix_paths]") {
     CHECK_FALSE(probe_writable(dir.string(), UINT64_MAX));
     fs::remove_all(dir);
 }
+
+// first_writable_dir returns the FIRST writable candidate in preference order,
+// skipping nonexistent / read-only / short-on-space entries. Backs
+// app_get_runtime_dir()'s /tmp-then-cache fallback on ProtectSystem=strict devices.
+TEST_CASE("first_writable_dir returns first writable candidate in order", "[helix_paths]") {
+    fs::path a = make_tmp_dir("fwd_a");
+    fs::path b = make_tmp_dir("fwd_b");
+    CHECK(first_writable_dir({a.string(), b.string()}) == a.string());
+    fs::remove_all(a);
+    fs::remove_all(b);
+}
+
+TEST_CASE("first_writable_dir skips a nonexistent candidate", "[helix_paths]") {
+    fs::path b = make_tmp_dir("fwd_skip_missing");
+    std::vector<std::string> cands = {"/no/such/path/really/unlikely/xyz", b.string()};
+    CHECK(first_writable_dir(cands) == b.string());
+    fs::remove_all(b);
+}
+
+TEST_CASE("first_writable_dir skips a read-only candidate", "[helix_paths]") {
+    if (::geteuid() == 0) {
+        return; // root bypasses permission bits — the read-only probe would succeed
+    }
+    fs::path dir = make_tmp_dir("fwd_ro");
+    fs::path locked = dir / "locked";
+    fs::create_directories(locked);
+    fs::permissions(locked, fs::perms::owner_read | fs::perms::owner_exec); // 0500, no write
+    fs::path good = make_tmp_dir("fwd_ro_good");
+
+    CHECK(first_writable_dir({locked.string(), good.string()}) == good.string());
+
+    fs::permissions(locked, fs::perms::owner_all); // restore so cleanup works
+    fs::remove_all(dir);
+    fs::remove_all(good);
+}
+
+TEST_CASE("first_writable_dir returns empty when nothing qualifies", "[helix_paths]") {
+    CHECK(first_writable_dir({}) == "");
+    CHECK(first_writable_dir({"/no/such/a", "/no/such/b"}) == "");
+}
+
+TEST_CASE("first_writable_dir honors min_free_bytes", "[helix_paths]") {
+    fs::path dir = make_tmp_dir("fwd_space");
+    // An impossibly large free-space gate forces the (otherwise writable) dir to
+    // be skipped, so no candidate qualifies.
+    CHECK(first_writable_dir({dir.string()}, UINT64_MAX) == "");
+    fs::remove_all(dir);
+}

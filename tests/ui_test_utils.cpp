@@ -850,6 +850,13 @@ std::string app_get_cache_dir() {
     return "";
 }
 
+// Stub for app_get_runtime_dir (tests use a writable temp dir)
+std::string app_get_runtime_dir() {
+    std::string path = "/tmp/helix_test_runtime";
+    std::filesystem::create_directories(path);
+    return path;
+}
+
 // Stub for app_get_config_dir (tests don't have a resolvable install layout)
 // Returns empty string — matches the production fallback when install root is unknown.
 std::string app_get_config_dir() {
