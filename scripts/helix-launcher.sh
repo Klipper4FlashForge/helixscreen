@@ -304,6 +304,27 @@ if [ ! -x "${MAIN_BIN}" ]; then
 fi
 log "Selected binary: $(basename "${MAIN_BIN}")"
 
+# Resolve a writable path for the boot-splash heartbeat file and export it so
+# the splash binary (via the watchdog), platform hooks, and helix-screen all
+# resolve the SAME path. The default /tmp is READ-ONLY inside the service mount
+# namespace on ProtectSystem=strict installs (Creality Sonic Pad, OrangePi
+# Zero3), where the heartbeat write below silently fails and the splash can
+# blank on a slow boot. Prefer /tmp so behavior and any external readers are
+# unchanged on normal devices; fall back to the (writable) install dir
+# otherwise. A user override from helixscreen.env is respected (already set).
+if [ -z "${HELIX_SPLASH_STATUS_FILE:-}" ]; then
+    for _sp_dir in /tmp /var/tmp "${INSTALL_DIR}"; do
+        if ( : > "${_sp_dir}/.helix-splash-probe.$$" ) 2>/dev/null; then
+            rm -f "${_sp_dir}/.helix-splash-probe.$$" 2>/dev/null || true
+            HELIX_SPLASH_STATUS_FILE="${_sp_dir}/helix-splash-status"
+            export HELIX_SPLASH_STATUS_FILE
+            log "Splash status file: ${HELIX_SPLASH_STATUS_FILE}"
+            break
+        fi
+    done
+    unset _sp_dir
+fi
+
 # Source platform hooks if present and run platform_pre_start. The init
 # script (S90helixscreen) also runs this on production boot, but dev deploys
 # (`make deploy-*` → restart launcher directly) bypass init.d, so the
