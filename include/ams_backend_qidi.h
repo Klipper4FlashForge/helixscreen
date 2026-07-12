@@ -199,8 +199,8 @@ class AmsBackendQidi : public AmsSubscriptionBackend {
     std::vector<QidiSlotRfid> slot_rfid_;
 
     // Dryer state for the box PTC heater (issue #1019).
-    DryerInfo dryer_info_;
-    std::time_t dry_end_epoch_ = 0;       ///< Absolute drying end time (epoch s), 0 = none
+    std::vector<DryerInfo> dryer_info_;       ///< Per-unit (per-box) dryer state, index = unit
+    std::vector<std::time_t> dry_end_epoch_;  ///< Per-unit drying end time (epoch s), 0 = none
     bool drying_timer_supported_ = false; ///< box_extras drying timer seen -> use ENABLE_BOX_DRY
     std::function<std::time_t()> now_fn_ = [] { return std::time(nullptr); };
 

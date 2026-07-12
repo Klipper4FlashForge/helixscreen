@@ -75,6 +75,17 @@ AmsUnit make_qidi_unit(int unit_index) {
     return unit;
 }
 
+DryerInfo make_qidi_dryer() {
+    DryerInfo d;
+    d.supported = true;
+    d.allows_during_print = true;
+    d.min_temp_c = 35.0f;
+    d.max_temp_c = 90.0f;
+    d.max_duration_min = 720;
+    d.supports_fan_control = false;
+    return d;
+}
+
 const SlotInfo* find_old_slot(const std::vector<AmsUnit>& units, int global_index) {
     for (const auto& unit : units) {
         if (global_index >= unit.first_slot_global_index &&
@@ -181,12 +192,9 @@ AmsBackendQidi::AmsBackendQidi(MoonrakerAPI* api, helix::MoonrakerClient* client
 
     // Box PTC dryer capabilities (issue #1019). max_temp_c is the settable ceiling
     // (target_max_temp_heater_generic=90); refined from configfile in on_started().
-    dryer_info_.supported = true;
-    dryer_info_.allows_during_print = true; // box heater is independent of the toolhead
-    dryer_info_.min_temp_c = 35.0f;
-    dryer_info_.max_temp_c = 90.0f;
-    dryer_info_.max_duration_min = 720;
-    dryer_info_.supports_fan_control = false;
+    // Per-unit: one DryerInfo per box, all sharing identical capability defaults.
+    dryer_info_.assign(system_info_.units.size(), make_qidi_dryer());
+    dry_end_epoch_.assign(system_info_.units.size(), 0);
 
     spdlog::debug("{} Backend constructed ({} slots, write-path always on)", backend_log_tag(),
                   NUM_SLOTS);
@@ -327,31 +335,33 @@ void AmsBackendQidi::apply_box_extras(const nlohmann::json& box_extras) {
     if (ds_it == box_extras.end() || !ds_it->is_object()) {
         return;
     }
-    std::time_t latest_end = 0;
+    std::lock_guard<std::mutex> lock(mutex_);
+    drying_timer_supported_ = true;
+    const std::time_t now = now_fn_();
     for (auto it = ds_it->begin(); it != ds_it->end(); ++it) {
         if (!it->is_object()) {
             continue;
         }
-        if (auto et = it->find("end_time"); et != it->end() && et->is_number()) {
-            const std::time_t v = et->get<std::int64_t>();
-            if (v > latest_end) {
-                latest_end = v;
-            }
+        auto unit_index = parse_box_unit_index(it.key()); // "box1" -> 0
+        if (!unit_index || *unit_index >= static_cast<int>(dryer_info_.size())) {
+            continue;
         }
+        const size_t u = static_cast<size_t>(*unit_index);
+        std::time_t end = 0;
+        if (auto et = it->find("end_time"); et != it->end() && et->is_number()) {
+            end = et->get<std::int64_t>();
+        }
+        // A drying cycle started outside HelixScreen (e.g. the QIDI stock UI) carries
+        // no commanded duration, so the progress ring would be inert. When a NEW
+        // end_time appears, derive the total from the first observed remaining so the
+        // ring renders; our own start_drying() already set duration_min for UI-started
+        // cycles (this just re-derives the same value once the firmware echoes it back).
+        if (end > now && end != dry_end_epoch_[u]) {
+            dryer_info_[u].duration_min = static_cast<int>((end - now) / 60);
+        }
+        dry_end_epoch_[u] = end;
+        dryer_info_[u].active = (end > now);
     }
-    std::lock_guard<std::mutex> lock(mutex_);
-    drying_timer_supported_ = true;
-    const std::time_t now = now_fn_();
-    // A drying cycle started outside HelixScreen (e.g. the QIDI stock UI) carries no
-    // commanded duration, so the progress ring would be inert. When a NEW end_time
-    // appears, derive the total from the first observed remaining so the ring renders;
-    // our own start_drying() already set duration_min for UI-started cycles (this just
-    // re-derives the same value once the firmware echoes the end_time back).
-    if (latest_end > now && latest_end != dry_end_epoch_) {
-        dryer_info_.duration_min = static_cast<int>((latest_end - now) / 60);
-    }
-    dry_end_epoch_ = latest_end;
-    dryer_info_.active = (dry_end_epoch_ > now);
 }
 
 void AmsBackendQidi::apply_config_settings(const nlohmann::json& settings) {
@@ -374,7 +384,10 @@ void AmsBackendQidi::apply_config_settings(const nlohmann::json& settings) {
     }
     if (settable_max) {
         std::lock_guard<std::mutex> lock(mutex_);
-        dryer_info_.max_temp_c = *settable_max;
+        // All boxes share the same settable ceiling.
+        for (auto& d : dryer_info_) {
+            d.max_temp_c = *settable_max;
+        }
         spdlog::info("{} Box dryer max temp from config: {}°C", backend_log_tag(), *settable_max);
     }
 
@@ -404,8 +417,6 @@ void AmsBackendQidi::apply_heater_status(const nlohmann::json& notification) {
         std::optional<float> target;
     };
     std::array<BoxReading, QIDI_MAX_BOXES> readings;
-    std::optional<float> max_temp;
-    std::optional<float> max_target;
 
     for (auto it = notification.begin(); it != notification.end(); ++it) {
         if (!it->is_object()) {
@@ -434,9 +445,6 @@ void AmsBackendQidi::apply_heater_status(const nlohmann::json& notification) {
                 if (!reading.temp || v > *reading.temp) {
                     reading.temp = v;
                 }
-                if (!max_temp || v > *max_temp) {
-                    max_temp = v;
-                }
             }
         }
         if (is_heater) {
@@ -444,9 +452,6 @@ void AmsBackendQidi::apply_heater_status(const nlohmann::json& notification) {
                 const float v = tgt_it->get<float>();
                 if (!reading.target || v > *reading.target) {
                     reading.target = v;
-                }
-                if (!max_target || v > *max_target) {
-                    max_target = v;
                 }
             }
         }
@@ -469,7 +474,7 @@ void AmsBackendQidi::apply_heater_status(const nlohmann::json& notification) {
     std::lock_guard<std::mutex> lock(mutex_);
     for (size_t i = 0; i < readings.size() && i < system_info_.units.size(); ++i) {
         const auto& reading = readings[i];
-        if (!reading.temp && !reading.humidity) {
+        if (!reading.temp && !reading.humidity && !reading.target) {
             continue;
         }
         auto& env = system_info_.units[i].environment;
@@ -483,12 +488,15 @@ void AmsBackendQidi::apply_heater_status(const nlohmann::json& notification) {
             env->humidity_pct = *reading.humidity;
             env->has_humidity = true;
         }
-    }
-    if (max_temp) {
-        dryer_info_.current_temp_c = *max_temp;
-    }
-    if (max_target) {
-        dryer_info_.target_temp_c = *max_target;
+        // Per-box dryer state: write each box's heater reading into its own unit.
+        if (i < dryer_info_.size()) {
+            if (reading.temp) {
+                dryer_info_[i].current_temp_c = *reading.temp;
+            }
+            if (reading.target) {
+                dryer_info_[i].target_temp_c = *reading.target;
+            }
+        }
     }
 }
 
@@ -504,6 +512,12 @@ void AmsBackendQidi::parse_save_variables(const nlohmann::json& variables) {
         if (box_count >= 0 && box_count <= QIDI_MAX_BOXES) {
             resize_qidi_units(system_info_, box_count);
             slot_rfid_.resize(static_cast<size_t>(system_info_.total_slots));
+            // Keep the per-unit dryer vectors sized to the box count, preserving
+            // existing state and seeding new boxes with capability defaults.
+            if (dryer_info_.size() != system_info_.units.size()) {
+                dryer_info_.resize(system_info_.units.size(), make_qidi_dryer());
+                dry_end_epoch_.resize(system_info_.units.size(), 0);
+            }
         }
     }
 
@@ -1331,12 +1345,15 @@ AmsError AmsBackendQidi::disable_bypass() {
 // --- Dryer / box-heater control (issue #1019) ---
 
 DryerInfo AmsBackendQidi::get_dryer_info(int unit) const {
-    (void)unit;
     std::lock_guard<std::mutex> lock(mutex_);
-    DryerInfo out = dryer_info_;
-    if (dry_end_epoch_ > 0) {
+    if (unit < 0 || unit >= static_cast<int>(dryer_info_.size())) {
+        return DryerInfo{.supported = false};
+    }
+    DryerInfo out = dryer_info_[static_cast<size_t>(unit)];
+    const std::time_t end = dry_end_epoch_[static_cast<size_t>(unit)];
+    if (end > 0) {
         const std::time_t now = now_fn_();
-        const int remaining = static_cast<int>((dry_end_epoch_ - now) / 60);
+        const int remaining = static_cast<int>((end - now) / 60);
         out.remaining_min = remaining > 0 ? remaining : 0;
         out.active = remaining > 0;
     }
@@ -1353,9 +1370,13 @@ AmsError AmsBackendQidi::start_drying(float temp_c, int duration_min, int fan_pc
     int max_duration;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        min_temp = dryer_info_.min_temp_c;
-        max_temp = dryer_info_.max_temp_c;
-        max_duration = dryer_info_.max_duration_min;
+        if (unit < 0 || unit >= static_cast<int>(dryer_info_.size())) {
+            return AmsErrorHelper::not_supported("Dryer");
+        }
+        const size_t u = static_cast<size_t>(unit);
+        min_temp = dryer_info_[u].min_temp_c;
+        max_temp = dryer_info_[u].max_temp_c;
+        max_duration = dryer_info_[u].max_duration_min;
     }
     if (temp_c < min_temp || temp_c > max_temp) {
         return AmsError(AmsResult::COMMAND_FAILED,
@@ -1375,8 +1396,11 @@ AmsError AmsBackendQidi::start_drying(float temp_c, int duration_min, int fan_pc
     bool timer;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        dryer_info_.target_temp_c = temp_c;
-        dryer_info_.duration_min = duration_min;
+        if (unit < 0 || unit >= static_cast<int>(dryer_info_.size())) {
+            return AmsErrorHelper::not_supported("Dryer");
+        }
+        dryer_info_[static_cast<size_t>(unit)].target_temp_c = temp_c;
+        dryer_info_[static_cast<size_t>(unit)].duration_min = duration_min;
         timer = drying_timer_supported_;
     }
     if (timer) {
@@ -1397,11 +1421,15 @@ AmsError AmsBackendQidi::stop_drying(int unit) {
     bool timer;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        dry_end_epoch_ = 0;
-        dryer_info_.active = false;
-        dryer_info_.target_temp_c = 0.0f;
-        dryer_info_.remaining_min = 0;
-        dryer_info_.duration_min = 0;
+        if (unit < 0 || unit >= static_cast<int>(dryer_info_.size())) {
+            return AmsErrorHelper::not_supported("Dryer");
+        }
+        const size_t u = static_cast<size_t>(unit);
+        dry_end_epoch_[u] = 0;
+        dryer_info_[u].active = false;
+        dryer_info_[u].target_temp_c = 0.0f;
+        dryer_info_[u].remaining_min = 0;
+        dryer_info_[u].duration_min = 0;
         timer = drying_timer_supported_;
     }
     if (timer) {

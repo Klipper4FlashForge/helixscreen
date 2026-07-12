@@ -81,8 +81,8 @@ class QidiBoxTestAccess {
                                  const std::string& brand) {
         return AmsBackendQidi::resolve_vendor_id(vendors, brand);
     }
-    static DryerInfo get_dryer(const AmsBackendQidi& b) {
-        return b.get_dryer_info();
+    static DryerInfo get_dryer(const AmsBackendQidi& b, int unit = 0) {
+        return b.get_dryer_info(unit);
     }
     static void set_clock(AmsBackendQidi& b, std::function<std::time_t()> fn) {
         b.now_fn_ = std::move(fn);
@@ -1165,6 +1165,40 @@ TEST_CASE("QIDI Box derives duration for externally-started drying (progress rin
     DryerInfo d = QidiBoxTestAccess::get_dryer(backend);
     REQUIRE(d.duration_min == 60);
     REQUIRE(d.get_progress_pct() == 0); // just started: 60/60 remaining
+}
+
+TEST_CASE("QIDI Box per-unit dryer: box1 drying, box2 idle -> distinct DryerInfo",
+          "[ams][qidi_box][dryer][multi-unit]") {
+    AmsBackendQidi backend(nullptr, nullptr);
+    // Expand to 2 boxes.
+    QidiBoxTestAccess::parse_vars(backend, json{{"box_count", 2}});
+
+    // Deterministic clock so remaining_min is stable.
+    QidiBoxTestAccess::set_clock(backend, [] { return std::time_t{1'000'000}; });
+    QidiBoxTestAccess::set_drying_timer_supported(backend, true);
+
+    // Box1 heating to 55C @ 48C now; box2 idle heater.
+    QidiBoxTestAccess::handle_status(
+        backend, json{{"heater_generic heater_box1", json{{"temperature", 48.0}, {"target", 55.0}}},
+                      {"heater_generic heater_box2", json{{"temperature", 24.0}, {"target", 0.0}}}});
+
+    // Box1 has an active drying end_time 30 min out; box2 none.
+    QidiBoxTestAccess::apply_box_extras(
+        backend, json{{"box_drying_state",
+                       json{{"box1", json{{"end_time", 1'000'000 + 30 * 60}}},
+                            {"box2", json{{"end_time", 0}}}}}});
+
+    DryerInfo d0 = QidiBoxTestAccess::get_dryer(backend, 0);
+    DryerInfo d1 = QidiBoxTestAccess::get_dryer(backend, 1);
+
+    REQUIRE(d0.active);
+    REQUIRE(d0.target_temp_c == Catch::Approx(55.0f).epsilon(0.01));
+    REQUIRE(d0.current_temp_c == Catch::Approx(48.0f).epsilon(0.01));
+    REQUIRE(d0.remaining_min == 30);
+
+    REQUIRE_FALSE(d1.active);
+    REQUIRE(d1.target_temp_c == Catch::Approx(0.0f).epsilon(0.01));
+    REQUIRE(d1.remaining_min == 0);
 }
 
 TEST_CASE("QIDI Box config query refines max temp (heater_generic section)",
