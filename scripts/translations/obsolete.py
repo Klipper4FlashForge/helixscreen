@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import Set, Dict, Any
 
 from .extractor import extract_strings_from_directory, extract_strings_from_cpp_directory
-from .yaml_manager import load_yaml_file, save_yaml_file
+from .yaml_manager import (
+    load_yaml_file,
+    _entry_spans,
+    _absorb_leading_comments,
+    _render_entry_lines,
+)
 
 
 def find_obsolete_keys(
@@ -91,24 +96,30 @@ def mark_obsolete_keys(
 
     for yaml_path in yaml_dir.glob("*.yml"):
         data = load_yaml_file(yaml_path)
-        translations = data.get("translations", {})
+        translations = data.get("translations")
 
         if not translations:
             continue
 
-        modified = False
-
-        # For each obsolete key, add DEPRECATED prefix to value
+        # Collect the value changes for keys that aren't already deprecated.
+        changes = {}
         for key in obsolete_keys:
             if key in translations:
                 value = translations[key]
                 if not str(value).startswith("[DEPRECATED]"):
-                    translations[key] = f"[DEPRECATED] {value}"
-                    modified = True
+                    changes[key] = f"[DEPRECATED] {value}"
                     marked += 1
 
-        if modified and not dry_run:
-            save_yaml_file(yaml_path, data)
+        if changes and not dry_run:
+            raw = yaml_path.read_text(encoding="utf-8").splitlines(keepends=True)
+            spans = _entry_spans(translations, len(raw))
+            # Replace each changed entry's lines bottom-up so indices stay valid.
+            for key in sorted(changes, key=lambda k: spans.get(k, (-1,))[0], reverse=True):
+                if key not in spans:
+                    continue
+                start, end = spans[key]
+                raw[start:end] = _render_entry_lines(key, changes[key])
+            yaml_path.write_text("".join(raw), encoding="utf-8")
 
     return marked
 
@@ -134,20 +145,28 @@ def delete_obsolete_keys(
 
     for yaml_path in yaml_dir.glob("*.yml"):
         data = load_yaml_file(yaml_path)
-        translations = data.get("translations", {})
+        translations = data.get("translations")
 
         if not translations:
             continue
 
-        modified = False
+        to_delete = [k for k in translations if k in obsolete_keys]
+        if not to_delete:
+            continue
 
-        for key in list(translations.keys()):
-            if key in obsolete_keys:
-                del translations[key]
-                modified = True
-                deleted += 1
+        deleted += len(to_delete)
 
-        if modified and not dry_run:
-            save_yaml_file(yaml_path, data)
+        if not dry_run:
+            raw = yaml_path.read_text(encoding="utf-8").splitlines(keepends=True)
+            spans = _entry_spans(translations, len(raw))
+            # Remove each entry's lines bottom-up so earlier deletes don't shift
+            # the indices of later ones. Absorb any source comment above the key.
+            for key in sorted(to_delete, key=lambda k: spans.get(k, (-1,))[0], reverse=True):
+                if key not in spans:
+                    continue
+                start, end = spans[key]
+                start = _absorb_leading_comments(raw, start)
+                del raw[start:end]
+            yaml_path.write_text("".join(raw), encoding="utf-8")
 
     return deleted
