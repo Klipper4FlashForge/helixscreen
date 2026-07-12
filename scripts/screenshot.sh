@@ -99,10 +99,27 @@ fi
 
 # Note: Panel validation is handled by the binary itself
 
+# On a Wayland desktop, force SDL's native Wayland driver. LVGL's SDL window
+# requests an OpenGL context (SDL_WINDOW_OPENGL); on the default X11/XWayland
+# path that triggers X_GLXCreateContext -> "X Error BadValue" and the process
+# dies before rendering anything. The native wayland driver uses EGL and works
+# (falling back to software EGL if the GPU's DRI driver is unavailable).
+if [ -n "$WAYLAND_DISPLAY" ] && [ -z "$SDL_VIDEODRIVER" ]; then
+    export SDL_VIDEODRIVER=wayland
+    info "Wayland session detected — using SDL_VIDEODRIVER=wayland (avoids XWayland GLX crash)"
+fi
+
 # Detect which display to use
 if [ -z "$HELIX_SCREENSHOT_DISPLAY" ]; then
-    # Default to display 1 (assumes terminal is on display 0)
-    HELIX_SCREENSHOT_DISPLAY=1
+    if [ -n "$WAYLAND_DISPLAY" ]; then
+        # Wayland: a single logical output at index 0. The X11 "terminal on
+        # display 0, open UI on display 1" assumption doesn't hold, and index 1
+        # is out of range on a single-output setup.
+        HELIX_SCREENSHOT_DISPLAY=0
+    else
+        # X11: default to display 1 (assumes terminal is on display 0)
+        HELIX_SCREENSHOT_DISPLAY=1
+    fi
     info "Opening UI on display $HELIX_SCREENSHOT_DISPLAY (override with HELIX_SCREENSHOT_DISPLAY env var)"
 else
     info "Using display $HELIX_SCREENSHOT_DISPLAY from HELIX_SCREENSHOT_DISPLAY env var"
