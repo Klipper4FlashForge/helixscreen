@@ -5,6 +5,25 @@ All notable changes to HelixScreen will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.99.89] - 2026-07-12
+
+### Added
+
+- **Snapmaker U1 remote screen** (#1031) — the U1 display can be mirrored over the remote-screen path, with RGB565→BGRA conversion and a direct framebuffer blit.
+- **More humidity sensors** (prestonbrown/helixscreen#1090) — AHT10, AHT20, and SHT3X humidity sensors are now surfaced in the sensors overlay.
+
+### Fixed
+
+- **In-app updates no longer fail on read-only-`/tmp` devices** — self-update aborted with a "Read-only file system" error while creating its temp directory on devices whose service sandbox makes `/tmp` read-only (e.g. Creality Sonic Pad, OrangePi Zero3). The updater now stages the download and extraction in a writable location beside the install directory. This is why updating to 0.99.88 failed on the Sonic Pad.
+- **AMS load no longer freezes in "Heating"** (prestonbrown/helixscreen#1065) — when a filament-system backend rejects a load or unload, the failure is surfaced in the sidebar instead of leaving the UI stuck.
+- **AD5X IFS reliability** (prestonbrown/helixscreen#1065) — lanes load directly via `INSERT_PRUTOK_IFS` (the firmware self-swaps and heats), a stalled load feed shows an indeterminate "Working…" state, seated-lane authority is gated on the head-switch sensor, and the material label reconciles across empty-lane transitions.
+- **Current layer from Z height** — when the slicer omits layer metadata, the current layer number is derived from Z height (shown without the previous "~" prefix).
+- **Safer during homing** — discretionary g-code is refused while the printer is homing or probing.
+
+### Changed
+
+- **Sovol SV08 detection** — the base Sovol SV08 profile gains a ~350 mm build-volume default.
+
 ## [0.99.88] - 2026-07-08
 
 ### Added
@@ -4228,6 +4247,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.89]: https://github.com/prestonbrown/helixscreen/compare/v0.99.88...v0.99.89
 [0.99.88]: https://github.com/prestonbrown/helixscreen/compare/v0.99.87...v0.99.88
 [0.99.87]: https://github.com/prestonbrown/helixscreen/compare/v0.99.86...v0.99.87
 [0.99.86]: https://github.com/prestonbrown/helixscreen/compare/v0.99.85...v0.99.86
