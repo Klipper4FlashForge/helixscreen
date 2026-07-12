@@ -3,7 +3,7 @@
 
 #include "ui_panel_filament.h"
 
-#include "ui_ams_edit_modal.h"
+#include "ui_ams_edit_overlay.h"
 #include "ui_callback_helpers.h"
 #include "ui_component_keypad.h"
 #include "ui_error_reporting.h"
@@ -1646,12 +1646,8 @@ void FilamentPanel::update_external_spool_from_state() {
 
 void FilamentPanel::show_external_spool_edit_modal() {
     if (!parent_screen_) {
-        spdlog::warn("[{}] Cannot show edit modal - no parent screen", get_name());
+        spdlog::warn("[{}] Cannot show slot editor - no parent screen", get_name());
         return;
-    }
-
-    if (!edit_modal_) {
-        edit_modal_ = std::make_unique<helix::ui::AmsEditModal>();
     }
 
     auto ext = AmsState::instance().get_external_spool_info();
@@ -1659,17 +1655,18 @@ void FilamentPanel::show_external_spool_edit_modal() {
     initial_info.slot_index = -2;
     initial_info.global_index = -2;
 
-    edit_modal_->set_completion_callback([](const helix::ui::AmsEditModal::EditResult& result) {
-        if (result.saved) {
-            if (result.slot_info.spoolman_id > 0 || !result.slot_info.material.empty()) {
-                AmsState::instance().set_external_spool_info(result.slot_info);
-            } else {
-                AmsState::instance().clear_external_spool_info();
+    helix::ui::get_ams_edit_overlay().show_for_slot(
+        parent_screen_, -2, initial_info, api_,
+        [](const helix::ui::AmsEditOverlay::EditResult& result) {
+            if (result.saved) {
+                if (result.slot_info.spoolman_id > 0 || !result.slot_info.material.empty()) {
+                    AmsState::instance().set_external_spool_info(result.slot_info);
+                } else {
+                    AmsState::instance().clear_external_spool_info();
+                }
+                NOTIFY_INFO(lv_tr("External spool updated"));
             }
-            NOTIFY_INFO(lv_tr("External spool updated"));
-        }
-    });
-    edit_modal_->show_for_slot(parent_screen_, -2, initial_info, api_);
+        });
 }
 
 void FilamentPanel::on_external_spool_edit_clicked(lv_event_t* /*e*/) {

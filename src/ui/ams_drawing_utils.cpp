@@ -71,11 +71,17 @@ SlotError::Severity worst_unit_severity(const AmsUnit& unit) {
 // ============================================================================
 
 int fill_percent_from_slot(const SlotInfo& slot, int min_pct) {
-    float pct = slot.get_remaining_percent();
+    // Canonical fill semantics (SlotInfo::display_fill_pct): real ratio when
+    // both weights are known, 50% when only metadata is present, 0 for an
+    // absent/ghost lane, and -1 when there is no data at all. -1 is propagated
+    // so callers can skip/keep-previous instead of rendering a phantom bar —
+    // this replaces the old "unknown weight -> 100 (FULL)" divergence that made
+    // every weightless slot look full (masked only by is_present gating).
+    int pct = slot.display_fill_pct();
     if (pct < 0) {
-        return 100;
+        return -1;
     }
-    return std::clamp(static_cast<int>(pct), min_pct, 100);
+    return std::clamp(pct, min_pct, 100);
 }
 
 int32_t calc_bar_width(int32_t container_width, int slot_count, int32_t gap, int32_t min_width,

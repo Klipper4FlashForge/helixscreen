@@ -12,10 +12,6 @@
 
 class MoonrakerAPI;
 
-namespace helix::ui {
-class AmsEditModal;
-}
-
 namespace helix {
 
 class ActiveSpoolWidget : public PanelWidget {
@@ -64,8 +60,6 @@ class ActiveSpoolWidget : public PanelWidget {
     helix::AsyncLifetimeGuard lifetime_;
 
     bool is_wide_ = false;
-
-    std::unique_ptr<helix::ui::AmsEditModal> edit_modal_;
 
     void update_spool_display();
     void resize_spool_canvases();

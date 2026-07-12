@@ -22,19 +22,22 @@ struct MockFilament {
     const char* color_name;
     const char* material;
     const char* brand;
+    float remaining_g; // matches MoonrakerSpoolmanAPIMock::init_mock_spools()
+    float total_g;
 };
 
 // Predefined sample filaments matching Spoolman mock spools 1-8 (moonraker_api_mock.cpp)
 // IMPORTANT: Keep in sync with MoonrakerAPIMock::init_mock_spools()
+// (guarded by tests/unit/test_mock_spool_consistency.cpp)
 constexpr MockFilament SAMPLE_FILAMENTS[] = {
-    {0x1A1A2E, "Jet Black", "PLA", "Polymaker"},        // Spool #1
-    {0x26DCD9, "Silk Blue", "Silk PLA", "eSUN"},        // Spool #2
-    {0x00AEFF, "Pop Blue", "ASA", "Elegoo"},            // Spool #3
-    {0xD20000, "Fire Engine Red", "ABS", "Flashforge"}, // Spool #4
-    {0xF4E111, "Signal Yellow", "PETG", "Kingroon"},    // Spool #5
-    {0xE8E8E8, "Clear", "TPU", "Overture"},             // Spool #6
-    {0x8A949E, "Gray", "ASA", "Bambu Lab"},             // Spool #7
-    {0xA2AAAD, "Grey", "PC", "Polymaker"},              // Spool #8
+    {0x1A1A2E, "Jet Black", "PLA", "Polymaker", 850.0f, 1000.0f},        // Spool #1
+    {0x26DCD9, "Silk Blue", "Silk PLA", "eSUN", 750.0f, 1000.0f},        // Spool #2
+    {0x00AEFF, "Pop Blue", "ASA", "Elegoo", 500.0f, 1000.0f},            // Spool #3
+    {0xD20000, "Fire Engine Red", "ABS", "Flashforge", 100.0f, 1000.0f}, // Spool #4
+    {0xF4E111, "Signal Yellow", "PETG", "Kingroon", 1000.0f, 1000.0f},   // Spool #5
+    {0xE8E8E8, "Clear", "TPU", "Overture", 600.0f, 1000.0f},             // Spool #6
+    {0x8A949E, "Gray ASA", "ASA", "Bambu Lab", 1000.0f, 1000.0f},        // Spool #7
+    {0xA2AAAD, "PolyMax PC Grey", "PC", "Polymaker", 500.0f, 750.0f},    // Spool #8
 };
 constexpr int NUM_SAMPLE_FILAMENTS = sizeof(SAMPLE_FILAMENTS) / sizeof(SAMPLE_FILAMENTS[0]);
 
@@ -104,12 +107,12 @@ AmsBackendMock::AmsBackendMock(int slot_count) {
         entry->info.material = sample.material;
         entry->info.brand = sample.brand;
 
-        // Mock Spoolman data with dramatic fill level differences for demo
+        // Mock Spoolman link — weights mirror init_mock_spools() so the slot
+        // editor and Spoolman views agree (spec §9 drift fix).
         entry->info.spoolman_id = i + 1;
-        entry->info.spool_name = std::string(sample.color_name) + " " + sample.material;
-        entry->info.total_weight_g = 1000.0f;
-        static const float fill_levels[] = {1.0f, 0.75f, 0.40f, 0.10f, 0.90f, 0.50f, 0.25f, 0.05f};
-        entry->info.remaining_weight_g = entry->info.total_weight_g * fill_levels[i % 8];
+        entry->info.spool_name = std::string(sample.brand) + " " + sample.material;
+        entry->info.total_weight_g = sample.total_g;
+        entry->info.remaining_weight_g = sample.remaining_g;
 
         // Temperature recommendations from filament database
         auto mat_info = filament::find_material(sample.material);
@@ -1559,17 +1562,27 @@ void AmsBackendMock::set_afc_mode(bool enabled) {
             const char* spool_name;
             float remaining;
         };
+        // Mirrors MoonrakerSpoolmanAPIMock::init_mock_spools() spools 1-7 so a
+        // lane's spoolman_id cross-references consistently (spec §9 drift fix).
+        // Lane index 3 is deliberately UNLINKED (spoolman_id=0, Generic PETG)
+        // to exercise the untracked-filament path in mock mode. It also carries
+        // no known weight (remaining=-1 sentinel below), so it's the one mock
+        // lane that exercises the weightless "—"/no-bar display path.
         const SlotData sample_data[] = {
-            {"ASA", "Bambu Lab", 0x000000, "Black", SlotStatus::LOADED, 1, "Black ASA", 750.0f},
-            {"PLA", "Polymaker", 0xFF0000, "Red", SlotStatus::AVAILABLE, 2, "Red PLA", 900.0f},
-            {"PETG", "eSUN", 0x00FF00, "Green", SlotStatus::AVAILABLE, 3, "Green PETG", 500.0f},
-            {"TPU", "eSUN", 0xFF6600, "Orange", SlotStatus::AVAILABLE, 0, "", 200.0f},
-            {"ABS", "Hatchbox", 0x0000FF, "Blue", SlotStatus::AVAILABLE, 4, "Blue ABS", 600.0f},
-            {"PLA", "Prusament", 0xFFFF00, "Yellow", SlotStatus::AVAILABLE, 5, "Yellow PLA",
+            {"PLA", "Polymaker", 0x1A1A2E, "Jet Black", SlotStatus::LOADED, 1, "Polymaker PLA",
              850.0f},
-            {"PETG", "Overture", 0xFF00FF, "Purple", SlotStatus::AVAILABLE, 6, "Purple PETG",
-             400.0f},
-            {"ASA", "KVP", 0x00FFFF, "Cyan", SlotStatus::AVAILABLE, 7, "Cyan ASA", 700.0f},
+            {"Silk PLA", "eSUN", 0x26DCD9, "Silk Blue", SlotStatus::AVAILABLE, 2, "eSUN Silk PLA",
+             750.0f},
+            {"ASA", "Elegoo", 0x00AEFF, "Pop Blue", SlotStatus::AVAILABLE, 3, "Elegoo ASA", 500.0f},
+            {"PETG", "Generic", 0xFF6600, "Orange", SlotStatus::AVAILABLE, 0, "", -1.0f},
+            {"ABS", "Flashforge", 0xD20000, "Fire Engine Red", SlotStatus::AVAILABLE, 4,
+             "Flashforge ABS", 100.0f},
+            {"PETG", "Kingroon", 0xF4E111, "Signal Yellow", SlotStatus::AVAILABLE, 5,
+             "Kingroon PETG", 1000.0f},
+            {"TPU", "Overture", 0xE8E8E8, "Clear", SlotStatus::AVAILABLE, 6, "Overture TPU",
+             600.0f},
+            {"ASA", "Bambu Lab", 0x8A949E, "Gray ASA", SlotStatus::AVAILABLE, 7, "Bambu Lab ASA",
+             1000.0f},
         };
         constexpr int sample_count = sizeof(sample_data) / sizeof(sample_data[0]);
 
@@ -1587,7 +1600,10 @@ void AmsBackendMock::set_afc_mode(bool enabled) {
             entry->info.status = (i == 0) ? SlotStatus::LOADED : d.status;
             entry->info.spoolman_id = d.spoolman_id;
             entry->info.spool_name = d.spool_name;
-            entry->info.total_weight_g = 1000.0f;
+            // Sample data's -1 sentinel (lane 3) means "no known weight" — keep
+            // total unknown too rather than fabricating a 1000g spool (matches
+            // the "unknown weight data renders '—'" contract in AmsEditOverlay).
+            entry->info.total_weight_g = (d.remaining >= 0.0f) ? 1000.0f : -1.0f;
             entry->info.remaining_weight_g = d.remaining;
             auto mat_info = filament::find_material(d.material);
             if (mat_info) {

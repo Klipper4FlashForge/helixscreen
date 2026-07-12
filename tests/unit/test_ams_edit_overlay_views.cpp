@@ -1,0 +1,1831 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// View-level tests for the AMS slot editor overlay redesign: identity chip
+// contents (tracked vs untracked), managed-state subject, pre-selection, and
+// view transitions. Uses the full-UI fixture (real XML tree) plus the
+// AmsEditOverlayViewTestAccess friend shim.
+
+#include "app_globals.h"
+#include "display_settings_manager.h"
+#include "ui_ams_edit_overlay.h"
+#include "ui_modal.h"
+#include "ui_nav_manager.h"
+#include "ui_update_queue.h"
+
+#include "../lvgl_ui_test_fixture.h"
+#include "moonraker_api_mock.h"
+#include "moonraker_client_mock.h"
+#include "printer_state.h"
+#include "spoolman_slot_saver.h"
+
+#include "../catch_amalgamated.hpp"
+#include "hv/json.hpp"
+
+using namespace helix;
+using namespace helix::ui;
+
+class AmsEditOverlayViewTestAccess {
+  public:
+    explicit AmsEditOverlayViewTestAccess(AmsEditOverlay& overlay) : overlay_(overlay) {}
+
+    lv_obj_t* widget(const char* name) {
+        return overlay_.find_widget(name);
+    }
+    void set_working_info(const SlotInfo& info) {
+        overlay_.working_info_ = info;
+    }
+    void call_update_ui() {
+        overlay_.update_ui();
+    }
+    int view() {
+        return lv_subject_get_int(&overlay_.view_mode_subject_);
+    }
+    void call_set_view(int v) {
+        overlay_.set_view(v);
+    }
+    int is_managed() {
+        return lv_subject_get_int(&overlay_.is_managed_subject_);
+    }
+    void set_cached_spools(std::vector<SpoolInfo> spools) {
+        overlay_.cached_spools_ = std::move(spools);
+    }
+    void call_render_spool_list(const std::string& filter) {
+        overlay_.render_spool_list(filter);
+    }
+    void call_enter_spool_edit() {
+        overlay_.enter_spool_edit();
+    }
+    void call_handle_spool_edit_save() {
+        overlay_.handle_spool_edit_save();
+    }
+    void call_handle_save() {
+        overlay_.handle_save();
+    }
+    void call_switch_to_picker() {
+        overlay_.switch_to_picker();
+    }
+    void call_handle_spool_selected(int spool_id) {
+        overlay_.handle_spool_selected(spool_id);
+    }
+    void call_switch_to_form() {
+        overlay_.switch_to_form();
+    }
+    void set_details_color(uint32_t rgb) {
+        overlay_.details_color_ = rgb;
+        overlay_.details_color_set_ = true;
+    }
+    SlotInfo working_info() {
+        return overlay_.working_info_;
+    }
+    helix::ui::FilamentCatalogSelector& details_selector() {
+        return overlay_.details_selector_;
+    }
+    // Simulate the async Spoolman fetch in enter_spool_edit() that overwrites
+    // detail_original_/detail_working_ wholesale with the fetched record
+    // (spool_weight_g = empty-spool CORE weight, not the filament total) and
+    // repopulates the on-screen fields — exactly what the fetch callback does.
+    void seed_detail_fetch(const SpoolInfo& spool) {
+        overlay_.detail_original_ = spool;
+        overlay_.detail_working_ = spool;
+        overlay_.populate_detail_fields();
+    }
+    bool is_dirty() {
+        return overlay_.is_dirty();
+    }
+    bool save_opt_in() {
+        return overlay_.save_to_spoolman_opt_in_;
+    }
+    void call_open_color_view() {
+        overlay_.open_color_view();
+    }
+    void call_apply_color(uint32_t rgb) {
+        overlay_.apply_color(rgb);
+    }
+    uint32_t details_color() {
+        return overlay_.details_color_;
+    }
+    bool details_color_set() {
+        return overlay_.details_color_set_;
+    }
+    static void build_spool_patches(const SpoolInfo& original, const SpoolInfo& edited,
+                                    nlohmann::json& spool_patch, nlohmann::json& filament_patch) {
+        SpoolmanSlotSaver::build_spool_patches(original, edited, spool_patch, filament_patch);
+    }
+
+  private:
+    AmsEditOverlay& overlay_;
+};
+
+namespace {
+
+void close_editor_overlay() {
+    NavigationManager::instance().go_back();
+    UpdateQueue::instance().drain();
+}
+
+SlotInfo untracked_slot() {
+    SlotInfo info;
+    info.slot_index = 0;
+    info.spoolman_id = 0;
+    info.brand = "Generic";
+    info.material = "PETG";
+    info.color_rgb = 0xFF6600;
+    info.color_name = "Orange";
+    return info;
+}
+
+SlotInfo tracked_slot() {
+    SlotInfo info;
+    info.slot_index = 0;
+    info.spoolman_id = 7;
+    info.brand = "Bambu Lab";
+    info.material = "ASA";
+    info.spool_name = "Bambu Lab ASA";
+    info.color_rgb = 0x8A949E;
+    info.color_name = "Gray ASA";
+    return info;
+}
+
+// Copy of untracked_slot() with weights explicitly marked unknown (-1
+// sentinel, also SlotInfo's default) — models a slot with no Spoolman/manual
+// weight data on record.
+SlotInfo untracked_slot_without_weights() {
+    SlotInfo info = untracked_slot();
+    info.total_weight_g = -1.0f;
+    info.remaining_weight_g = -1.0f;
+    return info;
+}
+
+// Mirrors the show_for_slot() + drain + process_lvgl sequence used by every
+// test in this file, seeded with a weightless slot. Takes the fixture so it
+// can reach test_screen()/process_lvgl() (both LVGLUITestFixture members).
+void show_overlay_for_mock_slot_without_weights(LVGLUITestFixture& fixture) {
+    auto& overlay = get_ams_edit_overlay();
+    REQUIRE(
+        overlay.show_for_slot(fixture.test_screen(), 0, untracked_slot_without_weights(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    fixture.process_lvgl(10);
+}
+
+void show_overlay_for_mock_tracked_slot(LVGLUITestFixture& fixture) {
+    auto& overlay = get_ams_edit_overlay();
+    // api=nullptr keeps the async Spoolman re-fetch out of the picture.
+    REQUIRE(overlay.show_for_slot(fixture.test_screen(), 0, tracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    fixture.process_lvgl(10);
+}
+
+void show_overlay_for_mock_untracked_slot(LVGLUITestFixture& fixture) {
+    auto& overlay = get_ams_edit_overlay();
+    REQUIRE(overlay.show_for_slot(fixture.test_screen(), 0, untracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    fixture.process_lvgl(10);
+}
+
+} // namespace
+
+TEST_CASE_METHOD(LVGLUITestFixture, "card tap opens spool-edit; change-filament row opens picker",
+                 "[ams_edit_overlay][card]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    // Change-filament routes to the picker only when Spoolman is connected.
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    show_overlay_for_mock_tracked_slot(*this);
+
+    lv_obj_t* card = access.widget("spool_card");
+    REQUIRE(card != nullptr);
+    lv_obj_send_event(card, LV_EVENT_CLICKED, nullptr);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    auto* view_subj = lv_xml_get_subject(nullptr, "ams_edit_view");
+    REQUIRE(view_subj != nullptr);
+    CHECK(lv_subject_get_int(view_subj) == AmsEditOverlay::kViewSpoolEdit);
+
+    access.call_switch_to_form();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    // Change Filament is now a button in the paired action row (design Option 1);
+    // the old link-style change_filament_row was retired.
+    CHECK(access.widget("change_filament_row") == nullptr);
+    lv_obj_t* row = access.widget("btn_change_filament");
+    REQUIRE(row != nullptr);
+    lv_obj_send_event(row, LV_EVENT_CLICKED, nullptr);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    CHECK(lv_subject_get_int(view_subj) == AmsEditOverlay::kViewSpoolPicker);
+
+    // Retired widgets: chip, details row, inline remaining slider.
+    CHECK(access.widget("identity_chip") == nullptr);
+    CHECK(access.widget("spool_details_row") == nullptr);
+    CHECK(access.widget("remaining_slider") == nullptr);
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "spool card shows Brand · Material for untracked slots",
+                 "[ams_edit_overlay][card]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* label = access.widget("card_identity_label");
+    REQUIRE(label != nullptr);
+    // Locked naming (spec §3.8): "Generic · PETG" — brand · material.
+    CHECK(std::string(lv_label_get_text(label)) == "Generic \xC2\xB7 PETG");
+    CHECK(access.is_managed() == 0);
+
+    lv_obj_t* mark = access.widget("chip_spoolman_mark");
+    REQUIRE(mark != nullptr);
+    CHECK(lv_obj_has_flag(mark, LV_OBJ_FLAG_HIDDEN));
+
+    // Chip + details row retired in favor of the card.
+    CHECK(access.widget("identity_chip") == nullptr);
+    CHECK(access.widget("spool_details_row") == nullptr);
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "spool card shows spool name + mark for tracked slots",
+                 "[ams_edit_overlay][card]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    // Managed state requires Spoolman availability, not just spoolman_id > 0.
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    // api=nullptr keeps the async Spoolman re-fetch out of the picture.
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* label = access.widget("card_identity_label");
+    REQUIRE(label != nullptr);
+    CHECK(std::string(lv_label_get_text(label)) == "Bambu Lab ASA");
+    CHECK(access.is_managed() == 1);
+
+    lv_obj_t* mark = access.widget("chip_spoolman_mark");
+    REQUIRE(mark != nullptr);
+    CHECK_FALSE(lv_obj_has_flag(mark, LV_OBJ_FLAG_HIDDEN));
+
+    CHECK(access.widget("spool_details_row") == nullptr);
+
+    // No "(Spoolman #N)" label anywhere anymore.
+    CHECK(access.widget("spoolman_id_label") == nullptr);
+    // Overview dropdowns are gone (the details view's embedded catalog
+    // selector still has its own vendor/type dropdowns — scope to form_view).
+    lv_obj_t* form_view = access.widget("form_view");
+    REQUIRE(form_view != nullptr);
+    CHECK(lv_obj_find_by_name(form_view, "vendor_dropdown") == nullptr);
+    CHECK(lv_obj_find_by_name(form_view, "material_dropdown") == nullptr);
+    CHECK(access.widget("btn_change_spool") == nullptr);
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "managed state requires Spoolman availability, not just a stale spoolman_id",
+                 "[ams_edit_overlay][card][spoolman]") {
+    // Regression (HELIX_MOCK_SPOOLMAN=0): a slot can carry a stale spoolman_id
+    // from a session where Spoolman was available. Once Spoolman itself is
+    // unavailable, the card mark and spool-edit logistics section must hide —
+    // update_ui() must gate on printer_has_spoolman, not spoolman_id alone.
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+
+    SECTION("Spoolman unavailable -> not managed despite spoolman_id > 0") {
+        lv_subject_set_int(spoolman_subj, 0);
+
+        REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), nullptr, nullptr));
+        UpdateQueue::instance().drain();
+        process_lvgl(10);
+
+        CHECK(access.is_managed() == 0);
+        lv_obj_t* mark = access.widget("chip_spoolman_mark");
+        REQUIRE(mark != nullptr);
+        CHECK(lv_obj_has_flag(mark, LV_OBJ_FLAG_HIDDEN));
+
+        close_editor_overlay();
+    }
+
+    SECTION("Spoolman available -> managed with spoolman_id > 0") {
+        lv_subject_set_int(spoolman_subj, 1);
+
+        REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), nullptr, nullptr));
+        UpdateQueue::instance().drain();
+        process_lvgl(10);
+
+        CHECK(access.is_managed() == 1);
+        lv_obj_t* mark = access.widget("chip_spoolman_mark");
+        REQUIRE(mark != nullptr);
+        CHECK_FALSE(lv_obj_has_flag(mark, LV_OBJ_FLAG_HIDDEN));
+
+        close_editor_overlay();
+    }
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "show_for_slot skips the identity-sync fetch when Spoolman is unavailable",
+                 "[ams_edit_overlay][card][spoolman]") {
+    // A Spoolman-less printer must not fire a doomed identity-sync fetch (one
+    // RPC + warn log) every time the slot editor opens. show_for_slot() gates
+    // the open-time re-fetch on printer_has_spoolman, matching enter_spool_edit.
+    //
+    // The mock is fully ENABLED here, so if the fetch fired it would return
+    // authoritative data and overwrite working_info_ (brand/material). The gate
+    // under test is the UI-side availability subject, not the mock's own flag —
+    // so an untouched working_info_ proves the fetch never ran.
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+    api.spoolman_mock().set_mock_spoolman_enabled(true);
+
+    // Authoritative record whose vendor/material differ from the slot's initial
+    // values, so a fired fetch is observable as a working_info_ change.
+    api.spoolman_mock().get_mock_spools().clear();
+    SpoolInfo authoritative;
+    authoritative.id = 7;
+    authoritative.vendor = "SpoolmanVendor";
+    authoritative.material = "SpoolmanPETG";
+    api.spoolman_mock().get_mock_spools().push_back(authoritative);
+
+    SlotInfo slot = tracked_slot(); // spoolman_id = 7
+    slot.brand = "SlotBrand";
+    slot.material = "SlotPLA";
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    SECTION("Spoolman unavailable -> no fetch, working_info_ untouched") {
+        lv_subject_set_int(spoolman_subj, 0);
+
+        REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, &api, nullptr));
+        UpdateQueue::instance().drain();
+        process_lvgl(10);
+
+        CHECK(access.working_info().brand == "SlotBrand");
+        CHECK(access.working_info().material == "SlotPLA");
+
+        close_editor_overlay();
+    }
+
+    SECTION("Spoolman available -> fetch fires, working_info_ synced") {
+        lv_subject_set_int(spoolman_subj, 1);
+
+        REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, &api, nullptr));
+        UpdateQueue::instance().drain();
+        process_lvgl(10);
+
+        CHECK(access.working_info().brand == "SpoolmanVendor");
+        CHECK(access.working_info().material == "SpoolmanPETG");
+
+        close_editor_overlay();
+    }
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "filament-details view: toggle hidden without Spoolman",
+                 "[ams_edit_overlay][details][toggle]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 0);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    CHECK(access.view() == AmsEditOverlay::kViewSpoolEdit);
+
+    lv_obj_t* toggle_row = access.widget("save_to_spoolman_row");
+    REQUIRE(toggle_row != nullptr);
+    CHECK(lv_obj_has_flag(toggle_row, LV_OBJ_FLAG_HIDDEN));
+
+    lv_subject_set_int(spoolman_subj, 1);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    CHECK_FALSE(lv_obj_has_flag(toggle_row, LV_OBJ_FLAG_HIDDEN));
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "spool-edit Save applies color locally with toggle off",
+                 "[ams_edit_overlay][spool_edit][toggle]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Untracked slot -> toggle defaults OFF (ams_edit_is_managed drives it).
+    lv_obj_t* toggle = access.widget("save_to_spoolman_switch");
+    REQUIRE(toggle != nullptr);
+    CHECK_FALSE(lv_obj_has_state(toggle, LV_STATE_CHECKED));
+
+    access.set_details_color(0xE53935);
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.view() == AmsEditOverlay::kViewOverview);
+    CHECK(access.working_info().color_rgb == 0xE53935);
+    CHECK(access.working_info().spoolman_id == 0); // stays untracked
+    CHECK_FALSE(access.save_opt_in());             // Save will NOT write Spoolman
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "spool-edit Save with toggle off unlinks a managed slot",
+                 "[ams_edit_overlay][spool_edit][toggle]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Managed slot -> toggle defaults ON.
+    lv_obj_t* toggle = access.widget("save_to_spoolman_switch");
+    REQUIRE(toggle != nullptr);
+    CHECK(lv_obj_has_state(toggle, LV_STATE_CHECKED));
+
+    // User switches it off -> unlink on Save (resolution §2.1): id -> 0,
+    // identity kept locally, no Spoolman write. This is the SOLE unlink path
+    // now that the picker's unlink entry is retired.
+    lv_obj_remove_state(toggle, LV_STATE_CHECKED);
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.working_info().spoolman_id == 0);
+    CHECK(access.working_info().material == "ASA"); // identity preserved
+    CHECK_FALSE(access.save_opt_in());
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool-edit Save unlinking a tracked slot keeps the local total weight",
+                 "[ams_edit_overlay][spool_edit][toggle]") {
+    // Regression (Finding 1): unlinking a tracked slot must NOT stage the
+    // fetched empty-spool core weight over the real total. Before the fix the
+    // unlink zeroed spoolman_id, control fell into the untracked weight-commit
+    // branch, and detail_working_.spool_weight_g (the 216g core weight from the
+    // async fetch) clobbered total_weight_g (1000).
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    SlotInfo slot = tracked_slot();
+    slot.total_weight_g = 1000.0f;
+    slot.remaining_weight_g = 1000.0f;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Simulate the async fetch that overwrote the detail buffers with the
+    // Spoolman record: spool_weight_g here is the empty-spool CORE weight.
+    SpoolInfo fetched;
+    fetched.id = 7;
+    fetched.filament_id = 3;
+    fetched.spool_weight_g = 216.0; // core weight, NOT the filament total
+    fetched.remaining_weight_g = 1000.0;
+    fetched.initial_weight_g = 1000.0;
+    access.seed_detail_fetch(fetched);
+
+    // User turns the toggle off -> unlink on Save.
+    lv_obj_t* toggle = access.widget("save_to_spoolman_switch");
+    REQUIRE(toggle != nullptr);
+    lv_obj_remove_state(toggle, LV_STATE_CHECKED);
+
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.view() == AmsEditOverlay::kViewOverview);
+    CHECK(access.working_info().spoolman_id == 0); // unlink still happened
+    // The core weight (216) must NOT have overwritten the real total (1000).
+    CHECK(access.working_info().total_weight_g == Catch::Approx(1000.0f));
+    CHECK(access.working_info().remaining_weight_g == Catch::Approx(1000.0f));
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "picker no longer offers a standalone unlink entry",
+                 "[ams_edit_overlay][spool_edit][picker]") {
+    // The picker_unlink_entry is retired — the single unlink path is spool-edit
+    // Save with the toggle off (covered above).
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    show_overlay_for_mock_tracked_slot(*this);
+    access.call_switch_to_picker();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.widget("picker_unlink_entry") == nullptr);
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "color view from spool-edit stages the pending color and returns there",
+                 "[ams_edit_overlay][color_view]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_open_color_view();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    CHECK(access.view() == AmsEditOverlay::kViewColor);
+
+    uint32_t before = access.working_info().color_rgb;
+    access.call_apply_color(0x1E88E5);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.view() == AmsEditOverlay::kViewSpoolEdit);
+    CHECK(access.details_color() == 0x1E88E5);
+    CHECK(access.details_color_set());
+    CHECK(access.working_info().color_rgb == before); // slot untouched until Save
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "unified spool-edit view shows logistics only when tracked",
+                 "[ams_edit_overlay][spool_edit]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    // Managed state requires Spoolman availability, not just spoolman_id > 0.
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    // Tracked slot: is_managed==1 -> logistics section visible.
+    show_overlay_for_mock_tracked_slot(*this);
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    CHECK(access.view() == AmsEditOverlay::kViewSpoolEdit);
+    lv_obj_t* logistics = access.widget("spool_edit_logistics");
+    REQUIRE(logistics != nullptr);
+    CHECK_FALSE(lv_obj_has_flag(logistics, LV_OBJ_FLAG_HIDDEN));
+    // The in-content Save button was retired — Save lives in the header bar now.
+    CHECK(access.widget("btn_spool_edit_save") == nullptr);
+    close_editor_overlay();
+
+    // Untracked slot: is_managed==0 -> logistics section hidden.
+    show_overlay_for_mock_untracked_slot(*this);
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    logistics = access.widget("spool_edit_logistics");
+    REQUIRE(logistics != nullptr);
+    CHECK(lv_obj_has_flag(logistics, LV_OBJ_FLAG_HIDDEN));
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "untracked spool-edit Save commits Remaining/Spool-weight into working_info_",
+                 "[ams_edit_overlay][spool_edit]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    show_overlay_for_mock_untracked_slot(*this);
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* remaining = access.widget("detail_field_remaining");
+    lv_obj_t* spool_weight = access.widget("detail_field_spool_weight");
+    REQUIRE(remaining != nullptr);
+    REQUIRE(spool_weight != nullptr);
+
+    lv_textarea_set_text(remaining, "321");
+    lv_textarea_set_text(spool_weight, "987");
+
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.view() == AmsEditOverlay::kViewOverview);
+    CHECK(access.working_info().spoolman_id == 0); // still untracked, no PATCH
+    CHECK(access.working_info().remaining_weight_g == Catch::Approx(321.0f));
+    CHECK(access.working_info().total_weight_g == Catch::Approx(987.0f));
+
+    // The commit path must be LIVE: staging into working_info_ without
+    // re-syncing original_info_ leaves is_dirty() true, so the overview
+    // header Save (the ONLY commit path) is enabled. A prior fix synced
+    // original_info_ here and blinded is_dirty() -> Save disabled -> the
+    // edit staged but could never commit.
+    CHECK(access.is_dirty());
+    auto* save_dis = lv_xml_get_subject(nullptr, "ams_edit_save_disabled");
+    REQUIRE(save_dis != nullptr);
+    CHECK(lv_subject_get_int(save_dis) == 0); // Save enabled
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "untracked spool-edit Save with a spool-weight-only edit lights the header Save",
+                 "[ams_edit_overlay][spool_edit][dirty]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    show_overlay_for_mock_untracked_slot(*this);
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* spool_weight = access.widget("detail_field_spool_weight");
+    REQUIRE(spool_weight != nullptr);
+    // Edit ONLY the spool weight — remaining stays blank (unchanged).
+    lv_textarea_set_text(spool_weight, "144");
+
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.view() == AmsEditOverlay::kViewOverview);
+    CHECK(access.working_info().total_weight_g == Catch::Approx(144.0f));
+    // The new total_weight_g term in is_dirty() must light Save even when
+    // remaining is untouched.
+    CHECK(access.is_dirty());
+    auto* save_dis = lv_xml_get_subject(nullptr, "ams_edit_save_disabled");
+    REQUIRE(save_dis != nullptr);
+    CHECK(lv_subject_get_int(save_dis) == 0); // Save enabled
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "untracked spool-edit Save with blank fields preserves the unknown sentinel",
+                 "[ams_edit_overlay][spool_edit][dirty]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    // Unknown-weight untracked slot: both weights are the -1 sentinel, so
+    // populate_detail_fields() renders both quantity fields blank.
+    show_overlay_for_mock_slot_without_weights(*this);
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* remaining = access.widget("detail_field_remaining");
+    lv_obj_t* spool_weight = access.widget("detail_field_spool_weight");
+    REQUIRE(remaining != nullptr);
+    REQUIRE(spool_weight != nullptr);
+    CHECK(std::string(lv_textarea_get_text(remaining)).empty());
+    CHECK(std::string(lv_textarea_get_text(spool_weight)).empty());
+
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Blank == unchanged: the -1 sentinel is preserved (NOT overwritten with
+    // 0), so the slot stays clean and Save does not light up.
+    CHECK(access.view() == AmsEditOverlay::kViewOverview);
+    CHECK(access.working_info().remaining_weight_g <= 0);
+    CHECK(access.working_info().total_weight_g <= 0);
+    CHECK_FALSE(access.is_dirty());
+    auto* save_dis = lv_xml_get_subject(nullptr, "ams_edit_save_disabled");
+    REQUIRE(save_dis != nullptr);
+    CHECK(lv_subject_get_int(save_dis) == 1); // Save stays disabled
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "untracked spool-edit Save rejects a negative weight and leaves working_info_ "
+                 "untouched",
+                 "[ams_edit_overlay][spool_edit]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    show_overlay_for_mock_untracked_slot(*this);
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* remaining = access.widget("detail_field_remaining");
+    REQUIRE(remaining != nullptr);
+    lv_textarea_set_text(remaining, "-50");
+
+    float before_remaining = access.working_info().remaining_weight_g;
+    float before_total = access.working_info().total_weight_g;
+
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Validation toast fired and returned early -> still on spool-edit view,
+    // working_info_ untouched, and the catalog selector stays attached (the
+    // early return happens before detach()/clear_catalog()).
+    CHECK(access.view() == AmsEditOverlay::kViewSpoolEdit);
+    CHECK(access.working_info().remaining_weight_g == before_remaining);
+    CHECK(access.working_info().total_weight_g == before_total);
+
+    close_editor_overlay();
+}
+
+namespace {
+std::vector<SpoolInfo> two_spools() {
+    SpoolInfo a;
+    a.id = 11;
+    a.vendor = "Polymaker";
+    a.material = "PLA";
+    a.color_hex = "1A1A2E";
+    SpoolInfo b;
+    b.id = 22;
+    b.vendor = "eSUN";
+    b.material = "PETG";
+    b.color_hex = "00FF00";
+    return {a, b};
+}
+} // namespace
+
+TEST_CASE_METHOD(LVGLUITestFixture, "picker pre-selects the first row for unlinked slots",
+                 "[ams_edit_overlay][picker][preselect]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.set_cached_spools(two_spools());
+    access.call_render_spool_list("");
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* list = access.widget("picker_spool_list");
+    REQUIRE(list != nullptr);
+    REQUIRE(lv_obj_get_child_count(list) == 2);
+    CHECK(lv_obj_has_state(lv_obj_get_child(list, 0), LV_STATE_CHECKED));
+    CHECK_FALSE(lv_obj_has_state(lv_obj_get_child(list, 1), LV_STATE_CHECKED));
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "picker-entry spool selection commits and closes the editor",
+                 "[ams_edit_overlay][picker][header_save]") {
+    // Task #13: when the editor is opened directly on the picker (context-menu
+    // "Select spool"), choosing a spool is a one-tap commit — apply + close the
+    // whole overlay via the header-Save commit path, firing completion with the
+    // applied spool. Spoolman is left unavailable so commit_and_close takes the
+    // synchronous local-close branch (no async PATCH seam needed here).
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 0);
+
+    bool fired = false;
+    AmsEditOverlay::EditResult captured;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr,
+                                  [&](const AmsEditOverlay::EditResult& r) {
+                                      fired = true;
+                                      captured = r;
+                                  },
+                                  /*open_on_picker=*/true));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolPicker);
+
+    access.set_cached_spools(two_spools());
+    access.call_render_spool_list("");
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Select spool #22 (eSUN PETG) from the picker.
+    access.call_handle_spool_selected(22);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Committed + closed in one step, completion fired with the applied spool.
+    CHECK(fired);
+    CHECK(captured.saved);
+    CHECK(captured.slot_info.spoolman_id == 22);
+    CHECK(captured.slot_info.material == "PETG");
+
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "picker-entry relink to a different spool never prompts or PATCHes the old spool",
+                 "[ams_edit_overlay][filament_picker][picker][header_save]") {
+    // Task #16 regression: a slot linked to spool A, opened directly on the
+    // picker, then switched to a DIFFERENT spool B is a pure RELINK — not an
+    // edit of A's identity. The old "Different filament?" confirm + identity
+    // PATCH would clobber the wrong Spoolman record. Assert: no confirm modal,
+    // completion fires once with spool B, and NO spool/filament PATCH is sent.
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    // Seed the currently-linked spool A (id 7) so the open-time re-fetch has an
+    // authoritative record and leaves original_info_ as A's identity.
+    SpoolInfo linked_a;
+    linked_a.id = 7;
+    linked_a.filament_id = 3;
+    linked_a.vendor = "Bambu Lab";
+    linked_a.material = "ASA";
+    linked_a.color_hex = "8A949E";
+    api.spoolman_mock().get_mock_spools().push_back(linked_a);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1); // is_spoolman_available() -> true
+    get_printer_state().set_spoolman_available(true);
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    bool fired = false;
+    AmsEditOverlay::EditResult captured;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api,
+                                  [&](const AmsEditOverlay::EditResult& r) {
+                                      fired = true;
+                                      captured = r;
+                                  },
+                                  /*open_on_picker=*/true));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolPicker);
+
+    access.set_cached_spools(two_spools());
+    access.call_render_spool_list("");
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Switch the link to spool #22 (eSUN PETG) — a different material/color.
+    access.call_handle_spool_selected(22);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // No "Different filament?" confirm modal interposed.
+    CHECK(ModalStack::instance().stack_empty());
+    // Committed + closed in one step with the newly linked spool.
+    CHECK(fired);
+    CHECK(captured.saved);
+    CHECK(captured.slot_info.spoolman_id == 22);
+    CHECK(captured.slot_info.material == "PETG");
+    // The old spool A was never touched: no identity/weight PATCH, no filament
+    // repoint, no new filament created.
+    CHECK(api.spoolman_mock().spool_updates.empty());
+    CHECK(api.spoolman_mock().filament_updates.empty());
+    // The new spool is registered as active on the server.
+    CHECK(api.spoolman_mock().get_mock_active_spool_id() == 22);
+
+    get_printer_state().set_spoolman_available(false); // restore clean slate
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "two-step relink header Save never prompts or PATCHes the old spool",
+                 "[ams_edit_overlay][filament_picker][picker][header_save]") {
+    // Task #16, two-step variant: reach the picker via Change Filament (not the
+    // one-tap entry), pick a different spool, return to the overview, then tap
+    // header Save. Same relink semantics: no confirm, no PATCH of the old spool.
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    SpoolInfo linked_a;
+    linked_a.id = 7;
+    linked_a.filament_id = 3;
+    linked_a.vendor = "Bambu Lab";
+    linked_a.material = "ASA";
+    linked_a.color_hex = "8A949E";
+    api.spoolman_mock().get_mock_spools().push_back(linked_a);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+    get_printer_state().set_spoolman_available(true);
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    bool fired = false;
+    AmsEditOverlay::EditResult captured;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api,
+                                  [&](const AmsEditOverlay::EditResult& r) {
+                                      fired = true;
+                                      captured = r;
+                                  }));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_switch_to_picker(); // Change-Filament entry: clears the shortcut
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolPicker);
+
+    access.set_cached_spools(two_spools());
+    access.call_render_spool_list("");
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_handle_spool_selected(22); // stages the relink, returns to overview
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewOverview);
+    REQUIRE_FALSE(fired); // not committed yet
+    REQUIRE(access.working_info().spoolman_id == 22);
+
+    access.call_handle_save(); // header Save on the overview
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(ModalStack::instance().stack_empty()); // no identity confirm
+    CHECK(fired);
+    CHECK(captured.saved);
+    CHECK(captured.slot_info.spoolman_id == 22);
+    CHECK(api.spoolman_mock().spool_updates.empty());
+    CHECK(api.spoolman_mock().filament_updates.empty());
+    CHECK(api.spoolman_mock().get_mock_active_spool_id() == 22);
+
+    get_printer_state().set_spoolman_available(false); // restore clean slate
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "editing the linked spool's identity (same spool) still prompts to confirm",
+                 "[ams_edit_overlay][filament_picker]") {
+    // Contrast with the relink cases: when spoolman_id is UNCHANGED and the
+    // material identity changes, this is a genuine edit of the linked spool —
+    // the "Different filament?" confirmation MUST still interpose (task #16 must
+    // not swallow it). Completion does not fire until the user answers.
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    // Seed spool 7 so the open-time re-fetch leaves original_info_ as ASA.
+    SpoolInfo linked_a;
+    linked_a.id = 7;
+    linked_a.filament_id = 3;
+    linked_a.vendor = "Bambu Lab";
+    linked_a.material = "ASA";
+    linked_a.color_hex = "8A949E";
+    api.spoolman_mock().get_mock_spools().push_back(linked_a);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+    get_printer_state().set_spoolman_available(true);
+    UpdateQueue::instance().drain(); // flush the queued availability update
+    REQUIRE(get_printer_state().is_spoolman_available());
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    bool fired = false;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api,
+                                  [&](const AmsEditOverlay::EditResult&) { fired = true; }));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Same linked spool (id 7), but change the material identity in place.
+    SlotInfo edited = access.working_info();
+    edited.material = "PLA"; // ASA -> PLA on the SAME spool 7
+    access.set_working_info(edited);
+
+    access.call_handle_save(); // header Save on the overview
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // The relink short-circuit must NOT swallow a same-spool identity edit: it
+    // still routes into the confirm path (no early close). Either the confirm
+    // modal is up (completion pending) or the fallback save fired against the
+    // linked spool — but never a silent no-op relink close.
+    const bool confirm_pending = !ModalStack::instance().stack_empty() && !fired;
+    const bool save_ran = !api.spoolman_mock().spool_updates.empty() ||
+                          !api.spoolman_mock().filament_updates.empty();
+    CHECK((confirm_pending || save_ran));
+
+    // Dismiss any modal so teardown is clean.
+    if (!ModalStack::instance().stack_empty()) {
+        Modal::hide(Modal::get_top());
+        UpdateQueue::instance().drain();
+        process_lvgl(10);
+    }
+    if (!fired) {
+        close_editor_overlay();
+    }
+    get_printer_state().set_spoolman_available(false); // restore clean slate
+}
+
+TEST_CASE_METHOD(
+    LVGLUITestFixture,
+    "identity-confirm Cancel aborts entirely — no silent local commit, selector stays alive",
+    "[ams_edit_overlay][filament_picker]") {
+    // Regression: Cancel on the "Different filament?" dialog used to hide the
+    // modal and then close_editor(true) — silently committing the staged
+    // identity change to the AMS panel (backend->set_slot_info() +
+    // sync_from_backend() in the panel's completion handler) while leaving
+    // Spoolman untouched. Cancel must be a TRUE ABORT: no completion, no
+    // PATCH, user stays on the spool-edit view with the edit still staged so
+    // they can re-Save (dialog reappears) or Back out.
+    //
+    // Reached via the spool-edit view's header Save (not a direct
+    // working_info_ mutation) so this also exercises the catalog-selector
+    // detach/reattach seam: handle_spool_edit_save()'s finish=true path
+    // unconditionally detaches + clears details_selector_ before reaching
+    // commit_and_close(), which is safe for every OTHER path (close, or
+    // async-error back to the overview) but would strand a dead selector on
+    // Cancel-abort if nothing re-attached it.
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    SpoolInfo linked_a;
+    linked_a.id = 7;
+    linked_a.filament_id = 3;
+    linked_a.vendor = "Bambu Lab";
+    linked_a.material = "ASA";
+    linked_a.color_hex = "8A949E";
+    api.spoolman_mock().get_mock_spools().push_back(linked_a);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+    get_printer_state().set_spoolman_available(true);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE(get_printer_state().is_spoolman_available());
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    int fire_count = 0;
+    AmsEditOverlay::EditResult captured;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api,
+                                  [&](const AmsEditOverlay::EditResult& r) {
+                                      fire_count++;
+                                      captured = r;
+                                  }));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain(); // applies the async Spoolman logistics fetch
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolEdit);
+
+    // Stage a color-only identity change (material stays ASA via the
+    // preselected catalog product) — same-spool edit, no logistics diff, so
+    // Save routes straight into the identity-confirm gate synchronously.
+    access.set_details_color(0x112233);
+
+    access.call_handle_save(); // header Save on spool-edit -> finish=true
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    REQUIRE_FALSE(ModalStack::instance().stack_empty()); // "Different filament?" is up
+    REQUIRE(fire_count == 0);
+
+    lv_obj_t* dlg = ModalStack::instance().top_dialog();
+    REQUIRE(dlg != nullptr);
+    lv_obj_t* cancel_btn = lv_obj_find_by_name(dlg, "btn_secondary");
+    REQUIRE(cancel_btn != nullptr);
+    lv_obj_send_event(cancel_btn, LV_EVENT_CLICKED, nullptr);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // TRUE ABORT: no completion, still on the spool-edit view, nothing sent.
+    CHECK(fire_count == 0);
+    CHECK(access.view() == AmsEditOverlay::kViewSpoolEdit);
+    CHECK(ModalStack::instance().stack_empty());
+    CHECK(api.spoolman_mock().spool_updates.empty());
+    CHECK(api.spoolman_mock().filament_updates.empty());
+    // The staged edit is still there (Cancel didn't discard it).
+    CHECK(access.working_info().color_rgb == 0x112233u);
+    // The catalog selector must still be functional — not stranded inert by
+    // the earlier detach() (the same stranded-selector bug class fixed
+    // twice before this one).
+    CHECK(access.details_selector().highlighted() != nullptr);
+
+    // Save again: same diff, dialog must reappear (state intact).
+    access.call_handle_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE_FALSE(ModalStack::instance().stack_empty());
+    REQUIRE(fire_count == 0);
+
+    // This time, Confirm: PATCH lands and completion fires exactly once.
+    lv_obj_t* dlg2 = ModalStack::instance().top_dialog();
+    REQUIRE(dlg2 != nullptr);
+    lv_obj_t* confirm_btn = lv_obj_find_by_name(dlg2, "btn_primary");
+    REQUIRE(confirm_btn != nullptr);
+    lv_obj_send_event(confirm_btn, LV_EVENT_CLICKED, nullptr);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(fire_count == 1);
+    CHECK(captured.saved);
+    CHECK((!api.spoolman_mock().spool_updates.empty() ||
+          !api.spoolman_mock().filament_updates.empty()));
+
+    get_printer_state().set_spoolman_available(false); // restore clean slate
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "combined identity+logistics save issues exactly one weight PATCH",
+                 "[ams_edit_overlay][spoolman][slot_saver]") {
+    // A header Save that changes BOTH the filament identity AND the remaining
+    // weight in one go must PATCH the weight exactly once. The overlay's
+    // logistics PATCH (build_spool_patches -> update_spoolman_spool carrying
+    // remaining_weight) covers it; on_all_saved then syncs the SlotInfo weight
+    // baseline so the follow-on SpoolmanSlotSaver::save() sees no spool-level
+    // delta and does NOT re-PATCH the weight. This locks that single-PATCH
+    // invariant against a redundant idempotent weight re-PATCH regressing.
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    SpoolInfo linked_a;
+    linked_a.id = 7;
+    linked_a.filament_id = 3;
+    linked_a.vendor = "Bambu Lab";
+    linked_a.material = "ASA";
+    linked_a.color_hex = "8A949E";
+    linked_a.remaining_weight_g = 1000.0;
+    api.spoolman_mock().get_mock_spools().push_back(linked_a);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+    get_printer_state().set_spoolman_available(true);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    int fire_count = 0;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api,
+                                  [&](const AmsEditOverlay::EditResult&) { fire_count++; }));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain(); // applies the async Spoolman logistics fetch
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolEdit);
+
+    // Change logistics: remaining weight 1000 -> 750.
+    lv_obj_t* remaining = access.widget("detail_field_remaining");
+    REQUIRE(remaining != nullptr);
+    lv_textarea_set_text(remaining, "750");
+    // Change identity: a color different from the linked spool, so Save routes
+    // through the identity-confirm gate and then SpoolmanSlotSaver.
+    access.set_details_color(0x112233);
+
+    access.call_handle_save(); // header Save on spool-edit -> finish=true
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    REQUIRE_FALSE(ModalStack::instance().stack_empty()); // "Different filament?"
+    lv_obj_t* dlg = ModalStack::instance().top_dialog();
+    REQUIRE(dlg != nullptr);
+    lv_obj_t* confirm_btn = lv_obj_find_by_name(dlg, "btn_primary");
+    REQUIRE(confirm_btn != nullptr);
+    lv_obj_send_event(confirm_btn, LV_EVENT_CLICKED, nullptr);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(fire_count == 1);
+
+    // Count every PATCH that set the remaining weight, across BOTH paths: the
+    // combined update_spoolman_spool() body and the dedicated
+    // update_spoolman_spool_weight() path.
+    int weight_patches = static_cast<int>(api.spoolman_mock().weight_updates.size());
+    for (const auto& rec : api.spoolman_mock().spool_updates) {
+        if (rec.patch.contains("remaining_weight")) {
+            weight_patches++;
+        }
+    }
+    CHECK(weight_patches == 1);
+
+    get_printer_state().set_spoolman_available(false); // restore clean slate
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "Change-Filament picker selection returns to overview without closing",
+                 "[ams_edit_overlay][picker]") {
+    // Contrast with the picker-entry shortcut: reaching the picker via Change
+    // Filament (switch_to_picker clears opened_on_picker_) keeps the two-step
+    // flow — a selection returns to the overview for review, no completion.
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    bool fired = false;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr,
+                                  [&](const AmsEditOverlay::EditResult&) { fired = true; }));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_switch_to_picker(); // Change-Filament entry: clears the shortcut
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolPicker);
+
+    access.set_cached_spools(two_spools());
+    access.call_render_spool_list("");
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_handle_spool_selected(22);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.view() == AmsEditOverlay::kViewOverview);
+    CHECK_FALSE(fired); // no commit — the overview header Save commits later
+    CHECK(access.working_info().spoolman_id == 22); // staged, awaiting review
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "picker always offers the setup entry",
+                 "[ams_edit_overlay][picker][setup_entry]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr, nullptr,
+                                  /*open_on_picker=*/true));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* entry = access.widget("picker_setup_entry");
+    REQUIRE(entry != nullptr);
+    // Present regardless of picker fetch state (loading/empty/content) —
+    // it is the only path forward when the spool list is empty.
+    CHECK_FALSE(lv_obj_has_flag(entry, LV_OBJ_FLAG_HIDDEN));
+    CHECK(lv_obj_has_flag(entry, LV_OBJ_FLAG_CLICKABLE));
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "picker pre-selects the current spool when linked",
+                 "[ams_edit_overlay][picker][preselect]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    SlotInfo linked = tracked_slot();
+    linked.spoolman_id = 22;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, linked, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.set_cached_spools(two_spools());
+    access.call_render_spool_list("");
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    lv_obj_t* list = access.widget("picker_spool_list");
+    REQUIRE(list != nullptr);
+    REQUIRE(lv_obj_get_child_count(list) == 2);
+    CHECK_FALSE(lv_obj_has_state(lv_obj_get_child(list, 0), LV_STATE_CHECKED));
+    CHECK(lv_obj_has_state(lv_obj_get_child(list, 1), LV_STATE_CHECKED));
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool-edit Save after a type change stages the checked product, not the old identity",
+                 "[ams_edit_overlay][catalog_selector]") {
+    // Regression for the silent-drop bug: user changes the Type dropdown, the
+    // product list rebuilds, then taps header Save. Before the fix the rebuilt
+    // list had nothing highlighted and Save skipped the identity entirely,
+    // saving the OLD brand/material. Now the selector always leaves a product
+    // checked, so Save stages the new identity.
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    SlotInfo slot = untracked_slot(); // Generic PETG
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    auto& sel = access.details_selector();
+    // Constrain the type dropdown for deterministic indices (index 0 = PETG,
+    // 1 = PLA); preselect-on-change was already enabled by enter_spool_edit.
+    sel.set_preselect_on_change(true);
+    sel.configure(std::string("PETG"), std::vector<std::string>{"PETG", "PLA"});
+    sel.populate();
+    sel.preselect_first();
+    REQUIRE(sel.current_type() == "PETG");
+    REQUIRE(sel.highlighted() != nullptr);
+
+    // Change type to PLA — the list must auto-highlight a PLA product.
+    sel.change_type_for_test(1);
+    REQUIRE(sel.current_type() == "PLA");
+    const helix::printer::EffectiveFilament* pla = sel.highlighted();
+    REQUIRE(pla != nullptr);
+    std::string expect_brand = pla->brand;
+
+    access.call_handle_spool_edit_save();
+    CHECK(access.working_info().material == "PLA");
+    CHECK(access.working_info().brand == expect_brand);
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool-edit Save applies Generic identity when a whitelisted type has no catalog product",
+                 "[ams_edit_overlay][catalog_selector]") {
+    // A firmware-whitelisted material with no seeded catalog product yields an
+    // empty (all-unchecked) product list. Save must not silently no-op the
+    // identity change: apply vendor Generic + the selected type string.
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    SlotInfo slot = untracked_slot();
+    slot.brand = "eSUN";     // prove the brand gets forced to Generic
+    slot.material = "PETG";  // differs from the selected SILK
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    auto& sel = access.details_selector();
+    sel.configure(std::nullopt, std::vector<std::string>{"SILK"});
+    sel.populate();
+    REQUIRE(sel.current_type() == "SILK");
+    REQUIRE(sel.highlighted() == nullptr);
+
+    access.call_handle_spool_edit_save();
+    CHECK(access.working_info().material == "SILK");
+    CHECK(access.working_info().brand == "Generic");
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "header Save shows on overview + spool-edit, hides on picker/color",
+                 "[ams_edit_overlay][views]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    auto* hide_subj = lv_xml_get_subject(nullptr, "ams_edit_save_hidden");
+    REQUIRE(hide_subj != nullptr);
+    auto* save_dis = lv_xml_get_subject(nullptr, "ams_edit_save_disabled");
+    REQUIRE(save_dis != nullptr);
+    REQUIRE(lv_subject_get_int(hide_subj) == 0); // overview: visible
+
+    access.call_set_view(AmsEditOverlay::kViewSpoolPicker);
+    REQUIRE(lv_subject_get_int(hide_subj) == 1); // picker: hidden
+
+    // Spool-edit: Save is VISIBLE and ENABLED even though nothing is dirty
+    // (edits live in widgets, not staged into working_info_).
+    access.call_set_view(AmsEditOverlay::kViewSpoolEdit);
+    REQUIRE(lv_subject_get_int(hide_subj) == 0);
+    REQUIRE_FALSE(access.is_dirty());
+    CHECK(lv_subject_get_int(save_dis) == 0);
+
+    access.call_set_view(AmsEditOverlay::kViewColor);
+    REQUIRE(lv_subject_get_int(hide_subj) == 1); // color: hidden
+
+    access.call_set_view(AmsEditOverlay::kViewOverview);
+    REQUIRE(lv_subject_get_int(hide_subj) == 0);
+    // Overview: dirty-gated — a clean slot keeps Save disabled.
+    CHECK(lv_subject_get_int(save_dis) == 1);
+
+    close_editor_overlay();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "header Save on spool-edit finishes and closes for an untracked slot",
+                 "[ams_edit_overlay][spool_edit][header_save]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    // No Spoolman -> the commit path skips any remote save and closes locally.
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 0);
+
+    bool fired = false;
+    AmsEditOverlay::EditResult captured;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr,
+                                  [&](const AmsEditOverlay::EditResult& r) {
+                                      fired = true;
+                                      captured = r;
+                                  }));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolEdit);
+
+    // Stage a color + weight edit in the spool-edit widgets.
+    access.set_details_color(0x123456);
+    lv_obj_t* remaining = access.widget("detail_field_remaining");
+    lv_obj_t* spool_weight = access.widget("detail_field_spool_weight");
+    REQUIRE(remaining != nullptr);
+    REQUIRE(spool_weight != nullptr);
+    lv_textarea_set_text(remaining, "654");
+    lv_textarea_set_text(spool_weight, "987");
+
+    // Header Save on spool-edit: applies the staged edits, then finishes + closes.
+    access.call_handle_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(fired);
+    CHECK(captured.saved);
+    CHECK(captured.slot_info.color_rgb == 0x123456);
+    CHECK(captured.slot_info.remaining_weight_g == Catch::Approx(654.0f));
+    CHECK(captured.slot_info.total_weight_g == Catch::Approx(987.0f));
+    CHECK(captured.slot_info.spoolman_id == 0); // stayed untracked
+
+    // Editor closed itself (go_back inside close_editor) — just settle the queue.
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "tracked spool-edit header Save PATCHes logistics then commits and closes once",
+                 "[ams_edit_overlay][spool_edit][header_save]") {
+    // Task #12 seam: a tracked slot's header Save on the spool-edit view runs
+    // the logistics PATCH (via the MoonrakerAPIMock, whose update callbacks fire
+    // synchronously), then finishes through commit_and_close(). Assert the PATCH
+    // landed and completion fired EXACTLY once — a blocking identity-confirm
+    // modal or a double commit would leave fire_count != 1.
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    // Seed the tracked spool so enter_spool_edit's fetch populates the logistics
+    // fields from a known baseline (price 19.99).
+    SpoolInfo seed;
+    seed.id = 7;
+    seed.filament_id = 3;
+    seed.vendor = "Generic";
+    seed.material = "PLA";
+    seed.color_name = "Navy";
+    seed.color_hex = "#112233";
+    seed.price = 19.99;
+    seed.remaining_weight_g = 500.0;
+    seed.spool_weight_g = 200.0;
+    seed.initial_weight_g = 1000.0;
+    api.spoolman_mock().get_mock_spools().push_back(seed);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    SlotInfo slot;
+    slot.slot_index = 0;
+    slot.spoolman_id = 7;
+    slot.spoolman_filament_id = 3;
+    slot.brand = "Generic";
+    slot.material = "PLA";
+    slot.spool_name = "Generic PLA";
+    slot.color_rgb = 0x112233;
+    slot.color_name = "Navy";
+    slot.total_weight_g = 1000.0f;
+    slot.remaining_weight_g = 500.0f;
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    int fire_count = 0;
+    AmsEditOverlay::EditResult captured;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, &api,
+                                  [&](const AmsEditOverlay::EditResult& r) {
+                                      fire_count++;
+                                      captured = r;
+                                  }));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain(); // applies the async Spoolman logistics fetch
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolEdit);
+
+    // Managed slot -> Save-to-Spoolman toggle defaults ON (stays tracked).
+    lv_obj_t* toggle = access.widget("save_to_spoolman_switch");
+    REQUIRE(toggle != nullptr);
+    REQUIRE(lv_obj_has_state(toggle, LV_STATE_CHECKED));
+
+    // Logistics-only edit: bump the price. Identity (material/color) untouched,
+    // so no identity-confirm modal should interpose.
+    lv_obj_t* price = access.widget("detail_field_price");
+    REQUIRE(price != nullptr);
+    lv_textarea_set_text(price, "29.99");
+
+    access.call_handle_save(); // header Save on spool-edit -> finish=true
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Single completion fire, marked saved.
+    CHECK(fire_count == 1);
+    CHECK(captured.saved);
+    CHECK(captured.slot_info.spoolman_id == 7); // stayed tracked
+
+    // The logistics PATCH reached Spoolman with the new price.
+    const auto& updates = api.spoolman_mock().spool_updates;
+    bool price_patched = false;
+    for (const auto& u : updates) {
+        if (u.patch.contains("price") &&
+            std::abs(u.patch["price"].get<double>() - 29.99) < 0.001) {
+            price_patched = true;
+        }
+    }
+    CHECK(price_patched);
+
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "weightless slot opens clean — no fabricated weights",
+                 "[ams_edit_overlay][dirty]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    show_overlay_for_mock_slot_without_weights(*this); // SlotInfo with total/remaining = -1
+    access.call_update_ui();
+
+    REQUIRE_FALSE(access.is_dirty());
+    auto* save_dis = lv_xml_get_subject(nullptr, "ams_edit_save_disabled");
+    REQUIRE(save_dis != nullptr);
+    REQUIRE(lv_subject_get_int(save_dis) == 1);          // Save stays disabled
+    REQUIRE(access.working_info().total_weight_g <= 0);  // untouched
+    REQUIRE(access.working_info().remaining_weight_g <= 0); // untouched
+
+    close_editor_overlay();
+}
+
+TEST_CASE("build_spool_patches splits spool-level vs filament-level fields",
+          "[ams_edit_overlay][spool_details]") {
+    SpoolInfo original;
+    original.id = 42;
+    original.filament_id = 7;
+    original.remaining_weight_g = 500.0;
+    original.spool_weight_g = 140.0;
+    original.price = 19.99;
+    original.lot_nr = "LOT-A";
+    original.location = "Shelf A";
+    original.comment = "";
+    original.color_hex = "#FF0000";
+
+    SpoolInfo edited = original;
+    edited.remaining_weight_g = 450.0;
+    edited.spool_weight_g = 200.0;
+    edited.price = 24.99;
+    edited.lot_nr = "LOT-B";
+    edited.location = "Shelf B";
+    edited.comment = "dried 4h";
+    edited.color_hex = "#00FF00";
+
+    nlohmann::json spool_patch;
+    nlohmann::json filament_patch;
+    AmsEditOverlayViewTestAccess::build_spool_patches(original, edited, spool_patch,
+                                                      filament_patch);
+
+    CHECK(spool_patch["remaining_weight"] == Catch::Approx(450.0));
+    CHECK(spool_patch["price"] == Catch::Approx(24.99));
+    CHECK(spool_patch["lot_nr"] == "LOT-B");
+    CHECK(spool_patch["location"] == "Shelf B");
+    CHECK(spool_patch["comment"] == "dried 4h");
+    CHECK(spool_patch.count("spool_weight") == 0);
+
+    CHECK(filament_patch["spool_weight"] == Catch::Approx(200.0));
+    CHECK(filament_patch["color_hex"] == "#00FF00");
+    CHECK(filament_patch.count("remaining_weight") == 0);
+
+    // No changes -> both empty
+    nlohmann::json empty_spool;
+    nlohmann::json empty_filament;
+    AmsEditOverlayViewTestAccess::build_spool_patches(original, original, empty_spool,
+                                                      empty_filament);
+    CHECK(empty_spool.empty());
+    CHECK(empty_filament.empty());
+}
+
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "ams edit overlay reclaims its widget tree on close and rebuilds on reopen",
+                 "[ams_edit_overlay][lifecycle]") {
+    // destroy-on-close: the overlay is large (~180 widgets) and opened only to
+    // edit a spool, so its tree is torn down on close and transparently rebuilt
+    // on the next open (memory reclaim for 111MB devices). Exercises a double
+    // open/close cycle and the picker-entry path. Animations off so the close
+    // callback runs synchronously and teardown is deterministic.
+    DisplaySettingsManager::instance().set_animations_enabled(false);
+
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+    SpoolInfo linked;
+    linked.id = 7;
+    linked.filament_id = 3;
+    linked.vendor = "Bambu Lab";
+    linked.material = "ASA";
+    linked.color_hex = "8A949E";
+    api.spoolman_mock().get_mock_spools().push_back(linked);
+
+    auto* subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(subj != nullptr);
+    lv_subject_set_int(subj, 1);
+    get_printer_state().set_spoolman_available(true);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    auto& overlay = get_ams_edit_overlay();
+
+    // --- Cycle 1: open ---
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    lv_obj_t* root1 = overlay.get_root();
+    REQUIRE(root1 != nullptr);
+    REQUIRE(lv_obj_is_valid(root1));
+
+    // --- Cycle 1: close → the widget tree is reclaimed (deferred delete) ---
+    NavigationManager::instance().go_back();
+    UpdateQueue::instance().drain();
+    process_lvgl(60);
+    CHECK_FALSE(lv_obj_is_valid(root1));
+
+    // --- Cycle 2: reopen → a FRESH tree (different root), fully functional ---
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    lv_obj_t* root2 = overlay.get_root();
+    REQUIRE(root2 != nullptr);
+    REQUIRE(lv_obj_is_valid(root2));
+    CHECK(root2 != root1);
+    AmsEditOverlayViewTestAccess access(overlay);
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    CHECK(access.widget("details_catalog_selector") != nullptr);
+
+    // --- Cycle 2: close ---
+    NavigationManager::instance().go_back();
+    UpdateQueue::instance().drain();
+    process_lvgl(60);
+    CHECK_FALSE(lv_obj_is_valid(root2));
+
+    // --- Picker-entry path (opened_on_picker_) opens + reclaims cleanly ---
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api, nullptr,
+                                  /*open_on_picker=*/true));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    lv_obj_t* root3 = overlay.get_root();
+    REQUIRE(root3 != nullptr);
+    REQUIRE(lv_obj_is_valid(root3));
+    NavigationManager::instance().go_back();
+    UpdateQueue::instance().drain();
+    process_lvgl(60);
+    CHECK_FALSE(lv_obj_is_valid(root3));
+
+    DisplaySettingsManager::instance().set_animations_enabled(true);
+    get_printer_state().set_spoolman_available(false);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "picker-entry link on an untracked slot with Spoolman available commits cleanly",
+                 "[ams_edit_overlay][filament_picker][picker][spoolman][header_save]") {
+    // Companion to the tracked-relink picker-entry test (8e23fbc23 covers
+    // A>0 -> B>0). This exercises the OTHER relink branch — 0 -> B>0 — with
+    // Spoolman AVAILABLE, so the pick runs through commit_and_close's async
+    // Spoolman seam (sync_active_spool) rather than the synchronous local-close
+    // branch the =0 picker-entry test uses. Assert: one-tap commit + close, slot
+    // linked to B, active spool set on the server, NO identity dialog, and no
+    // spurious identity PATCH (a fresh link is not an edit).
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+    get_printer_state().set_spoolman_available(true);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    bool fired = false;
+    AmsEditOverlay::EditResult captured;
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), &api,
+                                  [&](const AmsEditOverlay::EditResult& r) {
+                                      fired = true;
+                                      captured = r;
+                                  },
+                                  /*open_on_picker=*/true));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+    REQUIRE(access.view() == AmsEditOverlay::kViewSpoolPicker);
+
+    access.set_cached_spools(two_spools());
+    access.call_render_spool_list("");
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Link the untracked slot to spool #22 (eSUN PETG).
+    access.call_handle_spool_selected(22);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // No "Different filament?" confirm — a fresh link is a pure link switch.
+    CHECK(ModalStack::instance().stack_empty());
+    // Committed + closed in one step, linked to B.
+    CHECK(fired);
+    CHECK(captured.saved);
+    CHECK(captured.slot_info.spoolman_id == 22);
+    CHECK(captured.slot_info.material == "PETG");
+    // No identity/weight PATCH — linking is not editing.
+    CHECK(api.spoolman_mock().spool_updates.empty());
+    CHECK(api.spoolman_mock().filament_updates.empty());
+    // The newly linked spool is registered active on the server.
+    CHECK(api.spoolman_mock().get_mock_active_spool_id() == 22);
+
+    get_printer_state().set_spoolman_available(false);
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+}

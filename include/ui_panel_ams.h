@@ -5,7 +5,7 @@
 
 #include "ui_ams_context_menu.h"
 #include "ui_ams_detail.h"
-#include "ui_ams_edit_modal.h"
+#include "ui_ams_edit_overlay.h"
 #include "ui_ams_loading_error_modal.h"
 #include "ui_ams_selector_menu.h"
 #include "ui_ams_sidebar.h"
@@ -130,7 +130,6 @@ class AmsPanel : public PanelBase {
 
     std::unique_ptr<helix::ui::AmsContextMenu> context_menu_;      ///< Slot context menu
     std::unique_ptr<helix::ui::AmsSelectorMenu> selector_menu_;    ///< Selector/hub context menu
-    std::unique_ptr<helix::ui::AmsEditModal> edit_modal_;          ///< Edit filament modal
     std::unique_ptr<helix::ui::AmsLoadingErrorModal> error_modal_; ///< Loading error modal
     std::unique_ptr<helix::ui::AmsOperationSidebar> sidebar_;      ///< Shared sidebar component
 

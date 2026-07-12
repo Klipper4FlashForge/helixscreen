@@ -24,6 +24,7 @@
     <prop name="action_button_pad" type="string" default="#space_sm"/>
     <prop name="hide_action_button" type="string" default="true"/>
     <prop name="action_button_disabled_subject" type="string" default=""/>
+    <prop name="action_button_hidden_subject" type="string" default=""/>
     <!-- Second action button (left of primary) -->
     <prop name="action_button_2_text" type="string" default=""/>
     <prop name="action_button_2_text_tag" type="string" default=""/>
@@ -43,6 +44,7 @@
                 title="$title" title_tag="$title_tag" action_button_text="$action_button_text" action_button_text_tag="$action_button_text_tag" hide_action_button="$hide_action_button"
                 action_button_callback="$action_button_callback" action_button_height="$action_button_height"
                 action_button_pad="$action_button_pad" action_button_disabled_subject="$action_button_disabled_subject"
+                action_button_hidden_subject="$action_button_hidden_subject"
                 action_button_2_text="$action_button_2_text" action_button_2_text_tag="$action_button_2_text_tag" action_button_2_bg_color="$action_button_2_bg_color"
                 action_button_2_callback="$action_button_2_callback" hide_action_button_2="$hide_action_button_2"
                 back_button_callback="$back_button_callback"/>

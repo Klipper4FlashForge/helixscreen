@@ -363,6 +363,7 @@
   <translation tag="Chamber heating to %d°C..." en="Chamber heating to %d°C..."/>
   <translation tag="Chamber target set to {}°C" en="Chamber target set to {}°C"/>
   <translation tag="Change" en="Change"/>
+  <translation tag="Change Filament" en="Change Filament"/>
   <translation tag="Change LED color based on printer state" en="Change LED color based on printer state"/>
   <translation tag="Change PIN" en="Change PIN"/>
   <translation tag="Change Printer Host" en="Change Printer Host"/>
@@ -584,6 +585,7 @@
   <translation tag="Device name" en="Device name"/>
   <translation tag="Device name is required" en="Device name is required"/>
   <translation tag="Device: " en="Device: "/>
+  <translation tag="Different filament?" en="Different filament?"/>
   <translation tag="Disable" en="Disable"/>
   <translation tag="Disable Motors?" en="Disable Motors?"/>
   <translation tag="Disable the security PIN" en="Disable the security PIN"/>
@@ -1370,6 +1372,7 @@
   <translation tag="Not detected" en="Not detected"/>
   <translation tag="Not found (strobe only)" en="Not found (strobe only)"/>
   <translation tag="Not found (use phone app)" en="Not found (use phone app)"/>
+  <translation tag="Not in your spools? Set it up" en="Not in your spools? Set it up"/>
   <translation tag="Not yet calibrated" en="Not yet calibrated"/>
   <translation tag="Notes" en="Notes"/>
   <translation tag="Notes (optional)" en="Notes (optional)"/>
@@ -1805,6 +1808,7 @@
   <translation tag="Save Z-Offset?" en="Save Z-Offset?"/>
   <translation tag="Save changes to persist them across restarts?" en="Save changes to persist them across restarts?"/>
   <translation tag="Save failed: {}" en="Save failed: {}"/>
+  <translation tag="Save to Spoolman" en="Save to Spoolman"/>
   <translation tag="Saved Z-Offset" en="Saved Z-Offset"/>
   <translation tag="Saved to crash_report.txt (QR not available)" en="Saved to crash_report.txt (QR not available)"/>
   <translation tag="Saved to printer configuration." en="Saved to printer configuration."/>
@@ -2109,6 +2113,7 @@
   <translation tag="This file was sliced for {} but {} is loaded." en="This file was sliced for {} but {} is loaded."/>
   <translation tag="This is exactly the data that will be sent" en="This is exactly the data that will be sent"/>
   <translation tag="This is what data would be sent if enabled" en="This is what data would be sent if enabled"/>
+  <translation tag="This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?" en="This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?"/>
   <translation tag="This may take up to 30 seconds" en="This may take up to 30 seconds"/>
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." en="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps."/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" en="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?"/>
@@ -2234,6 +2239,7 @@
   <translation tag="Update Channel" en="Update Channel"/>
   <translation tag="Update Failed" en="Update Failed"/>
   <translation tag="Update Success" en="Update Success"/>
+  <translation tag="Update anyway" en="Update anyway"/>
   <translation tag="Update installed!" en="Update installed!"/>
   <translation tag="Update your security PIN" en="Update your security PIN"/>
   <translation tag="Updating Configuration..." en="Updating Configuration..."/>

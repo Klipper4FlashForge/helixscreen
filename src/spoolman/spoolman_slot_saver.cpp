@@ -50,6 +50,35 @@ ChangeSet SpoolmanSlotSaver::detect_changes(const SlotInfo& original, const Slot
     return changes;
 }
 
+void SpoolmanSlotSaver::build_spool_patches(const SpoolInfo& original, const SpoolInfo& edited,
+                                            nlohmann::json& spool_patch,
+                                            nlohmann::json& filament_patch) {
+    // Spool-level fields (per-spool in Spoolman API)
+    if (std::abs(edited.remaining_weight_g - original.remaining_weight_g) > 0.1) {
+        spool_patch["remaining_weight"] = edited.remaining_weight_g;
+    }
+    if (std::abs(edited.price - original.price) > 0.001) {
+        spool_patch["price"] = edited.price;
+    }
+    if (edited.lot_nr != original.lot_nr) {
+        spool_patch["lot_nr"] = edited.lot_nr;
+    }
+    if (edited.comment != original.comment) {
+        spool_patch["comment"] = edited.comment;
+    }
+    if (edited.location != original.location) {
+        spool_patch["location"] = edited.location;
+    }
+
+    // Filament-level fields (affect all spools of this filament definition)
+    if (std::abs(edited.spool_weight_g - original.spool_weight_g) > 0.1) {
+        filament_patch["spool_weight"] = edited.spool_weight_g;
+    }
+    if (edited.color_hex != original.color_hex) {
+        filament_patch["color_hex"] = edited.color_hex;
+    }
+}
+
 std::string SpoolmanSlotSaver::color_to_hex(uint32_t rgb) {
     char buf[8];
     std::snprintf(buf, sizeof(buf), "%06X", rgb & 0xFFFFFF);

@@ -408,6 +408,7 @@ translations:
   Change LED color based on printer state: Change LED color based on printer state
   Change PIN: Change PIN
   Change Printer Host: Change Printer Host
+  Change Filament: Change Filament
   Changes apply immediately. Adjust during print for tuning.: Changes apply immediately.
     Adjust during print for tuning.
   Changes are temporary and reset on printer reboot: Changes are temporary and reset
@@ -647,6 +648,7 @@ translations:
   Device name: Device name
   Device name is required: Device name is required
   'Device: ': 'Device: '
+  Different filament?: Different filament?
   Disable: Disable
   Disable Motors?: Disable Motors?
   Disable the security PIN: Disable the security PIN
@@ -1525,6 +1527,7 @@ translations:
   Not detected: Not detected
   Not found (strobe only): Not found (strobe only)
   Not found (use phone app): Not found (use phone app)
+  Not in your spools? Set it up: Not in your spools? Set it up
   Not yet calibrated: Not yet calibrated
   Notes: Notes
   Notes (optional): Notes (optional)
@@ -2005,6 +2008,7 @@ translations:
   Save changes to persist them across restarts?: Save changes to persist them across
     restarts?
   'Save failed: {}': 'Save failed: {}'
+  Save to Spoolman: Save to Spoolman
   Saved Z-Offset: Saved Z-Offset
   Saved to crash_report.txt (QR not available): Saved to crash_report.txt (QR not
     available)
@@ -2378,6 +2382,8 @@ translations:
   This is exactly the data that will be sent: This is exactly the data that will be
     sent
   This is what data would be sent if enabled: This is what data would be sent if enabled
+  This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?: This
+    looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?
   This may take up to 30 seconds: This may take up to 30 seconds
   ? This plugin lets HelixScreen control print start options like bed mesh and QGL.
     Once installed, use Configure PRINT_START below to enable optional steps.
@@ -2539,6 +2545,7 @@ translations:
   Update Channel: Update Channel
   Update Failed: Update Failed
   Update Success: Update Success
+  Update anyway: Update anyway
   Update installed!: Update installed!
   Update your security PIN: Update your security PIN
   Updating Configuration...: Updating Configuration...

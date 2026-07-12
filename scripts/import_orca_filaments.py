@@ -197,6 +197,15 @@ def _merge_cfs_seed(products, cfs_seed):
     product (Orca temps win) and drop the seed copy. Seed entries with no Orca match
     (CFS-only variants like "Generic TPU 64D", or Creality "CR-*") are kept as
     standalone products, still carrying their codes.
+
+    The same standalone-append path also carries `type` values that name a firmware
+    material whitelist but have no Orca profile at all — e.g. "Generic Silk PLA"
+    (type "SILK") for the AD5X stock firmware whitelist. Orca profiles silk PLA as
+    plain "PLA" with a display name, so there's no Orca product to merge into; the
+    seed entry is the sole source of a selectable product for that type. Regenerating
+    via `make regen-filaments` re-derives assets/filaments.json from Orca + this seed,
+    so hand-edits to assets/filaments.json alone would be wiped — the seed here is
+    what makes the entry durable across regen.
     """
     def _name_key(s):
         return re.sub(r"[^a-z0-9]+", "", s.lower())  # fold "PLA-Silk" == "PLA Silk"

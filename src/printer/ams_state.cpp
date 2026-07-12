@@ -378,6 +378,16 @@ void AmsState::init_subjects(bool register_xml) {
             lv_xml_register_subject(nullptr, name_buf, &slot_remaining_[i]);
         }
 
+        // Per-slot fill percent (SlotInfo::display_fill_pct encoding: 0-100, -1
+        // = unknown). Observed by the ams_slot widget so spool fill renders from
+        // state on every panel. -1 initial → "no data yet, leave render as-is".
+        lv_subject_init_int(&slot_fills_[i], -1);
+        subjects_.register_subject(&slot_fills_[i]);
+        if (register_xml) {
+            snprintf(name_buf, sizeof(name_buf), "ams_slot_%d_fill", i);
+            lv_xml_register_subject(nullptr, name_buf, &slot_fills_[i]);
+        }
+
         // Per-slot LIVE state subjects (path segment, toolhead-present, active-loaded)
         lv_subject_init_int(&slot_segments_[i], static_cast<int>(PathSegment::NONE));
         subjects_.register_subject(&slot_segments_[i]);
@@ -830,6 +840,13 @@ lv_subject_t* AmsState::get_slot_remaining_subject(int slot_index) {
     return &slot_remaining_[slot_index];
 }
 
+lv_subject_t* AmsState::get_slot_fill_subject(int slot_index) {
+    if (slot_index < 0 || slot_index >= MAX_SLOTS) {
+        return nullptr;
+    }
+    return &slot_fills_[slot_index];
+}
+
 // Per-slot LIVE state subjects. These are static-array (singleton-lifetime)
 // subjects, so the (slot, SubjectLifetime&) overloads return an EMPTY lifetime
 // token — the documented contract for static subjects (ui_observer_guard.h),
@@ -967,23 +984,90 @@ lv_subject_t* AmsState::get_slot_status_subject(int backend_index, int slot_inde
     return &subs.statuses[slot_index];
 }
 
+lv_subject_t* AmsState::get_slot_color_subject(int backend_index, int slot_index,
+                                               SubjectLifetime& lifetime) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    if (backend_index == 0) {
+        lifetime.reset(); // static subject — empty (always-alive) token
+        return get_slot_color_subject(slot_index);
+    }
+    int sec_idx = backend_index - 1;
+    if (sec_idx < 0 || sec_idx >= static_cast<int>(secondary_slot_subjects_.size())) {
+        lifetime.reset();
+        return nullptr;
+    }
+    lifetime = secondary_slot_subjects_[sec_idx].lifetime;
+    return get_slot_color_subject(backend_index, slot_index);
+}
+
+lv_subject_t* AmsState::get_slot_status_subject(int backend_index, int slot_index,
+                                                SubjectLifetime& lifetime) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    if (backend_index == 0) {
+        lifetime.reset(); // static subject — empty (always-alive) token
+        return get_slot_status_subject(slot_index);
+    }
+    int sec_idx = backend_index - 1;
+    if (sec_idx < 0 || sec_idx >= static_cast<int>(secondary_slot_subjects_.size())) {
+        lifetime.reset();
+        return nullptr;
+    }
+    lifetime = secondary_slot_subjects_[sec_idx].lifetime;
+    return get_slot_status_subject(backend_index, slot_index);
+}
+
+lv_subject_t* AmsState::get_slot_fill_subject(int backend_index, int slot_index,
+                                              SubjectLifetime& lifetime) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    if (backend_index == 0) {
+        lifetime.reset(); // static subject — empty (always-alive) token
+        return get_slot_fill_subject(slot_index);
+    }
+    int sec_idx = backend_index - 1;
+    if (sec_idx < 0 || sec_idx >= static_cast<int>(secondary_slot_subjects_.size())) {
+        lifetime.reset();
+        return nullptr;
+    }
+    auto& subs = secondary_slot_subjects_[sec_idx];
+    if (slot_index < 0 || slot_index >= subs.slot_count) {
+        lifetime.reset();
+        return nullptr;
+    }
+    lifetime = subs.lifetime;
+    return &subs.fills[slot_index];
+}
+
 void AmsState::BackendSlotSubjects::init(int count) {
     slot_count = count;
     colors.resize(count);
     statuses.resize(count);
+    fills.resize(count);
     for (int i = 0; i < count; ++i) {
         lv_subject_init_int(&colors[i], static_cast<int>(AMS_DEFAULT_SLOT_COLOR));
         lv_subject_init_int(&statuses[i], static_cast<int>(SlotStatus::UNKNOWN));
+        lv_subject_init_int(&fills[i], -1);
     }
+    // Fresh lifetime token: observers bound via the token'd accessors expire
+    // when deinit() invalidates it on backend rediscovery.
+    lifetime = std::make_shared<bool>(true);
 }
 
 void AmsState::BackendSlotSubjects::deinit() {
+    // Invalidate the lifetime token FIRST so any live observer's weak_ptr is
+    // dead before the subjects it points at are freed (#705 ordering).
+    if (lifetime) {
+        *lifetime = false;
+    }
+    lifetime.reset();
     for (auto& c : colors)
         lv_subject_deinit(&c);
     for (auto& s : statuses)
         lv_subject_deinit(&s);
+    for (auto& f : fills)
+        lv_subject_deinit(&f);
     colors.clear();
     statuses.clear();
+    fills.clear();
     slot_count = 0;
 }
 
@@ -1013,6 +1097,7 @@ void AmsState::sync_backend(int backend_index) {
         if (slot) {
             lv_subject_set_int(&subs.colors[i], static_cast<int>(slot->color_rgb));
             lv_subject_set_int(&subs.statuses[i], static_cast<int>(slot->status));
+            lv_subject_set_int(&subs.fills[i], slot->display_fill_pct());
         }
     }
 
@@ -1051,6 +1136,7 @@ void AmsState::update_slot_for_backend(int backend_index, int slot_index) {
     if (slot.slot_index >= 0) {
         lv_subject_set_int(&subs.colors[slot_index], static_cast<int>(slot.color_rgb));
         lv_subject_set_int(&subs.statuses[slot_index], static_cast<int>(slot.status));
+        lv_subject_set_int(&subs.fills[slot_index], slot.display_fill_pct());
 
         spdlog::trace("[AMS State] Updated backend {} slot {} - color=0x{:06X}, status={}",
                       backend_index, slot_index, slot.color_rgb,
@@ -1230,6 +1316,15 @@ void AmsState::sync_from_backend() {
             int new_status = static_cast<int>(slot->status);
             if (lv_subject_get_int(&slot_statuses_[i]) != new_status) {
                 lv_subject_set_int(&slot_statuses_[i], new_status);
+                any_slot_changed = true;
+            }
+
+            // Fill percent (canonical display_fill_pct encoding). The ams_slot
+            // widget observes this — so spool fill renders from state on every
+            // panel, not just the ones that remember to push it imperatively.
+            int new_fill = slot->display_fill_pct();
+            if (lv_subject_get_int(&slot_fills_[i]) != new_fill) {
+                lv_subject_set_int(&slot_fills_[i], new_fill);
                 any_slot_changed = true;
             }
 

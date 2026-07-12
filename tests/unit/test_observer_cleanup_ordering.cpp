@@ -890,14 +890,14 @@ TEST_CASE_METHOD(LVGLTestFixture, "HeatingIconAnimator pattern: double detach is
 }
 
 // ============================================================================
-// AmsEditModal thread safety pattern: async completion via queue_update
+// AmsEditOverlay thread safety pattern: async completion via queue_update
 //
 // The fix defers fire_completion() through ui_queue_update() so that
 // Spoolman async callbacks don't directly invoke LVGL-touching code
 // from a background thread. This test verifies the deferral pattern.
 // ============================================================================
 
-TEST_CASE_METHOD(LVGLTestFixture, "AmsEditModal pattern: async callback defers via queue_update",
+TEST_CASE_METHOD(LVGLTestFixture, "AmsEditOverlay pattern: async callback defers via queue_update",
                  "[observer_cleanup][crash_hardening][ams_modal]") {
     // Simulate the pattern: async callback captures state and defers work
     int completion_count = 0;

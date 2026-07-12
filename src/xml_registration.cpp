@@ -6,6 +6,7 @@
 #include "ui_ams_current_tool.h"
 #include "ui_ams_device_operations_overlay.h"
 #include "ui_ams_device_section_detail_overlay.h"
+#include "ui_ams_edit_overlay.h"
 #include "ui_button.h"
 #include "ui_carousel.h"
 #include "ui_confetti.h"
@@ -158,6 +159,41 @@ static void register_color_picker_component_constants() {
 }
 
 /**
+ * Register responsive constants into the color_swatch_grid component scope.
+ * Must be called AFTER register_xml("components/color_swatch_grid.xml").
+ * Swatch size follows the color_picker ladder (24/28/32 by screen height);
+ * grid width is computed as 6 columns so the 30 swatches always form 5 even
+ * rows at every breakpoint.
+ */
+static void register_color_swatch_grid_constants() {
+    lv_display_t* display = lv_display_get_default();
+    int32_t ver_res = lv_display_get_vertical_resolution(display);
+
+    int32_t swatch = ver_res <= UI_BREAKPOINT_MICRO_MAX   ? 24
+                     : ver_res <= UI_BREAKPOINT_SMALL_MAX ? 28
+                                                          : 32;
+    int32_t gap = ver_res <= UI_BREAKPOINT_MICRO_MAX ? 6 : 8;
+    constexpr int32_t cols = 6;
+    int32_t width = cols * swatch + (cols - 1) * gap;
+
+    static char swatch_buf[8];
+    static char gap_buf[8];
+    static char width_buf[8];
+    snprintf(swatch_buf, sizeof(swatch_buf), "%d", swatch);
+    snprintf(gap_buf, sizeof(gap_buf), "%d", gap);
+    snprintf(width_buf, sizeof(width_buf), "%d", width);
+
+    lv_xml_component_scope_t* scope = lv_xml_component_get_scope("color_swatch_grid");
+    if (scope) {
+        lv_xml_register_const(scope, "grid_swatch_size", swatch_buf);
+        lv_xml_register_const(scope, "grid_gap", gap_buf);
+        lv_xml_register_const(scope, "grid_width", width_buf);
+        spdlog::debug("[SwatchGrid] Registered swatch={} gap={} width={} for height {}px",
+                      swatch_buf, gap_buf, width_buf, ver_res);
+    }
+}
+
+/**
  * Toggle password visibility on a sibling textarea.
  * Finds "password_input" by walking up to the shared parent container,
  * then swaps the eye/eye_off icon on the button.
@@ -271,16 +307,21 @@ void register_xml_components() {
     // NOTE: Other AMS widgets (ams_slot, filament_path_canvas) are
     // registered lazily in ui_panel_ams.cpp when the AMS panel is first accessed
 
-    // AMS edit modal (MUST be after spool_canvas and hsv_picker registration)
+    // AMS slot editor (MUST be after spool_canvas and hsv_picker registration)
     // Registered globally so FilamentPanel can use it without AMS panel lazy init
     register_xml("spoolman_spool_item.xml");
-    register_xml("ams_edit_modal.xml");
+    // AMS slot editor (single overlay, internal views — spec §13)
+    helix::ui::get_ams_edit_overlay().register_callbacks();
+    register_xml("components/color_swatch_grid.xml");
+    register_color_swatch_grid_constants();
+    register_xml("ams_edit_overlay.xml");
 
     // Spoolman components (MUST be after spool_canvas registration)
     register_xml("spoolman_spool_row.xml");
     register_xml("spoolman_context_menu.xml");
     register_xml("spoolman_edit_modal.xml");
     register_xml("spoolman_panel.xml");
+    register_xml("components/filament_catalog_selector.xml");
     register_xml("components/filament_catalog_picker.xml");
 
     // Spool wizard components

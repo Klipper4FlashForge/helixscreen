@@ -5,7 +5,7 @@
 
 #include "ui_ams_context_menu.h"
 #include "ui_ams_detail.h"
-#include "ui_ams_edit_modal.h"
+#include "ui_ams_edit_overlay.h"
 #include "ui_ams_sidebar.h"
 #include "ui_bypass_spool_widget.h"
 #include "ui_observer_guard.h"
@@ -133,7 +133,6 @@ class AmsOverviewPanel : public PanelBase {
 
     // === Slot Interaction ===
     std::unique_ptr<helix::ui::AmsContextMenu> context_menu_; ///< Slot context menu (lazy init)
-    std::unique_ptr<helix::ui::AmsEditModal> edit_modal_;     ///< Edit modal (lazy init)
 
     void handle_detail_slot_tap(int global_slot_index, lv_point_t click_pt);
     void show_detail_context_menu(int slot_index, lv_obj_t* near_widget, lv_point_t click_pt);

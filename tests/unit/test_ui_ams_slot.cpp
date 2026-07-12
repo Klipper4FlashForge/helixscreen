@@ -145,37 +145,62 @@ TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: get_index returns -1 for non-ams_
     lv_obj_delete(btn);
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: set_fill_level stores value",
-                 "[ui][ams_slot][api]") {
+TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: out-of-range fill subject value clamps to full",
+                 "[ui][ams_slot][fill]") {
+    // The public float set_fill_level() API was removed (dead — the widget
+    // renders fill only from its per-slot subject). The clamp it used to test
+    // now lives on the subject apply path (apply_slot_fill_pct clamps to 0-100),
+    // so exercise it through the subject: a percent above 100 (e.g. a bad
+    // remaining>total ratio) renders full, not overfilled. The empty end and the
+    // -1 "no data" skip are covered by "fill renders from subject without panel
+    // push".
     ui_ams_slot_register();
+    AmsState::instance().init_subjects(false);
+
+    lv_subject_t* fill = AmsState::instance().get_slot_fill_subject(0);
+    REQUIRE(fill != nullptr);
+    lv_subject_set_int(fill, 150); // > 100
 
     lv_obj_t* slot = create_ams_slot(test_screen(), 0);
     REQUIRE(slot != nullptr);
-
-    // Set fill level to 75%
-    ui_ams_slot_set_fill_level(slot, 0.75f);
-
-    // Get should return same value
-    float level = ui_ams_slot_get_fill_level(slot);
-    REQUIRE(level == Catch::Approx(0.75f));
+    // setup_slot_observers applies the current subject value synchronously.
+    CHECK(ui_ams_slot_get_fill_level(slot) == Catch::Approx(1.0f));
 
     lv_obj_delete(slot);
+    lv_subject_set_int(fill, -1); // leave neutral for other tests
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: fill_level clamps to 0.0-1.0 range",
-                 "[ui][ams_slot][api]") {
+// Structural regression guard for the "spool always 100% full" bug: the widget
+// must render fill from its per-slot subject WITHOUT any panel pushing fill
+// imperatively. This is what makes AmsOverviewPanel's unit-detail spools
+// correct — they never pushed fill imperatively.
+TEST_CASE_METHOD(LVGLUITestFixture, "ams_slot: fill renders from subject without panel push",
+                 "[ui][ams_slot][fill]") {
     ui_ams_slot_register();
+    // init_subjects is idempotent on the shared singleton; register_xml=false is
+    // fine because the widget observes via the C++ accessor, not an XML name.
+    AmsState::instance().init_subjects(false);
 
+    // Write the per-slot fill subject exactly as sync_from_backend would (50%).
+    lv_subject_t* fill = AmsState::instance().get_slot_fill_subject(0);
+    REQUIRE(fill != nullptr);
+    lv_subject_set_int(fill, 50);
+
+    // Creating the widget runs setup_slot_observers, which applies the CURRENT
+    // subject value synchronously — no panel touches the fill level.
     lv_obj_t* slot = create_ams_slot(test_screen(), 0);
     REQUIRE(slot != nullptr);
+    CHECK(ui_ams_slot_get_fill_level(slot) == Catch::Approx(0.50f));
 
-    // Set negative value - should clamp to 0
-    ui_ams_slot_set_fill_level(slot, -0.5f);
-    REQUIRE(ui_ams_slot_get_fill_level(slot) >= 0.0f);
+    // A later change flows through the observer (deferred via queue_update, #82).
+    lv_subject_set_int(fill, 25);
+    process_lvgl(50);
+    CHECK(ui_ams_slot_get_fill_level(slot) == Catch::Approx(0.25f));
 
-    // Set value > 1.0 - should clamp to 1.0
-    ui_ams_slot_set_fill_level(slot, 1.5f);
-    REQUIRE(ui_ams_slot_get_fill_level(slot) <= 1.0f);
+    // -1 ("no data") must leave the current fill untouched.
+    lv_subject_set_int(fill, -1);
+    process_lvgl(50);
+    CHECK(ui_ams_slot_get_fill_level(slot) == Catch::Approx(0.25f));
 
     lv_obj_delete(slot);
 }
@@ -782,8 +807,8 @@ TEST_CASE("SlotInfo::display_fill_level renders ghost lanes empty, present lanes
           "[ams][slot][1071]") {
     // Ghost lane: EMPTY status, but a Spoolman link + material were RETAINED
     // across an eject (#1071), so has_filament_info() is true. The fill bar must
-    // read empty (0), NOT the 75% metadata fallback — otherwise an ejected lane
-    // renders ~75% full (#1071 BUG-1).
+    // read empty (0), NOT the 50% metadata fallback — otherwise an ejected lane
+    // renders half full (#1071 BUG-1).
     SlotInfo ghost;
     ghost.status = SlotStatus::EMPTY;
     ghost.material = "PLA";
@@ -803,13 +828,14 @@ TEST_CASE("SlotInfo::display_fill_level renders ghost lanes empty, present lanes
     REQUIRE(wfill.has_value());
     CHECK(*wfill == Catch::Approx(0.25f));
 
-    // Present lane, metadata but no remaining weight (e.g. Snapmaker RFID): 75%.
+    // Present lane, metadata but no remaining weight (e.g. Snapmaker RFID): 50%
+    // (indeterminate half-bar, not misleadingly-full).
     SlotInfo meta;
     meta.status = SlotStatus::AVAILABLE;
     meta.material = "PETG";
     auto mfill = meta.display_fill_level();
     REQUIRE(mfill.has_value());
-    CHECK(*mfill == Catch::Approx(0.75f));
+    CHECK(*mfill == Catch::Approx(0.50f));
 
     // Present lane, no info at all: leave the bar unchanged (nullopt).
     SlotInfo bare;

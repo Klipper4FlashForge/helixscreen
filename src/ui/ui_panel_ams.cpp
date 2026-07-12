@@ -110,7 +110,7 @@ static void ensure_ams_widgets_registered() {
     helix::ui::get_ams_environment_overlay().register_callbacks();
 
     // Context menu callbacks registered by helix::ui::AmsContextMenu class
-    // Edit modal and color picker callbacks registered by helix::ui::AmsEditModal class
+    // Slot editor and color picker callbacks registered by helix::ui::AmsEditOverlay class
 
     // Register XML components
     // NOTE: Old AMS settings panels removed - Device Operations overlay is registered in
@@ -122,7 +122,7 @@ static void ensure_ams_widgets_registered() {
     lv_xml_register_component_from_file("A:ui_xml/ams_panel.xml");
     lv_xml_register_component_from_file("A:ui_xml/ams_context_menu.xml");
     lv_xml_register_component_from_file("A:ui_xml/ams_selector_menu.xml");
-    // NOTE: spoolman_spool_item.xml and ams_edit_modal.xml are registered
+    // NOTE: spoolman_spool_item.xml and ams_edit_overlay.xml are registered
     // globally in xml_registration.cpp (needed by FilamentPanel without AMS lazy init)
     lv_xml_register_component_from_file("A:ui_xml/ams_loading_error_modal.xml");
     lv_xml_register_component_from_file("A:ui_xml/ams_environment_overlay.xml");
@@ -134,7 +134,7 @@ static void ensure_ams_widgets_registered() {
 
 // XML event callbacks now handled by helix::ui::AmsOperationSidebar class
 // Context menu callbacks handled by helix::ui::AmsContextMenu class
-// Edit modal callbacks handled by helix::ui::AmsEditModal class
+// Slot editor callbacks handled by helix::ui::AmsEditOverlay class
 
 // ============================================================================
 // Construction
@@ -311,7 +311,7 @@ void AmsPanel::init_subjects() {
         });
 
     // UI module subjects are now encapsulated in their respective classes:
-    // - helix::ui::AmsEditModal
+    // - helix::ui::AmsEditOverlay
     // - helix::ui::AmsColorPicker
 
     subjects_initialized_ = true;
@@ -471,7 +471,6 @@ void AmsPanel::clear_panel_reference() {
     sidebar_.reset();
     context_menu_.reset();
     selector_menu_.reset();
-    edit_modal_.reset();
     error_modal_.reset();
 
     // Nullify widget pointers BEFORE resetting observers — any cascading
@@ -1059,15 +1058,13 @@ void AmsPanel::update_slot_colors() {
                 }
             }
 
-            // Set fill level from the slot's display policy (see
-            // SlotInfo::display_fill_level): real ratio when both weights are
-            // known, 75% fallback when only metadata is present, and an empty
-            // bar for a not-present/ghost lane — which a retained Spoolman link
-            // across an eject would otherwise render as ~75% full (#1071 BUG-1).
-            // nullopt means leave the bar untouched.
-            if (auto fill = slot_info.display_fill_level()) {
-                ui_ams_slot_set_fill_level(slot_widgets_[i], *fill);
-            }
+            // Fill level is no longer pushed here: the ams_slot widget observes
+            // its own per-slot fill subject (AmsState::get_slot_fill_subject),
+            // written by sync_from_backend with the same SlotInfo::display_fill*
+            // policy (real ratio / 50% metadata fallback / empty ghost lane,
+            // #1071 BUG-1). Observing in the widget means every panel that hosts
+            // an ams_slot renders fill from state — the AmsOverviewPanel bug where
+            // unit-detail spools showed 100% full is fixed structurally.
 
             // Refresh slot to update tool badge and other dynamic state
             ui_ams_slot_refresh(slot_widgets_[i]);
@@ -1540,19 +1537,16 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
 }
 
 // ============================================================================
-// Edit Modal (delegated to helix::ui::AmsEditModal)
+// Slot Editor (delegated to helix::ui::AmsEditOverlay)
 // ============================================================================
 
 void AmsPanel::show_edit_modal(int slot_index, bool open_on_picker) {
     if (!parent_screen_) {
-        spdlog::warn("[{}] Cannot show edit modal - no parent screen", get_name());
+        spdlog::warn("[{}] Cannot show slot editor - no parent screen", get_name());
         return;
     }
 
-    // Create modal on first use (lazy initialization)
-    if (!edit_modal_) {
-        edit_modal_ = std::make_unique<helix::ui::AmsEditModal>();
-    }
+    auto& editor = helix::ui::get_ams_edit_overlay();
 
     // External spool (bypass/direct) — not managed by backend
     if (slot_index == -2) {
@@ -1561,14 +1555,16 @@ void AmsPanel::show_edit_modal(int slot_index, bool open_on_picker) {
         initial_info.slot_index = -2;
         initial_info.global_index = -2;
 
-        edit_modal_->set_completion_callback([](const helix::ui::AmsEditModal::EditResult& result) {
-            if (result.saved) {
-                AmsState::instance().set_external_spool_info(result.slot_info);
-                // bypass display update handled reactively by external_spool_observer_
-                NOTIFY_INFO(lv_tr("External spool updated"));
-            }
-        });
-        edit_modal_->show_for_slot(parent_screen_, -2, initial_info, api_, open_on_picker);
+        editor.show_for_slot(
+            parent_screen_, -2, initial_info, api_,
+            [](const helix::ui::AmsEditOverlay::EditResult& result) {
+                if (result.saved) {
+                    AmsState::instance().set_external_spool_info(result.slot_info);
+                    // bypass display update handled reactively by external_spool_observer_
+                    NOTIFY_INFO(lv_tr("External spool updated"));
+                }
+            },
+            open_on_picker);
         return;
     }
 
@@ -1581,41 +1577,40 @@ void AmsPanel::show_edit_modal(int slot_index, bool open_on_picker) {
     // Get current slot info
     SlotInfo initial_info = backend->get_slot_info(slot_index);
 
-    // Set completion callback to handle save result
-    edit_modal_->set_completion_callback([this](const helix::ui::AmsEditModal::EditResult& result) {
-        if (result.saved && result.slot_index >= 0) {
-            // Apply the edited slot info to the backend
-            AmsBackend* backend = AmsState::instance().get_backend();
-            if (backend) {
-                AmsError err = backend->set_slot_info(result.slot_index, result.slot_info);
-                if (!err.success()) {
-                    NOTIFY_ERROR("{}", err.user_msg);
-                    return;
+    editor.show_for_slot(
+        parent_screen_, slot_index, initial_info, api_,
+        [this](const helix::ui::AmsEditOverlay::EditResult& result) {
+            if (result.saved && result.slot_index >= 0) {
+                // Apply the edited slot info to the backend
+                AmsBackend* backend = AmsState::instance().get_backend();
+                if (backend) {
+                    AmsError err = backend->set_slot_info(result.slot_index, result.slot_info);
+                    if (!err.success()) {
+                        NOTIFY_ERROR("{}", err.user_msg);
+                        return;
+                    }
+
+                    // Sync Spoolman active spool if edited slot is currently loaded.
+                    // Backends like AFC only sync on physical load/unload, not UI edits.
+                    AmsState::instance().sync_active_spool_after_edit(result.slot_index,
+                                                                      result.slot_info.spoolman_id);
+
+                    AmsState::instance().sync_from_backend();
+
+                    // Force color subject re-notification so the material label
+                    // (piggybacked on the color observer) refreshes even when
+                    // only the material changed and the color stayed the same.
+                    lv_subject_t* color_sub =
+                        AmsState::instance().get_slot_color_subject(result.slot_index);
+                    if (color_sub) {
+                        lv_subject_notify(color_sub);
+                    }
+
+                    NOTIFY_INFO(lv_tr("Slot {} updated"), result.slot_index + 1);
                 }
-
-                // Sync Spoolman active spool if edited slot is currently loaded.
-                // Backends like AFC only sync on physical load/unload, not UI edits.
-                AmsState::instance().sync_active_spool_after_edit(result.slot_index,
-                                                                  result.slot_info.spoolman_id);
-
-                AmsState::instance().sync_from_backend();
-
-                // Force color subject re-notification so the material label
-                // (piggybacked on the color observer) refreshes even when
-                // only the material changed and the color stayed the same.
-                lv_subject_t* color_sub =
-                    AmsState::instance().get_slot_color_subject(result.slot_index);
-                if (color_sub) {
-                    lv_subject_notify(color_sub);
-                }
-
-                NOTIFY_INFO(lv_tr("Slot {} updated"), result.slot_index + 1);
             }
-        }
-    });
-
-    // Show the modal
-    edit_modal_->show_for_slot(parent_screen_, slot_index, initial_info, api_, open_on_picker);
+        },
+        open_on_picker);
 }
 
 void AmsPanel::show_loading_error_modal() {
