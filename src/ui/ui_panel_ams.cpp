@@ -92,10 +92,12 @@ static void ensure_ams_widgets_registered() {
     static bool env_cb_registered = false;
     if (!env_cb_registered) {
         lv_xml_register_event_cb(nullptr, "on_env_indicator_clicked", [](lv_event_t* e) {
-            (void)e;
-            spdlog::info("[AMS Environment] Indicator clicked — opening environment overlay");
+            auto* ind = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
+            int unit = ind ? static_cast<int>(reinterpret_cast<intptr_t>(lv_obj_get_user_data(ind)))
+                           : 0;
+            spdlog::info("[AMS Environment] Indicator clicked — opening overlay for unit {}", unit);
             auto& overlay = helix::ui::get_ams_environment_overlay();
-            overlay.show(lv_screen_active(), 0);
+            overlay.show(lv_screen_active(), unit);
         });
         env_cb_registered = true;
     }
