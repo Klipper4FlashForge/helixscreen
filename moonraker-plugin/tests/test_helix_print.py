@@ -706,91 +706,81 @@ class TestInstrumentGcode:
         config = MockConfigHelper(mock_server)
         return load_component(config)
 
-    def test_adds_starting_marker_at_beginning(self, helix):
-        """Test that STARTING phase is added at the beginning."""
+    def test_no_starting_marker_before_first_line(self, helix):
+        """v2 emits no preamble marker - phases are tracked as they occur.
+
+        The first output line is the original G-code; the first tracking block
+        appears immediately AFTER the line that triggers it (the HELIX_PHASE_*
+        macro, wrapped in begin/end markers).
+        """
         gcode = "G28\nG0 X0 Y0\n"
         result = helix._instrument_gcode(gcode)
 
-        # Should start with the STARTING marker
         lines = result.split("\n")
-        assert lines[0] == helix.TRACKING_MARKER_BEGIN
-        assert 'VARIABLE=phase VALUE=\'"STARTING"\'' in lines[1]
-        assert lines[2] == helix.TRACKING_MARKER_END
+        assert lines[0] == "G28"  # original gcode, no injected preamble
+        assert lines[1] == helix.TRACKING_MARKER_BEGIN
+        assert lines[2] == "HELIX_PHASE_HOMING"
+        assert lines[3] == helix.TRACKING_MARKER_END
 
-    def test_adds_complete_marker_at_end(self, helix):
-        """Test that COMPLETE phase is added at the end."""
+    def test_adds_ready_marker_at_end(self, helix):
+        """v2 signals preparation complete with a HELIX_READY block at the end."""
         gcode = "G28\nG0 X0 Y0\n"
         result = helix._instrument_gcode(gcode)
 
-        # Should end with the COMPLETE marker
         lines = result.split("\n")
         assert lines[-3] == helix.TRACKING_MARKER_BEGIN
-        assert 'VARIABLE=phase VALUE=\'"COMPLETE"\'' in lines[-2]
+        assert lines[-2] == "HELIX_READY"
         assert lines[-1] == helix.TRACKING_MARKER_END
 
     def test_detects_g28_homing(self, helix):
-        """Test G28 is detected as HOMING phase."""
-        gcode = "G28\n"
-        result = helix._instrument_gcode(gcode)
-
-        assert 'VALUE=\'"HOMING"\'' in result
+        """Test G28 is detected and emits the HELIX_PHASE_HOMING macro."""
+        result = helix._instrument_gcode("G28\n")
+        assert "HELIX_PHASE_HOMING" in result
 
     def test_detects_quad_gantry_level(self, helix):
-        """Test QUAD_GANTRY_LEVEL is detected as QGL phase."""
-        gcode = "QUAD_GANTRY_LEVEL\n"
-        result = helix._instrument_gcode(gcode)
-
-        assert 'VALUE=\'"QGL"\'' in result
+        """Test QUAD_GANTRY_LEVEL emits the HELIX_PHASE_QGL macro."""
+        result = helix._instrument_gcode("QUAD_GANTRY_LEVEL\n")
+        assert "HELIX_PHASE_QGL" in result
 
     def test_detects_z_tilt_adjust(self, helix):
-        """Test Z_TILT_ADJUST is detected as Z_TILT phase."""
-        gcode = "Z_TILT_ADJUST\n"
-        result = helix._instrument_gcode(gcode)
-
-        assert 'VALUE=\'"Z_TILT"\'' in result
+        """Test Z_TILT_ADJUST emits the HELIX_PHASE_Z_TILT macro."""
+        result = helix._instrument_gcode("Z_TILT_ADJUST\n")
+        assert "HELIX_PHASE_Z_TILT" in result
 
     def test_detects_bed_mesh_calibrate(self, helix):
-        """Test BED_MESH_CALIBRATE is detected as BED_MESH phase."""
-        gcode = "BED_MESH_CALIBRATE ADAPTIVE=1\n"
-        result = helix._instrument_gcode(gcode)
-
-        assert 'VALUE=\'"BED_MESH"\'' in result
+        """Test BED_MESH_CALIBRATE emits the HELIX_PHASE_BED_MESH macro."""
+        result = helix._instrument_gcode("BED_MESH_CALIBRATE ADAPTIVE=1\n")
+        assert "HELIX_PHASE_BED_MESH" in result
 
     def test_detects_clean_nozzle(self, helix):
-        """Test CLEAN_NOZZLE variants are detected as CLEANING phase."""
+        """Test CLEAN_NOZZLE variants emit the HELIX_PHASE_CLEANING macro."""
         for cmd in ["CLEAN_NOZZLE", "WIPE_NOZZLE"]:
-            gcode = f"{cmd}\n"
-            result = helix._instrument_gcode(gcode)
-            assert 'VALUE=\'"CLEANING"\'' in result, f"Failed for {cmd}"
+            result = helix._instrument_gcode(f"{cmd}\n")
+            assert "HELIX_PHASE_CLEANING" in result, f"Failed for {cmd}"
 
     def test_detects_purge_macros(self, helix):
-        """Test purge-related macros are detected as PURGING phase."""
+        """Test purge-related macros emit the HELIX_PHASE_PURGING macro."""
         for cmd in ["PURGE", "PURGE_LINE", "LINE_PURGE", "VORON_PURGE"]:
-            gcode = f"{cmd}\n"
-            result = helix._instrument_gcode(gcode)
-            assert 'VALUE=\'"PURGING"\'' in result, f"Failed for {cmd}"
+            result = helix._instrument_gcode(f"{cmd}\n")
+            assert "HELIX_PHASE_PURGING" in result, f"Failed for {cmd}"
 
     def test_detects_m109_heating(self, helix):
-        """Test M109 is detected as HEATING_NOZZLE phase."""
-        gcode = "M109 S220\n"
-        result = helix._instrument_gcode(gcode)
-
-        assert 'VALUE=\'"HEATING_NOZZLE"\'' in result
+        """Test M109 emits the HELIX_PHASE_HEATING_NOZZLE macro."""
+        result = helix._instrument_gcode("M109 S220\n")
+        assert "HELIX_PHASE_HEATING_NOZZLE" in result
 
     def test_detects_m190_heating(self, helix):
-        """Test M190 is detected as HEATING_BED phase."""
-        gcode = "M190 S60\n"
-        result = helix._instrument_gcode(gcode)
-
-        assert 'VALUE=\'"HEATING_BED"\'' in result
+        """Test M190 emits the HELIX_PHASE_HEATING_BED macro."""
+        result = helix._instrument_gcode("M190 S60\n")
+        assert "HELIX_PHASE_HEATING_BED" in result
 
     def test_ignores_comments(self, helix):
         """Test that comment lines are ignored."""
         gcode = "# G28 - this is just a comment\nG0 X0\n"
         result = helix._instrument_gcode(gcode)
 
-        # Should NOT contain HOMING because G28 is in a comment
-        assert 'VALUE=\'"HOMING"\'' not in result
+        # G28 is inside a comment, so no HOMING phase macro should be injected
+        assert "HELIX_PHASE_HOMING" not in result
 
     def test_preserves_original_gcode(self, helix):
         """Test that original gcode lines are preserved."""
@@ -811,24 +801,28 @@ LINE_PURGE
 """
         result = helix._instrument_gcode(gcode)
 
-        # Check all phases are detected in order
-        assert 'VALUE=\'"STARTING"\'' in result
-        assert 'VALUE=\'"HOMING"\'' in result
-        assert 'VALUE=\'"QGL"\'' in result
-        assert 'VALUE=\'"BED_MESH"\'' in result
-        assert 'VALUE=\'"HEATING_NOZZLE"\'' in result
-        assert 'VALUE=\'"PURGING"\'' in result
-        assert 'VALUE=\'"COMPLETE"\'' in result
+        # All phase macros are emitted, in source order, and preparation ends
+        # with HELIX_READY. v2 has no STARTING preamble.
+        expected_order = [
+            "HELIX_PHASE_HOMING",
+            "HELIX_PHASE_QGL",
+            "HELIX_PHASE_BED_MESH",
+            "HELIX_PHASE_HEATING_NOZZLE",
+            "HELIX_PHASE_PURGING",
+            "HELIX_READY",
+        ]
+        positions = [result.find(macro) for macro in expected_order]
+        assert all(
+            pos != -1 for pos in positions
+        ), f"missing macro(s): {list(zip(expected_order, positions))}"
+        assert positions == sorted(positions), "phase macros emitted out of order"
 
     def test_only_one_marker_per_line(self, helix):
-        """Test that only one phase marker is added per line."""
-        # This line matches both HOMING (G28) pattern, but should only get one marker
-        gcode = "G28\n"
-        result = helix._instrument_gcode(gcode)
+        """Test that only one phase macro is added per matched line."""
+        result = helix._instrument_gcode("G28\n")
 
-        # Count HOMING occurrences - should be exactly 1
-        homing_count = result.count('VALUE=\'"HOMING"\'')
-        assert homing_count == 1
+        # G28 should produce exactly one HELIX_PHASE_HOMING injection
+        assert result.count("HELIX_PHASE_HOMING") == 1
 
 
 class TestStripInstrumentation:
@@ -998,7 +992,7 @@ class TestMarkerConstants:
 
     def test_marker_begin_contains_version(self, helix):
         """Test that the begin marker contains version info."""
-        assert "v1" in helix.TRACKING_MARKER_BEGIN
+        assert "v2" in helix.TRACKING_MARKER_BEGIN
 
     def test_marker_end_matches_begin(self, helix):
         """Test that end marker is the closing version of begin marker."""
