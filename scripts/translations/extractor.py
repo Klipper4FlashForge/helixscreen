@@ -56,16 +56,22 @@ MEASUREMENT_PATTERN = re.compile(r'^\d+(\.\d+)?\s*(mm|cm|g|kg|ml|l|s|ms)$')
 # Numeric data placeholders: " 0 / 0", "0 / 0"
 NUMERIC_PLACEHOLDER_PATTERN = re.compile(r'^\s*\d+\s*/\s*\d+\s*$')
 
-# Short tokens and non-translatable exact strings.
-# Fb0MailboxSink is a C++ sink class name returned verbatim by its name() method;
-# the return-literal extraction pattern matches it, but it is an internal
-# identifier, never user-facing text. The `// i18n: do not translate` source
-# comment is documentation only — this extractor does not parse comments — so the
-# exact-match skip set is the mechanism that actually excludes it.
-NON_TRANSLATABLE = {
-    "true", "false", "xl", "lg", "md", "sm", "xs", "#RRGGBB",
-    "Fb0MailboxSink",
-}
+# Short tokens and non-translatable exact strings (format/layout tokens).
+NON_TRANSLATABLE = {"true", "false", "xl", "lg", "md", "sm", "xs", "#RRGGBB"}
+
+# A `// i18n: do not translate` source comment suppresses extraction of the
+# string literal(s) it applies to. Two placement conventions are honored (both
+# occur in the codebase): a trailing comment on the same line as the literal,
+# and a standalone comment on the line immediately above it. Only the literal's
+# own line (or the line directly below a standalone marker) is affected — the
+# marker never suppresses beyond that. Matches any i18n comment containing the
+# phrase "do not translate" (e.g. "i18n: do not translate - product name",
+# "i18n: Spoolman is a product name, do not translate"); the distinct
+# "i18n: universal" note is a separate convention and is NOT treated as a
+# suppression marker.
+I18N_DO_NOT_TRANSLATE_RE = re.compile(
+    r"//[^\n]*\bi18n:[^\n]*do\s+not\s+translate", re.IGNORECASE
+)
 
 # Language names displayed in their native script (never translated)
 LANGUAGE_NAMES = {
@@ -102,6 +108,35 @@ def _join_adjacent_literals(captured: str) -> str:
     """
     pieces = _STRING_LITERAL_RE.findall(captured)
     return "".join(pieces)
+
+
+def _has_do_not_translate_marker(content: str, literal_pos: int) -> bool:
+    """
+    Return True if a `// i18n: do not translate` marker applies to the string
+    literal at ``literal_pos``.
+
+    Trailing form: the marker is a comment on the same line as the literal.
+    Preceding form: the marker is a standalone comment (line starts with `//`)
+    on the line immediately above. Only these two adjacencies count, so a marker
+    never suppresses a literal further down the file.
+    """
+    line_start = content.rfind("\n", 0, literal_pos) + 1
+    line_end = content.find("\n", literal_pos)
+    if line_end == -1:
+        line_end = len(content)
+    this_line = content[line_start:line_end]
+    if I18N_DO_NOT_TRANSLATE_RE.search(this_line):
+        return True
+
+    # Preceding standalone marker on the immediately-previous line.
+    if line_start >= 2:
+        prev_end = line_start - 1
+        prev_start = content.rfind("\n", 0, prev_end) + 1
+        prev_line = content[prev_start:prev_end]
+        if prev_line.lstrip().startswith("//") and I18N_DO_NOT_TRANSLATE_RE.search(prev_line):
+            return True
+
+    return False
 
 # C++ patterns to skip (not user-facing)
 CPP_SKIP_PATTERNS = [
@@ -300,10 +335,19 @@ def extract_strings_from_cpp(cpp_path: Path) -> Set[str]:
             if is_adjacent:
                 text = _join_adjacent_literals(text)
 
-            # lv_tr() strings are explicitly marked - always include them
+            # lv_tr() strings are explicitly marked - always include them.
+            # A `// i18n: do not translate` marker does NOT override lv_tr(): the
+            # explicit call wins, so such a marker on an lv_tr line documents a
+            # non-translatable substring (e.g. a product name inside a sentence)
+            # rather than suppressing the whole string.
             if is_lv_tr:
                 if text and text.strip():
                     result.add(text)
+                continue
+
+            # Honor a `// i18n: do not translate` marker on the literal's line
+            # (trailing) or the line directly above it (standalone/preceding).
+            if _has_do_not_translate_marker(content, match.start(1)):
                 continue
 
             # Get surrounding context to check for skip patterns

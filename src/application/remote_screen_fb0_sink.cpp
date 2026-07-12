@@ -253,7 +253,7 @@ void Fb0MailboxSink::on_frame(const RemoteScreenFrame& f) {
 }
 
 const char* Fb0MailboxSink::name() const {
-    return "Fb0MailboxSink";
+    return "Fb0MailboxSink"; // i18n: do not translate - internal sink identifier
 }
 
 } // namespace helix
