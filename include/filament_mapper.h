@@ -90,6 +90,14 @@ class FilamentMapper {
     /// These are the tools that would trigger a color mismatch warning.
     static std::vector<int> find_unresolved_tools(const std::vector<ToolMapping>& mappings);
 
+    /// Resolve the per-tool DISPLAY color: the mapped slot's loaded color_rgb
+    /// when the tool is explicitly mapped to an existing slot, else the tool's
+    /// slicer color_rgb (or 0x808080 when no tool info). Pure; no LVGL/AMS.
+    static std::vector<uint32_t> resolve_display_colors(
+        const std::vector<GcodeToolInfo>& tools,
+        const std::vector<ToolMapping>& mappings,
+        const std::vector<AvailableSlot>& slots);
+
     /// Weighted RGB distance between two colors (luminance-weighted).
     /// Uses standard luminance coefficients: R=0.30, G=0.59, B=0.11.
     static int color_distance(uint32_t a, uint32_t b);
