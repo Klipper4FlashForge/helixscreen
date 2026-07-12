@@ -323,8 +323,8 @@
   <translation tag="Calibration move may still be running — response timed out" ja="キャリブレーション移動がまだ実行中の可能性があります — 応答タイムアウト"/>
   <translation tag="Calibration saved but cannot apply on SDL display" ja="キャリブレーションは保存されましたが SDL ディスプレイには適用できません"/>
   <translation tag="Calibration started" ja="キャリブレーションを開始しました"/>
-  <translation tag="Calibration succeeded, but the frequency chart data couldn&apos;t be read."/>
-  <translation tag="Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer."/>
+  <translation tag="Calibration succeeded, but the frequency chart data couldn&apos;t be read." ja="キャリブレーションは成功しましたが、周波数グラフのデータを読み取れませんでした。"/>
+  <translation tag="Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer." ja="キャリブレーションは成功しました。周波数グラフは HelixScreen がプリンター上で動作している場合のみ利用できます。"/>
   <translation tag="Calibration timed out. Please try again." ja="タイムアウトしました。もう一度お試しください。"/>
   <translation tag="Calibrator not initialized. Try reopening the panel." ja="キャリブレーターが初期化されていません。パネルを開き直してください。"/>
   <translation tag="Camera" ja="カメラ"/>
@@ -393,7 +393,7 @@
   <translation tag="Checking webcam" ja="ウェブカメラを確認中"/>
   <translation tag="Checking..." ja="確認中..."/>
   <translation tag="Choose 12-hour or 24-hour time display" ja="12時間表示または24時間表示を選択"/>
-  <translation tag="Choose Filament"/>
+  <translation tag="Choose Filament" ja="フィラメントを選択"/>
   <translation tag="Choose Spool" ja="スプールを選択"/>
   <translation tag="Choose an existing filament, or tap + New to create one." ja="既存のフィラメントを選択するか、+ 新規をタップして作成してください。"/>
   <translation tag="Choose display language" ja="表示言語を選択"/>
@@ -491,7 +491,7 @@
   <translation tag="Console" ja="コンソール"/>
   <translation tag="Console Settings" ja="コンソール設定"/>
   <translation tag="Context" ja="コンテキスト"/>
-  <translation tag="Continue"/>
+  <translation tag="Continue" ja="続行"/>
   <translation tag="Control optional print start features" ja="オプションの印刷開始機能を制御"/>
   <translation tag="Control power relays and smart outlets" ja="電源リレーとスマートコンセントを制御"/>
   <translation tag="Controlled by hardware sensor" ja="ハードウェアセンサーで制御"/>
@@ -637,7 +637,7 @@
   <translation tag="Each fan can only be selected once" ja="各ファンは一度のみ選択できます"/>
   <translation tag="Edit" ja="編集"/>
   <translation tag="Edit Preset" ja="プリセットを編集"/>
-  <translation tag="Edit Slot"/>
+  <translation tag="Edit Slot" ja="スロットを編集"/>
   <translation tag="Edit Slot 1" ja="スロット1を編集"/>
   <translation tag="Edit Spool" ja="スプールを編集"/>
   <translation tag="Edit Spool #{}" ja="スプール #{} を編集"/>
@@ -869,7 +869,7 @@
   <translation tag="Filament load failed: {}" ja="フィラメントの装填に失敗しました: {}"/>
   <translation tag="Filament loaded" ja="フィラメントを装填しました"/>
   <translation tag="Filament operation failed" ja="フィラメント操作に失敗しました"/>
-  <translation tag="Filament operation failed: {}"/>
+  <translation tag="Filament operation failed: {}" ja="フィラメント操作に失敗しました: {}"/>
   <translation tag="Filament operation timed out" ja="フィラメント操作がタイムアウトしました"/>
   <translation tag="Filament runout" ja="フィラメント切れ"/>
   <translation tag="Filament runout and motion detection sensors" ja="フィラメント切れとモーション検出センサー"/>
@@ -1164,7 +1164,7 @@
   <translation tag="Lost connection during print — try again" ja="印刷中に接続が切断されました — もう一度お試しください"/>
   <translation tag="Lot # (optional)" ja="ロット番号（オプション）"/>
   <translation tag="Lot/Batch Nr" ja="ロット/バッチ番号"/>
-  <translation tag="Low Memory"/>
+  <translation tag="Low Memory" ja="メモリ不足"/>
   <translation tag="M to toggle" ja="M で切り替え"/>
   <translation tag="MAC:" ja="MAC:"/>
   <translation tag="MACRO DEVICES" ja="マクロデバイス"/>
@@ -1733,7 +1733,7 @@
   <translation tag="Reset all settings and restart wizard" ja="すべての設定をリセットしてウィザードを再開"/>
   <translation tag="Reset failed: {}" ja="リセットに失敗しました: {}"/>
   <translation tag="Reset to Default" ja="デフォルトにリセット"/>
-  <translation tag="Reset to defaults"/>
+  <translation tag="Reset to defaults" ja="デフォルトに戻す"/>
   <translation tag="Reset to original values" ja="元の値にリセット"/>
   <translation tag="Resetting" ja="リセット中"/>
   <translation tag="Resetting..." ja="リセット中..."/>
@@ -1847,7 +1847,7 @@
   <translation tag="Screensaver" ja="スクリーンセーバー"/>
   <translation tag="Screensaver disabled" ja="スクリーンセーバーを無効化しました"/>
   <translation tag="Screws Tilt" ja="ネジ傾き"/>
-  <translation tag="Scroll Buttons"/>
+  <translation tag="Scroll Buttons" ja="スクロールボタン"/>
   <translation tag="Scroll Engage Distance" ja="スクロール開始距離"/>
   <translation tag="Scroll Guard" ja="スクロールガード"/>
   <translation tag="Search filename..." ja="ファイル名を検索..."/>
@@ -1928,7 +1928,7 @@
   <translation tag="Show printer icon in navigation bar" ja="ナビゲーションバーにプリンターアイコンを表示"/>
   <translation tag="Show temp for" ja="温度表示対象"/>
   <translation tag="Show text labels on icon-only home screen widgets" ja="アイコンのみのホーム画面ウィジェットにテキストラベルを表示"/>
-  <translation tag="Show up/down buttons on long lists"/>
+  <translation tag="Show up/down buttons on long lists" ja="長いリストに上下ボタンを表示"/>
   <translation tag="Show whatever curves you last had visible on the full graph." ja="フルグラフで最後に表示していた曲線を表示します。"/>
   <translation tag="Shutdown" ja="シャットダウン"/>
   <translation tag="Shutdown / Reboot" ja="シャットダウン / 再起動"/>
@@ -2120,8 +2120,8 @@
   <translation tag="These tools have no matching filament loaded:" ja="これらのツールに一致するフィラメントが装填されていません:"/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." ja="このキャリブレーションは紙の摩擦方式を使用して Z-offset を設定します。"/>
   <translation tag="This cannot be undone." ja="この操作は元に戻せません。"/>
-  <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?"/>
-  <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?"/>
+  <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" ja="このデバイスの RAM は {} MB しかありません。共振キャリブレーションはメモリを大量に消費し、プリンターのファームウェアが \&quot;Timer Too Close\&quot; エラーを報告したり、テスト中に再起動したりする可能性があります。それでも続行しますか？"/>
+  <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?" ja="このデバイスの RAM は非常に少ないです。共振キャリブレーションはメモリを大量に消費し、\&quot;Timer Too Close\&quot; エラーを引き起こす可能性があります。それでも続行しますか？"/>
   <translation tag="This file was sliced for {} but {} is loaded." ja="このファイルは {} 用にスライスされていますが、{} がロードされています。"/>
   <translation tag="This is exactly the data that will be sent" ja="これが送信されるデータです"/>
   <translation tag="This is what data would be sent if enabled" ja="これは有効にした場合に送信されるデータです"/>
@@ -2266,7 +2266,7 @@
   <translation tag="VM Peak" ja="VM ピーク"/>
   <translation tag="VM Size" ja="VM サイズ"/>
   <translation tag="Value must be between {:.0f} and {:.0f}" ja="値は {:.0f} から {:.0f} の間で入力してください"/>
-  <translation tag="Values must not be negative"/>
+  <translation tag="Values must not be negative" ja="値は負の数にできません"/>
   <translation tag="Velocity and acceleration limits" ja="速度と加速度の制限"/>
   <translation tag="Vendor" ja="ベンダー"/>
   <translation tag="Vendor Name" ja="ベンダー名"/>

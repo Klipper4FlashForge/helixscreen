@@ -375,8 +375,11 @@ translations:
   Calibration saved but cannot apply on SDL display: Calibration enregistrée mais
     impossible à appliquer sur un écran SDL
   Calibration started: Calibration démarrée
-  Calibration succeeded, but the frequency chart data couldn't be read.: ''
-  Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer.: ''
+  Calibration succeeded, but the frequency chart data couldn't be read.: Calibration
+    réussie, mais les données du graphique de fréquence n'ont pas pu être lues.
+  Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer.: Calibration
+    réussie. Le graphique de fréquence n'est disponible que lorsque HelixScreen s'exécute
+    sur l'imprimante.
   Calibration timed out. Please try again.: Délai expiré. Veuillez réessayer.
   Calibrator not initialized. Try reopening the panel.: Calibrateur non initialisé.
     Essayez de rouvrir le panneau.
@@ -465,7 +468,7 @@ translations:
   Checking webcam: Vérification de la webcam
   Checking...: Vérification...
   Choose 12-hour or 24-hour time display: Choisir l'affichage 12 heures ou 24 heures
-  Choose Filament: ''
+  Choose Filament: Choisir le filament
   Choose Spool: Choisir la bobine
   Choose an existing filament, or tap + New to create one.: Choisissez un filament
     existant, ou appuyez sur + Nouveau pour en créer un.
@@ -580,7 +583,7 @@ translations:
   Console: Console
   Console Settings: Paramètres de la console
   Context: Contexte
-  Continue: ''
+  Continue: Continuer
   Control optional print start features: Contrôler les fonctionnalités optionnelles
     de démarrage d'impression
   Control power relays and smart outlets: Contrôler les relais et prises connectées
@@ -741,7 +744,7 @@ translations:
     qu'une fois
   Edit: Modifier
   Edit Preset: Modifier le préréglage
-  Edit Slot: ''
+  Edit Slot: Modifier le slot
   Edit Slot 1: Modifier le slot 1
   Edit Spool: Modifier la bobine
   'Edit Spool #{}': 'Modifier la bobine #{}'
@@ -1002,7 +1005,7 @@ translations:
   'Filament load failed: {}': 'Échec du chargement du filament : {}'
   Filament loaded: Filament chargé
   Filament operation failed: Échec de l'opération filament
-  'Filament operation failed: {}': ''
+  'Filament operation failed: {}': 'Échec de l''opération sur le filament : {}'
   Filament operation timed out: Opération filament — délai dépassé
   Filament runout: Fin de filament
   Filament runout and motion detection sensors: Capteurs de fin de filament et de
@@ -1356,7 +1359,7 @@ translations:
     — réessayez
   'Lot # (optional)': 'Lot # (facultatif)'
   Lot/Batch Nr: N° de lot
-  Low Memory: ''
+  Low Memory: Mémoire faible
   M to toggle: M pour basculer
   'MAC:': 'MAC :'
   MACRO DEVICES: APPAREILS MACRO
@@ -2001,7 +2004,7 @@ translations:
     l'assistant
   'Reset failed: {}': 'Échec de la réinitialisation : {}'
   Reset to Default: Réinitialiser par défaut
-  Reset to defaults: ''
+  Reset to defaults: Réinitialiser par défaut
   Reset to original values: Réinitialiser aux valeurs d'origine
   Resetting: Réinitialisation
   Resetting...: Réinitialisation...
@@ -2137,7 +2140,7 @@ translations:
   Screensaver: Économiseur d'écran
   Screensaver disabled: Économiseur d'écran désactivé
   Screws Tilt: Inclinaison des vis
-  Scroll Buttons: ''
+  Scroll Buttons: Boutons de défilement
   Scroll Engage Distance: Distance d'activation du défilement
   Scroll Guard: Protection de défilement
   Search filename...: Rechercher un fichier...
@@ -2240,7 +2243,8 @@ translations:
   Show temp for: Afficher la température de
   Show text labels on icon-only home screen widgets: Afficher les libellés sur les
     widgets de l'écran d'accueil
-  Show up/down buttons on long lists: ''
+  Show up/down buttons on long lists: Afficher les boutons haut/bas sur les longues
+    listes
   Show whatever curves you last had visible on the full graph.: Afficher les dernières
     courbes visibles sur le graphique complet.
   Shutdown: Éteindre
@@ -2487,9 +2491,12 @@ translations:
     utilise la méthode de friction du papier pour définir votre Z-offset.
   This cannot be undone.: Cette action est irréversible.
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
-  : ''
+  : Cet appareil ne dispose que de {} Mo de RAM. La calibration de résonance est gourmande
+    en mémoire et peut amener le firmware de l'imprimante à signaler une erreur \"Timer
+    Too Close\" ou à redémarrer en cours de test. Continuer quand même ?
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
-  : ''
+  : Cet appareil dispose de très peu de RAM. La calibration de résonance est gourmande
+    en mémoire et peut provoquer une erreur \"Timer Too Close\". Continuer quand même ?
   This file was sliced for {} but {} is loaded.: Ce fichier a été tranché pour {}
     mais {} est chargé.
   This is exactly the data that will be sent: Voici exactement les données qui seront
@@ -2684,7 +2691,7 @@ translations:
   VM Peak: Pic de mémoire virtuelle
   VM Size: Taille de la mémoire virtuelle
   Value must be between {:.0f} and {:.0f}: La valeur doit être entre {:.0f} et {:.0f}
-  Values must not be negative: ''
+  Values must not be negative: Les valeurs ne doivent pas être négatives
   Velocity and acceleration limits: Limites de vitesse et d'accélération
   Vendor: Fabricant
   Vendor Name: Nom du fournisseur

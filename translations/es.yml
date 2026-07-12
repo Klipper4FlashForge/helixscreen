@@ -369,8 +369,11 @@ translations:
   Calibration saved but cannot apply on SDL display: Calibración guardada pero no
     se puede aplicar en pantalla SDL
   Calibration started: Calibración iniciada
-  Calibration succeeded, but the frequency chart data couldn't be read.: ''
-  Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer.: ''
+  Calibration succeeded, but the frequency chart data couldn't be read.: La calibración
+    se completó correctamente, pero no se pudieron leer los datos del gráfico de frecuencia.
+  Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer.: La
+    calibración se completó correctamente. El gráfico de frecuencia solo está disponible
+    cuando HelixScreen se ejecuta en la impresora.
   Calibration timed out. Please try again.: Tiempo agotado. Inténtalo de nuevo.
   Calibrator not initialized. Try reopening the panel.: Calibrador no inicializado.
     Intenta reabrir el panel.
@@ -458,7 +461,7 @@ translations:
   Checking webcam: Comprobando webcam
   Checking...: Comprobando...
   Choose 12-hour or 24-hour time display: Elija visualización de hora de 12 o 24 horas
-  Choose Filament: ''
+  Choose Filament: Elegir Filamento
   Choose Spool: Elegir bobina
   Choose an existing filament, or tap + New to create one.: Elige un filamento o toca
     + Nuevo para crear uno.
@@ -573,7 +576,7 @@ translations:
   Console: Consola
   Console Settings: Ajustes de Consola
   Context: Contexto
-  Continue: ''
+  Continue: Continuar
   Control optional print start features: Controlar funciones opcionales de inicio
     de impresión
   Control power relays and smart outlets: Controlar relés y enchufes inteligentes
@@ -733,7 +736,7 @@ translations:
     vez
   Edit: Editar
   Edit Preset: Editar Preajuste
-  Edit Slot: ''
+  Edit Slot: Editar Ranura
   Edit Slot 1: Editar Ranura 1
   Edit Spool: Editar bobina
   'Edit Spool #{}': Editar bobina n.º {}
@@ -987,7 +990,7 @@ translations:
   'Filament load failed: {}': 'Error al cargar filamento: {}'
   Filament loaded: Filamento cargado
   Filament operation failed: Falló la operación de filamento
-  'Filament operation failed: {}': ''
+  'Filament operation failed: {}': 'Falló la operación de filamento: {}'
   Filament operation timed out: Operación de filamento — tiempo de espera agotado
   Filament runout: Filamento agotado
   Filament runout and motion detection sensors: Sensores de detección de agotamiento
@@ -1338,7 +1341,7 @@ translations:
     — inténtalo de nuevo
   'Lot # (optional)': 'Lote # (opcional)'
   Lot/Batch Nr: Nº de lote
-  Low Memory: ''
+  Low Memory: Memoria baja
   M to toggle: M para alternar
   'MAC:': 'MAC:'
   MACRO DEVICES: DISPOSITIVOS DE MACRO
@@ -1977,7 +1980,7 @@ translations:
     asistente
   'Reset failed: {}': 'Error al restablecer: {}'
   Reset to Default: Restablecer valores predeterminados
-  Reset to defaults: ''
+  Reset to defaults: Restablecer valores predeterminados
   Reset to original values: Restaurar valores originales
   Resetting: Restableciendo
   Resetting...: Restableciendo...
@@ -2113,7 +2116,7 @@ translations:
   Screensaver: Salvapantallas
   Screensaver disabled: Salvapantallas desactivado
   Screws Tilt: Inclinación de Tornillos
-  Scroll Buttons: ''
+  Scroll Buttons: Botones de desplazamiento
   Scroll Engage Distance: Distancia de activación de desplazamiento
   Scroll Guard: Protección de desplazamiento
   Search filename...: Buscar archivo...
@@ -2212,7 +2215,7 @@ translations:
   Show temp for: Mostrar temperatura de
   Show text labels on icon-only home screen widgets: Mostrar etiquetas de texto en
     widgets de solo icono
-  Show up/down buttons on long lists: ''
+  Show up/down buttons on long lists: Mostrar botones arriba/abajo en listas largas
   Show whatever curves you last had visible on the full graph.: Mostrar las curvas
     que tenías visibles por última vez en el gráfico completo.
   Shutdown: Apagar
@@ -2456,9 +2459,12 @@ translations:
     usa el método de fricción de papel para establecer su Z-offset.
   This cannot be undone.: Esta acción no se puede deshacer.
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
-  : ''
+  : Este dispositivo solo tiene {} MB de RAM. La calibración de resonancia consume mucha
+    memoria y puede hacer que el firmware de la impresora informe un error \"Timer Too
+    Close\" o se reinicie a mitad de la prueba. ¿Continuar de todos modos?
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
-  : ''
+  : Este dispositivo tiene muy poca RAM. La calibración de resonancia consume mucha memoria
+    y puede causar un error \"Timer Too Close\". ¿Continuar de todos modos?
   This file was sliced for {} but {} is loaded.: Este archivo fue laminado para {}
     pero se ha cargado {}.
   This is exactly the data that will be sent: Estos son exactamente los datos que
@@ -2647,7 +2653,7 @@ translations:
   VM Peak: Pico de VM
   VM Size: Tamaño de VM
   Value must be between {:.0f} and {:.0f}: El valor debe estar entre {:.0f} y {:.0f}
-  Values must not be negative: ''
+  Values must not be negative: Los valores no deben ser negativos
   Velocity and acceleration limits: Límites de velocidad y aceleración
   Vendor: Fabricante
   Vendor Name: Nombre del Proveedor

@@ -328,8 +328,8 @@ translations:
   Calibration move may still be running — response timed out: 校准移动可能仍在运行 — 响应超时
   Calibration saved but cannot apply on SDL display: 校准已保存，但无法在 SDL 显示上应用
   Calibration started: 校准已开始
-  Calibration succeeded, but the frequency chart data couldn't be read.: ''
-  Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer.: ''
+  Calibration succeeded, but the frequency chart data couldn't be read.: 校准成功，但无法读取频率图表数据。
+  Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer.: 校准成功。频率图表仅在 HelixScreen 运行于打印机上时可用。
   Calibration timed out. Please try again.: 校准超时。请重试。
   Calibrator not initialized. Try reopening the panel.: 校准器未初始化。请尝试重新打开面板。
   Camera: 摄像头
@@ -399,7 +399,7 @@ translations:
   Checking webcam: 正在检查摄像头
   Checking...: 检查中...
   Choose 12-hour or 24-hour time display: 选择 12 小时制或 24 小时制
-  Choose Filament: ''
+  Choose Filament: 选择耗材
   Choose Spool: 选择线轴
   Choose an existing filament, or tap + New to create one.: 选择已有耗材，或点击 + 新建来创建。
   Choose display language: 选择显示语言
@@ -497,7 +497,7 @@ translations:
   Console: 控制台
   Console Settings: 控制台设置
   Context: 上下文
-  Continue: ''
+  Continue: 继续
   Control optional print start features: 控制可选的打印启动功能
   Control power relays and smart outlets: 控制电源继电器和智能插座
   Controlled by hardware sensor: 由硬件传感器控制
@@ -648,7 +648,7 @@ translations:
   Each fan can only be selected once: 每个风扇只能选择一次
   Edit: 编辑
   Edit Preset: 编辑预设
-  Edit Slot: ''
+  Edit Slot: 编辑料仓
   Edit Slot 1: 编辑料仓 1
   Edit Spool: 编辑料盘
   'Edit Spool #{}': '编辑线轴 #{}'
@@ -882,7 +882,7 @@ translations:
   'Filament load failed: {}': '耗材加载失败: {}'
   Filament loaded: 耗材已加载
   Filament operation failed: 耗材操作失败
-  'Filament operation failed: {}': ''
+  'Filament operation failed: {}': '耗材操作失败: {}'
   Filament operation timed out: 耗材操作超时
   Filament runout: 耗材用尽
   Filament runout and motion detection sensors: 耗材用尽和运动检测传感器
@@ -1193,7 +1193,7 @@ translations:
   Lost connection during print — try again: 打印过程中连接丢失 — 请重试
   'Lot # (optional)': 批号（可选）
   Lot/Batch Nr: 批次号
-  Low Memory: ''
+  Low Memory: 内存不足
   M to toggle: 按 M 切换
   'MAC:': MAC：
   MACRO DEVICES: 宏设备
@@ -1774,7 +1774,7 @@ translations:
   Reset all settings and restart wizard: 重置所有设置并重新启动向导
   'Reset failed: {}': '重置失败: {}'
   Reset to Default: 重置为默认
-  Reset to defaults: ''
+  Reset to defaults: 重置为默认值
   Reset to original values: 重置为原始值
   Resetting: 重置中
   Resetting...: 正在重置...
@@ -1894,7 +1894,7 @@ translations:
   Screensaver: 屏保
   Screensaver disabled: 屏保已禁用
   Screws Tilt: 螺丝倾斜
-  Scroll Buttons: ''
+  Scroll Buttons: 滚动按钮
   Scroll Engage Distance: 滚动触发距离
   Scroll Guard: 滚动保护
   Search filename...: 搜索文件名...
@@ -1980,7 +1980,7 @@ translations:
   Show printer icon in navigation bar: 在导航栏中显示打印机图标
   Show temp for: 显示温度
   Show text labels on icon-only home screen widgets: 在仅图标的主屏小组件上显示文字标签
-  Show up/down buttons on long lists: ''
+  Show up/down buttons on long lists: 在长列表中显示上/下按钮
   Show whatever curves you last had visible on the full graph.: 显示您上次在完整图表上可见的曲线。
   Shutdown: 关机
   Shutdown / Reboot: 关机 / 重启
@@ -2188,9 +2188,9 @@ translations:
     Z 偏移。
   This cannot be undone.: 此操作无法撤销。
   ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
-  : ''
+  : 此设备仅有 {} MB 内存。共振校准会占用大量内存，可能导致打印机固件报告 \"Timer Too Close\" 错误或在测试中途重启。仍要继续吗？
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
-  : ''
+  : 此设备内存极少。共振校准会占用大量内存，可能导致 \"Timer Too Close\" 错误。仍要继续吗？
   This file was sliced for {} but {} is loaded.: 此文件为 {} 切片，但当前加载的是 {}。
   This is exactly the data that will be sent: 这正是将要发送的数据
   This is what data would be sent if enabled: 这是启用后将发送的数据
@@ -2351,7 +2351,7 @@ translations:
   VM Peak: 虚拟内存峰值
   VM Size: 虚拟内存大小
   Value must be between {:.0f} and {:.0f}: 值必须在 {:.0f} 到 {:.0f} 之间
-  Values must not be negative: ''
+  Values must not be negative: 值不能为负数
   Velocity and acceleration limits: 速度和加速度限制
   Vendor: 供应商
   Vendor Name: 供应商名称

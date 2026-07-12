@@ -323,8 +323,8 @@
   <translation tag="Calibration move may still be running — response timed out" zh="校准移动可能仍在运行 — 响应超时"/>
   <translation tag="Calibration saved but cannot apply on SDL display" zh="校准已保存，但无法在 SDL 显示上应用"/>
   <translation tag="Calibration started" zh="校准已开始"/>
-  <translation tag="Calibration succeeded, but the frequency chart data couldn&apos;t be read."/>
-  <translation tag="Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer."/>
+  <translation tag="Calibration succeeded, but the frequency chart data couldn&apos;t be read." zh="校准成功，但无法读取频率图表数据。"/>
+  <translation tag="Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer." zh="校准成功。频率图表仅在 HelixScreen 运行于打印机上时可用。"/>
   <translation tag="Calibration timed out. Please try again." zh="校准超时。请重试。"/>
   <translation tag="Calibrator not initialized. Try reopening the panel." zh="校准器未初始化。请尝试重新打开面板。"/>
   <translation tag="Camera" zh="摄像头"/>
@@ -393,7 +393,7 @@
   <translation tag="Checking webcam" zh="正在检查摄像头"/>
   <translation tag="Checking..." zh="检查中..."/>
   <translation tag="Choose 12-hour or 24-hour time display" zh="选择 12 小时制或 24 小时制"/>
-  <translation tag="Choose Filament"/>
+  <translation tag="Choose Filament" zh="选择耗材"/>
   <translation tag="Choose Spool" zh="选择线轴"/>
   <translation tag="Choose an existing filament, or tap + New to create one." zh="选择已有耗材，或点击 + 新建来创建。"/>
   <translation tag="Choose display language" zh="选择显示语言"/>
@@ -491,7 +491,7 @@
   <translation tag="Console" zh="控制台"/>
   <translation tag="Console Settings" zh="控制台设置"/>
   <translation tag="Context" zh="上下文"/>
-  <translation tag="Continue"/>
+  <translation tag="Continue" zh="继续"/>
   <translation tag="Control optional print start features" zh="控制可选的打印启动功能"/>
   <translation tag="Control power relays and smart outlets" zh="控制电源继电器和智能插座"/>
   <translation tag="Controlled by hardware sensor" zh="由硬件传感器控制"/>
@@ -637,7 +637,7 @@
   <translation tag="Each fan can only be selected once" zh="每个风扇只能选择一次"/>
   <translation tag="Edit" zh="编辑"/>
   <translation tag="Edit Preset" zh="编辑预设"/>
-  <translation tag="Edit Slot"/>
+  <translation tag="Edit Slot" zh="编辑料仓"/>
   <translation tag="Edit Slot 1" zh="编辑料仓 1"/>
   <translation tag="Edit Spool" zh="编辑料盘"/>
   <translation tag="Edit Spool #{}" zh="编辑线轴 #{}"/>
@@ -869,7 +869,7 @@
   <translation tag="Filament load failed: {}" zh="耗材加载失败: {}"/>
   <translation tag="Filament loaded" zh="耗材已加载"/>
   <translation tag="Filament operation failed" zh="耗材操作失败"/>
-  <translation tag="Filament operation failed: {}"/>
+  <translation tag="Filament operation failed: {}" zh="耗材操作失败: {}"/>
   <translation tag="Filament operation timed out" zh="耗材操作超时"/>
   <translation tag="Filament runout" zh="耗材用尽"/>
   <translation tag="Filament runout and motion detection sensors" zh="耗材用尽和运动检测传感器"/>
@@ -1164,7 +1164,7 @@
   <translation tag="Lost connection during print — try again" zh="打印过程中连接丢失 — 请重试"/>
   <translation tag="Lot # (optional)" zh="批号（可选）"/>
   <translation tag="Lot/Batch Nr" zh="批次号"/>
-  <translation tag="Low Memory"/>
+  <translation tag="Low Memory" zh="内存不足"/>
   <translation tag="M to toggle" zh="按 M 切换"/>
   <translation tag="MAC:" zh="MAC："/>
   <translation tag="MACRO DEVICES" zh="宏设备"/>
@@ -1733,7 +1733,7 @@
   <translation tag="Reset all settings and restart wizard" zh="重置所有设置并重新启动向导"/>
   <translation tag="Reset failed: {}" zh="重置失败: {}"/>
   <translation tag="Reset to Default" zh="重置为默认"/>
-  <translation tag="Reset to defaults"/>
+  <translation tag="Reset to defaults" zh="重置为默认值"/>
   <translation tag="Reset to original values" zh="重置为原始值"/>
   <translation tag="Resetting" zh="重置中"/>
   <translation tag="Resetting..." zh="正在重置..."/>
@@ -1847,7 +1847,7 @@
   <translation tag="Screensaver" zh="屏保"/>
   <translation tag="Screensaver disabled" zh="屏保已禁用"/>
   <translation tag="Screws Tilt" zh="螺丝倾斜"/>
-  <translation tag="Scroll Buttons"/>
+  <translation tag="Scroll Buttons" zh="滚动按钮"/>
   <translation tag="Scroll Engage Distance" zh="滚动触发距离"/>
   <translation tag="Scroll Guard" zh="滚动保护"/>
   <translation tag="Search filename..." zh="搜索文件名..."/>
@@ -1928,7 +1928,7 @@
   <translation tag="Show printer icon in navigation bar" zh="在导航栏中显示打印机图标"/>
   <translation tag="Show temp for" zh="显示温度"/>
   <translation tag="Show text labels on icon-only home screen widgets" zh="在仅图标的主屏小组件上显示文字标签"/>
-  <translation tag="Show up/down buttons on long lists"/>
+  <translation tag="Show up/down buttons on long lists" zh="在长列表中显示上/下按钮"/>
   <translation tag="Show whatever curves you last had visible on the full graph." zh="显示您上次在完整图表上可见的曲线。"/>
   <translation tag="Shutdown" zh="关机"/>
   <translation tag="Shutdown / Reboot" zh="关机 / 重启"/>
@@ -2120,8 +2120,8 @@
   <translation tag="These tools have no matching filament loaded:" zh="以下工具未加载匹配的耗材："/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." zh="此校准使用纸张摩擦法设置 Z 偏移。"/>
   <translation tag="This cannot be undone." zh="此操作无法撤销。"/>
-  <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?"/>
-  <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?"/>
+  <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" zh="此设备仅有 {} MB 内存。共振校准会占用大量内存，可能导致打印机固件报告 \&quot;Timer Too Close\&quot; 错误或在测试中途重启。仍要继续吗？"/>
+  <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?" zh="此设备内存极少。共振校准会占用大量内存，可能导致 \&quot;Timer Too Close\&quot; 错误。仍要继续吗？"/>
   <translation tag="This file was sliced for {} but {} is loaded." zh="此文件为 {} 切片，但当前加载的是 {}。"/>
   <translation tag="This is exactly the data that will be sent" zh="这正是将要发送的数据"/>
   <translation tag="This is what data would be sent if enabled" zh="这是启用后将发送的数据"/>
@@ -2266,7 +2266,7 @@
   <translation tag="VM Peak" zh="虚拟内存峰值"/>
   <translation tag="VM Size" zh="虚拟内存大小"/>
   <translation tag="Value must be between {:.0f} and {:.0f}" zh="值必须在 {:.0f} 到 {:.0f} 之间"/>
-  <translation tag="Values must not be negative"/>
+  <translation tag="Values must not be negative" zh="值不能为负数"/>
   <translation tag="Velocity and acceleration limits" zh="速度和加速度限制"/>
   <translation tag="Vendor" zh="供应商"/>
   <translation tag="Vendor Name" zh="供应商名称"/>

@@ -323,8 +323,8 @@
   <translation tag="Calibration move may still be running — response timed out" fr="Mouvement de calibration peut-être encore en cours — délai dépassé"/>
   <translation tag="Calibration saved but cannot apply on SDL display" fr="Calibration enregistrée mais impossible à appliquer sur un écran SDL"/>
   <translation tag="Calibration started" fr="Calibration démarrée"/>
-  <translation tag="Calibration succeeded, but the frequency chart data couldn&apos;t be read."/>
-  <translation tag="Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer."/>
+  <translation tag="Calibration succeeded, but the frequency chart data couldn&apos;t be read." fr="Calibration réussie, mais les données du graphique de fréquence n&apos;ont pas pu être lues."/>
+  <translation tag="Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer." fr="Calibration réussie. Le graphique de fréquence n&apos;est disponible que lorsque HelixScreen s&apos;exécute sur l&apos;imprimante."/>
   <translation tag="Calibration timed out. Please try again." fr="Délai expiré. Veuillez réessayer."/>
   <translation tag="Calibrator not initialized. Try reopening the panel." fr="Calibrateur non initialisé. Essayez de rouvrir le panneau."/>
   <translation tag="Camera" fr="Caméra"/>
@@ -393,7 +393,7 @@
   <translation tag="Checking webcam" fr="Vérification de la webcam"/>
   <translation tag="Checking..." fr="Vérification..."/>
   <translation tag="Choose 12-hour or 24-hour time display" fr="Choisir l&apos;affichage 12 heures ou 24 heures"/>
-  <translation tag="Choose Filament"/>
+  <translation tag="Choose Filament" fr="Choisir le filament"/>
   <translation tag="Choose Spool" fr="Choisir la bobine"/>
   <translation tag="Choose an existing filament, or tap + New to create one." fr="Choisissez un filament existant, ou appuyez sur + Nouveau pour en créer un."/>
   <translation tag="Choose display language" fr="Choisir la langue d&apos;affichage"/>
@@ -491,7 +491,7 @@
   <translation tag="Console" fr="Console"/>
   <translation tag="Console Settings" fr="Paramètres de la console"/>
   <translation tag="Context" fr="Contexte"/>
-  <translation tag="Continue"/>
+  <translation tag="Continue" fr="Continuer"/>
   <translation tag="Control optional print start features" fr="Contrôler les fonctionnalités optionnelles de démarrage d&apos;impression"/>
   <translation tag="Control power relays and smart outlets" fr="Contrôler les relais et prises connectées"/>
   <translation tag="Controlled by hardware sensor" fr="Contrôlé par capteur matériel"/>
@@ -637,7 +637,7 @@
   <translation tag="Each fan can only be selected once" fr="Chaque ventilateur ne peut être sélectionné qu&apos;une fois"/>
   <translation tag="Edit" fr="Modifier"/>
   <translation tag="Edit Preset" fr="Modifier le préréglage"/>
-  <translation tag="Edit Slot"/>
+  <translation tag="Edit Slot" fr="Modifier le slot"/>
   <translation tag="Edit Slot 1" fr="Modifier le slot 1"/>
   <translation tag="Edit Spool" fr="Modifier la bobine"/>
   <translation tag="Edit Spool #{}" fr="Modifier la bobine #{}"/>
@@ -869,7 +869,7 @@
   <translation tag="Filament load failed: {}" fr="Échec du chargement du filament : {}"/>
   <translation tag="Filament loaded" fr="Filament chargé"/>
   <translation tag="Filament operation failed" fr="Échec de l&apos;opération filament"/>
-  <translation tag="Filament operation failed: {}"/>
+  <translation tag="Filament operation failed: {}" fr="Échec de l&apos;opération sur le filament : {}"/>
   <translation tag="Filament operation timed out" fr="Opération filament — délai dépassé"/>
   <translation tag="Filament runout" fr="Fin de filament"/>
   <translation tag="Filament runout and motion detection sensors" fr="Capteurs de fin de filament et de détection de mouvement"/>
@@ -1164,7 +1164,7 @@
   <translation tag="Lost connection during print — try again" fr="Connexion perdue pendant l&apos;impression — réessayez"/>
   <translation tag="Lot # (optional)" fr="Lot # (facultatif)"/>
   <translation tag="Lot/Batch Nr" fr="N° de lot"/>
-  <translation tag="Low Memory"/>
+  <translation tag="Low Memory" fr="Mémoire faible"/>
   <translation tag="M to toggle" fr="M pour basculer"/>
   <translation tag="MAC:" fr="MAC :"/>
   <translation tag="MACRO DEVICES" fr="APPAREILS MACRO"/>
@@ -1733,7 +1733,7 @@
   <translation tag="Reset all settings and restart wizard" fr="Réinitialiser tous les paramètres et redémarrer l&apos;assistant"/>
   <translation tag="Reset failed: {}" fr="Échec de la réinitialisation : {}"/>
   <translation tag="Reset to Default" fr="Réinitialiser par défaut"/>
-  <translation tag="Reset to defaults"/>
+  <translation tag="Reset to defaults" fr="Réinitialiser par défaut"/>
   <translation tag="Reset to original values" fr="Réinitialiser aux valeurs d&apos;origine"/>
   <translation tag="Resetting" fr="Réinitialisation"/>
   <translation tag="Resetting..." fr="Réinitialisation..."/>
@@ -1847,7 +1847,7 @@
   <translation tag="Screensaver" fr="Économiseur d&apos;écran"/>
   <translation tag="Screensaver disabled" fr="Économiseur d&apos;écran désactivé"/>
   <translation tag="Screws Tilt" fr="Inclinaison des vis"/>
-  <translation tag="Scroll Buttons"/>
+  <translation tag="Scroll Buttons" fr="Boutons de défilement"/>
   <translation tag="Scroll Engage Distance" fr="Distance d&apos;activation du défilement"/>
   <translation tag="Scroll Guard" fr="Protection de défilement"/>
   <translation tag="Search filename..." fr="Rechercher un fichier..."/>
@@ -1928,7 +1928,7 @@
   <translation tag="Show printer icon in navigation bar" fr="Afficher l&apos;icône de l&apos;imprimante dans la barre de navigation"/>
   <translation tag="Show temp for" fr="Afficher la température de"/>
   <translation tag="Show text labels on icon-only home screen widgets" fr="Afficher les libellés sur les widgets de l&apos;écran d&apos;accueil"/>
-  <translation tag="Show up/down buttons on long lists"/>
+  <translation tag="Show up/down buttons on long lists" fr="Afficher les boutons haut/bas sur les longues listes"/>
   <translation tag="Show whatever curves you last had visible on the full graph." fr="Afficher les dernières courbes visibles sur le graphique complet."/>
   <translation tag="Shutdown" fr="Éteindre"/>
   <translation tag="Shutdown / Reboot" fr="Éteindre / Redémarrer"/>
@@ -2120,8 +2120,8 @@
   <translation tag="These tools have no matching filament loaded:" fr="Ces outils n&apos;ont pas de filament correspondant chargé :"/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." fr="Cette calibration utilise la méthode de friction du papier pour définir votre Z-offset."/>
   <translation tag="This cannot be undone." fr="Cette action est irréversible."/>
-  <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?"/>
-  <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?"/>
+  <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" fr="Cet appareil ne dispose que de {} Mo de RAM. La calibration de résonance est gourmande en mémoire et peut amener le firmware de l&apos;imprimante à signaler une erreur \&quot;Timer Too Close\&quot; ou à redémarrer en cours de test. Continuer quand même ?"/>
+  <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?" fr="Cet appareil dispose de très peu de RAM. La calibration de résonance est gourmande en mémoire et peut provoquer une erreur \&quot;Timer Too Close\&quot;. Continuer quand même ?"/>
   <translation tag="This file was sliced for {} but {} is loaded." fr="Ce fichier a été tranché pour {} mais {} est chargé."/>
   <translation tag="This is exactly the data that will be sent" fr="Voici exactement les données qui seront envoyées"/>
   <translation tag="This is what data would be sent if enabled" fr="Voici les données qui seraient envoyées si activé"/>
@@ -2266,7 +2266,7 @@
   <translation tag="VM Peak" fr="Pic de mémoire virtuelle"/>
   <translation tag="VM Size" fr="Taille de la mémoire virtuelle"/>
   <translation tag="Value must be between {:.0f} and {:.0f}" fr="La valeur doit être entre {:.0f} et {:.0f}"/>
-  <translation tag="Values must not be negative"/>
+  <translation tag="Values must not be negative" fr="Les valeurs ne doivent pas être négatives"/>
   <translation tag="Velocity and acceleration limits" fr="Limites de vitesse et d&apos;accélération"/>
   <translation tag="Vendor" fr="Fabricant"/>
   <translation tag="Vendor Name" fr="Nom du fournisseur"/>
