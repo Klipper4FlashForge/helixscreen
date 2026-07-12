@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-12
 **Branch:** `feature/qidi-box-multi-unit`
-**Status:** Design approved, pending implementation
+**Status:** Implemented 2026-07-12
 
 ## Problem
 
