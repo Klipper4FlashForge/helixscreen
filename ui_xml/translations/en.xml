@@ -323,6 +323,8 @@
   <translation tag="Calibration move may still be running — response timed out" en="Calibration move may still be running — response timed out"/>
   <translation tag="Calibration saved but cannot apply on SDL display" en="Calibration saved but cannot apply on SDL display"/>
   <translation tag="Calibration started" en="Calibration started"/>
+  <translation tag="Calibration succeeded, but the frequency chart data couldn&apos;t be read." en="Calibration succeeded, but the frequency chart data couldn&apos;t be read."/>
+  <translation tag="Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer." en="Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer."/>
   <translation tag="Calibration timed out. Please try again." en="Calibration timed out. Please try again."/>
   <translation tag="Calibrator not initialized. Try reopening the panel." en="Calibrator not initialized. Try reopening the panel."/>
   <translation tag="Camera" en="Camera"/>
@@ -391,6 +393,7 @@
   <translation tag="Checking webcam" en="Checking webcam"/>
   <translation tag="Checking..." en="Checking..."/>
   <translation tag="Choose 12-hour or 24-hour time display" en="Choose 12-hour or 24-hour time display"/>
+  <translation tag="Choose Filament" en="Choose Filament"/>
   <translation tag="Choose Spool" en="Choose Spool"/>
   <translation tag="Choose an existing filament, or tap + New to create one." en="Choose an existing filament, or tap + New to create one."/>
   <translation tag="Choose display language" en="Choose display language"/>
@@ -488,6 +491,7 @@
   <translation tag="Console" en="Console"/>
   <translation tag="Console Settings" en="Console Settings"/>
   <translation tag="Context" en="Context"/>
+  <translation tag="Continue" en="Continue"/>
   <translation tag="Control optional print start features" en="Control optional print start features"/>
   <translation tag="Control power relays and smart outlets" en="Control power relays and smart outlets"/>
   <translation tag="Controlled by hardware sensor" en="Controlled by hardware sensor"/>
@@ -633,6 +637,7 @@
   <translation tag="Each fan can only be selected once" en="Each fan can only be selected once"/>
   <translation tag="Edit" en="Edit"/>
   <translation tag="Edit Preset" en="Edit Preset"/>
+  <translation tag="Edit Slot" en="Edit Slot"/>
   <translation tag="Edit Slot 1" en="Edit Slot 1"/>
   <translation tag="Edit Spool" en="Edit Spool"/>
   <translation tag="Edit Spool #{}" en="Edit Spool #{}"/>
@@ -864,6 +869,7 @@
   <translation tag="Filament load failed: {}" en="Filament load failed: {}"/>
   <translation tag="Filament loaded" en="Filament loaded"/>
   <translation tag="Filament operation failed" en="Filament operation failed"/>
+  <translation tag="Filament operation failed: {}" en="Filament operation failed: {}"/>
   <translation tag="Filament operation timed out" en="Filament operation timed out"/>
   <translation tag="Filament runout" en="Filament runout"/>
   <translation tag="Filament runout and motion detection sensors" en="Filament runout and motion detection sensors"/>
@@ -1158,6 +1164,7 @@
   <translation tag="Lost connection during print — try again" en="Lost connection during print — try again"/>
   <translation tag="Lot # (optional)" en="Lot # (optional)"/>
   <translation tag="Lot/Batch Nr" en="Lot/Batch Nr"/>
+  <translation tag="Low Memory" en="Low Memory"/>
   <translation tag="M to toggle" en="M to toggle"/>
   <translation tag="MAC:" en="MAC:"/>
   <translation tag="MACRO DEVICES" en="MACRO DEVICES"/>
@@ -1726,6 +1733,7 @@
   <translation tag="Reset all settings and restart wizard" en="Reset all settings and restart wizard"/>
   <translation tag="Reset failed: {}" en="Reset failed: {}"/>
   <translation tag="Reset to Default" en="Reset to Default"/>
+  <translation tag="Reset to defaults" en="Reset to defaults"/>
   <translation tag="Reset to original values" en="Reset to original values"/>
   <translation tag="Resetting" en="Resetting"/>
   <translation tag="Resetting..." en="Resetting..."/>
@@ -1839,6 +1847,7 @@
   <translation tag="Screensaver" en="Screensaver"/>
   <translation tag="Screensaver disabled" en="Screensaver disabled"/>
   <translation tag="Screws Tilt" en="Screws Tilt"/>
+  <translation tag="Scroll Buttons" en="Scroll Buttons"/>
   <translation tag="Scroll Engage Distance" en="Scroll Engage Distance"/>
   <translation tag="Scroll Guard" en="Scroll Guard"/>
   <translation tag="Search filename..." en="Search filename..."/>
@@ -1919,6 +1928,7 @@
   <translation tag="Show printer icon in navigation bar" en="Show printer icon in navigation bar"/>
   <translation tag="Show temp for" en="Show temp for"/>
   <translation tag="Show text labels on icon-only home screen widgets" en="Show text labels on icon-only home screen widgets"/>
+  <translation tag="Show up/down buttons on long lists" en="Show up/down buttons on long lists"/>
   <translation tag="Show whatever curves you last had visible on the full graph." en="Show whatever curves you last had visible on the full graph."/>
   <translation tag="Shutdown" en="Shutdown"/>
   <translation tag="Shutdown / Reboot" en="Shutdown / Reboot"/>
@@ -2110,6 +2120,8 @@
   <translation tag="These tools have no matching filament loaded:" en="These tools have no matching filament loaded:"/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." en="This calibration uses the paper friction method to set your Z-offset."/>
   <translation tag="This cannot be undone." en="This cannot be undone."/>
+  <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" en="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?"/>
+  <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?" en="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?"/>
   <translation tag="This file was sliced for {} but {} is loaded." en="This file was sliced for {} but {} is loaded."/>
   <translation tag="This is exactly the data that will be sent" en="This is exactly the data that will be sent"/>
   <translation tag="This is what data would be sent if enabled" en="This is what data would be sent if enabled"/>
@@ -2254,6 +2266,7 @@
   <translation tag="VM Peak" en="VM Peak"/>
   <translation tag="VM Size" en="VM Size"/>
   <translation tag="Value must be between {:.0f} and {:.0f}" en="Value must be between {:.0f} and {:.0f}"/>
+  <translation tag="Values must not be negative" en="Values must not be negative"/>
   <translation tag="Velocity and acceleration limits" en="Velocity and acceleration limits"/>
   <translation tag="Vendor" en="Vendor"/>
   <translation tag="Vendor Name" en="Vendor Name"/>

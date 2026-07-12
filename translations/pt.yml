@@ -369,6 +369,8 @@ translations:
   Calibration saved but cannot apply on SDL display: Calibração salva mas não pode
     ser aplicada no display SDL
   Calibration started: Calibração iniciada
+  Calibration succeeded, but the frequency chart data couldn't be read.: ''
+  Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer.: ''
   Calibration timed out. Please try again.: Tempo esgotado. Tente novamente.
   Calibrator not initialized. Try reopening the panel.: Calibrador não inicializado.
     Tente reabrir o painel.
@@ -456,6 +458,7 @@ translations:
   Checking webcam: Verificando webcam
   Checking...: Verificando...
   Choose 12-hour or 24-hour time display: Escolha exibição de hora em 12 ou 24 horas
+  Choose Filament: ''
   Choose Spool: Escolher bobina
   Choose an existing filament, or tap + New to create one.: Escolha um filamento existente
     ou toque em + Novo para criar um.
@@ -571,6 +574,7 @@ translations:
   Console: Console
   Console Settings: Configurações do Console
   Context: Contexto
+  Continue: ''
   Control optional print start features: Controlar recursos opcionais de início de
     impressão
   Control power relays and smart outlets: Controlar relés e tomadas inteligentes
@@ -728,6 +732,7 @@ translations:
   Each fan can only be selected once: Cada ventoinha só pode ser selecionada uma vez
   Edit: Editar
   Edit Preset: Editar Predefinição
+  Edit Slot: ''
   Edit Slot 1: Editar Slot 1
   Edit Spool: Editar Carretel
   'Edit Spool #{}': 'Editar Bobina #{}'
@@ -980,6 +985,7 @@ translations:
   'Filament load failed: {}': 'Falha ao carregar filamento: {}'
   Filament loaded: Filamento carregado
   Filament operation failed: Falha na operação de filamento
+  'Filament operation failed: {}': ''
   Filament operation timed out: Operação de filamento — tempo esgotado
   Filament runout: Fim de filamento
   Filament runout and motion detection sensors: Sensores de detecção de fim de filamento
@@ -1334,6 +1340,7 @@ translations:
     tente novamente
   'Lot # (optional)': 'Lote # (opcional)'
   Lot/Batch Nr: Nr. Lote/Batch
+  Low Memory: ''
   M to toggle: M para alternar
   'MAC:': 'MAC:'
   MACRO DEVICES: DISPOSITIVOS DE MACRO
@@ -1970,6 +1977,7 @@ translations:
     assistente
   'Reset failed: {}': 'Falha ao redefinir: {}'
   Reset to Default: Restaurar Padrão
+  Reset to defaults: ''
   Reset to original values: Restaurar valores originais
   Resetting: Restaurando
   Resetting...: Resetando...
@@ -2105,6 +2113,7 @@ translations:
   Screensaver: Protetor de Tela
   Screensaver disabled: Protetor de tela desativado
   Screws Tilt: Inclinação dos Parafusos
+  Scroll Buttons: ''
   Scroll Engage Distance: Distância de ativação da rolagem
   Scroll Guard: Proteção de rolagem
   Search filename...: Buscar nome do arquivo...
@@ -2206,6 +2215,7 @@ translations:
   Show temp for: Mostrar temp. para
   Show text labels on icon-only home screen widgets: Mostrar rótulos de texto em widgets
     da tela inicial com apenas ícones
+  Show up/down buttons on long lists: ''
   Show whatever curves you last had visible on the full graph.: Mostrar as curvas
     que estavam visíveis por último no gráfico completo.
   Shutdown: Desligar
@@ -2448,6 +2458,10 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: Esta calibração
     usa o método de fricção de papel para definir seu Z-offset.
   This cannot be undone.: Isso não pode ser desfeito.
+  ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
+  : ''
+  ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
+  : ''
   This file was sliced for {} but {} is loaded.: Este arquivo foi fatiado para {}
     mas {} está carregado.
   This is exactly the data that will be sent: Estes são exatamente os dados que serão
@@ -2638,6 +2652,7 @@ translations:
   VM Peak: Pico de VM
   VM Size: Tamanho de VM
   Value must be between {:.0f} and {:.0f}: O valor deve estar entre {:.0f} e {:.0f}
+  Values must not be negative: ''
   Velocity and acceleration limits: Limites de velocidade e aceleração
   Vendor: Fabricante
   Vendor Name: Nome do Fornecedor

@@ -363,6 +363,8 @@ translations:
   Calibration saved but cannot apply on SDL display: Калибровка сохранена, но не может
     быть применена на SDL дисплее
   Calibration started: Калибровка запущена
+  Calibration succeeded, but the frequency chart data couldn't be read.: ''
+  Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer.: ''
   Calibration timed out. Please try again.: Время истекло. Попробуйте снова.
   Calibrator not initialized. Try reopening the panel.: Калибратор не инициализирован.
     Попробуйте снова открыть панель.
@@ -449,6 +451,7 @@ translations:
   Checking...: Проверка...
   Choose 12-hour or 24-hour time display: Выберите 12-часовой или 24-часовой формат
     времени
+  Choose Filament: ''
   Choose Spool: Выбрать катушку
   Choose an existing filament, or tap + New to create one.: Выберите существующий
     филамент или нажмите + Новый, чтобы создать.
@@ -559,6 +562,7 @@ translations:
   Console: Консоль
   Console Settings: Настройки консоли
   Context: Контекст
+  Continue: ''
   Control optional print start features: Управление дополнительными функциями начала
     печати
   Control power relays and smart outlets: Управление реле и умными розетками
@@ -716,6 +720,7 @@ translations:
     раз
   Edit: Редактировать
   Edit Preset: Редактировать пресет
+  Edit Slot: ''
   Edit Slot 1: Редактировать слот 1
   Edit Spool: Редактировать катушку
   'Edit Spool #{}': 'Изменить катушку #{}'
@@ -967,6 +972,7 @@ translations:
   'Filament load failed: {}': 'Ошибка загрузки филамента: {}'
   Filament loaded: Филамент загружен
   Filament operation failed: Операция с филаментом не удалась
+  'Filament operation failed: {}': ''
   Filament operation timed out: Операция с филаментом — время ожидания истекло
   Filament runout: Окончание филамента
   Filament runout and motion detection sensors: Датчики окончания и движения филамента
@@ -1317,6 +1323,7 @@ translations:
     попробуйте снова
   'Lot # (optional)': 'Партия # (необязательно)'
   Lot/Batch Nr: Nr. партии/серии
+  Low Memory: ''
   M to toggle: M для переключения
   'MAC:': 'MAC:'
   MACRO DEVICES: МАКРО-УСТРОЙСТВА
@@ -1944,6 +1951,7 @@ translations:
   Reset all settings and restart wizard: Сбросить все настройки и перезапустить мастер
   'Reset failed: {}': 'Ошибка сброса: {}'
   Reset to Default: Сбросить до умолчания
+  Reset to defaults: ''
   Reset to original values: Сбросить к исходным значениям
   Resetting: Сброс
   Resetting...: Сброс...
@@ -2077,6 +2085,7 @@ translations:
   Screensaver: Заставка
   Screensaver disabled: Заставка отключена
   Screws Tilt: Наклон винтов
+  Scroll Buttons: ''
   Scroll Engage Distance: Расстояние активации прокрутки
   Scroll Guard: Защита прокрутки
   Search filename...: Поиск файла...
@@ -2176,6 +2185,7 @@ translations:
   Show temp for: Показывать темп. для
   Show text labels on icon-only home screen widgets: Показывать текстовые подписи
     на виджетах главного экрана
+  Show up/down buttons on long lists: ''
   Show whatever curves you last had visible on the full graph.: Показывать те кривые,
     что были видны на полном графике в последний раз.
   Shutdown: Выключение
@@ -2414,6 +2424,10 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: Эта калибровка
     использует метод трения бумаги об сопло для установки Z-смещения.
   This cannot be undone.: Это действие нельзя отменить.
+  ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
+  : ''
+  ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
+  : ''
   This file was sliced for {} but {} is loaded.: Файл нарезан для {}, но загружен
     {}.
   This is exactly the data that will be sent: Это именно те данные, которые будут
@@ -2600,6 +2614,7 @@ translations:
   VM Peak: Пик VM
   VM Size: Размер VM
   Value must be between {:.0f} and {:.0f}: Значение должно быть от {:.0f} до {:.0f}
+  Values must not be negative: ''
   Velocity and acceleration limits: Ограничения скорости и ускорения
   Vendor: Производитель
   Vendor Name: Название производителя

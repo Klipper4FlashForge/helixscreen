@@ -331,6 +331,8 @@ translations:
     — 応答タイムアウト
   Calibration saved but cannot apply on SDL display: キャリブレーションは保存されましたが SDL ディスプレイには適用できません
   Calibration started: キャリブレーションを開始しました
+  Calibration succeeded, but the frequency chart data couldn't be read.: ''
+  Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer.: ''
   Calibration timed out. Please try again.: タイムアウトしました。もう一度お試しください。
   Calibrator not initialized. Try reopening the panel.: キャリブレーターが初期化されていません。パネルを開き直してください。
   Camera: カメラ
@@ -400,6 +402,7 @@ translations:
   Checking webcam: ウェブカメラを確認中
   Checking...: 確認中...
   Choose 12-hour or 24-hour time display: 12時間表示または24時間表示を選択
+  Choose Filament: ''
   Choose Spool: スプールを選択
   Choose an existing filament, or tap + New to create one.: 既存のフィラメントを選択するか、+ 新規をタップして作成してください。
   Choose display language: 表示言語を選択
@@ -498,6 +501,7 @@ translations:
   Console: コンソール
   Console Settings: コンソール設定
   Context: コンテキスト
+  Continue: ''
   Control optional print start features: オプションの印刷開始機能を制御
   Control power relays and smart outlets: 電源リレーとスマートコンセントを制御
   Controlled by hardware sensor: ハードウェアセンサーで制御
@@ -649,6 +653,7 @@ translations:
   Each fan can only be selected once: 各ファンは一度のみ選択できます
   Edit: 編集
   Edit Preset: プリセットを編集
+  Edit Slot: ''
   Edit Slot 1: スロット1を編集
   Edit Spool: スプールを編集
   'Edit Spool #{}': 'スプール #{} を編集'
@@ -881,6 +886,7 @@ translations:
   'Filament load failed: {}': 'フィラメントの装填に失敗しました: {}'
   Filament loaded: フィラメントを装填しました
   Filament operation failed: フィラメント操作に失敗しました
+  'Filament operation failed: {}': ''
   Filament operation timed out: フィラメント操作がタイムアウトしました
   Filament runout: フィラメント切れ
   Filament runout and motion detection sensors: フィラメント切れとモーション検出センサー
@@ -1192,6 +1198,7 @@ translations:
   Lost connection during print — try again: 印刷中に接続が切断されました — もう一度お試しください
   'Lot # (optional)': ロット番号（オプション）
   Lot/Batch Nr: ロット/バッチ番号
+  Low Memory: ''
   M to toggle: M で切り替え
   'MAC:': 'MAC:'
   MACRO DEVICES: マクロデバイス
@@ -1775,6 +1782,7 @@ translations:
   Reset all settings and restart wizard: すべての設定をリセットしてウィザードを再開
   'Reset failed: {}': 'リセットに失敗しました: {}'
   Reset to Default: デフォルトにリセット
+  Reset to defaults: ''
   Reset to original values: 元の値にリセット
   Resetting: リセット中
   Resetting...: リセット中...
@@ -1894,6 +1902,7 @@ translations:
   Screensaver: スクリーンセーバー
   Screensaver disabled: スクリーンセーバーを無効化しました
   Screws Tilt: ネジ傾き
+  Scroll Buttons: ''
   Scroll Engage Distance: スクロール開始距離
   Scroll Guard: スクロールガード
   Search filename...: ファイル名を検索...
@@ -1979,6 +1988,7 @@ translations:
   Show printer icon in navigation bar: ナビゲーションバーにプリンターアイコンを表示
   Show temp for: 温度表示対象
   Show text labels on icon-only home screen widgets: アイコンのみのホーム画面ウィジェットにテキストラベルを表示
+  Show up/down buttons on long lists: ''
   Show whatever curves you last had visible on the full graph.: フルグラフで最後に表示していた曲線を表示します。
   Shutdown: シャットダウン
   Shutdown / Reboot: シャットダウン / 再起動
@@ -2185,6 +2195,10 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: このキャリブレーションは紙の摩擦方式を使用して
     Z-offset を設定します。
   This cannot be undone.: この操作は元に戻せません。
+  ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
+  : ''
+  ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
+  : ''
   This file was sliced for {} but {} is loaded.: このファイルは {} 用にスライスされていますが、{} がロードされています。
   This is exactly the data that will be sent: これが送信されるデータです
   This is what data would be sent if enabled: これは有効にした場合に送信されるデータです
@@ -2346,6 +2360,7 @@ translations:
   VM Peak: VM ピーク
   VM Size: VM サイズ
   Value must be between {:.0f} and {:.0f}: 値は {:.0f} から {:.0f} の間で入力してください
+  Values must not be negative: ''
   Velocity and acceleration limits: 速度と加速度の制限
   Vendor: ベンダー
   Vendor Name: ベンダー名

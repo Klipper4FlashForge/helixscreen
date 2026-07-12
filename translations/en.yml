@@ -355,6 +355,8 @@ translations:
   Calibration saved but cannot apply on SDL display: Calibration saved but cannot
     apply on SDL display
   Calibration started: Calibration started
+  Calibration succeeded, but the frequency chart data couldn't be read.: Calibration succeeded, but the frequency chart data couldn't be read.
+  Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer.: Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer.
   Calibration timed out. Please try again.: Calibration timed out. Please try again.
   Calibrator not initialized. Try reopening the panel.: Calibrator not initialized.
     Try reopening the panel.
@@ -437,6 +439,7 @@ translations:
   Checking webcam: Checking webcam
   Checking...: Checking...
   Choose 12-hour or 24-hour time display: Choose 12-hour or 24-hour time display
+  Choose Filament: Choose Filament
   Choose Spool: Choose Spool
   Choose an existing filament, or tap + New to create one.: Choose an existing filament,
     or tap + New to create one.
@@ -547,6 +550,7 @@ translations:
   Console: Console
   Console Settings: Console Settings
   Context: Context
+  Continue: Continue
   Control optional print start features: Control optional print start features
   Control power relays and smart outlets: Control power relays and smart outlets
   Controlled by hardware sensor: Controlled by hardware sensor
@@ -700,6 +704,7 @@ translations:
   Each fan can only be selected once: Each fan can only be selected once
   Edit: Edit
   Edit Preset: Edit Preset
+  Edit Slot: Edit Slot
   Edit Slot 1: Edit Slot 1
   Edit Spool: Edit Spool
   'Edit Spool #{}': 'Edit Spool #{}'
@@ -948,6 +953,7 @@ translations:
   'Filament load failed: {}': 'Filament load failed: {}'
   Filament loaded: Filament loaded
   Filament operation failed: Filament operation failed
+  'Filament operation failed: {}': 'Filament operation failed: {}'
   Filament operation timed out: Filament operation timed out
   Filament runout: Filament runout
   Filament runout and motion detection sensors: Filament runout and motion detection
@@ -1293,6 +1299,7 @@ translations:
   Lost connection during print — try again: Lost connection during print — try again
   'Lot # (optional)': 'Lot # (optional)'
   Lot/Batch Nr: Lot/Batch Nr
+  Low Memory: Low Memory
   M to toggle: M to toggle
   'MAC:': 'MAC:'
   MACRO DEVICES: MACRO DEVICES
@@ -1915,6 +1922,7 @@ translations:
   Reset all settings and restart wizard: Reset all settings and restart wizard
   'Reset failed: {}': 'Reset failed: {}'
   Reset to Default: Reset to Default
+  Reset to defaults: Reset to defaults
   Reset to original values: Reset to original values
   Resetting: Resetting
   Resetting...: Resetting...
@@ -2047,6 +2055,7 @@ translations:
   Screensaver: Screensaver
   Screensaver disabled: Screensaver disabled
   Screws Tilt: Screws Tilt
+  Scroll Buttons: Scroll Buttons
   Scroll Engage Distance: Scroll Engage Distance
   Scroll Guard: Scroll Guard
   Search filename...: Search filename...
@@ -2142,6 +2151,7 @@ translations:
   Show temp for: Show temp for
   Show text labels on icon-only home screen widgets: Show text labels on icon-only
     home screen widgets
+  Show up/down buttons on long lists: Show up/down buttons on long lists
   Show whatever curves you last had visible on the full graph.: Show whatever curves
     you last had visible on the full graph.
   Shutdown: Shutdown
@@ -2377,6 +2387,10 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: This calibration
     uses the paper friction method to set your Z-offset.
   This cannot be undone.: This cannot be undone.
+  ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
+  : This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
+  ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
+  : This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
   This file was sliced for {} but {} is loaded.: This file was sliced for {} but {}
     is loaded.
   This is exactly the data that will be sent: This is exactly the data that will be
@@ -2561,6 +2575,7 @@ translations:
   VM Peak: VM Peak
   VM Size: VM Size
   Value must be between {:.0f} and {:.0f}: Value must be between {:.0f} and {:.0f}
+  Values must not be negative: Values must not be negative
   Velocity and acceleration limits: Velocity and acceleration limits
   Vendor: Vendor
   Vendor Name: Vendor Name

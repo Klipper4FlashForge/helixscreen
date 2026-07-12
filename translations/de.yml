@@ -374,6 +374,8 @@ translations:
   Calibration saved but cannot apply on SDL display: Kalibrierung gespeichert, kann
     aber auf SDL-Display nicht angewendet werden
   Calibration started: Kalibrierung gestartet
+  Calibration succeeded, but the frequency chart data couldn't be read.: ''
+  Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer.: ''
   Calibration timed out. Please try again.: Zeitüberschreitung. Bitte erneut versuchen.
   Calibrator not initialized. Try reopening the panel.: Kalibrator nicht initialisiert.
     Versuchen Sie, das Panel erneut zu öffnen.
@@ -461,6 +463,7 @@ translations:
   Checking webcam: Webcam wird geprüft
   Checking...: Prüfe...
   Choose 12-hour or 24-hour time display: 12-Stunden- oder 24-Stunden-Zeitformat wählen
+  Choose Filament: ''
   Choose Spool: Spule auswählen
   Choose an existing filament, or tap + New to create one.: Vorhandenes Filament wählen
     oder + Neu tippen.
@@ -574,6 +577,7 @@ translations:
   Console: Konsole
   Console Settings: Konsoleneinstellungen
   Context: Kontext
+  Continue: ''
   Control optional print start features: Optionale Druckstartfunktionen steuern
   Control power relays and smart outlets: Relais und smarte Steckdosen steuern
   Controlled by hardware sensor: Durch Hardware-Sensor gesteuert
@@ -732,6 +736,7 @@ translations:
   Each fan can only be selected once: Jeder Lüfter kann nur einmal ausgewählt werden
   Edit: Bearbeiten
   Edit Preset: Voreinstellung bearbeiten
+  Edit Slot: ''
   Edit Slot 1: Slot 1 bearbeiten
   Edit Spool: Spule bearbeiten
   'Edit Spool #{}': 'Spule #{} bearbeiten'
@@ -993,6 +998,7 @@ translations:
   'Filament load failed: {}': 'Filament laden fehlgeschlagen: {}'
   Filament loaded: Filament geladen
   Filament operation failed: Filament-Vorgang fehlgeschlagen
+  'Filament operation failed: {}': ''
   Filament operation timed out: Filament-Vorgang Zeitüberschreitung
   Filament runout: Filament aufgebraucht
   Filament runout and motion detection sensors: Filament-Auslauf- und Bewegungserkennungssensoren
@@ -1344,6 +1350,7 @@ translations:
     — erneut versuchen
   'Lot # (optional)': Los-Nr. (optional)
   Lot/Batch Nr: Los-/Chargennr.
+  Low Memory: ''
   M to toggle: M zum Umschalten
   'MAC:': 'MAC:'
   MACRO DEVICES: MAKRO-GERÄTE
@@ -1976,6 +1983,7 @@ translations:
     neu starten
   'Reset failed: {}': 'Zurücksetzen fehlgeschlagen: {}'
   Reset to Default: Auf Standard zurücksetzen
+  Reset to defaults: ''
   Reset to original values: Auf Originalwerte zurücksetzen
   Resetting: Zurücksetzen
   Resetting...: Wird zurückgesetzt...
@@ -2111,6 +2119,7 @@ translations:
   Screensaver: Bildschirmschoner
   Screensaver disabled: Bildschirmschoner deaktiviert
   Screws Tilt: Schraubenneigung
+  Scroll Buttons: ''
   Scroll Engage Distance: Scroll-Auslöseabstand
   Scroll Guard: Scroll-Schutz
   Search filename...: Dateiname suchen...
@@ -2210,6 +2219,7 @@ translations:
   Show temp for: Temperatur anzeigen für
   Show text labels on icon-only home screen widgets: Textbeschriftungen auf Icon-Widgets
     des Startbildschirms anzeigen
+  Show up/down buttons on long lists: ''
   Show whatever curves you last had visible on the full graph.: Zeigt die zuletzt
     im vollständigen Diagramm sichtbaren Kurven an.
   Shutdown: Herunterfahren
@@ -2449,6 +2459,10 @@ translations:
   This calibration uses the paper friction method to set your Z-offset.: Diese Kalibrierung
     verwendet die Papierreibungsmethode zur Einstellung Ihres Z-Offsets.
   This cannot be undone.: Dies kann nicht rückgängig gemacht werden.
+  ? This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
+  : ''
+  ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
+  : ''
   This file was sliced for {} but {} is loaded.: Diese Datei wurde für {} gesliced,
     aber {} ist geladen.
   This is exactly the data that will be sent: Dies sind genau die Daten, die gesendet
@@ -2640,6 +2654,7 @@ translations:
   VM Peak: VM-Spitze
   VM Size: VM-Größe
   Value must be between {:.0f} and {:.0f}: Wert muss zwischen {:.0f} und {:.0f} liegen
+  Values must not be negative: ''
   Velocity and acceleration limits: Geschwindigkeits- und Beschleunigungslimits
   Vendor: Hersteller
   Vendor Name: Herstellername

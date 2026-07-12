@@ -323,6 +323,8 @@
   <translation tag="Calibration move may still be running — response timed out" ru="Движение калибровки может ещё выполняться — время ожидания истекло"/>
   <translation tag="Calibration saved but cannot apply on SDL display" ru="Калибровка сохранена, но не может быть применена на SDL дисплее"/>
   <translation tag="Calibration started" ru="Калибровка запущена"/>
+  <translation tag="Calibration succeeded, but the frequency chart data couldn&apos;t be read."/>
+  <translation tag="Calibration succeeded. The frequency chart is only available when HelixScreen runs on the printer."/>
   <translation tag="Calibration timed out. Please try again." ru="Время истекло. Попробуйте снова."/>
   <translation tag="Calibrator not initialized. Try reopening the panel." ru="Калибратор не инициализирован. Попробуйте снова открыть панель."/>
   <translation tag="Camera" ru="Камера"/>
@@ -391,6 +393,7 @@
   <translation tag="Checking webcam" ru="Проверка веб-камеры"/>
   <translation tag="Checking..." ru="Проверка..."/>
   <translation tag="Choose 12-hour or 24-hour time display" ru="Выберите 12-часовой или 24-часовой формат времени"/>
+  <translation tag="Choose Filament"/>
   <translation tag="Choose Spool" ru="Выбрать катушку"/>
   <translation tag="Choose an existing filament, or tap + New to create one." ru="Выберите существующий филамент или нажмите + Новый, чтобы создать."/>
   <translation tag="Choose display language" ru="Выберите язык интерфейса"/>
@@ -488,6 +491,7 @@
   <translation tag="Console" ru="Консоль"/>
   <translation tag="Console Settings" ru="Настройки консоли"/>
   <translation tag="Context" ru="Контекст"/>
+  <translation tag="Continue"/>
   <translation tag="Control optional print start features" ru="Управление дополнительными функциями начала печати"/>
   <translation tag="Control power relays and smart outlets" ru="Управление реле и умными розетками"/>
   <translation tag="Controlled by hardware sensor" ru="Управляется аппаратным датчиком"/>
@@ -633,6 +637,7 @@
   <translation tag="Each fan can only be selected once" ru="Каждый вентилятор можно выбрать только один раз"/>
   <translation tag="Edit" ru="Редактировать"/>
   <translation tag="Edit Preset" ru="Редактировать пресет"/>
+  <translation tag="Edit Slot"/>
   <translation tag="Edit Slot 1" ru="Редактировать слот 1"/>
   <translation tag="Edit Spool" ru="Редактировать катушку"/>
   <translation tag="Edit Spool #{}" ru="Изменить катушку #{}"/>
@@ -864,6 +869,7 @@
   <translation tag="Filament load failed: {}" ru="Ошибка загрузки филамента: {}"/>
   <translation tag="Filament loaded" ru="Филамент загружен"/>
   <translation tag="Filament operation failed" ru="Операция с филаментом не удалась"/>
+  <translation tag="Filament operation failed: {}"/>
   <translation tag="Filament operation timed out" ru="Операция с филаментом — время ожидания истекло"/>
   <translation tag="Filament runout" ru="Окончание филамента"/>
   <translation tag="Filament runout and motion detection sensors" ru="Датчики окончания и движения филамента"/>
@@ -1158,6 +1164,7 @@
   <translation tag="Lost connection during print — try again" ru="Потеряно соединение во время печати — попробуйте снова"/>
   <translation tag="Lot # (optional)" ru="Партия # (необязательно)"/>
   <translation tag="Lot/Batch Nr" ru="Nr. партии/серии"/>
+  <translation tag="Low Memory"/>
   <translation tag="M to toggle" ru="M для переключения"/>
   <translation tag="MAC:" ru="MAC:"/>
   <translation tag="MACRO DEVICES" ru="МАКРО-УСТРОЙСТВА"/>
@@ -1726,6 +1733,7 @@
   <translation tag="Reset all settings and restart wizard" ru="Сбросить все настройки и перезапустить мастер"/>
   <translation tag="Reset failed: {}" ru="Ошибка сброса: {}"/>
   <translation tag="Reset to Default" ru="Сбросить до умолчания"/>
+  <translation tag="Reset to defaults"/>
   <translation tag="Reset to original values" ru="Сбросить к исходным значениям"/>
   <translation tag="Resetting" ru="Сброс"/>
   <translation tag="Resetting..." ru="Сброс..."/>
@@ -1839,6 +1847,7 @@
   <translation tag="Screensaver" ru="Заставка"/>
   <translation tag="Screensaver disabled" ru="Заставка отключена"/>
   <translation tag="Screws Tilt" ru="Наклон винтов"/>
+  <translation tag="Scroll Buttons"/>
   <translation tag="Scroll Engage Distance" ru="Расстояние активации прокрутки"/>
   <translation tag="Scroll Guard" ru="Защита прокрутки"/>
   <translation tag="Search filename..." ru="Поиск файла..."/>
@@ -1919,6 +1928,7 @@
   <translation tag="Show printer icon in navigation bar" ru="Показывать значок принтера в панели навигации"/>
   <translation tag="Show temp for" ru="Показывать темп. для"/>
   <translation tag="Show text labels on icon-only home screen widgets" ru="Показывать текстовые подписи на виджетах главного экрана"/>
+  <translation tag="Show up/down buttons on long lists"/>
   <translation tag="Show whatever curves you last had visible on the full graph." ru="Показывать те кривые, что были видны на полном графике в последний раз."/>
   <translation tag="Shutdown" ru="Выключение"/>
   <translation tag="Shutdown / Reboot" ru="Выключение / Перезагрузка"/>
@@ -2110,6 +2120,8 @@
   <translation tag="These tools have no matching filament loaded:" ru="В этих инструментах нет подходящего филамента:"/>
   <translation tag="This calibration uses the paper friction method to set your Z-offset." ru="Эта калибровка использует метод трения бумаги об сопло для установки Z-смещения."/>
   <translation tag="This cannot be undone." ru="Это действие нельзя отменить."/>
+  <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?"/>
+  <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?"/>
   <translation tag="This file was sliced for {} but {} is loaded." ru="Файл нарезан для {}, но загружен {}."/>
   <translation tag="This is exactly the data that will be sent" ru="Это именно те данные, которые будут отправлены"/>
   <translation tag="This is what data would be sent if enabled" ru="Эти данные были бы отправлены при включении"/>
@@ -2254,6 +2266,7 @@
   <translation tag="VM Peak" ru="Пик VM"/>
   <translation tag="VM Size" ru="Размер VM"/>
   <translation tag="Value must be between {:.0f} and {:.0f}" ru="Значение должно быть от {:.0f} до {:.0f}"/>
+  <translation tag="Values must not be negative"/>
   <translation tag="Velocity and acceleration limits" ru="Ограничения скорости и ускорения"/>
   <translation tag="Vendor" ru="Производитель"/>
   <translation tag="Vendor Name" ru="Название производителя"/>
