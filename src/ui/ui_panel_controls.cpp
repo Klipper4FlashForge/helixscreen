@@ -30,6 +30,7 @@
 #include "moonraker_api.h"
 #include "observer_factory.h"
 #include "operation_timeout_guard.h"
+#include "panel_widgets/led_widget.h"
 #include "printer_state.h"
 #include "safety_settings_manager.h"
 #include "standard_macros.h"
@@ -77,6 +78,10 @@ ControlsPanel::ControlsPanel(PrinterState& printer_state, MoonrakerAPI* api)
 }
 
 ControlsPanel::~ControlsPanel() {
+    // Detach the LED widget while LVGL is still valid (its dtor calls detach(),
+    // but do it explicitly first so its observers are torn down before subjects).
+    led_widget_.reset();
+
     deinit_subjects();
 
     // Clean up lazily-created overlay panels to prevent dangling LVGL objects
@@ -360,6 +365,17 @@ void ControlsPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
         lv_obj_add_flag(secondary_temps_list_, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(secondary_temps_list_, on_secondary_temps_clicked, LV_EVENT_CLICKED,
                             this);
+    }
+
+    // LED quick-toggle cell (Calibration & Tools grid). Reuses LedWidget — the
+    // same class that drives the home-dashboard light widget — so the bulb icon
+    // reflects on/off + brightness + LED color and a tap toggles the light.
+    // The cell itself is hidden unless an LED strip is controllable
+    // (led_controllable binding in XML). attach() finds light_button/light_icon
+    // by name and wires the click handler + observers.
+    if (lv_obj_t* led_cell = lv_obj_find_by_name(panel_, "controls_led_cell")) {
+        led_widget_ = std::make_unique<helix::LedWidget>(printer_state_, api_);
+        led_widget_->attach(led_cell, parent_screen);
     }
 
     // Wire up card click handlers (cards need manual wiring for navigation)

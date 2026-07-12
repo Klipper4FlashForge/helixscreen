@@ -19,12 +19,14 @@
 #include "ui/temperature_observer_bundle.h"
 #include "ui/ui_modal_guard.h"
 
+#include <memory>
 #include <optional>
 
 // Forward declaration
 class TemperatureService;
 namespace helix {
 class TemperatureController;
+class LedWidget;
 namespace ui {
 struct ControlsPanelTestAccess; // test-only friend (tests/test_helpers/)
 } // namespace ui
@@ -265,6 +267,12 @@ class ControlsPanel : public PanelBase {
     lv_obj_t* bed_mesh_panel_ = nullptr;
     lv_obj_t* zoffset_panel_ = nullptr;
     lv_obj_t* screws_panel_ = nullptr;
+
+    /// LED quick-toggle for the Calibration & Tools grid cell. Reuses the same
+    /// LedWidget that drives the home-dashboard light widget (stateful bulb icon
+    /// reflecting on/off + brightness + LED color; tap toggles). Present only
+    /// when an LED strip is controllable (cell hidden via led_controllable).
+    std::unique_ptr<helix::LedWidget> led_widget_;
 
     //
     // === Modal Dialog State ===
