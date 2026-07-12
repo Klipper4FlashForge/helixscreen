@@ -445,6 +445,187 @@ class TestYamlFormatPreservation:
         assert aaa_pos < zzz_pos
 
 
+class TestYamlSurgicalInsertion:
+    """
+    Regression guard: keys are inserted by surgical line splicing, NOT by
+    round-tripping the whole document. A full re-serialize (the old behavior)
+    reflowed folded scalars and requoted unrelated entries, churning thousands
+    of lines when a single key was added.
+    """
+
+    @pytest.fixture
+    def folded_yaml_dir(self, tmp_path):
+        """A locale dir whose committed entries use folding and complex keys.
+
+        The exact byte layout below is what must survive an insertion untouched.
+        """
+        yaml_dir = tmp_path / "translations"
+        yaml_dir.mkdir()
+
+        # Note the 4-space folded continuation and the `? ... : ...` complex key.
+        en = (
+            "locale: en\n"
+            "translations:\n"
+            "  Apple: Apple\n"
+            "  Banana entry whose value wraps for realism: Banana entry whose value wraps\n"
+            "    onto a second physical line\n"
+            "  ? A very long key that ruamel renders with complex question-mark notation because it is wide\n"
+            "  : its rendered value\n"
+            "  Cherry: Cherry\n"
+            "  Zebra: Zebra\n"
+        )
+        de = (
+            "locale: de\n"
+            "translations:\n"
+            "  Apple: Apfel\n"
+            "  Banana entry whose value wraps for realism: Banane\n"
+            "  ? A very long key that ruamel renders with complex question-mark notation because it is wide\n"
+            "  : sein Wert\n"
+            "  Cherry: Kirsche\n"
+            "  Zebra: Zebra\n"
+        )
+        (yaml_dir / "en.yml").write_text(en)
+        (yaml_dir / "de.yml").write_text(de)
+        return yaml_dir
+
+    def test_untouched_lines_are_byte_identical(self, folded_yaml_dir):
+        """Inserting a key only adds lines; every pre-existing line is preserved."""
+        from translations.yaml_manager import merge_new_keys
+
+        before = (folded_yaml_dir / "en.yml").read_text().splitlines(keepends=True)
+
+        merge_new_keys(folded_yaml_dir, {"Blueberry"})  # sorts between Banana and Cherry
+
+        after = (folded_yaml_dir / "en.yml").read_text().splitlines(keepends=True)
+
+        # Old lines survive verbatim; the diff is a pure insertion.
+        added = [l for l in after if l not in before]
+        removed = [l for l in before if l not in after]
+        assert removed == []
+        assert len(added) == 1
+        assert added[0] == "  Blueberry: Blueberry\n"
+
+    def test_folded_and_complex_entries_not_reflowed(self, folded_yaml_dir):
+        """The folded value and the complex `? ` key are preserved byte-for-byte."""
+        from translations.yaml_manager import merge_new_keys
+
+        merge_new_keys(folded_yaml_dir, {"Mango"})
+
+        content = (folded_yaml_dir / "en.yml").read_text()
+        # Folded continuation line intact (would be joined by a full re-dump).
+        assert "    onto a second physical line\n" in content
+        # Complex-key block intact.
+        assert (
+            "  ? A very long key that ruamel renders with complex question-mark "
+            "notation because it is wide\n"
+        ) in content
+        assert "  : its rendered value\n" in content
+
+    def test_inserted_at_alphabetical_position(self, folded_yaml_dir):
+        """New key lands between its sorted neighbours, not appended blindly."""
+        from translations.yaml_manager import merge_new_keys
+
+        merge_new_keys(folded_yaml_dir, {"Blueberry"})
+
+        lines = (folded_yaml_dir / "en.yml").read_text().splitlines()
+        idx = {l.strip().split(":")[0]: i for i, l in enumerate(lines)}
+        # Banana < Blueberry < Cherry
+        assert idx["Banana entry whose value wraps for realism"] < idx["Blueberry"]
+        assert idx["Blueberry"] < idx["Cherry"]
+
+    def test_output_is_valid_yaml(self, folded_yaml_dir):
+        """The spliced file still parses and contains the new key with its value."""
+        from translations.yaml_manager import merge_new_keys, load_yaml_file
+
+        merge_new_keys(folded_yaml_dir, {"Blueberry"})
+
+        en = load_yaml_file(folded_yaml_dir / "en.yml")
+        de = load_yaml_file(folded_yaml_dir / "de.yml")
+        assert en["translations"]["Blueberry"] == "Blueberry"
+        assert de["translations"]["Blueberry"] == ""
+        # Pre-existing values untouched.
+        assert en["translations"]["Apple"] == "Apple"
+        assert de["translations"]["Cherry"] == "Kirsche"
+
+    def test_noop_when_nothing_new(self, folded_yaml_dir):
+        """Re-running with only already-present keys leaves files byte-identical."""
+        from translations.yaml_manager import merge_new_keys, load_yaml_file
+
+        existing = set(
+            load_yaml_file(folded_yaml_dir / "en.yml")["translations"].keys()
+        )
+        before_en = (folded_yaml_dir / "en.yml").read_text()
+        before_de = (folded_yaml_dir / "de.yml").read_text()
+
+        result = merge_new_keys(folded_yaml_dir, existing)
+
+        assert result.keys_added == 0
+        assert (folded_yaml_dir / "en.yml").read_text() == before_en
+        assert (folded_yaml_dir / "de.yml").read_text() == before_de
+
+    def test_key_containing_colon_is_quoted(self, folded_yaml_dir):
+        """A key with a colon renders as a valid quoted single-line entry."""
+        from translations.yaml_manager import merge_new_keys, load_yaml_file
+
+        merge_new_keys(folded_yaml_dir, {"Filament operation failed: {}"})
+
+        content = (folded_yaml_dir / "en.yml").read_text()
+        assert "'Filament operation failed: {}': 'Filament operation failed: {}'\n" in content
+        # And it round-trips.
+        en = load_yaml_file(folded_yaml_dir / "en.yml")
+        assert en["translations"]["Filament operation failed: {}"] == "Filament operation failed: {}"
+
+
+class TestYamlSurgicalDeletion:
+    """delete/mark obsolete keys must also splice lines, not re-serialize."""
+
+    @pytest.fixture
+    def folded_yaml_dir(self, tmp_path):
+        yaml_dir = tmp_path / "translations"
+        yaml_dir.mkdir()
+        (yaml_dir / "en.yml").write_text(
+            "locale: en\n"
+            "translations:\n"
+            "  Apple: Apple\n"
+            "  Banana entry whose value wraps for realism: Banana entry whose value wraps\n"
+            "    onto a second physical line\n"
+            "  Obsolete Key: Will be removed\n"
+            "  Zebra: Zebra\n"
+        )
+        return yaml_dir
+
+    def test_delete_removes_only_target_entry(self, folded_yaml_dir):
+        from translations.obsolete import delete_obsolete_keys
+
+        delete_obsolete_keys(folded_yaml_dir, {"Obsolete Key"})
+
+        content = (folded_yaml_dir / "en.yml").read_text()
+        assert "Obsolete Key" not in content
+        # Neighbours (including the folded entry) untouched.
+        assert "  Apple: Apple\n" in content
+        assert "    onto a second physical line\n" in content
+        assert "  Zebra: Zebra\n" in content
+
+    def test_delete_dry_run_no_change(self, folded_yaml_dir):
+        from translations.obsolete import delete_obsolete_keys
+
+        before = (folded_yaml_dir / "en.yml").read_text()
+        delete_obsolete_keys(folded_yaml_dir, {"Obsolete Key"}, dry_run=True)
+        assert (folded_yaml_dir / "en.yml").read_text() == before
+
+    def test_mark_deprecated_preserves_neighbours(self, folded_yaml_dir):
+        from translations.obsolete import mark_obsolete_keys
+        from translations.yaml_manager import load_yaml_file
+
+        mark_obsolete_keys(folded_yaml_dir, {"Obsolete Key"})
+
+        data = load_yaml_file(folded_yaml_dir / "en.yml")
+        assert data["translations"]["Obsolete Key"].startswith("[DEPRECATED]")
+        content = (folded_yaml_dir / "en.yml").read_text()
+        assert "    onto a second physical line\n" in content
+        assert "  Zebra: Zebra\n" in content
+
+
 class TestYamlDryRun:
     """Test dry-run mode for YAML operations."""
 
