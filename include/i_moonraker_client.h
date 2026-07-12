@@ -73,6 +73,10 @@ class IMoonrakerClient {
     get_gcode_store(int count, std::function<void(const std::vector<GcodeStoreEntry>&)> on_success,
                     std::function<void(const MoonrakerError&)> on_error) = 0;
 
+    /// @brief Fetch cached temperature history from Moonraker (server.temperature_store)
+    virtual void get_temperature_store(std::function<void(const TemperatureStore&)> on_success,
+                                       std::function<void(const MoonrakerError&)> on_error) = 0;
+
     // ========================================================================
     // Discovery
     // ========================================================================

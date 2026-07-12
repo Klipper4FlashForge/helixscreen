@@ -2553,6 +2553,33 @@ void Application::setup_discovery_callbacks() {
             crash_handler::breadcrumb::note("disc", "post_init_fans",
                                             static_cast<long>(hw.fans().size()));
 
+            // Seed temperature graphs from Moonraker's cached history so they are
+            // populated immediately instead of filling in live over several
+            // minutes (#944). Fired after init_fans so heater/sensor subjects
+            // exist. The RPC success callback runs on the WebSocket thread, so it
+            // marshals the parsed store to the main thread before touching the
+            // (main-thread-only) history manager. Re-runs naturally on reconnect
+            // because discovery re-runs.
+            client->get_temperature_store(
+                [](const TemperatureStore& store) {
+                    auto store_copy = std::make_shared<TemperatureStore>(store);
+                    helix::ui::queue_update("Application::seed_temperature_store", [store_copy]() {
+                        auto* mgr = get_temperature_history_manager();
+                        if (mgr == nullptr) {
+                            return;
+                        }
+                        using namespace std::chrono;
+                        int64_t now_ms =
+                            duration_cast<milliseconds>(system_clock::now().time_since_epoch())
+                                .count();
+                        mgr->seed_from_store(*store_copy, now_ms);
+                    });
+                },
+                [](const MoonrakerError& err) {
+                    spdlog::debug("[Application] server.temperature_store seed failed: {}",
+                                  err.message);
+                });
+
             // Dispatch initial subscription status AFTER init_fans so fan/sensor subjects
             // exist when the status data is processed. The initial status is passed from the
             // discovery sequence rather than dispatched separately to guarantee ordering.

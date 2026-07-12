@@ -315,6 +315,30 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
                          std::function<void(const std::vector<GcodeStoreEntry>&)> on_success,
                          std::function<void(const MoonrakerError&)> on_error) override;
 
+    /**
+     * @brief Fetch cached temperature history from Moonraker
+     *
+     * Retrieves ~20 minutes of 1 Hz per-sensor temperature history from
+     * Moonraker's server.temperature_store endpoint. Used to seed temperature
+     * graphs immediately on connect instead of waiting for live samples.
+     *
+     * @param on_success Callback with the parsed per-sensor store (oldest first)
+     * @param on_error Callback for errors
+     */
+    void get_temperature_store(std::function<void(const TemperatureStore&)> on_success,
+                               std::function<void(const MoonrakerError&)> on_error) override;
+
+    /**
+     * @brief Parse a server.temperature_store JSON "result" object into a TemperatureStore
+     *
+     * Exposed as a static helper so the JSON→struct conversion can be unit
+     * tested directly against canned payloads without a live connection.
+     *
+     * @param result The "result" object from the RPC response (sensor-keyed)
+     * @return Parsed store; empty if @p result is not an object
+     */
+    static TemperatureStore parse_temperature_store(const nlohmann::json& result);
+
     // ========== Discovery (delegates to MoonrakerDiscoverySequence) ==========
 
     /**

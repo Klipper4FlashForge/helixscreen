@@ -924,6 +924,18 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     }
 
   public:
+    /**
+     * @brief Build a realistic temperature history as a server.temperature_store payload
+     *
+     * Generates ~10 minutes of 1 Hz per-sensor history with a heat-up ->
+     * hold-at-target -> cooldown profile (extruder 25->215C, bed 25->60C) plus
+     * gentle sinusoids for any discovered temperature_sensor. The curve ends
+     * near ambient so it joins the idle live simulation smoothly. Used by the
+     * mock server.temperature_store handler so the connect-time seed populates
+     * the graphs in mock mode (#944).
+     */
+    TemperatureStore build_historical_temperature_store() const;
+
     /// Test inspection: the most recent timeout_ms passed to the 5-arg send_jsonrpc().
     /// 0 means either "not yet called" or "caller relied on default".
     uint32_t last_send_timeout_ms() const {

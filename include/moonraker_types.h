@@ -5,6 +5,7 @@
 
 #include "json_fwd.h"
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -308,6 +309,27 @@ struct GcodeStoreEntry {
     double time = 0.0;   ///< Unix timestamp
     std::string type;    ///< "command" or "response"
 };
+
+/**
+ * @brief One sensor's history from Moonraker's server.temperature_store endpoint
+ *
+ * Moonraker keeps ~20 minutes of 1 Hz history per temperature sensor. Each
+ * array is parallel (same length) when present, but any field may be absent
+ * for a given sensor (e.g. a temperature_sensor has no targets/powers).
+ */
+struct TemperatureStoreSeries {
+    std::vector<float> temperatures; ///< Measured temperature (°C) samples, oldest first
+    std::vector<float> targets;      ///< Target temperature (°C) samples, oldest first
+    std::vector<float> powers;       ///< Heater power (0-1) samples, oldest first
+};
+
+/**
+ * @brief Full response from server.temperature_store, keyed by sensor name
+ *
+ * Keys are Klipper object names, e.g. "extruder", "heater_bed",
+ * "temperature_sensor chamber".
+ */
+using TemperatureStore = std::map<std::string, TemperatureStoreSeries>;
 
 // ============================================================================
 // Bed Mesh Types

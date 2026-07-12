@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 
 using namespace helix;
 
@@ -236,6 +237,100 @@ bool TemperatureHistoryManager::add_sample_internal(const std::string& heater_na
     history.last_sample_ms = timestamp_ms;
 
     return true;
+}
+
+// ============================================================================
+// Bulk Seeding
+// ============================================================================
+
+void TemperatureHistoryManager::seed_from_store(const TemperatureStore& store, int64_t now_ms) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    int keys_seeded = 0;
+
+    for (const auto& [key, series] : store) {
+        const size_t n = series.temperatures.size();
+        if (n == 0) {
+            continue;
+        }
+
+        // Collect existing samples for this key (oldest first) so the seed can
+        // merge with any live sample already recorded before the fetch returned.
+        std::vector<TempSample> merged;
+        auto it = heaters_.find(key);
+        if (it != heaters_.end() && it->second.count > 0) {
+            const HeaterHistory& h = it->second;
+            int oldest_index;
+            int num_samples;
+            if (h.count < HISTORY_SIZE) {
+                oldest_index = 0;
+                num_samples = h.count;
+            } else {
+                oldest_index = h.write_index;
+                num_samples = HISTORY_SIZE;
+            }
+            merged.reserve(static_cast<size_t>(num_samples) + n);
+            for (int i = 0; i < num_samples; ++i) {
+                int idx = (oldest_index + i) % HISTORY_SIZE;
+                merged.push_back(h.samples[static_cast<size_t>(idx)]);
+            }
+        } else {
+            merged.reserve(n);
+        }
+
+        // Append synthesized seed samples. Timestamp of sample i is offset back
+        // from now_ms so the newest (i == n-1) lands exactly at now_ms.
+        for (size_t i = 0; i < n; ++i) {
+            TempSample s;
+            s.temp_deci = static_cast<int>(std::lround(series.temperatures[i] * 10.0f));
+            s.target_deci = (i < series.targets.size())
+                                ? static_cast<int>(std::lround(series.targets[i] * 10.0f))
+                                : 0;
+            s.timestamp_ms = now_ms - static_cast<int64_t>(n - 1 - i) * SAMPLE_INTERVAL_MS;
+            merged.push_back(s);
+        }
+
+        // Sort by timestamp. Stable so that, for an exact-timestamp collision,
+        // the seed sample (appended after existing samples) stays after the
+        // existing one and wins the de-dup below.
+        std::stable_sort(merged.begin(), merged.end(),
+                         [](const TempSample& a, const TempSample& b) {
+                             return a.timestamp_ms < b.timestamp_ms;
+                         });
+
+        // Collapse exact-timestamp collisions, keeping the later (seed) sample.
+        std::vector<TempSample> deduped;
+        deduped.reserve(merged.size());
+        for (const auto& sample : merged) {
+            if (!deduped.empty() && deduped.back().timestamp_ms == sample.timestamp_ms) {
+                deduped.back() = sample;
+            } else {
+                deduped.push_back(sample);
+            }
+        }
+
+        // Keep only the newest HISTORY_SIZE samples.
+        if (deduped.size() > static_cast<size_t>(HISTORY_SIZE)) {
+            deduped.erase(deduped.begin(), deduped.begin() + static_cast<std::ptrdiff_t>(
+                                                                 deduped.size() - HISTORY_SIZE));
+        }
+
+        // Rewrite the ring buffer from the merged result.
+        HeaterHistory& hh = heaters_[key];
+        for (size_t i = 0; i < deduped.size(); ++i) {
+            hh.samples[i] = deduped[i];
+        }
+        hh.count = static_cast<int>(deduped.size());
+        hh.write_index = hh.count % HISTORY_SIZE;
+        hh.last_sample_ms = deduped.empty() ? 0 : deduped.back().timestamp_ms;
+
+        spdlog::debug("[TempHistory] seeded '{}': {} samples (newest ts {})", key, hh.count,
+                      hh.last_sample_ms);
+        ++keys_seeded;
+    }
+
+    spdlog::debug("[TempHistory] seed_from_store: {} of {} store keys seeded", keys_seeded,
+                  store.size());
 }
 
 // ============================================================================

@@ -5,6 +5,7 @@
 
 #include "ui_observer_guard.h"
 
+#include "moonraker_types.h"
 #include "printer_state.h"
 
 #include <array>
@@ -183,6 +184,35 @@ class TemperatureHistoryManager {
      * @param target_deci New target value
      */
     void update_recent_sample_target(const std::string& heater_name, int target_deci);
+
+    // ========================================================================
+    // Bulk Seeding
+    // ========================================================================
+
+    /**
+     * @brief Seed history from Moonraker's cached temperature_store
+     *
+     * Bulk-loads ~20 minutes of 1 Hz history fetched via
+     * server.temperature_store so graphs are populated immediately on connect
+     * instead of filling in live over several minutes.
+     *
+     * For each sensor, timestamps are synthesized backward from @p now_ms at
+     * SAMPLE_INTERVAL_MS spacing so the newest seeded sample lands at @p now_ms.
+     * Temperatures/targets are converted to decidegrees (×10). Powers are
+     * ignored (TempSample has no power field).
+     *
+     * Seed samples are merged with any samples already recorded for a sensor,
+     * sorted by timestamp, de-duplicated on exact-timestamp collisions, and the
+     * newest HISTORY_SIZE are kept. This bypasses the SAMPLE_INTERVAL_MS write
+     * throttle and is race-safe against a live sample that may already have been
+     * appended before the async fetch returned.
+     *
+     * @param store Per-sensor history keyed by Klipper object name
+     * @param now_ms Wall-clock timestamp (Unix ms) for the newest seeded sample.
+     *               MUST be on the same clock feeding live samples so seeded and
+     *               live samples are comparable.
+     */
+    void seed_from_store(const TemperatureStore& store, int64_t now_ms);
 
   private:
     friend class TemperatureHistoryManagerTestAccess;

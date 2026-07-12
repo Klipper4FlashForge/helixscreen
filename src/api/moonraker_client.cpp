@@ -1085,6 +1085,57 @@ void MoonrakerClient::get_gcode_store(
         on_error);
 }
 
+TemperatureStore MoonrakerClient::parse_temperature_store(const json& result) {
+    TemperatureStore store;
+    if (!result.is_object()) {
+        return store;
+    }
+
+    // Each entry is a sensor name → {temperatures:[], targets:[], powers:[]}.
+    // Any array may be absent (a temperature_sensor has no targets/powers).
+    for (const auto& [key, series_json] : result.items()) {
+        if (!series_json.is_object()) {
+            continue;
+        }
+        TemperatureStoreSeries series;
+        auto load_array = [&series_json](const char* field, std::vector<float>& out) {
+            if (series_json.contains(field) && series_json[field].is_array()) {
+                const auto& arr = series_json[field];
+                out.reserve(arr.size());
+                for (const auto& v : arr) {
+                    if (v.is_number()) {
+                        out.push_back(v.get<float>());
+                    }
+                }
+            }
+        };
+        load_array("temperatures", series.temperatures);
+        load_array("targets", series.targets);
+        load_array("powers", series.powers);
+        store.emplace(key, std::move(series));
+    }
+
+    return store;
+}
+
+void MoonrakerClient::get_temperature_store(std::function<void(const TemperatureStore&)> on_success,
+                                            std::function<void(const MoonrakerError&)> on_error) {
+    json params = {{"include_monitors", false}};
+
+    send_jsonrpc(
+        "server.temperature_store", params,
+        [on_success](json response) {
+            TemperatureStore store;
+            if (response.contains("result")) {
+                store = parse_temperature_store(response["result"]);
+            }
+            if (on_success) {
+                on_success(store);
+            }
+        },
+        on_error);
+}
+
 void MoonrakerClient::invoke_connected_callback(const std::function<void()>& cb,
                                                 const char* cause) {
     if (cb) {

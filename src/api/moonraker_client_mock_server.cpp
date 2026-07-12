@@ -197,7 +197,39 @@ void register_server_handlers(std::unordered_map<std::string, MethodHandler>& re
         return true;
     };
 
-    spdlog::debug("[MoonrakerClientMock] Registered {} server method handlers", 5);
+    // server.temperature_store - Cached per-sensor temperature history
+    // https://moonraker.readthedocs.io/en/latest/web_api/#get-cached-temperature-data
+    // Mock returns a realistic heat/hold/cool curve so the connect-time seed
+    // (#944) populates the graphs in mock mode for visual verification.
+    registry["server.temperature_store"] =
+        [](MoonrakerClientMock* self, const json& /*params*/,
+           std::function<void(const json&)> success_cb,
+           std::function<void(const MoonrakerError&)> /*error_cb*/) -> bool {
+        TemperatureStore store = self->build_historical_temperature_store();
+
+        json result = json::object();
+        for (const auto& [key, series] : store) {
+            json entry = json::object();
+            entry["temperatures"] = series.temperatures;
+            if (!series.targets.empty()) {
+                entry["targets"] = series.targets;
+            }
+            if (!series.powers.empty()) {
+                entry["powers"] = series.powers;
+            }
+            result[key] = std::move(entry);
+        }
+        spdlog::debug("[MoonrakerClientMock] server.temperature_store (mock — {} keys)",
+                      result.size());
+
+        json response = {{"jsonrpc", "2.0"}, {"result", std::move(result)}};
+        if (success_cb) {
+            success_cb(response);
+        }
+        return true;
+    };
+
+    spdlog::debug("[MoonrakerClientMock] Registered {} server method handlers", 6);
 }
 
 } // namespace mock_internal

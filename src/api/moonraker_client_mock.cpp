@@ -3289,6 +3289,101 @@ void MoonrakerClientMock::dispatch_initial_state() {
     dispatch_status_update(initial_status);
 }
 
+TemperatureStore MoonrakerClientMock::build_historical_temperature_store() const {
+    // ~10 minutes of 1 Hz history emitted as Moonraker's flat per-key arrays.
+    // Profile: heat-up ramp -> hold at target (PID ripple) -> exponential
+    // cooldown. Deterministic (fixed pseudo-random seed) so the curve is stable
+    // across runs. Ends near ambient, matching the idle live simulation so the
+    // seeded history joins the live graph without a visible step (#944).
+    constexpr int SAMPLES = 600;      // 10 min @ 1 Hz
+    constexpr int HEAT_SAMPLES = 90;  // ~90 s ramp to target
+    constexpr int HOLD_SAMPLES = 150; // ~2.5 min at target
+    // remaining ~360 s: exponential cooldown back toward ambient
+    constexpr double PEAK_EXTRUDER = 215.0;
+    constexpr double PEAK_BED = 60.0;
+    constexpr double EXT_TAU = 90.0;  // extruder cooldown time constant (s)
+    constexpr double BED_TAU = 140.0; // bed cools slower
+
+    // Deterministic pseudo-random noise in [-1, 1] (no std::random_device).
+    uint32_t rng_state = 22221;
+    auto noise = [&rng_state](double amplitude) -> double {
+        rng_state = (rng_state * 1103515245u + 12345u) & 0x7fffffff;
+        return ((static_cast<double>(rng_state) / 0x3fffffff) - 1.0) * amplitude;
+    };
+
+    TemperatureStore store;
+    TemperatureStoreSeries& ext = store["extruder"];
+    TemperatureStoreSeries& bed = store["heater_bed"];
+    for (TemperatureStoreSeries* s : {&ext, &bed}) {
+        s->temperatures.reserve(SAMPLES);
+        s->targets.reserve(SAMPLES);
+        s->powers.reserve(SAMPLES);
+    }
+
+    for (int i = 0; i < SAMPLES; ++i) {
+        double ext_temp, bed_temp, ext_target, bed_target, ext_power, bed_power;
+        if (i < HEAT_SAMPLES) {
+            // Heating: linear ramp toward target, full heater power.
+            double p = static_cast<double>(i) / HEAT_SAMPLES;
+            ext_temp = ROOM_TEMP + (PEAK_EXTRUDER - ROOM_TEMP) * p;
+            bed_temp = ROOM_TEMP + (PEAK_BED - ROOM_TEMP) * std::min(1.0, p * 1.2);
+            ext_target = PEAK_EXTRUDER;
+            bed_target = PEAK_BED;
+            ext_power = 1.0;
+            bed_power = 1.0;
+        } else if (i < HEAT_SAMPLES + HOLD_SAMPLES) {
+            // Hold: small PID oscillation around target.
+            double o = i - HEAT_SAMPLES;
+            ext_temp = PEAK_EXTRUDER + 0.8 * std::sin(o * 0.15) + 0.3 * std::cos(o * 0.31);
+            bed_temp = PEAK_BED + 0.4 * std::sin(o * 0.12);
+            ext_target = PEAK_EXTRUDER;
+            bed_target = PEAK_BED;
+            ext_power = 0.30 + 0.10 * std::sin(o * 0.15);
+            bed_power = 0.25 + 0.08 * std::sin(o * 0.12);
+        } else {
+            // Cooldown: heaters off, exponential decay toward ambient.
+            double ct = i - HEAT_SAMPLES - HOLD_SAMPLES; // seconds since cooldown start
+            ext_temp = ROOM_TEMP + (PEAK_EXTRUDER - ROOM_TEMP) * std::exp(-ct / EXT_TAU);
+            bed_temp = ROOM_TEMP + (PEAK_BED - ROOM_TEMP) * std::exp(-ct / BED_TAU);
+            ext_target = 0.0;
+            bed_target = 0.0;
+            ext_power = 0.0;
+            bed_power = 0.0;
+        }
+
+        ext.temperatures.push_back(static_cast<float>(ext_temp + noise(0.3)));
+        ext.targets.push_back(static_cast<float>(ext_target));
+        ext.powers.push_back(static_cast<float>(ext_power));
+        bed.temperatures.push_back(static_cast<float>(bed_temp + noise(0.2)));
+        bed.targets.push_back(static_cast<float>(bed_target));
+        bed.powers.push_back(static_cast<float>(bed_power));
+    }
+
+    // Discovered temperature sensors: gentle sinusoids, no target/power.
+    for (const auto& sensor : discovery_.sensors()) {
+        if (sensor.rfind("temperature_sensor ", 0) != 0) {
+            continue;
+        }
+        const std::string name = sensor.substr(19); // strip "temperature_sensor " prefix
+        TemperatureStoreSeries& series = store[sensor];
+        series.temperatures.reserve(SAMPLES);
+        for (int i = 0; i < SAMPLES; ++i) {
+            double t_sec = -(SAMPLES - i); // negative = in the past
+            double temp;
+            if (name.find("chamber") != std::string::npos) {
+                temp = 35.0 + 8.0 * std::sin(2.0 * M_PI * t_sec / 300.0);
+            } else if (name.find("mcu") != std::string::npos) {
+                temp = 42.0 + 3.0 * std::sin(2.0 * M_PI * t_sec / 200.0);
+            } else {
+                temp = 30.0 + 2.0 * std::sin(2.0 * M_PI * t_sec / 180.0);
+            }
+            series.temperatures.push_back(static_cast<float>(temp + noise(0.4)));
+        }
+    }
+
+    return store;
+}
+
 void MoonrakerClientMock::dispatch_historical_temperatures() {
     // Generate 2-3 minutes of synthetic temperature history
     // At 250ms intervals, that's ~600 data points for 2.5 minutes
