@@ -122,7 +122,21 @@ A true 4-toolhead changer, running on the U1's built-in 3.5" screen. Each of the
 
 **Status:** Tested (on PAXX 1.2.x–1.4.x; stock-firmware support is newly added — testers wanted).
 
-> **Good to know:** The U1's 480×320 display is the smallest resolution HelixScreen supports; a few panels have known layout tightness there. On **PAXX Extended Firmware**, you can view (and control) the HelixScreen UI remotely in Mainsail/Fluidd — enable the firmware's `web remote_screen` toggle and the screen shows up as the "gui" webcam feed. Physical cameras work normally too. Writing filament data back to RFID tags works only on PAXX firmware.
+> **Good to know:** The U1's 480×320 display is the smallest resolution HelixScreen supports; a few panels have known layout tightness there. Physical cameras work normally. Writing filament data back to RFID tags works only on PAXX firmware.
+
+**Remote screen — view and control from Mainsail/Fluidd:** On **PAXX Extended Firmware**, the U1's built-in "gui" webcam feed shows the live HelixScreen UI, and you can tap it to drive the on-screen controls remotely — the same as touching the physical panel.
+
+To set it up:
+
+1. In the PAXX Extended Firmware settings, turn on the **remote screen** option (the `web remote_screen` toggle in the extended firmware config).
+2. Restart HelixScreen or reboot the printer so it picks up the setting.
+3. Open your printer in Mainsail or Fluidd (you must be logged in). The screen appears as the **"gui"** webcam — select it in the camera view.
+4. To control it, browse to `http://<printer-ip>/screen/` and tap the image. Taps, presses, and drags drive the HelixScreen UI live.
+
+Notes:
+- The feed is a still-image snapshot refreshed a few times per second, not smooth video — fine for monitoring and tapping through menus, not for watching animations.
+- This is **PAXX-only** for now. Stock firmware is not yet confirmed to expose the feed.
+- Before HelixScreen feeds it, the "gui" webcam shows **"No Signal"** — that's expected until the remote-screen toggle is on and HelixScreen has restarted.
 
 ---
 

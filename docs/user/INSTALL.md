@@ -378,7 +378,7 @@ The Snapmaker U1 is an all-in-one printer with a built-in touchscreen. HelixScre
 
 **Notes:**
 - **Reinstall after a firmware update** — any firmware update (stock or PAXX) resets system files and can overwrite HelixScreen; re-run the installer afterward.
-- **Remote screen ("gui" camera) is not yet supported** — the built-in firmware exposes a "gui" webcam in Mainsail/Fluidd that mirrors the printer's local touchscreen. Once HelixScreen takes over the display it owns the screen directly, so that feed shows "No Signal" and is expected. The physical "case" camera is unaffected. Streaming the HelixScreen UI to the web frontend is planned but not implemented; use Mainsail/Fluidd for remote monitoring in the meantime.
+- **Remote screen ("gui" camera) works on PAXX firmware** — the built-in "gui" webcam in Mainsail/Fluidd shows the live HelixScreen UI, and you can tap it to control the printer remotely. Enable the PAXX **remote screen** toggle and restart HelixScreen; until then the feed shows "No Signal" (expected). The physical "case" camera is unaffected. Stock firmware is not yet confirmed to expose the feed. Setup steps: [Supported Printers → Snapmaker U1](guide/supported-printers.md#snapmaker-u1-snapswap).
 - **Two harmless Moonraker warnings are expected** — after install, the Mainsail/Fluidd "Moonraker warnings found" banner may show *"Unable to find DBus PolKit Interface"* and *"Unable to initialize System Update Provider for distribution: buildroot"*. Both are inherent to Moonraker on the U1's buildroot firmware (no PolKit, no OS package manager) and do **not** affect HelixScreen or printing. They are not specific to HelixScreen — installing simply restarts Moonraker, which re-surfaces them. See [Troubleshooting](TROUBLESHOOTING.md).
 
 ---
