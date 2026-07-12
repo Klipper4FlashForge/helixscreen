@@ -313,6 +313,100 @@ class TestExtractSpecialCharacters:
         assert "Temperature: 200°C" in result
 
 
+class TestExtractHonorsDoNotTranslateMarker:
+    """`// i18n: do not translate` comments suppress C++ literal extraction."""
+
+    def _extract(self, tmp_path, source):
+        from translations.extractor import extract_strings_from_cpp
+
+        cpp = tmp_path / "sample.cpp"
+        cpp.write_text(dedent(source))
+        return extract_strings_from_cpp(cpp)
+
+    def test_trailing_marker_suppresses_same_line(self, tmp_path):
+        """A trailing marker suppresses the literal on its own line."""
+        result = self._extract(tmp_path, """\
+            const char* a() { return "Marked Name"; } // i18n: do not translate
+            const char* b() { return "Kept Name"; }
+        """)
+        assert "Marked Name" not in result
+        assert "Kept Name" in result
+
+    def test_preceding_line_marker_suppresses_next_line(self, tmp_path):
+        """A standalone marker suppresses the literal on the line directly below."""
+        result = self._extract(tmp_path, """\
+            void f() {
+                // i18n: do not translate
+                lv_label_set_text(lbl, "Preceding Name");
+                lv_label_set_text(lbl, "Plain Name");
+            }
+        """)
+        assert "Preceding Name" not in result
+        assert "Plain Name" in result
+
+    def test_unmarked_control_is_extracted(self, tmp_path):
+        """Without a marker the literal is extracted as usual."""
+        result = self._extract(tmp_path, """\
+            void f() { lv_label_set_text(lbl, "Visible Name"); }
+        """)
+        assert "Visible Name" in result
+
+    def test_trailing_marker_does_not_leak_to_next_line(self, tmp_path):
+        """A trailing marker only affects its own line, not the following one."""
+        result = self._extract(tmp_path, """\
+            const char* a() { return "Marked One"; } // i18n: do not translate
+            const char* b() { return "Unmarked Two"; }
+        """)
+        assert "Marked One" not in result
+        assert "Unmarked Two" in result
+
+    def test_preceding_marker_only_affects_immediate_next_line(self, tmp_path):
+        """A standalone marker suppresses only the immediately following line."""
+        result = self._extract(tmp_path, """\
+            void f() {
+                // i18n: do not translate
+                lv_label_set_text(lbl, "Right Below");
+                lv_label_set_text(lbl, "Two Below");
+            }
+        """)
+        assert "Right Below" not in result
+        assert "Two Below" in result
+
+    def test_preceding_marker_broken_by_blank_line(self, tmp_path):
+        """A blank line between marker and literal breaks the preceding form."""
+        result = self._extract(tmp_path, """\
+            void f() {
+                // i18n: do not translate
+
+                lv_label_set_text(lbl, "After Blank");
+            }
+        """)
+        assert "After Blank" in result
+
+    def test_universal_marker_is_not_a_suppression_marker(self, tmp_path):
+        """`// i18n: universal` is a distinct note and does not suppress."""
+        result = self._extract(tmp_path, """\
+            void f() { lv_label_set_text(lbl, "Universal Text"); } // i18n: universal
+        """)
+        assert "Universal Text" in result
+
+    def test_marker_does_not_override_lv_tr(self, tmp_path):
+        """An explicit lv_tr() wins; a marker on its line documents a substring."""
+        result = self._extract(tmp_path, """\
+            void f() { lv_tr("Please Translate"); } // i18n: do not translate
+        """)
+        assert "Please Translate" in result
+
+    def test_marker_phrasing_variants_all_suppress(self, tmp_path):
+        """Any i18n comment containing 'do not translate' suppresses."""
+        result = self._extract(tmp_path, """\
+            const char* a() { return "Alpha Prod"; } // i18n: do not translate - product name
+            const char* b() { return "Beta Prod"; } // i18n: Beta is a product name, do not translate
+        """)
+        assert "Alpha Prod" not in result
+        assert "Beta Prod" not in result
+
+
 # =============================================================================
 # Test: YAML Manager Module
 # =============================================================================
