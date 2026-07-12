@@ -1640,6 +1640,15 @@ void AmsState::bump_slots_version() {
     lv_subject_set_int(&slots_version_, current + 1);
 }
 
+void AmsState::set_dryer_mirror_unit(int unit) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    if (dryer_mirror_unit_ == unit) {
+        return;
+    }
+    dryer_mirror_unit_ = unit;
+    sync_dryer_from_backend();
+}
+
 void AmsState::sync_dryer_from_backend() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
 
@@ -1655,7 +1664,7 @@ void AmsState::sync_dryer_from_backend() {
         return;
     }
 
-    DryerInfo dryer = backend->get_dryer_info();
+    DryerInfo dryer = backend->get_dryer_info(dryer_mirror_unit_);
 
     // Update integer subjects
     int new_supported = dryer.supported ? 1 : 0;
@@ -2400,7 +2409,7 @@ void AmsState::adjust_modal_temp(int delta_c) {
     float max_temp = static_cast<float>(MAX_DRYER_TEMP_C);
     auto* backend = get_backend(0);
     if (backend) {
-        DryerInfo dryer = backend->get_dryer_info();
+        DryerInfo dryer = backend->get_dryer_info(dryer_mirror_unit_);
         min_temp = dryer.min_temp_c;
         max_temp = dryer.max_temp_c;
     }
@@ -2420,7 +2429,7 @@ void AmsState::adjust_modal_duration(int delta_min) {
     int max_duration = MAX_DRYER_DURATION_MIN;
     auto* backend = get_backend(0);
     if (backend) {
-        DryerInfo dryer = backend->get_dryer_info();
+        DryerInfo dryer = backend->get_dryer_info(dryer_mirror_unit_);
         max_duration = dryer.max_duration_min;
     }
 
