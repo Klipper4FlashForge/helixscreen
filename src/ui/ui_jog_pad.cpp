@@ -485,6 +485,23 @@ static void jog_pad_draw_cb(lv_event_t* e) {
             }
         }
     }
+
+    // Disabled state: overlay a translucent scrim so the pad visibly reads as
+    // unavailable. Presses are already blocked upstream (LVGL's input handling
+    // skips LV_STATE_DISABLED objects), so this is purely the visual cue.
+    if (lv_obj_has_state(obj, LV_STATE_DISABLED)) {
+        lv_draw_arc_dsc_t scrim_dsc;
+        lv_draw_arc_dsc_init(&scrim_dsc);
+        scrim_dsc.color = theme_manager_get_color("elevated_bg");
+        scrim_dsc.opa = LV_OPA_70;
+        scrim_dsc.width = static_cast<uint16_t>(radius * 2); // Fill entire circle
+        scrim_dsc.center.x = center_x;
+        scrim_dsc.center.y = center_y;
+        scrim_dsc.radius = static_cast<uint16_t>(radius);
+        scrim_dsc.start_angle = 0;
+        scrim_dsc.end_angle = 360;
+        lv_draw_arc(layer, &scrim_dsc);
+    }
 }
 
 // Press event: Track pressed zone for visual feedback
@@ -700,4 +717,18 @@ void ui_jog_pad_refresh_colors(lv_obj_t* obj) {
         load_colors(state, "motion_panel");
         lv_obj_invalidate(obj); // Trigger redraw
     }
+}
+
+void ui_jog_pad_set_enabled(lv_obj_t* obj, bool enabled) {
+    if (!obj)
+        return;
+    bool currently_disabled = lv_obj_has_state(obj, LV_STATE_DISABLED);
+    if (enabled == !currently_disabled)
+        return; // No change — avoid a redundant redraw
+    if (enabled) {
+        lv_obj_remove_state(obj, LV_STATE_DISABLED);
+    } else {
+        lv_obj_add_state(obj, LV_STATE_DISABLED);
+    }
+    lv_obj_invalidate(obj); // Redraw with/without the disabled scrim
 }

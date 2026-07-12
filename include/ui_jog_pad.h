@@ -70,3 +70,15 @@ helix::JogMode ui_jog_pad_get_mode(lv_obj_t* obj);
  * @param obj Jog pad object
  */
 void ui_jog_pad_refresh_colors(lv_obj_t* obj);
+
+/**
+ * Enable or disable the jog pad.
+ *
+ * When disabled the pad adds LV_STATE_DISABLED (so LVGL's input handling stops
+ * routing presses/clicks to it) and draws a translucent scrim so it visibly
+ * reads as unavailable. Used to gate jogging while the printer is not ready.
+ *
+ * @param obj Jog pad object
+ * @param enabled true to enable, false to disable + dim
+ */
+void ui_jog_pad_set_enabled(lv_obj_t* obj, bool enabled);
