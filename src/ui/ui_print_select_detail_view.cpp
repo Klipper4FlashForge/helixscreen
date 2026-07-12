@@ -23,6 +23,7 @@
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "memory_utils.h"
 #include "moonraker_api.h"
+#include "observer_factory.h"
 #include "runtime_config.h"
 #include "theme_manager.h"
 #include "tool_state.h"
@@ -155,6 +156,13 @@ void PrintSelectDetailView::init_subjects() {
     // Pre-print time estimate (formatted string for bind_text)
     UI_MANAGED_SUBJECT_STRING(prep_time_estimate_subject_, prep_time_estimate_buf_, "",
                               "preprint_estimate_text", subjects_);
+
+    // Re-color the preview live when a slot's loaded color/presence changes
+    // (filament reloaded). Static singleton subject -> plain ObserverGuard, no
+    // lifetime token. Handler no-ops while the view is closed.
+    slots_version_observer_ = observe_int_sync<PrintSelectDetailView>(
+        AmsState::instance().get_slots_version_subject(), this,
+        [](PrintSelectDetailView* self, int /*version*/) { self->on_ams_state_changed(); });
 
     subjects_initialized_ = true;
     spdlog::debug("[DetailView] Initialized pre-print option subjects");
@@ -303,18 +311,10 @@ lv_obj_t* PrintSelectDetailView::create(lv_obj_t* parent_screen) {
         }
     });
     filament_mapping_card_.set_on_mappings_changed([this]() {
-        apply_mapped_tool_colors();
-        lv_subject_set_int(&filament_mismatch_, filament_mapping_card_.has_mismatch() ? 1 : 0);
-        // Re-evaluate the pre-flight gate so a subsequent Print reflects the new
-        // tool→slot mapping (the native remap flow reaches the backend via the
-        // print-start controller, which reads get_filament_mappings()).
-        recompute_preflight();
-        // Re-render the FILAMENTS chips so their slot number + present color
-        // reflect the user's new mapping. set_mappings() fires this callback
-        // synchronously on the main thread, so a direct call is safe.
-        if (lv_subject_get_int(&color_swatches_visible_) == 1) {
-            update_color_swatches(tools_used_effective(), current_filament_colors_);
-        }
+        // The card already refreshed its own slot/mapping state from the user's
+        // edit — just re-color + re-gate. set_mappings() fires this synchronously
+        // on the main thread, so a direct call is safe.
+        refresh_preview_colors_and_mismatch();
     });
 
     // Look up history status display
@@ -991,6 +991,30 @@ void PrintSelectDetailView::apply_sliced_tool_colors() {
     if (!tool_colors.empty()) {
         ui_gcode_viewer_set_tool_colors(gcode_viewer_, tool_colors);
         lv_obj_invalidate(gcode_viewer_);
+    }
+}
+
+void PrintSelectDetailView::on_ams_state_changed() {
+    // Cheap guard: no work while closed / not yet loaded. gcode_viewer_ is nulled
+    // on on_deactivate(), so this also protects a dangling viewer pointer.
+    if (!is_visible() || !gcode_loaded_ || !gcode_viewer_) {
+        return;
+    }
+    // Refresh loaded slot colors WITHOUT recomputing mappings (preserve remap).
+    filament_mapping_card_.refresh_slot_data();
+    refresh_preview_colors_and_mismatch();
+}
+
+void PrintSelectDetailView::refresh_preview_colors_and_mismatch() {
+    apply_preview_colors();
+    lv_subject_set_int(&filament_mismatch_, filament_mapping_card_.has_mismatch() ? 1 : 0);
+    // Re-evaluate the pre-flight gate so a subsequent Print reflects the current
+    // tool->slot mapping (native remap flow reads get_filament_mappings()).
+    recompute_preflight();
+    // Re-render the FILAMENTS chips so slot number + present color track the
+    // current mapping/slot state.
+    if (lv_subject_get_int(&color_swatches_visible_) == 1) {
+        update_color_swatches(tools_used_effective(), current_filament_colors_);
     }
 }
 

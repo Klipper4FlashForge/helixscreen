@@ -12,6 +12,7 @@
 #include "preflight_validator.h"
 #include "print_file_data.h" // For FileHistoryStatus
 #include "subject_managed_panel.h"
+#include "ui_observer_guard.h"
 
 #include <functional>
 #include <lvgl.h>
@@ -560,6 +561,11 @@ class PrintSelectDetailView : public OverlayBase {
     SubjectManager subjects_;                   // RAII manager for subject cleanup
     // Note: subjects_initialized_ inherited from OverlayBase
 
+    // Live re-color when AMS slot colors/presence change while this view is open.
+    // Observes the STATIC AmsState::slots_version subject — no SubjectLifetime
+    // token (singleton, not a per-slot dynamic subject).
+    ObserverGuard slots_version_observer_;
+
     // Print preparation manager (owns it)
     std::unique_ptr<PrintPreparationManager> prep_manager_;
 
@@ -626,6 +632,9 @@ class PrintSelectDetailView : public OverlayBase {
 
     void apply_preview_colors();      // dispatch sliced vs actual by the subject
     void apply_sliced_tool_colors();  // force slicer palette into the viewer
+
+    void on_ams_state_changed();               // AMS slots_version observer handler
+    void refresh_preview_colors_and_mismatch(); // shared by card-edit + AMS observer
 
     /**
      * @brief Extract filament colors from parsed gcode when metadata lacks them
