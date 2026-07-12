@@ -583,9 +583,8 @@ void SensorSettingsOverlay::populate_humidity_sensors() {
         lv_obj_set_flex_grow(name_label, 1);
 
         auto* type_label = lv_label_create(row);
-        const char* type_str =
-            sensor.type == helix::sensors::HumiditySensorType::BME280 ? "BME280" : "HTU21D";
-        lv_label_set_text(type_label, type_str);
+        lv_label_set_text(type_label,
+                          helix::sensors::humidity_type_to_display_string(sensor.type).c_str());
         lv_obj_set_style_text_color(type_label, theme_manager_get_color("text_muted"), 0);
 
         spdlog::debug("[{}]   Created row for humidity sensor: {}", get_name(), sensor.sensor_name);

@@ -3,6 +3,7 @@
 
 #include "screenshot.h"
 
+#include "app_globals.h"
 #include "ui_error_reporting.h"
 
 #include <spdlog/spdlog.h>
@@ -64,9 +65,9 @@ bool write_bmp(const char* filename, const uint8_t* data, int width, int height)
 }
 
 std::string save_screenshot() {
-    // Generate unique filename with timestamp in /tmp
-    std::string filename =
-        "/tmp/ui-screenshot-" + std::to_string(static_cast<unsigned long>(time(nullptr))) + ".bmp";
+    // Generate unique filename with timestamp in the writable runtime dir
+    std::string filename = app_get_runtime_dir() + "/ui-screenshot-" +
+                           std::to_string(static_cast<unsigned long>(time(nullptr))) + ".bmp";
 
     // Take snapshot using LVGL's native API (platform-independent)
     lv_obj_t* screen = lv_screen_active();

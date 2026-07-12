@@ -148,9 +148,15 @@ class MotionPanel : public OverlayBase {
     ObserverGuard actual_z_observer_;
     ObserverGuard bed_moves_observer_;
     ObserverGuard homed_axes_observer_;
+    ObserverGuard jog_ready_observer_;
 
     void setup_jog_pad();
     void register_position_observers();
+
+    // Enable/dim the jog pad from the current nav_buttons_enabled state
+    // (connected AND klippy ready). Jogging while not ready is refused at the
+    // API layer; this makes the pad visibly unavailable to match.
+    void update_jog_pad_enabled();
 
     static void jog_pad_jog_cb(helix::JogDirection direction, float distance_mm, void* user_data);
     static void jog_pad_home_cb(void* user_data);

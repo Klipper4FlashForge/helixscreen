@@ -29,6 +29,19 @@ if ! mount -t tmpfs -o ro tmpfs /tmp; then
 fi
 mount -t tmpfs -o ro tmpfs /var/tmp 2>/dev/null || true
 
+# detect_tmp_dir() also probes device-specific writable partitions (/mnt/data,
+# /data, /user-resource) BEFORE the /tmp last resort. Those parents don't exist
+# on the OrangePi we're reproducing, but a host can have them writable — the
+# GitHub Actions runner mounts a large world-writable temp disk at /mnt, so
+# /mnt/data would be chosen and the REPRO would never reach the /tmp fallback.
+# Shadow those parents with read-only tmpfs (best-effort; skip ones that don't
+# exist) so /tmp is the only remaining candidate on any host. /usr (parent of
+# the /usr/data candidate) is left alone — it holds the binaries this script
+# execs, and is non-writable to a namespaced non-root uid regardless.
+for parent in /mnt /data /user-resource; do
+    [ -d "$parent" ] && mount -t tmpfs -o ro tmpfs "$parent" 2>/dev/null || true
+done
+
 # A read-only filesystem rejects writes even for (namespace) root — an EROFS
 # the kernel enforces regardless of uid, unlike a chmod which root bypasses.
 if mkdir /tmp/helixscreen-install 2>/dev/null; then

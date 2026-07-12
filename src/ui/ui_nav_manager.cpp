@@ -678,6 +678,17 @@ void NavigationManager::handle_klippy_state_change(int state) {
     bool was_ready = (previous_klippy_state_ == static_cast<int>(KlippyState::READY));
     bool is_ready = (state == static_cast<int>(KlippyState::READY));
 
+    // A SAVE_CONFIG or user-initiated restart bounces Klipper through a transient
+    // SHUTDOWN. Don't yank the user off their calibration panel to Home for it —
+    // the panel is still valid and klippy returns to READY within seconds.
+    if (was_ready && !is_ready && EmergencyStopOverlay::instance().is_expected_restart()) {
+        spdlog::debug("[NavigationManager] Klippy left READY during expected restart on panel {} "
+                      "- staying put",
+                      static_cast<int>(active_panel_));
+        previous_klippy_state_ = state;
+        return;
+    }
+
     // Redirect to home if klippy enters non-READY state (SHUTDOWN/ERROR) while on restricted panel
     if (was_ready && !is_ready && panel_requires_connection(active_panel_)) {
         const char* state_name = (state == static_cast<int>(KlippyState::SHUTDOWN)) ? "SHUTDOWN"

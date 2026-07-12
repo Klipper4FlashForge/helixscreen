@@ -3,6 +3,7 @@
 
 #include "wifi_backend_networkmanager.h"
 
+#include "app_globals.h"
 #include "spdlog/spdlog.h"
 
 #if !defined(__APPLE__) && !defined(__ANDROID__)
@@ -295,7 +296,7 @@ std::string WifiBackendNetworkManager::exec_nmcli(const std::string& args) {
 WifiBackendNetworkManager::NmcliResult
 WifiBackendNetworkManager::exec_nmcli_full(const std::string& args) {
     // Capture stderr separately via a temp file, keeping stdout clean for parsing
-    std::string stderr_file = "/tmp/nmcli_stderr_" + std::to_string(getpid());
+    std::string stderr_file = app_get_runtime_dir() + "/nmcli_stderr_" + std::to_string(getpid());
     std::string cmd = "nmcli " + args + " 2>" + stderr_file;
     spdlog::trace("[WifiBackend] NM: exec_full: {}", cmd);
 

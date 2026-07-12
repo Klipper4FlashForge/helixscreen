@@ -6,6 +6,7 @@
 #include "ams_state.h"
 #include "config.h"
 #include "hh_defaults.h"
+#include "humidity_sensor_types.h"
 #include "moonraker_api.h"
 
 #include <spdlog/fmt/fmt.h>
@@ -1482,9 +1483,8 @@ bool AmsBackendHappyHare::apply_environment_sensor_status(const nlohmann::json& 
         if (auto sp = sname.find(' '); sp != std::string::npos) {
             const std::string bare = sname.substr(sp + 1);
             if (!bare.empty()) {
-                for (const char* chip :
-                     {"bme280", "htu21d", "sht3x", "aht10", "aht20_f", "aht20"}) {
-                    candidates.push_back(std::string(chip) + " " + bare);
+                for (const auto& chip : helix::sensors::humidity_sensor_chips()) {
+                    candidates.push_back(std::string(chip.config_id) + " " + bare);
                 }
             }
         }

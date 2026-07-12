@@ -133,6 +133,28 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     AmsError select_slot(int slot_index) override;
     AmsError change_tool(int tool_number) override;
 
+    // ZMOD's INSERT_PRUTOK_IFS self-swaps: _INSERT_PRUTOK_IFS runs
+    // IFS_REMOVE_CURRENT_PRUTOK first, which no-ops on an empty head sensor and
+    // otherwise heats to the seated lane's configured temp before backing it
+    // out (zmod_ifs.py cmd_IFS_REMOVE_CURRENT_PRUTOK). A helix-side
+    // unload-before-load is therefore redundant — and the sidebar's swap path
+    // routed it to eject_lane(-1) when the head read empty, silently dropping
+    // the load (Vger1700, bundle Z5V4K3NL). Load straight through the macro,
+    // exactly like the stock screen (zmod_color.py).
+    [[nodiscard]] bool needs_unload_before_load(const AmsSystemInfo& info) const override {
+        (void)info;
+        return false;
+    }
+
+    // INSERT_PRUTOK_IFS resolves the target lane's configured material temp
+    // (get_prutok_config(prutok)['temp']) and _INSERT_PRUTOK_IFS does its own
+    // M104 + TEMPERATURE_WAIT, so the UI preheat poll is unnecessary. The
+    // backend phase tracker synthesizes the Heat-nozzle step from extruder temp
+    // frames, so heat progress still renders in the sidebar.
+    [[nodiscard]] bool supports_auto_heat_on_load() const override {
+        return true;
+    }
+
     // Cold per-lane eject / recover (#996). Issues `IFS_F11 PRUTOK={port}
     // CHECK=0` — a cold retract that drives one idle lane's feed motor backward
     // toward the spool. It does NOT heat the hotend and (CHECK=0) ignores the

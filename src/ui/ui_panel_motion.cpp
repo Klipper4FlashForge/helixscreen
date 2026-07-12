@@ -358,6 +358,9 @@ void MotionPanel::setup_jog_pad() {
         // Set initial jog mode
         ui_jog_pad_set_mode(jog_pad_, current_mode_);
 
+        // Apply initial enabled/dimmed state (the observer only fires on change)
+        update_jog_pad_enabled();
+
         spdlog::debug("[{}] Jog pad widget created (size: {}px)", get_name(), jog_size);
     } else {
         spdlog::error("[{}] Failed to create jog pad widget!", get_name());
@@ -448,8 +451,26 @@ void MotionPanel::register_position_observers() {
                                             lv_subject_set_int(&self->motion_z_homed_, z);
                                     });
 
+    // Dim/enable the jog pad to track connection + klippy readiness. The same
+    // subject greys the surrounding panel content via motion_panel.xml, but the
+    // custom-drawn jog pad has no XML binding, so drive it here.
+    jog_ready_observer_ = observe_int_sync<MotionPanel>(
+        get_printer_state().get_nav_buttons_enabled_subject(), this,
+        [](MotionPanel* self, int) {
+            if (!self->subjects_initialized_)
+                return;
+            self->update_jog_pad_enabled();
+        });
+
     spdlog::debug("[{}] Position + kinematics + homing observers registered (observer factory)",
                   get_name());
+}
+
+void MotionPanel::update_jog_pad_enabled() {
+    if (!jog_pad_)
+        return;
+    bool ready = lv_subject_get_int(get_printer_state().get_nav_buttons_enabled_subject()) != 0;
+    ui_jog_pad_set_enabled(jog_pad_, ready);
 }
 
 // Observer callbacks migrated to lambda-based observer factory pattern

@@ -4,6 +4,7 @@
 #include "panel_widget_manager.h"
 
 #include "ui_ams_mini_status.h"
+#include "ui_emergency_stop.h"
 #include "ui_notification.h"
 #include "ui_utils.h"
 
@@ -179,7 +180,12 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
         lv_subject_t* klippy = lv_xml_get_subject(nullptr, "klippy_state");
         if (connected && klippy) {
             int state = lv_subject_get_int(klippy);
-            if (state != static_cast<int>(KlippyState::READY)) {
+            // Don't inject the restart button for a transient SHUTDOWN caused by a
+            // SAVE_CONFIG or user-initiated restart — Klipper returns to READY on
+            // its own within seconds. is_expected_restart() is the same window the
+            // status icon and nav manager consult.
+            bool expected_restart = EmergencyStopOverlay::instance().is_expected_restart();
+            if (state != static_cast<int>(KlippyState::READY) && !expected_restart) {
                 const char* state_names[] = {"READY", "STARTUP", "SHUTDOWN", "ERROR"};
                 const char* name = (state >= 0 && state <= 3) ? state_names[state] : "UNKNOWN";
                 WidgetSlot slot;

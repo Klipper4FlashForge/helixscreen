@@ -8,6 +8,7 @@
 #include "app_globals.h"
 #include "config.h"
 #include "helix_version.h"
+#include "humidity_sensor_types.h"
 #include "hv/requests.h"
 #include "led/led_controller.h"
 #include "macro_fan_analyzer.h"
@@ -1475,9 +1476,7 @@ void MoonrakerDiscoverySequence::parse_objects(const json& objects) {
         // humidity from these directly (mmu_environment_manager ENV_SENSOR_CHIPS).
         // Classified from objects.list, so only existing objects are subscribed;
         // the humidity field is added to the sensor subscription below.
-        else if (name.rfind("bme280 ", 0) == 0 || name.rfind("htu21d ", 0) == 0 ||
-                 name.rfind("sht3x ", 0) == 0 || name.rfind("aht10 ", 0) == 0 ||
-                 name.rfind("aht20_f ", 0) == 0 || name.rfind("aht20 ", 0) == 0) {
+        else if (helix::sensors::humidity_chip_for_object(name) != nullptr) {
             // aht20_f is QIDI's box humidity/temp chip ("aht20_f heater_box1",
             // publishes {temperature, humidity}); confirmed on stock Q2 (#1022).
             sensors_.push_back(name);

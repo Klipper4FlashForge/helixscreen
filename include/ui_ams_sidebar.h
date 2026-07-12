@@ -79,6 +79,17 @@ class AmsOperationSidebar {
     void start_operation(StepOperationType op_type, int target_slot);
 
     /**
+     * @brief Revert a start_operation() whose backend dispatch failed
+     *
+     * start_operation() optimistically sets the AmsState action to HEATING and
+     * arms the pulse animation before the backend call. If that call returns an
+     * error, the backend never left IDLE — surface the error and resync the UI
+     * from the backend so the sidebar doesn't freeze in a phantom "Heating"
+     * (Vger1700, bundle Z5V4K3NL: dispatch error was silently discarded).
+     */
+    void fail_started_operation(const AmsError& error);
+
+    /**
      * @brief Handle load request with automatic preheat if needed
      */
     void handle_load_with_preheat(int slot_index);

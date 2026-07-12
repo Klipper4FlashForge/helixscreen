@@ -320,6 +320,15 @@ std::string app_get_install_root();
 // Result is cached after first call.
 std::string app_get_cache_dir();
 
+// Returns a writable base dir for SHORT-LIVED runtime files (nmcli stderr
+// capture, screenshots, timelapse temp downloads). Prefers a fast tmpfs
+// (HELIX_TMP_DIR, XDG_RUNTIME_DIR, /tmp, /var/tmp) so normal devices keep
+// working with the usual /tmp paths; falls back to the persistent cache dir
+// (~/.cache/helix/runtime) when the /tmp family is read-only, which happens
+// under ProtectSystem=strict (Sonic Pad / OrangePi Zero3). Returns a base dir
+// with NO trailing slash; callers append "/<name>". Never returns empty.
+std::string app_get_runtime_dir();
+
 // Returns the config directory (settings.json, printer_database.json,
 // helixscreen.env). If HELIX_CONFIG_DIR is set, returns it verbatim.
 // Otherwise joins the install root with "config" to form an absolute path.

@@ -196,6 +196,9 @@ TEST_CASE("Subscription: humidity sensor chips are subscribed with humidity",
     DiscoveryFixture fx;
     fx.add("htu21d box", {"sensor"});
     fx.add("bme280 chamber", {"sensor"});
+    fx.add("sht3x enclosure", {"sensor"});
+    fx.add("aht10 dryer", {"sensor"});
+    fx.add("aht20 box", {"sensor"});
     // QIDI's box temp/humidity chip ("aht20_f heater_box1" → {temperature,
     // humidity}); confirmed on a stock Q2 (#1022). Without humidity in its
     // subscription the dryer overlay never gets box humidity.
@@ -203,7 +206,8 @@ TEST_CASE("Subscription: humidity sensor chips are subscribed with humidity",
 
     json subs = fx.build();
 
-    for (const auto& s : {"htu21d box", "bme280 chamber", "aht20_f heater_box1"}) {
+    for (const auto& s : {"htu21d box", "bme280 chamber", "sht3x enclosure", "aht10 dryer",
+                          "aht20 box", "aht20_f heater_box1"}) {
         CAPTURE(s);
         REQUIRE(has_field(subs, s, "temperature"));
         REQUIRE(has_field(subs, s, "humidity"));

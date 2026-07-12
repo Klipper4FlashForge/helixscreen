@@ -240,6 +240,124 @@ ensure_wifi_associated() {
     return 0
 }
 
+# ── Remote screen: serve the live UI to Mainsail/Fluidd ──────────────────────
+#
+# PAXX Extended Firmware ships a remote-screen tool, /usr/local/bin/fb-http.py,
+# that serves the display over HTTP (127.0.0.1:8092, proxied by nginx's /screen/
+# route into the [webcam gui] Moonraker slot). On firmware 1.4 the stock init
+# started it from S99fb-http — but that is exactly the boot-glob script
+# HelixScreen's autostart hijacks to launch HelixScreen instead, so under
+# HelixScreen the remote screen never comes up.
+#
+# We start it from here instead. This hook runs on every HelixScreen start —
+# i.e. on every boot, via the same hijacked init that already defeats the
+# overlay boot-glob trap — so no separate (never-booting) S9x script is needed.
+# We drive fb-http's DRM backend, which captures /dev/dri/card0 directly: that
+# is the buffer HelixScreen renders to, so the remote view matches the panel
+# with NO framebuffer mirroring (obviating the /dev/fb0 staleness problem — see
+# docs/devel/printers/SNAPMAKER_U1_SUPPORT.md). Gated on the PAXX
+# `web remote_screen` toggle so the firmware setting is honored.
+HELIX_REMOTE_SCREEN_PID="${HELIX_REMOTE_SCREEN_PID:-/var/run/helix-remote-screen.pid}"
+HELIX_FB_HTTP="${HELIX_FB_HTTP:-/usr/local/bin/fb-http.py}"
+HELIX_FB_HTTP_HTML="${HELIX_FB_HTTP_HTML:-/usr/local/share/fb-http/html}"
+
+# True (0) when the PAXX extended-firmware `web remote_screen` toggle is on.
+# No toggle present (non-PAXX / older firmware) -> treat as disabled.
+_remote_screen_enabled() {
+    _cfg=""
+    for _c in /oem/printer_data/config/extended/extended2.cfg \
+              /home/lava/printer_data/config/extended/extended2.cfg; do
+        [ -f "$_c" ] && { _cfg="$_c"; break; }
+    done
+    [ -n "$_cfg" ] || return 1
+    [ -x /usr/local/bin/extended-config.py ] || return 1
+    _rs=$(/usr/local/bin/extended-config.py get "$_cfg" web remote_screen false 2>/dev/null)
+    case "$_rs" in [Tt][Rr][Uu][Ee]) return 0 ;; *) return 1 ;; esac
+}
+
+# Echo the backend-selection flags for the installed fb-http, or nothing.
+#
+# fb-http ships in two incompatible flavors:
+#   - Newer builds (current PAXX Extended Firmware) expose a DRM backend
+#     (--backend/--drm-device/--drm-wait) that captures /dev/dri/card0 — the
+#     buffer HelixScreen renders to — directly, so the remote view matches the
+#     panel with no framebuffer mirroring.
+#   - Older/mainline builds (paxx12/screen-apps) register only
+#     --port/--bind/--fb/--touch/--html-dir and read /dev/fb0.
+# Passing the DRM flags to a build that lacks them makes argparse exit(2) before
+# it binds :8092 — a silent dead feed. So probe the tool (its source advertises
+# every flag it accepts) and only emit DRM flags when it actually supports them;
+# otherwise fb-http falls back to its own fbdev default (/dev/fb0). Split out as
+# a helper so the capability probe is unit-testable.
+_remote_screen_backend_args() {
+    if grep -q -- '--backend' "$HELIX_FB_HTTP" 2>/dev/null; then
+        echo "--backend drm --drm-device /dev/dri/card0 --drm-wait 60"
+    fi
+}
+
+# Start fb-http (idempotent). No-op if the tool is absent or the toggle is off.
+start_remote_screen() {
+    [ -f "$HELIX_FB_HTTP" ] || return 0
+    _remote_screen_enabled || return 0
+    if [ -f "$HELIX_REMOTE_SCREEN_PID" ] && \
+       kill -0 "$(cat "$HELIX_REMOTE_SCREEN_PID" 2>/dev/null)" 2>/dev/null; then
+        return 0
+    fi
+    _rs_backend=$(_remote_screen_backend_args)
+    if [ -n "$_rs_backend" ]; then
+        # --drm-wait lets fb-http wait for the DRM device to be ready, so it is
+        # safe to launch here (before helix-screen becomes DRM master); capture
+        # is read-only and does not contend for DRM master.
+        echo "Remote screen: starting fb-http (DRM capture of /dev/dri/card0) on 127.0.0.1:8092"
+    else
+        # No DRM backend: fb-http reads /dev/fb0. HelixScreen renders into its own
+        # DRM dumb buffer and never touches fb0, so fb0 would be stale — UNLESS the
+        # in-app fb0 mailbox mirror is enabled. Export HELIX_REMOTE_SCREEN_FB0 so
+        # helix-screen (launched after this hook, inheriting our env) mirrors each
+        # rendered frame into /dev/fb0, making fb-http's snapshot the live UI. Only
+        # on the fbdev path — the DRM branch captures the real buffer directly and
+        # needs no mirror. See docs/devel/printers/SNAPMAKER_U1_SUPPORT.md.
+        export HELIX_REMOTE_SCREEN_FB0="/dev/fb0"
+        echo "Remote screen: starting fb-http (fbdev /dev/fb0) + in-app fb0 mirror on 127.0.0.1:8092"
+    fi
+    # Output is discarded to /dev/null: fb-http is a long-lived daemon (whole UI
+    # session) and Mainsail/Fluidd poll /screen/ continuously, so its per-request
+    # logging is unbounded. On the U1 /tmp is tmpfs, and an unbounded log there
+    # starves Klipper — the failure mode that filled tmpfs with 498 MB of stray
+    # output on this platform (see docs/devel/LOGGING.md and the LOGFILE tmpfs
+    # guard in config/helixscreen.init).
+    #
+    # $_rs_backend is deliberately unquoted so it word-splits into flags (or
+    # vanishes when empty); it is a fixed internal string, never user input.
+    start-stop-daemon -S -b -m -p "$HELIX_REMOTE_SCREEN_PID" -x /bin/sh -- -c \
+        "exec /usr/bin/python3 $HELIX_FB_HTTP --bind 127.0.0.1 --port 8092 $_rs_backend --html-dir $HELIX_FB_HTTP_HTML >/dev/null 2>&1"
+    unset _rs_backend
+}
+
+# Stop fb-http if we started it.
+#
+# If fb-http exits on its own before we stop (startup failure/crash), the pidfile
+# goes stale and its PID may be recycled to an unrelated process. `start-stop-daemon
+# -K -p` matches the pidfile ALONE, so it would then TERM whatever now owns that PID.
+# `--exec`/`--name` are unreliable here (we exec python3 through a /bin/sh wrapper,
+# so the running comm/exe is python3, not fb-http), so we verify the process's
+# cmdline still references fb-http before signaling, and always clear the pidfile.
+stop_remote_screen() {
+    if [ -f "$HELIX_REMOTE_SCREEN_PID" ]; then
+        _rs_pid=$(cat "$HELIX_REMOTE_SCREEN_PID" 2>/dev/null)
+        _fb_name=$(basename "$HELIX_FB_HTTP")
+        if [ -n "$_rs_pid" ] && kill -0 "$_rs_pid" 2>/dev/null && \
+           tr '\0' ' ' < "/proc/$_rs_pid/cmdline" 2>/dev/null | grep -qF "$_fb_name"; then
+            start-stop-daemon -K -p "$HELIX_REMOTE_SCREEN_PID" -s TERM 2>/dev/null || \
+                kill -TERM "$_rs_pid" 2>/dev/null || true
+        fi
+        rm -f "$HELIX_REMOTE_SCREEN_PID"
+        unset _rs_pid _fb_name
+    else
+        pkill -f "$HELIX_FB_HTTP" 2>/dev/null || true
+    fi
+}
+
 platform_pre_start() {
     export HELIX_CACHE_DIR="/userdata/helixscreen/cache"
     # Force DRM device — skip auto-detection which may race with connector state
@@ -253,10 +371,17 @@ platform_pre_start() {
     # Must NOT block boot or strand the device if helix later dies.
     ensure_wifi_associated
 
+    # Serve the live UI to Mainsail/Fluidd via the firmware's fb-http tool when
+    # the PAXX `web remote_screen` toggle is on (no-op otherwise).
+    start_remote_screen
+
     return 0
 }
 
 platform_post_stop() {
+    # Stop the remote-screen server we started in platform_pre_start.
+    stop_remote_screen
+
     # Kill the keepalive process if still running
     if [ -n "$DRM_KEEPALIVE_PID" ]; then
         kill "$DRM_KEEPALIVE_PID" 2>/dev/null || true

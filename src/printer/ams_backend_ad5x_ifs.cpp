@@ -1297,9 +1297,25 @@ AmsError AmsBackendAd5xIfs::unload_filament(int slot_index) {
     // toolhead, so route to the cold per-lane retract instead of a guaranteed
     // no-op (7AC4SDEX: head_switch_sensor empty, ifs_motion_sensor present).
     if (!head_loaded) {
+        // "Unload whatever is active" (slot_index < 0) needs a concrete lane for
+        // the cold eject — resolve through the seated channel, then the active
+        // slot. Passing -1 through to eject_lane() fails validate_slot_index()
+        // and the swap path discarded that error, freezing the sidebar in
+        // "Heating" (Vger1700, bundle Z5V4K3NL).
+        int eject_slot = slot_index >= 0 ? slot_index
+                         : seated_slot >= 0 ? seated_slot
+                                            : current_slot;
+        if (eject_slot < 0) {
+            spdlog::info("{} Unload with empty toolhead sensor and no seated/active lane -> "
+                         "nothing to unload",
+                         backend_log_tag());
+            return AmsError(AmsResult::WRONG_STATE,
+                            "unload_filament: head sensor empty, no seated or active lane",
+                            "Nothing to unload: no filament at the nozzle");
+        }
         spdlog::info("{} Unload with empty toolhead sensor -> cold lane eject (slot {})",
-                     backend_log_tag(), slot_index);
-        return eject_lane(slot_index);
+                     backend_log_tag(), eject_slot);
+        return eject_lane(eject_slot);
     }
 
     {

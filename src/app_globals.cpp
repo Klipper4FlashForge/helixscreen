@@ -444,6 +444,38 @@ std::string app_get_cache_dir() {
     return cached;
 }
 
+std::string app_get_runtime_dir() {
+    // Writable base dir for SHORT-LIVED runtime files (nmcli stderr capture,
+    // screenshots, timelapse temp downloads). Prefers fast tmpfs (/tmp) so
+    // existing file paths and scripts/screenshot.sh keep working on normal
+    // devices; falls back to the persistent cache dir when /tmp is read-only
+    // (ProtectSystem=strict sandbox on Sonic Pad / OrangePi Zero3). Returns a
+    // base dir with NO trailing slash; callers append "/<name>".
+    std::vector<std::string> candidates;
+    if (const char* e = std::getenv("HELIX_TMP_DIR"); e && e[0] != '\0')
+        candidates.emplace_back(e);
+    // /tmp first (after the explicit override) so behavior is unchanged on normal
+    // devices — scripts/screenshot.sh and other tooling read the usual /tmp paths,
+    // and a desktop's writable XDG_RUNTIME_DIR must NOT pull writes off /tmp.
+    candidates.emplace_back("/tmp");
+    candidates.emplace_back("/var/tmp");
+    if (const char* x = std::getenv("XDG_RUNTIME_DIR"); x && x[0] != '\0')
+        candidates.emplace_back(x);
+    std::string dir = helix::paths::first_writable_dir(candidates);
+    if (!dir.empty())
+        return helix::paths::strip_trailing_slash(dir);
+    // /tmp-family read-only (sandbox) — use the persistent cache dir, which
+    // resolves under ~/.cache / install root (writable under ReadWritePaths).
+    const std::string cache = app_get_cache_dir();
+    if (!cache.empty()) {
+        std::string p = cache + "/runtime";
+        if (helix::paths::ensure_dir(p) && helix::paths::probe_writable(p))
+            return p;
+    }
+    spdlog::warn("[App Globals] No writable runtime dir found; using /tmp (writes may fail)");
+    return "/tmp";
+}
+
 std::string app_get_config_dir() {
     static const std::string cached = []() {
         std::string cfg = helix::get_user_config_dir(); // "config" or $HELIX_CONFIG_DIR

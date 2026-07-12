@@ -310,6 +310,34 @@ void MoonrakerMotionAPI::execute_gcode(const std::string& gcode, SuccessCallback
     // so suppress the global RPC_ERROR toast from request tracker.
     bool silent = (on_error != nullptr);
 
+    // Refuse motion G-code (jog/home/move) unless Klipper is READY. When klippy
+    // is starting up, halted, or errored, printer.gcode.script is rejected by
+    // Klipper with a raw "Printer not ready"/initialization error — and during
+    // STARTUP the command is instead silently queued and can fire minutes later,
+    // long after the user has moved on. Motion is discretionary user input with
+    // no recovery role (recovery uses dedicated RPCs: firmware_restart, etc.), so
+    // block it at the boundary and surface a friendly toast. Stricter than the
+    // klippy gate in MoonrakerAPI::execute_gcode, which lets STARTUP through so
+    // queued recovery gcode can run — jog moves must NOT queue-and-fire-late.
+    {
+        const int klippy = lv_subject_get_int(state_.get_klippy_state_subject());
+        if (klippy != static_cast<int>(helix::KlippyState::READY)) {
+            if (!silent) {
+                spdlog::warn("[Motion API] Refusing motion G-code while Klipper not ready "
+                             "(state={}): '{}'",
+                             klippy, gcode.substr(0, 60));
+            }
+            if (on_error) {
+                MoonrakerError err;
+                err.type = MoonrakerErrorType::NOT_READY;
+                err.method = "printer.gcode.script";
+                err.message = "Printer is not ready";
+                on_error(err);
+            }
+            return;
+        }
+    }
+
     // Refuse app-initiated homing while a print is active. The Home buttons and
     // calibration/mesh auto-homes route through here; a mid-print G28 drives the
     // nozzle into the part on loadcell-Z printers (see MoonrakerAPI::execute_gcode

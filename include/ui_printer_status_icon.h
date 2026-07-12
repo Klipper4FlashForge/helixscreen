@@ -74,6 +74,22 @@ class PrinterStatusIcon {
      */
     void deinit_subjects();
 
+    /**
+     * @brief Pure mapping from connection + klippy state to the displayed icon.
+     *
+     * Extracted so the state logic is unit-testable without LVGL subjects or the
+     * singleton. When @p expected_restart is true, a transient Klipper SHUTDOWN
+     * (from a SAVE_CONFIG bounce or user-initiated restart) is shown as WARNING
+     * rather than ERROR — no red flash mid-calibration.
+     *
+     * @param connection_state ConnectionState enum value
+     * @param klippy_state     KlippyState enum value
+     * @param ever_connected   Whether the printer was ever connected this session
+     * @param expected_restart EmergencyStopOverlay::is_expected_restart()
+     */
+    static PrinterIconState compute_state(int connection_state, int klippy_state,
+                                          bool ever_connected, bool expected_restart);
+
   private:
     // Private constructor for singleton
     PrinterStatusIcon() = default;

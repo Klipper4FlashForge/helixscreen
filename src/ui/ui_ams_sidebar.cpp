@@ -768,6 +768,17 @@ void AmsOperationSidebar::start_operation(StepOperationType op_type, int target_
     }
 }
 
+void AmsOperationSidebar::fail_started_operation(const AmsError& error) {
+    spdlog::warn("[AmsSidebar] Operation dispatch failed: {} ({})", error.user_msg,
+                 error.technical_msg);
+    NOTIFY_ERROR(lv_tr("Filament operation failed: {}"), error.user_msg);
+    target_load_slot_ = -1;
+    AmsState::instance().set_pending_target_slot(-1);
+    // Backend never left IDLE; pull its truth back into the UI so the action
+    // buttons reappear and the step bar hides.
+    AmsState::instance().sync_from_backend();
+}
+
 void AmsOperationSidebar::update_step_progress(AmsAction action) {
     if (!active_ || !step_progress_container_) {
         return;
@@ -1053,18 +1064,22 @@ void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
 
     // Helper: initiate load or tool change depending on current state
     auto do_load_or_swap = [&]() {
+        AmsError error;
         if (backend->needs_unload_before_load(info) && info.current_slot != slot_index) {
             const SlotInfo* slot_info = info.get_slot_global(slot_index);
             if (slot_info && slot_info->mapped_tool >= 0) {
                 spdlog::info("[AmsSidebar] Preheat path: swapping via tool change T{}",
                              slot_info->mapped_tool);
-                backend->change_tool(slot_info->mapped_tool);
+                error = backend->change_tool(slot_info->mapped_tool);
             } else {
                 spdlog::info("[AmsSidebar] Preheat path: unload first, then load {}", slot_index);
-                backend->unload_filament();
+                error = backend->unload_filament();
             }
         } else {
-            backend->load_filament(slot_index);
+            error = backend->load_filament(slot_index);
+        }
+        if (!error.success()) {
+            fail_started_operation(error);
         }
     };
 
@@ -1125,6 +1140,7 @@ void AmsOperationSidebar::check_pending_load() {
 
         AmsBackend* backend = AmsState::instance().get_backend();
         if (backend) {
+            AmsError error;
             AmsSystemInfo preheat_info = backend->get_system_info();
             // Same centralized load-vs-swap rule as handle_load_with_preheat /
             // on_path_slot_clicked — keeps K1 vs K2 consistent (#968).
@@ -1134,15 +1150,18 @@ void AmsOperationSidebar::check_pending_load() {
                 if (slot_info && slot_info->mapped_tool >= 0) {
                     spdlog::info("[AmsSidebar] Preheat complete, swapping via tool change T{}",
                                  slot_info->mapped_tool);
-                    backend->change_tool(slot_info->mapped_tool);
+                    error = backend->change_tool(slot_info->mapped_tool);
                 } else {
                     spdlog::info("[AmsSidebar] Preheat complete, unloading first then load {}",
                                  slot);
-                    backend->unload_filament();
+                    error = backend->unload_filament();
                 }
             } else {
                 spdlog::info("[AmsSidebar] Preheat complete, loading slot {}", slot);
-                backend->load_filament(slot);
+                error = backend->load_filament(slot);
+            }
+            if (!error.success()) {
+                fail_started_operation(error);
             }
         }
     }

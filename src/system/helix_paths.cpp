@@ -75,6 +75,16 @@ bool probe_writable(const std::string& dir, std::uint64_t min_free_bytes) {
     return wrote;
 }
 
+std::string first_writable_dir(const std::vector<std::string>& candidates,
+                               std::uint64_t min_free_bytes) {
+    for (const std::string& dir : candidates) {
+        if (probe_writable(dir, min_free_bytes)) {
+            return dir;
+        }
+    }
+    return "";
+}
+
 bool ensure_dir(const std::string& path) {
     try {
         std::error_code ec;

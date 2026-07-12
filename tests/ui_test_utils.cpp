@@ -630,6 +630,10 @@ bool EmergencyStopOverlay::is_recovery_suppressed() const {
     return lv_tick_elaps(suppress_recovery_until_) > (UINT32_MAX / 2);
 }
 
+bool EmergencyStopOverlay::is_expected_restart() const {
+    return is_recovery_suppressed() || restart_in_progress_;
+}
+
 void EmergencyStopOverlay::show_recovery_dialog() {
     if (recovery_dialog_)
         return;
@@ -844,6 +848,13 @@ std::string app_get_install_root() {
 // Returns empty string — matches the production fallback when cache resolution fails.
 std::string app_get_cache_dir() {
     return "";
+}
+
+// Stub for app_get_runtime_dir (tests use a writable temp dir)
+std::string app_get_runtime_dir() {
+    std::string path = "/tmp/helix_test_runtime";
+    std::filesystem::create_directories(path);
+    return path;
 }
 
 // Stub for app_get_config_dir (tests don't have a resolvable install layout)

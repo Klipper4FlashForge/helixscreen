@@ -122,7 +122,7 @@ A true 4-toolhead changer, running on the U1's built-in 3.5" screen. Each of the
 
 **Status:** Tested (on PAXX 1.2.x–1.4.x; stock-firmware support is newly added — testers wanted).
 
-> **Good to know:** The U1's 480×320 display is the smallest resolution HelixScreen supports; a few panels have known layout tightness there. Remote screen/webcam mirroring isn't wired up yet (physical cameras work normally). Writing filament data back to RFID tags works only on PAXX firmware.
+> **Good to know:** The U1's 480×320 display is the smallest resolution HelixScreen supports; a few panels have known layout tightness there. On **PAXX Extended Firmware**, you can view (and control) the HelixScreen UI remotely in Mainsail/Fluidd — enable the firmware's `web remote_screen` toggle and the screen shows up as the "gui" webcam feed. Physical cameras work normally too. Writing filament data back to RFID tags works only on PAXX firmware.
 
 ---
 
