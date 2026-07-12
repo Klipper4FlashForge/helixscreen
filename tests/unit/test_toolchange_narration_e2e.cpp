@@ -130,6 +130,33 @@ TEST_CASE_METHOD(LVGLTestFixture,
 }
 
 // ---------------------------------------------------------------------------
+// 1b. UNLOAD narration resolves the retract phase to the template's final step.
+//     Regression for #1046 I-1: the matcher had no `retract` case, so the last
+//     unload step (retract) could never highlight.
+// ---------------------------------------------------------------------------
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "Toolchange narration E2E - UNLOAD retract advances to final step (#1046)",
+                 "[narration][ui_integration]") {
+    reset_step_baseline();
+    AmsState::instance().set_active_step_operation(StepOperationType::UNLOAD);
+    GcodeNarrationRouter router(nullptr, nullptr);
+
+    // UNLOAD template indices: heat=0, cut=1, retract=2
+    GcodeNarrationRouterTestAccess::feed(router, "// Heat nozzle");
+    helix::ui::UpdateQueue::instance().drain();
+    REQUIRE(current_step() == 0);
+
+    GcodeNarrationRouterTestAccess::feed(router, "// Cutting tip");
+    helix::ui::UpdateQueue::instance().drain();
+    REQUIRE(current_step() == 1);
+
+    GcodeNarrationRouterTestAccess::feed(router, "// Retracting filament");
+    REQUIRE(current_detail() == std::string("Retract"));
+    helix::ui::UpdateQueue::instance().drain();
+    REQUIRE(current_step() == 2);
+}
+
+// ---------------------------------------------------------------------------
 // 2. on_notify_gcode_response Moonraker-envelope parsing (closes untested gap).
 // ---------------------------------------------------------------------------
 TEST_CASE_METHOD(LVGLTestFixture,

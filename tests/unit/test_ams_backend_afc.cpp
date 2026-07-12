@@ -4396,6 +4396,15 @@ TEST_CASE("AFC narration recognizes brush/clean/cut/poop/kick (S2)",
     REQUIRE(afc.match_narration_phase("lane 2 is now loaded in toolhead") ==
             std::optional<std::string>("load"));
 }
+TEST_CASE("AFC narration recognizes retract for the unload sequence (#1046)",
+          "[unit][ams][afc][narration]") {
+    AmsBackendAfcTestHelper afc;
+    // The UNLOAD template ends with a `retract` step; without a matcher case the
+    // final unload step could never highlight (issue #1046 I-1).
+    REQUIRE(afc.match_narration_phase("Retracting filament") ==
+            std::optional<std::string>("retract"));
+    REQUIRE(afc.match_narration_phase("Retract") == std::optional<std::string>("retract"));
+}
 TEST_CASE("AFC narration ignores unrelated lines", "[unit][ams][afc][narration]") {
     AmsBackendAfcTestHelper afc;
     REQUIRE_FALSE(afc.match_narration_phase("Klipper state: ready").has_value());

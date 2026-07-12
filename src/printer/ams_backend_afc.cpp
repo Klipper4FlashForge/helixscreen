@@ -486,6 +486,8 @@ AmsBackendAfc::match_narration_phase(const std::string& narration) const {
         return "poop";
     if (has("cut"))
         return "cut";
+    if (has("retract")) // UNLOAD ends on a retract step; keep it reachable (#1046)
+        return "retract";
     if (has("to hub") || has("feed") || has("loading lane"))
         return "feed";
     if (has("heat"))

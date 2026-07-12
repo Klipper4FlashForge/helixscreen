@@ -518,6 +518,17 @@ void AmsOperationSidebar::recreate_step_progress_for_operation(StepOperationType
                 // so a member ObserverGuard with no SubjectLifetime is correct.
                 step_index_subject_ = backend->get_operation_step_index_subject(op_type);
                 if (step_index_subject_) {
+                    // #1046 I-1: for narration-driven bars, seed the shared step
+                    // subject to step 0 (heat) at operation start — BEFORE observing,
+                    // so the initial observer fire highlights heat immediately and the
+                    // bar never looks dead if the matcher misses the opening `//` line.
+                    // This also discards any early narration index resolved against a
+                    // prior operation's template before this recreate ran (#1046 M-1).
+                    // Firmware-phase subjects (e.g. Snapmaker) mirror live hardware
+                    // and MUST NOT be seeded — gate on the shared narration subject.
+                    if (step_index_subject_ == AmsState::instance().get_toolchange_step_subject()) {
+                        lv_subject_set_int(step_index_subject_, 0);
+                    }
                     step_index_observer_ = observe_int_sync<AmsOperationSidebar>(
                         step_index_subject_, this, [](AmsOperationSidebar* self, int index) {
                             if (!self->active_ || !self->step_progress_)
