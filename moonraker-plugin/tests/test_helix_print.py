@@ -96,49 +96,110 @@ class MockFileManager:
 
 
 class MockDatabase:
-    """Mock database for testing."""
+    """Mock database component for testing.
+
+    Mirrors the real Moonraker v0.10.0 `database` component's public surface
+    (verified from Moonraker source commit d5ee171): sql_execute, insert_item,
+    get_item, update_item, delete_item, ns_items, ns_length. There is NO
+    `execute_db_command` - that API was renamed/removed upstream. Only defining
+    the real methods means calling anything else raises AttributeError, same as
+    it would against the production object.
+    """
 
     def __init__(self):
-        self.data = {}
-        self.tables_created = []
+        self.namespaces: Dict[str, Dict[str, Any]] = {}
+        self.sql_commands = []
 
-    async def execute_db_command(self, sql: str, params: tuple = None):
-        if sql.strip().upper().startswith("CREATE TABLE"):
-            self.tables_created.append(sql)
-        return MagicMock(lastrowid=1)
+    async def sql_execute(self, sql: str, params: Optional[list] = None):
+        self.sql_commands.append((sql, params))
+        return MagicMock(lastrowid=1, rowcount=0)
+
+    async def insert_item(self, namespace: str, key: str, value: Any) -> None:
+        self.namespaces.setdefault(namespace, {})[key] = value
+
+    async def get_item(self, namespace: str, key: str, default: Any = None) -> Any:
+        return self.namespaces.get(namespace, {}).get(key, default)
+
+    async def update_item(self, namespace: str, key: str, value: Any) -> None:
+        self.namespaces.setdefault(namespace, {})[key] = value
+
+    async def delete_item(self, namespace: str, key: str) -> None:
+        self.namespaces.get(namespace, {}).pop(key, None)
+
+    async def ns_items(self, namespace: str) -> list:
+        return list(self.namespaces.get(namespace, {}).items())
+
+    async def ns_length(self, namespace: str) -> int:
+        return len(self.namespaces.get(namespace, {}))
 
 
 class MockKlippy:
-    """Mock Klipper connection for testing."""
+    """Mock klippy_connection component for testing.
+
+    Mirrors the real Moonraker v0.10.0 `KlippyConnection`'s public async surface:
+    request(web_request) and rollover_log(). It has NO `run_gcode` - that method
+    lives on klippy_apis (see MockKlippyApis below). Calling run_gcode on this
+    mock raises AttributeError, reproducing the production crash reported in
+    debug bundle RA6EPJTZ ("'KlippyConnection' object has no attribute
+    'run_gcode'").
+    """
 
     def __init__(self):
-        self.commands_sent = []
-        self.macros = {}  # Can be populated with test macros
+        self.requests_sent = []
 
-    async def run_gcode(self, gcode: str):
-        self.commands_sent.append(gcode)
+    async def request(self, web_request):
+        self.requests_sent.append(web_request)
+        return {}
 
-    async def request(self, endpoint: str, params: dict = None):
-        """Mock Klipper request method for API calls."""
-        if endpoint == "gcode_macro_variable":
-            macro_name = params.get("macro", "")
-            if macro_name in self.macros:
-                return {"gcode": self.macros[macro_name]}
-        raise Exception(f"Mock: {endpoint} not found")
+    async def rollover_log(self):
+        pass
+
+
+class MockKlippyApis:
+    """Mock klippy_apis component for testing.
+
+    Mirrors the real Moonraker v0.10.0 `KlippyAPI`'s public async surface
+    (verified from Moonraker source commit d5ee171): run_gcode, start_print,
+    do_restart, pause_print, resume_print, cancel_print, emergency_stop,
+    query_objects, get_object_list, list_endpoints, subscribe_objects,
+    get_klippy_info. This is the correct component for Klipper interaction
+    (SDCARD_PRINT_FILE, RESTART, etc.) - not klippy_connection.
+    """
+
+    def __init__(self):
+        self.run_gcode = AsyncMock(return_value="ok")
+        self.start_print = AsyncMock(return_value=None)
+        self.do_restart = AsyncMock(return_value=None)
+        self.pause_print = AsyncMock(return_value=None)
+        self.resume_print = AsyncMock(return_value=None)
+        self.cancel_print = AsyncMock(return_value=None)
+        self.emergency_stop = AsyncMock(return_value=None)
+        self.query_objects = AsyncMock(return_value={})
+        self.get_object_list = AsyncMock(return_value=[])
+        self.list_endpoints = AsyncMock(return_value={})
+        self.subscribe_objects = AsyncMock(return_value={})
+        self.get_klippy_info = AsyncMock(return_value={})
 
 
 class MockHistory:
-    """Mock history component for testing."""
+    """Mock history component for testing.
+
+    Mirrors the real Moonraker v0.10.0 `history` component: get_job(job_id) and
+    save_job(job, job_id). There is NO `modify_job` - that method does not exist
+    on modern Moonraker. HelixPrint's history filename-patching feature degrades
+    safely (best-effort) when it isn't available; see
+    HelixPrint._patch_history_entry.
+    """
 
     def __init__(self):
         self.jobs = {}
-        self.modifications = []
+        self.save_job_calls = []
 
     async def get_job(self, job_id: str):
         return self.jobs.get(job_id)
 
-    async def modify_job(self, job_id: str, **kwargs):
-        self.modifications.append({"job_id": job_id, **kwargs})
+    async def save_job(self, job, job_id=None):
+        self.save_job_calls.append((job, job_id))
 
 
 class MockConfigHelper:
@@ -181,6 +242,7 @@ def helix_print_component(mock_server, temp_gcodes_dir):
     mock_server.components["file_manager"] = MockFileManager(temp_gcodes_dir)
     mock_server.components["database"] = MockDatabase()
     mock_server.components["klippy_connection"] = MockKlippy()
+    mock_server.components["klippy_apis"] = MockKlippyApis()
     mock_server.components["history"] = MockHistory()
 
     # Create config
@@ -311,7 +373,7 @@ class TestStatusAPI:
         assert result["temp_dir"] == ".helix_temp"
         assert result["symlink_dir"] == ".helix_print"
         assert result["cleanup_delay"] == 3600
-        assert result["version"] == "1.0.0"
+        assert result["version"] == "1.0.1"
         assert result["active_prints"] == 0
 
 
@@ -433,10 +495,57 @@ class TestPrintModifiedAPI:
 
         await handler(request)
 
-        # Verify print command was sent
-        klippy = mock_server.components["klippy_connection"]
-        assert len(klippy.commands_sent) == 1
-        assert ".helix_print/benchy.gcode" in klippy.commands_sent[0]
+        # Verify print command was sent via klippy_apis (NOT klippy_connection,
+        # which has no run_gcode method - see MockKlippy/MockKlippyApis docs)
+        klippy_apis = mock_server.components["klippy_apis"]
+        assert klippy_apis.run_gcode.await_count == 1
+        sent_command = klippy_apis.run_gcode.await_args.args[0]
+        assert ".helix_print/benchy.gcode" in sent_command
+
+    @pytest.mark.asyncio
+    async def test_print_start_calls_klippy_apis_not_klippy_connection(
+        self, helix_print_component, mock_server, temp_gcodes_dir
+    ):
+        """Regression test for production crash (debug bundle RA6EPJTZ):
+
+        'Failed to start print: 'KlippyConnection' object has no attribute
+        run_gcode''. Starting a print must call klippy_apis.run_gcode exactly
+        once with an SDCARD_PRINT_FILE command naming the symlink - not
+        klippy_connection, which has no run_gcode method in real Moonraker.
+
+        This test FAILS against the old (klippy_connection.run_gcode) code and
+        PASSES after routing through klippy_apis.
+        """
+        original = Path(temp_gcodes_dir) / "benchy.gcode"
+        original.write_text("G28\n")
+
+        temp_dir = Path(temp_gcodes_dir) / ".helix_temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_file = temp_dir / "mod_benchy.gcode"
+        temp_file.write_text("G28\n")
+
+        await helix_print_component.component_init()
+
+        handler = mock_server.endpoints["/server/helix/print_modified"]
+        request = MockWebRequest({
+            "original_filename": "benchy.gcode",
+            "temp_file_path": ".helix_temp/mod_benchy.gcode",
+            "modifications": [],
+        })
+
+        result = await handler(request)
+        assert result["status"] == "printing"
+
+        klippy_apis = mock_server.components["klippy_apis"]
+        assert klippy_apis.run_gcode.await_count == 1
+        sent_command = klippy_apis.run_gcode.await_args.args[0]
+        assert "SDCARD_PRINT_FILE" in sent_command
+        assert 'FILENAME=".helix_print/benchy.gcode"' in sent_command
+
+        # klippy_connection must never be touched for this - it has no
+        # run_gcode method on real Moonraker.
+        klippy_connection = mock_server.components["klippy_connection"]
+        assert not hasattr(klippy_connection, "run_gcode")
 
     @pytest.mark.asyncio
     async def test_disabled_returns_error(self, mock_server, temp_gcodes_dir):
@@ -809,6 +918,7 @@ class TestPhaseTrackingEndpoints:
         mock_server.components["file_manager"] = MockFileManager(temp_gcodes_dir)
         mock_server.components["database"] = MockDatabase()
         mock_server.components["klippy_connection"] = MockKlippy()
+        mock_server.components["klippy_apis"] = MockKlippyApis()
         mock_server.components["history"] = MockHistory()
 
         config = MockConfigHelper(mock_server, {

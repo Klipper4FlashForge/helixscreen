@@ -50,7 +50,7 @@ HELIX_TEMP_TABLE = "helix_temp_files"
 DB_RECORD_MAX_AGE = 30 * 86400
 
 # Plugin version - used for API version detection by clients
-PLUGIN_VERSION = "1.0.0"
+PLUGIN_VERSION = "1.0.1"
 
 # Namespace for key-value storage fallback (Moonraker v0.8.x)
 HELIX_NAMESPACE = "helix_temp_files"
@@ -106,7 +106,7 @@ class HelixPrint:
         # Component references (resolved after init)
         self.file_manager: Optional[Any] = None
         self.history: Optional[Any] = None
-        self.klippy: Optional[Any] = None
+        self.klippy_apis: Optional[Any] = None
         self.database: Optional[Any] = None
 
         # State tracking
@@ -223,7 +223,7 @@ class HelixPrint:
         """Called after all components are loaded."""
         self.file_manager = self.server.lookup_component("file_manager")
         self.history = self.server.lookup_component("history", None)
-        self.klippy = self.server.lookup_component("klippy_connection")
+        self.klippy_apis = self.server.lookup_component("klippy_apis")
         self.database = self.server.lookup_component("database")
 
         # Get gcodes path
@@ -422,7 +422,7 @@ class HelixPrint:
         # Start the print with symlink path (escape filename for G-code)
         safe_symlink = self._escape_gcode_string(symlink_filename)
         try:
-            await self.klippy.run_gcode(
+            await self.klippy_apis.run_gcode(
                 f'SDCARD_PRINT_FILE FILENAME="{safe_symlink}"'
             )
             logging.info(f"HelixPrint: Started print with {symlink_filename}")
@@ -590,13 +590,22 @@ class HelixPrint:
         if not self.history or not print_info.job_id:
             return
 
-        # Check if history API is compatible
+        # Check if history API is compatible. This filename-rename is a cosmetic,
+        # best-effort feature (shows the original filename in job history instead
+        # of the temp/symlink name), so it degrades silently when unavailable.
+        # It relies on `modify_job`, which does not exist on Moonraker 0.9+
+        # (removed upstream). The modern replacement is `save_job`, but that takes
+        # an internal PrinterJob object rather than the plain dict `get_job`
+        # returns, and reconstructing one here would be fragile — so we don't
+        # implement that path. Gate on the method we actually call so modern
+        # Moonraker skips cleanly with a single warning rather than falling
+        # through to an AttributeError traceback on every finished print.
         if not hasattr(self.history, "get_job") or not hasattr(
             self.history, "modify_job"
         ):
             logging.warning(
-                "HelixPrint: History API not compatible "
-                "(missing get_job or modify_job)"
+                "HelixPrint: History filename-rename unavailable "
+                "(history component has no modify_job; needs Moonraker <0.9)"
             )
             return
 
@@ -941,8 +950,7 @@ class HelixPrint:
             klipper_restarted = False
             if success:
                 try:
-                    kc: KlippyConnection = self.server.lookup_component("klippy_connection")
-                    await kc.request("printer/restart", {})
+                    await self.klippy_apis.do_restart("RESTART")
                     klipper_restarted = True
                     logging.info("HelixPrint: Triggered Klipper restart after enabling phase tracking")
                 except Exception as e:
@@ -995,8 +1003,7 @@ class HelixPrint:
             klipper_restarted = False
             if success:
                 try:
-                    kc: KlippyConnection = self.server.lookup_component("klippy_connection")
-                    await kc.request("printer/restart", {})
+                    await self.klippy_apis.do_restart("RESTART")
                     klipper_restarted = True
                     logging.info("HelixPrint: Triggered Klipper restart after disabling phase tracking")
                 except Exception as e:
@@ -1039,28 +1046,17 @@ class HelixPrint:
 
     async def _get_print_start_macro(self) -> tuple:
         """
-        Get the PRINT_START macro definition from Klipper.
+        Get the PRINT_START macro definition from Klipper's config files.
+
+        Moonraker has no endpoint that returns a gcode_macro's raw gcode body
+        (there is no "gcode_macro_variable" API), so this reads directly from
+        the Klipper config files on disk.
 
         Returns (macro_name, gcode) tuple. Returns (name, None) if not found.
         """
-        if not self.klippy:
-            return (None, None)
-
         # Try common macro names
         macro_names = ["PRINT_START", "START_PRINT", "_PRINT_START"]
 
-        for name in macro_names:
-            try:
-                result = await self.klippy.request(
-                    "gcode_macro_variable",
-                    {"macro": name},
-                )
-                if result and "gcode" in result:
-                    return (name, result["gcode"])
-            except Exception:
-                continue
-
-        # Not found via API, try reading from config files
         config_dir = await self._get_config_dir()
         if config_dir:
             for name in macro_names:

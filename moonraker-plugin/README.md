@@ -104,7 +104,7 @@ Response:
     "symlink_dir": ".helix_print",
     "cleanup_delay": 86400,
     "active_prints": 0,
-    "version": "1.0.0"
+    "version": "1.0.1"
   }
 }
 ```

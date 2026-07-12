@@ -4,6 +4,7 @@
 #include "../../include/moonraker_api.h"
 #include "../../include/moonraker_client.h"
 #include "../../include/printer_state.h"
+#include "../../include/ui_update_queue.h"
 #include "../../lvgl/lvgl.h"
 #include "../ui_test_utils.h"
 
@@ -98,6 +99,92 @@ TEST_CASE_METHOD(HelixPrintAPITestFixture,
     // The implementation treats errors as "plugin not available"
     // So either way, service_has_helix_plugin should be false
     REQUIRE(state.service_has_helix_plugin() == false);
+}
+
+// ============================================================================
+// Fallback Test Client
+// ============================================================================
+//
+// Scripts two RPC methods to exercise the resilience fallback in
+// start_modified_print(): the helix_print plugin's print_modified endpoint
+// always fails (mimics the shipped v1.0.0 bug), while the stock
+// printer.print.start succeeds. Callbacks fire synchronously so the fallback
+// chain resolves within the call.
+namespace {
+class FallbackScriptedClient : public helix::MoonrakerClient {
+  public:
+    helix::RequestId send_jsonrpc(const std::string& method, const json& params,
+                                  std::function<void(const json&)> success_cb,
+                                  std::function<void(const MoonrakerError&)> error_cb,
+                                  uint32_t timeout_ms = 0, bool silent = false) override {
+        (void)timeout_ms;
+        (void)silent;
+        if (method == "server.helix.print_modified") {
+            ++print_modified_calls;
+            if (error_cb) {
+                MoonrakerError err;
+                err.type = MoonrakerErrorType::VALIDATION_ERROR;
+                err.message = "helix_print v1.0.0 print_modified bug";
+                err.method = method;
+                error_cb(err);
+            }
+            return 1;
+        }
+        if (method == "printer.print.start") {
+            ++print_start_calls;
+            print_start_filename = params.value("filename", std::string{});
+            if (success_cb) {
+                success_cb(json::object());
+            }
+            return 2;
+        }
+        return 0;
+    }
+
+    int print_modified_calls = 0;
+    int print_start_calls = 0;
+    std::string print_start_filename;
+};
+} // namespace
+
+TEST_CASE("HelixPrint API - falls back to printer.print.start when plugin print_modified fails",
+          "[print][api][slow]") {
+    FallbackScriptedClient client;
+    PrinterState state;
+    state.init_subjects(false);
+    MoonrakerAPI api(client, state);
+
+    std::atomic<bool> success_called{false};
+    std::atomic<bool> error_called{false};
+    ModifiedPrintResult result;
+
+    const std::string temp_path = ".helix_temp/modified_1766807545_benchy.gcode";
+
+    api.job().start_modified_print(
+        "benchy.gcode", temp_path, {"bed_leveling_disabled"},
+        [&](const ModifiedPrintResult& r) {
+            result = r;
+            success_called = true;
+        },
+        [&](const MoonrakerError&) { error_called = true; });
+
+    // Scripted callbacks fire synchronously; drain to satisfy L048/L052 in case a
+    // deferral is ever introduced into the fallback path.
+    helix::ui::UpdateQueue::instance().drain();
+
+    // The plugin endpoint was attempted once and failed...
+    REQUIRE(client.print_modified_calls == 1);
+    // ...then the fallback invoked stock printer.print.start with the temp path
+    // verbatim (already gcodes-root-relative — no stripping).
+    REQUIRE(client.print_start_calls == 1);
+    REQUIRE(client.print_start_filename == temp_path);
+
+    // The caller sees SUCCESS (not error), mapped into a ModifiedPrintResult.
+    REQUIRE(success_called.load() == true);
+    REQUIRE(error_called.load() == false);
+    REQUIRE(result.status == "printing");
+    REQUIRE(result.original_filename == "benchy.gcode");
+    REQUIRE(result.print_filename == temp_path);
 }
 
 // ============================================================================

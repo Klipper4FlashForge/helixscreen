@@ -150,5 +150,43 @@ void MoonrakerJobAPI::start_modified_print(const std::string& original_filename,
                          result.original_filename, result.print_filename);
             on_success(result);
         },
-        on_error);
+        // Resilience fallback: the helix_print plugin's print_modified endpoint is
+        // broken in shipped plugin v1.0.0 (fails for every field), so an already-
+        // deployed plugin leaves the user unable to start ANY print until they
+        // update it. When the plugin call fails, fall back to the stock
+        // printer.print.start on the already-uploaded temp file so the user can
+        // still print. `this` is safe to capture: MoonrakerJobAPI is a long-lived
+        // API wrapper owned by MoonrakerAPI (same lifetime as the client), matching
+        // how ui_resume_dispatch nests API calls through the long-lived api pointer.
+        // The callback runs on the WebSocket background thread and only touches
+        // spdlog + client_ (via start_print) — no LVGL/subject work here; the
+        // caller's on_success/on_error handle their own thread bouncing.
+        [this, original_filename, temp_file_path, on_success,
+         on_error](const MoonrakerError& err) {
+            spdlog::warn("[Moonraker API] helix_print plugin print_modified failed ({}); falling "
+                         "back to direct printer.print.start on temp file '{}'. Job history will "
+                         "show the temp filename (known degraded mode — update the helix_print "
+                         "plugin to restore original-filename history).",
+                         err.message, temp_file_path);
+
+            // temp_file_path is already gcodes-root-relative (e.g.
+            // ".helix_temp/modified_<ts>_<name>.gcode"), which is exactly the form
+            // printer.print.start expects as "filename" — the non-plugin path in
+            // ui_print_preparation_manager passes this same value straight to
+            // start_print(). No stripping required.
+            start_print(
+                temp_file_path,
+                [on_success, original_filename, temp_file_path]() {
+                    ModifiedPrintResult result;
+                    result.original_filename = original_filename;
+                    result.print_filename = temp_file_path;
+                    result.temp_filename = temp_file_path;
+                    result.status = "printing";
+                    spdlog::info("[Moonraker API] Fallback direct print started: {} (temp: {})",
+                                 original_filename, temp_file_path);
+                    on_success(result);
+                },
+                // Fallback ALSO failed — only now surface the error to the caller.
+                on_error);
+        });
 }
