@@ -565,7 +565,8 @@ bool AmsBackendAce::is_bypass_active() const {
 // Dryer Control
 // ============================================================================
 
-DryerInfo AmsBackendAce::get_dryer_info() const {
+DryerInfo AmsBackendAce::get_dryer_info(int unit) const {
+    (void)unit; // ACE is single-unit
     std::lock_guard<std::mutex> lock(mutex_);
     return dryer_info_;
 }
@@ -616,26 +617,21 @@ AmsError AmsBackendAce::stop_drying(int unit) {
     return execute_gcode("ACE_STOP_DRYING");
 }
 
-AmsError AmsBackendAce::update_drying(float temp_c, int duration_min, int fan_pct) {
-    auto err = stop_drying();
+AmsError AmsBackendAce::update_drying(float temp_c, int duration_min, int fan_pct, int unit) {
+    auto err = stop_drying(unit);
     if (!err.success()) {
         return err;
     }
-
     float target_temp = temp_c;
     int target_duration = duration_min;
-
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (temp_c < 0) {
+        if (temp_c < 0)
             target_temp = dryer_info_.target_temp_c;
-        }
-        if (duration_min < 0) {
+        if (duration_min < 0)
             target_duration = dryer_info_.duration_min;
-        }
     }
-
-    return start_drying(target_temp, target_duration, fan_pct);
+    return start_drying(target_temp, target_duration, fan_pct, unit);
 }
 
 std::vector<DryingPreset> AmsBackendAce::get_drying_presets() const {

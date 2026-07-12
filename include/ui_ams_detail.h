@@ -116,6 +116,11 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
  * Without this, slots are sized for full width, then the indicator
  * appears on top of the last spool.
  *
+ * Also selects which unit's env indicator subjects the statically-embedded
+ * detail-view indicator mirrors (see AmsState::set_detail_env_unit) and
+ * stamps the unit onto the indicator's user_data for click routing.
+ *
  * @param w Widget pointers from ams_detail_find_widgets()
+ * @param unit_index Unit whose env state to show; -1 (whole/single-unit) maps to unit 0
  */
-void ams_detail_pre_show_env_indicator(AmsDetailWidgets& w);
+void ams_detail_pre_show_env_indicator(AmsDetailWidgets& w, int unit_index);

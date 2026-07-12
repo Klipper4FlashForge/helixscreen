@@ -179,7 +179,7 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     AmsError reset_endless_spool() override;
 
     // Dryer support (v4 - KMS/EMU hardware with heaters)
-    [[nodiscard]] DryerInfo get_dryer_info() const override;
+    [[nodiscard]] DryerInfo get_dryer_info(int unit = 0) const override;
     AmsError start_drying(float temp_c, int duration_min, int fan_pct = -1, int unit = 0) override;
     AmsError stop_drying(int unit = 0) override;
     [[nodiscard]] bool has_environment_sensors() const override {

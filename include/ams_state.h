@@ -648,6 +648,9 @@ class AmsState {
     /// Shows when dryer_supported OR humidity sensor exists
     [[nodiscard]] lv_subject_t* get_dryer_info_visible_subject();
 
+    /// Select which AMS unit the scalar dryer subjects mirror (the opened unit).
+    void set_dryer_mirror_unit(int unit);
+
     // ========================================================================
     // Clog Detection Meter Subjects
     // ========================================================================
@@ -990,6 +993,15 @@ class AmsState {
 
     /// Formatted drying text (e.g., "47°C -> 55°C  2:30 left")
     [[nodiscard]] lv_subject_t* get_env_ind_drying_text_subject(int unit_index);
+
+    /// Select which AMS unit the detail-view env indicator mirrors.
+    void set_detail_env_unit(int unit);
+    [[nodiscard]] lv_subject_t* get_env_ind_detail_drying_active_subject() {
+        return &env_ind_detail_drying_active_;
+    }
+    [[nodiscard]] lv_subject_t* get_env_ind_detail_temp_text_subject() {
+        return &env_ind_detail_temp_text_;
+    }
 
     // ========================================================================
     // Direct State Update (called by backend event handler)
@@ -1357,6 +1369,7 @@ class AmsState {
     lv_subject_t dryer_target_temp_;
     lv_subject_t dryer_remaining_min_;
     lv_subject_t dryer_progress_pct_;
+    int dryer_mirror_unit_ = 0; ///< Unit whose dryer state the scalar subjects mirror
 
     // Dryer text subjects (need buffers)
     lv_subject_t dryer_current_temp_text_;
@@ -1443,6 +1456,24 @@ class AmsState {
     lv_subject_t env_ind_drying_active_[MAX_UNITS];
     lv_subject_t env_ind_drying_text_[MAX_UNITS];
     char env_ind_drying_text_buf_[MAX_UNITS][ENV_IND_DRYING_BUF_SIZE]{};
+
+    // Detail-view env indicator mirror subjects (reflect detail_env_unit_)
+    lv_subject_t env_ind_detail_temp_text_;
+    char env_ind_detail_temp_text_buf_[ENV_IND_TEXT_BUF_SIZE]{};
+    lv_subject_t env_ind_detail_humidity_text_;
+    char env_ind_detail_humidity_text_buf_[ENV_IND_TEXT_BUF_SIZE]{};
+    lv_subject_t env_ind_detail_humidity_status_;
+    lv_subject_t env_ind_detail_humidity_visible_;
+    lv_subject_t env_ind_detail_visible_;
+    lv_subject_t env_ind_detail_drying_active_;
+    lv_subject_t env_ind_detail_drying_text_;
+    char env_ind_detail_drying_text_buf_[ENV_IND_DRYING_BUF_SIZE]{};
+    int detail_env_unit_ = 0;
+
+    /// Mirror the detail_env_unit_'s per-unit env indicator subjects into the
+    /// dedicated ams_env_ind_detail_* subjects consumed by the statically
+    /// embedded detail-view indicator (see Task 9 brief).
+    void mirror_detail_env_subjects();
 
     // Stored callback for mock gcode response injection
     std::function<void(const std::string&)> gcode_response_callback_;

@@ -5,6 +5,7 @@
 
 #include "ui_ams_context_menu.h"
 #include "ui_ams_detail.h"
+#include "ui_ams_environment_overlay.h"
 #include "ui_ams_sidebar.h"
 #include "ui_ams_slot.h"
 #include "ui_ams_slot_layout.h"
@@ -316,8 +317,22 @@ void AmsOverviewPanel::create_unit_cards(const AmsSystemInfo& info) {
         UnitCard uc;
         uc.unit_index = i;
 
-        // Create card from XML component — all static styling is declarative
-        uc.card = static_cast<lv_obj_t*>(lv_xml_create(cards_row_, "ams_unit_card", nullptr));
+        // Create card from XML component — all static styling is declarative.
+        // Fully-expanded per-unit subject names (kept alive across lv_xml_create) so
+        // each card binds to its own unit's environment-indicator subjects.
+        char s_temp[40], s_hum[40], s_humstat[40], s_humvis[40], s_vis[40], s_dry[40], s_drytxt[40];
+        snprintf(s_temp, sizeof(s_temp), "ams_env_ind_%d_temp_text", i);
+        snprintf(s_hum, sizeof(s_hum), "ams_env_ind_%d_humidity_text", i);
+        snprintf(s_humstat, sizeof(s_humstat), "ams_env_ind_%d_humidity_status", i);
+        snprintf(s_humvis, sizeof(s_humvis), "ams_env_ind_%d_humidity_visible", i);
+        snprintf(s_vis, sizeof(s_vis), "ams_env_ind_%d_visible", i);
+        snprintf(s_dry, sizeof(s_dry), "ams_env_ind_%d_drying_active", i);
+        snprintf(s_drytxt, sizeof(s_drytxt), "ams_env_ind_%d_drying_text", i);
+        const char* attrs[] = {"temp_text",        s_temp,    "humidity_text",   s_hum,
+                               "humidity_status",  s_humstat, "humidity_visible", s_humvis,
+                               "visible",          s_vis,     "drying_active",    s_dry,
+                               "drying_text",      s_drytxt,  nullptr,            nullptr};
+        uc.card = static_cast<lv_obj_t*>(lv_xml_create(cards_row_, "ams_unit_card", attrs));
         if (!uc.card) {
             spdlog::error("[{}] Failed to create ams_unit_card XML for unit {}", get_name(), i);
             continue;
@@ -337,6 +352,12 @@ void AmsOverviewPanel::create_unit_cards(const AmsSystemInfo& info) {
         uc.name_label = lv_obj_find_by_name(uc.card, "unit_name");
         uc.bars_container = lv_obj_find_by_name(uc.card, "bars_container");
         uc.slot_count_label = lv_obj_find_by_name(uc.card, "slot_count");
+
+        // Stamp the unit index on the environment indicator so its click handler
+        // knows which unit's overlay to open.
+        if (lv_obj_t* ind = lv_obj_find_by_name(uc.card, "env_indicator")) {
+            lv_obj_set_user_data(ind, reinterpret_cast<void*>(static_cast<intptr_t>(i)));
+        }
 
         // Set logo image based on AMS system type
         ams_draw::apply_logo(uc.logo_image, unit, info);
@@ -878,7 +899,7 @@ void AmsOverviewPanel::create_detail_slots(const AmsUnit& unit) {
     }
 
     // Pre-show environment indicator so flex layout accounts for its width
-    ams_detail_pre_show_env_indicator(detail_widgets_);
+    ams_detail_pre_show_env_indicator(detail_widgets_, detail_unit_index_);
 
     auto result = ams_detail_create_slots(detail_widgets_, detail_slot_widgets_, MAX_DETAIL_SLOTS,
                                           unit_index, on_detail_slot_clicked, this);
@@ -1000,6 +1021,23 @@ static void ensure_overview_registered() {
         }
     });
 
+    // Register the environment-indicator click callback. ui_panel_ams.cpp
+    // registers the same name for the single-unit AmsPanel path, but when the
+    // multi-unit overview is the first (or only) AMS entry point in a run,
+    // that registration never runs — each ams_unit_card's <ams_environment_indicator
+    // event_cb="on_env_indicator_clicked"> would otherwise fail to bind
+    // (lv_xml_get_event_cb: "no event was found"). Registering here too is
+    // harmless/idempotent — same name, same behavior — and guarantees the
+    // callback exists before create_unit_cards() parses ams_unit_card.xml.
+    lv_xml_register_event_cb(nullptr, "on_env_indicator_clicked", [](lv_event_t* e) {
+        auto* ind = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
+        int unit = ind ? static_cast<int>(reinterpret_cast<intptr_t>(lv_obj_get_user_data(ind)))
+                       : 0;
+        spdlog::info("[AMS Environment] Indicator clicked — opening overlay for unit {}", unit);
+        auto& overlay = helix::ui::get_ams_environment_overlay();
+        overlay.show(lv_screen_active(), unit);
+    });
+
     // Register canvas widgets
     ui_system_path_canvas_register();
     ui_filament_path_canvas_register();
@@ -1013,6 +1051,9 @@ static void ensure_overview_registered() {
     lv_xml_register_component_from_file("A:ui_xml/components/ams_unit_detail.xml");
     lv_xml_register_component_from_file("A:ui_xml/components/ams_loaded_card.xml");
     lv_xml_register_component_from_file("A:ui_xml/ams_context_menu.xml");
+    // ams_unit_card.xml nests <ams_environment_indicator>, so it must be
+    // registered first or the child element parses as unknown.
+    lv_xml_register_component_from_file("A:ui_xml/components/ams_environment_indicator.xml");
     lv_xml_register_component_from_file("A:ui_xml/ams_unit_card.xml");
     lv_xml_register_component_from_file("A:ui_xml/components/ams_sidebar.xml");
     lv_xml_register_component_from_file("A:ui_xml/ams_overview_panel.xml");

@@ -7,6 +7,8 @@
 #include "moonraker_client_mock.h"
 #include "printer_state.h"
 #include "settings_manager.h"
+#include "test_helpers/qidi_box_test_access.h"
+#include "test_helpers/update_queue_test_access.h"
 
 #include "../lvgl_test_fixture.h"
 
@@ -20,88 +22,6 @@
 #include "hv/json.hpp"
 
 using json = nlohmann::json;
-
-// Friend-class shim per L065 — exposes private parse helpers for unit tests.
-// Mirrors the Ad5xIfsTestAccess pattern in test_ams_backend_ad5x_ifs.cpp.
-class QidiBoxTestAccess {
-  public:
-    static void parse_vars(AmsBackendQidi& b, const json& v) {
-        b.parse_save_variables(v);
-    }
-    static void handle_status(AmsBackendQidi& b, const json& n) {
-        b.handle_status_update(n);
-    }
-    static int filament_id(const AmsBackendQidi& b, int slot) {
-        return b.slot_rfid_.at(static_cast<size_t>(slot)).filament_id;
-    }
-    static int color_id(const AmsBackendQidi& b, int slot) {
-        return b.slot_rfid_.at(static_cast<size_t>(slot)).color_id;
-    }
-    static int vendor_id(const AmsBackendQidi& b, int slot) {
-        return b.slot_rfid_.at(static_cast<size_t>(slot)).vendor_id;
-    }
-    static void apply_query(AmsBackendQidi& b, const json& response) {
-        b.apply_query_response(response);
-    }
-    static void apply_filas_list(AmsBackendQidi& b, const std::string& content) {
-        b.apply_filas_list(content);
-    }
-    static std::optional<AmsBackendQidi::FilaProfile> get_profile(const AmsBackendQidi& b,
-                                                                  int fila_id) {
-        auto it = b.fila_profiles_.find(fila_id);
-        if (it == b.fila_profiles_.end())
-            return std::nullopt;
-        return it->second;
-    }
-    static std::optional<uint32_t> get_color(const AmsBackendQidi& b, int color_id) {
-        auto it = b.color_palette_.find(color_id);
-        if (it == b.color_palette_.end())
-            return std::nullopt;
-        return it->second;
-    }
-    static std::optional<std::string> get_vendor(const AmsBackendQidi& b, int vendor_id) {
-        auto it = b.vendor_names_.find(vendor_id);
-        if (it == b.vendor_names_.end())
-            return std::nullopt;
-        return it->second;
-    }
-    static size_t color_count(const AmsBackendQidi& b) {
-        return b.color_palette_.size();
-    }
-    static size_t vendor_count(const AmsBackendQidi& b) {
-        return b.vendor_names_.size();
-    }
-    static int resolve_fila_id(const std::map<int, AmsBackendQidi::FilaProfile>& profiles,
-                               const std::string& material, const std::string& name) {
-        return AmsBackendQidi::resolve_fila_id(profiles, material, name);
-    }
-    static int resolve_color_id(const std::map<int, uint32_t>& palette, uint32_t rgb) {
-        return AmsBackendQidi::resolve_color_id(palette, rgb);
-    }
-    static int resolve_vendor_id(const std::map<int, std::string>& vendors,
-                                 const std::string& brand) {
-        return AmsBackendQidi::resolve_vendor_id(vendors, brand);
-    }
-    static DryerInfo get_dryer(const AmsBackendQidi& b) {
-        return b.get_dryer_info();
-    }
-    static void set_clock(AmsBackendQidi& b, std::function<std::time_t()> fn) {
-        b.now_fn_ = std::move(fn);
-    }
-    static void apply_box_extras(AmsBackendQidi& b, const json& e) {
-        b.apply_box_extras(e);
-    }
-    static void set_drying_timer_supported(AmsBackendQidi& b, bool v) {
-        b.drying_timer_supported_ = v;
-    }
-    static void apply_config_settings(AmsBackendQidi& b, const json& s) {
-        b.apply_config_settings(s);
-    }
-    static void set_fw_caps(AmsBackendQidi& b, bool has_m603, bool has_clear_nozzle) {
-        b.fw_has_m603_ = has_m603;
-        b.fw_has_clear_nozzle_ = has_clear_nozzle;
-    }
-};
 
 // Subclass that captures execute_gcode() invocations so write-path tests
 // can assert the exact gcode emitted without needing a real Moonraker.
@@ -166,10 +86,11 @@ TEST_CASE("QIDI Box parse_save_variables: enable_box=1 connects the unit", "[ams
 // =====================================================================
 // `box_detect.py` writes save_variables.variables.box_count whenever USB
 // enumeration changes. Each physical box = 4 slots, chainable up to 4
-// boxes / 16 slots. The backend must resize the unit's slot vector to
-// match so the UI shows the right slot count.
+// boxes / 16 slots. The backend must model one AmsUnit per physical box so
+// the UI stacks boxes instead of drawing one clipped slot row.
 
-TEST_CASE("QIDI Box parse_save_variables: box_count=2 expands to 8 slots", "[ams][qidi_box]") {
+TEST_CASE("QIDI Box parse_save_variables: box_count=2 expands to two 4-slot units",
+          "[ams][qidi_box]") {
     AmsBackendQidi backend(nullptr, nullptr);
     REQUIRE(backend.get_system_info().total_slots == 4);
 
@@ -177,13 +98,44 @@ TEST_CASE("QIDI Box parse_save_variables: box_count=2 expands to 8 slots", "[ams
 
     auto info = backend.get_system_info();
     REQUIRE(info.total_slots == 8);
-    REQUIRE(info.units[0].slot_count == 8);
-    REQUIRE(info.units[0].slots.size() == 8);
+    REQUIRE(info.units.size() == 2);
+    REQUIRE(info.units[0].slot_count == 4);
+    REQUIRE(info.units[1].slot_count == 4);
+    REQUIRE(info.units[0].first_slot_global_index == 0);
+    REQUIRE(info.units[1].first_slot_global_index == 4);
 
-    // Newly-added slots should be sensibly initialized.
-    for (size_t i = 0; i < info.units[0].slots.size(); ++i) {
-        REQUIRE(info.units[0].slots[i].slot_index == static_cast<int>(i));
-        REQUIRE(info.units[0].slots[i].global_index == static_cast<int>(i));
+    for (const auto& unit : info.units) {
+        for (size_t i = 0; i < unit.slots.size(); ++i) {
+            REQUIRE(unit.slots[i].slot_index == static_cast<int>(i));
+            REQUIRE(unit.slots[i].global_index == unit.first_slot_global_index +
+                                                    static_cast<int>(i));
+        }
+    }
+}
+
+TEST_CASE("QIDI Box parse_save_variables: box_count=0 removes all physical units",
+          "[ams][qidi_box]") {
+    AmsBackendQidi backend(nullptr, nullptr);
+
+    QidiBoxTestAccess::parse_vars(backend, json{{"box_count", 0}});
+
+    auto info = backend.get_system_info();
+    REQUIRE(info.total_slots == 0);
+    REQUIRE(info.units.empty());
+}
+
+TEST_CASE("QIDI Box parse_save_variables: box_count=4 expands to sixteen slots",
+          "[ams][qidi_box]") {
+    AmsBackendQidi backend(nullptr, nullptr);
+
+    QidiBoxTestAccess::parse_vars(backend, json{{"box_count", 4}});
+
+    auto info = backend.get_system_info();
+    REQUIRE(info.total_slots == 16);
+    REQUIRE(info.units.size() == 4);
+    for (int unit = 0; unit < 4; ++unit) {
+        REQUIRE(info.units[static_cast<size_t>(unit)].slot_count == 4);
+        REQUIRE(info.units[static_cast<size_t>(unit)].first_slot_global_index == unit * 4);
     }
 }
 
@@ -276,7 +228,9 @@ TEST_CASE("QIDI Box handle_status_update applies save_variables changes", "[ams]
                                               }));
 
     auto info = backend.get_system_info();
+    REQUIRE(info.units.size() == 2);
     REQUIRE(info.units[0].connected);
+    REQUIRE(info.units[1].connected);
     REQUIRE(info.total_slots == 8);
 }
 
@@ -396,9 +350,8 @@ TEST_CASE("QIDI Box RFID side-table resizes with box_count", "[ams][qidi_box]") 
 // handle_status_update: heater_box drying state + aht20_f humidity
 // =====================================================================
 // The QIDI Box has per-box drying: heater_generic heater_box<N> provides
-// temperature + target, aht20_f heater_box<N> provides humidity. We
-// surface the maximum across all boxes onto AmsUnit::environment so the
-// UI can show "drying" when any box is active.
+// temperature + target, aht20_f heater_box<N> provides humidity. Each physical
+// box is modeled as its own AmsUnit so the UI can show the matching env data.
 
 TEST_CASE("QIDI Box heater_generic heater_box1 populates unit environment", "[ams][qidi_box]") {
     AmsBackendQidi backend(nullptr, nullptr);
@@ -425,12 +378,10 @@ TEST_CASE("QIDI Box aht20_f heater_box1 populates humidity", "[ams][qidi_box]") 
     REQUIRE(info.units[0].environment->humidity_pct == Catch::Approx(38.7).epsilon(0.01));
 }
 
-TEST_CASE("QIDI Box multiple heater_box readings expose the maximum", "[ams][qidi_box]") {
+TEST_CASE("QIDI Box multiple heater_box readings populate matching units", "[ams][qidi_box]") {
     AmsBackendQidi backend(nullptr, nullptr);
-    // Need at least 2 boxes worth of slots for this to make sense.
     QidiBoxTestAccess::parse_vars(backend, json{{"box_count", 2}});
 
-    // Box 1: hot drying. Box 2: idle. Max wins.
     QidiBoxTestAccess::handle_status(
         backend, json{
                      {"heater_generic heater_box1", json{{"temperature", 50.0}}},
@@ -438,8 +389,11 @@ TEST_CASE("QIDI Box multiple heater_box readings expose the maximum", "[ams][qid
                  });
 
     auto info = backend.get_system_info();
+    REQUIRE(info.units.size() == 2);
     REQUIRE(info.units[0].environment.has_value());
+    REQUIRE(info.units[1].environment.has_value());
     REQUIRE(info.units[0].environment->temperature_c == Catch::Approx(50.0).epsilon(0.01));
+    REQUIRE(info.units[1].environment->temperature_c == Catch::Approx(22.5).epsilon(0.01));
 }
 
 // QIDI Q2 firmware 01.01.02.01 (June 2026) refactor: box_config.py declares the
@@ -519,7 +473,9 @@ TEST_CASE("QIDI Box apply_query_response unwraps result.status and parses", "[am
     QidiBoxTestAccess::apply_query(backend, response);
 
     auto info = backend.get_system_info();
+    REQUIRE(info.units.size() == 2);
     REQUIRE(info.units[0].connected);
+    REQUIRE(info.units[1].connected);
     REQUIRE(info.total_slots == 8);
 }
 
@@ -607,6 +563,18 @@ TEST_CASE("QIDI Box load_filament: unloads a different loaded slot first",
             "M603 S250\nM109 S250\nEXTRUDER_LOAD SLOT=slot2\nCLEAR_NOZZLE\nM104 S0");
 }
 
+TEST_CASE("QIDI Box load_filament accepts global slots from later boxes",
+          "[ams][qidi_box][write_path]") {
+    RecordingQidiBackend backend;
+    QidiBoxTestAccess::parse_vars(backend, json{{"box_count", 2}});
+
+    auto err = backend.load_filament(5);
+
+    REQUIRE(err.success());
+    REQUIRE(backend.sent.size() == 1);
+    REQUIRE(backend.sent[0] == "M109 S250\nEXTRUDER_LOAD SLOT=slot5\nCLEAR_NOZZLE\nM104 S0");
+}
+
 TEST_CASE("QIDI Box load_filament: reloading the active slot does not self-unload",
           "[ams][qidi_box][write_path]") {
     RecordingQidiBackend backend;
@@ -637,6 +605,18 @@ TEST_CASE("QIDI Box unload_filament with -1 unloads the active slot via M603",
     QidiBoxTestAccess::parse_vars(backend, json{{"last_load_slot", "slot2"}});
 
     auto err = backend.unload_filament(-1);
+
+    REQUIRE(err.success());
+    REQUIRE(backend.sent.size() == 1);
+    REQUIRE(backend.sent[0] == "M603 S250");
+}
+
+TEST_CASE("QIDI Box unload_filament accepts global slots from later boxes",
+          "[ams][qidi_box][write_path]") {
+    RecordingQidiBackend backend;
+    QidiBoxTestAccess::parse_vars(backend, json{{"box_count", 2}});
+
+    auto err = backend.unload_filament(5);
 
     REQUIRE(err.success());
     REQUIRE(backend.sent.size() == 1);
@@ -691,6 +671,18 @@ TEST_CASE("QIDI Box change_tool resolves to the slot and drives the load path",
     REQUIRE(backend.sent[0] == "M109 S250\nEXTRUDER_LOAD SLOT=slot3\nCLEAR_NOZZLE\nM104 S0");
 }
 
+TEST_CASE("QIDI Box change_tool resolves tool mappings in later boxes",
+          "[ams][qidi_box][write_path]") {
+    RecordingQidiBackend backend;
+    QidiBoxTestAccess::parse_vars(backend, json{{"box_count", 2}, {"value_t0", "slot5"}});
+
+    auto err = backend.change_tool(0);
+
+    REQUIRE(err.success());
+    REQUIRE(backend.sent.size() == 1);
+    REQUIRE(backend.sent[0] == "M109 S250\nEXTRUDER_LOAD SLOT=slot5\nCLEAR_NOZZLE\nM104 S0");
+}
+
 TEST_CASE("QIDI Box set_tool_mapping emits SAVE_VARIABLE for value_t<N>",
           "[ams][qidi_box][write_path]") {
     RecordingQidiBackend backend;
@@ -700,6 +692,18 @@ TEST_CASE("QIDI Box set_tool_mapping emits SAVE_VARIABLE for value_t<N>",
     REQUIRE(err.success());
     REQUIRE(backend.sent.size() == 1);
     REQUIRE(backend.sent[0] == "SAVE_VARIABLE VARIABLE=value_t1 VALUE=\"slot3\"");
+}
+
+TEST_CASE("QIDI Box set_tool_mapping accepts global slots from later boxes",
+          "[ams][qidi_box][write_path]") {
+    RecordingQidiBackend backend;
+    QidiBoxTestAccess::parse_vars(backend, json{{"box_count", 2}});
+
+    auto err = backend.set_tool_mapping(/*tool=*/1, /*slot_idx=*/5);
+
+    REQUIRE(err.success());
+    REQUIRE(backend.sent.size() == 1);
+    REQUIRE(backend.sent[0] == "SAVE_VARIABLE VARIABLE=value_t1 VALUE=\"slot5\"");
 }
 
 TEST_CASE("QIDI Box lane eject is unsupported until force_move is enabled",
@@ -725,6 +729,21 @@ TEST_CASE("QIDI Box [force_move] enable_force_move turns on lane eject",
     REQUIRE(backend.sent.size() == 1);
     REQUIRE(backend.sent[0] ==
             "FORCE_MOVE STEPPER=\"box_stepper slot1\" VELOCITY=100 DISTANCE=-878");
+}
+
+TEST_CASE("QIDI Box lane eject accepts global slots from later boxes",
+          "[ams][qidi_box][write_path]") {
+    RecordingQidiBackend backend;
+    QidiBoxTestAccess::parse_vars(backend, json{{"box_count", 2}});
+    QidiBoxTestAccess::apply_config_settings(backend,
+                                             json{{"force_move", {{"enable_force_move", true}}}});
+
+    auto err = backend.eject_lane(5);
+
+    REQUIRE(err.success());
+    REQUIRE(backend.sent.size() == 1);
+    REQUIRE(backend.sent[0] ==
+            "FORCE_MOVE STEPPER=\"box_stepper slot5\" VELOCITY=100 DISTANCE=-878");
 }
 
 TEST_CASE("QIDI Box lane eject honors configurable distance/velocity settings",
@@ -859,8 +878,9 @@ TEST_CASE("QIDI Box on_started dispatches printer.objects.query (integration)",
 
     // start() calls on_started() which must dispatch printer.objects.query.
     // last_send_method() is captured synchronously inside the mock so we can
-    // assert without UpdateQueue draining.
+    // assert before draining the deferred response callback.
     REQUIRE(client.last_send_method() == "printer.objects.query");
+    helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
 }
 
 TEST_CASE("QIDI Box write-path rejects out-of-range slot/tool indices",
@@ -1044,7 +1064,8 @@ TEST_CASE("QIDI Box get_slot_info returns valid SlotInfo for expanded slots (box
                                            });
 
     auto info = backend.get_slot_info(5);
-    REQUIRE(info.slot_index == 5);
+    REQUIRE(info.slot_index == 1);
+    REQUIRE(info.global_index == 5);
     REQUIRE(info.status == SlotStatus::LOADED);
     // Index past the expanded count still rejects.
     REQUIRE(backend.get_slot_info(99).slot_index == -1);
@@ -1134,6 +1155,40 @@ TEST_CASE("QIDI Box derives duration for externally-started drying (progress rin
     DryerInfo d = QidiBoxTestAccess::get_dryer(backend);
     REQUIRE(d.duration_min == 60);
     REQUIRE(d.get_progress_pct() == 0); // just started: 60/60 remaining
+}
+
+TEST_CASE("QIDI Box per-unit dryer: box1 drying, box2 idle -> distinct DryerInfo",
+          "[ams][qidi_box][dryer][multi-unit]") {
+    AmsBackendQidi backend(nullptr, nullptr);
+    // Expand to 2 boxes.
+    QidiBoxTestAccess::parse_vars(backend, json{{"box_count", 2}});
+
+    // Deterministic clock so remaining_min is stable.
+    QidiBoxTestAccess::set_clock(backend, [] { return std::time_t{1'000'000}; });
+    QidiBoxTestAccess::set_drying_timer_supported(backend, true);
+
+    // Box1 heating to 55C @ 48C now; box2 idle heater.
+    QidiBoxTestAccess::handle_status(
+        backend, json{{"heater_generic heater_box1", json{{"temperature", 48.0}, {"target", 55.0}}},
+                      {"heater_generic heater_box2", json{{"temperature", 24.0}, {"target", 0.0}}}});
+
+    // Box1 has an active drying end_time 30 min out; box2 none.
+    QidiBoxTestAccess::apply_box_extras(
+        backend, json{{"box_drying_state",
+                       json{{"box1", json{{"end_time", 1'000'000 + 30 * 60}}},
+                            {"box2", json{{"end_time", 0}}}}}});
+
+    DryerInfo d0 = QidiBoxTestAccess::get_dryer(backend, 0);
+    DryerInfo d1 = QidiBoxTestAccess::get_dryer(backend, 1);
+
+    REQUIRE(d0.active);
+    REQUIRE(d0.target_temp_c == Catch::Approx(55.0f).epsilon(0.01));
+    REQUIRE(d0.current_temp_c == Catch::Approx(48.0f).epsilon(0.01));
+    REQUIRE(d0.remaining_min == 30);
+
+    REQUIRE_FALSE(d1.active);
+    REQUIRE(d1.target_temp_c == Catch::Approx(0.0f).epsilon(0.01));
+    REQUIRE(d1.remaining_min == 0);
 }
 
 TEST_CASE("QIDI Box config query refines max temp (heater_generic section)",
@@ -1517,6 +1572,27 @@ TEST_CASE("QIDI Box set_slot_info rejects out-of-range slot index", "[ams][qidi_
     REQUIRE(backend.sent.empty());
 }
 
+TEST_CASE("QIDI Box set_slot_info accepts global slots from later boxes",
+          "[ams][qidi_box][write_path]") {
+    RecordingQidiBackend backend;
+    QidiBoxTestAccess::parse_vars(backend, json{{"box_count", 2}});
+    QidiBoxTestAccess::apply_filas_list(backend, kStockFilasExcerpt);
+
+    SlotInfo info;
+    info.material = "ABS";
+    info.brand = "eSUN";
+    info.color_rgb = 0xFF362D;
+
+    auto err = backend.set_slot_info(5, info, true);
+    REQUIRE(err.success());
+
+    bool saw_fila = false;
+    for (const auto& g : backend.sent) {
+        saw_fila = saw_fila || g == "SAVE_VARIABLE VARIABLE=filament_slot5 VALUE=11";
+    }
+    REQUIRE(saw_fila);
+}
+
 TEST_CASE("QIDI Box set_slot_info with no palette/vendor data still writes fila",
           "[ams][qidi_box][write_path]") {
     RecordingQidiBackend backend;
@@ -1581,6 +1657,19 @@ TEST_CASE("QIDI Box current_error returns CRITICAL event for first blocked slot"
     // UI trap (RecoveryModalPresenter with 0 buttons hides the button container).
     CHECK(ev->recovery_actions.size() == 1);
     CHECK(ev->recovery_actions[0].gcode.find(';') != std::string::npos); // comment/no-op gcode
+}
+
+TEST_CASE("QIDI Box current_error scans slots from later boxes", "[ams][qidi_box][error-center]") {
+    RecordingQidiBackend backend;
+    QidiBoxTestAccess::parse_vars(backend, json{
+                                               {"enable_box", 1},
+                                               {"box_count", 2},
+                                               {"slot5", -3}, // BLOCKED
+                                           });
+
+    auto ev = backend.current_error();
+    REQUIRE(ev.has_value());
+    CHECK(ev->detail.find("6") != std::string::npos); // 1-based: global slot 5 → lane 6
 }
 
 TEST_CASE("QIDI Box current_error picks the first blocked slot when multiple blocked",

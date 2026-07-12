@@ -181,6 +181,7 @@ void AmsEnvironmentOverlay::show(lv_obj_t* parent_screen, int unit_index) {
 
     parent_screen_ = parent_screen;
     unit_index_ = unit_index;
+    AmsState::instance().set_dryer_mirror_unit(unit_index);
 
     if (!subjects_initialized_) {
         init_subjects();
@@ -341,7 +342,7 @@ void AmsEnvironmentOverlay::update_from_backend() {
     }
 
     // Get dryer info
-    DryerInfo dryer = backend->get_dryer_info();
+    DryerInfo dryer = backend->get_dryer_info(unit_index_);
 
     // Update temperature display (current temp always in temp_text, target in target_temp_text)
     if (has_env) {
@@ -523,7 +524,7 @@ void AmsEnvironmentOverlay::populate_presets() {
     // The box's max settable temp clamps both the dropdown label and the applied
     // value, so a preset whose nominal dry temp exceeds this box's ceiling (e.g.
     // PA at 70°C on a 65°C box) displays and sends the same clamped value.
-    DryerInfo dryer = backend->get_dryer_info();
+    DryerInfo dryer = backend->get_dryer_info(unit_index_);
 
     // Build dropdown options string (newline-separated)
     std::string options;
@@ -561,7 +562,7 @@ void AmsEnvironmentOverlay::apply_preset(int index) {
     // what Start Drying will actually send (see populate_presets()).
     float applied_temp = preset.temp_c;
     if (AmsBackend* backend = AmsState::instance().get_backend()) {
-        applied_temp = clamp_preset_temp(preset.temp_c, backend->get_dryer_info());
+        applied_temp = clamp_preset_temp(preset.temp_c, backend->get_dryer_info(unit_index_));
     }
 
     if (temp_input_) {
@@ -650,7 +651,7 @@ void AmsEnvironmentOverlay::on_start_stop_clicked(lv_event_t* e) {
     if (!backend) {
         NOTIFY_WARNING("{}", lv_tr("No Multi-Filament System connected"));
     } else {
-        DryerInfo dryer = backend->get_dryer_info();
+        DryerInfo dryer = backend->get_dryer_info(overlay.unit_index_);
 
         if (dryer.active) {
             // Stop drying

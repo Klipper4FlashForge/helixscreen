@@ -10,12 +10,14 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdlib>
 #include <ctime>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <utility>
 
 // Stub backend for the QIDI Box filament changer. Read-path mirrors
 // save_variables onto AmsSystemInfo; write-path (load/unload/change_tool)
@@ -44,6 +46,105 @@ std::optional<int> parse_slot_name(const std::string& val, int slot_count) {
         }
     } catch (const std::exception&) {
         // Bad slot string — fall through to nullopt
+    }
+    return std::nullopt;
+}
+
+constexpr int QIDI_SLOTS_PER_BOX = 4;
+constexpr int QIDI_MAX_BOXES = 4;
+
+AmsUnit make_qidi_unit(int unit_index) {
+    AmsUnit unit;
+    unit.unit_index = unit_index;
+    unit.name = fmt::format("QIDI Box {}", unit_index + 1);
+    unit.display_name = unit.name;
+    unit.slot_count = QIDI_SLOTS_PER_BOX;
+    unit.first_slot_global_index = unit_index * QIDI_SLOTS_PER_BOX;
+    unit.connected = false;
+    unit.topology = PathTopology::HUB;
+
+    for (int local = 0; local < QIDI_SLOTS_PER_BOX; ++local) {
+        const int global = unit.first_slot_global_index + local;
+        SlotInfo slot;
+        slot.slot_index = local;
+        slot.global_index = global;
+        slot.status = SlotStatus::UNKNOWN;
+        slot.mapped_tool = global;
+        unit.slots.push_back(std::move(slot));
+    }
+    return unit;
+}
+
+DryerInfo make_qidi_dryer() {
+    DryerInfo d;
+    d.supported = true;
+    d.allows_during_print = true;
+    d.min_temp_c = 35.0f;
+    d.max_temp_c = 90.0f;
+    d.max_duration_min = 720;
+    d.supports_fan_control = false;
+    return d;
+}
+
+const SlotInfo* find_old_slot(const std::vector<AmsUnit>& units, int global_index) {
+    for (const auto& unit : units) {
+        if (global_index >= unit.first_slot_global_index &&
+            global_index < unit.first_slot_global_index + unit.slot_count) {
+            const int local = global_index - unit.first_slot_global_index;
+            return unit.get_slot(local);
+        }
+    }
+    return nullptr;
+}
+
+const AmsUnit* find_old_unit(const std::vector<AmsUnit>& units, int unit_index) {
+    auto it = std::find_if(units.begin(), units.end(), [unit_index](const AmsUnit& unit) {
+        return unit.unit_index == unit_index;
+    });
+    return it == units.end() ? nullptr : &*it;
+}
+
+void resize_qidi_units(AmsSystemInfo& info, int box_count) {
+    box_count = std::clamp(box_count, 0, QIDI_MAX_BOXES);
+    const auto old_units = info.units;
+
+    std::vector<AmsUnit> units;
+    units.reserve(static_cast<size_t>(box_count));
+    for (int unit_index = 0; unit_index < box_count; ++unit_index) {
+        AmsUnit unit = make_qidi_unit(unit_index);
+        if (const AmsUnit* old = find_old_unit(old_units, unit_index)) {
+            unit.connected = old->connected;
+            unit.firmware_version = old->firmware_version;
+            unit.serial_number = old->serial_number;
+            unit.environment = old->environment;
+        }
+        for (auto& slot : unit.slots) {
+            if (const SlotInfo* old = find_old_slot(old_units, slot.global_index)) {
+                const int local = slot.slot_index;
+                const int global = slot.global_index;
+                slot = *old;
+                slot.slot_index = local;
+                slot.global_index = global;
+            }
+        }
+        units.push_back(std::move(unit));
+    }
+
+    info.units = std::move(units);
+    info.total_slots = box_count * QIDI_SLOTS_PER_BOX;
+}
+
+std::optional<int> parse_box_unit_index(const std::string& key) {
+    const size_t pos = key.rfind("box");
+    if (pos == std::string::npos) {
+        return std::nullopt;
+    }
+    try {
+        int box = std::stoi(key.substr(pos + 3));
+        if (box >= 1 && box <= QIDI_MAX_BOXES) {
+            return box - 1;
+        }
+    } catch (const std::exception&) {
     }
     return std::nullopt;
 }
@@ -86,36 +187,14 @@ AmsBackendQidi::AmsBackendQidi(MoonrakerAPI* api, helix::MoonrakerClient* client
     system_info_.supports_purge = false;
     system_info_.tip_method = TipMethod::CUT;
 
-    // Single unit with NUM_SLOTS empty slots, PARALLEL-less HUB topology.
-    AmsUnit unit;
-    unit.unit_index = 0;
-    unit.name = "QIDI Box";
-    unit.display_name = "QIDI Box";
-    unit.slot_count = NUM_SLOTS;
-    unit.first_slot_global_index = 0;
-    unit.connected = false; // flip once protocol is implemented
-    unit.topology = PathTopology::HUB;
-
-    for (int i = 0; i < NUM_SLOTS; ++i) {
-        SlotInfo slot;
-        slot.slot_index = i;
-        slot.global_index = i;
-        slot.status = SlotStatus::UNKNOWN;
-        slot.mapped_tool = i;
-        unit.slots.push_back(slot);
-    }
-
-    system_info_.units.push_back(std::move(unit));
+    system_info_.units.push_back(make_qidi_unit(0));
     slot_rfid_.resize(NUM_SLOTS);
 
     // Box PTC dryer capabilities (issue #1019). max_temp_c is the settable ceiling
     // (target_max_temp_heater_generic=90); refined from configfile in on_started().
-    dryer_info_.supported = true;
-    dryer_info_.allows_during_print = true; // box heater is independent of the toolhead
-    dryer_info_.min_temp_c = 35.0f;
-    dryer_info_.max_temp_c = 90.0f;
-    dryer_info_.max_duration_min = 720;
-    dryer_info_.supports_fan_control = false;
+    // Per-unit: one DryerInfo per box, all sharing identical capability defaults.
+    dryer_info_.assign(system_info_.units.size(), make_qidi_dryer());
+    dry_end_epoch_.assign(system_info_.units.size(), 0);
 
     spdlog::debug("{} Backend constructed ({} slots, write-path always on)", backend_log_tag(),
                   NUM_SLOTS);
@@ -135,25 +214,18 @@ void AmsBackendQidi::on_started() {
     // objects too — Moonraker won't push notifications for anything we
     // haven't subscribed to.
     //
-    // Query save_variables + box_extras, AND the box-1 heater/humidity objects
-    // so temperature + humidity render immediately instead of waiting for the
-    // first push delta. We don't yet know box_count at bootstrap, so query
-    // box 1 unconditionally (always present on a connected box); additional
-    // boxes get picked up by the notification path once box_count is observed.
-    // Null field-lists request the full object — apply_query_response routes
-    // the result back through handle_status_update so no new parsing is added.
-    nlohmann::json params = {
-        {"objects", nlohmann::json::object({
-                        {"save_variables", nullptr},
-                        {"box_extras", nullptr},
-                        {"heater_generic heater_box1", nullptr},
-                        {"aht20_f heater_box1", nullptr},
-                        // 01.01.02.01 dryer thermistors (#1047); harmless on
-                        // 1.1.1 where these objects don't exist.
-                        {"temperature_sensor heater_temp_a_box1", nullptr},
-                        {"temperature_sensor heater_temp_b_box1", nullptr},
-                    })},
-    };
+    // Query save_variables + box_extras, and all possible box heater/humidity
+    // objects. A machine may have 0..4 physical boxes; missing objects are
+    // harmless in Moonraker's query response, and save_variables.box_count gates
+    // which units are actually modeled.
+    auto objects = nlohmann::json::object({{"save_variables", nullptr}, {"box_extras", nullptr}});
+    for (int box = 1; box <= QIDI_MAX_BOXES; ++box) {
+        objects[fmt::format("heater_generic heater_box{}", box)] = nullptr;
+        objects[fmt::format("aht20_f heater_box{}", box)] = nullptr;
+        objects[fmt::format("temperature_sensor heater_temp_a_box{}", box)] = nullptr;
+        objects[fmt::format("temperature_sensor heater_temp_b_box{}", box)] = nullptr;
+    }
+    nlohmann::json params = {{"objects", std::move(objects)}};
 
     auto token = lifetime_.token();
     client_->send_jsonrpc("printer.objects.query", params, [this, token](nlohmann::json response) {
@@ -247,9 +319,7 @@ void AmsBackendQidi::handle_status_update(const nlohmann::json& notification) {
     // Per-box drying state arrives as separate top-level objects:
     //   "heater_generic heater_box<N>" → {temperature, target, power}
     //   "aht20_f heater_box<N>"        → {temperature, humidity}
-    // We surface the maximum temperature and maximum humidity across all
-    // boxes onto AmsUnit::environment so the UI can show "drying" when
-    // ANY box is active.
+    // Each physical box maps to the AmsUnit with the same zero-based index.
     apply_heater_status(notification);
 
     // box_extras carries box_drying_state.box<N>.{dry_state, end_time}
@@ -265,31 +335,33 @@ void AmsBackendQidi::apply_box_extras(const nlohmann::json& box_extras) {
     if (ds_it == box_extras.end() || !ds_it->is_object()) {
         return;
     }
-    std::time_t latest_end = 0;
+    std::lock_guard<std::mutex> lock(mutex_);
+    drying_timer_supported_ = true;
+    const std::time_t now = now_fn_();
     for (auto it = ds_it->begin(); it != ds_it->end(); ++it) {
         if (!it->is_object()) {
             continue;
         }
-        if (auto et = it->find("end_time"); et != it->end() && et->is_number()) {
-            const std::time_t v = et->get<std::int64_t>();
-            if (v > latest_end) {
-                latest_end = v;
-            }
+        auto unit_index = parse_box_unit_index(it.key()); // "box1" -> 0
+        if (!unit_index || *unit_index >= static_cast<int>(dryer_info_.size())) {
+            continue;
         }
+        const size_t u = static_cast<size_t>(*unit_index);
+        std::time_t end = 0;
+        if (auto et = it->find("end_time"); et != it->end() && et->is_number()) {
+            end = et->get<std::int64_t>();
+        }
+        // A drying cycle started outside HelixScreen (e.g. the QIDI stock UI) carries
+        // no commanded duration, so the progress ring would be inert. When a NEW
+        // end_time appears, derive the total from the first observed remaining so the
+        // ring renders; our own start_drying() already set duration_min for UI-started
+        // cycles (this just re-derives the same value once the firmware echoes it back).
+        if (end > now && end != dry_end_epoch_[u]) {
+            dryer_info_[u].duration_min = static_cast<int>((end - now) / 60);
+        }
+        dry_end_epoch_[u] = end;
+        dryer_info_[u].active = (end > now);
     }
-    std::lock_guard<std::mutex> lock(mutex_);
-    drying_timer_supported_ = true;
-    const std::time_t now = now_fn_();
-    // A drying cycle started outside HelixScreen (e.g. the QIDI stock UI) carries no
-    // commanded duration, so the progress ring would be inert. When a NEW end_time
-    // appears, derive the total from the first observed remaining so the ring renders;
-    // our own start_drying() already set duration_min for UI-started cycles (this just
-    // re-derives the same value once the firmware echoes the end_time back).
-    if (latest_end > now && latest_end != dry_end_epoch_) {
-        dryer_info_.duration_min = static_cast<int>((latest_end - now) / 60);
-    }
-    dry_end_epoch_ = latest_end;
-    dryer_info_.active = (dry_end_epoch_ > now);
 }
 
 void AmsBackendQidi::apply_config_settings(const nlohmann::json& settings) {
@@ -319,7 +391,10 @@ void AmsBackendQidi::apply_config_settings(const nlohmann::json& settings) {
     }
     if (settable_max) {
         std::lock_guard<std::mutex> lock(mutex_);
-        dryer_info_.max_temp_c = *settable_max;
+        // All boxes share the same settable ceiling.
+        for (auto& d : dryer_info_) {
+            d.max_temp_c = *settable_max;
+        }
         spdlog::info("{} Box dryer max temp from config: {}°C", backend_log_tag(), *settable_max);
     }
 
@@ -341,33 +416,16 @@ void AmsBackendQidi::apply_config_settings(const nlohmann::json& settings) {
 }
 
 void AmsBackendQidi::apply_heater_status(const nlohmann::json& notification) {
-    // NOTE: heater_generic heater_box<N> rides on the heaters loop in
-    // moonraker_discovery_sequence.cpp (subscribed with temperature+target).
-    // aht20_f heater_box<N> is classified as a humidity-capable sensor by the
-    // discovery classifier (alongside bme280/htu21d/sht3x/aht10) and subscribed
-    // with the {temperature, humidity} field set, so Moonraker pushes its
-    // humidity here. Confirmed on a stock QIDI Q2 (firmware 1.1.1): aht20_f
-    // heater_box1 reports {"temperature":27.67,"humidity":16} (#1022).
-    //
-    // Firmware 01.01.02.01 (June 2026) refactored the box plugins additively:
-    // box_config.py ADDS `temperature_sensor heater_temp_a/b_box<N>` for the
-    // dryer thermistors while KEEPING `aht20_f heater_box<N>` and
-    // `heater_generic heater_box<N>` under the same names. Confirmed against a
-    // real 01.01.02.01 machine's printer.objects.list (#1047) — aht20_f survives,
-    // so box humidity keeps coming from the same object as on 1.1.1 (the primary
-    // path below). The new heater_temp_*_box thermistors just mirror the heater
-    // element, so we deliberately exclude them from the displayed TEMPERATURE to
-    // avoid over-reporting; we match them only as a belt-and-suspenders extra
-    // place to look for `humidity`, harmless if absent. (One gap remains: the
-    // objects list proves aht20_f exists on 01.01.02.01 but not that it still
-    // publishes a humidity *field* — unverified, we own no QIDI hardware.)
     constexpr std::string_view kHeaterPrefix = "heater_generic heater_box";
     constexpr std::string_view kAht20Prefix = "aht20_f heater_box";
     constexpr std::string_view kBoxTempSensorPrefix = "temperature_sensor heater_temp_";
 
-    std::optional<float> max_temp;
-    std::optional<float> max_humidity;
-    std::optional<float> max_target;
+    struct BoxReading {
+        std::optional<float> temp;
+        std::optional<float> humidity;
+        std::optional<float> target;
+    };
+    std::array<BoxReading, QIDI_MAX_BOXES> readings;
 
     for (auto it = notification.begin(); it != notification.end(); ++it) {
         if (!it->is_object()) {
@@ -376,274 +434,256 @@ void AmsBackendQidi::apply_heater_status(const nlohmann::json& notification) {
         const std::string& key = it.key();
         const bool is_heater = key.rfind(kHeaterPrefix, 0) == 0;
         const bool is_aht = key.rfind(kAht20Prefix, 0) == 0;
-        // 01.01.02.01 dryer thermistor: temperature_sensor heater_temp_a_box<N>
-        // / heater_temp_b_box<N> (the "_box" guard keeps unrelated
-        // temperature_sensor objects out). Matched for humidity only — NOT temp.
         const bool is_box_temp_sensor =
             key.rfind(kBoxTempSensorPrefix, 0) == 0 && key.find("_box") != std::string::npos;
         if (!is_heater && !is_aht && !is_box_temp_sensor) {
             continue;
         }
-        // Box temperature is sourced from the heater object (1.1.1 + 01.01.02) and
-        // the 1.1.1 aht20 ambient sensor only — the heater_temp_*_box thermistors
-        // duplicate the heater element and are deliberately excluded here.
+        auto unit_index = parse_box_unit_index(key);
+        if (!unit_index) {
+            continue;
+        }
+        auto& reading = readings[static_cast<size_t>(*unit_index)];
+
+        // Box temperature is sourced from the heater object and the ambient
+        // aht20 object. The heater_temp_*_box thermistors mirror the heater
+        // element and are deliberately excluded from displayed temperature.
         if (is_heater || is_aht) {
             if (auto t_it = it->find("temperature"); t_it != it->end() && t_it->is_number()) {
                 const float v = t_it->get<float>();
-                if (!max_temp || v > *max_temp) {
-                    max_temp = v;
+                if (!reading.temp || v > *reading.temp) {
+                    reading.temp = v;
                 }
             }
         }
         if (is_heater) {
             if (auto tgt_it = it->find("target"); tgt_it != it->end() && tgt_it->is_number()) {
                 const float v = tgt_it->get<float>();
-                if (!max_target || v > *max_target) {
-                    max_target = v;
+                if (!reading.target || v > *reading.target) {
+                    reading.target = v;
                 }
             }
         }
-        // Humidity from any matched box object: aht20_f on 1.1.1, or wherever the
-        // 01.01.02 refactor relocated it (best-effort — see note above).
         if (auto h_it = it->find("humidity"); h_it != it->end() && h_it->is_number()) {
             const float v = h_it->get<float>();
-            if (!max_humidity || v > *max_humidity) {
-                max_humidity = v;
+            if (!reading.humidity || v > *reading.humidity) {
+                reading.humidity = v;
             }
         }
     }
 
-    if (!max_temp && !max_humidity && !max_target) {
+    bool any_env = false;
+    for (const auto& r : readings) {
+        any_env = any_env || r.temp || r.humidity || r.target;
+    }
+    if (!any_env) {
         return;
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
-    if (system_info_.units.empty()) {
-        return;
-    }
-    auto& env = system_info_.units[0].environment;
-    if (!env) {
-        env = EnvironmentData{};
-    }
-    if (max_temp) {
-        env->temperature_c = *max_temp;
-    }
-    if (max_humidity) {
-        env->humidity_pct = *max_humidity;
-        env->has_humidity = true;
-    }
-    if (max_temp) {
-        dryer_info_.current_temp_c = *max_temp;
-    }
-    if (max_target) {
-        dryer_info_.target_temp_c = *max_target;
+    for (size_t i = 0; i < readings.size() && i < system_info_.units.size(); ++i) {
+        const auto& reading = readings[i];
+        if (!reading.temp && !reading.humidity && !reading.target) {
+            continue;
+        }
+        auto& env = system_info_.units[i].environment;
+        if (!env) {
+            env = EnvironmentData{};
+        }
+        if (reading.temp) {
+            env->temperature_c = *reading.temp;
+        }
+        if (reading.humidity) {
+            env->humidity_pct = *reading.humidity;
+            env->has_humidity = true;
+        }
+        // Per-box dryer state: write each box's heater reading into its own unit.
+        if (i < dryer_info_.size()) {
+            if (reading.temp) {
+                dryer_info_[i].current_temp_c = *reading.temp;
+            }
+            if (reading.target) {
+                dryer_info_[i].target_temp_c = *reading.target;
+            }
+        }
     }
 }
 
 void AmsBackendQidi::parse_save_variables(const nlohmann::json& variables) {
-    if (!variables.is_object() || system_info_.units.empty()) {
+    if (!variables.is_object()) {
         return;
     }
     std::lock_guard<std::mutex> lock(mutex_);
 
-    // enable_box: master gate set by box_extras. 1 = active, 0/missing =
-    // installed-but-disabled. Treat as the unit's "connected" state.
-    auto enable_it = variables.find("enable_box");
-    if (enable_it != variables.end() && enable_it->is_number_integer()) {
-        system_info_.units[0].connected = (enable_it->get<int>() != 0);
-    }
-
-    // box_count: number of physical boxes detected by box_detect.py via USB
-    // enumeration. Each box has 4 slots; chainable up to 4 boxes / 16 slots.
-    // Resize the unit's slot vector to match, preserving any existing data
-    // for slots that remain valid.
     auto box_count_it = variables.find("box_count");
     if (box_count_it != variables.end() && box_count_it->is_number_integer()) {
-        int box_count = box_count_it->get<int>();
-        if (box_count >= 1 && box_count <= 4) {
-            const int desired_slots = box_count * NUM_SLOTS;
-            AmsUnit& unit = system_info_.units[0];
-            if (static_cast<int>(unit.slots.size()) != desired_slots) {
-                unit.slots.resize(static_cast<size_t>(desired_slots));
-                slot_rfid_.resize(static_cast<size_t>(desired_slots));
-                for (size_t i = 0; i < unit.slots.size(); ++i) {
-                    unit.slots[i].slot_index = static_cast<int>(i);
-                    unit.slots[i].global_index = static_cast<int>(i);
-                    if (unit.slots[i].mapped_tool < 0) {
-                        unit.slots[i].mapped_tool = static_cast<int>(i);
-                    }
-                }
-                unit.slot_count = desired_slots;
-                system_info_.total_slots = desired_slots;
+        const int box_count = box_count_it->get<int>();
+        if (box_count >= 0 && box_count <= QIDI_MAX_BOXES) {
+            resize_qidi_units(system_info_, box_count);
+            slot_rfid_.resize(static_cast<size_t>(system_info_.total_slots));
+            // Keep the per-unit dryer vectors sized to the box count, preserving
+            // existing state and seeding new boxes with capability defaults.
+            if (dryer_info_.size() != system_info_.units.size()) {
+                dryer_info_.resize(system_info_.units.size(), make_qidi_dryer());
+                dry_end_epoch_.resize(system_info_.units.size(), 0);
             }
         }
     }
 
-    AmsUnit& unit_ref = system_info_.units[0];
+    auto enable_it = variables.find("enable_box");
+    if (enable_it != variables.end() && enable_it->is_number_integer()) {
+        const bool connected = enable_it->get<int>() != 0;
+        for (auto& unit : system_info_.units) {
+            unit.connected = connected;
+        }
+    }
 
-    // value_t<N> = "slot<M>" — tool N prints from slot M. Apply over the
-    // default tool=slot mapping established when the unit was sized.
-    const int slot_count = static_cast<int>(unit_ref.slots.size());
-    for (size_t t = 0; t < unit_ref.slots.size(); ++t) {
+    const int slot_count = system_info_.total_slots;
+
+    // value_t<N> = "slot<M>" — tool N prints from global slot M.
+    for (int t = 0; t < slot_count; ++t) {
         const std::string key = "value_t" + std::to_string(t);
         auto vt_it = variables.find(key);
         if (vt_it == variables.end() || !vt_it->is_string()) {
             continue;
         }
         if (auto idx = parse_slot_name(vt_it->get<std::string>(), slot_count)) {
-            unit_ref.slots[*idx].mapped_tool = static_cast<int>(t);
+            for (auto& unit : system_info_.units) {
+                for (auto& slot : unit.slots) {
+                    if (slot.mapped_tool == t) {
+                        slot.mapped_tool = -1;
+                    }
+                }
+            }
+            if (auto* slot = system_info_.get_slot_global(*idx)) {
+                slot->mapped_tool = t;
+            }
         }
     }
 
-    // Per-slot state from `slot<N>` save_variables. box_stepper.py state
-    // machine values:
-    //   0  = empty
-    //   1  = available (parked in box)
-    //   2  = loaded all the way to extruder
-    //   3  = mid-transition (treat as available; action belongs on system_info_.action)
-    //   -1 = slot load failed
-    //   -2 = extruder load failed
-    //   -3 = runout-during-print
-    // Negative values all map to BLOCKED so the UI surfaces an error chip.
-    for (size_t i = 0; i < unit_ref.slots.size(); ++i) {
+    for (int i = 0; i < slot_count; ++i) {
+        auto* slot = system_info_.get_slot_global(i);
+        if (!slot) {
+            continue;
+        }
         const std::string key = "slot" + std::to_string(i);
         auto slot_it = variables.find(key);
         if (slot_it == variables.end() || !slot_it->is_number_integer()) {
             continue;
         }
         const int state = slot_it->get<int>();
-        SlotStatus mapped;
         switch (state) {
         case 0:
-            mapped = SlotStatus::EMPTY;
+            slot->status = SlotStatus::EMPTY;
             break;
         case 1:
         case 3:
-            mapped = SlotStatus::AVAILABLE;
+            slot->status = SlotStatus::AVAILABLE;
             break;
         case 2:
-            mapped = SlotStatus::LOADED;
+            slot->status = SlotStatus::LOADED;
             break;
         default:
-            // -1, -2, -3 — all error states
-            mapped = (state < 0) ? SlotStatus::BLOCKED : SlotStatus::UNKNOWN;
+            slot->status = (state < 0) ? SlotStatus::BLOCKED : SlotStatus::UNKNOWN;
             break;
         }
-        unit_ref.slots[i].status = mapped;
     }
 
-    // Determine whether any slot is in a hard error state. A BLOCKED slot must
-    // promote action to ERROR so AmsErrorBridge sees the ERROR transition and
-    // fires current_error(). Precedence: ERROR > LOADING > IDLE — a mid-flight
-    // tool change on a broken lane is still an error.
-    //
-    // action is recomputed whenever the update touches slot state or
-    // is_tool_change so a lane recovering from BLOCKED clears ERROR even
-    // when is_tool_change is absent from the update.
     auto tool_change_it = variables.find("is_tool_change");
     const bool has_slot_or_action_key = [&]() {
-        if (tool_change_it != variables.end())
+        if (tool_change_it != variables.end()) {
             return true;
-        for (size_t i = 0; i < unit_ref.slots.size(); ++i) {
-            if (variables.find("slot" + std::to_string(i)) != variables.end())
+        }
+        for (int i = 0; i < slot_count; ++i) {
+            if (variables.find("slot" + std::to_string(i)) != variables.end()) {
                 return true;
+            }
         }
         return false;
     }();
 
     if (has_slot_or_action_key) {
-        const bool any_blocked =
-            std::any_of(unit_ref.slots.begin(), unit_ref.slots.end(),
-                        [](const SlotInfo& s) { return s.status == SlotStatus::BLOCKED; });
+        bool any_blocked = false;
+        for (const auto& unit : system_info_.units) {
+            any_blocked = any_blocked || std::any_of(unit.slots.begin(), unit.slots.end(),
+                                                     [](const SlotInfo& s) {
+                                                         return s.status == SlotStatus::BLOCKED;
+                                                     });
+        }
         const bool is_loading = tool_change_it != variables.end() &&
                                 tool_change_it->is_number_integer() &&
                                 tool_change_it->get<int>() != 0;
-        if (any_blocked) {
-            system_info_.action = AmsAction::ERROR;
-        } else if (is_loading) {
-            system_info_.action = AmsAction::LOADING;
-        } else {
-            system_info_.action = AmsAction::IDLE;
-        }
+        system_info_.action = any_blocked ? AmsAction::ERROR
+                                          : (is_loading ? AmsAction::LOADING : AmsAction::IDLE);
     }
-
-    // last_load_slot is box_extras.py's authoritative "which slot is in the
-    // extruder right now" signal. Two outcomes:
-    //   "slot<N>"  → promote slot N to LOADED (covers the case where the
-    //                per-slot signal hasn't caught up, e.g. recovery paths)
-    //   "slot-1"   → demote any slot still claiming LOADED to AVAILABLE
-    //                (nothing is in the extruder anymore)
 
     auto load_it = variables.find("last_load_slot");
     if (load_it != variables.end() && load_it->is_string()) {
         const std::string val = load_it->get<std::string>();
         if (val == "slot-1") {
-            for (auto& slot : unit_ref.slots) {
-                if (slot.status == SlotStatus::LOADED) {
-                    slot.status = SlotStatus::AVAILABLE;
+            for (auto& unit : system_info_.units) {
+                for (auto& slot : unit.slots) {
+                    if (slot.status == SlotStatus::LOADED) {
+                        slot.status = SlotStatus::AVAILABLE;
+                    }
                 }
             }
-            // Nothing loaded — clear the system-level cursors so
-            // get_current_slot() / get_current_tool() / is_filament_loaded()
-            // report the truth instead of stale -1 defaults.
             system_info_.current_slot = -1;
             system_info_.current_tool = -1;
             system_info_.filament_loaded = false;
         } else if (auto idx = parse_slot_name(val, slot_count)) {
-            unit_ref.slots[*idx].status = SlotStatus::LOADED;
-            system_info_.current_slot = *idx;
-            system_info_.current_tool = unit_ref.slots[*idx].mapped_tool;
-            system_info_.filament_loaded = true;
+            if (auto* slot = system_info_.get_slot_global(*idx)) {
+                slot->status = SlotStatus::LOADED;
+                system_info_.current_slot = *idx;
+                system_info_.current_tool = slot->mapped_tool;
+                system_info_.filament_loaded = true;
+            }
         }
     }
 
-    // Per-slot RFID indices written by box_extras.py:
-    //   filament_slot<N> = material index 1-99 (officiall_filas_list.cfg)
-    //   color_slot<N>    = palette index 1-24
-    //   vendor_slot<N>   = vendor index (always 1 observed so far)
-    // Captured raw into slot_rfid_; resolved to material/color/brand by a
-    // separate cfg-file lookup (not yet implemented).
-    if (slot_rfid_.size() < unit_ref.slots.size()) {
-        slot_rfid_.resize(unit_ref.slots.size());
+    if (slot_rfid_.size() < static_cast<size_t>(slot_count)) {
+        slot_rfid_.resize(static_cast<size_t>(slot_count));
     }
-    for (size_t i = 0; i < unit_ref.slots.size(); ++i) {
+    for (int i = 0; i < slot_count; ++i) {
+        auto* slot = system_info_.get_slot_global(i);
+        if (!slot) {
+            continue;
+        }
         const std::string suffix = std::to_string(i);
         if (auto it = variables.find("filament_slot" + suffix);
             it != variables.end() && it->is_number_integer()) {
-            slot_rfid_[i].filament_id = it->get<int>();
+            slot_rfid_[static_cast<size_t>(i)].filament_id = it->get<int>();
         }
         if (auto it = variables.find("color_slot" + suffix);
             it != variables.end() && it->is_number_integer()) {
-            slot_rfid_[i].color_id = it->get<int>();
+            slot_rfid_[static_cast<size_t>(i)].color_id = it->get<int>();
         }
         if (auto it = variables.find("vendor_slot" + suffix);
             it != variables.end() && it->is_number_integer()) {
-            slot_rfid_[i].vendor_id = it->get<int>();
+            slot_rfid_[static_cast<size_t>(i)].vendor_id = it->get<int>();
         }
-        // Resolve cached RFID ids onto SlotInfo for the UI. Each lookup is
-        // best-effort: a miss leaves the existing field untouched so we never
-        // clobber good data with a blank.
-        SlotInfo& slot = unit_ref.slots[i];
-        if (slot_rfid_[i].filament_id > 0) {
-            auto p = fila_profiles_.find(slot_rfid_[i].filament_id);
+
+        const auto& rfid = slot_rfid_[static_cast<size_t>(i)];
+        if (rfid.filament_id > 0) {
+            auto p = fila_profiles_.find(rfid.filament_id);
             if (p != fila_profiles_.end()) {
-                slot.nozzle_temp_min = p->second.nozzle_min;
-                slot.nozzle_temp_max = p->second.nozzle_max;
+                slot->nozzle_temp_min = p->second.nozzle_min;
+                slot->nozzle_temp_max = p->second.nozzle_max;
                 if (!p->second.type.empty()) {
-                    slot.material = p->second.type;
+                    slot->material = p->second.type;
                 }
             }
         }
-        if (slot_rfid_[i].color_id > 0) {
-            auto c = color_palette_.find(slot_rfid_[i].color_id);
+        if (rfid.color_id > 0) {
+            auto c = color_palette_.find(rfid.color_id);
             if (c != color_palette_.end()) {
-                slot.color_rgb = c->second;
+                slot->color_rgb = c->second;
             }
         }
-        if (slot_rfid_[i].vendor_id > 0) {
-            auto v = vendor_names_.find(slot_rfid_[i].vendor_id);
+        if (rfid.vendor_id > 0) {
+            auto v = vendor_names_.find(rfid.vendor_id);
             if (v != vendor_names_.end() && !v->second.empty()) {
-                slot.brand = v->second;
+                slot->brand = v->second;
             }
         }
     }
@@ -921,19 +961,24 @@ AmsError AmsBackendQidi::load_filament(int slot_index) {
         if (system_info_.units.empty()) {
             return AmsErrorHelper::not_supported("QIDI Box: no unit configured");
         }
-        const auto& slots = system_info_.units[0].slots;
-        if (slot_index < 0 || static_cast<size_t>(slot_index) >= slots.size()) {
+        const SlotInfo* target = system_info_.get_slot_global(slot_index);
+        if (!target) {
             return AmsErrorHelper::not_supported("QIDI Box: slot index out of range");
         }
-        load_temp = load_temp_for_slot(slots[slot_index]);
+        load_temp = load_temp_for_slot(*target);
         // If a *different* slot is already in the extruder, retract it first —
         // EXTRUDER_LOAD on top of loaded filament would jam. Compose the two
         // verified stock primitives (unload + EXTRUDER_LOAD) rather than relying
         // on a tool-change macro.
-        for (const auto& s : slots) {
-            if (s.status == SlotStatus::LOADED && s.slot_index != slot_index) {
-                loaded_other = s.slot_index;
-                unload_temp = load_temp_for_slot(s);
+        for (const auto& unit : system_info_.units) {
+            for (const auto& s : unit.slots) {
+                if (s.status == SlotStatus::LOADED && s.global_index != slot_index) {
+                    loaded_other = s.global_index;
+                    unload_temp = load_temp_for_slot(s);
+                    break;
+                }
+            }
+            if (loaded_other >= 0) {
                 break;
             }
         }
@@ -979,13 +1024,17 @@ AmsError AmsBackendQidi::unload_filament(int slot_index) {
         if (system_info_.units.empty()) {
             return AmsErrorHelper::not_supported("QIDI Box: no unit configured");
         }
-        const auto& slots = system_info_.units[0].slots;
         if (slot_index == -1) {
             // Active slot: find the LOADED one and use its profile temperature.
             const SlotInfo* loaded = nullptr;
-            for (const auto& s : slots) {
-                if (s.status == SlotStatus::LOADED) {
-                    loaded = &s;
+            for (const auto& unit : system_info_.units) {
+                for (const auto& s : unit.slots) {
+                    if (s.status == SlotStatus::LOADED) {
+                        loaded = &s;
+                        break;
+                    }
+                }
+                if (loaded) {
                     break;
                 }
             }
@@ -993,11 +1042,11 @@ AmsError AmsBackendQidi::unload_filament(int slot_index) {
                 return AmsErrorHelper::not_supported("QIDI Box: no slot currently loaded");
             }
             unload_temp = load_temp_for_slot(*loaded);
-            target_slot = loaded->slot_index;
-        } else if (slot_index < 0 || static_cast<size_t>(slot_index) >= slots.size()) {
-            return AmsErrorHelper::not_supported("QIDI Box: slot index out of range");
+            target_slot = loaded->global_index;
+        } else if (const SlotInfo* slot = system_info_.get_slot_global(slot_index)) {
+            unload_temp = load_temp_for_slot(*slot);
         } else {
-            unload_temp = load_temp_for_slot(slots[slot_index]);
+            return AmsErrorHelper::not_supported("QIDI Box: slot index out of range");
         }
     }
 
@@ -1031,12 +1080,17 @@ AmsError AmsBackendQidi::change_tool(int tool_number) {
     int slot_index = tool_number;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (!system_info_.units.empty()) {
-            for (const auto& s : system_info_.units[0].slots) {
+        bool found = false;
+        for (const auto& unit : system_info_.units) {
+            for (const auto& s : unit.slots) {
                 if (s.mapped_tool == tool_number) {
-                    slot_index = s.slot_index;
+                    slot_index = s.global_index;
+                    found = true;
                     break;
                 }
+            }
+            if (found) {
+                break;
             }
         }
     }
@@ -1064,11 +1118,15 @@ std::optional<helix::ErrorEvent> AmsBackendQidi::current_error() const {
     std::lock_guard<std::mutex> lock(mutex_);
     if (system_info_.units.empty())
         return std::nullopt;
-    const auto& slots = system_info_.units[0].slots;
     int blocked = -1;
-    for (int i = 0; i < static_cast<int>(slots.size()); ++i) {
-        if (slots[i].status == SlotStatus::BLOCKED) {
-            blocked = i;
+    for (const auto& unit : system_info_.units) {
+        for (const auto& slot : unit.slots) {
+            if (slot.status == SlotStatus::BLOCKED) {
+                blocked = slot.global_index;
+                break;
+            }
+        }
+        if (blocked >= 0) {
             break;
         }
     }
@@ -1099,8 +1157,7 @@ AmsError AmsBackendQidi::eject_lane(int slot_index) {
         if (system_info_.units.empty()) {
             return AmsErrorHelper::not_supported("QIDI Box: no unit configured");
         }
-        const auto& slots = system_info_.units[0].slots;
-        if (slot_index < 0 || static_cast<size_t>(slot_index) >= slots.size()) {
+        if (!system_info_.get_slot_global(slot_index)) {
             return AmsErrorHelper::not_supported("QIDI Box: slot index out of range");
         }
     }
@@ -1225,8 +1282,7 @@ AmsError AmsBackendQidi::set_slot_info(int slot_index, const SlotInfo& info, boo
         if (system_info_.units.empty()) {
             return AmsErrorHelper::not_supported("QIDI Box: no unit configured");
         }
-        const auto& slots = system_info_.units[0].slots;
-        if (slot_index < 0 || static_cast<size_t>(slot_index) >= slots.size()) {
+        if (!system_info_.get_slot_global(slot_index)) {
             return AmsErrorHelper::not_supported("QIDI Box: slot index out of range");
         }
         // SlotInfo has no dedicated "QIDI product label" field; callers may put
@@ -1290,8 +1346,7 @@ AmsError AmsBackendQidi::set_tool_mapping(int tool_number, int slot_index) {
         if (system_info_.units.empty()) {
             return AmsErrorHelper::not_supported("QIDI Box: no unit configured");
         }
-        const auto& slots = system_info_.units[0].slots;
-        if (slot_index < 0 || static_cast<size_t>(slot_index) >= slots.size()) {
+        if (!system_info_.get_slot_global(slot_index)) {
             return AmsErrorHelper::not_supported("QIDI Box: slot index out of range");
         }
     }
@@ -1320,12 +1375,16 @@ AmsError AmsBackendQidi::disable_bypass() {
 
 // --- Dryer / box-heater control (issue #1019) ---
 
-DryerInfo AmsBackendQidi::get_dryer_info() const {
+DryerInfo AmsBackendQidi::get_dryer_info(int unit) const {
     std::lock_guard<std::mutex> lock(mutex_);
-    DryerInfo out = dryer_info_;
-    if (dry_end_epoch_ > 0) {
+    if (unit < 0 || unit >= static_cast<int>(dryer_info_.size())) {
+        return DryerInfo{.supported = false};
+    }
+    DryerInfo out = dryer_info_[static_cast<size_t>(unit)];
+    const std::time_t end = dry_end_epoch_[static_cast<size_t>(unit)];
+    if (end > 0) {
         const std::time_t now = now_fn_();
-        const int remaining = static_cast<int>((dry_end_epoch_ - now) / 60);
+        const int remaining = static_cast<int>((end - now) / 60);
         out.remaining_min = remaining > 0 ? remaining : 0;
         out.active = remaining > 0;
     }
@@ -1342,9 +1401,13 @@ AmsError AmsBackendQidi::start_drying(float temp_c, int duration_min, int fan_pc
     int max_duration;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        min_temp = dryer_info_.min_temp_c;
-        max_temp = dryer_info_.max_temp_c;
-        max_duration = dryer_info_.max_duration_min;
+        if (unit < 0 || unit >= static_cast<int>(dryer_info_.size())) {
+            return AmsErrorHelper::not_supported("Dryer");
+        }
+        const size_t u = static_cast<size_t>(unit);
+        min_temp = dryer_info_[u].min_temp_c;
+        max_temp = dryer_info_[u].max_temp_c;
+        max_duration = dryer_info_[u].max_duration_min;
     }
     if (temp_c < min_temp || temp_c > max_temp) {
         return AmsError(AmsResult::COMMAND_FAILED,
@@ -1364,8 +1427,11 @@ AmsError AmsBackendQidi::start_drying(float temp_c, int duration_min, int fan_pc
     bool timer;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        dryer_info_.target_temp_c = temp_c;
-        dryer_info_.duration_min = duration_min;
+        if (unit < 0 || unit >= static_cast<int>(dryer_info_.size())) {
+            return AmsErrorHelper::not_supported("Dryer");
+        }
+        dryer_info_[static_cast<size_t>(unit)].target_temp_c = temp_c;
+        dryer_info_[static_cast<size_t>(unit)].duration_min = duration_min;
         timer = drying_timer_supported_;
     }
     if (timer) {
@@ -1386,11 +1452,15 @@ AmsError AmsBackendQidi::stop_drying(int unit) {
     bool timer;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        dry_end_epoch_ = 0;
-        dryer_info_.active = false;
-        dryer_info_.target_temp_c = 0.0f;
-        dryer_info_.remaining_min = 0;
-        dryer_info_.duration_min = 0;
+        if (unit < 0 || unit >= static_cast<int>(dryer_info_.size())) {
+            return AmsErrorHelper::not_supported("Dryer");
+        }
+        const size_t u = static_cast<size_t>(unit);
+        dry_end_epoch_[u] = 0;
+        dryer_info_[u].active = false;
+        dryer_info_[u].target_temp_c = 0.0f;
+        dryer_info_[u].remaining_min = 0;
+        dryer_info_[u].duration_min = 0;
         timer = drying_timer_supported_;
     }
     if (timer) {

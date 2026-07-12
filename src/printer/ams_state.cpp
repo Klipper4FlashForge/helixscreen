@@ -485,6 +485,50 @@ void AmsState::init_subjects(bool register_xml) {
         }
     }
 
+    // Detail-view env indicator mirror subjects.
+    lv_subject_init_string(&env_ind_detail_temp_text_, env_ind_detail_temp_text_buf_, nullptr,
+                           ENV_IND_TEXT_BUF_SIZE, "---");
+    subjects_.register_subject(&env_ind_detail_temp_text_);
+    if (register_xml)
+        lv_xml_register_subject(nullptr, "ams_env_ind_detail_temp_text", &env_ind_detail_temp_text_);
+
+    lv_subject_init_string(&env_ind_detail_humidity_text_, env_ind_detail_humidity_text_buf_,
+                           nullptr, ENV_IND_TEXT_BUF_SIZE, "---");
+    subjects_.register_subject(&env_ind_detail_humidity_text_);
+    if (register_xml)
+        lv_xml_register_subject(nullptr, "ams_env_ind_detail_humidity_text",
+                                &env_ind_detail_humidity_text_);
+
+    lv_subject_init_int(&env_ind_detail_humidity_status_, 0);
+    subjects_.register_subject(&env_ind_detail_humidity_status_);
+    if (register_xml)
+        lv_xml_register_subject(nullptr, "ams_env_ind_detail_humidity_status",
+                                &env_ind_detail_humidity_status_);
+
+    lv_subject_init_int(&env_ind_detail_humidity_visible_, 0);
+    subjects_.register_subject(&env_ind_detail_humidity_visible_);
+    if (register_xml)
+        lv_xml_register_subject(nullptr, "ams_env_ind_detail_humidity_visible",
+                                &env_ind_detail_humidity_visible_);
+
+    lv_subject_init_int(&env_ind_detail_visible_, 0);
+    subjects_.register_subject(&env_ind_detail_visible_);
+    if (register_xml)
+        lv_xml_register_subject(nullptr, "ams_env_ind_detail_visible", &env_ind_detail_visible_);
+
+    lv_subject_init_int(&env_ind_detail_drying_active_, 0);
+    subjects_.register_subject(&env_ind_detail_drying_active_);
+    if (register_xml)
+        lv_xml_register_subject(nullptr, "ams_env_ind_detail_drying_active",
+                                &env_ind_detail_drying_active_);
+
+    lv_subject_init_string(&env_ind_detail_drying_text_, env_ind_detail_drying_text_buf_, nullptr,
+                           ENV_IND_DRYING_BUF_SIZE, "");
+    subjects_.register_subject(&env_ind_detail_drying_text_);
+    if (register_xml)
+        lv_xml_register_subject(nullptr, "ams_env_ind_detail_drying_text",
+                                &env_ind_detail_drying_text_);
+
     // Ask the factory for a backend. In mock mode, it returns a mock backend.
     // In real mode with no printer connected, it returns nullptr.
     // This keeps mock/real decision entirely in the factory.
@@ -1439,10 +1483,9 @@ void AmsState::sync_from_backend() {
     }
 
     // Update per-unit environment indicator display subjects (formatted text for XML).
-    // dryer is system-level (applies to all units); fetch once up front so the
-    // indicator can be made reachable for any drying-capable backend, not only when
-    // a live temp/humidity reading is present.
-    const auto& dryer = backend->get_dryer_info();
+    // The dryer is fetched per-unit below so each box's indicator reflects its own
+    // drying state — the indicator can be made reachable for any drying-capable box,
+    // not only when a live temp/humidity reading is present.
     for (const auto& unit : info.units) {
         int idx = unit.unit_index;
         if (idx < 0 || idx >= MAX_UNITS)
@@ -1510,10 +1553,11 @@ void AmsState::sync_from_backend() {
             }
         }
 
-        // Indicator is reachable when there is live environment data OR the
-        // backend supports drying — otherwise a dryer-capable box with no
+        // Indicator is reachable when there is live environment data OR this
+        // unit's dryer is supported — otherwise a dryer-capable box with no
         // temp/humidity sensor would have no way to open the drying controls.
-        const int ind_vis = (has_env || dryer.supported) ? 1 : 0;
+        const bool unit_supports_dryer = backend->get_dryer_info(idx).supported;
+        const int ind_vis = (has_env || unit_supports_dryer) ? 1 : 0;
         if (lv_subject_get_int(&env_ind_visible_[idx]) != ind_vis) {
             lv_subject_set_int(&env_ind_visible_[idx], ind_vis);
         }
@@ -1525,8 +1569,7 @@ void AmsState::sync_from_backend() {
         }
     }
 
-    // Update drying state for indicator (system-level dryer applies to all units).
-    // dryer was fetched above for the visibility gate.
+    // Update drying state for indicator — per-unit dryer.
     for (int i = 0; i < MAX_UNITS; ++i) {
         // Only update drying for units that have environment data visible
         if (lv_subject_get_int(&env_ind_visible_[i]) != 1) {
@@ -1535,6 +1578,7 @@ void AmsState::sync_from_backend() {
             }
             continue;
         }
+        const DryerInfo dryer = backend->get_dryer_info(i);
         if (dryer.supported && dryer.active) {
             if (lv_subject_get_int(&env_ind_drying_active_[i]) != 1) {
                 lv_subject_set_int(&env_ind_drying_active_[i], 1);
@@ -1603,6 +1647,9 @@ void AmsState::sync_from_backend() {
         spdlog::trace("[AmsState] Slot data changed, bumping version");
         bump_slots_version();
     }
+
+    // Mirror the detail-view env indicator's currently-shown unit
+    mirror_detail_env_subjects();
 
     // Sync dryer state (for systems with integrated drying like ACE)
     sync_dryer_from_backend();
@@ -1746,6 +1793,53 @@ void AmsState::bump_slots_version() {
     lv_subject_set_int(&slots_version_, current + 1);
 }
 
+void AmsState::set_dryer_mirror_unit(int unit) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    if (dryer_mirror_unit_ == unit) {
+        return;
+    }
+    dryer_mirror_unit_ = unit;
+    sync_dryer_from_backend();
+}
+
+void AmsState::set_detail_env_unit(int unit) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    detail_env_unit_ = unit;
+    mirror_detail_env_subjects();
+}
+
+void AmsState::mirror_detail_env_subjects() {
+    int u = detail_env_unit_;
+    if (u < 0 || u >= MAX_UNITS)
+        u = 0;
+    if (strcmp(lv_subject_get_string(&env_ind_detail_temp_text_),
+               lv_subject_get_string(&env_ind_temp_text_[u])) != 0)
+        lv_subject_copy_string(&env_ind_detail_temp_text_,
+                               lv_subject_get_string(&env_ind_temp_text_[u]));
+    if (strcmp(lv_subject_get_string(&env_ind_detail_humidity_text_),
+               lv_subject_get_string(&env_ind_humidity_text_[u])) != 0)
+        lv_subject_copy_string(&env_ind_detail_humidity_text_,
+                               lv_subject_get_string(&env_ind_humidity_text_[u]));
+    if (lv_subject_get_int(&env_ind_detail_humidity_status_) !=
+        lv_subject_get_int(&env_ind_humidity_status_[u]))
+        lv_subject_set_int(&env_ind_detail_humidity_status_,
+                           lv_subject_get_int(&env_ind_humidity_status_[u]));
+    if (lv_subject_get_int(&env_ind_detail_humidity_visible_) !=
+        lv_subject_get_int(&env_ind_humidity_visible_[u]))
+        lv_subject_set_int(&env_ind_detail_humidity_visible_,
+                           lv_subject_get_int(&env_ind_humidity_visible_[u]));
+    if (lv_subject_get_int(&env_ind_detail_visible_) != lv_subject_get_int(&env_ind_visible_[u]))
+        lv_subject_set_int(&env_ind_detail_visible_, lv_subject_get_int(&env_ind_visible_[u]));
+    if (lv_subject_get_int(&env_ind_detail_drying_active_) !=
+        lv_subject_get_int(&env_ind_drying_active_[u]))
+        lv_subject_set_int(&env_ind_detail_drying_active_,
+                           lv_subject_get_int(&env_ind_drying_active_[u]));
+    if (strcmp(lv_subject_get_string(&env_ind_detail_drying_text_),
+               lv_subject_get_string(&env_ind_drying_text_[u])) != 0)
+        lv_subject_copy_string(&env_ind_detail_drying_text_,
+                               lv_subject_get_string(&env_ind_drying_text_[u]));
+}
+
 void AmsState::sync_dryer_from_backend() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
 
@@ -1761,7 +1855,7 @@ void AmsState::sync_dryer_from_backend() {
         return;
     }
 
-    DryerInfo dryer = backend->get_dryer_info();
+    DryerInfo dryer = backend->get_dryer_info(dryer_mirror_unit_);
 
     // Update integer subjects
     int new_supported = dryer.supported ? 1 : 0;
@@ -2506,7 +2600,7 @@ void AmsState::adjust_modal_temp(int delta_c) {
     float max_temp = static_cast<float>(MAX_DRYER_TEMP_C);
     auto* backend = get_backend(0);
     if (backend) {
-        DryerInfo dryer = backend->get_dryer_info();
+        DryerInfo dryer = backend->get_dryer_info(dryer_mirror_unit_);
         min_temp = dryer.min_temp_c;
         max_temp = dryer.max_temp_c;
     }
@@ -2526,7 +2620,7 @@ void AmsState::adjust_modal_duration(int delta_min) {
     int max_duration = MAX_DRYER_DURATION_MIN;
     auto* backend = get_backend(0);
     if (backend) {
-        DryerInfo dryer = backend->get_dryer_info();
+        DryerInfo dryer = backend->get_dryer_info(dryer_mirror_unit_);
         max_duration = dryer.max_duration_min;
     }
 

@@ -1025,7 +1025,8 @@ class AmsBackend {
      *
      * @return DryerInfo struct (supported=false if no dryer)
      */
-    [[nodiscard]] virtual DryerInfo get_dryer_info() const {
+    [[nodiscard]] virtual DryerInfo get_dryer_info(int unit = 0) const {
+        (void)unit;
         return DryerInfo{.supported = false};
     }
 
@@ -1071,10 +1072,12 @@ class AmsBackend {
      * @param fan_pct New fan speed (-1 = no change)
      * @return AmsError with SUCCESS result on success, or error with reason
      */
-    virtual AmsError update_drying(float temp_c = -1, int duration_min = -1, int fan_pct = -1) {
+    virtual AmsError update_drying(float temp_c = -1, int duration_min = -1, int fan_pct = -1,
+                                   int unit = 0) {
         (void)temp_c;
         (void)duration_min;
         (void)fan_pct;
+        (void)unit;
         return AmsErrorHelper::not_supported("Dryer");
     }
 
