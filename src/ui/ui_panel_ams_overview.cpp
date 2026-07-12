@@ -891,7 +891,7 @@ void AmsOverviewPanel::create_detail_slots(const AmsUnit& unit) {
     }
 
     // Pre-show environment indicator so flex layout accounts for its width
-    ams_detail_pre_show_env_indicator(detail_widgets_);
+    ams_detail_pre_show_env_indicator(detail_widgets_, detail_unit_index_);
 
     auto result = ams_detail_create_slots(detail_widgets_, detail_slot_widgets_, MAX_DETAIL_SLOTS,
                                           unit_index, on_detail_slot_clicked, this);

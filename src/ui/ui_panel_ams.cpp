@@ -673,7 +673,7 @@ void AmsPanel::create_slots(int count) {
 
     // Pre-show environment indicator so flex layout accounts for its width
     // when calculating slot sizes. Must happen BEFORE slot creation.
-    ams_detail_pre_show_env_indicator(detail_widgets_);
+    ams_detail_pre_show_env_indicator(detail_widgets_, scoped_unit_index_);
 
     // Determine unit index for scoped views
     int unit_index = scoped_unit_index_;

@@ -66,3 +66,19 @@ TEST_CASE_METHOD(LVGLTestFixture, "Dryer scalar subjects mirror the selected uni
 
     ams.deinit_subjects();
 }
+
+TEST_CASE_METHOD(LVGLTestFixture, "Detail env subjects mirror the selected detail unit",
+                 "[ams][dryer][multi-unit][detail]") {
+    auto& ams = AmsState::instance();
+    ams.init_subjects(false); // MANDATORY (see Task 4/5): else set_int is a silent no-op → false RED
+    ams.set_backend(make_two_box_qidi_one_drying());
+
+    ams.sync_from_backend();    // populate per-unit env_ind_* subjects
+    ams.set_detail_env_unit(0); // mirror unit 0 (box1 drying)
+    CHECK(lv_subject_get_int(ams.get_env_ind_detail_drying_active_subject()) == 1);
+
+    ams.set_detail_env_unit(1); // mirror unit 1 (box2 idle)
+    CHECK(lv_subject_get_int(ams.get_env_ind_detail_drying_active_subject()) == 0);
+
+    ams.deinit_subjects();
+}

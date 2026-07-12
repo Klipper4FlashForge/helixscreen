@@ -638,9 +638,13 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
                   unit_index, hub_only);
 }
 
-void ams_detail_pre_show_env_indicator(AmsDetailWidgets& w) {
+void ams_detail_pre_show_env_indicator(AmsDetailWidgets& w, int unit_index) {
     if (!w.env_indicator)
         return;
+
+    const int u = (unit_index >= 0) ? unit_index : 0; // -1 == whole/single-unit → unit 0
+    AmsState::instance().set_detail_env_unit(u);
+    lv_obj_set_user_data(w.env_indicator, reinterpret_cast<void*>(static_cast<intptr_t>(u)));
 
     auto* backend = AmsState::instance().get_backend();
     if (backend && backend->has_environment_sensors()) {
