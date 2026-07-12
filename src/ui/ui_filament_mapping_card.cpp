@@ -126,6 +126,18 @@ void FilamentMappingCard::update(const std::vector<std::string>& gcode_colors,
                   available_slots_.size(), mappings_.size());
 }
 
+void FilamentMappingCard::refresh_slot_data() {
+    if (!card_ || !rows_container_) {
+        return;
+    }
+    if (!AmsState::instance().is_available()) {
+        return;
+    }
+    // Refresh loaded colors + presence only; mappings_ and tool_info_ untouched.
+    available_slots_ = AmsState::instance().collect_available_slots();
+    rebuild_compact_view();
+}
+
 bool FilamentMappingCard::has_mismatch() const {
     return has_any_mismatch();
 }
