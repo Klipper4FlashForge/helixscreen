@@ -7,6 +7,15 @@
     <px name="status_line_height" value="3"/>
     <px name="status_line_gap" value="2"/>
   </consts>
+  <api>
+    <prop name="temp_text"        type="subject" default="ams_env_ind_0_temp_text"/>
+    <prop name="humidity_text"    type="subject" default="ams_env_ind_0_humidity_text"/>
+    <prop name="humidity_status"  type="subject" default="ams_env_ind_0_humidity_status"/>
+    <prop name="humidity_visible" type="subject" default="ams_env_ind_0_humidity_visible"/>
+    <prop name="visible"          type="subject" default="ams_env_ind_0_visible"/>
+    <prop name="drying_active"    type="subject" default="ams_env_ind_0_drying_active"/>
+    <prop name="drying_text"      type="subject" default="ams_env_ind_0_drying_text"/>
+  </api>
   <view name="ams_unit_card"
         extends="lv_obj" height="content" scrollable="false" flex_flow="column" style_flex_main_place="start"
         style_flex_cross_place="center" style_bg_color="#elevated_bg" style_bg_opa="255" style_radius="#border_radius"
@@ -36,6 +45,9 @@
       <bind_flag_if_eq subject="ams_filament_runout" flag="hidden" ref_value="0"/>
     </icon>
     <!-- Environment indicator (temp/humidity) — hidden when no sensors -->
-    <ams_environment_indicator name="env_indicator" event_bubble="true"/>
+    <ams_environment_indicator name="env_indicator" event_bubble="true"
+        temp_text="$temp_text" humidity_text="$humidity_text"
+        humidity_status="$humidity_status" humidity_visible="$humidity_visible"
+        visible="$visible" drying_active="$drying_active" drying_text="$drying_text"/>
   </view>
 </component>
