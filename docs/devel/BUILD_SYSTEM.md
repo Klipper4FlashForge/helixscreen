@@ -32,7 +32,7 @@ make ad5x-docker
 # Build for Creality K1 series (MIPS32, dynamic/glibc)
 make k1-dynamic-docker
 
-# Build for Creality K2 series (ARM, tested on K2 Max)
+# Build for Creality K2 series (ARM, tested on K2 Plus)
 make k2-docker
 
 # Verify the binaries
@@ -89,7 +89,7 @@ make ad5m-docker         # Adventurer 5M via Docker
 make cc1-docker          # Centauri Carbon 1 via Docker
 make k1-docker           # Creality K1 series via Docker (static/musl)
 make k1-dynamic-docker   # Creality K1 series via Docker (dynamic/glibc)
-make k2-docker           # Creality K2 series via Docker (tested on K2 Max)
+make k2-docker           # Creality K2 series via Docker (tested on K2 Plus)
 make docker-toolchains   # Pre-build all Docker images
 
 # Direct cross-compilation (requires toolchain installed on host)
@@ -161,10 +161,10 @@ make cross-info          # Show cross-compilation help
 - **GCC 7.5 constraints**: See [GCC 7.5 Compatibility](#gcc-75-compatibility-k1-dynamic-target) section above
 - **Why two K1 targets?** Static/musl is simpler and more portable. Dynamic/glibc produces smaller binaries (shared system libs) and avoids musl edge cases, but requires the custom NaN2008 toolchain.
 
-#### Creality K2 Series (K2, K2 Pro, K2 Plus, K2 Max) — Tested on K2 Max
+#### Creality K2 Series (K2, K2 Pro, K2 Plus) — Tested on K2 Plus
 - **CPU**: Allwinner sun8iw20p1 (ARM Cortex-A7, dual-core, 57 BogoMIPS)
 - **Toolchain**: Bootlin `armv7-eabihf-musl` (GCC 12, musl libc)
-- **Display**: 480x1600 fbdev on K2 Max (480x800 on other K2 models)
+- **Display**: 480x800 fbdev (all K2 models; framebuffer is double-buffered → 480x1600 virtual)
 - **Input**: evdev for touch
 - **C Library**: musl (static linking)
 - **RAM**: ~488 MB

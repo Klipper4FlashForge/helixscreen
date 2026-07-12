@@ -12,16 +12,15 @@ All K2 models use Allwinner ARM Cortex-A7 dual-core processors running Tina Linu
 |-------|-------------|---------|----------------|-----|--------|
 | K2 | 260 mm cubed | 4.3" 480x800 | No | Optional | Untested |
 | K2 Pro | 300 mm cubed | 4.3" 480x800 | Yes (60C) | Optional | Untested |
-| K2 Plus | 350 mm cubed | 4.3" 480x800 | Yes (60C) | Optional | Untested |
-| K2 Max | 350 mm cubed | 4.3" 480x1600 | Yes | Yes (combo) | **Hardware confirmed** |
+| K2 Plus | 350 mm cubed | 4.3" 480x800 | Yes (60C) | Yes (CFS) | **Hardware confirmed** |
 | K2 SE | 220x215x245 mm | Unknown | No | Unknown | User-confirmed install (wget) |
 
-## Hardware (Confirmed on K2 Max — 2026-03-23)
+## Hardware (Confirmed on K2 Plus — 2026-03-23)
 
 | Spec | Value |
 |------|-------|
 | SoC | Allwinner sun8iw20p1 (ARM Cortex-A7, dual-core, 57 BogoMIPS) |
-| Display | 480x1600 portrait, 32bpp, fbdev (`/dev/fb0`) |
+| Display | 480x800 portrait, 32bpp, fbdev (`/dev/fb0`); double-buffered → 480x1600 virtual fb |
 | Stock UI | `/usr/bin/display-server` (must be stopped to use framebuffer) |
 | RAM | 488 MB total |
 | Storage | 27.5 GB on `/mnt/UDISK` |
@@ -44,7 +43,7 @@ All K2 models use Allwinner ARM Cortex-A7 dual-core processors running Tina Linu
 
 - **No curl** — BusyBox wget only (no HTTPS support). Use `python3 urllib` for HTTP requests.
 - **armv7l** — Dual-core Cortex-A7 (NOT Cortex-A53). Lower performance than K1 series.
-- **480x1600 display** — The K2 Max has a taller display than other K2 models (480x800). Needs software rotation to landscape. The `lcm_id=gc9503cv_ue_480_800` in cmdline suggests the base panel is 480x800 but the K2 Max may use a different panel.
+- **480x800 display** — The panel is 480x800 portrait, same as all other K2 models (`lcm_id=gc9503cv_ue_480_800` in cmdline confirms). HelixScreen software-rotates portrait→landscape (applies to all K2). The 480x1600 seen in `/sys/class/graphics/fb0/virtual_size` is a double-buffered virtual framebuffer (two stacked 480x800 buffers), not a taller panel.
 - **Python 3.9** — Available at `/usr/bin/python3`.
 
 ## Cross-Compilation
@@ -92,7 +91,7 @@ make package-k2
 
 ### Prerequisites
 
-- A Creality K2, K2 Pro, K2 Plus, or K2 Max printer
+- A Creality K2, K2 Pro, or K2 Plus printer
 - **Stock firmware with root access** — no custom firmware (Guilouz, etc.) required
 - Root access enabled: Settings > "Root account information" > acknowledge disclaimer > wait 30 seconds > press "Ok"
 - SSH access: `ssh root@<printer-ip>` (password: `creality_2024`)
@@ -162,7 +161,7 @@ killall helix-screen helix-splash helix-watchdog 2>/dev/null
 
 HelixScreen renders directly to `/dev/fb0`. The platform hooks stop the stock `display-server` to release the framebuffer. This is handled automatically by the deploy targets.
 
-The K2 Max framebuffer is **480x1600 portrait** — HelixScreen will need software rotation to landscape mode, plus touch coordinate transform.
+The K2 Plus panel is **480x800 portrait**; the framebuffer is double-buffered (480x1600 virtual). HelixScreen will need software rotation to landscape mode, plus touch coordinate transform.
 
 ### Touch Input
 
@@ -186,7 +185,7 @@ The CFS is implemented as Klipper modules, but the core logic is in **closed-sou
 
 ### Klipper Configuration
 
-From the active `box.cfg` on the K2 Max:
+From the active `box.cfg` on the K2 Plus:
 
 ```ini
 [serial_485 serial485]
@@ -533,7 +532,7 @@ HelixScreen auto-detects K2 printers using heuristics from `config/printer_datab
 ## Known Limitations
 
 ### Display
-- **480x1600 portrait framebuffer (K2 Max)** — needs software rotation to landscape. Other K2 models may be 480x800.
+- **480x800 portrait panel (double-buffered framebuffer → 480x1600 virtual)** — needs software rotation to landscape; same as all other K2 models.
 
 ### CFS
 - **Closed-source protocol** — CFS communication relies on `box_wrapper.cpython-39.so` binary blob. Protocol has been reverse-engineered from strings but full reimplementation is not yet available.

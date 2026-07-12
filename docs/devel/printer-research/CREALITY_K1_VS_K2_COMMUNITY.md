@@ -15,9 +15,9 @@ For HelixScreen: K2 is architecturally easier to target (ARM, not MIPS), but K1 
 
 | | K1 Series | K2 Series |
 |---|---|---|
-| **Linux SoC** | Ingenic X2000E (MIPS32r2, dual-core 1.2GHz) | Allwinner (ARM Cortex-A53, likely quad-core) |
+| **Linux SoC** | Ingenic X2000E (MIPS32r2, dual-core 1.2GHz) | Allwinner T113/sun8iw20p1 (ARM Cortex-A7, dual-core, armv7l — confirmed on device) |
 | **Motion MCU** | GD32F303RET6 (ARM Cortex-M3) | GD32F303RET6 (same) |
-| **RAM** | 256 MB LPDDR2 | Unconfirmed, likely 512MB+ |
+| **RAM** | 256 MB LPDDR2 | ~488 MB (confirmed on device) |
 | **Storage** | 8 GB eMMC | 32 GB |
 | **Linux base** | Creality OS (Buildroot 2020.02.1) | Tina Linux 21.02 (OpenWrt/Allwinner) |
 | **Python** | 3.8.2 (stock) | 3.9 (stock) |
@@ -127,7 +127,7 @@ This is better than nothing, but far from a genuine open-source community effort
 
 | Factor | Assessment |
 |--------|-----------|
-| Cross-compilation | **EASY** - ARM Cortex-A53, standard aarch64/armv7 toolchains |
+| Cross-compilation | **EASY** - ARM Cortex-A7 (armv7l, 32-bit only; not aarch64-capable), standard armv7 musl toolchain |
 | Moonraker availability | **Stock** - no community tools needed |
 | Display takeover | Less documented, similar approach expected (fb0) |
 | Proven precedent | None - no custom UI has been deployed on K2 |
@@ -163,5 +163,5 @@ If targeting both, **start with K1** (bigger impact, proven path), then port to 
 - [K1C 2025 Root Discussion](https://github.com/Guilouz/Creality-Helper-Script-Wiki/discussions/851)
 - [K1C 2025 Root Exploit](https://gist.github.com/C0DEbrained/c6f508109e34f43a39f4c22e901408dd)
 - [CrealityOfficial K2 Series Klipper](https://github.com/CrealityOfficial/K2_Series_Klipper)
-- [linux-sunxi.org A133/Creality T800](https://linux-sunxi.org/A133)
+- [linux-sunxi.org A133/Creality T800](https://linux-sunxi.org/A133) — note: the confirmed K2 Plus SoC is T113/sun8iw20p1 (Cortex-A7), not A133/T800
 - [Klipper Discourse: K2 GPL violations](https://klipper.discourse.group/t/creality-k2-plus-and-gpl-violations/22402)

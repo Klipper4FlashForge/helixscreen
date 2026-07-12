@@ -69,7 +69,7 @@ Runs on the K1's built-in screen. K1C and K1 Max are the most thoroughly tested 
 
 ---
 
-### Creality K2 Plus / K2 Pro / K2 Max / K2 SE
+### Creality K2 Plus / K2 Pro / K2 SE
 
 Runs on the K2's built-in screen and — unlike the K1 — **works with stock firmware and stock Moonraker**, no custom firmware required. This is the flagship CFS integration.
 
@@ -77,7 +77,7 @@ Runs on the K2's built-in screen and — unlike the K1 — **works with stock fi
 - **Full CFS multi-material** — up to 4 units × 4 slots (16 colors): per-slot color, material type, and remaining filament length; per-unit temperature and humidity; load/unload
 - **Auto-refill / backup spool** switching and tool-to-slot color mapping
 - **CFS dryer and humidity monitoring** per unit
-- **Chamber heater** control (K2 Pro / Plus / Max)
+- **Chamber heater** control (K2 Pro / Plus)
 - **AI print monitoring** available as a pre-print option, plus filament runout detection
 
 **Requirements:** Stock firmware works out of the box. See [Installation → Creality K2 Series](../INSTALL.md#creality-k2-series).

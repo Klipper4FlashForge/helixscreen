@@ -324,7 +324,7 @@ Don't copy features from web UIs just because "competitors have it" — evaluate
 | **Creality K1** | MIPS32 | Static linking |
 | **QIDI** | aarch64 | Detection heuristics + print profile |
 | **Snapmaker U1** | armv7-a | 480x320 display support |
-| **Creality K2** | ARM | Static musl (tested on K2 Max) |
+| **Creality K2** | ARM | Static musl (tested on K2 Plus) |
 | **macOS** | x86_64/ARM64 | SDL2 development |
 | **Linux** | x86_64 | SDL2, CI/CD tested |
 

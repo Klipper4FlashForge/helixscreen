@@ -465,13 +465,13 @@ else ifeq ($(PLATFORM_TARGET),k1-dynamic)
 
 else ifeq ($(PLATFORM_TARGET),k2)
     # -------------------------------------------------------------------------
-    # Creality K2 Series - Allwinner A133 (ARM Cortex-A53)
+    # Creality K2 Series - Allwinner T113 / sun8iw20p1 (ARM Cortex-A7, dual-core)
     # Specs: 480x800 display (portrait), ~512MB RAM, glibc 2.29 rootfs (Tina Linux)
     # -------------------------------------------------------------------------
     # FULLY STATIC BUILD with musl: Same proven strategy as K1 target.
     # Uses Bootlin's armv7-eabihf musl toolchain (32-bit ARM hard-float).
     #
-    # We target armv7 despite the A53 being aarch64-capable because Tina Linux
+    # We target armv7 (the Cortex-A7's native 32-bit ISA) because Tina Linux
     # (OpenWrt) commonly uses 32-bit userland, and entware packages are armv7sf.
     #
     # The K2 root filesystem is glibc 2.29, NOT musl — but we ship a FULLY
@@ -910,7 +910,7 @@ k1-dynamic:
 	$(Q)$(MAKE) PLATFORM_TARGET=k1-dynamic -j$(NPROC) all
 
 k2:
-	@echo "$(CYAN)$(BOLD)Cross-compiling for Creality K2 series (ARM Cortex-A53)...$(RESET)"
+	@echo "$(CYAN)$(BOLD)Cross-compiling for Creality K2 series (ARM Cortex-A7)...$(RESET)"
 	$(Q)$(MAKE) PLATFORM_TARGET=k2 -j$(NPROC) all
 
 snapmaker-u1:

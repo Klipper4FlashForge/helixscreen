@@ -29,10 +29,10 @@ The Creality K2 Plus is Creality's flagship CoreXY enclosed printer with 350mm³
 | **Price** | $1,499 (Combo with CFS) |
 
 ### Processor
-**CORRECTED**: The K2 uses a DIFFERENT SoC than the K1 series.
-- **Linux SoC**: Allwinner (likely A133/T800), ARM Cortex-A53 quad-core (NOT Ingenic MIPS like K1)
-- **Evidence**: Tina Linux (Allwinner's distro), entware armv7sf installer, linux-sunxi.org lists "Creality T800" as A133 rebadge
-- **RAM**: Unconfirmed, likely 512MB-1GB
+**CONFIRMED (on device 2026-03-23, K2 Plus hostname K2Plus-50C1)**: The K2 uses a DIFFERENT SoC than the K1 series.
+- **Linux SoC**: Allwinner T113 (sun8iw20p1), dual-core ARM Cortex-A7, armv7l (32-bit only) (NOT Ingenic MIPS like K1)
+- **Evidence**: Tina Linux (Allwinner's distro), entware armv7sf installer; `/proc/cpuinfo` reports sun8iw20p1 / Cortex-A7. linux-sunxi.org lists sun8iw20 = T113. (The earlier "A133/T800 rebadge" guess was wrong — the actual SoC is T113/sun8iw20p1.)
+- **RAM**: ~488 MB total (confirmed on device)
 - **Storage**: 32 GB
 - **Motion MCU**: GD32F303RET6 (ARM Cortex-M3) - same as K1
 
@@ -289,7 +289,7 @@ uname -m
 
 # 3. SoC confirmation
 cat /proc/cpuinfo
-# Looking for: Allwinner, Cortex-A53, etc.
+# Looking for: Allwinner sun8iw20p1 / T113, Cortex-A7, etc.
 
 # 4. Libc - musl or glibc?
 ldd --version 2>&1 || ls /lib/libc.so* /lib/ld-*
