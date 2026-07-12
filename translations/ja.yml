@@ -215,8 +215,8 @@ translations:
   'BLE write failed at packet {}: {}': 'パケット {} で BLE 書き込みに失敗しました: {}'
   'BLE write failed: {}': 'BLE 書き込みに失敗しました: {}'
   BLTouch Controls: BLTouchコントロール
-  BLUETOOTH PRINTERS: BLUETOOTH PRINTERS
-  BLUETOOTH SCANNERS: BLUETOOTH SCANNERS
+  BLUETOOTH PRINTERS: Bluetooth プリンター
+  BLUETOOTH SCANNERS: Bluetooth スキャナー
   Back: 戻る
   Back to Results: 結果に戻る
   'Backtrace: {} frames': 'バックトレース: {} フレーム'
@@ -372,6 +372,7 @@ translations:
   Chamber heating to %d°C...: チャンバーを%d°Cに加熱中...
   Chamber target set to {}°C: チャンバー目標温度を{}°C に設定
   Change: 変更
+  Change Filament: フィラメント交換
   Change LED color based on printer state: プリンターの状態に応じて LED の色を変更
   Change PIN: PIN を変更
   Change Printer Host: プリンターホスト変更
@@ -597,6 +598,7 @@ translations:
   Device name: デバイス名
   Device name is required: デバイス名は必須です
   'Device: ': 'デバイス: '
+  Different filament?: 別のフィラメント？
   Disable: 無効化
   Disable Motors?: モーターを無効にしますか？
   Disable the security PIN: セキュリティ PIN を無効化
@@ -639,7 +641,7 @@ translations:
   Duplicate: 複製
   Duplicated: 複製しました
   Duration: 時間
-  E-Stop (M112): E-Stop (M112)
+  E-Stop (M112): 緊急停止 (M112)
   E-Stop Confirmation: 緊急停止の確認
   EDDY CURRENT: EDDY CURRENT
   EMERGENCY STOP: 緊急停止
@@ -1094,7 +1096,7 @@ translations:
     で HelixScreen コミュニティに参加して、ディスカッション、ヒント、トラブルシューティング支援、機能リクエストを共有しましょう。
   Just now: たった今
   KEYBOARD LAYOUT: キーボードレイアウト
-  KLICKY CONTROLS: KLICKY CONTROLS
+  KLICKY CONTROLS: Klickyコントロール
   Keep Navigation Bar: ナビゲーションバーを維持
   Keep Printing: 印刷を続行
   Keep Required: 必須を維持
@@ -1409,6 +1411,7 @@ translations:
   Not detected: 検出されません
   Not found (strobe only): 見つかりません (ストロボのみ)
   Not found (use phone app): 見つかりません (スマホアプリを使用)
+  Not in your spools? Set it up: スプールにない？登録する
   Not yet calibrated: 未キャリブレーション
   Notes: メモ
   Notes (optional): メモ（オプション）
@@ -1857,6 +1860,7 @@ translations:
   Save Z-Offset?: Z-Offset を保存しますか？
   Save changes to persist them across restarts?: 再起動後も変更を保持するために保存しますか？
   'Save failed: {}': '保存に失敗しました: {}'
+  Save to Spoolman: Spoolman に保存
   Saved Z-Offset: 保存されたZ-Offset
   Saved to crash_report.txt (QR not available): crash_report.txt に保存しました（QR 利用不可）
   Saved to printer configuration.: プリンター設定に保存しました。
@@ -2184,6 +2188,7 @@ translations:
   This file was sliced for {} but {} is loaded.: このファイルは {} 用にスライスされていますが、{} がロードされています。
   This is exactly the data that will be sent: これが送信されるデータです
   This is what data would be sent if enabled: これは有効にした場合に送信されるデータです
+  This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?: リンクされた Spoolman スプールとは異なるフィラメントのようです。Spoolman スプールを一致するように更新しますか？
   This may take up to 30 seconds: 最大30秒かかる場合があります
   ? This plugin lets HelixScreen control print start options like bed mesh and QGL.
     Once installed, use Configure PRINT_START below to enable optional steps.
@@ -2326,6 +2331,7 @@ translations:
   Update Channel: 更新チャンネル
   Update Failed: 更新失敗
   Update Success: 更新成功
+  Update anyway: それでも更新
   Update installed!: アップデートをインストールしました！
   Update your security PIN: セキュリティ PIN を更新
   Updating Configuration...: 設定を更新中...
@@ -2414,6 +2420,7 @@ translations:
   Width: 幅
   Wifi: Wi-Fi
   Wizard Error: ウィザードエラー
+  Working...: 処理中...
   Write failed at chunk {}: チャンク {} で書き込みに失敗しました
   Wrong PIN: PIN が違います
   Wrong media: 不正なメディア

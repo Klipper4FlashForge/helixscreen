@@ -363,6 +363,7 @@
   <translation tag="Chamber heating to %d°C..." es="Calentando cámara a %d°C..."/>
   <translation tag="Chamber target set to {}°C" es="Objetivo de cámara establecido en {}°C"/>
   <translation tag="Change" es="Cambiar"/>
+  <translation tag="Change Filament" es="Cambiar Filamento"/>
   <translation tag="Change LED color based on printer state" es="Cambiar color de LED según el estado de la impresora"/>
   <translation tag="Change PIN" es="Cambiar PIN"/>
   <translation tag="Change Printer Host" es="Cambiar host de impresora"/>
@@ -584,6 +585,7 @@
   <translation tag="Device name" es="Nombre del dispositivo"/>
   <translation tag="Device name is required" es="El nombre del dispositivo es requerido"/>
   <translation tag="Device: " es="Dispositivo: "/>
+  <translation tag="Different filament?" es="¿Filamento diferente?"/>
   <translation tag="Disable" es="Desactivar"/>
   <translation tag="Disable Motors?" es="¿Desactivar Motores?"/>
   <translation tag="Disable the security PIN" es="Desactivar el PIN de seguridad"/>
@@ -623,7 +625,7 @@
   <translation tag="Duplicate" es="Duplicar"/>
   <translation tag="Duplicated" es="Duplicado"/>
   <translation tag="Duration" es="Duración"/>
-  <translation tag="E-Stop (M112)" es="E-Stop (M112)"/>
+  <translation tag="E-Stop (M112)" es="Parada de emergencia (M112)"/>
   <translation tag="E-Stop Confirmation" es="Confirmación de Parada de Emergencia"/>
   <translation tag="EDDY CURRENT" es="EDDY CURRENT"/>
   <translation tag="EMERGENCY STOP" es="PARADA DE EMERGENCIA"/>
@@ -1370,6 +1372,7 @@
   <translation tag="Not detected" es="No detectado"/>
   <translation tag="Not found (strobe only)" es="No encontrado (solo estroboscópico)"/>
   <translation tag="Not found (use phone app)" es="No encontrado (usa la app del teléfono)"/>
+  <translation tag="Not in your spools? Set it up" es="¿No está en tus bobinas? Configúralo"/>
   <translation tag="Not yet calibrated" es="Aún no calibrado"/>
   <translation tag="Notes" es="Notas"/>
   <translation tag="Notes (optional)" es="Notas (opcional)"/>
@@ -1805,6 +1808,7 @@
   <translation tag="Save Z-Offset?" es="¿Guardar Z-Offset?"/>
   <translation tag="Save changes to persist them across restarts?" es="¿Guardar cambios para mantenerlos entre reinicios?"/>
   <translation tag="Save failed: {}" es="Error al guardar: {}"/>
+  <translation tag="Save to Spoolman" es="Guardar en Spoolman"/>
   <translation tag="Saved Z-Offset" es="Z-Offset guardado"/>
   <translation tag="Saved to crash_report.txt (QR not available)" es="Guardado en crash_report.txt (QR no disponible)"/>
   <translation tag="Saved to printer configuration." es="Guardado en la configuración de la impresora."/>
@@ -2109,6 +2113,7 @@
   <translation tag="This file was sliced for {} but {} is loaded." es="Este archivo fue laminado para {} pero se ha cargado {}."/>
   <translation tag="This is exactly the data that will be sent" es="Estos son exactamente los datos que se enviarán"/>
   <translation tag="This is what data would be sent if enabled" es="Estos son los datos que se enviarían si se activa"/>
+  <translation tag="This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?" es="Esto parece un filamento diferente al de la bobina de Spoolman vinculada. ¿Actualizar la bobina de Spoolman para que coincida?"/>
   <translation tag="This may take up to 30 seconds" es="Esto puede tardar hasta 30 segundos"/>
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." es="Este plugin permite que HelixScreen controle opciones de inicio de impresión como malla de cama y QGL. Una vez instalado, use Configurar PRINT_START abajo para habilitar pasos opcionales."/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" es="Esta impresión necesita aproximadamente %.0fg pero la bobina tiene aproximadamente %.0fg restantes. ¿Iniciar de todos modos?"/>
@@ -2234,6 +2239,7 @@
   <translation tag="Update Channel" es="Canal de actualización"/>
   <translation tag="Update Failed" es="Actualización fallida"/>
   <translation tag="Update Success" es="Actualización correcta"/>
+  <translation tag="Update anyway" es="Actualizar de todos modos"/>
   <translation tag="Update installed!" es="¡Actualización instalada!"/>
   <translation tag="Update your security PIN" es="Actualice su PIN de seguridad"/>
   <translation tag="Updating Configuration..." es="Actualizando configuración..."/>
@@ -2315,6 +2321,7 @@
   <translation tag="Width" es="Ancho"/>
   <translation tag="Wifi" es="Wifi"/>
   <translation tag="Wizard Error" es="Error del asistente"/>
+  <translation tag="Working..." es="Procesando..."/>
   <translation tag="Write failed at chunk {}" es="Error de escritura en el fragmento {}"/>
   <translation tag="Wrong PIN" es="PIN incorrecto"/>
   <translation tag="Wrong media" es="Medio incorrecto"/>
@@ -2370,7 +2377,7 @@
   <translation tag="Zoom" es="Zoom"/>
   <translation tag="\&quot;%s\&quot; failed to load" es="&quot;%s&quot; no se pudo cargar"/>
   <translation tag="bed" es="cama"/>
-  <translation tag="by Preston Brown" es="by Preston Brown"/>
+  <translation tag="by Preston Brown" es="por Preston Brown"/>
   <translation tag="chamber heater" es="calentador de cámara"/>
   <translation tag="complete" es="completo"/>
   <translation tag="cores" es="núcleos"/>

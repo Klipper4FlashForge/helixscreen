@@ -363,6 +363,7 @@
   <translation tag="Chamber heating to %d°C..." fr="Chauffe de la chambre à %d°C..."/>
   <translation tag="Chamber target set to {}°C" fr="Cible de chambre définie à {}°C"/>
   <translation tag="Change" fr="Modifier"/>
+  <translation tag="Change Filament" fr="Changer le filament"/>
   <translation tag="Change LED color based on printer state" fr="Changer la couleur LED selon l&apos;état de l&apos;imprimante"/>
   <translation tag="Change PIN" fr="Changer le PIN"/>
   <translation tag="Change Printer Host" fr="Changer l&apos;hôte de l&apos;imprimante"/>
@@ -584,6 +585,7 @@
   <translation tag="Device name" fr="Nom de lappareil"/>
   <translation tag="Device name is required" fr="Le nom de l&apos;appareil est requis"/>
   <translation tag="Device: " fr="Appareil : "/>
+  <translation tag="Different filament?" fr="Filament différent ?"/>
   <translation tag="Disable" fr="Désactiver"/>
   <translation tag="Disable Motors?" fr="Désactiver les moteurs ?"/>
   <translation tag="Disable the security PIN" fr="Désactiver le PIN de sécurité"/>
@@ -623,7 +625,7 @@
   <translation tag="Duplicate" fr="Dupliquer"/>
   <translation tag="Duplicated" fr="Dupliqué"/>
   <translation tag="Duration" fr="Durée"/>
-  <translation tag="E-Stop (M112)" fr="E-Stop (M112)"/>
+  <translation tag="E-Stop (M112)" fr="Arrêt d&apos;urgence (M112)"/>
   <translation tag="E-Stop Confirmation" fr="Confirmation arrêt d&apos;urgence"/>
   <translation tag="EDDY CURRENT" fr="EDDY CURRENT"/>
   <translation tag="EMERGENCY STOP" fr="ARRÊT D&apos;URGENCE"/>
@@ -1370,6 +1372,7 @@
   <translation tag="Not detected" fr="Non détecté"/>
   <translation tag="Not found (strobe only)" fr="Introuvable (stroboscope uniquement)"/>
   <translation tag="Not found (use phone app)" fr="Introuvable (utilisez lapplication mobile)"/>
+  <translation tag="Not in your spools? Set it up" fr="Pas dans vos bobines ? Configurez-la"/>
   <translation tag="Not yet calibrated" fr="Pas encore calibré"/>
   <translation tag="Notes" fr="Notes"/>
   <translation tag="Notes (optional)" fr="Notes (facultatif)"/>
@@ -1805,6 +1808,7 @@
   <translation tag="Save Z-Offset?" fr="Enregistrer le Z-Offset ?"/>
   <translation tag="Save changes to persist them across restarts?" fr="Enregistrer les modifications pour les conserver après redémarrage ?"/>
   <translation tag="Save failed: {}" fr="Échec de l&apos;enregistrement : {}"/>
+  <translation tag="Save to Spoolman" fr="Enregistrer dans Spoolman"/>
   <translation tag="Saved Z-Offset" fr="Z-Offset enregistré"/>
   <translation tag="Saved to crash_report.txt (QR not available)" fr="Enregistré dans crash_report.txt (QR non disponible)"/>
   <translation tag="Saved to printer configuration." fr="Enregistré dans la configuration de l&apos;imprimante."/>
@@ -2109,6 +2113,7 @@
   <translation tag="This file was sliced for {} but {} is loaded." fr="Ce fichier a été tranché pour {} mais {} est chargé."/>
   <translation tag="This is exactly the data that will be sent" fr="Voici exactement les données qui seront envoyées"/>
   <translation tag="This is what data would be sent if enabled" fr="Voici les données qui seraient envoyées si activé"/>
+  <translation tag="This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?" fr="Ce filament semble différent de la bobine Spoolman liée. Mettre à jour la bobine Spoolman pour correspondre ?"/>
   <translation tag="This may take up to 30 seconds" fr="Cela peut prendre jusqu&apos;à 30 secondes"/>
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." fr="Ce plugin permet à HelixScreen de contrôler les options de démarrage d&apos;impression comme le maillage du plateau et QGL. Une fois installé, utilisez Configurer PRINT_START ci-dessous pour activer les étapes optionnelles."/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" fr="Cette impression nécessite environ %.0fg mais il reste environ %.0fg sur la bobine. Démarrer quand même ?"/>
@@ -2234,6 +2239,7 @@
   <translation tag="Update Channel" fr="Canal de mise à jour"/>
   <translation tag="Update Failed" fr="Mise à jour échouée"/>
   <translation tag="Update Success" fr="Mise à jour réussie"/>
+  <translation tag="Update anyway" fr="Mettre à jour quand même"/>
   <translation tag="Update installed!" fr="Mise à jour installée !"/>
   <translation tag="Update your security PIN" fr="Mettez à jour votre PIN de sécurité"/>
   <translation tag="Updating Configuration..." fr="Mise à jour de la configuration..."/>
@@ -2315,6 +2321,7 @@
   <translation tag="Width" fr="Largeur"/>
   <translation tag="Wifi" fr="Wi-Fi"/>
   <translation tag="Wizard Error" fr="Erreur de l&apos;assistant"/>
+  <translation tag="Working..." fr="En cours..."/>
   <translation tag="Write failed at chunk {}" fr="Échec de lécriture au bloc {}"/>
   <translation tag="Wrong PIN" fr="PIN incorrect"/>
   <translation tag="Wrong media" fr="Mauvais média"/>
@@ -2370,7 +2377,7 @@
   <translation tag="Zoom" fr="Zoom"/>
   <translation tag="\&quot;%s\&quot; failed to load" fr="\&quot;%s\&quot; na pas pu se charger"/>
   <translation tag="bed" fr="plateau"/>
-  <translation tag="by Preston Brown" fr="by Preston Brown"/>
+  <translation tag="by Preston Brown" fr="par Preston Brown"/>
   <translation tag="chamber heater" fr="chauffage du caisson"/>
   <translation tag="complete" fr="terminé"/>
   <translation tag="cores" fr="cœurs"/>

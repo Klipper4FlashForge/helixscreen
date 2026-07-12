@@ -205,7 +205,7 @@
   <translation tag="Available networks" ru="Доступные сети"/>
   <translation tag="Average" ru="Среднее"/>
   <translation tag="BEACON" ru="BEACON"/>
-  <translation tag="BETA" ru="BETA"/>
+  <translation tag="BETA" ru="БЕТА"/>
   <translation tag="BLE connect failed: {}" ru="Не удалось подключиться по BLE: {}"/>
   <translation tag="BLE write failed at packet {}: {}" ru="Не удалось записать по BLE в пакете {}: {}"/>
   <translation tag="BLE write failed: {}" ru="Не удалось записать по BLE: {}"/>
@@ -363,6 +363,7 @@
   <translation tag="Chamber heating to %d°C..." ru="Нагрев камеры до %d°C..."/>
   <translation tag="Chamber target set to {}°C" ru="Целевая температура камеры установлена на {}°C"/>
   <translation tag="Change" ru="Изменить"/>
+  <translation tag="Change Filament" ru="Сменить филамент"/>
   <translation tag="Change LED color based on printer state" ru="Менять цвет LED в зависимости от состояния принтера"/>
   <translation tag="Change PIN" ru="Изменить PIN"/>
   <translation tag="Change Printer Host" ru="Изменить хост принтера"/>
@@ -584,6 +585,7 @@
   <translation tag="Device name" ru="Имя устройства"/>
   <translation tag="Device name is required" ru="Требуется название устройства"/>
   <translation tag="Device: " ru="Устройство: "/>
+  <translation tag="Different filament?" ru="Другой филамент?"/>
   <translation tag="Disable" ru="Отключить"/>
   <translation tag="Disable Motors?" ru="Отключить моторы?"/>
   <translation tag="Disable the security PIN" ru="Отключить PIN-код"/>
@@ -623,7 +625,7 @@
   <translation tag="Duplicate" ru="Дублировать"/>
   <translation tag="Duplicated" ru="Дублировано"/>
   <translation tag="Duration" ru="Длительность"/>
-  <translation tag="E-Stop (M112)" ru="E-Stop (M112)"/>
+  <translation tag="E-Stop (M112)" ru="Авар. стоп (M112)"/>
   <translation tag="E-Stop Confirmation" ru="Подтверждение аварийной остановки"/>
   <translation tag="EDDY CURRENT" ru="EDDY CURRENT"/>
   <translation tag="EMERGENCY STOP" ru="АВАРИЙНАЯ ОСТАНОВКА"/>
@@ -1370,6 +1372,7 @@
   <translation tag="Not detected" ru="Не обнаружено"/>
   <translation tag="Not found (strobe only)" ru="Не найдено (только стробоскоп)"/>
   <translation tag="Not found (use phone app)" ru="Не найдено (используйте приложение на телефоне)"/>
+  <translation tag="Not in your spools? Set it up" ru="Нет в ваших катушках? Настроить"/>
   <translation tag="Not yet calibrated" ru="Ещё не откалибровано"/>
   <translation tag="Notes" ru="Заметки"/>
   <translation tag="Notes (optional)" ru="Заметки (необязательно)"/>
@@ -1492,7 +1495,7 @@
   <translation tag="Placed" ru="Добавлено"/>
   <translation tag="Platform" ru="Платформа"/>
   <translation tag="Platform: " ru="Платформа: "/>
-  <translation tag="Play / stop Crockett&apos;s Theme" ru="Play / stop Crockett&apos;s Theme"/>
+  <translation tag="Play / stop Crockett&apos;s Theme" ru="Воспроизвести / остановить «Crockett&apos;s Theme»"/>
   <translation tag="Please enter a theme name" ru="Введите название темы"/>
   <translation tag="Please enter a valid port (1-65535)." ru="Введите корректный порт (1-65535)."/>
   <translation tag="Please enter an IP address or hostname." ru="Введите IP-адрес или имя хоста."/>
@@ -1805,6 +1808,7 @@
   <translation tag="Save Z-Offset?" ru="Сохранить Z-Offset?"/>
   <translation tag="Save changes to persist them across restarts?" ru="Сохранить изменения, чтобы они сохранились после перезапуска?"/>
   <translation tag="Save failed: {}" ru="Ошибка сохранения: {}"/>
+  <translation tag="Save to Spoolman" ru="Сохранить в Spoolman"/>
   <translation tag="Saved Z-Offset" ru="Сохранённый Z-Offset"/>
   <translation tag="Saved to crash_report.txt (QR not available)" ru="Сохранено в crash_report.txt (QR недоступен)"/>
   <translation tag="Saved to printer configuration." ru="Сохранено в конфигурацию принтера."/>
@@ -1979,7 +1983,7 @@
   <translation tag="Spoolman unavailable — filament weights may be stale" ru="Spoolman недоступен — вес филамента может быть устаревшим"/>
   <translation tag="Spoolman: %zu Spool%s" ru="Spoolman: %zu катушк%s"/>
   <translation tag="Spoolman: %zu/%zu Spool%s" ru="Spoolman: %zu/%zu катушк%s"/>
-  <translation tag="Square Corner Velocity" ru="Square Corner Velocity"/>
+  <translation tag="Square Corner Velocity" ru="Скорость прохождения углов"/>
   <translation tag="Stable" ru="Стабильная"/>
   <translation tag="Stable\nBeta\nDev" ru="Стабильная\nБета\nDev"/>
   <translation tag="Standard" ru="Стандартный"/>
@@ -2109,6 +2113,7 @@
   <translation tag="This file was sliced for {} but {} is loaded." ru="Файл нарезан для {}, но загружен {}."/>
   <translation tag="This is exactly the data that will be sent" ru="Это именно те данные, которые будут отправлены"/>
   <translation tag="This is what data would be sent if enabled" ru="Эти данные были бы отправлены при включении"/>
+  <translation tag="This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?" ru="Похоже, это другой филамент, чем у привязанной катушки Spoolman. Обновить катушку Spoolman в соответствии?"/>
   <translation tag="This may take up to 30 seconds" ru="Это может занять до 30 секунд"/>
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." ru="Этот плагин позволяет HelixScreen управлять опциями начала печати, такими как сетка стола и QGL. После установки используйте «Настроить PRINT_START» ниже для включения опциональных шагов."/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" ru="Для этой печати нужно около %.0fг, но на катушке осталось около %.0fг. Всё равно начать?"/>
@@ -2234,6 +2239,7 @@
   <translation tag="Update Channel" ru="Канал обновлений"/>
   <translation tag="Update Failed" ru="Ошибка обновления"/>
   <translation tag="Update Success" ru="Обновление успешно"/>
+  <translation tag="Update anyway" ru="Всё равно обновить"/>
   <translation tag="Update installed!" ru="Обновление установлено!"/>
   <translation tag="Update your security PIN" ru="Обновите ваш PIN-код"/>
   <translation tag="Updating Configuration..." ru="Обновление конфигурации..."/>
@@ -2315,6 +2321,7 @@
   <translation tag="Width" ru="Ширина"/>
   <translation tag="Wifi" ru="Wi-Fi"/>
   <translation tag="Wizard Error" ru="Ошибка мастера"/>
+  <translation tag="Working..." ru="Выполнение..."/>
   <translation tag="Write failed at chunk {}" ru="Не удалось записать в блоке {}"/>
   <translation tag="Wrong PIN" ru="Неверный PIN"/>
   <translation tag="Wrong media" ru="Неверный носитель"/>
@@ -2370,7 +2377,7 @@
   <translation tag="Zoom" ru="Масштаб"/>
   <translation tag="\&quot;%s\&quot; failed to load" ru="Не удалось загрузить «%s»"/>
   <translation tag="bed" ru="стол"/>
-  <translation tag="by Preston Brown" ru="by Preston Brown"/>
+  <translation tag="by Preston Brown" ru="от Preston Brown"/>
   <translation tag="chamber heater" ru="нагреватель камеры"/>
   <translation tag="complete" ru="завершено"/>
   <translation tag="cores" ru="ядер"/>

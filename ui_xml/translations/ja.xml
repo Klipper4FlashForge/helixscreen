@@ -210,8 +210,8 @@
   <translation tag="BLE write failed at packet {}: {}" ja="パケット {} で BLE 書き込みに失敗しました: {}"/>
   <translation tag="BLE write failed: {}" ja="BLE 書き込みに失敗しました: {}"/>
   <translation tag="BLTouch Controls" ja="BLTouchコントロール"/>
-  <translation tag="BLUETOOTH PRINTERS" ja="BLUETOOTH PRINTERS"/>
-  <translation tag="BLUETOOTH SCANNERS" ja="BLUETOOTH SCANNERS"/>
+  <translation tag="BLUETOOTH PRINTERS" ja="Bluetooth プリンター"/>
+  <translation tag="BLUETOOTH SCANNERS" ja="Bluetooth スキャナー"/>
   <translation tag="Back" ja="戻る"/>
   <translation tag="Back to Results" ja="結果に戻る"/>
   <translation tag="Backtrace: {} frames" ja="バックトレース: {} フレーム"/>
@@ -363,6 +363,7 @@
   <translation tag="Chamber heating to %d°C..." ja="チャンバーを%d°Cに加熱中..."/>
   <translation tag="Chamber target set to {}°C" ja="チャンバー目標温度を{}°C に設定"/>
   <translation tag="Change" ja="変更"/>
+  <translation tag="Change Filament" ja="フィラメント交換"/>
   <translation tag="Change LED color based on printer state" ja="プリンターの状態に応じて LED の色を変更"/>
   <translation tag="Change PIN" ja="PIN を変更"/>
   <translation tag="Change Printer Host" ja="プリンターホスト変更"/>
@@ -584,6 +585,7 @@
   <translation tag="Device name" ja="デバイス名"/>
   <translation tag="Device name is required" ja="デバイス名は必須です"/>
   <translation tag="Device: " ja="デバイス: "/>
+  <translation tag="Different filament?" ja="別のフィラメント？"/>
   <translation tag="Disable" ja="無効化"/>
   <translation tag="Disable Motors?" ja="モーターを無効にしますか？"/>
   <translation tag="Disable the security PIN" ja="セキュリティ PIN を無効化"/>
@@ -623,7 +625,7 @@
   <translation tag="Duplicate" ja="複製"/>
   <translation tag="Duplicated" ja="複製しました"/>
   <translation tag="Duration" ja="時間"/>
-  <translation tag="E-Stop (M112)" ja="E-Stop (M112)"/>
+  <translation tag="E-Stop (M112)" ja="緊急停止 (M112)"/>
   <translation tag="E-Stop Confirmation" ja="緊急停止の確認"/>
   <translation tag="EDDY CURRENT" ja="EDDY CURRENT"/>
   <translation tag="EMERGENCY STOP" ja="緊急停止"/>
@@ -1065,7 +1067,7 @@
   <translation tag="Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests." ja="Discord で HelixScreen コミュニティに参加して、ディスカッション、ヒント、トラブルシューティング支援、機能リクエストを共有しましょう。"/>
   <translation tag="Just now" ja="たった今"/>
   <translation tag="KEYBOARD LAYOUT" ja="キーボードレイアウト"/>
-  <translation tag="KLICKY CONTROLS" ja="KLICKY CONTROLS"/>
+  <translation tag="KLICKY CONTROLS" ja="Klickyコントロール"/>
   <translation tag="Keep Navigation Bar" ja="ナビゲーションバーを維持"/>
   <translation tag="Keep Printing" ja="印刷を続行"/>
   <translation tag="Keep Required" ja="必須を維持"/>
@@ -1370,6 +1372,7 @@
   <translation tag="Not detected" ja="検出されません"/>
   <translation tag="Not found (strobe only)" ja="見つかりません (ストロボのみ)"/>
   <translation tag="Not found (use phone app)" ja="見つかりません (スマホアプリを使用)"/>
+  <translation tag="Not in your spools? Set it up" ja="スプールにない？登録する"/>
   <translation tag="Not yet calibrated" ja="未キャリブレーション"/>
   <translation tag="Notes" ja="メモ"/>
   <translation tag="Notes (optional)" ja="メモ（オプション）"/>
@@ -1805,6 +1808,7 @@
   <translation tag="Save Z-Offset?" ja="Z-Offset を保存しますか？"/>
   <translation tag="Save changes to persist them across restarts?" ja="再起動後も変更を保持するために保存しますか？"/>
   <translation tag="Save failed: {}" ja="保存に失敗しました: {}"/>
+  <translation tag="Save to Spoolman" ja="Spoolman に保存"/>
   <translation tag="Saved Z-Offset" ja="保存されたZ-Offset"/>
   <translation tag="Saved to crash_report.txt (QR not available)" ja="crash_report.txt に保存しました（QR 利用不可）"/>
   <translation tag="Saved to printer configuration." ja="プリンター設定に保存しました。"/>
@@ -2109,6 +2113,7 @@
   <translation tag="This file was sliced for {} but {} is loaded." ja="このファイルは {} 用にスライスされていますが、{} がロードされています。"/>
   <translation tag="This is exactly the data that will be sent" ja="これが送信されるデータです"/>
   <translation tag="This is what data would be sent if enabled" ja="これは有効にした場合に送信されるデータです"/>
+  <translation tag="This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?" ja="リンクされた Spoolman スプールとは異なるフィラメントのようです。Spoolman スプールを一致するように更新しますか？"/>
   <translation tag="This may take up to 30 seconds" ja="最大30秒かかる場合があります"/>
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." ja="このプラグインにより、HelixScreen がベッドメッシュや QGL などの印刷開始オプションを制御できます。インストール後、以下の「PRINT_START を設定」を使用してオプションの手順を有効にしてください。"/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" ja="この印刷には約 %.0fg 必要ですが、スプールの残量は約 %.0fg です。それでも開始しますか？"/>
@@ -2234,6 +2239,7 @@
   <translation tag="Update Channel" ja="更新チャンネル"/>
   <translation tag="Update Failed" ja="更新失敗"/>
   <translation tag="Update Success" ja="更新成功"/>
+  <translation tag="Update anyway" ja="それでも更新"/>
   <translation tag="Update installed!" ja="アップデートをインストールしました！"/>
   <translation tag="Update your security PIN" ja="セキュリティ PIN を更新"/>
   <translation tag="Updating Configuration..." ja="設定を更新中..."/>
@@ -2315,6 +2321,7 @@
   <translation tag="Width" ja="幅"/>
   <translation tag="Wifi" ja="Wi-Fi"/>
   <translation tag="Wizard Error" ja="ウィザードエラー"/>
+  <translation tag="Working..." ja="処理中..."/>
   <translation tag="Write failed at chunk {}" ja="チャンク {} で書き込みに失敗しました"/>
   <translation tag="Wrong PIN" ja="PIN が違います"/>
   <translation tag="Wrong media" ja="不正なメディア"/>

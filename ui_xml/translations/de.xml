@@ -363,6 +363,7 @@
   <translation tag="Chamber heating to %d°C..." de="Kammer heizt auf %d°C auf..."/>
   <translation tag="Chamber target set to {}°C" de="Kammer-Ziel auf {}°C gesetzt"/>
   <translation tag="Change" de="Ändern"/>
+  <translation tag="Change Filament" de="Filament wechseln"/>
   <translation tag="Change LED color based on printer state" de="LED-Farbe basierend auf Druckerstatus ändern"/>
   <translation tag="Change PIN" de="PIN ändern"/>
   <translation tag="Change Printer Host" de="Drucker-Host ändern"/>
@@ -584,6 +585,7 @@
   <translation tag="Device name" de="Gerätename"/>
   <translation tag="Device name is required" de="Gerätename ist erforderlich"/>
   <translation tag="Device: " de="Gerät: "/>
+  <translation tag="Different filament?" de="Anderes Filament?"/>
   <translation tag="Disable" de="Deaktivieren"/>
   <translation tag="Disable Motors?" de="Motoren deaktivieren?"/>
   <translation tag="Disable the security PIN" de="Sicherheits-PIN deaktivieren"/>
@@ -623,7 +625,7 @@
   <translation tag="Duplicate" de="Duplizieren"/>
   <translation tag="Duplicated" de="Dupliziert"/>
   <translation tag="Duration" de="Dauer"/>
-  <translation tag="E-Stop (M112)" de="E-Stop (M112)"/>
+  <translation tag="E-Stop (M112)" de="Notaus (M112)"/>
   <translation tag="E-Stop Confirmation" de="Notaus-Bestätigung"/>
   <translation tag="EDDY CURRENT" de="EDDY CURRENT"/>
   <translation tag="EMERGENCY STOP" de="NOTAUS"/>
@@ -1370,6 +1372,7 @@
   <translation tag="Not detected" de="Nicht erkannt"/>
   <translation tag="Not found (strobe only)" de="Nicht gefunden (nur Stroboskop)"/>
   <translation tag="Not found (use phone app)" de="Nicht gefunden (Telefon-App verwenden)"/>
+  <translation tag="Not in your spools? Set it up" de="Nicht in Ihren Spulen? Einrichten"/>
   <translation tag="Not yet calibrated" de="Noch nicht kalibriert"/>
   <translation tag="Notes" de="Notizen"/>
   <translation tag="Notes (optional)" de="Notizen (optional)"/>
@@ -1805,6 +1808,7 @@
   <translation tag="Save Z-Offset?" de="Z-Offset speichern?"/>
   <translation tag="Save changes to persist them across restarts?" de="Änderungen speichern, um sie über Neustarts hinweg zu erhalten?"/>
   <translation tag="Save failed: {}" de="Speichern fehlgeschlagen: {}"/>
+  <translation tag="Save to Spoolman" de="In Spoolman speichern"/>
   <translation tag="Saved Z-Offset" de="Gespeicherter Z-Offset"/>
   <translation tag="Saved to crash_report.txt (QR not available)" de="In crash_report.txt gespeichert (QR nicht verfügbar)"/>
   <translation tag="Saved to printer configuration." de="In Druckerkonfiguration gespeichert."/>
@@ -2109,6 +2113,7 @@
   <translation tag="This file was sliced for {} but {} is loaded." de="Diese Datei wurde für {} gesliced, aber {} ist geladen."/>
   <translation tag="This is exactly the data that will be sent" de="Dies sind genau die Daten, die gesendet werden"/>
   <translation tag="This is what data would be sent if enabled" de="Diese Daten würden bei Aktivierung gesendet"/>
+  <translation tag="This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?" de="Dies scheint ein anderes Filament als die verknüpfte Spoolman-Spule zu sein. Spoolman-Spule entsprechend aktualisieren?"/>
   <translation tag="This may take up to 30 seconds" de="Dies kann bis zu 30 Sekunden dauern"/>
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." de="Dieses Plugin ermöglicht HelixScreen die Steuerung von Druckstartoptionen wie Bettnetz und QGL. Nach der Installation verwenden Sie PRINT_START konfigurieren unten, um optionale Schritte zu aktivieren."/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" de="Dieser Druck benötigt etwa %.0fg, aber die Spule hat noch etwa %.0fg übrig. Trotzdem starten?"/>
@@ -2234,6 +2239,7 @@
   <translation tag="Update Channel" de="Update-Kanal"/>
   <translation tag="Update Failed" de="Update fehlgeschlagen"/>
   <translation tag="Update Success" de="Update erfolgreich"/>
+  <translation tag="Update anyway" de="Trotzdem aktualisieren"/>
   <translation tag="Update installed!" de="Update installiert!"/>
   <translation tag="Update your security PIN" de="Sicherheits-PIN aktualisieren"/>
   <translation tag="Updating Configuration..." de="Konfiguration wird aktualisiert..."/>
@@ -2315,6 +2321,7 @@
   <translation tag="Width" de="Breite"/>
   <translation tag="Wifi" de="WLAN"/>
   <translation tag="Wizard Error" de="Assistentenfehler"/>
+  <translation tag="Working..." de="Wird verarbeitet..."/>
   <translation tag="Write failed at chunk {}" de="Schreibvorgang bei Block {} fehlgeschlagen"/>
   <translation tag="Wrong PIN" de="Falsche PIN"/>
   <translation tag="Wrong media" de="Falsches Medium"/>

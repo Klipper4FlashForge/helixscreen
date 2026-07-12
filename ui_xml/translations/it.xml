@@ -185,7 +185,7 @@
   <translation tag="Authentication failed" it="Autenticazione fallita"/>
   <translation tag="Auto" it="Auto"/>
   <translation tag="Auto Bed Mesh" it="Mesh piano automatica"/>
-  <translation tag="Auto Cal" it="Auto Cal"/>
+  <translation tag="Auto Cal" it="Cal. auto"/>
   <translation tag="Auto-Detect" it="Rilevamento auto"/>
   <translation tag="Auto-Heat on Load" it="Riscaldamento automatico al caricamento"/>
   <translation tag="Auto-detect" it="Rilevamento auto"/>
@@ -289,7 +289,7 @@
   <translation tag="Bypass toggle failed: {}" it="Cambio bypass fallito: {}"/>
   <translation tag="C" it="C"/>
   <translation tag="CALIBRATION" it="CALIBRAZIONE"/>
-  <translation tag="CAPABILITIES" it="CAPABILITIES"/>
+  <translation tag="CAPABILITIES" it="FUNZIONALITÀ"/>
   <translation tag="CARTOGRAPHER" it="CARTOGRAPHER"/>
   <translation tag="CHANGED FROM LAST SESSION" it="MODIFICATO DALLA SESSIONE PRECEDENTE"/>
   <translation tag="COLOR SENSORS" it="SENSORI DI COLORE"/>
@@ -363,6 +363,7 @@
   <translation tag="Chamber heating to %d°C..." it="Riscaldamento camera a %d°C..."/>
   <translation tag="Chamber target set to {}°C" it="Target camera impostato a {}°C"/>
   <translation tag="Change" it="Cambia"/>
+  <translation tag="Change Filament" it="Cambia filamento"/>
   <translation tag="Change LED color based on printer state" it="Cambia colore LED in base allo stato della stampante"/>
   <translation tag="Change PIN" it="Cambia PIN"/>
   <translation tag="Change Printer Host" it="Cambia Host Stampante"/>
@@ -584,6 +585,7 @@
   <translation tag="Device name" it="Nome dispositivo"/>
   <translation tag="Device name is required" it="Il nome dispositivo è obbligatorio"/>
   <translation tag="Device: " it="Dispositivo: "/>
+  <translation tag="Different filament?" it="Filamento diverso?"/>
   <translation tag="Disable" it="Disabilita"/>
   <translation tag="Disable Motors?" it="Disabilitare motori?"/>
   <translation tag="Disable the security PIN" it="Disabilita il PIN di sicurezza"/>
@@ -614,7 +616,7 @@
   <translation tag="Downloading..." it="Download in corso..."/>
   <translation tag="Downloading... {:.1f}/{:.1f} MB" it="Download in corso... {:.1f}/{:.1f} MB"/>
   <translation tag="Draw a ripple at each touch — helps diagnose offsets" it="Disegna un&apos;onda a ogni tocco — aiuta a diagnosticare gli scostamenti"/>
-  <translation tag="Drive Cal" it="Drive Cal"/>
+  <translation tag="Drive Cal" it="Cal. drive"/>
   <translation tag="Drop shadow strength (0 = disabled)" it="Intensità ombra (0 = disabilitata)"/>
   <translation tag="Dryer Controls" it="Controlli essiccatore"/>
   <translation tag="Drying" it="Essiccazione"/>
@@ -623,7 +625,7 @@
   <translation tag="Duplicate" it="Duplica"/>
   <translation tag="Duplicated" it="Duplicato"/>
   <translation tag="Duration" it="Durata"/>
-  <translation tag="E-Stop (M112)" it="E-Stop (M112)"/>
+  <translation tag="E-Stop (M112)" it="Arresto emergenza (M112)"/>
   <translation tag="E-Stop Confirmation" it="Conferma arresto emergenza"/>
   <translation tag="EDDY CURRENT" it="EDDY CURRENT"/>
   <translation tag="EMERGENCY STOP" it="ARRESTO EMERGENZA"/>
@@ -1109,7 +1111,7 @@
   <translation tag="Layer Height" it="Altezza layer"/>
   <translation tag="Layer Macro captures one frame per layer change. Best for most prints." it="Layer Macro cattura un fotogramma per ogni cambio di strato. Ideale per la maggior parte delle stampe."/>
   <translation tag="Layer mode captures one frame per layer change. Best for most prints." it="La modalità layer cattura un fotogramma per cambio layer. Ideale per la maggior parte delle stampe."/>
-  <translation tag="Layer:" it="Layer:"/>
+  <translation tag="Layer:" it="Strato:"/>
   <translation tag="Layers" it="Layer"/>
   <translation tag="Layout" it="Layout"/>
   <translation tag="Learn More" it="Scopri di più"/>
@@ -1370,6 +1372,7 @@
   <translation tag="Not detected" it="Non rilevato"/>
   <translation tag="Not found (strobe only)" it="Non trovato (solo stroboscopio)"/>
   <translation tag="Not found (use phone app)" it="Non trovato (usa l’app del telefono)"/>
+  <translation tag="Not in your spools? Set it up" it="Non è tra le tue bobine? Configuralo"/>
   <translation tag="Not yet calibrated" it="Non ancora calibrato"/>
   <translation tag="Notes" it="Note"/>
   <translation tag="Notes (optional)" it="Note (facoltativo)"/>
@@ -1404,7 +1407,7 @@
   <translation tag="Objects" it="Oggetti"/>
   <translation tag="Off" it="Off"/>
   <translation tag="Off:" it="Off:"/>
-  <translation tag="Off\nFlying Toasters\nStarfield\n3D Pipes" it="Off\nFlying Toasters\nStarfield\n3D Pipes"/>
+  <translation tag="Off\nFlying Toasters\nStarfield\n3D Pipes" it="Off\nTostapane volanti\nCampo stellare\nTubi 3D"/>
   <translation tag="On" it="On"/>
   <translation tag="On and Off macros must be different" it="Le macro On e Off devono essere diverse"/>
   <translation tag="On/Off" it="On/Off"/>
@@ -1492,7 +1495,7 @@
   <translation tag="Placed" it="Inserito"/>
   <translation tag="Platform" it="Piattaforma"/>
   <translation tag="Platform: " it="Piattaforma: "/>
-  <translation tag="Play / stop Crockett&apos;s Theme" it="Play / stop Crockett&apos;s Theme"/>
+  <translation tag="Play / stop Crockett&apos;s Theme" it="Riproduci / ferma Crockett&apos;s Theme"/>
   <translation tag="Please enter a theme name" it="Inserire un nome per il tema"/>
   <translation tag="Please enter a valid port (1-65535)." it="Inserire una porta valida (1-65535)."/>
   <translation tag="Please enter an IP address or hostname." it="Inserire un indirizzo IP o hostname."/>
@@ -1805,6 +1808,7 @@
   <translation tag="Save Z-Offset?" it="Salvare Z-Offset?"/>
   <translation tag="Save changes to persist them across restarts?" it="Salvare le modifiche per mantenerle dopo i riavvii?"/>
   <translation tag="Save failed: {}" it="Salvataggio fallito: {}"/>
+  <translation tag="Save to Spoolman" it="Salva su Spoolman"/>
   <translation tag="Saved Z-Offset" it="Z-Offset Salvato"/>
   <translation tag="Saved to crash_report.txt (QR not available)" it="Salvato in crash_report.txt (QR non disponibile)"/>
   <translation tag="Saved to printer configuration." it="Salvato nella configurazione stampante."/>
@@ -1814,7 +1818,7 @@
   <translation tag="Saving config... Klipper will restart." it="Salvataggio config... Klipper si riavvierà."/>
   <translation tag="Saving will restart Klipper and CANCEL any active print!" it="Il salvataggio riavvierà Klipper e ANNULLERÀ qualsiasi stampa attiva!"/>
   <translation tag="Scan" it="Scansiona"/>
-  <translation tag="Scan Cal" it="Scan Cal"/>
+  <translation tag="Scan Cal" it="Cal. scan"/>
   <translation tag="Scan QR Code" it="Scansiona codice QR"/>
   <translation tag="Scan Spool QR Code" it="Scansiona codice QR bobina"/>
   <translation tag="Scan and select a Bluetooth printer first" it="Prima scansiona e seleziona una stampante Bluetooth"/>
@@ -1981,7 +1985,7 @@
   <translation tag="Spoolman: %zu/%zu Spool%s" it="Spoolman: %zu/%zu bobina%s"/>
   <translation tag="Square Corner Velocity" it="Velocità angoli retti"/>
   <translation tag="Stable" it="Stabile"/>
-  <translation tag="Stable\nBeta\nDev" it="Stable\nBeta\nDev"/>
+  <translation tag="Stable\nBeta\nDev" it="Stabile\nBeta\nDev"/>
   <translation tag="Standard" it="Standard"/>
   <translation tag="Standby" it="Standby"/>
   <translation tag="Starfield" it="Campo stellare"/>
@@ -2047,7 +2051,7 @@
   <translation tag="TEMPERATURE SENSORS" it="SENSORI DI TEMPERATURA"/>
   <translation tag="THEME COLORS" it="COLORI TEMA"/>
   <translation tag="TOGGLE: {}" it="COMMUTA: {}"/>
-  <translation tag="TOOLS" it="TOOLS"/>
+  <translation tag="TOOLS" it="STRUMENTI"/>
   <translation tag="TPU" it="TPU"/>
   <translation tag="Takes 3-5 min. Do not interrupt." it="Richiede 3-5 min. Non interrompere."/>
   <translation tag="Tap + to add" it="Tocca + per aggiungere"/>
@@ -2109,6 +2113,7 @@
   <translation tag="This file was sliced for {} but {} is loaded." it="Questo file è stato sezionato per {} ma è caricato {}."/>
   <translation tag="This is exactly the data that will be sent" it="Questi sono esattamente i dati che verranno inviati"/>
   <translation tag="This is what data would be sent if enabled" it="Questi sono i dati che verrebbero inviati se abilitato"/>
+  <translation tag="This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?" it="Questo sembra un filamento diverso dalla bobina Spoolman collegata. Aggiornare la bobina Spoolman per farla corrispondere?"/>
   <translation tag="This may take up to 30 seconds" it="Questo potrebbe richiedere fino a 30 secondi"/>
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." it="Questo plugin permette a HelixScreen di controllare opzioni avvio stampa come mesh piano e QGL. Una volta installato, usa Configura PRINT_START sotto per abilitare i passaggi opzionali."/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" it="Questa stampa richiede circa %.0fg ma la bobina ne ha circa %.0fg rimanenti. Avviare comunque?"/>
@@ -2234,6 +2239,7 @@
   <translation tag="Update Channel" it="Canale Aggiornamenti"/>
   <translation tag="Update Failed" it="Aggiornamento Fallito"/>
   <translation tag="Update Success" it="Aggiornamento riuscito"/>
+  <translation tag="Update anyway" it="Aggiorna comunque"/>
   <translation tag="Update installed!" it="Aggiornamento installato!"/>
   <translation tag="Update your security PIN" it="Aggiorna il tuo PIN di sicurezza"/>
   <translation tag="Updating Configuration..." it="Aggiornamento configurazione..."/>
@@ -2315,6 +2321,7 @@
   <translation tag="Width" it="Larghezza"/>
   <translation tag="Wifi" it="Wi-Fi"/>
   <translation tag="Wizard Error" it="Errore procedura guidata"/>
+  <translation tag="Working..." it="Elaborazione..."/>
   <translation tag="Write failed at chunk {}" it="Scrittura fallita al chunk {}"/>
   <translation tag="Wrong PIN" it="PIN errato"/>
   <translation tag="Wrong media" it="Supporto errato"/>
@@ -2370,7 +2377,7 @@
   <translation tag="Zoom" it="Zoom"/>
   <translation tag="\&quot;%s\&quot; failed to load" it="Caricamento di \&quot;%s\&quot; non riuscito"/>
   <translation tag="bed" it="piano"/>
-  <translation tag="by Preston Brown" it="by Preston Brown"/>
+  <translation tag="by Preston Brown" it="di Preston Brown"/>
   <translation tag="chamber heater" it="riscaldatore camera"/>
   <translation tag="complete" it="completato"/>
   <translation tag="cores" it="core"/>

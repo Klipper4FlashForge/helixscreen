@@ -422,6 +422,7 @@ translations:
   Chamber heating to %d°C...: Calentando cámara a %d°C...
   Chamber target set to {}°C: Objetivo de cámara establecido en {}°C
   Change: Cambiar
+  Change Filament: Cambiar Filamento
   Change LED color based on printer state: Cambiar color de LED según el estado de
     la impresora
   Change PIN: Cambiar PIN
@@ -675,6 +676,7 @@ translations:
   Device name: Nombre del dispositivo
   Device name is required: El nombre del dispositivo es requerido
   'Device: ': 'Dispositivo: '
+  Different filament?: ¿Filamento diferente?
   Disable: Desactivar
   Disable Motors?: ¿Desactivar Motores?
   Disable the security PIN: Desactivar el PIN de seguridad
@@ -718,7 +720,7 @@ translations:
   Duplicate: Duplicar
   Duplicated: Duplicado
   Duration: Duración
-  E-Stop (M112): E-Stop (M112)
+  E-Stop (M112): Parada de emergencia (M112)
   E-Stop Confirmation: Confirmación de Parada de Emergencia
   EDDY CURRENT: EDDY CURRENT
   EMERGENCY STOP: PARADA DE EMERGENCIA
@@ -1570,6 +1572,7 @@ translations:
   Not detected: No detectado
   Not found (strobe only): No encontrado (solo estroboscópico)
   Not found (use phone app): No encontrado (usa la app del teléfono)
+  Not in your spools? Set it up: ¿No está en tus bobinas? Configúralo
   Not yet calibrated: Aún no calibrado
   Notes: Notas
   Notes (optional): Notas (opcional)
@@ -2061,6 +2064,7 @@ translations:
   Save changes to persist them across restarts?: ¿Guardar cambios para mantenerlos
     entre reinicios?
   'Save failed: {}': 'Error al guardar: {}'
+  Save to Spoolman: Guardar en Spoolman
   Saved Z-Offset: Z-Offset guardado
   Saved to crash_report.txt (QR not available): Guardado en crash_report.txt (QR no
     disponible)
@@ -2447,6 +2451,7 @@ translations:
     se enviarán
   This is what data would be sent if enabled: Estos son los datos que se enviarían
     si se activa
+  This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?: Esto parece un filamento diferente al de la bobina de Spoolman vinculada. ¿Actualizar la bobina de Spoolman para que coincida?
   This may take up to 30 seconds: Esto puede tardar hasta 30 segundos
   ? This plugin lets HelixScreen control print start options like bed mesh and QGL.
     Once installed, use Configure PRINT_START below to enable optional steps.
@@ -2612,6 +2617,7 @@ translations:
   Update Channel: Canal de actualización
   Update Failed: Actualización fallida
   Update Success: Actualización correcta
+  Update anyway: Actualizar de todos modos
   Update installed!: ¡Actualización instalada!
   Update your security PIN: Actualice su PIN de seguridad
   Updating Configuration...: Actualizando configuración...
@@ -2710,6 +2716,7 @@ translations:
   Width: Ancho
   Wifi: Wifi
   Wizard Error: Error del asistente
+  Working...: Procesando...
   Write failed at chunk {}: Error de escritura en el fragmento {}
   Wrong PIN: PIN incorrecto
   Wrong media: Medio incorrecto
@@ -2777,7 +2784,7 @@ translations:
   Zoom: Zoom
   \"%s\" failed to load: '"%s" no se pudo cargar'
   bed: cama
-  by Preston Brown: by Preston Brown
+  by Preston Brown: por Preston Brown
   chamber heater: calentador de cámara
   complete: completo
   cores: núcleos

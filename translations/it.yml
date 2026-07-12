@@ -215,7 +215,7 @@ translations:
   Authentication failed: Autenticazione fallita
   Auto: Auto
   Auto Bed Mesh: Mesh piano automatica
-  Auto Cal: Auto Cal
+  Auto Cal: Cal. auto
   Auto-Detect: Rilevamento auto
   Auto-Heat on Load: Riscaldamento automatico al caricamento
   Auto-detect: Rilevamento auto
@@ -327,7 +327,7 @@ translations:
   'Bypass toggle failed: {}': 'Cambio bypass fallito: {}'
   C: C
   CALIBRATION: CALIBRAZIONE
-  CAPABILITIES: CAPABILITIES
+  CAPABILITIES: FUNZIONALITÀ
   CARTOGRAPHER: CARTOGRAPHER
   CHANGED FROM LAST SESSION: MODIFICATO DALLA SESSIONE PRECEDENTE
   COLOR SENSORS: SENSORI DI COLORE
@@ -421,6 +421,7 @@ translations:
   Chamber heating to %d°C...: Riscaldamento camera a %d°C...
   Chamber target set to {}°C: Target camera impostato a {}°C
   Change: Cambia
+  Change Filament: Cambia filamento
   Change LED color based on printer state: Cambia colore LED in base allo stato della
     stampante
   Change PIN: Cambia PIN
@@ -671,6 +672,7 @@ translations:
   Device name: Nome dispositivo
   Device name is required: Il nome dispositivo è obbligatorio
   'Device: ': 'Dispositivo: '
+  Different filament?: Filamento diverso?
   Disable: Disabilita
   Disable Motors?: Disabilitare motori?
   Disable the security PIN: Disabilita il PIN di sicurezza
@@ -707,7 +709,7 @@ translations:
   Downloading... {:.1f}/{:.1f} MB: Download in corso... {:.1f}/{:.1f} MB
   Draw a ripple at each touch — helps diagnose offsets: Disegna un'onda a ogni tocco
     — aiuta a diagnosticare gli scostamenti
-  Drive Cal: Drive Cal
+  Drive Cal: Cal. drive
   Drop shadow strength (0 = disabled): Intensità ombra (0 = disabilitata)
   Dryer Controls: Controlli essiccatore
   Drying: Essiccazione
@@ -716,7 +718,7 @@ translations:
   Duplicate: Duplica
   Duplicated: Duplicato
   Duration: Durata
-  E-Stop (M112): E-Stop (M112)
+  E-Stop (M112): Arresto emergenza (M112)
   E-Stop Confirmation: Conferma arresto emergenza
   EDDY CURRENT: EDDY CURRENT
   EMERGENCY STOP: ARRESTO EMERGENZA
@@ -1283,7 +1285,7 @@ translations:
   Layer mode captures one frame per layer change. Best for most prints.: La modalità
     layer cattura un fotogramma per cambio layer. Ideale per la maggior parte delle
     stampe.
-  'Layer:': 'Layer:'
+  'Layer:': 'Strato:'
   Layers: Layer
   Layout: Layout
   Learn More: Scopri di più
@@ -1573,6 +1575,7 @@ translations:
   Not detected: Non rilevato
   Not found (strobe only): Non trovato (solo stroboscopio)
   Not found (use phone app): Non trovato (usa l’app del telefono)
+  Not in your spools? Set it up: Non è tra le tue bobine? Configuralo
   Not yet calibrated: Non ancora calibrato
   Notes: Note
   Notes (optional): Note (facoltativo)
@@ -1607,7 +1610,7 @@ translations:
   Objects: Oggetti
   'Off': 'Off'
   'Off:': 'Off:'
-  Off\nFlying Toasters\nStarfield\n3D Pipes: Off\nFlying Toasters\nStarfield\n3D Pipes
+  Off\nFlying Toasters\nStarfield\n3D Pipes: Off\nTostapane volanti\nCampo stellare\nTubi 3D
   'On': 'On'
   On and Off macros must be different: Le macro On e Off devono essere diverse
   On/Off: On/Off
@@ -1708,7 +1711,7 @@ translations:
   Placed: Inserito
   Platform: Piattaforma
   'Platform: ': 'Piattaforma: '
-  Play / stop Crockett's Theme: Play / stop Crockett's Theme
+  Play / stop Crockett's Theme: Riproduci / ferma Crockett's Theme
   Please enter a theme name: Inserire un nome per il tema
   Please enter a valid port (1-65535).: Inserire una porta valida (1-65535).
   Please enter an IP address or hostname.: Inserire un indirizzo IP o hostname.
@@ -2060,6 +2063,7 @@ translations:
   Save changes to persist them across restarts?: Salvare le modifiche per mantenerle
     dopo i riavvii?
   'Save failed: {}': 'Salvataggio fallito: {}'
+  Save to Spoolman: Salva su Spoolman
   Saved Z-Offset: Z-Offset Salvato
   Saved to crash_report.txt (QR not available): Salvato in crash_report.txt (QR non
     disponibile)
@@ -2072,7 +2076,7 @@ translations:
   Saving will restart Klipper and CANCEL any active print!: Il salvataggio riavvierà
     Klipper e ANNULLERÀ qualsiasi stampa attiva!
   Scan: Scansiona
-  Scan Cal: Scan Cal
+  Scan Cal: Cal. scan
   Scan QR Code: Scansiona codice QR
   Scan Spool QR Code: Scansiona codice QR bobina
   Scan and select a Bluetooth printer first: Prima scansiona e seleziona una stampante
@@ -2274,7 +2278,7 @@ translations:
   'Spoolman: %zu/%zu Spool%s': 'Spoolman: %zu/%zu bobina%s'
   Square Corner Velocity: Velocità angoli retti
   Stable: Stabile
-  Stable\nBeta\nDev: Stable\nBeta\nDev
+  Stable\nBeta\nDev: Stabile\nBeta\nDev
   Standard: Standard
   Standby: Standby
   Starfield: Campo stellare
@@ -2350,7 +2354,7 @@ translations:
   TEMPERATURE SENSORS: SENSORI DI TEMPERATURA
   THEME COLORS: COLORI TEMA
   'TOGGLE: {}': 'COMMUTA: {}'
-  TOOLS: TOOLS
+  TOOLS: STRUMENTI
   TPU: TPU
   Takes 3-5 min. Do not interrupt.: Richiede 3-5 min. Non interrompere.
   Tap + to add: Tocca + per aggiungere
@@ -2445,6 +2449,7 @@ translations:
     inviati
   This is what data would be sent if enabled: Questi sono i dati che verrebbero inviati
     se abilitato
+  This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?: Questo sembra un filamento diverso dalla bobina Spoolman collegata. Aggiornare la bobina Spoolman per farla corrispondere?
   This may take up to 30 seconds: Questo potrebbe richiedere fino a 30 secondi
   ? This plugin lets HelixScreen control print start options like bed mesh and QGL.
     Once installed, use Configure PRINT_START below to enable optional steps.
@@ -2612,6 +2617,7 @@ translations:
   Update Channel: Canale Aggiornamenti
   Update Failed: Aggiornamento Fallito
   Update Success: Aggiornamento riuscito
+  Update anyway: Aggiorna comunque
   Update installed!: Aggiornamento installato!
   Update your security PIN: Aggiorna il tuo PIN di sicurezza
   Updating Configuration...: Aggiornamento configurazione...
@@ -2711,6 +2717,7 @@ translations:
   Width: Larghezza
   Wifi: Wi-Fi
   Wizard Error: Errore procedura guidata
+  Working...: Elaborazione...
   Write failed at chunk {}: Scrittura fallita al chunk {}
   Wrong PIN: PIN errato
   Wrong media: Supporto errato
@@ -2778,7 +2785,7 @@ translations:
   Zoom: Zoom
   \"%s\" failed to load: Caricamento di \"%s\" non riuscito
   bed: piano
-  by Preston Brown: by Preston Brown
+  by Preston Brown: di Preston Brown
   chamber heater: riscaldatore camera
   complete: completato
   cores: core

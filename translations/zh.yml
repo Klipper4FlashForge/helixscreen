@@ -209,7 +209,7 @@ translations:
   Available networks: 可用网络
   Average: 平均值
   BEACON: BEACON
-  BETA: BETA
+  BETA: 测试版
   'BLE connect failed: {}': 'BLE 连接失败: {}'
   'BLE write failed at packet {}: {}': 'BLE 在数据包 {} 处写入失败: {}'
   'BLE write failed: {}': 'BLE 写入失败: {}'
@@ -369,6 +369,7 @@ translations:
   Chamber heating to %d°C...: 腔体加热至 %d°C...
   Chamber target set to {}°C: 腔体目标温度设置为 {}°C
   Change: 更改
+  Change Filament: 更换耗材
   Change LED color based on printer state: 根据打印机状态更改 LED 颜色
   Change PIN: 更改 PIN
   Change Printer Host: 更改打印机主机
@@ -593,6 +594,7 @@ translations:
   Device name: 设备名称
   Device name is required: 设备名称为必填项
   'Device: ': '设备: '
+  Different filament?: 耗材不同？
   Disable: 禁用
   Disable Motors?: 关闭电机？
   Disable the security PIN: 禁用安全 PIN
@@ -634,7 +636,7 @@ translations:
   Duplicate: 复制
   Duplicated: 已复制
   Duration: 持续时间
-  E-Stop (M112): E-Stop (M112)
+  E-Stop (M112): 急停 (M112)
   E-Stop Confirmation: 急停确认
   EDDY CURRENT: EDDY CURRENT
   EMERGENCY STOP: 紧急停止
@@ -1403,6 +1405,7 @@ translations:
   Not detected: 未检测到
   Not found (strobe only): 未找到 (仅频闪)
   Not found (use phone app): 未找到 (使用手机应用)
+  'Not in your spools? Set it up': 不在您的料盘中？立即设置
   Not yet calibrated: 尚未校准
   Notes: 备注
   Notes (optional): 备注（可选）
@@ -1849,6 +1852,7 @@ translations:
   Save Z-Offset?: 保存 Z 偏移？
   Save changes to persist them across restarts?: 保存更改以便在重启后保留？
   'Save failed: {}': '保存失败: {}'
+  Save to Spoolman: 保存到 Spoolman
   Saved Z-Offset: 已保存 Z 偏移
   Saved to crash_report.txt (QR not available): 已保存到 crash_report.txt（二维码不可用）
   Saved to printer configuration.: 已保存到打印机配置。
@@ -2176,6 +2180,7 @@ translations:
   This file was sliced for {} but {} is loaded.: 此文件为 {} 切片，但当前加载的是 {}。
   This is exactly the data that will be sent: 这正是将要发送的数据
   This is what data would be sent if enabled: 这是启用后将发送的数据
+  'This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?': 这看起来与关联的 Spoolman 料盘中的耗材不同。是否更新 Spoolman 料盘以匹配？
   This may take up to 30 seconds: 这可能需要 30 秒
   ? This plugin lets HelixScreen control print start options like bed mesh and QGL.
     Once installed, use Configure PRINT_START below to enable optional steps.
@@ -2317,6 +2322,7 @@ translations:
   Update Channel: 更新通道
   Update Failed: 更新失败
   Update Success: 更新成功
+  Update anyway: 仍要更新
   Update installed!: 更新已安装！
   Update your security PIN: 更新您的安全 PIN
   Updating Configuration...: 正在更新配置...
@@ -2405,6 +2411,7 @@ translations:
   Width: 宽度
   Wifi: Wi-Fi
   Wizard Error: 向导错误
+  Working...: 处理中...
   Write failed at chunk {}: 区块 {} 写入失败
   Wrong PIN: PIN 错误
   Wrong media: 介质错误

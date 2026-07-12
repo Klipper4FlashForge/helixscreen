@@ -233,7 +233,7 @@ translations:
   Available networks: Доступные сети
   Average: Среднее
   BEACON: BEACON
-  BETA: BETA
+  BETA: БЕТА
   'BLE connect failed: {}': 'Не удалось подключиться по BLE: {}'
   'BLE write failed at packet {}: {}': 'Не удалось записать по BLE в пакете {}: {}'
   'BLE write failed: {}': 'Не удалось записать по BLE: {}'
@@ -415,6 +415,7 @@ translations:
   Chamber heating to %d°C...: Нагрев камеры до %d°C...
   Chamber target set to {}°C: Целевая температура камеры установлена на {}°C
   Change: Изменить
+  Change Filament: Сменить филамент
   Change LED color based on printer state: Менять цвет LED в зависимости от состояния
     принтера
   Change PIN: Изменить PIN
@@ -662,6 +663,7 @@ translations:
   Device name: Имя устройства
   Device name is required: Требуется название устройства
   'Device: ': 'Устройство: '
+  Different filament?: Другой филамент?
   Disable: Отключить
   Disable Motors?: Отключить моторы?
   Disable the security PIN: Отключить PIN-код
@@ -705,7 +707,7 @@ translations:
   Duplicate: Дублировать
   Duplicated: Дублировано
   Duration: Длительность
-  E-Stop (M112): E-Stop (M112)
+  E-Stop (M112): Авар. стоп (M112)
   E-Stop Confirmation: Подтверждение аварийной остановки
   EDDY CURRENT: EDDY CURRENT
   EMERGENCY STOP: АВАРИЙНАЯ ОСТАНОВКА
@@ -1551,6 +1553,7 @@ translations:
   Not detected: Не обнаружено
   Not found (strobe only): Не найдено (только стробоскоп)
   Not found (use phone app): Не найдено (используйте приложение на телефоне)
+  Not in your spools? Set it up: Нет в ваших катушках? Настроить
   Not yet calibrated: Ещё не откалибровано
   Notes: Заметки
   Notes (optional): Заметки (необязательно)
@@ -1684,7 +1687,7 @@ translations:
   Placed: Добавлено
   Platform: Платформа
   'Platform: ': 'Платформа: '
-  Play / stop Crockett's Theme: Play / stop Crockett's Theme
+  Play / stop Crockett's Theme: Воспроизвести / остановить «Crockett's Theme»
   Please enter a theme name: Введите название темы
   Please enter a valid port (1-65535).: Введите корректный порт (1-65535).
   Please enter an IP address or hostname.: Введите IP-адрес или имя хоста.
@@ -2035,6 +2038,7 @@ translations:
   Save changes to persist them across restarts?: Сохранить изменения, чтобы они сохранились
     после перезапуска?
   'Save failed: {}': 'Ошибка сохранения: {}'
+  Save to Spoolman: Сохранить в Spoolman
   Saved Z-Offset: Сохранённый Z-Offset
   Saved to crash_report.txt (QR not available): Сохранено в crash_report.txt (QR недоступен)
   Saved to printer configuration.: Сохранено в конфигурацию принтера.
@@ -2244,7 +2248,7 @@ translations:
     филамента может быть устаревшим
   'Spoolman: %zu Spool%s': 'Spoolman: %zu катушк%s'
   'Spoolman: %zu/%zu Spool%s': 'Spoolman: %zu/%zu катушк%s'
-  Square Corner Velocity: Square Corner Velocity
+  Square Corner Velocity: Скорость прохождения углов
   Stable: Стабильная
   Stable\nBeta\nDev: Стабильная\nБета\nDev
   Standard: Стандартный
@@ -2415,6 +2419,9 @@ translations:
   This is exactly the data that will be sent: Это именно те данные, которые будут
     отправлены
   This is what data would be sent if enabled: Эти данные были бы отправлены при включении
+  This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?: Похоже,
+    это другой филамент, чем у привязанной катушки Spoolman. Обновить катушку Spoolman
+    в соответствии?
   This may take up to 30 seconds: Это может занять до 30 секунд
   ? This plugin lets HelixScreen control print start options like bed mesh and QGL.
     Once installed, use Configure PRINT_START below to enable optional steps.
@@ -2577,6 +2584,7 @@ translations:
   Update Channel: Канал обновлений
   Update Failed: Ошибка обновления
   Update Success: Обновление успешно
+  Update anyway: Всё равно обновить
   Update installed!: Обновление установлено!
   Update your security PIN: Обновите ваш PIN-код
   Updating Configuration...: Обновление конфигурации...
@@ -2672,6 +2680,7 @@ translations:
   Width: Ширина
   Wifi: Wi-Fi
   Wizard Error: Ошибка мастера
+  Working...: Выполнение...
   Write failed at chunk {}: Не удалось записать в блоке {}
   Wrong PIN: Неверный PIN
   Wrong media: Неверный носитель
@@ -2739,7 +2748,7 @@ translations:
   Zoom: Масштаб
   \"%s\" failed to load: Не удалось загрузить «%s»
   bed: стол
-  by Preston Brown: by Preston Brown
+  by Preston Brown: от Preston Brown
   chamber heater: нагреватель камеры
   complete: завершено
   cores: ядер

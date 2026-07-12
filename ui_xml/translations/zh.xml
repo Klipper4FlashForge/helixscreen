@@ -205,7 +205,7 @@
   <translation tag="Available networks" zh="可用网络"/>
   <translation tag="Average" zh="平均值"/>
   <translation tag="BEACON" zh="BEACON"/>
-  <translation tag="BETA" zh="BETA"/>
+  <translation tag="BETA" zh="测试版"/>
   <translation tag="BLE connect failed: {}" zh="BLE 连接失败: {}"/>
   <translation tag="BLE write failed at packet {}: {}" zh="BLE 在数据包 {} 处写入失败: {}"/>
   <translation tag="BLE write failed: {}" zh="BLE 写入失败: {}"/>
@@ -363,6 +363,7 @@
   <translation tag="Chamber heating to %d°C..." zh="腔体加热至 %d°C..."/>
   <translation tag="Chamber target set to {}°C" zh="腔体目标温度设置为 {}°C"/>
   <translation tag="Change" zh="更改"/>
+  <translation tag="Change Filament" zh="更换耗材"/>
   <translation tag="Change LED color based on printer state" zh="根据打印机状态更改 LED 颜色"/>
   <translation tag="Change PIN" zh="更改 PIN"/>
   <translation tag="Change Printer Host" zh="更改打印机主机"/>
@@ -584,6 +585,7 @@
   <translation tag="Device name" zh="设备名称"/>
   <translation tag="Device name is required" zh="设备名称为必填项"/>
   <translation tag="Device: " zh="设备: "/>
+  <translation tag="Different filament?" zh="耗材不同？"/>
   <translation tag="Disable" zh="禁用"/>
   <translation tag="Disable Motors?" zh="关闭电机？"/>
   <translation tag="Disable the security PIN" zh="禁用安全 PIN"/>
@@ -623,7 +625,7 @@
   <translation tag="Duplicate" zh="复制"/>
   <translation tag="Duplicated" zh="已复制"/>
   <translation tag="Duration" zh="持续时间"/>
-  <translation tag="E-Stop (M112)" zh="E-Stop (M112)"/>
+  <translation tag="E-Stop (M112)" zh="急停 (M112)"/>
   <translation tag="E-Stop Confirmation" zh="急停确认"/>
   <translation tag="EDDY CURRENT" zh="EDDY CURRENT"/>
   <translation tag="EMERGENCY STOP" zh="紧急停止"/>
@@ -1370,6 +1372,7 @@
   <translation tag="Not detected" zh="未检测到"/>
   <translation tag="Not found (strobe only)" zh="未找到 (仅频闪)"/>
   <translation tag="Not found (use phone app)" zh="未找到 (使用手机应用)"/>
+  <translation tag="Not in your spools? Set it up" zh="不在您的料盘中？立即设置"/>
   <translation tag="Not yet calibrated" zh="尚未校准"/>
   <translation tag="Notes" zh="备注"/>
   <translation tag="Notes (optional)" zh="备注（可选）"/>
@@ -1805,6 +1808,7 @@
   <translation tag="Save Z-Offset?" zh="保存 Z 偏移？"/>
   <translation tag="Save changes to persist them across restarts?" zh="保存更改以便在重启后保留？"/>
   <translation tag="Save failed: {}" zh="保存失败: {}"/>
+  <translation tag="Save to Spoolman" zh="保存到 Spoolman"/>
   <translation tag="Saved Z-Offset" zh="已保存 Z 偏移"/>
   <translation tag="Saved to crash_report.txt (QR not available)" zh="已保存到 crash_report.txt（二维码不可用）"/>
   <translation tag="Saved to printer configuration." zh="已保存到打印机配置。"/>
@@ -2109,6 +2113,7 @@
   <translation tag="This file was sliced for {} but {} is loaded." zh="此文件为 {} 切片，但当前加载的是 {}。"/>
   <translation tag="This is exactly the data that will be sent" zh="这正是将要发送的数据"/>
   <translation tag="This is what data would be sent if enabled" zh="这是启用后将发送的数据"/>
+  <translation tag="This looks like a different filament than the linked Spoolman spool. Update the Spoolman spool to match?" zh="这看起来与关联的 Spoolman 料盘中的耗材不同。是否更新 Spoolman 料盘以匹配？"/>
   <translation tag="This may take up to 30 seconds" zh="这可能需要 30 秒"/>
   <translation tag="This plugin lets HelixScreen control print start options like bed mesh and QGL. Once installed, use Configure PRINT_START below to enable optional steps." zh="此插件让 HelixScreen 控制打印启动选项，如热床网格和 QGL。安装后，使用下面的配置 PRINT_START 启用可选步骤。"/>
   <translation tag="This print needs about %.0fg but the spool has about %.0fg remaining. Start anyway?" zh="本次打印需要约 %.0fg，但料盘仅剩约 %.0fg。仍要开始吗？"/>
@@ -2234,6 +2239,7 @@
   <translation tag="Update Channel" zh="更新通道"/>
   <translation tag="Update Failed" zh="更新失败"/>
   <translation tag="Update Success" zh="更新成功"/>
+  <translation tag="Update anyway" zh="仍要更新"/>
   <translation tag="Update installed!" zh="更新已安装！"/>
   <translation tag="Update your security PIN" zh="更新您的安全 PIN"/>
   <translation tag="Updating Configuration..." zh="正在更新配置..."/>
@@ -2315,6 +2321,7 @@
   <translation tag="Width" zh="宽度"/>
   <translation tag="Wifi" zh="Wi-Fi"/>
   <translation tag="Wizard Error" zh="向导错误"/>
+  <translation tag="Working..." zh="处理中..."/>
   <translation tag="Write failed at chunk {}" zh="区块 {} 写入失败"/>
   <translation tag="Wrong PIN" zh="PIN 错误"/>
   <translation tag="Wrong media" zh="介质错误"/>
