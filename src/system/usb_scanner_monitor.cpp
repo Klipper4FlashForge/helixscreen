@@ -237,9 +237,12 @@ std::vector<UsbScannerMonitor::ScannerSource> UsbScannerMonitor::find_scanner_de
     }
 
     // USB fallback. Caller-configured VID:PID disambiguates from regular keyboards.
+    // The user's device blacklist ("input/device_blacklist") is also applied so the
+    // scan overlay ignores devices HelixScreen is told to leave alone.
     std::string configured_id = helix::SettingsManager::instance().get_scanner_device_id();
-    auto devices =
-        helix::input::find_hid_keyboard_devices("/dev/input", "/sys/class/input", configured_id);
+    auto blacklist = helix::input::read_device_blacklist_from_config();
+    auto devices = helix::input::find_hid_keyboard_devices("/dev/input", "/sys/class/input",
+                                                           configured_id, blacklist);
     if (devices.empty())
         return {};
 

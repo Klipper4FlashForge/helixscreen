@@ -74,6 +74,41 @@ Some scanners support both Classic and BLE modes. BLE uses different pairing mec
 
 ---
 
+## Sharing a scanner with another tool (device blacklist)
+
+If another program on the same Pi already reads your barcode scanner — for example [afc-spool-scan](https://github.com/AFCProject/afc-spool-scan), which loads spools straight into AFC — HelixScreen can get in its way. HelixScreen automatically claims the first keyboard-like device it finds, and a USB barcode scanner looks exactly like a keyboard, so both programs end up fighting over it.
+
+You can tell HelixScreen to leave a specific device alone by adding its USB ID to a **blacklist**. A blacklisted device is ignored completely — HelixScreen won't use it for keyboard input or for the built-in scan overlay — leaving it free for the other tool. It still shows up in the Barcode Scanner device list so you can identify it.
+
+### 1. Find the scanner's USB ID
+
+The ID is a `vendor:product` pair like `002c:261a`. Find it either way:
+
+- **In HelixScreen:** open **Settings → Hardware & Devices → Spoolman → Barcode Scanner**. Each entry in the USB device list shows its ID.
+- **Over SSH:** run `lsusb` and look for your scanner. The ID is the pair right after `ID`, e.g. `Bus 001 Device 005: ID 002c:261a ...`.
+
+### 2. Add it to your settings
+
+Edit `~/helixscreen/config/settings.json` (the path varies by platform — see the table in [Configuration](../CONFIGURATION.md#configuration-file-location)) and add the ID to the `input` section:
+
+```json
+"input": {
+  "device_blacklist": ["002c:261a"]
+}
+```
+
+Use lowercase, and list as many devices as you need: `["002c:261a", "1a2c:4c5e"]`.
+
+### 3. Restart HelixScreen
+
+```bash
+sudo systemctl restart helixscreen
+```
+
+After the restart, HelixScreen no longer opens that device, and your other scanner tool has it to itself.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -84,6 +119,7 @@ Some scanners support both Classic and BLE modes. BLE uses different pairing mec
 | "Scanner bonded but didn't attach as a keyboard" | Set `ClassicBondedOnly=false` — see above. |
 | Scanner pairs, but scanned text types into the app's UI instead of being captured as a QR code | Open the QR scanner overlay before scanning. Outside the overlay, the scanner is just a keyboard. |
 | Scanned text has wrong characters | Set the correct **Layout** under **Barcode Scanner → Keyboard Layout**. |
+| Another tool (e.g. afc-spool-scan) stopped seeing the scanner after installing HelixScreen | Blacklist the device so HelixScreen ignores it — see [Sharing a scanner with another tool](#sharing-a-scanner-with-another-tool-device-blacklist). |
 
 ---
 

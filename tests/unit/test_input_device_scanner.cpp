@@ -519,6 +519,156 @@ TEST_CASE("find_hid_keyboard_devices detects USB HID keyboards for scanner use",
     }
 }
 
+TEST_CASE("is_vid_pid_blacklisted matches normalized vid:pid entries", "[input]") {
+    using helix::input::is_vid_pid_blacklisted;
+
+    SECTION("empty blacklist returns false") {
+        REQUIRE_FALSE(is_vid_pid_blacklisted("1a2c", "0003", {}));
+    }
+
+    SECTION("exact lowercase match") {
+        REQUIRE(is_vid_pid_blacklisted("1a2c", "0003", {"1a2c:0003"}));
+    }
+
+    SECTION("case-insensitive match (uppercase entry vs lowercase sysfs)") {
+        REQUIRE(is_vid_pid_blacklisted("1a2c", "0003", {"1A2C:0003"}));
+    }
+
+    SECTION("case-insensitive match (uppercase sysfs vs lowercase entry)") {
+        REQUIRE(is_vid_pid_blacklisted("1A2C", "0003", {"1a2c:0003"}));
+    }
+
+    SECTION("whitespace around entry is ignored") {
+        REQUIRE(is_vid_pid_blacklisted("1a2c", "0003", {"  1a2c : 0003  "}));
+    }
+
+    SECTION("leading 0x prefix is stripped on both sides") {
+        REQUIRE(is_vid_pid_blacklisted("0x1a2c", "0x0003", {"1a2c:0003"}));
+        REQUIRE(is_vid_pid_blacklisted("1a2c", "0003", {"0x1a2c:0x0003"}));
+    }
+
+    SECTION("non-matching entry returns false") {
+        REQUIRE_FALSE(is_vid_pid_blacklisted("1a2c", "0003", {"aaaa:bbbb"}));
+    }
+
+    SECTION("vendor matches but product differs returns false") {
+        REQUIRE_FALSE(is_vid_pid_blacklisted("1a2c", "0003", {"1a2c:9999"}));
+    }
+
+    SECTION("matches when present among several entries") {
+        REQUIRE(is_vid_pid_blacklisted("002c", "261a", {"aaaa:bbbb", "002c:261a", "1111:2222"}));
+    }
+
+    SECTION("malformed entry without colon is skipped gracefully") {
+        REQUIRE_FALSE(is_vid_pid_blacklisted("1a2c", "0003", {"1a2c0003"}));
+        // A malformed entry alongside a valid one must not break matching.
+        REQUIRE(is_vid_pid_blacklisted("1a2c", "0003", {"garbage", "1a2c:0003"}));
+    }
+
+    SECTION("empty vendor/product never matches") {
+        REQUIRE_FALSE(is_vid_pid_blacklisted("", "", {"1a2c:0003"}));
+    }
+}
+
+TEST_CASE("find_keyboard_device honors the device blacklist", "[input]") {
+    using helix::input::find_keyboard_device;
+
+    SECTION("blacklisted VID:PID keyboard is skipped") {
+        MockInputTree tree("kb_blacklist_skip");
+        tree.add_device_with_ids(1, "Generic HID Keyboard",
+                                 {{"key", "40000000"}, {"rel", "0"}, {"abs", "0"}}, "0003", "002c",
+                                 "261a");
+
+        auto result = find_keyboard_device(tree.dev_dir, tree.sysfs_dir, "", {"002c:261a"});
+        REQUIRE_FALSE(result.has_value());
+    }
+
+    SECTION("non-blacklisted keyboard is still returned") {
+        MockInputTree tree("kb_blacklist_keep");
+        tree.add_device_with_ids(1, "Generic HID Keyboard",
+                                 {{"key", "40000000"}, {"rel", "0"}, {"abs", "0"}}, "0003", "04d9",
+                                 "a070");
+
+        auto result = find_keyboard_device(tree.dev_dir, tree.sysfs_dir, "", {"002c:261a"});
+        REQUIRE(result.has_value());
+        REQUIRE(result->name == "Generic HID Keyboard");
+    }
+
+    SECTION("real keyboard returned when a blacklisted scanner is also present") {
+        MockInputTree tree("kb_blacklist_mixed");
+        tree.add_device_with_ids(1, "Generic HID Keyboard",
+                                 {{"key", "40000000"}, {"rel", "0"}, {"abs", "0"}}, "0003", "002c",
+                                 "261a");
+        tree.add_device_with_ids(2, "Real Keyboard",
+                                 {{"key", "40000000"}, {"rel", "0"}, {"abs", "0"}}, "0003", "04d9",
+                                 "a070");
+
+        auto result = find_keyboard_device(tree.dev_dir, tree.sysfs_dir, "", {"002c:261a"});
+        REQUIRE(result.has_value());
+        REQUIRE(result->name == "Real Keyboard");
+    }
+
+    SECTION("empty blacklist behaves exactly as before") {
+        MockInputTree tree("kb_blacklist_empty");
+        tree.add_device_with_ids(1, "Generic HID Keyboard",
+                                 {{"key", "40000000"}, {"rel", "0"}, {"abs", "0"}}, "0003", "002c",
+                                 "261a");
+
+        auto result = find_keyboard_device(tree.dev_dir, tree.sysfs_dir, "", {});
+        REQUIRE(result.has_value());
+        REQUIRE(result->name == "Generic HID Keyboard");
+    }
+}
+
+TEST_CASE("find_hid_keyboard_devices honors the device blacklist", "[input]") {
+    using helix::input::find_hid_keyboard_devices;
+
+    SECTION("blacklisted device is omitted, others present") {
+        MockInputTree tree("hid_blacklist_skip");
+        tree.add_device_with_ids(1, "Generic HID Keyboard",
+                                 {{"key", "40000000"}, {"abs", "0"}, {"rel", "0"}}, "0003", "002c",
+                                 "261a");
+        tree.add_device_with_ids(2, "Real Keyboard",
+                                 {{"key", "40000000"}, {"abs", "0"}, {"rel", "0"}}, "0003", "04d9",
+                                 "a070");
+
+        std::vector<std::string> blacklist{"002c:261a"};
+        auto result = find_hid_keyboard_devices(tree.dev_dir, tree.sysfs_dir, blacklist);
+        REQUIRE(result.size() == 1);
+        REQUIRE(result[0].name == "Real Keyboard");
+    }
+
+    SECTION("empty blacklist behaves exactly as before") {
+        MockInputTree tree("hid_blacklist_empty");
+        tree.add_device_with_ids(1, "Generic HID Keyboard",
+                                 {{"key", "40000000"}, {"abs", "0"}, {"rel", "0"}}, "0003", "002c",
+                                 "261a");
+        tree.add_device_with_ids(2, "Real Keyboard",
+                                 {{"key", "40000000"}, {"abs", "0"}, {"rel", "0"}}, "0003", "04d9",
+                                 "a070");
+
+        std::vector<std::string> blacklist;
+        auto result = find_hid_keyboard_devices(tree.dev_dir, tree.sysfs_dir, blacklist);
+        REQUIRE(result.size() == 2);
+    }
+
+    SECTION("configured overload also filters the blacklist") {
+        MockInputTree tree("hid_blacklist_configured");
+        tree.add_device_with_ids(1, "Generic HID Keyboard",
+                                 {{"key", "40000000"}, {"abs", "0"}, {"rel", "0"}}, "0003", "002c",
+                                 "261a");
+        tree.add_device_with_ids(2, "Real Keyboard",
+                                 {{"key", "40000000"}, {"abs", "0"}, {"rel", "0"}}, "0003", "04d9",
+                                 "a070");
+
+        // No configured VID:PID, but the blacklist must still be applied.
+        auto result = find_hid_keyboard_devices(tree.dev_dir, tree.sysfs_dir, std::string(""),
+                                                std::vector<std::string>{"002c:261a"});
+        REQUIRE(result.size() == 1);
+        REQUIRE(result[0].name == "Real Keyboard");
+    }
+}
+
 TEST_CASE("enumerate_usb_hid_devices returns devices with vendor/product IDs", "[input]") {
     using helix::input::enumerate_usb_hid_devices;
 

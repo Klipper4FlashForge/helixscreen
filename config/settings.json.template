@@ -156,6 +156,8 @@
     "_jitter_threshold_comment": "Touch jitter filter dead zone in pixels (0 to disable). Suppresses coordinate noise from touch controllers like Goodix GT9xx that causes taps to register as swipes.",
     "touch_device": "",
     "_touch_device_comment": "Override touch/pointer input device (e.g., '/dev/input/event1'). Empty string enables auto-detection. Auto-detection finds touch or pointer capable devices.",
+    "device_blacklist": [],
+    "_device_blacklist_comment": "List of USB input devices HelixScreen ignores entirely for keyboard/scanner input, as 'vid:pid' lowercase 4-digit hex strings (e.g. ['002c:261a']). Use this when an external barcode scanner tool (like afc-spool-scan) needs the device and HelixScreen keeps grabbing it. Find a device's VID:PID in the Barcode Scanner settings device list, or in helixscreen.log lines '[InputScanner] Found keyboard:' / 'Found USB HID keyboard device:'. Empty list = no blacklist.",
     "force_calibration": false,
     "_force_calibration_comment": "Force touch calibration on next startup. Automatically cleared after calibration completes. Default: false."
   },
