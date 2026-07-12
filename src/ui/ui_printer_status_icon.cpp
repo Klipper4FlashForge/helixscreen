@@ -2,6 +2,8 @@
 
 #include "ui_printer_status_icon.h"
 
+#include "ui_emergency_stop.h"
+
 #include "app_globals.h"
 #include "moonraker_client.h"
 #include "observer_factory.h"
@@ -93,39 +95,42 @@ void PrinterStatusIcon::init() {
     spdlog::debug("[PrinterStatusIcon] Initialization complete");
 }
 
-void PrinterStatusIcon::update_icon_state() {
-    PrinterIconState new_state;
-
-    if (cached_connection_state_ == static_cast<int>(ConnectionState::CONNECTED)) {
-        switch (cached_klippy_state_) {
+PrinterIconState PrinterStatusIcon::compute_state(int connection_state, int klippy_state,
+                                                  bool ever_connected, bool expected_restart) {
+    if (connection_state == static_cast<int>(ConnectionState::CONNECTED)) {
+        switch (klippy_state) {
         case static_cast<int>(KlippyState::STARTUP):
-            new_state = PrinterIconState::WARNING;
-            spdlog::debug("[PrinterStatusIcon] Klippy STARTUP -> printer state WARNING");
-            break;
+            return PrinterIconState::WARNING;
         case static_cast<int>(KlippyState::SHUTDOWN):
+            // A SAVE_CONFIG or user-initiated restart bounces Klipper through a
+            // transient SHUTDOWN. During an expected restart show WARNING (amber
+            // "restarting") instead of ERROR (red) so the icon doesn't flash red
+            // mid-calibration. A genuine SHUTDOWN (no restart pending) still maps
+            // to ERROR, as does KlippyState::ERROR regardless of the window.
+            return expected_restart ? PrinterIconState::WARNING : PrinterIconState::ERROR;
         case static_cast<int>(KlippyState::ERROR):
-            new_state = PrinterIconState::ERROR;
-            spdlog::debug("[PrinterStatusIcon] Klippy SHUTDOWN/ERROR -> printer state ERROR");
-            break;
+            return PrinterIconState::ERROR;
         case static_cast<int>(KlippyState::READY):
         default:
-            new_state = PrinterIconState::READY;
-            spdlog::debug("[PrinterStatusIcon] Klippy READY -> printer state READY");
-            break;
-        }
-    } else if (cached_connection_state_ == static_cast<int>(ConnectionState::FAILED)) {
-        new_state = PrinterIconState::ERROR;
-        spdlog::debug("[PrinterStatusIcon] Connection FAILED -> printer state ERROR");
-    } else { // DISCONNECTED, CONNECTING, RECONNECTING
-        if (get_printer_state().was_ever_connected()) {
-            new_state = PrinterIconState::WARNING;
-            spdlog::trace("[PrinterStatusIcon] Disconnected (was connected) -> printer state "
-                          "WARNING");
-        } else {
-            new_state = PrinterIconState::DISCONNECTED;
-            spdlog::trace("[PrinterStatusIcon] Never connected -> printer state DISCONNECTED");
+            return PrinterIconState::READY;
         }
     }
+    if (connection_state == static_cast<int>(ConnectionState::FAILED)) {
+        return PrinterIconState::ERROR;
+    }
+    // DISCONNECTED, CONNECTING, RECONNECTING
+    return ever_connected ? PrinterIconState::WARNING : PrinterIconState::DISCONNECTED;
+}
+
+void PrinterStatusIcon::update_icon_state() {
+    const bool expected_restart = EmergencyStopOverlay::instance().is_expected_restart();
+    PrinterIconState new_state =
+        compute_state(cached_connection_state_, cached_klippy_state_,
+                      get_printer_state().was_ever_connected(), expected_restart);
+
+    spdlog::debug("[PrinterStatusIcon] conn={} klippy={} expected_restart={} -> icon state {}",
+                  cached_connection_state_, cached_klippy_state_, expected_restart,
+                  static_cast<int>(new_state));
 
     if (subjects_initialized_) {
         lv_subject_set_int(&printer_icon_state_subject_, static_cast<int>(new_state));

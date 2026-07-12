@@ -39,6 +39,30 @@ TEST_CASE_METHOD(LVGLTestFixture, "Recovery suppression - basic timing", "[recov
     }
 }
 
+TEST_CASE_METHOD(LVGLTestFixture, "Expected restart - tracks SAVE_CONFIG suppression window",
+                 "[recovery][suppress]") {
+    // is_expected_restart() is the window the status icon, nav manager, and
+    // panel widget manager consult to treat a transient Klipper SHUTDOWN as a
+    // restart rather than an error.
+    auto& estop = EmergencyStopOverlay::instance();
+
+    SECTION("not an expected restart by default") {
+        REQUIRE_FALSE(estop.is_expected_restart());
+    }
+
+    SECTION("true while a SAVE_CONFIG suppression window is active") {
+        estop.suppress_recovery_dialog(5000);
+        REQUIRE(estop.is_expected_restart());
+    }
+
+    SECTION("false once the window expires") {
+        estop.suppress_recovery_dialog(10); // 10ms
+        REQUIRE(estop.is_expected_restart());
+        lv_tick_inc(50);
+        REQUIRE_FALSE(estop.is_expected_restart());
+    }
+}
+
 // ============================================================================
 // Recovery reason enum coverage
 // ============================================================================

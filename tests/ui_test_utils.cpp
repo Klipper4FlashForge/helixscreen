@@ -630,6 +630,10 @@ bool EmergencyStopOverlay::is_recovery_suppressed() const {
     return lv_tick_elaps(suppress_recovery_until_) > (UINT32_MAX / 2);
 }
 
+bool EmergencyStopOverlay::is_expected_restart() const {
+    return is_recovery_suppressed() || restart_in_progress_;
+}
+
 void EmergencyStopOverlay::show_recovery_dialog() {
     if (recovery_dialog_)
         return;

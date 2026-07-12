@@ -149,6 +149,19 @@ class EmergencyStopOverlay {
      */
     bool is_recovery_suppressed() const;
 
+    /**
+     * @brief Whether Klipper is expected to bounce through a transient SHUTDOWN.
+     *
+     * True while a SAVE_CONFIG-style suppression window is active
+     * (is_recovery_suppressed()) or a user-initiated restart is in flight
+     * (restart_in_progress_). UI consumers of klippy_state use this to treat the
+     * transient SHUTDOWN as a restart rather than an error — no red status icon,
+     * no navigate-to-home, no firmware_restart widget injection.
+     *
+     * @return true if a SHUTDOWN right now should be read as an expected restart
+     */
+    bool is_expected_restart() const;
+
   private:
     EmergencyStopOverlay() = default;
     ~EmergencyStopOverlay() = default;
