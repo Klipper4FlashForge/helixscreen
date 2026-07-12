@@ -130,6 +130,10 @@ void PrintSelectDetailView::init_subjects() {
     // G-code loading indicator (0=hidden, 1=visible)
     UI_MANAGED_SUBJECT_INT(detail_gcode_loading_, 0, "detail_gcode_loading", subjects_);
 
+    // Preview color mode: 0 = actual (loaded slot colors), 1 = sliced (slicer intent)
+    UI_MANAGED_SUBJECT_INT(detail_prefer_sliced_colors_, 0, "detail_prefer_sliced_colors",
+                           subjects_);
+
     // Filament mismatch warning (0=hidden, 1=visible)
     UI_MANAGED_SUBJECT_INT(filament_mismatch_, 0, "filament_mismatch", subjects_);
 
@@ -404,6 +408,7 @@ void PrintSelectDetailView::show(const std::string& filename, const std::string&
     lv_subject_set_int(&color_swatches_visible_, 0);
     lv_subject_set_int(&empty_tools_warning_, 0);
     lv_subject_set_int(&filament_mismatch_, 0);
+    lv_subject_set_int(&detail_prefer_sliced_colors_, 0); // every open starts on actual colors
 
     // Drop any cached pre-flight result from a previously-selected file. The
     // validator re-runs in try_extract_gcode_colors() once this file's gcode is
@@ -959,6 +964,36 @@ void PrintSelectDetailView::apply_mapped_tool_colors() {
     }
 }
 
+void PrintSelectDetailView::apply_preview_colors() {
+    if (!gcode_viewer_ || !gcode_loaded_) {
+        return;
+    }
+    if (lv_subject_get_int(&detail_prefer_sliced_colors_) == 1) {
+        apply_sliced_tool_colors();
+    } else {
+        // Actual (loaded) colors: firmware/slicer base, then mapped overrides win.
+        apply_tool_colors();
+        apply_mapped_tool_colors();
+    }
+}
+
+void PrintSelectDetailView::apply_sliced_tool_colors() {
+    if (!gcode_viewer_ || !gcode_loaded_ || current_filament_colors_.empty()) {
+        return;
+    }
+    std::vector<uint32_t> tool_colors;
+    for (const auto& hex : current_filament_colors_) {
+        auto parsed = helix::parse_hex_color(hex);
+        if (parsed) {
+            tool_colors.push_back(*parsed);
+        }
+    }
+    if (!tool_colors.empty()) {
+        ui_gcode_viewer_set_tool_colors(gcode_viewer_, tool_colors);
+        lv_obj_invalidate(gcode_viewer_);
+    }
+}
+
 void PrintSelectDetailView::try_extract_gcode_colors(lv_obj_t* viewer) {
     auto* parsed = ui_gcode_viewer_get_parsed_file(viewer);
     if (!parsed) {
@@ -1400,9 +1435,9 @@ void PrintSelectDetailView::load_gcode_for_preview() {
                     // Show all layers, no ghost (preview = full model)
                     ui_gcode_viewer_set_print_progress(viewer, -1);
 
-                    // Apply AMS or slicer tool colors, then override with mapped colors
-                    self->apply_tool_colors();
-                    self->apply_mapped_tool_colors();
+                    // Apply preview colors respecting the sliced/actual toggle
+                    // (default actual: AMS/slicer base then mapped overrides).
+                    self->apply_preview_colors();
 
                     // Extract colors from parsed gcode when metadata lacked them.
                     // This also computes preflight_result_ — it MUST run before
@@ -1500,10 +1535,8 @@ void PrintSelectDetailView::load_gcode_for_preview() {
                                     // Show all layers, no ghost (preview = full model)
                                     ui_gcode_viewer_set_print_progress(viewer, -1);
 
-                                    // Apply AMS or slicer tool colors, then override with mapped
-                                    // colors
-                                    self->apply_tool_colors();
-                                    self->apply_mapped_tool_colors();
+                                    // Apply preview colors respecting the sliced/actual toggle.
+                                    self->apply_preview_colors();
 
                                     // Extract colors from parsed gcode when metadata lacked them.
                                     // Also computes preflight_result_ — MUST run before

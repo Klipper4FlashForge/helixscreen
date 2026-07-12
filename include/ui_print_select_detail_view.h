@@ -512,6 +512,9 @@ class PrintSelectDetailView : public OverlayBase {
     lv_subject_t detail_gcode_viewer_mode_{};
     // G-code loading indicator (0=hidden, 1=visible)
     lv_subject_t detail_gcode_loading_{};
+    // 1 = show slicer-intended colors instead of loaded AMS slot colors.
+    // View-local, resets to 0 (actual) on every show().
+    lv_subject_t detail_prefer_sliced_colors_{};
     std::string temp_gcode_path_; // Cached downloaded gcode file path
     bool gcode_loaded_ = false;   // Whether gcode file has been loaded into viewer
     // Pending print-attempt (or other) callback registered via run_when_loaded()
@@ -620,6 +623,9 @@ class PrintSelectDetailView : public OverlayBase {
      * @brief Re-apply tool colors from user's filament mapping choices
      */
     void apply_mapped_tool_colors();
+
+    void apply_preview_colors();      // dispatch sliced vs actual by the subject
+    void apply_sliced_tool_colors();  // force slicer palette into the viewer
 
     /**
      * @brief Extract filament colors from parsed gcode when metadata lacks them
