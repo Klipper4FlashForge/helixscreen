@@ -9,10 +9,17 @@
 #include <utility>
 
 #include <fcntl.h>
-#include <linux/fb.h>
-#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+
+// The fbdev ioctl geometry probe is Linux-only. Everything else (mmap blit,
+// RGB565->BGRA conversion) is portable POSIX, so non-Linux native/dev builds
+// (macOS CI) compile the sink and exercise the conversion via configured
+// geometry — only the real-device probe is compiled out.
+#ifdef __linux__
+#include <linux/fb.h>
+#include <sys/ioctl.h>
+#endif
 
 namespace helix {
 
@@ -48,32 +55,40 @@ bool Fb0MailboxSink::start() {
         return false;
     }
 
+    bool have_ioctl = false;
+
+#ifdef __linux__
     // A real fbdev answers these ioctls; a regular file (test backing) does not.
     struct fb_var_screeninfo vinfo;
     struct fb_fix_screeninfo finfo;
     std::memset(&vinfo, 0, sizeof(vinfo));
     std::memset(&finfo, 0, sizeof(finfo));
 
-    bool have_ioctl = ::ioctl(fd_, FBIOGET_VSCREENINFO, &vinfo) == 0 &&
-                      ::ioctl(fd_, FBIOGET_FSCREENINFO, &finfo) == 0;
+    have_ioctl = ::ioctl(fd_, FBIOGET_VSCREENINFO, &vinfo) == 0 &&
+                 ::ioctl(fd_, FBIOGET_FSCREENINFO, &finfo) == 0;
 
     if (have_ioctl) {
         fb_w_      = static_cast<int>(vinfo.xres);
         fb_h_      = static_cast<int>(vinfo.yres);
         fb_bpp_    = static_cast<int>(vinfo.bits_per_pixel);
         fb_stride_ = static_cast<uint32_t>(finfo.line_length);
-    } else if (has_cfg_) {
-        // Test path: fall back to configured geometry so the blit math is
-        // exercisable without a device.
-        fb_w_      = cfg_w_;
-        fb_h_      = cfg_h_;
-        fb_bpp_    = cfg_bpp_;
-        fb_stride_ = cfg_stride_;
-    } else {
-        warn_once("no fbdev ioctls and no configured geometry");
-        ::close(fd_);
-        fd_ = -1;
-        return false;
+    }
+#endif
+
+    if (!have_ioctl) {
+        if (has_cfg_) {
+            // Test path (and all non-Linux builds): fall back to configured
+            // geometry so the blit math is exercisable without a device.
+            fb_w_      = cfg_w_;
+            fb_h_      = cfg_h_;
+            fb_bpp_    = cfg_bpp_;
+            fb_stride_ = cfg_stride_;
+        } else {
+            warn_once("no fbdev ioctls and no configured geometry");
+            ::close(fd_);
+            fd_ = -1;
+            return false;
+        }
     }
 
     if (fb_bpp_ != 32) {
