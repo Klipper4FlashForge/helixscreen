@@ -1008,8 +1008,9 @@ void PrintSelectDetailView::apply_sliced_tool_colors() {
 }
 
 void PrintSelectDetailView::on_ams_state_changed() {
-    // Cheap guard: no work while closed / not yet loaded. gcode_viewer_ is nulled
-    // on on_deactivate(), so this also protects a dangling viewer pointer.
+    // Cheap guard: no work while closed / not yet loaded. on_deactivate() clears
+    // gcode_loaded_ and on_ui_destroyed() nulls gcode_viewer_, so this also
+    // protects against a dangling viewer pointer after the view is torn down.
     if (!is_visible() || !gcode_loaded_ || !gcode_viewer_) {
         return;
     }
