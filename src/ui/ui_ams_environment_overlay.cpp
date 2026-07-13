@@ -18,6 +18,7 @@
 #include "ams_types.h"
 #include "config.h"
 #include "filament_database.h"
+#include "helix-xml/src/xml/lv_xml.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
 #include "static_panel_registry.h"
@@ -730,6 +731,31 @@ void AmsEnvironmentOverlay::on_preset_changed(lv_event_t* e) {
     }
 
     LVGL_SAFE_EVENT_CB_END();
+}
+
+void ensure_ams_env_indicator_registered() {
+    static bool s_registered = false;
+    if (s_registered) {
+        return;
+    }
+
+    // The badge's click callback and component file are shared by the single-unit
+    // AmsPanel and the multi-unit overview; whichever runs first registers them.
+    // The event_cb registration is last-wins-safe, but a second component
+    // registration would orphan the first scope node (lv_xml_register_component_from_data
+    // does no dedup), so the guard makes this happen exactly once per process.
+    lv_xml_register_event_cb(nullptr, "on_env_indicator_clicked", [](lv_event_t* e) {
+        auto* ind = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
+        int unit = ind ? static_cast<int>(reinterpret_cast<intptr_t>(lv_obj_get_user_data(ind)))
+                       : 0;
+        spdlog::info("[AMS Environment] Indicator clicked — opening overlay for unit {}", unit);
+        auto& overlay = get_ams_environment_overlay();
+        overlay.show(lv_screen_active(), unit);
+    });
+
+    lv_xml_register_component_from_file("A:ui_xml/components/ams_environment_indicator.xml");
+
+    s_registered = true;
 }
 
 } // namespace helix::ui

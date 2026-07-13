@@ -89,19 +89,10 @@ static void ensure_ams_widgets_registered() {
     // Register sidebar callbacks BEFORE XML parsing (callbacks must exist when parser sees them)
     helix::ui::AmsOperationSidebar::register_callbacks_static();
 
-    // Register environment indicator callback
-    static bool env_cb_registered = false;
-    if (!env_cb_registered) {
-        lv_xml_register_event_cb(nullptr, "on_env_indicator_clicked", [](lv_event_t* e) {
-            auto* ind = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
-            int unit = ind ? static_cast<int>(reinterpret_cast<intptr_t>(lv_obj_get_user_data(ind)))
-                           : 0;
-            spdlog::info("[AMS Environment] Indicator clicked — opening overlay for unit {}", unit);
-            auto& overlay = helix::ui::get_ams_environment_overlay();
-            overlay.show(lv_screen_active(), unit);
-        });
-        env_cb_registered = true;
-    }
+    // Register the environment-indicator badge (component + click callback).
+    // Shared with the multi-unit overview via one process-lifetime guard; must
+    // run before ams_panel.xml is parsed since it nests <ams_environment_indicator>.
+    helix::ui::ensure_ams_env_indicator_registered();
 
     // Tool text observers are initialized in ui_ams_current_tool_init() at
     // app startup so the print status panel's lane label works before any
@@ -119,7 +110,7 @@ static void ensure_ams_widgets_registered() {
     // xml_registration.cpp
     lv_xml_register_component_from_file("A:ui_xml/components/ams_unit_detail.xml");
     lv_xml_register_component_from_file("A:ui_xml/components/ams_loaded_card.xml");
-    lv_xml_register_component_from_file("A:ui_xml/components/ams_environment_indicator.xml");
+    // ams_environment_indicator registered above via ensure_ams_env_indicator_registered()
     lv_xml_register_component_from_file("A:ui_xml/components/ams_sidebar.xml");
     lv_xml_register_component_from_file("A:ui_xml/ams_panel.xml");
     lv_xml_register_component_from_file("A:ui_xml/ams_context_menu.xml");

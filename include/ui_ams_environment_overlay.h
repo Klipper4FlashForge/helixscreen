@@ -175,4 +175,17 @@ class AmsEnvironmentOverlay : public OverlayBase {
  */
 AmsEnvironmentOverlay& get_ams_environment_overlay();
 
+/**
+ * @brief Register the AMS environment-indicator badge (component + click callback) once.
+ *
+ * The single-unit AmsPanel and the multi-unit AmsOverviewPanel both embed the
+ * <ams_environment_indicator> badge. Each calls this before parsing the XML that
+ * nests it. A process-lifetime guard ensures the component file and the
+ * on_env_indicator_clicked event_cb are registered exactly once: the event_cb
+ * double-registration is last-wins-safe, but lv_xml_register_component_from_data
+ * does an unconditional insert with no dedup, so a second component registration
+ * would orphan the first scope node (a bounded one-time leak).
+ */
+void ensure_ams_env_indicator_registered();
+
 } // namespace helix::ui

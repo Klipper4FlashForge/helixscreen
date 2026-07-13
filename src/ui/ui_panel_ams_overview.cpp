@@ -1021,22 +1021,15 @@ static void ensure_overview_registered() {
         }
     });
 
-    // Register the environment-indicator click callback. ui_panel_ams.cpp
-    // registers the same name for the single-unit AmsPanel path, but when the
-    // multi-unit overview is the first (or only) AMS entry point in a run,
-    // that registration never runs — each ams_unit_card's <ams_environment_indicator
-    // event_cb="on_env_indicator_clicked"> would otherwise fail to bind
-    // (lv_xml_get_event_cb: "no event was found"). Registering here too is
-    // harmless/idempotent — same name, same behavior — and guarantees the
-    // callback exists before create_unit_cards() parses ams_unit_card.xml.
-    lv_xml_register_event_cb(nullptr, "on_env_indicator_clicked", [](lv_event_t* e) {
-        auto* ind = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
-        int unit = ind ? static_cast<int>(reinterpret_cast<intptr_t>(lv_obj_get_user_data(ind)))
-                       : 0;
-        spdlog::info("[AMS Environment] Indicator clicked — opening overlay for unit {}", unit);
-        auto& overlay = helix::ui::get_ams_environment_overlay();
-        overlay.show(lv_screen_active(), unit);
-    });
+    // Register the environment-indicator badge (component + click callback).
+    // ui_panel_ams.cpp registers the same name for the single-unit AmsPanel path,
+    // but when the multi-unit overview is the first (or only) AMS entry point in a
+    // run, that registration never runs — each ams_unit_card's
+    // <ams_environment_indicator event_cb="on_env_indicator_clicked"> would
+    // otherwise fail to bind (lv_xml_get_event_cb: "no event was found"). The
+    // shared helper's process-lifetime guard registers the callback and component
+    // exactly once, before create_unit_cards() parses ams_unit_card.xml.
+    helix::ui::ensure_ams_env_indicator_registered();
 
     // Register canvas widgets
     ui_system_path_canvas_register();
@@ -1051,9 +1044,8 @@ static void ensure_overview_registered() {
     lv_xml_register_component_from_file("A:ui_xml/components/ams_unit_detail.xml");
     lv_xml_register_component_from_file("A:ui_xml/components/ams_loaded_card.xml");
     lv_xml_register_component_from_file("A:ui_xml/ams_context_menu.xml");
-    // ams_unit_card.xml nests <ams_environment_indicator>, so it must be
-    // registered first or the child element parses as unknown.
-    lv_xml_register_component_from_file("A:ui_xml/components/ams_environment_indicator.xml");
+    // ams_unit_card.xml nests <ams_environment_indicator>, which is already
+    // registered above via ensure_ams_env_indicator_registered().
     lv_xml_register_component_from_file("A:ui_xml/ams_unit_card.xml");
     lv_xml_register_component_from_file("A:ui_xml/components/ams_sidebar.xml");
     lv_xml_register_component_from_file("A:ui_xml/ams_overview_panel.xml");
