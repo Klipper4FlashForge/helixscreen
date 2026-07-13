@@ -184,6 +184,10 @@ echo '/dev/sda1   1048576  0  512000  0% /'
     # The namespace couldn't mount tmpfs (locked-down CI): don't fail the suite.
     [[ "$output" == *"MOUNT_TMP_FAIL"* ]] && skip "tmpfs mount not permitted in this environment"
 
+    # Surface the scenario's own markers on failure — this E2E runs against a
+    # live namespace whose partition/mount layout varies by CI runner image, so
+    # a bare "status != 0" is undiagnosable without the scenario's stdout.
+    [ "$status" -eq 0 ] || echo "# ro_tmp scenario status=$status output=<<$output>>" >&3
     [ "$status" -eq 0 ]
     [[ "$output" == *"REPRO_OK"* ]]   # reproduced the bundle mkdir-on-read-only-/tmp failure
     [[ "$output" == *"FIX_OK"* ]]     # sibling staging dir + real extraction succeeded
