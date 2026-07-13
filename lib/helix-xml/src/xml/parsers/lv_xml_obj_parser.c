@@ -765,6 +765,11 @@ void lv_obj_xml_bind_flag_apply(lv_xml_parser_state_t * state, const char ** att
     if(subject_str == NULL) {
         LV_LOG_WARN("`subject` is missing in lv_obj bind_flag");
     }
+    else if(subject_str[0] == '\0') {
+        /* Empty subject = intentional "no binding" (an optional subject left at
+         * its empty default). Skip silently so the binding never installs and
+         * clobbers a static flag such as hidden="true". */
+    }
     else if(flag_str == NULL) {
         LV_LOG_WARN("`flag` is missing in lv_obj bind_flag");
     }
@@ -817,6 +822,11 @@ void lv_obj_xml_bind_state_apply(lv_xml_parser_state_t * state, const char ** at
 
     if(subject_str == NULL) {
         LV_LOG_WARN("`subject` is missing in lv_obj state_flag");
+    }
+    else if(subject_str[0] == '\0') {
+        /* Empty subject = intentional "no binding" (an optional subject left at
+         * its empty default). Skip silently so the binding never installs and
+         * clobbers a static state. */
     }
     else if(state_str == NULL) {
         LV_LOG_WARN("`state` is missing in lv_obj state_flag");
