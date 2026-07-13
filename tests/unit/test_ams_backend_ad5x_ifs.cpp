@@ -7932,3 +7932,52 @@ TEST_CASE("AD5X IFS: an empty first material observation is a baseline, not a sp
     REQUIRE(after.has_value());
     CHECK(after->material == "ABS");
 }
+
+// ==========================================================================
+// Bundle 77TDH9N6: a cold-start IFS load (INSERT_PRUTOK_IFS) legitimately runs
+// past the 300s AMS RPC ceiling (heat-from-cold + load + double purge + clean).
+// The macro completes fine, but the RPC times out at 300s and — unless silent —
+// surfaces a false "printer.gcode.script timed out after 300000ms" toast. The
+// backend owns completion via its phase tracker + IFS_STATUS, so the RPC timeout
+// is advisory here. execute_gcode() must dispatch silent=true (suppress ONLY the
+// timeout toast; genuine RPC-error toasts stay suppressed via the error_cb
+// caller_handles_ui path) while leaving the 300s ceiling unchanged.
+// ==========================================================================
+
+TEST_CASE("AD5X IFS execute_gcode dispatches silent with the AMS timeout ceiling",
+          "[ams][mock][ad5x_ifs]") {
+    MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
+    helix::PrinterState state;
+    state.init_subjects(false);
+    // execute_gcode()'s klippy-halted gate rejects everything until a real
+    // state update arrives (subjects initialize to SHUTDOWN).
+    state.set_klippy_state_sync(helix::KlippyState::READY);
+    client.connect("ws://mock/websocket", []() {}, []() {});
+
+    // Real MoonrakerAPI path: MoonrakerAPIMock does NOT override execute_gcode,
+    // so the silent/timeout args reach the client mock's send capture.
+    MoonrakerAPIMock api(client, state);
+    AmsBackendAd5xIfs backend(&api, &client);
+
+    SECTION("plain execute_gcode overload") {
+        auto err = backend.execute_gcode("INSERT_PRUTOK_IFS PRUTOK=2");
+        REQUIRE(err.success());
+
+        REQUIRE(client.last_send_method() == "printer.gcode.script");
+        // silent=true suppresses the false REQUEST_TIMEOUT toast.
+        REQUIRE(client.last_send_silent() == true);
+        // Ceiling unchanged — proves we did NOT alter AMS_OPERATION_TIMEOUT_MS.
+        REQUIRE(client.last_send_timeout_ms() == 300000u);
+    }
+
+    SECTION("on_complete execute_gcode overload") {
+        bool completed = false;
+        auto err = backend.execute_gcode("INSERT_PRUTOK_IFS PRUTOK=2",
+                                         [&completed]() { completed = true; });
+        REQUIRE(err.success());
+
+        REQUIRE(client.last_send_method() == "printer.gcode.script");
+        REQUIRE(client.last_send_silent() == true);
+        REQUIRE(client.last_send_timeout_ms() == 300000u);
+    }
+}
