@@ -942,8 +942,9 @@ class PrinterState {
      * @param roles Wizard-configured fan role assignments
      */
     void init_fans(const std::vector<std::string>& fan_objects,
-                   const helix::FanRoleConfig& roles = {}) {
-        fan_state_.init_fans(fan_objects, roles);
+                   const helix::FanRoleConfig& roles = {},
+                   const std::unordered_map<std::string, double>& max_power = {}) {
+        fan_state_.init_fans(fan_objects, roles, max_power);
     }
 
     /**

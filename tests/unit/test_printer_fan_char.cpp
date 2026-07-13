@@ -282,6 +282,60 @@ TEST_CASE("Fan characterization: per-fan speed updates from JSON",
     }
 }
 
+// ============================================================================
+// max_power normalization — Klipper reports `speed` scaled by the fan's
+// configured max_power (last_fan_value = value * max_power). Divide it back out
+// so a fan running full-on reads 100%, matching Mainsail. (heater-fan 50% bug)
+// ============================================================================
+
+TEST_CASE("Fan max_power normalization", "[fan][update][max_power]") {
+    lv_init_safe();
+
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    SECTION("heater_fan full-on with max_power 0.5 reads 100%") {
+        // Klipper reports speed=0.5 for a fan configured max_power: 0.5 running
+        // at logical full. Without normalization HelixScreen showed 50%.
+        state.init_fans({"heater_fan hotend_fan"}, {},
+                        {{"heater_fan hotend_fan", 0.5}});
+        json status = {{"heater_fan hotend_fan", {{"speed", 0.5}}}};
+        state.update_from_status(status);
+
+        REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("heater_fan hotend_fan")) == 100);
+    }
+
+    SECTION("no max_power configured leaves speed unchanged (default 1.0)") {
+        state.init_fans({"heater_fan hotend_fan"});
+        json status = {{"heater_fan hotend_fan", {{"speed", 0.5}}}};
+        state.update_from_status(status);
+
+        REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("heater_fan hotend_fan")) == 50);
+    }
+
+    SECTION("part fan normalization drives the main fan_speed_ subject") {
+        // Part fan with max_power 0.8: a logical 50% request stores 0.4; dividing
+        // back out yields 50% on the hero slider subject.
+        state.init_fans({"fan"}, {}, {{"fan", 0.8}});
+        json status = {{"fan", {{"speed", 0.4}}}};
+        state.update_from_status(status);
+
+        REQUIRE(lv_subject_get_int(state.get_fan_speed_subject()) == 50);
+        REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("fan")) == 50);
+    }
+
+    SECTION("normalized result clamps to 100%") {
+        // Defensive: even if a report exceeds max_power, don't overshoot 100.
+        state.init_fans({"heater_fan hotend_fan"}, {},
+                        {{"heater_fan hotend_fan", 0.5}});
+        json status = {{"heater_fan hotend_fan", {{"speed", 0.6}}}};
+        state.update_from_status(status);
+
+        REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("heater_fan hotend_fan")) == 100);
+    }
+}
+
 TEST_CASE("Fan characterization: FanInfo speed_percent updates",
           "[characterization][fan][update][faninfo]") {
     lv_init_safe();

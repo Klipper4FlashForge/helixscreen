@@ -115,8 +115,13 @@ class PrinterFanState {
      * @brief Initialize fan tracking from discovered fan objects
      * @param fan_objects List of Moonraker fan object names
      * @param roles Wizard-configured fan role assignments (for naming and classification)
+     * @param max_power Per-fan `max_power` from configfile.settings, keyed by
+     *        lowercased object name. Klipper reports `speed` scaled by max_power;
+     *        this map lets us divide it back out so a full-on fan reads 100%
+     *        (matching Mainsail). Absent entries default to 1.0 (no scaling).
      */
-    void init_fans(const std::vector<std::string>& fan_objects, const FanRoleConfig& roles = {});
+    void init_fans(const std::vector<std::string>& fan_objects, const FanRoleConfig& roles = {},
+                   const std::unordered_map<std::string, double>& max_power = {});
 
     /**
      * @brief Update speed for a specific fan (called during status updates)
@@ -183,6 +188,13 @@ class PrinterFanState {
     /// Get role-based display name override, or empty string if none
     std::string get_role_display_name(const std::string& object_name) const;
 
+    /// Normalize a raw Moonraker `speed` (0.0-1.0) by the fan's configured
+    /// max_power so a full-on fan reads 1.0. Klipper reports last_fan_value =
+    /// value * max_power; dividing it back out recovers the logical fraction,
+    /// matching Mainsail. Unknown fans and max_power<=0 default to 1.0 (no
+    /// scaling). Result is clamped to [0.0, 1.0].
+    double normalize_speed(const std::string& object_name, double raw_speed) const;
+
     /// Disambiguate fans sharing the "chamber_fan" suffix by role: a HEATER_FAN
     /// becomes "Chamber Heater Fan" and a TEMPERATURE_FAN "Chamber Cooling Fan".
     /// Returns base_name unchanged for any other object or type.
@@ -204,6 +216,10 @@ class PrinterFanState {
 
     // Fan metadata
     std::vector<FanInfo> fans_;
+
+    // Per-fan `max_power` from configfile.settings, keyed by lowercased object
+    // name. Used to normalize reported speeds (see normalize_speed()).
+    std::unordered_map<std::string, double> fan_max_power_;
 
     // Configured fan roles from wizard config
     FanRoleConfig roles_;

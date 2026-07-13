@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cctype>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -671,6 +672,7 @@ class PrinterDiscovery {
         chamber_heater_object_name_.clear();
         chamber_cooling_fan_name_.clear();
         chamber_fan_resting_deci_ = 0;
+        fan_max_power_.clear();
         has_led_ = false;
         led_effects_.clear();
         has_led_effects_ = false;
@@ -797,6 +799,17 @@ class PrinterDiscovery {
     }
     [[nodiscard]] int chamber_fan_resting_deci() const {
         return chamber_fan_resting_deci_;
+    }
+
+    /// Record a fan's configured `max_power` (from configfile.settings), keyed by
+    /// lowercased object name. Klipper reports `speed` scaled by this value, so
+    /// PrinterFanState divides it back out to display the logical fraction
+    /// (matching Mainsail). See PrinterFanState::normalize_speed().
+    void set_fan_max_power(const std::string& object_name, double max_power) {
+        fan_max_power_[object_name] = max_power;
+    }
+    [[nodiscard]] const std::unordered_map<std::string, double>& fan_max_power() const {
+        return fan_max_power_;
     }
 
     [[nodiscard]] bool has_led() const {
@@ -1373,6 +1386,10 @@ class PrinterDiscovery {
     int chamber_fan_resting_deci_ = 0;       ///< Cooling fan's configured resting/off target
                                              ///< (decidegrees), from configfile.settings
                                              ///< target_temp. 0 = unknown. M141 S0 returns here.
+    std::unordered_map<std::string, double> fan_max_power_; ///< Per-fan max_power from
+                                                            ///< configfile.settings, keyed by
+                                                            ///< lowercased object name. Used to
+                                                            ///< normalize reported fan speeds.
     bool has_led_ = false;
     std::vector<std::string> led_effects_;
     bool has_led_effects_ = false;

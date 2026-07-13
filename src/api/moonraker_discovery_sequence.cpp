@@ -735,6 +735,37 @@ void MoonrakerDiscoverySequence::continue_discovery_objects(uint64_t seq) {
                                     }
                                 }
 
+                                // Record each fan's configured max_power. Klipper reports
+                                // `speed` as last_fan_value = value * max_power, so the UI
+                                // divides it back out to show the logical fraction (a full-on
+                                // heater_fan with max_power: 0.5 should read 100%, not 50% —
+                                // matching Mainsail). Section names in configfile.settings are
+                                // lowercased by Klipper; store keyed the same way so
+                                // PrinterFanState::normalize_speed() (lowercased lookup) matches.
+                                {
+                                    std::lock_guard<std::mutex> lock(hardware_mutex_);
+                                    for (const auto& [section, cfg_vals] : settings.items()) {
+                                        const bool is_fan_section =
+                                            section == "fan" ||
+                                            section.rfind("heater_fan ", 0) == 0 ||
+                                            section.rfind("fan_generic ", 0) == 0 ||
+                                            section.rfind("controller_fan ", 0) == 0 ||
+                                            section.rfind("temperature_fan ", 0) == 0;
+                                        if (!is_fan_section || !cfg_vals.is_object() ||
+                                            !cfg_vals.contains("max_power") ||
+                                            !cfg_vals["max_power"].is_number()) {
+                                            continue;
+                                        }
+                                        double mp = cfg_vals["max_power"].get<double>();
+                                        if (mp <= 0.0 || mp >= 1.0) {
+                                            continue; // 1.0 (or invalid) means no scaling
+                                        }
+                                        hardware_.set_fan_max_power(section, mp);
+                                        spdlog::debug("[Discovery] Fan '{}' max_power: {}", section,
+                                                      mp);
+                                    }
+                                }
+
                                 auto* config = Config::get_instance();
                                 if (config && !macro_result.role_hints.empty()) {
                                     for (const auto& [obj_name, role] : macro_result.role_hints) {

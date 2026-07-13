@@ -108,14 +108,14 @@ void PrinterFanState::update_from_status(const nlohmann::json& status) {
         spdlog::trace("[PrinterFanState] Received fan status update: {}", fan.dump());
 
         if (fan.contains("speed") && fan["speed"].is_number()) {
-            int speed_pct = units::json_to_percent(fan, "speed");
+            double speed = fan["speed"].get<double>();
+            int speed_pct = units::to_percent(normalize_speed("fan", speed));
             spdlog::trace("[PrinterFanState] Fan speed update: {}%", speed_pct);
             if (lv_subject_get_int(&fan_speed_) != speed_pct) {
                 lv_subject_set_int(&fan_speed_, speed_pct);
             }
 
             // Also update multi-fan tracking
-            double speed = fan["speed"].get<double>();
             update_fan_speed("fan", speed);
         }
     }
@@ -133,7 +133,7 @@ void PrinterFanState::update_from_status(const nlohmann::json& status) {
                 // If this is the configured part fan, also update the main fan_speed_ subject
                 // so the hero slider tracks the actual part fan speed
                 if (!roles_.part_fan.empty() && key == roles_.part_fan) {
-                    int speed_pct = units::json_to_percent(value, "speed");
+                    int speed_pct = units::to_percent(normalize_speed(key, speed));
                     if (lv_subject_get_int(&fan_speed_) != speed_pct) {
                         lv_subject_set_int(&fan_speed_, speed_pct);
                     }
@@ -258,8 +258,24 @@ bool PrinterFanState::is_fan_controllable(FanType type) {
            type == FanType::OUTPUT_PIN_FAN;
 }
 
+double PrinterFanState::normalize_speed(const std::string& object_name, double raw_speed) const {
+    std::string key = object_name;
+    std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+    auto it = fan_max_power_.find(key);
+    double max_power = (it != fan_max_power_.end() && it->second > 0.0) ? it->second : 1.0;
+    double normalized = raw_speed / max_power;
+    if (normalized < 0.0)
+        normalized = 0.0;
+    if (normalized > 1.0)
+        normalized = 1.0;
+    return normalized;
+}
+
 void PrinterFanState::init_fans(const std::vector<std::string>& fan_objects,
-                                const FanRoleConfig& roles) {
+                                const FanRoleConfig& roles,
+                                const std::unordered_map<std::string, double>& max_power) {
+    fan_max_power_ = max_power;
+
     // Build new subject map, reusing existing subjects for fans that persist
     // across reconnections. Only deinit subjects for fans that disappeared.
     std::unordered_map<std::string, std::unique_ptr<lv_subject_t>> new_subjects;
@@ -386,7 +402,7 @@ void PrinterFanState::init_fans(const std::vector<std::string>& fan_objects,
 }
 
 void PrinterFanState::update_fan_speed(const std::string& object_name, double speed) {
-    int speed_pct = units::to_percent(speed);
+    int speed_pct = units::to_percent(normalize_speed(object_name, speed));
 
     for (auto& fan : fans_) {
         if (fan.object_name == object_name) {
