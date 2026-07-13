@@ -35,3 +35,10 @@ CONFIG_HEAP_POISONING_COMPREHENSIVE=y
 # and the overflow corrupts the internal heap's TLSF control (canaries stay intact).
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=32768
 CONFIG_FREERTOS_CHECK_STACKOVERFLOW_CANARY=y
+
+# Task 3: app core uses dynamic_cast/typeid (sound backends, panel_widget_manager);
+# RTTI cost measured in the audit report.
+CONFIG_COMPILER_CXX_RTTI=y
+
+# No TLS in the audit; the default cert bundle costs ~636KB rodata.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n

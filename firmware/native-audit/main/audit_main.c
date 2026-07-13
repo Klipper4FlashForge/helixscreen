@@ -9,6 +9,7 @@
 //
 // Board bring-up (pins/timings) verified by firmware/ktouch-probe.
 
+#include <pthread.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -25,7 +26,12 @@
 #include "src/xml/lv_xml.h"
 #include "src/xml/lv_xml_component.h"
 
+#include "audit_app.h"  // Task 3 slice driver (helixapp component)
+#include "esp_littlefs.h"
+
 static const char *TAG = "native_audit";
+
+static void *app_phase(void *arg);
 
 #define LCD_H_RES 800
 #define LCD_V_RES 480
@@ -223,6 +229,44 @@ void app_main(void) {
 
     ESP_LOGI(TAG, "=== AUDIT TASK 1 PASS: XML component live, entering render loop ===");
 
+    // Task 3: mount the ui_xml tree, then bring up the real app-core slice
+    // (PrinterState subject pipeline + home panel from its real XML).
+    esp_vfs_littlefs_conf_t fs_conf = {
+        .base_path = "/littlefs",
+        .partition_label = "storage",
+        .format_if_mount_failed = false,
+        .dont_mount = false,
+    };
+    esp_err_t fs_err = esp_vfs_littlefs_register(&fs_conf);
+    ESP_LOGI(TAG, "littlefs mount: %s", esp_err_to_name(fs_err));
+    if (fs_err == ESP_OK) {
+        size_t fs_total = 0, fs_used = 0;
+        esp_littlefs_info("storage", &fs_total, &fs_used);
+        ESP_LOGI(TAG, "littlefs: %u/%u KB used", (unsigned)(fs_used / 1024),
+                 (unsigned)(fs_total / 1024));
+    }
+    // The app phase must run on a pthread-created task: ESP-IDF's pthread_self()
+    // asserts from raw FreeRTOS tasks, and the app core calls
+    // std::this_thread::get_id() (main-thread detectors, spdlog). The main task
+    // just joins; all LVGL access stays sequential (Task 1 code above finished
+    // before this thread starts, and only app_phase touches LVGL afterwards).
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 32768);
+    pthread_t app_thread;
+    int perr = pthread_create(&app_thread, &attr, app_phase, NULL);
+    if (perr != 0) {
+        ESP_LOGE(TAG, "app_phase pthread_create failed: %d", perr);
+        return;
+    }
+    pthread_join(app_thread, NULL);
+}
+
+static void *app_phase(void *arg) {
+    (void)arg;
+    audit_app_run();
+    log_heap("app-slice-up");
+
     uint32_t n = 0;
     int64_t last_update = 0;
     while (true) {
@@ -239,4 +283,5 @@ void app_main(void) {
         }
         vTaskDelay(pdMS_TO_TICKS(delay < 5 ? 5 : delay > 50 ? 50 : delay));
     }
+    return NULL;
 }

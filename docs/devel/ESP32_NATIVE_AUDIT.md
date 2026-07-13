@@ -162,8 +162,108 @@ Direct libhv API leakage outside the client seam is tiny: two UI files call
 - `hv_stub` fidelity is declaration-level; pass-2 B files still need the real
   seam satisfied (Task 3 stub or Phase 2 esp_websocket_client port) to link.
 
+## Task 3 — Vertical slice links, boots, and renders ✅ PASS (2026-07-13)
+
+The full app-core slice — **486 repo sources** (PrinterState + all printer state
+classes, UpdateQueue, SubjectInitializer, theme system, all custom widgets, the
+home panel and its widget manager, settings/translation/tips managers) plus 34
+tier-6 fonts — links against ESP-IDF, boots on the K-Touch, and **renders the
+real home panel from the real `ui_xml/` tree served off LittleFS**. Visually
+confirmed on device (Nord theme fallback, image assets absent by design).
+Renderer compile-out gates (`HELIX_HAS_GCODE_VIEWER=0`,
+`HELIX_HAS_BED_MESH_3D=0`, added to the main Makefile as label-printer-style
+flags) and `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n` are in effect.
+
+### Numbers
+
+| Measurement | Value |
+|---|---|
+| App image (-Os, RTTI + exceptions ON, 486 sources, 34 fonts) | **9,064,576 bytes (8.64MB)** |
+| …same before cert-bundle off + last 2 renderer TUs gated | 9,229,616 (8.80MB) |
+| Core-slice-only milestone (before fonts/panels grew the list) | 1.06MB (helixapp archive alone: 90KB) |
+| Fonts in flash (largest single cost) | ~2.7MB |
+| `ui_xml/` tree on LittleFS partition | 4,936KB used / 6,464KB |
+| Boot to Task-1 card | ~3.4s |
+| Boot to home panel created + finalized | **~60s** (see seams below) |
+| Internal RAM free: boot → LVGL up → slice up | 245KB → 161KB → **63KB** |
+| PSRAM free: boot → LVGL up → slice up | 8.39MB → 7.36MB → **4.35MB** |
+| Heap over 80s steady render loop | flat (internal and PSRAM both stable) |
+
+Size notes: `esp_idf_size --files` shows ~630KB attributed to
+`esp_app_desc.c.obj` — an attribution artifact (the real `.rodata_desc` is
+0x100 bytes; the tool lumps unattributed rodata/exception tables at the segment
+start into it). Treat per-file numbers as approximate; the map file is the
+truth (`x509_crt_bundle*`, `gcode_*`, `bed_mesh_*` symbols verified absent).
+The 9.5MB factory partition is measurement-only; a product build must fit an
+OTA A/B scheme, and fonts remain the headline Phase 2 trim.
+
+### Runtime seams found (each cost a boot-debug cycle; all have audit-tree fixes)
+
+1. **`pthread_self()` asserts on raw FreeRTOS tasks.** The app core calls
+   `std::this_thread::get_id()` (`ui_notification_init`, main-thread
+   detectors, spdlog); ESP-IDF's gthread shim routes it to `pthread_self()`,
+   which `assert()`s from any task not created via pthread — including the
+   `main` task. Fix: `audit_main.c` runs the whole app phase (init + render
+   loop) on a pthread with a 32KB stack. **Phase 2 rule: every task that can
+   touch app code must be pthread-created.**
+2. **No working directory on ESP-IDF VFS → every relative asset path fails.**
+   Desktop assumes cwd = install root. `theme_manager`'s responsive-token
+   auto-discovery (`opendir("ui_xml")`) silently found nothing → all `space_*`
+   / `font_*` / `nav_width` tokens unregistered → `ui_text` hard-aborts on
+   missing `font_small` (boot loop). Config-dir creation fails the same way
+   (harmless here). Fix: `overrides/theme_manager.cpp` points discovery at
+   `/littlefs/ui_xml`. **Phase 2 needs a real asset-root abstraction.**
+3. **Token discovery I/O is pathological on flash filesystems.** ~25 scan
+   passes (px/string/color × up to 7 breakpoint suffixes), each re-reading
+   every top-level XML file (~1.26MB across ~150 files) via `std::ifstream`:
+   watchdog-observed **150s+ and still not done** on LittleFS. Fix: override
+   caches file bytes (~1.3MB, PSRAM) so flash is read once → theme init ~50s
+   total. **Phase 2: single-pass discovery or a build-time token table.**
+4. **Fonts must be XML-registered before theme init.** The slice initially
+   omitted `AssetManager::register_all()`; the responsive font registrar
+   verifies each face is linked and drops the token otherwise → same fatal
+   `font_small` path as (2). Also: 12 faces referenced by `asset_manager.cpp`
+   aren't in the tier-6 audit set (`source_code_pro` family, `mdi_icons_80/96/128`,
+   `noto_sans_8` — `mdi_icons_128.c` alone is 7.2MB of source); they're
+   alias-stubbed to `noto_sans_16` in `audit_stubs.cpp`. Only
+   `source_code_pro_10..16` can actually be selected at 480px and render as
+   the alias face — acceptable for a structure audit.
+5. **800×480 selects breakpoint tier `_medium`** (480 > `UI_BREAKPOINT_SMALL_MAX`),
+   not `_small` — pins exactly which font sizes a K-Touch build must ship.
+6. **Graceful degradation works.** Missing subjects from out-of-slice
+   subsystems (`job_queue_count`, `led_*`), a missing event callback, missing
+   `assets/images/*` on LittleFS, and missing translations all warn-and-continue.
+   The only hard-abort paths found were the two font-token ones above.
+
+### Slice mechanics (delta over Task 2)
+
+- `link_loop.py` grew `app_srcs.txt` to 486 sources using a Linux-build symbol
+  index (regen command in `resolve_undefined.py` header); stubs documented in
+  `audit_{stubs,moonraker_stub,platform_stubs2,fake_typeinfo,stb_impl}.*`.
+- `overrides/` audit-tree copies (never `src/` edits): 10 files — Xtensa
+  `int32_t`=long casts, `timegm`, `statvfs`, `ifaddrs`, `<thread>`, and now
+  `theme_manager.cpp` (VFS paths + content cache).
+- LittleFS via joltwallet component; `littlefs_create_partition_image` of
+  `ui_xml/`; `LV_FS_POSIX_PATH "/littlefs/"` maps the app's `A:` paths.
+- `SubjectInitializer::init_panels(nullptr, rc)` — panels tolerate a null API
+  at init; the audit drives state via PrinterState setters (like `--test`
+  minus libhv). No null-API crash observed through full panel construction.
+- Task watchdog warnings during init are cosmetic (main-thread init doesn't
+  yield for tens of seconds; steady-state loop is clean).
+
+### Threats to validity
+
+- No exceptions-off delta measured (RTTI+exceptions ON throughout Task 3).
+- 9.5MB factory partition is for measurement, not shippable (no OTA A/B).
+- Boot time includes audit logging and first-boot cache population; not a
+  Phase 2 boot-time prediction, but the LittleFS read cost it exposes is real.
+- Aliased mono/micro fonts mean glyph fidelity is unverified for those faces.
+- Home panel renders alongside the Task-1 card (intentional); no full-screen
+  visual-diff against a Linux screenshot was performed.
+- Slice has no Moonraker/WebSocket/network layer — the biggest unlinked seam.
+
 ## Remaining tasks
 
-- **Task 3:** vertical-slice link size (PrinterState + UpdateQueue + one panel). Not started. Sweep pre-work confirms `printer_state.cpp` and `static_subject_registry.cpp` compile (B) with the seam carved; `ui_panel_home.cpp` additionally needs the `panel_widget_manager.h` typeid resolved (RTTI config or carve).
-- **Task 4 [HW]:** RAM watermarks with the slice + CJK font viability. Not started.
+- **Task 4 [HW], partial:** slice RAM watermarks captured above (63KB internal
+  free is the tight number). Still open: CJK font viability.
 - **Task 5:** final report + go/no-go. Gates revised 2026-07-13: yellow = S3 + explicit feature gates (P4 hatch removed).
