@@ -350,9 +350,14 @@ two implementations of the same 1203-codepoint zh+ja translation subset
 
 Extrapolation: the desktop model loads ~22 bins for a CJK language even at
 the AD5M font tier ≈ **~3.0MB PSRAM of the ~3.15MB remaining + ~15s LittleFS
-load — not viable**. The compiled XIP route costs zero RAM at any size count;
-a realistic reduced set (regular + bold at the sizes the 800×480 medium tier
-uses, ~1.2–1.5MB flash) fits. **Verdict: CJK is VIABLE on the S3 — Phase 2
+load — not viable**. The compiled XIP route costs zero RAM — and the target
+build only needs the faces its breakpoint tier actually maps (Preston's
+callout): the 800×480 **_medium** tier uses exactly five text-font tokens
+(globals.xml:267-303) → CJK companions `noto_sans_26` (heading),
+`noto_sans_bold_28` (xl), `noto_sans_18` (body), `noto_sans_light_16`
+(small), `noto_sans_light_12` (xs). Summing those five bins × the measured
+1.10 compiled/bin ratio = **~0.9MB flash, zero RAM** (font_mono has no CJK
+fallback even on desktop). **Verdict: CJK is VIABLE on the S3 — Phase 2
 keeps CjkFontManager's `->fallback` wiring but points it at const compiled
 fonts (no lv_binfont_create, no load/unload, no heap).** The subset is baked
 at firmware build time from the translation YAMLs — same regen trigger the
