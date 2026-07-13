@@ -26,7 +26,7 @@ MoonrakerFileAPI::MoonrakerFileAPI(helix::MoonrakerClient& client) : client_(cli
 void MoonrakerFileAPI::list_files(const std::string& root, const std::string& path, bool recursive,
                                   FileListCallback on_success, ErrorCallback on_error) {
     // Validate root parameter
-    if (reject_invalid_identifier(root, "list_files", on_error))
+    if (reject_invalid_file_root(root, "list_files", on_error))
         return;
 
     // Validate path if provided
@@ -63,7 +63,7 @@ void MoonrakerFileAPI::list_files(const std::string& root, const std::string& pa
 void MoonrakerFileAPI::get_directory(const std::string& root, const std::string& path,
                                      FileListCallback on_success, ErrorCallback on_error) {
     // Validate root
-    if (reject_invalid_identifier(root, "get_directory", on_error))
+    if (reject_invalid_file_root(root, "get_directory", on_error))
         return;
 
     // Validate path if provided

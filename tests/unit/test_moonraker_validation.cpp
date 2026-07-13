@@ -273,6 +273,39 @@ TEST_CASE("reject_invalid_identifier() works with nullptr callback",
 }
 
 // ============================================================================
+// reject_invalid_file_root() Tests
+// ============================================================================
+
+TEST_CASE("reject_invalid_file_root() accepts hidden Moonraker roots",
+          "[moonraker_validation][reject]") {
+    bool error_called = false;
+    MoonrakerAPI::ErrorCallback on_error = [&](const MoonrakerError&) { error_called = true; };
+
+    REQUIRE(reject_invalid_file_root("gcodes", "list_files", on_error) == false);
+    REQUIRE(reject_invalid_file_root(".temp", "list_files", on_error) == false);
+    REQUIRE(error_called == false);
+
+    // Keep generic identifier validation unchanged for non-file-root callers.
+    REQUIRE(reject_invalid_identifier(".temp", "other_method", nullptr, true) == true);
+}
+
+TEST_CASE("reject_invalid_file_root() rejects unsafe roots", "[moonraker_validation][reject]") {
+    MoonrakerError captured_error;
+    MoonrakerAPI::ErrorCallback on_error = [&](const MoonrakerError& err) {
+        captured_error = err;
+    };
+
+    REQUIRE(reject_invalid_file_root("../secret", "list_files", on_error, true) == true);
+    REQUIRE(captured_error.type == MoonrakerErrorType::VALIDATION_ERROR);
+    REQUIRE(captured_error.method == "list_files");
+
+    REQUIRE(reject_invalid_file_root(".temp/shadow", "list_files", nullptr, true) == true);
+    REQUIRE(reject_invalid_file_root(".temp\n", "list_files", nullptr, true) == true);
+    REQUIRE(reject_invalid_file_root(".temp;G28", "list_files", nullptr, true) == true);
+    REQUIRE(reject_invalid_file_root(".", "list_files", nullptr, true) == true);
+}
+
+// ============================================================================
 // reject_out_of_range() Tests
 // ============================================================================
 
