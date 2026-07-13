@@ -218,6 +218,7 @@
              Only meaningful with an AMS mapping to compare against. -->
         <setting_toggle_row name="sliced_colors_row"
                             label="Show sliced colors"
+                            label_tag="Show sliced colors"
                             subject="detail_prefer_sliced_colors"
                             callback="on_toggle_sliced_colors">
           <bind_flag_if_eq subject="filament_mapping_visible" flag="hidden" ref_value="0"/>
