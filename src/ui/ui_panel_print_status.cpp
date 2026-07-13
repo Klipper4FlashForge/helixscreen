@@ -3199,32 +3199,36 @@ void PrintStatusPanel::load_gcode_for_viewing(const std::string& filename) {
             });
     };
 
-    auto load_existing_gcode_path = [this, token, filename, temp_path,
-                                     download_to_viewer](const std::string& metadata_target,
-                                                         const std::string& root,
-                                                         const std::string& download_target) {
+    // Shared size gate: skip 2D streaming if the file would OOM the device,
+    // otherwise stream it into the viewer. Used by both the standard "gcodes"
+    // metadata path and the QIDI ".temp" shadow path.
+    auto stream_if_safe = [this, download_to_viewer](const std::string& root,
+                                                     const std::string& download_target,
+                                                     uint64_t size) {
+        if (!helix::is_gcode_2d_streaming_safe(size)) {
+            auto mem = helix::get_system_memory_info();
+            spdlog::warn("[{}] G-code too large for 2D streaming: file={} bytes, available "
+                         "RAM={}MB - using thumbnail only",
+                         get_name(), size, mem.available_mb());
+            show_gcode_viewer(false);
+            return;
+        }
+
+        spdlog::debug("[{}] G-code size {} bytes - safe to render, streaming to disk...",
+                      get_name(), size);
+        download_to_viewer(root, download_target);
+    };
+
+    auto load_existing_gcode_path = [this, token, filename,
+                                     stream_if_safe](const std::string& metadata_target,
+                                                     const std::string& root,
+                                                     const std::string& download_target) {
         api_->files().get_file_metadata(
             metadata_target,
-            [this, token, filename, root, download_target,
-             download_to_viewer](const FileMetadata& metadata) {
+            [this, token, root, download_target, stream_if_safe](const FileMetadata& metadata) {
                 token.defer("PrintStatusPanel::gcode_metadata_ok",
-                            [this, filename, root, download_target, metadata,
-                             download_to_viewer]() {
-                                if (!helix::is_gcode_2d_streaming_safe(metadata.size)) {
-                                    auto mem = helix::get_system_memory_info();
-                                    spdlog::warn("[{}] G-code too large for 2D streaming: file={} "
-                                                 "bytes, available RAM={}MB - using thumbnail only",
-                                                 get_name(), metadata.size, mem.available_mb());
-                                    show_gcode_viewer(false);
-                                    return;
-                                }
-
-                                spdlog::debug(
-                                    "[{}] G-code size {} bytes - safe to render, streaming to "
-                                    "disk...",
-                                    get_name(), metadata.size);
-
-                                download_to_viewer(root, download_target);
+                            [this, root, download_target, metadata, stream_if_safe]() {
+                                stream_if_safe(root, download_target, metadata.size);
                             });
             },
             [this, token, filename](const MoonrakerError& err) {
@@ -3258,12 +3262,12 @@ void PrintStatusPanel::load_gcode_for_viewing(const std::string& filename) {
         api_->files().list_files(
             ".temp", "", false,
             [this, token, use_existing_download_path,
-             download_to_viewer](const std::vector<FileInfo>& files) {
+             stream_if_safe](const std::vector<FileInfo>& files) {
                 token.defer("PrintStatusPanel::qidi_3mf_shadow_list_ok",
-                            [this, files, use_existing_download_path, download_to_viewer]() {
-                                spdlog::info("[{}] .temp returned {} entries for QIDI native 3MF "
-                                             "preview lookup",
-                                             get_name(), files.size());
+                            [this, files, use_existing_download_path, stream_if_safe]() {
+                                spdlog::debug("[{}] .temp returned {} entries for QIDI native 3MF "
+                                              "preview lookup",
+                                              get_name(), files.size());
 
                                 for (const auto& file : files) {
                                     const std::string& candidate = file.path;
@@ -3277,27 +3281,17 @@ void PrintStatusPanel::load_gcode_for_viewing(const std::string& filename) {
                                                                    std::strlen(suffix),
                                                                    suffix) == 0;
                                     if (match) {
-                                        spdlog::info(
+                                        spdlog::debug(
                                             "[{}] Matched QIDI native 3MF shadow G-code: "
                                             ".temp/{} ({} bytes)",
                                             get_name(), file.path, file.size);
 
-                                        if (!helix::is_gcode_2d_streaming_safe(file.size)) {
-                                            auto mem = helix::get_system_memory_info();
-                                            spdlog::warn(
-                                                "[{}] G-code too large for 2D streaming: file={} "
-                                                "bytes, available RAM={}MB - using thumbnail only",
-                                                get_name(), file.size, mem.available_mb());
-                                            show_gcode_viewer(false);
-                                            return;
-                                        }
-
-                                        download_to_viewer(".temp", file.path);
+                                        stream_if_safe(".temp", file.path, file.size);
                                         return;
                                     }
                                 }
 
-                                spdlog::info(
+                                spdlog::debug(
                                     "[{}] No QIDI native 3MF shadow G-code found; "
                                     "falling back to active filename",
                                     get_name());
