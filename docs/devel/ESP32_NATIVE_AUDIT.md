@@ -292,18 +292,28 @@ Findings:
 - Code size is a non-issue for RAM: XIP demand-paging from flash is
   hardware-managed overlaying — only ~16KB of IRAM-pinned hot paths occupy RAM.
 
-**Open issue — periodic transient frame corruption (~10-15s cadence):** brief
-whole/partial-frame corruption that self-resolves, observed on the thr-0 full-
-shell build (unclear if present at thr 512; the earlier home-panel-only build
-showed none). Ruled OUT: LVGL compositing bandwidth — moving draw buffers to
-internal RAM (2×32-line, MALLOC_CAP_INTERNAL) did not change it (negative
-result; buffers reverted to PSRAM). Leads, in test order: (1) correlate with
-the render loop's 10s `[heap:steady]` log — change the log cadence and see if
-the flicker period follows; (2) periodic app timers doing large redraws or
-alloc bursts (tips rotation, MemoryMonitor sampling — PSRAM free oscillates
-~6.5KB at steady state, something IS allocating periodically); (3) bounce
-buffer size 10→20 lines (scanout refill margin); (4) `esp_lcd` draw_bitmap
-copy into the PSRAM framebuffer racing scanout during large invalidated areas.
+**RESOLVED — periodic transient frame corruption (~10-15s cadence):** brief
+whole/partial-frame corruption that self-resolved, observed on the thr-0 full-
+shell build. Root cause: the render loop's 10s `[heap:steady]` log called
+`heap_caps_get_largest_free_block()`, which runs `multi_heap_get_info()` — a
+walk of **every block in the heap inside an interrupt-disabling critical
+section**. At ALWAYSINTERNAL=0 the PSRAM heap holds thousands of small widget
+blocks, so the walk keeps interrupts off (and PSRAM busy) long enough for the
+RGB bounce-buffer refill ISR to miss its deadline → one corrupted frame per
+call. Proven by a differential build splitting the log into a pure UART line
+every 3s and a silent heap walk every 20s: user-observed flicker followed the
+20s walk exactly. Fix: steady-state logging uses `heap_caps_get_free_size()`
+only (O(1) tracked counter, no walk); full walks stay in one-shot stage
+watermarks. This also explains why the home-panel-only build showed none
+(small PSRAM heap = fast walk) — the trigger was heap block count, not the
+thr-0 routing itself. Ruled OUT along the way: LVGL compositing bandwidth —
+internal draw buffers (2×32-line, MALLOC_CAP_INTERNAL) did not change it
+(reverted to PSRAM).
+
+**Phase 2 rule from this:** on RGB-panel ESP32 targets, never call
+`heap_caps_get_largest_free_block()` / `heap_caps_get_info()` /
+`heap_caps_check_integrity*()` periodically while the display is live. Any
+ESP32 port of MemoryMonitor must sample with O(1) free-size counters only.
 
 ## Remaining tasks
 

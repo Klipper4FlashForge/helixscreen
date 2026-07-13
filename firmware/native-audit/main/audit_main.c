@@ -42,6 +42,13 @@ static void check_heap(const char *stage) {
     if (!ok) abort();
 }
 
+// Full watermark including largest free block. ONE-SHOT stages only:
+// heap_caps_get_largest_free_block() walks every heap block inside an
+// interrupt-disabling critical section. With the full shell at
+// ALWAYSINTERNAL=0 the PSRAM heap holds thousands of small widget blocks,
+// so the walk keeps interrupts off long enough for the RGB bounce-buffer
+// refill ISR to miss its deadline — one visibly corrupted frame per call.
+// Never call this from the steady-state render loop; use log_heap_fast().
 static void log_heap(const char *stage) {
     ESP_LOGI(TAG, "[heap:%s] internal free=%u largest=%u | psram free=%u largest=%u",
              stage,
@@ -49,6 +56,14 @@ static void log_heap(const char *stage) {
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+}
+
+// Steady-state-safe watermark: heap_caps_get_free_size() reads a tracked
+// counter (O(1), no block walk) so it cannot stall the scanout ISRs.
+static void log_heap_fast(const char *stage) {
+    ESP_LOGI(TAG, "[heap:%s] internal free=%u | psram free=%u", stage,
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 }
 
 // ---- Panel bring-up (verified pin map, see ktouch-probe) ----
@@ -168,11 +183,12 @@ void app_main(void) {
 
     lv_display_t *disp = lv_display_create(LCD_H_RES, LCD_V_RES);
     // LV_DRAW_BUF_ALIGN is 16 in the repo config; plain heap_caps_malloc is 8-aligned.
-    // Draw buffers stay in PSRAM: an internal-buffer experiment (2x32-line,
-    // MALLOC_CAP_INTERNAL, thr-0 run 2026-07-13) did NOT cure the periodic
-    // transient frame corruption, so compositing bandwidth is not the cause —
-    // no reason to spend 100KB of internal RAM here. (2x64KB internal is not
-    // even allocatable: largest internal block at this stage is ~118KB.)
+    // Draw buffers stay in PSRAM: compositing bandwidth is not a problem — an
+    // internal-buffer experiment (2x32-line, MALLOC_CAP_INTERNAL) rendered
+    // identically, so there's no reason to spend 100KB of internal RAM here.
+    // (2x64KB internal is not even allocatable: largest internal block at this
+    // stage is ~118KB.) The periodic frame corruption once blamed on bandwidth
+    // was the steady-state heap walk; see log_heap() vs log_heap_fast().
     size_t buf_px = LCD_H_RES * 80;
     lv_color_t *buf1 = heap_caps_aligned_alloc(16, buf_px * sizeof(lv_color16_t),
                                                MALLOC_CAP_SPIRAM);
@@ -284,7 +300,7 @@ static void *app_phase(void *arg) {
             lv_snprintf(tmp, sizeof(tmp), "subject update #%u", (unsigned)n);
             lv_subject_copy_string(&s_counter_subject, tmp);
             lv_subject_set_int(&s_progress_subject, (int)(n * 10 % 110));
-            if (n % 10 == 0) log_heap("steady");
+            if (n % 10 == 0) log_heap_fast("steady");
         }
         vTaskDelay(pdMS_TO_TICKS(delay < 5 ? 5 : delay > 50 ? 50 : delay));
     }
