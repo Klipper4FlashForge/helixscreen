@@ -85,9 +85,6 @@ static void apply_step_styling(lv_obj_t* step_item, StepState state) {
         return;
 
     lv_obj_t* circle = lv_obj_get_child(indicator_column, 0);
-    lv_obj_t* connector = (lv_obj_get_child_count(indicator_column) > 1)
-                              ? lv_obj_get_child(indicator_column, 1)
-                              : nullptr;
     lv_obj_t* step_number = circle ? lv_obj_get_child(circle, 0) : nullptr;
     lv_obj_t* checkmark = circle ? lv_obj_get_child(circle, 1) : nullptr;
     lv_obj_t* label = lv_obj_get_child(step_item, 1);
@@ -141,13 +138,9 @@ static void apply_step_styling(lv_obj_t* step_item, StepState state) {
             lv_obj_add_flag(checkmark, LV_OBJ_FLAG_HIDDEN);
     }
 
-    // Apply vertical connector line color (inside indicator_column for vertical layout)
-    if (connector) {
-        lv_obj_set_style_bg_color(connector, color, 0);
-    }
-
-    // Note: Horizontal connectors are now siblings in the main container, not children of step_item
-    // They will be updated separately in ui_step_progress_set_current()
+    // Connector recolor is handled by set_current()/set_completed() against the
+    // connector objects owned in data->connectors[] (siblings in the container),
+    // not here — connectors are not children of the step item / indicator column.
 
     // Apply label styling (slightly larger for active, smaller for inactive)
     if (label) {
@@ -194,6 +187,117 @@ static void step_progress_delete_cb(lv_event_t* e) {
     }
 }
 
+/**
+ * Position the connector lines between adjacent step circles from the CURRENT
+ * layout, creating each one on first call and updating its size/pos thereafter.
+ *
+ * Connectors are absolutely-positioned IGNORE_LAYOUT rects, so they do not move
+ * with the flex layout on their own. They must be recomputed on every reflow —
+ * the widget becoming visible, or a growing live-temp label shifting the circles
+ * — otherwise they freeze at their create-time geometry. A degenerate pass
+ * (spanning extent <= 0) simply sizes the connector to 0; a later valid reflow
+ * grows it, so a connector is never permanently dropped.
+ *
+ * Caller must have run a layout pass on @p container first (create does this;
+ * the SIZE_CHANGED handler fires post-layout).
+ */
+static void relayout_connectors(step_progress_data_t* data, lv_obj_t* container) {
+    if (!data || !container)
+        return;
+
+    const bool horizontal = data->horizontal;
+    const int32_t circle_size = data->circle_size;
+    const int32_t circle_radius = circle_size / 2;
+    const int32_t connector_thickness = data->connector_width;
+
+    for (int i = 0; i < data->step_count - 1; i++) {
+        lv_obj_t* current_step = data->step_items[i];
+        lv_obj_t* next_step = data->step_items[i + 1];
+        if (!current_step || !next_step)
+            continue;
+
+        lv_obj_t* current_indicator = lv_obj_get_child(current_step, 0);
+        lv_obj_t* next_indicator = lv_obj_get_child(next_step, 0);
+        if (!current_indicator || !next_indicator)
+            continue;
+
+        lv_obj_t* current_circle = lv_obj_get_child(current_indicator, 0);
+        lv_obj_t* next_circle = lv_obj_get_child(next_indicator, 0);
+        if (!current_circle || !next_circle)
+            continue;
+
+        // Absolute circle positions within container (step + indicator + circle offsets)
+        auto abs_x = [](lv_obj_t* step, lv_obj_t* ind, lv_obj_t* circ) {
+            return lv_obj_get_x(step) + lv_obj_get_x(ind) + lv_obj_get_x(circ);
+        };
+        auto abs_y = [](lv_obj_t* step, lv_obj_t* ind, lv_obj_t* circ) {
+            return lv_obj_get_y(step) + lv_obj_get_y(ind) + lv_obj_get_y(circ);
+        };
+
+        lv_coord_t conn_x, conn_y, conn_w, conn_h;
+
+        if (horizontal) {
+            // Horizontal: spans right edge of current circle to left edge of next
+            lv_coord_t cur_cx = abs_x(current_step, current_indicator, current_circle);
+            lv_coord_t next_cx = abs_x(next_step, next_indicator, next_circle);
+            conn_x = cur_cx + circle_size;
+            conn_w = next_cx - conn_x;
+            conn_h = connector_thickness;
+            conn_y = abs_y(current_step, current_indicator, current_circle) + circle_radius -
+                     (connector_thickness / 2);
+            if (conn_w < 0)
+                conn_w = 0; // degenerate pass — sized on the next valid reflow
+        } else {
+            // Vertical: spans bottom edge of current circle to top edge of next
+            lv_coord_t cur_cy = abs_y(current_step, current_indicator, current_circle);
+            lv_coord_t next_cy = abs_y(next_step, next_indicator, next_circle);
+            conn_y = cur_cy + circle_size;
+            conn_h = next_cy - conn_y;
+            conn_w = connector_thickness;
+            conn_x = abs_x(current_step, current_indicator, current_circle) + circle_radius -
+                     (connector_thickness / 2);
+            if (conn_h < 0)
+                conn_h = 0; // degenerate pass — sized on the next valid reflow
+        }
+
+        lv_obj_t* connector = data->connectors[i];
+        if (!connector) {
+            connector = lv_obj_create(container);
+            lv_obj_add_flag(connector, LV_OBJ_FLAG_IGNORE_LAYOUT);
+            lv_obj_remove_flag(connector, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_set_style_bg_opa(connector, LV_OPA_COVER, 0);
+            lv_obj_set_style_border_width(connector, 0, 0);
+            lv_obj_set_style_pad_all(connector, 0, 0);
+            lv_obj_set_style_radius(connector, 0, 0);
+            lv_color_t connector_color =
+                (data->states[i] == StepState::Completed) ? color_completed : color_pending;
+            lv_obj_set_style_bg_color(connector, connector_color, 0);
+            // Render behind step items so circles draw on top
+            lv_obj_move_to_index(connector, 0);
+            data->connectors[i] = connector;
+        }
+
+        lv_obj_set_size(connector, conn_w, conn_h);
+        lv_obj_set_pos(connector, conn_x, conn_y);
+
+        spdlog::debug("[StepProgress] Connector {}: pos=({},{}), size={}x{}", i, conn_x, conn_y,
+                      conn_w, conn_h);
+    }
+}
+
+/**
+ * Recompute connector geometry whenever the widget's size changes (becoming
+ * visible, label growth, container resize). Absolutely-positioned connectors
+ * don't track flex reflow on their own.
+ */
+static void step_progress_size_changed_cb(lv_event_t* e) {
+    lv_obj_t* container = lv_event_get_target_obj(e);
+    step_progress_data_t* data = (step_progress_data_t*)lv_obj_get_user_data(container);
+    if (data) {
+        relayout_connectors(data, container);
+    }
+}
+
 lv_obj_t* ui_step_progress_create(lv_obj_t* parent, const ui_step_t* steps, int step_count,
                                   bool horizontal, const char* scope_name) {
     if (!parent || !steps || step_count <= 0) {
@@ -218,7 +322,6 @@ lv_obj_t* ui_step_progress_create(lv_obj_t* parent, const ui_step_t* steps, int 
     if (row_gap <= 0)
         row_gap = 12; // fallback
 
-    int32_t circle_radius = circle_size / 2;
     int32_t border_width = 2;
 
     spdlog::debug("[StepProgress] Responsive sizes: circle={}px, connector={}px, label_gap={}px, "
@@ -379,83 +482,20 @@ lv_obj_t* ui_step_progress_create(lv_obj_t* parent, const ui_step_t* steps, int 
         data->step_items[i] = step_item;
     }
 
-    // Create connector lines AFTER layout is calculated
-    // Connectors use absolute positioning (IGNORE_LAYOUT) spanning circle-edge to circle-edge
+    // Create connector lines AFTER layout is calculated. Connectors use absolute
+    // positioning (IGNORE_LAYOUT) spanning circle-edge to circle-edge; they do
+    // not follow the flex reflow, so relayout_connectors() is re-run on every
+    // size change (see the SIZE_CHANGED handler below).
     lv_obj_update_layout(container);
 
     spdlog::debug("[StepProgress] Creating {} connectors for {} steps",
                   horizontal ? "horizontal" : "vertical", step_count);
 
-    for (int i = 0; i < step_count - 1; i++) {
-        lv_obj_t* current_step = data->step_items[i];
-        lv_obj_t* next_step = data->step_items[i + 1];
+    relayout_connectors(data, container);
 
-        lv_obj_t* current_indicator = lv_obj_get_child(current_step, 0);
-        lv_obj_t* next_indicator = lv_obj_get_child(next_step, 0);
-        if (!current_indicator || !next_indicator)
-            continue;
-
-        lv_obj_t* current_circle = lv_obj_get_child(current_indicator, 0);
-        lv_obj_t* next_circle = lv_obj_get_child(next_indicator, 0);
-        if (!current_circle || !next_circle)
-            continue;
-
-        // Compute absolute circle positions within container (step + indicator + circle offsets)
-        auto abs_x = [](lv_obj_t* step, lv_obj_t* ind, lv_obj_t* circ) {
-            return lv_obj_get_x(step) + lv_obj_get_x(ind) + lv_obj_get_x(circ);
-        };
-        auto abs_y = [](lv_obj_t* step, lv_obj_t* ind, lv_obj_t* circ) {
-            return lv_obj_get_y(step) + lv_obj_get_y(ind) + lv_obj_get_y(circ);
-        };
-
-        lv_coord_t conn_x, conn_y, conn_w, conn_h;
-
-        if (horizontal) {
-            // Horizontal: spans right edge of current circle to left edge of next
-            lv_coord_t cur_cx = abs_x(current_step, current_indicator, current_circle);
-            lv_coord_t next_cx = abs_x(next_step, next_indicator, next_circle);
-            conn_x = cur_cx + circle_size;
-            conn_w = next_cx - conn_x;
-            conn_h = connector_thickness;
-            conn_y = abs_y(current_step, current_indicator, current_circle) + circle_radius -
-                     (connector_thickness / 2);
-            if (conn_w <= 0)
-                continue;
-        } else {
-            // Vertical: spans bottom edge of current circle to top edge of next
-            lv_coord_t cur_cy = abs_y(current_step, current_indicator, current_circle);
-            lv_coord_t next_cy = abs_y(next_step, next_indicator, next_circle);
-            conn_y = cur_cy + circle_size;
-            conn_h = next_cy - conn_y;
-            conn_w = connector_thickness;
-            conn_x = abs_x(current_step, current_indicator, current_circle) + circle_radius -
-                     (connector_thickness / 2);
-            if (conn_h <= 0)
-                continue;
-        }
-
-        lv_obj_t* connector = lv_obj_create(container);
-        lv_obj_add_flag(connector, LV_OBJ_FLAG_IGNORE_LAYOUT);
-        lv_obj_remove_flag(connector, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_size(connector, conn_w, conn_h);
-        lv_obj_set_pos(connector, conn_x, conn_y);
-        lv_obj_set_style_bg_opa(connector, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_width(connector, 0, 0);
-        lv_obj_set_style_pad_all(connector, 0, 0);
-        lv_obj_set_style_radius(connector, 0, 0);
-        lv_color_t connector_color =
-            (steps[i].state == StepState::Completed) ? color_completed : color_pending;
-        lv_obj_set_style_bg_color(connector, connector_color, 0);
-
-        // Render behind step items so circles draw on top
-        lv_obj_move_to_index(connector, 0);
-
-        // Store connector pointer for updates
-        data->connectors[i] = connector;
-
-        spdlog::debug("[StepProgress] Connector {}: pos=({},{}), size={}x{}", i, conn_x, conn_y,
-                      conn_w, conn_h);
-    }
+    // Recompute connector geometry when the widget reflows (becoming visible
+    // after being created hidden, live-temp label growth, container resize).
+    lv_obj_add_event_cb(container, step_progress_size_changed_cb, LV_EVENT_SIZE_CHANGED, nullptr);
 
     return container;
 }
@@ -543,4 +583,13 @@ void ui_step_progress_set_label(lv_obj_t* widget, int step_index, const char* ne
     if (label) {
         lv_label_set_text(label, data->label_buffers[step_index]);
     }
+}
+
+lv_obj_t* ui_step_progress_test_get_connector(lv_obj_t* widget, int index) {
+    if (!widget)
+        return nullptr;
+    step_progress_data_t* data = (step_progress_data_t*)lv_obj_get_user_data(widget);
+    if (!data || index < 0 || index >= data->step_count - 1)
+        return nullptr;
+    return data->connectors[index];
 }

@@ -58,3 +58,14 @@ void ui_step_progress_set_completed(lv_obj_t* widget, int step_index);
  * @param new_label New label text
  */
 void ui_step_progress_set_label(lv_obj_t* widget, int step_index, const char* new_label);
+
+/**
+ * Test-only introspection: return the connector line object drawn between step
+ * circle @p index and @p index+1, or nullptr if it has not been created yet.
+ * Exposed for rendering tests that assert connector geometry after layout.
+ *
+ * @param widget Step progress widget
+ * @param index 0-based connector index (0 .. step_count-2)
+ * @return Connector object, or nullptr
+ */
+lv_obj_t* ui_step_progress_test_get_connector(lv_obj_t* widget, int index);
