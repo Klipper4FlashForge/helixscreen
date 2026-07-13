@@ -690,6 +690,17 @@ void PrinterState::set_timelapse_available(bool available) {
     });
 }
 
+void PrinterState::set_timelapse_default_enabled(bool enabled) {
+    // Seed the timelapse pre-print option's default from the global
+    // moonraker-timelapse `enabled` setting. Both the member write and the
+    // resynthesis must run on the main thread (#1094).
+    helix::ui::queue_update([this, enabled]() {
+        timelapse_default_enabled_ = enabled;
+        apply_dynamic_options();
+        update_gcode_modification_visibility();
+    });
+}
+
 void PrinterState::set_helix_plugin_installed(bool installed) {
     // Thread-safe: Use ui_queue_update to update LVGL subject from any thread
     // We handle the async dispatch here because we need to update composite subjects after
@@ -977,7 +988,12 @@ void PrinterState::apply_dynamic_options() {
         tl.label_key = "pre_print_option.timelapse.label";
         tl.category = PrePrintCategory::Monitoring;
         tl.order = 100;
-        tl.default_enabled = false; // opt-in
+        // Default reflects the global moonraker-timelapse `enabled` setting
+        // (seeded at discovery via set_timelapse_default_enabled). The plugin
+        // has no per-print concept — the toggle writes the global `enabled` at
+        // print start — so defaulting to a hardcoded false silently disabled a
+        // user's global timelapse on every print start (#1094).
+        tl.default_enabled = timelapse_default_enabled_;
         tl.strategy_kind = PrePrintStrategyKind::RuntimeCommand;
         PrePrintStrategyRuntimeCommand cmd;
         cmd.command_enabled = "timelapse:on";

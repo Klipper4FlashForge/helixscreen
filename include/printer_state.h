@@ -1478,6 +1478,22 @@ class PrinterState {
     void set_timelapse_available(bool available);
 
     /**
+     * @brief Seed the default state of the synthesized timelapse pre-print option
+     *
+     * The moonraker-timelapse plugin has no per-print concept — the pre-print
+     * toggle writes the GLOBAL `enabled` setting at print start. This seeds the
+     * toggle's default from that global setting so a user who enabled timelapse
+     * globally isn't silently disabled by starting a print without touching the
+     * toggle (#1094). Fetched at discovery via machine.timelapse.get_settings.
+     *
+     * Thread-safe: Can be called from any thread, defers to the main thread and
+     * re-synthesizes the option set there.
+     *
+     * @param enabled Global moonraker-timelapse `enabled` value
+     */
+    void set_timelapse_default_enabled(bool enabled);
+
+    /**
      * @brief Set HelixPrint plugin installation status
      *
      * Called after checking Moonraker for the helix_print plugin.
@@ -2041,6 +2057,12 @@ class PrinterState {
 
     /// Klipper pause_resume.is_paused: true when the print is paused via PAUSE gcode
     bool is_paused_ = false;
+
+    /// Default state for the synthesized timelapse pre-print option, seeded from
+    /// the global moonraker-timelapse `enabled` setting at discovery (#1094).
+    /// Main-thread-only: written and read inside apply_dynamic_options() and its
+    /// setter, both of which run on the main thread via queue_update.
+    bool timelapse_default_enabled_ = false;
 
     // ============================================================================
     // Thread-safe internal methods (called via lv_async_call from main thread)

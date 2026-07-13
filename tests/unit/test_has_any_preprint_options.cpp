@@ -24,6 +24,7 @@
 #include "../test_helpers/update_queue_test_access.h"
 #include "../ui_test_utils.h"
 #include "app_globals.h"
+#include "pre_print_option.h"
 #include "printer_discovery.h"
 #include "printer_state.h"
 
@@ -145,6 +146,44 @@ TEST_CASE("has_any_preprint_options: framework option count drives card alone",
 
     state.set_printer_type_sync("Creality K2 Plus");
     REQUIRE(read_aggregate(state) == 1);
+}
+
+// ---------------------------------------------------------------------------
+// #1094: the synthesized timelapse pre-print option must seed its default from
+// the global moonraker-timelapse `enabled` setting, not a hardcoded false.
+// Otherwise starting a print with the toggle untouched (default OFF) silently
+// writes enabled=False globally — turning off a user's global timelapse config.
+// ---------------------------------------------------------------------------
+
+const PrePrintOption* find_timelapse_option(PrinterState& state) {
+    UpdateQueueTestAccess::drain(UpdateQueue::instance());
+    return state.get_pre_print_option_set().find("timelapse");
+}
+
+TEST_CASE("timelapse pre-print default reflects global enabled=true (#1094)",
+          "[printer_state][preprint][timelapse]") {
+    lv_init_safe();
+    PrinterState& state = fresh_state();
+
+    state.set_timelapse_available(true);
+    state.set_timelapse_default_enabled(true);
+
+    const PrePrintOption* tl = find_timelapse_option(state);
+    REQUIRE(tl != nullptr);
+    REQUIRE(tl->default_enabled == true);
+}
+
+TEST_CASE("timelapse pre-print default reflects global enabled=false (#1094)",
+          "[printer_state][preprint][timelapse]") {
+    lv_init_safe();
+    PrinterState& state = fresh_state();
+
+    state.set_timelapse_available(true);
+    state.set_timelapse_default_enabled(false);
+
+    const PrePrintOption* tl = find_timelapse_option(state);
+    REQUIRE(tl != nullptr);
+    REQUIRE(tl->default_enabled == false);
 }
 
 TEST_CASE("has_any_preprint_options: simplified expression equivalent to old per-op OR",
