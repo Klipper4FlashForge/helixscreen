@@ -60,7 +60,6 @@ using helix::gcode::resolve_gcode_filename;
 
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <fstream>
 #include <memory>
 #include <set>
@@ -3269,26 +3268,30 @@ void PrintStatusPanel::load_gcode_for_viewing(const std::string& filename) {
                                               "preview lookup",
                                               get_name(), files.size());
 
+                                // A multi-plate .3mf can leave several
+                                // shadow_native_plate_*.gcode files in .temp, and
+                                // Moonraker exposes no plate index for the active
+                                // print. The active plate's shadow is (re)written at
+                                // print start, so the newest-modified match is the
+                                // best proxy for "the plate currently printing".
+                                const FileInfo* best = nullptr;
                                 for (const auto& file : files) {
-                                    const std::string& candidate = file.path;
-                                    constexpr const char* prefix = "shadow_native_plate_";
-                                    constexpr const char* suffix = ".gcode";
-                                    bool match = candidate.rfind(prefix, 0) == 0 &&
-                                                 candidate.size() >
-                                                     std::strlen(prefix) + std::strlen(suffix) &&
-                                                 candidate.compare(candidate.size() -
-                                                                       std::strlen(suffix),
-                                                                   std::strlen(suffix),
-                                                                   suffix) == 0;
-                                    if (match) {
-                                        spdlog::debug(
-                                            "[{}] Matched QIDI native 3MF shadow G-code: "
-                                            ".temp/{} ({} bytes)",
-                                            get_name(), file.path, file.size);
-
-                                        stream_if_safe(".temp", file.path, file.size);
-                                        return;
+                                    if (!helix::gcode::is_native_3mf_shadow(file.path)) {
+                                        continue;
                                     }
+                                    if (best == nullptr || file.modified > best->modified) {
+                                        best = &file;
+                                    }
+                                }
+
+                                if (best != nullptr) {
+                                    spdlog::debug(
+                                        "[{}] Selected QIDI native 3MF shadow G-code (newest of "
+                                        "matches): .temp/{} ({} bytes, modified {})",
+                                        get_name(), best->path, best->size, best->modified);
+
+                                    stream_if_safe(".temp", best->path, best->size);
+                                    return;
                                 }
 
                                 spdlog::debug(

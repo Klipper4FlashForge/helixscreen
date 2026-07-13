@@ -84,4 +84,18 @@ std::string resolve_gcode_filename(const std::string& path) {
     return path;
 }
 
+bool is_native_3mf_shadow(const std::string& name) {
+    static const std::string prefix = "shadow_native_plate_";
+    static const std::string suffix = ".gcode";
+
+    // Require at least one character between the prefix and suffix (the plate id).
+    if (name.size() <= prefix.size() + suffix.size()) {
+        return false;
+    }
+    if (name.compare(0, prefix.size(), prefix) != 0) {
+        return false;
+    }
+    return name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
 } // namespace helix::gcode

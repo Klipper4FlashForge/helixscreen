@@ -56,4 +56,17 @@ std::string get_display_filename(const std::string& path);
  */
 std::string resolve_gcode_filename(const std::string& path);
 
+/**
+ * @brief Test whether a filename is a QIDI native-3MF shadow G-code.
+ *
+ * QIDI firmware translates a native `.3mf` plate into a G-code file exposed via
+ * Moonraker's hidden `.temp` root, named `shadow_native_plate_<N>.gcode`. This
+ * matches that pattern: the `shadow_native_plate_` prefix, a `.gcode` suffix,
+ * and at least one character in between. Case-sensitive to match the firmware.
+ *
+ * @param name Bare filename (relative to the `.temp` root)
+ * @return true if the name is a native-3MF shadow G-code file
+ */
+bool is_native_3mf_shadow(const std::string& name);
+
 } // namespace helix::gcode
