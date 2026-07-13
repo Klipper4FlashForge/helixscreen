@@ -276,7 +276,16 @@ AmsError AmsSubscriptionBackend::execute_gcode(const std::string& gcode) {
                 spdlog::error("{} G-code failed: {} - {}", tag, gcode, err.message);
             }
         },
-        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
+        // silent=true: the phase tracker + IFS_STATUS own operation completion,
+        // so the RPC timeout is advisory for these long macros. A cold-start
+        // load can legitimately run past the 300s ceiling (bundle 77TDH9N6:
+        // heat-from-cold + load + double purge + clean), completing fine ~47s
+        // later — silent suppresses ONLY the false REQUEST_TIMEOUT toast. The
+        // error_cb above still logs "may still be running", and genuine Klipper
+        // RPC-error toasts stay suppressed anyway via the error_cb
+        // caller_handles_ui path in the request tracker.
+        /*silent=*/true);
     return AmsErrorHelper::success();
 }
 
@@ -306,6 +315,11 @@ AmsError AmsSubscriptionBackend::execute_gcode(const std::string& gcode,
                 spdlog::error("{} G-code failed: {} - {}", tag, gcode, err.message);
             }
         },
-        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
+        // silent=true: completion is owned by the phase tracker + IFS_STATUS, not
+        // the RPC return, so the advisory 300s timeout must not surface a false
+        // "timed out" toast for a legitimately-long macro (bundle 77TDH9N6).
+        // Genuine RPC-error toasts remain suppressed via the error_cb path.
+        /*silent=*/true);
     return AmsErrorHelper::success();
 }

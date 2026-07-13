@@ -770,13 +770,16 @@ void AmsOperationSidebar::start_operation(StepOperationType op_type, int target_
     // Set action to HEATING immediately — triggers XML binding to hide buttons
     AmsState::instance().set_action(AmsAction::HEATING);
 
-    // Create step progress with correct steps
-    recreate_step_progress_for_operation(op_type);
-
-    // Show step progress immediately
+    // Show the container BEFORE building the step widget so the create-time
+    // layout pass runs against a visible (non-collapsed) container. The step
+    // connectors also relayout on SIZE_CHANGED, but revealing first keeps the
+    // very first paint correct.
     if (step_progress_container_) {
         lv_obj_remove_flag(step_progress_container_, LV_OBJ_FLAG_HIDDEN);
     }
+
+    // Create step progress with correct steps
+    recreate_step_progress_for_operation(op_type);
 }
 
 void AmsOperationSidebar::fail_started_operation(const AmsError& error) {
