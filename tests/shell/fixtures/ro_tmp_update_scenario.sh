@@ -29,16 +29,21 @@ if ! mount -t tmpfs -o ro tmpfs /tmp; then
 fi
 mount -t tmpfs -o ro tmpfs /var/tmp 2>/dev/null || true
 
-# detect_tmp_dir() also probes device-specific writable partitions (/mnt/data,
-# /data, /user-resource) BEFORE the /tmp last resort. Those parents don't exist
-# on the OrangePi we're reproducing, but a host can have them writable — the
-# GitHub Actions runner mounts a large world-writable temp disk at /mnt, so
-# /mnt/data would be chosen and the REPRO would never reach the /tmp fallback.
+# detect_tmp_dir() probes several writable candidates BEFORE the /tmp last
+# resort, and the REPRO must exhaust all of them to reach that fallback:
+#   - /opt is the parent of the DEFAULT install-dir sibling. platform.sh does
+#     `: "${INSTALL_DIR:=/opt/helixscreen}"` on source, so even with INSTALL_DIR
+#     unset the FIRST candidate is /opt/.helixscreen-install. On a runner where
+#     /opt is writable it wins and the REPRO never reaches /tmp (this is what
+#     broke the nightly: status=4 REPRO_UNEXPECTED_TMP: /opt/.helixscreen-install).
+#   - /mnt/data, /data, /user-resource are device-specific partitions absent on
+#     the OrangePi we reproduce, but a host can have them writable — the GitHub
+#     runner mounts a large world-writable temp disk at /mnt.
 # Shadow those parents with read-only tmpfs (best-effort; skip ones that don't
 # exist) so /tmp is the only remaining candidate on any host. /usr (parent of
 # the /usr/data candidate) is left alone — it holds the binaries this script
 # execs, and is non-writable to a namespaced non-root uid regardless.
-for parent in /mnt /data /user-resource; do
+for parent in /opt /mnt /data /user-resource; do
     [ -d "$parent" ] && mount -t tmpfs -o ro tmpfs "$parent" 2>/dev/null || true
 done
 
