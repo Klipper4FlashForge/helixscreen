@@ -403,7 +403,35 @@ void MoonrakerDiscoverySequence::continue_discovery_objects(uint64_t seq) {
                             components.end();
                         if (has_timelapse_component) {
                             spdlog::info("[Moonraker Client] Timelapse component detected");
+                            // Card visibility must not depend on the settings
+                            // fetch — surface the row immediately.
                             get_printer_state().set_timelapse_available(true);
+
+                            // Fire-and-forget: seed the pre-print toggle default
+                            // from the global moonraker-timelapse `enabled`
+                            // setting. The plugin has no per-print concept, so a
+                            // hardcoded-false default would silently disable a
+                            // user's global timelapse on print start (#1094).
+                            client_.send_jsonrpc(
+                                "machine.timelapse.get_settings", json::object(),
+                                [](json response) {
+                                    bool enabled = false;
+                                    if (response.contains("result")) {
+                                        enabled = response["result"].value("enabled", false);
+                                    }
+                                    spdlog::info(
+                                        "[Moonraker Client] Timelapse global enabled={}", enabled);
+                                    get_printer_state().set_timelapse_default_enabled(enabled);
+                                },
+                                [](const MoonrakerError& err) {
+                                    spdlog::debug(
+                                        "[Moonraker Client] Timelapse settings fetch failed: {}",
+                                        err.message);
+                                    // Leave the default false — component exists
+                                    // but settings unreadable.
+                                },
+                                0,     // default timeout
+                                true); // silent — timelapse not always configured
                         }
                     }
                 }

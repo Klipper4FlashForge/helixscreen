@@ -212,7 +212,8 @@ void PrintStartController::execute_print_start() {
 
     std::string filename_to_print = filename_;
 
-    // Read options to check for timelapse (handled separately from prep_manager)
+    // Read the selected pre-print options for the start log below. Applying
+    // them (timelapse included) is owned entirely by prep_manager->start_print().
     auto options = prep_manager->read_options_from_subjects();
 
     spdlog::info(
@@ -227,14 +228,10 @@ void PrintStartController::execute_print_start() {
         observe_print_state_for_restore();
     }
 
-    // Enable timelapse recording if requested (Moonraker-Timelapse plugin)
-    if (options.timelapse && api_) {
-        api_->timelapse().set_timelapse_enabled(
-            true, []() { spdlog::info("[PrintStartController] Timelapse enabled for this print"); },
-            [](const MoonrakerError& err) {
-                spdlog::error("[PrintStartController] Failed to enable timelapse: {}", err.message);
-            });
-    }
+    // Timelapse application now lives SOLELY in
+    // PrintPreparationManager::start_print(), which dispatches the timelapse
+    // RuntimeCommand in BOTH directions (on/off). The redundant enable-only
+    // write that used to live here caused a double write on print start (#1094).
 
     // Capture callbacks for use in lambdas
     auto on_started = on_print_started_;
