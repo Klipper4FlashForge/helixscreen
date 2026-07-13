@@ -1093,10 +1093,13 @@ TemperatureStore MoonrakerClient::parse_temperature_store(const json& result) {
 
     // Each entry is a sensor name → {temperatures:[], targets:[], powers:[]}.
     // Any array may be absent (a temperature_sensor has no targets/powers).
-    for (const auto& [key, series_json] : result.items()) {
-        if (!series_json.is_object()) {
+    for (const auto& [key, series_json_binding] : result.items()) {
+        if (!series_json_binding.is_object()) {
             continue;
         }
+        // Alias the structured binding to a real local; C++17 forbids capturing
+        // a structured binding directly in a lambda (allowed only from C++20).
+        const json& series_json = series_json_binding;
         TemperatureStoreSeries series;
         auto load_array = [&series_json](const char* field, std::vector<float>& out) {
             if (series_json.contains(field) && series_json[field].is_array()) {
