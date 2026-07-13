@@ -12,6 +12,8 @@
 #include "app_globals.h"
 #include "asset_manager.h"
 #include "helix_sparkline.h"
+#include "panel_factory.h"
+#include "ui_nav_manager.h"
 #include "printer_state.h"
 #include "runtime_config.h"
 #include "setting_group.h"
@@ -84,14 +86,42 @@ extern "C" void audit_app_run(void) {
     subjects.init_post(rc);
     spdlog::info("audit_app: subjects initialized");
 
-    // The real panel, from its real XML.
-    HomePanel& hp = get_global_home_panel();
-    lv_obj_t* panel = (lv_obj_t*)lv_xml_create(lv_screen_active(), "home_panel", nullptr);
-    if (!panel) {
-        spdlog::error("audit_app: home_panel XML create FAILED");
+    // The real app shell, mirroring Application::init_ui() (application.cpp:1721):
+    // app_layout.xml instantiates the navbar AND all six panels resident-and-
+    // hidden — the desktop memory model, which is exactly what the RAM
+    // watermarks must measure. Task-1 card is cleaned off first (its subjects
+    // keep updating harmlessly; LVGL detaches observers on widget delete).
+    lv_obj_t* screen = lv_screen_active();
+    lv_obj_clean(screen);
+    lv_obj_t* app_layout = (lv_obj_t*)lv_xml_create(screen, "app_layout", nullptr);
+    if (!app_layout) {
+        spdlog::error("audit_app: app_layout XML create FAILED");
         return;
     }
-    hp.setup(panel, lv_screen_active());
-    hp.finalize_setup();
-    spdlog::info("audit_app: home panel created and finalized");
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(screen, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_update_layout(screen);
+    NavigationManager::instance().set_app_layout(app_layout);
+
+    lv_obj_t* navbar = lv_obj_find_by_name(app_layout, "navbar");
+    lv_obj_t* content_area = lv_obj_find_by_name(app_layout, "content_area");
+    if (!navbar || !content_area) {
+        spdlog::error("audit_app: navbar/content_area not found in app_layout");
+        return;
+    }
+    NavigationManager::instance().wire_events(navbar);
+
+    lv_obj_t* panel_container = lv_obj_find_by_name(content_area, "panel_container");
+    if (!panel_container) {
+        spdlog::error("audit_app: panel_container not found");
+        return;
+    }
+    static helix::PanelFactory panels;
+    if (!panels.find_panels(panel_container)) {
+        spdlog::error("audit_app: find_panels FAILED");
+        return;
+    }
+    panels.setup_panels(screen);
+    get_global_home_panel().finalize_setup();
+    spdlog::info("audit_app: app shell up (navbar + 6 panels resident)");
 }

@@ -262,8 +262,39 @@ OTA A/B scheme, and fonts remain the headline Phase 2 trim.
   visual-diff against a Linux screenshot was performed.
 - Slice has no Moonraker/WebSocket/network layer — the biggest unlinked seam.
 
+### Task 4 follow-up — full app shell + RAM routing experiment (2026-07-13)
+
+The slice was then upgraded from home-panel-only to the REAL desktop shell:
+`app_layout.xml` (navbar + all six panels resident-and-hidden, the desktop
+memory model), `NavigationManager::set_app_layout` + `wire_events`,
+`PanelFactory::find_panels/setup_panels`. Boots clean, navbar renders,
+user-confirmed on device. RAM measurements across configs:
+
+| Config | Internal free | PSRAM free |
+|---|---|---|
+| home panel only, `SPIRAM_MALLOC_ALWAYSINTERNAL=4096` | 63,155 | 4.35MB |
+| full shell (6 panels + navbar), `=512` | 63,171 | 3.39MB |
+| full shell (6 panels + navbar), `=0` | **159,967** | 3.29MB |
+
+Findings:
+
+- **The six-resident-panel desktop model costs ~0.97MB PSRAM** and fits with
+  3.3MB headroom — not a day-one blocker on 8MB. Lazy panel lifecycle
+  (create-on-navigate, the overlay pattern the codebase already uses for
+  print_status) remains the biggest lever to buy headroom back for data-heavy
+  features (gcode metadata, thumbnails, Moonraker payloads).
+- **Internal RAM pressure was entirely sub-512B allocations** (LVGL widget
+  structs are ~200-300B): threshold 512 reclaimed nothing, threshold 0
+  reclaimed ~97KB, moving internal from 63KB to 160KB free (of ~250KB).
+  RTOS/WiFi/DMA still get internal via explicit `heap_caps` flags. Boot time
+  unchanged (+2.4s, noise-level); steady-state heap flat in all configs.
+  No visible render degradation with all widget data in octal PSRAM.
+- Code size is a non-issue for RAM: XIP demand-paging from flash is
+  hardware-managed overlaying — only ~16KB of IRAM-pinned hot paths occupy RAM.
+
 ## Remaining tasks
 
-- **Task 4 [HW], partial:** slice RAM watermarks captured above (63KB internal
-  free is the tight number). Still open: CJK font viability.
+- **Task 4 [HW], partial:** slice RAM watermarks + routing experiment captured
+  above (160KB internal / 3.29MB PSRAM free with the full shell). Still open:
+  CJK font viability.
 - **Task 5:** final report + go/no-go. Gates revised 2026-07-13: yellow = S3 + explicit feature gates (P4 hatch removed).

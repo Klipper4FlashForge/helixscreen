@@ -4,6 +4,7 @@
 src/printer/printer_state.cpp
 src/application/static_subject_registry.cpp
 src/application/asset_manager.cpp
+src/application/panel_factory.cpp
 src/printer/printer_calibration_state.cpp
 src/printer/printer_capabilities_state.cpp
 src/printer/printer_composite_visibility_state.cpp
