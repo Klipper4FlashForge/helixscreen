@@ -11,6 +11,7 @@
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_print_preparation_manager.h"
+#include "ui_toast_manager.h"
 #include "ui_update_queue.h"
 #include "ui_utils.h"
 
@@ -23,6 +24,7 @@
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "memory_utils.h"
 #include "moonraker_api.h"
+#include "observer_factory.h"
 #include "runtime_config.h"
 #include "theme_manager.h"
 #include "tool_state.h"
@@ -130,6 +132,10 @@ void PrintSelectDetailView::init_subjects() {
     // G-code loading indicator (0=hidden, 1=visible)
     UI_MANAGED_SUBJECT_INT(detail_gcode_loading_, 0, "detail_gcode_loading", subjects_);
 
+    // Preview color mode: 0 = actual (loaded slot colors), 1 = sliced (slicer intent)
+    UI_MANAGED_SUBJECT_INT(detail_prefer_sliced_colors_, 0, "detail_prefer_sliced_colors",
+                           subjects_);
+
     // Filament mismatch warning (0=hidden, 1=visible)
     UI_MANAGED_SUBJECT_INT(filament_mismatch_, 0, "filament_mismatch", subjects_);
 
@@ -151,6 +157,13 @@ void PrintSelectDetailView::init_subjects() {
     // Pre-print time estimate (formatted string for bind_text)
     UI_MANAGED_SUBJECT_STRING(prep_time_estimate_subject_, prep_time_estimate_buf_, "",
                               "preprint_estimate_text", subjects_);
+
+    // Re-color the preview live when a slot's loaded color/presence changes
+    // (filament reloaded). Static singleton subject -> plain ObserverGuard, no
+    // lifetime token. Handler no-ops while the view is closed.
+    slots_version_observer_ = observe_int_sync<PrintSelectDetailView>(
+        AmsState::instance().get_slots_version_subject(), this,
+        [](PrintSelectDetailView* self, int /*version*/) { self->on_ams_state_changed(); });
 
     subjects_initialized_ = true;
     spdlog::debug("[DetailView] Initialized pre-print option subjects");
@@ -299,18 +312,10 @@ lv_obj_t* PrintSelectDetailView::create(lv_obj_t* parent_screen) {
         }
     });
     filament_mapping_card_.set_on_mappings_changed([this]() {
-        apply_mapped_tool_colors();
-        lv_subject_set_int(&filament_mismatch_, filament_mapping_card_.has_mismatch() ? 1 : 0);
-        // Re-evaluate the pre-flight gate so a subsequent Print reflects the new
-        // tool→slot mapping (the native remap flow reaches the backend via the
-        // print-start controller, which reads get_filament_mappings()).
-        recompute_preflight();
-        // Re-render the FILAMENTS chips so their slot number + present color
-        // reflect the user's new mapping. set_mappings() fires this callback
-        // synchronously on the main thread, so a direct call is safe.
-        if (lv_subject_get_int(&color_swatches_visible_) == 1) {
-            update_color_swatches(tools_used_effective(), current_filament_colors_);
-        }
+        // The card already refreshed its own slot/mapping state from the user's
+        // edit — just re-color + re-gate. set_mappings() fires this synchronously
+        // on the main thread, so a direct call is safe.
+        refresh_preview_colors_and_mismatch();
     });
 
     // Look up history status display
@@ -404,6 +409,7 @@ void PrintSelectDetailView::show(const std::string& filename, const std::string&
     lv_subject_set_int(&color_swatches_visible_, 0);
     lv_subject_set_int(&empty_tools_warning_, 0);
     lv_subject_set_int(&filament_mismatch_, 0);
+    lv_subject_set_int(&detail_prefer_sliced_colors_, 0); // every open starts on actual colors
 
     // Drop any cached pre-flight result from a previously-selected file. The
     // validator re-runs in try_extract_gcode_colors() once this file's gcode is
@@ -959,6 +965,73 @@ void PrintSelectDetailView::apply_mapped_tool_colors() {
     }
 }
 
+void PrintSelectDetailView::apply_preview_colors() {
+    if (!gcode_viewer_ || !gcode_loaded_) {
+        return;
+    }
+    if (lv_subject_get_int(&detail_prefer_sliced_colors_) == 1) {
+        apply_sliced_tool_colors();
+    } else {
+        // Actual (loaded) colors: firmware/slicer base, then mapped overrides win.
+        apply_tool_colors();
+        apply_mapped_tool_colors();
+    }
+}
+
+void PrintSelectDetailView::set_prefer_sliced_colors(bool prefer_sliced) {
+    lv_subject_set_int(&detail_prefer_sliced_colors_, prefer_sliced ? 1 : 0);
+    apply_preview_colors();
+    if (gcode_viewer_) {
+        lv_obj_invalidate(gcode_viewer_);
+    }
+    ToastManager::instance().show(ToastSeverity::INFO,
+                                  prefer_sliced ? lv_tr("Showing sliced colors")
+                                                : lv_tr("Showing loaded colors"),
+                                  2000);
+}
+
+void PrintSelectDetailView::apply_sliced_tool_colors() {
+    if (!gcode_viewer_ || !gcode_loaded_ || current_filament_colors_.empty()) {
+        return;
+    }
+    std::vector<uint32_t> tool_colors;
+    for (const auto& hex : current_filament_colors_) {
+        auto parsed = helix::parse_hex_color(hex);
+        if (parsed) {
+            tool_colors.push_back(*parsed);
+        }
+    }
+    if (!tool_colors.empty()) {
+        ui_gcode_viewer_set_tool_colors(gcode_viewer_, tool_colors);
+        lv_obj_invalidate(gcode_viewer_);
+    }
+}
+
+void PrintSelectDetailView::on_ams_state_changed() {
+    // Cheap guard: no work while closed / not yet loaded. on_deactivate() clears
+    // gcode_loaded_ and on_ui_destroyed() nulls gcode_viewer_, so this also
+    // protects against a dangling viewer pointer after the view is torn down.
+    if (!is_visible() || !gcode_loaded_ || !gcode_viewer_) {
+        return;
+    }
+    // Refresh loaded slot colors WITHOUT recomputing mappings (preserve remap).
+    filament_mapping_card_.refresh_slot_data();
+    refresh_preview_colors_and_mismatch();
+}
+
+void PrintSelectDetailView::refresh_preview_colors_and_mismatch() {
+    apply_preview_colors();
+    lv_subject_set_int(&filament_mismatch_, filament_mapping_card_.has_mismatch() ? 1 : 0);
+    // Re-evaluate the pre-flight gate so a subsequent Print reflects the current
+    // tool->slot mapping (native remap flow reads get_filament_mappings()).
+    recompute_preflight();
+    // Re-render the FILAMENTS chips so slot number + present color track the
+    // current mapping/slot state.
+    if (lv_subject_get_int(&color_swatches_visible_) == 1) {
+        update_color_swatches(tools_used_effective(), current_filament_colors_);
+    }
+}
+
 void PrintSelectDetailView::try_extract_gcode_colors(lv_obj_t* viewer) {
     auto* parsed = ui_gcode_viewer_get_parsed_file(viewer);
     if (!parsed) {
@@ -1400,9 +1473,9 @@ void PrintSelectDetailView::load_gcode_for_preview() {
                     // Show all layers, no ghost (preview = full model)
                     ui_gcode_viewer_set_print_progress(viewer, -1);
 
-                    // Apply AMS or slicer tool colors, then override with mapped colors
-                    self->apply_tool_colors();
-                    self->apply_mapped_tool_colors();
+                    // Apply preview colors respecting the sliced/actual toggle
+                    // (default actual: AMS/slicer base then mapped overrides).
+                    self->apply_preview_colors();
 
                     // Extract colors from parsed gcode when metadata lacked them.
                     // This also computes preflight_result_ — it MUST run before
@@ -1500,10 +1573,8 @@ void PrintSelectDetailView::load_gcode_for_preview() {
                                     // Show all layers, no ghost (preview = full model)
                                     ui_gcode_viewer_set_print_progress(viewer, -1);
 
-                                    // Apply AMS or slicer tool colors, then override with mapped
-                                    // colors
-                                    self->apply_tool_colors();
-                                    self->apply_mapped_tool_colors();
+                                    // Apply preview colors respecting the sliced/actual toggle.
+                                    self->apply_preview_colors();
 
                                     // Extract colors from parsed gcode when metadata lacked them.
                                     // Also computes preflight_result_ — MUST run before

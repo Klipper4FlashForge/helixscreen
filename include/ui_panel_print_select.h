@@ -343,6 +343,9 @@ class PrintSelectPanel : public PanelBase {
      */
     void show_detail_view();
 
+    /// Forward the "Show sliced colors" toggle to the detail view.
+    void forward_sliced_colors_toggle(bool checked);
+
     /**
      * @brief Programmatically select a file by name and show detail view
      *

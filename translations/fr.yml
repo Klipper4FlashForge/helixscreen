@@ -2204,6 +2204,7 @@ translations:
   Show instead of dimming: Afficher au lieu d'atténuer
   Show printer icon in navigation bar: Afficher l'icône de l'imprimante dans la barre
     de navigation
+  Show sliced colors: ''
   Show temp for: Afficher la température de
   Show text labels on icon-only home screen widgets: Afficher les libellés sur les
     widgets de l'écran d'accueil
@@ -2211,6 +2212,8 @@ translations:
     listes
   Show whatever curves you last had visible on the full graph.: Afficher les dernières
     courbes visibles sur le graphique complet.
+  Showing loaded colors: ''
+  Showing sliced colors: ''
   Shutdown: Éteindre
   Shutdown / Reboot: Éteindre / Redémarrer
   Shutdown failed: Échec de l'extinction

@@ -126,6 +126,18 @@ void FilamentMappingCard::update(const std::vector<std::string>& gcode_colors,
                   available_slots_.size(), mappings_.size());
 }
 
+void FilamentMappingCard::refresh_slot_data() {
+    if (!card_ || !rows_container_) {
+        return;
+    }
+    if (!AmsState::instance().is_available()) {
+        return;
+    }
+    // Refresh loaded colors + presence only; mappings_ and tool_info_ untouched.
+    available_slots_ = AmsState::instance().collect_available_slots();
+    rebuild_compact_view();
+}
+
 bool FilamentMappingCard::has_mismatch() const {
     return has_any_mismatch();
 }
@@ -252,26 +264,7 @@ bool FilamentMappingCard::has_any_mismatch() const {
 // ============================================================================
 
 std::vector<uint32_t> FilamentMappingCard::get_mapped_colors() const {
-    std::vector<uint32_t> colors;
-    colors.reserve(mappings_.size());
-
-    for (size_t i = 0; i < mappings_.size(); ++i) {
-        const auto& mapping = mappings_[i];
-        uint32_t color = (i < tool_info_.size()) ? tool_info_[i].color_rgb : 0x808080;
-
-        if (!mapping.is_auto && mapping.mapped_slot >= 0) {
-            for (const auto& s : available_slots_) {
-                if (s.slot_index == mapping.mapped_slot &&
-                    s.backend_index == mapping.mapped_backend) {
-                    color = s.color_rgb;
-                    break;
-                }
-            }
-        }
-        colors.push_back(color);
-    }
-
-    return colors;
+    return helix::FilamentMapper::resolve_display_colors(tool_info_, mappings_, available_slots_);
 }
 
 // ============================================================================

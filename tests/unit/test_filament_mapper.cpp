@@ -1096,3 +1096,88 @@ TEST_CASE("filament database provides temp ranges for mismatch warnings",
         CHECK(nylon->nozzle_max == pa->nozzle_max);
     }
 }
+
+// =============================================================================
+// resolve_display_colors — DISPLAY color resolution (loaded slot vs slicer)
+// =============================================================================
+
+using helix::AvailableSlot;
+using helix::FilamentMapper;
+using helix::GcodeToolInfo;
+using helix::ToolMapping;
+
+namespace {
+GcodeToolInfo tool(int idx, uint32_t rgb) {
+    GcodeToolInfo t;
+    t.tool_index = idx;
+    t.color_rgb = rgb;
+    return t;
+}
+AvailableSlot slot(int slot_idx, int backend, uint32_t rgb) {
+    AvailableSlot s;
+    s.slot_index = slot_idx;
+    s.backend_index = backend;
+    s.color_rgb = rgb;
+    s.is_empty = false;
+    return s;
+}
+ToolMapping mapped(int tool_idx, int slot_idx, int backend) {
+    ToolMapping m;
+    m.tool_index = tool_idx;
+    m.mapped_slot = slot_idx;
+    m.mapped_backend = backend;
+    m.is_auto = false;
+    return m;
+}
+ToolMapping unresolved(int tool_idx) {
+    ToolMapping m;
+    m.tool_index = tool_idx;
+    m.mapped_slot = -1;
+    m.mapped_backend = -1;
+    m.is_auto = true;
+    return m;
+}
+} // namespace
+
+TEST_CASE("resolve_display_colors uses loaded slot color for mapped tools", "[filament]") {
+    std::vector<GcodeToolInfo> tools = {tool(0, 0xFFFF00)};   // slicer yellow
+    std::vector<AvailableSlot> slots = {slot(3, 0, 0x0000FF)}; // slot 3 loaded blue
+    std::vector<ToolMapping> mappings = {mapped(0, 3, 0)};     // T0 -> slot 3
+
+    auto colors = FilamentMapper::resolve_display_colors(tools, mappings, slots);
+    REQUIRE(colors.size() == 1);
+    REQUIRE(colors[0] == 0x0000FF); // blue (loaded), NOT yellow (slicer)
+}
+
+TEST_CASE("resolve_display_colors falls back to slicer color when unmapped", "[filament]") {
+    std::vector<GcodeToolInfo> tools = {tool(0, 0xFFFF00)};
+    std::vector<AvailableSlot> slots = {slot(3, 0, 0x0000FF)};
+    std::vector<ToolMapping> mappings = {unresolved(0)}; // is_auto, no slot
+
+    auto colors = FilamentMapper::resolve_display_colors(tools, mappings, slots);
+    REQUIRE(colors.size() == 1);
+    REQUIRE(colors[0] == 0xFFFF00); // slicer yellow
+}
+
+TEST_CASE("resolve_display_colors reflects a slot color change (live re-color)", "[filament]") {
+    std::vector<GcodeToolInfo> tools = {tool(0, 0xFFFF00)};
+    std::vector<ToolMapping> mappings = {mapped(0, 3, 0)};
+
+    std::vector<AvailableSlot> before = {slot(3, 0, 0x0000FF)};
+    REQUIRE(FilamentMapper::resolve_display_colors(tools, mappings, before)[0] == 0x0000FF);
+
+    std::vector<AvailableSlot> after = {slot(3, 0, 0x00FF00)}; // reloaded green
+    REQUIRE(FilamentMapper::resolve_display_colors(tools, mappings, after)[0] == 0x00FF00);
+}
+
+TEST_CASE("resolve_display_colors preserves a manual mapping when an unrelated slot changes",
+          "[filament]") {
+    std::vector<GcodeToolInfo> tools = {tool(0, 0xFFFF00)};
+    std::vector<ToolMapping> mappings = {mapped(0, 2, 0)}; // T0 -> slot 2 (green)
+    std::vector<AvailableSlot> slots = {slot(0, 0, 0xFF0000), slot(2, 0, 0x00FF00)};
+
+    // slot 0 changes color; T0 is mapped to slot 2, so its color must stay green.
+    slots[0].color_rgb = 0x123456;
+    auto colors = FilamentMapper::resolve_display_colors(tools, mappings, slots);
+    REQUIRE(colors[0] == 0x00FF00);
+}

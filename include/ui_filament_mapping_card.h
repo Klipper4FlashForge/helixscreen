@@ -61,6 +61,14 @@ class FilamentMappingCard {
                 const std::vector<std::string>& gcode_materials);
 
     /**
+     * @brief Re-pull loaded slot colors/presence from AmsState and re-render,
+     * WITHOUT recomputing tool->slot mappings — preserves the user's manual
+     * remap and the auto assignment. Used by the detail view's live AMS-change
+     * handler.
+     */
+    void refresh_slot_data();
+
+    /**
      * @brief Get current tool-to-slot mappings
      */
     [[nodiscard]] std::vector<helix::ToolMapping> get_mappings() const {

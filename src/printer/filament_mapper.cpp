@@ -250,6 +250,30 @@ std::vector<ToolMapping> FilamentMapper::compute_defaults(const std::vector<Gcod
     return mappings;
 }
 
+std::vector<uint32_t> FilamentMapper::resolve_display_colors(
+    const std::vector<GcodeToolInfo>& tools, const std::vector<ToolMapping>& mappings,
+    const std::vector<AvailableSlot>& slots) {
+    std::vector<uint32_t> colors;
+    colors.reserve(mappings.size());
+
+    for (size_t i = 0; i < mappings.size(); ++i) {
+        const auto& mapping = mappings[i];
+        uint32_t color = (i < tools.size()) ? tools[i].color_rgb : 0x808080;
+
+        if (!mapping.is_auto && mapping.mapped_slot >= 0) {
+            for (const auto& s : slots) {
+                if (s.slot_index == mapping.mapped_slot &&
+                    s.backend_index == mapping.mapped_backend) {
+                    color = s.color_rgb;
+                    break;
+                }
+            }
+        }
+        colors.push_back(color);
+    }
+    return colors;
+}
+
 std::vector<ToolMapping>
 FilamentMapper::use_current_assignments(const std::vector<GcodeToolInfo>& tools,
                                         const std::vector<AvailableSlot>& slots) {

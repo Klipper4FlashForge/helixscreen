@@ -149,6 +149,12 @@ static void on_print_select_delete_button(lv_event_t* e) {
     get_global_print_select_panel().show_delete_confirmation();
 }
 
+static void on_toggle_sliced_colors(lv_event_t* e) {
+    auto* sw = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
+    bool checked = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    get_global_print_select_panel().forward_sliced_colors_toggle(checked);
+}
+
 static void on_print_select_detail_backdrop(lv_event_t* e) {
     auto* target = static_cast<lv_obj_t*>(lv_event_get_target(e));
     auto* current_target = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
@@ -328,6 +334,7 @@ void PrintSelectPanel::init_subjects() {
         {"on_print_select_delete_button", on_print_select_delete_button},
         {"on_print_select_detail_backdrop", on_print_select_detail_backdrop},
         {"on_print_detail_back_clicked", on_print_detail_back_clicked},
+        {"on_toggle_sliced_colors", on_toggle_sliced_colors},
     });
 
     subjects_initialized_ = true;
@@ -1930,6 +1937,12 @@ void PrintSelectPanel::show_detail_view() {
                            selected_file_size_bytes_);
         // Update history status display in detail view
         detail_view_->update_history_status(selected_history_status_, selected_success_count_);
+    }
+}
+
+void PrintSelectPanel::forward_sliced_colors_toggle(bool checked) {
+    if (detail_view_) {
+        detail_view_->set_prefer_sliced_colors(checked);
     }
 }
 

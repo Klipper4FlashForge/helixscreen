@@ -12,6 +12,7 @@
 #include "preflight_validator.h"
 #include "print_file_data.h" // For FileHistoryStatus
 #include "subject_managed_panel.h"
+#include "ui_observer_guard.h"
 
 #include <functional>
 #include <lvgl.h>
@@ -202,6 +203,11 @@ class PrintSelectDetailView : public OverlayBase {
      * Uses nav system to properly hide with backdrop management.
      */
     void hide();
+
+    /// Toggle the preview between slicer-intended colors (true) and actual loaded
+    /// AMS slot colors (false). Session-local; the panel's toggle callback calls
+    /// this with the switch's checked state.
+    void set_prefer_sliced_colors(bool prefer_sliced);
 
     /**
      * @brief Whether the current file's gcode has finished parsing.
@@ -512,6 +518,9 @@ class PrintSelectDetailView : public OverlayBase {
     lv_subject_t detail_gcode_viewer_mode_{};
     // G-code loading indicator (0=hidden, 1=visible)
     lv_subject_t detail_gcode_loading_{};
+    // 1 = show slicer-intended colors instead of loaded AMS slot colors.
+    // View-local, resets to 0 (actual) on every show().
+    lv_subject_t detail_prefer_sliced_colors_{};
     std::string temp_gcode_path_; // Cached downloaded gcode file path
     bool gcode_loaded_ = false;   // Whether gcode file has been loaded into viewer
     // Pending print-attempt (or other) callback registered via run_when_loaded()
@@ -556,6 +565,11 @@ class PrintSelectDetailView : public OverlayBase {
     char prep_time_estimate_buf_[64]{};         // buffer backing the string subject
     SubjectManager subjects_;                   // RAII manager for subject cleanup
     // Note: subjects_initialized_ inherited from OverlayBase
+
+    // Live re-color when AMS slot colors/presence change while this view is open.
+    // Observes the STATIC AmsState::slots_version subject — no SubjectLifetime
+    // token (singleton, not a per-slot dynamic subject).
+    ObserverGuard slots_version_observer_;
 
     // Print preparation manager (owns it)
     std::unique_ptr<PrintPreparationManager> prep_manager_;
@@ -620,6 +634,12 @@ class PrintSelectDetailView : public OverlayBase {
      * @brief Re-apply tool colors from user's filament mapping choices
      */
     void apply_mapped_tool_colors();
+
+    void apply_preview_colors();      // dispatch sliced vs actual by the subject
+    void apply_sliced_tool_colors();  // force slicer palette into the viewer
+
+    void on_ams_state_changed();               // AMS slots_version observer handler
+    void refresh_preview_colors_and_mismatch(); // shared by card-edit + AMS observer
 
     /**
      * @brief Extract filament colors from parsed gcode when metadata lacks them
