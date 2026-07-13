@@ -1895,10 +1895,13 @@
   <translation tag="Show detailed print preparation status" en="Show detailed print preparation status"/>
   <translation tag="Show instead of dimming" en="Show instead of dimming"/>
   <translation tag="Show printer icon in navigation bar" en="Show printer icon in navigation bar"/>
+  <translation tag="Show sliced colors" en="Show sliced colors"/>
   <translation tag="Show temp for" en="Show temp for"/>
   <translation tag="Show text labels on icon-only home screen widgets" en="Show text labels on icon-only home screen widgets"/>
   <translation tag="Show up/down buttons on long lists" en="Show up/down buttons on long lists"/>
   <translation tag="Show whatever curves you last had visible on the full graph." en="Show whatever curves you last had visible on the full graph."/>
+  <translation tag="Showing loaded colors" en="Showing loaded colors"/>
+  <translation tag="Showing sliced colors" en="Showing sliced colors"/>
   <translation tag="Shutdown" en="Shutdown"/>
   <translation tag="Shutdown / Reboot" en="Shutdown / Reboot"/>
   <translation tag="Shutdown failed" en="Shutdown failed"/>

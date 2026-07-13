@@ -1895,10 +1895,13 @@
   <translation tag="Show detailed print preparation status" ja="詳細な印刷準備ステータスを表示"/>
   <translation tag="Show instead of dimming" ja="暗くする代わりに表示"/>
   <translation tag="Show printer icon in navigation bar" ja="ナビゲーションバーにプリンターアイコンを表示"/>
+  <translation tag="Show sliced colors"/>
   <translation tag="Show temp for" ja="温度表示対象"/>
   <translation tag="Show text labels on icon-only home screen widgets" ja="アイコンのみのホーム画面ウィジェットにテキストラベルを表示"/>
   <translation tag="Show up/down buttons on long lists" ja="長いリストに上下ボタンを表示"/>
   <translation tag="Show whatever curves you last had visible on the full graph." ja="フルグラフで最後に表示していた曲線を表示します。"/>
+  <translation tag="Showing loaded colors"/>
+  <translation tag="Showing sliced colors"/>
   <translation tag="Shutdown" ja="シャットダウン"/>
   <translation tag="Shutdown / Reboot" ja="シャットダウン / 再起動"/>
   <translation tag="Shutdown failed" ja="シャットダウンに失敗しました"/>
