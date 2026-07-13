@@ -29,11 +29,13 @@ file(GLOB HELIX_XML_SRCS
      ${REPO_ROOT}/lib/helix-xml/src/libs/expat/*.c)
 
 idf_component_register(
-    SRCS ${LVGL_SRCS} ${HELIX_XML_SRCS} anomaly_stub.c
+    SRCS ${LVGL_SRCS} ${HELIX_XML_SRCS} anomaly_stub.c shim/platform_stubs.cpp
     INCLUDE_DIRS
         ${CMAKE_CURRENT_LIST_DIR}      # adapted lv_conf.h (RGB565)
         ${REPO_ROOT}/lib/lvgl          # lvgl.h, lvgl_private.h
         ${REPO_ROOT}/lib/helix-xml     # helix_xml.h
+        ${CMAKE_CURRENT_LIST_DIR}/shim         # spdlog_shim.h, hv_json_shim.h, platform_stubs.h
+        ${CMAKE_CURRENT_LIST_DIR}/shim/include # <spdlog/spdlog.h>, <hv/json.hpp> aliases (Task 2 sweep + Task 3 slice)
     PRIV_REQUIRES pthread esp_timer)
 
 # LV_KCONFIG_IGNORE: helix-xml ships lv_conf_internal.h without the sibling
