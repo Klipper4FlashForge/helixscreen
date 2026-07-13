@@ -315,9 +315,54 @@ internal draw buffers (2×32-line, MALLOC_CAP_INTERNAL) did not change it
 `heap_caps_check_integrity*()` periodically while the display is live. Any
 ESP32 port of MemoryMonitor must sample with O(1) free-size counters only.
 
+**Phase 2 constraint — temp-file / scratch storage (flagged by Preston
+2026-07-13):** the desktop app materializes multi-MB temp files in several
+paths, and the ESP32 has nowhere to put them — LittleFS storage is ~6.6MB
+total (and mostly full of ui_xml + fonts), there is no /tmp, and PSRAM can't
+absorb 10-100MB gcode. `StreamingPolicy`'s existing "stream" answer is
+*download to disk*, which doesn't exist here — the port needs a third policy
+mode: **no local materialization**. Inventory of desktop temp-file users and
+their ESP32 disposition:
+- `GCodeFileModifier` (print-prep download→modify→re-upload, e.g. spool remap
+  without native mapping): must go printer-side (Moonraker-side transform, or
+  restrict to printers with native remap à la U1 `SET_PRINT_EXTRUDER_MAP`) or
+  be feature-gated off.
+- 2D gcode viewer full-file download: already compiled out
+  (`HELIX_HAS_GCODE_VIEWER=0`, `f71f10341`).
+- Thumbnails (`thumbnail_processor`): small (tens of KB) — cap + PSRAM-only,
+  no disk cache.
+- Debug bundles (`log_collector`): multi-MB tarball — ESP32 variant must
+  stream straight to the upload socket or ship a reduced bundle.
+- Self-update (`update_checker` downloads the new binary): replaced wholesale
+  by native `esp_ota` A/B streaming from HTTP — never touches a filesystem.
+- `input_shaper_cache`, config writes: KB-scale, fine on LittleFS.
+
+**CJK font viability (Task 4, final piece — MEASURED on-device 2026-07-13):**
+two implementations of the same 1203-codepoint zh+ja translation subset
+(16px/4bpp, Noto Sans CJK SC+JP), rendered side by side on the K-Touch
+(user-confirmed correct glyphs, identical quality):
+
+| | runtime `.bin` (desktop CjkFontManager path) | compiled-in C array (XIP) |
+|---|---|---|
+| heap cost | **135.9KB PSRAM** (1.10× file size), 0 internal | **zero** (internal + PSRAM byte-identical) |
+| load time | **1361ms** from LittleFS (~90KB/s) | none (rodata) |
+| flash cost | 123KB on LittleFS | +135KB app image |
+
+Extrapolation: the desktop model loads ~22 bins for a CJK language even at
+the AD5M font tier ≈ **~3.0MB PSRAM of the ~3.15MB remaining + ~15s LittleFS
+load — not viable**. The compiled XIP route costs zero RAM at any size count;
+a realistic reduced set (regular + bold at the sizes the 800×480 medium tier
+uses, ~1.2–1.5MB flash) fits. **Verdict: CJK is VIABLE on the S3 — Phase 2
+keeps CjkFontManager's `->fallback` wiring but points it at const compiled
+fonts (no lv_binfont_create, no load/unload, no heap).** The subset is baked
+at firmware build time from the translation YAMLs — same regen trigger the
+desktop uses, different output format (`--format lvgl` vs `bin`). Test
+scaffolding: `main/noto_sans_cjk_16_compiled.c` (generated via lv_font_conv
+with the manifest codepoints) + `cjk_experiment()` in audit_main.c.
+
 ## Remaining tasks
 
-- **Task 4 [HW], partial:** slice RAM watermarks + routing experiment captured
-  above (160KB internal / 3.29MB PSRAM free with the full shell). Still open:
-  CJK font viability.
+- **Task 4 [HW]: COMPLETE** — RAM watermarks + routing (160KB internal /
+  3.29MB PSRAM free, full shell), flicker root-caused (heap-walk critical
+  section), CJK viability measured (compiled XIP = zero RAM, viable).
 - **Task 5:** final report + go/no-go. Gates revised 2026-07-13: yellow = S3 + explicit feature gates (P4 hatch removed).

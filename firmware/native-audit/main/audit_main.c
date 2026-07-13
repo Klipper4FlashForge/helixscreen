@@ -283,10 +283,56 @@ void app_main(void) {
     pthread_join(app_thread, NULL);
 }
 
+// ---- Task 4: CJK font viability ----
+//
+// Test A: the desktop CjkFontManager path — lv_binfont_create() of a runtime
+// .bin subset (1203 codepoints from the zh+ja translations, 16px/4bpp, 123KB
+// on LittleFS). Measures actual heap cost and LittleFS load time.
+// Test B: the same subset compiled in as a C array — lives in .rodata, XIP'd
+// from flash, zero heap by construction. Both render side by side; the label
+// text is taken from translations/{zh,ja}.yml so every glyph is in-subset.
+extern const lv_font_t noto_sans_cjk_16_compiled;
+
+static void cjk_experiment(void) {
+    size_t psram_before = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    size_t internal_before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    int64_t t0 = esp_timer_get_time();
+    lv_font_t *binfont = lv_binfont_create("A:assets/fonts/cjk/noto_sans_cjk_16.bin");
+    int64_t t1 = esp_timer_get_time();
+    ESP_LOGI(TAG,
+             "[cjk:binfont] %s in %lldms | psram cost=%d internal cost=%d",
+             binfont ? "OK" : "FAILED", (t1 - t0) / 1000,
+             (int)(psram_before - heap_caps_get_free_size(MALLOC_CAP_SPIRAM)),
+             (int)(internal_before - heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));
+
+    lv_obj_t *card = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(card, 520, 110);
+    lv_obj_align(card, LV_ALIGN_BOTTOM_MID, 0, -6);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x1a2332), 0);
+    lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
+
+    // White = Test A (runtime binfont). If font load failed the label falls
+    // back to the default Latin font and shows missing-glyph boxes.
+    lv_obj_t *l1 = lv_label_create(card);
+    if (binfont) lv_obj_set_style_text_font(l1, binfont, 0);
+    lv_label_set_text(l1, "打印机归位并探测热床、印刷完了後に保存してください");
+    lv_obj_set_style_text_color(l1, lv_color_hex(0xffffff), 0);
+    lv_obj_align(l1, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    // Blue = Test B (compiled-in subset, XIP from flash).
+    lv_obj_t *l2 = lv_label_create(card);
+    lv_obj_set_style_text_font(l2, &noto_sans_cjk_16_compiled, 0);
+    lv_label_set_text(l2, "打印机归位并探测热床、印刷完了後に保存してください");
+    lv_obj_set_style_text_color(l2, lv_color_hex(0x4fc3f7), 0);
+    lv_obj_align(l2, LV_ALIGN_TOP_LEFT, 0, 36);
+}
+
 static void *app_phase(void *arg) {
     (void)arg;
     audit_app_run();
     log_heap("app-slice-up");
+    cjk_experiment();
+    log_heap("post-cjk");
 
     uint32_t n = 0;
     int64_t last_update = 0;
