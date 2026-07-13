@@ -167,7 +167,12 @@ void app_main(void) {
     lv_xml_init();
 
     lv_display_t *disp = lv_display_create(LCD_H_RES, LCD_V_RES);
-    // LV_DRAW_BUF_ALIGN is 16 in the repo config; plain heap_caps_malloc is 8-aligned
+    // LV_DRAW_BUF_ALIGN is 16 in the repo config; plain heap_caps_malloc is 8-aligned.
+    // Draw buffers stay in PSRAM: an internal-buffer experiment (2x32-line,
+    // MALLOC_CAP_INTERNAL, thr-0 run 2026-07-13) did NOT cure the periodic
+    // transient frame corruption, so compositing bandwidth is not the cause —
+    // no reason to spend 100KB of internal RAM here. (2x64KB internal is not
+    // even allocatable: largest internal block at this stage is ~118KB.)
     size_t buf_px = LCD_H_RES * 80;
     lv_color_t *buf1 = heap_caps_aligned_alloc(16, buf_px * sizeof(lv_color16_t),
                                                MALLOC_CAP_SPIRAM);
