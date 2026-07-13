@@ -94,8 +94,10 @@ Deliverable: written report in `docs/devel/` with go/no-go recommendation and th
 
 **Decision gates:**
 - **Green** → Phase 2 ports the real codebase to S3.
-- **Yellow** → Phase 2 proceeds on ESP32-P4-class hardware (push BTT that direction; S3 stays the terminal) or with feature gates.
+- **Yellow** → Phase 2 proceeds on S3 **with explicit feature gates** (no camera/3D, capped lists, streamed JSON, Latin-first fonts); the audit report documents which gates.
 - **Red** → fallback to "shared XML engine + slim new app layer"; communicated to BTT early.
+
+*(Revised 2026-07-13: the original yellow gate included "steer BTT to ESP32-P4-class hardware." That option is off the table — BTT's goal is broader appeal for their existing S3 stock (K-Touch in hand, hardware recon verified in `docs/devel/printer-research/BTT_K_TOUCH_HARDWARE.md`), not a new panel. S3 + 8MB PSRAM + 16MB flash is the fixed target; feature gates are the expected design, not a fallback.)*
 
 ### Phase 2 porting seams (for the audit to validate)
 
