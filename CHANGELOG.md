@@ -5,6 +5,35 @@ All notable changes to HelixScreen will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.99.90] - 2026-07-12
+
+### Added
+
+- **Redesigned AMS spool editor** — the slot editor is now a single in-place flow: an overview spool card with an identity chip and Spoolman mark, a "Change filament" row, and in-place views for filament details, color (preset grid + custom hue), and spool details, replacing the old stacked dropdown/modal editor. Choosing a branded filament works even when Spoolman is absent, and scanning a QR repopulates the live editor instead of closing it.
+- **Sliced vs. loaded preview colors** (prestonbrown/helixscreen#959) — the gcode preview can recolor to your loaded AMS slot colors, updating live as slots change, with a toggle in print settings to prefer the sliced colors instead.
+- **Per-unit dryer environment** — multi-box AMS systems (QIDI) report drying state per box, with environment indicators and the dryer overlay routed to the unit you open.
+- **LED quick-toggle** — a LED on/off toggle in the Calibration & Tools grid.
+- **USB input device blacklist** (prestonbrown/helixscreen#1095) — a setting to ignore specific USB HID devices for input.
+- **Temperature history on connect** (prestonbrown/helixscreen#944) — temperature graphs seed from Moonraker's temperature store at connect, so recent history is shown immediately.
+
+### Fixed
+
+- **Print-start crash on the helix_print plugin** — Klipper calls route through `klippy_apis` with a client fallback, fixing a crash at print start.
+- **Motion refused until ready** — jog and home g-code is refused until Klipper is READY, and the jog pad dims and disables when the printer isn't ready.
+- **Timelapse capability** (prestonbrown/helixscreen#1094) — a hardware-timelapse batch no longer clobbers a component-detected timelapse capability.
+- **AMS spool rendering and saves** — per-slot fill levels render from state everywhere (the overview had shown every spool full), unknown-weight spools render half-full rather than full, a Cancel on the identity confirm aborts the save, switching a linked spool is treated as a relink instead of prompting to overwrite, and managed controls stay hidden without Spoolman.
+- **Panel RPC dedupe** (prestonbrown/helixscreen#910, prestonbrown/helixscreen#912) — an in-flight guard dedupes panel RPCs with self-heal, and the print-select file provider drops stale responses via a per-request generation guard.
+- **Writable temp paths on locked-down devices** — runtime `/tmp` writes and the splash-status path resolve to a writable directory under `ProtectSystem=strict` sandboxes.
+- **Wayland screenshots** — screenshot capture uses the native Wayland SDL driver on Wayland sessions.
+- **SAVE_CONFIG restart** — a SAVE_CONFIG-triggered restart is treated as transient rather than surfaced as an error.
+- **Small-device memory** — the AMS edit overlay is destroyed on close to reclaim its widget tree.
+
+### Changed
+
+- **Empty XML binding subjects** — an empty `bind_flag`/`bind_state` subject is treated as a no-op, fixing a phantom header button.
+- **Translation tooling** — `translation-sync` inserts keys surgically instead of rewriting locale files, honors `do not translate` / `universal` suppression markers, and dead keys were pruned.
+- **Filament product ordering** — plain material ranks first and support materials last in the product list.
+
 ## [0.99.89] - 2026-07-12
 
 ### Added
@@ -4247,6 +4276,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.90]: https://github.com/prestonbrown/helixscreen/compare/v0.99.89...v0.99.90
 [0.99.89]: https://github.com/prestonbrown/helixscreen/compare/v0.99.88...v0.99.89
 [0.99.88]: https://github.com/prestonbrown/helixscreen/compare/v0.99.87...v0.99.88
 [0.99.87]: https://github.com/prestonbrown/helixscreen/compare/v0.99.86...v0.99.87
