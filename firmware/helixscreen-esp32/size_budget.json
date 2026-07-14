@@ -1,0 +1,4 @@
+{
+  "app_max_bytes": 6081741,
+  "comment": "5.8MB = 6.0MB OTA slot minus margin. Spec: 2026-07-13-esp32-native-port-design.md. Raise only with a spec change."
+}
