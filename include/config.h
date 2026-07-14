@@ -13,8 +13,10 @@
 
 #pragma once
 
+#include "config_storage.h"
 #include "json_fwd.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -63,6 +65,7 @@ class Config {
     std::string path;
     std::string active_printer_id_; ///< Currently active printer slug ID
     bool read_only_mode_ = false;   ///< Config directory is on a read-only filesystem
+    std::unique_ptr<ConfigStorage> storage_; ///< Document-level persistence backend
 
   protected:
     json data;
@@ -107,7 +110,16 @@ class Config {
     void clear_path() {
         path.clear();
         active_printer_id_.clear();
+        storage_.reset();
     }
+
+    /**
+     * @brief Inject a persistence backend (call BEFORE init()).
+     *
+     * Default when unset: make_file_config_storage(resolved path). Embedded
+     * targets substitute NVS/LittleFS; tests substitute an in-memory mock.
+     */
+    void set_storage(std::unique_ptr<ConfigStorage> storage) { storage_ = std::move(storage); }
 
     /**
      * @brief Get configuration value at JSON pointer path
