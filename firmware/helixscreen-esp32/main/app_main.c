@@ -10,8 +10,22 @@
 
 #include "board_display.h"
 #include "ktouch.h"
+#include "lvgl_glue.h"
+#include "lvgl.h"
 
 static const char *TAG = "helixscreen";
+
+static void ui_build_hello(void) {
+    lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(0x0d1117), 0);
+    lv_obj_t *card = lv_obj_create(lv_screen_active());
+    lv_obj_set_size(card, 400, 120);
+    lv_obj_center(card);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x1a2332), 0);
+    lv_obj_t *label = lv_label_create(card);
+    lv_label_set_text(label, "helixscreen-esp32 foundation");
+    lv_obj_set_style_text_color(label, lv_color_hex(0x4fc3f7), 0);
+    lv_obj_center(label);
+}
 
 void app_main(void) {
     const esp_partition_t *running = esp_ota_get_running_partition();
@@ -19,13 +33,5 @@ void app_main(void) {
              running->label, running->address);
 
     esp_lcd_panel_handle_t panel = board_display_init();
-    // Test pattern: three horizontal color bands drawn via draw_bitmap —
-    // proves data-pin order and scanout before LVGL enters the picture.
-    static uint16_t line[BOARD_LCD_H_RES];
-    for (int y = 0; y < BOARD_LCD_V_RES; y++) {
-        uint16_t c = (y < 160) ? 0xF800 : (y < 320) ? 0x07E0 : 0x001F;
-        for (int x = 0; x < BOARD_LCD_H_RES; x++) line[x] = c;
-        esp_lcd_panel_draw_bitmap(panel, 0, y, BOARD_LCD_H_RES, y + 1, line);
-    }
-    ESP_LOGI(TAG, "display: test pattern up");
+    lvgl_glue_start(panel, ui_build_hello);
 }
