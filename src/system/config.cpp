@@ -29,6 +29,7 @@
 #include <fstream>
 #include <iomanip>
 #include <optional>
+#include <sstream>
 #include <sys/stat.h>
 #include <unistd.h>
 // C++17 filesystem - use std::filesystem if available, fall back to experimental
@@ -1057,13 +1058,17 @@ void Config::init(const std::string& config_path) {
                             {ENV_BACKUP_PRIMARY, env_backup_fallback()});
     }
 
+    if (!storage_) {
+        storage_ = make_file_config_storage(path);
+    }
     bool config_modified = false;
 
-    if (stat(path.c_str(), &buffer) == 0) {
+    auto loaded_doc = storage_->load();
+    if (loaded_doc) {
         // Load existing config
         spdlog::info("[Config] Loading config from {}", path);
         try {
-            data = json::parse(std::fstream(path));
+            data = json::parse(*loaded_doc);
 
             // Detect tarball default that replaced user config during a Moonraker
             // web update.  Moonraker type:web does rmtree() on the install dir and
@@ -1094,10 +1099,8 @@ void Config::init(const std::string& config_path) {
             CONFIG_RECORD_ERROR("file_io", "config_read_failed",
                                 fmt::format("parse error: {}", e.what()));
 
-            // Preserve the corrupt file for diagnosis
-            std::string corrupt_path = path + ".corrupt";
-            std::rename(path.c_str(), corrupt_path.c_str());
-            spdlog::info("[Config] Corrupt config saved to {}", corrupt_path);
+            // Preserve the corrupt document for diagnosis
+            storage_->preserve_corrupt();
 
             // Try restoring from backup before falling back to defaults
             std::string backup_src = find_backup(config_backup_search_paths());
@@ -1337,32 +1340,16 @@ void Config::init(const std::string& config_path) {
         }
     }
 
-    // Probe for read-only filesystem before attempting any writes.
-    // Try creating a small test file in the config directory — if it fails
-    // with EROFS or EACCES, enable read-only mode and skip all future saves.
-    {
-        fs::path config_dir = fs::path(path).parent_path();
-        std::string probe_path = (config_dir / ".helix-write-probe").string();
-        std::ofstream probe(probe_path);
-        if (!probe.is_open()) {
-            int err = errno;
-            if (err == EROFS || err == EACCES) {
-                read_only_mode_ = true;
-                spdlog::warn("[Config] Read-only filesystem detected ({}): "
-                             "config changes will not be persisted",
-                             strerror(err));
-            }
-        } else {
-            probe.close();
-            std::remove(probe_path.c_str());
-        }
+    // Probe for read-only storage before attempting any writes.
+    read_only_mode_ = storage_->read_only();
+    if (read_only_mode_) {
+        spdlog::warn("[Config] Read-only storage ({}): config changes will not be persisted",
+                     storage_->describe());
     }
 
     // Save updated config with any new defaults or migrations
     if (config_modified && !read_only_mode_) {
-        std::ofstream o(path);
-        o << std::setw(2) << data << std::endl;
-        spdlog::debug("[Config] Saved updated config to {}", path);
+        save();
     }
 
     // Maintain a rolling backup on startup — ensures backup freshness even if
@@ -1498,20 +1485,6 @@ json& Config::get_json(const std::string& json_path) {
     return data[json::json_pointer(json_path)];
 }
 
-/// Map common errno values to user-friendly descriptions
-static std::string errno_reason(int err) {
-    switch (err) {
-    case ENOSPC:
-        return "disk full";
-    case EROFS:
-        return "read-only filesystem";
-    case EACCES:
-        return "permission denied";
-    default:
-        return strerror(err);
-    }
-}
-
 bool Config::save() {
     if (path.empty()) {
         spdlog::trace("[Config] Skipping save (no config path set)");
@@ -1523,98 +1496,22 @@ bool Config::save() {
         return false;
     }
 
-    spdlog::trace("[Config] Saving config to {}", path);
+    spdlog::trace("[Config] Saving config to {}", storage_ ? storage_->describe() : path);
 
-    try {
-        // Resolve symlinks so atomic rename targets the real file, not the symlink
-        std::string target_path = path;
-        {
-            std::error_code ec;
-            if (fs::is_symlink(path, ec)) {
-                auto real = fs::canonical(path, ec);
-                if (!ec) {
-                    spdlog::debug("[Config] Resolved symlink {} -> {}", path, real.string());
-                    target_path = real.string();
-                }
-            }
-        }
+    if (!storage_) {
+        storage_ = make_file_config_storage(path);
+    }
 
-        // Atomic save: write to temp file, then rename to avoid partial writes on crash/power loss
-        std::string tmp_path = target_path + ".tmp";
-        {
-            std::ofstream o(tmp_path);
-            if (!o.is_open()) {
-                std::string reason = errno_reason(errno);
-                NOTIFY_ERROR("Could not save settings: {}", reason);
-                LOG_ERROR_INTERNAL("Failed to open temp file for writing: {} ({})", tmp_path,
-                                   reason);
-                CONFIG_RECORD_ERROR("file_io", "config_write_failed",
-                                    fmt::format("open failed: {}", reason));
-                return false;
-            }
-
-            o << std::setw(2) << data << std::endl;
-            o.flush();
-
-            if (!o.good()) {
-                std::string reason = errno_reason(errno);
-                NOTIFY_ERROR("Failed to save settings: {}", reason);
-                LOG_ERROR_INTERNAL("Failed to write config to {}: {}", tmp_path, reason);
-                CONFIG_RECORD_ERROR("file_io", "config_write_failed",
-                                    fmt::format("write error: {}", reason));
-                std::remove(tmp_path.c_str());
-                return false;
-            }
-        }
-
-        // fsync the temp file so data is durable before the rename, then fsync
-        // the parent directory so the rename itself is durable. Required on
-        // flash-backed filesystems (#943, Qidi Q2): without this, a clean
-        // shutdown / power cycle can leave settings.json empty even though
-        // userspace-level rename() returned success.
-        {
-            int fd = ::open(tmp_path.c_str(), O_RDONLY);
-            if (fd >= 0) {
-                (void)::fsync(fd);
-                ::close(fd);
-            }
-        }
-
-        if (std::rename(tmp_path.c_str(), target_path.c_str()) != 0) {
-            NOTIFY_ERROR("Failed to save configuration file");
-            LOG_ERROR_INTERNAL("Failed to rename temp file '{}' to '{}': {}", tmp_path, target_path,
-                               strerror(errno));
-            CONFIG_RECORD_ERROR("file_io", "config_write_failed",
-                                fmt::format("rename failed: {}", strerror(errno)));
-            std::remove(tmp_path.c_str());
-            return false;
-        }
-
-        {
-            std::string dir = fs::path(target_path).parent_path().string();
-            if (!dir.empty()) {
-                int dfd = ::open(dir.c_str(), O_RDONLY | O_DIRECTORY);
-                if (dfd >= 0) {
-                    (void)::fsync(dfd);
-                    ::close(dfd);
-                }
-            }
-        }
-
-        spdlog::trace("[Config] saved successfully to {}", path);
-
-        // Maintain rolling backup outside install dir (survives Moonraker wipes)
-        write_rolling_backup(path, CONFIG_BACKUP_PRIMARY, config_backup_fallback());
-
-        return true;
-
-    } catch (const std::exception& e) {
-        NOTIFY_ERROR("Failed to save configuration: {}", e.what());
-        LOG_ERROR_INTERNAL("Exception while saving config to {}: {}", path, e.what());
+    std::ostringstream oss;
+    oss << std::setw(2) << data << std::endl;
+    if (!storage_->store(oss.str())) {
+        NOTIFY_ERROR("Failed to save configuration file");
         CONFIG_RECORD_ERROR("file_io", "config_write_failed",
-                            fmt::format("exception: {}", e.what()));
+                            fmt::format("store failed: {}", storage_->describe()));
         return false;
     }
+    spdlog::trace("[Config] saved successfully to {}", storage_->describe());
+    return true;
 }
 
 bool Config::is_read_only() const {
