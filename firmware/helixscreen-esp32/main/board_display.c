@@ -1,0 +1,78 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+#include "board_display.h"
+#include "ktouch.h"
+
+#include "driver/gpio.h"
+#include "driver/ledc.h"
+#include "esp_lcd_panel_rgb.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+esp_lcd_panel_handle_t board_display_init(void) {
+    gpio_config_t rst = {.pin_bit_mask = 1ULL << BOARD_LCD_PIN_RESET,
+                         .mode = GPIO_MODE_OUTPUT};
+    ESP_ERROR_CHECK(gpio_config(&rst));
+    gpio_set_level(BOARD_LCD_PIN_RESET, 0);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    gpio_set_level(BOARD_LCD_PIN_RESET, 1);
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    esp_lcd_rgb_panel_config_t cfg = {
+        .clk_src = LCD_CLK_SRC_DEFAULT,
+        .timings = {
+            .pclk_hz = BOARD_LCD_PCLK_HZ,
+            .h_res = BOARD_LCD_H_RES,
+            .v_res = BOARD_LCD_V_RES,
+            .hsync_pulse_width = BOARD_LCD_HSYNC_PW,
+            .hsync_back_porch = BOARD_LCD_HSYNC_BP,
+            .hsync_front_porch = BOARD_LCD_HSYNC_FP,
+            .vsync_pulse_width = BOARD_LCD_VSYNC_PW,
+            .vsync_back_porch = BOARD_LCD_VSYNC_BP,
+            .vsync_front_porch = BOARD_LCD_VSYNC_FP,
+            .flags = {.pclk_active_neg = 1},
+        },
+        .data_width = 16,
+        .bits_per_pixel = 16,
+        .num_fbs = 1,
+        // 10-line bounce buffers: direct PSRAM scanout visibly desyncs when
+        // redraw traffic competes for PSRAM bandwidth (audit Task 1 trap).
+        .bounce_buffer_size_px = 10 * BOARD_LCD_H_RES,
+        .hsync_gpio_num = -1,
+        .vsync_gpio_num = -1,
+        .de_gpio_num = BOARD_LCD_PIN_DE,
+        .pclk_gpio_num = BOARD_LCD_PIN_PCLK,
+        .disp_gpio_num = -1,
+        .data_gpio_nums = BOARD_LCD_DATA_PINS,
+        .flags = {.fb_in_psram = 1},
+    };
+    esp_lcd_panel_handle_t panel = NULL;
+    ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&cfg, &panel));
+    ESP_ERROR_CHECK(esp_lcd_panel_reset(panel));
+    ESP_ERROR_CHECK(esp_lcd_panel_init(panel));
+
+    ledc_timer_config_t timer = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .duty_resolution = LEDC_TIMER_11_BIT,
+        .timer_num = LEDC_TIMER_1,
+        .freq_hz = 30000,
+        .clk_cfg = LEDC_AUTO_CLK,
+    };
+    ESP_ERROR_CHECK(ledc_timer_config(&timer));
+    ledc_channel_config_t channel = {
+        .gpio_num = BOARD_BACKLIGHT_PIN,
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = LEDC_CHANNEL_0,
+        .timer_sel = LEDC_TIMER_1,
+        .duty = (1 << 11) - 1,
+        .hpoint = 0,
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&channel));
+    return panel;
+}
+
+void board_display_backlight(uint8_t percent) {
+    if (percent > 100) percent = 100;
+    uint32_t duty = ((uint32_t)percent * ((1 << 11) - 1)) / 100;
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+}
