@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -54,11 +55,17 @@ class FileConfigStorage : public ConfigStorage {
     std::optional<std::string> load() override {
         struct stat st;
         if (stat(path_.c_str(), &st) != 0) {
-            return std::nullopt;
+            return std::nullopt; // absent — first boot
         }
         std::ifstream in(path_);
         if (!in.is_open()) {
-            return std::nullopt;
+            // Present but unreadable (e.g. permission denied) — distinct
+            // from "absent" so Config::init() can route this into
+            // corrupt-preserve + backup-restore instead of silently
+            // treating a locked-down existing config as first-boot.
+            int err = errno;
+            throw std::runtime_error(
+                fmt::format("failed to open {} for reading: {}", path_, errno_reason(err)));
         }
         std::ostringstream ss;
         ss << in.rdbuf();

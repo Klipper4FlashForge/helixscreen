@@ -18,6 +18,13 @@ class ConfigStorage {
     virtual ~ConfigStorage() = default;
 
     /// Whole-document read. nullopt = document does not exist (first boot).
+    /// If the document exists but could not be read (permission denied, I/O
+    /// error), throw (e.g. std::runtime_error) rather than returning
+    /// nullopt — callers must be able to tell "absent" from "present but
+    /// unreadable" so they don't silently treat a locked-down existing
+    /// config as first-boot and reset it to defaults. Config::init() routes
+    /// a thrown load() into the same corrupt-preserve + backup-restore path
+    /// as a parse failure.
     virtual std::optional<std::string> load() = 0;
 
     /// Atomic, durable whole-document write. False on failure (caller logs).

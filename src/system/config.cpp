@@ -22,16 +22,14 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
-#include <fcntl.h>
 #include <fstream>
 #include <iomanip>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <sys/stat.h>
-#include <unistd.h>
 // C++17 filesystem - use std::filesystem if available, fall back to experimental
 #if __cplusplus >= 201703L && __has_include(<filesystem>)
 #include <filesystem>
@@ -1063,11 +1061,29 @@ void Config::init(const std::string& config_path) {
     }
     bool config_modified = false;
 
-    auto loaded_doc = storage_->load();
-    if (loaded_doc) {
+    // A thrown load() means the document is present but unreadable (e.g.
+    // permission denied) — distinct from "absent" (nullopt, no throw). Both
+    // cases funnel into the "load existing config" branch below so a
+    // present-but-unreadable config gets the same corrupt-preserve +
+    // backup-restore recovery as a parse failure, instead of being silently
+    // treated as first-boot and reset to defaults.
+    std::optional<std::string> loaded_doc;
+    bool load_read_failed = false;
+    std::string load_read_error;
+    try {
+        loaded_doc = storage_->load();
+    } catch (const std::exception& e) {
+        load_read_failed = true;
+        load_read_error = e.what();
+    }
+
+    if (loaded_doc || load_read_failed) {
         // Load existing config
         spdlog::info("[Config] Loading config from {}", path);
         try {
+            if (load_read_failed) {
+                throw std::runtime_error(load_read_error);
+            }
             data = json::parse(*loaded_doc);
 
             // Detect tarball default that replaced user config during a Moonraker
@@ -1094,10 +1110,16 @@ void Config::init(const std::string& config_path) {
                     }
                 }
             }
-        } catch (const json::exception& e) {
-            spdlog::error("[Config] Failed to parse {}: {}", path, e.what());
-            CONFIG_RECORD_ERROR("file_io", "config_read_failed",
-                                fmt::format("parse error: {}", e.what()));
+        } catch (const std::exception& e) {
+            if (load_read_failed) {
+                spdlog::error("[Config] Failed to read {}: {}", path, e.what());
+                CONFIG_RECORD_ERROR("file_io", "config_read_failed",
+                                    fmt::format("read error: {}", e.what()));
+            } else {
+                spdlog::error("[Config] Failed to parse {}: {}", path, e.what());
+                CONFIG_RECORD_ERROR("file_io", "config_read_failed",
+                                    fmt::format("parse error: {}", e.what()));
+            }
 
             // Preserve the corrupt document for diagnosis
             storage_->preserve_corrupt();
