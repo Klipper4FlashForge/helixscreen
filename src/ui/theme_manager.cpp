@@ -16,6 +16,7 @@
 #include "lvgl/src/themes/lv_theme_private.h"
 #include "settings_manager.h"
 #include "theme_loader.h"
+#include "theme_token_table.h"
 
 #include <spdlog/spdlog.h>
 
@@ -76,6 +77,7 @@ static UiBreakpoint compute_breakpoint_from_height(int32_t ver_res) {
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
@@ -1556,6 +1558,7 @@ static helix::ThemeData theme_manager_load_active_theme() {
 }
 
 void theme_manager_init(lv_display_t* display, bool use_dark_mode_param) {
+    auto tm_init_start = std::chrono::steady_clock::now();
     theme_display = display;
     use_dark_mode = use_dark_mode_param;
 
@@ -1687,6 +1690,12 @@ void theme_manager_init(lv_display_t* display, bool use_dark_mode_param) {
     // don't reveal a white window background on startup
     android_set_window_bg_color(theme_manager_parse_hex_color(mode_palette.screen_bg.c_str()));
 #endif
+
+    spdlog::debug("[Theme] theme_manager_init took {} ms (token table {})",
+                  std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::steady_clock::now() - tm_init_start)
+                      .count(),
+                  helix::theme_tokens::enabled() ? "on" : "off");
 }
 
 void theme_manager_deinit() {
@@ -2762,6 +2771,13 @@ std::vector<std::string> theme_manager_find_xml_files(const char* directory) {
 
 std::unordered_map<std::string, std::string>
 theme_manager_parse_all_xml_for_element(const char* directory, const char* element_type) {
+    // Build-time token table: skip the ~28-scan boot storm when the table is
+    // enabled and the caller wants the canonical ui_xml dir (tests and
+    // alternate dirs always scan live).
+    if (helix::theme_tokens::enabled() && directory &&
+        std::strcmp(directory, tm_ui_xml_dir()) == 0) {
+        return helix::theme_tokens::for_element(element_type);
+    }
     std::unordered_map<std::string, std::string> token_values;
     std::vector<std::string> files = theme_manager_find_xml_files(directory);
     for (const auto& filepath : files) {
@@ -2773,6 +2789,12 @@ theme_manager_parse_all_xml_for_element(const char* directory, const char* eleme
 std::unordered_map<std::string, std::string>
 theme_manager_parse_all_xml_for_suffix(const char* directory, const char* element_type,
                                        const char* suffix) {
+    // Build-time token table: same fast-path guard as _for_element above.
+    if (helix::theme_tokens::enabled() && directory &&
+        std::strcmp(directory, tm_ui_xml_dir()) == 0) {
+        return helix::theme_tokens::for_suffix(element_type, suffix);
+    }
+
     std::unordered_map<std::string, std::string> token_values;
 
     // Get sorted list of all XML files
