@@ -59,6 +59,32 @@ std::string get_user_config_dir();
 std::string get_data_dir();
 
 /**
+ * @brief Root directory containing ui_xml/ and assets/
+ *
+ * Defaults to "." — byte-compatible with the historical CWD assumption
+ * (Application chdir()s into the data root at startup, so relative paths
+ * already resolve). Embedded targets with no working directory (ESP-IDF
+ * VFS has none — every relative path fails there) call
+ * set_asset_root("/littlefs") before any UI/theme init.
+ *
+ * Same thread-safety caveats as get_user_config_dir(): set once during
+ * single-threaded startup, read-only afterwards.
+ */
+const std::string& asset_root();
+
+/** @brief Override the asset root (empty string resets to "."). */
+void set_asset_root(const std::string& root);
+
+/**
+ * @brief Join a relative asset path onto asset_root()
+ *
+ * Identity when the root is "." (desktop: asset_path("ui_xml") == "ui_xml",
+ * keeping every existing path byte-identical); prefix-joined otherwise
+ * ("/littlefs/ui_xml").
+ */
+std::string asset_path(const std::string& relpath);
+
+/**
  * @brief Build a writable path under the user-config directory
  *
  * Returns get_user_config_dir() + "/" + relpath, with any trailing slash
