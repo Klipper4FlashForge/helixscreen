@@ -46,7 +46,14 @@ static void ui_build_hello(void) {
     lv_obj_add_event_cb(btn, tap_cb, LV_EVENT_CLICKED, btn_label);
 }
 
+// Defined in the helixnet component. Referenced (never called) so the linker
+// keeps the EspMoonrakerClient in the image and the size gate accounts for its
+// real footprint before Task 10 wires the transport into the boot flow.
+extern void helixnet_link_probe(void);
+static void (*volatile s_helixnet_keep)(void) = helixnet_link_probe;
+
 void app_main(void) {
+    (void)s_helixnet_keep;
     const esp_partition_t *running = esp_ota_get_running_partition();
     ESP_LOGI(TAG, "helixscreen-esp32 booting from partition '%s' @ 0x%08" PRIx32,
              running->label, running->address);

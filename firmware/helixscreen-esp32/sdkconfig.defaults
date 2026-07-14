@@ -32,3 +32,8 @@ CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
 # TLS to Moonraker is optional/LAN; the default cert bundle costs ~636KB.
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
+
+# Separate TX lock for esp_websocket_client: without it a send can block 10s+
+# behind an in-progress receive (esp-idf#14918), and Moonraker traffic is
+# bidirectional (RPCs out while status streams in). Required by helixnet.
+CONFIG_ESP_WS_CLIENT_SEPARATE_TX_LOCK=y
