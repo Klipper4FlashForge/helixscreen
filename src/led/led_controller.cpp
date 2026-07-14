@@ -8,8 +8,8 @@
 #include "color_utils.h"
 #include "config.h"
 #include "helix/xml/scoped_subject_registry.h"
+#include "i_moonraker_client.h"
 #include "moonraker_api.h"
-#include "moonraker_client.h"
 #include "moonraker_error.h"
 #include "observer_factory.h"
 #include "printer_discovery.h"
@@ -62,7 +62,7 @@ LedController& LedController::instance() {
     return s_instance;
 }
 
-void LedController::init(MoonrakerAPI* api, MoonrakerClient* client) {
+void LedController::init(MoonrakerAPI* api, IMoonrakerClient* client) {
     api_ = api;
     client_ = client;
 

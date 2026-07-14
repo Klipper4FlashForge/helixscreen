@@ -49,7 +49,7 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
      *
      * @note Both pointers must remain valid for the lifetime of this backend.
      */
-    AmsBackendHappyHare(MoonrakerAPI* api, helix::MoonrakerClient* client);
+    AmsBackendHappyHare(MoonrakerAPI* api, helix::IMoonrakerClient* client);
     ~AmsBackendHappyHare() override;
 
     /**

@@ -60,6 +60,18 @@ class IMoonrakerClient {
     /// @brief Disconnect from Moonraker WebSocket server
     virtual void disconnect() = 0;
 
+    /// @brief Get URL from the last connect() call ("" if never connected)
+    virtual const std::string& get_last_url() const = 0;
+
+    /// @brief Enable/disable automatic reconnection
+    ///
+    /// Disabling stops the transport from retrying in the background — used by
+    /// connection-test flows (setup wizard, change-host modal) that probe a
+    /// candidate host and don't want a background reconnect loop fighting the
+    /// probe. Transient by design: the next connect() call unconditionally
+    /// re-installs its own reconnect settings, regardless of this flag.
+    virtual void set_auto_reconnect(bool enabled) = 0;
+
     // ========================================================================
     // JSON-RPC Protocol
     // ========================================================================

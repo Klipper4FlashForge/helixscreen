@@ -8,7 +8,7 @@
 
 #include "hv/json.hpp"
 
-AmsSubscriptionBackend::AmsSubscriptionBackend(MoonrakerAPI* api, helix::MoonrakerClient* client)
+AmsSubscriptionBackend::AmsSubscriptionBackend(MoonrakerAPI* api, helix::IMoonrakerClient* client)
     : api_(api), client_(client) {
     // Common defaults -- derived constructors set type-specific fields
     system_info_.version = "unknown";

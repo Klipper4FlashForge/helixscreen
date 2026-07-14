@@ -22,7 +22,7 @@ using namespace helix;
 // Construction / Destruction
 // ============================================================================
 
-AmsBackendHappyHare::AmsBackendHappyHare(MoonrakerAPI* api, MoonrakerClient* client)
+AmsBackendHappyHare::AmsBackendHappyHare(MoonrakerAPI* api, IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
     // Initialize system info with Happy Hare defaults
     system_info_.type = AmsType::HAPPY_HARE;

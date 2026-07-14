@@ -146,6 +146,22 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      */
     void force_reconnect() override;
 
+    /**
+     * @brief Enable/disable automatic reconnection
+     *
+     * Disabling calls setReconnect(nullptr), stopping libhv's background
+     * retry loop. Re-enabling re-installs the same reconn_setting_t that
+     * connect() builds (shared via install_reconnect_settings()) so behavior
+     * matches a fresh connect() call. Transient by design: the next
+     * connect() unconditionally re-installs reconnect settings regardless of
+     * this flag. Used by connection-test flows (setup wizard, change-host
+     * modal) to probe a candidate host without a background reconnect
+     * fighting the probe.
+     *
+     * @param enabled false to stop automatic reconnection, true to resume it
+     */
+    void set_auto_reconnect(bool enabled) override;
+
     // ========== Subscription Management ==========
 
     /**
@@ -400,7 +416,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      * Returns the WebSocket URL used in the most recent connect() call.
      * Empty string if never connected.
      */
-    const std::string& get_last_url() const {
+    const std::string& get_last_url() const override {
         return last_url_;
     }
 
@@ -759,6 +775,12 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
 
     void start_health_timer();
     void stop_health_timer();
+
+    // Builds the reconn_setting_t from reconnect_min_delay_ms_/reconnect_max_delay_ms_
+    // and installs it via setReconnect(). Shared by connect() and
+    // set_auto_reconnect(true) so both paths install identical reconnect
+    // behavior — no duplicated reconn_setting_t construction.
+    void apply_reconnect_settings();
 
     // Reconnection staleness detection.
     // Written/read only from the libhv event loop thread (onclose + health timer).

@@ -20,7 +20,7 @@
 #include <vector>
 
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 }
 class MoonrakerAPI;
 
@@ -139,7 +139,7 @@ class InputShaperPanel : public OverlayBase {
      * @param client helix::MoonrakerClient (kept for potential future use)
      * @param api MoonrakerAPI for G-code execution
      */
-    void set_api(helix::MoonrakerClient* client, MoonrakerAPI* api);
+    void set_api(helix::IMoonrakerClient* client, MoonrakerAPI* api);
 
     /**
      * @brief Get current panel state
@@ -209,7 +209,7 @@ class InputShaperPanel : public OverlayBase {
 
     // Widget/client references (overlay_root_ inherited from OverlayBase)
     lv_obj_t* parent_screen_ = nullptr;
-    helix::MoonrakerClient* client_ = nullptr;
+    helix::IMoonrakerClient* client_ = nullptr;
     MoonrakerAPI* api_ = nullptr;
 
     // Private setup helper (called by create())

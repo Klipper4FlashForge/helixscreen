@@ -60,10 +60,10 @@
 #include "hardware_validator.h"
 #include "helix_version.h"
 #include "input_settings_manager.h"
+#include "i_moonraker_client.h"
 #include "led/led_controller.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
-#include "moonraker_client.h"
 #include "moonraker_manager.h"
 #include "observer_factory.h"
 #include "platform_info.h"
@@ -1022,7 +1022,7 @@ void SettingsPanel::handle_change_host_clicked() {
         lv_subject_copy_string(&printer_host_value_subject_, host_display.c_str());
 
         // Reconnect to the new host
-        MoonrakerClient* client = get_moonraker_client();
+        IMoonrakerClient* client = get_moonraker_client();
         MoonrakerManager* manager = get_moonraker_manager();
 
         if (!client || !manager) {

@@ -5,7 +5,7 @@
 
 #include "ams_backend.h"
 #include "ams_state.h"
-#include "moonraker_client.h"
+#include "i_moonraker_client.h"
 
 #include <spdlog/spdlog.h>
 
@@ -21,7 +21,7 @@ constexpr const char* kNotifyHandlerName = "gcode_narration_router";
 
 } // namespace
 
-GcodeNarrationRouter::GcodeNarrationRouter(MoonrakerAPI* api, MoonrakerClient* client)
+GcodeNarrationRouter::GcodeNarrationRouter(MoonrakerAPI* api, IMoonrakerClient* client)
     : api_(api), client_(client) {
     if (!client_) {
         spdlog::warn("[GcodeNarrationRouter] Null client — handler not registered");

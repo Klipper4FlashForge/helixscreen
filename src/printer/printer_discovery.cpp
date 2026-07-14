@@ -8,10 +8,10 @@
 #include "app_globals.h"
 #include "filament_sensor_manager.h"
 #include "humidity_sensor_manager.h"
+#include "i_moonraker_client.h"
 #include "led/led_auto_state.h"
 #include "led/led_controller.h"
 #include "moonraker_api.h"
-#include "moonraker_client.h"
 #include "printer_name_sync.h"
 #include "probe_sensor_manager.h"
 #include "runtime_config.h"
@@ -94,7 +94,7 @@ std::string PrinterDiscovery::summary() const {
 }
 
 void init_subsystems_from_hardware(const PrinterDiscovery& hardware, MoonrakerAPI* api,
-                                   MoonrakerClient* client) {
+                                   IMoonrakerClient* client) {
     spdlog::debug("[PrinterDiscovery] Initializing subsystems from hardware discovery");
 
     // Initialize AMS backend (AFC, Happy Hare, ACE, Tool Changer)

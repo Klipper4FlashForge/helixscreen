@@ -54,7 +54,7 @@ bool natural_less(const std::string& a, const std::string& b) {
 // Construction / Destruction
 // ============================================================================
 
-AmsBackendAfc::AmsBackendAfc(MoonrakerAPI* api, MoonrakerClient* client)
+AmsBackendAfc::AmsBackendAfc(MoonrakerAPI* api, IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
     // Initialize system info with AFC defaults
     system_info_.type = AmsType::AFC;

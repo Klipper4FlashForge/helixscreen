@@ -97,7 +97,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
      *
      * @note Both pointers must remain valid for the lifetime of this backend.
      */
-    AmsBackendAfc(MoonrakerAPI* api, helix::MoonrakerClient* client);
+    AmsBackendAfc(MoonrakerAPI* api, helix::IMoonrakerClient* client);
     ~AmsBackendAfc() override;
 
     /**

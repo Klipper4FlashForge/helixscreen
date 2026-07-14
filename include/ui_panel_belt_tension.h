@@ -13,7 +13,7 @@
 class MoonrakerAPI;
 
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 }
 
 // Forward declare
@@ -79,7 +79,7 @@ class BeltTensionPanel : public OverlayBase {
     //
 
     void show();
-    void set_api(helix::MoonrakerClient* client, MoonrakerAPI* api);
+    void set_api(helix::IMoonrakerClient* client, MoonrakerAPI* api);
 
     //
     // === Event Handlers (public for XML callbacks) ===
@@ -152,7 +152,7 @@ class BeltTensionPanel : public OverlayBase {
     // Calibrator
     std::unique_ptr<helix::calibration::BeltTensionCalibrator> calibrator_;
     MoonrakerAPI* api_ = nullptr;
-    helix::MoonrakerClient* client_ = nullptr;
+    helix::IMoonrakerClient* client_ = nullptr;
 
     // Chart
     ui_frequency_response_chart_t* chart_ = nullptr;

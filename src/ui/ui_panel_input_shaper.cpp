@@ -17,8 +17,8 @@
 #include "host_identity.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "memory_utils.h"
+#include "i_moonraker_client.h"
 #include "moonraker_api.h"
-#include "moonraker_client.h"
 #include "platform_capabilities.h"
 #include "static_panel_registry.h"
 
@@ -59,7 +59,7 @@ static lv_subject_t s_input_shaper_state;
 
 // Forward declarations
 static void on_input_shaper_row_clicked(lv_event_t* e);
-MoonrakerClient* get_moonraker_client();
+IMoonrakerClient* get_moonraker_client();
 MoonrakerAPI* get_moonraker_api();
 
 InputShaperPanel& get_global_input_shaper_panel() {
@@ -110,7 +110,7 @@ static void on_input_shaper_row_clicked(lv_event_t* e) {
         spdlog::debug("[InputShaper] Creating input shaper panel...");
 
         // Set API references before create
-        MoonrakerClient* client = get_moonraker_client();
+        IMoonrakerClient* client = get_moonraker_client();
         MoonrakerAPI* api = get_moonraker_api();
         panel.set_api(client, api);
 
@@ -394,7 +394,7 @@ void InputShaperPanel::setup_widgets() {
 // SHOW
 // ============================================================================
 
-void InputShaperPanel::set_api(MoonrakerClient* client, MoonrakerAPI* api) {
+void InputShaperPanel::set_api(IMoonrakerClient* client, MoonrakerAPI* api) {
     client_ = client;
     api_ = api;
 

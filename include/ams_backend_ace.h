@@ -45,7 +45,7 @@ class AceTestAccess;
 
 class AmsBackendAce : public AmsSubscriptionBackend {
   public:
-    AmsBackendAce(MoonrakerAPI* api, helix::MoonrakerClient* client);
+    AmsBackendAce(MoonrakerAPI* api, helix::IMoonrakerClient* client);
 
     ~AmsBackendAce() override;
 

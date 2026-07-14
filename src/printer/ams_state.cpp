@@ -605,12 +605,12 @@ void AmsState::deinit_subjects() {
 }
 
 void AmsState::init_backend_from_hardware(const helix::PrinterDiscovery& hardware,
-                                          MoonrakerAPI* api, MoonrakerClient* client) {
+                                          MoonrakerAPI* api, IMoonrakerClient* client) {
     init_backends_from_hardware(hardware, api, client);
 }
 
 void AmsState::init_backends_from_hardware(const helix::PrinterDiscovery& hardware,
-                                           MoonrakerAPI* api, MoonrakerClient* client) {
+                                           MoonrakerAPI* api, IMoonrakerClient* client) {
     const auto& systems = hardware.detected_ams_systems();
     if (systems.empty()) {
         spdlog::debug("[AMS State] No AMS systems detected, skipping");

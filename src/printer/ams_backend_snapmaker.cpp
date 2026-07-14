@@ -94,7 +94,7 @@ constexpr std::array<std::string_view, 8> kKnownSubTypes = {
 // Construction
 // ============================================================================
 
-AmsBackendSnapmaker::AmsBackendSnapmaker(MoonrakerAPI* api, helix::MoonrakerClient* client)
+AmsBackendSnapmaker::AmsBackendSnapmaker(MoonrakerAPI* api, helix::IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
     // Initialize system info
     system_info_.type = AmsType::SNAPMAKER;

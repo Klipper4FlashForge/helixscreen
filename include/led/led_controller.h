@@ -18,7 +18,7 @@
 
 class MoonrakerAPI;
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 }
 
 namespace helix {
@@ -166,7 +166,7 @@ class WledBackend {
     void set_api(MoonrakerAPI* api) {
         api_ = api;
     }
-    void set_client(MoonrakerClient* client) {
+    void set_client(IMoonrakerClient* client) {
         client_ = client;
     }
 
@@ -219,7 +219,7 @@ class WledBackend {
 
   private:
     MoonrakerAPI* api_ = nullptr;
-    MoonrakerClient* client_ = nullptr;
+    IMoonrakerClient* client_ = nullptr;
     std::vector<LedStripInfo> strips_;
     std::unordered_map<std::string, std::string> strip_addresses_;
     std::unordered_map<std::string, std::vector<WledPresetInfo>> strip_presets_;
@@ -335,7 +335,7 @@ class LedController {
   public:
     static LedController& instance();
 
-    void init(MoonrakerAPI* api, MoonrakerClient* client);
+    void init(MoonrakerAPI* api, IMoonrakerClient* client);
     void deinit();
 
     [[nodiscard]] bool is_initialized() const {
@@ -525,7 +525,7 @@ class LedController {
 
     bool initialized_ = false;
     MoonrakerAPI* api_ = nullptr;
-    MoonrakerClient* client_ = nullptr;
+    IMoonrakerClient* client_ = nullptr;
     helix::AsyncLifetimeGuard lifetime_;
 
     NativeBackend native_;

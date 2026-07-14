@@ -11,8 +11,8 @@
 #include "ui_update_queue.h"
 
 #include "app_globals.h"
+#include "i_moonraker_client.h"
 #include "moonraker_api.h"
-#include "moonraker_client.h"
 #include "static_panel_registry.h"
 #include "static_subject_registry.h"
 
@@ -298,7 +298,7 @@ void BeltTensionPanel::set_view_state(ViewState state) {
 // SHOW / LIFECYCLE
 // ============================================================================
 
-void BeltTensionPanel::set_api(helix::MoonrakerClient* client, MoonrakerAPI* api) {
+void BeltTensionPanel::set_api(helix::IMoonrakerClient* client, MoonrakerAPI* api) {
     client_ = client;
     api_ = api;
 

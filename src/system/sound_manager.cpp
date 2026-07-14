@@ -6,8 +6,8 @@
 #include "audio_settings_manager.h"
 #include "config.h"
 #include "data_root_resolver.h"
+#include "i_moonraker_client.h"
 #include "m300_sound_backend.h"
-#include "moonraker_client.h"
 #include "pwm_sound_backend.h"
 #include "runtime_config.h"
 #include "sound_backend.h"
@@ -46,7 +46,7 @@ SoundManager& SoundManager::instance() {
     return instance;
 }
 
-void SoundManager::set_moonraker_client(MoonrakerClient* client) {
+void SoundManager::set_moonraker_client(IMoonrakerClient* client) {
     client_ = client;
     spdlog::debug("[SoundManager] Moonraker client set: {}", client ? "connected" : "nullptr");
 

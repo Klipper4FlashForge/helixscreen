@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "i_moonraker_sub_apis.h"
 #include "moonraker_error.h"
 #include "moonraker_types.h"
 
@@ -41,7 +42,7 @@ class PrinterState;
  *       []() { ... },
  *       [](const auto& err) { ... });
  */
-class MoonrakerMotionAPI {
+class MoonrakerMotionAPI : public IMotionAPI {
   public:
     using SuccessCallback = std::function<void()>;
     using ErrorCallback = std::function<void(const MoonrakerError&)>;
@@ -72,7 +73,8 @@ class MoonrakerMotionAPI {
      * @param on_success Success callback
      * @param on_error Error callback
      */
-    void home_axes(const std::string& axes, SuccessCallback on_success, ErrorCallback on_error);
+    void home_axes(const std::string& axes, SuccessCallback on_success,
+                   ErrorCallback on_error) override;
 
     /**
      * @brief Move an axis by a relative amount
@@ -84,7 +86,7 @@ class MoonrakerMotionAPI {
      * @param on_error Error callback
      */
     void move_axis(char axis, double distance, double feedrate, SuccessCallback on_success,
-                   ErrorCallback on_error);
+                   ErrorCallback on_error) override;
 
     /**
      * @brief Set absolute position for an axis
@@ -96,7 +98,7 @@ class MoonrakerMotionAPI {
      * @param on_error Error callback
      */
     void move_to_position(char axis, double position, double feedrate, SuccessCallback on_success,
-                          ErrorCallback on_error);
+                          ErrorCallback on_error) override;
 
   protected:
     helix::MoonrakerClient& client_;

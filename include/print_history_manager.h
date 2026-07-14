@@ -14,7 +14,7 @@
 
 class MoonrakerAPI;
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 }
 
 /**
@@ -84,7 +84,7 @@ class PrintHistoryManager {
      * @param api MoonrakerAPI for fetching history
      * @param client helix::MoonrakerClient for notification subscription
      */
-    PrintHistoryManager(MoonrakerAPI* api, helix::MoonrakerClient* client);
+    PrintHistoryManager(MoonrakerAPI* api, helix::IMoonrakerClient* client);
 
     ~PrintHistoryManager();
 
@@ -213,7 +213,7 @@ class PrintHistoryManager {
 
     // Dependencies
     MoonrakerAPI* api_;
-    helix::MoonrakerClient* client_;
+    helix::IMoonrakerClient* client_;
 
     // Cached data
     std::vector<PrintHistoryJob> cached_jobs_;

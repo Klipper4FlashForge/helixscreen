@@ -10,10 +10,10 @@
 
 #include "app_globals.h"
 #include "config.h"
+#include "i_moonraker_client.h"
 #include "lvgl/lvgl.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
-#include "moonraker_client.h"
 #include "printer_detector.h"
 #include "printer_images.h"
 #include "printer_name_sync.h"
@@ -132,7 +132,7 @@ static PrinterDetectionHint detect_printer_type(const std::string& kinematics) {
 void WizardPrinterIdentifyStep::init_subjects() {
     // Check if we're connected to a DIFFERENT printer than last time
     std::string current_url;
-    MoonrakerClient* client = get_moonraker_client();
+    IMoonrakerClient* client = get_moonraker_client();
     if (client) {
         current_url = client->get_last_url();
     }
