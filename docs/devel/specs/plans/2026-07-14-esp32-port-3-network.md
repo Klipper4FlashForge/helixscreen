@@ -459,7 +459,7 @@ Flip `MoonrakerManager::m_client` to `std::unique_ptr<helix::IMoonrakerClient>` 
 
 **Files:**
 - Create: `firmware/helixscreen-esp32/main/net_hil.cpp` (+ hook into app_main behind `CONFIG_HELIX_NET_HIL`)
-- Create: `firmware/helixscreen-esp32/main/Kconfig.projbuild` additions: `HELIX_NET_HIL` (bool), `HELIX_HIL_WIFI_SSID`, `HELIX_HIL_WIFI_PASS`, `HELIX_HIL_MOONRAKER_URL` (string, e.g. `ws://192.168.1.113:7125/websocket`)
+- Create: `firmware/helixscreen-esp32/main/Kconfig.projbuild` additions: `HELIX_NET_HIL` (bool), `HELIX_HIL_WIFI_SSID`, `HELIX_HIL_WIFI_PASS`, `HELIX_HIL_MOONRAKER_URL` (string, default `ws://192.168.1.112:7125/websocket` — Preston's Voron V2, chosen 2026-07-14)
 - Test: on-device, serial evidence
 
 **HIL scenario (single pthread, 32KB stack, started after display init so the hello card stays up):**
