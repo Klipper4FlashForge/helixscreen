@@ -73,5 +73,15 @@ static_assert(std::is_same_v<decltype(&helix::IMoonrakerClient::get_last_url),
                              const std::string& (helix::IMoonrakerClient::*)() const>);
 static_assert(std::is_same_v<decltype(&helix::IMoonrakerClient::set_auto_reconnect),
                              void (helix::IMoonrakerClient::*)(bool)>);
+static_assert(
+    std::is_same_v<decltype(&helix::IMoonrakerClient::set_on_hardware_discovered),
+                   void (helix::IMoonrakerClient::*)(
+                       std::function<void(const helix::PrinterDiscovery&)>)>);
+static_assert(
+    std::is_same_v<decltype(&helix::IMoonrakerClient::set_on_discovery_complete),
+                   void (helix::IMoonrakerClient::*)(
+                       std::function<void(const helix::PrinterDiscovery&, const json&)>)>);
+static_assert(std::is_same_v<decltype(&helix::IMoonrakerClient::set_bed_mesh_callback),
+                             void (helix::IMoonrakerClient::*)(std::function<void(const json&)>)>);
 // clang-format on
 #endif

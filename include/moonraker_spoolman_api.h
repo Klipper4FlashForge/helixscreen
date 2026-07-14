@@ -22,7 +22,7 @@
 
 // Forward declarations
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 } // namespace helix
 
 // Forward declare json
@@ -61,7 +61,7 @@ class MoonrakerSpoolmanAPI : public ISpoolmanAPI {
      *
      * @param client MoonrakerClient instance (must remain valid during API lifetime)
      */
-    explicit MoonrakerSpoolmanAPI(helix::MoonrakerClient& client);
+    explicit MoonrakerSpoolmanAPI(helix::IMoonrakerClient& client);
     virtual ~MoonrakerSpoolmanAPI() = default;
 
     // ========================================================================
@@ -255,5 +255,5 @@ class MoonrakerSpoolmanAPI : public ISpoolmanAPI {
                                          ErrorCallback on_error) override;
 
   protected:
-    helix::MoonrakerClient& client_;
+    helix::IMoonrakerClient& client_;
 };

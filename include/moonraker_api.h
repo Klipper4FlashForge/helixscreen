@@ -97,7 +97,7 @@ class MoonrakerAPI : public IMoonrakerAPI {
      * @param client MoonrakerClient instance (must remain valid during API lifetime)
      * @param state PrinterState instance (must remain valid during API lifetime)
      */
-    MoonrakerAPI(helix::MoonrakerClient& client, helix::PrinterState& state);
+    MoonrakerAPI(helix::IMoonrakerClient& client, helix::PrinterState& state);
     virtual ~MoonrakerAPI();
 
     // ========================================================================
@@ -563,14 +563,14 @@ class MoonrakerAPI : public IMoonrakerAPI {
     // ========================================================================
 
     /**
-     * @brief Get reference to underlying MoonrakerClient
+     * @brief Get reference to underlying client transport
      *
-     * Provides direct access to the WebSocket client for advanced operations
+     * Provides direct access to the transport client for advanced operations
      * requiring direct G-code execution or state observation.
      *
-     * @return Reference to MoonrakerClient
+     * @return Reference to IMoonrakerClient
      */
-    helix::MoonrakerClient& get_client() override {
+    helix::IMoonrakerClient& get_client() override {
         return client_;
     }
 
@@ -764,7 +764,7 @@ class MoonrakerAPI : public IMoonrakerAPI {
     // C++ destroys members in reverse declaration order, so data members
     // (declared first) are destroyed LAST, after sub-APIs that reference them.
     std::string http_base_url_; ///< HTTP base URL for file transfers
-    helix::MoonrakerClient& client_;
+    helix::IMoonrakerClient& client_;
     helix::PrinterState& state_;
 
     /// Discovered printer hardware (heaters, fans, sensors, LEDs, capabilities)

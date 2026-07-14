@@ -23,7 +23,7 @@
 
 // Forward declarations
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 } // namespace helix
 
 /**
@@ -57,7 +57,7 @@ class MoonrakerRestAPI : public IRestAPI {
      * @param client MoonrakerClient instance (must remain valid during API lifetime)
      * @param http_base_url Reference to HTTP base URL string (owned by MoonrakerAPI)
      */
-    MoonrakerRestAPI(helix::MoonrakerClient& client, const std::string& http_base_url);
+    MoonrakerRestAPI(helix::IMoonrakerClient& client, const std::string& http_base_url);
     virtual ~MoonrakerRestAPI();
 
     // ========================================================================
@@ -146,6 +146,6 @@ class MoonrakerRestAPI : public IRestAPI {
     void get_server_config(RestCallback on_success, ErrorCallback on_error) override;
 
   protected:
-    helix::MoonrakerClient& client_;
+    helix::IMoonrakerClient& client_;
     const std::string& http_base_url_;
 };

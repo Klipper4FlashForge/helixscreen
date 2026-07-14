@@ -122,6 +122,17 @@ class IMoonrakerClient {
     /// @brief Clear all cached discovery data
     virtual void clear_discovery_cache() = 0;
 
+    /// @brief Set callback for hardware discovery (early phase, before full subscription)
+    virtual void
+    set_on_hardware_discovered(std::function<void(const helix::PrinterDiscovery&)> cb) = 0;
+
+    /// @brief Set callback for printer discovery completion
+    virtual void set_on_discovery_complete(
+        std::function<void(const helix::PrinterDiscovery&, const json& initial_status)> cb) = 0;
+
+    /// @brief Set callback for bed mesh updates received via WebSocket
+    virtual void set_bed_mesh_callback(std::function<void(const json&)> callback) = 0;
+
     // ========================================================================
     // Subscriptions & Method Callbacks
     // ========================================================================

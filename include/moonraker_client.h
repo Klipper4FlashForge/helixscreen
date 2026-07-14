@@ -450,7 +450,8 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      *
      * @param cb Callback invoked with discovered hardware (early)
      */
-    void set_on_hardware_discovered(std::function<void(const helix::PrinterDiscovery&)> cb) {
+    void
+    set_on_hardware_discovered(std::function<void(const helix::PrinterDiscovery&)> cb) override {
         discovery_.set_on_hardware_discovered(std::move(cb));
     }
 
@@ -464,7 +465,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      */
     void set_on_discovery_complete(
         std::function<void(const helix::PrinterDiscovery&, const nlohmann::json& initial_status)>
-            cb) {
+            cb) override {
         discovery_.set_on_discovery_complete(std::move(cb));
     }
 
@@ -477,7 +478,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      *
      * @param callback Callback receiving raw bed_mesh JSON, or nullptr to disable
      */
-    void set_bed_mesh_callback(std::function<void(const json&)> callback) {
+    void set_bed_mesh_callback(std::function<void(const json&)> callback) override {
         discovery_.set_bed_mesh_callback(std::move(callback));
     }
 
