@@ -4,7 +4,7 @@
 #pragma once
 
 #include "bed_mesh_probe_parser.h"
-#include "moonraker_client.h"
+#include "i_moonraker_client.h"
 #include "preprint_predictor.h"
 #include "print_start_profile.h"
 #include "printer_state.h"
@@ -47,7 +47,7 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
      * @param client helix::MoonrakerClient for registering callbacks
      * @param state helix::PrinterState to update with phase progress
      */
-    PrintStartCollector(helix::MoonrakerClient& client, helix::PrinterState& state);
+    PrintStartCollector(helix::IMoonrakerClient& client, helix::PrinterState& state);
 
     ~PrintStartCollector();
 
@@ -289,7 +289,7 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
     }
 
     // Dependencies
-    helix::MoonrakerClient& client_;
+    helix::IMoonrakerClient& client_;
     helix::PrinterState& state_;
 
     // Registration state

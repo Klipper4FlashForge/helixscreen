@@ -414,13 +414,13 @@ int count_children_with_marker(lv_obj_t* parent, const char* marker) {
 // Defaults to nullptr (most UI tests don't touch Moonraker); tests that exercise
 // real callback routing can swap in a MoonrakerClientMock via
 // set_moonraker_client() and restore it in their dtor.
-static helix::MoonrakerClient* g_test_moonraker_client = nullptr;
+static helix::IMoonrakerClient* g_test_moonraker_client = nullptr;
 
-MoonrakerClient* get_moonraker_client() {
+IMoonrakerClient* get_moonraker_client() {
     return g_test_moonraker_client;
 }
 
-void set_moonraker_client(MoonrakerClient* client) {
+void set_moonraker_client(IMoonrakerClient* client) {
     g_test_moonraker_client = client;
 }
 

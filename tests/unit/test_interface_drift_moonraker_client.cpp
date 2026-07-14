@@ -69,5 +69,9 @@ static_assert(std::is_same_v<decltype(&helix::IMoonrakerClient::process_timeouts
                              void (helix::IMoonrakerClient::*)()>);
 static_assert(std::is_same_v<decltype(&helix::IMoonrakerClient::lifetime_weak),
                              std::weak_ptr<bool> (helix::IMoonrakerClient::*)() const>);
+static_assert(std::is_same_v<decltype(&helix::IMoonrakerClient::get_last_url),
+                             const std::string& (helix::IMoonrakerClient::*)() const>);
+static_assert(std::is_same_v<decltype(&helix::IMoonrakerClient::set_auto_reconnect),
+                             void (helix::IMoonrakerClient::*)(bool)>);
 // clang-format on
 #endif

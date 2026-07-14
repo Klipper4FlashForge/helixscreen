@@ -13,7 +13,7 @@
 
 class MoonrakerAPI;
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 }
 
 /**
@@ -27,7 +27,7 @@ class MoonrakerClient;
  */
 class JobQueueState {
   public:
-    JobQueueState(MoonrakerAPI* api, helix::MoonrakerClient* client);
+    JobQueueState(MoonrakerAPI* api, helix::IMoonrakerClient* client);
     ~JobQueueState();
 
     // Non-copyable
@@ -62,7 +62,7 @@ class JobQueueState {
     void deinit_subjects();
 
     MoonrakerAPI* api_;
-    helix::MoonrakerClient* client_;
+    helix::IMoonrakerClient* client_;
 
     // Cached data
     std::vector<JobQueueEntry> cached_jobs_;

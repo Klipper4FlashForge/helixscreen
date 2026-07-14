@@ -16,7 +16,7 @@ class MoonrakerAPI;
 struct GcodeNarrationRouterTestAccess;
 
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 
 /// Consumes `//` narration lines from notify_gcode_response and routes them to
 /// the active AmsBackend's step model, updating the AmsState toolchange_step
@@ -28,7 +28,7 @@ class MoonrakerClient;
 /// must outlive this router.
 class GcodeNarrationRouter {
   public:
-    GcodeNarrationRouter(MoonrakerAPI* api, MoonrakerClient* client);
+    GcodeNarrationRouter(MoonrakerAPI* api, IMoonrakerClient* client);
     ~GcodeNarrationRouter();
 
     GcodeNarrationRouter(const GcodeNarrationRouter&) = delete;
@@ -49,7 +49,7 @@ class GcodeNarrationRouter {
     void process_line(const std::string& line);
 
     MoonrakerAPI* api_;
-    MoonrakerClient* client_;
+    IMoonrakerClient* client_;
 
     /// [L072] Generation guard for the callback captured by MoonrakerClient.
     /// Declared last so it destructs FIRST — outstanding tokens are invalidated

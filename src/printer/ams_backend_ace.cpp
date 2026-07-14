@@ -16,8 +16,8 @@
 #include "ui_update_queue.h"
 
 #include "lvgl/src/others/translation/lv_translation.h"
+#include "i_moonraker_client.h"
 #include "moonraker_api.h"
-#include "moonraker_client.h"
 #include "post_op_cooldown_manager.h"
 #include "spdlog/spdlog.h"
 
@@ -33,7 +33,7 @@ static constexpr int MAX_INFO_FETCH_FAILURES = 3;
 // Construction / Destruction
 // ============================================================================
 
-AmsBackendAce::AmsBackendAce(MoonrakerAPI* api, MoonrakerClient* client)
+AmsBackendAce::AmsBackendAce(MoonrakerAPI* api, IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
     // Initialize system info with ACE defaults
     system_info_.type = AmsType::ACE;

@@ -139,7 +139,7 @@ class PluginManager {
      * @param state PrinterState reference
      * @param config Config instance
      */
-    void set_core_services(MoonrakerAPI* api, MoonrakerClient* client, PrinterState& state,
+    void set_core_services(MoonrakerAPI* api, IMoonrakerClient* client, PrinterState& state,
                            Config* config);
 
     /**
@@ -237,7 +237,7 @@ class PluginManager {
      * @param api New MoonrakerAPI pointer
      * @param client New MoonrakerClient pointer
      */
-    void update_moonraker_services(MoonrakerAPI* api, MoonrakerClient* client);
+    void update_moonraker_services(MoonrakerAPI* api, IMoonrakerClient* client);
 
     // ========================================================================
     // Status Queries
@@ -358,7 +358,7 @@ class PluginManager {
 
     // Core services (set via set_core_services())
     MoonrakerAPI* moonraker_api_ = nullptr;
-    MoonrakerClient* moonraker_client_ = nullptr;
+    IMoonrakerClient* moonraker_client_ = nullptr;
     PrinterState* printer_state_ = nullptr;
     Config* config_ = nullptr;
 

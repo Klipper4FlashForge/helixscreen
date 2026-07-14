@@ -12,9 +12,9 @@
 #include "ui_update_queue.h"
 
 #include "app_globals.h"
+#include "i_moonraker_client.h"
 #include "moonraker_advanced_api.h"
 #include "moonraker_api.h"
-#include "moonraker_client.h"
 #include "printer_state.h"
 #include "probe_sensor_manager.h"
 #include "probe_sensor_types.h"
@@ -40,7 +40,7 @@ static std::unique_ptr<ProbeOverlay> g_probe_overlay;
 // Forward declarations
 static void on_probe_row_clicked(lv_event_t* e);
 MoonrakerAPI* get_moonraker_api();
-MoonrakerClient* get_moonraker_client();
+IMoonrakerClient* get_moonraker_client();
 
 ProbeOverlay& get_global_probe_overlay() {
     if (!g_probe_overlay) {
@@ -100,7 +100,7 @@ static void on_probe_row_clicked(lv_event_t* e) {
 
 // Helper to send a GCode command via MoonrakerClient
 static void send_probe_gcode(const char* gcode, const char* label) {
-    MoonrakerClient* client = get_moonraker_client();
+    IMoonrakerClient* client = get_moonraker_client();
     if (!client) {
         spdlog::error("[Probe] No client for {} command", label);
         return;

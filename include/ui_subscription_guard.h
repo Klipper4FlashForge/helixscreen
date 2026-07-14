@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "moonraker_client.h"
+#include "i_moonraker_client.h"
 
 #include <spdlog/spdlog.h>
 
@@ -41,7 +41,7 @@ class SubscriptionGuard {
      * @param client Moonraker client that owns the subscription
      * @param id Subscription ID from register_notify_update()
      */
-    SubscriptionGuard(helix::MoonrakerClient* client, helix::SubscriptionId id)
+    SubscriptionGuard(helix::IMoonrakerClient* client, helix::SubscriptionId id)
         : subscription_id_(id), lifetime_(client ? client->lifetime_weak() : std::weak_ptr<bool>{}),
           unsubscribe_fn_(
               client

@@ -1426,7 +1426,7 @@ class PrinterDiscovery {
 // Forward declarations for init_subsystems_from_hardware (global scope)
 class MoonrakerAPI;
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 }
 
 namespace helix {
@@ -1442,6 +1442,6 @@ namespace helix {
  * @param client MoonrakerClient instance
  */
 void init_subsystems_from_hardware(const PrinterDiscovery& hardware, MoonrakerAPI* api,
-                                   MoonrakerClient* client);
+                                   IMoonrakerClient* client);
 
 } // namespace helix

@@ -41,7 +41,7 @@ PluginManager::~PluginManager() {
 // Configuration
 // ============================================================================
 
-void PluginManager::set_core_services(MoonrakerAPI* api, MoonrakerClient* client,
+void PluginManager::set_core_services(MoonrakerAPI* api, IMoonrakerClient* client,
                                       PrinterState& state, Config* config) {
     moonraker_api_ = api;
     moonraker_client_ = client;
@@ -435,7 +435,7 @@ void PluginManager::on_moonraker_disconnected() {
     EventDispatcher::instance().emit(events::PRINTER_DISCONNECTED);
 }
 
-void PluginManager::update_moonraker_services(MoonrakerAPI* api, MoonrakerClient* client) {
+void PluginManager::update_moonraker_services(MoonrakerAPI* api, IMoonrakerClient* client) {
     moonraker_api_ = api;
     moonraker_client_ = client;
 

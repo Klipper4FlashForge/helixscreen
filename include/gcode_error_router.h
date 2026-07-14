@@ -21,7 +21,7 @@ class MoonrakerAPI;
 struct GcodeErrorRouterTestAccess;
 
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 
 namespace ui {
 class RecoveryModalPresenter;
@@ -72,7 +72,7 @@ class GcodeErrorRouter {
     /// api and client may be nullptr (test/mock builds). presenter must
     /// outlive this router -- Application owns both and destroys the router
     /// before the presenter.
-    GcodeErrorRouter(MoonrakerAPI* api, MoonrakerClient* client,
+    GcodeErrorRouter(MoonrakerAPI* api, IMoonrakerClient* client,
                      helix::ui::RecoveryModalPresenter& presenter);
     ~GcodeErrorRouter();
 
@@ -138,7 +138,7 @@ class GcodeErrorRouter {
     static std::string truncate_for_toast(std::string text);
 
     MoonrakerAPI* api_;
-    MoonrakerClient* client_;
+    IMoonrakerClient* client_;
 
     /// Shared modal presenter. Not owned; must outlive this router.
     helix::ui::RecoveryModalPresenter& presenter_;

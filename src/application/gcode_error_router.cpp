@@ -11,8 +11,8 @@
 #include "app_globals.h"
 #include "error_classify.h"
 #include "error_event.h"
+#include "i_moonraker_client.h"
 #include "moonraker_api.h"
-#include "moonraker_client.h"
 #include "moonraker_error.h"
 #include "moonraker_types.h"
 #include "printer_recovery_service.h"
@@ -84,7 +84,7 @@ double now_unix_seconds() {
 
 } // namespace
 
-GcodeErrorRouter::GcodeErrorRouter(MoonrakerAPI* api, MoonrakerClient* client,
+GcodeErrorRouter::GcodeErrorRouter(MoonrakerAPI* api, IMoonrakerClient* client,
                                    helix::ui::RecoveryModalPresenter& presenter)
     : api_(api), client_(client), presenter_(presenter) {
     if (!client_) {

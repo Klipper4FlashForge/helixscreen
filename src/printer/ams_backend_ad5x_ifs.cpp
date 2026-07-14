@@ -10,9 +10,9 @@
 #include "config.h"
 #include "host_identity.h"
 #include "http_executor.h"
+#include "i_moonraker_client.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
-#include "moonraker_client.h"
 #include "post_op_cooldown_manager.h"
 
 #include <spdlog/spdlog.h>
@@ -30,7 +30,7 @@
 
 using json = nlohmann::json;
 
-AmsBackendAd5xIfs::AmsBackendAd5xIfs(MoonrakerAPI* api, helix::MoonrakerClient* client)
+AmsBackendAd5xIfs::AmsBackendAd5xIfs(MoonrakerAPI* api, helix::IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
     // Fill tool map with UNMAPPED_PORT
     tool_map_.fill(UNMAPPED_PORT);

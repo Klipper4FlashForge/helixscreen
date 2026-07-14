@@ -25,7 +25,7 @@
 // Forward declarations
 class MoonrakerAPI;
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 }
 
 namespace helix {
@@ -131,7 +131,7 @@ class AmsState {
      * @param client helix::MoonrakerClient instance for WebSocket communication
      */
     void init_backend_from_hardware(const helix::PrinterDiscovery& hardware, MoonrakerAPI* api,
-                                    helix::MoonrakerClient* client);
+                                    helix::IMoonrakerClient* client);
 
     /**
      * @brief Initialize backends from all detected AMS/filament systems
@@ -145,7 +145,7 @@ class AmsState {
      * @param client helix::MoonrakerClient instance for WebSocket communication
      */
     void init_backends_from_hardware(const helix::PrinterDiscovery& hardware, MoonrakerAPI* api,
-                                     helix::MoonrakerClient* client);
+                                     helix::IMoonrakerClient* client);
 
     /**
      * @brief Set the AMS backend
@@ -1227,7 +1227,7 @@ class AmsState {
      * @param api MoonrakerAPI instance for REST calls
      * @param client helix::MoonrakerClient instance for the backend
      */
-    void probe_ace(MoonrakerAPI* api, helix::MoonrakerClient* client);
+    void probe_ace(MoonrakerAPI* api, helix::IMoonrakerClient* client);
 
     /**
      * @brief Create and start ACE backend
@@ -1238,7 +1238,7 @@ class AmsState {
      * @param api MoonrakerAPI instance
      * @param client helix::MoonrakerClient instance
      */
-    void create_ace_backend(MoonrakerAPI* api, helix::MoonrakerClient* client);
+    void create_ace_backend(MoonrakerAPI* api, helix::IMoonrakerClient* client);
 
     /// Per-backend slot subject storage for secondary backends (index > 0)
     struct BackendSlotSubjects {

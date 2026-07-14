@@ -17,7 +17,7 @@ using namespace helix;
 // Construction / Destruction
 // ============================================================================
 
-AmsBackendToolChanger::AmsBackendToolChanger(MoonrakerAPI* api, MoonrakerClient* client)
+AmsBackendToolChanger::AmsBackendToolChanger(MoonrakerAPI* api, IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
     // Initialize system info with tool changer defaults
     system_info_.type = AmsType::TOOL_CHANGER;

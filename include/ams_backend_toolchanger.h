@@ -54,7 +54,7 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
      * @note Pointers must remain valid for the lifetime of this backend.
      * @note Call set_discovered_tools() before start() to set tool names.
      */
-    AmsBackendToolChanger(MoonrakerAPI* api, helix::MoonrakerClient* client);
+    AmsBackendToolChanger(MoonrakerAPI* api, helix::IMoonrakerClient* client);
 
     /**
      * @brief Set discovered tool names from PrinterCapabilities

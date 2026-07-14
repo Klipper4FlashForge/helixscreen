@@ -12,7 +12,7 @@
 #include <vector>
 
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 }
 class MoonrakerAPI;
 
@@ -122,7 +122,7 @@ class ScrewsTiltPanel : public OverlayBase {
      * @param client Moonraker client for sending commands
      * @param api Moonraker API for calculate_screws_tilt()
      */
-    void set_client(helix::MoonrakerClient* client, MoonrakerAPI* api) {
+    void set_client(helix::IMoonrakerClient* client, MoonrakerAPI* api) {
         client_ = client;
         api_ = api;
     }
@@ -189,7 +189,7 @@ class ScrewsTiltPanel : public OverlayBase {
     // Widget references
     // Note: overlay_root_ inherited from OverlayBase
     lv_obj_t* parent_screen_ = nullptr;
-    helix::MoonrakerClient* client_ = nullptr;
+    helix::IMoonrakerClient* client_ = nullptr;
     MoonrakerAPI* api_ = nullptr;
 
     // Results UI elements

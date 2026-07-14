@@ -9,8 +9,8 @@
 #include "app_globals.h"
 #include "config.h"
 #include "host_identity.h"
+#include "i_moonraker_client.h"
 #include "lvgl/lvgl.h"
-#include "moonraker_client.h"
 #include "theme_manager.h"
 #include "utils/network_validation.h"
 
@@ -177,7 +177,7 @@ void ChangeHostModal::handle_test_connection() {
         return;
     }
 
-    MoonrakerClient* client = get_moonraker_client();
+    IMoonrakerClient* client = get_moonraker_client();
     if (!client) {
         set_status("icon_close_circle", "danger", "Client not available");
         return;
@@ -206,7 +206,7 @@ void ChangeHostModal::handle_test_connection() {
             token.defer("ChangeHostModal::dispatch_test_failure", [this]() { on_test_failure(); });
         });
 
-    client->setReconnect(nullptr);
+    client->set_auto_reconnect(false);
 
     if (result != 0) {
         spdlog::error("[ChangeHostModal] Failed to initiate test connection: {}", result);

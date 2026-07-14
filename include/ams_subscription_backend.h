@@ -7,8 +7,8 @@
 
 #include "ams_backend.h"
 #include "async_lifetime_guard.h"
+#include "i_moonraker_client.h"
 #include "moonraker_api.h"
-#include "moonraker_client.h"
 
 #include <spdlog/spdlog.h>
 
@@ -31,7 +31,7 @@
 ///   - validate_slot_index() - if they need custom validation
 class AmsSubscriptionBackend : public AmsBackend {
   public:
-    AmsSubscriptionBackend(MoonrakerAPI* api, helix::MoonrakerClient* client);
+    AmsSubscriptionBackend(MoonrakerAPI* api, helix::IMoonrakerClient* client);
     ~AmsSubscriptionBackend() override;
 
     // --- Lifecycle (final -- derived classes use hooks instead) ---
@@ -107,7 +107,7 @@ class AmsSubscriptionBackend : public AmsBackend {
 
     // --- Protected state for derived classes ---
     MoonrakerAPI* api_;
-    helix::MoonrakerClient* client_;
+    helix::IMoonrakerClient* client_;
     mutable std::mutex mutex_;
     AmsSystemInfo system_info_;
     std::atomic<bool> running_{false};

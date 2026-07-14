@@ -20,7 +20,7 @@
 
 class MoonrakerAPI;
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 class PrinterDiscovery;
 } // namespace helix
 
@@ -1683,7 +1683,7 @@ class AmsBackend {
      *
      * @param detected_type The detected AMS type from printer discovery
      * @return Unique pointer to backend instance, or nullptr if type is NONE
-     * @deprecated Use create(AmsType, MoonrakerAPI*, helix::MoonrakerClient*) for real backends
+     * @deprecated Use create(AmsType, MoonrakerAPI*, helix::IMoonrakerClient*) for real backends
      */
     static std::unique_ptr<AmsBackend> create(AmsType detected_type);
 
@@ -1703,7 +1703,7 @@ class AmsBackend {
      * @return Unique pointer to backend instance, or nullptr if type is NONE
      */
     static std::unique_ptr<AmsBackend> create(AmsType detected_type, MoonrakerAPI* api,
-                                              helix::MoonrakerClient* client);
+                                              helix::IMoonrakerClient* client);
 
     /**
      * @brief Create mock backend for testing

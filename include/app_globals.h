@@ -11,7 +11,7 @@
 
 // Forward declarations
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 class TemperatureController;
 } // namespace helix
 class MoonrakerAPI;
@@ -27,13 +27,13 @@ class TemperatureHistoryManager;
  * @brief Get global MoonrakerClient instance
  * @return Pointer to global MoonrakerClient (may be nullptr if not initialized)
  */
-helix::MoonrakerClient* get_moonraker_client();
+helix::IMoonrakerClient* get_moonraker_client();
 
 /**
  * @brief Set global MoonrakerClient instance (called by main.cpp during init)
  * @param client Pointer to MoonrakerClient instance
  */
-void set_moonraker_client(helix::MoonrakerClient* client);
+void set_moonraker_client(helix::IMoonrakerClient* client);
 
 /**
  * @brief Get global MoonrakerAPI instance
