@@ -16,7 +16,7 @@
 #include "app_globals.h"
 #include "backdrop_blur.h"
 #include "display_settings_manager.h"
-#include "moonraker_client.h" // For ConnectionState enum
+#include "connection_state.h" // For ConnectionState enum
 #include "observer_factory.h"
 #include "overlay_base.h"
 #include "page_scroll_auto_inject.h"

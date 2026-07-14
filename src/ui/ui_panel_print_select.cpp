@@ -40,7 +40,7 @@
 #include "helix-xml/src/xml/lv_xml.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
-#include "moonraker_client.h" // For ConnectionState enum
+#include "connection_state.h" // For ConnectionState enum
 #include "observer_factory.h"
 #include "preprint_predictor.h"
 #include "print_history_manager.h"

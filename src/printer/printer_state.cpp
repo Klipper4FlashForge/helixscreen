@@ -27,7 +27,7 @@
 #include "lvgl.h"
 #include "lvgl/src/display/lv_display_private.h" // For rendering_in_progress check
 #include "lvgl_debug_invalidate.h"
-#include "moonraker_client.h" // For ConnectionState enum
+#include "connection_state.h" // For ConnectionState enum
 #include "probe_sensor_manager.h"
 #include "runtime_config.h"
 #include "settings_manager.h"

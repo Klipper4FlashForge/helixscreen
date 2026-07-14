@@ -11,8 +11,8 @@
 
 #include "printer_network_state.h"
 
-#include "moonraker_client.h" // For ConnectionState enum
-#include "printer_state.h"    // For KlippyState enum
+#include "connection_state.h" // For ConnectionState enum
+#include "printer_state.h"     // For KlippyState enum
 #include "state/subject_macros.h"
 
 #include <spdlog/spdlog.h>

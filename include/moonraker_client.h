@@ -37,6 +37,7 @@
 
 #pragma once
 
+#include "connection_state.h"
 #include "hv/Event.h" // TimerID
 #include "hv/WebSocketClient.h"
 #include "i_moonraker_client.h"
@@ -78,17 +79,6 @@ inline constexpr SubscriptionId INVALID_SUBSCRIPTION_ID = 0;
 
 namespace helix {
 using ::json; // Make global json alias visible in this namespace
-
-/**
- * @brief Connection state for Moonraker WebSocket
- */
-enum class ConnectionState {
-    DISCONNECTED, // Not connected
-    CONNECTING,   // Connection in progress
-    CONNECTED,    // Connected and ready
-    RECONNECTING, // Automatic reconnection in progress
-    FAILED        // Connection failed (max retries exceeded)
-};
 
 /**
  * @brief WebSocket client for Moonraker API communication
