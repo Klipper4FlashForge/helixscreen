@@ -62,22 +62,9 @@
 #include <vector>
 
 namespace helix {
-/**
- * @brief Unique identifier for notification subscriptions
- *
- * Used to track and remove subscriptions registered via register_notify_update().
- * Valid IDs are always > 0; ID 0 indicates invalid/unsubscribed.
- */
-using SubscriptionId = uint64_t;
-
-/** @brief Invalid subscription ID constant */
-inline constexpr SubscriptionId INVALID_SUBSCRIPTION_ID = 0;
-
+// SubscriptionId and INVALID_SUBSCRIPTION_ID are defined in i_moonraker_client.h
 // RequestId and INVALID_REQUEST_ID are defined in moonraker_request_tracker.h
 
-} // namespace helix
-
-namespace helix {
 using ::json; // Make global json alias visible in this namespace
 
 /**
@@ -135,7 +122,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      * Called automatically by disconnect() to prevent stale data when
      * switching between printers.
      */
-    void clear_discovery_cache() {
+    void clear_discovery_cache() override {
         discovery_.clear_cache();
     }
 
@@ -157,7 +144,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      *
      * Thread-safe. Can be called from any thread.
      */
-    void force_reconnect();
+    void force_reconnect() override;
 
     // ========== Subscription Management ==========
 
@@ -170,7 +157,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      * @param cb Callback function receiving parsed JSON notification
      * @return Subscription ID for later unsubscription (0 = invalid/failed)
      */
-    SubscriptionId register_notify_update(std::function<void(const json&)> cb);
+    SubscriptionId register_notify_update(std::function<void(const json&)> cb) override;
 
     /**
      * @brief Unsubscribe from status update notifications
@@ -181,7 +168,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      * @param id Subscription ID returned by register_notify_update()
      * @return true if subscription was found and removed, false otherwise
      */
-    bool unsubscribe_notify_update(SubscriptionId id);
+    bool unsubscribe_notify_update(SubscriptionId id) override;
 
     /**
      * @brief Register persistent callback for specific notification methods
@@ -194,7 +181,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      * @param cb Callback function receiving parsed JSON notification
      */
     void register_method_callback(const std::string& method, const std::string& handler_name,
-                                  std::function<void(const json&)> cb);
+                                  std::function<void(const json&)> cb) override;
 
     /**
      * @brief Unregister a method callback by handler name
@@ -206,7 +193,8 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      * @param handler_name Handler name used during registration
      * @return true if handler was found and removed, false otherwise
      */
-    bool unregister_method_callback(const std::string& method, const std::string& handler_name);
+    bool unregister_method_callback(const std::string& method,
+                                    const std::string& handler_name) override;
 
     // ========== JSON-RPC Protocol ==========
 
@@ -275,7 +263,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      * @param id Request ID returned by send_jsonrpc()
      * @return true if request was found and cancelled, false otherwise
      */
-    bool cancel_request(RequestId id) {
+    bool cancel_request(RequestId id) override {
         return tracker_.cancel(id);
     }
 
@@ -353,7 +341,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      *
      * @param objects JSON array of object names
      */
-    void parse_objects(const json& objects) {
+    void parse_objects(const json& objects) override {
         discovery_.parse_objects(objects);
     }
 
@@ -373,7 +361,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      * @brief Get discovered hardware data
      * @return Reference to PrinterDiscovery containing all discovered hardware
      */
-    [[nodiscard]] helix::PrinterDiscovery hardware() const {
+    [[nodiscard]] helix::PrinterDiscovery hardware() const override {
         return discovery_.hardware();
     }
 
@@ -402,7 +390,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
     /**
      * @brief Get current connection state
      */
-    ConnectionState get_connection_state() const {
+    ConnectionState get_connection_state() const override {
         return connection_state_;
     }
 
@@ -431,7 +419,8 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      *
      * @param cb Callback invoked when state changes (old_state, new_state)
      */
-    void set_state_change_callback(std::function<void(ConnectionState, ConnectionState)> cb) {
+    void
+    set_state_change_callback(std::function<void(ConnectionState, ConnectionState)> cb) override {
         state_change_callback_ = cb;
     }
 
@@ -493,13 +482,14 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      * @param handler_name Unique key for replace / remove
      * @param cb           Callback fired on each connection event
      */
-    void add_connected_observer(const std::string& handler_name, std::function<void()> cb);
+    void add_connected_observer(const std::string& handler_name,
+                                std::function<void()> cb) override;
 
     /**
      * @brief Remove a previously-registered on-connected observer
      * @return true if a handler was removed
      */
-    bool remove_connected_observer(const std::string& handler_name);
+    bool remove_connected_observer(const std::string& handler_name) override;
 
     // ========== Events ==========
 
@@ -511,7 +501,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      *
      * @param cb Callback function, or nullptr to unregister
      */
-    void register_event_handler(MoonrakerEventCallback cb);
+    void register_event_handler(MoonrakerEventCallback cb) override;
 
     /**
      * @brief Temporarily suppress disconnect modal notifications
@@ -522,14 +512,14 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      *
      * @param duration_ms How long to suppress disconnect modals (default 10000ms)
      */
-    void suppress_disconnect_modal(uint32_t duration_ms = 10000);
+    void suppress_disconnect_modal(uint32_t duration_ms = 10000) override;
 
     /**
      * @brief Check if disconnect modal is currently suppressed
      *
      * @return true if suppress_disconnect_modal() was called recently
      */
-    [[nodiscard]] bool is_disconnect_modal_suppressed() const;
+    [[nodiscard]] bool is_disconnect_modal_suppressed() const override;
 
     // ========== Configuration ==========
 
@@ -538,7 +528,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      *
      * @param timeout_ms Connection timeout (default 10000ms)
      */
-    void set_connection_timeout(uint32_t timeout_ms) {
+    void set_connection_timeout(uint32_t timeout_ms) override {
         connection_timeout_ms_ = timeout_ms;
     }
 
@@ -547,7 +537,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      *
      * @param timeout_ms Request timeout
      */
-    void set_default_request_timeout(uint32_t timeout_ms) {
+    void set_default_request_timeout(uint32_t timeout_ms) override {
         tracker_.set_default_timeout(timeout_ms);
     }
 
@@ -564,7 +554,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      */
     void configure_timeouts(uint32_t connection_timeout_ms, uint32_t request_timeout_ms,
                             uint32_t keepalive_interval_ms, uint32_t reconnect_min_delay_ms,
-                            uint32_t reconnect_max_delay_ms) {
+                            uint32_t reconnect_max_delay_ms) override {
         connection_timeout_ms_ = connection_timeout_ms;
         tracker_.set_default_timeout(request_timeout_ms);
         keepalive_interval_ms_ = keepalive_interval_ms;
@@ -578,7 +568,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      * Should be called periodically (e.g., from main loop) to check for timed out requests.
      * Typically called every 1-5 seconds.
      */
-    void process_timeouts() {
+    void process_timeouts() override {
         tracker_.check_timeouts(
             [this](MoonrakerEventType type, const std::string& msg, bool is_error,
                    const std::string& details) { emit_event(type, msg, is_error, details); });
@@ -611,7 +601,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      * of SubscriptionGuard only care about *object* destruction, not
      * disconnect/reconnect cycles.
      */
-    std::weak_ptr<bool> lifetime_weak() const {
+    std::weak_ptr<bool> lifetime_weak() const override {
         return destruction_guard_;
     }
 
