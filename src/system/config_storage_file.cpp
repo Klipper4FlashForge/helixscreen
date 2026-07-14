@@ -3,6 +3,14 @@
 
 #include "app_constants.h"
 #include "config_backup.h"
+#include "ui_error_reporting.h"
+
+#if !defined(HELIX_SPLASH_ONLY) && !defined(HELIX_WATCHDOG)
+#include "system/telemetry_manager.h"
+#define CONFIG_RECORD_ERROR(...) TelemetryManager::instance().record_error(__VA_ARGS__)
+#else
+#define CONFIG_RECORD_ERROR(...) ((void)0)
+#endif
 
 #include <spdlog/spdlog.h>
 
@@ -80,15 +88,24 @@ class FileConfigStorage : public ConfigStorage {
             {
                 std::ofstream o(tmp_path);
                 if (!o.is_open()) {
-                    spdlog::error("[ConfigStorage] open failed: {} ({})", tmp_path,
-                                  errno_reason(errno));
+                    std::string reason = errno_reason(errno);
+                    NOTIFY_ERROR("Could not save settings: {}", reason);
+                    LOG_ERROR_INTERNAL("Failed to open temp file for writing: {} ({})", tmp_path,
+                                       reason);
+                    CONFIG_RECORD_ERROR("file_io", "config_write_failed",
+                                        fmt::format("open failed: {}", reason));
                     return false;
                 }
+
                 o << bytes;
                 o.flush();
+
                 if (!o.good()) {
-                    spdlog::error("[ConfigStorage] write failed: {} ({})", tmp_path,
-                                  errno_reason(errno));
+                    std::string reason = errno_reason(errno);
+                    NOTIFY_ERROR("Failed to save settings: {}", reason);
+                    LOG_ERROR_INTERNAL("Failed to write config to {}: {}", tmp_path, reason);
+                    CONFIG_RECORD_ERROR("file_io", "config_write_failed",
+                                        fmt::format("write error: {}", reason));
                     std::remove(tmp_path.c_str());
                     return false;
                 }
@@ -103,8 +120,11 @@ class FileConfigStorage : public ConfigStorage {
             }
 
             if (std::rename(tmp_path.c_str(), target_path.c_str()) != 0) {
-                spdlog::error("[ConfigStorage] rename '{}' -> '{}' failed: {}", tmp_path,
-                              target_path, strerror(errno));
+                NOTIFY_ERROR("Failed to save configuration file");
+                LOG_ERROR_INTERNAL("Failed to rename temp file '{}' to '{}': {}", tmp_path,
+                                   target_path, strerror(errno));
+                CONFIG_RECORD_ERROR("file_io", "config_write_failed",
+                                    fmt::format("rename failed: {}", strerror(errno)));
                 std::remove(tmp_path.c_str());
                 return false;
             }
@@ -124,7 +144,10 @@ class FileConfigStorage : public ConfigStorage {
             write_rolling_backup(path_, CONFIG_BACKUP_PRIMARY, config_backup_fallback());
             return true;
         } catch (const std::exception& e) {
-            spdlog::error("[ConfigStorage] exception saving {}: {}", path_, e.what());
+            NOTIFY_ERROR("Failed to save configuration: {}", e.what());
+            LOG_ERROR_INTERNAL("Exception while saving config to {}: {}", path_, e.what());
+            CONFIG_RECORD_ERROR("file_io", "config_write_failed",
+                                fmt::format("exception: {}", e.what()));
             return false;
         }
     }

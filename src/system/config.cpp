@@ -1505,9 +1505,11 @@ bool Config::save() {
     std::ostringstream oss;
     oss << std::setw(2) << data << std::endl;
     if (!storage_->store(oss.str())) {
-        NOTIFY_ERROR("Failed to save configuration file");
-        CONFIG_RECORD_ERROR("file_io", "config_write_failed",
-                            fmt::format("store failed: {}", storage_->describe()));
+        // FileConfigStorage (the default backend) already reports the specific
+        // failure via NOTIFY_ERROR + CONFIG_RECORD_ERROR at the failing phase
+        // (open/write/rename/exception) — don't double-toast here. Non-file
+        // backends get at least this log line.
+        spdlog::error("[Config] Failed to save via {}", storage_->describe());
         return false;
     }
     spdlog::trace("[Config] saved successfully to {}", storage_->describe());
