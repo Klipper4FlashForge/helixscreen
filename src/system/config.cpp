@@ -28,7 +28,6 @@
 #include <iomanip>
 #include <optional>
 #include <sstream>
-#include <stdexcept>
 #include <sys/stat.h>
 // C++17 filesystem - use std::filesystem if available, fall back to experimental
 #if __cplusplus >= 201703L && __has_include(<filesystem>)
@@ -922,6 +921,38 @@ static std::vector<std::string> config_backup_search_paths() {
             legacy_config_backup_fallback()};
 }
 
+/// Shared recovery for a document Config::init() could not use as-is (either
+/// a JSON parse failure or a present-but-unreadable file): preserve it for
+/// diagnosis, try the backup chain, and fall back to defaults if nothing
+/// usable is found. Callers are expected to have already logged the
+/// specific cause (parse error vs. read error) before calling this, since
+/// that distinction matters for telemetry but not for the recovery itself.
+static void recover_config_from_backup_or_defaults(json& data, ConfigStorage& storage) {
+    // Preserve the corrupt document for diagnosis
+    storage.preserve_corrupt();
+
+    // Try restoring from backup before falling back to defaults
+    std::string backup_src = find_backup(config_backup_search_paths());
+
+    bool restored = false;
+    if (!backup_src.empty()) {
+        try {
+            data = json::parse(std::fstream(backup_src));
+            restored = true;
+            spdlog::info("[Config] Restored from backup: {}", backup_src);
+            NOTIFY_WARNING("Settings were corrupted — restored from backup");
+        } catch (const json::exception& e2) {
+            spdlog::warn("[Config] Backup also corrupt: {}", e2.what());
+        }
+    }
+
+    if (!restored) {
+        spdlog::warn("[Config] No valid backup — resetting to defaults");
+        data = get_default_config("127.0.0.1", false);
+        NOTIFY_ERROR("Settings were corrupted and could not be recovered — reset to defaults");
+    }
+}
+
 } // namespace
 
 Config::Config() {}
@@ -1063,7 +1094,7 @@ void Config::init(const std::string& config_path) {
 
     // A thrown load() means the document is present but unreadable (e.g.
     // permission denied) — distinct from "absent" (nullopt, no throw). Both
-    // cases funnel into the "load existing config" branch below so a
+    // cases route into the "load existing config" branch below so a
     // present-but-unreadable config gets the same corrupt-preserve +
     // backup-restore recovery as a parse failure, instead of being silently
     // treated as first-boot and reset to defaults.
@@ -1080,72 +1111,56 @@ void Config::init(const std::string& config_path) {
     if (loaded_doc || load_read_failed) {
         // Load existing config
         spdlog::info("[Config] Loading config from {}", path);
-        try {
-            if (load_read_failed) {
-                throw std::runtime_error(load_read_error);
-            }
-            data = json::parse(*loaded_doc);
 
-            // Detect tarball default that replaced user config during a Moonraker
-            // web update.  Moonraker type:web does rmtree() on the install dir and
-            // extracts the release tarball fresh — the tarball includes a preset-based
-            // settings.json with wizard_completed=false and no config_version.  If a
-            // rolling backup with real user data exists, prefer it.
-            if (data.value("config_version", 0) == 0) {
-                std::string backup_src = find_backup(config_backup_search_paths());
-                if (!backup_src.empty()) {
-                    try {
-                        auto backup_data = json::parse(std::fstream(backup_src));
-                        if (backup_data.value("config_version", 0) > 0) {
-                            spdlog::warn("[Config] Loaded config is a tarball default "
-                                         "(no config_version) — restoring from backup: {}",
-                                         backup_src);
-                            data = std::move(backup_data);
-                            config_modified = true;
-                            NOTIFY_WARNING("Settings restored after update");
+        if (load_read_failed) {
+            // Route directly into the shared recovery path rather than
+            // re-throwing into the json::parse try/catch below — that would
+            // require widening its catch to std::exception, which would
+            // also swallow an unrelated failure (e.g. bad_alloc under
+            // memory pressure on RAM-constrained embedded targets) and
+            // misdiagnose it as document corruption, renaming a perfectly
+            // healthy settings.json to .corrupt.
+            spdlog::error("[Config] Failed to read {}: {}", path, load_read_error);
+            CONFIG_RECORD_ERROR("file_io", "config_read_failed",
+                                fmt::format("read error: {}", load_read_error));
+            recover_config_from_backup_or_defaults(data, *storage_);
+            config_modified = true;
+        } else {
+            try {
+                data = json::parse(*loaded_doc);
+
+                // Detect tarball default that replaced user config during a Moonraker
+                // web update.  Moonraker type:web does rmtree() on the install dir and
+                // extracts the release tarball fresh — the tarball includes a preset-based
+                // settings.json with wizard_completed=false and no config_version.  If a
+                // rolling backup with real user data exists, prefer it.
+                if (data.value("config_version", 0) == 0) {
+                    std::string backup_src = find_backup(config_backup_search_paths());
+                    if (!backup_src.empty()) {
+                        try {
+                            auto backup_data = json::parse(std::fstream(backup_src));
+                            if (backup_data.value("config_version", 0) > 0) {
+                                spdlog::warn("[Config] Loaded config is a tarball default "
+                                             "(no config_version) — restoring from backup: {}",
+                                             backup_src);
+                                data = std::move(backup_data);
+                                config_modified = true;
+                                NOTIFY_WARNING("Settings restored after update");
+                            }
+                        } catch (const json::exception& e) {
+                            spdlog::warn(
+                                "[Config] Backup parse failed during tarball detection: {}",
+                                e.what());
                         }
-                    } catch (const json::exception& e) {
-                        spdlog::warn("[Config] Backup parse failed during tarball detection: {}",
-                                     e.what());
                     }
                 }
-            }
-        } catch (const std::exception& e) {
-            if (load_read_failed) {
-                spdlog::error("[Config] Failed to read {}: {}", path, e.what());
-                CONFIG_RECORD_ERROR("file_io", "config_read_failed",
-                                    fmt::format("read error: {}", e.what()));
-            } else {
+            } catch (const json::exception& e) {
                 spdlog::error("[Config] Failed to parse {}: {}", path, e.what());
                 CONFIG_RECORD_ERROR("file_io", "config_read_failed",
                                     fmt::format("parse error: {}", e.what()));
+                recover_config_from_backup_or_defaults(data, *storage_);
+                config_modified = true;
             }
-
-            // Preserve the corrupt document for diagnosis
-            storage_->preserve_corrupt();
-
-            // Try restoring from backup before falling back to defaults
-            std::string backup_src = find_backup(config_backup_search_paths());
-
-            bool restored = false;
-            if (!backup_src.empty()) {
-                try {
-                    data = json::parse(std::fstream(backup_src));
-                    restored = true;
-                    spdlog::info("[Config] Restored from backup: {}", backup_src);
-                    NOTIFY_WARNING("Settings were corrupted — restored from backup");
-                } catch (const json::exception& e2) {
-                    spdlog::warn("[Config] Backup also corrupt: {}", e2.what());
-                }
-            }
-
-            if (!restored) {
-                spdlog::warn("[Config] No valid backup — resetting to defaults");
-                data = get_default_config("127.0.0.1", false);
-                NOTIFY_ERROR(
-                    "Settings were corrupted and could not be recovered — reset to defaults");
-            }
-            config_modified = true;
         }
 
         // Run display config migration (moves root-level display_* to /display/)
