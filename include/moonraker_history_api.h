@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "i_moonraker_sub_apis.h"
 #include "moonraker_error.h"
 #include "print_history_data.h"
 
@@ -37,7 +38,7 @@ class MoonrakerClient;
  *       [](const auto& jobs, uint64_t total) { ... },
  *       [](const auto& err) { ... });
  */
-class MoonrakerHistoryAPI {
+class MoonrakerHistoryAPI : public IHistoryAPI {
   public:
     using SuccessCallback = std::function<void()>;
     using ErrorCallback = std::function<void(const MoonrakerError&)>;
@@ -69,8 +70,8 @@ class MoonrakerHistoryAPI {
      * @param on_success Callback with parsed job list and total count
      * @param on_error Error callback
      */
-    virtual void get_history_list(int limit, int start, double since, double before,
-                                  HistoryListCallback on_success, ErrorCallback on_error);
+    void get_history_list(int limit, int start, double since, double before,
+                          HistoryListCallback on_success, ErrorCallback on_error) override;
 
     /**
      * @brief Get aggregated history totals/statistics
@@ -80,7 +81,7 @@ class MoonrakerHistoryAPI {
      * @param on_success Callback with totals struct
      * @param on_error Error callback
      */
-    virtual void get_history_totals(HistoryTotalsCallback on_success, ErrorCallback on_error);
+    void get_history_totals(HistoryTotalsCallback on_success, ErrorCallback on_error) override;
 
     /**
      * @brief Delete a job from history by its unique ID
@@ -91,8 +92,8 @@ class MoonrakerHistoryAPI {
      * @param on_success Success callback (job deleted)
      * @param on_error Error callback
      */
-    virtual void delete_history_job(const std::string& job_id, SuccessCallback on_success,
-                                    ErrorCallback on_error);
+    void delete_history_job(const std::string& job_id, SuccessCallback on_success,
+                            ErrorCallback on_error) override;
 
   protected:
     helix::MoonrakerClient& client_;
