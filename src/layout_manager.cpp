@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "layout_manager.h"
 
+#include "data_root_resolver.h"
+
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -54,22 +56,22 @@ bool LayoutManager::is_standard() const {
 
 std::string LayoutManager::resolve_xml_path(const std::string& filename) const {
     if (is_standard()) {
-        return "ui_xml/" + filename;
+        return helix::asset_path("ui_xml/" + filename);
     }
 
-    std::string variant_path = "ui_xml/" + name_ + "/" + filename;
+    std::string variant_path = helix::asset_path("ui_xml/" + name_ + "/" + filename);
     if (access(variant_path.c_str(), F_OK) == 0) {
         return variant_path;
     }
 
-    return "ui_xml/" + filename;
+    return helix::asset_path("ui_xml/" + filename);
 }
 
 bool LayoutManager::has_override(const std::string& filename) const {
     if (is_standard()) {
         return false;
     }
-    std::string variant_path = "ui_xml/" + name_ + "/" + filename;
+    std::string variant_path = helix::asset_path("ui_xml/" + name_ + "/" + filename);
     return access(variant_path.c_str(), F_OK) == 0;
 }
 

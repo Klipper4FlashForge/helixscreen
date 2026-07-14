@@ -9,6 +9,7 @@
 
 #include "border_radius_sizes.h"
 #include "config.h"
+#include "data_root_resolver.h"
 #include "helix-xml/src/libs/expat/expat.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "lvgl/lvgl.h"
@@ -23,6 +24,15 @@
 #endif
 
 #include <cstring>
+
+// Canonical ui_xml directory for token discovery, resolved once through the
+// asset-root seam. On desktop this is byte-identical to the old "ui_xml"
+// literal; on CWD-less targets (ESP-IDF VFS) it becomes an absolute path
+// under the mount the firmware configured via helix::set_asset_root().
+static const char* tm_ui_xml_dir() {
+    static const std::string dir = helix::asset_path("ui_xml");
+    return dir.c_str();
+}
 
 // Maps a value-suffix (e.g. "_large") to its tier number. Same ordering as the
 // UiBreakpoint tiers and fonts.mk FONT_TIERS. Returns -1 on unknown suffix.
@@ -782,8 +792,8 @@ static void theme_update_colors(bool is_dark) {
  */
 static void theme_manager_register_color_pairs(lv_xml_component_scope_t* scope, bool dark_mode) {
     // Find all color tokens with _light and _dark suffixes from all XML files
-    auto light_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "color", "_light");
-    auto dark_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "color", "_dark");
+    auto light_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "color", "_light");
+    auto dark_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "color", "_dark");
 
     // For each _light color, check if _dark exists and register base name
     int registered = 0;
@@ -824,7 +834,7 @@ static void theme_manager_register_static_constants(lv_xml_component_scope_t* sc
 
     int color_count = 0, px_count = 0, string_count = 0;
 
-    auto color_tokens = theme_manager_parse_all_xml_for_element("ui_xml", "color");
+    auto color_tokens = theme_manager_parse_all_xml_for_element(tm_ui_xml_dir(), "color");
 
     for (const auto& [name, value] : color_tokens) {
         if (!has_dynamic_suffix(name)) {
@@ -833,14 +843,14 @@ static void theme_manager_register_static_constants(lv_xml_component_scope_t* sc
         }
     }
 
-    for (const auto& [name, value] : theme_manager_parse_all_xml_for_element("ui_xml", "px")) {
+    for (const auto& [name, value] : theme_manager_parse_all_xml_for_element(tm_ui_xml_dir(), "px")) {
         if (!has_dynamic_suffix(name)) {
             lv_xml_register_const(scope, name.c_str(), value.c_str());
             px_count++;
         }
     }
 
-    for (const auto& [name, value] : theme_manager_parse_all_xml_for_element("ui_xml", "string")) {
+    for (const auto& [name, value] : theme_manager_parse_all_xml_for_element(tm_ui_xml_dir(), "string")) {
         if (!has_dynamic_suffix(name)) {
             lv_xml_register_const(scope, name.c_str(), value.c_str());
             string_count++;
@@ -950,7 +960,7 @@ void theme_manager_register_responsive_spacing(lv_display_t* display) {
             nav_suffix = "_large";
 
         // Read nav_width values from navigation_bar.xml consts
-        auto nav_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", nav_suffix);
+        auto nav_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", nav_suffix);
         auto nav_it = nav_tokens.find("nav_width");
         if (nav_it != nav_tokens.end()) {
             lv_xml_register_const(scope, "nav_width", nav_it->second.c_str());
@@ -961,13 +971,13 @@ void theme_manager_register_responsive_spacing(lv_display_t* display) {
 
     // Auto-discover all px tokens from all XML files (including optional _micro, _tiny, _xlarge,
     // and _xxlarge)
-    auto micro_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_micro");
-    auto tiny_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_tiny");
-    auto small_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_small");
-    auto medium_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_medium");
-    auto large_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_large");
-    auto xlarge_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_xlarge");
-    auto xxlarge_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_xxlarge");
+    auto micro_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_micro");
+    auto tiny_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_tiny");
+    auto small_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_small");
+    auto medium_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_medium");
+    auto large_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_large");
+    auto xlarge_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_xlarge");
+    auto xxlarge_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_xxlarge");
 
     int registered = 0;
     for (const auto& [base_name, small_val] : small_tokens) {
@@ -1071,7 +1081,7 @@ void theme_manager_refresh_layout_constants(lv_display_t* display) {
     else
         nav_suffix = "_large";
 
-    auto nav_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", nav_suffix);
+    auto nav_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", nav_suffix);
     auto nav_it = nav_tokens.find("nav_width");
     if (nav_it != nav_tokens.end()) {
         lv_xml_update_const(scope, "nav_width", nav_it->second.c_str());
@@ -1079,13 +1089,13 @@ void theme_manager_refresh_layout_constants(lv_display_t* display) {
 
     // Update all responsive spacing tokens for new breakpoint
     const char* size_suffix = theme_manager_get_breakpoint_suffix(ver_res);
-    auto micro_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_micro");
-    auto small_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_small");
-    auto medium_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_medium");
-    auto large_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_large");
-    auto tiny_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_tiny");
-    auto xlarge_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_xlarge");
-    auto xxlarge_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_xxlarge");
+    auto micro_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_micro");
+    auto small_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_small");
+    auto medium_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_medium");
+    auto large_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_large");
+    auto tiny_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_tiny");
+    auto xlarge_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_xlarge");
+    auto xxlarge_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "px", "_xxlarge");
 
     for (const auto& [base_name, small_val] : small_tokens) {
         auto medium_it = medium_tokens.find(base_name);
@@ -1192,13 +1202,13 @@ void theme_manager_register_responsive_fonts(lv_display_t* display) {
 
     // Auto-discover all string tokens from all XML files (including optional _micro, _tiny,
     // _xlarge, and _xxlarge)
-    auto micro_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "string", "_micro");
-    auto tiny_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "string", "_tiny");
-    auto small_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "string", "_small");
-    auto medium_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "string", "_medium");
-    auto large_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "string", "_large");
-    auto xlarge_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "string", "_xlarge");
-    auto xxlarge_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "string", "_xxlarge");
+    auto micro_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "string", "_micro");
+    auto tiny_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "string", "_tiny");
+    auto small_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "string", "_small");
+    auto medium_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "string", "_medium");
+    auto large_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "string", "_large");
+    auto xlarge_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "string", "_xlarge");
+    auto xxlarge_tokens = theme_manager_parse_all_xml_for_suffix(tm_ui_xml_dir(), "string", "_xxlarge");
 
     int registered = 0;
     for (const auto& [base_name, small_val] : small_tokens) {
