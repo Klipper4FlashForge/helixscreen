@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "lvgl_glue.h"
 #include "ktouch.h"
+#include "ota_health.h"
 
 #include <pthread.h>
 #include "esp_heap_caps.h"
@@ -26,6 +27,7 @@ static uint32_t tick_cb(void) { return (uint32_t)(esp_timer_get_time() / 1000); 
 static void *ui_thread(void *arg) {
     (void)arg;
     s_ui_build();
+    ota_health_confirm();
     ESP_LOGI(TAG, "ui: built, entering render loop");
     while (true) {
         uint32_t delay = lv_timer_handler();
