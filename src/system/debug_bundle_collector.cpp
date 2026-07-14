@@ -10,7 +10,7 @@
 #include "http_executor.h"
 #include "hv/requests.h"
 #include "logging_init.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "platform_capabilities.h"
 #include "platform_info.h"
 #include "printer_state.h"

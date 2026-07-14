@@ -13,7 +13,7 @@
 #include "app_globals.h"
 #include "filament_database.h"
 #include "material_settings_manager.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "static_panel_registry.h"
 #include "theme_manager.h"
 
