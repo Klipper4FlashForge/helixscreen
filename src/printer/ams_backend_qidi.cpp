@@ -174,7 +174,7 @@ int load_temp_for_slot(const SlotInfo& slot) {
 }
 } // namespace
 
-AmsBackendQidi::AmsBackendQidi(MoonrakerAPI* api, helix::IMoonrakerClient* client)
+AmsBackendQidi::AmsBackendQidi(IMoonrakerAPI* api, helix::IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
     // Populate system_info_ so get_system_info() returns a self-consistent
     // empty-but-initialised snapshot even before any status update arrives.

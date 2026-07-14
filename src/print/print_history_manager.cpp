@@ -6,7 +6,7 @@
 #include "ui_update_queue.h"
 
 #include "i_moonraker_client.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 
 #include <spdlog/spdlog.h>
 
@@ -18,7 +18,7 @@ using namespace helix;
 // Construction / Destruction
 // ============================================================================
 
-PrintHistoryManager::PrintHistoryManager(MoonrakerAPI* api, IMoonrakerClient* client)
+PrintHistoryManager::PrintHistoryManager(IMoonrakerAPI* api, IMoonrakerClient* client)
     : api_(api), client_(client) {
     spdlog::debug("[HistoryManager] Created");
     subscribe_to_notifications();

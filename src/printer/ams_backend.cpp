@@ -22,7 +22,7 @@
 #include "ams_backend_snapmaker.h"
 #include "ams_backend_toolchanger.h"
 #include "filament_database.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "printer_discovery.h"
 #include "runtime_config.h"
 
@@ -377,7 +377,7 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type) {
     }
 }
 
-std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerAPI* api,
+std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, IMoonrakerAPI* api,
                                                IMoonrakerClient* client) {
 #ifdef HELIX_ENABLE_MOCKS
     if (auto mock = try_create_mock(client)) {
@@ -388,7 +388,7 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
     switch (detected_type) {
     case AmsType::HAPPY_HARE:
         if (!api || !client) {
-            spdlog::error("[AMS Backend] Happy Hare requires MoonrakerAPI and MoonrakerClient");
+            spdlog::error("[AMS Backend] Happy Hare requires IMoonrakerAPI and MoonrakerClient");
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating Happy Hare backend");
@@ -396,7 +396,7 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
 
     case AmsType::AFC:
         if (!api || !client) {
-            spdlog::error("[AMS Backend] AFC requires MoonrakerAPI and MoonrakerClient");
+            spdlog::error("[AMS Backend] AFC requires IMoonrakerAPI and MoonrakerClient");
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating AFC backend");
@@ -404,7 +404,7 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
 
     case AmsType::ACE:
         if (!api || !client) {
-            spdlog::error("[AMS Backend] ACE requires MoonrakerAPI and MoonrakerClient");
+            spdlog::error("[AMS Backend] ACE requires IMoonrakerAPI and MoonrakerClient");
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating ACE backend");
@@ -412,7 +412,7 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
 
     case AmsType::TOOL_CHANGER:
         if (!api || !client) {
-            spdlog::error("[AMS Backend] Tool changer requires MoonrakerAPI and MoonrakerClient");
+            spdlog::error("[AMS Backend] Tool changer requires IMoonrakerAPI and MoonrakerClient");
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating Tool Changer backend");
@@ -422,7 +422,7 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
     case AmsType::AD5X_IFS:
 #if HELIX_HAS_IFS
         if (!api || !client) {
-            spdlog::error("[AMS Backend] AD5X IFS requires MoonrakerAPI and MoonrakerClient");
+            spdlog::error("[AMS Backend] AD5X IFS requires IMoonrakerAPI and MoonrakerClient");
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating AD5X IFS backend");
@@ -435,7 +435,7 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
     case AmsType::CFS:
 #if HELIX_HAS_CFS
         if (!api || !client) {
-            spdlog::error("[AMS Backend] CFS requires MoonrakerAPI and MoonrakerClient");
+            spdlog::error("[AMS Backend] CFS requires IMoonrakerAPI and MoonrakerClient");
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating CFS backend");
@@ -447,7 +447,7 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
 
     case AmsType::SNAPMAKER:
         if (!api || !client) {
-            spdlog::error("[AMS Backend] Snapmaker requires MoonrakerAPI and MoonrakerClient");
+            spdlog::error("[AMS Backend] Snapmaker requires IMoonrakerAPI and MoonrakerClient");
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating Snapmaker SnapSwap backend");
@@ -455,7 +455,7 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
 
     case AmsType::QIDI_BOX:
         if (!api || !client) {
-            spdlog::error("[AMS Backend] QIDI Box requires MoonrakerAPI and MoonrakerClient");
+            spdlog::error("[AMS Backend] QIDI Box requires IMoonrakerAPI and MoonrakerClient");
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating QIDI Box backend (stub)");

@@ -14,7 +14,7 @@
 #include "app_globals.h"
 #include "i_moonraker_client.h"
 #include "moonraker_advanced_api.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "printer_state.h"
 #include "probe_sensor_manager.h"
 #include "probe_sensor_types.h"
@@ -39,7 +39,7 @@ static std::unique_ptr<ProbeOverlay> g_probe_overlay;
 
 // Forward declarations
 static void on_probe_row_clicked(lv_event_t* e);
-MoonrakerAPI* get_moonraker_api();
+IMoonrakerAPI* get_moonraker_api();
 IMoonrakerClient* get_moonraker_client();
 
 ProbeOverlay& get_global_probe_overlay() {
@@ -80,7 +80,7 @@ static void on_probe_row_clicked(lv_event_t* e) {
     if (!overlay.get_root()) {
         spdlog::debug("[Probe] Creating probe overlay...");
 
-        MoonrakerAPI* api = get_moonraker_api();
+        IMoonrakerAPI* api = get_moonraker_api();
         overlay.set_api(api);
 
         lv_obj_t* screen = lv_display_get_screen_active(nullptr);
@@ -412,7 +412,7 @@ void ProbeOverlay::cleanup() {
     spdlog::trace("[Probe] Cleanup");
 }
 
-void ProbeOverlay::set_api(MoonrakerAPI* api) {
+void ProbeOverlay::set_api(IMoonrakerAPI* api) {
     api_ = api;
 }
 

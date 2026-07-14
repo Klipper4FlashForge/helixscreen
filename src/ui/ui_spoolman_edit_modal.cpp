@@ -14,7 +14,7 @@
 #include "label_printer_utils.h"
 #endif
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "spoolman_slot_saver.h"
 #include "theme_manager.h"
 
@@ -84,7 +84,7 @@ void SpoolEditModal::set_completion_callback(CompletionCallback callback) {
     completion_callback_ = std::move(callback);
 }
 
-bool SpoolEditModal::show_for_spool(lv_obj_t* parent, const SpoolInfo& spool, MoonrakerAPI* api) {
+bool SpoolEditModal::show_for_spool(lv_obj_t* parent, const SpoolInfo& spool, IMoonrakerAPI* api) {
     register_callbacks();
     init_subjects();
 

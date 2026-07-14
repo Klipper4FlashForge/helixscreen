@@ -8,7 +8,7 @@
 #include "ui_update_queue.h"
 #include "ui_utils.h"
 
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "printer_recovery_service.h"
 #include "printer_state.h"
@@ -34,7 +34,7 @@ AbortManager& AbortManager::instance() {
 // Initialization
 // ============================================================================
 
-void AbortManager::init(MoonrakerAPI* api, PrinterState* state) {
+void AbortManager::init(IMoonrakerAPI* api, PrinterState* state) {
     api_ = api;
     printer_state_ = state;
     spdlog::debug("[AbortManager] Initialized with dependencies");

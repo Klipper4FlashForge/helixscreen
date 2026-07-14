@@ -11,7 +11,7 @@
 #include <cstdint>
 #include <mutex>
 
-class MoonrakerAPI;
+class IMoonrakerAPI;
 
 /**
  * @brief Centralized Spoolman weight polling and circuit breaker management
@@ -36,7 +36,7 @@ class SpoolmanManager {
     void init_subjects();
     void deinit_subjects();
 
-    void set_api(MoonrakerAPI* api);
+    void set_api(IMoonrakerAPI* api);
 
     void refresh_spoolman_weights();
     void start_spoolman_polling();
@@ -51,7 +51,7 @@ class SpoolmanManager {
     static std::atomic<bool> s_shutdown_flag;
 
     mutable std::recursive_mutex mutex_;
-    MoonrakerAPI* api_ = nullptr;
+    IMoonrakerAPI* api_ = nullptr;
     bool initialized_ = false;
 
     // Polling

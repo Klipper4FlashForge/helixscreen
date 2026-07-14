@@ -14,7 +14,7 @@
 #include "filament_database.h"
 #include "klipper_config_editor.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "static_panel_registry.h"
 #include "static_subject_registry.h"
@@ -594,7 +594,7 @@ void PIDCalibrationPanel::teardown_pid_graph() {
 
 void PIDCalibrationPanel::send_pid_calibrate() {
     if (!api_) {
-        spdlog::error("[PIDCal] No MoonrakerAPI");
+        spdlog::error("[PIDCal] No IMoonrakerAPI");
         on_calibration_result(false, 0, 0, 0, "No printer connection");
         return;
     }
@@ -1291,7 +1291,7 @@ void PIDCalibrationPanel::start_migration() {
 
 void PIDCalibrationPanel::send_mpc_calibrate() {
     if (!api_) {
-        spdlog::error("[PIDCal] No MoonrakerAPI for MPC calibration");
+        spdlog::error("[PIDCal] No IMoonrakerAPI for MPC calibration");
         lv_subject_copy_string(&subj_error_message_, "No printer connection");
         set_state(State::ERROR);
         return;

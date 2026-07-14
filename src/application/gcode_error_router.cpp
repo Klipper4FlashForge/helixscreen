@@ -12,7 +12,7 @@
 #include "error_classify.h"
 #include "error_event.h"
 #include "i_moonraker_client.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "moonraker_error.h"
 #include "moonraker_types.h"
 #include "printer_recovery_service.h"
@@ -84,7 +84,7 @@ double now_unix_seconds() {
 
 } // namespace
 
-GcodeErrorRouter::GcodeErrorRouter(MoonrakerAPI* api, IMoonrakerClient* client,
+GcodeErrorRouter::GcodeErrorRouter(IMoonrakerAPI* api, IMoonrakerClient* client,
                                    helix::ui::RecoveryModalPresenter& presenter)
     : api_(api), client_(client), presenter_(presenter) {
     if (!client_) {
@@ -277,11 +277,11 @@ void GcodeErrorRouter::present_recover_toast(const ErrorEvent& e) {
     // through PrinterRecoveryService, not execute_gcode.
     if (!api_)
         return; // No API client -> recovery would be a no-op; nothing actionable to show.
-    MoonrakerAPI* api = api_;
+    IMoonrakerAPI* api = api_;
     ToastManager::instance().show_with_action(
         ToastSeverity::ERROR, truncate_for_toast(e.detail).c_str(), lv_tr("Recover"),
         [](void* ud) {
-            auto* a = static_cast<MoonrakerAPI*>(ud);
+            auto* a = static_cast<IMoonrakerAPI*>(ud);
             if (!a)
                 return;
             spdlog::info("[GcodeError] User tapped Recover for key298");

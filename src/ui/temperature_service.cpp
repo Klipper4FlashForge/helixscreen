@@ -19,7 +19,7 @@
 #include "app_globals.h"
 #include "filament_database.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "printer_state.h"
 #include "temperature_controller.h"
@@ -63,7 +63,7 @@ static const char* heater_label(HeaterType type) {
 // Constructor
 // ============================================================================
 
-TemperatureService::TemperatureService(PrinterState& printer_state, MoonrakerAPI* api)
+TemperatureService::TemperatureService(PrinterState& printer_state, IMoonrakerAPI* api)
     : printer_state_(printer_state), api_(api) {
     // Get recommended temperatures from filament database
     auto pla_info = filament::find_material("PLA");

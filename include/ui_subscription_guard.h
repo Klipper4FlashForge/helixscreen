@@ -11,7 +11,7 @@
 #include <memory>
 #include <utility>
 
-class MoonrakerAPI;
+class IMoonrakerAPI;
 
 /**
  * @brief RAII wrapper for Moonraker subscriptions - auto-unsubscribes on destruction
@@ -23,11 +23,11 @@ class MoonrakerAPI;
  * unsubscription if the client has already been destroyed. This prevents crashes
  * from shutdown ordering issues without requiring manual release() calls.
  *
- * Supports construction from either helix::MoonrakerClient or MoonrakerAPI:
+ * Supports construction from either helix::MoonrakerClient or IMoonrakerAPI:
  * @code
  *   // Via helix::MoonrakerClient (legacy)
  *   subscription_ = SubscriptionGuard(client, client->register_notify_update(...));
- *   // Via MoonrakerAPI (preferred)
+ *   // Via IMoonrakerAPI (preferred)
  *   subscription_ = SubscriptionGuard(api, api->subscribe_notifications(...));
  * @endcode
  */
@@ -49,12 +49,12 @@ class SubscriptionGuard {
                   : std::function<void(helix::SubscriptionId)>{}) {}
 
     /**
-     * @brief Construct guard from MoonrakerAPI and subscription ID
+     * @brief Construct guard from IMoonrakerAPI and subscription ID
      *
-     * @param api MoonrakerAPI that owns the subscription
+     * @param api IMoonrakerAPI that owns the subscription
      * @param id Subscription ID from subscribe_notifications()
      */
-    SubscriptionGuard(MoonrakerAPI* api, helix::SubscriptionId id);
+    SubscriptionGuard(IMoonrakerAPI* api, helix::SubscriptionId id);
 
     ~SubscriptionGuard() {
         reset();

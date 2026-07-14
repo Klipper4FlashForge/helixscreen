@@ -4,7 +4,7 @@
 #include "ams_backend_toolchanger.h"
 
 #include "ams_error.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 
 #include <spdlog/spdlog.h>
 
@@ -17,7 +17,7 @@ using namespace helix;
 // Construction / Destruction
 // ============================================================================
 
-AmsBackendToolChanger::AmsBackendToolChanger(MoonrakerAPI* api, IMoonrakerClient* client)
+AmsBackendToolChanger::AmsBackendToolChanger(IMoonrakerAPI* api, IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
     // Initialize system info with tool changer defaults
     system_info_.type = AmsType::TOOL_CHANGER;

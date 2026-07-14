@@ -19,7 +19,7 @@
 #include "ams_state.h"
 #include "app_globals.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "printer_state.h"
 #include "runtime_config.h"
@@ -120,7 +120,7 @@ void SpoolmanManager::deinit_subjects() {
     print_state_observer_.release();
     spoolman_availability_observer_.release();
 
-    // Clear dangling API pointer — MoonrakerAPI is destroyed during teardown
+    // Clear dangling API pointer — IMoonrakerAPI is destroyed during teardown
     api_ = nullptr;
 
     if (poll_timer_ && lv_is_initialized()) {
@@ -131,7 +131,7 @@ void SpoolmanManager::deinit_subjects() {
     initialized_ = false;
 }
 
-void SpoolmanManager::set_api(MoonrakerAPI* api) {
+void SpoolmanManager::set_api(IMoonrakerAPI* api) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     api_ = api;
     reset_circuit_breaker();

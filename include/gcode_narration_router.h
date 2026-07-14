@@ -9,7 +9,7 @@
 
 #include "hv/json.hpp"
 
-class MoonrakerAPI;
+class IMoonrakerAPI;
 
 // Test-only accessor (declared in the test TU), forward-declared here so the
 // friend grant below can name it explicitly.
@@ -28,7 +28,7 @@ class IMoonrakerClient;
 /// must outlive this router.
 class GcodeNarrationRouter {
   public:
-    GcodeNarrationRouter(MoonrakerAPI* api, IMoonrakerClient* client);
+    GcodeNarrationRouter(IMoonrakerAPI* api, IMoonrakerClient* client);
     ~GcodeNarrationRouter();
 
     GcodeNarrationRouter(const GcodeNarrationRouter&) = delete;
@@ -48,7 +48,7 @@ class GcodeNarrationRouter {
     /// AmsState::set_narration_phase write is thread-safe.
     void process_line(const std::string& line);
 
-    MoonrakerAPI* api_;
+    IMoonrakerAPI* api_;
     IMoonrakerClient* client_;
 
     /// [L072] Generation guard for the callback captured by MoonrakerClient.

@@ -39,7 +39,7 @@
 #include "gcode_parser.h" // For extract_thumbnails_from_content (USB thumbnail fallback)
 #include "helix-xml/src/xml/lv_xml.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "connection_state.h" // For ConnectionState enum
 #include "observer_factory.h"
 #include "preprint_predictor.h"
@@ -78,7 +78,7 @@ using helix::ui::format_print_time;
 
 static std::unique_ptr<PrintSelectPanel> g_print_select_panel;
 
-PrintSelectPanel* get_print_select_panel(PrinterState& printer_state, MoonrakerAPI* api) {
+PrintSelectPanel* get_print_select_panel(PrinterState& printer_state, IMoonrakerAPI* api) {
     if (!g_print_select_panel) {
         g_print_select_panel = std::make_unique<PrintSelectPanel>(printer_state, api);
         // Register both deinit AND destruction in one callback (consistent with other panels)
@@ -173,7 +173,7 @@ static void on_print_detail_back_clicked(lv_event_t* e) {
 // Constructor / Destructor
 // ============================================================================
 
-PrintSelectPanel::PrintSelectPanel(PrinterState& printer_state, MoonrakerAPI* api)
+PrintSelectPanel::PrintSelectPanel(PrinterState& printer_state, IMoonrakerAPI* api)
     : PanelBase(printer_state, api) {
     spdlog::trace("[{}] Constructed", get_name());
 }
@@ -727,7 +727,7 @@ void PrintSelectPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
     if (api_) {
         refresh_files();
     } else {
-        spdlog::debug("[{}] MoonrakerAPI not available yet, waiting for set_api()", get_name());
+        spdlog::debug("[{}] IMoonrakerAPI not available yet, waiting for set_api()", get_name());
         update_empty_state();
     }
 
@@ -1545,7 +1545,7 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
     }
 }
 
-void PrintSelectPanel::set_api(MoonrakerAPI* api) {
+void PrintSelectPanel::set_api(IMoonrakerAPI* api) {
     api_ = api;
 
     // Update file provider's API reference (it was created with nullptr in setup())

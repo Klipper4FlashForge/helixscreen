@@ -17,7 +17,7 @@
 #include "config.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "macro_modification_manager.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "moonraker_client.h"
 #include "moonraker_manager.h"
 #include "panel_widgets/shutdown_widget.h"
@@ -42,7 +42,7 @@ AdvancedPanel& get_global_advanced_panel() {
 }
 
 // Called by main.cpp to initialize the global instance
-void init_global_advanced_panel(PrinterState& printer_state, MoonrakerAPI* api) {
+void init_global_advanced_panel(PrinterState& printer_state, IMoonrakerAPI* api) {
     g_advanced_panel = std::make_unique<AdvancedPanel>(printer_state, api);
     StaticPanelRegistry::instance().register_destroy("AdvancedPanel",
                                                      []() { g_advanced_panel.reset(); });
@@ -52,7 +52,7 @@ void init_global_advanced_panel(PrinterState& printer_state, MoonrakerAPI* api) 
 // CONSTRUCTOR
 // ============================================================================
 
-AdvancedPanel::AdvancedPanel(PrinterState& printer_state, MoonrakerAPI* api)
+AdvancedPanel::AdvancedPanel(PrinterState& printer_state, IMoonrakerAPI* api)
     : PanelBase(printer_state, api) {
     spdlog::trace("[{}] Constructor", get_name());
 }

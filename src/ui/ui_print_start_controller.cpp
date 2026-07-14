@@ -26,7 +26,7 @@
 #include "filament_database.h"
 #include "filament_sensor_manager.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "printer_state.h"
 #include "settings_manager.h"
@@ -46,7 +46,7 @@ namespace helix::ui {
 // Constructor / Destructor
 // ============================================================================
 
-PrintStartController::PrintStartController(PrinterState& printer_state, MoonrakerAPI* api)
+PrintStartController::PrintStartController(PrinterState& printer_state, IMoonrakerAPI* api)
     : printer_state_(printer_state), api_(api) {
     spdlog::debug("[PrintStartController] Created");
 }
@@ -90,7 +90,7 @@ PrintStartController::~PrintStartController() {
 // Setup
 // ============================================================================
 
-void PrintStartController::set_api(MoonrakerAPI* api) {
+void PrintStartController::set_api(IMoonrakerAPI* api) {
     api_ = api;
 }
 

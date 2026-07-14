@@ -8,7 +8,7 @@
 
 #include "hv/json.hpp"
 
-AmsSubscriptionBackend::AmsSubscriptionBackend(MoonrakerAPI* api, helix::IMoonrakerClient* client)
+AmsSubscriptionBackend::AmsSubscriptionBackend(IMoonrakerAPI* api, helix::IMoonrakerClient* client)
     : api_(api), client_(client) {
     // Common defaults -- derived constructors set type-specific fields
     system_info_.version = "unknown";
@@ -39,8 +39,8 @@ AmsError AmsSubscriptionBackend::start() {
         }
 
         if (!api_) {
-            spdlog::error("{} Cannot start: MoonrakerAPI is null", backend_log_tag());
-            return AmsErrorHelper::not_connected("MoonrakerAPI not provided");
+            spdlog::error("{} Cannot start: IMoonrakerAPI is null", backend_log_tag());
+            return AmsErrorHelper::not_connected("IMoonrakerAPI not provided");
         }
 
         // Derived class extra checks (e.g., ToolChanger requires tools discovered)
@@ -234,7 +234,7 @@ AmsError AmsSubscriptionBackend::ensure_homed_then(std::string gcode,
                                             system_info_.action = AmsAction::IDLE;
                                         });
                         },
-                        MoonrakerAPI::HOMING_TIMEOUT_MS);
+                        IMoonrakerAPI::HOMING_TIMEOUT_MS);
                 } else if (on_complete) {
                     execute_gcode(gcode_copy, on_complete);
                 } else {
@@ -258,7 +258,7 @@ AmsError AmsSubscriptionBackend::ensure_homed_then(std::string gcode,
 
 AmsError AmsSubscriptionBackend::execute_gcode(const std::string& gcode) {
     if (!api_) {
-        return AmsErrorHelper::not_connected("MoonrakerAPI not available");
+        return AmsErrorHelper::not_connected("IMoonrakerAPI not available");
     }
     const char* tag = backend_log_tag();
     spdlog::info("{} Executing G-code: {}", tag, gcode);
@@ -268,7 +268,7 @@ AmsError AmsSubscriptionBackend::execute_gcode(const std::string& gcode) {
             if (err.type == MoonrakerErrorType::TIMEOUT) {
                 spdlog::warn("{} G-code response timed out (may still be running): {}", tag, gcode);
             } else if (err.type == MoonrakerErrorType::NOT_READY) {
-                // MoonrakerAPI already logs a [warning] when refusing g-code on a halted
+                // IMoonrakerAPI already logs a [warning] when refusing g-code on a halted
                 // Klipper. AD5X-IFS retries _IFS_VARS on every Adventurer5M.json poll, so
                 // duplicating at [error] floods the log post-halt.
                 spdlog::debug("{} G-code skipped (Klipper halted): {}", tag, gcode);
@@ -276,7 +276,7 @@ AmsError AmsSubscriptionBackend::execute_gcode(const std::string& gcode) {
                 spdlog::error("{} G-code failed: {} - {}", tag, gcode, err.message);
             }
         },
-        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
+        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
         // silent=true: the phase tracker + IFS_STATUS own operation completion,
         // so the RPC timeout is advisory for these long macros. A cold-start
         // load can legitimately run past the 300s ceiling (bundle 77TDH9N6:
@@ -292,7 +292,7 @@ AmsError AmsSubscriptionBackend::execute_gcode(const std::string& gcode) {
 AmsError AmsSubscriptionBackend::execute_gcode(const std::string& gcode,
                                                std::function<void()> on_complete) {
     if (!api_) {
-        return AmsErrorHelper::not_connected("MoonrakerAPI not available");
+        return AmsErrorHelper::not_connected("IMoonrakerAPI not available");
     }
     const char* tag = backend_log_tag();
     spdlog::info("{} Executing G-code: {}", tag, gcode);
@@ -315,7 +315,7 @@ AmsError AmsSubscriptionBackend::execute_gcode(const std::string& gcode,
                 spdlog::error("{} G-code failed: {} - {}", tag, gcode, err.message);
             }
         },
-        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
+        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS,
         // silent=true: completion is owned by the phase tracker + IFS_STATUS, not
         // the RPC return, so the advisory 300s timeout must not surface a false
         // "timed out" toast for a legitimately-long macro (bundle 77TDH9N6).

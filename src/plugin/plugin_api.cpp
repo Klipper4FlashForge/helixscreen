@@ -17,7 +17,7 @@ namespace helix::plugin {
 // PluginAPI Implementation
 // ============================================================================
 
-PluginAPI::PluginAPI(MoonrakerAPI* api, IMoonrakerClient* client, PrinterState& state,
+PluginAPI::PluginAPI(IMoonrakerAPI* api, IMoonrakerClient* client, PrinterState& state,
                      Config* config, const std::string& plugin_id)
     : moonraker_api_(api), moonraker_client_(client), printer_state_(state), config_(config),
       plugin_id_(plugin_id), alive_flag_(std::make_shared<bool>(true)) {
@@ -327,7 +327,7 @@ bool PluginAPI::has_injection_point(const std::string& point_id) const {
 // Internal Methods
 // ============================================================================
 
-void PluginAPI::set_moonraker(MoonrakerAPI* api, IMoonrakerClient* client) {
+void PluginAPI::set_moonraker(IMoonrakerAPI* api, IMoonrakerClient* client) {
     std::lock_guard<std::mutex> lock(mutex_);
     moonraker_api_ = api;
     moonraker_client_ = client;

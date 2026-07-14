@@ -55,7 +55,7 @@ TimelapseVideosOverlay& get_global_timelapse_videos() {
     return *g_timelapse_videos;
 }
 
-void init_global_timelapse_videos(MoonrakerAPI* api) {
+void init_global_timelapse_videos(IMoonrakerAPI* api) {
     if (g_timelapse_videos) {
         spdlog::warn("[Timelapse Videos] TimelapseVideosOverlay already initialized, skipping");
         return;
@@ -103,7 +103,7 @@ void open_timelapse_videos() {
 // CONSTRUCTOR
 // ============================================================================
 
-TimelapseVideosOverlay::TimelapseVideosOverlay(MoonrakerAPI* api) : api_(api) {
+TimelapseVideosOverlay::TimelapseVideosOverlay(IMoonrakerAPI* api) : api_(api) {
     spdlog::debug("[{}] Constructor", get_name());
 }
 

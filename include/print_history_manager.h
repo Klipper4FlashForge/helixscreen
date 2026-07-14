@@ -12,7 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
-class MoonrakerAPI;
+class IMoonrakerAPI;
 namespace helix {
 class IMoonrakerClient;
 }
@@ -81,10 +81,10 @@ class PrintHistoryManager {
     /**
      * @brief Construct PrintHistoryManager with API and client references
      *
-     * @param api MoonrakerAPI for fetching history
+     * @param api IMoonrakerAPI for fetching history
      * @param client helix::MoonrakerClient for notification subscription
      */
-    PrintHistoryManager(MoonrakerAPI* api, helix::IMoonrakerClient* client);
+    PrintHistoryManager(IMoonrakerAPI* api, helix::IMoonrakerClient* client);
 
     ~PrintHistoryManager();
 
@@ -212,7 +212,7 @@ class PrintHistoryManager {
     void subscribe_to_notifications();
 
     // Dependencies
-    MoonrakerAPI* api_;
+    IMoonrakerAPI* api_;
     helix::IMoonrakerClient* client_;
 
     // Cached data

@@ -67,9 +67,9 @@ static lv_obj_t* create_icon_item(lv_obj_t* parent, const ui_icon::IconMapping& 
 // CONSTRUCTOR
 // ============================================================================
 
-GlyphsPanel::GlyphsPanel(PrinterState& printer_state, MoonrakerAPI* api)
+GlyphsPanel::GlyphsPanel(PrinterState& printer_state, IMoonrakerAPI* api)
     : PanelBase(printer_state, api) {
-    // GlyphsPanel doesn't use PrinterState or MoonrakerAPI, but we accept
+    // GlyphsPanel doesn't use PrinterState or IMoonrakerAPI, but we accept
     // them for interface consistency with other panels
 }
 

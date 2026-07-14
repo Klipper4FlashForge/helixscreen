@@ -7,7 +7,7 @@
 #include "ui_timer_guard.h"
 
 #include "async_lifetime_guard.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "printer_state.h"
 
 #include <atomic>
@@ -42,16 +42,16 @@ class ActivePrintMediaManager {
     ActivePrintMediaManager& operator=(const ActivePrintMediaManager&) = delete;
 
     /**
-     * @brief Set the MoonrakerAPI instance for thumbnail downloads
+     * @brief Set the IMoonrakerAPI instance for thumbnail downloads
      *
      * Must be called before thumbnail loading will work. Also registers the
      * persistent Moonraker method callbacks (notify_filelist_changed /
      * notify_klippy_ready) used to re-trigger thumbnail loads that failed
      * because Moonraker hadn't finished scanning the file yet.
      *
-     * @param api Pointer to MoonrakerAPI (can be nullptr to disable)
+     * @param api Pointer to IMoonrakerAPI (can be nullptr to disable)
      */
-    void set_api(MoonrakerAPI* api);
+    void set_api(IMoonrakerAPI* api);
 
     /**
      * @brief Set the original filename for thumbnail lookup
@@ -123,7 +123,7 @@ class ActivePrintMediaManager {
     void retrigger_thumbnail_load(const char* reason);
 
     PrinterState& printer_state_;
-    MoonrakerAPI* api_ = nullptr;
+    IMoonrakerAPI* api_ = nullptr;
     ObserverGuard print_filename_observer_;
     std::string thumbnail_source_filename_;
     std::string last_effective_filename_;
@@ -146,7 +146,7 @@ class ActivePrintMediaManager {
     uint32_t retry_generation_ = 0;         ///< Load generation the pending retry belongs to
     bool thumbnail_loaded_ = false;         ///< Thumbnail successfully loaded for current filename
 
-    MoonrakerAPI* listener_api_ = nullptr; ///< API the method callbacks are registered on
+    IMoonrakerAPI* listener_api_ = nullptr; ///< API the method callbacks are registered on
     std::string filelist_handler_name_;
     std::string klippy_ready_handler_name_;
 

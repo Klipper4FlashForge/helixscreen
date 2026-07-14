@@ -23,7 +23,7 @@
 #include "config.h"
 #include "data_root_resolver.h"
 #include "i_moonraker_client.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "panel_widget_manager.h"
 #include "printer_state.h"
 #include "static_subject_registry.h"
@@ -51,7 +51,7 @@ using namespace helix;
 // Global singleton instances (extern declarations in header, definitions here)
 // These are set by main.cpp during initialization
 static IMoonrakerClient* g_moonraker_client = nullptr;
-static MoonrakerAPI* g_moonraker_api = nullptr;
+static IMoonrakerAPI* g_moonraker_api = nullptr;
 static MoonrakerManager* g_moonraker_manager = nullptr;
 static JobQueueState* g_job_queue_state = nullptr;
 static PrintHistoryManager* g_print_history_manager = nullptr;
@@ -88,11 +88,11 @@ void set_moonraker_client(IMoonrakerClient* client) {
     g_moonraker_client = client;
 }
 
-MoonrakerAPI* get_moonraker_api() {
+IMoonrakerAPI* get_moonraker_api() {
     return g_moonraker_api;
 }
 
-void set_moonraker_api(MoonrakerAPI* api) {
+void set_moonraker_api(IMoonrakerAPI* api) {
     g_moonraker_api = api;
 }
 

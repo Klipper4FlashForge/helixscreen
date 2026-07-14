@@ -77,7 +77,7 @@ ActivePrintMediaManager::~ActivePrintMediaManager() {
     unregister_moonraker_listeners();
 }
 
-void ActivePrintMediaManager::set_api(MoonrakerAPI* api) {
+void ActivePrintMediaManager::set_api(IMoonrakerAPI* api) {
     if (api_ != api) {
         unregister_moonraker_listeners();
     }

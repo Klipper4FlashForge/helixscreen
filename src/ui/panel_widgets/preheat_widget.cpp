@@ -14,7 +14,7 @@
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "macro_executor.h"
 #include "material_settings_manager.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "panel_widget_registry.h"
 #include "printer_state.h"
@@ -264,7 +264,7 @@ void PreheatWidget::handle_apply() {
 
     auto* api = get_moonraker_api();
     if (!api) {
-        spdlog::warn("[PreheatWidget] No MoonrakerAPI available");
+        spdlog::warn("[PreheatWidget] No IMoonrakerAPI available");
         return;
     }
 
@@ -304,7 +304,7 @@ void PreheatWidget::handle_apply() {
 void PreheatWidget::handle_cooldown() {
     auto* api = get_moonraker_api();
     if (!api) {
-        spdlog::warn("[PreheatWidget] No MoonrakerAPI available for cooldown");
+        spdlog::warn("[PreheatWidget] No IMoonrakerAPI available for cooldown");
         return;
     }
 

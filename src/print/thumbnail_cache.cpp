@@ -314,7 +314,7 @@ void ThumbnailCache::evict_if_needed() {
     }
 }
 
-void ThumbnailCache::fetch(MoonrakerAPI* api, const std::string& relative_path,
+void ThumbnailCache::fetch(IMoonrakerAPI* api, const std::string& relative_path,
                            SuccessCallback on_success, ErrorCallback on_error) {
     if (relative_path.empty()) {
         if (on_error) {
@@ -586,7 +586,7 @@ std::string ThumbnailCache::get_if_optimized(const std::string& relative_path,
     return bin_path;
 }
 
-void ThumbnailCache::fetch_optimized(MoonrakerAPI* api, const std::string& relative_path,
+void ThumbnailCache::fetch_optimized(IMoonrakerAPI* api, const std::string& relative_path,
                                      const helix::ThumbnailTarget& target,
                                      SuccessCallback on_success, ErrorCallback on_error,
                                      time_t source_modified) {
@@ -724,7 +724,7 @@ void ThumbnailCache::process_and_callback(const std::string& png_lvgl_path,
 // High-Level Semantic Methods
 // ============================================================================
 
-void ThumbnailCache::fetch_for_detail_view(MoonrakerAPI* api, const std::string& relative_path,
+void ThumbnailCache::fetch_for_detail_view(IMoonrakerAPI* api, const std::string& relative_path,
                                            ThumbnailLoadContext ctx, SuccessCallback on_success,
                                            ErrorCallback on_error) {
     // Detail views use pre-scaled .bin at a larger size than card views.
@@ -753,7 +753,7 @@ void ThumbnailCache::fetch_for_detail_view(MoonrakerAPI* api, const std::string&
         });
 }
 
-void ThumbnailCache::fetch_for_card_view(MoonrakerAPI* api, const std::string& relative_path,
+void ThumbnailCache::fetch_for_card_view(IMoonrakerAPI* api, const std::string& relative_path,
                                          ThumbnailLoadContext ctx, SuccessCallback on_success,
                                          ErrorCallback on_error, time_t source_modified) {
     // Card views benefit from pre-scaled .bin files for faster rendering.

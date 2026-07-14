@@ -93,7 +93,7 @@ std::string PrinterDiscovery::summary() const {
     return ss.str();
 }
 
-void init_subsystems_from_hardware(const PrinterDiscovery& hardware, MoonrakerAPI* api,
+void init_subsystems_from_hardware(const PrinterDiscovery& hardware, IMoonrakerAPI* api,
                                    IMoonrakerClient* client) {
     spdlog::debug("[PrinterDiscovery] Initializing subsystems from hardware discovery");
 

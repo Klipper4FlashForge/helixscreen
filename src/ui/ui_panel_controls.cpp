@@ -71,7 +71,7 @@ using helix::ui::position::format_position;
 // CONSTRUCTOR
 // ============================================================================
 
-ControlsPanel::ControlsPanel(PrinterState& printer_state, MoonrakerAPI* api)
+ControlsPanel::ControlsPanel(PrinterState& printer_state, IMoonrakerAPI* api)
     : PanelBase(printer_state, api) {
     // Dependencies passed for interface consistency
     // Child panels (motion, temp, extrusion) may use these when wired

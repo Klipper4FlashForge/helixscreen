@@ -346,7 +346,7 @@ std::optional<AmsAlert> CfsErrorDecoder::decode(const std::string& key_code, int
 // AmsBackendCfs — Main CFS backend class
 // =============================================================================
 
-AmsBackendCfs::AmsBackendCfs(MoonrakerAPI* api, helix::IMoonrakerClient* client)
+AmsBackendCfs::AmsBackendCfs(IMoonrakerAPI* api, helix::IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
     system_info_.type = AmsType::CFS;
     system_info_.type_name = "CFS";
@@ -1484,7 +1484,7 @@ std::string AmsBackendCfs::swap_gcode(int idx, CfsMacroVariant variant) {
 
 AmsError AmsBackendCfs::dispatch_action_script(std::string gcode) {
     if (!api_) {
-        return AmsErrorHelper::not_connected("MoonrakerAPI not available");
+        return AmsErrorHelper::not_connected("IMoonrakerAPI not available");
     }
 
     auto on_complete = [this]() {
@@ -1529,11 +1529,11 @@ AmsError AmsBackendCfs::dispatch_action_script(std::string gcode) {
                 if (macro_variant_ != CfsMacroVariant::K1) {
                     api_->execute_gcode(
                         "BOX_RESTORE_FAN", []() {}, [](const MoonrakerError&) {},
-                        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
                 }
                 api_->execute_gcode(
                     "RESTORE_GCODE_STATE NAME=helix_cfs_load", []() {},
-                    [](const MoonrakerError&) {}, MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                    [](const MoonrakerError&) {}, IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
             }
         });
     };
@@ -1542,7 +1542,7 @@ AmsError AmsBackendCfs::dispatch_action_script(std::string gcode) {
     // own completion callbacks that propagate to action-state cleanup.
     if (!client_) {
         api_->execute_gcode(gcode, std::move(on_complete), std::move(on_error),
-                            MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                            IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
         return AmsErrorHelper::success();
     }
 
@@ -1577,13 +1577,13 @@ AmsError AmsBackendCfs::dispatch_action_script(std::string gcode) {
                             token.defer("AmsBackendCfs::g28_done", [this, gcode_copy, on_complete,
                                                                     on_error]() {
                                 api_->execute_gcode(gcode_copy, on_complete, on_error,
-                                                    MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                                                    IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
                             });
                         },
-                        on_error, MoonrakerAPI::HOMING_TIMEOUT_MS);
+                        on_error, IMoonrakerAPI::HOMING_TIMEOUT_MS);
                 } else {
                     api_->execute_gcode(gcode_copy, on_complete, on_error,
-                                        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                                        IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
                 }
             });
         },

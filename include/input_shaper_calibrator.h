@@ -13,7 +13,7 @@
  * 4. Apply chosen settings to printer
  * 5. Save configuration to printer.cfg
  *
- * This is a state machine that coordinates MoonrakerAPI calls and
+ * This is a state machine that coordinates IMoonrakerAPI calls and
  * provides progress/error callbacks to the UI layer.
  */
 
@@ -23,7 +23,7 @@
 #include <string>
 
 // Forward declaration
-class MoonrakerAPI;
+class IMoonrakerAPI;
 struct MoonrakerError;
 
 namespace helix {
@@ -125,9 +125,9 @@ class InputShaperCalibrator {
     /**
      * @brief Constructor with API dependency injection
      *
-     * @param api Non-owning pointer to MoonrakerAPI instance
+     * @param api Non-owning pointer to IMoonrakerAPI instance
      */
-    explicit InputShaperCalibrator(MoonrakerAPI* api);
+    explicit InputShaperCalibrator(IMoonrakerAPI* api);
 
     /**
      * @brief Destructor
@@ -273,7 +273,7 @@ class InputShaperCalibrator {
      */
     void ensure_homed_then(std::function<void()> then, ErrorCallback on_error);
 
-    MoonrakerAPI* api_ = nullptr; ///< Non-owning pointer to API
+    IMoonrakerAPI* api_ = nullptr; ///< Non-owning pointer to API
     State state_ = State::IDLE;
     CalibrationResults results_;
 };

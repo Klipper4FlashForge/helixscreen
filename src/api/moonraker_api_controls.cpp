@@ -508,7 +508,7 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
                          timeout_ms, silent);
 }
 
-bool MoonrakerAPI::is_safe_gcode_param(const std::string& str) {
+bool IMoonrakerAPI::is_safe_gcode_param(const std::string& str) {
     return moonraker_internal::is_safe_identifier(str);
 }
 

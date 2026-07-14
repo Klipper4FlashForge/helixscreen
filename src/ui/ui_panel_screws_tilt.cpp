@@ -11,7 +11,7 @@
 
 #include "app_globals.h"
 #include "i_moonraker_client.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "printer_state.h"
 #include "static_panel_registry.h"
 #include "theme_manager.h"
@@ -36,7 +36,7 @@ static lv_subject_t s_screws_tilt_state;
 // Forward declarations
 static void on_screws_tilt_row_clicked(lv_event_t* e);
 IMoonrakerClient* get_moonraker_client();
-MoonrakerAPI* get_moonraker_api();
+IMoonrakerAPI* get_moonraker_api();
 
 ScrewsTiltPanel& get_global_screws_tilt_panel() {
     if (!s_screws_tilt_panel) {
@@ -82,7 +82,7 @@ static void on_screws_tilt_row_clicked(lv_event_t* e) {
 
         // Set client and API before creating UI
         IMoonrakerClient* client = get_moonraker_client();
-        MoonrakerAPI* api = get_moonraker_api();
+        IMoonrakerAPI* api = get_moonraker_api();
         panel.set_client(client, api);
 
         // Create the overlay UI
@@ -412,7 +412,7 @@ void ScrewsTiltPanel::start_probing() {
                     on_screws_tilt_error(msg);
                 });
             },
-            MoonrakerAPI::HOMING_TIMEOUT_MS);
+            IMoonrakerAPI::HOMING_TIMEOUT_MS);
     }
 }
 

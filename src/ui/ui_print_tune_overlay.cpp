@@ -12,7 +12,7 @@
 
 #include "format_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "printer_state.h"
 #include "static_panel_registry.h"
@@ -119,7 +119,7 @@ PrintTuneOverlay::~PrintTuneOverlay() {
 // SHOW (PUBLIC ENTRY POINT)
 // ============================================================================
 
-void PrintTuneOverlay::show(lv_obj_t* parent_screen, MoonrakerAPI* api,
+void PrintTuneOverlay::show(lv_obj_t* parent_screen, IMoonrakerAPI* api,
                             PrinterState& printer_state) {
     spdlog::debug("[PrintTuneOverlay] show() called");
 

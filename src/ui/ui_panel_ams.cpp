@@ -32,7 +32,7 @@
 #include "color_utils.h"
 #include "config.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "printer_detector.h"
 #include "printer_state.h"
@@ -133,7 +133,7 @@ static void ensure_ams_widgets_registered() {
 // Construction
 // ============================================================================
 
-AmsPanel::AmsPanel(PrinterState& printer_state, MoonrakerAPI* api) : PanelBase(printer_state, api) {
+AmsPanel::AmsPanel(PrinterState& printer_state, IMoonrakerAPI* api) : PanelBase(printer_state, api) {
     spdlog::debug("[AmsPanel] Constructed");
 }
 

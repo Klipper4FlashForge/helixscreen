@@ -7,7 +7,7 @@
 
 #include "panel_widget.h"
 
-class MoonrakerAPI;
+class IMoonrakerAPI;
 
 namespace helix {
 
@@ -15,7 +15,7 @@ class PrinterState;
 
 class LedControlsWidget : public PanelWidget {
   public:
-    LedControlsWidget(PrinterState& printer_state, MoonrakerAPI* api);
+    LedControlsWidget(PrinterState& printer_state, IMoonrakerAPI* api);
     ~LedControlsWidget() override;
 
     void attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) override;
@@ -30,7 +30,7 @@ class LedControlsWidget : public PanelWidget {
     void handle_clicked();
 
     PrinterState& printer_state_;
-    MoonrakerAPI* api_;
+    IMoonrakerAPI* api_;
     lv_obj_t* widget_obj_ = nullptr;
     lv_obj_t* parent_screen_ = nullptr;
     lv_obj_t* led_control_panel_ = nullptr;

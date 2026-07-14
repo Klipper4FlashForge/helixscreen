@@ -12,7 +12,7 @@
 #include "http_executor.h"
 #include "i_moonraker_client.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "post_op_cooldown_manager.h"
 
 #include <spdlog/spdlog.h>
@@ -30,7 +30,7 @@
 
 using json = nlohmann::json;
 
-AmsBackendAd5xIfs::AmsBackendAd5xIfs(MoonrakerAPI* api, helix::IMoonrakerClient* client)
+AmsBackendAd5xIfs::AmsBackendAd5xIfs(IMoonrakerAPI* api, helix::IMoonrakerClient* client)
     : AmsSubscriptionBackend(api, client) {
     // Fill tool map with UNMAPPED_PORT
     tool_map_.fill(UNMAPPED_PORT);
@@ -3165,7 +3165,7 @@ void AmsBackendAd5xIfs::query_zcolor_silent() {
     // parse_zcolor_silent. Clean JSON (not a prompt dialog), so it works even on
     // old zmod where GET_ZCOLOR degrades to a prompt-fallback. Routed through the
     // backend's fire-and-forget execute_gcode() rather than the callback-taking
-    // MoonrakerAPI overload.
+    // IMoonrakerAPI overload.
     execute_gcode("IFS_STATUS");
 
     if (!silent) {

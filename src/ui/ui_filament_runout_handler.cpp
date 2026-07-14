@@ -11,7 +11,7 @@
 #include "ams_state.h"
 #include "filament_sensor_manager.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "print_control_buttons.h"
 #include "print_lifecycle_state.h" // For PrintState enum
@@ -28,7 +28,7 @@ namespace helix::ui {
 // FilamentRunoutHandler Implementation
 // ============================================================================
 
-FilamentRunoutHandler::FilamentRunoutHandler(MoonrakerAPI* api) : api_(api) {
+FilamentRunoutHandler::FilamentRunoutHandler(IMoonrakerAPI* api) : api_(api) {
     spdlog::debug("[FilamentRunoutHandler] Constructed");
 }
 

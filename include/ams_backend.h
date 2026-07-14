@@ -18,7 +18,7 @@
 #include "ams_types.h"
 #include "error_event.h"
 
-class MoonrakerAPI;
+class IMoonrakerAPI;
 namespace helix {
 class IMoonrakerClient;
 class PrinterDiscovery;
@@ -1677,13 +1677,13 @@ class AmsBackend {
      * @brief Create appropriate backend for detected AMS type (mock only)
      *
      * Factory method that creates a mock backend for testing.
-     * For real backends, use the overload that accepts MoonrakerAPI and MoonrakerClient.
+     * For real backends, use the overload that accepts IMoonrakerAPI and MoonrakerClient.
      *
      * In mock mode (RuntimeConfig::should_mock_ams()), returns AmsBackendMock.
      *
      * @param detected_type The detected AMS type from printer discovery
      * @return Unique pointer to backend instance, or nullptr if type is NONE
-     * @deprecated Use create(AmsType, MoonrakerAPI*, helix::IMoonrakerClient*) for real backends
+     * @deprecated Use create(AmsType, IMoonrakerAPI*, helix::IMoonrakerClient*) for real backends
      */
     static std::unique_ptr<AmsBackend> create(AmsType detected_type);
 
@@ -1698,11 +1698,11 @@ class AmsBackend {
      * In mock mode (RuntimeConfig::should_mock_ams()), returns AmsBackendMock.
      *
      * @param detected_type The detected AMS type from printer discovery
-     * @param api Pointer to MoonrakerAPI for sending commands
+     * @param api Pointer to IMoonrakerAPI for sending commands
      * @param client Pointer to helix::MoonrakerClient for subscriptions
      * @return Unique pointer to backend instance, or nullptr if type is NONE
      */
-    static std::unique_ptr<AmsBackend> create(AmsType detected_type, MoonrakerAPI* api,
+    static std::unique_ptr<AmsBackend> create(AmsType detected_type, IMoonrakerAPI* api,
                                               helix::IMoonrakerClient* client);
 
     /**

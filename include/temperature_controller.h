@@ -15,7 +15,7 @@
 namespace helix {
 class PrinterState;
 }
-class MoonrakerAPI;
+class IMoonrakerAPI;
 
 namespace helix {
 
@@ -46,9 +46,9 @@ struct KeypadRange {
 /// NOTIFY_* notification system for toasts, so logic is unit-testable.
 class TemperatureController {
   public:
-    TemperatureController(PrinterState& state, MoonrakerAPI* api);
+    TemperatureController(PrinterState& state, IMoonrakerAPI* api);
 
-    void set_api(MoonrakerAPI* api) {
+    void set_api(IMoonrakerAPI* api) {
         api_ = api;
     }
 
@@ -102,7 +102,7 @@ class TemperatureController {
     }
 
     PrinterState& state_;
-    MoonrakerAPI* api_;
+    IMoonrakerAPI* api_;
 };
 
 } // namespace helix

@@ -19,7 +19,7 @@
 #include "app_globals.h"
 #include "filament_database.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "printer_discovery.h"
 #include "printer_state.h"
@@ -583,7 +583,7 @@ void AmsState::deinit_subjects() {
 
     spdlog::trace("[AMS State] Deinitializing subjects");
 
-    // Clear dangling API pointer — the MoonrakerAPI is destroyed during teardown
+    // Clear dangling API pointer — the IMoonrakerAPI is destroyed during teardown
     // before AmsState re-initializes. Without this, sync_from_backend() would
     // dereference a freed pointer on the next init_subjects() cycle.
     api_ = nullptr;
@@ -605,12 +605,12 @@ void AmsState::deinit_subjects() {
 }
 
 void AmsState::init_backend_from_hardware(const helix::PrinterDiscovery& hardware,
-                                          MoonrakerAPI* api, IMoonrakerClient* client) {
+                                          IMoonrakerAPI* api, IMoonrakerClient* client) {
     init_backends_from_hardware(hardware, api, client);
 }
 
 void AmsState::init_backends_from_hardware(const helix::PrinterDiscovery& hardware,
-                                           MoonrakerAPI* api, IMoonrakerClient* client) {
+                                           IMoonrakerAPI* api, IMoonrakerClient* client) {
     const auto& systems = hardware.detected_ams_systems();
     if (systems.empty()) {
         spdlog::debug("[AMS State] No AMS systems detected, skipping");
@@ -843,7 +843,7 @@ bool AmsState::is_available() const {
     return primary && primary->get_type() != AmsType::NONE;
 }
 
-void AmsState::set_moonraker_api(MoonrakerAPI* api) {
+void AmsState::set_moonraker_api(IMoonrakerAPI* api) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     api_ = api;
     last_synced_spoolman_id_ = 0; // Reset tracking on API change
