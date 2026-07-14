@@ -7,10 +7,62 @@
 
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <unistd.h>
 
 namespace helix::application {
+
+namespace {
+
+// Verify a PID belongs to our early splash binary by reading /proc/<pid>/comm.
+// Mirrors helix_watchdog.cpp's pid_is_our_splash() PID-recycling guard: if the
+// original splash was reaped and the kernel handed the PID to an unrelated
+// process, signalling it would be a bug. Returns false on any uncertainty.
+bool pid_is_helix_splash(pid_t pid) {
+    if (pid <= 0) {
+        return false;
+    }
+#ifdef __linux__
+    char comm_path[64];
+    snprintf(comm_path, sizeof(comm_path), "/proc/%d/comm", pid);
+    FILE* f = fopen(comm_path, "r");
+    if (!f) {
+        return false;
+    }
+    char comm[64]  = {0};
+    bool got_line = (fgets(comm, sizeof(comm), f) != nullptr);
+    fclose(f);
+    if (!got_line) {
+        return false;
+    }
+    size_t n = strlen(comm);
+    if (n > 0 && comm[n - 1] == '\n') {
+        comm[n - 1] = '\0';
+    }
+    // Linux truncates /proc/<pid>/comm to 15 chars; "helix-splash" (12) fits.
+    return strcmp(comm, "helix-splash") == 0;
+#else
+    (void)pid;
+    return false;
+#endif
+}
+
+// Parse HELIX_SPLASH_PID from the environment. Returns <= 0 if unset/invalid.
+pid_t read_env_splash_pid() {
+    const char* p = getenv("HELIX_SPLASH_PID");
+    if (p == nullptr || *p == '\0') {
+        return 0;
+    }
+    char*     end = nullptr;
+    long      v   = strtol(p, &end, 10);
+    if (end == p || v <= 0) {
+        return 0;
+    }
+    return static_cast<pid_t>(v);
+}
+
+} // namespace
 
 void SplashScreenManager::start(pid_t splash_pid) {
     m_splash_pid = splash_pid;
@@ -18,6 +70,24 @@ void SplashScreenManager::start(pid_t splash_pid) {
     m_signaled = false;
     m_discovery_complete = false;
     m_post_refresh_frames = 0;
+
+    // DRM path: the watchdog launches helix-screen WITHOUT --splash-pid, so the
+    // early fb0 splash (helix-splash) is an orphan we never signal. It keeps
+    // repainting /dev/fb0 (the remote screen) until its own 180s backstop, then
+    // clears it — the remote goes black. When we were given no PID, adopt the one
+    // the watchdog exported in HELIX_SPLASH_PID (verified via /proc/<pid>/comm) so
+    // the normal handoff path (check_and_signal -> SIGUSR1) retires it, no longer
+    // dependent solely on the watchdog's single reap. Only when the arg PID was
+    // absent — a launcher-provided PID always wins.
+    if (m_splash_pid <= 0) {
+        pid_t env_pid = read_env_splash_pid();
+        if (pid_is_helix_splash(env_pid)) {
+            m_splash_pid = env_pid;
+            spdlog::info("[SplashManager] Adopted early splash PID {} from HELIX_SPLASH_PID "
+                         "(DRM handoff retirement)",
+                         env_pid);
+        }
+    }
 }
 
 void SplashScreenManager::on_discovery_complete() {

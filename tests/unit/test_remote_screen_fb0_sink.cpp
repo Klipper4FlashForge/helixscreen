@@ -41,19 +41,31 @@ constexpr int      kFbH      = 320;
 constexpr uint32_t kFbStride = 1920; // 480 * 4, no row padding
 constexpr size_t   kFbSize   = static_cast<size_t>(kFbStride) * kFbH; // 614400
 
+// 16bpp (RGB565) destination geometry — some U1 firmwares expose fb0 at 16bpp.
+constexpr uint32_t kFbStride16 = kFbW * 2;                               // 960, no row padding
+constexpr size_t   kFbSize16   = static_cast<size_t>(kFbStride16) * kFbH; // 307200
+
 std::vector<uint8_t> read_file(const std::string& path) {
     std::ifstream in(path, std::ios::binary);
     return std::vector<uint8_t>((std::istreambuf_iterator<char>(in)),
                                 std::istreambuf_iterator<char>());
 }
 
-std::string make_temp_fb() {
+std::string make_temp_fb_sized(size_t bytes) {
     char tmpl[] = "/tmp/helix_fb0_XXXXXX";
     int  fd     = ::mkstemp(tmpl);
     REQUIRE(fd >= 0);
-    REQUIRE(::ftruncate(fd, static_cast<off_t>(kFbSize)) == 0);
+    REQUIRE(::ftruncate(fd, static_cast<off_t>(bytes)) == 0);
     ::close(fd);
     return std::string(tmpl);
+}
+
+std::string make_temp_fb() {
+    return make_temp_fb_sized(kFbSize);
+}
+
+std::string make_temp_fb16() {
+    return make_temp_fb_sized(kFbSize16);
 }
 
 // A frame whose px_map is a FULL-buffer-origin source (stride spans the whole
@@ -239,6 +251,98 @@ TEST_CASE("Fb0MailboxSink: unknown source format is skipped", "[remote_screen][f
     REQUIRE(fb.size() == kFbSize);
     REQUIRE(fb[0] == 0x00);
     REQUIRE(fb[kFbSize / 2] == 0x00);
+
+    ::unlink(path.c_str());
+}
+
+TEST_CASE("Fb0MailboxSink: 16bpp dest, RGB565 source is copied verbatim", "[remote_screen][fb0]") {
+    std::string path = make_temp_fb16();
+
+    Fb0MailboxSink sink(path);
+    sink.configure_geometry(kFbW, kFbH, kFbStride16, 16);
+    REQUIRE(sink.start());
+    REQUIRE(sink.wants_frames());
+
+    // Full-size RGB565 source (stride matches the 16bpp dest). Distinct value
+    // 0x1234 in the rect (40,30)..(71,61); rest zero. RGB565 -> RGB565 is a
+    // straight per-row memcpy, so fb0 must equal the source bytes verbatim.
+    std::vector<uint8_t> src(kFbSize16, 0);
+    const uint16_t       val = 0x1234;
+    for (int y = 30; y <= 61; ++y) {
+        for (int x = 40; x <= 71; ++x) {
+            size_t o   = static_cast<size_t>(y) * kFbStride16 + static_cast<size_t>(x) * 2;
+            src[o + 0] = static_cast<uint8_t>(val & 0xFF);
+            src[o + 1] = static_cast<uint8_t>(val >> 8);
+        }
+    }
+
+    sink.on_frame(
+        make_frame(src.data(), 40, 30, 71, 61, kFbStride16, RemoteScreenPixelFormat::RGB565));
+    sink.stop();
+
+    std::vector<uint8_t> fb = read_file(path);
+    REQUIRE(fb.size() == kFbSize16);
+
+    // fb0 at a pixel inside the rect equals the source bytes (little-endian 0x1234).
+    const size_t off = static_cast<size_t>(45) * kFbStride16 + static_cast<size_t>(50) * 2;
+    REQUIRE(fb[off + 0] == 0x34);
+    REQUIRE(fb[off + 1] == 0x12);
+    // Last column of the rect (71) copied too.
+    const size_t last = static_cast<size_t>(45) * kFbStride16 + static_cast<size_t>(71) * 2;
+    REQUIRE(fb[last + 0] == 0x34);
+    REQUIRE(fb[last + 1] == 0x12);
+    // Outside the flushed rect stays zero.
+    REQUIRE(fb[0] == 0x00);
+
+    ::unlink(path.c_str());
+}
+
+TEST_CASE("Fb0MailboxSink: 16bpp dest, BGRA source packs to RGB565", "[remote_screen][fb0]") {
+    std::string path = make_temp_fb16();
+
+    Fb0MailboxSink sink(path);
+    sink.configure_geometry(kFbW, kFbH, kFbStride16, 16);
+    REQUIRE(sink.start());
+
+    // Full-size BGRA source (stride 1920). Four known colors in four adjacent
+    // cells; each must pack to its canonical RGB565 value in the 16bpp dest.
+    std::vector<uint8_t> src(kFbSize, 0);
+    fill_bgra_rect(src, kFbStride, 0, 0, 7, 7, 0x00, 0x00, 0xFF, 0xFF);   // red   -> 0xF800
+    fill_bgra_rect(src, kFbStride, 10, 0, 17, 7, 0x00, 0xFF, 0x00, 0xFF); // green -> 0x07E0
+    fill_bgra_rect(src, kFbStride, 20, 0, 27, 7, 0xFF, 0x00, 0x00, 0xFF); // blue  -> 0x001F
+    fill_bgra_rect(src, kFbStride, 30, 0, 37, 7, 0xFF, 0xFF, 0xFF, 0xFF); // white -> 0xFFFF
+
+    sink.on_frame(
+        make_frame(src.data(), 0, 0, 37, 7, kFbStride, RemoteScreenPixelFormat::BGRA8888));
+    sink.stop();
+
+    std::vector<uint8_t> fb = read_file(path);
+    REQUIRE(fb.size() == kFbSize16);
+
+    auto px16 = [&](int x, int y) -> uint16_t {
+        size_t o = static_cast<size_t>(y) * kFbStride16 + static_cast<size_t>(x) * 2;
+        return static_cast<uint16_t>(fb[o] | (fb[o + 1] << 8));
+    };
+
+    REQUIRE(px16(3, 3) == 0xF800);  // red
+    REQUIRE(px16(13, 3) == 0x07E0); // green
+    REQUIRE(px16(23, 3) == 0x001F); // blue
+    REQUIRE(px16(33, 3) == 0xFFFF); // white
+    // Little-endian byte order in the buffer: red low byte 0x00, high byte 0xF8.
+    const size_t red_off = static_cast<size_t>(3) * kFbStride16 + static_cast<size_t>(3) * 2;
+    REQUIRE(fb[red_off + 0] == 0x00);
+    REQUIRE(fb[red_off + 1] == 0xF8);
+
+    ::unlink(path.c_str());
+}
+
+TEST_CASE("Fb0MailboxSink: unsupported bpp leaves an inactive no-op sink", "[remote_screen][fb0]") {
+    std::string path = make_temp_fb_sized(static_cast<size_t>(kFbW) * kFbH * 3); // 24bpp-ish
+
+    Fb0MailboxSink sink(path);
+    sink.configure_geometry(kFbW, kFbH, kFbW * 3, 24); // 24bpp is rejected
+    REQUIRE_FALSE(sink.start());
+    REQUIRE_FALSE(sink.wants_frames());
 
     ::unlink(path.c_str());
 }

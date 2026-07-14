@@ -3537,6 +3537,36 @@ int Application::main_loop() {
                     .count();
             TelemetryManager::instance().record_frame_time(static_cast<uint32_t>(frame_us));
 
+            // Task C handoff repaint: on the U1 DRM path the early fb0 splash owns
+            // /dev/fb0 (the remote screen) and, once retired via SIGUSR1, no longer
+            // repaints it. Force the real flush hook — which mirrors dirty rects
+            // into fb0 — to paint one FULL frame BEFORE the splash is signaled to
+            // exit, so the remote shows the complete UI rather than the splash's
+            // frozen frame (or, on an idle UI that never dirties, black). Gated on a
+            // remote sink being active so non-U1 devices skip the forced redraw;
+            // ready_to_signal() makes it fire exactly once, on the frame the splash
+            // is about to be retired. The mandatory order is: restore flush cb ->
+            // full invalidate + lv_refr_now (mirror writes a full fb0 frame) -> THEN
+            // check_and_signal (SIGUSR1 -> splash exits without clearing fb0).
+            if (m_display && m_display->remote_screen_active() &&
+                m_splash_manager.ready_to_signal()) {
+                // If a suppressed-flush splash path was active (launcher passed
+                // --splash-pid), lift suppression first so the repaint is not a
+                // no-op; on the DRM watchdog path invalidation was never suppressed.
+                // Clearing the flag here also stops the post-signal handoff block
+                // below from repainting a second time.
+                if (invalidation_suppressed) {
+                    invalidation_suppressed = false;
+                    lv_display_enable_invalidation(nullptr, true);
+                }
+                restore_flush_callback(); // no-op on the DRM path (flush never swapped)
+                if (lv_obj_t* screen = lv_screen_active()) {
+                    lv_obj_update_layout(screen);
+                    invalidate_all_recursive(screen);
+                    lv_refr_now(nullptr);
+                }
+            }
+
             // Signal splash to exit when discovery completes (or timeout)
             m_splash_manager.check_and_signal();
 

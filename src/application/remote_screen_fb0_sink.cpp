@@ -91,8 +91,8 @@ bool Fb0MailboxSink::start() {
         }
     }
 
-    if (fb_bpp_ != 32) {
-        warn_once("unsupported bpp (need 32)");
+    if (fb_bpp_ != 16 && fb_bpp_ != 32) {
+        warn_once("unsupported bpp (need 16 or 32)");
         ::close(fd_);
         fd_ = -1;
         return false;
@@ -153,6 +153,10 @@ void Fb0MailboxSink::on_frame(const RemoteScreenFrame& f) {
     case RemoteScreenPixelFormat::Unknown:  break;
     }
 
+    // Destination bytes-per-pixel: 4 (32bpp BGRA) or 2 (16bpp RGB565). All four
+    // src x dst combinations are handled in the blit loop below.
+    const int dst_bpp = fb_bpp_ / 8;
+
     // px_map points to the DRAW-BUFFER ORIGIN (0,0), NOT the dirty-area origin.
     // In LVGL direct/full render mode, lv_refr.c's call_flush_cb passes
     // layer->draw_buf->data unchanged and only offsets the *area*. So a dirty
@@ -171,13 +175,14 @@ void Fb0MailboxSink::on_frame(const RemoteScreenFrame& f) {
     if (log_count_ < 3) {
         ++log_count_;
         spdlog::info("[RemoteScreen] on_frame ENTER #{}: area=({},{})-({},{}) "
-                     "disp={}x{} src_stride={} src_bpp={} cf={} fb={}x{} fb_stride={} map_size={}",
+                     "disp={}x{} src_stride={} src_bpp={} cf={} fb={}x{} fb_bpp={} dst_bpp={} "
+                     "fb_stride={} map_size={}",
                      log_count_, f.x1, f.y1, f.x2, f.y2, f.disp_w, f.disp_h,
-                     f.src_stride, src_bpp, f.color_format, fb_w_, fb_h_, fb_stride_,
-                     static_cast<unsigned long>(map_size_));
+                     f.src_stride, src_bpp, f.color_format, fb_w_, fb_h_, fb_bpp_, dst_bpp,
+                     fb_stride_, static_cast<unsigned long>(map_size_));
     }
 
-    if (f.src_stride == 0 || src_bpp == 0 || fb_bpp_ != 32) {
+    if (f.src_stride == 0 || src_bpp == 0 || (fb_bpp_ != 16 && fb_bpp_ != 32)) {
         return;
     }
 
@@ -218,37 +223,62 @@ void Fb0MailboxSink::on_frame(const RemoteScreenFrame& f) {
 
     for (int32_t row = 0; row < h; ++row) {
         const int32_t abs_y   = y1 + row;
-        const size_t  dst_off = static_cast<size_t>(abs_y) * fb_stride_ + static_cast<size_t>(x1) * 4;
+        const size_t  dst_off = static_cast<size_t>(abs_y) * fb_stride_ +
+                               static_cast<size_t>(x1) * static_cast<size_t>(dst_bpp);
         // Same absolute (x1, abs_y) into the buffer-origin source.
         const size_t  src_off = static_cast<size_t>(abs_y) * src_stride +
                                 static_cast<size_t>(x1) * static_cast<size_t>(src_bpp);
         uint8_t*       dst = map_ + dst_off;
         const uint8_t* src = f.px_map + src_off;
 
-        if (src_bpp == 4) {
-            // BGRA -> BGRA: straight copy.
-            std::memcpy(dst, src, static_cast<size_t>(w) * 4);
+        if (dst_bpp == 4) {
+            // Destination is 32bpp BGRA (the hardware-verified U1 480x320 fb0).
+            if (src_bpp == 4) {
+                // BGRA -> BGRA: straight copy.
+                std::memcpy(dst, src, static_cast<size_t>(w) * 4);
+            } else {
+                // RGB565 (little-endian 0bRRRRRGGGGGGBBBBB) -> BGRA8888.
+                for (int32_t col = 0; col < w; ++col) {
+                    const uint16_t p = static_cast<uint16_t>(src[0] | (src[1] << 8));
+                    src += 2;
+                    const uint8_t r5 = static_cast<uint8_t>((p >> 11) & 0x1F);
+                    const uint8_t g6 = static_cast<uint8_t>((p >> 5) & 0x3F);
+                    const uint8_t b5 = static_cast<uint8_t>(p & 0x1F);
+                    dst[0] = static_cast<uint8_t>((b5 << 3) | (b5 >> 2)); // B
+                    dst[1] = static_cast<uint8_t>((g6 << 2) | (g6 >> 4)); // G
+                    dst[2] = static_cast<uint8_t>((r5 << 3) | (r5 >> 2)); // R
+                    dst[3] = 0xFF;                                        // A
+                    dst += 4;
+                }
+            }
         } else {
-            // RGB565 (little-endian 0bRRRRRGGGGGGBBBBB) -> BGRA8888.
-            for (int32_t col = 0; col < w; ++col) {
-                const uint16_t p = static_cast<uint16_t>(src[0] | (src[1] << 8));
-                src += 2;
-                const uint8_t r5 = static_cast<uint8_t>((p >> 11) & 0x1F);
-                const uint8_t g6 = static_cast<uint8_t>((p >> 5) & 0x3F);
-                const uint8_t b5 = static_cast<uint8_t>(p & 0x1F);
-                dst[0] = static_cast<uint8_t>((b5 << 3) | (b5 >> 2)); // B
-                dst[1] = static_cast<uint8_t>((g6 << 2) | (g6 >> 4)); // G
-                dst[2] = static_cast<uint8_t>((r5 << 3) | (r5 >> 2)); // R
-                dst[3] = 0xFF;                                        // A
-                dst += 4;
+            // Destination is 16bpp RGB565 (U1 firmwares whose /dev/fb0 is 16bpp).
+            if (src_bpp == 2) {
+                // RGB565 -> RGB565: straight copy. LVGL's RGB565 is little-endian
+                // and matches fbdev RGB565 on these panels (the DRM draw buffer is
+                // already RGB565), so no per-pixel repack is needed.
+                std::memcpy(dst, src, static_cast<size_t>(w) * 2);
+            } else {
+                // BGRA8888 -> RGB565. Source bytes are B=src[0], G=src[1], R=src[2].
+                for (int32_t col = 0; col < w; ++col) {
+                    const uint8_t b = src[0];
+                    const uint8_t g = src[1];
+                    const uint8_t r = src[2];
+                    src += 4;
+                    const uint16_t p = static_cast<uint16_t>(((r >> 3) << 11) |
+                                                             ((g >> 2) << 5) | (b >> 3));
+                    dst[0] = static_cast<uint8_t>(p & 0xFF);        // low byte (little-endian)
+                    dst[1] = static_cast<uint8_t>((p >> 8) & 0xFF); // high byte
+                    dst += 2;
+                }
             }
         }
     }
 
     if (log_count_ <= 3 && log_done_ < 3) {
         ++log_done_;
-        spdlog::info("[RemoteScreen] on_frame DONE #{} (copied {}x{} at ({},{}) src_bpp={})",
-                     log_done_, w, h, x1, y1, src_bpp);
+        spdlog::info("[RemoteScreen] on_frame DONE #{} (copied {}x{} at ({},{}) src_bpp={} dst_bpp={})",
+                     log_done_, w, h, x1, y1, src_bpp, dst_bpp);
     }
 }
 

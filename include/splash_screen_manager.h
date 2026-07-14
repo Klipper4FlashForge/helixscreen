@@ -65,6 +65,25 @@ class SplashScreenManager {
     }
 
     /**
+     * @brief True on the frame the next check_and_signal() would actually signal.
+     *
+     * Side-effect-free mirror of check_and_signal()'s decision: not yet signaled
+     * AND (no splash PID, discovery complete, or the discovery timeout elapsed).
+     * Used to force a full fb0-mirror repaint at handoff BEFORE the early splash
+     * is signaled to exit, so the remote screen shows the real UI, not black.
+     * Returns false once signaled, so a handoff repaint fires exactly once.
+     */
+    bool ready_to_signal() const {
+        if (m_signaled) {
+            return false;
+        }
+        if (m_splash_pid <= 0 || m_discovery_complete) {
+            return true;
+        }
+        return elapsed_ms() >= DISCOVERY_TIMEOUT_MS;
+    }
+
+    /**
      * @brief Check if discovery has completed
      */
     bool is_discovery_complete() const {
