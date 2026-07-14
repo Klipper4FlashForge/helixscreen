@@ -166,6 +166,10 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     std::atomic<bool> alive_{true};
     // Backing store for lifetime_weak(): identical to desktop's shared_ptr<bool>.
     std::shared_ptr<bool> lifetime_ = std::make_shared<bool>(true);
+    // Set while a housekeeping tick is executing on the ESP_TIMER_TASK. The dtor
+    // spins on this after esp_timer_delete() because that call does not join an
+    // in-flight callback (see the dtor comment).
+    std::atomic<bool> timer_in_flight_{false};
 
     mutable std::mutex state_mutex_;
     ConnectionState state_ = ConnectionState::DISCONNECTED;
@@ -180,6 +184,9 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     // Fragment reassembly (grows to cap, shrinks on disconnect). WS-task only.
     std::string rx_buf_;
     bool rx_skip_ = false;
+    // WS-task only. Gates the RECONNECTED event so the first-ever connect is
+    // silent and only genuine reconnections emit (desktop was_connected_).
+    bool was_connected_ = false;
 
     // Bounded request tracker.
     std::mutex requests_mutex_;

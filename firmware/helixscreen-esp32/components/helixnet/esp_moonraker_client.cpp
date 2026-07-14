@@ -43,20 +43,31 @@ EspMoonrakerClient::EspMoonrakerClient() {
 
 EspMoonrakerClient::~EspMoonrakerClient() {
     // Destruction order is safety-critical (desktop precedent). Flip alive FIRST
-    // so any event already queued on the WS task early-outs, THEN stop the
-    // transport (blocks until the WS task drains) and the housekeeping timer,
-    // and only then let the callback maps / tracker be freed by member dtors.
+    // so any event already queued on either task early-outs before touching
+    // members.
     alive_.store(false);
 
-    if (ws_) {
-        esp_websocket_client_stop(ws_);
-        esp_websocket_client_destroy(ws_);
-        ws_ = nullptr;
-    }
+    // Tear the housekeeping timer down BEFORE the transport. esp_timer_stop()/
+    // esp_timer_delete() prevent future dispatches but do NOT join a callback
+    // that is already running on the ESP_TIMER_TASK — so after deleting we spin
+    // until the in-flight tick (if any) clears timer_in_flight_. Without this the
+    // WS stop + member teardown below could race process_timeouts() mid-walk of
+    // the tracker map (UAF on a destroyed mutex/map).
     if (housekeeping_timer_) {
         esp_timer_stop(housekeeping_timer_);
         esp_timer_delete(housekeeping_timer_);
         housekeeping_timer_ = nullptr;
+    }
+    while (timer_in_flight_.load()) {
+        vTaskDelay(1);
+    }
+
+    // Now stop the transport (blocks until the WS task drains); callback maps /
+    // tracker are freed last by the member dtors.
+    if (ws_) {
+        esp_websocket_client_stop(ws_);
+        esp_websocket_client_destroy(ws_);
+        ws_ = nullptr;
     }
 }
 
@@ -221,7 +232,12 @@ void EspMoonrakerClient::on_ws_connected() {
     rx_skip_ = false;
 
     set_state(ConnectionState::CONNECTED);
-    emit_event(MoonrakerEventType::RECONNECTED, "Connected to Moonraker", false);
+    // Only a genuine reconnection emits RECONNECTED; the first-ever connect is
+    // silent (desktop was_connected_ guard, moonraker_client.cpp:483-485).
+    if (was_connected_) {
+        emit_event(MoonrakerEventType::RECONNECTED, "Connected to Moonraker", false);
+    }
+    was_connected_ = true;
 
     if (on_connected_) {
         try {
@@ -438,9 +454,18 @@ void EspMoonrakerClient::dispatch_message(const char* buf, size_t len) {
 
 void EspMoonrakerClient::housekeeping_trampoline(void* arg) {
     auto* self = static_cast<EspMoonrakerClient*>(arg);
-    if (!self || !self->alive_.load()) {
+    if (!self) {
         return;
     }
+    // Mark the tick in-flight BEFORE reading any member so the dtor's quiesce
+    // loop (which runs after esp_timer_delete) always observes an overlapping
+    // callback and waits it out.
+    self->timer_in_flight_.store(true);
+    if (!self->alive_.load()) {
+        self->timer_in_flight_.store(false);
+        return;
+    }
+
     self->process_timeouts();
 
     // 60s of RECONNECTING → FAILED (purely informational; reconnect continues).
@@ -457,6 +482,8 @@ void EspMoonrakerClient::housekeeping_trampoline(void* arg) {
         self->emit_event(MoonrakerEventType::CONNECTION_FAILED,
                          "Reconnection has not succeeded", true);
     }
+
+    self->timer_in_flight_.store(false);
 }
 
 void EspMoonrakerClient::process_timeouts() {
@@ -470,6 +497,11 @@ void EspMoonrakerClient::process_timeouts() {
     const int64_t now = now_us();
     {
         std::lock_guard<std::mutex> lock(requests_mutex_);
+        // Defense in depth: bail under the lock if teardown began after the
+        // trampoline's entry check (the dtor's quiesce loop still waits on us).
+        if (!alive_.load()) {
+            return;
+        }
         for (auto it = pending_.begin(); it != pending_.end();) {
             const int64_t age_us = now - it->second.sent_us;
             if (age_us > static_cast<int64_t>(it->second.timeout_ms) * 1000) {
