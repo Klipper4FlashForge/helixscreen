@@ -4546,6 +4546,18 @@ uninstall() {
                 || log_warn "Could not restore /etc/init.d/S99input-event-daemon"
         fi
         restored_ui="Snapmaker stock UI (/usr/bin/gui re-enabled)"
+        # Final step: drop the /oem/.debug firmware debug-mode flag the installer
+        # created (snapmaker-u1-setup-autostart.sh step 1) to stop
+        # /etc/init.d/S01aoverlayfs from wiping /oem/overlay/* on boot. Removing it
+        # restores stock overlay-wipe-on-boot behavior: on the next boot the
+        # overlay-upper (our patched init scripts) is discarded and the pristine
+        # squashfs-lower stock rootfs is what runs — the cleanest possible
+        # uninstall, leaving no HelixScreen state change behind. No-op if the flag
+        # was never created (guarded by -f).
+        if [ -f /oem/.debug ]; then
+            log_info "Removing /oem/.debug (restores stock overlay-wipe-on-boot)"
+            $SUDO rm -f /oem/.debug 2>/dev/null || true
+        fi
     fi
 
     # Clean up helixscreen cache directories
