@@ -24,7 +24,11 @@ bool ALSASoundBackend::initialize(const std::string& device) {
     // Open with NONBLOCK to avoid hanging if the device is busy.
     int err = snd_pcm_open(&pcm_, device.c_str(), SND_PCM_STREAM_PLAYBACK, SND_PCM_NONBLOCK);
     if (err < 0) {
-        spdlog::error("[ALSASound] Cannot open PCM device '{}': {}", device, snd_strerror(err));
+        // A device that won't open is usually just "no audio hardware here", which
+        // is benign — SoundManager retries "default" and, only if that also fails,
+        // logs the authoritative error. Warn (not error) so an audio-less device
+        // doesn't surface a scary error line for an expected, recoverable state.
+        spdlog::warn("[ALSASound] Cannot open PCM device '{}': {}", device, snd_strerror(err));
         return false;
     }
 
