@@ -459,7 +459,7 @@ Flip `MoonrakerManager::m_client` to `std::unique_ptr<helix::IMoonrakerClient>` 
 
 **Files:**
 - Create: `firmware/helixscreen-esp32/main/net_hil.cpp` (+ hook into app_main behind `CONFIG_HELIX_NET_HIL`)
-- Create: `firmware/helixscreen-esp32/main/Kconfig.projbuild` additions: `HELIX_NET_HIL` (bool), `HELIX_HIL_WIFI_SSID`, `HELIX_HIL_WIFI_PASS`, `HELIX_HIL_MOONRAKER_URL` (string, default `ws://192.168.1.112:7125/websocket` — Preston's Voron V2, chosen 2026-07-14)
+- Create: `firmware/helixscreen-esp32/main/Kconfig.projbuild` additions: `HELIX_NET_HIL` (bool, default n), `HELIX_HIL_WIFI_SSID` (default ""), `HELIX_HIL_WIFI_PASS` (default ""), `HELIX_HIL_MOONRAKER_URL` (string, default `ws://192.168.1.112:7125/websocket` — Preston's Voron V2, chosen 2026-07-14). **Credentials are NEVER committed** (public repo): SSID/pass defaults stay empty; the build injects real values via a git-ignored `sdkconfig.local` (add to .gitignore) or interactive menuconfig. The controller holds the real values and supplies them at flash time.
 - Test: on-device, serial evidence
 
 **HIL scenario (single pthread, 32KB stack, started after display init so the hello card stays up):**
