@@ -91,6 +91,18 @@ int EspMoonrakerClient::connect(const char* url, std::function<void()> on_connec
     on_connected_ = std::move(on_connected);
     on_disconnected_ = std::move(on_disconnected);
 
+    // A prior connect()/probe may have left a live client or a suspended
+    // reconnect timeout. Start clean and unconditionally re-arm reconnection —
+    // a transient set_auto_reconnect(false) is reset here by contract.
+    if (ws_) {
+        esp_websocket_client_stop(ws_);
+        esp_websocket_client_destroy(ws_);
+        ws_ = nullptr;
+    }
+    auto_reconnect_.store(true);
+    next_reconnect_delay_ms_ = reconnect_min_delay_ms_;
+    was_connected_ = false;
+
     esp_websocket_client_config_t cfg = {};
     cfg.uri = url_.c_str();
     // 4096 default is too small once nlohmann is on the callback path.
@@ -274,17 +286,23 @@ void EspMoonrakerClient::on_ws_connected() {
 void EspMoonrakerClient::on_ws_disconnected() {
     ESP_LOGW(TAG, "disconnected from %s", url_.c_str());
 
-    // Manual exponential backoff: apply the current delay, then double up to max
-    // for the following attempt. Safe to call from the disconnect handler.
-    if (ws_) {
-        esp_websocket_client_set_reconnect_timeout(ws_, next_reconnect_delay_ms_);
+    if (auto_reconnect_.load()) {
+        // Manual exponential backoff: apply the current delay, then double up to
+        // max for the following attempt. Safe to call from the disconnect handler.
+        if (ws_) {
+            esp_websocket_client_set_reconnect_timeout(ws_, next_reconnect_delay_ms_);
+        }
+        next_reconnect_delay_ms_ = std::min(next_reconnect_delay_ms_ * 2, reconnect_max_delay_ms_);
+        set_state(ConnectionState::RECONNECTING);
+    } else {
+        // Reconnection suspended (probe flow): neutralize the component's own
+        // fixed-interval auto-reconnect by pushing the next attempt effectively
+        // never, and report a terminal DISCONNECTED rather than RECONNECTING.
+        if (ws_) {
+            esp_websocket_client_set_reconnect_timeout(ws_, INT32_MAX);
+        }
+        set_state(ConnectionState::DISCONNECTED);
     }
-    next_reconnect_delay_ms_ =
-        std::min(next_reconnect_delay_ms_ * 2, reconnect_max_delay_ms_);
-
-    // Auto-reconnect is armed, so this is a RECONNECTING transition (not a clean
-    // DISCONNECTED, which only disconnect() produces).
-    set_state(ConnectionState::RECONNECTING);
     emit_event(MoonrakerEventType::CONNECTION_LOST, "Connection to Moonraker lost", true);
 
     // Fail every in-flight request with connection_lost (two-phase).
@@ -835,6 +853,24 @@ void EspMoonrakerClient::add_connected_observer(const std::string& handler_name,
 bool EspMoonrakerClient::remove_connected_observer(const std::string& handler_name) {
     std::lock_guard<std::mutex> lock(observers_mutex_);
     return connected_observers_.erase(handler_name) > 0;
+}
+
+void EspMoonrakerClient::set_auto_reconnect(bool enabled) {
+    auto_reconnect_.store(enabled);
+    if (!ws_) {
+        return; // next connect() installs reconnect settings from scratch
+    }
+    if (enabled) {
+        // Re-arm: restore the exponential-backoff floor.
+        next_reconnect_delay_ms_ = reconnect_min_delay_ms_;
+        esp_websocket_client_set_reconnect_timeout(ws_, reconnect_min_delay_ms_);
+    } else {
+        // Suspend background reconnection WITHOUT dropping the current connection
+        // (mirrors desktop setReconnect(nullptr)). The component has no runtime
+        // disable API, so we push its fixed-interval retry effectively never;
+        // set_reconnect_timeout is a plain field write, safe from any task.
+        esp_websocket_client_set_reconnect_timeout(ws_, INT32_MAX);
+    }
 }
 
 void EspMoonrakerClient::force_reconnect() {

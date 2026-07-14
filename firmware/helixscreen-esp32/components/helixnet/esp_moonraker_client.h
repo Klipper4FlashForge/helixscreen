@@ -43,6 +43,10 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     int connect(const char* url, std::function<void()> on_connected,
                 std::function<void()> on_disconnected) override;
     void disconnect() override;
+    const std::string& get_last_url() const override {
+        return url_;
+    }
+    void set_auto_reconnect(bool enabled) override;
 
     // --- JSON-RPC protocol ---
     int send_jsonrpc(const std::string& method) override;
@@ -180,6 +184,10 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     int reconnect_min_delay_ms_ = 200;
     int reconnect_max_delay_ms_ = 2000;
     int next_reconnect_delay_ms_ = 200;
+    // When false, a disconnect goes straight to DISCONNECTED and background
+    // reconnection is suspended (connection-test probe flows). Transient: every
+    // connect() re-arms it to true.
+    std::atomic<bool> auto_reconnect_{true};
 
     // Fragment reassembly (grows to cap, shrinks on disconnect). WS-task only.
     std::string rx_buf_;
