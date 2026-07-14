@@ -33,8 +33,15 @@ firmware/helixscreen-esp32/          # ESP-IDF project (product quality)
 │                                    #      impls of IMoonrakerClient / IMoonrakerAPI
 ├── shim/                            # spdlog→esp_log, hv/ include aliases
 ├── boards/ktouch/                   # pin/timing/touch board table (config, not fork)
-└── partitions.csv                   # OTA A/B: 2×6.5MB app + ~2.5MB storage + NVS
+└── partitions.csv                   # OTA A/B: 2×6.0MB app + 3.75MB storage + NVS
 ```
+
+*(Partition sizing corrected during planning: storage must hold ui_xml — 1.6MB
+top-level + 412KB components + 1.8MB per-language translations (the 884KB
+merged translations.xml and micro/ layouts don't ship: translation_loader.cpp
+loads per-language files only; 800×480 is the _medium breakpoint). Build-time
+XML minification (~30%) makes 3.75MB comfortable. App slots therefore 6.0MB,
+image budget ≤5.8MB.)*
 
 The audit tree (`firmware/native-audit/`) remains as frozen reference;
 the product tree starts clean and pulls proven pieces from it deliberately.
@@ -80,7 +87,7 @@ the product tree starts clean and pulls proven pieces from it deliberately.
 
 | Budget | Limit | Enforcement |
 |---|---|---|
-| App image | ≤6.3MB (6.5MB slot − margin) | CI fails build over budget |
+| App image | ≤5.8MB (6.0MB slot − margin) | CI fails build over budget |
 | PSRAM steady-state free | ≥1.5MB with shell + live Moonraker + AMS | HIL boot-log assertion |
 | Internal SRAM free | ≥100KB steady state | HIL boot-log assertion |
 | Boot to rendered UI | ≤10s | HIL serial-marker timing |
