@@ -21,7 +21,7 @@
 
 // Forward declarations
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 } // namespace helix
 
 /**
@@ -53,7 +53,7 @@ class MoonrakerJobAPI : public IJobAPI {
      *
      * @param client MoonrakerClient instance (must remain valid during API lifetime)
      */
-    explicit MoonrakerJobAPI(helix::MoonrakerClient& client);
+    explicit MoonrakerJobAPI(helix::IMoonrakerClient& client);
     virtual ~MoonrakerJobAPI() = default;
 
     // ========================================================================
@@ -131,5 +131,5 @@ class MoonrakerJobAPI : public IJobAPI {
     void cancel_print(SuccessCallback on_success, ErrorCallback on_error) override;
 
   protected:
-    helix::MoonrakerClient& client_;
+    helix::IMoonrakerClient& client_;
 };

@@ -20,7 +20,7 @@
 
 // Forward declarations
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 } // namespace helix
 
 /**
@@ -63,7 +63,7 @@ class MoonrakerFileTransferAPI : public ITransfersAPI {
      * @param client MoonrakerClient instance (must remain valid during API lifetime)
      * @param http_base_url Reference to HTTP base URL string (owned by MoonrakerAPI)
      */
-    MoonrakerFileTransferAPI(helix::MoonrakerClient& client, const std::string& http_base_url);
+    MoonrakerFileTransferAPI(helix::IMoonrakerClient& client, const std::string& http_base_url);
 
     /**
      * @brief Destructor — joins all pending HTTP threads
@@ -209,6 +209,6 @@ class MoonrakerFileTransferAPI : public ITransfersAPI {
                                ProgressCallback on_progress = nullptr) override;
 
   protected:
-    helix::MoonrakerClient& client_;
+    helix::IMoonrakerClient& client_;
     const std::string& http_base_url_;
 };

@@ -15,7 +15,7 @@
 #include "app_globals.h"
 #include "device_display_name.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
@@ -343,7 +343,7 @@ void PowerDeviceWidget::handle_clicked() {
         }
     }
 
-    MoonrakerAPI* api = get_api();
+    IMoonrakerAPI* api = get_api();
     if (!api) {
         spdlog::warn("[PowerDeviceWidget] No API available");
         return;
@@ -388,7 +388,7 @@ bool PowerDeviceWidget::on_edit_configure() {
     return false;
 }
 
-MoonrakerAPI* PowerDeviceWidget::get_api() const {
+IMoonrakerAPI* PowerDeviceWidget::get_api() const {
     return get_moonraker_api();
 }
 
@@ -913,7 +913,7 @@ void PowerDeviceWidget::save_config() {
 }
 
 void PowerDeviceWidget::refresh_all_devices_state() {
-    MoonrakerAPI* api = get_api();
+    IMoonrakerAPI* api = get_api();
     if (!api)
         return;
 
@@ -949,7 +949,7 @@ void PowerDeviceWidget::refresh_all_devices_state() {
 }
 
 void PowerDeviceWidget::handle_all_devices_toggle() {
-    MoonrakerAPI* api = get_api();
+    IMoonrakerAPI* api = get_api();
     if (!api) {
         spdlog::warn("[PowerDeviceWidget] No API available for all-devices toggle");
         return;

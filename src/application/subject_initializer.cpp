@@ -99,7 +99,7 @@ void SubjectInitializer::init_core_and_state() {
     spdlog::debug("[SubjectInitializer] Core and state subjects initialized");
 }
 
-void SubjectInitializer::init_panels(MoonrakerAPI* api, const RuntimeConfig& /* runtime_config */) {
+void SubjectInitializer::init_panels(IMoonrakerAPI* api, const RuntimeConfig& /* runtime_config */) {
     spdlog::debug("[SubjectInitializer] Initializing panel subjects (api={})...",
                   api ? "valid" : "nullptr");
 
@@ -166,7 +166,7 @@ void SubjectInitializer::init_ams_subjects() {
     helix::sensors::TemperatureSensorManager::instance().init_subjects();
 }
 
-void SubjectInitializer::init_panel_subjects(MoonrakerAPI* api) {
+void SubjectInitializer::init_panel_subjects(IMoonrakerAPI* api) {
     spdlog::trace("[SubjectInitializer] Initializing panel subjects");
 
     // Initialize widget-owned subjects before any panel XML is created.
@@ -297,7 +297,7 @@ void SubjectInitializer::init_panel_subjects(MoonrakerAPI* api) {
     helix::PanelWidgetManager::instance().register_shared_resource<TemperatureService>(
         m_temp_control_panel.get());
     if (api) {
-        helix::PanelWidgetManager::instance().register_shared_resource<MoonrakerAPI>(api);
+        helix::PanelWidgetManager::instance().register_shared_resource<IMoonrakerAPI>(api);
     }
 
     // E-Stop overlay — cleanup self-registered inside init_subjects()

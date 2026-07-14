@@ -19,7 +19,7 @@
 #include "i_moonraker_client.h"
 #include "lvgl/lvgl.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "platform_info.h"
 #include "printer_discovery.h"
 #include "runtime_config.h"
@@ -328,7 +328,7 @@ void WizardConnectionStep::on_connection_success(const helix::LifetimeToken& tok
     lv_subject_set_int(&connection_testing_, 0);
 
     // Set HTTP base URL so discovery can make HTTP calls
-    MoonrakerAPI* api = get_moonraker_api();
+    IMoonrakerAPI* api = get_moonraker_api();
     if (api) {
         std::string http_url = "http://" + ip + ":" + port;
         api->set_http_base_url(http_url);
@@ -343,7 +343,7 @@ void WizardConnectionStep::on_connection_success(const helix::LifetimeToken& tok
                 spdlog::info("[Wizard Connection] Hardware discovery complete!");
 
                 tok.defer("WizardConnectionStep::discovery_success", [this]() {
-                    MoonrakerAPI* api = get_moonraker_api();
+                    IMoonrakerAPI* api = get_moonraker_api();
                     IMoonrakerClient* client = get_moonraker_client();
                     if (api) {
                         const auto& heaters = api->hardware().heaters();
@@ -584,7 +584,7 @@ void WizardConnectionStep::on_auto_probe_success(const helix::LifetimeToken& tok
     lv_subject_set_int(&connection_testing_, 0);
 
     // Set HTTP base URL so discovery can make HTTP calls
-    MoonrakerAPI* api = get_moonraker_api();
+    IMoonrakerAPI* api = get_moonraker_api();
     if (api) {
         std::string http_url = "http://" + ip + ":" + port;
         api->set_http_base_url(http_url);
@@ -599,7 +599,7 @@ void WizardConnectionStep::on_auto_probe_success(const helix::LifetimeToken& tok
                 spdlog::info("[Wizard Connection] Auto-probe: Hardware discovery complete");
 
                 tok.defer("WizardConnectionStep::auto_probe_discovery_success", [this]() {
-                    MoonrakerAPI* api = get_moonraker_api();
+                    IMoonrakerAPI* api = get_moonraker_api();
                     IMoonrakerClient* client = get_moonraker_client();
                     if (api) {
                         spdlog::info("[Wizard Connection] Hostname: '{}'",

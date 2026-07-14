@@ -17,7 +17,7 @@
 #include "display_settings_manager.h"
 #include "format_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "moonraker_client.h"
 #include "observer_factory.h"
 #include "print_history_manager.h"
@@ -383,7 +383,7 @@ void HistoryListPanel::set_jobs(const std::vector<PrintHistoryJob>& jobs) {
 }
 
 void HistoryListPanel::refresh_from_api() {
-    MoonrakerAPI* api = get_moonraker_api();
+    IMoonrakerAPI* api = get_moonraker_api();
     if (!api) {
         spdlog::warn("[{}] Cannot refresh: API not set", get_name());
         return;
@@ -430,7 +430,7 @@ void HistoryListPanel::refresh_from_api() {
 }
 
 void HistoryListPanel::load_more() {
-    MoonrakerAPI* api = get_moonraker_api();
+    IMoonrakerAPI* api = get_moonraker_api();
     // A healthy in-flight page load short-circuits; a stuck one (response lost
     // >30s ago) falls through and is recovered by try_acquire() below.
     if (!api || (load_more_guard_.active() && !load_more_guard_.is_stuck()) || !has_more_data_) {
@@ -491,7 +491,7 @@ void HistoryListPanel::load_more() {
 }
 
 void HistoryListPanel::fetch_timelapse_files() {
-    MoonrakerAPI* api = get_moonraker_api();
+    IMoonrakerAPI* api = get_moonraker_api();
     if (!api) {
         apply_filters_and_sort();
         return;
@@ -994,7 +994,7 @@ void HistoryListPanel::show_detail_overlay(const PrintHistoryJob& job) {
             lv_obj_add_flag(thumbnail_image, LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(thumbnail_fallback, LV_OBJ_FLAG_HIDDEN);
 
-            MoonrakerAPI* api = get_moonraker_api();
+            IMoonrakerAPI* api = get_moonraker_api();
             // Use ThumbnailCache to fetch/download thumbnail
             auto* self = this;
             get_thumbnail_cache().fetch(
@@ -1216,7 +1216,7 @@ void HistoryListPanel::confirm_delete() {
 
     spdlog::info("[{}] Confirming delete for job_id: {}", get_name(), job_id);
 
-    MoonrakerAPI* api = get_moonraker_api();
+    IMoonrakerAPI* api = get_moonraker_api();
     if (api) {
         api->history().delete_history_job(
             job_id,

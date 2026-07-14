@@ -17,7 +17,7 @@
 #include "config.h"
 #include "format_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "printer_state.h"
 #include "subject_managed_panel.h"
@@ -560,7 +560,7 @@ void MotionPanel::handle_z_button(const char* name) {
 
     spdlog::debug("[{}] Z jog: {:+.0f}mm (bed_moves={})", get_name(), distance, bed_moves_);
 
-    MoonrakerAPI* api = get_moonraker_api();
+    IMoonrakerAPI* api = get_moonraker_api();
     if (api) {
         // Z feedrate: 600 mm/min (10 mm/s) - slower for safety
         constexpr double Z_FEEDRATE = 600.0;
@@ -686,7 +686,7 @@ void MotionPanel::jog(JogDirection direction, float distance_mm) {
     }
 
     // Send jog commands via Moonraker API
-    MoonrakerAPI* api = get_moonraker_api();
+    IMoonrakerAPI* api = get_moonraker_api();
     if (api) {
         // Default feedrate: 6000 mm/min (100 mm/s) for XY jog moves
         constexpr double JOG_FEEDRATE = 6000.0;
@@ -713,7 +713,7 @@ void MotionPanel::jog(JogDirection direction, float distance_mm) {
 void MotionPanel::home(char axis) {
     spdlog::debug("[{}] Home command: {} axis", get_name(), axis);
 
-    MoonrakerAPI* api = get_moonraker_api();
+    IMoonrakerAPI* api = get_moonraker_api();
     if (api) {
         // Convert axis char to string for API ("" for all, "X", "Y", "Z", or "XY")
         std::string axes_str;

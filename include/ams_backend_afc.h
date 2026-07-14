@@ -92,12 +92,12 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /**
      * @brief Construct AFC backend
      *
-     * @param api Pointer to MoonrakerAPI (for sending G-code commands)
+     * @param api Pointer to IMoonrakerAPI (for sending G-code commands)
      * @param client Pointer to helix::MoonrakerClient (for subscribing to updates)
      *
      * @note Both pointers must remain valid for the lifetime of this backend.
      */
-    AmsBackendAfc(MoonrakerAPI* api, helix::IMoonrakerClient* client);
+    AmsBackendAfc(IMoonrakerAPI* api, helix::IMoonrakerClient* client);
     ~AmsBackendAfc() override;
 
     /**

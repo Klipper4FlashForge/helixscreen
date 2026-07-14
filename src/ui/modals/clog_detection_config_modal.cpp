@@ -4,7 +4,7 @@
 
 #include "ams_state.h"
 #include "app_globals.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "moonraker_error.h"
 #include "panel_widget_config.h"
 #include "panel_widget_manager.h"

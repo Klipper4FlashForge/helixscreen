@@ -13,7 +13,7 @@
 #include "app_globals.h"
 #include "format_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "moonraker_client.h"
 #include "observer_factory.h"
 #include "printer_state.h"
@@ -387,7 +387,7 @@ void HistoryDashboardPanel::refresh_data() {
 }
 
 void HistoryDashboardPanel::fetch_totals_for_all_time() {
-    MoonrakerAPI* api = get_moonraker_api();
+    IMoonrakerAPI* api = get_moonraker_api();
     if (!api) {
         // Fallback to cached jobs if no API
         update_statistics(cached_jobs_);

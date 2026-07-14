@@ -37,7 +37,7 @@
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "memory_monitor.h"
 #include "memory_utils.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "preprint_predictor.h"
 #include "print_status_preview_decision.h"
@@ -128,7 +128,7 @@ static void try_reclaim_cached_print_status() {
     });
 }
 
-PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, MoonrakerAPI* api)
+PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, IMoonrakerAPI* api)
     : printer_state_(printer_state), api_(api) {
     // Pre-init local subject used by observer callback below (fires immediately on subscribe)
     lv_subject_init_int(&exclude_objects_available_subject_, 0);

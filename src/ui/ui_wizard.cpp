@@ -33,7 +33,7 @@
 #include "i_moonraker_client.h"
 #include "lvgl/lvgl.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "panel_widget_config.h"
 #include "panel_widget_manager.h"
 #include "platform_info.h"
@@ -639,7 +639,7 @@ static void ui_wizard_ensure_filament_sensors_discovered() {
     if (!fsm.get_sensors().empty()) {
         return;
     }
-    MoonrakerAPI* api = get_moonraker_api();
+    IMoonrakerAPI* api = get_moonraker_api();
     if (api && api->hardware().has_filament_sensors()) {
         fsm.discover_sensors(api->hardware().filament_sensor_names());
         spdlog::debug("[Wizard] Populated FilamentSensorManager for skip calculation");

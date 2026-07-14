@@ -30,7 +30,7 @@
 #include "macro_executor.h"
 #include "macro_param_cache.h"
 #include "material_settings_manager.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "post_op_cooldown_manager.h"
 #include "printer_state.h"
@@ -84,7 +84,7 @@ helix::MacroParamModal& get_filament_param_modal() {
 // CONSTRUCTOR
 // ============================================================================
 
-FilamentPanel::FilamentPanel(PrinterState& printer_state, MoonrakerAPI* api)
+FilamentPanel::FilamentPanel(PrinterState& printer_state, IMoonrakerAPI* api)
     : PanelBase(printer_state, api) {
     // Initialize buffer contents with default values
     std::snprintf(temp_display_buf_, sizeof(temp_display_buf_), "%d / %d°C", nozzle_current_,
@@ -1285,7 +1285,7 @@ void FilamentPanel::execute_extrude() {
                 NOTIFY_ERROR(lv_tr("Extrude failed: {}"), error.user_message());
             }
         },
-        MoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+        IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
 }
 
 void FilamentPanel::handle_purge_button() {
@@ -1409,7 +1409,7 @@ void FilamentPanel::execute_purge() {
                 NOTIFY_ERROR(lv_tr("Purge failed: {}"), error.user_message());
             }
         },
-        MoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+        IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
 }
 
 void FilamentPanel::handle_retract_button() {
@@ -1473,7 +1473,7 @@ void FilamentPanel::execute_retract() {
                 NOTIFY_ERROR(lv_tr("Retract failed: {}"), error.user_message());
             }
         },
-        MoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+        IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
 }
 
 // ============================================================================
@@ -2505,7 +2505,7 @@ void FilamentPanel::execute_load() {
                 NOTIFY_ERROR(lv_tr("Filament load failed: {}"), error.user_message());
             }
         },
-        MoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+        IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
 }
 
 void FilamentPanel::execute_unload() {
@@ -2613,7 +2613,7 @@ void FilamentPanel::execute_unload() {
                 NOTIFY_ERROR(lv_tr("Filament unload failed: {}"), error.user_message());
             }
         },
-        MoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+        IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
 }
 
 void FilamentPanel::run_filament_macro(const std::string& macro_name, const std::string& op_label,
@@ -2676,7 +2676,7 @@ void FilamentPanel::run_filament_macro(const std::string& macro_name, const std:
                 NOTIFY_ERROR(lv_tr("Macro failed: {}"), error.user_message());
             }
         },
-        MoonrakerAPI::EXTRUSION_TIMEOUT_MS);
+        IMoonrakerAPI::EXTRUSION_TIMEOUT_MS);
 }
 
 void FilamentPanel::show_load_warning() {

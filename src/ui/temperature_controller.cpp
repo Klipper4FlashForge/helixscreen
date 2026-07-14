@@ -6,7 +6,7 @@
 
 #include "filament_database.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "printer_state.h"
 
 #include <algorithm>
@@ -16,7 +16,7 @@
 
 namespace helix {
 
-TemperatureController::TemperatureController(PrinterState& state, MoonrakerAPI* api)
+TemperatureController::TemperatureController(PrinterState& state, IMoonrakerAPI* api)
     : state_(state), api_(api) {
     // Keypad ceilings mirror temperature_service.cpp keypad_range fields.
     model_[idx(HeaterType::Nozzle)].keypad_max_default = 350.0f;

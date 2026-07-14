@@ -22,7 +22,7 @@
 
 // Forward declarations
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 } // namespace helix
 
 /**
@@ -51,7 +51,7 @@ class MoonrakerTimelapseAPI : public ITimelapseAPI {
      * @param client MoonrakerClient instance (must remain valid during API lifetime)
      * @param http_base_url Reference to HTTP base URL string (owned by MoonrakerAPI)
      */
-    explicit MoonrakerTimelapseAPI(helix::MoonrakerClient& client,
+    explicit MoonrakerTimelapseAPI(helix::IMoonrakerClient& client,
                                    const std::string& http_base_url);
     virtual ~MoonrakerTimelapseAPI();
 
@@ -138,6 +138,6 @@ class MoonrakerTimelapseAPI : public ITimelapseAPI {
     void get_webcam_list(WebcamListCallback on_success, ErrorCallback on_error) override;
 
   protected:
-    helix::MoonrakerClient& client_;
+    helix::IMoonrakerClient& client_;
     const std::string& http_base_url_;
 };

@@ -23,7 +23,7 @@
 #include <vector>
 
 // Forward declarations
-class MoonrakerAPI;
+class IMoonrakerAPI;
 namespace helix {
 class IMoonrakerClient;
 }
@@ -127,10 +127,10 @@ class AmsState {
      * Does nothing if no MMU is detected or if already in mock mode.
      *
      * @param hardware Discovered printer hardware
-     * @param api MoonrakerAPI instance for making API calls
+     * @param api IMoonrakerAPI instance for making API calls
      * @param client helix::MoonrakerClient instance for WebSocket communication
      */
-    void init_backend_from_hardware(const helix::PrinterDiscovery& hardware, MoonrakerAPI* api,
+    void init_backend_from_hardware(const helix::PrinterDiscovery& hardware, IMoonrakerAPI* api,
                                     helix::IMoonrakerClient* client);
 
     /**
@@ -141,10 +141,10 @@ class AmsState {
      * concurrent backends for printers with multiple filament systems.
      *
      * @param hardware Discovered printer hardware
-     * @param api MoonrakerAPI instance for making API calls
+     * @param api IMoonrakerAPI instance for making API calls
      * @param client helix::MoonrakerClient instance for WebSocket communication
      */
-    void init_backends_from_hardware(const helix::PrinterDiscovery& hardware, MoonrakerAPI* api,
+    void init_backends_from_hardware(const helix::PrinterDiscovery& hardware, IMoonrakerAPI* api,
                                      helix::IMoonrakerClient* client);
 
     /**
@@ -219,9 +219,9 @@ class AmsState {
      * When set, AmsState will automatically call set_active_spool() when
      * a slot with a Spoolman ID becomes loaded. Pass nullptr to disable.
      *
-     * @param api MoonrakerAPI instance (not owned)
+     * @param api IMoonrakerAPI instance (not owned)
      */
-    void set_moonraker_api(MoonrakerAPI* api);
+    void set_moonraker_api(IMoonrakerAPI* api);
 
     /**
      * @brief Set callback for mock backend gcode response injection
@@ -1224,10 +1224,10 @@ class AmsState {
      * Makes an async REST call to /server/ace/info. If successful,
      * creates ACE backend via lv_async_call to maintain thread safety.
      *
-     * @param api MoonrakerAPI instance for REST calls
+     * @param api IMoonrakerAPI instance for REST calls
      * @param client helix::MoonrakerClient instance for the backend
      */
-    void probe_ace(MoonrakerAPI* api, helix::IMoonrakerClient* client);
+    void probe_ace(IMoonrakerAPI* api, helix::IMoonrakerClient* client);
 
     /**
      * @brief Create and start ACE backend
@@ -1235,10 +1235,10 @@ class AmsState {
      * Called on main thread after successful ACE probe.
      * Must be called from LVGL thread context.
      *
-     * @param api MoonrakerAPI instance
+     * @param api IMoonrakerAPI instance
      * @param client helix::MoonrakerClient instance
      */
-    void create_ace_backend(MoonrakerAPI* api, helix::IMoonrakerClient* client);
+    void create_ace_backend(IMoonrakerAPI* api, helix::IMoonrakerClient* client);
 
     /// Per-backend slot subject storage for secondary backends (index > 0)
     struct BackendSlotSubjects {
@@ -1265,7 +1265,7 @@ class AmsState {
     bool initialized_ = false;
 
     // Moonraker API for Spoolman integration
-    MoonrakerAPI* api_ = nullptr;
+    IMoonrakerAPI* api_ = nullptr;
     int last_synced_spoolman_id_ = 0; ///< Track to avoid duplicate set_active_spool calls
 
     // Subject manager for automatic cleanup

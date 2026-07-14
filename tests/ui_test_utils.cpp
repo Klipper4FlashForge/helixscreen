@@ -424,7 +424,7 @@ void set_moonraker_client(IMoonrakerClient* client) {
     g_test_moonraker_client = client;
 }
 
-MoonrakerAPI* get_moonraker_api() {
+IMoonrakerAPI* get_moonraker_api() {
     return nullptr;
 }
 
@@ -560,7 +560,7 @@ EmergencyStopOverlay& EmergencyStopOverlay::instance() {
     return inst;
 }
 
-void EmergencyStopOverlay::init(PrinterState& printer_state, MoonrakerAPI* /* api */) {
+void EmergencyStopOverlay::init(PrinterState& printer_state, IMoonrakerAPI* /* api */) {
     printer_state_ = &printer_state;
 }
 

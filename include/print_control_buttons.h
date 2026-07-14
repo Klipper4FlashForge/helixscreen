@@ -10,7 +10,7 @@
 
 #include <lvgl.h>
 
-class MoonrakerAPI;
+class IMoonrakerAPI;
 
 namespace helix::ui {
 
@@ -30,7 +30,7 @@ class PrintControlButtons {
     /// wire the event callbacks, and start observing the print state. Idempotent.
     void init_subjects();
 
-    void set_api(MoonrakerAPI* api) {
+    void set_api(IMoonrakerAPI* api) {
         api_ = api;
     }
 
@@ -59,7 +59,7 @@ class PrintControlButtons {
     static void on_primary_clicked(lv_event_t* e);
     static void on_stop_clicked(lv_event_t* e);
 
-    MoonrakerAPI* api_ = nullptr;
+    IMoonrakerAPI* api_ = nullptr;
     bool subjects_initialized_ = false;
     PendingAction pending_action_ = PendingAction::None;
     lv_timer_t* pending_action_timeout_ = nullptr;

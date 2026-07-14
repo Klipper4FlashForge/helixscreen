@@ -30,7 +30,7 @@
 #include "display_settings_manager.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "observer_factory.h"
 #include "printer_detector.h"
 #include "static_panel_registry.h"
@@ -86,7 +86,7 @@ static void set_slot_count_label(lv_obj_t* label, int slot_count) {
 // Construction
 // ============================================================================
 
-AmsOverviewPanel::AmsOverviewPanel(PrinterState& printer_state, MoonrakerAPI* api)
+AmsOverviewPanel::AmsOverviewPanel(PrinterState& printer_state, IMoonrakerAPI* api)
     : PanelBase(printer_state, api) {
     spdlog::debug("[AMS Overview] Constructed");
 }

@@ -29,7 +29,7 @@
 
 // Forward declarations
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 } // namespace helix
 class MoonrakerAPI;
 
@@ -103,7 +103,7 @@ class MoonrakerAdvancedAPI : public IAdvancedAPI {
      * @param client MoonrakerClient instance (must remain valid during API lifetime)
      * @param api MoonrakerAPI instance for G-code execution (must remain valid during API lifetime)
      */
-    MoonrakerAdvancedAPI(helix::MoonrakerClient& client, MoonrakerAPI& api);
+    MoonrakerAdvancedAPI(helix::IMoonrakerClient& client, MoonrakerAPI& api);
     virtual ~MoonrakerAdvancedAPI() = default;
 
     // ========================================================================
@@ -524,7 +524,7 @@ class MoonrakerAdvancedAPI : public IAdvancedAPI {
                             ErrorCallback on_error) override;
 
   protected:
-    helix::MoonrakerClient& client_;
+    helix::IMoonrakerClient& client_;
     MoonrakerAPI& api_;
 
   private:

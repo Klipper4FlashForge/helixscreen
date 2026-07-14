@@ -22,7 +22,7 @@
  * ## Features
  * - Lists all detected gcode_macro entries from Klipper
  * - Filters system macros (_* prefix) by default
- * - Executes macros via MoonrakerAPI::execute_gcode()
+ * - Executes macros via IMoonrakerAPI::execute_gcode()
  * - Empty state when no macros available
  *
  * ## Usage

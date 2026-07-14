@@ -122,6 +122,17 @@ class IMoonrakerClient {
     /// @brief Clear all cached discovery data
     virtual void clear_discovery_cache() = 0;
 
+    /// @brief Set callback for hardware discovery (early phase, before full subscription)
+    virtual void
+    set_on_hardware_discovered(std::function<void(const helix::PrinterDiscovery&)> cb) = 0;
+
+    /// @brief Set callback for printer discovery completion
+    virtual void set_on_discovery_complete(
+        std::function<void(const helix::PrinterDiscovery&, const json& initial_status)> cb) = 0;
+
+    /// @brief Set callback for bed mesh updates received via WebSocket
+    virtual void set_bed_mesh_callback(std::function<void(const json&)> callback) = 0;
+
     // ========================================================================
     // Subscriptions & Method Callbacks
     // ========================================================================
@@ -140,6 +151,13 @@ class IMoonrakerClient {
     /// @brief Unregister a method callback by handler name
     virtual bool unregister_method_callback(const std::string& method,
                                             const std::string& handler_name) = 0;
+
+    /// @brief Dispatch printer status to all registered notify callbacks
+    ///
+    /// Wraps raw status data (e.g., from a subscription response) into a
+    /// notify_status_update notification format and dispatches to callbacks.
+    /// Used for both initial subscription state and incremental updates.
+    virtual void dispatch_status_update(const json& status) = 0;
 
     // ========================================================================
     // Connection State & Observers
@@ -215,5 +233,12 @@ class IMoonrakerClient {
     /// @brief Get lifetime guard for safe destructor-aware captures
     virtual std::weak_ptr<bool> lifetime_weak() const = 0;
 };
+
+/**
+ * Platform-provided client factory for embedded targets. NOT defined in the
+ * desktop build — the ESP32 firmware tree implements it over
+ * esp_websocket_client (MoonrakerManager calls it when ESP_PLATFORM is defined).
+ */
+std::unique_ptr<IMoonrakerClient> create_platform_moonraker_client();
 
 } // namespace helix

@@ -63,7 +63,7 @@
 #include "i_moonraker_client.h"
 #include "led/led_controller.h"
 #include "lvgl/src/others/translation/lv_translation.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "moonraker_manager.h"
 #include "observer_factory.h"
 #include "platform_info.h"
@@ -93,7 +93,7 @@ using namespace helix;
 // CONSTRUCTOR
 // ============================================================================
 
-SettingsPanel::SettingsPanel(PrinterState& printer_state, MoonrakerAPI* api)
+SettingsPanel::SettingsPanel(PrinterState& printer_state, IMoonrakerAPI* api)
     : PanelBase(printer_state, api) {
     spdlog::trace("[{}] Constructor", get_name());
 }
@@ -969,7 +969,7 @@ void SettingsPanel::handle_spoolman_settings_clicked() {
         overlay.init_subjects();
         overlay.register_callbacks();
     }
-    MoonrakerAPI* api = get_moonraker_api();
+    IMoonrakerAPI* api = get_moonraker_api();
     if (api) {
         overlay.set_api(api);
     }

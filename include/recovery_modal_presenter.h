@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-class MoonrakerAPI;
+class IMoonrakerAPI;
 
 namespace helix::ui {
 
@@ -28,7 +28,7 @@ namespace helix::ui {
 /// Lifetime: must outlive any GcodeErrorRouter that holds a reference to it.
 class RecoveryModalPresenter {
   public:
-    explicit RecoveryModalPresenter(MoonrakerAPI* api);
+    explicit RecoveryModalPresenter(IMoonrakerAPI* api);
     ~RecoveryModalPresenter() = default;
 
     RecoveryModalPresenter(const RecoveryModalPresenter&) = delete;
@@ -46,7 +46,7 @@ class RecoveryModalPresenter {
     [[nodiscard]] bool is_visible() const;
 
   private:
-    MoonrakerAPI* api_;
+    IMoonrakerAPI* api_;
     std::unique_ptr<helix::ui::ActionPromptModal> modal_;
     std::string shown_detail_;
     std::vector<helix::RecoveryAction> active_actions_;

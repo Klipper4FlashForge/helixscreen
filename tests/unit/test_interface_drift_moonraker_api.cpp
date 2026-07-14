@@ -22,9 +22,9 @@
 #include "moonraker_spoolman_api.h"
 #include "moonraker_timelapse_api.h"
 
-#include "../catch_amalgamated.hpp"
-
 #include <type_traits>
+
+#include "../catch_amalgamated.hpp"
 
 TEST_CASE("Moonraker sub-API classes satisfy their interfaces", "[compile][drift]") {
     static_assert(std::is_base_of_v<IMotionAPI, MoonrakerMotionAPI>,
@@ -78,6 +78,41 @@ TEST_CASE("Moonraker sub-API classes satisfy their interfaces", "[compile][drift
                   "MoonrakerTimelapseAPI must implement every pure virtual from ITimelapseAPI");
 
     SUCCEED("All ten Moonraker sub-API interfaces ↔ concrete class pairs verified at compile time");
+}
+
+// Pin the sub-API accessor return types: IMoonrakerAPI must hand back the
+// interface reference (not a concrete sub-API), so consumers depend only on the
+// interface surface. The concrete MoonrakerAPI covariantly overrides these to
+// return the concrete sub-APIs — that is verified by the mock-parity case below.
+TEST_CASE("IMoonrakerAPI sub-API accessors return interface references", "[compile][drift]") {
+    static_assert(
+        std::is_same_v<decltype(std::declval<IMoonrakerAPI&>().advanced()), IAdvancedAPI&>,
+        "IMoonrakerAPI::advanced() must return IAdvancedAPI&");
+    static_assert(
+        std::is_same_v<decltype(std::declval<IMoonrakerAPI&>().transfers()), ITransfersAPI&>,
+        "IMoonrakerAPI::transfers() must return ITransfersAPI&");
+    static_assert(std::is_same_v<decltype(std::declval<IMoonrakerAPI&>().history()), IHistoryAPI&>,
+                  "IMoonrakerAPI::history() must return IHistoryAPI&");
+    static_assert(std::is_same_v<decltype(std::declval<IMoonrakerAPI&>().job()), IJobAPI&>,
+                  "IMoonrakerAPI::job() must return IJobAPI&");
+    static_assert(
+        std::is_same_v<decltype(std::declval<IMoonrakerAPI&>().timelapse()), ITimelapseAPI&>,
+        "IMoonrakerAPI::timelapse() must return ITimelapseAPI&");
+    static_assert(std::is_same_v<decltype(std::declval<IMoonrakerAPI&>().motion()), IMotionAPI&>,
+                  "IMoonrakerAPI::motion() must return IMotionAPI&");
+    static_assert(std::is_same_v<decltype(std::declval<IMoonrakerAPI&>().rest()), IRestAPI&>,
+                  "IMoonrakerAPI::rest() must return IRestAPI&");
+    static_assert(
+        std::is_same_v<decltype(std::declval<IMoonrakerAPI&>().spoolman()), ISpoolmanAPI&>,
+        "IMoonrakerAPI::spoolman() must return ISpoolmanAPI&");
+    static_assert(std::is_same_v<decltype(std::declval<IMoonrakerAPI&>().files()), IFilesAPI&>,
+                  "IMoonrakerAPI::files() must return IFilesAPI&");
+    static_assert(std::is_same_v<decltype(std::declval<IMoonrakerAPI&>().queue()), IQueueAPI&>,
+                  "IMoonrakerAPI::queue() must return IQueueAPI&");
+    static_assert(std::is_same_v<decltype(std::declval<IMoonrakerAPI&>().get_client()),
+                                 helix::IMoonrakerClient&>,
+                  "IMoonrakerAPI::get_client() must return helix::IMoonrakerClient&");
+    SUCCEED("IMoonrakerAPI accessor return types pinned to interface references");
 }
 
 #ifdef HELIX_ENABLE_MOCKS

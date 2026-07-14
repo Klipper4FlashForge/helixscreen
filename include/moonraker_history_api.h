@@ -22,7 +22,7 @@
 
 // Forward declarations
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 } // namespace helix
 
 /**
@@ -51,7 +51,7 @@ class MoonrakerHistoryAPI : public IHistoryAPI {
      *
      * @param client MoonrakerClient instance (must remain valid during API lifetime)
      */
-    explicit MoonrakerHistoryAPI(helix::MoonrakerClient& client);
+    explicit MoonrakerHistoryAPI(helix::IMoonrakerClient& client);
     virtual ~MoonrakerHistoryAPI() = default;
 
     // ========================================================================
@@ -96,5 +96,5 @@ class MoonrakerHistoryAPI : public IHistoryAPI {
                             ErrorCallback on_error) override;
 
   protected:
-    helix::MoonrakerClient& client_;
+    helix::IMoonrakerClient& client_;
 };

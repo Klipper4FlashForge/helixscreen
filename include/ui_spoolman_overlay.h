@@ -27,7 +27,7 @@
 #include <vector>
 
 // Forward declarations
-class MoonrakerAPI;
+class IMoonrakerAPI;
 
 namespace helix::ui {
 
@@ -141,11 +141,11 @@ class SpoolmanOverlay : public OverlayBase {
     void refresh();
 
     /**
-     * @brief Set MoonrakerAPI for database access
+     * @brief Set IMoonrakerAPI for database access
      *
-     * @param api MoonrakerAPI instance (not owned)
+     * @param api IMoonrakerAPI instance (not owned)
      */
-    void set_api(MoonrakerAPI* api) {
+    void set_api(IMoonrakerAPI* api) {
         api_ = api;
     }
 
@@ -237,8 +237,8 @@ class SpoolmanOverlay : public OverlayBase {
     /// Subject for refresh interval in seconds
     lv_subject_t refresh_interval_subject_;
 
-    /// MoonrakerAPI for database access (not owned)
-    MoonrakerAPI* api_ = nullptr;
+    /// IMoonrakerAPI for database access (not owned)
+    IMoonrakerAPI* api_ = nullptr;
 
     /// Default values
     static constexpr bool DEFAULT_SYNC_ENABLED = true;

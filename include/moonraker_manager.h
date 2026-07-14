@@ -18,7 +18,7 @@ namespace helix {
 class Config;
 }
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 }
 class MoonrakerAPI;
 namespace helix {
@@ -114,7 +114,7 @@ class MoonrakerManager {
     /**
      * @brief Get the Moonraker client
      */
-    helix::MoonrakerClient* client() const {
+    helix::IMoonrakerClient* client() const {
         return m_client.get();
     }
 
@@ -301,7 +301,7 @@ class MoonrakerManager {
     void create_api(const RuntimeConfig& runtime_config);
 
     // Owned resources
-    std::unique_ptr<helix::MoonrakerClient> m_client;
+    std::unique_ptr<helix::IMoonrakerClient> m_client;
     std::unique_ptr<MoonrakerAPI> m_api;
 
     // Thread-safe notification queue

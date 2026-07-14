@@ -13,7 +13,7 @@
 namespace helix {
 class PrinterState;
 }
-class MoonrakerAPI;
+class IMoonrakerAPI;
 
 namespace helix::led {
 
@@ -53,7 +53,7 @@ class LedControlOverlay : public OverlayBase {
     void on_deactivate() override;
     void cleanup() override;
 
-    void set_api(MoonrakerAPI* api) {
+    void set_api(IMoonrakerAPI* api) {
         api_ = api;
     }
 
@@ -111,7 +111,7 @@ class LedControlOverlay : public OverlayBase {
 
     // Dependencies
     helix::PrinterState& printer_state_;
-    MoonrakerAPI* api_ = nullptr;
+    IMoonrakerAPI* api_ = nullptr;
 
     // Widget references (owned by LVGL, not us)
     // Section visibility handled declaratively via bind_flag_if_eq subjects

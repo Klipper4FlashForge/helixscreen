@@ -12,7 +12,7 @@
 
 #include "app_globals.h"
 #include "i_moonraker_client.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "static_panel_registry.h"
 #include "static_subject_registry.h"
 
@@ -82,7 +82,7 @@ static void on_belt_tension_row_clicked(lv_event_t* e) {
 
         // Set API references before create
         auto* client = get_moonraker_client();
-        MoonrakerAPI* api = get_moonraker_api();
+        IMoonrakerAPI* api = get_moonraker_api();
         panel.set_api(client, api);
 
         lv_obj_t* screen = lv_display_get_screen_active(nullptr);
@@ -298,7 +298,7 @@ void BeltTensionPanel::set_view_state(ViewState state) {
 // SHOW / LIFECYCLE
 // ============================================================================
 
-void BeltTensionPanel::set_api(helix::IMoonrakerClient* client, MoonrakerAPI* api) {
+void BeltTensionPanel::set_api(helix::IMoonrakerClient* client, IMoonrakerAPI* api) {
     client_ = client;
     api_ = api;
 

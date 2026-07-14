@@ -21,7 +21,7 @@
 #include "ui/temperature_observer_bundle.h"
 
 // Forward declaration
-class MoonrakerAPI;
+class IMoonrakerAPI;
 
 #include <functional>
 #include <memory>
@@ -47,9 +47,9 @@ class PrintStatusPanel : public OverlayBase {
      * @brief Construct PrintStatusPanel with injected dependencies
      *
      * @param printer_state Reference to helix::PrinterState
-     * @param api Pointer to MoonrakerAPI (for pause/cancel commands)
+     * @param api Pointer to IMoonrakerAPI (for pause/cancel commands)
      */
-    PrintStatusPanel(helix::PrinterState& printer_state, MoonrakerAPI* api);
+    PrintStatusPanel(helix::PrinterState& printer_state, IMoonrakerAPI* api);
 
     ~PrintStatusPanel() override;
 
@@ -164,10 +164,10 @@ class PrintStatusPanel : public OverlayBase {
     }
 
     /**
-     * @brief Update MoonrakerAPI pointer
+     * @brief Update IMoonrakerAPI pointer
      * @param api New API pointer (may be nullptr)
      */
-    void set_api(MoonrakerAPI* api) {
+    void set_api(IMoonrakerAPI* api) {
         api_ = api;
         if (exclude_manager_) {
             exclude_manager_->set_api(api);
@@ -287,7 +287,7 @@ class PrintStatusPanel : public OverlayBase {
     //
 
     helix::PrinterState& printer_state_;
-    MoonrakerAPI* api_;
+    IMoonrakerAPI* api_;
     lv_obj_t* parent_screen_ = nullptr;
 
     //

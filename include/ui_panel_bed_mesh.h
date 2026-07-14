@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 
-class MoonrakerAPI;
+class IMoonrakerAPI;
 
 /**
  * @brief Bed mesh visualization panel with 3D renderer
@@ -101,7 +101,7 @@ class BedMeshPanel : public OverlayBase {
     void start_calibration_probing();
 
   private:
-    void launch_calibration(MoonrakerAPI* api, int expected_probes, int probe_samples = 1);
+    void launch_calibration(IMoonrakerAPI* api, int expected_probes, int probe_samples = 1);
     // ========== Subject Manager (RAII cleanup) ==========
     SubjectManager subjects_;
 

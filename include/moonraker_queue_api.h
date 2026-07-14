@@ -20,7 +20,7 @@
 
 // Forward declarations
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 } // namespace helix
 
 /**
@@ -48,7 +48,7 @@ class MoonrakerQueueAPI : public IQueueAPI {
      *
      * @param client MoonrakerClient instance (must remain valid during API lifetime)
      */
-    explicit MoonrakerQueueAPI(helix::MoonrakerClient& client);
+    explicit MoonrakerQueueAPI(helix::IMoonrakerClient& client);
     virtual ~MoonrakerQueueAPI() = default;
 
     /**
@@ -96,5 +96,5 @@ class MoonrakerQueueAPI : public IQueueAPI {
                      ErrorCallback on_error) override;
 
   protected:
-    helix::MoonrakerClient& client_;
+    helix::IMoonrakerClient& client_;
 };

@@ -6,7 +6,7 @@
 #include "ui_observer_guard.h"
 
 #include "lvgl.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "printer_state.h"
 #include "subject_managed_panel.h"
 
@@ -71,9 +71,9 @@ class EmergencyStopOverlay {
      * and API for operation.
      *
      * @param printer_state Reference to helix::PrinterState for print job state
-     * @param api Pointer to MoonrakerAPI for emergency_stop() calls
+     * @param api Pointer to IMoonrakerAPI for emergency_stop() calls
      */
-    void init(helix::PrinterState& printer_state, MoonrakerAPI* api);
+    void init(helix::PrinterState& printer_state, IMoonrakerAPI* api);
 
     /**
      * @brief Initialize subjects for XML binding
@@ -172,7 +172,7 @@ class EmergencyStopOverlay {
 
     // Dependencies (set via init())
     helix::PrinterState* printer_state_ = nullptr;
-    MoonrakerAPI* api_ = nullptr;
+    IMoonrakerAPI* api_ = nullptr;
 
     // Confirmation requirement (set via set_require_confirmation())
     bool require_confirmation_ = false;

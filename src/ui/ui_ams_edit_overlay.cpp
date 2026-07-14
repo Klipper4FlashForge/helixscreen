@@ -29,7 +29,7 @@
 #include "ui_overlay_qr_scanner.h"
 #include "ui_toast_manager.h"
 
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "printer_state.h"
 #include "spoolman_slot_saver.h"
 #include "spoolman_types.h"
@@ -52,7 +52,7 @@ bool AmsEditOverlay::callbacks_registered_ = false;
 // Fire-and-forget: notify Moonraker of the active spool so other clients
 // (Mainsail, Fluidd) see the change and filament tracking works.
 // Pass 0 to clear the active spool (unlink).
-static void sync_active_spool(MoonrakerAPI* api, int spool_id) {
+static void sync_active_spool(IMoonrakerAPI* api, int spool_id) {
     spdlog::info("[AmsEditOverlay] Syncing active spool to {} on server", spool_id);
     api->spoolman().set_active_spool(
         spool_id,
@@ -101,7 +101,7 @@ lv_obj_t* AmsEditOverlay::find_widget(const char* name) const {
 // ============================================================================
 
 bool AmsEditOverlay::show_for_slot(lv_obj_t* parent, int slot_index, const SlotInfo& initial_info,
-                                   MoonrakerAPI* api, CompletionCallback on_complete,
+                                   IMoonrakerAPI* api, CompletionCallback on_complete,
                                    bool open_on_picker) {
     // A previous widget tree may have died with its screen (display rebuild,
     // test teardown) without the destroy-on-close path running — drop the

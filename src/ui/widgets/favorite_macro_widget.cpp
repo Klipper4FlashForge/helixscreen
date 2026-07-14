@@ -17,7 +17,7 @@
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "macro_executor.h"
 #include "macro_param_cache.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "panel_widget_config.h"
 #include "panel_widget_manager.h"
 #include "panel_widget_registry.h"
@@ -63,7 +63,7 @@ helix::MacroParamModal& get_shared_param_modal() {
 // destroyed mid-modal without UAF — none of the callback paths touch `this`.
 struct MacroExecCtx {
     std::string macro_name;
-    MoonrakerAPI* api;
+    IMoonrakerAPI* api;
     lv_obj_t* parent_screen;
 };
 
@@ -79,7 +79,7 @@ void run_macro_after_confirm(MacroExecCtx ctx) {
     case helix::MacroParamKnowledge::KNOWN_PARAMS:
         if (ctx.parent_screen) {
             std::string name = ctx.macro_name;
-            MoonrakerAPI* api = ctx.api;
+            IMoonrakerAPI* api = ctx.api;
             get_shared_param_modal().show_for_macro(
                 ctx.parent_screen, ctx.macro_name, cached.params,
                 [api, name](const helix::MacroParamResult& result) {
@@ -90,7 +90,7 @@ void run_macro_after_confirm(MacroExecCtx ctx) {
     case helix::MacroParamKnowledge::UNKNOWN:
         if (ctx.parent_screen) {
             std::string name = ctx.macro_name;
-            MoonrakerAPI* api = ctx.api;
+            IMoonrakerAPI* api = ctx.api;
             get_shared_param_modal().show_for_unknown_params(
                 ctx.parent_screen, ctx.macro_name,
                 [api, name](const helix::MacroParamResult& result) {
@@ -266,7 +266,7 @@ void FavoriteMacroWidget::open_config_modal() {
     config_modal_->show(parent_screen_);
 }
 
-MoonrakerAPI* FavoriteMacroWidget::get_api() const {
+IMoonrakerAPI* FavoriteMacroWidget::get_api() const {
     return get_moonraker_api();
 }
 
@@ -320,7 +320,7 @@ void FavoriteMacroWidget::save_config() {
 }
 
 void FavoriteMacroWidget::fetch_and_execute() {
-    MoonrakerAPI* api = get_api();
+    IMoonrakerAPI* api = get_api();
     if (!api) {
         spdlog::warn("[FavoriteMacroWidget] No API available");
         return;

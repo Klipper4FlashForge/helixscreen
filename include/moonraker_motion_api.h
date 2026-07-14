@@ -22,7 +22,7 @@
 
 // Forward declarations
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 class PrinterState;
 } // namespace helix
 
@@ -58,7 +58,7 @@ class MoonrakerMotionAPI : public IMotionAPI {
      *              consulted by the homing guard to refuse G28 while printing
      * @param safety_limits Reference to safety limits (must remain valid during API lifetime)
      */
-    MoonrakerMotionAPI(helix::MoonrakerClient& client, helix::PrinterState& state,
+    MoonrakerMotionAPI(helix::IMoonrakerClient& client, helix::PrinterState& state,
                        const SafetyLimits& safety_limits);
     virtual ~MoonrakerMotionAPI() = default;
 
@@ -101,7 +101,7 @@ class MoonrakerMotionAPI : public IMotionAPI {
                           ErrorCallback on_error) override;
 
   protected:
-    helix::MoonrakerClient& client_;
+    helix::IMoonrakerClient& client_;
     helix::PrinterState& state_;
     const SafetyLimits& safety_limits_;
 

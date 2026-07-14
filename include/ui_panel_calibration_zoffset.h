@@ -12,7 +12,7 @@
 
 #include <string>
 
-class MoonrakerAPI;
+class IMoonrakerAPI;
 namespace helix {
 class PrinterState;
 }
@@ -124,11 +124,11 @@ class ZOffsetCalibrationPanel : public OverlayBase {
     void show();
 
     /**
-     * @brief Set the MoonrakerAPI for G-code commands
+     * @brief Set the IMoonrakerAPI for G-code commands
      *
-     * @param api MoonrakerAPI for sending commands
+     * @param api IMoonrakerAPI for sending commands
      */
-    void set_api(MoonrakerAPI* api) {
+    void set_api(IMoonrakerAPI* api) {
         api_ = api;
     }
 
@@ -166,7 +166,7 @@ class ZOffsetCalibrationPanel : public OverlayBase {
     // API reference
     // Note: overlay_root_ inherited from OverlayBase
     lv_obj_t* parent_screen_ = nullptr;
-    MoonrakerAPI* api_ = nullptr;
+    IMoonrakerAPI* api_ = nullptr;
 
     // State management
     State state_ = State::IDLE;

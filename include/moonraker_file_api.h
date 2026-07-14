@@ -25,7 +25,7 @@
 
 // Forward declarations
 namespace helix {
-class MoonrakerClient;
+class IMoonrakerClient;
 } // namespace helix
 
 /**
@@ -78,7 +78,7 @@ class MoonrakerFileAPI : public IFilesAPI {
      *
      * @param client MoonrakerClient instance (must remain valid during API lifetime)
      */
-    explicit MoonrakerFileAPI(helix::MoonrakerClient& client);
+    explicit MoonrakerFileAPI(helix::IMoonrakerClient& client);
     virtual ~MoonrakerFileAPI() = default;
 
     // ========================================================================
@@ -203,7 +203,7 @@ class MoonrakerFileAPI : public IFilesAPI {
                           ErrorCallback on_error) override;
 
   protected:
-    helix::MoonrakerClient& client_;
+    helix::IMoonrakerClient& client_;
 
     /**
      * @brief Parse file list response from server.files.list

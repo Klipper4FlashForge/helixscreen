@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "thumbnail_load_context.h"
 #include "thumbnail_processor.h"
 
@@ -44,7 +44,7 @@
  *     });
  * ```
  *
- * @see MoonrakerAPI::download_thumbnail
+ * @see IMoonrakerAPI::download_thumbnail
  */
 class ThumbnailCache {
   public:
@@ -146,14 +146,14 @@ class ThumbnailCache {
      * 2. Downloads from Moonraker if not cached
      * 3. Calls success callback with LVGL-ready path
      *
-     * @param api MoonrakerAPI instance for downloading
+     * @param api IMoonrakerAPI instance for downloading
      * @param relative_path Moonraker relative path (e.g., ".thumbnails/file.png")
      * @param on_success Called with LVGL path on success (may be called synchronously if cached)
      * @param on_error Called with error message on failure
      *
      * @note Callbacks may be invoked from background thread - use ui_async_call_safe for UI updates
      */
-    void fetch(MoonrakerAPI* api, const std::string& relative_path, SuccessCallback on_success,
+    void fetch(IMoonrakerAPI* api, const std::string& relative_path, SuccessCallback on_success,
                ErrorCallback on_error);
 
     /**
@@ -169,7 +169,7 @@ class ThumbnailCache {
      * 3. Download PNG if needed, then pre-scale
      * 4. Return .bin path on success
      *
-     * @param api MoonrakerAPI instance for downloading
+     * @param api IMoonrakerAPI instance for downloading
      * @param relative_path Moonraker relative path (e.g., ".thumbnails/file.png")
      * @param target Target dimensions for pre-scaling (from
      * ThumbnailProcessor::get_target_for_display())
@@ -182,7 +182,7 @@ class ThumbnailCache {
      * @note Falls back to PNG on pre-scaling failure - display still works, just slower
      * @see docs/THUMBNAIL_OPTIMIZATION_PLAN.md
      */
-    void fetch_optimized(MoonrakerAPI* api, const std::string& relative_path,
+    void fetch_optimized(IMoonrakerAPI* api, const std::string& relative_path,
                          const helix::ThumbnailTarget& target, SuccessCallback on_success,
                          ErrorCallback on_error, time_t source_modified = 0);
 
@@ -225,7 +225,7 @@ class ThumbnailCache {
      * only be invoked if the caller is still alive and the generation matches.
      * This eliminates the need for manual validity checks in each callback.
      *
-     * @param api MoonrakerAPI instance for downloading
+     * @param api IMoonrakerAPI instance for downloading
      * @param relative_path Moonraker relative path (e.g., ".thumbnails/file.png")
      * @param ctx Async safety context (created via ThumbnailLoadContext::create())
      * @param on_success Called with LVGL path on success (only if ctx.is_valid())
@@ -234,7 +234,7 @@ class ThumbnailCache {
      * @note Callbacks may be invoked from background thread - use ui_async_call_safe for UI updates
      * @see ThumbnailLoadContext::create
      */
-    void fetch_for_detail_view(MoonrakerAPI* api, const std::string& relative_path,
+    void fetch_for_detail_view(IMoonrakerAPI* api, const std::string& relative_path,
                                ThumbnailLoadContext ctx, SuccessCallback on_success,
                                ErrorCallback on_error = nullptr);
 
@@ -252,7 +252,7 @@ class ThumbnailCache {
      * only be invoked if the caller is still alive and the generation matches.
      * This eliminates the need for manual validity checks in each callback.
      *
-     * @param api MoonrakerAPI instance for downloading
+     * @param api IMoonrakerAPI instance for downloading
      * @param relative_path Moonraker relative path (e.g., ".thumbnails/file.png")
      * @param ctx Async safety context (created via ThumbnailLoadContext::create())
      * @param on_success Called with LVGL path on success (only if ctx.is_valid())
@@ -262,7 +262,7 @@ class ThumbnailCache {
      * @note Callbacks may be invoked from background thread - use ui_async_call_safe for UI updates
      * @see ThumbnailLoadContext::create
      */
-    void fetch_for_card_view(MoonrakerAPI* api, const std::string& relative_path,
+    void fetch_for_card_view(IMoonrakerAPI* api, const std::string& relative_path,
                              ThumbnailLoadContext ctx, SuccessCallback on_success,
                              ErrorCallback on_error = nullptr, time_t source_modified = 0);
 

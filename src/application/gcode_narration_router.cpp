@@ -21,7 +21,7 @@ constexpr const char* kNotifyHandlerName = "gcode_narration_router";
 
 } // namespace
 
-GcodeNarrationRouter::GcodeNarrationRouter(MoonrakerAPI* api, IMoonrakerClient* client)
+GcodeNarrationRouter::GcodeNarrationRouter(IMoonrakerAPI* api, IMoonrakerClient* client)
     : api_(api), client_(client) {
     if (!client_) {
         spdlog::warn("[GcodeNarrationRouter] Null client — handler not registered");

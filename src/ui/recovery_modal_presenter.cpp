@@ -10,7 +10,7 @@
 #include "action_prompt_manager.h"
 #include "error_event.h"
 #include "lvgl.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "moonraker_error.h"
 #include "moonraker_types.h"
 
@@ -43,7 +43,7 @@ const char* modal_title_for(const helix::ErrorEvent& e) {
 
 namespace helix::ui {
 
-RecoveryModalPresenter::RecoveryModalPresenter(MoonrakerAPI* api) : api_(api) {}
+RecoveryModalPresenter::RecoveryModalPresenter(IMoonrakerAPI* api) : api_(api) {}
 
 bool RecoveryModalPresenter::is_visible() const {
     return modal_ && modal_->is_visible();
@@ -90,7 +90,7 @@ void RecoveryModalPresenter::present(const helix::ErrorEvent& e) {
                         ToastSeverity::ERROR, ("Recovery failed: " + err.user_message()).c_str(),
                         6000);
                 },
-                MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+                IMoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
         });
     }
 

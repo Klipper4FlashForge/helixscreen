@@ -5,7 +5,7 @@
 
 #include "async_lifetime_guard.h"
 #include "lvgl.h"
-#include "moonraker_api.h"
+#include "i_moonraker_api.h"
 #include "moonraker_types.h"
 #include "overlay_base.h"
 #include "thumbnail_cache.h"
@@ -21,7 +21,7 @@ struct TimelapseCardDimensions {
 
 class TimelapseVideosOverlay : public OverlayBase {
   public:
-    explicit TimelapseVideosOverlay(MoonrakerAPI* api);
+    explicit TimelapseVideosOverlay(IMoonrakerAPI* api);
 
     void init_subjects() override;
     lv_obj_t* create(lv_obj_t* parent) override;
@@ -34,7 +34,7 @@ class TimelapseVideosOverlay : public OverlayBase {
     void on_deactivate() override;
     void cleanup() override;
 
-    void set_api(MoonrakerAPI* api) {
+    void set_api(IMoonrakerAPI* api) {
         api_ = api;
     }
 
@@ -66,7 +66,7 @@ class TimelapseVideosOverlay : public OverlayBase {
     static void on_delete_confirmed(lv_event_t* e);
     static void on_delete_cancelled(lv_event_t* e);
 
-    MoonrakerAPI* api_;
+    IMoonrakerAPI* api_;
     std::vector<VideoEntry> videos_;
     bool can_play_ = false;
     std::string player_command_;
@@ -90,5 +90,5 @@ class TimelapseVideosOverlay : public OverlayBase {
 };
 
 TimelapseVideosOverlay& get_global_timelapse_videos();
-void init_global_timelapse_videos(MoonrakerAPI* api);
+void init_global_timelapse_videos(IMoonrakerAPI* api);
 void open_timelapse_videos();

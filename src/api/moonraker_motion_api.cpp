@@ -95,7 +95,7 @@ std::string annotate_gcode(const std::string& gcode) {
 // MoonrakerMotionAPI Implementation
 // ============================================================================
 
-MoonrakerMotionAPI::MoonrakerMotionAPI(helix::MoonrakerClient& client, helix::PrinterState& state,
+MoonrakerMotionAPI::MoonrakerMotionAPI(helix::IMoonrakerClient& client, helix::PrinterState& state,
                                        const SafetyLimits& safety_limits)
     : client_(client), state_(state), safety_limits_(safety_limits) {}
 

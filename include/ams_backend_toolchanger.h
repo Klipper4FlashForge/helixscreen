@@ -48,13 +48,13 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
     /**
      * @brief Construct tool changer backend
      *
-     * @param api Pointer to MoonrakerAPI (for sending G-code commands)
+     * @param api Pointer to IMoonrakerAPI (for sending G-code commands)
      * @param client Pointer to helix::MoonrakerClient (for subscribing to updates)
      *
      * @note Pointers must remain valid for the lifetime of this backend.
      * @note Call set_discovered_tools() before start() to set tool names.
      */
-    AmsBackendToolChanger(MoonrakerAPI* api, helix::IMoonrakerClient* client);
+    AmsBackendToolChanger(IMoonrakerAPI* api, helix::IMoonrakerClient* client);
 
     /**
      * @brief Set discovered tool names from PrinterCapabilities
