@@ -648,7 +648,7 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
      *
      * @param status Raw printer status object
      */
-    void dispatch_status_update(const json& status);
+    void dispatch_status_update(const json& status) override;
 
     /**
      * @brief Invoke an on_connected-style callback with exception safety.

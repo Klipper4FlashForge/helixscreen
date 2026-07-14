@@ -152,6 +152,13 @@ class IMoonrakerClient {
     virtual bool unregister_method_callback(const std::string& method,
                                             const std::string& handler_name) = 0;
 
+    /// @brief Dispatch printer status to all registered notify callbacks
+    ///
+    /// Wraps raw status data (e.g., from a subscription response) into a
+    /// notify_status_update notification format and dispatches to callbacks.
+    /// Used for both initial subscription state and incremental updates.
+    virtual void dispatch_status_update(const json& status) = 0;
+
     // ========================================================================
     // Connection State & Observers
     // ========================================================================
@@ -226,5 +233,12 @@ class IMoonrakerClient {
     /// @brief Get lifetime guard for safe destructor-aware captures
     virtual std::weak_ptr<bool> lifetime_weak() const = 0;
 };
+
+/**
+ * Platform-provided client factory for embedded targets. NOT defined in the
+ * desktop build — the ESP32 firmware tree implements it over
+ * esp_websocket_client (MoonrakerManager calls it when ESP_PLATFORM is defined).
+ */
+std::unique_ptr<IMoonrakerClient> create_platform_moonraker_client();
 
 } // namespace helix

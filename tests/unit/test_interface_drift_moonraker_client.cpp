@@ -33,6 +33,8 @@ static_assert(std::is_same_v<decltype(&helix::IMoonrakerClient::register_method_
                                                                std::function<void(const json&)>)>);
 static_assert(std::is_same_v<decltype(&helix::IMoonrakerClient::unregister_method_callback),
                              bool (helix::IMoonrakerClient::*)(const std::string&, const std::string&)>);
+static_assert(std::is_same_v<decltype(&helix::IMoonrakerClient::dispatch_status_update),
+                             void (helix::IMoonrakerClient::*)(const json&)>);
 static_assert(std::is_same_v<decltype(&helix::IMoonrakerClient::get_connection_state),
                              helix::ConnectionState (helix::IMoonrakerClient::*)() const>);
 static_assert(std::is_same_v<decltype(&helix::IMoonrakerClient::add_connected_observer),

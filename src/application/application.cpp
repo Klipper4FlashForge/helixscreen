@@ -2465,7 +2465,7 @@ void Application::reapply_hardware_roles() {
 }
 
 void Application::setup_discovery_callbacks() {
-    MoonrakerClient* client = m_moonraker->client();
+    IMoonrakerClient* client = m_moonraker->client();
     IMoonrakerAPI* api = m_moonraker->api();
 
     Application* app = this;
@@ -3077,7 +3077,7 @@ lv_obj_t* Application::create_overlay_panel(lv_obj_t* screen, const char* compon
 }
 
 void Application::init_action_prompt() {
-    MoonrakerClient* client = m_moonraker->client();
+    IMoonrakerClient* client = m_moonraker->client();
     IMoonrakerAPI* api = m_moonraker->api();
 
     if (!client) {
