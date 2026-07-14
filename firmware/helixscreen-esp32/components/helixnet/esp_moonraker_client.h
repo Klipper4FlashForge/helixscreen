@@ -70,6 +70,11 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     PrinterDiscovery hardware() const override;
     void parse_objects(const json& objects) override;
     void clear_discovery_cache() override;
+    void set_on_hardware_discovered(
+        std::function<void(const helix::PrinterDiscovery&)> cb) override;
+    void set_on_discovery_complete(
+        std::function<void(const helix::PrinterDiscovery&, const json& initial_status)> cb) override;
+    void set_bed_mesh_callback(std::function<void(const json&)> callback) override;
 
     // --- Subscriptions & method callbacks ---
     SubscriptionId register_notify_update(std::function<void(const json&)> cb) override;
@@ -78,6 +83,7 @@ class EspMoonrakerClient final : public IMoonrakerClient {
                                   std::function<void(const json&)> cb) override;
     bool unregister_method_callback(const std::string& method,
                                     const std::string& handler_name) override;
+    void dispatch_status_update(const json& status) override;
 
     // --- Connection state & observers ---
     ConnectionState get_connection_state() const override;
@@ -140,6 +146,10 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     void on_ws_disconnected();
     void on_ws_data(const esp_websocket_event_data_t* data);
     void dispatch_message(const char* buf, size_t len);
+    // Fan a notify_status_update-shaped message out to the notify + method
+    // callback maps (copy-then-invoke) and the bed-mesh callback. Shared by the
+    // WS dispatch path and dispatch_status_update().
+    void dispatch_notification(const json& msg);
 
     // esp_timer trampoline → instance housekeeping (timeouts + FAILED).
     static void housekeeping_trampoline(void* arg);
@@ -209,6 +219,11 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     std::atomic<uint64_t> next_subscription_id_{0};
     std::map<std::string, std::map<std::string, std::function<void(const json&)>>>
         method_callbacks_;
+    // Discovery / bed-mesh callbacks (guarded by callbacks_mutex_). In v1 these
+    // pair with the discover_printer stub; Plan 4 drives them from real discovery.
+    std::function<void(const helix::PrinterDiscovery&)> on_hardware_discovered_;
+    std::function<void(const helix::PrinterDiscovery&, const json&)> on_discovery_complete_;
+    std::function<void(const json&)> bed_mesh_callback_;
 
     std::mutex observers_mutex_;
     std::map<std::string, std::function<void()>> connected_observers_;

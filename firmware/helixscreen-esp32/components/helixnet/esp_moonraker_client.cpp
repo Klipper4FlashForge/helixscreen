@@ -433,35 +433,59 @@ void EspMoonrakerClient::dispatch_message(const char* buf, size_t len) {
         }
     }
 
-    // Notification (has "method") → notify + method callback maps.
+    // Notification (has "method") → notify + method + bed-mesh callbacks.
     if (msg.contains("method") && msg["method"].is_string()) {
-        std::string method = msg["method"].get<std::string>();
-        std::vector<std::function<void(const json&)>> to_invoke;
-        {
-            std::lock_guard<std::mutex> lock(callbacks_mutex_);
-            if (method == "notify_status_update" || method == "notify_filelist_changed") {
-                to_invoke.reserve(notify_callbacks_.size());
-                for (const auto& [id, cb] : notify_callbacks_) {
-                    to_invoke.push_back(cb);
-                }
-            }
-            auto it = method_callbacks_.find(method);
-            if (it != method_callbacks_.end()) {
-                for (const auto& [handler, cb] : it->second) {
-                    to_invoke.push_back(cb);
-                }
+        dispatch_notification(msg);
+    }
+}
+
+void EspMoonrakerClient::dispatch_notification(const json& msg) {
+    if (!msg.contains("method") || !msg["method"].is_string()) {
+        return;
+    }
+    std::string method = msg["method"].get<std::string>();
+
+    std::vector<std::function<void(const json&)>> to_invoke;
+    std::function<void(const json&)> bed_mesh_cb;
+    {
+        std::lock_guard<std::mutex> lock(callbacks_mutex_);
+        if (method == "notify_status_update" || method == "notify_filelist_changed") {
+            to_invoke.reserve(notify_callbacks_.size());
+            for (const auto& [id, cb] : notify_callbacks_) {
+                to_invoke.push_back(cb);
             }
         }
-        for (auto& cb : to_invoke) {
-            if (!cb) {
-                continue;
+        auto it = method_callbacks_.find(method);
+        if (it != method_callbacks_.end()) {
+            for (const auto& [handler, cb] : it->second) {
+                to_invoke.push_back(cb);
             }
+        }
+        bed_mesh_cb = bed_mesh_callback_;
+    }
+
+    // Extract bed mesh before user callbacks (mirrors desktop ordering): a
+    // notify_status_update carries params[0].bed_mesh on the containing object.
+    if (bed_mesh_cb && method == "notify_status_update" && msg.contains("params") &&
+        msg["params"].is_array() && !msg["params"].empty()) {
+        const json& params0 = msg["params"][0];
+        if (params0.contains("bed_mesh") && params0["bed_mesh"].is_object()) {
             try {
-                cb(msg);
-            } catch (const std::exception& e) {
-                ESP_LOGE(TAG, "callback for '%s' threw: %s", method.c_str(), e.what());
+                bed_mesh_cb(params0["bed_mesh"]);
             } catch (...) {
             }
+        }
+    }
+
+    for (auto& cb : to_invoke) {
+        if (!cb) {
+            continue;
+        }
+        try {
+            cb(msg);
+        } catch (const std::exception& e) {
+            ESP_LOGE(TAG, "callback for '%s' threw: %s", method.c_str(), e.what());
+        } catch (...) {
         }
     }
 }
@@ -758,7 +782,28 @@ void EspMoonrakerClient::discover_printer(std::function<void()> on_complete,
     }
     send_jsonrpc(
         "server.info", json(),
-        [on_complete](const json&) {
+        [this, on_complete](const json& response) {
+            // v1 stub: no object parsing yet (Plan 4), but honor the registered
+            // discovery callbacks so consumers wire the same way as on desktop.
+            std::function<void(const helix::PrinterDiscovery&)> hw_cb;
+            std::function<void(const helix::PrinterDiscovery&, const json&)> done_cb;
+            {
+                std::lock_guard<std::mutex> lock(callbacks_mutex_);
+                hw_cb = on_hardware_discovered_;
+                done_cb = on_discovery_complete_;
+            }
+            if (hw_cb) {
+                try {
+                    hw_cb(hardware_);
+                } catch (...) {
+                }
+            }
+            if (done_cb) {
+                try {
+                    done_cb(hardware_, response);
+                } catch (...) {
+                }
+            }
             if (on_complete) {
                 on_complete();
             }
@@ -781,6 +826,23 @@ void EspMoonrakerClient::parse_objects(const json& /*objects*/) {
 
 void EspMoonrakerClient::clear_discovery_cache() {
     spdlog::debug("[helixnet] clear_discovery_cache: no-op in v1 (Plan 4)");
+}
+
+void EspMoonrakerClient::set_on_hardware_discovered(
+    std::function<void(const helix::PrinterDiscovery&)> cb) {
+    std::lock_guard<std::mutex> lock(callbacks_mutex_);
+    on_hardware_discovered_ = std::move(cb);
+}
+
+void EspMoonrakerClient::set_on_discovery_complete(
+    std::function<void(const helix::PrinterDiscovery&, const json&)> cb) {
+    std::lock_guard<std::mutex> lock(callbacks_mutex_);
+    on_discovery_complete_ = std::move(cb);
+}
+
+void EspMoonrakerClient::set_bed_mesh_callback(std::function<void(const json&)> callback) {
+    std::lock_guard<std::mutex> lock(callbacks_mutex_);
+    bed_mesh_callback_ = std::move(callback);
 }
 
 // ---------------------------------------------------------------------------
@@ -821,6 +883,15 @@ bool EspMoonrakerClient::unregister_method_callback(const std::string& method,
         method_callbacks_.erase(it);
     }
     return removed;
+}
+
+void EspMoonrakerClient::dispatch_status_update(const json& status) {
+    // Wrap raw status into the notify_status_update envelope and route it through
+    // the same fan-out an incoming WS notification would take. [status, eventtime].
+    json wrapped;
+    wrapped["method"] = "notify_status_update";
+    wrapped["params"] = json::array({status, 0.0});
+    dispatch_notification(wrapped);
 }
 
 // ---------------------------------------------------------------------------
