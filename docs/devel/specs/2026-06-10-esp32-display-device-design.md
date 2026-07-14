@@ -99,6 +99,16 @@ Deliverable: written report in `docs/devel/` with go/no-go recommendation and th
 
 *(Revised 2026-07-13: the original yellow gate included "steer BTT to ESP32-P4-class hardware." That option is off the table — BTT's goal is broader appeal for their existing S3 stock (K-Touch in hand, hardware recon verified in `docs/devel/printer-research/BTT_K_TOUCH_HARDWARE.md`), not a new panel. S3 + 8MB PSRAM + 16MB flash is the fixed target; feature gates are the expected design, not a fallback.)*
 
+**⚑ PHASE 0 RESULT (2026-07-13): 🟡 YELLOW — Phase 2 proceeds on S3 with
+explicit feature gates.** Full report + measurements + the gate list:
+`docs/devel/ESP32_NATIVE_AUDIT.md`. Highlights: LVGL + helix-xml unmodified,
+app core ~90% shim-portable (one real seam: libhv WS/HTTP), full 6-panel
+shell renders on the K-Touch, 26-30 FPS realistic / 5 FPS full-screen worst
+case, CJK viable via compiled per-tier XIP subsets (~0.9MB flash, zero RAM),
+extrapolated product image ~7MB (single-slot fits; OTA A/B needs the
+documented diet). **Communicating this result to BTT is Preston's
+conversation — the audit report is the input, not the message.**
+
 ### Phase 2 porting seams (for the audit to validate)
 
 - Network: ESP impl of `IMoonrakerClient`/`IMoonrakerAPI` over `esp_websocket_client`/`esp_http_client`; libhv stays home.

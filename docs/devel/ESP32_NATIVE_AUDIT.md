@@ -5,6 +5,108 @@
 **Toolchain:** ESP-IDF v5.5 (release branch), `-Os`, C++ exceptions on
 **Constraint (2026-07-13):** S3 is the fixed target — no P4 escape hatch. BTT wants broader appeal for existing stock. Feature gates are the expected design.
 
+## Verdict: 🟡 YELLOW — proceed to Phase 2 on S3, with explicit feature gates
+
+Everything the near-parity thesis actually depended on survived contact with
+hardware: LVGL 9.5 and `lib/helix-xml` compile and run **unmodified**; the app
+core is ~90% shim-portable with exactly one real porting seam (libhv WS/HTTP);
+the full desktop shell (navbar + all six panels, real XML, real subject
+pipeline) boots and renders on the K-Touch with flat heap; CJK is affordable
+(compiled per-tier XIP subsets, zero RAM); and every render-integrity issue
+found was root-caused to something fixable (missing `lv_xml_init`, stride
+align, bounce buffers, heap-walk instrumentation) — none to the pipeline
+itself. What makes this yellow instead of green is arithmetic, not
+architecture: the audit image is 8.64MB against a ~6.5MB/slot OTA A/B budget
+(per-tier fonts recover ~1.7MB of a measured 2.8MB font payload; a product
+build lands ~7MB → single-slot fits, A/B needs the documented diet), and the
+full shell leaves ~3.3MB PSRAM for data features — enough for the status-UI
+mission, not for desktop-scale caches. Those are precisely the feature gates
+the yellow gate anticipated. No red findings.
+
+## Measurements
+
+| Metric | Value | Gate | Status |
+|---|---|---|---|
+| helix-xml compile | 42/42 clean, zero source changes | all | ✅ |
+| LVGL 9.5 compile (repo patches incl.) | all ~600 files clean | all | ✅ |
+| App-core sweep (pass 2, 468 files) | A:48 B:372 C:35 D:13 | D<20 | ✅ |
+| Slice image (-Os, RTTI+EH on, 486 srcs, 34 fonts) | 8.64MB (audit+experiments build: 8.79MB) | — | — |
+| Extrapolated product image | ~7MB (−1.7MB per-tier fonts, +WS/HTTP/WiFi port, +0.9MB CJK) | <6 / <9 | 🟡 |
+| PSRAM watermark (full 6-panel shell) | ~4.7MB used / 3.29MB free of 8MB | fits with headroom | 🟡 |
+| Internal SRAM low-water | 160KB free (`ALWAYSINTERNAL=0`; 63KB at default) | informational | — |
+| CJK strategy | compiled per-tier XIP subsets (5 faces, ~0.9MB flash, zero RAM) | workable | ✅ |
+| Render FPS, realistic case (live animation in full shell, partial redraws) | 26-30 FPS @ 12-15ms render, 3-6% CPU (perf-monitor overlay, user-read) | ~25+ | ✅ |
+| Render FPS, worst case (forced full-screen invalidation, 100× `lv_refr_now`) | 5.0 FPS (200ms/frame) — avoid continuous full-screen animation | informational | — |
+| C++ exceptions + RTTI | on in every measurement above (never A/B'd off) | informational | — |
+| Boot to rendered shell | ~81s (LittleFS XML + token scan; build-time token table planned) | informational | — |
+| Heap over steady state | flat (all builds, 80s+ windows) | no leaks | ✅ |
+
+## What blocks what (bucket C and D detail)
+
+- **The one real seam:** `include/moonraker_client.h` → `hv/WebSocketClient.h`
+  transitively blocks 149 files (via `observer_factory.h`/`app_globals.h`).
+  Phase 2 grows the audit's skeletal `shim/hv_stub/` into an
+  `esp_websocket_client`/`esp_http_client` implementation behind the existing
+  `IMoonrakerClient`/`IMoonrakerAPI` interfaces — the mock-drift seams are the
+  porting seams, as designed.
+- **C bucket (35):** 23 RTTI (`typeid` via `panel_widget_manager.h`; already
+  flipped on with `CONFIG_COMPILER_CXX_RTTI=y`), 4 Xtensa `int32_t`=`long`
+  `std::min/max` mismatches (one-line casts), 8 misc POSIX one-liners.
+- **D bucket (13):** 8× `hv/requests.h` HTTP users (→ esp_http_client port),
+  2 BlueZ Bluetooth (gate off; NimBLE is a later option), `dlfcn`/`ucontext`/
+  `hlog` (gate off — plugin loading and crash-handler paths don't apply).
+
+## Recommended Phase 2 shape
+
+- **Keep LVGL + helix-xml unmodified** (lv_conf deltas from Task 1: color
+  depth 16, `LV_DRAW_BUF_STRIDE_ALIGN 1`, `LV_OS_PTHREAD`, `lv_xml_init()`
+  after `lv_init()`).
+- **Port surface = libhv only**, behind `IMoonrakerClient`/`IMoonrakerAPI`.
+- **Structural rules discovered on-device:** every app-touching task is
+  pthread-created (32KB+ stack if it touches XML); asset-root abstraction
+  (no cwd on ESP-IDF VFS); build-time token table (kills the 25-pass XML scan
+  and most of the 81s boot); heap telemetry O(1)-only while the display is
+  live; `ALWAYSINTERNAL=0` + explicit `heap_caps` internal allocs.
+- **Feature gates (the yellow list):** no camera, no 3D/2D gcode rendering
+  (already compile-gated: `HELIX_HAS_GCODE_VIEWER=0` / `HELIX_HAS_BED_MESH_3D=0`),
+  capped file lists + streamed JSON parsing, **no local temp-file
+  materialization** (gcode transforms printer-side or native-remap printers
+  only; debug bundles stream to socket; self-update = native `esp_ota` A/B),
+  per-tier fonts with compiled CJK subsets.
+- **RAM headroom lever if needed:** lazy panel lifecycle (create-on-navigate)
+  recovers most of the 0.97MB six-resident-panel cost.
+- **Partitioning:** start single-slot factory (+ recovery-lite) at ~7MB;
+  move to OTA A/B (2×6.5MB) once the image diet gets under 6.5MB.
+
+## Threats to validity
+
+- The slice runs **mock printer data** — no live Moonraker WebSocket traffic.
+  Real JSON churn (temp updates, file lists, AMS state) is the biggest
+  unmeasured RAM/CPU variable; it's also exactly what the streamed-JSON gate
+  exists to cap.
+- **Shim fidelity:** spdlog→esp_log and the hv stub compile the code but
+  don't exercise it; the 8 D-bucket HTTP files have never been compiled for
+  Xtensa. New blockers may surface during the real port.
+- **Boot time** (81s) reflects the audit's LittleFS layout and the known
+  pathological token scan; the build-time token table is designed but unbuilt.
+- **FPS**: the realistic-case number comes from a continuously-animating
+  element in the shell (partial redraws) — scrolling and touch-driven
+  full-panel churn are not profiled; GT911 touch is verified at probe level
+  but not wired into the audit firmware. The 5 FPS full-screen worst case
+  means transition animations need care (one-shot 200ms panel switches are
+  acceptable; sustained full-screen animation is not). Untested lever:
+  internal-RAM draw buffers were ruled out for the flicker bug but never
+  A/B'd for FPS — PSRAM traffic is ~3× per frame with both buffers and the
+  framebuffer in PSRAM.
+- Single device, bench power, no thermal soak.
+
+## Communicating the result
+
+**The BTT conversation is Preston's** — this report is the input, not the
+message. Suggested framing: the S3 K-Touch can run a real HelixScreen-family
+firmware (same XML engine, same declarative UI, same look) with a documented
+feature-gate list; it will not run the desktop feature set 1:1.
+
 ## Task 1 — helix-xml + LVGL compile/link/boot ✅ PASS (2026-07-13)
 
 `firmware/native-audit/` compiles the repo's **LVGL 9.5 submodule (with our patches) and `lib/helix-xml` completely unmodified**, via relative paths, against ESP-IDF. Verified end-to-end on a physical K-Touch: XML component with design-token consts, styled nested widgets, and live `bind_text`/`bind_value` subject bindings rendering at 800×480, visually confirmed stable and artifact-free.

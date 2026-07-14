@@ -327,12 +327,33 @@ static void cjk_experiment(void) {
     lv_obj_align(l2, LV_ALIGN_TOP_LEFT, 0, 36);
 }
 
+// Task 5 FPS gate: sustained full-screen redraw rate through the real
+// pipeline (full shell composited via 80-line PSRAM draw buffers +
+// esp_lcd draw_bitmap into the PSRAM framebuffer). lv_refr_now() renders
+// synchronously, so timing N forced full refreshes measures pure render
+// throughput with no task-loop sleep in the number. The LV_USE_PERF_MONITOR
+// overlay (bottom right) additionally shows live FPS/CPU during normal use.
+static void fps_benchmark(void) {
+    lv_display_t *disp = lv_display_get_default();
+    lv_obj_t *scr = lv_screen_active();
+    const int N = 100;
+    int64_t t0 = esp_timer_get_time();
+    for (int i = 0; i < N; i++) {
+        lv_obj_invalidate(scr);
+        lv_refr_now(disp);
+    }
+    int64_t t1 = esp_timer_get_time();
+    ESP_LOGI(TAG, "[fps] %d full-screen refreshes in %lldms = %.1f fps sustained",
+             N, (t1 - t0) / 1000, (double)N * 1000000.0 / (double)(t1 - t0));
+}
+
 static void *app_phase(void *arg) {
     (void)arg;
     audit_app_run();
     log_heap("app-slice-up");
     cjk_experiment();
     log_heap("post-cjk");
+    fps_benchmark();
 
     uint32_t n = 0;
     int64_t last_update = 0;
