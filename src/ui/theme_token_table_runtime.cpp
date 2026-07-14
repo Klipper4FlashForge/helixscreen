@@ -41,9 +41,11 @@ std::unordered_map<std::string, std::string> for_suffix(const char* element_type
             continue;
         }
         const size_t nlen = std::strlen(e.name);
-        // Same predicate as the runtime scanner: name must be strictly
-        // longer than the suffix and end with it; key is the stripped base.
-        if (nlen > slen && std::strcmp(e.name + nlen - slen, suffix) == 0) {
+        // Same predicate as the runtime scanner (ends_with_suffix): name must
+        // be at least as long as the suffix and end with it; key is the
+        // stripped base (empty when the name IS the suffix, matching the
+        // scanner).
+        if (nlen >= slen && std::strcmp(e.name + nlen - slen, suffix) == 0) {
             out[std::string(e.name, nlen - slen)] = e.value;
         }
     }

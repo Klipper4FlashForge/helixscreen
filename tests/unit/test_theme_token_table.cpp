@@ -13,6 +13,10 @@ static const char* kSuffixes[] = {"_light",  "_dark",  "_micro",  "_tiny",   "_s
                                   "_medium", "_large", "_xlarge", "_xxlarge"};
 
 TEST_CASE("token table matches runtime scan (full element maps)", "[theme][tokens]") {
+    // Fail loudly if HELIX_TOKEN_TABLE leaked into the test environment: with
+    // the table enabled, the "scanned" side below would hit the fast path too,
+    // making the parity check vacuous (table compared against itself).
+    REQUIRE_FALSE(helix::theme_tokens::enabled());
     for (const char* type : kTypes) {
         INFO("type=" << type << " — if this fails, run: make regen-tokens");
         auto scanned = theme_manager_parse_all_xml_for_element("ui_xml", type);
@@ -22,6 +26,10 @@ TEST_CASE("token table matches runtime scan (full element maps)", "[theme][token
 }
 
 TEST_CASE("token table matches runtime scan (suffix maps)", "[theme][tokens]") {
+    // Fail loudly if HELIX_TOKEN_TABLE leaked into the test environment: with
+    // the table enabled, the "scanned" side below would hit the fast path too,
+    // making the parity check vacuous (table compared against itself).
+    REQUIRE_FALSE(helix::theme_tokens::enabled());
     for (const char* type : kTypes) {
         for (const char* suffix : kSuffixes) {
             INFO("type=" << type << " suffix=" << suffix
