@@ -53,10 +53,13 @@ static size_t tokenize(const char * s, tok_t * out, size_t cap){
     return n;
 }
 
+#define LV_XML_EXPR_TEST_TOK_MAX 128
 size_t lv_xml_expr_tokenize_for_test(const char * src, lv_xml_expr_tok_kind_t * out, size_t cap){
-    tok_t buf[128]; size_t n = tokenize(src, buf, 128);
+    tok_t buf[LV_XML_EXPR_TEST_TOK_MAX];
+    size_t n = tokenize(src, buf, LV_XML_EXPR_TEST_TOK_MAX);
     size_t m = n < cap ? n : cap;
-    for(size_t i=0;i<m;i++) out[i]=buf[i].kind;
+    if (m > LV_XML_EXPR_TEST_TOK_MAX) m = LV_XML_EXPR_TEST_TOK_MAX;
+    for (size_t i = 0; i < m; i++) out[i] = buf[i].kind;
     return n;
 }
 #endif /* LV_USE_XML */
