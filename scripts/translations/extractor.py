@@ -33,6 +33,44 @@ from typing import Set, Dict, List, Tuple, Optional
 # placeholders (IPs, numerics, URLs) are dropped later by the skip patterns.
 TEXT_ATTRIBUTES = {"text", "label", "description", "title", "subtitle", "placeholder_tag"}
 
+# Inline element text: <text_muted>Foo</text_muted>. The C parser
+# (lib/helix-xml/src/xml/lv_xml.c) applies this as text= + translation_tag=,
+# so it is translatable by default. Matches an open tag (capturing its
+# attribute blob) followed immediately by a text run. Deliberately does not
+# require the matching close tag so text-before-child mixed content is caught.
+INLINE_TEXT_RE = re.compile(
+    r"<([A-Za-z_][\w-]*)((?:\s+[\w:.-]+=\"[^\"]*\")*)\s*>([^<]+)<"
+)
+
+_WS_RUN_RE = re.compile(r"[ \t\r\n]+")
+
+# Attributes whose presence makes the parser DROP inline text (attribute wins).
+_INLINE_CONFLICT_RE = re.compile(r'(?<![\w])(?:text|bind_text|translation_tag)="')
+
+# XML comments, matched non-greedily across lines. Comment prose regularly
+# contains angle-bracket examples (e.g. "<WidthSensorRole>(index))") that
+# INLINE_TEXT_RE would otherwise mistake for a real open-tag + text run.
+_XML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
+def _blank_xml_comments(content: str) -> str:
+    """Replace comment bodies with same-length filler (newlines kept) so
+    inline-text scanning ignores commented-out markup while match offsets
+    and line numbers still line up with the original file content."""
+    return _XML_COMMENT_RE.sub(
+        lambda m: "".join(c if c == "\n" else " " for c in m.group(0)), content
+    )
+
+
+def collapse_whitespace(text: str) -> str:
+    """Trim + collapse whitespace runs to single spaces.
+
+    MUST stay byte-identical to collapse_whitespace() in
+    lib/helix-xml/src/xml/lv_xml.c — the collapsed string is the translation
+    key on both sides.
+    """
+    return _WS_RUN_RE.sub(" ", text).strip(" ")
+
 # Patterns to skip
 VARIABLE_PATTERN = re.compile(r"\$\w+")  # $variable
 ICON_PATTERN = re.compile(r"^#icon_")  # #icon_xxx
@@ -294,6 +332,24 @@ def should_skip_text(text: str) -> bool:
     return False
 
 
+def _iter_inline_texts(content: str):
+    """Yield (collapsed_text, match_start) for translatable inline text runs.
+
+    Positions are relative to the original ``content`` (comments are blanked,
+    not removed, so offsets and line numbers stay valid for the caller)."""
+    scanned = _blank_xml_comments(content)
+    for match in INLINE_TEXT_RE.finditer(scanned):
+        attr_blob = match.group(2) or ""
+        if _INLINE_CONFLICT_RE.search(attr_blob):
+            continue
+        text = collapse_whitespace(_decode_xml_entities(match.group(3)))
+        if not text or text.startswith("$") or text.startswith("#"):
+            continue
+        if should_skip_text(text):
+            continue
+        yield text, match.start(3)
+
+
 def should_skip_cpp_text(text: str) -> bool:
     """Determine if C++ text should be skipped (not user-facing)."""
     if should_skip_text(text):
@@ -500,6 +556,10 @@ def extract_strings_from_xml(xml_path: Path) -> Set[str]:
             if not should_skip_text(decoded):
                 result.add(decoded)
 
+    # Inline element text (parser-synthesized text= + translation_tag=)
+    for text, _pos in _iter_inline_texts(content):
+        result.add(text)
+
     return result
 
 
@@ -580,6 +640,10 @@ def extract_strings_with_locations(xml_path: Path) -> Dict[str, List[Tuple[str, 
             if decoded not in result:
                 result[decoded] = []
             result[decoded].append((filename, line_num))
+
+    for text, pos in _iter_inline_texts(content):
+        line_num = content[:pos].count("\n") + 1
+        result.setdefault(text, []).append((filename, line_num))
 
     return result
 
