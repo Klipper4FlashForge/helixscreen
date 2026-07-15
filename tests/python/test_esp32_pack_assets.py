@@ -79,8 +79,12 @@ def _pack(tmp_path: Path, source_tree: Path) -> Path:
 
 def _build_source_tree(root: Path) -> dict[str, bytes]:
     """A small tree covering: nested dirs, plain text (compresses), a
-    deliberately incompressible binary blob, and a fake .png (must be
-    stored raw per the filter, verified by checking its comp_algo)."""
+    deliberately incompressible binary blob, a fake .png (must be stored raw
+    per the filter, verified by checking its comp_algo), and filename edge
+    cases (a space and non-ASCII characters in the name) that real
+    ui_xml/translations/*.xml and assets/images/printers/*.png filenames
+    never exercise but that a robust packer/reader round-trip should still
+    survive."""
     files = {
         "ui_xml/globals.xml": b"<globals>" + b"<entry/>" * 200 + b"</globals>",
         "ui_xml/translations/en.xml": "<translations><entry>Hello, world! 你好</entry></translations>".encode("utf-8"),
@@ -88,6 +92,8 @@ def _build_source_tree(root: Path) -> dict[str, bytes]:
         "assets/images/printers/voron-v2.png": os.urandom(4096),  # incompressible stand-in for real PNG bytes
         "assets/filaments.json": b'{"filaments": []}',
         "empty.xml": b"",
+        "assets/images/printers/creality k1 max.png": os.urandom(512),  # space in filename
+        "ui_xml/translations/ünïcode name.xml": "<translations/>".encode("utf-8"),  # non-ASCII filename
     }
     for rel, content in files.items():
         path = root / rel

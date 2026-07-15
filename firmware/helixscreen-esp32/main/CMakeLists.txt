@@ -11,10 +11,17 @@ idf_component_register(SRCS "app_main.c" "board_display.c" "lvgl_glue.c" "touch_
 # assembles (minified ui_xml in every shipped language, config JSON, printer
 # image renditions) by scripts/esp32_pack_assets.py. Both are explicit,
 # inspectable pre-steps — like the staging script itself, packing is
-# deliberately NOT something CMake shells out to, so configure fails loudly
-# with next-step instructions instead of silently flashing a stale or
-# zero-length image. `cfg` (settings) is unaffected — this partition swap
-# only touches `storage`.
+# deliberately NOT something CMake shells out to. Two build-time guards cover
+# the two ways the packed image can be wrong: the EXISTS check right below
+# only runs at CMake configure time and only catches it being MISSING; the
+# check_storage_asset_staleness custom target further down has no OUTPUT so
+# it re-runs on every `idf.py build` (not just reconfigure) and catches it
+# being STALE (image exists but ui_xml/assets/staging changed since the last
+# pack). Both fail loudly with next-step instructions instead of silently
+# flashing a missing, stale, or zero-length image. `cfg` (settings) is
+# unaffected — this partition swap only touches `storage`.
+set(REPO_ROOT ${CMAKE_CURRENT_LIST_DIR}/../../..)
+cmake_path(NORMAL_PATH REPO_ROOT)
 set(STORAGE_IMAGE ${CMAKE_BINARY_DIR}/storage_frogfs.bin)
 if(NOT EXISTS ${STORAGE_IMAGE})
     message(FATAL_ERROR
@@ -23,6 +30,28 @@ if(NOT EXISTS ${STORAGE_IMAGE})
         "'python3 <repo_root>/scripts/esp32_pack_assets.py' first (writes here by "
         "default), then re-run idf.py build.")
 endif()
+
+# Build-time staleness guard (see comment above): compares the packed image's
+# mtime against the newest mtime under every tree that feeds it. Checked
+# sources: ui_xml/ and assets/ (what stage_assets.py reads), the printer-image
+# rendition build dir (what stage_assets.py copies from, produced by
+# esp32_printer_images.py), and the staging tree itself (what pack_assets.py
+# reads) — covers both "edited a source and forgot to re-stage" and "re-staged
+# but forgot to re-pack". No OUTPUT means ninja/make always considers this
+# target out of date and re-runs the check every build.
+idf_build_get_property(python PYTHON)
+add_custom_target(check_storage_asset_staleness ALL
+    COMMAND ${python} ${REPO_ROOT}/scripts/esp32_check_asset_staleness.py
+            ${STORAGE_IMAGE}
+            ${REPO_ROOT}/ui_xml
+            ${REPO_ROOT}/assets/config
+            ${REPO_ROOT}/assets/filaments.json
+            ${REPO_ROOT}/assets/images/printers
+            ${REPO_ROOT}/build/esp32_printer_images
+            ${CMAKE_BINARY_DIR}/littlefs_staging
+    COMMENT "Checking packed storage asset image is not stale"
+    VERBATIM)
+
 partition_table_get_partition_info(storage_offset "--partition-name storage" "offset")
 if(NOT storage_offset)
     message(FATAL_ERROR "Could not find offset of 'storage' partition in partitions.csv")
@@ -38,8 +67,7 @@ esptool_py_flash_target_image(flash "storage" "${storage_offset}" "${STORAGE_IMA
 # repo-header + shim include paths helixnet's own sources use — those are
 # PRIVATE to the helixnet target and don't propagate to a sibling component.
 # Mirrors components/helixnet/CMakeLists.txt; keep the two in lockstep.
-set(REPO_ROOT ${CMAKE_CURRENT_LIST_DIR}/../../..)
-cmake_path(NORMAL_PATH REPO_ROOT)
+# (REPO_ROOT set earlier, alongside the storage-image guards above.)
 set(HELIXNET_SHIM ${CMAKE_CURRENT_LIST_DIR}/../components/helixnet/shim)
 
 target_include_directories(${COMPONENT_LIB} PRIVATE
