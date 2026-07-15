@@ -552,6 +552,10 @@ bool ToastManager::is_visible() const {
     return false;
 }
 
+// refresh_duplicate() is NOT stubbed here — it's defined inline in
+// include/ui_toast_manager.h so the test binary links the same
+// implementation the real app uses. See the comment on that declaration.
+
 // Stub implementations for EmergencyStopOverlay (tests don't use the overlay)
 #include "ui_emergency_stop.h"
 

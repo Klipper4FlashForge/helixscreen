@@ -360,6 +360,12 @@ void ToastManager::create_toast_internal(ToastSeverity severity, const char* mes
         return;
     }
 
+    // Dedupe: rapid identical toasts refresh the existing one instead of
+    // stacking. Action toasts are excluded (callback/user_data may differ).
+    if (!with_action && refresh_duplicate(severity, message)) {
+        return;
+    }
+
     ensure_stack_container();
     if (!toast_stack_) {
         spdlog::error("[ToastManager] Failed to create stack container");
@@ -402,6 +408,8 @@ void ToastManager::create_toast_internal(ToastSeverity severity, const char* mes
     it->widget = widget;
     it->action_cb = with_action ? action_cb : nullptr;
     it->action_user_data = with_action ? action_user_data : nullptr;
+    it->severity = severity;
+    it->message = message;
 
     if (with_action) {
         lv_obj_t* action_btn = lv_obj_find_by_name(widget, "toast_action_btn");
