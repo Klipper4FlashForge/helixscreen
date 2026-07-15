@@ -18,6 +18,7 @@
 // can also serve as a passive regression tripwire); grep stderr for
 // "[ISOLATION-LEAK]".
 
+#include "http_executor.h"
 #include "thumbnail_processor.h"
 #include "ui_observer_guard.h"
 
@@ -75,6 +76,16 @@ class IsolationListener : public Catch::EventListenerBase {
         // Spawning it here folds it into every test's threads_ baseline, so the
         // delta check only catches genuine per-test thread leaks.
         (void)helix::ThumbnailProcessor::instance();
+
+        // Same rationale for the HttpExecutor lanes: fast() (4 workers) and
+        // slow() (1 worker) are process-wide pools whose worker threads start
+        // lazily on first use and live for the process. The first test to reach
+        // an async network/REST call (e.g. EthernetManager::get_info_async ->
+        // HttpExecutor::fast().start()) would otherwise be flagged as leaking
+        // all 4 fast-lane workers. start_all() is the app-init entry point and
+        // start() is idempotent, so warming both lanes here folds their threads
+        // into the baseline.
+        helix::http::HttpExecutor::start_all();
     }
 
     void testRunEnded(Catch::TestRunStats const& /*stats*/) override {
