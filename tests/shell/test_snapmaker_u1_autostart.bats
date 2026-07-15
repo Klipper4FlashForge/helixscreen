@@ -293,6 +293,7 @@ SH_EOF
         -e "s|/etc/init.d/S99fb-http|$MOCK_ROOT/etc/init.d/S99fb-http|g" \
         -e "s|/etc/init.d/S99screen|$MOCK_ROOT/etc/init.d/S99screen|g" \
         -e "s|/etc/init.d/S99input-event-daemon|$MOCK_ROOT/etc/init.d/S99input-event-daemon|g" \
+        -e "s|/oem/.debug|$MOCK_ROOT/oem/.debug|g" \
         "$BATS_TEST_TMPDIR/u1_restore.sh" > "$BATS_TEST_TMPDIR/u1_restore.sh.tmp"
     mv "$BATS_TEST_TMPDIR/u1_restore.sh.tmp" "$BATS_TEST_TMPDIR/u1_restore.sh"
 
@@ -403,4 +404,38 @@ EOF
     [ -f "$MOCK_ROOT/etc/init.d/S99input-event-daemon" ]
     grep -q "input-event-daemon" "$MOCK_ROOT/etc/init.d/S99input-event-daemon"
     ! grep -q HelixScreen "$MOCK_ROOT/etc/init.d/S99input-event-daemon"
+}
+
+# --- /oem/.debug overlay-persistence flag removal ---------------------------
+# The installer creates /oem/.debug (autostart step 1) so S01aoverlayfs does NOT
+# wipe /oem/overlay/* on boot, persisting our overlay changes. Leaving it behind
+# is an uninstall-incompleteness bug: it's a firmware debug-mode flag not present
+# on a clean stock U1. The uninstall block must drop it as its final step so the
+# next boot reverts the overlay-upper back to pristine squashfs-lower stock.
+
+@test "uninstall u1: removes leftover /oem/.debug overlay-persistence flag" {
+    # Post-install state: the flag the installer touched is present.
+    touch "$MOCK_ROOT/oem/.debug"
+    [ -f "$MOCK_ROOT/oem/.debug" ]
+
+    extract_u1_restore
+    run u1_restore
+    [ "$status" -eq 0 ]
+
+    # The uninstall dropped the flag — stock overlay-wipe-on-boot is restored.
+    [ ! -e "$MOCK_ROOT/oem/.debug" ]
+    # /oem itself must survive — we only remove the flag file, nothing else.
+    [ -d "$MOCK_ROOT/oem" ]
+}
+
+@test "uninstall u1: no /oem/.debug present is a no-op (no error)" {
+    # A stock device (or one where the flag was already cleared) must not error.
+    [ ! -e "$MOCK_ROOT/oem/.debug" ]
+
+    extract_u1_restore
+    run u1_restore
+    [ "$status" -eq 0 ]
+
+    [ ! -e "$MOCK_ROOT/oem/.debug" ]
+    [ -d "$MOCK_ROOT/oem" ]
 }

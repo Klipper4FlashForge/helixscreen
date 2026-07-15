@@ -5,10 +5,14 @@
 #include "ams_types.h"
 #include "filament_slot_override.h"
 #include "filament_slot_override_store.h"
+#include "lvgl_test_fixture.h"
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
+#include "moonraker_types.h"
 #include "printer_state.h"
+#include "ui_update_queue.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <json.hpp> // nlohmann/json from libhv
 #include <memory>
@@ -58,6 +62,24 @@ class AceTestAccess {
     // notify envelope.
     static void parse_ace(AmsBackendAce& b, const json& data) {
         b.parse_ace_object(data);
+    }
+
+    // Expose the on_started() subscription-vs-REST decision (#1069). Returns
+    // the slot-bearing object, or nullptr when the REST fallback should run.
+    static const json* select_slot_bearing_object(const json& status, const char** key) {
+        return AmsBackendAce::select_slot_bearing_object(status, key);
+    }
+
+    // Drive the individual REST poll methods (private; async-defer their work
+    // through the UpdateQueue, so tests must drain the queue afterward).
+    static void poll_info(AmsBackendAce& b) {
+        b.poll_info();
+    }
+    static void poll_status(AmsBackendAce& b) {
+        b.poll_status();
+    }
+    static void poll_slots(AmsBackendAce& b) {
+        b.poll_slots();
     }
 };
 
@@ -1117,4 +1139,239 @@ TEST_CASE("ACE maps native runout slot status to EMPTY", "[ams][ace][native][par
 
     // runout = ran dry mid-print; mapped to EMPTY (no dedicated RUNOUT status).
     CHECK(backend.get_slot_info(1).status == SlotStatus::EMPTY);
+}
+
+// ============================================================================
+// #1069: Kobra S1 mainline-Python Klipper fork REST path.
+//
+// The fork ships a custom ace_status.py Moonraker component that exposes ACE
+// state through /server/ace/status + /server/ace/slots (but NOT /info). The
+// underlying `ace` Klipper object is a MANAGER (ace_instances/current_index,
+// no slots), so the WebSocket subscription path parses zero slots and the REST
+// bridge must take over. These tests lock the four fixes for that path.
+// ============================================================================
+
+// --- Fix 1: manager-only object must fall through to REST fallback ----------
+
+TEST_CASE("ACE manager-only ace object (no slots) selects REST fallback",
+          "[ams][ace][rest_fallback][kobra]") {
+    // Kobra S1 fork: `ace` is a manager with ace_instances/current_index and NO
+    // slots array. select_slot_bearing_object must return nullptr so on_started
+    // commits to REST polling instead of parsing zero slots off the manager.
+    json status = json::object();
+    status["ace"] = json{{"ace_instances", 1}, {"current_index", 0}};
+
+    const char* key = nullptr;
+    const json* picked = AceTestAccess::select_slot_bearing_object(status, &key);
+
+    CHECK(picked == nullptr);
+    CHECK(key == nullptr);
+}
+
+TEST_CASE("ACE object WITH slots array still selects subscription path",
+          "[ams][ace][rest_fallback][kobra]") {
+    // Regression: a genuine slot-bearing `ace` (ValgACE) or `filament_hub`
+    // (native) object must still be chosen for the WebSocket subscription path.
+    SECTION("community ace key") {
+        json status = json::object();
+        status["ace"] = json{
+            {"model", "ACE Pro"},
+            {"slots", json::array({json{{"status", "available"}, {"type", "PLA"}}})},
+        };
+        const char* key = nullptr;
+        const json* picked = AceTestAccess::select_slot_bearing_object(status, &key);
+        REQUIRE(picked != nullptr);
+        REQUIRE(key != nullptr);
+        CHECK(std::string(key) == "ace");
+    }
+
+    SECTION("native filament_hub key preferred") {
+        json status = json::object();
+        status["filament_hub"] = make_native_filament_hub_payload();
+        // A manager-only ace present alongside must NOT be picked over the
+        // slot-bearing filament_hub.
+        status["ace"] = json{{"ace_instances", 1}, {"current_index", 0}};
+        const char* key = nullptr;
+        const json* picked = AceTestAccess::select_slot_bearing_object(status, &key);
+        REQUIRE(picked != nullptr);
+        REQUIRE(key != nullptr);
+        CHECK(std::string(key) == "filament_hub");
+    }
+
+    SECTION("empty slots array is not slot-bearing") {
+        // An object with an empty slots array carries no slot data — treat it
+        // like the manager-only case and fall through to REST.
+        json status = json::object();
+        status["ace"] = json{{"model", "ACE Pro"}, {"slots", json::array()}};
+        const char* key = nullptr;
+        const json* picked = AceTestAccess::select_slot_bearing_object(status, &key);
+        CHECK(picked == nullptr);
+    }
+}
+
+// --- Fix 3: REST slot parser accepts `type` as a material alias -------------
+
+TEST_CASE("ACE parse_slots_response falls back to type for material",
+          "[ams][ace][parse][kobra]") {
+    AmsBackendAceTestHelper helper;
+
+    // Kobra S1 /slots returns `type` (like the object path), not `material`.
+    json data = {{"slots",
+                  {{{"index", 0}, {"status", "ready"}, {"type", "PLA"}, {"color", "#FF0000"}}}}};
+
+    bool changed = helper.test_parse_slots_response(data);
+    REQUIRE(changed == true);
+
+    auto slot0 = helper.get_slot_info(0);
+    CHECK(slot0.material == "PLA"); // type -> material
+}
+
+TEST_CASE("ACE parse_slots_response prefers material over type when both present",
+          "[ams][ace][parse][kobra]") {
+    AmsBackendAceTestHelper helper;
+
+    json data = {{"slots",
+                  {{{"index", 0},
+                    {"status", "ready"},
+                    {"material", "PETG"},
+                    {"type", "PLA"},
+                    {"color", "#00FF00"}}}}};
+
+    helper.test_parse_slots_response(data);
+    CHECK(helper.get_slot_info(0).material == "PETG"); // explicit material wins
+}
+
+// --- Fix 4: widen REST slot status vocabulary to mirror the object path ------
+
+TEST_CASE("ACE parse_slots_response maps ready/preload/running to AVAILABLE",
+          "[ams][ace][parse][kobra]") {
+    AmsBackendAceTestHelper helper;
+
+    json data = {{"slots",
+                  {{{"index", 0}, {"status", "ready"}},
+                   {{"index", 1}, {"status", "preload"}},
+                   {{"index", 2}, {"status", "running"}},
+                   {{"index", 3}, {"status", "runout"}}}}};
+
+    helper.test_parse_slots_response(data);
+
+    CHECK(helper.get_slot_info(0).status == SlotStatus::AVAILABLE); // ready
+    CHECK(helper.get_slot_info(1).status == SlotStatus::AVAILABLE); // preload
+    CHECK(helper.get_slot_info(2).status == SlotStatus::AVAILABLE); // running
+    CHECK(helper.get_slot_info(3).status == SlotStatus::EMPTY);     // runout
+}
+
+TEST_CASE("ACE parse_slots_response maps unknown to UNKNOWN like the object path",
+          "[ams][ace][parse][kobra]") {
+    AmsBackendAceTestHelper helper;
+
+    json data = {{"slots", {{{"index", 0}, {"status", "unknown"}}}}};
+    helper.test_parse_slots_response(data);
+    CHECK(helper.get_slot_info(0).status == SlotStatus::UNKNOWN);
+}
+
+// --- Fix 2a: /status carries model + firmware (no /info required) ------------
+
+TEST_CASE("ACE parse_status_response derives model and firmware",
+          "[ams][ace][parse][kobra]") {
+    AmsBackendAceTestHelper helper;
+
+    // The fork's /server/ace/status envelope carries model + firmware, so the
+    // backend no longer needs /server/ace/info to identify the hardware.
+    json data = {{"model", "ACE Pro"}, {"firmware", "2.5.1"}, {"loaded_slot", -1}};
+
+    helper.test_parse_status_response(data);
+    auto info = helper.get_test_system_info();
+
+    CHECK(info.type_name == "ACE");
+    CHECK(info.version == "2.5.1"); // firmware -> version
+}
+
+// --- Fix 2b: /info optional — no false "install ValgACE" error --------------
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "ACE missing /info does not surface an error when /status succeeds",
+                 "[ams][ace][rest_fallback][kobra][slow]") {
+    MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
+    helix::PrinterState state;
+    state.init_subjects(false);
+    MoonrakerAPIMock api(client, state);
+
+    // Fork surface: /info 404s, /status + /slots succeed. /status carries model.
+    RestResponse info_404;
+    info_404.success = false;
+    info_404.status_code = 404;
+    info_404.error = "Not Found";
+    api.rest_mock().mock_set_get_response("/server/ace/info", info_404);
+
+    RestResponse status_ok;
+    status_ok.success = true;
+    status_ok.status_code = 200;
+    status_ok.data = {{"result", {{"model", "ACE Pro"}, {"firmware", "2.5.1"}, {"loaded_slot", -1}}}};
+    api.rest_mock().mock_set_get_response("/server/ace/status", status_ok);
+    // /slots falls through to the mock's built-in 4-slot canned response.
+
+    AmsBackendAce backend(&api, nullptr);
+
+    std::vector<std::string> events;
+    backend.set_event_callback(
+        [&events](const std::string& ev, const std::string&) { events.push_back(ev); });
+
+    // Drive the poll methods the loop would run: /info fails repeatedly (up to
+    // the give-up threshold), while /status + /slots succeed each cycle.
+    for (int i = 0; i < 4; ++i) {
+        AceTestAccess::poll_info(backend);
+        AceTestAccess::poll_status(backend);
+        AceTestAccess::poll_slots(backend);
+        helix::ui::UpdateQueue::instance().drain();
+    }
+
+    // No error event surfaced — /status is succeeding, so the "install
+    // ace_status.py from ValgACE" toast must NOT fire (the user already has a
+    // working bridge; #1069).
+    CHECK(std::count(events.begin(), events.end(),
+                     std::string(AmsBackend::EVENT_ERROR)) == 0);
+
+    // Backend populated model + slots purely from /status + /slots.
+    auto info = backend.get_system_info();
+    CHECK(info.type_name == "ACE");
+    CHECK(info.version == "2.5.1");
+    REQUIRE(info.units.size() == 1);
+    CHECK(info.units[0].slots.size() == 4);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "ACE surfaces an error when the data endpoints are all missing",
+                 "[ams][ace][rest_fallback][kobra][slow]") {
+    // Genuinely-missing-bridge case: /info, /status AND /slots all 404. The
+    // error must still surface — but now gated on the DATA endpoints failing,
+    // not on /info.
+    MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
+    helix::PrinterState state;
+    state.init_subjects(false);
+    MoonrakerAPIMock api(client, state);
+
+    RestResponse not_found;
+    not_found.success = false;
+    not_found.status_code = 404;
+    not_found.error = "Not Found";
+    api.rest_mock().mock_set_get_response("/server/ace/info", not_found);
+    api.rest_mock().mock_set_get_response("/server/ace/status", not_found);
+    api.rest_mock().mock_set_get_response("/server/ace/slots", not_found);
+
+    AmsBackendAce backend(&api, nullptr);
+
+    int error_events = 0;
+    backend.set_event_callback([&error_events](const std::string& ev, const std::string&) {
+        if (ev == AmsBackend::EVENT_ERROR)
+            ++error_events;
+    });
+
+    // Drive enough failing /status cycles to cross the threshold.
+    for (int i = 0; i < 5; ++i) {
+        AceTestAccess::poll_status(backend);
+        helix::ui::UpdateQueue::instance().drain();
+    }
+
+    CHECK(error_events >= 1);
 }

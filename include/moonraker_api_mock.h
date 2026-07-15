@@ -440,6 +440,15 @@ class MoonrakerRestAPIMock : public MoonrakerRestAPI {
         post_responses_[endpoint] = std::move(response);
     }
 
+    /// Configure a persistent fake response for GET `endpoint`. Checked at the
+    /// top of call_rest_get (before the built-in ACE canned responses) so tests
+    /// can drive failure paths — e.g. a Klipper fork that ships /server/ace/status
+    /// + /slots but NOT /server/ace/info (#1069) — or inject custom payloads.
+    /// Unlike POST responses these are NOT consumed; they persist across polls.
+    void mock_set_get_response(const std::string& endpoint, RestResponse response) {
+        get_responses_[endpoint] = std::move(response);
+    }
+
   private:
     /// Mock WLED strip on/off states (strip_id -> is_on)
     std::map<std::string, bool> mock_wled_states_;
@@ -452,6 +461,8 @@ class MoonrakerRestAPIMock : public MoonrakerRestAPI {
     std::vector<PostRecord> post_history_;
     /// Per-endpoint canned responses (test spy)
     std::map<std::string, RestResponse> post_responses_;
+    /// Per-endpoint canned GET responses (test spy). Persistent, not consumed.
+    std::map<std::string, RestResponse> get_responses_;
 };
 
 /**

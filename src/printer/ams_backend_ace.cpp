@@ -105,20 +105,15 @@ void AmsBackendAce::on_started() {
             // and skips if the owner has been destroyed.
             token.defer("AmsBackendAce::on_started_query", [this, response]() {
                 // Prefer the native `filament_hub` key; fall back to the
-                // community `ace` key. Pick whichever is a non-empty object.
+                // community `ace` key. Commit to the subscription path ONLY
+                // when the matched object actually carries slot data — a
+                // manager-only object (Kobra S1 fork: ace_instances/current_index,
+                // no slots) must fall through to the REST bridge (#1069).
                 const json* ace_data = nullptr;
                 const char* matched_key = nullptr;
                 if (response.contains("result") && response["result"].contains("status")) {
-                    const auto& status = response["result"]["status"];
-                    if (status.contains("filament_hub") && status["filament_hub"].is_object() &&
-                        !status["filament_hub"].empty()) {
-                        ace_data = &status["filament_hub"];
-                        matched_key = "filament_hub";
-                    } else if (status.contains("ace") && status["ace"].is_object() &&
-                               !status["ace"].empty()) {
-                        ace_data = &status["ace"];
-                        matched_key = "ace";
-                    }
+                    ace_data =
+                        select_slot_bearing_object(response["result"]["status"], &matched_key);
                 }
 
                 if (ace_data) {
@@ -719,21 +714,10 @@ void AmsBackendAce::parse_ace_object(const json& data) {
                 slot.slot_index = static_cast<int>(i);
                 slot.global_index = static_cast<int>(i);
 
-                // Parse status. Community ValgACE uses
-                // available/loaded/ready; native Anycubic GoKlipper uses
-                // empty/ready/preload/running/runout. "runout" means the slot
-                // ran dry mid-print — present-but-empty; map to EMPTY since
-                // SlotStatus has no dedicated RUNOUT value.
+                // Parse status via the shared vocabulary map so the object path
+                // and the REST fallback path can't drift.
                 if (slot_json.contains("status") && slot_json["status"].is_string()) {
-                    std::string ss = slot_json["status"].get<std::string>();
-                    if (ss == "empty" || ss == "runout") {
-                        slot.status = SlotStatus::EMPTY;
-                    } else if (ss == "available" || ss == "loaded" || ss == "ready" ||
-                               ss == "preload" || ss == "running") {
-                        slot.status = SlotStatus::AVAILABLE;
-                    } else {
-                        slot.status = SlotStatus::UNKNOWN;
-                    }
+                    slot.status = slot_status_from_string(slot_json["status"].get<std::string>());
                 }
 
                 // Parse color: ValgACE returns [r, g, b] array
@@ -903,6 +887,46 @@ void AmsBackendAce::parse_ace_object(const json& data) {
     }
 }
 
+const json* AmsBackendAce::select_slot_bearing_object(const json& status, const char** matched_key) {
+    // Commit to the subscription path ONLY when the object actually carries
+    // slot data (a non-empty "slots" array — the exact key parse_ace_object
+    // reads). A manager-only object (Kobra S1 fork's `ace`: ace_instances /
+    // current_index, no slots) has no slots array and must fall through to the
+    // REST bridge so the whole /server/ace/* surface gets queried (#1069).
+    auto has_slot_data = [](const json& obj) {
+        return obj.is_object() && obj.contains("slots") && obj["slots"].is_array() &&
+               !obj["slots"].empty();
+    };
+
+    if (status.contains("filament_hub") && has_slot_data(status["filament_hub"])) {
+        if (matched_key)
+            *matched_key = "filament_hub";
+        return &status["filament_hub"];
+    }
+    if (status.contains("ace") && has_slot_data(status["ace"])) {
+        if (matched_key)
+            *matched_key = "ace";
+        return &status["ace"];
+    }
+    return nullptr;
+}
+
+SlotStatus AmsBackendAce::slot_status_from_string(const std::string& status_str) {
+    // Native Anycubic GoKlipper uses empty/ready/preload/running/runout;
+    // community ValgACE uses available/loaded/ready. "runout" means the slot
+    // ran dry mid-print — present-but-empty; map to EMPTY since SlotStatus has
+    // no dedicated RUNOUT value. Anything unrecognized (incl. "unknown") maps
+    // to UNKNOWN.
+    if (status_str == "empty" || status_str == "runout") {
+        return SlotStatus::EMPTY;
+    }
+    if (status_str == "available" || status_str == "loaded" || status_str == "ready" ||
+        status_str == "preload" || status_str == "running") {
+        return SlotStatus::AVAILABLE;
+    }
+    return SlotStatus::UNKNOWN;
+}
+
 uint32_t AmsBackendAce::parse_slot_color(const json& color_val) {
     // ValgACE format: [r, g, b] array
     if (color_val.is_array() && color_val.size() >= 3) {
@@ -985,23 +1009,25 @@ void AmsBackendAce::rest_polling_loop() {
     poll_info();
 
     while (!rest_stop_requested_.load()) {
-        // Retry info fetch if it hasn't succeeded yet and we haven't hit the limit
+        // /server/ace/info is OPTIONAL — best-effort retry until the cap for the
+        // model/version it can supply, but its absence is NOT fatal: the Kobra
+        // S1 fork ships /status + /slots (which carry model + slots) but NOT
+        // /info (#1069). Give up quietly after the cap.
         if (!info_fetched_.load() && info_fetch_failures_.load() < MAX_INFO_FETCH_FAILURES) {
             poll_info();
         } else if (!info_fetched_.load() &&
-                   info_fetch_failures_.load() >= MAX_INFO_FETCH_FAILURES) {
-            if (info_fetch_failures_.load() == MAX_INFO_FETCH_FAILURES) {
-                spdlog::warn("[ACE] Giving up on /server/ace/info after {} attempts. "
-                             "Backend will remain idle until restarted.",
-                             MAX_INFO_FETCH_FAILURES);
-                ++info_fetch_failures_;
-            }
+                   info_fetch_failures_.load() == MAX_INFO_FETCH_FAILURES) {
+            spdlog::info("[ACE] /server/ace/info unavailable after {} attempts — "
+                         "using /status + /slots (this fork has no /info endpoint).",
+                         MAX_INFO_FETCH_FAILURES);
+            ++info_fetch_failures_;
         }
 
-        if (info_fetched_.load()) {
-            poll_status();
-            poll_slots();
-        }
+        // Data endpoints are the source of truth for slots (and model, via the
+        // /status envelope) — poll them unconditionally, NOT gated on
+        // info_fetched_. Gating here left the fork's backend permanently idle.
+        poll_status();
+        poll_slots();
 
         // Interruptible sleep
         std::unique_lock<std::mutex> lock(rest_stop_mutex_);
@@ -1040,25 +1066,12 @@ void AmsBackendAce::poll_info() {
                 info_fetched_.store(true);
                 info_fetch_failures_ = 0;
             } else {
+                // /info is optional (#1069) — a failure here is NOT surfaced to
+                // the user. The "bridge not found" error is gated on the DATA
+                // endpoints (/status + /slots) failing instead; see poll_status.
                 int failures = ++info_fetch_failures_;
-                spdlog::debug("[ACE] /server/ace/info attempt {} failed: {}", failures, resp.error);
-                if (failures == MAX_INFO_FETCH_FAILURES) {
-                    spdlog::warn("[ACE] Moonraker bridge not available at /server/ace/info after "
-                                 "{} attempts. BunnyACE/DuckACE users need to install ValgACE's "
-                                 "ace_status.py Moonraker component for HelixScreen integration.",
-                                 failures);
-                    emit_event(EVENT_ERROR,
-                               "ACE detected but Moonraker bridge not found. "
-                               "Install the ace_status.py component from ValgACE for full ACE "
-                               "support.");
-                    helix::ui::queue_update([]() {
-                        ToastManager::instance().show(
-                            ToastSeverity::WARNING,
-                            lv_tr("ACE Moonraker bridge not found. Install ace_status.py "
-                                  "from ValgACE for full support."),
-                            6000);
-                    });
-                }
+                spdlog::debug("[ACE] /server/ace/info attempt {} failed (optional): {}", failures,
+                              resp.error);
             }
         });
 
@@ -1088,11 +1101,33 @@ void AmsBackendAce::poll_status() {
         // emit_event) to main thread.
         token.defer("AmsBackendAce::poll_status_apply", [this, resp]() {
             if (resp.success && resp.data.contains("result")) {
+                rest_data_ok_.store(true);
+                data_fetch_failures_.store(0);
                 if (parse_status_response(resp.data["result"])) {
                     emit_event(EVENT_STATE_CHANGED);
                 }
             } else {
-                spdlog::debug("[ACE] Status poll failed: {}", resp.error);
+                int failures = ++data_fetch_failures_;
+                spdlog::debug("[ACE] Status poll attempt {} failed: {}", failures, resp.error);
+                // Genuinely-missing-bridge case: the DATA endpoints are down and
+                // nothing has ever succeeded. Surface it once. A working /slots
+                // resets data_fetch_failures_, so this only fires when BOTH
+                // /status and /slots are unavailable (#1069).
+                if (failures == MAX_DATA_FETCH_FAILURES && !rest_data_ok_.load()) {
+                    spdlog::warn("[ACE] Moonraker ACE bridge not responding at /server/ace/status "
+                                 "after {} attempts — no ACE data endpoints available.",
+                                 failures);
+                    emit_event(EVENT_ERROR,
+                               "ACE detected but Moonraker bridge not found. "
+                               "Install the ace_status.py component for full ACE support.");
+                    helix::ui::queue_update([]() {
+                        ToastManager::instance().show(
+                            ToastSeverity::WARNING,
+                            lv_tr("ACE Moonraker bridge not found. Install ace_status.py "
+                                  "for full support."),
+                            6000);
+                    });
+                }
             }
         });
     });
@@ -1112,6 +1147,11 @@ void AmsBackendAce::poll_slots() {
         // emit_event) to main thread.
         token.defer("AmsBackendAce::poll_slots_apply", [this, resp]() {
             if (resp.success && resp.data.contains("result")) {
+                // A working /slots is sufficient data — latch data-ok and reset
+                // the failure counter so the "bridge not found" error only fires
+                // when BOTH data endpoints are down (#1069).
+                rest_data_ok_.store(true);
+                data_fetch_failures_.store(0);
                 if (parse_slots_response(resp.data["result"])) {
                     // REST fallback parses all slots at once — use STATE_CHANGED
                     // (full-sync semantics) rather than SLOT_CHANGED without a
@@ -1177,6 +1217,20 @@ void AmsBackendAce::parse_info_response(const json& data) {
 bool AmsBackendAce::parse_status_response(const json& data) {
     std::lock_guard<std::mutex> lock(mutex_);
     bool changed = false;
+
+    // The fork's /server/ace/status envelope carries model + firmware, so the
+    // backend can identify the hardware without /server/ace/info (#1069). Match
+    // the object-path key names (`model`, `firmware`).
+    if (data.contains("model") && data["model"].is_string()) {
+        system_info_.type_name = "ACE";
+        auto model = data["model"].get<std::string>();
+        if (!system_info_.units.empty()) {
+            system_info_.units[0].name = model;
+        }
+    }
+    if (data.contains("firmware") && data["firmware"].is_string()) {
+        system_info_.version = data["firmware"].get<std::string>();
+    }
 
     if (data.contains("loaded_slot") && data["loaded_slot"].is_number_integer()) {
         int slot = data["loaded_slot"].get<int>();
@@ -1280,14 +1334,10 @@ bool AmsBackendAce::parse_slots_response(const json& data) {
         slot.global_index = static_cast<int>(i);
 
         if (slot_json.contains("status") && slot_json["status"].is_string()) {
-            std::string status_str = slot_json["status"].get<std::string>();
-            SlotStatus status = SlotStatus::UNKNOWN;
-
-            if (status_str == "empty") {
-                status = SlotStatus::EMPTY;
-            } else if (status_str == "available" || status_str == "loaded") {
-                status = SlotStatus::AVAILABLE;
-            }
+            // Mirror the object path exactly via the shared vocabulary map —
+            // this fork emits `ready` (and can emit `unknown`), which the old
+            // empty/available/loaded-only mapping misclassified (#1069).
+            SlotStatus status = slot_status_from_string(slot_json["status"].get<std::string>());
 
             if (status != slot.status) {
                 slot.status = status;
@@ -1304,12 +1354,18 @@ bool AmsBackendAce::parse_slots_response(const json& data) {
             }
         }
 
+        // Material: prefer `material`, fall back to `type` (this fork's /slots
+        // returns `type`, like the object path). Mirror parse_ace_object.
+        std::string material;
         if (slot_json.contains("material") && slot_json["material"].is_string()) {
-            std::string material = slot_json["material"].get<std::string>();
-            if (material != slot.material) {
-                slot.material = material;
-                changed = true;
-            }
+            material = slot_json["material"].get<std::string>();
+        }
+        if (material.empty() && slot_json.contains("type") && slot_json["type"].is_string()) {
+            material = slot_json["type"].get<std::string>();
+        }
+        if (!material.empty() && material != slot.material) {
+            slot.material = material;
+            changed = true;
         }
 
         if (slot_json.contains("temp_min") && slot_json["temp_min"].is_number_integer()) {

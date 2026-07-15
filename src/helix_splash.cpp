@@ -42,6 +42,10 @@
 // SIGTERM/SIGINT: graceful shutdown (e.g., system shutdown)
 // SIGUSR1: main app is ready, hand off display immediately
 static volatile sig_atomic_t g_quit = 0;
+// Set only by SIGUSR1 (app-ready handoff). Distinguishes a handoff exit — where
+// the successor (helix-screen's fb0 mirror) takes over /dev/fb0 — from a
+// shutdown/backstop exit. On handoff we must NOT clear fb0 (see teardown below).
+static volatile sig_atomic_t g_ready = 0;
 
 // Define the LVGL assert callback pointer for splash binary
 // (normally defined in logging_init.cpp, but splash doesn't link that)
@@ -49,7 +53,12 @@ static volatile sig_atomic_t g_quit = 0;
 helix_assert_callback_t g_helix_assert_cpp_callback = nullptr;
 
 static void signal_handler(int sig) {
-    (void)sig;
+    // SIGUSR1 is the app-ready handoff: the successor owns fb0, so mark ready so
+    // teardown skips the framebuffer clear. SIGTERM/SIGINT are shutdown/backstop
+    // exits and leave g_ready unset, so teardown clears fb0 as before.
+    if (sig == SIGUSR1) {
+        g_ready = 1;
+    }
     g_quit = 1;
 }
 
@@ -686,13 +695,20 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Clear framebuffer to background color before exit
-    // This prevents visual artifacts during handoff to helix-screen
-    lv_obj_clean(screen);                                            // Remove all children
-    lv_obj_set_style_bg_color(screen, lv_color_hex(clear_color), 0); // Match splash bg
-    lv_obj_invalidate(screen);                                       // Mark for redraw
-    lv_timer_handler();                                              // Render the clear
-    lv_refr_now(nullptr);                                            // Force immediate refresh
+    // Clear framebuffer to background color before exit — but ONLY on a
+    // shutdown/backstop exit (g_ready unset). On an app-ready handoff (SIGUSR1
+    // -> g_ready) the successor, helix-screen's fb0 mirror, now owns /dev/fb0;
+    // clearing it to dark would blank the remote screen until the next dirty
+    // rect, and on an idle UI that repaint never comes — the remote goes black.
+    // Leaving the last splash frame in place lets the mirror's full-frame repaint
+    // (forced at handoff) take over seamlessly.
+    if (!g_ready) {
+        lv_obj_clean(screen);                                            // Remove all children
+        lv_obj_set_style_bg_color(screen, lv_color_hex(clear_color), 0); // Match splash bg
+        lv_obj_invalidate(screen);                                       // Mark for redraw
+        lv_timer_handler();                                              // Render the clear
+        lv_refr_now(nullptr);                                            // Force immediate refresh
+    }
 
     // Cleanup is handled automatically by destructors
     return 0;

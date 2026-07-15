@@ -5,6 +5,19 @@ All notable changes to HelixScreen will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.99.91] - 2026-07-13
+
+### Added
+
+- **Native QIDI 3MF print previews** (prestonbrown/helixscreen#1092) — print previews are read directly from QIDI's native 3MF files, selecting the newest-modified shadow gcode.
+
+### Fixed
+
+- **Fan speed reporting** (prestonbrown/helixscreen#1096) — reported fan speed is normalized by `max_power` so it matches Mainsail.
+- **Timelapse pre-print toggle** (prestonbrown/helixscreen#1094) — the pre-print timelapse toggle seeds its default from the global enabled setting, dropping a redundant print-start write.
+- **AMS step connectors** (bundle 77TDH9N6) — step connector lines are recomputed on reflow so they always draw.
+- **AMS long-macro toast** (bundle 77TDH9N6) — an advisory RPC-timeout toast no longer fires during long-running AMS macros.
+
 ## [0.99.90] - 2026-07-12
 
 ### Added
@@ -4276,6 +4289,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.91]: https://github.com/prestonbrown/helixscreen/compare/v0.99.90...v0.99.91
 [0.99.90]: https://github.com/prestonbrown/helixscreen/compare/v0.99.89...v0.99.90
 [0.99.89]: https://github.com/prestonbrown/helixscreen/compare/v0.99.88...v0.99.89
 [0.99.88]: https://github.com/prestonbrown/helixscreen/compare/v0.99.87...v0.99.88

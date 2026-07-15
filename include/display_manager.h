@@ -141,6 +141,16 @@ class DisplayManager : public helix::ICalibrationSink {
     }
 
     /**
+     * @brief True if any remote-screen sink (e.g. the U1 fb0 mirror) is active.
+     *
+     * Lets callers gate remote-only work (such as forcing a full fb0 repaint at
+     * splash handoff) so devices without a remote sink pay nothing.
+     */
+    bool remote_screen_active() const {
+        return m_remote_screen.any_active();
+    }
+
+    /**
      * @brief Get current display width
      * @return Width in pixels, or 0 if not initialized
      */

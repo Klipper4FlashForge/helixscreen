@@ -16,9 +16,11 @@ namespace helix {
  *
  * On the Snapmaker U1 the firmware's fb-http daemon serves PNG snapshots of
  * `/dev/fb0`, which HelixScreen does not otherwise feed (it owns the panel via
- * DRM). This sink mmaps `/dev/fb0` and memcpys each dirty area straight in —
- * BGRA maps through to LVGL's native ARGB8888 little-endian with no per-pixel
- * conversion (hardware-verified 2026-07-09: 480x320, 32bpp, stride 1920).
+ * DRM). This sink mmaps `/dev/fb0` and blits each dirty area straight in. Both
+ * 32bpp (BGRA) and 16bpp (RGB565) fb0 geometries are supported: a 32bpp BGRA
+ * source maps through to a 32bpp fb0 with no per-pixel conversion
+ * (hardware-verified 2026-07-09: 480x320, 32bpp, stride 1920), and the four
+ * source x destination bpp combinations are each handled in `on_frame`.
  *
  * The device path is injectable so tests can back the sink with a temp file.
  * When the path is a regular file the fbdev ioctls fail, so `start()` falls
