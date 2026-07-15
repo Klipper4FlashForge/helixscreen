@@ -1,30 +1,29 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-Stage the ESP32 LittleFS "storage" partition image contents.
+Stage the ESP32 "storage" partition source tree (packed asset container).
 
-Assembles a minified copy of ui_xml/, the config JSON assets, and (if present)
-Task 3's printer images into a staging directory, prints a per-class size
-table, and fails if the total exceeds the storage partition budget.
+Assembles a minified copy of ui_xml/ (all languages), the config JSON assets,
+and (if present) Task 3's printer image renditions into a staging directory,
+then prints a per-class raw-byte size table.
 
 Usage:
     python3 scripts/esp32_stage_assets.py [--out DIR]
 
-Then build the firmware normally (idf.py build picks up the staging dir via
-littlefs_create_partition_image — see main/CMakeLists.txt). This script does
-NOT flash anything; `idf.py build` bakes the staged tree into the storage.bin
-image, and a normal `idf.py flash` (or `idf.py littlefs-flash`) writes it.
+This script only assembles the staging tree — it does not gate on partition
+size and does not pack or flash anything. `scripts/esp32_pack_assets.py`
+consumes this staging tree, deflates the text assets into a single packed
+frogfs container image, and is where the real size gate lives (packed image
+size vs the 3.75MB `storage` partition — see that script's docstring).
 
-Sizing model: LittleFS allocates whole erase blocks, so a directory of many
-small files uses far more flash than the sum of their byte counts (measured:
-308 ui_xml component files summing to 1.04MB of text used 1.76MB on a real
-image — 65% overhead from block rounding alone). All budget accounting below
-is done in block-rounded ("on-flash") bytes, not raw byte counts, using the
-same --block-size=4096 the build passes to littlefs-python (see
-managed_components/joltwallet__littlefs/project_include.cmake). A fixed
-metadata reserve on top covers directory-metadata growth as more files are
-added (measured 2-3 blocks of drift between the naive per-file block-rounding
-sum and the real packer's output when populating ui_xml/translations/).
+Historical note: this staging tree used to be mounted directly as a LittleFS
+image, which allocates a whole 4KB erase block per file regardless of size —
+308 small ui_xml component files cost 1.76MB on-flash for 1.04MB of text (69%
+overhead), leaving no room for all 9 languages or any printer images. The
+packed container (Task 3) eliminates that per-file block tax and adds ~3-4:1
+deflate on text, which is why this script no longer trims languages or
+gates on a block-rounded budget: every raw byte counted here ends up smaller,
+not larger, once packed.
 """
 
 import argparse
@@ -36,31 +35,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = REPO_ROOT / "firmware" / "helixscreen-esp32" / "build" / "littlefs_staging"
 
-# Hard cap: the `storage` partition is 0x3c0000 bytes (partitions.csv).
-STORAGE_PARTITION_BYTES = 3_932_160
-
-# Must match --block-size passed to littlefs-python by
-# littlefs_create_partition_image() (project_include.cmake) — every file
-# consumes a whole number of these regardless of its actual size.
-BLOCK_SIZE = 4096
-
-# Fixed reserve subtracted from the partition budget before deciding what
-# fits: covers directory-metadata blocks the naive per-file block-rounding
-# sum doesn't model (see module docstring). 16 blocks = 64KB.
-METADATA_RESERVE_BYTES = 16 * BLOCK_SIZE
-
-EFFECTIVE_BUDGET_BYTES = STORAGE_PARTITION_BYTES - METADATA_RESERVE_BYTES
-
 # ui_xml subtrees/files excluded from staging.
 EXCLUDED_XML_DIRS = ("micro",)
 EXCLUDED_XML_FILES = ("translations.xml",)  # merged file; per-language files ship instead
-
-
-def on_flash_bytes(size: int) -> int:
-    """Round a file's byte size up to the block size LittleFS actually
-    allocates for it. This — not the raw byte count — is what determines
-    whether a set of files fits in the partition."""
-    return ((size + BLOCK_SIZE - 1) // BLOCK_SIZE) * BLOCK_SIZE
 
 
 def strip_xml_comments(text: str) -> str:
@@ -160,7 +137,7 @@ def format_bytes(n: int) -> str:
 
 def stage_ui_xml(ui_xml_dir: Path, out_dir: Path) -> int:
     """Minify and copy ui_xml/, excluding micro/ and the merged translations.xml.
-    Returns total on-flash bytes written (translations/ handled separately by
+    Returns total raw bytes written (translations/ handled separately by
     stage_translations, not counted here)."""
     total = 0
     for src in sorted(ui_xml_dir.rglob("*.xml")):
@@ -176,16 +153,20 @@ def stage_ui_xml(ui_xml_dir: Path, out_dir: Path) -> int:
         dest = out_dir / "ui_xml" / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(minified, encoding="utf-8")
-        total += on_flash_bytes(len(minified.encode("utf-8")))
+        total += len(minified.encode("utf-8"))
     return total
 
 
-def stage_translations(ui_xml_dir: Path, out_dir: Path, remaining_budget: int) -> tuple[int, list[str]]:
-    """Minify per-language translation files: `en` always, then the rest
-    largest-first while each still fits in the remaining on-flash budget
-    (first-fit decreasing — a smaller language later in the list may still
-    fit after a larger one didn't). Returns (on-flash bytes written, included
-    language codes)."""
+def stage_translations(ui_xml_dir: Path, out_dir: Path,
+                       remaining_budget: int = sys.maxsize) -> tuple[int, list[str]]:
+    """Minify and stage every per-language translation file. `en` is a hard
+    requirement (fails the build if missing or, given an explicit
+    remaining_budget, if it doesn't fit); every other language ships
+    unconditionally — the packed container (see module docstring) has ample
+    room for all 9 languages, so there is no per-language trimming here.
+    remaining_budget only exists for the en-fits invariant; callers packing
+    into a real container don't need to (and by default don't) constrain it.
+    Returns (raw bytes written, included language codes)."""
     translations_dir = ui_xml_dir / "translations"
     if not translations_dir.is_dir():
         return 0, []
@@ -204,7 +185,7 @@ def stage_translations(ui_xml_dir: Path, out_dir: Path, remaining_budget: int) -
     def add(lang: str) -> bool:
         nonlocal total
         minified = candidates[lang]
-        size = on_flash_bytes(len(minified.encode("utf-8")))
+        size = len(minified.encode("utf-8"))
         if total + size > remaining_budget:
             return False
         dest = out_dir / "ui_xml" / "translations" / f"{lang}.xml"
@@ -220,16 +201,11 @@ def stage_translations(ui_xml_dir: Path, out_dir: Path, remaining_budget: int) -
         sys.exit(1)
     if not add("en"):
         print(f"FAIL: en.xml ({len(candidates['en'].encode('utf-8'))} B minified) does not fit "
-              f"in the remaining on-flash budget ({remaining_budget} B) — en must always ship.",
+              f"in the remaining budget ({remaining_budget} B) — en must always ship.",
               file=sys.stderr)
         sys.exit(1)
 
-    others = sorted(
-        (lang for lang in candidates if lang != "en"),
-        key=lambda lang: len(candidates[lang].encode("utf-8")),
-        reverse=True,
-    )
-    for lang in others:
+    for lang in sorted(lang for lang in candidates if lang != "en"):
         add(lang)
 
     return total, included
@@ -237,7 +213,7 @@ def stage_translations(ui_xml_dir: Path, out_dir: Path, remaining_budget: int) -
 
 def stage_config(assets_dir: Path, out_dir: Path) -> int:
     """Copy assets/config/{printer_database.json, printing_tips.json, themes/}.
-    Returns total on-flash bytes."""
+    Returns total raw bytes."""
     total = 0
     config_dir = assets_dir / "config"
     dest_config = out_dir / "assets" / "config"
@@ -248,13 +224,13 @@ def stage_config(assets_dir: Path, out_dir: Path) -> int:
             continue
         dest_config.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest_config / name)
-        total += on_flash_bytes(src.stat().st_size)
+        total += src.stat().st_size
 
     themes_src = config_dir / "themes"
     if themes_src.is_dir():
         themes_dest = dest_config / "themes"
         shutil.copytree(themes_src, themes_dest, dirs_exist_ok=True)
-        total += sum(on_flash_bytes(f.stat().st_size) for f in themes_dest.rglob("*") if f.is_file())
+        total += sum(f.stat().st_size for f in themes_dest.rglob("*") if f.is_file())
 
     return total
 
@@ -266,18 +242,22 @@ def stage_filaments(assets_dir: Path, out_dir: Path) -> int:
     dest = out_dir / "assets" / "filaments.json"
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dest)
-    return on_flash_bytes(src.stat().st_size)
+    return src.stat().st_size
 
 
 def stage_printer_images(repo_root: Path, out_dir: Path) -> tuple[int, bool]:
-    """Copy build/esp32_printer_images/ if Task 3 has produced it. Returns
-    (on-flash bytes copied, whether the source dir existed)."""
+    """Copy build/esp32_printer_images/ (Task 3's downscaled renditions) if
+    present, to assets/images/printers/ — the path PrinterImageWidget's
+    fallback resolution expects relative to the asset root (see
+    src/system/prerendered_images.cpp get_prerendered_printer_path /
+    get_best_printer_image callers). Returns (raw bytes copied, whether the
+    source dir existed)."""
     src = repo_root / "build" / "esp32_printer_images"
     if not src.is_dir():
         return 0, False
-    dest = out_dir / "printer_images"
+    dest = out_dir / "assets" / "images" / "printers"
     shutil.copytree(src, dest, dirs_exist_ok=True)
-    total = sum(on_flash_bytes(f.stat().st_size) for f in dest.rglob("*") if f.is_file())
+    total = sum(f.stat().st_size for f in dest.rglob("*") if f.is_file())
     return total, True
 
 
@@ -296,38 +276,31 @@ def main() -> int:
     assets_dir = REPO_ROOT / "assets"
 
     ui_xml_bytes = stage_ui_xml(ui_xml_dir, out_dir)
-    # ui_xml on-flash bytes staged; translations get whatever room is left
-    # under the (metadata-reserved) effective budget. config/filaments/images
-    # are small, fixed-size classes so they're staged unconditionally.
+    translations_bytes, included_langs = stage_translations(ui_xml_dir, out_dir)
     config_bytes = stage_config(assets_dir, out_dir)
     filaments_bytes = stage_filaments(assets_dir, out_dir)
     printer_images_bytes, printer_images_present = stage_printer_images(REPO_ROOT, out_dir)
 
-    fixed_total = ui_xml_bytes + config_bytes + filaments_bytes + printer_images_bytes
-    remaining_budget = EFFECTIVE_BUDGET_BYTES - fixed_total
-    translations_bytes, included_langs = stage_translations(ui_xml_dir, out_dir, remaining_budget)
+    total = ui_xml_bytes + translations_bytes + config_bytes + filaments_bytes + printer_images_bytes
 
-    total = fixed_total + translations_bytes
-
-    print("ESP32 LittleFS storage staging (on-flash, block-rounded bytes):")
+    print("ESP32 storage staging tree (raw bytes; packed size is computed by "
+          "esp32_pack_assets.py):")
     print(f"  ui_xml (minified, excl. micro/ + translations.xml): {format_bytes(ui_xml_bytes)}")
     print(f"  translations ({', '.join(included_langs) if included_langs else 'none'}): "
           f"{format_bytes(translations_bytes)}")
     print(f"  assets/config (printer_database, printing_tips, themes): {format_bytes(config_bytes)}")
     print(f"  assets/filaments.json: {format_bytes(filaments_bytes)}")
     if printer_images_present:
-        print(f"  printer_images (build/esp32_printer_images/): {format_bytes(printer_images_bytes)}")
+        print(f"  assets/images/printers (build/esp32_printer_images/): "
+              f"{format_bytes(printer_images_bytes)}")
     else:
-        print("  printer_images: SKIPPED (build/esp32_printer_images/ not present — Task 3)")
-    print(f"  TOTAL: {format_bytes(total)} / effective budget {format_bytes(EFFECTIVE_BUDGET_BYTES)} "
-          f"(partition {format_bytes(STORAGE_PARTITION_BYTES)} minus "
-          f"{format_bytes(METADATA_RESERVE_BYTES)} metadata reserve)")
+        print("  assets/images/printers: SKIPPED (build/esp32_printer_images/ not present — "
+              "run scripts/esp32_printer_images.py first)")
+    print(f"  TOTAL (raw, pre-pack): {format_bytes(total)}")
     print(f"  output: {out_dir}")
+    print("  Next: python3 scripts/esp32_pack_assets.py (packs this tree and gates on the "
+          "real 3.75MB storage partition budget)")
 
-    if total > EFFECTIVE_BUDGET_BYTES:
-        print(f"FAIL: staged on-flash size {total} exceeds effective storage partition budget "
-              f"{EFFECTIVE_BUDGET_BYTES}", file=sys.stderr)
-        return 1
     return 0
 
 

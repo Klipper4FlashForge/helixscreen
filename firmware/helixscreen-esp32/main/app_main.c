@@ -76,9 +76,9 @@ void app_main(void) {
              running->label, running->address);
 
     // Assets/config must be mounted before anything reads them — the UI
-    // boots off /littlefs starting with a later task. Non-fatal here: the
-    // placeholder UI below doesn't need it yet, but a failure is loud in
-    // the log rather than silently missing later.
+    // boots off /assets (packed frogfs container) starting with a later
+    // task. Non-fatal here: the placeholder UI below doesn't need it yet,
+    // but a failure is loud in the log rather than silently missing later.
     esp_err_t storage_err = storage_mount();
     if (storage_err != ESP_OK) {
         ESP_LOGE(TAG, "storage_mount failed: %s (asset/config storage unavailable)",

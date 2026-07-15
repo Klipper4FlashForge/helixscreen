@@ -3,22 +3,35 @@ idf_component_register(SRCS "app_main.c" "board_display.c" "lvgl_glue.c" "touch_
                              "storage_mount.c" "net_hil.cpp"
                        PRIV_REQUIRES esp_timer app_update esp_lcd driver helixcore helixnet pthread
                                      esp_wifi esp_netif esp_event nvs_flash joltwallet__littlefs
+                                     jkent__frogfs
                        INCLUDE_DIRS "." "../boards")
 
-# LittleFS "storage" partition image: built from the staging tree the desktop
-# script assembles (minified ui_xml, config JSON, printer images). Configure
-# time only checks that the staging dir exists — running the python script is
-# a separate, explicit step (see scripts/esp32_stage_assets.py), not something
-# CMake shells out to, so a stale/missing staging dir fails with a clear
-# message instead of silently packing whatever is (or isn't) on disk.
-set(LITTLEFS_STAGING_DIR ${CMAKE_BINARY_DIR}/littlefs_staging)
-if(NOT EXISTS ${LITTLEFS_STAGING_DIR})
+# `storage` partition image: a packed frogfs (jkent/frogfs) compressed
+# container, built from the staging tree scripts/esp32_stage_assets.py
+# assembles (minified ui_xml in every shipped language, config JSON, printer
+# image renditions) by scripts/esp32_pack_assets.py. Both are explicit,
+# inspectable pre-steps — like the staging script itself, packing is
+# deliberately NOT something CMake shells out to, so configure fails loudly
+# with next-step instructions instead of silently flashing a stale or
+# zero-length image. `cfg` (settings) is unaffected — this partition swap
+# only touches `storage`.
+set(STORAGE_IMAGE ${CMAKE_BINARY_DIR}/storage_frogfs.bin)
+if(NOT EXISTS ${STORAGE_IMAGE})
     message(FATAL_ERROR
-        "LittleFS staging dir missing: ${LITTLEFS_STAGING_DIR}\n"
-        "Run 'python3 <repo_root>/scripts/esp32_stage_assets.py' first (writes "
-        "here by default), then re-run idf.py build.")
+        "Packed asset container missing: ${STORAGE_IMAGE}\n"
+        "Run 'python3 <repo_root>/scripts/esp32_stage_assets.py' then "
+        "'python3 <repo_root>/scripts/esp32_pack_assets.py' first (writes here by "
+        "default), then re-run idf.py build.")
 endif()
-littlefs_create_partition_image(storage ${LITTLEFS_STAGING_DIR} FLASH_IN_PROJECT)
+partition_table_get_partition_info(storage_offset "--partition-name storage" "offset")
+if(NOT storage_offset)
+    message(FATAL_ERROR "Could not find offset of 'storage' partition in partitions.csv")
+endif()
+idf_component_get_property(main_args esptool_py FLASH_ARGS)
+idf_component_get_property(sub_args esptool_py FLASH_SUB_ARGS)
+esptool_py_flash_target(storage-flash "${main_args}" "${sub_args}")
+esptool_py_flash_target_image(storage-flash "storage" "${storage_offset}" "${STORAGE_IMAGE}")
+esptool_py_flash_target_image(flash "storage" "${storage_offset}" "${STORAGE_IMAGE}")
 
 # net_hil.cpp (Task 10, gated behind CONFIG_HELIX_NET_HIL) calls into
 # EspMoonrakerClient's IMoonrakerClient contract directly, which needs the same
