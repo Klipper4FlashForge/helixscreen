@@ -9,6 +9,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from translations.extractor import (  # noqa: E402
     collapse_whitespace,
     extract_strings_from_xml,
+    extract_strings_with_locations,
 )
 
 # Shared collapse-parity table — keep in sync with the C tests in
@@ -92,3 +93,33 @@ def test_inline_skips_prop_and_const_tokens(tmp_path):
 def test_inline_whitespace_only_ignored(tmp_path):
     xml = '<view><text_muted name="m">\n    </text_muted></view>'
     assert "" not in _extract(tmp_path, xml)
+
+
+def test_inline_text_locations_line_number(tmp_path):
+    # A two-line XML comment sits above the inline-text element. This locks
+    # the _blank_xml_comments invariant: comment bodies are blanked to
+    # same-length filler (newlines preserved), so match offsets/line numbers
+    # are computed against the ORIGINAL content, not a comment-stripped one.
+    xml = """<component>
+  <!-- comment line one
+       comment line two -->
+  <view extends="lv_obj">
+    <text_muted name="msg">Print speed</text_muted>
+  </view>
+</component>"""
+    f = tmp_path / "sample.xml"
+    f.write_text(xml, encoding="utf-8")
+    result = extract_strings_with_locations(f)
+    assert "Print speed" in result
+    # Line count (1-indexed), hand-counted from the string above:
+    # 1 <component>  2 <!-- comment line one  3 comment line two -->
+    # 4 <view ...>  5 <text_muted ...>Print speed</text_muted>
+    assert result["Print speed"] == [("sample.xml", 5)]
+
+
+def test_inline_mixed_content_leading_text(tmp_path):
+    # Text before a child element ("mixed content") must still be caught —
+    # INLINE_TEXT_RE's [^<]+ stops at the next "<", whether that's the
+    # closing tag or a child element's opening tag.
+    xml = '<view><text_muted name="m">Leading text<lv_obj name="child"/></text_muted></view>'
+    assert "Leading text" in _extract(tmp_path, xml)
