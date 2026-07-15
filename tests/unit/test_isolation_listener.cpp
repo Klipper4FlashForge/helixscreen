@@ -18,6 +18,7 @@
 // can also serve as a passive regression tripwire); grep stderr for
 // "[ISOLATION-LEAK]".
 
+#include "thumbnail_processor.h"
 #include "ui_observer_guard.h"
 
 #include <array>
@@ -62,6 +63,19 @@ int live_thread_count() {
 class IsolationListener : public Catch::EventListenerBase {
   public:
     using Catch::EventListenerBase::EventListenerBase;
+
+    void testRunStarting(Catch::TestRunInfo const& /*info*/) override {
+        // Pre-warm process-wide worker pools ONCE before any per-test thread
+        // baseline is captured. ThumbnailProcessor is a Meyer's singleton whose
+        // constructor eagerly starts an HThreadPool worker (MIN_WORKER_THREADS=1)
+        // that lives for the whole process. The first test to reach a thumbnail
+        // fetch (get_thumbnail_cache() -> ThumbnailProcessor::instance()) would
+        // otherwise be flagged as "leaking" that thread — a false positive, since
+        // a process-lifetime pool thread is not an unjoined per-test thread.
+        // Spawning it here folds it into every test's threads_ baseline, so the
+        // delta check only catches genuine per-test thread leaks.
+        (void)helix::ThumbnailProcessor::instance();
+    }
 
     void testRunEnded(Catch::TestRunStats const& /*stats*/) override {
         // Production teardown calls ObserverGuard::invalidate_all() before LVGL is
