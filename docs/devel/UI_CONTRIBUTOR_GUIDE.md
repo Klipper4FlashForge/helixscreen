@@ -305,6 +305,8 @@ All of these support `bind_text="subject_name"` for dynamic content and `text="s
 <text_small text="Firmware v1.2.3"/>
 ```
 
+They also accept the text as inline element content instead of a `text=` attribute -- `<text_muted>Last updated 5 min ago</text_muted>` is equivalent to the `text_muted` line above, and is translatable by default. See "Inline Text Content" in `LVGL9_XML_GUIDE.md` for the full rules.
+
 ### ui_card
 
 A standard card surface with `card_bg` background, themed border, and `border_radius` already applied.
