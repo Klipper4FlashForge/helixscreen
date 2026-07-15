@@ -121,6 +121,25 @@ void HelixTestFixture::reset_all() {
         lv_subject_set_int(ams, 0);
     }
 
+    // DisplaySettingsManager's animations_enabled is a process-global subject
+    // that defaults to the platform value (true on desktop). A fixture-less
+    // TEST_CASE that calls SettingsManager::init_subjects() (e.g. QIDI box lane
+    // eject in test_ams_backend_qidi.cpp) cascades into
+    // DisplaySettingsManager::init_subjects() and latches it true, which then
+    // leaks into every later test. With animations ON, Modal exit animates over
+    // MODAL_EXIT_DURATION_MS (150ms) and only removes the entry from the raw
+    // stack_ vector when the animation completes — but modal tests typically
+    // pump only ~10ms of LVGL time before asserting ModalStack::stack_empty(),
+    // so the entry lingers and the assertion fails
+    // (test_ams_edit_overlay_views.cpp). Forcing animations off here makes modal
+    // teardown synchronous and removes a whole class of modal-timing flakiness.
+    // Set the subject directly (not set_animations_enabled(), which also writes
+    // Config) to avoid Config side effects. No-op when no test has initialized
+    // the subject yet — an uninitialized subject already reads 0/false.
+    if (lv_subject_t* anim = lv_xml_get_subject(nullptr, "settings_animations_enabled")) {
+        lv_subject_set_int(anim, 0);
+    }
+
     // NOTE: NavigationManager has no public reset API (clear_overlay_stack is
     // private; shutdown() is a one-way teardown for app exit). Add a reset
     // here if/when test flakiness from leftover panel/overlay state surfaces.
