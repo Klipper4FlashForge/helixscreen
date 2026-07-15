@@ -950,12 +950,14 @@ int MoonrakerManager::connect(const std::string& /*websocket_url*/,
 // Stub for app_globals_init_subjects (creates test notification + edit mode subjects)
 static lv_subject_t s_test_notification_subject;
 static lv_subject_t s_test_home_edit_mode_subject;
+static lv_subject_t s_test_wizard_active_subject;
 static bool s_test_notification_subject_initialized = false;
 
 void app_globals_init_subjects() {
     if (!s_test_notification_subject_initialized) {
         lv_subject_init_pointer(&s_test_notification_subject, nullptr);
         lv_subject_init_int(&s_test_home_edit_mode_subject, 0);
+        lv_subject_init_int(&s_test_wizard_active_subject, 0);
         s_test_notification_subject_initialized = true;
         spdlog::debug("[Test Stub] app_globals_init_subjects: subjects initialized");
     }
@@ -965,6 +967,7 @@ void app_globals_deinit_subjects() {
     if (s_test_notification_subject_initialized) {
         lv_subject_deinit(&s_test_notification_subject);
         lv_subject_deinit(&s_test_home_edit_mode_subject);
+        lv_subject_deinit(&s_test_wizard_active_subject);
         s_test_notification_subject_initialized = false;
         spdlog::debug("[Test Stub] app_globals_deinit_subjects: subjects deinitialized");
     }
@@ -982,6 +985,13 @@ lv_subject_t& get_home_edit_mode_subject() {
         app_globals_init_subjects();
     }
     return s_test_home_edit_mode_subject;
+}
+
+lv_subject_t& get_wizard_active_subject() {
+    if (!s_test_notification_subject_initialized) {
+        app_globals_init_subjects();
+    }
+    return s_test_wizard_active_subject;
 }
 
 // Stub for ui_notification_init_subjects (creates test subjects for notification badge)

@@ -27,20 +27,29 @@ namespace {
 
 // Both button handlers receive the borrowed MoonrakerAPI* via user_data. The
 // gcode error callback may arrive on the libhv WebSocket thread, so the coded
-// message is extracted on that thread (pure string work) and the toast + lv_tr
-// lookup are bounced onto the main thread via queue_update — never capture
-// widgets or `this` (there is no owning object; the modal is fire-and-forget).
-void run_recovery_gcode(MoonrakerAPI* api, const char* gcode, const char* fail_fmt,
+// message is extracted on that thread (pure string work) and the toast is
+// bounced onto the main thread via queue_update — never capture widgets or
+// `this` (there is no owning object; the modal is fire-and-forget).
+//
+// fail_fmt_tr is the ALREADY-TRANSLATED format string (lv_tr(...) called by
+// the caller, at click time, with a literal). lv_tr(...) returns a
+// static-lifetime pointer (same precedent as the button labels above), so
+// capturing it into the deferred lambda is safe. Translating at the call site
+// rather than re-calling lv_tr() on a stored raw format string keeps the
+// literal directly adjacent to lv_tr( in the source, which the translation
+// sync tool's extractor requires to discover the key — lv_tr(variable) is
+// invisible to it.
+void run_recovery_gcode(MoonrakerAPI* api, const char* gcode, const char* fail_fmt_tr,
                         const char* log_tag) {
     api->execute_gcode(
         gcode,
         [log_tag]() { spdlog::info("[PLR] {} accepted by firmware", log_tag); },
-        [fail_fmt, log_tag](const MoonrakerError& err) {
+        [fail_fmt_tr, log_tag](const MoonrakerError& err) {
             spdlog::error("[PLR] {} failed: {}", log_tag, err.message);
             std::string detail = helix::snapmaker_extract_coded_msg(err.message, err.user_message());
             helix::ui::queue_update("ui_plr_prompt::recovery_error",
-                                    [fail_fmt, detail = std::move(detail)]() {
-                                        NOTIFY_ERROR(fmt::runtime(lv_tr(fail_fmt)), detail);
+                                    [fail_fmt_tr, detail = std::move(detail)]() {
+                                        NOTIFY_ERROR(fmt::runtime(fail_fmt_tr), detail);
                                     });
         });
 }
@@ -54,7 +63,7 @@ void on_plr_resume(lv_event_t* e) {
         return;
     }
     spdlog::info("[PLR] User chose Resume — running SDCARD_PRINT_PL_RESTORE");
-    run_recovery_gcode(api, "SDCARD_PRINT_PL_RESTORE", "Recovery failed: {}",
+    run_recovery_gcode(api, "SDCARD_PRINT_PL_RESTORE", lv_tr("Recovery failed: {}"),
                        "SDCARD_PRINT_PL_RESTORE");
     LVGL_SAFE_EVENT_CB_END();
 }
@@ -68,7 +77,7 @@ void on_plr_discard(lv_event_t* e) {
         return;
     }
     spdlog::info("[PLR] User chose Discard — running SDCARD_PRINT_PL_CLEAR_ENV");
-    run_recovery_gcode(api, "SDCARD_PRINT_PL_CLEAR_ENV", "Failed to discard recovery data: {}",
+    run_recovery_gcode(api, "SDCARD_PRINT_PL_CLEAR_ENV", lv_tr("Failed to discard recovery data: {}"),
                        "SDCARD_PRINT_PL_CLEAR_ENV");
     LVGL_SAFE_EVENT_CB_END();
 }
@@ -106,25 +115,17 @@ void show_plr_recovery_prompt(MoonrakerAPI* api) {
         file, lv_tr("The printer lost power while printing {}. Resume where it left off?"),
         lv_tr("The printer lost power during a print. It can resume where it left off."));
 
-    // modal_configure stores the button-label POINTERS in subjects, so they
-    // must outlive the modal — lv_tr(...) returns static-lifetime strings.
-    modal_configure(ModalSeverity::Info, /*show_cancel=*/true, lv_tr("Resume"), lv_tr("Discard"));
-
-    const char* attrs[] = {"title", lv_tr("Resume interrupted print?"), "message", body.c_str(),
-                           nullptr};
-    lv_obj_t* dialog = Modal::show("modal_dialog", attrs);
+    // Resume = primary/confirm, Discard = secondary/cancel. modal_show_confirmation
+    // wires both non-null handlers directly (no auto-close wrapper), passing
+    // `api` as borrowed user_data — the handlers keep their own Modal::hide +
+    // null-check. lv_tr(...) returns static-lifetime strings, which the modal
+    // stores by pointer, so they must outlive the modal (they do).
+    lv_obj_t* dialog = modal_show_confirmation(
+        lv_tr("Resume interrupted print?"), body.c_str(), ModalSeverity::Info, lv_tr("Resume"),
+        on_plr_resume, on_plr_discard, api, lv_tr("Discard"));
     if (!dialog) {
         spdlog::error("[PLR] Failed to create recovery prompt modal");
         return;
-    }
-
-    // Pass `api` as borrowed user_data (no heap ctx → backdrop dismiss cannot
-    // leak). btn_secondary = Discard, btn_primary = Resume.
-    if (lv_obj_t* discard_btn = lv_obj_find_by_name(dialog, "btn_secondary")) {
-        lv_obj_add_event_cb(discard_btn, on_plr_discard, LV_EVENT_CLICKED, api);
-    }
-    if (lv_obj_t* resume_btn = lv_obj_find_by_name(dialog, "btn_primary")) {
-        lv_obj_add_event_cb(resume_btn, on_plr_resume, LV_EVENT_CLICKED, api);
     }
 
     spdlog::info("[PLR] Recovery prompt shown (recovery_file='{}')", file);

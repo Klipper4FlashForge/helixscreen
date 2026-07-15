@@ -566,6 +566,12 @@ class PrinterState {
         return print_domain_.pl_recovery_file();
     }
 
+    /// Clear the cached PLR recovery file path. Delegated to PrinterPrintState;
+    /// see its accessor docs. Main-thread only.
+    void clear_pl_recovery_file() {
+        print_domain_.clear_pl_recovery_file();
+    }
+
     /**
      * @brief True when Klipper's pause_resume.is_paused is set.
      *

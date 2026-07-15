@@ -114,6 +114,49 @@ TEST_CASE_METHOD(PlrStateTestFixture, "PLR state: missing fields entirely leaves
     REQUIRE(pl_recovery_file().empty());
 }
 
+TEST_CASE_METHOD(PlrStateTestFixture, "PLR state: file_path change is applied (changed-guard)",
+                 "[plr][state]") {
+    // update_from_status only assigns pl_recovery_file_ when the incoming
+    // file_path differs (avoids a per-status temporary). A genuine change must
+    // still flow through.
+    json first = {{"virtual_sdcard",
+                   {{"progress", 0.0},
+                    {"is_active", false},
+                    {"pl_env_valid", true},
+                    {"file_path", "first.gcode"}}}};
+    state().update_from_status(first);
+    REQUIRE(pl_recovery_file() == "first.gcode");
+
+    json second = {{"virtual_sdcard",
+                    {{"progress", 0.0},
+                     {"is_active", false},
+                     {"pl_env_valid", true},
+                     {"file_path", "second.gcode"}}}};
+    state().update_from_status(second);
+    REQUIRE(pl_recovery_file() == "second.gcode");
+}
+
+TEST_CASE_METHOD(PlrStateTestFixture,
+                 "PLR state: disconnect-edge reset clears pl_env_valid + recovery file",
+                 "[plr][state]") {
+    json valid = {{"virtual_sdcard",
+                   {{"progress", 0.0},
+                    {"is_active", false},
+                    {"pl_env_valid", true},
+                    {"file_path", "interrupted.gcode"}}}};
+    state().update_from_status(valid);
+    REQUIRE(pl_env_valid() == true);
+    REQUIRE(pl_recovery_file() == "interrupted.gcode");
+
+    // The offer controller performs exactly this on a CONNECTED->not-CONNECTED
+    // edge so a reconnect re-derives a genuine 0->1 pl_env_valid edge from the
+    // fresh status: force the subject to 0 and drop the stale recovery file.
+    lv_subject_set_int(state().get_pl_env_valid_subject(), 0);
+    state().clear_pl_recovery_file();
+    REQUIRE(pl_env_valid() == false);
+    REQUIRE(pl_recovery_file().empty());
+}
+
 TEST_CASE_METHOD(PlrStateTestFixture, "PLR state: pl_env_valid flips true then back to false",
                  "[plr][state]") {
     json valid = {{"virtual_sdcard",

@@ -440,11 +440,13 @@ void modal_register_keyboard(lv_obj_t* modal, lv_obj_t* textarea);
  * @param on_confirm Callback for confirm button (receives user_data)
  * @param on_cancel Callback for cancel button (receives user_data), or nullptr for no callback
  * @param user_data User data passed to callbacks
+ * @param cancel_text Secondary button text, or nullptr to default to "Cancel"
  * @return The created dialog widget, or nullptr on failure
  */
 lv_obj_t* modal_show_confirmation(const char* title, const char* message, ModalSeverity severity,
                                   const char* confirm_text, lv_event_cb_t on_confirm,
-                                  lv_event_cb_t on_cancel, void* user_data);
+                                  lv_event_cb_t on_cancel, void* user_data,
+                                  const char* cancel_text = nullptr);
 
 /**
  * @brief Show an info/alert dialog with single "OK" button

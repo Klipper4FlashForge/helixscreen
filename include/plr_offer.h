@@ -11,10 +11,15 @@ struct PlrOfferSignals {
     bool printer_idle;     ///< no active or paused print right now
     bool is_snapmaker;     ///< connected printer is a Snapmaker U1 (or PAXX)
     bool already_prompted; ///< one-shot latch: already offered this connection
+    bool wizard_active;    ///< setup wizard is running (app_globals::is_wizard_active())
 };
 
 /// Should HelixScreen offer to resume an interrupted print? Pure: no LVGL,
-/// threading, or singletons.
+/// threading, or singletons. Returns false while the setup wizard is active
+/// (`wizard_active`); the caller must NOT latch `already_prompted` on a
+/// wizard-only suppression. The authoritative account of the one-shot latch and
+/// how suppressed offers re-fire lives at the decision site,
+/// PlrOfferController::evaluate_offer (ui_plr_offer_controller.cpp).
 bool plr_should_offer(const PlrOfferSignals& signals);
 
 /// Should the one-shot "already_prompted" latch be re-armed? True only on a

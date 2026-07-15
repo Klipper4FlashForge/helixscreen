@@ -6,7 +6,8 @@
 namespace helix {
 
 bool plr_should_offer(const PlrOfferSignals& s) {
-    return s.pl_env_valid && s.printer_idle && s.is_snapmaker && !s.already_prompted;
+    return s.pl_env_valid && s.printer_idle && s.is_snapmaker && !s.already_prompted &&
+           !s.wizard_active;
 }
 
 bool plr_should_rearm(int prev_conn_state, int new_conn_state) {

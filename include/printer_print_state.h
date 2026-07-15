@@ -287,6 +287,13 @@ class PrinterPrintState {
         return pl_recovery_file_;
     }
 
+    /// Clear the cached Power-Loss-Recovery file path. Used on the disconnect
+    /// edge alongside forcing pl_env_valid back to 0, so a reconnect starts from
+    /// a clean slate and re-derives both from the fresh status. Main-thread only.
+    void clear_pl_recovery_file() {
+        pl_recovery_file_.clear();
+    }
+
     // ========================================================================
     // Setters
     // ========================================================================

@@ -1091,7 +1091,7 @@ void helix::ui::modal_register_keyboard(lv_obj_t* modal, lv_obj_t* textarea) {
 lv_obj_t* helix::ui::modal_show_confirmation(const char* title, const char* message,
                                              ModalSeverity severity, const char* confirm_text,
                                              lv_event_cb_t on_confirm, lv_event_cb_t on_cancel,
-                                             void* user_data) {
+                                             void* user_data, const char* cancel_text) {
     if (!title || !message) {
         spdlog::error("[Modal] show_confirmation: title and message are required");
         return nullptr;
@@ -1103,7 +1103,7 @@ lv_obj_t* helix::ui::modal_show_confirmation(const char* title, const char* mess
     // Configure modal with severity and button text
     helix::ui::modal_configure(severity, true,
                                confirm_text ? confirm_text : "OK", // i18n: universal
-                               lv_tr("Cancel"));
+                               cancel_text ? cancel_text : lv_tr("Cancel"));
 
     // Show the modal
     lv_obj_t* dialog = Modal::show("modal_dialog", attrs);

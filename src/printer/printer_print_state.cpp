@@ -647,7 +647,12 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
             }
         }
         if (auto fp_it = sdcard.find("file_path"); fp_it != sdcard.end() && fp_it->is_string()) {
-            pl_recovery_file_ = fp_it->get<std::string>();
+            // get_ref borrows the stored string (no temporary); assign only when
+            // it actually changed, mirroring the pl_env_valid changed-guard above.
+            const auto& fp = fp_it->get_ref<const std::string&>();
+            if (pl_recovery_file_ != fp) {
+                pl_recovery_file_ = fp;
+            }
         }
 
         if (sdcard.contains("progress") && sdcard["progress"].is_number()) {

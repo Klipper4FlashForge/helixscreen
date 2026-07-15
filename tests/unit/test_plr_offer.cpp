@@ -19,6 +19,7 @@ PlrOfferSignals all_true_signals() {
     s.printer_idle = true;
     s.is_snapmaker = true;
     s.already_prompted = false;
+    s.wizard_active = false;
     return s;
 }
 
@@ -50,6 +51,18 @@ TEST_CASE("plr_should_offer: already_prompted latch blocks re-offer", "[plr][off
     PlrOfferSignals s = all_true_signals();
     s.already_prompted = true;
     REQUIRE(plr_should_offer(s) == false);
+}
+
+TEST_CASE("plr_should_offer: wizard active blocks offer", "[plr][offer]") {
+    PlrOfferSignals s = all_true_signals();
+    s.wizard_active = true;
+    REQUIRE(plr_should_offer(s) == false);
+}
+
+TEST_CASE("plr_should_offer: all good with wizard inactive still offers", "[plr][offer]") {
+    PlrOfferSignals s = all_true_signals();
+    s.wizard_active = false;
+    REQUIRE(plr_should_offer(s) == true);
 }
 
 TEST_CASE("plr_should_rearm: CONNECTED -> DISCONNECTED re-arms", "[plr][offer][rearm]") {
