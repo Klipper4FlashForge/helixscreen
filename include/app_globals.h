@@ -335,3 +335,30 @@ std::string app_get_runtime_dir();
 // Falls back to the relative "config" when install root is unknown.
 // Result is cached after first call.
 std::string app_get_config_dir();
+
+// Parses an environment-variable value as a boolean. Truthy values are
+// "1", "true", "yes", "on" (case-insensitive); everything else (including
+// nullptr, "", "0", "false") is false. Pure/side-effect-free so it can be
+// unit-tested without depending on the process environment.
+bool helix_parse_truthy_env(const char* value);
+
+// Pure predicate behind updates_externally_managed(), split out for testing so
+// the three env inputs can be exercised without mutating the process env.
+// True when EITHER an explicit HELIX_UPDATES_EXTERNAL override is truthy, OR the
+// launch looks firmware-managed: a supervisor owns our lifecycle (HELIX_SUPERVISED)
+// AND our asset root was relocated via HELIX_DATA_DIR. The latter is how a
+// firmware that bind-mounts the binary over its stock GUI path runs us — there
+// /proc/self/exe no longer resolves our install tree, so self-update can't work.
+bool compute_updates_externally_managed(const char* updates_external,
+                                        const char* supervised, const char* data_dir);
+
+// Returns true when software updates are owned by the device firmware, in which
+// case HelixScreen must NOT run its in-app self-update: the periodic auto-check
+// is suppressed and manual check/download entry points short-circuit.
+//
+// Detected from the environment the firmware already sets (HELIX_SUPERVISED +
+// HELIX_DATA_DIR), with HELIX_UPDATES_EXTERNAL as an explicit override. NOT keyed
+// off HELIX_SUPERVISED alone — our own watchdog sets that on normal installs
+// (without HELIX_DATA_DIR) where self-update MUST still work. Read once and
+// cached (like app_get_install_root()).
+bool updates_externally_managed();

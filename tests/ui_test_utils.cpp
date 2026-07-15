@@ -10,8 +10,12 @@
 #include "spdlog/spdlog.h"
 #include "test_helpers/update_queue_test_access.h"
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
+#include <string>
 #include <thread>
 
 using namespace helix;
@@ -861,6 +865,39 @@ std::string app_get_runtime_dir() {
 // Returns empty string — matches the production fallback when install root is unknown.
 std::string app_get_config_dir() {
     return "";
+}
+
+// app_globals.o is excluded from the test link, so mirror the real
+// helix_parse_truthy_env / updates_externally_managed logic here (kept
+// byte-identical to src/app_globals.cpp) so the update-gate tests exercise
+// the genuine parse behavior rather than a hollow stub.
+bool helix_parse_truthy_env(const char* value) {
+    if (!value || value[0] == '\0') {
+        return false;
+    }
+    std::string v(value);
+    auto not_space = [](unsigned char c) { return !std::isspace(c); };
+    v.erase(v.begin(), std::find_if(v.begin(), v.end(), not_space));
+    v.erase(std::find_if(v.rbegin(), v.rend(), not_space).base(), v.end());
+    std::transform(v.begin(), v.end(), v.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return v == "1" || v == "true" || v == "yes" || v == "on";
+}
+
+bool compute_updates_externally_managed(const char* updates_external, const char* supervised,
+                                        const char* data_dir) {
+    if (helix_parse_truthy_env(updates_external)) {
+        return true;
+    }
+    return helix_parse_truthy_env(supervised) && data_dir && data_dir[0] != '\0';
+}
+
+bool updates_externally_managed() {
+    static const bool cached =
+        compute_updates_externally_managed(std::getenv("HELIX_UPDATES_EXTERNAL"),
+                                           std::getenv("HELIX_SUPERVISED"),
+                                           std::getenv("HELIX_DATA_DIR"));
+    return cached;
 }
 
 // Stub for get_moonraker_manager (tests don't have manager)

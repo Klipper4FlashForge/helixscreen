@@ -1216,6 +1216,7 @@ translations:
   Manage: 管理
   Manage Printers: 管理打印机
   Manage configured printers: 管理已配置的打印机
+  Managed by your firmware: ''
   Manual: 手动
   Manual Bed Leveling: 手动热床调平
   Map to closest colors with matching material: 按匹配材料映射最接近的颜色
@@ -1981,6 +1982,7 @@ translations:
   Snapmaker SnapSwap: Snapmaker SnapSwap
   Snapmaker U1: Snapmaker U1
   Soft: 柔和
+  Software Updates: ''
   Some filaments don't match the slicer's intent.: 部分耗材与切片软件的意图不符。
   Some settings will take effect after restart.: 某些设置将在重启后生效。
   Sound Theme: 声音主题

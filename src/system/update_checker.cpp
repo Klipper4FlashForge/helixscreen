@@ -1026,6 +1026,14 @@ void UpdateChecker::start_download() {
     if (shutting_down_.load())
         return;
 
+    // Firmware-managed devices own updates via their own package pipeline.
+    // Never self-download/install — it would fight the firmware's setup.
+    if (updates_externally_managed()) {
+        spdlog::info("[UpdateChecker] Update skipped: updates are managed externally "
+                     "(firmware-managed environment)");
+        return;
+    }
+
     // Safety: refuse download while printing
     auto job_state = get_printer_state().get_print_job_state();
     if (job_state == PrintJobState::PRINTING || job_state == PrintJobState::PAUSED) {
@@ -2024,6 +2032,15 @@ void UpdateChecker::check_for_updates(Callback callback) {
         return;
     }
 
+    // Firmware-managed devices own updates externally — never check remotely.
+    // Gating this top-level entry covers both manual and auto-check callers so
+    // no download/install path can ever proceed.
+    if (updates_externally_managed()) {
+        spdlog::info("[UpdateChecker] Update skipped: updates are managed externally "
+                     "(firmware-managed environment)");
+        return;
+    }
+
     // Use mutex for entire operation to prevent race conditions.
     // This is safe because we join the previous thread before spawning a new one,
     // so we won't deadlock with the worker thread.
@@ -2389,6 +2406,15 @@ void UpdateChecker::dismiss_current_version() {
 // ============================================================================
 
 void UpdateChecker::start_auto_check() {
+    // Firmware-managed devices own updates externally — never schedule the
+    // periodic auto-check timer so the "update available" notification path
+    // can never fire.
+    if (updates_externally_managed()) {
+        spdlog::info("[UpdateChecker] Auto-check disabled: updates are managed externally "
+                     "(firmware-managed environment)");
+        return;
+    }
+
     if (auto_check_timer_) {
         spdlog::debug("[UpdateChecker] Auto-check timer already running");
         return;

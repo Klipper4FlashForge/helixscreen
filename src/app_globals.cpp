@@ -35,6 +35,8 @@
 #include <cerrno>
 #include <climits>
 #include <csignal>
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -490,5 +492,39 @@ std::string app_get_config_dir() {
         }
         return cfg; // best-effort relative fallback
     }();
+    return cached;
+}
+
+bool helix_parse_truthy_env(const char* value) {
+    if (!value || value[0] == '\0') {
+        return false;
+    }
+    std::string v(value);
+    // Trim surrounding whitespace (helixscreen.env values can carry a stray space).
+    auto not_space = [](unsigned char c) { return !std::isspace(c); };
+    v.erase(v.begin(), std::find_if(v.begin(), v.end(), not_space));
+    v.erase(std::find_if(v.rbegin(), v.rend(), not_space).base(), v.end());
+    std::transform(v.begin(), v.end(), v.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return v == "1" || v == "true" || v == "yes" || v == "on";
+}
+
+bool compute_updates_externally_managed(const char* updates_external, const char* supervised,
+                                        const char* data_dir) {
+    // Explicit override wins.
+    if (helix_parse_truthy_env(updates_external)) {
+        return true;
+    }
+    // Firmware-managed launch: supervised AND asset root relocated. Our own
+    // watchdog sets HELIX_SUPERVISED but never HELIX_DATA_DIR, so this stays
+    // false on normal self-managed installs.
+    return helix_parse_truthy_env(supervised) && data_dir && data_dir[0] != '\0';
+}
+
+bool updates_externally_managed() {
+    static const bool cached =
+        compute_updates_externally_managed(std::getenv("HELIX_UPDATES_EXTERNAL"),
+                                           std::getenv("HELIX_SUPERVISED"),
+                                           std::getenv("HELIX_DATA_DIR"));
     return cached;
 }

@@ -133,6 +133,9 @@ class SettingsPanel : public PanelBase {
     // Platform visibility subjects (Android hides these)
     lv_subject_t show_network_settings_subject_;
     lv_subject_t show_update_settings_subject_;
+    // 1 when updates are managed by the device firmware (HELIX_UPDATES_EXTERNAL):
+    // hides the in-app check/install controls and shows a static notice instead.
+    lv_subject_t updates_firmware_managed_subject_;
     lv_subject_t show_backlight_settings_subject_;
 
     // Touch calibration status subject
