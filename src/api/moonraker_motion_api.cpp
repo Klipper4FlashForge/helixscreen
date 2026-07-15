@@ -187,6 +187,59 @@ void MoonrakerMotionAPI::move_axis(char axis, double distance, double feedrate,
     execute_gcode(gcode, on_success, on_error);
 }
 
+void MoonrakerMotionAPI::move_relative(double dx, double dy, double dz, double xy_feedrate,
+                                       double z_feedrate, SuccessCallback on_success,
+                                       ErrorCallback on_error) {
+    if (reject_non_finite({dx, dy, dz, xy_feedrate, z_feedrate}, "move_relative", on_error)) {
+        return;
+    }
+
+    // Per-axis distance safety (same limits as move_axis).
+    const struct {
+        char axis;
+        double dist;
+    } deltas[] = {{'X', dx}, {'Y', dy}, {'Z', dz}};
+    for (const auto& d : deltas) {
+        if (d.dist != 0.0 && !is_safe_distance(d.dist, safety_limits_)) {
+            NOTIFY_ERROR("Move distance {:.1f}mm is too large. Maximum: {:.1f}mm.",
+                         std::abs(d.dist), safety_limits_.max_relative_distance_mm);
+            if (on_error) {
+                MoonrakerError err;
+                err.type = MoonrakerErrorType::VALIDATION_ERROR;
+                err.message = "Distance " + std::to_string(d.dist) +
+                              "mm exceeds safety limits on axis " + std::string(1, d.axis);
+                err.method = "move_relative";
+                on_error(err);
+            }
+            return;
+        }
+    }
+    for (double f : {xy_feedrate, z_feedrate}) {
+        if (f != 0 && !is_safe_feedrate(f, safety_limits_)) {
+            NOTIFY_ERROR("Speed {:.0f}mm/min is too fast. Maximum: {:.0f}mm/min.", f,
+                         safety_limits_.max_feedrate_mm_min);
+            if (on_error) {
+                MoonrakerError err;
+                err.type = MoonrakerErrorType::VALIDATION_ERROR;
+                err.message = "Feedrate " + std::to_string(f) + "mm/min exceeds safety limits";
+                err.method = "move_relative";
+                on_error(err);
+            }
+            return;
+        }
+    }
+
+    std::string gcode = generate_relative_move_gcode(dx, dy, dz, xy_feedrate, z_feedrate);
+    if (gcode.empty()) {
+        if (on_success) {
+            on_success(); // nothing to do — treat as trivially complete
+        }
+        return;
+    }
+    spdlog::info("[Motion API] Relative move dx={} dy={} dz={} (G-code: {})", dx, dy, dz, gcode);
+    execute_gcode(gcode, on_success, on_error);
+}
+
 void MoonrakerMotionAPI::move_to_position(char axis, double position, double feedrate,
                                           SuccessCallback on_success, ErrorCallback on_error) {
     // Reject NaN/Inf before any G-code generation
@@ -279,6 +332,45 @@ std::string MoonrakerMotionAPI::generate_move_gcode(char axis, double distance, 
         gcode << " F" << feedrate;
     }
     gcode << "\nG90"; // Back to absolute positioning
+    return gcode.str();
+}
+
+std::string MoonrakerMotionAPI::generate_relative_move_gcode(double dx, double dy, double dz,
+                                                             double xy_feedrate,
+                                                             double z_feedrate) {
+    const double vals[] = {dx, dy, dz, xy_feedrate, z_feedrate};
+    for (double v : vals) {
+        if (std::isnan(v) || std::isinf(v)) {
+            spdlog::warn("[Motion API] generate_relative_move_gcode: Rejecting G-code "
+                         "generation: invalid value (NaN/Inf)");
+            return "";
+        }
+    }
+    if (dx == 0.0 && dy == 0.0 && dz == 0.0) {
+        return "";
+    }
+
+    std::ostringstream gcode;
+    gcode << "G91";
+    if (dx != 0.0 || dy != 0.0) {
+        gcode << "\nG0";
+        if (dx != 0.0) {
+            gcode << " X" << dx;
+        }
+        if (dy != 0.0) {
+            gcode << " Y" << dy;
+        }
+        if (xy_feedrate > 0) {
+            gcode << " F" << xy_feedrate;
+        }
+    }
+    if (dz != 0.0) {
+        gcode << "\nG0 Z" << dz;
+        if (z_feedrate > 0) {
+            gcode << " F" << z_feedrate;
+        }
+    }
+    gcode << "\nG90";
     return gcode.str();
 }
 
@@ -388,11 +480,37 @@ void MoonrakerMotionAPI::execute_gcode(const std::string& gcode, SuccessCallback
 
     spdlog::trace("[Motion API] Executing G-code: {}", annotated);
 
-    // Guard: only wrap on_success in lambda if non-null, otherwise pass nullptr.
-    std::function<void(const json&)> success_wrapper;
-    if (on_success) {
-        success_wrapper = [on_success](json) { on_success(); };
+    // Stamp app-initiated motion activity for discretionary (jog) gcode so the
+    // busy guard can attribute the resulting idle_timeout "Printing" to us.
+    // Both callbacks are wrapped: the request tracker guarantees exactly one
+    // fires (success, error, or timeout), keeping the inflight count balanced.
+    // NOTE: `silent` was computed from the CALLER's on_error before wrapping.
+    const bool stamp = helix::is_discretionary_gcode(gcode);
+    helix::PrinterState* ps = &state_;
+    if (stamp) {
+        ps->app_motion_activity().note_sent();
     }
-    client_.send_jsonrpc("printer.gcode.script", params, std::move(success_wrapper), on_error,
-                         timeout_ms, silent);
+
+    std::function<void(const json&)> success_wrapper;
+    if (on_success || stamp) {
+        success_wrapper = [on_success, ps, stamp](json) {
+            if (stamp) {
+                ps->app_motion_activity().note_done();
+            }
+            if (on_success) {
+                on_success();
+            }
+        };
+    }
+    ErrorCallback error_wrapper = on_error;
+    if (stamp) {
+        error_wrapper = [on_error, ps](const MoonrakerError& err) {
+            ps->app_motion_activity().note_done();
+            if (on_error) {
+                on_error(err);
+            }
+        };
+    }
+    client_.send_jsonrpc("printer.gcode.script", params, std::move(success_wrapper),
+                         std::move(error_wrapper), timeout_ms, silent);
 }
