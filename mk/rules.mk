@@ -301,10 +301,14 @@ endif
 	$(call emit-compile-command,$(CC),$(LVGL_C_CFLAGS) $(INCLUDES) $(LV_CONF),$<,$@)
 
 # Compile Helix XML sources (extracted from LVGL, with our patches baked in)
+# Unlike LVGL/lv_markdown/quirc (vendored, rarely touched), helix-xml is
+# direct-edit and under active development (see CLAUDE.md), so it gets
+# DEPFLAGS like app sources do - stale objects after a header-only edit here
+# caused a struct-size mismatch/stack-smash that required hand-deleting 168 .o files.
 $(OBJ_DIR)/helix-xml/%.o: $(HELIX_XML_DIR)/%.c lv_conf.h $(PATCHES_STAMP)
 	$(Q)mkdir -p $(dir $@)
 	$(ECHO) "$(CYAN)[CC]$(RESET) $<"
-	$(Q)$(CC) $(SUBMODULE_CFLAGS) $(INCLUDES) $(LV_CONF) -c $< -o $@ || { \
+	$(Q)$(CC) $(SUBMODULE_CFLAGS) $(DEPFLAGS) $(INCLUDES) $(LV_CONF) -c $< -o $@ || { \
 		echo "$(RED)$(BOLD)✗ Compilation failed:$(RESET) $<"; \
 		exit 1; \
 	}
@@ -546,5 +550,12 @@ compile_commands_full:
 -include $(wildcard $(OBJ_DIR)/*/*/*.d)
 -include $(wildcard $(OBJ_DIR)/tests/*.d)
 -include $(wildcard $(OBJ_DIR)/tests/*/*.d)
+# helix-xml is direct-edit (not vendored), so its .d files ARE tracked, unlike
+# LVGL/lv_markdown/quirc below. Paths are 3-4 levels deep from OBJ_DIR:
+#   $(OBJ_DIR)/helix-xml/src/xml/*.d           - e.g. lv_xml.c, lv_xml_component.c
+#   $(OBJ_DIR)/helix-xml/src/xml/parsers/*.d   - per-widget XML parsers
+#   $(OBJ_DIR)/helix-xml/src/libs/expat/*.d    - vendored expat (still direct-edit tree)
+-include $(wildcard $(OBJ_DIR)/helix-xml/*/*/*.d)
+-include $(wildcard $(OBJ_DIR)/helix-xml/*/*/*/*.d)
 # NOTE: LVGL .d files intentionally NOT included - they add 150k+ lines of deps
 # that slow make startup by 4+ seconds. LVGL rarely changes; do clean build if needed.
