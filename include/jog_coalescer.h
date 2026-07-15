@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 
 namespace helix {
@@ -12,8 +13,13 @@ struct AxisMove {
     double dx = 0.0;
     double dy = 0.0;
     double dz = 0.0;
+    // Mixed-magnitude float cancellation can leave ~1e-17 residue in an
+    // accumulated delta; treat anything below this as zero so a near-null move
+    // (which would serialize in scientific notation) never flushes.
+    static constexpr double kEpsilonMm = 1e-6;
     bool any() const {
-        return dx != 0.0 || dy != 0.0 || dz != 0.0;
+        return std::abs(dx) > kEpsilonMm || std::abs(dy) > kEpsilonMm ||
+               std::abs(dz) > kEpsilonMm;
     }
 };
 

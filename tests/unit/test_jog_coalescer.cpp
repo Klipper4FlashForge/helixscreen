@@ -77,6 +77,22 @@ TEST_CASE("JogCoalescer: reset clears everything", "[jog_coalescer]") {
     CHECK(c.uncommitted_x() == 0.0);
 }
 
+TEST_CASE("JogCoalescer: float-residue reversal nets to idle, no residual flush",
+          "[jog_coalescer]") {
+    // 0.1 + 1.0 - 1.0 - 0.1 leaves ~1e-17 residue in double arithmetic. An exact
+    // != 0.0 check would flush a near-null move (serialized in scientific notation);
+    // the epsilon threshold in AxisMove::any() treats it as zero and goes idle.
+    JogCoalescer c;
+    REQUIRE(c.on_tap({1.0, 0.0, 0.0}).has_value()); // establish in-flight
+    c.on_tap({0.1, 0.0, 0.0});
+    c.on_tap({1.0, 0.0, 0.0});
+    c.on_tap({-1.0, 0.0, 0.0});
+    c.on_tap({-0.1, 0.0, 0.0});
+    auto flush = c.on_ack();
+    CHECK_FALSE(flush.has_value()); // residue below epsilon -> nothing to send
+    CHECK_FALSE(c.in_flight());
+}
+
 TEST_CASE("clamp_jog_delta: clamps target to envelope", "[jog_coalescer]") {
     // current=195, nothing uncommitted, +10 would hit 205 with max 200 -> +5
     CHECK_THAT(helix::clamp_jog_delta(195.0, 0.0, 10.0, 0.0, 200.0),
