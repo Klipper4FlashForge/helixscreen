@@ -55,9 +55,18 @@ TEST_CASE("compile: unknown subject fails (returns null)", "[xml_expr]") {
     REQUIRE(e == nullptr);
 }
 
+TEST_CASE("compile: repeated subject collapses to one distinct", "[xml_expr]") {
+    lv_subject_init_int(&s_a, 1); lv_subject_init_int(&s_b, 0);
+    lv_xml_expr_t * e = lv_xml_expr_compile("a && a", mock_resolver, nullptr);
+    REQUIRE(e != nullptr);
+    REQUIRE(lv_xml_expr_subject_count(e) == 1);
+    lv_xml_expr_free(e);
+}
+
 TEST_CASE("compile: malformed expressions fail cleanly", "[xml_expr]") {
     REQUIRE(lv_xml_expr_compile("", mock_resolver, nullptr) == nullptr);
     REQUIRE(lv_xml_expr_compile("(a && b", mock_resolver, nullptr) == nullptr);
     REQUIRE(lv_xml_expr_compile("a &&", mock_resolver, nullptr) == nullptr);
     REQUIRE(lv_xml_expr_compile("a @ b", mock_resolver, nullptr) == nullptr);
+    REQUIRE(lv_xml_expr_compile("a && b)", mock_resolver, nullptr) == nullptr);
 }

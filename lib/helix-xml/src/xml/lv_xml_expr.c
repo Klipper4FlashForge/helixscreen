@@ -53,12 +53,12 @@ static size_t tokenize(const char * s, tok_t * out, size_t cap){
     return n;
 }
 
-#define LV_XML_EXPR_TEST_TOK_MAX 128
+#define LV_XML_EXPR_MAX_TOKENS 128
 size_t lv_xml_expr_tokenize_for_test(const char * src, lv_xml_expr_tok_kind_t * out, size_t cap){
-    tok_t buf[LV_XML_EXPR_TEST_TOK_MAX];
-    size_t n = tokenize(src, buf, LV_XML_EXPR_TEST_TOK_MAX);
+    tok_t buf[LV_XML_EXPR_MAX_TOKENS];
+    size_t n = tokenize(src, buf, LV_XML_EXPR_MAX_TOKENS);
     size_t m = n < cap ? n : cap;
-    if (m > LV_XML_EXPR_TEST_TOK_MAX) m = LV_XML_EXPR_TEST_TOK_MAX;
+    if (m > LV_XML_EXPR_MAX_TOKENS) m = LV_XML_EXPR_MAX_TOKENS;
     for (size_t i = 0; i < m; i++) out[i] = buf[i].kind;
     return n;
 }
@@ -100,6 +100,7 @@ static void node_free(expr_node_t * n){ if(!n)return; node_free(n->a); node_free
 static void collect_subject(parser_t * p, lv_subject_t * s){
     for(size_t i=0;i<p->nsub;i++) if(p->subs[i]==s) return;
     if(p->nsub < 32) p->subs[p->nsub++]=s;
+    else LV_LOG_WARN("expr: more than 32 distinct subjects; dependency dropped");
 }
 
 static expr_node_t * parse_primary(parser_t * p){
@@ -150,7 +151,8 @@ static expr_node_t * parse_or(parser_t * p){ static const lv_xml_expr_tok_kind_t
 
 lv_xml_expr_t * lv_xml_expr_compile(const char * src, lv_xml_expr_resolver_t resolver, void * ctx){
     if(src==NULL || src[0]=='\0') return NULL;
-    tok_t toks[128]; size_t nt = tokenize(src, toks, 128);
+    tok_t toks[LV_XML_EXPR_MAX_TOKENS]; size_t nt = tokenize(src, toks, LV_XML_EXPR_MAX_TOKENS);
+    if(nt > LV_XML_EXPR_MAX_TOKENS){ LV_LOG_WARN("expr: too many tokens in '%s'", src); return NULL; }
     for(size_t i=0;i<nt;i++) if(toks[i].kind==LV_XML_EXPR_TOK_ERROR){ LV_LOG_WARN("expr: bad token in '%s'", src); return NULL; }
     parser_t p = { .t=toks, .pos=0, .error=false, .resolver=resolver, .ctx=ctx, .nsub=0 };
     expr_node_t * root = parse_or(&p);
