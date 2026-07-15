@@ -315,6 +315,16 @@ void MotionPanel::on_deactivate() {
     OverlayBase::on_deactivate();
 }
 
+void MotionPanel::on_ui_destroyed() {
+    // Null raw child pointers so persistent observers (jog_ready_observer_
+    // dereferences jog_pad_ on every connection/klippy flap) can't UAF if the
+    // overlay widget tree is ever destroyed (destroy-on-close, parent screen
+    // teardown). Peers do the same — see BedMeshPanel::on_ui_destroyed.
+    jog_pad_ = nullptr;
+    parent_screen_ = nullptr;
+    jog_coalescer_.reset();
+}
+
 // ============================================================================
 // Jog Pad Setup
 // ============================================================================
