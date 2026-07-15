@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "app_motion_activity.h"
 #include "capability_overrides.h"
 #include "hardware_validator.h"
 #include "lvgl/lvgl.h"
@@ -1698,6 +1699,25 @@ class PrinterState {
     bool is_blocking_operation_active();
 
     /**
+     * @brief Like is_blocking_operation_active(), but attributes self-inflicted busy
+     *
+     * Treats busy-ness attributable to the app's own recent jog activity (in
+     * flight, or acked within AppMotionActivity::kGraceWindow) as NOT blocking.
+     * Manual probe remains an absolute block. Guards for discretionary gcode use
+     * THIS predicate so back-to-back jogs don't self-block — idle_timeout reports
+     * "Printing" during any move, including our own jog (spec 2026-07-15).
+     *
+     * @return true if a blocking non-print operation NOT caused by the app is active
+     */
+    bool is_external_blocking_operation_active();
+
+    /// App-initiated motion (jog) activity tracker; Task 3 stamps it from the
+    /// motion API so is_external_blocking_operation_active() can subtract self-busy.
+    helix::AppMotionActivity& app_motion_activity() {
+        return app_motion_activity_;
+    }
+
+    /**
      * @brief Check if printer has a probe configured
      *
      * Used by Z-offset calibration to determine whether to use
@@ -1943,6 +1963,9 @@ class PrinterState {
 
     /// Calibration state component (firmware retraction, manual probe, motor state)
     helix::PrinterCalibrationState calibration_state_;
+
+    /// App-initiated motion (jog) activity tracker for busy-guard attribution
+    helix::AppMotionActivity app_motion_activity_;
 
     /// Hardware validation state component (issue counts, severity, status text)
     helix::PrinterHardwareValidationState hardware_validation_state_;

@@ -178,6 +178,30 @@ TEST_CASE_METHOD(BusyGuardApiFixture,
 }
 
 // ============================================================================
+// Self-inflicted busy (app's own jog in flight) is NOT blocked
+// ============================================================================
+
+TEST_CASE_METHOD(BusyGuardApiFixture,
+                 "execute_gcode allows discretionary gcode while app motion is in flight",
+                 "[busy_guard][mock]") {
+    // idle_timeout reports "Printing" during any move, including our own jog. When
+    // the app itself has motion outstanding, the busy-ness is self-inflicted, so
+    // back-to-back jogs must pass instead of self-blocking with a busy toast.
+    set_idle_printing(true);
+    set_print_state(PrintJobState::STANDBY);
+    state.app_motion_activity().note_sent();
+
+    api->execute_gcode("M106 S255", nullptr,
+                       [this](const MoonrakerError& err) { error_cb(err); });
+
+    CHECK_FALSE(error_called);
+    REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
+    CHECK_FALSE(mock_client.gcode_script_history().empty());
+
+    state.app_motion_activity().note_done();
+}
+
+// ============================================================================
 // Motion API routes through the same guard
 // ============================================================================
 

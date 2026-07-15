@@ -107,6 +107,39 @@ TEST_CASE_METHOD(BlockingOpFixture,
 }
 
 // ============================================================================
+// Case 1b: is_external_blocking_operation_active attributes self-inflicted busy
+// ============================================================================
+
+TEST_CASE_METHOD(BlockingOpFixture,
+                 "is_external_blocking_operation_active attributes self-busy",
+                 "[printer_state][busy_guard]") {
+    // Arrange like the "idle_timeout Printing while STANDBY -> blocking" section:
+    // idle_timeout_printing = 1, print job state STANDBY, no manual probe.
+    set_idle_timeout_printing(1);
+    set_manual_probe(0);
+    set_print_state(PrintJobState::STANDBY);
+
+    SECTION("external busy: no app motion -> blocked") {
+        CHECK(state.is_blocking_operation_active());
+        CHECK(state.is_external_blocking_operation_active());
+    }
+
+    SECTION("self busy: app motion in flight -> not blocked") {
+        state.app_motion_activity().note_sent();
+        CHECK(state.is_blocking_operation_active()); // raw predicate unchanged
+        CHECK_FALSE(state.is_external_blocking_operation_active());
+        state.app_motion_activity().note_done();
+    }
+
+    SECTION("manual probe blocks even during app motion") {
+        set_manual_probe(1);
+        state.app_motion_activity().note_sent();
+        CHECK(state.is_external_blocking_operation_active());
+        state.app_motion_activity().note_done();
+    }
+}
+
+// ============================================================================
 // Case 2: idle_timeout.state JSON parse -> idle_timeout_printing_ subject
 // ============================================================================
 

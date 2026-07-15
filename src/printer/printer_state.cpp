@@ -766,6 +766,21 @@ bool PrinterState::is_blocking_operation_active() {
     return pstate != PrintJobState::PRINTING && pstate != PrintJobState::PAUSED;
 }
 
+bool PrinterState::is_external_blocking_operation_active() {
+    // Manual probe is an absolute block: TESTZ sessions must never accept
+    // jog gcode regardless of how recently the app itself sent motion.
+    if (lv_subject_get_int(calibration_state_.get_manual_probe_active_subject()) != 0) {
+        return true;
+    }
+    if (!is_blocking_operation_active()) {
+        return false;
+    }
+    // idle_timeout == "Printing" during any move, including our own jog. If the
+    // app has motion in flight (or acked within the grace window), the busy-ness
+    // is self-inflicted — let discretionary gcode through so jogs don't self-block.
+    return !app_motion_activity_.recently_active();
+}
+
 bool PrinterState::can_start_new_print() const {
     return print_domain_.can_start_new_print();
 }

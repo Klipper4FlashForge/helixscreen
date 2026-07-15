@@ -475,8 +475,10 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
     // surfacing a stream of "Fan control failed: printer busy" toasts (see debug
     // bundle 7CT79XXK, Sovol SV08 calibration). Recovery, homing, probe-control
     // (TESTZ/ACCEPT/ABORT) and macros are never discretionary, so they pass.
-    // Real file prints are excluded by is_blocking_operation_active().
-    if (helix::is_discretionary_gcode(gcode) && state_.is_blocking_operation_active()) {
+    // Real file prints are excluded by is_blocking_operation_active(). Self-busy
+    // from the app's own recent jog passes too (idle_timeout reports "Printing"
+    // during any move); only external blocking ops still refuse.
+    if (helix::is_discretionary_gcode(gcode) && state_.is_external_blocking_operation_active()) {
         if (!silent) {
             spdlog::warn("[Moonraker API] Refusing discretionary G-code while printer is "
                          "homing/leveling: '{}'",
