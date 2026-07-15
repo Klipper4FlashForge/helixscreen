@@ -1154,6 +1154,7 @@ void SettingsPanel::handle_factory_reset_clicked() {
 }
 
 void SettingsPanel::handle_plugins_clicked() {
+#if HELIX_HAS_PLUGINS
     spdlog::debug("[{}] Plugins clicked - opening overlay", get_name());
 
     auto& overlay = get_settings_plugins_overlay();
@@ -1169,6 +1170,11 @@ void SettingsPanel::handle_plugins_clicked() {
         NavigationManager::instance().register_overlay_instance(overlay.get_root(), &overlay);
         NavigationManager::instance().push_overlay(overlay.get_root());
     }
+#else
+    // Plugin system compiled out (HELIX_HAS_PLUGINS=0) — row_plugins stays in the
+    // XML layout (see CLAUDE.md gcode_viewer precedent) but the click is inert.
+    spdlog::debug("[{}] Plugins clicked - plugin system compiled out, ignoring", get_name());
+#endif
 }
 
 void SettingsPanel::perform_factory_reset() {

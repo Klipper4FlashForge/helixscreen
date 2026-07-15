@@ -1883,6 +1883,7 @@ bool Application::init_moonraker() {
 }
 
 bool Application::init_plugins() {
+#if HELIX_HAS_PLUGINS
     spdlog::debug("[Application] Initializing plugin system");
 
     m_plugin_manager = std::make_unique<helix::plugin::PluginManager>();
@@ -1959,6 +1960,10 @@ bool Application::init_plugins() {
 
     helix::MemoryMonitor::log_now("after_plugins_loaded");
     return all_loaded;
+#else
+    spdlog::debug("[Application] Plugin system compiled out (HELIX_HAS_PLUGINS=0)");
+    return true;
+#endif
 }
 
 bool Application::run_wizard() {
