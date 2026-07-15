@@ -230,6 +230,37 @@ class AmsBackendAce : public AmsSubscriptionBackend {
      */
     static uint32_t parse_slot_color(const nlohmann::json& color_val);
 
+    /**
+     * @brief Pick the ace/filament_hub status object that actually carries slot
+     *        data (a non-empty "slots" array).
+     *
+     * The on_started() query commits to the WebSocket subscription path only
+     * when the matched object carries slots. A manager-only object — e.g. the
+     * Kobra S1 fork's `ace` object exposes `ace_instances`/`current_index` but
+     * NO `slots` (the per-unit slot data lives in separate `ace_instance_N`
+     * objects) — must fall through to the REST bridge at /server/ace/ instead
+     * of parsing zero slots off the manager (#1069).
+     *
+     * @param status The `result.status` object from printer.objects.query
+     * @param matched_key Out: set to the picked key ("filament_hub"/"ace") when
+     *        a slot-bearing object is found; untouched otherwise. May be null.
+     * @return Pointer to the slot-bearing object (borrowed from @p status), or
+     *         nullptr if neither filament_hub nor ace carries a slots array.
+     */
+    static const nlohmann::json* select_slot_bearing_object(const nlohmann::json& status,
+                                                            const char** matched_key);
+
+    /**
+     * @brief Map an ACE slot status string to a SlotStatus.
+     *
+     * Single source of truth shared by the WebSocket object path
+     * (parse_ace_object) and the REST fallback path (parse_slots_response) so
+     * the two vocabularies can't drift. empty/runout -> EMPTY;
+     * available/loaded/ready/preload/running -> AVAILABLE; anything else
+     * (including "unknown") -> UNKNOWN.
+     */
+    static SlotStatus slot_status_from_string(const std::string& status_str);
+
     // ========================================================================
     // Members
     // ========================================================================
@@ -240,6 +271,16 @@ class AmsBackendAce : public AmsSubscriptionBackend {
     // Info tracking
     std::atomic<bool> info_fetched_{false};
     std::atomic<int> info_fetch_failures_{0};
+
+    // Data-endpoint (/status + /slots) tracking. /server/ace/info is optional —
+    // model/slots come from /status + /slots — so the "bridge not found" error
+    // is gated on the DATA endpoints failing, not on /info (#1069). rest_data_ok_
+    // latches true once /status or /slots ever succeeds; data_fetch_failures_
+    // counts consecutive /status failures (reset by any /status OR /slots
+    // success) and drives the one-shot error toast only while rest_data_ok_ is
+    // still false.
+    std::atomic<bool> rest_data_ok_{false};
+    std::atomic<int> data_fetch_failures_{0};
 
     // Callback lifetime management
     helix::AsyncLifetimeGuard lifetime_;
@@ -253,6 +294,9 @@ class AmsBackendAce : public AmsSubscriptionBackend {
 
     // Configuration
     static constexpr int POLL_INTERVAL_MS = 500;
+    /// Consecutive data-endpoint (/status) failures before surfacing the
+    /// "Moonraker bridge not found" error (genuinely-missing-bridge case).
+    static constexpr int MAX_DATA_FETCH_FAILURES = 3;
 
     // Layer any configured FilamentSlotOverride for `slot_index` over `slot`,
     // mutating `slot` in place. Override wins for every non-default field;

@@ -2240,6 +2240,15 @@ void MoonrakerSpoolmanAPIMock::delete_spoolman_filament(int filament_id, Success
 void MoonrakerRestAPIMock::call_rest_get(const std::string& endpoint, RestCallback on_complete) {
     spdlog::debug("[MoonrakerAPIMock] REST GET: {}", endpoint);
 
+    // Test-configured per-endpoint override wins over the built-in canned
+    // responses so tests can drive 404 / failure paths and custom payloads.
+    if (auto it = get_responses_.find(endpoint); it != get_responses_.end()) {
+        if (on_complete) {
+            on_complete(it->second);
+        }
+        return;
+    }
+
     RestResponse resp;
     resp.success = true;
     resp.status_code = 200;
