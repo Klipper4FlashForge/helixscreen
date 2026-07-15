@@ -139,3 +139,95 @@ TEST_CASE_METHOD(XMLTestFixture, "Non-text widget ignores inline text without cr
     REQUIRE(box != nullptr);
     CHECK(lv_obj_get_child_count(box) == 0);
 }
+
+TEST_CASE_METHOD(XMLTestFixture, "text attribute wins over inline text",
+                 "[xml][inline_text]") {
+    const char* xml = R"(<component>
+  <view extends="lv_obj" width="300" height="300">
+    <text_muted name="msg" text="attribute wins">inline loses</text_muted>
+  </view>
+</component>)";
+    lv_obj_t* msg = create_and_find(*this, "it_conflict_text", xml, "msg");
+    REQUIRE(msg != nullptr);
+    CHECK(lv_streq(lv_label_get_text(msg), "attribute wins"));
+}
+
+TEST_CASE_METHOD(XMLTestFixture, "translation_tag attribute wins over inline text",
+                 "[xml][inline_text]") {
+    const char* xml = R"(<component>
+  <view extends="lv_obj" width="300" height="300">
+    <text_muted name="msg" translation_tag="Existing Key">inline loses</text_muted>
+  </view>
+</component>)";
+    lv_obj_t* msg = create_and_find(*this, "it_conflict_tag", xml, "msg");
+    REQUIRE(msg != nullptr);
+    // No pack: tag falls back to itself.
+    CHECK(lv_streq(lv_label_get_text(msg), "Existing Key"));
+}
+
+TEST_CASE_METHOD(XMLTestFixture, "bind_text wins over inline text", "[xml][inline_text]") {
+    static lv_subject_t subj;
+    static char buf[64];
+    static char prev[64];
+    lv_subject_init_string(&subj, buf, prev, sizeof(buf), "bound value");
+    lv_xml_register_subject(NULL, "it_bound_subject", &subj);
+    const char* xml = R"(<component>
+  <view extends="lv_obj" width="300" height="300">
+    <text_muted name="msg" bind_text="it_bound_subject">inline loses</text_muted>
+  </view>
+</component>)";
+    lv_obj_t* msg = create_and_find(*this, "it_conflict_bind", xml, "msg");
+    REQUIRE(msg != nullptr);
+    CHECK(lv_streq(lv_label_get_text(msg), "bound value"));
+}
+
+TEST_CASE_METHOD(XMLTestFixture, "$prop substitution works in inline text",
+                 "[xml][inline_text]") {
+    const char* xml = R"(<component>
+  <api>
+    <prop name="title" type="string" default="Default title"/>
+  </api>
+  <view extends="lv_obj" width="300" height="300">
+    <text_muted name="msg">$title</text_muted>
+  </view>
+</component>)";
+    REQUIRE(lv_xml_register_component_from_data("it_prop", xml) == LV_RESULT_OK);
+    const char* attrs[] = {"title", "Passed title", nullptr};
+    lv_obj_t* root = create_component("it_prop", attrs);
+    REQUIRE(root != nullptr);
+    lv_obj_t* msg = lv_obj_find_by_name(root, "msg");
+    REQUIRE(msg != nullptr);
+    CHECK(lv_streq(lv_label_get_text(msg), "Passed title"));
+}
+
+TEST_CASE_METHOD(XMLTestFixture, "$prop default applies when attr not passed",
+                 "[xml][inline_text]") {
+    // Component registered in the previous test may persist per-scope; register
+    // under a fresh name to stay order-independent.
+    const char* xml = R"(<component>
+  <api>
+    <prop name="title" type="string" default="Default title"/>
+  </api>
+  <view extends="lv_obj" width="300" height="300">
+    <text_muted name="msg">$title</text_muted>
+  </view>
+</component>)";
+    lv_obj_t* msg = create_and_find(*this, "it_prop_default", xml, "msg");
+    REQUIRE(msg != nullptr);
+    CHECK(lv_streq(lv_label_get_text(msg), "Default title"));
+}
+
+TEST_CASE_METHOD(XMLTestFixture, "#const substitution works in inline text",
+                 "[xml][inline_text]") {
+    const char* xml = R"(<component>
+  <consts>
+    <str name="it_greeting" value="Const hello"/>
+  </consts>
+  <view extends="lv_obj" width="300" height="300">
+    <text_muted name="msg">#it_greeting</text_muted>
+  </view>
+</component>)";
+    lv_obj_t* msg = create_and_find(*this, "it_const", xml, "msg");
+    REQUIRE(msg != nullptr);
+    CHECK(lv_streq(lv_label_get_text(msg), "Const hello"));
+}
