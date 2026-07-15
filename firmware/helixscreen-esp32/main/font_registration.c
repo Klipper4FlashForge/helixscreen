@@ -10,14 +10,14 @@ static const char *TAG = "font_registration";
 // Font symbols come from LV_FONT_CUSTOM_DECLARE in lv_conf.h (extern
 // lv_font_t declarations), backed by the .c sources compiled into helixcore
 // (see components/helixcore/CMakeLists.txt HELIX_FONT_SRCS). Referencing
-// every symbol here keeps a live caller of this function from dropping any
-// individual face, but Task 6 (theme init) is what supplies that caller —
-// until then nothing in the image calls helix_fonts_register() itself, so
-// --gc-sections would discard the whole function (and with it every font
-// symbol it's the only reference to). __attribute__((used)) marks it as a
-// GC root regardless of callers, so the fonts stay linked in now and Task 6
-// only has to add the call site.
-__attribute__((used)) void helix_fonts_register(void) {
+// every symbol here keeps any individual face from being dropped — but only
+// while this function itself survives the link. With no caller in the image,
+// --gc-sections discards it (this Xtensa toolchain does NOT honor
+// __attribute__((used)) as a GC root — verified via link map, symbols at
+// 0x0). What actually anchors it is `-Wl,--undefined=helix_fonts_register`
+// in main/CMakeLists.txt: do not remove that flag unless a real call site
+// exists AND the font symbols are re-verified present post-link (nm/readelf).
+void helix_fonts_register(void) {
     lv_xml_register_font(NULL, "noto_sans_26", &noto_sans_26);
     lv_xml_register_font(NULL, "noto_sans_bold_28", &noto_sans_bold_28);
     lv_xml_register_font(NULL, "noto_sans_18", &noto_sans_18);
