@@ -60,6 +60,9 @@ void lv_obj_xml_bind_style_prop_apply(lv_xml_parser_state_t * state, const char 
 void * lv_obj_xml_bind_flag_create(lv_xml_parser_state_t * state, const char ** attrs);
 void lv_obj_xml_bind_flag_apply(lv_xml_parser_state_t * state, const char ** attrs);
 
+void * lv_obj_xml_bind_flag_if_create(lv_xml_parser_state_t * state, const char ** attrs);
+void lv_obj_xml_bind_flag_if_apply(lv_xml_parser_state_t * state, const char ** attrs);
+
 void * lv_obj_xml_bind_state_create(lv_xml_parser_state_t * state, const char ** attrs);
 void lv_obj_xml_bind_state_apply(lv_xml_parser_state_t * state, const char ** attrs);
 

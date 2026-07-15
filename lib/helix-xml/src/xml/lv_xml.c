@@ -264,6 +264,7 @@ void lv_xml_init(void)
     lv_xml_register_widget("lv_obj-bind_flag_if_lt", lv_obj_xml_bind_flag_create, lv_obj_xml_bind_flag_apply);
     lv_xml_register_widget("lv_obj-bind_flag_if_ge", lv_obj_xml_bind_flag_create, lv_obj_xml_bind_flag_apply);
     lv_xml_register_widget("lv_obj-bind_flag_if_le", lv_obj_xml_bind_flag_create, lv_obj_xml_bind_flag_apply);
+    lv_xml_register_widget("lv_obj-bind_flag_if", lv_obj_xml_bind_flag_if_create, lv_obj_xml_bind_flag_if_apply);
 
     lv_xml_register_widget("lv_obj-bind_state_if_eq", lv_obj_xml_bind_state_create, lv_obj_xml_bind_state_apply);
     lv_xml_register_widget("lv_obj-bind_state_if_not_eq", lv_obj_xml_bind_state_create, lv_obj_xml_bind_state_apply);
