@@ -5,14 +5,13 @@
 // Plan 1 fills these in task by task; this skeleton proves the partition
 // layout and toolchain.
 
+#include "board_display.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
-#include "sdkconfig.h"
-
-#include "board_display.h"
 #include "ktouch.h"
-#include "lvgl_glue.h"
 #include "lvgl.h"
+#include "lvgl_glue.h"
+#include "sdkconfig.h"
 #include "storage_mount.h"
 #include "touch_input.h"
 
@@ -24,18 +23,18 @@
 // by default — see main/Kconfig.projbuild.
 extern void net_hil_start(void);
 
-static void net_hil_task(void *arg) {
+static void net_hil_task(void* arg) {
     (void)arg;
     net_hil_start();
     vTaskDelete(NULL);
 }
 #endif
 
-static const char *TAG = "helixscreen";
+static const char* TAG = "helixscreen";
 
-static void tap_cb(lv_event_t *e) {
+static void tap_cb(lv_event_t* e) {
     static int taps = 0;
-    lv_obj_t *btn_label = lv_event_get_user_data(e);
+    lv_obj_t* btn_label = lv_event_get_user_data(e);
     lv_label_set_text_fmt(btn_label, "tap me: %d", ++taps);
     LV_LOG_USER("tap %d", taps);
 }
@@ -43,19 +42,19 @@ static void tap_cb(lv_event_t *e) {
 static void ui_build_hello(void) {
     touch_input_init();
     lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(0x0d1117), 0);
-    lv_obj_t *card = lv_obj_create(lv_screen_active());
+    lv_obj_t* card = lv_obj_create(lv_screen_active());
     lv_obj_set_size(card, 400, 120);
     lv_obj_center(card);
     lv_obj_set_style_bg_color(card, lv_color_hex(0x1a2332), 0);
-    lv_obj_t *label = lv_label_create(card);
+    lv_obj_t* label = lv_label_create(card);
     lv_label_set_text(label, "helixscreen-esp32 foundation");
     lv_obj_set_style_text_color(label, lv_color_hex(0x4fc3f7), 0);
     lv_obj_center(label);
 
-    lv_obj_t *btn = lv_button_create(lv_screen_active());
+    lv_obj_t* btn = lv_button_create(lv_screen_active());
     lv_obj_set_size(btn, 200, 60);
     lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -40);
-    lv_obj_t *btn_label = lv_label_create(btn);
+    lv_obj_t* btn_label = lv_label_create(btn);
     lv_label_set_text(btn_label, "tap me: 0");
     lv_obj_center(btn_label);
     // Raw event_cb is fine here: foundation bring-up predates the XML engine
@@ -69,11 +68,18 @@ static void ui_build_hello(void) {
 extern void helixnet_link_probe(void);
 static void (*volatile s_helixnet_keep)(void) = helixnet_link_probe;
 
+// Defined in the helixapp component. Referenced (never called) so the linker
+// keeps the curated Core+AMS app core in the image and the size gate accounts
+// for its footprint before Task 6 wires the real UI bring-up.
+extern void helixapp_link_probe(void);
+static void (*volatile s_helixapp_keep)(void) = helixapp_link_probe;
+
 void app_main(void) {
     (void)s_helixnet_keep;
-    const esp_partition_t *running = esp_ota_get_running_partition();
-    ESP_LOGI(TAG, "helixscreen-esp32 booting from partition '%s' @ 0x%08" PRIx32,
-             running->label, running->address);
+    (void)s_helixapp_keep;
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    ESP_LOGI(TAG, "helixscreen-esp32 booting from partition '%s' @ 0x%08" PRIx32, running->label,
+             running->address);
 
     // Assets/config must be mounted before anything reads them — the UI
     // boots off /assets (packed frogfs container) starting with a later

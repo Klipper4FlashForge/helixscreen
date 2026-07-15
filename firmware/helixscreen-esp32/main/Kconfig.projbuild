@@ -35,3 +35,16 @@ config HELIX_HIL_MOONRAKER_URL
         Moonraker WebSocket endpoint the HIL scenario connects to.
 
 endmenu
+
+menu "HelixScreen App Core"
+
+config HELIX_MOCK_PRINTER
+    bool "Compile the mock Moonraker client into the app core"
+    default n
+    help
+        Adds the mock client/API sources to the helixapp component and defines
+        HELIX_ENABLE_MOCKS=1, so the UI can be driven from synthetic printer
+        state with no live Moonraker. Off by default: production firmware talks
+        to a real printer over EspMoonrakerClient. Development-only.
+
+endmenu

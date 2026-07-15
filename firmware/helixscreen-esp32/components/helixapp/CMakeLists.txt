@@ -1,0 +1,116 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# helixapp — the curated Core+AMS app core, compiled UNMODIFIED from ../../src
+# via relative paths (same rule as helixcore/helixnet). A separate component so
+# `idf.py size-components` attributes app-core bytes distinctly from LVGL and
+# the network layer.
+#
+# The source list lives in app_srcs.txt (checked in, exact relative paths) so it
+# can be curated without CMake edits; every include/exclude decision is recorded
+# there as a comment. Derived from the Plan 2 native-audit 491-file manifest
+# minus the subsystems gated off for the v1 Core+AMS cut (label printers,
+# camera, gcode/bed-mesh 3D rendering, plugins, timelapse viewer, screensaver,
+# calibration panels, sound backends, mocks) and the Task 10 HTTP sub-APIs, PLUS
+# the real src/api Moonraker command surface that the audit had stubbed
+# (helixnet's EspMoonrakerClient makes the transport real).
+
+set(REPO_ROOT ${CMAKE_CURRENT_LIST_DIR}/../../../..)
+cmake_path(NORMAL_PATH REPO_ROOT)
+
+# The drift-prone logging/JSON/platform shim is single-sourced in helixnet — we
+# do NOT copy it. helixapp adds only the parse-only hv/ transport headers that
+# helixnet legitimately does not need: ~21 app TUs transitively include the
+# concrete helix::MoonrakerClient (moonraker_client.h -> hv/WebSocketClient.h),
+# which is never instantiated on ESP32 (MoonrakerManager's ESP arm builds
+# EspMoonrakerClient). See shim/hv/WebSocketClient.h.
+set(HELIXNET_SHIM ${CMAKE_CURRENT_LIST_DIR}/../helixnet/shim)
+set(HELIXAPP_SHIM ${CMAKE_CURRENT_LIST_DIR}/shim)
+
+file(STRINGS ${CMAKE_CURRENT_LIST_DIR}/app_srcs.txt APP_SRCS_REL
+     REGEX "^[^#].*\\.(cpp|c)$")
+set(APP_SRCS "")
+foreach(rel ${APP_SRCS_REL})
+    list(APPEND APP_SRCS ${REPO_ROOT}/${rel})
+endforeach()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+             ${CMAKE_CURRENT_LIST_DIR}/app_srcs.txt)
+
+# CONFIG_HELIX_MOCK_PRINTER (main/Kconfig.projbuild, default n): pull the mock
+# client/API sources into the build and turn on HELIX_ENABLE_MOCKS so the UI can
+# run off synthetic printer state. Off in production firmware.
+set(MOCK_SRCS "")
+if(CONFIG_HELIX_MOCK_PRINTER)
+    file(STRINGS ${CMAKE_CURRENT_LIST_DIR}/app_srcs.txt MOCK_SRCS_REL
+         REGEX "^# MOCK: .*\\.(cpp|c)$")
+    foreach(line ${MOCK_SRCS_REL})
+        string(REGEX REPLACE "^# MOCK: " "" rel "${line}")
+        list(APPEND MOCK_SRCS ${REPO_ROOT}/${rel})
+    endforeach()
+endif()
+
+# Local firmware-tree sources: platform seams (Linux-bound singletons the app
+# reaches through may-be-null accessors), the Task 10 HTTP link stubs, missing
+# font-face aliases, and the app_main link probe.
+set(LOCAL_SRCS
+    helixapp_platform_stubs.cpp
+    helixapp_platform_stubs2.cpp
+    task10_pending_stubs.cpp
+    excluded_subsystems_stub.cpp
+    font_aliases.c
+    stb_impl.c
+    link_probe.cpp)
+
+idf_component_register(
+    SRCS ${APP_SRCS} ${MOCK_SRCS} ${LOCAL_SRCS}
+    INCLUDE_DIRS "."
+    REQUIRES helixcore helixnet
+    PRIV_REQUIRES pthread esp_timer)
+
+# The PCH -include is C++-only: font/image .c sources compile as plain C.
+target_compile_options(${COMPONENT_LIB} PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:-std=gnu++17>
+    -w
+    $<$<COMPILE_LANGUAGE:CXX>:-include>
+    $<$<COMPILE_LANGUAGE:CXX>:${REPO_ROOT}/include/lvgl_pch.h>)
+
+# Real v1 Core+AMS gate set (the plan's compile definitions). Excluded
+# subsystems compile out via these; kept files that touch them see the #else
+# no-op branch. HELIX_ENABLE_MOCKS is added only when CONFIG_HELIX_MOCK_PRINTER.
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    HELIX_VERSION="0.0.0-esp32"
+    HELIX_VERSION_MAJOR=0 HELIX_VERSION_MINOR=0 HELIX_VERSION_PATCH=0
+    HELIX_GIT_HASH="esp32"
+    INSTALLER_FILENAME="install.sh"
+    HELIX_MAX_FONT_TIER=6
+    HELIX_PLATFORM_ESP32=1
+    HELIX_HAS_PLUGINS=0
+    HELIX_HAS_TIMELAPSE_VIEWER=0
+    HELIX_HAS_CAMERA=0
+    HELIX_HAS_GCODE_VIEWER=0
+    HELIX_HAS_BED_MESH_3D=0
+    HELIX_HAS_LABEL_PRINTER=0
+    HELIX_HAS_CFS=1
+    HELIX_HAS_IFS=1
+    HELIX_HAS_SOUND=0
+    HELIX_ENABLE_SCREENSAVER=0
+    HELIX_RELEASE_BUILD)
+if(CONFIG_HELIX_MOCK_PRINTER)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE HELIX_ENABLE_MOCKS=1)
+endif()
+
+target_include_directories(${COMPONENT_LIB} PRIVATE
+    ${REPO_ROOT}
+    ${REPO_ROOT}/include
+    ${REPO_ROOT}/src/generated
+    ${REPO_ROOT}/build/generated
+    ${HELIXAPP_SHIM}            # parse-only hv/Event.h + hv/WebSocketClient.h
+    ${HELIXNET_SHIM}/include    # <spdlog/spdlog.h>, <hv/json.hpp> aliases
+    ${HELIXNET_SHIM})           # spdlog_shim.h, hv_json_shim.h, platform_stubs.h
+target_include_directories(${COMPONENT_LIB} SYSTEM PRIVATE
+    ${REPO_ROOT}/lib
+    ${REPO_ROOT}/lib/glm
+    ${REPO_ROOT}/lib/lvgl
+    ${REPO_ROOT}/lib/lvgl/src
+    ${REPO_ROOT}/lib/stb
+    ${REPO_ROOT}/lib/lv_markdown/src
+    ${REPO_ROOT}/lib/lv_markdown/deps/md4c)
