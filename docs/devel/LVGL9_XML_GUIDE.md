@@ -2,7 +2,7 @@
 
 Comprehensive guide to the declarative XML UI system with reactive data binding, based on practical experience building the HelixScreen UI. The XML engine lives in `lib/helix-xml/` (extracted from LVGL 9.4, MIT licensed) and works with LVGL 9.5.
 
-**Last Updated:** 2026-02-18
+**Last Updated:** 2026-07-15
 
 ---
 
@@ -250,6 +250,44 @@ The `@` prefix on `ui_button`'s `text` attribute marks a value as a subject refe
 ```
 
 > **Note:** Standard LVGL widgets (`lv_label`, `lv_slider`) resolve `bind_text` directly as a subject name. The `@` prefix convention is specific to `ui_button`, which needs to disambiguate between literal button labels and subject references.
+
+#### Inline Text Content
+
+Widgets that understand `text=` also accept inline element content, HTML-style:
+
+```xml
+<text_muted>Print speed</text_muted>
+<!-- equivalent to: -->
+<text_muted text="Print speed" translation_tag="Print speed"/>
+```
+
+**Inline text is translatable by default.** The literal string is used as the
+translation key (and as the fallback when no translation exists), and the label
+re-resolves on language change -- same behavior as the `label=`/`label_tag=`
+pairs on setting rows. `make translation-sync` extracts inline text
+automatically. Use `text="..."` instead when a string must stay untranslated
+(versions, IPs, device names).
+
+Rules:
+
+- **Attributes win.** If the element also has `text=`, `bind_text=`, or
+  `translation_tag=`, the inline text is dropped with a runtime warning.
+- **Whitespace collapses HTML-style.** Leading/trailing whitespace is trimmed
+  and internal runs (including newlines -- even explicit `&#10;`) collapse to a
+  single space. For multi-line label text, use `text="Line1&#10;Line2"`.
+- **`$prop` / `#const` resolve** exactly like attribute values (whole-value):
+  `<text_muted>$title</text_muted>` works inside a component view.
+- **Literal text starting with `$` or `#` is not supported.** It's parsed as a
+  prop/const reference; if the name doesn't resolve, the text is dropped with
+  a warning instead of rendering literally. Use `text="$5.00"` for a literal
+  string that happens to start with one of these sigils.
+- **Mixed content is allowed**: text before/after child elements applies to the
+  containing element; children are unaffected.
+- Widgets that don't understand `text` ignore inline content silently, like any
+  unknown attribute.
+- Inline text on the root `<view>` element of a component is not supported --
+  it's silently dropped. Use `text=`/`bind_text=` on the view's opening tag, or
+  put the inline text on a child element instead.
 
 #### Conditional Flag Bindings (Show/Hide)
 

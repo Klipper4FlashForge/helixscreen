@@ -43,6 +43,7 @@ void lv_xml_parser_state_init(lv_xml_parser_state_t * state)
 {
     lv_memzero(state, sizeof(lv_xml_parser_state_t));
     lv_ll_init(&state->parent_ll, sizeof(lv_obj_t *));
+    lv_ll_init(&state->pcdata_ll, sizeof(lv_xml_pcdata_entry_t));
     lv_xml_component_scope_init(&state->scope);
 }
 

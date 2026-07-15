@@ -99,6 +99,11 @@ Subject types: `lv_subject_init_string()`, `lv_subject_init_int()`, `lv_subject_
 </lv_button>
 ```
 
+```xml
+<!-- Inline text -->
+<text_muted>Print speed</text_muted>  <!-- == text="Print speed" translation_tag="Print speed"; translatable by default, whitespace collapses, attrs win over inline -->
+```
+
 Comparison operators: `bind_flag_if_eq`, `_not_eq`, `_gt`, `_ge`, `_lt`, `_le` (same for `bind_state_if_*` and `bind_style_if_*`).
 
 Flags: `hidden`, `clickable`, `checkable`, `scrollable`, `disabled`, `ignore_layout`, `floating`.

@@ -45,10 +45,21 @@ typedef enum {
     LV_XML_PARSER_SECTION_VIEW
 } lv_xml_parser_section_t;
 
+/** One entry per open element during view parsing; accumulates PCDATA so
+ *  inline text (`<text_muted>Foo</text_muted>`) can be applied at end-tag. */
+typedef struct {
+    lv_obj_t * item;    /**< widget the element created (NULL if none) */
+    char * buf;         /**< accumulated character data (lv_malloc'd) */
+    size_t len;
+    size_t cap;
+    bool has_conflict;  /**< element already had text=/bind_text=/translation_tag= */
+} lv_xml_pcdata_entry_t;
+
 struct _lv_xml_parser_state_t {
     const char * tag_name;
     lv_xml_component_scope_t scope;
     lv_ll_t parent_ll;
+    lv_ll_t pcdata_ll;  /*Stack of lv_xml_pcdata_entry_t mirroring open elements*/
     lv_obj_t * parent;
     lv_obj_t * item;
     lv_obj_t * view;    /*Pointer to the created view during component creation*/
