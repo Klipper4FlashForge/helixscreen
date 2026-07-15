@@ -231,3 +231,52 @@ TEST_CASE_METHOD(XMLTestFixture, "#const substitution works in inline text",
     REQUIRE(msg != nullptr);
     CHECK(lv_streq(lv_label_get_text(msg), "Const hello"));
 }
+
+TEST_CASE_METHOD(XMLTestFixture, "Inline text re-resolves on language change",
+                 "[xml][inline_text][translation]") {
+    // Deep-check for the "it_tag" test above: proves the synthesized
+    // translation_tag is actually stored on the label (not just applied as a
+    // literal text= fallback) by round-tripping it through a real pack and a
+    // language switch.
+    //
+    // Pack lifetime note: LVGLTestFixture calls lv_init_safe() once via
+    // std::call_once (tests/lvgl_test_fixture.cpp) and is never torn down with
+    // lv_deinit() between test cases -- LVGL, and any dynamic translation pack
+    // registered into it, persists for the lifetime of the whole test binary.
+    // LVGL's translation module has no "remove one pack" API (see
+    // include/translation_loader.h) and lv_translation_deinit() nukes every
+    // registered pack process-wide, which would be unsafe to call here since
+    // other tests may load the real app translation catalog. So this pack is
+    // deliberately left registered rather than partially/unsafely torn down.
+    // That's safe: lv_translation_get() walks packs most-recently-added
+    // first, so it only intercepts lookups for the exact tag below, and
+    // "Print speed" does not appear in ui_xml/translations/translations.xml
+    // (verified), so it can't shadow a real translation used by another test.
+    lv_translation_pack_t* pack = lv_translation_add_dynamic();
+    REQUIRE(pack != nullptr);
+    lv_translation_add_language(pack, "en");
+    lv_translation_add_language(pack, "de");
+    lv_translation_tag_dsc_t* tag = lv_translation_add_tag(pack, "Print speed");
+    REQUIRE(tag != nullptr);
+    lv_translation_set_tag_translation(pack, tag, 0, "Print speed");
+    lv_translation_set_tag_translation(pack, tag, 1, "Druckgeschwindigkeit");
+    lv_translation_set_language("en");
+
+    const char* xml = R"(<component>
+  <view extends="lv_obj" width="300" height="300">
+    <text_muted name="msg">Print speed</text_muted>
+  </view>
+</component>)";
+    lv_obj_t* msg = create_and_find(*this, "it_i18n", xml, "msg");
+    REQUIRE(msg != nullptr);
+    CHECK(lv_streq(lv_label_get_text(msg), "Print speed"));
+
+    lv_translation_set_language("de");
+    process_lvgl(50);
+    CHECK(lv_streq(lv_label_get_text(msg), "Druckgeschwindigkeit"));
+
+    // Restore the global language selection so it doesn't bleed into
+    // whatever test runs next in this process (packs themselves are left
+    // registered -- see note above).
+    lv_translation_set_language("en");
+}
