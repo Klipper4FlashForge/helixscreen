@@ -435,11 +435,11 @@ void EspMoonrakerClient::dispatch_message(const char* buf, size_t len) {
 
     // Notification (has "method") → notify + method + bed-mesh callbacks.
     if (msg.contains("method") && msg["method"].is_string()) {
-        dispatch_notification(msg);
+        dispatch_notification(msg, /*include_method_callbacks=*/true);
     }
 }
 
-void EspMoonrakerClient::dispatch_notification(const json& msg) {
+void EspMoonrakerClient::dispatch_notification(const json& msg, bool include_method_callbacks) {
     if (!msg.contains("method") || !msg["method"].is_string()) {
         return;
     }
@@ -455,10 +455,14 @@ void EspMoonrakerClient::dispatch_notification(const json& msg) {
                 to_invoke.push_back(cb);
             }
         }
-        auto it = method_callbacks_.find(method);
-        if (it != method_callbacks_.end()) {
-            for (const auto& [handler, cb] : it->second) {
-                to_invoke.push_back(cb);
+        // Method-specific handlers fire only for genuine inbound notifications;
+        // the synthetic dispatch_status_update path is notify-only (desktop parity).
+        if (include_method_callbacks) {
+            auto it = method_callbacks_.find(method);
+            if (it != method_callbacks_.end()) {
+                for (const auto& [handler, cb] : it->second) {
+                    to_invoke.push_back(cb);
+                }
             }
         }
         bed_mesh_cb = bed_mesh_callback_;
@@ -472,6 +476,8 @@ void EspMoonrakerClient::dispatch_notification(const json& msg) {
         if (params0.contains("bed_mesh") && params0["bed_mesh"].is_object()) {
             try {
                 bed_mesh_cb(params0["bed_mesh"]);
+            } catch (const std::exception& e) {
+                ESP_LOGE(TAG, "bed_mesh callback threw: %s", e.what());
             } catch (...) {
             }
         }
@@ -795,12 +801,16 @@ void EspMoonrakerClient::discover_printer(std::function<void()> on_complete,
             if (hw_cb) {
                 try {
                     hw_cb(hardware_);
+                } catch (const std::exception& e) {
+                    ESP_LOGE(TAG, "on_hardware_discovered callback threw: %s", e.what());
                 } catch (...) {
                 }
             }
             if (done_cb) {
                 try {
                     done_cb(hardware_, response);
+                } catch (const std::exception& e) {
+                    ESP_LOGE(TAG, "on_discovery_complete callback threw: %s", e.what());
                 } catch (...) {
                 }
             }
@@ -891,7 +901,9 @@ void EspMoonrakerClient::dispatch_status_update(const json& status) {
     json wrapped;
     wrapped["method"] = "notify_status_update";
     wrapped["params"] = json::array({status, 0.0});
-    dispatch_notification(wrapped);
+    // Notify-only fan-out (no method_callbacks_), matching desktop
+    // dispatch_status_update semantics.
+    dispatch_notification(wrapped, /*include_method_callbacks=*/false);
 }
 
 // ---------------------------------------------------------------------------

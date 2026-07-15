@@ -146,10 +146,12 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     void on_ws_disconnected();
     void on_ws_data(const esp_websocket_event_data_t* data);
     void dispatch_message(const char* buf, size_t len);
-    // Fan a notify_status_update-shaped message out to the notify + method
-    // callback maps (copy-then-invoke) and the bed-mesh callback. Shared by the
-    // WS dispatch path and dispatch_status_update().
-    void dispatch_notification(const json& msg);
+    // Fan a notify_status_update-shaped message out to the notify callbacks
+    // (copy-then-invoke) and the bed-mesh callback. Shared by the WS dispatch
+    // path and dispatch_status_update(). include_method_callbacks also fans out
+    // to method_callbacks_ — true only for real inbound WS notifications; the
+    // synthetic dispatch_status_update path is notify-only, matching desktop.
+    void dispatch_notification(const json& msg, bool include_method_callbacks);
 
     // esp_timer trampoline → instance housekeeping (timeouts + FAILED).
     static void housekeeping_trampoline(void* arg);
