@@ -1,9 +1,24 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 idf_component_register(SRCS "app_main.c" "board_display.c" "lvgl_glue.c" "touch_input.c" "ota_health.c"
-                             "net_hil.cpp"
+                             "storage_mount.c" "net_hil.cpp"
                        PRIV_REQUIRES esp_timer app_update esp_lcd driver helixcore helixnet pthread
-                                     esp_wifi esp_netif esp_event nvs_flash
+                                     esp_wifi esp_netif esp_event nvs_flash joltwallet__littlefs
                        INCLUDE_DIRS "." "../boards")
+
+# LittleFS "storage" partition image: built from the staging tree the desktop
+# script assembles (minified ui_xml, config JSON, printer images). Configure
+# time only checks that the staging dir exists — running the python script is
+# a separate, explicit step (see scripts/esp32_stage_assets.py), not something
+# CMake shells out to, so a stale/missing staging dir fails with a clear
+# message instead of silently packing whatever is (or isn't) on disk.
+set(LITTLEFS_STAGING_DIR ${CMAKE_BINARY_DIR}/littlefs_staging)
+if(NOT EXISTS ${LITTLEFS_STAGING_DIR})
+    message(FATAL_ERROR
+        "LittleFS staging dir missing: ${LITTLEFS_STAGING_DIR}\n"
+        "Run 'python3 <repo_root>/scripts/esp32_stage_assets.py' first (writes "
+        "here by default), then re-run idf.py build.")
+endif()
+littlefs_create_partition_image(storage ${LITTLEFS_STAGING_DIR} FLASH_IN_PROJECT)
 
 # net_hil.cpp (Task 10, gated behind CONFIG_HELIX_NET_HIL) calls into
 # EspMoonrakerClient's IMoonrakerClient contract directly, which needs the same
