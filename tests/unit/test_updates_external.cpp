@@ -47,26 +47,37 @@ TEST_CASE("helix_parse_truthy_env rejects falsy and empty values", "[update][ext
 
 TEST_CASE("compute_updates_externally_managed detects firmware-managed launch",
           "[update][external]") {
-    // Explicit override wins regardless of the other vars.
-    CHECK(compute_updates_externally_managed("1", nullptr, nullptr));
-    CHECK(compute_updates_externally_managed("yes", "0", ""));
+    // Args: (updates_external, disable_auto_updates, supervised, data_dir)
+
+    // Explicit HELIX_UPDATES_EXTERNAL override wins regardless of the other vars.
+    CHECK(compute_updates_externally_managed("1", nullptr, nullptr, nullptr));
+    CHECK(compute_updates_externally_managed("yes", nullptr, "0", ""));
+
+    // Explicit HELIX_DISABLE_AUTO_UPDATES (firmware-facing name) also wins alone.
+    CHECK(compute_updates_externally_managed(nullptr, "1", nullptr, nullptr));
+    CHECK(compute_updates_externally_managed(nullptr, "true", "0", ""));
+    CHECK(compute_updates_externally_managed(nullptr, "on", nullptr, nullptr));
 
     // Firmware-managed: supervised AND asset root relocated.
-    CHECK(compute_updates_externally_managed(nullptr, "1", "/oem/apps/helixscreen/latest"));
-    CHECK(compute_updates_externally_managed("", "true", "/some/dir"));
+    CHECK(compute_updates_externally_managed(nullptr, nullptr, "1", "/oem/apps/helixscreen/latest"));
+    CHECK(compute_updates_externally_managed("", nullptr, "true", "/some/dir"));
 
     // Our own watchdog install: supervised but HELIX_DATA_DIR unset/empty —
     // self-update MUST stay enabled.
-    CHECK_FALSE(compute_updates_externally_managed(nullptr, "1", nullptr));
-    CHECK_FALSE(compute_updates_externally_managed(nullptr, "1", ""));
+    CHECK_FALSE(compute_updates_externally_managed(nullptr, nullptr, "1", nullptr));
+    CHECK_FALSE(compute_updates_externally_managed(nullptr, nullptr, "1", ""));
 
     // HELIX_DATA_DIR alone (e.g. a dev pointing at a custom asset dir) is not
     // enough — a supervisor must also own the lifecycle.
-    CHECK_FALSE(compute_updates_externally_managed(nullptr, nullptr, "/some/dir"));
-    CHECK_FALSE(compute_updates_externally_managed(nullptr, "0", "/some/dir"));
+    CHECK_FALSE(compute_updates_externally_managed(nullptr, nullptr, nullptr, "/some/dir"));
+    CHECK_FALSE(compute_updates_externally_managed(nullptr, nullptr, "0", "/some/dir"));
+
+    // A falsy explicit opt-out does not force the managed state.
+    CHECK_FALSE(compute_updates_externally_managed(nullptr, "0", nullptr, nullptr));
+    CHECK_FALSE(compute_updates_externally_managed("false", "no", nullptr, nullptr));
 
     // Nothing set → normal self-managed install.
-    CHECK_FALSE(compute_updates_externally_managed(nullptr, nullptr, nullptr));
+    CHECK_FALSE(compute_updates_externally_managed(nullptr, nullptr, nullptr, nullptr));
 }
 
 TEST_CASE("updates_externally_managed reflects the environment (cached)",
@@ -74,8 +85,8 @@ TEST_CASE("updates_externally_managed reflects the environment (cached)",
     // The value is cached process-wide, so we assert it agrees with the pure
     // predicate over the current env rather than trying to flip it mid-process.
     const bool expected = compute_updates_externally_managed(
-        std::getenv("HELIX_UPDATES_EXTERNAL"), std::getenv("HELIX_SUPERVISED"),
-        std::getenv("HELIX_DATA_DIR"));
+        std::getenv("HELIX_UPDATES_EXTERNAL"), std::getenv("HELIX_DISABLE_AUTO_UPDATES"),
+        std::getenv("HELIX_SUPERVISED"), std::getenv("HELIX_DATA_DIR"));
     CHECK(updates_externally_managed() == expected);
     // Stable across calls (proves the cache doesn't re-read differently).
     CHECK(updates_externally_managed() == updates_externally_managed());

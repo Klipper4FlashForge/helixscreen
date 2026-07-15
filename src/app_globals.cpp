@@ -509,10 +509,12 @@ bool helix_parse_truthy_env(const char* value) {
     return v == "1" || v == "true" || v == "yes" || v == "on";
 }
 
-bool compute_updates_externally_managed(const char* updates_external, const char* supervised,
+bool compute_updates_externally_managed(const char* updates_external,
+                                        const char* disable_auto_updates, const char* supervised,
                                         const char* data_dir) {
-    // Explicit override wins.
-    if (helix_parse_truthy_env(updates_external)) {
+    // Explicit opt-out wins. HELIX_DISABLE_AUTO_UPDATES is the firmware-facing
+    // name; HELIX_UPDATES_EXTERNAL is an older alias with the same effect.
+    if (helix_parse_truthy_env(disable_auto_updates) || helix_parse_truthy_env(updates_external)) {
         return true;
     }
     // Firmware-managed launch: supervised AND asset root relocated. Our own
@@ -524,6 +526,7 @@ bool compute_updates_externally_managed(const char* updates_external, const char
 bool updates_externally_managed() {
     static const bool cached =
         compute_updates_externally_managed(std::getenv("HELIX_UPDATES_EXTERNAL"),
+                                           std::getenv("HELIX_DISABLE_AUTO_UPDATES"),
                                            std::getenv("HELIX_SUPERVISED"),
                                            std::getenv("HELIX_DATA_DIR"));
     return cached;
