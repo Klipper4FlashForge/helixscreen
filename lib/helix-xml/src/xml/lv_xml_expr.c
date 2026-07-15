@@ -167,6 +167,39 @@ lv_xml_expr_t * lv_xml_expr_compile(const char * src, lv_xml_expr_resolver_t res
     return e;
 }
 
+/*=====================
+ *  Evaluator
+ *====================*/
+
+static int32_t eval_node(const expr_node_t * n){
+    switch(n->kind){
+        case N_INT: return n->ival;
+        case N_SUB: return lv_subject_get_int(n->subject);
+        case N_UNARY: {
+            int32_t v = eval_node(n->a);
+            return n->op==LV_XML_EXPR_TOK_NOT ? (v?0:1) : -v;
+        }
+        case N_BINARY: {
+            int32_t l = eval_node(n->a), r = eval_node(n->b);
+            switch(n->op){
+                case LV_XML_EXPR_TOK_OR:  return (l||r)?1:0;
+                case LV_XML_EXPR_TOK_AND: return (l&&r)?1:0;
+                case LV_XML_EXPR_TOK_EQ:  return l==r; case LV_XML_EXPR_TOK_NE: return l!=r;
+                case LV_XML_EXPR_TOK_LT:  return l<r;  case LV_XML_EXPR_TOK_LE: return l<=r;
+                case LV_XML_EXPR_TOK_GT:  return l>r;  case LV_XML_EXPR_TOK_GE: return l>=r;
+                case LV_XML_EXPR_TOK_PLUS:return l+r;  case LV_XML_EXPR_TOK_MINUS:return l-r;
+                case LV_XML_EXPR_TOK_STAR:return l*r;
+                case LV_XML_EXPR_TOK_SLASH:  if(r==0){LV_LOG_WARN("expr: divide by zero");return 0;} return l/r;
+                case LV_XML_EXPR_TOK_PERCENT:if(r==0){LV_LOG_WARN("expr: mod by zero");return 0;} return l%r;
+                default: return 0;
+            }
+        }
+    }
+    return 0;
+}
+
+int32_t lv_xml_expr_eval(const lv_xml_expr_t * e){ return (e && e->root) ? eval_node(e->root) : 0; }
+
 void lv_xml_expr_free(lv_xml_expr_t * e){ if(!e)return; node_free(e->root); lv_free(e->subjects); lv_free(e); }
 size_t lv_xml_expr_subject_count(const lv_xml_expr_t * e){ return e?e->subject_count:0; }
 lv_subject_t * lv_xml_expr_subject_at(const lv_xml_expr_t * e, size_t i){ return (e && i<e->subject_count)?e->subjects[i]:NULL; }

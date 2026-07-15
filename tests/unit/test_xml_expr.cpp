@@ -70,3 +70,35 @@ TEST_CASE("compile: malformed expressions fail cleanly", "[xml_expr]") {
     REQUIRE(lv_xml_expr_compile("a @ b", mock_resolver, nullptr) == nullptr);
     REQUIRE(lv_xml_expr_compile("a && b)", mock_resolver, nullptr) == nullptr);
 }
+
+static int32_t eval(const char * src) {
+    lv_xml_expr_t * e = lv_xml_expr_compile(src, mock_resolver, nullptr);
+    REQUIRE(e != nullptr);
+    int32_t v = lv_xml_expr_eval(e);
+    lv_xml_expr_free(e);
+    return v;
+}
+
+TEST_CASE("eval: boolean + comparison over subjects", "[xml_expr]") {
+    lv_subject_init_int(&s_a, 1); lv_subject_init_int(&s_b, 5);
+    REQUIRE(eval("a && b > 3")   == 1);
+    REQUIRE(eval("a and b gt 3") == 1);   // word form identical
+    lv_subject_set_int(&s_b, 2);
+    REQUIRE(eval("a && b > 3")   == 0);
+    REQUIRE(eval("a || b > 3")   == 1);
+    REQUIRE(eval("!a")           == 0);
+    REQUIRE(eval("not a")        == 0);
+}
+
+TEST_CASE("eval: precedence and grouping", "[xml_expr]") {
+    lv_subject_init_int(&s_a, 2); lv_subject_init_int(&s_b, 3);
+    REQUIRE(eval("a + b * 2")   == 8);
+    REQUIRE(eval("(a + b) * 2") == 10);
+    REQUIRE(eval("a % b")       == 2);
+}
+
+TEST_CASE("eval: divide by zero yields 0, no crash", "[xml_expr]") {
+    lv_subject_init_int(&s_a, 4); lv_subject_init_int(&s_b, 0);
+    REQUIRE(eval("a / b") == 0);
+    REQUIRE(eval("a % b") == 0);
+}
