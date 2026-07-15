@@ -1187,6 +1187,7 @@
   <translation tag="Manage" zh="管理"/>
   <translation tag="Manage Printers" zh="管理打印机"/>
   <translation tag="Manage configured printers" zh="管理已配置的打印机"/>
+  <translation tag="Managed by your firmware"/>
   <translation tag="Manual" zh="手动"/>
   <translation tag="Manual Bed Leveling" zh="手动热床调平"/>
   <translation tag="Map to closest colors with matching material" zh="按匹配材料映射最接近的颜色"/>
@@ -1929,6 +1930,7 @@
   <translation tag="Snapmaker SnapSwap" zh="Snapmaker SnapSwap"/>
   <translation tag="Snapmaker U1" zh="Snapmaker U1"/>
   <translation tag="Soft" zh="柔和"/>
+  <translation tag="Software Updates"/>
   <translation tag="Some filaments don&apos;t match the slicer&apos;s intent." zh="部分耗材与切片软件的意图不符。"/>
   <translation tag="Some settings will take effect after restart." zh="某些设置将在重启后生效。"/>
   <translation tag="Sound Theme" zh="声音主题"/>

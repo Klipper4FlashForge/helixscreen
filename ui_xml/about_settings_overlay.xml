@@ -83,6 +83,17 @@
                             label="Install Update" label_tag="Install Update" icon="download" description=""
                             description_tag="" callback="on_about_install_update_clicked"/>
       </lv_obj>
+      <!-- Firmware-managed updates notice (replaces the check/install controls
+           when HELIX_UPDATES_EXTERNAL is set — updates come from the firmware) -->
+      <lv_obj name="container_updates_firmware_managed" width="100%" style_pad_all="0" scrollable="false">
+        <bind_flag_if_eq subject="updates_firmware_managed" flag="hidden" ref_value="0"/>
+        <setting_info_row name="row_updates_firmware_managed"
+                          label="Software Updates" label_tag="Software Updates"
+                          icon="information_outline">
+          <text_muted name="value" text="Managed by your firmware"
+                      translation_tag="Managed by your firmware"/>
+        </setting_info_row>
+      </lv_obj>
       <!-- Klipper Version -->
       <setting_info_row name="row_klipper" label="Klipper" label_tag="Klipper" icon="toy_brick_outline">
         <text_muted name="value" bind_text="klipper_version"/>

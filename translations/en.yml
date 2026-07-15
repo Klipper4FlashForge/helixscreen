@@ -1322,6 +1322,7 @@ translations:
   Manage: Manage
   Manage Printers: Manage Printers
   Manage configured printers: Manage configured printers
+  Managed by your firmware: Managed by your firmware
   Manual: Manual
   Manual Bed Leveling: Manual Bed Leveling
   Map to closest colors with matching material: Map to closest colors with matching
@@ -2149,6 +2150,7 @@ translations:
   Snapmaker SnapSwap: Snapmaker SnapSwap
   Snapmaker U1: Snapmaker U1
   Soft: Soft
+  Software Updates: Software Updates
   Some filaments don't match the slicer's intent.: Some filaments don't match the
     slicer's intent.
   Some settings will take effect after restart.: Some settings will take effect after

@@ -7790,6 +7790,47 @@ _refuse_uninstall_from_install_dir() {
     esac
 }
 
+# Refuse to run on a device where HelixScreen is managed by the firmware
+# (e.g. PAXX's Snapmaker U1 firmware, which bind-mounts our binary over
+# /usr/bin/gui, supervises it via lmd, and owns updates through a pinned
+# helixscreen-pkg). Running the standalone installer there would trample the
+# firmware-managed setup. Detection: either marker present ⇒ firmware-managed.
+#
+# Advanced users can force past the guard with HELIX_IGNORE_FIRMWARE_MANAGED=1.
+# Tests set HELIX_FIRMWARE_MANAGED_MARKER to a temp root to exercise the guard
+# without touching the real /oem or /etc trees.
+_refuse_if_firmware_managed() {
+    if [ "${HELIX_IGNORE_FIRMWARE_MANAGED:-0}" = "1" ]; then
+        log_warn "HELIX_IGNORE_FIRMWARE_MANAGED=1 set — skipping firmware-managed guard"
+        return 0
+    fi
+
+    _fw_root="${HELIX_FIRMWARE_MANAGED_MARKER:-}"
+    _fw_dir_marker="${_fw_root}/oem/apps/helixscreen"
+    _fw_hook_marker="${_fw_root}/etc/hooks/lmd.d/30-helixscreen.sh"
+
+    if [ -d "$_fw_dir_marker" ] || [ -f "$_fw_hook_marker" ]; then
+        if [ -d "$_fw_dir_marker" ]; then
+            _fw_detected="$_fw_dir_marker"
+        else
+            _fw_detected="$_fw_hook_marker"
+        fi
+        log_error "=========================================="
+        log_error "HelixScreen is managed by your firmware on this device."
+        log_error "Detected: $_fw_detected"
+        log_error "=========================================="
+        log_error ""
+        log_error "Use the firmware configuration to enable, disable, or update"
+        log_error "HelixScreen (Snapmaker Components > Touchscreen GUI)."
+        log_error "Do NOT run this installer — it would overwrite the"
+        log_error "firmware-managed setup."
+        log_error ""
+        log_error "To override this check anyway (advanced users), re-run with:"
+        log_error "  HELIX_IGNORE_FIRMWARE_MANAGED=1 sh install.sh"
+        exit 1
+    fi
+}
+
 # Main installation flow
 main() {
     update_mode=false
@@ -7852,6 +7893,13 @@ main() {
     # the post-set_install_paths call below covers the normal runtime case.
     if [ "$uninstall_mode" = true ]; then
         _refuse_uninstall_from_install_dir
+    fi
+
+    # Refuse to install/update over a firmware-managed HelixScreen. Runs before
+    # platform detection and any install work so we never trample the firmware's
+    # setup. Uninstall is exempt — leave the firmware's own teardown to it.
+    if [ "$uninstall_mode" != true ]; then
+        _refuse_if_firmware_managed
     fi
 
     printf '\n'

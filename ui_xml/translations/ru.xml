@@ -1187,6 +1187,7 @@
   <translation tag="Manage" ru="Управление"/>
   <translation tag="Manage Printers" ru="Управление принтерами"/>
   <translation tag="Manage configured printers" ru="Управление настроенными принтерами"/>
+  <translation tag="Managed by your firmware"/>
   <translation tag="Manual" ru="Вручную"/>
   <translation tag="Manual Bed Leveling" ru="Ручное выравнивание стола"/>
   <translation tag="Map to closest colors with matching material" ru="Подобрать ближайшие цвета с подходящим материалом"/>
@@ -1929,6 +1930,7 @@
   <translation tag="Snapmaker SnapSwap" ru="Snapmaker SnapSwap"/>
   <translation tag="Snapmaker U1" ru="Snapmaker U1"/>
   <translation tag="Soft" ru="Мягкий"/>
+  <translation tag="Software Updates"/>
   <translation tag="Some filaments don&apos;t match the slicer&apos;s intent." ru="Некоторые филаменты не соответствуют замыслу слайсера."/>
   <translation tag="Some settings will take effect after restart." ru="Некоторые настройки вступят в силу после перезапуска."/>
   <translation tag="Sound Theme" ru="Звуковая тема"/>

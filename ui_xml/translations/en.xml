@@ -1187,6 +1187,7 @@
   <translation tag="Manage" en="Manage"/>
   <translation tag="Manage Printers" en="Manage Printers"/>
   <translation tag="Manage configured printers" en="Manage configured printers"/>
+  <translation tag="Managed by your firmware" en="Managed by your firmware"/>
   <translation tag="Manual" en="Manual"/>
   <translation tag="Manual Bed Leveling" en="Manual Bed Leveling"/>
   <translation tag="Map to closest colors with matching material" en="Map to closest colors with matching material"/>
@@ -1929,6 +1930,7 @@
   <translation tag="Snapmaker SnapSwap" en="Snapmaker SnapSwap"/>
   <translation tag="Snapmaker U1" en="Snapmaker U1"/>
   <translation tag="Soft" en="Soft"/>
+  <translation tag="Software Updates" en="Software Updates"/>
   <translation tag="Some filaments don&apos;t match the slicer&apos;s intent." en="Some filaments don&apos;t match the slicer&apos;s intent."/>
   <translation tag="Some settings will take effect after restart." en="Some settings will take effect after restart."/>
   <translation tag="Sound Theme" en="Sound Theme"/>

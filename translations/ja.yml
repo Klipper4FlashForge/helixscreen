@@ -1221,6 +1221,7 @@ translations:
   Manage: 管理
   Manage Printers: プリンター管理
   Manage configured printers: 設定済みプリンターを管理
+  Managed by your firmware: ''
   Manual: 手動
   Manual Bed Leveling: 手動ベッドレベリング
   Map to closest colors with matching material: 一致する素材で最も近い色に割り当て
@@ -1989,6 +1990,7 @@ translations:
   Snapmaker SnapSwap: Snapmaker SnapSwap
   Snapmaker U1: Snapmaker U1
   Soft: ソフト
+  Software Updates: ''
   Some filaments don't match the slicer's intent.: 一部のフィラメントがスライサーの意図と一致しません。
   Some settings will take effect after restart.: 一部の設定は再起動後に有効になります。
   Sound Theme: サウンドテーマ
