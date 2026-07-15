@@ -1,10 +1,27 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 idf_component_register(SRCS "app_main.c" "board_display.c" "lvgl_glue.c" "touch_input.c" "ota_health.c"
-                             "storage_mount.c" "net_hil.cpp"
+                             "storage_mount.c" "net_hil.cpp" "font_registration.c"
                        PRIV_REQUIRES esp_timer app_update esp_lcd driver helixcore helixnet pthread
                                      esp_wifi esp_netif esp_event nvs_flash joltwallet__littlefs
                                      jkent__frogfs
                        INCLUDE_DIRS "." "../boards")
+
+# font_registration.c's helix_fonts_register() has no caller yet (Task 6
+# wires the call site before theme init) and defines no symbol any other
+# object needs, so two things would otherwise happen silently: (1) the
+# linker's normal archive-extraction rule skips font_registration.c.o
+# entirely — confirmed by a byte-for-byte identical binary size before/after
+# adding the font sources without this fix — and (2) even after forcing
+# extraction (tried WHOLE_ARCHIVE + __attribute__((used)) first), plain
+# -Wl,--gc-sections still discarded the now-extracted-but-still-uncalled
+# function, per the link map (.literal.helix_fonts_register / noto_sans_26
+# etc. showed up with address 0x0 — collected, not placed). --undefined is
+# the standard fix for exactly this "registered but not yet called" shape:
+# it forces ld to (a) search archives for the symbol, extracting
+# font_registration.c.obj (and, transitively, every font .obj it references)
+# and (b) treat that symbol as a GC root so --gc-sections can't then discard
+# it. Task 6 adding the real call site makes this redundant but harmless.
+target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--undefined=helix_fonts_register")
 
 # `storage` partition image: a packed frogfs (jkent/frogfs) compressed
 # container, built from the staging tree scripts/esp32_stage_assets.py

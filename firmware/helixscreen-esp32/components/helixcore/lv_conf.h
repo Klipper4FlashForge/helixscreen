@@ -564,7 +564,31 @@
 /*Optionally declare custom fonts here.
  *You can use these fonts as default font too and they will be available globally.
  *E.g. #define LV_FONT_CUSTOM_DECLARE   LV_FONT_DECLARE(my_font_1) LV_FONT_DECLARE(my_font_2)*/
-#define LV_FONT_CUSTOM_DECLARE  /* audit: app fonts are Makefile-compiled, not available here */
+/* Medium-tier (800x480 K-Touch) compiled faces — only the faces the _medium
+ * breakpoint's globals.xml font tokens reference. CJK companions are Plan 5.
+ * Plain extern, NOT the LV_FONT_DECLARE() macro (which always adds const):
+ * LV_FONT_CUSTOM_DECLARE is pulled in by every TU that includes lvgl.h —
+ * including each font's own .c file — so the qualifier here must match that
+ * file's own definition further down in the same TU, or gcc errors with
+ * "conflicting type qualifiers". The generated sources are inconsistent: the
+ * noto_sans_* faces (older font_conv run) define a non-const `lv_font_t`,
+ * while source_code_pro_14 and the mdi_icons_* faces (newer run) define
+ * `const lv_font_t` — checked per-file with
+ * `grep -A2 '#if LVGL_VERSION_MAJOR >= 8' assets/fonts/<name>.c`. Matches the
+ * desktop lv_conf.h idiom for noto_sans_14 (`extern lv_font_t ...;`, also
+ * non-const), extended to the medium tier's full face list. */
+#define LV_FONT_CUSTOM_DECLARE \
+    extern lv_font_t noto_sans_26; \
+    extern lv_font_t noto_sans_bold_28; \
+    extern lv_font_t noto_sans_18; \
+    extern lv_font_t noto_sans_light_16; \
+    extern lv_font_t noto_sans_light_12; \
+    extern const lv_font_t source_code_pro_14; \
+    extern const lv_font_t mdi_icons_16; \
+    extern const lv_font_t mdi_icons_24; \
+    extern const lv_font_t mdi_icons_32; \
+    extern const lv_font_t mdi_icons_48; \
+    extern const lv_font_t mdi_icons_64;
 
 /*Always set a default font*/
 #define LV_FONT_DEFAULT &lv_font_montserrat_14  /* audit: repo uses noto_sans_14 */
