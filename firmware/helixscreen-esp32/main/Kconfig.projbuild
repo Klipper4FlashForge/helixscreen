@@ -1,0 +1,37 @@
+menu "HelixScreen Network HIL (test-only)"
+
+config HELIX_NET_HIL
+    bool "Enable network HIL scenario (live Moonraker session)"
+    default n
+    help
+        Test-only. Brings up a raw WiFi station and drives a live Moonraker
+        WebSocket session through EspMoonrakerClient to validate the transport
+        on real K-Touch hardware (Plan 3 Task 10). The real WifiBackend lands
+        in Plan 4; this is self-contained and disabled by default so it never
+        ships. Requires HELIX_HIL_WIFI_SSID/PASS, supplied via a git-ignored
+        sdkconfig.local — never commit real credentials.
+
+config HELIX_HIL_WIFI_SSID
+    string "HIL WiFi SSID"
+    depends on HELIX_NET_HIL
+    default ""
+    help
+        Test-only WiFi SSID for the network HIL scenario. Stays empty in the
+        committed tree; supply the real value via sdkconfig.local at flash time.
+
+config HELIX_HIL_WIFI_PASS
+    string "HIL WiFi password"
+    depends on HELIX_NET_HIL
+    default ""
+    help
+        Test-only WiFi password for the network HIL scenario. NEVER commit a
+        real value — supply via sdkconfig.local (git-ignored).
+
+config HELIX_HIL_MOONRAKER_URL
+    string "HIL Moonraker WebSocket URL"
+    depends on HELIX_NET_HIL
+    default "ws://192.168.1.112:7125/websocket"
+    help
+        Moonraker WebSocket endpoint the HIL scenario connects to.
+
+endmenu

@@ -7,12 +7,19 @@
 
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "sdkconfig.h"
 
 #include "board_display.h"
 #include "ktouch.h"
 #include "lvgl_glue.h"
 #include "lvgl.h"
 #include "touch_input.h"
+
+#if CONFIG_HELIX_NET_HIL
+// Defined in net_hil.cpp (Task 10). Test-only network HIL scenario, disabled
+// by default — see main/Kconfig.projbuild.
+extern void net_hil_start(void);
+#endif
 
 static const char *TAG = "helixscreen";
 
@@ -57,6 +64,16 @@ void app_main(void) {
     const esp_partition_t *running = esp_ota_get_running_partition();
     ESP_LOGI(TAG, "helixscreen-esp32 booting from partition '%s' @ 0x%08" PRIx32,
              running->label, running->address);
+
+#if CONFIG_HELIX_NET_HIL
+    // Must run BEFORE board_display_init: the RGB panel starts continuous DMA
+    // at init, and first-boot WiFi RF calibration + PHY NVS writes overlapping
+    // that DMA hang the chip into TG1WDT resets (observed on K-Touch). This
+    // call blocks until WiFi has an IP, then spawns the HIL thread and returns;
+    // display comes up a few seconds late in HIL builds only. It also cannot go
+    // after lvgl_glue_start, which joins the UI thread and never returns.
+    net_hil_start();
+#endif
 
     esp_lcd_panel_handle_t panel = board_display_init();
     lvgl_glue_start(panel, ui_build_hello);
