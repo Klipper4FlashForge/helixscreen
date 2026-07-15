@@ -74,6 +74,10 @@
  **********************/
 static void view_start_element_handler(void * user_data, const char * name, const char ** attrs);
 static void view_end_element_handler(void * user_data, const char * name);
+static void view_character_data_handler(void * user_data, const XML_Char * s, int len);
+static void collapse_whitespace(char * s);
+static void apply_pending_inline_text(lv_xml_parser_state_t * state, const char * name);
+static void free_pcdata_ll(lv_xml_parser_state_t * state);
 static void create_timeline_instances(lv_xml_parser_state_t * state);
 static void get_timeline_from_event_cb(lv_event_t * e);
 static void free_timelines_event_cb(lv_event_t * e);
@@ -309,11 +313,13 @@ void * lv_xml_create_in_scope(lv_obj_t * parent, lv_xml_component_scope_t * pare
     XML_Parser parser = XML_ParserCreate_MM(NULL, &mem_handlers, NULL);
     XML_SetUserData(parser, &state);
     XML_SetElementHandler(parser, view_start_element_handler, view_end_element_handler);
+    XML_SetCharacterDataHandler(parser, view_character_data_handler);
 
     /* Parse the XML */
     if(XML_Parse(parser, scope->view_def, lv_strlen(scope->view_def), XML_TRUE) == XML_STATUS_ERROR) {
         LV_LOG_WARN("XML parsing error: %s on line %lu", XML_ErrorString(XML_GetErrorCode(parser)),
                     XML_GetCurrentLineNumber(parser));
+        free_pcdata_ll(&state);
         XML_ParserFree(parser);
         return NULL;
     }
@@ -336,6 +342,7 @@ void * lv_xml_create_in_scope(lv_obj_t * parent, lv_xml_component_scope_t * pare
     create_timeline_instances(&state);
 
     lv_ll_clear(&state.parent_ll);
+    free_pcdata_ll(&state);
     XML_ParserFree(parser);
 
     return state.view;
@@ -995,10 +1002,125 @@ static void resolve_consts(const char ** item_attrs, lv_xml_component_scope_t * 
     }
 }
 
+/** Trim leading/trailing whitespace and collapse internal runs of
+ *  space/tab/CR/LF to a single space (HTML PCDATA semantics), in place.
+ *  MUST stay byte-identical to collapse_whitespace() in
+ *  scripts/translations/extractor.py — the collapsed string is the
+ *  translation key on both sides. */
+static void collapse_whitespace(char * s)
+{
+    char * src = s;
+    char * dst = s;
+    bool in_ws = true; /*true drops leading whitespace*/
+    for(; *src; src++) {
+        char c = *src;
+        if(c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+            in_ws = true;
+            continue;
+        }
+        if(in_ws && dst != s) *dst++ = ' ';
+        in_ws = false;
+        *dst++ = c;
+    }
+    *dst = '\0';
+}
+
+static void view_character_data_handler(void * user_data, const XML_Char * s, int len)
+{
+    lv_xml_parser_state_t * state = (lv_xml_parser_state_t *)user_data;
+    if(len <= 0) return;
+    lv_xml_pcdata_entry_t * entry = lv_ll_get_tail(&state->pcdata_ll);
+    if(entry == NULL) return; /*Character data outside any element (prolog etc.)*/
+
+    size_t needed = entry->len + (size_t)len + 1;
+    if(needed > entry->cap) {
+        size_t new_cap = entry->cap ? entry->cap * 2 : 64;
+        while(new_cap < needed) new_cap *= 2;
+        char * new_buf = lv_realloc(entry->buf, new_cap);
+        if(new_buf == NULL) return; /*OOM: drop this chunk*/
+        entry->buf = new_buf;
+        entry->cap = new_cap;
+    }
+    lv_memcpy(entry->buf + entry->len, s, (size_t)len);
+    entry->len += (size_t)len;
+    entry->buf[entry->len] = '\0';
+}
+
+/** Pop the PCDATA entry for the element just closed and, if it captured real
+ *  text, apply it as `text` + `translation_tag` through the element's normal
+ *  apply_cb — i.e. `<text_muted>Foo</text_muted>` behaves like
+ *  `<text_muted text="Foo" translation_tag="Foo"/>`. */
+static void apply_pending_inline_text(lv_xml_parser_state_t * state, const char * name)
+{
+    lv_xml_pcdata_entry_t * entry = lv_ll_get_tail(&state->pcdata_ll);
+    if(entry == NULL) return;
+
+    char * buf = entry->buf;
+    lv_obj_t * item = entry->item;
+    bool has_conflict = entry->has_conflict;
+    lv_ll_remove(&state->pcdata_ll, entry);
+    lv_free(entry);
+
+    if(buf == NULL) return;
+    collapse_whitespace(buf);
+    if(buf[0] == '\0' || item == NULL) {
+        lv_free(buf);
+        return;
+    }
+    if(has_conflict) {
+        LV_LOG_WARN("Inline text ignored on <%s>: element also has "
+                    "text/bind_text/translation_tag", name);
+        lv_free(buf);
+        return;
+    }
+
+    /*Resolve $prop/#const exactly like attribute values (whole-value)*/
+    const char * synth[5] = {"text", buf, "translation_tag", buf, NULL};
+    resolve_params(&state->scope, state->parent_scope, synth, state->parent_attrs);
+    resolve_consts(synth, &state->scope);
+    if(synth[0][0] == '\0' || synth[2][0] == '\0') { /*unresolved -> dropped pair*/
+        lv_free(buf);
+        return;
+    }
+
+    lv_widget_processor_t * p = lv_xml_widget_get_processor(name);
+    if(p == NULL) {
+        /*Component instance: apply through the widget it extends*/
+        lv_xml_component_scope_t * comp_scope = lv_xml_component_get_scope(name);
+        if(comp_scope) p = lv_xml_widget_get_extended_widget_processor(comp_scope->extends);
+    }
+    if(p) {
+        lv_obj_t * item_saved = state->item;
+        state->item = item;
+        p->apply_cb(state, synth); /*apply_cb copies values; buf freed below*/
+        state->item = item_saved;
+    }
+    lv_free(buf);
+}
+
+static void free_pcdata_ll(lv_xml_parser_state_t * state)
+{
+    lv_xml_pcdata_entry_t * e;
+    LV_LL_READ(&state->pcdata_ll, e) {
+        if(e->buf) lv_free(e->buf);
+    }
+    lv_ll_clear(&state->pcdata_ll);
+}
+
 static void view_start_element_handler(void * user_data, const char * name, const char ** attrs)
 {
     lv_xml_parser_state_t * state = (lv_xml_parser_state_t *)user_data;
     state->tag_name = name;
+
+    lv_xml_pcdata_entry_t * pcdata = lv_ll_ins_tail(&state->pcdata_ll);
+    if(pcdata) {
+        lv_memzero(pcdata, sizeof(*pcdata));
+        if(attrs) {
+            pcdata->has_conflict = lv_xml_get_value_of(attrs, "text") != NULL ||
+                                   lv_xml_get_value_of(attrs, "bind_text") != NULL ||
+                                   lv_xml_get_value_of(attrs, "translation_tag") != NULL;
+        }
+    }
 
     bool is_view = false;
     if(lv_streq(name, "view")) {
@@ -1087,6 +1209,8 @@ static void view_start_element_handler(void * user_data, const char * name, cons
         return;
     }
 
+    if(pcdata) pcdata->item = state->item;
+
     void ** new_parent = lv_ll_ins_tail(&state->parent_ll);
     if(new_parent == NULL) {
         LV_LOG_ERROR("OOM: failed to allocate parent node for '%s'", name);
@@ -1101,9 +1225,9 @@ static void view_start_element_handler(void * user_data, const char * name, cons
 
 static void view_end_element_handler(void * user_data, const char * name)
 {
-    LV_UNUSED(name);
-
     lv_xml_parser_state_t * state = (lv_xml_parser_state_t *)user_data;
+
+    apply_pending_inline_text(state, name);
 
     lv_obj_t ** current_parent = lv_ll_get_tail(&state->parent_ll);
     if(current_parent) {
