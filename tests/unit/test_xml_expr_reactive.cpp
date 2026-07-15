@@ -30,24 +30,28 @@ TEST_CASE_METHOD(LVGLTestFixture, "reactive: recomputes on each distinct input",
     REQUIRE(e != nullptr);
     REQUIRE(lv_xml_expr_subject_count(e) == 2);
     lv_xml_expr_bind(e, owner, cb, nullptr);
-    REQUIRE(last == 0); // initial eval fired
+    REQUIRE(last == 0);  // initial eval fired
+    REQUIRE(calls == 1); // fired EXACTLY once at bind, not once per distinct subject
     lv_subject_set_int(&ra, 1); // change A
     REQUIRE(last == 0); // b still <= 3
     lv_subject_set_int(&rb, 5); // change B
     REQUIRE(last == 1); // now true
     int before = calls;
     lv_obj_delete(owner); // must free expr + detach observers
-    lv_subject_set_int(&rb, 9); // no observers left -> cb not called
+    lv_subject_set_int(&ra, 0); // perturb BOTH subjects post-delete: no observers left
+    lv_subject_set_int(&rb, 9);
     REQUIRE(calls == before);
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "reactive: repeated subject registers once, no double free", "[xml_expr][reactive]") {
     lv_subject_init_int(&ra, 2);
     last = -999;
+    calls = 0;
     lv_obj_t* owner = lv_obj_create(lv_screen_active());
     lv_xml_expr_t* e = lv_xml_expr_compile("a + a", res, nullptr); // a referenced twice
     REQUIRE(lv_xml_expr_subject_count(e) == 1); // distinct collapse
     lv_xml_expr_bind(e, owner, cb, nullptr);
     REQUIRE(last == 4);
+    REQUIRE(calls == 1); // fired exactly once at bind
     lv_obj_delete(owner); // ASAN: no double-free
 }

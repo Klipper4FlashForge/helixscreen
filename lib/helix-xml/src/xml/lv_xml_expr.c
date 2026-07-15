@@ -212,12 +212,16 @@ lv_subject_t * lv_xml_expr_subject_at(const lv_xml_expr_t * e, size_t i){ return
 
 /* Shared context for all per-subject observers of one bind. Freed exactly
  * once from `expr_bind_delete_cb` on the owner's LV_EVENT_DELETE - observers
- * are registered with auto_free_user_data = 0 so they never free it. */
-typedef struct { lv_xml_expr_t * expr; void (*cb)(void *, int32_t); void * user_data; } expr_bind_t;
+ * are registered with auto_free_user_data = 0 so they never free it.
+ * `registering` suppresses the synchronous callback LVGL fires when each
+ * observer is added, so the initial value is delivered exactly once (by the
+ * explicit fire in lv_xml_expr_bind) rather than once per distinct subject. */
+typedef struct { lv_xml_expr_t * expr; void (*cb)(void *, int32_t); void * user_data; bool registering; } expr_bind_t;
 
 static void expr_bind_observer_cb(lv_observer_t * obs, lv_subject_t * subject){
     LV_UNUSED(subject);
     expr_bind_t * b = obs->user_data;
+    if(b->registering) return;   /* suppress the add-time fire; see explicit fire below */
     b->cb(b->user_data, lv_xml_expr_eval(b->expr));
 }
 
@@ -230,16 +234,19 @@ static void expr_bind_delete_cb(lv_event_t * e){
 void lv_xml_expr_bind(lv_xml_expr_t * expr, lv_obj_t * owner,
                       void (*cb)(void * user_data, int32_t value), void * user_data){
     expr_bind_t * b = lv_malloc(sizeof(expr_bind_t));
-    b->expr = expr; b->cb = cb; b->user_data = user_data;
+    b->expr = expr; b->cb = cb; b->user_data = user_data; b->registering = true;
 
     /* One observer per distinct subject, tied to `owner`; do NOT auto-free the
-     * shared context (it is freed exactly once by expr_bind_delete_cb below). */
+     * shared context (it is freed exactly once by expr_bind_delete_cb below).
+     * `registering` is true here so the add-time fire from each observer is
+     * suppressed - we deliver the initial value once, explicitly, below. */
     size_t n = lv_xml_expr_subject_count(expr);
     for(size_t i=0;i<n;i++){
         lv_observer_t * o = lv_subject_add_observer_obj(lv_xml_expr_subject_at(expr,i),
                                                         expr_bind_observer_cb, owner, b);
         if(o) o->auto_free_user_data = 0;
     }
+    b->registering = false;
 
     /* Single free-once hook on owner deletion. */
     lv_obj_add_event_cb(owner, expr_bind_delete_cb, LV_EVENT_DELETE, b);
