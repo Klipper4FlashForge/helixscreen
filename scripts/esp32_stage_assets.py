@@ -68,15 +68,81 @@ def strip_xml_comments(text: str) -> str:
     return re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
 
 
-def collapse_inter_tag_whitespace(text: str) -> str:
-    """Collapse whitespace-only runs between a tag's '>' and the next '<'.
+def _tokenize_xml(text: str) -> list[tuple[str, str]]:
+    """Split text into ("tag", str) / ("text", str) tokens.
 
-    Only matches spans that are *entirely* whitespace, so real text content
-    (which sits in the same '>' ... '<' position for a non-empty element) is
-    never touched, and attribute values (inside a single tag, between '<' and
-    its own '>') are structurally outside this pattern and untouched too.
+    A "tag" token spans exactly from a real '<' to its true matching '>' —
+    attribute-value quoting, CDATA sections, and comments are all tracked so a
+    literal '>' inside any of them can't be mistaken for the tag's close.
+    Everything else is a verbatim "text" token. This makes the tag/text split
+    boundary-aware in a way a blind '>...<' regex can't be: e.g. a literal '>'
+    in text content (legal, unescaped XML) followed by whitespace and then the
+    next tag's '<' must NOT be read as "whitespace between two tags".
     """
-    return re.sub(r">\s+<", "><", text)
+    tokens: list[tuple[str, str]] = []
+    i = 0
+    n = len(text)
+    text_start = 0
+
+    while i < n:
+        if text[i] != "<":
+            i += 1
+            continue
+
+        if i > text_start:
+            tokens.append(("text", text[text_start:i]))
+
+        tag_start = i
+        if text.startswith("<![CDATA[", i):
+            end = text.find("]]>", i + 9)
+            end = end + 3 if end != -1 else n
+        elif text.startswith("<!--", i):
+            end = text.find("-->", i + 4)
+            end = end + 3 if end != -1 else n
+        else:
+            j = i + 1
+            quote = None
+            while j < n:
+                c = text[j]
+                if quote:
+                    if c == quote:
+                        quote = None
+                elif c in ("'", '"'):
+                    quote = c
+                elif c == ">":
+                    j += 1
+                    break
+                j += 1
+            end = j
+        tokens.append(("tag", text[tag_start:end]))
+        i = end
+        text_start = i
+
+    if text_start < n:
+        tokens.append(("text", text[text_start:n]))
+
+    return tokens
+
+
+def collapse_inter_tag_whitespace(text: str) -> str:
+    """Remove whitespace-only text nodes that sit directly between two tags.
+
+    Tag-boundary aware (see `_tokenize_xml`): a text token is dropped only if
+    it is both (a) entirely whitespace and (b) immediately flanked by real tag
+    tokens on both sides. Real text content — including a text node that's
+    non-whitespace only because it contains a bare '>' — is never touched, and
+    neither are attribute values, CDATA sections, or comments.
+    """
+    tokens = _tokenize_xml(text)
+    out = []
+    for idx, (kind, content) in enumerate(tokens):
+        if kind == "text" and content.strip() == "":
+            prev_is_tag = idx > 0 and tokens[idx - 1][0] == "tag"
+            next_is_tag = idx < len(tokens) - 1 and tokens[idx + 1][0] == "tag"
+            if prev_is_tag and next_is_tag:
+                continue
+        out.append(content)
+    return "".join(out)
 
 
 def minify_xml(text: str) -> str:
@@ -148,8 +214,15 @@ def stage_translations(ui_xml_dir: Path, out_dir: Path, remaining_budget: int) -
         included.append(lang)
         return True
 
-    if "en" in candidates:
-        add("en")
+    if "en" not in candidates:
+        print("FAIL: no en.xml found in ui_xml/translations/ — en must always ship.",
+              file=sys.stderr)
+        sys.exit(1)
+    if not add("en"):
+        print(f"FAIL: en.xml ({len(candidates['en'].encode('utf-8'))} B minified) does not fit "
+              f"in the remaining on-flash budget ({remaining_budget} B) — en must always ship.",
+              file=sys.stderr)
+        sys.exit(1)
 
     others = sorted(
         (lang for lang in candidates if lang != "en"),
