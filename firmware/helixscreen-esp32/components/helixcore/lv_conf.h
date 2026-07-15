@@ -100,7 +100,14 @@
  * - LV_OS_WINDOWS
  * - LV_OS_MQX
  * - LV_OS_CUSTOM */
-#define LV_USE_OS   LV_OS_PTHREAD
+/* LV_OS_NONE: this firmware drives LVGL from a single task, so the SW draw
+ * unit's separate thread buys nothing — and its 32KB pthread stack is a
+ * runtime internal-RAM allocation that FAILS once WiFi fragments the heap
+ * (largest free block measured 31744 < 32768), leaving the render path
+ * waiting forever on a draw thread that was never created: UI logs
+ * "entering render loop" but never flushes a pixel. Synchronous drawing
+ * removes the hidden allocation entirely. */
+#define LV_USE_OS   LV_OS_NONE
 
 #if LV_USE_OS == LV_OS_CUSTOM
     #define LV_OS_CUSTOM_INCLUDE <stdint.h>

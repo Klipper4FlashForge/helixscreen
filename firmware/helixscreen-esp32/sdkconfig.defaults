@@ -37,3 +37,36 @@ CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
 # behind an in-progress receive (esp-idf#14918), and Moonraker traffic is
 # bidirectional (RPCs out while status streams in). Required by helixnet.
 CONFIG_ESP_WS_CLIENT_SEPARATE_TX_LOCK=y
+
+# WiFi + display + octal-PSRAM coexistence (2026-07-15 boot-reliability
+# investigation, 20-reset harness verified; mirrors stock K-Touch firmware's
+# published Arduino-ESP32/IDF-5.1.1 config). WiFi/LWIP buffers allocate from
+# PSRAM so WiFi's variable internal-heap appetite cannot fragment internal
+# SRAM out from under the UI (the draw buffers + UI task stack are static in
+# .bss — see main/lvgl_glue.c). Static TX/RX buffer counts make the WiFi
+# internal footprint deterministic.
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER=y
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=8
+CONFIG_ESP_WIFI_CACHE_TX_BUFFER_NUM=16
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=8
+
+# Stock parity: adaptively drop PHY TX power after a brownout event — the
+# board's 5V path is marginal under full-power TX bursts (weak-RSSI worst
+# case), and stock ships this mitigation.
+CONFIG_ESP_PHY_REDUCE_TX_POWER=y
+
+# Stock parity: DOUT flash header — the shipped stock image runs DOUT@80m,
+# not the QIO its build config nominally requested. (Stock's 32B data-cache
+# line was tried and worsened scan-out: 64B lines give longer, more efficient
+# PSRAM bursts for the framebuffer reads.)
+CONFIG_ESPTOOLPY_FLASHMODE_DOUT=y
+
+# Bounce-buffer scan-out must survive cache-disabled flash windows (WiFi PHY
+# cal writes to NVS, OTA health marks otadata — both fire around first
+# render). LCD_RGB_ISR_IRAM_SAFE is NOT usable here: the refill ISR reads the
+# PSRAM framebuffer, which is unreachable while cache is off ("Cache disabled
+# but cached memory region accessed" panic, measured). Instead the ISR pauses
+# and DMA restarts on the next vsync, so an underrun costs one glitched frame
+# rather than permanently desyncing the panel into its test pattern.
+CONFIG_LCD_RGB_RESTART_IN_VSYNC=y

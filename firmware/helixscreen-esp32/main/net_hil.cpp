@@ -285,11 +285,9 @@ void* hil_thread_main(void*) {
 } // namespace
 
 extern "C" void net_hil_start(void) {
-    // Synchronous WiFi bring-up BEFORE the caller starts the LCD: first-boot RF
-    // calibration + PHY NVS writes overlapping the RGB panel's continuous DMA
-    // hang the chip into TG1WDT resets (observed on K-Touch, Task 10 HIL).
-    // Serializing radio-up before display-up avoids the init-time collision;
-    // the 60s scenario still exercises WiFi/LCD coexistence during streaming.
+    // Blocks until WiFi has an IP, then spawns the HIL thread. Runs on its
+    // own task (see app_main) so a slow or absent network can never hold the
+    // display off — DHCP at weak RSSI was observed taking 75s+.
     wifi_init_station();
 
     pthread_attr_t attr;

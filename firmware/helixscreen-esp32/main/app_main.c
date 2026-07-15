@@ -16,9 +16,18 @@
 #include "touch_input.h"
 
 #if CONFIG_HELIX_NET_HIL
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 // Defined in net_hil.cpp (Task 10). Test-only network HIL scenario, disabled
 // by default — see main/Kconfig.projbuild.
 extern void net_hil_start(void);
+
+static void net_hil_task(void *arg) {
+    (void)arg;
+    net_hil_start();
+    vTaskDelete(NULL);
+}
 #endif
 
 static const char *TAG = "helixscreen";
@@ -66,13 +75,14 @@ void app_main(void) {
              running->label, running->address);
 
 #if CONFIG_HELIX_NET_HIL
-    // Must run BEFORE board_display_init: the RGB panel starts continuous DMA
-    // at init, and first-boot WiFi RF calibration + PHY NVS writes overlapping
-    // that DMA hang the chip into TG1WDT resets (observed on K-Touch). This
-    // call blocks until WiFi has an IP, then spawns the HIL thread and returns;
-    // display comes up a few seconds late in HIL builds only. It also cannot go
-    // after lvgl_glue_start, which joins the UI thread and never returns.
-    net_hil_start();
+    // Network bring-up runs in its own task: the UI must come up
+    // unconditionally, never behind WiFi — association without DHCP (weak
+    // RSSI, dead AP, wrong creds) otherwise leaves the device on a black
+    // screen indefinitely. The earlier wifi-before-LCD serialization guarded
+    // against a suspected RF-cal x RGB-DMA boot wedge that reset-cause
+    // instrumentation disproved: that wedge was an internal-RAM ENOMEM abort
+    // loop, fixed structurally by static allocation in lvgl_glue.c.
+    xTaskCreate(net_hil_task, "net_hil_start", 8192, NULL, 5, NULL);
 #endif
 
     esp_lcd_panel_handle_t panel = board_display_init();
