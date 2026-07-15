@@ -44,6 +44,12 @@ size_t  lv_xml_expr_subject_count(const lv_xml_expr_t * expr);
 lv_subject_t * lv_xml_expr_subject_at(const lv_xml_expr_t * expr, size_t i);
 void    lv_xml_expr_free(lv_xml_expr_t * expr);
 
+/* Observe every referenced subject; call cb(user_data, eval(expr)) on any change and once
+ * immediately. Frees `expr` AND detaches observers when `owner` is deleted (LV_EVENT_DELETE).
+ * Takes ownership of `expr`. */
+void lv_xml_expr_bind(lv_xml_expr_t * expr, lv_obj_t * owner,
+                      void (*cb)(void * user_data, int32_t value), void * user_data);
+
 #ifdef __cplusplus
 }
 #endif

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "lv_xml_expr.h"
 #if LV_USE_XML
+#include <lvgl.h>
+#include <lvgl_private.h>
 #include <string.h>
 #include <stdbool.h>
 
@@ -203,4 +205,46 @@ int32_t lv_xml_expr_eval(const lv_xml_expr_t * e){ return (e && e->root) ? eval_
 void lv_xml_expr_free(lv_xml_expr_t * e){ if(!e)return; node_free(e->root); lv_free(e->subjects); lv_free(e); }
 size_t lv_xml_expr_subject_count(const lv_xml_expr_t * e){ return e?e->subject_count:0; }
 lv_subject_t * lv_xml_expr_subject_at(const lv_xml_expr_t * e, size_t i){ return (e && i<e->subject_count)?e->subjects[i]:NULL; }
+
+/*=====================
+ *  Reactive bind (free-once lifetime)
+ *====================*/
+
+/* Shared context for all per-subject observers of one bind. Freed exactly
+ * once from `expr_bind_delete_cb` on the owner's LV_EVENT_DELETE - observers
+ * are registered with auto_free_user_data = 0 so they never free it. */
+typedef struct { lv_xml_expr_t * expr; void (*cb)(void *, int32_t); void * user_data; } expr_bind_t;
+
+static void expr_bind_observer_cb(lv_observer_t * obs, lv_subject_t * subject){
+    LV_UNUSED(subject);
+    expr_bind_t * b = obs->user_data;
+    b->cb(b->user_data, lv_xml_expr_eval(b->expr));
+}
+
+static void expr_bind_delete_cb(lv_event_t * e){
+    expr_bind_t * b = lv_event_get_user_data(e);
+    lv_xml_expr_free(b->expr);
+    lv_free(b);
+}
+
+void lv_xml_expr_bind(lv_xml_expr_t * expr, lv_obj_t * owner,
+                      void (*cb)(void * user_data, int32_t value), void * user_data){
+    expr_bind_t * b = lv_malloc(sizeof(expr_bind_t));
+    b->expr = expr; b->cb = cb; b->user_data = user_data;
+
+    /* One observer per distinct subject, tied to `owner`; do NOT auto-free the
+     * shared context (it is freed exactly once by expr_bind_delete_cb below). */
+    size_t n = lv_xml_expr_subject_count(expr);
+    for(size_t i=0;i<n;i++){
+        lv_observer_t * o = lv_subject_add_observer_obj(lv_xml_expr_subject_at(expr,i),
+                                                        expr_bind_observer_cb, owner, b);
+        if(o) o->auto_free_user_data = 0;
+    }
+
+    /* Single free-once hook on owner deletion. */
+    lv_obj_add_event_cb(owner, expr_bind_delete_cb, LV_EVENT_DELETE, b);
+
+    /* Fire once now so the target reflects the initial value. */
+    cb(user_data, lv_xml_expr_eval(expr));
+}
 #endif /* LV_USE_XML */
