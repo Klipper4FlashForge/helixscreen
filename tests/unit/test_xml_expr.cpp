@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "../catch_amalgamated.hpp"
 #include <algorithm>
+#include <cstring>
 #include <vector>
 extern "C" {
 #include "helix-xml/src/xml/lv_xml_expr.h"
@@ -33,4 +34,30 @@ TEST_CASE("lexer: integers, parens, arithmetic", "[xml_expr]") {
 TEST_CASE("lexer: stray character is an error token", "[xml_expr]") {
     auto t = lex("a @ b");
     REQUIRE(std::find(t.begin(), t.end(), LV_XML_EXPR_TOK_ERROR) != t.end());
+}
+
+static lv_subject_t s_a, s_b;
+static lv_subject_t * mock_resolver(void *, const char * name) {
+    if (!strcmp(name, "a")) return &s_a;
+    if (!strcmp(name, "b")) return &s_b;
+    return nullptr;
+}
+
+TEST_CASE("compile: valid expression returns non-null", "[xml_expr]") {
+    lv_subject_init_int(&s_a, 0); lv_subject_init_int(&s_b, 0);
+    lv_xml_expr_t * e = lv_xml_expr_compile("a && b > 3", mock_resolver, nullptr);
+    REQUIRE(e != nullptr);
+    lv_xml_expr_free(e);
+}
+
+TEST_CASE("compile: unknown subject fails (returns null)", "[xml_expr]") {
+    lv_xml_expr_t * e = lv_xml_expr_compile("a && zzz", mock_resolver, nullptr);
+    REQUIRE(e == nullptr);
+}
+
+TEST_CASE("compile: malformed expressions fail cleanly", "[xml_expr]") {
+    REQUIRE(lv_xml_expr_compile("", mock_resolver, nullptr) == nullptr);
+    REQUIRE(lv_xml_expr_compile("(a && b", mock_resolver, nullptr) == nullptr);
+    REQUIRE(lv_xml_expr_compile("a &&", mock_resolver, nullptr) == nullptr);
+    REQUIRE(lv_xml_expr_compile("a @ b", mock_resolver, nullptr) == nullptr);
 }

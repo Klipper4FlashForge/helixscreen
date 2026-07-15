@@ -62,4 +62,110 @@ size_t lv_xml_expr_tokenize_for_test(const char * src, lv_xml_expr_tok_kind_t * 
     for (size_t i = 0; i < m; i++) out[i] = buf[i].kind;
     return n;
 }
+
+/*=====================
+ *  AST + Pratt parser
+ *====================*/
+
+typedef enum { N_INT, N_SUB, N_UNARY, N_BINARY } node_kind_t;
+typedef struct expr_node {
+    node_kind_t kind;
+    lv_xml_expr_tok_kind_t op;      /* for UNARY/BINARY */
+    int32_t ival;                   /* for N_INT */
+    lv_subject_t * subject;         /* for N_SUB */
+    struct expr_node * a, * b;
+} expr_node_t;
+
+struct lv_xml_expr_t {
+    expr_node_t * root;
+    lv_subject_t ** subjects;       /* distinct referenced subjects */
+    size_t subject_count;
+};
+
+typedef struct {
+    tok_t * t; size_t pos; bool error;
+    lv_xml_expr_resolver_t resolver; void * ctx;
+    lv_subject_t * subs[32]; size_t nsub;   /* distinct collector */
+} parser_t;
+
+static expr_node_t * parse_or(parser_t * p);   /* fwd */
+
+static tok_t * peek(parser_t * p){ return &p->t[p->pos]; }
+static tok_t * advance(parser_t * p){ return &p->t[p->pos++]; }
+static bool accept(parser_t * p, lv_xml_expr_tok_kind_t k){ if(peek(p)->kind==k){p->pos++;return true;} return false; }
+
+static expr_node_t * node_new(node_kind_t k){ expr_node_t * n=lv_zalloc(sizeof(expr_node_t)); n->kind=k; return n; }
+static void node_free(expr_node_t * n){ if(!n)return; node_free(n->a); node_free(n->b); lv_free(n); }
+
+static void collect_subject(parser_t * p, lv_subject_t * s){
+    for(size_t i=0;i<p->nsub;i++) if(p->subs[i]==s) return;
+    if(p->nsub < 32) p->subs[p->nsub++]=s;
+}
+
+static expr_node_t * parse_primary(parser_t * p){
+    tok_t * t = peek(p);
+    if(t->kind==LV_XML_EXPR_TOK_INT){ advance(p); expr_node_t*n=node_new(N_INT); n->ival=t->ival; return n; }
+    if(t->kind==LV_XML_EXPR_TOK_IDENT){
+        advance(p);
+        char name[64]; size_t ln=t->len<63?t->len:63; memcpy(name,t->start,ln); name[ln]='\0';
+        lv_subject_t * s = p->resolver ? p->resolver(p->ctx,name) : NULL;
+        if(!s){ LV_LOG_WARN("expr: unknown subject '%s'", name); p->error=true; return NULL; }
+        collect_subject(p,s);
+        expr_node_t*n=node_new(N_SUB); n->subject=s; return n;
+    }
+    if(accept(p,LV_XML_EXPR_TOK_LPAREN)){
+        expr_node_t * n = parse_or(p);
+        if(!accept(p,LV_XML_EXPR_TOK_RPAREN)){ p->error=true; }
+        return n;
+    }
+    p->error=true; return NULL;
+}
+
+static expr_node_t * parse_unary(parser_t * p){
+    tok_t * t = peek(p);
+    if(t->kind==LV_XML_EXPR_TOK_NOT || t->kind==LV_XML_EXPR_TOK_MINUS){
+        advance(p); expr_node_t*n=node_new(N_UNARY); n->op=t->kind; n->a=parse_unary(p); return n;
+    }
+    return parse_primary(p);
+}
+
+/* generic left-assoc binary level */
+static expr_node_t * parse_bin(parser_t * p, const lv_xml_expr_tok_kind_t * ops, size_t nops,
+                               expr_node_t * (*next)(parser_t *)){
+    expr_node_t * left = next(p);
+    for(;;){
+        lv_xml_expr_tok_kind_t k = peek(p)->kind; bool m=false;
+        for(size_t i=0;i<nops;i++) if(ops[i]==k){m=true;break;}
+        if(!m) break;
+        advance(p);
+        expr_node_t*n=node_new(N_BINARY); n->op=k; n->a=left; n->b=next(p); left=n;
+    }
+    return left;
+}
+static expr_node_t * parse_mul(parser_t * p){ static const lv_xml_expr_tok_kind_t o[]={LV_XML_EXPR_TOK_STAR,LV_XML_EXPR_TOK_SLASH,LV_XML_EXPR_TOK_PERCENT}; return parse_bin(p,o,3,parse_unary);}
+static expr_node_t * parse_add(parser_t * p){ static const lv_xml_expr_tok_kind_t o[]={LV_XML_EXPR_TOK_PLUS,LV_XML_EXPR_TOK_MINUS}; return parse_bin(p,o,2,parse_mul);}
+static expr_node_t * parse_cmp(parser_t * p){ static const lv_xml_expr_tok_kind_t o[]={LV_XML_EXPR_TOK_EQ,LV_XML_EXPR_TOK_NE,LV_XML_EXPR_TOK_LT,LV_XML_EXPR_TOK_LE,LV_XML_EXPR_TOK_GT,LV_XML_EXPR_TOK_GE}; return parse_bin(p,o,6,parse_add);}
+static expr_node_t * parse_and(parser_t * p){ static const lv_xml_expr_tok_kind_t o[]={LV_XML_EXPR_TOK_AND}; return parse_bin(p,o,1,parse_cmp);}
+static expr_node_t * parse_or(parser_t * p){ static const lv_xml_expr_tok_kind_t o[]={LV_XML_EXPR_TOK_OR}; return parse_bin(p,o,1,parse_and);}
+
+lv_xml_expr_t * lv_xml_expr_compile(const char * src, lv_xml_expr_resolver_t resolver, void * ctx){
+    if(src==NULL || src[0]=='\0') return NULL;
+    tok_t toks[128]; size_t nt = tokenize(src, toks, 128);
+    for(size_t i=0;i<nt;i++) if(toks[i].kind==LV_XML_EXPR_TOK_ERROR){ LV_LOG_WARN("expr: bad token in '%s'", src); return NULL; }
+    parser_t p = { .t=toks, .pos=0, .error=false, .resolver=resolver, .ctx=ctx, .nsub=0 };
+    expr_node_t * root = parse_or(&p);
+    if(p.error || root==NULL || peek(&p)->kind!=LV_XML_EXPR_TOK_EOF){
+        LV_LOG_WARN("expr: parse error in '%s'", src);
+        node_free(root); return NULL;
+    }
+    lv_xml_expr_t * e = lv_zalloc(sizeof(lv_xml_expr_t));
+    e->root = root; e->subject_count = p.nsub;
+    e->subjects = lv_malloc(sizeof(lv_subject_t*) * (p.nsub?p.nsub:1));
+    for(size_t i=0;i<p.nsub;i++) e->subjects[i]=p.subs[i];
+    return e;
+}
+
+void lv_xml_expr_free(lv_xml_expr_t * e){ if(!e)return; node_free(e->root); lv_free(e->subjects); lv_free(e); }
+size_t lv_xml_expr_subject_count(const lv_xml_expr_t * e){ return e?e->subject_count:0; }
+lv_subject_t * lv_xml_expr_subject_at(const lv_xml_expr_t * e, size_t i){ return (e && i<e->subject_count)?e->subjects[i]:NULL; }
 #endif /* LV_USE_XML */
