@@ -1026,8 +1026,11 @@ json MoonrakerDiscoverySequence::build_subscription_objects(
     // SD playback was deactivated" (Snapmaker U1 dirty-bed exception,
     // level-2 aborts, post-SDCARD_RESET_FILE). prepare_for_resume reads
     // it to decide between RESUME and "Restart from beginning?" UX.
+    // pl_env_valid / file_path: Snapmaker-fork Power-Loss-Recovery fields.
+    // Absent (harmless) on mainline Klipper — Moonraker sends explicit null
+    // for a subscribed field the connected firmware never populates.
     subscription_objects["virtual_sdcard"] =
-        json::array({"progress", "layer", "layer_count", "is_active"});
+        json::array({"progress", "layer", "layer_count", "is_active", "pl_env_valid", "file_path"});
     subscription_objects["toolhead"] =
         json::array({"position", "homed_axes", "kinematics", "extruder", "max_velocity",
                      "axis_minimum", "axis_maximum"});

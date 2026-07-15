@@ -95,6 +95,10 @@ void PrinterPrintState::init_subjects(bool register_xml) {
     // Klipper print_stats.message — pause/error reason from firmware
     INIT_SUBJECT_STRING(print_message, "", subjects_, register_xml);
 
+    // virtual_sdcard.pl_env_valid — Snapmaker-fork Power-Loss-Recovery flag.
+    // Default 0; stays 0 forever on mainline Klipper (field absent).
+    INIT_SUBJECT_INT(pl_env_valid, 0, subjects_, register_xml);
+
     // Pre-populate per-extruder filament_used map. Freezing the map structure
     // here eliminates the BG-thread emplace vs UI-thread read rehash race
     // (see header). update_from_status and the accessor both do direct
@@ -629,6 +633,21 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
         // gate on other fields being present.
         if (sdcard.contains("is_active") && sdcard["is_active"].is_boolean()) {
             sdcard_active_ = sdcard["is_active"].get<bool>();
+        }
+
+        // pl_env_valid / file_path — Snapmaker-fork Power-Loss-Recovery fields.
+        // Absent (harmless) on mainline Klipper; Moonraker sends an explicit
+        // null for a subscribed field the connected firmware never populates,
+        // so type-check before extracting rather than assuming presence.
+        if (auto pl_it = sdcard.find("pl_env_valid");
+            pl_it != sdcard.end() && pl_it->is_boolean()) {
+            int val = pl_it->get<bool>() ? 1 : 0;
+            if (lv_subject_get_int(&pl_env_valid_) != val) {
+                lv_subject_set_int(&pl_env_valid_, val);
+            }
+        }
+        if (auto fp_it = sdcard.find("file_path"); fp_it != sdcard.end() && fp_it->is_string()) {
+            pl_recovery_file_ = fp_it->get<std::string>();
         }
 
         if (sdcard.contains("progress") && sdcard["progress"].is_number()) {
