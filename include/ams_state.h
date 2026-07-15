@@ -128,7 +128,7 @@ class AmsState {
      *
      * @param hardware Discovered printer hardware
      * @param api IMoonrakerAPI instance for making API calls
-     * @param client helix::MoonrakerClient instance for WebSocket communication
+     * @param client helix::IMoonrakerClient instance for WebSocket communication
      */
     void init_backend_from_hardware(const helix::PrinterDiscovery& hardware, IMoonrakerAPI* api,
                                     helix::IMoonrakerClient* client);
@@ -142,7 +142,7 @@ class AmsState {
      *
      * @param hardware Discovered printer hardware
      * @param api IMoonrakerAPI instance for making API calls
-     * @param client helix::MoonrakerClient instance for WebSocket communication
+     * @param client helix::IMoonrakerClient instance for WebSocket communication
      */
     void init_backends_from_hardware(const helix::PrinterDiscovery& hardware, IMoonrakerAPI* api,
                                      helix::IMoonrakerClient* client);
@@ -1225,7 +1225,7 @@ class AmsState {
      * creates ACE backend via lv_async_call to maintain thread safety.
      *
      * @param api IMoonrakerAPI instance for REST calls
-     * @param client helix::MoonrakerClient instance for the backend
+     * @param client helix::IMoonrakerClient instance for the backend
      */
     void probe_ace(IMoonrakerAPI* api, helix::IMoonrakerClient* client);
 
@@ -1236,7 +1236,7 @@ class AmsState {
      * Must be called from LVGL thread context.
      *
      * @param api IMoonrakerAPI instance
-     * @param client helix::MoonrakerClient instance
+     * @param client helix::IMoonrakerClient instance
      */
     void create_ace_backend(IMoonrakerAPI* api, helix::IMoonrakerClient* client);
 

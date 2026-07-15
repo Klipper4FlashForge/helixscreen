@@ -44,7 +44,7 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
   public:
     /**
      * @brief Construct a PrintStartCollector
-     * @param client helix::MoonrakerClient for registering callbacks
+     * @param client helix::IMoonrakerClient for registering callbacks
      * @param state helix::PrinterState to update with phase progress
      */
     PrintStartCollector(helix::IMoonrakerClient& client, helix::PrinterState& state);

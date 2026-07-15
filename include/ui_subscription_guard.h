@@ -23,9 +23,9 @@ class IMoonrakerAPI;
  * unsubscription if the client has already been destroyed. This prevents crashes
  * from shutdown ordering issues without requiring manual release() calls.
  *
- * Supports construction from either helix::MoonrakerClient or IMoonrakerAPI:
+ * Supports construction from either helix::IMoonrakerClient or IMoonrakerAPI:
  * @code
- *   // Via helix::MoonrakerClient (legacy)
+ *   // Via helix::IMoonrakerClient (legacy)
  *   subscription_ = SubscriptionGuard(client, client->register_notify_update(...));
  *   // Via IMoonrakerAPI (preferred)
  *   subscription_ = SubscriptionGuard(api, api->subscribe_notifications(...));

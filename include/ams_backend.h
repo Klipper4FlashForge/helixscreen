@@ -102,7 +102,7 @@ class AmsBackend {
     /**
      * @brief Release subscriptions without unsubscribing
      *
-     * Use during shutdown when the helix::MoonrakerClient may already be destroyed.
+     * Use during shutdown when the helix::IMoonrakerClient may already be destroyed.
      * This abandons the subscription rather than trying to call into the client.
      * Backends that hold SubscriptionGuards should call release() on them.
      */
@@ -1699,7 +1699,7 @@ class AmsBackend {
      *
      * @param detected_type The detected AMS type from printer discovery
      * @param api Pointer to IMoonrakerAPI for sending commands
-     * @param client Pointer to helix::MoonrakerClient for subscriptions
+     * @param client Pointer to helix::IMoonrakerClient for subscriptions
      * @return Unique pointer to backend instance, or nullptr if type is NONE
      */
     static std::unique_ptr<AmsBackend> create(AmsType detected_type, IMoonrakerAPI* api,

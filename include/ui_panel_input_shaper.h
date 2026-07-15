@@ -136,7 +136,7 @@ class InputShaperPanel : public OverlayBase {
      *
      * Creates InputShaperCalibrator instance with the API.
      *
-     * @param client helix::MoonrakerClient (kept for potential future use)
+     * @param client helix::IMoonrakerClient (kept for potential future use)
      * @param api IMoonrakerAPI for G-code execution
      */
     void set_api(helix::IMoonrakerClient* client, IMoonrakerAPI* api);

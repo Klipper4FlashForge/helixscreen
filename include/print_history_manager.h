@@ -82,7 +82,7 @@ class PrintHistoryManager {
      * @brief Construct PrintHistoryManager with API and client references
      *
      * @param api IMoonrakerAPI for fetching history
-     * @param client helix::MoonrakerClient for notification subscription
+     * @param client helix::IMoonrakerClient for notification subscription
      */
     PrintHistoryManager(IMoonrakerAPI* api, helix::IMoonrakerClient* client);
 
