@@ -11,7 +11,9 @@
 #include <system_error>
 #include <thread>
 
-#include <sys/statvfs.h>
+#if !defined(HELIX_PLATFORM_ESP32)
+#include <sys/statvfs.h> // newlib (ESP-IDF) has no statvfs
+#endif
 #include <unistd.h>
 
 namespace helix::paths {
@@ -25,6 +27,13 @@ bool is_writable_dir(const std::string& dir) {
 }
 
 std::uint64_t available_space(const std::string& dir) {
+#if defined(HELIX_PLATFORM_ESP32)
+    // newlib has no statvfs; report a generous fixed budget so the portable
+    // path utilities (ensure_dir, probe_writable) behave. A later port swaps in
+    // esp_littlefs_info() for the real mount free space.
+    (void)dir;
+    return 64ULL * 1024 * 1024;
+#else
     struct statvfs vfs {};
     if (::statvfs(dir.c_str(), &vfs) != 0) {
         return 0;
@@ -33,6 +42,7 @@ std::uint64_t available_space(const std::string& dir) {
     // (pi32/armhf, MIPS32) f_bavail/f_frsize are 32-bit and the product wraps
     // for any filesystem larger than ~4 GiB.
     return static_cast<std::uint64_t>(vfs.f_bavail) * static_cast<std::uint64_t>(vfs.f_frsize);
+#endif
 }
 
 bool probe_writable(const std::string& dir, std::uint64_t min_free_bytes) {
