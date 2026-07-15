@@ -86,6 +86,7 @@ translations:
   A: 辅
   ABS: ABS
   ACCELEROMETERS: 加速度计
+  ACE Moonraker bridge not found. Install ace_status.py for full support.: ''
   ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: 未找到
     ACE Moonraker 桥接。请从 ValgACE 安装 ace_status.py 以获得完整支持。
   ACTIONS: 操作
@@ -1077,6 +1078,7 @@ translations:
   Invalid status response from printer: 打印机返回的状态响应无效
   Issue description: 问题描述
   Job Queue: 任务队列
+  'Jog failed: {}': ''
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: 加入
     HelixScreen 的 Discord 社区，参与讨论、获取技巧、故障排除帮助和功能请求。
   Just now: 刚刚

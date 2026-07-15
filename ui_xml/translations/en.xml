@@ -86,6 +86,7 @@
   <translation tag="A" en="A"/>
   <translation tag="ABS" en="ABS"/>
   <translation tag="ACCELEROMETERS" en="ACCELEROMETERS"/>
+  <translation tag="ACE Moonraker bridge not found. Install ace_status.py for full support." en="ACE Moonraker bridge not found. Install ace_status.py for full support."/>
   <translation tag="ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support." en="ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support."/>
   <translation tag="ACTIONS" en="ACTIONS"/>
   <translation tag="ADXL" en="ADXL"/>
@@ -1053,6 +1054,7 @@
   <translation tag="Invalid status response from printer" en="Invalid status response from printer"/>
   <translation tag="Issue description" en="Issue description"/>
   <translation tag="Job Queue" en="Job Queue"/>
+  <translation tag="Jog failed: {}" en="Jog failed: {}"/>
   <translation tag="Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests." en="Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests."/>
   <translation tag="Just now" en="Just now"/>
   <translation tag="KEYBOARD LAYOUT" en="KEYBOARD LAYOUT"/>

@@ -92,6 +92,7 @@ translations:
   A: A
   ABS: ABS
   ACCELEROMETERS: ACELERÔMETROS
+  ACE Moonraker bridge not found. Install ace_status.py for full support.: ''
   ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: Ponte
     ACE do Moonraker não encontrada. Instale ace_status.py do ValgACE para suporte
     completo.
@@ -1210,6 +1211,7 @@ translations:
   Invalid status response from printer: Resposta de status inválida da impressora
   Issue description: Descrição do problema
   Job Queue: Fila de Trabalhos
+  'Jog failed: {}': ''
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: Participe
     da comunidade HelixScreen no Discord para discussões, dicas, ajuda na solução
     de problemas e solicitações de recursos.

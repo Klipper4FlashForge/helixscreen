@@ -94,6 +94,7 @@ translations:
   A: A
   ABS: ABS
   ACCELEROMETERS: BESCHLEUNIGUNGSSENSOREN
+  ACE Moonraker bridge not found. Install ace_status.py for full support.: ''
   ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: ACE-Moonraker-Brücke
     nicht gefunden. Installieren Sie ace_status.py von ValgACE für volle Unterstützung.
   ACTIONS: AKTIONEN
@@ -1219,6 +1220,7 @@ translations:
   Invalid status response from printer: Ungültige Statusantwort vom Drucker
   Issue description: Problembeschreibung
   Job Queue: Auftragswarteschlange
+  'Jog failed: {}': ''
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: Tritt
     der HelixScreen-Community auf Discord bei für Diskussionen, Tipps, Hilfe zur Fehlerbehebung
     und Funktionswünsche.
