@@ -128,6 +128,31 @@ TEST_CASE_METHOD(XMLTestFixture, "Mixed content: text plus child element",
     REQUIRE(card != nullptr);
 }
 
+TEST_CASE_METHOD(XMLTestFixture, "Inline text directly on the root view is dropped",
+                 "[xml][inline_text]") {
+    // The closing </view> tag is what expat hands view_end_element_handler --
+    // literally "view", never the resolved `extends` target -- so
+    // apply_pending_inline_text()'s processor lookup (lv_xml_widget_get_processor
+    // + lv_xml_component_get_scope, both keyed on that raw name) always misses
+    // for "view" and the pending text is freed unapplied. This pins that
+    // behavior empirically: extending lv_label (which would render inline text
+    // if it were applied) proves it is NOT applied, rather than just being a
+    // widget that ignores text like lv_obj would.
+    const char* xml = R"(<component>
+  <view extends="lv_label" width="300" height="60">Root inline text</view>
+</component>)";
+    REQUIRE(lv_xml_register_component_from_data("it_root_view", xml) == LV_RESULT_OK);
+    lv_obj_t* root = create_component("it_root_view");
+    REQUIRE(root != nullptr);
+    // lv_label_create()'s constructor unconditionally sets text to
+    // LV_LABEL_DEFAULT_TEXT ("Text", an XML-editor preview placeholder) before
+    // any XML attribute/content is applied. No "text" attribute was given, so
+    // the label still showing that exact placeholder (rather than "Root
+    // inline text") confirms the inline content never reached
+    // lv_label_set_text() at all.
+    CHECK(lv_streq(lv_label_get_text(root), "Text"));
+}
+
 TEST_CASE_METHOD(XMLTestFixture, "Non-text widget ignores inline text without crashing",
                  "[xml][inline_text]") {
     const char* xml = R"(<component>
