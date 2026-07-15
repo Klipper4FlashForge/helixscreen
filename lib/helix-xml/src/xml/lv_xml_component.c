@@ -19,6 +19,7 @@
 #include "parsers/lv_xml_obj_parser.h"
 #include "../libs/expat/expat.h"
 #include "../misc/lv_fs.h"
+#include "lv_xml_expr.h"
 #include <string.h>
 
 /*********************
@@ -54,6 +55,7 @@ static void process_const_element(lv_xml_parser_state_t * state, const char ** a
 static void process_font_element(lv_xml_parser_state_t * state, const char * type, const char ** attrs);
 static void process_image_element(lv_xml_parser_state_t * state, const char * type, const char ** attrs);
 static void process_prop_element(lv_xml_parser_state_t * state, const char * name, const char ** attrs);
+static void process_subject_expr_element(lv_xml_parser_state_t * state, const char ** attrs);
 static char * extract_view_content(const char * xml_definition);
 static style_prop_anim_type_t style_prop_anim_get_type(lv_style_prop_t prop);
 static void anim_exec_cb(lv_anim_t * a, int32_t v);
@@ -90,6 +92,7 @@ void lv_xml_component_scope_init(lv_xml_component_scope_t * scope)
     lv_ll_init(&scope->param_ll, sizeof(lv_xml_param_t));
     lv_ll_init(&scope->gradient_ll, sizeof(lv_xml_grad_t));
     lv_ll_init(&scope->subjects_ll, sizeof(lv_xml_subject_t));
+    lv_ll_init(&scope->subject_expr_ll, sizeof(lv_xml_subject_expr_t));
     lv_ll_init(&scope->event_ll, sizeof(lv_xml_event_cb_t));
     lv_ll_init(&scope->image_ll, sizeof(lv_xml_image_t));
     lv_ll_init(&scope->font_ll, sizeof(lv_xml_font_t));
@@ -316,6 +319,24 @@ lv_result_t lv_xml_component_unregister(const char * name)
     }
     lv_ll_clear(&scope->gradient_ll);
 
+    /* <subject_expr> derived subjects MUST be torn down BEFORE subjects_ll:
+     * their observers may sit on input subjects that live in subjects_ll (freed
+     * below) OR on still-live global subjects. Detaching every observer while
+     * all input subjects are still valid avoids both (a) a use-after-free of
+     * `ctx` when a global input later changes and (b) touching an already-freed
+     * same-scope subject. The derived lv_subject_t itself lives in subjects_ll
+     * and is freed there, not here. */
+    lv_xml_subject_expr_t * subject_expr;
+    LV_LL_READ(&scope->subject_expr_ll, subject_expr) {
+        for(uint32_t i = 0; i < subject_expr->observer_count; i++) {
+            if(subject_expr->observers[i]) lv_observer_remove(subject_expr->observers[i]);
+        }
+        lv_free(subject_expr->observers);
+        lv_xml_expr_free(subject_expr->expr);
+        lv_free(subject_expr->ctx);
+    }
+    lv_ll_clear(&scope->subject_expr_ll);
+
     lv_xml_subject_t * subject;
     LV_LL_READ(&scope->subjects_ll, subject) {
         lv_free((char *)subject->name);
@@ -534,6 +555,129 @@ static void process_subject_element(lv_xml_parser_state_t * state, const char * 
     }
 
     lv_xml_register_subject(&state->scope, name, subject);
+}
+
+/**
+ * Shared observer context for a <subject_expr> derived subject: the derived
+ * subject to write into and the compiled expression to re-evaluate. One
+ * instance is shared by every observer registered on the expression's
+ * distinct input subjects; it's freed exactly once, at scope teardown
+ * (see the `subject_expr_ll` walk in `lv_xml_component_unregister`) rather
+ * than via `auto_free_user_data` on any one observer, since multiple
+ * observers share this same pointer and a per-observer free would double-free.
+ */
+typedef struct {
+    lv_subject_t * derived;
+    lv_xml_expr_t * expr;
+} subject_expr_ctx_t;
+
+/* Resolver shim: <subject_expr> looks up its input subjects by name in the
+ * enclosing component's scope, exactly like a plain <subject> reference. */
+static lv_subject_t * subject_expr_resolver(void * ctx, const char * name)
+{
+    return lv_xml_get_subject((lv_xml_component_scope_t *)ctx, name);
+}
+
+static void subject_expr_observer_cb(lv_observer_t * obs, lv_subject_t * s)
+{
+    LV_UNUSED(s);
+    subject_expr_ctx_t * c = (subject_expr_ctx_t *)lv_observer_get_user_data(obs);
+    lv_subject_set_int(c->derived, lv_xml_expr_eval(c->expr));
+}
+
+/**
+ * `<subject_expr name="x" expr="...">`: creates an int subject `x` whose value
+ * is kept in sync with the result of evaluating `expr`, by observing every
+ * distinct subject the expression references.
+ *
+ * Ordering constraint: every subject named in `expr` must already be
+ * registered in this scope (or globally) by the time this element is parsed
+ * -- either a global subject, or an earlier `<subject>`/`<subject_expr>` entry
+ * in the same `<subjects>` block. Forward references are not supported
+ * (`lv_xml_expr_compile` warns and this function bails out without
+ * registering anything).
+ */
+static void process_subject_expr_element(lv_xml_parser_state_t * state, const char ** attrs)
+{
+    const char * name = lv_xml_get_value_of(attrs, "name");
+    const char * expr_s = lv_xml_get_value_of(attrs, "expr");
+
+    if(name == NULL) {
+        LV_LOG_WARN("'name' is missing from a subject_expr");
+        return;
+    }
+    if(expr_s == NULL) {
+        LV_LOG_WARN("'expr' is missing from subject_expr '%s'", name);
+        return;
+    }
+
+    lv_xml_expr_t * expr = lv_xml_expr_compile(expr_s, subject_expr_resolver, &state->scope);
+    if(expr == NULL) {
+        LV_LOG_WARN("subject_expr '%s': failed to compile expr '%s'", name, expr_s);
+        return;
+    }
+
+    lv_subject_t * derived = lv_zalloc(sizeof(lv_subject_t));
+    if(derived == NULL) {
+        LV_LOG_ERROR("OOM: failed to allocate subject_expr '%s'", name);
+        lv_xml_expr_free(expr);
+        return;
+    }
+    lv_subject_init_int(derived, lv_xml_expr_eval(expr));   /* seed with current value */
+
+    /* subjects_ll now owns `derived` and frees it on scope teardown, same as
+     * any <subject>. */
+    lv_xml_register_subject(&state->scope, name, derived);
+
+    subject_expr_ctx_t * ctx = lv_malloc(sizeof(subject_expr_ctx_t));
+    if(ctx == NULL) {
+        LV_LOG_ERROR("OOM: failed to allocate subject_expr context for '%s'", name);
+        lv_xml_expr_free(expr);
+        return;   /* `derived` stays registered (harmless, static value); no observers to leak */
+    }
+    ctx->derived = derived;
+    ctx->expr = expr;
+
+    /* Track (expr, ctx) for a single teardown-time free -- subjects_ll's
+     * cleanup only knows how to free `derived`, not the expression or the
+     * context shared by its observers. */
+    lv_xml_subject_expr_t * record = lv_ll_ins_head(&state->scope.subject_expr_ll);
+    if(record == NULL) {
+        LV_LOG_ERROR("OOM: failed to track subject_expr '%s' for teardown", name);
+        lv_xml_expr_free(expr);
+        lv_free(ctx);
+        return;
+    }
+    record->expr = expr;
+    record->ctx = ctx;
+    record->observers = NULL;
+    record->observer_count = 0;
+
+    /* `ctx` is freed exactly once via the subject_expr_ll teardown. Each
+     * observer shares this same `ctx` pointer, so per-observer auto-free would
+     * double-free it (lv_subject_add_observer zero-inits auto_free_user_data
+     * off, which is what we want).
+     *
+     * We retain every observer handle so scope teardown can lv_observer_remove()
+     * it BEFORE freeing `ctx`. Without this, an observer left attached to a
+     * still-live *global* input subject would fire subject_expr_observer_cb on
+     * a freed `ctx` (use-after-free) the next time that global subject changed. */
+    size_t n = lv_xml_expr_subject_count(expr);
+    if(n > 0) {
+        record->observers = lv_malloc(sizeof(lv_observer_t *) * n);
+        if(record->observers == NULL) {
+            LV_LOG_ERROR("OOM: failed to allocate subject_expr observers for '%s'", name);
+            /* Fall through: with no retained handles we cannot safely detach
+             * later, so register nothing. `record` stays with 0 observers;
+             * expr/ctx are still freed at teardown. */
+            return;
+        }
+        record->observer_count = (uint32_t)n;
+        for(size_t i = 0; i < n; i++) {
+            record->observers[i] =
+                lv_subject_add_observer(lv_xml_expr_subject_at(expr, i), subject_expr_observer_cb, ctx);
+        }
+    }
 }
 
 static void process_timeline_element(lv_xml_parser_state_t * state, const char ** attrs)
@@ -967,7 +1111,8 @@ static void start_metadata_handler(void * user_data, const char * name, const ch
 
         case LV_XML_PARSER_SECTION_SUBJECTS:
             if(old_section != state->section) return;   /*Ignore the section opening, e.g. <subjects>*/
-            process_subject_element(state, name, attrs);
+            if(lv_streq(name, "subject_expr")) process_subject_expr_element(state, attrs);
+            else process_subject_element(state, name, attrs);
             break;
         case LV_XML_PARSER_SECTION_TIMELINE:
             process_timeline_element(state, attrs);

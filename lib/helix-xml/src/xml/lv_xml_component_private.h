@@ -20,6 +20,7 @@ extern "C" {
 #include "../misc/lv_ll.h"
 #include "../misc/lv_style.h"
 #include "../core/lv_observer.h"
+#include "lv_xml_expr.h"
 
 /**********************
  *      TYPEDEFS
@@ -34,6 +35,7 @@ struct _lv_xml_component_scope_t {
     lv_ll_t param_ll;
     lv_ll_t gradient_ll;
     lv_ll_t subjects_ll;
+    lv_ll_t subject_expr_ll;   /**< <subject_expr> derived subjects: (expr, ctx) pairs freed at scope teardown */
     lv_ll_t timeline_ll;
     lv_ll_t font_ll;
     lv_ll_t image_ll;
@@ -54,6 +56,19 @@ typedef struct {
     const char * name;
     lv_subject_t * subject;
 } lv_xml_subject_t;
+
+/**
+ * A `<subject_expr>` derived-subject record: the compiled expression and its
+ * shared observer context, kept only so scope teardown can free them. The
+ * derived `lv_subject_t*` itself lives in `subjects_ll` (via lv_xml_subject_t)
+ * like any other subject and is freed by the existing subjects_ll cleanup.
+ */
+typedef struct {
+    lv_xml_expr_t * expr;
+    void * ctx;                  /* subject_expr_ctx_t*, defined in lv_xml_component.c */
+    lv_observer_t ** observers;  /* one per distinct input subject, detached at teardown */
+    uint32_t observer_count;
+} lv_xml_subject_expr_t;
 
 typedef struct {
     const char * name;
