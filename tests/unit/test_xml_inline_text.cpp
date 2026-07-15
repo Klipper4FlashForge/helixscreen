@@ -274,31 +274,35 @@ TEST_CASE_METHOD(XMLTestFixture, "Inline text re-resolves on language change",
     // other tests may load the real app translation catalog. So this pack is
     // deliberately left registered rather than partially/unsafely torn down.
     // That's safe: lv_translation_get() walks packs most-recently-added
-    // first, so it only intercepts lookups for the exact tag below, and
-    // "Print speed" does not appear in ui_xml/translations/translations.xml
-    // (verified), so it can't shadow a real translation used by another test.
+    // first, so it only intercepts lookups for the exact tag below, and the
+    // tag is a deliberately mangled nonsense string, not a near-miss of a real
+    // catalog entry -- a real key differing only by case (e.g. "Print speed"
+    // vs. the catalog's "Print Speed") would still pass today because
+    // lv_streq()/expat comparisons are case-sensitive, but that's isolation by
+    // accident: a future catalog addition matching this test's exact case
+    // would silently shadow real UI strings for the rest of the run.
     lv_translation_pack_t* pack = lv_translation_add_dynamic();
     REQUIRE(pack != nullptr);
     lv_translation_add_language(pack, "en");
     lv_translation_add_language(pack, "de");
-    lv_translation_tag_dsc_t* tag = lv_translation_add_tag(pack, "Print speed");
+    lv_translation_tag_dsc_t* tag = lv_translation_add_tag(pack, "Zz inline i18n probe zZ");
     REQUIRE(tag != nullptr);
-    lv_translation_set_tag_translation(pack, tag, 0, "Print speed");
-    lv_translation_set_tag_translation(pack, tag, 1, "Druckgeschwindigkeit");
+    lv_translation_set_tag_translation(pack, tag, 0, "Zz inline i18n probe zZ");
+    lv_translation_set_tag_translation(pack, tag, 1, "Zz fake Deutsch probe zZ");
     lv_translation_set_language("en");
 
     const char* xml = R"(<component>
   <view extends="lv_obj" width="300" height="300">
-    <text_muted name="msg">Print speed</text_muted>
+    <text_muted name="msg">Zz inline i18n probe zZ</text_muted>
   </view>
 </component>)";
     lv_obj_t* msg = create_and_find(*this, "it_i18n", xml, "msg");
     REQUIRE(msg != nullptr);
-    CHECK(lv_streq(lv_label_get_text(msg), "Print speed"));
+    CHECK(lv_streq(lv_label_get_text(msg), "Zz inline i18n probe zZ"));
 
     lv_translation_set_language("de");
     process_lvgl(50);
-    CHECK(lv_streq(lv_label_get_text(msg), "Druckgeschwindigkeit"));
+    CHECK(lv_streq(lv_label_get_text(msg), "Zz fake Deutsch probe zZ"));
 
     // Restore the global language selection so it doesn't bleed into
     // whatever test runs next in this process (packs themselves are left
