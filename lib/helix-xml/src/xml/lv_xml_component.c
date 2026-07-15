@@ -491,6 +491,15 @@ static void process_subject_element(lv_xml_parser_state_t * state, const char * 
     const char * name = lv_xml_get_value_of(attrs, "name");
     const char * value = lv_xml_get_value_of(attrs, "value");
 
+    /* HelixScreen's ui_xml convention is `<subject name="x" type="int" value="0"/>`
+     * (a single "subject" tag with a "type" attribute), not upstream LVGL's
+     * `<int name="x" value="0"/>` tag-per-type convention that `type` (the tag
+     * name passed by the caller) otherwise reflects. Prefer the attribute when
+     * present so `<subject type="...">` actually takes effect instead of
+     * silently leaving the subject at LV_SUBJECT_TYPE_INVALID. */
+    const char * type_attr = lv_xml_get_value_of(attrs, "type");
+    if(type_attr != NULL) type = type_attr;
+
     if(name == NULL) {
         LV_LOG_WARN("'name' is missing from a subject");
         return;
