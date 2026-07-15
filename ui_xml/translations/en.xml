@@ -86,6 +86,7 @@
   <translation tag="A" en="A"/>
   <translation tag="ABS" en="ABS"/>
   <translation tag="ACCELEROMETERS" en="ACCELEROMETERS"/>
+  <translation tag="ACE Moonraker bridge not found. Install ace_status.py for full support." en="ACE Moonraker bridge not found. Install ace_status.py for full support."/>
   <translation tag="ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support." en="ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support."/>
   <translation tag="ACTIONS" en="ACTIONS"/>
   <translation tag="ADXL" en="ADXL"/>
@@ -750,6 +751,7 @@
   <translation tag="Failed to delete file" en="Failed to delete file"/>
   <translation tag="Failed to delete profile" en="Failed to delete profile"/>
   <translation tag="Failed to delete spool" en="Failed to delete spool"/>
+  <translation tag="Failed to discard recovery data: {}" en="Failed to discard recovery data: {}"/>
   <translation tag="Failed to download G-code for modification: {}" en="Failed to download G-code for modification: {}"/>
   <translation tag="Failed to download G-code for remap: {}" en="Failed to download G-code for remap: {}"/>
   <translation tag="Failed to download helixscreen.conf.\nCheck printer connection." en="Failed to download helixscreen.conf.\nCheck printer connection."/>
@@ -1665,6 +1667,7 @@
   <translation tag="Recovering AFC system..." en="Recovering AFC system..."/>
   <translation tag="Recovery failed" en="Recovery failed"/>
   <translation tag="Recovery failed: " en="Recovery failed: "/>
+  <translation tag="Recovery failed: {}" en="Recovery failed: {}"/>
   <translation tag="Reduce Sensitivity" en="Reduce Sensitivity"/>
   <translation tag="Reduce ringing and ghosting artifacts" en="Reduce ringing and ghosting artifacts"/>
   <translation tag="Reduce vibration artifacts like ringing and ghosting" en="Reduce vibration artifacts like ringing and ghosting"/>
@@ -1729,6 +1732,7 @@
   <translation tag="Restarting..." en="Restarting..."/>
   <translation tag="Resume" en="Resume"/>
   <translation tag="Resume Print" en="Resume Print"/>
+  <translation tag="Resume interrupted print?" en="Resume interrupted print?"/>
   <translation tag="Resume macro not configured" en="Resume macro not configured"/>
   <translation tag="Resume preparation failed: {}" en="Resume preparation failed: {}"/>
   <translation tag="Resuming..." en="Resuming..."/>
@@ -2079,6 +2083,8 @@
   <translation tag="The heater will cycle on and off several times." en="The heater will cycle on and off several times."/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." en="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading."/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" en="The printer halted this print and cannot resume it. Restart from the beginning?"/>
+  <translation tag="The printer lost power during a print. It can resume where it left off." en="The printer lost power during a print. It can resume where it left off."/>
+  <translation tag="The printer lost power while printing {}. Resume where it left off?" en="The printer lost power while printing {}. Resume where it left off?"/>
   <translation tag="The printer rejected the filament configuration. The print was not started." en="The printer rejected the filament configuration. The print was not started."/>
   <translation tag="The runout sensor indicates no filament is loaded. Start print anyway?" en="The runout sensor indicates no filament is loaded. Start print anyway?"/>
   <translation tag="The toolhead sensor indicates filament is already loaded. Proceed with load anyway?" en="The toolhead sensor indicates filament is already loaded. Proceed with load anyway?"/>

@@ -86,6 +86,7 @@ translations:
   A: 辅
   ABS: ABS
   ACCELEROMETERS: 加速度计
+  ACE Moonraker bridge not found. Install ace_status.py for full support.: ''
   ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: 未找到
     ACE Moonraker 桥接。请从 ValgACE 安装 ace_status.py 以获得完整支持。
   ACTIONS: 操作
@@ -761,6 +762,7 @@ translations:
   Failed to delete file: 删除文件失败
   Failed to delete profile: 删除配置文件失败
   Failed to delete spool: 删除料盘失败
+  'Failed to discard recovery data: {}': ''
   'Failed to download G-code for modification: {}': '下载 G-code 进行修改失败: {}'
   'Failed to download G-code for remap: {}': 下载用于重新映射的 G-code 失败：{}
   Failed to download helixscreen.conf.\nCheck printer connection.: 下载 helixscreen.conf
@@ -1706,6 +1708,7 @@ translations:
   Recovering AFC system...: AFC系统恢复中...
   Recovery failed: 恢复失败
   'Recovery failed: ': '恢复失败: '
+  'Recovery failed: {}': ''
   Reduce Sensitivity: 降低灵敏度
   Reduce ringing and ghosting artifacts: 减少振纹和残影
   Reduce vibration artifacts like ringing and ghosting: 减少振纹和残影等振动伪影
@@ -1770,6 +1773,7 @@ translations:
   Restarting...: 正在重启...
   Resume: 恢复
   Resume Print: 恢复打印
+  Resume interrupted print?: ''
   Resume macro not configured: 恢复宏未配置
   'Resume preparation failed: {}': 恢复准备失败：{}
   Resuming...: 恢复中...
@@ -2145,6 +2149,8 @@ translations:
     then lock the reading.
   : 电机振动皮带的同时,频闪灯以相同频率闪烁。当皮带看起来静止不动(冻结)时,即找到了共振频率。\n\n使用频率按钮扫描各数值,直到皮带看起来静止,然后锁定读数。
   The printer halted this print and cannot resume it. Restart from the beginning?: 打印机已停止此打印且无法恢复。从头重新开始？
+  The printer lost power during a print. It can resume where it left off.: ''
+  The printer lost power while printing {}. Resume where it left off?: ''
   The printer rejected the filament configuration. The print was not started.: 打印机拒绝了该耗材配置。打印未启动。
   The runout sensor indicates no filament is loaded. Start print anyway?: 断料传感器显示未装载耗材。仍要开始打印吗？
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: 工具头传感器显示耗材已装载。仍要继续装载吗？

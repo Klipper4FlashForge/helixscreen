@@ -2,7 +2,7 @@
 
 **Date**: 2026-03-31
 **Status**: Approved
-**Scope**: Toolchanger backend, RFID filament integration, device deployment
+**Scope**: Toolchanger backend, RFID filament integration, device deployment, power-loss recovery
 
 ## Overview
 
@@ -17,6 +17,7 @@ The U1 does **not** use the viesturz/klipper-toolchanger module. It exposes tool
 | **1: Device deployment** | Flash Extended FW, SSH, confirm display resolution, deploy HelixScreen, verify basic operation | Yes |
 | **2: Toolchanger backend** | `AmsBackendSnapmaker`, `ToolState` integration, tool switching, extruder state parsing | No (mock tests) |
 | **3: RFID filament** | `filament_detect` parsing, `SlotInfo` population, `filament_feed` state, slot remapping via `extruder_map_table` | No (mock tests) |
+| **4: Power-loss recovery** | Detect/offer/resume/discard an interrupted print via `virtual_sdcard.pl_env_valid` | Yes (device investigation) + No (UI, mock tests) |
 
 ## Live API Surface (from 192.168.30.103)
 
@@ -317,6 +318,40 @@ Per-channel feed state from `filament_feed left/right`:
 
 ---
 
+## Phase 4: Power-Loss Recovery
+
+Snapmaker's Klipper fork adds a custom brownout-detect + continuous-save mechanism (`[power_loss_check]` extra, patched `virtual_sdcard.py`) that PAXX Extended Firmware inherits unchanged — it's part of Snapmaker's fork, not the stock GUI PAXX replaces. On brownout, the MCU latches stepper positions to its own flash while `virtual_sdcard` snapshots print progress to JSON on disk; on the next boot, Klipper validates the JSON against MCU flash and exposes the result as a standard Moonraker object field. No custom endpoint or plugin is involved — the whole feature is reachable through the objects HelixScreen already subscribes to on Snapmaker.
+
+Full device investigation: `.claude/scratchpad/2026-07-15-u1-power-loss-recovery-findings.md` (bench U1, 192.168.30.103, software_version 0.9.0).
+
+### Detect
+
+`virtual_sdcard.pl_env_valid` (bool) — `true` only after the post-boot MCU/JSON validation succeeds on an idle printer; resets to `false` on every processed line during a normal print. HelixScreen subscribes to it alongside the other Snapmaker `virtual_sdcard` fields already tracked (`file_path`, `progress`, `file_position`, `file_size`) and stores it as the `pl_env_valid` subject on `PrinterPrintState`.
+
+### Offer
+
+`PlrOfferController` (owned by `SubjectInitializer`) watches `pl_env_valid` and connection state and shows a one-shot Resume/Discard prompt when all of: `pl_env_valid` is true, the printer is idle, the connected backend is Snapmaker, the offer hasn't already fired this connection, and the setup wizard isn't active. The latch re-arms on a CONNECTED → not-CONNECTED transition so a disconnect/reconnect cycle offers again. Decision logic lives in the pure `plr_should_offer()` / `plr_should_rearm()` helpers (`include/plr_offer.h`) — no LVGL or threading in the predicate itself.
+
+### Resume / Discard
+
+| Action | Gcode | Firmware guard | Coded error on guard failure |
+|--------|-------|-----------------|-------------------------------|
+| Resume | `SDCARD_PRINT_PL_RESTORE` | `machine_state_manager.main_state` must be IDLE (0) | `0001-0531-0000-0005` |
+| Discard | `SDCARD_PRINT_PL_CLEAR_ENV` | Refused while PRINTING | `0001-0531-0000-0006` |
+
+Restore reheats bed/extruder, homes X/Y, reconstructs Z from MCU-flash stepper data (not the JSON), restores PA/flow/speed/fan state, and resumes the file from its saved position. Once the print transitions to a normal PRINTING state, the existing #1099 auto-navigation (`print_start_navigation`) takes over and pushes the print-status overlay — PLR does not need its own progress UI.
+
+### Error surfacing
+
+Firmware errors on both gcodes arrive as a script-error message containing embedded JSON, e.g. `{"coded":"0001-0531-0000-0005","msg":"...","action":"none"}`. `snapmaker_extract_coded_msg()` (`src/printer/snapmaker_resume.cpp`) pulls the `coded` field out for display; the toast falls back to the raw message if the JSON doesn't parse. Dismissing the prompt via backdrop tap leaves the recovery environment untouched (stock behavior — it keeps offering next connect until Resume or Discard is chosen explicitly).
+
+### Out of scope for this phase
+
+- `machine_state_manager.action_code` progress states (e.g. `PRINT_PL_RESTORE=128`, `PRINT_RESUMING=130`) during the restore sequence itself — not surfaced as a distinct "recovering…" UI state; the modal simply closes and normal print-status navigation picks up once printing resumes.
+- Editing/inspecting the saved print state (layer, Z, flow) before deciding — the prompt is binary (resume as-is, or discard).
+
+---
+
 ## Files
 
 ### New Files
@@ -326,6 +361,11 @@ Per-channel feed state from `filament_feed left/right`:
 | `include/ams_backend_snapmaker.h` | Backend header |
 | `src/printer/ams_backend_snapmaker.cpp` | Backend implementation |
 | `tests/unit/test_ams_backend_snapmaker.cpp` | Unit tests |
+| `include/plr_offer.h`, `src/printer/plr_offer.cpp` | Pure `plr_should_offer()` / `plr_should_rearm()` decision helpers |
+| `include/plr_offer_controller.h`, `src/ui/ui_plr_offer_controller.cpp` | `PlrOfferController` — owns the pl_env_valid/connection observers |
+| `include/snapmaker_resume.h`, `src/printer/snapmaker_resume.cpp` | `snapmaker_extract_coded_msg()` JSON-coded error parser |
+| `src/ui/ui_plr_prompt.h`, `src/ui/ui_plr_prompt.cpp` | Resume/Discard modal + gcode dispatch |
+| `tests/unit/test_plr_offer.cpp`, `test_plr_state.cpp`, `test_plr_error.cpp`, `test_plr_prompt.cpp` | Unit tests (`[plr]` tag) |
 
 ### Modified Files
 
@@ -336,7 +376,10 @@ Per-channel feed state from `filament_feed left/right`:
 | `src/printer/ams_backend.cpp` | Add `case AmsType::SNAPMAKER` in `create()` factory, add `#include "ams_backend_snapmaker.h"` |
 | `src/printer/ams_state.cpp` | Create `AmsBackendSnapmaker` when detected |
 | `src/printer/tool_state.cpp` | Add Snapmaker-specific `init_tools()` branch (4 tools from extruder objects) and `update_from_status()` branch (parse `state`, `park_pin`, `active_pin`, `activating_move`, `extruder_offset`) |
-| `src/api/moonraker_discovery_sequence.cpp` | Add `filament_detect`, `filament_feed left/right`, `print_task_config`, `machine_state_manager` to object subscriptions in `complete_discovery_subscription()` |
+| `src/api/moonraker_discovery_sequence.cpp` | Add `filament_detect`, `filament_feed left/right`, `print_task_config`, `machine_state_manager` to object subscriptions in `complete_discovery_subscription()`; also subscribe `virtual_sdcard.pl_env_valid` |
+| `include/printer_print_state.h`, `src/printer/printer_print_state.cpp` | Add `pl_env_valid` subject + `pl_recovery_file()` |
+| `include/printer_state.h` | Expose `get_pl_env_valid_subject()` |
+| `include/subject_initializer.h`, `src/application/subject_initializer.cpp` | Construct/own `PlrOfferController` |
 
 ### Existing Infrastructure (No Changes Needed)
 
@@ -379,7 +422,6 @@ Per-channel feed state from `filament_feed left/right`:
 - Exception manager (`exception_manager` — error/warning state, monitor later)
 - Air purifier control (`purifier` object)
 - Defect detection settings (`defect_detection`)
-- Power loss recovery (`power_loss_check`)
 - XYZ offset calibration UI (`XYZ_OFFSET_CALIBRATE` macros)
 - Camera integration
 - Snapmaker Cloud connectivity
@@ -398,3 +440,4 @@ These are potential future enhancements but not part of this initial integration
 - [U1 Support Doc](../printers/SNAPMAKER_U1_SUPPORT.md) — Build/deploy/hardware details
 - [Tool Abstraction](../TOOL_ABSTRACTION.md) — ToolState architecture
 - [Filament Management](../FILAMENT_MANAGEMENT.md) — AMS backend pattern
+- `.claude/scratchpad/2026-07-15-u1-power-loss-recovery-findings.md` — power-loss recovery device investigation (bench U1, firmware source paths, gotchas)

@@ -86,6 +86,7 @@
   <translation tag="A" zh="辅"/>
   <translation tag="ABS" zh="ABS"/>
   <translation tag="ACCELEROMETERS" zh="加速度计"/>
+  <translation tag="ACE Moonraker bridge not found. Install ace_status.py for full support."/>
   <translation tag="ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support." zh="未找到 ACE Moonraker 桥接。请从 ValgACE 安装 ace_status.py 以获得完整支持。"/>
   <translation tag="ACTIONS" zh="操作"/>
   <translation tag="ADXL" zh="ADXL"/>
@@ -750,6 +751,7 @@
   <translation tag="Failed to delete file" zh="删除文件失败"/>
   <translation tag="Failed to delete profile" zh="删除配置文件失败"/>
   <translation tag="Failed to delete spool" zh="删除料盘失败"/>
+  <translation tag="Failed to discard recovery data: {}"/>
   <translation tag="Failed to download G-code for modification: {}" zh="下载 G-code 进行修改失败: {}"/>
   <translation tag="Failed to download G-code for remap: {}" zh="下载用于重新映射的 G-code 失败：{}"/>
   <translation tag="Failed to download helixscreen.conf.\nCheck printer connection." zh="下载 helixscreen.conf 失败。\n请检查打印机连接。"/>
@@ -1665,6 +1667,7 @@
   <translation tag="Recovering AFC system..." zh="AFC系统恢复中..."/>
   <translation tag="Recovery failed" zh="恢复失败"/>
   <translation tag="Recovery failed: " zh="恢复失败: "/>
+  <translation tag="Recovery failed: {}"/>
   <translation tag="Reduce Sensitivity" zh="降低灵敏度"/>
   <translation tag="Reduce ringing and ghosting artifacts" zh="减少振纹和残影"/>
   <translation tag="Reduce vibration artifacts like ringing and ghosting" zh="减少振纹和残影等振动伪影"/>
@@ -1729,6 +1732,7 @@
   <translation tag="Restarting..." zh="正在重启..."/>
   <translation tag="Resume" zh="恢复"/>
   <translation tag="Resume Print" zh="恢复打印"/>
+  <translation tag="Resume interrupted print?"/>
   <translation tag="Resume macro not configured" zh="恢复宏未配置"/>
   <translation tag="Resume preparation failed: {}" zh="恢复准备失败：{}"/>
   <translation tag="Resuming..." zh="恢复中..."/>
@@ -2079,6 +2083,8 @@
   <translation tag="The heater will cycle on and off several times." zh="加热器将多次开关循环。"/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." zh="电机振动皮带的同时,频闪灯以相同频率闪烁。当皮带看起来静止不动(冻结)时,即找到了共振频率。\n\n使用频率按钮扫描各数值,直到皮带看起来静止,然后锁定读数。"/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" zh="打印机已停止此打印且无法恢复。从头重新开始？"/>
+  <translation tag="The printer lost power during a print. It can resume where it left off."/>
+  <translation tag="The printer lost power while printing {}. Resume where it left off?"/>
   <translation tag="The printer rejected the filament configuration. The print was not started." zh="打印机拒绝了该耗材配置。打印未启动。"/>
   <translation tag="The runout sensor indicates no filament is loaded. Start print anyway?" zh="断料传感器显示未装载耗材。仍要开始打印吗？"/>
   <translation tag="The toolhead sensor indicates filament is already loaded. Proceed with load anyway?" zh="工具头传感器显示耗材已装载。仍要继续装载吗？"/>

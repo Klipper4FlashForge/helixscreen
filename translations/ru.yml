@@ -91,6 +91,7 @@ translations:
   A: A
   ABS: ABS
   ACCELEROMETERS: АКСЕЛЕРОМЕТРЫ
+  ACE Moonraker bridge not found. Install ace_status.py for full support.: ''
   ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: Мост
     ACE Moonraker не найден. Установите ace_status.py из ValgACE для полной поддержки.
   ACTIONS: ДЕЙСТВИЯ
@@ -842,6 +843,7 @@ translations:
   Failed to delete file: Не удалось удалить файл
   Failed to delete profile: Не удалось удалить профиль
   Failed to delete spool: Не удалось удалить катушку
+  'Failed to discard recovery data: {}': ''
   'Failed to download G-code for modification: {}': 'Не удалось скачать G-code для
     изменения: {}'
   'Failed to download G-code for remap: {}': 'Не удалось скачать G-code для переназначения:
@@ -1876,6 +1878,7 @@ translations:
   Recovering AFC system...: Восстановление системы AFC...
   Recovery failed: Восстановление не удалось
   'Recovery failed: ': 'Восстановление не удалось: '
+  'Recovery failed: {}': ''
   Reduce Sensitivity: Снизить чувствительность
   Reduce ringing and ghosting artifacts: Уменьшить артефакты звона и двоения
   Reduce vibration artifacts like ringing and ghosting: Уменьшить артефакты вибрации,
@@ -1944,6 +1947,7 @@ translations:
   Restarting...: Перезапуск...
   Resume: Продолжить
   Resume Print: Продолжить печать
+  Resume interrupted print?: ''
   Resume macro not configured: Макрос возобновления не настроен
   'Resume preparation failed: {}': 'Не удалось подготовиться к возобновлению: {}'
   Resuming...: Возобновление...
@@ -2371,6 +2375,8 @@ translations:
     затем зафиксируйте показание.
   The printer halted this print and cannot resume it. Restart from the beginning?: Принтер
     остановил эту печать и не может её возобновить. Начать с начала?
+  The printer lost power during a print. It can resume where it left off.: ''
+  The printer lost power while printing {}. Resume where it left off?: ''
   The printer rejected the filament configuration. The print was not started.: Принтер
     отклонил конфигурацию филамента. Печать не была запущена.
   The runout sensor indicates no filament is loaded. Start print anyway?: Датчик окончания
