@@ -56,7 +56,9 @@ void ThemeManager::init() {
     if (initialized_)
         return;
 
+    spdlog::warn("[TEMP-BISECT init] before register_style_configs (this={})", (const void*)this);  // TEMP
     register_style_configs();
+    spdlog::warn("[TEMP-BISECT init] after register_style_configs, before palette-defaults/apply");  // TEMP
 
     // If palettes weren't explicitly set, apply sensible Nord defaults
     // This ensures tests and fallback scenarios have readable colors
@@ -174,12 +176,17 @@ void ThemeManager::register_style_configs() {
 
 void ThemeManager::apply_palette(const ThemePalette& palette) {
     current_palette_ = palette;
+    size_t idx = 0;  // TEMP
     for (auto& entry : styles_) {
         if (entry.configure) {
+            spdlog::warn("[TEMP-BISECT apply_palette] role={} configure={}", idx,  // TEMP
+                         (const void*)entry.configure);
             lv_style_reset(&entry.style);
             entry.configure(&entry.style, palette);
         }
+        ++idx;  // TEMP
     }
+    spdlog::warn("[TEMP-BISECT apply_palette] DONE ({} roles)", idx);  // TEMP
 }
 
 void ThemeManager::set_dark_mode(bool dark) {
