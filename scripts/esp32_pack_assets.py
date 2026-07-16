@@ -30,7 +30,7 @@ Size gate: unlike the old per-file LittleFS block-rounding budget, a packed
 frogfs image has no per-file flash-block tax — each entry costs its own
 (compressed) byte count plus a small fixed header (~8-20 bytes) padded to a
 4-byte boundary. The gate here is simply the packed image's total byte size
-against the `storage` partition (0x3c0000 = 3,932,160 bytes, partitions.csv),
+against the `storage` partition (0x200000 = 2,097,152 bytes, partitions.csv),
 minus a small safety margin for headroom (future growth without touching the
 partition table, and any esptool_py write-size rounding).
 """
@@ -49,8 +49,8 @@ DEFAULT_CACHE_DIR = FIRMWARE_DIR / "build" / "frogfs_cache"
 DEFAULT_OUTPUT = FIRMWARE_DIR / "build" / "storage_frogfs.bin"
 MKFROGFS = FIRMWARE_DIR / "managed_components" / "jkent__frogfs" / "tools" / "mkfrogfs.py"
 
-# `storage` partition size (partitions.csv: storage, data, spiffs, 0xc20000, 0x3c0000).
-STORAGE_PARTITION_BYTES = 3_932_160
+# `storage` partition size (partitions.csv: storage, data, spiffs, 0xde0000, 0x200000).
+STORAGE_PARTITION_BYTES = 2_097_152
 
 # Small fixed safety margin: frogfs itself has no per-file block tax, but we
 # keep headroom for incremental content growth between spec revisions and

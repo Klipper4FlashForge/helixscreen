@@ -299,7 +299,7 @@ def main() -> int:
     print(f"  TOTAL (raw, pre-pack): {format_bytes(total)}")
     print(f"  output: {out_dir}")
     print("  Next: python3 scripts/esp32_pack_assets.py (packs this tree and gates on the "
-          "real 3.75MB storage partition budget)")
+          "real 2.0MB storage partition budget)")
 
     return 0
 
