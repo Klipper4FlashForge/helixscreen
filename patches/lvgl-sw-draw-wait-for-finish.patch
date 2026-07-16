@@ -1,5 +1,5 @@
 diff --git a/src/draw/sw/lv_draw_sw.c b/src/draw/sw/lv_draw_sw.c
-index efca2bdc7..8d0822d4b 100644
+index efca2bdc7..2931e4740 100644
 --- a/src/draw/sw/lv_draw_sw.c
 +++ b/src/draw/sw/lv_draw_sw.c
 @@ -55,6 +55,9 @@ static void execute_drawing(lv_draw_task_t * t);
@@ -54,7 +54,18 @@ index efca2bdc7..8d0822d4b 100644
  static int32_t lv_draw_sw_delete(lv_draw_unit_t * draw_unit)
  {
  #if LV_USE_OS
-@@ -384,6 +415,14 @@ static void render_thread_cb(void * ptr)
+@@ -367,6 +398,10 @@ static void render_thread_cb(void * ptr)
+ #if LV_USE_PARALLEL_DRAW_DEBUG
+         parallel_debug_draw(thread_dsc->task_act, thread_dsc->idx);
+ #endif
++        /* Release barrier: publish all pixel writes from execute_drawing() before
++         * the main thread can observe FINISHED and free the layer buffer. volatile
++         * alone is not a hardware barrier on weak-memory targets (ARM64). */
++        __atomic_thread_fence(__ATOMIC_RELEASE);
+         thread_dsc->task_act->state = LV_DRAW_TASK_STATE_FINISHED;
+         thread_dsc->task_act = NULL;
+ 
+@@ -384,6 +419,14 @@ static void render_thread_cb(void * ptr)
  static void execute_drawing(lv_draw_task_t * t)
  {
      LV_PROFILER_DRAW_BEGIN;

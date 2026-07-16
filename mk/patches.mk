@@ -294,6 +294,13 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	else \
 		echo "$(GREEN)✓ LVGL signed draw coords patch already applied$(RESET)"; \
 	fi
+	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_draw_render_thread_acquire.patch 2>/dev/null; then \
+		echo "$(YELLOW)→ Applying LVGL render-thread acquire/release barrier patch (ARM64 layer-buffer UAF)...$(RESET)"; \
+		git -C $(LVGL_DIR) apply ../../patches/lvgl_draw_render_thread_acquire.patch && \
+		echo "$(GREEN)✓ Render-thread acquire/release barrier patch applied$(RESET)"; \
+	else \
+		echo "$(GREEN)✓ LVGL render-thread acquire/release barrier patch already applied$(RESET)"; \
+	fi
 	$(Q)if git -C $(LVGL_DIR) diff --quiet src/draw/sw/lv_draw_sw_letter.c 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL label draw NULL font guard patch...$(RESET)"; \
 		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_draw_sw_label_null_guard.patch 2>/dev/null; then \
