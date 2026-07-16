@@ -23,7 +23,7 @@ using namespace helix;
 // ============================================================================
 
 TEST_CASE("MoonrakerClientMock handles server.connection.identify",
-          "[moonraker][connection][identify][slow]") {
+          "[moonraker][connection][identify]") {
     MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
     mock.connect("ws://mock/websocket", []() {}, []() {});
 
@@ -89,7 +89,7 @@ TEST_CASE("MoonrakerClientMock handles server.connection.identify",
 // ============================================================================
 
 TEST_CASE("MoonrakerClientMock discover_printer doesn't fail due to identify",
-          "[moonraker][connection][discovery][slow]") {
+          "[moonraker][connection][discovery]") {
     MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
     mock.connect("ws://mock/websocket", []() {}, []() {});
 
@@ -118,7 +118,7 @@ TEST_CASE("MoonrakerClientMock discover_printer doesn't fail due to identify",
 // state tracking is available for inspection.
 
 TEST_CASE("MoonrakerClient identification state tracking",
-          "[moonraker][connection][identify][state][slow]") {
+          "[moonraker][connection][identify][state]") {
     MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
 
     SECTION("is_identified starts false before connection") {

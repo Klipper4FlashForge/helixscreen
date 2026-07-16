@@ -752,7 +752,7 @@ TEST_CASE("MoonrakerClientMock G-code temperature parsing", "[connection][slow][
 // Hardware Discovery Tests
 // ============================================================================
 
-TEST_CASE("MoonrakerClientMock hardware discovery", "[connection][slow][hardware_discovery]") {
+TEST_CASE("MoonrakerClientMock hardware discovery", "[connection][hardware_discovery]") {
     SECTION("VORON_24 has correct hardware") {
         MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
         auto hw = mock.hardware();
@@ -1289,7 +1289,7 @@ TEST_CASE("MoonrakerClientMock bed mesh", "[slow][mock][calibration]") {
 // send_jsonrpc Tests
 // ============================================================================
 
-TEST_CASE("MoonrakerClientMock send_jsonrpc methods", "[connection][slow][jsonrpc]") {
+TEST_CASE("MoonrakerClientMock send_jsonrpc methods", "[connection][jsonrpc]") {
     SECTION("send_jsonrpc without params returns success") {
         MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
         REQUIRE(mock.send_jsonrpc("printer.info") == 0);
@@ -2110,7 +2110,7 @@ TEST_CASE("MoonrakerClientMock print progress increments during printing",
 }
 
 TEST_CASE("MoonrakerClientMock print completion triggers complete state",
-          "[print][complete][slow]") {
+          "[print][complete]") {
     MockBehaviorTestFixture fixture;
 
     SECTION("print state transitions through phases correctly") {
@@ -2346,7 +2346,7 @@ TEST_CASE("MoonrakerClientMock BED_MESH_CALIBRATE generates new mesh",
 }
 
 TEST_CASE("MoonrakerClientMock BED_MESH_PROFILE LOAD changes active profile",
-          "[mock][calibration][gcode][slow]") {
+          "[mock][calibration][gcode]") {
     MockBehaviorTestFixture fixture;
 
     SECTION("BED_MESH_PROFILE LOAD loads existing profile") {
@@ -2385,7 +2385,7 @@ TEST_CASE("MoonrakerClientMock BED_MESH_PROFILE LOAD changes active profile",
 }
 
 TEST_CASE("MoonrakerClientMock BED_MESH_CLEAR clears active mesh",
-          "[mock][calibration][gcode][slow]") {
+          "[mock][calibration][gcode]") {
     MockBehaviorTestFixture fixture;
 
     SECTION("BED_MESH_CLEAR clears active mesh and sends notification") {
@@ -3189,7 +3189,7 @@ TEST_CASE("MoonrakerClientMock idle_timeout simulation", "[mock][idle_timeout][s
 // gcode_script return value contract: 0 = success, non-zero = error
 // ============================================================================
 
-TEST_CASE("MoonrakerClientMock gcode_script returns 0 on success", "[mock][gcode][slow]") {
+TEST_CASE("MoonrakerClientMock gcode_script returns 0 on success", "[mock][gcode]") {
     MockBehaviorTestFixture fixture;
     auto mock = fixture.create_mock();
     mock->connect("ws://localhost:7125/websocket", [] {}, [] {});
@@ -3229,7 +3229,7 @@ TEST_CASE("MoonrakerClientMock gcode_script returns 0 on success", "[mock][gcode
     mock->disconnect();
 }
 
-TEST_CASE("MoonrakerClientMock gcode_script returns non-zero on error", "[mock][gcode][slow]") {
+TEST_CASE("MoonrakerClientMock gcode_script returns non-zero on error", "[mock][gcode]") {
     MockBehaviorTestFixture fixture;
     auto mock = fixture.create_mock();
     mock->connect("ws://localhost:7125/websocket", [] {}, [] {});

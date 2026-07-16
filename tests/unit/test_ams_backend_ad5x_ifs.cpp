@@ -4535,7 +4535,7 @@ TEST_CASE("AD5X IFS set_slot_info takes effect when no override present",
 // ==========================================================================
 
 TEST_CASE("AD5X IFS set_slot_info(persist=true) stores override in memory and store",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Build a real MoonrakerAPIMock so the backend's override store has a
     // destination to write to. on_started() is not called — overrides_
     // starts empty — so we can assert the persist path populates it.
@@ -4592,7 +4592,7 @@ TEST_CASE("AD5X IFS set_slot_info(persist=true) stores override in memory and st
 }
 
 TEST_CASE("AD5X IFS set_slot_info(persist=false) does NOT write to store",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Same fixture as above, but with persist=false the override store
     // must stay untouched — set_slot_info is a pure in-memory preview.
     Ad5xIfsTmpCacheDir tmp("task10_no_persist");
@@ -4637,7 +4637,7 @@ TEST_CASE("AD5X IFS set_slot_info(persist=false) does NOT write to store",
 // ==========================================================================
 
 TEST_CASE("AD5X IFS update_slot_weight preserves identity and does not write Adventurer5M.json",
-          "[ams][ad5x_ifs][filament_slot_override][981][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override][981]") {
     Ad5xIfsTmpCacheDir tmp("weight_only_preserves_identity");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -4691,7 +4691,7 @@ TEST_CASE("AD5X IFS update_slot_weight preserves identity and does not write Adv
 }
 
 TEST_CASE("AD5X IFS update_slot_weight on an un-overridden slot does not lock identity",
-          "[ams][ad5x_ifs][filament_slot_override][981][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override][981]") {
     Ad5xIfsTmpCacheDir tmp("weight_only_no_lock");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -4727,7 +4727,7 @@ TEST_CASE("AD5X IFS update_slot_weight on an un-overridden slot does not lock id
 }
 
 TEST_CASE("AD5X IFS set_slot_info(persist=true) survives a matching firmware parse",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // After a persist=true write, the user's color/material round-trip through
     // Adventurer5M.json — so the next firmware parse reports the SAME values
     // and apply_overrides re-lays the brand/spool_name/etc. metadata that
@@ -4773,7 +4773,7 @@ TEST_CASE("AD5X IFS set_slot_info(persist=true) survives a matching firmware par
 }
 
 TEST_CASE("AD5X IFS user-edited slot survives firmware FFMInfo revert (#965 regression)",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // #965: AD5X firmware re-emits the previously-loaded material into
     // Adventurer5M.json shortly after print completion (and on some
     // restart paths). Pre-fix, the OverwriteAlways auto-mirror would clobber
@@ -4849,7 +4849,7 @@ TEST_CASE("AD5X IFS user-edited slot survives firmware FFMInfo revert (#965 regr
 }
 
 TEST_CASE("AD5X IFS auto-mirror still tracks firmware for slots with no user lock",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Companion to the #965 regression: bootstrap (no override, or override
     // with locks=false) MUST still pick up genuine external edits so
     // OrcaSlicer's MoonrakerPrinterAgent stays in sync with the printer.
@@ -4908,7 +4908,7 @@ TEST_CASE("AD5X IFS set_slot_info(persist=true) with no store still updates in-m
 }
 
 TEST_CASE("AD5X IFS set_slot_info(persist=true) with pre-existing override replaces it",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Seed an old override (simulating a prior load from disk), then overwrite
     // it via set_slot_info. get_slot_info must reflect the NEW values
     // immediately, not the old staged override.
@@ -4965,7 +4965,7 @@ TEST_CASE("AD5X IFS set_slot_info(persist=true) with pre-existing override repla
 // ==========================================================================
 
 TEST_CASE("AD5X IFS external color change syncs lane_data, preserves brand metadata",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     Ad5xIfsTmpCacheDir tmp("ext_color_change_syncs");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -5048,7 +5048,7 @@ TEST_CASE("AD5X IFS external color change syncs lane_data, preserves brand metad
 }
 
 TEST_CASE("AD5X IFS external color change with no override creates minimal lane_data record",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // When zmod owns slot color/material truth and the user has never touched
     // the slot via Helix, lane_data was previously empty → Orca had no way to
     // see the slot's color from MoonrakerPrinterAgent. Now we publish a
@@ -5103,7 +5103,7 @@ TEST_CASE("AD5X IFS external color change with no override creates minimal lane_
 }
 
 TEST_CASE("AD5X IFS GET_ZCOLOR eject keeps the override and lane_data (#1071)",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Genuine spool removal. presence is owned solely by GET_ZCOLOR now: when
     // apply_zcolor_result reports a slot present->absent the lane renders empty,
     // but #1071: the override (brand/spool_name/spoolman) and the MR DB lane_data
@@ -5205,7 +5205,7 @@ class GcodeCapturingBackend : public AmsBackendAd5xIfs {
 } // namespace
 
 TEST_CASE("AD5X IFS external color change mirrors colors+types into _IFS_VARS",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     Ad5xIfsTmpCacheDir tmp("ifs_vars_mirror_external");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -5261,7 +5261,7 @@ TEST_CASE("AD5X IFS external color change mirrors colors+types into _IFS_VARS",
 }
 
 TEST_CASE("AD5X IFS bambufy prefix gets SHOW=0 to suppress _IFS_VARS echo",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     Ad5xIfsTmpCacheDir tmp("ifs_vars_mirror_bambufy_show0");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -5304,7 +5304,7 @@ TEST_CASE("AD5X IFS bambufy prefix gets SHOW=0 to suppress _IFS_VARS echo",
 }
 
 TEST_CASE("AD5X IFS mirror skipped when has_ifs_vars_ is false (stock zmod)",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Stock zmod (no lessWaste/bambufy plugin) has no _IFS_VARS macro to call.
     // Sync still fires (lane_data still updates for Orca) but the mirror push
     // is skipped — calling _IFS_VARS on a printer without the macro just
@@ -5357,7 +5357,7 @@ TEST_CASE("AD5X IFS mirror skipped when has_ifs_vars_ is false (stock zmod)",
 // every boot, and after the wipe the next boot loaded 0 overrides because
 // boot 1 had cleared them all.
 TEST_CASE("AD5X IFS empty colors_[] on boot does NOT establish phantom baseline",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     Ad5xIfsTmpCacheDir tmp("boot_phantom_baseline_no_clear");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -5467,7 +5467,7 @@ TEST_CASE("AD5X IFS empty colors_[] on boot does NOT establish phantom baseline"
 }
 
 TEST_CASE("AD5X IFS first firmware color observation does NOT clear override",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Even when the override's saved color differs from what the firmware
     // reports at startup, the very first observation is a BASELINE. This
     // matches real-world startup: override loaded from lane_data arrives
@@ -5535,7 +5535,7 @@ TEST_CASE("AD5X IFS first firmware color observation does NOT clear override",
 // ------------------------------------------------------------------
 
 TEST_CASE("AD5X IFS set_slot_info(persist=true) does not wipe override on color edit",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Baseline firmware parse establishes last_firmware_color_.
     // Then user saves a new override with a DIFFERENT color.
     // The override must survive — not get treated as a hardware swap.
@@ -5592,7 +5592,7 @@ TEST_CASE("AD5X IFS set_slot_info(persist=true) does not wipe override on color 
 }
 
 TEST_CASE("AD5X IFS set_slot_info(persist=false) preview does not wipe existing override",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Seed a pre-existing override, establish baseline via firmware parse,
     // then preview a DIFFERENT color with persist=false. The preview must
     // not be misread as a physical swap — the saved override must remain
@@ -5794,7 +5794,7 @@ TEST_CASE("AD5X IFS pure black (#000000) is a real reading, not a no-signal sent
 // ------------------------------------------------------------------
 
 TEST_CASE("AD5X IFS clear_slot_override erases in-memory override and MR DB entry",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     Ad5xIfsTmpCacheDir tmp("task16_clear_slot_override");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -5862,7 +5862,7 @@ TEST_CASE("AD5X IFS clear_slot_override erases in-memory override and MR DB entr
 }
 
 TEST_CASE("AD5X IFS clear_slot_override is safe when no override is present",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     Ad5xIfsTmpCacheDir tmp("task16_clear_slot_override_noop");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;

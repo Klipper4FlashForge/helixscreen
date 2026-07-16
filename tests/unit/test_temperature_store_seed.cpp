@@ -220,7 +220,7 @@ TEST_CASE_METHOD(TempStoreSeedTestFixture, "seed_from_store caps at HISTORY_SIZE
 // ============================================================================
 
 TEST_CASE("get_temperature_store returns a realistic populated store via mock",
-          "[temp][seed][slow]") {
+          "[temp][seed]") {
     MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
     mock.connect("ws://mock/websocket", []() {}, []() {});
 

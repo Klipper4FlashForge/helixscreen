@@ -85,7 +85,7 @@ class MetadataAPITestFixture {
 // ============================================================================
 
 TEST_CASE_METHOD(MetadataAPITestFixture, "get_file_metadata calls success callback with valid file",
-                 "[metadata][api][slow]") {
+                 "[metadata][api]") {
     bool success_called = false;
     bool error_called = false;
 
@@ -99,7 +99,7 @@ TEST_CASE_METHOD(MetadataAPITestFixture, "get_file_metadata calls success callba
 }
 
 TEST_CASE_METHOD(MetadataAPITestFixture, "get_file_metadata with silent flag compiles correctly",
-                 "[metadata][api][silent][slow]") {
+                 "[metadata][api][silent]") {
     // This test verifies that silent=true parameter is accepted
     // In real usage, this prevents toast spam when files aren't indexed
     bool success_called = false;
@@ -115,7 +115,7 @@ TEST_CASE_METHOD(MetadataAPITestFixture, "get_file_metadata with silent flag com
 }
 
 TEST_CASE_METHOD(MetadataAPITestFixture, "metascan_file calls success callback with metadata",
-                 "[metadata][api][metascan][slow]") {
+                 "[metadata][api][metascan]") {
     bool success_called = false;
     bool error_called = false;
 
@@ -129,7 +129,7 @@ TEST_CASE_METHOD(MetadataAPITestFixture, "metascan_file calls success callback w
 }
 
 TEST_CASE_METHOD(MetadataAPITestFixture, "metascan_file is silent by default",
-                 "[metadata][api][metascan][slow]") {
+                 "[metadata][api][metascan]") {
     // metascan_file has silent=true by default (see API declaration)
     bool success_called = false;
 
@@ -211,7 +211,7 @@ TEST_CASE("PrintSelectUsbSource switches from USB to PRINTER when symlink detect
 // ============================================================================
 
 TEST_CASE_METHOD(MetadataAPITestFixture, "list_files for usb path returns empty when no symlink",
-                 "[usb][symlink][integration][slow]") {
+                 "[usb][symlink][integration]") {
     // Ensure symlink simulation is off
     mock_set_usb_symlink_active(false);
 
@@ -233,7 +233,7 @@ TEST_CASE_METHOD(MetadataAPITestFixture, "list_files for usb path returns empty 
 
 TEST_CASE_METHOD(MetadataAPITestFixture,
                  "list_files for usb path returns files when symlink active",
-                 "[usb][symlink][integration][slow]") {
+                 "[usb][symlink][integration]") {
     // Enable symlink simulation
     mock_set_usb_symlink_active(true);
 

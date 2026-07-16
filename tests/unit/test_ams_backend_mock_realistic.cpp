@@ -66,7 +66,7 @@ TEST_CASE("AmsBackendMock realistic mode defaults", "[ams][mock][realistic]") {
 }
 
 TEST_CASE("AmsBackendMock realistic mode load operation phases",
-          "[ams][mock][realistic][load][slow]") {
+          "[ams][mock][realistic][load]") {
     FastTimingScope timing_guard; // RAII: 1000x speedup, auto-restored
 
     // Declare before backend so they outlive it (backend destructor joins threads)
@@ -136,7 +136,7 @@ TEST_CASE("AmsBackendMock realistic mode load operation phases",
 }
 
 TEST_CASE("AmsBackendMock realistic mode unload operation phases",
-          "[ams][mock][realistic][unload][slow]") {
+          "[ams][mock][realistic][unload]") {
     FastTimingScope timing_guard; // RAII: 1000x speedup, auto-restored
 
     // Declare before backend so they outlive it (backend destructor joins threads)
@@ -287,7 +287,7 @@ TEST_CASE("AmsBackendMock realistic mode completes to IDLE",
 }
 
 TEST_CASE("AmsBackendMock realistic mode can be cancelled",
-          "[ams][mock][realistic][cancel][slow]") {
+          "[ams][mock][realistic][cancel]") {
     FastTimingScope timing_guard; // RAII: 1000x speedup, auto-restored
 
     AmsBackendMock backend(4);
@@ -372,7 +372,7 @@ TEST_CASE("AmsBackendMock tool change shows SELECTING phase",
     backend.stop();
 }
 
-TEST_CASE("AmsBackendMock PAUSED state handling", "[ams][mock][realistic][paused][slow]") {
+TEST_CASE("AmsBackendMock PAUSED state handling", "[ams][mock][realistic][paused]") {
     FastTimingScope timing_guard; // RAII: 1000x speedup, auto-restored
 
     AmsBackendMock backend(4);
@@ -412,7 +412,7 @@ TEST_CASE("AmsBackendMock PAUSED state handling", "[ams][mock][realistic][paused
     backend.stop();
 }
 
-TEST_CASE("AmsBackendMock error recovery sequence", "[ams][mock][realistic][recovery][slow]") {
+TEST_CASE("AmsBackendMock error recovery sequence", "[ams][mock][realistic][recovery]") {
     FastTimingScope timing_guard; // RAII: 1000x speedup, auto-restored
 
     // Declare before backend so they outlive it (backend destructor joins threads)

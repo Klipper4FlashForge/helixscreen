@@ -1381,7 +1381,7 @@ TEST_CASE("CFS has no per-slot prep sensors", "[ams][cfs]") {
 // ============================================================================
 
 TEST_CASE("CFS override loaded at init is applied over firmware data",
-          "[ams][cfs][filament_slot_override][slow]") {
+          "[ams][cfs][filament_slot_override]") {
     // Seed an override in-memory and verify apply_overrides layers it over
     // firmware-parsed slot data. CFS's firmware populates brand /
     // color_name / total_weight_g from the RFID material DB, but the
@@ -1422,7 +1422,7 @@ TEST_CASE("CFS override loaded at init is applied over firmware data",
 }
 
 TEST_CASE("CFS migrates from helix-screen:cfs_slot_overrides on first startup",
-          "[ams][cfs][filament_slot_override][migration][slow]") {
+          "[ams][cfs][filament_slot_override][migration]") {
     // Pre-Task-8 CFS wrote per-slot overrides to
     // helix-screen:cfs_slot_overrides. On first startup post-upgrade, the
     // store's load_blocking() migrates that data into lane_data and deletes
@@ -1472,7 +1472,7 @@ TEST_CASE("CFS migrates from helix-screen:cfs_slot_overrides on first startup",
 }
 
 TEST_CASE("CFS set_slot_info(persist=true) writes to store",
-          "[ams][cfs][filament_slot_override][slow]") {
+          "[ams][cfs][filament_slot_override]") {
     CfsTmpCacheDir tmp("task14_persist_true");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1520,7 +1520,7 @@ TEST_CASE("CFS set_slot_info(persist=true) writes to store",
 }
 
 TEST_CASE("CFS set_slot_info(persist=false) does NOT write to store",
-          "[ams][cfs][filament_slot_override][slow]") {
+          "[ams][cfs][filament_slot_override]") {
     CfsTmpCacheDir tmp("task14_persist_false");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1573,7 +1573,7 @@ TEST_CASE("CFS set_slot_info(persist=false) does NOT write to store",
 }
 
 TEST_CASE("CFS RFID fingerprint change clears override (hardware swap detected)",
-          "[ams][cfs][filament_slot_override][slow]") {
+          "[ams][cfs][filament_slot_override]") {
     CfsTmpCacheDir tmp("task14_uid_swap_clears");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1660,7 +1660,7 @@ TEST_CASE("CFS RFID fingerprint change clears override (hardware swap detected)"
 }
 
 TEST_CASE("CFS first RFID observation does NOT clear override",
-          "[ams][cfs][filament_slot_override][slow]") {
+          "[ams][cfs][filament_slot_override]") {
     // Even when the override was saved against a different (now-stale)
     // fingerprint, the very first observation is a BASELINE and must never
     // fire a clear. Matches Snapmaker semantics.
@@ -1703,7 +1703,7 @@ TEST_CASE("CFS first RFID observation does NOT clear override",
 }
 
 TEST_CASE("CFS empty RFID fingerprint does not update baseline or clear",
-          "[ams][cfs][filament_slot_override][slow]") {
+          "[ams][cfs][filament_slot_override]") {
     // Sentinel material_type "-1" / color_value "-1" = no tag / reader
     // disabled / unreadable. Must not update the baseline and must not clear.
     // This is the contract that keeps transient tag-read failures from
@@ -1749,7 +1749,7 @@ TEST_CASE("CFS empty RFID fingerprint does not update baseline or clear",
 }
 
 TEST_CASE("CFS override preserved across unchanged parses",
-          "[ams][cfs][filament_slot_override][slow]") {
+          "[ams][cfs][filament_slot_override]") {
     // When the RFID fingerprint is unchanged (same spool re-observed), the
     // override must be re-applied on every parse. This is the core behavior
     // that was broken pre-Task-14: firmware data overwrote user edits on

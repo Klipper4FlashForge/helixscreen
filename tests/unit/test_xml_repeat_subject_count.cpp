@@ -16,7 +16,7 @@ static const char * COMP_CNT =
   "</component>";
 
 TEST_CASE_METHOD(LVGLTestFixture, "repeat: subject count expands then rebuilds on change",
-                 "[xml][repeat][slow]") {
+                 "[xml][repeat]") {
     REQUIRE(lv_xml_register_component_from_data("t_cnt", COMP_CNT) == LV_RESULT_OK);
     lv_xml_component_scope_t * scope = lv_xml_component_get_scope("t_cnt");
     lv_obj_t * v = (lv_obj_t *)lv_xml_create(lv_screen_active(), "t_cnt", nullptr);
@@ -39,7 +39,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "repeat: subject count expands then rebuilds o
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "repeat: rapid count churn coalesces to the final value",
-                 "[xml][repeat][slow]") {
+                 "[xml][repeat]") {
     REQUIRE(lv_xml_register_component_from_data("t_churn", COMP_CNT) == LV_RESULT_OK);
     lv_xml_component_scope_t * scope = lv_xml_component_get_scope("t_churn");
     lv_obj_t * v = (lv_obj_t *)lv_xml_create(lv_screen_active(), "t_churn", nullptr);
@@ -63,7 +63,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "repeat: rapid count churn coalesces to the fi
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "repeat: 0->N->0 cycles leave a consistent tree",
-                 "[xml][repeat][slow]") {
+                 "[xml][repeat]") {
     REQUIRE(lv_xml_register_component_from_data("t_cyc", COMP_CNT) == LV_RESULT_OK);
     lv_xml_component_scope_t * scope = lv_xml_component_get_scope("t_cyc");
     lv_obj_t * v = (lv_obj_t *)lv_xml_create(lv_screen_active(), "t_cyc", nullptr);
@@ -103,7 +103,7 @@ const char * COMP_GLOBAL_CNT =
 } // namespace
 
 TEST_CASE_METHOD(LVGLTestFixture, "repeat: GLOBAL count observer removed on unregister (no UAF)",
-                 "[xml][repeat][slow]") {
+                 "[xml][repeat]") {
     // The count subject lives in the GLOBAL scope, outliving the component. Only the
     // repeat_ll teardown removes the observer sitting on it -- if it didn't, mutating
     // the global after unregister would fire the rebuild callback on a freed record
@@ -148,7 +148,7 @@ const char * COMP_UAF_CNT =
 
 TEST_CASE_METHOD(LVGLTestFixture,
                  "repeat: count change AFTER instance delete does not UAF (observer tied to instance)",
-                 "[xml][repeat][slow]") {
+                 "[xml][repeat]") {
     // The count subject is GLOBAL and outlives the instance; the component stays
     // REGISTERED. When the instance is deleted its roots[] are freed with the tree.
     // If the count observer were tied only to the component scope (not the instance),
@@ -191,7 +191,7 @@ const char * COMP_REINST_CNT =
 
 TEST_CASE_METHOD(LVGLTestFixture,
                  "repeat: re-instantiation does not accumulate stale observers",
-                 "[xml][repeat][slow]") {
+                 "[xml][repeat]") {
     // view_def is re-parsed on every lv_xml_create, so each instantiation appends a
     // fresh record+observer. If the 1st instance's record isn't reclaimed on its
     // delete, a later count change fires teardown on BOTH records -- the dead one on

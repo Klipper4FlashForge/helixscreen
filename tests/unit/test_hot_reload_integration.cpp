@@ -82,7 +82,7 @@ void ensure_fake_component_registered(const char* name) {
 } // anonymous namespace
 
 TEST_CASE_METHOD(MoonrakerTestFixture, "rebuild_active_views swaps active panel widget pointer",
-                 "[hot-reload][integration][slow]") {
+                 "[hot-reload][integration]") {
     // 1. Register stub component
     constexpr const char* kComponent = "fake_rebuild_panel";
     ensure_fake_component_registered(kComponent);

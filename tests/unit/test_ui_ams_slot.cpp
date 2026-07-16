@@ -720,7 +720,7 @@ lv_obj_t* create_empty_slot(lv_obj_t* parent, AmsBackendMock* mock_ptr) {
 } // namespace
 
 TEST_CASE_METHOD(LVGLUITestFixture, "AMS slot ghosts empty slot with brand-only metadata",
-                 "[ui][ams_slot][filament_slot_override][slow]") {
+                 "[ui][ams_slot][filament_slot_override]") {
     ui_ams_slot_register();
     AmsState::instance().init_subjects(true);
 
@@ -749,7 +749,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "AMS slot ghosts empty slot with brand-only 
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture, "AMS slot ghosts empty slot with spool_name-only metadata",
-                 "[ui][ams_slot][filament_slot_override][slow]") {
+                 "[ui][ams_slot][filament_slot_override]") {
     ui_ams_slot_register();
     AmsState::instance().init_subjects(true);
 
@@ -776,7 +776,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "AMS slot ghosts empty slot with spool_name-
 }
 
 TEST_CASE_METHOD(LVGLUITestFixture, "AMS slot hides empty slot with no metadata at all",
-                 "[ui][ams_slot][filament_slot_override][slow]") {
+                 "[ui][ams_slot][filament_slot_override]") {
     ui_ams_slot_register();
     AmsState::instance().init_subjects(true);
 
