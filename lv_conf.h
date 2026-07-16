@@ -852,16 +852,11 @@
 #define LV_USE_LIBJPEG_TURBO 0
 
 /* Camera support — enabled on platforms with networking and enough RAM.
- * Camera uses stb_image for JPEG decoding (header-only, zero deps).
- * ESP_PLATFORM (ESP-IDF) is excluded: the ESP32 v1 cut ships no camera/QR
- * subsystem. This lv_conf.h is force-included everywhere and unconditionally
- * #defines the macro, so it must know about the exclusion — otherwise it
- * silently overrides the helixapp build's -DHELIX_HAS_CAMERA=0 and the QR
- * call sites (which have no ESP camera backend linked) fail at link. */
+ * Camera uses stb_image for JPEG decoding (header-only, zero deps). */
 #if !defined(HELIX_PLATFORM_AD5M) && !defined(HELIX_PLATFORM_CC1) && \
     !defined(HELIX_PLATFORM_MIPS) && !defined(HELIX_PLATFORM_K1) && \
     !defined(HELIX_PLATFORM_AD5X) && !defined(HELIX_PLATFORM_K2) && \
-    !defined(HELIX_PLATFORM_SNAPMAKER_U1) && !defined(ESP_PLATFORM)
+    !defined(HELIX_PLATFORM_SNAPMAKER_U1)
 #define HELIX_HAS_CAMERA 1
 #else
 #define HELIX_HAS_CAMERA 0
