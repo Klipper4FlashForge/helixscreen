@@ -91,7 +91,8 @@ void AmsBackendAd5xIfs::on_started() {
     // on this (main) thread; the Moonraker DB callback fires on the libhv
     // event loop, so the two threads don't interfere.
     if (api_) {
-        override_store_ = std::make_unique<helix::ams::FilamentSlotOverrideStore>(api_, "ifs");
+        override_store_ = std::make_unique<helix::ams::FilamentSlotOverrideStore>(
+            api_, "ifs", helix::ams::lane_key_style_for(get_type()));
         // Do the (potentially 5s) MR DB round-trip OUTSIDE the lock, then swap in
         // under mutex_. AmsSubscriptionBackend::start() registers the WebSocket
         // notify subscription before on_started() is invoked, so a status

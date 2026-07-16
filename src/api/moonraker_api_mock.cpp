@@ -292,6 +292,7 @@ void MoonrakerAPIMock::set_database_empty(const std::string& namespace_name,
 void MoonrakerAPIMock::database_post_item(const std::string& namespace_name, const std::string& key,
                                           const json& value, std::function<void()> on_success,
                                           ErrorCallback on_error) {
+    ++db_post_count_;
     if (next_db_post_rejection_.has_value()) {
         MoonrakerError err = std::move(*next_db_post_rejection_);
         next_db_post_rejection_.reset();
@@ -358,6 +359,7 @@ void MoonrakerAPIMock::database_delete_item(const std::string& namespace_name,
                                             const std::string& key,
                                             std::function<void()> on_success,
                                             ErrorCallback on_error) {
+    ++db_delete_count_;
     if (next_db_delete_rejection_.has_value()) {
         MoonrakerError err = std::move(*next_db_delete_rejection_);
         next_db_delete_rejection_.reset();

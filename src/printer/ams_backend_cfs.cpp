@@ -400,7 +400,8 @@ void AmsBackendCfs::on_started() {
     // lane_data happens automatically inside load_blocking the first time
     // lane_data is empty (Task 8).
     if (api_) {
-        override_store_ = std::make_unique<helix::ams::FilamentSlotOverrideStore>(api_, "cfs");
+        override_store_ = std::make_unique<helix::ams::FilamentSlotOverrideStore>(
+            api_, "cfs", helix::ams::lane_key_style_for(get_type()));
         // Do the (potentially 5s) MR DB round-trip OUTSIDE the lock, then swap
         // in under mutex_. Holding mutex_ during the swap ensures the parse
         // path sees a coherent map rather than a torn write.

@@ -81,6 +81,10 @@ class SlotRegistry {
     int tool_for_slot(int global_index) const;
     int slot_for_tool(int tool_number) const;
     void set_tool_mapping(int global_index, int tool_number);
+    /// Clear a slot's tool mapping (mark unmapped). Also clears the reverse map
+    /// entry if it still points at this slot. set_tool_mapping() rejects negative
+    /// tool numbers, so this is the primitive for resetting to unmapped.
+    void clear_tool_mapping(int global_index);
     void set_tool_map(const std::vector<int>& tool_to_slot);
 
     // === Endless spool ===

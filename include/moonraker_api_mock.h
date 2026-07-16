@@ -734,6 +734,21 @@ class MoonrakerAPIMock : public MoonrakerAPI {
     nlohmann::json mock_get_db_value(const std::string& namespace_name,
                                      const std::string& key) const;
 
+    /// Number of times database_post_item() was called on this mock instance.
+    /// Counts every invocation — including calls later rejected via
+    /// mock_reject_next_db_post() or captured via mock_defer_next_db_post() — so
+    /// tests can assert "a write was attempted" or "no write happened".
+    [[nodiscard]] int mock_db_post_count() const {
+        return db_post_count_;
+    }
+
+    /// Number of times database_delete_item() was called on this mock instance.
+    /// Counts every invocation (see mock_db_post_count() for rejection/defer
+    /// semantics).
+    [[nodiscard]] int mock_db_delete_count() const {
+        return db_delete_count_;
+    }
+
     /// Cause the next database_post_item() call to fire its on_error callback
     /// with the given MoonrakerError, and skip writing to the mock DB. The
     /// rejection is consumed on the first call — subsequent posts succeed
@@ -814,6 +829,13 @@ class MoonrakerAPIMock : public MoonrakerAPI {
 
     /// Mock database storage: key = "namespace:key", value = JSON
     std::map<std::string, nlohmann::json> mock_db_;
+
+    /// Call counters for database write ops. Incremented at the top of each
+    /// override, before any rejection/defer branch, so a rejected or deferred
+    /// call still counts as an attempt. Exposed via mock_db_post_count() /
+    /// mock_db_delete_count().
+    int db_post_count_ = 0;
+    int db_delete_count_ = 0;
 
     /// One-shot rejection for database_post_item (set by mock_reject_next_db_post).
     std::optional<MoonrakerError> next_db_post_rejection_;

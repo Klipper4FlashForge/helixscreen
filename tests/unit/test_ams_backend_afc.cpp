@@ -1395,6 +1395,83 @@ TEST_CASE("AFC tool mapping swap updates correctly", "[ams][afc][tool_mapping][p
     REQUIRE(helper.get_slot_mapped_tool(2) == 0); // lane3 now maps to T0
 }
 
+TEST_CASE("AFC tool mapping resets when map transitions string to null",
+          "[ams][afc][tool_mapping]") {
+    // CORE REGRESSION: when a lane is explicitly unmapped, AFC sends "map" as JSON
+    // null in the delta. A PRESENT null is authoritative — the lane must drop its
+    // stale tool mapping instead of keeping the previous value.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_stepper("lane1", {{"map", "T2"}, {"prep", true}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 2);
+
+    // Same lane, map now null → mapping must reset to unmapped (-1)
+    helper.feed_afc_stepper("lane1", {{"map", nullptr}, {"prep", true}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == -1);
+    // Reverse map must no longer point T2 at this slot
+    REQUIRE(helper.get_tool_mapping()[2] == -1);
+}
+
+TEST_CASE("AFC tool mapping survives an update with no map field",
+          "[ams][afc][tool_mapping]") {
+    // parse_afc_stepper receives Moonraker notify_status_update DELTAS: a partial
+    // update (e.g. weight-only) that omits "map" means "unchanged", NOT "unmapped".
+    // Clearing on absent would wipe a live tool mapping mid-print — the mapping must
+    // survive. Only a PRESENT map value is authoritative (see the null test above).
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_stepper("lane1", {{"map", "T2"}, {"prep", true}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 2);
+
+    // Partial delta with no "map" key → mapping preserved.
+    helper.feed_afc_stepper("lane1", {{"weight", 931.7}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 2);
+}
+
+TEST_CASE("AFC tool mapping valid string still maps", "[ams][afc][tool_mapping]") {
+    // Guard against over-correction: the valid-string path is unchanged.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_stepper("lane1", {{"map", "T0"}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 0);
+
+    helper.feed_afc_stepper("lane1", {{"map", "T3"}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 3);
+}
+
+TEST_CASE("AFC tool mapping array-shaped map resets and does not crash",
+          "[ams][afc][tool_mapping]") {
+    // Speculative future AFC shape (enhancement #605): map as an array. We do NOT
+    // support multi-tool maps — treat as unmapped, warn once (tripwire), no crash.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_stepper("lane1", {{"map", "T2"}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 2);
+
+    REQUIRE_NOTHROW(
+        helper.feed_afc_stepper("lane1", {{"map", nlohmann::json::array({"T0", "T4"})}}));
+    REQUIRE(helper.get_slot_mapped_tool(0) == -1);
+}
+
+TEST_CASE("AFC tool mapping empty or malformed map resets", "[ams][afc][tool_mapping]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_stepper("lane1", {{"map", "T2"}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == 2);
+    helper.feed_afc_stepper("lane1", {{"map", ""}});
+    REQUIRE(helper.get_slot_mapped_tool(0) == -1);
+
+    helper.feed_afc_stepper("lane2", {{"map", "T2"}});
+    REQUIRE(helper.get_slot_mapped_tool(1) == 2);
+    helper.feed_afc_stepper("lane2", {{"map", "garbage"}});
+    REQUIRE(helper.get_slot_mapped_tool(1) == -1);
+}
+
 TEST_CASE("AFC endless spool from runout_lane field", "[ams][afc][endless_spool][phase1]") {
     // Real device: AFC_stepper lane1 has "runout_lane": "lane2"
     // meaning if lane1 runs out, switch to lane2.
