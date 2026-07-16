@@ -133,3 +133,91 @@ TEST_CASE_METHOD(LVGLTestFixture, "repeat: GLOBAL count observer removed on unre
     process_lvgl(20);
     SUCCEED("global-count repeat observer cleanly removed; no UAF on post-unregister change");
 }
+
+namespace {
+lv_subject_t g_repeat_uaf_count;
+const char * COMP_UAF_CNT =
+  "<component>"
+  "  <view>"
+  "    <lv_obj name='root'>"
+  "      <repeat count='g_rep_uaf'><lv_obj name='item'/></repeat>"
+  "    </lv_obj>"
+  "  </view>"
+  "</component>";
+} // namespace
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "repeat: count change AFTER instance delete does not UAF (observer tied to instance)",
+                 "[xml][repeat][slow]") {
+    // The count subject is GLOBAL and outlives the instance; the component stays
+    // REGISTERED. When the instance is deleted its roots[] are freed with the tree.
+    // If the count observer were tied only to the component scope (not the instance),
+    // it would stay live with dangling roots -- and the mutation below would fire the
+    // rebuild callback -> teardown -> lv_obj_set_layout/lv_obj_set_parent on freed
+    // widgets (teardown never validates, L076) -> use-after-free under ASAN. This is
+    // the window BETWEEN instance-delete and unregister, which is unbounded in
+    // production (nav away, later a printer-state subject changes).
+    lv_subject_init_int(&g_repeat_uaf_count, 3);
+    lv_xml_register_subject(nullptr, "g_rep_uaf", &g_repeat_uaf_count);
+
+    REQUIRE(lv_xml_register_component_from_data("t_uaf", COMP_UAF_CNT) == LV_RESULT_OK);
+    lv_obj_t * v = (lv_obj_t *)lv_xml_create(lv_screen_active(), "t_uaf", nullptr);
+    lv_obj_t * root = lv_obj_find_by_name(v, "root");
+    REQUIRE(root != nullptr);
+    REQUIRE(lv_obj_get_child_count(root) == 3);
+
+    lv_obj_delete(v);        // instance gone; roots[] freed; component still registered
+    process_lvgl(30);
+
+    // Dangerous window: the shared subject changes while no instance is alive.
+    lv_subject_set_int(&g_repeat_uaf_count, 7);
+    process_lvgl(30);
+    SUCCEED("count change after instance delete did not reach a dangling observer");
+
+    lv_xml_component_unregister("t_uaf");
+}
+
+namespace {
+lv_subject_t g_repeat_reinst_count;
+const char * COMP_REINST_CNT =
+  "<component>"
+  "  <view>"
+  "    <lv_obj name='root'>"
+  "      <repeat count='g_rep_reinst'><lv_obj name='item'/></repeat>"
+  "    </lv_obj>"
+  "  </view>"
+  "</component>";
+} // namespace
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "repeat: re-instantiation does not accumulate stale observers",
+                 "[xml][repeat][slow]") {
+    // view_def is re-parsed on every lv_xml_create, so each instantiation appends a
+    // fresh record+observer. If the 1st instance's record isn't reclaimed on its
+    // delete, a later count change fires teardown on BOTH records -- the dead one on
+    // freed roots. Proves per-instance reclamation + no repeat_ll accumulation.
+    lv_subject_init_int(&g_repeat_reinst_count, 2);
+    lv_xml_register_subject(nullptr, "g_rep_reinst", &g_repeat_reinst_count);
+
+    REQUIRE(lv_xml_register_component_from_data("t_reinst", COMP_REINST_CNT) == LV_RESULT_OK);
+
+    lv_obj_t * v1 = (lv_obj_t *)lv_xml_create(lv_screen_active(), "t_reinst", nullptr);
+    REQUIRE(lv_obj_get_child_count(lv_obj_find_by_name(v1, "root")) == 2);
+    lv_obj_delete(v1);
+    process_lvgl(30);
+
+    lv_obj_t * v2 = (lv_obj_t *)lv_xml_create(lv_screen_active(), "t_reinst", nullptr);
+    lv_obj_t * root2 = lv_obj_find_by_name(v2, "root");
+    REQUIRE(root2 != nullptr);
+    REQUIRE(lv_obj_get_child_count(root2) == 2);
+
+    // Rebuild must touch ONLY the live 2nd instance; the 1st instance's observer must
+    // be gone (else its teardown fires on freed roots -> UAF under ASAN).
+    lv_subject_set_int(&g_repeat_reinst_count, 5);
+    process_lvgl(30);
+    REQUIRE(lv_obj_get_child_count(root2) == 5);
+
+    lv_obj_delete(v2);
+    process_lvgl(30);
+    lv_xml_component_unregister("t_reinst");
+}

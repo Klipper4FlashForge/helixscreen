@@ -79,11 +79,20 @@ typedef struct {
  * The record retains everything the rebuild needs — the captured SAX-event body,
  * a value snapshot of the resolution scope, and a deep copy of the component's
  * parent attributes — because the original parse state is long gone by rebuild
- * time. Freed at scope teardown (`repeat_ll` walk in lv_xml_component_unregister),
- * which detaches the observer BEFORE the observed subject is freed.
+ * time.
+ *
+ * Lifetime is tied to the INSTANCE, not the scope: an LV_EVENT_DELETE callback on
+ * `view_root` detaches the observer, frees the record heap, and unlinks the record
+ * from `repeat_ll` when the instance is deleted. Because the count subject is
+ * shared (a scope subject reused across instances, or a global), an observer that
+ * outlived its instance would fire the rebuild on freed roots (use-after-free).
+ * The `repeat_ll` walk in lv_xml_component_unregister is the fallback for records
+ * whose instances are still alive at unregister; it also removes the pending
+ * delete callback so it cannot fire on an already-freed record.
  */
 typedef struct {
     lv_obj_t *      parent;         /* enclosing element the expansion's children attach to */
+    lv_obj_t *      view_root;      /* instance view root; its LV_EVENT_DELETE reclaims this record */
     lv_subject_t *  count_subject;  /* the bound count subject */
     lv_observer_t * observer;       /* retained so teardown can detach before the subject is freed */
     void *          capture;        /* lv_xml_repeat_capture_t*, the retained body events (owned) */

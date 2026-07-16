@@ -91,6 +91,8 @@ static void xml_repeat_retain(lv_xml_parser_state_t * state, lv_xml_repeat_captu
                               lv_subject_t * count_subject);
 static void xml_repeat_teardown_expansion(lv_xml_repeat_t * r);
 static void xml_repeat_rebuild_cb(lv_observer_t * observer, lv_subject_t * subject);
+static void xml_repeat_record_free_heap(lv_xml_repeat_t * r);
+static void xml_repeat_instance_delete_cb(lv_event_t * e);
 static bool xml_value_has_compose(const char * value);
 static char * xml_compose_indexed(lv_xml_parser_state_t * state, const char * raw);
 static void xml_state_free_composed(lv_xml_parser_state_t * state);
@@ -1538,6 +1540,7 @@ static void xml_repeat_retain(lv_xml_parser_state_t * state, lv_xml_repeat_captu
 
     lv_obj_t ** tail = lv_ll_get_tail(&state->parent_ll);
     r->parent = tail ? *tail : state->parent;
+    r->view_root = state->view;       /*instance root; its delete reclaims this record*/
 
     r->scope = state->scope;          /*value snapshot; read-only during rebuild*/
     r->parent_scope = state->parent_scope;
@@ -1547,6 +1550,19 @@ static void xml_repeat_retain(lv_xml_parser_state_t * state, lv_xml_repeat_captu
      *before the observer fires so the live state never double-frees it.*/
     state->context = NULL;
 
+    /*Tie the record + observer lifetime to the INSTANCE. The count subject is
+     *shared (a scope subject reused across instances, or a global) and outlives any
+     *one instance, so the observer must go when the instance's tree is deleted —
+     *otherwise it fires the rebuild on freed roots (UAF). Mirror the timeline
+     *cleanup: an LV_EVENT_DELETE cb on the view root. If there is no view root
+     *(degenerate parse), fall back to the unregister-time sweep only.*/
+    if(r->view_root) {
+        lv_obj_add_event_cb(r->view_root, xml_repeat_instance_delete_cb, LV_EVENT_DELETE, r);
+    }
+    else {
+        LV_LOG_WARN("<repeat count> subject-bound with no view root; rebuild lifetime falls back to unregister");
+    }
+
     /*Registering the observer fires xml_repeat_rebuild_cb immediately, which does
      *the initial expansion (into r->parent via a reconstructed state) and records
      *the roots. r->parent is the current tail of the live parent_ll, so children
@@ -1554,19 +1570,19 @@ static void xml_repeat_retain(lv_xml_parser_state_t * state, lv_xml_repeat_captu
     r->observer = lv_subject_add_observer(count_subject, xml_repeat_rebuild_cb, r);
 }
 
-/** Detach the count observer and free the retained body/snapshots of a
- *  subject-bound `<repeat>` record. See the header for the widget-lifetime
- *  contract (roots are already deleted with the instance before unregister). */
-void lv_xml_repeat_record_free(lv_xml_repeat_t * r)
+/** Free the owned heap of a `<repeat>` record: detach the count observer, free the
+ *  captured body, the roots ARRAY (never the widgets — the instance owns those),
+ *  and the parent-attrs snapshot. Does NOT free the record node itself, remove the
+ *  delete cb, or unlink from `repeat_ll` — the two callers do that differently. */
+static void xml_repeat_record_free_heap(lv_xml_repeat_t * r)
 {
-    if(r == NULL) return;
     if(r->observer) {
         lv_observer_remove(r->observer);
         r->observer = NULL;
     }
     xml_repeat_capture_free((lv_xml_repeat_capture_t *)r->capture);
     r->capture = NULL;
-    lv_free(r->roots);                /*the array only — the widgets are already gone*/
+    lv_free(r->roots);                /*the array only — widgets are freed by LVGL*/
     r->roots = NULL;
     r->root_count = 0;
     if(r->parent_attrs) {
@@ -1574,6 +1590,42 @@ void lv_xml_repeat_record_free(lv_xml_repeat_t * r)
         lv_free(r->parent_attrs);
         r->parent_attrs = NULL;
     }
+}
+
+/** LV_EVENT_DELETE on the instance view root: reclaim the record for THIS instance.
+ *  The instance's widget tree (including this expansion's roots) is being freed by
+ *  LVGL right now, so never touch roots[] — only detach the observer, free the
+ *  record heap, unlink the record from `repeat_ll`, and free the node. Unlinking is
+ *  what keeps lv_xml_component_unregister from double-freeing it later. This cb
+ *  never runs during a rebuild's own teardown: that deletes an off-tree condemned
+ *  container (which holds the old roots), not the view root. */
+static void xml_repeat_instance_delete_cb(lv_event_t * e)
+{
+    lv_xml_repeat_t * r = (lv_xml_repeat_t *)lv_event_get_user_data(e);
+    if(r == NULL) return;
+
+    /*Recover the registered scope by name before freeing anything (scope is a value
+     *member, untouched by free_heap, so the name stays valid until lv_free(r)).*/
+    lv_xml_component_scope_t * reg = lv_xml_component_get_scope(r->scope.name);
+
+    xml_repeat_record_free_heap(r);
+
+    if(reg) lv_ll_remove(&reg->repeat_ll, r);
+    lv_free(r);                       /*the record IS the ll node (see lv_ll_ins_tail)*/
+}
+
+/** Free a `<repeat>` record from the scope-teardown path (records whose instances
+ *  are still alive at unregister). Removes the pending instance-delete cb first so
+ *  it cannot fire on the freed record after the instance is later deleted, then
+ *  frees the record heap. The node itself is freed by the caller's lv_ll_clear. */
+void lv_xml_repeat_record_free(lv_xml_repeat_t * r)
+{
+    if(r == NULL) return;
+    if(r->view_root) {
+        lv_obj_remove_event_cb_with_user_data(r->view_root, xml_repeat_instance_delete_cb, r);
+        r->view_root = NULL;
+    }
+    xml_repeat_record_free_heap(r);
 }
 
 /** True if `value` contains an embedded `${...}` composition marker anywhere.
