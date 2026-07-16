@@ -284,9 +284,58 @@ TEST_CASE("compute_defaults material mismatch skips color match, uses positional
 
     auto result = FilamentMapper::compute_defaults(tools, slots);
     REQUIRE(result.size() == 1);
-    // Color match skips incompatible materials; positional fallback assigns slot 0
+    // The tool's own positional lane (slot_index 0 == tool_index 0) is assigned
+    // with a material-mismatch flag so PrintStartController can warn.
     CHECK(result[0].mapped_slot == 0);
     CHECK(result[0].material_mismatch);
+}
+
+TEST_CASE("compute_defaults blind fallback refuses a known-incompatible lane",
+          "[filament_mapper][compute][material]") {
+    // Tool 0 wants PLA; the only loaded lane sits at a non-positional index and is
+    // PETG, so neither firmware, color, nor positional matching fires. The
+    // material-blind "any unclaimed lane" fallback must NOT grab the incompatible
+    // PETG lane — leave the tool unmatched so preflight surfaces it.
+    std::vector<GcodeToolInfo> tools = {{0, 0xFF0000, "PLA"}};
+    std::vector<AvailableSlot> slots = {
+        {3, 0, 0xFF0000, "PETG", false, -1},
+    };
+
+    auto result = FilamentMapper::compute_defaults(tools, slots);
+    REQUIRE(result.size() == 1);
+    CHECK(result[0].mapped_slot == -1);
+    CHECK(result[0].is_auto);
+    CHECK(result[0].reason == ToolMapping::MatchReason::AUTO);
+}
+
+TEST_CASE("compute_defaults blind fallback routes around incompatible to compatible",
+          "[filament_mapper][compute][material]") {
+    // No positional or color match; the fallback skips the incompatible PETG lane
+    // and fills the compatible PLA lane rather than grabbing the first unclaimed.
+    std::vector<GcodeToolInfo> tools = {{0, 0xFF0000, "PLA"}};
+    std::vector<AvailableSlot> slots = {
+        {3, 0, 0xFF0000, "PETG", false, -1}, // exact color, wrong material
+        {4, 0, 0x0000FF, "PLA", false, -1},  // compatible material, off color
+    };
+
+    auto result = FilamentMapper::compute_defaults(tools, slots);
+    REQUIRE(result.size() == 1);
+    CHECK(result[0].mapped_slot == 4);
+    CHECK_FALSE(result[0].material_mismatch);
+}
+
+TEST_CASE("compute_defaults blind fallback still fills an unknown-material lane",
+          "[filament_mapper][compute][material]") {
+    // A non-positional lane with no reported material can't be proven
+    // incompatible, so backends that don't publish material keep the fallback.
+    std::vector<GcodeToolInfo> tools = {{0, 0xFF0000, "PLA"}};
+    std::vector<AvailableSlot> slots = {
+        {3, 0, 0x00FF00, "", false, -1},
+    };
+
+    auto result = FilamentMapper::compute_defaults(tools, slots);
+    REQUIRE(result.size() == 1);
+    CHECK(result[0].mapped_slot == 3);
 }
 
 TEST_CASE("compute_defaults case-insensitive material match no mismatch",

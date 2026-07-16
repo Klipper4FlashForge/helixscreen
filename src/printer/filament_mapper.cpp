@@ -145,6 +145,18 @@ std::vector<ToolMapping> FilamentMapper::compute_defaults(const std::vector<Gcod
     // Color matching allows slot re-use, but positional fallback avoids it.
     std::vector<SlotKey> used_slots;
 
+    // A fallback must never auto-assign a lane whose material is KNOWN to be
+    // incompatible with the tool (e.g. a PLA tool into a PETG or TPU lane) — that
+    // misroutes the print on every backend. Unknown/empty materials can't be
+    // proven incompatible, so they stay eligible (backends that don't publish
+    // material keep the positional fallback). Explicit firmware mappings
+    // (Priority 1) are still honored with a mismatch warning; only the guesses
+    // here are gated.
+    auto material_blocked = [](const GcodeToolInfo& tool, const AvailableSlot& slot) {
+        return !tool.material.empty() && !slot.material.empty() &&
+               !materials_match(tool.material, slot.material);
+    };
+
     for (const auto& tool : tools) {
         ToolMapping mapping;
         mapping.tool_index = tool.tool_index;
@@ -210,6 +222,10 @@ std::vector<ToolMapping> FilamentMapper::compute_defaults(const std::vector<Gcod
                         mapping.mapped_slot = slot.slot_index;
                         mapping.mapped_backend = slot.backend_index;
                         mapping.reason = ToolMapping::MatchReason::COLOR_MATCH;
+                        // The tool's own positional lane is a deliberate default:
+                        // assign it but flag a material mismatch so PrintStartController
+                        // can warn. (Only the material-blind "any unclaimed lane"
+                        // fallback below refuses incompatible lanes.)
                         if (!tool.material.empty() && !slot.material.empty() &&
                             !materials_match(tool.material, slot.material)) {
                             mapping.material_mismatch = true;
@@ -219,18 +235,18 @@ std::vector<ToolMapping> FilamentMapper::compute_defaults(const std::vector<Gcod
                     break;
                 }
             }
-            // If positional slot was already taken, try any unclaimed slot
+            // No positional lane: rather than grab an arbitrary unclaimed lane (the
+            // old material-blind behavior that misrouted prints — a PLA tool into a
+            // PETG/TPU lane), take the first unclaimed lane that is not known to be
+            // incompatible. If none qualifies the tool stays unmatched for preflight.
             if (mapping.mapped_slot < 0) {
                 for (const auto& slot : slots) {
                     auto key = slot.key();
-                    if (std::find(used_slots.begin(), used_slots.end(), key) == used_slots.end()) {
+                    if (std::find(used_slots.begin(), used_slots.end(), key) == used_slots.end() &&
+                        !material_blocked(tool, slot)) {
                         mapping.mapped_slot = slot.slot_index;
                         mapping.mapped_backend = slot.backend_index;
                         mapping.reason = ToolMapping::MatchReason::COLOR_MATCH;
-                        if (!tool.material.empty() && !slot.material.empty() &&
-                            !materials_match(tool.material, slot.material)) {
-                            mapping.material_mismatch = true;
-                        }
                         used_slots.push_back(key);
                         break;
                     }
