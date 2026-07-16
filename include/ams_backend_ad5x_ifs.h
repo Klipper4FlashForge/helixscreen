@@ -434,6 +434,17 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // spoolman_*, weights, color_name), and fires clear_async on the override
     // store. Firmware-sourced fields are left untouched.
     void clear_override_locked(int slot_index, SlotInfo& slot);
+    // Called on the empty->present (physical insert) edge for a lane. Drops the
+    // color/material user-lock flags on an AUTO-TRACKED override (one with no
+    // real Spoolman binding) so firmware truth for the freshly inserted spool
+    // refreshes through the OverwriteAlways auto-mirror. A physical insert emits
+    // no CHANGE_ZCOLOR, so the #981 external-edit clear never fires here — the
+    // insert itself is the "this lane's contents changed" signal. A lane with a
+    // deliberate Spoolman binding (spoolman_id > 0) is left untouched: #1071
+    // retains it across an eject/insert cycle. brand/spool_name/spoolman_id/
+    // weights are never modified — only the two lock flags. Caller holds mutex_.
+    // See docs/devel/FILAMENT_MANAGEMENT.md § "AD5X IFS material/color reconcile".
+    void unlock_auto_tracked_override_on_insert_locked(int slot_index);
     void parse_adventurer_json(const std::string& content);
     void read_adventurer_json();
     void register_zcolor_listener();

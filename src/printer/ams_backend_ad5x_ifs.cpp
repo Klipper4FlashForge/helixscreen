@@ -850,24 +850,30 @@ bool AmsBackendAd5xIfs::check_external_color_change(int slot_index,
     if (it->second == color)
         return false; // unchanged — no edit signal
 
-    // Observed color changed. Record the new color as the baseline before
-    // doing anything else so a failed save_async doesn't make us re-fire
-    // every poll.
+    // Observed color changed versus the baseline.
     const uint32_t old_color = it->second;
-    it->second = color;
 
     if (!slot_has_filament) {
-        // Empty slot reads back as the placeholder #808080 in parse_adventurer_json
-        // — that's not an "edit," it's the absence of a reading. Eject is
-        // handled separately by parse_adventurer_json dropping presence to false;
-        // the lane->Spoolman override is RETAINED across empty (#1071), not
-        // cleared. Just update the baseline so we don't repeat this branch every
-        // poll.
-        spdlog::debug("{} Slot {} firmware color changed #{:06X} -> #{:06X} "
-                      "(slot empty — sync skipped, eject handled by parse path)",
-                      backend_log_tag(), slot_index, old_color, color);
+        // Two sub-cases, both "not a real present-lane color":
+        //   - Empty slot: reads back the #808080 placeholder — the absence of a
+        //     reading, not an edit. Eject is handled by the parse path dropping
+        //     presence; the lane->Spoolman override is RETAINED across empty
+        //     (#1071), not cleared.
+        //   - Presence-lag insert: on modern ZMOD the firmware color can surface
+        //     one parse frame BEFORE IFS_STATUS Ports flips the slot present.
+        // Do NOT advance the baseline here. Advancing consumed the delta while
+        // the slot was still "absent", so when presence caught up the baseline
+        // already equalled the new color and the sync was swallowed entirely —
+        // the freshly inserted spool kept the previous color (#1065). Hold the
+        // last real color so the delta survives until a present-lane frame.
+        spdlog::debug("{} Slot {} color reading #{:06X} while slot not present — "
+                      "baseline held at #{:06X}, sync deferred to presence (#1065)",
+                      backend_log_tag(), slot_index, color, old_color);
         return false;
     }
+    // Present-lane real reading: advance the baseline before syncing so a failed
+    // save_async doesn't make us re-fire every poll.
+    it->second = color;
 
     spdlog::info("{} Slot {} firmware color changed #{:06X} -> #{:06X}, "
                  "syncing override + Moonraker DB lane_data (external edit detected)",
@@ -926,20 +932,33 @@ bool AmsBackendAd5xIfs::check_external_type_change(int slot_index,
         return false; // unchanged — no edit signal
 
     const std::string old_material = it->second;
-    it->second = observed_material; // update baseline, including a transition to ""
 
     // Only a present slot reporting a real (non-empty) material is an external
-    // type edit worth syncing. An empty observation (eject) is baselined above
-    // — so the subsequent insert is a genuine "" -> MATERIAL delta — but it is
-    // not itself sync-worthy. The user-locked-material guard (#965) still lives
-    // inside sync_override_to_firmware_locked's OverwriteAlways mirror, so a
+    // type edit worth syncing. Two skip sub-cases, treated differently for the
+    // baseline (this asymmetry is the #1065 insert-swallow fix):
+    //   - EMPTY observation while the slot is empty == eject. Advance the
+    //     baseline to "" so the subsequent insert is a genuine "" -> MATERIAL
+    //     delta that syncs. (The top guard already returned for empty material
+    //     on a PRESENT slot / no-color-reading, so here empty implies eject.)
+    //   - NON-EMPTY material while the slot is not yet present == modern-ZMOD
+    //     presence-lag insert: the firmware type surfaced one parse frame before
+    //     IFS_STATUS Ports flipped the slot present. Do NOT advance the baseline
+    //     — hold the old value so the delta survives until a present-lane frame,
+    //     otherwise the sync is swallowed and the new type never reaches the
+    //     override (color updated on screen, material stuck — #981/#1065).
+    // The user-locked-material guard (#965) still lives inside
+    // sync_override_to_firmware_locked's OverwriteAlways mirror, so a
     // deliberately locked material is preserved through this path too.
     if (!slot_has_filament || observed_material.empty()) {
-        spdlog::debug("{} Slot {} firmware material changed '{}' -> '{}' "
-                      "(slot empty / no material — baseline updated, sync skipped)",
-                      backend_log_tag(), slot_index, old_material, observed_material);
+        if (observed_material.empty())
+            it->second = observed_material; // eject: baseline -> ""
+        spdlog::debug("{} Slot {} firmware material '{}' -> '{}' "
+                      "(slot empty / no material — {}, sync skipped)",
+                      backend_log_tag(), slot_index, old_material, observed_material,
+                      observed_material.empty() ? "baseline updated" : "baseline held (#1065)");
         return false;
     }
+    it->second = observed_material; // present-lane real delta: advance + sync below
 
     // The mirror inside sync_override_to_firmware_locked refreshes BOTH color
     // and material from the passed values, so we must hand it the real firmware
@@ -1026,6 +1045,50 @@ void AmsBackendAd5xIfs::clear_override_locked(int slot_index, SlotInfo& slot) {
                 spdlog::warn("{} clear_async failed for slot {}: {}", tag, slot_index, err);
             }
         });
+    }
+}
+
+void AmsBackendAd5xIfs::unlock_auto_tracked_override_on_insert_locked(int slot_index) {
+    // Caller holds mutex_. See the header doc + FILAMENT_MANAGEMENT.md for the
+    // full model. Short version: a lane's material/color override can be
+    // user-locked either by a menu edit (set_slot_info) or by the pessimistic
+    // !material.empty() load default (from_lane_data_record). A locked field is
+    // never refreshed by the OverwriteAlways auto-mirror, so a freshly inserted
+    // spool keeps painting the PREVIOUS spool's type/color. Only an external
+    // CHANGE_ZCOLOR clears that lock (#981), and a physical insert emits none —
+    // so unlock here, on the insert edge itself.
+    auto it = overrides_.find(slot_index);
+    if (it == overrides_.end())
+        return; // auto-tracking already (no override) — nothing to unlock
+    auto& ovr = it->second;
+    // A real Spoolman binding is a deliberate identity the user attached; #1071
+    // retains it across an eject/insert cycle (same-spool maintenance
+    // re-insert). Leave a bound lane fully alone — its material/color came from
+    // the bound spool, not a stale guess.
+    if (ovr.spoolman_id > 0)
+        return;
+    if (!ovr.user_locked_material && !ovr.user_locked_color)
+        return; // already auto-tracking both fields
+    spdlog::info("{} Slot {} inserted (empty->present) with no Spoolman link — "
+                 "unlocking auto-tracked material/color so the new spool's firmware "
+                 "type/color refresh (#1065)",
+                 backend_log_tag(), slot_index);
+    ovr.user_locked_material = false;
+    ovr.user_locked_color = false;
+    // Persist the unlock so a restart doesn't reload the pessimistic
+    // !material.empty() lock default and re-stick the old type. The subsequent
+    // update_slot_from_state -> auto-mirror will save again once firmware truth
+    // refreshes the material/color; this first save just makes the unlock
+    // durable even if the same spool goes back in and no material delta follows.
+    if (override_store_) {
+        helix::ams::FilamentSlotOverride snapshot = ovr;
+        const std::string tag = backend_log_tag();
+        override_store_->save_async(
+            slot_index, snapshot, [tag, slot_index](bool success, const std::string& err) {
+                if (!success) {
+                    spdlog::warn("{} unlock persist failed for slot {}: {}", tag, slot_index, err);
+                }
+            });
     }
 }
 
@@ -3423,6 +3486,13 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
                                      "retaining the Spoolman link (#1071)",
                                      backend_log_tag(), i);
                     }
+                    // absent->present: a spool was physically inserted. Unlock an
+                    // auto-tracked (no-Spoolman) override so the new spool's
+                    // firmware material/color refresh (#1065). update_slot_from_state
+                    // below then re-runs the reconcile with the locks cleared.
+                    if (!was_present && ports[idx]) {
+                        unlock_auto_tracked_override_on_insert_locked(i);
+                    }
                 }
             }
 
@@ -3566,6 +3636,11 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
                     spdlog::info("{} Slot {} went empty (GET_ZCOLOR present->absent) "
                                  "— retaining the Spoolman link (#1071)",
                                  backend_log_tag(), i);
+                }
+                // absent->present: physical insert on the GET_ZCOLOR-only path
+                // (no IFS_STATUS Ports this frame). Same unlock as the Ports edge.
+                if (!was_present && loaded) {
+                    unlock_auto_tracked_override_on_insert_locked(i);
                 }
             }
 

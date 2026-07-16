@@ -229,6 +229,66 @@ panel — not a slicer-to-printer write.
 - **Wire-format spec (public):** [`../specs/filament_slots.md`](../specs/filament_slots.md)
 - **Implementation notes (internal):** [`FILAMENT_SLOT_METADATA.md`](FILAMENT_SLOT_METADATA.md)
 
+### AD5X IFS material/color reconcile (locks, insert, #1065/#1071)
+
+Native ZMOD has **no per-port RFID or spool identity** — the only per-lane
+signals are a color (`ffmColor`) and a material type (`ffmType`), read via
+`GET_ZCOLOR` / `IFS_STATUS`, plus a presence bit from `IFS_STATUS Ports`. Because
+there's no identity, a lane's `FilamentSlotOverride` bundles two conceptually
+different kinds of data, and they follow different rules:
+
+- **Display data** — `color_rgb` + `material`. Should track what's physically loaded.
+- **Identity data** — `spoolman_id`, `brand`, `spool_name`, weights. Attached by
+  the user; firmware knows nothing about it. Retained across an eject/insert
+  cycle so a re-inserted same spool keeps its assignment (**#1071**).
+
+The `user_locked_color` / `user_locked_material` flags gate whether the
+`OverwriteAlways` auto-mirror (`mirror_firmware_to_lane_data`) may refresh the
+display fields from firmware truth. A locked field is **never** auto-refreshed —
+this exists to protect a deliberate user choice from the AD5X post-print
+`FFMInfo` revert, which re-emits the *old* type after a print (**#965**).
+
+**The reconcile detectors** live in `ams_backend_ad5x_ifs.cpp`:
+`check_external_color_change` and `check_external_type_change`, both called from
+`update_slot_from_state`. Each keeps a per-slot baseline (`last_firmware_color_`
+/ `last_firmware_material_`); a baseline≠observed delta on a *present* lane fires
+`sync_override_to_firmware_locked`, which runs the auto-mirror.
+
+Two footguns this area has repeatedly hit (fixed in #1065; keep them fixed):
+
+1. **Baseline swallow on presence lag.** On modern ZMOD the firmware
+   color/type can surface one parse frame *before* `IFS_STATUS Ports` flips the
+   slot present. The detectors must **hold** the baseline while the slot reads
+   not-present (advancing it only for a genuine empty-lane/`""` eject reading).
+   If the baseline advances during the lag, the delta is consumed while the sync
+   is skipped, and when presence catches up there's no delta left — the change is
+   swallowed (classic symptom: *color updated on screen, material stuck*).
+
+2. **Insert can't clear a lock, so the display sticks.** The only thing that
+   clears a lock is an external `CHANGE_ZCOLOR` in the gcode stream (**#981**,
+   emitted by the ZMOD COLOR macro / LCD). A **physical insert emits no
+   `CHANGE_ZCOLOR`**, so a lane whose material was locked — either by a menu
+   type-set (`set_slot_info`) or by the pessimistic `!material.empty()` load
+   default in `from_lane_data_record` — keeps painting the *previous* spool's
+   type after a new spool goes in. This is why "change type via the COLOR macro"
+   worked while "insert a new spool and change its type" did not.
+
+   Fix: `unlock_auto_tracked_override_on_insert_locked()` runs on the
+   empty→present edge (both `apply_zcolor_result` presence sites). It drops the
+   two lock flags **only when the lane has no real Spoolman binding**
+   (`spoolman_id <= 0`) — an auto-tracked material is a guess that a fresh insert
+   invalidates, so firmware truth should win. `brand` / `spool_name` /
+   `spoolman_id` / weights are never touched, so a retained binding still paints.
+
+   **Why gate on the Spoolman binding.** On insert we can't tell "same spool back
+   after maintenance" from "brand-new spool" — there's no identity signal. The
+   two want opposite things for the identity fields, so we don't guess: a lane
+   with a deliberate Spoolman binding is left entirely alone (**#1071** retains
+   it), and only auto-tracked lanes (no binding) refresh material/color from
+   firmware. The residual case — a genuinely different spool re-inserted into a
+   *bound* lane — keeps the stale binding until the user re-binds, the same
+   tradeoff #1071 already accepts.
+
 ### OrcaSlicer compatibility — by backend
 
 All HelixScreen-managed AMS backends write the AFC-standard `lane_data`
