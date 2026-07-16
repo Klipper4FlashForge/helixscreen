@@ -74,6 +74,30 @@ Store the resolved version as `NEW_VERSION` (without `v` prefix) for all subsequ
 
 Run tests. This is mandatory and cannot be skipped.
 
+### Quality checks
+
+Same script CI's "Code Quality" workflow runs — single source of truth. Run it first so
+lint/validation failures surface before the long test build.
+
+```bash
+./scripts/quality-checks.sh
+```
+
+- If it exits 0 → continue
+- If it exits non-zero → STOP: "Quality checks failed — fix before releasing." Show the
+  failing check. Look for the `❌` lines; `⚠️` lines (clang-format / XML formatting) are
+  advisory and do NOT fail the script.
+
+Do not release on a red `main`. Before starting, also confirm CI is green for the commit
+being released:
+
+```bash
+gh run list --workflow="Code Quality" --limit 1 --json conclusion,headSha
+```
+
+If the latest run is a `failure`, treat it as a STOP — fix it first. (v0.99.92 shipped
+with Code Quality red for ~10 hours because this gate did not exist.)
+
 ### C++ tests
 ```bash
 make test-run
@@ -296,6 +320,7 @@ Show: "Undone. Commit removed (changes preserved as staged), tag deleted."
 | Not on main | STOP with message, do not offer to switch |
 | Dirty working tree | STOP with message, do not offer to stash |
 | Behind origin | STOP with message, do not offer to pull |
+| Quality checks fail | STOP with the `❌` output — do not release on a red `main` |
 | Tests fail | STOP with failure output |
 | Version not greater | STOP: "v{NEW_VERSION} is not greater than v{LAST_TAG}" |
 | User aborts at any checkpoint | STOP cleanly, no partial state |
