@@ -87,6 +87,7 @@ class MockMotionTestFixture {
         std::lock_guard<std::mutex> lock(mutex_);
         notifications_.clear();
         callback_invoked_.store(false);
+        last_matched_ = json{};
     }
 
     /**
@@ -119,6 +120,10 @@ class MockMotionTestFixture {
                 std::lock_guard<std::mutex> lock(mutex_);
                 for (const auto& n : notifications_) {
                     if (predicate(n)) {
+                        // Capture the exact notification that matched so callers can
+                        // assert against the validated snapshot instead of a racing
+                        // backward re-scan (see get_matched_position()).
+                        last_matched_ = n;
                         return true;
                     }
                 }
@@ -154,6 +159,34 @@ class MockMotionTestFixture {
     }
 
     /**
+     * @brief Get the toolhead position from the notification that satisfied the
+     *        most recent wait_for_matching() predicate.
+     * @return Position array [x, y, z, e] or nullopt if the matched notification
+     *         carried no toolhead.position.
+     * @note Deterministic: reads the exact snapshot the wait validated, so it is
+     *       immune to the temperature-simulation thread appending a newer
+     *       notification with a stale position between the wait and this read.
+     *       Uses the same null-safe extraction as get_latest_position().
+     */
+    std::optional<std::array<double, 4>> get_matched_position() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const json& n = last_matched_;
+        if (n.contains("params") && n["params"].is_array() && !n["params"].empty()) {
+            const json& status = n["params"][0];
+            if (status.is_object() && status.contains("toolhead") &&
+                status["toolhead"].contains("position") &&
+                status["toolhead"]["position"].is_array() &&
+                status["toolhead"]["position"].size() == 4) {
+                return std::array<double, 4>{status["toolhead"]["position"][0].get<double>(),
+                                             status["toolhead"]["position"][1].get<double>(),
+                                             status["toolhead"]["position"][2].get<double>(),
+                                             status["toolhead"]["position"][3].get<double>()};
+            }
+        }
+        return std::nullopt;
+    }
+
+    /**
      * @brief Get the latest homed_axes from notifications
      * @return homed_axes string or nullopt if not found
      */
@@ -178,6 +211,12 @@ class MockMotionTestFixture {
     std::condition_variable cv_;
     std::atomic<bool> callback_invoked_{false};
     std::vector<json> notifications_;
+    // The exact notification that satisfied the most recent wait_for_matching()
+    // predicate. Reading position from this snapshot is race-free: the background
+    // temperature-simulation thread keeps appending notifications concurrently, so
+    // a fresh get_latest_position() backward scan can pick up a temp-sim
+    // notification whose position snapshot was read before the move applied.
+    json last_matched_;
 };
 
 /**
@@ -226,7 +265,7 @@ TEST_CASE("MoonrakerClientMock G0/G1 movement commands", "[api][movement]") {
             },
             2000));
 
-        auto pos = fixture.get_latest_position();
+        auto pos = fixture.get_matched_position();
         REQUIRE(pos.has_value());
         REQUIRE(approx_equal((*pos)[0], 10.0)); // X
         REQUIRE(approx_equal((*pos)[1], 20.0)); // Y
@@ -264,7 +303,7 @@ TEST_CASE("MoonrakerClientMock G0/G1 movement commands", "[api][movement]") {
             },
             2000));
 
-        auto pos = fixture.get_latest_position();
+        auto pos = fixture.get_matched_position();
         REQUIRE(pos.has_value());
         REQUIRE(approx_equal((*pos)[2], 5.0)); // Z
 
@@ -303,7 +342,7 @@ TEST_CASE("MoonrakerClientMock G0/G1 movement commands", "[api][movement]") {
             },
             2000));
 
-        auto pos = fixture.get_latest_position();
+        auto pos = fixture.get_matched_position();
         REQUIRE(pos.has_value());
         REQUIRE(approx_equal((*pos)[0], 10.0)); // X
         REQUIRE(approx_equal((*pos)[1], 10.0)); // Y
@@ -368,7 +407,7 @@ TEST_CASE("MoonrakerClientMock G0/G1 movement commands", "[api][movement]") {
             },
             2000));
 
-        auto pos = fixture.get_latest_position();
+        auto pos = fixture.get_matched_position();
         REQUIRE(pos.has_value());
         REQUIRE(approx_equal((*pos)[0], 15.0)); // X = 10 + 5
         REQUIRE(approx_equal((*pos)[1], 15.0)); // Y = 10 + 5
@@ -415,7 +454,7 @@ TEST_CASE("MoonrakerClientMock G0/G1 movement commands", "[api][movement]") {
             },
             2000));
 
-        auto pos = fixture.get_latest_position();
+        auto pos = fixture.get_matched_position();
         REQUIRE(pos.has_value());
         REQUIRE(approx_equal((*pos)[0], 20.0)); // X = absolute 20
 
@@ -486,7 +525,7 @@ TEST_CASE("MoonrakerClientMock G28 homing commands", "[slow][api][homing]") {
             },
             5000));
 
-        auto pos = fixture.get_latest_position();
+        auto pos = fixture.get_matched_position();
         REQUIRE(pos.has_value());
         REQUIRE(approx_equal((*pos)[0], 0.0));
         REQUIRE(approx_equal((*pos)[1], 0.0));
@@ -553,7 +592,7 @@ TEST_CASE("MoonrakerClientMock G28 homing commands", "[slow][api][homing]") {
             },
             5000));
 
-        auto pos = fixture.get_latest_position();
+        auto pos = fixture.get_matched_position();
         REQUIRE(pos.has_value());
         REQUIRE(approx_equal((*pos)[0], 0.0));  // X homed to 0
         REQUIRE(approx_equal((*pos)[1], 50.0)); // Y unchanged
@@ -618,7 +657,7 @@ TEST_CASE("MoonrakerClientMock G28 homing commands", "[slow][api][homing]") {
             },
             5000));
 
-        auto pos = fixture.get_latest_position();
+        auto pos = fixture.get_matched_position();
         REQUIRE(pos.has_value());
         REQUIRE(approx_equal((*pos)[0], 0.0));  // X homed
         REQUIRE(approx_equal((*pos)[1], 0.0));  // Y homed
@@ -734,7 +773,7 @@ TEST_CASE("MoonrakerClientMock position in status updates", "[api][position_repo
             2000));
 
         // Verify each axis was updated
-        auto pos = fixture.get_latest_position();
+        auto pos = fixture.get_matched_position();
         REQUIRE(pos.has_value());
         REQUIRE(approx_equal((*pos)[0], 25.0));
         REQUIRE(approx_equal((*pos)[1], 35.0));
