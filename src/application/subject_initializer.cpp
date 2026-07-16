@@ -211,8 +211,15 @@ void SubjectInitializer::init_panel_subjects(IMoonrakerAPI* api) {
     init_global_timelapse_install(api);
     get_global_timelapse_install().init_subjects();
 
+#if !defined(HELIX_PLATFORM_ESP32)
+    // Timelapse videos overlay is excluded from the ESP32 v1 Core+AMS cut: its
+    // TU is not compiled and the accessor is a link stub over uninitialized
+    // storage. init_subjects() is pure-virtual, so calling it here would
+    // dispatch through a null vtable (LoadProhibited). Nothing on ESP navigates
+    // to it, so skip init. (Timelapse settings/install above are real on ESP.)
     init_global_timelapse_videos(api);
     get_global_timelapse_videos().init_subjects();
+#endif
 
     init_global_retraction_settings(api);
     get_global_retraction_settings().init_subjects();
@@ -267,6 +274,13 @@ void SubjectInitializer::init_panel_subjects(IMoonrakerAPI* api) {
     m_motion_panel = &get_global_motion_panel();
     m_motion_panel->init_subjects();
 
+#if !defined(HELIX_PLATFORM_ESP32)
+    // Bed-mesh and calibration (PID / Z-offset) panels are excluded from the
+    // ESP32 v1 Core+AMS cut: their TUs are not compiled and the accessors are
+    // link stubs over uninitialized storage. init_subjects() is pure-virtual,
+    // so calling it on that storage dispatches through a null vtable
+    // (LoadProhibited). Nothing on ESP navigates to them; skip boot init.
+    // m_bed_mesh_panel stays nullptr — its getter is never called on ESP.
     m_bed_mesh_panel = &get_global_bed_mesh_panel();
     m_bed_mesh_panel->init_subjects();
 
@@ -275,6 +289,7 @@ void SubjectInitializer::init_panel_subjects(IMoonrakerAPI* api) {
     get_global_pid_cal_panel().init_subjects();
 
     get_global_zoffset_cal_panel().init_subjects();
+#endif
 
     // TemperatureController (owned by SubjectInitializer — stateless wiring, no subjects)
     m_temp_controller = std::make_unique<helix::TemperatureController>(get_printer_state(), api);
