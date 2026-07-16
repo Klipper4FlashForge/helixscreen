@@ -61,6 +61,7 @@ add_custom_target(check_storage_asset_staleness ALL
     COMMAND ${python} ${REPO_ROOT}/scripts/esp32_check_asset_staleness.py
             ${STORAGE_IMAGE}
             ${REPO_ROOT}/ui_xml
+            ${CMAKE_CURRENT_LIST_DIR}/../ui_xml_overrides
             ${REPO_ROOT}/assets/config
             ${REPO_ROOT}/assets/filaments.json
             ${REPO_ROOT}/assets/images/printers

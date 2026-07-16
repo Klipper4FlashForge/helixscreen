@@ -80,3 +80,12 @@ CONFIG_ESPTOOLPY_FLASHMODE_DOUT=y
 # and DMA restarts on the next vsync, so an underrun costs one glitched frame
 # rather than permanently desyncing the panel into its test pattern.
 CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
+
+# Task WDT window: 8s (default 5s). Deferred panels are built on first
+# navigation via a single un-yieldable lv_xml_create that runs on the UI thread
+# and can approach a few seconds (see PanelFactory::build_deferred_panel); the
+# idle task starves for that window and the 5s Task WDT could reset on a fat
+# panel's first open. 8s is a safety margin so first-nav never resets while the
+# real per-panel build times are measured (logged as "Deferred panel 'X' built
+# in Yms"). Revisit — if every panel builds well under 5s, restore the default.
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=8
