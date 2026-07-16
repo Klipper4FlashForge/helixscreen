@@ -12,6 +12,7 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <unordered_map>
 
@@ -556,6 +557,10 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
 
     // Per-lane hub routing: lane_name → hub name ("direct" for direct lanes)
     std::unordered_map<std::string, std::string> lane_hub_routing_;
+
+    // Lanes whose "map" field arrived as a non-string (array/object) — dedupes the
+    // multi-tool tripwire warning so it fires once per lane, not per update.
+    std::set<std::string> map_non_string_warned_lanes_;
 
     // Hub and toolhead sensors (from AFC_hub and AFC_extruder objects)
     std::unordered_map<std::string, bool> hub_sensors_; ///< Per-hub sensor state, keyed by hub name

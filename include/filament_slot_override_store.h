@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include "ams_types.h"
 #include "filament_slot_override.h"
+#include "hv/json.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -15,9 +17,54 @@ class FilamentSlotOverrideStoreTestAccess;
 
 namespace helix::ams {
 
+// Outer Moonraker DB key convention for per-slot lane_data records. The two
+// styles carry the SAME 0-based inner "lane" field but different outer keys:
+//   - Lane: "laneN" (1-based, AFC/Happy Hare convention) — filament systems.
+//   - Tool: "T<n>"  (0-based, Orca/Mainsail tool convention) — tool changers.
+// A tool changer converging on the T<n> key style makes HelixScreen writes
+// overwrite Mainsail #2510's records instead of duplicating them (both readers
+// key off the inner "lane" field, so a shared outer key avoids Orca's no-dedup
+// collision). See docs/specs/filament_slots.md § "Interoperating readers and
+// writers".
+enum class LaneKeyStyle { Lane, Tool };
+
+// Maps an AmsType to its lane_data key style. Tool changers (Snapmaker, generic
+// TOOL_CHANGER) use T<n> keys; every filament-switching system uses laneN.
+// Deriving from is_tool_changer() keeps the policy in one place — never branch
+// on backend_id, and never use !is_filament_system() (it includes SNAPMAKER in
+// both lists, ams_types.h).
+inline LaneKeyStyle lane_key_style_for(AmsType t) {
+    return is_tool_changer(t) ? LaneKeyStyle::Tool : LaneKeyStyle::Lane;
+}
+
+// Counts of lane_data records that are inconsistent or invisible to other
+// readers. Detected read-only at load and logged once — we do NOT auto-rewrite
+// third-party/corrupt records (that would vandalize a shared namespace); the
+// one-shot laneN->T<n> migration only ever touches keys HelixScreen authored.
+// Note: out-of-range slots are intentionally NOT counted — the store does not
+// know NUM_PORTS (the caller range-checks), so it cannot honestly detect them.
+struct LaneDataAnomalies {
+    int int_typed_lane = 0;     ///< inner "lane" is an int, not a string — OrcaSlicer drops these
+    int key_inner_mismatch = 0; ///< key looks like laneN/T<n> but disagrees with the inner index
+    int unparseable = 0;        ///< non-"seated" object carrying no valid "lane" field
+    int duplicate_slot = 0;     ///< more than one record resolving to the same slot index
+    [[nodiscard]] int total() const {
+        return int_typed_lane + key_inner_mismatch + unparseable + duplicate_slot;
+    }
+};
+
+// Read-only scan of a raw lane_data namespace document. Pure: no DB access, no
+// mutation. Skips the "seated" sibling scalar. Used for the one-shot load-time
+// diagnostic; also unit-tested directly.
+[[nodiscard]] LaneDataAnomalies scan_lane_data_anomalies(const nlohmann::json& namespace_doc);
+
 class FilamentSlotOverrideStore {
   public:
-    FilamentSlotOverrideStore(IMoonrakerAPI* api, std::string backend_id);
+    // key_style defaults to Lane so the many lane-based construction sites and
+    // tests need no change. Production sites pass lane_key_style_for(get_type())
+    // so the correct style is derived from the backend's AmsType.
+    FilamentSlotOverrideStore(IMoonrakerAPI* api, std::string backend_id,
+                              LaneKeyStyle key_style = LaneKeyStyle::Lane);
 
     // Blocking load from Moonraker database (called only at backend init time).
     // Later tasks will add local-cache fallback.
@@ -57,9 +104,14 @@ class FilamentSlotOverrideStore {
 
     IMoonrakerAPI* api_;
     std::string backend_id_;
+    // Outer-key style for this backend's lane_data records (laneN vs T<n>). Set
+    // once at construction from the backend's AmsType via lane_key_style_for().
+    LaneKeyStyle key_style_;
     // Adopts the AFC/OrcaSlicer lane_data Moonraker convention. Each slot is
     // stored under key "laneN" where N is the 1-based slot index (lane1, lane2,
-    // ...). Slot index 0 in HelixScreen maps to "lane1" on disk.
+    // ...), or "T<n>" (0-based) on tool changers. Slot index 0 maps to "lane1"
+    // (Lane style) or "T0" (Tool style) on disk. See format_lane_key in the
+    // .cpp for the exact rule.
     std::string namespace_ = "lane_data";
     // Local timeout for load_blocking()'s cv.wait_for. Defaults to 5 seconds;
     // overridable by FilamentSlotOverrideStoreTestAccess for timeout tests.
@@ -82,16 +134,6 @@ class FilamentSlotOverrideStore {
     // Migration uses this to locate legacy "{backend_id}_slot_overrides.json"
     // files that pre-date the unified filament_slot_overrides.json format.
     std::filesystem::path cache_dir_effective() const;
-    // Returns the Moonraker DB key for a given slot.
-    //
-    // IMPORTANT: the DB key is 1-based (AFC convention: lane1, lane2, ...) but
-    // the "lane" field *inside* each record is 0-based (matches Orca's
-    // tool-index interpretation, written by to_lane_data_record in the .cpp).
-    // Easy to get wrong — changing one without the other silently breaks
-    // interop with AFC and Orca.
-    static std::string lane_key(int slot_index) {
-        return "lane" + std::to_string(slot_index + 1);
-    }
 };
 
 // =============================================================================

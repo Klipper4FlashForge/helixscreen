@@ -1345,23 +1345,46 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
                   slot_index, sensors.prep, sensors.load, sensors.loaded_to_hub,
                   slot_status_to_string(slot.status));
 
-    // Parse tool mapping from "map" field (e.g., "T0", "T1")
-    if (data.contains("map") && data["map"].is_string()) {
-        std::string map_str = data["map"].get<std::string>();
-        // Parse "T{N}" format
-        if (map_str.size() >= 2 && map_str[0] == 'T') {
-            try {
-                int tool_num = std::stoi(map_str.substr(1));
-                if (tool_num >= 0 && tool_num <= 64) {
-                    // Update registry tool mapping (also sets slot.mapped_tool)
-                    slots_.set_tool_mapping(slot_index, tool_num);
-                    spdlog::trace("[AMS AFC] Lane {} mapped to tool T{}", lane_name, tool_num);
+    // Parse tool mapping from "map" field. This function receives Moonraker
+    // notify_status_update DELTAS (only changed fields), so an ABSENT "map" means
+    // "unchanged" and must NOT clear the mapping — same partial-delta rule the
+    // status block above applies. Only a PRESENT value is authoritative:
+    //   string "T0"    → map to that tool
+    //   null           → unmapped, clear
+    //   array/object   → speculative multi-tool shape (AFC #605), unsupported;
+    //                    clear + warn once per lane so it surfaces in logs.
+    if (data.contains("map")) {
+        bool mapped = false;
+        if (data["map"].is_string()) {
+            std::string map_str = data["map"].get<std::string>();
+            // Parse "T{N}" format
+            if (map_str.size() >= 2 && map_str[0] == 'T') {
+                try {
+                    int tool_num = std::stoi(map_str.substr(1));
+                    if (tool_num >= 0 && tool_num <= 64) {
+                        // Update registry tool mapping (also sets slot.mapped_tool)
+                        slots_.set_tool_mapping(slot_index, tool_num);
+                        spdlog::trace("[AMS AFC] Lane {} mapped to tool T{}", lane_name, tool_num);
+                        mapped = true;
+                    }
+                } catch (...) {
+                    // Invalid tool number format — fall through to reset
                 }
-            } catch (...) {
-                // Invalid tool number format
+            }
+        } else if (!data["map"].is_null()) {
+            // Present but not a string: array/object multi-tool shape (unsupported)
+            if (map_non_string_warned_lanes_.insert(lane_name).second) {
+                spdlog::warn("[AMS AFC] Lane {} 'map' field is not a string (got array/object); "
+                             "multi-tool map is not supported — see AFC #605",
+                             lane_name);
             }
         }
+        if (!mapped) {
+            // Present-but-null, present-non-string, or malformed → authoritative unmap
+            slots_.clear_tool_mapping(slot_index);
+        }
     }
+    // "map" absent → partial delta, keep existing mapping
 
     // Parse hub routing for this lane ("direct" or hub name like "HTLF_1")
     if (data.contains("hub") && data["hub"].is_string()) {
