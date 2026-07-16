@@ -28,23 +28,28 @@ file(GLOB HELIX_XML_SRCS
      ${REPO_ROOT}/lib/helix-xml/src/xml/parsers/*.c
      ${REPO_ROOT}/lib/helix-xml/src/libs/expat/*.c)
 
-# Medium-tier (800x480 K-Touch) compiled font faces. Explicit list, not a glob
-# over assets/fonts/*.c — that directory holds ~40 faces across every
-# breakpoint tier plus CJK; only the faces the _medium tier's globals.xml
-# tokens reference ship here (see LV_FONT_CUSTOM_DECLARE in lv_conf.h, which
-# must stay in lockstep with this list). CJK companions are Plan 5.
+# Medium-tier (800x480 K-Touch) compiled font faces. These are FIRMWARE-LOCAL
+# RLE-COMPRESSED twins of the assets/fonts/ faces (bitmap_format=1), regenerated
+# from the SAME TTFs / codepoint ranges / bpp by scripts/esp32_regen_compressed_
+# fonts.sh with lv_font_conv compression enabled — identical symbol names, glyph
+# sets, and sizes, ~44% smaller in flash. Decompressed at render time via
+# LV_USE_FONT_COMPRESSED=1 (lv_conf.h). We do NOT reuse assets/fonts/*.c: those
+# stay plain (bitmap_format=0) because they're shared with desktop and weak ARM
+# devices where per-glyph decompression cost is untested. Kept in lockstep with
+# LV_FONT_CUSTOM_DECLARE in lv_conf.h (noto_* non-const, source_code/mdi const).
+# CJK companions are Plan 5.
 set(HELIX_FONT_SRCS
-    ${REPO_ROOT}/assets/fonts/noto_sans_26.c
-    ${REPO_ROOT}/assets/fonts/noto_sans_bold_28.c
-    ${REPO_ROOT}/assets/fonts/noto_sans_18.c
-    ${REPO_ROOT}/assets/fonts/noto_sans_light_16.c
-    ${REPO_ROOT}/assets/fonts/noto_sans_light_12.c
-    ${REPO_ROOT}/assets/fonts/source_code_pro_14.c
-    ${REPO_ROOT}/assets/fonts/mdi_icons_16.c
-    ${REPO_ROOT}/assets/fonts/mdi_icons_24.c
-    ${REPO_ROOT}/assets/fonts/mdi_icons_32.c
-    ${REPO_ROOT}/assets/fonts/mdi_icons_48.c
-    ${REPO_ROOT}/assets/fonts/mdi_icons_64.c)
+    ${CMAKE_CURRENT_LIST_DIR}/fonts/noto_sans_26.c
+    ${CMAKE_CURRENT_LIST_DIR}/fonts/noto_sans_bold_28.c
+    ${CMAKE_CURRENT_LIST_DIR}/fonts/noto_sans_18.c
+    ${CMAKE_CURRENT_LIST_DIR}/fonts/noto_sans_light_16.c
+    ${CMAKE_CURRENT_LIST_DIR}/fonts/noto_sans_light_12.c
+    ${CMAKE_CURRENT_LIST_DIR}/fonts/source_code_pro_14.c
+    ${CMAKE_CURRENT_LIST_DIR}/fonts/mdi_icons_16.c
+    ${CMAKE_CURRENT_LIST_DIR}/fonts/mdi_icons_24.c
+    ${CMAKE_CURRENT_LIST_DIR}/fonts/mdi_icons_32.c
+    ${CMAKE_CURRENT_LIST_DIR}/fonts/mdi_icons_48.c
+    ${CMAKE_CURRENT_LIST_DIR}/fonts/mdi_icons_64.c)
 
 idf_component_register(
     SRCS ${LVGL_SRCS} ${HELIX_XML_SRCS} ${HELIX_FONT_SRCS} anomaly_stub.c
