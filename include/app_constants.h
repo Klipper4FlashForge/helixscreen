@@ -152,12 +152,9 @@ constexpr int EDIT_MODE_MOVE_CANCEL_DPX = 12;
  * them if the config directory is missing after an update.
  */
 namespace Update {
-/// Primary backup — systemd StateDirectory (/var/lib/helixscreen/)
-constexpr const char* CONFIG_BACKUP_PRIMARY = "/var/lib/helixscreen/settings.json.backup";
-constexpr const char* ENV_BACKUP_PRIMARY = "/var/lib/helixscreen/helixscreen.env.backup";
 
-/// Legacy backup paths (for migration)
-constexpr const char* LEGACY_CONFIG_BACKUP_PRIMARY = "/var/lib/helixscreen/helixconfig.json.backup";
+/// Default primary backup directory — systemd StateDirectory (/var/lib/helixscreen/)
+constexpr const char* STATE_DIR_DEFAULT = "/var/lib/helixscreen";
 
 /// Validate that a HOME path looks sane (absolute, >1 char, no control chars).
 /// Returns "/tmp" if HOME is corrupted (heap damage to environ block).
@@ -182,10 +179,35 @@ inline std::string& backup_fallback_dir_ref() {
     static std::string dir = [] { return sanitize_home(std::getenv("HOME")) + "/.helixscreen"; }();
     return dir;
 }
+
+/// Primary (StateDirectory) backup dir. Mutable for the same reason
+/// backup_fallback_dir_ref() is: tests redirect it at a temp dir so the
+/// backup-cascade cases can run on a machine that has HelixScreen installed —
+/// otherwise the real /var/lib/helixscreen/settings.json.backup wins the
+/// priority order and the test's own fixture backup is never consulted.
+inline std::string& state_dir_ref() {
+    static std::string dir = STATE_DIR_DEFAULT;
+    return dir;
+}
 } // namespace detail
 
 inline std::string backup_fallback_dir() {
     return detail::backup_fallback_dir_ref();
+}
+
+inline std::string state_dir() {
+    return detail::state_dir_ref();
+}
+
+inline std::string config_backup_primary() {
+    return state_dir() + "/settings.json.backup";
+}
+inline std::string env_backup_primary() {
+    return state_dir() + "/helixscreen.env.backup";
+}
+/// Legacy primary backup path (for migration)
+inline std::string legacy_config_backup_primary() {
+    return state_dir() + "/helixconfig.json.backup";
 }
 
 inline std::string config_backup_fallback() {

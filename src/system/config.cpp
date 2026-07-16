@@ -43,11 +43,11 @@ namespace fs = std::experimental::filesystem;
 using namespace helix;
 
 using AppConstants::Update::config_backup_fallback;
-using AppConstants::Update::CONFIG_BACKUP_PRIMARY;
+using AppConstants::Update::config_backup_primary;
 using AppConstants::Update::env_backup_fallback;
-using AppConstants::Update::ENV_BACKUP_PRIMARY;
+using AppConstants::Update::env_backup_primary;
 using AppConstants::Update::legacy_config_backup_fallback;
-using AppConstants::Update::LEGACY_CONFIG_BACKUP_PRIMARY;
+using AppConstants::Update::legacy_config_backup_primary;
 
 Config* Config::instance{NULL};
 
@@ -916,11 +916,39 @@ using helix::config_backup::restore_from_backup;
 using helix::config_backup::write_backup_file;
 using helix::config_backup::write_rolling_backup;
 
+/// Whether the rolling-backup tiers apply to this run.
+///
+/// The backup tiers (/var/lib/helixscreen/, $HOME/.helixscreen/) belong to the
+/// REAL printer config.  Test mode declares its own config — config/settings-test.json
+/// — and must stay there, so the production tiers are off-limits in both
+/// directions: reading them would restore a stale real config over a missing
+/// test config, and writing them would clobber the user's rolling backup with
+/// test data.  A missing test config falls back to normal defaults instead.
+static bool backups_enabled() {
+#if !defined(HELIX_SPLASH_ONLY) && !defined(HELIX_WATCHDOG)
+    auto* rt = get_runtime_config();
+    if (rt && rt->is_test_mode())
+        return false;
+#endif
+    return true;
+}
+
 /// Backup search paths in priority order (primary, fallback, legacy primary, legacy fallback).
 /// Used by restore_from_backup() and find_backup() calls throughout init().
+/// Empty in test mode — see backups_enabled().
 static std::vector<std::string> config_backup_search_paths() {
-    return {CONFIG_BACKUP_PRIMARY, config_backup_fallback(), LEGACY_CONFIG_BACKUP_PRIMARY,
+    if (!backups_enabled())
+        return {};
+    return {config_backup_primary(), config_backup_fallback(), legacy_config_backup_primary(),
             legacy_config_backup_fallback()};
+}
+
+/// Env-file backup search paths in priority order (primary, fallback).
+/// Empty in test mode — see backups_enabled().
+static std::vector<std::string> env_backup_search_paths() {
+    if (!backups_enabled())
+        return {};
+    return {env_backup_primary(), env_backup_fallback()};
 }
 
 } // namespace
@@ -1053,8 +1081,7 @@ void Config::init(const std::string& config_path) {
     // Restore helixscreen.env independently — it can be lost even if config survived
     {
         std::string env_path = (fs::path(path).parent_path() / "helixscreen.env").string();
-        restore_from_backup(env_path, "helixscreen.env",
-                            {ENV_BACKUP_PRIMARY, env_backup_fallback()});
+        restore_from_backup(env_path, "helixscreen.env", env_backup_search_paths());
     }
 
     bool config_modified = false;
@@ -1369,14 +1396,14 @@ void Config::init(const std::string& config_path) {
     // the user never explicitly saves settings.  Skip when the loaded config is
     // a tarball default (wizard not yet completed, no real user data) to avoid
     // poisoning the backup with preset defaults that would break future recovery.
-    if (!is_wizard_required()) {
-        write_rolling_backup(path, CONFIG_BACKUP_PRIMARY, config_backup_fallback());
+    if (backups_enabled() && !is_wizard_required()) {
+        write_rolling_backup(path, config_backup_primary(), config_backup_fallback());
     }
 
     // Back up helixscreen.env outside install dir (env only changes at startup via launcher)
-    {
+    if (backups_enabled()) {
         std::string env_path = (fs::path(path).parent_path() / "helixscreen.env").string();
-        write_rolling_backup(env_path, ENV_BACKUP_PRIMARY, env_backup_fallback());
+        write_rolling_backup(env_path, env_backup_primary(), env_backup_fallback());
     }
 
     spdlog::debug("[Config] initialized: moonraker={}:{}",
@@ -1604,7 +1631,9 @@ bool Config::save() {
         spdlog::trace("[Config] saved successfully to {}", path);
 
         // Maintain rolling backup outside install dir (survives Moonraker wipes)
-        write_rolling_backup(path, CONFIG_BACKUP_PRIMARY, config_backup_fallback());
+        if (backups_enabled()) {
+            write_rolling_backup(path, config_backup_primary(), config_backup_fallback());
+        }
 
         return true;
 
