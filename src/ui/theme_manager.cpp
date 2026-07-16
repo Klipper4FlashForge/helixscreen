@@ -1661,11 +1661,37 @@ void theme_manager_init(lv_display_t* display, bool use_dark_mode_param) {
         font_body_name = lv_xml_get_const(nullptr, "font_body_small");
     }
 
+    // The reads above resolve the suffixed variant const (e.g. font_body_medium),
+    // which is supplied by globals.xml's component consts. On the firmware
+    // release path that nullptr-scope read can miss it, but the responsive font
+    // registrar (theme_manager_register_responsive_fonts, run just above) always
+    // registers the breakpoint-selected BASE name "font_body" into this same
+    // scope — so fall back to it. Desktop resolves the variant directly and
+    // never reaches this line.
+    if (!font_body_name) {
+        font_body_name = lv_xml_get_const(nullptr, "font_body");
+    }
+
     const lv_font_t* base_font =
         font_body_name ? lv_xml_get_font(nullptr, font_body_name) : nullptr;
     if (!base_font) {
-        spdlog::warn("[Theme] Failed to get font '{}', using noto_sans_16", font_variant_name);
-        base_font = &noto_sans_16;
+        // Resolve the fallback through the font REGISTRY (returns NULL if the
+        // face isn't linked/registered — e.g. a pruned firmware tier has no
+        // "noto_sans_16"), NOT via the &noto_sans_16 symbol: on such builds that
+        // symbol can resolve to a NULL/weak address and theme_init_lvgl would
+        // dereference it (Guru Meditation, PC=0). If even that misses, use
+        // LVGL's built-in default, which is always valid. NEVER hand a NULL font
+        // to LVGL.
+        const lv_font_t* fallback = lv_xml_get_font(nullptr, "noto_sans_16");
+        if (fallback) {
+            spdlog::warn("[Theme] Failed to get font '{}', using noto_sans_16", font_variant_name);
+            base_font = fallback;
+        } else {
+            spdlog::error("[Theme] Failed to get font '{}' and fallback noto_sans_16 is not "
+                          "registered; using lv_font_get_default()",
+                          font_variant_name);
+            base_font = lv_font_get_default();
+        }
     }
 
     // Build palette from current mode
