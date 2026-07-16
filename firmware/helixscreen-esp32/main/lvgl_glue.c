@@ -32,10 +32,6 @@ static void (*s_ui_tick)(void);
 // copy starts at frame top, finishing well before scan-out reaches a
 // mid-screen region. Single FB kept; small partial redraws stay cheap.
 static SemaphoreHandle_t s_vsync_sem;
-// True when the next flush_cb call begins a new LVGL refresh cycle (so it should
-// wait for vsync). Cleared after the first flush of a cycle, re-armed after the
-// cycle's last flush. See flush_cb.
-static bool s_first_flush_of_cycle = true;
 
 static bool flush_on_vsync(esp_lcd_panel_handle_t panel,
                            const esp_lcd_rgb_panel_event_data_t *edata, void *user_ctx) {
@@ -49,41 +45,33 @@ static bool flush_on_vsync(esp_lcd_panel_handle_t panel,
     return high_task_woken == pdTRUE;
 }
 
-// Draw buffers are static (reserved at link time — NOT runtime heap-allocated,
-// so they can't lose the fragmentation lottery a runtime alloc would).
+// LVGL draw buffer — ONE full-frame buffer, driven in DIRECT mode.
 //
-// LOCATION — INTERNAL DRAM, not PSRAM. Rendering to/from PSRAM draw buffers
-// contends with the RGB framebuffer scan-out on the shared octal-PSRAM bus:
-// every partial redraw (e.g. the 1Hz temperature widget updates) streams pixels
-// through PSRAM while the RGB bounce ISR needs deterministic framebuffer reads,
-// so refills miss and the flush bands tear (the "lines through navbar icons"
-// Preston saw are scan-out tearing in the bands the navbar shares with updating
-// widgets, recovered by RESTART_IN_VSYNC → visible glitch), and every blend is
-// bus-throttled (slow paint). Internal draw buffers remove that contention.
+// Why: in PARTIAL mode LVGL flushed ~40 small dirty chunks per refresh, each a
+// separate memcpy into the single live framebuffer racing the RGB bounce ISR's
+// scan-out read — so paint was visibly progressive (chunk-by-chunk) AND any
+// ungated chunk could tear (the residual navbar/glitch artifacts). DIRECT mode
+// renders the whole refresh into this persistent full-frame buffer; flush_cb
+// then copies the refresh's dirty band to the panel framebuffer in ONE
+// contiguous top-to-bottom draw_bitmap gated to a fresh vsync. Result: the frame
+// lands atomically (the real perceptual speed win) with ONE beam race per cycle
+// (full head start) instead of ~40 chances to lose to PSRAM bus contention.
 //
-// SIZE — the arithmetic tradeoff against boot-time internal-DRAM pressure. The
-// full 24-line pair (76.8KB) is why these were pushed to PSRAM originally: the
-// 48KB UI-pthread stack and 32KB RGB bounce DMA must still find contiguous
-// internal blocks (see the "internal heap before ..." gate logs; measured
-// steady-state largest-free-block is ~31KB — the heap is fragmented, so the
-// bounce buffer is the tight constraint). The 12-line pair (2x19.2KB = 38.4KB)
-// keeps double-buffering (render N+1 while flushing N) at half the internal
-// cost. To trade RAM for fewer flush passes, raise UI_DRAW_BUF_LINES to 24 IF
-// the gate logs show the bounce buffer still fits; UI_DRAW_BUF_PSRAM 1 reverts
-// to the old PSRAM placement if the internal pressure proves too high.
-#define UI_DRAW_BUF_PSRAM 0 // 1 = PSRAM (old placement); 0 = internal DRAM
-#define UI_DRAW_BUF_LINES 12
-#define UI_DRAW_BUF_BYTES \
-    (BOARD_LCD_H_RES * UI_DRAW_BUF_LINES * sizeof(lv_color16_t))
-#if UI_DRAW_BUF_PSRAM
-// PSRAM requires CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y; without it
-// EXT_RAM_BSS_ATTR is a silent no-op and the buffers fall back to internal.
-#define UI_DRAW_BUF_ATTR EXT_RAM_BSS_ATTR LV_ATTRIBUTE_MEM_ALIGN
-#else
-#define UI_DRAW_BUF_ATTR LV_ATTRIBUTE_MEM_ALIGN
-#endif
-UI_DRAW_BUF_ATTR static uint8_t s_draw_buf1[UI_DRAW_BUF_BYTES];
-UI_DRAW_BUF_ATTR static uint8_t s_draw_buf2[UI_DRAW_BUF_BYTES];
+// PSRAM: 800x480x2 = 768KB won't fit internal DRAM, so it lives in PSRAM. That
+// reintroduces some PSRAM-bandwidth contention with the bounce scan-out (why the
+// old partial buffers were internal), but num_fbs stays 1 — no driver
+// flip/bounce conflict, which is what killed the double-FB attempt (see
+// board_display.c). Worst case here is a recoverable RESTART_IN_VSYNC glitch,
+// not permanent BIST desync. Allocated at runtime (heap_caps) so it doesn't grow
+// .bss or the boot internal-DRAM gate.
+#define UI_DRAW_BUF_BYTES ((size_t)BOARD_LCD_H_RES * BOARD_LCD_V_RES * sizeof(lv_color16_t))
+static uint8_t *s_draw_buf;
+
+// Accumulated dirty Y-range for the current refresh cycle (always full width).
+// Copied as one contiguous full-width band on the cycle's last flush.
+static int32_t s_dirty_y1;
+static int32_t s_dirty_y2;
+static bool s_dirty_valid = false;
 
 // XML/expat parsing recurses deeply during component registration and layout;
 // the audit ran the full app slice on a 32KB pthread stack. 48KB gives margin
@@ -92,40 +80,41 @@ UI_DRAW_BUF_ATTR static uint8_t s_draw_buf2[UI_DRAW_BUF_BYTES];
 #define UI_THREAD_STACK_BYTES (48 * 1024)
 
 static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
-    // Gate the flush on vsync ONCE per refresh cycle, not per flush. LVGL may
-    // flush several dirty areas per refresh; only the FIRST copy of a cycle waits
-    // for a fresh vsync (so the whole cycle starts at blanking), and the rest run
-    // back-to-back ungated. This stays tear-free while restoring paint speed:
-    // per-flush gating serialized ~40 partial copies at one vsync each
-    // (~660ms/full repaint = progressive banding, which read as corruption on
-    // home->controls first-nav). Cycle boundary = lv_display_flush_is_last().
-    //
-    // TEAR-FREE INVARIANT (load-bearing — do not break): a cycle's copies must
-    // stay AHEAD of the scan beam. Beam ~= V_RES/frame ~= 29 lines/ms (480 lines
-    // @ ~60Hz); a full repaint is ~40 12-line memcpys ~= 8ms ~= 60 lines/ms, so
-    // starting both at vsync the copies outrun the beam ~2x. Holds because LVGL
-    // flushes a full redraw roughly top-to-bottom and partial redraws are a few
-    // small regions written near frame start. If the draw buffers shrink or copy
-    // throughput drops below beam speed, or a top region is flushed very late in
-    // a large multi-region cycle, tearing returns.
-    //
-    // The stale-token DRAIN is INSIDE the per-cycle branch on purpose: each cycle
-    // (including back-to-back ones — e.g. the deferred-panel loading scrim, then
-    // the panel-swap repaint after the ~3s build piles ~180 idle vsyncs)
-    // independently clears any leftover token before waiting fresh, so no cycle
-    // inherits a stale vsync. Bounded 100ms wait so a stalled panel can't hang
-    // the render loop.
-    if (s_first_flush_of_cycle) {
-        if (s_vsync_sem) {
-            xSemaphoreTake(s_vsync_sem, 0);
-            xSemaphoreTake(s_vsync_sem, pdMS_TO_TICKS(100));
-        }
-        s_first_flush_of_cycle = false;
+    (void)px_map; // DIRECT mode: LVGL rendered straight into s_draw_buf.
+    // Accumulate this refresh's dirty Y-range (full width). Copy nothing until
+    // the cycle's last flush — that keeps the whole frame's update as ONE copy.
+    if (!s_dirty_valid) {
+        s_dirty_y1 = area->y1;
+        s_dirty_y2 = area->y2;
+        s_dirty_valid = true;
+    } else {
+        if (area->y1 < s_dirty_y1)
+            s_dirty_y1 = area->y1;
+        if (area->y2 > s_dirty_y2)
+            s_dirty_y2 = area->y2;
     }
-    esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1,
-                              area->y2 + 1, px_map);
-    if (lv_display_flush_is_last(disp)) {
-        s_first_flush_of_cycle = true; // next flush starts a new cycle -> re-gate
+
+    if (!lv_display_flush_is_last(disp)) {
+        lv_display_flush_ready(disp);
+        return;
+    }
+
+    // Last flush of the cycle. Gate on a FRESH vsync (drain any stale token from
+    // idle vsyncs first — back-to-back cycles like the deferred-panel loading
+    // scrim then the panel-swap repaint must not inherit one; bounded 100ms so a
+    // stalled panel can't hang the render loop), then push the whole dirty band
+    // in ONE contiguous top-to-bottom copy. Full-width rows are tightly packed in
+    // the full-frame buffer, so draw_bitmap of [0, y1 .. W, y2+1] with the source
+    // offset by y1 rows is the correct packed span — one beam race per frame with
+    // a full head start, frame lands atomically. See s_draw_buf.
+    if (s_vsync_sem) {
+        xSemaphoreTake(s_vsync_sem, 0);
+        xSemaphoreTake(s_vsync_sem, pdMS_TO_TICKS(100));
+    }
+    if (s_dirty_valid) {
+        uint8_t *band = s_draw_buf + (size_t)s_dirty_y1 * BOARD_LCD_H_RES * sizeof(lv_color16_t);
+        esp_lcd_panel_draw_bitmap(s_panel, 0, s_dirty_y1, BOARD_LCD_H_RES, s_dirty_y2 + 1, band);
+        s_dirty_valid = false;
     }
     lv_display_flush_ready(disp);
 }
@@ -160,9 +149,21 @@ static void *ui_thread_main(void *arg) {
              heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
              heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 
+    // Full-frame PSRAM draw buffer for DIRECT mode (see s_draw_buf). 64-byte
+    // aligned for PSRAM cache-line coherency when esp_lcd reads it.
+    s_draw_buf = heap_caps_aligned_alloc(64, UI_DRAW_BUF_BYTES, MALLOC_CAP_SPIRAM);
+    if (!s_draw_buf) {
+        ESP_LOGE(TAG, "FATAL: no PSRAM for %u-byte draw buffer (free=%u largest=%u)",
+                 (unsigned)UI_DRAW_BUF_BYTES, (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+        abort();
+    }
+    ESP_LOGI(TAG, "draw buffer: %u bytes PSRAM @ %p (psram free=%u)", (unsigned)UI_DRAW_BUF_BYTES,
+             s_draw_buf, (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+
     lv_display_t *disp = lv_display_create(BOARD_LCD_H_RES, BOARD_LCD_V_RES);
-    lv_display_set_buffers(disp, s_draw_buf1, s_draw_buf2, UI_DRAW_BUF_BYTES,
-                           LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_buffers(disp, s_draw_buf, NULL, UI_DRAW_BUF_BYTES,
+                           LV_DISPLAY_RENDER_MODE_DIRECT);
     lv_display_set_flush_cb(disp, flush_cb);
 
     // Touch indev registration must run on the UI thread after lv_init.
