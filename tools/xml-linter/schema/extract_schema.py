@@ -871,6 +871,17 @@ def _extract_special_elements(parsers_dir: Path, schema: dict[str, Any]) -> None
         },
     }
 
+    # Both of the above are validated by parse_registered_widgets() finding a
+    # lv_xml_register_widget("name", ...) call in lv_xml_init() -- neither
+    # goes through that call, so is_valid_widget() (registered_widgets or
+    # special_elements) would reject them as "Unknown widget type" wherever
+    # they appear outside a <subjects> block (subject_expr is skipped there
+    # as a definition tag, but <repeat> appears directly in view markup).
+    # Register both as special_elements explicitly.
+    for tag in ("subject_expr", "repeat"):
+        if tag not in schema["special_elements"]:
+            schema["special_elements"].append(tag)
+
     # Add special obj elements with their attributes
     _extract_obj_special_elements(schema)
 

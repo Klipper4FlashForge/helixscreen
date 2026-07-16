@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Snapmaker U1 power-loss recovery** — after a power loss, HelixScreen offers to resume the interrupted print at connect time; a declined offer re-arms when it becomes relevant again.
 - **Anycubic Kobra S1 mainline fork** (prestonbrown/helixscreen#1069) — ACE filament systems on the Kobra S1's mainline-Python firmware fork work via a REST bridge.
 - **XML expressions** — layouts can derive subjects from expressions (`<subject_expr>`) and use inline `cond=` conditions on `bind_flag_if` / `bind_state_if` / `bind_style_if`.
+- **XML `<repeat>` looping** — `<repeat count>` expands a fragment with a `$i` index (fixed or subject-bound, reactively rebuilding); `${i}` composes indexed subject names for self-wiring repeated widgets.
 - **PAXX firmware-managed installs (Snapmaker U1)** — installs bundled by the PAXX Extended Firmware are supported (firmware owns updates), with a `HELIX_DISABLE_AUTO_UPDATES` opt-out.
 
 ### Fixed

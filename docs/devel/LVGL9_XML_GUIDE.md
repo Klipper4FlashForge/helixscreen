@@ -570,11 +570,13 @@ These are parse-time only -- the hidden state does not change after creation. Fo
 
 | Form | Example | Meaning |
 |------|---------|---------|
-| Literal | `count="4"` | A fixed integer (clamped to `[0, 256]`). |
-| `#const` | `count="#rows"` | A component `<const>` value. |
-| Subject name | `count="row_count"` | Read from a subject at load time. *(Reactive rebuild when the subject changes is a later task; today it expands to the subject's current value.)* |
+| Literal | `count="4"` | A fixed integer (clamped to `[0, 256]`), resolved once at load time. The expansion never changes. |
+| `#const` | `count="#rows"` | A component `<const>` value, resolved once at load time. |
+| Subject name | `count="row_count"` | **Reactive.** Expands to the subject's current value at load time, then re-expands automatically every time the subject changes — teardown of the old items and creation of the new ones happens on an async, off-tree-reparent path (no synchronous deletion inside the observer callback). |
 
 Each iteration re-resolves the body against pristine attribute values, so `$i`, `$param`, and `#const` references all yield independent per-iteration results — the labels above each get their own index, not a shared last value.
+
+> ⚠️ **Subject-bound `<repeat>` MUST be the last child of its parent, or the only child of a dedicated container.** On rebuild, the old expansion's roots are detached and the new ones are created fresh — and LVGL always appends a freshly-created child to the *end* of its parent's child list. If a subject-bound `<repeat>` shares a parent with static siblings that come after it in the document, those siblings stay put but the rebuilt repeat items land *after* them, silently reordering the layout every time the count changes. A literal or `#const` `count` never rebuilds, so this only matters for subject-bound `count`. Fix: give the `<repeat>` its own container (an `<lv_obj>` wrapper with no other children), or make it the last element inside its parent. See `ui_xml/test_panel.xml` "XML Repeat Demo" for a worked example of both the fixed and subject-bound forms side by side.
 
 ##### Self-wiring indexed subjects with `${name}`
 
