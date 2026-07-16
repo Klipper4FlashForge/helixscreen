@@ -1144,6 +1144,18 @@ bool Application::init_logging() {
             resolve_log_level(m_args.verbosity, config_level, get_runtime_config()->test_mode);
     }
 
+    // An explicit -v/--log-level means the user asked to watch the logs, so attach
+    // the console sink even when stdout is a pipe. Without this, `helix-screen -vv |
+    // tee run.log` on any box with a systemd journal socket produces no output at
+    // all — auto-detection picks the Journal target, whose console gate is
+    // isatty(stdout). A bare run with no flag keeps the journal-only behavior.
+    log_config.force_console = m_args.verbosity > 0 || !g_log_level_cli.empty();
+
+    // --test always gets a console sink, whatever stdout is (pipe, file, socket).
+    // Read here rather than inside logging_init.cpp because that TU is linked into
+    // the watchdog build, which does not link runtime_config.o.
+    log_config.test_mode = get_runtime_config()->test_mode;
+
     // Resolve log destination: CLI > config > auto
     std::string log_dest_str = g_log_dest_cli;
     if (log_dest_str.empty()) {
