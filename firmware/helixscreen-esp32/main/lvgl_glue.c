@@ -24,62 +24,34 @@ static esp_lcd_panel_handle_t s_panel;
 static void (*s_ui_build)(void);
 static void (*s_ui_tick)(void);
 
-// Vsync gate for the flush (D2 tear fix). The single PSRAM framebuffer is
-// scanned out continuously; esp_lcd_panel_draw_bitmap() memcpys a dirty region
-// straight into it, so a copy landing under the active scan line tears the
-// band (persistent on the static navbar, periodic on the 1Hz-updating panel).
-// on_vsync gives this binary semaphore each frame; flush_cb waits for it so the
-// copy starts at frame top, finishing well before scan-out reaches a
-// mid-screen region. Single FB kept; small partial redraws stay cheap.
-static SemaphoreHandle_t s_vsync_sem;
+// D2 tear fix — LVGL double-buffered DIRECT mode over the two RGB framebuffers.
+// The panel has num_fbs=2 (board_display.c). LVGL renders each frame's dirty
+// areas straight into the BACK framebuffer; flush_cb hands the completed frame
+// to esp_lcd, which flips it to scan-out at the next frame boundary. Nothing
+// ever writes the framebuffer currently being scanned, so the tearing/glitch
+// (and the "persistent" navbar lines, which are the same race on a static
+// region) is structurally impossible. LVGL keeps both framebuffers consistent
+// itself (direct mode re-renders the last two refreshes' dirty areas into the
+// alternating buffer), so no manual front->back copy is needed.
+//
+// on_vsync gives this binary semaphore at each frame boundary; flush_cb waits
+// on it after submitting the frame so LVGL can't start rendering into a buffer
+// that's still on screen. The old 12-line internal draw-buffer pair is gone —
+// in direct mode the framebuffers ARE the draw buffers — which returns ~38KB of
+// internal DRAM (steady-state back over the >=100KB budget).
+static SemaphoreHandle_t s_flush_sem;
 
-static bool flush_on_vsync(esp_lcd_panel_handle_t panel,
-                           const esp_lcd_rgb_panel_event_data_t *edata, void *user_ctx) {
+static bool on_frame_boundary(esp_lcd_panel_handle_t panel,
+                              const esp_lcd_rgb_panel_event_data_t *edata, void *user_ctx) {
     (void)panel;
     (void)edata;
     (void)user_ctx;
     BaseType_t high_task_woken = pdFALSE;
-    if (s_vsync_sem) {
-        xSemaphoreGiveFromISR(s_vsync_sem, &high_task_woken);
+    if (s_flush_sem) {
+        xSemaphoreGiveFromISR(s_flush_sem, &high_task_woken);
     }
     return high_task_woken == pdTRUE;
 }
-
-// Draw buffers are static (reserved at link time — NOT runtime heap-allocated,
-// so they can't lose the fragmentation lottery a runtime alloc would).
-//
-// LOCATION — INTERNAL DRAM, not PSRAM. Rendering to/from PSRAM draw buffers
-// contends with the RGB framebuffer scan-out on the shared octal-PSRAM bus:
-// every partial redraw (e.g. the 1Hz temperature widget updates) streams pixels
-// through PSRAM while the RGB bounce ISR needs deterministic framebuffer reads,
-// so refills miss and the flush bands tear (the "lines through navbar icons"
-// Preston saw are scan-out tearing in the bands the navbar shares with updating
-// widgets, recovered by RESTART_IN_VSYNC → visible glitch), and every blend is
-// bus-throttled (slow paint). Internal draw buffers remove that contention.
-//
-// SIZE — the arithmetic tradeoff against boot-time internal-DRAM pressure. The
-// full 24-line pair (76.8KB) is why these were pushed to PSRAM originally: the
-// 48KB UI-pthread stack and 32KB RGB bounce DMA must still find contiguous
-// internal blocks (see the "internal heap before ..." gate logs; measured
-// steady-state largest-free-block is ~31KB — the heap is fragmented, so the
-// bounce buffer is the tight constraint). The 12-line pair (2x19.2KB = 38.4KB)
-// keeps double-buffering (render N+1 while flushing N) at half the internal
-// cost. To trade RAM for fewer flush passes, raise UI_DRAW_BUF_LINES to 24 IF
-// the gate logs show the bounce buffer still fits; UI_DRAW_BUF_PSRAM 1 reverts
-// to the old PSRAM placement if the internal pressure proves too high.
-#define UI_DRAW_BUF_PSRAM 0 // 1 = PSRAM (old placement); 0 = internal DRAM
-#define UI_DRAW_BUF_LINES 12
-#define UI_DRAW_BUF_BYTES \
-    (BOARD_LCD_H_RES * UI_DRAW_BUF_LINES * sizeof(lv_color16_t))
-#if UI_DRAW_BUF_PSRAM
-// PSRAM requires CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y; without it
-// EXT_RAM_BSS_ATTR is a silent no-op and the buffers fall back to internal.
-#define UI_DRAW_BUF_ATTR EXT_RAM_BSS_ATTR LV_ATTRIBUTE_MEM_ALIGN
-#else
-#define UI_DRAW_BUF_ATTR LV_ATTRIBUTE_MEM_ALIGN
-#endif
-UI_DRAW_BUF_ATTR static uint8_t s_draw_buf1[UI_DRAW_BUF_BYTES];
-UI_DRAW_BUF_ATTR static uint8_t s_draw_buf2[UI_DRAW_BUF_BYTES];
 
 // XML/expat parsing recurses deeply during component registration and layout;
 // the audit ran the full app slice on a 32KB pthread stack. 48KB gives margin
@@ -88,19 +60,24 @@ UI_DRAW_BUF_ATTR static uint8_t s_draw_buf2[UI_DRAW_BUF_BYTES];
 #define UI_THREAD_STACK_BYTES (48 * 1024)
 
 static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
-    // Gate on the next vsync so the copy into the live framebuffer starts during
-    // blanking (see s_vsync_sem). Drain any STALE give first (vsyncs fire during
-    // idle and leave the binary sem set — without the drain, the first flush
-    // after an idle gap, e.g. the 1Hz temp update, would take the stale token
-    // and copy immediately, which is the exact periodic tear we're fixing).
-    // Then wait for a FRESH vsync. Bounded — a stalled vsync must never hang the
-    // render loop; fall through and copy if it doesn't arrive.
-    if (s_vsync_sem) {
-        xSemaphoreTake(s_vsync_sem, 0);
-        xSemaphoreTake(s_vsync_sem, pdMS_TO_TICKS(100));
+    (void)area;
+    // Direct mode: LVGL renders the dirty areas straight into the back
+    // framebuffer (px_map). A refresh can flush several dirty areas — only the
+    // LAST one submits the frame. For the earlier areas there's nothing to do
+    // but mark them ready (they're already in the buffer).
+    if (!lv_display_flush_is_last(disp)) {
+        lv_display_flush_ready(disp);
+        return;
     }
-    esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1,
-                              area->y2 + 1, px_map);
+    // Hand the whole completed framebuffer to esp_lcd, which flips it to
+    // scan-out at the next frame boundary. Then wait for that boundary so LVGL
+    // can't begin rendering into a buffer that's still on screen. Drain any
+    // stale give first; bounded wait so a stalled panel can't wedge the loop.
+    esp_lcd_panel_draw_bitmap(s_panel, 0, 0, BOARD_LCD_H_RES, BOARD_LCD_V_RES, px_map);
+    if (s_flush_sem) {
+        xSemaphoreTake(s_flush_sem, 0);
+        xSemaphoreTake(s_flush_sem, pdMS_TO_TICKS(100));
+    }
     lv_display_flush_ready(disp);
 }
 
@@ -119,11 +96,11 @@ static void *ui_thread_main(void *arg) {
     // Panel first (RGB init + bounce buffers). Thread-agnostic hardware setup.
     s_panel = board_display_init();
 
-    // Vsync gate for tear-free flushing (see s_vsync_sem / flush_cb). Register
-    // before any flush can run. on_vsync is not IRAM-safe here (the bounce ISR
-    // runs with cache on — LCD_RGB_ISR_IRAM_SAFE is off), so no IRAM_ATTR.
-    s_vsync_sem = xSemaphoreCreateBinary();
-    esp_lcd_rgb_panel_event_callbacks_t lcd_cbs = {.on_vsync = flush_on_vsync};
+    // Frame-boundary signal for the double-FB flush (see s_flush_sem/flush_cb).
+    // Register before any flush can run. Not IRAM-safe here (the bounce ISR runs
+    // with cache on — LCD_RGB_ISR_IRAM_SAFE is off), so no IRAM_ATTR.
+    s_flush_sem = xSemaphoreCreateBinary();
+    esp_lcd_rgb_panel_event_callbacks_t lcd_cbs = {.on_vsync = on_frame_boundary};
     esp_lcd_rgb_panel_register_event_callbacks(s_panel, &lcd_cbs, NULL);
 
     lv_init();
@@ -134,9 +111,14 @@ static void *ui_thread_main(void *arg) {
              heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
              heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 
+    // Direct mode over the panel's two framebuffers (double buffering). LVGL
+    // renders into whichever FB is the back buffer; flush_cb flips it.
+    void *fb0 = NULL, *fb1 = NULL;
+    ESP_ERROR_CHECK(esp_lcd_rgb_panel_get_frame_buffer(s_panel, 2, &fb0, &fb1));
     lv_display_t *disp = lv_display_create(BOARD_LCD_H_RES, BOARD_LCD_V_RES);
-    lv_display_set_buffers(disp, s_draw_buf1, s_draw_buf2, UI_DRAW_BUF_BYTES,
-                           LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_buffers(disp, fb0, fb1,
+                           BOARD_LCD_H_RES * BOARD_LCD_V_RES * sizeof(lv_color16_t),
+                           LV_DISPLAY_RENDER_MODE_DIRECT);
     lv_display_set_flush_cb(disp, flush_cb);
 
     // Touch indev registration must run on the UI thread after lv_init.
