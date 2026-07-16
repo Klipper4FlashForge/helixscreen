@@ -179,10 +179,12 @@ void ThemeManager::apply_palette(const ThemePalette& palette) {
     size_t idx = 0;  // TEMP
     for (auto& entry : styles_) {
         if (entry.configure) {
-            spdlog::warn("[TEMP-BISECT apply_palette] role={} configure={}", idx,  // TEMP
-                         (const void*)entry.configure);
+            spdlog::warn("[TEMP-BISECT apply_palette] role={} configure={} style={}", idx,  // TEMP
+                         (const void*)entry.configure, (const void*)&entry.style);
             lv_style_reset(&entry.style);
+            spdlog::warn("[TEMP-BISECT apply_palette] role={} after lv_style_reset, before configure", idx);  // TEMP
             entry.configure(&entry.style, palette);
+            spdlog::warn("[TEMP-BISECT apply_palette] role={} after configure", idx);  // TEMP
         }
         ++idx;  // TEMP
     }

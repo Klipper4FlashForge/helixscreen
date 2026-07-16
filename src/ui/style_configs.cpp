@@ -3,6 +3,8 @@
 
 #include <lvgl.h>
 
+#include <spdlog/spdlog.h>  // TEMP: bisect instrumentation (remove after HIL)
+
 namespace style_configs {
 
 /// Apply shadow properties from palette when shadow_width > 0
@@ -27,11 +29,18 @@ static void apply_border(lv_style_t* s, const ThemePalette& p, lv_color_t bg_col
 
 // Base styles
 void configure_card(lv_style_t* s, const ThemePalette& p) {
+    spdlog::warn("[TEMP-BISECT card] enter s={} border_radius={} border_width={} shadow_width={}",  // TEMP
+                 (const void*)s, p.border_radius, p.border_width, p.shadow_width);
     lv_style_set_bg_color(s, p.card_bg);
+    spdlog::warn("[TEMP-BISECT card] after set_bg_color");  // TEMP
     lv_style_set_bg_opa(s, LV_OPA_COVER);
+    spdlog::warn("[TEMP-BISECT card] after set_bg_opa, before apply_border");  // TEMP
     apply_border(s, p, p.card_bg);
+    spdlog::warn("[TEMP-BISECT card] after apply_border, before set_radius");  // TEMP
     lv_style_set_radius(s, p.border_radius);
+    spdlog::warn("[TEMP-BISECT card] after set_radius, before apply_shadow");  // TEMP
     apply_shadow(s, p);
+    spdlog::warn("[TEMP-BISECT card] done");  // TEMP
 }
 
 void configure_dialog(lv_style_t* s, const ThemePalette& p) {
