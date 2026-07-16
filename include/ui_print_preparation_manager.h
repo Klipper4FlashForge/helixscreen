@@ -411,6 +411,31 @@ class PrintPreparationManager {
                                      NavigateToStatusCallback on_navigate_to_status);
 
     /**
+     * @brief Would DISABLING this pre-print option require the HelixPrint plugin?
+     *
+     * The print-detail view uses this to HIDE a toggle when the plugin is
+     * absent: without the plugin, disabling such an option can't be honored —
+     * start_print() reaches check_modification_capability() and drops the
+     * modification with a "Requires HelixPrint plugin" warning.
+     *
+     * Returns true only when NO pre-start short-circuit in start_print() would
+     * fire before that capability check. Two ways to require the plugin:
+     *   (a) a file-embeddable op (bed_mesh/qgl/z_tilt/nozzle_clean) is embedded
+     *       in the currently-scanned file, OR
+     *   (b) the option is a MacroParam whose skip must be rewritten into the
+     *       START_PRINT call.
+     * Both are suppressed when the printer has a pre-start mechanism (a
+     * MacroParam skip that triggers `setup_gcode`, or any PreStartGcode line):
+     * in that path start_print() streams / defers to the native macro WITHOUT
+     * the plugin. This is exactly why the K2 Plus PREPARE bed_mesh toggle must
+     * stay visible — see the mirror logic in start_print() (the pre-start block
+     * at the top) and collect_ops_to_disable()/collect_macro_skip_params().
+     *
+     * @param opt The option whose disable-cost is being evaluated
+     */
+    [[nodiscard]] bool disabling_option_requires_plugin(const PrePrintOption& opt) const;
+
+    /**
      * @brief Get the pre-print time estimate subject (seconds)
      *
      * Updated by recalculate_estimate() whenever checkbox toggles change.

@@ -1714,16 +1714,27 @@ void PrintSelectDetailView::populate_option_rows() {
     }
     last_rendered_printer_type_ = current_type;
 
-    // No visibility gating: a printer's database entry declaring an option in
-    // pre_print_options is sufficient evidence that the option works on that
-    // printer. The legacy plugin_installed && capabilities.X gate (used for
-    // the deprecated PrintStartCapabilities path) hid options like K2 Plus's
-    // bed_mesh because the K2 Plus doesn't ship with HelixPrint installed —
-    // but its native START_PRINT macro takes the PREPARE param directly, so
-    // no plugin is needed. If a future option DOES require the plugin, add a
-    // requires_plugin field to the option JSON and gate at parse/render.
-    auto visibility_lookup = [](const std::string& /*id*/) -> lv_subject_t* {
-        return nullptr; // Always visible for declared options
+    // Plugin-gated visibility: HIDE a toggle only when DISABLING it would
+    // require the HelixPrint plugin (see
+    // PrintPreparationManager::disabling_option_requires_plugin). For those
+    // options we bind the row to the helix_plugin_installed tri-state subject;
+    // the renderer hides the row when it reads 0 (plugin confirmed absent) and
+    // keeps it visible at -1 (still checking, startup window) and 1 (present).
+    //
+    // CAUTION — do NOT hide options the printer handles natively without the
+    // plugin. K2 Plus bed_mesh is a MacroParam whose START_PRINT/PRINT_PREPARED
+    // takes the skip directly (setup_gcode present), so the predicate returns
+    // false and it stays visible. Hiding it was a shipped regression; the
+    // predicate now enforces the distinction structurally.
+    auto visibility_lookup = [this](const std::string& id) -> lv_subject_t* {
+        if (!prep_manager_ || !printer_state_) {
+            return nullptr;
+        }
+        const PrePrintOption* opt = printer_state_->get_pre_print_option_set().find(id);
+        if (opt && prep_manager_->disabling_option_requires_plugin(*opt)) {
+            return printer_state_->get_helix_plugin_installed_subject();
+        }
+        return nullptr; // Not plugin-dependent: always visible for declared options.
     };
 
     option_rows_renderer_.populate(pre_print_options_container_, option_set, visibility_lookup,
