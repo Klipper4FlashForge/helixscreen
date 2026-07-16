@@ -340,6 +340,18 @@ lv_result_t lv_xml_component_unregister(const char * name)
     lv_xml_subject_t * subject;
     LV_LL_READ(&scope->subjects_ll, subject) {
         lv_free((char *)subject->name);
+        /* Detach every remaining observer BEFORE freeing the subject. Widgets
+         * created from this component (bind_text / bind_flag_if / bind_style_* /
+         * cond= / subject_expr, all of which register via lv_subject_add_observer*)
+         * keep observers on these scope-owned subjects. Without lv_subject_deinit
+         * the raw lv_free below would leave those observers dangling; the widget's
+         * later LV_EVENT_DELETE (e.g. NavigationManager::rebuild_active_views on a
+         * HELIX_HOT_RELOAD re-register, which deletes the old widgets AFTER the
+         * component is unregistered) would then lv_observer_remove() a freed
+         * subject -> use-after-free. lv_subject_deinit only walks subs_ll and
+         * removes observers; it does not touch value/prev_value, so the string
+         * buffers below (which lv_subject_deinit does not own) are still freed. */
+        lv_subject_deinit(subject->subject);
         if(subject->subject->type == LV_SUBJECT_TYPE_STRING) {
             lv_free((char *)subject->subject->prev_value.pointer);
             lv_free((char *)subject->subject->value.pointer);
