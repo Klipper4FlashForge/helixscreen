@@ -329,9 +329,22 @@ void * lv_xml_create_in_scope(lv_obj_t * parent, lv_xml_component_scope_t * pare
     if(XML_Parse(parser, scope->view_def, lv_strlen(scope->view_def), XML_TRUE) == XML_STATUS_ERROR) {
         LV_LOG_WARN("XML parsing error: %s on line %lu", XML_ErrorString(XML_GetErrorCode(parser)),
                     XML_GetCurrentLineNumber(parser));
+        /*An unclosed <repeat> leaves an active capture on state.context; free it.*/
+        if(state.context) {
+            xml_repeat_capture_free((lv_xml_repeat_capture_t *)state.context);
+            state.context = NULL;
+        }
         free_pcdata_ll(&state);
         XML_ParserFree(parser);
         return NULL;
+    }
+
+    /*Well-formed input closes every <repeat>, but malformed input (parse aborted
+     *without an error status, or a stray unclosed body) can leave a live capture.
+     *Free it so the heap capture never leaks.*/
+    if(state.context) {
+        xml_repeat_capture_free((lv_xml_repeat_capture_t *)state.context);
+        state.context = NULL;
     }
 
     state.item = state.view;
@@ -1336,28 +1349,32 @@ static void view_start_element_handler(void * user_data, const char * name, cons
     lv_xml_repeat_capture_t * cap = (lv_xml_repeat_capture_t *)state->context;
 
     /*Enter capture on <repeat>. Must run before the pcdata push below: <repeat>
-     *creates no object and pushes no stack node, so it owns no pcdata entry.*/
+     *creates no object and pushes no stack node, so it owns no pcdata entry.
+     *A capture is ALWAYS allocated (even on missing/unparseable count) so the
+     *matching </repeat> is still intercepted and the parent stack stays balanced
+     *— a bare early-return would let </repeat> pop a frame it never pushed and
+     *mis-parent every following sibling. Missing count => expand zero times.*/
     if(lv_streq(name, "repeat") && (cap == NULL || !cap->replaying)) {
         const char * cnt = lv_xml_get_value_of(attrs, "count");
         if(cnt == NULL) {
-            LV_LOG_WARN("<repeat> is missing the required 'count' attribute; skipping");
-            return;
+            LV_LOG_WARN("<repeat> is missing the required 'count' attribute; expanding zero times");
         }
         cap = lv_zalloc(sizeof(lv_xml_repeat_capture_t));
         if(cap == NULL) {
-            LV_LOG_ERROR("OOM: failed to allocate <repeat> capture");
+            /*Catastrophic: without a capture the stack cannot be kept balanced.
+             *Log loudly; the tree may be corrupt but there is nothing to recover.*/
+            LV_LOG_ERROR("OOM: failed to allocate <repeat> capture; tree may be corrupt");
             return;
         }
         cap->active = true;
         cap->base_depth = (uint32_t)lv_ll_get_len(&state->parent_ll);
-        size_t clen = lv_strlen(cnt);
-        cap->count_raw = lv_malloc(clen + 1);
-        if(cap->count_raw == NULL) {
-            lv_free(cap);
-            LV_LOG_ERROR("OOM: failed to copy <repeat> count");
-            return;
+        if(cnt) {
+            size_t clen = lv_strlen(cnt);
+            cap->count_raw = lv_malloc(clen + 1);
+            /*On copy OOM leave count_raw NULL: xml_repeat_resolve_count treats NULL
+             *as 0, so the body still expands zero times and the stack stays balanced.*/
+            if(cap->count_raw) lv_memcpy(cap->count_raw, cnt, clen + 1);
         }
-        lv_memcpy(cap->count_raw, cnt, clen + 1);
         state->context = cap;
         return;                          /*<repeat> creates no object, no stack push*/
     }
