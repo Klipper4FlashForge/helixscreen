@@ -92,6 +92,14 @@ void ActiveSpoolWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
     // Size spool canvases to match responsive icon size
     resize_spool_canvases();
 
+    // Sync layout visibility to the persisted is_wide_ state. Widget instances
+    // are recycled across rebuilds (PanelWidgetManager reuse path), but a fresh
+    // XML component always starts with wide_layout hidden + spool_compact shown.
+    // Without this, a recycled 2x1 instance keeps is_wide_==true, on_size_changed
+    // early-returns (wide == is_wide_), and the default-white spool_compact is
+    // left visible — the #1109 "static white spool" symptom.
+    apply_layout_visibility();
+
     // Initial display update
     update_spool_display();
 
@@ -132,7 +140,17 @@ void ActiveSpoolWidget::on_size_changed(int colspan, int /*rowspan*/, int /*widt
     if (!widget_obj_)
         return;
 
-    if (wide) {
+    apply_layout_visibility();
+
+    // Refresh display for the now-visible elements
+    update_spool_display();
+
+    spdlog::debug("[ActiveSpoolWidget] on_size_changed colspan={} -> {}", colspan,
+                  wide ? "wide" : "compact");
+}
+
+void ActiveSpoolWidget::apply_layout_visibility() {
+    if (is_wide_) {
         // Show wide layout, hide compact spool
         if (wide_layout_)
             lv_obj_remove_flag(wide_layout_, LV_OBJ_FLAG_HIDDEN);
@@ -145,12 +163,6 @@ void ActiveSpoolWidget::on_size_changed(int colspan, int /*rowspan*/, int /*widt
         if (spool_compact_)
             lv_obj_remove_flag(spool_compact_, LV_OBJ_FLAG_HIDDEN);
     }
-
-    // Refresh display for the now-visible elements
-    update_spool_display();
-
-    spdlog::debug("[ActiveSpoolWidget] on_size_changed colspan={} -> {}", colspan,
-                  wide ? "wide" : "compact");
 }
 
 void ActiveSpoolWidget::resize_spool_canvases() {
