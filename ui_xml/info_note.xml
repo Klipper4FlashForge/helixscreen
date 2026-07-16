@@ -2,10 +2,10 @@
 <!-- Copyright (C) 2025-2026 356C LLC -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <!-- Reusable info note component (icon + text) for informational messages -->
-<!-- Usage: <info_note icon="information_outline" text="Touch screen to wake from sleep" translation_tag="Touch screen to wake from sleep"/> -->
+<!-- Usage: <info_note icon="info_outline" text="Touch screen to wake from sleep" translation_tag="Touch screen to wake from sleep"/> -->
 <component>
   <api>
-    <prop name="icon" type="string" default="information_outline"/>
+    <prop name="icon" type="string" default="info_outline"/>
     <prop name="text" type="string" default=""/>
     <prop name="text_tag" type="string" default=""/>
     <prop name="icon_variant" type="string" default="secondary"/>
