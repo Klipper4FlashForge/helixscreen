@@ -19,29 +19,160 @@
 #include "lvgl/lvgl.h"
 #include "overlay_base.h"
 #include "printer_state.h"
+#include "ui_utils.h" // safe_delete_deferred (deferred-panel loading scrim teardown)
 
 #include <spdlog/spdlog.h>
+
+#include <chrono>
 
 using namespace helix;
 
 // Note: PanelOverlayAdapter was removed - PrintStatusPanel now inherits directly
 // from OverlayBase, eliminating the need for an adapter.
 
+#if defined(HELIX_PLATFORM_ESP32)
+namespace {
+// A brief modal loading state painted before a deferred panel's (multi-second)
+// lv_xml_create. Full-screen scrim + spinner on the top layer so it covers the
+// still-visible previous panel. Torn down deferred-safe after the build.
+lv_obj_t* make_loading_scrim() {
+    lv_obj_t* scrim = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(scrim);
+    lv_obj_set_size(scrim, lv_pct(100), lv_pct(100));
+    lv_obj_set_style_bg_color(scrim, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(scrim, LV_OPA_60, LV_PART_MAIN);
+    lv_obj_remove_flag(scrim, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t* spin = lv_spinner_create(scrim);
+    lv_spinner_set_anim_params(spin, 1000, 200);
+    lv_obj_set_size(spin, 56, 56);
+    lv_obj_center(spin);
+    return scrim;
+}
+} // namespace
+#endif
+
 bool PanelFactory::find_panels(lv_obj_t* panel_container) {
+    m_panel_container = panel_container; // kept for deferred panel creation (ESP)
     for (int i = 0; i < UI_PANEL_COUNT; i++) {
         m_panels[i] = lv_obj_find_by_name(panel_container, PANEL_NAMES[i]);
         if (!m_panels[i]) {
+#if defined(HELIX_PLATFORM_ESP32)
+            // On ESP the app_layout override instantiates only home at boot; the
+            // other five panels are created on first navigation. Their absence
+            // here is expected — only home must be present.
+            if (i != static_cast<int>(PanelId::Home)) {
+                spdlog::debug("[PanelFactory] Panel '{}' deferred (built on first nav)",
+                              PANEL_NAMES[i]);
+                continue;
+            }
+#endif
             spdlog::error("[PanelFactory] Missing panel '{}' in container", PANEL_NAMES[i]);
             return false;
         }
     }
-    spdlog::debug("[PanelFactory] Found all {} panels", static_cast<int>(UI_PANEL_COUNT));
+    spdlog::debug("[PanelFactory] Panels found in container");
     return true;
 }
 
+void PanelFactory::setup_one_panel(int panel_id) {
+    lv_obj_t* obj = m_panels[panel_id];
+    if (!obj)
+        return;
+    auto& nav = NavigationManager::instance();
+    PanelBase* inst = nullptr;
+    switch (static_cast<PanelId>(panel_id)) {
+    case PanelId::Home:
+        get_global_home_panel().setup(obj, m_screen);
+        inst = &get_global_home_panel();
+        break;
+    case PanelId::PrintSelect: {
+        auto* p = get_print_select_panel(get_printer_state(), nullptr);
+        p->setup(obj, m_screen);
+        inst = p;
+        break;
+    }
+    case PanelId::Controls:
+        get_global_controls_panel().setup(obj, m_screen);
+        inst = &get_global_controls_panel();
+        break;
+    case PanelId::Filament:
+        get_global_filament_panel().setup(obj, m_screen);
+        inst = &get_global_filament_panel();
+        break;
+    case PanelId::Settings:
+        get_global_settings_panel().setup(obj, m_screen);
+        inst = &get_global_settings_panel();
+        break;
+    case PanelId::Advanced:
+        get_global_advanced_panel().setup(obj, m_screen);
+        inst = &get_global_advanced_panel();
+        break;
+    default:
+        return;
+    }
+    nav.register_panel_instance(static_cast<PanelId>(panel_id), inst);
+}
+
+void PanelFactory::build_deferred_panel(int panel_id) {
+#if defined(HELIX_PLATFORM_ESP32)
+    if (!m_panel_container || !m_screen)
+        return;
+    if (panel_id <= static_cast<int>(PanelId::Home) || panel_id >= UI_PANEL_COUNT)
+        return; // home is built eagerly; nothing else defers
+    if (m_panels[panel_id])
+        return; // already built
+
+    // Loading state MUST paint before the blocking create: set it, force one
+    // refresh, then build (a state that only appears after the build is useless).
+    lv_obj_t* scrim = make_loading_scrim();
+    lv_refr_now(lv_display_get_default());
+
+    auto build_start = std::chrono::steady_clock::now();
+    lv_obj_t* obj =
+        static_cast<lv_obj_t*>(lv_xml_create(m_panel_container, PANEL_NAMES[panel_id], nullptr));
+    if (obj) {
+        lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN); // nav un-hides after we return
+        m_panels[panel_id] = obj;
+        NavigationManager::instance().replace_panel_widget(static_cast<PanelId>(panel_id), obj);
+        setup_one_panel(panel_id);
+        auto ms = std::chrono::duration<double, std::milli>(
+                      std::chrono::steady_clock::now() - build_start)
+                      .count();
+        spdlog::info("[PanelFactory] Deferred panel '{}' built in {:.0f}ms", PANEL_NAMES[panel_id],
+                     ms);
+    } else {
+        spdlog::error("[PanelFactory] Deferred build of '{}' FAILED (lv_xml_create null)",
+                      PANEL_NAMES[panel_id]);
+    }
+
+    // Hide immediately (sync flag, not a delete) so the scrim can't linger over
+    // the new panel; async-delete is teardown-safe inside a queued nav callback.
+    if (scrim) {
+        lv_obj_add_flag(scrim, LV_OBJ_FLAG_HIDDEN);
+        helix::ui::safe_delete_deferred(scrim);
+    }
+#else
+    (void)panel_id;
+#endif
+}
+
 void PanelFactory::setup_panels(lv_obj_t* screen) {
+    m_screen = screen; // setup() target for eager + deferred panels
     // Register panels with navigation system
     NavigationManager::instance().set_panels(m_panels.data());
+
+#if defined(HELIX_PLATFORM_ESP32)
+    // ESP: build ONLY home at boot. Instantiating all six panels here is ~19s of
+    // layout_update_core on the K-Touch (Plan 4 Task 6 profile). The other five
+    // are created on first navigation via build_deferred_panel, registered as
+    // NavigationManager's deferred builder below. See app_layout override.
+    NavigationManager::instance().set_deferred_panel_builder(
+        [this](int id) { build_deferred_panel(id); });
+    setup_one_panel(static_cast<int>(PanelId::Home));
+    NavigationManager::instance().activate_initial_panel();
+    spdlog::debug("[PanelFactory] Home panel set up; 5 panels deferred to first navigation");
+    return;
+#endif
 
     // Each panel's setup() builds its full content subtree and forces layout —
     // a deep layout_update_core recursion. Yield to the idle task between panels

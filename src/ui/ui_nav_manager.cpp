@@ -645,6 +645,10 @@ void NavigationManager::overlay_animate_zoom_out(lv_obj_t* panel, lv_area_t sour
 // ============================================================================
 
 void NavigationManager::handle_active_panel_change(int32_t new_active_panel) {
+    // Deferred bring-up: catches navigation paths that set active_panel directly
+    // (set_active from connection/klippy handlers, etc.) without going through
+    // switch_to_panel_impl. No-op on desktop and for already-built panels.
+    ensure_panel_built(new_active_panel);
     // Show/hide panels if widgets are set
     for (int i = 0; i < UI_PANEL_COUNT; i++) {
         if (panel_widgets_[i]) {
@@ -821,6 +825,12 @@ void NavigationManager::nav_button_clicked_cb(lv_event_t* event) {
 void NavigationManager::switch_to_panel_impl(int panel_id) {
     auto switch_start = std::chrono::steady_clock::now();
     spdlog::trace("[NavigationManager] switch_to_panel_impl executing for panel {}", panel_id);
+
+    // Deferred bring-up (ESP32): build the target panel on first navigation so
+    // the overlay/stack/show logic below sees a real widget. No-op on desktop
+    // and for already-built panels. The builder paints a loading state before
+    // the blocking create; see PanelFactory::build_deferred_panel.
+    ensure_panel_built(panel_id);
 
     // L081 Mech D defense: cancel in-flight pointer input before panel switch.
     // Sends LV_EVENT_INDEV_RESET to current act_obj while it's still alive,
@@ -1255,6 +1265,25 @@ void NavigationManager::replace_panel_widget(helix::PanelId id, lv_obj_t* new_wi
     panel_widgets_[idx] = new_widget;
     spdlog::debug("[NavigationManager] Panel widget for {} swapped to {}", panel_id_to_name(id),
                   (void*)new_widget);
+}
+
+void NavigationManager::set_deferred_panel_builder(std::function<void(int)> builder) {
+    deferred_panel_builder_ = std::move(builder);
+}
+
+void NavigationManager::ensure_panel_built(int panel_id) {
+    if (panel_id < 0 || panel_id >= UI_PANEL_COUNT)
+        return;
+    if (panel_widgets_[panel_id])
+        return; // already built
+    if (!deferred_panel_builder_)
+        return; // desktop / all-resident model — nothing to defer
+    if (building_deferred_panel_)
+        return; // re-entrancy guard (nav runs single-threaded; belt-and-suspenders)
+    building_deferred_panel_ = true;
+    spdlog::info("[NavigationManager] Building deferred panel {} on first navigation", panel_id);
+    deferred_panel_builder_(panel_id); // creates + setup + registers widget/instance
+    building_deferred_panel_ = false;
 }
 
 lv_obj_t* NavigationManager::get_panel_widget(helix::PanelId id) const {

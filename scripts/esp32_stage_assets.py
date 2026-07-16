@@ -35,6 +35,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = REPO_ROOT / "firmware" / "helixscreen-esp32" / "build" / "littlefs_staging"
 
+# Firmware-local ui_xml overrides copied OVER the shared staged tree. Lets the
+# ESP32 build ship a variant of a shared component (e.g. a home-only app_layout
+# that defers the other five panels' instantiation) without forking the shared
+# ui_xml/ or touching the desktop build. Each file's path mirrors its location
+# under ui_xml/ (so ui_xml_overrides/app_layout.xml replaces ui_xml/app_layout.xml).
+UI_XML_OVERRIDES_DIR = REPO_ROOT / "firmware" / "helixscreen-esp32" / "ui_xml_overrides"
+
 # ui_xml subtrees/files excluded from staging.
 EXCLUDED_XML_DIRS = ("micro",)
 EXCLUDED_XML_FILES = ("translations.xml",)  # merged file; per-language files ship instead
@@ -157,6 +164,27 @@ def stage_ui_xml(ui_xml_dir: Path, out_dir: Path) -> int:
     return total
 
 
+def stage_ui_xml_overrides(overrides_dir: Path, out_dir: Path) -> int:
+    """Overwrite staged ui_xml files with firmware-local overrides (minified).
+    Runs AFTER stage_ui_xml so the override wins. Returns the net byte delta
+    (override size minus the shared file it replaced) so the staging summary
+    stays accurate."""
+    if not overrides_dir.is_dir():
+        return 0
+    delta = 0
+    for src in sorted(overrides_dir.rglob("*.xml")):
+        rel = src.relative_to(overrides_dir)
+        dest = out_dir / "ui_xml" / rel
+        prev = dest.stat().st_size if dest.exists() else 0
+        minified = minify_xml(src.read_text(encoding="utf-8"))
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(minified, encoding="utf-8")
+        new = len(minified.encode("utf-8"))
+        print(f"  ui_xml override: {rel} ({format_bytes(new)}, replaces {format_bytes(prev)})")
+        delta += new - prev
+    return delta
+
+
 def stage_translations(ui_xml_dir: Path, out_dir: Path,
                        remaining_budget: int = sys.maxsize) -> tuple[int, list[str]]:
     """Minify and stage every per-language translation file. `en` is a hard
@@ -276,6 +304,7 @@ def main() -> int:
     assets_dir = REPO_ROOT / "assets"
 
     ui_xml_bytes = stage_ui_xml(ui_xml_dir, out_dir)
+    ui_xml_bytes += stage_ui_xml_overrides(UI_XML_OVERRIDES_DIR, out_dir)
     translations_bytes, included_langs = stage_translations(ui_xml_dir, out_dir)
     config_bytes = stage_config(assets_dir, out_dir)
     filaments_bytes = stage_filaments(assets_dir, out_dir)
