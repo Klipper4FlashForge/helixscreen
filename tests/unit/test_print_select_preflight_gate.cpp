@@ -258,6 +258,75 @@ TEST_CASE("Swatch render: full platform keeps viewer-parse ownership",
 
 namespace {
 
+/// Minimal model of load_gcode_for_preview()'s "should we render the toolpath
+/// preview, or fall back to the thumbnail?" decision. Guards the change that let
+/// 2D-mode devices (no-GLES / GPU-blocked / budget-forced) render the detail-view
+/// preview instead of always showing the static thumbnail: the ONLY skips are the
+/// user-forced Thumbnail-Only mode and an oversized file. Being in 2D mode must
+/// NOT skip — that's the regression this pins.
+struct PreviewLoadModel {
+    static constexpr int RENDER_MODE_THUMBNAIL_ONLY = 3;
+
+    int gcode_render_mode = 0; // 0 = Auto, 3 = Thumbnail Only
+    bool using_2d_mode = false; // viewer renders 2D (no-GLES etc.)
+    bool streaming_safe = true; // is_gcode_2d_streaming_safe(size)
+
+    enum class Outcome { RenderPreview, ThumbnailOnly };
+
+    /// Mirrors the post-guard skip logic in load_gcode_for_preview().
+    [[nodiscard]] Outcome decide() const {
+        if (gcode_render_mode == RENDER_MODE_THUMBNAIL_ONLY) {
+            return Outcome::ThumbnailOnly; // user forced thumbnail
+        }
+        if (!streaming_safe) {
+            return Outcome::ThumbnailOnly; // too large for available RAM
+        }
+        // NOTE: using_2d_mode intentionally does NOT gate here.
+        return Outcome::RenderPreview;
+    }
+};
+
+} // namespace
+
+TEST_CASE("Detail preview: 2D-mode device renders the toolpath, not just the thumbnail",
+          "[print_select][preflight][preview]") {
+    // The regression: 2D-mode devices (Snapmaker U1, AD5M, K1…) used to skip the
+    // detail-view preview and show only the thumbnail. They must now render.
+    PreviewLoadModel m;
+    m.using_2d_mode = true; // no-GLES device
+    m.gcode_render_mode = 0; // Auto
+    m.streaming_safe = true;
+
+    REQUIRE(m.decide() == PreviewLoadModel::Outcome::RenderPreview);
+}
+
+TEST_CASE("Detail preview: 3D-capable device still renders", "[print_select][preflight][preview]") {
+    PreviewLoadModel m;
+    m.using_2d_mode = false; // GLES device (3D)
+    REQUIRE(m.decide() == PreviewLoadModel::Outcome::RenderPreview);
+}
+
+TEST_CASE("Detail preview: user-forced Thumbnail Only always wins",
+          "[print_select][preflight][preview]") {
+    PreviewLoadModel m;
+    m.gcode_render_mode = PreviewLoadModel::RENDER_MODE_THUMBNAIL_ONLY;
+    // Regardless of render capability, the user's Thumbnail-Only choice is honored.
+    m.using_2d_mode = true;
+    REQUIRE(m.decide() == PreviewLoadModel::Outcome::ThumbnailOnly);
+    m.using_2d_mode = false;
+    REQUIRE(m.decide() == PreviewLoadModel::Outcome::ThumbnailOnly);
+}
+
+TEST_CASE("Detail preview: oversized file degrades to thumbnail",
+          "[print_select][preflight][preview]") {
+    PreviewLoadModel m;
+    m.streaming_safe = false; // exceeds available RAM
+    m.using_2d_mode = true;
+    REQUIRE(m.decide() == PreviewLoadModel::Outcome::ThumbnailOnly);
+}
+
+namespace {
+
 /// Minimal model of the "which mapping does the print actually use?" decision
 /// shared by PrintSelectDetailView::effective_mappings()/effective_auto_match()
 /// and PrintStatusPanel's render path. The pure color/type matching itself is

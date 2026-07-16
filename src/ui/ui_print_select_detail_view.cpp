@@ -1444,17 +1444,16 @@ void PrintSelectDetailView::load_gcode_for_preview() {
     // Show loading spinner over thumbnail
     lv_subject_set_int(&detail_gcode_loading_, 1);
 
-    // Check "Thumbnail Only" render mode - skip all gcode downloading/parsing
+    // Check "Thumbnail Only" render mode - skip all gcode downloading/parsing.
+    // This is the ONLY user-forced skip: past here we render whatever mode the
+    // viewer is in (3D on GLES devices, 2D-layer otherwise), just like the
+    // print-status panel. 2D-mode devices used to fall back to the thumbnail
+    // here; now they get the real toolpath preview — with the effective
+    // lane-matched colors (apply_preview_colors) — so the browser shows the
+    // colors the print will actually use. Oversized files still degrade to the
+    // thumbnail below via is_gcode_2d_streaming_safe().
     if (DisplaySettingsManager::instance().get_gcode_render_mode() == 3) {
         spdlog::info("[DetailView] G-code render mode is Thumbnail Only - skipping G-code load");
-        lv_subject_set_int(&detail_gcode_loading_, 0);
-        show_gcode_viewer(false);
-        return;
-    }
-
-    // Detail page only shows the 3D viewer — skip download/parse on 2D-only platforms
-    if (ui_gcode_viewer_is_using_2d_mode(gcode_viewer_)) {
-        spdlog::debug("[DetailView] 2D-only platform — skipping G-code preview (thumbnail only)");
         lv_subject_set_int(&detail_gcode_loading_, 0);
         show_gcode_viewer(false);
         return;
