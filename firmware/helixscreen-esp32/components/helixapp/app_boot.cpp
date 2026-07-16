@@ -217,6 +217,12 @@ extern "C" void app_boot_ui(void) {
     // Phase 1: asset root + writable config storage. The packed /assets frogfs
     // container is read-only; settings live on the /config LittleFS partition.
     helix::set_asset_root("/assets");
+    // get_data_dir() honors $HELIX_DATA_DIR; without this it returns the relative
+    // "." — meaningless on a CWD-less VFS. The read-only seed reads that go
+    // through get_data_dir() (find_readable's "<data>/assets/config/" seed used
+    // by e.g. PrinterDetector's printer_database.json) then resolve under the
+    // /assets mount (→ /assets/assets/config/...). Matches set_asset_root above.
+    setenv("HELIX_DATA_DIR", "/assets", 1);
     // get_user_config_dir() honors $HELIX_CONFIG_DIR; without this it returns
     // the relative "config", which is meaningless on a CWD-less VFS (theme
     // loader, env backups). Must point at the writable partition.
@@ -268,6 +274,15 @@ extern "C" void app_boot_ui(void) {
     // separate registration cost from panel-build cost (subjects-up → home).
     helix::register_xml_components();
     log_heap_milestone("xml-registered");
+
+    // Notification badge click: the real handler opens the NotificationHistory
+    // panel, which is excluded from the v1 ESP cut (its accessor isn't linked —
+    // notification_register_callbacks() would drag in the excluded panel). The
+    // badge still exists on the home widget, so register a no-op for its event
+    // (BEFORE app_layout XML is created in build_shell) to silence the
+    // "callback not found" warning; opening history is a later stage.
+    lv_xml_register_event_cb(nullptr, "status_notification_history_clicked",
+                             [](lv_event_t*) {});
 
     // Phase 8: core subjects (PrinterState / AmsState).
     static SubjectInitializer subjects;
