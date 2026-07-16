@@ -12,6 +12,7 @@
 #include "esp_pthread.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lvgl.h"
 #include "src/xml/lv_xml.h"
@@ -22,6 +23,27 @@ static const char *TAG = "lvgl_glue";
 static esp_lcd_panel_handle_t s_panel;
 static void (*s_ui_build)(void);
 static void (*s_ui_tick)(void);
+
+// Vsync gate for the flush (D2 tear fix). The single PSRAM framebuffer is
+// scanned out continuously; esp_lcd_panel_draw_bitmap() memcpys a dirty region
+// straight into it, so a copy landing under the active scan line tears the
+// band (persistent on the static navbar, periodic on the 1Hz-updating panel).
+// on_vsync gives this binary semaphore each frame; flush_cb waits for it so the
+// copy starts at frame top, finishing well before scan-out reaches a
+// mid-screen region. Single FB kept; small partial redraws stay cheap.
+static SemaphoreHandle_t s_vsync_sem;
+
+static bool flush_on_vsync(esp_lcd_panel_handle_t panel,
+                           const esp_lcd_rgb_panel_event_data_t *edata, void *user_ctx) {
+    (void)panel;
+    (void)edata;
+    (void)user_ctx;
+    BaseType_t high_task_woken = pdFALSE;
+    if (s_vsync_sem) {
+        xSemaphoreGiveFromISR(s_vsync_sem, &high_task_woken);
+    }
+    return high_task_woken == pdTRUE;
+}
 
 // Draw buffers are static (reserved at link time — NOT runtime heap-allocated,
 // so they can't lose the fragmentation lottery a runtime alloc would).
@@ -66,6 +88,17 @@ UI_DRAW_BUF_ATTR static uint8_t s_draw_buf2[UI_DRAW_BUF_BYTES];
 #define UI_THREAD_STACK_BYTES (48 * 1024)
 
 static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
+    // Gate on the next vsync so the copy into the live framebuffer starts during
+    // blanking (see s_vsync_sem). Drain any STALE give first (vsyncs fire during
+    // idle and leave the binary sem set — without the drain, the first flush
+    // after an idle gap, e.g. the 1Hz temp update, would take the stale token
+    // and copy immediately, which is the exact periodic tear we're fixing).
+    // Then wait for a FRESH vsync. Bounded — a stalled vsync must never hang the
+    // render loop; fall through and copy if it doesn't arrive.
+    if (s_vsync_sem) {
+        xSemaphoreTake(s_vsync_sem, 0);
+        xSemaphoreTake(s_vsync_sem, pdMS_TO_TICKS(100));
+    }
     esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1,
                               area->y2 + 1, px_map);
     lv_display_flush_ready(disp);
@@ -85,6 +118,13 @@ static void *ui_thread_main(void *arg) {
 
     // Panel first (RGB init + bounce buffers). Thread-agnostic hardware setup.
     s_panel = board_display_init();
+
+    // Vsync gate for tear-free flushing (see s_vsync_sem / flush_cb). Register
+    // before any flush can run. on_vsync is not IRAM-safe here (the bounce ISR
+    // runs with cache on — LCD_RGB_ISR_IRAM_SAFE is off), so no IRAM_ATTR.
+    s_vsync_sem = xSemaphoreCreateBinary();
+    esp_lcd_rgb_panel_event_callbacks_t lcd_cbs = {.on_vsync = flush_on_vsync};
+    esp_lcd_rgb_panel_register_event_callbacks(s_panel, &lcd_cbs, NULL);
 
     lv_init();
     lv_tick_set_cb(tick_cb);
