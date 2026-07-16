@@ -4,6 +4,7 @@
 #include "ota_health.h"
 #include "touch_input.h"
 
+#include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "esp_lcd_panel_rgb.h"
 #include "esp_log.h"
@@ -21,24 +22,24 @@ static esp_lcd_panel_handle_t s_panel;
 static void (*s_ui_build)(void);
 static void (*s_ui_tick)(void);
 
-// Draw buffers are static (.bss, internal SRAM, reserved at link time) — NOT
-// heap-allocated. WiFi's internal allocations fragment the heap run-to-run;
-// after wifi-up the largest contiguous internal block measured 31-63KB, so a
-// runtime alloc of a 38KB draw buffer is a boot lottery that abort-looped the
-// device (2026-07-15 boot-reliability investigation). Link-time reservation
-// cannot fragment. 24 lines x 800px x RGB565: sized so both buffers fit
-// alongside WiFi and the RGB bounce buffers in 512KB SRAM.
-//
-// The UI thread is now a pthread (the app core needs pthread_self() /
-// std::this_thread::get_id()), not a static FreeRTOS task. Its ~48KB stack is a
-// heap allocation — but app_main creates it BEFORE any network task, while the
-// internal heap is still unfragmented, so it lands reliably (the same pattern
-// the static reservation used to guarantee).
+// Draw buffers are static (reserved at link time — NOT runtime heap-allocated,
+// so they can't lose the WiFi fragmentation lottery a runtime alloc would), but
+// placed in PSRAM via EXT_RAM_BSS_ATTR rather than internal SRAM. At 2x38.4KB
+// (24 lines x 800px x RGB565) they were the single largest internal-DRAM .bss
+// consumer; with the full app core's static footprint, keeping them internal
+// dropped the largest contiguous internal block below the 48KB UI-pthread stack
+// and boot-failed with ENOMEM before WiFi even started. PSRAM is roomy (8MB) so
+// the reservation is free there, and PSRAM draw buffers are proven by the Plan 2
+// audit (its 80-line PSRAM buffers hit the 26-30fps baseline — see the HIL FPS
+// note; RGB draw_bitmap does a CPU copy from px_map into the framebuffer, which
+// reads PSRAM fine). Requires CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+// (sdkconfig.defaults) — without it EXT_RAM_BSS_ATTR is a silent no-op and they
+// fall back to internal DRAM.
 #define UI_DRAW_BUF_LINES 24
 #define UI_DRAW_BUF_BYTES \
     (BOARD_LCD_H_RES * UI_DRAW_BUF_LINES * sizeof(lv_color16_t))
-LV_ATTRIBUTE_MEM_ALIGN static uint8_t s_draw_buf1[UI_DRAW_BUF_BYTES];
-LV_ATTRIBUTE_MEM_ALIGN static uint8_t s_draw_buf2[UI_DRAW_BUF_BYTES];
+EXT_RAM_BSS_ATTR LV_ATTRIBUTE_MEM_ALIGN static uint8_t s_draw_buf1[UI_DRAW_BUF_BYTES];
+EXT_RAM_BSS_ATTR LV_ATTRIBUTE_MEM_ALIGN static uint8_t s_draw_buf2[UI_DRAW_BUF_BYTES];
 
 // XML/expat parsing recurses deeply during component registration and layout;
 // the audit ran the full app slice on a 32KB pthread stack. 48KB gives margin
@@ -100,6 +101,13 @@ void lvgl_glue_start(esp_lcd_panel_handle_t panel, void (*ui_build)(void),
     if (cfg_err != ESP_OK) {
         ESP_LOGE(TAG, "esp_pthread_set_cfg failed: %s", esp_err_to_name(cfg_err));
     }
+
+    // One-shot: the number that decides boot success. The 48KB UI stack must fit
+    // in `largest`; if this drops below ~48KB the pthread_create below fails with
+    // ENOMEM (errno 12). Logged every boot so a regression is visible in the log.
+    ESP_LOGI(TAG, "internal heap before ui pthread: free=%u largest=%u (need >=%u)",
+             heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL), UI_THREAD_STACK_BYTES);
 
     pthread_t ui_thread;
     int rc = pthread_create(&ui_thread, NULL, ui_thread_main, NULL);

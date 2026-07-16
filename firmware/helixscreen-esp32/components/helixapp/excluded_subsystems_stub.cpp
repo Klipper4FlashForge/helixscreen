@@ -28,6 +28,7 @@
 // cannot supply. They are resolved by adding their portable, platform-free real
 // .cpp files to app_srcs.txt instead. See the report for details.
 
+#include "esp_attr.h"
 #include "esp_log.h"
 
 #include "shaper_csv_parser.h"
@@ -45,19 +46,19 @@
 
 // src/ui/ui_panel_bed_mesh.cpp (DEFINE_GLOBAL_PANEL)
 BedMeshPanel& get_global_bed_mesh_panel() {
-    alignas(BedMeshPanel) static unsigned char storage[sizeof(BedMeshPanel)];
+    alignas(BedMeshPanel) EXT_RAM_BSS_ATTR static unsigned char storage[sizeof(BedMeshPanel)];
     return *reinterpret_cast<BedMeshPanel*>(storage);
 }
 
 // src/ui/ui_panel_calibration_pid.cpp
 PIDCalibrationPanel& get_global_pid_cal_panel() {
-    alignas(PIDCalibrationPanel) static unsigned char storage[sizeof(PIDCalibrationPanel)];
+    alignas(PIDCalibrationPanel) EXT_RAM_BSS_ATTR static unsigned char storage[sizeof(PIDCalibrationPanel)];
     return *reinterpret_cast<PIDCalibrationPanel*>(storage);
 }
 
 // src/ui/ui_overlay_timelapse_videos.cpp
 TimelapseVideosOverlay& get_global_timelapse_videos() {
-    alignas(TimelapseVideosOverlay) static unsigned char storage[sizeof(TimelapseVideosOverlay)];
+    alignas(TimelapseVideosOverlay) EXT_RAM_BSS_ATTR static unsigned char storage[sizeof(TimelapseVideosOverlay)];
     return *reinterpret_cast<TimelapseVideosOverlay*>(storage);
 }
 
@@ -87,19 +88,19 @@ void PIDCalibrationPanel::show() {}
 
 // src/ui/ui_panel_input_shaper.cpp (DEFINE_GLOBAL_PANEL)
 InputShaperPanel& get_global_input_shaper_panel() {
-    alignas(InputShaperPanel) static unsigned char storage[sizeof(InputShaperPanel)];
+    alignas(InputShaperPanel) EXT_RAM_BSS_ATTR static unsigned char storage[sizeof(InputShaperPanel)];
     return *reinterpret_cast<InputShaperPanel*>(storage);
 }
 
 // src/ui/ui_panel_screws_tilt.cpp (DEFINE_GLOBAL_PANEL)
 ScrewsTiltPanel& get_global_screws_tilt_panel() {
-    alignas(ScrewsTiltPanel) static unsigned char storage[sizeof(ScrewsTiltPanel)];
+    alignas(ScrewsTiltPanel) EXT_RAM_BSS_ATTR static unsigned char storage[sizeof(ScrewsTiltPanel)];
     return *reinterpret_cast<ScrewsTiltPanel*>(storage);
 }
 
 // src/ui/ui_panel_calibration_zoffset.cpp (DEFINE_GLOBAL_PANEL)
 ZOffsetCalibrationPanel& get_global_zoffset_cal_panel() {
-    alignas(ZOffsetCalibrationPanel) static unsigned char storage[sizeof(ZOffsetCalibrationPanel)];
+    alignas(ZOffsetCalibrationPanel) EXT_RAM_BSS_ATTR static unsigned char storage[sizeof(ZOffsetCalibrationPanel)];
     return *reinterpret_cast<ZOffsetCalibrationPanel*>(storage);
 }
 

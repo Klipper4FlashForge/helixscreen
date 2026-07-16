@@ -13,6 +13,13 @@ CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_USE_MALLOC=y
 CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0
 CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536
+# Allow static .bss to be placed in PSRAM via EXT_RAM_BSS_ATTR. Reclaims
+# internal DRAM: the app core's static footprint (LVGL draw buffers, excluded-
+# panel stub storage) grew enough that the largest contiguous internal block
+# fell below the 48KB UI-pthread stack, boot-failing with ENOMEM before WiFi
+# even started. Moving those large statics to PSRAM restores the internal
+# headroom. Without this, EXT_RAM_BSS_ATTR is a silent no-op.
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 CONFIG_COMPILER_CXX_EXCEPTIONS=y
@@ -22,8 +29,11 @@ CONFIG_FREERTOS_HZ=1000
 CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192
 
-# XML parse (expat) recursion needs a real stack (audit trap #4).
-CONFIG_ESP_MAIN_TASK_STACK_SIZE=32768
+# app_main is now tiny: it mounts storage, spawns the UI pthread (expat/XML
+# recursion runs on THAT 48KB pthread stack, not here — see lvgl_glue.c) and the
+# net task, then returns. 8KB is ample; the old 32KB was a straight 24KB of
+# internal DRAM we can't spare given the app core's static footprint.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 CONFIG_FREERTOS_CHECK_STACKOVERFLOW_CANARY=y
 
 # OTA A/B with rollback: new image must confirm healthy boot or the
