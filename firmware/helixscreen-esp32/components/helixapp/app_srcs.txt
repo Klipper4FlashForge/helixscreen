@@ -48,40 +48,12 @@
 #     none are Core+AMS. The link loop adds any genuinely-referenced core file.
 #
 # ===== app core (kept from audit) =====
-assets/fonts/mdi_icons_14.c
-assets/fonts/mdi_icons_16.c
-assets/fonts/mdi_icons_24.c
-assets/fonts/mdi_icons_32.c
-assets/fonts/mdi_icons_48.c
-assets/fonts/mdi_icons_64.c
-assets/fonts/noto_sans_10.c
-assets/fonts/noto_sans_11.c
-assets/fonts/noto_sans_12.c
-assets/fonts/noto_sans_14.c
-assets/fonts/noto_sans_16.c
-assets/fonts/noto_sans_18.c
-assets/fonts/noto_sans_20.c
-assets/fonts/noto_sans_24.c
-assets/fonts/noto_sans_26.c
-assets/fonts/noto_sans_28.c
-assets/fonts/noto_sans_32.c
-assets/fonts/noto_sans_40.c
-assets/fonts/noto_sans_bold_14.c
-assets/fonts/noto_sans_bold_16.c
-assets/fonts/noto_sans_bold_18.c
-assets/fonts/noto_sans_bold_20.c
-assets/fonts/noto_sans_bold_24.c
-assets/fonts/noto_sans_bold_28.c
-assets/fonts/noto_sans_bold_32.c
-assets/fonts/noto_sans_bold_40.c
-assets/fonts/noto_sans_light_10.c
-assets/fonts/noto_sans_light_11.c
-assets/fonts/noto_sans_light_12.c
-assets/fonts/noto_sans_light_14.c
-assets/fonts/noto_sans_light_16.c
-assets/fonts/noto_sans_light_18.c
-assets/fonts/noto_sans_light_20.c
-assets/fonts/noto_sans_light_26.c
+# fonts: NONE here — helixcore's HELIX_FONT_SRCS (components/helixcore/CMakeLists.txt)
+# is the single source of truth for the 11 medium-tier faces the 800x480 K-Touch
+# renders. AssetManager::register_fonts() (src/application/asset_manager.cpp) still
+# references every breakpoint tier's font symbols by address, so the other tiers'
+# faces are satisfied by aliases to real medium-tier faces in font_aliases.cpp rather
+# than compiling their glyph data — see that file's header for the full symbol set.
 lib/lv_markdown/deps/md4c/md4c.c
 lib/lv_markdown/src/lv_markdown.c
 lib/lv_markdown/src/lv_markdown_style.c

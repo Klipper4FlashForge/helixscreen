@@ -56,7 +56,7 @@ set(LOCAL_SRCS
     helixapp_platform_stubs2.cpp
     task10_pending_stubs.cpp
     excluded_subsystems_stub.cpp
-    font_aliases.c
+    font_aliases.cpp
     stb_impl.c
     link_probe.cpp)
 

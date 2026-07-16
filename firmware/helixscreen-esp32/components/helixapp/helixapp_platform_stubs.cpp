@@ -121,37 +121,7 @@ TemperatureHistoryManager* get_temperature_history_manager() {
     return nullptr;
 }
 
-// Font faces referenced by AssetManager::register_fonts but not in the audit
-// font set: the whole source_code_pro mono family, the tier-5/6 mdi 80/96/128
-// (mdi_icons_128.c alone is 7.2MB of source), and micro-only noto_sans_8.
-// The large ones sit behind runtime breakpoint guards that are false on the
-// 800x480 K-Touch; source_code_pro_10..16 CAN be selected and will render as
-// the alias face — acceptable, the audit verifies structure not glyph
-// fidelity. A real K-Touch build trims via HELIX_MAX_FONT_TIER (Phase 2).
-extern "C" {
-extern const lv_font_t noto_sans_16; // any always-linked face works
-extern const lv_font_t mdi_icons_128;
-extern const lv_font_t mdi_icons_80;
-extern const lv_font_t mdi_icons_96;
-extern const lv_font_t noto_sans_8;
-extern const lv_font_t source_code_pro_10;
-extern const lv_font_t source_code_pro_12;
-extern const lv_font_t source_code_pro_14;
-extern const lv_font_t source_code_pro_16;
-extern const lv_font_t source_code_pro_18;
-extern const lv_font_t source_code_pro_20;
-extern const lv_font_t source_code_pro_24;
-extern const lv_font_t source_code_pro_8;
-}
-extern "C" const lv_font_t mdi_icons_128 = noto_sans_16;
-extern "C" const lv_font_t mdi_icons_80 = noto_sans_16;
-extern "C" const lv_font_t mdi_icons_96 = noto_sans_16;
-extern "C" const lv_font_t noto_sans_8 = noto_sans_16;
-extern "C" const lv_font_t source_code_pro_10 = noto_sans_16;
-extern "C" const lv_font_t source_code_pro_12 = noto_sans_16;
-extern "C" const lv_font_t source_code_pro_14 = noto_sans_16;
-extern "C" const lv_font_t source_code_pro_16 = noto_sans_16;
-extern "C" const lv_font_t source_code_pro_18 = noto_sans_16;
-extern "C" const lv_font_t source_code_pro_20 = noto_sans_16;
-extern "C" const lv_font_t source_code_pro_24 = noto_sans_16;
-extern "C" const lv_font_t source_code_pro_8 = noto_sans_16;
+// Font-face aliases (all faces AssetManager::register_fonts() references
+// outside helixcore's 11 medium-tier faces, plus the mdi/noto_sans/
+// source_code_pro tiers this component no longer compiles for real) live in
+// font_aliases.cpp, not here — single source of truth, see that file's header.
