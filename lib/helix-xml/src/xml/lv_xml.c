@@ -1642,6 +1642,20 @@ static bool xml_value_has_compose(const char * value)
     return false;
 }
 
+/** True if `s` parses fully as a base-10 integer: optional surrounding whitespace,
+ *  optional sign, at least one digit, nothing else. Decides whether a component
+ *  param may serve as a numeric `${expr}` operand. */
+static bool xml_str_is_integer(const char * s)
+{
+    if(s == NULL) return false;
+    while(*s == ' ' || *s == '\t') s++;
+    if(*s == '+' || *s == '-') s++;
+    if(!(*s >= '0' && *s <= '9')) return false;    /* require at least one digit */
+    while(*s >= '0' && *s <= '9') s++;
+    while(*s == ' ' || *s == '\t') s++;
+    return *s == '\0';
+}
+
 /** True if `s` is a single bare identifier: matches ^[A-Za-z_][A-Za-z0-9_]*$ with no
  *  operators, spaces, or leading digit. A bare-identifier token keeps the legacy
  *  name-substitution path (`${i}`, `${grp}`); anything else is an integer expression. */
@@ -1703,7 +1717,18 @@ static lv_subject_t * xml_compose_expr_resolver(void * vctx, const char * name)
     if(lv_streq(name, "i"))
         return (c->rc && c->rc->replaying) ? &c->index_subject : NULL;
 
-    /* 2. numeric component-param operand — added in Task 2 */
+    /* 2. numeric component-param / parent-attr -> transient int operand.
+     *    Mirrors xml_compose_lookup's param resolution (parent attrs, then default). */
+    {
+        const char * pv = lv_xml_get_value_of(c->state->parent_attrs, name);
+        if(pv == NULL || pv[0] == '$') pv = get_param_default(&c->state->scope, name);
+        if(pv && xml_str_is_integer(pv)) {
+            if(c->param_count >= XML_COMPOSE_EXPR_MAX_OPERANDS) return NULL;
+            lv_subject_t * s = &c->param_subjects[c->param_count++];
+            lv_subject_init_int(s, lv_xml_atoi(pv));
+            return s;
+        }
+    }
 
     /* 3. real scope subject (also finds globally registered subjects) */
     return lv_xml_get_subject(&c->state->scope, name);

@@ -173,3 +173,47 @@ TEST_CASE_METHOD(LVGLTestFixture, "expr: bare ${i}/${grp} unchanged (backward co
     lv_obj_delete(v);
     lv_xml_component_unregister("t_expr6");
 }
+
+// Numeric component param as an operand: cols="4" -> ${cols * 2} = 8.
+static const char * COMP_EXPR_PARAM =
+  "<component>"
+  "  <api><prop name='cols' type='string'/></api>"
+  "  <view>"
+  "    <lv_obj name='g' width='${cols * 2}' height='10'/>"
+  "  </view>"
+  "</component>";
+
+TEST_CASE_METHOD(LVGLTestFixture, "expr: numeric param is a valid operand", "[xml][expr_compose]") {
+    REQUIRE(lv_xml_register_component_from_data("t_expr7", COMP_EXPR_PARAM) == LV_RESULT_OK);
+    const char * attrs[] = {"cols", "4", nullptr};
+    lv_obj_t * v = (lv_obj_t*)lv_xml_create(lv_screen_active(), "t_expr7", attrs);
+    lv_obj_t * g = lv_obj_find_by_name(v, "g");
+    process_lvgl(20);
+    lv_obj_update_layout(g);
+    REQUIRE(lv_obj_get_width(g) == 8);
+    lv_obj_delete(v);
+    lv_xml_component_unregister("t_expr7");
+}
+
+// Non-numeric param in arithmetic: grp="fan" -> ${grp * 2} fails to compile,
+// splices empty (numeric apply -> width 0), no crash.
+static const char * COMP_EXPR_PARAM_BAD =
+  "<component>"
+  "  <api><prop name='grp' type='string'/></api>"
+  "  <view>"
+  "    <lv_obj name='g' width='${grp * 2}' height='10'/>"
+  "  </view>"
+  "</component>";
+
+TEST_CASE_METHOD(LVGLTestFixture, "expr: non-numeric param in arithmetic degrades", "[xml][expr_compose]") {
+    REQUIRE(lv_xml_register_component_from_data("t_expr8", COMP_EXPR_PARAM_BAD) == LV_RESULT_OK);
+    const char * attrs[] = {"grp", "fan", nullptr};
+    lv_obj_t * v = (lv_obj_t*)lv_xml_create(lv_screen_active(), "t_expr8", attrs);
+    lv_obj_t * g = lv_obj_find_by_name(v, "g");
+    process_lvgl(20);
+    lv_obj_update_layout(g);
+    REQUIRE(lv_obj_get_width(g) == 0);   // empty width string -> 0
+    lv_obj_delete(v);
+    lv_xml_component_unregister("t_expr8");
+    SUCCEED("non-numeric param in arithmetic did not crash");
+}
