@@ -31,6 +31,9 @@
 #     src/api/moonraker_rest_api.cpp        ) task10_pending_stubs.cpp (abort-if-called,
 #     src/api/moonraker_file_transfer_api.cpp ) REMOVE IN TASK 10).
 #     src/api/moonraker_timelapse_api.cpp   )
+#     (IMoonrakerAPI::is_safe_gcode_param() was pulled out of moonraker_api_controls.cpp
+#     into the HTTP-free src/api/moonraker_api_validation.cpp — kept below, AFC/HappyHare
+#     need the real validator pre-Task-10, not the reject-everything stub.)
 #   Platform seams (no ESP backend yet; provided by helixapp_platform_stubs.cpp,
 #   same as the audit): src/api/{wifi,usb,ethernet}_manager + *_backend*,
 #     display/backlight/drm/fbdev backends, src/network/mdns_discovery,
@@ -468,6 +471,7 @@ src/api/moonraker_api.cpp
 src/api/moonraker_api_config.cpp
 src/api/moonraker_api_led.cpp
 src/api/moonraker_api_print.cpp
+src/api/moonraker_api_validation.cpp
 src/api/moonraker_advanced_api.cpp
 src/api/moonraker_file_api.cpp
 src/api/moonraker_history_api.cpp

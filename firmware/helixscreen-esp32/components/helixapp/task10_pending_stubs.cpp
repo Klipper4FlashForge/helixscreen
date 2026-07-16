@@ -14,10 +14,8 @@
 // esp32p4-task-5-report.md.
 
 #include "esp_log.h"
-#include "i_moonraker_api.h"
 
 #include <cstdlib>
-#include <string>
 
 namespace {
 [[maybe_unused]] [[noreturn]] void task10_unimplemented(const char* sym) {
@@ -28,15 +26,5 @@ namespace {
     abort();
 }
 } // namespace
-
-// IMoonrakerAPI::is_safe_gcode_param — a pure gcode-safety validator whose sole
-// definition lives in src/api/moonraker_api_controls.cpp (excluded here: it
-// includes hv/requests.h, Task 10 scope). Called by the AFC/HappyHare AMS
-// backends to vet gcode params. Conservative default: reject. Task 10 restores
-// the real validator with the controls TU. NOT abort() — it is on a normal AMS
-// code path, and rejecting is the safe answer if it ever runs pre-Task-10.
-bool IMoonrakerAPI::is_safe_gcode_param(const std::string& /*str*/) {
-    return false;
-}
 
 // (further Task 10 HTTP sub-API symbols appended here as the link demands them)
