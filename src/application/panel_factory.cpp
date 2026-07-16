@@ -33,8 +33,11 @@ using namespace helix;
 #if defined(HELIX_PLATFORM_ESP32)
 namespace {
 // A brief modal loading state painted before a deferred panel's (multi-second)
-// lv_xml_create. Full-screen scrim + spinner on the top layer so it covers the
-// still-visible previous panel. Torn down deferred-safe after the build.
+// lv_xml_create. Full-screen scrim + STATIC "Loading..." label on the top layer
+// so it covers the still-visible previous panel. Deliberately NOT a spinner: the
+// build blocks the LVGL thread synchronously, so no animation timer can run
+// during it — a spinner would freeze and read as a hang. Static text is honest.
+// Torn down deferred-safe after the build.
 lv_obj_t* make_loading_scrim() {
     lv_obj_t* scrim = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(scrim);
@@ -42,10 +45,10 @@ lv_obj_t* make_loading_scrim() {
     lv_obj_set_style_bg_color(scrim, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(scrim, LV_OPA_60, LV_PART_MAIN);
     lv_obj_remove_flag(scrim, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_t* spin = lv_spinner_create(scrim);
-    lv_spinner_set_anim_params(spin, 1000, 200);
-    lv_obj_set_size(spin, 56, 56);
-    lv_obj_center(spin);
+    lv_obj_t* lbl = lv_label_create(scrim);
+    lv_label_set_text(lbl, "Loading...");
+    lv_obj_set_style_text_color(lbl, lv_color_white(), LV_PART_MAIN);
+    lv_obj_center(lbl);
     return scrim;
 }
 } // namespace
