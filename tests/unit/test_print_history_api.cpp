@@ -81,7 +81,7 @@ class PrintHistoryTestFixture {
 // ============================================================================
 
 TEST_CASE_METHOD(PrintHistoryTestFixture, "get_history_list returns mock jobs",
-                 "[history][api][slow]") {
+                 "[history][api]") {
     std::atomic<bool> success_called{false};
     std::atomic<bool> error_called{false};
     std::vector<PrintHistoryJob> captured_jobs;
@@ -116,7 +116,7 @@ TEST_CASE_METHOD(PrintHistoryTestFixture, "get_history_list returns mock jobs",
 }
 
 TEST_CASE_METHOD(PrintHistoryTestFixture, "get_history_list jobs have valid status",
-                 "[history][api][slow]") {
+                 "[history][api]") {
     std::atomic<bool> done{false};
     std::vector<PrintHistoryJob> captured_jobs;
 
@@ -150,7 +150,7 @@ TEST_CASE_METHOD(PrintHistoryTestFixture, "get_history_list jobs have valid stat
 // ============================================================================
 
 TEST_CASE_METHOD(PrintHistoryTestFixture, "get_history_totals returns statistics",
-                 "[history][api][slow]") {
+                 "[history][api]") {
     std::atomic<bool> success_called{false};
     std::atomic<bool> error_called{false};
     PrintHistoryTotals captured_totals;
@@ -185,7 +185,7 @@ TEST_CASE_METHOD(PrintHistoryTestFixture, "get_history_totals returns statistics
 // ============================================================================
 
 TEST_CASE_METHOD(PrintHistoryTestFixture, "delete_history_job calls success callback",
-                 "[history][api][slow]") {
+                 "[history][api]") {
     std::atomic<bool> success_called{false};
     std::atomic<bool> error_called{false};
 

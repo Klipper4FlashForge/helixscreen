@@ -311,7 +311,7 @@ TEST_CASE_METHOD(InputShaperTestFixture, "set_input_shaper accepts all valid sha
 // InputShaperResult Parsing Tests
 // ============================================================================
 
-TEST_CASE("InputShaperResult default construction", "[slow][calibration]") {
+TEST_CASE("InputShaperResult default construction", "[calibration]") {
     InputShaperResult result;
 
     // Default axis is 'X' per struct definition
@@ -324,7 +324,7 @@ TEST_CASE("InputShaperResult default construction", "[slow][calibration]") {
     REQUIRE(result.freq_response.empty());
 }
 
-TEST_CASE("InputShaperResult is_valid check", "[slow][calibration]") {
+TEST_CASE("InputShaperResult is_valid check", "[calibration]") {
     InputShaperResult result;
 
     // Empty result is not valid
@@ -341,7 +341,7 @@ TEST_CASE("InputShaperResult is_valid check", "[slow][calibration]") {
 // Response Parsing Simulation Tests
 // ============================================================================
 
-TEST_CASE("InputShaperResult can store calibration data", "[slow][calibration]") {
+TEST_CASE("InputShaperResult can store calibration data", "[calibration]") {
     // Simulate building a result from parsed G-code responses
     InputShaperResult result;
     result.axis = 'X';
@@ -367,7 +367,7 @@ TEST_CASE("InputShaperResult can store calibration data", "[slow][calibration]")
     REQUIRE(result.freq_response.size() == 4);
 }
 
-TEST_CASE("InputShaperResult can represent incomplete state", "[slow][calibration]") {
+TEST_CASE("InputShaperResult can represent incomplete state", "[calibration]") {
     InputShaperResult result;
     result.axis = 'Y';
     // Leave shaper_type empty to simulate error/incomplete
@@ -380,7 +380,7 @@ TEST_CASE("InputShaperResult can represent incomplete state", "[slow][calibratio
 // Shaper Type Validation Tests
 // ============================================================================
 
-TEST_CASE("Valid shaper type strings", "[slow][calibration][validation]") {
+TEST_CASE("Valid shaper type strings", "[calibration][validation]") {
     // These are the official Klipper input shaper types
     std::vector<std::string> valid_types = {
         "zv",       // Zero Vibration

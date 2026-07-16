@@ -828,7 +828,7 @@ TEST_CASE("Snapmaker RFID info parsing", "[ams][snapmaker]") {
 // ============================================================================
 
 TEST_CASE("Snapmaker override loaded at init is applied over firmware data",
-          "[ams][snapmaker][filament_slot_override][slow]") {
+          "[ams][snapmaker][filament_slot_override]") {
     // Seed lane_data in the mock Moonraker DB with a slot 0 override.
     // Inject the pre-loaded override into the backend directly (skipping
     // on_started() since the backend is built with api=nullptr for simplicity —
@@ -874,7 +874,7 @@ TEST_CASE("Snapmaker override loaded at init is applied over firmware data",
 }
 
 TEST_CASE("Snapmaker set_slot_info(persist=true) writes override and survives status update",
-          "[ams][snapmaker][filament_slot_override][slow]") {
+          "[ams][snapmaker][filament_slot_override]") {
     // This is the core behavior that was BROKEN before Task 12: set_slot_info
     // ignored its persist parameter and the next firmware status update
     // wiped user edits. The override must now survive subsequent parses.
@@ -923,7 +923,7 @@ TEST_CASE("Snapmaker set_slot_info(persist=true) writes override and survives st
 }
 
 TEST_CASE("Snapmaker set_slot_info(persist=false) preview does NOT write store",
-          "[ams][snapmaker][filament_slot_override][slow]") {
+          "[ams][snapmaker][filament_slot_override]") {
     SnapmakerTmpCacheDir tmp("task12_no_persist");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -956,7 +956,7 @@ TEST_CASE("Snapmaker set_slot_info(persist=false) preview does NOT write store",
 }
 
 TEST_CASE("Snapmaker RFID UID change clears override (hardware swap detected)",
-          "[ams][snapmaker][filament_slot_override][slow]") {
+          "[ams][snapmaker][filament_slot_override]") {
     SnapmakerTmpCacheDir tmp("task12_uid_swap_clears");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1015,7 +1015,7 @@ TEST_CASE("Snapmaker RFID UID change clears override (hardware swap detected)",
 }
 
 TEST_CASE("Snapmaker first RFID UID observation does NOT clear override",
-          "[ams][snapmaker][filament_slot_override][slow]") {
+          "[ams][snapmaker][filament_slot_override]") {
     // Even when the override was saved against a different (now-stale) UID,
     // the very first observation is a BASELINE and must never fire a clear.
     SnapmakerTmpCacheDir tmp("task12_first_uid_baseline");
@@ -1061,7 +1061,7 @@ TEST_CASE("Snapmaker first RFID UID observation does NOT clear override",
 }
 
 TEST_CASE("Snapmaker empty RFID UID does not update baseline or clear",
-          "[ams][snapmaker][filament_slot_override][slow]") {
+          "[ams][snapmaker][filament_slot_override]") {
     // Empty UID = no tag / reader disabled / unreadable. Must not update
     // the baseline and must not clear. This is the contract that keeps
     // transient tag-read failures from masking a genuine hardware swap

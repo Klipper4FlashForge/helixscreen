@@ -208,7 +208,7 @@ TEST_CASE("FilamentSlotOverride roundtrips through JSON", "[filament_slot_overri
 }
 
 TEST_CASE("FilamentSlotOverrideStore load returns empty when namespace absent",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -221,7 +221,7 @@ TEST_CASE("FilamentSlotOverrideStore load returns empty when namespace absent",
 }
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking parses lane_data entries",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -276,7 +276,7 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking parses lane_data entries",
 }
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking skips entries missing lane field",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -291,7 +291,7 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking skips entries missing lane fi
 }
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking rejects negative lane values",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -306,7 +306,7 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking rejects negative lane values"
 }
 
 TEST_CASE("FilamentSlotOverrideStore save_async writes AFC-shaped record to lane_data",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("save_afc");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -355,7 +355,7 @@ TEST_CASE("FilamentSlotOverrideStore save_async writes AFC-shaped record to lane
 }
 
 TEST_CASE("FilamentSlotOverrideStore save_async emits Happy Hare key aliases",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     // Forward-compat: the writer emits vendor_name (alias of vendor) and name
     // (alias of spool_name) using Happy Hare's key convention, in addition to
     // our own keys. Orca is most likely to consume vendor_name for vendor-aware
@@ -387,7 +387,7 @@ TEST_CASE("FilamentSlotOverrideStore save_async emits Happy Hare key aliases",
 }
 
 TEST_CASE("FilamentSlotOverrideStore save_async omits aliases when source empty",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     // The aliases are emitted only alongside their source key — an empty brand
     // emits neither vendor nor vendor_name; an empty spool_name emits neither
     // spool_name nor name.
@@ -416,7 +416,7 @@ TEST_CASE("FilamentSlotOverrideStore save_async omits aliases when source empty"
 }
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking reads Happy Hare alias-only record",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     // A record written by Happy Hare's mmu_server.push_lane_data carries
     // vendor_name / name but NOT vendor / spool_name. The reader must fall back
     // to the alias keys so these records parse correctly.
@@ -442,7 +442,7 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking reads Happy Hare alias-only r
 }
 
 TEST_CASE("FilamentSlotOverrideStore save_async emits explicit bed/nozzle temps",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("save_temps_explicit");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -470,7 +470,7 @@ TEST_CASE("FilamentSlotOverrideStore save_async emits explicit bed/nozzle temps"
 }
 
 TEST_CASE("FilamentSlotOverrideStore save_async falls back to material DB when temps unset",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("save_temps_fallback");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -498,7 +498,7 @@ TEST_CASE("FilamentSlotOverrideStore save_async falls back to material DB when t
 }
 
 TEST_CASE("FilamentSlotOverrideStore save_async omits temps when no material and no override",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("save_temps_none");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -522,7 +522,7 @@ TEST_CASE("FilamentSlotOverrideStore save_async omits temps when no material and
 }
 
 TEST_CASE("FilamentSlotOverrideStore save_async sets updated_at on the stored record",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("save_updated_at");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -558,7 +558,7 @@ TEST_CASE("FilamentSlotOverrideStore save_async sets updated_at on the stored re
 }
 
 TEST_CASE("FilamentSlotOverrideStore save_async reports error on MR DB failure",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -589,7 +589,7 @@ TEST_CASE("FilamentSlotOverrideStore save_async reports error on MR DB failure",
 }
 
 TEST_CASE("FilamentSlotOverrideStore clear_async removes single slot",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("clear_single");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -620,7 +620,7 @@ TEST_CASE("FilamentSlotOverrideStore clear_async removes single slot",
 }
 
 TEST_CASE("FilamentSlotOverrideStore clear_async succeeds for absent slot (idempotent)",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("clear_idempotent");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -644,7 +644,7 @@ TEST_CASE("FilamentSlotOverrideStore clear_async succeeds for absent slot (idemp
 }
 
 TEST_CASE("FilamentSlotOverrideStore clear_async rejects negative slot_index",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -663,7 +663,7 @@ TEST_CASE("FilamentSlotOverrideStore clear_async rejects negative slot_index",
 }
 
 TEST_CASE("FilamentSlotOverrideStore clear_async handles null callback gracefully",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("clear_null_cb");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -680,7 +680,7 @@ TEST_CASE("FilamentSlotOverrideStore clear_async handles null callback gracefull
 }
 
 TEST_CASE("FilamentSlotOverrideStore clear_async maps 404 error to success",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("clear_404");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -705,7 +705,7 @@ TEST_CASE("FilamentSlotOverrideStore clear_async maps 404 error to success",
 }
 
 TEST_CASE("FilamentSlotOverrideStore clear_async propagates non-missing-key errors",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -731,7 +731,7 @@ TEST_CASE("FilamentSlotOverrideStore clear_async propagates non-missing-key erro
 }
 
 TEST_CASE("FilamentSlotOverrideStore clear_async maps message-based missing-key error to success",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("clear_msg_missing");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -766,7 +766,7 @@ TEST_CASE("FilamentSlotOverrideStore clear_async maps message-based missing-key 
 // ============================================================================
 
 TEST_CASE("FilamentSlotOverrideStore save_async callback fires after store destroyed (no UAF)",
-          "[filament_slot_override][slow][lifetime]") {
+          "[filament_slot_override][lifetime]") {
     // TmpCacheDir declared outside the store scope so it outlives the deferred
     // cache-write fired below — cache path is value-captured into the lambda
     // before store destruction, but the dir still needs to exist when the
@@ -797,7 +797,7 @@ TEST_CASE("FilamentSlotOverrideStore save_async callback fires after store destr
 }
 
 TEST_CASE("FilamentSlotOverrideStore clear_async callback fires after store destroyed (no UAF)",
-          "[filament_slot_override][slow][lifetime]") {
+          "[filament_slot_override][lifetime]") {
     TmpCacheDir tmp("lifetime_clear");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -819,7 +819,7 @@ TEST_CASE("FilamentSlotOverrideStore clear_async callback fires after store dest
 
 TEST_CASE(
     "FilamentSlotOverrideStore save_async error callback fires after store destroyed (no UAF)",
-    "[filament_slot_override][slow][lifetime]") {
+    "[filament_slot_override][lifetime]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -859,7 +859,7 @@ TEST_CASE(
 // ============================================================================
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking returns empty on timeout",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -893,7 +893,7 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking returns empty on timeout",
 // ============================================================================
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking handles non-object namespace value",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -911,7 +911,7 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking handles non-object namespace 
 }
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking skips namespace siblings that are not lane records",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -948,7 +948,7 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking skips namespace siblings that
 // ============================================================================
 
 TEST_CASE("FilamentSlotOverrideStore save_async writes local cache on success",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("task6_save_writes");
 
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
@@ -987,7 +987,7 @@ TEST_CASE("FilamentSlotOverrideStore save_async writes local cache on success",
 }
 
 TEST_CASE("FilamentSlotOverrideStore clear_async erases from local cache on success",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("task6_clear_erases");
 
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
@@ -1017,7 +1017,7 @@ TEST_CASE("FilamentSlotOverrideStore clear_async erases from local cache on succ
 }
 
 TEST_CASE("FilamentSlotOverrideStore save_async preserves other backends in cache",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("task6_preserves_other");
 
     // Seed the cache with an ACE entry that our IFS save must leave untouched.
@@ -1045,7 +1045,7 @@ TEST_CASE("FilamentSlotOverrideStore save_async preserves other backends in cach
 }
 
 TEST_CASE("FilamentSlotOverrideStore save_async survives corrupt existing cache",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("task6_corrupt");
 
     // Seed with unparseable JSON.
@@ -1087,7 +1087,7 @@ TEST_CASE("FilamentSlotOverrideStore save_async survives corrupt existing cache"
 // ============================================================================
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking falls back to cache when MR DB connection fails",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("task7_fallback_error");
 
     // Seed the cache file directly with a known entry.
@@ -1123,7 +1123,7 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking falls back to cache when MR D
 }
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking falls back to cache on MR DB timeout",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("task7_fallback_timeout");
 
     nlohmann::json doc = {{"version", 1}, {"ifs", {{"slots", {{"0", {{"brand", "eSUN"}}}}}}}};
@@ -1151,7 +1151,7 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking falls back to cache on MR DB 
 
 TEST_CASE(
     "FilamentSlotOverrideStore load_blocking does NOT use cache when MR DB returns empty namespace",
-    "[filament_slot_override][slow]") {
+    "[filament_slot_override]") {
     TmpCacheDir tmp("task7_empty_ns_no_fallback");
 
     // Seed cache with stale data that we must NOT return — an empty-but-success
@@ -1173,7 +1173,7 @@ TEST_CASE(
 }
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking cache fallback handles missing file",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("task7_missing_cache");
     // No cache file created — TmpCacheDir makes the dir but not the file.
 
@@ -1192,7 +1192,7 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking cache fallback handles missin
 }
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking cache fallback handles corrupt cache",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("task7_corrupt_cache");
     std::ofstream(tmp.path / "filament_slot_overrides.json") << "not json";
 
@@ -1211,7 +1211,7 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking cache fallback handles corrup
 }
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking cache returns only this backend's slots",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     TmpCacheDir tmp("task7_backend_isolation");
 
     // Seed cache with both ifs and ace entries; only the ifs ones are ours.
@@ -1250,7 +1250,7 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking cache returns only this backe
 // ============================================================================
 
 TEST_CASE("Migration: ACE backend migrates legacy namespace to lane_data on first load",
-          "[filament_slot_override][migration][slow]") {
+          "[filament_slot_override][migration]") {
     TmpCacheDir tmp("task8_ace_migrate");
 
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
@@ -1312,7 +1312,7 @@ TEST_CASE("Migration: ACE backend migrates legacy namespace to lane_data on firs
 }
 
 TEST_CASE("Migration: CFS backend migrates its legacy namespace, not ACE's",
-          "[filament_slot_override][migration][slow]") {
+          "[filament_slot_override][migration]") {
     TmpCacheDir tmp("task8_cfs_isolation");
 
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
@@ -1343,7 +1343,7 @@ TEST_CASE("Migration: CFS backend migrates its legacy namespace, not ACE's",
 }
 
 TEST_CASE("Migration: IFS backend skips migration entirely",
-          "[filament_slot_override][migration][slow]") {
+          "[filament_slot_override][migration]") {
     TmpCacheDir tmp("task8_ifs_skip");
 
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
@@ -1367,7 +1367,7 @@ TEST_CASE("Migration: IFS backend skips migration entirely",
 }
 
 TEST_CASE("Migration: no-op when lane_data already populated",
-          "[filament_slot_override][migration][slow]") {
+          "[filament_slot_override][migration]") {
     TmpCacheDir tmp("task8_no_op_with_lane_data");
 
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
@@ -1394,7 +1394,7 @@ TEST_CASE("Migration: no-op when lane_data already populated",
 }
 
 TEST_CASE("Migration: idempotent (second startup after migration is no-op)",
-          "[filament_slot_override][migration][slow]") {
+          "[filament_slot_override][migration]") {
     TmpCacheDir tmp("task8_idempotent");
 
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
@@ -1423,7 +1423,7 @@ TEST_CASE("Migration: idempotent (second startup after migration is no-op)",
 }
 
 TEST_CASE("Migration: aborts without deleting legacy if write fails",
-          "[filament_slot_override][migration][slow]") {
+          "[filament_slot_override][migration]") {
     TmpCacheDir tmp("task8_abort_on_write_fail");
 
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
@@ -1451,7 +1451,7 @@ TEST_CASE("Migration: aborts without deleting legacy if write fails",
 }
 
 TEST_CASE("Migration: non-object slot entries are skipped silently",
-          "[filament_slot_override][migration][slow]") {
+          "[filament_slot_override][migration]") {
     TmpCacheDir tmp("task8_malformed_slot");
 
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
@@ -1477,7 +1477,7 @@ TEST_CASE("Migration: non-object slot entries are skipped silently",
 }
 
 TEST_CASE("Migration: legacy with only malformed entries is still cleaned up",
-          "[filament_slot_override][migration][slow]") {
+          "[filament_slot_override][migration]") {
     TmpCacheDir tmp("task8_all_malformed");
 
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
@@ -1503,7 +1503,7 @@ TEST_CASE("Migration: legacy with only malformed entries is still cleaned up",
 }
 
 TEST_CASE("Migration: deletes legacy per-backend local JSON file after success",
-          "[filament_slot_override][migration][slow]") {
+          "[filament_slot_override][migration]") {
     TmpCacheDir tmp("task8_local_file_cleanup");
 
     // Seed the per-backend legacy local JSON file that pre-dates Task 6's
@@ -1551,7 +1551,7 @@ TEST_CASE("Migration: deletes legacy per-backend local JSON file after success",
 // (or doesn't) as expected.
 
 TEST_CASE("mirror_firmware_to_lane_data FillUnsetOnly: empty override gets firmware values",
-          "[mirror_firmware][slow]") {
+          "[mirror_firmware]") {
     TmpCacheDir tmp("mirror_fillunset_empty");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1576,7 +1576,7 @@ TEST_CASE("mirror_firmware_to_lane_data FillUnsetOnly: empty override gets firmw
 }
 
 TEST_CASE("mirror_firmware_to_lane_data FillUnsetOnly: user color preserved against firmware",
-          "[mirror_firmware][slow]") {
+          "[mirror_firmware]") {
     TmpCacheDir tmp("mirror_fillunset_user_wins");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1611,7 +1611,7 @@ TEST_CASE("mirror_firmware_to_lane_data FillUnsetOnly: user color preserved agai
 
 TEST_CASE("mirror_firmware_to_lane_data: pure black firmware color is mirrored "
           "(NOT treated as no-signal)",
-          "[mirror_firmware][slow]") {
+          "[mirror_firmware]") {
     // Regression for the K2 lane1 bug: firmware reports loaded black PLA as
     // RGB 0x000000 (color_value="0000000"). The pre-color_set helper used
     // `firmware_color == 0` as a "no signal" sentinel and silently dropped
@@ -1660,7 +1660,7 @@ TEST_CASE("mirror_firmware_to_lane_data: pure black firmware color is mirrored "
 }
 
 TEST_CASE("mirror_firmware_to_lane_data FillUnsetOnly: partial override fills only the gap",
-          "[mirror_firmware][slow]") {
+          "[mirror_firmware]") {
     TmpCacheDir tmp("mirror_fillunset_partial");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1692,7 +1692,7 @@ TEST_CASE("mirror_firmware_to_lane_data FillUnsetOnly: partial override fills on
     CHECK(stored["spool_name"] == "PolyTerra Sage");
 }
 
-TEST_CASE("mirror_firmware_to_lane_data: no-signal cases skip writing", "[mirror_firmware][slow]") {
+TEST_CASE("mirror_firmware_to_lane_data: no-signal cases skip writing", "[mirror_firmware]") {
     TmpCacheDir tmp("mirror_no_signal");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1718,7 +1718,7 @@ TEST_CASE("mirror_firmware_to_lane_data: no-signal cases skip writing", "[mirror
 }
 
 TEST_CASE("mirror_firmware_to_lane_data OverwriteAlways: external color edit propagates",
-          "[mirror_firmware][slow]") {
+          "[mirror_firmware]") {
     TmpCacheDir tmp("mirror_overwrite_external");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1753,7 +1753,7 @@ TEST_CASE("mirror_firmware_to_lane_data OverwriteAlways: external color edit pro
 }
 
 TEST_CASE("mirror_firmware_to_lane_data: steady state does not churn lane_data",
-          "[mirror_firmware][slow]") {
+          "[mirror_firmware]") {
     TmpCacheDir tmp("mirror_steady_state");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1884,7 +1884,7 @@ TEST_CASE("mirror_firmware_to_lane_data OverwriteAlways: auto-mirrored entry sti
 
 TEST_CASE("load_blocking: legacy lane_data record (no helix_locked_*) loads as user-locked "
           "(#965 pessimistic default)",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     // Pre-fix records (v0.99.60–.67) don't carry helix_locked_* fields. Many
     // of those entries came from user edits — auto-mirror would silently
     // clobber them on the next firmware change after upgrade. Treat legacy
@@ -1925,7 +1925,7 @@ TEST_CASE("load_blocking: legacy lane_data record (no helix_locked_*) loads as u
 }
 
 TEST_CASE("save + load round-trip preserves explicit lock state",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     // Auto-mirror records (locks=false) must reload as locks=false so
     // subsequent firmware changes still propagate. The explicit-emission rule
     // in to_lane_data_record distinguishes "explicit false" from "missing".
@@ -1977,7 +1977,7 @@ TEST_CASE("save + load round-trip preserves explicit lock state",
 // ============================================================================
 
 TEST_CASE("FilamentSlotOverrideStore seated slot round-trips through save/load",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2008,7 +2008,7 @@ TEST_CASE("FilamentSlotOverrideStore seated slot round-trips through save/load",
 }
 
 TEST_CASE("FilamentSlotOverrideStore clear_seated_slot_async removes the seated key",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2035,7 +2035,7 @@ TEST_CASE("FilamentSlotOverrideStore clear_seated_slot_async removes the seated 
 }
 
 TEST_CASE("FilamentSlotOverrideStore load_seated_slot_blocking returns nullopt when unset",
-          "[filament_slot_override][slow]") {
+          "[filament_slot_override]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);

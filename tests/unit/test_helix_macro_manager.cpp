@@ -150,7 +150,7 @@ TEST_CASE("MacroManager - get_macro_content includes conditional operations", "[
     REQUIRE(content.find("Z_TILT_ADJUST") != std::string::npos);
 }
 
-TEST_CASE("MacroManager - get_macro_names returns expected macros", "[slow][config][content]") {
+TEST_CASE("MacroManager - get_macro_names returns expected macros", "[config][content]") {
     auto names = MacroManager::get_macro_names();
 
     // v2.0 has 14 public macros (excluding _HELIX_STATE which starts with _)
@@ -207,7 +207,7 @@ TEST_CASE("MacroManager - HELIX_BED_MESH_IF_NEEDED has age-based logic", "[confi
 // Version Tests
 // ============================================================================
 
-TEST_CASE("MacroManager - get_version returns valid semver", "[slow][config][version]") {
+TEST_CASE("MacroManager - get_version returns valid semver", "[config][version]") {
     std::string version = MacroManager::get_version();
 
     // Should not be empty
@@ -220,7 +220,7 @@ TEST_CASE("MacroManager - get_version returns valid semver", "[slow][config][ver
     REQUIRE(version >= "2.0.0");
 }
 
-TEST_CASE("MacroManager - filename constant is valid", "[slow][config][constants]") {
+TEST_CASE("MacroManager - filename constant is valid", "[config][constants]") {
     std::string filename = HELIX_MACROS_FILENAME;
 
     REQUIRE(filename == "helix_macros.cfg");

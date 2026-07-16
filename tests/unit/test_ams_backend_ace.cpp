@@ -629,7 +629,7 @@ TEST_CASE("ACE operations require API", "[ams][ace][preconditions]") {
 // ============================================================================
 
 TEST_CASE("ACE override loaded at init is applied over firmware data",
-          "[ams][ace][filament_slot_override][slow]") {
+          "[ams][ace][filament_slot_override]") {
     AceTmpCacheDir tmp("task13_override_applied");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -666,7 +666,7 @@ TEST_CASE("ACE override loaded at init is applied over firmware data",
 }
 
 TEST_CASE("ACE migrates from helix-screen:ace_slot_overrides on first startup",
-          "[ams][ace][filament_slot_override][migration][slow]") {
+          "[ams][ace][filament_slot_override][migration]") {
     // Pre-Task-8 ACE wrote per-slot overrides to
     // helix-screen:ace_slot_overrides. On first startup post-upgrade, the
     // store's load_blocking() migrates that data into lane_data and deletes
@@ -718,7 +718,7 @@ TEST_CASE("ACE migrates from helix-screen:ace_slot_overrides on first startup",
 }
 
 TEST_CASE("ACE set_slot_info(persist=true) writes to store",
-          "[ams][ace][filament_slot_override][slow]") {
+          "[ams][ace][filament_slot_override]") {
     AceTmpCacheDir tmp("task13_persist_true");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -771,7 +771,7 @@ TEST_CASE("ACE set_slot_info(persist=true) writes to store",
 }
 
 TEST_CASE("ACE set_slot_info(persist=false) does NOT write to store",
-          "[ams][ace][filament_slot_override][slow]") {
+          "[ams][ace][filament_slot_override]") {
     AceTmpCacheDir tmp("task13_persist_false");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -811,7 +811,7 @@ TEST_CASE("ACE set_slot_info(persist=false) does NOT write to store",
 }
 
 TEST_CASE("ACE slot transition empty -> present clears override",
-          "[ams][ace][filament_slot_override][slow]") {
+          "[ams][ace][filament_slot_override]") {
     AceTmpCacheDir tmp("task13_empty_to_present_clears");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -862,7 +862,7 @@ TEST_CASE("ACE slot transition empty -> present clears override",
 }
 
 TEST_CASE("ACE slot transition loaded -> empty does NOT clear override",
-          "[ams][ace][filament_slot_override][slow]") {
+          "[ams][ace][filament_slot_override]") {
     // User unloaded the current spool but hasn't swapped yet. The override
     // must survive — they may reinsert the same spool. Only the inverse
     // transition (empty -> present) is a swap signal.
@@ -935,7 +935,7 @@ TEST_CASE("ACE partial override only replaces specified fields",
 // ============================================================================
 
 TEST_CASE("ACE clear_slot_override erases in-memory override and MR DB entry",
-          "[ams][ace][filament_slot_override][slow]") {
+          "[ams][ace][filament_slot_override]") {
     AceTmpCacheDir tmp("task16_clear_slot_override");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -996,7 +996,7 @@ TEST_CASE("ACE clear_slot_override erases in-memory override and MR DB entry",
 }
 
 TEST_CASE("ACE clear_slot_override is a no-op when no override is present",
-          "[ams][ace][filament_slot_override][slow]") {
+          "[ams][ace][filament_slot_override]") {
     AceTmpCacheDir tmp("task16_clear_slot_override_noop");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1291,7 +1291,7 @@ TEST_CASE("ACE parse_status_response derives model and firmware",
 
 TEST_CASE_METHOD(LVGLTestFixture,
                  "ACE missing /info does not surface an error when /status succeeds",
-                 "[ams][ace][rest_fallback][kobra][slow]") {
+                 "[ams][ace][rest_fallback][kobra]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -1342,7 +1342,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
 
 TEST_CASE_METHOD(LVGLTestFixture,
                  "ACE surfaces an error when the data endpoints are all missing",
-                 "[ams][ace][rest_fallback][kobra][slow]") {
+                 "[ams][ace][rest_fallback][kobra]") {
     // Genuinely-missing-bridge case: /info, /status AND /slots all 404. The
     // error must still surface — but now gated on the DATA endpoints failing,
     // not on /info.
