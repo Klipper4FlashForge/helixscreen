@@ -176,3 +176,77 @@ TEST_CASE("is_discretionary_gcode strips inline comments",
     // a non-discretionary line still trips even with a trailing comment
     CHECK_FALSE(is_discretionary_gcode("G28 ; home first\nM106 S255"));
 }
+
+// ============================================================================
+// Case 7: gcode_contains_move() — isolates dangerous-to-queue motion (G0/G1)
+// ============================================================================
+//
+// Within the already-discretionary bucket the busy guard has to distinguish
+// commands that queue harmlessly (fan/temp/LED) from a physical MOVE that must
+// never fire minutes late after the user has walked away. gcode_contains_move
+// flags the latter so the guard can keep rejecting jogs while it queues the rest.
+
+TEST_CASE("gcode_contains_move flags physical moves only", "[gcode][classify][move]") {
+    SECTION("bare moves (upper + lower case)") {
+        CHECK(gcode_contains_move("G0 X10"));
+        CHECK(gcode_contains_move("g0 x10"));
+        CHECK(gcode_contains_move("G1 X10 Y10 F3000"));
+        CHECK(gcode_contains_move("g1 x10 y10 f3000"));
+    }
+    SECTION("wrapped relative jog (G91 / G0 / G90) contains a move") {
+        CHECK(gcode_contains_move("G91\nG0 X10 F3000\nG90"));
+    }
+    SECTION("fan / temp / LED are NOT moves") {
+        CHECK_FALSE(gcode_contains_move("M106 S255"));
+        CHECK_FALSE(gcode_contains_move("M104 S200"));
+        CHECK_FALSE(gcode_contains_move("SET_FAN_SPEED FAN=fan0 SPEED=1.0"));
+        CHECK_FALSE(gcode_contains_move("SET_LED LED=my_led RED=1"));
+    }
+    SECTION("bare positioning-mode sets are NOT moves (pure modal state)") {
+        CHECK_FALSE(gcode_contains_move("G90"));
+        CHECK_FALSE(gcode_contains_move("G91"));
+    }
+    SECTION("whole-token match — G10/G100 are not G0/G1") {
+        CHECK_FALSE(gcode_contains_move("G10"));
+        CHECK_FALSE(gcode_contains_move("G100 X1"));
+    }
+    SECTION("empty / comment-only") {
+        CHECK_FALSE(gcode_contains_move(""));
+        CHECK_FALSE(gcode_contains_move("; just a note"));
+    }
+    SECTION("a move anywhere in a multi-line script trips it") {
+        CHECK(gcode_contains_move("M106 S255\nG0 X10"));
+        CHECK(gcode_contains_move("M104 S200 ; heat\nG1 Z5"));
+    }
+}
+
+// ============================================================================
+// Case 8: discretionary_gcode_noun() — command-type-aware toast wording
+// ============================================================================
+//
+// When a benign command is queued behind a blocking op, the once-per-episode
+// toast names what queued ("your temperature change will run when it's ready").
+
+TEST_CASE("discretionary_gcode_noun names the command type", "[gcode][classify][noun]") {
+    SECTION("temperature") {
+        CHECK(discretionary_gcode_noun("M104 S200") == "temperature change");
+        CHECK(discretionary_gcode_noun("M140 S60") == "temperature change");
+        CHECK(discretionary_gcode_noun("SET_HEATER_TEMPERATURE HEATER=extruder TARGET=200") ==
+              "temperature change");
+        CHECK(discretionary_gcode_noun("M141 S50") == "temperature change");
+    }
+    SECTION("fan") {
+        CHECK(discretionary_gcode_noun("M106 S255") == "fan change");
+        CHECK(discretionary_gcode_noun("M107") == "fan change");
+        CHECK(discretionary_gcode_noun("SET_FAN_SPEED FAN=fan0 SPEED=1.0") == "fan change");
+    }
+    SECTION("LED") {
+        CHECK(discretionary_gcode_noun("SET_LED LED=my_led RED=1") == "LED change");
+    }
+    SECTION("first meaningful line wins; bare modal/unknown fall back to generic") {
+        // The G91 wrapper is modal-only, so the fan line names the toast.
+        CHECK(discretionary_gcode_noun("G91\nM106 S255") == "fan change");
+        CHECK(discretionary_gcode_noun("G90") == "change");
+        CHECK(discretionary_gcode_noun("") == "change");
+    }
+}

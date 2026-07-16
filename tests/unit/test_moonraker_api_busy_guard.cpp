@@ -3,18 +3,23 @@
 
 /**
  * @file test_moonraker_api_busy_guard.cpp
- * @brief Tests for the "refuse discretionary gcode while homing/probing" guard.
+ * @brief Tests for the discretionary-gcode busy guard while homing/probing.
  *
  * A blocking non-print operation (G28, BED_MESH_CALIBRATE, QGL, PROBE_ACCURACY,
- * manual probe) holds Klipper's single-threaded gcode lock. Discretionary gcode
- * (fan/temp/non-homing move/LED) sent meanwhile would queue behind it and time
- * out after 60s. The guard in BOTH MoonrakerAPI::execute_gcode and
- * MoonrakerMotionAPI::execute_gcode refuses such commands early with a toast,
- * while letting recovery/homing/probe-control and macros pass, and never blocks
- * during a real file print.
+ * manual probe) holds Klipper's single-threaded gcode lock. The guard splits
+ * discretionary gcode two ways (#1108):
+ *   - Physical MOVES (jog/home) are REFUSED — a jog that fires minutes late is
+ *     dangerous. This is the motion API's whole job and the controls API refuses
+ *     a raw move too.
+ *   - Benign fan/temp/LED are QUEUED fire-and-forget (they run harmlessly when the
+ *     lock frees, like every other frontend), with a single "busy — will run when
+ *     ready" toast per blocking episode instead of a per-command timeout.
+ * Recovery/homing/probe-control and macros are never discretionary, so they pass,
+ * and nothing is blocked during a real file print.
  *
- * Motivated by debug bundle 7CT79XXK (Sovol SV08): 4 fan commands each timed out
- * at 60s during a Cartographer calibration.
+ * History: bundle 7CT79XXK (Sovol SV08) saw 4 fan commands each time out at 60s
+ * during a Cartographer calibration — the guard originally REJECTED them; #1108
+ * changed the benign path to queue-with-one-toast so the commands aren't lost.
  */
 
 #include "../../include/moonraker_api.h"
@@ -73,36 +78,58 @@ class BusyGuardApiFixture : public LVGLTestFixture {
 } // namespace
 
 // ============================================================================
-// Discretionary gcode blocked while a blocking non-print op is active
+// Benign discretionary gcode (fan/temp/LED) QUEUES while a blocking op is active
 // ============================================================================
 
 TEST_CASE_METHOD(BusyGuardApiFixture,
-                 "execute_gcode refuses discretionary gcode while homing/leveling",
+                 "execute_gcode queues benign discretionary gcode while homing/leveling",
                  "[busy_guard][mock]") {
-    SECTION("idle_timeout Printing + not a file print blocks a fan command") {
+    // #1108: benign commands are no longer rejected — they queue in Klipper and run
+    // when the lock frees. The command must actually be SENT and no error surfaced.
+    SECTION("idle_timeout Printing + not a file print queues a fan command") {
         set_idle_printing(true); // homing/leveling holds the gcode lock
         set_print_state(PrintJobState::STANDBY);
 
         api->execute_gcode("M106 S255", nullptr,
                            [this](const MoonrakerError& err) { error_cb(err); });
 
-        CHECK(error_called);
-        CHECK(captured_error.type == MoonrakerErrorType::NOT_READY);
-        CHECK(captured_error.message == "Printer is busy — try again in a moment");
-        CHECK(mock_client.gcode_script_history().empty());
+        CHECK_FALSE(error_called);
+        REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
+        CHECK_FALSE(mock_client.gcode_script_history().empty());
     }
 
-    SECTION("manual probe active blocks a temp command") {
+    SECTION("manual probe active queues a temp command") {
         set_idle_printing(false); // idle_timeout can bounce to Ready between TESTZ
         set_manual_probe(true);
 
         api->execute_gcode("M104 S200", nullptr,
                            [this](const MoonrakerError& err) { error_cb(err); });
 
-        CHECK(error_called);
-        CHECK(captured_error.type == MoonrakerErrorType::NOT_READY);
-        CHECK(mock_client.gcode_script_history().empty());
+        CHECK_FALSE(error_called);
+        REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
+        CHECK_FALSE(mock_client.gcode_script_history().empty());
     }
+}
+
+// ============================================================================
+// A physical MOVE is still REFUSED while a blocking op is active
+// ============================================================================
+
+TEST_CASE_METHOD(BusyGuardApiFixture,
+                 "execute_gcode refuses a raw move while homing/leveling",
+                 "[busy_guard][mock]") {
+    // Even through the controls API, a G0/G1 must not queue — late-firing motion is
+    // the genuinely dangerous case the guard exists to prevent. #1108.
+    set_idle_printing(true);
+    set_print_state(PrintJobState::STANDBY);
+
+    api->execute_gcode("G0 X10 F3000", nullptr,
+                       [this](const MoonrakerError& err) { error_cb(err); });
+
+    CHECK(error_called);
+    CHECK(captured_error.type == MoonrakerErrorType::NOT_READY);
+    CHECK(captured_error.message == "Printer is busy — try again in a moment");
+    CHECK(mock_client.gcode_script_history().empty());
 }
 
 // ============================================================================
@@ -241,11 +268,12 @@ TEST_CASE_METHOD(BusyGuardApiFixture, "busy refusal reaches the user as the busy
     set_idle_printing(true);
     set_print_state(PrintJobState::STANDBY);
 
-    api->execute_gcode("M106 S255", nullptr,
+    // A move is still refused (benign fan/temp/LED now queue instead); its message
+    // is what the toast renders — the whole point of the guard's message.
+    api->execute_gcode("G0 X10 F3000", nullptr,
                        [this](const MoonrakerError& err) { error_cb(err); });
 
     REQUIRE(error_called);
-    // What the toast actually renders — the whole point of the guard's message.
     CHECK(captured_error.user_message() == "Printer is busy — try again in a moment");
 }
 

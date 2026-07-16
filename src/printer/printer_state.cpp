@@ -477,6 +477,17 @@ void PrinterState::update_from_status(const json& state) {
     // to calibration_state_ component
     calibration_state_.update_from_status(state);
 
+    // Re-arm the once-per-episode busy-queue toast when the COMPOSITE blocking
+    // condition has cleared — never on an individual signal's falling edge. A
+    // manual-probe session whose idle_timeout bounces to "Ready" between TESTZ moves
+    // is still one blocking episode; keying off idle_timeout alone would re-toast
+    // mid-episode (#1108 review). is_blocking_operation_active() sees the just-updated
+    // manual_probe / idle_timeout / print-job subjects. The store is idempotent, so
+    // gating on the predicate needs no separate edge tracking.
+    if (!is_blocking_operation_active()) {
+        calibration_state_.arm_busy_queue_toast();
+    }
+
     // Forward filament sensor updates to FilamentSensorManager
     // The manager handles all sensor types: filament_switch_sensor and filament_motion_sensor
     helix::FilamentSensorManager::instance().update_from_status(state);

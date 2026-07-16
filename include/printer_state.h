@@ -1744,6 +1744,14 @@ class PrinterState {
         return app_motion_activity_;
     }
 
+    /// Claim the once-per-episode "busy — your change will queue" toast. True for
+    /// the first benign discretionary command queued behind a blocking op, false
+    /// thereafter until the op ends. Delegates to the calibration state, which
+    /// re-arms it on the op's falling edge. See PrinterCalibrationState.
+    bool claim_busy_queue_toast() {
+        return calibration_state_.claim_busy_queue_toast();
+    }
+
     /**
      * @brief Check if printer has a probe configured
      *
