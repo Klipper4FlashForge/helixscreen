@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "theme_manager.h"
 
-#include <spdlog/spdlog.h>  // TEMP: bisect instrumentation (remove after HIL)
-
 // Forward declarations for style configure functions
 namespace style_configs {
 void configure_card(lv_style_t* s, const ThemePalette& p);
@@ -56,9 +54,7 @@ void ThemeManager::init() {
     if (initialized_)
         return;
 
-    spdlog::warn("[TEMP-BISECT init] before register_style_configs (this={})", (const void*)this);  // TEMP
     register_style_configs();
-    spdlog::warn("[TEMP-BISECT init] after register_style_configs, before palette-defaults/apply");  // TEMP
 
     // If palettes weren't explicitly set, apply sensible Nord defaults
     // This ensures tests and fallback scenarios have readable colors
@@ -176,19 +172,12 @@ void ThemeManager::register_style_configs() {
 
 void ThemeManager::apply_palette(const ThemePalette& palette) {
     current_palette_ = palette;
-    size_t idx = 0;  // TEMP
     for (auto& entry : styles_) {
         if (entry.configure) {
-            spdlog::warn("[TEMP-BISECT apply_palette] role={} configure={} style={}", idx,  // TEMP
-                         (const void*)entry.configure, (const void*)&entry.style);
             lv_style_reset(&entry.style);
-            spdlog::warn("[TEMP-BISECT apply_palette] role={} after lv_style_reset, before configure", idx);  // TEMP
             entry.configure(&entry.style, palette);
-            spdlog::warn("[TEMP-BISECT apply_palette] role={} after configure", idx);  // TEMP
         }
-        ++idx;  // TEMP
     }
-    spdlog::warn("[TEMP-BISECT apply_palette] DONE ({} roles)", idx);  // TEMP
 }
 
 void ThemeManager::set_dark_mode(bool dark) {
@@ -197,12 +186,9 @@ void ThemeManager::set_dark_mode(bool dark) {
     dark_mode_ = dark;
 
     if (initialized_) {
-        spdlog::warn("[TEMP-BISECT set_dark_mode X] before apply_palette");  // TEMP
         apply_palette(dark ? dark_palette_ : light_palette_);
-        spdlog::warn("[TEMP-BISECT set_dark_mode Y] before lv_obj_report_style_change");  // TEMP
         // Trigger LVGL widget refresh
         lv_obj_report_style_change(nullptr);
-        spdlog::warn("[TEMP-BISECT set_dark_mode Z] after lv_obj_report_style_change");  // TEMP
     }
 }
 

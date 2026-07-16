@@ -733,28 +733,19 @@ static lv_theme_t* theme_init_lvgl(lv_display_t* display, const theme_palette_t*
     ThemePalette light_pal = convert_to_theme_palette(&light_theme_pal, props);
 
     auto& tm = ThemeManager::instance();
-    spdlog::warn("[TEMP-BISECT theme_init_lvgl A] before tm.set_palettes");  // TEMP
     tm.set_palettes(light_pal, dark_pal);
-    spdlog::warn("[TEMP-BISECT theme_init_lvgl A1] before tm.init");  // TEMP
     tm.init();
-    spdlog::warn("[TEMP-BISECT theme_init_lvgl A2] before tm.set_dark_mode");  // TEMP
     tm.set_dark_mode(is_dark);
-    spdlog::warn("[TEMP-BISECT theme_init_lvgl A3] after tm.set_dark_mode");  // TEMP
 
     // Initialize widget-specific styles not in StyleRole enum
-    spdlog::warn("[TEMP-BISECT theme_init_lvgl B] before init_extra_styles");  // TEMP
     init_extra_styles(palette, resolve_border_radius(props));
 
     // Create LVGL default theme as base (we'll layer on top)
-    spdlog::warn("[TEMP-BISECT theme_init_lvgl C] before lv_theme_default_init");  // TEMP
     default_theme_backup =
         lv_theme_default_init(display, palette->primary, palette->secondary, is_dark, base_font);
-    spdlog::warn("[TEMP-BISECT theme_init_lvgl D] after lv_theme_default_init (backup={})",  // TEMP
-                 (const void*)default_theme_backup);
 
     // Initialize our custom theme
     lv_theme_set_apply_cb(&helix_theme, helix_theme_apply);
-    spdlog::warn("[TEMP-BISECT theme_init_lvgl E] after set_apply_cb (returning)");  // TEMP
     helix_theme.font_small = base_font;
     helix_theme.font_normal = base_font;
     helix_theme.font_large = base_font;
@@ -1587,36 +1578,29 @@ void theme_manager_init(lv_display_t* display, bool use_dark_mode_param) {
 
     // Load active theme from config/themes directory
     active_theme = theme_manager_load_active_theme();
-    spdlog::warn("[TEMP-BISECT tm_init 1] after load_active_theme");  // TEMP: remove after HIL bisect
 
     // Register semantic colors from dual-palette system (includes _light/_dark variants and base
     // names) NOTE: Legacy palette registration removed - was causing token collisions (text_light
     // conflict)
     theme_manager_register_semantic_colors(scope, active_theme, use_dark_mode);
-    spdlog::warn("[TEMP-BISECT tm_init 2] after register_semantic_colors");  // TEMP
 
     // Register theme properties (border_radius, etc.) - must be before static constants
     // so theme values override globals.xml defaults (first registration wins in LVGL)
     theme_manager_register_theme_properties(scope, active_theme);
-    spdlog::warn("[TEMP-BISECT tm_init 3] after register_theme_properties");  // TEMP
 
     // Register static constants (colors, px, strings without dynamic suffixes)
     theme_manager_register_static_constants(scope);
 
     // Register fixed object color palette tokens (theme-invariant, hard-coded)
     theme_manager_register_object_colors(scope);
-    spdlog::warn("[TEMP-BISECT tm_init 4] after static_constants + object_colors + "  // TEMP
-                 "(color_pairs/responsive next)");
 
     // Auto-register all color pairs from globals.xml (xxx_light/xxx_dark -> xxx)
     // This handles screen_bg, text, header_text, elevated_bg, card_bg, etc.
     theme_manager_register_color_pairs(scope, use_dark_mode);
-    spdlog::warn("[TEMP-BISECT tm_init 4b] after register_color_pairs");  // TEMP
 
     // Register responsive constants (must be before theme init so fonts are available)
     theme_manager_register_responsive_spacing(display);
     theme_manager_register_responsive_fonts(display);
-    spdlog::warn("[TEMP-BISECT tm_init 4c] after responsive_spacing+fonts (breakpoint/fontpick next)");  // TEMP
 
     // Initialize ui_breakpoint subject for reactive responsive visibility
     {
@@ -1711,21 +1695,14 @@ void theme_manager_init(lv_display_t* display, bool use_dark_mode_param) {
     }
 
     // Build palette from current mode
-    spdlog::warn("[TEMP-BISECT tm_init 5] before get_current_mode_palette");  // TEMP: remove after HIL bisect
     const helix::ModePalette& mode_palette = get_current_mode_palette();
-    spdlog::warn("[TEMP-BISECT tm_init 6] before build_palette_from_mode");  // TEMP
     theme_palette_t palette = build_palette_from_mode(mode_palette);
 
     // Initialize custom HelixScreen theme (wraps LVGL default theme)
-    spdlog::warn("[TEMP-BISECT tm_init 7] before theme_init_lvgl (base_font={})",  // TEMP
-                 (const void*)base_font);
     current_theme = theme_init_lvgl(display, &palette, use_dark_mode, base_font);
-    spdlog::warn("[TEMP-BISECT tm_init 8] after theme_init_lvgl (current_theme={})",  // TEMP
-                 (const void*)current_theme);
 
     if (current_theme) {
         lv_display_set_theme(display, current_theme);
-        spdlog::warn("[TEMP-BISECT tm_init 9] after lv_display_set_theme");  // TEMP
         spdlog::debug("[Theme] Initialized HelixScreen theme: {} mode",
                       use_dark_mode ? "dark" : "light");
         spdlog::trace("[Theme] Colors: primary={}, screen={}, card={}", mode_palette.primary,
