@@ -1078,7 +1078,9 @@ jobs:
 
         # Symbol maps and debug info are version-keyed, not channel-specific.
         # Symbol maps are zstd-compressed (.sym.zst) — nm output compresses ~25:1.
-        # The resolver (scripts/resolve-backtrace.sh) fetches .sym.zst first.
+        # Both consumers read this single compressed copy: scripts/resolve-backtrace.sh
+        # fetches .sym.zst first, and the crash worker (server/crash-worker) decodes
+        # zstd in-Worker via a bundled pure-JS decompressor.
         echo "=== Uploading symbol maps (zstd compressed) ==="
         for symfile in symbol-files/*.sym; do
           [ -f "$symfile" ] || continue
