@@ -1474,25 +1474,34 @@ int MoonrakerClientMock::gcode_script(const std::string& gcode) {
 
         // Check limits (like real Klipper)
         bool out_of_range = false;
-        std::string error_msg;
+        std::string error_detail;
         if (target_x < X_MIN || target_x > X_MAX) {
-            error_msg = "!! Move out of range: X=" + std::to_string(target_x);
+            error_detail = "Move out of range: X=" + std::to_string(target_x);
             out_of_range = true;
         } else if (target_y < Y_MIN || target_y > Y_MAX) {
-            error_msg = "!! Move out of range: Y=" + std::to_string(target_y);
+            error_detail = "Move out of range: Y=" + std::to_string(target_y);
             out_of_range = true;
         } else if (target_z < Z_MIN || target_z > Z_MAX) {
-            error_msg = "!! Move out of range: Z=" + std::to_string(target_z);
+            error_detail = "Move out of range: Z=" + std::to_string(target_z);
             out_of_range = true;
         }
 
         if (out_of_range) {
-            dispatch_gcode_response(error_msg);
-            spdlog::warn("[MoonrakerClientMock] Move rejected - {}", error_msg);
+            // The two channels carry the SAME rejection in different shapes, and
+            // real Moonraker is the spec for both:
+            //   - broadcast gcode-response stream: `!!`-prefixed (error_classify
+            //     strips the prefix before the router sees it);
+            //   - JSON-RPC error `message`: no prefix at all.
+            // Storing the prefixed form in the latch made the RPC message
+            // "!! Move out of range: ..." — a string the `!!` channel could never
+            // match, silently defeating the cross-source toast dedup.
+            const std::string broadcast_line = "!! " + error_detail;
+            dispatch_gcode_response(broadcast_line);
+            spdlog::warn("[MoonrakerClientMock] Move rejected - {}", broadcast_line);
             // Store error for RPC handler to return proper error response (like real Moonraker)
             {
                 std::lock_guard<std::mutex> lock(gcode_error_mutex_);
-                last_gcode_error_ = error_msg;
+                last_gcode_error_ = error_detail;
             }
         } else {
             // Apply the move as a group so the background simulation loop never

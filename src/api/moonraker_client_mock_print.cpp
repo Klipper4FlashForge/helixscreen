@@ -6,6 +6,7 @@
 #include "app_globals.h"
 #include "moonraker_client_mock_internal.h"
 #include "printer_state.h"
+#include "rpc_error_correlation.h"
 
 #include <spdlog/spdlog.h>
 
@@ -34,7 +35,15 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
         // independently. Each line's std::stod/std::stoi is guarded so a parse
         // quirk surfaces as an error result, never a C++ exception escaping the
         // RPC layer (real Moonraker returns an error string, it doesn't crash).
+        //
+        // The error message is latched HERE, the moment a line fails, exactly as
+        // `result` is. gcode_script()'s latch is per-CALL (it clears on entry),
+        // but the RPC's error is per-SCRIPT: every jog is "G91\nG0 X..\nG90", so
+        // reading the latch after the loop returned whatever the trailing G90
+        // left behind — empty — and the caller rendered "An unknown error
+        // occurred." instead of the real rejection.
         int result = 0;
+        std::string script_error;
         size_t line_start = 0;
         while (line_start <= script.size()) {
             size_t nl = script.find('\n', line_start);
@@ -47,8 +56,13 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
             size_t first = line.find_first_not_of(' ');
             if (first != std::string::npos) {
                 try {
-                    if (self->gcode_script(line.substr(first)) != 0)
+                    if (self->gcode_script(line.substr(first)) != 0) {
                         result = 1;
+                        // Keep the FIRST failure: Klipper aborts the script at the
+                        // first rejected command, so later lines cannot supersede it.
+                        if (script_error.empty())
+                            script_error = self->get_last_gcode_error();
+                    }
                 } catch (const std::exception& ex) {
                     spdlog::debug("[MoonrakerClientMock] gcode_script parse skipped for '{}': {}",
                                   line, ex.what());
@@ -63,8 +77,10 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
         // while Klipper still processed the gcode above. The collector-based APIs rely on
         // this to exercise paths where the RPC response is lost but Klipper keeps running.
         if (auto forced = self->take_forced_gcode_error(script)) {
-            if (error_cb)
+            if (error_cb) {
+                helix::rpc_error_correlation::record_caller_handled(forced->message);
                 error_cb(*forced);
+            }
             return true;
         }
 
@@ -74,8 +90,15 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
             if (error_cb) {
                 MoonrakerError err;
                 err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-                err.message = self->get_last_gcode_error();
+                err.message = script_error;
                 err.method = "printer.gcode.script";
+                // Mirror MoonrakerRequestTracker::route_response: a caller with its
+                // own error_cb is handling the error UI, so record the message and
+                // let the `!!` broadcast handler suppress its duplicate toast.
+                // send_jsonrpc() dispatches into this registry inline and never
+                // reaches the tracker, so without this the mock double-toasts every
+                // rejection that real hardware reports once.
+                helix::rpc_error_correlation::record_caller_handled(err.message);
                 error_cb(err);
             }
         } else if (success_cb) {

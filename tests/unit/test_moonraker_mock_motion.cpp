@@ -14,8 +14,10 @@
  * in the toolhead.position and toolhead.homed_axes notification fields.
  */
 
+#include "error_classify.h"
 #include "moonraker_client_mock.h"
 #include "moonraker_error.h"
+#include "rpc_error_correlation.h"
 
 #include <atomic>
 #include <chrono>
@@ -189,7 +191,7 @@ inline bool approx_equal(double a, double b, double tolerance = 0.001) {
 // Movement Command Tests (G0/G1)
 // ============================================================================
 
-TEST_CASE("MoonrakerClientMock G0/G1 movement commands", "[slow][api][movement]") {
+TEST_CASE("MoonrakerClientMock G0/G1 movement commands", "[api][movement]") {
     MockMotionTestFixture fixture;
 
     SECTION("G0 X Y movement updates position") {
@@ -697,7 +699,7 @@ TEST_CASE("MoonrakerClientMock G28 homing commands", "[slow][api][homing]") {
 // Position Reporting Tests
 // ============================================================================
 
-TEST_CASE("MoonrakerClientMock position in status updates", "[api][position_reporting][slow]") {
+TEST_CASE("MoonrakerClientMock position in status updates", "[api][position_reporting]") {
     MockMotionTestFixture fixture;
 
     SECTION("Position updates are reflected in status notifications") {
@@ -830,7 +832,7 @@ TEST_CASE("MoonrakerClientMock position in status updates", "[api][position_repo
 // Out-of-Range Movement Error Tests
 // ============================================================================
 
-TEST_CASE("MoonrakerClientMock out-of-range move error handling", "[api][movement][errors][slow]") {
+TEST_CASE("MoonrakerClientMock out-of-range move error handling", "[api][movement][errors]") {
     SECTION("Move beyond X_MAX returns error") {
         MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
         mock.connect("ws://mock/websocket", []() {}, []() {});
@@ -1025,4 +1027,115 @@ TEST_CASE("MoonrakerClientMock out-of-range move error handling", "[api][movemen
         mock.stop_temperature_simulation();
         mock.disconnect();
     }
+}
+
+// ============================================================================
+// Multi-line script error fidelity (mock must mirror real Moonraker)
+// ============================================================================
+
+TEST_CASE("MoonrakerClientMock multi-line script surfaces the failing line's error",
+          "[api][movement][errors][mock_fidelity]") {
+    // Every jog the app sends is multi-line: "G91\nG0 X..\nG90". The RPC handler
+    // splits the script and calls gcode_script() once per line, and gcode_script()
+    // clears the error latch on entry — so the trailing G90 used to wipe the G0's
+    // error and the caller received an EMPTY message, which user_message() then
+    // rendered as "An unknown error occurred.".
+    MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
+    mock.connect("ws://mock/websocket", []() {}, []() {});
+    helix::rpc_error_correlation::clear_for_test();
+
+    mock.gcode_script("G28"); // home -> X=0
+
+    bool success_called = false;
+    bool error_called = false;
+    MoonrakerError captured;
+
+    // Relative +400 from X=0 lands at 400, beyond the Voron 2.4 X_MAX of 350.
+    json params = {{"script", "G91\nG0 X400 F6000\nG90"}};
+    mock.send_jsonrpc(
+        "printer.gcode.script", params, [&success_called](json) { success_called = true; },
+        [&](const MoonrakerError& err) {
+            error_called = true;
+            captured = err;
+        });
+
+    CHECK_FALSE(success_called);
+    REQUIRE(error_called);
+
+    // The trailing G90 must not erase the failing G0's error.
+    REQUIRE_FALSE(captured.message.empty());
+    CHECK(captured.message.find("out of range") != std::string::npos);
+    CHECK(captured.message.find("X=") != std::string::npos);
+
+    // Real Moonraker's JSON-RPC error message carries no `!!` stream prefix.
+    CHECK(captured.message.rfind("!!", 0) != 0);
+
+    // The whole point: the user sees the real reason, not the unknown fallback.
+    CHECK(captured.user_message() == captured.message);
+    CHECK(captured.user_message() != "An unknown error occurred.");
+
+    mock.stop_temperature_simulation();
+    mock.disconnect();
+    helix::rpc_error_correlation::clear_for_test();
+}
+
+TEST_CASE("MoonrakerClientMock records RPC error correlation like the request tracker",
+          "[api][movement][errors][mock_fidelity]") {
+    // On real hardware MoonrakerRequestTracker::route_response calls
+    // record_caller_handled() whenever the caller supplied its own error_cb, so
+    // the `!!` broadcast handler suppresses its independent toast and the user
+    // sees ONE readable toast. MoonrakerClientMock::send_jsonrpc dispatches into
+    // method_handlers_ inline and bypasses the tracker entirely, so it must
+    // record the correlation itself or mock runs double-toast.
+    MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
+    mock.connect("ws://mock/websocket", []() {}, []() {});
+    helix::rpc_error_correlation::clear_for_test();
+
+    mock.gcode_script("G28");
+
+    MoonrakerError captured;
+    json params = {{"script", "G91\nG0 X400 F6000\nG90"}};
+    mock.send_jsonrpc(
+        "printer.gcode.script", params, [](json) {},
+        [&captured](const MoonrakerError& err) { captured = err; });
+
+    REQUIRE_FALSE(captured.message.empty());
+    CHECK(helix::rpc_error_correlation::was_recently_handled(captured.message));
+
+    // End-to-end proof of the dedup contract: the text the `!!` broadcast
+    // channel hands GcodeErrorRouter (after error_classify strips the prefix)
+    // must EXACTLY equal the recorded RPC message — was_recently_handled() is
+    // an exact-string match, so any divergence silently re-enables the second
+    // toast. This is the assertion that fails if the latch keeps its `!!`.
+    helix::ClassifyContext ctx;
+    auto ev = helix::error_classify::classify("!! Move out of range: X=400.000000", ctx);
+    REQUIRE(ev.has_value());
+    CHECK(ev->detail == captured.message);
+    CHECK(helix::rpc_error_correlation::was_recently_handled(ev->detail));
+
+    mock.stop_temperature_simulation();
+    mock.disconnect();
+    helix::rpc_error_correlation::clear_for_test();
+}
+
+TEST_CASE("MoonrakerClientMock does not record correlation when nobody handles the error",
+          "[api][movement][errors][mock_fidelity]") {
+    // Mirrors the tracker: it records ONLY when an error_cb exists. With no
+    // error_cb the caller surfaces nothing, so the `!!` broadcast toast is the
+    // user's only signal and must NOT be suppressed.
+    MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
+    mock.connect("ws://mock/websocket", []() {}, []() {});
+    helix::rpc_error_correlation::clear_for_test();
+
+    mock.gcode_script("G28");
+
+    json params = {{"script", "G91\nG0 X400 F6000\nG90"}};
+    mock.send_jsonrpc("printer.gcode.script", params, [](json) {}, nullptr);
+
+    CHECK_FALSE(
+        helix::rpc_error_correlation::was_recently_handled("Move out of range: X=400.000000"));
+
+    mock.stop_temperature_simulation();
+    mock.disconnect();
+    helix::rpc_error_correlation::clear_for_test();
 }
