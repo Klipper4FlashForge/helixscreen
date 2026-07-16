@@ -37,6 +37,18 @@ esp_lcd_panel_handle_t board_display_init(void) {
         },
         .data_width = 16,
         .bits_per_pixel = 16,
+        // DO NOT set num_fbs > 1 with this bounce-buffer config. Tried it (LVGL
+        // double-FB DIRECT mode, D2 tear fix attempt): num_fbs=2 + bounce_buffer
+        // + RESTART_IN_VSYNC = SCAN-OUT DEATH — the panel drops into its BIST
+        // color-cycle test pattern (white/red/green/blue/blank) while the app
+        // keeps running. The bounce ISR streams FB->bounce->panel continuously; a
+        // second FB plus a draw_bitmap "flip" gives the driver two conflicting
+        // ideas of which FB feeds the bounce, and the vsync DMA restart desyncs
+        // permanently. The esp_lcd/esp_lvgl_port double-FB examples all use DIRECT
+        // PSRAM scan-out with NO bounce — but this panel REQUIRES bounce (direct
+        // scan-out desyncs under redraw PSRAM-bandwidth contention, the Task-1
+        // trap below). So double-FB is closed on this hardware; tearing is handled
+        // in software instead (per-refresh-cycle vsync-gated flush, lvgl_glue.c).
         .num_fbs = 1,
         // 10-line bounce buffers: direct PSRAM scanout visibly desyncs when
         // redraw traffic competes for PSRAM bandwidth (audit Task 1 trap).

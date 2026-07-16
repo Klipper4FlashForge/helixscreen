@@ -32,6 +32,10 @@ static void (*s_ui_tick)(void);
 // copy starts at frame top, finishing well before scan-out reaches a
 // mid-screen region. Single FB kept; small partial redraws stay cheap.
 static SemaphoreHandle_t s_vsync_sem;
+// True when the next flush_cb call begins a new LVGL refresh cycle (so it should
+// wait for vsync). Cleared after the first flush of a cycle, re-armed after the
+// cycle's last flush. See flush_cb.
+static bool s_first_flush_of_cycle = true;
 
 static bool flush_on_vsync(esp_lcd_panel_handle_t panel,
                            const esp_lcd_rgb_panel_event_data_t *edata, void *user_ctx) {
@@ -88,19 +92,41 @@ UI_DRAW_BUF_ATTR static uint8_t s_draw_buf2[UI_DRAW_BUF_BYTES];
 #define UI_THREAD_STACK_BYTES (48 * 1024)
 
 static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
-    // Gate on the next vsync so the copy into the live framebuffer starts during
-    // blanking (see s_vsync_sem). Drain any STALE give first (vsyncs fire during
-    // idle and leave the binary sem set — without the drain, the first flush
-    // after an idle gap, e.g. the 1Hz temp update, would take the stale token
-    // and copy immediately, which is the exact periodic tear we're fixing).
-    // Then wait for a FRESH vsync. Bounded — a stalled vsync must never hang the
-    // render loop; fall through and copy if it doesn't arrive.
-    if (s_vsync_sem) {
-        xSemaphoreTake(s_vsync_sem, 0);
-        xSemaphoreTake(s_vsync_sem, pdMS_TO_TICKS(100));
+    // Gate the flush on vsync ONCE per refresh cycle, not per flush. LVGL may
+    // flush several dirty areas per refresh; only the FIRST copy of a cycle waits
+    // for a fresh vsync (so the whole cycle starts at blanking), and the rest run
+    // back-to-back ungated. This stays tear-free while restoring paint speed:
+    // per-flush gating serialized ~40 partial copies at one vsync each
+    // (~660ms/full repaint = progressive banding, which read as corruption on
+    // home->controls first-nav). Cycle boundary = lv_display_flush_is_last().
+    //
+    // TEAR-FREE INVARIANT (load-bearing — do not break): a cycle's copies must
+    // stay AHEAD of the scan beam. Beam ~= V_RES/frame ~= 29 lines/ms (480 lines
+    // @ ~60Hz); a full repaint is ~40 12-line memcpys ~= 8ms ~= 60 lines/ms, so
+    // starting both at vsync the copies outrun the beam ~2x. Holds because LVGL
+    // flushes a full redraw roughly top-to-bottom and partial redraws are a few
+    // small regions written near frame start. If the draw buffers shrink or copy
+    // throughput drops below beam speed, or a top region is flushed very late in
+    // a large multi-region cycle, tearing returns.
+    //
+    // The stale-token DRAIN is INSIDE the per-cycle branch on purpose: each cycle
+    // (including back-to-back ones — e.g. the deferred-panel loading scrim, then
+    // the panel-swap repaint after the ~3s build piles ~180 idle vsyncs)
+    // independently clears any leftover token before waiting fresh, so no cycle
+    // inherits a stale vsync. Bounded 100ms wait so a stalled panel can't hang
+    // the render loop.
+    if (s_first_flush_of_cycle) {
+        if (s_vsync_sem) {
+            xSemaphoreTake(s_vsync_sem, 0);
+            xSemaphoreTake(s_vsync_sem, pdMS_TO_TICKS(100));
+        }
+        s_first_flush_of_cycle = false;
     }
     esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1,
                               area->y2 + 1, px_map);
+    if (lv_display_flush_is_last(disp)) {
+        s_first_flush_of_cycle = true; // next flush starts a new cycle -> re-gate
+    }
     lv_display_flush_ready(disp);
 }
 
