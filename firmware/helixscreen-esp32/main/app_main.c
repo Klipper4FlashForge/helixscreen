@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // HelixScreen ESP32 target — entry point.
-// Boot order: storage mount → board display → LVGL + UI pthread (the real
-// HelixScreen shell) → network task. The UI pthread is created BEFORE any
-// network task so its ~48KB stack lands while the internal heap is still
-// unfragmented (the boot-reliability pattern — WiFi startup fragments the heap
-// and a late large internal alloc becomes a boot lottery).
+// Boot order: storage mount → UI pthread (created FIRST, on a pristine internal
+// heap) → network task. The UI pthread's ~48KB stack is the boot's first
+// sizeable heap allocation; its thread body then does board_display_init +
+// LVGL + the real shell. Creating it before the panel/LVGL allocs AND before
+// the net task's WiFi bring-up is the boot-reliability pattern — a late 48KB
+// internal alloc on a display/WiFi-fragmented heap fails with pthread_create
+// ENOMEM (errno 12) and the device boots to a black screen.
 
 #include "app_boot.h"
-#include "board_display.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "ktouch.h"
@@ -55,11 +56,12 @@ void app_main(void) {
                  esp_err_to_name(storage_err));
     }
 
-    // Bring up the panel, then LVGL + the UI pthread that runs the real shell.
-    // This happens BEFORE the network task spawn below so the pthread stack
-    // allocation cannot lose the WiFi heap-fragmentation lottery.
-    esp_lcd_panel_handle_t panel = board_display_init();
-    lvgl_glue_start(panel, app_boot_ui, app_boot_tick);
+    // Create the UI pthread FIRST — its 48KB stack must land on the still-
+    // pristine internal heap. Its thread body brings up the panel + LVGL + the
+    // real shell. This precedes the network task spawn below so neither the
+    // display/LVGL allocations nor WiFi can fragment the heap out from under the
+    // stack allocation (the boot-reliability pattern — see lvgl_glue.h).
+    lvgl_glue_start(app_boot_ui, app_boot_tick);
 
 #if CONFIG_HELIX_NET_HIL
     // Network bring-up runs in its own task: the UI must come up
