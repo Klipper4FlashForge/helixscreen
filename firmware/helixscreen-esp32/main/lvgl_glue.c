@@ -18,6 +18,7 @@
 #include "src/xml/lv_xml.h"
 
 #include <pthread.h>
+#include <stdint.h>
 
 static const char *TAG = "lvgl_glue";
 static esp_lcd_panel_handle_t s_panel;
@@ -25,7 +26,7 @@ static void (*s_ui_build)(void);
 static void (*s_ui_tick)(void);
 
 // ---------------------------------------------------------------------------
-// Beam-aware selective flush gating (D2 tear fix, v1).
+// Beam-aware selective flush gating (D2 tear fix, v1) + starvation diagnostics.
 //
 // The single PSRAM framebuffer is scanned out continuously by the RGB bounce
 // ISR. esp_lcd_panel_draw_bitmap() memcpys a dirty region straight into that
@@ -34,26 +35,19 @@ static void (*s_ui_tick)(void);
 // not an option here — num_fbs>1 + bounce desyncs scan-out (see board_display.c
 // DO-NOT-RETRY). So we serialize copies against the beam in software.
 //
-// Earlier attempts and why this supersedes them:
-//   - Gate EVERY flush on a fresh vsync: tear-free but serialized ~40 partial
-//     copies at one vsync each (~1.2s/full repaint at this panel's ~32Hz) —
-//     progressive banding that read as corruption on first nav.
-//   - Gate once per refresh CYCLE (only the first flush waits): fast, but a
-//     cycle spans many frames during LVGL's render time, so the beam laps the
-//     paint and a top region flushed late in a big multi-region cycle races a
-//     mid-screen beam — residual navbar corruption / glitch remained.
+// Three gating variants have failed HIL (per-flush=clean but ~1.2s/repaint;
+// per-cycle=corrupted; beam-aware 48-line margin=corrupted). The beam-locality
+// model is now suspect. Leading hypothesis: PSRAM BUS STARVATION — the flush
+// memcpy saturates the octal-PSRAM bus, the bounce ISR misses a refill, and
+// garbage shows at the BEAM's position regardless of where the copy landed.
+// The block below is INSTRUMENTATION ONLY (no fix-logic change from f95d6a849):
+// it measures vsync cadence, frame-complete cadence, gate rate, and ACHIEVED
+// copy throughput so we can confirm/refute starvation on-device instead of
+// guessing. All at ESP_LOGI — sdkconfig has CONFIG_LOG_MAXIMUM_LEVEL=3 (INFO),
+// so ESP_LOGD is compiled out (that's why the previous round logged nothing).
 //
-// This version estimates the beam's line position at EACH flush from the most
-// recent vsync timestamp and gates (waits one fresh vsync) ONLY when copying
-// this flush's [y1,y2] region would actually overlap the beam during the copy.
-// Flushes safely ahead of or behind the beam copy immediately — that's the
-// speed. Copies run ~45+ lines/ms vs the beam's ~17.7 lines/ms, so once a
-// top-of-frame flush is gated to blanking, the rest of a top-to-bottom repaint
-// stays ahead and passes ungated. Degrades gracefully: over-gate = slower,
-// under-gate = a rare transient glitch, never BIST.
-//
-// on_vsync gives s_vsync_sem (the gate wait) AND stamps s_last_vsync_us (the
-// beam clock) every frame.
+// on_vsync gives s_vsync_sem (the gate wait), stamps s_last_vsync_us (the beam
+// clock), and counts fires. on_frame_buf_complete counts full-frame scanouts.
 static SemaphoreHandle_t s_vsync_sem;
 // Low 32 bits of esp_timer_get_time() at the last vsync. 32-bit aligned, so
 // load/store is a single Xtensa instruction — no tearing between ISR write and
@@ -84,15 +78,41 @@ static volatile uint32_t s_last_vsync_us;
 //
 // COPY_LINES_PER_MS — assumed draw_bitmap throughput (internal buf -> PSRAM FB),
 // conservative (real ~60-70, degrades under bounce contention). Lower = wider
-// band = safer/slower.
+// band = safer/slower. The diag log below reports the ACHIEVED rate to calibrate
+// this and to test the starvation hypothesis (a saturated bus shows low lpms).
 #define BEAM_MARGIN_LINES 48
 #define COPY_LINES_PER_MS 45
 
-// Gate-rate telemetry: gated/passed flush counts logged every 10s at debug so
-// over/under-gating can be verified on HIL instead of guessed.
-static uint32_t s_gate_count;
-static uint32_t s_pass_count;
-static uint32_t s_stat_log_us;
+// HELIX_FLUSH_DIAG — starvation-vs-locality discriminator (measurement mode).
+// When 1, flush_cb IGNORES the beam decision and instead forces the gate to a
+// value that alternates every 10s window: even windows ALL-GATED (every flush
+// waits a fresh vsync — the known-CLEAN per-flush behavior), odd windows
+// ALL-UNGATED (no waiting). Window boundaries log at INFO so Preston can note
+// exactly when artifacts appear. If artifacts appear ONLY in ungated windows
+// AND at positions unrelated to what's repainting, starvation is proven (the
+// copy's bus load, not its screen locality, is what corrupts scan-out).
+// Default 0: this build measures REAL beam-aware behavior first. Flip to 1 and
+// rebuild for the alternating-window test.
+#ifndef HELIX_FLUSH_DIAG
+#define HELIX_FLUSH_DIAG 0
+#endif
+
+// Diagnostic counters. ISR-incremented ones use atomics (S3 is dual-core; the
+// vsync/frame ISR runs on the core that owns the LCD peripheral, the reader is
+// the UI thread). The rest are touched only on the UI thread (flush_cb and the
+// render loop are the same thread), so plain ops are fine.
+static uint32_t s_vsync_fires;        // ISR: on_vsync count this window
+static uint32_t s_framebuf_completes; // ISR: on_frame_buf_complete count this window
+static uint32_t s_gate_count;         // flushes that waited a vsync
+static uint32_t s_pass_count;         // flushes that copied immediately
+static uint32_t s_copy_lines_total;   // sum of lines copied this window
+static uint32_t s_copy_us_total;      // sum of draw_bitmap durations this window
+static uint32_t s_copy_worst_lpms = 0xFFFFFFFFu; // slowest single copy (lines/ms)
+static uint32_t s_stat_log_us;        // window start (esp_timer low 32)
+#if HELIX_FLUSH_DIAG
+static bool s_diag_gate;
+static uint32_t s_diag_window_idx = 0xFFFFFFFFu;
+#endif
 
 static bool flush_on_vsync(esp_lcd_panel_handle_t panel,
                            const esp_lcd_rgb_panel_event_data_t *edata, void *user_ctx) {
@@ -100,11 +120,25 @@ static bool flush_on_vsync(esp_lcd_panel_handle_t panel,
     (void)edata;
     (void)user_ctx;
     s_last_vsync_us = (uint32_t)esp_timer_get_time(); // ISR-safe; stamps the beam clock
+    __atomic_fetch_add(&s_vsync_fires, 1, __ATOMIC_RELAXED);
     BaseType_t high_task_woken = pdFALSE;
     if (s_vsync_sem) {
         xSemaphoreGiveFromISR(s_vsync_sem, &high_task_woken);
     }
     return high_task_woken == pdTRUE;
+}
+
+// Fires when a whole frame buffer has finished scanning out (the FB could be
+// reused). Cadence should track the real frame rate (~32Hz); a drop below the
+// vsync count would indicate scan-out restarts/desync (the starvation symptom).
+static bool framebuf_complete_cb(esp_lcd_panel_handle_t panel,
+                                 const esp_lcd_rgb_panel_event_data_t *edata,
+                                 void *user_ctx) {
+    (void)panel;
+    (void)edata;
+    (void)user_ctx;
+    __atomic_fetch_add(&s_framebuf_completes, 1, __ATOMIC_RELAXED);
+    return false;
 }
 
 // Draw buffers are static (reserved at link time — NOT runtime heap-allocated,
@@ -151,6 +185,7 @@ UI_DRAW_BUF_ATTR static uint8_t s_draw_buf2[UI_DRAW_BUF_BYTES];
 static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
     uint32_t now = (uint32_t)esp_timer_get_time();
     uint32_t elapsed = now - s_last_vsync_us; // us since last vsync (modular, wrap-safe)
+    int32_t n_lines = area->y2 - area->y1 + 1;
 
     // Estimate the beam's line position and whether copying [y1,y2] now would
     // race it. Gate (wait a fresh vsync) ONLY on overlap; otherwise copy
@@ -162,7 +197,6 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
         gate = true;
     } else {
         int32_t beam = (int32_t)(elapsed * LCD_LINE_RATE_HZ / 1000000u);
-        int32_t n_lines = area->y2 - area->y1 + 1;
         uint32_t copy_us = (uint32_t)n_lines * 1000u / COPY_LINES_PER_MS;
         int32_t beam_end = beam + (int32_t)(copy_us * LCD_LINE_RATE_HZ / 1000000u);
         int32_t lo = beam - BEAM_MARGIN_LINES;
@@ -170,6 +204,12 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
         // Overlap iff the region is neither wholly below lo nor wholly above hi.
         gate = !((int32_t)area->y2 < lo || (int32_t)area->y1 > hi);
     }
+
+#if HELIX_FLUSH_DIAG
+    // Measurement mode: override the beam decision with the alternating window
+    // state (set in diag_report). Beam logic above still runs but is discarded.
+    gate = s_diag_gate;
+#endif
 
     if (gate) {
         // Drain any stale token, then wait one fresh vsync so the copy starts at
@@ -184,17 +224,66 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
         s_pass_count++;
     }
 
+    // Time the copy itself: for a PSRAM FB this is a memcpy that returns when the
+    // pixels have landed, so its duration is a direct read of PSRAM-bus pressure.
+    // Achieved lines/ms (reported per window) tests the starvation hypothesis and
+    // calibrates COPY_LINES_PER_MS.
+    uint32_t t0 = (uint32_t)esp_timer_get_time();
     esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1, area->x2 + 1,
                               area->y2 + 1, px_map);
-    lv_display_flush_ready(disp);
-
-    if (now - s_stat_log_us >= 10000000u) {
-        ESP_LOGD(TAG, "flush gate rate (10s): %u gated / %u passed", s_gate_count,
-                 s_pass_count);
-        s_gate_count = 0;
-        s_pass_count = 0;
-        s_stat_log_us = now;
+    uint32_t dt = (uint32_t)esp_timer_get_time() - t0;
+    s_copy_lines_total += (uint32_t)n_lines;
+    s_copy_us_total += dt;
+    if (dt > 0) {
+        uint32_t lpms = (uint32_t)n_lines * 1000u / dt;
+        if (lpms < s_copy_worst_lpms) {
+            s_copy_worst_lpms = lpms;
+        }
     }
+
+    lv_display_flush_ready(disp);
+}
+
+// Emits the 10s diagnostic line (INFO) and, under HELIX_FLUSH_DIAG, advances the
+// alternating gate window. Called every render-loop iteration so it fires even
+// with no flushes (idle) — that's how we catch a stalled/anomalous vsync.
+static void diag_report(void) {
+    uint32_t now = (uint32_t)esp_timer_get_time();
+
+#if HELIX_FLUSH_DIAG
+    uint32_t widx = now / 10000000u;
+    if (widx != s_diag_window_idx) {
+        s_diag_window_idx = widx;
+        s_diag_gate = (widx & 1u) != 0u;
+        ESP_LOGI(TAG, "FLUSH_DIAG window -> %s", s_diag_gate ? "ALL-GATED" : "ALL-UNGATED");
+    }
+#endif
+
+    uint32_t elapsed = now - s_stat_log_us;
+    if (elapsed < 10000000u) {
+        return;
+    }
+
+    uint32_t vs = __atomic_exchange_n(&s_vsync_fires, 0, __ATOMIC_RELAXED);
+    uint32_t fb = __atomic_exchange_n(&s_framebuf_completes, 0, __ATOMIC_RELAXED);
+    uint32_t vs_hz10 = (uint32_t)((uint64_t)vs * 10000000u / elapsed); // Hz x10
+    uint32_t fb_hz10 = (uint32_t)((uint64_t)fb * 10000000u / elapsed); // Hz x10
+    uint32_t avg_lpms = s_copy_us_total ? (s_copy_lines_total * 1000u / s_copy_us_total) : 0;
+    uint32_t worst_lpms = (s_copy_worst_lpms == 0xFFFFFFFFu) ? 0 : s_copy_worst_lpms;
+
+    ESP_LOGI(TAG,
+             "flush diag (10s): vsync %u (%u.%u Hz) framebuf %u (%u.%u Hz) | gate %u/%u "
+             "gated/passed | copy %u lines/%u us avg %u lpms worst %u lpms",
+             vs, vs_hz10 / 10u, vs_hz10 % 10u, fb, fb_hz10 / 10u, fb_hz10 % 10u,
+             s_gate_count, s_pass_count, s_copy_lines_total, s_copy_us_total, avg_lpms,
+             worst_lpms);
+
+    s_gate_count = 0;
+    s_pass_count = 0;
+    s_copy_lines_total = 0;
+    s_copy_us_total = 0;
+    s_copy_worst_lpms = 0xFFFFFFFFu;
+    s_stat_log_us = now;
 }
 
 static uint32_t tick_cb(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
@@ -212,11 +301,15 @@ static void *ui_thread_main(void *arg) {
     // Panel first (RGB init + bounce buffers). Thread-agnostic hardware setup.
     s_panel = board_display_init();
 
-    // Vsync gate for tear-free flushing (see s_vsync_sem / flush_cb). Register
-    // before any flush can run. on_vsync is not IRAM-safe here (the bounce ISR
-    // runs with cache on — LCD_RGB_ISR_IRAM_SAFE is off), so no IRAM_ATTR.
+    // Vsync gate for tear-free flushing (see s_vsync_sem / flush_cb) + the frame
+    // diagnostics. Register before any flush can run. Neither callback is
+    // IRAM-safe here (the bounce ISR runs with cache on — LCD_RGB_ISR_IRAM_SAFE
+    // is off), so no IRAM_ATTR and no logging inside them.
     s_vsync_sem = xSemaphoreCreateBinary();
-    esp_lcd_rgb_panel_event_callbacks_t lcd_cbs = {.on_vsync = flush_on_vsync};
+    esp_lcd_rgb_panel_event_callbacks_t lcd_cbs = {
+        .on_vsync = flush_on_vsync,
+        .on_frame_buf_complete = framebuf_complete_cb,
+    };
     esp_lcd_rgb_panel_register_event_callbacks(s_panel, &lcd_cbs, NULL);
 
     lv_init();
@@ -238,11 +331,13 @@ static void *ui_thread_main(void *arg) {
     s_ui_build();
     ota_health_confirm();
     ESP_LOGI(TAG, "ui: built, entering render loop");
+    s_stat_log_us = (uint32_t)esp_timer_get_time(); // start the first diag window clean
     while (true) {
         uint32_t delay = lv_timer_handler();
         if (s_ui_tick) {
             s_ui_tick();
         }
+        diag_report();
         vTaskDelay(pdMS_TO_TICKS(delay < 5 ? 5 : delay > 50 ? 50 : delay));
     }
     return NULL;
