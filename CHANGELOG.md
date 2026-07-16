@@ -5,6 +5,29 @@ All notable changes to HelixScreen will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.99.92] - 2026-07-15
+
+### Added
+
+- **Jog move coalescing** — rapid jog taps merge into a single pending move instead of queueing one g-code per tap, so the toolhead keeps up with your finger; your own jogs no longer trip the "printer busy" guard, and rapid identical toasts refresh in place instead of stacking.
+- **Snapmaker U1 power-loss recovery** — after a power loss, HelixScreen offers to resume the interrupted print at connect time; a declined offer re-arms when it becomes relevant again.
+- **Anycubic Kobra S1 mainline fork** (prestonbrown/helixscreen#1069) — ACE filament systems on the Kobra S1's mainline-Python firmware fork work via a REST bridge.
+- **XML expressions** — layouts can derive subjects from expressions (`<subject_expr>`) and use inline `cond=` conditions on `bind_flag_if` / `bind_state_if` / `bind_style_if`.
+- **PAXX firmware-managed installs (Snapmaker U1)** — installs bundled by the PAXX Extended Firmware are supported (firmware owns updates), with a `HELIX_DISABLE_AUTO_UPDATES` opt-out.
+
+### Fixed
+
+- **Snapmaker U1 remote screen going blank** — the remote screen ("gui" webcam) no longer goes black a few minutes after boot: the early-boot splash is retired at UI handoff instead of lingering and clearing the shared framebuffer, and the UI paints a full frame at takeover. The mirror also handles 16-bit framebuffers.
+- **Installer upgrades now restart into the new version** (prestonbrown/helixscreen#1106) — installing over a running HelixScreen left the old binary running while reporting success; the installer now restarts when an instance is already up.
+- **Print status auto-opens for an active job** (prestonbrown/helixscreen#1099) — connecting while a print is already running opens the print status panel.
+- **Quieter no-audio devices** — a missing ALSA device logs a warning instead of an error.
+- **Snapmaker U1 uninstall leftover** — uninstall removes the `/oem/.debug` marker the installer created.
+
+### Changed
+
+- **Snapmaker U1 remote-screen setup docs** — enabling must go through the firmware settings web UI (a hand cfg edit doesn't register the "gui" webcam); setup docs corrected.
+- **Inline XML text translation** — inline element text in XML layouts participates in translation extraction and runtime language switching.
+
 ## [0.99.91] - 2026-07-13
 
 ### Added
@@ -4289,6 +4312,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.92]: https://github.com/prestonbrown/helixscreen/compare/v0.99.91...v0.99.92
 [0.99.91]: https://github.com/prestonbrown/helixscreen/compare/v0.99.90...v0.99.91
 [0.99.90]: https://github.com/prestonbrown/helixscreen/compare/v0.99.89...v0.99.90
 [0.99.89]: https://github.com/prestonbrown/helixscreen/compare/v0.99.88...v0.99.89
