@@ -1077,6 +1077,14 @@ TEST_CASE_METHOD(ConfigTestFixture, "Config: default display/bed_mesh_render_mod
     REQUIRE(bed_mesh_render_mode == 0);
 }
 
+TEST_CASE_METHOD(ConfigTestFixture, "Config: default display/gpu_blur_blocked is false",
+                 "[config][display][defaults]") {
+    set_data_empty();
+
+    bool gpu_blur_blocked = config.get<bool>("/display/gpu_blur_blocked", false);
+    REQUIRE(gpu_blur_blocked == false);
+}
+
 TEST_CASE_METHOD(ConfigTestFixture, "Config: default input/calibration/valid is false",
                  "[config][input][defaults]") {
     set_data_empty();

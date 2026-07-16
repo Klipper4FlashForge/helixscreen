@@ -255,6 +255,18 @@ const std::string& gpu_3d_guard_path() {
     return p;
 }
 
+// GPU 2D blur crash-loop guard file. The DRM+EGL backdrop-blur path writes this
+// immediately before its first Mali/EGL init and removes it once the pipeline is
+// up. If the driver hard-faults inside that init (an in-driver SIGSEGV the
+// reactive check_gl() guard cannot catch), the process dies with the file still
+// present; finding it here at startup means the last session crashed initializing
+// GPU blur, so we promote it to a persistent block. Routed through the writable
+// config dir like the other markers so it survives RO-rootfs platforms.
+const std::string& gpu_blur_guard_path() {
+    static const std::string p = helix::writable_path("gpu_blur_guard");
+    return p;
+}
+
 // Safe-mode marker written by the watchdog when it detects a deterministic
 // crash loop (CRASH_LOOP_MAX_CRASHES same-signature crashes within the
 // CRASH_LOOP_WINDOW_SEC window). When present at startup, the application
@@ -517,6 +529,22 @@ int Application::run(int argc, char** argv) {
             Config::get_instance()->set<bool>("/display/gpu_3d_blocked", true);
             Config::get_instance()->save();
             std::filesystem::remove(gpu_3d_guard_path(), ec);
+        }
+    }
+
+    // Promote a surviving GPU blur crash-loop guard to a persistent block. The
+    // guard file only survives if the last session died inside the Mali/EGL blur
+    // init mid-setup (backdrop_blur.cpp clears it once the pipeline is up). Set
+    // /display/gpu_blur_blocked so the backdrop uses the pure-CPU blur path, then
+    // remove the guard so a subsequent clean run can re-arm it.
+    {
+        std::error_code ec;
+        if (std::filesystem::exists(gpu_blur_guard_path(), ec)) {
+            spdlog::warn("[Application] GPU blur crash-loop guard survived — last session likely "
+                         "faulted inside the GPU driver; blocking GPU backdrop blur");
+            Config::get_instance()->set<bool>("/display/gpu_blur_blocked", true);
+            Config::get_instance()->save();
+            std::filesystem::remove(gpu_blur_guard_path(), ec);
         }
     }
 
