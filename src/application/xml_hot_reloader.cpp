@@ -190,9 +190,10 @@ void XmlHotReloader::scan_and_reload() {
 
                 size_t subject_count = count_xml_subjects(reload_name.c_str());
                 if (subject_count > 0) {
-                    spdlog::warn(
-                        "[HotReload] '{}' defines {} XML subject(s); any live widget bound "
-                        "to these subjects will hold a dangling pointer until rebuilt",
+                    spdlog::debug(
+                        "[HotReload] '{}' defines {} XML subject(s); unregister deinits them "
+                        "(observers detached), so live widgets bound to them become inert until "
+                        "rebuilt below",
                         reload_name, subject_count);
                 }
 
