@@ -61,6 +61,13 @@
 
 These evaluate once at parse time — not reactive. For runtime visibility, use `bind_flag_if_*`.
 
+### Repeating (`<repeat>`)
+
+| Tag/Attr | Notes |
+|----------|-------|
+| `<repeat count=>` | Expands its body `count` times. `count` is a literal, a `#const`, or a subject name; a subject-bound `count` **reactively rebuilds** on change (async off-tree teardown). Clamped to `[0, 256]`. Not nestable yet. Reactive `<repeat>` must be its parent's last child or in its own container. |
+| `$i` / `${i}` | Zero-based iteration index inside a `<repeat>` body. Bare `$i` is whole-value only (`text="$i"`); `${i}` (and `${prop}`) splices into a larger string, e.g. `bind_text="slot_${i}_label"`. `${i + 1}` arithmetic is a follow-up. |
+
 ## Style Attributes (style_* prefix)
 
 ### Size & Spacing

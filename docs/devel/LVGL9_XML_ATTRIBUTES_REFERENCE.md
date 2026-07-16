@@ -104,8 +104,8 @@ All widgets inherit these.
 
 | Tag/Attr | Notes |
 |----------|-------|
-| `<repeat count=>` | Expands its body `count` times at load time. `count` is a literal, a `#const`, or a subject name (read at load time; reactive rebuild is a later task). Clamped to `[0, 256]`. Not nestable yet. |
-| `$i` | Bare zero-based iteration index, valid only inside a `<repeat>` body. One `$i` per attribute value; embedded composition (`${i}`) and arithmetic (`${i + 1}`) are follow-ups. |
+| `<repeat count=>` | Expands its body `count` times. `count` is a literal, a `#const`, or a subject name; a subject-bound `count` **reactively rebuilds** the expansion when the subject changes (async off-tree teardown — a reactive `<repeat>` must be its parent's last child or in its own container). Clamped to `[0, 256]`. Not nestable yet. |
+| `$i` / `${i}` | Zero-based iteration index inside a `<repeat>` body. Bare `$i` is a whole-value substitution (`text="$i"`); `${i}` (and `${prop}`) splices into a larger string for self-wiring indexed subjects (`bind_text="slot_${i}_label"`). Index arithmetic (`${i + 1}`) is a follow-up. |
 
 ---
 
