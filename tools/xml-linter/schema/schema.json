@@ -799,6 +799,13 @@
         }
       }
     },
+    "repeat": {
+      "attributes": {
+        "count": {
+          "type": "string"
+        }
+      }
+    },
     "lv_obj-style": {
       "attributes": {
         "name": {
@@ -2758,7 +2765,9 @@
     "lv_obj-bind_state_if_gt",
     "lv_obj-bind_state_if_lt",
     "lv_obj-bind_state_if_ge",
-    "lv_obj-bind_state_if_le"
+    "lv_obj-bind_state_if_le",
+    "subject_expr",
+    "repeat"
   ],
   "registered_widgets": [
     "lv_obj",
@@ -2968,6 +2977,16 @@
     "cooling_color_dark",
     "cooling_color_light",
     "danger",
+    "demo_count",
+    "demo_error",
+    "demo_slot_0_label",
+    "demo_slot_1_label",
+    "demo_slot_2_label",
+    "demo_slot_3_label",
+    "demo_slot_4_label",
+    "demo_slot_5_label",
+    "demo_temp",
+    "demo_threshold",
     "dialog_content_max",
     "dialog_content_max_large",
     "dialog_content_max_medium",

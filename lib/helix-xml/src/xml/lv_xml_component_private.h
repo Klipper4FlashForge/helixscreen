@@ -36,6 +36,7 @@ struct _lv_xml_component_scope_t {
     lv_ll_t gradient_ll;
     lv_ll_t subjects_ll;
     lv_ll_t subject_expr_ll;   /**< <subject_expr> derived subjects: (expr, ctx) pairs freed at scope teardown */
+    lv_ll_t repeat_ll;         /**< subject-bound <repeat> records (lv_xml_repeat_t): retained capture + count observer, freed at scope teardown */
     lv_ll_t timeline_ll;
     lv_ll_t font_ll;
     lv_ll_t image_ll;
@@ -70,6 +71,39 @@ typedef struct {
     uint32_t observer_count;
 } lv_xml_subject_expr_t;
 
+/**
+ * A subject-bound `<repeat count="subj">` record. When `count` names an int
+ * subject, the expansion re-materializes whenever that subject changes: a count
+ * observer tears down the prior expansion (async, off-tree reparent — never a
+ * sync delete inside the observer) and replays the captured body `count` times.
+ * The record retains everything the rebuild needs — the captured SAX-event body,
+ * a value snapshot of the resolution scope, and a deep copy of the component's
+ * parent attributes — because the original parse state is long gone by rebuild
+ * time.
+ *
+ * Lifetime is tied to the INSTANCE, not the scope: an LV_EVENT_DELETE callback on
+ * `view_root` detaches the observer, frees the record heap, and unlinks the record
+ * from `repeat_ll` when the instance is deleted. Because the count subject is
+ * shared (a scope subject reused across instances, or a global), an observer that
+ * outlived its instance would fire the rebuild on freed roots (use-after-free).
+ * The `repeat_ll` walk in lv_xml_component_unregister is the fallback for records
+ * whose instances are still alive at unregister; it also removes the pending
+ * delete callback so it cannot fire on an already-freed record.
+ */
+typedef struct {
+    lv_obj_t *      parent;         /* enclosing element the expansion's children attach to */
+    lv_obj_t *      view_root;      /* instance view root; its LV_EVENT_DELETE reclaims this record */
+    lv_subject_t *  count_subject;  /* the bound count subject */
+    lv_observer_t * observer;       /* retained so teardown can detach before the subject is freed */
+    void *          capture;        /* lv_xml_repeat_capture_t*, the retained body events (owned) */
+    lv_obj_t **     roots;          /* top-level objects of the current expansion (array owned) */
+    uint32_t        root_count;
+    bool            in_rebuild;     /* reentrancy guard for the rebuild callback */
+    lv_xml_component_scope_t   scope;         /* value snapshot; list heads shared read-only with the registered scope */
+    lv_xml_component_scope_t * parent_scope;  /* stable pointer into a registered scope, or NULL */
+    char **         parent_attrs;   /* deep-copied NULL-terminated snapshot, owned (or NULL) */
+} lv_xml_repeat_t;
+
 typedef struct {
     const char * name;
     lv_ll_t anims_ll;
@@ -100,6 +134,16 @@ void lv_xml_component_init(void);
  * @param scope     pointer to a component contexts
  */
 void lv_xml_component_scope_init(lv_xml_component_scope_t * scope);
+
+/**
+ * Detach the count observer and free the retained body/snapshots of a
+ * subject-bound `<repeat>` record (implemented in lv_xml.c, which owns the
+ * capture type). Does NOT delete the expansion's widgets: the mandatory
+ * teardown order deletes the component instance before unregister, so the
+ * expansion roots are already gone and touching them would be a use-after-free.
+ * @param repeat    pointer to a lv_xml_repeat_t record
+ */
+void lv_xml_repeat_record_free(lv_xml_repeat_t * repeat);
 
 /**********************
  *      MACROS

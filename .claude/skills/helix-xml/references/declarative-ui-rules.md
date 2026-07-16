@@ -13,6 +13,7 @@
 | `lv_obj_add_flag(HIDDEN)` | Visibility is UI | `<bind_flag_if_eq>` in XML |
 | `lv_obj_set_style_*()` | Styling in XML | Design tokens in XML |
 | `lv_obj_add_state(DISABLED)` | State is UI | `<bind_state_if_eq>` in XML |
+| C++ create-and-wire loop for repeated fragments | Structure is UI | XML `<repeat count="N">` (fixed) or `<repeat count="subject">` (reactive rebuild) — see `xml-guide.md` "Repeating Fragments" |
 
 ### Reactive Patterns for Common UI Tasks
 

@@ -152,6 +152,26 @@ Reference: lesson **L089**.
 
 ---
 
+### My `<repeat>` label binds to nothing — `bind_text="slot_${i}_label"` shows the default text, or the linter warns `UNKNOWN_SUBJECT_REF`.
+
+**Cause:** Two independent things go wrong with embedded `${name}` composition:
+
+1. **Runtime shows the default.** `bind_text="slot_${i}_label"` composes a subject name per iteration (`slot_0_label`, `slot_1_label`, …). If the C++ side never registered those exact indexed subjects, each bind resolves against a non-existent subject and the widget keeps its default value. The XML is fine — the subjects are missing. Register `slot_0_label`…`slot_N_label` (matching the composed names exactly) in your panel's subject init.
+
+2. **CI warns `UNKNOWN_SUBJECT_REF`.** The linter cannot statically resolve a composed name (the loop index / prop is only known at runtime), so it must skip it. The `${...}` skip lives in `tools/xml-linter/src/helix_xml_linter/crossref.py` (`_check_subject_reference`). A brace-free name like `bind_text="typo_subject"` still warns — that skip only applies when the value contains `${`.
+
+**Fix:** Make sure the composed names and the registered subject names line up character-for-character, and keep the `${...}` skip in `crossref.py`. Remember `$i` is a whole-value substitution — `slot_$i` does **not** splice; you must write `slot_${i}` (see the [XML guide](LVGL9_XML_GUIDE.md#self-wiring-indexed-subjects-with-name)).
+
+---
+
+### My label shows `foo__bar` (a doubled underscore / missing word), or the log warns `xml_compose_indexed ... could not be resolved`.
+
+**Cause:** A literal `${...}` in visible text or an attribute value is not just decoration — it's a live composition sigil, and `xml_compose_indexed` tries to resolve it wherever it appears, not just inside a `<repeat>` body. If you write descriptive text like `text="each card binds to demo_slot_${i}_label"` outside a `<repeat>` (or referencing a name that isn't `i`/a component prop), there's no loop index or prop to resolve against, so it splices empty and logs a warning — the rendered text comes out mangled (`demo_slot__label`).
+
+**Fix:** There is no escape sequence for `${...}`. If you need to show the literal characters `${i}` or `${name}` in a label (e.g. explaining the syntax in a demo panel), don't put it in `text=`/`translation_tag=` — describe it in prose instead (e.g. "self-wires to its indexed subject (demo_slot_N_label)"). Only use `${...}` where you actually want composition to fire: inside a `<repeat>` body (`${i}`), or against a component prop that's genuinely in scope.
+
+---
+
 ## Design Tokens & Theming
 
 ### Review feedback: "please use design tokens instead of hardcoded colors."

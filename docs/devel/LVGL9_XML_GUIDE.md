@@ -229,6 +229,8 @@ LVGL XML uses prefix sigils to distinguish different value types:
 |-------|---------|---------|---------|
 | `#` | Design token / const | `style_pad_all="#space_md"` | Spacing, colors, sizes |
 | `$` | Component prop | `text="$primary_text"` | Inside component templates |
+| `$i` | `<repeat>` loop index | `text="$i"` | Inside a `<repeat>` body (see [Repeating fragments](#repeating-fragments-with-repeat)) |
+| `${name}` | Embedded composition | `bind_text="demo_${i}_v"` | Splices the loop index (`${i}`) or a component prop (`${grp}`) into a larger string — self-wires indexed subjects (see [Repeating fragments](#repeating-fragments-with-repeat)) |
 | `@` | Subject binding | `text="@my_subject"` | Reactive data on `ui_button` |
 
 The `@` prefix on `ui_button`'s `text` attribute marks a value as a subject reference (reactive) vs. a literal string (static). Alternatively, `bind_text` always treats its value as a subject name (no `@` needed). See [ui_button](#ui_button) for details.
@@ -550,6 +552,50 @@ These are parse-time only -- the hidden state does not change after creation. Fo
 **❌ No `bind_text_if_eq`** - use multiple labels with `bind_flag_if_*` for conditional text.
 
 **✅ Compound conditions are supported** via the expression evaluator (see "Expression Conditionals" above) — `cond="a or b gt c"` on `bind_flag_if`/`bind_state_if`/`bind_style_if`, or a `<subject_expr>` derived subject for a condition reused in multiple places. This replaces stacking several single-subject `bind_flag_if_*` elements or writing a hand-rolled C++ derived subject for "OR of two subjects" type logic.
+
+#### Repeating fragments with `<repeat>`
+
+`<repeat count="N">…body…</repeat>` expands its body `N` times at load time, so a fixed-size list of widgets becomes XML structure instead of a C++ create-and-wire loop. Inside the body, the bare sigil `$i` resolves to the zero-based iteration index.
+
+```xml
+<lv_obj name="root">
+  <repeat count="4">
+    <lv_label name="lbl" text="$i" style_pad_all="#space_sm"/>
+  </repeat>
+</lv_obj>
+<!-- root now has 4 labels reading "0", "1", "2", "3" -->
+```
+
+`count` accepts three forms:
+
+| Form | Example | Meaning |
+|------|---------|---------|
+| Literal | `count="4"` | A fixed integer (clamped to `[0, 256]`), resolved once at load time. The expansion never changes. |
+| `#const` | `count="#rows"` | A component `<const>` value, resolved once at load time. |
+| Subject name | `count="row_count"` | **Reactive.** Expands to the subject's current value at load time, then re-expands automatically every time the subject changes — teardown of the old items and creation of the new ones happens on an async, off-tree-reparent path (no synchronous deletion inside the observer callback). |
+
+Each iteration re-resolves the body against pristine attribute values, so `$i`, `$param`, and `#const` references all yield independent per-iteration results — the labels above each get their own index, not a shared last value.
+
+> ⚠️ **Subject-bound `<repeat>` MUST be the last child of its parent, or the only child of a dedicated container.** On rebuild, the old expansion's roots are detached and the new ones are created fresh — and LVGL always appends a freshly-created child to the *end* of its parent's child list. If a subject-bound `<repeat>` shares a parent with static siblings that come after it in the document, those siblings stay put but the rebuilt repeat items land *after* them, silently reordering the layout every time the count changes. A literal or `#const` `count` never rebuilds, so this only matters for subject-bound `count`. Fix: give the `<repeat>` its own container (an `<lv_obj>` wrapper with no other children), or make it the last element inside its parent. See `ui_xml/test_panel.xml` "XML Repeat Demo" for a worked example of both the fixed and subject-bound forms side by side.
+
+##### Self-wiring indexed subjects with `${name}`
+
+The bare `$i` sigil is a whole-value substitution: `text="$i"` becomes the index, but `text="slot_$i"` does not splice. To compose the index (or a component prop) **into a larger string**, use the embedded `${name}` sigil. This is what lets a repeated widget bind to its own per-iteration subject:
+
+```xml
+<lv_obj name="root">
+  <repeat count="3">
+    <lv_label name="lbl" bind_text="demo_${i}_v"/>
+  </repeat>
+</lv_obj>
+<!-- three labels bind to subjects demo_0_v, demo_1_v, demo_2_v -->
+```
+
+`${i}` resolves to the loop index; any other `${name}` resolves against the component's props (passed attributes first, then the `<prop>` default). Both can appear in the same value, so a component with `<prop name="grp"/>` instantiated as `<my_row grp="fan"/>` can bind `bind_text="status_${grp}_${i}_x"` → `status_fan_0_x`, `status_fan_1_x`, … The C++ side is responsible for registering those indexed subjects; an unresolved `${name}` splices empty and logs a warning.
+
+Index **arithmetic** inside composition (`${i + 1}`) is a separate follow-up and is not supported yet.
+
+`<repeat>` is intercepted directly by the XML view parser (it creates no widget of its own), so its body must be well-formed markup that would be valid where the `<repeat>` sits. Nesting `<repeat>` inside another `<repeat>` is not yet supported.
 
 ### 4. Observer Cleanup in DELETE Handlers
 

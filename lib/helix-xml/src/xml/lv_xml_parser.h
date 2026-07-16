@@ -55,6 +55,39 @@ typedef struct {
     bool has_conflict;  /**< element already had text=/bind_text=/translation_tag= */
 } lv_xml_pcdata_entry_t;
 
+/** One buffered SAX event captured inside a `<repeat>` body. The strings are
+ *  deep copies (owned) so each replay iteration re-parses pristine, sigil-bearing
+ *  attribute values — this is what defeats the destructive in-place mutation that
+ *  `resolve_params`/`resolve_consts` perform. */
+typedef struct {
+    int kind;            /**< 0=start, 1=end, 2=chardata */
+    char * name;         /**< element name (start/end) or text (chardata); owned */
+    char ** attrs;       /**< NULL-terminated name/val array, all owned; NULL for end/chardata */
+} lv_xml_repeat_event_t;
+
+/** State for a single `<repeat>` expansion, hung off `state->context` for the
+ *  duration of the repeat body. On the `<repeat>` start tag a fresh instance is
+ *  allocated; the body is buffered while `active && !replaying`; on `</repeat>`
+ *  the buffered events are replayed `count` times through the normal element
+ *  handlers with `current_index` injected for `$i`. Freed after replay (literal
+ *  path) or retained for reactive rebuild (subject-bound count — Task 3). */
+typedef struct {
+    bool     active;             /**< currently buffering a `<repeat>` body */
+    uint32_t base_depth;         /**< parent_ll length at the `<repeat>` start tag */
+    char *   count_raw;          /**< raw `count` attr (literal / #const / subject name), owned */
+    lv_xml_repeat_event_t * events;
+    uint32_t event_count;
+    uint32_t event_cap;
+    int32_t  current_index;      /**< `$i` value during replay */
+    bool     replaying;          /**< true while replaying (handlers create, not buffer) */
+    /* Transient `$i`-formatted strings produced during replay; freed at the end
+     * of each expansion so they outlive the per-element handler call that copies
+     * them but never accumulate across iterations or rebuilds. */
+    char **  idx_strings;
+    uint32_t idx_count;
+    uint32_t idx_cap;
+} lv_xml_repeat_capture_t;
+
 struct _lv_xml_parser_state_t {
     const char * tag_name;
     lv_xml_component_scope_t scope;
@@ -63,10 +96,23 @@ struct _lv_xml_parser_state_t {
     lv_obj_t * parent;
     lv_obj_t * item;
     lv_obj_t * view;    /*Pointer to the created view during component creation*/
-    void * context;     /*Custom data that can be stored during parsing*/
+    void * context;     /*Custom data stored during parsing. During a view-def parse
+                          *it holds the active lv_xml_repeat_capture_t* (or NULL); the
+                          *component metadata parser reuses it for the current timeline.*/
     const char ** parent_attrs;
     lv_xml_component_scope_t * parent_scope;
     lv_xml_parser_section_t section;
+    /* Transient strings produced by embedded `${name}` composition in
+     * resolve_params (e.g. bind_text="demo_${i}_v" -> "demo_2_v"). This is the
+     * only substitution path that ALLOCATES — the whole-value `$name`/`#const`
+     * paths merely repoint an attribute slot at non-owned storage. The composed
+     * strings are owned here and freed exactly once at parse end
+     * (lv_xml_create_in_scope), so a composed value outlives every element-handler
+     * call within the parse but never leaks. resolve_consts never touches them
+     * (they don't start with `#`). */
+    char **  composed_strings;
+    uint32_t composed_count;
+    uint32_t composed_cap;
 };
 
 /**********************

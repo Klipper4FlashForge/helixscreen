@@ -96,6 +96,26 @@ Renders markdown as native LVGL widgets. Supports `bind_text` for dynamic conten
 <divider_horizontal width="100%"/>
 ```
 
+## Repeating Fragments (`<repeat>`)
+
+Expands a body N times at load time — replaces a C++ create-and-wire loop.
+
+```xml
+<repeat count="4">
+    <lv_label text="$i"/>              <!-- bare $i: whole-value index, 0/1/2/3 -->
+</repeat>
+
+<repeat count="row_count">             <!-- subject name: REACTIVE, rebuilds on change -->
+    <lv_label bind_text="slot_${i}_label"/>  <!-- ${i}: composes into a larger string -->
+</repeat>
+```
+
+- `count`: literal, `#const`, or a subject name (subject-bound = reactive rebuild via async off-tree teardown, not a synchronous delete).
+- `$i` bare = whole-value substitution only (`text="$i"` works, `text="slot_$i"` does not splice).
+- `${i}` / `${prop}` = embedded composition — splices into a larger string, e.g. `bind_text="slot_${i}_label"` self-wires each repeated widget to its own indexed subject (C++ must register `slot_0_label`..`slot_N_label`). No escape sequence — a literal `${...}` anywhere in a value is always resolved as composition.
+- ⚠️ **A subject-bound `<repeat>` must be its parent's last child, or the sole child of a dedicated wrapper.** LVGL always appends freshly-created children to the tail of the parent's list, so on rebuild, items land after any static siblings that follow the `<repeat>` in the document — silently reordering the layout.
+- Not yet supported: `${i + 1}` arithmetic, nested `<repeat>`.
+
 ## Styles
 
 ### Defining (NO style_ prefix inside <styles>)

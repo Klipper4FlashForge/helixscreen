@@ -78,6 +78,24 @@ static void view_character_data_handler(void * user_data, const XML_Char * s, in
 static void collapse_whitespace(char * s);
 static void apply_pending_inline_text(lv_xml_parser_state_t * state, const char * name);
 static void free_pcdata_ll(lv_xml_parser_state_t * state);
+static char ** xml_repeat_copy_attrs(const char ** attrs);
+static void xml_repeat_buffer_event(lv_xml_repeat_capture_t * cap, int kind, const char * name,
+                                    const char ** attrs);
+static void xml_repeat_capture_free(lv_xml_repeat_capture_t * cap);
+static const char * xml_repeat_index_string(lv_xml_repeat_capture_t * cap, int32_t index);
+static int32_t xml_repeat_resolve_count(lv_xml_parser_state_t * state, const char * count_raw);
+static bool xml_repeat_count_is_subject(const char * count_raw);
+static void xml_repeat_expand(lv_xml_parser_state_t * state, lv_xml_repeat_capture_t * cap, int32_t count,
+                              lv_obj_t *** out_roots, uint32_t * out_root_count);
+static void xml_repeat_retain(lv_xml_parser_state_t * state, lv_xml_repeat_capture_t * cap,
+                              lv_subject_t * count_subject);
+static void xml_repeat_teardown_expansion(lv_xml_repeat_t * r);
+static void xml_repeat_rebuild_cb(lv_observer_t * observer, lv_subject_t * subject);
+static void xml_repeat_record_free_heap(lv_xml_repeat_t * r);
+static void xml_repeat_instance_delete_cb(lv_event_t * e);
+static bool xml_value_has_compose(const char * value);
+static char * xml_compose_indexed(lv_xml_parser_state_t * state, const char * raw);
+static void xml_state_free_composed(lv_xml_parser_state_t * state);
 static void create_timeline_instances(lv_xml_parser_state_t * state);
 static void get_timeline_from_event_cb(lv_event_t * e);
 static void free_timelines_event_cb(lv_event_t * e);
@@ -322,9 +340,23 @@ void * lv_xml_create_in_scope(lv_obj_t * parent, lv_xml_component_scope_t * pare
     if(XML_Parse(parser, scope->view_def, lv_strlen(scope->view_def), XML_TRUE) == XML_STATUS_ERROR) {
         LV_LOG_WARN("XML parsing error: %s on line %lu", XML_ErrorString(XML_GetErrorCode(parser)),
                     XML_GetCurrentLineNumber(parser));
+        /*An unclosed <repeat> leaves an active capture on state.context; free it.*/
+        if(state.context) {
+            xml_repeat_capture_free((lv_xml_repeat_capture_t *)state.context);
+            state.context = NULL;
+        }
+        xml_state_free_composed(&state);
         free_pcdata_ll(&state);
         XML_ParserFree(parser);
         return NULL;
+    }
+
+    /*Well-formed input closes every <repeat>, but malformed input (parse aborted
+     *without an error status, or a stray unclosed body) can leave a live capture.
+     *Free it so the heap capture never leaks.*/
+    if(state.context) {
+        xml_repeat_capture_free((lv_xml_repeat_capture_t *)state.context);
+        state.context = NULL;
     }
 
     state.item = state.view;
@@ -344,6 +376,7 @@ void * lv_xml_create_in_scope(lv_obj_t * parent, lv_xml_component_scope_t * pare
 
     create_timeline_instances(&state);
 
+    xml_state_free_composed(&state);
     lv_ll_clear(&state.parent_ll);
     free_pcdata_ll(&state);
     XML_ParserFree(parser);
@@ -911,16 +944,38 @@ static const char * get_param_default(lv_xml_component_scope_t * scope, const ch
     return NULL;
 }
 
-static void resolve_params(lv_xml_component_scope_t * item_scope, lv_xml_component_scope_t * parent_scope,
+static void resolve_params(lv_xml_parser_state_t * state, lv_xml_component_scope_t * item_scope,
+                           lv_xml_component_scope_t * parent_scope,
                            const char ** item_attrs, const char ** parent_attrs)
 {
     uint32_t i;
     for(i = 0; item_attrs[i]; i += 2) {
         const char * value = item_attrs[i + 1];
 
+        /*Embedded `${name}` composition — splice the loop index (`${i}`) or a
+         *component param (`${grp}`) into a larger string, e.g.
+         *bind_text="demo_${i}_v" -> "demo_2_v". Detected by the "${" marker so it
+         *fires wherever it appears (leading or embedded); the whole-value `$name`
+         *and `#const` paths below never see a "${". This is the only allocating
+         *branch: the result is owned by state->composed_strings, freed at parse
+         *end. resolve_consts won't touch it (composed names don't start with `#`).*/
+        if(xml_value_has_compose(value)) {
+            item_attrs[i + 1] = xml_compose_indexed(state, value);
+            continue;
+        }
+
         if(value[0] == '$') {
             /*E.g. the ${my_color} value is the my_color attribute name on the parent*/
             const char * name_clean = &value[1]; /*skips `$`*/
+
+            /*`$i` — the <repeat> loop index (bare, zero-based). Resolved from the
+             *active repeat capture on state->context, only during replay. Substitute
+             *a per-expansion transient string that outlives this handler call.*/
+            lv_xml_repeat_capture_t * rc = state ? (lv_xml_repeat_capture_t *)state->context : NULL;
+            if(rc && rc->replaying && lv_streq(name_clean, "i")) {
+                item_attrs[i + 1] = xml_repeat_index_string(rc, rc->current_index);
+                continue;
+            }
 
             const char * type = get_param_type(item_scope, name_clean);
             if(type == NULL) {
@@ -1032,6 +1087,22 @@ static void view_character_data_handler(void * user_data, const XML_Char * s, in
 {
     lv_xml_parser_state_t * state = (lv_xml_parser_state_t *)user_data;
     if(len <= 0) return;
+
+    /*Buffer inline text while capturing a <repeat> body so it replays with the
+     *elements it belongs to. The chardata handler receives a length, not a NUL-
+     *terminated string, so make a bounded copy for the event.*/
+    lv_xml_repeat_capture_t * cap = (lv_xml_repeat_capture_t *)state->context;
+    if(cap && cap->active && !cap->replaying) {
+        char * text = lv_malloc((size_t)len + 1);
+        if(text) {
+            lv_memcpy(text, s, (size_t)len);
+            text[len] = '\0';
+            xml_repeat_buffer_event(cap, /*kind=*/2, text, NULL);
+            lv_free(text);
+        }
+        return;
+    }
+
     lv_xml_pcdata_entry_t * entry = lv_ll_get_tail(&state->pcdata_ll);
     if(entry == NULL) return; /*Character data outside any element (prolog etc.)*/
 
@@ -1079,7 +1150,7 @@ static void apply_pending_inline_text(lv_xml_parser_state_t * state, const char 
 
     /*Resolve $prop/#const exactly like attribute values (whole-value)*/
     const char * synth[5] = {"text", buf, "translation_tag", buf, NULL};
-    resolve_params(&state->scope, state->parent_scope, synth, state->parent_attrs);
+    resolve_params(state, &state->scope, state->parent_scope, synth, state->parent_attrs);
     resolve_consts(synth, &state->scope);
     if(synth[0][0] == '\0' || synth[2][0] == '\0') { /*unresolved -> dropped pair*/
         lv_free(buf);
@@ -1110,9 +1181,614 @@ static void free_pcdata_ll(lv_xml_parser_state_t * state)
     lv_ll_clear(&state->pcdata_ll);
 }
 
+/*======================
+ *   <repeat> support
+ *=====================*/
+
+/** Deep-copy a NULL-terminated name/value attribute array. The copies keep any
+ *  `$`/`#` sigils intact so each replay iteration's resolve_params/resolve_consts
+ *  run against pristine values. */
+static char ** xml_repeat_copy_attrs(const char ** attrs)
+{
+    size_t n = 0;
+    if(attrs) {
+        while(attrs[n]) n++;                 /*counts name+val entries*/
+    }
+    char ** out = lv_malloc(sizeof(char *) * (n + 1));
+    if(out == NULL) return NULL;
+    for(size_t i = 0; i < n; i++) {
+        size_t len = lv_strlen(attrs[i]);
+        out[i] = lv_malloc(len + 1);
+        if(out[i] == NULL) {
+            /*Roll back what we have to avoid a leak on OOM*/
+            for(size_t j = 0; j < i; j++) lv_free(out[j]);
+            lv_free(out);
+            return NULL;
+        }
+        lv_memcpy(out[i], attrs[i], len + 1);
+    }
+    out[n] = NULL;
+    return out;
+}
+
+/** Append one buffered SAX event to the capture buffer. `kind` 0=start (attrs
+ *  deep-copied), 1=end (name only), 2=chardata (text stored in `name`). */
+static void xml_repeat_buffer_event(lv_xml_repeat_capture_t * cap, int kind, const char * name,
+                                    const char ** attrs)
+{
+    if(cap->event_count == cap->event_cap) {
+        uint32_t new_cap = cap->event_cap ? cap->event_cap * 2 : 8;
+        lv_xml_repeat_event_t * ne = lv_realloc(cap->events, sizeof(lv_xml_repeat_event_t) * new_cap);
+        if(ne == NULL) {
+            LV_LOG_ERROR("OOM: failed to grow <repeat> capture buffer");
+            return;
+        }
+        cap->events = ne;
+        cap->event_cap = new_cap;
+    }
+
+    lv_xml_repeat_event_t * ev = &cap->events[cap->event_count];
+    ev->kind = kind;
+    ev->attrs = NULL;
+    ev->name = NULL;
+
+    size_t len = lv_strlen(name);
+    ev->name = lv_malloc(len + 1);
+    if(ev->name == NULL) {
+        LV_LOG_ERROR("OOM: failed to copy <repeat> event name");
+        return;
+    }
+    lv_memcpy(ev->name, name, len + 1);
+
+    if(kind == 0) {
+        ev->attrs = xml_repeat_copy_attrs(attrs);
+    }
+
+    cap->event_count++;
+}
+
+/** Free all owned strings held by the capture (events, count_raw, idx_strings). */
+static void xml_repeat_capture_free(lv_xml_repeat_capture_t * cap)
+{
+    if(cap == NULL) return;
+    for(uint32_t e = 0; e < cap->event_count; e++) {
+        lv_xml_repeat_event_t * ev = &cap->events[e];
+        if(ev->name) lv_free(ev->name);
+        if(ev->attrs) {
+            for(size_t a = 0; ev->attrs[a]; a++) lv_free(ev->attrs[a]);
+            lv_free(ev->attrs);
+        }
+    }
+    lv_free(cap->events);
+    for(uint32_t k = 0; k < cap->idx_count; k++) lv_free(cap->idx_strings[k]);
+    lv_free(cap->idx_strings);
+    lv_free(cap->count_raw);
+    lv_free(cap);
+}
+
+/** Format `index` into a freshly allocated string tracked on the capture. Freed
+ *  at the end of the current expansion so it outlives the handler call that
+ *  copies it but never accumulates across iterations. Returns "" on OOM. */
+static const char * xml_repeat_index_string(lv_xml_repeat_capture_t * cap, int32_t index)
+{
+    char buf[16];
+    lv_snprintf(buf, sizeof(buf), "%d", (int)index);
+    size_t len = lv_strlen(buf);
+    char * s = lv_malloc(len + 1);
+    if(s == NULL) return "";
+    lv_memcpy(s, buf, len + 1);
+
+    if(cap->idx_count == cap->idx_cap) {
+        uint32_t new_cap = cap->idx_cap ? cap->idx_cap * 2 : 8;
+        char ** na = lv_realloc(cap->idx_strings, sizeof(char *) * new_cap);
+        if(na == NULL) {
+            lv_free(s);
+            return "";
+        }
+        cap->idx_strings = na;
+        cap->idx_cap = new_cap;
+    }
+    cap->idx_strings[cap->idx_count++] = s;
+    return s;
+}
+
+/** Resolve the raw `count` into a concrete iteration count. Literal digits ->
+ *  atoi; leading `#` -> const lookup then atoi; otherwise treated as a subject
+ *  name and read at current value (reactive rebuild is Task 3). Clamped [0,256]. */
+static int32_t xml_repeat_resolve_count(lv_xml_parser_state_t * state, const char * count_raw)
+{
+    int32_t count = 0;
+    if(count_raw == NULL || count_raw[0] == '\0') {
+        count = 0;
+    }
+    else if(count_raw[0] == '#') {
+        const char * cv = lv_xml_get_const(&state->scope, &count_raw[1]);
+        count = cv ? lv_xml_atoi(cv) : 0;
+    }
+    else if((count_raw[0] >= '0' && count_raw[0] <= '9') || count_raw[0] == '-' || count_raw[0] == '+') {
+        count = lv_xml_atoi(count_raw);
+    }
+    else {
+        /*Subject name: read the current value; Task 3 adds the reactive observer.*/
+        lv_subject_t * subject = lv_xml_get_subject(&state->scope, count_raw);
+        count = subject ? lv_subject_get_int(subject) : 0;
+    }
+
+    if(count < 0) count = 0;
+    if(count > 256) {
+        LV_LOG_WARN("<repeat count='%s'> resolved to %d, clamping to 256", count_raw, (int)count);
+        count = 256;
+    }
+    return count;
+}
+
+/** True if `count_raw` should be treated as a subject name (i.e. not empty, not a
+ *  `#const`, not a signed literal). Only such a `count` gets a reactive observer;
+ *  literals and consts expand once at parse time. */
+static bool xml_repeat_count_is_subject(const char * count_raw)
+{
+    if(count_raw == NULL || count_raw[0] == '\0') return false;
+    if(count_raw[0] == '#') return false;
+    char c = count_raw[0];
+    if((c >= '0' && c <= '9') || c == '-' || c == '+') return false;
+    return true;
+}
+
+/** Replay the buffered body `count` times through the real element handlers,
+ *  injecting `$i` per iteration. During replay cap->replaying is true so the
+ *  handlers create objects instead of buffering. When `out_roots` is non-NULL the
+ *  top-level objects created by the expansion (the body's direct children) are
+ *  collected into a freshly allocated array handed back to the caller, which then
+ *  owns it — this is what lets the subject-bound rebuild find and tear down the
+ *  prior expansion. */
+static void xml_repeat_expand(lv_xml_parser_state_t * state, lv_xml_repeat_capture_t * cap, int32_t count,
+                              lv_obj_t *** out_roots, uint32_t * out_root_count)
+{
+    if(count < 0) count = 0;
+
+    lv_obj_t ** roots = NULL;
+    uint32_t root_count = 0;
+    uint32_t root_cap = 0;
+
+    cap->replaying = true;
+    for(int32_t i = 0; i < count; i++) {
+        cap->current_index = i;
+        /*Track nesting within this iteration's (balanced) event stream so the
+         *body's DIRECT children — the expansion roots — can be identified as the
+         *start events seen at nest depth 0, independent of any other children the
+         *enclosing parent already holds.*/
+        int nest = 0;
+        for(uint32_t e = 0; e < cap->event_count; e++) {
+            lv_xml_repeat_event_t * ev = &cap->events[e];
+            if(ev->kind == 0) {
+                /*Build a FRESH shallow array of pointers over the owned deep-copied
+                 *strings. resolve_params/resolve_consts mutate the attribute slots
+                 *in place, so the throwaway array absorbs that — ev->attrs stays
+                 *pristine (sigils intact) for the next iteration. Mutating ev->attrs
+                 *directly would repoint owned slots at const/transient storage and
+                 *double-free at teardown.*/
+                size_t n = 0;
+                while(ev->attrs && ev->attrs[n]) n++;
+                const char ** shallow = lv_malloc(sizeof(char *) * (n + 1));
+                if(shallow == NULL) {
+                    LV_LOG_ERROR("OOM: <repeat> replay shallow attrs");
+                    continue;
+                }
+                for(size_t a = 0; a < n; a++) shallow[a] = ev->attrs[a];
+                shallow[n] = NULL;
+                bool top_level = (nest == 0);
+                view_start_element_handler(state, ev->name, shallow);
+                lv_free(shallow);
+                if(top_level && out_roots && state->item) {
+                    if(root_count == root_cap) {
+                        uint32_t new_cap = root_cap ? root_cap * 2 : 8;
+                        lv_obj_t ** nr = lv_realloc(roots, sizeof(lv_obj_t *) * new_cap);
+                        if(nr) {
+                            roots = nr;
+                            root_cap = new_cap;
+                        }
+                    }
+                    if(root_count < root_cap) roots[root_count++] = state->item;
+                }
+                nest++;
+            }
+            else if(ev->kind == 1) {
+                nest--;
+                view_end_element_handler(state, ev->name);
+            }
+            else {
+                view_character_data_handler(state, ev->name, (int)lv_strlen(ev->name));
+            }
+        }
+    }
+    cap->replaying = false;
+
+    /*Drop the per-expansion $i strings now that every apply_cb has copied them.*/
+    for(uint32_t k = 0; k < cap->idx_count; k++) lv_free(cap->idx_strings[k]);
+    cap->idx_count = 0;
+
+    if(out_roots) {
+        *out_roots = roots;
+        *out_root_count = root_count;
+    }
+    else if(roots) {
+        lv_free(roots);   /*defensive: only built when out_roots requested*/
+    }
+}
+
+/** Async-tear-down the current expansion of a subject-bound `<repeat>`. This runs
+ *  from the count observer (synchronous, inside a UpdateQueue drain batch), so it
+ *  MUST NOT synchronously delete widgets [L081][L059]. Mirrors the C++
+ *  helix::ui::safe_delete_subtree algorithm in pure C: reparent every root into an
+ *  off-tree, hidden, layout-less "condemned" sink (a synchronous detach from the
+ *  live parent's child list) and then `lv_obj_delete_async` the sink so the actual
+ *  destruction happens outside the batch. Never `lv_obj_is_valid()` here [L076]. */
+static void xml_repeat_teardown_expansion(lv_xml_repeat_t * r)
+{
+    if(r->roots == NULL || r->root_count == 0) {
+        lv_free(r->roots);   /*NULL-safe; keeps the record consistent*/
+        r->roots = NULL;
+        r->root_count = 0;
+        return;
+    }
+
+    lv_obj_t * condemned = lv_obj_create(lv_layer_top());
+    if(condemned) {
+        lv_obj_add_flag(condemned, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_size(condemned, 0, 0);
+        lv_obj_set_layout(condemned, LV_LAYOUT_NONE);
+        for(uint32_t k = 0; k < r->root_count; k++) {
+            if(r->roots[k]) {
+                lv_obj_set_layout(r->roots[k], LV_LAYOUT_NONE);
+                lv_obj_set_parent(r->roots[k], condemned);   /*sync-detach from live parent*/
+            }
+        }
+        lv_obj_delete_async(condemned);                       /*async, outside the batch*/
+    }
+    else {
+        /*OOM on the sink is catastrophic; fall back to per-root async delete so we
+         *still never sync-delete inside the observer batch.*/
+        LV_LOG_ERROR("OOM: <repeat> teardown sink; falling back to per-root async delete");
+        for(uint32_t k = 0; k < r->root_count; k++) {
+            if(r->roots[k]) lv_obj_delete_async(r->roots[k]);
+        }
+    }
+
+    lv_free(r->roots);
+    r->roots = NULL;
+    r->root_count = 0;
+}
+
+/** Count-subject observer: re-materialize the `<repeat>` expansion for the new
+ *  count. Tears down the prior expansion asynchronously, then replays the retained
+ *  body through a freshly reconstructed parser state (the original parse state is
+ *  long gone). Also serves the INITIAL expansion via the immediate fire that
+ *  lv_subject_add_observer performs at registration. */
+static void xml_repeat_rebuild_cb(lv_observer_t * observer, lv_subject_t * subject)
+{
+    LV_UNUSED(subject);
+    lv_xml_repeat_t * r = (lv_xml_repeat_t *)lv_observer_get_user_data(observer);
+    if(r == NULL || r->in_rebuild) return;
+    r->in_rebuild = true;
+
+    int32_t count = r->count_subject ? lv_subject_get_int(r->count_subject) : 0;
+    if(count < 0) count = 0;
+    if(count > 256) {
+        LV_LOG_WARN("<repeat> count subject resolved to %d, clamping to 256", (int)count);
+        count = 256;
+    }
+
+    /*Async off-tree teardown of the prior expansion — never a sync delete here.*/
+    xml_repeat_teardown_expansion(r);
+
+    /*Reconstruct a minimal parser state to drive the captured body. Start from a
+     *fully-initialized state (so no field is missed), then override with the
+     *record's snapshots.*/
+    lv_xml_parser_state_t tmp_state;
+    lv_xml_parser_state_init(&tmp_state);
+    tmp_state.scope = r->scope;                          /*value copy; list heads shared read-only*/
+    tmp_state.parent = r->parent;
+    tmp_state.parent_attrs = (const char **)r->parent_attrs;
+    tmp_state.parent_scope = r->parent_scope;
+    tmp_state.context = r->capture;
+
+    lv_obj_t ** pnode = lv_ll_ins_head(&tmp_state.parent_ll);
+    if(pnode) *pnode = r->parent;
+
+    xml_repeat_expand(&tmp_state, (lv_xml_repeat_capture_t *)r->capture, count,
+                      &r->roots, &r->root_count);
+
+    /*Free everything the replay allocated on the temp state. The composed-strings
+     *list (from `${name}` in the body) is per-state and would leak per rebuild
+     *without this. The scope snapshot shares nodes with the registered scope, so
+     *do NOT clear its linked lists here.*/
+    xml_state_free_composed(&tmp_state);
+    lv_ll_clear(&tmp_state.parent_ll);
+    free_pcdata_ll(&tmp_state);
+
+    r->in_rebuild = false;
+}
+
+/** Move a captured `<repeat>` body into a retained record so its expansion tracks
+ *  the count subject. Called from the `</repeat>` close path when `count` names a
+ *  live subject. The record lives in the REGISTERED scope's `repeat_ll` (recovered
+ *  by name) — NOT `state->scope`, whose `repeat_ll` head is a by-value copy that
+ *  the registered scope never sees. Registering the observer LAST triggers the
+ *  immediate-fire that performs the initial expansion (see xml_repeat_rebuild_cb),
+ *  so there is exactly one build path. */
+static void xml_repeat_retain(lv_xml_parser_state_t * state, lv_xml_repeat_capture_t * cap,
+                              lv_subject_t * count_subject)
+{
+    lv_xml_component_scope_t * reg = lv_xml_component_get_scope(state->scope.name);
+    lv_xml_repeat_t * r = reg ? lv_ll_ins_tail(&reg->repeat_ll) : NULL;
+    if(r == NULL) {
+        /*No home for the record (unnamed scope or OOM): degrade to a one-shot
+         *expansion at the current value so the tree is still populated. The
+         *capture is freed by the caller's fallthrough path.*/
+        if(reg == NULL) LV_LOG_WARN("<repeat count> subject-bound in an unnamed scope; rebuild disabled");
+        else LV_LOG_ERROR("OOM: failed to retain <repeat> record; rebuild disabled");
+        int32_t count = count_subject ? lv_subject_get_int(count_subject) : 0;
+        xml_repeat_expand(state, cap, count, NULL, NULL);
+        xml_repeat_capture_free(cap);
+        state->context = NULL;
+        return;
+    }
+
+    lv_memzero(r, sizeof(*r));
+    r->capture = cap;                 /*ownership moves into the record*/
+    r->count_subject = count_subject;
+
+    lv_obj_t ** tail = lv_ll_get_tail(&state->parent_ll);
+    r->parent = tail ? *tail : state->parent;
+    r->view_root = state->view;       /*instance root; its delete reclaims this record*/
+
+    r->scope = state->scope;          /*value snapshot; read-only during rebuild*/
+    r->parent_scope = state->parent_scope;
+    r->parent_attrs = state->parent_attrs ? xml_repeat_copy_attrs(state->parent_attrs) : NULL;
+
+    /*The capture is now owned by the record; detach it from the live parse state
+     *before the observer fires so the live state never double-frees it.*/
+    state->context = NULL;
+
+    /*Tie the record + observer lifetime to the INSTANCE. The count subject is
+     *shared (a scope subject reused across instances, or a global) and outlives any
+     *one instance, so the observer must go when the instance's tree is deleted —
+     *otherwise it fires the rebuild on freed roots (UAF). Mirror the timeline
+     *cleanup: an LV_EVENT_DELETE cb on the view root. If there is no view root
+     *(degenerate parse), fall back to the unregister-time sweep only.*/
+    if(r->view_root) {
+        lv_obj_add_event_cb(r->view_root, xml_repeat_instance_delete_cb, LV_EVENT_DELETE, r);
+    }
+    else {
+        LV_LOG_WARN("<repeat count> subject-bound with no view root; rebuild lifetime falls back to unregister");
+    }
+
+    /*Registering the observer fires xml_repeat_rebuild_cb immediately, which does
+     *the initial expansion (into r->parent via a reconstructed state) and records
+     *the roots. r->parent is the current tail of the live parent_ll, so children
+     *land in exactly the same place the literal path would have created them.*/
+    r->observer = lv_subject_add_observer(count_subject, xml_repeat_rebuild_cb, r);
+}
+
+/** Free the owned heap of a `<repeat>` record: detach the count observer, free the
+ *  captured body, the roots ARRAY (never the widgets — the instance owns those),
+ *  and the parent-attrs snapshot. Does NOT free the record node itself, remove the
+ *  delete cb, or unlink from `repeat_ll` — the two callers do that differently. */
+static void xml_repeat_record_free_heap(lv_xml_repeat_t * r)
+{
+    if(r->observer) {
+        lv_observer_remove(r->observer);
+        r->observer = NULL;
+    }
+    xml_repeat_capture_free((lv_xml_repeat_capture_t *)r->capture);
+    r->capture = NULL;
+    lv_free(r->roots);                /*the array only — widgets are freed by LVGL*/
+    r->roots = NULL;
+    r->root_count = 0;
+    if(r->parent_attrs) {
+        for(size_t a = 0; r->parent_attrs[a]; a++) lv_free(r->parent_attrs[a]);
+        lv_free(r->parent_attrs);
+        r->parent_attrs = NULL;
+    }
+}
+
+/** LV_EVENT_DELETE on the instance view root: reclaim the record for THIS instance.
+ *  The instance's widget tree (including this expansion's roots) is being freed by
+ *  LVGL right now, so never touch roots[] — only detach the observer, free the
+ *  record heap, unlink the record from `repeat_ll`, and free the node. Unlinking is
+ *  what keeps lv_xml_component_unregister from double-freeing it later. This cb
+ *  never runs during a rebuild's own teardown: that deletes an off-tree condemned
+ *  container (which holds the old roots), not the view root. */
+static void xml_repeat_instance_delete_cb(lv_event_t * e)
+{
+    lv_xml_repeat_t * r = (lv_xml_repeat_t *)lv_event_get_user_data(e);
+    if(r == NULL) return;
+
+    /*Recover the registered scope by name before freeing anything (scope is a value
+     *member, untouched by free_heap, so the name stays valid until lv_free(r)).*/
+    lv_xml_component_scope_t * reg = lv_xml_component_get_scope(r->scope.name);
+
+    xml_repeat_record_free_heap(r);
+
+    if(reg) lv_ll_remove(&reg->repeat_ll, r);
+    lv_free(r);                       /*the record IS the ll node (see lv_ll_ins_tail)*/
+}
+
+/** Free a `<repeat>` record from the scope-teardown path (records whose instances
+ *  are still alive at unregister). Removes the pending instance-delete cb first so
+ *  it cannot fire on the freed record after the instance is later deleted, then
+ *  frees the record heap. The node itself is freed by the caller's lv_ll_clear. */
+void lv_xml_repeat_record_free(lv_xml_repeat_t * r)
+{
+    if(r == NULL) return;
+    if(r->view_root) {
+        lv_obj_remove_event_cb_with_user_data(r->view_root, xml_repeat_instance_delete_cb, r);
+        r->view_root = NULL;
+    }
+    xml_repeat_record_free_heap(r);
+}
+
+/** True if `value` contains an embedded `${...}` composition marker anywhere.
+ *  A bare `$name` (whole-value param / `$i`) has no `{` after the `$`, so it is
+ *  left to the whole-value branch in resolve_params. */
+static bool xml_value_has_compose(const char * value)
+{
+    const char * d = value;
+    while((d = lv_strchr(d, '$')) != NULL) {
+        if(d[1] == '{') return true;
+        d++;
+    }
+    return false;
+}
+
+/** Resolve a single `${name}` token. `${i}` yields the current `<repeat>` loop
+ *  index (only meaningful during replay); any other name resolves against the
+ *  component's parent attributes then its param defaults. `scratch` backs the
+ *  formatted index. Returns NULL when the name cannot be resolved. */
+static const char * xml_compose_lookup(lv_xml_parser_state_t * state, const char * name,
+                                       char * scratch, size_t scratch_sz)
+{
+    if(lv_streq(name, "i")) {
+        lv_xml_repeat_capture_t * rc = state ? (lv_xml_repeat_capture_t *)state->context : NULL;
+        if(rc == NULL || !rc->replaying) return NULL; /*`$i` only exists during a replay*/
+        lv_snprintf(scratch, scratch_sz, "%d", (int)rc->current_index);
+        return scratch;
+    }
+    const char * v = lv_xml_get_value_of(state->parent_attrs, name);
+    /*An unresolved param passed down as a `$`-sigil is not a usable value.*/
+    if(v == NULL || v[0] == '$') v = get_param_default(&state->scope, name);
+    return v; /*may be NULL*/
+}
+
+/** Splice every `${name}` in `raw` with its resolved value, returning a freshly
+ *  allocated string tracked on state->composed_strings (freed at parse end).
+ *  An unresolved `${name}` splices empty and warns. Returns "" on OOM. */
+static char * xml_compose_indexed(lv_xml_parser_state_t * state, const char * raw)
+{
+    size_t cap = lv_strlen(raw) + 1;
+    char * out = lv_malloc(cap);
+    if(out == NULL) return "";
+    size_t len = 0; /*bytes used, excluding the terminating NUL*/
+
+    /*Ensure room for `n` more bytes plus a NUL, growing geometrically.*/
+#define XML_COMPOSE_APPEND(src, n)                                   \
+    do {                                                             \
+        size_t add_ = (n);                                           \
+        if(len + add_ + 1 > cap) {                                   \
+            while(len + add_ + 1 > cap) cap *= 2;                    \
+            char * grown_ = lv_realloc(out, cap);                    \
+            if(grown_ == NULL) { lv_free(out); return ""; }         \
+            out = grown_;                                            \
+        }                                                            \
+        lv_memcpy(out + len, (src), add_);                          \
+        len += add_;                                                 \
+    } while(0)
+
+    const char * p = raw;
+    while(*p) {
+        if(p[0] == '$' && p[1] == '{') {
+            const char * close = lv_strchr(p + 2, '}');
+            if(close == NULL) {
+                /*Unterminated `${` — copy the remainder verbatim and stop.*/
+                XML_COMPOSE_APPEND(p, lv_strlen(p));
+                break;
+            }
+            size_t nlen = (size_t)(close - (p + 2));
+            char nbuf[64];
+            if(nlen >= sizeof(nbuf)) {
+                LV_LOG_WARN("<repeat> ${...} name too long in '%s'; splicing empty", raw);
+            }
+            else {
+                lv_memcpy(nbuf, p + 2, nlen);
+                nbuf[nlen] = '\0';
+                char scratch[16];
+                const char * rep = xml_compose_lookup(state, nbuf, scratch, sizeof(scratch));
+                if(rep == NULL) {
+                    LV_LOG_WARN("<repeat> ${%s} could not be resolved in '%s'; splicing empty",
+                                nbuf, raw);
+                }
+                else {
+                    XML_COMPOSE_APPEND(rep, lv_strlen(rep));
+                }
+            }
+            p = close + 1;
+        }
+        else {
+            XML_COMPOSE_APPEND(p, 1);
+            p++;
+        }
+    }
+    out[len] = '\0';
+#undef XML_COMPOSE_APPEND
+
+    /*Track the owned string on state; freed once at parse end.*/
+    if(state->composed_count == state->composed_cap) {
+        uint32_t new_cap = state->composed_cap ? state->composed_cap * 2 : 8;
+        char ** na = lv_realloc(state->composed_strings, sizeof(char *) * new_cap);
+        if(na == NULL) { lv_free(out); return ""; }
+        state->composed_strings = na;
+        state->composed_cap = new_cap;
+    }
+    state->composed_strings[state->composed_count++] = out;
+    return out;
+}
+
+/** Free all composed strings tracked on `state`. Called once per parse (both the
+ *  error and success exits of lv_xml_create_in_scope). A reactive-rebuild caller
+ *  (subject-bound `<repeat>`, Task 3) that drives xml_repeat_expand through its
+ *  own parser state must call this after each rebuild for the same reason. */
+static void xml_state_free_composed(lv_xml_parser_state_t * state)
+{
+    for(uint32_t k = 0; k < state->composed_count; k++) lv_free(state->composed_strings[k]);
+    lv_free(state->composed_strings);
+    state->composed_strings = NULL;
+    state->composed_count = 0;
+    state->composed_cap = 0;
+}
+
 static void view_start_element_handler(void * user_data, const char * name, const char ** attrs)
 {
     lv_xml_parser_state_t * state = (lv_xml_parser_state_t *)user_data;
+
+    lv_xml_repeat_capture_t * cap = (lv_xml_repeat_capture_t *)state->context;
+
+    /*Enter capture on <repeat>. Must run before the pcdata push below: <repeat>
+     *creates no object and pushes no stack node, so it owns no pcdata entry.
+     *A capture is ALWAYS allocated (even on missing/unparseable count) so the
+     *matching </repeat> is still intercepted and the parent stack stays balanced
+     *— a bare early-return would let </repeat> pop a frame it never pushed and
+     *mis-parent every following sibling. Missing count => expand zero times.*/
+    if(lv_streq(name, "repeat") && (cap == NULL || !cap->replaying)) {
+        const char * cnt = lv_xml_get_value_of(attrs, "count");
+        if(cnt == NULL) {
+            LV_LOG_WARN("<repeat> is missing the required 'count' attribute; expanding zero times");
+        }
+        cap = lv_zalloc(sizeof(lv_xml_repeat_capture_t));
+        if(cap == NULL) {
+            /*Catastrophic: without a capture the stack cannot be kept balanced.
+             *Log loudly; the tree may be corrupt but there is nothing to recover.*/
+            LV_LOG_ERROR("OOM: failed to allocate <repeat> capture; tree may be corrupt");
+            return;
+        }
+        cap->active = true;
+        cap->base_depth = (uint32_t)lv_ll_get_len(&state->parent_ll);
+        if(cnt) {
+            size_t clen = lv_strlen(cnt);
+            cap->count_raw = lv_malloc(clen + 1);
+            /*On copy OOM leave count_raw NULL: xml_repeat_resolve_count treats NULL
+             *as 0, so the body still expands zero times and the stack stays balanced.*/
+            if(cap->count_raw) lv_memcpy(cap->count_raw, cnt, clen + 1);
+        }
+        state->context = cap;
+        return;                          /*<repeat> creates no object, no stack push*/
+    }
+
+    /*Buffer body events while capturing (and not yet replaying).*/
+    if(cap && cap->active && !cap->replaying) {
+        xml_repeat_buffer_event(cap, /*kind=*/0, name, attrs);
+        return;                          /*no creation, no stack mutation*/
+    }
+
     state->tag_name = name;
 
     lv_xml_pcdata_entry_t * pcdata = lv_ll_ins_tail(&state->pcdata_ll);
@@ -1152,7 +1828,7 @@ static void view_start_element_handler(void * user_data, const char * name, cons
      *E.g. in `my_button` `<lv_label x="5" text="${title}".
      *This function changes the pointers in the child attributes if the start with '$'
      *with the corresponding parameter. E.g. "text", "${title}" -> "text", "Hello" */
-    resolve_params(&state->scope, state->parent_scope, attrs, state->parent_attrs);
+    resolve_params(state, &state->scope, state->parent_scope, attrs, state->parent_attrs);
 
     resolve_consts(attrs, &state->scope);
 
@@ -1229,6 +1905,32 @@ static void view_start_element_handler(void * user_data, const char * name, cons
 static void view_end_element_handler(void * user_data, const char * name)
 {
     lv_xml_parser_state_t * state = (lv_xml_parser_state_t *)user_data;
+
+    lv_xml_repeat_capture_t * cap = (lv_xml_repeat_capture_t *)state->context;
+    if(cap && cap->active && !cap->replaying) {
+        uint32_t depth = (uint32_t)lv_ll_get_len(&state->parent_ll);
+        if(lv_streq(name, "repeat") && depth == cap->base_depth) {
+            /*Closing </repeat>: resolve count and replay the buffered body. If
+             *`count` names a live subject, retain the capture in a record with a
+             *count observer so the expansion re-materializes reactively; the
+             *record path also drives the initial expansion. Otherwise (literal /
+             *#const / unresolved subject name) expand once and free the capture.*/
+            if(xml_repeat_count_is_subject(cap->count_raw)) {
+                lv_subject_t * cs = lv_xml_get_subject(&state->scope, cap->count_raw);
+                if(cs) {
+                    xml_repeat_retain(state, cap, cs);   /*moves cap into a record, clears state->context*/
+                    return;
+                }
+            }
+            int32_t count = xml_repeat_resolve_count(state, cap->count_raw);
+            xml_repeat_expand(state, cap, count, NULL, NULL);
+            xml_repeat_capture_free(cap);      /*literal path: buffer not retained*/
+            state->context = NULL;
+            return;
+        }
+        xml_repeat_buffer_event(cap, /*kind=*/1, name, NULL);
+        return;
+    }
 
     apply_pending_inline_text(state, name);
 
