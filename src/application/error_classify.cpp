@@ -46,6 +46,11 @@ std::optional<ErrorEvent> classify(const std::string& raw_line, const ClassifyCo
             (raw_line.size() >= 7 && raw_line[6] == ' ') ? raw_line.substr(7) : raw_line.substr(6);
     }
 
+    // Capture Klipper's wording before clean_error_text() gets a chance to
+    // rewrite it — the RPC channel records this exact string, so it is what the
+    // cross-source dedup must match on. See ErrorEvent::raw_detail.
+    e.raw_detail = text;
+
     std::string code;
     GcodeErrorRouter::clean_error_text(text, code);
     e.detail = text;

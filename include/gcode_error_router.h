@@ -131,7 +131,10 @@ class GcodeErrorRouter {
 
     /// Plain unclassified toast: deferred 150ms so a late-arriving RPC
     /// error response can populate the correlation buffer first.
-    void present_deferred_toast(const std::string& text);
+    /// @param text     cleaned/translated text to display
+    /// @param raw_text Klipper's pre-clean wording — the dedup identity the
+    ///                 fire-time re-check matches on (see ErrorEvent::raw_detail)
+    void present_deferred_toast(const std::string& text, const std::string& raw_text);
 
     /// Bytes-only truncation for transient toasts. Modals always get the
     /// full text -- they wrap to multiple lines.
