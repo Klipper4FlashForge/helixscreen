@@ -164,22 +164,26 @@ void on_temp_notify(const json& msg) {
     }
     const json& status = msg["params"][0];
 
+    // notify_status_update carries DELTAS: a given update usually contains ONLY
+    // extruder OR heater_bed, not both. Carry last-known values so the log always
+    // shows real temps — defaulting the absent field to 0.0 produced fake
+    // "extruder=28.7 bed=0.0" / "extruder=0.0 bed=28.0" flapping every delta.
+    static double s_last_extruder = 0.0;
+    static double s_last_bed = 0.0;
     bool has_temp = false;
-    double extruder_temp = 0.0;
-    double bed_temp = 0.0;
     if (status.contains("extruder") && status["extruder"].contains("temperature")) {
-        extruder_temp = status["extruder"]["temperature"].get<double>();
+        s_last_extruder = status["extruder"]["temperature"].get<double>();
         has_temp = true;
     }
     if (status.contains("heater_bed") && status["heater_bed"].contains("temperature")) {
-        bed_temp = status["heater_bed"]["temperature"].get<double>();
+        s_last_bed = status["heater_bed"]["temperature"].get<double>();
         has_temp = true;
     }
     if (!has_temp) {
         return;
     }
     s_msgs.fetch_add(1, std::memory_order_relaxed);
-    ESP_LOGI(TAG, "extruder=%.1f bed=%.1f", extruder_temp, bed_temp);
+    ESP_LOGI(TAG, "extruder=%.1f bed=%.1f", s_last_extruder, s_last_bed);
 }
 
 void* hil_thread_main(void*) {
