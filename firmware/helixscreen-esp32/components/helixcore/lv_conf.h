@@ -360,11 +360,16 @@
  *If LV_USE_LOG is enabled an error message will be printed on failure*/
 #define LV_USE_ASSERT_NULL          1   /*Check if the parameter is NULL. (Very fast, recommended)*/
 #define LV_USE_ASSERT_MALLOC        1   /*Checks is the memory is successfully allocated or no. (Very fast, recommended)*/
-#ifdef HELIX_RELEASE_BUILD
-#define LV_USE_ASSERT_STYLE         0   /*Disabled for release builds - saves RAM and removes startup warning*/
-#else
-#define LV_USE_ASSERT_STYLE         1   /*Check if the styles are properly initialized. (Very fast, recommended)*/
-#endif
+/* Unconditionally 0 on firmware — NOT gated on HELIX_RELEASE_BUILD.
+ * The sentinel field this flag adds is the FIRST member of lv_style_t, so its
+ * value changes sizeof(lv_style_t) by 4 bytes. HELIX_RELEASE_BUILD is defined
+ * only for the helixapp component, not helixcore (where LVGL compiles), so a
+ * gate here would give LVGL a sentinel'd lv_style_t while helixapp's StyleEntry
+ * embeds a smaller one — lv_style_reset() (LVGL-side, larger layout) then
+ * overruns into the adjacent StyleEntry.configure fn-ptr, crashing theme init
+ * with PC=0. Every ESP TU MUST agree on this; keep it a constant. Enforced by
+ * helix_lvgl_abi.h. */
+#define LV_USE_ASSERT_STYLE         0   /*Disabled — saves RAM, and ABI-consistent across all firmware components*/
 #define LV_USE_ASSERT_MEM_INTEGRITY 0   /*Check the integrity of `lv_mem` after critical operations. (Slow)*/
 #define LV_USE_ASSERT_OBJ           0   /*Check the object's type and existence (e.g. not deleted). (Slow)*/
 

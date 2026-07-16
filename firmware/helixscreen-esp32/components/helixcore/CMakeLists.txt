@@ -53,6 +53,7 @@ set(HELIX_FONT_SRCS
 
 idf_component_register(
     SRCS ${LVGL_SRCS} ${HELIX_XML_SRCS} ${HELIX_FONT_SRCS} anomaly_stub.c
+         helix_lvgl_abi_check.c
     INCLUDE_DIRS
         ${CMAKE_CURRENT_LIST_DIR}      # adapted lv_conf.h (RGB565)
         ${REPO_ROOT}/lib/lvgl          # lvgl.h, lvgl_private.h
@@ -65,8 +66,17 @@ idf_component_register(
 # their include with this macro (desktop resolves the #else branch,
 # "lvgl/lvgl.h", via its own -isystem lib path instead) — firmware only
 # exposes lib/lvgl as an include dir, so take the #include "lvgl.h" branch.
-target_compile_definitions(${COMPONENT_LIB} PUBLIC LV_CONF_INCLUDE_SIMPLE LV_KCONFIG_IGNORE
-                                                     LV_LVGL_H_INCLUDE_SIMPLE)
+# LV_CONF_PATH pins the ONE lv_conf.h every ESP component compiles against.
+# Without it, helixapp's include path (which carries ${REPO_ROOT}) resolves the
+# repo-root DESKTOP lv_conf.h (LV_COLOR_DEPTH=32) while helixcore/LVGL resolves
+# this firmware one (16) — two configs in one image, divergent lv_color_t and
+# lv_style_t layouts, memory corruption across the boundary. LV_CONF_PATH takes
+# precedence over LV_CONF_INCLUDE_SIMPLE in lv_conf_internal.h, so the repo-root
+# copy becomes unreachable in firmware builds regardless of -I ordering.
+target_compile_definitions(${COMPONENT_LIB} PUBLIC
+    "LV_CONF_PATH=\"${CMAKE_CURRENT_LIST_DIR}/lv_conf.h\""
+    LV_CONF_INCLUDE_SIMPLE LV_KCONFIG_IGNORE
+    LV_LVGL_H_INCLUDE_SIMPLE)
 # LVGL 9.5 sources trip -Wformat and old-style warnings on Xtensa GCC; the
 # audit measures compile/link viability, not warning hygiene.
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-format -Wno-unused-variable)

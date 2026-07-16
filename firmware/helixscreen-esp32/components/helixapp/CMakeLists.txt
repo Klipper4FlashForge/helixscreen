@@ -63,6 +63,7 @@ set(LOCAL_SRCS
     excluded_subsystems_stub.cpp
     font_aliases.cpp
     stb_impl.c
+    helix_lvgl_abi_check.c
     link_probe.cpp)
 
 idf_component_register(
