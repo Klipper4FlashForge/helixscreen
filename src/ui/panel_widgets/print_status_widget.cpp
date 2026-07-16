@@ -15,6 +15,7 @@
 #include "ams_state.h"
 #include "app_constants.h"
 #include "app_globals.h"
+#include "data_root_resolver.h"
 #include "filament_sensor_manager.h"
 #include "moonraker_client.h"
 #include "observer_factory.h"
@@ -36,6 +37,19 @@
 #include <chrono>
 #include <string_view>
 #include <unordered_set>
+
+namespace {
+// Resolved bundle path for the benchy placeholder thumbnail. Static so
+// lv_image_set_src / the idle-thumb subject can hold the pointer (it outlives
+// the widget). Identity on desktop (asset_root "."); absolute
+// (A:/assets/assets/images/...) on firmware, where a raw "A:assets/images/..."
+// literal misses the mount and lv_image_set_src fails to open it.
+const char* benchy_thumb_path() {
+    static const std::string p =
+        helix::asset_component_uri("assets/images/benchy_thumbnail_white.png");
+    return p.c_str();
+}
+} // namespace
 
 namespace helix {
 void register_print_status_widget() {
@@ -122,6 +136,10 @@ void PrintStatusWidget::init_static_subjects() {
     lv_xml_register_subject(nullptr, "print_status_view", &view_subject_);
     // Default to benchy; reset_print_card_to_idle replaces with last-print
     // thumbnail when history loads.
+    // Resolve the benchy default to its bundle-absolute path before the subject
+    // captures it (a raw "A:assets/images/..." literal misses the /assets mount
+    // on firmware and lv_image_set_src can't open it).
+    snprintf(idle_thumb_path_buf_, sizeof(idle_thumb_path_buf_), "%s", benchy_thumb_path());
     lv_subject_init_string(&idle_thumb_path_subject_, idle_thumb_path_buf_, nullptr,
                            sizeof(idle_thumb_path_buf_), idle_thumb_path_buf_);
     lv_xml_register_subject(nullptr, "print_status_idle_thumb_path", &idle_thumb_path_subject_);
@@ -681,7 +699,7 @@ void PrintStatusWidget::on_print_thumbnail_path_changed(const char* path) {
         lv_image_set_src(print_card_active_thumb_, path);
         spdlog::info("[PrintStatusWidget] Active print thumbnail updated: {}", path);
     } else {
-        lv_image_set_src(print_card_active_thumb_, "A:assets/images/benchy_thumbnail_white.png");
+        lv_image_set_src(print_card_active_thumb_, benchy_thumb_path());
         spdlog::debug("[PrintStatusWidget] Active print thumbnail cleared (empty path)");
     }
 }
@@ -780,7 +798,7 @@ void PrintStatusWidget::reset_print_card_to_idle() {
     // Try to show the last printed file's thumbnail instead of benchy
     std::string thumb_rel_path = get_last_print_thumbnail_path();
     if (thumb_rel_path.empty()) {
-        set_thumb_on_widgets("A:assets/images/benchy_thumbnail_white.png");
+        set_thumb_on_widgets(benchy_thumb_path());
         spdlog::debug("[PrintStatusWidget] Idle thumbnail: benchy (no history)");
         return;
     }
@@ -800,7 +818,7 @@ void PrintStatusWidget::reset_print_card_to_idle() {
     }
 
     // Set benchy as placeholder while we fetch
-    set_thumb_on_widgets("A:assets/images/benchy_thumbnail_white.png");
+    set_thumb_on_widgets(benchy_thumb_path());
 
     // Fetch async from Moonraker
     auto* api = get_moonraker_api();
