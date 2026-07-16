@@ -21,6 +21,8 @@
 #include "post_op_cooldown_manager.h"
 #include "spdlog/spdlog.h"
 
+#include <spdlog/fmt/fmt.h>
+
 #include <chrono>
 
 using json = nlohmann::json;
@@ -88,12 +90,19 @@ void AmsBackendAce::on_started() {
 
     auto token = lifetime_.token();
 
-    // Query both Klipper object names directly (works if driver has
+    // Query all known Klipper object names directly (works if driver has
     // get_status()). Native Anycubic GoKlipper registers the object as
-    // `filament_hub`; community ValgACE/BunnyACE/DuckACE register it as `ace`.
+    // `filament_hub`; community ValgACE/BunnyACE/DuckACE register it as `ace`;
+    // the Kobra S1 mainline-Python fork registers each unit as
+    // `ace_instance_N` (#1107). printer.objects.query tolerates unknown
+    // objects (absent from the result) and select_slot_bearing_object handles
+    // absent keys, so over-querying is safe.
     json objects_to_query = json::object();
     objects_to_query["filament_hub"] = nullptr;
     objects_to_query["ace"] = nullptr;
+    for (int i = 0; i < 4; ++i) {
+        objects_to_query[fmt::format("ace_instance_{}", i)] = nullptr;
+    }
 
     json params = {{"objects", objects_to_query}};
 
@@ -111,7 +120,7 @@ void AmsBackendAce::on_started() {
                 // manager-only object (Kobra S1 fork: ace_instances/current_index,
                 // no slots) must fall through to the REST bridge (#1069).
                 const json* ace_data = nullptr;
-                const char* matched_key = nullptr;
+                std::string matched_key;
                 if (response.contains("result") && response["result"].contains("status")) {
                     ace_data =
                         select_slot_bearing_object(response["result"]["status"], &matched_key);
@@ -166,7 +175,9 @@ void AmsBackendAce::handle_status_update(const json& notification) {
         return;
 
     // Native Anycubic GoKlipper publishes under `filament_hub`; community
-    // ValgACE under `ace`. Prefer filament_hub, fall back to ace.
+    // ValgACE under `ace`; the Kobra S1 mainline-Python fork under
+    // `ace_instance_N` (#1107). Preference order: filament_hub, ace, then the
+    // lowest-numbered ace_instance_N.
     const json* ace_data = nullptr;
     if (status->contains("filament_hub") && (*status)["filament_hub"].is_object() &&
         !(*status)["filament_hub"].empty()) {
@@ -174,6 +185,19 @@ void AmsBackendAce::handle_status_update(const json& notification) {
     } else if (status->contains("ace") && (*status)["ace"].is_object() &&
                !(*status)["ace"].empty()) {
         ace_data = &(*status)["ace"];
+    } else {
+        const std::string* best_key = nullptr;
+        for (auto it = status->begin(); it != status->end(); ++it) {
+            if (it.key().rfind("ace_instance", 0) == 0 && it.value().is_object() &&
+                !it.value().empty()) {
+                if (best_key == nullptr || it.key() < *best_key) {
+                    best_key = &it.key();
+                }
+            }
+        }
+        if (best_key) {
+            ace_data = &(*status)[*best_key];
+        }
     }
     if (!ace_data)
         return;
@@ -888,7 +912,8 @@ void AmsBackendAce::parse_ace_object(const json& data) {
     }
 }
 
-const json* AmsBackendAce::select_slot_bearing_object(const json& status, const char** matched_key) {
+const json* AmsBackendAce::select_slot_bearing_object(const json& status,
+                                                      std::string* matched_key) {
     // Commit to the subscription path ONLY when the object actually carries
     // slot data (a non-empty "slots" array — the exact key parse_ace_object
     // reads). A manager-only object (Kobra S1 fork's `ace`: ace_instances /
@@ -899,6 +924,11 @@ const json* AmsBackendAce::select_slot_bearing_object(const json& status, const 
                !obj["slots"].empty();
     };
 
+    // Preference order: filament_hub (native GoKlipper), then ace (community
+    // ValgACE/BunnyACE), then ace_instance_N (Kobra S1 mainline-Python fork —
+    // #1107) in ascending name order. The object path is used only if the
+    // matched object carries a slots array; otherwise the caller falls through
+    // to the REST bridge.
     if (status.contains("filament_hub") && has_slot_data(status["filament_hub"])) {
         if (matched_key)
             *matched_key = "filament_hub";
@@ -908,6 +938,23 @@ const json* AmsBackendAce::select_slot_bearing_object(const json& status, const 
         if (matched_key)
             *matched_key = "ace";
         return &status["ace"];
+    }
+    // Kobra S1 fork registers each unit as `ace_instance_N`. Pick the
+    // lowest-numbered slot-bearing instance so the choice is deterministic.
+    if (status.is_object()) {
+        const std::string* best_key = nullptr;
+        for (auto it = status.begin(); it != status.end(); ++it) {
+            if (it.key().rfind("ace_instance", 0) == 0 && has_slot_data(it.value())) {
+                if (best_key == nullptr || it.key() < *best_key) {
+                    best_key = &it.key();
+                }
+            }
+        }
+        if (best_key) {
+            if (matched_key)
+                *matched_key = *best_key;
+            return &status[*best_key];
+        }
     }
     return nullptr;
 }

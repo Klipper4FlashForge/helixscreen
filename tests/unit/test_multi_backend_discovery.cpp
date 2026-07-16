@@ -71,6 +71,53 @@ TEST_CASE("PrinterDiscovery: no AMS detected returns empty", "[ams][multi-backen
     REQUIRE(hw.mmu_type() == AmsType::NONE);
 }
 
+// #1107: Anycubic Kobra S1 "mainline-Python ACE fork" registers its filament
+// system as `ace_instance_0` (has get_status()), NOT `ace`/`filament_hub`. The
+// config section is [ace] with ace_count=1, but only ace_instance_N appears in
+// printer.objects.list. Detection must match the ace_instance_N prefix and
+// record the object name(s) so the discovery sequence can subscribe them.
+TEST_CASE("PrinterDiscovery: ace_instance_0 (Kobra S1 fork) detected as ACE",
+          "[ams][ace][multi-backend]") {
+    helix::PrinterDiscovery hw;
+    nlohmann::json objects = nlohmann::json::array(
+        {"ace_instance_0", "extruder", "heater_bed", "gcode_move"});
+    hw.parse_objects(objects);
+
+    const auto& systems = hw.detected_ams_systems();
+    REQUIRE(systems.size() == 1);
+    REQUIRE(systems[0].type == AmsType::ACE);
+    REQUIRE(hw.mmu_type() == AmsType::ACE);
+    REQUIRE(hw.ace_object_names() == std::vector<std::string>{"ace_instance_0"});
+}
+
+TEST_CASE("PrinterDiscovery: multiple ace_instance_N objects all recorded",
+          "[ams][ace][multi-backend]") {
+    helix::PrinterDiscovery hw;
+    // Two ACE units — the first sets has_mmu_/ACE, but BOTH names must be
+    // collected (name-collection is not gated by the !has_mmu_ guard).
+    nlohmann::json objects = nlohmann::json::array(
+        {"ace_instance_0", "ace_instance_1", "extruder", "heater_bed", "gcode_move"});
+    hw.parse_objects(objects);
+
+    const auto& systems = hw.detected_ams_systems();
+    REQUIRE(systems.size() == 1);
+    REQUIRE(systems[0].type == AmsType::ACE);
+    REQUIRE(hw.mmu_type() == AmsType::ACE);
+    REQUIRE(hw.ace_object_names() ==
+            std::vector<std::string>{"ace_instance_0", "ace_instance_1"});
+}
+
+TEST_CASE("PrinterDiscovery: classic ace object still recorded in ace_object_names",
+          "[ams][ace][multi-backend]") {
+    helix::PrinterDiscovery hw;
+    nlohmann::json objects =
+        nlohmann::json::array({"ace", "extruder", "heater_bed", "gcode_move"});
+    hw.parse_objects(objects);
+
+    REQUIRE(hw.mmu_type() == AmsType::ACE);
+    REQUIRE(hw.ace_object_names() == std::vector<std::string>{"ace"});
+}
+
 // ============================================================================
 // Task 2: Multi-backend storage tests
 // ============================================================================

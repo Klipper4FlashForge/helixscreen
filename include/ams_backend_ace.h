@@ -242,13 +242,17 @@ class AmsBackendAce : public AmsSubscriptionBackend {
      * of parsing zero slots off the manager (#1069).
      *
      * @param status The `result.status` object from printer.objects.query
-     * @param matched_key Out: set to the picked key ("filament_hub"/"ace") when
-     *        a slot-bearing object is found; untouched otherwise. May be null.
+     * @param matched_key Out: set to the picked key ("filament_hub"/"ace"/
+     *        "ace_instance_N") when a slot-bearing object is found; left
+     *        unchanged otherwise. May be null. Owned std::string so the key
+     *        stays valid regardless of the source json's lifetime (the
+     *        `ace_instance_N` keys are dynamic, not string literals).
      * @return Pointer to the slot-bearing object (borrowed from @p status), or
-     *         nullptr if neither filament_hub nor ace carries a slots array.
+     *         nullptr if no filament_hub/ace/ace_instance_N carries a slots
+     *         array.
      */
     static const nlohmann::json* select_slot_bearing_object(const nlohmann::json& status,
-                                                            const char** matched_key);
+                                                            std::string* matched_key);
 
     /**
      * @brief Map an ACE slot status string to a SlotStatus.

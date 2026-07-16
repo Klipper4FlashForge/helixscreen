@@ -1260,10 +1260,19 @@ json MoonrakerDiscoverySequence::build_subscription_objects(
         subscription_objects["save_variables"] = nullptr;
     }
 
-    // ACE (Anycubic ACE Pro — ValgACE/BunnyACE/DuckACE Klipper drivers)
-    // The ace object provides slot colors, materials, status, dryer state via get_status()
+    // ACE (Anycubic ACE Pro — ValgACE/BunnyACE/DuckACE Klipper drivers, native
+    // GoKlipper `filament_hub`, or the Kobra S1 mainline-Python fork's
+    // `ace_instance_N` objects, #1107). Subscribe the real detected object
+    // name(s) so slot colors, materials, status, and dryer state push live via
+    // get_status(). Falls back to `ace` if the name list is unexpectedly empty.
     if (hw.mmu_type() == AmsType::ACE) {
-        subscription_objects["ace"] = nullptr;
+        if (hw.ace_object_names().empty()) {
+            subscription_objects["ace"] = nullptr;
+        } else {
+            for (const auto& ace_obj : hw.ace_object_names()) {
+                subscription_objects[ace_obj] = nullptr;
+            }
+        }
     }
 
     // CFS (Creality Filament System) — K2 series with RS-485 CFS units
