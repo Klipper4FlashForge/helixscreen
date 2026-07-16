@@ -37,13 +37,7 @@ esp_lcd_panel_handle_t board_display_init(void) {
         },
         .data_width = 16,
         .bits_per_pixel = 16,
-        // Two framebuffers for LVGL double-buffered DIRECT mode (D2 tear fix):
-        // LVGL renders into the back FB and esp_lcd flips to it at a frame
-        // boundary, so nothing writes the buffer being scanned out. Each FB is
-        // 768KB in PSRAM (fb_in_psram) — PSRAM has room; internal DRAM is
-        // unaffected (the old 12-line internal draw-buffer pair is removed with
-        // this change, returning ~38KB internal).
-        .num_fbs = 2,
+        .num_fbs = 1,
         // 10-line bounce buffers: direct PSRAM scanout visibly desyncs when
         // redraw traffic competes for PSRAM bandwidth (audit Task 1 trap).
         .bounce_buffer_size_px = 10 * BOARD_LCD_H_RES,
