@@ -1230,3 +1230,49 @@ TEST_CASE("resolve_display_colors preserves a manual mapping when an unrelated s
     auto colors = FilamentMapper::resolve_display_colors(tools, mappings, slots);
     REQUIRE(colors[0] == 0x00FF00);
 }
+
+// =============================================================================
+// effective_mappings / effective_tool_colors — the shared toggle-aware helpers
+// =============================================================================
+
+TEST_CASE("effective_mappings auto ON ignores firmware mapping and color-matches",
+          "[filament_mapper][effective]") {
+    std::vector<GcodeToolInfo> tools = {{0, 0x00FF00, "PLA"}}; // wants green PLA
+    std::vector<AvailableSlot> slots = {
+        {0, 0, 0xFF0000, "PLA", false, 0},  // red PLA, firmware-mapped to tool 0
+        {1, 0, 0x00FF00, "PLA", false, -1}, // green PLA, no firmware mapping
+    };
+
+    // Auto ON: firmware mapping is cleared so the color match (green) wins.
+    auto on = FilamentMapper::effective_mappings(tools, slots, /*auto_color_map=*/true);
+    REQUIRE(on.size() == 1);
+    CHECK(on[0].mapped_slot == 1);
+
+    // Auto OFF: positional assignment — tool 0 takes the first slot (red).
+    auto off = FilamentMapper::effective_mappings(tools, slots, /*auto_color_map=*/false);
+    REQUIRE(off.size() == 1);
+    CHECK(off[0].mapped_slot == 0);
+}
+
+TEST_CASE("effective_tool_colors scatters a sparse used-set to tool-number indices",
+          "[filament_mapper][effective]") {
+    // A print using only T0 and T2 must land each color at its tool number, with
+    // the unused T1 slot filled with the neutral default.
+    std::vector<GcodeToolInfo> tools = {{0, 0xAA0000, "PLA"}, {2, 0x0000BB, "PLA"}};
+    std::vector<AvailableSlot> slots = {
+        {0, 0, 0xAA0000, "PLA", false, -1},
+        {1, 0, 0x123456, "PLA", false, -1},
+        {2, 0, 0x0000BB, "PLA", false, -1},
+    };
+
+    auto colors = FilamentMapper::effective_tool_colors(tools, slots, /*auto_color_map=*/true);
+    REQUIRE(colors.size() == 3); // max tool_index (2) + 1
+    CHECK(colors[0] == 0xAA0000);
+    CHECK(colors[1] == 0x808080); // T1 unused → neutral default
+    CHECK(colors[2] == 0x0000BB);
+}
+
+TEST_CASE("effective_tool_colors returns empty for no tools", "[filament_mapper][effective]") {
+    std::vector<AvailableSlot> slots = {{0, 0, 0xAA0000, "PLA", false, -1}};
+    CHECK(FilamentMapper::effective_tool_colors({}, slots, /*auto_color_map=*/true).empty());
+}

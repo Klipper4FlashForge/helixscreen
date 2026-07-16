@@ -98,6 +98,28 @@ class FilamentMapper {
         const std::vector<ToolMapping>& mappings,
         const std::vector<AvailableSlot>& slots);
 
+    /// Toggle-aware mapping: the single place that turns the auto-color-map
+    /// preference into a mapping. When @p auto_color_map is true, firmware
+    /// mappings are cleared so they don't pre-empt color/type matches and
+    /// compute_defaults runs; otherwise use_current_assignments (positional).
+    /// This is the hoisted equivalent of FilamentMappingCard's seeding logic,
+    /// so the card, the print-file swatch/preflight, and the live render all
+    /// resolve the same way. Pure; no LVGL/AMS/Settings dependency (caller
+    /// passes the resolved bool).
+    static std::vector<ToolMapping> effective_mappings(const std::vector<GcodeToolInfo>& tools,
+                                                       const std::vector<AvailableSlot>& slots,
+                                                       bool auto_color_map);
+
+    /// Render convenience: effective_mappings + resolve_display_colors, scattered
+    /// into a DENSE vector indexed by logical tool number (size = max
+    /// tool_index + 1). Tool numbers not present in @p tools get 0x808080; used
+    /// tools with no matched lane keep their slicer color. Ready to hand to
+    /// ui_gcode_viewer_set_tool_colors (which is logical-tool-indexed). Returns
+    /// empty when @p tools is empty. Pure; no LVGL/AMS.
+    static std::vector<uint32_t> effective_tool_colors(const std::vector<GcodeToolInfo>& tools,
+                                                       const std::vector<AvailableSlot>& slots,
+                                                       bool auto_color_map);
+
     /// Weighted RGB distance between two colors (luminance-weighted).
     /// Uses standard luminance coefficients: R=0.30, G=0.59, B=0.11.
     static int color_distance(uint32_t a, uint32_t b);

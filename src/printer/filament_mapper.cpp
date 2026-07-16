@@ -290,6 +290,53 @@ std::vector<uint32_t> FilamentMapper::resolve_display_colors(
     return colors;
 }
 
+std::vector<ToolMapping> FilamentMapper::effective_mappings(const std::vector<GcodeToolInfo>& tools,
+                                                            const std::vector<AvailableSlot>& slots,
+                                                            bool auto_color_map) {
+    if (auto_color_map) {
+        // Color/type matching: clear firmware mappings so they don't pre-empt
+        // color matches (mirrors FilamentMappingCard's auto-match seeding).
+        auto slots_for_matching = slots;
+        for (auto& s : slots_for_matching) {
+            s.current_tool_mapping = -1;
+        }
+        return compute_defaults(tools, slots_for_matching);
+    }
+    return use_current_assignments(tools, slots);
+}
+
+std::vector<uint32_t> FilamentMapper::effective_tool_colors(
+    const std::vector<GcodeToolInfo>& tools, const std::vector<AvailableSlot>& slots,
+    bool auto_color_map) {
+    if (tools.empty()) {
+        return {};
+    }
+
+    auto mappings = effective_mappings(tools, slots, auto_color_map);
+    auto per_tool = resolve_display_colors(tools, mappings, slots); // in `tools` order
+
+    // Scatter the tools-ordered colors into a dense vector indexed by logical
+    // tool number, so a print that uses e.g. only T0 and T2 lands T2's color at
+    // index 2 (the gcode viewer's tool_colors_ is tool-number-indexed). Tool
+    // numbers no used tool covers stay the neutral default.
+    int max_tool = -1;
+    for (const auto& t : tools) {
+        max_tool = std::max(max_tool, t.tool_index);
+    }
+    if (max_tool < 0) {
+        return {};
+    }
+
+    std::vector<uint32_t> out(static_cast<size_t>(max_tool) + 1, 0x808080);
+    for (size_t i = 0; i < tools.size() && i < per_tool.size(); ++i) {
+        int idx = tools[i].tool_index;
+        if (idx >= 0 && idx <= max_tool) {
+            out[static_cast<size_t>(idx)] = per_tool[i];
+        }
+    }
+    return out;
+}
+
 std::vector<ToolMapping>
 FilamentMapper::use_current_assignments(const std::vector<GcodeToolInfo>& tools,
                                         const std::vector<AvailableSlot>& slots) {
