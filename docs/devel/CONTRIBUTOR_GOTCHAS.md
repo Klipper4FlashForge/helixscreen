@@ -164,6 +164,14 @@ Reference: lesson **L089**.
 
 ---
 
+### My label shows `foo__bar` (a doubled underscore / missing word), or the log warns `xml_compose_indexed ... could not be resolved`.
+
+**Cause:** A literal `${...}` in visible text or an attribute value is not just decoration — it's a live composition sigil, and `xml_compose_indexed` tries to resolve it wherever it appears, not just inside a `<repeat>` body. If you write descriptive text like `text="each card binds to demo_slot_${i}_label"` outside a `<repeat>` (or referencing a name that isn't `i`/a component prop), there's no loop index or prop to resolve against, so it splices empty and logs a warning — the rendered text comes out mangled (`demo_slot__label`).
+
+**Fix:** There is no escape sequence for `${...}`. If you need to show the literal characters `${i}` or `${name}` in a label (e.g. explaining the syntax in a demo panel), don't put it in `text=`/`translation_tag=` — describe it in prose instead (e.g. "self-wires to its indexed subject (demo_slot_N_label)"). Only use `${...}` where you actually want composition to fire: inside a `<repeat>` body (`${i}`), or against a component prop that's genuinely in scope.
+
+---
+
 ## Design Tokens & Theming
 
 ### Review feedback: "please use design tokens instead of hardcoded colors."

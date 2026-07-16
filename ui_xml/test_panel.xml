@@ -124,8 +124,8 @@
           </ui_card>
         </repeat>
       </lv_obj>
-      <text_small text="SUBJECT-BOUND count=&quot;demo_count&quot; -- rebuilds when the slider changes, each card self-wires to demo_slot_${i}_label"
-                  translation_tag="SUBJECT-BOUND count=&quot;demo_count&quot; -- rebuilds when the slider changes, each card self-wires to demo_slot_${i}_label"/>
+      <text_small text="SUBJECT-BOUND count=&quot;demo_count&quot; -- rebuilds on slider change, each card self-wires to its indexed subject (demo_slot_N_label)"
+                  translation_tag="SUBJECT-BOUND count=&quot;demo_count&quot; -- rebuilds on slider change, each card self-wires to its indexed subject (demo_slot_N_label)"/>
       <!-- Dedicated container: the subject-bound repeat is its ONLY child.
            A reactive repeat that shares a parent with later static siblings
            mis-orders on rebuild (rebuilt items are always appended to the end
