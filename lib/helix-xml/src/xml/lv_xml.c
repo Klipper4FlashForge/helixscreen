@@ -29,6 +29,7 @@
 #include "lv_xml_utils.h"
 #include "lv_xml_load_private.h"
 #include "lv_xml_private.h"
+#include "lv_xml_expr.h"
 #include "parsers/lv_xml_obj_parser.h"
 #include "parsers/lv_xml_button_parser.h"
 #include "parsers/lv_xml_label_parser.h"
@@ -1641,6 +1642,22 @@ static bool xml_value_has_compose(const char * value)
     return false;
 }
 
+/** True if `s` is a single bare identifier: matches ^[A-Za-z_][A-Za-z0-9_]*$ with no
+ *  operators, spaces, or leading digit. A bare-identifier token keeps the legacy
+ *  name-substitution path (`${i}`, `${grp}`); anything else is an integer expression. */
+static bool xml_token_is_bare_identifier(const char * s)
+{
+    if(s == NULL || *s == '\0') return false;
+    char c0 = *s;
+    if(!((c0 >= 'A' && c0 <= 'Z') || (c0 >= 'a' && c0 <= 'z') || c0 == '_')) return false;
+    for(const char * p = s + 1; *p; p++) {
+        char c = *p;
+        if(!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+             (c >= '0' && c <= '9') || c == '_')) return false;
+    }
+    return true;
+}
+
 /** Resolve a single `${name}` token. `${i}` yields the current `<repeat>` loop
  *  index (only meaningful during replay); any other name resolves against the
  *  component's parent attributes then its param defaults. `scratch` backs the
@@ -1658,6 +1675,38 @@ static const char * xml_compose_lookup(lv_xml_parser_state_t * state, const char
     /*An unresolved param passed down as a `$`-sigil is not a usable value.*/
     if(v == NULL || v[0] == '$') v = get_param_default(&state->scope, name);
     return v; /*may be NULL*/
+}
+
+/** Max distinct operands an inline `${expr}` may reference — matches the evaluator's
+ *  internal subject cap. */
+#define XML_COMPOSE_EXPR_MAX_OPERANDS 32
+
+/** Resolver context for an inline `${expr}`. Lives on the stack for exactly one
+ *  compose call (compile+eval+free), so index_subject / param_subjects are
+ *  stack-lifetime and deinit'd right after eval. No observers are ever attached. */
+typedef struct {
+    lv_xml_parser_state_t * state;
+    lv_xml_repeat_capture_t * rc;                 /* NULL unless in a replaying <repeat> */
+    lv_subject_t index_subject;                   /* seeded to rc->current_index for `i` */
+    lv_subject_t param_subjects[XML_COMPOSE_EXPR_MAX_OPERANDS]; /* numeric-param operands (Task 2) */
+    uint32_t param_count;
+} xml_compose_expr_ctx_t;
+
+/** Maps an identifier in a `${expr}` to a subject: `i` -> the loop index; a numeric
+ *  component param -> a transient int subject (Task 2); otherwise a real scope subject.
+ *  Returns NULL for an unresolvable name, which makes lv_xml_expr_compile fail. */
+static lv_subject_t * xml_compose_expr_resolver(void * vctx, const char * name)
+{
+    xml_compose_expr_ctx_t * c = (xml_compose_expr_ctx_t *)vctx;
+
+    /* 1. loop index */
+    if(lv_streq(name, "i"))
+        return (c->rc && c->rc->replaying) ? &c->index_subject : NULL;
+
+    /* 2. numeric component-param operand — added in Task 2 */
+
+    /* 3. real scope subject (also finds globally registered subjects) */
+    return lv_xml_get_subject(&c->state->scope, name);
 }
 
 /** Splice every `${name}` in `raw` with its resolved value, returning a freshly
@@ -1694,21 +1743,48 @@ static char * xml_compose_indexed(lv_xml_parser_state_t * state, const char * ra
                 break;
             }
             size_t nlen = (size_t)(close - (p + 2));
-            char nbuf[64];
+            char nbuf[256];
             if(nlen >= sizeof(nbuf)) {
-                LV_LOG_WARN("<repeat> ${...} name too long in '%s'; splicing empty", raw);
+                LV_LOG_WARN("${...} token too long in '%s'; splicing empty", raw);
             }
             else {
                 lv_memcpy(nbuf, p + 2, nlen);
                 nbuf[nlen] = '\0';
-                char scratch[16];
-                const char * rep = xml_compose_lookup(state, nbuf, scratch, sizeof(scratch));
-                if(rep == NULL) {
-                    LV_LOG_WARN("<repeat> ${%s} could not be resolved in '%s'; splicing empty",
-                                nbuf, raw);
+
+                if(xml_token_is_bare_identifier(nbuf)) {
+                    /*Legacy name substitution: ${i}, ${grp}, ${prop}.*/
+                    char scratch[16];
+                    const char * rep = xml_compose_lookup(state, nbuf, scratch, sizeof(scratch));
+                    if(rep == NULL) {
+                        LV_LOG_WARN("${%s} could not be resolved in '%s'; splicing empty", nbuf, raw);
+                    }
+                    else {
+                        XML_COMPOSE_APPEND(rep, lv_strlen(rep));
+                    }
                 }
                 else {
-                    XML_COMPOSE_APPEND(rep, lv_strlen(rep));
+                    /*Integer expression: evaluate once and splice the result as text.
+                     *Resolve-once — compile/eval/free all happen here; no observers.*/
+                    xml_compose_expr_ctx_t ectx;
+                    ectx.state = state;
+                    ectx.rc = state ? (lv_xml_repeat_capture_t *)state->context : NULL;
+                    ectx.param_count = 0;
+                    lv_subject_init_int(&ectx.index_subject,
+                                        (ectx.rc && ectx.rc->replaying) ? (int32_t)ectx.rc->current_index : 0);
+
+                    lv_xml_expr_t * ex = lv_xml_expr_compile(nbuf, xml_compose_expr_resolver, &ectx);
+                    if(ex == NULL) {
+                        LV_LOG_WARN("${%s} could not be evaluated in '%s'; splicing empty", nbuf, raw);
+                    }
+                    else {
+                        char exprbuf[16];
+                        lv_snprintf(exprbuf, sizeof(exprbuf), "%d", (int)lv_xml_expr_eval(ex));
+                        XML_COMPOSE_APPEND(exprbuf, lv_strlen(exprbuf));
+                        lv_xml_expr_free(ex);
+                    }
+                    for(uint32_t k = 0; k < ectx.param_count; k++)
+                        lv_subject_deinit(&ectx.param_subjects[k]);
+                    lv_subject_deinit(&ectx.index_subject);
                 }
             }
             p = close + 1;
