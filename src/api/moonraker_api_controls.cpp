@@ -468,29 +468,60 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
         }
     }
 
-    // Refuse discretionary gcode (fan, temp, non-homing moves, LED) while a
-    // blocking non-print operation holds Klipper's single-threaded gcode lock
-    // (homing, BED_MESH_CALIBRATE, QGL, PROBE_ACCURACY, manual probe). Such a
-    // command would otherwise queue behind the op and time out after 60s,
-    // surfacing a stream of "Fan control failed: printer busy" toasts (see debug
-    // bundle 7CT79XXK, Sovol SV08 calibration). Recovery, homing, probe-control
-    // (TESTZ/ACCEPT/ABORT) and macros are never discretionary, so they pass.
-    // Real file prints are excluded by is_blocking_operation_active(). Self-busy
+    // Gate discretionary gcode (fan, temp, non-homing moves, LED) while a blocking
+    // non-print operation holds Klipper's single-threaded gcode lock (homing,
+    // BED_MESH_CALIBRATE, QGL, PROBE_ACCURACY, manual probe). Split by danger below:
+    // a physical MOVE is refused (a late jog is dangerous); benign fan/temp/LED are
+    // queued fire-and-forget with a single per-episode toast rather than lost or
+    // timed out (bundle 7CT79XXK, Sovol SV08 calibration; #1108). Recovery, homing,
+    // probe-control (TESTZ/ACCEPT/ABORT) and macros are never discretionary, so they
+    // pass. Real file prints are excluded by is_blocking_operation_active(). Self-busy
     // from the app's own recent jog passes too (idle_timeout reports "Printing"
-    // during any move); only external blocking ops still refuse.
+    // during any move); only external blocking ops are gated.
     if (helix::is_discretionary_gcode(gcode) && state_.is_external_blocking_operation_active()) {
-        if (!silent) {
-            spdlog::warn("[Moonraker API] Refusing discretionary G-code while printer is "
-                         "homing/leveling: '{}'",
-                         gcode.substr(0, 60));
+        // A physical MOVE must never queue behind the blocking op: a jog that fires
+        // minutes late, after the user has walked away, can crash the toolhead.
+        // Refuse it up front (recovery/homing are non-discretionary and never reach
+        // here). #1108: the reporter agrees the hard block on motion is correct.
+        if (helix::gcode_contains_move(gcode)) {
+            if (!silent) {
+                spdlog::warn("[Moonraker API] Refusing motion G-code while printer is "
+                             "homing/leveling: '{}'",
+                             gcode.substr(0, 60));
+            }
+            if (on_error) {
+                MoonrakerError err;
+                err.type = MoonrakerErrorType::NOT_READY;
+                err.method = "printer.gcode.script";
+                err.message = "Printer is busy — try again in a moment";
+                on_error(err);
+            }
+            return;
         }
-        if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::NOT_READY;
-            err.method = "printer.gcode.script";
-            err.message = "Printer is busy — try again in a moment";
-            on_error(err);
+
+        // Benign discretionary command (fan / temp / LED): let Klipper queue it
+        // behind the blocking op — it runs harmlessly the moment the gcode lock
+        // frees, which is what every other frontend does. Send fire-and-forget
+        // (silent, no callbacks) so the queued command's inevitable ~60s response
+        // wait never surfaces a scary timeout toast (bundle 7CT79XXK). Instead
+        // announce it ONCE per blocking episode so a late-firing change isn't a
+        // surprise. #1108.
+        //
+        // Trade-off: dropping the caller's callbacks means a command that Klipper
+        // genuinely rejects when it finally runs (e.g. a macro emitting an out-of-
+        // range target) surfaces no error — same as the silent-queue frontends. The
+        // controls path stamps no motion activity, so there is no inflight/counter
+        // to leak by skipping the callbacks.
+        if (state_.claim_busy_queue_toast()) {
+            NOTIFY_INFO("Printer is busy — your {} will run when it's ready.",
+                        helix::discretionary_gcode_noun(gcode));
         }
+        std::string queued = annotate_gcode(gcode);
+        json queued_params = {{"script", queued}};
+        spdlog::debug("[Moonraker API] Queuing discretionary G-code behind blocking op: {}",
+                      queued);
+        client_.send_jsonrpc("printer.gcode.script", queued_params, nullptr, nullptr, timeout_ms,
+                             /*silent=*/true);
         return;
     }
 

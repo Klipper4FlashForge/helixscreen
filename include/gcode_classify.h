@@ -21,6 +21,56 @@
 
 namespace helix {
 
+namespace detail {
+
+/// Uppercased first whitespace-delimited token of @p line, with any inline `;`
+/// comment stripped first. Empty for a blank / whitespace-only / comment-only line.
+/// Shared by every classifier below so tokenization stays identical across them.
+inline std::string gcode_first_token_upper(const std::string& line) {
+    std::string l = line;
+    const size_t comment = l.find(';');
+    if (comment != std::string::npos) {
+        l.erase(comment);
+    }
+    const size_t start = l.find_first_not_of(" \t\r");
+    if (start == std::string::npos) {
+        return {};
+    }
+    const size_t end = l.find_first_of(" \t\r", start);
+    std::string token =
+        l.substr(start, end == std::string::npos ? std::string::npos : end - start);
+    for (char& c : token) {
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+    return token;
+}
+
+/// Coarse category of a single (already-uppercased, whole) g-code token.
+/// `Other` means "not in the discretionary set" — recovery/homing/probe/macro.
+enum class GcodeCat { Other, Fan, Temp, Move, Modal, Led };
+
+inline GcodeCat categorize_gcode_token(const std::string& t) {
+    if (t == "M106" || t == "M107" || t == "SET_FAN_SPEED") {
+        return GcodeCat::Fan;
+    }
+    if (t == "M104" || t == "M140" || t == "M109" || t == "M190" || t == "M141" ||
+        t == "SET_HEATER_TEMPERATURE" || t == "SET_TEMPERATURE_FAN_TARGET") {
+        return GcodeCat::Temp;
+    }
+    if (t == "G0" || t == "G1") {
+        return GcodeCat::Move;
+    }
+    if (t == "G90" || t == "G91") {
+        return GcodeCat::Modal;
+    }
+    if (t == "SET_LED") {
+        return GcodeCat::Led;
+    }
+    return GcodeCat::Other;
+}
+
+} // namespace detail
+
 /// True if @p script consists ENTIRELY of discretionary commands — convenience
 /// commands that are safe to refuse while the printer is busy with a blocking
 /// operation. Default-ALLOW: returns true ONLY for the known discretionary set,
@@ -53,35 +103,61 @@ inline bool is_discretionary_gcode(const std::string& script) {
     std::string line;
     bool saw_command = false;
     while (std::getline(lines, line)) {
-        // Strip an inline comment: everything from the first ';' onward.
-        const size_t comment = line.find(';');
-        if (comment != std::string::npos) {
-            line.erase(comment);
-        }
-        // First non-blank character on the line.
-        const size_t start = line.find_first_not_of(" \t\r");
-        if (start == std::string::npos) {
+        const std::string token = detail::gcode_first_token_upper(line);
+        if (token.empty()) {
             continue; // blank / whitespace-only / comment-only line
         }
-        // First token spans until the next whitespace (or end of line).
-        const size_t end = line.find_first_of(" \t\r", start);
-        std::string token =
-            line.substr(start, end == std::string::npos ? std::string::npos : end - start);
-        for (char& c : token) {
-            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        }
-        const bool discretionary =
-            token == "M106" || token == "M107" || token == "SET_FAN_SPEED" ||
-            token == "M104" || token == "M140" || token == "M109" || token == "M190" ||
-            token == "M141" || token == "SET_HEATER_TEMPERATURE" ||
-            token == "SET_TEMPERATURE_FAN_TARGET" || token == "G0" || token == "G1" ||
-            token == "G90" || token == "G91" || token == "SET_LED";
-        if (!discretionary) {
+        if (detail::categorize_gcode_token(token) == detail::GcodeCat::Other) {
             return false; // any non-discretionary command → allow the whole script
         }
         saw_command = true;
     }
     return saw_command;
+}
+
+/// True if @p script contains a physical MOVE (G0/G1) on any line.
+///
+/// A discretionary script that moves the toolhead must NOT be queued behind a
+/// blocking op the way fan/temp/LED can be: a jog that fires minutes late — after
+/// the user has walked away — can crash the head. The busy guard uses this to keep
+/// rejecting moves while it lets the benign rest queue. Whole-token, comment-aware
+/// (so "G10"/"G100" do not trip). Bare G90/G91 are modal-only, not moves.
+inline bool gcode_contains_move(const std::string& script) {
+    std::istringstream lines(script);
+    std::string line;
+    while (std::getline(lines, line)) {
+        const std::string token = detail::gcode_first_token_upper(line);
+        if (detail::categorize_gcode_token(token) == detail::GcodeCat::Move) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// A short human noun naming what a benign discretionary @p script changes, for
+/// the "queued — runs when it's ready" toast: "temperature change", "fan change",
+/// "LED change", or a generic "change". Returns the first meaningful line's kind
+/// (modal G90/G91 wrappers and unrecognized lines are skipped), so a jog-style
+/// "G91\nM106" is named for its fan line.
+inline std::string discretionary_gcode_noun(const std::string& script) {
+    std::istringstream lines(script);
+    std::string line;
+    while (std::getline(lines, line)) {
+        const std::string token = detail::gcode_first_token_upper(line);
+        switch (detail::categorize_gcode_token(token)) {
+        case detail::GcodeCat::Temp:
+            return "temperature change";
+        case detail::GcodeCat::Fan:
+            return "fan change";
+        case detail::GcodeCat::Led:
+            return "LED change";
+        case detail::GcodeCat::Move:
+        case detail::GcodeCat::Modal:
+        case detail::GcodeCat::Other:
+            break; // keep scanning for a line that names a benign change
+        }
+    }
+    return "change";
 }
 
 } // namespace helix

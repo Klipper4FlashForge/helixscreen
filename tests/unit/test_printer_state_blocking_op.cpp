@@ -169,3 +169,68 @@ TEST_CASE_METHOD(BlockingOpFixture,
         CHECK(lv_subject_get_int(subj) == 0);
     }
 }
+
+// ============================================================================
+// Case 3: once-per-episode busy-queue toast latch (#1108)
+// ============================================================================
+//
+// When benign discretionary gcode queues behind a blocking op, the guard should
+// tell the user ONCE per episode, not once per command. claim_busy_queue_toast()
+// returns true for the first claim after the op starts, false thereafter, and
+// re-arms on the op's falling edge (idle_timeout Ready, or manual_probe inactive).
+
+TEST_CASE_METHOD(BlockingOpFixture, "claim_busy_queue_toast fires once per blocking episode",
+                 "[printer_state][busy_guard]") {
+    // The re-arm consults is_blocking_operation_active(), which excludes real file
+    // prints — keep the fixture in a non-print state so the blocking signals apply.
+    set_print_state(PrintJobState::STANDBY);
+
+    auto idle_timeout = [&](const char* s) {
+        state.update_from_status(nlohmann::json{{"idle_timeout", {{"state", s}}}});
+    };
+    auto manual_probe = [&](bool active) {
+        state.update_from_status(nlohmann::json{{"manual_probe", {{"is_active", active}}}});
+    };
+
+    SECTION("idle_timeout episode: claimed once, then re-armed after it ends") {
+        idle_timeout("Printing"); // episode 1 begins
+        CHECK(state.claim_busy_queue_toast());
+        CHECK_FALSE(state.claim_busy_queue_toast());
+        CHECK_FALSE(state.claim_busy_queue_toast());
+
+        idle_timeout("Ready");    // op flushes -> re-arm
+        idle_timeout("Printing"); // episode 2 begins
+        CHECK(state.claim_busy_queue_toast());
+    }
+
+    SECTION("manual-probe episode re-arms once it clears") {
+        manual_probe(true); // probe episode begins (idle_timeout stays Ready/0)
+        CHECK(state.claim_busy_queue_toast());
+        CHECK_FALSE(state.claim_busy_queue_toast());
+
+        manual_probe(false); // probe done -> composite clears -> re-arm
+        manual_probe(true);  // new probe episode
+        CHECK(state.claim_busy_queue_toast());
+    }
+
+    SECTION("idle_timeout bounce mid manual-probe does NOT re-toast (composite episode)") {
+        // A PROBE_CALIBRATE / TESTZ session: manual_probe holds the block, but
+        // idle_timeout bounces Printing->Ready between TESTZ moves. That bounce must
+        // NOT re-arm the toast — it is still one episode (#1108 review, Finding 1).
+        manual_probe(true);
+        idle_timeout("Printing");
+        CHECK(state.claim_busy_queue_toast()); // first tap -> toast
+        CHECK_FALSE(state.claim_busy_queue_toast());
+
+        idle_timeout("Ready");                       // idle bounce, probe still active
+        CHECK_FALSE(state.claim_busy_queue_toast());  // STILL suppressed
+        idle_timeout("Printing");                    // next TESTZ move
+        CHECK_FALSE(state.claim_busy_queue_toast());  // STILL the same episode
+
+        // Episode ends only when BOTH signals clear.
+        manual_probe(false);
+        idle_timeout("Ready");
+        idle_timeout("Printing"); // a fresh homing/leveling episode
+        CHECK(state.claim_busy_queue_toast());
+    }
+}

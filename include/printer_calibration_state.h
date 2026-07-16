@@ -7,6 +7,8 @@
 
 #include "hv/json.hpp"
 
+#include <atomic>
+
 namespace helix {
 
 /**
@@ -137,6 +139,35 @@ class PrinterCalibrationState {
         return &unretract_speed_;
     }
 
+    /**
+     * @brief Claim the "printer is busy — your change will queue" toast for the
+     *        current blocking episode.
+     *
+     * The discretionary-gcode busy guard lets benign commands (fan/temp/LED) queue
+     * behind a blocking op instead of rejecting them, and wants to tell the user
+     * ONCE per episode rather than once per command (bundle 7CT79XXK saw four
+     * back-to-back toasts). Returns true for the first caller after the blocking op
+     * started, false thereafter, until PrinterState re-arms it via
+     * arm_busy_queue_toast() once the composite blocking condition clears.
+     *
+     * Both claim and re-arm normally run on the main thread (status parsing is
+     * queued to it, and NOTIFY_INFO self-defers). The flag is atomic purely so a
+     * background caller of execute_gcode remains safe against the concurrent
+     * re-arm; it is a lone flag with no data published alongside it, so relaxed
+     * ordering is sufficient.
+     */
+    bool claim_busy_queue_toast() {
+        return !busy_queue_toast_shown_.exchange(true, std::memory_order_relaxed);
+    }
+
+    /// Re-arm the once-per-episode busy-queue toast so the next blocking episode
+    /// announces itself again. Called by PrinterState::update_from_status when the
+    /// COMPOSITE blocking condition (is_blocking_operation_active) is clear — not on
+    /// any single subject's falling edge, which would re-toast mid-episode (#1108).
+    void arm_busy_queue_toast() {
+        busy_queue_toast_shown_.store(false, std::memory_order_relaxed);
+    }
+
   private:
     friend class PrinterCalibrationStateTestAccess;
 
@@ -159,6 +190,11 @@ class PrinterCalibrationState {
 
     // idle_timeout.state == "Printing" flag (Klipper's canonical busy indicator)
     lv_subject_t idle_timeout_printing_{}; // 0=not printing/busy, 1=state == "Printing"
+
+    // Latches the once-per-blocking-episode "your change will queue" toast. Claimed
+    // by the busy guard (main thread), re-armed on the blocking op's falling edge in
+    // update_from_status (websocket thread) — hence atomic.
+    std::atomic<bool> busy_queue_toast_shown_{false};
 };
 
 } // namespace helix
