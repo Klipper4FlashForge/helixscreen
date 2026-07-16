@@ -61,6 +61,36 @@ All widgets inherit these.
 
 **Operators:** `bind_flag_if_eq`, `bind_flag_if_not_eq`, `bind_flag_if_gt`, `bind_flag_if_ge`, `bind_flag_if_lt`, `bind_flag_if_le` (same for `bind_state_*`)
 
+**Expression-driven conditionals** (multi-subject / arithmetic conditions — see `LVGL9_XML_GUIDE.md` § "Expression Conditionals"):
+
+```xml
+<!-- Derived subject, kept in sync (declare inputs first) -->
+<subjects>
+    <int name="demo_temp" value="50"/>
+    <int name="demo_threshold" value="70"/>
+    <subject_expr name="demo_alarm" expr="demo_temp gt demo_threshold"/>
+</subjects>
+
+<lv_obj>
+    <bind_flag_if cond="demo_alarm" flag="hidden" invert="true"/>
+</lv_obj>
+<ui_button>
+    <bind_state_if cond="demo_alarm" state="disabled"/>
+</ui_button>
+<ui_card>
+    <bind_style_if name="demo_alarm_style" cond="demo_alarm"/>
+</ui_card>
+```
+
+| Tag/Attr | Notes |
+|----------|-------|
+| `<subject_expr name= expr=>` | Sibling of `<subject>`/`<int>` in `<subjects>`; derived int subject, inputs must be declared earlier |
+| `<bind_flag_if cond= flag= invert=>` | Reactive flag add/remove driven by expression |
+| `<bind_state_if cond= state= invert=>` | Reactive state add/remove driven by expression |
+| `<bind_style_if cond= name= selector= parts= invert=>` | Reactive style enable/disable driven by expression |
+
+**Grammar:** subject name, int literal, `( )` grouping; `== != < <= > >=` / word forms `eq ne lt le gt ge`; `&& \|\| !` / word forms `and or not`; `+ - * / %` (div/mod by zero → `0`). **House style = word forms** — `&&`/`<` need XML escaping (`&amp;&amp;`/`&lt;`), word forms don't.
+
 ---
 
 ## Style Attributes (style_* prefix)
