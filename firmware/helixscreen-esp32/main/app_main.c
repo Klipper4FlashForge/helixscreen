@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // HelixScreen ESP32 target — entry point.
-// Boot order: storage mount → board display → LVGL + UI pthread (the real
-// HelixScreen shell) → network task. The UI pthread is created BEFORE any
-// network task so its ~48KB stack lands while the internal heap is still
-// unfragmented (the boot-reliability pattern — WiFi startup fragments the heap
-// and a late large internal alloc becomes a boot lottery).
+// Boot order: storage mount → UI pthread (created FIRST) → network task. The UI
+// pthread's thread body brings up the panel + LVGL + the real shell; creating
+// the pthread before the net task keeps the boot's two internal-DRAM allocation
+// gates (48KB UI stack, then the 32KB RGB bounce DMA in board_display_init)
+// ahead of WiFi. Fitting both also required moving the app core's large statics
+// to PSRAM (see lvgl_glue.c / sdkconfig.defaults) — ordering alone wasn't
+// enough; the internal-DRAM demand simply exceeded the free budget.
 
 #include "app_boot.h"
-#include "board_display.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "ktouch.h"
@@ -55,11 +56,11 @@ void app_main(void) {
                  esp_err_to_name(storage_err));
     }
 
-    // Bring up the panel, then LVGL + the UI pthread that runs the real shell.
-    // This happens BEFORE the network task spawn below so the pthread stack
-    // allocation cannot lose the WiFi heap-fragmentation lottery.
-    esp_lcd_panel_handle_t panel = board_display_init();
-    lvgl_glue_start(panel, app_boot_ui, app_boot_tick);
+    // Create the UI pthread FIRST — its thread body brings up the panel + LVGL +
+    // the real shell. This precedes the network task spawn below so the boot's
+    // internal-DRAM allocations (pthread stack, then the RGB bounce DMA) run
+    // before WiFi (see lvgl_glue.h).
+    lvgl_glue_start(app_boot_ui, app_boot_tick);
 
 #if CONFIG_HELIX_NET_HIL
     // Network bring-up runs in its own task: the UI must come up

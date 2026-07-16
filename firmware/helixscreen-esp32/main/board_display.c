@@ -4,9 +4,13 @@
 
 #include "driver/gpio.h"
 #include "driver/ledc.h"
+#include "esp_heap_caps.h"
 #include "esp_lcd_panel_rgb.h"
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+
+static const char *TAG = "board_display";
 
 esp_lcd_panel_handle_t board_display_init(void) {
     gpio_config_t rst = {.pin_bit_mask = 1ULL << BOARD_LCD_PIN_RESET,
@@ -46,6 +50,14 @@ esp_lcd_panel_handle_t board_display_init(void) {
         .flags = {.fb_in_psram = 1},
     };
     esp_lcd_panel_handle_t panel = NULL;
+    // Allocation gate #2 (one-shot, every boot): esp_lcd_new_rgb_panel allocates
+    // the RGB bounce buffer in INTERNAL DMA-capable SRAM. If internal DRAM is
+    // exhausted this aborts ("no mem for bounce buffer") into a reset loop, so
+    // the deciding heap number is logged here — the counterpart to gate #1 (the
+    // UI pthread stack in lvgl_glue.c).
+    ESP_LOGI(TAG, "internal heap before rgb panel: free=%u largest=%u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
     ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&cfg, &panel));
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panel));
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel));
