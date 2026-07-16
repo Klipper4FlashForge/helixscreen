@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!-- Negative counterpart to new_syntax.xml: a genuinely unknown tag and a
+     genuinely unknown attribute on a real bind_*_if tag. Must still error,
+     proving the new schema entries didn't disable validation generally. -->
+<component>
+  <subjects>
+    <subject name="temp" type="int" value="0"/>
+  </subjects>
+  <view name="expr_invalid_view" extends="lv_obj" width="100%" height="content">
+    <lv_obj width="100%" height="50">
+      <bind_flag_if_typo cond="temp" flag="hidden"/>
+      <bind_state_if cond="temp" state="checked" bogus_attr="oops"/>
+    </lv_obj>
+  </view>
+</component>

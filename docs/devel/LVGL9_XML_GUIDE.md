@@ -434,6 +434,85 @@ Attributes are the same as `bind_style`: `name` (style name), `subject` (subject
 
 **CRITICAL: Remove inline styles when using `bind_style_if_*`.** The same priority rule applies as with `bind_style` -- inline `style_*` attributes always win over added styles. When switching padding responsively, do NOT set `style_pad_left` on the element; use two `bind_style_if_*` elements instead.
 
+#### Expression Conditionals
+
+Every `bind_flag_if_*` / `bind_state_if_*` / `bind_style_if_*` variant above compares **one** subject against **one** `ref_value`. When a condition needs to combine multiple subjects (`error_flag OR temp > threshold`) or do arithmetic, use the expression evaluator instead of stacking several single-subject binds or writing a hand-rolled C++ derived subject.
+
+The evaluator is an integer-only expression language over subjects: nonzero is truthy, the result is always an int, division/modulo by zero evaluate to `0` instead of crashing. It's exposed through four constructs:
+
+**1. `<subject_expr>` — a derived subject, kept in sync**
+
+Inside a component's `<subjects>` block, `<subject_expr name="X" expr="EXPR"/>` creates an int subject `X` that recomputes and updates automatically whenever any subject referenced by `EXPR` changes. It's a sibling of `<subject>`/`<int>` entries, and it can itself be referenced by widget bindings just like any other subject.
+
+**Every subject referenced by `expr` must already be declared** before the `<subject_expr>` line — either globally (C++-registered) or earlier in the same `<subjects>` block. Forward references don't compile (the XML parser logs a warning and the derived subject is silently not registered).
+
+```xml
+<subjects>
+    <int name="demo_temp" value="50"/>
+    <int name="demo_threshold" value="70"/>
+    <int name="demo_error" value="0"/>
+    <subject_expr name="demo_alarm" expr="demo_error or demo_temp gt demo_threshold"/>
+</subjects>
+```
+
+**2. `<bind_flag_if cond="EXPR" flag="FLAG" invert="true|false"/>`** — child of any object. Adds `flag` when `EXPR` is truthy, removes it when falsy. `invert="true"` flips that (apply when falsy) — the common case for `flag="hidden"` when the markup wants to read as "show when `cond`" instead of "hide when `cond`":
+
+```xml
+<lv_obj>
+    <bind_flag_if cond="demo_alarm" flag="hidden" invert="true"/>
+    <text_heading text="ALARM"/>
+</lv_obj>
+
+<!-- Direct multi-subject expression, no subject_expr needed -->
+<lv_obj>
+    <bind_flag_if cond="demo_temp gt demo_threshold" flag="hidden" invert="true"/>
+    <text_body text="Temp is over threshold"/>
+</lv_obj>
+```
+
+**3. `<bind_state_if cond="EXPR" state="STATE" invert="..."/>`** — same semantics, toggling an `lv_state_t` (e.g. `disabled`, `checked`) instead of a flag:
+
+```xml
+<ui_button text="Action">
+    <bind_state_if cond="demo_alarm" state="disabled"/>
+</ui_button>
+```
+
+**4. `<bind_style_if cond="EXPR" name="STYLE" selector="..." parts="..." invert="..."/>`** — same expression-driven pattern for style enable/disable, mirroring `bind_style_if_eq` (`name`, `selector`/`parts` behave identically — see "Applying One Style to Multiple Parts" above):
+
+```xml
+<styles>
+    <style name="demo_alarm_style" bg_color="#warning" bg_opa="255"/>
+</styles>
+<ui_card>
+    <bind_style_if name="demo_alarm_style" cond="demo_alarm"/>
+    <text_body text="Styled by bind_style_if"/>
+</ui_card>
+```
+
+**Grammar** (integer-only; nonzero = truthy):
+
+| Category | Operators |
+|----------|-----------|
+| Operands | subject name, integer literal, `( expr )` for grouping |
+| Comparison | `== != < <= > >=` or word forms `eq ne lt le gt ge` |
+| Boolean | `&& \|\| !` or word forms `and or not` |
+| Arithmetic | `+ - * /` (divide-by-zero → `0`), `%` (mod-by-zero → `0`) |
+
+Both symbolic and word forms tokenize identically — `a && b` and `a and b` compile to the same expression.
+
+**House style: use word forms (`and`/`or`/`not`/`gt`/`lt`/...).** `&&` and `<` are XML metacharacters — inside an XML attribute value they must be written as `&amp;&amp;` and `&lt;`, which is unreadable and easy to get wrong. Word forms need no escaping:
+
+```xml
+<!-- ✅ Preferred: no escaping needed -->
+<bind_flag_if cond="demo_error or demo_temp gt demo_threshold" flag="hidden" invert="true"/>
+
+<!-- Also valid, but requires XML entity escaping -->
+<bind_flag_if cond="demo_error &amp;&amp; demo_temp &gt; demo_threshold" flag="hidden"/>
+```
+
+A full working demo of all four constructs (sliders/switch driving `demo_temp`, `demo_threshold`, `demo_error`, all four binding types reacting live) is in `ui_xml/test_panel.xml` (reachable via `-p test`) — use it as the canonical reference and a live testbed when writing new expressions.
+
 #### Parse-Time Conditional Hidden Attributes
 
 These attributes hide an element at parse time based on a resolved prop value. Unlike `bind_flag_if_*` (which is reactive and requires a subject), these evaluate once when the XML is parsed and are useful for component props.
@@ -469,6 +548,8 @@ These are parse-time only -- the hidden state does not change after creation. Fo
 #### Binding Limitations
 
 **❌ No `bind_text_if_eq`** - use multiple labels with `bind_flag_if_*` for conditional text.
+
+**✅ Compound conditions are supported** via the expression evaluator (see "Expression Conditionals" above) — `cond="a or b gt c"` on `bind_flag_if`/`bind_state_if`/`bind_style_if`, or a `<subject_expr>` derived subject for a condition reused in multiple places. This replaces stacking several single-subject `bind_flag_if_*` elements or writing a hand-rolled C++ derived subject for "OR of two subjects" type logic.
 
 ### 4. Observer Cleanup in DELETE Handlers
 

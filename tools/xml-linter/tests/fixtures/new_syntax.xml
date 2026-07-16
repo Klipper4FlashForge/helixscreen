@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!-- File exercising the XML expression-evaluator syntax: subject_expr,
+     bind_flag_if, bind_state_if, bind_style_if. Must lint clean. -->
+<component>
+  <consts>
+    <color name="warn_color" value="0xff0000"/>
+  </consts>
+  <subjects>
+    <subject name="temp" type="int" value="0"/>
+    <subject name="target" type="int" value="200"/>
+    <subject_expr name="temp_over_target" expr="temp > target"/>
+  </subjects>
+  <styles>
+    <style name="warn_style" bg_color="#warn_color"/>
+  </styles>
+  <view name="expr_view" extends="lv_obj" width="100%" height="content">
+    <lv_obj width="100%" height="50">
+      <bind_flag_if cond="temp_over_target" flag="hidden" invert="false"/>
+      <bind_state_if cond="temp > 0" state="checked" invert="true"/>
+      <bind_style_if cond="temp_over_target" name="warn_style" selector="main" parts="main,indicator" invert="false"/>
+    </lv_obj>
+  </view>
+</component>

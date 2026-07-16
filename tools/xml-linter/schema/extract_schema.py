@@ -850,6 +850,18 @@ def _extract_special_elements(parsers_dir: Path, schema: dict[str, Any]) -> None
                 "attributes": {},
             }
 
+    # <subject_expr name="X" expr="..."> -- derived-subject sibling of <subject>
+    # inside a component's <subjects> block (lv_xml_component.c
+    # process_subject_expr_element). It's parsed directly by the <subjects>
+    # element handler, not registered via lv_xml_register_widget(), so it
+    # can't be auto-discovered the way lv_obj-* special elements are.
+    schema["widgets"]["subject_expr"] = {
+        "attributes": {
+            "name": {"type": "string"},
+            "expr": {"type": "string"},
+        },
+    }
+
     # Add special obj elements with their attributes
     _extract_obj_special_elements(schema)
 
@@ -984,6 +996,36 @@ def _extract_obj_special_elements(schema: dict[str, Any]) -> None:
                 "ref_value": {"type": "int"},
             },
         }
+
+    # cond= expression-driven variants (lv_xml_obj_parser.c
+    # lv_obj_xml_bind_flag_if_apply / bind_state_if_apply / bind_style_if_apply)
+    # -- written in XML unprefixed as <bind_flag_if>/<bind_state_if>/
+    # <bind_style_if>; `cond` is a free-form expression string, not enum-validated.
+    schema["widgets"]["lv_obj-bind_flag_if"] = {
+        "attributes": {
+            "cond": {"type": "string"},
+            "flag": {"type": "enum", "enum": "flag"},
+            "invert": {"type": "bool"},
+        },
+    }
+
+    schema["widgets"]["lv_obj-bind_state_if"] = {
+        "attributes": {
+            "cond": {"type": "string"},
+            "state": {"type": "enum", "enum": "state"},
+            "invert": {"type": "bool"},
+        },
+    }
+
+    schema["widgets"]["lv_obj-bind_style_if"] = {
+        "attributes": {
+            "cond": {"type": "string"},
+            "name": {"type": "string"},
+            "selector": {"type": "string"},
+            "parts": {"type": "string"},
+            "invert": {"type": "bool"},
+        },
+    }
 
 
 # ---------------------------------------------------------------------------

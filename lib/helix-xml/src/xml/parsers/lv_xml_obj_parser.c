@@ -12,6 +12,7 @@
 #include <lvgl.h>
 #include <lvgl_private.h>
 #include "../lv_xml_private.h"
+#include "../lv_xml_expr.h"
 
 /*********************
  *      DEFINES
@@ -790,6 +791,92 @@ void lv_obj_xml_bind_flag_apply(lv_xml_parser_state_t * state, const char ** att
     }
 }
 
+/* Resolver shim: <bind_flag_if cond="..."> looks up subjects referenced by
+ * the expression in the enclosing component's scope, same as every other
+ * expression-consuming tag (see subject_expr_resolver in lv_xml_component.c). */
+static lv_subject_t * cond_flag_scope_resolver(void * ctx, const char * name)
+{
+    return lv_xml_get_subject((lv_xml_component_scope_t *)ctx, name);
+}
+
+typedef struct {
+    lv_obj_t * obj;
+    lv_obj_flag_t flag;
+    bool invert;
+} cond_flag_ctx_t;
+
+/* lv_xml_expr_bind callback: fires once immediately at bind and again on any
+ * referenced-subject change. `value` is the freshly-evaluated cond result. */
+static void cond_flag_cb(void * user_data, int32_t value)
+{
+    cond_flag_ctx_t * c = (cond_flag_ctx_t *)user_data;
+    bool on = value != 0;
+    if(c->invert) on = !on;
+    if(on) lv_obj_add_flag(c->obj, c->flag);
+    else lv_obj_remove_flag(c->obj, c->flag);
+}
+
+/* `lv_xml_expr_bind` owns and frees the compiled expression on `owner`
+ * delete, but it does not own `user_data` -- free the ctx ourselves on the
+ * same LV_EVENT_DELETE. */
+static void free_cond_flag_ctx_cb(lv_event_t * e)
+{
+    cond_flag_ctx_t * c = (cond_flag_ctx_t *)lv_event_get_user_data(e);
+    lv_free(c);
+}
+
+void * lv_obj_xml_bind_flag_if_create(lv_xml_parser_state_t * state, const char ** attrs)
+{
+    LV_UNUSED(attrs);
+    void * item = lv_xml_state_get_parent(state);
+    return item;
+}
+
+/**
+ * `<bind_flag_if cond="EXPR" flag="FLAGNAME" invert="true|false"/>`: reactive
+ * flag binding driven by the expression evaluator instead of a single
+ * subject/ref_value comparison. `flag` is added when `cond` is truthy and
+ * removed when falsy; `invert="true"` flips that (apply when falsy) -- the
+ * common case for `hidden` where the markup wants to express "show when
+ * cond" rather than "hide when cond".
+ */
+void lv_obj_xml_bind_flag_if_apply(lv_xml_parser_state_t * state, const char ** attrs)
+{
+    const char * cond = lv_xml_get_value_of(attrs, "cond");
+    const char * flag_str = lv_xml_get_value_of(attrs, "flag");
+    if(cond == NULL) {
+        LV_LOG_WARN("`cond` is missing in bind_flag_if");
+        return;
+    }
+    if(flag_str == NULL) {
+        LV_LOG_WARN("`flag` is missing in bind_flag_if");
+        return;
+    }
+
+    lv_obj_flag_t flag = flag_to_enum(flag_str);
+    lv_obj_t * item = lv_xml_state_get_parent(state);
+
+    lv_xml_expr_t * expr = lv_xml_expr_compile(cond, cond_flag_scope_resolver, &state->scope);
+    if(expr == NULL) {
+        LV_LOG_WARN("bind_flag_if: failed to compile cond '%s'", cond);
+        return;
+    }
+
+    cond_flag_ctx_t * c = lv_malloc(sizeof(cond_flag_ctx_t));
+    LV_ASSERT_MALLOC(c);
+    if(c == NULL) {
+        lv_xml_expr_free(expr);
+        return;
+    }
+    c->obj = item;
+    c->flag = flag;
+    const char * invert_str = lv_xml_get_value_of(attrs, "invert");
+    c->invert = invert_str && (lv_streq(invert_str, "true") || lv_streq(invert_str, "1"));
+
+    lv_xml_expr_bind(expr, item, cond_flag_cb, c);
+    lv_obj_add_event_cb(item, free_cond_flag_ctx_cb, LV_EVENT_DELETE, c);
+}
+
 void * lv_obj_xml_bind_state_create(lv_xml_parser_state_t * state, const char ** attrs)
 {
     LV_UNUSED(attrs);
@@ -846,6 +933,190 @@ void lv_obj_xml_bind_state_apply(lv_xml_parser_state_t * state, const char ** at
             cb(item, subject, s, ref_value);
         }
     }
+}
+
+typedef struct {
+    lv_obj_t * obj;
+    lv_state_t state;
+    bool invert;
+} cond_state_ctx_t;
+
+/* lv_xml_expr_bind callback: fires once immediately at bind and again on any
+ * referenced-subject change. `value` is the freshly-evaluated cond result. */
+static void cond_state_cb(void * user_data, int32_t value)
+{
+    cond_state_ctx_t * c = (cond_state_ctx_t *)user_data;
+    bool on = value != 0;
+    if(c->invert) on = !on;
+    if(on) lv_obj_add_state(c->obj, c->state);
+    else lv_obj_remove_state(c->obj, c->state);
+}
+
+/* `lv_xml_expr_bind` owns and frees the compiled expression on `owner`
+ * delete, but it does not own `user_data` -- free the ctx ourselves on the
+ * same LV_EVENT_DELETE. */
+static void free_cond_state_ctx_cb(lv_event_t * e)
+{
+    cond_state_ctx_t * c = (cond_state_ctx_t *)lv_event_get_user_data(e);
+    lv_free(c);
+}
+
+void * lv_obj_xml_bind_state_if_create(lv_xml_parser_state_t * state, const char ** attrs)
+{
+    LV_UNUSED(attrs);
+    void * item = lv_xml_state_get_parent(state);
+    return item;
+}
+
+/**
+ * `<bind_state_if cond="EXPR" state="STATENAME" invert="true|false"/>`:
+ * reactive state binding driven by the expression evaluator instead of a
+ * single subject/ref_value comparison. `state` is added when `cond` is
+ * truthy and removed when falsy; `invert="true"` flips that.
+ */
+void lv_obj_xml_bind_state_if_apply(lv_xml_parser_state_t * state, const char ** attrs)
+{
+    const char * cond = lv_xml_get_value_of(attrs, "cond");
+    const char * state_str = lv_xml_get_value_of(attrs, "state");
+    if(cond == NULL) {
+        LV_LOG_WARN("`cond` is missing in bind_state_if");
+        return;
+    }
+    if(state_str == NULL) {
+        LV_LOG_WARN("`state` is missing in bind_state_if");
+        return;
+    }
+
+    lv_state_t st = lv_xml_state_to_enum(state_str);
+    lv_obj_t * item = lv_xml_state_get_parent(state);
+
+    lv_xml_expr_t * expr = lv_xml_expr_compile(cond, cond_flag_scope_resolver, &state->scope);
+    if(expr == NULL) {
+        LV_LOG_WARN("bind_state_if: failed to compile cond '%s'", cond);
+        return;
+    }
+
+    cond_state_ctx_t * c = lv_malloc(sizeof(cond_state_ctx_t));
+    LV_ASSERT_MALLOC(c);
+    if(c == NULL) {
+        lv_xml_expr_free(expr);
+        return;
+    }
+    c->obj = item;
+    c->state = st;
+    const char * invert_str = lv_xml_get_value_of(attrs, "invert");
+    c->invert = invert_str && (lv_streq(invert_str, "true") || lv_streq(invert_str, "1"));
+
+    lv_xml_expr_bind(expr, item, cond_state_cb, c);
+    lv_obj_add_event_cb(item, free_cond_state_ctx_cb, LV_EVENT_DELETE, c);
+}
+
+typedef struct {
+    lv_obj_t * obj;
+    const lv_style_t * style;
+    lv_style_selector_t selectors[8];
+    size_t n_selectors;
+    bool invert;
+} cond_style_ctx_t;
+
+/* lv_xml_expr_bind callback: fires once immediately at bind and again on any
+ * referenced-subject change. `value` is the freshly-evaluated cond result. */
+static void cond_style_cb(void * user_data, int32_t value)
+{
+    cond_style_ctx_t * c = (cond_style_ctx_t *)user_data;
+    bool on = value != 0;
+    if(c->invert) on = !on;
+    for(size_t i = 0; i < c->n_selectors; i++) {
+        lv_obj_style_set_disabled(c->obj, c->style, c->selectors[i], !on);
+    }
+}
+
+/* `lv_xml_expr_bind` owns and frees the compiled expression on `owner`
+ * delete, but it does not own `user_data` -- free the ctx ourselves on the
+ * same LV_EVENT_DELETE. */
+static void free_cond_style_ctx_cb(lv_event_t * e)
+{
+    cond_style_ctx_t * c = (cond_style_ctx_t *)lv_event_get_user_data(e);
+    lv_free(c);
+}
+
+void * lv_obj_xml_bind_style_if_create(lv_xml_parser_state_t * state, const char ** attrs)
+{
+    LV_UNUSED(attrs);
+    void * item = lv_xml_state_get_parent(state);
+    return item;
+}
+
+/**
+ * `<bind_style_if cond="EXPR" name="STYLENAME" selector="..." parts="..."
+ * invert="true|false"/>`: reactive style enable/disable driven by the
+ * expression evaluator instead of a single subject/ref_value comparison,
+ * matching `bind_style_cmp` semantics. The style is added (once) and then
+ * enabled when `cond` is truthy, disabled when falsy; `invert="true"` flips
+ * that. `parts="main,indicator"` applies the same enable/disable state to
+ * multiple parts from a single compiled expression/observer.
+ */
+void lv_obj_xml_bind_style_if_apply(lv_xml_parser_state_t * state, const char ** attrs)
+{
+    const char * cond = lv_xml_get_value_of(attrs, "cond");
+    if(cond == NULL) {
+        LV_LOG_WARN("`cond` is missing in bind_style_if");
+        return;
+    }
+
+    const char * name = lv_xml_get_value_of(attrs, "name");
+    if(name == NULL) {
+        /*Silently ignore this issue.
+         *The name set to NULL if there there was no default value when resolving params*/
+        return;
+    }
+
+    lv_xml_style_t * xml_style = lv_xml_get_style_by_name(&state->scope, name);
+    if(xml_style == NULL) {
+        LV_LOG_WARN("`%s` style is not found", name);
+        return;
+    }
+
+    const char * selector_str = lv_xml_get_value_of(attrs, "selector");
+    lv_style_selector_t selector = lv_xml_style_selector_text_to_enum(selector_str);
+
+    lv_obj_t * item = lv_xml_state_get_parent(state);
+
+    /* `parts="main,indicator"` -- apply the same style + observer to multiple
+     * parts in one element, mirroring bind_style_cmp. */
+    const char * parts_str = lv_xml_get_value_of(attrs, "parts");
+    lv_style_selector_t parts[8];
+    size_t n_parts = lv_xml_parse_parts_attr(parts_str, selector & 0xFFFF, parts, 8);
+
+    lv_xml_expr_t * expr = lv_xml_expr_compile(cond, cond_flag_scope_resolver, &state->scope);
+    if(expr == NULL) {
+        LV_LOG_WARN("bind_style_if: failed to compile cond '%s'", cond);
+        return;
+    }
+
+    cond_style_ctx_t * c = lv_malloc(sizeof(cond_style_ctx_t));
+    LV_ASSERT_MALLOC(c);
+    if(c == NULL) {
+        lv_xml_expr_free(expr);
+        return;
+    }
+    c->obj = item;
+    c->style = &xml_style->style;
+
+    size_t count = (n_parts > 0) ? n_parts : 1;
+    for(size_t i = 0; i < count; i++) {
+        lv_style_selector_t sel = (n_parts > 0) ? parts[i] : selector;
+        c->selectors[i] = sel;
+        /* Add the style (starts enabled, observer will immediately set correct state) */
+        lv_obj_add_style(item, &xml_style->style, sel);
+    }
+    c->n_selectors = count;
+
+    const char * invert_str = lv_xml_get_value_of(attrs, "invert");
+    c->invert = invert_str && (lv_streq(invert_str, "true") || lv_streq(invert_str, "1"));
+
+    lv_xml_expr_bind(expr, item, cond_style_cb, c);
+    lv_obj_add_event_cb(item, free_cond_style_ctx_cb, LV_EVENT_DELETE, c);
 }
 
 void * lv_obj_xml_screen_load_event_create(lv_xml_parser_state_t * state, const char ** attrs)

@@ -602,3 +602,58 @@ class TestLinterStateQualifiers:
         result = linter.lint_file(state_qualifiers_xml)
         errors = [d for d in result.diagnostics if d.severity == Severity.ERROR]
         assert len(errors) == 0, f"Unexpected errors: {[d.message for d in errors]}"
+
+
+class TestLinterNewSyntax:
+    """Tests for the XML expression-evaluator syntax: <subject_expr>,
+    <bind_flag_if>, <bind_state_if>, <bind_style_if>. See lib/helix-xml
+    lv_xml_component.c (process_subject_expr_element) and
+    lv_xml_obj_parser.c (lv_obj_xml_bind_flag_if_apply / bind_state_if_apply /
+    bind_style_if_apply)."""
+
+    def test_new_syntax_lints_clean(self, schema: Schema, new_syntax_xml: Path) -> None:
+        """subject_expr / bind_flag_if / bind_state_if / bind_style_if must not
+        trigger UNKNOWN_WIDGET or UNKNOWN_ATTRIBUTE."""
+        linter = Linter(schema, LinterConfig(enable_xref=False))
+        result = linter.lint_file(new_syntax_xml)
+        errors = [d for d in result.diagnostics if d.severity == Severity.ERROR]
+        assert len(errors) == 0, f"Unexpected errors: {[d.message for d in errors]}"
+
+    def test_new_syntax_no_unknown_widget(self, schema: Schema, new_syntax_xml: Path) -> None:
+        """Explicitly confirm none of the new tags are flagged UNKNOWN_WIDGET."""
+        linter = Linter(schema, LinterConfig(enable_xref=False))
+        result = linter.lint_file(new_syntax_xml)
+        widget_errors = [d for d in result.diagnostics if d.check == CheckType.UNKNOWN_WIDGET]
+        assert widget_errors == []
+
+    def test_new_syntax_no_unknown_attribute(self, schema: Schema, new_syntax_xml: Path) -> None:
+        """Explicitly confirm cond/flag/state/invert/selector/parts/name/expr are
+        all recognized attributes, not just tolerated via a bind_/style_ prefix
+        fallback."""
+        linter = Linter(schema, LinterConfig(enable_xref=False))
+        result = linter.lint_file(new_syntax_xml)
+        attr_errors = [d for d in result.diagnostics if d.check == CheckType.UNKNOWN_ATTRIBUTE]
+        assert attr_errors == []
+
+    def test_genuinely_unknown_tag_still_errors(
+        self, schema: Schema, new_syntax_invalid_xml: Path
+    ) -> None:
+        """A misspelled bind_*_if tag must still be UNKNOWN_WIDGET — proves the
+        new schema entries didn't disable widget validation generally."""
+        linter = Linter(schema, LinterConfig(enable_xref=False))
+        result = linter.lint_file(new_syntax_invalid_xml)
+        widget_errors = [d for d in result.diagnostics if d.check == CheckType.UNKNOWN_WIDGET]
+        assert len(widget_errors) >= 1
+        assert "bind_flag_if_typo" in {d.element for d in widget_errors}
+
+    def test_genuinely_unknown_attribute_still_errors(
+        self, schema: Schema, new_syntax_invalid_xml: Path
+    ) -> None:
+        """A bogus attribute on a real bind_state_if tag must still be
+        UNKNOWN_ATTRIBUTE — proves the new schema entries didn't loosen
+        attribute validation for these widgets."""
+        linter = Linter(schema, LinterConfig(enable_xref=False))
+        result = linter.lint_file(new_syntax_invalid_xml)
+        attr_errors = [d for d in result.diagnostics if d.check == CheckType.UNKNOWN_ATTRIBUTE]
+        assert len(attr_errors) >= 1
+        assert "bogus_attr" in {d.attribute for d in attr_errors}

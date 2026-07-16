@@ -115,6 +115,43 @@ Reference: lesson **L031**.
 
 ---
 
+### I wrote `cond="a && b"` in an XML expression and it's rejected / broken.
+
+**Cause:** `&&` and `<` are XML metacharacters. Written literally inside an attribute value, they either fail to parse as valid XML or get mangled before reaching the expression compiler.
+
+**Fix:** Use the word-form operators instead — they need no escaping and tokenize identically to the symbolic forms: `and`/`or`/`not` for `&&`/`||`/`!`, and `eq`/`ne`/`lt`/`le`/`gt`/`ge` for `==`/`!=`/`<`/`<=`/`>`/`>=`. This is house style for `cond=` and `<subject_expr expr=>`:
+
+```xml
+<!-- ✗ Needs escaping, easy to get wrong -->
+<bind_flag_if cond="demo_error &amp;&amp; demo_temp &gt; demo_threshold" flag="hidden"/>
+
+<!-- ✓ House style: word forms, no escaping -->
+<bind_flag_if cond="demo_error or demo_temp gt demo_threshold" flag="hidden" invert="true"/>
+```
+
+If you do need the symbolic form for some reason, escape it as XML entities (`&amp;&amp;`, `&lt;`, `&gt;`) — both forms compile to the same expression.
+
+See `LVGL9_XML_GUIDE.md` § "Expression Conditionals".
+
+---
+
+### My new `cond=`/`<subject_expr>` XML fails CI with `UNKNOWN_WIDGET` or `UNKNOWN_ATTRIBUTE`.
+
+**Cause:** The XML linter validates against a committed schema snapshot (`tools/xml-linter/schema/schema.json`), not against the C++ source directly. Adding a new tag or attribute (like `subject_expr`, `cond`, or any new custom widget) doesn't update that snapshot automatically.
+
+**Fix:** Regenerate and commit the schema:
+
+```bash
+make regen-xml-schema
+git add tools/xml-linter/schema/schema.json
+```
+
+`.github/workflows/lint-xml.yml` runs against the committed schema, so a stale one fails the first XML fixture that uses the new syntax — even though it works fine locally.
+
+Reference: lesson **L089**.
+
+---
+
 ## Design Tokens & Theming
 
 ### Review feedback: "please use design tokens instead of hardcoded colors."
