@@ -13,6 +13,8 @@
 
 #include "ams_state.h"
 
+#include "data_root_resolver.h"
+
 #include "helix_psram_attr.h"
 #include "ui_color_picker.h"
 #include "ui_update_queue.h"
@@ -118,39 +120,39 @@ const char* AmsState::get_logo_path(const std::string& type_name) {
 
     // Map system names to logo paths
     // Note: All logos are 64x64 white-on-transparent PNGs
-    static const std::unordered_map<std::string, const char*> logo_map = {
+    static const std::unordered_map<std::string, std::string> logo_map = {
         // AFC (Armored Turtle) - has its own logo
-        {"afc", "A:assets/images/ams/afc_64.png"},
-        {"box turtle", "A:assets/images/ams/box_turtle_64.png"},
-        {"box_turtle", "A:assets/images/ams/box_turtle_64.png"},
-        {"boxturtle", "A:assets/images/ams/box_turtle_64.png"},
+        {"afc", asset_component_uri("assets/images/ams/afc_64.png")},
+        {"box turtle", asset_component_uri("assets/images/ams/box_turtle_64.png")},
+        {"box_turtle", asset_component_uri("assets/images/ams/box_turtle_64.png")},
+        {"boxturtle", asset_component_uri("assets/images/ams/box_turtle_64.png")},
 
         // Happy Hare - generic firmware, has its own logo
-        {"happy hare", "A:assets/images/ams/happy_hare_64.png"},
-        {"happy_hare", "A:assets/images/ams/happy_hare_64.png"},
-        {"happyhare", "A:assets/images/ams/happy_hare_64.png"},
+        {"happy hare", asset_component_uri("assets/images/ams/happy_hare_64.png")},
+        {"happy_hare", asset_component_uri("assets/images/ams/happy_hare_64.png")},
+        {"happyhare", asset_component_uri("assets/images/ams/happy_hare_64.png")},
 
         // Specific hardware types (when detected or configured)
-        {"ercf", "A:assets/images/ams/ercf_64.png"},
-        {"3ms", "A:assets/images/ams/3ms_64.png"},
-        {"tradrack", "A:assets/images/ams/tradrack_64.png"},
-        {"mmx", "A:assets/images/ams/mmx_64.png"},
-        {"night owl", "A:assets/images/ams/night_owl_64.png"},
-        {"night_owl", "A:assets/images/ams/night_owl_64.png"},
-        {"nightowl", "A:assets/images/ams/night_owl_64.png"},
-        {"quattro box", "A:assets/images/ams/quattro_box_64.png"},
-        {"quattro_box", "A:assets/images/ams/quattro_box_64.png"},
-        {"quattrobox", "A:assets/images/ams/quattro_box_64.png"},
-        {"btt vivid", "A:assets/images/ams/btt_vivid_64.png"},
-        {"btt_vivid", "A:assets/images/ams/btt_vivid_64.png"},
-        {"bttvivid", "A:assets/images/ams/btt_vivid_64.png"},
-        {"vivid", "A:assets/images/ams/btt_vivid_64.png"},
-        {"kms", "A:assets/images/ams/kms_64.png"},
+        {"ercf", asset_component_uri("assets/images/ams/ercf_64.png")},
+        {"3ms", asset_component_uri("assets/images/ams/3ms_64.png")},
+        {"tradrack", asset_component_uri("assets/images/ams/tradrack_64.png")},
+        {"mmx", asset_component_uri("assets/images/ams/mmx_64.png")},
+        {"night owl", asset_component_uri("assets/images/ams/night_owl_64.png")},
+        {"night_owl", asset_component_uri("assets/images/ams/night_owl_64.png")},
+        {"nightowl", asset_component_uri("assets/images/ams/night_owl_64.png")},
+        {"quattro box", asset_component_uri("assets/images/ams/quattro_box_64.png")},
+        {"quattro_box", asset_component_uri("assets/images/ams/quattro_box_64.png")},
+        {"quattrobox", asset_component_uri("assets/images/ams/quattro_box_64.png")},
+        {"btt vivid", asset_component_uri("assets/images/ams/btt_vivid_64.png")},
+        {"btt_vivid", asset_component_uri("assets/images/ams/btt_vivid_64.png")},
+        {"bttvivid", asset_component_uri("assets/images/ams/btt_vivid_64.png")},
+        {"vivid", asset_component_uri("assets/images/ams/btt_vivid_64.png")},
+        {"kms", asset_component_uri("assets/images/ams/kms_64.png")},
     };
 
     auto it = logo_map.find(lower_name);
     if (it != logo_map.end()) {
-        return it->second;
+        return it->second.c_str();
     }
     return nullptr;
 }
