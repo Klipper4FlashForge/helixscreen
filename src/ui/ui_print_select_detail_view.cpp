@@ -26,6 +26,7 @@
 #include "moonraker_api.h"
 #include "observer_factory.h"
 #include "runtime_config.h"
+#include "settings_manager.h"
 #include "theme_manager.h"
 #include "tool_state.h"
 
@@ -742,10 +743,9 @@ void PrintSelectDetailView::update_color_swatches(const std::set<int>& tool_indi
 
     const auto tools = get_used_tool_info(); // real tool_index, intended colors
     auto slots = AmsState::instance().collect_available_slots();
-    auto mappings = filament_mapping_card_.get_mappings();
-    if (mappings.empty()) {
-        mappings = helix::FilamentMapper::compute_defaults(tools, slots);
-    }
+    // Effective (toggle-aware) mapping: card edits win on editable backends;
+    // U1/ACE auto-match so the bottom band shows the matched lane, not identity.
+    auto mappings = effective_mappings();
 
     const lv_color_t neutral = theme_manager_get_color("text_muted");
 
@@ -1091,6 +1091,32 @@ std::vector<helix::GcodeToolInfo> PrintSelectDetailView::get_used_tool_info() co
     return tools;
 }
 
+bool PrintSelectDetailView::effective_auto_match() const {
+    // Non-editable-card backends (U1 / ACE) have no card UI to flip the
+    // persisted auto-color preference, so they always auto-match (color+type);
+    // otherwise the persisted default (FALSE) would force positional matching
+    // and pick the wrong lane. Editable backends honor the user's setting.
+    bool card_editable = false;
+    if (auto* backend = AmsState::instance().get_backend()) {
+        card_editable = backend->get_tool_mapping_capabilities().editable;
+    }
+    return !card_editable || SettingsManager::instance().get_auto_color_map();
+}
+
+std::vector<helix::ToolMapping> PrintSelectDetailView::effective_mappings() const {
+    // Editable backends: the card seeds and owns mappings_, and user edits win.
+    auto m = filament_mapping_card_.get_mappings();
+    if (!m.empty()) {
+        return m;
+    }
+    // Non-editable backends (U1 / ACE): the card is hidden and get_mappings() is
+    // empty — resolve the effective (toggle-aware) mapping the same way the live
+    // render does, so swatches + preflight + render all agree.
+    return helix::FilamentMapper::effective_mappings(
+        get_used_tool_info(), AmsState::instance().collect_available_slots(),
+        effective_auto_match());
+}
+
 void PrintSelectDetailView::recompute_preflight() {
     // ------------------------------------------------------------------
     // Backend-agnostic pre-flight validation (single source of truth for
@@ -1130,13 +1156,11 @@ void PrintSelectDetailView::recompute_preflight() {
     // Happy Hare / CFS / AD5X-IFS / toolchanger) would never clear the block.
     //
     // Behavior-preserving at parse time: for editable backends the card seeds
-    // mappings_ with compute_defaults() until the user edits it (identical
-    // result); for U1/ACE the card is hidden and mappings_ is empty, so the
-    // fallback reproduces the original compute_defaults() path exactly.
-    auto mapping = filament_mapping_card_.get_mappings();
-    if (mapping.empty()) {
-        mapping = helix::FilamentMapper::compute_defaults(tools, slots);
-    }
+    // mappings_ with the effective defaults until the user edits it (identical
+    // result); for U1/ACE the card is hidden and mappings_ is empty, so
+    // effective_mappings() resolves the toggle-aware (auto color+type) match —
+    // the SAME mapping the color swatches and live render use.
+    auto mapping = effective_mappings();
     preflight_result_ = helix::PreflightValidator::validate(tools, slots, mapping);
 
     bool any_mismatch = false;

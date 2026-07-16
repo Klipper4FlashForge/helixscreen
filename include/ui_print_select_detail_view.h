@@ -328,6 +328,28 @@ class PrintSelectDetailView : public OverlayBase {
     [[nodiscard]] std::vector<helix::GcodeToolInfo> get_used_tool_info() const;
 
     /**
+     * @brief The mapping the print will actually use — display + gate source.
+     *
+     * Editable backends (AFC / Happy Hare / CFS / AD5X-IFS / toolchanger): the
+     * card seeds and owns mappings_, and user edits win, so this returns
+     * get_mappings() unchanged. Non-editable backends (Snapmaker U1 / ACE): the
+     * card is hidden and get_mappings() is empty, so we compute the effective
+     * mapping via FilamentMapper::effective_mappings() using
+     * effective_auto_match(). This is the single helper both the color swatches
+     * and the pre-flight gate consult so they resolve identically.
+     */
+    [[nodiscard]] std::vector<helix::ToolMapping> effective_mappings() const;
+
+    /**
+     * @brief Whether auto (color+type) matching applies for this backend.
+     *
+     * Non-editable-card backends (U1 / ACE) have no UI to flip the persisted
+     * auto-color preference, so they always auto-match. Editable backends honor
+     * SettingsManager::get_auto_color_map().
+     */
+    [[nodiscard]] bool effective_auto_match() const;
+
+    /**
      * @brief Logical tools the parsed gcode body actually uses.
      *
      * Returns ParsedGCodeFile::tools_used_indices from the gcode viewer's

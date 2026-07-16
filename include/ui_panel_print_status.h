@@ -23,14 +23,18 @@
 // Forward declaration
 class MoonrakerAPI;
 
+#include "filament_mapper.h" // helix::GcodeToolInfo
+
 #include <functional>
 #include <memory>
 #include <set>
 #include <string>
+#include <vector>
 
 // Forward declarations
 class TemperatureService;
 class PrintStatusPanel;
+struct FileMetadata;
 
 /**
  * @brief Print status panel - shows active print progress and controls
@@ -550,6 +554,28 @@ class PrintStatusPanel : public OverlayBase {
     void apply_filament_color_override(
         uint32_t color_rgb);            ///< Apply AMS/Spoolman filament color to gcode viewer
     bool build_and_apply_tool_colors(); ///< Build per-tool AMS color map and apply to viewer
+
+    /// Per-tool slicer palette from the active file's Moonraker metadata, stored
+    /// so the live render can resolve the SAME toggle-aware tool→lane match the
+    /// print-select swatches and pre-flight use (instead of coloring every tool
+    /// by the identity tool_to_slot_map, which paints the whole model in T0's
+    /// filament on true toolchangers like the Snapmaker U1). Populated in the
+    /// get_file_metadata callbacks; empty until metadata arrives.
+    std::vector<std::string> filament_colors_;    ///< per-tool hex ("#RRGGBB")
+    std::vector<std::string> filament_materials_; ///< per-tool material, split from ';' list
+
+    /// Store per-tool colors/materials from file metadata (main-thread only).
+    void store_filament_metadata(const FileMetadata& metadata);
+
+    /// Build per-tool GcodeToolInfo for the tools the parsed file actually uses,
+    /// from the stored slicer palette. Empty when metadata or the parsed used-set
+    /// is unavailable (caller then falls back to apply_ams_tool_colors).
+    [[nodiscard]] std::vector<helix::GcodeToolInfo> build_print_tool_info() const;
+
+    /// Whether auto (color+type) matching applies for the active backend. Mirrors
+    /// PrintSelectDetailView::effective_auto_match(): non-editable-card backends
+    /// (U1 / ACE) always auto-match; editable backends honor the user setting.
+    [[nodiscard]] bool effective_auto_match() const;
 
     static void format_time(int seconds, char* buf, size_t buf_size);
 
