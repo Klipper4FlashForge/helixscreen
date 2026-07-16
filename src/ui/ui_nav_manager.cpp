@@ -712,12 +712,28 @@ void NavigationManager::backdrop_click_event_cb(lv_event_t* e) {
     lv_obj_t* target = static_cast<lv_obj_t*>(lv_event_get_target(e));
     lv_obj_t* current = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
 
-    // Only respond if click was directly on backdrop (not bubbled from child)
+    // Only respond if the event was directly on the backdrop (not bubbled)
     if (target != current) {
         return;
     }
 
     auto& mgr = NavigationManager::instance();
+
+    if (lv_event_get_code(e) == LV_EVENT_PRESSED) {
+        // Capture keyboard visibility at PRESS time. LVGL's indev_proc_press
+        // sends PRESSED before indev_click_focus, whose DEFOCUS hides the
+        // keyboard — so by CLICKED, is_visible() would already read false.
+        mgr.backdrop_press_keyboard_visible_ = KeyboardManager::instance().is_visible();
+        return;
+    }
+
+    // LV_EVENT_CLICKED — a tap that dismissed the on-screen keyboard must not
+    // also dismiss (or navigate away from) the overlay behind it. Consume this
+    // tap for the keyboard dismiss only; a second tap dismisses the overlay.
+    if (mgr.take_backdrop_keyboard_dismiss()) {
+        spdlog::trace("[NavigationManager] Backdrop tap dismissed on-screen keyboard; overlay kept");
+        return;
+    }
 
     // Only process if there's an overlay to close (stack > 1 means overlays exist)
     if (mgr.panel_stack_.size() <= 1) {
@@ -767,6 +783,14 @@ void NavigationManager::backdrop_click_event_cb(lv_event_t* e) {
     // Regular backdrop click - close topmost overlay
     spdlog::trace("[NavigationManager] Backdrop clicked, closing topmost overlay");
     mgr.go_back();
+}
+
+bool NavigationManager::take_backdrop_keyboard_dismiss() {
+    if (!backdrop_press_keyboard_visible_) {
+        return false;
+    }
+    backdrop_press_keyboard_visible_ = false;
+    return true;
 }
 
 void NavigationManager::nav_button_clicked_cb(lv_event_t* event) {
@@ -1588,6 +1612,10 @@ void NavigationManager::push_overlay(lv_obj_t* overlay_panel, bool hide_previous
             mgr.overlay_backdrop_ = helix::ui::create_darkened_backdrop(screen, 40);
             if (mgr.overlay_backdrop_) {
                 lv_obj_move_foreground(mgr.overlay_backdrop_);
+                // PRESSED latches keyboard visibility before LVGL's click-focus
+                // hides it; CLICKED consumes the tap for the keyboard dismiss.
+                lv_obj_add_event_cb(mgr.overlay_backdrop_, backdrop_click_event_cb,
+                                    LV_EVENT_PRESSED, nullptr);
                 lv_obj_add_event_cb(mgr.overlay_backdrop_, backdrop_click_event_cb,
                                     LV_EVENT_CLICKED, nullptr);
             }
@@ -1700,6 +1728,10 @@ void NavigationManager::push_overlay_zoom_from(lv_obj_t* overlay_panel, lv_area_
             mgr.overlay_backdrop_ = helix::ui::create_darkened_backdrop(screen, 40);
             if (mgr.overlay_backdrop_) {
                 lv_obj_move_foreground(mgr.overlay_backdrop_);
+                // PRESSED latches keyboard visibility before LVGL's click-focus
+                // hides it; CLICKED consumes the tap for the keyboard dismiss.
+                lv_obj_add_event_cb(mgr.overlay_backdrop_, backdrop_click_event_cb,
+                                    LV_EVENT_PRESSED, nullptr);
                 lv_obj_add_event_cb(mgr.overlay_backdrop_, backdrop_click_event_cb,
                                     LV_EVENT_CLICKED, nullptr);
             }

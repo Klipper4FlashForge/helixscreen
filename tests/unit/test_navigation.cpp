@@ -433,6 +433,58 @@ TEST_CASE_METHOD(NavbarIconTestFixture, "Out-of-band widget deletion scrubs pane
 }
 
 // ============================================================================
+// Backdrop tap must not dismiss the overlay while the on-screen keyboard is up
+// ============================================================================
+// Reported on Snapmaker U1 v0.91: entering the Spoolman IP was impossible — the
+// on-screen keyboard closed and the settings overlay popped on nearly every
+// keystroke. Overlays are narrower than the screen (hor_res - nav_width) and sit
+// over a full-screen clickable dismiss-backdrop, so a stray tap outside the
+// keyboard/field lands on the exposed backdrop column and calls go_back().
+//
+// LVGL's indev_proc_press sends LV_EVENT_PRESSED before the click-focus DEFOCUS
+// that hides the keyboard (lv_indev.c: PRESSED at :1344, indev_click_focus at
+// :1351), so is_visible() already reads false by the CLICKED handler. The fix
+// latches keyboard visibility at PRESSED and consumes that first backdrop tap
+// for the keyboard dismiss only — the overlay stays; a second tap dismisses it.
+TEST_CASE_METHOD(NavbarIconTestFixture,
+                 "Backdrop tap with keyboard up dismisses keyboard, keeps overlay",
+                 "[navigation][overlay][keyboard]") {
+    auto& nav = NavigationManager::instance();
+
+    // Seed a base panel so push_overlay's is_first_overlay logic has a stack.
+    lv_obj_t* base = lv_obj_create(test_screen());
+    REQUIRE(base != nullptr);
+    lv_obj_t* panels[UI_PANEL_COUNT] = {nullptr};
+    panels[static_cast<int>(PanelId::Home)] = base;
+    nav.set_panels(panels);
+
+    MockPanelLifecycle mock_panel;
+    lv_obj_t* overlay = lv_obj_create(test_screen());
+    REQUIRE(overlay != nullptr);
+    lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    nav.register_overlay_instance(overlay, &mock_panel);
+    nav.push_overlay(overlay);
+    helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+    REQUIRE(nav.is_panel_in_stack(overlay) == true);
+
+    // Keyboard was visible when the backdrop was pressed: the CLICKED handler
+    // consumes this tap for the keyboard dismiss and returns before go_back(), so
+    // the overlay is kept.
+    nav.set_backdrop_press_keyboard_visible_for_testing(true);
+    REQUIRE(nav.take_backdrop_keyboard_dismiss() == true);
+    REQUIRE(nav.is_panel_in_stack(overlay) == true);
+
+    // The latch is one-shot: the next tap (keyboard now down) is NOT consumed, so
+    // the handler falls through to go_back() and dismisses the overlay.
+    REQUIRE(nav.take_backdrop_keyboard_dismiss() == false);
+    nav.go_back();
+    helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+    REQUIRE(nav.is_panel_in_stack(overlay) == false);
+
+    lv_obj_delete(base);
+}
+
+// ============================================================================
 // Overlay freed BEFORE the deferred push drains (bundle MBUX7WUN)
 // ============================================================================
 // push_overlay() queues its whole body via queue_update, capturing the raw
