@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Server-side symbol resolution for crash backtraces.
-// Fetches .sym files (nm -nC output) from R2 and resolves raw hex addresses
-// to function names + offsets.
+// Fetches zstd-compressed .sym maps (nm -nC output) from R2 and resolves raw
+// hex addresses to function names + offsets.
+
+import { decompress as zstdDecompress } from "fzstd";
 
 /** A single symbol from nm -nC output. */
 export interface Symbol {
@@ -311,14 +313,25 @@ export async function resolveBacktrace(bucket: R2Bucket, report: CrashReport): P
     const platform = report.platform || report.app_platform;
     if (!version || !platform) return result;
 
-    // Fetch symbol file from R2
-    const symKey = `symbols/v${version}/${platform}.sym`;
-    const symObj = await bucket.get(symKey);
-    if (!symObj) return result;
+    // Fetch symbol file from R2. Maps are published zstd-compressed (.sym.zst —
+    // nm output compresses ~25:1). Workers have no zstd in DecompressionStream,
+    // so decode it in-process with a pure-JS decompressor. Fall back to an
+    // uncompressed .sym if one happens to exist (older/backfilled uploads).
+    const symBase = `symbols/v${version}/${platform}`;
+    let symText: string | null = null;
+
+    const zstObj = await bucket.get(`${symBase}.sym.zst`);
+    if (zstObj) {
+      const compressed = new Uint8Array(await zstObj.arrayBuffer());
+      symText = new TextDecoder().decode(zstdDecompress(compressed));
+    } else {
+      const rawObj = await bucket.get(`${symBase}.sym`);
+      if (rawObj) symText = await rawObj.text();
+    }
+    if (symText === null) return result;
 
     result.symbolFileFound = true;
 
-    const symText = await symObj.text();
     const symbols = parseSymbolTable(symText);
     if (symbols.length === 0) return result;
 
