@@ -202,6 +202,54 @@ TEST_CASE_METHOD(BusyGuardApiFixture,
 }
 
 // ============================================================================
+// The refusal reason survives all the way to the user-facing string
+// ============================================================================
+
+TEST_CASE("MoonrakerError::user_message prefers a populated message for NOT_READY",
+          "[busy_guard][errors]") {
+    // user_message() returned the type-based string BEFORE checking `message`,
+    // so every guard's specific reason was overridden by the generic
+    // "wait for initialization" text — which is actively wrong for a transient
+    // blocking op the user should just retry.
+    MoonrakerError busy;
+    busy.type = MoonrakerErrorType::NOT_READY;
+    busy.message = "Printer is busy — try again in a moment";
+    CHECK(busy.user_message() == "Printer is busy — try again in a moment");
+
+    MoonrakerError homing;
+    homing.type = MoonrakerErrorType::NOT_READY;
+    homing.message = "Homing is disabled while a print is in progress";
+    CHECK(homing.user_message() == "Homing is disabled while a print is in progress");
+
+    // An empty message still falls back to the generic type text.
+    MoonrakerError bare;
+    bare.type = MoonrakerErrorType::NOT_READY;
+    CHECK(bare.user_message() == "Printer is not ready. Please wait for initialization.");
+
+    // TIMEOUT / CONNECTION_LOST deliberately keep their curated type text: their
+    // `message` fields carry diagnostic detail ("WebSocket connection lost"),
+    // which is jargon beside the friendly string. Narrow fix, not a blanket
+    // "message always wins".
+    CHECK(MoonrakerError::connection_lost("printer.gcode.script").user_message() ==
+          "Connection to printer lost.");
+    CHECK(MoonrakerError::timeout("printer.gcode.script", 30000).user_message() ==
+          "Request timed out. The printer may be busy.");
+}
+
+TEST_CASE_METHOD(BusyGuardApiFixture, "busy refusal reaches the user as the busy reason",
+                 "[busy_guard][mock][errors]") {
+    set_idle_printing(true);
+    set_print_state(PrintJobState::STANDBY);
+
+    api->execute_gcode("M106 S255", nullptr,
+                       [this](const MoonrakerError& err) { error_cb(err); });
+
+    REQUIRE(error_called);
+    // What the toast actually renders — the whole point of the guard's message.
+    CHECK(captured_error.user_message() == "Printer is busy — try again in a moment");
+}
+
+// ============================================================================
 // Motion API routes through the same guard
 // ============================================================================
 
