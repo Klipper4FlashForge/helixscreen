@@ -376,7 +376,16 @@ std::string get_themes_directory() {
 }
 
 std::string get_default_themes_directory() {
+#if defined(HELIX_PLATFORM_ESP32)
+    // Firmware: read-only theme defaults ship in the packed /assets container.
+    // Route through the asset_path seam so the path is absolute
+    // (/assets/config/themes/defaults) — get_data_dir() is "." here, which would
+    // yield a relative path that fails to stat (unlike the desktop layout, whose
+    // config lives under <data_dir>/assets/config).
+    return asset_path("config/themes/defaults");
+#else
     return get_data_dir() + "/assets/config/themes/defaults";
+#endif
 }
 
 bool has_default_theme(const std::string& filename) {
@@ -428,8 +437,10 @@ std::optional<ThemeData> reset_theme_to_default(const std::string& filename) {
 bool ensure_themes_directory(const std::string& themes_dir) {
     struct stat st;
 
-    // First ensure parent config directory exists
-    std::string config_dir = "config";
+    // First ensure parent config directory exists. Use the writable config dir
+    // (honors $HELIX_CONFIG_DIR — e.g. /config on ESP32) rather than a literal
+    // relative "config", which fails when the CWD isn't the config root.
+    std::string config_dir = get_user_config_dir();
     if (stat(config_dir.c_str(), &st) != 0) {
         if (mkdir(config_dir.c_str(), 0750) != 0) {
             spdlog::error("[ThemeLoader] Failed to create config directory {}: {}", config_dir,
