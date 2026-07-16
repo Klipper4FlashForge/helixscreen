@@ -33,6 +33,8 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "sdkconfig.h"
 
 #include "app_globals.h"
@@ -196,6 +198,19 @@ void mock_push_temps() {
 
 } // namespace
 
+// Cooperative yield for the long synchronous boot build. The UI pthread runs at
+// a higher priority than the idle task; a multi-second uninterrupted stretch of
+// XML registration / panel layout starves idle, and the Task WDT (which watches
+// idle) fires (TG1WDT_SYS_RST). Shared boot code (register_xml_components,
+// PanelFactory::setup_panels) calls this between units of work — one tick of
+// vTaskDelay lets idle run and feed the WDT. Cheap (~1 tick each) and correct
+// regardless of how long the boot build takes. Declared extern "C" so the
+// main-tree callers can reference it under their HELIX_PLATFORM_ESP32 gate
+// without pulling in FreeRTOS headers.
+extern "C" void helix_boot_yield(void) {
+    vTaskDelay(1);
+}
+
 extern "C" void app_boot_ui(void) {
     log_heap_milestone("boot-ui-start");
 
@@ -245,9 +260,14 @@ extern "C" void app_boot_ui(void) {
     std::string lang = config->get_language();
     helix::ui::ensure_translation_loaded(lang);
     lv_translation_set_language(lang.c_str());
+    log_heap_milestone("translations-up");
 
-    // Phase 7: all XML components from the /assets container.
+    // Phase 7: all XML components from the /assets container. This is the
+    // heaviest boot phase (~300 component templates: frogfs read + decompress +
+    // expat parse each) — the milestone brackets it so the HIL profile can
+    // separate registration cost from panel-build cost (subjects-up → home).
     helix::register_xml_components();
+    log_heap_milestone("xml-registered");
 
     // Phase 8: core subjects (PrinterState / AmsState).
     static SubjectInitializer subjects;
