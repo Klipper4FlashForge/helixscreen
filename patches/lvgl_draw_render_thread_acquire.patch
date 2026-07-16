@@ -1,0 +1,24 @@
+diff --git a/src/draw/lv_draw.c b/src/draw/lv_draw.c
+index dc4ce2219..0cc57c4f4 100644
+--- a/src/draw/lv_draw.c
++++ b/src/draw/lv_draw.c
+@@ -242,6 +242,9 @@ bool lv_draw_dispatch_layer(lv_display_t * disp, lv_layer_t * layer)
+     while(t) {
+         t_next = t->next;
+         if(t->state == LV_DRAW_TASK_STATE_FINISHED) {
++            /* Acquire barrier: pairs with the render thread's release fence so all
++             * of its pixel writes are visible before we free the task/layer. */
++            __atomic_thread_fence(__ATOMIC_ACQUIRE);
+             cleanup_task(t, disp);
+             remove_task = true;
+             if(t_prev != NULL)
+@@ -687,6 +691,9 @@ static void cleanup_task(lv_draw_task_t * t, lv_display_t * disp)
+         lv_layer_t * layer_drawn = (lv_layer_t *)draw_image_dsc->src;
+ 
+         if(layer_drawn->draw_buf) {
++            /* Ensure no draw unit is still blending into this buffer before we
++             * destroy it. Returns immediately when no render is in flight. */
++            lv_draw_wait_for_finish();
+             int32_t h = lv_area_get_height(&layer_drawn->buf_area);
+             uint32_t layer_size_byte = h * layer_drawn->draw_buf->header.stride;
+ 
