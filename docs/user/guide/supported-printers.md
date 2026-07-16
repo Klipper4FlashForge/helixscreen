@@ -128,15 +128,16 @@ A true 4-toolhead changer, running on the U1's built-in 3.5" screen. Each of the
 
 To set it up:
 
-1. In the PAXX Extended Firmware settings, turn on the **remote screen** option (the `web remote_screen` toggle in the extended firmware config).
-2. Restart HelixScreen or reboot the printer so it picks up the setting.
+1. Open the firmware settings web UI at `http://<printer-ip>/firmware-config/` (log in with your Mainsail/Fluidd credentials) and set **Remote Screen** to **Enabled**.
+2. That's it — the setting restarts HelixScreen and Moonraker for you, registers the **"gui"** webcam, and starts the screen server.
 3. Open your printer in Mainsail or Fluidd (you must be logged in). The screen appears as the **"gui"** webcam — select it in the camera view.
 4. To control it, browse to `http://<printer-ip>/screen/` and tap the image. Taps, presses, and drags drive the HelixScreen UI live.
 
 Notes:
+- Use the firmware settings web UI, not a hand edit of the config file. Setting `web remote_screen` in `extended2.cfg` by hand is **not enough** — the "gui" webcam won't appear, because the web UI toggle also enables the `[webcam gui]` section in `extended/moonraker/04_remote_screen.cfg` and restarts Moonraker. If you must do it by hand, do all three, then restart HelixScreen and Moonraker.
 - The feed is a still-image snapshot refreshed a few times per second, not smooth video — fine for monitoring and tapping through menus, not for watching animations.
 - This is **PAXX-only** for now. Stock firmware is not yet confirmed to expose the feed.
-- Before HelixScreen feeds it, the "gui" webcam shows **"No Signal"** — that's expected until the remote-screen toggle is on and HelixScreen has restarted.
+- If the "gui" webcam shows **"No Signal"** or a stale/black frame, HelixScreen hasn't restarted since the toggle was turned on — restart HelixScreen or reboot the printer.
 
 ---
 
