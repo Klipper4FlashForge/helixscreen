@@ -229,6 +229,7 @@ LVGL XML uses prefix sigils to distinguish different value types:
 |-------|---------|---------|---------|
 | `#` | Design token / const | `style_pad_all="#space_md"` | Spacing, colors, sizes |
 | `$` | Component prop | `text="$primary_text"` | Inside component templates |
+| `$i` | `<repeat>` loop index | `text="$i"` | Inside a `<repeat>` body (see [Repeating fragments](#repeating-fragments-with-repeat)) |
 | `@` | Subject binding | `text="@my_subject"` | Reactive data on `ui_button` |
 
 The `@` prefix on `ui_button`'s `text` attribute marks a value as a subject reference (reactive) vs. a literal string (static). Alternatively, `bind_text` always treats its value as a subject name (no `@` needed). See [ui_button](#ui_button) for details.
@@ -550,6 +551,33 @@ These are parse-time only -- the hidden state does not change after creation. Fo
 **❌ No `bind_text_if_eq`** - use multiple labels with `bind_flag_if_*` for conditional text.
 
 **✅ Compound conditions are supported** via the expression evaluator (see "Expression Conditionals" above) — `cond="a or b gt c"` on `bind_flag_if`/`bind_state_if`/`bind_style_if`, or a `<subject_expr>` derived subject for a condition reused in multiple places. This replaces stacking several single-subject `bind_flag_if_*` elements or writing a hand-rolled C++ derived subject for "OR of two subjects" type logic.
+
+#### Repeating fragments with `<repeat>`
+
+`<repeat count="N">…body…</repeat>` expands its body `N` times at load time, so a fixed-size list of widgets becomes XML structure instead of a C++ create-and-wire loop. Inside the body, the bare sigil `$i` resolves to the zero-based iteration index.
+
+```xml
+<lv_obj name="root">
+  <repeat count="4">
+    <lv_label name="lbl" text="$i" style_pad_all="#space_sm"/>
+  </repeat>
+</lv_obj>
+<!-- root now has 4 labels reading "0", "1", "2", "3" -->
+```
+
+`count` accepts three forms:
+
+| Form | Example | Meaning |
+|------|---------|---------|
+| Literal | `count="4"` | A fixed integer (clamped to `[0, 256]`). |
+| `#const` | `count="#rows"` | A component `<const>` value. |
+| Subject name | `count="row_count"` | Read from a subject at load time. *(Reactive rebuild when the subject changes is a later task; today it expands to the subject's current value.)* |
+
+Each iteration re-resolves the body against pristine attribute values, so `$i`, `$param`, and `#const` references all yield independent per-iteration results — the labels above each get their own index, not a shared last value.
+
+`$i` is a **bare index only** for now. Embedded composition (`bind_text="slot_${i}_label"` to self-wire indexed subjects) and index arithmetic (`${i + 1}`) are separate follow-ups. A single `$i` per attribute value is all this task supports.
+
+`<repeat>` is intercepted directly by the XML view parser (it creates no widget of its own), so its body must be well-formed markup that would be valid where the `<repeat>` sits. Nesting `<repeat>` inside another `<repeat>` is not yet supported.
 
 ### 4. Observer Cleanup in DELETE Handlers
 

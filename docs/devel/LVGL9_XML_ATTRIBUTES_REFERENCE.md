@@ -91,6 +91,22 @@ All widgets inherit these.
 
 **Grammar:** subject name, int literal, `( )` grouping; `== != < <= > >=` / word forms `eq ne lt le gt ge`; `&& \|\| !` / word forms `and or not`; `+ - * / %` (div/mod by zero → `0`). **House style = word forms** — `&&`/`<` need XML escaping (`&amp;&amp;`/`&lt;`), word forms don't.
 
+**Looping** (`LVGL9_XML_GUIDE.md` § "Repeating fragments with `<repeat>`"):
+
+```xml
+<!-- Expand the body N times at load time; $i is the zero-based index -->
+<lv_obj name="root">
+    <repeat count="4">
+        <lv_label name="lbl" text="$i"/>
+    </repeat>
+</lv_obj>
+```
+
+| Tag/Attr | Notes |
+|----------|-------|
+| `<repeat count=>` | Expands its body `count` times at load time. `count` is a literal, a `#const`, or a subject name (read at load time; reactive rebuild is a later task). Clamped to `[0, 256]`. Not nestable yet. |
+| `$i` | Bare zero-based iteration index, valid only inside a `<repeat>` body. One `$i` per attribute value; embedded composition (`${i}`) and arithmetic (`${i + 1}`) are follow-ups. |
+
 ---
 
 ## Style Attributes (style_* prefix)

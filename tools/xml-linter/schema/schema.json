@@ -799,6 +799,13 @@
         }
       }
     },
+    "repeat": {
+      "attributes": {
+        "count": {
+          "type": "string"
+        }
+      }
+    },
     "lv_obj-style": {
       "attributes": {
         "name": {
@@ -2968,6 +2975,9 @@
     "cooling_color_dark",
     "cooling_color_light",
     "danger",
+    "demo_error",
+    "demo_temp",
+    "demo_threshold",
     "dialog_content_max",
     "dialog_content_max_large",
     "dialog_content_max_medium",

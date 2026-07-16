@@ -862,6 +862,15 @@ def _extract_special_elements(parsers_dir: Path, schema: dict[str, Any]) -> None
         },
     }
 
+    # <repeat count="N">...body...</repeat> -- load-time looping construct handled
+    # directly in lv_xml.c's view element handlers (capture/replay), not registered
+    # via lv_xml_register_widget(). `count` is a literal, a #const, or a subject name.
+    schema["widgets"]["repeat"] = {
+        "attributes": {
+            "count": {"type": "string"},
+        },
+    }
+
     # Add special obj elements with their attributes
     _extract_obj_special_elements(schema)
 
