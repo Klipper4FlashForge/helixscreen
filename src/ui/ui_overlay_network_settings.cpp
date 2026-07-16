@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "ui_overlay_network_settings.h"
+#include "data_root_resolver.h"
 
 #include "ui_callback_helpers.h"
 #include "ui_effects.h"
@@ -231,7 +232,7 @@ lv_obj_t* NetworkSettingsOverlay::create(lv_obj_t* parent_screen) {
     // Register wifi_network_item component first
     static bool network_item_registered = false;
     if (!network_item_registered) {
-        lv_xml_register_component_from_file("A:ui_xml/wifi_network_item.xml");
+        lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/wifi_network_item.xml").c_str());
         network_item_registered = true;
         spdlog::debug("[NetworkSettingsOverlay] Registered wifi_network_item component");
     }

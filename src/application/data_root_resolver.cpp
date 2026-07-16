@@ -98,6 +98,10 @@ std::string asset_path(const std::string& relpath) {
     return root + "/" + relpath;
 }
 
+std::string asset_component_uri(const std::string& relpath) {
+    return "A:" + asset_path(relpath);
+}
+
 std::string writable_path(const std::string& relpath) {
     return helix::paths::strip_trailing_slash(get_user_config_dir()) + "/" + relpath;
 }

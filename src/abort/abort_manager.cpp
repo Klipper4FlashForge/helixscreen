@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "abort_manager.h"
+#include "data_root_resolver.h"
 
 #include "ui_callback_helpers.h"
 #include "ui_effects.h"
@@ -46,7 +47,7 @@ void AbortManager::init_subjects() {
     }
 
     // Register XML component for the modal
-    lv_xml_register_component_from_file("A:ui_xml/abort_progress_modal.xml");
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/abort_progress_modal.xml").c_str());
 
     // Register E-Stop button callback (unique name per L039)
     register_xml_callbacks({

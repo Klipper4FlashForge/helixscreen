@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "ui_ams_slot.h"
+#include "data_root_resolver.h"
 
 #include "ui_fonts.h"
 #include "ui_icon_codepoints.h"
@@ -932,7 +933,7 @@ static void ams_slot_xml_apply(lv_xml_parser_state_t* state, const char** attrs)
 
 void ui_ams_slot_register(void) {
     // Register the XML component first (defines the structural template)
-    lv_xml_register_component_from_file("A:ui_xml/ams_slot_view.xml");
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/ams_slot_view.xml").c_str());
 
     // Register the custom widget (uses the XML template + adds dynamic behavior)
     lv_xml_register_widget("ams_slot", ams_slot_xml_create, ams_slot_xml_apply);

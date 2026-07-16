@@ -85,6 +85,18 @@ void set_asset_root(const std::string& root);
 std::string asset_path(const std::string& relpath);
 
 /**
+ * @brief LVGL "A:" URI for registering a bundled XML component/asset
+ *
+ * Returns "A:" + asset_path(relpath). Use this instead of a hardcoded
+ * "A:ui_xml/..." literal when calling lv_xml_register_component_from_file (or any
+ * lv_fs open): the literal is only correct when asset_root is "." (desktop), and
+ * silently fails on firmware where the bundle is mounted at "/assets"
+ * ("A:ui_xml/..." → missing file; the correct path is "A:/assets/ui_xml/...").
+ * Byte-identical to the old literal on desktop.
+ */
+std::string asset_component_uri(const std::string& relpath);
+
+/**
  * @brief Build a writable path under the user-config directory
  *
  * Returns get_user_config_dir() + "/" + relpath, with any trailing slash

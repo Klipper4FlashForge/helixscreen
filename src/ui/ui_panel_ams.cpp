@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "ui_panel_ams.h"
+#include "data_root_resolver.h"
 
 #include "ui_ams_detail.h"
 #include "ui_ams_device_operations_overlay.h"
@@ -108,17 +109,17 @@ static void ensure_ams_widgets_registered() {
     // Register XML components
     // NOTE: Old AMS settings panels removed - Device Operations overlay is registered in
     // xml_registration.cpp
-    lv_xml_register_component_from_file("A:ui_xml/components/ams_unit_detail.xml");
-    lv_xml_register_component_from_file("A:ui_xml/components/ams_loaded_card.xml");
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/components/ams_unit_detail.xml").c_str());
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/components/ams_loaded_card.xml").c_str());
     // ams_environment_indicator registered above via ensure_ams_env_indicator_registered()
-    lv_xml_register_component_from_file("A:ui_xml/components/ams_sidebar.xml");
-    lv_xml_register_component_from_file("A:ui_xml/ams_panel.xml");
-    lv_xml_register_component_from_file("A:ui_xml/ams_context_menu.xml");
-    lv_xml_register_component_from_file("A:ui_xml/ams_selector_menu.xml");
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/components/ams_sidebar.xml").c_str());
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/ams_panel.xml").c_str());
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/ams_context_menu.xml").c_str());
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/ams_selector_menu.xml").c_str());
     // NOTE: spoolman_spool_item.xml and ams_edit_overlay.xml are registered
     // globally in xml_registration.cpp (needed by FilamentPanel without AMS lazy init)
-    lv_xml_register_component_from_file("A:ui_xml/ams_loading_error_modal.xml");
-    lv_xml_register_component_from_file("A:ui_xml/ams_environment_overlay.xml");
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/ams_loading_error_modal.xml").c_str());
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/ams_environment_overlay.xml").c_str());
     // NOTE: color_picker.xml is registered at startup in xml_registration.cpp
 
     s_ams_widgets_registered = true;

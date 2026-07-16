@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "ui_panel_ams_overview.h"
+#include "data_root_resolver.h"
 
 #include "ui_ams_context_menu.h"
 #include "ui_ams_detail.h"
@@ -1041,14 +1042,14 @@ static void ensure_overview_registered() {
     ui_ams_slot_register();
 
     // Register the XML components (dependencies must be registered before overview panel)
-    lv_xml_register_component_from_file("A:ui_xml/components/ams_unit_detail.xml");
-    lv_xml_register_component_from_file("A:ui_xml/components/ams_loaded_card.xml");
-    lv_xml_register_component_from_file("A:ui_xml/ams_context_menu.xml");
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/components/ams_unit_detail.xml").c_str());
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/components/ams_loaded_card.xml").c_str());
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/ams_context_menu.xml").c_str());
     // ams_unit_card.xml nests <ams_environment_indicator>, which is already
     // registered above via ensure_ams_env_indicator_registered().
-    lv_xml_register_component_from_file("A:ui_xml/ams_unit_card.xml");
-    lv_xml_register_component_from_file("A:ui_xml/components/ams_sidebar.xml");
-    lv_xml_register_component_from_file("A:ui_xml/ams_overview_panel.xml");
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/ams_unit_card.xml").c_str());
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/components/ams_sidebar.xml").c_str());
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/ams_overview_panel.xml").c_str());
 
     s_overview_registered = true;
     spdlog::debug("[AMS Overview] XML registration complete");

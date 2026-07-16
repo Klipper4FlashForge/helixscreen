@@ -7,6 +7,7 @@
  */
 
 #include "ui_ams_environment_overlay.h"
+#include "data_root_resolver.h"
 
 #include "ui_error_reporting.h"
 #include "ui_event_safety.h"
@@ -139,7 +140,7 @@ lv_obj_t* AmsEnvironmentOverlay::create(lv_obj_t* parent) {
     // overlay safe to open directly (e.g. CLI --ams-environment) without first
     // visiting the AMS panel, which is where lazy registration otherwise happens.
     if (!lv_xml_component_get_scope("ams_environment_overlay")) {
-        lv_xml_register_component_from_file("A:ui_xml/ams_environment_overlay.xml");
+        lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/ams_environment_overlay.xml").c_str());
     }
 
     overlay_ = static_cast<lv_obj_t*>(lv_xml_create(parent, "ams_environment_overlay", nullptr));
@@ -753,7 +754,7 @@ void ensure_ams_env_indicator_registered() {
         overlay.show(lv_screen_active(), unit);
     });
 
-    lv_xml_register_component_from_file("A:ui_xml/components/ams_environment_indicator.xml");
+    lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/components/ams_environment_indicator.xml").c_str());
 
     s_registered = true;
 }

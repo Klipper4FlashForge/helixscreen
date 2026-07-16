@@ -378,11 +378,14 @@ std::string get_themes_directory() {
 std::string get_default_themes_directory() {
 #if defined(HELIX_PLATFORM_ESP32)
     // Firmware: read-only theme defaults ship in the packed /assets container.
-    // Route through the asset_path seam so the path is absolute
-    // (/assets/config/themes/defaults) — get_data_dir() is "." here, which would
-    // yield a relative path that fails to stat (unlike the desktop layout, whose
-    // config lives under <data_dir>/assets/config).
-    return asset_path("config/themes/defaults");
+    // The staged tree keeps the SAME layout as desktop's data dir — config lives
+    // under assets/config/ — and asset_root is the "/assets" mount, so the full
+    // path is /assets/assets/config/themes/defaults (the doubled "assets" is
+    // mount-point + staged dir, NOT a typo). The relpath here must match desktop's
+    // "assets/config/themes/defaults"; dropping the leading "assets/" points one
+    // level short (/assets/config/...), finds no JSON, and silently falls back to
+    // the compiled-in Nord palette.
+    return asset_path("assets/config/themes/defaults");
 #else
     return get_data_dir() + "/assets/config/themes/defaults";
 #endif

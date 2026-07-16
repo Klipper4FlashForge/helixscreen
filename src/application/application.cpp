@@ -1379,7 +1379,7 @@ bool Application::init_theme() {
 
     // Register globals.xml first (required for theme constants, fonts, spacing tokens)
     // Note: fonts must be registered before this (done in init_assets phase)
-    lv_result_t globals_result = lv_xml_register_component_from_file("A:ui_xml/globals.xml");
+    lv_result_t globals_result = lv_xml_register_component_from_file(helix::asset_component_uri("ui_xml/globals.xml").c_str());
     if (globals_result != LV_RESULT_OK) {
         spdlog::error("[Application] FATAL: Failed to load globals.xml - "
                       "all XML constants (fonts, colors, spacing) will be missing. "
