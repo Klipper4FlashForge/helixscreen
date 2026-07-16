@@ -664,7 +664,6 @@ void register_xml_components() {
     register_xml("wizard_touch_calibration.xml");
     register_xml("wizard_header_bar.xml");
     register_xml("wizard_container.xml");
-    register_xml("network_list_item.xml");
     register_xml("wifi_password_modal.xml");
     register_xml("wizard_wifi_setup.xml");
     register_xml("wizard_connection.xml");
