@@ -35,23 +35,28 @@ endforeach()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
              ${CMAKE_CURRENT_LIST_DIR}/app_srcs.txt)
 
-# CONFIG_HELIX_MOCK_PRINTER (main/Kconfig.projbuild, default n): pull the mock
-# client/API sources into the build and turn on HELIX_ENABLE_MOCKS so the UI can
-# run off synthetic printer state. Off in production firmware.
+# CONFIG_HELIX_MOCK_PRINTER (main/Kconfig.projbuild, default n): drive mock
+# printer data on-device. It does NOT pull the app-layer mock sources or define
+# HELIX_ENABLE_MOCKS — that path is unlinkable on ESP32: MoonrakerClientMock
+# derives helix::MoonrakerClient (the concrete libhv WebSocket client, whose
+# transport base is intentionally undefined on ESP — see helixnet/helixapp
+# shims), and MoonrakerManager::create_api() compiles a `MoonrakerAPIMock`
+# construction + a `dynamic_cast<MoonrakerClient*>` under `#ifdef
+# HELIX_ENABLE_MOCKS`, both of which demand the excluded concrete client's
+# ctor/typeinfo. Defining the macro therefore breaks the link regardless of
+# runtime test_mode. Instead, CONFIG_HELIX_MOCK_PRINTER is a plain sdkconfig
+# macro that app_boot.cpp reads to run a firmware-local synthetic PrinterState
+# driver (see app_boot.cpp `#if CONFIG_HELIX_MOCK_PRINTER`), feeding the same
+# production PrinterState::update_from_status() path with zero network. The
+# `# MOCK:` lines in app_srcs.txt are retained as documentation of the desktop
+# mock set but are deliberately NOT compiled here.
 set(MOCK_SRCS "")
-if(CONFIG_HELIX_MOCK_PRINTER)
-    file(STRINGS ${CMAKE_CURRENT_LIST_DIR}/app_srcs.txt MOCK_SRCS_REL
-         REGEX "^# MOCK: .*\\.(cpp|c)$")
-    foreach(line ${MOCK_SRCS_REL})
-        string(REGEX REPLACE "^# MOCK: " "" rel "${line}")
-        list(APPEND MOCK_SRCS ${REPO_ROOT}/${rel})
-    endforeach()
-endif()
 
 # Local firmware-tree sources: platform seams (Linux-bound singletons the app
 # reaches through may-be-null accessors), the Task 10 HTTP link stubs, missing
 # font-face aliases, and the app_main link probe.
 set(LOCAL_SRCS
+    app_boot.cpp
     helixapp_platform_stubs.cpp
     helixapp_platform_stubs2.cpp
     task10_pending_stubs.cpp
@@ -94,9 +99,10 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     HELIX_HAS_SOUND=0
     HELIX_ENABLE_SCREENSAVER=0
     HELIX_RELEASE_BUILD)
-if(CONFIG_HELIX_MOCK_PRINTER)
-    target_compile_definitions(${COMPONENT_LIB} PRIVATE HELIX_ENABLE_MOCKS=1)
-endif()
+# NOTE: HELIX_ENABLE_MOCKS is intentionally NEVER defined on ESP32 — the
+# app-layer mock stack is unlinkable here (see the MOCK_SRCS comment above).
+# CONFIG_HELIX_MOCK_PRINTER drives the firmware-local synthetic driver in
+# app_boot.cpp instead.
 
 target_include_directories(${COMPONENT_LIB} PRIVATE
     ${REPO_ROOT}

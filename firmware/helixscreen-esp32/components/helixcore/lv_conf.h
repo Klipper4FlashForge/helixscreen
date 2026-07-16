@@ -883,11 +883,17 @@
 #define LV_USE_LIBJPEG_TURBO 0
 
 /* Camera support — enabled on platforms with networking and enough RAM.
- * Camera uses stb_image for JPEG decoding (header-only, zero deps). */
+ * Camera uses stb_image for JPEG decoding (header-only, zero deps).
+ * ESP_PLATFORM (all ESP-IDF component TUs — helixcore/helixapp/main) is
+ * excluded: the ESP32 v1 cut ships no camera/QR subsystem, matching the
+ * HELIX_HAS_CAMERA=0 the helixapp CMakeLists intends. This unconditional
+ * #define otherwise overrides that -D, so the exclusion must live here too
+ * (and using ESP_PLATFORM keeps HELIX_HAS_CAMERA consistent across every ESP
+ * TU, since HELIX_PLATFORM_ESP32 is only defined for the helixapp component). */
 #if !defined(HELIX_PLATFORM_AD5M) && !defined(HELIX_PLATFORM_CC1) && \
     !defined(HELIX_PLATFORM_MIPS) && !defined(HELIX_PLATFORM_K1) && \
     !defined(HELIX_PLATFORM_AD5X) && !defined(HELIX_PLATFORM_K2) && \
-    !defined(HELIX_PLATFORM_SNAPMAKER_U1)
+    !defined(HELIX_PLATFORM_SNAPMAKER_U1) && !defined(ESP_PLATFORM)
 #define HELIX_HAS_CAMERA 1
 #else
 #define HELIX_HAS_CAMERA 0

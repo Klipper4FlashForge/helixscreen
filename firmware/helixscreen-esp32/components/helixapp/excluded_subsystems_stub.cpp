@@ -1,87 +1,131 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Link stubs for v1-EXCLUDED UI subsystems whose symbols kept Core+AMS panels
-// still reference ungated. These are the app-level analogue of the audit's
-// platform stubs: the print-status / print-select panels embed the gcode
-// preview, and the AMS panels embed the camera QR-scan overlay, but neither
-// gates those call sites behind HELIX_HAS_GCODE_VIEWER / HELIX_HAS_CAMERA — so
-// the symbols are demanded at link even though the implementations
-// (ui_gcode_viewer.cpp under #if HELIX_HAS_GCODE_VIEWER, ui_overlay_qr_scanner
-// .cpp under #if HELIX_HAS_CAMERA) compile to nothing here.
+// Link stubs for excluded UI subsystems in the v1 Core+AMS cut.
 //
-// Nothing on the idle hello-card path calls these; bodies are inert. Wiring the
-// real UI (Task 6) should gate these call sites in the panels (main-tree
-// #if HELIX_HAS_*), at which point this file shrinks or disappears. Documented
-// in esp32p4-task-5-report.md.
+// The panels/overlays below are gated OFF for the ESP32 build (calibration
+// panels, timelapse videos, belt-tension) so their .cpp TUs are NOT in
+// app_srcs.txt. Kept code (subject_initializer.cpp, ui_panel_controls.cpp,
+// moonraker_advanced_api.cpp, etc.) still references their symbols by address
+// or name. The idle Stage-A bring-up never navigates to any of these panels,
+// so the stubs are never dereferenced / never actually run their logic.
+//
+// Stub strategies:
+//   * global-instance accessors (get_global_*_panel): return a reference into
+//     static aligned raw storage that is never dereferenced. The real
+//     accessors (DEFINE_GLOBAL_PANEL) construct a live panel singleton; here we
+//     only need the symbol to resolve so the address-taking call sites link.
+//   * row-handler / event-callback initializers: no-op — the XML rows that
+//     would fire them are never created.
+//   * parse_shaper_csv: returns a default-constructed (empty) result — only
+//     reachable after a real input-shaper calibration run, which cannot happen
+//     on Stage A.
+//   * PIDCalibrationPanel member methods: no-op — set from subject_initializer
+//     wiring that runs but has no visible effect on the idle path.
+//
+// NOTE: PrintStartCollector and M300SoundBackend are deliberately NOT stubbed
+// here — kept code constructs them (make_shared) and, for the sound backend,
+// dynamic_casts to it, so they need real ctors/vtables/typeinfo that a stub
+// cannot supply. They are resolved by adding their portable, platform-free real
+// .cpp files to app_srcs.txt instead. See the report for details.
 
-#include "ui_gcode_viewer.h"
-#include "ui_overlay_qr_scanner.h"
+#include "esp_log.h"
 
-#include <cstddef>
-#include <new>
+#include "shaper_csv_parser.h"
+#include "ui_overlay_timelapse_videos.h"
+#include "ui_panel_belt_tension.h"
+#include "ui_panel_bed_mesh.h"
+#include "ui_panel_calibration_pid.h"
+#include "ui_panel_calibration_zoffset.h"
+#include "ui_panel_input_shaper.h"
+#include "ui_panel_screws_tilt.h"
 
-// ---- gcode viewer C API (2D/3D preview; HELIX_HAS_GCODE_VIEWER=0) ----------
-// extern "C" surface referenced by ui_panel_print_status / print-select views.
-extern "C" {
-void ui_gcode_viewer_register(void) {}
-void ui_gcode_viewer_load_file(lv_obj_t*, const char*) {}
-void ui_gcode_viewer_clear(lv_obj_t*) {}
-bool ui_gcode_viewer_has_content(lv_obj_t*) {
-    return false;
-}
-void ui_gcode_viewer_set_paused(lv_obj_t*, bool) {}
-bool ui_gcode_viewer_is_paused(lv_obj_t*) {
-    return false;
-}
-void ui_gcode_viewer_force_redraw(lv_obj_t*) {}
-void ui_gcode_viewer_set_render_mode(lv_obj_t*, helix::GcodeViewerRenderMode) {}
-bool ui_gcode_viewer_is_using_2d_mode(lv_obj_t*) {
-    return true;
-}
-void ui_gcode_viewer_disable_streaming(lv_obj_t*) {}
-void ui_gcode_viewer_reset_camera(lv_obj_t*) {}
-void ui_gcode_viewer_set_load_callback(lv_obj_t*, gcode_viewer_load_callback_t, void*) {}
-void ui_gcode_viewer_set_clear_callback(lv_obj_t*, ui_gcode_viewer_clear_cb_t, void*) {}
-void ui_gcode_viewer_set_content_offset_y(lv_obj_t*, float) {}
-int ui_gcode_viewer_get_max_layer(lv_obj_t*) {
-    return 0;
-}
-const char* ui_gcode_viewer_get_filename(lv_obj_t*) {
-    return nullptr;
-}
-void ui_gcode_viewer_set_print_progress(lv_obj_t*, int) {}
-} // extern "C"
+// ===========================================================================
+// Global-scope panel / overlay instance accessors (raw-storage references).
+// ===========================================================================
 
-// C++-linkage gcode viewer surface (AMS tool-color + object-picking overlays).
-const helix::gcode::ParsedGCodeFile* ui_gcode_viewer_get_parsed_file(lv_obj_t*) {
-    return nullptr;
-}
-void ui_gcode_viewer_set_tool_colors(lv_obj_t*, const std::vector<uint32_t>&) {}
-bool ui_gcode_viewer_apply_ams_tool_colors(lv_obj_t*) {
-    return false;
-}
-void ui_gcode_viewer_set_excluded_objects(lv_obj_t*, const std::unordered_set<std::string>&) {}
-void ui_gcode_viewer_set_highlighted_objects(lv_obj_t*, const std::unordered_set<std::string>&) {}
-void ui_gcode_viewer_set_object_tap_callback(lv_obj_t*, void (*)(lv_obj_t*, const char*, void*),
-                                             void*) {}
-void ui_gcode_viewer_set_object_long_press_callback(lv_obj_t*,
-                                                    void (*)(lv_obj_t*, const char*, void*),
-                                                    void*) {}
-
-// ---- camera QR-scan overlay (HELIX_HAS_CAMERA=0) --------------------------
-// The AMS panels reach it through get_qr_scanner_overlay().show(...). The
-// overlay is never constructed on the idle path, so return a reference to raw
-// storage rather than construct a QrScannerOverlay (its members pull the
-// excluded UsbScannerMonitor / camera stack). show()/show_for_active_spool are
-// non-virtual no-ops — no vtable, no construction cascade.
-namespace helix::ui {
-
-void QrScannerOverlay::show(lv_obj_t*, int, ResultCallback, CancelCallback) {}
-void QrScannerOverlay::show_for_active_spool(lv_obj_t*, ResultCallback, CancelCallback) {}
-
-QrScannerOverlay& get_qr_scanner_overlay() {
-    alignas(QrScannerOverlay) static unsigned char storage[sizeof(QrScannerOverlay)];
-    return *reinterpret_cast<QrScannerOverlay*>(storage); // never dereferenced (idle path)
+// src/ui/ui_panel_bed_mesh.cpp (DEFINE_GLOBAL_PANEL)
+BedMeshPanel& get_global_bed_mesh_panel() {
+    alignas(BedMeshPanel) static unsigned char storage[sizeof(BedMeshPanel)];
+    return *reinterpret_cast<BedMeshPanel*>(storage);
 }
 
-} // namespace helix::ui
+// src/ui/ui_panel_calibration_pid.cpp
+PIDCalibrationPanel& get_global_pid_cal_panel() {
+    alignas(PIDCalibrationPanel) static unsigned char storage[sizeof(PIDCalibrationPanel)];
+    return *reinterpret_cast<PIDCalibrationPanel*>(storage);
+}
+
+// src/ui/ui_overlay_timelapse_videos.cpp
+TimelapseVideosOverlay& get_global_timelapse_videos() {
+    alignas(TimelapseVideosOverlay) static unsigned char storage[sizeof(TimelapseVideosOverlay)];
+    return *reinterpret_cast<TimelapseVideosOverlay*>(storage);
+}
+
+// ===========================================================================
+// Global-scope free functions (no-op wiring).
+// ===========================================================================
+
+// src/ui/ui_overlay_timelapse_videos.cpp
+void init_global_timelapse_videos(IMoonrakerAPI*) {}
+void open_timelapse_videos() {}
+
+// ===========================================================================
+// PIDCalibrationPanel member methods (src/ui/ui_panel_calibration_pid.cpp).
+// ===========================================================================
+
+void PIDCalibrationPanel::set_temp_control_panel(TemperatureService*) {}
+void PIDCalibrationPanel::show() {}
+
+// ===========================================================================
+// More global-scope accessors + wiring initializers. NOTE: these panel classes
+// and their accessors are declared at GLOBAL scope in their headers — the
+// `namespace helix { ... }` block at the top of each header is only a short
+// forward-declaration block that closes before the class/accessor. The callers
+// (ui_printer_manager_overlay.cpp etc.) reference the global symbols, so these
+// MUST be global (not in namespace helix), or the mangled names won't match.
+// ===========================================================================
+
+// src/ui/ui_panel_input_shaper.cpp (DEFINE_GLOBAL_PANEL)
+InputShaperPanel& get_global_input_shaper_panel() {
+    alignas(InputShaperPanel) static unsigned char storage[sizeof(InputShaperPanel)];
+    return *reinterpret_cast<InputShaperPanel*>(storage);
+}
+
+// src/ui/ui_panel_screws_tilt.cpp (DEFINE_GLOBAL_PANEL)
+ScrewsTiltPanel& get_global_screws_tilt_panel() {
+    alignas(ScrewsTiltPanel) static unsigned char storage[sizeof(ScrewsTiltPanel)];
+    return *reinterpret_cast<ScrewsTiltPanel*>(storage);
+}
+
+// src/ui/ui_panel_calibration_zoffset.cpp (DEFINE_GLOBAL_PANEL)
+ZOffsetCalibrationPanel& get_global_zoffset_cal_panel() {
+    alignas(ZOffsetCalibrationPanel) static unsigned char storage[sizeof(ZOffsetCalibrationPanel)];
+    return *reinterpret_cast<ZOffsetCalibrationPanel*>(storage);
+}
+
+// src/ui/ui_panel_belt_tension.cpp
+void init_belt_tension_row_handler() {}
+
+// src/ui/ui_panel_input_shaper.cpp
+void init_input_shaper_row_handler() {}
+
+// src/ui/ui_panel_screws_tilt.cpp
+void init_screws_tilt_row_handler() {}
+
+// src/ui/ui_panel_calibration_zoffset.cpp
+void init_zoffset_row_handler() {}
+void init_zoffset_event_callbacks() {}
+
+// parse_shaper_csv IS genuinely helix::calibration-namespaced (called qualified
+// from moonraker_advanced_api.cpp).
+namespace helix {
+namespace calibration {
+
+// src/calibration/shaper_csv_parser.cpp — default (empty) result; only reachable
+// after a real shaper calibration run, which cannot happen on Stage A.
+ShaperCsvData parse_shaper_csv(const std::string&, char) {
+    return ShaperCsvData{};
+}
+
+} // namespace calibration
+} // namespace helix

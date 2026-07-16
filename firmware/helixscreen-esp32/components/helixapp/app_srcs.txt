@@ -479,6 +479,38 @@ src/rendering/gcode_parser.cpp
 src/rendering/gcode_ops_detector.cpp
 src/rendering/gcode_file_modifier.cpp
 src/rendering/gcode_tool_remapper.cpp
+#   gcode viewer, compiled-out branch (HELIX_HAS_GCODE_VIEWER=0): its #else
+#   no-op body defines the full ui_gcode_viewer_* C/C++ API AND registers a
+#   stub <gcode_viewer> XML widget so the print-status / print-select layouts
+#   parse (an unregistered tag corrupts sibling parenting). Replaces the
+#   hand-written gcode half of excluded_subsystems_stub.cpp — and unlike that
+#   stub it actually registers the widget. Deps (gcode_parser types, lv_xml
+#   parser) are all in this build.
+src/ui/ui_gcode_viewer.cpp
+#   bed-mesh viewer, compiled-out branch (HELIX_HAS_BED_MESH_3D=0): same trick
+#   as ui_gcode_viewer above — its #else no-op defines ui_bed_mesh_register()
+#   (registers a stub <bed_mesh> widget so layouts parse) plus the rest of the
+#   API. Kept panels reference ui_bed_mesh_register() ungated.
+src/ui/ui_bed_mesh.cpp
+
+# ===== link-loop additions: genuinely-referenced core the app_boot path pulls =====
+# These are constructed (not just referenced by pointer) in KEPT code, so a
+# never-dereferenced stub is impossible — the real ctor/vtable/typeinfo are
+# required. All three are portable Core+AMS code (no HTTP, no platform seam):
+#   m300_sound_backend.cpp: sound_manager.cpp (KEPT) does make_shared<M300SoundBackend>
+#     and dynamic_cast<M300SoundBackend*>; needs the real ctor + vtable + typeinfo.
+#     Sends M300 gcode via a callback — no platform deps (HELIX_HAS_SOUND does not
+#     guard it).
+src/system/m300_sound_backend.cpp
+#   print_start_collector.cpp: moonraker_manager.cpp (KEPT) does
+#     make_shared<PrintStartCollector>() and calls stop()/start()/reset()/etc.;
+#     the whole object is needed. Deps (PreprintPredictor, ThermalRateModel,
+#     Config, PrinterDetector) are all already in this manifest.
+src/print/print_start_collector.cpp
+#   print_start_profile.cpp: PrintStartProfile::load() is called directly from
+#     moonraker_manager.cpp (KEPT) AND from print_start_collector.cpp. JSON-profile
+#     loader; only dep is data_root_resolver.cpp (already in this manifest).
+src/print/print_start_profile.cpp
 
 # ===== mocks (CONFIG_HELIX_MOCK_PRINTER only) =====
 # MOCK: src/api/moonraker_api_mock.cpp

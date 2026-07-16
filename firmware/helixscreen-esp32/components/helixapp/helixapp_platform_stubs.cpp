@@ -98,9 +98,18 @@ void app_globals_deinit_subjects() {
     g_subjects_initialized = false;
 }
 
+// Moonraker manager global accessor. app_boot.cpp now wires a real
+// MoonrakerManager, so this needs real process-global storage (get returns what
+// set stored) rather than the audit's nullptr slice behavior. The api/client
+// storage + setters live in helixapp_platform_stubs2.cpp next to their existing
+// getters. Forward decl only — opaque pointer storage needs no header.
 class MoonrakerManager;
+static MoonrakerManager* g_moonraker_manager = nullptr;
 MoonrakerManager* get_moonraker_manager() {
-    return nullptr; // audit: no manager; slice drives PrinterState directly
+    return g_moonraker_manager;
+}
+void set_moonraker_manager(MoonrakerManager* manager) {
+    g_moonraker_manager = manager;
 }
 
 // Owned by the app lifecycle on Linux (app_globals.cpp); absent in the slice.

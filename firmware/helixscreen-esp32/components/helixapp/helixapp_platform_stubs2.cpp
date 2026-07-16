@@ -87,11 +87,19 @@ bool is_android_platform() {
 bool is_wizard_active() {
     return false;
 }
+// Real process-global storage for the Moonraker API/client pointers: app_boot
+// wires them via set_moonraker_api/client, and consumers read them back here
+// (the audit slice returned nullptr because nothing set them). set_moonraker_
+// manager lives in helixapp_platform_stubs.cpp next to get_moonraker_manager.
+static IMoonrakerAPI* g_moonraker_api = nullptr;
 IMoonrakerAPI* get_moonraker_api() {
-    return nullptr;
+    return g_moonraker_api;
+}
+void set_moonraker_api(IMoonrakerAPI* api) {
+    g_moonraker_api = api;
 }
 std::string app_get_runtime_dir() {
-    return std::string("/littlefs");
+    return std::string("/config");
 }
 
 // --- SpoolmanOverlay (Moonraker database + HTTP probe UI) --------------------
@@ -213,11 +221,16 @@ helix_bt_context* BluetoothLoader::get_or_create_context() {
 namespace helix {
 
 // --- CameraStream (libhv HTTP MJPEG client + turbojpeg/stb decode) -----------
+// Gated on HELIX_HAS_CAMERA: with camera off (v1 ESP cut) the class itself is
+// compiled out of camera_stream.h, and no kept TU references it, so these
+// stubs are neither compilable nor needed.
+#if HELIX_HAS_CAMERA
 void CameraStream::start(const std::string&, const std::string&, FrameCallback, ErrorCallback) {}
 void CameraStream::stop() {}
 bool CameraStream::configure_from_printer(std::string&, std::string&) {
     return false;
 }
+#endif // HELIX_HAS_CAMERA
 
 // --- DebugBundleCollector (libhv HTTPS upload of diagnostics) ----------------
 // The result callback is never invoked.
@@ -252,9 +265,11 @@ std::vector<LabelSize> IppPrinter::supported_sizes_static() {
 }
 
 // --- SnapshotQrScanner (libhv HTTP snapshot poll + quirc decode thread) ------
+#if HELIX_HAS_CAMERA
 void SnapshotQrScanner::start(const std::string&, FrameCallback, QrResultCallback, ErrorCallback) {}
 void SnapshotQrScanner::stop() {}
 void SnapshotQrScanner::frame_consumed() {}
+#endif // HELIX_HAS_CAMERA
 
 } // namespace helix
 
@@ -352,14 +367,19 @@ helix::TouchCalibration DisplayManager::get_current_calibration() const {
 
 // --- app_globals path accessors, third batch ---------------------------------
 // ESP32 storage root is the LittleFS mount; all path families collapse to it.
+// Writable-storage roots on ESP32. The asset container (/assets) is a
+// read-only frogfs image; the only writable filesystem is the /config LittleFS
+// partition, so all config + cache writes land there (Task 6 carry-item: route
+// get_helix_cache_dir to /config). Callers that write create the subtree
+// themselves (create_directories), as on desktop.
 std::string app_get_cache_dir() {
-    return std::string("/littlefs");
+    return std::string("/config/cache");
 }
 std::string app_get_config_dir() {
-    return std::string("/littlefs");
+    return std::string("/config");
 }
-std::string get_helix_cache_dir(const std::string&) {
-    return std::string("/littlefs");
+std::string get_helix_cache_dir(const std::string& subdir) {
+    return subdir.empty() ? std::string("/config/cache") : "/config/cache/" + subdir;
 }
 
 namespace helix {
@@ -426,17 +446,21 @@ std::string ThumbnailProcessor::get_if_processed(const std::string&, const Thumb
 // --- CameraStream ctor/dtor + is_running, third batch (see round 2) -----------
 // Members are strings/atomics/std::thread/unique_ptr<uint8_t[]> — all complete
 // types, no cascade. The stream thread is never started, so = default is safe.
+#if HELIX_HAS_CAMERA
 CameraStream::CameraStream() = default;
 CameraStream::~CameraStream() = default;
 bool CameraStream::is_running() const {
     return false;
 }
+#endif // HELIX_HAS_CAMERA
 
 // --- SnapshotQrScanner ctor/dtor, third batch (see round 2) -------------------
 // QrDecoder (by-value member) is now compiled for real in the slice, so the
 // defaulted special members no longer cascade.
+#if HELIX_HAS_CAMERA
 SnapshotQrScanner::SnapshotQrScanner() = default;
 SnapshotQrScanner::~SnapshotQrScanner() = default;
+#endif // HELIX_HAS_CAMERA
 
 } // namespace helix
 
@@ -559,8 +583,12 @@ void EthernetManager::get_info_async(std::function<void(const EthernetInfo&)>) {
 // slice answer. Constructing the real JobQueueState (its .cpp IS in the
 // slice) at static-init time would run subject registration before LVGL
 // init, so the nullptr contract is used instead.
+static helix::IMoonrakerClient* g_moonraker_client = nullptr;
 helix::IMoonrakerClient* get_moonraker_client() {
-    return nullptr;
+    return g_moonraker_client;
+}
+void set_moonraker_client(helix::IMoonrakerClient* client) {
+    g_moonraker_client = client;
 }
 JobQueueState* get_job_queue_state() {
     return nullptr;
