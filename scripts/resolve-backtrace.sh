@@ -229,20 +229,34 @@ if not crash_txt.strip():
                      "try --crash-file on the crash_report instead.\n")
     sys.exit(2)
 
-with open(out_path, "w") as f:
-    f.write(crash_txt)
-
 def kv(text, key):
     m = re.search(r'(?im)^\s*%s\s*[:=]\s*(.+?)\s*$' % re.escape(key), text)
     return m.group(1).strip() if m else ""
+
+# crash_txt carries version: but not platform: — the platform lives in the
+# bundle's system section. Synthesize the line the crash-file parser expects so
+# --bundle works without the caller repeating a platform already in the JSON.
+if not kv(crash_txt, "platform"):
+    sysinfo = d.get("system")
+    bundle_platform = ""
+    if isinstance(sysinfo, dict):
+        p = sysinfo.get("platform")
+        if isinstance(p, str):
+            bundle_platform = p.strip()
+    if bundle_platform:
+        crash_txt = crash_txt.rstrip("\n") + "\nplatform:%s\n" % bundle_platform
+
+with open(out_path, "w") as f:
+    f.write(crash_txt)
 
 bv  = field("version")
 sig = kv(crash_txt, "name") or kv(crash_txt, "signal")
 ts  = kv(crash_txt, "timestamp")
 up  = kv(crash_txt, "uptime")
 sys.stderr.write("=== crash_txt (raw recent crash — resolving THIS) ===\n")
-sys.stderr.write("  signal=%s version=%s uptime=%ss timestamp=%s\n"
-                 % (sig or "?", kv(crash_txt, "version") or bv or "?", up or "?", ts or "?"))
+sys.stderr.write("  signal=%s version=%s platform=%s uptime=%ss timestamp=%s\n"
+                 % (sig or "?", kv(crash_txt, "version") or bv or "?",
+                    kv(crash_txt, "platform") or "?", up or "?", ts or "?"))
 for k in ("reg_pc", "reg_ra", "fault_addr", "queue_prev"):
     v = kv(crash_txt, k)
     if v:
@@ -946,6 +960,67 @@ resolve_with_addr2line() {
     echo "$output"
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Batched addr2line.
+#
+# addr2line maps the .debug file and pulls DWARF in lazily, so a process per
+# address re-reads the same file N times and each child grows without bound —
+# on the pi .debug (~2.6GB) a single child was measured at 9.5GB RSS, and a
+# killed run orphans children that keep growing invisibly (the binary name
+# truncates to "aarch64-linux-g", so pkill -f addr2line misses them).
+#
+# One process for every address instead. -p (pretty) makes the output safe to
+# split: each address begins a line that does NOT start with " (inlined by) ",
+# and inline frames continue with that prefix. If the parse doesn't yield
+# exactly one block per address (a non-GNU addr2line with different pretty
+# formatting), fall back to the per-address path rather than misalign frames.
+#
+# Resolving only the "reliable" frames was measured and is NOT worth it: every
+# frame in a typical trace lands in the same few CUs, so addr2line pages in the
+# same DWARF either way (16.9GB peak / ~175s for 10 addresses vs 43). Skipping
+# the stack-scan candidates costs their file:line — where the real call spine
+# often hides — and saves nothing. Resolve them all.
+A2L_RESULTS=()
+A2L_BATCHED=false
+_a2l_count=$#
+if [[ -n "$ADDR2LINE" ]] && (( _a2l_count > 0 )); then
+    _offsets=()
+    for addr in "$@"; do
+        _h="${addr#0x}"; _h="${_h#0X}"
+        _d=$((16#$_h))
+        (( LOAD_BASE > 0 )) && _d=$(( _d - LOAD_BASE ))
+        _offsets+=("$(printf '0x%x' "$_d")")
+    done
+
+    _a2l_out=$("$ADDR2LINE" -e "$ADDR2LINE_TARGET" -f -C -i -p "${_offsets[@]}" 2>/dev/null || true)
+
+    if [[ -n "$_a2l_out" ]]; then
+        _cur=""
+        _started=0
+        while IFS= read -r _line; do
+            if [[ "$_line" == " (inlined by) "* ]]; then
+                _frag="${_line# (inlined by) }"
+                [[ "$_frag" == "??"* ]] && continue
+                if [[ -n "$_cur" ]]; then _cur="${_cur} → ${_frag}"; else _cur="$_frag"; fi
+            else
+                (( _started )) && A2L_RESULTS+=("$_cur")
+                _started=1
+                _cur=""
+                [[ "$_line" == "??"* ]] || _cur="$_line"
+            fi
+        done <<< "$_a2l_out"
+        (( _started )) && A2L_RESULTS+=("$_cur")
+
+        if (( ${#A2L_RESULTS[@]} == _a2l_count )); then
+            A2L_BATCHED=true
+        else
+            echo "Note: batched addr2line returned ${#A2L_RESULTS[@]} blocks for ${_a2l_count} addresses;" \
+                 "falling back to per-address resolution." >&2
+            A2L_RESULTS=()
+        fi
+    fi
+fi
+
 echo "Resolving ${#@} address(es) against v${VERSION}/${PLATFORM}..."
 if (( LOAD_BASE > 0 )); then
     if [[ "$AUTO_DETECT_BASE" == "true" ]]; then
@@ -1003,7 +1078,14 @@ for addr in "$@"; do
     fi
 
     # Supplement with addr2line source info when available
-    if [[ -n "$ADDR2LINE" ]]; then
+    if [[ "$A2L_BATCHED" == "true" ]]; then
+        if (( _addr_idx <= ${#A2L_RESULTS[@]} )); then
+            a2l_result="${A2L_RESULTS[$(( _addr_idx - 1 ))]}"
+            if [[ -n "$a2l_result" ]]; then
+                echo "    ${a2l_result}"
+            fi
+        fi
+    elif [[ -n "$ADDR2LINE" ]]; then
         # Compute file offset (subtract ASLR base)
         local_hex="${addr#0x}"
         local_hex="${local_hex#0X}"
