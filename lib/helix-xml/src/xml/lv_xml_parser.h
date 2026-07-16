@@ -63,7 +63,7 @@ typedef struct {
     int kind;            /**< 0=start, 1=end, 2=chardata */
     char * name;         /**< element name (start/end) or text (chardata); owned */
     char ** attrs;       /**< NULL-terminated name/val array, all owned; NULL for end/chardata */
-} lv_xml_repeat_event_t;
+} xml_frag_event_t;
 
 /** State for a single `<repeat>` expansion, hung off `state->context` for the
  *  duration of the repeat body. On the `<repeat>` start tag a fresh instance is
@@ -75,7 +75,7 @@ typedef struct {
     bool     active;             /**< currently buffering a `<repeat>` body */
     uint32_t base_depth;         /**< parent_ll length at the `<repeat>` start tag */
     char *   count_raw;          /**< raw `count` attr (literal / #const / subject name), owned */
-    lv_xml_repeat_event_t * events;
+    xml_frag_event_t * events;
     uint32_t event_count;
     uint32_t event_cap;
     int32_t  current_index;      /**< `$i` value during replay */
@@ -86,7 +86,7 @@ typedef struct {
     char **  idx_strings;
     uint32_t idx_count;
     uint32_t idx_cap;
-} lv_xml_repeat_capture_t;
+} xml_frag_capture_t;
 
 struct _lv_xml_parser_state_t {
     const char * tag_name;
@@ -97,7 +97,7 @@ struct _lv_xml_parser_state_t {
     lv_obj_t * item;
     lv_obj_t * view;    /*Pointer to the created view during component creation*/
     void * context;     /*Custom data stored during parsing. During a view-def parse
-                          *it holds the active lv_xml_repeat_capture_t* (or NULL); the
+                          *it holds the active xml_frag_capture_t* (or NULL); the
                           *component metadata parser reuses it for the current timeline.*/
     const char ** parent_attrs;
     lv_xml_component_scope_t * parent_scope;

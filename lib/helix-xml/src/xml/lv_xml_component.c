@@ -93,7 +93,7 @@ void lv_xml_component_scope_init(lv_xml_component_scope_t * scope)
     lv_ll_init(&scope->gradient_ll, sizeof(lv_xml_grad_t));
     lv_ll_init(&scope->subjects_ll, sizeof(lv_xml_subject_t));
     lv_ll_init(&scope->subject_expr_ll, sizeof(lv_xml_subject_expr_t));
-    lv_ll_init(&scope->repeat_ll, sizeof(lv_xml_repeat_t));
+    lv_ll_init(&scope->frag_ll, sizeof(xml_frag_record_t));
     lv_ll_init(&scope->event_ll, sizeof(lv_xml_event_cb_t));
     lv_ll_init(&scope->image_ll, sizeof(lv_xml_image_t));
     lv_ll_init(&scope->font_ll, sizeof(lv_xml_font_t));
@@ -320,20 +320,21 @@ lv_result_t lv_xml_component_unregister(const char * name)
     }
     lv_ll_clear(&scope->gradient_ll);
 
-    /* Subject-bound <repeat> records MUST be torn down BEFORE subject_expr_ll and
-     * subjects_ll: each record's count observer sits on a scope subject (freed in
-     * the subjects_ll walk below) or on a still-live GLOBAL subject. Detaching
-     * every observer while its subject is still valid avoids firing the rebuild
-     * callback on a freed record the next time that subject changes (use-after-
-     * free). lv_xml_repeat_record_free() only detaches the observer and frees the
-     * record's owned heap (captured body, parent-attrs snapshot, roots array); it
-     * deliberately does NOT touch the expansion's widgets, which lv_obj_delete of
-     * the component instance (mandated before unregister) has already freed. */
-    lv_xml_repeat_t * repeat;
-    LV_LL_READ(&scope->repeat_ll, repeat) {
-        lv_xml_repeat_record_free(repeat);
+    /* Subject-bound fragment records (<repeat>, and later <if>) MUST be torn down
+     * BEFORE subject_expr_ll and subjects_ll: each record's observer sits on a
+     * scope subject (freed in the subjects_ll walk below) or on a still-live
+     * GLOBAL subject. Detaching every observer while its subject is still valid
+     * avoids firing the rebuild callback on a freed record the next time that
+     * subject changes (use-after-free). lv_xml_frag_record_free() only detaches
+     * the observer and frees the record's owned heap (captured body, parent-attrs
+     * snapshot, roots array); it deliberately does NOT touch the expansion's
+     * widgets, which lv_obj_delete of the component instance (mandated before
+     * unregister) has already freed. */
+    xml_frag_record_t * frag;
+    LV_LL_READ(&scope->frag_ll, frag) {
+        lv_xml_frag_record_free(frag);
     }
-    lv_ll_clear(&scope->repeat_ll);
+    lv_ll_clear(&scope->frag_ll);
 
     /* <subject_expr> derived subjects MUST be torn down BEFORE subjects_ll:
      * their observers may sit on input subjects that live in subjects_ll (freed
