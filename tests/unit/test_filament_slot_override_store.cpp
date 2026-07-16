@@ -2089,7 +2089,7 @@ using helix::ams::LaneKeyStyle;
 // ---------------------------------------------------------------------------
 
 TEST_CASE("FilamentSlotOverrideStore save_async writes a T-keyed record on Tool key style",
-          "[filament_slot_override][lane_key_style][slow]") {
+          "[filament_slot_override][lane_key_style]") {
     TmpCacheDir tmp("tool_save_t");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -2112,7 +2112,7 @@ TEST_CASE("FilamentSlotOverrideStore save_async writes a T-keyed record on Tool 
 }
 
 TEST_CASE("FilamentSlotOverrideStore save_async writes a lane-keyed record on Lane key style",
-          "[filament_slot_override][lane_key_style][slow]") {
+          "[filament_slot_override][lane_key_style]") {
     std::string backend;
     SECTION("ace") { backend = "ace"; }
     SECTION("cfs") { backend = "cfs"; }
@@ -2140,7 +2140,7 @@ TEST_CASE("FilamentSlotOverrideStore save_async writes a lane-keyed record on La
 }
 
 TEST_CASE("FilamentSlotOverrideStore Tool key style uses 0-based tool numbers",
-          "[filament_slot_override][lane_key_style][slow]") {
+          "[filament_slot_override][lane_key_style]") {
     TmpCacheDir tmp("tool_zero_based");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -2164,7 +2164,7 @@ TEST_CASE("FilamentSlotOverrideStore Tool key style uses 0-based tool numbers",
 }
 
 TEST_CASE("FilamentSlotOverrideStore records carry a 0-based STRING lane field (Orca contract)",
-          "[filament_slot_override][lane_key_style][slow]") {
+          "[filament_slot_override][lane_key_style]") {
     // Orca's safe_json_string (MoonrakerPrinterAgent.cpp:661) is is_string()-
     // guarded with NO coercion, so the inner "lane" MUST be a JSON string or
     // Orca silently drops the record (:796). Both styles must satisfy this.
@@ -2204,7 +2204,7 @@ TEST_CASE("FilamentSlotOverrideStore records carry a 0-based STRING lane field (
 }
 
 TEST_CASE("FilamentSlotOverrideStore clear_async deletes the T-key on Tool key style",
-          "[filament_slot_override][lane_key_style][slow]") {
+          "[filament_slot_override][lane_key_style]") {
     TmpCacheDir tmp("tool_clear_t");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -2243,7 +2243,7 @@ TEST_CASE("lane_key_style_for maps AmsType to key style", "[filament_slot_overri
 // ---------------------------------------------------------------------------
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking reads T-keyed records",
-          "[filament_slot_override][lane_key_style][slow]") {
+          "[filament_slot_override][lane_key_style]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2261,7 +2261,7 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking reads T-keyed records",
 }
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking reads a record under an unrecognized key",
-          "[filament_slot_override][lane_key_style][slow]") {
+          "[filament_slot_override][lane_key_style]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2278,7 +2278,7 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking reads a record under an unrec
 }
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking ignores the seated key when parsing lanes",
-          "[filament_slot_override][lane_key_style][slow]") {
+          "[filament_slot_override][lane_key_style]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2297,7 +2297,7 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking ignores the seated key when p
 }
 
 TEST_CASE("FilamentSlotOverrideStore load_seated_slot_blocking still works alongside T-keyed lanes",
-          "[filament_slot_override][lane_key_style][slow]") {
+          "[filament_slot_override][lane_key_style]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2321,7 +2321,7 @@ TEST_CASE("FilamentSlotOverrideStore load_seated_slot_blocking still works along
 // ---------------------------------------------------------------------------
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking prefers the canonical key on duplicates (Tool)",
-          "[filament_slot_override][lane_key_style][slow]") {
+          "[filament_slot_override][lane_key_style]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2339,7 +2339,7 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking prefers the canonical key on 
 }
 
 TEST_CASE("FilamentSlotOverrideStore load_blocking prefers the canonical key on duplicates (Lane)",
-          "[filament_slot_override][lane_key_style][slow]") {
+          "[filament_slot_override][lane_key_style]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2357,7 +2357,7 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking prefers the canonical key on 
 }
 
 TEST_CASE("FilamentSlotOverrideStore canonical key wins even when a rival key sorts after it",
-          "[filament_slot_override][lane_key_style][slow]") {
+          "[filament_slot_override][lane_key_style]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2378,7 +2378,7 @@ TEST_CASE("FilamentSlotOverrideStore canonical key wins even when a rival key so
 }
 
 TEST_CASE("FilamentSlotOverrideStore canonical key wins over a newer scan_time on a rival key",
-          "[filament_slot_override][lane_key_style][slow]") {
+          "[filament_slot_override][lane_key_style]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2405,7 +2405,7 @@ TEST_CASE("FilamentSlotOverrideStore canonical key wins over a newer scan_time o
 // ---------------------------------------------------------------------------
 
 TEST_CASE("Key migration: Tool-style backend rewrites laneN records to T<n>",
-          "[filament_slot_override][lane_key_style][migration][slow]") {
+          "[filament_slot_override][lane_key_style][migration]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2436,7 +2436,7 @@ TEST_CASE("Key migration: Tool-style backend rewrites laneN records to T<n>",
 }
 
 TEST_CASE("Key migration: Lane-style backends are untouched",
-          "[filament_slot_override][lane_key_style][migration][slow]") {
+          "[filament_slot_override][lane_key_style][migration]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2453,7 +2453,7 @@ TEST_CASE("Key migration: Lane-style backends are untouched",
 }
 
 TEST_CASE("Key migration: idempotent (second load is a no-op)",
-          "[filament_slot_override][lane_key_style][migration][slow]") {
+          "[filament_slot_override][lane_key_style][migration]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2479,7 +2479,7 @@ TEST_CASE("Key migration: idempotent (second load is a no-op)",
 }
 
 TEST_CASE("Key migration: preserves the seated key",
-          "[filament_slot_override][lane_key_style][migration][slow]") {
+          "[filament_slot_override][lane_key_style][migration]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2498,7 +2498,7 @@ TEST_CASE("Key migration: preserves the seated key",
 }
 
 TEST_CASE("Key migration: aborts without deleting laneN if the T-key write fails",
-          "[filament_slot_override][lane_key_style][migration][slow]") {
+          "[filament_slot_override][lane_key_style][migration]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2521,7 +2521,7 @@ TEST_CASE("Key migration: aborts without deleting laneN if the T-key write fails
 }
 
 TEST_CASE("Key migration: all-or-nothing across multiple slots",
-          "[filament_slot_override][lane_key_style][migration][slow]") {
+          "[filament_slot_override][lane_key_style][migration]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2545,7 +2545,7 @@ TEST_CASE("Key migration: all-or-nothing across multiple slots",
 }
 
 TEST_CASE("Key migration: drops a stale laneN when the canonical T-key already exists",
-          "[filament_slot_override][lane_key_style][migration][slow]") {
+          "[filament_slot_override][lane_key_style][migration]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2570,7 +2570,7 @@ TEST_CASE("Key migration: drops a stale laneN when the canonical T-key already e
 }
 
 TEST_CASE("Key migration: leaves third-party keys alone",
-          "[filament_slot_override][lane_key_style][migration][slow]") {
+          "[filament_slot_override][lane_key_style][migration]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2591,7 +2591,7 @@ TEST_CASE("Key migration: leaves third-party keys alone",
 }
 
 TEST_CASE("Key migration: does not run when MR DB is unreachable",
-          "[filament_slot_override][lane_key_style][migration][slow]") {
+          "[filament_slot_override][lane_key_style][migration]") {
     TmpCacheDir tmp("migrate_unreachable");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -2612,7 +2612,7 @@ TEST_CASE("Key migration: does not run when MR DB is unreachable",
 }
 
 TEST_CASE("Legacy migration on ace still writes lane keys",
-          "[filament_slot_override][lane_key_style][migration][slow]") {
+          "[filament_slot_override][lane_key_style][migration]") {
     // Fences the try_migrate_legacy refactor onto format_lane_key: an ace
     // (Lane) backend migrating helix-screen:ace_slot_overrides must still write
     // 1-based "lane1" keys, not "T0".
