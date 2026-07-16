@@ -24,23 +24,40 @@ static void (*s_ui_build)(void);
 static void (*s_ui_tick)(void);
 
 // Draw buffers are static (reserved at link time — NOT runtime heap-allocated,
-// so they can't lose the fragmentation lottery a runtime alloc would), but
-// placed in PSRAM via EXT_RAM_BSS_ATTR rather than internal SRAM. At 2x38.4KB
-// (24 lines x 800px x RGB565) they were the single largest internal-DRAM .bss
-// consumer; keeping them internal (with the full app core's static footprint)
-// left too little contiguous internal DRAM for the boot-time allocations (48KB
-// UI stack + 32KB RGB bounce DMA + 32KB net thread) — boot-failed with ENOMEM
-// before WiFi even started. PSRAM is roomy (8MB) so the reservation is free
-// there, and PSRAM draw buffers are proven by the Plan 2 audit (26-30fps
-// baseline — see HIL FPS note; RGB draw_bitmap does a CPU copy from px_map into
-// the framebuffer, which reads PSRAM fine). Requires
-// CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y (sdkconfig.defaults) — without
-// it EXT_RAM_BSS_ATTR is a silent no-op and they fall back to internal DRAM.
-#define UI_DRAW_BUF_LINES 24
+// so they can't lose the fragmentation lottery a runtime alloc would).
+//
+// LOCATION — INTERNAL DRAM, not PSRAM. Rendering to/from PSRAM draw buffers
+// contends with the RGB framebuffer scan-out on the shared octal-PSRAM bus:
+// every partial redraw (e.g. the 1Hz temperature widget updates) streams pixels
+// through PSRAM while the RGB bounce ISR needs deterministic framebuffer reads,
+// so refills miss and the flush bands tear (the "lines through navbar icons"
+// Preston saw are scan-out tearing in the bands the navbar shares with updating
+// widgets, recovered by RESTART_IN_VSYNC → visible glitch), and every blend is
+// bus-throttled (slow paint). Internal draw buffers remove that contention.
+//
+// SIZE — the arithmetic tradeoff against boot-time internal-DRAM pressure. The
+// full 24-line pair (76.8KB) is why these were pushed to PSRAM originally: the
+// 48KB UI-pthread stack and 32KB RGB bounce DMA must still find contiguous
+// internal blocks (see the "internal heap before ..." gate logs; measured
+// steady-state largest-free-block is ~31KB — the heap is fragmented, so the
+// bounce buffer is the tight constraint). The 12-line pair (2x19.2KB = 38.4KB)
+// keeps double-buffering (render N+1 while flushing N) at half the internal
+// cost. To trade RAM for fewer flush passes, raise UI_DRAW_BUF_LINES to 24 IF
+// the gate logs show the bounce buffer still fits; UI_DRAW_BUF_PSRAM 1 reverts
+// to the old PSRAM placement if the internal pressure proves too high.
+#define UI_DRAW_BUF_PSRAM 0 // 1 = PSRAM (old placement); 0 = internal DRAM
+#define UI_DRAW_BUF_LINES 12
 #define UI_DRAW_BUF_BYTES \
     (BOARD_LCD_H_RES * UI_DRAW_BUF_LINES * sizeof(lv_color16_t))
-EXT_RAM_BSS_ATTR LV_ATTRIBUTE_MEM_ALIGN static uint8_t s_draw_buf1[UI_DRAW_BUF_BYTES];
-EXT_RAM_BSS_ATTR LV_ATTRIBUTE_MEM_ALIGN static uint8_t s_draw_buf2[UI_DRAW_BUF_BYTES];
+#if UI_DRAW_BUF_PSRAM
+// PSRAM requires CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y; without it
+// EXT_RAM_BSS_ATTR is a silent no-op and the buffers fall back to internal.
+#define UI_DRAW_BUF_ATTR EXT_RAM_BSS_ATTR LV_ATTRIBUTE_MEM_ALIGN
+#else
+#define UI_DRAW_BUF_ATTR LV_ATTRIBUTE_MEM_ALIGN
+#endif
+UI_DRAW_BUF_ATTR static uint8_t s_draw_buf1[UI_DRAW_BUF_BYTES];
+UI_DRAW_BUF_ATTR static uint8_t s_draw_buf2[UI_DRAW_BUF_BYTES];
 
 // XML/expat parsing recurses deeply during component registration and layout;
 // the audit ran the full app slice on a 32KB pthread stack. 48KB gives margin
