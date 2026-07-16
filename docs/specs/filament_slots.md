@@ -105,13 +105,22 @@ DELETE /server/database/item      # body: { namespace, key }
 
 ### Top-level shape
 
-One JSON object keyed by lane identifier (`lane1`, `lane2`, …). Each value is
-an object conforming to the record shape in Section 3.
+One JSON object keyed by a per-slot identifier. Two key styles are in use
+(§4): `laneN` (1-based, filament systems) and `T<n>` (0-based, tool changers).
+Each value is an object conforming to the record shape in Section 3.
 
-Keys outside the `laneN` pattern may exist in the namespace (other tools may
-have reserved the namespace for adjacent uses); readers should skip them
-rather than erroring. HelixScreen iterates and only accepts keys beginning with
-`lane`.
+**The outer key is opaque; the inner `lane` field is authoritative.** Readers
+recover a slot's index from the record's `lane` field (§3), never by parsing
+the outer key. This is how OrcaSlicer reads the namespace
+(`MoonrakerPrinterAgent.cpp:780` iterates values and never inspects the key),
+and it is what makes the two key styles interoperable.
+
+Non-record siblings may exist in the namespace (`seated`, other tools' config).
+Readers must skip any value that is not a well-formed record — i.e. not an
+object, or missing the `lane` field — rather than erroring. HelixScreen is
+**key-agnostic**: it ingests any record with a parseable `lane` field
+regardless of its outer key, so it reads records written by AFC, Happy Hare,
+Mainsail, or anyone else. See §8 for the full reader/writer contract.
 
 ---
 
@@ -186,23 +195,33 @@ and making future schema evolution easier.
 
 ## 4. Key mapping and indexing
 
-There are two distinct indices for the same slot. This is intentional and
-matches AFC / OrcaSlicer expectations.
+The outer DB key and the inner `lane` field are two distinct indices for the
+same slot. The **inner field is always 0-based and authoritative**; the outer
+key's base depends on the writer's key style.
 
-| Index | Where | Base | Example for HelixScreen's slot 0 |
-|-------|-------|------|----------------------------------|
-| Outer DB key | `lane_data` namespace key | 1-based | `"lane1"` |
-| Inner `lane` field | Record body | 0-based (stringified) | `"0"` |
+| Key style | Outer DB key | Outer base | Inner `lane` field | Example for slot 0 | Written by |
+|-----------|--------------|------------|--------------------|--------------------|------------|
+| `laneN` | `"lane" + (i+1)` | 1-based | `std::to_string(i)` (0-based string) | key `"lane1"`, field `"0"` | HelixScreen (filament systems), AFC, Happy Hare |
+| `T<n>` | `"T" + i` | 0-based | `std::to_string(i)` (0-based string) | key `"T0"`, field `"0"` | HelixScreen (tool changers), Mainsail #2510 |
 
-The 1-based DB key matches AFC's on-disk layout (AFC labels its lanes
-`lane1`, `lane2`, … in its own config too). The 0-based inner field matches
-how OrcaSlicer's `MoonrakerPrinterAgent` parses it: as a tool/extruder index
-starting at T0.
+The `laneN` style matches AFC's on-disk layout (AFC labels its lanes `lane1`,
+`lane2`, … in its own config). The `T<n>` style matches the tool-index naming
+Mainsail and OrcaSlicer use (`T0`, `T1`, …). **Both styles carry the identical
+0-based stringified inner `lane` field** — the only difference is the outer key
+and its base, which readers treat as opaque.
 
-HelixScreen's writer produces the key via `lane_key(i) = "lane" + (i+1)` and
-the inner field via `std::to_string(i)`. Readers parse the inner `lane` field
-to recover the 0-based slot index and use that as the canonical identifier;
-the outer key is treated as opaque once the `lane` prefix is confirmed.
+Why a tool changer uses `T<n>`: Mainsail's Spoolman + toolchanger integration
+(PR #2510) writes its records keyed `T<n>`. A HelixScreen tool changer that
+also wrote `laneN` for the same slot would produce **two records with the same
+inner `lane`** — which OrcaSlicer ingests as duplicate trays (it does not
+dedup; see §8). Converging on the `T<n>` key makes the two writers overwrite
+one shared key instead of colliding.
+
+HelixScreen's writer produces the key via
+`format_lane_key(i, style)` (`"T"+i` for Tool, `"lane"+(i+1)` for Lane) and the
+inner field via `std::to_string(i)`. Readers recover the 0-based slot index
+from the inner `lane` field and use it as the canonical identifier; the outer
+key is opaque.
 
 Negative values in the inner `lane` field are rejected on read. This matches
 `MoonrakerPrinterAgent.cpp:796`.
@@ -308,8 +327,15 @@ Guidelines:
 - **Always emit** `lane`. OrcaSlicer requires it.
 - **Stamp** `scan_time` on every write. Use ISO-8601 UTC with second
   precision; other readers will rely on it.
-- **Use the 1-based DB key and 0-based inner `lane`.** Breaking this
-  correspondence silently desyncs every other reader.
+- **Pick one key style and stay consistent within a slot.** Use `laneN`
+  (1-based outer key) for filament systems or `T<n>` (0-based outer key) for
+  tool changers; either way the inner `lane` field is 0-based (§4). The outer
+  key is opaque to readers — OrcaSlicer never inspects it
+  (`MoonrakerPrinterAgent.cpp:780`), so a "wrong" outer key does **not** desync
+  a reader. What *does* cause trouble is writing the **same inner `lane` under
+  two different outer keys**: OrcaSlicer has no dedup and shows both as separate
+  trays (§8). Converging with other writers on one key style for a given slot
+  avoids that.
 - **Add extension fields freely.** Other tools will ignore them. If your
   extension becomes broadly useful, open a documentation PR here or in the
   AFC docs so the convention grows deliberately.
@@ -335,7 +361,49 @@ Clock skew between the printer and your writer can defeat this; treat
 
 ---
 
-## 8. Reference implementations
+## 8. Interoperating readers and writers
+
+`lane_data` is a **shared, cooperative namespace**: several tools write to it
+and several read from it, with no central coordinator. This section documents
+the three-way contract as ground truth — every claim below was verified against
+the tools' source, **not** their PR or release descriptions (a PR broadening a
+TypeScript type is not evidence the wire format changed). When in doubt,
+re-verify against the cited source lines rather than this table.
+
+### Writers
+
+| Writer | Key style | Notes |
+|--------|-----------|-------|
+| **HelixScreen** | `T<n>` on tool changers, `laneN` otherwise | `format_lane_key(i, style)` in `filament_slot_override_store.cpp`. Style is derived from the AMS type (`lane_key_style_for`), not hardcoded per backend. |
+| **AFC** (Armored Turtle) | `laneN` | Its Klipper plugin's `send_lane_data` writes 1-based lane keys. |
+| **Happy Hare** | `laneN` | `components/mmu_server.py` `push_lane_data`; also emits `vendor_name` / `name` / `filament_id` inner fields. |
+| **Mainsail #2510** | `T<n>` | Writes `lane_data` records for plain Spoolman + tool changer setups, keyed by tool (`T0`, `T1`, …). This is why HelixScreen tool changers converge on `T<n>`. |
+
+### Readers
+
+| Reader | Behavior (verified against source) |
+|--------|-----------------------------------|
+| **OrcaSlicer** | `MoonrakerPrinterAgent::fetch_moonraker_filament_data`. **Key-opaque**: iterates `result.value.items()` (`:780`) and never reads the outer key — the slot index comes from the inner `lane` field (`:786`). The inner `lane` **must be a JSON string**: `safe_json_string()` (`:661`) is `is_string()`-guarded with no coercion, so an integer `lane` is silently dropped (`:796`). **No deduplication**: `trays.push_back()` (`:813`) is unconditional and the grid bind (`:494`) is first-match-wins over nlohmann's alphabetically-sorted keys. Color parsing (`normalize_color_value`, `:691`) strips a leading `#`, so `#RRGGBB` is fine. Orca does not read Spoolman or the `gcode_macro` namespace. |
+| **HelixScreen** | `load_blocking` in `filament_slot_override_store.cpp`. **Key-agnostic**: ingests any record whose inner `lane` parses, regardless of outer key. **Canonical-preferring on duplicates**: when two keys describe the same slot, keeps the record whose key is canonical for this backend's own style (first canonical wins; a canonical beats a non-canonical; otherwise the incumbent stays). This is order-independent and agrees with Orca's alphabetical first-wins in every case that can occur. Tool-changer backends additionally migrate their own stale `laneN` records to `T<n>` on load (dropping, not overwriting, a `laneN` when the canonical `T<n>` already exists). |
+
+### The collision rule
+
+Because Orca keys off the **inner** `lane` field and does **not** dedup, two
+records that share the same inner `lane` under two different outer keys (e.g. a
+stale `lane1` and a fresh `T0`, both `"lane": "0"`) appear in Orca as **two
+trays for one slot**. `"T0"` sorts before `"lane1"`, so Orca's first-match-wins
+would show the `T0` record — but the duplicate is still visually present.
+
+The fix is not on the reader side (readers cannot know two keys mean one slot):
+**writers must converge on one key style per slot.** HelixScreen does this by
+writing `T<n>` on tool changers (matching Mainsail) and migrating away any
+stale `laneN` it previously wrote. A third party that keeps rewriting a
+different key for the same slot will produce a permanent duplicate that no
+reader can resolve.
+
+---
+
+## 9. Reference implementations
 
 | Project | File | Role |
 |---------|------|------|
@@ -348,6 +416,16 @@ Clock skew between the printer and your writer can defeat this; treat
 
 ## Changelog
 
+- **v1.4 (2026-07-16)**: Documented the `T<n>` tool-changer key style alongside
+  `laneN`, made the top-level shape (§2) and key mapping (§4) key-agnostic, and
+  added §8 "Interoperating readers and writers" (the three-way writer/reader
+  contract, verified against source). Corrected the previously-wrong normative
+  claim that "breaking the 1-based key / 0-based field correspondence silently
+  desyncs every other reader" — OrcaSlicer never reads the outer key
+  (`MoonrakerPrinterAgent.cpp:780`), so the outer key is opaque; the real
+  hazard is the same inner `lane` under two outer keys (Orca does not dedup).
+  HelixScreen now writes `T<n>` on tool changers (converging with Mainsail
+  #2510) and migrates its own stale `laneN` records to `T<n>` on load.
 - **v1.3 (2026-06-18)**: Corrected the Happy Hare description — HH's Moonraker
   component (`components/mmu_server.py`, `push_lane_data`) writes `lane_data`
   records directly (keys `vendor_name` / `name` / `filament_id`), and

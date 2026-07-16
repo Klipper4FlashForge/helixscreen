@@ -402,3 +402,50 @@ TEST_CASE_METHOD(LVGLTestFixture,
         REQUIRE(manager.get_option_state("does_not_exist") == PrePrintOptionState::NOT_APPLICABLE);
     }
 }
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "PrePrintOptionsRenderer: plugin visibility subject is tri-state",
+                 "[print_file_detail][pre_print_options][preprint][plugin_gate]") {
+    // Mirrors the plugin-gate wiring: the visibility subject is the
+    // helix_plugin_installed tri-state (-1 unknown/checking, 0 confirmed-absent,
+    // 1 present). Rows stay visible during the -1 startup window and only hide
+    // on a confirmed 0.
+    PrePrintOptionsRenderer renderer;
+    lv_obj_t* container = lv_obj_create(test_screen());
+
+    PrePrintOptionSet set;
+    set.macro_name = "START_PRINT";
+    PrePrintOption opt;
+    opt.id = "bed_mesh";
+    opt.category = PrePrintCategory::Mechanical;
+    opt.order = 10;
+    opt.default_enabled = true;
+    opt.strategy_kind = PrePrintStrategyKind::MacroParam;
+    opt.strategy = PrePrintStrategyMacroParam{"SKIP_LEVELING", "0", "1", "0"};
+    set.options.push_back(opt);
+
+    lv_subject_t plugin_installed{};
+    lv_subject_init_int(&plugin_installed, -1); // unknown / still checking
+
+    auto vis_lookup = [&](const std::string& id) -> lv_subject_t* {
+        return id == "bed_mesh" ? &plugin_installed : nullptr;
+    };
+
+    renderer.populate(container, set, vis_lookup, nullptr);
+    lv_obj_t* row = renderer.get_row("bed_mesh");
+    REQUIRE(row != nullptr);
+
+    // -1 (unknown): row visible so we never flash-hide during startup.
+    REQUIRE_FALSE(lv_obj_has_flag(row, LV_OBJ_FLAG_HIDDEN));
+
+    // 0 (confirmed absent): hidden.
+    lv_subject_set_int(&plugin_installed, 0);
+    REQUIRE(lv_obj_has_flag(row, LV_OBJ_FLAG_HIDDEN));
+
+    // 1 (present): visible again.
+    lv_subject_set_int(&plugin_installed, 1);
+    REQUIRE_FALSE(lv_obj_has_flag(row, LV_OBJ_FLAG_HIDDEN));
+
+    renderer.clear();
+    lv_subject_deinit(&plugin_installed);
+}

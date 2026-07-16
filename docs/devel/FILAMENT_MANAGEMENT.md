@@ -297,15 +297,20 @@ additional configuration. **Verified against OrcaSlicer upstream/main
 (post-2.4.0-beta nightly)**, source `MoonrakerPrinterAgent.cpp`
 `fetch_moonraker_filament_data()`.
 
-| Backend | Writer | How OrcaSlicer picks it up |
-|---------|--------|----------------------------|
-| AD5X IFS | HelixScreen (`FilamentSlotOverrideStore`) | `lane_data` namespace |
-| Snapmaker U1 | HelixScreen (`FilamentSlotOverrideStore`) | `lane_data` namespace |
-| ACE (Anycubic ACE Pro) | HelixScreen (`FilamentSlotOverrideStore`) | `lane_data` namespace |
-| CFS (Creality K2) | HelixScreen (`FilamentSlotOverrideStore`) | `lane_data` namespace |
-| AFC / Box Turtle | AFC's own Klipper plugin | `lane_data` namespace (AFC is the originator) |
-| Happy Hare | Happy Hare's own Klipper plugin (`components/mmu_server.py` `push_lane_data`) | `lane_data` namespace — Orca prefers it over the live `mmu` object |
-| Tool Changer | (not applicable — no per-slot metadata) | N/A |
+| Backend | Writer | Key style | How OrcaSlicer picks it up |
+|---------|--------|-----------|----------------------------|
+| AD5X IFS | HelixScreen (`FilamentSlotOverrideStore`) | `laneN` (1-based) | `lane_data` namespace |
+| Snapmaker U1 | HelixScreen (`FilamentSlotOverrideStore`) | `T<n>` (0-based) — tool changer | `lane_data` namespace |
+| ACE (Anycubic ACE Pro) | HelixScreen (`FilamentSlotOverrideStore`) | `laneN` (1-based) | `lane_data` namespace |
+| CFS (Creality K2) | HelixScreen (`FilamentSlotOverrideStore`) | `laneN` (1-based) | `lane_data` namespace |
+| AFC / Box Turtle | AFC's own Klipper plugin | `laneN` (1-based) | `lane_data` namespace (AFC is the originator) |
+| Happy Hare | Happy Hare's own Klipper plugin (`components/mmu_server.py` `push_lane_data`) | `laneN` (1-based) | `lane_data` namespace — Orca prefers it over the live `mmu` object |
+| Tool Changer | (not applicable — no per-slot metadata) | — | N/A |
+
+The key style is derived from the AMS type (`lane_key_style_for(get_type())`),
+not hardcoded per backend: tool changers (Snapmaker U1, generic
+klipper-toolchanger) write `T<n>`, filament systems write `laneN`. See the
+interoperability subsection below.
 
 IFS, Snapmaker, ACE, and CFS share the `FilamentSlotOverrideStore`
 infrastructure and publish to `lane_data`; AFC and Happy Hare each write
@@ -346,6 +351,37 @@ a HelixScreen-side `filament_id` resolver:** Orca reads the field from nowhere,
 there is no deterministic (vendor, material) → Orca `setting_id` catalog (the
 ids number in the hundreds and churn across releases), and we do not ship a
 forked OrcaSlicer that could add the read path.
+
+### `lane_data` interoperability (outer-key contract)
+
+`lane_data` is a **shared namespace with multiple writers and multiple
+readers**. The authoritative, source-verified contract lives in the public
+spec — [`../specs/filament_slots.md` § "Interoperating readers and
+writers"](../specs/filament_slots.md#8-interoperating-readers-and-writers).
+Read that section before touching key formatting, the load filter, or the
+migration. The summary:
+
+- **Writers and their key style**: HelixScreen (`T<n>` on tool changers,
+  `laneN` otherwise), AFC (`laneN`), Happy Hare (`laneN`), Mainsail #2510
+  (`T<n>` on Spoolman + tool changer).
+- **Readers**: OrcaSlicer is **key-opaque** (reads the inner `lane` field, never
+  the outer key — `MoonrakerPrinterAgent.cpp:780`), requires the inner `lane`
+  to be a JSON **string**, and does **no deduplication**. HelixScreen's reader
+  is **key-agnostic** and prefers the canonical key for its own style on
+  duplicates (`load_blocking` in `filament_slot_override_store.cpp`).
+- **The collision hazard is not a wrong outer key** — it is the **same inner
+  `lane` under two different outer keys**, which Orca renders as two trays for
+  one slot. A tool changer converges on `T<n>` (matching Mainsail) and migrates
+  its own stale `laneN` records to `T<n>` on load to avoid exactly this.
+
+**Lesson (recorded inline so we don't re-derive it):** verify wire-format
+claims against the tools' **source**, not their PR or release text. Mainsail
+#2510's companion PR broadened an AFC `map` TypeScript type to `string[]`,
+which looked like a schema change but was speculative — upstream AFC still
+emits a scalar `map`. Confirming against `MoonrakerPrinterAgent.cpp` (Orca) and
+the AFC plugin source, not the PR descriptions, is what kept this change
+correct. Cite exact source lines in the spec so a future reader re-verifies the
+same way.
 
 ---
 

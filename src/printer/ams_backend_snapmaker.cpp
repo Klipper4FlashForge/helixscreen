@@ -161,7 +161,8 @@ void AmsBackendSnapmaker::on_started() {
     if (!api_)
         return;
 
-    override_store_ = std::make_unique<helix::ams::FilamentSlotOverrideStore>(api_, "snapmaker");
+    override_store_ = std::make_unique<helix::ams::FilamentSlotOverrideStore>(
+        api_, "snapmaker", helix::ams::lane_key_style_for(get_type()));
     auto loaded = override_store_->load_blocking();
     const auto loaded_count = loaded.size();
     {
