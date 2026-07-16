@@ -13,6 +13,7 @@
 
 #include "ams_state.h"
 
+#include "helix_psram_attr.h"
 #include "ui_color_picker.h"
 #include "ui_update_queue.h"
 
@@ -85,7 +86,9 @@ std::optional<helix::ToolTopology> build_ams_topology(AmsBackend* backend, int b
 } // namespace
 
 AmsState& AmsState::instance() {
-    static AmsState instance;
+    // ~9.5KB singleton: relocate to PSRAM on ESP to reclaim internal DRAM (it's
+    // app-state, first touched at runtime, never DMA/ISR). No-op elsewhere.
+    static HELIX_PSRAM_BSS AmsState instance;
     return instance;
 }
 

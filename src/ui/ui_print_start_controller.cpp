@@ -10,6 +10,7 @@
 
 #include "ui_print_start_controller.h"
 
+#include "helix_psram_attr.h"
 #include "ui_error_reporting.h"
 #include "ui_event_safety.h"
 #include "ui_modal.h"
@@ -758,7 +759,7 @@ void PrintStartController::show_color_mismatch_warning(
     // Static buffer for message - must persist during modal lifetime (modal stores pointer).
     // Safe because we always close any existing dialog first above,
     // preventing concurrent access to this buffer.
-    static char message_buffer[1024];
+    static HELIX_PSRAM_BSS char message_buffer[1024];
     snprintf(message_buffer, sizeof(message_buffer), "%s", message.c_str());
 
     color_mismatch_modal_ = helix::ui::modal_show_confirmation(
@@ -1023,7 +1024,7 @@ void PrintStartController::show_material_mismatch_warning(
                      "or failed prints.");
 
     // Static buffer for message — must persist during modal lifetime.
-    static char message_buffer[2048];
+    static HELIX_PSRAM_BSS char message_buffer[2048];
     snprintf(message_buffer, sizeof(message_buffer), "%s", message.c_str());
 
     material_mismatch_modal_ = helix::ui::modal_show_confirmation(
