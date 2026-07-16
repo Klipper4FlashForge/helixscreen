@@ -147,6 +147,20 @@ lv_subject_t& get_notification_subject();
 lv_subject_t& get_home_edit_mode_subject();
 
 /**
+ * @brief Get the global wizard-active subject
+ *
+ * Observable mirror of is_wizard_active(), updated inside set_wizard_active().
+ * Value 1 while the setup wizard owns the screen, 0 otherwise. Lets code that
+ * must react to the wizard opening/closing (e.g. the PLR offer controller
+ * re-evaluating once the wizard exits) observe an edge instead of polling a
+ * plain bool. Seeded from the current flag at init so it is correct even if
+ * set_wizard_active() ran before subject initialization.
+ *
+ * @return Reference to the wizard-active subject
+ */
+lv_subject_t& get_wizard_active_subject();
+
+/**
  * @brief Initialize all global subjects
  *
  * Must be called during app initialization after LVGL is initialized.

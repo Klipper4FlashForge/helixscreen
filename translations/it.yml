@@ -91,6 +91,7 @@ translations:
   A: A
   ABS: ABS
   ACCELEROMETERS: ACCELEROMETRI
+  ACE Moonraker bridge not found. Install ace_status.py for full support.: ''
   ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: Bridge
     ACE Moonraker non trovato. Installa ace_status.py da ValgACE per il supporto completo.
   ACTIONS: AZIONI
@@ -853,6 +854,7 @@ translations:
   Failed to delete file: Impossibile eliminare il file
   Failed to delete profile: Impossibile eliminare il profilo
   Failed to delete spool: Eliminazione bobina fallita
+  'Failed to discard recovery data: {}': ''
   'Failed to download G-code for modification: {}': 'Impossibile scaricare G-code
     per modifica: {}'
   'Failed to download G-code for remap: {}': 'Impossibile scaricare G-code per rimappatura:
@@ -1897,6 +1899,7 @@ translations:
   Recovering AFC system...: Recupero sistema AFC...
   Recovery failed: Recupero fallito
   'Recovery failed: ': 'Recupero fallito: '
+  'Recovery failed: {}': ''
   Reduce Sensitivity: Riduci sensibilità
   Reduce ringing and ghosting artifacts: Riduci artefatti di ringing e ghosting
   Reduce vibration artifacts like ringing and ghosting: Riduci artefatti da vibrazione
@@ -1966,6 +1969,7 @@ translations:
   Restarting...: Riavvio in corso...
   Resume: Riprendi
   Resume Print: Riprendi stampa
+  Resume interrupted print?: ''
   Resume macro not configured: Macro ripresa non configurata
   'Resume preparation failed: {}': 'Preparazione alla ripresa fallita: {}'
   Resuming...: Ripresa...
@@ -2396,6 +2400,8 @@ translations:
     cinghia non appare ferma, poi blocca la lettura.
   The printer halted this print and cannot resume it. Restart from the beginning?: La
     stampante ha interrotto questa stampa e non può riprenderla. Riavviare dall'inizio?
+  The printer lost power during a print. It can resume where it left off.: ''
+  The printer lost power while printing {}. Resume where it left off?: ''
   The printer rejected the filament configuration. The print was not started.: La
     stampante ha rifiutato la configurazione del filamento. La stampa non è stata
     avviata.

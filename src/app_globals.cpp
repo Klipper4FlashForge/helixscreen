@@ -64,6 +64,7 @@ static SubjectManager g_subjects;
 static lv_subject_t g_notification_subject;
 static lv_subject_t g_show_beta_features_subject;
 static lv_subject_t g_home_edit_mode_subject;
+static lv_subject_t g_wizard_active_subject;
 
 // Application quit flag (volatile sig_atomic_t for async-signal-safety)
 static volatile sig_atomic_t g_quit_requested = 0;
@@ -148,6 +149,10 @@ lv_subject_t& get_home_edit_mode_subject() {
     return g_home_edit_mode_subject;
 }
 
+lv_subject_t& get_wizard_active_subject() {
+    return g_wizard_active_subject;
+}
+
 // Track if subjects are initialized
 static bool g_subjects_initialized = false;
 
@@ -174,6 +179,12 @@ void app_globals_init_subjects() {
     lv_subject_init_int(&g_home_edit_mode_subject, 0);
     g_subjects.register_subject(&g_home_edit_mode_subject);
     lv_xml_register_subject(nullptr, "home_edit_mode", &g_home_edit_mode_subject);
+
+    // Initialize wizard-active subject (observable mirror of is_wizard_active()).
+    // Seed from the current flag so it is correct even when set_wizard_active()
+    // ran before this init. Not XML-bound — observed programmatically only.
+    lv_subject_init_int(&g_wizard_active_subject, g_wizard_active ? 1 : 0);
+    g_subjects.register_subject(&g_wizard_active_subject);
 
     // Initialize modal dialog subjects (for modal_dialog.xml binding)
     helix::ui::modal_init_subjects();
@@ -309,6 +320,14 @@ void set_wizard_active(bool active) {
     bool was_active = g_wizard_active;
     g_wizard_active = active;
     spdlog::debug("[App Globals] Wizard active state set to: {}", active);
+
+    // Mirror into the observable subject so observers (e.g. the PLR offer
+    // controller) see the edge. Guard on init: set_wizard_active() can run
+    // before app_globals_init_subjects(), and init seeds the subject from the
+    // current flag, so skipping here loses nothing. Called on the main thread.
+    if (g_subjects_initialized) {
+        lv_subject_set_int(&g_wizard_active_subject, active ? 1 : 0);
+    }
 
     // Fire completion callback when wizard transitions from active to inactive
     if (was_active && !active && g_wizard_completion_cb) {

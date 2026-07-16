@@ -86,6 +86,7 @@
   <translation tag="A" de="A"/>
   <translation tag="ABS" de="ABS"/>
   <translation tag="ACCELEROMETERS" de="BESCHLEUNIGUNGSSENSOREN"/>
+  <translation tag="ACE Moonraker bridge not found. Install ace_status.py for full support."/>
   <translation tag="ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support." de="ACE-Moonraker-Brücke nicht gefunden. Installieren Sie ace_status.py von ValgACE für volle Unterstützung."/>
   <translation tag="ACTIONS" de="AKTIONEN"/>
   <translation tag="ADXL" de="ADXL"/>
@@ -750,6 +751,7 @@
   <translation tag="Failed to delete file" de="Datei löschen fehlgeschlagen"/>
   <translation tag="Failed to delete profile" de="Profil löschen fehlgeschlagen"/>
   <translation tag="Failed to delete spool" de="Spule konnte nicht gelöscht werden"/>
+  <translation tag="Failed to discard recovery data: {}"/>
   <translation tag="Failed to download G-code for modification: {}" de="G-Code-Download zur Änderung fehlgeschlagen: {}"/>
   <translation tag="Failed to download G-code for remap: {}" de="G-code für Neuzuordnung konnte nicht heruntergeladen werden: {}"/>
   <translation tag="Failed to download helixscreen.conf.\nCheck printer connection." de="helixscreen.conf konnte nicht heruntergeladen werden.\nDruckerverbindung prüfen."/>
@@ -1665,6 +1667,7 @@
   <translation tag="Recovering AFC system..." de="AFC-Wiederherstellung..."/>
   <translation tag="Recovery failed" de="Wiederherstellung fehlgeschlagen"/>
   <translation tag="Recovery failed: " de="Wiederherstellung fehlgeschlagen: "/>
+  <translation tag="Recovery failed: {}"/>
   <translation tag="Reduce Sensitivity" de="Empfindlichkeit verringern"/>
   <translation tag="Reduce ringing and ghosting artifacts" de="Klingel- und Geisterartefakte reduzieren"/>
   <translation tag="Reduce vibration artifacts like ringing and ghosting" de="Vibrationsartefakte wie Klingeln und Geisterbilder reduzieren"/>
@@ -1729,6 +1732,7 @@
   <translation tag="Restarting..." de="Wird neu gestartet..."/>
   <translation tag="Resume" de="Fortsetzen"/>
   <translation tag="Resume Print" de="Druck fortsetzen"/>
+  <translation tag="Resume interrupted print?"/>
   <translation tag="Resume macro not configured" de="Fortsetzen-Makro nicht konfiguriert"/>
   <translation tag="Resume preparation failed: {}" de="Vorbereitung zum Fortsetzen fehlgeschlagen: {}"/>
   <translation tag="Resuming..." de="Fortsetzen..."/>
@@ -2079,6 +2083,8 @@
   <translation tag="The heater will cycle on and off several times." de="Die Heizung wird mehrmals ein- und ausschalten."/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." de="Der Motor lässt den Riemen vibrieren, während ein Stroboskoplicht mit derselben Frequenz blinkt. Wenn der Riemen stillzustehen scheint (eingefroren), haben Sie die Resonanzfrequenz gefunden.\n\nVerwenden Sie die Frequenztasten, um die Werte durchzugehen, bis der Riemen stillzustehen scheint, und fixieren Sie dann den Messwert."/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" de="Der Drucker hat diesen Druck angehalten und kann ihn nicht fortsetzen. Von vorne neu starten?"/>
+  <translation tag="The printer lost power during a print. It can resume where it left off."/>
+  <translation tag="The printer lost power while printing {}. Resume where it left off?"/>
   <translation tag="The printer rejected the filament configuration. The print was not started." de="Der Drucker hat die Filamentkonfiguration abgelehnt. Der Druck wurde nicht gestartet."/>
   <translation tag="The runout sensor indicates no filament is loaded. Start print anyway?" de="Der Auslaufsensor zeigt an, dass kein Filament geladen ist. Druck trotzdem starten?"/>
   <translation tag="The toolhead sensor indicates filament is already loaded. Proceed with load anyway?" de="Der Werkzeugkopfsensor zeigt an, dass Filament bereits geladen ist. Trotzdem mit dem Laden fortfahren?"/>

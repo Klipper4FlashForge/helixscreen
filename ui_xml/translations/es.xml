@@ -86,6 +86,7 @@
   <translation tag="A" es="A"/>
   <translation tag="ABS" es="ABS"/>
   <translation tag="ACCELEROMETERS" es="ACELERÓMETROS"/>
+  <translation tag="ACE Moonraker bridge not found. Install ace_status.py for full support."/>
   <translation tag="ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support." es="No se encontró el puente ACE de Moonraker. Instale ace_status.py de ValgACE para soporte completo."/>
   <translation tag="ACTIONS" es="ACCIONES"/>
   <translation tag="ADXL" es="ADXL"/>
@@ -750,6 +751,7 @@
   <translation tag="Failed to delete file" es="Error al eliminar archivo"/>
   <translation tag="Failed to delete profile" es="Error al eliminar perfil"/>
   <translation tag="Failed to delete spool" es="Error al eliminar bobina"/>
+  <translation tag="Failed to discard recovery data: {}"/>
   <translation tag="Failed to download G-code for modification: {}" es="Error al descargar G-code para modificación: {}"/>
   <translation tag="Failed to download G-code for remap: {}" es="Error al descargar G-code para reasignar: {}"/>
   <translation tag="Failed to download helixscreen.conf.\nCheck printer connection." es="Error al descargar helixscreen.conf.\nCompruebe la conexión."/>
@@ -1665,6 +1667,7 @@
   <translation tag="Recovering AFC system..." es="Recuperando sistema AFC..."/>
   <translation tag="Recovery failed" es="Error en recuperación"/>
   <translation tag="Recovery failed: " es="Recuperación fallida: "/>
+  <translation tag="Recovery failed: {}"/>
   <translation tag="Reduce Sensitivity" es="Reducir sensibilidad"/>
   <translation tag="Reduce ringing and ghosting artifacts" es="Reducir artefactos de resonancia y fantasma"/>
   <translation tag="Reduce vibration artifacts like ringing and ghosting" es="Reducir artefactos de vibración como resonancia y fantasma"/>
@@ -1729,6 +1732,7 @@
   <translation tag="Restarting..." es="Reiniciando..."/>
   <translation tag="Resume" es="Reanudar"/>
   <translation tag="Resume Print" es="Reanudar Impresión"/>
+  <translation tag="Resume interrupted print?"/>
   <translation tag="Resume macro not configured" es="Macro de reanudación no configurado"/>
   <translation tag="Resume preparation failed: {}" es="La preparación para reanudar falló: {}"/>
   <translation tag="Resuming..." es="Reanudando..."/>
@@ -2079,6 +2083,8 @@
   <translation tag="The heater will cycle on and off several times." es="El calentador se encenderá y apagará varias veces."/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." es="El motor hace vibrar la correa mientras una luz estroboscópica parpadea a la misma frecuencia. Cuando la correa parece quedarse quieta (congelada), has encontrado la frecuencia de resonancia.\n\nUsa los botones de frecuencia para recorrer los valores hasta que la correa parezca estar inmóvil, luego bloquea la lectura."/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" es="La impresora detuvo esta impresión y no puede reanudarla. ¿Reiniciar desde el principio?"/>
+  <translation tag="The printer lost power during a print. It can resume where it left off."/>
+  <translation tag="The printer lost power while printing {}. Resume where it left off?"/>
   <translation tag="The printer rejected the filament configuration. The print was not started." es="La impresora rechazó la configuración de filamento. La impresión no se inició."/>
   <translation tag="The runout sensor indicates no filament is loaded. Start print anyway?" es="El sensor de agotamiento indica que no hay filamento cargado. ¿Iniciar la impresión de todos modos?"/>
   <translation tag="The toolhead sensor indicates filament is already loaded. Proceed with load anyway?" es="El sensor del cabezal indica que ya hay filamento cargado. ¿Continuar con la carga de todos modos?"/>

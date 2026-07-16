@@ -94,6 +94,7 @@ translations:
   A: A
   ABS: ABS
   ACCELEROMETERS: BESCHLEUNIGUNGSSENSOREN
+  ACE Moonraker bridge not found. Install ace_status.py for full support.: ''
   ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: ACE-Moonraker-Brücke
     nicht gefunden. Installieren Sie ace_status.py von ValgACE für volle Unterstützung.
   ACTIONS: AKTIONEN
@@ -864,6 +865,7 @@ translations:
   Failed to delete file: Datei löschen fehlgeschlagen
   Failed to delete profile: Profil löschen fehlgeschlagen
   Failed to delete spool: Spule konnte nicht gelöscht werden
+  'Failed to discard recovery data: {}': ''
   'Failed to download G-code for modification: {}': 'G-Code-Download zur Änderung
     fehlgeschlagen: {}'
   'Failed to download G-code for remap: {}': 'G-code für Neuzuordnung konnte nicht
@@ -1908,6 +1910,7 @@ translations:
   Recovering AFC system...: AFC-Wiederherstellung...
   Recovery failed: Wiederherstellung fehlgeschlagen
   'Recovery failed: ': 'Wiederherstellung fehlgeschlagen: '
+  'Recovery failed: {}': ''
   Reduce Sensitivity: Empfindlichkeit verringern
   Reduce ringing and ghosting artifacts: Klingel- und Geisterartefakte reduzieren
   Reduce vibration artifacts like ringing and ghosting: Vibrationsartefakte wie Klingeln
@@ -1976,6 +1979,7 @@ translations:
   Restarting...: Wird neu gestartet...
   Resume: Fortsetzen
   Resume Print: Druck fortsetzen
+  Resume interrupted print?: ''
   Resume macro not configured: Fortsetzen-Makro nicht konfiguriert
   'Resume preparation failed: {}': 'Vorbereitung zum Fortsetzen fehlgeschlagen: {}'
   Resuming...: Fortsetzen...
@@ -2406,6 +2410,8 @@ translations:
   The printer halted this print and cannot resume it. Restart from the beginning?: Der
     Drucker hat diesen Druck angehalten und kann ihn nicht fortsetzen. Von vorne neu
     starten?
+  The printer lost power during a print. It can resume where it left off.: ''
+  The printer lost power while printing {}. Resume where it left off?: ''
   The printer rejected the filament configuration. The print was not started.: Der
     Drucker hat die Filamentkonfiguration abgelehnt. Der Druck wurde nicht gestartet.
   The runout sensor indicates no filament is loaded. Start print anyway?: Der Auslaufsensor

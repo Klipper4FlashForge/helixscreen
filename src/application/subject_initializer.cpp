@@ -53,6 +53,7 @@
 #include "panel_widget_manager.h"
 #include "print_completion.h"
 #include "print_control_buttons.h"
+#include "plr_offer_controller.h"
 #include "print_start_navigation.h"
 #include "printer_state.h"
 #include "probe_sensor_manager.h"
@@ -320,6 +321,12 @@ void SubjectInitializer::init_observers() {
 
     // Print start navigation observer (auto-navigate to print status)
     m_observers.push_back(helix::init_print_start_navigation_observer());
+
+    // Power-loss-recovery offer controller. Registered unconditionally — the
+    // pure plr_should_offer() self-guards non-Snapmaker printers (pl_env_valid
+    // stays false on every other backend). Owns its own observers; RAII cleanup
+    // on SubjectInitializer teardown.
+    m_plr_offer_controller = std::make_unique<helix::ui::PlrOfferController>();
 
     // Print outcome telemetry observer (records anonymous print stats when telemetry enabled)
     m_observers.push_back(TelemetryManager::instance().init_print_outcome_observer());
