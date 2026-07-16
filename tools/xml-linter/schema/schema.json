@@ -789,6 +789,16 @@
       "inherits": "lv_obj",
       "attributes": {}
     },
+    "subject_expr": {
+      "attributes": {
+        "name": {
+          "type": "string"
+        },
+        "expr": {
+          "type": "string"
+        }
+      }
+    },
     "lv_obj-style": {
       "attributes": {
         "name": {
@@ -1254,6 +1264,53 @@
         },
         "ref_value": {
           "type": "int"
+        }
+      }
+    },
+    "lv_obj-bind_flag_if": {
+      "attributes": {
+        "cond": {
+          "type": "string"
+        },
+        "flag": {
+          "type": "enum",
+          "enum": "flag"
+        },
+        "invert": {
+          "type": "bool"
+        }
+      }
+    },
+    "lv_obj-bind_state_if": {
+      "attributes": {
+        "cond": {
+          "type": "string"
+        },
+        "state": {
+          "type": "enum",
+          "enum": "state"
+        },
+        "invert": {
+          "type": "bool"
+        }
+      }
+    },
+    "lv_obj-bind_style_if": {
+      "attributes": {
+        "cond": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "selector": {
+          "type": "string"
+        },
+        "parts": {
+          "type": "string"
+        },
+        "invert": {
+          "type": "bool"
         }
       }
     },
@@ -2693,6 +2750,9 @@
     "lv_obj-bind_flag_if_lt",
     "lv_obj-bind_flag_if_ge",
     "lv_obj-bind_flag_if_le",
+    "lv_obj-bind_flag_if",
+    "lv_obj-bind_state_if",
+    "lv_obj-bind_style_if",
     "lv_obj-bind_state_if_eq",
     "lv_obj-bind_state_if_not_eq",
     "lv_obj-bind_state_if_gt",
@@ -2790,30 +2850,6 @@
     "ams_context_dropdown_w_micro",
     "ams_context_dropdown_w_small",
     "ams_context_dropdown_w_tiny",
-    "ams_edit_close_btn_size",
-    "ams_edit_close_btn_size_large",
-    "ams_edit_close_btn_size_medium",
-    "ams_edit_close_btn_size_micro",
-    "ams_edit_close_btn_size_small",
-    "ams_edit_close_btn_size_tiny",
-    "ams_edit_color_preview_size",
-    "ams_edit_color_preview_size_large",
-    "ams_edit_color_preview_size_medium",
-    "ams_edit_color_preview_size_micro",
-    "ams_edit_color_preview_size_small",
-    "ams_edit_color_preview_size_tiny",
-    "ams_edit_header_pad_bot",
-    "ams_edit_header_pad_bot_large",
-    "ams_edit_header_pad_bot_medium",
-    "ams_edit_header_pad_bot_micro",
-    "ams_edit_header_pad_bot_small",
-    "ams_edit_header_pad_bot_tiny",
-    "ams_edit_header_pad_top",
-    "ams_edit_header_pad_top_large",
-    "ams_edit_header_pad_top_medium",
-    "ams_edit_header_pad_top_micro",
-    "ams_edit_header_pad_top_small",
-    "ams_edit_header_pad_top_tiny",
     "ams_hub",
     "ams_hub_border",
     "ams_logo_size",
@@ -2941,7 +2977,6 @@
     "dialog_content_max_xlarge",
     "dialog_content_max_xxlarge",
     "dot_size",
-    "dropdown_width",
     "elevated_bg",
     "fan_arc_size",
     "fan_arc_size_large",
@@ -3053,6 +3088,9 @@
     "graph_line_primary",
     "graph_line_secondary",
     "graph_line_target",
+    "grid_gap",
+    "grid_swatch_size",
+    "grid_width",
     "handle_color",
     "handle_style",
     "header_height",
@@ -3126,7 +3164,6 @@
     "icon_text_gap",
     "info",
     "input_height",
-    "input_width",
     "keypad_btn_height",
     "keypad_btn_height_large",
     "keypad_btn_height_medium",
