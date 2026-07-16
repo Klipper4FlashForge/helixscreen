@@ -51,6 +51,22 @@
 
 **Operators:** `bind_flag_if_eq`, `_not_eq`, `_gt`, `_ge`, `_lt`, `_le` (same for `bind_state_if_*` and `bind_style_if_*`)
 
+### Compound Conditions (`<subject_expr>`, `cond=`)
+
+For conditions spanning 2+ subjects (`a or b gt c`), use the expression evaluator instead of a hand-written C++ derived subject.
+
+| Tag/Attr | Notes |
+|----------|-------|
+| `<subject_expr name= expr=>` | Sibling of `<subject>`/`<int>` in `<subjects>`; derived int subject that recomputes when any referenced subject changes. Inputs must be declared earlier in the block (or globally). |
+| `cond="EXPR"` | Inline on `<bind_flag_if>`, `<bind_state_if>`, `<bind_style_if>` — same attrs as the `_eq`/`_gt`/etc. forms (`flag`/`state`/`name`, `invert`) but `cond` replaces `subject`+`ref_value`. |
+
+Grammar: comparison `eq ne lt le gt ge` (`== != < <= > >=`), boolean `and or not` (`&& \|\| !`), arithmetic `+ - * / %` (div/mod-by-zero → `0`). **Word forms are house style** — `&&`/`<` need `&amp;&amp;`/`&lt;` XML escaping.
+
+```xml
+<subject_expr name="demo_alarm" expr="demo_error or demo_temp gt demo_threshold"/>
+<bind_flag_if cond="demo_alarm" flag="hidden" invert="true"/>
+```
+
 ### Parse-Time Conditional Hidden
 
 | Attribute | Behavior |

@@ -96,6 +96,38 @@ Renders markdown as native LVGL widgets. Supports `bind_text` for dynamic conten
 <divider_horizontal width="100%"/>
 ```
 
+## Expression-Driven Conditions (`<subject_expr>`, `cond=`)
+
+Every `bind_flag_if_*`/`bind_state_if_*`/`bind_style_if_*` element compares **one** subject against one `ref_value`. For compound conditions (`error OR temp > threshold`), use the expression evaluator instead of a hand-written C++ derived subject.
+
+```xml
+<subjects>
+    <int name="demo_temp" value="50"/>
+    <int name="demo_threshold" value="70"/>
+    <int name="demo_error" value="0"/>
+    <subject_expr name="demo_alarm" expr="demo_error or demo_temp gt demo_threshold"/>
+</subjects>
+
+<lv_obj>
+    <bind_flag_if cond="demo_alarm" flag="hidden" invert="true"/>   <!-- reuses the derived subject -->
+</lv_obj>
+<lv_obj>
+    <bind_flag_if cond="demo_temp gt demo_threshold" flag="hidden" invert="true"/>  <!-- inline, no subject_expr needed -->
+</lv_obj>
+<ui_button text="Action">
+    <bind_state_if cond="demo_alarm" state="disabled"/>
+</ui_button>
+<ui_card>
+    <bind_style_if name="demo_alarm_style" cond="demo_alarm"/>
+</ui_card>
+```
+
+- `<subject_expr name="X" expr="EXPR"/>` — sibling of `<subject>`/`<int>` in a `<subjects>` block; creates a derived int subject that recomputes whenever any subject in `EXPR` changes. Every subject referenced must be declared earlier (forward references silently fail to register).
+- `cond="EXPR"` works inline on `bind_flag_if`, `bind_state_if`, `bind_style_if` — no `subject_expr` needed for a one-off condition.
+- Grammar (integer-only, nonzero = truthy): comparison `eq ne lt le gt ge` (or `== != < <= > >=`), boolean `and or not` (or `&& || !`), arithmetic `+ - * / %` (div/mod by zero → `0`).
+- **House style: word forms** (`and`/`or`/`gt`/...). Symbolic `&&`/`<` are XML metacharacters and need `&amp;&amp;`/`&lt;` escaping — word forms don't.
+- Live testbed: `ui_xml/test_panel.xml` (`-p test`), all four constructs wired to sliders/switch.
+
 ## Repeating Fragments (`<repeat>`)
 
 Expands a body N times at load time — replaces a C++ create-and-wire loop.
