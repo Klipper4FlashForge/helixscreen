@@ -134,6 +134,44 @@ class TestCrossRefSubjectRefs:
         ]
         assert len(subject_warnings) == 0
 
+    def test_composed_indexed_name_not_flagged(
+        self, schema: Schema, tmp_path: Path
+    ) -> None:
+        """A ${...} composed subject name (runtime-resolved) is not flagged."""
+        xml = tmp_path / "composed.xml"
+        xml.write_text(
+            "<component><view extends='lv_obj'>"
+            "<lv_label bind_text='demo_${i}_v'/>"
+            "</view></component>",
+            encoding="utf-8",
+        )
+        linter = Linter(schema, LinterConfig(enable_xref=True))
+        result = linter.lint_file(xml)
+        subject_warnings = [
+            d for d in result.diagnostics if d.check == CheckType.UNKNOWN_SUBJECT_REF
+        ]
+        assert subject_warnings == []
+
+    def test_plain_undefined_subject_still_flagged_alongside_composed(
+        self, schema: Schema, tmp_path: Path
+    ) -> None:
+        """A brace-free undefined subject still warns even next to a ${...} name."""
+        xml = tmp_path / "mixed.xml"
+        xml.write_text(
+            "<component><view extends='lv_obj'>"
+            "<lv_label bind_text='demo_${i}_v'/>"
+            "<lv_label bind_text='no_such_subject'/>"
+            "</view></component>",
+            encoding="utf-8",
+        )
+        linter = Linter(schema, LinterConfig(enable_xref=True))
+        result = linter.lint_file(xml)
+        subject_warnings = [
+            d for d in result.diagnostics if d.check == CheckType.UNKNOWN_SUBJECT_REF
+        ]
+        assert len(subject_warnings) == 1
+        assert subject_warnings[0].value == "no_such_subject"
+
 
 class TestCrossRefDefinitions:
     """Tests for definition collection."""

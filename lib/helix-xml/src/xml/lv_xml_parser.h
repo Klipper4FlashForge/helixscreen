@@ -102,6 +102,17 @@ struct _lv_xml_parser_state_t {
     const char ** parent_attrs;
     lv_xml_component_scope_t * parent_scope;
     lv_xml_parser_section_t section;
+    /* Transient strings produced by embedded `${name}` composition in
+     * resolve_params (e.g. bind_text="demo_${i}_v" -> "demo_2_v"). This is the
+     * only substitution path that ALLOCATES — the whole-value `$name`/`#const`
+     * paths merely repoint an attribute slot at non-owned storage. The composed
+     * strings are owned here and freed exactly once at parse end
+     * (lv_xml_create_in_scope), so a composed value outlives every element-handler
+     * call within the parse but never leaks. resolve_consts never touches them
+     * (they don't start with `#`). */
+    char **  composed_strings;
+    uint32_t composed_count;
+    uint32_t composed_cap;
 };
 
 /**********************

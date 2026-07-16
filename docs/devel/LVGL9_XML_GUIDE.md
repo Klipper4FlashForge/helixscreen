@@ -230,6 +230,7 @@ LVGL XML uses prefix sigils to distinguish different value types:
 | `#` | Design token / const | `style_pad_all="#space_md"` | Spacing, colors, sizes |
 | `$` | Component prop | `text="$primary_text"` | Inside component templates |
 | `$i` | `<repeat>` loop index | `text="$i"` | Inside a `<repeat>` body (see [Repeating fragments](#repeating-fragments-with-repeat)) |
+| `${name}` | Embedded composition | `bind_text="demo_${i}_v"` | Splices the loop index (`${i}`) or a component prop (`${grp}`) into a larger string — self-wires indexed subjects (see [Repeating fragments](#repeating-fragments-with-repeat)) |
 | `@` | Subject binding | `text="@my_subject"` | Reactive data on `ui_button` |
 
 The `@` prefix on `ui_button`'s `text` attribute marks a value as a subject reference (reactive) vs. a literal string (static). Alternatively, `bind_text` always treats its value as a subject name (no `@` needed). See [ui_button](#ui_button) for details.
@@ -575,7 +576,22 @@ These are parse-time only -- the hidden state does not change after creation. Fo
 
 Each iteration re-resolves the body against pristine attribute values, so `$i`, `$param`, and `#const` references all yield independent per-iteration results — the labels above each get their own index, not a shared last value.
 
-`$i` is a **bare index only** for now. Embedded composition (`bind_text="slot_${i}_label"` to self-wire indexed subjects) and index arithmetic (`${i + 1}`) are separate follow-ups. A single `$i` per attribute value is all this task supports.
+##### Self-wiring indexed subjects with `${name}`
+
+The bare `$i` sigil is a whole-value substitution: `text="$i"` becomes the index, but `text="slot_$i"` does not splice. To compose the index (or a component prop) **into a larger string**, use the embedded `${name}` sigil. This is what lets a repeated widget bind to its own per-iteration subject:
+
+```xml
+<lv_obj name="root">
+  <repeat count="3">
+    <lv_label name="lbl" bind_text="demo_${i}_v"/>
+  </repeat>
+</lv_obj>
+<!-- three labels bind to subjects demo_0_v, demo_1_v, demo_2_v -->
+```
+
+`${i}` resolves to the loop index; any other `${name}` resolves against the component's props (passed attributes first, then the `<prop>` default). Both can appear in the same value, so a component with `<prop name="grp"/>` instantiated as `<my_row grp="fan"/>` can bind `bind_text="status_${grp}_${i}_x"` → `status_fan_0_x`, `status_fan_1_x`, … The C++ side is responsible for registering those indexed subjects; an unresolved `${name}` splices empty and logs a warning.
+
+Index **arithmetic** inside composition (`${i + 1}`) is a separate follow-up and is not supported yet.
 
 `<repeat>` is intercepted directly by the XML view parser (it creates no widget of its own), so its body must be well-formed markup that would be valid where the `<repeat>` sits. Nesting `<repeat>` inside another `<repeat>` is not yet supported.
 

@@ -85,6 +85,9 @@ static void xml_repeat_capture_free(lv_xml_repeat_capture_t * cap);
 static const char * xml_repeat_index_string(lv_xml_repeat_capture_t * cap, int32_t index);
 static int32_t xml_repeat_resolve_count(lv_xml_parser_state_t * state, const char * count_raw);
 static void xml_repeat_expand(lv_xml_parser_state_t * state, lv_xml_repeat_capture_t * cap, int32_t count);
+static bool xml_value_has_compose(const char * value);
+static char * xml_compose_indexed(lv_xml_parser_state_t * state, const char * raw);
+static void xml_state_free_composed(lv_xml_parser_state_t * state);
 static void create_timeline_instances(lv_xml_parser_state_t * state);
 static void get_timeline_from_event_cb(lv_event_t * e);
 static void free_timelines_event_cb(lv_event_t * e);
@@ -334,6 +337,7 @@ void * lv_xml_create_in_scope(lv_obj_t * parent, lv_xml_component_scope_t * pare
             xml_repeat_capture_free((lv_xml_repeat_capture_t *)state.context);
             state.context = NULL;
         }
+        xml_state_free_composed(&state);
         free_pcdata_ll(&state);
         XML_ParserFree(parser);
         return NULL;
@@ -364,6 +368,7 @@ void * lv_xml_create_in_scope(lv_obj_t * parent, lv_xml_component_scope_t * pare
 
     create_timeline_instances(&state);
 
+    xml_state_free_composed(&state);
     lv_ll_clear(&state.parent_ll);
     free_pcdata_ll(&state);
     XML_ParserFree(parser);
@@ -939,6 +944,18 @@ static void resolve_params(lv_xml_parser_state_t * state, lv_xml_component_scope
     for(i = 0; item_attrs[i]; i += 2) {
         const char * value = item_attrs[i + 1];
 
+        /*Embedded `${name}` composition — splice the loop index (`${i}`) or a
+         *component param (`${grp}`) into a larger string, e.g.
+         *bind_text="demo_${i}_v" -> "demo_2_v". Detected by the "${" marker so it
+         *fires wherever it appears (leading or embedded); the whole-value `$name`
+         *and `#const` paths below never see a "${". This is the only allocating
+         *branch: the result is owned by state->composed_strings, freed at parse
+         *end. resolve_consts won't touch it (composed names don't start with `#`).*/
+        if(xml_value_has_compose(value)) {
+            item_attrs[i + 1] = xml_compose_indexed(state, value);
+            continue;
+        }
+
         if(value[0] == '$') {
             /*E.g. the ${my_color} value is the my_color attribute name on the parent*/
             const char * name_clean = &value[1]; /*skips `$`*/
@@ -1340,6 +1357,124 @@ static void xml_repeat_expand(lv_xml_parser_state_t * state, lv_xml_repeat_captu
     /*Drop the per-expansion $i strings now that every apply_cb has copied them.*/
     for(uint32_t k = 0; k < cap->idx_count; k++) lv_free(cap->idx_strings[k]);
     cap->idx_count = 0;
+}
+
+/** True if `value` contains an embedded `${...}` composition marker anywhere.
+ *  A bare `$name` (whole-value param / `$i`) has no `{` after the `$`, so it is
+ *  left to the whole-value branch in resolve_params. */
+static bool xml_value_has_compose(const char * value)
+{
+    const char * d = value;
+    while((d = lv_strchr(d, '$')) != NULL) {
+        if(d[1] == '{') return true;
+        d++;
+    }
+    return false;
+}
+
+/** Resolve a single `${name}` token. `${i}` yields the current `<repeat>` loop
+ *  index (only meaningful during replay); any other name resolves against the
+ *  component's parent attributes then its param defaults. `scratch` backs the
+ *  formatted index. Returns NULL when the name cannot be resolved. */
+static const char * xml_compose_lookup(lv_xml_parser_state_t * state, const char * name,
+                                       char * scratch, size_t scratch_sz)
+{
+    if(lv_streq(name, "i")) {
+        lv_xml_repeat_capture_t * rc = state ? (lv_xml_repeat_capture_t *)state->context : NULL;
+        if(rc == NULL || !rc->replaying) return NULL; /*`$i` only exists during a replay*/
+        lv_snprintf(scratch, scratch_sz, "%d", (int)rc->current_index);
+        return scratch;
+    }
+    const char * v = lv_xml_get_value_of(state->parent_attrs, name);
+    /*An unresolved param passed down as a `$`-sigil is not a usable value.*/
+    if(v == NULL || v[0] == '$') v = get_param_default(&state->scope, name);
+    return v; /*may be NULL*/
+}
+
+/** Splice every `${name}` in `raw` with its resolved value, returning a freshly
+ *  allocated string tracked on state->composed_strings (freed at parse end).
+ *  An unresolved `${name}` splices empty and warns. Returns "" on OOM. */
+static char * xml_compose_indexed(lv_xml_parser_state_t * state, const char * raw)
+{
+    size_t cap = lv_strlen(raw) + 1;
+    char * out = lv_malloc(cap);
+    if(out == NULL) return "";
+    size_t len = 0; /*bytes used, excluding the terminating NUL*/
+
+    /*Ensure room for `n` more bytes plus a NUL, growing geometrically.*/
+#define XML_COMPOSE_APPEND(src, n)                                   \
+    do {                                                             \
+        size_t add_ = (n);                                           \
+        if(len + add_ + 1 > cap) {                                   \
+            while(len + add_ + 1 > cap) cap *= 2;                    \
+            char * grown_ = lv_realloc(out, cap);                    \
+            if(grown_ == NULL) { lv_free(out); return ""; }         \
+            out = grown_;                                            \
+        }                                                            \
+        lv_memcpy(out + len, (src), add_);                          \
+        len += add_;                                                 \
+    } while(0)
+
+    const char * p = raw;
+    while(*p) {
+        if(p[0] == '$' && p[1] == '{') {
+            const char * close = lv_strchr(p + 2, '}');
+            if(close == NULL) {
+                /*Unterminated `${` — copy the remainder verbatim and stop.*/
+                XML_COMPOSE_APPEND(p, lv_strlen(p));
+                break;
+            }
+            size_t nlen = (size_t)(close - (p + 2));
+            char nbuf[64];
+            if(nlen >= sizeof(nbuf)) {
+                LV_LOG_WARN("<repeat> ${...} name too long in '%s'; splicing empty", raw);
+            }
+            else {
+                lv_memcpy(nbuf, p + 2, nlen);
+                nbuf[nlen] = '\0';
+                char scratch[16];
+                const char * rep = xml_compose_lookup(state, nbuf, scratch, sizeof(scratch));
+                if(rep == NULL) {
+                    LV_LOG_WARN("<repeat> ${%s} could not be resolved in '%s'; splicing empty",
+                                nbuf, raw);
+                }
+                else {
+                    XML_COMPOSE_APPEND(rep, lv_strlen(rep));
+                }
+            }
+            p = close + 1;
+        }
+        else {
+            XML_COMPOSE_APPEND(p, 1);
+            p++;
+        }
+    }
+    out[len] = '\0';
+#undef XML_COMPOSE_APPEND
+
+    /*Track the owned string on state; freed once at parse end.*/
+    if(state->composed_count == state->composed_cap) {
+        uint32_t new_cap = state->composed_cap ? state->composed_cap * 2 : 8;
+        char ** na = lv_realloc(state->composed_strings, sizeof(char *) * new_cap);
+        if(na == NULL) { lv_free(out); return ""; }
+        state->composed_strings = na;
+        state->composed_cap = new_cap;
+    }
+    state->composed_strings[state->composed_count++] = out;
+    return out;
+}
+
+/** Free all composed strings tracked on `state`. Called once per parse (both the
+ *  error and success exits of lv_xml_create_in_scope). A reactive-rebuild caller
+ *  (subject-bound `<repeat>`, Task 3) that drives xml_repeat_expand through its
+ *  own parser state must call this after each rebuild for the same reason. */
+static void xml_state_free_composed(lv_xml_parser_state_t * state)
+{
+    for(uint32_t k = 0; k < state->composed_count; k++) lv_free(state->composed_strings[k]);
+    lv_free(state->composed_strings);
+    state->composed_strings = NULL;
+    state->composed_count = 0;
+    state->composed_cap = 0;
 }
 
 static void view_start_element_handler(void * user_data, const char * name, const char ** attrs)

@@ -152,6 +152,18 @@ Reference: lesson **L089**.
 
 ---
 
+### My `<repeat>` label binds to nothing — `bind_text="slot_${i}_label"` shows the default text, or the linter warns `UNKNOWN_SUBJECT_REF`.
+
+**Cause:** Two independent things go wrong with embedded `${name}` composition:
+
+1. **Runtime shows the default.** `bind_text="slot_${i}_label"` composes a subject name per iteration (`slot_0_label`, `slot_1_label`, …). If the C++ side never registered those exact indexed subjects, each bind resolves against a non-existent subject and the widget keeps its default value. The XML is fine — the subjects are missing. Register `slot_0_label`…`slot_N_label` (matching the composed names exactly) in your panel's subject init.
+
+2. **CI warns `UNKNOWN_SUBJECT_REF`.** The linter cannot statically resolve a composed name (the loop index / prop is only known at runtime), so it must skip it. The `${...}` skip lives in `tools/xml-linter/src/helix_xml_linter/crossref.py` (`_check_subject_reference`). A brace-free name like `bind_text="typo_subject"` still warns — that skip only applies when the value contains `${`.
+
+**Fix:** Make sure the composed names and the registered subject names line up character-for-character, and keep the `${...}` skip in `crossref.py`. Remember `$i` is a whole-value substitution — `slot_$i` does **not** splice; you must write `slot_${i}` (see the [XML guide](LVGL9_XML_GUIDE.md#self-wiring-indexed-subjects-with-name)).
+
+---
+
 ## Design Tokens & Theming
 
 ### Review feedback: "please use design tokens instead of hardcoded colors."
