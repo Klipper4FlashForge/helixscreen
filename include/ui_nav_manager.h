@@ -374,6 +374,27 @@ class NavigationManager {
     bool has_open_overlays() const;
 
     /**
+     * @brief Consume the "on-screen keyboard was visible when the dismiss-
+     * backdrop was pressed" latch.
+     *
+     * Overlays sit over a full-screen clickable dismiss-backdrop; a tap that
+     * lands on the backdrop while the keyboard is up should dismiss the keyboard
+     * only, not pop the overlay behind it. LVGL fires LV_EVENT_PRESSED before the
+     * click-focus DEFOCUS that hides the keyboard, so backdrop_click_event_cb
+     * latches visibility at PRESSED and consults it here at CLICKED (by which
+     * point is_visible() would already read false).
+     *
+     * @return true (once) if that tap should be consumed for the keyboard
+     *         dismiss; the caller must keep the overlay. Cleared on read.
+     */
+    bool take_backdrop_keyboard_dismiss();
+
+    /** Test seam: force the keyboard-visible-at-press latch. */
+    void set_backdrop_press_keyboard_visible_for_testing(bool visible) {
+        backdrop_press_keyboard_visible_ = visible;
+    }
+
+    /**
      * @brief Shutdown navigation system during application exit
      *
      * Deactivates current overlay/panel and clears all registries.
@@ -522,6 +543,15 @@ class NavigationManager {
 
     // Shared overlay backdrop widget (for first overlay)
     lv_obj_t* overlay_backdrop_ = nullptr;
+
+    // Latched at the dismiss-backdrop's LV_EVENT_PRESSED with the on-screen
+    // keyboard's visibility. LVGL's click-focus DEFOCUS (which hides the
+    // keyboard) fires between PRESSED and CLICKED, so is_visible() is already
+    // false by the time backdrop_click_event_cb handles CLICKED — the visibility
+    // must be captured at press time. Consumed one-shot by
+    // take_backdrop_keyboard_dismiss(): a tap that hides the keyboard must not
+    // also dismiss the overlay behind it.
+    bool backdrop_press_keyboard_visible_ = false;
 
     // Dynamic backdrops for nested overlays (overlay → its backdrop)
     std::unordered_map<lv_obj_t*, lv_obj_t*> overlay_backdrops_;
