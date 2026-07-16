@@ -14,6 +14,7 @@
 #include "ui_panel_settings.h"
 
 #include "app_globals.h"
+#include "boot_yield.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "lvgl/lvgl.h"
 #include "overlay_base.h"
@@ -42,24 +43,35 @@ void PanelFactory::setup_panels(lv_obj_t* screen) {
     // Register panels with navigation system
     NavigationManager::instance().set_panels(m_panels.data());
 
+    // Each panel's setup() builds its full content subtree and forces layout —
+    // a deep layout_update_core recursion. Yield to the idle task between panels
+    // so the Task WDT never fires mid-build on ESP (HELIX_BOOT_YIELD is a no-op
+    // everywhere else). See boot_yield.h.
+
     // Setup home panel
     get_global_home_panel().setup(m_panels[static_cast<int>(PanelId::Home)], screen);
+    HELIX_BOOT_YIELD();
 
     // Setup controls panel
     get_global_controls_panel().setup(m_panels[static_cast<int>(PanelId::Controls)], screen);
+    HELIX_BOOT_YIELD();
 
     // Setup print select panel
     get_print_select_panel(get_printer_state(), nullptr)
         ->setup(m_panels[static_cast<int>(PanelId::PrintSelect)], screen);
+    HELIX_BOOT_YIELD();
 
     // Setup filament panel
     get_global_filament_panel().setup(m_panels[static_cast<int>(PanelId::Filament)], screen);
+    HELIX_BOOT_YIELD();
 
     // Setup settings panel
     get_global_settings_panel().setup(m_panels[static_cast<int>(PanelId::Settings)], screen);
+    HELIX_BOOT_YIELD();
 
     // Setup advanced panel
     get_global_advanced_panel().setup(m_panels[static_cast<int>(PanelId::Advanced)], screen);
+    HELIX_BOOT_YIELD();
 
     // Register C++ panel instances for lifecycle dispatch (on_activate/on_deactivate)
     auto& nav = NavigationManager::instance();
