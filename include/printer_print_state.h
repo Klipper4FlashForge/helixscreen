@@ -268,6 +268,32 @@ class PrinterPrintState {
         return print_exception_message_;
     }
 
+    /// virtual_sdcard.pl_env_valid — Snapmaker-fork Power-Loss-Recovery flag.
+    /// True only after the firmware validates a coherent power-loss snapshot
+    /// against MCU flash on boot; default 0, and stays 0 on mainline Klipper
+    /// (field absent). Main-thread only (updated by update_from_status).
+    lv_subject_t* get_pl_env_valid_subject() {
+        return &pl_env_valid_;
+    }
+
+    /// True when virtual_sdcard.pl_env_valid is set. See get_pl_env_valid_subject().
+    [[nodiscard]] bool is_pl_env_valid() const {
+        return lv_subject_get_int(const_cast<lv_subject_t*>(&pl_env_valid_)) != 0;
+    }
+
+    /// virtual_sdcard.file_path — the file a Power-Loss-Recovery restore would
+    /// resume. Only meaningful when is_pl_env_valid() is true. Main-thread only.
+    [[nodiscard]] const std::string& pl_recovery_file() const {
+        return pl_recovery_file_;
+    }
+
+    /// Clear the cached Power-Loss-Recovery file path. Used on the disconnect
+    /// edge alongside forcing pl_env_valid back to 0, so a reconnect starts from
+    /// a clean slate and re-derives both from the fresh status. Main-thread only.
+    void clear_pl_recovery_file() {
+        pl_recovery_file_.clear();
+    }
+
     // ========================================================================
     // Setters
     // ========================================================================
@@ -619,6 +645,12 @@ class PrinterPrintState {
     // paused with is_active=false; see is_sdcard_active() docs). Main-thread
     // only, updated from update_from_status.
     bool sdcard_active_ = false;
+
+    // virtual_sdcard.pl_env_valid — Snapmaker-fork Power-Loss-Recovery flag.
+    lv_subject_t pl_env_valid_{}; // Integer: 1 when a validated PLR snapshot exists
+    // virtual_sdcard.file_path — companion to pl_env_valid_. Not a subject:
+    // no XML binding needed, read on the main thread by the resume dispatcher.
+    std::string pl_recovery_file_;
 
     // Slicer progress from display_status (M73 gcode command)
     // When active, preferred over virtual_sdcard file-position progress

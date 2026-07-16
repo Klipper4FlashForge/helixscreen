@@ -858,6 +858,7 @@ translations:
   Failed to delete file: Falha ao excluir arquivo
   Failed to delete profile: Falha ao excluir perfil
   Failed to delete spool: Falha ao excluir carretel
+  'Failed to discard recovery data: {}': ''
   'Failed to download G-code for modification: {}': 'Falha ao baixar G-code para modificação:
     {}'
   'Failed to download G-code for remap: {}': 'Falha ao baixar G-code para remapeamento:
@@ -1904,6 +1905,7 @@ translations:
   Recovering AFC system...: Recuperando sistema AFC...
   Recovery failed: Recuperação falhou
   'Recovery failed: ': 'A recuperação falhou: '
+  'Recovery failed: {}': ''
   Reduce Sensitivity: Reduzir Sensibilidade
   Reduce ringing and ghosting artifacts: Reduzir artefatos de ringing e ghosting
   Reduce vibration artifacts like ringing and ghosting: Reduzir artefatos de vibração
@@ -1973,6 +1975,7 @@ translations:
   Restarting...: Reiniciando...
   Resume: Retomar
   Resume Print: Retomar Impressão
+  Resume interrupted print?: ''
   Resume macro not configured: Macro de retomada não configurado
   'Resume preparation failed: {}': 'Falha na preparação para retomar: {}'
   Resuming...: Retomando...
@@ -2407,6 +2410,8 @@ translations:
     então trave a leitura.
   The printer halted this print and cannot resume it. Restart from the beginning?: A
     impressora parou esta impressão e não pode retomá-la. Reiniciar do início?
+  The printer lost power during a print. It can resume where it left off.: ''
+  The printer lost power while printing {}. Resume where it left off?: ''
   The printer rejected the filament configuration. The print was not started.: A impressora
     rejeitou a configuração do filamento. A impressão não foi iniciada.
   The runout sensor indicates no filament is loaded. Start print anyway?: O sensor

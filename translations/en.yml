@@ -825,6 +825,7 @@ translations:
   Failed to delete file: Failed to delete file
   Failed to delete profile: Failed to delete profile
   Failed to delete spool: Failed to delete spool
+  'Failed to discard recovery data: {}': 'Failed to discard recovery data: {}'
   'Failed to download G-code for modification: {}': 'Failed to download G-code for
     modification: {}'
   'Failed to download G-code for remap: {}': 'Failed to download G-code for remap:
@@ -1847,6 +1848,7 @@ translations:
   Recovering AFC system...: Recovering AFC system...
   Recovery failed: Recovery failed
   'Recovery failed: ': 'Recovery failed: '
+  'Recovery failed: {}': 'Recovery failed: {}'
   Reduce Sensitivity: Reduce Sensitivity
   Reduce ringing and ghosting artifacts: Reduce ringing and ghosting artifacts
   Reduce vibration artifacts like ringing and ghosting: Reduce vibration artifacts
@@ -1915,6 +1917,7 @@ translations:
   Restarting...: Restarting...
   Resume: Resume
   Resume Print: Resume Print
+  Resume interrupted print?: Resume interrupted print?
   Resume macro not configured: Resume macro not configured
   'Resume preparation failed: {}': 'Resume preparation failed: {}'
   Resuming...: Resuming...
@@ -2336,6 +2339,8 @@ translations:
     then lock the reading.
   The printer halted this print and cannot resume it. Restart from the beginning?: The
     printer halted this print and cannot resume it. Restart from the beginning?
+  The printer lost power during a print. It can resume where it left off.: The printer lost power during a print. It can resume where it left off.
+  The printer lost power while printing {}. Resume where it left off?: The printer lost power while printing {}. Resume where it left off?
   The printer rejected the filament configuration. The print was not started.: The
     printer rejected the filament configuration. The print was not started.
   The runout sensor indicates no filament is loaded. Start print anyway?: The runout

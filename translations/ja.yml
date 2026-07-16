@@ -768,6 +768,7 @@ translations:
   Failed to delete file: ファイルの削除に失敗しました
   Failed to delete profile: プロファイルの削除に失敗しました
   Failed to delete spool: スプールの削除に失敗しました
+  'Failed to discard recovery data: {}': ''
   'Failed to download G-code for modification: {}': 'G-code の変更用ダウンロードに失敗しました: {}'
   'Failed to download G-code for remap: {}': 'リマップ用のG-codeのダウンロードに失敗しました: {}'
   Failed to download helixscreen.conf.\nCheck printer connection.: helixscreen.confのダウンロードに失敗しました。\nプリンター接続を確認してください。
@@ -1716,6 +1717,7 @@ translations:
   Recovering AFC system...: AFCシステムを復旧中...
   Recovery failed: 復旧失敗
   'Recovery failed: ': '復旧に失敗しました: '
+  'Recovery failed: {}': ''
   Reduce Sensitivity: 感度を下げる
   Reduce ringing and ghosting artifacts: リンギングとゴーストのアーティファクトを軽減
   Reduce vibration artifacts like ringing and ghosting: リンギングやゴーストなどの振動アーティファクトを軽減
@@ -1780,6 +1782,7 @@ translations:
   Restarting...: 再起動中...
   Resume: 再開
   Resume Print: 印刷を再開
+  Resume interrupted print?: ''
   Resume macro not configured: 再開マクロが未設定です
   'Resume preparation failed: {}': '再開準備に失敗しました: {}'
   Resuming...: 再開中...
@@ -2155,6 +2158,8 @@ translations:
     then lock the reading.
   : モーターがベルトを振動させ、ストロボライトが同じ周波数で点滅します。ベルトが静止して(止まって)見えたとき、共振周波数を見つけたことになります。\n\n周波数ボタンで値を変化させ、ベルトが静止して見えたらその値を固定してください。
   The printer halted this print and cannot resume it. Restart from the beginning?: プリンターはこの印刷を停止し、再開できません。最初からやり直しますか？
+  The printer lost power during a print. It can resume where it left off.: ''
+  The printer lost power while printing {}. Resume where it left off?: ''
   The printer rejected the filament configuration. The print was not started.: プリンターがフィラメント設定を拒否しました。印刷は開始されませんでした。
   The runout sensor indicates no filament is loaded. Start print anyway?: フィラメント切れセンサーがフィラメント未装填を検出しました。それでも印刷を開始しますか？
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: ツールヘッドセンサーがフィラメント装填済みを検出しました。それでも装填を続行しますか？

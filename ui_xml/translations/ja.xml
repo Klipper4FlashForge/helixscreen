@@ -751,6 +751,7 @@
   <translation tag="Failed to delete file" ja="ファイルの削除に失敗しました"/>
   <translation tag="Failed to delete profile" ja="プロファイルの削除に失敗しました"/>
   <translation tag="Failed to delete spool" ja="スプールの削除に失敗しました"/>
+  <translation tag="Failed to discard recovery data: {}"/>
   <translation tag="Failed to download G-code for modification: {}" ja="G-code の変更用ダウンロードに失敗しました: {}"/>
   <translation tag="Failed to download G-code for remap: {}" ja="リマップ用のG-codeのダウンロードに失敗しました: {}"/>
   <translation tag="Failed to download helixscreen.conf.\nCheck printer connection." ja="helixscreen.confのダウンロードに失敗しました。\nプリンター接続を確認してください。"/>
@@ -1667,6 +1668,7 @@
   <translation tag="Recovering AFC system..." ja="AFCシステムを復旧中..."/>
   <translation tag="Recovery failed" ja="復旧失敗"/>
   <translation tag="Recovery failed: " ja="復旧に失敗しました: "/>
+  <translation tag="Recovery failed: {}"/>
   <translation tag="Reduce Sensitivity" ja="感度を下げる"/>
   <translation tag="Reduce ringing and ghosting artifacts" ja="リンギングとゴーストのアーティファクトを軽減"/>
   <translation tag="Reduce vibration artifacts like ringing and ghosting" ja="リンギングやゴーストなどの振動アーティファクトを軽減"/>
@@ -1731,6 +1733,7 @@
   <translation tag="Restarting..." ja="再起動中..."/>
   <translation tag="Resume" ja="再開"/>
   <translation tag="Resume Print" ja="印刷を再開"/>
+  <translation tag="Resume interrupted print?"/>
   <translation tag="Resume macro not configured" ja="再開マクロが未設定です"/>
   <translation tag="Resume preparation failed: {}" ja="再開準備に失敗しました: {}"/>
   <translation tag="Resuming..." ja="再開中..."/>
@@ -2081,6 +2084,8 @@
   <translation tag="The heater will cycle on and off several times." ja="ヒーターは数回オン/オフを繰り返します。"/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." ja="モーターがベルトを振動させ、ストロボライトが同じ周波数で点滅します。ベルトが静止して(止まって)見えたとき、共振周波数を見つけたことになります。\n\n周波数ボタンで値を変化させ、ベルトが静止して見えたらその値を固定してください。"/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" ja="プリンターはこの印刷を停止し、再開できません。最初からやり直しますか？"/>
+  <translation tag="The printer lost power during a print. It can resume where it left off."/>
+  <translation tag="The printer lost power while printing {}. Resume where it left off?"/>
   <translation tag="The printer rejected the filament configuration. The print was not started." ja="プリンターがフィラメント設定を拒否しました。印刷は開始されませんでした。"/>
   <translation tag="The runout sensor indicates no filament is loaded. Start print anyway?" ja="フィラメント切れセンサーがフィラメント未装填を検出しました。それでも印刷を開始しますか？"/>
   <translation tag="The toolhead sensor indicates filament is already loaded. Proceed with load anyway?" ja="ツールヘッドセンサーがフィラメント装填済みを検出しました。それでも装填を続行しますか？"/>

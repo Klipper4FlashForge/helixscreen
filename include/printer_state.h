@@ -547,6 +547,33 @@ class PrinterState {
     }
 
     /**
+     * @brief virtual_sdcard.pl_env_valid — Snapmaker-fork Power-Loss-Recovery flag.
+     *
+     * Delegated to PrinterPrintState; see its accessor docs.
+     */
+    lv_subject_t* get_pl_env_valid_subject() {
+        return print_domain_.get_pl_env_valid_subject();
+    }
+
+    [[nodiscard]] bool is_pl_env_valid() const {
+        return print_domain_.is_pl_env_valid();
+    }
+
+    /**
+     * @brief virtual_sdcard.file_path — the file a PLR restore would resume.
+     * Only meaningful when is_pl_env_valid() is true.
+     */
+    [[nodiscard]] const std::string& pl_recovery_file() const {
+        return print_domain_.pl_recovery_file();
+    }
+
+    /// Clear the cached PLR recovery file path. Delegated to PrinterPrintState;
+    /// see its accessor docs. Main-thread only.
+    void clear_pl_recovery_file() {
+        print_domain_.clear_pl_recovery_file();
+    }
+
+    /**
      * @brief True when Klipper's pause_resume.is_paused is set.
      *
      * Reflects the last received pause_resume.is_paused value from Moonraker.
