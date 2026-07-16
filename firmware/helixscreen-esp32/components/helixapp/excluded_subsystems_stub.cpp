@@ -6,8 +6,19 @@
 // panels, timelapse videos, belt-tension) so their .cpp TUs are NOT in
 // app_srcs.txt. Kept code (subject_initializer.cpp, ui_panel_controls.cpp,
 // moonraker_advanced_api.cpp, etc.) still references their symbols by address
-// or name. The idle Stage-A bring-up never navigates to any of these panels,
-// so the stubs are never dereferenced / never actually run their logic.
+// or name, so the stubs must resolve at link time.
+//
+// IMPORTANT: these accessors return a reference into UNINITIALIZED storage —
+// the object is never constructed, so its vtable pointer is garbage/zero.
+// Any VIRTUAL call on the returned reference (e.g. init_subjects()) dispatches
+// through that null vtable and faults (LoadProhibited). subject_initializer.cpp
+// used to call init_subjects() on bed_mesh/pid_cal/zoffset_cal/timelapse_videos
+// at BOOT (not on navigation) and crashed here; those calls are now gated
+// `#if !defined(HELIX_PLATFORM_ESP32)`. Only NON-virtual no-op member stubs
+// (e.g. PIDCalibrationPanel::set_temp_control_panel below) are safe to call on
+// this storage, because they never dereference `this`. If you add a new kept
+// call site that dereferences one of these, gate it too — do NOT rely on the
+// stub being "never touched".
 //
 // Stub strategies:
 //   * global-instance accessors (get_global_*_panel): return a reference into
