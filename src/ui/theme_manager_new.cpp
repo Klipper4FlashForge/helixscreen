@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "theme_manager.h"
 
+#include <spdlog/spdlog.h>  // TEMP: bisect instrumentation (remove after HIL)
+
 // Forward declarations for style configure functions
 namespace style_configs {
 void configure_card(lv_style_t* s, const ThemePalette& p);
@@ -186,9 +188,12 @@ void ThemeManager::set_dark_mode(bool dark) {
     dark_mode_ = dark;
 
     if (initialized_) {
+        spdlog::warn("[TEMP-BISECT set_dark_mode X] before apply_palette");  // TEMP
         apply_palette(dark ? dark_palette_ : light_palette_);
+        spdlog::warn("[TEMP-BISECT set_dark_mode Y] before lv_obj_report_style_change");  // TEMP
         // Trigger LVGL widget refresh
         lv_obj_report_style_change(nullptr);
+        spdlog::warn("[TEMP-BISECT set_dark_mode Z] after lv_obj_report_style_change");  // TEMP
     }
 }
 

@@ -733,10 +733,13 @@ static lv_theme_t* theme_init_lvgl(lv_display_t* display, const theme_palette_t*
     ThemePalette light_pal = convert_to_theme_palette(&light_theme_pal, props);
 
     auto& tm = ThemeManager::instance();
-    spdlog::warn("[TEMP-BISECT theme_init_lvgl A] before tm.set_palettes/init");  // TEMP
+    spdlog::warn("[TEMP-BISECT theme_init_lvgl A] before tm.set_palettes");  // TEMP
     tm.set_palettes(light_pal, dark_pal);
+    spdlog::warn("[TEMP-BISECT theme_init_lvgl A1] before tm.init");  // TEMP
     tm.init();
+    spdlog::warn("[TEMP-BISECT theme_init_lvgl A2] before tm.set_dark_mode");  // TEMP
     tm.set_dark_mode(is_dark);
+    spdlog::warn("[TEMP-BISECT theme_init_lvgl A3] after tm.set_dark_mode");  // TEMP
 
     // Initialize widget-specific styles not in StyleRole enum
     spdlog::warn("[TEMP-BISECT theme_init_lvgl B] before init_extra_styles");  // TEMP
