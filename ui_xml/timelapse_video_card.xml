@@ -44,11 +44,12 @@
     <!-- Metadata clip container -->
     <lv_obj name="metadata_clip"
             width="100%" height="#metadata_overlay_min_height" style_radius="0" style_pad_all="0" align="bottom_mid"
-            scrollable="false">
+            scrollable="false" clickable="false" event_bubble="true">
       <lv_obj name="metadata_overlay"
               width="100%" height="62" style_bg_opa="#metadata_overlay_opacity" style_radius="#border_radius"
               style_pad_left="#space_xs" style_pad_right="#space_xs" style_pad_top="#space_md"
-              style_pad_bottom="#space_xs" align="bottom_mid" flex_flow="column" scrollable="false">
+              style_pad_bottom="#space_xs" align="bottom_mid" flex_flow="column" scrollable="false"
+              clickable="false" event_bubble="true">
         <!-- Filename label -->
         <text_xs name="filename_label"
                  width="100%" height="18" text="$filename" long_mode="dots" style_text_color="#text"/>
