@@ -356,6 +356,9 @@ class PrintStatusWidget : public PanelWidget {
     void defer_reset_print_card_to_idle();
     void update_idle_compact_mode();
     void update_active_layout_mode();
+    // Apply the imperative print-card row/column flex layout for is_column_.
+    // Called from on_size_changed and attach() (recycled-instance re-sync, #1109).
+    void apply_card_layout();
     void update_last_print_availability();
 
     // Library action handlers

@@ -361,6 +361,12 @@ void PrintStatusWidget::attach(lv_obj_t* widget_obj, lv_obj_t* parent_screen) {
     update_idle_compact_mode();
     update_active_layout_mode();
 
+    // Sync the imperative print-card flex layout to the persisted is_column_.
+    // Instances are recycled across rebuilds onto a fresh component whose default
+    // flow is column; without this a recycled row-layout card whose colspan
+    // matches is_column_ would keep the default column layout (see #1109 pattern).
+    apply_card_layout();
+
     spdlog::debug("[PrintStatusWidget] Attached (layout_style={})", layout_style_);
 }
 
@@ -456,6 +462,25 @@ void PrintStatusWidget::on_size_changed(int colspan, int rowspan, int /*width_px
         return;
     }
     is_column_ = use_column;
+    apply_card_layout();
+
+    spdlog::debug("[PrintStatusWidget] on_size_changed {}x{} -> {} (compact={})", colspan, rowspan,
+                  use_column ? "column" : "row", is_compact_);
+}
+
+// Apply the imperative print-card flex layout (thumbnail row vs column) for the
+// current is_column_ state. Split out of on_size_changed so attach() can re-apply
+// it: widget instances are recycled across rebuilds, but a fresh XML component
+// starts at the default flow (column). Without an attach()-time apply, a card
+// whose new colspan matches the persisted is_column_ makes on_size_changed
+// early-return (use_column == is_column_) and the imperative layout is never
+// established on the fresh component — leaving a row-layout card (1x2/3x2) stuck
+// in the default column arrangement. Same recycled-instance class as #1109.
+void PrintStatusWidget::apply_card_layout() {
+    if (!print_card_layout_ || !print_card_thumb_wrap_)
+        return;
+
+    const bool use_column = is_column_;
 
     // Update subject for declarative icon visibility in XML
     lv_subject_set_int(&column_mode_subject_, use_column ? 1 : 0);
@@ -486,9 +511,6 @@ void PrintStatusWidget::on_size_changed(int colspan, int rowspan, int /*width_px
     }
     apply_info_layout(print_card_preparing_info_);
     apply_info_layout(print_card_info_);
-
-    spdlog::debug("[PrintStatusWidget] on_size_changed {}x{} -> {} (compact={})", colspan, rowspan,
-                  use_column ? "column" : "row", is_compact_);
 
     // Re-fit the Detailed-layout progress arc to a square sized from its
     // (now-known) parent column dimensions.
