@@ -144,9 +144,9 @@ Expands a body N times at load time — replaces a C++ create-and-wire loop.
 
 - `count`: literal, `#const`, or a subject name (subject-bound = reactive rebuild via async off-tree teardown, not a synchronous delete).
 - `$i` bare = whole-value substitution only (`text="$i"` works, `text="slot_$i"` does not splice).
-- `${i}` / `${prop}` = embedded composition — splices into a larger string, e.g. `bind_text="slot_${i}_label"` self-wires each repeated widget to its own indexed subject (C++ must register `slot_0_label`..`slot_N_label`). No escape sequence — a literal `${...}` anywhere in a value is always resolved as composition.
+- `${…}` = embedded composition **or** integer expression. A single bare name (`${i}`, `${prop}`) splices into a larger string, e.g. `bind_text="slot_${i}_label"` self-wires each repeated widget to its own indexed subject (C++ must register `slot_0_label`..`slot_N_label`). A token with operators is evaluated as an integer and the result spliced: `${i + 1}`, `${i * 84}` (numeric attrs), `${base * scale}` (subjects), `${cols * 2}` (numeric prop). Operands: `i`, integer literals, numeric props, subjects; grammar as in the expression evaluator. A literal `${...}` anywhere in a value is always resolved.
 - ⚠️ **A subject-bound `<repeat>` must be its parent's last child, or the sole child of a dedicated wrapper.** LVGL always appends freshly-created children to the tail of the parent's list, so on rebuild, items land after any static siblings that follow the `<repeat>` in the document — silently reordering the layout.
-- Not yet supported: `${i + 1}` arithmetic, nested `<repeat>`.
+- **Resolve-once**: a `${expr}` is evaluated once at widget creation; subject operands do not update reactively (use `bind_*` for live values). Not yet supported: float expressions, reactive computed numeric attributes, nested `<repeat>`.
 
 ## Styles
 
