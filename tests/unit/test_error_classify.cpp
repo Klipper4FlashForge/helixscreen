@@ -81,6 +81,29 @@ TEST_CASE("Error: command error is WARNING/KLIPPER", "[error-center][classify]")
     REQUIRE(e->source == helix::ErrorSource::KLIPPER);
 }
 
+TEST_CASE("raw_detail preserves Klipper's wording when detail is rewritten",
+          "[error-center][classify]") {
+    ClassifyContext ctx;
+    auto e = classify("!! Must home axis first", ctx);
+    REQUIRE(e.has_value());
+    // clean_error_text() rewrites the display text ("axis" -> "axes")...
+    REQUIRE(e->detail == "Must home axes first");
+    // ...but raw_detail must keep Klipper's exact wording, because that is the
+    // string the RPC channel records via record_caller_handled(). If these two
+    // diverge without raw_detail, the cross-source dedup can never match and
+    // the user gets two toasts for one rejection.
+    REQUIRE(e->raw_detail == "Must home axis first");
+}
+
+TEST_CASE("raw_detail equals detail when the cleaner leaves the text alone",
+          "[error-center][classify]") {
+    ClassifyContext ctx;
+    auto e = classify("!! Move out of range: X=400.000000", ctx);
+    REQUIRE(e.has_value());
+    REQUIRE(e->detail == "Move out of range: X=400.000000");
+    REQUIRE(e->raw_detail == e->detail);
+}
+
 TEST_CASE("non-error line yields nullopt", "[error-center][classify]") {
     ClassifyContext ctx;
     REQUIRE_FALSE(classify("// AFC_Brush: Clean Nozzle", ctx).has_value());

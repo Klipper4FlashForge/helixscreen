@@ -8,6 +8,7 @@
 
 #include "gcode_classify.h"
 #include "gcode_homing.h"
+#include "jog_coalescer.h"
 #include "moonraker_client.h"
 #include "moonraker_types.h"
 #include "printer_state.h"
@@ -16,6 +17,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <iomanip>
 #include <sstream>
 
 #include "hv/json.hpp"
@@ -40,6 +42,32 @@ bool is_safe_position(double position, const SafetyLimits& limits) {
 
 bool is_safe_feedrate(double feedrate, const SafetyLimits& limits) {
     return feedrate >= limits.min_feedrate_mm_min && feedrate <= limits.max_feedrate_mm_min;
+}
+
+/**
+ * Format a numeric value for G-code without ever emitting scientific notation.
+ *
+ * A bare `ostringstream << double` uses defaultfloat: roughly 6 significant
+ * digits, switching to scientific notation for small magnitudes. Klipper
+ * tolerates "X1e-17", but it is unreadable in logs and one clamp change away
+ * from a genuinely odd command — clamp_jog_delta can return a real sub-micron
+ * residual (predicted=199.9999995, +1, max=200 -> ~5e-7).
+ *
+ * Fixed notation with trailing zeros trimmed keeps ordinary values byte-identical
+ * to the old defaultfloat output ("4", "0.5", "-2", "6000") while making
+ * scientific output unrepresentable for anything that survives the epsilon gate.
+ */
+std::string format_gcode_value(double v) {
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(6) << v;
+    std::string s = ss.str();
+    // std::fixed always emits a decimal point for finite values (NaN/Inf are
+    // rejected upstream), so the trim is unconditional.
+    s.erase(s.find_last_not_of('0') + 1);
+    if (!s.empty() && s.back() == '.') {
+        s.pop_back();
+    }
+    return s;
 }
 
 bool reject_non_finite(std::initializer_list<double> values, const char* method,
@@ -346,28 +374,36 @@ std::string MoonrakerMotionAPI::generate_relative_move_gcode(double dx, double d
             return "";
         }
     }
-    if (dx == 0.0 && dy == 0.0 && dz == 0.0) {
-        return "";
+    // Gate each axis on the SAME epsilon that AxisMove::any() uses to decide
+    // whether a coalesced move is worth flushing at all. An exact != 0.0 test
+    // here disagreed with that gate: a cross-axis reversal nets ~1e-17 of float
+    // cancellation residue onto one axis while another carries a real delta, and
+    // the residue was serialized as a real term ("G0 X1e-17 Y2").
+    const bool move_x = std::abs(dx) > helix::AxisMove::kEpsilonMm;
+    const bool move_y = std::abs(dy) > helix::AxisMove::kEpsilonMm;
+    const bool move_z = std::abs(dz) > helix::AxisMove::kEpsilonMm;
+    if (!move_x && !move_y && !move_z) {
+        return ""; // includes the all-zero case
     }
 
     std::ostringstream gcode;
     gcode << "G91";
-    if (dx != 0.0 || dy != 0.0) {
+    if (move_x || move_y) {
         gcode << "\nG0";
-        if (dx != 0.0) {
-            gcode << " X" << dx;
+        if (move_x) {
+            gcode << " X" << format_gcode_value(dx);
         }
-        if (dy != 0.0) {
-            gcode << " Y" << dy;
+        if (move_y) {
+            gcode << " Y" << format_gcode_value(dy);
         }
         if (xy_feedrate > 0) {
-            gcode << " F" << xy_feedrate;
+            gcode << " F" << format_gcode_value(xy_feedrate);
         }
     }
-    if (dz != 0.0) {
-        gcode << "\nG0 Z" << dz;
+    if (move_z) {
+        gcode << "\nG0 Z" << format_gcode_value(dz);
         if (z_feedrate > 0) {
-            gcode << " F" << z_feedrate;
+            gcode << " F" << format_gcode_value(z_feedrate);
         }
     }
     gcode << "\nG90";

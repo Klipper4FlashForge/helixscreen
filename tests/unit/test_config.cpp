@@ -5,6 +5,7 @@
 #include "app_constants.h"
 #include "config.h"
 #include "config_testing.h"
+#include "runtime_config.h"
 #include "static_subject_registry.h"
 #include "wizard_config_paths.h"
 
@@ -1515,16 +1516,22 @@ TEST_CASE_METHOD(ConfigTestFixture, "Config: language supports all planned langu
 // ============================================================================
 
 // RAII guard to save and restore the global backup file that init() overwrites
-/// RAII guard: redirect HOME to a temp dir so tarball-detection doesn't find
-/// real backups. Each instance gets a unique dir to avoid parallel-shard races.
+/// RAII guard: redirect BOTH backup tiers (the $HOME fallback and the
+/// /var/lib/helixscreen StateDirectory primary) to a temp dir so neither
+/// tarball-detection nor restore finds a real backup. Redirecting the primary
+/// too is what lets these tests run on a machine with HelixScreen installed —
+/// they used to SKIP whenever /var/lib/helixscreen/settings.json.backup existed.
+/// Each instance gets a unique dir to avoid parallel-shard races.
 struct BackupGuard {
     std::string temp_dir;
     std::string original_home;
+    std::string prev_state_dir;
     bool had_home;
 
     BackupGuard()
         : temp_dir(std::filesystem::temp_directory_path().string() + "/helix_nobackup_" +
                    std::to_string(getpid()) + "_" + std::to_string(rand())),
+          prev_state_dir(AppConstants::Update::detail::state_dir_ref()),
           had_home(std::getenv("HOME") != nullptr) {
         if (had_home)
             original_home = std::getenv("HOME");
@@ -1532,6 +1539,7 @@ struct BackupGuard {
         setenv("HOME", temp_dir.c_str(), 1);
         AppConstants::Update::detail::backup_fallback_dir_ref() =
             AppConstants::Update::sanitize_home(std::getenv("HOME")) + "/.helixscreen";
+        AppConstants::Update::detail::state_dir_ref() = temp_dir + "/var-lib";
     }
     ~BackupGuard() {
         if (had_home)
@@ -1540,6 +1548,7 @@ struct BackupGuard {
             unsetenv("HOME");
         AppConstants::Update::detail::backup_fallback_dir_ref() =
             AppConstants::Update::sanitize_home(std::getenv("HOME")) + "/.helixscreen";
+        AppConstants::Update::detail::state_dir_ref() = prev_state_dir;
         std::error_code ec;
         std::filesystem::remove_all(temp_dir, ec);
     }
@@ -1615,12 +1624,9 @@ TEST_CASE_METHOD(ConfigTestFixture,
 TEST_CASE_METHOD(ConfigTestFixture,
                  "Config: fresh config gets version stamp and sounds default to false",
                  "[core][config][migration][versioning]") {
-    // System-level backup at /var/lib/helixscreen/ takes priority over HOME-based
-    // fallback and would be restored instead of creating a truly fresh config.
-    struct stat st {};
-    if (stat("/var/lib/helixscreen/settings.json.backup", &st) == 0)
-        SKIP(
-            "System backup exists at /var/lib/helixscreen/ — would override fresh config defaults");
+    // BackupGuard (below) redirects both backup tiers into a temp dir, so a real
+    // /var/lib/helixscreen backup on the host cannot be restored over the fresh
+    // config this test is asserting about.
 
     // Brand new config — no file exists
     std::string temp_dir = std::filesystem::temp_directory_path().string() + "/helix_fresh_test_" +
@@ -2482,15 +2488,25 @@ namespace {
 
 /// RAII guard for HOME environment variable — ensures cleanup even if assertions throw.
 /// Prevents environ poisoning that creates junk single-char directories in CWD.
+///
+/// Also redirects the primary (StateDirectory) backup tier under the same temp
+/// home. The primary tier outranks the $HOME fallback in the search order, so
+/// without this a real /var/lib/helixscreen/settings.json.backup on the host
+/// would be restored instead of the fixture's backup — which is why these tests
+/// used to SKIP on any machine that had ever installed HelixScreen.
 struct HomeGuard {
     std::string original;
+    std::string prev_state_dir;
     bool had_home;
-    explicit HomeGuard(const std::string& new_home) : had_home(std::getenv("HOME") != nullptr) {
+    explicit HomeGuard(const std::string& new_home)
+        : prev_state_dir(AppConstants::Update::detail::state_dir_ref()),
+          had_home(std::getenv("HOME") != nullptr) {
         if (had_home)
             original = std::getenv("HOME");
         setenv("HOME", new_home.c_str(), 1);
         AppConstants::Update::detail::backup_fallback_dir_ref() =
             AppConstants::Update::sanitize_home(std::getenv("HOME")) + "/.helixscreen";
+        AppConstants::Update::detail::state_dir_ref() = new_home + "/var-lib";
     }
     ~HomeGuard() {
         if (had_home)
@@ -2499,6 +2515,7 @@ struct HomeGuard {
             unsetenv("HOME");
         AppConstants::Update::detail::backup_fallback_dir_ref() =
             AppConstants::Update::sanitize_home(std::getenv("HOME")) + "/.helixscreen";
+        AppConstants::Update::detail::state_dir_ref() = prev_state_dir;
     }
 };
 
@@ -2510,12 +2527,8 @@ struct HomeGuard {
 
 TEST_CASE("Config::init() recovers from corrupt config by restoring backup",
           "[core][config][corruption]") {
-    // System-level backup at /var/lib/helixscreen/ takes priority over the
-    // HOME-based fallback this test sets up, causing wrong data to be restored.
-    struct stat st {};
-    if (stat("/var/lib/helixscreen/settings.json.backup", &st) == 0)
-        SKIP("System backup exists at /var/lib/helixscreen/ — would override test backup");
-
+    // HomeGuard (below) redirects both backup tiers into temp_dir, so a real
+    // /var/lib/helixscreen backup on the host cannot outrank this test's backup.
     std::string temp_dir = "/tmp/helix_test_corrupt_backup_" + std::to_string(getpid());
     std::filesystem::remove_all(temp_dir);
     std::filesystem::create_directories(temp_dir);
@@ -2569,26 +2582,10 @@ TEST_CASE("Config::init() falls back to defaults when corrupt and no backup exis
         o << "not json at all";
     }
 
-    // RAII guard: restore HOME even if REQUIRE throws
-    struct HomeRestore {
-        std::string orig;
-        bool had;
-        HomeRestore() : had(std::getenv("HOME") != nullptr) {
-            if (had)
-                orig = std::getenv("HOME");
-        }
-        ~HomeRestore() {
-            if (had)
-                setenv("HOME", orig.c_str(), 1);
-            else
-                unsetenv("HOME");
-            AppConstants::Update::detail::backup_fallback_dir_ref() =
-                AppConstants::Update::sanitize_home(std::getenv("HOME")) + "/.helixscreen";
-        }
-    } home_guard;
-    setenv("HOME", temp_dir.c_str(), 1);
-    AppConstants::Update::detail::backup_fallback_dir_ref() =
-        AppConstants::Update::sanitize_home(std::getenv("HOME")) + "/.helixscreen";
+    // RAII guard: redirect both backup tiers into temp_dir and restore them (and
+    // HOME) even if REQUIRE throws. Redirecting the primary tier keeps the test
+    // independent of a real /var/lib/helixscreen backup on the host.
+    HomeGuard home_guard(temp_dir);
 
     Config test_config;
     test_config.init(temp_path);
@@ -2615,26 +2612,10 @@ TEST_CASE("Config::init() falls back to defaults when both config and backup are
         o << "{truncated";
     }
 
-    // RAII guard: restore HOME even if REQUIRE throws
-    struct HomeRestore {
-        std::string orig;
-        bool had;
-        HomeRestore() : had(std::getenv("HOME") != nullptr) {
-            if (had)
-                orig = std::getenv("HOME");
-        }
-        ~HomeRestore() {
-            if (had)
-                setenv("HOME", orig.c_str(), 1);
-            else
-                unsetenv("HOME");
-            AppConstants::Update::detail::backup_fallback_dir_ref() =
-                AppConstants::Update::sanitize_home(std::getenv("HOME")) + "/.helixscreen";
-        }
-    } home_guard;
-    setenv("HOME", temp_dir.c_str(), 1);
-    AppConstants::Update::detail::backup_fallback_dir_ref() =
-        AppConstants::Update::sanitize_home(std::getenv("HOME")) + "/.helixscreen";
+    // RAII guard: redirect both backup tiers into temp_dir and restore them (and
+    // HOME) even if REQUIRE throws. Redirecting the primary tier keeps the test
+    // independent of a real /var/lib/helixscreen backup on the host.
+    HomeGuard home_guard(temp_dir);
 
     std::string backup_dir = temp_dir + "/.helixscreen";
     std::filesystem::create_directories(backup_dir);
@@ -2655,14 +2636,13 @@ TEST_CASE("Config::init() falls back to defaults when both config and backup are
 // ============================================================================
 // Tarball Default Detection Tests (Moonraker web update config clobber)
 //
-// These tests require no system-level backup at /var/lib/helixscreen/ — they
-// will SKIP on devices with HelixScreen installed.  Designed for CI / clean
-// build machines.
+// HomeGuard redirects both backup tiers into the temp dir, so these run on
+// developer machines with HelixScreen installed as well as on clean CI boxes.
 // ============================================================================
 
 namespace {
 
-/// RAII temp directory + HOME redirect for tarball detection tests.
+/// RAII temp directory + backup-tier redirect for tarball detection tests.
 struct TarballTestEnv {
     std::filesystem::path dir;
     std::string config_path;
@@ -2673,9 +2653,6 @@ struct TarballTestEnv {
         : dir("/tmp/helix_test_" + name + "_" + std::to_string(getpid())),
           config_path((dir / "settings.json").string()),
           backup_dir((dir / ".helixscreen").string()), home(dir.string()) {
-        struct stat st {};
-        if (stat("/var/lib/helixscreen/settings.json.backup", &st) == 0)
-            SKIP("System backup exists at /var/lib/helixscreen/ — would override test");
         std::filesystem::remove_all(dir);
         std::filesystem::create_directories(dir);
     }
@@ -3252,4 +3229,214 @@ TEST_CASE("Config: v16→v17 migration renames retired Voron printer_image IDs",
 
         std::filesystem::remove_all(temp_dir);
     }
+}
+
+// ============================================================================
+// Test-Mode Backup Isolation Tests (#1105)
+//
+// `--test` declares its own config (config/settings-test.json) but the backup
+// cascade searched PRODUCTION locations (/var/lib/helixscreen/, $HOME/.helixscreen/).
+// A missing test config was therefore silently overwritten with a stale real
+// config, and saving in test mode clobbered the real user's rolling backup with
+// test data. Test mode must never read or write production backups.
+// ============================================================================
+
+namespace {
+
+/// RAII: force RuntimeConfig::test_mode and restore the previous value.
+struct ConfigTestModeGuard {
+    RuntimeConfig* rc;
+    bool prev;
+    explicit ConfigTestModeGuard(bool enabled) : rc(get_runtime_config()), prev(rc->test_mode) {
+        rc->test_mode = enabled;
+    }
+    ~ConfigTestModeGuard() {
+        rc->test_mode = prev;
+    }
+};
+
+/// RAII: redirect BOTH backup tiers (primary StateDirectory + $HOME fallback)
+/// into a temp dir, so a real /var/lib/helixscreen backup on the dev box cannot
+/// influence the test, and the test cannot touch the real one.
+struct BackupSandbox {
+    std::filesystem::path dir;
+    std::string prev_state_dir;
+    std::string prev_fallback_dir;
+    std::string original_home;
+    bool had_home;
+
+    explicit BackupSandbox(const std::string& name)
+        : dir("/tmp/helix_test_" + name + "_" + std::to_string(getpid()) + "_" +
+              std::to_string(rand())),
+          prev_state_dir(AppConstants::Update::detail::state_dir_ref()),
+          prev_fallback_dir(AppConstants::Update::detail::backup_fallback_dir_ref()),
+          had_home(std::getenv("HOME") != nullptr) {
+        if (had_home)
+            original_home = std::getenv("HOME");
+        std::filesystem::remove_all(dir);
+        std::filesystem::create_directories(dir);
+        setenv("HOME", dir.string().c_str(), 1);
+        AppConstants::Update::detail::state_dir_ref() = (dir / "var-lib").string();
+        AppConstants::Update::detail::backup_fallback_dir_ref() = (dir / ".helixscreen").string();
+    }
+
+    ~BackupSandbox() {
+        if (had_home)
+            setenv("HOME", original_home.c_str(), 1);
+        else
+            unsetenv("HOME");
+        AppConstants::Update::detail::state_dir_ref() = prev_state_dir;
+        AppConstants::Update::detail::backup_fallback_dir_ref() = prev_fallback_dir;
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+    }
+
+    std::string config_path() const {
+        return (dir / "settings-test.json").string();
+    }
+
+    /// Write a backup at the primary (StateDirectory) tier.
+    void write_primary_backup(const json& j) {
+        std::filesystem::create_directories(AppConstants::Update::state_dir());
+        std::ofstream o(AppConstants::Update::config_backup_primary());
+        o << j.dump(2);
+    }
+
+    bool primary_backup_exists() const {
+        return std::filesystem::exists(AppConstants::Update::config_backup_primary());
+    }
+
+    json read_primary_backup() const {
+        return json::parse(std::fstream(AppConstants::Update::config_backup_primary()));
+    }
+};
+
+/// A recognizable "production" backup — marker values that must never leak into
+/// a test-mode config.
+json production_backup_json() {
+    return json{{"config_version", CURRENT_CONFIG_VERSION},
+                {"active_printer_id", "real-production-printer"},
+                {"brightness", 42},
+                {"wizard_completed", true},
+                {"printers", {{"real-production-printer", {{"moonraker_host", "10.9.9.9"}}}}}};
+}
+
+} // namespace
+
+TEST_CASE("Config::init() in test mode does not restore a missing config from a production backup",
+          "[core][config][test-mode][backup-isolation]") {
+    BackupSandbox env("testmode_no_restore");
+    env.write_primary_backup(production_backup_json());
+    REQUIRE(env.primary_backup_exists()); // precondition: a backup IS available
+
+    ConfigTestModeGuard test_mode(true);
+
+    // Config file is absent — exactly the `--test` first-run case.
+    REQUIRE_FALSE(std::filesystem::exists(env.config_path()));
+
+    Config test_config;
+    test_config.init(env.config_path());
+
+    // Must fall back to normal defaults, NOT the production backup.
+    REQUIRE(test_config.get<std::string>("/active_printer_id", "") != "real-production-printer");
+    REQUIRE(test_config.get<int>("/brightness", 0) != 42);
+    REQUIRE(test_config.get<std::string>("/printers/real-production-printer/moonraker_host", "") ==
+            "");
+}
+
+TEST_CASE("Config::init() outside test mode still restores a missing config from backup",
+          "[core][config][backup-isolation]") {
+    // Guards the isolation from over-reaching: production recovery must survive.
+    BackupSandbox env("prodmode_restores");
+    env.write_primary_backup(production_backup_json());
+
+    ConfigTestModeGuard test_mode(false);
+
+    REQUIRE_FALSE(std::filesystem::exists(env.config_path()));
+
+    Config test_config;
+    test_config.init(env.config_path());
+
+    REQUIRE(test_config.get<std::string>("/active_printer_id", "") == "real-production-printer");
+    REQUIRE(test_config.get<int>("/brightness", 0) == 42);
+}
+
+TEST_CASE("Config::init() in test mode does not adopt a backup over a tarball-default config",
+          "[core][config][test-mode][backup-isolation]") {
+    // The second /var/lib-consulting path: a loaded config with config_version==0
+    // is treated as a tarball default and replaced with backup contents.
+    BackupSandbox env("testmode_no_tarball_adopt");
+    env.write_primary_backup(production_backup_json());
+
+    // A config_version==0 config — would trip tarball detection outside test mode.
+    {
+        std::ofstream o(env.config_path());
+        o << json{{"preset", "ad5x"},
+                  {"wizard_completed", false},
+                  {"printers", {{"default", {{"moonraker_host", "127.0.0.1"}}}}}}
+                 .dump(2);
+    }
+
+    ConfigTestModeGuard test_mode(true);
+
+    Config test_config;
+    test_config.init(env.config_path());
+
+    // Test config must stay put — no production data adopted.
+    REQUIRE(test_config.get<std::string>("/active_printer_id", "") != "real-production-printer");
+    REQUIRE(test_config.get<int>("/brightness", 0) != 42);
+}
+
+TEST_CASE("Config::init() in test mode does not write a production rolling backup",
+          "[core][config][test-mode][backup-isolation]") {
+    // The write-side mirror of the same hazard: test-mode saves must not clobber
+    // the real user's rolling backup with test data.
+    BackupSandbox env("testmode_no_backup_write");
+
+    // A complete, wizard-completed config so init()'s rolling-backup write is reached.
+    {
+        std::ofstream o(env.config_path());
+        o << json{{"config_version", CURRENT_CONFIG_VERSION},
+                  {"active_printer_id", "test-printer"},
+                  {"wizard_completed", true},
+                  {"brightness", 7},
+                  {"printers", {{"test-printer", {{"moonraker_host", "127.0.0.1"}}}}}}
+                 .dump(2);
+    }
+
+    ConfigTestModeGuard test_mode(true);
+
+    Config test_config;
+    test_config.init(env.config_path());
+    test_config.set("/brightness", 9);
+    test_config.save();
+
+    REQUIRE_FALSE(env.primary_backup_exists());
+    REQUIRE_FALSE(std::filesystem::exists(AppConstants::Update::config_backup_fallback()));
+}
+
+TEST_CASE("Config::save() outside test mode still writes a rolling backup",
+          "[core][config][backup-isolation]") {
+    // Guards the write-side isolation from over-reaching.
+    BackupSandbox env("prodmode_writes_backup");
+
+    {
+        std::ofstream o(env.config_path());
+        o << json{{"config_version", CURRENT_CONFIG_VERSION},
+                  {"active_printer_id", "test-printer"},
+                  {"wizard_completed", true},
+                  {"brightness", 7},
+                  {"printers", {{"test-printer", {{"moonraker_host", "127.0.0.1"}}}}}}
+                 .dump(2);
+    }
+
+    ConfigTestModeGuard test_mode(false);
+
+    Config test_config;
+    test_config.init(env.config_path());
+    test_config.set("/brightness", 9);
+    test_config.save();
+
+    REQUIRE(env.primary_backup_exists());
+    REQUIRE(env.read_primary_backup().value("brightness", 0) == 9);
 }

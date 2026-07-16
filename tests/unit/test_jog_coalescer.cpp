@@ -108,3 +108,40 @@ TEST_CASE("clamp_jog_delta: clamps target to envelope", "[jog_coalescer]") {
     CHECK_THAT(helix::clamp_jog_delta(200.0, 0.0, -1.0, 0.0, 200.0),
                Catch::Matchers::WithinAbs(-1.0, 1e-9));
 }
+
+TEST_CASE("clamp_jog_delta: clamps target to the min edge", "[jog_coalescer]") {
+    // Mirror of the max-edge case above. Every assertion there passes min=0.0,
+    // which never binds, so the min branch of std::clamp went unguarded.
+    // current=5, nothing uncommitted, -10 would hit -5 with min 0 -> -5
+    CHECK_THAT(helix::clamp_jog_delta(5.0, 0.0, -10.0, 0.0, 200.0),
+               Catch::Matchers::WithinAbs(-5.0, 1e-9));
+    // Accounts for uncommitted travel: current=10, -5 uncommitted, -10 -> -5
+    CHECK_THAT(helix::clamp_jog_delta(10.0, -5.0, -10.0, 0.0, 200.0),
+               Catch::Matchers::WithinAbs(-5.0, 1e-9));
+    // Fully at edge -> 0
+    CHECK(helix::clamp_jog_delta(0.0, 0.0, -1.0, 0.0, 200.0) == 0.0);
+    // Never reverses direction even if predicted undershoots the envelope
+    CHECK(helix::clamp_jog_delta(-5.0, 0.0, -1.0, 0.0, 200.0) == 0.0);
+    // Moves away from the edge pass through untouched
+    CHECK_THAT(helix::clamp_jog_delta(0.0, 0.0, 1.0, 0.0, 200.0),
+               Catch::Matchers::WithinAbs(1.0, 1e-9));
+}
+
+TEST_CASE("clamp_jog_delta: honours a negative min envelope", "[jog_coalescer]") {
+    // A min of 0.0 is indistinguishable from "no lower bound" for most sign
+    // errors. Y axes routinely carry a negative soft limit (position_min: -5),
+    // so the lower bound must be respected as an arbitrary value, not as zero.
+    // predicted=0, -10 would hit -10 with min -5 -> -5
+    CHECK_THAT(helix::clamp_jog_delta(0.0, 0.0, -10.0, -5.0, 200.0),
+               Catch::Matchers::WithinAbs(-5.0, 1e-9));
+    // Uncommitted travel already ate part of the envelope: predicted=-4, -1 left
+    CHECK_THAT(helix::clamp_jog_delta(-3.0, -1.0, -10.0, -5.0, 200.0),
+               Catch::Matchers::WithinAbs(-1.0, 1e-9));
+    // Sitting exactly on the negative limit -> 0
+    CHECK(helix::clamp_jog_delta(-5.0, 0.0, -1.0, -5.0, 200.0) == 0.0);
+    // Past the negative limit -> 0, never a direction-reversing correction
+    CHECK(helix::clamp_jog_delta(-7.0, 0.0, -1.0, -5.0, 200.0) == 0.0);
+    // Moving back inside from the negative limit passes through untouched
+    CHECK_THAT(helix::clamp_jog_delta(-5.0, 0.0, 2.0, -5.0, 200.0),
+               Catch::Matchers::WithinAbs(2.0, 1e-9));
+}

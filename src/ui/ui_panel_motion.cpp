@@ -679,7 +679,12 @@ void MotionPanel::jog(JogDirection direction, float distance_mm) {
     if (ddx != 0.0 && bounds.has_x && x_homed) {
         ddx = helix::clamp_jog_delta(current_x_, jog_coalescer_.uncommitted_x(), ddx, bounds.x_min,
                                      bounds.x_max);
-        if (ddx == 0.0) {
+        // Epsilon, not == 0.0: clamping against a predicted position that is a
+        // hair inside the envelope returns a sub-micron residual (199.9999995,
+        // +1, max=200 -> ~5e-7). That is a blocked jog, not a real move — an
+        // exact compare skipped the warning and dispatched a no-op instead.
+        if (std::abs(ddx) <= helix::AxisMove::kEpsilonMm) {
+            ddx = 0.0;
             if (!x_edge_warned_) {
                 NOTIFY_WARNING(lv_tr("X jog blocked at bed edge"));
                 x_edge_warned_ = true;
@@ -691,7 +696,8 @@ void MotionPanel::jog(JogDirection direction, float distance_mm) {
     if (ddy != 0.0 && bounds.has_y && y_homed) {
         ddy = helix::clamp_jog_delta(current_y_, jog_coalescer_.uncommitted_y(), ddy, bounds.y_min,
                                      bounds.y_max);
-        if (ddy == 0.0) {
+        if (std::abs(ddy) <= helix::AxisMove::kEpsilonMm) {
+            ddy = 0.0;
             if (!y_edge_warned_) {
                 NOTIFY_WARNING(lv_tr("Y jog blocked at bed edge"));
                 y_edge_warned_ = true;

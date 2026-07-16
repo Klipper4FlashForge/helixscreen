@@ -83,7 +83,18 @@ struct MoonrakerError {
         } else if (type == MoonrakerErrorType::CONNECTION_LOST) {
             return "Connection to printer lost.";
         } else if (type == MoonrakerErrorType::NOT_READY) {
-            return "Printer is not ready. Please wait for initialization.";
+            // A populated NOT_READY message is always more specific than the
+            // generic fallback, and the fallback is actively misleading for the
+            // transient cases: the guards distinguish "busy — try again in a
+            // moment" and "homing is disabled while a print is in progress",
+            // neither of which is "wait for initialization". Klipper's own
+            // not-ready text likewise names the actual fault.
+            //
+            // Deliberately narrow: TIMEOUT/CONNECTION_LOST above keep their
+            // curated strings because their `message` fields hold diagnostic
+            // detail ("WebSocket connection lost"), which reads as jargon.
+            return message.empty() ? "Printer is not ready. Please wait for initialization."
+                                   : message;
         } else if (type == MoonrakerErrorType::FILE_NOT_FOUND) {
             return "File not found on printer.";
         } else if (type == MoonrakerErrorType::PERMISSION_DENIED) {

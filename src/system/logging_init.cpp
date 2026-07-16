@@ -23,6 +23,7 @@
 #include <lvgl.h>
 #include <memory>
 #include <sstream>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
 
@@ -310,6 +311,67 @@ void init_early() {
     spdlog::set_default_logger(logger);
 }
 
+StdoutKind classify_stdout() {
+    if (isatty(STDOUT_FILENO) != 0)
+        return StdoutKind::Tty;
+
+    struct stat st {};
+    if (fstat(STDOUT_FILENO, &st) != 0)
+        return StdoutKind::Other; // conservative: not forceable
+
+    if (S_ISFIFO(st.st_mode))
+        return StdoutKind::Pipe;
+    if (S_ISREG(st.st_mode))
+        return StdoutKind::File;
+    if (S_ISSOCK(st.st_mode))
+        return StdoutKind::Socket;
+    return StdoutKind::Other;
+}
+
+bool should_add_console(LogTarget effective_target, bool enable_console, bool force_console,
+                        bool test_mode, StdoutKind stdout_kind) {
+    if (!enable_console)
+        return false;
+
+    switch (effective_target) {
+    case LogTarget::Console:
+        // Console is the only sink for this target — always attach.
+        return true;
+    case LogTarget::Android:
+        // stdout is invisible under logcat; android_sink carries the output.
+        // Deliberately checked BEFORE test_mode: Android + --test is not a real
+        // configuration, and a console sink would be unreadable there anyway, so
+        // test mode does not override this.
+        return false;
+    default:
+        // Journal/Syslog/File already capture output structurally. Attach the
+        // console for interactive shell runs so dev boxes and `ssh -t` still see
+        // colored output, but not for daemonized launches where stdout is
+        // redirected into that same journal/file — that double-logs every line
+        // (root cause of the Snapmaker U1 tmpfs blowout: /tmp/helixscreen.log
+        // grew to 498 MB at trace level).
+        //
+        // force_console (explicit -v/--log-level) additionally attaches the
+        // console for a PIPE — a human watching via `| tee` — but never for a
+        // regular file or socket, which are the daemon redirect and the systemd
+        // journal. The shipped launcher synthesizes --log-level/-vv from
+        // HELIX_LOG_LEVEL / HELIX_DEBUG, so force_console IS reachable under
+        // systemd; forcing there would reintroduce the blowout. See the full
+        // rationale on should_add_console() in logging_init.h.
+        //
+        // test_mode attaches the console for ANY stdout kind, closing the gap for
+        // `--test -vv > file` (#1105's literal repro, which a reporter may well
+        // have redirected rather than piped). Safe because --test never runs in
+        // production: no systemd unit, init script, procd shim, or launcher
+        // passes it, so test mode cannot reach a daemonized double-log path.
+        if (test_mode)
+            return true;
+        if (stdout_kind == StdoutKind::Tty)
+            return true;
+        return force_console && stdout_kind == StdoutKind::Pipe;
+    }
+}
+
 void init(const LogConfig& config) {
     std::vector<spdlog::sink_ptr> sinks;
 
@@ -324,31 +386,11 @@ void init(const LogConfig& config) {
         (effective_target == LogTarget::File) ? resolve_log_file_path(config.file_path) : "";
 
     // Console sink — added when enabled AND the target benefits from it.
-    //
-    // Behavior by target:
-    //   - Console: console is the ONLY sink, always add.
-    //   - Android: stdout is invisible; android_sink handles output. Skip.
-    //   - Syslog/Journal/File: structured destination already captures output.
-    //     Add console ONLY when stdout is a TTY (interactive run from a shell),
-    //     so dev workstations and `ssh -t` sessions still see colored output.
-    //     Daemonized launches under SysV/systemd have stdout redirected to a
-    //     file or the journal — adding a stdout sink there double-logs every
-    //     line (was the root cause of the Snapmaker U1 tmpfs blowout where
-    //     /tmp/helixscreen.log grew to 498 MB at trace level).
-    bool add_console = false;
-    if (config.enable_console) {
-        switch (effective_target) {
-        case LogTarget::Console:
-            add_console = true;
-            break;
-        case LogTarget::Android:
-            add_console = false;
-            break;
-        default:
-            add_console = (isatty(STDOUT_FILENO) != 0);
-            break;
-        }
-    }
+    // Decision lives in should_add_console() so it is unit-testable without a TTY;
+    // classify_stdout() is the only part that touches the real fd.
+    bool add_console =
+        should_add_console(effective_target, config.enable_console, config.force_console,
+                           config.test_mode, classify_stdout());
     if (add_console) {
         auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
         console->set_pattern(pattern_for_sink(SinkKind::Console));

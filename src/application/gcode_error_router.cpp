@@ -241,6 +241,24 @@ std::string GcodeErrorRouter::truncate_for_toast(std::string text) {
     return text;
 }
 
+// Cross-source dedup lookup, kept in ONE normalization on both sides.
+//
+// MoonrakerRequestTracker::route_response() records the RAW Klipper-supplied
+// `error.message`, so the identity we look up is `raw_detail` — Klipper's
+// wording before clean_error_text() rewrote it. Matching on `detail` alone
+// misses every message the cleaner touches ("Must home axis first" ->
+// "Must home axes first"), which double-toasts a single rejection.
+//
+// `detail` stays as a fallback for classifiers that leave `raw_detail` empty
+// (the AMS backends, whose detail already IS the raw text). The match remains
+// exact-string on both arms — see include/rpc_error_correlation.h for why
+// substring matching is deliberately avoided.
+static bool already_reported_via_rpc(const std::string& raw_detail, const std::string& detail) {
+    if (!raw_detail.empty() && rpc_error_correlation::was_recently_handled(raw_detail))
+        return true;
+    return rpc_error_correlation::was_recently_handled(detail);
+}
+
 PresentAs decide_presentation(const ErrorEvent& e) {
     const bool has_recover = !e.recovery_actions.empty();
     if (e.severity == ErrorSeverity::CRITICAL)
@@ -299,20 +317,23 @@ void GcodeErrorRouter::present_recover_toast(const ErrorEvent& e) {
         api, /*duration_ms=*/15000);
 }
 
-void GcodeErrorRouter::present_deferred_toast(const std::string& text) {
+void GcodeErrorRouter::present_deferred_toast(const std::string& text,
+                                              const std::string& raw_text) {
     // Deferred toast for unclassified errors -- gives the late-arrival
     // RPC error response a chance to populate the correlation buffer
-    // before we re-check at fire time.
+    // before we re-check at fire time. `raw` is carried alongside `clean`
+    // so the re-check matches the same identity process_line() used.
     struct DeferredCtx {
         std::string clean;
+        std::string raw;
         std::string short_form;
     };
-    auto* dctx = new DeferredCtx{text, truncate_for_toast(text)};
+    auto* dctx = new DeferredCtx{text, raw_text, truncate_for_toast(text)};
     auto* dt = lv_timer_create(
         [](lv_timer_t* timer) {
             auto* c = static_cast<DeferredCtx*>(lv_timer_get_user_data(timer));
             if (c) {
-                if (rpc_error_correlation::was_recently_handled(c->clean)) {
+                if (already_reported_via_rpc(c->raw, c->clean)) {
                     spdlog::info("[GcodeError] Suppressing deferred `!!` toast "
                                  "(caller-handled RPC error arrived after): {}",
                                  c->clean);
@@ -357,7 +378,7 @@ void GcodeErrorRouter::process_line(const std::string& line) {
     // contextual toast. Skipping our generic surfacing avoids double-
     // notification for the same root cause. (The deferred-toast path
     // re-checks at fire time for late-arriving RPC responses.)
-    if (rpc_error_correlation::was_recently_handled(ev->detail)) {
+    if (already_reported_via_rpc(ev->raw_detail, ev->detail)) {
         spdlog::info("[GcodeError] Suppressing duplicate (RPC-handled): {}", ev->detail);
         return;
     }
@@ -374,7 +395,7 @@ void GcodeErrorRouter::process_line(const std::string& line) {
         present_recover_toast(*ev);
         return;
     case PresentAs::TOAST:
-        present_deferred_toast(ev->detail);
+        present_deferred_toast(ev->detail, ev->raw_detail);
         return;
     case PresentAs::NONE:
         return;
