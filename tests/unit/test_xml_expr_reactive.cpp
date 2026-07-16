@@ -55,3 +55,27 @@ TEST_CASE_METHOD(LVGLTestFixture, "reactive: repeated subject registers once, no
     REQUIRE(calls == 1); // fired exactly once at bind
     lv_obj_delete(owner); // ASAN: no double-free
 }
+
+TEST_CASE_METHOD(LVGLTestFixture, "expr_unbind: detaches observers; later change does not fire", "[xml_expr][reactive]") {
+    lv_subject_init_int(&ra, 1);
+    last = -999;
+    calls = 0;
+    lv_obj_t* owner = lv_obj_create(lv_screen_active());
+    lv_xml_expr_t* e = lv_xml_expr_compile("a > 0", res, nullptr);
+    REQUIRE(e != nullptr);
+    lv_xml_expr_bind_t* h = lv_xml_expr_bind(e, owner, cb, nullptr);
+    REQUIRE(h != nullptr);
+    REQUIRE(calls == 1); // immediate fire at bind
+
+    lv_xml_expr_unbind(h); // detach BEFORE any owner delete
+    lv_subject_set_int(&ra, 5); // must not reach the freed bind
+    REQUIRE(calls == 1); // no further fire after unbind
+
+    lv_obj_delete(owner); // must NOT double-free (delete cb removed)
+    SUCCEED("unbind detached cleanly; owner delete was a no-op");
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "expr_unbind: NULL handle is a no-op", "[xml_expr][reactive]") {
+    lv_xml_expr_unbind(nullptr);
+    SUCCEED("NULL unbind did not crash");
+}

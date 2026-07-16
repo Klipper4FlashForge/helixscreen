@@ -211,12 +211,22 @@ lv_subject_t * lv_xml_expr_subject_at(const lv_xml_expr_t * e, size_t i){ return
  *====================*/
 
 /* Shared context for all per-subject observers of one bind. Freed exactly
- * once from `expr_bind_delete_cb` on the owner's LV_EVENT_DELETE - observers
- * are registered with auto_free_user_data = 0 so they never free it.
+ * once, either from `expr_bind_delete_cb` on the owner's LV_EVENT_DELETE or
+ * from `lv_xml_expr_unbind` if the caller detaches early - observers are
+ * registered with auto_free_user_data = 0 so they never free it.
  * `registering` suppresses the synchronous callback LVGL fires when each
  * observer is added, so the initial value is delivered exactly once (by the
- * explicit fire in lv_xml_expr_bind) rather than once per distinct subject. */
-typedef struct { lv_xml_expr_t * expr; void (*cb)(void *, int32_t); void * user_data; bool registering; } expr_bind_t;
+ * explicit fire in lv_xml_expr_bind) rather than once per distinct subject.
+ * `observers`/`observer_count` retain every per-subject observer handle so
+ * lv_xml_expr_unbind can lv_observer_remove() them before the owner (or its
+ * subjects) go away - mirrors the <subject_expr> teardown in
+ * lv_xml_component.c. */
+struct lv_xml_expr_bind_t {
+    lv_xml_expr_t * expr; void (*cb)(void *, int32_t); void * user_data;
+    lv_obj_t * owner; bool registering;
+    lv_observer_t ** observers; size_t observer_count;
+};
+typedef struct lv_xml_expr_bind_t expr_bind_t;
 
 static void expr_bind_observer_cb(lv_observer_t * obs, lv_subject_t * subject){
     LV_UNUSED(subject);
@@ -227,25 +237,43 @@ static void expr_bind_observer_cb(lv_observer_t * obs, lv_subject_t * subject){
 
 static void expr_bind_delete_cb(lv_event_t * e){
     expr_bind_t * b = lv_event_get_user_data(e);
+    lv_free(b->observers);
     lv_xml_expr_free(b->expr);
     lv_free(b);
 }
 
-void lv_xml_expr_bind(lv_xml_expr_t * expr, lv_obj_t * owner,
+lv_xml_expr_bind_t * lv_xml_expr_bind(lv_xml_expr_t * expr, lv_obj_t * owner,
                       void (*cb)(void * user_data, int32_t value), void * user_data){
     expr_bind_t * b = lv_malloc(sizeof(expr_bind_t));
-    b->expr = expr; b->cb = cb; b->user_data = user_data; b->registering = true;
+    if(b == NULL) { lv_xml_expr_free(expr); return NULL; }
+    b->expr = expr; b->cb = cb; b->user_data = user_data; b->owner = owner; b->registering = true;
+    b->observers = NULL; b->observer_count = 0;
 
     /* One observer per distinct subject, tied to `owner`; do NOT auto-free the
-     * shared context (it is freed exactly once by expr_bind_delete_cb below).
-     * `registering` is true here so the add-time fire from each observer is
-     * suppressed - we deliver the initial value once, explicitly, below. */
+     * shared context (it is freed exactly once by expr_bind_delete_cb or
+     * lv_xml_expr_unbind). `registering` is true here so the add-time fire
+     * from each observer is suppressed - we deliver the initial value once,
+     * explicitly, below. */
     size_t n = lv_xml_expr_subject_count(expr);
+    if(n > 0) {
+        b->observers = lv_malloc(sizeof(lv_observer_t *) * n);
+        if(b->observers == NULL) {
+            /* Without a tracking array we cannot detach these observers in
+             * lv_xml_expr_unbind; registering them untracked would orphan them
+             * on a freed bind ctx (UAF). Register NONE — the initial fire below
+             * still delivers the current value; the bind is simply not reactive.
+             * Mirrors the <subject_expr> OOM bail in lv_xml_component.c. */
+            LV_LOG_ERROR("OOM: expr bind observer array; binding will not be reactive");
+            n = 0;
+        }
+    }
     for(size_t i=0;i<n;i++){
         lv_observer_t * o = lv_subject_add_observer_obj(lv_xml_expr_subject_at(expr,i),
                                                         expr_bind_observer_cb, owner, b);
         if(o) o->auto_free_user_data = 0;
+        if(b->observers) b->observers[i] = o;
     }
+    b->observer_count = n;
     b->registering = false;
 
     /* Single free-once hook on owner deletion. */
@@ -253,5 +281,21 @@ void lv_xml_expr_bind(lv_xml_expr_t * expr, lv_obj_t * owner,
 
     /* Fire once now so the target reflects the initial value. */
     cb(user_data, lv_xml_expr_eval(expr));
+    return b;
+}
+
+void lv_xml_expr_unbind(lv_xml_expr_bind_t * b){
+    if(b == NULL) return;
+    /* Detach every per-subject observer BEFORE freeing anything - each
+     * observer's target is `owner`, so lv_observer_remove() also strips the
+     * per-observer unsubscribe-on-delete hook it registered on `owner`. */
+    for(size_t i=0;i<b->observer_count;i++){
+        if(b->observers && b->observers[i]) lv_observer_remove(b->observers[i]);
+    }
+    lv_free(b->observers);
+    /* Remove the shared delete-cb hook so a later owner delete does not double-free. */
+    lv_obj_remove_event_cb_with_user_data(b->owner, expr_bind_delete_cb, b);
+    lv_xml_expr_free(b->expr);
+    lv_free(b);
 }
 #endif /* LV_USE_XML */
