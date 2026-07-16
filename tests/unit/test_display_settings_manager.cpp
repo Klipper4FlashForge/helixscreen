@@ -194,6 +194,26 @@ TEST_CASE_METHOD(LVGLTestFixture, "DisplaySettingsManager set/get round trips",
     DisplaySettingsManager::instance().deinit_subjects();
 }
 
+// An explicit render-mode pick is a clear "retry GPU features" signal, so it must
+// clear BOTH persistent crash-loop blocks (3D GLES viewer + 2D backdrop blur) so
+// a user isn't stuck on the CPU paths forever after one prior driver crash.
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "DisplaySettingsManager set_gcode_render_mode clears GPU crash-loop blocks",
+                 "[display_settings]") {
+    DisplaySettingsManager::instance().init_subjects();
+
+    Config* config = Config::get_instance();
+    config->set<bool>("/display/gpu_3d_blocked", true);
+    config->set<bool>("/display/gpu_blur_blocked", true);
+
+    DisplaySettingsManager::instance().set_gcode_render_mode(1);
+
+    REQUIRE(config->get<bool>("/display/gpu_3d_blocked", true) == false);
+    REQUIRE(config->get<bool>("/display/gpu_blur_blocked", true) == false);
+
+    DisplaySettingsManager::instance().deinit_subjects();
+}
+
 TEST_CASE_METHOD(LVGLTestFixture, "DisplaySettingsManager dim seconds to index conversion",
                  "[display_settings]") {
     // dim_seconds_to_index: 0=Never, 30=30sec, 60=1min, 120=2min, 300=5min, 600=10min

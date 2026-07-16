@@ -726,6 +726,9 @@ void DisplaySettingsManager::set_gcode_render_mode(int mode) {
     // persistent crash-loop block (issues #966 / #1084 / #1085) so the user can
     // retry 3D even after a prior driver crash promoted /display/gpu_3d_blocked.
     config->set<bool>("/display/gpu_3d_blocked", false);
+    // Mirror for the 2D backdrop-blur block: a deliberate render-mode change is a
+    // clear signal the user wants GPU features retried, so clear the blur block too.
+    config->set<bool>("/display/gpu_blur_blocked", false);
     config->save();
 
     static const char* MODE_NAMES[] = {"Auto", "3D", "2D", "Thumbnail Only"};

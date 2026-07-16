@@ -3,10 +3,15 @@
 
 #include "backdrop_blur.h"
 
+#include "config.h"
+#include "data_root_resolver.h"
+
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <vector>
 
 #ifdef ENABLE_GLES_3D
@@ -265,9 +270,47 @@ static bool init_gpu_blur() {
     if (s_gpu.initialized)
         return true;
 
+    // Persistent crash-loop block: a prior session that hard-faulted inside the
+    // Mali/EGL init promoted /display/gpu_blur_blocked. Honor it before touching
+    // any DRM device and stay on the CPU blur path for the whole session.
+    if (Config::get_instance()->get<bool>("/display/gpu_blur_blocked", false)) {
+        spdlog::warn("[Backdrop Blur] GPU blur blocked by /display/gpu_blur_blocked (prior driver "
+                     "crash) — using CPU blur");
+        s_gpu.init_failed = true;
+        return false;
+    }
+
     // DRM device paths to try
     static constexpr const char* kDrmDevices[] = {"/dev/dri/renderD128", "/dev/dri/card1",
                                                   "/dev/dri/card0"};
+
+    // Arm the crash-loop guard immediately before the risky Mali/EGL init. If the
+    // driver hard-faults below (an in-driver SIGSEGV that returns no error we can
+    // check), the file survives and Application promotes it to a persistent block
+    // on the next launch.
+    const std::string guard_path = helix::writable_path("gpu_blur_guard");
+    {
+        std::ofstream guard(guard_path, std::ios::out | std::ios::trunc);
+        if (guard.is_open()) {
+            guard << "1";
+            spdlog::debug("[Backdrop Blur] Armed GPU crash-loop guard: {}", guard_path);
+        } else {
+            spdlog::warn("[Backdrop Blur] Could not write GPU crash-loop guard: {}", guard_path);
+        }
+    }
+
+    // Remove the guard on ANY normal return — success OR a graceful failure (no
+    // usable GL device, EGL init error, shader/link failure). Only an in-driver
+    // SIGSEGV, which unwinds no stack, leaves the file behind so the next launch
+    // can promote it to a persistent block. A graceful failure must NOT promote:
+    // the caller already sets init_failed and falls back to CPU blur this session.
+    struct GuardCleaner {
+        const std::string& path;
+        ~GuardCleaner() {
+            std::error_code ec;
+            std::filesystem::remove(path, ec);
+        }
+    } guard_cleaner{guard_path};
 
     for (const char* path : kDrmDevices) {
         int fd = open(path, O_RDWR | O_CLOEXEC);
@@ -454,6 +497,10 @@ static bool init_gpu_blur() {
     eglMakeCurrent(s_gpu.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 
     s_gpu.initialized = true;
+
+    // Pipeline is up — the Mali/EGL init survived. The GuardCleaner above removes
+    // the crash-loop guard as this function returns (normally), so a clean run
+    // doesn't look like a mid-init fault on the next launch.
     spdlog::debug("[Backdrop Blur] GPU blur pipeline initialized");
     return true;
 }
