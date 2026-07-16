@@ -3,6 +3,7 @@
 #include "../catch_amalgamated.hpp"
 #include <algorithm>
 #include <cstring>
+#include <string>
 #include <vector>
 extern "C" {
 #include "helix-xml/src/xml/lv_xml_expr.h"
@@ -101,4 +102,17 @@ TEST_CASE("eval: divide by zero yields 0, no crash", "[xml_expr]") {
     lv_subject_init_int(&s_a, 4); lv_subject_init_int(&s_b, 0);
     REQUIRE(eval("a / b") == 0);
     REQUIRE(eval("a % b") == 0);
+}
+
+TEST_CASE("compile: >128-token expression is rejected (no OOB, no parser walk-off)", "[xml_expr]") {
+    lv_subject_init_int(&s_a, 1);
+    // Build "a + a + a + ... + a" long enough to exceed the 128-token buffer
+    // (each " + a" adds 2 tokens; ~200 terms => ~400 tokens, well over 128).
+    std::string big = "a";
+    for (int i = 0; i < 200; i++) big += " + a";
+    REQUIRE(lv_xml_expr_compile(big.c_str(), mock_resolver, nullptr) == nullptr);
+    // A just-fits expression still compiles (sanity that the cap isn't over-eager).
+    lv_xml_expr_t * ok = lv_xml_expr_compile("a + a + a", mock_resolver, nullptr);
+    REQUIRE(ok != nullptr);
+    lv_xml_expr_free(ok);
 }

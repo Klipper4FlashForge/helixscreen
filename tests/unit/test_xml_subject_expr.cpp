@@ -82,6 +82,50 @@ TEST_CASE_METHOD(LVGLTestFixture, "subject_expr: missing name or expr is a no-op
     REQUIRE(lv_xml_component_unregister("t_expr_noname") == LV_RESULT_OK);
 }
 
+namespace {
+lv_subject_t g_expr_global_input;  // static storage: outlives the component that observes it
+}
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "subject_expr: GLOBAL input observer is removed on unregister (no UAF)",
+                 "[xml_expr][subject_expr]") {
+    // A subject_expr whose input lives in the GLOBAL scope (not the component's own
+    // subjects_ll). Only the subject_expr_ll teardown removes that observer -- if it
+    // didn't, mutating the global after unregister would fire a dangling observer on
+    // freed ctx (ASAN use-after-free). This is the retained-observer removal's reason
+    // for existing; the same-scope tests don't cover it.
+    lv_subject_init_int(&g_expr_global_input, 0);
+    lv_xml_register_subject(nullptr, "g_expr_in", &g_expr_global_input);  // global scope
+
+    const char* comp =
+        "<component>"
+        "  <subjects>"
+        "    <subject_expr name='g_derived' expr='g_expr_in gt 5'/>"
+        "  </subjects>"
+        "  <view><lv_obj/></view>"
+        "</component>";
+    REQUIRE(lv_xml_register_component_from_data("t_gexpr", comp) == LV_RESULT_OK);
+    lv_obj_t* v = (lv_obj_t*)lv_xml_create(lv_screen_active(), "t_gexpr", nullptr);
+    REQUIRE(v != nullptr);
+
+    lv_subject_t* d = lv_xml_get_subject(lv_xml_component_get_scope("t_gexpr"), "g_derived");
+    REQUIRE(d != nullptr);
+
+    // Observer is live: changing the global recomputes the derived subject.
+    lv_subject_set_int(&g_expr_global_input, 10);
+    REQUIRE(lv_subject_get_int(d) == 1);
+    lv_subject_set_int(&g_expr_global_input, 2);
+    REQUIRE(lv_subject_get_int(d) == 0);
+
+    // Unregister the component. subject_expr_ll must lv_observer_remove() the observer
+    // sitting on the still-live GLOBAL subject before freeing its ctx.
+    REQUIRE(lv_xml_component_unregister("t_gexpr") == LV_RESULT_OK);
+
+    // Mutating the global now must NOT reach a freed ctx.
+    lv_subject_set_int(&g_expr_global_input, 99);
+    SUCCEED("global-input subject_expr observer cleanly removed; no UAF on post-unregister change");
+}
+
 TEST_CASE_METHOD(LVGLTestFixture, "subject_expr: bad expr does not register a broken subject",
                  "[xml_expr][subject_expr]") {
     const char* comp_bad_expr =
