@@ -821,7 +821,7 @@
 #define LV_USE_FS_POSIX 1
 #if LV_USE_FS_POSIX
     #define LV_FS_POSIX_LETTER 'A'     /*Set an upper cased letter on which the drive will accessible (e.g. 'A')*/
-    #define LV_FS_POSIX_PATH "/littlefs/" /*AUDIT: VFS mount point; "A:ui_xml/..." -> /littlefs/ui_xml/...*/
+    #define LV_FS_POSIX_PATH "" /*asset paths are absolute via helix::asset_path() ("A:/assets/ui_xml/...") — a non-empty root here double-prefixes ("/littlefs//assets/...") and every open fails (Task 6 HIL round 4)*/
     #define LV_FS_POSIX_CACHE_SIZE 0    /*>0 to cache this number of bytes in lv_fs_read()*/
 #endif
 

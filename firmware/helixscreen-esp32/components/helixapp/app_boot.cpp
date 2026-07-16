@@ -202,6 +202,10 @@ extern "C" void app_boot_ui(void) {
     // Phase 1: asset root + writable config storage. The packed /assets frogfs
     // container is read-only; settings live on the /config LittleFS partition.
     helix::set_asset_root("/assets");
+    // get_user_config_dir() honors $HELIX_CONFIG_DIR; without this it returns
+    // the relative "config", which is meaningless on a CWD-less VFS (theme
+    // loader, env backups). Must point at the writable partition.
+    setenv("HELIX_CONFIG_DIR", "/config", 1);
     helix::Config* config = helix::Config::get_instance();
     config->set_storage(helix::make_file_config_storage("/config/settings.json"));
     config->init("/config/settings.json");
