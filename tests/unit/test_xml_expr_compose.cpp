@@ -135,8 +135,9 @@ TEST_CASE_METHOD(LVGLTestFixture, "expr: malformed/unknown splices empty, no cra
     lv_obj_t * v = (lv_obj_t*)lv_xml_create(lv_screen_active(), "t_expr5", nullptr);
     lv_obj_t * root = lv_obj_find_by_name(v, "root");
     REQUIRE(lv_obj_get_child_count(root) == 2);  // widgets still created
-    // empty translate_x string parses to 0 in the numeric apply path
-    REQUIRE(lv_obj_get_style_translate_x(lv_obj_get_child(root, 0), LV_PART_MAIN) == 0);
+    // both malformed exprs splice empty; empty translate_x parses to 0 in the numeric apply path
+    REQUIRE(lv_obj_get_style_translate_x(lv_obj_get_child(root, 0), LV_PART_MAIN) == 0);  // ${bogus_ident + 1}
+    REQUIRE(lv_obj_get_style_translate_x(lv_obj_get_child(root, 1), LV_PART_MAIN) == 0);  // ${5 + }
     lv_obj_delete(v);
     lv_xml_component_unregister("t_expr5");
     SUCCEED("malformed expression did not crash");

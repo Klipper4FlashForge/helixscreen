@@ -1804,8 +1804,8 @@ static char * xml_compose_indexed(lv_xml_parser_state_t * state, const char * ra
                     else {
                         char exprbuf[16];
                         lv_snprintf(exprbuf, sizeof(exprbuf), "%d", (int)lv_xml_expr_eval(ex));
+                        lv_xml_expr_free(ex); /*free before APPEND, which may return early on OOM*/
                         XML_COMPOSE_APPEND(exprbuf, lv_strlen(exprbuf));
-                        lv_xml_expr_free(ex);
                     }
                     for(uint32_t k = 0; k < ectx.param_count; k++)
                         lv_subject_deinit(&ectx.param_subjects[k]);
