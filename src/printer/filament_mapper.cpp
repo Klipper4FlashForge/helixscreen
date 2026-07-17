@@ -120,8 +120,17 @@ SlotKey FilamentMapper::find_closest_color_slot(uint32_t target_color,
     int best_distance = COLOR_MATCH_TOLERANCE + 1; // Must be within tolerance
 
     for (const auto& slot : slots) {
+        // Empty slots have no filament — their reported color is stale (left over
+        // from the last spool), so they must never attract a color match. Matching
+        // a tool to an empty lane paints the render in a color that can't print and
+        // routes the print to a lane the firmware will reject (the v0.91 "wrong
+        // filament" report: a white tool matched the empty white lane instead of
+        // being substituted to a loaded lane).
+        if (slot.is_empty) {
+            continue;
+        }
         // Skip slots with incompatible materials (unless either side has no info)
-        if (!slot.is_empty && !target_material.empty() && !slot.material.empty() &&
+        if (!target_material.empty() && !slot.material.empty() &&
             !materials_match(target_material, slot.material)) {
             continue;
         }
@@ -216,7 +225,9 @@ std::vector<ToolMapping> FilamentMapper::compute_defaults(const std::vector<Gcod
         {
             int tool_idx = tool.tool_index;
             for (const auto& slot : slots) {
-                if (slot.slot_index == tool_idx && slot.backend_index == 0) {
+                // Only a LOADED lane can serve as a substitute — an empty lane has
+                // no filament to route the tool to.
+                if (slot.slot_index == tool_idx && slot.backend_index == 0 && !slot.is_empty) {
                     auto key = slot.key();
                     if (std::find(used_slots.begin(), used_slots.end(), key) == used_slots.end()) {
                         mapping.mapped_slot = slot.slot_index;
@@ -242,7 +253,8 @@ std::vector<ToolMapping> FilamentMapper::compute_defaults(const std::vector<Gcod
             if (mapping.mapped_slot < 0) {
                 for (const auto& slot : slots) {
                     auto key = slot.key();
-                    if (std::find(used_slots.begin(), used_slots.end(), key) == used_slots.end() &&
+                    if (!slot.is_empty &&
+                        std::find(used_slots.begin(), used_slots.end(), key) == used_slots.end() &&
                         !material_blocked(tool, slot)) {
                         mapping.mapped_slot = slot.slot_index;
                         mapping.mapped_backend = slot.backend_index;

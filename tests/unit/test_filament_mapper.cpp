@@ -134,15 +134,30 @@ TEST_CASE("find_closest_color_slot with no slots returns invalid key", "[filamen
     CHECK(result == SlotKey{-1, -1});
 }
 
-TEST_CASE("find_closest_color_slot matches empty slots by color", "[filament_mapper][slot]") {
+TEST_CASE("find_closest_color_slot skips empty slots (stale color must not match)",
+          "[filament_mapper][slot]") {
     std::vector<AvailableSlot> slots = {
-        {0, 0, 0xFF0000, "PLA", true, -1},  // empty but has color
-        {1, 0, 0x00FF00, "PLA", false, -1}, // green, not empty
+        {0, 0, 0xFF0000, "PLA", true, -1},  // EMPTY, but reports a stale red color
+        {1, 0, 0x00FF00, "PLA", false, -1}, // green, loaded
     };
 
-    // Looking for red — slot 0 matches color even though empty
+    // An empty slot has no filament — its stale color must never attract a match,
+    // even on an exact color hit. The only loaded slot (green) is out of tolerance,
+    // so nothing matches.
     auto result = FilamentMapper::find_closest_color_slot(0xFF0000, "", slots);
-    CHECK(result == SlotKey{0, 0});
+    CHECK(result == SlotKey{-1, -1});
+}
+
+TEST_CASE("find_closest_color_slot matches a loaded slot over an empty same-color slot",
+          "[filament_mapper][slot]") {
+    std::vector<AvailableSlot> slots = {
+        {0, 0, 0xFF0000, "PLA", true, -1},  // EMPTY red (stale)
+        {1, 0, 0xFF0000, "PLA", false, -1}, // LOADED red
+    };
+
+    // Exact-red target must land on the loaded lane, never the empty one.
+    auto result = FilamentMapper::find_closest_color_slot(0xFF0000, "", slots);
+    CHECK(result == SlotKey{1, 0});
 }
 
 TEST_CASE("find_closest_color_slot returns closest match", "[filament_mapper][slot]") {
@@ -243,18 +258,20 @@ TEST_CASE("compute_defaults firmware mapping detects material mismatch",
     CHECK(result[0].material_mismatch);
 }
 
-TEST_CASE("compute_defaults firmware mapping ignores empty slots",
+TEST_CASE("compute_defaults never matches an empty firmware-mapped slot",
           "[filament_mapper][compute][firmware]") {
     std::vector<GcodeToolInfo> tools = {{0, 0xFF0000, "PLA"}};
     std::vector<AvailableSlot> slots = {
-        {0, 0, 0xFF0000, "PLA", true, 0}, // firmware-mapped but empty
+        {0, 0, 0xFF0000, "PLA", true, 0}, // firmware-mapped but EMPTY
     };
 
     auto result = FilamentMapper::compute_defaults(tools, slots);
     REQUIRE(result.size() == 1);
-    // Firmware mapping skips empty slots, but color matching still finds it
-    CHECK(result[0].mapped_slot == 0);
-    CHECK(result[0].reason == ToolMapping::MatchReason::COLOR_MATCH);
+    // Empty lanes are skipped by firmware, color, AND fallback matching — an empty
+    // lane can't print. With nothing loaded the tool stays unmatched (AUTO).
+    CHECK(result[0].mapped_slot == -1);
+    CHECK(result[0].is_auto);
+    CHECK(result[0].reason == ToolMapping::MatchReason::AUTO);
 }
 
 TEST_CASE("compute_defaults duplicate firmware mapping takes first non-empty",
@@ -433,7 +450,7 @@ TEST_CASE("compute_defaults multi-tool same color with no close alternative",
 // compute_defaults — all empty slots
 // =============================================================================
 
-TEST_CASE("compute_defaults empty slots participate in color matching",
+TEST_CASE("compute_defaults does not match empty slots (nothing loaded to print)",
           "[filament_mapper][compute]") {
     std::vector<GcodeToolInfo> tools = {{0, 0xFF0000, "PLA"}, {1, 0x00FF00, "PLA"}};
     std::vector<AvailableSlot> slots = {
@@ -443,11 +460,12 @@ TEST_CASE("compute_defaults empty slots participate in color matching",
 
     auto result = FilamentMapper::compute_defaults(tools, slots);
     REQUIRE(result.size() == 2);
-    // Empty slots still match by color (user may plan to load filament)
-    CHECK(result[0].mapped_slot == 0);
-    CHECK(result[0].reason == ToolMapping::MatchReason::COLOR_MATCH);
-    CHECK(result[1].mapped_slot == 1);
-    CHECK(result[1].reason == ToolMapping::MatchReason::COLOR_MATCH);
+    // Both lanes are empty — their reported colors are stale, so neither tool
+    // matches; each stays unmatched (AUTO) rather than routing to a dead lane.
+    CHECK(result[0].mapped_slot == -1);
+    CHECK(result[0].is_auto);
+    CHECK(result[1].mapped_slot == -1);
+    CHECK(result[1].is_auto);
 }
 
 // =============================================================================
@@ -874,7 +892,7 @@ TEST_CASE("find_unresolved_tools", "[filament_mapper]") {
     }
 }
 
-TEST_CASE("compute_defaults all slots are empty falls to positional",
+TEST_CASE("compute_defaults all slots empty leaves tool unmatched",
           "[filament_mapper][compute]") {
     std::vector<GcodeToolInfo> tools = {{0, 0xFF0000, "PLA"}};
     std::vector<AvailableSlot> slots = {
@@ -884,8 +902,11 @@ TEST_CASE("compute_defaults all slots are empty falls to positional",
 
     auto result = FilamentMapper::compute_defaults(tools, slots);
     REQUIRE(result.size() == 1);
-    // No color match (black vs red), positional fallback assigns slot 0
-    CHECK(result[0].mapped_slot == 0);
+    // Nothing is loaded — color, positional, and blind fallbacks all skip empty
+    // lanes, so the tool stays unmatched (AUTO / let firmware decide) instead of
+    // being routed to a dead lane.
+    CHECK(result[0].mapped_slot == -1);
+    CHECK(result[0].is_auto);
 }
 
 // =============================================================================
