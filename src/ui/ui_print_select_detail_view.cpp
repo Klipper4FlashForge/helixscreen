@@ -26,6 +26,7 @@
 #include "moonraker_api.h"
 #include "observer_factory.h"
 #include "runtime_config.h"
+#include "settings_manager.h"
 #include "theme_manager.h"
 #include "tool_state.h"
 
@@ -742,10 +743,9 @@ void PrintSelectDetailView::update_color_swatches(const std::set<int>& tool_indi
 
     const auto tools = get_used_tool_info(); // real tool_index, intended colors
     auto slots = AmsState::instance().collect_available_slots();
-    auto mappings = filament_mapping_card_.get_mappings();
-    if (mappings.empty()) {
-        mappings = helix::FilamentMapper::compute_defaults(tools, slots);
-    }
+    // Effective (toggle-aware) mapping: card edits win on editable backends;
+    // U1/ACE auto-match so the bottom band shows the matched lane, not identity.
+    auto mappings = effective_mappings();
 
     const lv_color_t neutral = theme_manager_get_color("text_muted");
 
@@ -899,14 +899,19 @@ void PrintSelectDetailView::update_history_status(FileHistoryStatus status, int 
 // ============================================================================
 
 void PrintSelectDetailView::show_gcode_viewer(bool show) {
-    // Mode 0 = thumbnail, 1 = 3D
-    // Detail panel only supports 3D viewer — fall back to thumbnail if 2D
+    // detail_gcode_viewer_mode_ drives the XML visibility bindings in
+    // print_file_detail.xml:
+    //   0 = thumbnail  (viewer hidden, gradient + thumbnail shown)
+    //   1 = 3D viewer  (viewer shown, gradient hidden for clean black bg,
+    //                   rotate hint shown)
+    //   2 = 2D viewer  (viewer shown over the gradient, rotate hint hidden —
+    //                   there's no rotate affordance for the flat 2D layer view)
+    // 2D-mode devices (no-GLES / GPU-blocked / budget-forced) now render the
+    // real toolpath preview instead of falling back to the thumbnail.
     int mode = 0;
     if (show) {
-        bool is_2d = gcode_viewer_ && ui_gcode_viewer_is_using_2d_mode(gcode_viewer_);
-        if (!is_2d) {
-            mode = 1;
-        }
+        const bool is_2d = gcode_viewer_ && ui_gcode_viewer_is_using_2d_mode(gcode_viewer_);
+        mode = is_2d ? 2 : 1;
     }
     lv_subject_set_int(&detail_gcode_viewer_mode_, mode);
 
@@ -927,54 +932,33 @@ void PrintSelectDetailView::show_gcode_viewer(bool show) {
     spdlog::trace("[DetailView] G-code viewer mode: {} ({})", mode, mode == 0 ? "thumbnail" : "3D");
 }
 
-void PrintSelectDetailView::apply_tool_colors() {
-    if (!gcode_viewer_ || !gcode_loaded_) {
-        return;
-    }
-
-    // Try AMS slot colors first
-    if (ui_gcode_viewer_apply_ams_tool_colors(gcode_viewer_)) {
-        return;
-    }
-
-    // Fallback: use file metadata colors (from slicer)
-    if (!current_filament_colors_.empty()) {
-        std::vector<uint32_t> tool_colors;
-        for (const auto& hex : current_filament_colors_) {
-            auto parsed = helix::parse_hex_color(hex);
-            if (parsed) {
-                tool_colors.push_back(*parsed);
-            }
-        }
-        if (!tool_colors.empty()) {
-            ui_gcode_viewer_set_tool_colors(gcode_viewer_, tool_colors);
-        }
-    }
-}
-
-void PrintSelectDetailView::apply_mapped_tool_colors() {
-    if (!gcode_viewer_ || !gcode_loaded_) {
-        return;
-    }
-
-    auto colors = filament_mapping_card_.get_mapped_colors();
-    if (!colors.empty()) {
-        ui_gcode_viewer_set_tool_colors(gcode_viewer_, colors);
-        lv_obj_invalidate(gcode_viewer_);
-        spdlog::debug("[DetailView] Applied {} mapped tool colors to gcode viewer", colors.size());
-    }
-}
-
 void PrintSelectDetailView::apply_preview_colors() {
     if (!gcode_viewer_ || !gcode_loaded_) {
         return;
     }
-    if (lv_subject_get_int(&detail_prefer_sliced_colors_) == 1) {
-        apply_sliced_tool_colors();
-    } else {
-        // Actual (loaded) colors: firmware/slicer base, then mapped overrides win.
-        apply_tool_colors();
-        apply_mapped_tool_colors();
+    const auto tools = get_used_tool_info();
+    if (tools.empty()) {
+        return;
+    }
+    const auto slots = AmsState::instance().collect_available_slots();
+
+    // Single color engine — the SAME FilamentMapper::effective_tool_colors the
+    // print-file swatches and the live print-status render use. The sliced/actual
+    // toggle only changes which MAPPINGS feed it:
+    //   - Actual (loaded): effective_mappings() — card edits win on editable
+    //     backends, auto color+type match otherwise. This is what colors each
+    //     tool by its MATCHED lane instead of the identity physical-slot position.
+    //   - Sliced: fully-default (unmapped) mappings, so resolve_display_colors
+    //     falls back to each tool's own slicer color — the file's intended look.
+    const std::vector<helix::ToolMapping> mappings =
+        (lv_subject_get_int(&detail_prefer_sliced_colors_) == 1)
+            ? std::vector<helix::ToolMapping>(tools.size())
+            : effective_mappings();
+
+    const auto colors = helix::FilamentMapper::effective_tool_colors(tools, mappings, slots);
+    if (!colors.empty()) {
+        ui_gcode_viewer_set_tool_colors(gcode_viewer_, colors);
+        lv_obj_invalidate(gcode_viewer_);
     }
 }
 
@@ -988,23 +972,6 @@ void PrintSelectDetailView::set_prefer_sliced_colors(bool prefer_sliced) {
                                   prefer_sliced ? lv_tr("Showing sliced colors")
                                                 : lv_tr("Showing loaded colors"),
                                   2000);
-}
-
-void PrintSelectDetailView::apply_sliced_tool_colors() {
-    if (!gcode_viewer_ || !gcode_loaded_ || current_filament_colors_.empty()) {
-        return;
-    }
-    std::vector<uint32_t> tool_colors;
-    for (const auto& hex : current_filament_colors_) {
-        auto parsed = helix::parse_hex_color(hex);
-        if (parsed) {
-            tool_colors.push_back(*parsed);
-        }
-    }
-    if (!tool_colors.empty()) {
-        ui_gcode_viewer_set_tool_colors(gcode_viewer_, tool_colors);
-        lv_obj_invalidate(gcode_viewer_);
-    }
 }
 
 void PrintSelectDetailView::on_ams_state_changed() {
@@ -1091,6 +1058,32 @@ std::vector<helix::GcodeToolInfo> PrintSelectDetailView::get_used_tool_info() co
     return tools;
 }
 
+bool PrintSelectDetailView::effective_auto_match() const {
+    // Non-editable-card backends (U1 / ACE) have no card UI to flip the
+    // persisted auto-color preference, so they always auto-match (color+type);
+    // otherwise the persisted default (FALSE) would force positional matching
+    // and pick the wrong lane. Editable backends honor the user's setting.
+    bool card_editable = false;
+    if (auto* backend = AmsState::instance().get_backend()) {
+        card_editable = backend->get_tool_mapping_capabilities().editable;
+    }
+    return !card_editable || SettingsManager::instance().get_auto_color_map();
+}
+
+std::vector<helix::ToolMapping> PrintSelectDetailView::effective_mappings() const {
+    // Editable backends: the card seeds and owns mappings_, and user edits win.
+    auto m = filament_mapping_card_.get_mappings();
+    if (!m.empty()) {
+        return m;
+    }
+    // Non-editable backends (U1 / ACE): the card is hidden and get_mappings() is
+    // empty — resolve the effective (toggle-aware) mapping the same way the live
+    // render does, so swatches + preflight + render all agree.
+    return helix::FilamentMapper::effective_mappings(
+        get_used_tool_info(), AmsState::instance().collect_available_slots(),
+        effective_auto_match());
+}
+
 void PrintSelectDetailView::recompute_preflight() {
     // ------------------------------------------------------------------
     // Backend-agnostic pre-flight validation (single source of truth for
@@ -1130,13 +1123,11 @@ void PrintSelectDetailView::recompute_preflight() {
     // Happy Hare / CFS / AD5X-IFS / toolchanger) would never clear the block.
     //
     // Behavior-preserving at parse time: for editable backends the card seeds
-    // mappings_ with compute_defaults() until the user edits it (identical
-    // result); for U1/ACE the card is hidden and mappings_ is empty, so the
-    // fallback reproduces the original compute_defaults() path exactly.
-    auto mapping = filament_mapping_card_.get_mappings();
-    if (mapping.empty()) {
-        mapping = helix::FilamentMapper::compute_defaults(tools, slots);
-    }
+    // mappings_ with the effective defaults until the user edits it (identical
+    // result); for U1/ACE the card is hidden and mappings_ is empty, so
+    // effective_mappings() resolves the toggle-aware (auto color+type) match —
+    // the SAME mapping the color swatches and live render use.
+    auto mapping = effective_mappings();
     preflight_result_ = helix::PreflightValidator::validate(tools, slots, mapping);
 
     bool any_mismatch = false;
@@ -1420,17 +1411,16 @@ void PrintSelectDetailView::load_gcode_for_preview() {
     // Show loading spinner over thumbnail
     lv_subject_set_int(&detail_gcode_loading_, 1);
 
-    // Check "Thumbnail Only" render mode - skip all gcode downloading/parsing
+    // Check "Thumbnail Only" render mode - skip all gcode downloading/parsing.
+    // This is the ONLY user-forced skip: past here we render whatever mode the
+    // viewer is in (3D on GLES devices, 2D-layer otherwise), just like the
+    // print-status panel. 2D-mode devices used to fall back to the thumbnail
+    // here; now they get the real toolpath preview — with the effective
+    // lane-matched colors (apply_preview_colors) — so the browser shows the
+    // colors the print will actually use. Oversized files still degrade to the
+    // thumbnail below via is_gcode_2d_streaming_safe().
     if (DisplaySettingsManager::instance().get_gcode_render_mode() == 3) {
         spdlog::info("[DetailView] G-code render mode is Thumbnail Only - skipping G-code load");
-        lv_subject_set_int(&detail_gcode_loading_, 0);
-        show_gcode_viewer(false);
-        return;
-    }
-
-    // Detail page only shows the 3D viewer — skip download/parse on 2D-only platforms
-    if (ui_gcode_viewer_is_using_2d_mode(gcode_viewer_)) {
-        spdlog::debug("[DetailView] 2D-only platform — skipping G-code preview (thumbnail only)");
         lv_subject_set_int(&detail_gcode_loading_, 0);
         show_gcode_viewer(false);
         return;

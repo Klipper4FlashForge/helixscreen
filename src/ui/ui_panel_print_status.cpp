@@ -16,6 +16,7 @@
 #include "ui_nav_manager.h"
 #include "ui_overlay_temp_graph.h"
 #include "ui_panel_common.h"
+#include "ui_filament_mapping_card.h"
 #include "ui_panel_print_select.h"
 #include "ui_print_start_controller.h"
 #include "ui_subject_registry.h"
@@ -29,7 +30,9 @@
 #include "config.h"
 #include "display_manager.h"
 #include "display_settings_manager.h"
+#include "filament_mapper.h"
 #include "filament_sensor_manager.h"
+#include "gcode_parser.h"
 #include "format_utils.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "injection_point_manager.h"
@@ -43,6 +46,7 @@
 #include "print_status_preview_decision.h"
 #include "printer_state.h"
 #include "runtime_config.h"
+#include "settings_manager.h"
 #include "static_panel_registry.h"
 #include "system/crash_handler.h"
 #include "theme_manager.h"
@@ -63,6 +67,7 @@ using helix::gcode::resolve_gcode_filename;
 #include <fstream>
 #include <memory>
 #include <set>
+#include <sstream>
 #include <vector>
 
 // Global instance for legacy API and resize callback
@@ -3017,6 +3022,10 @@ void PrintStatusPanel::load_thumbnail_for_file(const std::string& filename) {
 
                 // Note: Layer count from metadata is now set by ActivePrintMediaManager
 
+                // Cache the per-tool slicer palette so the live render can resolve
+                // the effective tool→lane match (build_and_apply_tool_colors).
+                store_filament_metadata(metadata);
+
                 // Store slicer's estimated print time for remaining time fallback
                 if (metadata.estimated_time > 0) {
                     get_printer_state().set_estimated_print_time(
@@ -3227,6 +3236,9 @@ void PrintStatusPanel::load_gcode_for_viewing(const std::string& filename) {
             [this, token, root, download_target, stream_if_safe](const FileMetadata& metadata) {
                 token.defer("PrintStatusPanel::gcode_metadata_ok",
                             [this, root, download_target, metadata, stream_if_safe]() {
+                                // Cache per-tool palette before the render loads so
+                                // build_and_apply_tool_colors resolves matched lanes.
+                                store_filament_metadata(metadata);
                                 stream_if_safe(root, download_target, metadata.size);
                             });
             },
@@ -3346,11 +3358,81 @@ void PrintStatusPanel::apply_filament_color_override(uint32_t color_rgb) {
     }
 }
 
+void PrintStatusPanel::store_filament_metadata(const FileMetadata& metadata) {
+    // Per-tool hex colors, as sliced ("#RRGGBB" per tool).
+    filament_colors_ = metadata.filament_colors;
+
+    // filament_type is a ';'-joined list ("PLA;PLA;PETG"); split to per-tool.
+    filament_materials_.clear();
+    if (!metadata.filament_type.empty()) {
+        std::istringstream stream(metadata.filament_type);
+        std::string token;
+        while (std::getline(stream, token, ';')) {
+            filament_materials_.push_back(token);
+        }
+    }
+}
+
+std::vector<helix::GcodeToolInfo> PrintStatusPanel::build_print_tool_info() const {
+    if (!gcode_viewer_ || filament_colors_.empty()) {
+        return {};
+    }
+    const auto* parsed = ui_gcode_viewer_get_parsed_file(gcode_viewer_);
+    if (!parsed || parsed->tools_used_indices.empty()) {
+        return {};
+    }
+
+    // Full slicer palette from the stored metadata, then filter to the tools this
+    // file actually uses (real tool_index preserved) — mirrors
+    // PrintSelectDetailView::get_used_tool_info().
+    const auto all_tool_info =
+        helix::ui::FilamentMappingCard::build_tool_info(filament_colors_, filament_materials_);
+
+    std::vector<helix::GcodeToolInfo> tools;
+    tools.reserve(parsed->tools_used_indices.size());
+    for (int tool : parsed->tools_used_indices) {
+        if (tool >= 0 && static_cast<size_t>(tool) < all_tool_info.size()) {
+            auto info = all_tool_info[static_cast<size_t>(tool)];
+            info.tool_index = tool;
+            tools.push_back(info);
+        }
+    }
+    return tools;
+}
+
+bool PrintStatusPanel::effective_auto_match() const {
+    // Non-editable-card backends (U1 / ACE) have no card UI to flip the persisted
+    // auto-color preference, so they always auto-match; editable backends honor
+    // the user setting. Mirrors PrintSelectDetailView::effective_auto_match().
+    bool card_editable = false;
+    if (auto* backend = AmsState::instance().get_backend()) {
+        card_editable = backend->get_tool_mapping_capabilities().editable;
+    }
+    return !card_editable || SettingsManager::instance().get_auto_color_map();
+}
+
 bool PrintStatusPanel::build_and_apply_tool_colors() {
     if (!gcode_viewer_ || !ui_gcode_viewer_has_content(gcode_viewer_)) {
         return false;
     }
 
+    // Preferred path: resolve each used tool to the EFFECTIVE (toggle-aware)
+    // matched lane's color — the same match the print-select swatches and
+    // pre-flight use — and push a logical-tool-indexed color vector directly to
+    // the viewer. This bypasses apply_ams_tool_colors' identity tool_to_slot_map,
+    // which on a true toolchanger (Snapmaker U1) colors the whole model by T0.
+    const auto tools = build_print_tool_info();
+    if (!tools.empty()) {
+        const auto colors = helix::FilamentMapper::effective_tool_colors(
+            tools, AmsState::instance().collect_available_slots(), effective_auto_match());
+        if (!colors.empty()) {
+            ui_gcode_viewer_set_tool_colors(gcode_viewer_, colors);
+            return true;
+        }
+    }
+
+    // Fallback: no stored metadata yet (or no lanes) — use the backend's own
+    // per-tool color mapping (correct for single-nozzle multi-material backends).
     return ui_gcode_viewer_apply_ams_tool_colors(gcode_viewer_);
 }
 
