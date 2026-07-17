@@ -660,8 +660,11 @@ static void setup_slot_observers(AmsSlotData* data) {
                     return;
                 apply_slot_color(d, color_int);
 
-                // Also refresh material label — there's no dedicated material subject,
-                // but material changes always accompany color updates from sync_from_backend().
+                // Also refresh the material label as a fast-path here. The
+                // primary backend has a dedicated material subject that bumps
+                // slots_version -> refresh_slots() on a material-only change
+                // (#1065); this re-read still covers secondary backends (which
+                // have no material subject) and color-coincident changes.
                 if (d->material_label) {
                     AmsBackend* be = AmsState::instance().get_backend();
                     if (be) {

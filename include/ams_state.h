@@ -869,6 +869,22 @@ class AmsState {
     [[nodiscard]] lv_subject_t* get_slot_remaining_subject(int slot_index);
 
     /**
+     * @brief Get per-slot material-type subject (primary backend).
+     *
+     * Holds the last-synced material string ("PLA", "PETG", …, or "" when the
+     * lane has no material). Written by the status-sync path; a delta bumps
+     * slots_version so the panel's refresh_slots() re-reads the material label
+     * even when the color/status did not change (#1065 — native ZMOD AD5X where
+     * a type change keeps the same color and previously left the label stale).
+     * Primary backend only; secondary-backend material labels refresh via the
+     * color observer's re-read.
+     *
+     * @param slot_index Slot index (0 to MAX_SLOTS-1)
+     * @return Subject pointer or nullptr if out of range
+     */
+    [[nodiscard]] lv_subject_t* get_slot_material_subject(int slot_index);
+
+    /**
      * @brief Get per-slot fill-level subject (primary backend).
      *
      * Holds the fill percent as an int using the SlotInfo::display_fill_pct
@@ -1428,6 +1444,8 @@ class AmsState {
     lv_subject_t slot_statuses_[MAX_SLOTS];
     lv_subject_t slot_remaining_[MAX_SLOTS]; // string: "52m" or "432g" or ""
     char slot_remaining_buf_[MAX_SLOTS][16]; // buffers for remaining strings
+    lv_subject_t slot_materials_[MAX_SLOTS]; // string: "PLA", "PETG", … or "" (last synced type)
+    char slot_materials_buf_[MAX_SLOTS][24]; // buffers for material strings (holds "PETG-CF" etc.)
     lv_subject_t slot_fills_[MAX_SLOTS];     // int: fill percent 0-100, -1 = unknown/no-data
                                              // (SlotInfo::display_fill_pct encoding)
 

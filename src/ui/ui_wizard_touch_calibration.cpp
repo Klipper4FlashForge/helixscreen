@@ -448,6 +448,13 @@ void WizardTouchCalibrationStep::on_test_area_touched_static(lv_event_t* e) {
 // Instance Event Handlers
 // ============================================================================
 
+helix::ICalibrationSink* WizardTouchCalibrationStep::calibration_sink() {
+    if (calibration_sink_override_) {
+        return calibration_sink_override_;
+    }
+    return DisplayManager::instance();
+}
+
 void WizardTouchCalibrationStep::handle_accept_clicked() {
     spdlog::info("[{}] Accept calibration clicked", get_name());
 
@@ -464,6 +471,16 @@ void WizardTouchCalibrationStep::handle_retry_clicked() {
 
     if (!panel_) {
         return;
+    }
+
+    // Revert the just-applied affine and re-disable it BEFORE re-capturing, so the
+    // re-run reads raw (post-LVGL-linear) coordinates instead of feeding the new
+    // (possibly bad) affine back through the transform — a feedback loop that made
+    // recalibration produce garbage. Mirrors the Settings overlay retry
+    // (ui_touch_calibration_overlay.cpp) and the begin_capture() disable in
+    // create() (#943). The backup is retained across retry.
+    if (helix::ICalibrationSink* sink = calibration_sink()) {
+        session_.revert_for_retry(*sink);
     }
 
     // Use cancel()+start() rather than retry() because the wizard auto-accepts
