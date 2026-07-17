@@ -5,6 +5,15 @@
 
 #include "lvgl/lvgl.h"
 
+// display_backend_drm.cpp / display_backend_fbdev.cpp are compiled by
+// mk/display-lib.mk WITHOUT the precompiled header, so they never see
+// lv_xml_component_scope_t (which ordinary TUs get transitively from
+// lvgl_pch.h -> helix-xml/helix_xml.h). This header only references the type by
+// pointer, so a forward-declaring typedef keeps it self-contained without
+// pulling the whole XML engine into every includer. Identical to the typedef in
+// lib/helix-xml/src/xml/lv_xml_types.h, which C++ permits to repeat.
+typedef struct _lv_xml_component_scope_t lv_xml_component_scope_t;
+
 namespace helix::xml {
 
 // RAII override for the current XML subject-registration scope.
