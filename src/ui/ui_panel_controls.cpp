@@ -12,6 +12,7 @@
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_notification.h"
+#include "ui_toast_manager.h"
 #include "ui_overlay_temp_graph.h"
 #include "ui_panel_bed_mesh.h"
 #include "ui_panel_calibration_zoffset.h"
@@ -1722,11 +1723,21 @@ void ControlsPanel::handle_motors_cancel() {
 }
 
 void ControlsPanel::handle_calibration_bed_mesh() {
+#if defined(HELIX_PLATFORM_ESP32)
+    // Bed-mesh calibration is excluded from the v1 Core+AMS cut; its panel is a
+    // null-vtable link stub. Toast instead of the LoadProhibited crash.
+    helix::ui::show_feature_unavailable_toast();
+    return;
+#endif
     helix::ui::lazy_create_and_push_overlay<BedMeshPanel>(
         get_global_bed_mesh_panel, bed_mesh_panel_, parent_screen_, "Bed Mesh", get_name(), true);
 }
 
 void ControlsPanel::handle_calibration_zoffset() {
+#if defined(HELIX_PLATFORM_ESP32)
+    helix::ui::show_feature_unavailable_toast();
+    return;
+#endif
     // Set the Moonraker client before lazy creation so it's available when calibration starts
     get_global_zoffset_cal_panel().set_api(get_moonraker_api());
     helix::ui::lazy_create_and_push_overlay<ZOffsetCalibrationPanel>(
@@ -1735,6 +1746,10 @@ void ControlsPanel::handle_calibration_zoffset() {
 }
 
 void ControlsPanel::handle_calibration_screws() {
+#if defined(HELIX_PLATFORM_ESP32)
+    helix::ui::show_feature_unavailable_toast();
+    return;
+#endif
     get_global_screws_tilt_panel().set_client(get_moonraker_client(), get_moonraker_api());
     helix::ui::lazy_create_and_push_overlay<ScrewsTiltPanel>(
         get_global_screws_tilt_panel, screws_panel_, parent_screen_, "Bed Screws", get_name());

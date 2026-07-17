@@ -43,6 +43,7 @@
 #include "esp_log.h"
 
 #include "shaper_csv_parser.h"
+#include "ui_toast_manager.h"
 #include "ui_overlay_timelapse_videos.h"
 #include "ui_panel_belt_tension.h"
 #include "ui_panel_bed_mesh.h"
@@ -115,17 +116,33 @@ ZOffsetCalibrationPanel& get_global_zoffset_cal_panel() {
     return *reinterpret_cast<ZOffsetCalibrationPanel*>(storage);
 }
 
+// Advanced-panel staged-calibration rows (Input Shaping / Belt Tension / Z-Offset)
+// stay VISIBLE — they are features the user should learn exist — but their panels
+// are excluded from the v1 cut. Instead of the old silent no-op registration,
+// register a real handler that shows the shared "not yet available" toast so the
+// tap has visible feedback and can never reach the null-vtable panel stub.
+static void esp32_staged_feature_row_cb(lv_event_t* /*e*/) {
+    helix::ui::show_feature_unavailable_toast();
+}
+
 // src/ui/ui_panel_belt_tension.cpp
-void init_belt_tension_row_handler() {}
+void init_belt_tension_row_handler() {
+    lv_xml_register_event_cb(nullptr, "on_belt_tension_row_clicked", esp32_staged_feature_row_cb);
+}
 
 // src/ui/ui_panel_input_shaper.cpp
-void init_input_shaper_row_handler() {}
+void init_input_shaper_row_handler() {
+    lv_xml_register_event_cb(nullptr, "on_input_shaper_row_clicked", esp32_staged_feature_row_cb);
+}
 
-// src/ui/ui_panel_screws_tilt.cpp
+// src/ui/ui_panel_screws_tilt.cpp — Advanced screws-tilt row stays a no-op; it is
+// XML-gated on printer_has_screws_tilt and reached crash-safely (unregistered cb).
 void init_screws_tilt_row_handler() {}
 
 // src/ui/ui_panel_calibration_zoffset.cpp
-void init_zoffset_row_handler() {}
+void init_zoffset_row_handler() {
+    lv_xml_register_event_cb(nullptr, "on_zoffset_row_clicked", esp32_staged_feature_row_cb);
+}
 void init_zoffset_event_callbacks() {}
 
 // parse_shaper_csv IS genuinely helix::calibration-namespaced (called qualified

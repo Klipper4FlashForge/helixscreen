@@ -62,6 +62,7 @@ static SubjectManager g_subjects;
 static lv_subject_t g_notification_subject;
 static lv_subject_t g_show_beta_features_subject;
 static lv_subject_t g_home_edit_mode_subject;
+static lv_subject_t g_platform_extras_subject;
 
 // Application quit flag (volatile sig_atomic_t for async-signal-safety)
 static volatile sig_atomic_t g_quit_requested = 0;
@@ -172,6 +173,24 @@ void app_globals_init_subjects() {
     lv_subject_init_int(&g_home_edit_mode_subject, 0);
     g_subjects.register_subject(&g_home_edit_mode_subject);
     lv_xml_register_subject(nullptr, "home_edit_mode", &g_home_edit_mode_subject);
+
+    // Platform-availability gate for excluded v1 (ESP32 / K-Touch) hardware
+    // features whose affordances are XML-declarative and cannot be hidden from a
+    // compiled TU (their owning overlay is excluded from the app_srcs manifest).
+    // 1 = affordances render exactly as today (every non-ESP32 build); 0 = hidden.
+    // The default of 1 keeps all desktop/embedded builds behaviorally identical —
+    // only the ESP32 v1 cut flips it to 0. XML rows bind via:
+    //   <bind_flag_if_eq subject="platform_extras_available" flag="hidden" ref_value="0"/>
+    // Cleanup is co-located: register_subject() below hands it to g_subjects, which
+    // app_globals_deinit_subjects() (registered with StaticSubjectRegistry above)
+    // deinits before lv_deinit().
+#if defined(HELIX_PLATFORM_ESP32)
+    lv_subject_init_int(&g_platform_extras_subject, 0);
+#else
+    lv_subject_init_int(&g_platform_extras_subject, 1);
+#endif
+    g_subjects.register_subject(&g_platform_extras_subject);
+    lv_xml_register_subject(nullptr, "platform_extras_available", &g_platform_extras_subject);
 
     // Initialize modal dialog subjects (for modal_dialog.xml binding)
     helix::ui::modal_init_subjects();

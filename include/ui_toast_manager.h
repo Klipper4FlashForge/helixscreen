@@ -118,3 +118,20 @@ class ToastManager {
     size_t max_visible_ = kMaxVisible;
     std::atomic<bool> initialized_{false};
 };
+
+namespace helix {
+namespace ui {
+
+/**
+ * @brief Show the single shared "feature unavailable on this display" toast.
+ *
+ * One reusable call site for every excluded-subsystem affordance on the ESP32
+ * v1 (K-Touch) build. The message text is the single translatable string
+ * `lv_tr("Not yet available on this display")` so translation extraction picks
+ * it up exactly once. Safe to call on any build; on desktop it is simply never
+ * reached because its callers are gated behind `#if defined(HELIX_PLATFORM_ESP32)`.
+ */
+void show_feature_unavailable_toast();
+
+} // namespace ui
+} // namespace helix

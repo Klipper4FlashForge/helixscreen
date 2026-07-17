@@ -1239,11 +1239,18 @@ void AmsEditOverlay::update_spoolman_button_state() {
     // lone Change Filament button centered.
     lv_obj_t* scan_btn = find_widget("btn_scan_qr_code");
     if (scan_btn) {
+#if defined(HELIX_PLATFORM_ESP32)
+        // No camera on the v1 Core+AMS cut — Scan QR has no offline analogue,
+        // so keep it hidden regardless of Spoolman availability.
+        lv_obj_add_flag(scan_btn, LV_OBJ_FLAG_HIDDEN);
+        (void)has_spoolman;
+#else
         if (has_spoolman) {
             lv_obj_remove_flag(scan_btn, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(scan_btn, LV_OBJ_FLAG_HIDDEN);
         }
+#endif
     }
 }
 

@@ -799,6 +799,12 @@ void ProbeOverlay::handle_accuracy_estop() {
 void ProbeOverlay::handle_zoffset_cal() {
     spdlog::debug("[Probe] Z-Offset calibration requested");
 
+#if defined(HELIX_PLATFORM_ESP32)
+    // Secondary entry to Z-Offset calibration (excluded, null-vtable stub on v1).
+    helix::ui::show_feature_unavailable_toast();
+    return;
+#endif
+
     auto& overlay = get_global_zoffset_cal_panel();
 
     // Lazy-create z-offset overlay
@@ -813,6 +819,12 @@ void ProbeOverlay::handle_zoffset_cal() {
 
 void ProbeOverlay::handle_bed_mesh() {
     spdlog::debug("[Probe] Bed mesh requested");
+
+#if defined(HELIX_PLATFORM_ESP32)
+    // Secondary entry to bed-mesh calibration (excluded, null-vtable stub on v1).
+    helix::ui::show_feature_unavailable_toast();
+    return;
+#endif
 
     auto& panel = get_global_bed_mesh_panel();
 
