@@ -357,6 +357,11 @@ lv_xml_style_t * lv_xml_get_style_by_name(lv_xml_component_scope_t * scope, cons
     if(style_name) {
         char component_name[256];
         size_t len = (size_t)(style_name - style_name_raw);
+        if(len >= sizeof(component_name)) {
+            LV_LOG_WARN("style reference '%s' has an over-long component name; ignoring",
+                        style_name_raw);
+            return NULL;
+        }
         lv_memcpy(component_name, style_name_raw, len);
         component_name[len] = '\0';
         scope = lv_xml_component_get_scope(component_name);

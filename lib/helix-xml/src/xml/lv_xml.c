@@ -994,7 +994,14 @@ static void resolve_params(lv_xml_parser_state_t * state, lv_xml_component_scope
                 }
                 else if(lv_streq(type, "style")) {
                     lv_xml_style_t * s = lv_xml_get_style_by_name(parent_scope, ext_value);
-                    ext_value = s->long_name;
+                    if(s != NULL) {
+                        ext_value = s->long_name;
+                    }
+                    else {
+                        LV_LOG_WARN("style '%s' referenced on '%s' not found; using default",
+                                    ext_value, item_scope->name);
+                        ext_value = get_param_default(item_scope, name_clean);
+                    }
                 }
             }
             else {
