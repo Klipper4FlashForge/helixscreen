@@ -170,7 +170,14 @@ TEST_CASE("get_effective_remap identity-filter drops identity + auto entries",
 // on the U1, where the card is hidden) → identity-filter → build_preprint_gcode.
 // Proves the emitted SET_PRINT_EXTRUDER_MAP / SET_PRINT_USED_EXTRUDERS route each
 // logical tool to the physical head holding its matched filament — not identity.
-TEST_CASE("Snapmaker routing: auto color match drives the emitted extruder map",
+//
+// Inputs are the EXACT live values captured from the reporter's U1
+// (192.168.30.103, 2026-07-16) for 4_COLOR_RING_PLA_10m59s.gcode:
+//   sliced filament_colour = #E2DEDB;#080A0D;#F4C032;#E72F1D  (T0..T3)
+//   print_task_config: filament_exist=[T,F,T,T],
+//     filament_color_rgba=[080A0D, E2DEDB, E72F1D, F4C032] (heads 0..3), all PLA.
+// i.e. black/red/yellow loaded in heads 0/2/3; head 1 (white) is EMPTY (stale).
+TEST_CASE("Snapmaker routing: real U1 4-color-ring auto match drives the extruder map",
           "[snapmaker][preprint][remap]") {
     // Mirror of get_effective_remap()'s identity-filter (physical head 0..3).
     auto effective_remap = [](const std::vector<helix::ToolMapping>& mappings) {
@@ -184,16 +191,17 @@ TEST_CASE("Snapmaker routing: auto color match drives the emitted extruder map",
         return remap;
     };
 
-    // 4-color ring: sliced T0=white, T1=black, T2=yellow, T3=red (all PLA).
+    // Sliced per-tool colors (T0=white, T1=black, T2=yellow, T3=red), all PLA.
     std::vector<helix::GcodeToolInfo> tools = {
-        {0, 0xFFFFFF, "PLA"}, {1, 0x000000, "PLA"}, {2, 0xFFFF00, "PLA"}, {3, 0xFF0000, "PLA"}};
+        {0, 0xE2DEDB, "PLA"}, {1, 0x080A0D, "PLA"}, {2, 0xF4C032, "PLA"}, {3, 0xE72F1D, "PLA"}};
 
-    // Physical heads: 0=black, 2=red, 3=yellow LOADED; 1=white EMPTY (stale color).
+    // Physical heads as the firmware reports them: 0=black, 2=red, 3=yellow LOADED;
+    // 1=white EMPTY (still reports its stale 0xE2DEDB color).
     std::vector<helix::AvailableSlot> slots = {
-        {0, 0, 0x000000, "PLA", false, -1}, // head 0: black loaded
-        {1, 0, 0xFFFFFF, "PLA", true, -1},  // head 1: EMPTY (stale white)
-        {2, 0, 0xFF0000, "PLA", false, -1}, // head 2: red loaded
-        {3, 0, 0xFFFF00, "PLA", false, -1}, // head 3: yellow loaded
+        {0, 0, 0x080A0D, "PLA", false, -1}, // head 0: black loaded
+        {1, 0, 0xE2DEDB, "PLA", true, -1},  // head 1: EMPTY (stale white)
+        {2, 0, 0xE72F1D, "PLA", false, -1}, // head 2: red loaded
+        {3, 0, 0xF4C032, "PLA", false, -1}, // head 3: yellow loaded
     };
 
     // Auto match (U1 has no editable card, so effective_mappings runs the match).
