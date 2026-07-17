@@ -5,6 +5,33 @@ All notable changes to HelixScreen will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.99.93] - 2026-07-16
+
+### Added
+
+- **XML `<if>` / `<else>` structural conditionals** — layouts can build one branch, another, or nothing based on a subject or expression, reactively rebuilding when it changes; only the matching branch is created. Rounds out conditional support alongside `<repeat>` and `${…}`.
+- **Integer expressions in `${…}`** — XML `${…}` composition can evaluate integer arithmetic and take numeric component params as operands, not just compose indexed subject names.
+- **2D toolpath preview on the print detail view** — devices that render a 2D toolpath (rather than a 3D model) show that preview on the file detail view instead of the flat thumbnail.
+- **Filament color routing follows the effective tool match** (Snapmaker U1) — on toolchangers, the gcode preview, spool swatches, and preflight checks color by each tool's effective filament match rather than assuming T0, and `SET_PRINT_EXTRUDER_MAP` is driven from that same match.
+
+### Fixed
+
+- **Power-loss recovery on AFC-modded Snapmaker U1** — the U1 resume offer now also reaches U1s running the AFC filament-system mod.
+- **Filament mis-routing on empty or incompatible lanes** — a tool is never matched to an empty lane (which had shown a stale color), the material-blind lane fallback no longer grabs incompatible filament, and lane data is keyed by tool on toolchangers (ingesting foreign keys and migrating stale `laneN` entries).
+- **AD5X IFS material and color on insert** (prestonbrown/helixscreen#1065) — physically inserting filament refreshes material and color for auto-tracked lanes.
+- **Kobra S1 ACE detection** (prestonbrown/helixscreen#1107) — the Kobra S1 mainline-Python firmware fork's `ace_instance_N` objects are detected.
+- **Render-thread crash on ARM64** (prestonbrown/helixscreen#1102) — a missing memory barrier in the software-render→main handoff could free a layer buffer still in use; the handoff is now barriered, and the subject-bound `<repeat>` observer lifetime is tied to its instance to close a related use-after-free.
+- **Recycled panel layout** (prestonbrown/helixscreen#1109) — print-status cards and the active-spool row re-apply their layout and visibility when a recycled widget instance is reused, instead of showing a stale layout.
+- **Decorative taps reach the button** (prestonbrown/helixscreen#1101) — taps on decorative children of a card or row route to the handler root instead of being swallowed.
+- **Blocking-op g-code queueing** (prestonbrown/helixscreen#1108) — benign discretionary commands are queued during blocking operations rather than rejected.
+- **Jog precision and toasts** (prestonbrown/helixscreen#1104) — jog axes are gated on an AxisMove epsilon and never emit scientific notation, a populated NOT_READY message beats the generic fallback, and duplicate RPC and gcode-stream toasts dedupe on Klipper's raw wording.
+- **Keyboard dismiss keeps the overlay open** — tapping the backdrop to dismiss the on-screen keyboard no longer also closes the overlay behind it.
+- **2D backdrop blur crash guard** — abort-modal GPU blur initialization is deferred with a crash-loop guard.
+
+### Changed
+
+- **Pre-print toggles hidden without HelixPrint** — pre-print toggles that require the HelixPrint plugin are hidden when the plugin isn't installed.
+
 ## [0.99.92] - 2026-07-15
 
 ### Added
@@ -4313,6 +4340,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.93]: https://github.com/prestonbrown/helixscreen/compare/v0.99.92...v0.99.93
 [0.99.92]: https://github.com/prestonbrown/helixscreen/compare/v0.99.91...v0.99.92
 [0.99.91]: https://github.com/prestonbrown/helixscreen/compare/v0.99.90...v0.99.91
 [0.99.90]: https://github.com/prestonbrown/helixscreen/compare/v0.99.89...v0.99.90
