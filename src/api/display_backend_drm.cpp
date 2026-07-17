@@ -14,7 +14,7 @@
 #include "input_device_scanner.h"
 #include "touch_calibration_wrapper.h"
 
-#include "system/telemetry_manager.h"
+#include "helix_display_telemetry.h"
 
 #include <spdlog/spdlog.h>
 
@@ -645,9 +645,14 @@ lv_indev_t* DisplayBackendDRM::create_input_pointer() {
                     screen_height_, abs_mismatch, needs_cal_forced_by_abs, got_range);
 
                 // Report a telemetry anomaly (rate-limited, best-effort). Stable slug
-                // so occurrences can be aggregated across devices/boots.
-                TelemetryManager::instance().record_error(
-                    "display", "touch-coarse-scale-skipped", "drm_abs_range_query_unusable");
+                // so occurrences can be aggregated across devices/boots. Routed
+                // through the C bridge rather than TelemetryManager directly so
+                // this object (which is force-linked into helix-splash /
+                // helix-watchdog via --whole-archive) does not drag the telemetry
+                // singleton into those pipeline-less binaries. See
+                // helix_display_telemetry.h.
+                helix_display_telemetry_error("display", "touch-coarse-scale-skipped",
+                                              "drm_abs_range_query_unusable");
             }
 
             // Touch axis / range overrides via environment (parity with the fbdev
