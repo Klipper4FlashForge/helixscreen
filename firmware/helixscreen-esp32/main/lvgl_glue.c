@@ -10,7 +10,6 @@
 #include "esp_lcd_panel_rgb.h"
 #include "esp_log.h"
 #include "esp_pthread.h"
-#include "esp_rom_sys.h" // esp_rom_delay_us — precise bounded stall for beam pacing
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -82,34 +81,6 @@ static uint8_t *s_band;   // internal-DRAM two-hop staging band (NULL => direct 
 // to align each blit to a fresh frame top.
 static SemaphoreHandle_t s_vsync_sem;
 
-// Beam clock for the presenter's per-band PACING (present_blit). on_vsync stamps
-// this; the presenter reads (now - this) to locate the scan beam. 32-bit aligned
-// volatile = single-instruction load/store on Xtensa (no torn ISR/task read).
-static volatile uint32_t s_last_vsync_us;
-
-// Panel line geometry from the board timings: the beam advances one line per
-// HTOTAL pixel clocks, so LCD_LINE_RATE_HZ = pclk/HTOTAL lines/sec; a frame is
-// VTOTAL lines. K-Touch: HTOTAL=836, VTOTAL=548, rate=17703 lines/s (~32.3Hz).
-#define LCD_HTOTAL \
-    (BOARD_LCD_H_RES + BOARD_LCD_HSYNC_PW + BOARD_LCD_HSYNC_BP + BOARD_LCD_HSYNC_FP)
-#define LCD_VTOTAL \
-    (BOARD_LCD_V_RES + BOARD_LCD_VSYNC_PW + BOARD_LCD_VSYNC_BP + BOARD_LCD_VSYNC_FP)
-#define LCD_LINE_RATE_HZ ((uint32_t)BOARD_LCD_PCLK_HZ / LCD_HTOTAL)
-#define LCD_FRAME_US ((uint32_t)LCD_VTOTAL * 1000000u / LCD_LINE_RATE_HZ)
-
-// Beam-pacing safety margin (lines the beam must be past a band before the
-// presenter writes it). THIS IS PACING, NOT THE FAILED beam-aware GATING
-// (f95d6a849):
-//   - gating RACED — it used this margin to decide gate-or-skip, so an under-
-//     margin estimate wrote INTO the beam's path and tore.
-//   - pacing WAITS until the beam has cleared the band; the margin only sets HOW
-//     LONG we wait. Over-margin costs a few extra microseconds of off-thread
-//     stall — it can NEVER cause a tear.
-// So this margin is pure correctness headroom: bump it if unsure, NEVER shrink it
-// to "optimize" (throughput is the two-hop copy's job, not this). 48 covers the
-// on_vsync->active phase ambiguity (VSYNC_PW+VSYNC_BP=36) plus jitter.
-#define BEAM_MARGIN_LINES 48
-
 // Presenter handoff: the completed-cycle dirty Y-union, published by flush_cb on
 // flush_is_last and consumed by the presenter. Guarded by a portMUX critical
 // section (a few int assignments — never blocks). Full width; band = [y1, y2].
@@ -140,7 +111,6 @@ static bool flush_on_vsync(esp_lcd_panel_handle_t panel,
     (void)panel;
     (void)edata;
     (void)user_ctx;
-    s_last_vsync_us = (uint32_t)esp_timer_get_time(); // ISR-safe; the presenter's beam clock
     __atomic_fetch_add(&s_vsync_fires, 1, __ATOMIC_RELAXED);
     BaseType_t high_task_woken = pdFALSE;
     if (s_vsync_sem) {
@@ -221,6 +191,8 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
     lv_display_flush_ready(disp); // immediate — LVGL never blocks on the panel
 }
 
+// Blit shadow rows [y1, y2] (full width) to the FB. Two-hop through the internal
+// band buffer when available (see the s_band comment); direct otherwise.
 // Records a single band's achieved throughput into the window stats.
 static void blit_stat(int32_t lines, uint32_t dt_us) {
     s_blit_lines_total += (uint32_t)lines;
@@ -232,52 +204,24 @@ static void blit_stat(int32_t lines, uint32_t dt_us) {
     }
 }
 
-// PACE: stall (precise, off-thread) until the scan beam has cleared band
-// [by, by+bh) by BEAM_MARGIN_LINES, so the impending write into those FB rows
-// cannot land where the beam is currently reading. The present starts at a fresh
-// vsync (beam ~ line 0), so we write each band top-to-bottom just behind the
-// beam — making a tear structurally impossible at ANY copy speed (see the
-// BEAM_MARGIN_LINES gating-vs-pacing note). Bounded by the remaining per-present
-// budget (2 frames): on exhaustion we write anyway (a rare recoverable glitch,
-// never a hang) — the same spirit as the 100ms vsync-wait bound. Analytic wait
-// via esp_rom_delay_us + one confirming re-read for vsync-phase jitter.
-static void beam_pace_band(int32_t by, int32_t bh, uint32_t *budget_us) {
-    int32_t clear_line = by + bh + BEAM_MARGIN_LINES;
-    for (int i = 0; i < 2; i++) {
-        uint32_t elapsed = (uint32_t)esp_timer_get_time() - s_last_vsync_us;
-        int32_t beam = (int32_t)((uint64_t)elapsed * LCD_LINE_RATE_HZ / 1000000u);
-        if (beam >= clear_line)
-            return; // beam has cleared the band -> safe to write now
-        uint32_t wait_us =
-            (uint32_t)((uint64_t)(clear_line - beam) * 1000000u / LCD_LINE_RATE_HZ);
-        if (wait_us >= *budget_us) {
-            esp_rom_delay_us(*budget_us);
-            *budget_us = 0;
-            return; // 2-frame budget spent -> write anyway (bounded, recoverable)
-        }
-        *budget_us -= wait_us;
-        esp_rom_delay_us(wait_us);
-    }
-}
-
 static void present_blit(int32_t y1, int32_t y2) {
-    uint32_t budget_us = 2u * LCD_FRAME_US; // per-present pacing cap (2 frames)
-    for (int32_t by = y1; by <= y2; by += UI_BAND_LINES) {
-        int32_t bh = y2 - by + 1;
-        if (bh > UI_BAND_LINES)
-            bh = UI_BAND_LINES;
-        beam_pace_band(by, bh, &budget_us);
-        uint32_t t0 = (uint32_t)esp_timer_get_time();
-        if (s_band) {
+    if (s_band) {
+        for (int32_t by = y1; by <= y2; by += UI_BAND_LINES) {
+            int32_t bh = y2 - by + 1;
+            if (bh > UI_BAND_LINES)
+                bh = UI_BAND_LINES;
+            uint32_t t0 = (uint32_t)esp_timer_get_time();
             // hop 1: shadow(PSRAM) -> internal band (sequential read)
             memcpy(s_band, s_shadow + (size_t)by * FB_STRIDE, (size_t)bh * FB_STRIDE);
             // hop 2: internal band -> FB(PSRAM) (cache-buffered write)
             esp_lcd_panel_draw_bitmap(s_panel, 0, by, BOARD_LCD_H_RES, by + bh, s_band);
-        } else {
-            esp_lcd_panel_draw_bitmap(s_panel, 0, by, BOARD_LCD_H_RES, by + bh,
-                                      s_shadow + (size_t)by * FB_STRIDE);
+            blit_stat(bh, (uint32_t)esp_timer_get_time() - t0);
         }
-        blit_stat(bh, (uint32_t)esp_timer_get_time() - t0);
+    } else {
+        uint32_t t0 = (uint32_t)esp_timer_get_time();
+        esp_lcd_panel_draw_bitmap(s_panel, 0, y1, BOARD_LCD_H_RES, y2 + 1,
+                                  s_shadow + (size_t)y1 * FB_STRIDE);
+        blit_stat(y2 - y1 + 1, (uint32_t)esp_timer_get_time() - t0);
     }
 }
 
