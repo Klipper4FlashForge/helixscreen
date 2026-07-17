@@ -94,11 +94,24 @@ static bool s_cur_valid;
 static int32_t s_cur_y1;
 static int32_t s_cur_y2;
 
+// --- TEMPORARY triage diagnostics (regression capture) ---
+// vsync fires (ISR, atomic), presented frames, and blit throughput per 10s at
+// ESP_LOGI. s_blit_worst_lpms is the SLOWEST single band across the window — if
+// the printer-image PNG re-decode (LV_CACHE_DEF_SIZE=0) collapses the two-hop
+// rate during nav, worst-band lpms drops below the ~17.7 lpms beam here.
+static uint32_t s_vsync_fires;
+static uint32_t s_presented;
+static uint32_t s_blit_lines_total;
+static uint32_t s_blit_us_total;
+static uint32_t s_blit_worst_lpms = 0xFFFFFFFFu;
+static uint32_t s_stat_log_us;
+
 static bool flush_on_vsync(esp_lcd_panel_handle_t panel,
                            const esp_lcd_rgb_panel_event_data_t *edata, void *user_ctx) {
     (void)panel;
     (void)edata;
     (void)user_ctx;
+    __atomic_fetch_add(&s_vsync_fires, 1, __ATOMIC_RELAXED);
     BaseType_t high_task_woken = pdFALSE;
     if (s_vsync_sem) {
         xSemaphoreGiveFromISR(s_vsync_sem, &high_task_woken);
@@ -180,27 +193,67 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 
 // Blit shadow rows [y1, y2] (full width) to the FB. Two-hop through the internal
 // band buffer when available (see the s_band comment); direct otherwise.
+// Records a single band's achieved throughput into the window stats.
+static void blit_stat(int32_t lines, uint32_t dt_us) {
+    s_blit_lines_total += (uint32_t)lines;
+    s_blit_us_total += dt_us;
+    if (dt_us > 0) {
+        uint32_t lpms = (uint32_t)lines * 1000u / dt_us;
+        if (lpms < s_blit_worst_lpms)
+            s_blit_worst_lpms = lpms;
+    }
+}
+
 static void present_blit(int32_t y1, int32_t y2) {
     if (s_band) {
         for (int32_t by = y1; by <= y2; by += UI_BAND_LINES) {
             int32_t bh = y2 - by + 1;
             if (bh > UI_BAND_LINES)
                 bh = UI_BAND_LINES;
+            uint32_t t0 = (uint32_t)esp_timer_get_time();
             // hop 1: shadow(PSRAM) -> internal band (sequential read)
             memcpy(s_band, s_shadow + (size_t)by * FB_STRIDE, (size_t)bh * FB_STRIDE);
             // hop 2: internal band -> FB(PSRAM) (cache-buffered write)
             esp_lcd_panel_draw_bitmap(s_panel, 0, by, BOARD_LCD_H_RES, by + bh, s_band);
+            blit_stat(bh, (uint32_t)esp_timer_get_time() - t0);
         }
     } else {
+        uint32_t t0 = (uint32_t)esp_timer_get_time();
         esp_lcd_panel_draw_bitmap(s_panel, 0, y1, BOARD_LCD_H_RES, y2 + 1,
                                   s_shadow + (size_t)y1 * FB_STRIDE);
+        blit_stat(y2 - y1 + 1, (uint32_t)esp_timer_get_time() - t0);
     }
+}
+
+// Emits the 10s triage line (INFO). Called every presenter loop iteration so it
+// fires even when idle (no frames to present).
+static void present_diag_maybe(void) {
+    uint32_t now = (uint32_t)esp_timer_get_time();
+    uint32_t elapsed = now - s_stat_log_us;
+    if (elapsed < 10000000u)
+        return;
+    uint32_t vs = __atomic_exchange_n(&s_vsync_fires, 0, __ATOMIC_RELAXED);
+    uint32_t vs_hz10 = (uint32_t)((uint64_t)vs * 10000000u / elapsed);
+    uint32_t pr_hz10 = (uint32_t)((uint64_t)s_presented * 10000000u / elapsed);
+    uint32_t avg = s_blit_us_total ? (s_blit_lines_total * 1000u / s_blit_us_total) : 0;
+    uint32_t worst = (s_blit_worst_lpms == 0xFFFFFFFFu) ? 0 : s_blit_worst_lpms;
+    ESP_LOGI(TAG,
+             "present diag (10s): vsync %u (%u.%u Hz) presented %u (%u.%u Hz) | blit avg %u "
+             "worst-band %u lpms",
+             vs, vs_hz10 / 10u, vs_hz10 % 10u, s_presented, pr_hz10 / 10u, pr_hz10 % 10u, avg,
+             worst);
+    s_presented = 0;
+    s_blit_lines_total = 0;
+    s_blit_us_total = 0;
+    s_blit_worst_lpms = 0xFFFFFFFFu;
+    s_stat_log_us = now;
 }
 
 // Presenter task: blits completed shadow frames to the FB, each aligned to a
 // fresh vsync so the copy starts at frame top and outruns the beam.
 static void present_task(void *arg) {
     (void)arg;
+    s_stat_log_us = (uint32_t)esp_timer_get_time();
     while (true) {
         portENTER_CRITICAL(&s_present_mux);
         bool have = s_frame_pending;
@@ -210,6 +263,7 @@ static void present_task(void *arg) {
             // No completed frame — wait for a vsync (or 50ms) then re-check.
             // Tolerates empty vsyncs.
             xSemaphoreTake(s_vsync_sem, pdMS_TO_TICKS(50));
+            present_diag_maybe();
             continue;
         }
 
@@ -232,7 +286,9 @@ static void present_task(void *arg) {
             y2 = BOARD_LCD_V_RES - 1;
         if (y2 >= y1) {
             present_blit(y1, y2);
+            s_presented++;
         }
+        present_diag_maybe();
     }
 }
 
