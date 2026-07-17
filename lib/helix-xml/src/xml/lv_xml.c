@@ -93,6 +93,7 @@ static xml_frag_record_t * xml_frag_retain(lv_xml_parser_state_t * state, xml_fr
 static void xml_frag_teardown(xml_frag_record_t * r);
 static void xml_frag_rebuild(xml_frag_record_t * r, uint32_t lo, uint32_t hi, int32_t count);
 static void xml_frag_rebuild_cb(lv_observer_t * observer, lv_subject_t * subject);
+static void if_cond_changed_cb(void * record, int32_t value);
 static void xml_frag_record_free_heap(xml_frag_record_t * r);
 static void xml_frag_instance_delete_cb(lv_event_t * e);
 static bool xml_value_has_compose(const char * value);
@@ -1521,6 +1522,26 @@ static void xml_frag_rebuild_cb(lv_observer_t * observer, lv_subject_t * subject
     xml_frag_rebuild(r, 0, ((xml_frag_capture_t *)r->capture)->event_count, count);
 }
 
+/** <if> reactive trigger: pick the true/false slice from the new cond value and
+ *  rebuild it (count=1). Runs on the main thread inside a UpdateQueue drain
+ *  (subject-set path) and via lv_xml_expr_bind's immediate fire for the initial
+ *  build. */
+static void if_cond_changed_cb(void * record, int32_t value)
+{
+    xml_frag_record_t * r = (xml_frag_record_t *)record;
+    xml_frag_capture_t * cap = (xml_frag_capture_t *)r->capture;
+    uint32_t lo, hi;
+    if(value != 0) {
+        lo = 0;
+        hi = cap->has_else ? cap->else_split : cap->event_count;
+    }
+    else {
+        lo = cap->has_else ? cap->else_split : cap->event_count;
+        hi = cap->event_count;
+    }
+    xml_frag_rebuild(r, lo, hi, 1);
+}
+
 /** Generic: move a captured body into a retained fragment record so its expansion
  *  can be reactively rebuilt (implemented in lv_xml.c, which owns the capture
  *  type). Creates the record in the REGISTERED scope's `frag_ll` (recovered by
@@ -1580,6 +1601,13 @@ static void xml_frag_record_free_heap(xml_frag_record_t * r)
         lv_observer_remove(r->observer);
         r->observer = NULL;
     }
+    /*<if> reactive bind: on the instance-delete path (this function, called from
+     *xml_frag_instance_delete_cb) the bind's OWN expr_bind_delete_cb is also
+     *registered on this SAME view_root's LV_EVENT_DELETE and frees the bind itself
+     *(observers + expr + bind ctx). Calling lv_xml_expr_unbind here would double-free
+     *it. Just drop the pointer; the unregister-sweep path (lv_xml_frag_record_free)
+     *is the one that must call _unbind, BEFORE reaching this function.*/
+    r->bind = NULL;
     xml_frag_capture_free((xml_frag_capture_t *)r->capture);
     r->capture = NULL;
     lv_free(r->roots);                /*the array only — widgets are freed by LVGL*/
@@ -1624,6 +1652,15 @@ void lv_xml_frag_record_free(xml_frag_record_t * r)
     if(r->view_root) {
         lv_obj_remove_event_cb_with_user_data(r->view_root, xml_frag_instance_delete_cb, r);
         r->view_root = NULL;
+    }
+    /*<if> reactive bind: the instance is still alive here (this is the unregister
+     *sweep, called BEFORE subjects_ll teardown), so the bind's expr_bind_delete_cb
+     *has NOT fired and its observers still sit on subjects about to be freed.
+     *_unbind removes those observers AND the expr_bind_delete_cb hook from
+     *r->view_root, so the later lv_obj_delete(v) does not double-free.*/
+    if(r->bind) {
+        lv_xml_expr_unbind((lv_xml_expr_bind_t *)r->bind);
+        r->bind = NULL;
     }
     xml_frag_record_free_heap(r);
 }
@@ -2092,14 +2129,50 @@ static void view_end_element_handler(void * user_data, const char * name)
             return;                      /*skip the marker's OWN end event; split already taken*/
         }
         if(cap->is_if && lv_streq(name, "if") && depth == cap->base_depth) {
-            /*Evaluate cond. Static path only in this task: expand the selected
-             *slice once. Task 4 replaces this with the reactive split (retain +
-             *bind when the cond references subjects).*/
+            /*Evaluate cond once, then branch on whether it references any subjects.*/
             lv_xml_expr_t * ex = cap->cond_raw
                                   ? lv_xml_expr_compile(cap->cond_raw, frag_cond_resolver, &state->scope) : NULL;
             if(cap->cond_raw && ex == NULL) {
                 LV_LOG_WARN("<if>: failed to compile cond '%s'; treated as false", cap->cond_raw);
             }
+
+            if(ex && lv_xml_expr_subject_count(ex) > 0) {
+                /*Reactive: retain the capture into a record and bind the cond to the
+                 *instance root. lv_xml_expr_bind's immediate fire performs the initial
+                 *build via if_cond_changed_cb, so there is nothing else to do here.
+                 *_bind TAKES OWNERSHIP of `ex` (do not free it below), and xml_frag_retain
+                 *moved `cap` into the record (do not xml_frag_capture_free it below).*/
+                /*Eval the initial value BEFORE handing `ex` to _bind: _bind takes
+                 *ownership of `ex` and, on its own OOM, frees it — so reading the value
+                 *first lets a bind failure still expand the correct slice.*/
+                int32_t v0 = lv_xml_expr_eval(ex);
+                xml_frag_record_t * r = xml_frag_retain(state, cap);   /*clears state->context*/
+                if(r) {
+                    r->bind = lv_xml_expr_bind(ex, r->view_root, if_cond_changed_cb, r);
+                    if(r->bind == NULL) {
+                        /*_bind OOM: `ex` is already freed; the record still owns the
+                         *capture. Expand the v0 slice once so the <if> renders (just
+                         *non-reactive) instead of silently staying empty. The record
+                         *stays in frag_ll; its teardown paths already handle a NULL bind.*/
+                        LV_LOG_ERROR("OOM: <if> reactive bind failed; expanding once, non-reactive");
+                        uint32_t lo, hi;
+                        if(v0 != 0) {
+                            lo = 0;
+                            hi = cap->has_else ? cap->else_split : cap->event_count;
+                        }
+                        else {
+                            lo = cap->has_else ? cap->else_split : cap->event_count;
+                            hi = cap->event_count;
+                        }
+                        xml_frag_rebuild(r, lo, hi, /*count=*/1);
+                    }
+                    return;
+                }
+                /*retain failed (unnamed scope or OOM): fall through to a one-shot
+                 *expansion at the current value (state->context still == cap).*/
+                LV_LOG_WARN("<if> reactive retain failed; expanding once, non-reactive");
+            }
+
             int32_t v = ex ? lv_xml_expr_eval(ex) : 0;
             uint32_t lo, hi;
             if(v != 0) {

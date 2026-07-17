@@ -101,6 +101,7 @@ typedef struct {
     lv_xml_component_scope_t   scope;         /* value snapshot; list heads shared read-only with the registered scope */
     lv_xml_component_scope_t * parent_scope;  /* stable pointer into a registered scope, or NULL */
     char **         parent_attrs;   /* deep-copied NULL-terminated snapshot, owned (or NULL) */
+    void *          bind;           /* <if> only: lv_xml_expr_bind_t* handle; detached in the frag sweep. NULL for <repeat>. */
 } xml_frag_record_t;
 
 typedef struct {
