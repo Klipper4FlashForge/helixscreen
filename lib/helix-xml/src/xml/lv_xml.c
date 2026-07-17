@@ -1223,7 +1223,7 @@ static void xml_frag_buffer_event(xml_frag_capture_t * cap, int kind, const char
         uint32_t new_cap = cap->event_cap ? cap->event_cap * 2 : 8;
         xml_frag_event_t * ne = lv_realloc(cap->events, sizeof(xml_frag_event_t) * new_cap);
         if(ne == NULL) {
-            LV_LOG_ERROR("OOM: failed to grow <repeat> capture buffer");
+            LV_LOG_ERROR("OOM: failed to grow <frag> capture buffer");
             return;
         }
         cap->events = ne;
@@ -1238,7 +1238,7 @@ static void xml_frag_buffer_event(xml_frag_capture_t * cap, int kind, const char
     size_t len = lv_strlen(name);
     ev->name = lv_malloc(len + 1);
     if(ev->name == NULL) {
-        LV_LOG_ERROR("OOM: failed to copy <repeat> event name");
+        LV_LOG_ERROR("OOM: failed to copy <frag> event name");
         return;
     }
     lv_memcpy(ev->name, name, len + 1);
@@ -1378,7 +1378,7 @@ static void xml_frag_expand(lv_xml_parser_state_t * state, xml_frag_capture_t * 
                 while(ev->attrs && ev->attrs[n]) n++;
                 const char ** shallow = lv_malloc(sizeof(char *) * (n + 1));
                 if(shallow == NULL) {
-                    LV_LOG_ERROR("OOM: <repeat> replay shallow attrs");
+                    LV_LOG_ERROR("OOM: <frag> replay shallow attrs");
                     continue;
                 }
                 for(size_t a = 0; a < n; a++) shallow[a] = ev->attrs[a];
@@ -1455,7 +1455,7 @@ static void xml_frag_teardown(xml_frag_record_t * r)
     else {
         /*OOM on the sink is catastrophic; fall back to per-root async delete so we
          *still never sync-delete inside the observer batch.*/
-        LV_LOG_ERROR("OOM: <repeat> teardown sink; falling back to per-root async delete");
+        LV_LOG_ERROR("OOM: <frag> teardown sink; falling back to per-root async delete");
         for(uint32_t k = 0; k < r->root_count; k++) {
             if(r->roots[k]) lv_obj_delete_async(r->roots[k]);
         }
