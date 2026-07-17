@@ -606,6 +606,10 @@ void DisplayManager::shutdown() {
 }
 
 void DisplayManager::configure_scroll(int scroll_throw, int scroll_limit) {
+    // Remember the values so a post-swap input rebuild (rotation fallback) can
+    // reapply them to the freshly-created pointer without re-reading config.
+    m_scroll_throw = scroll_throw;
+    m_scroll_limit = scroll_limit;
     if (!m_pointer) {
         return;
     }
@@ -613,6 +617,44 @@ void DisplayManager::configure_scroll(int scroll_throw, int scroll_limit) {
     lv_indev_set_scroll_throw(m_pointer, static_cast<uint8_t>(scroll_throw));
     lv_indev_set_scroll_limit(m_pointer, static_cast<uint8_t>(scroll_limit));
     spdlog::trace("[DisplayManager] Scroll config: throw={}, limit={}", scroll_throw, scroll_limit);
+}
+
+void DisplayManager::rebuild_input_after_backend_swap() {
+    // A backend swap (DRM→fbdev rotation fallback) deleted the display and freed
+    // the old backend. lv_display_delete() only detaches indevs (sets their
+    // display to NULL) — it does not free them — so m_pointer/m_keyboard still
+    // point at indevs bound to the gone backend, whose read_cb/user_data now
+    // reference freed memory. Delete them and recreate on the current backend,
+    // mirroring init()'s input setup so scroll/long-press/sleep-wrapper/keyboard
+    // behavior is preserved.
+    if (m_pointer) {
+        lv_indev_delete(m_pointer);
+        m_pointer = nullptr;
+    }
+    if (m_keyboard) {
+        lv_indev_delete(m_keyboard);
+        m_keyboard = nullptr;
+    }
+    // The saved read callback belonged to the deleted pointer; drop it so the
+    // sleep-aware wrapper re-captures the new pointer's callback on reinstall.
+    m_original_pointer_read_cb = nullptr;
+
+    m_pointer = m_backend->create_input_pointer();
+    if (m_pointer) {
+        configure_scroll(m_scroll_throw, m_scroll_limit);
+        lv_indev_set_long_press_time(m_pointer, AppConstants::Input::LONG_PRESS_MS);
+#ifndef HELIX_DISPLAY_SDL
+        install_sleep_aware_input_wrapper();
+#endif
+    }
+
+    m_keyboard = m_backend->create_input_keyboard();
+    if (m_keyboard) {
+        setup_keyboard_group();
+    }
+
+    spdlog::info("[DisplayManager] Input rebuilt after backend swap (pointer={}, keyboard={})",
+                 m_pointer ? "ok" : "null", m_keyboard ? "ok" : "null");
 }
 
 void DisplayManager::setup_keyboard_group() {
@@ -1282,6 +1324,13 @@ bool DisplayManager::try_drm_to_fbdev_fallback(lv_display_rotation_t rot, bool s
         return true; // No fallback needed
     }
 
+    // If input devices were already created (apply_rotation runs this fallback
+    // after init()), they are bound to the DRM backend we are about to free and
+    // to the display we are about to delete — they must be rebuilt on the fbdev
+    // backend below. At init time m_pointer is still null and init() creates the
+    // input devices after this returns, so nothing to rebuild there.
+    const bool had_input_devices = (m_pointer != nullptr);
+
     spdlog::warn("[DisplayManager] DRM lacks hardware rotation for {}°, "
                  "falling back to fbdev (flicker-free software rotation)",
                  static_cast<int>(rot) * 90);
@@ -1306,6 +1355,15 @@ bool DisplayManager::try_drm_to_fbdev_fallback(lv_display_rotation_t rot, bool s
     }
     spdlog::info("[DisplayManager] Fbdev fallback succeeded at {}x{}", m_width, m_height);
     warn_fbdev_high_dpi();
+
+    // Recreate the input devices on the new backend. lv_display_delete() only
+    // detached them (their display is now NULL) and m_backend.reset() freed the
+    // DRM backend their read_cb/user_data pointed into — leaving m_pointer as a
+    // display-less indev referencing freed memory and the fbdev backend with no
+    // input at all. Rebuild only when they already existed (post-init swap).
+    if (had_input_devices) {
+        rebuild_input_after_backend_swap();
+    }
     return true;
 }
 
