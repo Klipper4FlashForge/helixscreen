@@ -144,6 +144,11 @@ class DisplayBackendDRM : public DisplayBackend {
     bool using_egl_ = false; ///< Track if GPU-accelerated path is active
     helix::TouchCalibration calibration_;
     helix::CalibrationContext calibration_context_;
+    /// True once install_calibration_wrapper() has wired calibrated_read_cb onto
+    /// pointer_ with user_data = &calibration_context_. Tracks install state so
+    /// calibration updates never re-probe the indev's user_data (which can be
+    /// stale/corrupted — bundle LG9X482B) to decide whether to install.
+    bool calibration_wrapper_installed_ = false;
     bool needs_calibration_ = false;
     int screen_width_ = 0;
     int screen_height_ = 0;

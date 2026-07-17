@@ -181,6 +181,12 @@ class DisplayBackendFbdev : public DisplayBackend {
     /// Calibration context for touch input (member to avoid memory leak)
     helix::CalibrationContext calibration_context_;
 
+    /// True once install_calibration_wrapper() has wired calibrated_read_cb onto
+    /// touch_ with user_data = &calibration_context_. Tracks install state so
+    /// calibration updates never re-probe the indev's user_data (which can be
+    /// stale/corrupted — bundle LG9X482B) to decide whether to install.
+    bool calibration_wrapper_installed_ = false;
+
     /// Whether the detected touch device needs calibration (false for USB HID)
     bool needs_calibration_ = false;
 

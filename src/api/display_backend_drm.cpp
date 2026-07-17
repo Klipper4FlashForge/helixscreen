@@ -703,6 +703,7 @@ lv_indev_t* DisplayBackendDRM::create_input_pointer() {
 
             helix::install_calibration_wrapper(pointer_, calibration_context_, calibration_,
                                                screen_width_, screen_height_);
+            calibration_wrapper_installed_ = true;
         }
     }
 
@@ -1224,44 +1225,38 @@ bool DisplayBackendDRM::set_calibration(const helix::TouchCalibration& cal) {
     }
 
     calibration_ = cal;
+    // Update the owned context directly — calibrated_read_cb reads this same
+    // member. Never round-trip through lv_indev_get_user_data(pointer_): that
+    // slot can be stale or corrupted (bundle LG9X482B held XML string bytes),
+    // and writing cal through a non-null garbage pointer faults.
+    calibration_context_.calibration = cal;
 
-    if (pointer_) {
-        auto* ctx = static_cast<helix::CalibrationContext*>(lv_indev_get_user_data(pointer_));
-        if (ctx) {
-            ctx->calibration = cal;
-            spdlog::info("[DRM Backend] Calibration updated: a={:.4f} b={:.4f} c={:.4f} d={:.4f} "
-                         "e={:.4f} f={:.4f}",
-                         cal.a, cal.b, cal.c, cal.d, cal.e, cal.f);
-        } else {
-            // Wrapper not yet installed — install it now
-            helix::install_calibration_wrapper(pointer_, calibration_context_, calibration_,
-                                               screen_width_, screen_height_);
-            spdlog::info("[DRM Backend] Calibration callback installed at runtime");
-        }
+    if (pointer_ && !calibration_wrapper_installed_) {
+        // Wrapper not yet installed — install it now
+        helix::install_calibration_wrapper(pointer_, calibration_context_, calibration_,
+                                           screen_width_, screen_height_);
+        calibration_wrapper_installed_ = true;
+        spdlog::info("[DRM Backend] Calibration callback installed at runtime");
+    } else {
+        spdlog::info("[DRM Backend] Calibration updated: a={:.4f} b={:.4f} c={:.4f} d={:.4f} "
+                     "e={:.4f} f={:.4f}",
+                     cal.a, cal.b, cal.c, cal.d, cal.e, cal.f);
     }
 
     return true;
 }
 
 void DisplayBackendDRM::disable_affine_calibration() {
-    if (pointer_) {
-        auto* ctx = static_cast<helix::CalibrationContext*>(lv_indev_get_user_data(pointer_));
-        if (ctx) {
-            ctx->calibration.valid = false;
-            spdlog::debug("[DRM Backend] Affine calibration disabled for recalibration");
-        }
-    }
+    // Operate on the owned member, not lv_indev_get_user_data(pointer_): the
+    // indev's user_data can be stale/corrupted and slip past an "if (ctx)" guard
+    // as a non-null garbage pointer, faulting on the write (bundle LG9X482B).
+    calibration_context_.calibration.valid = false;
+    spdlog::debug("[DRM Backend] Affine calibration disabled for recalibration");
 }
 
 void DisplayBackendDRM::enable_affine_calibration() {
-    if (pointer_) {
-        auto* ctx = static_cast<helix::CalibrationContext*>(lv_indev_get_user_data(pointer_));
-        if (ctx) {
-            ctx->calibration = calibration_;
-            spdlog::debug("[DRM Backend] Affine calibration re-enabled (valid={})",
-                          calibration_.valid);
-        }
-    }
+    calibration_context_.calibration = calibration_;
+    spdlog::debug("[DRM Backend] Affine calibration re-enabled (valid={})", calibration_.valid);
 }
 
 #endif // HELIX_DISPLAY_DRM
