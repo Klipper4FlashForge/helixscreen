@@ -217,16 +217,12 @@ DisplayBackendDRM::DisplayBackendDRM() : drm_device_(auto_detect_drm_device()) {
 DisplayBackendDRM::DisplayBackendDRM(const std::string& drm_device) : drm_device_(drm_device) {}
 
 DisplayBackendDRM::~DisplayBackendDRM() {
-    // Clear the touch pointer's calibration read callback and user_data before
-    // calibration_context_ (a value member) is destroyed. Nothing deletes
-    // indevs until lv_deinit(), so the pointer indev outlives this backend. If
-    // an indev read fires between our destruction and lv_deinit(),
-    // calibrated_read_cb would dereference the freed calibration_context_
-    // (use-after-free / SIGSEGV). Mirrors ~DisplayBackendFbdev.
-    if (pointer_) {
-        lv_indev_set_read_cb(pointer_, nullptr);
-        lv_indev_set_user_data(pointer_, nullptr);
-    }
+    // Tear down the calibration read callback before calibration_context_ (a value
+    // member) is destroyed. Nothing deletes indevs until lv_deinit(), so the
+    // pointer indev outlives this backend; if an indev read fired between our
+    // destruction and lv_deinit(), calibrated_read_cb would reach the freed
+    // calibration_context_ (use-after-free / SIGSEGV). Mirrors ~DisplayBackendFbdev.
+    helix::uninstall_calibration_wrapper(pointer_, calibration_context_);
     restore_console();
 }
 

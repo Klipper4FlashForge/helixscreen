@@ -8,8 +8,25 @@
 
 namespace helix {
 
+namespace {
+
+// Handle to the active calibration context for calibrated_read_cb().
+//
+// The read callback is a plain C function pointer and only receives lv_indev_t*,
+// so it needs some way to reach the CalibrationContext. It deliberately does NOT
+// use the indev's user_data: that slot lives inside the heap-allocated lv_indev_t
+// struct, next to churny allocations (XML strings), and a corrupted/reused slot
+// returned a non-null garbage pointer that crashed the read/disable paths
+// (bundle LG9X482B, prestonbrown/helixscreen#1112). This handle lives in our own
+// static storage instead. There is only ever one calibrated touch indev per
+// process, and it is installed/torn down on the main (LVGL) thread — the same
+// thread the read callback runs on — so a plain pointer needs no synchronization.
+CalibrationContext* s_active_ctx = nullptr;
+
+} // namespace
+
 void calibrated_read_cb(lv_indev_t* indev, lv_indev_data_t* data) {
-    auto* ctx = static_cast<CalibrationContext*>(lv_indev_get_user_data(indev));
+    CalibrationContext* ctx = s_active_ctx;
     if (!ctx) {
         return;
     }
@@ -80,8 +97,21 @@ void install_calibration_wrapper(lv_indev_t* indev, CalibrationContext& ctx,
     ctx.screen_width = screen_w;
     ctx.screen_height = screen_h;
 
-    lv_indev_set_user_data(indev, &ctx);
+    s_active_ctx = &ctx;
     lv_indev_set_read_cb(indev, helix::calibrated_read_cb);
+}
+
+void uninstall_calibration_wrapper(lv_indev_t* indev, CalibrationContext& ctx) {
+    // Silence our callback on this indev so it can't fire against a freed ctx
+    // between backend destruction and lv_deinit (prestonbrown/helixscreen#1102).
+    // Only touch the read_cb if it's still ours — a newer backend may have taken
+    // over the (different) live indev.
+    if (indev && lv_indev_get_read_cb(indev) == helix::calibrated_read_cb) {
+        lv_indev_set_read_cb(indev, nullptr);
+    }
+    if (s_active_ctx == &ctx) {
+        s_active_ctx = nullptr;
+    }
 }
 
 } // namespace helix
