@@ -4,12 +4,16 @@
 namespace helix {
 
 /// Raw inputs for the connect-time Power-Loss-Recovery offer decision, all
-/// sourced from PrinterState. Snapmaker-fork firmware only (see PrinterState
-/// pl_env_valid docs) — pl_env_valid stays false on every other backend.
+/// sourced from PrinterState. `pl_env_valid` is the self-gating capability
+/// signal: it is a field ONLY Snapmaker's forked virtual_sdcard ever emits
+/// (mainline/AFC Klipper never sends it, and our parser only accepts a JSON
+/// boolean, so it stays false everywhere else). So `pl_env_valid == true`
+/// already means "Snapmaker firmware with a valid recovery snapshot" — no
+/// separate backend/printer-type gate is needed, which is what lets the offer
+/// fire on an AFC-modded U1 whose AMS backend is not the Snapmaker backend.
 struct PlrOfferSignals {
-    bool pl_env_valid;     ///< virtual_sdcard.pl_env_valid
+    bool pl_env_valid;     ///< virtual_sdcard.pl_env_valid (Snapmaker-fork-only signal)
     bool printer_idle;     ///< no active or paused print right now
-    bool is_snapmaker;     ///< connected printer is a Snapmaker U1 (or PAXX)
     bool already_prompted; ///< one-shot latch: already offered this connection
     bool wizard_active;    ///< setup wizard is running (app_globals::is_wizard_active())
 };

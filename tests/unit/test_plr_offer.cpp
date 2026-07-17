@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "../../include/plr_offer.h"
-
 #include "moonraker_client.h" // ConnectionState
 
 #include "../catch_amalgamated.hpp"
 
 using helix::ConnectionState;
-using helix::PlrOfferSignals;
 using helix::plr_should_offer;
 using helix::plr_should_rearm;
+using helix::PlrOfferSignals;
 
 namespace {
 
@@ -17,7 +16,6 @@ PlrOfferSignals all_true_signals() {
     PlrOfferSignals s;
     s.pl_env_valid = true;
     s.printer_idle = true;
-    s.is_snapmaker = true;
     s.already_prompted = false;
     s.wizard_active = false;
     return s;
@@ -41,9 +39,23 @@ TEST_CASE("plr_should_offer: printer not idle => no offer", "[plr][offer]") {
     REQUIRE(plr_should_offer(s) == false);
 }
 
-TEST_CASE("plr_should_offer: non-Snapmaker printer never offers", "[plr][offer]") {
-    PlrOfferSignals s = all_true_signals();
-    s.is_snapmaker = false;
+// Regression: the offer must fire for any valid idle recovery snapshot,
+// independent of the filament/AMS backend. `pl_env_valid` is emitted only by
+// Snapmaker's forked virtual_sdcard, so it is self-gating — an earlier
+// redundant "AMS backend == SNAPMAKER" gate wrongly suppressed the offer on an
+// AFC-modded U1 (bundle UDZJQVQZ) whose backend is not the Snapmaker one, even
+// though the Snapmaker firmware PLR works and pl_env_valid goes true.
+TEST_CASE("plr_should_offer fires for a valid idle snapshot regardless of filament backend",
+          "[plr][offer]") {
+    PlrOfferSignals s;
+    s.pl_env_valid = true;
+    s.printer_idle = true;
+    s.already_prompted = false;
+    s.wizard_active = false;
+    REQUIRE(plr_should_offer(s) == true);
+
+    // The only capability gate is pl_env_valid itself.
+    s.pl_env_valid = false;
     REQUIRE(plr_should_offer(s) == false);
 }
 
