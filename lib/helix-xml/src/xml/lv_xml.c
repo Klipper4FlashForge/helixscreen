@@ -1265,6 +1265,7 @@ static void xml_frag_capture_free(xml_frag_capture_t * cap)
     for(uint32_t k = 0; k < cap->idx_count; k++) lv_free(cap->idx_strings[k]);
     lv_free(cap->idx_strings);
     lv_free(cap->count_raw);
+    lv_free(cap->cond_raw);
     lv_free(cap);
 }
 
@@ -1845,6 +1846,14 @@ static void xml_state_free_composed(lv_xml_parser_state_t * state)
     state->composed_cap = 0;
 }
 
+/* Resolver shim: <if cond="..."> looks up subjects referenced by the expression
+ * in the enclosing component's scope, same as every other expression-consuming
+ * tag (mirrors cond_flag_scope_resolver in lv_xml_obj_parser.c). */
+static lv_subject_t * frag_cond_resolver(void * ctx, const char * name)
+{
+    return lv_xml_get_subject((lv_xml_component_scope_t *)ctx, name);
+}
+
 static void view_start_element_handler(void * user_data, const char * name, const char ** attrs)
 {
     lv_xml_parser_state_t * state = (lv_xml_parser_state_t *)user_data;
@@ -1882,10 +1891,47 @@ static void view_start_element_handler(void * user_data, const char * name, cons
         return;                          /*<repeat> creates no object, no stack push*/
     }
 
+    /*Enter capture on <if>. Same balanced-stack reasoning as <repeat> above: a
+     *capture is always allocated (even with a missing/unparseable cond) so the
+     *matching </if> is still intercepted. Missing cond => treated as false at
+     *</if> (v defaults to 0 when ex is NULL).*/
+    if(lv_streq(name, "if") && (cap == NULL || !cap->replaying)) {
+        const char * cnd = lv_xml_get_value_of(attrs, "cond");
+        if(cnd == NULL) LV_LOG_WARN("<if> is missing the required 'cond' attribute; treated as false");
+        cap = lv_zalloc(sizeof(xml_frag_capture_t));
+        if(cap == NULL) { LV_LOG_ERROR("OOM: <if> capture; tree may be corrupt"); return; }
+        cap->active = true;
+        cap->is_if = true;
+        cap->base_depth = (uint32_t)lv_ll_get_len(&state->parent_ll);
+        if(cnd) {
+            size_t l = lv_strlen(cnd);
+            cap->cond_raw = lv_malloc(l + 1);
+            if(cap->cond_raw) lv_memcpy(cap->cond_raw, cnd, l + 1);
+        }
+        state->context = cap;
+        return;                          /*<if> creates no object, no stack push*/
+    }
+
     /*Buffer body events while capturing (and not yet replaying).*/
     if(cap && cap->active && !cap->replaying) {
+        if(cap->is_if && lv_streq(name, "else")) {
+            if(cap->has_else) {
+                LV_LOG_WARN("<if> has more than one <else>; the first split wins");
+            }
+            else {
+                cap->else_split = cap->event_count;   /*false-body starts here*/
+                cap->has_else = true;
+            }
+            return;                      /*skip the marker's OWN start event*/
+        }
         xml_frag_buffer_event(cap, /*kind=*/0, name, attrs);
         return;                          /*no creation, no stack mutation*/
+    }
+
+    /*Stray <else> outside any <if>: no active capture reached this element.*/
+    if(lv_streq(name, "else")) {
+        LV_LOG_WARN("<else> outside <if>; ignored");
+        return;
     }
 
     state->tag_name = name;
@@ -2042,7 +2088,44 @@ static void view_end_element_handler(void * user_data, const char * name)
             state->context = NULL;
             return;
         }
+        if(cap->is_if && lv_streq(name, "else")) {
+            return;                      /*skip the marker's OWN end event; split already taken*/
+        }
+        if(cap->is_if && lv_streq(name, "if") && depth == cap->base_depth) {
+            /*Evaluate cond. Static path only in this task: expand the selected
+             *slice once. Task 4 replaces this with the reactive split (retain +
+             *bind when the cond references subjects).*/
+            lv_xml_expr_t * ex = cap->cond_raw
+                                  ? lv_xml_expr_compile(cap->cond_raw, frag_cond_resolver, &state->scope) : NULL;
+            if(cap->cond_raw && ex == NULL) {
+                LV_LOG_WARN("<if>: failed to compile cond '%s'; treated as false", cap->cond_raw);
+            }
+            int32_t v = ex ? lv_xml_expr_eval(ex) : 0;
+            uint32_t lo, hi;
+            if(v != 0) {
+                lo = 0;
+                hi = cap->has_else ? cap->else_split : cap->event_count;
+            }
+            else {
+                lo = cap->has_else ? cap->else_split : cap->event_count;
+                hi = cap->event_count;
+            }
+            xml_frag_expand(state, cap, lo, hi, /*count=*/1, NULL, NULL);
+            if(ex) lv_xml_expr_free(ex);
+            xml_frag_capture_free(cap);
+            state->context = NULL;
+            return;
+        }
         xml_frag_buffer_event(cap, /*kind=*/1, name, NULL);
+        return;
+    }
+
+    /*Stray </else> with no active <if> capture: its start pushed no parent/pcdata
+     *frame (warned there), so it must pop none. Returning here — symmetric with the
+     *stray-<else> start guard — keeps parent_ll balanced; falling through to the
+     *unconditional pop below would remove the enclosing element's still-open frame
+     *early and mis-parent every following sibling.*/
+    if(lv_streq(name, "else")) {
         return;
     }
 

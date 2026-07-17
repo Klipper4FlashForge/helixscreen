@@ -65,12 +65,15 @@ typedef struct {
     char ** attrs;       /**< NULL-terminated name/val array, all owned; NULL for end/chardata */
 } xml_frag_event_t;
 
-/** State for a single `<repeat>` expansion, hung off `state->context` for the
- *  duration of the repeat body. On the `<repeat>` start tag a fresh instance is
- *  allocated; the body is buffered while `active && !replaying`; on `</repeat>`
- *  the buffered events are replayed `count` times through the normal element
- *  handlers with `current_index` injected for `$i`. Freed after replay (literal
- *  path) or retained for reactive rebuild (subject-bound count — Task 3). */
+/** State for a single `<repeat>` or `<if>` expansion, hung off `state->context`
+ *  for the duration of the fragment body. On the `<repeat>`/`<if>` start tag a
+ *  fresh instance is allocated; the body is buffered while `active && !replaying`;
+ *  on the matching close tag the buffered events are replayed through the normal
+ *  element handlers — `count` times with `current_index` injected for `$i`
+ *  (`<repeat>`), or once over the selected true/false slice (`<if>`, `is_if`).
+ *  Freed after replay (literal `<repeat>` / static `<if>` — this task) or retained
+ *  for reactive rebuild (subject-bound `<repeat>` count; reactive `<if>` cond is
+ *  Task 4). */
 typedef struct {
     bool     active;             /**< currently buffering a `<repeat>` body */
     uint32_t base_depth;         /**< parent_ll length at the `<repeat>` start tag */
@@ -86,6 +89,12 @@ typedef struct {
     char **  idx_strings;
     uint32_t idx_count;
     uint32_t idx_cap;
+    /* <if> only: index into events[] where the false-body begins (the <else> split).
+     * has_else=false => the whole buffer is the true-body; false-body is empty. */
+    uint32_t else_split;
+    bool     has_else;
+    bool     is_if;              /* distinguishes an <if> capture from a <repeat> capture */
+    char *   cond_raw;           /* <if> cond attr (owned); NULL for <repeat> */
 } xml_frag_capture_t;
 
 struct _lv_xml_parser_state_t {
