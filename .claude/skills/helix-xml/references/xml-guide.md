@@ -148,6 +148,29 @@ Expands a body N times at load time — replaces a C++ create-and-wire loop.
 - ⚠️ **A subject-bound `<repeat>` must be its parent's last child, or the sole child of a dedicated wrapper.** LVGL always appends freshly-created children to the tail of the parent's list, so on rebuild, items land after any static siblings that follow the `<repeat>` in the document — silently reordering the layout.
 - **Resolve-once**: a `${expr}` is evaluated once at widget creation; subject operands do not update reactively (use `bind_*` for live values). Not yet supported: float expressions, reactive computed numeric attributes, nested `<repeat>`.
 
+## Structural Conditionals (`<if>` / `<else>`)
+
+Creates **only** the matching branch — the other is never built. Different from `bind_flag hidden`/`cond=`, which build both branches and toggle visibility: cheap for light subtrees, wasteful for an expensive one. Use `<if>` for expensive/structural conditional *creation* (a whole card, an alternate layout); keep `bind_flag`/`cond=` for cheap show/hide.
+
+```xml
+<subjects><subject name="c" type="int" value="1"/></subjects>
+<lv_obj name="root">
+  <if cond="c gt 0">
+    <lv_obj name="t"/>
+    <else/>
+    <lv_obj name="f"/>
+  </if>
+</lv_obj>
+<!-- c > 0: root's only child is "t". c <= 0: root's only child is "f". -->
+```
+(adapted from `tests/unit/test_xml_if_else.cpp`)
+
+- `<else/>` is an inline divider *inside* the one `<if>…</if>` — everything before it is the true-body, everything after (up to `</if>`) is the false-body. `<else/>` and `<else></else>` are identical. Optional — no `<else>` means "create nothing" on false, component still loads.
+- `cond`: same word-form grammar as `cond=`/`<subject_expr>` above — subject names, int literals, `and`/`or`/`not`, `eq`/`ne`/`lt`/`le`/`gt`/`ge`, arithmetic.
+- **Static vs reactive**: no subject operands = static, evaluated once at load, no observer, losing branch never created. One or more subject operands = reactive, rebuilds (tears down current branch, builds the other) on any operand change.
+- ⚠️ **A reactively-rebuilt `<if>` must be its parent's last child, or the sole child of a dedicated wrapper** — same ordering constraint as `<repeat>` above (LVGL appends the rebuilt body after any static siblings that follow it in the document, silently reordering the layout).
+- Second `<else/>` in one `<if>` → warns, first split wins. Stray `<else/>` outside any `<if>` → warns, ignored, component still loads. Nested `<if>` not yet supported (same as nested `<repeat>`).
+
 ## Styles
 
 ### Defining (NO style_ prefix inside <styles>)

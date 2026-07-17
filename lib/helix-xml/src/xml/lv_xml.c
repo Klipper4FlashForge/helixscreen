@@ -79,21 +79,23 @@ static void view_character_data_handler(void * user_data, const XML_Char * s, in
 static void collapse_whitespace(char * s);
 static void apply_pending_inline_text(lv_xml_parser_state_t * state, const char * name);
 static void free_pcdata_ll(lv_xml_parser_state_t * state);
-static char ** xml_repeat_copy_attrs(const char ** attrs);
-static void xml_repeat_buffer_event(lv_xml_repeat_capture_t * cap, int kind, const char * name,
-                                    const char ** attrs);
-static void xml_repeat_capture_free(lv_xml_repeat_capture_t * cap);
-static const char * xml_repeat_index_string(lv_xml_repeat_capture_t * cap, int32_t index);
+static char ** xml_frag_copy_attrs(const char ** attrs);
+static void xml_frag_buffer_event(xml_frag_capture_t * cap, int kind, const char * name,
+                                  const char ** attrs);
+static void xml_frag_capture_free(xml_frag_capture_t * cap);
+static const char * xml_repeat_index_string(xml_frag_capture_t * cap, int32_t index);
 static int32_t xml_repeat_resolve_count(lv_xml_parser_state_t * state, const char * count_raw);
 static bool xml_repeat_count_is_subject(const char * count_raw);
-static void xml_repeat_expand(lv_xml_parser_state_t * state, lv_xml_repeat_capture_t * cap, int32_t count,
-                              lv_obj_t *** out_roots, uint32_t * out_root_count);
-static void xml_repeat_retain(lv_xml_parser_state_t * state, lv_xml_repeat_capture_t * cap,
-                              lv_subject_t * count_subject);
-static void xml_repeat_teardown_expansion(lv_xml_repeat_t * r);
-static void xml_repeat_rebuild_cb(lv_observer_t * observer, lv_subject_t * subject);
-static void xml_repeat_record_free_heap(lv_xml_repeat_t * r);
-static void xml_repeat_instance_delete_cb(lv_event_t * e);
+static void xml_frag_expand(lv_xml_parser_state_t * state, xml_frag_capture_t * cap,
+                            uint32_t lo, uint32_t hi, int32_t count,
+                            lv_obj_t *** out_roots, uint32_t * out_root_count);
+static xml_frag_record_t * xml_frag_retain(lv_xml_parser_state_t * state, xml_frag_capture_t * cap);
+static void xml_frag_teardown(xml_frag_record_t * r);
+static void xml_frag_rebuild(xml_frag_record_t * r, uint32_t lo, uint32_t hi, int32_t count);
+static void xml_frag_rebuild_cb(lv_observer_t * observer, lv_subject_t * subject);
+static void if_cond_changed_cb(void * record, int32_t value);
+static void xml_frag_record_free_heap(xml_frag_record_t * r);
+static void xml_frag_instance_delete_cb(lv_event_t * e);
 static bool xml_value_has_compose(const char * value);
 static char * xml_compose_indexed(lv_xml_parser_state_t * state, const char * raw);
 static void xml_state_free_composed(lv_xml_parser_state_t * state);
@@ -343,7 +345,7 @@ void * lv_xml_create_in_scope(lv_obj_t * parent, lv_xml_component_scope_t * pare
                     XML_GetCurrentLineNumber(parser));
         /*An unclosed <repeat> leaves an active capture on state.context; free it.*/
         if(state.context) {
-            xml_repeat_capture_free((lv_xml_repeat_capture_t *)state.context);
+            xml_frag_capture_free((xml_frag_capture_t *)state.context);
             state.context = NULL;
         }
         xml_state_free_composed(&state);
@@ -356,7 +358,7 @@ void * lv_xml_create_in_scope(lv_obj_t * parent, lv_xml_component_scope_t * pare
      *without an error status, or a stray unclosed body) can leave a live capture.
      *Free it so the heap capture never leaks.*/
     if(state.context) {
-        xml_repeat_capture_free((lv_xml_repeat_capture_t *)state.context);
+        xml_frag_capture_free((xml_frag_capture_t *)state.context);
         state.context = NULL;
     }
 
@@ -972,7 +974,7 @@ static void resolve_params(lv_xml_parser_state_t * state, lv_xml_component_scope
             /*`$i` — the <repeat> loop index (bare, zero-based). Resolved from the
              *active repeat capture on state->context, only during replay. Substitute
              *a per-expansion transient string that outlives this handler call.*/
-            lv_xml_repeat_capture_t * rc = state ? (lv_xml_repeat_capture_t *)state->context : NULL;
+            xml_frag_capture_t * rc = state ? (xml_frag_capture_t *)state->context : NULL;
             if(rc && rc->replaying && lv_streq(name_clean, "i")) {
                 item_attrs[i + 1] = xml_repeat_index_string(rc, rc->current_index);
                 continue;
@@ -1092,13 +1094,13 @@ static void view_character_data_handler(void * user_data, const XML_Char * s, in
     /*Buffer inline text while capturing a <repeat> body so it replays with the
      *elements it belongs to. The chardata handler receives a length, not a NUL-
      *terminated string, so make a bounded copy for the event.*/
-    lv_xml_repeat_capture_t * cap = (lv_xml_repeat_capture_t *)state->context;
+    xml_frag_capture_t * cap = (xml_frag_capture_t *)state->context;
     if(cap && cap->active && !cap->replaying) {
         char * text = lv_malloc((size_t)len + 1);
         if(text) {
             lv_memcpy(text, s, (size_t)len);
             text[len] = '\0';
-            xml_repeat_buffer_event(cap, /*kind=*/2, text, NULL);
+            xml_frag_buffer_event(cap, /*kind=*/2, text, NULL);
             lv_free(text);
         }
         return;
@@ -1189,7 +1191,7 @@ static void free_pcdata_ll(lv_xml_parser_state_t * state)
 /** Deep-copy a NULL-terminated name/value attribute array. The copies keep any
  *  `$`/`#` sigils intact so each replay iteration's resolve_params/resolve_consts
  *  run against pristine values. */
-static char ** xml_repeat_copy_attrs(const char ** attrs)
+static char ** xml_frag_copy_attrs(const char ** attrs)
 {
     size_t n = 0;
     if(attrs) {
@@ -1214,21 +1216,21 @@ static char ** xml_repeat_copy_attrs(const char ** attrs)
 
 /** Append one buffered SAX event to the capture buffer. `kind` 0=start (attrs
  *  deep-copied), 1=end (name only), 2=chardata (text stored in `name`). */
-static void xml_repeat_buffer_event(lv_xml_repeat_capture_t * cap, int kind, const char * name,
-                                    const char ** attrs)
+static void xml_frag_buffer_event(xml_frag_capture_t * cap, int kind, const char * name,
+                                  const char ** attrs)
 {
     if(cap->event_count == cap->event_cap) {
         uint32_t new_cap = cap->event_cap ? cap->event_cap * 2 : 8;
-        lv_xml_repeat_event_t * ne = lv_realloc(cap->events, sizeof(lv_xml_repeat_event_t) * new_cap);
+        xml_frag_event_t * ne = lv_realloc(cap->events, sizeof(xml_frag_event_t) * new_cap);
         if(ne == NULL) {
-            LV_LOG_ERROR("OOM: failed to grow <repeat> capture buffer");
+            LV_LOG_ERROR("OOM: failed to grow <frag> capture buffer");
             return;
         }
         cap->events = ne;
         cap->event_cap = new_cap;
     }
 
-    lv_xml_repeat_event_t * ev = &cap->events[cap->event_count];
+    xml_frag_event_t * ev = &cap->events[cap->event_count];
     ev->kind = kind;
     ev->attrs = NULL;
     ev->name = NULL;
@@ -1236,24 +1238,24 @@ static void xml_repeat_buffer_event(lv_xml_repeat_capture_t * cap, int kind, con
     size_t len = lv_strlen(name);
     ev->name = lv_malloc(len + 1);
     if(ev->name == NULL) {
-        LV_LOG_ERROR("OOM: failed to copy <repeat> event name");
+        LV_LOG_ERROR("OOM: failed to copy <frag> event name");
         return;
     }
     lv_memcpy(ev->name, name, len + 1);
 
     if(kind == 0) {
-        ev->attrs = xml_repeat_copy_attrs(attrs);
+        ev->attrs = xml_frag_copy_attrs(attrs);
     }
 
     cap->event_count++;
 }
 
 /** Free all owned strings held by the capture (events, count_raw, idx_strings). */
-static void xml_repeat_capture_free(lv_xml_repeat_capture_t * cap)
+static void xml_frag_capture_free(xml_frag_capture_t * cap)
 {
     if(cap == NULL) return;
     for(uint32_t e = 0; e < cap->event_count; e++) {
-        lv_xml_repeat_event_t * ev = &cap->events[e];
+        xml_frag_event_t * ev = &cap->events[e];
         if(ev->name) lv_free(ev->name);
         if(ev->attrs) {
             for(size_t a = 0; ev->attrs[a]; a++) lv_free(ev->attrs[a]);
@@ -1264,13 +1266,14 @@ static void xml_repeat_capture_free(lv_xml_repeat_capture_t * cap)
     for(uint32_t k = 0; k < cap->idx_count; k++) lv_free(cap->idx_strings[k]);
     lv_free(cap->idx_strings);
     lv_free(cap->count_raw);
+    lv_free(cap->cond_raw);
     lv_free(cap);
 }
 
 /** Format `index` into a freshly allocated string tracked on the capture. Freed
  *  at the end of the current expansion so it outlives the handler call that
  *  copies it but never accumulates across iterations. Returns "" on OOM. */
-static const char * xml_repeat_index_string(lv_xml_repeat_capture_t * cap, int32_t index)
+static const char * xml_repeat_index_string(xml_frag_capture_t * cap, int32_t index)
 {
     char buf[16];
     lv_snprintf(buf, sizeof(buf), "%d", (int)index);
@@ -1335,17 +1338,20 @@ static bool xml_repeat_count_is_subject(const char * count_raw)
     return true;
 }
 
-/** Replay the buffered body `count` times through the real element handlers,
- *  injecting `$i` per iteration. During replay cap->replaying is true so the
- *  handlers create objects instead of buffering. When `out_roots` is non-NULL the
- *  top-level objects created by the expansion (the body's direct children) are
- *  collected into a freshly allocated array handed back to the caller, which then
- *  owns it — this is what lets the subject-bound rebuild find and tear down the
- *  prior expansion. */
-static void xml_repeat_expand(lv_xml_parser_state_t * state, lv_xml_repeat_capture_t * cap, int32_t count,
-                              lv_obj_t *** out_roots, uint32_t * out_root_count)
+/** Replay the buffered body's `[lo,hi)` event slice `count` times through the real
+ *  element handlers, injecting `$i` per iteration. During replay cap->replaying is
+ *  true so the handlers create objects instead of buffering. When `out_roots` is
+ *  non-NULL the top-level objects created by the expansion (the sliced body's
+ *  direct children) are collected into a freshly allocated array handed back to
+ *  the caller, which then owns it — this is what lets the subject-bound rebuild
+ *  find and tear down the prior expansion. `<repeat>` passes the full range
+ *  `[0, cap->event_count)`; `<if>` (Task 3) passes the selected true/false slice. */
+static void xml_frag_expand(lv_xml_parser_state_t * state, xml_frag_capture_t * cap,
+                            uint32_t lo, uint32_t hi, int32_t count,
+                            lv_obj_t *** out_roots, uint32_t * out_root_count)
 {
     if(count < 0) count = 0;
+    if(hi > cap->event_count) hi = cap->event_count;
 
     lv_obj_t ** roots = NULL;
     uint32_t root_count = 0;
@@ -1359,8 +1365,8 @@ static void xml_repeat_expand(lv_xml_parser_state_t * state, lv_xml_repeat_captu
          *start events seen at nest depth 0, independent of any other children the
          *enclosing parent already holds.*/
         int nest = 0;
-        for(uint32_t e = 0; e < cap->event_count; e++) {
-            lv_xml_repeat_event_t * ev = &cap->events[e];
+        for(uint32_t e = lo; e < hi; e++) {
+            xml_frag_event_t * ev = &cap->events[e];
             if(ev->kind == 0) {
                 /*Build a FRESH shallow array of pointers over the owned deep-copied
                  *strings. resolve_params/resolve_consts mutate the attribute slots
@@ -1372,7 +1378,7 @@ static void xml_repeat_expand(lv_xml_parser_state_t * state, lv_xml_repeat_captu
                 while(ev->attrs && ev->attrs[n]) n++;
                 const char ** shallow = lv_malloc(sizeof(char *) * (n + 1));
                 if(shallow == NULL) {
-                    LV_LOG_ERROR("OOM: <repeat> replay shallow attrs");
+                    LV_LOG_ERROR("OOM: <frag> replay shallow attrs");
                     continue;
                 }
                 for(size_t a = 0; a < n; a++) shallow[a] = ev->attrs[a];
@@ -1417,14 +1423,14 @@ static void xml_repeat_expand(lv_xml_parser_state_t * state, lv_xml_repeat_captu
     }
 }
 
-/** Async-tear-down the current expansion of a subject-bound `<repeat>`. This runs
- *  from the count observer (synchronous, inside a UpdateQueue drain batch), so it
+/** Async-tear-down the current expansion of a subject-bound fragment record. This
+ *  runs from the observer (synchronous, inside a UpdateQueue drain batch), so it
  *  MUST NOT synchronously delete widgets [L081][L059]. Mirrors the C++
  *  helix::ui::safe_delete_subtree algorithm in pure C: reparent every root into an
  *  off-tree, hidden, layout-less "condemned" sink (a synchronous detach from the
  *  live parent's child list) and then `lv_obj_delete_async` the sink so the actual
  *  destruction happens outside the batch. Never `lv_obj_is_valid()` here [L076]. */
-static void xml_repeat_teardown_expansion(lv_xml_repeat_t * r)
+static void xml_frag_teardown(xml_frag_record_t * r)
 {
     if(r->roots == NULL || r->root_count == 0) {
         lv_free(r->roots);   /*NULL-safe; keeps the record consistent*/
@@ -1449,7 +1455,7 @@ static void xml_repeat_teardown_expansion(lv_xml_repeat_t * r)
     else {
         /*OOM on the sink is catastrophic; fall back to per-root async delete so we
          *still never sync-delete inside the observer batch.*/
-        LV_LOG_ERROR("OOM: <repeat> teardown sink; falling back to per-root async delete");
+        LV_LOG_ERROR("OOM: <frag> teardown sink; falling back to per-root async delete");
         for(uint32_t k = 0; k < r->root_count; k++) {
             if(r->roots[k]) lv_obj_delete_async(r->roots[k]);
         }
@@ -1460,27 +1466,16 @@ static void xml_repeat_teardown_expansion(lv_xml_repeat_t * r)
     r->root_count = 0;
 }
 
-/** Count-subject observer: re-materialize the `<repeat>` expansion for the new
- *  count. Tears down the prior expansion asynchronously, then replays the retained
- *  body through a freshly reconstructed parser state (the original parse state is
- *  long gone). Also serves the INITIAL expansion via the immediate fire that
- *  lv_subject_add_observer performs at registration. */
-static void xml_repeat_rebuild_cb(lv_observer_t * observer, lv_subject_t * subject)
+/* Shared rebuild core: async-teardown the prior expansion, then replay events
+ * [lo,hi) `count` times into r->parent via a reconstructed parser state. Used by
+ * both <repeat> (lo=0, hi=event_count, count=subject value) and <if> (count=1,
+ * lo/hi = the selected true/false slice). */
+static void xml_frag_rebuild(xml_frag_record_t * r, uint32_t lo, uint32_t hi, int32_t count)
 {
-    LV_UNUSED(subject);
-    lv_xml_repeat_t * r = (lv_xml_repeat_t *)lv_observer_get_user_data(observer);
     if(r == NULL || r->in_rebuild) return;
     r->in_rebuild = true;
 
-    int32_t count = r->count_subject ? lv_subject_get_int(r->count_subject) : 0;
-    if(count < 0) count = 0;
-    if(count > 256) {
-        LV_LOG_WARN("<repeat> count subject resolved to %d, clamping to 256", (int)count);
-        count = 256;
-    }
-
-    /*Async off-tree teardown of the prior expansion — never a sync delete here.*/
-    xml_repeat_teardown_expansion(r);
+    xml_frag_teardown(r);   /* async off-tree; frees r->roots array */
 
     /*Reconstruct a minimal parser state to drive the captured body. Start from a
      *fully-initialized state (so no field is missed), then override with the
@@ -1496,8 +1491,8 @@ static void xml_repeat_rebuild_cb(lv_observer_t * observer, lv_subject_t * subje
     lv_obj_t ** pnode = lv_ll_ins_head(&tmp_state.parent_ll);
     if(pnode) *pnode = r->parent;
 
-    xml_repeat_expand(&tmp_state, (lv_xml_repeat_capture_t *)r->capture, count,
-                      &r->roots, &r->root_count);
+    xml_frag_expand(&tmp_state, (xml_frag_capture_t *)r->capture, lo, hi, count,
+                    &r->roots, &r->root_count);
 
     /*Free everything the replay allocated on the temp state. The composed-strings
      *list (from `${name}` in the body) is per-state and would leak per rebuild
@@ -1510,34 +1505,64 @@ static void xml_repeat_rebuild_cb(lv_observer_t * observer, lv_subject_t * subje
     r->in_rebuild = false;
 }
 
-/** Move a captured `<repeat>` body into a retained record so its expansion tracks
- *  the count subject. Called from the `</repeat>` close path when `count` names a
- *  live subject. The record lives in the REGISTERED scope's `repeat_ll` (recovered
- *  by name) — NOT `state->scope`, whose `repeat_ll` head is a by-value copy that
- *  the registered scope never sees. Registering the observer LAST triggers the
- *  immediate-fire that performs the initial expansion (see xml_repeat_rebuild_cb),
- *  so there is exactly one build path. */
-static void xml_repeat_retain(lv_xml_parser_state_t * state, lv_xml_repeat_capture_t * cap,
-                              lv_subject_t * count_subject)
+/** <repeat> count-subject observer: re-materialize the full body `count` times for
+ *  the new count. Also serves the INITIAL expansion via the immediate fire that
+ *  lv_subject_add_observer performs at registration. */
+static void xml_frag_rebuild_cb(lv_observer_t * observer, lv_subject_t * subject)
+{
+    LV_UNUSED(subject);
+    xml_frag_record_t * r = (xml_frag_record_t *)lv_observer_get_user_data(observer);
+    if(r == NULL) return;
+    int32_t count = r->count_subject ? lv_subject_get_int(r->count_subject) : 0;
+    if(count < 0) count = 0;
+    if(count > 256) {
+        LV_LOG_WARN("<repeat> count subject resolved to %d, clamping to 256", (int)count);
+        count = 256;
+    }
+    xml_frag_rebuild(r, 0, ((xml_frag_capture_t *)r->capture)->event_count, count);
+}
+
+/** <if> reactive trigger: pick the true/false slice from the new cond value and
+ *  rebuild it (count=1). Runs on the main thread inside a UpdateQueue drain
+ *  (subject-set path) and via lv_xml_expr_bind's immediate fire for the initial
+ *  build. */
+static void if_cond_changed_cb(void * record, int32_t value)
+{
+    xml_frag_record_t * r = (xml_frag_record_t *)record;
+    xml_frag_capture_t * cap = (xml_frag_capture_t *)r->capture;
+    uint32_t lo, hi;
+    if(value != 0) {
+        lo = 0;
+        hi = cap->has_else ? cap->else_split : cap->event_count;
+    }
+    else {
+        lo = cap->has_else ? cap->else_split : cap->event_count;
+        hi = cap->event_count;
+    }
+    xml_frag_rebuild(r, lo, hi, 1);
+}
+
+/** Generic: move a captured body into a retained fragment record so its expansion
+ *  can be reactively rebuilt (implemented in lv_xml.c, which owns the capture
+ *  type). Creates the record in the REGISTERED scope's `frag_ll` (recovered by
+ *  name) — NOT `state->scope`, whose `frag_ll` head is a by-value copy that the
+ *  registered scope never sees. Wires NO trigger/observer — the caller (the
+ *  `</repeat>` close path today; `<if>` in a later task) owns which subject drives
+ *  the rebuild and registers it after this returns. */
+static xml_frag_record_t * xml_frag_retain(lv_xml_parser_state_t * state, xml_frag_capture_t * cap)
 {
     lv_xml_component_scope_t * reg = lv_xml_component_get_scope(state->scope.name);
-    lv_xml_repeat_t * r = reg ? lv_ll_ins_tail(&reg->repeat_ll) : NULL;
+    xml_frag_record_t * r = reg ? lv_ll_ins_tail(&reg->frag_ll) : NULL;
     if(r == NULL) {
-        /*No home for the record (unnamed scope or OOM): degrade to a one-shot
-         *expansion at the current value so the tree is still populated. The
-         *capture is freed by the caller's fallthrough path.*/
-        if(reg == NULL) LV_LOG_WARN("<repeat count> subject-bound in an unnamed scope; rebuild disabled");
-        else LV_LOG_ERROR("OOM: failed to retain <repeat> record; rebuild disabled");
-        int32_t count = count_subject ? lv_subject_get_int(count_subject) : 0;
-        xml_repeat_expand(state, cap, count, NULL, NULL);
-        xml_repeat_capture_free(cap);
-        state->context = NULL;
-        return;
+        /*No home for the record (unnamed scope or OOM): the caller falls back to a
+         *one-shot expansion + capture_free so the tree is still populated.*/
+        if(reg == NULL) LV_LOG_WARN("<if>/<repeat> subject-bound in an unnamed scope; reactivity disabled");
+        else LV_LOG_ERROR("OOM: failed to retain frag record; reactivity disabled");
+        return NULL;   /* caller falls back to a one-shot expansion + capture_free */
     }
 
     lv_memzero(r, sizeof(*r));
     r->capture = cap;                 /*ownership moves into the record*/
-    r->count_subject = count_subject;
 
     lv_obj_t ** tail = lv_ll_get_tail(&state->parent_ll);
     r->parent = tail ? *tail : state->parent;
@@ -1545,43 +1570,45 @@ static void xml_repeat_retain(lv_xml_parser_state_t * state, lv_xml_repeat_captu
 
     r->scope = state->scope;          /*value snapshot; read-only during rebuild*/
     r->parent_scope = state->parent_scope;
-    r->parent_attrs = state->parent_attrs ? xml_repeat_copy_attrs(state->parent_attrs) : NULL;
+    r->parent_attrs = state->parent_attrs ? xml_frag_copy_attrs(state->parent_attrs) : NULL;
 
     /*The capture is now owned by the record; detach it from the live parse state
-     *before the observer fires so the live state never double-frees it.*/
+     *before the caller wires the observer so the live state never double-frees it.*/
     state->context = NULL;
 
-    /*Tie the record + observer lifetime to the INSTANCE. The count subject is
+    /*Tie the record + observer lifetime to the INSTANCE. The bound subject is
      *shared (a scope subject reused across instances, or a global) and outlives any
      *one instance, so the observer must go when the instance's tree is deleted —
      *otherwise it fires the rebuild on freed roots (UAF). Mirror the timeline
      *cleanup: an LV_EVENT_DELETE cb on the view root. If there is no view root
      *(degenerate parse), fall back to the unregister-time sweep only.*/
     if(r->view_root) {
-        lv_obj_add_event_cb(r->view_root, xml_repeat_instance_delete_cb, LV_EVENT_DELETE, r);
+        lv_obj_add_event_cb(r->view_root, xml_frag_instance_delete_cb, LV_EVENT_DELETE, r);
     }
     else {
-        LV_LOG_WARN("<repeat count> subject-bound with no view root; rebuild lifetime falls back to unregister");
+        LV_LOG_WARN("frag subject-bound with no view root; lifetime falls back to unregister");
     }
-
-    /*Registering the observer fires xml_repeat_rebuild_cb immediately, which does
-     *the initial expansion (into r->parent via a reconstructed state) and records
-     *the roots. r->parent is the current tail of the live parent_ll, so children
-     *land in exactly the same place the literal path would have created them.*/
-    r->observer = lv_subject_add_observer(count_subject, xml_repeat_rebuild_cb, r);
+    return r;
 }
 
-/** Free the owned heap of a `<repeat>` record: detach the count observer, free the
+/** Free the owned heap of a fragment record: detach the observer, free the
  *  captured body, the roots ARRAY (never the widgets — the instance owns those),
  *  and the parent-attrs snapshot. Does NOT free the record node itself, remove the
- *  delete cb, or unlink from `repeat_ll` — the two callers do that differently. */
-static void xml_repeat_record_free_heap(lv_xml_repeat_t * r)
+ *  delete cb, or unlink from `frag_ll` — the two callers do that differently. */
+static void xml_frag_record_free_heap(xml_frag_record_t * r)
 {
     if(r->observer) {
         lv_observer_remove(r->observer);
         r->observer = NULL;
     }
-    xml_repeat_capture_free((lv_xml_repeat_capture_t *)r->capture);
+    /*<if> reactive bind: on the instance-delete path (this function, called from
+     *xml_frag_instance_delete_cb) the bind's OWN expr_bind_delete_cb is also
+     *registered on this SAME view_root's LV_EVENT_DELETE and frees the bind itself
+     *(observers + expr + bind ctx). Calling lv_xml_expr_unbind here would double-free
+     *it. Just drop the pointer; the unregister-sweep path (lv_xml_frag_record_free)
+     *is the one that must call _unbind, BEFORE reaching this function.*/
+    r->bind = NULL;
+    xml_frag_capture_free((xml_frag_capture_t *)r->capture);
     r->capture = NULL;
     lv_free(r->roots);                /*the array only — widgets are freed by LVGL*/
     r->roots = NULL;
@@ -1596,37 +1623,46 @@ static void xml_repeat_record_free_heap(lv_xml_repeat_t * r)
 /** LV_EVENT_DELETE on the instance view root: reclaim the record for THIS instance.
  *  The instance's widget tree (including this expansion's roots) is being freed by
  *  LVGL right now, so never touch roots[] — only detach the observer, free the
- *  record heap, unlink the record from `repeat_ll`, and free the node. Unlinking is
+ *  record heap, unlink the record from `frag_ll`, and free the node. Unlinking is
  *  what keeps lv_xml_component_unregister from double-freeing it later. This cb
  *  never runs during a rebuild's own teardown: that deletes an off-tree condemned
  *  container (which holds the old roots), not the view root. */
-static void xml_repeat_instance_delete_cb(lv_event_t * e)
+static void xml_frag_instance_delete_cb(lv_event_t * e)
 {
-    lv_xml_repeat_t * r = (lv_xml_repeat_t *)lv_event_get_user_data(e);
+    xml_frag_record_t * r = (xml_frag_record_t *)lv_event_get_user_data(e);
     if(r == NULL) return;
 
     /*Recover the registered scope by name before freeing anything (scope is a value
      *member, untouched by free_heap, so the name stays valid until lv_free(r)).*/
     lv_xml_component_scope_t * reg = lv_xml_component_get_scope(r->scope.name);
 
-    xml_repeat_record_free_heap(r);
+    xml_frag_record_free_heap(r);
 
-    if(reg) lv_ll_remove(&reg->repeat_ll, r);
+    if(reg) lv_ll_remove(&reg->frag_ll, r);
     lv_free(r);                       /*the record IS the ll node (see lv_ll_ins_tail)*/
 }
 
-/** Free a `<repeat>` record from the scope-teardown path (records whose instances
+/** Free a fragment record from the scope-teardown path (records whose instances
  *  are still alive at unregister). Removes the pending instance-delete cb first so
  *  it cannot fire on the freed record after the instance is later deleted, then
  *  frees the record heap. The node itself is freed by the caller's lv_ll_clear. */
-void lv_xml_repeat_record_free(lv_xml_repeat_t * r)
+void lv_xml_frag_record_free(xml_frag_record_t * r)
 {
     if(r == NULL) return;
     if(r->view_root) {
-        lv_obj_remove_event_cb_with_user_data(r->view_root, xml_repeat_instance_delete_cb, r);
+        lv_obj_remove_event_cb_with_user_data(r->view_root, xml_frag_instance_delete_cb, r);
         r->view_root = NULL;
     }
-    xml_repeat_record_free_heap(r);
+    /*<if> reactive bind: the instance is still alive here (this is the unregister
+     *sweep, called BEFORE subjects_ll teardown), so the bind's expr_bind_delete_cb
+     *has NOT fired and its observers still sit on subjects about to be freed.
+     *_unbind removes those observers AND the expr_bind_delete_cb hook from
+     *r->view_root, so the later lv_obj_delete(v) does not double-free.*/
+    if(r->bind) {
+        lv_xml_expr_unbind((lv_xml_expr_bind_t *)r->bind);
+        r->bind = NULL;
+    }
+    xml_frag_record_free_heap(r);
 }
 
 /** True if `value` contains an embedded `${...}` composition marker anywhere.
@@ -1680,7 +1716,7 @@ static const char * xml_compose_lookup(lv_xml_parser_state_t * state, const char
                                        char * scratch, size_t scratch_sz)
 {
     if(lv_streq(name, "i")) {
-        lv_xml_repeat_capture_t * rc = state ? (lv_xml_repeat_capture_t *)state->context : NULL;
+        xml_frag_capture_t * rc = state ? (xml_frag_capture_t *)state->context : NULL;
         if(rc == NULL || !rc->replaying) return NULL; /*`$i` only exists during a replay*/
         lv_snprintf(scratch, scratch_sz, "%d", (int)rc->current_index);
         return scratch;
@@ -1700,7 +1736,7 @@ static const char * xml_compose_lookup(lv_xml_parser_state_t * state, const char
  *  stack-lifetime and deinit'd right after eval. No observers are ever attached. */
 typedef struct {
     lv_xml_parser_state_t * state;
-    lv_xml_repeat_capture_t * rc;                 /* NULL unless in a replaying <repeat> */
+    xml_frag_capture_t * rc;                      /* NULL unless in a replaying <repeat> */
     lv_subject_t index_subject;                   /* seeded to rc->current_index for `i` */
     lv_subject_t param_subjects[XML_COMPOSE_EXPR_MAX_OPERANDS]; /* numeric-param operands (Task 2) */
     uint32_t param_count;
@@ -1792,7 +1828,7 @@ static char * xml_compose_indexed(lv_xml_parser_state_t * state, const char * ra
                      *Resolve-once — compile/eval/free all happen here; no observers.*/
                     xml_compose_expr_ctx_t ectx;
                     ectx.state = state;
-                    ectx.rc = state ? (lv_xml_repeat_capture_t *)state->context : NULL;
+                    ectx.rc = state ? (xml_frag_capture_t *)state->context : NULL;
                     ectx.param_count = 0;
                     lv_subject_init_int(&ectx.index_subject,
                                         (ectx.rc && ectx.rc->replaying) ? (int32_t)ectx.rc->current_index : 0);
@@ -1836,7 +1872,7 @@ static char * xml_compose_indexed(lv_xml_parser_state_t * state, const char * ra
 
 /** Free all composed strings tracked on `state`. Called once per parse (both the
  *  error and success exits of lv_xml_create_in_scope). A reactive-rebuild caller
- *  (subject-bound `<repeat>`, Task 3) that drives xml_repeat_expand through its
+ *  (subject-bound `<repeat>`, Task 3) that drives xml_frag_expand through its
  *  own parser state must call this after each rebuild for the same reason. */
 static void xml_state_free_composed(lv_xml_parser_state_t * state)
 {
@@ -1847,11 +1883,19 @@ static void xml_state_free_composed(lv_xml_parser_state_t * state)
     state->composed_cap = 0;
 }
 
+/* Resolver shim: <if cond="..."> looks up subjects referenced by the expression
+ * in the enclosing component's scope, same as every other expression-consuming
+ * tag (mirrors cond_flag_scope_resolver in lv_xml_obj_parser.c). */
+static lv_subject_t * frag_cond_resolver(void * ctx, const char * name)
+{
+    return lv_xml_get_subject((lv_xml_component_scope_t *)ctx, name);
+}
+
 static void view_start_element_handler(void * user_data, const char * name, const char ** attrs)
 {
     lv_xml_parser_state_t * state = (lv_xml_parser_state_t *)user_data;
 
-    lv_xml_repeat_capture_t * cap = (lv_xml_repeat_capture_t *)state->context;
+    xml_frag_capture_t * cap = (xml_frag_capture_t *)state->context;
 
     /*Enter capture on <repeat>. Must run before the pcdata push below: <repeat>
      *creates no object and pushes no stack node, so it owns no pcdata entry.
@@ -1864,7 +1908,7 @@ static void view_start_element_handler(void * user_data, const char * name, cons
         if(cnt == NULL) {
             LV_LOG_WARN("<repeat> is missing the required 'count' attribute; expanding zero times");
         }
-        cap = lv_zalloc(sizeof(lv_xml_repeat_capture_t));
+        cap = lv_zalloc(sizeof(xml_frag_capture_t));
         if(cap == NULL) {
             /*Catastrophic: without a capture the stack cannot be kept balanced.
              *Log loudly; the tree may be corrupt but there is nothing to recover.*/
@@ -1884,10 +1928,47 @@ static void view_start_element_handler(void * user_data, const char * name, cons
         return;                          /*<repeat> creates no object, no stack push*/
     }
 
+    /*Enter capture on <if>. Same balanced-stack reasoning as <repeat> above: a
+     *capture is always allocated (even with a missing/unparseable cond) so the
+     *matching </if> is still intercepted. Missing cond => treated as false at
+     *</if> (v defaults to 0 when ex is NULL).*/
+    if(lv_streq(name, "if") && (cap == NULL || !cap->replaying)) {
+        const char * cnd = lv_xml_get_value_of(attrs, "cond");
+        if(cnd == NULL) LV_LOG_WARN("<if> is missing the required 'cond' attribute; treated as false");
+        cap = lv_zalloc(sizeof(xml_frag_capture_t));
+        if(cap == NULL) { LV_LOG_ERROR("OOM: <if> capture; tree may be corrupt"); return; }
+        cap->active = true;
+        cap->is_if = true;
+        cap->base_depth = (uint32_t)lv_ll_get_len(&state->parent_ll);
+        if(cnd) {
+            size_t l = lv_strlen(cnd);
+            cap->cond_raw = lv_malloc(l + 1);
+            if(cap->cond_raw) lv_memcpy(cap->cond_raw, cnd, l + 1);
+        }
+        state->context = cap;
+        return;                          /*<if> creates no object, no stack push*/
+    }
+
     /*Buffer body events while capturing (and not yet replaying).*/
     if(cap && cap->active && !cap->replaying) {
-        xml_repeat_buffer_event(cap, /*kind=*/0, name, attrs);
+        if(cap->is_if && lv_streq(name, "else")) {
+            if(cap->has_else) {
+                LV_LOG_WARN("<if> has more than one <else>; the first split wins");
+            }
+            else {
+                cap->else_split = cap->event_count;   /*false-body starts here*/
+                cap->has_else = true;
+            }
+            return;                      /*skip the marker's OWN start event*/
+        }
+        xml_frag_buffer_event(cap, /*kind=*/0, name, attrs);
         return;                          /*no creation, no stack mutation*/
+    }
+
+    /*Stray <else> outside any <if>: no active capture reached this element.*/
+    if(lv_streq(name, "else")) {
+        LV_LOG_WARN("<else> outside <if>; ignored");
+        return;
     }
 
     state->tag_name = name;
@@ -2007,29 +2088,117 @@ static void view_end_element_handler(void * user_data, const char * name)
 {
     lv_xml_parser_state_t * state = (lv_xml_parser_state_t *)user_data;
 
-    lv_xml_repeat_capture_t * cap = (lv_xml_repeat_capture_t *)state->context;
+    xml_frag_capture_t * cap = (xml_frag_capture_t *)state->context;
     if(cap && cap->active && !cap->replaying) {
         uint32_t depth = (uint32_t)lv_ll_get_len(&state->parent_ll);
         if(lv_streq(name, "repeat") && depth == cap->base_depth) {
             /*Closing </repeat>: resolve count and replay the buffered body. If
-             *`count` names a live subject, retain the capture in a record with a
-             *count observer so the expansion re-materializes reactively; the
-             *record path also drives the initial expansion. Otherwise (literal /
-             *#const / unresolved subject name) expand once and free the capture.*/
+             *`count` names a live subject, retain the capture in a record and wire
+             *a count observer so the expansion re-materializes reactively; the
+             *observer's immediate fire also drives the initial expansion. Otherwise
+             *(literal / #const / unresolved subject name, or retain failure) expand
+             *once and free the capture.*/
             if(xml_repeat_count_is_subject(cap->count_raw)) {
                 lv_subject_t * cs = lv_xml_get_subject(&state->scope, cap->count_raw);
                 if(cs) {
-                    xml_repeat_retain(state, cap, cs);   /*moves cap into a record, clears state->context*/
-                    return;
+                    xml_frag_record_t * r = xml_frag_retain(state, cap);
+                    if(r) {
+                        r->count_subject = cs;
+                        r->observer = lv_subject_add_observer(cs, xml_frag_rebuild_cb, r);
+                        return;
+                    }
+                    /*retain failed: fall through to the one-shot path below
+                     *(state->context still == cap)*/
                 }
             }
+            /*One-shot path: literal / #const / unresolved subject name, OR a
+             *subject-bound count whose retain failed (unnamed scope or OOM, so
+             *reactivity is disabled). xml_repeat_resolve_count clamps a subject
+             *count to 256 — the pre-refactor retain fallback read the subject
+             *value unclamped here, the lone expansion path without the cap. This
+             *now clamps like every other path (rebuild_cb, literal), bounding
+             *runaway widget creation in that degenerate case; the clamp is the
+             *only intentional behavior change in the xml_frag_* extraction.*/
             int32_t count = xml_repeat_resolve_count(state, cap->count_raw);
-            xml_repeat_expand(state, cap, count, NULL, NULL);
-            xml_repeat_capture_free(cap);      /*literal path: buffer not retained*/
+            xml_frag_expand(state, cap, 0, cap->event_count, count, NULL, NULL);
+            xml_frag_capture_free(cap);      /*literal path: buffer not retained*/
             state->context = NULL;
             return;
         }
-        xml_repeat_buffer_event(cap, /*kind=*/1, name, NULL);
+        if(cap->is_if && lv_streq(name, "else")) {
+            return;                      /*skip the marker's OWN end event; split already taken*/
+        }
+        if(cap->is_if && lv_streq(name, "if") && depth == cap->base_depth) {
+            /*Evaluate cond once, then branch on whether it references any subjects.*/
+            lv_xml_expr_t * ex = cap->cond_raw
+                                  ? lv_xml_expr_compile(cap->cond_raw, frag_cond_resolver, &state->scope) : NULL;
+            if(cap->cond_raw && ex == NULL) {
+                LV_LOG_WARN("<if>: failed to compile cond '%s'; treated as false", cap->cond_raw);
+            }
+
+            if(ex && lv_xml_expr_subject_count(ex) > 0) {
+                /*Reactive: retain the capture into a record and bind the cond to the
+                 *instance root. lv_xml_expr_bind's immediate fire performs the initial
+                 *build via if_cond_changed_cb, so there is nothing else to do here.
+                 *_bind TAKES OWNERSHIP of `ex` (do not free it below), and xml_frag_retain
+                 *moved `cap` into the record (do not xml_frag_capture_free it below).*/
+                /*Eval the initial value BEFORE handing `ex` to _bind: _bind takes
+                 *ownership of `ex` and, on its own OOM, frees it — so reading the value
+                 *first lets a bind failure still expand the correct slice.*/
+                int32_t v0 = lv_xml_expr_eval(ex);
+                xml_frag_record_t * r = xml_frag_retain(state, cap);   /*clears state->context*/
+                if(r) {
+                    r->bind = lv_xml_expr_bind(ex, r->view_root, if_cond_changed_cb, r);
+                    if(r->bind == NULL) {
+                        /*_bind OOM: `ex` is already freed; the record still owns the
+                         *capture. Expand the v0 slice once so the <if> renders (just
+                         *non-reactive) instead of silently staying empty. The record
+                         *stays in frag_ll; its teardown paths already handle a NULL bind.*/
+                        LV_LOG_ERROR("OOM: <if> reactive bind failed; expanding once, non-reactive");
+                        uint32_t lo, hi;
+                        if(v0 != 0) {
+                            lo = 0;
+                            hi = cap->has_else ? cap->else_split : cap->event_count;
+                        }
+                        else {
+                            lo = cap->has_else ? cap->else_split : cap->event_count;
+                            hi = cap->event_count;
+                        }
+                        xml_frag_rebuild(r, lo, hi, /*count=*/1);
+                    }
+                    return;
+                }
+                /*retain failed (unnamed scope or OOM): fall through to a one-shot
+                 *expansion at the current value (state->context still == cap).*/
+                LV_LOG_WARN("<if> reactive retain failed; expanding once, non-reactive");
+            }
+
+            int32_t v = ex ? lv_xml_expr_eval(ex) : 0;
+            uint32_t lo, hi;
+            if(v != 0) {
+                lo = 0;
+                hi = cap->has_else ? cap->else_split : cap->event_count;
+            }
+            else {
+                lo = cap->has_else ? cap->else_split : cap->event_count;
+                hi = cap->event_count;
+            }
+            xml_frag_expand(state, cap, lo, hi, /*count=*/1, NULL, NULL);
+            if(ex) lv_xml_expr_free(ex);
+            xml_frag_capture_free(cap);
+            state->context = NULL;
+            return;
+        }
+        xml_frag_buffer_event(cap, /*kind=*/1, name, NULL);
+        return;
+    }
+
+    /*Stray </else> with no active <if> capture: its start pushed no parent/pcdata
+     *frame (warned there), so it must pop none. Returning here — symmetric with the
+     *stray-<else> start guard — keeps parent_ll balanced; falling through to the
+     *unconditional pop below would remove the enclosing element's still-open frame
+     *early and mis-parent every following sibling.*/
+    if(lv_streq(name, "else")) {
         return;
     }
 

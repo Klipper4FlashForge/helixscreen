@@ -44,11 +44,19 @@ size_t  lv_xml_expr_subject_count(const lv_xml_expr_t * expr);
 lv_subject_t * lv_xml_expr_subject_at(const lv_xml_expr_t * expr, size_t i);
 void    lv_xml_expr_free(lv_xml_expr_t * expr);
 
+/* Opaque handle for a reactive bind; pass to lv_xml_expr_unbind to detach early. */
+typedef struct lv_xml_expr_bind_t lv_xml_expr_bind_t;
+
 /* Observe every referenced subject; call cb(user_data, eval(expr)) on any change and once
  * immediately. Frees `expr` AND detaches observers when `owner` is deleted (LV_EVENT_DELETE).
- * Takes ownership of `expr`. */
-void lv_xml_expr_bind(lv_xml_expr_t * expr, lv_obj_t * owner,
-                      void (*cb)(void * user_data, int32_t value), void * user_data);
+ * Takes ownership of `expr`. Returns a handle (or NULL on OOM) usable with lv_xml_expr_unbind. */
+lv_xml_expr_bind_t * lv_xml_expr_bind(lv_xml_expr_t * expr, lv_obj_t * owner,
+                                      void (*cb)(void * user_data, int32_t value), void * user_data);
+
+/* Detach a bind created by lv_xml_expr_bind BEFORE its owner is deleted: removes every
+ * per-subject observer and the owner's delete hook (so a later owner delete does not
+ * double-free), then frees the expr and the bind context. NULL-safe. */
+void lv_xml_expr_unbind(lv_xml_expr_bind_t * handle);
 
 #ifdef __cplusplus
 }

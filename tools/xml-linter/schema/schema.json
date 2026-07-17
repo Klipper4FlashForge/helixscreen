@@ -806,6 +806,16 @@
         }
       }
     },
+    "if": {
+      "attributes": {
+        "cond": {
+          "type": "string"
+        }
+      }
+    },
+    "else": {
+      "attributes": {}
+    },
     "lv_obj-style": {
       "attributes": {
         "name": {
@@ -2767,7 +2777,9 @@
     "lv_obj-bind_state_if_ge",
     "lv_obj-bind_state_if_le",
     "subject_expr",
-    "repeat"
+    "repeat",
+    "if",
+    "else"
   ],
   "registered_widgets": [
     "lv_obj",

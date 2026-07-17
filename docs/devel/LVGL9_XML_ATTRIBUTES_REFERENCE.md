@@ -107,6 +107,24 @@ All widgets inherit these.
 | `<repeat count=>` | Expands its body `count` times. `count` is a literal, a `#const`, or a subject name; a subject-bound `count` **reactively rebuilds** the expansion when the subject changes (async off-tree teardown — a reactive `<repeat>` must be its parent's last child or in its own container). Clamped to `[0, 256]`. Not nestable yet. |
 | `$i` / `${…}` | Zero-based iteration index inside a `<repeat>` body. Bare `$i` is a whole-value substitution (`text="$i"`); `${i}` / `${prop}` splices a name into a larger string (`bind_text="slot_${i}_label"`). `${…}` also evaluates an **integer expression** and splices the result (`${i + 1}`, `${i * 84}`, `${base * scale}`, `${cols * 2}`) — operands are `i`, integer literals, numeric props, and subjects. **Resolve-once**: subject operands are read at creation and do not update reactively (use `bind_*` for live values). |
 
+**Structural conditionals** (`LVGL9_XML_GUIDE.md` § "Structural conditionals with `<if>` / `<else>`"):
+
+```xml
+<!-- Creates ONLY the matching branch; false branch is never built -->
+<lv_obj name="root">
+    <if cond="c gt 0">
+        <lv_obj name="t"/>
+        <else/>
+        <lv_obj name="f"/>
+    </if>
+</lv_obj>
+```
+
+| Tag/Attr | Notes |
+|----------|-------|
+| `<if cond=>` | `cond` is an expression string, same word-form grammar as `cond=` on `bind_flag_if`/`<subject_expr>`. Creates only the matching body — no subjects referenced = static, expands once at load, no observer; subjects referenced = reactive, rebuilds on any operand change. Reactive `<if>` must be its parent's last child or in its own container (same ordering constraint as `<repeat>`). Not nestable yet. |
+| `<else>` | No attributes. Inline divider inside one `<if>…</if>`: everything before it is the true-body, everything after is the false-body. `<else/>` and `<else></else>` are identical. Optional — omitting it means "create nothing" for the false case. A second `<else/>` warns (first split wins); a stray `<else/>` outside any `<if>` warns and is ignored. |
+
 ---
 
 ## Style Attributes (style_* prefix)
