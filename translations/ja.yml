@@ -87,6 +87,7 @@ translations:
   A: A
   ABS: ABS
   ACCELEROMETERS: 加速度センサー
+  ACE Moonraker bridge not found. Install ace_status.py for full support.: ''
   ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: ACE
     Moonraker ブリッジが見つかりません。完全なサポートには ValgACE から ace_status.py をインストールしてください。
   ACTIONS: アクション
@@ -1398,6 +1399,7 @@ translations:
   Not found (strobe only): 見つかりません (ストロボのみ)
   Not found (use phone app): 見つかりません (スマホアプリを使用)
   Not in your spools? Set it up: スプールにない？登録する
+  Not yet available on this display: ''
   Not yet calibrated: 未キャリブレーション
   Notes: メモ
   Notes (optional): メモ（オプション）

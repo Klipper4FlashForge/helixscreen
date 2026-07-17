@@ -86,6 +86,7 @@
   <translation tag="A" zh="辅"/>
   <translation tag="ABS" zh="ABS"/>
   <translation tag="ACCELEROMETERS" zh="加速度计"/>
+  <translation tag="ACE Moonraker bridge not found. Install ace_status.py for full support."/>
   <translation tag="ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support." zh="未找到 ACE Moonraker 桥接。请从 ValgACE 安装 ace_status.py 以获得完整支持。"/>
   <translation tag="ACTIONS" zh="操作"/>
   <translation tag="ADXL" zh="ADXL"/>
@@ -1359,6 +1360,7 @@
   <translation tag="Not found (strobe only)" zh="未找到 (仅频闪)"/>
   <translation tag="Not found (use phone app)" zh="未找到 (使用手机应用)"/>
   <translation tag="Not in your spools? Set it up" zh="不在您的料盘中？立即设置"/>
+  <translation tag="Not yet available on this display"/>
   <translation tag="Not yet calibrated" zh="尚未校准"/>
   <translation tag="Notes" zh="备注"/>
   <translation tag="Notes (optional)" zh="备注（可选）"/>

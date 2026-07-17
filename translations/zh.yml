@@ -86,6 +86,7 @@ translations:
   A: 辅
   ABS: ABS
   ACCELEROMETERS: 加速度计
+  ACE Moonraker bridge not found. Install ace_status.py for full support.: ''
   ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: 未找到
     ACE Moonraker 桥接。请从 ValgACE 安装 ace_status.py 以获得完整支持。
   ACTIONS: 操作
@@ -1392,6 +1393,7 @@ translations:
   Not found (strobe only): 未找到 (仅频闪)
   Not found (use phone app): 未找到 (使用手机应用)
   'Not in your spools? Set it up': 不在您的料盘中？立即设置
+  Not yet available on this display: ''
   Not yet calibrated: 尚未校准
   Notes: 备注
   Notes (optional): 备注（可选）

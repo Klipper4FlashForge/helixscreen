@@ -86,6 +86,7 @@
   <translation tag="A" ru="A"/>
   <translation tag="ABS" ru="ABS"/>
   <translation tag="ACCELEROMETERS" ru="АКСЕЛЕРОМЕТРЫ"/>
+  <translation tag="ACE Moonraker bridge not found. Install ace_status.py for full support."/>
   <translation tag="ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support." ru="Мост ACE Moonraker не найден. Установите ace_status.py из ValgACE для полной поддержки."/>
   <translation tag="ACTIONS" ru="ДЕЙСТВИЯ"/>
   <translation tag="ADXL" ru="ADXL"/>
@@ -1359,6 +1360,7 @@
   <translation tag="Not found (strobe only)" ru="Не найдено (только стробоскоп)"/>
   <translation tag="Not found (use phone app)" ru="Не найдено (используйте приложение на телефоне)"/>
   <translation tag="Not in your spools? Set it up" ru="Нет в ваших катушках? Настроить"/>
+  <translation tag="Not yet available on this display"/>
   <translation tag="Not yet calibrated" ru="Ещё не откалибровано"/>
   <translation tag="Notes" ru="Заметки"/>
   <translation tag="Notes (optional)" ru="Заметки (необязательно)"/>

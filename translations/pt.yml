@@ -92,6 +92,7 @@ translations:
   A: A
   ABS: ABS
   ACCELEROMETERS: ACELERÔMETROS
+  ACE Moonraker bridge not found. Install ace_status.py for full support.: ''
   ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: Ponte
     ACE do Moonraker não encontrada. Instale ace_status.py do ValgACE para suporte
     completo.
@@ -1560,6 +1561,7 @@ translations:
   Not found (strobe only): Não encontrado (apenas estroboscópico)
   Not found (use phone app): Não encontrado (use o app do celular)
   Not in your spools? Set it up: Não está nos seus carretéis? Configure aqui
+  Not yet available on this display: ''
   Not yet calibrated: Ainda não calibrado
   Notes: Notas
   Notes (optional): Notas (opcional)

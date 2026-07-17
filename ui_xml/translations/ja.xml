@@ -86,6 +86,7 @@
   <translation tag="A" ja="A"/>
   <translation tag="ABS" ja="ABS"/>
   <translation tag="ACCELEROMETERS" ja="加速度センサー"/>
+  <translation tag="ACE Moonraker bridge not found. Install ace_status.py for full support."/>
   <translation tag="ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support." ja="ACE Moonraker ブリッジが見つかりません。完全なサポートには ValgACE から ace_status.py をインストールしてください。"/>
   <translation tag="ACTIONS" ja="アクション"/>
   <translation tag="ADXL" ja="ADXL"/>
@@ -1359,6 +1360,7 @@
   <translation tag="Not found (strobe only)" ja="見つかりません (ストロボのみ)"/>
   <translation tag="Not found (use phone app)" ja="見つかりません (スマホアプリを使用)"/>
   <translation tag="Not in your spools? Set it up" ja="スプールにない？登録する"/>
+  <translation tag="Not yet available on this display"/>
   <translation tag="Not yet calibrated" ja="未キャリブレーション"/>
   <translation tag="Notes" ja="メモ"/>
   <translation tag="Notes (optional)" ja="メモ（オプション）"/>
