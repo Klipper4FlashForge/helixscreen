@@ -194,9 +194,14 @@ void mock_seed_ready() {
 void mock_push_temps() {
     static int t = 0;
     ++t;
-    // Gentle sine-free oscillation (integer, no libm) so the readout visibly
-    // moves without pretending to be a real heater curve.
-    double nozzle = 205.0 + (t % 20);
+    // Jitter both heaters WITHIN TEMP_TOLERANCE (2.0C) of their targets so the
+    // heating-icon animator stays AT_TARGET and never starts its infinite pulse.
+    // A wider sweep that crosses (target - tolerance) toggles HEATING<->AT_TARGET
+    // and repaints the icon at frame rate for half of every cycle — millions of
+    // idle repaints that tear on the unpaced ESP32 blit. Nozzle 214-216 (target
+    // 215, threshold 213), bed 58-62 (target 60, threshold 58): both stay above
+    // threshold, readout still visibly jitters, animator stays quiet.
+    double nozzle = 214.0 + (t % 3);
     double bed = 58.0 + (t % 5);
     nlohmann::json status = {
         {"extruder", {{"temperature", nozzle}, {"target", 215.0}}},
