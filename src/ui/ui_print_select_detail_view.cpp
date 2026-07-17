@@ -1172,11 +1172,18 @@ std::map<int, int> PrintSelectDetailView::get_effective_remap() const {
     auto default_head = [](int tool) { return (tool >= 0 && tool <= 3) ? tool : 0; };
 
     std::map<int, int> remap;
-    for (const auto& m : filament_mapping_card_.get_mappings()) {
+    // Source the mappings from effective_mappings() — the SAME toggle-aware match
+    // the render, swatches, and pre-flight use. On editable backends this is the
+    // card's mappings (user edits win); on non-editable backends (Snapmaker U1 /
+    // ACE), where the card is hidden and get_mappings() is empty, it is the auto
+    // color+type match. This is what turns the U1's emitted SET_PRINT_EXTRUDER_MAP
+    // from an empty identity into the real per-tool routing (each logical tool to
+    // the physical head holding its matched filament). mapped_slot is the physical
+    // head 0..3 on the U1 (slot_index == head).
+    for (const auto& m : effective_mappings()) {
         // Only include genuine remaps: a real slot assignment that differs from
         // the firmware-default head for this tool. Identity mappings are omitted
-        // (the firmware already routes them). On U1 today the card is hidden so
-        // get_mappings() is empty and this stays empty (Part A / identity).
+        // (the firmware already routes them).
         if (m.mapped_slot >= 0 && m.mapped_slot != default_head(m.tool_index)) {
             remap[m.tool_index] = m.mapped_slot;
         }

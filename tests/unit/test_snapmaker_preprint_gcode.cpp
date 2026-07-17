@@ -164,3 +164,53 @@ TEST_CASE("get_effective_remap identity-filter drops identity + auto entries",
         REQUIRE(effective_remap(mappings).empty());
     }
 }
+
+// End-to-end of the U1 routing emit: an AUTO color match (what
+// PrintSelectDetailView::get_effective_remap now sources from effective_mappings
+// on the U1, where the card is hidden) → identity-filter → build_preprint_gcode.
+// Proves the emitted SET_PRINT_EXTRUDER_MAP / SET_PRINT_USED_EXTRUDERS route each
+// logical tool to the physical head holding its matched filament — not identity.
+TEST_CASE("Snapmaker routing: auto color match drives the emitted extruder map",
+          "[snapmaker][preprint][remap]") {
+    // Mirror of get_effective_remap()'s identity-filter (physical head 0..3).
+    auto effective_remap = [](const std::vector<helix::ToolMapping>& mappings) {
+        auto default_head = [](int tool) { return (tool >= 0 && tool <= 3) ? tool : 0; };
+        std::map<int, int> remap;
+        for (const auto& m : mappings) {
+            if (m.mapped_slot >= 0 && m.mapped_slot != default_head(m.tool_index)) {
+                remap[m.tool_index] = m.mapped_slot;
+            }
+        }
+        return remap;
+    };
+
+    // 4-color ring: sliced T0=white, T1=black, T2=yellow, T3=red (all PLA).
+    std::vector<helix::GcodeToolInfo> tools = {
+        {0, 0xFFFFFF, "PLA"}, {1, 0x000000, "PLA"}, {2, 0xFFFF00, "PLA"}, {3, 0xFF0000, "PLA"}};
+
+    // Physical heads: 0=black, 2=red, 3=yellow LOADED; 1=white EMPTY (stale color).
+    std::vector<helix::AvailableSlot> slots = {
+        {0, 0, 0x000000, "PLA", false, -1}, // head 0: black loaded
+        {1, 0, 0xFFFFFF, "PLA", true, -1},  // head 1: EMPTY (stale white)
+        {2, 0, 0xFF0000, "PLA", false, -1}, // head 2: red loaded
+        {3, 0, 0xFFFF00, "PLA", false, -1}, // head 3: yellow loaded
+    };
+
+    // Auto match (U1 has no editable card, so effective_mappings runs the match).
+    auto mappings = helix::FilamentMapper::effective_mappings(tools, slots, /*auto=*/true);
+    auto remap = effective_remap(mappings);
+
+    // T1(black)->head0, T2(yellow)->head3, T3(red)->head2 are true remaps.
+    // T0(white) has no loaded white lane; it substitutes to head0 (its identity
+    // head, black), so it is NOT a remap entry. The empty white head 1 must never
+    // be matched.
+    std::map<int, int> expected_remap = {{1, 0}, {2, 3}, {3, 2}};
+    REQUIRE(remap == expected_remap);
+
+    SnapmakerProbe sm;
+    std::string gcode = sm.build_preprint_gcode({0, 1, 2, 3}, remap);
+    REQUIRE(gcode == "SET_PRINT_EXTRUDER_MAP CONFIG_EXTRUDER=1 MAP_EXTRUDER=0\n"
+                     "SET_PRINT_EXTRUDER_MAP CONFIG_EXTRUDER=2 MAP_EXTRUDER=3\n"
+                     "SET_PRINT_EXTRUDER_MAP CONFIG_EXTRUDER=3 MAP_EXTRUDER=2\n"
+                     "SET_PRINT_USED_EXTRUDERS EXTRUDERS=0,2,3");
+}
