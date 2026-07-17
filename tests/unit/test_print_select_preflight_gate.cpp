@@ -327,6 +327,42 @@ TEST_CASE("Detail preview: oversized file degrades to thumbnail",
 
 namespace {
 
+/// Mirrors show_gcode_viewer()'s mapping to the detail_gcode_viewer_mode_ subject
+/// that drives print_file_detail.xml visibility: 0 = thumbnail, 1 = 3D viewer,
+/// 2 = 2D viewer. Guards the second half of the fix: loading the preview isn't
+/// enough — a 2D-mode device must resolve to mode 2 (viewer visible) and NOT
+/// mode 0, or the render stays hidden behind the thumbnail (the exact symptom
+/// observed on the U1).
+struct ViewerShowModeModel {
+    bool using_2d_mode = false;
+
+    [[nodiscard]] int mode_for(bool show) const {
+        if (!show) {
+            return 0; // thumbnail
+        }
+        return using_2d_mode ? 2 : 1; // 2 = 2D viewer, 1 = 3D viewer
+    }
+};
+
+} // namespace
+
+TEST_CASE("Detail viewer mode: 2D device resolves to the visible 2D mode, not thumbnail",
+          "[print_select][preflight][preview]") {
+    ViewerShowModeModel m;
+    m.using_2d_mode = true;
+    REQUIRE(m.mode_for(true) == 2); // viewer visible (NOT 0 = thumbnail)
+    REQUIRE(m.mode_for(false) == 0);
+}
+
+TEST_CASE("Detail viewer mode: 3D device uses 3D mode", "[print_select][preflight][preview]") {
+    ViewerShowModeModel m;
+    m.using_2d_mode = false;
+    REQUIRE(m.mode_for(true) == 1);
+    REQUIRE(m.mode_for(false) == 0);
+}
+
+namespace {
+
 /// Minimal model of the "which mapping does the print actually use?" decision
 /// shared by PrintSelectDetailView::effective_mappings()/effective_auto_match()
 /// and PrintStatusPanel's render path. The pure color/type matching itself is

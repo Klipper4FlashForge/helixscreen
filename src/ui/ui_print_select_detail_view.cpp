@@ -899,14 +899,19 @@ void PrintSelectDetailView::update_history_status(FileHistoryStatus status, int 
 // ============================================================================
 
 void PrintSelectDetailView::show_gcode_viewer(bool show) {
-    // Mode 0 = thumbnail, 1 = 3D
-    // Detail panel only supports 3D viewer — fall back to thumbnail if 2D
+    // detail_gcode_viewer_mode_ drives the XML visibility bindings in
+    // print_file_detail.xml:
+    //   0 = thumbnail  (viewer hidden, gradient + thumbnail shown)
+    //   1 = 3D viewer  (viewer shown, gradient hidden for clean black bg,
+    //                   rotate hint shown)
+    //   2 = 2D viewer  (viewer shown over the gradient, rotate hint hidden —
+    //                   there's no rotate affordance for the flat 2D layer view)
+    // 2D-mode devices (no-GLES / GPU-blocked / budget-forced) now render the
+    // real toolpath preview instead of falling back to the thumbnail.
     int mode = 0;
     if (show) {
-        bool is_2d = gcode_viewer_ && ui_gcode_viewer_is_using_2d_mode(gcode_viewer_);
-        if (!is_2d) {
-            mode = 1;
-        }
+        const bool is_2d = gcode_viewer_ && ui_gcode_viewer_is_using_2d_mode(gcode_viewer_);
+        mode = is_2d ? 2 : 1;
     }
     lv_subject_set_int(&detail_gcode_viewer_mode_, mode);
 
