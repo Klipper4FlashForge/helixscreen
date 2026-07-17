@@ -213,6 +213,26 @@ class Ad5xIfsTestAccess {
         b.port_presence_[idx] = val;
         b.update_slot_from_state(static_cast<int>(idx));
     }
+    // Mirror eject_lane()'s optimistic clear (#1065): drop presence and stamp the
+    // eject instant so the settling-suppression window is active. Used to test that
+    // a lagging follow-up Ports read can't resurrect the just-ejected lane.
+    static void mark_ejected(AmsBackendAd5xIfs& b, int slot) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        b.port_presence_[static_cast<size_t>(slot)] = false;
+        b.last_eject_time_[static_cast<size_t>(slot)] = std::chrono::steady_clock::now();
+        b.update_slot_from_state(slot);
+    }
+    // Age a lane's eject stamp past the suppression window so a genuine
+    // re-insertion (false->true presence) is honored again.
+    static void expire_eject_window(AmsBackendAd5xIfs& b, int slot) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        b.last_eject_time_[static_cast<size_t>(slot)] =
+            std::chrono::steady_clock::now() - std::chrono::hours(1);
+    }
+    static int current_slot(const AmsBackendAd5xIfs& b) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.system_info_.current_slot;
+    }
     static AmsBackendAd5xIfs::ZColorSilentResult
     parse_zcolor_silent(const std::vector<std::string>& lines) {
         return AmsBackendAd5xIfs::parse_zcolor_silent(lines, "test");
@@ -1310,6 +1330,28 @@ TEST_CASE("AD5X IFS indeterminate: a fresh progress signal clears the flag (#106
     // A temp-VALUE change is a genuine progress signal → clears immediately.
     Ad5xIfsTestAccess::handle_status(backend, make_extruder(180.0, 230.0));
     REQUIRE_FALSE(Ad5xIfsTestAccess::operation_indeterminate(backend));
+}
+
+// The sidebar's stall watchdog (ui_ams_sidebar) drives the detector by calling
+// AmsState::sync_from_backend() on a main-thread timer while an op is active —
+// which reaches the backend only through get_system_info(). So get_system_info()
+// MUST run the timeout check itself, WITHOUT a prior status frame or an explicit
+// run_action_timeout(): that is the only signal available when the WebSocket feed
+// has stalled (#1065 row 14). If this regresses, the "Working…" state never
+// appears on a real hang even though the flag logic is correct.
+TEST_CASE("AD5X IFS indeterminate: get_system_info() trips the flag on its own (#1065 watchdog path)",
+          "[ams][ad5x_ifs][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_head_filament(backend, false);
+    Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/false);
+    Ad5xIfsTestAccess::handle_status(backend, make_extruder(150.0, 230.0));
+    REQUIRE_FALSE(backend.get_system_info().operation_indeterminate);
+
+    // Feed starves past the threshold. No run_action_timeout(), no status frame —
+    // only the watchdog's get_system_info() call, exactly as sync_from_backend()
+    // reaches it.
+    Ad5xIfsTestAccess::set_progress_age(backend, std::chrono::seconds(10));
+    REQUIRE(backend.get_system_info().operation_indeterminate);
 }
 
 TEST_CASE("AD5X IFS indeterminate: healthy heat never false-fires; frozen value does "
@@ -2417,6 +2459,88 @@ TEST_CASE("AD5X IFS GET_ZCOLOR present->absent clears the slot override", "[ams]
     // #1071: an emptied lane now KEEPS its Spoolman link (see the dedicated
     // keep-the-link test below) — only firmware-sourced presence/status drops.
     CHECK(Ad5xIfsTestAccess::get_override(backend, 0).has_value());
+}
+
+// #1065: after an eject, the RS-485 silk sensor lags ~1s before it reads the
+// just-retracted lane clear. The eject-follow-up IFS_STATUS frame can therefore
+// still report the lane present and resurrect it — and the LAST-ejected lane has
+// no later query to re-correct it, so it kept offering Unload. eject_lane() now
+// stamps the eject and apply_zcolor_result ignores a false->true presence flip
+// for that lane within the settling window; a true re-insert after the window is
+// honored.
+TEST_CASE("AD5X IFS eject-settling: a lagging Ports read does not resurrect the lane (#1065)",
+          "[ams][ad5x_ifs][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    REQUIRE_FALSE(Ad5xIfsTestAccess::has_per_port_sensors(backend));
+
+    // All four lanes present (establish via the presence helper so status is set).
+    for (int i = 0; i < 4; ++i) {
+        Ad5xIfsTestAccess::set_port_presence(backend, i, true);
+    }
+    REQUIRE(backend.get_slot_info(0).is_present());
+
+    // Eject lane 0 — optimistic clear + eject stamp.
+    Ad5xIfsTestAccess::mark_ejected(backend, 0);
+    REQUIRE_FALSE(backend.get_slot_info(0).is_present());
+
+    // Follow-up query lands while the silk sensor is still settling: Ports still
+    // reads lane 0 present. Within the window this must NOT resurrect the lane.
+    {
+        AmsBackendAd5xIfs::ZColorSilentResult r;
+        r.saw_valid_response = true;
+        r.ifs_active = true;
+        r.ifs_chan = 0; // real IFS_STATUS frames carry Chan alongside Ports
+        r.ifs_ports = std::array<bool, 4>{true, true, true, true};
+        Ad5xIfsTestAccess::apply_zcolor_result(backend, r);
+    }
+    REQUIRE_FALSE(Ad5xIfsTestAccess::port_presence(backend, 0));
+    REQUIRE(backend.get_slot_info(0).status == SlotStatus::EMPTY);
+
+    // After the settling window, a genuine re-insert (Ports present) is honored.
+    Ad5xIfsTestAccess::expire_eject_window(backend, 0);
+    {
+        AmsBackendAd5xIfs::ZColorSilentResult r;
+        r.saw_valid_response = true;
+        r.ifs_active = true;
+        r.ifs_chan = 0;
+        r.ifs_ports = std::array<bool, 4>{true, true, true, true};
+        Ad5xIfsTestAccess::apply_zcolor_result(backend, r);
+    }
+    REQUIRE(Ad5xIfsTestAccess::port_presence(backend, 0));
+    REQUIRE(backend.get_slot_info(0).is_present());
+}
+
+// #1065 load-complete flash: FFMInfo.channel is sticky (only the ~5s JSON poll
+// refreshes it, only an eject clears it), so right after a load into a DIFFERENT
+// lane it still names the PREVIOUS lane. If that lane reads empty in the frame's
+// Ports snapshot the pointer is stale and must not be adopted as seated — else
+// the load-complete frame flashes the previous lane loaded and repaints its
+// retained filament. Here FFMInfo.channel=4 is stale (lane 4 empty) while a load
+// into lane 3 completes (Chan=3).
+TEST_CASE("AD5X IFS stale FFMInfo.channel at an empty lane is not adopted as seated (#1065)",
+          "[ams][ad5x_ifs][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    REQUIRE_FALSE(Ad5xIfsTestAccess::has_per_port_sensors(backend));
+
+    Ad5xIfsTestAccess::set_ffm_channel(backend, 4); // sticky pointer at now-empty lane 4
+    {
+        AmsBackendAd5xIfs::ZColorSilentResult r;
+        r.saw_valid_response = true;
+        r.ifs_active = true;
+        r.ifs_chan = 3;                                          // real seated lane = 3
+        r.ifs_ports = std::array<bool, 4>{true, true, true, false}; // lane 4 empty
+        r.slots[0] = AmsBackendAd5xIfs::ZColorSlot{"PLA", "111111"};
+        r.slots[1] = AmsBackendAd5xIfs::ZColorSlot{"PETG", "222222"};
+        r.slots[2] = AmsBackendAd5xIfs::ZColorSlot{"PETG", "333333"};
+        Ad5xIfsTestAccess::apply_zcolor_result(backend, r);
+    }
+
+    // Seated follows the present lane (Chan=3), NOT the stale FFMInfo.channel=4.
+    REQUIRE(Ad5xIfsTestAccess::seated_chan(backend) == 3);
+    REQUIRE(Ad5xIfsTestAccess::current_slot(backend) == 2); // lane 3 == slot index 2
+    REQUIRE_FALSE(backend.get_slot_info(3).is_present());    // lane 4 does not flash loaded
+    REQUIRE(backend.get_slot_info(3).status == SlotStatus::EMPTY);
+    REQUIRE(backend.get_slot_info(2).is_present());
 }
 
 // #1071: AD5X must match the AFC / Happy Hare backends, which never clear the

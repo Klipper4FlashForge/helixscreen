@@ -636,6 +636,16 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     std::vector<std::string> custom_material_types_;
     std::array<int, TOOL_MAP_SIZE> tool_map_;   // tool_map_[tool] = port (1-4, 5=unmapped)
     std::array<bool, NUM_PORTS> port_presence_; // Per-port filament sensor state
+    // Per-port instant of the last optimistic eject clear. On the constrained
+    // AD5X the RS-485 silk sensor lags ~1s after IFS_F11 cold-retracts a lane, so
+    // the eject follow-up IFS_STATUS/GET_ZCOLOR can still read the just-ejected
+    // lane present and resurrect it. Within kEjectPresenceSuppression of the
+    // stamp, a false->true presence transition for that lane is ignored so the
+    // optimistic clear survives the settling window (#1065 — the last-ejected
+    // lane had no later query to re-correct it and kept offering Unload). A
+    // present->absent transition and any transition after the window still apply.
+    std::array<std::chrono::steady_clock::time_point, NUM_PORTS> last_eject_time_{};
+    static constexpr std::chrono::milliseconds kEjectPresenceSuppression{4000};
     int active_tool_ = -1;                      // Current tool (-1 = none)
     // Physically seated port from IFS_STATUS "Chan" (1-4; 0 = none). Persists at
     // the seated port while loaded-idle (when GET_ZCOLOR's "Extruder:" reads
