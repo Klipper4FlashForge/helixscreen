@@ -187,6 +187,20 @@ class AmsOperationSidebar {
     // Guards widget operations against use-after-free on dangling lv_obj_t* pointers.
     bool active_ = false;
 
+    // Independent main-thread clock for the indeterminate detector (#1065 row 14).
+    // On the 2-core AD5X a blocking load/unload macro can starve the WebSocket
+    // status feed, freezing the live-temp readout AND the backend's feed-driven
+    // stall check together. This timer periodically calls sync_from_backend()
+    // while an op is active, so get_system_info() -> check_action_timeout() flips
+    // ams_operation_indeterminate on its own clock and the Heat step swaps to
+    // "Working…". Created in setup(), deleted in cleanup() (both main-thread), so
+    // it never outlives the sidebar. Runs on the LVGL main loop — if the loop
+    // itself stalls it won't fire, but the loop keeps rendering (the number is
+    // visibly frozen), so it does.
+    lv_timer_t* stall_watchdog_timer_ = nullptr;
+    static constexpr uint32_t kStallWatchdogPeriodMs = 1500;
+    static void stall_watchdog_cb(lv_timer_t* timer);
+
     // Step progress state
     StepOperationType current_operation_type_ = StepOperationType::LOAD_FRESH;
     int current_step_count_ = 4;

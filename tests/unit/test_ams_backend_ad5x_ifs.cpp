@@ -1332,6 +1332,28 @@ TEST_CASE("AD5X IFS indeterminate: a fresh progress signal clears the flag (#106
     REQUIRE_FALSE(Ad5xIfsTestAccess::operation_indeterminate(backend));
 }
 
+// The sidebar's stall watchdog (ui_ams_sidebar) drives the detector by calling
+// AmsState::sync_from_backend() on a main-thread timer while an op is active —
+// which reaches the backend only through get_system_info(). So get_system_info()
+// MUST run the timeout check itself, WITHOUT a prior status frame or an explicit
+// run_action_timeout(): that is the only signal available when the WebSocket feed
+// has stalled (#1065 row 14). If this regresses, the "Working…" state never
+// appears on a real hang even though the flag logic is correct.
+TEST_CASE("AD5X IFS indeterminate: get_system_info() trips the flag on its own (#1065 watchdog path)",
+          "[ams][ad5x_ifs][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    Ad5xIfsTestAccess::set_head_filament(backend, false);
+    Ad5xIfsTestAccess::begin_phase(backend, /*is_unload=*/false);
+    Ad5xIfsTestAccess::handle_status(backend, make_extruder(150.0, 230.0));
+    REQUIRE_FALSE(backend.get_system_info().operation_indeterminate);
+
+    // Feed starves past the threshold. No run_action_timeout(), no status frame —
+    // only the watchdog's get_system_info() call, exactly as sync_from_backend()
+    // reaches it.
+    Ad5xIfsTestAccess::set_progress_age(backend, std::chrono::seconds(10));
+    REQUIRE(backend.get_system_info().operation_indeterminate);
+}
+
 TEST_CASE("AD5X IFS indeterminate: healthy heat never false-fires; frozen value does "
           "(#1065 row 14)",
           "[ams][ad5x_ifs][1065]") {

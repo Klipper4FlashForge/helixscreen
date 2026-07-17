@@ -161,10 +161,38 @@ bool AmsOperationSidebar::setup(lv_obj_t* panel) {
     update_settings_visibility();
 
     active_ = true;
+
+    // Independent stall watchdog for the indeterminate "Working…" state (#1065
+    // row 14). Runs on the main loop; the callback no-ops unless an op is active.
+    if (!stall_watchdog_timer_) {
+        stall_watchdog_timer_ = lv_timer_create(stall_watchdog_cb, kStallWatchdogPeriodMs, this);
+    }
+
     sync_reset_button_label();
     update_check_gates_visibility();
     spdlog::debug("[AmsSidebar] Setup complete");
     return true;
+}
+
+void AmsOperationSidebar::stall_watchdog_cb(lv_timer_t* timer) {
+    auto* self = static_cast<AmsOperationSidebar*>(lv_timer_get_user_data(timer));
+    if (!self || !self->active_) {
+        return;
+    }
+    // Only poke the backend while a filament op is in progress — an idle AMS
+    // panel needs no watchdog. AmsAction::IDLE == 0.
+    lv_subject_t* action = AmsState::instance().get_ams_action_subject();
+    if (action && lv_subject_get_int(action) == 0) {
+        return;
+    }
+    // A blocking load/unload macro can starve the WebSocket status feed on the
+    // 2-core AD5X, freezing the live-temp readout and the feed-driven stall
+    // check together. Drive the check on this independent clock:
+    // sync_from_backend() -> get_system_info() -> check_action_timeout() flips
+    // ams_operation_indeterminate, and indeterminate_observer_ swaps the Heat
+    // step to "Working…" (#1065 row 14). This is a no-op when a healthy feed is
+    // already keeping the flag clear.
+    AmsState::instance().sync_from_backend();
 }
 
 void AmsOperationSidebar::setup_step_progress() {
@@ -313,6 +341,13 @@ void AmsOperationSidebar::init_observers() {
 void AmsOperationSidebar::cleanup() {
     // Clear active flag FIRST to prevent observer callbacks from using freed widgets
     active_ = false;
+
+    // Delete the stall watchdog before anything else so its main-thread callback
+    // can't fire mid-teardown (it never outlives the sidebar this way).
+    if (stall_watchdog_timer_) {
+        lv_timer_delete(stall_watchdog_timer_);
+        stall_watchdog_timer_ = nullptr;
+    }
 
     // Nullify widget refs BEFORE resetting observers — any cascading observer
     // callbacks that slip through the active_ guard will see null pointers and
