@@ -14,6 +14,8 @@
 #include "input_device_scanner.h"
 #include "touch_calibration_wrapper.h"
 
+#include "system/telemetry_manager.h"
+
 #include <spdlog/spdlog.h>
 
 #include <lvgl.h>
@@ -555,6 +557,12 @@ lv_indev_t* DisplayBackendDRM::create_input_pointer() {
             // fbdev backend already does this (#943/#986); the DRM backend did not.
             struct input_absinfo abs_x = {}, abs_y = {};
             bool got_range = false;
+            // #943 diagnostics: did we actually install the coarse down-scale, and
+            // was calibration forced because the queried ABS range was unusable /
+            // mismatched? Used below to emit a loud signal when the scale is skipped
+            // on a panel that needs it.
+            bool coarse_scale_installed = false;
+            bool needs_cal_forced_by_abs = false;
             if (has_abs && screen_width_ > 0 && screen_height_ > 0) {
                 int fd = open(touch_path, O_RDONLY | O_NONBLOCK);
                 if (fd >= 0) {
@@ -582,6 +590,7 @@ lv_indev_t* DisplayBackendDRM::create_input_pointer() {
                     if (used_mt_fallback && got_range && abs_x.maximum > abs_x.minimum) {
                         lv_evdev_set_calibration(pointer_, abs_x.minimum, abs_y.minimum,
                                                  abs_x.maximum, abs_y.maximum);
+                        coarse_scale_installed = true;
                         spdlog::info("[DRM Backend] Applied MT axis range to LVGL calibration: "
                                      "X({}..{}) Y({}..{})",
                                      abs_x.minimum, abs_x.maximum, abs_y.minimum, abs_y.maximum);
@@ -595,11 +604,13 @@ lv_indev_t* DisplayBackendDRM::create_input_pointer() {
 
                         if (!needs_calibration_ && abs_x.maximum <= 0 && abs_y.maximum <= 0) {
                             needs_calibration_ = true;
+                            needs_cal_forced_by_abs = true;
                             spdlog::warn("[DRM Backend] ABS range is zero — forcing calibration");
                         } else if (!needs_calibration_ &&
                                    helix::has_abs_display_mismatch(abs_x.maximum, abs_y.maximum,
                                                                    screen_width_, screen_height_)) {
                             needs_calibration_ = true;
+                            needs_cal_forced_by_abs = true;
                             spdlog::warn("[DRM Backend] ABS range ({},{}) mismatches display "
                                          "({}x{}) — forcing calibration",
                                          abs_x.maximum, abs_y.maximum, screen_width_,
@@ -607,6 +618,30 @@ lv_indev_t* DisplayBackendDRM::create_input_pointer() {
                         }
                     }
                 }
+            }
+
+            // #943 diagnostic: if the coarse down-scale was never installed
+            // (lv_evdev_set_calibration skipped — e.g. the ABS/MT range query failed
+            // on this boot) but the panel is known to mismatch the digitizer, raw
+            // 0..max coords flow into the smaller panel UNSCALED and only the
+            // top-left corner registers. This was silent before; make it loud and
+            // grep-able so a failed-query boot is diagnosable from logs alone.
+            bool abs_mismatch =
+                got_range && helix::has_abs_display_mismatch(abs_x.maximum, abs_y.maximum,
+                                                             screen_width_, screen_height_);
+            if (!coarse_scale_installed && (abs_mismatch || needs_cal_forced_by_abs)) {
+                spdlog::warn(
+                    "[DRM Backend] Coarse touch scale NOT installed (lv_evdev_set_calibration "
+                    "skipped) but panel mismatches — raw touch coords will flow UNSCALED (touch "
+                    "may register only top-left). ABS X({}..{}) Y({}..{}) vs display {}x{} "
+                    "[abs_mismatch={} needs_cal_forced={} got_range={}]",
+                    abs_x.minimum, abs_x.maximum, abs_y.minimum, abs_y.maximum, screen_width_,
+                    screen_height_, abs_mismatch, needs_cal_forced_by_abs, got_range);
+
+                // Report a telemetry anomaly (rate-limited, best-effort). Stable slug
+                // so occurrences can be aggregated across devices/boots.
+                TelemetryManager::instance().record_error(
+                    "display", "touch-coarse-scale-skipped", "drm_abs_range_query_unusable");
             }
 
             // Load stored calibration.
