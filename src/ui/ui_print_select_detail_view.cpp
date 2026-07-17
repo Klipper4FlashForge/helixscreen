@@ -932,54 +932,33 @@ void PrintSelectDetailView::show_gcode_viewer(bool show) {
     spdlog::trace("[DetailView] G-code viewer mode: {} ({})", mode, mode == 0 ? "thumbnail" : "3D");
 }
 
-void PrintSelectDetailView::apply_tool_colors() {
-    if (!gcode_viewer_ || !gcode_loaded_) {
-        return;
-    }
-
-    // Try AMS slot colors first
-    if (ui_gcode_viewer_apply_ams_tool_colors(gcode_viewer_)) {
-        return;
-    }
-
-    // Fallback: use file metadata colors (from slicer)
-    if (!current_filament_colors_.empty()) {
-        std::vector<uint32_t> tool_colors;
-        for (const auto& hex : current_filament_colors_) {
-            auto parsed = helix::parse_hex_color(hex);
-            if (parsed) {
-                tool_colors.push_back(*parsed);
-            }
-        }
-        if (!tool_colors.empty()) {
-            ui_gcode_viewer_set_tool_colors(gcode_viewer_, tool_colors);
-        }
-    }
-}
-
-void PrintSelectDetailView::apply_mapped_tool_colors() {
-    if (!gcode_viewer_ || !gcode_loaded_) {
-        return;
-    }
-
-    auto colors = filament_mapping_card_.get_mapped_colors();
-    if (!colors.empty()) {
-        ui_gcode_viewer_set_tool_colors(gcode_viewer_, colors);
-        lv_obj_invalidate(gcode_viewer_);
-        spdlog::debug("[DetailView] Applied {} mapped tool colors to gcode viewer", colors.size());
-    }
-}
-
 void PrintSelectDetailView::apply_preview_colors() {
     if (!gcode_viewer_ || !gcode_loaded_) {
         return;
     }
-    if (lv_subject_get_int(&detail_prefer_sliced_colors_) == 1) {
-        apply_sliced_tool_colors();
-    } else {
-        // Actual (loaded) colors: firmware/slicer base, then mapped overrides win.
-        apply_tool_colors();
-        apply_mapped_tool_colors();
+    const auto tools = get_used_tool_info();
+    if (tools.empty()) {
+        return;
+    }
+    const auto slots = AmsState::instance().collect_available_slots();
+
+    // Single color engine — the SAME FilamentMapper::effective_tool_colors the
+    // print-file swatches and the live print-status render use. The sliced/actual
+    // toggle only changes which MAPPINGS feed it:
+    //   - Actual (loaded): effective_mappings() — card edits win on editable
+    //     backends, auto color+type match otherwise. This is what colors each
+    //     tool by its MATCHED lane instead of the identity physical-slot position.
+    //   - Sliced: fully-default (unmapped) mappings, so resolve_display_colors
+    //     falls back to each tool's own slicer color — the file's intended look.
+    const std::vector<helix::ToolMapping> mappings =
+        (lv_subject_get_int(&detail_prefer_sliced_colors_) == 1)
+            ? std::vector<helix::ToolMapping>(tools.size())
+            : effective_mappings();
+
+    const auto colors = helix::FilamentMapper::effective_tool_colors(tools, mappings, slots);
+    if (!colors.empty()) {
+        ui_gcode_viewer_set_tool_colors(gcode_viewer_, colors);
+        lv_obj_invalidate(gcode_viewer_);
     }
 }
 
@@ -993,23 +972,6 @@ void PrintSelectDetailView::set_prefer_sliced_colors(bool prefer_sliced) {
                                   prefer_sliced ? lv_tr("Showing sliced colors")
                                                 : lv_tr("Showing loaded colors"),
                                   2000);
-}
-
-void PrintSelectDetailView::apply_sliced_tool_colors() {
-    if (!gcode_viewer_ || !gcode_loaded_ || current_filament_colors_.empty()) {
-        return;
-    }
-    std::vector<uint32_t> tool_colors;
-    for (const auto& hex : current_filament_colors_) {
-        auto parsed = helix::parse_hex_color(hex);
-        if (parsed) {
-            tool_colors.push_back(*parsed);
-        }
-    }
-    if (!tool_colors.empty()) {
-        ui_gcode_viewer_set_tool_colors(gcode_viewer_, tool_colors);
-        lv_obj_invalidate(gcode_viewer_);
-    }
 }
 
 void PrintSelectDetailView::on_ams_state_changed() {

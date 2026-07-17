@@ -120,6 +120,18 @@ class FilamentMapper {
                                                        const std::vector<AvailableSlot>& slots,
                                                        bool auto_color_map);
 
+    /// Same DENSE tool-indexed color vector as above, but from an already-resolved
+    /// @p mappings vector instead of recomputing from @p auto_color_map. This is
+    /// the single color engine both the live render and the print-file preview
+    /// share: the render passes auto-computed mappings, the preview passes its
+    /// card-aware effective mappings (user edits win on editable backends), and a
+    /// fully-default (unmapped) @p mappings yields the plain slicer palette. Pure;
+    /// no LVGL/AMS. @p mappings must be parallel to @p tools (same order).
+    static std::vector<uint32_t>
+    effective_tool_colors(const std::vector<GcodeToolInfo>& tools,
+                          const std::vector<ToolMapping>& mappings,
+                          const std::vector<AvailableSlot>& slots);
+
     /// Weighted RGB distance between two colors (luminance-weighted).
     /// Uses standard luminance coefficients: R=0.30, G=0.59, B=0.11.
     static int color_distance(uint32_t a, uint32_t b);

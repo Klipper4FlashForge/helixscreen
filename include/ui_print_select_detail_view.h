@@ -645,20 +645,11 @@ class PrintSelectDetailView : public OverlayBase {
      */
     void show_gcode_viewer(bool show);
 
-    /**
-     * @brief Apply tool colors to the gcode viewer
-     *
-     * Reads AMS slot colors when available, falls back to file metadata colors.
-     */
-    void apply_tool_colors();
-
-    /**
-     * @brief Re-apply tool colors from user's filament mapping choices
-     */
-    void apply_mapped_tool_colors();
-
-    void apply_preview_colors();      // dispatch sliced vs actual by the subject
-    void apply_sliced_tool_colors();  // force slicer palette into the viewer
+    // Resolve the used tools' colors via the shared FilamentMapper color engine
+    // (effective_tool_colors) and push them to the viewer. The sliced/actual
+    // toggle selects the mappings fed in: effective_mappings() for actual (loaded,
+    // lane-matched) vs default/unmapped for sliced (the file's own palette).
+    void apply_preview_colors();
 
     void on_ams_state_changed();               // AMS slots_version observer handler
     void refresh_preview_colors_and_mismatch(); // shared by card-edit + AMS observer

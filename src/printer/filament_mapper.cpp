@@ -311,9 +311,33 @@ std::vector<uint32_t> FilamentMapper::effective_tool_colors(
     if (tools.empty()) {
         return {};
     }
+    return effective_tool_colors(tools, effective_mappings(tools, slots, auto_color_map), slots);
+}
 
-    auto mappings = effective_mappings(tools, slots, auto_color_map);
-    auto per_tool = resolve_display_colors(tools, mappings, slots); // in `tools` order
+std::vector<uint32_t> FilamentMapper::effective_tool_colors(
+    const std::vector<GcodeToolInfo>& tools, const std::vector<ToolMapping>& mappings,
+    const std::vector<AvailableSlot>& slots) {
+    if (tools.empty()) {
+        return {};
+    }
+
+    // Align @p mappings to @p tools by tool_index — the card's mappings are not
+    // guaranteed parallel to the used-tool list, and resolve_display_colors pairs
+    // by position. A tool with no matching mapping stays default (unmapped) so it
+    // resolves to its own slicer color.
+    std::vector<ToolMapping> aligned;
+    aligned.reserve(tools.size());
+    for (const auto& t : tools) {
+        ToolMapping picked;
+        for (const auto& m : mappings) {
+            if (m.tool_index == t.tool_index) {
+                picked = m;
+                break;
+            }
+        }
+        aligned.push_back(picked);
+    }
+    auto per_tool = resolve_display_colors(tools, aligned, slots); // in `tools` order
 
     // Scatter the tools-ordered colors into a dense vector indexed by logical
     // tool number, so a print that uses e.g. only T0 and T2 lands T2's color at
