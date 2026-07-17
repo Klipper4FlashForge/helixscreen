@@ -116,29 +116,92 @@ TEST_CASE_METHOD(XMLTestFixture,
     //    material label (only slot 0 carries PLA here).
     REQUIRE(slot0_material_text(panel) == "PLA");
 
-    // 4. In-app edit reflected in the backend — ONLY the material changes; the
-    //    color stays the same (the exact #981 trigger: the color subject does
-    //    not change, so the color observer never re-reads material). No
-    //    slots_version bump, so no slots_version observer refresh fires.
+    // 4. The live edit path is now covered by the #1065 test above (a material
+    //    edit bumps slots_version -> refresh_slots on the sync frame). What this
+    //    test still guards is on_activate()'s UNCONDITIONAL refresh_slots() as a
+    //    defense-in-depth re-read: force the label out of sync with the backend
+    //    directly (no event, no sync — a genuine desync no subject can catch),
+    //    then confirm on_activate() re-reads material from the backend.
+    {
+        lv_obj_t* slot_grid = lv_obj_find_by_name(panel.get_panel(), "slot_grid");
+        REQUIRE(slot_grid != nullptr);
+        lv_obj_t* material_label = lv_obj_find_by_name(slot_grid, "material_label");
+        REQUIRE(material_label != nullptr);
+        lv_label_set_text(material_label, "STALE"); // desync the label behind the backend
+    }
+    REQUIRE(slot0_material_text(panel) == "STALE");
+
+    // 5. Navigate back -> on_activate(). THE REGRESSION ASSERTION: with the
+    //    refresh_slots() call removed from on_activate(), the label stays "STALE".
+    //    Backend material is still PLA, so on_activate() must restore it.
+    panel.on_activate();
+    process_lvgl(20);
+
+    REQUIRE(slot0_material_text(panel) == "PLA");
+
+    // Tear down panel UI before the fixture destroys state/subjects.
+    panel.clear_panel_reference();
+    lv_obj_delete(panel_obj);
+    process_lvgl(10);
+    AmsState::instance().set_backend(nullptr);
+}
+
+TEST_CASE_METHOD(XMLTestFixture,
+                 "sync_from_backend refreshes a material-only slot change immediately (#1065)",
+                 "[ui_integration][ams][regression][1065]") {
+    // #1065 (native ZMOD AD5X): a lane whose MATERIAL type changes while its
+    // color stays the same failed to refresh the MF-menu material label —
+    // color updated, material stuck — until some unrelated action bumped
+    // slots_version. Root cause: the sync loop never compared material, so a
+    // material-only delta produced no slots_version bump and refresh_slots()
+    // never re-read the label. Fix: sync_from_backend()/update_slot() now treat
+    // a material delta like a color/status delta and bump slots_version, so the
+    // label refreshes on the SAME sync frame — no nav-away/on_activate needed.
+    auto mock = std::make_unique<AmsBackendMock>(4);
+    mock->set_afc_mode(true);
+    REQUIRE(mock->start().success());
+
+    {
+        SlotInfo info = mock->get_slot_info(0);
+        info.material = "PLA";
+        REQUIRE(mock->set_slot_info(0, info).success());
+    }
+
+    auto* backend = mock.get();
+    AmsState::instance().set_backend(std::move(mock));
+    AmsState::instance().init_subjects(true);
+    AmsState::instance().sync_from_backend();
+
+    register_ams_widgets_and_xml_once();
+
+    AmsPanel panel(state(), &api());
+    panel.init_subjects();
+
+    lv_obj_t* panel_obj =
+        static_cast<lv_obj_t*>(lv_xml_create(test_screen(), "ams_panel", nullptr));
+    REQUIRE(panel_obj != nullptr);
+
+    panel.setup(panel_obj, test_screen());
+    lv_obj_update_layout(test_screen());
+    process_lvgl(50);
+    panel.refresh_slots();
+    process_lvgl(20);
+
+    REQUIRE(slot0_material_text(panel) == "PLA");
+
+    // Change ONLY the material (color untouched), then sync. No on_activate,
+    // no unrelated slot change — the material delta itself must drive the label.
     {
         SlotInfo info = backend->get_slot_info(0);
         info.material = "PETG"; // color_rgb left untouched
         REQUIRE(backend->set_slot_info(0, info).success());
     }
-    AmsState::instance().sync_from_backend(); // refreshes color subjects only
+    AmsState::instance().sync_from_backend();
     process_lvgl(20);
 
-    // The label is still stale here — no path has re-read material yet.
-    REQUIRE(slot0_material_text(panel) == "PLA");
-
-    // 5. Navigate back -> on_activate(). THE REGRESSION ASSERTION: with the
-    //    refresh_slots() call removed from on_activate(), the label stays "PLA".
-    panel.on_activate();
-    process_lvgl(20);
-
+    // THE #1065 ASSERTION: the label tracks the new material on the sync frame.
     REQUIRE(slot0_material_text(panel) == "PETG");
 
-    // Tear down panel UI before the fixture destroys state/subjects.
     panel.clear_panel_reference();
     lv_obj_delete(panel_obj);
     process_lvgl(10);

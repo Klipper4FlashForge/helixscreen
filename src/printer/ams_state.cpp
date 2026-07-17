@@ -378,6 +378,14 @@ void AmsState::init_subjects(bool register_xml) {
             lv_xml_register_subject(nullptr, name_buf, &slot_remaining_[i]);
         }
 
+        lv_subject_init_string(&slot_materials_[i], slot_materials_buf_[i], nullptr,
+                               sizeof(slot_materials_buf_[i]), "");
+        subjects_.register_subject(&slot_materials_[i]);
+        if (register_xml) {
+            snprintf(name_buf, sizeof(name_buf), "ams_slot_%d_material", i);
+            lv_xml_register_subject(nullptr, name_buf, &slot_materials_[i]);
+        }
+
         // Per-slot fill percent (SlotInfo::display_fill_pct encoding: 0-100, -1
         // = unknown). Observed by the ams_slot widget so spool fill renders from
         // state on every panel. -1 initial → "no data yet, leave render as-is".
@@ -884,6 +892,13 @@ lv_subject_t* AmsState::get_slot_remaining_subject(int slot_index) {
     return &slot_remaining_[slot_index];
 }
 
+lv_subject_t* AmsState::get_slot_material_subject(int slot_index) {
+    if (slot_index < 0 || slot_index >= MAX_SLOTS) {
+        return nullptr;
+    }
+    return &slot_materials_[slot_index];
+}
+
 lv_subject_t* AmsState::get_slot_fill_subject(int slot_index) {
     if (slot_index < 0 || slot_index >= MAX_SLOTS) {
         return nullptr;
@@ -1383,6 +1398,16 @@ void AmsState::sync_from_backend() {
                 lv_subject_copy_string(&slot_remaining_[i], remaining.c_str());
             }
 
+            // Material type. Unlike remaining, a material delta MUST bump
+            // slots_version: the panel's material label is re-read only by
+            // refresh_slots() (it has no direct binding), so a type change that
+            // leaves color/status unchanged would otherwise leave the label stale
+            // (#1065 — native ZMOD AD5X "color updates, material stuck").
+            if (strcmp(lv_subject_get_string(&slot_materials_[i]), slot->material.c_str()) != 0) {
+                lv_subject_copy_string(&slot_materials_[i], slot->material.c_str());
+                any_slot_changed = true;
+            }
+
             // Per-slot LIVE state: path segment, toolhead-present, active-loaded.
             // Sourced directly from the backend accessors so the panel observes
             // real-time sensor changes (path redraw + active-lane highlight).
@@ -1628,6 +1653,11 @@ void AmsState::sync_from_backend() {
         if (strcmp(lv_subject_get_string(&slot_remaining_[i]), "") != 0) {
             lv_subject_copy_string(&slot_remaining_[i], "");
         }
+        // Clear material for unused slots — bump so the label clears (#1065)
+        if (strcmp(lv_subject_get_string(&slot_materials_[i]), "") != 0) {
+            lv_subject_copy_string(&slot_materials_[i], "");
+            any_slot_changed = true;
+        }
         // Reset per-slot LIVE state subjects for unused slots
         if (lv_subject_get_int(&slot_segments_[i]) != static_cast<int>(PathSegment::NONE)) {
             lv_subject_set_int(&slot_segments_[i], static_cast<int>(PathSegment::NONE));
@@ -1697,6 +1727,14 @@ void AmsState::update_slot(int slot_index) {
         }
         if (strcmp(lv_subject_get_string(&slot_remaining_[slot_index]), remaining.c_str()) != 0) {
             lv_subject_copy_string(&slot_remaining_[slot_index], remaining.c_str());
+        }
+
+        // Material type — a delta bumps slots_version so refresh_slots() re-reads
+        // the material label even when color/status are unchanged (#1065).
+        if (strcmp(lv_subject_get_string(&slot_materials_[slot_index]), slot.material.c_str()) !=
+            0) {
+            lv_subject_copy_string(&slot_materials_[slot_index], slot.material.c_str());
+            changed = true;
         }
 
         // Per-slot LIVE state: path segment, toolhead-present, active-loaded.
