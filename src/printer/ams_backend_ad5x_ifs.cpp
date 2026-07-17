@@ -1616,6 +1616,10 @@ AmsError AmsBackendAd5xIfs::eject_lane(int slot_index) {
                 port_presence_[slot_index] = false;
                 changed = true;
             }
+            // Stamp the eject so the follow-up query's stale silk-sensor read
+            // (the lane still settling clear of the port) can't resurrect it
+            // before the window elapses (#1065).
+            last_eject_time_[static_cast<size_t>(slot_index)] = std::chrono::steady_clock::now();
             if (changed) {
                 update_slot_from_state(slot_index);
             }
@@ -3355,6 +3359,19 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
                 (chan > 0 && chan <= NUM_PORTS && result.ifs_ports.has_value() &&
                  !(*result.ifs_ports)[static_cast<size_t>(chan - 1)]);
 
+            // Same corroboration for FFMInfo.channel. It is sticky (only the ~5s
+            // JSON poll refreshes it, only an eject clears it), so right after a
+            // load into a DIFFERENT lane it still names the PREVIOUS lane. If that
+            // lane reads empty in THIS frame's Ports snapshot, the pointer is
+            // stale — do not adopt it as seated, or the load-complete frame flashes
+            // the previously-seated lane as loaded and repaints its retained
+            // override (#1065). Only trust THIS frame's Ports (never lagging
+            // port_presence_), mirroring chan_lane_empty; on a Ports-less frame
+            // the pointer is adopted as before.
+            const bool ffm_lane_empty =
+                (ffm_channel_ > 0 && ffm_channel_ <= NUM_PORTS && result.ifs_ports.has_value() &&
+                 !(*result.ifs_ports)[static_cast<size_t>(ffm_channel_ - 1)]);
+
             // Adventurer5M.json's FFMInfo.channel is the firmware's own persistent
             // record of the lane currently at the toolhead — the SAME field its
             // _IFS_REMOVE_CURRENT_PRUTOK unload macro resolves from. It stays put
@@ -3386,7 +3403,7 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
                                   backend_log_tag(), ffm_channel_, seated_chan_);
                 }
                 seated_chan_ = 0;
-            } else if (ffm_channel_ > 0) {
+            } else if (ffm_channel_ > 0 && !ffm_lane_empty) {
                 if (seated_chan_ != ffm_channel_ || chan != ffm_channel_) {
                     spdlog::debug("{} Seated lane from FFMInfo.channel={} (IFS_STATUS Chan={} {})",
                                   backend_log_tag(), ffm_channel_, chan,
@@ -3422,11 +3439,12 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
                 seated_chan_ = chan;
             }
 
-            // A known FFMInfo.channel, a real seated channel (Chan>0), or a
-            // confirmed-empty head resolves the seated state, so any later idle
+            // A known present-lane FFMInfo.channel, a real seated channel (Chan>0),
+            // or a confirmed-empty head resolves the seated state, so any later idle
             // Chan==0 is a genuine clear rather than post-reboot amnesia — close the
-            // cold-boot restore window.
-            if (ffm_channel_ > 0 || (chan > 0 && !chan_lane_empty) ||
+            // cold-boot restore window. A stale FFMInfo.channel pointing at an empty
+            // lane (#1065) does NOT resolve on its own — it isn't real seated truth.
+            if ((ffm_channel_ > 0 && !ffm_lane_empty) || (chan > 0 && !chan_lane_empty) ||
                 (chan == 0 && !head_filament_)) {
                 seated_resolved_since_boot_ = true;
             }
@@ -3470,6 +3488,21 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
                 for (int i = 0; i < NUM_PORTS; ++i) {
                     const auto idx = static_cast<size_t>(i);
                     if (port_presence_[idx] == ports[idx]) {
+                        continue;
+                    }
+                    // Eject-settling suppression (#1065): a false->true transition
+                    // within kEjectPresenceSuppression of this lane's eject is the
+                    // silk sensor still settling clear of the just-retracted lane,
+                    // not a re-insert. Ignore it so the optimistic clear survives —
+                    // the last-ejected lane otherwise stayed "present" (offering
+                    // Unload) with no later query to re-correct it. true->false and
+                    // any transition after the window still apply.
+                    if (!port_presence_[idx] && ports[idx] &&
+                        (std::chrono::steady_clock::now() - last_eject_time_[idx]) <
+                            kEjectPresenceSuppression) {
+                        spdlog::debug("{} Slot {} IFS_STATUS Ports reads present within eject "
+                                      "settling window — ignoring as sensor lag (#1065)",
+                                      backend_log_tag(), i);
                         continue;
                     }
                     const bool was_present = port_presence_[idx];
@@ -3620,8 +3653,13 @@ void AmsBackendAd5xIfs::apply_zcolor_result(const ZColorSilentResult& result) {
             // same response carried IFS_STATUS Ports, which is the sensor-backed
             // authority and already set presence above; don't let the SILENT slot
             // lines fight it.
+            // Also skip once IFS_STATUS Ports has ever been the presence authority
+            // (ifs_status_ports_seen_): zmod's GET_ZCOLOR color latch survives an
+            // eject, so on a Ports-capable device it would resurrect an emptied
+            // lane from its retained color on a frame that happened to carry no
+            // Ports reading (#1065, mirrors the JSON-poll guard below).
             if (!has_per_port_sensors_ && !result.ifs_ports.has_value() &&
-                port_presence_[idx] != loaded) {
+                !ifs_status_ports_seen_.load() && port_presence_[idx] != loaded) {
                 const bool was_present = port_presence_[idx];
                 port_presence_[idx] = loaded;
                 changed = true;
