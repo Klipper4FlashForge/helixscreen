@@ -41,6 +41,7 @@
 #include "asset_manager.h"
 #include "config.h"
 #include "config_storage.h"
+#include "wizard_config_paths.h"
 #include "connection_state.h"
 #include "data_root_resolver.h"
 #include "helix_sparkline.h"
@@ -178,7 +179,16 @@ void mock_seed_ready() {
     ps.set_klippy_state_sync(helix::KlippyState::READY);
     ps.set_printer_connection_state(static_cast<int>(helix::ConnectionState::CONNECTED),
                                     "Mock printer");
-    spdlog::info("app_boot: mock printer seeded READY/CONNECTED (CONFIG_HELIX_MOCK_PRINTER)");
+    // Seed a printer identity so the home printer-image widget resolves to a
+    // bundled image. The widget reads config PRINTER_TYPE at attach() (during
+    // build_shell); without an identity get_best_printer_image("") returns the
+    // generic fallback. "Voron 2.4" maps to the staged voron-v2.png. This is why
+    // the seed must run BEFORE the shell builds (see call site).
+    helix::Config* config = helix::Config::get_instance();
+    if (config) {
+        config->set<std::string>(config->df() + helix::wizard::PRINTER_TYPE, "Voron 2.4");
+    }
+    spdlog::info("app_boot: mock printer seeded READY/CONNECTED + type Voron 2.4");
 }
 
 void mock_push_temps() {
@@ -302,15 +312,17 @@ extern "C" void app_boot_ui(void) {
     subjects.init_post(rc);
     log_heap_milestone("subjects-up");
 
+#if CONFIG_HELIX_MOCK_PRINTER
+    // Before the shell builds: seed READY/CONNECTED + the printer identity so the
+    // home printer-image widget reads a resolvable PRINTER_TYPE at attach().
+    mock_seed_ready();
+#endif
+
     // Phase 11: the app shell (navbar + six resident panels).
     if (!build_shell()) {
         spdlog::error("app_boot: shell build failed — UI incomplete");
         return;
     }
-
-#if CONFIG_HELIX_MOCK_PRINTER
-    mock_seed_ready();
-#endif
 
     ESP_LOGI(TAG, "helix: home panel up");
     log_heap_milestone("home-panel-up");
