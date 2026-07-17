@@ -100,13 +100,6 @@ static int32_t s_cur_y2;
 // the printer-image PNG re-decode (LV_CACHE_DEF_SIZE=0) collapses the two-hop
 // rate during nav, worst-band lpms drops below the ~17.7 lpms beam here.
 static uint32_t s_vsync_fires;
-// Scan-out health proxy: on_frame_buf_complete fires when a whole frame finished
-// scanning out cleanly. esp_lcd exposes NO direct underrun/restart counter, so a
-// framebuf Hz that DROPS BELOW the vsync Hz is our best indirect signal that
-// frames aren't completing — i.e. RESTART_IN_VSYNC is kicking in (the "analog-TV
-// static / vsync loss" Preston sees). A direct restart counter would need a
-// one-line esp_lcd driver patch (deferred).
-static uint32_t s_framebuf_completes;
 static uint32_t s_presented;
 static uint32_t s_blit_lines_total;
 static uint32_t s_blit_us_total;
@@ -124,18 +117,6 @@ static bool flush_on_vsync(esp_lcd_panel_handle_t panel,
         xSemaphoreGiveFromISR(s_vsync_sem, &high_task_woken);
     }
     return high_task_woken == pdTRUE;
-}
-
-// Fires when a whole frame finished scanning out cleanly — the scan-out health
-// proxy (see s_framebuf_completes). A framebuf Hz below the vsync Hz => frames
-// aren't completing => scan-out disruption / RESTART_IN_VSYNC.
-static bool framebuf_complete_cb(esp_lcd_panel_handle_t panel,
-                                 const esp_lcd_rgb_panel_event_data_t *edata, void *user_ctx) {
-    (void)panel;
-    (void)edata;
-    (void)user_ctx;
-    __atomic_fetch_add(&s_framebuf_completes, 1, __ATOMIC_RELAXED);
-    return false;
 }
 
 // LVGL draw buffers — INTERNAL DRAM, PARTIAL mode (unchanged from the working
@@ -252,18 +233,15 @@ static void present_diag_maybe(void) {
     if (elapsed < 10000000u)
         return;
     uint32_t vs = __atomic_exchange_n(&s_vsync_fires, 0, __ATOMIC_RELAXED);
-    uint32_t fb = __atomic_exchange_n(&s_framebuf_completes, 0, __ATOMIC_RELAXED);
     uint32_t vs_hz10 = (uint32_t)((uint64_t)vs * 10000000u / elapsed);
-    uint32_t fb_hz10 = (uint32_t)((uint64_t)fb * 10000000u / elapsed);
     uint32_t pr_hz10 = (uint32_t)((uint64_t)s_presented * 10000000u / elapsed);
     uint32_t avg = s_blit_us_total ? (s_blit_lines_total * 1000u / s_blit_us_total) : 0;
     uint32_t worst = (s_blit_worst_lpms == 0xFFFFFFFFu) ? 0 : s_blit_worst_lpms;
-    // framebuf Hz < vsync Hz => scan-out disruption (the "vsync loss" signal).
     ESP_LOGI(TAG,
-             "present diag (10s): vsync %u (%u.%u Hz) framebuf %u (%u.%u Hz) presented %u "
-             "(%u.%u Hz) | blit avg %u worst-band %u lpms",
-             vs, vs_hz10 / 10u, vs_hz10 % 10u, fb, fb_hz10 / 10u, fb_hz10 % 10u, s_presented,
-             pr_hz10 / 10u, pr_hz10 % 10u, avg, worst);
+             "present diag (10s): vsync %u (%u.%u Hz) presented %u (%u.%u Hz) | blit avg %u "
+             "worst-band %u lpms",
+             vs, vs_hz10 / 10u, vs_hz10 % 10u, s_presented, pr_hz10 / 10u, pr_hz10 % 10u, avg,
+             worst);
     s_presented = 0;
     s_blit_lines_total = 0;
     s_blit_us_total = 0;
@@ -333,10 +311,7 @@ static void *ui_thread_main(void *arg) {
     // on_vsync is not IRAM-safe here (the bounce ISR runs with cache on —
     // LCD_RGB_ISR_IRAM_SAFE is off), so no IRAM_ATTR and no logging inside it.
     s_vsync_sem = xSemaphoreCreateBinary();
-    esp_lcd_rgb_panel_event_callbacks_t lcd_cbs = {
-        .on_vsync = flush_on_vsync,
-        .on_frame_buf_complete = framebuf_complete_cb, // scan-out health proxy
-    };
+    esp_lcd_rgb_panel_event_callbacks_t lcd_cbs = {.on_vsync = flush_on_vsync};
     esp_lcd_rgb_panel_register_event_callbacks(s_panel, &lcd_cbs, NULL);
 
     lv_init();
