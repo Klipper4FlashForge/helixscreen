@@ -30,30 +30,6 @@ using namespace helix;
 // Note: PanelOverlayAdapter was removed - PrintStatusPanel now inherits directly
 // from OverlayBase, eliminating the need for an adapter.
 
-#if defined(HELIX_PLATFORM_ESP32)
-namespace {
-// A brief modal loading state painted before a deferred panel's (multi-second)
-// lv_xml_create. Full-screen scrim + STATIC "Loading..." label on the top layer
-// so it covers the still-visible previous panel. Deliberately NOT a spinner: the
-// build blocks the LVGL thread synchronously, so no animation timer can run
-// during it — a spinner would freeze and read as a hang. Static text is honest.
-// Torn down deferred-safe after the build.
-lv_obj_t* make_loading_scrim() {
-    lv_obj_t* scrim = lv_obj_create(lv_layer_top());
-    lv_obj_remove_style_all(scrim);
-    lv_obj_set_size(scrim, lv_pct(100), lv_pct(100));
-    lv_obj_set_style_bg_color(scrim, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(scrim, LV_OPA_60, LV_PART_MAIN);
-    lv_obj_remove_flag(scrim, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_t* lbl = lv_label_create(scrim);
-    lv_label_set_text(lbl, "Loading...");
-    lv_obj_set_style_text_color(lbl, lv_color_white(), LV_PART_MAIN);
-    lv_obj_center(lbl);
-    return scrim;
-}
-} // namespace
-#endif
-
 bool PanelFactory::find_panels(lv_obj_t* panel_container) {
     m_panel_container = panel_container; // kept for deferred panel creation (ESP)
     for (int i = 0; i < UI_PANEL_COUNT; i++) {
@@ -125,11 +101,9 @@ void PanelFactory::build_deferred_panel(int panel_id) {
     if (m_panels[panel_id])
         return; // already built
 
-    // Loading state MUST paint before the blocking create: set it, force one
-    // refresh, then build (a state that only appears after the build is useless).
-    lv_obj_t* scrim = make_loading_scrim();
-    lv_refr_now(lv_display_get_default());
-
+    // The loading scrim + paint-before-block is now owned by NavigationManager's
+    // NavTransitionScrim guard, which wraps the whole nav transition (this build
+    // runs under it). One scrim mechanism for all transitions, not two.
     auto build_start = std::chrono::steady_clock::now();
     lv_obj_t* obj =
         static_cast<lv_obj_t*>(lv_xml_create(m_panel_container, PANEL_NAMES[panel_id], nullptr));
@@ -146,13 +120,6 @@ void PanelFactory::build_deferred_panel(int panel_id) {
     } else {
         spdlog::error("[PanelFactory] Deferred build of '{}' FAILED (lv_xml_create null)",
                       PANEL_NAMES[panel_id]);
-    }
-
-    // Hide immediately (sync flag, not a delete) so the scrim can't linger over
-    // the new panel; async-delete is teardown-safe inside a queued nav callback.
-    if (scrim) {
-        lv_obj_add_flag(scrim, LV_OBJ_FLAG_HIDDEN);
-        helix::ui::safe_delete_deferred(scrim);
     }
 #else
     (void)panel_id;

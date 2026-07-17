@@ -525,6 +525,10 @@ class NavigationManager {
     // still null, to build it on first navigation. See set_deferred_panel_builder().
     std::function<void(int)> deferred_panel_builder_;
     bool building_deferred_panel_ = false; // re-entrancy guard for the builder
+    // Outermost-transition guard for the ESP32 nav busy scrim (NavTransitionScrim
+    // in ui_nav_manager.cpp): switch_to_panel_impl can cascade into
+    // handle_active_panel_change, and only the outer one owns/tears down a scrim.
+    bool nav_scrim_active_ = false;
 
     // If panel_id has no widget yet and a deferred builder is set, build it now
     // (first-navigation lazy bring-up). No-op on desktop (builder unset) and for

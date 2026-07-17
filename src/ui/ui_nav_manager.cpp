@@ -38,6 +38,68 @@ using helix::ui::observe_int_sync;
 #include <cstdio>
 #include <cstdlib>
 
+#if defined(HELIX_PLATFORM_ESP32)
+namespace {
+// Full-screen loading scrim on the TOP layer (above the panels AND the navbar),
+// painted before a (possibly multi-second) panel transition. STATIC "Loading..."
+// label, NOT a spinner: the transition blocks the LVGL thread, so no animation
+// timer can run — a spinner would freeze and read as a hang. Default-CLICKABLE,
+// so it absorbs every tap (incl. navbar hammering) for the whole transition.
+lv_obj_t* make_loading_scrim() {
+    lv_obj_t* scrim = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(scrim);
+    lv_obj_set_size(scrim, lv_pct(100), lv_pct(100));
+    lv_obj_set_style_bg_color(scrim, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(scrim, LV_OPA_60, LV_PART_MAIN);
+    lv_obj_remove_flag(scrim, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t* lbl = lv_label_create(scrim);
+    lv_label_set_text(lbl, "Loading...");
+    lv_obj_set_style_text_color(lbl, lv_color_white(), LV_PART_MAIN);
+    lv_obj_center(lbl);
+    return scrim;
+}
+
+// RAII busy indicator wrapping a panel transition (the deferred first-build now
+// runs UNDER this scrim — one mechanism, not two). ctor shows the scrim and
+// forces it to paint BEFORE the blocking transition body (the LVGL thread is
+// about to block; a state that only appears after is useless). dtor paints the
+// now-un-hidden new panel under the scrim, then lifts the scrim on the next
+// UpdateQueue drain via safe_delete_deferred — the transition runs from an
+// lv_async_call queued context where a sync delete can corrupt LVGL's event
+// list (#776). The new panel is painted before the scrim lifts, so there is no
+// old-panel flash. The one-tick gap between the dtor refresh and the deferred
+// reveal is safe: process_pending runs every lv_timer_handler tick and nothing
+// in a nav transition wedges the queue between them (revisit if Stage B adds a
+// long synchronous op inside a transition). Only the OUTERMOST transition owns a
+// scrim — switch_to_panel_impl can cascade into handle_active_panel_change via
+// the active_panel subject, and we must not nest two.
+class NavTransitionScrim {
+public:
+    explicit NavTransitionScrim(bool& active) : active_(active), owns_(!active) {
+        if (owns_) {
+            active_ = true;
+            scrim_ = make_loading_scrim();
+            lv_refr_now(lv_display_get_default());
+        }
+    }
+    ~NavTransitionScrim() {
+        if (owns_) {
+            lv_refr_now(lv_display_get_default());
+            helix::ui::safe_delete_deferred(scrim_);
+            active_ = false;
+        }
+    }
+    NavTransitionScrim(const NavTransitionScrim&) = delete;
+    NavTransitionScrim& operator=(const NavTransitionScrim&) = delete;
+
+private:
+    bool& active_;
+    bool owns_;
+    lv_obj_t* scrim_ = nullptr;
+};
+} // namespace
+#endif
+
 // ============================================================================
 // SINGLETON INSTANCE
 // ============================================================================
@@ -645,6 +707,11 @@ void NavigationManager::overlay_animate_zoom_out(lv_obj_t* panel, lv_area_t sour
 // ============================================================================
 
 void NavigationManager::handle_active_panel_change(int32_t new_active_panel) {
+#if defined(HELIX_PLATFORM_ESP32)
+    // Busy scrim + input block for the whole transition (ESP32-only; no-op on the
+    // nested inner change if switch_to_panel_impl cascaded here).
+    NavTransitionScrim scrim_guard(nav_scrim_active_);
+#endif
     // Deferred bring-up: catches navigation paths that set active_panel directly
     // (set_active from connection/klippy handlers, etc.) without going through
     // switch_to_panel_impl. No-op on desktop and for already-built panels.
@@ -823,6 +890,11 @@ void NavigationManager::nav_button_clicked_cb(lv_event_t* event) {
 }
 
 void NavigationManager::switch_to_panel_impl(int panel_id) {
+#if defined(HELIX_PLATFORM_ESP32)
+    // Busy scrim + input block for the whole transition (ESP32-only). Outermost
+    // owner; a cascade into handle_active_panel_change won't create a second one.
+    NavTransitionScrim scrim_guard(nav_scrim_active_);
+#endif
     auto switch_start = std::chrono::steady_clock::now();
     spdlog::trace("[NavigationManager] switch_to_panel_impl executing for panel {}", panel_id);
 
