@@ -17,7 +17,21 @@
 #include "sdkconfig.h"
 #include "storage_mount.h"
 
-#if CONFIG_HELIX_NET_HIL
+// ===========================================================================
+// EXPERIMENT (temporary, 2026-07-17): radio-off A/B for the idle-glitching
+// hunt. When 1, the WiFi + net_hil network task is NOT spawned even if
+// CONFIG_HELIX_NET_HIL is set (the HIL sdkconfig.local force-sets NET_HIL=y,
+// so an override here — not a Kconfig default — is what actually takes effect).
+// The local mock still drives the UI, so the display runs identically minus
+// ALL WiFi/net PSRAM-bus traffic. Hypothesis: if idle glitching vanishes with
+// this ON, the cause is bounce-refill underruns from shared-bus contention
+// (invisible to the framebuf==vsync meter — a missed 565us refill shows one
+// garbage band but the frame still completes), NOT present tearing.
+// FLIP TO 0 to restore normal networked HIL once Preston returns the verdict.
+// ===========================================================================
+#define HELIX_RADIO_OFF 1
+
+#if CONFIG_HELIX_NET_HIL && !HELIX_RADIO_OFF
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -62,11 +76,13 @@ void app_main(void) {
     // before WiFi (see lvgl_glue.h).
     lvgl_glue_start(app_boot_ui, app_boot_tick);
 
-#if CONFIG_HELIX_NET_HIL
+#if CONFIG_HELIX_NET_HIL && !HELIX_RADIO_OFF
     // Network bring-up runs in its own task: the UI must come up
     // unconditionally, never behind WiFi — association without DHCP (weak RSSI,
     // dead AP, wrong creds) otherwise leaves the device on a black screen
     // indefinitely.
     xTaskCreate(net_hil_task, "net_hil_start", 8192, NULL, 5, NULL);
+#elif CONFIG_HELIX_NET_HIL && HELIX_RADIO_OFF
+    ESP_LOGW(TAG, "HELIX_RADIO_OFF experiment: WiFi + net_hil NOT started (mock drives UI)");
 #endif
 }
