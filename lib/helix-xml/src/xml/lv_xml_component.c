@@ -148,14 +148,21 @@ lv_result_t lv_xml_register_component_from_data(const char * name, const char * 
     bool globals = false;
     if(lv_streq(name, "globals")) globals = true;
 
-    /* Create a temporary parser state to extract styles/params/consts */
+    /* Create a temporary parser state to extract styles/params/consts.
+     * Always run the full initializer first: it zeroes the struct and inits the
+     * parent_ll/pcdata_ll lists that start_metadata_handler relies on. The
+     * globals branch then overlays state.scope onto the (already-initialized)
+     * state so metadata is written into the shared global scope. Skipping the
+     * initializer for globals left parent_ll/pcdata_ll/context/parent/view as
+     * stack garbage, which the metadata handler reads and dereferences —
+     * undefined behavior with stack-dependent (intermittent) results. */
     lv_xml_parser_state_t state;
+    lv_xml_parser_state_init(&state);
     if(globals) {
         lv_xml_component_scope_t * global_scope = lv_xml_component_get_scope("globals");
         state.scope = *global_scope;
     }
     else {
-        lv_xml_parser_state_init(&state);
         state.scope.name = name;
     }
 
