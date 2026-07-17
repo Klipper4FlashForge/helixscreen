@@ -19,6 +19,7 @@
 #include <spdlog/spdlog.h>
 
 #include <cstring>
+#include <unordered_set>
 
 using namespace helix;
 
@@ -56,6 +57,21 @@ struct UiButtonData {
 uint64_t next_button_id() {
     static uint64_t n = 1;
     return n++;
+}
+
+// Set of addresses that are currently one of OUR live ui_buttons. A deferred
+// contrast recompute captures a raw lv_obj_t*; by the time it fires the button
+// may have been freed and its address reused. lv_obj_is_valid() only proves the
+// address is *some* live object — it can be a foreign widget whose user_data is
+// a small non-pointer sentinel (e.g. 0x2), and dereferencing that as a
+// UiButtonData* crashes (#1111). Membership here is the missing precondition:
+// only if btn is still a tracked ui_button is its user_data guaranteed to be a
+// real UiButtonData safe to dereference. Function-local static (not namespace
+// scope) to avoid static-init-order issues; main-thread only (create, delete,
+// and queue drain all run on the UI thread), so no locking is needed.
+std::unordered_set<const lv_obj_t*>& live_ui_buttons() {
+    static std::unordered_set<const lv_obj_t*> s;
+    return s;
 }
 
 /**
@@ -287,21 +303,28 @@ void update_button_text_contrast(lv_obj_t* btn) {
     }
 }
 
-// Defer a contrast recompute that survives widget address reuse (#924).
-// lv_obj_is_valid() only confirms the address is *a* live object; a freed
-// button's address can be reallocated to a different ui_button before the
-// deferred tick fires, passing both lv_obj_is_valid and the magic check.
-// Capture the button's unique id at defer time and re-verify identity on the
-// main thread before touching style/state.
+// Defer a contrast recompute that survives widget address reuse.
+// The button may be freed and its address reused before the deferred tick
+// fires. Two independent hazards:
+//   1. Reused by a foreign (non-ui_button) widget whose user_data is a small
+//      non-pointer sentinel (e.g. 0x2). lv_obj_is_valid() passes (a live object
+//      occupies the address) and !d passes, so dereferencing d->magic faults at
+//      the sentinel address (#1111). Guard: reject btn unless it is still one of
+//      our tracked live ui_buttons — only then is user_data a real UiButtonData.
+//   2. Reused by a *different* ui_button. It passes the registry + magic checks,
+//      so re-verify the per-button identity token captured at defer time (#924).
 void defer_button_contrast_update(lv_obj_t* btn) {
     UiButtonData* data = static_cast<UiButtonData*>(lv_obj_get_user_data(btn));
     if (!data || data->magic != UiButtonData::MAGIC)
         return;
     const uint64_t gen = data->id;
     helix::ui::queue_update([btn, gen]() {
-        if (!lv_obj_is_valid(btn))
+        // Hazard 1: never dereference user_data unless btn is still a live
+        // ui_button we own (guards against foreign-widget address reuse, #1111).
+        if (!live_ui_buttons().count(btn))
             return;
         UiButtonData* d = static_cast<UiButtonData*>(lv_obj_get_user_data(btn));
+        // Hazard 2: same address, different ui_button — identity token differs.
         if (!d || d->magic != UiButtonData::MAGIC || d->id != gen)
             return;
         update_button_text_contrast(btn);
@@ -350,6 +373,9 @@ void button_clicked_sound_cb(lv_event_t* e) {
  */
 void button_delete_cb(lv_event_t* e) {
     lv_obj_t* btn = lv_event_get_target_obj(e);
+    // Stop tracking this address before it is freed and possibly reused, so a
+    // pending deferred contrast update rejects the stale pointer (#1111).
+    live_ui_buttons().erase(btn);
     UiButtonData* data = static_cast<UiButtonData*>(lv_obj_get_user_data(btn));
     // Only delete if magic matches - user_data may have been overwritten
     // by Modal::wire_button with a Modal* pointer
@@ -628,6 +654,9 @@ void* ui_button_create(lv_xml_parser_state_t* state, const char** attrs) {
 
     // Store user data on button
     lv_obj_set_user_data(btn, data);
+    // Track this address as a live ui_button so deferred work can verify the
+    // button hasn't been freed and its address reused (#1111).
+    live_ui_buttons().insert(btn);
 
     // Register event handlers
     lv_obj_add_event_cb(btn, button_style_changed_cb, LV_EVENT_STYLE_CHANGED, nullptr);

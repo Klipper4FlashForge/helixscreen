@@ -49,6 +49,8 @@ lv_obj_t* make_fake_button(lv_obj_t* parent, UiButtonData** out_data) {
                                   .label = nullptr,
                                   .icon_on_right = false};
     lv_obj_set_user_data(btn, data);
+    // Mirror the real create path: register as a live ui_button (#1111).
+    live_ui_buttons().insert(btn);
     // Match the real widget's delete cleanup so the UiButtonData is freed.
     lv_obj_add_event_cb(btn, button_delete_cb, LV_EVENT_DELETE, nullptr);
     if (out_data)
@@ -137,5 +139,47 @@ TEST_CASE_METHOD(XMLTestFixture,
     REQUIRE(after == kSentinelOpa);
 
     lv_obj_delete(btn); // button_delete_cb frees foreign_data
+    helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+}
+
+TEST_CASE_METHOD(XMLTestFixture,
+                 "ui_button deferred contrast rejects a reused address holding a foreign widget",
+                 "[ui_button][crash]") {
+    // The #1111 crash: the button is freed and its address is reused by a
+    // NON-ui_button widget whose user_data is a small non-pointer sentinel
+    // (observed value: 0x2 — many LVGL widgets stash small ints/enums there).
+    // lv_obj_is_valid(btn) is TRUE (a live foreign object occupies the address),
+    // !d is false (0x2 is non-null), so the old guard dereferenced d->magic at
+    // address 0x2 -> SIGSEGV. The live-ui_button registry must reject btn before
+    // any user_data dereference.
+    UiButtonData* original_data = nullptr;
+    lv_obj_t* btn = make_fake_button(test_screen(), &original_data);
+    REQUIRE(btn != nullptr);
+
+    // Queue the deferred contrast update — captures (btn, original id).
+    defer_button_contrast_update(btn);
+
+    // Simulate delete-then-reuse: the original ui_button is gone (untracked,
+    // its data freed) but its address now hosts a foreign widget carrying a
+    // small non-pointer user_data. btn stays a live lv_obj so lv_obj_is_valid
+    // still passes, reproducing the exact production condition.
+    delete original_data;
+    live_ui_buttons().erase(btn); // what button_delete_cb does on real deletion
+    lv_obj_set_user_data(btn, reinterpret_cast<void*>(0x2));
+
+    // Plant the sentinel; if the stale defer runs it overwrites it.
+    lv_obj_set_style_opa(btn, kSentinelOpa, LV_PART_MAIN);
+
+    REQUIRE_NOTHROW(
+        helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance()));
+
+    lv_opa_t after = lv_obj_get_style_opa(btn, LV_PART_MAIN);
+    INFO("sentinel=" << int(kSentinelOpa) << " after=" << int(after));
+    // The registry check rejects btn before touching user_data: sentinel survives.
+    REQUIRE(after == kSentinelOpa);
+
+    // Restore a null user_data so button_delete_cb doesn't dereference 0x2.
+    lv_obj_set_user_data(btn, nullptr);
+    lv_obj_delete(btn);
     helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
 }
