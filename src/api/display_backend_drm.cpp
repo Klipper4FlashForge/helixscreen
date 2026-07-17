@@ -650,6 +650,36 @@ lv_indev_t* DisplayBackendDRM::create_input_pointer() {
                     "display", "touch-coarse-scale-skipped", "drm_abs_range_query_unusable");
             }
 
+            // Touch axis / range overrides via environment (parity with the fbdev
+            // backend, which has had these; the DRM backend did not — #943). These
+            // override the kernel-reported EVIOCGABS range, which some controllers
+            // over-report: the digitizer advertises a wider ABS range than it
+            // actually emits, so the auto-installed coarse scale over-divides and
+            // taps collapse into a fraction of the panel (Qidi Q2 class — the
+            // "captured/target ratio < 1.0" symptom from the span-check log).
+            // Setting the true emitted range here restores 1:1 mapping. To invert
+            // an axis, swap min/max (e.g. MIN_Y=3200 MAX_Y=900).
+            const char* swap_axes = std::getenv("HELIX_TOUCH_SWAP_AXES");
+            if (swap_axes != nullptr && strcmp(swap_axes, "1") == 0) {
+                spdlog::info("[DRM Backend] Touch axes swapped (HELIX_TOUCH_SWAP_AXES=1)");
+                lv_evdev_set_swap_axes(pointer_, true);
+            }
+
+            const char* env_min_x = std::getenv("HELIX_TOUCH_MIN_X");
+            const char* env_max_x = std::getenv("HELIX_TOUCH_MAX_X");
+            const char* env_min_y = std::getenv("HELIX_TOUCH_MIN_Y");
+            const char* env_max_y = std::getenv("HELIX_TOUCH_MAX_Y");
+            if (env_min_x && env_max_x && env_min_y && env_max_y) {
+                int min_x = std::atoi(env_min_x);
+                int max_x = std::atoi(env_max_x);
+                int min_y = std::atoi(env_min_y);
+                int max_y = std::atoi(env_max_y);
+                spdlog::info("[DRM Backend] Touch calibration range from env: X({}->{}) Y({}->{}) "
+                             "(overrides kernel EVIOCGABS)",
+                             min_x, max_x, min_y, max_y);
+                lv_evdev_set_calibration(pointer_, min_x, min_y, max_x, max_y);
+            }
+
             // Load stored calibration.
             calibration_ = helix::load_touch_calibration();
 

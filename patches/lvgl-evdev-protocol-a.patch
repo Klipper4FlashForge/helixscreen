@@ -1,8 +1,62 @@
 diff --git a/src/drivers/evdev/lv_evdev.c b/src/drivers/evdev/lv_evdev.c
-index 1b8319e04..52dd8dca2 100644
+index 1b8319e04..4011693d5 100644
 --- a/src/drivers/evdev/lv_evdev.c
 +++ b/src/drivers/evdev/lv_evdev.c
-@@ -221,6 +221,18 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+@@ -12,6 +12,7 @@
+ #include <unistd.h>
+ #include <fcntl.h>
+ #include <errno.h>
++#include <stdlib.h> /* getenv — #943 touch-range diagnostic */
+ #include <string.h>
+ #include <sys/types.h>
+ #include <dirent.h>
+@@ -147,6 +148,45 @@ static lv_point_t _evdev_process_pointer(lv_indev_t * indev, int x, int y)
+     lv_point_t p;
+     p.x = _evdev_calibrate(swapped_x, dsc->min_x, dsc->max_x, offset_x, offset_x + width - 1);
+     p.y = _evdev_calibrate(swapped_y, dsc->min_y, dsc->max_y, offset_y, offset_y + height - 1);
++
++    /* #943 diagnostic: observe the RAW digitizer coordinates actually emitted vs
++     * the ABS range the driver was configured with (dsc->min/max, set by
++     * lv_evdev_set_calibration). If a controller over-reports its range —
++     * advertises e.g. 0..800 via EVIOCGABS but only ever emits ~0..480 during real
++     * touches — the coarse scale over-divides and taps collapse into a fraction of
++     * the panel (Qidi Q2, #943). Surfacing the actual emitted range lets
++     * reported-vs-emitted be compared directly from a single log capture. Gated on
++     * HELIX_DEBUG_TOUCH so it is silent unless a reporter explicitly enables it;
++     * routed through LV_LOG_WARN, which is active at the configured WARN level and
++     * reaches journalctl via the spdlog print-cb bridge (LV_LOG_INFO/USER/TRACE are
++     * compiled out). Observed extremes accumulate for the process lifetime so the
++     * max converges on the true emitted range over a calibration session. */
++    {
++        static int touch_range_dbg = -1;
++        if(touch_range_dbg < 0) {
++            touch_range_dbg = (getenv("HELIX_DEBUG_TOUCH") || getenv("HELIX_DEBUG_TOUCHES"))
++                              ? 1 : 0;
++        }
++        if(touch_range_dbg) {
++            static int rx_min = (1 << 30), rx_max = -(1 << 30);
++            static int ry_min = (1 << 30), ry_max = -(1 << 30);
++            static unsigned sample_n = 0;
++            int extended = 0;
++            if(swapped_x < rx_min) { rx_min = swapped_x; extended = 1; }
++            if(swapped_x > rx_max) { rx_max = swapped_x; extended = 1; }
++            if(swapped_y < ry_min) { ry_min = swapped_y; extended = 1; }
++            if(swapped_y > ry_max) { ry_max = swapped_y; extended = 1; }
++            /* Log on every newly observed extreme, else every 60th sample. */
++            if(extended || (sample_n++ % 60 == 0)) {
++                LV_LOG_WARN("[TouchDebug/evdev] raw=(%d,%d) -> px=(%d,%d) | observed raw "
++                            "x[%d..%d] y[%d..%d] vs configured x[%d..%d] y[%d..%d]",
++                            swapped_x, swapped_y, p.x, p.y,
++                            rx_min, rx_max, ry_min, ry_max,
++                            dsc->min_x, dsc->max_x, dsc->min_y, dsc->max_y);
++            }
++        }
++    }
++
+     return p;
+ }
+ 
+@@ -221,6 +261,18 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
                                      dsc->touch_count = i + 1;
                                  }
                              }
@@ -21,7 +75,7 @@ index 1b8319e04..52dd8dca2 100644
                          }
                      }
                      else {
-@@ -251,10 +263,24 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+@@ -251,10 +303,24 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
          }
  #if LV_USE_GESTURE_RECOGNITION
          else if(in.type == EV_SYN && in.code == SYN_REPORT) {
@@ -48,7 +102,7 @@ index 1b8319e04..52dd8dca2 100644
                      if(dsc->touch_data[i].state == LV_INDEV_STATE_PRESSED || dsc->touch_data[i].state == LV_INDEV_STATE_RELEASED) {
                          LV_LOG_TRACE("Slot %d: state=%s, raw(%d, %d)",
                                       i,
-@@ -268,7 +294,7 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+@@ -268,7 +334,7 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
  
                  int active_touches = 0;
  
@@ -57,7 +111,7 @@ index 1b8319e04..52dd8dca2 100644
                      if(dsc->touch_data[i].state == LV_INDEV_STATE_PRESSED || dsc->touch_data[i].state == LV_INDEV_STATE_RELEASED) {
                          calibrated_touch_data[active_touches] = dsc->touch_data[i];
  
-@@ -288,18 +314,10 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+@@ -288,18 +354,10 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
                  lv_indev_gesture_recognizers_update(indev, calibrated_touch_data, active_touches);
                  lv_indev_gesture_recognizers_set_data(indev, data);
  
@@ -80,7 +134,7 @@ index 1b8319e04..52dd8dca2 100644
  
                  dsc->touch_data_changed = false;
              }
-@@ -342,6 +360,22 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+@@ -342,6 +400,22 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
          default:
              break;
      }
