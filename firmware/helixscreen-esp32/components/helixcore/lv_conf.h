@@ -406,11 +406,23 @@
  *Used by image decoders such as `lv_lodepng` to keep the decoded image in the memory.
  *If size is not set to 0, the decoder will fail to decode when the cache is full.
  *If size is 0, the cache function is not enabled and the decoded mem will be released immediately after use.*/
-#define LV_CACHE_DEF_SIZE       0
+// Was 0 (early RAM-caution from the memory diet): with 0 the decoded bitmap is
+// FREED after each draw, so a PNG (e.g. the home printer image, LV_USE_LODEPNG)
+// is software-RE-DECODED every repaint. During a nav that composites the panel
+// per animation frame that decode load collapsed the presenter blit below beam
+// speed -> tearing. 1MB caches decoded images (LRU) so each decodes ONCE. LVGL's
+// cache is LAZY: it grows via lv_malloc (-> PSRAM here) only as images are cached
+// up to this ceiling, and LRU-evicts past it — so v1 only holds the ~240KB
+// printer image; the 1MB headroom is for Stage B thumbnails. Image-decode cache
+// ONLY (lv_init.c passes it to lv_image_decoder_init); fonts use a separate glyph
+// cache, so this does NOT change text paint. Bump for Stage B thumbnail grids.
+#define LV_CACHE_DEF_SIZE       (1 * 1024 * 1024)
 
 /*Default number of image header cache entries. The cache is used to store the headers of images
  *The main logic is like `LV_CACHE_DEF_SIZE` but for image headers.*/
-#define LV_IMAGE_HEADER_CACHE_DEF_CNT 0
+// Was 0 -> image header (dims/format) re-read on every layout/draw. 16 entries
+// (a few bytes each) caches them alongside the decoded-bitmap cache above.
+#define LV_IMAGE_HEADER_CACHE_DEF_CNT 16
 
 /*Number of stops allowed per gradient. Increase this to allow more stops.
  *This adds (sizeof(lv_color_t) + 1) bytes per additional stop*/
