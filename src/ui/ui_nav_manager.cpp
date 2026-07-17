@@ -59,6 +59,32 @@ lv_obj_t* make_loading_scrim() {
     return scrim;
 }
 
+// Settle-heal: one full-screen repaint scheduled a beat after a panel
+// transition completes. Tears the unpaced blit leaves on STATIC content (the
+// navbar, which never repaints on its own) stick on screen; a single
+// invalidate in the quiet window after the transition forces a clean present
+// that heals them. Debounced through one shared one-shot timer so a burst of
+// tap-through navigations collapses to a single heal after the last settles.
+// The heal present could itself tear, but it runs at post-transition idle load
+// where the blit wins the beam race, and it re-arms nothing. Stage B's
+// pointer-swap makes tears impossible — this is the Stage A mitigation.
+lv_timer_t* g_settle_heal_timer = nullptr;
+
+void schedule_settle_heal(uint32_t delay_ms) {
+    if (g_settle_heal_timer != nullptr) {
+        lv_timer_set_period(g_settle_heal_timer, delay_ms);
+        lv_timer_reset(g_settle_heal_timer); // restart the countdown (debounce)
+        return;
+    }
+    g_settle_heal_timer = lv_timer_create(
+        [](lv_timer_t*) {
+            lv_obj_invalidate(lv_screen_active());
+            g_settle_heal_timer = nullptr; // repeat_count=1 auto-deletes after this cb
+        },
+        delay_ms, nullptr);
+    lv_timer_set_repeat_count(g_settle_heal_timer, 1);
+}
+
 // RAII busy indicator wrapping a panel transition (the deferred first-build now
 // runs UNDER this scrim — one mechanism, not two). ctor shows the scrim and
 // forces it to paint BEFORE the blocking transition body (the LVGL thread is
@@ -87,6 +113,7 @@ public:
             lv_refr_now(lv_display_get_default());
             helix::ui::safe_delete_deferred(scrim_);
             active_ = false;
+            schedule_settle_heal(500);
         }
     }
     NavTransitionScrim(const NavTransitionScrim&) = delete;

@@ -331,6 +331,23 @@ extern "C" void app_boot_ui(void) {
 
     ESP_LOGI(TAG, "helix: home panel up");
     log_heap_milestone("home-panel-up");
+
+    // Settle-heal: one full-screen repaint ~600ms after the shell is up. The
+    // synchronous boot build is the heaviest load window on the unpaced blit,
+    // and any tear it leaves on STATIC content (the navbar never repaints on
+    // its own) sticks on screen forever. Network is already quiet by now
+    // (websocket connects ~4s, home-up ~11s), so this fires into calm and
+    // forces a clean present that heals the boot-window artifacts. The heal
+    // present could itself tear, but at idle load the blit wins the beam race;
+    // it is one-shot and re-arms nothing. Stage B's pointer-swap makes tears
+    // impossible — this is the Stage A mitigation.
+    lv_timer_t* heal = lv_timer_create(
+        [](lv_timer_t*) {
+            lv_obj_invalidate(lv_screen_active());
+            ESP_LOGI(TAG, "helix: boot settle-heal repaint");
+        },
+        600, nullptr);
+    lv_timer_set_repeat_count(heal, 1);
 }
 
 extern "C" void app_boot_tick(void) {
