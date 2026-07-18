@@ -40,6 +40,10 @@ struct ExtruderInfo {
     std::string display_name; ///< Human-readable: "Nozzle", "Nozzle 1"
     float temperature = 0.0f; ///< Raw float for internal tracking
     float target = 0.0f;
+    /// Last non-zero nozzle target (°C), latched. Survives the target cooling to 0
+    /// so a filament swap can still heat the nozzle enough to purge the previous
+    /// material. Reset on unload (via clear_load_latch); in-memory only.
+    float last_nonzero_target = 0.0f;
     std::unique_ptr<lv_subject_t> temp_subject;   ///< Decidegrees (value * 10)
     std::unique_ptr<lv_subject_t> target_subject; ///< Decidegrees
     SubjectLifetime temp_lifetime;   ///< Lifetime token for temp_subject (for ObserverGuard safety)
@@ -278,6 +282,34 @@ class PrinterTemperatureState {
      * @return Klipper name of active extruder (defaults to "extruder")
      */
     const std::string& active_extruder_name() const;
+
+    /**
+     * @brief Active extruder's latched last non-zero target (°C)
+     *
+     * Returns the active extruder's last_nonzero_target, or 0 if the active
+     * extruder is unknown (not yet discovered). Used by the swap-preheat guard
+     * so a nozzle that cooled to 0 still heats enough to purge the previous
+     * material.
+     */
+    float get_active_extruder_last_nonzero_target() const {
+        auto it = extruders_.find(active_extruder_name_);
+        return it != extruders_.end() ? it->second.last_nonzero_target : 0.0f;
+    }
+
+    /**
+     * @brief Clear the load latch (last non-zero target) for an extruder
+     * @param extruder_name Klipper name; empty resolves to the active extruder
+     *
+     * Called on unload — the filament is physically pulled, so there is nothing
+     * left to purge and the held temperature must not linger into the next load.
+     */
+    void clear_load_latch(const std::string& extruder_name = "") {
+        const std::string& name = extruder_name.empty() ? active_extruder_name_ : extruder_name;
+        auto it = extruders_.find(name);
+        if (it != extruders_.end()) {
+            it->second.last_nonzero_target = 0.0f;
+        }
+    }
 
   private:
     friend class PrinterTemperatureStateTestAccess;

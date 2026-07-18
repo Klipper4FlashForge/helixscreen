@@ -768,8 +768,12 @@ void FilamentPanel::handle_preset_button(int material_id) {
     // Send temperature commands to printer (nozzle, bed, and chamber if applicable)
     if (selected_material_ == material_id) {
         if (auto* c = get_temperature_controller()) {
+            // Switching material: hold the previous filament's temp if hotter so
+            // the old material still purges cleanly (keep_previous_hot).
             c->set_target(helix::HeaterType::Nozzle, static_cast<double>(nozzle_target_),
-                          {.toast = true, .on_success = [target = nozzle_target_]() {
+                          {.toast = true,
+                           .keep_previous_hot = true,
+                           .on_success = [target = nozzle_target_]() {
                                NOTIFY_SUCCESS(lv_tr("Nozzle target set to {}°C"), target);
                            }});
             c->set_target(helix::HeaterType::Bed, static_cast<double>(bed_target_),
@@ -1936,8 +1940,10 @@ void FilamentPanel::handle_spool_preset_button() {
 
     // Send temperature commands
     if (auto* c = get_temperature_controller()) {
+        // Switching material via spool preset: hold the previous filament's temp
+        // if hotter so the old material still purges cleanly (keep_previous_hot).
         c->set_target(helix::HeaterType::Nozzle, static_cast<double>(nozzle_target_),
-                      {.toast = true, .on_success = [t = nozzle_target_]() {
+                      {.toast = true, .keep_previous_hot = true, .on_success = [t = nozzle_target_]() {
                            NOTIFY_SUCCESS(lv_tr("Nozzle target set to {}°C"), t);
                        }});
         c->set_target(helix::HeaterType::Bed, static_cast<double>(bed_target_),
@@ -2287,15 +2293,15 @@ void FilamentPanel::start_preheat_for_op(PreheatOp op) {
     pending_preheat_op_ = op;
     pending_preheat_target_ = target;
 
-    // Belt-and-suspenders with the snapshot in restore_heater_after_preheat:
-    // skipping the SET_HEATER call here avoids a brief 240→200→240 dip
-    // through Klipper, while the prior_nozzle_target_ snapshot guarantees
-    // the heater isn't turned off when the op completes.
+    // Send the preheat target and let the controller floor it at the hotter of
+    // the requested temp, the latched previous target, and the current actual
+    // (keep_previous_hot). The controller's own max() avoids the 240→200→240 dip
+    // that a naive lower would cause, while the prior_nozzle_target_ snapshot
+    // guarantees the heater isn't turned off when the op completes.
     const int real_target = current_extruder_target();
-    if (real_target < target) {
-        if (auto* c = get_temperature_controller()) {
-            c->set_target(helix::HeaterType::Nozzle, static_cast<double>(target), {.toast = false});
-        }
+    if (auto* c = get_temperature_controller()) {
+        c->set_target(helix::HeaterType::Nozzle, static_cast<double>(target),
+                      {.toast = false, .keep_previous_hot = true});
     }
 
     if (material_name.empty()) {
@@ -2509,6 +2515,11 @@ void FilamentPanel::execute_load() {
 }
 
 void FilamentPanel::execute_unload() {
+    // Filament is being pulled — nothing left to purge, so drop the swap-preheat
+    // latch. The next load computes its hold-temp fresh instead of inheriting this
+    // material's target.
+    printer_state_.clear_nozzle_load_latch();
+
     // When an AMS backend is active, route unload through it so the backend's
     // tool change sequence runs (retract, cut, purge) instead of raw extrusion.
     // Note: bypass unload stays routed through the backend — AFC calls the user's
