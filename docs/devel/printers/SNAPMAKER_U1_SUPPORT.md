@@ -298,6 +298,30 @@ HelixScreen uses the `snapmaker_u1` print start profile (`config/print_start_pro
 
 The progress bar updates as each phase completes, so you can see exactly where your printer is in its startup routine.
 
+## Pre-Print Flow Calibration (Pressure Advance)
+
+The U1 auto-calibrates pressure advance per extruder at the start of every print (the "Purging" phase above). Snapmaker calls this **flow calibration**, but the value it computes and applies is the Klipper pressure-advance K.
+
+**The sensor is an eddy-current inductance coil, not a load cell.** Each toolhead has one `[inductance_coil extruder{N}]` (pins `e0:PA0`…`e3:PA0`) — the same sensor genus the U1 uses as its Z-probe (`probe_inductance_coil.py`, carries a `z_offset`). It outputs a 1–2 MHz frequency that shifts with tiny displacement of a metal target, reacting to extrusion back-pressure. There is no strain-gauge/load-cell in this path.
+
+**Mechanism** (on-device `klippy/extras/flow_calibrator.py`, backed by the native `klippy/extras/flow_calc_server` binary over FIFO pipes `/tmp/flow_calculator_{req,resp}`):
+
+- The machine start gcode calls `SM_PRINT_FLOW_CALIBRATE EXTRUDER=N` once per active extruder, right after auto-feed and before the bed mesh.
+- For each candidate K, `_measure_k()` purges filament in a repeating slow/fast pattern (defaults **0.8 mm/s slow, 8 mm/s fast, 200 mm/s² accel, 14 loops**) while recording (a) coil frequency samples and (b) trapq acceleration timing. The native server returns a signed **`area`** — the flow mismatch between the fast and slow phases. At the correct K, fast/slow stay pressure-matched and `area → 0`.
+- It root-finds the zero-crossing (default `LINEAR_FITTING`: `np.polyfit` through ~5 `(k, area)` points; alt `DICHOTOMY` bisects on the sign of `area`), applies the result live via `_set_pressure_advance`, persists it to `flow_calibrator.json`, and records it into the virtual_sdcard for power-loss recovery (`record_pl_print_pressure_advance`, ties into [PLR](#print-start-tracking)).
+- It marks the extruder calibrated so it won't re-run mid-print, and aborts cleanly (falling back to the filament default K) on filament runout, tangle, cancel, or out-of-range.
+
+**Gotcha — OrcaSlicer's manual PA overrides the measurement.** Whether the calibrated K actually reaches the print is decided entirely by the Orca filament profile's **"Enable pressure advance"** toggle:
+
+| Orca `enable_pressure_advance` | What prints | Why |
+|---|---|---|
+| **OFF** | The coil-measured K | Orca emits no `SET_PRESSURE_ADVANCE` — the value applied by `SM_PRINT_FLOW_CALIBRATE` stands for the whole job (all tools). |
+| **ON** | Orca's static K (e.g. 0.02) | Orca injects `SET_PRESSURE_ADVANCE ADVANCE=<val>; Override pressure advance value` after calibration (and once per tool change on multi-color), clobbering the measurement. The calibration still runs and still saves to disk, but is discarded for the print. |
+
+Verified against two real slices: a single-color file with `enable_pressure_advance = 1` had exactly one `SET_PRESSURE_ADVANCE` (after the four calibrations); a 4-color file with `enable_pressure_advance = 0` had **zero** across 13k lines. So counter-intuitively, to *use* the sensor you *disable* PA in Orca — enabling it means "I'm supplying my own value, ignore the sensor." (Not yet confirmed which state is Snapmaker's shipped Orca-profile default.)
+
+**HelixScreen relevance:** the routine is gated on the print task's `flow_calibrate` flag (disable-able per job), and emits `SET_MAIN_STATE MAIN_STATE=FLOW_CALIBRATION` plus per-extruder `{EXTRUDER}_FLOW_CALIBRATING` action codes — both surfaceable in the UI during the pre-print phase.
+
 ## 480x320 Display Considerations
 
 The U1's 480x320 display uses the TINY layout preset. This is the smallest resolution HelixScreen supports, and several UI panels have known layout issues at this size. See the [480x320 UI Audit](480x320_UI_AUDIT.md) for a panel-by-panel breakdown. Key issues:
