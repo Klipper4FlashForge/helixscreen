@@ -5,6 +5,26 @@ All notable changes to HelixScreen will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.99.94] - 2026-07-17
+
+### Added
+
+- **Old filament purges cleanly on swap** — swapping filament holds the previous material's temperature while it purges, so the old filament clears before the new one loads.
+- **Touch calibration diagnostics** (prestonbrown/helixscreen#943) — a DRM touch-range env override plus calibration span/raw-sample logging, and a warning + telemetry when the DRM coarse touch scale is skipped.
+
+### Fixed
+
+- **Touch stops responding after a display rotation** (prestonbrown/helixscreen#1112) — input devices are rebuilt after a DRM→fbdev rotation swap so touch keeps working.
+- **Touch-calibration use-after-free crash** (prestonbrown/helixscreen#1102, prestonbrown/helixscreen#1112) — the calibration read path uses an owned calibration context instead of freed indev user_data, and the touch indev callback/user_data are cleared in the backend destructor.
+- **Wizard recalibration retry** (prestonbrown/helixscreen#943) — a retry reverts the previous affine transform first, so it recalibrates from raw coordinates.
+- **AD5X IFS false "hang" on load** (prestonbrown/helixscreen#1065) — a stalled load feed is driven by a sidebar watchdog so the "Working…" state clears instead of reading as a hang, and eject-settling / stale FFMInfo no longer mis-seat IFS lanes.
+- **AMS material label refresh** (prestonbrown/helixscreen#1065) — a type-only filament change refreshes the slot label (each slot now has its own material subject).
+- **Z-offset readback** — the live Z-offset is rounded instead of truncated.
+- **Spool swatch artifacts** — the spool canvas draw buffer is cleared before use.
+- **Chamber temperature labels** — chamber temp buffers are zero-initialized so labels don't bind garbage before the first reading.
+- **XML layout parser hardening** — style nodes are zeroed before init, component-name copies are bounds-checked with a null-guarded lookup, and parser state is initialized for globals-component registration, preventing garbage bindings and crashes.
+- **Redundant swap toast suppressed** — the filament-swap success toast is hidden when swap-preheat is only holding temperature.
+
 ## [0.99.93] - 2026-07-16
 
 ### Added
@@ -4340,6 +4360,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.94]: https://github.com/prestonbrown/helixscreen/compare/v0.99.93...v0.99.94
 [0.99.93]: https://github.com/prestonbrown/helixscreen/compare/v0.99.92...v0.99.93
 [0.99.92]: https://github.com/prestonbrown/helixscreen/compare/v0.99.91...v0.99.92
 [0.99.91]: https://github.com/prestonbrown/helixscreen/compare/v0.99.90...v0.99.91
