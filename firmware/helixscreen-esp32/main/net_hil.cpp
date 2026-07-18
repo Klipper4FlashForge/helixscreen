@@ -217,6 +217,47 @@ void* hil_thread_main(void*) {
         vSemaphoreDelete(info_done);
     }
 
+    // Exercise the real discovery chain (Task 7) end-to-end and log its results.
+    // discover_printer() issues its own printer.objects.subscribe, which REPLACES
+    // the per-connection subscription — so run it to completion here, BEFORE the
+    // manual extruder+heater_bed subscribe below re-establishes the minimal set
+    // the temp oracle (on_temp_notify) consumes. Nothing else invokes
+    // discover_printer on this boot: MoonrakerManager's client doesn't connect
+    // until Task 8, so this HIL scenario is its only caller.
+    {
+        s_client->set_on_hardware_discovered([](const helix::PrinterDiscovery& hw) {
+            ESP_LOGI(TAG,
+                     "discovery hardware: %u heaters, %u sensors, %u fans, %u leds, %u "
+                     "filament-sensors",
+                     static_cast<unsigned>(hw.heaters().size()),
+                     static_cast<unsigned>(hw.sensors().size()),
+                     static_cast<unsigned>(hw.fans().size()),
+                     static_cast<unsigned>(hw.leds().size()),
+                     static_cast<unsigned>(hw.filament_sensor_names().size()));
+        });
+        s_client->set_on_discovery_complete([](const helix::PrinterDiscovery& hw,
+                                               const json& initial_status) {
+            ESP_LOGI(TAG, "discovery complete: %u objects in initial status, mmu=%d toolchanger=%d",
+                     static_cast<unsigned>(initial_status.is_object() ? initial_status.size() : 0),
+                     static_cast<int>(hw.has_mmu()), static_cast<int>(hw.has_tool_changer()));
+        });
+
+        SemaphoreHandle_t disc_done = xSemaphoreCreateBinary();
+        s_client->discover_printer(
+            [disc_done]() {
+                ESP_LOGI(TAG, "discover_printer done");
+                xSemaphoreGive(disc_done);
+            },
+            [disc_done](const std::string& reason) {
+                ESP_LOGW(TAG, "discover_printer error: %s", reason.c_str());
+                xSemaphoreGive(disc_done);
+            });
+        if (xSemaphoreTake(disc_done, pdMS_TO_TICKS(15000)) != pdTRUE) {
+            ESP_LOGE(TAG, "discover_printer timed out");
+        }
+        vSemaphoreDelete(disc_done);
+    }
+
     // Baseline heap AFTER connect + server.info so setup allocations (WS
     // buffers, request tracker) don't skew the 60s flatness check.
     uint32_t heap_baseline = esp_get_free_heap_size();
