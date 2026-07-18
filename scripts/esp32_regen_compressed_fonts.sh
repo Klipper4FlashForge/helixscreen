@@ -37,7 +37,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # --- lv_font_conv (v1.5.3) on PATH -------------------------------------------
-export PATH="/home/pbrown/.nvm/versions/node/v20.20.0/bin:$PATH"
+# Use the project-local npm install, matching regen_text_fonts.sh /
+# regen_mdi_fonts.sh — not a personal nvm path.
+export PATH="$PWD/node_modules/.bin:$PATH"
 if ! command -v lv_font_conv >/dev/null 2>&1; then
     echo "ERROR: lv_font_conv not found on PATH" >&2
     exit 1
@@ -362,8 +364,13 @@ echo ""
 # --- Noto text faces (Latin/Cyrillic + 12-codepoint CJK wizard subset) -------
 # Same invocation as regen_text_fonts.sh minus --no-compress; then strip const.
 
-gen_noto() { # <src_ttf> <size> <outname>
-    local src="$1" size="$2" name="$3" out="$OUT_DIR/$3.c"
+# Passing "bin" as the 4th arg ALSO emits a runtime-loadable .bin twin (same
+# glyphs/ranges/bpp, lv_font_conv --format bin) alongside the compiled .c. The
+# .bin twins are the faces moved out of the app image into the frogfs `storage`
+# partition (loaded at boot via lv_binfont_create); the .c stays generated so
+# the face can be moved back into the compile without a regen.
+gen_noto() { # <src_ttf> <size> <outname> [bin]
+    local src="$1" size="$2" name="$3" emit_bin="${4:-}" out="$OUT_DIR/$3.c"
     echo "  $name (compressed) -> $out"
     lv_font_conv \
         --font "$src"        --size "$size" --range "$UNICODE_RANGES" \
@@ -372,13 +379,22 @@ gen_noto() { # <src_ttf> <size> <outname>
         --bpp 4 --format lvgl \
         -o "$out"
     strip_const "$out"
+    if [ "$emit_bin" = "bin" ]; then
+        echo "  $name (compressed) -> $OUT_DIR/$name.bin  [frogfs twin]"
+        lv_font_conv \
+            --font "$src"        --size "$size" --range "$UNICODE_RANGES" \
+            --font "$FONT_CJK_SC" --size "$size" --range "$WIZARD_CJK" \
+            --font "$FONT_CJK_JP" --size "$size" --range "$WIZARD_CJK" \
+            --bpp 4 --format bin \
+            -o "$OUT_DIR/$name.bin"
+    fi
 }
 
 gen_noto "$FONT_REGULAR" 26 noto_sans_26
-gen_noto "$FONT_BOLD"    28 noto_sans_bold_28
+gen_noto "$FONT_BOLD"    28 noto_sans_bold_28 bin
 gen_noto "$FONT_REGULAR" 18 noto_sans_18
-gen_noto "$FONT_LIGHT"   16 noto_sans_light_16
-gen_noto "$FONT_LIGHT"   12 noto_sans_light_12
+gen_noto "$FONT_LIGHT"   16 noto_sans_light_16 bin
+gen_noto "$FONT_LIGHT"   12 noto_sans_light_12 bin
 
 # --- Source Code Pro monospace ----------------------------------------------
 # regen_text_fonts.sh already omits --no-compress for this face (so the desktop
@@ -393,20 +409,27 @@ lv_font_conv \
 # --- MDI icon faces ----------------------------------------------------------
 # Same invocation as regen_mdi_fonts.sh minus --no-compress; no const strip
 # (extern const lv_font_t mdi_icons_* in lv_conf.h).
-gen_mdi() { # <size>
-    local size="$1" out="$OUT_DIR/mdi_icons_$1.c"
+gen_mdi() { # <size> [bin]
+    local size="$1" emit_bin="${2:-}" out="$OUT_DIR/mdi_icons_$1.c"
     echo "  mdi_icons_$size (compressed) -> $out"
     lv_font_conv \
         --font "$FONT_MDI" --size "$size" --bpp 4 --format lvgl \
         --range "$MDI_ICONS" \
         -o "$out"
+    if [ "$emit_bin" = "bin" ]; then
+        echo "  mdi_icons_$size (compressed) -> $OUT_DIR/mdi_icons_$size.bin  [frogfs twin]"
+        lv_font_conv \
+            --font "$FONT_MDI" --size "$size" --bpp 4 --format bin \
+            --range "$MDI_ICONS" \
+            -o "$OUT_DIR/mdi_icons_$size.bin"
+    fi
 }
 
 gen_mdi 16
 gen_mdi 24
 gen_mdi 32
-gen_mdi 48
-gen_mdi 64
+gen_mdi 48 bin
+gen_mdi 64 bin
 
 echo ""
-echo "Done. 11 compressed font twins written to $OUT_DIR"
+echo "Done. 11 compressed .c font twins + 5 .bin frogfs twins written to $OUT_DIR"
