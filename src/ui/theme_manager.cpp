@@ -59,25 +59,10 @@ int32_t responsive_dimension(lv_display_t* display) {
     return hor < ver ? hor : ver;
 }
 
-// Breakpoint ladder — keep in sync with theme_manager_get_breakpoint_suffix()
-// and FONT_TIERS ordering. The resolution argument is the dimension the design
-// system should adapt to — typically responsive_dimension(display) so both
-// orientations pick a breakpoint matched to the cramped axis.
-static UiBreakpoint compute_breakpoint(int32_t resolution) {
-    if (resolution <= UI_BREAKPOINT_MICRO_MAX)
-        return UiBreakpoint::Micro;
-    if (resolution <= UI_BREAKPOINT_TINY_MAX)
-        return UiBreakpoint::Tiny;
-    if (resolution <= UI_BREAKPOINT_SMALL_MAX)
-        return UiBreakpoint::Small;
-    if (resolution <= UI_BREAKPOINT_MEDIUM_MAX)
-        return UiBreakpoint::Medium;
-    if (resolution <= UI_BREAKPOINT_LARGE_MAX)
-        return UiBreakpoint::Large;
-    if (resolution <= UI_BREAKPOINT_XLARGE_MAX)
-        return UiBreakpoint::XLarge;
-    return UiBreakpoint::XXLarge;
-}
+// Breakpoint classification lives in ui_breakpoint.h as breakpoint_for() — the
+// single canonical ladder shared with theme_manager_get_breakpoint_suffix() and
+// FONT_TIERS ordering. Pass responsive_dimension(display) so both orientations
+// pick a breakpoint matched to the cramped axis.
 
 #include <algorithm>
 #include <cctype>
@@ -425,7 +410,7 @@ static void update_handle_styles(const theme_palette_t* palette, int border_radi
         // Responsive knob padding: smaller at tiny/micro to avoid clipping in compact cards
         auto* display = lv_display_get_default();
         auto bp =
-            display ? compute_breakpoint(responsive_dimension(display)) : UiBreakpoint::Medium;
+            display ? breakpoint_for(responsive_dimension(display)) : UiBreakpoint::Medium;
         int32_t knob_pad = (bp <= UiBreakpoint::Tiny) ? LV_DPX(4) : LV_DPX(6);
         lv_style_set_pad_left(&slider_knob_style, knob_pad);
         lv_style_set_pad_right(&slider_knob_style, knob_pad);
@@ -882,21 +867,8 @@ static void theme_manager_register_static_constants(lv_xml_component_scope_t* sc
  * @return One of the seven suffix strings above (valid for lv_xml_get_const lookups).
  */
 const char* theme_manager_get_breakpoint_suffix(int32_t resolution) {
-    if (resolution <= UI_BREAKPOINT_MICRO_MAX) {
-        return "_micro";
-    } else if (resolution <= UI_BREAKPOINT_TINY_MAX) {
-        return "_tiny";
-    } else if (resolution <= UI_BREAKPOINT_SMALL_MAX) {
-        return "_small";
-    } else if (resolution <= UI_BREAKPOINT_MEDIUM_MAX) {
-        return "_medium";
-    } else if (resolution <= UI_BREAKPOINT_LARGE_MAX) {
-        return "_large";
-    } else if (resolution <= UI_BREAKPOINT_XLARGE_MAX) {
-        return "_xlarge";
-    } else {
-        return "_xxlarge";
-    }
+    return responsive_pick(breakpoint_for(resolution), "_micro", "_tiny", "_small", "_medium",
+                           "_large", "_xlarge", "_xxlarge");
 }
 
 /**
@@ -917,15 +889,10 @@ void theme_manager_register_responsive_spacing(lv_display_t* display) {
 
     // Use the smaller dimension — the cramped axis is the design constraint
     // regardless of orientation (landscape: usually height; portrait: width).
-    int32_t resp_res = hor_res < ver_res ? hor_res : ver_res;
+    int32_t resp_res = responsive_dimension(display);
     const char* size_suffix = theme_manager_get_breakpoint_suffix(resp_res);
-    const char* size_label = (resp_res <= UI_BREAKPOINT_MICRO_MAX)    ? "MICRO"
-                             : (resp_res <= UI_BREAKPOINT_TINY_MAX)   ? "TINY"
-                             : (resp_res <= UI_BREAKPOINT_SMALL_MAX)  ? "SMALL"
-                             : (resp_res <= UI_BREAKPOINT_MEDIUM_MAX) ? "MEDIUM"
-                             : (resp_res <= UI_BREAKPOINT_LARGE_MAX)  ? "LARGE"
-                             : (resp_res <= UI_BREAKPOINT_XLARGE_MAX) ? "XLARGE"
-                                                                      : "XXLARGE";
+    const char* size_label = responsive_pick(breakpoint_for(resp_res), "MICRO", "TINY", "SMALL",
+                                             "MEDIUM", "LARGE", "XLARGE", "XXLARGE");
 
     lv_xml_component_scope_t* scope = lv_xml_component_get_scope("globals");
     if (!scope) {
@@ -1096,7 +1063,7 @@ void theme_manager_refresh_layout_constants(lv_display_t* display) {
 
     // Update all responsive spacing tokens for new breakpoint (use min dimension
     // so portrait orientations pick a breakpoint suited to the cramped axis)
-    int32_t resp_res = hor_res < ver_res ? hor_res : ver_res;
+    int32_t resp_res = responsive_dimension(display);
     const char* size_suffix = theme_manager_get_breakpoint_suffix(resp_res);
     auto micro_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_micro");
     auto small_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_small");
@@ -1169,7 +1136,7 @@ void theme_manager_refresh_layout_constants(lv_display_t* display) {
 
     // Update breakpoint subject — use shared helper so rotation never
     // downgrades XXLarge to XLarge (previous bug: missing XLARGE_MAX check).
-    UiBreakpoint bp = compute_breakpoint(resp_res);
+    UiBreakpoint bp = breakpoint_for(resp_res);
 
     lv_subject_t* bp_subject = lv_xml_get_subject(nullptr, "ui_breakpoint");
     if (bp_subject) {
@@ -1191,20 +1158,12 @@ void theme_manager_refresh_layout_constants(lv_display_t* display) {
  * @param display The LVGL display to get resolution from
  */
 void theme_manager_register_responsive_fonts(lv_display_t* display) {
-    int32_t hor_res = lv_display_get_horizontal_resolution(display);
-    int32_t ver_res = lv_display_get_vertical_resolution(display);
-
     // Use the smaller dimension — the cramped axis is the design constraint
     // regardless of orientation (landscape: usually height; portrait: width).
-    int32_t resp_res = hor_res < ver_res ? hor_res : ver_res;
+    int32_t resp_res = responsive_dimension(display);
     const char* size_suffix = theme_manager_get_breakpoint_suffix(resp_res);
-    const char* size_label = (resp_res <= UI_BREAKPOINT_MICRO_MAX)    ? "MICRO"
-                             : (resp_res <= UI_BREAKPOINT_TINY_MAX)   ? "TINY"
-                             : (resp_res <= UI_BREAKPOINT_SMALL_MAX)  ? "SMALL"
-                             : (resp_res <= UI_BREAKPOINT_MEDIUM_MAX) ? "MEDIUM"
-                             : (resp_res <= UI_BREAKPOINT_LARGE_MAX)  ? "LARGE"
-                             : (resp_res <= UI_BREAKPOINT_XLARGE_MAX) ? "XLARGE"
-                                                                      : "XXLARGE";
+    const char* size_label = responsive_pick(breakpoint_for(resp_res), "MICRO", "TINY", "SMALL",
+                                             "MEDIUM", "LARGE", "XLARGE", "XXLARGE");
 
     lv_xml_component_scope_t* scope = lv_xml_component_get_scope("globals");
     if (!scope) {
@@ -1613,7 +1572,7 @@ void theme_manager_init(lv_display_t* display, bool use_dark_mode_param) {
     // Initialize ui_breakpoint subject for reactive responsive visibility
     {
         int32_t resp_res = responsive_dimension(display);
-        UiBreakpoint bp = compute_breakpoint(resp_res);
+        UiBreakpoint bp = breakpoint_for(resp_res);
 
         if (!breakpoint_subject_initialized) {
             lv_subject_init_int(&ui_breakpoint_subject, to_int(bp));

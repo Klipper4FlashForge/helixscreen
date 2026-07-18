@@ -45,6 +45,54 @@ constexpr inline int32_t to_int(UiBreakpoint bp) {
     return static_cast<int32_t>(bp);
 }
 
+/// Classify a resolution (pixels on the axis the design must fit content into —
+/// typically responsive_dimension(display), the cramped axis) into its tier.
+/// This is the single canonical breakpoint ladder; callers that need a tier from
+/// a resolution use this rather than hand-rolling `if (res <= UI_BREAKPOINT_X)`
+/// chains. Distinct from as_breakpoint(), which clamps a stored enum index.
+constexpr inline UiBreakpoint breakpoint_for(int32_t resolution) {
+    if (resolution <= UI_BREAKPOINT_MICRO_MAX)
+        return UiBreakpoint::Micro;
+    if (resolution <= UI_BREAKPOINT_TINY_MAX)
+        return UiBreakpoint::Tiny;
+    if (resolution <= UI_BREAKPOINT_SMALL_MAX)
+        return UiBreakpoint::Small;
+    if (resolution <= UI_BREAKPOINT_MEDIUM_MAX)
+        return UiBreakpoint::Medium;
+    if (resolution <= UI_BREAKPOINT_LARGE_MAX)
+        return UiBreakpoint::Large;
+    if (resolution <= UI_BREAKPOINT_XLARGE_MAX)
+        return UiBreakpoint::XLarge;
+    return UiBreakpoint::XXLarge;
+}
+
+/// Select one value per breakpoint tier. Pass all seven values cramped→roomy
+/// (micro…xxlarge); returns the one matching `bp`. Replaces the hand-rolled
+/// `if (res <= UI_BREAKPOINT_X) v = a; else if …` chains scattered across the UI
+/// so the tier boundaries live in exactly one place (breakpoint_for). Works for
+/// ints, strings (literals decay to const char*), or any copyable T.
+template <typename T>
+constexpr T responsive_pick(UiBreakpoint bp, T micro, T tiny, T small, T medium, T large, T xlarge,
+                            T xxlarge) {
+    switch (bp) {
+    case UiBreakpoint::Micro:
+        return micro;
+    case UiBreakpoint::Tiny:
+        return tiny;
+    case UiBreakpoint::Small:
+        return small;
+    case UiBreakpoint::Medium:
+        return medium;
+    case UiBreakpoint::Large:
+        return large;
+    case UiBreakpoint::XLarge:
+        return xlarge;
+    case UiBreakpoint::XXLarge:
+        return xxlarge;
+    }
+    return xxlarge;
+}
+
 /// Convert a raw integer to a UiBreakpoint (clamped to valid range [Micro, XXLarge]).
 /// Safe for use with lv_subject_get_int() results from the ui_breakpoint subject.
 inline UiBreakpoint as_breakpoint(int32_t raw) {
