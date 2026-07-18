@@ -407,8 +407,11 @@ lv_font_conv \
     -o "$OUT_DIR/source_code_pro_14.c"
 
 # --- MDI icon faces ----------------------------------------------------------
-# Same invocation as regen_mdi_fonts.sh minus --no-compress; no const strip
-# (extern const lv_font_t mdi_icons_* in lv_conf.h).
+# Same invocation as regen_mdi_fonts.sh minus --no-compress. 48/64 get the
+# same const strip as regen_mdi_fonts.sh: those two symbols are non-const in
+# ui_fonts.h / lv_conf.h (runtime-populated shims on ESP32), so the compiled
+# twin must match or moving the face back into the compile hits
+# conflicting-qualifiers. 16/24/32 stay const.
 gen_mdi() { # <size> [bin]
     local size="$1" emit_bin="${2:-}" out="$OUT_DIR/mdi_icons_$1.c"
     echo "  mdi_icons_$size (compressed) -> $out"
@@ -416,6 +419,9 @@ gen_mdi() { # <size> [bin]
         --font "$FONT_MDI" --size "$size" --bpp 4 --format lvgl \
         --range "$MDI_ICONS" \
         -o "$out"
+    if [ "$size" = "48" ] || [ "$size" = "64" ]; then
+        sed -i 's/^const lv_font_t /lv_font_t /' "$out"
+    fi
     if [ "$emit_bin" = "bin" ]; then
         echo "  mdi_icons_$size (compressed) -> $OUT_DIR/mdi_icons_$size.bin  [frogfs twin]"
         lv_font_conv \
