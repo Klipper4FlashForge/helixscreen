@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 #include <string>
+#include <vector>
 
 class LayoutManagerTestAccess;
 
@@ -41,6 +42,11 @@ class LayoutManager {
     LayoutType detect(int width, int height) const;
     static const char* type_to_name(LayoutType type);
     static LayoutType name_to_type(const std::string& name);
+
+    // Ordered list of variant directories to search for an XML override, most
+    // specific first (base ui_xml/ is always the final fallback and is not
+    // included here). Portrait sub-classes inherit the shared portrait/ layer.
+    std::vector<std::string> variant_chain() const;
 
     LayoutType type_{LayoutType::STANDARD};
     std::string name_{"standard"};

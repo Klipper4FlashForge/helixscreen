@@ -52,25 +52,46 @@ bool LayoutManager::is_standard() const {
     return type_ == LayoutType::STANDARD;
 }
 
+std::vector<std::string> LayoutManager::variant_chain() const {
+    switch (type_) {
+    // Portrait sub-classes fall back to the shared portrait/ layer before base,
+    // so they only need to carry files that actually differ from portrait/.
+    case LayoutType::MICRO_PORTRAIT:
+        return {"micro_portrait", "portrait"};
+    case LayoutType::TINY_PORTRAIT:
+        return {"tiny_portrait", "portrait"};
+    case LayoutType::PORTRAIT:
+        return {"portrait"};
+    case LayoutType::ULTRAWIDE:
+        return {"ultrawide"};
+    case LayoutType::MICRO:
+        return {"micro"};
+    case LayoutType::TINY:
+        return {"tiny"};
+    case LayoutType::STANDARD:
+    default:
+        return {};
+    }
+}
+
 std::string LayoutManager::resolve_xml_path(const std::string& filename) const {
-    if (is_standard()) {
-        return "ui_xml/" + filename;
+    for (const auto& dir : variant_chain()) {
+        std::string variant_path = "ui_xml/" + dir + "/" + filename;
+        if (access(variant_path.c_str(), F_OK) == 0) {
+            return variant_path;
+        }
     }
-
-    std::string variant_path = "ui_xml/" + name_ + "/" + filename;
-    if (access(variant_path.c_str(), F_OK) == 0) {
-        return variant_path;
-    }
-
     return "ui_xml/" + filename;
 }
 
 bool LayoutManager::has_override(const std::string& filename) const {
-    if (is_standard()) {
-        return false;
+    for (const auto& dir : variant_chain()) {
+        std::string variant_path = "ui_xml/" + dir + "/" + filename;
+        if (access(variant_path.c_str(), F_OK) == 0) {
+            return true;
+        }
     }
-    std::string variant_path = "ui_xml/" + name_ + "/" + filename;
-    return access(variant_path.c_str(), F_OK) == 0;
+    return false;
 }
 
 LayoutType LayoutManager::detect(int width, int height) const {
