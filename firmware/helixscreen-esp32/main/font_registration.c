@@ -25,7 +25,7 @@ static struct {
     const char *name;
     int64_t ms;
     bool ok;
-} s_load_results[5];
+} s_load_results[10];
 
 // Re-log the .bin load results outside the ~2s WiFi RF-cal serial dead window.
 // Called from app_boot at home-panel-up.
@@ -41,7 +41,7 @@ void helix_fonts_log_summary(void) {
 }
 
 void helix_fonts_register(void) {
-    // These 5 faces' glyph data lives in frogfs .bin files (moved out of the
+    // These 10 faces' glyph data lives in frogfs .bin files (moved out of the
     // compiled app image; see components/helixcore/moved_fonts_shim.c for their
     // zero-init writable symbols). Populate the shim structs HERE — before the
     // lv_xml_register_font() token registrations below AND before the
@@ -63,6 +63,11 @@ void helix_fonts_register(void) {
         {"noto_sans_light_12", "A:/assets/assets/fonts/noto_sans_light_12.bin", &noto_sans_light_12},
         {"mdi_icons_48", "A:/assets/assets/fonts/mdi_icons_48.bin", &mdi_icons_48},
         {"mdi_icons_64", "A:/assets/assets/fonts/mdi_icons_64.bin", &mdi_icons_64},
+        {"noto_sans_26", "A:/assets/assets/fonts/noto_sans_26.bin", &noto_sans_26},
+        {"source_code_pro_14", "A:/assets/assets/fonts/source_code_pro_14.bin", &source_code_pro_14},
+        {"mdi_icons_16", "A:/assets/assets/fonts/mdi_icons_16.bin", &mdi_icons_16},
+        {"mdi_icons_24", "A:/assets/assets/fonts/mdi_icons_24.bin", &mdi_icons_24},
+        {"mdi_icons_32", "A:/assets/assets/fonts/mdi_icons_32.bin", &mdi_icons_32},
     };
     for (size_t i = 0; i < sizeof(moved_faces) / sizeof(moved_faces[0]); i++) {
         int64_t t0 = esp_timer_get_time();
@@ -97,5 +102,5 @@ void helix_fonts_register(void) {
     lv_xml_register_font(NULL, "mdi_icons_48", &mdi_icons_48);
     lv_xml_register_font(NULL, "mdi_icons_64", &mdi_icons_64);
 
-    ESP_LOGI(TAG, "registered 11 medium-tier fonts (6 compiled + 5 runtime .bin)");
+    ESP_LOGI(TAG, "registered 11 medium-tier fonts (1 compiled + 10 runtime .bin)");
 }

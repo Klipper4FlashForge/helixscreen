@@ -587,14 +587,15 @@
  * LV_FONT_CUSTOM_DECLARE is pulled in by every TU that includes lvgl.h —
  * including each font's own .c file — so the qualifier here must match that
  * file's own definition further down in the same TU, or gcc errors with
- * "conflicting type qualifiers". The generated sources are inconsistent: the
- * noto_sans_* faces (older font_conv run) define a non-const `lv_font_t`,
- * while source_code_pro_14 and mdi_icons_16/24/32 (newer run) define
- * `const lv_font_t`. mdi_icons_48/64 are non-const here: their glyph .c left
- * HELIX_FONT_SRCS (moved to runtime .bin) and their symbols are now the
- * writable, runtime-populated shims in moved_fonts_shim.c — so the qualifier
- * matches the shim's definition, not a compiled font .c. Const-ness was
- * checked per-file with
+ * "conflicting type qualifiers". Every face except noto_sans_18 is now non-const
+ * here: their glyph .c left HELIX_FONT_SRCS (moved to runtime .bin) and their
+ * symbols are the writable, runtime-populated shims in moved_fonts_shim.c — so
+ * the qualifier matches the shim's definition, not a compiled font .c. The
+ * committed desktop AND firmware-twin .c sources for the ex-const faces
+ * (source_code_pro_14, mdi_icons_16/24/32) were de-const'd in lockstep so a
+ * move-back into the compile stays qualifier-clean. Only noto_sans_18 stays
+ * compiled in (the boot fallback anchor); it is non-const like the noto_sans_*
+ * faces (older font_conv run). Const-ness was checked per-file with
  * `grep -A2 '#if LVGL_VERSION_MAJOR >= 8' assets/fonts/<name>.c`. Matches the
  * desktop lv_conf.h idiom for noto_sans_14 (`extern lv_font_t ...;`, also
  * non-const), extended to the medium tier's full face list. */
@@ -604,10 +605,10 @@
     extern lv_font_t noto_sans_18; \
     extern lv_font_t noto_sans_light_16; \
     extern lv_font_t noto_sans_light_12; \
-    extern const lv_font_t source_code_pro_14; \
-    extern const lv_font_t mdi_icons_16; \
-    extern const lv_font_t mdi_icons_24; \
-    extern const lv_font_t mdi_icons_32; \
+    extern lv_font_t source_code_pro_14; /* non-const: runtime-populated from .bin (moved_fonts_shim.c) */ \
+    extern lv_font_t mdi_icons_16; /* non-const: runtime-populated from .bin (moved_fonts_shim.c) */ \
+    extern lv_font_t mdi_icons_24; /* non-const: runtime-populated from .bin (moved_fonts_shim.c) */ \
+    extern lv_font_t mdi_icons_32; /* non-const: runtime-populated from .bin (moved_fonts_shim.c) */ \
     extern lv_font_t mdi_icons_48; /* non-const: runtime-populated from .bin (moved_fonts_shim.c) */ \
     extern lv_font_t mdi_icons_64; /* non-const: runtime-populated from .bin (moved_fonts_shim.c) */
 
