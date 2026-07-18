@@ -263,8 +263,13 @@ test-shell:
 		else \
 			bats tests/shell/; \
 		fi; \
+		STATUS=$$?; \
 		END_TIME=$$(date +%s); \
 		DURATION=$$((END_TIME - START_TIME)); \
+		if [ $$STATUS -ne 0 ]; then \
+			echo "$(RED)$(BOLD)✗ Shell tests FAILED in $${DURATION}s$(RESET)"; \
+			exit $$STATUS; \
+		fi; \
 		echo "$(GREEN)$(BOLD)✓ Shell tests passed in $${DURATION}s$(RESET)"; \
 	else \
 		echo "$(YELLOW)⚠ bats not found - skipping shell tests$(RESET)"; \
