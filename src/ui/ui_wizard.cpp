@@ -362,22 +362,22 @@ void ui_wizard_container_register_responsive_constants() {
 
     // Detect screen size using custom breakpoints
     lv_display_t* display = lv_display_get_default();
-    // Constrained axis (min of width/height): wizard button width should fit
-    // the narrow axis in portrait, and the short axis on wide-but-short panels.
-    int32_t resp_res = responsive_dimension(display);
+    int32_t hor_res = lv_display_get_horizontal_resolution(display);
+    int32_t ver_res = lv_display_get_vertical_resolution(display);
+    int32_t greater_res = LV_MAX(hor_res, ver_res);
 
     // Determine button width based on breakpoint (only responsive constant remaining)
     const char* button_width;
     const char* size_label;
 
-    if (resp_res <= UI_BREAKPOINT_MICRO_MAX) { // ≤272: 480x272
+    if (greater_res <= UI_BREAKPOINT_MICRO_MAX) { // ≤272: 480x272
         button_width = "90";
         size_label = "MICRO";
-    } else if (resp_res <= UI_BREAKPOINT_SMALL_MAX) { // 273-460
+    } else if (greater_res <= UI_BREAKPOINT_SMALL_MAX) { // 273-460
         // TINY/SMALL share presets — button widths are too similar to warrant separate tiers
         button_width = "110";
         size_label = "TINY/SMALL";
-    } else if (resp_res <= UI_BREAKPOINT_MEDIUM_MAX) { // 481-800: 800x480
+    } else if (greater_res <= UI_BREAKPOINT_MEDIUM_MAX) { // 481-800: 800x480
         button_width = "140";
         size_label = "MEDIUM";
     } else { // >800: 1024x600+
@@ -385,7 +385,7 @@ void ui_wizard_container_register_responsive_constants() {
         size_label = "LARGE";
     }
 
-    spdlog::debug("[Wizard] Screen size: {} (min_dim={}px)", size_label, resp_res);
+    spdlog::debug("[Wizard] Screen size: {} (greater_res={}px)", size_label, greater_res);
 
     // Register button width constant
     WizardConstant constants[] = {
