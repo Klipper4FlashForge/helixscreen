@@ -549,6 +549,11 @@ lv_obj_t* ui_spool_canvas_create(lv_obj_t* parent, int32_t size) {
     // Create draw buffer
     data_ptr->draw_buf = lv_draw_buf_create(size, size, LV_COLOR_FORMAT_ARGB8888, 0);
     if (data_ptr->draw_buf) {
+        // lv_draw_buf_create leaves the pixels uninitialised; clear before
+        // set_draw_buf, whose image-source format probe (is_jpg) would otherwise
+        // read uninitialised bytes, and so the canvas starts from a clean state
+        // even if redraw_spool doesn't cover every pixel.
+        lv_draw_buf_clear(data_ptr->draw_buf, nullptr);
         lv_canvas_set_draw_buf(canvas, data_ptr->draw_buf);
     } else {
         spdlog::error("[SpoolCanvas] Failed to create draw buffer");
