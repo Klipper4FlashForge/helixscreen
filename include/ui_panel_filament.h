@@ -304,8 +304,8 @@ class FilamentPanel : public PanelBase {
     char nozzle_target_buf_[16];
     char bed_current_buf_[16];
     char bed_target_buf_[16];
-    char chamber_current_buf_[16];
-    char chamber_target_buf_[16];
+    char chamber_current_buf_[16] = {};
+    char chamber_target_buf_[16] = {};
 
     //
     // === Instance State ===
