@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "font_registration.h"
 
+#include <stdbool.h>
+#include <stddef.h>
+
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "lvgl.h"
@@ -18,6 +21,25 @@ static const char *TAG = "font_registration";
 // 0x0). What actually anchors it is `-Wl,--undefined=helix_fonts_register`
 // in main/CMakeLists.txt: do not remove that flag unless a real call site
 // exists AND the font symbols are re-verified present post-link (nm/readelf).
+static struct {
+    const char *name;
+    int64_t ms;
+    bool ok;
+} s_load_results[5];
+
+// Re-log the .bin load results outside the ~2s WiFi RF-cal serial dead window.
+// Called from app_boot at home-panel-up.
+void helix_fonts_log_summary(void) {
+    for (size_t i = 0; i < sizeof(s_load_results) / sizeof(s_load_results[0]); i++) {
+        if (!s_load_results[i].name) continue;
+        if (s_load_results[i].ok) {
+            ESP_LOGI(TAG, "fonts: %s .bin %lld ms", s_load_results[i].name, s_load_results[i].ms);
+        } else {
+            ESP_LOGW(TAG, "fonts: %s .bin LOAD FAILED (noto_sans_18 fallback)", s_load_results[i].name);
+        }
+    }
+}
+
 void helix_fonts_register(void) {
     // These 5 faces' glyph data lives in frogfs .bin files (moved out of the
     // compiled app image; see components/helixcore/moved_fonts_shim.c for their
@@ -26,66 +48,39 @@ void helix_fonts_register(void) {
     // AssetManager::register_all() by-symbol registrations (app_boot.cpp:266) —
     // so both point at valid, fully-populated shims. On load failure we fall
     // back to a copy of noto_sans_18 (compiled in) so text still renders.
-    {
+    //
+    // Results are also recorded for helix_fonts_log_summary(): these loads run
+    // at ~2s, inside the WiFi RF-cal power dip that knocks the CH340 off USB —
+    // the immediate log lines below land in a dead serial window on every boot
+    // with the radio on, so app_boot re-logs the summary at home-panel-up.
+    static const struct {
+        const char *name;
+        const char *path;
+        lv_font_t *shim;
+    } moved_faces[] = {
+        {"noto_sans_bold_28", "A:/assets/assets/fonts/noto_sans_bold_28.bin", &noto_sans_bold_28},
+        {"noto_sans_light_16", "A:/assets/assets/fonts/noto_sans_light_16.bin", &noto_sans_light_16},
+        {"noto_sans_light_12", "A:/assets/assets/fonts/noto_sans_light_12.bin", &noto_sans_light_12},
+        {"mdi_icons_48", "A:/assets/assets/fonts/mdi_icons_48.bin", &mdi_icons_48},
+        {"mdi_icons_64", "A:/assets/assets/fonts/mdi_icons_64.bin", &mdi_icons_64},
+    };
+    for (size_t i = 0; i < sizeof(moved_faces) / sizeof(moved_faces[0]); i++) {
         int64_t t0 = esp_timer_get_time();
-        lv_font_t *loaded = lv_binfont_create("A:/assets/assets/fonts/noto_sans_bold_28.bin");
+        lv_font_t *loaded = lv_binfont_create(moved_faces[i].path);
         int64_t dt_ms = (esp_timer_get_time() - t0) / 1000;
+        s_load_results[i].name = moved_faces[i].name;
+        s_load_results[i].ms = dt_ms;
+        s_load_results[i].ok = (loaded != NULL);
         if (loaded) {
-            noto_sans_bold_28 = *loaded;
-            ESP_LOGI(TAG, "font %s loaded from .bin in %lld ms", "noto_sans_bold_28", dt_ms);
+            *moved_faces[i].shim = *loaded;
+            ESP_LOGI(TAG, "font %s loaded from .bin in %lld ms", moved_faces[i].name, dt_ms);
         } else {
-            noto_sans_bold_28 = noto_sans_18;
-            ESP_LOGW(TAG, "font %s .bin load FAILED (%lld ms) — fell back to noto_sans_18", "noto_sans_bold_28", dt_ms);
+            *moved_faces[i].shim = noto_sans_18;
+            ESP_LOGW(TAG, "font %s .bin load FAILED (%lld ms) — fell back to noto_sans_18",
+                     moved_faces[i].name, dt_ms);
         }
     }
-    {
-        int64_t t0 = esp_timer_get_time();
-        lv_font_t *loaded = lv_binfont_create("A:/assets/assets/fonts/noto_sans_light_16.bin");
-        int64_t dt_ms = (esp_timer_get_time() - t0) / 1000;
-        if (loaded) {
-            noto_sans_light_16 = *loaded;
-            ESP_LOGI(TAG, "font %s loaded from .bin in %lld ms", "noto_sans_light_16", dt_ms);
-        } else {
-            noto_sans_light_16 = noto_sans_18;
-            ESP_LOGW(TAG, "font %s .bin load FAILED (%lld ms) — fell back to noto_sans_18", "noto_sans_light_16", dt_ms);
-        }
-    }
-    {
-        int64_t t0 = esp_timer_get_time();
-        lv_font_t *loaded = lv_binfont_create("A:/assets/assets/fonts/noto_sans_light_12.bin");
-        int64_t dt_ms = (esp_timer_get_time() - t0) / 1000;
-        if (loaded) {
-            noto_sans_light_12 = *loaded;
-            ESP_LOGI(TAG, "font %s loaded from .bin in %lld ms", "noto_sans_light_12", dt_ms);
-        } else {
-            noto_sans_light_12 = noto_sans_18;
-            ESP_LOGW(TAG, "font %s .bin load FAILED (%lld ms) — fell back to noto_sans_18", "noto_sans_light_12", dt_ms);
-        }
-    }
-    {
-        int64_t t0 = esp_timer_get_time();
-        lv_font_t *loaded = lv_binfont_create("A:/assets/assets/fonts/mdi_icons_48.bin");
-        int64_t dt_ms = (esp_timer_get_time() - t0) / 1000;
-        if (loaded) {
-            mdi_icons_48 = *loaded;
-            ESP_LOGI(TAG, "font %s loaded from .bin in %lld ms", "mdi_icons_48", dt_ms);
-        } else {
-            mdi_icons_48 = noto_sans_18;
-            ESP_LOGW(TAG, "font %s .bin load FAILED (%lld ms) — fell back to noto_sans_18", "mdi_icons_48", dt_ms);
-        }
-    }
-    {
-        int64_t t0 = esp_timer_get_time();
-        lv_font_t *loaded = lv_binfont_create("A:/assets/assets/fonts/mdi_icons_64.bin");
-        int64_t dt_ms = (esp_timer_get_time() - t0) / 1000;
-        if (loaded) {
-            mdi_icons_64 = *loaded;
-            ESP_LOGI(TAG, "font %s loaded from .bin in %lld ms", "mdi_icons_64", dt_ms);
-        } else {
-            mdi_icons_64 = noto_sans_18;
-            ESP_LOGW(TAG, "font %s .bin load FAILED (%lld ms) — fell back to noto_sans_18", "mdi_icons_64", dt_ms);
-        }
-    }
+
     // The lv_binfont_create() results are intentionally never destroyed: they
     // live for the process lifetime and their glyph/cmap tables back the shim
     // struct-copies above, so lv_binfont_destroy would free data still in use.

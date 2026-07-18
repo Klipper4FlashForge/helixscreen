@@ -83,6 +83,7 @@
 // would be circular). The symbol resolves at the final whole-image link, and
 // is kept alive by -Wl,--undefined=helix_fonts_register in main/CMakeLists.txt.
 extern "C" void helix_fonts_register(void);
+extern "C" void helix_fonts_log_summary(void);
 
 static const char* TAG = "app_boot";
 
@@ -331,6 +332,9 @@ extern "C" void app_boot_ui(void) {
 
     ESP_LOGI(TAG, "helix: home panel up");
     log_heap_milestone("home-panel-up");
+    // The .bin font loads at ~2s print into the WiFi RF-cal serial dead window
+    // (CH340 drops off USB); re-log them here where serial is reliable.
+    helix_fonts_log_summary();
 
     // Settle-heal: one full-screen repaint ~600ms after the shell is up. The
     // synchronous boot build is the heaviest load window on the unpaced blit,
