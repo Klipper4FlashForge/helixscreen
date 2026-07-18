@@ -64,6 +64,8 @@ constexpr int UI_PANEL_COUNT = static_cast<int>(helix::PanelId::Count);
  *   NavigationManager::instance().set_panels(panel_widgets);
  */
 class NavigationManager {
+    friend class NavigationManagerTestAccess;
+
   public:
     /**
      * @brief Get singleton instance
@@ -388,11 +390,6 @@ class NavigationManager {
      *         dismiss; the caller must keep the overlay. Cleared on read.
      */
     bool take_backdrop_keyboard_dismiss();
-
-    /** Test seam: force the keyboard-visible-at-press latch. */
-    void set_backdrop_press_keyboard_visible_for_testing(bool visible) {
-        backdrop_press_keyboard_visible_ = visible;
-    }
 
     /**
      * @brief Shutdown navigation system during application exit

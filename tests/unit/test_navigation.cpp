@@ -3,6 +3,7 @@
 
 #include "../../include/theme_manager.h"
 #include "../../include/ui_nav_manager.h"
+#include "../test_helpers/navigation_manager_test_access.h"
 #include "../ui_test_utils.h"
 #include "lvgl/lvgl.h"
 
@@ -470,7 +471,7 @@ TEST_CASE_METHOD(NavbarIconTestFixture,
     // Keyboard was visible when the backdrop was pressed: the CLICKED handler
     // consumes this tap for the keyboard dismiss and returns before go_back(), so
     // the overlay is kept.
-    nav.set_backdrop_press_keyboard_visible_for_testing(true);
+    NavigationManagerTestAccess::set_backdrop_press_keyboard_visible(nav, true);
     REQUIRE(nav.take_backdrop_keyboard_dismiss() == true);
     REQUIRE(nav.is_panel_in_stack(overlay) == true);
 
