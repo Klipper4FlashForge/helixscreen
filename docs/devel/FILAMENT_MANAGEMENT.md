@@ -580,6 +580,41 @@ Per-slot error indicators and per-unit error badges, driven by `SlotInfo.error` 
 
 ---
 
+## Swap Preheat: Hold Previous Filament Temp
+
+When a user switches filament, the nozzle must stay hot enough to purge the material already in the melt zone. Dropping straight to the new material's temperature (e.g. ABS 250 → TPU 230) leaves un-purged high-temp filament clogging the path.
+
+**The rule.** A "switching material" send floors the nozzle target at:
+
+```
+load_target = max(new_material_temp, last_nonzero_nozzle_target, current_actual_nozzle_temp)
+```
+
+- `new_material_temp` — what the tapped preset / load op requested.
+- `last_nonzero_nozzle_target` — an **in-session latch** of the last non-zero nozzle target. It **survives the target cooling to 0**, so even a cold swap reheats to the old material's temp to purge it. Latched in `PrinterTemperatureState::update_from_status()` (per-`ExtruderInfo.last_nonzero_target`, per-extruder).
+- `current_actual_nozzle_temp` — covers a physically-hot nozzle whose target was already cleared.
+
+**Latch lifecycle.**
+- **Set:** every status update with `target > 0` (per extruder).
+- **Survives:** cooldown to 0 (the whole point).
+- **Reset:** on **unload only** — the filament is physically pulled, so nothing is left to purge. `FilamentPanel::execute_unload()` and `AmsOperationSidebar::handle_unload()` call `PrinterState::clear_nozzle_load_latch()`.
+- **Not persisted** across restart — a power cycle means a cold printer that reheats anyway, and persistence is where staleness would bite.
+
+**Where the guard lives.** `TemperatureController::set_target(HeaterType, celsius, opts)` applies the floor when `opts.keep_previous_hot` is set. Nozzle only — bed/chamber and any send without the flag are untouched, so cooldown-to-0 and deliberate manual keypad lowers still work.
+
+**Which calls set `keep_previous_hot`.**
+| Call site | Flag | Rationale |
+|-----------|------|-----------|
+| Material preset tap (`handle_preset_button`, `handle_spool_preset_button`) | ✅ on | "I'm switching material" |
+| Op preheat (`start_preheat_for_op` — load/extrude/purge/etc.) | ✅ on | controller computes the max; replaced the old target-only check |
+| AMS load-with-preheat (`handle_load_with_preheat`) | ✅ on | skip/wait decision also uses `max(actual, latch)` so a cooled nozzle still reheats to purge |
+| Manual keypad entry (`handle_custom_nozzle_confirmed`) | ❌ off | deliberate override |
+| Cooldown-to-0 | ❌ off | must still reach 0 |
+
+**User feedback.** When (and only when) the guard raises the target above the request, an info toast fires: *"Holding nozzle at N°C to purge previous filament."* (plus an `spdlog::info` line). No toast when the request already clears the floor.
+
+---
+
 ## Supported Backends
 
 ### AmsType Enum

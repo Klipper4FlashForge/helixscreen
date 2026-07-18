@@ -32,6 +32,12 @@ struct HeaterPresets {
 /// - on_success / on_error: optional caller hooks fired after the RPC completes.
 struct SendOptions {
     bool toast = true;
+    /// Swap-preheat guard (nozzle only). When true, the requested target is floored
+    /// at max(latched last-nonzero nozzle target, current actual nozzle temp) so a
+    /// filament switch never drops the nozzle below what's needed to purge the
+    /// previous material. Set by "switching material" call sites (preset tap, load).
+    /// Leave false for deliberate manual sets and cooldown-to-0.
+    bool keep_previous_hot = false;
     std::function<void()> on_success = nullptr;
     std::function<void(const MoonrakerError&)> on_error = nullptr;
 };

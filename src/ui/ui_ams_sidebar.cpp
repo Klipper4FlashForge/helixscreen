@@ -27,6 +27,9 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+#include <cmath>
+
 namespace helix::ui {
 
 // ============================================================================
@@ -960,6 +963,10 @@ void AmsOperationSidebar::handle_unload(int slot_index) {
         return;
     }
 
+    // Filament is being pulled — drop the swap-preheat latch so the next load
+    // computes its hold-temp fresh instead of inheriting this material's target.
+    printer_state_.clear_nozzle_load_latch();
+
     // Build the UNLOAD stepper first (HEATING + correct step list). Use the
     // explicit slot when supplied, otherwise the firmware's active slot.
     AmsSystemInfo info = backend->get_system_info();
@@ -1145,8 +1152,17 @@ void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
     int current_deci = lv_subject_get_int(printer_state_.get_active_extruder_temp_subject());
     int current = temperature::deci_to_degrees(current_deci);
 
+    // Swap-preheat: the effective load temp is the hotter of the requested
+    // material temp and the latched last-nonzero nozzle target, so a nozzle that
+    // cooled below the previous material's temp still reheats to purge it. Fold the
+    // latch into the skip/wait decision; the controller applies the same max()
+    // (against latch AND actual) when we send, via keep_previous_hot.
+    int latch =
+        static_cast<int>(std::lround(printer_state_.get_active_extruder_last_nonzero_target()));
+    int effective_target = std::max(target, latch);
+
     constexpr int TEMP_THRESHOLD = 5;
-    if (current >= (target - TEMP_THRESHOLD)) {
+    if (current >= (effective_target - TEMP_THRESHOLD)) {
         ui_initiated_heat_ = false;
         do_load_or_swap();
         return;
@@ -1154,16 +1170,18 @@ void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
 
     // Start preheating
     pending_load_slot_ = slot_index;
-    pending_load_target_temp_ = target;
+    pending_load_target_temp_ = effective_target;
     ui_initiated_heat_ = true;
 
     if (auto* c = get_temperature_controller()) {
-        c->set_target(helix::HeaterType::Nozzle, static_cast<double>(target), {.toast = false});
+        c->set_target(helix::HeaterType::Nozzle, static_cast<double>(target),
+                      {.toast = false, .keep_previous_hot = true});
     }
 
-    show_preheat_feedback(slot_index, target);
+    show_preheat_feedback(slot_index, effective_target);
 
-    spdlog::info("[AmsSidebar] Starting preheat to {}C for slot {} load", target, slot_index);
+    spdlog::info("[AmsSidebar] Starting preheat to {}C (requested {}, latch {}) for slot {} load",
+                 effective_target, target, latch, slot_index);
 }
 
 void AmsOperationSidebar::check_pending_load() {

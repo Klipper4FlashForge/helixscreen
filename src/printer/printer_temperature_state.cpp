@@ -331,6 +331,12 @@ void PrinterTemperatureState::update_from_status(const nlohmann::json& status) {
         if (data.contains("target") && data["target"].is_number()) {
             int target_deci = helix::units::json_to_decidegrees(data, "target");
             info.target = data["target"].get<float>();
+            // Latch the last non-zero target so it survives cooldown-to-0. The
+            // swap-preheat guard consults this to keep the nozzle hot enough to
+            // purge the previous material even after it has cooled.
+            if (info.target > 0.0f) {
+                info.last_nonzero_target = info.target;
+            }
             if (lv_subject_get_int(info.target_subject.get()) != target_deci) {
                 lv_subject_set_int(info.target_subject.get(), target_deci);
             }

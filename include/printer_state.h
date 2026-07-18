@@ -301,6 +301,16 @@ class PrinterState {
         temperature_state_.set_active_extruder(name);
     }
 
+    // Active extruder's latched last non-zero target (°C); 0 if unknown.
+    float get_active_extruder_last_nonzero_target() const {
+        return temperature_state_.get_active_extruder_last_nonzero_target();
+    }
+
+    // Clear the nozzle load latch (last non-zero target); empty name = active extruder.
+    void clear_nozzle_load_latch(const std::string& extruder_name = "") {
+        temperature_state_.clear_load_latch(extruder_name);
+    }
+
     lv_subject_t* get_extruder_version_subject() {
         return temperature_state_.get_extruder_version_subject();
     }
