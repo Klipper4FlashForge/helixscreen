@@ -14,6 +14,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <cmath>
 #include <cstring>
 
 namespace helix {
@@ -182,7 +183,11 @@ void PrinterMotionState::update_from_status(const nlohmann::json& status) {
         if (gcode_move.contains("homing_origin") && gcode_move["homing_origin"].is_array()) {
             const auto& origin = gcode_move["homing_origin"];
             if (origin.size() >= 3 && origin[2].is_number()) {
-                int z_microns = static_cast<int>(origin[2].get<double>() * 1000.0);
+                // Round (not truncate) so Klipper's float accumulation of relative
+                // Z_ADJUST deltas (0.04 - 0.01 -> 0.0299999) snaps back to a clean
+                // micron value; truncation left the display stuck at 0.029 and made
+                // it impossible to return to a hundredth-rounded offset.
+                int z_microns = static_cast<int>(std::lround(origin[2].get<double>() * 1000.0));
                 if (lv_subject_get_int(&gcode_z_offset_) != z_microns) {
                     lv_subject_set_int(&gcode_z_offset_, z_microns);
                     spdlog::trace("[PrinterMotionState] G-code Z-offset: {}um", z_microns);
