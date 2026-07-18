@@ -289,6 +289,52 @@ def stage_printer_images(repo_root: Path, out_dir: Path) -> tuple[int, bool]:
     return total, True
 
 
+# The "cold" font faces moved out of the compiled app image into the frogfs
+# `storage` partition (Stage B fonts->frogfs enabler). Loaded at boot via
+# lv_binfont_create("A:/assets/assets/fonts/<face>.bin") in
+# firmware/helixscreen-esp32/main/font_registration.c. Generated as .bin twins
+# by scripts/esp32_regen_compressed_fonts.sh (committed alongside the .c).
+FONT_BIN_DIR = REPO_ROOT / "firmware" / "helixscreen-esp32" / "components" / "helixcore" / "fonts"
+
+
+def stage_fonts(out_dir: Path) -> int:
+    """Copy the runtime .bin font faces to assets/fonts/. Returns raw bytes."""
+    bins = sorted(FONT_BIN_DIR.glob("*.bin"))
+    if not bins:
+        return 0
+    dest = out_dir / "assets" / "fonts"
+    dest.mkdir(parents=True, exist_ok=True)
+    total = 0
+    for src in bins:
+        shutil.copy2(src, dest / src.name)
+        total += src.stat().st_size
+    return total
+
+
+def stage_images(assets_dir: Path, out_dir: Path) -> int:
+    """Rider I1: the general assets/images/ tree was never staged, so runtime
+    paths like "A:/assets/assets/images/benchy_thumbnail_white.png" (correct
+    for the mount) resolved to a missing file. Stage the referenced non-printer
+    images: the benchy print-preview thumbnail and the AMS backend logos.
+    Returns raw bytes."""
+    dest_images = out_dir / "assets" / "images"
+    total = 0
+    for name in ("benchy_thumbnail_white.png",):
+        src = assets_dir / "images" / name
+        if src.is_file():
+            dest_images.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest_images / name)
+            total += src.stat().st_size
+    ams_src = assets_dir / "images" / "ams"
+    if ams_src.is_dir():
+        ams_dest = dest_images / "ams"
+        ams_dest.mkdir(parents=True, exist_ok=True)
+        for src in sorted(ams_src.glob("*.png")):
+            shutil.copy2(src, ams_dest / src.name)
+            total += src.stat().st_size
+    return total
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT,
@@ -309,8 +355,11 @@ def main() -> int:
     config_bytes = stage_config(assets_dir, out_dir)
     filaments_bytes = stage_filaments(assets_dir, out_dir)
     printer_images_bytes, printer_images_present = stage_printer_images(REPO_ROOT, out_dir)
+    images_bytes = stage_images(assets_dir, out_dir)
+    fonts_bytes = stage_fonts(out_dir)
 
-    total = ui_xml_bytes + translations_bytes + config_bytes + filaments_bytes + printer_images_bytes
+    total = (ui_xml_bytes + translations_bytes + config_bytes + filaments_bytes
+             + printer_images_bytes + images_bytes + fonts_bytes)
 
     print("ESP32 storage staging tree (raw bytes; packed size is computed by "
           "esp32_pack_assets.py):")
@@ -325,6 +374,8 @@ def main() -> int:
     else:
         print("  assets/images/printers: SKIPPED (build/esp32_printer_images/ not present — "
               "run scripts/esp32_printer_images.py first)")
+    print(f"  assets/images (benchy thumbnail + AMS logos): {format_bytes(images_bytes)}")
+    print(f"  assets/fonts (runtime .bin faces): {format_bytes(fonts_bytes)}")
     print(f"  TOTAL (raw, pre-pack): {format_bytes(total)}")
     print(f"  output: {out_dir}")
     print("  Next: python3 scripts/esp32_pack_assets.py (packs this tree and gates on the "

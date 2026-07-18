@@ -5,7 +5,7 @@
 // Spawns the UI pthread and returns immediately. The pthread body does the
 // ENTIRE UI bring-up — board_display_init(), lv_init + lv_xml_init (LVGL does
 // NOT call the latter; skipping it is heap-corruption-shaped TLSF crashes), the
-// display with static PSRAM draw buffers, touch, ui_build() once, then the
+// display with static internal-DRAM draw buffers, touch, ui_build() once, then the
 // lv_timer_handler loop (ui_tick, if non-NULL, runs each iteration after the
 // timer handler). Everything that touches the panel/LVGL/app code runs on that
 // pthread — the app core calls std::this_thread::get_id() (spdlog, main-thread
