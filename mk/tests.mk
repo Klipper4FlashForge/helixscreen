@@ -70,6 +70,29 @@ define run_tests_parallel
 	fi
 endef
 
+# Report the result of the immediately-preceding test command, timing it and
+# FAILING the recipe if the command failed. Captures $$? as its first action, so
+# it MUST directly follow the test invocation in the recipe:
+#
+#   @START_TIME=$$(date +%s); \
+#   $(TEST_BIN) "[tag]"; \
+#   $(call report_test_result,Human label)
+#
+# This replaces the historical `$(TEST_BIN) ... && END=...; echo passed` idiom,
+# where the `&&` only guarded the END assignment: a failing test still fell
+# through the `;`-separated echo and the recipe exited 0, masking the failure.
+# Args: $(1) = human-readable label for the test group.
+define report_test_result
+	TEST_RC=$$?; \
+	END_TIME=$$(date +%s); \
+	DURATION=$$((END_TIME - START_TIME)); \
+	if [ $$TEST_RC -ne 0 ]; then \
+		echo "$(RED)$(BOLD)✗ $(1) FAILED (exit $$TEST_RC) after $${DURATION}s$(RESET)"; \
+		exit $$TEST_RC; \
+	fi; \
+	echo "$(GREEN)$(BOLD)✓ $(1) passed in $${DURATION}s$(RESET)"
+endef
+
 # ============================================================================
 # Test Dependency System - AUTOMATIC DISCOVERY
 # ============================================================================
@@ -212,10 +235,8 @@ test-run: test-build
 test-serial: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running unit tests sequentially (excluding slow)...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "~[.] ~[slow]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)$(BOLD)✓ Tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "~[.] ~[slow]"; \
+	$(call report_test_result,Unit tests)
 
 # Run ALL tests including slow ones (for thorough validation)
 # Fast tests run in parallel shards; [slow] tests run sequentially to avoid
@@ -226,9 +247,7 @@ test-all: test-build
 	$(call run_tests_parallel,"~[.] ~[slow]"); \
 	echo "$(CYAN)$(BOLD)Running [slow] tests sequentially...$(RESET)"; \
 	$(TEST_BIN) "[slow]" --durations yes; \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)$(BOLD)✓ All tests passed in $${DURATION}s$(RESET)"
+	$(call report_test_result,All tests)
 
 # Alias that rebuilds and runs tests (useful for development)
 tests: test-run
@@ -243,10 +262,8 @@ tests: test-run
 test-kiauh:
 	$(ECHO) "$(CYAN)$(BOLD)Running KIAUH extension tests...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	python3 -m unittest scripts.kiauh.tests.test_kiauh_extension -v && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)$(BOLD)✓ KIAUH extension tests passed in $${DURATION}s$(RESET)"
+	python3 -m unittest scripts.kiauh.tests.test_kiauh_extension -v; \
+	$(call report_test_result,KIAUH extension tests)
 
 # ============================================================================
 # Shell/Bats Tests
@@ -289,46 +306,36 @@ test-verbose: test-build
 test-gcode: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running G-code tests...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "[gcode]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)✓ G-code tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "[gcode]"; \
+	$(call report_test_result,G-code tests)
 
 # Run UI-related tests
 test-ui: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running UI tests...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "[navigation],[theme],[wizard]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)✓ UI tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "[navigation],[theme],[wizard]"; \
+	$(call report_test_result,UI tests)
 
 # Run Moonraker/mock-related tests
 test-moonraker: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running Moonraker tests...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "[mock],[sequencer],[capabilities]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)✓ Moonraker tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "[mock],[sequencer],[capabilities]"; \
+	$(call report_test_result,Moonraker tests)
 
 # Run network-related tests (WiFi, Ethernet)
 test-network: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running network tests...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "[network],[scan],[connect]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)✓ Network tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "[network],[scan],[connect]"; \
+	$(call report_test_result,Network tests)
 
 # Run security-related tests
 test-security: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running security tests...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "[security],[injection],[safety]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)✓ Security tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "[security],[injection],[safety]"; \
+	$(call report_test_result,Security tests)
 
 # List all available test tags
 test-list-tags: test-build
@@ -367,30 +374,24 @@ test-fast: test-build
 test-slow: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running slow tests only...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "[slow]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)$(BOLD)✓ Slow tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "[slow]"; \
+	$(call report_test_result,Slow tests)
 
 # Run only eventloop tests - hv::EventLoop network tests (very slow, 5-10 min)
 # These are the slowest tests due to WebSocket connection/disconnection cycles
 test-eventloop: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running eventloop tests only (this will take 5-10 minutes)...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "[eventloop]" "~[.]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)$(BOLD)✓ EventLoop tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "[eventloop]" "~[.]"; \
+	$(call report_test_result,EventLoop tests)
 
 # Smoke test - minimal critical tests for quick validation (<30s)
 # Use during rapid iteration to catch obvious regressions
 test-smoke: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running smoke tests (minimal critical subset)...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "[config],[navigation],[ui_theme],[parser]" "~[slow]" "~[.]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)$(BOLD)✓ Smoke tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "[config],[navigation],[ui_theme],[parser]" "~[slow]" "~[.]"; \
+	$(call report_test_result,Smoke tests)
 
 # Show test coverage summary by tag area
 test-summary: test-build
@@ -453,82 +454,64 @@ test-config: test-build
 test-core: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running core tests...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "[core]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)$(BOLD)✓ Core tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "[core]"; \
+	$(call report_test_result,Core tests)
 
 # CONNECTION tests - Moonraker connection lifecycle, retry, robustness
 test-connection: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running connection tests...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "[connection]" "~[slow]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)✓ Connection tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "[connection]" "~[slow]"; \
+	$(call report_test_result,Connection tests)
 
 # STATE tests - PrinterState, subjects, observers
 test-state: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running state tests...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "[state]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)✓ State tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "[state]"; \
+	$(call report_test_result,State tests)
 
 # PRINT tests - Print workflow, start/pause/cancel, exclude object
 test-print: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running print tests...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "[print]" "~[slow]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)✓ Print tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "[print]" "~[slow]"; \
+	$(call report_test_result,Print tests)
 
 # CALIBRATION tests - Bed mesh, input shaper
 test-calibration: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running calibration tests...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "[calibration]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)✓ Calibration tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "[calibration]"; \
+	$(call report_test_result,Calibration tests)
 
 # PRINTER tests - Printer detection, capabilities, hardware
 test-printer: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running printer tests...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "[printer]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)✓ Printer tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "[printer]"; \
+	$(call report_test_result,Printer tests)
 
 # AMS tests - All AMS/MMU backends (includes [afc], [ace])
 test-ams: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running AMS tests...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "[ams]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)✓ AMS tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "[ams]"; \
+	$(call report_test_result,AMS tests)
 
 # FILAMENT tests - Spoolman, filament sensors
 test-filament: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running filament tests...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "[filament]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)✓ Filament tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "[filament]"; \
+	$(call report_test_result,Filament tests)
 
 # ASSETS tests - Thumbnails, prerendered images
 test-assets: test-build
 	$(ECHO) "$(CYAN)$(BOLD)Running assets tests...$(RESET)"
 	@START_TIME=$$(date +%s); \
-	$(TEST_BIN) "[assets]" && \
-	END_TIME=$$(date +%s); \
-	DURATION=$$((END_TIME - START_TIME)); \
-	echo "$(GREEN)✓ Assets tests passed in $${DURATION}s$(RESET)"
+	$(TEST_BIN) "[assets]"; \
+	$(call report_test_result,Assets tests)
 
 # Unified test binary - uses automatic app object discovery
 # No more manual dependency lists! New source files are automatically included.
