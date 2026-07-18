@@ -136,7 +136,9 @@ extern const lv_font_t mdi_icons_96;
 extern const lv_font_t noto_sans_8;
 extern const lv_font_t source_code_pro_10;
 extern const lv_font_t source_code_pro_12;
-extern const lv_font_t source_code_pro_14;
+// non-const: canonical declaration in ui_fonts.h dropped const so embedded
+// targets populate this moved face at runtime from a .bin (Plan A fonts->frogfs)
+extern lv_font_t source_code_pro_14;
 extern const lv_font_t source_code_pro_16;
 extern const lv_font_t source_code_pro_18;
 extern const lv_font_t source_code_pro_20;
@@ -149,7 +151,7 @@ extern "C" const lv_font_t mdi_icons_96 = noto_sans_16;
 extern "C" const lv_font_t noto_sans_8 = noto_sans_16;
 extern "C" const lv_font_t source_code_pro_10 = noto_sans_16;
 extern "C" const lv_font_t source_code_pro_12 = noto_sans_16;
-extern "C" const lv_font_t source_code_pro_14 = noto_sans_16;
+extern "C" lv_font_t source_code_pro_14 = noto_sans_16;
 extern "C" const lv_font_t source_code_pro_16 = noto_sans_16;
 extern "C" const lv_font_t source_code_pro_18 = noto_sans_16;
 extern "C" const lv_font_t source_code_pro_20 = noto_sans_16;
