@@ -9,13 +9,6 @@
     <px name="nav_width_small" value="76"/>
     <px name="nav_width_medium" value="104"/>
     <px name="nav_width_large" value="132"/>
-    <!-- Nav bar height per breakpoint (used by portrait variant; auto-selected by vertical resolution) -->
-    <px name="nav_height_micro" value="42"/>
-    <px name="nav_height_tiny" value="48"/>
-    <px name="nav_height_small" value="56"/>
-    <px name="nav_height_medium" value="64"/>
-    <px name="nav_height_large" value="76"/>
-    <px name="nav_height_xlarge" value="88"/>
   </consts>
   <view extends="lv_obj"
         width="#nav_width" height="100%" style_pad_top="#space_xl" style_pad_bottom="#space_xl" style_pad_left="0" style_pad_right="0" flex_flow="column"
