@@ -18,8 +18,10 @@
 
 using namespace helix;
 
-// MDI icon font (48px for good visibility in debug panel)
-extern const lv_font_t mdi_icons_48;
+// MDI icon font (48px for good visibility in debug panel). Non-const: the
+// canonical declaration in ui_fonts.h dropped const so embedded targets can
+// populate the symbol at runtime from a .bin face.
+extern lv_font_t mdi_icons_48;
 
 /**
  * @brief Create a single icon display item

@@ -336,6 +336,20 @@ for SIZE in $SIZES; do
         --range "$MDI_ICONS" \
         --no-compress \
         -o "$OUTPUT"
+
+    # De-const only mdi_icons_48 and mdi_icons_64: these two faces are
+    # runtime-populated on embedded targets (ESP32 loads their glyph data from
+    # a .bin and struct-copies into the symbol at boot), so ui_fonts.h declares
+    # them non-const. The .c definition must match or gcc errors with
+    # "conflicting type qualifiers". mdi_icons_16/24/32 (and 80/96/128) stay
+    # const. Mirrors the strip in scripts/regen_text_fonts.sh.
+    if [ "$SIZE" = "48" ] || [ "$SIZE" = "64" ]; then
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' 's/^const lv_font_t /lv_font_t /' "$OUTPUT"
+        else
+            sed -i 's/^const lv_font_t /lv_font_t /' "$OUTPUT"
+        fi
+    fi
 done
 
 echo ""

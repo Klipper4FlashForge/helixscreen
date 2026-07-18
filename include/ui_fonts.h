@@ -11,8 +11,14 @@
 LV_FONT_DECLARE(mdi_icons_128); // Oversized hero icons (XXLARGE displays)
 LV_FONT_DECLARE(mdi_icons_96);  // Large hero icons (XXLARGE displays)
 LV_FONT_DECLARE(mdi_icons_80);  // Large hero icons (XLARGE displays)
-LV_FONT_DECLARE(mdi_icons_64);  // Navigation bar icons
-LV_FONT_DECLARE(mdi_icons_48);  // Status card icons (large displays)
+// mdi_icons_48/64 are declared non-const (not LV_FONT_DECLARE) because on
+// embedded targets (ESP32) their glyph data is loaded from a runtime .bin
+// and struct-copied into these symbols at boot (see
+// firmware/helixscreen-esp32/main/font_registration.c). Desktop still
+// compiles them from assets/fonts/*.c — now emitted non-const to match, a
+// ~40B move from .rodata to .data. Do NOT widen this de-const to other faces.
+extern lv_font_t mdi_icons_64;  // Navigation bar icons
+extern lv_font_t mdi_icons_48;  // Status card icons (large displays)
 LV_FONT_DECLARE(mdi_icons_32);  // Status card icons (small displays)
 LV_FONT_DECLARE(mdi_icons_24);  // General UI icons (tiny displays)
 LV_FONT_DECLARE(mdi_icons_16);  // Metadata icons (small inline)
