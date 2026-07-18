@@ -1031,7 +1031,7 @@ void EspMoonrakerClient::discover_printer(std::function<void()> on_complete,
     json identify_params = {{"client_name", "HelixScreen"},
                             {"version", HELIX_VERSION},
                             {"type", "display"},
-                            {"url", "https://github.com/helixscreen/helixscreen"}};
+                            {"url", "https://github.com/prestonbrown/helixscreen"}};
 
     // Step a — server.connection.identify (best-effort; older Moonraker may lack
     // it). Either outcome continues to the Klippy-readiness gate.
