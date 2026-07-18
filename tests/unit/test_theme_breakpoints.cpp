@@ -78,6 +78,68 @@ TEST_CASE("Breakpoint index enum has correct values", "[theme][breakpoints]") {
 }
 
 // ============================================================================
+// breakpoint_for() + responsive_pick() — the shared primitives that
+// theme_manager_get_breakpoint_suffix() and every responsive site now route
+// through. The tier boundaries are load-bearing: the landscape display is tuned
+// against them and must not shift (memory project_portrait_landscape_invariant_rule).
+// ============================================================================
+
+TEST_CASE("breakpoint_for classifies each tier at its inclusive boundary", "[theme][breakpoints]") {
+    REQUIRE(breakpoint_for(1) == UiBreakpoint::Micro);
+    REQUIRE(breakpoint_for(272) == UiBreakpoint::Micro); // inclusive top of MICRO
+    REQUIRE(breakpoint_for(273) == UiBreakpoint::Tiny);
+    REQUIRE(breakpoint_for(390) == UiBreakpoint::Tiny);
+    REQUIRE(breakpoint_for(391) == UiBreakpoint::Small);
+    REQUIRE(breakpoint_for(460) == UiBreakpoint::Small);
+    REQUIRE(breakpoint_for(461) == UiBreakpoint::Medium);
+    REQUIRE(breakpoint_for(550) == UiBreakpoint::Medium);
+    REQUIRE(breakpoint_for(551) == UiBreakpoint::Large);
+    REQUIRE(breakpoint_for(700) == UiBreakpoint::Large);
+    REQUIRE(breakpoint_for(701) == UiBreakpoint::XLarge);
+    REQUIRE(breakpoint_for(1000) == UiBreakpoint::XLarge);
+    REQUIRE(breakpoint_for(1001) == UiBreakpoint::XXLarge);
+    REQUIRE(breakpoint_for(4000) == UiBreakpoint::XXLarge);
+}
+
+TEST_CASE("breakpoint_for matches the shipping landscape displays", "[theme][breakpoints]") {
+    // Constrained axis is the height in landscape. Load-bearing: re-tiering any of
+    // these would resize a production display the layout has been tuned against.
+    REQUIRE(breakpoint_for(272) == UiBreakpoint::Micro);  // 480x272
+    REQUIRE(breakpoint_for(320) == UiBreakpoint::Tiny);   // 480x320
+    REQUIRE(breakpoint_for(480) == UiBreakpoint::Medium); // 800x480
+    REQUIRE(breakpoint_for(600) == UiBreakpoint::Large);  // 1024x600
+    REQUIRE(breakpoint_for(720) == UiBreakpoint::XLarge); // 1280x720
+}
+
+TEST_CASE("responsive_pick returns the value matching the tier", "[theme][breakpoints]") {
+    // Distinct sentinel per tier so any mis-wired case is caught.
+    auto pick = [](UiBreakpoint bp) { return responsive_pick(bp, 10, 20, 30, 40, 50, 60, 70); };
+    REQUIRE(pick(UiBreakpoint::Micro) == 10);
+    REQUIRE(pick(UiBreakpoint::Tiny) == 20);
+    REQUIRE(pick(UiBreakpoint::Small) == 30);
+    REQUIRE(pick(UiBreakpoint::Medium) == 40);
+    REQUIRE(pick(UiBreakpoint::Large) == 50);
+    REQUIRE(pick(UiBreakpoint::XLarge) == 60);
+    REQUIRE(pick(UiBreakpoint::XXLarge) == 70);
+}
+
+TEST_CASE("responsive_pick + breakpoint_for reproduce the public suffix ladder",
+          "[theme][breakpoints]") {
+    // This composition is exactly how theme_manager_get_breakpoint_suffix() is now
+    // implemented — assert it end-to-end and against the public API it backs, so a
+    // regression in either primitive fails here.
+    auto suffix = [](int32_t res) {
+        return responsive_pick(breakpoint_for(res), "_micro", "_tiny", "_small", "_medium", "_large",
+                               "_xlarge", "_xxlarge");
+    };
+    REQUIRE(std::string(suffix(272)) == "_micro");
+    REQUIRE(std::string(suffix(480)) == "_medium");
+    REQUIRE(std::string(suffix(2160)) == "_xxlarge");
+    REQUIRE(std::string(suffix(480)) == theme_manager_get_breakpoint_suffix(480));
+    REQUIRE(std::string(suffix(600)) == theme_manager_get_breakpoint_suffix(600));
+}
+
+// ============================================================================
 // Responsive token fallback behavior (XML-based, uses test fixtures)
 // ============================================================================
 
