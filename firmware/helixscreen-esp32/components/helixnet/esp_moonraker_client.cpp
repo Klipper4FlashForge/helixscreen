@@ -3,6 +3,8 @@
 
 #include "esp_moonraker_client.h"
 
+#include "helix_version.h" // HELIX_VERSION for server.connection.identify
+
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -285,6 +287,11 @@ void EspMoonrakerClient::on_ws_connected() {
 
 void EspMoonrakerClient::on_ws_disconnected() {
     ESP_LOGW(TAG, "disconnected from %s", url_.c_str());
+
+    // Any discovery chain in flight is now invalid: its pending requests are about
+    // to be failed with connection_lost below. Clear the guard so the next
+    // on_connected → discover_printer() can start fresh (no generation guard yet).
+    discovery_in_flight_.store(false);
 
     if (auto_reconnect_.load()) {
         // Manual exponential backoff: apply the current delay, then double up to
@@ -775,8 +782,227 @@ void EspMoonrakerClient::get_temperature_store(
 }
 
 // ---------------------------------------------------------------------------
-// Discovery (Plan 4 fills the real sequence; v1 = a server.info round-trip)
+// Discovery
+//
+// A trimmed reimplementation of the desktop MoonrakerDiscoverySequence chain
+// (src/api/moonraker_discovery_sequence.cpp) over the client's own send_jsonrpc.
+// The desktop sequence is NOT reused: it is hard-coupled to the concrete
+// helix::MoonrakerClient (holds MoonrakerClient&, calls connection_generation()
+// + emit_event(), and makes a sync libhv webcam probe) and is deliberately
+// excluded from the ESP image (helixapp/app_srcs.txt). The one portable piece —
+// PrinterDiscovery::parse_objects() — is reused as-is.
+//
+// v1 (Core+AMS) drops the desktop steps that only feed the About screen / webcam
+// / power UI: 2nd server.info (Moonraker version, Spoolman, webcam), printer.info
+// hostname, machine.system_info OS/arch, MCU last_stats queries, and
+// machine.device_power / server.sensors probes.
 // ---------------------------------------------------------------------------
+
+namespace {
+
+// Pure subscription-payload builder over a discovered PrinterDiscovery snapshot.
+// Mirrors the object-class selection of the desktop
+// MoonrakerDiscoverySequence::build_subscription_objects, trimmed to the v1
+// Core+AMS cut (no MCU last_stats / webcam / power / spoolman entries). Each
+// object's field list is narrowed to what the HelixScreen parsers actually read,
+// so Klipper does not stream every internal field on each motion step. Depends
+// only on PrinterDiscovery accessors + nlohmann::json — host-testable in
+// isolation.
+json build_subscription_objects(const PrinterDiscovery& hw) {
+    json objs;
+
+    // --- Core objects (always subscribed) ---
+    objs["print_stats"] = json::array({"state", "filename", "filament_used", "print_duration",
+                                       "total_duration", "estimated_time", "info", "message"});
+    objs["virtual_sdcard"] = json::array({"progress", "layer", "layer_count", "is_active"});
+    objs["toolhead"] = json::array({"position", "homed_axes", "kinematics", "extruder",
+                                    "max_velocity", "axis_minimum", "axis_maximum"});
+    objs["gcode_move"] = json::array(
+        {"gcode_position", "speed", "speed_factor", "extrude_factor", "homing_origin"});
+    objs["motion_report"] = json::array({"live_extruder_velocity"});
+    objs["display_status"] = json::array({"message", "progress"});
+    objs["webhooks"] = json::array({"state", "state_message"});
+    objs["pause_resume"] = json::array({"is_paused"});
+    objs["bed_mesh"] = json::array(
+        {"profile_name", "probed_matrix", "mesh_min", "mesh_max", "mesh_params", "profiles"});
+    objs["exclude_object"] = json::array({"objects", "excluded_objects", "current_object"});
+    objs["manual_probe"] = json::array({"is_active", "z_position"});
+    objs["stepper_enable"] = json::array({"steppers"});
+    objs["idle_timeout"] = json::array({"state"});
+
+    // --- Heaters (extruders, heater_bed, heater_generic) ---
+    static const json heater_fields = json::array({"temperature", "target"});
+    for (const auto& h : hw.heaters()) {
+        objs[h] = heater_fields;
+    }
+
+    // --- Sensors (temperature_sensor, temperature_fan, tmc*). temperature_fan is
+    // overwritten in the fans loop below with the union of its fields. ---
+    static const json sensor_fields = json::array({"temperature", "humidity"});
+    for (const auto& s : hw.sensors()) {
+        objs[s] = sensor_fields;
+    }
+
+    // --- Fans. Field shape varies by object type. ---
+    static const json fan_speed_fields = json::array({"speed"});
+    static const json temp_fan_fields = json::array({"temperature", "target", "speed"});
+    static const json output_pin_value_fields = json::array({"value"});
+    for (const auto& f : hw.fans()) {
+        if (f.rfind("temperature_fan ", 0) == 0) {
+            objs[f] = temp_fan_fields;
+        } else if (f.rfind("output_pin ", 0) == 0) {
+            objs[f] = output_pin_value_fields;
+        } else {
+            objs[f] = fan_speed_fields;
+        }
+    }
+    if (hw.has_fan_feedback()) {
+        objs["fan_feedback"] =
+            json::array({"fan0_speed", "fan1_speed", "fan2_speed", "fan3_speed", "fan4_speed",
+                         "fan5_speed", "fan6_speed", "fan7_speed", "fan8_speed", "fan9_speed"});
+    }
+
+    // --- LEDs + led_effect ---
+    static const json led_color_fields = json::array({"color_data"});
+    for (const auto& l : hw.leds()) {
+        if (l.rfind("output_pin ", 0) == 0) {
+            objs[l] = output_pin_value_fields;
+        } else {
+            objs[l] = led_color_fields;
+        }
+    }
+    for (const auto& e : hw.led_effects()) {
+        objs[e] = json::array({"enabled"});
+    }
+
+    // --- Firmware retraction ---
+    if (hw.has_firmware_retraction()) {
+        objs["firmware_retraction"] = json::array(
+            {"retract_length", "retract_speed", "unretract_extra_length", "unretract_speed"});
+    }
+
+    // --- Filament sensors ---
+    static const json filament_sensor_fields =
+        json::array({"filament_detected", "enabled", "detection_count"});
+    for (const auto& s : hw.filament_sensor_names()) {
+        objs[s] = filament_sensor_fields;
+    }
+
+    // --- Width sensors ---
+    if (hw.has_width_sensors()) {
+        static const json width_fields = json::array({"Diameter", "Raw"});
+        for (const auto& s : hw.width_sensor_objects()) {
+            objs[s] = width_fields;
+        }
+    }
+
+    // --- Print-start detection macros ---
+    objs["gcode_macro _START_PRINT"] = json::array({"print_started"});
+    objs["gcode_macro START_PRINT"] = json::array({"preparation_done"});
+    objs["gcode_macro _HELIX_STATE"] = json::array({"print_started"});
+
+    // --- AMS / filament systems (v1 Core+AMS) ---
+    if (hw.has_mmu()) {
+        // Happy Hare mmu object — narrowed to the fields the AMS backends read
+        // (nullptr would flood notifications, #388).
+        objs["mmu"] = json::array(
+            {"gate",           "tool",           "filament",       "action",
+             "reason_for_pause", "filament_pos", "gate_status",    "gate_color_rgb",
+             "gate_color",     "gate_material",  "gate_name",      "gate_filament_name",
+             "gate_spool_id",  "gate_temperature", "has_bypass",   "num_units",
+             "num_gates",      "unit_gate_counts", "unit",         "ttg_map",
+             "endless_spool_groups", "sensors",  "bowden_progress", "clog_detection_enabled",
+             "encoder",        "flowguard",      "drying_state",   "sync_feedback_state",
+             "sync_feedback_bias_modelled", "sync_feedback_bias_raw", "sync_feedback_flow_rate",
+             "sync_drive",     "spoolman_support", "pending_spool_id", "espooler_active",
+             "num_toolchanges", "slicer_tool_map", "toolchange_purge_volume", "leds"});
+    }
+
+    // AFC objects come from the raw printer-object list — the typed PrinterDiscovery
+    // accessors don't expose the full AFC_* set. parse_objects() populates
+    // printer_objects() before this runs. Field lists mirror the desktop
+    // AmsBackendAfc parsers.
+    static const json afc_state_fields = json::array(
+        {"connected",  "bypass_state", "quiet_mode",  "current_load",  "current_lane",
+         "current_state", "current_tool", "current_toolchange", "error_state", "filament_loaded",
+         "lane_loaded", "led_state",    "message",     "name",          "number_of_toolchanges",
+         "num_extruders", "status",     "system",      "tool_sensor_after_extruder", "tool_stn",
+         "tool_stn_unload", "type",     "units",       "lanes",         "hubs",
+         "extruders",   "buffers"});
+    static const json afc_stepper_fields = json::array(
+        {"buffer_status", "color", "dist_hub", "extruder", "filament_status", "hub", "load",
+         "loaded_to_hub", "map", "material", "prep", "runout_lane", "spool_id", "status",
+         "tool_loaded", "weight"});
+    static const json afc_hub_fields = json::array({"state", "afc_bowden_length"});
+    static const json afc_buffer_fields = json::array(
+        {"state", "distance_to_fault", "error_sensitivity", "fault_detection_enabled", "lanes"});
+    static const json afc_extruder_fields =
+        json::array({"lane_loaded", "tool_end_status", "tool_start_status"});
+    static const json afc_unit_fields = json::array({"lanes", "extruders", "hubs", "buffers"});
+    for (const auto& o : hw.printer_objects()) {
+        if (o == "AFC" || o == "afc") {
+            objs[o] = afc_state_fields;
+        } else if (o.rfind("AFC_stepper ", 0) == 0 || o.rfind("AFC_lane ", 0) == 0) {
+            objs[o] = afc_stepper_fields;
+        } else if (o.rfind("AFC_hub ", 0) == 0) {
+            objs[o] = afc_hub_fields;
+        } else if (o.rfind("AFC_buffer ", 0) == 0) {
+            objs[o] = afc_buffer_fields;
+        } else if (o.rfind("AFC_extruder ", 0) == 0) {
+            objs[o] = afc_extruder_fields;
+        } else if (o.rfind("AFC_led ", 0) == 0) {
+            continue; // never parsed by HelixScreen
+        } else if (o.rfind("AFC_", 0) == 0) {
+            objs[o] = afc_unit_fields; // unit-level object (BoxTurtle/OpenAMS/ViViD/...)
+        }
+    }
+
+    // Backend-specific companion objects (nullptr = all fields; these are small).
+    switch (hw.mmu_type()) {
+    case AmsType::AD5X_IFS:
+        objs["save_variables"] = nullptr;
+        break;
+    case AmsType::ACE:
+        objs["ace"] = nullptr;
+        break;
+    case AmsType::CFS:
+        objs["box"] = nullptr;
+        objs["motor_control"] = nullptr;
+        break;
+    case AmsType::SNAPMAKER:
+        objs["filament_detect"] = nullptr;
+        objs["filament_feed left"] = nullptr;
+        objs["filament_feed right"] = nullptr;
+        objs["print_task_config"] = nullptr;
+        objs["machine_state_manager"] = nullptr;
+        for (int i = 0; i < 4; ++i) {
+            objs[std::string("filament_motion_sensor e") + std::to_string(i) + "_filament"] =
+                nullptr;
+        }
+        break;
+    case AmsType::QIDI_BOX:
+        objs["box_extras"] = nullptr;
+        objs["save_variables"] = nullptr;
+        break;
+    default:
+        break;
+    }
+
+    // --- Toolchanger + per-tool objects ---
+    if (hw.has_tool_changer()) {
+        objs["toolchanger"] = json::array({"status", "tool_number", "tool_numbers"});
+        static const json tool_fields =
+            json::array({"active", "mounted", "detect_state", "gcode_x_offset", "gcode_y_offset",
+                         "gcode_z_offset", "extruder", "fan"});
+        for (const auto& t : hw.tool_names()) {
+            objs["tool " + t] = tool_fields;
+        }
+    }
+
+    return objs;
+}
+
+} // namespace
 
 void EspMoonrakerClient::discover_printer(std::function<void()> on_complete,
                                           std::function<void(const std::string&)> on_error) {
@@ -786,56 +1012,232 @@ void EspMoonrakerClient::discover_printer(std::function<void()> on_complete,
         }
         return;
     }
+
+    // Re-entrancy / staleness: the ESP client has no connection_generation() guard
+    // (desktop's stale-sequence mechanism), so a reconnect landing mid-chain could
+    // double-fire discovery. discovery_in_flight_ collapses the common overlap — a
+    // second discover_printer() while one is running — and is cleared on disconnect
+    // (on_ws_disconnected) and at chain end. Full generation parity is Task 9.
+    if (discovery_in_flight_.exchange(true)) {
+        spdlog::debug("[helixnet] discover_printer: already in flight, ignoring re-entrant call");
+        return;
+    }
+
+    // Share the user callbacks across the nested chain; every terminal path clears
+    // discovery_in_flight_ exactly once (discovery_fail, or the subscribe success).
+    auto done = std::make_shared<std::function<void()>>(std::move(on_complete));
+    auto fail = std::make_shared<std::function<void(const std::string&)>>(std::move(on_error));
+
+    json identify_params = {{"client_name", "HelixScreen"},
+                            {"version", HELIX_VERSION},
+                            {"type", "display"},
+                            {"url", "https://github.com/helixscreen/helixscreen"}};
+
+    // Step a — server.connection.identify (best-effort; older Moonraker may lack
+    // it). Either outcome continues to the Klippy-readiness gate.
     send_jsonrpc(
-        "server.info", json(),
-        [this, on_complete](const json& response) {
-            // v1 stub: no object parsing yet (Plan 4), but honor the registered
-            // discovery callbacks so consumers wire the same way as on desktop.
-            std::function<void(const helix::PrinterDiscovery&)> hw_cb;
-            std::function<void(const helix::PrinterDiscovery&, const json&)> done_cb;
-            {
-                std::lock_guard<std::mutex> lock(callbacks_mutex_);
-                hw_cb = on_hardware_discovered_;
-                done_cb = on_discovery_complete_;
+        "server.connection.identify", identify_params,
+        [this, done, fail](const json& resp) {
+            if (resp.contains("result")) {
+                spdlog::info("[helixnet] identified to Moonraker (connection_id: {})",
+                             resp["result"].value("connection_id", 0));
             }
-            if (hw_cb) {
-                try {
-                    hw_cb(hardware_);
-                } catch (const std::exception& e) {
-                    ESP_LOGE(TAG, "on_hardware_discovered callback threw: %s", e.what());
-                } catch (...) {
-                }
-            }
-            if (done_cb) {
-                try {
-                    done_cb(hardware_, response);
-                } catch (const std::exception& e) {
-                    ESP_LOGE(TAG, "on_discovery_complete callback threw: %s", e.what());
-                } catch (...) {
-                }
-            }
-            if (on_complete) {
-                on_complete();
-            }
+            discovery_gate_klippy(done, fail);
         },
-        [on_error](const MoonrakerError& err) {
-            if (on_error) {
-                on_error(err.message);
-            }
+        [this, done, fail](const MoonrakerError& err) {
+            spdlog::warn("[helixnet] identify failed (continuing): {}", err.message);
+            discovery_gate_klippy(done, fail);
         });
 }
 
+void EspMoonrakerClient::discovery_gate_klippy(DiscoveryDone done, DiscoveryFail fail) {
+    // Step b — server.info Klippy-readiness gate. printer.objects.list returns
+    // JSON-RPC -32601 while Klippy is in STARTUP; gate here so we defer (retryable)
+    // instead of surfacing a confusing error.
+    send_jsonrpc(
+        "server.info", json(),
+        [this, done, fail](const json& resp) {
+            std::string klippy_state = "unknown";
+            if (resp.contains("result") && resp["result"].contains("klippy_state") &&
+                resp["result"]["klippy_state"].is_string()) {
+                klippy_state = resp["result"]["klippy_state"].get<std::string>();
+            }
+            spdlog::debug("[helixnet] Klippy state gate: {}", klippy_state);
+            // "ready" and "shutdown" both expose valid Klipper objects; anything
+            // else (startup/error/unknown) defers.
+            if (klippy_state != "ready" && klippy_state != "shutdown") {
+                std::string reason = "Klippy not ready (state: " + klippy_state + ")";
+                spdlog::warn("[helixnet] {}", reason);
+                discovery_fail(fail, MoonrakerEventType::DISCOVERY_DEFERRED, reason);
+                return;
+            }
+            discovery_query_objects(std::move(done), std::move(fail));
+        },
+        [this, done, fail](const MoonrakerError& err) {
+            spdlog::error("[helixnet] server.info failed: {}", err.message);
+            discovery_fail(fail, MoonrakerEventType::DISCOVERY_FAILED, err.message);
+        });
+}
+
+void EspMoonrakerClient::discovery_query_objects(DiscoveryDone done, DiscoveryFail fail) {
+    // Step c — printer.objects.list → parse_objects() → fire on_hardware_discovered_.
+    // silent=true suppresses the error toast if Klippy vanished between the gate and
+    // this call.
+    send_jsonrpc(
+        "printer.objects.list", json(),
+        [this, done, fail](const json& resp) {
+            if (!resp.contains("result") || !resp["result"].contains("objects")) {
+                std::string reason = "Failed to query printer objects";
+                if (resp.contains("error") && resp["error"].contains("message") &&
+                    resp["error"]["message"].is_string()) {
+                    reason = resp["error"]["message"].get<std::string>();
+                }
+                spdlog::error("[helixnet] printer.objects.list failed: {}", reason);
+                discovery_fail(fail, MoonrakerEventType::DISCOVERY_FAILED, reason);
+                return;
+            }
+
+            parse_objects(resp["result"]["objects"]); // locks hardware_mutex_
+
+            // Snapshot for the early hardware-discovered callback (AMS/MMU backends
+            // init before the subscribe response arrives). Copy under lock (#562,
+            // #777) — the callback runs outside the lock.
+            std::function<void(const helix::PrinterDiscovery&)> hw_cb;
+            {
+                std::lock_guard<std::mutex> lock(callbacks_mutex_);
+                hw_cb = on_hardware_discovered_;
+            }
+            PrinterDiscovery snapshot;
+            {
+                std::lock_guard<std::mutex> lock(hardware_mutex_);
+                snapshot = hardware_;
+            }
+            spdlog::info("[helixnet] discovered {} heaters, {} sensors, {} fans, {} leds, {} "
+                         "filament sensors",
+                         snapshot.heaters().size(), snapshot.sensors().size(),
+                         snapshot.fans().size(), snapshot.leds().size(),
+                         snapshot.filament_sensor_names().size());
+            if (hw_cb) {
+                try {
+                    hw_cb(snapshot);
+                } catch (const std::exception& e) {
+                    ESP_LOGE(TAG, "on_hardware_discovered threw: %s", e.what());
+                } catch (...) {
+                }
+            }
+
+            discovery_subscribe(std::move(done), std::move(fail));
+        },
+        [this, done, fail](const MoonrakerError& err) {
+            spdlog::error("[helixnet] printer.objects.list request failed: {}", err.message);
+            discovery_fail(fail, MoonrakerEventType::DISCOVERY_FAILED, err.message);
+        },
+        0,     // default timeout
+        true); // silent
+}
+
+void EspMoonrakerClient::discovery_subscribe(DiscoveryDone done, DiscoveryFail fail) {
+    // Step d — printer.objects.subscribe. Build the payload from the discovered
+    // snapshot, then fire on_discovery_complete_(hardware, initial_status) with the
+    // status returned in the subscribe response, and finally on_complete().
+    PrinterDiscovery snapshot;
+    {
+        std::lock_guard<std::mutex> lock(hardware_mutex_);
+        snapshot = hardware_;
+    }
+    json subscription_objects = build_subscription_objects(snapshot);
+    json params = {{"objects", subscription_objects}};
+    size_t num = subscription_objects.size();
+
+    send_jsonrpc(
+        "printer.objects.subscribe", params,
+        [this, done, fail, num](const json& resp) {
+            if (resp.contains("result")) {
+                spdlog::info("[helixnet] subscription complete: {} objects subscribed", num);
+            } else if (resp.contains("error")) {
+                // Subscribe returned an error object but the request itself
+                // succeeded — desktop treats this as non-fatal; discovery still
+                // completes so the UI can come up.
+                spdlog::error("[helixnet] subscribe returned error: {}", resp["error"].dump());
+                emit_event(MoonrakerEventType::DISCOVERY_FAILED,
+                           "Failed to subscribe to printer updates", false);
+            }
+
+            json initial_status;
+            if (resp.contains("result") && resp["result"].contains("status")) {
+                initial_status = resp["result"]["status"];
+            }
+
+            std::function<void(const helix::PrinterDiscovery&, const json&)> done_cb;
+            {
+                std::lock_guard<std::mutex> lock(callbacks_mutex_);
+                done_cb = on_discovery_complete_;
+            }
+            PrinterDiscovery snap;
+            {
+                std::lock_guard<std::mutex> lock(hardware_mutex_);
+                snap = hardware_;
+            }
+            if (done_cb) {
+                try {
+                    done_cb(snap, initial_status);
+                } catch (const std::exception& e) {
+                    ESP_LOGE(TAG, "on_discovery_complete threw: %s", e.what());
+                } catch (...) {
+                }
+            }
+
+            discovery_in_flight_.store(false);
+            if (*done) {
+                try {
+                    (*done)();
+                } catch (...) {
+                }
+            }
+        },
+        [this, done, fail](const MoonrakerError& err) {
+            spdlog::error("[helixnet] subscribe request failed: {}", err.message);
+            discovery_fail(fail, MoonrakerEventType::DISCOVERY_FAILED, err.message);
+        });
+}
+
+void EspMoonrakerClient::discovery_fail(const DiscoveryFail& fail, MoonrakerEventType ev,
+                                        const std::string& reason) {
+    emit_event(ev, reason, true);
+    discovery_in_flight_.store(false);
+    if (fail && *fail) {
+        try {
+            (*fail)(reason);
+        } catch (...) {
+        }
+    }
+}
+
 PrinterDiscovery EspMoonrakerClient::hardware() const {
+    std::lock_guard<std::mutex> lock(hardware_mutex_);
     return hardware_;
 }
 
-void EspMoonrakerClient::parse_objects(const json& /*objects*/) {
-    // Real object parsing lands with discovery in Plan 4.
-    spdlog::debug("[helixnet] parse_objects: no-op in v1 (Plan 4)");
+void EspMoonrakerClient::parse_objects(const json& objects) {
+    std::lock_guard<std::mutex> lock(hardware_mutex_);
+    hardware_.parse_objects(objects);
+    // parse_objects() clears printer_objects_, so repopulate the raw name list
+    // AFTER it — build_subscription_objects derives AFC/unit objects from it.
+    std::vector<std::string> names;
+    if (objects.is_array()) {
+        names.reserve(objects.size());
+        for (const auto& o : objects) {
+            if (o.is_string()) {
+                names.push_back(o.get<std::string>());
+            }
+        }
+    }
+    hardware_.set_printer_objects(names);
 }
 
 void EspMoonrakerClient::clear_discovery_cache() {
-    spdlog::debug("[helixnet] clear_discovery_cache: no-op in v1 (Plan 4)");
+    std::lock_guard<std::mutex> lock(hardware_mutex_);
+    hardware_ = PrinterDiscovery{};
 }
 
 void EspMoonrakerClient::set_on_hardware_discovered(

@@ -169,6 +169,18 @@ class EspMoonrakerClient final : public IMoonrakerClient {
                              uint32_t timeout_ms, bool silent);
     bool is_connected() const;
 
+    // --- Discovery chain (Task 7). discover_printer() is the entry point; each
+    // step below runs on the websocket_task and threads the shared user callbacks
+    // through. Split out of discover_printer for readability. ---
+    using DiscoveryDone = std::shared_ptr<std::function<void()>>;
+    using DiscoveryFail = std::shared_ptr<std::function<void(const std::string&)>>;
+    void discovery_gate_klippy(DiscoveryDone done, DiscoveryFail fail);
+    void discovery_query_objects(DiscoveryDone done, DiscoveryFail fail);
+    void discovery_subscribe(DiscoveryDone done, DiscoveryFail fail);
+    // Emit `ev`, clear discovery_in_flight_, and invoke the error callback once.
+    void discovery_fail(const DiscoveryFail& fail, MoonrakerEventType ev,
+                        const std::string& reason);
+
     esp_websocket_client_handle_t ws_ = nullptr;
     esp_timer_handle_t housekeeping_timer_ = nullptr;
     std::string url_;
@@ -235,7 +247,18 @@ class EspMoonrakerClient final : public IMoonrakerClient {
 
     std::atomic<int64_t> suppress_modal_until_us_{0};
 
-    PrinterDiscovery hardware_; // default-constructed; Plan 4 populates via discovery
+    // Guards hardware_: populated on the websocket_task during discovery, read by
+    // consumers on the main thread via hardware(). Mirrors desktop's
+    // MoonrakerDiscoverySequence::hardware_mutex_.
+    mutable std::mutex hardware_mutex_;
+    // Collapses a re-entrant discover_printer() while one is already running. The
+    // ESP client has no connection_generation() staleness guard yet, so a
+    // reconnect mid-discovery could otherwise double-fire the chain; this bool is
+    // the coarse guard. Reset on disconnect and at chain end. Task 9 adds full
+    // generation parity.
+    std::atomic<bool> discovery_in_flight_{false};
+
+    PrinterDiscovery hardware_; // populated via discovery (guarded by hardware_mutex_)
 };
 
 } // namespace helix
