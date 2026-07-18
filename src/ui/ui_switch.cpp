@@ -338,11 +338,10 @@ static void ui_switch_xml_apply(lv_xml_parser_state_t* state, const char** attrs
 void ui_switch_register_responsive_constants() {
     spdlog::trace("[Switch] Registering responsive constants");
 
-    // Use custom breakpoints optimized for our hardware: max(hor_res, ver_res)
+    // Constrained axis (min of width/height) — keeps switch geometry consistent
+    // with ui_switch_init_size_presets() and fits the narrow axis in portrait.
     lv_display_t* display = lv_display_get_default();
-    int32_t hor_res = lv_display_get_horizontal_resolution(display);
-    int32_t ver_res = lv_display_get_vertical_resolution(display);
-    int32_t greater_res = LV_MAX(hor_res, ver_res);
+    int32_t resp_res = responsive_dimension(display);
 
     // Switch sizing strategy:
     // - Knob is square (width = height of switch)
@@ -365,7 +364,7 @@ void ui_switch_register_responsive_constants() {
     const char* switch_height_large;
     const char* knob_pad_large;
 
-    if (greater_res <= UI_BREAKPOINT_MICRO_MAX) { // ≤272: 480x272
+    if (resp_res <= UI_BREAKPOINT_MICRO_MAX) { // ≤272: 480x272
         switch_height = "16";
         switch_width = "32";
         knob_pad = "1";
@@ -376,9 +375,9 @@ void ui_switch_register_responsive_constants() {
         switch_height_large = "20";
         switch_width_large = "40";
         knob_pad_large = "1";
-        spdlog::trace("[Switch] Screen: MICRO (greater_res={}px), switch: {}x{}, row: {}px",
-                      greater_res, switch_width, switch_height, row_height);
-    } else if (greater_res <= UI_BREAKPOINT_SMALL_MAX) { // 273-460
+        spdlog::trace("[Switch] Screen: MICRO (min_dim={}px), switch: {}x{}, row: {}px",
+                      resp_res, switch_width, switch_height, row_height);
+    } else if (resp_res <= UI_BREAKPOINT_SMALL_MAX) { // 273-460
         switch_height = "20";
         switch_width = "40";
         knob_pad = "1";
@@ -392,9 +391,9 @@ void ui_switch_register_responsive_constants() {
         switch_width_large = "56";
         knob_pad_large = "2";
 
-        spdlog::trace("[Switch] Screen: TINY/SMALL (greater_res={}px), switch: {}x{}, row: {}px",
-                      greater_res, switch_width, switch_height, row_height);
-    } else if (greater_res <= UI_BREAKPOINT_MEDIUM_MAX) { // 481-800: 800x480
+        spdlog::trace("[Switch] Screen: TINY/SMALL (min_dim={}px), switch: {}x{}, row: {}px",
+                      resp_res, switch_width, switch_height, row_height);
+    } else if (resp_res <= UI_BREAKPOINT_MEDIUM_MAX) { // 481-800: 800x480
         switch_height = "28";
         switch_width = "56";
         knob_pad = "2";
@@ -408,8 +407,8 @@ void ui_switch_register_responsive_constants() {
         switch_width_large = "88";
         knob_pad_large = "3";
 
-        spdlog::trace("[Switch] Screen: MEDIUM (greater_res={}px), switch: {}x{}, row: {}px",
-                      greater_res, switch_width, switch_height, row_height);
+        spdlog::trace("[Switch] Screen: MEDIUM (min_dim={}px), switch: {}x{}, row: {}px",
+                      resp_res, switch_width, switch_height, row_height);
     } else { // >800: 1024x600+
         // Switch: 44px height, 88px width
         // Knob: 3px padding
@@ -427,8 +426,8 @@ void ui_switch_register_responsive_constants() {
         switch_width_large = "112";
         knob_pad_large = "4";
 
-        spdlog::trace("[Switch] Screen: LARGE (greater_res={}px), switch: {}x{}, row: {}px",
-                      greater_res, switch_width, switch_height, row_height);
+        spdlog::trace("[Switch] Screen: LARGE (min_dim={}px), switch: {}x{}, row: {}px",
+                      resp_res, switch_width, switch_height, row_height);
     }
 
     // Get globals scope for constant registration

@@ -69,26 +69,26 @@ static bool s_noop_subject_initialized = false;
  */
 static void register_color_picker_responsive_constants() {
     lv_display_t* display = lv_display_get_default();
-    int32_t hor_res = lv_display_get_horizontal_resolution(display);
-    int32_t ver_res = lv_display_get_vertical_resolution(display);
-    int32_t greater_res = LV_MAX(hor_res, ver_res);
+    // Constrained axis (min of width/height): preview + swatch tiles are square,
+    // so they should fit the narrow axis in portrait, not the tall one.
+    int32_t resp_res = responsive_dimension(display);
 
     // Preview swatch size and text height scale with screen
     const char* preview_size;
     const char* preview_size_small;
     const char* text_height;
     const char* theme_swatch_size;
-    if (greater_res <= UI_BREAKPOINT_MICRO_MAX) {
+    if (resp_res <= UI_BREAKPOINT_MICRO_MAX) {
         preview_size = "32";
         preview_size_small = "16";
         text_height = "44";
         theme_swatch_size = "20";
-    } else if (greater_res <= UI_BREAKPOINT_SMALL_MAX) {
+    } else if (resp_res <= UI_BREAKPOINT_SMALL_MAX) {
         preview_size = "40";
         preview_size_small = "20";
         text_height = "52";
         theme_swatch_size = "24";
-    } else if (greater_res <= UI_BREAKPOINT_MEDIUM_MAX) {
+    } else if (resp_res <= UI_BREAKPOINT_MEDIUM_MAX) {
         preview_size = "48";
         preview_size_small = "24";
         text_height = "60";
@@ -108,7 +108,7 @@ static void register_color_picker_responsive_constants() {
         lv_xml_register_const(scope, "theme_swatch_size", theme_swatch_size);
         spdlog::debug(
             "[Color Picker] Registered color_preview_size={}, theme_swatch_size={} for screen {}px",
-            preview_size, theme_swatch_size, greater_res);
+            preview_size, theme_swatch_size, resp_res);
     }
 }
 

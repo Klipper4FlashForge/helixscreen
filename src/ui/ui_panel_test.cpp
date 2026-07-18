@@ -66,25 +66,25 @@ void TestPanel::populate_labels() {
     lv_display_t* display = lv_display_get_default();
     int32_t hor_res = lv_display_get_horizontal_resolution(display);
     int32_t ver_res = lv_display_get_vertical_resolution(display);
-    int32_t greater_res = LV_MAX(hor_res, ver_res);
+    int32_t resp_res = responsive_dimension(display); // constrained axis (min w/h)
 
     // Determine screen size category
     const char* size_category;
     int switch_width, switch_height;
     int row_height;
 
-    if (greater_res <= UI_BREAKPOINT_MICRO_MAX) { // ≤272: 480x272
+    if (resp_res <= UI_BREAKPOINT_MICRO_MAX) { // ≤272: 480x272
         size_category = "MICRO";
         switch_width = 28;
         switch_height = 14;
         row_height = 22;
-    } else if (greater_res <= UI_BREAKPOINT_SMALL_MAX) { // 273-460
+    } else if (resp_res <= UI_BREAKPOINT_SMALL_MAX) { // 273-460
         // TINY/SMALL share presets — switch elements are too small to benefit from separate tiers
         size_category = "TINY/SMALL";
         switch_width = 36;
         switch_height = 18;
         row_height = 26;
-    } else if (greater_res <= UI_BREAKPOINT_MEDIUM_MAX) { // 481-800: 800x480
+    } else if (resp_res <= UI_BREAKPOINT_MEDIUM_MAX) { // 481-800: 800x480
         size_category = "MEDIUM";
         switch_width = 64;
         switch_height = 32;
@@ -105,8 +105,8 @@ void TestPanel::populate_labels() {
     char buffer[128];
 
     if (screen_size_label) {
-        snprintf(buffer, sizeof(buffer), "Screen Size: %s (%dx%d, max=%d)", size_category, hor_res,
-                 ver_res, greater_res);
+        snprintf(buffer, sizeof(buffer), "Screen Size: %s (%dx%d, min=%d)", size_category, hor_res,
+                 ver_res, resp_res);
         lv_label_set_text(screen_size_label, buffer);
     }
 
@@ -122,7 +122,7 @@ void TestPanel::populate_labels() {
     }
 
     spdlog::info("[{}] Setup complete: {} ({}x{}, max={}), switch={}x{}, row={}px", get_name(),
-                 size_category, hor_res, ver_res, greater_res, switch_width, switch_height,
+                 size_category, hor_res, ver_res, resp_res, switch_width, switch_height,
                  row_height);
 }
 
