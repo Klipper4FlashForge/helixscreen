@@ -148,6 +148,10 @@ void TemperatureController::set_target(HeaterType type, double celsius, SendOpti
                          "previous filament (requested lower)",
                          shown);
             NOTIFY_INFO(lv_tr("Holding nozzle at {}°C to purge previous filament."), shown);
+            // The holding toast above is now the sole nozzle message. Drop the
+            // caller's success callback so it doesn't also fire a "target set to
+            // {requested}°C" toast that contradicts the temp we actually held.
+            opts.on_success = nullptr;
         }
     }
 

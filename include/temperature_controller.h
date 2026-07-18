@@ -37,6 +37,8 @@ struct SendOptions {
     /// filament switch never drops the nozzle below what's needed to purge the
     /// previous material. Set by "switching material" call sites (preset tap, load).
     /// Leave false for deliberate manual sets and cooldown-to-0.
+    /// Note: when this floors the target, it emits its own "holding" toast and
+    /// clears on_success so the caller doesn't fire a contradictory "set to X" toast.
     bool keep_previous_hot = false;
     std::function<void()> on_success = nullptr;
     std::function<void(const MoonrakerError&)> on_error = nullptr;
