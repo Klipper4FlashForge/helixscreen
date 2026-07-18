@@ -86,16 +86,6 @@ extern "C" void helix_fonts_register(void);
 
 static const char* TAG = "app_boot";
 
-// A/B EXPERIMENT (temporary, 2026-07-17): boot-path settle-heal toggle. Gate
-// data showed TG1WDT_SYS_RST rose to ~3/20 after the settle-heal landed; prime
-// suspect is the ~600ms-after-home-panel-up full-screen invalidate contending
-// with WiFi bring-up + presenter on the PSRAM bus during the heavy boot window.
-// Set to 0 to compile OUT only the BOOT heal (the post-nav heal in
-// ui_nav_manager.cpp is untouched). If TG1WDT drops back to ~1/20 the boot heal
-// is confirmed and the permanent fix is deferring it to post-WiFi idle (NOT
-// deleting it — it heals real boot-window tears). Flip to 1 to restore.
-#define HELIX_BOOT_SETTLE_HEAL 0
-
 namespace {
 
 // The MoonrakerManager owns the client + API for the process lifetime. Held at
@@ -342,7 +332,6 @@ extern "C" void app_boot_ui(void) {
     ESP_LOGI(TAG, "helix: home panel up");
     log_heap_milestone("home-panel-up");
 
-#if HELIX_BOOT_SETTLE_HEAL
     // Settle-heal: one full-screen repaint ~600ms after the shell is up. The
     // synchronous boot build is the heaviest load window on the unpaced blit,
     // and any tear it leaves on STATIC content (the navbar never repaints on
@@ -359,7 +348,6 @@ extern "C" void app_boot_ui(void) {
         },
         600, nullptr);
     lv_timer_set_repeat_count(heal, 1);
-#endif // HELIX_BOOT_SETTLE_HEAL
 }
 
 extern "C" void app_boot_tick(void) {
