@@ -73,6 +73,10 @@ lv_result_t lv_xml_register_style(lv_xml_component_scope_t * scope, const char *
 
     if(!found) {
         xml_style = lv_ll_ins_tail(&scope->style_ll);
+        /* lv_ll_ins_tail returns uninitialised storage; zero it before use so
+         * lv_style_init's LV_USE_ASSERT_STYLE check doesn't read an uninitialised
+         * sentinel/prop_cnt (and name/long_name start from a known state). */
+        lv_memzero(xml_style, sizeof(*xml_style));
         xml_style->name = lv_strdup(style_name);
         lv_style_init(&xml_style->style);
         size_t long_name_len = lv_strlen(scope->name) + 1 + lv_strlen(style_name) + 1;
