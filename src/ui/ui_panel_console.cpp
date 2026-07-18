@@ -404,11 +404,13 @@ lv_obj_t* ConsolePanel::create(lv_obj_t* parent) {
             LV_EVENT_KEY, this);
     }
 
-    // Show timestamps on medium+ screens (vertical resolution > 460px)
-    int32_t ver_res = lv_display_get_vertical_resolution(lv_display_get_default());
-    show_timestamps_ = (ver_res > UI_BREAKPOINT_SMALL_MAX);
-    spdlog::debug("[{}] Timestamps {} (ver_res={})", get_name(),
-                  show_timestamps_ ? "enabled" : "disabled", ver_res);
+    // Show timestamps on medium+ screens. Gate on the constrained axis (min of
+    // width/height): the timestamp column is horizontal, so a narrow portrait
+    // screen should hide it even though its height is large.
+    int32_t resp_res = responsive_dimension(lv_display_get_default());
+    show_timestamps_ = (resp_res > UI_BREAKPOINT_SMALL_MAX);
+    spdlog::debug("[{}] Timestamps {} (min_dim={})", get_name(),
+                  show_timestamps_ ? "enabled" : "disabled", resp_res);
 
     spdlog::info("[{}] Overlay created successfully", get_name());
     return overlay_root_;

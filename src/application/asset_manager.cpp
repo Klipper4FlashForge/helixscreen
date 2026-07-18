@@ -21,24 +21,23 @@ void AssetManager::register_fonts() {
         return;
     }
 
-    // Determine breakpoint from the current display's vertical resolution.
+    // Determine breakpoint from the constrained axis (min of width/height), so a
+    // portrait screen skips the large-font tiers its narrow axis never uses
+    // instead of loading them off its tall axis. Landscape is unchanged (min is
+    // already the height). Matches responsive_dimension() in theme_manager.
     // Fonts only used at larger breakpoints are skipped to save memory
     // (~500-800KB of .rodata pages that won't be faulted in).
-    int32_t ver_res = 0;
-    lv_display_t* disp = lv_display_get_default();
-    if (disp) {
-        ver_res = lv_display_get_vertical_resolution(disp);
-    }
-    const bool is_medium_plus = (ver_res > UI_BREAKPOINT_SMALL_MAX);
-    const bool is_large_plus = (ver_res > UI_BREAKPOINT_MEDIUM_MAX);
-    const bool is_xlarge_plus = (ver_res > UI_BREAKPOINT_LARGE_MAX);
-    const bool is_xxlarge_plus = (ver_res > UI_BREAKPOINT_XLARGE_MAX);
-    const bool is_micro = (ver_res <= UI_BREAKPOINT_MICRO_MAX);
+    const int32_t resp_res = responsive_dimension(nullptr);
+    const bool is_medium_plus = (resp_res > UI_BREAKPOINT_SMALL_MAX);
+    const bool is_large_plus = (resp_res > UI_BREAKPOINT_MEDIUM_MAX);
+    const bool is_xlarge_plus = (resp_res > UI_BREAKPOINT_LARGE_MAX);
+    const bool is_xxlarge_plus = (resp_res > UI_BREAKPOINT_XLARGE_MAX);
+    const bool is_micro = (resp_res <= UI_BREAKPOINT_MICRO_MAX);
 
     int skipped = 0;
 
-    spdlog::trace("[AssetManager] Registering fonts (ver_res={}, micro={}, medium+={}, large+={})",
-                  ver_res, is_micro, is_medium_plus, is_large_plus);
+    spdlog::trace("[AssetManager] Registering fonts (min_dim={}, micro={}, medium+={}, large+={})",
+                  resp_res, is_micro, is_medium_plus, is_large_plus);
 
     // Material Design Icons (various sizes for different UI elements)
     // Source: https://pictogrammers.com/library/mdi/

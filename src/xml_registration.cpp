@@ -119,11 +119,15 @@ static void register_color_picker_responsive_constants() {
 static void register_color_picker_component_constants() {
     lv_display_t* display = lv_display_get_default();
     int32_t ver_res = lv_display_get_vertical_resolution(display);
+    // Swatch is a square touch target — size it off the constrained axis so it
+    // stays tappable in portrait. The HSV picker below is genuinely vertical (it
+    // fills the modal's height), so that math deliberately keeps using ver_res.
+    const int32_t resp_res = responsive_dimension(display);
 
     // Swatch size: smaller on compact screens
-    const char* swatch_size = ver_res <= UI_BREAKPOINT_MICRO_MAX   ? "24"
-                              : ver_res <= UI_BREAKPOINT_SMALL_MAX ? "28"
-                                                                   : "32";
+    const char* swatch_size = resp_res <= UI_BREAKPOINT_MICRO_MAX   ? "24"
+                              : resp_res <= UI_BREAKPOINT_SMALL_MAX ? "28"
+                                                                    : "32";
 
     // HSV picker: size proportionally to screen height
     // On TINY (full-screen modal), chrome is ~142px (header+tabs+padding+dividers+buttons)
@@ -167,12 +171,14 @@ static void register_color_picker_component_constants() {
  */
 static void register_color_swatch_grid_constants() {
     lv_display_t* display = lv_display_get_default();
-    int32_t ver_res = lv_display_get_vertical_resolution(display);
+    // Square-tile grid: size tiles + gap off the constrained axis so the grid
+    // fits a narrow portrait screen instead of overflowing off its tall axis.
+    int32_t resp_res = responsive_dimension(display);
 
-    int32_t swatch = ver_res <= UI_BREAKPOINT_MICRO_MAX   ? 24
-                     : ver_res <= UI_BREAKPOINT_SMALL_MAX ? 28
-                                                          : 32;
-    int32_t gap = ver_res <= UI_BREAKPOINT_MICRO_MAX ? 6 : 8;
+    int32_t swatch = resp_res <= UI_BREAKPOINT_MICRO_MAX   ? 24
+                     : resp_res <= UI_BREAKPOINT_SMALL_MAX ? 28
+                                                           : 32;
+    int32_t gap = resp_res <= UI_BREAKPOINT_MICRO_MAX ? 6 : 8;
     constexpr int32_t cols = 6;
     int32_t width = cols * swatch + (cols - 1) * gap;
 
@@ -188,8 +194,8 @@ static void register_color_swatch_grid_constants() {
         lv_xml_register_const(scope, "grid_swatch_size", swatch_buf);
         lv_xml_register_const(scope, "grid_gap", gap_buf);
         lv_xml_register_const(scope, "grid_width", width_buf);
-        spdlog::debug("[SwatchGrid] Registered swatch={} gap={} width={} for height {}px",
-                      swatch_buf, gap_buf, width_buf, ver_res);
+        spdlog::debug("[SwatchGrid] Registered swatch={} gap={} width={} for min_dim {}px",
+                      swatch_buf, gap_buf, width_buf, resp_res);
     }
 }
 
