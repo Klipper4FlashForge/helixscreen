@@ -120,6 +120,12 @@ I18N_DO_NOT_TRANSLATE_RE = re.compile(
 )
 I18N_UNIVERSAL_RE = re.compile(r"//[^\n]*\bi18n:\s*universal", re.IGNORECASE)
 
+# File-level opt-out for XML files: an `i18n: skip-file` marker anywhere in an
+# XML comment excludes the whole file from extraction. Used by dev/test-only
+# panels (test_panel.xml, gcode_test_panel.xml, step_test_panel.xml) whose demo
+# strings are never shown to end users and shouldn't pollute the locale packs.
+I18N_SKIP_FILE_RE = re.compile(r"<!--[^>]*\bi18n:\s*skip-file", re.IGNORECASE)
+
 # Language names displayed in their native script (never translated)
 LANGUAGE_NAMES = {
     "Deutsch", "English", "Español", "Français", "Italiano", "Português",
@@ -496,6 +502,10 @@ def extract_strings_from_xml(xml_path: Path) -> Set[str]:
         print(f"Warning: Failed to read {xml_path}: {e}")
         return result
 
+    # File-level opt-out: dev/test panels carry an `i18n: skip-file` marker.
+    if I18N_SKIP_FILE_RE.search(content):
+        return result
+
     # Check for bind_text on a per-element basis using regex
     # Elements with bind_text should not have their text extracted
     # Pattern: <tag ... bind_text="..." ... text="value" ...> or reverse order
@@ -582,6 +592,10 @@ def extract_strings_with_locations(xml_path: Path) -> Dict[str, List[Tuple[str, 
             content = f.read()
     except IOError as e:
         print(f"Warning: Failed to read {xml_path}: {e}")
+        return result
+
+    # File-level opt-out: dev/test panels carry an `i18n: skip-file` marker.
+    if I18N_SKIP_FILE_RE.search(content):
         return result
 
     filename = str(xml_path.name)

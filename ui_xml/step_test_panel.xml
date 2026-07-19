@@ -1,6 +1,8 @@
 <?xml version="1.0"?>
 <!-- Copyright (C) 2025-2026 356C LLC -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Test/Development Panel — accessible only via dev flags -->
+<!-- i18n: skip-file — dev-only demo strings, never shown to end users -->
 <component>
   <!-- Local Constants -->
   <consts>

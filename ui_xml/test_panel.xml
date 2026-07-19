@@ -2,6 +2,7 @@
 <!-- Copyright (C) 2025-2026 356C LLC -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <!-- Test/Development Panel - Only accessible via -p test or -panel test flag -->
+<!-- i18n: skip-file — dev-only demo strings, never shown to end users -->
 <component>
   <!-- Styles used by the XML Expression Demo (bind_style_if) -->
   <styles>
