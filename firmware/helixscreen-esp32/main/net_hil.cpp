@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // net_hil — Plan 3 Task 10 network hardware-in-the-loop scenario. Test-only:
-// brings up a raw esp_wifi station (the real WifiBackend lands in Plan 4) and
-// drives a live Moonraker WebSocket session through EspMoonrakerClient to
-// validate the transport on real K-Touch hardware while the display stays up.
+// brings up the real WifiBackend (Task 13, wifi_backend_esp.cpp — over
+// esp_wifi directly, not the shared WiFiManager singleton, since this build
+// never runs app_boot.cpp's app_net_start() and so never races it) and drives
+// a live Moonraker WebSocket session through EspMoonrakerClient to validate
+// the transport on real K-Touch hardware while the display stays up.
 // Entirely gated behind CONFIG_HELIX_NET_HIL (default n) — this translation
 // unit compiles to nothing when the option is off. See
 // .superpowers/sdd/task-10-brief.md for the exact scenario contract.
@@ -13,17 +15,14 @@
 #if CONFIG_HELIX_NET_HIL
 
 #include "esp_moonraker_client.h"
+#include "wifi_backend.h"
+#include "wifi_backend_esp.h"
 
-#include "esp_event.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
-#include "esp_netif.h"
 #include "esp_timer.h"
-#include "esp_wifi.h"
-#include "nvs_flash.h"
 
 #include "freertos/FreeRTOS.h"
-#include "freertos/event_groups.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
@@ -37,7 +36,6 @@ extern "C" void net_hil_start(void);
 namespace {
 
 constexpr char TAG[] = "net_hil";
-constexpr EventBits_t kWifiConnectedBit = BIT0;
 // esp-idf#14918: a TX can block 10s+ behind an in-progress RX without the
 // separate TX lock (sdkconfig.defaults sets CONFIG_ESP_WS_CLIENT_SEPARATE_TX_LOCK).
 // Anything above this during the probe means that class of contention is back.
@@ -47,8 +45,6 @@ constexpr int64_t kPingCadenceMs = 15000;
 constexpr int64_t kProbeAtMs = 30000;
 constexpr int kProbeBurstCount = 5;
 constexpr uint32_t kHeapFlatToleranceBytes = 8192;
-
-EventGroupHandle_t s_wifi_event_group = nullptr;
 
 // Counters updated from the WS task (notify callback, RPC error callbacks) and
 // read from the HIL thread — plain atomics, no ordering requirements beyond
@@ -62,59 +58,41 @@ std::atomic<uint32_t> s_max_msg{0};
 // Plan 4 owns real client lifecycle). Leaked on purpose.
 helix::IMoonrakerClient* s_client = nullptr;
 
-void wifi_event_handler(void*, esp_event_base_t event_base, int32_t event_id, void*) {
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGW(TAG, "wifi station disconnected, retrying");
-        esp_wifi_connect();
-    }
-}
+// Task 13: process-lifetime backend instance, owned directly (not through
+// the shared WiFiManager singleton) — this scenario never runs alongside
+// app_boot.cpp's app_net_start() (CONFIG_HELIX_NET_HIL gates it off there),
+// so there's no second owner to collide with. Leaked on purpose, same
+// rationale as s_client above.
+std::unique_ptr<WifiBackend> s_wifi_backend;
 
-void ip_event_handler(void*, esp_event_base_t event_base, int32_t event_id, void* event_data) {
-    if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        auto* event = static_cast<ip_event_got_ip_t*>(event_data);
-        ESP_LOGI(TAG, "wifi got ip: " IPSTR, IP2STR(&event->ip_info.ip));
-        xEventGroupSetBits(s_wifi_event_group, kWifiConnectedBit);
-    }
-}
-
-// Test-only WiFi station bring-up. Self-contained on purpose: the real
-// WifiBackend (Plan 4's create_platform_wifi_backend) supersedes this, but
-// Task 10 shouldn't reach into app-layer code to get network up.
+// Test-only WiFi station bring-up over the real WifiBackend (Task 13,
+// wifi_backend_esp.cpp). Explicitly connects with the Kconfig SSID/password
+// (the "HelixScreen Network" menu) rather than relying on NVS/first-boot-seed
+// timing, so the scenario always joins the configured HIL network regardless
+// of whatever credentials a prior production-path boot may have stored.
 void wifi_init_station(void) {
-    esp_err_t nvs_rc = nvs_flash_init();
-    if (nvs_rc == ESP_ERR_NVS_NO_FREE_PAGES || nvs_rc == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        nvs_rc = nvs_flash_init();
+    helix::wifi_backend_esp_allow_hardware_bringup();
+    s_wifi_backend = helix::create_platform_wifi_backend(/*silent=*/false);
+
+    SemaphoreHandle_t connected_sem = xSemaphoreCreateBinary();
+    s_wifi_backend->register_event_callback(
+        "CONNECTED", [connected_sem](const std::string&) { xSemaphoreGive(connected_sem); });
+
+    WiFiError start_err = s_wifi_backend->start();
+    if (!start_err.success()) {
+        ESP_LOGE(TAG, "wifi backend start failed: %s", start_err.technical_msg.c_str());
     }
-    ESP_ERROR_CHECK(nvs_rc);
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_create_default_wifi_sta();
-
-    s_wifi_event_group = xEventGroupCreate();
-
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    ESP_ERROR_CHECK(
-        esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, nullptr));
-    ESP_ERROR_CHECK(
-        esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &ip_event_handler, nullptr));
-
-    wifi_config_t wifi_config = {};
-    std::strncpy(reinterpret_cast<char*>(wifi_config.sta.ssid), CONFIG_HELIX_HIL_WIFI_SSID,
-                 sizeof(wifi_config.sta.ssid) - 1);
-    std::strncpy(reinterpret_cast<char*>(wifi_config.sta.password), CONFIG_HELIX_HIL_WIFI_PASS,
-                 sizeof(wifi_config.sta.password) - 1);
-    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    WiFiError connect_err =
+        s_wifi_backend->connect_network(CONFIG_HELIX_HIL_WIFI_SSID, CONFIG_HELIX_HIL_WIFI_PASS);
+    if (!connect_err.success()) {
+        ESP_LOGE(TAG, "wifi backend connect_network failed: %s",
+                 connect_err.technical_msg.c_str());
+    }
 
     ESP_LOGI(TAG, "waiting for wifi connection (ssid=\"%s\")...", CONFIG_HELIX_HIL_WIFI_SSID);
-    xEventGroupWaitBits(s_wifi_event_group, kWifiConnectedBit, pdFALSE, pdTRUE, portMAX_DELAY);
+    xSemaphoreTake(connected_sem, portMAX_DELAY);
+    vSemaphoreDelete(connected_sem);
+    ESP_LOGI(TAG, "wifi up");
 }
 
 // Synchronous printer.info round trip: blocks the HIL thread on a binary

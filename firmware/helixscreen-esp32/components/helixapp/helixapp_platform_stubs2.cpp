@@ -384,56 +384,12 @@ std::string get_helix_cache_dir(const std::string& subdir) {
 
 namespace helix {
 
-// --- WiFiManager (wpa_supplicant/wpa_cli backend; ESP32 uses esp_wifi) -------
-// The slice UI reaches it through get_wifi_manager(), so the whole public
-// surface plus ctor/dtor is stubbed. backend_ stays null; wifi_backend.h is
-// included by wifi_manager.h, so unique_ptr<WifiBackend> destructs fine.
-// "No hardware / disabled / not connected" is the honest no-op state.
-WiFiManager::WiFiManager(bool) {}
-WiFiManager::~WiFiManager() = default;
-std::vector<WiFiNetwork> WiFiManager::scan_once() {
-    return {};
-}
-void WiFiManager::start_scan(std::function<void(const std::vector<WiFiNetwork>&)>) {}
-void WiFiManager::stop_scan() {}
-void WiFiManager::connect(const std::string&, const std::string&,
-                          std::function<void(bool success, const std::string& error)>) {}
-void WiFiManager::disconnect() {}
-bool WiFiManager::is_connected() {
-    return false;
-}
-std::string WiFiManager::get_connected_ssid() {
-    return {};
-}
-std::string WiFiManager::get_ip_address() {
-    return {};
-}
-std::string WiFiManager::get_mac_address() {
-    return {};
-}
-int WiFiManager::get_signal_strength() {
-    return 0;
-}
-bool WiFiManager::supports_5ghz() {
-    return false;
-}
-bool WiFiManager::has_hardware() {
-    return false;
-}
-bool WiFiManager::is_enabled() {
-    return false;
-}
-bool WiFiManager::set_enabled(bool) {
-    return false;
-}
-void WiFiManager::retry_async() {}
-void WiFiManager::add_state_observer(helix::LifetimeToken, std::function<void()>) {}
-void WiFiManager::init_self_reference(std::shared_ptr<WiFiManager>) {}
-
-std::shared_ptr<WiFiManager> get_wifi_manager() {
-    static std::shared_ptr<WiFiManager> mgr = std::make_shared<WiFiManager>(true);
-    return mgr;
-}
+// --- WiFiManager: Task 13 replaces this stub. src/api/wifi_manager.cpp (the
+// real, desktop-shared implementation) and src/api/wifi_backend.cpp are now
+// compiled in (app_srcs.txt); WifiBackend::create() dispatches to
+// helix::create_platform_wifi_backend() on ESP_PLATFORM, implemented in
+// wifi_backend_esp.cpp against esp_wifi. get_wifi_manager()'s singleton
+// storage lives in wifi_manager.cpp itself, so no stub is needed here.
 
 // --- ThumbnailProcessor, third batch (see round 2) ----------------------------
 ThumbnailTarget ThumbnailProcessor::get_target_for_resolution(int, int, ThumbnailSize) {

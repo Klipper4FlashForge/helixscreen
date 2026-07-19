@@ -343,18 +343,11 @@ void SettingsPanel::init_subjects() {
     // Platform visibility subjects — hidden on Android where OS manages these
     bool on_android = helix::is_android_platform();
 
-    // Task 12 R1: also hidden on ESP32 until Task 13 (WifiBackend over
-    // esp_wifi) lands. NetworkSettingsOverlay is compiled in (it's shared
-    // code), but wifi_manager.h/ethernet_manager.h resolve to the
-    // helixapp_platform_stubs.cpp seam on ESP32 today — tapping this row
-    // would open a scan/join page with no working backend behind it. Not a
-    // WiFi-credentials change (scope-fenced to Tasks 13/14): this only hides
-    // the entry point to a page whose backend doesn't exist yet.
-#if defined(HELIX_PLATFORM_ESP32)
-    bool show_network_settings = false;
-#else
+    // Task 13: un-hidden on ESP32 now that WifiBackend over esp_wifi
+    // (wifi_backend_esp.cpp) backs wifi_manager.h for real — Ethernet stays
+    // out of scope (ethernet_manager.h still resolves to the
+    // helixapp_platform_stubs.cpp seam; no ESP32 wired-network HIL exists).
     bool show_network_settings = !on_android;
-#endif
     lv_subject_init_int(&show_network_settings_subject_, show_network_settings ? 1 : 0);
     subjects_.register_subject(&show_network_settings_subject_);
     lv_xml_register_subject(nullptr, "show_network_settings", &show_network_settings_subject_);

@@ -54,7 +54,7 @@ set(MOCK_SRCS "")
 
 # Local firmware-tree sources: platform seams (Linux-bound singletons the app
 # reaches through may-be-null accessors), the Task 10 HTTP link stubs, missing
-# font-face aliases, and the app_main link probe.
+# font-face aliases, the app_main link probe, and the Task 13 WifiBackend impl.
 set(LOCAL_SRCS
     app_boot.cpp
     helixapp_platform_stubs.cpp
@@ -64,7 +64,8 @@ set(LOCAL_SRCS
     font_aliases.cpp
     stb_impl.c
     helix_lvgl_abi_check.c
-    link_probe.cpp)
+    link_probe.cpp
+    wifi_backend_esp.cpp)
 
 idf_component_register(
     SRCS ${APP_SRCS} ${MOCK_SRCS} ${LOCAL_SRCS}

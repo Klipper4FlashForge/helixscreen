@@ -18,8 +18,10 @@
 //     face set, link-anchored in main/CMakeLists.txt) in addition to
 //     AssetManager::register_all(), which registers the full token set backed
 //     by the aliases in font_aliases.cpp.
-//   * No connect() for real (non-mock) builds: WiFi lands in Task 13, so the
-//     shell comes up in the not-ready/connecting UI, which is product-correct.
+//   * Real (non-mock) builds bring WiFi up through the shared WifiBackend
+//     (Task 13, wifi_backend_esp.cpp) rather than raw esp_wifi calls; the
+//     shell still comes up in the not-ready/connecting UI first and the
+//     Moonraker connect fires once the backend reports an IP.
 //   * CONFIG_HELIX_MOCK_PRINTER drives a firmware-local synthetic PrinterState
 //     driver (below), NOT the app-layer MoonrakerClientMock — that mock
 //     inherits the libhv-based concrete MoonrakerClient, whose transport base
@@ -84,17 +86,13 @@
 #include <string>
 
 #if !CONFIG_HELIX_MOCK_PRINTER
-// Non-mock (real connect) path only — WiFi station bring-up + connect thread.
-// File scope: these are extern "C" ESP-IDF APIs and must not sit inside the
-// anonymous namespace the rest of the boot code lives in.
-#include "esp_event.h"
-#include "esp_netif.h"
-#include "esp_wifi.h"
-#include "nvs_flash.h"
+// Non-mock (real connect) path only — WiFi bring-up (Task 13, over the shared
+// WifiBackend) + Moonraker connect thread.
+#include "async_lifetime_guard.h"
+#include "wifi_backend_esp.h"
+#include "wifi_manager.h"
 
-#include "freertos/event_groups.h"
-
-#include <cstring>
+#include <atomic>
 #include <pthread.h>
 #endif // !CONFIG_HELIX_MOCK_PRINTER
 
@@ -462,86 +460,36 @@ std::string ws_to_http_base(const std::string& ws_url) {
     return url;
 }
 
-constexpr EventBits_t kAppWifiConnectedBit = BIT0;
-EventGroupHandle_t s_app_wifi_event_group = nullptr;
+// Task 13: process-lifetime guard for the state-observer callback below.
+// app_net_start()'s pthread is the only thread that registers against it; the
+// observer itself fires from WiFiManager::notify_state_observers(), called
+// from whatever context the esp_wifi backend reports CONNECTED/DISCONNECTED
+// on (see wifi_backend_esp.cpp), and defers via the token to the UpdateQueue
+// — drained by app_boot_tick() on the render loop, never back onto the net
+// thread. Never invalidated (this boot flow has no owning object to tear
+// down), matching net_hil.cpp's "process-lifetime singleton, leaked on
+// purpose" precedent for the same reason.
+helix::AsyncLifetimeGuard s_net_lifetime;
+std::atomic<bool> s_moonraker_connect_kicked{false};
 
-void app_wifi_event_handler(void*, esp_event_base_t base, int32_t id, void*) {
-    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
-    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGW(TAG, "wifi station disconnected, retrying");
-        esp_wifi_connect();
+// One-shot handoff to the Moonraker connect, callable from either the bounded
+// wait below or the state observer that resolves a later connection. The
+// atomic exchange guarantees mgr->connect() fires exactly once regardless of
+// which caller wins the race.
+void kick_moonraker_connect_once() {
+    bool expected = false;
+    if (!s_moonraker_connect_kicked.compare_exchange_strong(expected, true)) {
+        return;
     }
-}
-
-void app_ip_event_handler(void*, esp_event_base_t base, int32_t id, void* event_data) {
-    if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
-        auto* event = static_cast<ip_event_got_ip_t*>(event_data);
-        ESP_LOGI(TAG, "wifi got ip: " IPSTR, IP2STR(&event->ip_info.ip));
-        xEventGroupSetBits(s_app_wifi_event_group, kAppWifiConnectedBit);
-    }
-}
-
-// Station bring-up. Blocks until an IP is acquired. Runs on the app-net pthread
-// (below) so the WiFi driver's internal-DRAM allocations land on that thread —
-// which is spawned AFTER app_boot_ui()'s internal-DRAM gates — and so a slow /
-// absent network never holds the render loop. Best-effort on the idempotent
-// init steps (nvs / netif / default event loop) so it does not abort if a prior
-// path already ran them.
-void app_wifi_bring_up_station() {
-    esp_err_t nvs_rc = nvs_flash_init();
-    if (nvs_rc == ESP_ERR_NVS_NO_FREE_PAGES || nvs_rc == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        nvs_rc = nvs_flash_init();
-    }
-    if (nvs_rc != ESP_OK) {
-        ESP_LOGW(TAG, "nvs_flash_init: %s (continuing)", esp_err_to_name(nvs_rc));
-    }
-    ESP_ERROR_CHECK(esp_netif_init());
-    esp_err_t loop_rc = esp_event_loop_create_default();
-    if (loop_rc != ESP_OK && loop_rc != ESP_ERR_INVALID_STATE) {
-        ESP_ERROR_CHECK(loop_rc);
-    }
-    esp_netif_create_default_wifi_sta();
-
-    s_app_wifi_event_group = xEventGroupCreate();
-
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    ESP_ERROR_CHECK(
-        esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &app_wifi_event_handler, nullptr));
-    ESP_ERROR_CHECK(
-        esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &app_ip_event_handler, nullptr));
-
-    wifi_config_t wifi_config = {};
-    std::strncpy(reinterpret_cast<char*>(wifi_config.sta.ssid), CONFIG_HELIX_HIL_WIFI_SSID,
-                 sizeof(wifi_config.sta.ssid) - 1);
-    std::strncpy(reinterpret_cast<char*>(wifi_config.sta.password), CONFIG_HELIX_HIL_WIFI_PASS,
-                 sizeof(wifi_config.sta.password) - 1);
-    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
-
-    ESP_LOGI(TAG, "app: waiting for wifi (ssid=\"%s\")...", CONFIG_HELIX_HIL_WIFI_SSID);
-    xEventGroupWaitBits(s_app_wifi_event_group, kAppWifiConnectedBit, pdFALSE, pdTRUE,
-                        portMAX_DELAY);
-    ESP_LOGI(TAG, "app: wifi up");
-}
-
-void* app_net_thread_main(void*) {
-    app_wifi_bring_up_station();
-
     MoonrakerManager* mgr = g_manager;
     if (!mgr) {
         ESP_LOGE(TAG, "app_net: no MoonrakerManager — cannot connect");
-        return nullptr;
+        return;
     }
     // Task 12 R2: read the effective host/port from Config, not Kconfig
     // directly — app_boot_ui()'s Phase 1 seed guarantees a value is present
     // (either the user's saved Host or the first-boot Kconfig default) by the
-    // time this thread runs (app_net_start() is called last, after Phase 1).
+    // time this runs (app_net_start() is called last, after Phase 1).
     helix::Config* config = helix::Config::get_instance();
     std::string host = config->get<std::string>(config->df() + "moonraker_host", "");
     int port = config->get<int>(config->df() + "moonraker_port", 7125);
@@ -550,9 +498,63 @@ void* app_net_thread_main(void*) {
     ESP_LOGI(TAG, "app: connecting Moonraker (%s)", ws_url.c_str());
     // Async: connect() starts the WebSocket client task and returns. on_connected
     // → MoonrakerManager::connect()'s discover_printer() → the callbacks
-    // registered in setup_discovery_callbacks_esp(), all on the WS task. This
-    // thread has nothing left to do, so it exits and frees its 32KB stack.
+    // registered in setup_discovery_callbacks_esp(), all on the WS task.
     mgr->connect(ws_url, http_base);
+}
+
+// R4: bounded wait for the FIRST post-boot association, replacing the old
+// portMAX_DELAY park (which held this thread's 32KB stack forever against a
+// never-associating network — the Task 9 backlog item now due). 20s covers
+// the historical successful-assoc case with margin; the backend's own
+// assoc-timeout + bounded backoff retry (wifi_backend_esp.cpp) keep trying
+// underneath regardless of whether this wait succeeds.
+constexpr int kBootBoundedWaitMs = 20000;
+constexpr int kBootPollIntervalMs = 200;
+
+void* app_net_thread_main(void*) {
+    // Opens the esp_wifi hardware bring-up gate — see wifi_backend_esp.h for
+    // why this must happen from THIS pthread specifically (THE PATTERN:
+    // >=32KB internal alloc claimed only here, after app_boot_ui()'s
+    // internal-DRAM gates), not from whatever thread happens to call
+    // get_wifi_manager() first (e.g. NetworkWidget's ctor during the earlier,
+    // heavy build_shell() phase).
+    helix::wifi_backend_esp_allow_hardware_bringup();
+
+    auto wifi = helix::get_wifi_manager();
+
+    // Register the handoff BEFORE waiting: a CONNECTED that lands after the
+    // bounded wait below (weak signal, slow AP) still triggers the Moonraker
+    // connect exactly once, with no thread parked waiting for it.
+    wifi->add_state_observer(s_net_lifetime.token(), [wifi]() {
+        if (wifi->is_connected()) {
+            kick_moonraker_connect_once();
+        }
+    });
+
+    // The singleton may already exist — constructed earlier (gate closed) by
+    // some other get_wifi_manager() caller, in which case its start_async()
+    // was a harmless no-op. Kick a real bring-up attempt now that the gate is
+    // open; idempotent if this call IS the first construction (the ctor
+    // already invoked start_async() once).
+    wifi->retry_async();
+
+    for (int waited_ms = 0; waited_ms < kBootBoundedWaitMs; waited_ms += kBootPollIntervalMs) {
+        if (wifi->is_connected()) {
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(kBootPollIntervalMs));
+    }
+
+    if (wifi->is_connected()) {
+        kick_moonraker_connect_once();
+    } else {
+        ESP_LOGW(TAG,
+                 "app_net: no association after %dms — UI stays not-ready; backend keeps "
+                 "retrying in the background",
+                 kBootBoundedWaitMs);
+    }
+    // Handoff is either done above or deferred to the state observer — exit
+    // either way, freeing this thread's 32KB stack (R4: no permanent park).
     return nullptr;
 }
 

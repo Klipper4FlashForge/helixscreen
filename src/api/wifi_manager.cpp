@@ -21,7 +21,10 @@
 #include "spdlog/spdlog.h"
 #include "wifi_ui_utils.h"
 
-#if !defined(__APPLE__) && !defined(__ANDROID__)
+#if !defined(__APPLE__) && !defined(__ANDROID__) && !defined(ESP_PLATFORM)
+// NetworkManager/wpa_supplicant fallback (handle_init_failed, below) is a
+// Linux-desktop-only concern — ESP32 has a single esp_wifi backend with no
+// fallback path (see wifi_backend_esp.cpp).
 #include "wifi_backend_networkmanager.h"
 #include "wifi_backend_wpa_supplicant.h"
 #endif

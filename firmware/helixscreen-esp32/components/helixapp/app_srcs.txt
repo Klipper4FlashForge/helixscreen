@@ -35,7 +35,9 @@
 #     into the HTTP-free src/api/moonraker_api_validation.cpp — kept below, AFC/HappyHare
 #     need the real validator pre-Task-10, not the reject-everything stub.)
 #   Platform seams (no ESP backend yet; provided by helixapp_platform_stubs.cpp,
-#   same as the audit): src/api/{wifi,usb,ethernet}_manager + *_backend*,
+#   same as the audit): src/api/{usb,ethernet}_manager + *_backend*
+#     (wifi_manager/wifi_backend moved OUT of this list in Task 13 — real,
+#     backed by wifi_backend_esp.cpp),
 #     display/backlight/drm/fbdev backends, src/network/mdns_discovery,
 #     src/system/{host_identity,platform_info,telemetry_manager,update_checker,
 #     crash_*,debug_bundle_collector,camera_stream,snapshot_qr_scanner,
@@ -440,6 +442,11 @@ src/ui/ui_ams_detail.cpp
 src/system/helix_paths.cpp
 src/printer/filament_slot_override_store.cpp
 src/api/wifi_ui_utils.cpp
+# Task 13: wifi_manager.cpp/wifi_backend.cpp were platform-seamed (stub in
+# helixapp_platform_stubs2.cpp) through Task 12 — now real, backed by
+# wifi_backend_esp.cpp (LOCAL_SRCS, CMakeLists.txt) against esp_wifi.
+src/api/wifi_manager.cpp
+src/api/wifi_backend.cpp
 src/api/moonraker_api.cpp
 src/api/moonraker_api_config.cpp
 src/api/moonraker_api_led.cpp
