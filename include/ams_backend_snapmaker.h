@@ -79,11 +79,12 @@ class AmsBackendSnapmaker : public AmsSubscriptionBackend {
     [[nodiscard]] AmsSystemInfo get_system_info() const override;
     [[nodiscard]] SlotInfo get_slot_info(int slot_index) const override;
 
-    // Operation step bar. The U1 firmware reports a sequential
-    // Home -> Select -> Heat -> Move phase via the ams_operation_phase subject,
-    // so the step model and its driving index live in the backend (the sidebar
-    // renders generically). LOAD ends in "Feed filament", UNLOAD in "Retract";
-    // the Heat step shows a live nozzle temperature.
+    // Operation step bar. The U1 firmware reports a granular channel_state that
+    // classify_channel_state maps to a per-direction step index published via the
+    // ams_operation_phase subject, so the step model and its driving index live in
+    // the backend (the sidebar renders generically). LOAD is a 5-step model
+    // (Home -> Select -> Heat -> Feed filament -> Purge); UNLOAD is 4 steps
+    // (Home -> Select -> Heat -> Retract). The Heat step shows a live nozzle temp.
     [[nodiscard]] OperationStepModel get_operation_step_model(StepOperationType op) const override;
     [[nodiscard]] lv_subject_t* get_operation_step_index_subject(StepOperationType op) override;
 
@@ -104,10 +105,12 @@ class AmsBackendSnapmaker : public AmsSubscriptionBackend {
     [[nodiscard]] PathSegment get_slot_filament_segment(int slot_index) const override;
     [[nodiscard]] PathSegment infer_error_segment() const override;
 
-    // LIVE per-slot toolhead sensor: the per-tool filament_motion_sensor
-    // (e{N}_filament) cached in sensor_filament_present_[]. Reads true only while
-    // filament is at THIS tool's toolhead, dropping to false once it parks in the
-    // buffer — exactly the real-time signal the panel observes to redraw the path.
+    // Per-slot "filament is loaded to THIS tool's toolhead". Returns the
+    // channel_state latch (loaded_at_toolhead_), driven by filament_feed
+    // channel_state transitions — true between load_finish and the next
+    // unload_finish/wait_insert/preload_finish. The per-tool motion sensor
+    // (e{N}_filament) is NOT used here: on current firmware it fails to drop to
+    // false after an unload, so it can't answer "is this lane loaded".
     [[nodiscard]] bool slot_has_filament_at_toolhead(int slot_index) const override;
 
     // Per-tool LOADED status. The U1 has 4 independent toolheads, so each slot's
@@ -123,11 +126,13 @@ class AmsBackendSnapmaker : public AmsSubscriptionBackend {
     // The base PARALLEL gate offers Unload for any tool with filament in its
     // buffer (is_present()). On the U1 that keeps offering Unload after a tool
     // is already unloaded — the firmware retracts the filament to the buffer
-    // (channel_state preload_finish) but filament_exist stays true, so the slot
-    // remains AVAILABLE. Override to additionally require the per-tool motion
-    // sensor (e{N}_filament), which reads true only while filament is loaded at
-    // the toolhead (load_finish) and drops to false once it parks in the buffer.
-    // Verified on hardware 2026-06-12. Still offers Unload for every toolhead
+    // (channel_state preload_finish/unload_finish) but filament_exist stays
+    // true, so the slot remains AVAILABLE. Override to additionally require the
+    // channel_state load latch (loaded_at_toolhead_), which is true only while
+    // filament is loaded at the toolhead (between load_finish and the next
+    // unload_finish). The motion sensor was tried first but fails to clear after
+    // an unload on current firmware; channel_state is the authoritative signal
+    // (u1_channel_state_reference.md). Still offers Unload for every toolhead
     // physically loaded (active or parked), preserving the per-tool unload fix.
     [[nodiscard]] bool can_unload_from_toolhead(int slot_index) const override;
 
@@ -262,6 +267,24 @@ class AmsBackendSnapmaker : public AmsSubscriptionBackend {
     /// the UI subject on an actual change. -1 = nothing published yet. Written
     /// only from handle_status_update (the single WS-thread writer).
     int last_published_port_present_ = -1;
+
+    /// Per-slot "filament is loaded to THIS tool's toolhead" latch, driven
+    /// purely from filament_feed.channel_state transitions (NOT the motion
+    /// sensor). The per-tool motion sensor (e{N}_filament) does not reliably
+    /// drop to false after an unload on current firmware — a freshly-unloaded
+    /// lane still reads filament_detected=true (tip retracted from the melt
+    /// zone only, filament parked past the toolhead sensor). channel_state is
+    /// the authoritative load signal (verified live on a U1, firmware
+    /// 20260608): load_finish means loaded, unload_finish / wait_insert /
+    /// preload_finish mean not-loaded. Mirrors the firmware's own persisted
+    /// config['load_finish'] flag. Set true on load_finish; cleared on
+    /// unload_finish / wait_insert / preload_finish; left unchanged on every
+    /// transient / in-progress / fail state. Defaults false: a lane we've never
+    /// seen a channel_state for is treated as not-loaded. Read by
+    /// slot_has_filament_at_toolhead() and can_unload_from_toolhead(). The
+    /// motion sensor (sensor_filament_present_) still owns mid-print runout —
+    /// a different question ("did the ACTIVE lane run out during extrusion").
+    std::array<bool, NUM_TOOLS> loaded_at_toolhead_{{false, false, false, false}};
 
     /// Validate slot index is within range
     AmsError validate_slot_index(int slot_index) const;

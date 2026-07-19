@@ -87,7 +87,38 @@ class SnapmakerTestAccess {
         std::lock_guard<std::mutex> lock(b.mutex_);
         b.system_info_.current_slot = slot_index;
     }
+    // The channel_state-driven "loaded at toolhead" latch (the core fix). Read
+    // directly so tests can assert the latch independently of the query methods
+    // that consume it.
+    static bool loaded_at_toolhead(const AmsBackendSnapmaker& b, int slot_index) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.loaded_at_toolhead_[slot_index];
+    }
+    static void set_loaded_at_toolhead(AmsBackendSnapmaker& b, int slot_index, bool loaded) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        b.loaded_at_toolhead_[slot_index] = loaded;
+    }
+    static void set_current_tool(AmsBackendSnapmaker& b, int tool) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        b.system_info_.current_tool = tool;
+    }
 };
+
+// Build a filament_feed status notification for a single channel/extruder with
+// a given channel_state (+ optional filament_detected / channel_error). Routes
+// extruders 0,1 to "filament_feed left" and 2,3 to "filament_feed right" to
+// mirror the U1 feed topology, though the backend reads either object for any
+// extruder key. Shared by the channel_state coverage tests below.
+static json make_feed_status(int extruder_idx, const std::string& channel_state,
+                             bool filament_detected = true,
+                             const std::string& channel_error = "ok") {
+    const char* feed_key = (extruder_idx <= 1) ? "filament_feed left" : "filament_feed right";
+    std::string ext_key = "extruder" + std::to_string(extruder_idx);
+    return json{{feed_key,
+                 json{{ext_key, json{{"filament_detected", filament_detected},
+                                     {"channel_state", channel_state},
+                                     {"channel_error", channel_error}}}}}};
+}
 
 namespace {
 // Per-test tmp cache dir — same idiom as test_ams_backend_ad5x_ifs.cpp.
@@ -251,41 +282,47 @@ TEST_CASE("AmsBackendSnapmaker construction", "[ams][snapmaker]") {
 // Operation Step Model Tests
 // ============================================================================
 
-TEST_CASE("Snapmaker get_operation_step_model is the 4-phase firmware sequence",
+TEST_CASE("Snapmaker get_operation_step_model is the per-direction firmware sequence",
           "[ams][snapmaker][stepmodel]") {
     AmsBackendSnapmaker backend(nullptr, nullptr);
 
-    SECTION("LOAD ends in Feed filament with a live-temp Heat step") {
+    SECTION("LOAD is a 5-step model ending in Purge with a live-temp Heat step") {
         auto model = backend.get_operation_step_model(StepOperationType::LOAD_FRESH);
-        REQUIRE(model.steps.size() == 4);
+        REQUIRE(model.steps.size() == 5);
         CHECK(std::string(model.steps[0].label) == "Home");
         CHECK(std::string(model.steps[1].label) == "Select");
         CHECK(std::string(model.steps[2].label) == "Heat nozzle");
         CHECK(std::string(model.steps[3].label) == "Feed filament");
-        // phase_id mirrors the firmware operation_phase index.
+        CHECK(std::string(model.steps[4].label) == "Purge");
+        // phase_id mirrors the firmware operation_phase index the classifier emits.
         CHECK(model.steps[0].phase_id == 0);
         CHECK(model.steps[1].phase_id == 1);
         CHECK(model.steps[2].phase_id == 2);
         CHECK(model.steps[3].phase_id == 3);
+        CHECK(model.steps[4].phase_id == 4);
         // Only the Heat step shows a live nozzle temperature.
         CHECK(model.steps[2].live_temp);
         CHECK_FALSE(model.steps[0].live_temp);
         CHECK_FALSE(model.steps[3].live_temp);
+        CHECK_FALSE(model.steps[4].live_temp);
     }
 
-    SECTION("LOAD_SWAP also produces the load-direction model") {
+    SECTION("LOAD_SWAP also produces the 5-step load-direction model") {
         auto model = backend.get_operation_step_model(StepOperationType::LOAD_SWAP);
-        REQUIRE(model.steps.size() == 4);
+        REQUIRE(model.steps.size() == 5);
         CHECK(std::string(model.steps[3].label) == "Feed filament");
+        CHECK(std::string(model.steps[4].label) == "Purge");
     }
 
-    SECTION("UNLOAD ends in Retract") {
+    SECTION("UNLOAD is a 4-step model ending in Retract") {
         auto model = backend.get_operation_step_model(StepOperationType::UNLOAD);
         REQUIRE(model.steps.size() == 4);
         CHECK(std::string(model.steps[0].label) == "Home");
         CHECK(std::string(model.steps[1].label) == "Select");
         CHECK(std::string(model.steps[2].label) == "Heat nozzle");
         CHECK(std::string(model.steps[3].label) == "Retract");
+        CHECK(model.steps[0].phase_id == 0);
+        CHECK(model.steps[3].phase_id == 3);
         CHECK(model.steps[2].live_temp);
     }
 }
@@ -355,6 +392,17 @@ TEST_CASE("Snapmaker can_unload_from_toolhead offers unload for every loaded too
         {"print_task_config", json{{"filament_exist", json::array({true, true, false, true})}}}};
     SnapmakerTestAccess::handle_status(backend, status);
 
+    // Loaded state is keyed off channel_state now: slots 0/1/3 report load_finish
+    // (filament at the toolhead), slot 2 reports wait_insert (empty channel).
+    json feed = json{
+        {"filament_feed left",
+         json{{"extruder0", json{{"filament_detected", true}, {"channel_state", "load_finish"}}},
+              {"extruder1", json{{"filament_detected", true}, {"channel_state", "load_finish"}}}}},
+        {"filament_feed right",
+         json{{"extruder2", json{{"filament_detected", false}, {"channel_state", "wait_insert"}}},
+              {"extruder3", json{{"filament_detected", true}, {"channel_state", "load_finish"}}}}}};
+    SnapmakerTestAccess::handle_status(backend, feed);
+
     // Sanity: the status drove the slot states the gate keys on.
     REQUIRE(backend.get_slot_info(0).status == SlotStatus::LOADED);
     REQUIRE(backend.get_slot_info(1).status == SlotStatus::AVAILABLE);
@@ -373,29 +421,33 @@ TEST_CASE("Snapmaker can_unload_from_toolhead offers unload for every loaded too
     }
 }
 
-// can_unload_from_toolhead must require filament AT the toolhead (per-tool
-// motion sensor), not merely present in the buffer. After an unload the U1
-// retracts filament to the buffer: filament_exist stays true (slot AVAILABLE)
-// but e{N}_filament drops to filament_detected:false. Gating on is_present()
-// alone kept offering Unload for an already-unloaded tool. (Hardware capture
-// 2026-06-12: unloaded tool reports motion sensor false, loaded tools true.)
+// can_unload_from_toolhead must require filament AT the toolhead, not merely
+// present in the buffer. After an unload the U1 retracts filament to the buffer:
+// filament_exist stays true (slot AVAILABLE) and — the firmware bug this fix
+// targets — the motion sensor e{N}_filament even stays true, but channel_state
+// reports unload_finish. Keying off the channel_state latch (not is_present or
+// the motion sensor) stops offering Unload for an already-unloaded tool.
 TEST_CASE("Snapmaker can_unload_from_toolhead requires filament at the toolhead, not just buffer",
           "[ams][snapmaker][unload]") {
     AmsBackendSnapmaker backend(nullptr, nullptr);
 
-    // All four tools hold filament; slot 0 is active (LOADED), 1-3 AVAILABLE.
+    // All four tools loaded to their toolhead (channel_state load_finish).
     json status = json{
         {"toolhead", json{{"extruder", "extruder"}}},
         {"print_task_config", json{{"filament_exist", json::array({true, true, true, true})}}}};
     SnapmakerTestAccess::handle_status(backend, status);
+    for (int e = 0; e < 4; ++e) {
+        SnapmakerTestAccess::handle_status(backend, make_feed_status(e, "load_finish"));
+    }
 
-    // Default motion sensors all read present → every loaded tool is unloadable.
+    // Every loaded tool is unloadable.
     REQUIRE(backend.can_unload_from_toolhead(2));
 
-    SECTION("a tool unloaded to the buffer (motion sensor false) is NOT unloadable") {
-        // Simulate the post-unload state: filament parked in the buffer, so the
-        // slot stays AVAILABLE but the toolhead motion sensor reads runout.
-        SnapmakerTestAccess::set_sensor_present(backend, 2, false);
+    SECTION("a tool unloaded to the buffer (channel_state unload_finish) is NOT unloadable") {
+        // Post-unload: filament parked in the buffer (still detected=true, the
+        // firmware bug), channel_state unload_finish → the loaded latch clears.
+        SnapmakerTestAccess::handle_status(backend,
+                                           make_feed_status(2, "unload_finish", true));
         CHECK_FALSE(backend.can_unload_from_toolhead(2));
         // Tools still loaded at their toolhead remain unloadable.
         CHECK(backend.can_unload_from_toolhead(1));
@@ -413,16 +465,17 @@ TEST_CASE("Snapmaker channel_error on idle empty lane does NOT raise Error", "[a
     AmsBackendSnapmaker backend(nullptr, nullptr);
 
     // Heads 0 and 2 present, head 1 left empty. Head 1 reports the firmware's
-    // idle-empty token while sitting idle (channel_state "idle"), not loading.
+    // idle-empty token while sitting idle (channel_state "wait_insert" = no
+    // filament in channel), not mid-load.
     json status =
         json{{"filament_feed left", json{{"extruder0", json{{"filament_detected", true},
-                                                            {"channel_state", "idle"},
+                                                            {"channel_state", "inited"},
                                                             {"channel_error", "ok"}}},
                                          {"extruder1", json{{"filament_detected", false},
-                                                            {"channel_state", "idle"},
+                                                            {"channel_state", "wait_insert"},
                                                             {"channel_error", "no_filament"}}},
                                          {"extruder2", json{{"filament_detected", true},
-                                                            {"channel_state", "idle"},
+                                                            {"channel_state", "inited"},
                                                             {"channel_error", "ok"}}}}}};
     SnapmakerTestAccess::handle_status(backend, status);
 
@@ -435,11 +488,11 @@ TEST_CASE("Snapmaker channel_error on idle empty lane does NOT raise Error", "[a
 TEST_CASE("Snapmaker channel_error during an active load DOES raise Error", "[ams][snapmaker]") {
     AmsBackendSnapmaker backend(nullptr, nullptr);
 
-    // A real load FAILURE: lane 1 is mid-load (channel_state "loading") when the
-    // firmware reports an error. This must surface as Error so the user is told.
+    // A real load FAILURE: lane 1 is mid-load (channel_state "load_heating") when
+    // the firmware reports an error. This must surface as Error so the user is told.
     json status =
         json{{"filament_feed left", json{{"extruder1", json{{"filament_detected", false},
-                                                            {"channel_state", "loading"},
+                                                            {"channel_state", "load_heating"},
                                                             {"channel_error", "no_filament"}}}}}};
     SnapmakerTestAccess::handle_status(backend, status);
 
@@ -458,7 +511,7 @@ TEST_CASE("Snapmaker channel_error on the ACTIVE lane DOES raise Error", "[ams][
     SnapmakerTestAccess::set_current_slot(backend, 0);
     json status =
         json{{"filament_feed left", json{{"extruder0", json{{"filament_detected", false},
-                                                            {"channel_state", "idle"},
+                                                            {"channel_state", "inited"},
                                                             {"channel_error", "some_fault"}}}}}};
     SnapmakerTestAccess::handle_status(backend, status);
 
@@ -486,8 +539,9 @@ TEST_CASE("Snapmaker granular unload sub-states drive UNLOADING action",
 }
 
 TEST_CASE("Snapmaker granular load sub-states drive LOADING action", "[ams][snapmaker][load]") {
-    // Symmetric to the unload case: load_homing/picking/heating/doing → LOADING.
-    for (const char* state : {"load_homing", "load_picking", "load_heating", "load_doing"}) {
+    // Symmetric to the unload case: every granular load sub-state → LOADING.
+    for (const char* state : {"load_prepare", "load_homing", "load_picking", "load_heating",
+                              "load_feeding", "load_extruding", "load_flushing"}) {
         AmsBackendSnapmaker backend(nullptr, nullptr);
         json status =
             json{{"filament_feed left", json{{"extruder2", json{{"filament_detected", true},
@@ -510,9 +564,10 @@ TEST_CASE("Snapmaker channel_state maps to granular operation_phase", "[ams][sna
         int expected_phase;
     };
     const Case cases[] = {
-        {"unload_homing", 0},  {"unload_picking", 1}, {"unload_heating", 2},  {"unload_doing", 3},
-        {"load_homing", 0},    {"load_picking", 1},   {"load_heating", 2},    {"load_doing", 3},
-        {"unload_finish", -1}, {"load_finish", -1},   {"preload_finish", -1}, {"idle", -1},
+        {"unload_homing", 0},  {"unload_picking", 1},  {"unload_heating", 2},
+        {"unload_doing", 3},   {"load_homing", 0},     {"load_picking", 1},
+        {"load_heating", 2},   {"load_feeding", 3},    {"unload_finish", -1},
+        {"load_finish", -1},   {"preload_finish", -1}, {"inited", -1},
     };
 
     for (const auto& c : cases) {
@@ -625,6 +680,272 @@ TEST_CASE("Snapmaker get_slot_filament_segment renders NOZZLE for every present 
         SnapmakerTestAccess::set_port_sensor_present(backend, 1, true);
         CHECK(backend.get_slot_filament_segment(1) == PathSegment::OUTPUT);
     }
+}
+
+// ============================================================================
+// channel_state "loaded at toolhead" latch (the core fix)
+// ============================================================================
+// The per-tool motion sensor (e{N}_filament) does NOT drop to false after an
+// unload on current firmware — a freshly-unloaded lane still reads
+// filament_detected=true. The authoritative load signal is
+// filament_feed.channel_state: load_finish means loaded, unload_finish /
+// wait_insert / preload_finish mean not-loaded. The backend derives a per-slot
+// latch from those transitions and the toolhead-load queries key off it.
+
+TEST_CASE("Snapmaker load_finish latches loaded + offers unload", "[ams][snapmaker][channel_state]") {
+    AmsBackendSnapmaker backend(nullptr, nullptr);
+    SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "load_finish"));
+
+    CHECK(SnapmakerTestAccess::loaded_at_toolhead(backend, 2));
+    CHECK(backend.slot_has_filament_at_toolhead(2));
+    CHECK(backend.can_unload_from_toolhead(2));
+}
+
+TEST_CASE("Snapmaker unload_finish clears the loaded latch even while motion sensor stays true",
+          "[ams][snapmaker][channel_state]") {
+    // The exact live-captured condition (U1 firmware 20260608, lanes 3&4 just
+    // unloaded): channel_state=unload_finish but the motion sensor still reads
+    // filament_detected=true. Before the fix the toolhead-load queries keyed off
+    // the motion sensor, so an unloaded lane kept rendering filament at the
+    // toolhead and kept offering Unload. Now the channel_state latch governs.
+    AmsBackendSnapmaker backend(nullptr, nullptr);
+
+    // Start loaded.
+    SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "load_finish"));
+    REQUIRE(SnapmakerTestAccess::loaded_at_toolhead(backend, 2));
+
+    // Motion sensor is (wrongly) still reporting present — the firmware bug.
+    SnapmakerTestAccess::set_sensor_present(backend, 2, true);
+    // Now the lane reports unload_finish while filament_detected is still true.
+    SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "unload_finish",
+                                                                /*filament_detected=*/true));
+
+    CHECK_FALSE(SnapmakerTestAccess::loaded_at_toolhead(backend, 2));
+    CHECK_FALSE(backend.slot_has_filament_at_toolhead(2));
+    CHECK_FALSE(backend.can_unload_from_toolhead(2));
+    // Filament is still physically in the buffer (detected=true) so the slot is
+    // AVAILABLE, NOT EMPTY — the spool is present, just not at the toolhead.
+    CHECK(backend.get_slot_info(2).status == SlotStatus::AVAILABLE);
+}
+
+TEST_CASE("Snapmaker wait_insert means not loaded", "[ams][snapmaker][channel_state]") {
+    AmsBackendSnapmaker backend(nullptr, nullptr);
+    // Seed a loaded latch, then a wait_insert (channel empty) must clear it.
+    SnapmakerTestAccess::set_loaded_at_toolhead(backend, 1, true);
+    SnapmakerTestAccess::handle_status(backend, make_feed_status(1, "wait_insert",
+                                                                /*filament_detected=*/false));
+    CHECK_FALSE(SnapmakerTestAccess::loaded_at_toolhead(backend, 1));
+    CHECK_FALSE(backend.slot_has_filament_at_toolhead(1));
+}
+
+TEST_CASE("Snapmaker preload_finish is present-but-not-loaded", "[ams][snapmaker][channel_state]") {
+    // preload stages filament into the buffer, NOT to the nozzle. Present
+    // (detected=true → slot AVAILABLE) but the loaded latch must be clear.
+    AmsBackendSnapmaker backend(nullptr, nullptr);
+    SnapmakerTestAccess::set_loaded_at_toolhead(backend, 0, true);
+    SnapmakerTestAccess::handle_status(backend, make_feed_status(0, "preload_finish",
+                                                                /*filament_detected=*/true));
+    CHECK_FALSE(SnapmakerTestAccess::loaded_at_toolhead(backend, 0));
+    CHECK(backend.get_slot_info(0).status == SlotStatus::AVAILABLE);
+    CHECK_FALSE(backend.can_unload_from_toolhead(0));
+}
+
+TEST_CASE("Snapmaker loaded latch is KEPT across transient states",
+          "[ams][snapmaker][channel_state]") {
+    // Only terminal transitions move the latch. Every in-progress state leaves
+    // it untouched, so a mid-unload sequence keeps "loaded" true until the
+    // actual unload_finish lands.
+    AmsBackendSnapmaker backend(nullptr, nullptr);
+    SnapmakerTestAccess::handle_status(backend, make_feed_status(3, "load_finish"));
+    REQUIRE(SnapmakerTestAccess::loaded_at_toolhead(backend, 3));
+
+    for (const char* transient :
+         {"unload_prepare", "unload_homing", "unload_picking", "unload_heating",
+          "unload_heat_finish", "unload_doing"}) {
+        SnapmakerTestAccess::handle_status(backend, make_feed_status(3, transient));
+        INFO("transient=" << transient);
+        CHECK(SnapmakerTestAccess::loaded_at_toolhead(backend, 3));
+    }
+
+    SnapmakerTestAccess::handle_status(backend, make_feed_status(3, "unload_finish"));
+    CHECK_FALSE(SnapmakerTestAccess::loaded_at_toolhead(backend, 3));
+}
+
+TEST_CASE("Snapmaker fail channel_state does NOT flip the loaded latch",
+          "[ams][snapmaker][channel_state]") {
+    AmsBackendSnapmaker backend(nullptr, nullptr);
+    SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "load_finish"));
+    REQUIRE(SnapmakerTestAccess::loaded_at_toolhead(backend, 2));
+    // A subsequent unload_fail must not clear the latch (filament is still at
+    // the toolhead — the unload failed).
+    SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "unload_fail"));
+    CHECK(SnapmakerTestAccess::loaded_at_toolhead(backend, 2));
+}
+
+// ============================================================================
+// Full 39-state channel_state coverage (action + operation_phase)
+// ============================================================================
+// Every firmware channel_state (filament_feed.py:34-72, firmware 20260608) maps
+// to the correct AmsAction and 4-phase step index. Driven off the single
+// classify_channel_state() table in the backend.
+
+TEST_CASE("Snapmaker every channel_state maps to the right action and phase",
+          "[ams][snapmaker][channel_state]") {
+    struct Case {
+        const char* state;
+        AmsAction action;
+        int phase;
+    };
+    const Case cases[] = {
+        // idle / init
+        {"none", AmsAction::IDLE, -1},
+        {"inited", AmsAction::IDLE, -1},
+        {"wait_insert", AmsAction::IDLE, -1},
+        {"test", AmsAction::IDLE, -1},
+        // preload
+        {"preload_prepare", AmsAction::LOADING, 0},
+        {"preload_feeding", AmsAction::LOADING, 3},
+        {"preload_finish", AmsAction::IDLE, -1},
+        {"preload_fail", AmsAction::ERROR, -1},
+        // load
+        {"load_prepare", AmsAction::LOADING, 0},
+        {"load_homing", AmsAction::LOADING, 0},
+        {"load_picking", AmsAction::LOADING, 1},
+        {"load_heating", AmsAction::LOADING, 2},
+        {"load_feeding", AmsAction::LOADING, 3},
+        {"load_extruding", AmsAction::LOADING, 3},
+        {"load_flushing", AmsAction::LOADING, 4},
+        {"load_finish", AmsAction::IDLE, -1},
+        {"load_fail", AmsAction::ERROR, -1},
+        // unload
+        {"unload_prepare", AmsAction::UNLOADING, 0},
+        {"unload_homing", AmsAction::UNLOADING, 0},
+        {"unload_picking", AmsAction::UNLOADING, 1},
+        {"unload_heating", AmsAction::UNLOADING, 2},
+        {"unload_heat_finish", AmsAction::UNLOADING, 2},
+        {"unload_doing", AmsAction::UNLOADING, 3},
+        {"unload_finish", AmsAction::IDLE, -1},
+        {"unload_fail", AmsAction::ERROR, -1},
+        // manual feed
+        {"manual_sta_prepare", AmsAction::LOADING, 0},
+        {"manual_sta_homing", AmsAction::LOADING, 0},
+        {"manual_sta_picking", AmsAction::LOADING, 1},
+        {"manual_sta_prepare_finish", AmsAction::LOADING, 1},
+        {"manual_sta_prepare_fail", AmsAction::ERROR, -1},
+        {"manual_sta_heating", AmsAction::LOADING, 2},
+        {"manual_sta_extruding", AmsAction::LOADING, 3},
+        {"manual_sta_extrude_finish", AmsAction::LOADING, 3},
+        {"manual_sta_extrude_fail", AmsAction::ERROR, -1},
+        {"manual_sta_flushing", AmsAction::LOADING, 4},
+        {"manual_sta_flush_finish", AmsAction::LOADING, 4},
+        {"manual_sta_flush_fail", AmsAction::ERROR, -1},
+        {"manual_sta_finish", AmsAction::IDLE, -1},
+        {"manual_sta_fail", AmsAction::ERROR, -1},
+    };
+
+    for (const auto& c : cases) {
+        AmsBackendSnapmaker backend(nullptr, nullptr);
+        // Make extruder 0 the active lane so *_fail states surface as ERROR
+        // (the false-alarm guard only suppresses errors on idle empty NON-active
+        // lanes) and feed present filament.
+        SnapmakerTestAccess::set_current_slot(backend, 0);
+        SnapmakerTestAccess::set_current_tool(backend, 0);
+        SnapmakerTestAccess::handle_status(backend, make_feed_status(0, c.state));
+        INFO("channel_state=" << c.state);
+        CHECK(backend.get_system_info().action == c.action);
+        CHECK(backend.get_system_info().operation_phase == c.phase);
+    }
+}
+
+TEST_CASE("Snapmaker fail channel_state raises ERROR with detail",
+          "[ams][snapmaker][channel_state]") {
+    // A *_fail channel_state alone (channel_error still "ok") must surface an
+    // error — Change 2 adds this on top of the existing channel_error handling.
+    for (const char* fail : {"load_fail", "unload_fail", "preload_fail", "manual_sta_fail"}) {
+        AmsBackendSnapmaker backend(nullptr, nullptr);
+        SnapmakerTestAccess::set_current_slot(backend, 1);
+        SnapmakerTestAccess::handle_status(backend, make_feed_status(1, fail));
+        INFO("fail state=" << fail);
+        CHECK(backend.get_system_info().action == AmsAction::ERROR);
+        CHECK_FALSE(backend.get_system_info().operation_detail.empty());
+    }
+}
+
+TEST_CASE("Snapmaker fail on an idle empty non-active lane stays quiet",
+          "[ams][snapmaker][channel_state]") {
+    // The multi-color false-alarm guard must still hold: a fail on a lane that
+    // is empty, idle, and not active should not pop a spurious error modal.
+    AmsBackendSnapmaker backend(nullptr, nullptr);
+    SnapmakerTestAccess::set_current_slot(backend, 0); // active lane is 0, not 2
+    SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "preload_fail",
+                                                                /*filament_detected=*/false));
+    CHECK(backend.get_system_info().action != AmsAction::ERROR);
+}
+
+TEST_CASE("Snapmaker full load progression walks the phase bar",
+          "[ams][snapmaker][channel_state][phase]") {
+    struct Step {
+        const char* state;
+        AmsAction action;
+        int phase;
+    };
+    const Step seq[] = {
+        {"load_prepare", AmsAction::LOADING, 0},   {"load_homing", AmsAction::LOADING, 0},
+        {"load_picking", AmsAction::LOADING, 1},   {"load_heating", AmsAction::LOADING, 2},
+        {"load_feeding", AmsAction::LOADING, 3},   {"load_extruding", AmsAction::LOADING, 3},
+        {"load_flushing", AmsAction::LOADING, 4},  {"load_finish", AmsAction::IDLE, -1},
+    };
+    AmsBackendSnapmaker backend(nullptr, nullptr);
+    for (const auto& s : seq) {
+        SnapmakerTestAccess::handle_status(backend, make_feed_status(2, s.state));
+        INFO("state=" << s.state);
+        CHECK(backend.get_system_info().action == s.action);
+        CHECK(backend.get_system_info().operation_phase == s.phase);
+    }
+    CHECK(SnapmakerTestAccess::loaded_at_toolhead(backend, 2));
+}
+
+TEST_CASE("Snapmaker full manual-feed progression is visible", "[ams][snapmaker][channel_state]") {
+    // Before the fix the entire manual_sta_* family was unhandled, so manual
+    // feed left the action at IDLE and the step bar dead. Now each phase shows.
+    const char* seq[] = {"manual_sta_prepare",  "manual_sta_homing",  "manual_sta_picking",
+                         "manual_sta_heating",  "manual_sta_extruding"};
+    AmsBackendSnapmaker backend(nullptr, nullptr);
+    for (const char* state : seq) {
+        SnapmakerTestAccess::handle_status(backend, make_feed_status(2, state));
+        INFO("state=" << state);
+        CHECK(backend.get_system_info().action == AmsAction::LOADING);
+    }
+    SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "manual_sta_finish"));
+    CHECK(backend.get_system_info().action == AmsAction::IDLE);
+}
+
+TEST_CASE("Snapmaker motion-sensor runout path is independent of the loaded latch",
+          "[ams][snapmaker][channel_state][runout]") {
+    // No regression: mid-print runout is still driven by the per-tool motion
+    // sensor (e{N}_filament), a different question from "is the lane loaded".
+    // The loaded latch must NOT be touched by a motion-sensor runout — filament
+    // that stops moving is still loaded at the toolhead, it just ran out upstream.
+    AmsBackendSnapmaker backend(nullptr, nullptr);
+
+    // Active tool 0 loaded (pin state) with filament present everywhere.
+    json loaded = json{
+        {"toolhead", json{{"extruder", "extruder"}}},
+        {"print_task_config", json{{"filament_exist", json::array({true, true, true, true})}}}};
+    SnapmakerTestAccess::handle_status(backend, loaded);
+    REQUIRE(backend.get_system_info().filament_loaded);
+    // And latch it loaded via channel_state.
+    SnapmakerTestAccess::set_loaded_at_toolhead(backend, 0, true);
+
+    // Active lane's motion sensor drops during extrusion → runout.
+    json runout =
+        json{{"filament_motion_sensor e0_filament", json{{"filament_detected", false}}}};
+    SnapmakerTestAccess::handle_status(backend, runout);
+
+    // Runout path fired: the global loaded flag reflects the motion sensor.
+    CHECK_FALSE(backend.get_system_info().filament_loaded);
+    // But the channel_state loaded latch is untouched by the motion sensor.
+    CHECK(SnapmakerTestAccess::loaded_at_toolhead(backend, 0));
 }
 
 // ============================================================================

@@ -56,36 +56,169 @@ constexpr std::array<std::string_view, 8> kKnownSubTypes = {
     return token;
 }
 
-// Map a Snapmaker U1 granular channel_state to the operation sub-phase index the
-// step bar renders: 0 = Home, 1 = Select, 2 = Heat, 3 = Move (Retract on unload /
-// Feed on load). The firmware emits these sequentially for both directions as
-// "<load|unload>_<homing|picking|heating|doing>". Any state that is not one of
-// the four active sub-phases (idle, *_finish, preload_*, empty, etc.) maps to -1
-// = "no active step", which resolves the step bar to complete/hidden. Keeping
-// this independent of the AmsAction collapse lets the action stay LOADING/
-// UNLOADING (load-vs-unload) while the phase drives the individual step.
-[[nodiscard]] int channel_state_to_operation_phase(const std::string& state) {
-    // Suffix match so both load_* and unload_* share one table; preload_* and
-    // *_finish deliberately fall through to -1.
+// User-facing message for a *_fail channel_state (Change 2). The firmware
+// signals the failure in channel_state itself (e.g. "load_fail") independently
+// of the channel_error token, so surface a direction-aware message when a fail
+// state lands. lane_index is 0-based.
+[[nodiscard]] std::string friendly_channel_state_fail(const std::string& state, int lane_index) {
+    if (state.rfind("unload_", 0) == 0) {
+        return fmt::format("Unload failed on lane {}.", lane_index + 1);
+    }
+    if (state.rfind("preload_", 0) == 0) {
+        return fmt::format("Preload failed on lane {}.", lane_index + 1);
+    }
+    // load_fail, manual_sta_*_fail, and any other feed failure.
+    return fmt::format("Load failed on lane {}.", lane_index + 1);
+}
+
+// Classification of a single Snapmaker U1 filament_feed channel_state. The
+// firmware exposes 39 distinct states (filament_feed.py:34-72, captured live
+// from firmware 20260608); this maps each to everything the backend needs so
+// the parse reads off ONE table instead of scattered string compares. See
+// .claude/scratchpad/u1_channel_state_reference.md for the authoritative table.
+//
+// Fields:
+//  - action:        the AmsAction the operation collapses to (drives the coarse
+//                   LOAD/UNLOAD/ERROR/IDLE status). LOADING covers preload/load/
+//                   manual feed; UNLOADING covers unload; ERROR covers *_fail;
+//                   IDLE covers none/inited/wait_insert/test and every *_finish.
+//  - phase:         step-bar step index into get_operation_step_model(op).
+//                   Per-direction (a state is unambiguously load/unload/manual by
+//                   prefix, so indices never collide across directions):
+//                     LOAD/manual/preload model (5 steps):
+//                       0=Home 1=Select 2=Heat 3=Feed 4=Purge
+//                     UNLOAD model (4 steps):
+//                       0=Home 1=Select 2=Heat 3=Retract
+//                   -1 = "no active step" (idle / *_finish / *_fail).
+//  - is_terminal:   a *_finish that ENDS the operation (resolves action → IDLE).
+//                   preload_finish is terminal-for-latch but does NOT end the op
+//                   (the nozzle may still be heating on a re-unload); the parse
+//                   special-cases it.
+//  - is_fail:       a *_fail state — surface as ERROR (Change 2).
+//  - sets_loaded:   SET the "loaded at toolhead" latch true (load_finish only).
+//  - clears_loaded: CLEAR the latch false (unload_finish/wait_insert/preload_finish).
+//  - ignore:        the factory 'test' state — touch nothing.
+struct ChannelStateInfo {
+    AmsAction action = AmsAction::IDLE;
+    int phase = -1;
+    bool is_terminal = false;
+    bool is_fail = false;
+    bool sets_loaded = false;
+    bool clears_loaded = false;
+    bool ignore = false;
+};
+
+[[nodiscard]] ChannelStateInfo classify_channel_state(const std::string& state) {
+    // One row per firmware state. Exact-match lookup — unambiguous and reads
+    // directly off the reference table. Unknown/future states fall through to
+    // the prefix/suffix heuristic below so we degrade gracefully rather than
+    // silently mis-classify.
+    static const std::unordered_map<std::string, ChannelStateInfo> kTable = [] {
+        std::unordered_map<std::string, ChannelStateInfo> m;
+        auto add = [&](const char* s, ChannelStateInfo info) { m.emplace(s, info); };
+        constexpr auto LOAD = AmsAction::LOADING;
+        constexpr auto UNLOAD = AmsAction::UNLOADING;
+        constexpr auto IDLE = AmsAction::IDLE;
+        constexpr auto ERR = AmsAction::ERROR;
+        // {action, phase, is_terminal, is_fail, sets_loaded, clears_loaded, ignore}
+        // --- idle / init ---
+        add("none", {IDLE, -1, false, false, false, false, false});
+        add("inited", {IDLE, -1, false, false, false, false, false});
+        add("wait_insert", {IDLE, -1, false, false, false, /*clear=*/true, false});
+        add("test", {IDLE, -1, false, false, false, false, /*ignore=*/true});
+        // --- preload (stage insert -> gear, NOT to nozzle) ---
+        add("preload_prepare", {LOAD, 0, false, false, false, false, false});
+        add("preload_feeding", {LOAD, 3, false, false, false, false, false});
+        add("preload_finish", {IDLE, -1, /*terminal=*/true, false, false, /*clear=*/true, false});
+        add("preload_fail", {ERR, -1, false, /*fail=*/true, false, false, false});
+        // --- load (feed to nozzle) ---
+        add("load_prepare", {LOAD, 0, false, false, false, false, false});
+        add("load_homing", {LOAD, 0, false, false, false, false, false});
+        add("load_picking", {LOAD, 1, false, false, false, false, false});
+        add("load_heating", {LOAD, 2, false, false, false, false, false});
+        add("load_feeding", {LOAD, 3, false, false, false, false, false});
+        add("load_extruding", {LOAD, 3, false, false, false, false, false});
+        add("load_flushing", {LOAD, 4, false, false, false, false, false});
+        add("load_finish", {IDLE, -1, /*terminal=*/true, false, /*set=*/true, false, false});
+        add("load_fail", {ERR, -1, false, /*fail=*/true, false, false, false});
+        // --- unload (retract from nozzle) ---
+        add("unload_prepare", {UNLOAD, 0, false, false, false, false, false});
+        add("unload_homing", {UNLOAD, 0, false, false, false, false, false});
+        add("unload_picking", {UNLOAD, 1, false, false, false, false, false});
+        add("unload_heating", {UNLOAD, 2, false, false, false, false, false});
+        add("unload_heat_finish", {UNLOAD, 2, false, false, false, false, false});
+        add("unload_doing", {UNLOAD, 3, false, false, false, false, false});
+        add("unload_finish", {IDLE, -1, /*terminal=*/true, false, false, /*clear=*/true, false});
+        add("unload_fail", {ERR, -1, false, /*fail=*/true, false, false, false});
+        // --- manual feed (MANUAL_FEEDING) ---
+        add("manual_sta_prepare", {LOAD, 0, false, false, false, false, false});
+        add("manual_sta_homing", {LOAD, 0, false, false, false, false, false});
+        add("manual_sta_picking", {LOAD, 1, false, false, false, false, false});
+        add("manual_sta_prepare_finish", {LOAD, 1, false, false, false, false, false});
+        add("manual_sta_prepare_fail", {ERR, -1, false, /*fail=*/true, false, false, false});
+        add("manual_sta_heating", {LOAD, 2, false, false, false, false, false});
+        add("manual_sta_extruding", {LOAD, 3, false, false, false, false, false});
+        add("manual_sta_extrude_finish", {LOAD, 3, false, false, false, false, false});
+        add("manual_sta_extrude_fail", {ERR, -1, false, /*fail=*/true, false, false, false});
+        add("manual_sta_flushing", {LOAD, 4, false, false, false, false, false});
+        add("manual_sta_flush_finish", {LOAD, 4, false, false, false, false, false});
+        add("manual_sta_flush_fail", {ERR, -1, false, /*fail=*/true, false, false, false});
+        // manual_sta_finish is a completed manual EXTRUDE, not a load — it ends
+        // the op (IDLE) but does NOT set the loaded latch.
+        add("manual_sta_finish", {IDLE, -1, /*terminal=*/true, false, false, false, false});
+        add("manual_sta_fail", {ERR, -1, false, /*fail=*/true, false, false, false});
+        return m;
+    }();
+
+    auto it = kTable.find(state);
+    if (it != kTable.end()) {
+        return it->second;
+    }
+
+    // Fallback for an unrecognized state (firmware drift). Never emitted by
+    // firmware 20260608, but classify conservatively so a future state can't
+    // wedge the action machine. Prefix chooses the family; suffix the phase.
+    ChannelStateInfo info;
     auto ends_with = [&](std::string_view suffix) {
         return state.size() > suffix.size() &&
                state.compare(state.size() - suffix.size(), suffix.size(), suffix) == 0;
     };
-    // Only the granular sub-phases of an in-progress load/unload carry a phase.
-    const bool is_load = state.rfind("load_", 0) == 0 && state.rfind("preload_", 0) != 0;
     const bool is_unload = state.rfind("unload_", 0) == 0;
-    if (!is_load && !is_unload) {
-        return -1;
+    const bool is_load = !is_unload && (state.rfind("load_", 0) == 0 ||
+                                        state.rfind("preload_", 0) == 0 ||
+                                        state.rfind("manual_sta_", 0) == 0);
+    if (ends_with("_fail")) {
+        info.action = AmsAction::ERROR;
+        info.is_fail = true;
+    } else if (ends_with("_finish")) {
+        info.action = AmsAction::IDLE;
+        info.is_terminal = true;
+    } else if (is_unload) {
+        info.action = AmsAction::UNLOADING;
+    } else if (is_load) {
+        info.action = AmsAction::LOADING;
+    } else {
+        info.action = AmsAction::IDLE;
     }
-    if (ends_with("_homing"))
-        return 0;
-    if (ends_with("_picking"))
-        return 1;
-    if (ends_with("_heating"))
-        return 2;
-    if (ends_with("_doing"))
-        return 3;
-    return -1; // *_finish and anything else: no active step
+    if (info.action == AmsAction::LOADING || info.action == AmsAction::UNLOADING) {
+        // Mirrors the per-direction step models: load/manual/preload reach Feed(3)
+        // then Purge(4); unload has no Purge step so its Move phase is Retract(3).
+        if (ends_with("_homing") || ends_with("_prepare"))
+            info.phase = 0;
+        else if (ends_with("_picking"))
+            info.phase = 1;
+        else if (ends_with("_heating"))
+            info.phase = 2;
+        else if (ends_with("_flushing") && !is_unload)
+            info.phase = 4;
+        else if (ends_with("_doing") || ends_with("_feeding") || ends_with("_extruding") ||
+                 ends_with("_flushing"))
+            info.phase = 3;
+    }
+    spdlog::debug("[AmsBackendSnapmaker] unrecognized channel_state '{}' -> fallback action={} "
+                  "phase={}",
+                  state, ams_action_to_string(info.action), info.phase);
+    return info;
 }
 
 } // namespace
@@ -195,24 +328,42 @@ SlotInfo AmsBackendSnapmaker::get_slot_info(int slot_index) const {
 
 AmsBackend::OperationStepModel
 AmsBackendSnapmaker::get_operation_step_model(StepOperationType op) const {
-    // Four-phase firmware sequence (Home / Select / Heat / Move). The phase_id
-    // matches the value reported by the ams_operation_phase subject, and the Heat
-    // step (phase 2) shows a live nozzle temperature. The trailing "Move" step is
-    // "Feed filament" on load and "Retract" on unload. Labels are wrapped in
-    // lv_tr() so they are both translated at build time and picked up by the
-    // string-extraction tooling.
+    // Per-direction firmware step sequence. Each step's phase_id is the index the
+    // classifier (classify_channel_state) emits into system_info_.operation_phase,
+    // which the sidebar consumes directly as the current step index via the
+    // ams_operation_phase subject. Load and unload use different-length step lists;
+    // that is safe because only one backend + one operation is live at a time, so
+    // Snapmaker owns the whole index space (classify_channel_state maps load/manual/
+    // preload states into the LOAD indices and unload states into the UNLOAD ones).
+    //
+    //   LOAD  (5 steps): Home 0 -> Select 1 -> Heat 2 (live) -> Feed 3 -> Purge 4
+    //     load_prepare/homing -> Home; load_picking -> Select; load_heating -> Heat;
+    //     load_feeding/extruding -> Feed; load_flushing -> Purge.
+    //     (preload and the manual_sta_* family reuse this load-direction model.)
+    //   UNLOAD (4 steps): Home 0 -> Select 1 -> Heat 2 (live) -> Retract 3
+    //     unload_prepare/homing -> Home; unload_picking -> Select;
+    //     unload_heating/heat_finish -> Heat; unload_doing -> Retract.
+    //
+    // The Heat step (phase 2) shows a live nozzle temperature. All labels are
+    // wrapped in lv_tr() so they are translated and picked up by the string tooling.
     const bool unload = (op == StepOperationType::UNLOAD);
     OperationStepModel model;
     model.steps.push_back({lv_tr("Home"), 0, false, false});
     model.steps.push_back({lv_tr("Select"), 1, false, false});
     model.steps.push_back({lv_tr("Heat nozzle"), 2, false, /*live_temp=*/true});
-    model.steps.push_back({unload ? lv_tr("Retract") : lv_tr("Feed filament"), 3, false, false});
+    if (unload) {
+        model.steps.push_back({lv_tr("Retract"), 3, false, false});
+    } else {
+        model.steps.push_back({lv_tr("Feed filament"), 3, false, false});
+        model.steps.push_back({lv_tr("Purge"), 4, false, false});
+    }
     return model;
 }
 
 lv_subject_t* AmsBackendSnapmaker::get_operation_step_index_subject(StepOperationType /*op*/) {
     // The U1 firmware drives the current step directly via the operation-phase
-    // subject (Home/Select/Heat/Move), not via narration.
+    // subject (the per-direction step index from classify_channel_state), not via
+    // narration.
     return AmsState::instance().get_ams_operation_phase_subject();
 }
 
@@ -349,13 +500,14 @@ bool AmsBackendSnapmaker::can_unload_from_toolhead(int slot_index) const {
     if (!slot || !slot->is_present()) {
         return false;
     }
-    // Filament must be at THIS toolhead, not merely parked in the buffer. The
-    // per-tool motion sensor (e{N}_filament) reads true only while filament is
-    // loaded to the toolhead; after an unload it retracts to the buffer and the
-    // sensor drops to false even though filament_exist (and thus is_present())
-    // stays true. Without this the menu kept offering Unload for an
-    // already-unloaded tool. See the header note + 2026-06-12 hardware capture.
-    return sensor_filament_present_[slot_index];
+    // Filament must be AT this toolhead, not merely parked in the buffer. The
+    // channel_state latch reads true only between load_finish and the next
+    // unload_finish/wait_insert/preload_finish. The per-tool motion sensor
+    // (e{N}_filament) is NOT a reliable load signal on current firmware — it
+    // stays true after an unload — so it must not gate Unload. Without the
+    // latch the menu kept offering Unload for an already-unloaded tool. See the
+    // header note + the u1_channel_state_reference.md live capture.
+    return loaded_at_toolhead_[slot_index];
 }
 
 bool AmsBackendSnapmaker::slot_has_filament_at_toolhead(int slot_index) const {
@@ -363,7 +515,8 @@ bool AmsBackendSnapmaker::slot_has_filament_at_toolhead(int slot_index) const {
     if (slot_index < 0 || slot_index >= NUM_TOOLS) {
         return false;
     }
-    return sensor_filament_present_[slot_index];
+    // channel_state latch, NOT the motion sensor — see can_unload_from_toolhead.
+    return loaded_at_toolhead_[slot_index];
 }
 
 bool AmsBackendSnapmaker::slot_is_actively_loaded(int slot_index) const {
@@ -1096,129 +1249,145 @@ void AmsBackendSnapmaker::handle_status_update(const nlohmann::json& notificatio
                             }
                         }
 
-                        // Parse channel_state for load/unload action tracking
+                        // Parse channel_state — the single authoritative signal
+                        // for load state and operation progress. classify_channel_state
+                        // maps every firmware state (39 total) to {action, phase,
+                        // terminal, fail, latch set/clear}; the parse reads off that
+                        // one table rather than scattered string compares. See
+                        // u1_channel_state_reference.md.
                         auto state = ch.value("channel_state", "");
                         auto error = ch.value("channel_error", "ok");
+                        const ChannelStateInfo info = classify_channel_state(state);
+
                         // Mirror the granular firmware sub-phase into the system
                         // info so the sidebar step bar can show the real
-                        // Home/Select/Heat/Move sequence rather than the coarse
-                        // 2-step view. -1 for any non-active state (idle, finish,
-                        // preload_*, error). Updated only when the firmware
-                        // actually reports a channel_state, so an incremental
-                        // status omitting it doesn't spuriously clear the phase.
+                        // Home/Select/Heat/Move sequence. -1 for any non-active
+                        // state (idle, *_finish, *_fail, preload_finish). Updated
+                        // only when the firmware actually reports a channel_state,
+                        // so an incremental status omitting it doesn't clear the
+                        // phase spuriously.
                         if (!state.empty()) {
-                            int new_phase = channel_state_to_operation_phase(state);
-                            if (system_info_.operation_phase != new_phase) {
-                                system_info_.operation_phase = new_phase;
+                            if (system_info_.operation_phase != info.phase) {
+                                system_info_.operation_phase = info.phase;
                                 changed = true;
                             }
                         }
-                        if (error != "ok" && !error.empty() && error != "none") {
-                            // Distinguish a genuine load FAILURE from an idle,
-                            // never-loaded EMPTY lane. The firmware reports
-                            // channel_error="no_filament" for any lane sitting
-                            // empty — including a lane deliberately left unloaded
-                            // for a multi-color print (e.g. heads 0+2 used, head 1
-                            // empty). Post-print that empty lane would latch the
-                            // whole backend into action=Error="no_filament" and
-                            // pop a spurious AMS loading-error modal. A real load
-                            // failure happens during/after a load attempt
-                            // (channel_state loading/preloading) or on a lane that
-                            // actually has filament present, or on the active lane.
-                            // Treat an error on an idle, empty, non-active lane as
-                            // a non-event. (Snapmaker U1 false-alarm fix.)
+
+                        // "Loaded at toolhead" latch (the core fix). Driven purely
+                        // from channel_state transitions, NOT the motion sensor
+                        // (which fails to clear after an unload on current firmware).
+                        // SET on load_finish; CLEAR on unload_finish / wait_insert /
+                        // preload_finish; KEEP on every transient / in-progress /
+                        // fail state. Mirrors the firmware's persisted
+                        // config['load_finish'].
+                        if (!state.empty() && !info.ignore) {
+                            if (info.sets_loaded && !loaded_at_toolhead_[i]) {
+                                loaded_at_toolhead_[i] = true;
+                                changed = true;
+                            } else if (info.clears_loaded && loaded_at_toolhead_[i]) {
+                                loaded_at_toolhead_[i] = false;
+                                changed = true;
+                            }
+                        }
+
+                        // Error surfacing: either a firmware channel_error token OR
+                        // a *_fail channel_state (Change 2). Preserve the multi-color
+                        // false-alarm guard — the firmware reports
+                        // channel_error="no_filament" for ANY empty lane, and briefly
+                        // a *_fail channel_state when it auto-feeds a lane deliberately
+                        // left unloaded for a multi-color print (heads 0+2 used, head 1
+                        // empty). Neither must latch the whole backend into
+                        // action=Error and pop a spurious modal on such an idle empty
+                        // non-active lane. An error is real when the lane holds
+                        // filament (lane not empty), is the active lane, or an
+                        // operation is genuinely underway on it (an in-progress
+                        // LOADING/UNLOADING state — a *_fail is terminal, so the same
+                        // empty-lane guard applies to it as to the no_filament token).
+                        const bool has_error_token =
+                            error != "ok" && !error.empty() && error != "none";
+                        if (has_error_token || info.is_fail) {
                             const auto* slot = system_info_.units[0].get_slot(i);
                             const bool lane_empty = slot == nullptr || !slot->is_present();
-                            const bool load_in_progress =
-                                state == "loading" || state == "preloading";
                             const bool active_lane =
                                 system_info_.current_slot == i || system_info_.current_tool == i;
-                            if (lane_empty && !load_in_progress && !active_lane) {
+                            const bool op_in_progress = info.action == AmsAction::LOADING ||
+                                                        info.action == AmsAction::UNLOADING;
+                            if (lane_empty && !op_in_progress && !active_lane) {
                                 spdlog::debug(
-                                    "[AmsBackendSnapmaker] ignoring channel_error '{}' on idle "
-                                    "empty lane {} (not loading, not active)",
-                                    error, i);
+                                    "[AmsBackendSnapmaker] ignoring error (token='{}' state='{}') "
+                                    "on idle empty lane {} (not operating, not active)",
+                                    error, state, i);
                             } else {
                                 system_info_.action = AmsAction::ERROR;
-                                system_info_.operation_detail = friendly_channel_error(error, i);
+                                system_info_.operation_detail =
+                                    has_error_token ? friendly_channel_error(error, i)
+                                                    : friendly_channel_state_fail(state, i);
                                 changed = true;
                             }
-                        } else if (state == "loading" || state == "preloading") {
-                            system_info_.action = AmsAction::LOADING;
-                            changed = true;
-                        } else if (state == "unloading") {
-                            system_info_.action = AmsAction::UNLOADING;
-                            changed = true;
-                        } else if (state.rfind("unload_", 0) == 0 && state != "unload_finish") {
-                            // Snapmaker U1 emits granular unload sub-states rather than
-                            // a flat "unloading": unload_homing/picking/heating/doing.
-                            // Without recognizing these the action never leaves Idle
-                            // during a U1 unload, so the optimistic HEATING set by the
-                            // UI gets clobbered and the step bar drops to Idle mid-op.
-                            // unload_finish is excluded so it reaches its handler below.
-                            system_info_.action = AmsAction::UNLOADING;
-                            changed = true;
-                        } else if (state.rfind("load_", 0) == 0 && state != "load_finish") {
-                            // Granular load sub-states: load_homing/picking/heating/doing.
-                            // The "load_" prefix deliberately does NOT match "preload_*"
-                            // (preload_finish / preloading), which are handled elsewhere.
-                            // load_finish is excluded so it reaches its IDLE handler below.
-                            system_info_.action = AmsAction::LOADING;
-                            changed = true;
-                        } else if (state == "unload_finish" || state == "preload_finish") {
-                            // Unload completed: the firmware has retracted filament
-                            // out of the toolhead into the buffer. The extruder
-                            // pin-state path keeps filament_loaded=(active>=0) true
-                            // because the tool's active_pin stays set while parked,
-                            // so without this the active-lane highlight never clears
-                            // after an idle unload (bottom T-badge stayed "active"
-                            // while top-right correctly showed Idle). Clear the
-                            // loaded state for THIS channel so the single
-                            // active-loaded source of truth (slot_is_actively_loaded
-                            // / filament_loaded) drops immediately.
-                            auto* slot = system_info_.units[0].get_slot(i);
-                            if (slot && slot->status == SlotStatus::LOADED) {
-                                slot->status = SlotStatus::AVAILABLE;
-                                changed = true;
-                            }
-                            if (system_info_.current_slot == i || system_info_.current_tool == i) {
-                                system_info_.filament_loaded = false;
-                                system_info_.current_slot = -1;
-                                system_info_.current_tool = -1;
-                                changed = true;
-                            }
-                            // Only "unload_finish" is the TRUE end of the operation.
-                            // "preload_finish" (filament staged in the buffer) can be
-                            // reported while the operation is still running — e.g. a
-                            // lane already at preload_finish that the user re-unloads:
-                            // the nozzle heats but channel_state stays preload_finish,
-                            // and dropping to IDLE here killed the unload step display
-                            // mid-heat (#u1-unload-steps). Leave the action alone for
-                            // preload_finish; it resolves to IDLE via the "idle"
-                            // channel_state below once the operation truly settles.
-                            if (state == "unload_finish") {
-                                // Record the just-unloaded lane so FilamentSensorManager
-                                // can suppress the runout-guidance modal for the grace
-                                // window during which the user is EXPECTED to pull the
-                                // filament out of this lane (the e<N>_filament sensor
-                                // fires "no filament" seconds after the unload completes).
-                                AmsState::instance().mark_slot_unloaded(i);
-                                if (system_info_.action == AmsAction::LOADING ||
-                                    system_info_.action == AmsAction::UNLOADING) {
-                                    system_info_.action = AmsAction::IDLE;
-                                    system_info_.operation_detail.clear();
-                                    PostOpCooldownManager::instance().schedule();
+                        } else if (!state.empty() && !info.ignore) {
+                            // No error — drive the action / operation lifecycle from
+                            // the classifier.
+                            if (info.action == AmsAction::LOADING) {
+                                if (system_info_.action != AmsAction::LOADING) {
+                                    system_info_.action = AmsAction::LOADING;
                                     changed = true;
                                 }
+                            } else if (info.action == AmsAction::UNLOADING) {
+                                if (system_info_.action != AmsAction::UNLOADING) {
+                                    system_info_.action = AmsAction::UNLOADING;
+                                    changed = true;
+                                }
+                            } else if (info.is_terminal) {
+                                // A *_finish state resolves the operation.
+                                // unload_finish and preload_finish both retract
+                                // filament out of the toolhead: demote the slot from
+                                // LOADED to AVAILABLE and drop the active-lane
+                                // highlight so slot_is_actively_loaded / filament_loaded
+                                // clears immediately (the extruder pin-state path keeps
+                                // active_pin set while parked, which otherwise leaves
+                                // the badge "active" after an idle unload).
+                                if (info.clears_loaded) {
+                                    auto* slot = system_info_.units[0].get_slot(i);
+                                    if (slot && slot->status == SlotStatus::LOADED) {
+                                        slot->status = SlotStatus::AVAILABLE;
+                                        changed = true;
+                                    }
+                                    if (system_info_.current_slot == i ||
+                                        system_info_.current_tool == i) {
+                                        system_info_.filament_loaded = false;
+                                        system_info_.current_slot = -1;
+                                        system_info_.current_tool = -1;
+                                        changed = true;
+                                    }
+                                }
+                                if (state == "unload_finish") {
+                                    // Record the just-unloaded lane so
+                                    // FilamentSensorManager suppresses the runout
+                                    // modal during the grace window when the user is
+                                    // EXPECTED to pull filament out of this lane.
+                                    AmsState::instance().mark_slot_unloaded(i);
+                                }
+                                // preload_finish is terminal-for-latch but does NOT
+                                // end the op: a lane already at preload_finish that
+                                // the user re-unloads keeps channel_state=preload_finish
+                                // while the nozzle heats, and dropping to IDLE here
+                                // killed the unload step display mid-heat
+                                // (#u1-unload-steps). Only the true terminals resolve
+                                // the action to IDLE.
+                                if (state != "preload_finish") {
+                                    if (system_info_.action == AmsAction::LOADING ||
+                                        system_info_.action == AmsAction::UNLOADING) {
+                                        system_info_.action = AmsAction::IDLE;
+                                        system_info_.operation_detail.clear();
+                                        PostOpCooldownManager::instance().schedule();
+                                        changed = true;
+                                    }
+                                }
                             }
-                        } else if (state == "load_finish" || state == "idle") {
-                            if (system_info_.action == AmsAction::LOADING ||
-                                system_info_.action == AmsAction::UNLOADING) {
-                                system_info_.action = AmsAction::IDLE;
-                                system_info_.operation_detail.clear();
-                                PostOpCooldownManager::instance().schedule();
-                                changed = true;
-                            }
+                            // IDLE non-terminal (none / inited / wait_insert): leave
+                            // the action untouched — a stray idle mid-op must not
+                            // clobber an in-progress LOADING/UNLOADING. The latch
+                            // already handled wait_insert's clear above.
                         }
 
                         // Diagnostic: trace the firmware channel_state sequence during
