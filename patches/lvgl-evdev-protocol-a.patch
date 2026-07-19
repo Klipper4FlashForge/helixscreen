@@ -1,5 +1,5 @@
 diff --git a/src/drivers/evdev/lv_evdev.c b/src/drivers/evdev/lv_evdev.c
-index 1b8319e04..4011693d5 100644
+index 1b8319e04..ccc3a2ee8 100644
 --- a/src/drivers/evdev/lv_evdev.c
 +++ b/src/drivers/evdev/lv_evdev.c
 @@ -12,6 +12,7 @@
@@ -10,7 +10,25 @@ index 1b8319e04..4011693d5 100644
  #include <string.h>
  #include <sys/types.h>
  #include <dirent.h>
-@@ -147,6 +148,45 @@ static lv_point_t _evdev_process_pointer(lv_indev_t * indev, int x, int y)
+@@ -74,6 +75,17 @@ typedef struct {
+     uint8_t touch_count; /* Number of valid touch points */
+     uint8_t current_slot; /* Current touch point slot */
+     bool touch_data_changed; /* Flag to indicate if touch data has changed since last SYN_REPORT */
++    /* Per-slot completeness gate: some capacitive controllers (e.g. Holtek
++     * 04d9:8030 on BTT-HDMI5) intermittently emit a new-contact press carrying
++     * only one axis — X without Y, or Y without X. Because released slots have
++     * their point zeroed (see the invalidation loop at end of _evdev_read), a
++     * partial press would otherwise be emitted at a screen edge (missing Y -> 0
++     * top edge; missing X -> 0 left edge), producing phantom edge taps. Track
++     * whether BOTH axes have been received for the current contact and refuse to
++     * emit a slot as PRESSED until it holds a complete (x,y) pair. */
++    bool touch_got_x[MAX_TOUCH_POINTS];  /* ABS_MT_POSITION_X seen for current contact */
++    bool touch_got_y[MAX_TOUCH_POINTS];  /* ABS_MT_POSITION_Y seen for current contact */
++    bool touch_xy_ready[MAX_TOUCH_POINTS]; /* got_x && got_y — slot is emittable */
+ #endif
+ } lv_evdev_t;
+ 
+@@ -147,6 +159,45 @@ static lv_point_t _evdev_process_pointer(lv_indev_t * indev, int x, int y)
      lv_point_t p;
      p.x = _evdev_calibrate(swapped_x, dsc->min_x, dsc->max_x, offset_x, offset_x + width - 1);
      p.y = _evdev_calibrate(swapped_y, dsc->min_y, dsc->max_y, offset_y, offset_y + height - 1);
@@ -56,7 +74,39 @@ index 1b8319e04..4011693d5 100644
      return p;
  }
  
-@@ -221,6 +261,18 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+@@ -190,6 +241,9 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+ #if LV_USE_GESTURE_RECOGNITION
+                     if(in.code == ABS_MT_POSITION_X && dsc->current_slot < MAX_TOUCH_POINTS) {
+                         dsc->touch_data[dsc->current_slot].point.x = in.value;
++                        dsc->touch_got_x[dsc->current_slot] = true;
++                        dsc->touch_xy_ready[dsc->current_slot] =
++                            dsc->touch_got_x[dsc->current_slot] && dsc->touch_got_y[dsc->current_slot];
+                         dsc->touch_data_changed = true;
+                         LV_LOG_TRACE("MT_X update: slot=%d, x=%d", dsc->current_slot, in.value);
+                     }
+@@ -200,6 +254,9 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+ #if LV_USE_GESTURE_RECOGNITION
+                     if(in.code == ABS_MT_POSITION_Y && dsc->current_slot < MAX_TOUCH_POINTS) {
+                         dsc->touch_data[dsc->current_slot].point.y = in.value;
++                        dsc->touch_got_y[dsc->current_slot] = true;
++                        dsc->touch_xy_ready[dsc->current_slot] =
++                            dsc->touch_got_x[dsc->current_slot] && dsc->touch_got_y[dsc->current_slot];
+                         dsc->touch_data_changed = true;
+                         LV_LOG_TRACE("MT_Y update: slot=%d, y=%d", dsc->current_slot, in.value);
+                     }
+@@ -212,6 +269,11 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+                     if(in.value == -1) {
+                         if(dsc->current_slot < MAX_TOUCH_POINTS) {
+                             dsc->touch_data[dsc->current_slot].state = LV_INDEV_STATE_RELEASED;
++                            /* Clear the completeness gate so a stale "ready" cannot leak
++                             * into the next contact reusing this slot. */
++                            dsc->touch_got_x[dsc->current_slot] = false;
++                            dsc->touch_got_y[dsc->current_slot] = false;
++                            dsc->touch_xy_ready[dsc->current_slot] = false;
+                             dsc->touch_data_changed = true;
+                             LV_LOG_TRACE("Touch slot %d released", dsc->current_slot);
+ 
+@@ -221,6 +283,18 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
                                      dsc->touch_count = i + 1;
                                  }
                              }
@@ -75,7 +125,22 @@ index 1b8319e04..4011693d5 100644
                          }
                      }
                      else {
-@@ -251,10 +303,24 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+@@ -228,6 +302,14 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+                             dsc->touch_data[dsc->current_slot].state = LV_INDEV_STATE_PRESSED;
+                             dsc->touch_data[dsc->current_slot].id = dsc->current_slot;
+                             dsc->touch_count = LV_MAX(dsc->touch_count, dsc->current_slot + 1);
++                            /* A new contact starts incomplete: the ABS_MT_POSITION_X/Y
++                             * events for it arrive after this TRACKING_ID (standard MT
++                             * protocol-B ordering). Clearing here means the slot is not
++                             * emittable until BOTH axes land, so a one-axis glitch frame
++                             * is dropped instead of producing an edge tap. */
++                            dsc->touch_got_x[dsc->current_slot] = false;
++                            dsc->touch_got_y[dsc->current_slot] = false;
++                            dsc->touch_xy_ready[dsc->current_slot] = false;
+                             dsc->touch_data_changed = true;
+                             LV_LOG_TRACE("Touch slot %d pressed, touch_count=%d", dsc->current_slot, dsc->touch_count);
+                         }
+@@ -251,10 +333,24 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
          }
  #if LV_USE_GESTURE_RECOGNITION
          else if(in.type == EV_SYN && in.code == SYN_REPORT) {
@@ -102,16 +167,24 @@ index 1b8319e04..4011693d5 100644
                      if(dsc->touch_data[i].state == LV_INDEV_STATE_PRESSED || dsc->touch_data[i].state == LV_INDEV_STATE_RELEASED) {
                          LV_LOG_TRACE("Slot %d: state=%s, raw(%d, %d)",
                                       i,
-@@ -268,7 +334,7 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+@@ -268,8 +364,14 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
  
                  int active_touches = 0;
  
 -                for(int i = 0; i < MAX_TOUCH_POINTS; i++) {
+-                    if(dsc->touch_data[i].state == LV_INDEV_STATE_PRESSED || dsc->touch_data[i].state == LV_INDEV_STATE_RELEASED) {
 +                for(int i = 0; i < dsc->touch_count; i++) {
-                     if(dsc->touch_data[i].state == LV_INDEV_STATE_PRESSED || dsc->touch_data[i].state == LV_INDEV_STATE_RELEASED) {
++                    /* A PRESSED slot that has not yet received both axes is not
++                     * emittable — skip it so a partial (one-axis) glitch press is
++                     * never fed to the gesture recognizer. RELEASED slots are always
++                     * emitted so lifts still fire. */
++                    bool emittable = (dsc->touch_data[i].state == LV_INDEV_STATE_RELEASED) ||
++                                     (dsc->touch_data[i].state == LV_INDEV_STATE_PRESSED && dsc->touch_xy_ready[i]);
++                    if(emittable) {
                          calibrated_touch_data[active_touches] = dsc->touch_data[i];
  
-@@ -288,18 +354,10 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+                         lv_point_t calib_point = _evdev_process_pointer(indev, dsc->touch_data[i].point.x, dsc->touch_data[i].point.y);
+@@ -288,18 +390,10 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
                  lv_indev_gesture_recognizers_update(indev, calibrated_touch_data, active_touches);
                  lv_indev_gesture_recognizers_set_data(indev, data);
  
@@ -134,7 +207,40 @@ index 1b8319e04..4011693d5 100644
  
                  dsc->touch_data_changed = false;
              }
-@@ -342,6 +400,22 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+@@ -324,14 +418,25 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+             data->state = dsc->state;
+             data->key = dsc->key;
+             break;
+-        case LV_INDEV_TYPE_POINTER:
++        case LV_INDEV_TYPE_POINTER: {
+ #if LV_USE_GESTURE_RECOGNITION
+-            if(dsc->touch_count > 0) {
++            /* A PRESSED slot 0 that has not yet received both axes must NOT be
++             * reported as a press: its point may contain a zeroed axis (released
++             * slots are zeroed at end of _evdev_read) and would land at a screen
++             * edge, producing a phantom tap. Treat it as not-emittable and fall
++             * through to the released/idle fallback below. */
++            bool slot0_incomplete = dsc->touch_count > 0 &&
++                                    dsc->touch_data[0].state == LV_INDEV_STATE_PRESSED &&
++                                    !dsc->touch_xy_ready[0];
++            if(dsc->touch_count > 0 && !slot0_incomplete) {
+                 data->state = dsc->touch_data[0].state;
+                 data->point = _evdev_process_pointer(indev, dsc->touch_data[0].point.x, dsc->touch_data[0].point.y);
+             }
+             else {
+-                data->state = dsc->state;
++                /* Force RELEASED for an incomplete slot-0 press even though
++                 * dsc->state may be PRESSED (BTN_TOUCH=1) — this suppresses the
++                 * phantom edge tap until both axes arrive one SYN later. */
++                data->state = slot0_incomplete ? LV_INDEV_STATE_RELEASED : dsc->state;
+                 data->point = _evdev_process_pointer(indev, dsc->root_x, dsc->root_y);
+             }
+ #else
+@@ -339,9 +444,26 @@ static void _evdev_read(lv_indev_t * indev, lv_indev_data_t * data)
+             data->point = _evdev_process_pointer(indev, dsc->root_x, dsc->root_y);
+ #endif
+             break;
++        }
          default:
              break;
      }
