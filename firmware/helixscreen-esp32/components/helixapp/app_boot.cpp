@@ -89,6 +89,7 @@
 // Non-mock (real connect) path only — WiFi bring-up (Task 13, over the shared
 // WifiBackend) + Moonraker connect thread.
 #include "async_lifetime_guard.h"
+#include "provisioning_esp.h"
 #include "wifi_backend_esp.h"
 #include "wifi_manager.h"
 
@@ -537,6 +538,22 @@ void* app_net_thread_main(void*) {
     // open; idempotent if this call IS the first construction (the ctor
     // already invoked start_async() once).
     wifi->retry_async();
+
+    // Task 14: out-of-box case. retry_async() -> WifiBackendEsp::start() just
+    // ran load_or_seed_credentials(), so provisioning_needed() below sees the
+    // post-seed state (a dev sdkconfig.local Kconfig SSID, if any, has already
+    // been written to NVS) rather than a never-started snapshot. If NVS still
+    // has no stored SSID, stand up the SoftAP captive portal instead of
+    // silently idling for kBootBoundedWaitMs below — the shell is already up
+    // (this thread starts after build_shell()), so the not-ready UI is on
+    // screen throughout and the portal's own instructions modal explains what
+    // to do. provisioning_run_portal() blocks until either a join succeeds
+    // (through this same WiFiManager) or the user dismisses back to Settings >
+    // Network; either way the bounded wait below resolves instantly
+    // afterward (is_connected() is already true on the join path).
+    if (helix::provisioning_needed()) {
+        helix::provisioning_run_portal();
+    }
 
     for (int waited_ms = 0; waited_ms < kBootBoundedWaitMs; waited_ms += kBootPollIntervalMs) {
         if (wifi->is_connected()) {

@@ -65,7 +65,8 @@ set(LOCAL_SRCS
     stb_impl.c
     helix_lvgl_abi_check.c
     link_probe.cpp
-    wifi_backend_esp.cpp)
+    wifi_backend_esp.cpp
+    provisioning_esp.cpp)
 
 idf_component_register(
     SRCS ${APP_SRCS} ${MOCK_SRCS} ${LOCAL_SRCS}
@@ -73,7 +74,8 @@ idf_component_register(
     REQUIRES helixcore helixnet
     # esp_wifi/esp_netif/esp_event/nvs_flash: the non-mock connect path
     # (app_boot.cpp, Task 8) brings up the WiFi station before connecting.
-    PRIV_REQUIRES pthread esp_timer esp_wifi esp_netif esp_event nvs_flash)
+    # esp_http_server: Task 14's provisioning captive portal (provisioning_esp.cpp).
+    PRIV_REQUIRES pthread esp_timer esp_wifi esp_netif esp_event nvs_flash esp_http_server)
 
 # The PCH -include is C++-only: font/image .c sources compile as plain C.
 target_compile_options(${COMPONENT_LIB} PRIVATE
