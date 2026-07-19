@@ -132,9 +132,13 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     static constexpr uint64_t kHousekeepingPeriodUs = 5LL * 1000 * 1000;
     // esp_websocket_client's own task stack (connect()'s cfg.task_stack).
     // Named so the discovery-complete watermark log (discovery_subscribe)
-    // reports headroom against the SAME value connect() actually configures
-    // — see connect()'s comment for why this was raised from 8192.
-    static constexpr uint32_t kWsTaskStackBytes = 16384;
+    // reports headroom against the SAME value connect() actually configures.
+    // Sized from measurement, not guesswork: 44 forced-reconnect cycles
+    // showed a deterministic ~6.5KB peak (watermark 10,060 free of a trial
+    // 16384), so 8192 carries ~1.7KB headroom — and this stack is INTERNAL
+    // DRAM (a 16KB trial cost exactly 8KB of steady-state internal free,
+    // breaking the >=100KB budget). The watermark log guards the margin.
+    static constexpr uint32_t kWsTaskStackBytes = 8192;
 
     struct Pending {
         std::string method;

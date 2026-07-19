@@ -123,19 +123,13 @@ int EspMoonrakerClient::connect(const char* url, std::function<void()> on_connec
 
     esp_websocket_client_config_t cfg = {};
     cfg.uri = url_.c_str();
-    // 4096 default is too small once nlohmann is on the callback path; 8192
-    // was the Task 7/8 margin. Task 9's disable_auto_reconnect=true (below)
-    // makes the component tear down and recreate this task on EVERY
-    // disconnect (vTaskDelete + xTaskCreatePinnedToCore) rather than reusing
-    // one persistent stack for the whole session, and this build's
-    // CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM lets that fresh stack land
-    // in the same PSRAM arena as our json-heavy discovery allocations —
-    // prime suspect for a heap-corruption abort hit once in a Task 9 soak
-    // (esp32p4-task-9-report.md, Investigation section). Raised as a
-    // defensive margin; the stack high-watermark log at discovery
-    // completion (see discovery_subscribe's success callback) reports the
-    // measured headroom so this is settled with direct evidence rather than
-    // another probabilistic soak.
+    // 4096 default is too small once nlohmann is on the callback path.
+    // 8192 is measurement-backed: discovery (the deepest json work on this
+    // task) peaks at ~6.5KB, deterministic across 44 forced-reconnect
+    // cycles — see kWsTaskStackBytes and the watermark log in
+    // discovery_subscribe, which reports the live margin every cycle. A
+    // stack-overflow hypothesis for the one soak heap-corruption abort was
+    // REFUTED by that measurement (esp32p4-task-9-report.md, Investigation).
     cfg.task_stack = kWsTaskStackBytes;
     // Bounds the per-DATA-event chunk, not the message; we reassemble.
     cfg.buffer_size = 32768;
