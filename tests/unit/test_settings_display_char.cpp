@@ -122,7 +122,6 @@ TEST_CASE("CHAR: DisplaySettings XML callback names",
     }
 
     SECTION("Dropdown callbacks") {
-        REQUIRE(std::string("on_display_sleep_changed") == "on_display_sleep_changed");
         REQUIRE(std::string("on_bed_mesh_mode_changed") == "on_bed_mesh_mode_changed");
         REQUIRE(std::string("on_gcode_mode_changed") == "on_gcode_mode_changed");
         REQUIRE(std::string("on_time_format_changed") == "on_time_format_changed");
@@ -402,7 +401,6 @@ TEST_CASE("CHAR: Brightness section conditional visibility",
  * 5. Callbacks Used:
  *    - on_dark_mode_changed (toggle)
  *    - on_brightness_changed (slider)
- *    - on_display_sleep_changed (dropdown)
  *    - on_bed_mesh_mode_changed (dropdown)
  *    - on_gcode_mode_changed (dropdown)
  *    - on_time_format_changed (dropdown)

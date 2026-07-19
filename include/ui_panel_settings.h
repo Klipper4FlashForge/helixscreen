@@ -175,7 +175,6 @@ class SettingsPanel : public PanelBase {
 
     void handle_dark_mode_changed(bool enabled);
     void handle_animations_changed(bool enabled);
-    void handle_display_sleep_changed(int index);
     void handle_led_light_changed(bool enabled);
     void handle_led_settings_clicked();
     void handle_sound_settings_clicked();
@@ -282,7 +281,6 @@ class SettingsPanel : public PanelBase {
     // === Static Trampolines (private - only used internally) ===
     //
     static void on_dark_mode_changed(lv_event_t* e);
-    static void on_display_sleep_changed(lv_event_t* e);
 
     // Static callbacks for overlays
     static void on_restart_later_clicked(lv_event_t* e);

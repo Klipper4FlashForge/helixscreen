@@ -138,24 +138,6 @@ static void on_cancel_escalation_timeout_changed(lv_event_t* e) {
     SafetySettingsManager::instance().set_cancel_escalation_timeout_seconds(seconds);
 }
 
-// Static callback for display dim dropdown
-static void on_display_dim_dropdown_changed(lv_event_t* e) {
-    lv_obj_t* dropdown = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
-    int index = static_cast<int>(lv_dropdown_get_selected(dropdown));
-    int seconds = DisplaySettingsManager::index_to_dim_seconds(index);
-    spdlog::info("[SettingsPanel] Display dim changed: index {} = {}s", index, seconds);
-    DisplaySettingsManager::instance().set_display_dim_sec(seconds);
-}
-
-// Static callback for display sleep dropdown
-static void on_display_sleep_dropdown_changed(lv_event_t* e) {
-    lv_obj_t* dropdown = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
-    int index = static_cast<int>(lv_dropdown_get_selected(dropdown));
-    int seconds = DisplaySettingsManager::index_to_sleep_seconds(index);
-    spdlog::info("[SettingsPanel] Display sleep changed: index {} = {}s", index, seconds);
-    DisplaySettingsManager::instance().set_display_sleep_sec(seconds);
-}
-
 // Static callback for bed mesh render mode dropdown
 static void on_bed_mesh_mode_changed(lv_event_t* e) {
     lv_obj_t* dropdown = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
@@ -377,8 +359,6 @@ void SettingsPanel::init_subjects() {
     register_xml_callbacks({
         // Dropdowns
         {"on_completion_alert_changed", on_completion_alert_dropdown_changed},
-        {"on_display_dim_changed", on_display_dim_dropdown_changed},
-        {"on_display_sleep_changed", on_display_sleep_dropdown_changed},
         {"on_bed_mesh_mode_changed", on_bed_mesh_mode_changed},
         {"on_gcode_mode_changed", on_gcode_mode_changed},
         {"on_z_movement_style_changed", on_z_movement_style_changed},
@@ -806,12 +786,6 @@ void SettingsPanel::handle_dark_mode_changed(bool enabled) {
 void SettingsPanel::handle_animations_changed(bool enabled) {
     spdlog::info("[{}] Animations toggled: {}", get_name(), enabled ? "ON" : "OFF");
     DisplaySettingsManager::instance().set_animations_enabled(enabled);
-}
-
-void SettingsPanel::handle_display_sleep_changed(int index) {
-    int seconds = DisplaySettingsManager::index_to_sleep_seconds(index);
-    spdlog::info("[{}] Display sleep changed: index {} = {}s", get_name(), index, seconds);
-    DisplaySettingsManager::instance().set_display_sleep_sec(seconds);
 }
 
 void SettingsPanel::handle_led_light_changed(bool enabled) {
@@ -1292,14 +1266,6 @@ void SettingsPanel::on_animations_changed(lv_event_t* e) {
     auto* toggle = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
     bool enabled = lv_obj_has_state(toggle, LV_STATE_CHECKED);
     get_global_settings_panel().handle_animations_changed(enabled);
-    LVGL_SAFE_EVENT_CB_END();
-}
-
-void SettingsPanel::on_display_sleep_changed(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[SettingsPanel] on_display_sleep_changed");
-    auto* dropdown = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
-    int index = static_cast<int>(lv_dropdown_get_selected(dropdown));
-    get_global_settings_panel().handle_display_sleep_changed(index);
     LVGL_SAFE_EVENT_CB_END();
 }
 
