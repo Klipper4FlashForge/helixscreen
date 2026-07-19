@@ -1071,6 +1071,7 @@ translations:
   Heat bed before calibrating for accurate offset with thermal expansion.: Aqueça
     a mesa antes de calibrar para um offset preciso com expansão térmica.
   Heat nozzle: Aquecer bico
+  Heat to at least %d°C for filament operations: ''
   Heatbed Temperature: Temperatura da Mesa Aquecida
   Heated Bed: Mesa Aquecida
   Heated Bed MPC Calibration: Calibração MPC da Mesa Aquecida
@@ -1103,6 +1104,7 @@ translations:
   Hide Firmware Noise: Ocultar Ruído do Firmware
   Hide Temperature Reports: Ocultar Relatórios de Temperatura
   High Water Mark: Marca de Pico
+  Holding nozzle at {}°C to purge previous filament.: ''
   Home: Início
   Home failed: Homing falhou
   Home selector: Fazer home do seletor

@@ -939,6 +939,7 @@
   <translation tag="Heat Soak" pt="Aquecimento Prolongado"/>
   <translation tag="Heat bed before calibrating for accurate offset with thermal expansion." pt="Aqueça a mesa antes de calibrar para um offset preciso com expansão térmica."/>
   <translation tag="Heat nozzle" pt="Aquecer bico"/>
+  <translation tag="Heat to at least %d°C for filament operations"/>
   <translation tag="Heatbed Temperature" pt="Temperatura da Mesa Aquecida"/>
   <translation tag="Heated Bed" pt="Mesa Aquecida"/>
   <translation tag="Heated Bed MPC Calibration" pt="Calibração MPC da Mesa Aquecida"/>
@@ -967,6 +968,7 @@
   <translation tag="Hide Firmware Noise" pt="Ocultar Ruído do Firmware"/>
   <translation tag="Hide Temperature Reports" pt="Ocultar Relatórios de Temperatura"/>
   <translation tag="High Water Mark" pt="Marca de Pico"/>
+  <translation tag="Holding nozzle at {}°C to purge previous filament."/>
   <translation tag="Home" pt="Início"/>
   <translation tag="Home failed" pt="Homing falhou"/>
   <translation tag="Home selector" pt="Fazer home do seletor"/>

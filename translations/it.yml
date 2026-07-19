@@ -1069,6 +1069,7 @@ translations:
   Heat bed before calibrating for accurate offset with thermal expansion.: Riscalda
     il piano prima di calibrare per un offset preciso con espansione termica.
   Heat nozzle: Riscalda ugello
+  Heat to at least %d°C for filament operations: ''
   Heatbed Temperature: Temperatura piano riscaldato
   Heated Bed: Piano riscaldato
   Heated Bed MPC Calibration: Calibrazione MPC piano riscaldato
@@ -1099,6 +1100,7 @@ translations:
   Hide Firmware Noise: Nascondi rumore firmware
   Hide Temperature Reports: Nascondi report temperature
   High Water Mark: Picco massimo
+  Holding nozzle at {}°C to purge previous filament.: ''
   Home: Home
   Home failed: Homing fallito
   Home selector: Homing selettore

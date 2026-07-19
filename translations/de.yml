@@ -1083,6 +1083,7 @@ translations:
   Heat bed before calibrating for accurate offset with thermal expansion.: Bett vor
     der Kalibrierung heizen für genauen Offset mit Wärmeausdehnung.
   Heat nozzle: Düse aufheizen
+  Heat to at least %d°C for filament operations: ''
   Heatbed Temperature: Heizbett-Temperatur
   Heated Bed: Heizbett
   Heated Bed MPC Calibration: Heizbett MPC-Kalibrierung
@@ -1113,6 +1114,7 @@ translations:
   Hide Firmware Noise: Firmware-Rauschen ausblenden
   Hide Temperature Reports: Temperaturberichte ausblenden
   High Water Mark: Höchststand
+  Holding nozzle at {}°C to purge previous filament.: ''
   Home: Home
   Home failed: Referenzfahrt fehlgeschlagen
   Home selector: Selektor referenzieren

@@ -963,6 +963,7 @@ translations:
   Heat Soak: ヒートソーク
   Heat bed before calibrating for accurate offset with thermal expansion.: 熱膨張を考慮した正確なオフセットのため、キャリブレーション前にベッドを加熱してください。
   Heat nozzle: ノズルを加熱
+  Heat to at least %d°C for filament operations: ''
   Heatbed Temperature: ヒートベッド温度
   Heated Bed: 加熱ベッド
   Heated Bed MPC Calibration: ヒートベッド MPCキャリブレーション
@@ -992,6 +993,7 @@ translations:
   Hide Firmware Noise: ファームウェアノイズを非表示
   Hide Temperature Reports: 温度レポートを非表示
   High Water Mark: 最大値
+  Holding nozzle at {}°C to purge previous filament.: ''
   Home: ホーム
   Home failed: ホーミング失敗
   Home selector: セレクターをホーミング

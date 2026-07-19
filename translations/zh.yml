@@ -959,6 +959,7 @@ translations:
   Heat Soak: 预热浸泡
   Heat bed before calibrating for accurate offset with thermal expansion.: 校准前加热热床，以获得考虑热膨胀的精确偏移。
   Heat nozzle: 加热喷嘴
+  Heat to at least %d°C for filament operations: ''
   Heatbed Temperature: 热床温度
   Heated Bed: 加热床
   Heated Bed MPC Calibration: 热床 MPC 校准
@@ -988,6 +989,7 @@ translations:
   Hide Firmware Noise: 隐藏固件噪声
   Hide Temperature Reports: 隐藏温度报告
   High Water Mark: 峰值标记
+  Holding nozzle at {}°C to purge previous filament.: ''
   Home: 归位
   Home failed: 归位失败
   Home selector: 选择器归位

@@ -56,9 +56,6 @@ using namespace helix;
 // The material each slot represents is runtime-reassignable via preset_materials_.
 static constexpr int PRESET_COUNT = 4;
 
-// Format string for safety warning (used in constructor and set_limits)
-static constexpr const char* SAFETY_WARNING_FMT = "Heat to at least %d°C for filament operations";
-
 namespace helix::filament_presets {
 bool validate_reassignment(int slot, const std::string& material) {
     if (slot < 0 || slot >= 4 || material.empty()) {
@@ -93,7 +90,7 @@ FilamentPanel::FilamentPanel(PrinterState& printer_state, MoonrakerAPI* api)
     std::snprintf(warning_temps_buf_, sizeof(warning_temps_buf_),
                   lv_tr("Current: %d°C | Target: %d°C"), nozzle_current_, nozzle_target_);
     std::snprintf(safety_warning_text_buf_, sizeof(safety_warning_text_buf_),
-                  lv_tr(SAFETY_WARNING_FMT), min_extrude_temp_);
+                  lv_tr("Heat to at least %d°C for filament operations"), min_extrude_temp_);
     format_target_or_off(0, material_nozzle_buf_, sizeof(material_nozzle_buf_));
     format_target_or_off(0, material_bed_buf_, sizeof(material_bed_buf_));
     std::snprintf(nozzle_current_buf_, sizeof(nozzle_current_buf_), "%d°C", nozzle_current_);
@@ -2390,7 +2387,7 @@ void FilamentPanel::set_limits(int min_temp, int max_temp, int min_extrude_temp)
     if (min_extrude_temp_ != min_extrude_temp) {
         min_extrude_temp_ = min_extrude_temp;
         std::snprintf(safety_warning_text_buf_, sizeof(safety_warning_text_buf_),
-                      lv_tr(SAFETY_WARNING_FMT), min_extrude_temp_);
+                      lv_tr("Heat to at least %d°C for filament operations"), min_extrude_temp_);
         lv_subject_copy_string(&safety_warning_text_subject_, safety_warning_text_buf_);
         spdlog::info("[{}] Min extrusion temp updated: {}°C", get_name(), min_extrude_temp_);
     }

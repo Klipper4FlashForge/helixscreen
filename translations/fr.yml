@@ -1088,6 +1088,7 @@ translations:
   Heat bed before calibrating for accurate offset with thermal expansion.: Chauffez
     le plateau avant de calibrer pour un offset précis avec la dilatation thermique.
   Heat nozzle: Chauffer la buse
+  Heat to at least %d°C for filament operations: ''
   Heatbed Temperature: Température du plateau chauffant
   Heated Bed: Plateau chauffant
   Heated Bed MPC Calibration: Calibration MPC du plateau chauffant
@@ -1119,6 +1120,7 @@ translations:
   Hide Firmware Noise: Masquer le bruit du firmware
   Hide Temperature Reports: Masquer les rapports de température
   High Water Mark: Pic dutilisation
+  Holding nozzle at {}°C to purge previous filament.: ''
   Home: Origine
   Home failed: Échec de la référence
   Home selector: Origine du sélecteur
