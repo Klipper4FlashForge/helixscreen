@@ -34,6 +34,7 @@
 #endif
 
 #include "platform_stubs.h" // helix_shim_log()
+#include "sdkconfig.h"      // CONFIG_HELIX_LOG_STRIP_DEBUG (helixscreen-esp32 only; unset here)
 
 namespace spdlog {
 
@@ -78,8 +79,22 @@ inline void log(level::level_enum lvl, const S& f, Args&&...) {
         ::spdlog::log(lvl, std::forward<Args>(args)...);                                           \
     }
 
+#if CONFIG_HELIX_LOG_STRIP_DEBUG
+// debug/trace never reach the console at the shipped INFO level, so the calls
+// are dropped to empty inline templates instead of routing through
+// ::spdlog::log. Call sites keep compiling unchanged (same argument list,
+// same void return), but with nothing left in the body the compiler proves
+// each format-string literal and its fmt::format_string/fmt::format
+// instantiation unreachable and drops them, taking the format-string data and
+// the per-call-site argument-packing code with them. The option lives in the
+// helixscreen-esp32 tree's Kconfig.projbuild only, so it is always unset here
+// and this branch never triggers in this throwaway audit tree.
+template <typename... Args> inline void trace(Args&&...) {}
+template <typename... Args> inline void debug(Args&&...) {}
+#else
 HELIX_SHIM_LEVEL_FN(trace, level::trace)
 HELIX_SHIM_LEVEL_FN(debug, level::debug)
+#endif
 HELIX_SHIM_LEVEL_FN(info, level::info)
 HELIX_SHIM_LEVEL_FN(warn, level::warn)
 HELIX_SHIM_LEVEL_FN(error, level::err)

@@ -64,6 +64,21 @@ endmenu
 
 menu "HelixScreen App Core"
 
+config HELIX_LOG_STRIP_DEBUG
+    bool "Strip spdlog::debug/trace format strings from the binary"
+    default y
+    help
+        The app core carries roughly 4,300 spdlog-style log call sites;
+        spdlog::debug/trace account for about half of them and can never
+        print on shipped firmware, which runs at INFO level. Each one still
+        costs a format-string literal plus per-call-site fmt argument-packing
+        code, together worth several hundred KB against a partition slot with
+        very little headroom to spare. When enabled, the spdlog shim compiles
+        spdlog::debug/trace down to empty inline functions, so the compiler
+        drops the format strings and their fmt instantiation entirely. Turn
+        this off to get full debug/trace formatting back for on-device
+        debugging; info/warn/error/critical are unaffected either way.
+
 config HELIX_MOCK_PRINTER
     bool "Compile the mock Moonraker client into the app core"
     default n
