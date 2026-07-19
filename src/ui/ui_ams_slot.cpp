@@ -49,7 +49,8 @@ struct AmsSlotData {
     // RAII observer handles - automatically removed when this struct is destroyed
     ObserverGuard color_observer;
     ObserverGuard status_observer;
-    ObserverGuard fill_observer; ///< Per-slot fill percent (spool visual fill)
+    ObserverGuard fill_observer;     ///< Per-slot fill percent (spool visual fill)
+    ObserverGuard material_observer; ///< Per-slot material type label (static subject)
     ObserverGuard current_slot_observer;
     ObserverGuard filament_loaded_observer;
     ObserverGuard active_loaded_observer; ///< Per-slot active-loaded (single highlight source)
@@ -224,6 +225,30 @@ static void apply_slot_fill_pct(AmsSlotData* data, int pct) {
     pct = std::clamp(pct, 0, 100);
     data->fill_level = static_cast<float>(pct) / 100.0f;
     update_filament_ring_size(data);
+}
+
+/**
+ * @brief Apply the material-type label from the per-slot material subject.
+ *
+ * The widget owns its own material rendering (like fill and color) so every
+ * ams_slot consumer — AmsPanel, AmsOverviewPanel, AmsDetail — repaints on a
+ * material-only change without any container re-reading it imperatively
+ * (#1065). Empty material -> "--" placeholder; long names truncate to 4 chars
+ * when 5+ slots share a row (overlap guard, matching the old refresh_slots()).
+ * Material names (PLA, PETG, …) are not translated.
+ */
+static void apply_slot_material(AmsSlotData* data, const char* material) {
+    if (!data || !data->material_label)
+        return;
+    if (!material || material[0] == '\0') {
+        lv_label_set_text(data->material_label, "--");
+        return;
+    }
+    std::string text = material;
+    if (data->total_count > 4 && text.length() > 4) {
+        text = text.substr(0, 4);
+    }
+    lv_label_set_text(data->material_label, text.c_str());
 }
 
 // ============================================================================
@@ -659,20 +684,8 @@ static void setup_slot_observers(AmsSlotData* data) {
                 if (!d)
                     return;
                 apply_slot_color(d, color_int);
-
-                // Also refresh the material label as a fast-path here. The
-                // primary backend has a dedicated material subject that bumps
-                // slots_version -> refresh_slots() on a material-only change
-                // (#1065); this re-read still covers secondary backends (which
-                // have no material subject) and color-coincident changes.
-                if (d->material_label) {
-                    AmsBackend* be = AmsState::instance().get_backend();
-                    if (be) {
-                        SlotInfo slot = be->get_slot_info(d->slot_index);
-                        lv_label_set_text(d->material_label,
-                                          slot.material.empty() ? "--" : slot.material.c_str());
-                    }
-                }
+                // Material has its own per-slot subject + observer (below), so
+                // it no longer piggybacks on the color change (#1065).
             },
             data->color_lifetime);
     }
@@ -700,6 +713,23 @@ static void setup_slot_observers(AmsSlotData* data) {
             },
             data->fill_lifetime);
     }
+
+    // Per-slot material observer: the STRUCTURAL fix for material, mirroring
+    // fill. The ams_slot widget owns its material label, so a material-only
+    // change (type edited while color is unchanged) repaints on EVERY consumer
+    // — AmsPanel, AmsOverviewPanel, AmsDetail — with no container re-reading it
+    // imperatively (#1065, native ZMOD AD5X "material stuck, color updates").
+    // The material subject is a static singleton, so no SubjectLifetime token.
+    lv_subject_t* material_subject = state.get_slot_material_subject(data->slot_index);
+    if (material_subject) {
+        data->material_observer = helix::ui::observe_string<lv_obj_t>(
+            material_subject, obj, [](lv_obj_t* o, const char* mat) {
+                auto* d = get_slot_data(o);
+                if (d)
+                    apply_slot_material(d, mat);
+            });
+    }
+
     if (current_slot_subject) {
         data->current_slot_observer = observe_int_sync<lv_obj_t>(
             current_slot_subject, obj, [](lv_obj_t* o, int current_slot) {
@@ -785,15 +815,16 @@ static void setup_slot_observers(AmsSlotData* data) {
     if (current_slot_subject && data->current_slot_observer) {
         apply_current_slot_highlight(data, lv_subject_get_int(current_slot_subject));
     }
+    if (material_subject && data->material_observer) {
+        apply_slot_material(data, lv_subject_get_string(material_subject));
+    }
 
-    // Update material label, tool badge, error indicator from backend
+    // Update tool badge + error indicator from backend. Material is NOT read
+    // here — it flows from the per-slot material subject via the observer above,
+    // so it stays reactive on every consumer (#1065).
     AmsBackend* backend = state.get_backend();
     if (backend) {
         SlotInfo slot = backend->get_slot_info(data->slot_index);
-        if (data->material_label) {
-            lv_label_set_text(data->material_label,
-                              slot.material.empty() ? "--" : slot.material.c_str());
-        }
         // Update tool badge based on slot's mapped_tool
         apply_tool_badge(data, slot.mapped_tool, slot.tool_mapping_override);
         // Update error indicator from slot data
@@ -905,6 +936,7 @@ static void ams_slot_xml_apply(lv_xml_parser_state_t* state, const char** attrs)
                 // Clear existing observers
                 data->color_observer.reset();
                 data->status_observer.reset();
+                data->material_observer.reset();
                 data->current_slot_observer.reset();
                 data->filament_loaded_observer.reset();
 
@@ -997,14 +1029,11 @@ void ui_ams_slot_refresh(lv_obj_t* obj) {
     }
 
     // Only update non-observer properties here.
-    // Color, status, and current-slot highlight are driven by observers.
+    // Color, status, current-slot highlight, and material are driven by
+    // observers (material via the per-slot material subject, #1065).
     AmsBackend* backend = AmsState::instance().get_backend();
     if (backend) {
         SlotInfo slot = backend->get_slot_info(data->slot_index);
-        if (data->material_label) {
-            lv_label_set_text(data->material_label,
-                              slot.material.empty() ? "--" : slot.material.c_str());
-        }
         apply_tool_badge(data, slot.mapped_tool, slot.tool_mapping_override);
         apply_slot_error(data, slot);
     }

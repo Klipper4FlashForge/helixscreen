@@ -1031,37 +1031,15 @@ void AmsPanel::update_slot_colors() {
             }
         }
 
-        // Update material label and fill level from backend slot info
-        if (backend) {
-            SlotInfo slot_info = backend->get_slot_info(i);
-
-            // Update slot-internal material label
-            // Truncate long material names when many slots to prevent overlap
-            lv_obj_t* material_label = lv_obj_find_by_name(slot_widgets_[i], "material_label");
-            if (material_label) {
-                if (!slot_info.material.empty()) {
-                    std::string material = slot_info.material;
-                    // Truncate to 4 chars when overlapping (5+ slots)
-                    if (slot_count > 4 && material.length() > 4) {
-                        material = material.substr(0, 4);
-                    }
-                    lv_label_set_text(material_label, material.c_str());
-                } else {
-                    lv_label_set_text(material_label, "---");
-                }
-            }
-
-            // Fill level is no longer pushed here: the ams_slot widget observes
-            // its own per-slot fill subject (AmsState::get_slot_fill_subject),
-            // written by sync_from_backend with the same SlotInfo::display_fill*
-            // policy (real ratio / 50% metadata fallback / empty ghost lane,
-            // #1071 BUG-1). Observing in the widget means every panel that hosts
-            // an ams_slot renders fill from state — the AmsOverviewPanel bug where
-            // unit-detail spools showed 100% full is fixed structurally.
-
-            // Refresh slot to update tool badge and other dynamic state
-            ui_ams_slot_refresh(slot_widgets_[i]);
-        }
+        // Material and fill are no longer pushed here: the ams_slot widget
+        // observes its own per-slot subjects (AmsState::get_slot_material_subject
+        // / get_slot_fill_subject), written by sync_from_backend. Observing in
+        // the widget means every panel that hosts an ams_slot stays reactive —
+        // the AmsOverviewPanel "100% full" fill bug (structural) and the #1065
+        // "material stuck, color updates" bug are both fixed at the widget, so no
+        // container re-reads them imperatively. Only non-subject state (tool
+        // badge, error indicator) is refreshed from the backend here.
+        ui_ams_slot_refresh(slot_widgets_[i]);
 
         // Update status indicator
         update_slot_status(i);
