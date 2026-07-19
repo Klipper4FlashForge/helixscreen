@@ -621,8 +621,17 @@ void EspMoonrakerClient::process_timeouts() {
     // app_boot_tick pump — NEVER the websocket task — so the stop()/start()
     // below cannot race the websocket task's own event dispatch, unlike the
     // component's built-in auto-reconnect this replaces.
-    if (reconnect_pending_.load() && now_us() >= reconnect_deadline_us_.load()) {
-        reconnect_pending_.store(false);
+    //
+    // The claim itself MUST still be atomic across those two pump contexts:
+    // a plain load()-then-store(false) lets both tasks observe pending==true
+    // before either clears it, so both would call stop()+start() on the same
+    // ws_ concurrently — the exact cross-task transport race F8 exists to
+    // eliminate, just relocated here (code review finding). exchange(false)
+    // makes exactly one caller win: only the task whose exchange() call
+    // observes the prior value as true proceeds; the loser sees false and
+    // does nothing. Deadline is checked first (a plain load, no claim) so a
+    // not-yet-due intent is left untouched for the next tick.
+    if (now_us() >= reconnect_deadline_us_.load() && reconnect_pending_.exchange(false)) {
         // R3: if a manual connect()/force_reconnect() bumped the generation
         // since this intent was scheduled, it belongs to a connection nothing
         // is waiting on anymore — drop it instead of restarting on top of

@@ -35,10 +35,20 @@ TEST_CASE("next_backoff_delay_ms doubles up to the cap", "[esp32][reconnect]") {
     REQUIRE(next_backoff_delay_ms(3000, 2000) == 2000);
 }
 
-TEST_CASE("next_backoff_delay_ms handles a zero floor without stalling forever",
+TEST_CASE("next_backoff_delay_ms(0, max) returns 0 — the function has no zero-floor special case",
           "[esp32][reconnect]") {
-    // A misconfigured 0ms floor must still climb toward the cap, not stay
-    // stuck at 0 forever (0 * 2 == 0 would never reach max_delay_ms).
+    // Doubling a 0ms delay is 0 forever (0 * 2 == 0). next_backoff_delay_ms does
+    // NOT guard against this — documenting that explicitly here so the absence of
+    // a guard is a tested fact, not an assumption. Production never hits it:
+    // reconnect_min_delay_ms_ defaults to 200 and configure_timeouts() only ever
+    // sets it from a caller-supplied value.
+    REQUIRE(next_backoff_delay_ms(0, 2000) == 0);
+
+    // If a caller DID defensively substitute a 1ms floor whenever the configured
+    // delay is 0, doubling from there still converges to the cap in a bounded
+    // number of steps. This is a property of the substitute-then-double PATTERN a
+    // caller would use, not of next_backoff_delay_ms itself — no such caller
+    // exists today (see above), but the pattern is cheap to keep proven correct.
     int delay = 0;
     for (int i = 0; i < 20 && delay < 2000; ++i) {
         delay = next_backoff_delay_ms(delay == 0 ? 1 : delay, 2000);
