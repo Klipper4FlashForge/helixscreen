@@ -27,6 +27,7 @@
 #include "ui_print_select_history.h"
 #include "ui_print_select_path_navigator.h"
 #include "ui_subject_registry.h"
+#include "ui_toast_manager.h"
 #include "ui_update_queue.h"
 
 #include "ams_backend.h"
@@ -538,6 +539,22 @@ void PrintSelectPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
             }
 
             panel->apply_sort();
+
+#if defined(HELIX_PLATFORM_ESP32)
+            // Task 11 R1: cap the browsable list to the newest N files. No
+            // local disk/pagination UI on this platform — an unbounded list
+            // from a printer with years of prints would be an unusable
+            // scroll and a PSRAM/RAM cost for card recycling metadata.
+            // apply_sort() above has just guaranteed dirs-first + newest-
+            // files-first, so a straight tail-truncate keeps the newest N.
+            constexpr size_t kEsp32MaxFileCount = 50;
+            if (cap_print_file_list_to_newest(panel->file_list_, kEsp32MaxFileCount)) {
+                ToastManager::instance().show(
+                    ToastSeverity::INFO,
+                    lv_tr("Showing the 50 newest files. See more in the printer's web UI."));
+            }
+#endif
+
             panel->merge_history_into_file_list(); // Populate history status for each file
             panel->update_sort_indicators();
 
@@ -1326,6 +1343,7 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                     spdlog::debug("[{}] Using local thumbnail for {}: {}", self->get_name(),
                                   d->filename, self->file_list_[d->index].thumbnail_path);
                 } else {
+#if !defined(HELIX_PLATFORM_ESP32)
                     // Remote path - use semantic API for card view thumbnails
                     spdlog::debug("[{}] Fetching card thumbnail for {}: {}", self->get_name(),
                                   d->filename, d->thumb_path);
@@ -1402,6 +1420,57 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                                          self->get_name(), filename_copy, error);
                         },
                         modified_ts);
+#else
+                    // ESP32 (Task 11 R2): no disk thumbnail cache on this platform
+                    // (Task 10 R6), so bypass ThumbnailCache/ThumbnailProcessor
+                    // entirely and fetch the PNG bytes directly via the HTTP lane,
+                    // decoding into a PSRAM-backed lv_image_dsc_t instead of a
+                    // cache file (see esp_psram_thumbnail.h).
+                    //
+                    // MANDATORY threading: EspHttpLane invokes on_success/on_error
+                    // directly on its own worker thread with no built-in
+                    // marshaling. This callback therefore does only local
+                    // byte-copy/PSRAM work on the worker thread and defers every
+                    // `self`/file_list_ touch via panel_tok.defer() — `self` is
+                    // captured here only to pass into that deferred lambda, never
+                    // dereferenced on this thread.
+                    spdlog::debug("[{}] Fetching PSRAM thumbnail for {}: {}", self->get_name(),
+                                  d->filename, d->thumb_path);
+
+                    size_t file_idx = d->index;
+                    std::string filename_copy = d->filename;
+                    constexpr size_t kEsp32ThumbnailMaxBytes = 512 * 1024;
+
+                    self->api_->transfers().download_file_partial(
+                        "gcodes", d->thumb_path, kEsp32ThumbnailMaxBytes,
+                        // Success callback — runs on the EspHttpLane worker thread.
+                        [self, panel_tok, file_idx, filename_copy](const std::string& png_bytes) {
+                            auto thumb = helix::ui::EspPsramThumbnail::create(png_bytes);
+                            if (!thumb) {
+                                spdlog::warn("[PrintSelectPanel] PSRAM alloc failed for "
+                                             "thumbnail: {}",
+                                             filename_copy);
+                                return;
+                            }
+                            panel_tok.defer(
+                                "PrintSelectPanel::on_psram_thumbnail_fetched",
+                                [self, file_idx, filename_copy,
+                                 thumb = std::move(thumb)]() mutable {
+                                    if (file_idx < self->file_list_.size() &&
+                                        self->file_list_[file_idx].filename == filename_copy) {
+                                        self->file_list_[file_idx].esp_thumbnail =
+                                            std::move(thumb);
+                                        self->schedule_view_refresh();
+                                    }
+                                });
+                        },
+                        // Error callback — bg thread, log only, no member access.
+                        [filename_copy](const MoonrakerError& error) {
+                            spdlog::debug(
+                                "[PrintSelectPanel] PSRAM thumbnail fetch failed for {}: {}",
+                                filename_copy, error.message);
+                        });
+#endif
                 }
             } else if (self->api_) {
                 // No thumbnail from metadata - try extracting from gcode file directly
