@@ -196,6 +196,32 @@ TEST_CASE_METHOD(XMLTestFixture,
         INFO("cancel chip in state " << sv.st << " hidden=expected " << sv.hidden);
         CHECK(lv_obj_has_flag(chip, LV_OBJ_FLAG_HIDDEN) == sv.hidden);
     }
+    // --- VERIFY: capture surface is hidden and Accept is reachable -------------
+    // In VERIFY (state 4) the full-screen capture surface must hide so its taps
+    // stop grabbing — otherwise, foreground-lifted onto the screen root, it covers
+    // the Accept/Retry buttons and the calibration is unwinnable. Two stacked
+    // bind_flag_if_eq on the capture surface's `hidden` flag (ref_value 4 and 5)
+    // fight — each clears on non-match, last-registered wins — leaving it VISIBLE
+    // in VERIFY. A single bind_flag_if must drive it. Regression: Accept
+    // unclickable after #1029 lifted the capture surface to screen foreground.
+    {
+        lv_subject_set_int(state, 4); // STATE_VERIFY
+        lv_obj_update_layout(screen);
+        INFO("capture surface in VERIFY hidden=" << lv_obj_has_flag(capture, LV_OBJ_FLAG_HIDDEN));
+        CHECK(lv_obj_has_flag(capture, LV_OBJ_FLAG_HIDDEN));
+
+        lv_obj_t* accept = lv_obj_find_by_name(screen, "btn_accept");
+        REQUIRE(accept != nullptr);
+        lv_area_t a;
+        lv_obj_get_coords(accept, &a);
+        int32_t ax = (a.x1 + a.x2) / 2;
+        int32_t ay = (a.y1 + a.y2) / 2;
+        lv_obj_t* got = hit_at(screen, ax, ay);
+        INFO("Accept centre (" << ax << "," << ay << ") -> " << name_of(got));
+        CHECK(got != capture);
+        CHECK(is_within(got, accept));
+    }
+
     lv_subject_set_int(state, 1); // restore capture state before teardown
 
     // --- Teardown restores the reparented widgets (no orphan on the screen) -----

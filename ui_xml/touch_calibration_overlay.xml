@@ -26,9 +26,9 @@
                 style_text_align="center" align="top_left">
         <!-- Bindings control visibility: hidden in states 0, 4, 5 (visible in 1, 2, 3) -->
         <!-- NOTE: Do NOT add hidden="true" base attribute - bindings handle it -->
-        <bind_flag_if_eq subject="touch_cal_state" flag="hidden" ref_value="0"/>
-        <bind_flag_if_eq subject="touch_cal_state" flag="hidden" ref_value="4"/>
-        <bind_flag_if_eq subject="touch_cal_state" flag="hidden" ref_value="5"/>
+        <!-- ONE observer: stacked bind_flag_if_eq on the same flag fight (each clears -->
+        <!-- on non-match, last-registered wins) and leave the crosshair visible in VERIFY. -->
+        <bind_flag_if cond="touch_cal_state lt 1 or touch_cal_state gt 3" flag="hidden"/>
       </lv_label>
 
       <!-- Note: Verify marker removed - using ripple effect instead (via ui_create_ripple) -->
@@ -39,9 +39,11 @@
         <event_cb trigger="pressed" callback="on_touch_cal_overlay_touched"/>
         <event_cb trigger="released" callback="on_touch_cal_overlay_released"/>
         <!-- Hidden in VERIFY and COMPLETE states (visible in 1, 2, 3 for point capture) -->
-        <!-- In VERIFY, buttons must be clickable; ripples go on content area directly -->
-        <bind_flag_if_eq subject="touch_cal_state" flag="hidden" ref_value="4"/>
-        <bind_flag_if_eq subject="touch_cal_state" flag="hidden" ref_value="5"/>
+        <!-- In VERIFY, buttons must be clickable; ripples go on content area directly. -->
+        <!-- ONE observer: two stacked bind_flag_if_eq on the same flag fight (each -->
+        <!-- clears on non-match, last-registered wins) leaving this VISIBLE in VERIFY. -->
+        <!-- Since #1029 lifts this surface to screen foreground, that covers Accept. -->
+        <bind_flag_if cond="touch_cal_state gt 3" flag="hidden"/>
       </lv_obj>
 
       <!-- Button container (bottom center) -->
