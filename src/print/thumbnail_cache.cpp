@@ -419,6 +419,20 @@ std::string ThumbnailCache::save_raw_png(const std::string& source_identifier,
         return "";
     }
 
+#if defined(HELIX_PLATFORM_ESP32)
+    // No disk-cache materialization on ESP32 (Task 10 R3 hard constraint).
+    // This path is reachable ONLY via the gcode-header thumbnail-extraction
+    // fallback (ui_panel_print_select.cpp), which is itself desktop-shaped
+    // and awaiting Task 11's PSRAM-based redesign — until then, refuse to
+    // write and let the existing empty-return handling there degrade
+    // gracefully ("Failed to cache extracted thumbnail for ..." + skip), the
+    // same fallback contract every other failure branch in this function
+    // already uses.
+    spdlog::debug("[ThumbnailCache] save_raw_png: no local cache on this platform ({})",
+                  source_identifier);
+    return "";
+#endif
+
     // Check disk pressure before saving
     if (!is_caching_allowed()) {
         spdlog::warn("[ThumbnailCache] Disk critically low, skipping save of {}",

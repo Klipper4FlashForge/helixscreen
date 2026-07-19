@@ -48,6 +48,7 @@
 #include "i_moonraker_client.h"
 #include "moonraker_api.h" // complete MoonrakerAPI : IMoonrakerAPI for the init_panels upcast
 #include "moonraker_manager.h"
+#include "moonraker_types.h" // FileInfo/FileMetadata/ThumbnailInfo/resolve_thumbnail_path — HTTP HIL probe
 #include "panel_factory.h"
 #include "printer_discovery.h" // helix::PrinterDiscovery + init_subsystems (discovery callback args)
 #include "printer_fan_state.h" // helix::FanRoleConfig for the non-mock fan-role resolve
@@ -243,6 +244,78 @@ void mock_push_temps() {
 // client never connects (WiFi was deferred to "Task 13" in Stage A).
 // ---------------------------------------------------------------------------
 
+#if CONFIG_HELIX_HTTP_HIL
+// One-shot Task 10 HTTP-lane self-test (R5). Lists the gcodes root, fetches
+// metadata for the first file found, and pulls its best thumbnail through the
+// HTTP lane (ITransfersAPI::download_file_partial — MoonrakerFileTransferAPI's
+// real ESP32 implementation, esp_rest_api.cpp), logging the resolved path,
+// dimensions, byte count, and heap so the controller can flash-and-verify on
+// real hardware without writing any code. Fire-and-forget: nothing here
+// blocks boot or the shell, and a failure at any step just logs and stops
+// (no retry — this is a manual verification aid, not production behavior).
+void run_http_hil_probe(MoonrakerManager* mgr) {
+    IMoonrakerAPI* api = mgr->api();
+    if (!api) {
+        ESP_LOGW(TAG, "[http_hil] no API available — skipping probe");
+        return;
+    }
+
+    api->files().get_directory(
+        "gcodes", "",
+        [api](const std::vector<FileInfo>& entries) {
+            const FileInfo* first_file = nullptr;
+            for (const auto& e : entries) {
+                if (!e.is_dir) {
+                    first_file = &e;
+                    break;
+                }
+            }
+            if (!first_file) {
+                ESP_LOGW(TAG, "[http_hil] no gcode files in root — nothing to probe");
+                return;
+            }
+
+            std::string filename = first_file->filename;
+            ESP_LOGI(TAG, "[http_hil] fetching metadata for %s", filename.c_str());
+
+            api->files().get_file_metadata(
+                filename,
+                [api, filename](const FileMetadata& meta) {
+                    const ThumbnailInfo* thumb = meta.get_best_thumbnail(160, 160);
+                    if (!thumb) {
+                        ESP_LOGW(TAG, "[http_hil] %s has no thumbnails — nothing to fetch",
+                                 filename.c_str());
+                        return;
+                    }
+                    std::string thumb_path = resolve_thumbnail_path(thumb->relative_path, "");
+                    ESP_LOGI(TAG, "[http_hil] fetching thumbnail %s (%dx%d, metadata-reported)",
+                             thumb_path.c_str(), thumb->width, thumb->height);
+
+                    api->transfers().download_file_partial(
+                        "gcodes", thumb_path, 512 * 1024,
+                        [thumb_path](const std::string& content) {
+                            ESP_LOGI(TAG,
+                                     "[http_hil] OK: %s -> %u bytes | heap internal=%u psram=%u",
+                                     thumb_path.c_str(), (unsigned)content.size(),
+                                     (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                                     (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+                        },
+                        [thumb_path](const MoonrakerError& err) {
+                            ESP_LOGE(TAG, "[http_hil] FAILED: %s -> %s", thumb_path.c_str(),
+                                     err.message.c_str());
+                        });
+                },
+                [filename](const MoonrakerError& err) {
+                    ESP_LOGE(TAG, "[http_hil] get_file_metadata(%s) failed: %s", filename.c_str(),
+                             err.message.c_str());
+                });
+        },
+        [](const MoonrakerError& err) {
+            ESP_LOGE(TAG, "[http_hil] get_directory failed: %s", err.message.c_str());
+        });
+}
+#endif // CONFIG_HELIX_HTTP_HIL
+
 // Mirror Application::setup_discovery_callbacks() (src/application/application.cpp:2478),
 // TRIMMED to the v1 Core+AMS cut. Both callbacks fire on the WebSocket task, so
 // every subject write is marshalled to the UI thread via ui_queue_update().
@@ -321,6 +394,10 @@ void setup_discovery_callbacks_esp(MoonrakerManager& manager) {
                                  snapshot->heaters().size(), snapshot->fans().size(),
                                  snapshot->sensors().size(),
                                  status_snapshot->is_object() ? status_snapshot->size() : 0);
+
+#if CONFIG_HELIX_HTTP_HIL
+                    run_http_hil_probe(mgr);
+#endif
                 });
         });
 
@@ -328,8 +405,9 @@ void setup_discovery_callbacks_esp(MoonrakerManager& manager) {
 }
 
 // ws://host:port/path -> http://host:port  (best-effort HTTP base for the API;
-// v1 REST is stubbed on ESP, so this is stored but not yet exercised — jog and
-// macros round-trip over the WebSocket JSON-RPC channel).
+// Task 10's HTTP lane exercises this for print-select thumbnail/gcode-header
+// fetches via download_file_partial — jog and macros still round-trip over
+// the WebSocket JSON-RPC channel and never touch this base URL).
 std::string ws_to_http_base(const std::string& ws_url) {
     std::string url = ws_url;
     if (url.rfind("ws://", 0) == 0) {

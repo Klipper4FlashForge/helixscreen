@@ -1,15 +1,25 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// TEMPORARY link stubs for the Moonraker sub-APIs deferred to Task 10 (the
-// hv/requests.h HTTP TUs and the concrete libhv transport). Each symbol here is
-// referenced by a kept app TU but defined in a source file excluded from this
-// component (see app_srcs.txt "EXCLUDED, and why"). Bodies log + surface the
-// failure through the API's ErrorCallback: nothing on the idle hello-card path
-// calls them, but a stray user action (e.g. tapping a temp preset) must fail
-// gracefully, NOT abort/reset the board in the user's hands. Task 10 replaces
-// this whole file with the real esp_http_client / esp_websocket_client ports.
+// TEMPORARY link stubs for Moonraker sub-APIs NOT covered by Task 10's HTTP
+// lane. Each symbol here is referenced by a kept app TU but defined in a
+// source file excluded from this component (see app_srcs.txt "EXCLUDED, and
+// why"). Bodies log + surface the failure through the API's ErrorCallback:
+// a stray user action (e.g. tapping a temp preset) must fail gracefully, NOT
+// abort/reset the board in the user's hands.
 //
-// REMOVE IN TASK 10.
+// Task 10 (esp32p4-task-10-report.md) moved MoonrakerRestAPI and
+// MoonrakerFileTransferAPI OUT of this file and into helixnet/esp_rest_api.cpp
+// — that's their real home now (download_file_partial is genuinely
+// implemented there; every other method on those two classes is an asserting
+// stub, per Task 10's R1 enumeration: none of them are reachable from the v1
+// print-select thumbnail/metadata surface). What's LEFT here is out of Task
+// 10's scope entirely:
+//   - Group A (MoonrakerAPI facade controls below): the printer command
+//     surface (set_temperature, execute_gcode, restart_*, etc.) — a later
+//     Stage C/D task (print/settings HTTP, or JSON-RPC if that's how these
+//     route on ESP) owns making these real.
+//   - MoonrakerTimelapseAPI: timelapse viewer is excluded from the v1
+//     Core+AMS cut (HELIX_HAS_TIMELAPSE_VIEWER=0) — no reachable UI calls it.
 //
 // Symbols are added here exactly as the linker demands them; each carries the
 // excluded source file it comes from. The full inventory is mirrored in
@@ -18,8 +28,6 @@
 #include "esp_log.h"
 
 #include "moonraker_api.h"
-#include "moonraker_file_transfer_api.h"
-#include "moonraker_rest_api.h"
 #include "moonraker_timelapse_api.h"
 
 #include <functional>
@@ -127,104 +135,24 @@ void MoonrakerAPI::update_safety_limits_from_printer(SuccessCallback, ErrorCallb
 }
 
 // ---------------------------------------------------------------------------
-// Moonraker sub-API classes (rest_api_ / file_transfer_api_ / timelapse_api_).
-// moonraker_api.cpp (KEPT) constructs each as a std::unique_ptr member via
-// make_unique and destroys them in ~MoonrakerAPI. Because each class OVERRIDES
+// MoonrakerTimelapseAPI (timelapse_api_ member).
+// moonraker_api.cpp (KEPT) constructs it as a std::unique_ptr member via
+// make_unique and destroys it in ~MoonrakerAPI. Because the class OVERRIDES
 // its interface's pure virtuals, a bare ctor stub is NOT enough: the ctor emits
 // a reference to the class vtable, whose key function (the out-of-line dtor) and
-// every virtual slot live in the EXCLUDED src/api/moonraker_{rest,file_transfer,
-// timelapse}_api.cpp. So we must define ctor + dtor + ALL virtuals here to let
-// the compiler emit each vtable in this TU with every slot resolved.
+// every virtual slot live in the EXCLUDED src/api/moonraker_timelapse_api.cpp.
+// So we must define ctor + dtor + ALL virtuals here to let the compiler emit
+// the vtable in this TU with every slot resolved.
 //
 //   ctor : real no-op — runs during MoonrakerAPI construction on boot. Only
 //          initializes the two reference members (client_, http_base_url_).
 //   dtor : real no-op — runs during MoonrakerAPI destruction on shutdown.
-//   virtuals : log-only if called — no HTTP transport runs on the idle path.
+//   virtuals : log-only if called — the timelapse viewer is excluded from the
+//              v1 Core+AMS cut (HELIX_HAS_TIMELAPSE_VIEWER=0), so there is no
+//              reachable UI path to any of these on the ESP32 build.
 //
-// These sub-API transports have no reachable UI on the ESP32 bring-up build, so
-// log-only non-fatal is sufficient (and avoids the per-callsite error-callback
-// code that pushed the binary over the OTA slot). The reachable MoonrakerAPI
-// facade controls above keep the error callback so the UI surfaces failure.
-//
-// Callback-parameter typedefs resolve in each class's inherited scope.
+// Callback-parameter typedefs resolve in the class's inherited scope.
 // ---------------------------------------------------------------------------
-
-// --- MoonrakerRestAPI (src/api/moonraker_rest_api.cpp) ---
-MoonrakerRestAPI::MoonrakerRestAPI(helix::IMoonrakerClient& client,
-                                   const std::string& http_base_url)
-    : client_(client), http_base_url_(http_base_url) {}
-
-MoonrakerRestAPI::~MoonrakerRestAPI() {}
-
-void MoonrakerRestAPI::call_rest_get(const std::string&, RestCallback) {
-    task10_unimplemented("MoonrakerRestAPI::call_rest_get");
-}
-
-void MoonrakerRestAPI::call_rest_post(const std::string&, const json&, RestCallback) {
-    task10_unimplemented("MoonrakerRestAPI::call_rest_post");
-}
-
-void MoonrakerRestAPI::wled_get_strips(RestCallback, ErrorCallback) {
-    task10_unimplemented("MoonrakerRestAPI::wled_get_strips");
-}
-
-void MoonrakerRestAPI::wled_set_strip(const std::string&, const std::string&, int, int,
-                                      SuccessCallback, ErrorCallback) {
-    task10_unimplemented("MoonrakerRestAPI::wled_set_strip");
-}
-
-void MoonrakerRestAPI::wled_get_status(RestCallback, ErrorCallback) {
-    task10_unimplemented("MoonrakerRestAPI::wled_get_status");
-}
-
-void MoonrakerRestAPI::get_server_config(RestCallback, ErrorCallback) {
-    task10_unimplemented("MoonrakerRestAPI::get_server_config");
-}
-
-// --- MoonrakerFileTransferAPI (src/api/moonraker_file_transfer_api.cpp) ---
-MoonrakerFileTransferAPI::MoonrakerFileTransferAPI(helix::IMoonrakerClient& client,
-                                                   const std::string& http_base_url)
-    : client_(client), http_base_url_(http_base_url) {}
-
-MoonrakerFileTransferAPI::~MoonrakerFileTransferAPI() {}
-
-void MoonrakerFileTransferAPI::download_file(const std::string&, const std::string&, StringCallback,
-                                             ErrorCallback) {
-    task10_unimplemented("MoonrakerFileTransferAPI::download_file");
-}
-
-void MoonrakerFileTransferAPI::download_file_partial(const std::string&, const std::string&, size_t,
-                                                     StringCallback, ErrorCallback) {
-    task10_unimplemented("MoonrakerFileTransferAPI::download_file_partial");
-}
-
-void MoonrakerFileTransferAPI::download_file_to_path(const std::string&, const std::string&,
-                                                     const std::string&, StringCallback,
-                                                     ErrorCallback, ProgressCallback) {
-    task10_unimplemented("MoonrakerFileTransferAPI::download_file_to_path");
-}
-
-void MoonrakerFileTransferAPI::download_thumbnail(const std::string&, const std::string&,
-                                                  StringCallback, ErrorCallback) {
-    task10_unimplemented("MoonrakerFileTransferAPI::download_thumbnail");
-}
-
-void MoonrakerFileTransferAPI::upload_file(const std::string&, const std::string&,
-                                           const std::string&, SuccessCallback, ErrorCallback) {
-    task10_unimplemented("MoonrakerFileTransferAPI::upload_file");
-}
-
-void MoonrakerFileTransferAPI::upload_file_with_name(const std::string&, const std::string&,
-                                                     const std::string&, const std::string&,
-                                                     SuccessCallback, ErrorCallback) {
-    task10_unimplemented("MoonrakerFileTransferAPI::upload_file_with_name");
-}
-
-void MoonrakerFileTransferAPI::upload_file_from_path(const std::string&, const std::string&,
-                                                     const std::string&, SuccessCallback,
-                                                     ErrorCallback, ProgressCallback) {
-    task10_unimplemented("MoonrakerFileTransferAPI::upload_file_from_path");
-}
 
 // --- MoonrakerTimelapseAPI (src/api/moonraker_timelapse_api.cpp) ---
 MoonrakerTimelapseAPI::MoonrakerTimelapseAPI(helix::IMoonrakerClient& client,
@@ -263,4 +191,4 @@ void MoonrakerTimelapseAPI::get_webcam_list(WebcamListCallback, ErrorCallback) {
     task10_unimplemented("MoonrakerTimelapseAPI::get_webcam_list");
 }
 
-// (further Task 10 HTTP sub-API symbols appended here as the link demands them)
+// (further symbols appended here as later tasks' link passes demand them)

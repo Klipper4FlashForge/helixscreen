@@ -44,6 +44,22 @@ config HELIX_NET_HIL
         so it never ships; the production app connect path (app_boot.cpp,
         Plan 4 Task 8) supersedes it and owns WiFi + connect when this is off.
 
+config HELIX_HTTP_HIL
+    bool "Enable HTTP lane HIL probe (one-shot thumbnail fetch)"
+    default n
+    help
+        Test-only. Plan 4 Task 10: once the production connect path
+        (app_boot.cpp) reaches on_discovery_complete, lists the gcodes root,
+        fetches metadata for the first file found, and pulls its best
+        thumbnail through the Task 10 HTTP lane (ITransfersAPI::
+        download_file_partial), logging the resolved thumbnail path,
+        dimensions, byte count, and internal/PSRAM free heap. Lets the
+        controller flash-and-verify the HTTP lane on real hardware without
+        writing any code. Runs once per boot; does not repeat. Disabled by
+        default so it never ships. Independent of CONFIG_HELIX_NET_HIL (which
+        owns its own WiFi bring-up) — this probe rides the real app's already-
+        connected client.
+
 endmenu
 
 menu "HelixScreen App Core"
