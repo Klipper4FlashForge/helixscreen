@@ -15,10 +15,6 @@
 #include "app_globals.h"
 
 #include <cstdlib>
-#include <filesystem>
-#include <fstream>
-#include <string>
-#include <unistd.h>
 
 #include "../catch_amalgamated.hpp"
 
@@ -66,12 +62,6 @@ TEST_CASE("compute_updates_externally_managed detects firmware-managed launch",
     CHECK(compute_updates_externally_managed(nullptr, nullptr, "1", "/oem/apps/helixscreen/latest"));
     CHECK(compute_updates_externally_managed("", nullptr, "true", "/some/dir"));
 
-    // Env-independent on-disk marker flags the managed state on its own — even
-    // when the firmware launcher never propagated any HELIX_* env to us.
-    CHECK(compute_updates_externally_managed(nullptr, nullptr, nullptr, nullptr, /*marker=*/true));
-    CHECK(compute_updates_externally_managed(nullptr, nullptr, "0", "", /*marker=*/true));
-    CHECK(compute_updates_externally_managed("false", "no", nullptr, nullptr, /*marker=*/true));
-
     // Our own watchdog install: supervised but HELIX_DATA_DIR unset/empty —
     // self-update MUST stay enabled.
     CHECK_FALSE(compute_updates_externally_managed(nullptr, nullptr, "1", nullptr));
@@ -86,50 +76,8 @@ TEST_CASE("compute_updates_externally_managed detects firmware-managed launch",
     CHECK_FALSE(compute_updates_externally_managed(nullptr, "0", nullptr, nullptr));
     CHECK_FALSE(compute_updates_externally_managed("false", "no", nullptr, nullptr));
 
-    // Nothing set, no marker → normal self-managed install.
+    // Nothing set → normal self-managed install.
     CHECK_FALSE(compute_updates_externally_managed(nullptr, nullptr, nullptr, nullptr));
-    CHECK_FALSE(compute_updates_externally_managed(nullptr, nullptr, nullptr, nullptr, /*marker=*/false));
-}
-
-TEST_CASE("firmware_managed_marker_present detects on-disk install markers",
-          "[update][external]") {
-    namespace fs = std::filesystem;
-
-    // Build an isolated firmware-root tree and point the installer-style override
-    // at it so the check never touches the real /oem or /etc trees.
-    const fs::path root =
-        fs::temp_directory_path() / ("helix_fw_marker_" + std::to_string(::getpid()));
-    fs::remove_all(root);
-    setenv("HELIX_FIRMWARE_MANAGED_MARKER", root.string().c_str(), 1);
-    unsetenv("HELIX_IGNORE_FIRMWARE_MANAGED");
-
-    // No markers yet → not firmware-managed.
-    CHECK_FALSE(firmware_managed_marker_present());
-
-    // The /oem/apps/helixscreen install tree (a directory) flags managed.
-    fs::create_directories(root / "oem/apps/helixscreen");
-    CHECK(firmware_managed_marker_present());
-
-    // The bypass forces the self-managed state even with the marker present.
-    setenv("HELIX_IGNORE_FIRMWARE_MANAGED", "1", 1);
-    CHECK_FALSE(firmware_managed_marker_present());
-    unsetenv("HELIX_IGNORE_FIRMWARE_MANAGED");
-
-    // A plain file at the dir-marker path must NOT count (we require a directory).
-    fs::remove_all(root / "oem");
-    fs::create_directories(root / "oem/apps");
-    { std::ofstream(root / "oem/apps/helixscreen") << "not a dir\n"; }
-    CHECK_FALSE(firmware_managed_marker_present());
-    fs::remove_all(root / "oem");
-
-    // The lmd hook file alone also flags managed.
-    CHECK_FALSE(firmware_managed_marker_present());
-    fs::create_directories(root / "etc/hooks/lmd.d");
-    { std::ofstream(root / "etc/hooks/lmd.d/30-helixscreen.sh") << "#!/bin/sh\n"; }
-    CHECK(firmware_managed_marker_present());
-
-    fs::remove_all(root);
-    unsetenv("HELIX_FIRMWARE_MANAGED_MARKER");
 }
 
 TEST_CASE("updates_externally_managed reflects the environment (cached)",
@@ -138,8 +86,7 @@ TEST_CASE("updates_externally_managed reflects the environment (cached)",
     // predicate over the current env rather than trying to flip it mid-process.
     const bool expected = compute_updates_externally_managed(
         std::getenv("HELIX_UPDATES_EXTERNAL"), std::getenv("HELIX_DISABLE_AUTO_UPDATES"),
-        std::getenv("HELIX_SUPERVISED"), std::getenv("HELIX_DATA_DIR"),
-        firmware_managed_marker_present());
+        std::getenv("HELIX_SUPERVISED"), std::getenv("HELIX_DATA_DIR"));
     CHECK(updates_externally_managed() == expected);
     // Stable across calls (proves the cache doesn't re-read differently).
     CHECK(updates_externally_managed() == updates_externally_managed());
