@@ -1454,7 +1454,7 @@ These can be set in the systemd service file or before running the binary:
 | `HELIX_GCODE_MODE` | Override G-code render mode (`3D` or `2D`) |
 | `HELIX_GCODE_STREAMING` | Override G-code streaming mode |
 | `HELIX_FORCE_STREAMING` | Force streaming for all file operations (`1` to enable) |
-| `HELIX_HOT_RELOAD` | Enable XML hot reload for development (`1` to enable) |
+| `HELIX_HOT_RELOAD` | Override XML hot reload default (`0` force off, `1` force on). Defaults ON for native builds, OFF for device release builds. |
 
 **Example in service file:**
 ```ini

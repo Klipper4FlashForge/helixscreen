@@ -1591,7 +1591,9 @@ bool Application::register_xml_components() {
     helix::register_xml_components();
     spdlog::debug("[Application] XML components registered");
 
-    // Start XML hot reloader if enabled (dev-only, HELIX_HOT_RELOAD=1)
+    // Start XML hot reloader if enabled. Default ON for native (non-release)
+    // builds so editing XML during dev Just Works; OFF for cross-compiled
+    // release targets. Env var HELIX_HOT_RELOAD={0,1} overrides either way.
     if (RuntimeConfig::hot_reload_enabled()) {
         m_hot_reloader = std::make_unique<helix::XmlHotReloader>();
         m_hot_reloader->set_after_reload_callback([](const std::string& component) {

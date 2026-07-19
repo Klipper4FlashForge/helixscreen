@@ -95,7 +95,7 @@ All developer documentation lives here. When working on features, look up the re
 | `ROADMAP.md` | Feature timeline, what's complete, what's next |
 | `IDEAS.md` | Feature ideas and brainstorming |
 | `plans/` | Active implementation plans |
-| `plans/2026-02-23-xml-hot-reload.md` | XML hot reload: status, design decisions, Phase 3 stretch goal |
+| `superpowers/specs/2026-04-21-xml-hot-reload-rebuild-design.md` | XML hot reload: rebuild-active-widgets design (implemented; see `src/application/xml_hot_reloader.cpp` + `NavigationManager::rebuild_active_views`) |
 | `plans/2026-06-13-slow-boot-splash-ux.md` | Slow-boot splash UX: 30s splash cap + blank-screen gap on slow devices (K2, AD5M Forge-X), handoff timing |
 | `printer-research/` | Printer-specific research notes |
 | `printer-research/FLASHFORGE_AD5X_IFS_ANALYSIS.md` | AD5X IFS protocol reverse engineering |

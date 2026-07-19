@@ -112,8 +112,10 @@ spdlog::debug("[Theme] Registered {} items", count);
 | Translations | `config/strings/*.yaml` | Yes (codegen) | No |
 
 ### XML Hot Reload
+Hot reload is **ON by default** for native builds — no env var needed.
 ```bash
-HELIX_HOT_RELOAD=1 ./build/bin/helix-screen --test -vv
+./build/bin/helix-screen --test -vv
+# edit ui_xml/*.xml → save → active panel/overlay/modal rebuilds in place within ~500ms
 ```
 
 ## Code Standards

@@ -505,8 +505,8 @@ ccache -p | grep -E 'base_dir|hash_dir|max_size'
 ./scripts/setup-worktree.sh feature/my-feature
 cd .worktrees/my-feature
 
-# 2. Iterate — XML-only changes need no rebuild (loaded at runtime)
-HELIX_HOT_RELOAD=1 ./build/bin/helix-screen --test -vv
+# 2. Iterate — XML-only changes need no rebuild (loaded at runtime + hot reload is ON by default)
+./build/bin/helix-screen --test -vv
 # ...C++ changes:
 make -j && ./build/bin/helix-screen --test -vv
 
@@ -1239,7 +1239,7 @@ The Makefile is **self-documenting** — these help targets are the authoritativ
 | `make V=1 …` | Verbose (show full compiler commands) |
 | `make JOBS=N …` | Cap parallel job count |
 
-Run flags worth knowing: `./build/bin/helix-screen --test -vv` (mock printer + DEBUG), `HELIX_HOT_RELOAD=1 …` (live XML reload).
+Run flags worth knowing: `./build/bin/helix-screen --test -vv` (mock printer + DEBUG logs, hot reload ON by default for live XML editing).
 
 ### Tests
 

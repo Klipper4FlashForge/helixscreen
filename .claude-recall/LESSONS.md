@@ -142,8 +142,8 @@
 - **Uses**: 11 | **Velocity**: 0.0908203125 | **Learned**: 2026-02-15 | **Last**: 2026-06-13 | **Category**: architecture
 > `lv_obj_set_user_data()` = single shared slot; XML widgets/handlers/LVGL internals may already own it (ui_button→button_data_t*, severity_card→string). NEVER free/cast user_data you didn't set on THAT exact obj. NEVER walk the parent chain for non-null user_data (finds ui_button's → miscast SEGV, AmsOperationSidebar/AmsDryerCard). Find by `lv_obj_get_name()`, read user_data from that named obj. Per-item data: per-cb event user_data, C++ map keyed by ptr, or hidden named child.
 
-### [L071] [***--|*----] XML child click passthrough — lv_obj is clickable by default, and clickable="false" does NOT inherit
-- **Uses**: 16 | **Velocity**: 0.01318359375 | **Learned**: 2026-02-21 | **Last**: 2026-07-15 | **Category**: ui | **Type**: constraint
+### [L071] [***--|***--] XML child click passthrough — lv_obj is clickable by default, and clickable="false" does NOT inherit
+- **Uses**: 17 | **Velocity**: 1.01318359375 | **Learned**: 2026-02-21 | **Last**: 2026-07-18 | **Category**: ui | **Type**: constraint
 > Root with a click handler → every absorbing descendant needs `clickable="false" event_bubble="true"`. `lv_obj`/`ui_card`/`ui_dialog` are clickable by DEFAULT (`lv_obj_constructor`, lv_obj.c:584); only lv_image/label/line/menu/spinner aren't — tell: "thumbnail works, text area dead" (#1101). `lv_indev_search_obj` (lv_indev.c:618) recurses on GEOMETRY, deepest child wins → guard EVERY offender (#1101 needed 4). `clickable="true"` on lv_obj = no-op. Don't lint-"fix" the inverse: backdrop-dismiss roots (context_backdrop/menu) WANT absorb — test instead: `lv_indev_search_obj(test_screen(), &p)` in XMLTestFixture asserts tap target. Refs: test_print_file_card_hittest.cpp, ui_xml/setting_action_row.xml.
 
 ### [L070] [***--|*----] Don't lv_tr() non-translatable strings
@@ -241,16 +241,16 @@
 - **Uses**: 0 | **Velocity**: 0 | **Learned**: 2026-06-16 | **Last**: 2026-06-16 | **Category**: gotcha
 > A pure decision function's tests are only as strong as whether their inputs match what the function actually receives at runtime. decide_preview_action() tests passed while it had a deadlock because they fed view_mode=1/2 (3D/2D), but at print start the view-mode subject is 0 (thumbnail) and only flips after gcode loads. Result: green tests + on-device failure. When a pure fn takes a runtime-derived input, assert against the value it actually holds at the call site (0 at print start), not a convenient one.
 
-### [L094] [-----|-----] Don't gate a load/fetch on display-output state it produces
-- **Uses**: 0 | **Velocity**: 0 | **Learned**: 2026-06-16 | **Last**: 2026-06-16 | **Category**: gotcha
+### [L094] [*----|***--] Don't gate a load/fetch on display-output state it produces
+- **Uses**: 1 | **Velocity**: 1 | **Learned**: 2026-06-16 | **Last**: 2026-07-18 | **Category**: gotcha
 > Gating a load decision on a state that only updates AFTER the load completes deadlocks. The print-status gcode download was gated on the view-mode subject being 3D/2D, but that subject only becomes 3D/2D once gcode is loaded -> gcode never downloads, mode never leaves thumbnail, 3D render never appears (user saw 'thumbnail not 3D'). Gate loads on intent/settings (want_viewer + render-mode setting), never on the rendered result. Found in PrintStatusPanel preview unification.
 
-### [L095] [**---|*****] Verify feature existence in code, not from issue phrasing + commit messages
-- **Uses**: 9 | **Velocity**: 4.5 | **Learned**: 2026-07-01 | **Last**: 2026-07-17 | **Category**: correction
+### [L095] [***--|*****] Verify feature existence in code, not from issue phrasing + commit messages
+- **Uses**: 10 | **Velocity**: 5.5 | **Learned**: 2026-07-01 | **Last**: 2026-07-19 | **Category**: correction
 > Don't claim a capability is absent from issue wording + commit messages — grep/read the actual code first (reporter "can't find X" usually = discoverability gap, not missing). Spoolman picker existed (AmsEditModal, behind "Choose Spool") despite 6 fix-commits implying otherwise (#1071). Corollary: don't inherit a subagent's "race" claim from a stale comment — verify current code.
 
-### [L096] [*----|****-] queue_prev tag-ring names the victim, not the crash — resolve real frames first
-- **Uses**: 3 | **Velocity**: 2.25 | **Learned**: 2026-07-02 | **Last**: 2026-07-15 | **Category**: correction
+### [L096] [**---|*****] queue_prev tag-ring names the victim, not the crash — resolve real frames first
+- **Uses**: 6 | **Velocity**: 5.25 | **Learned**: 2026-07-02 | **Last**: 2026-07-19 | **Category**: correction
 > Crash-handler queue_prev/queue_prev2 = last N *completed* UpdateQueue cbs (victim context), NOT a stack — don't investigate the named cb. Run `scripts/resolve-backtrace.sh --crash-file <f> <platform>` FIRST for real PC/RA + FP-walk. #983 grid walk-off signature: LV_COORD_MAX 0x1FFFFFFF in a reg + fault_addr==heap_end+1 + deep repeated layout_update_core/grid_update. Generic guard v0.99.76; PrinterImageWidget-attach arm (lv_image_set_src→layout recursion) v0.99.78 (#1025). Burned twice (PerformanceState::apply_sample, TSM::update_subjects). Companion L090/L095.
 
 ### [L097] [-----|-----] LV_SYMBOL_OK renders as tofu on body-font labels — use icon font for C++-built glyphs

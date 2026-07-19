@@ -107,8 +107,8 @@ Reference: lesson **L009**.
 
 **Fix:**
 
-- XML loads at runtime from `ui_xml/`. Just relaunch: `./build/bin/helix-screen --test -vv`.
-- For live reload without relaunching: `HELIX_HOT_RELOAD=1 ./build/bin/helix-screen --test -vv` — edit XML, save, switch panels, see changes.
+- XML loads at runtime from `ui_xml/`. Hot reload is ON by default for native builds — just edit + save; the active panel/overlay/modal rebuilds in place within ~500ms. No relaunch needed.
+- If hot reload isn't picking up the change, you can force a clean restart: `./build/bin/helix-screen --test -vv`.
 - If you truly see no change, confirm: (1) you saved the file, (2) it's in `ui_xml/` not a copy elsewhere, (3) the component is actually instantiated on the panel you're viewing.
 
 Reference: lesson **L031**.

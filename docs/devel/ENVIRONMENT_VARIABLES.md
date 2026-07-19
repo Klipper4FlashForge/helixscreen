@@ -1050,40 +1050,46 @@ SCREWS_AUTO_START=1 ./build/bin/helix-screen --test -p screws-tilt
 
 ### `HELIX_HOT_RELOAD`
 
-Enable XML hot reload for live UI editing. When enabled, a background thread polls `ui_xml/` and `ui_xml/components/` every 500ms for file changes. Modified XML components are automatically unregistered and re-registered with LVGL — no restart needed.
+Enable XML hot reload for live UI editing. When enabled, a background thread polls `ui_xml/` (recursively — includes breakpoint variants and `components/`) every 500ms for file changes. Modified XML components are pre-validated, then unregistered and re-registered with LVGL, and the active panel/overlay/modal widget tree is torn down and rebuilt in place — no restart, no navigation needed.
 
 | Property | Value |
 |----------|-------|
-| **Values** | `1` (enable), unset (disable) |
-| **Default** | Disabled (zero overhead in production) |
+| **Values** | `0` (force off), `1` (force on), unset (use build default) |
+| **Default** | **ON for native builds** (no `HELIX_RELEASE_BUILD`); **OFF for cross-compiled release targets** (Pi, AD5M, K1, etc.) |
 | **File** | `src/system/runtime_config.cpp`, `src/application/xml_hot_reloader.cpp` |
 
 ```bash
-# Enable hot reload during development
-HELIX_HOT_RELOAD=1 ./build/bin/helix-screen --test -vv
+# Native dev build: hot reload is already ON by default — just run:
+./build/bin/helix-screen --test -vv
+
+# Force-enable on a device running a release build (rare; for live on-device debugging):
+HELIX_HOT_RELOAD=1 ./build/bin/helix-screen -vv
+
+# Force-disable in a native dev build (e.g., benchmarking):
+HELIX_HOT_RELOAD=0 ./build/bin/helix-screen --test -vv
 ```
 
 **How it works:**
-1. On startup, scans `ui_xml/` and `ui_xml/components/` and records file modification times
+1. On startup, recursively scans `ui_xml/` and records file modification times (skips `translations/` and `.claude-recall/`)
 2. Every 500ms, checks all tracked XML files for mtime changes
-3. When a change is detected, queues an `lv_xml_component_unregister()` + `lv_xml_register_component_from_file()` on the LVGL main thread
-4. Log output confirms the reload: `[HotReload] Reloaded: home_panel (0.4ms)`
+3. On change: reads the file and validates XML well-formedness on the polling thread (no LVGL state touched). If the file is mid-write (truncated, briefly empty during atomic rename) or has a syntax error, the reload is deferred — the existing UI stays live and the next poll retries. Mtime cache is not updated on failure.
+4. If valid: queues `lv_xml_component_unregister()` + `lv_xml_register_component_from_data()` on the LVGL main thread, then fires `NavigationManager::rebuild_active_views()` which tears down + recreates the active panel, all overlays, and the top modal.
+5. Log output confirms each step: `[HotReload] Reloaded: home_panel (0.4ms)`, `[PanelBase::rebuild] Home Panel — tearing down and re-creating`, etc.
 
 **Limitations:**
-- **Existing widgets are not rebuilt.** After a reload, navigate away from the current panel and back to see the updated layout. Future versions may add automatic panel refresh.
 - **New files are not detected.** Only files present when the app starts are tracked. Adding a new XML file requires a restart.
 - **Component re-registration only.** If the XML change requires new subjects, callbacks, or C++ code, a full rebuild + restart is needed.
 
 **Typical workflow:**
 ```bash
-# Terminal 1: Run with hot reload
-HELIX_HOT_RELOAD=1 ./build/bin/helix-screen --test -vv
+# Terminal 1: Run (hot reload is ON by default for native builds)
+./build/bin/helix-screen --test -vv
 
-# Terminal 2: Edit XML, save, watch the log
+# Terminal 2: Edit XML, save, watch the UI + log
 vim ui_xml/home_panel.xml
+# [HotReload] Detected change: home_panel
 # [HotReload] Reloaded: home_panel (0.3ms)
-
-# Switch panels in the UI to see the new layout
+# [PanelBase::rebuild] Home Panel — tearing down and re-creating
 ```
 
 ---

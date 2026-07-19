@@ -184,8 +184,8 @@ make -j
 # Run with real printer
 ./build/bin/helix-screen
 
-# XML hot reload (edit XML, switch panels to see changes live)
-HELIX_HOT_RELOAD=1 ./build/bin/helix-screen --test -vv
+# XML hot reload is ON by default for native builds (edit XML, save, see changes live)
+./build/bin/helix-screen --test -vv
 
 # Run tests
 make test-run

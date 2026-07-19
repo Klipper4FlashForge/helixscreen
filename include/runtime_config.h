@@ -155,8 +155,13 @@ struct RuntimeConfig {
     /**
      * @brief Check if XML hot reload is enabled
      *
-     * When enabled, XML files are polled for changes and re-registered live.
-     * Enabled via HELIX_HOT_RELOAD=1 environment variable. Dev-only feature.
+     * When enabled, XML files in `ui_xml/` are polled every 500ms for changes
+     * and re-registered live — edit a panel XML, save, see the change without
+     * restarting the app.
+     *
+     * Default: ON for native builds (no `HELIX_RELEASE_BUILD`), OFF for
+     * cross-compiled release targets (Pi, AD5M, K1, etc.). Env var
+     * `HELIX_HOT_RELOAD=0|1` overrides the default either way.
      *
      * @return true if hot reload is enabled
      */

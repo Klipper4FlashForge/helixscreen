@@ -20,7 +20,7 @@ make pi-test                         # Build on thelio + deploy + run
 scripts/setup-worktree.sh feature/my-branch  # Symlinks deps, builds fast
 ```
 
-**XML changes need no rebuild:** `ui_xml/*.xml` is loaded at runtime — edit XML, then **relaunch** the binary to see changes (no `make` needed). Live hot-reload-while-running is NOT implemented yet (planned future feature of the XML loader; see `docs/devel/plans/2026-02-23-xml-hot-reload.md`). `HELIX_HOT_RELOAD=1` currently does nothing.
+**XML changes need no rebuild:** `ui_xml/*.xml` is loaded at runtime — edit XML, then **relaunch** the binary to see changes (no `make` needed). For live editing without restarting, set `HELIX_HOT_RELOAD=1` and the running app will re-register components within ~500ms of a save and rebuild the active panel/overlay/modal in place. Invalid XML (mid-write truncation, syntax errors) is silently skipped on the polling thread — the existing UI stays live and the next poll retries.
 
 **Screenshots:** Press 'S' in UI, or `./scripts/screenshot.sh helix-screen output-name [panel]`
 

@@ -446,11 +446,11 @@ make -j                              # build binary only
 make test-run                        # build and run the full test suite
 ```
 
-For UI iteration without rebuilding after every XML edit:
+For UI iteration without rebuilding after every XML edit — hot reload is ON by default for native builds, so just run:
 
 ```bash
-HELIX_HOT_RELOAD=1 ./build/bin/helix-screen --test -vv
-# edit XML → save → switch panels → see changes live
+./build/bin/helix-screen --test -vv
+# edit XML → save → active panel rebuilds in place within ~500ms
 ```
 
 Test at multiple breakpoints before submitting. At minimum: `-s 480x320`, `-s 800x480`, `-s 1024x600`. See `UI_CONTRIBUTOR_GUIDE.md` § Screen Breakpoints.

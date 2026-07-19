@@ -75,8 +75,30 @@ bool RuntimeConfig::hot_reload_enabled() {
     static bool enabled = false;
     if (!checked) {
         checked = true;
+        // Native (non-cross-compiled) builds default to hot-reload ON for
+        // faster UI iteration — edit XML, save, see changes without restart.
+        // Cross-compiled release builds (Pi, AD5M, K1, etc.) define
+        // HELIX_RELEASE_BUILD and default to OFF: polling ~300 XML files every
+        // 500ms is wasteful on low-power devices and the files don't change
+        // post-install anyway.
+        //
+        // Env var always wins:
+        //   HELIX_HOT_RELOAD=1  force ON  (e.g., enable on a device for live debugging)
+        //   HELIX_HOT_RELOAD=0  force OFF (e.g., disable in a native dev build)
+        bool default_on;
+#ifdef HELIX_RELEASE_BUILD
+        default_on = false;
+#else
+        default_on = true;
+#endif
         const char* val = std::getenv("HELIX_HOT_RELOAD");
-        enabled = (val != nullptr && std::strcmp(val, "1") == 0);
+        if (val != nullptr && std::strcmp(val, "0") == 0) {
+            enabled = false;
+        } else if (val != nullptr && std::strcmp(val, "1") == 0) {
+            enabled = true;
+        } else {
+            enabled = default_on;
+        }
     }
     return enabled;
 }
