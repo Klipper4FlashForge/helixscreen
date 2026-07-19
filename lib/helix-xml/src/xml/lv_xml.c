@@ -98,6 +98,8 @@ static void xml_frag_record_free_heap(xml_frag_record_t * r);
 static void xml_frag_instance_delete_cb(lv_event_t * e);
 static bool xml_value_has_compose(const char * value);
 static char * xml_compose_indexed(lv_xml_parser_state_t * state, const char * raw);
+static bool xml_state_track_string(lv_xml_parser_state_t * state, char * owned);
+static const char * xml_state_concat2(lv_xml_parser_state_t * state, const char * a, const char * b);
 static void xml_state_free_composed(lv_xml_parser_state_t * state);
 static void create_timeline_instances(lv_xml_parser_state_t * state);
 static void get_timeline_from_event_cb(lv_event_t * e);
@@ -980,17 +982,41 @@ static void resolve_params(lv_xml_parser_state_t * state, lv_xml_component_scope
                 continue;
             }
 
-            const char * type = get_param_type(item_scope, name_clean);
-            if(type == NULL) {
-                LV_LOG_WARN("'%s' parameter is not defined on '%s'", name_clean, item_scope->name);
+            /*`$prop|ref` — a param reference followed by a literal comparison
+             *value, used by hidden_if_prop_eq / hidden_if_prop_not_eq. Resolve
+             *only `prop`; the `|ref` suffix is carried through verbatim so the
+             *obj parser can split on the pipe. Param names never contain `|`, so
+             *the split is unambiguous. Without this, the whole "prop|ref" was
+             *looked up as one param name, failed, blanked the attribute, and
+             *silently disabled the hide (bundle ET5ACW4S).*/
+            const char * pipe = lv_strchr(name_clean, '|');
+            char namebuf[128];
+            const char * lookup_name = name_clean;
+            if(pipe) {
+                size_t nlen = (size_t)(pipe - name_clean);
+                if(nlen < sizeof(namebuf)) {
+                    lv_memcpy(namebuf, name_clean, nlen);
+                    namebuf[nlen] = '\0';
+                    lookup_name = namebuf;
+                }
+                else {
+                    /*Pathologically long name — fall back to whole-string lookup
+                     *(warns + blanks) rather than overrun namebuf.*/
+                    pipe = NULL;
+                }
             }
-            const char * ext_value = lv_xml_get_value_of(parent_attrs, name_clean);
+
+            const char * type = get_param_type(item_scope, lookup_name);
+            if(type == NULL) {
+                LV_LOG_WARN("'%s' parameter is not defined on '%s'", lookup_name, item_scope->name);
+            }
+            const char * ext_value = lv_xml_get_value_of(parent_attrs, lookup_name);
             if(ext_value) {
                 /*If the value is not resolved earlier (e.g. it's a top level element created manually)
                  * use the default value. Note: Only check for '$' (unresolved props), not '#' which
                  * indicates const/token references that will be resolved by resolve_consts later.*/
                 if(ext_value[0] == '$') {
-                    ext_value = get_param_default(item_scope, name_clean);
+                    ext_value = get_param_default(item_scope, lookup_name);
                 }
                 else if(lv_streq(type, "style")) {
                     lv_xml_style_t * s = lv_xml_get_style_by_name(parent_scope, ext_value);
@@ -1000,15 +1026,20 @@ static void resolve_params(lv_xml_parser_state_t * state, lv_xml_component_scope
                     else {
                         LV_LOG_WARN("style '%s' referenced on '%s' not found; using default",
                                     ext_value, item_scope->name);
-                        ext_value = get_param_default(item_scope, name_clean);
+                        ext_value = get_param_default(item_scope, lookup_name);
                     }
                 }
             }
             else {
                 /*If the API attribute is not provide don't set it*/
-                ext_value = get_param_default(item_scope, name_clean);
+                ext_value = get_param_default(item_scope, lookup_name);
             }
-            if(ext_value) {
+            if(pipe) {
+                /*Reattach the literal `|ref` suffix to the resolved value (empty
+                 *if the param was unset with no default).*/
+                item_attrs[i + 1] = xml_state_concat2(state, ext_value ? ext_value : "", pipe);
+            }
+            else if(ext_value) {
                 item_attrs[i + 1] = ext_value;
             }
             else {
@@ -1866,14 +1897,39 @@ static char * xml_compose_indexed(lv_xml_parser_state_t * state, const char * ra
 #undef XML_COMPOSE_APPEND
 
     /*Track the owned string on state; freed once at parse end.*/
+    if(!xml_state_track_string(state, out)) { lv_free(out); return ""; }
+    return out;
+}
+
+/** Track an owned heap string on state->composed_strings so it is freed once at
+ *  parse end (same pool as the `${...}` composition results). Returns false on
+ *  OOM — the caller still owns `owned` and must free it. */
+static bool xml_state_track_string(lv_xml_parser_state_t * state, char * owned)
+{
     if(state->composed_count == state->composed_cap) {
         uint32_t new_cap = state->composed_cap ? state->composed_cap * 2 : 8;
         char ** na = lv_realloc(state->composed_strings, sizeof(char *) * new_cap);
-        if(na == NULL) { lv_free(out); return ""; }
+        if(na == NULL) return false;
         state->composed_strings = na;
         state->composed_cap = new_cap;
     }
-    state->composed_strings[state->composed_count++] = out;
+    state->composed_strings[state->composed_count++] = owned;
+    return true;
+}
+
+/** Allocate `a` concatenated with `b` as a NUL-terminated string owned by
+ *  `state` (freed at parse end). Either argument may be NULL (treated as ""),
+ *  Returns "" on OOM. */
+static const char * xml_state_concat2(lv_xml_parser_state_t * state, const char * a, const char * b)
+{
+    size_t la = a ? lv_strlen(a) : 0;
+    size_t lb = b ? lv_strlen(b) : 0;
+    char * out = lv_malloc(la + lb + 1);
+    if(out == NULL) return "";
+    if(la) lv_memcpy(out, a, la);
+    if(lb) lv_memcpy(out + la, b, lb);
+    out[la + lb] = '\0';
+    if(!xml_state_track_string(state, out)) { lv_free(out); return ""; }
     return out;
 }
 
