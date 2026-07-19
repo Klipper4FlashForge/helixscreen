@@ -278,6 +278,17 @@
     <string name="font_xl_xlarge" value="noto_sans_bold_32"/>
     <string name="font_xl_xxlarge" value="noto_sans_bold_40"/>
     <!-- NO BASE font_xl - registered at runtime -->
+    <!-- font_body_bold variants (bold weight at body size, e.g. markdown strong/section
+         headers). Sizes track font_body but step up to the nearest available bold glyph
+         (noto_sans_bold ships 14/16/18/20/24/28 always, 32 at xlarge tier, 40 at xxlarge). -->
+    <string name="font_body_bold_micro" value="noto_sans_bold_14"/>
+    <string name="font_body_bold_tiny" value="noto_sans_bold_14"/>
+    <string name="font_body_bold_small" value="noto_sans_bold_14"/>
+    <string name="font_body_bold_medium" value="noto_sans_bold_18"/>
+    <string name="font_body_bold_large" value="noto_sans_bold_20"/>
+    <string name="font_body_bold_xlarge" value="noto_sans_bold_24"/>
+    <string name="font_body_bold_xxlarge" value="noto_sans_bold_32"/>
+    <!-- NO BASE font_body_bold - registered at runtime -->
     <!-- font_body variants (standard body text) -->
     <string name="font_body_micro" value="noto_sans_12"/>
     <string name="font_body_tiny" value="noto_sans_12"/>
