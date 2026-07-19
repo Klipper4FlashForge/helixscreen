@@ -357,17 +357,32 @@ std::string app_get_config_dir();
 bool helix_parse_truthy_env(const char* value);
 
 // Pure predicate behind updates_externally_managed(), split out for testing so
-// the env inputs can be exercised without mutating the process env.
-// True when EITHER an explicit override is truthy — HELIX_DISABLE_AUTO_UPDATES
-// (the firmware-facing name) or HELIX_UPDATES_EXTERNAL (older alias, kept working)
-// — OR the launch looks firmware-managed: a supervisor owns our lifecycle
-// (HELIX_SUPERVISED) AND our asset root was relocated via HELIX_DATA_DIR. The
-// latter is how a firmware that bind-mounts the binary over its stock GUI path
-// runs us — there /proc/self/exe no longer resolves our install tree, so
-// self-update can't work.
+// the inputs can be exercised without mutating the process env or touching disk.
+// True when ANY of:
+//   - an explicit override is truthy — HELIX_DISABLE_AUTO_UPDATES (the
+//     firmware-facing name) or HELIX_UPDATES_EXTERNAL (older alias, kept working);
+//   - the launch looks firmware-managed via env: a supervisor owns our lifecycle
+//     (HELIX_SUPERVISED) AND our asset root was relocated via HELIX_DATA_DIR —
+//     how a firmware that bind-mounts the binary over its stock GUI path runs us
+//     (there /proc/self/exe no longer resolves our install tree, so self-update
+//     can't work);
+//   - firmware_marker is set — an env-independent, on-disk signal that the device
+//     is firmware-managed. Some launchers (lmd bind-mount) do NOT propagate the
+//     hook's exported env to our process, so the HELIX_SUPERVISED+HELIX_DATA_DIR
+//     inference can silently miss; the install-tree markers on disk cannot.
 bool compute_updates_externally_managed(const char* updates_external,
                                         const char* disable_auto_updates,
-                                        const char* supervised, const char* data_dir);
+                                        const char* supervised, const char* data_dir,
+                                        bool firmware_marker = false);
+
+// Env-independent firmware-managed detection — the on-disk backstop feeding
+// updates_externally_managed(). True when the install-tree markers a bind-mount
+// firmware drops are present: the /oem/apps/helixscreen directory or the
+// /etc/hooks/lmd.d/30-helixscreen.sh lmd hook. Honors the
+// HELIX_FIRMWARE_MANAGED_MARKER test-root prefix and the
+// HELIX_IGNORE_FIRMWARE_MANAGED bypass, mirroring the standalone installer guard
+// (scripts/lib/installer/main.sh) so the app and installer agree.
+bool firmware_managed_marker_present();
 
 // Returns true when software updates are owned by the device firmware, in which
 // case HelixScreen must NOT run its in-app self-update: the periodic auto-check
@@ -378,6 +393,9 @@ bool compute_updates_externally_managed(const char* updates_external,
 // also infer the managed state from the environment the firmware already sets
 // (HELIX_SUPERVISED + HELIX_DATA_DIR together). NOT keyed off HELIX_SUPERVISED
 // alone — our own watchdog sets that on normal installs (without HELIX_DATA_DIR)
-// where self-update MUST still work. Read once and cached (like
-// app_get_install_root()).
+// where self-update MUST still work. Finally, as an env-independent backstop, the
+// on-disk install-tree markers a bind-mount firmware drops (the same ones the
+// standalone installer refuses on) also flag the managed state — this catches
+// launchers that fail to propagate the hook's exported env to our process. Read
+// once and cached (like app_get_install_root()).
 bool updates_externally_managed();

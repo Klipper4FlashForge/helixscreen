@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <string>
+#include <sys/stat.h>
 #include <thread>
 
 using namespace helix;
@@ -890,11 +891,30 @@ bool helix_parse_truthy_env(const char* value) {
 
 bool compute_updates_externally_managed(const char* updates_external,
                                         const char* disable_auto_updates, const char* supervised,
-                                        const char* data_dir) {
+                                        const char* data_dir, bool firmware_marker) {
     if (helix_parse_truthy_env(disable_auto_updates) || helix_parse_truthy_env(updates_external)) {
         return true;
     }
-    return helix_parse_truthy_env(supervised) && data_dir && data_dir[0] != '\0';
+    if (helix_parse_truthy_env(supervised) && data_dir && data_dir[0] != '\0') {
+        return true;
+    }
+    return firmware_marker;
+}
+
+bool firmware_managed_marker_present() {
+    if (helix_parse_truthy_env(std::getenv("HELIX_IGNORE_FIRMWARE_MANAGED"))) {
+        return false;
+    }
+    const char* root_env = std::getenv("HELIX_FIRMWARE_MANAGED_MARKER");
+    const std::string root = root_env ? root_env : "";
+
+    struct stat st;
+    const std::string dir_marker = root + "/oem/apps/helixscreen";
+    if (stat(dir_marker.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
+        return true;
+    }
+    const std::string hook_marker = root + "/etc/hooks/lmd.d/30-helixscreen.sh";
+    return stat(hook_marker.c_str(), &st) == 0 && S_ISREG(st.st_mode);
 }
 
 bool updates_externally_managed() {
@@ -902,7 +922,8 @@ bool updates_externally_managed() {
         compute_updates_externally_managed(std::getenv("HELIX_UPDATES_EXTERNAL"),
                                            std::getenv("HELIX_DISABLE_AUTO_UPDATES"),
                                            std::getenv("HELIX_SUPERVISED"),
-                                           std::getenv("HELIX_DATA_DIR"));
+                                           std::getenv("HELIX_DATA_DIR"),
+                                           firmware_managed_marker_present());
     return cached;
 }
 

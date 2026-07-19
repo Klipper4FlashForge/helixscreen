@@ -41,6 +41,7 @@
 #include <cstring>
 #include <filesystem>
 #include <string>
+#include <sys/stat.h> // stat, S_ISDIR, S_ISREG — env-independent firmware marker check
 #include <vector>
 
 // Platform-specific includes for process restart
@@ -530,16 +531,48 @@ bool helix_parse_truthy_env(const char* value) {
 
 bool compute_updates_externally_managed(const char* updates_external,
                                         const char* disable_auto_updates, const char* supervised,
-                                        const char* data_dir) {
+                                        const char* data_dir, bool firmware_marker) {
     // Explicit opt-out wins. HELIX_DISABLE_AUTO_UPDATES is the firmware-facing
     // name; HELIX_UPDATES_EXTERNAL is an older alias with the same effect.
     if (helix_parse_truthy_env(disable_auto_updates) || helix_parse_truthy_env(updates_external)) {
         return true;
     }
-    // Firmware-managed launch: supervised AND asset root relocated. Our own
-    // watchdog sets HELIX_SUPERVISED but never HELIX_DATA_DIR, so this stays
-    // false on normal self-managed installs.
-    return helix_parse_truthy_env(supervised) && data_dir && data_dir[0] != '\0';
+    // Firmware-managed launch inferred from env: supervised AND asset root
+    // relocated. Our own watchdog sets HELIX_SUPERVISED but never HELIX_DATA_DIR,
+    // so this stays false on normal self-managed installs.
+    if (helix_parse_truthy_env(supervised) && data_dir && data_dir[0] != '\0') {
+        return true;
+    }
+    // Env-independent backstop: the install-tree markers a bind-mount firmware
+    // drops on disk. Needed because some launchers (lmd) don't propagate the
+    // hook's exported env to our process, silently defeating the inference above.
+    return firmware_marker;
+}
+
+// Env-independent firmware-managed detection: the on-disk install-tree markers a
+// bind-mount firmware drops. Mirrors the standalone installer's guard
+// (scripts/lib/installer/main.sh _refuse_if_firmware_managed), including the
+// HELIX_FIRMWARE_MANAGED_MARKER test-root prefix and the
+// HELIX_IGNORE_FIRMWARE_MANAGED bypass, so the app and installer agree on what
+// counts as firmware-managed.
+bool firmware_managed_marker_present() {
+    // Same escape hatch the installer honors: an advanced user who forced a
+    // manual install onto a firmware device wants self-update to work again.
+    if (helix_parse_truthy_env(std::getenv("HELIX_IGNORE_FIRMWARE_MANAGED"))) {
+        return false;
+    }
+    const char* root_env = std::getenv("HELIX_FIRMWARE_MANAGED_MARKER");
+    const std::string root = root_env ? root_env : "";
+
+    struct stat st;
+    // /oem/apps/helixscreen — the versioned install tree (directory).
+    const std::string dir_marker = root + "/oem/apps/helixscreen";
+    if (stat(dir_marker.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
+        return true;
+    }
+    // /etc/hooks/lmd.d/30-helixscreen.sh — the lmd bind-mount hook (file).
+    const std::string hook_marker = root + "/etc/hooks/lmd.d/30-helixscreen.sh";
+    return stat(hook_marker.c_str(), &st) == 0 && S_ISREG(st.st_mode);
 }
 
 bool updates_externally_managed() {
@@ -547,6 +580,7 @@ bool updates_externally_managed() {
         compute_updates_externally_managed(std::getenv("HELIX_UPDATES_EXTERNAL"),
                                            std::getenv("HELIX_DISABLE_AUTO_UPDATES"),
                                            std::getenv("HELIX_SUPERVISED"),
-                                           std::getenv("HELIX_DATA_DIR"));
+                                           std::getenv("HELIX_DATA_DIR"),
+                                           firmware_managed_marker_present());
     return cached;
 }
