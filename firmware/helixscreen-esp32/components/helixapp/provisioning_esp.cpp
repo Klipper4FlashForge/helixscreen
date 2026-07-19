@@ -54,6 +54,7 @@ bool provisioning_run_portal() {
 #include "ui_modal.h"
 #include "ui_update_queue.h"
 #include "utils/network_validation.h"
+#include "wifi_backend_esp.h"
 #include "wifi_manager.h"
 
 #include "esp_http_server.h"
@@ -93,7 +94,13 @@ constexpr int kApChannel = 1;
 constexpr uint8_t kApMaxConnections = 4;
 constexpr int kDnsPort = 53;
 constexpr int kDnsRecvTimeoutMs = 250; // bounds how often the poll loop re-checks exit flags
-constexpr int kSaveJoinTimeoutMs = 12000; // bounded wait for a /save join attempt to resolve
+// The /save handler's join poll must outlast the backend's own real assoc
+// envelope (wifi_backend_esp.cpp): kAssocTimeoutUs=15s, then a bounded-backoff
+// retry starting at kRetryBackoffFloorUs=2s. 15s (first attempt) + 2s
+// (backoff floor) + 15s (retry attempt) = 32s worst case for the common
+// slow-but-successful case; 40s leaves comfortable margin so in-window
+// resolution is the normal case, not the exception (review MEDIUM-1).
+constexpr int kSaveJoinTimeoutMs = 40000;
 constexpr int kSavePollMs = 200;
 
 // ---------------------------------------------------------------------------
@@ -470,8 +477,27 @@ esp_err_t save_post_handler(httpd_req_t* req) {
         httpd_resp_set_type(req, "text/html");
         httpd_resp_send(req, kSuccessPage, HTTPD_RESP_USE_STRLEN);
     } else {
-        std::string reason =
-            (result == JoinState::FAILED) ? s_connect_error : "Timed out waiting for a connection.";
+        std::string reason;
+        if (result == JoinState::FAILED) {
+            reason = s_connect_error;
+            // Self-healing rollback (review item 2): connect_network() already
+            // persisted these creds to NVS before the assoc result was known
+            // (Task 13's design — the NVS write is unconditional, the join
+            // attempt follows). A DEFINITIVE failure (wrong password, etc.)
+            // here means bad creds are now sitting in NVS; left alone, the
+            // next reboot sees a stored SSID and never re-triggers the portal,
+            // silently retrying a known-bad password forever in the
+            // background. The "wifi" namespace was empty before this portal
+            // session wrote it, so erasing it is rolling back this session's
+            // own unverified write, not destroying prior user data. A bare
+            // timeout (PENDING, not FAILED) is NOT rolled back — the backend
+            // may still resolve it on a later background retry, which the
+            // outer teardown loop's wifi->is_connected() check already
+            // catches correctly.
+            helix::wifi_backend_esp_clear_stored_credentials();
+        } else {
+            reason = "Timed out waiting for a connection.";
+        }
         respond_with_error("Could not join \"" + ssid + "\": " + reason,
                            host.empty() ? current_moonraker_host() : host);
     }
@@ -663,6 +689,7 @@ bool provisioning_run_portal() {
     esp_err_t cfg_rc = esp_wifi_set_config(WIFI_IF_AP, &ap_config);
     if (cfg_rc != ESP_OK) {
         ESP_LOGE(TAG, "esp_wifi_set_config(AP) failed: %s", esp_err_to_name(cfg_rc));
+        esp_wifi_set_mode(WIFI_MODE_STA); // don't leave an unconfigured AP up with no portal
         return false;
     }
     // Best-effort: wifi is very likely already started (STA, from the caller's
@@ -682,7 +709,8 @@ bool provisioning_run_portal() {
     ESP_LOGI(TAG, "portal: SoftAP '%s' up, portal at http://%s", s_ap_ssid.c_str(), ip_str);
     show_instructions_modal(s_ap_ssid, ip_str);
 
-    s_scan_results = scan_networks_bounded(helix::get_wifi_manager());
+    auto wifi = helix::get_wifi_manager();
+    s_scan_results = scan_networks_bounded(wifi);
 
     bool httpd_up = start_httpd();
     int dns_sock = open_dns_socket();
@@ -699,7 +727,15 @@ bool provisioning_run_portal() {
         return false;
     }
 
-    while (!s_dismiss_requested.load() && !s_join_succeeded.load()) {
+    // Authoritative on ACTUAL connection state, not just the /save handler's
+    // own in-window flag (review MEDIUM-1): the handler's join poll can give
+    // up and render a "timed out" page while the backend keeps associating in
+    // the background (its own bounded-backoff retry, wifi_backend_esp.cpp) —
+    // a slow-but-real join then lands after the handler already returned,
+    // with nothing to unblock this loop. Checking wifi->is_connected()
+    // directly closes that window regardless of handler timing, and also
+    // covers a concurrent Settings > Network join finishing first.
+    while (!s_dismiss_requested.load() && !s_join_succeeded.load() && !wifi->is_connected()) {
         dns_pump_once(dns_sock, ip_info.ip.addr);
     }
 
@@ -710,7 +746,7 @@ bool provisioning_run_portal() {
     // changes on top of it.
     esp_wifi_set_mode(WIFI_MODE_STA);
 
-    bool joined = s_join_succeeded.load();
+    bool joined = s_join_succeeded.load() || wifi->is_connected();
     if (joined) {
         hide_instructions_modal(); // dismiss path already hid it via on_modal_deleted
     }

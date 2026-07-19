@@ -178,6 +178,31 @@ bool wifi_backend_esp_hw_bringup_allowed() {
     return s_hw_bringup_allowed.load();
 }
 
+// Task 14 — see wifi_backend_esp.h for the self-healing rationale. Mirrors
+// nvs_write_creds()'s open/write/commit/close shape exactly, erasing instead
+// of writing; kept in this TU so it stays the ONLY thing (besides
+// connect_network()) that ever opens the "wifi" namespace for writing.
+void wifi_backend_esp_clear_stored_credentials() {
+    nvs_handle_t h;
+    esp_err_t rc = nvs_open(kNvsNamespace, NVS_READWRITE, &h);
+    if (rc != ESP_OK) {
+        spdlog::warn("[WifiBackend] esp32: nvs_open('wifi') failed clearing credentials: {}",
+                     esp_err_to_name(rc));
+        return;
+    }
+    // ESP_ERR_NVS_NOT_FOUND on either key is fine (already absent) — no
+    // separate check needed, nvs_commit() below is what actually matters.
+    nvs_erase_key(h, kNvsKeySsid);
+    nvs_erase_key(h, kNvsKeyPsk);
+    esp_err_t crc = nvs_commit(h);
+    if (crc != ESP_OK) {
+        spdlog::warn("[WifiBackend] esp32: nvs_commit failed clearing credentials: {}",
+                     esp_err_to_name(crc));
+    }
+    nvs_close(h);
+    spdlog::info("[WifiBackend] esp32: cleared stored WiFi credentials (provisioning rollback)");
+}
+
 } // namespace helix
 
 namespace {
