@@ -118,9 +118,6 @@ class SettingsManager {
     /** @brief Set Z movement style override and apply to printer state */
     void set_z_movement_style(ZMovementStyle style);
 
-    /** @brief Get dropdown options string "Auto\nBed Moves\nNozzle Moves" */
-    static const char* get_z_movement_style_options();
-
     // =========================================================================
     // CHAMBER ASSIGNMENT (owned by SettingsManager — sensor/heater override)
     // =========================================================================

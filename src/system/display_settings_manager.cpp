@@ -56,22 +56,11 @@ using namespace helix;
 // Index: 0=Never, 1=30sec, 2=1min, 3=2min, 4=5min
 static const int DIM_OPTIONS[] = {0, 30, 60, 120, 300, 600};
 static const int DIM_OPTIONS_COUNT = sizeof(DIM_OPTIONS) / sizeof(DIM_OPTIONS[0]);
-static const char* DIM_OPTIONS_TEXT =
-    "Never\n30 seconds\n1 minute\n2 minutes\n5 minutes\n10 minutes";
 
 // Display sleep option values (seconds) - time before screen fully sleeps
 // Index: 0=Never, 1=1min, 2=5min, 3=10min, 4=30min
 static const int SLEEP_OPTIONS[] = {0, 60, 300, 600, 1200, 1800};
 static const int SLEEP_OPTIONS_COUNT = sizeof(SLEEP_OPTIONS) / sizeof(SLEEP_OPTIONS[0]);
-static const char* SLEEP_OPTIONS_TEXT =
-    "Never\n1 minute\n5 minutes\n10 minutes\n20 minutes\n30 minutes";
-
-// Bed mesh render mode options (Auto=0, 3D=1, 2D=2)
-static const char* BED_MESH_RENDER_MODE_OPTIONS_TEXT = "Auto\n3D View\n2D Heatmap";
-static const char* GCODE_RENDER_MODE_OPTIONS_TEXT = "Auto\n3D View\n2D Layers\nThumbnail Only";
-
-// Time format options (12H=0, 24H=1)
-static const char* TIME_FORMAT_OPTIONS_TEXT = "12 Hour\n24 Hour";
 
 // Timezone options: curated list of IANA timezones with friendly display names
 struct TimezoneEntry {
@@ -705,10 +694,6 @@ void DisplaySettingsManager::set_bed_mesh_render_mode(int mode) {
                   clamped == 0 ? "Auto" : (clamped == 1 ? "3D" : "2D"));
 }
 
-const char* DisplaySettingsManager::get_bed_mesh_render_mode_options() {
-    return lv_tr(BED_MESH_RENDER_MODE_OPTIONS_TEXT);
-}
-
 int DisplaySettingsManager::get_gcode_render_mode() const {
     return lv_subject_get_int(const_cast<lv_subject_t*>(&gcode_render_mode_subject_));
 }
@@ -736,10 +721,6 @@ void DisplaySettingsManager::set_gcode_render_mode(int mode) {
                   MODE_NAMES[clamped]);
 }
 
-const char* DisplaySettingsManager::get_gcode_render_mode_options() {
-    return lv_tr(GCODE_RENDER_MODE_OPTIONS_TEXT);
-}
-
 TimeFormat DisplaySettingsManager::get_time_format() const {
     int val = lv_subject_get_int(const_cast<lv_subject_t*>(&time_format_subject_));
     return static_cast<TimeFormat>(std::clamp(val, 0, 1));
@@ -754,10 +735,6 @@ void DisplaySettingsManager::set_time_format(TimeFormat format) {
     Config* config = Config::get_instance();
     config->set<int>("/display/time_format", val);
     config->save();
-}
-
-const char* DisplaySettingsManager::get_time_format_options() {
-    return lv_tr(TIME_FORMAT_OPTIONS_TEXT);
 }
 
 // =============================================================================
@@ -837,10 +814,6 @@ void DisplaySettingsManager::set_screensaver_type(int type) {
     config->set<int>("/display/screensaver_type", type);
     config->save();
 }
-
-const char* DisplaySettingsManager::get_screensaver_type_options() {
-    return lv_tr("Off\nFlying Toasters\nStarfield\n3D Pipes");
-}
 #endif
 
 // =============================================================================
@@ -873,10 +846,6 @@ bool DisplaySettingsManager::get_bed_mesh_show_zero_plane() const {
 // DISPLAY DIM OPTIONS
 // =============================================================================
 
-const char* DisplaySettingsManager::get_display_dim_options() {
-    return lv_tr(DIM_OPTIONS_TEXT);
-}
-
 int DisplaySettingsManager::dim_seconds_to_index(int seconds) {
     for (int i = 0; i < DIM_OPTIONS_COUNT; i++) {
         if (DIM_OPTIONS[i] == seconds) {
@@ -897,10 +866,6 @@ int DisplaySettingsManager::index_to_dim_seconds(int index) {
 // =============================================================================
 // DISPLAY SLEEP OPTIONS
 // =============================================================================
-
-const char* DisplaySettingsManager::get_display_sleep_options() {
-    return lv_tr(SLEEP_OPTIONS_TEXT);
-}
 
 int DisplaySettingsManager::sleep_seconds_to_index(int seconds) {
     for (int i = 0; i < SLEEP_OPTIONS_COUNT; i++) {

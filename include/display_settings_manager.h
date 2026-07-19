@@ -165,26 +165,17 @@ class DisplaySettingsManager {
     /** @brief Set bed mesh render mode (updates subject + persists) */
     void set_bed_mesh_render_mode(int mode);
 
-    /** @brief Get dropdown options string "Auto\n3D View\n2D Heatmap" */
-    static const char* get_bed_mesh_render_mode_options();
-
     /** @brief Get G-code render mode (0=Auto, 1=3D, 2=2D, 3=Thumbnail Only) */
     int get_gcode_render_mode() const;
 
     /** @brief Set G-code render mode (updates subject + persists) */
     void set_gcode_render_mode(int mode);
 
-    /** @brief Get dropdown options string "Auto\n3D View\n2D Layers" */
-    static const char* get_gcode_render_mode_options();
-
     /** @brief Get time format setting */
     TimeFormat get_time_format() const;
 
     /** @brief Set time format (updates subject + persists) */
     void set_time_format(TimeFormat format);
-
-    /** @brief Get dropdown options string "12 Hour\n24 Hour" */
-    static const char* get_time_format_options();
 
     /** @brief Get current timezone IANA ID (e.g., "America/New_York") */
     std::string get_timezone() const;
@@ -211,9 +202,6 @@ class DisplaySettingsManager {
 
     /** @brief Set screensaver type (updates subject + persists) */
     void set_screensaver_type(int type);
-
-    /** @brief Get dropdown options string for screensaver types */
-    static const char* get_screensaver_type_options();
 #endif
 
     // =========================================================================
@@ -233,9 +221,6 @@ class DisplaySettingsManager {
     // DISPLAY DIM OPTIONS (for dropdown population)
     // =========================================================================
 
-    /** @brief Get display dim options for dropdown */
-    static const char* get_display_dim_options();
-
     /** @brief Get dropdown index for current dim seconds value */
     static int dim_seconds_to_index(int seconds);
 
@@ -245,9 +230,6 @@ class DisplaySettingsManager {
     // =========================================================================
     // DISPLAY SLEEP OPTIONS (for dropdown population)
     // =========================================================================
-
-    /** @brief Get display sleep options for dropdown */
-    static const char* get_display_sleep_options();
 
     /** @brief Get dropdown index for current sleep seconds value */
     static int sleep_seconds_to_index(int seconds);

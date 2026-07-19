@@ -128,12 +128,5 @@ TEST_CASE_METHOD(LVGLTestFixture, "AudioSettingsManager subject values match get
     AudioSettingsManager::instance().deinit_subjects();
 }
 
-TEST_CASE_METHOD(LVGLTestFixture, "AudioSettingsManager completion alert options string",
-                 "[audio_settings]") {
-    const char* options = AudioSettingsManager::get_completion_alert_options();
-    REQUIRE(options != nullptr);
-    REQUIRE(std::string(options) == "Off\nNotification\nAlert");
-}
-
 // Backward compat test removed: forwarding wrappers in SettingsManager have been eliminated.
 // All consumers now use AudioSettingsManager directly.

@@ -28,7 +28,6 @@ static const spdlog::level::level_enum LOG_LEVEL_VALUES[] = {
     spdlog::level::trace,
 };
 static const int LOG_LEVEL_COUNT = sizeof(LOG_LEVEL_VALUES) / sizeof(LOG_LEVEL_VALUES[0]);
-static const char* LOG_LEVEL_OPTIONS_TEXT = "Warn\nInfo\nDebug\nTrace";
 
 // Config key strings matching the dropdown indices
 static const char* LOG_LEVEL_STRINGS[] = {"warn", "info", "debug", "trace"};
@@ -218,10 +217,6 @@ void SystemSettingsManager::set_update_channel(int channel) {
     UpdateChecker::instance().clear_cache();
 }
 
-const char* SystemSettingsManager::get_update_channel_options() {
-    return lv_tr("Stable\nBeta\nDev");
-}
-
 // =============================================================================
 // TELEMETRY SETTINGS
 // =============================================================================
@@ -268,8 +263,4 @@ void SystemSettingsManager::set_log_level_by_index(int index) {
     Config* config = Config::get_instance();
     config->set<std::string>("/log_level", LOG_LEVEL_STRINGS[clamped]);
     config->save();
-}
-
-const char* SystemSettingsManager::get_log_level_options() {
-    return lv_tr(LOG_LEVEL_OPTIONS_TEXT);
 }

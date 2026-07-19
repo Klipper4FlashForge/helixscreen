@@ -90,12 +90,6 @@ TEST_CASE_METHOD(LVGLTestFixture, "SystemSettingsManager update channel set/get"
         REQUIRE(SystemSettingsManager::instance().get_update_channel() == 2);
     }
 
-    SECTION("options string") {
-        const char* options = SystemSettingsManager::get_update_channel_options();
-        REQUIRE(options != nullptr);
-        REQUIRE(std::string(options) == "Stable\nBeta\nDev");
-    }
-
     SystemSettingsManager::instance().deinit_subjects();
 }
 

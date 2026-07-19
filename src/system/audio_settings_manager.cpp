@@ -12,9 +12,6 @@
 
 using namespace helix;
 
-// Completion alert options (Off=0, Notification=1, Alert=2)
-static const char* COMPLETION_ALERT_OPTIONS_TEXT = "Off\nNotification\nAlert";
-
 AudioSettingsManager& AudioSettingsManager::instance() {
     static AudioSettingsManager instance;
     return instance;
@@ -168,8 +165,4 @@ void AudioSettingsManager::set_completion_alert_mode(CompletionAlertMode mode) {
     Config* config = Config::get_instance();
     config->set<int>("/completion_alert", val);
     config->save();
-}
-
-const char* AudioSettingsManager::get_completion_alert_options() {
-    return lv_tr(COMPLETION_ALERT_OPTIONS_TEXT);
 }

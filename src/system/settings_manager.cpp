@@ -29,9 +29,6 @@
 
 using namespace helix;
 
-// Z movement style options (Auto=0, Bed Moves=1, Nozzle Moves=2)
-static const char* Z_MOVEMENT_STYLE_OPTIONS_TEXT = "Auto\nBed Moves\nNozzle Moves";
-
 // Aftermarket toolhead styles shown in dropdown (Auto + user overrides only)
 // Native styles (DEFAULT, CREALITY_K1, CREALITY_K2) are auto-detected and not shown.
 static const char* TOOLHEAD_STYLE_OPTIONS_TEXT = "Auto\nStealthburner\nA4T\nAntHead\nJabberWocky";
@@ -301,10 +298,6 @@ void SettingsManager::set_z_movement_style(ZMovementStyle style) {
 
     // 3. Apply override to printer state
     get_printer_state().apply_effective_bed_moves();
-}
-
-const char* SettingsManager::get_z_movement_style_options() {
-    return lv_tr(Z_MOVEMENT_STYLE_OPTIONS_TEXT);
 }
 
 // =============================================================================

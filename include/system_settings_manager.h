@@ -85,9 +85,6 @@ class SystemSettingsManager {
     /** @brief Set update channel, persist, and clear update cache */
     void set_update_channel(int channel);
 
-    /** @brief Get dropdown options string "Stable\nBeta\nDev" */
-    static const char* get_update_channel_options();
-
     // =========================================================================
     // TELEMETRY SETTINGS
     // =========================================================================
@@ -107,9 +104,6 @@ class SystemSettingsManager {
 
     /** @brief Set log level by dropdown index, apply immediately, and persist */
     void set_log_level_by_index(int index);
-
-    /** @brief Get dropdown options string "Warn\nInfo\nDebug\nTrace" */
-    static const char* get_log_level_options();
 
     // =========================================================================
     // SUBJECT ACCESSORS (for XML binding)

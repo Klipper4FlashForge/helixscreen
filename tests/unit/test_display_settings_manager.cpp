@@ -330,37 +330,3 @@ TEST_CASE_METHOD(LVGLTestFixture, "DisplaySettingsManager subject values match g
 
     DisplaySettingsManager::instance().deinit_subjects();
 }
-
-TEST_CASE_METHOD(LVGLTestFixture, "DisplaySettingsManager options strings", "[display_settings]") {
-    SECTION("dim options") {
-        const char* options = DisplaySettingsManager::get_display_dim_options();
-        REQUIRE(options != nullptr);
-        REQUIRE(std::string(options).find("Never") != std::string::npos);
-        REQUIRE(std::string(options).find("5 minutes") != std::string::npos);
-    }
-
-    SECTION("sleep options") {
-        const char* options = DisplaySettingsManager::get_display_sleep_options();
-        REQUIRE(options != nullptr);
-        REQUIRE(std::string(options).find("Never") != std::string::npos);
-        REQUIRE(std::string(options).find("30 minutes") != std::string::npos);
-    }
-
-    SECTION("bed mesh render mode options") {
-        const char* options = DisplaySettingsManager::get_bed_mesh_render_mode_options();
-        REQUIRE(options != nullptr);
-        REQUIRE(std::string(options) == "Auto\n3D View\n2D Heatmap");
-    }
-
-    SECTION("gcode render mode options") {
-        const char* options = DisplaySettingsManager::get_gcode_render_mode_options();
-        REQUIRE(options != nullptr);
-        REQUIRE(std::string(options) == "Auto\n3D View\n2D Layers\nThumbnail Only");
-    }
-
-    SECTION("time format options") {
-        const char* options = DisplaySettingsManager::get_time_format_options();
-        REQUIRE(options != nullptr);
-        REQUIRE(std::string(options) == "12 Hour\n24 Hour");
-    }
-}

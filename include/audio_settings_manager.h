@@ -82,9 +82,6 @@ class AudioSettingsManager {
     /** @brief Set completion alert mode (updates subject + persists) */
     void set_completion_alert_mode(CompletionAlertMode mode);
 
-    /** @brief Get dropdown options string "Off\nNotification\nAlert" */
-    static const char* get_completion_alert_options();
-
     // =========================================================================
     // SUBJECT ACCESSORS (for XML binding)
     // =========================================================================
