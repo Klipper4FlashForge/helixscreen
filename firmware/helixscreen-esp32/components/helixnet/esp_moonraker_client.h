@@ -146,6 +146,10 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     // evidence (5 separate requests across 3 different methods each sat the
     // full 60s with no disconnect ever observed in between).
     static constexpr int kPingPongTimeoutSec = 20;
+    static_assert(kPingPongTimeoutSec * 1000u < kDefaultRequestTimeoutMs,
+                  "ping/pong must detect a dead link before the per-request timeout fires — "
+                  "otherwise silent connection death stalls requests for the full request "
+                  "timeout with no disconnect in between (Task 9 confirm-soak defect)");
 
     struct Pending {
         std::string method;
