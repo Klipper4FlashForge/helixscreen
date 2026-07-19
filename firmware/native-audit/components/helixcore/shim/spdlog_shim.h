@@ -34,7 +34,9 @@
 #endif
 
 #include "platform_stubs.h" // helix_shim_log()
-#include "sdkconfig.h"      // CONFIG_HELIX_LOG_STRIP_DEBUG (helixscreen-esp32 only; unset here)
+#if __has_include("sdkconfig.h") // CONFIG_HELIX_LOG_STRIP_DEBUG (helixscreen-esp32 only; unset here —
+#include "sdkconfig.h"           // guarded so this frozen tree still compiles with no generated config)
+#endif
 
 namespace spdlog {
 

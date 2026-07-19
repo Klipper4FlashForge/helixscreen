@@ -68,8 +68,8 @@ config HELIX_LOG_STRIP_DEBUG
     bool "Strip spdlog::debug/trace format strings from the binary"
     default y
     help
-        The app core carries roughly 4,300 spdlog-style log call sites;
-        spdlog::debug/trace account for about half of them and can never
+        The app core carries ~3,949 spdlog::debug/trace call sites, which
+        can never
         print on shipped firmware, which runs at INFO level. Each one still
         costs a format-string literal plus per-call-site fmt argument-packing
         code, together worth several hundred KB against a partition slot with
