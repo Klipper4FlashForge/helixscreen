@@ -888,21 +888,13 @@ bool helix_parse_truthy_env(const char* value) {
     return v == "1" || v == "true" || v == "yes" || v == "on";
 }
 
-bool compute_updates_externally_managed(const char* updates_external,
-                                        const char* disable_auto_updates, const char* supervised,
-                                        const char* data_dir) {
-    if (helix_parse_truthy_env(disable_auto_updates) || helix_parse_truthy_env(updates_external)) {
-        return true;
-    }
-    return helix_parse_truthy_env(supervised) && data_dir && data_dir[0] != '\0';
+bool compute_updates_externally_managed(const char* disable_auto_updates) {
+    return helix_parse_truthy_env(disable_auto_updates);
 }
 
 bool updates_externally_managed() {
     static const bool cached =
-        compute_updates_externally_managed(std::getenv("HELIX_UPDATES_EXTERNAL"),
-                                           std::getenv("HELIX_DISABLE_AUTO_UPDATES"),
-                                           std::getenv("HELIX_SUPERVISED"),
-                                           std::getenv("HELIX_DATA_DIR"));
+        compute_updates_externally_managed(std::getenv("HELIX_DISABLE_AUTO_UPDATES"));
     return cached;
 }
 

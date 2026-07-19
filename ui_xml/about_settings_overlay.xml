@@ -84,7 +84,7 @@
                             description_tag="" callback="on_about_install_update_clicked"/>
       </lv_obj>
       <!-- Firmware-managed updates notice (replaces the check/install controls
-           when HELIX_UPDATES_EXTERNAL is set — updates come from the firmware) -->
+           when HELIX_DISABLE_AUTO_UPDATES is set — updates come from the firmware) -->
       <lv_obj name="container_updates_firmware_managed" width="100%" style_pad_all="0" scrollable="false">
         <bind_flag_if_eq subject="updates_firmware_managed" flag="hidden" ref_value="0"/>
         <setting_info_row name="row_updates_firmware_managed"

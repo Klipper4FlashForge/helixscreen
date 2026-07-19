@@ -357,27 +357,20 @@ std::string app_get_config_dir();
 bool helix_parse_truthy_env(const char* value);
 
 // Pure predicate behind updates_externally_managed(), split out for testing so
-// the env inputs can be exercised without mutating the process env.
-// True when EITHER an explicit override is truthy — HELIX_DISABLE_AUTO_UPDATES
-// (the firmware-facing name) or HELIX_UPDATES_EXTERNAL (older alias, kept working)
-// — OR the launch looks firmware-managed: a supervisor owns our lifecycle
-// (HELIX_SUPERVISED) AND our asset root was relocated via HELIX_DATA_DIR. The
-// latter is how a firmware that bind-mounts the binary over its stock GUI path
-// runs us — there /proc/self/exe no longer resolves our install tree, so
-// self-update can't work.
-bool compute_updates_externally_managed(const char* updates_external,
-                                        const char* disable_auto_updates,
-                                        const char* supervised, const char* data_dir);
+// the env input can be exercised without mutating the process env.
+// True only when the explicit HELIX_DISABLE_AUTO_UPDATES flag is truthy. No
+// environment inference: the update gate keys solely off this firmware-facing
+// flag. A future change will instead derive the state from whether self-update
+// can physically write the install tree.
+bool compute_updates_externally_managed(const char* disable_auto_updates);
 
 // Returns true when software updates are owned by the device firmware, in which
 // case HelixScreen must NOT run its in-app self-update: the periodic auto-check
 // is suppressed and manual check/download entry points short-circuit.
 //
-// Firmware sets HELIX_DISABLE_AUTO_UPDATES=1 to opt out explicitly (preferred);
-// HELIX_UPDATES_EXTERNAL is an older alias with the same effect. As a fallback we
-// also infer the managed state from the environment the firmware already sets
-// (HELIX_SUPERVISED + HELIX_DATA_DIR together). NOT keyed off HELIX_SUPERVISED
-// alone — our own watchdog sets that on normal installs (without HELIX_DATA_DIR)
-// where self-update MUST still work. Read once and cached (like
+// Managed state is true ONLY when the explicit HELIX_DISABLE_AUTO_UPDATES flag
+// is truthy. No other environment variable participates — a firmware-managed
+// install must set this flag. A future change will derive the state from whether
+// self-update can physically write the install tree. Read once and cached (like
 // app_get_install_root()).
 bool updates_externally_managed();
