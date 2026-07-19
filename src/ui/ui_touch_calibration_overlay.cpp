@@ -14,6 +14,7 @@
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "static_panel_registry.h"
 #include "touch_calibration.h"
+#include "touch_calibration_layout.h"
 
 #include <spdlog/spdlog.h>
 
@@ -71,6 +72,13 @@ static void on_touch_cal_back_clicked(lv_event_t* e) {
     (void)e;
     LVGL_SAFE_EVENT_CB_BEGIN("[TouchCalibrationOverlay] back clicked");
     get_touch_calibration_overlay().handle_back_clicked();
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+static void on_touch_cal_cancel_clicked(lv_event_t* e) {
+    (void)e;
+    LVGL_SAFE_EVENT_CB_BEGIN("[TouchCalibrationOverlay] cancel chip clicked");
+    get_touch_calibration_overlay().handle_cancel_clicked();
     LVGL_SAFE_EVENT_CB_END();
 }
 
@@ -245,6 +253,7 @@ void TouchCalibrationOverlay::register_callbacks() {
         {"on_touch_cal_overlay_touched", on_touch_cal_overlay_touched},
         {"on_touch_cal_overlay_released", on_touch_cal_overlay_released},
         {"on_touch_cal_back_clicked", on_touch_cal_back_clicked},
+        {"on_touch_cal_cancel_clicked", on_touch_cal_cancel_clicked},
     });
 
     spdlog::debug("[{}] Event callbacks registered", get_name());
@@ -384,24 +393,45 @@ void TouchCalibrationOverlay::on_activate() {
 
     spdlog::debug("[{}] on_activate()", get_name());
 
-    // Reparent ONLY the crosshair to screen root, AFTER push_overlay moves
-    // overlay_root_ to foreground. Rationale:
-    //   - The crosshair's visual position must match the screen_points the
-    //     calibration solver uses. If it stays inside calibration_content,
-    //     it's offset by the overlay's title bar — producing a Y-biased
-    //     calibration that shifts every tap after the cal is accepted.
-    //   - The touch_capture_overlay does NOT need reparenting. LVGL dispatches
-    //     touch events using the indev-reported coord, not the widget's
-    //     physical screen rect. Leaving the capture layer in its XML location
-    //     avoids z-order gotchas (reparenting it put it under the overlay
-    //     panel's foreground-moved backdrop and broke touch capture entirely).
-    if (crosshair_) {
-        if (!crosshair_orig_parent_) {
-            crosshair_orig_parent_ = lv_obj_get_parent(crosshair_);
+    // Lift the crosshair AND the touch capture surface onto the screen root,
+    // AFTER push_overlay moves overlay_root_ to foreground. The capture surface
+    // must cover the FULL screen — header included — so that an uncalibrated tap
+    // on a top-edge target (affine is disabled during capture) can't report a
+    // coordinate that lands in the header strip and route to the header Back
+    // button (which is clickable + full-width). LVGL hit-tests by widget geometry,
+    // so a capture surface confined to the content area below the header leaves
+    // that top strip owned by the Back button. Shared with the first-run wizard —
+    // see touch_calibration_layout.h.
+    helix::ui::CaptureSurfaceWidgets cap =
+        helix::ui::reparent_capture_surface_fullscreen(overlay_root_);
+    crosshair_ = cap.crosshair;
+    if (cap.crosshair && !crosshair_orig_parent_) {
+        crosshair_orig_parent_ = cap.crosshair_original_parent;
+    }
+    if (cap.capture_overlay) {
+        capture_overlay_ = cap.capture_overlay;
+        if (!capture_orig_parent_) {
+            capture_orig_parent_ = cap.capture_original_parent;
         }
-        lv_obj_set_parent(crosshair_, lv_screen_active());
-        lv_obj_add_flag(crosshair_, LV_OBJ_FLAG_FLOATING);
-        lv_obj_move_foreground(crosshair_);
+    }
+
+    // The header Back button is now covered by the full-screen capture surface,
+    // so provide an abort affordance that does NOT sit under any calibration
+    // target: the Cancel chip lives in the bottom-left corner (targets occupy
+    // top-left, top-right and bottom-center). Lift it above the capture surface
+    // so it stays clickable, then pin it to the screen's bottom-left corner
+    // (independent of content layout — the capture surface is screen-absolute).
+    raised_cancel_ = helix::ui::raise_control_above_capture(overlay_root_, "cancel_chip");
+    if (raised_cancel_.obj) {
+        constexpr lv_coord_t CANCEL_CHIP_INSET = 12;
+        lv_obj_t* scr = lv_screen_active();
+        lv_obj_update_layout(scr);
+        lv_coord_t chip_h = lv_obj_get_height(raised_cancel_.obj);
+        // Absolute screen-corner placement (align is TOP_LEFT so set_pos is
+        // absolute, not an offset from an alignment anchor).
+        lv_obj_set_align(raised_cancel_.obj, LV_ALIGN_TOP_LEFT);
+        lv_obj_set_pos(raised_cancel_.obj, CANCEL_CHIP_INSET,
+                       lv_obj_get_height(scr) - chip_h - CANCEL_CHIP_INSET);
     }
 
     // Initialize crosshair position if calibrating
@@ -410,6 +440,11 @@ void TouchCalibrationOverlay::on_activate() {
 
 void TouchCalibrationOverlay::on_deactivate() {
     spdlog::debug("[{}] on_deactivate()", get_name());
+
+    // Reparent the capture surface + Cancel chip back into the overlay subtree
+    // BEFORE the slide-out, so a live full-screen touch target doesn't linger on
+    // the screen behind the dismissed overlay. (crosshair too.)
+    restore_reparented_widgets();
 
     // Cancel any in-progress calibration
     if (panel_) {
@@ -452,16 +487,13 @@ void TouchCalibrationOverlay::cleanup() {
         panel_->cancel();
     }
 
-    // Restore crosshair to its original XML parent so the overlay can be
-    // re-shown cleanly and the widget doesn't linger on screen when hidden.
-    // Also clear the FLOATING flag we added in on_activate() so layout
-    // behavior matches the XML default on next show.
-    if (crosshair_ && crosshair_orig_parent_) {
-        lv_obj_set_parent(crosshair_, crosshair_orig_parent_);
-        lv_obj_remove_flag(crosshair_, LV_OBJ_FLAG_FLOATING);
-        lv_obj_add_flag(crosshair_, LV_OBJ_FLAG_HIDDEN);
-    }
+    // Restore the crosshair, capture surface, and Cancel chip to their original
+    // XML parents so the overlay can be re-shown cleanly and nothing lingers on
+    // screen when hidden. Clears the FLOATING flags added in on_activate() so
+    // layout matches the XML default on next show.
+    restore_reparented_widgets();
     crosshair_orig_parent_ = nullptr;
+    capture_orig_parent_ = nullptr;
 
     // Clear widget pointers
     crosshair_ = nullptr;
@@ -680,6 +712,13 @@ void TouchCalibrationOverlay::handle_back_clicked() {
     hide();
 }
 
+void TouchCalibrationOverlay::handle_cancel_clicked() {
+    // Same abort path as Back: the Cancel chip only exists because the header
+    // Back button is covered by the full-screen capture surface during capture.
+    spdlog::info("[{}] Cancel chip clicked", get_name());
+    handle_back_clicked();
+}
+
 // ============================================================================
 // UI Update Helpers
 // ============================================================================
@@ -745,6 +784,29 @@ void TouchCalibrationOverlay::update_instruction_text() {
              lv_tr("Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d"),
              p.point_num, p.current_sample + 1, p.total_samples);
     lv_subject_copy_string(&instruction_subject_, instruction_buffer_);
+}
+
+void TouchCalibrationOverlay::restore_reparented_widgets() {
+    // Cancel chip back into the overlay subtree.
+    helix::ui::restore_raised_control(raised_cancel_);
+    raised_cancel_ = {};
+
+    // Capture surface back into its content parent. It is 100%x100% by XML, so the
+    // parent re-lays it out once FLOATING is cleared.
+    if (capture_overlay_ && capture_orig_parent_) {
+        lv_obj_set_parent(capture_overlay_, capture_orig_parent_);
+        lv_obj_remove_flag(capture_overlay_, LV_OBJ_FLAG_FLOATING);
+        lv_obj_set_size(capture_overlay_, LV_PCT(100), LV_PCT(100));
+        lv_obj_set_pos(capture_overlay_, 0, 0);
+    }
+    capture_overlay_ = nullptr;
+
+    // Crosshair back into its content parent (hidden until the next capture).
+    if (crosshair_ && crosshair_orig_parent_) {
+        lv_obj_set_parent(crosshair_, crosshair_orig_parent_);
+        lv_obj_remove_flag(crosshair_, LV_OBJ_FLAG_FLOATING);
+        lv_obj_add_flag(crosshair_, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 void TouchCalibrationOverlay::update_crosshair_position() {

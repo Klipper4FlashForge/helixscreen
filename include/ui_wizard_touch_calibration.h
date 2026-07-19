@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "touch_calibration_layout.h"
 #include "touch_calibration_panel.h"
 #include "touch_calibration_session.h"
 #include "wizard_step.h"
@@ -161,10 +162,10 @@ class WizardTouchCalibrationStep : public helix::wizard::Step {
     // revert path can be exercised without standing up a DisplayManager.
     helix::ICalibrationSink* calibration_sink_override_ = nullptr;
 
-    // Next/Skip group reparenting state (brought on top of touch overlay)
-    lv_obj_t* skip_btn_original_parent_ = nullptr;
-    lv_coord_t skip_btn_orig_w_ = 0;
-    lv_coord_t skip_btn_orig_h_ = 0;
+    // Next/Skip group lifted above the full-screen capture surface so it stays
+    // clickable during calibration. Restore state owned here (shared helper in
+    // touch_calibration_layout.h).
+    helix::ui::RaisedControl raised_skip_;
 
     // Event handlers (static trampolines)
     static void on_accept_clicked_static(lv_event_t* e);

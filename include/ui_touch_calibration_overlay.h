@@ -31,6 +31,7 @@
 #include "overlay_base.h"
 #include "subject_managed_panel.h"
 #include "touch_calibration.h"
+#include "touch_calibration_layout.h"
 #include "touch_calibration_panel.h"
 #include "touch_calibration_session.h"
 
@@ -177,6 +178,14 @@ class TouchCalibrationOverlay : public OverlayBase {
     /** @brief Handle back button click - cancels calibration */
     void handle_back_clicked();
 
+    /**
+     * @brief Handle the in-capture Cancel chip - same abort path as Back
+     *
+     * During active point capture the full-screen capture surface covers the
+     * header Back button, so a corner Cancel chip provides the abort affordance.
+     */
+    void handle_cancel_clicked();
+
     //
     // === Accessors ===
     //
@@ -206,6 +215,17 @@ class TouchCalibrationOverlay : public OverlayBase {
 
     /** @brief Position crosshair at current calibration target */
     void update_crosshair_position();
+
+    /**
+     * @brief Reparent crosshair + capture surface + Cancel chip back into the
+     *        overlay subtree so nothing is orphaned on the active screen.
+     *
+     * The full-screen capture surface and Cancel chip are lifted onto
+     * lv_screen_active() during capture; they MUST be returned to the overlay
+     * before it slides away, otherwise a live full-screen touch target would
+     * linger on the screen behind it. Idempotent.
+     */
+    void restore_reparented_widgets();
 
     /**
      * @brief Handle calibration completion from panel
@@ -253,8 +273,19 @@ class TouchCalibrationOverlay : public OverlayBase {
     // Original parent for crosshair. The widget is reparented to screen root
     // on activation so its coordinates are screen-absolute (required for
     // calibration accuracy — the overlay's title bar offsets the default XML
-    // nesting). Restored on cleanup().
+    // nesting). Restored on deactivate/cleanup.
     lv_obj_t* crosshair_orig_parent_ = nullptr;
+
+    // The touch capture surface is lifted onto lv_screen_active() at 100%x100%
+    // during capture so it covers the header too (uncalibrated top-edge taps
+    // can't leak to the header Back button). Original parent is kept so it can
+    // be reparented back into the overlay before dismiss.
+    lv_obj_t* capture_overlay_ = nullptr;
+    lv_obj_t* capture_orig_parent_ = nullptr;
+
+    // In-capture Cancel chip lifted above the full-screen capture surface (the
+    // Back button is unreachable while capturing). Restore state owned here.
+    helix::ui::RaisedControl raised_cancel_;
 
     //
     // === State Constants ===
