@@ -619,6 +619,18 @@ extern "C" void app_boot_tick(void) {
         g_manager->process_notifications();
         g_manager->process_timeouts();
     }
+    // One-shot steady-state budget sample at t=60s: by then WiFi, WebSocket,
+    // discovery, and live status streaming are all up, so this reads budgets
+    // under real load. Uses only the O(1) free-size counters — the
+    // largest-block walk takes a heap-wide critical section and is banned
+    // from the steady-state loop (see log_heap_milestone).
+    static bool steady_logged = false;
+    if (!steady_logged && esp_timer_get_time() > 60000000LL) {
+        steady_logged = true;
+        ESP_LOGI(TAG, "[heap:steady-60s] internal free=%u | psram free=%u",
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    }
 #if CONFIG_HELIX_MOCK_PRINTER
     // ~1 Hz synthetic temperature push. tick fires every render iteration
     // (5-50ms); gate to roughly once a second.
