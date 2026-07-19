@@ -32,6 +32,7 @@
 #include "gcode_narration_router.h"
 #include "hardware_role_registry.h"
 #include "hardware_validator.h"
+#include "hardware_fingerprint.h"
 #include "helix_version.h"
 #include "http_executor.h"
 #include "job_queue_state.h"
@@ -2558,9 +2559,33 @@ void Application::setup_discovery_callbacks() {
             // only reference we own and nobody else aliases it, so this copy is
             // race-free (#789, #799).
             crash_handler::breadcrumb::note("disc", "pre_api_hw",
-                                            static_cast<long>(snapshot->macros().size()));
+                                           static_cast<long>(snapshot->macros().size()));
             api->hardware() = *snapshot;
             crash_handler::breadcrumb::note("disc", "post_api_hw", n);
+
+            // Hardware-shape fingerprint: detect "reconnect with same hardware"
+            // so user-facing side-effects (LED chip population, hardware
+            // validation toasts, targeted reconfig wizard, telemetry snapshots)
+            // can skip. See compute_hardware_fingerprint() in
+            // hardware_fingerprint.h for rationale.
+            // Computed from api->hardware() (post-copy) — *snapshot is moved
+            // into set_hardware below and is empty after that point.
+            const size_t new_fingerprint = helix::compute_hardware_fingerprint(api->hardware());
+            const bool hw_changed =
+                app->m_first_discovery_complete || (new_fingerprint != app->m_last_hardware_fingerprint);
+            app->m_last_hardware_fingerprint = new_fingerprint;
+            app->m_first_discovery_complete = false;
+            crash_handler::breadcrumb::note("disc", "hw_changed", hw_changed ? 1L : 0L);
+            if (hw_changed) {
+                spdlog::info("[Application] on_discovery_complete #{} — hardware shape changed "
+                             "(fingerprint=0x{:x}), running full pipeline",
+                             n, new_fingerprint);
+            } else {
+                spdlog::info("[Application] on_discovery_complete #{} — hardware shape unchanged "
+                             "(fingerprint=0x{:x}), skipping user-facing side-effects",
+                             n, new_fingerprint);
+            }
+
 
             // Mark discovery complete so splash can exit
             app->m_splash_manager.on_discovery_complete();
@@ -2637,8 +2662,13 @@ void Application::setup_discovery_callbacks() {
                 get_printer_state().set_os_version(hw.os_version());
             }
 
-            // Populate LED chips now that hardware is discovered
-            get_global_settings_panel().populate_led_chips();
+            // Populate LED chips now that hardware is discovered.
+            // Gated on hw_changed — LED chip topology doesn't change reconnect-to-
+            // reconnect unless the hardware shape changed, and populate_led_chips
+            // fires LED capability subjects that cascade into panel rebuilds.
+            if (hw_changed) {
+                get_global_settings_panel().populate_led_chips();
+            }
             crash_handler::breadcrumb::note("disc", "post_led_chips", n);
 
             // Fetch print hours now that connection is live, and refresh on job changes
@@ -2705,15 +2735,22 @@ void Application::setup_discovery_callbacks() {
             // on PRINTER_TYPE already being set, so a user's manual pick in the identify
             // step (which writes PRINTER_TYPE on cleanup) won't be overwritten by a later
             // discovery callback.
+            //
+            // Gated on hw_changed — printer type detection is purely a function of the
+            // hardware shape, so re-running on a reconnect with unchanged hardware would
+            // produce the same result (and trigger config writes + subjects).
             // NOTE: use api->hardware() — snapshot was std::move'd into it above (#789).
             // Reading *snapshot here would pass an empty/moved-from PrinterDiscovery and
             // detection would fail with "0 sensors, 0 fans, hostname ''" (#802).
-            PrinterDetector::auto_detect_and_save(api->hardware(), Config::get_instance());
+            if (hw_changed) {
+                PrinterDetector::auto_detect_and_save(api->hardware(), Config::get_instance());
+            }
 
             // Auto-heal + persist heater roles (batched single save, symmetry with fan roles
             // above). Ensures the validator sees resolved heater names so it does not emit a
             // toast every boot for a stale saved role that has a confident replacement.
-            {
+            // Gated on hw_changed — healing is purely a function of heater hardware shape.
+            if (hw_changed) {
                 const auto& heaters = hw.heaters();
                 auto* cfg = Config::get_instance();
                 bool heater_changed = false;
@@ -2745,8 +2782,14 @@ void Application::setup_discovery_callbacks() {
             auto validation_result = validator.validate(Config::get_instance(), api->hardware());
             get_printer_state().set_hardware_validation_result(validation_result);
 
-            if (validation_result.has_issues() && !Config::get_instance()->is_wizard_required() &&
-                !is_wizard_active()) {
+            // Gated on hw_changed — without this guard, any hardware issue toast
+            // (e.g. "expected fan not found") would re-fire on every reconnect even
+            // when nothing has changed. validate() still runs (cheap, caches result,
+            // updates the validation_result subject for the UI); only the user-facing
+            // notify is suppressed on unchanged hardware. The validator's session
+            // snapshot below tracks state across runs regardless.
+            if (validation_result.has_issues() && hw_changed &&
+                !Config::get_instance()->is_wizard_required() && !is_wizard_active()) {
                 validator.notify_user(validation_result);
             }
 
@@ -2755,6 +2798,14 @@ void Application::setup_discovery_callbacks() {
             // affected step(s), not the full first-run wizard. Skipped while the first-run
             // wizard is required/active, and gated to once-per-connection so it does not
             // relaunch on reconnect churn within a single session.
+            //
+            // Also gated on hw_changed: unresolved guided steps are purely a function of
+            // (saved config, current hardware). If hardware is unchanged since the last
+            // discovery, the result is identical and re-launching the wizard would just
+            // harass the user. The wizard cancel callback persists the decline, so the
+            // next discovery with the SAME hardware would also see no unresolved steps —
+            // the hw_changed gate is defense-in-depth for the rare case where a prior
+            // session was killed before the decline could be persisted.
             auto reconfig_steps = helix::unresolved_guided_steps(Config::get_instance(), hw);
             // Idle gate: NEVER launch the reconfig wizard over a live print.
             // The print_active subject is NOT yet updated from this discovery's
@@ -2770,7 +2821,7 @@ void Application::setup_discovery_callbacks() {
                 helix::PrinterPrintState::status_indicates_active_print(*status_snapshot)) {
                 print_active = true;
             }
-            if (!reconfig_steps.empty() && !print_active &&
+            if (hw_changed && !reconfig_steps.empty() && !print_active &&
                 !Config::get_instance()->is_wizard_required() && !is_wizard_active() &&
                 !app->m_targeted_reconfig_shown) {
                 app->m_targeted_reconfig_shown = true;
@@ -2806,10 +2857,17 @@ void Application::setup_discovery_callbacks() {
             crash_handler::breadcrumb::note("disc", "post_validate", n);
 
             // Record telemetry session event now that hardware data is available
-            // (hardware_profile is deferred until after build volume is fetched below)
+            // (hardware_profile is deferred until after build volume is fetched below).
+            // record_session always runs (counts sessions, including reconnects).
+            // settings_snapshot + memory_snapshot are gated on hw_changed — they
+            // capture a fingerprint of the current config + heap state for telemetry,
+            // and would just re-record identical data on a reconnect with unchanged
+            // hardware.
             TelemetryManager::instance().record_session();
-            TelemetryManager::instance().record_settings_snapshot();
-            TelemetryManager::instance().record_memory_snapshot("session_start");
+            if (hw_changed) {
+                TelemetryManager::instance().record_settings_snapshot();
+                TelemetryManager::instance().record_memory_snapshot("session_start");
+            }
             crash_handler::breadcrumb::note("disc", "post_telemetry", n);
 
             // Fetch safety limits and build volume from Klipper config (stepper ranges,

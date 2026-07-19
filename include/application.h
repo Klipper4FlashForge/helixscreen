@@ -215,6 +215,14 @@ class Application {
     // Guards the discovery-triggered targeted hardware-reconfig wizard so it launches
     // at most once per connection. Reset when a new hardware discovery begins.
     bool m_targeted_reconfig_shown = false;
+    // Hardware-shape fingerprint from the most recent on_discovery_complete.
+    // When a reconnect's fingerprint matches (hardware unchanged), expensive
+    // user-facing side-effects (LED chip population, hardware validation
+    // toasts, targeted reconfig wizard, telemetry snapshots) are skipped —
+    // only the subject-restoring work that the UI needs to rebind runs.
+    // See on_discovery_complete in application.cpp.
+    size_t m_last_hardware_fingerprint = 0;
+    bool m_first_discovery_complete = true;
     bool m_shutdown_complete = false;
     bool m_soft_restart_in_progress = false;
 
