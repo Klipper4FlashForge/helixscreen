@@ -1,3 +1,36 @@
+menu "HelixScreen Network"
+
+# WiFi + Moonraker endpoint the firmware uses at boot. Interim credential source
+# until the UI-driven WifiBackend (Plan 4 Task 13) and the runtime settings
+# surface (Task 12) land — supplied via a git-ignored sdkconfig.local, NEVER
+# committed. Shared by the production app connect path (app_boot.cpp) and the
+# test-only network HIL scenario below. Symbol names keep the HELIX_HIL_ prefix
+# for continuity with the Plan 3 HIL config; they are no longer HIL-only.
+
+config HELIX_HIL_WIFI_SSID
+    string "WiFi SSID"
+    default ""
+    help
+        WiFi SSID the firmware associates to at boot (station mode). Empty in the
+        committed tree; supply the real value via a git-ignored sdkconfig.local.
+        Never commit real credentials.
+
+config HELIX_HIL_WIFI_PASS
+    string "WiFi password"
+    default ""
+    help
+        WiFi password. NEVER commit a real value — supply via sdkconfig.local.
+
+config HELIX_HIL_MOONRAKER_URL
+    string "Moonraker WebSocket URL"
+    default "ws://192.168.1.112:7125/websocket"
+    help
+        Moonraker WebSocket endpoint the app connects to at boot. The default is
+        the HIL Voron; override via sdkconfig.local. A runtime settings surface
+        replaces this in Task 12.
+
+endmenu
+
 menu "HelixScreen Network HIL (test-only)"
 
 config HELIX_NET_HIL
@@ -6,33 +39,10 @@ config HELIX_NET_HIL
     help
         Test-only. Brings up a raw WiFi station and drives a live Moonraker
         WebSocket session through EspMoonrakerClient to validate the transport
-        on real K-Touch hardware (Plan 3 Task 10). The real WifiBackend lands
-        in Plan 4; this is self-contained and disabled by default so it never
-        ships. Requires HELIX_HIL_WIFI_SSID/PASS, supplied via a git-ignored
-        sdkconfig.local — never commit real credentials.
-
-config HELIX_HIL_WIFI_SSID
-    string "HIL WiFi SSID"
-    depends on HELIX_NET_HIL
-    default ""
-    help
-        Test-only WiFi SSID for the network HIL scenario. Stays empty in the
-        committed tree; supply the real value via sdkconfig.local at flash time.
-
-config HELIX_HIL_WIFI_PASS
-    string "HIL WiFi password"
-    depends on HELIX_NET_HIL
-    default ""
-    help
-        Test-only WiFi password for the network HIL scenario. NEVER commit a
-        real value — supply via sdkconfig.local (git-ignored).
-
-config HELIX_HIL_MOONRAKER_URL
-    string "HIL Moonraker WebSocket URL"
-    depends on HELIX_NET_HIL
-    default "ws://192.168.1.112:7125/websocket"
-    help
-        Moonraker WebSocket endpoint the HIL scenario connects to.
+        on real K-Touch hardware (Plan 3 Task 10). Uses the WiFi SSID/PASS and
+        Moonraker URL from the "HelixScreen Network" menu. Disabled by default
+        so it never ships; the production app connect path (app_boot.cpp,
+        Plan 4 Task 8) supersedes it and owns WiFi + connect when this is off.
 
 endmenu
 

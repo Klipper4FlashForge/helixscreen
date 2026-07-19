@@ -70,7 +70,9 @@ idf_component_register(
     SRCS ${APP_SRCS} ${MOCK_SRCS} ${LOCAL_SRCS}
     INCLUDE_DIRS "."
     REQUIRES helixcore helixnet
-    PRIV_REQUIRES pthread esp_timer)
+    # esp_wifi/esp_netif/esp_event/nvs_flash: the non-mock connect path
+    # (app_boot.cpp, Task 8) brings up the WiFi station before connecting.
+    PRIV_REQUIRES pthread esp_timer esp_wifi esp_netif esp_event nvs_flash)
 
 # The PCH -include is C++-only: font/image .c sources compile as plain C.
 target_compile_options(${COMPONENT_LIB} PRIVATE

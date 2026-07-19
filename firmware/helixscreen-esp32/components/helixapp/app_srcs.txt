@@ -99,6 +99,7 @@ src/printer/consumption_sink.cpp
 src/printer/filament_catalog.cpp
 src/printer/filament_consumption_tracker.cpp
 src/printer/filament_mapper.cpp
+src/printer/hardware_role_registry.cpp
 src/printer/hardware_validator.cpp
 src/printer/hh_defaults.cpp
 src/printer/macro_executor.cpp

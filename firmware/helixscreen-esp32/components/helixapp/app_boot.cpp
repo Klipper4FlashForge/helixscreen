@@ -45,10 +45,14 @@
 #include "connection_state.h"
 #include "data_root_resolver.h"
 #include "helix_sparkline.h"
+#include "i_moonraker_client.h"
 #include "moonraker_api.h" // complete MoonrakerAPI : IMoonrakerAPI for the init_panels upcast
 #include "moonraker_manager.h"
 #include "panel_factory.h"
+#include "printer_discovery.h" // helix::PrinterDiscovery + init_subsystems (discovery callback args)
+#include "printer_fan_state.h" // helix::FanRoleConfig for the non-mock fan-role resolve
 #include "printer_state.h"
+#include "temperature_sensor_manager.h"
 #include "runtime_config.h"
 #include "setting_group.h"
 #include "subject_initializer.h"
@@ -76,6 +80,21 @@
 #include <spdlog/spdlog.h>
 
 #include <string>
+
+#if !CONFIG_HELIX_MOCK_PRINTER
+// Non-mock (real connect) path only — WiFi station bring-up + connect thread.
+// File scope: these are extern "C" ESP-IDF APIs and must not sit inside the
+// anonymous namespace the rest of the boot code lives in.
+#include "esp_event.h"
+#include "esp_netif.h"
+#include "esp_wifi.h"
+#include "nvs_flash.h"
+
+#include "freertos/event_groups.h"
+
+#include <cstring>
+#include <pthread.h>
+#endif // !CONFIG_HELIX_MOCK_PRINTER
 
 // Defined in the main component (main/font_registration.c). Declared locally
 // rather than via its header: that header lives under main/, which cannot be
@@ -212,6 +231,228 @@ void mock_push_temps() {
 }
 #endif // CONFIG_HELIX_MOCK_PRINTER
 
+#if !CONFIG_HELIX_MOCK_PRINTER
+// ---------------------------------------------------------------------------
+// Real Moonraker connect path (Task 8) — non-mock builds.
+//
+// Two halves: (1) setup_discovery_callbacks_esp() registers the ESP consumer of
+// the Task 7 discovery chain on the manager's EspMoonrakerClient; (2)
+// app_net_start() brings WiFi up and kicks MoonrakerManager::connect(). Both are
+// the on-device stand-in for Application (excluded on ESP): without (1) the
+// discovery callbacks fire into a void and no subject updates; without (2) the
+// client never connects (WiFi was deferred to "Task 13" in Stage A).
+// ---------------------------------------------------------------------------
+
+// Mirror Application::setup_discovery_callbacks() (src/application/application.cpp:2478),
+// TRIMMED to the v1 Core+AMS cut. Both callbacks fire on the WebSocket task, so
+// every subject write is marshalled to the UI thread via ui_queue_update().
+//
+// Trimmed vs the desktop handler:
+//   * on_hardware_discovered does NOT call init_subsystems_from_hardware()
+//     (src/printer/printer_discovery.cpp is excluded from the ESP image — see
+//     app_srcs.txt), which on desktop wires AMS backends, LED/probe/width/tool-
+//     changer state, Spoolman, printer-name sync and standard macros. None of
+//     that is in the Task 8 cut. We init only the temperature-sensor subjects so
+//     sensor cards populate.
+//   * on_discovery_complete drops: splash exit, self-restart sentinel cleanup,
+//     temperature-store history seed, LED-chip population, print-hours /
+//     timelapse / external-update method callbacks, PrinterDetector auto-detect,
+//     heater-role autoheal, HardwareValidator, power/sensor REST subscribe.
+//     Kept: hardware into PrinterState, fan + extruder subject init, klipper /
+//     moonraker version, and the initial-status dispatch — the load-bearing
+//     "live temps on the home panel" path.
+void setup_discovery_callbacks_esp(MoonrakerManager& manager) {
+    helix::IMoonrakerClient* client = manager.client();
+    if (!client) {
+        spdlog::error("app_boot: no Moonraker client — discovery callbacks not registered");
+        return;
+    }
+
+    client->set_on_hardware_discovered([](const helix::PrinterDiscovery& hardware) {
+        // Copy on the BG thread so the queued main-thread callback owns a stable,
+        // non-aliased snapshot (desktop #761/#789 lesson).
+        auto snapshot = std::make_shared<helix::PrinterDiscovery>(hardware);
+        helix::ui::queue_update("app_boot::on_hardware_discovered", [snapshot]() {
+            helix::sensors::TemperatureSensorManager::instance().discover(snapshot->sensors());
+        });
+    });
+
+    MoonrakerManager* mgr = &manager;
+    client->set_on_discovery_complete(
+        [mgr](const helix::PrinterDiscovery& hardware, const nlohmann::json& initial_status) {
+            spdlog::debug("[app_boot] on_discovery_complete BG entry (status keys: {})",
+                          initial_status.is_object() ? initial_status.size() : 0);
+            auto snapshot = std::make_shared<helix::PrinterDiscovery>(hardware);
+            auto status_snapshot = std::make_shared<const nlohmann::json>(initial_status);
+            helix::ui::queue_update(
+                "app_boot::on_discovery_complete", [mgr, snapshot, status_snapshot]() {
+                    helix::PrinterState& ps = get_printer_state();
+
+                    // Hardware into PrinterState first — init_fans / init_extruders
+                    // build their subjects from it, and set_hardware seeds the
+                    // capability flags the home/motion panels read.
+                    ps.set_hardware(*snapshot);
+
+                    const auto& fans = snapshot->fans();
+                    ps.init_fans(fans,
+                                 helix::FanRoleConfig::from_config(helix::Config::get_instance(),
+                                                                   fans),
+                                 snapshot->fan_max_power());
+                    ps.init_extruders(snapshot->heaters());
+
+                    ps.set_klipper_version(snapshot->software_version());
+                    ps.set_moonraker_version(snapshot->moonraker_version());
+
+                    // Dispatch the initial subscription status LAST, after the
+                    // fan/sensor/extruder subjects exist. dispatch_status_update
+                    // wraps it in a notify_status_update envelope and fans out to
+                    // MoonrakerManager's notify handler → notification queue →
+                    // process_notifications() (pumped from app_boot_tick) →
+                    // update_from_status() + ToolState — exactly the path an
+                    // inbound live notification takes. Same call the desktop
+                    // handler makes (application.cpp:2593).
+                    helix::IMoonrakerClient* c = mgr->client();
+                    if (c && status_snapshot->is_object() && !status_snapshot->empty()) {
+                        c->dispatch_status_update(*status_snapshot);
+                    }
+
+                    spdlog::info("[app_boot] discovery applied: {} heaters, {} fans, {} sensors, "
+                                 "{} initial-status keys",
+                                 snapshot->heaters().size(), snapshot->fans().size(),
+                                 snapshot->sensors().size(),
+                                 status_snapshot->is_object() ? status_snapshot->size() : 0);
+                });
+        });
+
+    spdlog::info("[app_boot] discovery callbacks registered (real connect path)");
+}
+
+// ws://host:port/path -> http://host:port  (best-effort HTTP base for the API;
+// v1 REST is stubbed on ESP, so this is stored but not yet exercised — jog and
+// macros round-trip over the WebSocket JSON-RPC channel).
+std::string ws_to_http_base(const std::string& ws_url) {
+    std::string url = ws_url;
+    if (url.rfind("ws://", 0) == 0) {
+        url = "http://" + url.substr(5);
+    } else if (url.rfind("wss://", 0) == 0) {
+        url = "https://" + url.substr(6);
+    }
+    // Strip a trailing "/websocket" (or any path) — the HTTP base is scheme+host.
+    size_t scheme_end = url.find("://");
+    size_t path = url.find('/', scheme_end == std::string::npos ? 0 : scheme_end + 3);
+    if (path != std::string::npos) {
+        url = url.substr(0, path);
+    }
+    return url;
+}
+
+constexpr EventBits_t kAppWifiConnectedBit = BIT0;
+EventGroupHandle_t s_app_wifi_event_group = nullptr;
+
+void app_wifi_event_handler(void*, esp_event_base_t base, int32_t id, void*) {
+    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        ESP_LOGW(TAG, "wifi station disconnected, retrying");
+        esp_wifi_connect();
+    }
+}
+
+void app_ip_event_handler(void*, esp_event_base_t base, int32_t id, void* event_data) {
+    if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+        auto* event = static_cast<ip_event_got_ip_t*>(event_data);
+        ESP_LOGI(TAG, "wifi got ip: " IPSTR, IP2STR(&event->ip_info.ip));
+        xEventGroupSetBits(s_app_wifi_event_group, kAppWifiConnectedBit);
+    }
+}
+
+// Station bring-up. Blocks until an IP is acquired. Runs on the app-net pthread
+// (below) so the WiFi driver's internal-DRAM allocations land on that thread —
+// which is spawned AFTER app_boot_ui()'s internal-DRAM gates — and so a slow /
+// absent network never holds the render loop. Best-effort on the idempotent
+// init steps (nvs / netif / default event loop) so it does not abort if a prior
+// path already ran them.
+void app_wifi_bring_up_station() {
+    esp_err_t nvs_rc = nvs_flash_init();
+    if (nvs_rc == ESP_ERR_NVS_NO_FREE_PAGES || nvs_rc == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        nvs_rc = nvs_flash_init();
+    }
+    if (nvs_rc != ESP_OK) {
+        ESP_LOGW(TAG, "nvs_flash_init: %s (continuing)", esp_err_to_name(nvs_rc));
+    }
+    ESP_ERROR_CHECK(esp_netif_init());
+    esp_err_t loop_rc = esp_event_loop_create_default();
+    if (loop_rc != ESP_OK && loop_rc != ESP_ERR_INVALID_STATE) {
+        ESP_ERROR_CHECK(loop_rc);
+    }
+    esp_netif_create_default_wifi_sta();
+
+    s_app_wifi_event_group = xEventGroupCreate();
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    ESP_ERROR_CHECK(
+        esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &app_wifi_event_handler, nullptr));
+    ESP_ERROR_CHECK(
+        esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &app_ip_event_handler, nullptr));
+
+    wifi_config_t wifi_config = {};
+    std::strncpy(reinterpret_cast<char*>(wifi_config.sta.ssid), CONFIG_HELIX_HIL_WIFI_SSID,
+                 sizeof(wifi_config.sta.ssid) - 1);
+    std::strncpy(reinterpret_cast<char*>(wifi_config.sta.password), CONFIG_HELIX_HIL_WIFI_PASS,
+                 sizeof(wifi_config.sta.password) - 1);
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI(TAG, "app: waiting for wifi (ssid=\"%s\")...", CONFIG_HELIX_HIL_WIFI_SSID);
+    xEventGroupWaitBits(s_app_wifi_event_group, kAppWifiConnectedBit, pdFALSE, pdTRUE,
+                        portMAX_DELAY);
+    ESP_LOGI(TAG, "app: wifi up");
+}
+
+void* app_net_thread_main(void*) {
+    app_wifi_bring_up_station();
+
+    MoonrakerManager* mgr = g_manager;
+    if (!mgr) {
+        ESP_LOGE(TAG, "app_net: no MoonrakerManager — cannot connect");
+        return nullptr;
+    }
+    std::string ws_url = CONFIG_HELIX_HIL_MOONRAKER_URL;
+    std::string http_base = ws_to_http_base(ws_url);
+    ESP_LOGI(TAG, "app: connecting Moonraker (%s)", ws_url.c_str());
+    // Async: connect() starts the WebSocket client task and returns. on_connected
+    // → MoonrakerManager::connect()'s discover_printer() → the callbacks
+    // registered in setup_discovery_callbacks_esp(), all on the WS task. This
+    // thread has nothing left to do, so it exits and frees its 32KB stack.
+    mgr->connect(ws_url, http_base);
+    return nullptr;
+}
+
+// Spawn the connect thread. Called at the END of app_boot_ui() (home panel up),
+// so the pthread stack — the only >=32KB internal allocation on this path — is
+// claimed AFTER the boot's internal-DRAM gates and BEFORE esp_wifi_start()
+// (which runs inside the thread). pthread-created + detached, mirroring net_hil
+// (which documented an ENOMEM near-miss when a net thread spawned after WiFi).
+void app_net_start() {
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 32 * 1024);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+    pthread_t thread;
+    int rc = pthread_create(&thread, &attr, app_net_thread_main, nullptr);
+    pthread_attr_destroy(&attr);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "app_net: pthread_create failed: %d — no live connection", rc);
+    }
+}
+#endif // !CONFIG_HELIX_MOCK_PRINTER
+
 } // namespace
 
 // Cooperative yield for the long synchronous boot build. The UI pthread runs at
@@ -312,6 +553,13 @@ extern "C" void app_boot_ui(void) {
     manager.init(rc, config);
     set_moonraker_manager(&manager);
     g_manager = &manager;
+#if !CONFIG_HELIX_MOCK_PRINTER
+    // Register the ESP consumer of the Task 7 discovery chain before any connect
+    // can fire it. Harmless when app_net_start() below is gated off (NET_HIL
+    // owns the network): the callbacks just never run because manager never
+    // connects.
+    setup_discovery_callbacks_esp(manager);
+#endif
 
     // Phase 10: panel subjects, now that the API pointer exists.
     subjects.init_panels(manager.api(), rc);
@@ -352,6 +600,16 @@ extern "C" void app_boot_ui(void) {
         },
         600, nullptr);
     lv_timer_set_repeat_count(heal, 1);
+
+#if !CONFIG_HELIX_MOCK_PRINTER && !CONFIG_HELIX_NET_HIL
+    // Bring up WiFi + connect to Moonraker, LAST — the shell is already up, so
+    // the connect thread's stack (the only >=32KB internal alloc on this path)
+    // is claimed after every boot internal-DRAM gate, and the not-ready UI is
+    // already on screen while the network converges. Gated off for the NET_HIL
+    // test build (net_hil.cpp owns WiFi + its own client there) and for mock
+    // builds (synthetic driver, no network).
+    app_net_start();
+#endif
 }
 
 extern "C" void app_boot_tick(void) {
