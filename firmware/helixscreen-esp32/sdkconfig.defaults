@@ -94,3 +94,19 @@ CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
 # filament 2403ms, controls 1769ms, print_select 1224ms, settings 642ms), so the
 # temporary 8s margin is no longer needed and the default 5s stands.
 CONFIG_ESP_TASK_WDT_TIMEOUT_S=5
+
+# mbedTLS ECP curve trim (flash diet): the only TLS peer this device ever
+# contacts is api.github.com/objects.githubusercontent.com for OTA/version
+# checks, which negotiates TLS1.3 X25519 with a P-256 leaf / P-384 chain
+# (probed 2026-07-16). Keep exactly those three; the other 9 curves are dead
+# code (~30-70KB). Moonraker traffic is plain ws:// on LAN. Re-widen only if a
+# new TLS endpoint appears.
+CONFIG_MBEDTLS_ECP_DP_SECP192R1_ENABLED=n
+CONFIG_MBEDTLS_ECP_DP_SECP224R1_ENABLED=n
+CONFIG_MBEDTLS_ECP_DP_SECP521R1_ENABLED=n
+CONFIG_MBEDTLS_ECP_DP_SECP192K1_ENABLED=n
+CONFIG_MBEDTLS_ECP_DP_SECP224K1_ENABLED=n
+CONFIG_MBEDTLS_ECP_DP_SECP256K1_ENABLED=n
+CONFIG_MBEDTLS_ECP_DP_BP256R1_ENABLED=n
+CONFIG_MBEDTLS_ECP_DP_BP384R1_ENABLED=n
+CONFIG_MBEDTLS_ECP_DP_BP512R1_ENABLED=n
