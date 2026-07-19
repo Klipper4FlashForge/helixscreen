@@ -5,6 +5,22 @@ All notable changes to HelixScreen will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.99.96] - 2026-07-19
+
+### Added
+
+- **More timezone offsets** — the timezone picker now covers previously missing zones: Newfoundland (−3:30), Cape Verde (−1:00), Iran (+3:30), Afghanistan (+4:30), Pakistan (+5:00), Nepal (+5:45), Myanmar (+6:30), and New Caledonia (+11:00). Each is bundled so it resolves on devices without system tzdata; existing saved timezones are unaffected.
+
+### Fixed
+
+- **Touch recalibration Accept button** (prestonbrown/helixscreen#1029) — the capture surface no longer covers the Accept/Retry buttons in the verify step, so recalibration can actually be completed.
+- **Phantom edge taps on some capacitive touchscreens** — Holtek-based controllers (such as the BTT-HDMI5) could intermittently emit a touch report carrying only one axis, landing as a phantom tap at a screen edge and navigating into the wrong menu. Single-axis glitch frames are now dropped until both X and Y coordinates arrive for a contact.
+- **Snapmaker U1 filament load/unload state** — load state is now derived from the firmware's `channel_state` rather than the per-tool motion sensor, which lingers "present" after an unload on current firmware. Unloaded lanes no longer render as loaded or offer Unload, the filament path is drawn to match the actual state, and the load/unload step display covers all firmware feed states.
+
+### Changed
+
+- **In-app updater suppressed when it can't apply** — on installations where the app physically cannot self-update (a read-only rootfs or a permission-mismatched install), the updater no longer offers a download that would fail to install, showing an "Updates aren't available on this installation" notice instead. Firmware-managed installs opt out via the single `HELIX_DISABLE_AUTO_UPDATES` flag.
+
 ## [0.99.95] - 2026-07-18
 
 ### Added
@@ -4375,6 +4391,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.96]: https://github.com/prestonbrown/helixscreen/compare/v0.99.95...v0.99.96
 [0.99.95]: https://github.com/prestonbrown/helixscreen/compare/v0.99.94...v0.99.95
 [0.99.94]: https://github.com/prestonbrown/helixscreen/compare/v0.99.93...v0.99.94
 [0.99.93]: https://github.com/prestonbrown/helixscreen/compare/v0.99.92...v0.99.93
