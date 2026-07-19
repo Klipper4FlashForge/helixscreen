@@ -5,6 +5,21 @@ All notable changes to HelixScreen will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.99.95] - 2026-07-18
+
+### Added
+
+- **Portrait-orientation layout foundation** (prestonbrown/helixscreen#1110) — min-dimension breakpoints and a bottom-navbar shell lay the groundwork for portrait displays; layouts now pick their sizing from the constrained screen axis (breakpoints, switch presets, navbar height) so they scale correctly on tall, narrow screens.
+- **Home button warns when the axes aren't homed** — the jog center home button is tinted as a warning until the printer is homed.
+
+### Fixed
+
+- **Touch recalibration capture area** (prestonbrown/helixscreen#1029) — recalibrating from Settings captures across the full screen.
+- **Temperature tool selector on Snapmaker U1** (prestonbrown/helixscreen#1114) — the tool selector is now touch-friendly on the U1.
+- **AMS slot material label** (prestonbrown/helixscreen#1065) — the slot material label updates reactively from its own per-slot subject.
+- **Log-level setting translation** — the Settings log-level option now translates correctly.
+- **Property-based conditional hiding** — `$prop|ref` params resolve correctly so `hidden_if_prop_eq` works in XML layouts.
+
 ## [0.99.94] - 2026-07-17
 
 ### Added
@@ -4360,6 +4375,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.95]: https://github.com/prestonbrown/helixscreen/compare/v0.99.94...v0.99.95
 [0.99.94]: https://github.com/prestonbrown/helixscreen/compare/v0.99.93...v0.99.94
 [0.99.93]: https://github.com/prestonbrown/helixscreen/compare/v0.99.92...v0.99.93
 [0.99.92]: https://github.com/prestonbrown/helixscreen/compare/v0.99.91...v0.99.92
