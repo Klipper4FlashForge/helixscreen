@@ -136,6 +136,11 @@ class SettingsPanel : public PanelBase {
     // 1 when updates are managed by the device firmware (HELIX_DISABLE_AUTO_UPDATES):
     // hides the in-app check/install controls and shows a static notice instead.
     lv_subject_t updates_firmware_managed_subject_;
+    // 1 when in-app updates are suppressed for a NON-firmware reason (self-update is
+    // physically impossible because the install tree isn't writable). Drives a
+    // neutral "updates aren't available" notice, mutually exclusive with the
+    // firmware-managed notice above.
+    lv_subject_t updates_unavailable_subject_;
     lv_subject_t show_backlight_settings_subject_;
 
     // Touch calibration status subject

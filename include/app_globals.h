@@ -374,3 +374,28 @@ bool compute_updates_externally_managed(const char* disable_auto_updates);
 // self-update can physically write the install tree. Read once and cached (like
 // app_get_install_root()).
 bool updates_externally_managed();
+
+// Pure predicate: can an in-app self-update PHYSICALLY be applied to this install
+// tree? Self-update swaps the install root by renaming it ("mv <root> <root>.old;
+// mv <new> <root>"), which requires write permission on the install root's PARENT
+// directory (rename mutates the parent's entries). This returns
+// helix::paths::is_writable_dir(parent) — false on a read-only rootfs (EROFS) or a
+// permission mismatch. An empty install_root (unresolvable/bind-mounted layout) or
+// an empty parent returns TRUE conservatively, deferring to the installer fallbacks
+// and the explicit flag rather than a false negative. Split out for testing so the
+// path input can be exercised without the cached process install root.
+bool compute_self_update_supported(const std::string& install_root);
+
+// Cached wrapper over compute_self_update_supported(app_get_install_root()). False
+// when the install-root parent isn't writable (read-only rootfs / permission), so
+// the in-app updater won't offer an update it physically cannot apply. Read once
+// and cached (like app_get_install_root()).
+bool self_update_supported();
+
+// Combined in-app-updater gate: true when the updater must NOT run, for EITHER
+// reason — updates are firmware-managed via the explicit HELIX_DISABLE_AUTO_UPDATES
+// flag (updates_externally_managed()), OR a self-update is physically impossible
+// because the install tree isn't writable (!self_update_supported()). Functional
+// update entry points (check/auto-check/download) gate on THIS; the "Managed by
+// your firmware" notice keeps keying off updates_externally_managed() alone.
+bool in_app_updates_suppressed();

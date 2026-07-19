@@ -898,6 +898,29 @@ bool updates_externally_managed() {
     return cached;
 }
 
+// Mirror of src/app_globals.cpp compute_self_update_supported / self_update_supported /
+// in_app_updates_suppressed (app_globals.o is excluded from the test link).
+#include "system/helix_paths.h"
+bool compute_self_update_supported(const std::string& install_root) {
+    if (install_root.empty()) {
+        return true;
+    }
+    const std::string parent = std::filesystem::path(install_root).parent_path().string();
+    if (parent.empty()) {
+        return true;
+    }
+    return helix::paths::is_writable_dir(parent);
+}
+
+bool self_update_supported() {
+    static const bool cached = compute_self_update_supported(app_get_install_root());
+    return cached;
+}
+
+bool in_app_updates_suppressed() {
+    return updates_externally_managed() || !self_update_supported();
+}
+
 // Stub for get_moonraker_manager (tests don't have manager)
 MoonrakerManager* get_moonraker_manager() {
     return nullptr;

@@ -538,3 +538,31 @@ bool updates_externally_managed() {
         compute_updates_externally_managed(std::getenv("HELIX_DISABLE_AUTO_UPDATES"));
     return cached;
 }
+
+bool compute_self_update_supported(const std::string& install_root) {
+    // Self-update swaps the install root via rename ("mv <root> <root>.old;
+    // mv <new> <root>"), which needs write permission on the PARENT directory —
+    // rename mutates the parent's directory entries, not the root itself. So the
+    // physical precondition is a writable parent. access(W_OK) on it is an exact
+    // predictor: false on a read-only rootfs (EROFS) and on a permission mismatch.
+    if (install_root.empty()) {
+        // Unresolvable layout (bind-mounted binary). Conservative: assume
+        // supported — the installer's own fallbacks and the explicit
+        // HELIX_DISABLE_AUTO_UPDATES flag remain the deciding factors.
+        return true;
+    }
+    const std::string parent = std::filesystem::path(install_root).parent_path().string();
+    if (parent.empty()) {
+        return true; // no parent to test (e.g. a bare relative name) — don't block.
+    }
+    return helix::paths::is_writable_dir(parent);
+}
+
+bool self_update_supported() {
+    static const bool cached = compute_self_update_supported(app_get_install_root());
+    return cached;
+}
+
+bool in_app_updates_suppressed() {
+    return updates_externally_managed() || !self_update_supported();
+}

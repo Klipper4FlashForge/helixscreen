@@ -94,6 +94,18 @@
                       translation_tag="Managed by your firmware"/>
         </setting_info_row>
       </lv_obj>
+      <!-- Updates-unavailable notice (replaces the check/install controls when a
+           self-update is physically impossible — the install tree isn't writable —
+           and updates are NOT firmware-managed) -->
+      <lv_obj name="container_updates_unavailable" width="100%" style_pad_all="0" scrollable="false">
+        <bind_flag_if_eq subject="updates_unavailable" flag="hidden" ref_value="0"/>
+        <setting_info_row name="row_updates_unavailable"
+                          label="Software Updates" label_tag="Software Updates"
+                          icon="info_outline">
+          <text_muted name="value" text="Updates aren't available on this installation."
+                      translation_tag="Updates aren't available on this installation."/>
+        </setting_info_row>
+      </lv_obj>
       <!-- Klipper Version -->
       <setting_info_row name="row_klipper" label="Klipper" label_tag="Klipper" icon="toy_brick_outline">
         <text_muted name="value" bind_text="klipper_version"/>

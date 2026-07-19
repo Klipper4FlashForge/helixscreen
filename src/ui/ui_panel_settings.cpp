@@ -330,18 +330,26 @@ void SettingsPanel::init_subjects() {
     lv_xml_register_subject(nullptr, "show_network_settings", &show_network_settings_subject_);
 
     // Update checker runs on all platforms — on Android, "Install Update"
-    // redirects to the Play Store instead of self-updating. When updates are
-    // firmware-managed (see updates_externally_managed), hide the in-app check/install
-    // controls entirely and surface a static "managed by firmware" notice.
-    bool fw_managed = updates_externally_managed();
-    lv_subject_init_int(&show_update_settings_subject_, fw_managed ? 0 : 1);
+    // redirects to the Play Store instead of self-updating. In-app updates are
+    // suppressed for EITHER reason: firmware-managed (explicit flag) OR a
+    // physically-impossible self-update (install tree not writable). Hide the
+    // check/install controls whenever suppressed; show the firmware notice only for
+    // the flag, and a neutral "not available" notice for the physical case.
+    bool externally_managed = updates_externally_managed();
+    bool suppressed = in_app_updates_suppressed();
+    lv_subject_init_int(&show_update_settings_subject_, suppressed ? 0 : 1);
     subjects_.register_subject(&show_update_settings_subject_);
     lv_xml_register_subject(nullptr, "show_update_settings", &show_update_settings_subject_);
 
-    lv_subject_init_int(&updates_firmware_managed_subject_, fw_managed ? 1 : 0);
+    lv_subject_init_int(&updates_firmware_managed_subject_, externally_managed ? 1 : 0);
     subjects_.register_subject(&updates_firmware_managed_subject_);
     lv_xml_register_subject(nullptr, "updates_firmware_managed",
                             &updates_firmware_managed_subject_);
+
+    lv_subject_init_int(&updates_unavailable_subject_,
+                        (suppressed && !externally_managed) ? 1 : 0);
+    subjects_.register_subject(&updates_unavailable_subject_);
+    lv_xml_register_subject(nullptr, "updates_unavailable", &updates_unavailable_subject_);
 
     lv_subject_init_int(&show_backlight_settings_subject_, on_android ? 0 : 1);
     subjects_.register_subject(&show_backlight_settings_subject_);

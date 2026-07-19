@@ -1026,11 +1026,13 @@ void UpdateChecker::start_download() {
     if (shutting_down_.load())
         return;
 
-    // Firmware-managed devices own updates via their own package pipeline.
-    // Never self-download/install — it would fight the firmware's setup.
-    if (updates_externally_managed()) {
-        spdlog::info("[UpdateChecker] Update skipped: updates are managed externally "
-                     "(firmware-managed environment)");
+    // Firmware-managed devices own updates via their own package pipeline, and a
+    // read-only / non-writable install tree can't be swapped at all. Never
+    // self-download/install in either case — it would fight the firmware's setup
+    // or fail the atomic directory rename.
+    if (in_app_updates_suppressed()) {
+        spdlog::info("[UpdateChecker] Update skipped: in-app updates are suppressed "
+                     "(firmware-managed or install tree not writable)");
         return;
     }
 
@@ -2032,12 +2034,13 @@ void UpdateChecker::check_for_updates(Callback callback) {
         return;
     }
 
-    // Firmware-managed devices own updates externally — never check remotely.
-    // Gating this top-level entry covers both manual and auto-check callers so
-    // no download/install path can ever proceed.
-    if (updates_externally_managed()) {
-        spdlog::info("[UpdateChecker] Update skipped: updates are managed externally "
-                     "(firmware-managed environment)");
+    // Firmware-managed devices own updates externally, and a non-writable install
+    // tree can't be updated in place — never check remotely in either case. Gating
+    // this top-level entry covers both manual and auto-check callers so no
+    // download/install path can ever proceed.
+    if (in_app_updates_suppressed()) {
+        spdlog::info("[UpdateChecker] Update skipped: in-app updates are suppressed "
+                     "(firmware-managed or install tree not writable)");
         return;
     }
 
@@ -2406,12 +2409,12 @@ void UpdateChecker::dismiss_current_version() {
 // ============================================================================
 
 void UpdateChecker::start_auto_check() {
-    // Firmware-managed devices own updates externally — never schedule the
-    // periodic auto-check timer so the "update available" notification path
-    // can never fire.
-    if (updates_externally_managed()) {
-        spdlog::info("[UpdateChecker] Auto-check disabled: updates are managed externally "
-                     "(firmware-managed environment)");
+    // Firmware-managed devices own updates externally, and a non-writable install
+    // tree can't be updated in place — never schedule the periodic auto-check timer
+    // in either case, so the "update available" notification path can never fire.
+    if (in_app_updates_suppressed()) {
+        spdlog::info("[UpdateChecker] Auto-check disabled: in-app updates are suppressed "
+                     "(firmware-managed or install tree not writable)");
         return;
     }
 
