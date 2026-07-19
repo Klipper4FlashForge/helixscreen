@@ -466,6 +466,11 @@ void MotionPanel::register_position_observers() {
                                             lv_subject_set_int(&self->motion_y_homed_, y);
                                         if (lv_subject_get_int(&self->motion_z_homed_) != z)
                                             lv_subject_set_int(&self->motion_z_homed_, z);
+
+                                        // Recolor the custom-drawn center home button:
+                                        // warning tint until all axes are homed.
+                                        if (self->jog_pad_)
+                                            ui_jog_pad_set_homed(self->jog_pad_, x && y && z);
                                     });
 
     // Dim/enable the jog pad to track connection + klippy readiness. The same

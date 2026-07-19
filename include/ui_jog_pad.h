@@ -82,3 +82,14 @@ void ui_jog_pad_refresh_colors(lv_obj_t* obj);
  * @param enabled true to enable, false to disable + dim
  */
 void ui_jog_pad_set_enabled(lv_obj_t* obj, bool enabled);
+
+/**
+ * Set the homing state of the jog pad.
+ *
+ * When not homed, the center home button's ring + icon are drawn in the theme
+ * "warning" color to signal that homing is required before jogging.
+ *
+ * @param obj Jog pad object
+ * @param homed true if all axes are homed, false otherwise
+ */
+void ui_jog_pad_set_homed(lv_obj_t* obj, bool homed);
