@@ -547,12 +547,15 @@ void PrintSelectPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
             // scroll and a PSRAM/RAM cost for card recycling metadata.
             // apply_sort() above has just guaranteed dirs-first + newest-
             // files-first, so a straight tail-truncate keeps the newest N.
+            // Cap runs every refresh (needed for correctness even when
+            // nothing else changed), but the toast is deferred until we know
+            // below whether the list actually changed — this poll fires
+            // every 5s and frequently returns identical data, and
+            // ToastManager has no dedup, so toasting here unconditionally
+            // would spam the same message on every poll (review finding).
             constexpr size_t kEsp32MaxFileCount = 50;
-            if (cap_print_file_list_to_newest(panel->file_list_, kEsp32MaxFileCount)) {
-                ToastManager::instance().show(
-                    ToastSeverity::INFO,
-                    lv_tr("Showing the 50 newest files. See more in the printer's web UI."));
-            }
+            bool esp32_list_capped =
+                cap_print_file_list_to_newest(panel->file_list_, kEsp32MaxFileCount);
 #endif
 
             panel->merge_history_into_file_list(); // Populate history status for each file
@@ -577,6 +580,13 @@ void PrintSelectPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
 
             if (list_changed) {
                 spdlog::debug("[{}] File list changed, repopulating", panel->get_name());
+#if defined(HELIX_PLATFORM_ESP32)
+                if (esp32_list_capped) {
+                    ToastManager::instance().show(
+                        ToastSeverity::INFO,
+                        lv_tr("Showing the 50 newest files. See more in the printer's web UI."));
+                }
+#endif
                 if (panel->current_view_mode_ == PrintSelectViewMode::CARD) {
                     panel->populate_card_view(same_dir);
                 } else {

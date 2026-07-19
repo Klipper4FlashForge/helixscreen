@@ -15,7 +15,10 @@
 
 #include "lvgl.h"
 
+#include "async_lifetime_guard.h" // for helix::internal::on_main_thread()
 #include "esp_heap_caps.h"
+
+#include <lvgl/src/misc/cache/instance/lv_image_cache.h> // lv_image_cache_drop()
 
 #include <cstring>
 #include <memory>
@@ -40,6 +43,31 @@ class EspPsramThumbnail {
 
     ~EspPsramThumbnail() {
         if (data_) {
+            // LVGL's image cache keys a variable-source (lv_image_dsc_t*) entry
+            // on the source pointer itself (&dsc_ here). If this buffer's heap
+            // address gets reused for a later EspPsramThumbnail and the old
+            // cache entry hasn't LRU-evicted yet, lv_image_set_src(new dsc)
+            // could hit the stale decoded bitmap — a card showing a previous
+            // file's thumbnail (review Focus 2). Drop it explicitly.
+            //
+            // lv_image_cache_drop() reaches into the draw units
+            // (LV_EVENT_INVALIDATE_AREA broadcast) and is documented unsafe
+            // off the UI thread (see Application's memory-pressure responder,
+            // application.cpp). Every normal destruction path here (file_list_
+            // replaced/sorted, card recycled, panel torn down) runs on the
+            // main thread via UpdateQueue::process_pending() — the shared_ptr
+            // is only ever unwrapped inside a tok.defer()'d lambda, and
+            // UpdateQueue::queue() always stores that lambda into
+            // pending_/frozen_buffer_ to run there. The ONE exception:
+            // queue()'s shut_down_ branch drops the incoming callback (and
+            // whatever it captured) synchronously on the CALLING thread,
+            // which could be the EspHttpLane worker if a fetch completes
+            // after UpdateQueue::shutdown() has already run. Guard instead of
+            // assuming that race can't happen; skipping the drop there is
+            // harmless since the process is already tearing down.
+            if (helix::internal::on_main_thread()) {
+                lv_image_cache_drop(dsc());
+            }
             heap_caps_free(data_);
         }
     }
