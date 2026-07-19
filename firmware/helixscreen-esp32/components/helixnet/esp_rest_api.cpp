@@ -87,7 +87,18 @@ bool esp_is_safe_path(const std::string& path) {
         path.find('\0') != std::string::npos) {
         return false;
     }
-    return path.find_first_of("<>|*?") == std::string::npos;
+    if (path.size() >= 2 && path[1] == ':') { // drive letter, same as desktop
+        return false;
+    }
+    if (path.find_first_of("<>|*?") != std::string::npos) {
+        return false;
+    }
+    for (char c : path) {
+        if (std::iscntrl(static_cast<unsigned char>(c))) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool esp_is_safe_file_root(const std::string& root) {
