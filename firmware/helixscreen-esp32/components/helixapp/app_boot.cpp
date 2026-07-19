@@ -58,6 +58,7 @@
 #include "setting_group.h"
 #include "subject_initializer.h"
 #include "theme_manager.h"
+#include "tips_manager.h"
 #include "translation_loader.h"
 #include "ui_ams_mini_status.h"
 #include "ui_bed_mesh.h"
@@ -124,6 +125,43 @@ void log_heap_milestone(const char* stage) {
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+}
+
+// Task 12 R2: Config (settings.json, the `cfg` partition) is the source of
+// truth for the Moonraker host/port — same schema desktop uses
+// (df()+"moonraker_host" / df()+"moonraker_port", see src/system/config.cpp
+// and src/ui/ui_change_host_modal.cpp). CONFIG_HELIX_HIL_MOONRAKER_URL is only
+// the FIRST-BOOT seed for that schema: a full "ws://host:port/path" string
+// (Kconfig's format), parsed once when Config has no value yet. Split out as
+// its own struct/function (rather than reusing ws_to_http_base, which is
+// scheme+path only) because Config's two keys need host and port separated.
+struct HostPort {
+    std::string host;
+    int port;
+};
+
+HostPort parse_moonraker_kconfig_url(const std::string& url) {
+    std::string working = url;
+    size_t scheme_end = working.find("://");
+    if (scheme_end != std::string::npos) {
+        working = working.substr(scheme_end + 3);
+    }
+    size_t path_start = working.find('/');
+    if (path_start != std::string::npos) {
+        working = working.substr(0, path_start);
+    }
+    size_t colon_pos = working.rfind(':');
+    if (colon_pos == std::string::npos) {
+        return {working, 7125};
+    }
+    std::string host = working.substr(0, colon_pos);
+    int port = 7125;
+    try {
+        port = std::stoi(working.substr(colon_pos + 1));
+    } catch (const std::exception&) {
+        port = 7125;
+    }
+    return {host, port};
 }
 
 // Register the custom C++ widgets the XML components extend. Same set as the
@@ -500,7 +538,14 @@ void* app_net_thread_main(void*) {
         ESP_LOGE(TAG, "app_net: no MoonrakerManager — cannot connect");
         return nullptr;
     }
-    std::string ws_url = CONFIG_HELIX_HIL_MOONRAKER_URL;
+    // Task 12 R2: read the effective host/port from Config, not Kconfig
+    // directly — app_boot_ui()'s Phase 1 seed guarantees a value is present
+    // (either the user's saved Host or the first-boot Kconfig default) by the
+    // time this thread runs (app_net_start() is called last, after Phase 1).
+    helix::Config* config = helix::Config::get_instance();
+    std::string host = config->get<std::string>(config->df() + "moonraker_host", "");
+    int port = config->get<int>(config->df() + "moonraker_port", 7125);
+    std::string ws_url = "ws://" + host + ":" + std::to_string(port) + "/websocket";
     std::string http_base = ws_to_http_base(ws_url);
     ESP_LOGI(TAG, "app: connecting Moonraker (%s)", ws_url.c_str());
     // Async: connect() starts the WebSocket client task and returns. on_connected
@@ -565,6 +610,22 @@ extern "C" void app_boot_ui(void) {
     helix::Config* config = helix::Config::get_instance();
     config->set_storage(helix::make_file_config_storage("/config/settings.json"));
     config->init("/config/settings.json");
+
+    // Task 12 R2: first-boot-only Moonraker host/port seed. If settings.json
+    // already has a value (any boot after the user has edited Host in Settings,
+    // or a prior first-boot seed), leave it untouched — the Kconfig value must
+    // never override a user-set value. Seeding here (before any UI/subject
+    // reads Config) means the Settings > System > Host row and the real
+    // connect path (app_net_start(), below) both see a consistent value from
+    // their very first read.
+    if (config->get<std::string>(config->df() + "moonraker_host", "").empty()) {
+        HostPort seed = parse_moonraker_kconfig_url(CONFIG_HELIX_HIL_MOONRAKER_URL);
+        config->set(config->df() + "moonraker_host", seed.host);
+        config->set(config->df() + "moonraker_port", seed.port);
+        config->save();
+        ESP_LOGI(TAG, "app_boot: seeded first-boot Moonraker host from Kconfig default (%s:%d)",
+                 seed.host.c_str(), seed.port);
+    }
 
     // Phase 2: RuntimeConfig from build config (no CLI). g_runtime_config is a
     // process-global; MoonrakerManager + SubjectInitializer read it back.
@@ -649,6 +710,18 @@ extern "C" void app_boot_ui(void) {
     // home printer-image widget reads a resolvable PRINTER_TYPE at attach().
     mock_seed_ready();
 #endif
+
+    // Task 12 R3: tips database. Must run before build_shell() below — the home
+    // panel's TipsWidget calls TipsManager::get_random_unique_tip() from
+    // attach(), which fires as soon as app_layout's XML is created. Mirrors
+    // desktop's Application::init_ui() call (application.cpp). ESP32 boot never
+    // called this (root cause of "No tips available for unique selection" on
+    // every boot — NOT a staging/path bug: printing_tips.json is staged and
+    // find_readable() resolves it correctly under /assets/assets/config/, the
+    // init() call itself was simply missing).
+    if (!helix::TipsManager::get_instance()->init(helix::find_readable("printing_tips.json"))) {
+        spdlog::warn("app_boot: Failed to initialize tips manager");
+    }
 
     // Phase 11: the app shell (navbar + six resident panels).
     if (!build_shell()) {
