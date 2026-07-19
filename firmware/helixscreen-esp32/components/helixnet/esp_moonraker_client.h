@@ -130,6 +130,11 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     static constexpr int64_t kReconnectingToFailedUs = 60LL * 1000 * 1000;
     // Period of the owned esp_timer that drives timeout + FAILED bookkeeping.
     static constexpr uint64_t kHousekeepingPeriodUs = 5LL * 1000 * 1000;
+    // esp_websocket_client's own task stack (connect()'s cfg.task_stack).
+    // Named so the discovery-complete watermark log (discovery_subscribe)
+    // reports headroom against the SAME value connect() actually configures
+    // — see connect()'s comment for why this was raised from 8192.
+    static constexpr uint32_t kWsTaskStackBytes = 16384;
 
     struct Pending {
         std::string method;

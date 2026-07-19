@@ -123,8 +123,20 @@ int EspMoonrakerClient::connect(const char* url, std::function<void()> on_connec
 
     esp_websocket_client_config_t cfg = {};
     cfg.uri = url_.c_str();
-    // 4096 default is too small once nlohmann is on the callback path.
-    cfg.task_stack = 8192;
+    // 4096 default is too small once nlohmann is on the callback path; 8192
+    // was the Task 7/8 margin. Task 9's disable_auto_reconnect=true (below)
+    // makes the component tear down and recreate this task on EVERY
+    // disconnect (vTaskDelete + xTaskCreatePinnedToCore) rather than reusing
+    // one persistent stack for the whole session, and this build's
+    // CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM lets that fresh stack land
+    // in the same PSRAM arena as our json-heavy discovery allocations —
+    // prime suspect for a heap-corruption abort hit once in a Task 9 soak
+    // (esp32p4-task-9-report.md, Investigation section). Raised as a
+    // defensive margin; the stack high-watermark log at discovery
+    // completion (see discovery_subscribe's success callback) reports the
+    // measured headroom so this is settled with direct evidence rather than
+    // another probabilistic soak.
+    cfg.task_stack = kWsTaskStackBytes;
     // Bounds the per-DATA-event chunk, not the message; we reassemble.
     cfg.buffer_size = 32768;
     cfg.network_timeout_ms = static_cast<int>(connection_timeout_ms_);
@@ -1281,6 +1293,21 @@ void EspMoonrakerClient::discovery_subscribe(DiscoveryDone done, DiscoveryFail f
                 } catch (...) {
                 }
             }
+
+            // Permanent telemetry, not scaffolding: uxTaskGetStackHighWaterMark
+            // reports the MINIMUM free stack space this (this reconnect
+            // cycle's freshly created — see connect()'s F8 comment) websocket
+            // task has ever had since it started, in bytes. Logged here
+            // because discovery is the heaviest, most deeply-nested json
+            // work this task does per cycle (identify/gate/query_objects/
+            // subscribe, ending here). If this ever reports < 8192 the old
+            // (pre-fix) budget would have overflowed — confirming the
+            // heap-corruption soak hypothesis retroactively; if it stays
+            // comfortably high across churn, that hypothesis is wrong and
+            // this line is the tripwire evidence for whatever the hunt
+            // turns to next.
+            spdlog::info("[helixnet] ws task stack watermark: {} bytes free of {}",
+                         uxTaskGetStackHighWaterMark(nullptr), kWsTaskStackBytes);
 
             discovery_in_flight_.store(false);
             if (*done) {
