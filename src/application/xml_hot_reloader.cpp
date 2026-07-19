@@ -7,13 +7,63 @@
 #include <spdlog/spdlog.h>
 
 #include <chrono>
+#include <fstream>
 #include <lvgl.h>
+#include <sstream>
 
 extern "C" {
+#include "helix-xml/src/libs/expat/expat.h"
 #include "helix-xml/src/xml/lv_xml_component_private.h"
 }
 
 namespace fs = std::filesystem;
+
+namespace {
+
+/// Read a file into `out`. Returns false on open/read failure (e.g. file is
+/// mid-rename, briefly empty, or permission-denied). Sets `err_out` for logging.
+bool read_file_contents(const std::string& abs_path, std::string& out, std::string& err_out) {
+    std::ifstream f(abs_path, std::ios::binary);
+    if (!f) {
+        err_out = "open failed";
+        return false;
+    }
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    if (!f && !f.eof()) {
+        err_out = "read error mid-file";
+        return false;
+    }
+    out = ss.str();
+    if (out.empty()) {
+        // Empty file = editor is mid-write (truncate-then-fill) or user really
+        // emptied it. Either way, don't try to parse — defer to next poll.
+        err_out = "empty (mid-write?)";
+        return false;
+    }
+    return true;
+}
+
+/// Check XML well-formedness with expat. No LVGL state touched, safe to call
+/// from the polling thread. Returns true if `xml_def` parses cleanly. Sets
+/// `err_out` with expat's error string on failure.
+bool xml_is_well_formed(const std::string& xml_def, std::string& err_out) {
+    XML_Parser parser = XML_ParserCreate(nullptr);
+    if (!parser) {
+        err_out = "expat allocation failed";
+        return false;
+    }
+    enum XML_Status status =
+        XML_Parse(parser, xml_def.data(), static_cast<int>(xml_def.size()), XML_TRUE);
+    bool ok = (status == XML_STATUS_OK);
+    if (!ok) {
+        err_out = XML_ErrorString(XML_GetErrorCode(parser));
+    }
+    XML_ParserFree(parser);
+    return ok;
+}
+
+} // anonymous namespace
 
 static size_t count_xml_subjects(const char* component_name) {
     lv_xml_component_scope_t* scope = lv_xml_component_get_scope(component_name);
@@ -167,12 +217,28 @@ void XmlHotReloader::scan_and_reload() {
             continue;
         }
 
-        // File changed!
-        cached_mtime = current_mtime;
-
         auto comp_name = component_name_from_path(fs::path(abs_path));
         auto lvgl_path = file_to_lvgl_path_[abs_path];
 
+        // PRE-FLIGHT (parse-then-swap): read the file and validate XML
+        // well-formedness BEFORE touching the registered component. If the file
+        // is mid-write (truncated, briefly empty during atomic rename) or
+        // contains a syntax error (user saved while typing), the existing
+        // component stays registered and live widgets keep working. We also
+        // don't update cached_mtime, so the next poll tick retries
+        // automatically — recovering from transient mid-write states without
+        // user intervention.
+        std::string xml_buf;
+        std::string err_msg;
+        if (!read_file_contents(abs_path, xml_buf, err_msg) ||
+            !xml_is_well_formed(xml_buf, err_msg)) {
+            spdlog::warn("[HotReload] '{}' not reloadable yet ({}); deferring to next poll",
+                         comp_name, err_msg);
+            continue;
+        }
+
+        // File is stable + valid XML. Commit the mtime cache + fire the reload.
+        cached_mtime = current_mtime;
         spdlog::info("[HotReload] Detected change: {} ({})", comp_name, abs_path);
 
         if (reload_callback_) {
@@ -181,11 +247,15 @@ void XmlHotReloader::scan_and_reload() {
             if (after_reload_callback_)
                 after_reload_callback_(comp_name);
         } else {
-            // Marshal the reload to the LVGL main thread
+            // Marshal the reload to the LVGL main thread. We pass the
+            // pre-validated buffer (not the file path) so the main thread
+            // doesn't re-read mid-write content, and so register_from_data
+            // cannot fail on a parse error we already ruled out.
             auto reload_name = comp_name;
-            auto reload_path = lvgl_path;
+            auto reload_buf = std::move(xml_buf);
             auto after_cb = after_reload_callback_;
-            helix::ui::queue_update([reload_name, reload_path, after_cb]() {
+            helix::ui::queue_update([reload_name, reload_buf = std::move(reload_buf),
+                                     after_cb]() {
                 auto start = std::chrono::steady_clock::now();
 
                 size_t subject_count = count_xml_subjects(reload_name.c_str());
@@ -204,11 +274,17 @@ void XmlHotReloader::scan_and_reload() {
                                  reload_name);
                 }
 
-                // Re-register from the updated file
-                result = lv_xml_register_component_from_file(reload_path.c_str());
+                // Re-register from the pre-validated buffer (NOT from file —
+                // file could change again between pre-flight and now).
+                result = lv_xml_register_component_from_data(reload_name.c_str(),
+                                                             reload_buf.c_str());
                 if (result != LV_RESULT_OK) {
-                    spdlog::error("[HotReload] Failed to re-register '{}' from {}", reload_name,
-                                  reload_path);
+                    // Shouldn't happen — pre-flight already parsed this exact
+                    // buffer successfully. If we ever get here, the component
+                    // is unregistered and live widgets are inert; log loudly.
+                    spdlog::error("[HotReload] Post-pre-flight parse failure for '{}' — "
+                                  "component is now unregistered; fix and save again",
+                                  reload_name);
                     return;
                 }
 

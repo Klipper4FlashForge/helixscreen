@@ -558,3 +558,87 @@ TEST_CASE_METHOD(HotReloadFixture, "after_reload callback fires with component n
     REQUIRE(reload_log == std::vector<std::string>{"motion_panel"});
     REQUIRE(after_log == std::vector<std::string>{"motion_panel"});
 }
+
+// ============================================================================
+// Parse-then-swap failure handling [hot-reload]
+// ============================================================================
+
+/// Overwrite a tracked XML file with new content + guarantee mtime changes
+/// (some filesystems have 1s granularity, so we sleep to be safe).
+static void overwrite_xml(const fs::path& path, const std::string& content) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::ofstream f(path, std::ios::trunc);
+    f << content;
+}
+
+TEST_CASE_METHOD(HotReloadFixture, "invalid XML is skipped without firing reload",
+                 "[hot-reload]") {
+    create_xml("motion_panel.xml", "<component/>");
+
+    std::atomic<int> reload_count{0};
+    std::atomic<int> after_count{0};
+    helix::XmlHotReloader hr;
+    hr.set_reload_callback([&](const std::string&, const std::string&) { reload_count++; });
+    hr.set_after_reload_callback([&](const std::string&) { after_count++; });
+
+    hr.start({temp_dir_.string()}, 10000);
+
+    // Overwrite with malformed XML — should be deferred, not reloaded.
+    overwrite_xml(temp_dir_ / "motion_panel.xml",
+                  "<?xml version=\"1.0\"?>\n"
+                  "<!-- comment before root is fine, but unterminated:\n"
+                  "<component>");
+
+    hr.scan_and_reload();
+    hr.stop();
+
+    REQUIRE(reload_count.load() == 0);
+    REQUIRE(after_count.load() == 0);
+}
+
+TEST_CASE_METHOD(HotReloadFixture, "invalid XML does not update mtime cache (retry on next poll)",
+                 "[hot-reload]") {
+    create_xml("my_panel.xml", "<component/>");
+
+    std::atomic<int> reload_count{0};
+    helix::XmlHotReloader hr;
+    hr.set_reload_callback([&](const std::string&, const std::string&) { reload_count++; });
+
+    hr.start({temp_dir_.string()}, 10000);
+
+    // First overwrite: invalid XML — should be deferred.
+    overwrite_xml(temp_dir_ / "my_panel.xml", "<component"); // unterminated
+    hr.scan_and_reload();
+    REQUIRE(reload_count.load() == 0);
+
+    // Second overwrite: valid XML — must trigger reload (mtime cache wasn't
+    // updated on the failed attempt, so this new change is visible).
+    overwrite_xml(temp_dir_ / "my_panel.xml", "<component><view/></component>");
+    hr.scan_and_reload();
+    REQUIRE(reload_count.load() == 1);
+
+    hr.stop();
+}
+
+TEST_CASE_METHOD(HotReloadFixture, "empty file is deferred (editor mid-write)",
+                 "[hot-reload]") {
+    create_xml("home_panel.xml", "<component/>");
+
+    std::atomic<int> reload_count{0};
+    helix::XmlHotReloader hr;
+    hr.set_reload_callback([&](const std::string&, const std::string&) { reload_count++; });
+
+    hr.start({temp_dir_.string()}, 10000);
+
+    // Simulate an editor's atomic-rename window: file briefly empty.
+    overwrite_xml(temp_dir_ / "home_panel.xml", "");
+    hr.scan_and_reload();
+    REQUIRE(reload_count.load() == 0);
+
+    // Editor finishes the write: valid content lands. Reload fires.
+    overwrite_xml(temp_dir_ / "home_panel.xml", "<component><view/></component>");
+    hr.scan_and_reload();
+    REQUIRE(reload_count.load() == 1);
+
+    hr.stop();
+}
