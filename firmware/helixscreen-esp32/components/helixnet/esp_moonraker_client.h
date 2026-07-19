@@ -17,6 +17,7 @@
 #pragma once
 
 #include "i_moonraker_client.h"
+#include "reconnect_backoff.h"
 
 #include "esp_timer.h"
 #include "esp_websocket_client.h"
@@ -174,12 +175,18 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     // through. Split out of discover_printer for readability. ---
     using DiscoveryDone = std::shared_ptr<std::function<void()>>;
     using DiscoveryFail = std::shared_ptr<std::function<void(const std::string&)>>;
-    void discovery_gate_klippy(DiscoveryDone done, DiscoveryFail fail);
-    void discovery_query_objects(DiscoveryDone done, DiscoveryFail fail);
-    void discovery_subscribe(DiscoveryDone done, DiscoveryFail fail);
-    // Emit `ev`, clear discovery_in_flight_, and invoke the error callback once.
-    void discovery_fail(const DiscoveryFail& fail, MoonrakerEventType ev,
-                        const std::string& reason);
+    // `generation` is the connection_generation_ snapshot captured at
+    // discover_printer() entry (R3). Every step re-checks it as the first
+    // thing it does; a mismatch means a reconnect landed mid-chain and this
+    // continuation abandons in place without touching hardware_,
+    // discovery_in_flight_, or the user callbacks.
+    void discovery_gate_klippy(DiscoveryDone done, DiscoveryFail fail, uint64_t generation);
+    void discovery_query_objects(DiscoveryDone done, DiscoveryFail fail, uint64_t generation);
+    void discovery_subscribe(DiscoveryDone done, DiscoveryFail fail, uint64_t generation);
+    // Emit `ev`, clear discovery_in_flight_, and invoke the error callback once
+    // — but only if `generation` still matches (see above).
+    void discovery_fail(const DiscoveryFail& fail, MoonrakerEventType ev, const std::string& reason,
+                        uint64_t generation);
 
     esp_websocket_client_handle_t ws_ = nullptr;
     esp_timer_handle_t housekeeping_timer_ = nullptr;
@@ -212,6 +219,32 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     // reconnection is suspended (connection-test probe flows). Transient: every
     // connect() re-arms it to true.
     std::atomic<bool> auto_reconnect_{true};
+
+    // F8: on_ws_disconnected() (websocket_task) records reconnect INTENT only —
+    // it never calls esp_websocket_client_stop()/start() itself, because that
+    // would tear down transport structures from the very task executing the
+    // event that's disconnecting them (root cause of the spinlock_acquire
+    // assert seen on server-side disconnect, Plan 3 finding F8). The actual
+    // stop()/start() executes later from process_timeouts(), which runs on the
+    // housekeeping esp_timer (ESP_TIMER_TASK) and the main-thread app_boot_tick
+    // pump — never the websocket task.
+    std::atomic<bool> reconnect_pending_{false};
+    std::atomic<int64_t> reconnect_deadline_us_{0};
+    // Generation the pending intent was scheduled against (R3). If a manual
+    // connect()/force_reconnect() bumps connection_generation_ before the
+    // deadline elapses, process_timeouts() drops the stale intent instead of
+    // restarting a connection nothing is waiting on anymore.
+    std::atomic<uint64_t> reconnect_generation_{0};
+
+    // R3: bumped on every new connection attempt — connect(), force_reconnect(),
+    // and the deferred auto-reconnect executor in process_timeouts(). The
+    // discovery chain snapshots this at discover_printer() entry and re-checks
+    // it at every async continuation. Mirrors desktop
+    // MoonrakerClient::connection_generation_ (include/moonraker_client.h),
+    // trimmed to this client: same bump-on-attempt semantics, no separate
+    // per-chain sequence counter (this client only ever runs one discovery
+    // chain at a time via discovery_in_flight_).
+    std::atomic<uint64_t> connection_generation_{0};
 
     // Fragment reassembly (grows to cap, shrinks on disconnect). WS-task only.
     std::string rx_buf_;
@@ -251,11 +284,13 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     // consumers on the main thread via hardware(). Mirrors desktop's
     // MoonrakerDiscoverySequence::hardware_mutex_.
     mutable std::mutex hardware_mutex_;
-    // Collapses a re-entrant discover_printer() while one is already running. The
-    // ESP client has no connection_generation() staleness guard yet, so a
-    // reconnect mid-discovery could otherwise double-fire the chain; this bool is
-    // the coarse guard. Reset on disconnect and at chain end. Task 9 adds full
-    // generation parity.
+    // Collapses a re-entrant discover_printer() while one is already running.
+    // Reset on disconnect (on_ws_disconnected), at chain end, and — belt and
+    // suspenders against it being stuck true by an abandoned stale chain —
+    // whenever a new connection attempt begins (connect(), force_reconnect(),
+    // the auto-reconnect executor). The connection_generation_ guard (R3)
+    // handles the rest: a stale chain's own continuations never reach the
+    // code that would touch this flag on the new generation's behalf.
     std::atomic<bool> discovery_in_flight_{false};
 
     PrinterDiscovery hardware_; // populated via discovery (guarded by hardware_mutex_)

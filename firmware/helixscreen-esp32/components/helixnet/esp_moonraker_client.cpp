@@ -93,14 +93,30 @@ int EspMoonrakerClient::connect(const char* url, std::function<void()> on_connec
     on_connected_ = std::move(on_connected);
     on_disconnected_ = std::move(on_disconnected);
 
-    // A prior connect()/probe may have left a live client or a suspended
-    // reconnect timeout. Start clean and unconditionally re-arm reconnection —
-    // a transient set_auto_reconnect(false) is reset here by contract.
+    // F5: disarm BEFORE tearing down any prior client. If the stop() below
+    // synchronously emits a DISCONNECTED event for the client we're about to
+    // replace, on_ws_disconnected() must see auto_reconnect_ == false so it
+    // doesn't arm a reconnect for a connection we're discarding on purpose.
+    auto_reconnect_.store(false);
+    reconnect_pending_.store(false);
+
+    // A prior connect()/probe may have left a live client or a pending
+    // reconnect intent. Start clean.
     if (ws_) {
         esp_websocket_client_stop(ws_);
         esp_websocket_client_destroy(ws_);
         ws_ = nullptr;
     }
+
+    // R3: this is a new connection attempt — bump the generation so any
+    // discovery chain still finishing from a previous connection abandons in
+    // place, and force-clear the in-flight guard so it can't be stuck true
+    // from that abandoned chain (see discovery_in_flight_ comment).
+    connection_generation_.fetch_add(1);
+    discovery_in_flight_.store(false);
+
+    // Re-arm reconnection for the new connection — a transient
+    // set_auto_reconnect(false) is reset here by contract.
     auto_reconnect_.store(true);
     next_reconnect_delay_ms_ = reconnect_min_delay_ms_;
     was_connected_ = false;
@@ -113,10 +129,13 @@ int EspMoonrakerClient::connect(const char* url, std::function<void()> on_connec
     cfg.buffer_size = 32768;
     cfg.network_timeout_ms = static_cast<int>(connection_timeout_ms_);
     cfg.ping_interval_sec = 10;
-    // Auto-reconnect stays ON (fixed 10s); we drive exponential backoff manually
-    // via esp_websocket_client_set_reconnect_timeout() from the disconnect handler.
-    cfg.disable_auto_reconnect = false;
-    cfg.reconnect_timeout_ms = next_reconnect_delay_ms_;
+    // F8: the component's own auto-reconnect tears down/restarts transport
+    // structures from inside its own websocket task, which is the root cause
+    // of the spinlock_acquire assert seen on server-side disconnect (Plan 3
+    // finding F8). We disable it entirely and drive reconnection ourselves —
+    // on_ws_disconnected() only records intent; process_timeouts() (a
+    // different task) executes the actual stop()/start().
+    cfg.disable_auto_reconnect = true;
 
     ws_ = esp_websocket_client_init(&cfg);
     if (!ws_) {
@@ -139,6 +158,14 @@ int EspMoonrakerClient::connect(const char* url, std::function<void()> on_connec
 }
 
 void EspMoonrakerClient::disconnect() {
+    // F5: disarm BEFORE stop(). esp_websocket_client_stop() can emit a
+    // DISCONNECTED event; if auto_reconnect_ were still true when that event
+    // lands, on_ws_disconnected() would arm a zombie reconnect right after an
+    // intentional disconnect. Also drop any reconnect intent a PRIOR
+    // disconnect may have already scheduled — an intentional disconnect must
+    // win over it.
+    auto_reconnect_.store(false);
+    reconnect_pending_.store(false);
     if (ws_) {
         esp_websocket_client_stop(ws_);
     }
@@ -237,9 +264,6 @@ void EspMoonrakerClient::on_ws_connected() {
     ESP_LOGI(TAG, "connected to %s", url_.c_str());
     // Reset exponential backoff for the next disconnect.
     next_reconnect_delay_ms_ = reconnect_min_delay_ms_;
-    if (ws_) {
-        esp_websocket_client_set_reconnect_timeout(ws_, next_reconnect_delay_ms_);
-    }
     // shrink the reassembly buffer back down after a session's peak.
     rx_buf_.clear();
     rx_buf_.shrink_to_fit();
@@ -290,24 +314,30 @@ void EspMoonrakerClient::on_ws_disconnected() {
 
     // Any discovery chain in flight is now invalid: its pending requests are about
     // to be failed with connection_lost below. Clear the guard so the next
-    // on_connected → discover_printer() can start fresh (no generation guard yet).
+    // on_connected → discover_printer() can start fresh. The connection_generation_
+    // guard (R3) additionally makes that chain's own continuations no-ops if any
+    // of them still land after this point.
     discovery_in_flight_.store(false);
 
     if (auto_reconnect_.load()) {
-        // Manual exponential backoff: apply the current delay, then double up to
-        // max for the following attempt. Safe to call from the disconnect handler.
-        if (ws_) {
-            esp_websocket_client_set_reconnect_timeout(ws_, next_reconnect_delay_ms_);
-        }
-        next_reconnect_delay_ms_ = std::min(next_reconnect_delay_ms_ * 2, reconnect_max_delay_ms_);
+        // F8: record intent ONLY — never call esp_websocket_client_stop()/
+        // start() from here. This handler runs on the websocket_task; touching
+        // the transport from within its own event dispatch is the root cause
+        // of the spinlock_acquire assert (Plan 3 finding F8). The actual
+        // reconnect executes later from process_timeouts() (housekeeping
+        // esp_timer + main-thread app_boot_tick pump — never this task).
+        const int delay_ms = next_reconnect_delay_ms_;
+        reconnect_deadline_us_.store(now_us() + static_cast<int64_t>(delay_ms) * 1000);
+        reconnect_generation_.store(connection_generation_.load());
+        reconnect_pending_.store(true);
+        // Manual exponential backoff: this attempt uses delay_ms; double up to
+        // the cap for the NEXT one.
+        next_reconnect_delay_ms_ = helix::next_backoff_delay_ms(delay_ms, reconnect_max_delay_ms_);
         set_state(ConnectionState::RECONNECTING);
     } else {
-        // Reconnection suspended (probe flow): neutralize the component's own
-        // fixed-interval auto-reconnect by pushing the next attempt effectively
-        // never, and report a terminal DISCONNECTED rather than RECONNECTING.
-        if (ws_) {
-            esp_websocket_client_set_reconnect_timeout(ws_, INT32_MAX);
-        }
+        // Reconnection suspended (probe flow): report a terminal DISCONNECTED
+        // and leave no reconnect intent behind.
+        reconnect_pending_.store(false);
         set_state(ConnectionState::DISCONNECTED);
     }
     emit_event(MoonrakerEventType::CONNECTION_LOST, "Connection to Moonraker lost", true);
@@ -582,6 +612,29 @@ void EspMoonrakerClient::process_timeouts() {
                 t.cb(t.err);
             } catch (...) {
             }
+        }
+    }
+
+    // F8: execute any pending auto-reconnect intent recorded by
+    // on_ws_disconnected(). process_timeouts() is driven from the
+    // housekeeping esp_timer (ESP_TIMER_TASK) and the main-thread
+    // app_boot_tick pump — NEVER the websocket task — so the stop()/start()
+    // below cannot race the websocket task's own event dispatch, unlike the
+    // component's built-in auto-reconnect this replaces.
+    if (reconnect_pending_.load() && now_us() >= reconnect_deadline_us_.load()) {
+        reconnect_pending_.store(false);
+        // R3: if a manual connect()/force_reconnect() bumped the generation
+        // since this intent was scheduled, it belongs to a connection nothing
+        // is waiting on anymore — drop it instead of restarting on top of
+        // whatever the manual path already did.
+        const bool current =
+            (reconnect_generation_.load() == connection_generation_.load());
+        if (current && auto_reconnect_.load() && ws_) {
+            connection_generation_.fetch_add(1);
+            discovery_in_flight_.store(false);
+            ESP_LOGI(TAG, "auto-reconnect: restarting transport");
+            esp_websocket_client_stop(ws_);
+            esp_websocket_client_start(ws_);
         }
     }
 }
@@ -1013,15 +1066,24 @@ void EspMoonrakerClient::discover_printer(std::function<void()> on_complete,
         return;
     }
 
-    // Re-entrancy / staleness: the ESP client has no connection_generation() guard
-    // (desktop's stale-sequence mechanism), so a reconnect landing mid-chain could
-    // double-fire discovery. discovery_in_flight_ collapses the common overlap — a
-    // second discover_printer() while one is running — and is cleared on disconnect
-    // (on_ws_disconnected) and at chain end. Full generation parity is Task 9.
+    // Re-entrancy: discovery_in_flight_ collapses a second discover_printer()
+    // while one is running for THIS generation — cleared on disconnect
+    // (on_ws_disconnected) and at chain end, and force-cleared whenever a new
+    // connection attempt begins (connect(), force_reconnect(), the
+    // auto-reconnect executor), so it can't stick true across a generation
+    // change even if the old chain never reaches a terminal callback.
     if (discovery_in_flight_.exchange(true)) {
         spdlog::debug("[helixnet] discover_printer: already in flight, ignoring re-entrant call");
         return;
     }
+
+    // R3: snapshot the generation this chain belongs to. Every async
+    // continuation below re-checks it before touching hardware_,
+    // discovery_in_flight_, or the user callbacks — a reconnect landing
+    // mid-chain bumps connection_generation_, which makes every subsequent
+    // callback in THIS chain a no-op instead of applying stale results or
+    // double-running discovery for the new connection.
+    const uint64_t generation = connection_generation_.load();
 
     // Share the user callbacks across the nested chain; every terminal path clears
     // discovery_in_flight_ exactly once (discovery_fail, or the subscribe success).
@@ -1037,26 +1099,36 @@ void EspMoonrakerClient::discover_printer(std::function<void()> on_complete,
     // it). Either outcome continues to the Klippy-readiness gate.
     send_jsonrpc(
         "server.connection.identify", identify_params,
-        [this, done, fail](const json& resp) {
+        [this, done, fail, generation](const json& resp) {
+            if (helix::is_stale_generation(generation, connection_generation_.load())) {
+                return;
+            }
             if (resp.contains("result")) {
                 spdlog::info("[helixnet] identified to Moonraker (connection_id: {})",
                              resp["result"].value("connection_id", 0));
             }
-            discovery_gate_klippy(done, fail);
+            discovery_gate_klippy(done, fail, generation);
         },
-        [this, done, fail](const MoonrakerError& err) {
+        [this, done, fail, generation](const MoonrakerError& err) {
+            if (helix::is_stale_generation(generation, connection_generation_.load())) {
+                return;
+            }
             spdlog::warn("[helixnet] identify failed (continuing): {}", err.message);
-            discovery_gate_klippy(done, fail);
+            discovery_gate_klippy(done, fail, generation);
         });
 }
 
-void EspMoonrakerClient::discovery_gate_klippy(DiscoveryDone done, DiscoveryFail fail) {
+void EspMoonrakerClient::discovery_gate_klippy(DiscoveryDone done, DiscoveryFail fail,
+                                               uint64_t generation) {
     // Step b — server.info Klippy-readiness gate. printer.objects.list returns
     // JSON-RPC -32601 while Klippy is in STARTUP; gate here so we defer (retryable)
     // instead of surfacing a confusing error.
     send_jsonrpc(
         "server.info", json(),
-        [this, done, fail](const json& resp) {
+        [this, done, fail, generation](const json& resp) {
+            if (helix::is_stale_generation(generation, connection_generation_.load())) {
+                return;
+            }
             std::string klippy_state = "unknown";
             if (resp.contains("result") && resp["result"].contains("klippy_state") &&
                 resp["result"]["klippy_state"].is_string()) {
@@ -1068,24 +1140,31 @@ void EspMoonrakerClient::discovery_gate_klippy(DiscoveryDone done, DiscoveryFail
             if (klippy_state != "ready" && klippy_state != "shutdown") {
                 std::string reason = "Klippy not ready (state: " + klippy_state + ")";
                 spdlog::warn("[helixnet] {}", reason);
-                discovery_fail(fail, MoonrakerEventType::DISCOVERY_DEFERRED, reason);
+                discovery_fail(fail, MoonrakerEventType::DISCOVERY_DEFERRED, reason, generation);
                 return;
             }
-            discovery_query_objects(std::move(done), std::move(fail));
+            discovery_query_objects(std::move(done), std::move(fail), generation);
         },
-        [this, done, fail](const MoonrakerError& err) {
+        [this, done, fail, generation](const MoonrakerError& err) {
+            if (helix::is_stale_generation(generation, connection_generation_.load())) {
+                return;
+            }
             spdlog::error("[helixnet] server.info failed: {}", err.message);
-            discovery_fail(fail, MoonrakerEventType::DISCOVERY_FAILED, err.message);
+            discovery_fail(fail, MoonrakerEventType::DISCOVERY_FAILED, err.message, generation);
         });
 }
 
-void EspMoonrakerClient::discovery_query_objects(DiscoveryDone done, DiscoveryFail fail) {
+void EspMoonrakerClient::discovery_query_objects(DiscoveryDone done, DiscoveryFail fail,
+                                                 uint64_t generation) {
     // Step c — printer.objects.list → parse_objects() → fire on_hardware_discovered_.
     // silent=true suppresses the error toast if Klippy vanished between the gate and
     // this call.
     send_jsonrpc(
         "printer.objects.list", json(),
-        [this, done, fail](const json& resp) {
+        [this, done, fail, generation](const json& resp) {
+            if (helix::is_stale_generation(generation, connection_generation_.load())) {
+                return;
+            }
             if (!resp.contains("result") || !resp["result"].contains("objects")) {
                 std::string reason = "Failed to query printer objects";
                 if (resp.contains("error") && resp["error"].contains("message") &&
@@ -1093,7 +1172,7 @@ void EspMoonrakerClient::discovery_query_objects(DiscoveryDone done, DiscoveryFa
                     reason = resp["error"]["message"].get<std::string>();
                 }
                 spdlog::error("[helixnet] printer.objects.list failed: {}", reason);
-                discovery_fail(fail, MoonrakerEventType::DISCOVERY_FAILED, reason);
+                discovery_fail(fail, MoonrakerEventType::DISCOVERY_FAILED, reason, generation);
                 return;
             }
 
@@ -1126,17 +1205,21 @@ void EspMoonrakerClient::discovery_query_objects(DiscoveryDone done, DiscoveryFa
                 }
             }
 
-            discovery_subscribe(std::move(done), std::move(fail));
+            discovery_subscribe(std::move(done), std::move(fail), generation);
         },
-        [this, done, fail](const MoonrakerError& err) {
+        [this, done, fail, generation](const MoonrakerError& err) {
+            if (helix::is_stale_generation(generation, connection_generation_.load())) {
+                return;
+            }
             spdlog::error("[helixnet] printer.objects.list request failed: {}", err.message);
-            discovery_fail(fail, MoonrakerEventType::DISCOVERY_FAILED, err.message);
+            discovery_fail(fail, MoonrakerEventType::DISCOVERY_FAILED, err.message, generation);
         },
         0,     // default timeout
         true); // silent
 }
 
-void EspMoonrakerClient::discovery_subscribe(DiscoveryDone done, DiscoveryFail fail) {
+void EspMoonrakerClient::discovery_subscribe(DiscoveryDone done, DiscoveryFail fail,
+                                             uint64_t generation) {
     // Step d — printer.objects.subscribe. Build the payload from the discovered
     // snapshot, then fire on_discovery_complete_(hardware, initial_status) with the
     // status returned in the subscribe response, and finally on_complete().
@@ -1151,7 +1234,10 @@ void EspMoonrakerClient::discovery_subscribe(DiscoveryDone done, DiscoveryFail f
 
     send_jsonrpc(
         "printer.objects.subscribe", params,
-        [this, done, fail, num](const json& resp) {
+        [this, done, fail, num, generation](const json& resp) {
+            if (helix::is_stale_generation(generation, connection_generation_.load())) {
+                return;
+            }
             if (resp.contains("result")) {
                 spdlog::info("[helixnet] subscription complete: {} objects subscribed", num);
             } else if (resp.contains("error")) {
@@ -1195,14 +1281,24 @@ void EspMoonrakerClient::discovery_subscribe(DiscoveryDone done, DiscoveryFail f
                 }
             }
         },
-        [this, done, fail](const MoonrakerError& err) {
+        [this, done, fail, generation](const MoonrakerError& err) {
+            if (helix::is_stale_generation(generation, connection_generation_.load())) {
+                return;
+            }
             spdlog::error("[helixnet] subscribe request failed: {}", err.message);
-            discovery_fail(fail, MoonrakerEventType::DISCOVERY_FAILED, err.message);
+            discovery_fail(fail, MoonrakerEventType::DISCOVERY_FAILED, err.message, generation);
         });
 }
 
 void EspMoonrakerClient::discovery_fail(const DiscoveryFail& fail, MoonrakerEventType ev,
-                                        const std::string& reason) {
+                                        const std::string& reason, uint64_t generation) {
+    // Defense in depth: every call site above already checks staleness before
+    // calling in, but discovery_fail is the one place discovery_in_flight_
+    // gets cleared on the failure path, so re-check here too (R3) — a stale
+    // caller must not clear the flag on behalf of a newer generation's chain.
+    if (helix::is_stale_generation(generation, connection_generation_.load())) {
+        return;
+    }
     emit_event(ev, reason, true);
     discovery_in_flight_.store(false);
     if (fail && *fail) {
@@ -1342,19 +1438,20 @@ bool EspMoonrakerClient::remove_connected_observer(const std::string& handler_na
 
 void EspMoonrakerClient::set_auto_reconnect(bool enabled) {
     auto_reconnect_.store(enabled);
-    if (!ws_) {
-        return; // next connect() installs reconnect settings from scratch
-    }
     if (enabled) {
-        // Re-arm: restore the exponential-backoff floor.
+        // Re-arm: restore the exponential-backoff floor for the next
+        // disconnect. No transport call needed — reconnection is entirely
+        // driven by our own reconnect_pending_/deadline state (F8), not the
+        // esp_websocket_client component's built-in reconnect (disabled at
+        // connect() time). This just lets a future on_ws_disconnected() arm
+        // the next intent.
         next_reconnect_delay_ms_ = reconnect_min_delay_ms_;
-        esp_websocket_client_set_reconnect_timeout(ws_, reconnect_min_delay_ms_);
     } else {
-        // Suspend background reconnection WITHOUT dropping the current connection
-        // (mirrors desktop setReconnect(nullptr)). The component has no runtime
-        // disable API, so we push its fixed-interval retry effectively never;
-        // set_reconnect_timeout is a plain field write, safe from any task.
-        esp_websocket_client_set_reconnect_timeout(ws_, INT32_MAX);
+        // Suspend background reconnection WITHOUT dropping the current
+        // connection (mirrors desktop setReconnect(nullptr)). Cancel anything
+        // already scheduled by a prior disconnect — suspending must win over
+        // an intent recorded before the caller asked to suspend it.
+        reconnect_pending_.store(false);
     }
 }
 
@@ -1362,8 +1459,21 @@ void EspMoonrakerClient::force_reconnect() {
     if (!ws_) {
         return;
     }
+    // F5 ordering: disarm before stop() so a synchronous DISCONNECTED event
+    // can't schedule a redundant auto-reconnect intent on top of this manual
+    // one; drop anything already scheduled too.
+    auto_reconnect_.store(false);
+    reconnect_pending_.store(false);
+
     next_reconnect_delay_ms_ = reconnect_min_delay_ms_;
     esp_websocket_client_stop(ws_);
+
+    // R3: new connection attempt — bump the generation and force-clear the
+    // in-flight guard, same as connect() (see discovery_in_flight_ comment).
+    connection_generation_.fetch_add(1);
+    discovery_in_flight_.store(false);
+
+    auto_reconnect_.store(true);
     set_state(ConnectionState::CONNECTING);
     esp_websocket_client_start(ws_);
 }
