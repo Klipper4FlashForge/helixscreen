@@ -135,6 +135,20 @@ int EspMoonrakerClient::connect(const char* url, std::function<void()> on_connec
     cfg.buffer_size = 32768;
     cfg.network_timeout_ms = static_cast<int>(connection_timeout_ms_);
     cfg.ping_interval_sec = 10;
+    // Defect 1 (Task 9 confirm soak): we never set this, so the component
+    // defaulted to its own WEBSOCKET_PINGPONG_TIMEOUT_SEC = 120s — LONGER
+    // than our own 60s default_request_timeout_ms_. A connection that goes
+    // silent (no observable read error — no FIN/RST reaches this task's read
+    // loop, which can happen transiently) was therefore NEVER caught by
+    // ping/pong at all: our own slower 60s request timeout always lost that
+    // race and fired first, so the printer screen sat dataless for up to a
+    // minute with discovery_in_flight_ stuck true, and no "Connection lost"
+    // ever appeared in between. Set explicitly here, safely under 60s, so a
+    // silent connection is instead caught by ping/pong first — turning that
+    // wait into a normal disconnect + auto-reconnect. Two ping intervals'
+    // worth of missed PONGs before giving up (not one) to avoid flagging a
+    // single delayed pong under ordinary WiFi jitter as a dead connection.
+    cfg.pingpong_timeout_sec = kPingPongTimeoutSec;
     // F8: the component's own auto-reconnect tears down/restarts transport
     // structures from inside its own websocket task, which is the root cause
     // of the spinlock_acquire assert seen on server-side disconnect (Plan 3

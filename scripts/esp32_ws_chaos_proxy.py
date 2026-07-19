@@ -7,11 +7,13 @@ printer's services.
 
 Point the device at this proxy (sdkconfig.local URL override) instead of the
 Voron directly; the proxy forwards every byte both ways transparently and only
-misbehaves when told to. Each "drop" tears down the whole proxied session (both
-the K-Touch-facing socket and the current upstream socket) so the device sees
-exactly what a server-side disconnect looks like — the real Voron's Moonraker
-service itself is never touched or restarted; the proxy just opens a fresh
-upstream connection for the device's next reconnect attempt.
+misbehaves when told to. Each "drop" tears down EVERY currently-live proxied
+session (both the K-Touch-facing socket and its upstream socket, for every
+session tracked — not just whichever one happens to be "current") so the
+device sees exactly what a server-side disconnect looks like — the real
+Voron's Moonraker service itself is never touched or restarted; the proxy
+just opens a fresh upstream connection for the device's next reconnect
+attempt.
 
 Usage:
     # Drop the current client connection every 45s, forever:
@@ -45,12 +47,54 @@ class ChaosProxy:
         self.upstream_host = upstream_host
         self.upstream_port = upstream_port
         self.cycle = 0
-        self._drop_requested = threading.Event()
+        # Every currently-live (client_sock, upstream_sock) session, guarded
+        # by _sessions_lock. See request_drop() for why this replaced a
+        # shared threading.Event + one polling watcher thread per connection.
+        self._sessions_lock = threading.Lock()
+        self._live_sessions = []
 
     def request_drop(self):
-        """Arm a drop of the CURRENT client connection (if any). Called from
-        the SIGUSR1 handler or the --drop-every timer thread."""
-        self._drop_requested.set()
+        """Tear down EVERY currently-live proxied session, immediately —
+        called from the SIGUSR1 handler or the --drop-every timer thread.
+
+        The prior design used a single shared threading.Event that each
+        connection's own watcher thread polled; whichever watcher happened to
+        notice the flag first consumed it (clearing it for everyone else),
+        so if MORE THAN ONE session was ever alive at once — e.g. a device
+        that opened a fresh TCP connection while an older one was still
+        technically open proxy-side, for whatever reason — the older session
+        could be skipped by every subsequent drop indefinitely, since a newer
+        session's watcher kept winning the race. Measured in a Task 9 soak:
+        one device connection stayed alive 5+ minutes and outlived several
+        drop cycles that all landed on newer, unrelated connections instead.
+        Iterating every tracked session here, under one lock, makes a drop
+        affect ALL of them — no session can be perpetually skipped — and
+        removes the up-to-100ms watcher polling latency as a side effect.
+        """
+        with self._sessions_lock:
+            sessions = list(self._live_sessions)
+        if not sessions:
+            self._log("DROP requested but no live sessions to tear down")
+            return
+        self.cycle += 1
+        self._log(f"DROP cycle={self.cycle} — tearing down {len(sessions)} live session(s)")
+        for client_sock, upstream_sock in sessions:
+            # shutdown(SHUT_RDWR) on each socket — not a bare close()/
+            # SO_LINGER RST — is the reliable mechanism: each pump thread is
+            # concurrently blocked in a recv() on one of these two sockets,
+            # and closing an fd out from under a thread blocked in recv() on
+            # it is a well-known race (measured: an RST is silently
+            # swallowed and the remote peer sees nothing until ITS OWN
+            # multi-second timeout, defeating the point of a deterministic
+            # soak drop). shutdown() is documented-safe to call from another
+            # thread specifically to unblock a peer's in-progress blocking
+            # I/O, and is delivered to the remote socket immediately
+            # (measured: FIN observed client-side in <10ms).
+            for sock in (client_sock, upstream_sock):
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
 
     def _log(self, msg):
         ts = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -68,42 +112,6 @@ class ChaosProxy:
         finally:
             stop_event.set()
 
-    def _drop_watcher(self, client_sock, upstream_sock, stop_event):
-        """Polls for a requested drop while this connection is active; the
-        moment one is requested, tears down BOTH sides so the entire proxied
-        session ends — matching a genuine server-side disconnect, where the
-        device's socket AND the (now-stale) upstream socket both go away. The
-        device opens a fresh TCP+WS connection on its next reconnect attempt,
-        and the proxy opens a fresh upstream connection to the real Moonraker
-        for it, same as a real session teardown/restart would look like.
-
-        shutdown(SHUT_RDWR) on each socket — not a bare close()/SO_LINGER RST
-        — is the reliable mechanism: each pump thread is concurrently blocked
-        in a recv() on one of these two sockets, and closing an fd out from
-        under a thread blocked in recv() on it is a well-known race (measured:
-        an RST is silently swallowed and the remote peer sees nothing until
-        ITS OWN multi-second timeout, defeating the point of a deterministic
-        soak drop). shutdown() is documented-safe to call from another thread
-        specifically to unblock a peer's in-progress blocking I/O, and is
-        delivered to the remote socket immediately (measured: FIN observed
-        client-side in <10ms). Both pump threads wake with EOF/an error, set
-        stop_event, and handle_connection() closes both sockets once nothing
-        else references them.
-        """
-        while not stop_event.is_set():
-            if self._drop_requested.is_set():
-                self._drop_requested.clear()
-                self.cycle += 1
-                self._log(f"DROP cycle={self.cycle} — tearing down proxied session")
-                for sock in (client_sock, upstream_sock):
-                    try:
-                        sock.shutdown(socket.SHUT_RDWR)
-                    except OSError:
-                        pass
-                stop_event.set()
-                return
-            time.sleep(0.1)
-
     def handle_connection(self, client_sock, client_addr):
         # Runs in its own thread (see serve_forever) so a slow/hung teardown
         # of one connection can never block the accept loop from taking the
@@ -118,6 +126,10 @@ class ChaosProxy:
             client_sock.close()
             return
 
+        session = (client_sock, upstream_sock)
+        with self._sessions_lock:
+            self._live_sessions.append(session)
+
         stop_event = threading.Event()
         threads = [
             threading.Thread(
@@ -126,15 +138,17 @@ class ChaosProxy:
             threading.Thread(
                 target=self._pump, args=(upstream_sock, client_sock, stop_event), daemon=True
             ),
-            threading.Thread(
-                target=self._drop_watcher, args=(client_sock, upstream_sock, stop_event),
-                daemon=True,
-            ),
         ]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
+
+        with self._sessions_lock:
+            try:
+                self._live_sessions.remove(session)
+            except ValueError:
+                pass  # already removed — shouldn't happen, but never crash a soak over it
 
         for sock in (client_sock, upstream_sock):
             try:

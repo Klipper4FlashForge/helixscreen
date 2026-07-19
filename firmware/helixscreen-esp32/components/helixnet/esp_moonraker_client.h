@@ -139,6 +139,13 @@ class EspMoonrakerClient final : public IMoonrakerClient {
     // DRAM (a 16KB trial cost exactly 8KB of steady-state internal free,
     // breaking the >=100KB budget). The watermark log guards the margin.
     static constexpr uint32_t kWsTaskStackBytes = 8192;
+    // connect()'s cfg.pingpong_timeout_sec (Defect 1, Task 9 confirm soak).
+    // Must stay comfortably below kDefaultRequestTimeoutMs (60s) so a
+    // silently-dead connection is caught by ping/pong first, not by the
+    // slower per-request timeout — see connect()'s comment for the soak
+    // evidence (5 separate requests across 3 different methods each sat the
+    // full 60s with no disconnect ever observed in between).
+    static constexpr int kPingPongTimeoutSec = 20;
 
     struct Pending {
         std::string method;
