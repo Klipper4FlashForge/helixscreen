@@ -385,36 +385,30 @@ PathSegment AmsBackendSnapmaker::get_slot_filament_segment(int slot_index) const
     if (!slot)
         return PathSegment::NONE;
 
-    // Toolhead motion sensor empty for this tool. That alone does NOT mean
-    // "no filament" — on the U1 an unload retracts filament out of the toolhead
-    // but leaves it staged in the bowden/buffer (channel_state preload_finish),
-    // where the buffer-side port sensor still reads present. Distinguish the
-    // two cases with the port sensor (hardware capture 2026-06-13, tool T2:
-    // e2_filament motion=false, filament_feed right.extruder2 detected=true):
-    //   - port present  → filament threaded through the bowden but short of the
-    //                      toolhead sensor: draw the line down to the toolhead
-    //                      entry sensor dot but no farther (OUTPUT). The dot
-    //                      stays hollow because the toolhead sensor reads empty.
-    //   - port empty too → genuine runout / no filament: draw nothing (NONE).
-    if (slot_index >= 0 && slot_index < NUM_TOOLS && !sensor_filament_present_[slot_index]) {
-        if (port_sensor_filament_present_[slot_index])
-            return PathSegment::OUTPUT;
+    if (slot_index < 0 || slot_index >= NUM_TOOLS)
         return PathSegment::NONE;
+
+    // Filament is threaded all the way into THIS tool's nozzle only when the
+    // channel_state latch says load_finish. The per-tool motion sensor
+    // (sensor_filament_present_) is NOT a reliable "at toolhead" signal on
+    // current firmware — after an unload it lingers present (the tip parks at
+    // the toolhead sensor while retracting out of the melt zone), so keying
+    // NOZZLE off it left unloaded lanes rendering as fully loaded (the whole
+    // point of the channel_state fix). PARALLEL multi-toolhead machine: each
+    // tool feeds its own dedicated nozzle, so a loaded tool always has filament
+    // at its own nozzle — render NOZZLE.
+    if (loaded_at_toolhead_[slot_index]) {
+        return PathSegment::NOZZLE;
     }
 
-    // PARALLEL multi-toolhead machine: each tool feeds its own dedicated
-    // nozzle. Reaching here means this tool's motion sensor reads filament
-    // present (the runout early-return above didn't fire), so filament is
-    // threaded all the way into THIS tool's toolhead — render NOZZLE.
-    //
-    // The firmware marks only the *active* tool LOADED; every other
-    // physically-loaded toolhead reports AVAILABLE. Previously AVAILABLE
-    // (when not the active slot) rendered HUB, so the line stopped short at
-    // the sensor dot for loaded-but-parked tools. On this topology a present
-    // tool always has filament at its own nozzle, so both LOADED and
-    // AVAILABLE render NOZZLE.
-    if (slot->status == SlotStatus::LOADED || slot->status == SlotStatus::AVAILABLE) {
-        return PathSegment::NOZZLE;
+    // Not loaded to the nozzle. If filament is still staged in the bowden/buffer
+    // — the port sensor reads present, or the motion sensor still lingers
+    // present just after an unload — draw the line down to the toolhead entry
+    // sensor dot but no farther (OUTPUT); the dot stays hollow because the
+    // filament is not fed into the hotend. Otherwise nothing (genuine runout /
+    // empty lane).
+    if (port_sensor_filament_present_[slot_index] || sensor_filament_present_[slot_index]) {
+        return PathSegment::OUTPUT;
     }
     return PathSegment::NONE;
 }

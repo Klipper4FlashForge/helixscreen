@@ -630,52 +630,46 @@ TEST_CASE("Snapmaker preload_finish is NOT matched by the load_ prefix branch",
 }
 
 // get_slot_filament_segment — on the U1's PARALLEL multi-toolhead topology
-// every present tool feeds its own dedicated nozzle, so its filament must
-// render all the way into the toolhead (NOZZLE). The firmware marks only the
-// active tool LOADED; the rest are AVAILABLE. Previously AVAILABLE non-active
-// tools rendered HUB and the line stopped short at the sensor dot. (U1
-// multi-toolhead field report, 2026-06-12.)
-TEST_CASE("Snapmaker get_slot_filament_segment renders NOZZLE for every present tool",
+// every tool loaded to its own dedicated nozzle renders all the way into the
+// toolhead (NOZZLE); multiple tools can be loaded at once, each to its own
+// nozzle. "Loaded to the nozzle" is the channel_state latch (load_finish), NOT
+// the motion sensor — the sensor lingers present after an unload, which used to
+// leave unloaded lanes rendering as fully loaded. A tool that is present in the
+// buffer but not loaded renders OUTPUT (line to the toolhead entry dot, hollow);
+// an empty lane renders nothing.
+TEST_CASE("Snapmaker get_slot_filament_segment renders NOZZLE for every loaded tool",
           "[ams][snapmaker][path]") {
     AmsBackendSnapmaker backend(nullptr, nullptr);
 
-    // Slot 0 active (LOADED), slots 1 & 3 hold filament (AVAILABLE), slot 2 empty.
-    json status = json{
-        {"toolhead", json{{"extruder", "extruder"}}}, // active tool = slot 0
-        {"print_task_config", json{{"filament_exist", json::array({true, true, false, true})}}}};
-    SnapmakerTestAccess::handle_status(backend, status);
-
-    // Sanity: status drove the slot states.
-    REQUIRE(backend.get_slot_info(0).status == SlotStatus::LOADED);
-    REQUIRE(backend.get_slot_info(1).status == SlotStatus::AVAILABLE);
-    REQUIRE(backend.get_slot_info(2).status == SlotStatus::EMPTY);
-    REQUIRE(backend.get_slot_info(3).status == SlotStatus::AVAILABLE);
-
-    SECTION("active LOADED tool renders into the toolhead") {
+    SECTION("active loaded tool renders into the toolhead") {
+        SnapmakerTestAccess::handle_status(backend, make_feed_status(0, "load_finish"));
         CHECK(backend.get_slot_filament_segment(0) == PathSegment::NOZZLE);
     }
-    SECTION("non-active loaded (AVAILABLE) tools render into their toolhead (the fix)") {
+    SECTION("multiple non-active loaded tools each render into their own toolhead") {
+        SnapmakerTestAccess::handle_status(backend, make_feed_status(1, "load_finish"));
+        SnapmakerTestAccess::handle_status(backend, make_feed_status(3, "load_finish"));
         CHECK(backend.get_slot_filament_segment(1) == PathSegment::NOZZLE);
         CHECK(backend.get_slot_filament_segment(3) == PathSegment::NOZZLE);
     }
     SECTION("empty tool renders no filament line") {
+        SnapmakerTestAccess::set_sensor_present(backend, 2, false);
+        SnapmakerTestAccess::set_port_sensor_present(backend, 2, false);
+        SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "wait_insert",
+                                                                    /*filament_detected=*/false));
         CHECK(backend.get_slot_filament_segment(2) == PathSegment::NONE);
     }
     SECTION("a tool with neither sensor present (real runout) renders no line") {
-        // Both the toolhead motion sensor AND the buffer/port sensor read empty
-        // → genuine runout / no filament. The port sensor defaults false in this
-        // status (no filament_feed object), so clearing the motion sensor alone
-        // is the both-false case and must still render nothing.
+        // Not loaded (latch defaults false), and both the toolhead motion sensor
+        // AND the buffer/port sensor read empty → genuine runout / no filament.
         SnapmakerTestAccess::set_sensor_present(backend, 1, false);
+        SnapmakerTestAccess::set_port_sensor_present(backend, 1, false);
         CHECK(backend.get_slot_filament_segment(1) == PathSegment::NONE);
     }
-    SECTION("filament staged in the bowden (motion empty, port present) renders to the dot") {
+    SECTION("filament staged in the bowden (not loaded, port present) renders to the dot") {
         // U1 post-unload state: filament retracted out of the toolhead but left
-        // in the feed tube. Toolhead motion sensor reads empty, buffer/port
-        // sensor still present → draw the line down to the toolhead entry sensor
-        // but no farther (OUTPUT), not nothing. (Hardware capture 2026-06-13:
-        // tool T2 e2_filament motion=false, filament_feed right.extruder2
-        // detected=true, channel_state=preload_finish.)
+        // in the feed tube. Latch clear (unload_finish), toolhead motion sensor
+        // reads empty, buffer/port sensor still present → draw the line down to
+        // the toolhead entry sensor but no farther (OUTPUT), not nothing.
         SnapmakerTestAccess::set_sensor_present(backend, 1, false);
         SnapmakerTestAccess::set_port_sensor_present(backend, 1, true);
         CHECK(backend.get_slot_filament_segment(1) == PathSegment::OUTPUT);
@@ -946,6 +940,42 @@ TEST_CASE("Snapmaker motion-sensor runout path is independent of the loaded latc
     CHECK_FALSE(backend.get_system_info().filament_loaded);
     // But the channel_state loaded latch is untouched by the motion sensor.
     CHECK(SnapmakerTestAccess::loaded_at_toolhead(backend, 0));
+}
+
+TEST_CASE("Snapmaker filament path segment follows the loaded latch, not the motion sensor",
+          "[ams][snapmaker][channel_state]") {
+    // The canvas draws NOZZLE (filament threaded to the hotend) only when the
+    // lane is actually loaded. The live bug: an unloaded lane kept its motion
+    // sensor present, so the segment rendered NOZZLE and the lane looked fully
+    // loaded on screen even though its Unload button was correctly disabled.
+    AmsBackendSnapmaker backend(nullptr, nullptr);
+
+    SECTION("loaded lane draws to the nozzle") {
+        SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "load_finish"));
+        CHECK(backend.get_slot_filament_segment(2) == PathSegment::NOZZLE);
+    }
+
+    SECTION("unloaded lane with motion sensor still present draws OUTPUT, not NOZZLE") {
+        // Exact live condition: unload_finish but the toolhead motion sensor and
+        // buffer port sensor both still read present.
+        SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "load_finish"));
+        SnapmakerTestAccess::set_sensor_present(backend, 2, true);
+        SnapmakerTestAccess::set_port_sensor_present(backend, 2, true);
+        SnapmakerTestAccess::handle_status(backend,
+                                           make_feed_status(2, "unload_finish",
+                                                            /*filament_detected=*/true));
+        CHECK_FALSE(SnapmakerTestAccess::loaded_at_toolhead(backend, 2));
+        // Filament is staged in the buffer but NOT at the nozzle.
+        CHECK(backend.get_slot_filament_segment(2) == PathSegment::OUTPUT);
+    }
+
+    SECTION("empty lane draws nothing") {
+        SnapmakerTestAccess::set_sensor_present(backend, 1, false);
+        SnapmakerTestAccess::set_port_sensor_present(backend, 1, false);
+        SnapmakerTestAccess::handle_status(backend, make_feed_status(1, "wait_insert",
+                                                                    /*filament_detected=*/false));
+        CHECK(backend.get_slot_filament_segment(1) == PathSegment::NONE);
+    }
 }
 
 // ============================================================================
