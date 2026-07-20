@@ -277,18 +277,11 @@ class FilamentPanel : public PanelBase {
     // Purge amount state
     int purge_amount_ = 10; // Default 10mm
 
-    // Preset button temperature label subjects (e.g., "210°C / 60°C")
-    lv_subject_t preset_temps_subjects_[4];
-    char preset_temps_bufs_[4][24];
-
-    // Runtime-reassignable preset material per button (default PLA/PETG/ABS/TPU).
-    std::array<std::string, 4> preset_materials_ = {"PLA", "PETG", "ABS", "TPU"};
-
-    // Preset button NAME label subjects (e.g. "PLA"); parallel to preset_temps_subjects_.
-    // Wide enough for a branded "%s %s" (brand + type) without truncation (e.g. "Bambu Lab
-    // PETG-CF").
-    lv_subject_t preset_name_subjects_[4];
-    char preset_name_bufs_[4][48];
+    // Preset slot identity and the name/temps label subjects now live in
+    // helix::presets (include/preset_materials.h). They used to be panel-scoped
+    // here, which meant the nozzle/bed/chamber temp panels — a different XML
+    // scope — physically could not bind them and grew their own hardcoded
+    // copies instead. They are globally scoped and slot-indexed now.
 
     // Offline branded-filament catalog picker shown on preset long-press.
     helix::ui::FilamentCatalogPickerModal catalog_picker_;
@@ -411,8 +404,7 @@ class FilamentPanel : public PanelBase {
     void update_warning_text();
     void update_safety_state();
     void update_preset_buttons_visual();
-    void update_preset_button_temps();  ///< Update preset button labels from filament DB
-    void update_preset_button_labels(); ///< Update preset button NAME labels from preset_materials_
+    // Label/temps refresh moved to helix::presets::refresh_subjects().
     void check_and_auto_select_preset(); ///< Auto-select preset if targets match
     /// Apply a branded product picked from the catalog picker to a preset slot:
     /// updates the plain type (reassign_preset), attaches the exact branded product

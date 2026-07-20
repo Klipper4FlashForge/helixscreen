@@ -117,7 +117,19 @@ class TempGraphOverlay : public OverlayBase {
         TempGraphOverlay* overlay;
         int preset_value;
     };
-    static constexpr int MAX_PRESETS = 4;
+    /// How many of the user's preset material slots this overlay surfaces.
+    ///
+    /// DELIBERATELY 3, not helix::presets::PRESET_COUNT. This overlay's preset
+    /// strip has no room for a fourth button — it is a layout constraint, not an
+    /// oversight, and not something a DRY pass should "fix". The temp PANELS
+    /// (nozzle/bed/chamber) do show all four slots; this compact overlay shows
+    /// the first three. If you widen it, you must first find the space.
+    static constexpr int TEMP_GRAPH_VISIBLE_PRESETS = 3;
+    static_assert(TEMP_GRAPH_VISIBLE_PRESETS <= helix::presets::PRESET_COUNT,
+                  "cannot surface more preset slots than exist");
+
+    /// "Off" + the visible material presets.
+    static constexpr int MAX_PRESETS = 1 + TEMP_GRAPH_VISIBLE_PRESETS;
     std::array<PresetData, MAX_PRESETS> preset_data_{};
 
     // State

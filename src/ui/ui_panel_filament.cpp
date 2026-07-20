@@ -33,6 +33,7 @@
 #include "moonraker_api.h"
 #include "observer_factory.h"
 #include "post_op_cooldown_manager.h"
+#include "preset_materials.h"
 #include "printer_state.h"
 #include "safety_settings_manager.h"
 #include "settings_manager.h"
@@ -53,7 +54,8 @@
 using namespace helix;
 
 // Preset slot count (0=PLA-position, 1=PETG-position, 2=ABS-position, 3=TPU-position).
-// The material each slot represents is runtime-reassignable via preset_materials_.
+// The material each slot represents is runtime-reassignable; slot identity comes
+// from helix::presets (backed by MaterialSettingsManager), never a local copy.
 static constexpr int PRESET_COUNT = 4;
 
 namespace helix::filament_presets {
@@ -303,27 +305,6 @@ void FilamentPanel::init_subjects() {
         UI_MANAGED_SUBJECT_INT(op_retract_state_subject_, 0, "filament_op_retract_state",
                                subjects_);
 
-        // Preset button temperature label subjects (populated from filament DB in setup)
-        static constexpr const char* preset_subject_names[] = {
-            "filament_preset_pla_temps", "filament_preset_petg_temps", "filament_preset_abs_temps",
-            "filament_preset_tpu_temps"};
-        for (int i = 0; i < PRESET_COUNT; i++) {
-            preset_temps_bufs_[i][0] = '\0';
-            UI_MANAGED_SUBJECT_STRING(preset_temps_subjects_[i], preset_temps_bufs_[i],
-                                      preset_temps_bufs_[i], preset_subject_names[i], subjects_);
-        }
-
-        // Preset button NAME label subjects (reassignable material name per slot)
-        static constexpr const char* preset_name_subject_names[] = {
-            "filament_preset_pla_name", "filament_preset_petg_name", "filament_preset_abs_name",
-            "filament_preset_tpu_name"};
-        for (int i = 0; i < PRESET_COUNT; i++) {
-            preset_name_bufs_[i][0] = '\0';
-            UI_MANAGED_SUBJECT_STRING(preset_name_subjects_[i], preset_name_bufs_[i],
-                                      preset_name_bufs_[i], preset_name_subject_names[i],
-                                      subjects_);
-        }
-
         // Card title subject (dynamic: "Multi-Filament" or "External Spool")
         std::strncpy(card_title_buf_, lv_tr("Multi-Filament"), sizeof(card_title_buf_) - 1);
         UI_MANAGED_SUBJECT_STRING(card_title_subject_, card_title_buf_, card_title_buf_,
@@ -466,11 +447,9 @@ void FilamentPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
 
     // Load persisted preset-material assignments (default PLA/PETG/ABS/TPU if unset)
     helix::MaterialSettingsManager::instance().init(); // idempotent
-    preset_materials_ = helix::MaterialSettingsManager::instance().get_preset_materials();
 
     // Populate preset button temperature + name labels from filament database
-    update_preset_button_temps();
-    update_preset_button_labels();
+    helix::presets::refresh_subjects();
 
     // Initialize visual state
     update_preset_buttons_visual();
@@ -520,43 +499,7 @@ void FilamentPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
 // PRIVATE HELPERS
 // ============================================================================
 
-void FilamentPanel::update_preset_button_temps() {
-    auto& mgr = helix::MaterialSettingsManager::instance();
-    for (int i = 0; i < PRESET_COUNT; i++) {
-        auto branded = mgr.get_preset_filament(i);
-        if (branded && branded->is_branded()) {
-            // Exact branded product temps (whole °C ints, same unit as MaterialInfo).
-            std::snprintf(preset_temps_bufs_[i], sizeof(preset_temps_bufs_[i]), "%d°C / %d°C",
-                          branded->nozzle, branded->bed);
-        } else {
-            auto mat = filament::find_material(preset_materials_[i]);
-            if (mat) {
-                std::snprintf(preset_temps_bufs_[i], sizeof(preset_temps_bufs_[i]), "%d°C / %d°C",
-                              mat->nozzle_recommended(), mat->bed_temp);
-            } else {
-                std::snprintf(preset_temps_bufs_[i], sizeof(preset_temps_bufs_[i]), "---");
-            }
-        }
-        lv_subject_copy_string(&preset_temps_subjects_[i], preset_temps_bufs_[i]);
-    }
-}
 
-void FilamentPanel::update_preset_button_labels() {
-    auto& mgr = helix::MaterialSettingsManager::instance();
-    for (int i = 0; i < PRESET_COUNT; i++) {
-        auto branded = mgr.get_preset_filament(i);
-        if (branded && branded->is_branded() && !branded->brand.empty()) {
-            // e.g. "Bambu PLA" — brand + generic type kept in lockstep by
-            // set_preset_filament()/reassign_preset().
-            std::snprintf(preset_name_bufs_[i], sizeof(preset_name_bufs_[i]), "%s %s",
-                          branded->brand.c_str(), preset_materials_[i].c_str());
-        } else {
-            std::snprintf(preset_name_bufs_[i], sizeof(preset_name_bufs_[i]), "%s",
-                          preset_materials_[i].c_str());
-        }
-        lv_subject_copy_string(&preset_name_subjects_[i], preset_name_bufs_[i]);
-    }
-}
 
 void FilamentPanel::update_temp_display() {
     std::snprintf(temp_display_buf_, sizeof(temp_display_buf_), "%d / %d°C", nozzle_current_,
@@ -672,7 +615,7 @@ void FilamentPanel::check_and_auto_select_preset() {
             }
             continue;
         }
-        auto mat = filament::find_material(preset_materials_[i]);
+        auto mat = filament::find_material(helix::presets::name(i));
         if (mat && nozzle_target_ == mat->nozzle_recommended() && bed_target_ == mat->bed_temp) {
             matching_preset = i;
             break;
@@ -687,7 +630,7 @@ void FilamentPanel::check_and_auto_select_preset() {
 
         if (matching_preset >= 0) {
             spdlog::debug("[{}] Auto-selected preset: {} (nozzle={}°C, bed={}°C)", get_name(),
-                          preset_materials_[matching_preset], nozzle_target_, bed_target_);
+                          helix::presets::name(matching_preset), nozzle_target_, bed_target_);
         } else {
             spdlog::debug("[{}] No matching preset for nozzle={}°C, bed={}°C", get_name(),
                           nozzle_target_, bed_target_);
@@ -796,10 +739,11 @@ void FilamentPanel::reassign_preset(int slot, const std::string& material) {
                      material);
         return;
     }
-    preset_materials_[slot] = material;
     helix::MaterialSettingsManager::instance().set_preset_material(slot, material);
-    update_preset_button_labels();
-    update_preset_button_temps();
+    helix::presets::refresh_subjects();
+    if (auto* tc = get_temperature_controller()) {
+        tc->refresh_presets();
+    }
     check_and_auto_select_preset(); // refresh CHECKED highlight vs current targets
     update_spool_preset();          // refresh 5th (dynamic spool) button visibility
     spdlog::info("[{}] Preset slot {} reassigned to {}", get_name(), slot, material);
@@ -807,9 +751,10 @@ void FilamentPanel::reassign_preset(int slot, const std::string& material) {
 
 void FilamentPanel::reset_presets_to_defaults() {
     helix::MaterialSettingsManager::instance().reset_preset_materials();
-    preset_materials_ = helix::MaterialSettingsManager::instance().get_preset_materials();
-    update_preset_button_labels();
-    update_preset_button_temps();
+    helix::presets::refresh_subjects();
+    if (auto* tc = get_temperature_controller()) {
+        tc->refresh_presets();
+    }
     check_and_auto_select_preset();
     update_spool_preset(); // refresh 5th (dynamic spool) button visibility
     spdlog::info("[{}] Presets reset to defaults", get_name());
@@ -830,7 +775,7 @@ void FilamentPanel::handle_preset_longpress(int slot) {
     // same threading context the old material_picker_ callback ran in — so call
     // straight through get_global_filament_panel() (singleton, lives for process
     // lifetime) with no defer/lifetime-token needed, matching that prior pattern.
-    catalog_picker_.show(screen, std::optional<std::string>(preset_materials_[slot]),
+    catalog_picker_.show(screen, std::optional<std::string>(helix::presets::name(slot)),
                          [slot](const helix::printer::EffectiveFilament& ef) {
                              get_global_filament_panel().apply_preset_pick(slot, ef);
                          });
@@ -855,8 +800,7 @@ void FilamentPanel::apply_preset_pick(int slot, const helix::printer::EffectiveF
     // reassign_preset() already refreshed labels/temps/highlight for the generic
     // type; refresh again now that the branded product is attached so the button
     // shows the branded name/temps instead.
-    update_preset_button_labels();
-    update_preset_button_temps();
+    helix::presets::refresh_subjects();
     check_and_auto_select_preset();
     spdlog::info("[{}] Preset slot {} attached to branded filament '{}' ({}/{}°C)", get_name(),
                  slot, ef.id, ef.nozzle_recommended, ef.bed_temp);
@@ -1968,7 +1912,7 @@ void FilamentPanel::update_spool_preset() {
 
     // Check if material matches an existing preset — if so, don't show spool button
     for (int i = 0; i < PRESET_COUNT; i++) {
-        std::string preset_lower(preset_materials_[i]);
+        std::string preset_lower(helix::presets::name(i));
         std::string mat_lower(active.material_name);
         std::transform(preset_lower.begin(), preset_lower.end(), preset_lower.begin(), ::tolower);
         std::transform(mat_lower.begin(), mat_lower.end(), mat_lower.begin(), ::tolower);
@@ -2152,10 +2096,10 @@ void FilamentPanel::set_material(int material_id) {
         return;
     }
 
-    auto mat = filament::find_material(preset_materials_[material_id]);
+    auto mat = filament::find_material(helix::presets::name(material_id));
     if (!mat) {
         spdlog::error("[{}] Material '{}' not found in database", get_name(),
-                      preset_materials_[material_id]);
+                      helix::presets::name(material_id));
         return;
     }
 
@@ -2178,7 +2122,7 @@ void FilamentPanel::set_material(int material_id) {
     update_status();
 
     spdlog::info("[{}] Material set: {} (nozzle={}°C, bed={}°C, chamber={}°C)", get_name(),
-                 preset_materials_[material_id], nozzle_target_, bed_target_, mat->chamber_temp_c);
+                 helix::presets::name(material_id), nozzle_target_, bed_target_, mat->chamber_temp_c);
 }
 
 bool FilamentPanel::is_extrusion_allowed() const {
@@ -2241,9 +2185,9 @@ FilamentPanel::PreheatTempResult FilamentPanel::resolve_preheat_temp() const {
 
     // Priority 3: Selected material preset
     if (selected_material_ >= 0 && selected_material_ < PRESET_COUNT) {
-        auto mat = filament::find_material(preset_materials_[selected_material_]);
+        auto mat = filament::find_material(helix::presets::name(selected_material_));
         if (mat) {
-            return {mat->nozzle_min, preset_materials_[selected_material_]};
+            return {mat->nozzle_min, helix::presets::name(selected_material_)};
         }
     }
 

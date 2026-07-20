@@ -12,6 +12,9 @@
 #include "ui_text.h"
 #include "ui_text_input.h"
 
+#include "material_settings_manager.h"
+#include "preset_materials.h"
+
 #include "spdlog/spdlog.h"
 
 // Forward declaration — defined in favorite_macro_widget.cpp, not exported in any header.
@@ -121,6 +124,14 @@ XMLTestFixture::XMLTestFixture() : LVGLTestFixture() {
     // pointers for the duration of this test.
     m_state.init_subjects(true);
 
+    // Quick-preset material subjects (preset_material_N_name/_temps). The
+    // filament panel, all three temp panels, the temp graph overlay and the PID
+    // panel bind these by name, so any XML test that builds one needs them
+    // registered or every preset button label silently renders empty.
+    helix::MaterialSettingsManager::instance().init();
+    helix::presets::init_subjects();
+    helix::presets::refresh_subjects();
+
     m_client = std::make_unique<MoonrakerClient>();
     m_api = std::make_unique<MoonrakerAPI>(*m_client, m_state);
 
@@ -194,17 +205,8 @@ void XMLTestFixture::setup_global_xml_registrations_once() {
     lv_xml_register_event_cb(nullptr, "", xml_test_noop_event_callback);
     lv_xml_register_event_cb(nullptr, "on_header_back_clicked", xml_test_noop_event_callback);
     // Nozzle temp panel callbacks
-    lv_xml_register_event_cb(nullptr, "on_nozzle_preset_off_clicked", xml_test_noop_event_callback);
-    lv_xml_register_event_cb(nullptr, "on_nozzle_preset_pla_clicked", xml_test_noop_event_callback);
-    lv_xml_register_event_cb(nullptr, "on_nozzle_preset_petg_clicked",
-                             xml_test_noop_event_callback);
-    lv_xml_register_event_cb(nullptr, "on_nozzle_preset_abs_clicked", xml_test_noop_event_callback);
     lv_xml_register_event_cb(nullptr, "on_nozzle_custom_clicked", xml_test_noop_event_callback);
     // Bed temp panel callbacks
-    lv_xml_register_event_cb(nullptr, "on_bed_preset_off_clicked", xml_test_noop_event_callback);
-    lv_xml_register_event_cb(nullptr, "on_bed_preset_pla_clicked", xml_test_noop_event_callback);
-    lv_xml_register_event_cb(nullptr, "on_bed_preset_petg_clicked", xml_test_noop_event_callback);
-    lv_xml_register_event_cb(nullptr, "on_bed_preset_abs_clicked", xml_test_noop_event_callback);
     lv_xml_register_event_cb(nullptr, "on_bed_custom_clicked", xml_test_noop_event_callback);
 
     // Register widgets needed by favorite_macro_config_modal

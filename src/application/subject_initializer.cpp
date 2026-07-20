@@ -50,7 +50,9 @@
 #include "led/ui_led_control_overlay.h"
 #include "lock_manager.h"
 #include "lvgl/lvgl.h"
+#include "material_settings_manager.h"
 #include "panel_widget_manager.h"
+#include "preset_materials.h"
 #include "print_completion.h"
 #include "print_control_buttons.h"
 #include "plr_offer_controller.h"
@@ -126,10 +128,19 @@ void SubjectInitializer::init_post(const RuntimeConfig& runtime_config) {
 
 void SubjectInitializer::init_core_subjects() {
     spdlog::trace("[SubjectInitializer] Initializing core subjects");
-    app_globals_init_subjects();                    // Global subjects (notification subject, etc.)
-    PrinterStatusIcon::instance().init_subjects();  // Printer icon state
-    helix::ui::notification_init_subjects();        // Notification badge subjects
+    app_globals_init_subjects();                   // Global subjects (notification subject, etc.)
+    PrinterStatusIcon::instance().init_subjects(); // Printer icon state
+    helix::ui::notification_init_subjects();       // Notification badge subjects
     helix::LockManager::instance().init_subjects(); // Lock screen pin_set subject
+
+    // Quick-preset material name/temperature subjects. MUST be here in core
+    // init: the filament panel, the three temp panels and the temp graph
+    // overlay all bind these by name, so they have to exist before ANY panel
+    // XML is created. MaterialSettingsManager::init() is idempotent and already
+    // ran via SettingsManager, but call it explicitly so preset identity is
+    // loaded even if subject init is driven directly by a test.
+    helix::MaterialSettingsManager::instance().init();
+    helix::presets::init_subjects();
 }
 
 void SubjectInitializer::init_printer_state_subjects() {

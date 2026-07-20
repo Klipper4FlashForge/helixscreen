@@ -573,9 +573,19 @@ void TempGraphOverlay::configure_control_strip() {
         return;
     auto& heater = temp_control_panel_->heater(heater_type);
 
-    // Configure preset values for the callback
-    int preset_values[] = {heater.config.presets.off, heater.config.presets.pla,
-                           heater.config.presets.petg, heater.config.presets.abs};
+    // Configure preset values for the callback. Index 0 is "Off"; index i>=1 is
+    // user preset slot i-1 (helix::presets).
+    //
+    // Only the first TEMP_GRAPH_VISIBLE_PRESETS slots are surfaced here: this
+    // overlay's preset strip has no room for a fourth button. That is a layout
+    // constraint, not an oversight — see the constant's definition. Loop over
+    // TEMP_GRAPH_VISIBLE_PRESETS, never PRESET_COUNT, or this overruns the
+    // buttons that actually exist in temp_graph_overlay.xml.
+    int preset_values[MAX_PRESETS] = {};
+    preset_values[0] = heater.config.presets.off;
+    for (int i = 0; i < TEMP_GRAPH_VISIBLE_PRESETS; ++i) {
+        preset_values[i + 1] = heater.config.presets.material[static_cast<size_t>(i)];
+    }
 
     // Store preset values indexed by name suffix for lookup in callback
     // (cannot use lv_obj_set_user_data — ui_button owns that slot, L069)

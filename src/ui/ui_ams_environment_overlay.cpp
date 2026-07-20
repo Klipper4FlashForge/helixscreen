@@ -21,6 +21,7 @@
 #include "helix-xml/src/xml/lv_xml.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "observer_factory.h"
+#include "preset_materials.h"
 #include "static_panel_registry.h"
 
 #include <spdlog/spdlog.h>
@@ -77,6 +78,16 @@ AmsEnvironmentOverlay::~AmsEnvironmentOverlay() {
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
+
+std::vector<std::string> AmsEnvironmentOverlay::fallback_comfort_materials() {
+    std::vector<std::string> out;
+    for (const auto& m : helix::presets::all()) {
+        if (!m.empty()) {
+            out.push_back(m);
+        }
+    }
+    return out;
+}
 
 void AmsEnvironmentOverlay::init_subjects() {
     init_subjects_guarded([this]() {
@@ -462,9 +473,11 @@ void AmsEnvironmentOverlay::update_comfort_text(float humidity_pct) {
         }
     }
 
-    // Fall back to common materials if no slots loaded
+    // Fall back to the user's configured quick-preset materials if no slots are
+    // loaded. Previously a fourth hardcoded list ({"PLA","PETG","ABS","PA"})
+    // that disagreed with every other preset copy in the codebase.
     if (loaded_materials.empty()) {
-        loaded_materials = {"PLA", "PETG", "ABS", "PA"};
+        loaded_materials = fallback_comfort_materials();
     }
 
     // Update subjects for each comfort row (up to MAX_COMFORT_ROWS)
@@ -473,7 +486,7 @@ void AmsEnvironmentOverlay::update_comfort_text(float humidity_pct) {
         if (row_idx >= MAX_COMFORT_ROWS)
             break;
 
-        const auto* range = filament::get_comfort_range(mat_name.c_str());
+        const auto range = filament::get_comfort_range(mat_name.c_str());
         if (!range)
             continue;
 
@@ -608,7 +621,7 @@ void AmsEnvironmentOverlay::auto_select_preset() {
         if (slot.material.empty())
             continue;
 
-        const auto* range = filament::get_comfort_range(slot.material);
+        const auto range = filament::get_comfort_range(slot.material);
         if (range && range->dry_temp_c > 0 && range->dry_temp_c < lowest_dry_temp) {
             lowest_dry_temp = static_cast<float>(range->dry_temp_c);
             best_match_name = slot.material;

@@ -16,6 +16,7 @@
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
 #include "observer_factory.h"
+#include "preset_materials.h"
 #include "static_panel_registry.h"
 #include "static_subject_registry.h"
 #include "temperature_service.h"
@@ -23,8 +24,10 @@
 
 #include <spdlog/spdlog.h>
 
+#include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <lvgl.h>
 #include <memory>
 
@@ -176,15 +179,10 @@ void PIDCalibrationPanel::init_subjects() {
             {"on_pid_abort", on_abort_clicked},
             {"on_pid_done", on_done_clicked},
             {"on_pid_retry", on_retry_clicked},
-            // Material preset callbacks
-            {"on_pid_preset_pla", on_pid_preset_pla},
-            {"on_pid_preset_petg", on_pid_preset_petg},
-            {"on_pid_preset_abs", on_pid_preset_abs},
-            {"on_pid_preset_pa", on_pid_preset_pa},
-            {"on_pid_preset_tpu", on_pid_preset_tpu},
-            {"on_pid_preset_bed_pla", on_pid_preset_bed_pla},
-            {"on_pid_preset_bed_petg", on_pid_preset_bed_petg},
-            {"on_pid_preset_bed_abs", on_pid_preset_bed_abs},
+            // Material preset callbacks — one per heater, slot read from the
+            // button name (replaces 8 per-material trampolines).
+            {"on_pid_preset_material", on_pid_preset_material},
+            {"on_pid_preset_bed_material", on_pid_preset_bed_material},
             // MPC method/config callbacks
             {"on_cal_method_pid", on_method_pid_clicked},
             {"on_cal_method_mpc", on_method_mpc_clicked},
@@ -1545,61 +1543,57 @@ static int get_material_bed_temp(const char* name) {
     return mat ? mat->bed_temp : 60;
 }
 
-// Material preset trampolines (extruder) — temps from filament database
-void PIDCalibrationPanel::on_pid_preset_pla(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_pla");
-    (void)e;
-    get_global_pid_cal_panel().handle_preset_clicked(get_material_nozzle_temp("PLA"), "PLA");
+// Material preset handlers — index-parameterized.
+//
+// These were eight near-identical trampolines, one per hardcoded material
+// (PLA/PETG/ABS/PA/TPU for the extruder, PLA/PETG/ABS for the bed), each
+// differing only in the string it looked a temperature up with. They are now
+// two handlers that read the preset SLOT from the clicked button's name and
+// resolve the material through helix::presets, so the PID panel offers exactly
+// the materials the user configured instead of a fixed list that disagreed with
+// every other preset surface in the app.
+
+/// Parse the preset slot from a button named "btn_preset_mN" / "btn_preset_bed_mN".
+/// Returns -1 if the name is missing or malformed.
+static int pid_preset_slot(lv_event_t* e) {
+    auto* btn = static_cast<lv_obj_t*>(lv_event_get_target(e));
+    const char* name = btn ? lv_obj_get_name(btn) : nullptr;
+    if (!name) {
+        spdlog::warn("[PIDCal] Preset button has no name; ignoring click");
+        return -1;
+    }
+    const char* suffix = std::strrchr(name, '_');
+    if (!suffix || suffix[1] != 'm' || !std::isdigit(static_cast<unsigned char>(suffix[2]))) {
+        spdlog::warn("[PIDCal] Preset button '{}' has no slot suffix; ignoring click", name);
+        return -1;
+    }
+    int slot = suffix[2] - '0';
+    if (slot < 0 || slot >= helix::presets::PRESET_COUNT) {
+        spdlog::warn("[PIDCal] Preset button '{}' slot {} out of range", name, slot);
+        return -1;
+    }
+    return slot;
+}
+
+void PIDCalibrationPanel::on_pid_preset_material(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_material");
+    int slot = pid_preset_slot(e);
+    if (slot >= 0) {
+        const std::string material = helix::presets::name(slot);
+        get_global_pid_cal_panel().handle_preset_clicked(get_material_nozzle_temp(material.c_str()),
+                                                         material.c_str());
+    }
     LVGL_SAFE_EVENT_CB_END();
 }
 
-void PIDCalibrationPanel::on_pid_preset_petg(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_petg");
-    (void)e;
-    get_global_pid_cal_panel().handle_preset_clicked(get_material_nozzle_temp("PETG"), "PETG");
-    LVGL_SAFE_EVENT_CB_END();
-}
-
-void PIDCalibrationPanel::on_pid_preset_abs(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_abs");
-    (void)e;
-    get_global_pid_cal_panel().handle_preset_clicked(get_material_nozzle_temp("ABS"), "ABS");
-    LVGL_SAFE_EVENT_CB_END();
-}
-
-void PIDCalibrationPanel::on_pid_preset_pa(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_pa");
-    (void)e;
-    get_global_pid_cal_panel().handle_preset_clicked(get_material_nozzle_temp("PA"), "PA");
-    LVGL_SAFE_EVENT_CB_END();
-}
-
-void PIDCalibrationPanel::on_pid_preset_tpu(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_tpu");
-    (void)e;
-    get_global_pid_cal_panel().handle_preset_clicked(get_material_nozzle_temp("TPU"), "TPU");
-    LVGL_SAFE_EVENT_CB_END();
-}
-
-// Material preset trampolines (bed) — temps from filament database
-void PIDCalibrationPanel::on_pid_preset_bed_pla(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_bed_pla");
-    (void)e;
-    get_global_pid_cal_panel().handle_preset_clicked(get_material_bed_temp("PLA"), "PLA");
-    LVGL_SAFE_EVENT_CB_END();
-}
-
-void PIDCalibrationPanel::on_pid_preset_bed_petg(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_bed_petg");
-    (void)e;
-    get_global_pid_cal_panel().handle_preset_clicked(get_material_bed_temp("PETG"), "PETG");
-    LVGL_SAFE_EVENT_CB_END();
-}
-
-void PIDCalibrationPanel::on_pid_preset_bed_abs(lv_event_t* e) {
-    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_bed_abs");
-    (void)e;
-    get_global_pid_cal_panel().handle_preset_clicked(get_material_bed_temp("ABS"), "ABS");
+void PIDCalibrationPanel::on_pid_preset_bed_material(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[PIDCal] on_pid_preset_bed_material");
+    int slot = pid_preset_slot(e);
+    if (slot >= 0) {
+        const std::string material = helix::presets::name(slot);
+        get_global_pid_cal_panel().handle_preset_clicked(get_material_bed_temp(material.c_str()),
+                                                         material.c_str());
+    }
     LVGL_SAFE_EVENT_CB_END();
 }
 

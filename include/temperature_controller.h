@@ -7,6 +7,7 @@
 #include "async_lifetime_guard.h"
 #include "heater_limits.h"
 #include "moonraker_error.h"
+#include "preset_materials.h"
 
 #include <array>
 #include <functional>
@@ -19,13 +20,22 @@ class MoonrakerAPI;
 
 namespace helix {
 
-/// Preset target temperatures (°C) for a single heater.
-struct HeaterPresets {
-    int off = 0;
-    int pla = 0;
-    int petg = 0;
-    int abs = 0;
-};
+// HeaterPresets lives in ui_heater_config.h (included above) so heater_config_t
+// and this controller share one definition instead of two parallel copies.
+
+/**
+ * @brief Compute a heater's preset temperatures from the user's preset materials.
+ *
+ * Slot i corresponds to helix::presets::name(i).
+ *  - Nozzle / Bed: derived from the filament database entry for that slot's
+ *    material (user MaterialSettingsManager overrides already folded in).
+ *  - Chamber: a documented, slot-indexed enclosure ladder that is deliberately
+ *    NOT material-derived — see CHAMBER_PRESET_LADDER_C in the .cpp for why.
+ *
+ * Free function so callers without a controller instance (TemperatureService
+ * construction) share one derivation instead of duplicating the lookups.
+ */
+HeaterPresets compute_heater_presets(HeaterType type);
 
 /// Options for a heater set-target call.
 /// - toast: show the standard error toast on failure (default true).
@@ -77,6 +87,10 @@ class TemperatureController {
 
     /// The heater's preset target values (°C).
     const HeaterPresets& presets(HeaterType type) const;
+
+    /// Recompute every heater's preset temperatures from the user's currently
+    /// configured preset materials. Call after a preset slot is reassigned.
+    void refresh_presets();
 
     /// Whether a preset value should be shown given the configured max (hidden if above it).
     bool preset_visible(HeaterType type, int value_c) const;

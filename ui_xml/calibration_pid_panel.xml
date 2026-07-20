@@ -94,20 +94,17 @@
                       width="100%" height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs"
                       style_flex_main_place="start" scrollable="false">
                 <bind_flag_if_eq subject="pid_heater_is_extruder" flag="hidden" ref_value="0"/>
-                <ui_button name="btn_preset_pla" flex_grow="1" height="#button_height_sm" text="PLA" style_text_font="#font_small">
-                  <event_cb trigger="clicked" callback="on_pid_preset_pla"/>
+                <ui_button name="btn_preset_m0" flex_grow="1" height="#button_height_sm" bind_text="preset_material_0_name" style_text_font="#font_small">
+                  <event_cb trigger="clicked" callback="on_pid_preset_material"/>
                 </ui_button>
-                <ui_button name="btn_preset_petg" flex_grow="1" height="#button_height_sm" text="PETG" style_text_font="#font_small">
-                  <event_cb trigger="clicked" callback="on_pid_preset_petg"/>
+                <ui_button name="btn_preset_m1" flex_grow="1" height="#button_height_sm" bind_text="preset_material_1_name" style_text_font="#font_small">
+                  <event_cb trigger="clicked" callback="on_pid_preset_material"/>
                 </ui_button>
-                <ui_button name="btn_preset_abs" flex_grow="1" height="#button_height_sm" text="ABS" style_text_font="#font_small">
-                  <event_cb trigger="clicked" callback="on_pid_preset_abs"/>
+                <ui_button name="btn_preset_m2" flex_grow="1" height="#button_height_sm" bind_text="preset_material_2_name" style_text_font="#font_small">
+                  <event_cb trigger="clicked" callback="on_pid_preset_material"/>
                 </ui_button>
-                <ui_button name="btn_preset_pa" flex_grow="1" height="#button_height_sm" text="PA" style_text_font="#font_small">
-                  <event_cb trigger="clicked" callback="on_pid_preset_pa"/>
-                </ui_button>
-                <ui_button name="btn_preset_tpu" flex_grow="1" height="#button_height_sm" text="TPU" style_text_font="#font_small">
-                  <event_cb trigger="clicked" callback="on_pid_preset_tpu"/>
+                <ui_button name="btn_preset_m3" flex_grow="1" height="#button_height_sm" bind_text="preset_material_3_name" style_text_font="#font_small">
+                  <event_cb trigger="clicked" callback="on_pid_preset_material"/>
                 </ui_button>
               </lv_obj>
               <!-- Material Presets (Bed) -->
@@ -115,14 +112,17 @@
                       width="100%" height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs"
                       style_flex_main_place="start" scrollable="false">
                 <bind_flag_if_not_eq subject="pid_heater_is_extruder" flag="hidden" ref_value="0"/>
-                <ui_button name="btn_preset_bed_pla" flex_grow="1" height="#button_height_sm" text="PLA" style_text_font="#font_small">
-                  <event_cb trigger="clicked" callback="on_pid_preset_bed_pla"/>
+                <ui_button name="btn_preset_bed_m0" flex_grow="1" height="#button_height_sm" bind_text="preset_material_0_name" style_text_font="#font_small">
+                  <event_cb trigger="clicked" callback="on_pid_preset_bed_material"/>
                 </ui_button>
-                <ui_button name="btn_preset_bed_petg" flex_grow="1" height="#button_height_sm" text="PETG" style_text_font="#font_small">
-                  <event_cb trigger="clicked" callback="on_pid_preset_bed_petg"/>
+                <ui_button name="btn_preset_bed_m1" flex_grow="1" height="#button_height_sm" bind_text="preset_material_1_name" style_text_font="#font_small">
+                  <event_cb trigger="clicked" callback="on_pid_preset_bed_material"/>
                 </ui_button>
-                <ui_button name="btn_preset_bed_abs" flex_grow="1" height="#button_height_sm" text="ABS" style_text_font="#font_small">
-                  <event_cb trigger="clicked" callback="on_pid_preset_bed_abs"/>
+                <ui_button name="btn_preset_bed_m2" flex_grow="1" height="#button_height_sm" bind_text="preset_material_2_name" style_text_font="#font_small">
+                  <event_cb trigger="clicked" callback="on_pid_preset_bed_material"/>
+                </ui_button>
+                <ui_button name="btn_preset_bed_m3" flex_grow="1" height="#button_height_sm" bind_text="preset_material_3_name" style_text_font="#font_small">
+                  <event_cb trigger="clicked" callback="on_pid_preset_bed_material"/>
                 </ui_button>
               </lv_obj>
               <!-- Temperature: [-] 200°C [+] -->

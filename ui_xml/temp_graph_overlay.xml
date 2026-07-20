@@ -83,13 +83,13 @@
                      style_border_color="#border" style_border_opa="255">
             <event_cb trigger="clicked" callback="on_temp_graph_preset_clicked"/>
           </ui_button>
-          <ui_button name="preset_1" width="48%" text="PLA">
+          <ui_button name="preset_1" width="48%" bind_text="preset_material_0_name">
             <event_cb trigger="clicked" callback="on_temp_graph_preset_clicked"/>
           </ui_button>
-          <ui_button name="preset_2" width="48%" text="PETG">
+          <ui_button name="preset_2" width="48%" bind_text="preset_material_1_name">
             <event_cb trigger="clicked" callback="on_temp_graph_preset_clicked"/>
           </ui_button>
-          <ui_button name="preset_3" width="48%" text="ABS">
+          <ui_button name="preset_3" width="48%" bind_text="preset_material_2_name">
             <event_cb trigger="clicked" callback="on_temp_graph_preset_clicked"/>
           </ui_button>
         </lv_obj>
@@ -134,13 +134,13 @@
                      style_border_color="#border" style_border_opa="255">
             <event_cb trigger="clicked" callback="on_temp_graph_preset_clicked"/>
           </ui_button>
-          <ui_button name="bed_preset_1" width="48%" text="PLA">
+          <ui_button name="bed_preset_1" width="48%" bind_text="preset_material_0_name">
             <event_cb trigger="clicked" callback="on_temp_graph_preset_clicked"/>
           </ui_button>
-          <ui_button name="bed_preset_2" width="48%" text="PETG">
+          <ui_button name="bed_preset_2" width="48%" bind_text="preset_material_1_name">
             <event_cb trigger="clicked" callback="on_temp_graph_preset_clicked"/>
           </ui_button>
-          <ui_button name="bed_preset_3" width="48%" text="ABS">
+          <ui_button name="bed_preset_3" width="48%" bind_text="preset_material_2_name">
             <event_cb trigger="clicked" callback="on_temp_graph_preset_clicked"/>
           </ui_button>
         </lv_obj>

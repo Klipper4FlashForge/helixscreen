@@ -12,8 +12,10 @@
 #include "ui_temperature_utils.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
+#include <string>
 
 #include "hv/json.hpp"
 
@@ -26,30 +28,64 @@ TemperatureController::TemperatureController(PrinterState& state, MoonrakerAPI* 
     model_[idx(HeaterType::Bed)].keypad_max_default = 150.0f;
     model_[idx(HeaterType::Chamber)].keypad_max_default = 80.0f;
 
-    // Preset values mirror temperature_service.cpp TemperatureService ctor.
-    // Single source of truth: nozzle/bed presets are derived from the filament
-    // database (same derivation as temperature_service.cpp lines 67-80), so
-    // views reading presets from the controller match what the service produced.
-    auto pla_info = filament::find_material("PLA");
-    auto petg_info = filament::find_material("PETG");
-    auto abs_info = filament::find_material("ABS");
+    refresh_presets();
+}
 
-    // Nozzle presets (fallbacks 210/245/255 match the service)
-    int nozzle_pla = pla_info ? pla_info->nozzle_recommended() : 210;
-    int nozzle_petg = petg_info ? petg_info->nozzle_recommended() : 245;
-    int nozzle_abs = abs_info ? abs_info->nozzle_recommended() : 255;
+/**
+ * Chamber preset ladder, slot-indexed, in °C.
+ *
+ * THESE ARE ENCLOSURE TEMPERATURES, NOT MATERIAL-DERIVED VALUES. Do not "DRY
+ * this up" by deriving them from the filament database like nozzle and bed.
+ *
+ * The filament database's chamber_temp_c is 0 for every open-frame material —
+ * PLA=0, PETG=0, TPU=0, and only ABS=50. Deriving chamber presets from the
+ * slot's material would therefore render Off / Off / 50 / Off and collapse
+ * three of the four buttons into duplicates of "Off" on every enclosed printer.
+ * That is a functional regression, so chamber deliberately keeps its own
+ * generic low → high ladder that is independent of which material occupies the
+ * slot. Slot N simply gets the Nth rung.
+ *
+ * The first three rungs preserve the long-standing 40/50/60 values so existing
+ * behavior is unchanged; the fourth extends the ladder for the fourth slot.
+ */
+inline constexpr std::array<int, presets::PRESET_COUNT> CHAMBER_PRESET_LADDER_C{40, 50, 60, 70};
 
-    // Bed presets (fallbacks 60/80/100 match the service)
-    int bed_pla = pla_info ? pla_info->bed_temp : 60;
-    int bed_petg = petg_info ? petg_info->bed_temp : 80;
-    int bed_abs = abs_info ? abs_info->bed_temp : 100;
+HeaterPresets compute_heater_presets(HeaterType type) {
+    HeaterPresets out{};
+    out.off = 0;
 
-    model_[idx(HeaterType::Nozzle)].presets = {
-        .off = 0, .pla = nozzle_pla, .petg = nozzle_petg, .abs = nozzle_abs};
-    model_[idx(HeaterType::Bed)].presets = {
-        .off = 0, .pla = bed_pla, .petg = bed_petg, .abs = bed_abs};
-    // Chamber: hardcoded {0, 40, 50, 60} in temperature_service.cpp.
-    model_[idx(HeaterType::Chamber)].presets = {.off = 0, .pla = 40, .petg = 50, .abs = 60};
+    for (int i = 0; i < presets::PRESET_COUNT; ++i) {
+        if (type == HeaterType::Chamber) {
+            out.material[i] = CHAMBER_PRESET_LADDER_C[i];
+            continue;
+        }
+
+        // Nozzle and bed presets ARE material-derived: each slot's temperature
+        // comes from the filament database entry for whatever material the user
+        // assigned to that slot, so reassigning a slot moves its temps with it.
+        // find_material() already folds in the user's MaterialSettingsManager
+        // override, so a customized material carries its custom temps here.
+        const std::string material = presets::name(i);
+        auto info = filament::find_material(material);
+        if (!info) {
+            spdlog::warn("[TempController] Preset slot {} material '{}' not in filament database; "
+                         "{} preset defaults to 0",
+                         i, material, type == HeaterType::Nozzle ? "nozzle" : "bed");
+            out.material[i] = 0;
+            continue;
+        }
+        out.material[i] =
+            (type == HeaterType::Nozzle) ? info->nozzle_recommended() : info->bed_temp;
+    }
+    return out;
+}
+
+void TemperatureController::refresh_presets() {
+    for (int t = 0; t < HEATER_TYPE_COUNT; ++t) {
+        model_[t].presets = compute_heater_presets(static_cast<HeaterType>(t));
+    }
+    spdlog::debug("[TempController] Presets refreshed for slots [{}, {}, {}, {}]", presets::name(0),
+                  presets::name(1), presets::name(2), presets::name(3));
 }
 
 std::string TemperatureController::resolved_name(HeaterType type) const {

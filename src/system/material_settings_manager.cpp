@@ -117,9 +117,7 @@ void MaterialSettingsManager::save_to_config() {
 }
 
 void MaterialSettingsManager::assign_defaults() {
-    for (int i = 0; i < 4; ++i) {
-        preset_materials_[i] = DEFAULT_PRESET_MATERIALS[i];
-    }
+    preset_materials_ = default_preset_materials();
 }
 
 void MaterialSettingsManager::load_presets_from_config() {

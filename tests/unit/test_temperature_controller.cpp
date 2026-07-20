@@ -73,7 +73,9 @@ TEST_CASE("TemperatureController preset visibility honors configured max", "[tem
     REQUIRE(f.controller.preset_visible(HeaterType::Chamber, 40));
     REQUIRE(f.controller.preset_visible(HeaterType::Chamber, 50));
     REQUIRE_FALSE(f.controller.preset_visible(HeaterType::Chamber, 60));
-    REQUIRE(f.controller.presets(HeaterType::Chamber).abs == 60); // value still defined
+    // Slot 2 of the chamber's enclosure ladder is still 60 — hiding it above the
+    // configured max must not change the underlying value.
+    REQUIRE(f.controller.presets(HeaterType::Chamber).material[2] == 60);
 }
 
 TEST_CASE("TemperatureController set_target routes to the resolved name", "[temp_controller]") {

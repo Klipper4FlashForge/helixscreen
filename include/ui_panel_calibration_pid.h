@@ -431,15 +431,12 @@ class PIDCalibrationPanel : public OverlayBase {
     static void on_fan_detailed_clicked(lv_event_t* e);
     static void on_fan_thorough_clicked(lv_event_t* e);
     // Material preset trampolines (extruder)
-    static void on_pid_preset_pla(lv_event_t* e);
-    static void on_pid_preset_petg(lv_event_t* e);
-    static void on_pid_preset_abs(lv_event_t* e);
-    static void on_pid_preset_pa(lv_event_t* e);
-    static void on_pid_preset_tpu(lv_event_t* e);
-    // Material preset trampolines (bed)
-    static void on_pid_preset_bed_pla(lv_event_t* e);
-    static void on_pid_preset_bed_petg(lv_event_t* e);
-    static void on_pid_preset_bed_abs(lv_event_t* e);
+    // One handler per heater; the preset slot is parsed from the clicked
+    // button's name ("btn_preset_mN" / "btn_preset_bed_mN") and resolved to a
+    // material through helix::presets. Replaces the eight per-material
+    // trampolines that hardcoded PLA/PETG/ABS/PA/TPU.
+    static void on_pid_preset_material(lv_event_t* e);
+    static void on_pid_preset_bed_material(lv_event_t* e);
 };
 
 // Global instance accessor

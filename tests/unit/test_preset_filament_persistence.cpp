@@ -158,7 +158,7 @@ class TestAccess {
   public:
     static void reset(MaterialSettingsManager& mgr) {
         mgr.overrides_.clear();
-        mgr.preset_materials_ = {"PLA", "PETG", "ABS", "TPU"};
+        mgr.preset_materials_ = default_preset_materials();
         mgr.preset_filaments_ = {};
         mgr.initialized_ = false;
     }
