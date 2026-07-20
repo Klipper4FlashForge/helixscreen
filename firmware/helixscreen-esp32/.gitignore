@@ -8,3 +8,4 @@ dependencies.lock
 # injected here at flash time — NEVER committed (public repo). See
 # main/Kconfig.projbuild (HELIX_NET_HIL) and CMakeLists.txt.
 sdkconfig.local
+build_mock/
