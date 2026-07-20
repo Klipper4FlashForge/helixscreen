@@ -150,6 +150,15 @@ TEST_CASE("Display message: END_PRINT M117 survives the print-end clear",
     REQUIRE(std::string(lv_subject_get_string(state.get_display_message_subject())) ==
             "Print complete - remove part");
     REQUIRE(lv_subject_get_int(state.get_display_message_visible_subject()) == 1);
+
+    // A later frame repeating the terminal state must NOT re-clear. This is
+    // what discriminates edge- from level-triggered: a level-triggered clear
+    // would fire again here and swallow the farewell message.
+    json still_complete = {{"print_stats", {{"state", "complete"}}}};
+    state.update_from_status(still_complete);
+    REQUIRE(std::string(lv_subject_get_string(state.get_display_message_subject())) ==
+            "Print complete - remove part");
+    REQUIRE(lv_subject_get_int(state.get_display_message_visible_subject()) == 1);
 }
 
 // ============================================================================
