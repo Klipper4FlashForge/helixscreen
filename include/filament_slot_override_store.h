@@ -174,9 +174,10 @@ class FilamentSlotOverrideStore {
 //     fields the user hasn't explicitly set. clear_slot_override resets the
 //     entry, after which auto-mirror takes over again.
 enum class MirrorPolicy {
-    /// Overwrite ovr.color_rgb / ovr.material with firmware values
-    /// unconditionally. Use when user edits propagate back to firmware so the
-    /// two views stay in sync (AD5X IFS).
+    /// Overwrite ovr.color_rgb / ovr.material with firmware values, EXCEPT for
+    /// fields the user explicitly locked (user_locked_color /
+    /// user_locked_material — see #965). Use when user edits propagate back to
+    /// firmware so the two views stay in sync (AD5X IFS, Snapmaker paxx12).
     OverwriteAlways,
     /// Only fill ovr.color_rgb / ovr.material when they're currently UNSET
     /// (color_rgb == 0, empty material). Use when user edits don't reach
