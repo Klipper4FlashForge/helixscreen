@@ -86,6 +86,13 @@ std::string display_family(std::string_view type);
  */
 std::string orca_match_type(std::string_view display_type);
 
+/// True once the Orca tables have been loaded and are non-empty. A missing or
+/// pre-change assets/filaments.json yields empty tables, which makes
+/// orca_match_type() return "" for every input — safe for emit (we omit the
+/// field) but destructive for the heal, which would strip material from every
+/// record. Callers that WRITE based on orca_match_type must check this first.
+bool orca_tables_available();
+
 /// Inject the Orca tables directly, bypassing the lazy asset load. Empty
 /// containers for both arguments restore lazy loading from
 /// assets/filaments.json on the next orca_match_type() call.

@@ -290,6 +290,12 @@ void set_orca_tables(std::set<std::string> library_types,
     g_orca_loaded = !(g_orca_library_types.empty() && g_orca_overrides.empty());
 }
 
+bool orca_tables_available() {
+    std::lock_guard<std::mutex> lock(g_orca_mutex);
+    load_orca_tables_locked();
+    return !g_orca_library_types.empty();
+}
+
 std::string orca_match_type(std::string_view display_type) {
     std::string work(trim(display_type));
     if (work.empty())
