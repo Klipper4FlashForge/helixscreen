@@ -86,10 +86,10 @@ std::string display_family(std::string_view type);
  */
 std::string orca_match_type(std::string_view display_type);
 
-/// Inject the Orca tables directly, bypassing the asset load. Tests only —
-/// keeps resolution deterministic and independent of asset search paths.
-/// Empty arguments restore lazy loading from assets/filaments.json.
-void set_orca_tables_for_testing(std::set<std::string> library_types,
-                                 std::map<std::string, std::string> overrides);
+/// Inject the Orca tables directly, bypassing the lazy asset load. Empty
+/// containers for both arguments restore lazy loading from
+/// assets/filaments.json on the next orca_match_type() call.
+void set_orca_tables(std::set<std::string> library_types,
+                     std::map<std::string, std::string> overrides);
 
 } // namespace filament
