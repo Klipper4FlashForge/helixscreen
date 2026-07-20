@@ -426,6 +426,7 @@ void register_xml_components() {
     register_xml("components/filament_swatch.xml");
     register_xml("components/filament_slot_picker_row.xml");
     register_xml("components/filament_mapping_tool_row.xml");
+    register_xml("components/compact_toggle_row.xml");
     register_xml("print_file_detail.xml");
 
     // Panel widget components (dynamic instantiation from PanelWidgetConfig)

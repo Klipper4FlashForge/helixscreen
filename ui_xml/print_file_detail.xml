@@ -156,7 +156,7 @@
       <!-- RIGHT SECTION: Options and buttons (4/9 width)                    -->
       <!-- ================================================================== -->
       <lv_obj name="options_section"
-              height="100%" flex_grow="4" style_pad_hor="0" style_pad_ver="#space_sm" style_pad_gap="#space_lg"
+              height="100%" flex_grow="4" style_pad_hor="0" style_pad_ver="#space_sm" style_pad_gap="#space_sm"
               flex_flow="column">
         <!-- Print history status display (hidden by default) -->
         <lv_obj name="history_status_row"
@@ -198,7 +198,8 @@
              subject. PrintSelectDetailView publishes 1/0 after each
              FilamentMappingCard::update(). -->
         <ui_card name="filament_mapping_card"
-                 width="100%" style_pad_hor="0" style_pad_ver="#space_md" style_border_width="0" flex_flow="column">
+                 width="100%" style_pad_hor="0" style_pad_ver="#space_md" style_pad_gap="#space_xs"
+                 style_border_width="0" flex_flow="column">
           <bind_flag_if_eq subject="filament_mapping_visible" flag="hidden" ref_value="0"/>
           <lv_obj width="100%"
                   height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="row"
@@ -218,13 +219,13 @@
 
         <!-- Preview color mode: actual (loaded slot) vs sliced (slicer intent).
              Only meaningful with an AMS mapping to compare against. -->
-        <setting_toggle_row name="sliced_colors_row"
+        <compact_toggle_row name="sliced_colors_row"
                             label="Show sliced colors"
                             label_tag="Show sliced colors"
                             subject="detail_prefer_sliced_colors"
                             callback="on_toggle_sliced_colors">
           <bind_flag_if_eq subject="filament_mapping_visible" flag="hidden" ref_value="0"/>
-        </setting_toggle_row>
+        </compact_toggle_row>
 
         <!-- Wrapper: zero-gap so spacer doesn't add extra space from parent's pad_gap -->
         <lv_obj width="100%" flex_grow="1" style_pad_all="0" style_pad_gap="0" flex_flow="column">
