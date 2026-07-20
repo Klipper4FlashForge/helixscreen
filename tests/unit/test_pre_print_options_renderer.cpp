@@ -4,7 +4,7 @@
 #include "ui_pre_print_options_renderer.h"
 #include "ui_print_preparation_manager.h"
 
-#include "../lvgl_test_fixture.h"
+#include "../lvgl_ui_test_fixture.h"
 #include "pre_print_option.h"
 #include "printer_detector.h"
 
@@ -74,7 +74,7 @@ PrePrintOptionSet make_multi_category_set() {
 
 } // namespace
 
-TEST_CASE_METHOD(LVGLTestFixture,
+TEST_CASE_METHOD(LVGLUITestFixture,
                  "PrePrintOptionsRenderer: empty option set leaves container empty",
                  "[print_file_detail][pre_print_options]") {
     PrePrintOptionsRenderer renderer;
@@ -87,7 +87,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
     REQUIRE(lv_obj_get_child_count(container) == 0);
 }
 
-TEST_CASE_METHOD(LVGLTestFixture, "PrePrintOptionsRenderer: single-category set has no subheader",
+TEST_CASE_METHOD(LVGLUITestFixture, "PrePrintOptionsRenderer: single-category set has no subheader",
                  "[print_file_detail][pre_print_options]") {
     PrePrintOptionsRenderer renderer;
     lv_obj_t* container = lv_obj_create(test_screen());
@@ -115,7 +115,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "PrePrintOptionsRenderer: single-category set 
     REQUIRE(lv_obj_get_child_count(container) == 1);
 }
 
-TEST_CASE_METHOD(LVGLTestFixture, "PrePrintOptionsRenderer: multi-category set emits flat row list",
+TEST_CASE_METHOD(LVGLUITestFixture, "PrePrintOptionsRenderer: multi-category set emits flat row list",
                  "[print_file_detail][pre_print_options]") {
     PrePrintOptionsRenderer renderer;
     lv_obj_t* container = lv_obj_create(test_screen());
@@ -136,7 +136,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "PrePrintOptionsRenderer: multi-category set e
     REQUIRE(classes == std::vector<std::string>{"row", "row", "row"});
 }
 
-TEST_CASE_METHOD(LVGLTestFixture,
+TEST_CASE_METHOD(LVGLUITestFixture,
                  "PrePrintOptionsRenderer: state subjects initialized from default_enabled",
                  "[print_file_detail][pre_print_options]") {
     PrePrintOptionsRenderer renderer;
@@ -157,7 +157,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
     REQUIRE(renderer.get_state("does_not_exist", 42) == 42);
 }
 
-TEST_CASE_METHOD(LVGLTestFixture,
+TEST_CASE_METHOD(LVGLUITestFixture,
                  "PrePrintOptionsRenderer: visibility lookup hides row when subject is 0",
                  "[print_file_detail][pre_print_options]") {
     PrePrintOptionsRenderer renderer;
@@ -206,7 +206,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
     lv_subject_deinit(&can_show);
 }
 
-TEST_CASE_METHOD(LVGLTestFixture,
+TEST_CASE_METHOD(LVGLUITestFixture,
                  "PrePrintOptionsRenderer: set_state updates subject and persists across reads",
                  "[print_file_detail][pre_print_options]") {
     PrePrintOptionsRenderer renderer;
@@ -224,7 +224,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
     REQUIRE(renderer.get_state("does_not_exist") == 0);
 }
 
-TEST_CASE_METHOD(LVGLTestFixture,
+TEST_CASE_METHOD(LVGLUITestFixture,
                  "PrePrintOptionsRenderer: AD5M Pro live DB entry produces one row, no subheader",
                  "[print_file_detail][pre_print_options][db]") {
     // Sanity-checks the live printer_database.json: AD5M Pro currently has a
@@ -246,7 +246,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
     }
 }
 
-TEST_CASE_METHOD(LVGLTestFixture, "PrePrintOptionsRenderer: K1C live DB entry produces one row",
+TEST_CASE_METHOD(LVGLUITestFixture, "PrePrintOptionsRenderer: K1C live DB entry produces one row",
                  "[print_file_detail][pre_print_options][db]") {
     auto set = PrinterDetector::get_pre_print_option_set("Creality K1C");
     REQUIRE_FALSE(set.empty());
@@ -262,7 +262,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "PrePrintOptionsRenderer: K1C live DB entry pr
     REQUIRE(renderer.get_switch("bed_mesh") != nullptr);
 }
 
-TEST_CASE_METHOD(LVGLTestFixture,
+TEST_CASE_METHOD(LVGLUITestFixture,
                  "PrePrintOptionsRenderer: K2 Plus live DB renders bed_mesh and ai_detect",
                  "[print_file_detail][pre_print_options][db][ai_detect]") {
     // K2 Plus advertises bed_mesh (Mechanical) + ai_detect (Monitoring).
@@ -282,7 +282,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
     REQUIRE(renderer.get_switch("ai_detect") != nullptr);
 }
 
-TEST_CASE_METHOD(LVGLTestFixture, "PrePrintOptionsRenderer: label_key wins over humanize_id",
+TEST_CASE_METHOD(LVGLUITestFixture, "PrePrintOptionsRenderer: label_key wins over humanize_id",
                  "[print_file_detail][pre_print_options][label]") {
     // When `label_key` is present, the renderer must look it up via lv_tr
     // and never fall through to the humanize_id path. We verify by giving
@@ -346,7 +346,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "PrePrintOptionsRenderer: label_key wins over 
     REQUIRE(unkeyed_text == "AI Detect");
 }
 
-TEST_CASE_METHOD(LVGLTestFixture, "PrePrintOptionsRenderer: clear() drops rows and resets subjects",
+TEST_CASE_METHOD(LVGLUITestFixture, "PrePrintOptionsRenderer: clear() drops rows and resets subjects",
                  "[print_file_detail][pre_print_options]") {
     PrePrintOptionsRenderer renderer;
     lv_obj_t* container = lv_obj_create(test_screen());
@@ -365,7 +365,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "PrePrintOptionsRenderer: clear() drops rows a
 // delegates to the renderer. Mirrors the production wiring in
 // PrintSelectDetailView::populate_option_rows() where the renderer
 // becomes the source of truth for per-option toggle state.
-TEST_CASE_METHOD(LVGLTestFixture,
+TEST_CASE_METHOD(LVGLUITestFixture,
                  "PrePrintOptionsRenderer: provider integration with PrintPreparationManager",
                  "[print_file_detail][pre_print_options][integration]") {
     PrePrintOptionsRenderer renderer;
@@ -403,7 +403,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
     }
 }
 
-TEST_CASE_METHOD(LVGLTestFixture,
+TEST_CASE_METHOD(LVGLUITestFixture,
                  "PrePrintOptionsRenderer: plugin visibility subject is tri-state",
                  "[print_file_detail][pre_print_options][preprint][plugin_gate]") {
     // Mirrors the plugin-gate wiring: the visibility subject is the
