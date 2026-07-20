@@ -1079,6 +1079,15 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     mutable std::mutex gcode_error_mutex_;
     std::string last_gcode_error_;
 
+    // M117 display message (needs mutex since std::string is not atomic).
+    // display_message_set_ distinguishes "user sent M117" (even to clear the
+    // text to "") from "no M117 has been sent yet" so the periodic status
+    // broadcast knows whether to keep showing the canned phase strings
+    // ("Heating...", "Purging nozzle") or the user's message.
+    mutable std::mutex display_message_mutex_;
+    std::string display_message_;
+    bool display_message_set_ = false;
+
     // Print simulation state (legacy - kept for backward compatibility)
     std::atomic<int> print_state_{
         0}; // 0=standby, 1=printing, 2=paused, 3=complete, 4=cancelled, 5=error

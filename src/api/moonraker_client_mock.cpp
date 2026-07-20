@@ -1325,6 +1325,27 @@ int MoonrakerClientMock::gcode_script(const std::string& gcode) {
         }
     }
 
+    // M117 <message> - Set display message (LCD message on real printers).
+    // Bare M117 (or M117 followed only by whitespace) clears the message.
+    // Klipper strips exactly one leading space after the command, so
+    // "M117 hello" -> "hello" but "M117  hello" (two spaces) -> " hello".
+    if (gcode == "M117" || gcode.find("M117 ") == 0) {
+        std::string text = gcode.substr(4);
+        if (!text.empty() && text.front() == ' ') {
+            text.erase(0, 1);
+        }
+        if (text.find_first_not_of(" \t") == std::string::npos) {
+            text.clear();
+        }
+        {
+            std::lock_guard<std::mutex> lock(display_message_mutex_);
+            display_message_ = text;
+            display_message_set_ = true;
+        }
+        spdlog::info("[MoonrakerClientMock] Display message set to \"{}\" (M117)", text);
+        dispatch_status_update({{"display_status", {{"message", text}}}});
+    }
+
     // Parse motion mode commands (G90/G91)
     // G90 - Absolute positioning mode
     // G91 - Relative positioning mode
@@ -3951,11 +3972,19 @@ void MoonrakerClientMock::temperature_simulation_loop() {
               {"progress", progress},
               {"is_active",
                phase == MockPrintPhase::PRINTING || phase == MockPrintPhase::PREHEAT}}},
-            // display_status: M73 slicer progress + M117 display message
+            // display_status: M73 slicer progress + M117 display message.
+            // A user-set M117 message (even cleared to "") always wins over the
+            // canned phase strings below - those only apply before the user has
+            // ever sent an M117.
             {"display_status",
              {{"progress", progress},
               {"message",
                [&]() -> json {
+                   {
+                       std::lock_guard<std::mutex> lock(display_message_mutex_);
+                       if (display_message_set_)
+                           return display_message_;
+                   }
                    if (phase == MockPrintPhase::PREHEAT)
                        return "Heating...";
                    if (phase == MockPrintPhase::PRINTING && progress < 0.02)

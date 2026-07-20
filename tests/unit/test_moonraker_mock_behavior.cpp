@@ -3250,4 +3250,35 @@ TEST_CASE("MoonrakerClientMock gcode_script returns non-zero on error", "[mock][
     mock->disconnect();
 }
 
+TEST_CASE("MoonrakerClientMock: M117 sets display_status.message", "[mock][display_message]") {
+    TestableMoonrakerMock mock;
+
+    json captured;
+    mock.register_notify_update([&captured](const json& notif) {
+        if (notif.contains("params") && notif["params"].is_array() &&
+            !notif["params"].empty() && notif["params"][0].contains("display_status")) {
+            captured = notif["params"][0]["display_status"];
+        }
+    });
+
+    SECTION("sets the message text") {
+        mock.gcode_script("M117 Leveling 3/9");
+        REQUIRE(captured.contains("message"));
+        REQUIRE(captured["message"].get<std::string>() == "Leveling 3/9");
+    }
+
+    SECTION("bare M117 clears the message") {
+        mock.gcode_script("M117 something");
+        captured = json{};
+        mock.gcode_script("M117");
+        REQUIRE(captured.contains("message"));
+        REQUIRE(captured["message"].get<std::string>() == "");
+    }
+
+    SECTION("strips exactly one leading space, preserves the rest") {
+        mock.gcode_script("M117  two spaces");
+        REQUIRE(captured["message"].get<std::string>() == " two spaces");
+    }
+}
+
 #pragma GCC diagnostic pop
