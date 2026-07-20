@@ -1882,6 +1882,90 @@ TEST_CASE("mirror_firmware_to_lane_data OverwriteAlways: auto-mirrored entry sti
     CHECK(overrides[0].material == "PETG");
 }
 
+TEST_CASE("locked fields survive an OverwriteAlways mirror", "[mirror_firmware][lock]") {
+    std::unordered_map<int, FilamentSlotOverride> overrides;
+    auto& ovr = overrides[0];
+    ovr.material = "ASA-GF";
+    ovr.color_rgb = 0x1A1A1A;
+    ovr.color_set = true;
+    ovr.user_locked_material = true;
+    ovr.user_locked_color = true;
+
+    // Firmware reports something different — e.g. AD5X re-emitting stale
+    // FFMInfo after a print completes (#965).
+    bool changed = helix::ams::mirror_firmware_to_lane_data(
+        nullptr, overrides, 0, 0xFF0000, "PLA", /*slot_has_filament=*/true,
+        helix::ams::MirrorPolicy::OverwriteAlways, "[test]");
+
+    CHECK_FALSE(changed);
+    CHECK(overrides[0].material == "ASA-GF");
+    CHECK(overrides[0].color_rgb == 0x1A1A1Au);
+}
+
+TEST_CASE("unlocked fields accept an OverwriteAlways mirror", "[mirror_firmware][lock]") {
+    std::unordered_map<int, FilamentSlotOverride> overrides;
+    auto& ovr = overrides[0];
+    ovr.material = "PLA";
+    ovr.color_rgb = 0x00FF00;
+    ovr.color_set = true;
+    // locks default false — auto-mirror wrote these, not the user
+
+    bool changed = helix::ams::mirror_firmware_to_lane_data(
+        nullptr, overrides, 0, 0xFF0000, "PETG", /*slot_has_filament=*/true,
+        helix::ams::MirrorPolicy::OverwriteAlways, "[test]");
+
+    CHECK(changed);
+    CHECK(overrides[0].material == "PETG");
+    CHECK(overrides[0].color_rgb == 0xFF0000u);
+}
+
+TEST_CASE("FillUnsetOnly never overwrites a set field", "[mirror_firmware][lock]") {
+    std::unordered_map<int, FilamentSlotOverride> overrides;
+    auto& ovr = overrides[0];
+    ovr.material = "ASA-GF";
+    ovr.color_rgb = 0x1A1A1A;
+    ovr.color_set = true;
+    ovr.user_locked_material = true;
+    ovr.user_locked_color = true;
+
+    // CFS: every status poll re-reports firmware truth. Without the guard this
+    // would erase the user's choice on the next poll.
+    bool changed = helix::ams::mirror_firmware_to_lane_data(
+        nullptr, overrides, 0, 0x000000, "PLA", /*slot_has_filament=*/true,
+        helix::ams::MirrorPolicy::FillUnsetOnly, "[test]");
+
+    CHECK_FALSE(changed);
+    CHECK(overrides[0].material == "ASA-GF");
+}
+
+TEST_CASE("FillUnsetOnly honors user_locked_material on an empty-but-locked field",
+          "[mirror_firmware][lock]") {
+    // The test above ("never overwrites a set field") can't discriminate the
+    // user_locked_material guard from the material.empty() unset-check, since
+    // material is non-empty there and the unset-check alone already blocks the
+    // write. This case isolates the guard: material is empty (as the unset-
+    // check would normally allow a fill) but user_locked_material is true — a
+    // legacy or hand-edited lane_data record where the lock flag and the
+    // value-set state disagree (see the "user-lock checks are redundant..."
+    // comment on this function). Only the lock guard can block this write.
+    // Color is locked-and-set so its branch is a no-op here — this isolates
+    // the assertion to the material guard alone.
+    std::unordered_map<int, FilamentSlotOverride> overrides;
+    auto& ovr = overrides[0];
+    ovr.material.clear();
+    ovr.user_locked_material = true;
+    ovr.color_rgb = 0x0000FF;
+    ovr.color_set = true;
+    ovr.user_locked_color = true;
+
+    bool changed = helix::ams::mirror_firmware_to_lane_data(
+        nullptr, overrides, 0, 0x0000FF, "PLA", /*slot_has_filament=*/true,
+        helix::ams::MirrorPolicy::FillUnsetOnly, "[test]");
+
+    CHECK_FALSE(changed);
+    CHECK(overrides[0].material.empty());
+}
+
 TEST_CASE("load_blocking: legacy lane_data record (no helix_locked_*) loads as user-locked "
           "(#965 pessimistic default)",
           "[filament_slot_override]") {
