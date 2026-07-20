@@ -97,34 +97,15 @@ TEST_CASE_METHOD(HelixTestFixture, "classify_primary_fans handles empty fan list
 // Integration tests: PrintStatusPanel fan subjects
 // =============================================================================
 
-// Fixture that owns a PrintStatusPanel with subjects initialized. Binds to
-// the process-lifetime global singleton (get_global_print_status_panel(),
-// the same instance production code uses) rather than a fresh stack-local
-// PrintStatusPanel.
-//
-// init_subjects() registers ~20 subject names (e.g. "print_progress_text",
-// shared with panel_widget_print_status.xml's print_card_info block) into
-// the process-global XML subject registry, which has no unregister API —
-// only overwrite-by-name (lv_xml_register_subject). A stack-local panel
-// destroyed at the end of each test would leave those names pointing at
-// freed stack memory for the rest of the test binary's run: the next test
-// to lv_xml_create() any component referencing one of those names hits a
-// dangling lv_subject_t* and segfaults (or silently reads garbage),
-// depending on what happens to occupy that address — discovered via the
-// M117 widget tests (print_status idle M117 row / active M117 row cases in
-// test_print_status_widget_m117.cpp), which are the first tests to
-// lv_xml_create() panel_widget_print_status.xml after this fixture runs.
-// Binding to the stable global singleton keeps the registration valid for
-// the process lifetime; init_subjects() is idempotent (guarded internally
-// by subjects_initialized_), so repeated construction across test cases is
-// a real init on the first case and a no-op thereafter.
+// Fixture that owns a PrintStatusPanel with subjects initialized.
+// Uses the global PrinterState singleton (same as production).
 struct FanPanelFixture : public HelixTestFixture {
-    FanPanelFixture() : panel(get_global_print_status_panel()) {
+    FanPanelFixture() : panel(get_printer_state(), nullptr) {
         panel.init_subjects();
     }
     ~FanPanelFixture() override = default;
 
-    PrintStatusPanel& panel;
+    PrintStatusPanel panel;
 };
 
 TEST_CASE_METHOD(HelixTestFixture, "classify_primary_fans via global PrinterState fans_ live path",
