@@ -289,4 +289,22 @@ TEST_CASE("print_active tracks PrintJobState across a full job lifecycle",
         INFO("moonraker state: " << s.moonraker_state);
         REQUIRE(lv_subject_get_int(state.get_print_active_subject()) == s.expected_active);
     }
+
+    // Delta persistence: Moonraker sends deltas, so most frames carry no
+    // print_stats at all. print_active must RETAIN its value across those —
+    // recomputing it to 0 would hide the print card mid-print.
+    json printing = {{"print_stats", {{"state", "printing"}}}};
+    state.update_from_status(printing);
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+    REQUIRE(lv_subject_get_int(state.get_print_active_subject()) == 1);
+
+    // A frame with no print_stats key whatsoever.
+    state.update_from_status({{"virtual_sdcard", {{"progress", 0.5}}}});
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+    REQUIRE(lv_subject_get_int(state.get_print_active_subject()) == 1);
+
+    // And an empty frame.
+    state.update_from_status(json::object());
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+    REQUIRE(lv_subject_get_int(state.get_print_active_subject()) == 1);
 }
