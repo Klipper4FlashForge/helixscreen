@@ -66,15 +66,34 @@ TEST_CASE_METHOD(XMLTestFixture,
 
     FilamentCatalogSelector sel;
     sel.attach(root);
-    // AD5X-shaped whitelist: SILK has no Generic-vendor catalog product at all, so the old
-    // subtract-only filter silently dropped it, locking users out of a firmware-supported
-    // material. PLA and PETG both exist for Generic and are intersected as before.
+    // PEEK has no Generic-vendor catalog product at all, so a subtract-only filter
+    // would silently drop it, locking users out of a firmware-supported material.
+    // PLA and PETG both exist for Generic and are intersected as before.
+    sel.configure(std::nullopt, std::vector<std::string>{"PLA", "PEEK", "PETG"});
+    sel.populate();
+
+    // Sorted family headings (PETG, PLA) first, then whitelist-only entries appended
+    // in whitelist order, preserving whitelist spelling.
+    CHECK(sel.type_options() == "PETG\nPLA\nPEEK");
+
+    sel.detach();
+}
+
+TEST_CASE_METHOD(XMLTestFixture,
+                 "selector folds a whitelisted variant type into its family heading",
+                 "[filament_picker][catalog_selector][whitelist][family]") {
+    lv_obj_t* root = make_fragment();
+    REQUIRE(root != nullptr);
+
+    FilamentCatalogSelector sel;
+    sel.attach(root);
+    // SILK's only Generic product is "Silk PLA" — it is stocked, so it is NOT an
+    // absent-whitelist append. It folds under the PLA family heading instead of
+    // standing as its own top-level entry, while still emitting type "SILK".
     sel.configure(std::nullopt, std::vector<std::string>{"PLA", "SILK", "PETG"});
     sel.populate();
 
-    // Sorted catalog intersection (PETG, PLA) first, then whitelist-only entries appended
-    // in whitelist order, preserving whitelist spelling.
-    CHECK(sel.type_options() == "PETG\nPLA\nSILK");
+    CHECK(sel.type_options() == "PETG\nPLA");
 
     sel.detach();
 }
@@ -97,8 +116,7 @@ TEST_CASE_METHOD(XMLTestFixture, "selector clears highlight when vendor changes"
     sel.detach();
 }
 
-TEST_CASE_METHOD(XMLTestFixture,
-                 "preselect_on_change keeps a checked product across a type change",
+TEST_CASE_METHOD(XMLTestFixture, "preselect_on_change keeps a checked product across a type change",
                  "[filament_picker][catalog_selector][preselect]") {
     lv_obj_t* root = make_fragment();
     REQUIRE(root != nullptr);
@@ -137,8 +155,7 @@ TEST_CASE_METHOD(XMLTestFixture,
     helix::ui::UpdateQueue::instance().drain();
 }
 
-TEST_CASE_METHOD(XMLTestFixture,
-                 "preselect_on_change leaves an empty product list unchecked",
+TEST_CASE_METHOD(XMLTestFixture, "preselect_on_change leaves an empty product list unchecked",
                  "[filament_picker][catalog_selector][preselect]") {
     lv_obj_t* root = make_fragment();
     REQUIRE(root != nullptr);
@@ -146,11 +163,11 @@ TEST_CASE_METHOD(XMLTestFixture,
     FilamentCatalogSelector sel;
     sel.attach(root);
     sel.set_preselect_on_change(true);
-    // SILK is whitelisted but has no Generic catalog product -> appended type,
+    // PEEK is whitelisted but has no Generic catalog product -> appended heading,
     // empty product list. Nothing to check; the host decides Save semantics.
-    sel.configure(std::nullopt, std::vector<std::string>{"SILK"});
+    sel.configure(std::nullopt, std::vector<std::string>{"PEEK"});
     sel.populate();
-    CHECK(sel.current_type() == "SILK");
+    CHECK(sel.current_type() == "PEEK");
     CHECK(sel.highlighted() == nullptr);
 
     sel.detach();
@@ -169,13 +186,21 @@ TEST_CASE_METHOD(XMLTestFixture,
     REQUIRE(sel.current_vendor() == "Generic");
     REQUIRE(sel.current_type() == "PLA");
 
-    // assets/filaments.json lists Generic/PLA in file order as: Support for
-    // PLA, PLA, PLA High Speed, PLA Matte, PLA Silk. Display order must sink
-    // "Support for PLA" to the end and put the plain "PLA" first, with the
-    // remaining variants alphabetical in between.
+    // Within the base-type (type == "PLA") run, display order must put the plain
+    // "PLA" first, sink "Support for PLA" to the end, and sort the rest
+    // alphabetically. Products of the family's VARIANT types (Glow PLA, PLA-CF,
+    // PLA-GF, SILK, Wood PLA...) follow as their own runs after the whole
+    // base-type run, each run keyed by its type so the heading reads
+    // base-then-variants rather than one interleaved alphabetical soup.
+    //
+    // The decorative PLAs each carry their own type (type == name) because they
+    // are distinct filament_database.h rows; display_family() strips the
+    // decorative affix so they land under the PLA heading as single-product runs.
     auto names = sel.product_names_for_test();
     REQUIRE(names == std::vector<std::string>{"PLA", "PLA High Speed", "PLA Matte", "PLA Silk",
-                                              "Support for PLA"});
+                                              "Support for PLA", "Glow PLA", "Marble PLA",
+                                              "Matte PLA", "Metal PLA", "PLA-CF", "PLA-GF",
+                                              "Silk PLA", "Wood PLA"});
 
     sel.detach();
 }

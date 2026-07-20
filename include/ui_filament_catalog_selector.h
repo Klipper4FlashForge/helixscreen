@@ -74,30 +74,54 @@ class FilamentCatalogSelector {
 
     // === Introspection (tests + hosts) ===
     [[nodiscard]] std::string current_vendor() const;
+    /// Selected Type-dropdown text. Since grouping, this is a material FAMILY
+    /// heading ("PLA"), not necessarily a catalog type — a family collapses
+    /// PLA / PLA-CF / PLA-GF / PLA-AERO / SILK under one entry. Hosts that need
+    /// the material a user actually picked must read highlighted()->type; this
+    /// is only a last-resort fallback for a heading with no products behind it
+    /// (a firmware-whitelisted type the catalog does not stock), where the
+    /// heading text IS the whitelist type spelling.
     [[nodiscard]] std::string current_type() const;
     [[nodiscard]] std::string type_options() const;
 
     // === Test drivers (mirror the XML event paths) ===
     void select_first_product_for_test();
+    /// Highlight a specific product by id, mirroring a row tap.
+    void select_product_for_test(const std::string& product_id);
     void change_vendor_for_test(uint32_t index);
     void change_type_for_test(uint32_t index);
     /// Product names in current display order (post display-ranking) for the
-    /// active vendor+type — lets tests assert row order without walking the
+    /// active vendor+family — lets tests assert row order without walking the
     /// rendered widget tree.
     [[nodiscard]] std::vector<std::string> product_names_for_test() const;
+    /// Ordered products for the active vendor+family. Lets tests assert which
+    /// variant TYPES are grouped under a heading and that their temperatures
+    /// stay distinct. Pointers valid until the next populate()/clear_catalog().
+    [[nodiscard]] std::vector<const helix::printer::EffectiveFilament*> products_for_test() const;
+    /// Row label the list renders for @p p under the active family heading —
+    /// the variant-disambiguation string tests assert against.
+    [[nodiscard]] std::string row_label_for_test(const helix::printer::EffectiveFilament* p) const;
 
   private:
     void populate_vendor_dropdown();
     void populate_type_dropdown();
     void rebuild_product_list();
-    /// products_for() results ranked for display: the plain material whose
-    /// name equals `type` (case-insensitive) first, "Support…" materials
-    /// last, everything else alphabetical (case-insensitive) in between,
-    /// stable within ranks. Used everywhere the selector renders the product
-    /// list or auto-picks "the first product" so preselect lands on the
-    /// plain material rather than raw catalog/file order.
+    /// Every product of `vendor` whose type belongs to material family
+    /// `family`, whitelist-filtered by its OWN type, ranked for display:
+    /// base-type products first (plain material name first within them),
+    /// then variants grouped by type alphabetically, "Support…" last.
+    /// Used everywhere the selector renders the product list or auto-picks
+    /// "the first product" so preselect lands on the plain base material
+    /// rather than a fiber-filled variant or raw file order.
     std::vector<const helix::printer::EffectiveFilament*>
-    ordered_products_for(const std::string& vendor, const std::string& type) const;
+    ordered_products_for(const std::string& vendor, const std::string& family) const;
+    /// Whitelist gate for a single catalog TYPE. Filtering happens per entry,
+    /// never per heading: a family heading is only as permissive as the
+    /// variants behind it, so a whitelisted printer never sees a variant its
+    /// firmware would reject just because a sibling variant is allowed.
+    [[nodiscard]] bool type_allowed(const std::string& type) const;
+    /// Display family heading for a catalog type (thin wrapper for logging).
+    [[nodiscard]] static std::string family_of(const std::string& type);
     void handle_vendor_changed();
     void handle_type_changed();
     void handle_row_selected(const std::string& product_id);

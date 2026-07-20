@@ -776,7 +776,7 @@ TEST_CASE("compute_defaults single tool no material info skips mismatch",
 TEST_CASE("materials_match handles trailing whitespace", "[filament_mapper][material]") {
     // Trailing spaces: base material extraction finds "PLA" in "PLA "
     CHECK(FilamentMapper::materials_match("PLA ", "PLA"));
-    // Leading space: " PLA" has no known prefix, but "PLA" is known → unknown vs PLA = compatible
+    // Leading space: base extraction trims, so " PLA" resolves to PLA
     CHECK(FilamentMapper::materials_match("PLA", " PLA"));
     CHECK(FilamentMapper::materials_match("PLA ", "PLA "));
 }

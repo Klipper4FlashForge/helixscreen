@@ -3,6 +3,7 @@
 #include "filament_mapper.h"
 
 #include "filament_database.h"
+#include "filament_variants.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 
 #include <algorithm>
@@ -68,30 +69,6 @@ bool FilamentMapper::colors_match(uint32_t color_a, uint32_t color_b) {
     return color_distance(color_a, color_b) <= COLOR_MATCH_TOLERANCE;
 }
 
-/// Extract the base material from a compound name like "PLA SnapSpeed" → "PLA".
-/// Tries progressively shorter prefixes against the filament database.
-static std::string_view extract_base_material(std::string_view name) {
-    // Already a known material?
-    if (filament::find_material(name).has_value()) {
-        return name;
-    }
-
-    // Try progressively shorter prefixes at word/separator boundaries.
-    // "PLA SnapSpeed" → try "PLA SnapSpee"... eventually "PLA"
-    // "PLA-CF" → try "PLA-C"... "PLA-"... "PLA"
-    for (size_t i = name.size(); i > 0; --i) {
-        char c = name[i - 1];
-        if (c == ' ' || c == '-' || c == '_') {
-            auto prefix = name.substr(0, i - 1);
-            if (!prefix.empty() && filament::find_material(prefix).has_value()) {
-                return prefix;
-            }
-        }
-    }
-
-    return name; // Return as-is if no known prefix found
-}
-
 bool FilamentMapper::materials_match(const std::string& a, const std::string& b) {
     // Empty vs non-empty is always a mismatch
     if (a.empty() != b.empty()) {
@@ -106,10 +83,11 @@ bool FilamentMapper::materials_match(const std::string& a, const std::string& b)
         return true;
     }
 
-    // Resolve compound names to base materials (e.g., "PLA SnapSpeed" → "PLA")
-    // then check compatibility groups
-    auto base_a = extract_base_material(a);
-    auto base_b = extract_base_material(b);
+    // Resolve compound names to base materials (e.g., "PLA SnapSpeed" → "PLA",
+    // "PLA-CF" → "PLA") then check compatibility groups. Shared with the
+    // catalog picker's family grouping — see filament_variants.h.
+    auto base_a = filament::extract_base_material(a);
+    auto base_b = filament::extract_base_material(b);
     return filament::are_materials_compatible(base_a, base_b);
 }
 
