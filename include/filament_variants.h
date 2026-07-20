@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <map>
+#include <set>
 #include <string>
 #include <string_view>
 
@@ -54,5 +56,40 @@ std::string extract_base_material(std::string_view name);
  * which keeps unknown//user-overlay types visible instead of silently dropped.
  */
 std::string display_family(std::string_view type);
+
+/**
+ * @brief Reduce a display type to a string OrcaSlicer can actually match.
+ *
+ * OrcaSlicer matches a lane to a filament preset by exact, case-sensitive
+ * equality on `filament_type` (Preset.cpp:3327). On no match it does NOT leave
+ * the lane unset — it falls back to the first library preset whose name
+ * contains "PLA" (Preset.cpp:3300), and that id then resolves successfully in
+ * sync_ams_list, bypassing the smarter similarity search. So an unmatchable
+ * string yields PLA temperatures on whatever is actually loaded.
+ *
+ * Emitting a LESS precise string is therefore safer than a precise-but-
+ * unmatchable one. Resolution order:
+ *   1. explicit override from orca_type_overrides
+ *   2. the type itself, if present in orca_library_types
+ *   3. extract_base_material(type), if that is in orca_library_types
+ *   4. "" — caller must omit the field entirely
+ *
+ * Both tables ship in assets/filaments.json, generated from OrcaSlicer's
+ * filament library by scripts/import_orca_filaments.py. Only library presets
+ * are used because they alone carry `compatible_printers: []`, making them
+ * matchable on every printer regardless of installed vendor profiles.
+ *
+ * @param display_type HelixScreen's precise type ("ASA-GF"). May be firmware-
+ *        reported, free text, or a dropdown spelling — not necessarily in the
+ *        catalog.
+ * @return Orca-matchable type, or "" when nothing is safely matchable.
+ */
+std::string orca_match_type(std::string_view display_type);
+
+/// Inject the Orca tables directly, bypassing the asset load. Tests only —
+/// keeps resolution deterministic and independent of asset search paths.
+/// Empty arguments restore lazy loading from assets/filaments.json.
+void set_orca_tables_for_testing(std::set<std::string> library_types,
+                                 std::map<std::string, std::string> overrides);
 
 } // namespace filament
