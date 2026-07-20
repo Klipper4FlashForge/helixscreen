@@ -6,6 +6,11 @@
 
 #include <algorithm>
 #include <cctype>
+#include <fstream>
+#include <mutex>
+
+#include "hv/json.hpp"
+#include <spdlog/spdlog.h>
 
 namespace filament {
 
@@ -154,6 +159,71 @@ std::string_view family_override(std::string_view name) {
     return {};
 }
 
+/// Lazily-loaded Orca tables. Guarded because backends resolve from their own
+/// threads; the tables are immutable after load.
+std::mutex g_orca_mutex;
+bool g_orca_loaded = false;
+std::set<std::string> g_orca_library_types;
+std::map<std::string, std::string> g_orca_overrides;
+
+// Same search order as FilamentCatalog::kBuiltinPaths (filament_catalog.cpp:19).
+const char* kOrcaTablePaths[] = {"assets/filaments.json", "../assets/filaments.json",
+                                 "/opt/helixscreen/assets/filaments.json"};
+
+/// Load the tables from the first readable asset. Caller holds g_orca_mutex.
+void load_orca_tables_locked() {
+    if (g_orca_loaded)
+        return;
+    g_orca_loaded = true; // one attempt; a missing asset must not retry per call
+    for (const char* path : kOrcaTablePaths) {
+        std::ifstream f(path);
+        if (!f.is_open())
+            continue;
+        try {
+            auto doc = nlohmann::json::parse(f);
+            if (!doc.is_object())
+                continue;
+            if (auto it = doc.find("orca_library_types");
+                it != doc.end() && it->is_array()) {
+                for (const auto& t : *it) {
+                    if (t.is_string())
+                        g_orca_library_types.insert(t.get<std::string>());
+                }
+            }
+            if (auto it = doc.find("orca_type_overrides");
+                it != doc.end() && it->is_object()) {
+                for (const auto& [k, v] : it->items()) {
+                    if (v.is_string())
+                        g_orca_overrides[k] = v.get<std::string>();
+                }
+            }
+            spdlog::debug("[filament] loaded {} Orca library types, {} overrides from {}",
+                          g_orca_library_types.size(), g_orca_overrides.size(), path);
+            return;
+        } catch (const std::exception& e) {
+            spdlog::warn("[filament] Orca table parse failed {}: {}", path, e.what());
+        }
+    }
+    // No asset: every lookup misses, so orca_match_type returns "" and the
+    // caller omits `material`. Orca then shows the lane empty — visibly wrong
+    // rather than confidently wrong, which is the safe failure direction.
+    spdlog::warn("[filament] no Orca library tables found; lane_data will omit material");
+}
+
+/// Case-insensitive lookup against the library set. Orca's own match is
+/// case-sensitive, so we return the CANONICAL spelling from the table, never
+/// the caller's casing.
+const std::string* find_library_type(const std::string& candidate) {
+    auto exact = g_orca_library_types.find(candidate);
+    if (exact != g_orca_library_types.end())
+        return &*exact;
+    for (const auto& t : g_orca_library_types) {
+        if (iequals(t, candidate))
+            return &t;
+    }
+    return nullptr;
+}
+
 } // namespace
 
 std::string extract_base_material(std::string_view name) {
@@ -201,6 +271,40 @@ std::string display_family(std::string_view type) {
     // A type we cannot reduce is its own family — one heading, one entry — so
     // user-overlay and firmware-only types stay reachable instead of vanishing.
     return base.empty() ? std::string(type) : base;
+}
+
+void set_orca_tables_for_testing(std::set<std::string> library_types,
+                                 std::map<std::string, std::string> overrides) {
+    std::lock_guard<std::mutex> lock(g_orca_mutex);
+    g_orca_library_types = std::move(library_types);
+    g_orca_overrides = std::move(overrides);
+    // Empty tables mean "restore lazy load"; non-empty means "tests own these".
+    g_orca_loaded = !(g_orca_library_types.empty() && g_orca_overrides.empty());
+}
+
+std::string orca_match_type(std::string_view display_type) {
+    std::string work(trim(display_type));
+    if (work.empty())
+        return "";
+
+    std::lock_guard<std::mutex> lock(g_orca_mutex);
+    load_orca_tables_locked();
+
+    // 1. Explicit override wins outright, including an intentional "" that
+    //    means "this type must never be emitted".
+    for (const auto& [k, v] : g_orca_overrides) {
+        if (iequals(k, work))
+            return v;
+    }
+    // 2. The type itself, if Orca's library carries it.
+    if (const std::string* hit = find_library_type(work))
+        return *hit;
+    // 3. Base polymer, if the library carries that.
+    std::string base = extract_base_material(work);
+    if (const std::string* hit = find_library_type(base))
+        return *hit;
+    // 4. Nothing safe to say. Caller omits the field.
+    return "";
 }
 
 } // namespace filament
