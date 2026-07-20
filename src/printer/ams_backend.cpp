@@ -35,6 +35,35 @@
 
 using namespace helix;
 
+namespace {
+// Task 15 R2: ACE (500ms REST poll) and AD5X IFS (5s whole-file HTTP poll)
+// are the only AMS backends that need a raw HTTP transport instead of the
+// WebSocket JSON-RPC channel every other backend rides. On ESP32 that
+// transport is the Task 10 HTTP lane (EspHttpLane) — a single dedicated
+// worker thread with a bounded, capped fetch model — still an evaluation arm
+// pending a real-hardware budget/latency measurement, so it's gated by
+// CONFIG_HELIX_AMS_HTTP_POLL_BACKENDS (default n). Flipping the flag is the
+// only delta between "unsupported on this screen" and a real backend.
+// Desktop always supports both (unconditional real HTTP stack).
+#if defined(ESP_PLATFORM)
+bool http_poll_ams_backends_supported() {
+    // A Kconfig bool set to 'n' (the default) is OMITTED from sdkconfig.h
+    // entirely, not defined as 0 — so this must be a preprocessor #if, not a
+    // runtime return of the macro's value (the latter fails to compile when
+    // off: the token is simply undeclared).
+#if CONFIG_HELIX_AMS_HTTP_POLL_BACKENDS
+    return true;
+#else
+    return false;
+#endif
+}
+#else
+constexpr bool http_poll_ams_backends_supported() {
+    return true;
+}
+#endif
+} // namespace
+
 lv_subject_t* AmsBackend::get_operation_step_index_subject(StepOperationType op) {
     // Narration-capable backends drive their step index through the
     // GcodeNarrationRouter, which writes AmsState's toolchange_step subject.
@@ -407,6 +436,10 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, IMoonraker
             spdlog::error("[AMS Backend] ACE requires IMoonrakerAPI and MoonrakerClient");
             return nullptr;
         }
+        if (!http_poll_ams_backends_supported()) {
+            spdlog::info("[AMS Backend] AMS backend 'ACE' unsupported on this screen");
+            return nullptr;
+        }
         spdlog::debug("[AMS Backend] Creating ACE backend");
         return std::make_unique<AmsBackendAce>(api, client);
 
@@ -423,6 +456,10 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, IMoonraker
 #if HELIX_HAS_IFS
         if (!api || !client) {
             spdlog::error("[AMS Backend] AD5X IFS requires IMoonrakerAPI and MoonrakerClient");
+            return nullptr;
+        }
+        if (!http_poll_ams_backends_supported()) {
+            spdlog::info("[AMS Backend] AMS backend 'AD5X IFS' unsupported on this screen");
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating AD5X IFS backend");

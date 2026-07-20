@@ -47,10 +47,24 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 # runtime test_mode. Instead, CONFIG_HELIX_MOCK_PRINTER is a plain sdkconfig
 # macro that app_boot.cpp reads to run a firmware-local synthetic PrinterState
 # driver (see app_boot.cpp `#if CONFIG_HELIX_MOCK_PRINTER`), feeding the same
-# production PrinterState::update_from_status() path with zero network. The
+# production PrinterState::update_from_status() path with zero network. Most
 # `# MOCK:` lines in app_srcs.txt are retained as documentation of the desktop
 # mock set but are deliberately NOT compiled here.
+#
+# Task 15 R3 exception: ams_backend_mock.cpp has no dependency on the concrete
+# libhv MoonrakerClient (its ctor takes only a slot count; the optional
+# MoonrakerClientMock hookup in ams_backend.cpp's create_mock_with_features()
+# degrades gracefully to nullptr) — its only repo dependencies
+# (afc_defaults.cpp, hh_defaults.cpp, slot_registry.cpp, filament_database.h)
+# are already in APP_SRCS above. It links cleanly, so it's the one `# MOCK:`
+# source actually compiled, and only for mock builds. app_boot.cpp's
+# mock_seed_ams() constructs it directly (bypassing the
+# RuntimeConfig::should_mock_ams() factory gate, which requires test_mode —
+# deliberately never set on ESP, see app_boot_ui()'s NOTE).
 set(MOCK_SRCS "")
+if(CONFIG_HELIX_MOCK_PRINTER)
+    list(APPEND MOCK_SRCS ${REPO_ROOT}/src/printer/ams_backend_mock.cpp)
+endif()
 
 # Local firmware-tree sources: platform seams (Linux-bound singletons the app
 # reaches through may-be-null accessors), the Task 10 HTTP link stubs, missing

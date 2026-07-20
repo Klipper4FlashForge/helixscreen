@@ -27,6 +27,15 @@
 // transport (src/api/moonraker_file_api.cpp, kept unmodified in
 // app_srcs.txt), no HTTP involved.
 //
+// Plan 4 Task 15 R2 adds one more real method: IRestAPI::call_rest_get,
+// needed by the ACE AMS backend's REST poll (behind
+// CONFIG_HELIX_AMS_HTTP_POLL_BACKENDS, default n — see ams_backend.cpp's
+// http_poll_ams_backends_supported() gate). It rides the same EspHttpLane as
+// download_file_partial below. Unconditionally real (not itself
+// Kconfig-gated): the only reachable caller on ESP32 is the ACE backend,
+// which is only ever constructed when that Kconfig is on, so leaving this
+// implementation unconditional changes nothing observable when it's off.
+//
 // Everything else here is an asserting stub (log + ErrorCallback, matching
 // task10_pending_stubs.cpp's existing non-fatal pattern — never abort/reset
 // the board on a stray user action):
@@ -41,14 +50,16 @@
 //   ITransfersAPI::download_file, download_file_to_path, upload_file,
 //     upload_file_with_name, upload_file_from_path — not reachable from the
 //     v1 print-select thumbnail/metadata surface (used elsewhere: macro
-//     editor, AMS AD5X/QIDI polling, timelapse, klipper.conf editor, print-
-//     start prep — all out of Task 10's scope), and download_file_to_path
-//     specifically is HARD-BANNED by R3 regardless (file materialization).
-//   IRestAPI::call_rest_get/call_rest_post/wled_*/get_server_config — no
-//     print-select call site; WLED is excluded from v1, and the AMS backends
-//     that use call_rest_get/call_rest_post (ACE, Snapmaker) are explicitly
-//     out of Task 10's scope per the brief ("What's missing is the HTTP
-//     side: thumbnails and file metadata").
+//     editor, AD5X polling — itself real again as of Task 15 via
+//     download_file_partial, see ams_backend_ad5x_ifs.cpp — timelapse,
+//     klipper.conf editor, print-start prep — all still out of scope), and
+//     download_file_to_path specifically is HARD-BANNED by R3 regardless
+//     (file materialization).
+//   IRestAPI::call_rest_post/wled_*/get_server_config — no print-select call
+//     site; WLED is excluded from v1; call_rest_post's only AMS caller
+//     (Snapmaker's optional filament_detect/set action) already degrades
+//     gracefully on failure and stays out of Task 15's scope (that flag only
+//     covers the two HTTP-*polling* backends, ACE and AD5X IFS).
 
 #include "moonraker_file_transfer_api.h"
 #include "moonraker_rest_api.h"
@@ -171,7 +182,7 @@ std::string esp_url_escape_path(const std::string& path) {
 
 // Non-fatal: log + surface failure through the API's ErrorCallback. Mirrors
 // task10_pending_stubs.cpp's task10_unimplemented_err — a stray user action
-// (e.g. an AMS backend polling call_rest_get) must fail gracefully, not
+// (e.g. Snapmaker's optional call_rest_post action) must fail gracefully, not
 // abort/reset the board.
 void esp_rest_unimplemented_err(const char* sym,
                                 const std::function<void(const MoonrakerError&)>& err) {
@@ -183,6 +194,32 @@ void esp_rest_unimplemented_err(const char* sym,
         err(e);
     }
 }
+
+// Task 15 R2: validation for call_rest_get's endpoint, mirroring desktop's
+// is_safe_endpoint (src/api/moonraker_rest_api.cpp) — rejects directory
+// traversal and CRLF/NUL injection. Deliberately NOT esp_is_safe_path above:
+// REST endpoints are absolute paths ("/server/ace/info"), which
+// esp_is_safe_path rejects (it's shaped for Moonraker file-root paths).
+bool esp_is_safe_endpoint(const std::string& endpoint) {
+    if (endpoint.empty()) {
+        return false;
+    }
+    if (endpoint.find("..") != std::string::npos) {
+        return false;
+    }
+    for (char c : endpoint) {
+        if (c == '\n' || c == '\r' || c == '\0') {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Generous enough for ACE's /server/ace/{info,status,slots} JSON bodies
+// (a handful of scalar fields + a small slots array) without being wasteful
+// of the lane's PSRAM accumulation buffer. EspHttpLane fails loud rather than
+// silently truncating an over-cap response (see esp_http_lane.cpp).
+constexpr size_t kRestGetCapBytes = 16 * 1024;
 } // namespace
 
 // ============================================================================
@@ -270,8 +307,8 @@ void MoonrakerFileTransferAPI::upload_file_from_path(const std::string&, const s
 }
 
 // ============================================================================
-// MoonrakerRestAPI — no v1 print-select call site (see file header); every
-// method stays an asserting stub.
+// MoonrakerRestAPI — call_rest_get is real (Task 15 R2, see file header);
+// every other method has no v1 print-select call site and stays a stub.
 // ============================================================================
 
 MoonrakerRestAPI::MoonrakerRestAPI(helix::IMoonrakerClient& client,
@@ -280,12 +317,70 @@ MoonrakerRestAPI::MoonrakerRestAPI(helix::IMoonrakerClient& client,
 
 MoonrakerRestAPI::~MoonrakerRestAPI() = default;
 
-void MoonrakerRestAPI::call_rest_get(const std::string&, RestCallback on_complete) {
-    ESP_LOGE(TAG, "esp_rest_api stub: MoonrakerRestAPI::call_rest_get");
-    if (on_complete) {
+void MoonrakerRestAPI::call_rest_get(const std::string& endpoint, RestCallback on_complete) {
+    if (!esp_is_safe_endpoint(endpoint)) {
+        ESP_LOGE(TAG, "call_rest_get: invalid endpoint '%s'", endpoint.c_str());
+        if (on_complete) {
+            RestResponse resp;
+            resp.success = false;
+            resp.error = "Invalid endpoint - contains unsafe characters";
+            on_complete(resp);
+        }
+        return;
+    }
+
+    if (http_base_url_.empty()) {
+        ESP_LOGE(TAG, "call_rest_get: HTTP base URL not configured");
+        if (on_complete) {
+            RestResponse resp;
+            resp.success = false;
+            resp.error = "HTTP base URL not configured";
+            on_complete(resp);
+        }
+        return;
+    }
+
+    std::string url = http_base_url_;
+    if (!endpoint.empty() && endpoint[0] != '/') {
+        url += "/";
+    }
+    url += endpoint;
+
+    ESP_LOGD(TAG, "call_rest_get: %s", url.c_str());
+
+    bool queued = helix::http::EspHttpLane::instance().submit_get(
+        url, kRestGetCapBytes,
+        [on_complete](const uint8_t* data, size_t size) {
+            RestResponse resp;
+            resp.success = true;
+            resp.status_code = 200; // the lane only succeeds on HTTP 200/206
+            if (size > 0) {
+                try {
+                    resp.data = nlohmann::json::parse(reinterpret_cast<const char*>(data),
+                                                      reinterpret_cast<const char*>(data) + size);
+                } catch (const nlohmann::json::exception&) {
+                    resp.data = nlohmann::json::object();
+                    resp.data["_raw_body"] =
+                        std::string(reinterpret_cast<const char*>(data), size);
+                }
+            }
+            if (on_complete) {
+                on_complete(resp);
+            }
+        },
+        [on_complete](const std::string& message) {
+            RestResponse resp;
+            resp.success = false;
+            resp.error = message;
+            if (on_complete) {
+                on_complete(resp);
+            }
+        });
+
+    if (!queued && on_complete) {
         RestResponse resp;
         resp.success = false;
-        resp.error = "not implemented on this platform";
+        resp.error = "HTTP lane queue full — try again";
         on_complete(resp);
     }
 }

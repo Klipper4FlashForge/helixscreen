@@ -40,12 +40,14 @@
 #include "sdkconfig.h"
 
 #include "app_globals.h"
+#include "ams_state.h"
 #include "asset_manager.h"
 #include "config.h"
 #include "config_storage.h"
 #include "wizard_config_paths.h"
 #include "connection_state.h"
 #include "data_root_resolver.h"
+#include "filament_sensor_manager.h"
 #include "helix_sparkline.h"
 #include "i_moonraker_client.h"
 #include "moonraker_api.h" // complete MoonrakerAPI : IMoonrakerAPI for the init_panels upcast
@@ -56,6 +58,7 @@
 #include "printer_fan_state.h" // helix::FanRoleConfig for the non-mock fan-role resolve
 #include "printer_state.h"
 #include "temperature_sensor_manager.h"
+#include "tool_state.h"
 #include "runtime_config.h"
 #include "setting_group.h"
 #include "subject_initializer.h"
@@ -96,6 +99,14 @@
 #include <atomic>
 #include <pthread.h>
 #endif // !CONFIG_HELIX_MOCK_PRINTER
+
+#if CONFIG_HELIX_MOCK_PRINTER
+// Task 15 R3: AmsBackendMock has no dependency on the concrete libhv
+// MoonrakerClient (unlike moonraker_client_mock.cpp etc. — see the MOCK_SRCS
+// comment in CMakeLists.txt), so it links cleanly here. Included only in mock
+// builds (CMakeLists.txt's MOCK_SRCS).
+#include "ams_backend_mock.h"
+#endif // CONFIG_HELIX_MOCK_PRINTER
 
 // Defined in the main component (main/font_registration.c). Declared locally
 // rather than via its header: that header lives under main/, which cannot be
@@ -247,6 +258,26 @@ void mock_seed_ready() {
         config->set<std::string>(config->df() + helix::wizard::PRINTER_TYPE, "Voron 2.4");
     }
     spdlog::info("app_boot: mock printer seeded READY/CONNECTED + type Voron 2.4");
+}
+
+// Task 15 R3: mirrors desktop's HELIX_MOCK_AMS=multi (src/printer/ams_backend.cpp
+// try_create_mock()) — but that path is gated on RuntimeConfig::should_mock_ams(),
+// which requires test_mode, deliberately never set on ESP (see the NOTE in
+// app_boot_ui() below: test_mode would route MoonrakerManager through the
+// unlinkable app-layer mock arms). So this constructs AmsBackendMock directly,
+// bypassing the factory, and installs it as AmsState's active backend the same
+// way a real backend would install via AmsState::init_backends_from_hardware().
+// set_multi_unit_mode(true) alone (no HELIX_MOCK_AMS_STATE scenario) never
+// spawns AmsBackendMock's internal scenario_thread_ — only "loading"/"bypass"
+// initial-state scenarios do that — so this stays thread-free, matching R1's
+// "no new BG surfaces" constraint.
+void mock_seed_ams() {
+    auto backend = std::make_unique<AmsBackendMock>(4);
+    backend->set_multi_unit_mode(true);
+    backend->start();
+    AmsState::instance().set_backend(std::move(backend));
+    AmsState::instance().sync_from_backend();
+    spdlog::info("app_boot: mock AMS seeded (multi-unit)");
 }
 
 void mock_push_temps() {
@@ -413,15 +444,34 @@ void setup_discovery_callbacks_esp(MoonrakerManager& manager) {
                     ps.set_klipper_version(snapshot->software_version());
                     ps.set_moonraker_version(snapshot->moonraker_version());
 
+                    IMoonrakerAPI* api = mgr->api();
+                    helix::IMoonrakerClient* c = mgr->client();
+
+                    // Task 15 R1: AMS-relevant subset of desktop's
+                    // init_subsystems_from_hardware() (src/printer/printer_discovery.cpp,
+                    // excluded from the ESP image) — backend construction, filament
+                    // sensors, tool state. Runs here (after the fan/extruder subjects
+                    // above, before the dispatch below) to keep the same "subjects
+                    // before dispatch" invariant Task 8 established. LED, standard
+                    // macros, probe/humidity/width sensors, and camera-adjacent
+                    // subsystems stay deferred (Task 8 review's enumeration).
+                    AmsState::instance().init_backend_from_hardware(*snapshot, api, c);
+                    if (snapshot->has_filament_sensors()) {
+                        auto& fsm = helix::FilamentSensorManager::instance();
+                        fsm.discover_sensors(snapshot->filament_sensor_names());
+                        fsm.load_config_from_file();
+                    }
+                    helix::ToolState::instance().init_tools(*snapshot);
+                    helix::ToolState::instance().load_spool_assignments(api);
+
                     // Dispatch the initial subscription status LAST, after the
-                    // fan/sensor/extruder subjects exist. dispatch_status_update
+                    // fan/sensor/extruder/AMS subjects exist. dispatch_status_update
                     // wraps it in a notify_status_update envelope and fans out to
                     // MoonrakerManager's notify handler → notification queue →
                     // process_notifications() (pumped from app_boot_tick) →
                     // update_from_status() + ToolState — exactly the path an
                     // inbound live notification takes. Same call the desktop
                     // handler makes (application.cpp:2593).
-                    helix::IMoonrakerClient* c = mgr->client();
                     if (c && status_snapshot->is_object() && !status_snapshot->empty()) {
                         c->dispatch_status_update(*status_snapshot);
                     }
@@ -728,6 +778,10 @@ extern "C" void app_boot_ui(void) {
     // Before the shell builds: seed READY/CONNECTED + the printer identity so the
     // home printer-image widget reads a resolvable PRINTER_TYPE at attach().
     mock_seed_ready();
+    // Task 15 R3: seed a multi-unit AMS backend so the AMS panels have slots/
+    // colors to render in mock builds (AmsState::init_subjects(), which already
+    // ran in Phase 8 above, left backends_ empty on ESP — see mock_seed_ams()).
+    mock_seed_ams();
 #endif
 
     // Task 12 R3: tips database. Must run before build_shell() below — the home

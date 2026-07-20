@@ -88,4 +88,25 @@ config HELIX_MOCK_PRINTER
         state with no live Moonraker. Off by default: production firmware talks
         to a real printer over EspMoonrakerClient. Development-only.
 
+config HELIX_AMS_HTTP_POLL_BACKENDS
+    bool "Enable HTTP-polling AMS backends (ACE, AD5X IFS)"
+    default n
+    help
+        Plan 4 Task 15 R2. Every AMS backend except two rides the WebSocket
+        JSON-RPC transport (AFC, Happy Hare, Toolchanger, CFS, Snapmaker,
+        QIDI Box) and is unaffected by this flag. The two exceptions poll
+        Moonraker over raw HTTP instead: ACE polls /server/ace/{info,status,
+        slots} every 500ms, and AD5X IFS polls a whole generated JSON config
+        file every 5s. Both ride the Task 10 HTTP lane (EspHttpLane) — a
+        single dedicated worker thread with a bounded, capped fetch model —
+        rather than a full HTTP client stack.
+
+        Off by default: detecting an ACE or AD5X IFS system logs "AMS backend
+        '<name>' unsupported on this screen" (once) instead of constructing
+        the backend. Turn on to let the controller measure the HTTP lane's
+        real-world latency/budget impact on real hardware; flipping this flag
+        is the only code-level difference between the two outcomes. The
+        ship/no-ship decision for these two backends is made after that
+        on-device measurement, not by this flag alone.
+
 endmenu

@@ -2652,47 +2652,61 @@ void AmsBackendAd5xIfs::poll_adventurer_json() {
     }
 
     auto token = lifetime_.token();
-    api_->transfers().download_file(
-        "config", "Adventurer5M.json",
-        [this, token](const std::string& content) {
-            // MAIN THREAD: clear in-flight gate AND apply the parse together
-            // so we never touch member state on the bg thread. The gate may
-            // stay "true" for one extra UpdateQueue tick — harmless coalescing.
-            token.defer("Ad5xIfsBackend::poll_json_apply", [this, content]() mutable {
-                json_poll_in_flight_.store(false);
+    auto on_content = [this, token](const std::string& content) {
+        // MAIN THREAD: clear in-flight gate AND apply the parse together
+        // so we never touch member state on the bg thread. The gate may
+        // stay "true" for one extra UpdateQueue tick — harmless coalescing.
+        token.defer("Ad5xIfsBackend::poll_json_apply", [this, content]() mutable {
+            json_poll_in_flight_.store(false);
 
-                if (!note_json_content(content)) {
-                    spdlog::trace("{} Adventurer5M.json unchanged ({} bytes), "
-                                  "skipping GET_ZCOLOR",
-                                  backend_log_tag(), content.size());
-                    return;
-                }
-
-                spdlog::debug("{} Adventurer5M.json changed ({} bytes), parsing + "
-                              "scheduling GET_ZCOLOR",
+            if (!note_json_content(content)) {
+                spdlog::trace("{} Adventurer5M.json unchanged ({} bytes), "
+                              "skipping GET_ZCOLOR",
                               backend_log_tag(), content.size());
-                parse_adventurer_json(content);
-                schedule_zcolor_query("json_poll");
-            });
-        },
-        [this, token](const MoonrakerError& err) {
-            // MAIN THREAD: clearing the gate + atomic + log lives in the defer
-            // so no member access happens on the bg thread.
-            if (err.type == MoonrakerErrorType::FILE_NOT_FOUND || err.code == 404) {
-                token.defer("Ad5xIfsBackend::poll_json_404", [this]() {
-                    json_poll_in_flight_.store(false);
-                    json_poll_supported_.store(false);
-                    spdlog::info("{} Adventurer5M.json poll: file not found, disabling poll",
-                                 backend_log_tag());
-                });
-            } else {
-                token.defer("Ad5xIfsBackend::poll_json_err", [this, msg = err.message]() {
-                    json_poll_in_flight_.store(false);
-                    spdlog::debug("{} Adventurer5M.json poll failed (will retry): {}",
-                                  backend_log_tag(), msg);
-                });
+                return;
             }
+
+            spdlog::debug("{} Adventurer5M.json changed ({} bytes), parsing + "
+                          "scheduling GET_ZCOLOR",
+                          backend_log_tag(), content.size());
+            parse_adventurer_json(content);
+            schedule_zcolor_query("json_poll");
         });
+    };
+    auto on_error = [this, token](const MoonrakerError& err) {
+        // MAIN THREAD: clearing the gate + atomic + log lives in the defer
+        // so no member access happens on the bg thread.
+        if (err.type == MoonrakerErrorType::FILE_NOT_FOUND || err.code == 404) {
+            token.defer("Ad5xIfsBackend::poll_json_404", [this]() {
+                json_poll_in_flight_.store(false);
+                json_poll_supported_.store(false);
+                spdlog::info("{} Adventurer5M.json poll: file not found, disabling poll",
+                             backend_log_tag());
+            });
+        } else {
+            token.defer("Ad5xIfsBackend::poll_json_err", [this, msg = err.message]() {
+                json_poll_in_flight_.store(false);
+                spdlog::debug("{} Adventurer5M.json poll failed (will retry): {}",
+                              backend_log_tag(), msg);
+            });
+        }
+    };
+
+#if defined(ESP_PLATFORM)
+    // Task 15 R2 evaluation arm (CONFIG_HELIX_AMS_HTTP_POLL_BACKENDS):
+    // download_file() is a hard stub on ESP32 (Task 10's HTTP lane only
+    // supports bounded fetches — see esp_rest_api.cpp). Adventurer5M.json is
+    // a small generated config; kAdventurerJsonPollCapBytes is generous
+    // enough a real file rarely hits it, and download_file_partial fails
+    // loud on an over-cap response rather than silently truncating (see
+    // esp_http_lane.cpp) — same graceful degrade as any other poll failure
+    // handled by on_error above.
+    static constexpr size_t kAdventurerJsonPollCapBytes = 32 * 1024;
+    api_->transfers().download_file_partial("config", "Adventurer5M.json",
+                                            kAdventurerJsonPollCapBytes, on_content, on_error);
+#else
+    api_->transfers().download_file("config", "Adventurer5M.json", on_content, on_error);
+#endif
 }
 
 bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
