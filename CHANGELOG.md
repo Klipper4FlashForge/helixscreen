@@ -5,6 +5,35 @@ All notable changes to HelixScreen will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.99.97] - 2026-07-19
+
+> **0.99.96 was withdrawn.** Its phantom-edge-tap fix broke touch input entirely on
+> Goodix-based controllers (Creality K2 and likely others), leaving the screen
+> unresponsive with SSH as the only recovery. That change is reverted here. If you
+> installed 0.99.96 and lost touch, updating to 0.99.97 restores it.
+
+### Added
+
+- **Material variants grouped under their base material** — the filament picker now lists ASA, ASA-CF and ASA-GF under a single ASA heading instead of three unrelated top-level entries, with a chip showing which variant a row selects. Variants remain distinct materials with their own temperatures; only the grouping changed.
+- **Missing filament types are selectable again** — ASA-GF, ABS-CF, PC-CF, PC-GF, PET-GF and PLA-GF existed in the material table but had no catalog entry, so they never appeared in the picker. Seventeen further types people actually buy (PLA+, ABS+, ASA+, PA6, PA12, PPA, TPU-95A, the decorative PLAs and others) were added alongside them.
+
+### Fixed
+
+- **CFS slot edits were silently discarded** — setting a slot's material on a Creality K2 wrote the colour to the box, and the next poll read that write back as a physical spool swap and deleted the edit. The material survived on screen until the next restart but never reached OrcaSlicer, which kept syncing stale firmware values.
+- **CFS slots never showed empty** — the box keeps reporting a remaining length after a spool is pulled, so an emptied bay stayed "available" indefinitely. Presence now follows the live vendor signal, and the stale record is cleared when a spool is removed.
+- **Spoolman configuration silently did nothing** — on stock Creality firmware the settings were written to a file Moonraker never reads, while the UI reported success. The target is now proven reachable before writing, changing an already-configured URL actually takes effect, and a configuration that cannot be written reports a clear error instead of claiming to have worked. Removing Spoolman no longer reports success while leaving it configured.
+- **Spool list ordering** — the Spoolman spool picker sorts by most recent activity, so a newly added spool appears at the top instead of below every previously used one.
+- **Preheat presets ignored reassigned materials** — reassigning a preset slot updated the filament panel but not the preheat widget, which kept showing and applying the original material's temperature.
+- **Filament drying temperatures were too low for some materials** — PET, PET-CF, PET-GF, PA66, PA6-CF and the PPA family were offered a drying profile derived from a different member of their group. Generic PET also shipped with no bed temperature at all.
+- **Labels for untracked spools** — a spool with no Spoolman entry printed a meaningless "#0" and a QR code pointing at a record that does not exist; both are now omitted. The Print Label button also appears as soon as a label printer is paired, rather than after reopening the panel.
+- **Markdown rendering** — bold text uses a real bold font and headings are visually distinct.
+- **Hot reload no longer crashes on mid-save files** — XML is validated before the old component is unregistered.
+
+### Changed
+
+- **Phantom edge tap fix reverted** — the 0.99.96 change required both touch axes to arrive for every new contact, but controllers that omit unchanged coordinates never satisfied that, dropping every touch. Holtek-based screens (BTT-HDMI5) may again see occasional edge taps until a safer fix ships.
+- **Hot reload defaults to on for native builds.**
+
 ## [0.99.96] - 2026-07-19
 
 ### Added
@@ -4391,6 +4420,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.97]: https://github.com/prestonbrown/helixscreen/compare/v0.99.96...v0.99.97
 [0.99.96]: https://github.com/prestonbrown/helixscreen/compare/v0.99.95...v0.99.96
 [0.99.95]: https://github.com/prestonbrown/helixscreen/compare/v0.99.94...v0.99.95
 [0.99.94]: https://github.com/prestonbrown/helixscreen/compare/v0.99.93...v0.99.94
