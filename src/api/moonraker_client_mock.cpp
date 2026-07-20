@@ -1369,6 +1369,7 @@ int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
         }
         spdlog::info("[MoonrakerClientMock] Display message set to \"{}\" (M117)", text);
         dispatch_status_update({{"display_status", {{"message", text}}}});
+        return 0;
     }
 
     // Parse motion mode commands (G90/G91)

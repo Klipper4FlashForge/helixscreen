@@ -3328,6 +3328,29 @@ TEST_CASE("MoonrakerClientMock: M117 sets display_status.message", "[mock][displ
         REQUIRE(captured.contains("message"));
         REQUIRE(captured["message"].get<std::string>() == "Hello World");
     }
+
+    // Regression: the M117 branch used to fall through the rest of
+    // gcode_script() instead of returning, so message TEXT containing other
+    // command substrings ("G28", "G1"/"G0") re-triggered those handlers. A
+    // user M117 message that merely mentions "G28" must not home the axes.
+    SECTION("M117 text containing G28 does not trigger homing") {
+        json toolhead_captured;
+        mock.register_notify_update([&toolhead_captured](const json& notif) {
+            if (notif.contains("params") && notif["params"].is_array() &&
+                !notif["params"].empty() && notif["params"][0].contains("toolhead")) {
+                toolhead_captured = notif["params"][0]["toolhead"];
+            }
+        });
+
+        int result = mock.gcode_script("M117 G28 done");
+
+        REQUIRE(result == 0);
+        REQUIRE(captured.contains("message"));
+        REQUIRE(captured["message"].get<std::string>() == "G28 done");
+        // Homing dispatches a toolhead/homed_axes update (see the G28 tests
+        // above) - none should have been produced by this M117 call.
+        REQUIRE_FALSE(toolhead_captured.contains("homed_axes"));
+    }
 }
 
 // ============================================================================

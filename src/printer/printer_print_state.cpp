@@ -295,9 +295,14 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
                 // Clear M117 at print END, never at print start. Clearing on the
                 // observed transition INTO printing destroys PRINT_START-era
                 // messages permanently: Moonraker sends deltas, so Klipper never
-                // re-sends an unchanged value. At print end no such traffic is in
-                // flight, so this is race-free. An END_PRINT macro's M117 arrives
-                // in a later notification and displays normally.
+                // re-sends an unchanged value. Correctness here depends on
+                // print_stats being parsed (above) before display_status is
+                // parsed (see the display_status handling later in this
+                // function) within the same status object: if that ordering
+                // ever reversed, a display_status delta belonging to this same
+                // notification could be applied before this clear and get wiped
+                // out immediately after. An END_PRINT macro's M117 arrives in a
+                // later notification and displays normally.
                 //
                 // Must stay inside the `new_state != current_state` guard so this
                 // is EDGE-triggered. Level-triggered would re-clear on every

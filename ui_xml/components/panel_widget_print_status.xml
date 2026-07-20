@@ -84,8 +84,11 @@
         </lv_obj>
       </lv_obj>
       <!-- Klipper display_status.message (M117). Collapses to zero height when
-           empty. Cleared at print end, so this never shows the previous job's
-           text. clickable/event_bubble keep taps reaching the card handler. -->
+           empty. Shows the printer's current M117 text; cleared when a print
+           ends, but a message sent AFTER the print ends (e.g. by an END_PRINT
+           macro) persists here until the printer sets a new one - so this can
+           still show the previous job's farewell text into the next pre-print.
+           clickable/event_bubble keep taps reaching the card handler. -->
       <text_small name="idle_display_message"
                   width="100%" bind_text="display_message" style_text_align="center"
                   long_mode="dots" style_text_color="#text_muted" hidden="true"
@@ -122,12 +125,18 @@
       <bind_flag_if_not_eq subject="print_status_view" flag="hidden" ref_value="2"/>
     </print_status_detailed_idle>
     <!-- ACTIVE STATE: Shared container for preparing + printing phases -->
-    <!-- Visibility bound to print_active (1 when PRINTING or PAUSED). -->
+    <!-- Visibility bound to print_status_view (views 3/4 are the active views), -->
+    <!-- matching the source of truth used by the children it hosts -->
+    <!-- (print_card_layout / print_card_printing_detailed below) instead of the -->
+    <!-- separately-set print_active subject. print_active is set synchronously -->
+    <!-- while print_status_view is updated via a deferred observer, so binding -->
+    <!-- to print_active desynced this wrapper from its children by one tick at -->
+    <!-- print start/end, briefly showing two height="100%" siblings at once. -->
     <lv_obj name="print_card_printing"
             width="100%" height="100%" style_pad_left="#space_sm" style_pad_right="#space_sm" style_pad_top="#space_xxs"
             style_pad_bottom="#space_sm" flex_flow="column" style_pad_gap="#space_xs" style_flex_cross_place="center"
             scrollable="false" hidden="true" clickable="false" event_bubble="true">
-      <bind_flag_if_eq subject="print_active" flag="hidden" ref_value="0"/>
+      <bind_flag_if cond="print_status_view lt 3" flag="hidden"/>
       <!-- PAUSED BADGE: visible while print is paused. Sits at the top of the
            active card wrapper so it shows for both library and detailed
            layouts. Scaled-down sibling of the paused_badge on print_status_panel. -->
