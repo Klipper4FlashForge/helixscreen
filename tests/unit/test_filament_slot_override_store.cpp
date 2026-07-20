@@ -2,6 +2,7 @@
 #include "ams_types.h"
 #include "filament_slot_override.h"
 #include "filament_slot_override_store.h"
+#include "filament_variants.h"
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
 #include "printer_state.h"
@@ -2922,5 +2923,101 @@ TEST_CASE("load never rewrites a foreign record",
     auto after = api.mock_get_db_value("lane_data", "lane2");
     REQUIRE(after.is_object());
     CHECK(after["material"] == "ASA-GF");        // untouched
+    CHECK_FALSE(after.contains("helix_material"));
+}
+
+TEST_CASE("healed record is not re-healed on a second load",
+          "[filament_slot_override][migration][orca_match]") {
+    // Self-limitation is the entire safety argument for a write that happens
+    // without the user asking (see the heal loop's comment in
+    // filament_slot_override_store.cpp). Pin it with a real second boot,
+    // not just the "already has helix_material" comment.
+    TmpCacheDir tmp("orca_heal_once");
+    MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
+    helix::PrinterState state;
+    state.init_subjects(false);
+    MoonrakerAPIMock api(client, state);
+
+    api.mock_set_db_value("lane_data", "lane2",
+                          json{{"lane", "1"},
+                               {"material", "ASA-GF"},
+                               {"color", "#1A1A1A"},
+                               {"helix_locked_color", true},
+                               {"helix_locked_material", true}});
+
+    {
+        FilamentSlotOverrideStore store(&api, "cfs");
+        FilamentSlotOverrideStoreTestAccess::set_cache_directory(store, tmp.path);
+        auto loaded = store.load_blocking();
+        REQUIRE(loaded.count(1) == 1);
+    }
+
+    auto healed = api.mock_get_db_value("lane_data", "lane2");
+    REQUIRE(healed.is_object());
+    REQUIRE(healed["material"] == "ASA");
+    const int posts_after_first_boot = api.mock_db_post_count();
+
+    // Reconstruct the store (fresh instance, same backing Moonraker mock) and
+    // load again — a second boot must not re-fire the heal.
+    {
+        FilamentSlotOverrideStore store2(&api, "cfs");
+        FilamentSlotOverrideStoreTestAccess::set_cache_directory(store2, tmp.path);
+        auto loaded2 = store2.load_blocking();
+        REQUIRE(loaded2.count(1) == 1);
+        CHECK(loaded2[1].material == "ASA-GF");
+    }
+
+    CHECK(api.mock_db_post_count() == posts_after_first_boot);
+    auto after_second_boot = api.mock_get_db_value("lane_data", "lane2");
+    REQUIRE(after_second_boot.is_object());
+    CHECK(after_second_boot["material"] == "ASA"); // unchanged by the second load
+}
+
+TEST_CASE("load skips the heal entirely when Orca tables are unavailable",
+          "[filament_slot_override][migration][orca_match][H1]") {
+    // A missing or pre-change assets/filaments.json makes orca_match_type()
+    // return "" for every input. Before the orca_tables_available() guard,
+    // that made the heal's gate ("current == match") false for every
+    // helix-authored record, so it rewrote all of them and stripped
+    // `material` — a data-loss bug (H1). Force the "tables unavailable"
+    // state via the public set_orca_tables() API: passing a non-empty
+    // overrides map alongside an empty library-types set is NOT the
+    // both-empty case that means "restore lazy load" (see set_orca_tables's
+    // doc comment), so it pins g_orca_loaded with an empty library — the
+    // same shape a stale/missing asset produces.
+    filament::set_orca_tables({}, {{"__test_sentinel__", "PLA"}});
+    struct RestoreTables {
+        ~RestoreTables() { filament::set_orca_tables({}, {}); }
+    } restore_tables;
+
+    TmpCacheDir tmp("orca_heal_unavailable");
+    MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
+    helix::PrinterState state;
+    state.init_subjects(false);
+    MoonrakerAPIMock api(client, state);
+
+    // Pre-existing helix-authored record with a precise material and no
+    // helix_material yet — exactly what the heal targets.
+    api.mock_set_db_value("lane_data", "lane2",
+                          json{{"lane", "1"},
+                               {"material", "ASA-GF"},
+                               {"color", "#1A1A1A"},
+                               {"helix_locked_color", true},
+                               {"helix_locked_material", true}});
+
+    FilamentSlotOverrideStore store(&api, "cfs");
+    FilamentSlotOverrideStoreTestAccess::set_cache_directory(store, tmp.path);
+    auto loaded = store.load_blocking();
+    REQUIRE(loaded.count(1) == 1);
+    // In memory the precise identity is still readable.
+    CHECK(loaded[1].material == "ASA-GF");
+
+    // On the wire, the record must be untouched: no heal fired, so
+    // `material` is neither stripped nor rewritten, and `helix_material` was
+    // never added — leaving the record eligible to heal once the tables
+    // come back on a later boot.
+    auto after = api.mock_get_db_value("lane_data", "lane2");
+    REQUIRE(after.is_object());
+    CHECK(after["material"] == "ASA-GF");
     CHECK_FALSE(after.contains("helix_material"));
 }
