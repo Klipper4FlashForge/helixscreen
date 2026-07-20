@@ -20,7 +20,7 @@
 - **Declarative over imperative** — no `lv_obj_add_flag(obj, HIDDEN)`, no `lv_label_set_text`. Use subject bindings (CLAUDE.md Rules 2, 3).
 - **One `bind_flag_*` per flag per object.** Multiple `bind_flag_if_eq` on the same object are independent observers; last write wins [L042].
 - **Word-form operators in XML conditions** (`eq ne lt le gt ge and or not`) — `&&`/`<` need escaping.
-- **Android XML mirrors exist** under `android/app/src/main/assets/ui_xml/` and need identical edits where noted.
+- **Do NOT edit `android/app/src/main/assets/ui_xml/`.** It is a generated build artifact, not source: `android/.gitignore:5` ignores the whole `app/src/main/assets/` tree, zero files there are tracked, and `android/app/build.gradle:86` copies from `../../ui_xml` at build time. Editing `ui_xml/` is sufficient and authoritative; the Android copy regenerates on the next build. (Earlier revisions of this plan wrongly instructed mirroring edits there — ignore any such instruction remaining in a task body.)
 - **No `lv_tr()` on M117 text** — it is user data, not a translatable string [L070].
 - Build command: `make -j`. Test build: `make test-build`. Check for concurrent builds first with `pgrep -xc cc1plus` [L092].
 
@@ -192,8 +192,6 @@ If `print_start_phase_` is now unused inside this translation unit's visibility 
             <!-- preparing_overlay above, so the two do not duplicate. -->
 ```
 
-Apply the identical comment edit to `android/app/src/main/assets/ui_xml/print_status_panel.xml` at the corresponding lines.
-
 - [ ] **Step 5: Run test to verify it passes**
 
 ```bash
@@ -205,7 +203,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/printer/printer_print_state.cpp ui_xml/print_status_panel.xml android/app/src/main/assets/ui_xml/print_status_panel.xml tests/unit/test_display_message.cpp
+git add src/printer/printer_print_state.cpp ui_xml/print_status_panel.xml tests/unit/test_display_message.cpp
 git commit -m "fix(print): show M117 during pre-print heating/QGL/purge"
 ```
 
@@ -388,7 +386,6 @@ Gives M117 a home on the library idle card and fixes the dead/clipped copy in th
 
 **Files:**
 - Modify: `ui_xml/components/panel_widget_print_status.xml` — add row to `print_card_idle` (~`:16-86`), gate the row at `:182-186` to view 3
-- Modify: `android/app/src/main/assets/ui_xml/components/panel_widget_print_status.xml` — identical edits
 - Test: manual runtime verification (Task 7)
 
 **Interfaces:**
@@ -434,10 +431,6 @@ Replace the block at `:182-186` with:
 
 A single `bind_flag_if` with a compound condition — not two stacked `bind_flag_if_eq` children, which would be independent observers racing on the same flag [L042], and not a C++ derived subject (CLAUDE.md Rule 9).
 
-- [ ] **Step 3: Mirror both edits to the Android asset copy**
-
-Apply Steps 1 and 2 verbatim to `android/app/src/main/assets/ui_xml/components/panel_widget_print_status.xml`.
-
 - [ ] **Step 4: Verify the XML parses**
 
 ```bash
@@ -457,7 +450,7 @@ Expected: PASS. No schema regeneration is needed — no new widget type was regi
 - [ ] **Step 6: Commit**
 
 ```bash
-git add ui_xml/components/panel_widget_print_status.xml android/app/src/main/assets/ui_xml/components/panel_widget_print_status.xml
+git add ui_xml/components/panel_widget_print_status.xml
 git commit -m "feat(ui): add M117 row to idle card, scope active-card row to library view"
 ```
 
@@ -469,7 +462,6 @@ Deletes a C++ observer that only copies one string subject into another.
 
 **Files:**
 - Modify: `ui_xml/print_status_panel.xml:89-91`
-- Modify: `android/app/src/main/assets/ui_xml/print_status_panel.xml:89-91`
 - Modify: `src/ui/ui_panel_print_status.cpp` — remove `:206-210`, `:410-411`, `:637-638`, `:2758-2770`
 - Modify: `include/ui_panel_print_status.h` — remove `:323`, `:400`, `:641`, `:661`
 
@@ -482,7 +474,7 @@ Deletes a C++ observer that only copies one string subject into another.
 - [ ] **Step 1: Confirm nothing else binds `preparing_operation`**
 
 ```bash
-grep -rn "preparing_operation" ui_xml/ android/app/src/main/assets/ui_xml/ src/ include/ tests/
+grep -rn "preparing_operation" ui_xml/ src/ include/ tests/
 ```
 
 Expected: only the sites listed under **Files** above. If any other consumer appears, stop and report it.
@@ -496,8 +488,6 @@ In `ui_xml/print_status_panel.xml`, replace lines 89-91 with:
                         width="100%" bind_text="print_start_message" text="Preparing..." translation_tag="Preparing..."
                         style_text_color="#text" style_text_align="center"/>
 ```
-
-Apply the identical edit to `android/app/src/main/assets/ui_xml/print_status_panel.xml:89-91`.
 
 Accepted behavior change: the `"Preparing..."` inline default is stamped over by the subject's current value at bind time, so the heading is briefly blank if the overlay renders before the collector emits its first phase message. In practice `preparing_overlay` is gated by `bind_flag_if_eq subject="preparing_visible" ref_value="0"` (`print_status_panel.xml:87`) and `preparing_visible` is only set once a phase is known — so a message has already landed. Confirm visually in Task 7.
 
@@ -535,7 +525,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/ui/ui_panel_print_status.cpp include/ui_panel_print_status.h ui_xml/print_status_panel.xml android/app/src/main/assets/ui_xml/print_status_panel.xml
+git add src/ui/ui_panel_print_status.cpp include/ui_panel_print_status.h ui_xml/print_status_panel.xml
 git commit -m "refactor(ui): bind preparing heading directly to print_start_message"
 ```
 
@@ -547,7 +537,6 @@ Removes a CLAUDE.md Rule 2 violation. A suitable derived subject already exists.
 
 **Files:**
 - Modify: `ui_xml/components/panel_widget_print_status.xml:117-120` (add binding)
-- Modify: `android/app/src/main/assets/ui_xml/components/panel_widget_print_status.xml` (identical)
 - Modify: `src/ui/panel_widgets/print_status_widget.cpp:664-698` (remove the imperative block)
 - Test: `tests/unit/test_display_message.cpp` (parity test)
 
@@ -624,8 +613,6 @@ Also update the now-false comment two lines above it — it currently reads `Vis
     <!-- Visibility bound to print_active (1 when PRINTING or PAUSED). -->
 ```
 
-Apply both edits to `android/app/src/main/assets/ui_xml/components/panel_widget_print_status.xml`.
-
 - [ ] **Step 4: Remove the imperative block**
 
 In `src/ui/panel_widgets/print_status_widget.cpp`, inside `on_print_state_changed()` (~`:664`), delete the whole `if (print_card_printing_) { ... }` block (~`:679-684`) together with its explanatory comment about the wrapper's padding.
@@ -654,7 +641,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add ui_xml/components/panel_widget_print_status.xml android/app/src/main/assets/ui_xml/components/panel_widget_print_status.xml src/ui/panel_widgets/print_status_widget.cpp tests/unit/test_display_message.cpp
+git add ui_xml/components/panel_widget_print_status.xml src/ui/panel_widgets/print_status_widget.cpp tests/unit/test_display_message.cpp
 git commit -m "refactor(ui): bind print_card_printing visibility to print_active subject"
 ```
 
