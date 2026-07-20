@@ -258,7 +258,10 @@ def _merge_cfs_seed(products, cfs_seed):
     these types, so they always take the standalone-append path below.
     """
     def _name_key(s):
-        return re.sub(r"[^a-z0-9]+", "", s.lower())  # fold "PLA-Silk" == "PLA Silk"
+        # Fold "PLA-Silk" == "PLA Silk", but keep "+" -- it's a meaningful suffix
+        # (see _slug): "PLA+" and "PLA" are different products and must not
+        # collide into the same match key.
+        return re.sub(r"[^a-z0-9+]+", "", s.lower())
 
     # Match on (brand, name) ONLY — deliberately NOT on `type`.
     #
