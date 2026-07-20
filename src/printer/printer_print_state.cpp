@@ -302,9 +302,24 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
                 // Must stay inside the `new_state != current_state` guard so this
                 // is EDGE-triggered. Level-triggered would re-clear on every
                 // notification while COMPLETE and would swallow the END_PRINT M117.
+                //
+                // Second clause covers an ABNORMAL exit: some paths (Klipper
+                // restart mid-print, SDCARD_RESET_FILE, certain firmware cancels)
+                // go printing/paused -> standby directly, without ever passing
+                // through a terminal state, so the block above never fires and
+                // the last mid-print M117 would otherwise persist into idle and
+                // into the next print. This must NOT fire on the normal
+                // complete -> standby leg of the end-of-print sequence — that
+                // transition's `current_state` is COMPLETE, not
+                // PRINTING/PAUSED, so it's excluded here and the END_PRINT
+                // macro's farewell message (set after the COMPLETE clear above)
+                // survives.
                 if (new_state == PrintJobState::COMPLETE ||
                     new_state == PrintJobState::CANCELLED ||
-                    new_state == PrintJobState::ERROR) {
+                    new_state == PrintJobState::ERROR ||
+                    (new_state == PrintJobState::STANDBY &&
+                     (current_state == PrintJobState::PRINTING ||
+                      current_state == PrintJobState::PAUSED))) {
                     lv_subject_copy_string(&display_message_, "");
                     update_display_message_visible();
                 }

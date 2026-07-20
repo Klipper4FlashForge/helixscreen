@@ -161,6 +161,70 @@ TEST_CASE("Display message: END_PRINT M117 survives the print-end clear",
     REQUIRE(lv_subject_get_int(state.get_display_message_visible_subject()) == 1);
 }
 
+TEST_CASE("Display message: cleared on abnormal exit to standby (no terminal state)",
+          "[print][display_message]") {
+    lv_init_safe();
+
+    auto run_abnormal_exit = [](const char* active_state) {
+        PrinterState& state = get_printer_state();
+        PrinterStateTestAccess::reset(state);
+        state.init_subjects(false);
+
+        json active = {{"print_stats", {{"state", active_state}}}};
+        state.update_from_status(active);
+
+        json msg = {{"display_status", {{"message", "Layer 47/120"}}}};
+        state.update_from_status(msg);
+        REQUIRE(std::string(lv_subject_get_string(state.get_display_message_subject())) ==
+                "Layer 47/120");
+
+        // Klipper restart / SDCARD_RESET_FILE / firmware cancel: jumps straight
+        // to standby WITHOUT passing through complete/cancelled/error.
+        json standby = {{"print_stats", {{"state", "standby"}}}};
+        state.update_from_status(standby);
+
+        REQUIRE(std::string(lv_subject_get_string(state.get_display_message_subject())) == "");
+        REQUIRE(lv_subject_get_int(state.get_display_message_visible_subject()) == 0);
+    };
+
+    SECTION("printing -> standby") { run_abnormal_exit("printing"); }
+    SECTION("paused -> standby") { run_abnormal_exit("paused"); }
+}
+
+TEST_CASE("Display message: normal end-of-print sequence leaves the END_PRINT "
+          "farewell message intact through the complete->standby transition",
+          "[print][display_message]") {
+    lv_init_safe();
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    // This is the negative case for the abnormal-exit clear above: the normal
+    // path is printing -> complete -> standby, and an END_PRINT macro's M117
+    // lands between the complete and standby transitions. If STANDBY cleared
+    // unconditionally, this farewell message would be wiped a second time.
+    json printing = {{"print_stats", {{"state", "printing"}}}};
+    state.update_from_status(printing);
+
+    json done = {{"print_stats", {{"state", "complete"}}}};
+    state.update_from_status(done);
+    REQUIRE(std::string(lv_subject_get_string(state.get_display_message_subject())) == "");
+
+    json farewell = {{"display_status", {{"message", "Print complete - remove part"}}}};
+    state.update_from_status(farewell);
+    REQUIRE(std::string(lv_subject_get_string(state.get_display_message_subject())) ==
+            "Print complete - remove part");
+
+    // Printer settles back to standby after the operator clears the bed / the
+    // idle timeout fires. This must NOT clear the farewell message.
+    json standby = {{"print_stats", {{"state", "standby"}}}};
+    state.update_from_status(standby);
+
+    REQUIRE(std::string(lv_subject_get_string(state.get_display_message_subject())) ==
+            "Print complete - remove part");
+    REQUIRE(lv_subject_get_int(state.get_display_message_visible_subject()) == 1);
+}
+
 // ============================================================================
 // Initial State
 // ============================================================================
