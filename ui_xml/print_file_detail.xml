@@ -156,8 +156,8 @@
       <!-- RIGHT SECTION: Options and buttons (4/9 width)                    -->
       <!-- ================================================================== -->
       <lv_obj name="options_section"
-              height="100%" flex_grow="4" style_pad_hor="0" style_pad_ver="#space_sm" style_pad_gap="#space_sm"
-              flex_flow="column">
+              height="100%" flex_grow="4" style_pad_hor="0" style_pad_top="#space_sm" style_pad_bottom="0"
+              style_pad_gap="#space_sm" flex_flow="column" scrollable="false">
         <!-- Print history status display (hidden by default) -->
         <lv_obj name="history_status_row"
                 width="100%" height="content" flex_flow="row" style_pad_gap="#space_xs" style_flex_cross_place="center"
@@ -201,14 +201,35 @@
                  width="100%" style_pad_hor="0" style_pad_ver="#space_md" style_pad_gap="#space_xs"
                  style_border_width="0" flex_flow="column">
           <bind_flag_if_eq subject="filament_mapping_visible" flag="hidden" ref_value="0"/>
+          <!-- Header row: section title left, sliced-colors toggle right. The
+               toggle belongs to this card because it only has meaning relative
+               to the mapping shown below it. -->
           <lv_obj width="100%"
                   height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="row"
-                  style_flex_cross_place="center" scrollable="false" clickable="false" event_bubble="true">
-            <text_small text="FILAMENT MAPPING" translation_tag="FILAMENT_MAPPING" clickable="false" event_bubble="true"/>
-            <icon name="filament_mismatch_icon"
-                  src="alert" size="sm" variant="warning" clickable="false" event_bubble="true">
-              <bind_flag_if_eq subject="filament_mismatch" flag="hidden" ref_value="0"/>
-            </icon>
+                  style_flex_main_place="space_between" style_flex_cross_place="center"
+                  scrollable="false" clickable="false" event_bubble="true">
+            <lv_obj width="content"
+                    height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="row"
+                    style_flex_cross_place="center" scrollable="false" clickable="false" event_bubble="true">
+              <text_small text="MAPPING" translation_tag="MAPPING" clickable="false" event_bubble="true"/>
+              <icon name="filament_mismatch_icon"
+                    src="alert" size="sm" variant="warning" clickable="false" event_bubble="true">
+                <bind_flag_if_eq subject="filament_mismatch" flag="hidden" ref_value="0"/>
+              </icon>
+            </lv_obj>
+            <!-- Switch stays clickable (it is the control); the wrapper passes
+                 taps through so the rest of the header still reaches the card. -->
+            <lv_obj width="content"
+                    height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="row"
+                    style_flex_cross_place="center" scrollable="false" clickable="false" event_bubble="true">
+              <text_small name="sliced_colors_label"
+                          text="Sliced colors" translation_tag="Sliced colors"
+                          clickable="false" event_bubble="true"/>
+              <ui_switch name="sliced_colors_toggle" size="small">
+                <bind_state_if_eq subject="detail_prefer_sliced_colors" state="checked" ref_value="1"/>
+                <event_cb trigger="value_changed" callback="on_toggle_sliced_colors"/>
+              </ui_switch>
+            </lv_obj>
           </lv_obj>
           <lv_obj name="filament_mapping_rows"
                   width="100%" height="content" style_pad_all="0" style_pad_gap="#space_xs" flex_flow="column"
@@ -217,18 +238,11 @@
           </lv_obj>
         </ui_card>
 
-        <!-- Preview color mode: actual (loaded slot) vs sliced (slicer intent).
-             Only meaningful with an AMS mapping to compare against. -->
-        <compact_toggle_row name="sliced_colors_row"
-                            label="Show sliced colors"
-                            label_tag="Show sliced colors"
-                            subject="detail_prefer_sliced_colors"
-                            callback="on_toggle_sliced_colors">
-          <bind_flag_if_eq subject="filament_mapping_visible" flag="hidden" ref_value="0"/>
-        </compact_toggle_row>
-
-        <!-- Wrapper: zero-gap so spacer doesn't add extra space from parent's pad_gap -->
-        <lv_obj width="100%" flex_grow="1" style_pad_all="0" style_pad_gap="0" flex_flow="column">
+        <!-- Wrapper: zero-gap so the spacer doesn't inherit the parent's pad_gap.
+             Not scrollable — overflow here must be visible, not hidden behind a
+             scrollbar. -->
+        <lv_obj width="100%" flex_grow="1" style_pad_all="0" style_pad_gap="0" flex_flow="column"
+                scrollable="false">
           <!-- Options card.
                Toggle rows are populated dynamically in C++ from the active
                printer's PrePrintOptionSet (see PrintSelectDetailView::
@@ -247,8 +261,12 @@
             </lv_obj>
           </ui_card>
 
-          <!-- Spacer pushes buttons to bottom when options card is hidden -->
-          <lv_obj flex_grow="1"/>
+
+          <!-- Pushes the action buttons to the bottom of the column. Styling is
+               stripped so it contributes flex growth only — a default lv_obj
+               carries theme padding, background and border. -->
+          <lv_obj width="100%" height="0" flex_grow="1"
+                  style_pad_all="0" style_bg_opa="0" style_border_width="0" scrollable="false"/>
 
           <!-- Pre-print time estimate (bound to string subject) -->
           <text_small name="prep_time_estimate"

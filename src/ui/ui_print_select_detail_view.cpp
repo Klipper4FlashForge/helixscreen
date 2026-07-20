@@ -968,10 +968,6 @@ void PrintSelectDetailView::set_prefer_sliced_colors(bool prefer_sliced) {
     if (gcode_viewer_) {
         lv_obj_invalidate(gcode_viewer_);
     }
-    ToastManager::instance().show(ToastSeverity::INFO,
-                                  prefer_sliced ? lv_tr("Showing sliced colors")
-                                                : lv_tr("Showing loaded colors"),
-                                  2000);
 }
 
 void PrintSelectDetailView::on_ams_state_changed() {
