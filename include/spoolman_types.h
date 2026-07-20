@@ -6,6 +6,7 @@
 #include "ams_types.h"
 #include "color_utils.h"
 
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -180,14 +181,47 @@ struct FilamentUsageRecord {
 std::vector<SpoolInfo> filter_spools(const std::vector<SpoolInfo>& spools,
                                      const std::string& query);
 
+/// Sentinel recency key for a spool carrying no parseable timestamp at all.
+/// Sorts below every dated spool.
+constexpr int64_t SPOOL_RECENCY_NONE = INT64_MIN;
+
 /**
- * @brief Sort spools in-place by last-used timestamp (most recent first)
+ * @brief Parse a Spoolman ISO 8601 timestamp to epoch seconds
  *
- * Ordering (all descending):
- *   1. Spools with a non-empty last_used come before spools that have never been used.
- *   2. Among used spools, later last_used first. Spoolman emits ISO 8601, which
- *      sorts lexically in temporal order, so string comparison is sufficient.
- *   3. Tie-breaker (also for never-used spools): higher id first.
+ * Accepts the shapes Spoolman emits across versions:
+ *   - naive local:  "2026-07-19T12:34:56"
+ *   - explicit UTC: "2026-07-19T12:34:56Z"
+ *   - UTC offset:   "2026-07-19T12:34:56+02:00"
+ * Fractional seconds ("...:56.123456") are accepted and truncated.
+ *
+ * Parsing rather than string-comparing matters because the recency key takes the
+ * max of two timestamp fields: a "Z"-suffixed value and a "+02:00"-suffixed value
+ * compare wrong lexically even though both are well-formed.
+ *
+ * @param ts Timestamp string (may be empty)
+ * @return Epoch seconds, or std::nullopt if empty/unparseable
+ */
+std::optional<int64_t> parse_spool_timestamp(const std::string& ts);
+
+/**
+ * @brief Recency key for a spool: the later of last_used and registered
+ *
+ * A spool ranks by its most recent activity of EITHER kind, so a freshly added
+ * never-used spool competes on its registration date and can outrank a spool
+ * that was used a while ago. Never-used spools are NOT banished below used ones.
+ *
+ * @return Epoch seconds of the later timestamp, or SPOOL_RECENCY_NONE if the
+ *         spool has neither a parseable last_used nor a parseable registered.
+ */
+int64_t spool_recency_key(const SpoolInfo& spool);
+
+/**
+ * @brief Sort spools in-place by recency, most recent activity first
+ *
+ * Single sort key, descending: max(last_used, registered). See spool_recency_key().
+ * Spools with no usable timestamp sort last. Ties (including two undated spools)
+ * break on higher id first, which is deterministic across refreshes so a re-fetch
+ * cannot churn the list order.
  */
 void sort_spools_by_recency(std::vector<SpoolInfo>& spools);
 

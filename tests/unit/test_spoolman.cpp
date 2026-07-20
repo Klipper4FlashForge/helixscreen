@@ -1673,70 +1673,158 @@ TEST_CASE("SlotInfo spoolman_vendor_id defaults to 0", "[ams][spoolman]") {
 }
 
 // ============================================================================
-// sort_spools_by_recency — picker ordering (#1071): most-recently-used first,
-// then (for never-used spools) most-recently-created first.
+// sort_spools_by_recency — picker ordering (#1071). Single descending key:
+// max(last_used, registered). A never-used spool competes on its registration
+// date rather than being banished below every used spool.
 // ============================================================================
 
-TEST_CASE("sort_spools_by_recency orders used-newest then created-newest (#1071)",
-          "[filament][spoolman][sort]") {
-    std::vector<SpoolInfo> spools;
+namespace {
 
-    // Used spools (have last_used) — should sort ahead of never-used, newest first.
-    SpoolInfo used_old;
-    used_old.id = 10;
-    used_old.last_used = "2026-01-01T00:00:00";
-    spools.push_back(used_old);
-
-    SpoolInfo used_new;
-    used_new.id = 11;
-    used_new.last_used = "2026-06-01T00:00:00";
-    spools.push_back(used_new);
-
-    // Never-used spools (empty last_used) — order by registered (creation), newest first.
-    SpoolInfo fresh_old;
-    fresh_old.id = 20;
-    fresh_old.registered = "2025-01-01T00:00:00";
-    spools.push_back(fresh_old);
-
-    SpoolInfo fresh_new;
-    fresh_new.id = 21;
-    fresh_new.registered = "2025-12-31T00:00:00";
-    spools.push_back(fresh_new);
-
-    // Never-used with NO registered timestamp — falls to id tie-break, sorts last.
-    SpoolInfo fresh_undated;
-    fresh_undated.id = 5;
-    spools.push_back(fresh_undated);
-
-    sort_spools_by_recency(spools);
-
-    // Used spools first (newest use), then never-used by creation (newest),
-    // then the undated one (no registered) last via id tie-break.
-    REQUIRE(spools.size() == 5);
-    CHECK(spools[0].id == 11); // used, 2026-06
-    CHECK(spools[1].id == 10); // used, 2026-01
-    CHECK(spools[2].id == 21); // never-used, created 2025-12
-    CHECK(spools[3].id == 20); // never-used, created 2025-01
-    CHECK(spools[4].id == 5);  // never-used, no registered -> last
+/// Build a spool with explicit timestamps for ordering tests.
+SpoolInfo dated_spool(int id, const std::string& last_used, const std::string& registered) {
+    SpoolInfo s;
+    s.id = id;
+    s.last_used = last_used;
+    s.registered = registered;
+    return s;
 }
 
-TEST_CASE("sort_spools_by_recency tie-breaks equal registered by id (#1071)",
+std::vector<int> ids_of(const std::vector<SpoolInfo>& spools) {
+    std::vector<int> ids;
+    ids.reserve(spools.size());
+    for (const auto& s : spools)
+        ids.push_back(s.id);
+    return ids;
+}
+
+} // namespace
+
+TEST_CASE("sort_spools_by_recency puts a newly added never-used spool on top (#1071)",
           "[filament][spoolman][sort]") {
+    // The user's exact scenario: a spool registered today but never used must
+    // outrank a spool used yesterday. Under the old "used spools always first"
+    // rule the brand-new spool sank to the bottom of the picker.
     std::vector<SpoolInfo> spools;
-
-    SpoolInfo a;
-    a.id = 1;
-    a.registered = "2025-05-05T00:00:00";
-    spools.push_back(a);
-
-    SpoolInfo b;
-    b.id = 2;
-    b.registered = "2025-05-05T00:00:00"; // same creation timestamp
-    spools.push_back(b);
+    spools.push_back(dated_spool(11, "2026-07-18T09:00:00", "2026-01-02T00:00:00"));
+    spools.push_back(dated_spool(21, "", "2026-07-19T08:00:00")); // added today, never used
 
     sort_spools_by_recency(spools);
 
-    // Equal registered -> higher id first (stable tie-break).
-    CHECK(spools[0].id == 2);
-    CHECK(spools[1].id == 1);
+    CHECK(ids_of(spools) == std::vector<int>{21, 11});
+}
+
+TEST_CASE("sort_spools_by_recency puts a used spool above an older-registered unused spool",
+          "[filament][spoolman][sort]") {
+    std::vector<SpoolInfo> spools;
+    spools.push_back(dated_spool(30, "", "2026-07-15T00:00:00")); // never used, older
+    spools.push_back(dated_spool(31, "2026-07-19T00:00:00", "2026-03-01T00:00:00"));
+
+    sort_spools_by_recency(spools);
+
+    CHECK(ids_of(spools) == std::vector<int>{31, 30});
+}
+
+TEST_CASE("sort_spools_by_recency key is the max of last_used and registered",
+          "[filament][spoolman][sort]") {
+    // Neither field alone yields this order:
+    //   by last_used only  -> {41, 40} (40 has none, sinks)
+    //   by registered only -> {40, 41}
+    //   by max(...)        -> {40, 41} via 40's registration beating 41's use
+    SpoolInfo used_a_while_ago = dated_spool(41, "2026-04-01T00:00:00", "2025-01-01T00:00:00");
+    SpoolInfo added_recently = dated_spool(40, "", "2026-05-01T00:00:00");
+
+    CHECK(spool_recency_key(added_recently) > spool_recency_key(used_a_while_ago));
+
+    // A spool whose registration post-dates its own last_used keys off registration.
+    SpoolInfo re_registered = dated_spool(42, "2026-01-01T00:00:00", "2026-06-01T00:00:00");
+    CHECK(spool_recency_key(re_registered) ==
+          spool_recency_key(dated_spool(0, "", "2026-06-01T00:00:00")));
+
+    // And one used after registration keys off last_used.
+    SpoolInfo used_after = dated_spool(43, "2026-06-01T00:00:00", "2026-01-01T00:00:00");
+    CHECK(spool_recency_key(used_after) ==
+          spool_recency_key(dated_spool(0, "2026-06-01T00:00:00", "")));
+}
+
+TEST_CASE("sort_spools_by_recency falls back to registered when last_used is missing",
+          "[filament][spoolman][sort]") {
+    std::vector<SpoolInfo> spools;
+    spools.push_back(dated_spool(50, "", "2026-02-01T00:00:00"));
+    spools.push_back(dated_spool(51, "", "2026-08-01T00:00:00"));
+    spools.push_back(dated_spool(52, "", "2026-05-01T00:00:00"));
+
+    sort_spools_by_recency(spools);
+
+    // Never-used spools order among themselves by registration, newest first.
+    CHECK(ids_of(spools) == std::vector<int>{51, 52, 50});
+}
+
+TEST_CASE("sort_spools_by_recency sorts spools with no usable timestamp last",
+          "[filament][spoolman][sort]") {
+    std::vector<SpoolInfo> spools;
+    spools.push_back(dated_spool(60, "", ""));                    // no timestamps at all
+    spools.push_back(dated_spool(61, "", "not-a-timestamp"));     // unparseable
+    spools.push_back(dated_spool(62, "", "2020-01-01T00:00:00")); // ancient but dated
+
+    sort_spools_by_recency(spools);
+
+    // The dated spool wins however old it is; undated ones fall to id tie-break.
+    CHECK(spools[0].id == 62);
+    CHECK(spool_recency_key(spools[1]) == SPOOL_RECENCY_NONE);
+    CHECK(spool_recency_key(spools[2]) == SPOOL_RECENCY_NONE);
+    CHECK(ids_of(spools) == std::vector<int>{62, 61, 60});
+}
+
+TEST_CASE("sort_spools_by_recency ordering is deterministic across refreshes",
+          "[filament][spoolman][sort]") {
+    // Equal keys must not churn between fetches, which arrive in arbitrary order.
+    const std::string same = "2026-05-05T00:00:00";
+    std::vector<SpoolInfo> a{dated_spool(1, "", same), dated_spool(2, "", same),
+                             dated_spool(3, "", same)};
+    std::vector<SpoolInfo> b{dated_spool(3, "", same), dated_spool(1, "", same),
+                             dated_spool(2, "", same)};
+
+    sort_spools_by_recency(a);
+    sort_spools_by_recency(b);
+
+    CHECK(ids_of(a) == std::vector<int>{3, 2, 1}); // higher id first
+    CHECK(ids_of(a) == ids_of(b));                 // same result from a different input order
+}
+
+TEST_CASE("sort_spools_by_recency handles an empty list", "[filament][spoolman][sort]") {
+    std::vector<SpoolInfo> spools;
+    sort_spools_by_recency(spools);
+    CHECK(spools.empty());
+}
+
+TEST_CASE("parse_spool_timestamp handles the timestamp shapes Spoolman emits",
+          "[filament][spoolman][sort]") {
+    // Naive and explicit-UTC forms of the same instant agree.
+    const auto naive = parse_spool_timestamp("2026-07-19T12:34:56");
+    const auto zulu = parse_spool_timestamp("2026-07-19T12:34:56Z");
+    REQUIRE(naive.has_value());
+    REQUIRE(zulu.has_value());
+    CHECK(*naive == *zulu);
+
+    // Fractional seconds are accepted and truncated.
+    const auto frac = parse_spool_timestamp("2026-07-19T12:34:56.123456Z");
+    REQUIRE(frac.has_value());
+    CHECK(*frac == *zulu);
+
+    // A +02:00 offset is two hours EARLIER in UTC than the same wall-clock in Z.
+    const auto plus2 = parse_spool_timestamp("2026-07-19T12:34:56+02:00");
+    REQUIRE(plus2.has_value());
+    CHECK(*plus2 == *zulu - 2 * 3600);
+
+    // This is exactly the case string comparison gets wrong: lexically
+    // "...56+02:00" > "...56Z" is false, yet the +02:00 instant is earlier.
+    // Parsing gives the correct relation regardless of suffix.
+    const auto minus5 = parse_spool_timestamp("2026-07-19T12:34:56-05:00");
+    REQUIRE(minus5.has_value());
+    CHECK(*minus5 == *zulu + 5 * 3600);
+
+    // Junk and empties yield nullopt rather than a bogus epoch.
+    CHECK_FALSE(parse_spool_timestamp("").has_value());
+    CHECK_FALSE(parse_spool_timestamp("nope").has_value());
+    CHECK_FALSE(parse_spool_timestamp("2026-07-19").has_value()); // date only, too short
 }
