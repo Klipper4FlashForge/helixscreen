@@ -2869,3 +2869,58 @@ TEST_CASE("foreign records without helix_material still read", "[filament_slot_o
     REQUIRE(parsed.has_value());
     CHECK(parsed->second.material == "PETG");
 }
+
+TEST_CASE("load heals our own records with an unmatchable material",
+          "[filament_slot_override][migration][orca_match]") {
+    TmpCacheDir tmp("orca_heal");
+    MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
+    helix::PrinterState state;
+    state.init_subjects(false);
+    MoonrakerAPIMock api(client, state);
+
+    // A pre-fix record: unmatchable material, no helix_material, but our
+    // helix_locked_* markers prove we wrote it.
+    api.mock_set_db_value("lane_data", "lane2",
+                          json{{"lane", "1"},
+                               {"material", "ASA-GF"},
+                               {"color", "#1A1A1A"},
+                               {"helix_locked_color", true},
+                               {"helix_locked_material", true}});
+
+    FilamentSlotOverrideStore store(&api, "cfs");
+    FilamentSlotOverrideStoreTestAccess::set_cache_directory(store, tmp.path);
+    auto loaded = store.load_blocking();
+
+    // In memory we keep the precise identity.
+    REQUIRE(loaded.count(1) == 1);
+    CHECK(loaded[1].material == "ASA-GF");
+
+    // On the wire, material is now matchable and our identity is preserved.
+    auto healed = api.mock_get_db_value("lane_data", "lane2");
+    REQUIRE(healed.is_object());
+    CHECK(healed["material"] == "ASA");
+    CHECK(healed["helix_material"] == "ASA-GF");
+}
+
+TEST_CASE("load never rewrites a foreign record",
+          "[filament_slot_override][migration][orca_match]") {
+    TmpCacheDir tmp("orca_heal_foreign");
+    MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
+    helix::PrinterState state;
+    state.init_subjects(false);
+    MoonrakerAPIMock api(client, state);
+
+    // No helix_locked_* keys — written by AFC's plugin or Mainsail. Even though
+    // "ASA-GF" is unmatchable, this namespace is shared and not ours to edit.
+    api.mock_set_db_value("lane_data", "lane2",
+                          json{{"lane", "1"}, {"material", "ASA-GF"}, {"color", "#1A1A1A"}});
+
+    FilamentSlotOverrideStore store(&api, "cfs");
+    FilamentSlotOverrideStoreTestAccess::set_cache_directory(store, tmp.path);
+    auto loaded = store.load_blocking();
+
+    auto after = api.mock_get_db_value("lane_data", "lane2");
+    REQUIRE(after.is_object());
+    CHECK(after["material"] == "ASA-GF");        // untouched
+    CHECK_FALSE(after.contains("helix_material"));
+}
