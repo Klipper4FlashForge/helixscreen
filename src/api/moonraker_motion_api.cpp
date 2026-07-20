@@ -90,10 +90,38 @@ bool reject_non_finite(std::initializer_list<double> values, const char* method,
     return false;
 }
 
+constexpr const char* GCODE_SOURCE_COMMENT = " ; from helixscreen";
+
+// M117 (display message) and M118 (console echo) consume the rest of the
+// line as a literal text payload — Klipper does NOT strip a trailing
+// " ; ..." comment before storing/echoing it (confirmed live: "M117 Hello
+// World" rendered on-screen as "Hello World ; from helixscreen"). Every
+// other command treats ";" as an end-of-line comment Klipper safely
+// ignores, so only these two need to be skipped. Case-insensitive; tolerates
+// leading whitespace. This codebase never emits Nxxx line-number prefixes on
+// outgoing G-code, so that case is not handled.
+bool is_gcode_text_payload_command(const std::string& line) {
+    size_t start = line.find_first_not_of(" \t\r");
+    if (start == std::string::npos || line.size() < start + 4) {
+        return false;
+    }
+    char c0 = static_cast<char>(std::tolower(static_cast<unsigned char>(line[start])));
+    char c1 = static_cast<char>(std::tolower(static_cast<unsigned char>(line[start + 1])));
+    char c2 = line[start + 2];
+    char c3 = line[start + 3];
+    if (c0 != 'm' || c1 != '1' || c2 != '1' || (c3 != '7' && c3 != '8')) {
+        return false;
+    }
+    // Boundary check: the char after "M117"/"M118" (if any) must not continue
+    // the token — "M1170" is a different (unknown) command, not M117.
+    if (line.size() > start + 4 && std::isalnum(static_cast<unsigned char>(line[start + 4]))) {
+        return false;
+    }
+    return true;
+}
+
 // Annotate G-code with source comment for traceability
 std::string annotate_gcode(const std::string& gcode) {
-    constexpr const char* GCODE_SOURCE_COMMENT = " ; from helixscreen";
-
     std::string result;
     result.reserve(gcode.size() + 20 * std::count(gcode.begin(), gcode.end(), '\n') + 20);
 
@@ -107,7 +135,10 @@ std::string annotate_gcode(const std::string& gcode) {
         }
         first = false;
 
-        if (!line.empty() && line.find_first_not_of(" \t\r") != std::string::npos) {
+        // Only add comment to non-empty lines, and never to M117/M118 whose
+        // argument is a literal text payload (see is_gcode_text_payload_command).
+        if (!line.empty() && line.find_first_not_of(" \t\r") != std::string::npos &&
+            !is_gcode_text_payload_command(line)) {
             result += line + GCODE_SOURCE_COMMENT;
         } else {
             result += line;
