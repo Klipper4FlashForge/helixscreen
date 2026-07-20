@@ -337,22 +337,41 @@ Expected remaining writes: the parse site (~`:534-556`) and the new print-end cl
 
 - [ ] **Step 4: Add the print-end clear**
 
-In the same state-transition if/else chain in `src/printer/printer_print_state.cpp` (~`:283-296`), add a branch for terminal states. Place it alongside the existing `PRINTING` branch:
+**Placement matters — read this before writing code.** The existing chain in `src/printer/printer_print_state.cpp` (~`:268-294`) is an outcome-setting `if / else if` chain whose FIRST THREE arms already match COMPLETE, CANCELLED, and ERROR:
 
 ```cpp
-        } else if (new_state == PrintJobState::COMPLETE ||
-                   new_state == PrintJobState::CANCELLED ||
-                   new_state == PrintJobState::ERROR) {
-            // Clear M117 at print END, never at print start. Clearing on the
-            // observed transition INTO printing destroys PRINT_START-era
-            // messages permanently: Moonraker sends deltas, so Klipper never
-            // re-sends an unchanged value. At print end no such traffic is in
-            // flight, so this is race-free. An END_PRINT macro's M117 arrives
-            // in a later notification and displays normally.
-            lv_subject_copy_string(&display_message_, "");
-            update_display_message_visible();
-        }
+if (new_state != current_state) {
+    if      (new_state == PrintJobState::COMPLETE)  { ...set outcome... }
+    else if (new_state == PrintJobState::CANCELLED) { ...set outcome... }
+    else if (new_state == PrintJobState::ERROR)     { ...set outcome... }
+    else if (new_state == PrintJobState::PRINTING && current_state != PrintJobState::PAUSED) { ... }
+}
 ```
+
+So an `else if` appended after the `PRINTING` arm would be **unreachable dead code**. Do not add one. Do not restructure the outcome chain either — it works and is not this task's business.
+
+Instead add a **separate `if`** immediately after that chain closes, still INSIDE the enclosing `if (new_state != current_state)` block:
+
+```cpp
+                // Clear M117 at print END, never at print start. Clearing on the
+                // observed transition INTO printing destroys PRINT_START-era
+                // messages permanently: Moonraker sends deltas, so Klipper never
+                // re-sends an unchanged value. At print end no such traffic is in
+                // flight, so this is race-free. An END_PRINT macro's M117 arrives
+                // in a later notification and displays normally.
+                //
+                // Must stay inside the `new_state != current_state` guard so this
+                // is EDGE-triggered. Level-triggered would re-clear on every
+                // notification while COMPLETE and would swallow the END_PRINT M117.
+                if (new_state == PrintJobState::COMPLETE ||
+                    new_state == PrintJobState::CANCELLED ||
+                    new_state == PrintJobState::ERROR) {
+                    lv_subject_copy_string(&display_message_, "");
+                    update_display_message_visible();
+                }
+```
+
+A single block rather than one clear appended to each of the three terminal arms — three copies of the same two lines would be verbatim duplication.
 
 - [ ] **Step 5: Run tests to verify they pass**
 
