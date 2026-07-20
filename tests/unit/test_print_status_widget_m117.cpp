@@ -91,8 +91,10 @@ TEST_CASE_METHOD(LVGLUITestFixture,
                  "[print_status][panel_widget][m117]") {
     bool hidden_before_active = false;
     bool hidden_while_active_library = true;
+    bool hidden_after_clear_while_active = false;
     int view_before_active = -1;
     int view_while_active = -1;
+    int view_after_clear = -1;
     {
         PrintStatusWidget widget;
         widget.set_config({{"layout_style", "library"}});
@@ -123,6 +125,18 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
         view_while_active = lv_subject_get_int(PrintStatusWidget::view_subject_for_test());
         hidden_while_active_library = lv_obj_has_flag(active_msg, LV_OBJ_FLAG_HIDDEN);
+
+        // Second half of the compound condition
+        // ("print_status_view ne 3 or display_message_visible eq 0"): stay in
+        // view 3 and clear M117 the way Klipper does (null message). Without
+        // this case the `display_message_visible eq 0` clause is dead — the
+        // message is non-empty for the whole test above, so deleting the clause
+        // leaves every other assertion green.
+        state().update_from_status({{"display_status", {{"message", nullptr}}}});
+        UpdateQueue::instance().drain();
+
+        view_after_clear = lv_subject_get_int(PrintStatusWidget::view_subject_for_test());
+        hidden_after_clear_while_active = lv_obj_has_flag(active_msg, LV_OBJ_FLAG_HIDDEN);
     }
     PrintStatusWidget::destroy_formatter_for_test();
 
@@ -131,4 +145,8 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     REQUIRE(view_while_active == 3);
     REQUIRE_FALSE(hidden_while_active_library);
+
+    // Still the active library view, but the message is gone -> row hides.
+    REQUIRE(view_after_clear == 3);
+    REQUIRE(hidden_after_clear_while_active);
 }
