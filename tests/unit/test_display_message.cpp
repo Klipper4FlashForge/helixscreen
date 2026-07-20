@@ -70,36 +70,86 @@ TEST_CASE("Display message: parses string message from display_status",
 }
 
 // ============================================================================
-// Reset Behavior
+// Clearing Semantics
 // ============================================================================
 
-TEST_CASE("Display message: resets on new print", "[print][display_message]") {
+TEST_CASE("Display message: survives the transition into PRINTING",
+          "[print][display_message]") {
     lv_init_safe();
     PrinterState& state = get_printer_state();
     PrinterStateTestAccess::reset(state);
     state.init_subjects(false);
 
-    // Set a message during first print
+    // Regression for the delta-clobber bug. A PRINT_START macro emits M117
+    // before print_stats.state flips to "printing", so the message arrives in
+    // an EARLIER notification. Moonraker sends deltas, so Klipper will never
+    // re-send this value. If the PRINTING transition clears it, it is gone for
+    // the whole print — which is exactly what users reported.
+    json m117 = {{"display_status", {{"message", "Heating bed to 60"}}}};
+    state.update_from_status(m117);
+    REQUIRE(std::string(lv_subject_get_string(state.get_display_message_subject())) ==
+            "Heating bed to 60");
+
+    // Separate notification, no display_status key at all (a true delta).
     json printing = {{"print_stats", {{"state", "printing"}}}};
     state.update_from_status(printing);
 
-    json msg = {{"display_status", {{"message", "Old print message"}}}};
-    state.update_from_status(msg);
     REQUIRE(std::string(lv_subject_get_string(state.get_display_message_subject())) ==
-            "Old print message");
+            "Heating bed to 60");
+    REQUIRE(lv_subject_get_int(state.get_display_message_visible_subject()) == 1);
+}
 
-    // Complete and start new print
-    json complete = {{"print_stats", {{"state", "complete"}}}};
-    state.update_from_status(complete);
+TEST_CASE("Display message: cleared at print end", "[print][display_message]") {
+    lv_init_safe();
 
-    json standby = {{"print_stats", {{"state", "standby"}}}};
-    state.update_from_status(standby);
+    auto run_end_state = [](const char* end_state) {
+        PrinterState& state = get_printer_state();
+        PrinterStateTestAccess::reset(state);
+        state.init_subjects(false);
 
-    json new_print = {{"print_stats", {{"state", "printing"}}}};
-    state.update_from_status(new_print);
+        json printing = {{"print_stats", {{"state", "printing"}}}};
+        state.update_from_status(printing);
 
-    // Message should be cleared for new print
+        json msg = {{"display_status", {{"message", "Layer 47/120"}}}};
+        state.update_from_status(msg);
+        REQUIRE(std::string(lv_subject_get_string(state.get_display_message_subject())) ==
+                "Layer 47/120");
+
+        json done = {{"print_stats", {{"state", end_state}}}};
+        state.update_from_status(done);
+
+        REQUIRE(std::string(lv_subject_get_string(state.get_display_message_subject())) == "");
+        REQUIRE(lv_subject_get_int(state.get_display_message_visible_subject()) == 0);
+    };
+
+    SECTION("complete") { run_end_state("complete"); }
+    SECTION("cancelled") { run_end_state("cancelled"); }
+    SECTION("error") { run_end_state("error"); }
+}
+
+TEST_CASE("Display message: END_PRINT M117 survives the print-end clear",
+          "[print][display_message]") {
+    lv_init_safe();
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    json printing = {{"print_stats", {{"state", "printing"}}}};
+    state.update_from_status(printing);
+
+    // Print ends first...
+    json done = {{"print_stats", {{"state", "complete"}}}};
+    state.update_from_status(done);
     REQUIRE(std::string(lv_subject_get_string(state.get_display_message_subject())) == "");
+
+    // ...then an END_PRINT macro's M117 lands in a later notification.
+    // It must display, not be swallowed.
+    json farewell = {{"display_status", {{"message", "Print complete - remove part"}}}};
+    state.update_from_status(farewell);
+
+    REQUIRE(std::string(lv_subject_get_string(state.get_display_message_subject())) ==
+            "Print complete - remove part");
+    REQUIRE(lv_subject_get_int(state.get_display_message_visible_subject()) == 1);
 }
 
 // ============================================================================

@@ -187,8 +187,6 @@ void PrinterPrintState::reset_for_new_print() {
     layer_z_derived_ = false;
     slicer_progress_ = 0.0;
     slicer_progress_active_ = false;
-    lv_subject_copy_string(&display_message_, "");
-    update_display_message_visible();
     lv_subject_copy_string(&print_message_, "");
     lv_subject_set_int(&print_duration_, 0);
     lv_subject_set_int(&print_elapsed_, 0);
@@ -288,12 +286,27 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
                         spdlog::info("[PrinterPrintState] New print starting - clearing outcome");
                         lv_subject_set_int(&print_outcome_, static_cast<int>(PrintOutcome::NONE));
                     }
-                    // Reset slicer progress and display message for the new print
+                    // Reset slicer progress for the new print
                     slicer_progress_ = 0.0;
                     slicer_progress_active_ = false;
+                    lv_subject_copy_string(&print_message_, "");
+                }
+
+                // Clear M117 at print END, never at print start. Clearing on the
+                // observed transition INTO printing destroys PRINT_START-era
+                // messages permanently: Moonraker sends deltas, so Klipper never
+                // re-sends an unchanged value. At print end no such traffic is in
+                // flight, so this is race-free. An END_PRINT macro's M117 arrives
+                // in a later notification and displays normally.
+                //
+                // Must stay inside the `new_state != current_state` guard so this
+                // is EDGE-triggered. Level-triggered would re-clear on every
+                // notification while COMPLETE and would swallow the END_PRINT M117.
+                if (new_state == PrintJobState::COMPLETE ||
+                    new_state == PrintJobState::CANCELLED ||
+                    new_state == PrintJobState::ERROR) {
                     lv_subject_copy_string(&display_message_, "");
                     update_display_message_visible();
-                    lv_subject_copy_string(&print_message_, "");
                 }
             }
 
