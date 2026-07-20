@@ -328,11 +328,14 @@
              spool-edit); it applies identity/color/logistics, then finishes and
              closes the editor. The former in-content Save button was retired. -->
 
-        <!-- Spool-logistics action: revealed by enter_spool_edit() only when a
-             label printer is configured. -->
+        <!-- Spool-logistics action: visible only when a label printer is
+             configured. The static hidden="true" is the fallback for builds
+             without label-printer support, where `label_printer_configured` is
+             never registered and this binding is skipped. -->
         <ui_button name="btn_detail_print_label" width="100%" height="#button_height"
                    text="Print Label" translation_tag="Print Label" variant="secondary"
                    icon="printer" hidden="true">
+          <bind_flag_if_eq subject="label_printer_configured" flag="hidden" ref_value="0"/>
           <event_cb trigger="clicked" callback="ams_edit_print_label_cb"/>
         </ui_button>
       </lv_obj>

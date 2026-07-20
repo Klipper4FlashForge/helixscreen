@@ -1406,12 +1406,17 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     // A firmware-whitelisted material with no seeded catalog product yields an
     // empty (all-unchecked) product list. Save must not silently no-op the
     // identity change: apply vendor Generic + the selected type string.
+    //
+    // PEEK is the example because Generic stocks no PEEK product at all, so it
+    // stands as its own appended heading. A stocked material would instead fold
+    // into its family heading (SILK -> "Silk PLA" -> the PLA heading) and would
+    // no longer exercise the empty-product-list path this test covers.
     auto& overlay = get_ams_edit_overlay();
     AmsEditOverlayViewTestAccess access(overlay);
 
     SlotInfo slot = untracked_slot();
-    slot.brand = "eSUN";     // prove the brand gets forced to Generic
-    slot.material = "PETG";  // differs from the selected SILK
+    slot.brand = "eSUN";    // prove the brand gets forced to Generic
+    slot.material = "PETG"; // differs from the selected PEEK
     REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, nullptr, nullptr));
     UpdateQueue::instance().drain();
     process_lvgl(10);
@@ -1421,13 +1426,13 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     process_lvgl(10);
 
     auto& sel = access.details_selector();
-    sel.configure(std::nullopt, std::vector<std::string>{"SILK"});
+    sel.configure(std::nullopt, std::vector<std::string>{"PEEK"});
     sel.populate();
-    REQUIRE(sel.current_type() == "SILK");
+    REQUIRE(sel.current_type() == "PEEK");
     REQUIRE(sel.highlighted() == nullptr);
 
     access.call_handle_spool_edit_save();
-    CHECK(access.working_info().material == "SILK");
+    CHECK(access.working_info().material == "PEEK");
     CHECK(access.working_info().brand == "Generic");
 
     close_editor_overlay();

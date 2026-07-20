@@ -374,6 +374,20 @@ void AmsEditOverlay::init_subjects() {
         lv_subject_init_string(&chip_text_subject_, chip_text_buf_, nullptr, sizeof(chip_text_buf_),
                                "");
         subjects_.register_subject(&chip_text_subject_);
+
+#if HELIX_HAS_LABEL_PRINTER
+        // Expose the label-printer readiness flag to XML so
+        // btn_detail_print_label can bind its `hidden` flag declaratively and
+        // track pairing/unpairing while the overlay is open. The subject is
+        // owned by LabelPrinterSettingsManager (NOT registered into subjects_ —
+        // it must outlive this overlay). Builds without HELIX_HAS_LABEL_PRINTER
+        // leave the subject unregistered; the XML binding then never installs
+        // and the button keeps its static hidden="true".
+        helix::LabelPrinterSettingsManager::instance().init_subjects();
+        lv_xml_register_subject(
+            nullptr, "label_printer_configured",
+            helix::LabelPrinterSettingsManager::instance().subject_printer_configured());
+#endif
     });
 }
 
@@ -469,8 +483,8 @@ void AmsEditOverlay::populate_picker() {
                     return;
                 }
 
-                // Spools arrive already ordered most-recently-used first (then
-                // most-recently-created for never-used) — sort_spools_by_recency()
+                // Spools arrive ordered by most recent activity first, where a
+                // spool's rank is max(last_used, registered) — sort_spools_by_recency()
                 // is applied once in the API layer on fetch (#1071). filter_spools()
                 // preserves order, so filtering doesn't need to re-sort.
                 cached_spools_ = spools;
@@ -727,19 +741,9 @@ void AmsEditOverlay::enter_spool_edit() {
     detail_working_ = detail_original_;
     populate_detail_fields();
 
-    // Print Label is spool logistics — offer it here, only when configured.
-    if (lv_obj_t* btn_print = find_widget("btn_detail_print_label")) {
-#if HELIX_HAS_LABEL_PRINTER
-        bool printer_ready = helix::LabelPrinterSettingsManager::instance().is_configured();
-#else
-        bool printer_ready = false;
-#endif
-        if (printer_ready) {
-            lv_obj_remove_flag(btn_print, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(btn_print, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
+    // Print Label visibility is declarative — btn_detail_print_label binds its
+    // hidden flag to `label_printer_configured` in ams_edit_overlay.xml, so
+    // pairing a printer while this view is open reveals the button live.
 
     set_view(kViewSpoolEdit);
 
