@@ -15,6 +15,7 @@
 #include <string>
 
 #include "../catch_amalgamated.hpp"
+#include "filament_catalog.h"
 
 namespace {
 
@@ -85,4 +86,35 @@ TEST_CASE_METHOD(TableFixture, "orca_match_type handles non-catalog input", "[or
     CHECK(filament::orca_match_type("  PLA  ") == "PLA");   // whitespace
     CHECK(filament::orca_match_type("pla") == "PLA");       // case
     CHECK(filament::orca_match_type("Silk PLA") == "PLA");  // decorated
+}
+
+// Every catalog type must resolve to a library type, or be on the explicit
+// must-not-guess list. A new catalog type that silently resolves to "" would
+// otherwise ship as a lane Orca shows empty, with nobody noticing. This case
+// deliberately skips TableFixture — it exercises the real shipped tables
+// loaded from assets/filaments.json, not the hand-mirrored copy above.
+TEST_CASE("every catalog type resolves or is deliberately blank", "[orca_match][catalog]") {
+    // Deliberately unmatchable — see the spec's safety rationale. PET is not
+    // PETG; PPS/PPA have no library equivalent and a wrong guess is unsafe.
+    const std::set<std::string> kMustNotGuess = {"PET", "PET-GF", "PPS", "PPS-CF", "PPA"};
+
+    auto catalog = helix::printer::FilamentCatalog::load_full();
+    auto products = catalog.all_products();
+    REQUIRE(products.size() > 300); // sanity: the asset actually loaded
+
+    std::set<std::string> unresolved;
+    for (const auto* p : products) {
+        if (p->type.empty())
+            continue;
+        if (filament::orca_match_type(p->type).empty() && !kMustNotGuess.count(p->type))
+            unresolved.insert(p->type);
+    }
+
+    INFO("Types resolving to nothing. Either add an entry to ORCA_TYPE_OVERRIDES "
+         "in scripts/import_orca_filaments.py and regenerate, or add it to "
+         "kMustNotGuess above with a comment explaining why guessing is unsafe.");
+    for (const auto& t : unresolved) {
+        UNSCOPED_INFO("  unresolved type: " << t);
+    }
+    CHECK(unresolved.empty());
 }
