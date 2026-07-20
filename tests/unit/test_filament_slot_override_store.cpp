@@ -2713,3 +2713,75 @@ TEST_CASE("Anomaly scan: non-object namespace is empty result, no crash",
     CHECK(scan_lane_data_anomalies(json(nullptr)).total() == 0);
     CHECK(scan_lane_data_anomalies(json::array({1, 2, 3})).total() == 0);
 }
+
+TEST_CASE("lane_data carries both the Orca match string and our display string",
+          "[filament_slot_override][orca_match]") {
+    TmpCacheDir tmp("orca_match_emit");
+    MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
+    helix::PrinterState state;
+    state.init_subjects(false);
+    MoonrakerAPIMock api(client, state);
+    FilamentSlotOverrideStore store(&api, "cfs");
+    FilamentSlotOverrideStoreTestAccess::set_cache_directory(store, tmp.path);
+
+    FilamentSlotOverride ovr;
+    ovr.material = "ASA-GF";
+    ovr.color_rgb = 0x1A1A1A;
+    ovr.color_set = true;
+    store.save_async(1, ovr, [](bool, std::string) {});
+
+    auto written = api.mock_get_db_value("lane_data", "lane2");
+    REQUIRE(written.is_object());
+    // Orca matches on `material` alone and cannot match "ASA-GF" — it would
+    // silently resolve to a PLA preset.
+    CHECK(written["material"] == "ASA");
+    // Our precise identity survives for read-back.
+    CHECK(written["helix_material"] == "ASA-GF");
+    CHECK(written["color"] == "#1A1A1A");
+}
+
+TEST_CASE("material is omitted when nothing is safely matchable",
+          "[filament_slot_override][orca_match][safety]") {
+    TmpCacheDir tmp("orca_match_omit");
+    MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
+    helix::PrinterState state;
+    state.init_subjects(false);
+    MoonrakerAPIMock api(client, state);
+    FilamentSlotOverrideStore store(&api, "cfs");
+    FilamentSlotOverrideStoreTestAccess::set_cache_directory(store, tmp.path);
+
+    FilamentSlotOverride ovr;
+    ovr.material = "PPS-CF"; // no Orca library equivalent
+    store.save_async(0, ovr, [](bool, std::string) {});
+
+    auto written = api.mock_get_db_value("lane_data", "lane1");
+    REQUIRE(written.is_object());
+    // Absent `material` makes Orca treat the lane as unloaded — visibly empty
+    // beats confidently PLA.
+    CHECK_FALSE(written.contains("material"));
+    CHECK(written["helix_material"] == "PPS-CF");
+}
+
+TEST_CASE("round-trip preserves the precise display material", "[filament_slot_override][orca_match]") {
+    json rec;
+    rec["lane"] = "1";
+    rec["material"] = "ASA";
+    rec["helix_material"] = "ASA-GF";
+    rec["helix_locked_material"] = true;
+
+    auto parsed = helix::ams::from_lane_data_record(rec);
+    REQUIRE(parsed.has_value());
+    // Without this, a restart would silently downgrade the user's ASA-GF to ASA.
+    CHECK(parsed->second.material == "ASA-GF");
+}
+
+TEST_CASE("foreign records without helix_material still read", "[filament_slot_override][orca_match]") {
+    // Mainsail / AFC / Happy Hare write `material` only.
+    json rec;
+    rec["lane"] = "0";
+    rec["material"] = "PETG";
+
+    auto parsed = helix::ams::from_lane_data_record(rec);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->second.material == "PETG");
+}

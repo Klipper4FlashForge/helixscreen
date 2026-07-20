@@ -5,6 +5,7 @@
 #include "data_root_resolver.h"
 #include "filament_database.h"
 #include "filament_slot_override.h"
+#include "filament_variants.h"
 #include "i_moonraker_api.h"
 #include "moonraker_error.h"
 
@@ -84,8 +85,21 @@ nlohmann::json to_lane_data_record(int slot_index, const FilamentSlotOverride& o
         std::snprintf(buf, sizeof(buf), "#%06X", o.color_rgb & 0x00FFFFFFu);
         j["color"] = buf;
     }
-    if (!o.material.empty())
-        j["material"] = o.material;
+    // Two strings, deliberately. OrcaSlicer reads `material` and matches it by
+    // exact string equality against its filament library; a string it cannot
+    // match does NOT degrade gracefully — it resolves to a PLA preset
+    // (Preset.cpp:3300), which means PLA temps on whatever is really loaded. So
+    // `material` carries a conservative, matchable string.
+    //
+    // `helix_material` carries our precise identity ("ASA-GF"), which Orca
+    // ignores. Without it, load_blocking would read back the degraded string
+    // and permanently forget what the user actually loaded.
+    if (!o.material.empty()) {
+        const std::string match = filament::orca_match_type(o.material);
+        if (!match.empty())
+            j["material"] = match;
+        j["helix_material"] = o.material;
+    }
     // helix_locked_* are HelixScreen-internal markers. Always emit both (even
     // when false) so a future re-load can distinguish "explicit auto-mirror,
     // safe to track" from "missing key, fall back to pessimistic default."
@@ -126,72 +140,6 @@ nlohmann::json to_lane_data_record(int slot_index, const FilamentSlotOverride& o
     if (!o.color_name.empty())
         j["color_name"] = o.color_name;
     return j;
-}
-
-// Parse AFC-shaped record (+ our extensions) back into FilamentSlotOverride.
-// Returns (slot_index, override) where slot_index comes from the "lane" field
-// (which Orca requires). nullopt if the record is malformed (non-object or
-// missing/invalid "lane" field).
-std::optional<std::pair<int, FilamentSlotOverride>> from_lane_data_record(const nlohmann::json& j) {
-    if (!j.is_object() || !j.contains("lane"))
-        return std::nullopt;
-    int slot_index = 0;
-    if (j["lane"].is_string()) {
-        try {
-            slot_index = std::stoi(j["lane"].get<std::string>());
-        } catch (...) {
-            return std::nullopt;
-        }
-    } else if (j["lane"].is_number_integer()) {
-        slot_index = j["lane"].get<int>();
-    } else {
-        return std::nullopt;
-    }
-    // Matches OrcaSlicer's MoonrakerPrinterAgent.cpp:796 — negative lane
-    // values are never valid slot indices.
-    if (slot_index < 0)
-        return std::nullopt;
-
-    FilamentSlotOverride o;
-    if (j.contains("color") && j["color"].is_string()) {
-        std::string s = j["color"].get<std::string>();
-        if (!s.empty() && s[0] == '#') {
-            s = s.substr(1);
-        } else if (s.size() >= 2 && (s.substr(0, 2) == "0x" || s.substr(0, 2) == "0X")) {
-            s = s.substr(2);
-        }
-        try {
-            o.color_rgb = static_cast<uint32_t>(std::stoul(s, nullptr, 16));
-            o.color_set = true;
-        } catch (...) {
-            // Leave color_rgb at default + color_set=false on parse failure.
-        }
-    }
-    o.material = j.value("material", "");
-    // Pessimistic legacy-default: pre-fix records have no helix_locked_* key.
-    // Assume the field IS user-locked when it carries a value — protects
-    // existing overrides from auto-mirror clobber after upgrade. New records
-    // (post-fix) carry the explicit flag and round-trip exactly. See struct
-    // doc + #965 for rationale.
-    o.user_locked_color = j.value("helix_locked_color", o.color_set);
-    o.user_locked_material = j.value("helix_locked_material", !o.material.empty());
-    // Prefer our own `vendor` key; fall back to Happy Hare's `vendor_name` so
-    // alias-only records (e.g. written by HH's mmu_server push_lane_data) read
-    // correctly. Round-trips of our own records stay exact.
-    o.brand = j.value("vendor", j.value("vendor_name", std::string()));
-    o.spoolman_id = j.value("spool_id", 0);
-    o.bed_temp = j.value("bed_temp", 0);
-    o.nozzle_temp = j.value("nozzle_temp", 0);
-    if (j.contains("scan_time") && j["scan_time"].is_string()) {
-        o.updated_at = parse_iso8601(j["scan_time"].get<std::string>());
-    }
-    // Prefer `spool_name`; fall back to Happy Hare's `name` alias.
-    o.spool_name = j.value("spool_name", j.value("name", std::string()));
-    o.spoolman_vendor_id = j.value("spoolman_vendor_id", 0);
-    o.remaining_weight_g = j.value("remaining_weight_g", -1.0f);
-    o.total_weight_g = j.value("total_weight_g", -1.0f);
-    o.color_name = j.value("color_name", "");
-    return std::make_pair(slot_index, o);
 }
 
 // Update the on-disk cache file with the current state of one slot.
@@ -409,6 +357,80 @@ std::optional<int> implied_slot_from_key(const std::string& key) {
 }
 
 } // namespace
+
+// Parse AFC-shaped record (+ our extensions) back into FilamentSlotOverride.
+// Returns (slot_index, override) where slot_index comes from the "lane" field
+// (which Orca requires). nullopt if the record is malformed (non-object or
+// missing/invalid "lane" field).
+//
+// Namespace-scope (not anonymous) rather than static: this is the wire-format
+// parser and tests need to reach it directly to verify round-tripping without
+// going through the full save_async/load_blocking async machinery. Production
+// callers in this file keep calling it unqualified.
+std::optional<std::pair<int, FilamentSlotOverride>> from_lane_data_record(const nlohmann::json& j) {
+    if (!j.is_object() || !j.contains("lane"))
+        return std::nullopt;
+    int slot_index = 0;
+    if (j["lane"].is_string()) {
+        try {
+            slot_index = std::stoi(j["lane"].get<std::string>());
+        } catch (...) {
+            return std::nullopt;
+        }
+    } else if (j["lane"].is_number_integer()) {
+        slot_index = j["lane"].get<int>();
+    } else {
+        return std::nullopt;
+    }
+    // Matches OrcaSlicer's MoonrakerPrinterAgent.cpp:796 — negative lane
+    // values are never valid slot indices.
+    if (slot_index < 0)
+        return std::nullopt;
+
+    FilamentSlotOverride o;
+    if (j.contains("color") && j["color"].is_string()) {
+        std::string s = j["color"].get<std::string>();
+        if (!s.empty() && s[0] == '#') {
+            s = s.substr(1);
+        } else if (s.size() >= 2 && (s.substr(0, 2) == "0x" || s.substr(0, 2) == "0X")) {
+            s = s.substr(2);
+        }
+        try {
+            o.color_rgb = static_cast<uint32_t>(std::stoul(s, nullptr, 16));
+            o.color_set = true;
+        } catch (...) {
+            // Leave color_rgb at default + color_set=false on parse failure.
+        }
+    }
+    // Prefer our precise identity; fall back to `material` for foreign records
+    // (Mainsail, AFC, Happy Hare) and for records written before helix_material
+    // existed.
+    o.material = j.value("helix_material", j.value("material", std::string()));
+    // Pessimistic legacy-default: pre-fix records have no helix_locked_* key.
+    // Assume the field IS user-locked when it carries a value — protects
+    // existing overrides from auto-mirror clobber after upgrade. New records
+    // (post-fix) carry the explicit flag and round-trip exactly. See struct
+    // doc + #965 for rationale.
+    o.user_locked_color = j.value("helix_locked_color", o.color_set);
+    o.user_locked_material = j.value("helix_locked_material", !o.material.empty());
+    // Prefer our own `vendor` key; fall back to Happy Hare's `vendor_name` so
+    // alias-only records (e.g. written by HH's mmu_server push_lane_data) read
+    // correctly. Round-trips of our own records stay exact.
+    o.brand = j.value("vendor", j.value("vendor_name", std::string()));
+    o.spoolman_id = j.value("spool_id", 0);
+    o.bed_temp = j.value("bed_temp", 0);
+    o.nozzle_temp = j.value("nozzle_temp", 0);
+    if (j.contains("scan_time") && j["scan_time"].is_string()) {
+        o.updated_at = parse_iso8601(j["scan_time"].get<std::string>());
+    }
+    // Prefer `spool_name`; fall back to Happy Hare's `name` alias.
+    o.spool_name = j.value("spool_name", j.value("name", std::string()));
+    o.spoolman_vendor_id = j.value("spoolman_vendor_id", 0);
+    o.remaining_weight_g = j.value("remaining_weight_g", -1.0f);
+    o.total_weight_g = j.value("total_weight_g", -1.0f);
+    o.color_name = j.value("color_name", "");
+    return std::make_pair(slot_index, o);
+}
 
 LaneDataAnomalies scan_lane_data_anomalies(const nlohmann::json& namespace_doc) {
     LaneDataAnomalies a;
