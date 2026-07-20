@@ -32,54 +32,57 @@ Stops `PrintStartCollector` writing user M117 text into `print_start_message`, s
 
 **Files:**
 - Modify: `src/print/print_start_collector.cpp:243-253`
-- Test: `tests/unit/test_display_message.cpp`
+- Test: `tests/unit/test_print_start_collector.cpp`
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
 - Produces: `print_start_message` now contains only collector-generated phase labels. Task 5 relies on this.
 
+**Why the test lives in `test_print_start_collector.cpp`:** the pass-through is reached only via the `notify_status_update` callback that `PrintStartCollector::start()` registers with `MoonrakerClient` (`print_start_collector.cpp:199`). `test_display_message.cpp` never constructs a client or a collector, so a test there cannot reach this code and would pass identically before and after the change. `MoonrakerClient::dispatch_status_update()` (`include/moonraker_client.h:654`, public, inherited by `MoonrakerClientMock`) wraps a bare status object into the real envelope and fires that exact callback map — it is the correct seam.
+
 - [ ] **Step 1: Write the failing test**
 
-Append to `tests/unit/test_display_message.cpp`:
+Add to `tests/unit/test_print_start_collector.cpp` as a `TEST_CASE_METHOD` on the existing `PrintStartCollectorHeaterFixture` (defined `:603-716`). Match the tag string used by the surrounding `TEST_CASE_METHOD`s in that file:
 
 ```cpp
-// ============================================================================
-// Writer Independence (subject ownership)
-// ============================================================================
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
+                 "PrintStartCollector: M117 does not overwrite the phase label",
+                 /* match surrounding tags in this file */) {
+    // Drive to a known phase that has its own label. Mirrors the existing
+    // proactive bed-heating section at :955-964.
+    collector().start();
+    drain_async_updates();
+    drain_async_updates(); // INITIALIZING settle
 
-TEST_CASE("Display message: M117 does not write print_start_message",
-          "[print][display_message]") {
-    lv_init_safe();
-    PrinterState& state = get_printer_state();
-    PrinterStateTestAccess::reset(state);
-    state.init_subjects(false);
+    set_all_temps(150, 600, 0, 0);
+    collector().check_fallback_completion();
+    drain_async_updates();
+    drain_async_updates();
+    REQUIRE(get_current_phase() == PrintStartPhase::HEATING_BED);
+    REQUIRE(get_current_message() == "Heating Bed...");
 
-    // Put the collector into a known phase with its own label.
-    state.set_print_start_state(PrintStartPhase::HEATING_BED, "Heating Bed...", 30);
-    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
-    REQUIRE(std::string(lv_subject_get_string(state.get_print_start_message_subject())) ==
-            "Heating Bed...");
+    // A user M117 arrives on the same notify_status_update path the collector
+    // listens on. It must NOT clobber the collector's phase label — user text
+    // belongs in display_message, which PrinterPrintState owns.
+    client().dispatch_status_update({{"display_status", {{"message", "Leveling 3/9"}}}});
+    drain_async_updates();
+    drain_async_updates();
 
-    // A user M117 arrives. It must land in display_message and leave the
-    // phase label untouched.
-    json status = {{"display_status", {{"message", "Leveling 3/9"}}}};
-    state.update_from_status(status);
-    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
-
-    REQUIRE(std::string(lv_subject_get_string(state.get_display_message_subject())) ==
-            "Leveling 3/9");
-    REQUIRE(std::string(lv_subject_get_string(state.get_print_start_message_subject())) ==
-            "Heating Bed...");
+    REQUIRE(get_current_message() == "Heating Bed...");
 }
 ```
+
+Fixture helpers used, all pre-existing: `client()`, `collector()`, `get_current_phase()`, `get_current_message()` (`:643-645`), `drain_async_updates()` (`:688-690`), `set_all_temps()`.
 
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-make test-build && ./build/bin/helix-tests "[display_message]"
+make test-build && ./build/bin/helix-tests "[print_start]"
 ```
 
-Expected: FAIL on the final `REQUIRE` — `print_start_message` reads `"Leveling 3/9"` because the collector's M117 pass-through overwrote the phase label.
+(Use whichever tag the file's tests actually carry — confirm with `./build/bin/helix-tests --list-tests | grep -i print.start`.)
+
+Expected: FAIL on the final `REQUIRE` — `get_current_message()` reads `"Leveling 3/9"` because the collector's M117 pass-through overwrote the phase label. **If it passes immediately, stop and report** — that means the pass-through is not reachable the way the plan assumes.
 
 - [ ] **Step 3: Remove the pass-through**
 
@@ -94,15 +97,15 @@ grep -rn "update_message_only" src/ include/ tests/
 - [ ] **Step 4: Run test to verify it passes**
 
 ```bash
-make test-build && ./build/bin/helix-tests "[display_message]"
+make test-build && ./build/bin/helix-tests "[print_start]"
 ```
 
-Expected: PASS.
+Expected: PASS — the new test, and every pre-existing phase-label assertion in the file (`:964` `"Heating Bed..."`, `:1056` `"Heating Nozzle..."`, `:2048` `"Loading Filament"`, `:2451` `"Bed mesh"`, `:2480` `"Priming"`, and the gcode-response-driven ones at `:726, 766, 793, 837`). Those are the regression net for this deletion — none of them drive `display_status`, so they must all stay green.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/print/print_start_collector.cpp include/print_start_collector.h tests/unit/test_display_message.cpp
+git add src/print/print_start_collector.cpp include/print_start_collector.h tests/unit/test_print_start_collector.cpp
 git commit -m "fix(print): stop routing M117 into the phase-label subject"
 ```
 
