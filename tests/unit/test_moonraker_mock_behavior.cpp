@@ -3279,6 +3279,89 @@ TEST_CASE("MoonrakerClientMock: M117 sets display_status.message", "[mock][displ
         mock.gcode_script("M117  two spaces");
         REQUIRE(captured["message"].get<std::string>() == " two spaces");
     }
+
+    SECTION("preserves embedded quotes and backslashes verbatim") {
+        mock.gcode_script("M117 She said \"hi\" \\ok\\");
+        REQUIRE(captured.contains("message"));
+        REQUIRE(captured["message"].get<std::string>() == "She said \"hi\" \\ok\\");
+    }
+
+    SECTION("preserves a message longer than the downstream 128-byte display buffer") {
+        std::string long_text(200, 'x');
+        mock.gcode_script("M117 " + long_text);
+        REQUIRE(captured.contains("message"));
+        REQUIRE(captured["message"].get<std::string>() == long_text);
+    }
+}
+
+// ============================================================================
+// M117 precedence over periodic status broadcasts
+// ============================================================================
+//
+// Commit 959bb0140's central design property: once a user sends M117, that
+// message must survive the mock's own periodic status broadcast (fired every
+// NOTIFICATION_INTERVAL_TICKS ticks from temperature_simulation_loop()) even
+// while the print is in a phase that would otherwise emit a canned string
+// ("Heating...", "Purging nozzle"). The SECTIONs above only ever inspect the
+// notification dispatched by the M117 call itself - they never drive the
+// periodic broadcast, so they cannot prove precedence. This test does.
+TEST_CASE("MoonrakerClientMock: M117 message survives periodic status broadcasts",
+          "[mock][display_message][slow]") {
+    MockBehaviorTestFixture fixture;
+
+    // Speedup chosen so PREHEAT (nozzle 25->220 @ 3C/s, bed 25->55 @ 1C/s)
+    // takes a few seconds of wall-clock time - long enough to observe several
+    // periodic broadcasts (~1s apart, wall-clock, independent of speedup)
+    // while still in PREHEAT/early-PRINTING, where the canned strings apply.
+    MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24, 20.0);
+    mock.register_notify_update(fixture.create_capture_callback());
+    mock.connect("ws://mock/websocket", []() {}, []() {});
+
+    const std::string custom_message = "Precedence check 42";
+
+    // Start a print (enters PREHEAT) and immediately set a custom M117
+    // message before any canned string has had a chance to appear.
+    mock.gcode_script("SDCARD_PRINT_FILE FILENAME=3DBenchy.gcode");
+    mock.gcode_script("M117 " + custom_message);
+
+    // Discard everything so far (initial state, the print-start notification,
+    // and the M117 call's own narrow {"display_status":{"message":...}}
+    // dispatch). Only notifications captured from here on can be periodic
+    // broadcasts.
+    fixture.reset();
+
+    // Wait for at least 3 further notifications so we sample multiple
+    // periodic broadcast ticks across the PREHEAT -> early-PRINTING window.
+    REQUIRE(fixture.wait_for_callbacks(3, 8000));
+    mock.stop_temperature_simulation();
+
+    // A periodic broadcast is identifiable by carrying the full status
+    // object (print_stats + display_status together) - unlike the M117
+    // call's own narrow dispatch, which only ever contains display_status.
+    size_t periodic_broadcasts_checked = 0;
+    for (const auto& notification : fixture.get_notifications()) {
+        if (!notification.contains("params") || !notification["params"].is_array() ||
+            notification["params"].empty()) {
+            continue;
+        }
+        const json& status = notification["params"][0];
+        if (!status.is_object() || !status.contains("print_stats") ||
+            !status.contains("display_status")) {
+            continue;
+        }
+
+        ++periodic_broadcasts_checked;
+        REQUIRE(status["display_status"].contains("message"));
+        const json& message = status["display_status"]["message"];
+        REQUIRE(message.is_string());
+        REQUIRE(message.get<std::string>() == custom_message);
+    }
+
+    // Make sure we actually exercised the periodic-broadcast path and didn't
+    // just vacuously pass because no full status object showed up.
+    REQUIRE(periodic_broadcasts_checked >= 1);
+
+    mock.disconnect();
 }
 
 #pragma GCC diagnostic pop
