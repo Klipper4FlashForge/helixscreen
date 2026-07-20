@@ -83,6 +83,15 @@
           </ui_button>
         </lv_obj>
       </lv_obj>
+      <!-- Klipper display_status.message (M117). Collapses to zero height when
+           empty. Cleared at print end, so this never shows the previous job's
+           text. clickable/event_bubble keep taps reaching the card handler. -->
+      <text_small name="idle_display_message"
+                  width="100%" bind_text="display_message" style_text_align="center"
+                  long_mode="dots" style_text_color="#text_muted" hidden="true"
+                  clickable="false" event_bubble="true">
+        <bind_flag_if_eq subject="display_message_visible" flag="hidden" ref_value="0"/>
+      </text_small>
     </lv_obj>
     <!-- COMPACT IDLE STATE: Print Files + Print Last (for 1x2 size).
          No header, no thumbnail, no Recent — just the two most important actions.
@@ -179,10 +188,13 @@
       <print_status_detailed_active name="print_card_printing_detailed">
         <bind_flag_if_not_eq subject="print_status_view" flag="hidden" ref_value="4"/>
       </print_status_detailed_active>
+      <!-- Library active view only (print_status_view == 3). The detailed
+           active view has its own M117 row inside print_status_detailed_active;
+           this copy is clipped there by that component's height="100%". -->
       <text_small name="display_message"
-                  width="100%" bind_text="display_message" style_text_align="center" long_mode="dots"
-                  hidden="true" clickable="false" event_bubble="true">
-        <bind_flag_if_eq subject="display_message_visible" flag="hidden" ref_value="0"/>
+                  width="100%" bind_text="display_message" style_text_align="center"
+                  long_mode="dots" hidden="true" clickable="false" event_bubble="true">
+        <bind_flag_if cond="print_status_view ne 3 or display_message_visible eq 0" flag="hidden"/>
       </text_small>
     </lv_obj>
   </view>
