@@ -283,6 +283,26 @@ def test_merge_cfs_seed_does_not_clobber_an_existing_orca_code():
     assert products[0]["codes"] == {"cfs": "99999", "other": "abc"}
 
 
+def test_merge_cfs_seed_does_not_fold_plus_variant_into_base():
+    # _name_key stripped "+" along with every other non-alnum character, so a seed
+    # entry named "PLA+" normalized to the same key as Orca's "PLA" and merged --
+    # the seed's type then won (by design, see the disagreement test above), which
+    # retyped plain Generic PLA as "PLA+". "+" is a meaningful suffix (see _slug
+    # and test_slug_preserves_plus_suffix): PLA+ and PLA are different products and
+    # must never collide in the merge key.
+    products = [{"id": "generic-pla", "brand": "Generic", "name": "PLA",
+                 "type": "PLA", "source": "orca"}]
+    seed = [{"id": "generic-pla-plus", "brand": "Generic", "name": "PLA+",
+             "type": "PLA+", "codes": {"cfs": "10001"}, "source": "cfs-seed"}]
+    imp._merge_cfs_seed(products, seed)
+
+    by_id = {p["id"]: p for p in products}
+    assert set(by_id) == {"generic-pla", "generic-pla-plus"}
+    assert by_id["generic-pla"]["type"] == "PLA"            # base untouched
+    assert by_id["generic-pla-plus"]["type"] == "PLA+"       # seed kept its own type
+    assert by_id["generic-pla-plus"]["codes"]["cfs"] == "10001"
+
+
 # ---------------------------------------------------------------------------
 # Orca library type tables (the silent-PLA-fallback fix)
 # ---------------------------------------------------------------------------
