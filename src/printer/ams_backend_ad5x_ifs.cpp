@@ -1745,9 +1745,8 @@ lv_subject_t* AmsBackendAd5xIfs::get_operation_step_index_subject(StepOperationT
 // --- Configuration ---
 
 std::optional<std::vector<std::string>> AmsBackendAd5xIfs::get_supported_materials() const {
-    // Stock AD5X firmware whitelist — sending anything outside it causes
-    // "Invalid material type: X. Valid: PLA, PLA-CF, SILK, TPU, ABS, PETG, PETG-CF".
-    std::vector<std::string> result{"PLA", "PLA-CF", "SILK", "TPU", "ABS", "PETG", "PETG-CF"};
+    // Stock AD5X firmware whitelist — see kStockWhitelist in the header.
+    std::vector<std::string> result(kStockWhitelist.begin(), kStockWhitelist.end());
 
     // Append user-defined types from bambufy_custom_types (save_variables) and
     // [zmod_ifs] filament_<NAME> (mod_data/user.cfg). zmod's COLOR macro

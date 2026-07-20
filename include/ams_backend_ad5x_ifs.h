@@ -90,6 +90,18 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     static constexpr int UNMAPPED_PORT = 5;
 
     /**
+     * @brief Stock AD5X firmware material whitelist.
+     *
+     * Sending anything outside this list makes the firmware reject the command with
+     * "Invalid material type: X. Valid: PLA, PLA-CF, SILK, TPU, ABS, PETG, PETG-CF".
+     * get_supported_materials() seeds its result from here and appends user-defined
+     * types; the invariant and catalog-selector tests derive their expectations from
+     * this array rather than re-typing it, so a change here propagates to its guards.
+     */
+    static constexpr std::array<const char*, 7> kStockWhitelist{"PLA", "PLA-CF", "SILK", "TPU",
+                                                                "ABS", "PETG",   "PETG-CF"};
+
+    /**
      * @brief Bare filament-sensor names AD5X IFS owns.
      *
      * Native ZMOD post-hub motion sensor ifs_motion_sensor; toolhead
