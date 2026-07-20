@@ -188,19 +188,25 @@ TEST_CASE_METHOD(XMLTestFixture,
 
     // Within the base-type (type == "PLA") run, display order must put the plain
     // "PLA" first, sink "Support for PLA" to the end, and sort the rest
-    // alphabetically. Products of the family's VARIANT types (Glow PLA, PLA-CF,
-    // PLA-GF, SILK, Wood PLA...) follow as their own runs after the whole
-    // base-type run, each run keyed by its type so the heading reads
+    // alphabetically. Products of the family's VARIANT types (Glow PLA, PLA+,
+    // PLA-CF, PLA-GF, SILK, Wood PLA...) follow as their own runs after the
+    // whole base-type run, each run keyed by its type so the heading reads
     // base-then-variants rather than one interleaved alphabetical soup.
     //
     // The decorative PLAs each carry their own type (type == name) because they
     // are distinct filament_database.h rows; display_family() strips the
     // decorative affix so they land under the PLA heading as single-product runs.
+    // "PLA+" is the catalog's trailing-plus grade product: display_family()
+    // strips the '+' the same way it strips "-CF"/"-GF", so it groups here too
+    // rather than getting its own heading. Its variant-run key is the raw type
+    // string "PLA+", which sorts by ASCII before "PLA-CF"/"PLA-GF" because '+'
+    // (0x2B) is less than '-' (0x2D) — same alphabetical-by-type rule as every
+    // other variant run, not a special case.
     auto names = sel.product_names_for_test();
     REQUIRE(names == std::vector<std::string>{"PLA", "PLA High Speed", "PLA Matte", "PLA Silk",
                                               "Support for PLA", "Glow PLA", "Marble PLA",
-                                              "Matte PLA", "Metal PLA", "PLA-CF", "PLA-GF",
-                                              "Silk PLA", "Wood PLA"});
+                                              "Matte PLA", "Metal PLA", "PLA+", "PLA-CF",
+                                              "PLA-GF", "Silk PLA", "Wood PLA"});
 
     sel.detach();
 }
