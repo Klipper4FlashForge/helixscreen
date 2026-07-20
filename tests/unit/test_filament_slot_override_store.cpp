@@ -3021,3 +3021,92 @@ TEST_CASE("load skips the heal entirely when Orca tables are unavailable",
     CHECK(after["material"] == "ASA-GF");
     CHECK_FALSE(after.contains("helix_material"));
 }
+
+TEST_CASE("load heals a stale laneN record before the Tool-key migration moves it",
+          "[filament_slot_override][migration][orca_match][lane_key_style][H2]") {
+    // On a Snapmaker U1 (Tool key style), a stale laneN record written by an
+    // older build hits both the heal and try_migrate_lane_keys_to_tool_keys
+    // in the same load_blocking(). Before the fix, the heal wrote to
+    // format_lane_key(idx, key_style_) — i.e. T1 — while the migration
+    // independently computed T1's body from its own unhealed snapshot; two
+    // unordered writes to T1 with no ordering guarantee. This pins that the
+    // final T<n> body is healed: the heal must land on laneN (the key it
+    // actually read) so the migration picks up the already-healed body when
+    // it moves it to T<n>.
+    TmpCacheDir tmp("orca_heal_tool_migration");
+    MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
+    helix::PrinterState state;
+    state.init_subjects(false);
+    MoonrakerAPIMock api(client, state);
+
+    // A pre-fix, 1-based laneN record: unmatchable material, no
+    // helix_material, but our helix_locked_* markers prove we wrote it.
+    api.mock_set_db_value("lane_data", "lane2",
+                          json{{"lane", "1"},
+                               {"material", "ASA-GF"},
+                               {"color", "#1A1A1A"},
+                               {"helix_locked_color", true},
+                               {"helix_locked_material", true}});
+
+    FilamentSlotOverrideStore store(&api, "snapmaker", LaneKeyStyle::Tool);
+    FilamentSlotOverrideStoreTestAccess::set_cache_directory(store, tmp.path);
+    auto loaded = store.load_blocking();
+
+    REQUIRE(loaded.count(1) == 1);
+    CHECK(loaded[1].material == "ASA-GF");
+
+    // The migration moved the record to T1 and dropped the stale laneN — and
+    // the body that landed at T1 must be the HEALED one, not the original
+    // unmatchable string.
+    CHECK(api.mock_get_db_value("lane_data", "lane2").is_null());
+    auto t1 = api.mock_get_db_value("lane_data", "T1");
+    REQUIRE(t1.is_object());
+    CHECK(t1["material"] == "ASA");
+    CHECK(t1["helix_material"] == "ASA-GF");
+}
+
+TEST_CASE("drift: heal repairs an already-healed record whose match no longer exists",
+          "[filament_slot_override][migration][orca_match][H3]") {
+    // The heal's gate must not be "already has helix_material" — that would
+    // make it permanently unable to repair a record after a regenerated
+    // Orca table drops a type it previously matched. That's the dangerous
+    // drift direction the spec calls out: Orca removes a type we claim -> we
+    // emit an unmatchable string -> PLA fallback. Simulate the drift by
+    // restricting the table to a set that no longer contains "ASA", for a
+    // record that was already healed (carries helix_material) on an earlier
+    // boot when "ASA" was still matchable.
+    filament::set_orca_tables({"PLA"}, {});
+    struct RestoreTables {
+        ~RestoreTables() { filament::set_orca_tables({}, {}); }
+    } restore_tables;
+
+    TmpCacheDir tmp("orca_heal_drift");
+    MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
+    helix::PrinterState state;
+    state.init_subjects(false);
+    MoonrakerAPIMock api(client, state);
+
+    // Already-healed from an earlier boot: matchable material="ASA", precise
+    // identity "ASA-GF" preserved via helix_material.
+    api.mock_set_db_value("lane_data", "lane2",
+                          json{{"lane", "1"},
+                               {"material", "ASA"},
+                               {"helix_material", "ASA-GF"},
+                               {"color", "#1A1A1A"},
+                               {"helix_locked_color", true},
+                               {"helix_locked_material", true}});
+
+    FilamentSlotOverrideStore store(&api, "cfs");
+    FilamentSlotOverrideStoreTestAccess::set_cache_directory(store, tmp.path);
+    auto loaded = store.load_blocking();
+
+    REQUIRE(loaded.count(1) == 1);
+    CHECK(loaded[1].material == "ASA-GF"); // precise identity still readable
+
+    // "ASA" is no longer in the (drifted) table, so the stale `material`
+    // string must be repaired rather than left to resolve to a PLA preset.
+    auto after = api.mock_get_db_value("lane_data", "lane2");
+    REQUIRE(after.is_object());
+    CHECK_FALSE(after.contains("material"));
+    CHECK(after["helix_material"] == "ASA-GF");
+}

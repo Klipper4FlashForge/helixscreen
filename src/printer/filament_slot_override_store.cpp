@@ -1061,29 +1061,35 @@ std::unordered_map<int, FilamentSlotOverride> FilamentSlotOverrideStore::load_bl
         }
     }
 
-    // One-shot heal: records written before orca_match_type existed carry a
-    // `material` OrcaSlicer cannot match, which it silently resolves to a PLA
-    // preset — PLA temperatures on whatever is really loaded. Rewrite them so
-    // the fix reaches existing installs without requiring the user to re-edit
-    // every slot.
+    // One-shot heal: records written before orca_match_type existed (or whose
+    // match has drifted since — see below) carry a `material` OrcaSlicer
+    // cannot match, which it silently resolves to a PLA preset — PLA
+    // temperatures on whatever is really loaded. Rewrite them so the fix
+    // reaches existing installs without requiring the user to re-edit every
+    // slot.
     //
     // ONLY records we authored, proven by a helix_locked_* key. AFC, Happy
     // Hare and Mainsail share this namespace and their records are not ours to
     // rewrite — same rule scan_lane_data_anomalies follows (see this file's
     // header comment on LaneDataAnomalies).
     //
-    // Self-limiting: a healed record gains helix_material, and the gate below
-    // skips any record that already has it — so after the first successful
-    // heal this loop does nothing for that slot on every subsequent boot.
+    // Deliberately NOT gated on "already has helix_material". The trigger is
+    // "the record resolves to a different match string than it carries" —
+    // that also covers drift: a later Orca-table regeneration can drop a type
+    // we previously matched, so a record healed on an earlier boot needs to be
+    // healable again. Self-limiting instead via `orca_match_type(current) ==
+    // current`, which terminates because every override target is itself
+    // asserted to be in orca_library_types (see the Python-side idempotency
+    // test) — so a record this loop just wrote is never re-written on the
+    // next boot. The one case that check doesn't cover on its own — a record
+    // whose `material` was omitted because nothing was safely matchable — is
+    // covered by the `current.empty()` skip just below.
     //
     // Gated on orca_tables_available(): a missing or pre-change
     // assets/filaments.json makes orca_match_type() return "" for EVERY
     // input, which would make the gate below ("current == match") false for
     // every helix-authored record and strip `material` from all of them in
-    // one pass — and that strip is sticky (helix_material then blocks the
-    // heal from ever revisiting the record, even after the asset is
-    // restored). Skip the whole pass rather than heal against an empty
-    // table.
+    // one pass. Skip the whole pass rather than heal against an empty table.
     if (!filament::orca_tables_available()) {
         spdlog::warn("[FilamentSlotOverrideStore:{}] Orca tables unavailable; skipping "
                      "lane_data heal",
@@ -1093,11 +1099,13 @@ std::unordered_map<int, FilamentSlotOverride> FilamentSlotOverrideStore::load_bl
             const std::string& key = it.key();
             if (key == "seated" || !it.value().is_object())
                 continue;
-            const auto& rec = it.value();
+            // Non-const: healed below via direct mutation, not a copy — see
+            // the in-place-mutation comment further down.
+            auto& rec = it.value();
             const bool ours =
                 rec.contains("helix_locked_color") || rec.contains("helix_locked_material");
-            if (!ours || rec.contains("helix_material"))
-                continue; // not ours, or already healed
+            if (!ours)
+                continue; // not ours to rewrite
             const std::string current = rec.value("material", "");
             if (current.empty())
                 continue;
@@ -1106,19 +1114,48 @@ std::unordered_map<int, FilamentSlotOverride> FilamentSlotOverrideStore::load_bl
             auto parsed = from_lane_data_record(rec);
             if (!parsed)
                 continue;
+            // `identity` prefers helix_material, falling back to material,
+            // exactly like from_lane_data_record — so a record already healed
+            // once (which now drifted) is re-keyed off our own prior identity,
+            // not the possibly-stale `material` string.
+            const std::string identity = parsed->second.material;
+            const std::string matched = filament::orca_match_type(identity);
+
             spdlog::info(
                 "[FilamentSlotOverrideStore:{}] healing lane_data {}: material '{}' is not "
                 "Orca-matchable, rewriting with helix_material",
                 backend_id_, key, current);
+
+            // Heal by mutating `rec` in place — a reference into
+            // received_copy itself — rather than regenerating the record via
+            // to_lane_data_record/save_async. Two things fall out of this:
+            //   1. scan_time and any field this store doesn't model (a
+            //      foreign co-author's key) survive untouched, instead of
+            //      being dropped by a full round-trip through
+            //      FilamentSlotOverride.
+            //   2. received_copy is what the Tool-key migration below reads.
+            //      Mutating it here means a stale laneN record is healed
+            //      BEFORE the migration moves it to T<n>, so the migration's
+            //      write carries the healed body — no unordered double-write
+            //      to T<n> between this heal and that migration (H2).
+            rec["helix_material"] = identity;
+            if (matched.empty())
+                rec.erase("material");
+            else
+                rec["material"] = matched;
+
+            // POST to the SAME key we read (not the key_style_-derived key
+            // save_async would compute) so a stale laneN record is healed at
+            // laneN, leaving the Tool-key migration below to move the
+            // already-healed body — this store never writes T<n> directly
+            // for a record it read under laneN.
             const std::string backend_id_copy = backend_id_;
-            save_async(parsed->first, parsed->second,
-                       [backend_id_copy, key](bool success, std::string err) {
-                           if (!success) {
-                               spdlog::warn(
-                                   "[FilamentSlotOverrideStore:{}] heal failed for {}: {}",
-                                   backend_id_copy, key, err);
-                           }
-                       });
+            api_->database_post_item(
+                namespace_, key, rec, []() {},
+                [backend_id_copy, key](const MoonrakerError& err) {
+                    spdlog::warn("[FilamentSlotOverrideStore:{}] heal failed for {}: {}",
+                                 backend_id_copy, key, err.message);
+                });
         }
     }
 
