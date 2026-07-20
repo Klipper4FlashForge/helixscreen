@@ -153,3 +153,73 @@ setup() {
     run validate_binary_architecture "$binary" "windows"
     [ "$status" -eq 0 ]
 }
+
+# --- Hex-reader fallback chain (see validate_binary_architecture) ---
+#
+# Each test shadows tools on PATH to simulate a real device profile from the
+# physical fleet, then asserts a valid binary still validates.
+
+# Shadow the named commands with a stub behaving like $2 ("missing" or "segv").
+_shadow_tools() {
+    local mode=$1; shift
+    mkdir -p "$BATS_TEST_TMPDIR/bin"
+    local t
+    for t in "$@"; do
+        if [ "$mode" = "segv" ]; then
+            printf '#!/bin/sh\nkill -SEGV $$\n' > "$BATS_TEST_TMPDIR/bin/$t"
+        else
+            printf '#!/bin/sh\necho "%s: not found" >&2\nexit 127\n' "$t" > "$BATS_TEST_TMPDIR/bin/$t"
+        fi
+        chmod +x "$BATS_TEST_TMPDIR/bin/$t"
+    done
+    export PATH="$BATS_TEST_TMPDIR/bin:$PATH"
+}
+
+@test "validate_binary_architecture: segfaulting dd does not break validation (Pi CM4 libarmmem)" {
+    local binary="$BATS_TEST_TMPDIR/helix-screen"
+    create_fake_arm32_elf "$binary"
+    _shadow_tools segv dd
+    run validate_binary_architecture "$binary" "pi32"
+    [ "$status" -eq 0 ]
+}
+
+@test "validate_binary_architecture: works with no hexdump (BTT CB1 profile)" {
+    local binary="$BATS_TEST_TMPDIR/helix-screen"
+    create_fake_arm32_elf "$binary"
+    _shadow_tools missing hexdump
+    run validate_binary_architecture "$binary" "pi32"
+    [ "$status" -eq 0 ]
+}
+
+@test "validate_binary_architecture: works with only hexdump (Elegoo CC1 profile)" {
+    local binary="$BATS_TEST_TMPDIR/helix-screen"
+    create_fake_arm32_elf "$binary"
+    _shadow_tools missing od xxd
+    run validate_binary_architecture "$binary" "pi32"
+    [ "$status" -eq 0 ]
+}
+
+@test "validate_binary_architecture: an od emitting address offsets falls through, not misread" {
+    local binary="$BATS_TEST_TMPDIR/helix-screen"
+    create_fake_arm32_elf "$binary"
+    # hexdump absent, and od ignores -A n so it prefixes an offset column.
+    _shadow_tools missing hexdump
+    mkdir -p "$BATS_TEST_TMPDIR/bin"
+    printf '#!/bin/sh\necho "0000000 7f 45 4c 46 01 01 01 00"\n' > "$BATS_TEST_TMPDIR/bin/od"
+    chmod +x "$BATS_TEST_TMPDIR/bin/od"
+    # xxd must still carry it to a correct verdict.
+    run validate_binary_architecture "$binary" "pi32"
+    [ "$status" -eq 0 ]
+}
+
+@test "validate_binary_architecture: no working hex reader at all reports read failure" {
+    local binary="$BATS_TEST_TMPDIR/helix-screen"
+    create_fake_arm32_elf "$binary"
+    _shadow_tools missing hexdump od xxd dd
+    # helpers.bash stubs log_error to a no-op; override it to capture the text.
+    log_error() { echo "$@"; }
+    export -f log_error
+    run validate_binary_architecture "$binary" "pi32"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"no working hex reader"* ]]
+}

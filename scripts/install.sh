@@ -4203,19 +4203,70 @@ validate_binary_architecture() {
         return 1
     fi
 
-    # Read first 20 bytes of ELF header as space-separated hex
-    # Try hexdump first (BusyBox), fall back to od (POSIX), then xxd
-    local header
-    header=$(dd if="$binary" bs=1 count=20 2>/dev/null | hexdump -v -e '1/1 "%02x "' 2>/dev/null) || true
+    # Read first 20 bytes of ELF header as space-separated hex.
+    #
+    # Each tool reads the file directly. Piping through `dd` made all three
+    # attempts share a single producer, so one broken `dd` defeated the whole
+    # fallback chain: a Pi CM4 with 32-bit userspace under a 64-bit kernel
+    # segfaults in `dd bs=1` via the libarmmem memcpy shim that Raspberry Pi OS
+    # force-loads from /etc/ld.so.preload.
+    #
+    # Order is load-bearing, verified against the physical fleet:
+    #   hexdump - the only capable tool on minimal BusyBox (Elegoo CC1, where
+    #             the `od` applet lacks -A/-t/-N and `xxd` is absent)
+    #   od      - covers hosts with no hexdump at all (BTT CB1)
+    #   xxd     - last; missing from several embedded images
+    #
+    # Each candidate must start with the ELF magic to be accepted, so a tool
+    # that emits address offsets or a usage banner falls through to the next
+    # method rather than being misread as a corrupt binary.
+    local header="" raw="" candidate=""
+
+    _try_header() {
+        [ -n "$header" ] && return 0
+        [ -z "$candidate" ] && return 1
+        [ -z "$raw" ] && raw=$candidate
+        case "$candidate" in
+            "7f 45 4c 46 "*) header=$candidate ;;
+        esac
+        [ -n "$header" ]
+    }
+
+    candidate=$(hexdump -v -n 20 -e '1/1 "%02x "' "$binary" 2>/dev/null) || true
+    _try_header
     if [ -z "$header" ]; then
-        header=$(dd if="$binary" bs=1 count=20 2>/dev/null | od -A n -t x1 -v 2>/dev/null | tr '\n' ' ' | tr -s ' ' | sed 's/^ //;s/ $//') || true
+        candidate=$(od -A n -t x1 -v -N 20 "$binary" 2>/dev/null | tr '\n' ' ' | tr -s ' ' | sed 's/^ //;s/ $//') || true
+        _try_header
     fi
     if [ -z "$header" ]; then
-        header=$(dd if="$binary" bs=1 count=20 2>/dev/null | xxd -p 2>/dev/null | sed 's/../& /g;s/ $//') || true
+        candidate=$(xxd -p -l 20 "$binary" 2>/dev/null | sed 's/../& /g;s/ $//') || true
+        _try_header
+    fi
+
+    # Safety net: the original dd-piped forms. Retained so any platform whose
+    # tools reject the direct-read flags behaves exactly as it did before.
+    if [ -z "$header" ]; then
+        candidate=$(dd if="$binary" bs=1 count=20 2>/dev/null | hexdump -v -e '1/1 "%02x "' 2>/dev/null) || true
+        _try_header
+    fi
+    if [ -z "$header" ]; then
+        candidate=$(dd if="$binary" bs=1 count=20 2>/dev/null | od -A n -t x1 -v 2>/dev/null | tr '\n' ' ' | tr -s ' ' | sed 's/^ //;s/ $//') || true
+        _try_header
+    fi
+    if [ -z "$header" ]; then
+        candidate=$(dd if="$binary" bs=1 count=20 2>/dev/null | xxd -p 2>/dev/null | sed 's/../& /g;s/ $//') || true
+        _try_header
+    fi
+
+    # A file that read fine but isn't an ELF still needs the "not an ELF"
+    # diagnosis below, not "cannot read".
+    if [ -z "$header" ] && [ -n "$raw" ]; then
+        header=$raw
     fi
 
     if [ -z "$header" ]; then
-        log_error "Cannot read binary header (file may be empty or corrupted)"
+        log_error "Cannot read binary header (no working hex reader, or file is empty)"
+        log_error "  Tried: hexdump, od, xxd (direct and via dd)"
         return 1
     fi
 
