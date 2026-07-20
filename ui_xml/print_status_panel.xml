@@ -87,7 +87,7 @@
           <bind_flag_if_eq subject="preparing_visible" flag="hidden" ref_value="0"/>
           <spinner name="preparing_spinner" size="lg"/>
           <text_heading name="preparing_operation_label"
-                        width="100%" bind_text="preparing_operation" text="Preparing..." translation_tag="Preparing..."
+                        width="100%" bind_text="print_start_message" text="Preparing..." translation_tag="Preparing..."
                         style_text_color="#text" style_text_align="center"/>
           <progress_bar name="preparing_progress_bar" width="80%" bind_value="preparing_progress"/>
           <text_small name="preparing_eta"

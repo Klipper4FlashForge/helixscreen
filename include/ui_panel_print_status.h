@@ -319,9 +319,8 @@ class PrintStatusPanel : public OverlayBase {
         view_toggle_icon_subject_; ///< MDI codepoint for btn_view_toggle_icon (cube/layers)
 
     // Preparing state subjects
-    lv_subject_t preparing_visible_subject_;   // int: 1 if preparing, 0 otherwise
-    lv_subject_t preparing_operation_subject_; // string: current operation name
-    lv_subject_t preparing_progress_subject_;  // int: 0-100 progress percentage
+    lv_subject_t preparing_visible_subject_;  // int: 1 if preparing, 0 otherwise
+    lv_subject_t preparing_progress_subject_; // int: 0-100 progress percentage
 
     // Viewer mode subject (0=thumbnail mode, 1=gcode viewer mode)
     lv_subject_t gcode_viewer_mode_subject_;
@@ -397,7 +396,6 @@ class PrintStatusPanel : public OverlayBase {
     char progress_text_buf_[32] = "0%";
     char layer_text_buf_[80] = "Layer 0 / 0";
     char filament_used_text_buf_[32] = "";
-    char preparing_operation_buf_[64] = "Preparing...";
     char elapsed_buf_[32] = "0h 00m";
     char remaining_buf_[32] = "0h 00m";
     char eta_buf_[32] = "";
@@ -638,7 +636,6 @@ class PrintStatusPanel : public OverlayBase {
     void on_print_duration_changed(int seconds);
     void on_print_time_left_changed(int seconds);
     void on_print_start_phase_changed(int phase);
-    void on_print_start_message_changed(const char* message);
     void on_print_start_progress_changed(int progress);
     void on_preprint_remaining_changed(int seconds);
     void on_preprint_elapsed_changed(int seconds);
@@ -658,7 +655,6 @@ class PrintStatusPanel : public OverlayBase {
     ObserverGuard print_duration_observer_;
     ObserverGuard print_time_left_observer_;
     ObserverGuard print_start_phase_observer_;
-    ObserverGuard print_start_message_observer_;
     ObserverGuard print_start_progress_observer_;
     ObserverGuard preprint_remaining_observer_;
     ObserverGuard preprint_elapsed_observer_;

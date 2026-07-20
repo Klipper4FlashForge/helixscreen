@@ -203,11 +203,6 @@ PrintStatusPanel::PrintStatusPanel(PrinterState& printer_state, MoonrakerAPI* ap
     print_start_phase_observer_ = observe_int_sync<PrintStatusPanel>(
         printer_state_.get_print_start_phase_subject(), this,
         [](PrintStatusPanel* self, int phase) { self->on_print_start_phase_changed(phase); });
-    print_start_message_observer_ =
-        observe_string<PrintStatusPanel>(printer_state_.get_print_start_message_subject(), this,
-                                         [](PrintStatusPanel* self, const char* message) {
-                                             self->on_print_start_message_changed(message);
-                                         });
     print_start_progress_observer_ =
         observe_int_sync<PrintStatusPanel>(printer_state_.get_print_start_progress_subject(), this,
                                            [](PrintStatusPanel* self, int progress) {
@@ -407,8 +402,6 @@ void PrintStatusPanel::init_subjects() {
 
     // Preparing state subjects
     UI_MANAGED_SUBJECT_INT(preparing_visible_subject_, 0, "preparing_visible", subjects_);
-    UI_MANAGED_SUBJECT_STRING(preparing_operation_subject_, preparing_operation_buf_,
-                              "Preparing...", "preparing_operation", subjects_);
     UI_MANAGED_SUBJECT_INT(preparing_progress_subject_, 0, "preparing_progress", subjects_);
 
     // Progress bar subject (integer 0-100 for XML bind_value)
@@ -634,8 +627,6 @@ void PrintStatusPanel::init_subjects() {
     int initial_phase = lv_subject_get_int(printer_state_.get_print_start_phase_subject());
     if (initial_phase != 0) {
         on_print_start_phase_changed(initial_phase);
-        auto* msg = lv_subject_get_string(printer_state_.get_print_start_message_subject());
-        on_print_start_message_changed(msg);
         int prog = lv_subject_get_int(printer_state_.get_print_start_progress_subject());
         on_print_start_progress_changed(prog);
         spdlog::debug("[{}] Synced initial preparation state: phase={}, progress={}%", get_name(),
@@ -2753,20 +2744,6 @@ void PrintStatusPanel::on_print_start_phase_changed(int phase) {
     }
     was_preparing_ = preparing;
     spdlog::debug("[{}] Print start phase changed: {} (visible={})", get_name(), phase, preparing);
-}
-
-void PrintStatusPanel::on_print_start_message_changed(const char* message) {
-    // Guard: subjects may not be initialized if called from constructor's observer setup
-    if (!subjects_initialized_) {
-        return;
-    }
-
-    if (message) {
-        strncpy(preparing_operation_buf_, message, sizeof(preparing_operation_buf_) - 1);
-        preparing_operation_buf_[sizeof(preparing_operation_buf_) - 1] = '\0';
-        lv_subject_copy_string(&preparing_operation_subject_, preparing_operation_buf_);
-        spdlog::trace("[{}] Print start message: {}", get_name(), message);
-    }
 }
 
 void PrintStatusPanel::on_print_start_progress_changed(int progress) {
