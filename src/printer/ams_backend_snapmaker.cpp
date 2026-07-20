@@ -769,9 +769,11 @@ AmsError AmsBackendSnapmaker::set_slot_info(int slot_index, const SlotInfo& info
         // check from misreading a user color edit as a physical spool swap.
         // Snapmaker's hardware-event check is RFID-UID-based, and the user
         // cannot set a CARD_UID through the edit UI — SlotInfo has no UID
-        // field. So last_rfid_uid_ stays at whatever the firmware last
+        // field. So rfid_tracker_ keeps whatever the firmware last
         // reported, and the next parse compares firmware UID against that
-        // baseline exactly as intended. No pre-update needed here.
+        // baseline exactly as intended. No expected-echo value needed here.
+        // (CFS shares the tracker and DOES register one — it writes
+        // color_value back to the box, which is half of its fingerprint.)
         if (persist) {
             helix::ams::FilamentSlotOverride ovr;
             ovr.brand = info.brand;
@@ -1683,31 +1685,28 @@ void AmsBackendSnapmaker::apply_overrides(SlotInfo& slot, int slot_index) {
 
 void AmsBackendSnapmaker::check_hardware_event_clear(SlotInfo& slot, int slot_index,
                                                      const std::string& observed_uid) {
-    // Empty UID = "no reading" (no tag, unread, RFID reader disabled,
-    // malformed CARD_UID). Treat as non-signal: don't update the baseline,
-    // don't clear. Without this guard every tag-less poll would overwrite a
-    // real prior UID and mask a genuine hardware swap on the next good read.
-    if (observed_uid.empty())
-        return;
-
-    auto it = last_rfid_uid_.find(slot_index);
-    if (it == last_rfid_uid_.end()) {
-        // First observation for this slot — establish baseline. Even if the
-        // override was previously saved against a different UID, the first
-        // observation is NEVER a swap signal. apply_overrides still runs
-        // after us and the override wins.
-        last_rfid_uid_[slot_index] = observed_uid;
-        spdlog::debug("{} Slot {} baseline RFID UID: {}", backend_log_tag(), slot_index,
-                      observed_uid);
+    // Semantics are unchanged from the hand-rolled baseline map this used to
+    // keep; the bookkeeping now lives in the shared tracker (CFS runs the same
+    // one). Snapmaker registers no expect() value, so OwnWriteEcho cannot occur
+    // here — nothing on this backend writes a CARD_UID back to firmware.
+    //
+    //   NoSignal  = empty UID: no tag, unread, RFID reader disabled, malformed
+    //               CARD_UID. Baseline untouched, no clear — otherwise every
+    //               tag-less poll would overwrite a real prior UID and mask a
+    //               genuine hardware swap on the next good read.
+    //   Baseline  = first observation. Even when the override was saved against
+    //               a different UID, the first observation is NEVER a swap
+    //               signal; apply_overrides runs after us and the override wins.
+    //   Unchanged = same spool re-observed.
+    std::string old_uid;
+    const auto event = rfid_tracker_.observe(slot_index, observed_uid, &old_uid);
+    if (event != helix::ams::FingerprintEvent::Changed) {
+        if (event == helix::ams::FingerprintEvent::Baseline) {
+            spdlog::debug("{} Slot {} baseline RFID UID: {}", backend_log_tag(), slot_index,
+                          observed_uid);
+        }
         return;
     }
-    if (it->second == observed_uid)
-        return; // unchanged — no swap signal
-
-    // UID changed. Record the new UID as the baseline FIRST so a failed
-    // clear_async doesn't make us re-fire on every subsequent poll.
-    const std::string old_uid = it->second;
-    it->second = observed_uid;
 
     auto ovr_it = overrides_.find(slot_index);
     if (ovr_it == overrides_.end()) {

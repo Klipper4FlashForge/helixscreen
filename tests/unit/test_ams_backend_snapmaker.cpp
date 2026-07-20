@@ -70,10 +70,7 @@ class SnapmakerTestAccess {
     }
     static std::optional<std::string> last_rfid_uid(const AmsBackendSnapmaker& b, int slot_index) {
         std::lock_guard<std::mutex> lock(b.mutex_);
-        auto it = b.last_rfid_uid_.find(slot_index);
-        if (it == b.last_rfid_uid_.end())
-            return std::nullopt;
-        return it->second;
+        return b.rfid_tracker_.baseline(slot_index);
     }
     static void set_sensor_present(AmsBackendSnapmaker& b, int slot_index, bool present) {
         std::lock_guard<std::mutex> lock(b.mutex_);

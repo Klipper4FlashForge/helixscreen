@@ -288,8 +288,37 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// written firmware-truth for the newly-inserted spool. Only strictly
     /// override-exclusive fields (spool_name / spoolman_id /
     /// spoolman_vendor_id / remaining_weight_g) are reset.
-    void check_hardware_event_clear(SlotInfo& slot, int slot_index,
-                                    const std::string& observed_uid);
+    ///
+    /// One fingerprint component — color_value — is also WRITTEN by
+    /// push_slot_color_to_firmware, so firmware eventually echoes our own edit
+    /// back as a fingerprint change. That echo is not a swap. push_ therefore
+    /// registers the expected post-write fingerprint with rfid_tracker_, which
+    /// classifies the echo as OwnWriteEcho and leaves the override intact.
+    ///
+    /// Returns true iff the override was cleared, so the caller can skip the
+    /// lane_data mirror for this parse (a DELETE and a POST against the same
+    /// lane_data key in one pass is a write race — see handle_status_update).
+    [[nodiscard]] bool check_hardware_event_clear(SlotInfo& slot, int slot_index,
+                                                  const std::string& observed_uid);
+
+    /// Clear a stale auto-mirrored override when firmware reports the bay
+    /// EMPTY. CFS has no other ejection path: the RFID fingerprint LATCHES
+    /// after a spool is pulled, so check_hardware_event_clear sees Unchanged
+    /// forever and the lane_data record would keep advertising a spool that
+    /// isn't there (stale color/material published to OrcaSlicer, plus
+    /// apply_overrides promoting the empty bay back to AVAILABLE as a ghost
+    /// slot).
+    ///
+    /// User-locked overrides are RETAINED across an empty bay — a deliberate
+    /// assignment means "this is what lives in this slot", and a slot that is
+    /// merely unloaded must not lose it. Only unlocked records, which by
+    /// construction came from the firmware auto-mirror, are erased. Matches
+    /// the AD5X IFS policy of retaining the lane->Spoolman override across
+    /// empty (#1071).
+    ///
+    /// Caller must hold mutex_ and must call this BEFORE apply_overrides.
+    /// Returns true iff the override was cleared.
+    [[nodiscard]] bool clear_stale_override_on_removal_locked(SlotInfo& slot, int slot_index);
 
     // Shared helper used by every override-clear path (hardware event and
     // explicit user request). Caller must hold mutex_. Erases
@@ -307,10 +336,10 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     std::unordered_map<int, helix::ams::FilamentSlotOverride> overrides_;
 
     // Per-slot last-observed RFID fingerprint (material_type + "|" +
-    // color_value, using the raw pre-strip_code strings). Empty = first
-    // observation not yet made (or only sentinel / no-tag values seen so
-    // far). All access under mutex_.
-    std::unordered_map<int, std::string> last_rfid_uid_;
+    // color_value, using the raw pre-strip_code strings), plus the pending
+    // expected fingerprint for a color push we issued. Shared with the other
+    // RFID-fingerprint backend (Snapmaker). All access under mutex_.
+    helix::ams::SlotFingerprintTracker rfid_tracker_;
 
     // Sub-phase synthesis: CFS sets system_info_.action=LOADING/UNLOADING once
     // at gcode dispatch and leaves it there through cut/retract/feed/purge.

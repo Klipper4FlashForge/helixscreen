@@ -308,8 +308,10 @@ class AmsBackendSnapmaker : public AmsSubscriptionBackend {
     /// Unlike the AD5X IFS implementation (which uses color as the event
     /// signal and needs a self-wipe guard in set_slot_info), Snapmaker uses
     /// the RFID UID — a hardware identifier the user cannot set via the UI.
-    /// So set_slot_info does NOT pre-update last_rfid_uid_; the baseline
-    /// stays at whatever firmware last reported and user edits don't race.
+    /// So set_slot_info registers no expected-echo value with rfid_tracker_;
+    /// the baseline stays at whatever firmware last reported and user edits
+    /// don't race. (CFS shares the tracker but DOES need that guard — it
+    /// writes color_value back to the box, which is half of its fingerprint.)
     void check_hardware_event_clear(SlotInfo& slot, int slot_index,
                                     const std::string& observed_uid);
 
@@ -327,7 +329,9 @@ class AmsBackendSnapmaker : public AmsSubscriptionBackend {
     std::unique_ptr<helix::ams::FilamentSlotOverrideStore> override_store_;
     std::unordered_map<int, helix::ams::FilamentSlotOverride> overrides_;
 
-    // Per-slot last-observed RFID CARD_UID. Empty = first observation not yet
-    // made (or only empty UIDs seen). All access under mutex_.
-    std::unordered_map<int, std::string> last_rfid_uid_;
+    // Per-slot last-observed RFID CARD_UID. Shared with the other
+    // RFID-fingerprint backend (CFS). Snapmaker never calls expect() — nothing
+    // here writes a UID back to firmware, so every change is external. All
+    // access under mutex_.
+    helix::ams::SlotFingerprintTracker rfid_tracker_;
 };

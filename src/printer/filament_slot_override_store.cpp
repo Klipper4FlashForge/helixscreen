@@ -1360,12 +1360,20 @@ bool mirror_firmware_to_lane_data(FilamentSlotOverrideStore* store,
         // set, otherwise every status poll would erase the user's choice.
         // The escape hatch is clear_slot_override, which erases the entry
         // and lets auto-mirror take over again.
-        if (!ovr.color_set) {
+        //
+        // The user-lock checks are redundant with the unset checks in the
+        // common path (set_slot_info sets color_set together with
+        // user_locked_color), but they are the authoritative "the user chose
+        // this" signal and every mirror policy honors them. Keeping both
+        // policies lock-aware means a record whose locks and value-set flags
+        // ever disagree — a legacy record, a hand-edited lane_data entry, a
+        // third-party writer — still cannot lose the user's choice here.
+        if (!ovr.user_locked_color && !ovr.color_set) {
             ovr.color_rgb = firmware_color;
             ovr.color_set = true;
             changed = true;
         }
-        if (ovr.material.empty() && !firmware_material.empty()) {
+        if (!ovr.user_locked_material && ovr.material.empty() && !firmware_material.empty()) {
             ovr.material = firmware_material;
             changed = true;
         }
@@ -1392,6 +1400,67 @@ bool mirror_firmware_to_lane_data(FilamentSlotOverrideStore* store,
                           });
     }
     return true;
+}
+
+// =============================================================================
+// SlotFingerprintTracker
+// =============================================================================
+
+FingerprintEvent SlotFingerprintTracker::observe(int slot_index, const std::string& observed,
+                                                 std::string* previous) {
+    if (observed.empty())
+        return FingerprintEvent::NoSignal;
+
+    auto it = baseline_.find(slot_index);
+    if (it == baseline_.end()) {
+        baseline_[slot_index] = observed;
+        return FingerprintEvent::Baseline;
+    }
+    if (it->second == observed)
+        return FingerprintEvent::Unchanged;
+
+    if (previous)
+        *previous = it->second;
+    // Advance the baseline BEFORE classifying, so a caller whose follow-up
+    // action fails (a rejected clear_async, say) doesn't re-fire the same event
+    // on every subsequent poll.
+    it->second = observed;
+
+    auto exp = expected_.find(slot_index);
+    if (exp == expected_.end())
+        return FingerprintEvent::Changed;
+
+    // Single-shot: any change consumes the expectation, matching or not. A
+    // non-matching change means the slot moved somewhere we did not send it, so
+    // whatever echo was outstanding is no longer meaningful — and swap
+    // detection returns to normal immediately rather than staying suppressed.
+    const bool matched = (exp->second == observed);
+    expected_.erase(exp);
+    return matched ? FingerprintEvent::OwnWriteEcho : FingerprintEvent::Changed;
+}
+
+void SlotFingerprintTracker::expect(int slot_index, std::string expected_value) {
+    expected_[slot_index] = std::move(expected_value);
+}
+
+void SlotFingerprintTracker::forget_expected(int slot_index) {
+    expected_.erase(slot_index);
+}
+
+std::optional<std::string> SlotFingerprintTracker::baseline(int slot_index) const {
+    auto it = baseline_.find(slot_index);
+    if (it == baseline_.end())
+        return std::nullopt;
+    return it->second;
+}
+
+bool SlotFingerprintTracker::has_expected(int slot_index) const {
+    return expected_.find(slot_index) != expected_.end();
+}
+
+void SlotFingerprintTracker::clear() {
+    baseline_.clear();
+    expected_.clear();
 }
 
 } // namespace helix::ams

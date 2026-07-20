@@ -113,6 +113,24 @@ bool is_vender_sentinel(const std::string& v) {
     return v.empty() || v == "none" || v == "None" || v == "-1";
 }
 
+/// True when a raw per-slot `material_type` string carries no RFID payload,
+/// i.e. the reader has no tag data for this bay. Adds `"unknown"` to the
+/// vender sentinel set: for `material_type` "unknown" means the reader has
+/// nothing for this bay, whereas for `vender` it means a tag IS seated but its
+/// vendor didn't resolve. That asymmetry is real hardware behavior, not an
+/// inconsistency — see prestonbrown/helixscreen#1077 and the presence rule in
+/// parse_box_status.
+///
+/// Deliberately NOT applied to `color_value`: that field is user-writable
+/// (push_slot_color_to_firmware / the stock LCD both issue BOX_MODIFY_TN_DATA
+/// PART=color_value) and reads a real color on untagged bays, so it cannot
+/// distinguish a tagged bay from an untagged one. `material_type` has no write
+/// path anywhere in the UI, so a non-sentinel value there means — and only
+/// means — that a tag was actually read.
+bool is_material_code_sentinel(const std::string& v) {
+    return v.empty() || v == "none" || v == "None" || v == "-1" || v == "unknown";
+}
+
 } // namespace
 
 struct CfsErrorEntry {
@@ -640,17 +658,48 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
                 }
             }
 
-            // Presence uses a COMBINED signal, not `vender` alone: an untagged
-            // 3rd-party spool has no RFID vendor (sentinel `vender`) yet reports
-            // a real `remain_len` from the measuring wheel — keying purely on
-            // `vender` would wrongly parse it EMPTY (the mirror of the ghost-slot
-            // bug). A bay is present when EITHER the vendor signal OR a positive
-            // remaining length says so; only when they BOTH read empty do we
-            // treat it as EMPTY. color_value/material_type are deliberately NOT
-            // consulted (they latch). A user override can still promote a
-            // firmware-EMPTY bay (see apply_overrides).
+            // Presence, in priority order. Each firmware field is used only
+            // where it is actually trustworthy:
+            //
+            //  1. `vender` is the LIVE occupancy signal for a TAGGED bay — it
+            //     reads a real vendor name (or the present-but-unresolved
+            //     "unknown") while a tag is seated and drops to a sentinel the
+            //     moment the spool is pulled. Non-sentinel => PRESENT.
+            //
+            //  2. `remain_len` is a FALLBACK that exists solely to cover
+            //     UNTAGGED 3rd-party spools: they have no RFID vendor, so
+            //     `vender` reads sentinel even though a spool is physically
+            //     seated, and the measuring wheel is the only evidence we get
+            //     (prestonbrown/helixscreen#1077, commit 65b3a1b8d).
+            //
+            //     But `remain_len` LATCHES: after a tagged spool is removed the
+            //     box keeps reporting its last length forever (observed on K2:
+            //     vender "none" alongside remain_len "50"). Applying the
+            //     untagged fallback there pins the bay AVAILABLE permanently.
+            //
+            //     A bay carrying a real latched RFID material code
+            //     (`material_type` past its sentinels) is by definition a
+            //     TAGGED bay, and the untagged fallback does not apply to it —
+            //     for those, `vender` alone decides. So the fallback is
+            //     consulted only when no tag was ever read, which is exactly
+            //     the untagged case it was written for.
+            //
+            //     `color_value` is deliberately NOT part of this test even
+            //     though it also latches. It is user-writable (the stock LCD
+            //     and our own push_slot_color_to_firmware both write it) and on
+            //     real K2 hardware it reads a real color on EVERY bay, tagged
+            //     or not — including bays whose material_type is "unknown".
+            //     Folding it in would make has_tag_payload permanently true,
+            //     silently disabling the untagged fallback and re-breaking
+            //     #1077. material_type has no write path, so it alone is a
+            //     trustworthy tagged/untagged discriminator.
+            //
+            // A user override can still promote a firmware-EMPTY bay back to
+            // AVAILABLE (see apply_overrides).
             const bool remain_present = slot.remaining_length_m > 0.0f;
-            if (vender_occupied || remain_present) {
+            const bool has_tag_payload = !is_material_code_sentinel(mat_code_raw);
+            const bool untagged_present = !has_tag_payload && remain_present;
+            if (vender_occupied || untagged_present) {
                 slot.status = SlotStatus::AVAILABLE;
             } else {
                 slot.status = SlotStatus::EMPTY;
@@ -702,11 +751,17 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
 // The fingerprint is intentionally stable across the same spool: CFS rewrites
 // both fields from a server-side RFID lookup, so the same physical tag yields
 // the same material_type code and the same color_value. A user swapping to a
-// different spool changes at least one of those fields. User edits via
-// set_slot_info DON'T touch firmware's material_type/color_value (those come
-// from the next parse), so a color edit in the UI can't accidentally mimic a
-// swap. CFS does NOT expose a dedicated CARD_UID field — this composite is the
-// documented surrogate.
+// different spool changes at least one of those fields. CFS does NOT expose a
+// dedicated CARD_UID field — this composite is the documented surrogate.
+//
+// color_value is NOT firmware-exclusive: push_slot_color_to_firmware writes it
+// via BOX_MODIFY_TN_DATA so the stock LCD shows the user's chosen color. That
+// write comes back around as a fingerprint change on a later poll, which reads
+// identically to a physical swap. push_ therefore registers the expected
+// post-write fingerprint with rfid_tracker_ (SlotFingerprintTracker::expect),
+// and check_hardware_event_clear classifies the echo as OwnWriteEcho rather
+// than a swap. material_type has no write path — nothing in the UI can set a
+// raw CFS material code.
 static std::string build_cfs_slot_uid(const nlohmann::json& unit_json, int local_index) {
     auto pick = [&](const char* field) -> std::string {
         if (!unit_json.contains(field) || !unit_json[field].is_array())
@@ -849,17 +904,32 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
                     const std::string& observed_uid =
                         (uid_it != observed_uids.end()) ? uid_it->second : std::string{};
 
-                    check_hardware_event_clear(slot, global_idx, observed_uid);
+                    // Both clear paths run BEFORE apply_overrides so a clear's
+                    // field reset isn't masked by a stale override layer.
+                    bool cleared = check_hardware_event_clear(slot, global_idx, observed_uid);
+                    cleared |= clear_stale_override_on_removal_locked(slot, global_idx);
+
                     // Mirror firmware-truth color/material into lane_data so
                     // OrcaSlicer's MoonrakerPrinterAgent sees the spool. Runs
                     // BEFORE apply_overrides so the values reflect firmware,
                     // not the override-masked view. FillUnsetOnly: CFS user
                     // edits don't reach firmware, so we must not let firmware
                     // overwrite them — see mirror_firmware_to_lane_data docs.
-                    helix::ams::mirror_firmware_to_lane_data(
-                        override_store_.get(), overrides_, global_idx, slot.color_rgb,
-                        slot.material, slot.status == SlotStatus::AVAILABLE,
-                        helix::ams::MirrorPolicy::FillUnsetOnly, backend_log_tag());
+                    //
+                    // Skipped on a parse that cleared: a clear fires clear_async
+                    // (DELETE) and the mirror fires save_async (POST) against
+                    // the SAME lane_data key. Both are async and independently
+                    // ordered, so issuing them together is a write race whose
+                    // outcome depends on which reply Moonraker processes last —
+                    // a DELETE landing second silently drops the record we just
+                    // published. The next poll republishes from firmware truth
+                    // with the delete already settled.
+                    if (!cleared) {
+                        helix::ams::mirror_firmware_to_lane_data(
+                            override_store_.get(), overrides_, global_idx, slot.color_rgb,
+                            slot.material, slot.status == SlotStatus::AVAILABLE,
+                            helix::ams::MirrorPolicy::FillUnsetOnly, backend_log_tag());
+                    }
                     apply_overrides(slot, global_idx);
                 }
             }
@@ -1127,13 +1197,18 @@ AmsError AmsBackendCfs::set_slot_info(int slot_index, const SlotInfo& info, bool
         // edits are in-memory only and will be overwritten by the next
         // firmware parse (expected preview contract).
         //
-        // NOTE on self-wipe: CFS's hardware-event check is RFID-fingerprint-based
-        // (material_type + color_value from firmware). The user cannot set
-        // those raw RFID strings through the UI — set_slot_info only touches
-        // display-level material/color_rgb fields, never the raw firmware
-        // material_type code. So last_rfid_uid_ stays at whatever firmware
-        // last reported and user edits don't race against the hardware-event
-        // detection. Same logic as Snapmaker.
+        // NOTE on self-wipe: CFS's hardware-event check is RFID-fingerprint-
+        // based (material_type + color_value from firmware), and one half of
+        // that fingerprint IS user-writable — push_slot_color_to_firmware
+        // (below, persist path only) rewrites color_value via
+        // BOX_MODIFY_TN_DATA. Firmware echoes that write back on a later poll,
+        // where it is indistinguishable from a physical spool swap and would
+        // erase the override we are staging right here.
+        //
+        // The self-wipe guard lives in push_slot_color_to_firmware, which
+        // registers the expected post-write fingerprint with rfid_tracker_
+        // before dispatching the gcode. material_type has no write path, so
+        // that half of the fingerprint remains pure firmware truth.
         if (persist) {
             helix::ams::FilamentSlotOverride ovr;
             ovr.brand = info.brand;
@@ -1229,10 +1304,46 @@ void AmsBackendCfs::push_slot_color_to_firmware(int global_index, uint32_t color
                   "BOX_MODIFY_TN_DATA ADDR=%d NUM=%c PART=color_value DATA=%s", unit, slot_letter,
                   data);
 
+    // Self-wipe guard. Once firmware applies this write it reports the new
+    // color_value back to us, changing the RFID fingerprint that
+    // check_hardware_event_clear watches — which on its own reads exactly like
+    // a physical spool swap and erases the override the user just created.
+    //
+    // Register the fingerprint we expect to see once the write lands: the
+    // CURRENT material_type (this gcode does not touch it) paired with the
+    // color we're about to send. We deliberately do NOT overwrite the baseline
+    // outright: the gcode is queued asynchronously behind whatever else Klipper
+    // is running, so firmware keeps reporting the OLD color for an unknown
+    // number of polls first. Those polls must stay Unchanged, and only the
+    // eventual echo may consume the expectation.
+    //
+    // The expectation is single-shot and any non-matching change consumes it
+    // too, so a genuine spool swap that happens while this write is in flight
+    // is still detected and swap detection is never left permanently blinded.
+    //
+    // With no baseline yet there is nothing to build an expectation from — and
+    // none is needed: the first observation for a slot is always a baseline and
+    // never fires a clear.
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (auto base = rfid_tracker_.baseline(global_index)) {
+            const auto bar = base->find('|');
+            const std::string material = (bar == std::string::npos) ? *base : base->substr(0, bar);
+            rfid_tracker_.expect(global_index, material + "|" + data);
+        }
+    }
+
     auto err = execute_gcode(gcode);
     if (err.result != AmsResult::SUCCESS) {
         // Non-fatal — the override is already in lane_data so user data isn't
         // lost; only the firmware-side LCD won't reflect this edit.
+        //
+        // Drop the expectation: no echo is coming, so the next fingerprint
+        // change is genuinely external and must be treated as a swap.
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            rfid_tracker_.forget_expected(global_index);
+        }
         spdlog::warn("{} push_slot_color_to_firmware: gcode dispatch failed for slot {}: {}",
                      backend_log_tag(), global_index, err.technical_msg);
     }
@@ -1896,40 +2007,44 @@ void AmsBackendCfs::apply_overrides(SlotInfo& slot, int slot_index) {
     }
 }
 
-void AmsBackendCfs::check_hardware_event_clear(SlotInfo& slot, int slot_index,
+bool AmsBackendCfs::check_hardware_event_clear(SlotInfo& slot, int slot_index,
                                                const std::string& observed_uid) {
-    // Empty observed UID = no RFID tag / sentinel material_type / sentinel
-    // color_value. Treat as non-signal: don't update the baseline, don't
-    // clear. Without this guard every tag-less poll would overwrite a real
-    // prior fingerprint and mask a genuine hardware swap on the next good
-    // read. Matches Snapmaker's empty-UID semantics.
-    if (observed_uid.empty())
-        return;
+    std::string old_uid;
+    const auto event = rfid_tracker_.observe(slot_index, observed_uid, &old_uid);
 
-    auto it = last_rfid_uid_.find(slot_index);
-    if (it == last_rfid_uid_.end()) {
-        // First observation for this slot — establish baseline. Even if the
-        // override was previously saved against a different fingerprint, the
-        // first observation is NEVER a swap signal. apply_overrides still
-        // runs after us and the override wins.
-        last_rfid_uid_[slot_index] = observed_uid;
+    switch (event) {
+    case helix::ams::FingerprintEvent::NoSignal:
+        // No RFID tag / sentinel material_type / sentinel color_value, or the
+        // slot wasn't in this incremental update. Baseline untouched, no clear.
+        return false;
+
+    case helix::ams::FingerprintEvent::Baseline:
         spdlog::debug("{} Slot {} baseline RFID fingerprint: {}", backend_log_tag(), slot_index,
                       observed_uid);
-        return;
-    }
-    if (it->second == observed_uid)
-        return; // unchanged — no swap signal
+        return false;
 
-    // Fingerprint changed. Record the new value as the baseline FIRST so a
-    // failed clear_async doesn't make us re-fire on every subsequent poll.
-    const std::string old_uid = it->second;
-    it->second = observed_uid;
+    case helix::ams::FingerprintEvent::Unchanged:
+        return false;
+
+    case helix::ams::FingerprintEvent::OwnWriteEcho:
+        // Firmware just handed back the color_value we wrote in
+        // push_slot_color_to_firmware. The physical spool never moved, so the
+        // user's override stands. The baseline has already advanced to the
+        // echoed value, so the NEXT genuine swap is detected against it.
+        spdlog::debug("{} Slot {} RFID fingerprint {} -> {} matches our own color push — "
+                      "override retained",
+                      backend_log_tag(), slot_index, old_uid, observed_uid);
+        return false;
+
+    case helix::ams::FingerprintEvent::Changed:
+        break;
+    }
 
     auto ovr_it = overrides_.find(slot_index);
     if (ovr_it == overrides_.end()) {
         spdlog::debug("{} Slot {} RFID fingerprint changed {} -> {} (no override to clear)",
                       backend_log_tag(), slot_index, old_uid, observed_uid);
-        return;
+        return false;
     }
 
     spdlog::info("{} Slot {} RFID fingerprint changed {} -> {}, clearing override "
@@ -1941,6 +2056,50 @@ void AmsBackendCfs::check_hardware_event_clear(SlotInfo& slot, int slot_index,
     // policy. Caller already holds mutex_.
     (void)ovr_it;
     clear_override_locked(slot_index, slot);
+    return true;
+}
+
+bool AmsBackendCfs::clear_stale_override_on_removal_locked(SlotInfo& slot, int slot_index) {
+    if (slot.status != SlotStatus::EMPTY)
+        return false;
+
+    auto it = overrides_.find(slot_index);
+    if (it == overrides_.end())
+        return false;
+
+    // A deliberate user assignment survives an empty bay. The user told us what
+    // belongs in this slot; unloading it — or a reader that momentarily can't
+    // see the tag — must not throw that away. Locks are the authoritative
+    // "the user chose this" signal and they round-trip through lane_data, so
+    // this holds across restarts too. Legacy records load with locks defaulted
+    // to true wherever the field has a value, so pre-lock user data is covered.
+    const auto& o = it->second;
+    if (o.user_locked_color || o.user_locked_material) {
+        return false;
+    }
+
+    // Identity fields are equally authoritative, and locks alone don't cover
+    // them. The FillUnsetOnly auto-mirror writes ONLY color_rgb/color_set and
+    // material (see mirror_firmware_to_lane_data) — it can never populate a
+    // brand, spool name or Spoolman id. So an override carrying any of those
+    // came from a user assignment (or a Spoolman link), which must survive an
+    // empty bay exactly like a locked field does. Without this, a bay that
+    // reads EMPTY for one poll — a genuine unload, but equally a transient
+    // unreadable-tag read — silently destroys the user's Spoolman linkage.
+    if (!o.brand.empty() || !o.spool_name.empty() || o.spoolman_id != 0 ||
+        o.spoolman_vendor_id != 0) {
+        return false;
+    }
+
+    // What's left in overrides_ for an empty bay is pure firmware auto-mirror
+    // residue — color/material describing a spool that is no longer seated.
+    // Erase it so the lane_data record stops advertising a stale color/material
+    // to OrcaSlicer and apply_overrides stops promoting the bay back to
+    // AVAILABLE.
+    spdlog::info("{} Slot {} reads EMPTY — clearing auto-mirrored override for the removed spool",
+                 backend_log_tag(), slot_index);
+    clear_override_locked(slot_index, slot);
+    return true;
 }
 
 void AmsBackendCfs::clear_override_locked(int slot_index, SlotInfo& slot) {

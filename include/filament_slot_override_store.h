@@ -203,4 +203,75 @@ bool mirror_firmware_to_lane_data(FilamentSlotOverrideStore* store,
                                   const std::string& firmware_material, bool slot_has_filament,
                                   MirrorPolicy policy, const std::string& log_tag);
 
+// =============================================================================
+// Shared per-slot firmware-observation baseline tracker
+// =============================================================================
+
+/// Classification of one firmware observation against the per-slot baseline.
+enum class FingerprintEvent {
+    /// Empty observation: no tag, unread reader, or the slot wasn't included in
+    /// this (incremental) status update. Baseline is left untouched — otherwise
+    /// a tag-less poll would overwrite a real prior value and mask a genuine
+    /// change on the next good read.
+    NoSignal,
+    /// First real observation for this slot. Establishes the baseline; NEVER an
+    /// event, even when a previously-loaded override disagrees with it.
+    Baseline,
+    /// Identical to the baseline — the same physical spool re-observed.
+    Unchanged,
+    /// Changed to exactly the value a prior expect() said to await, i.e. this
+    /// is the firmware echoing back a write HelixScreen itself made.
+    OwnWriteEcho,
+    /// Changed for some reason other than our own pending write — for the RFID
+    /// backends this means a physical spool swap.
+    Changed,
+};
+
+/// Per-slot "what did firmware last report for this slot?" tracker, shared by
+/// the RFID-fingerprint backends (CFS, Snapmaker). It owns only the
+/// bookkeeping — deciding what a given event *means* (clear the override, sync
+/// lane_data, log) stays in each backend, so their policies can differ.
+///
+/// Beyond the plain baseline compare it carries an `expect()` slot: backends
+/// that write a value back to firmware (CFS's BOX_MODIFY_TN_DATA color push)
+/// record the value they expect to see echoed. Because the write is
+/// asynchronous, firmware keeps reporting the OLD value for an unknown number
+/// of polls before the echo lands — so the expectation must SURVIVE those
+/// polls rather than overwrite the baseline immediately. Those intervening
+/// polls classify as Unchanged; the echo itself classifies as OwnWriteEcho.
+///
+/// The expectation is single-shot and is consumed by the first change of any
+/// kind, so a genuine physical swap that lands while a write is in flight is
+/// still reported as Changed and never permanently blinds swap detection for
+/// that slot.
+class SlotFingerprintTracker {
+  public:
+    /// Feed one observation. When the result is OwnWriteEcho or Changed and
+    /// `previous` is non-null, it receives the superseded baseline value (for
+    /// logging). The baseline is advanced BEFORE returning a change event so a
+    /// caller whose follow-up action fails doesn't re-fire on every poll.
+    FingerprintEvent observe(int slot_index, const std::string& observed,
+                             std::string* previous = nullptr);
+
+    /// Record the value this slot is expected to report once a write we just
+    /// issued reaches firmware. Replaces any prior unconsumed expectation.
+    void expect(int slot_index, std::string expected_value);
+
+    /// Drop a pending expectation (e.g. the write failed to dispatch, so no
+    /// echo is coming and the next change is genuinely external).
+    void forget_expected(int slot_index);
+
+    /// Current baseline for a slot, or nullopt when none observed yet.
+    [[nodiscard]] std::optional<std::string> baseline(int slot_index) const;
+
+    /// Whether an unconsumed expectation is pending for a slot.
+    [[nodiscard]] bool has_expected(int slot_index) const;
+
+    void clear();
+
+  private:
+    std::unordered_map<int, std::string> baseline_;
+    std::unordered_map<int, std::string> expected_;
+};
+
 } // namespace helix::ams
