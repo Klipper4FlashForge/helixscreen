@@ -106,8 +106,11 @@ PrintSelectDetailView::~PrintSelectDetailView() {
         confirmation_dialog_widget_ = nullptr;
     }
 
-    // Clean up main widget if created
-    helix::ui::safe_delete(overlay_root_);
+    // Destructors can run from inside a queue_update() batch (unique_ptr
+    // reassignment, owner reset()); a sync lv_obj_delete() there corrupts
+    // LVGL's event list if another sync delete lands in the same batch
+    // (#776, #190, #80). Deferred delete is safe outside a batch too.
+    helix::ui::safe_delete_deferred(overlay_root_);
 }
 
 // ============================================================================

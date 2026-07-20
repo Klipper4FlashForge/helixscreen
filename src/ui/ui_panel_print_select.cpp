@@ -1775,12 +1775,19 @@ void PrintSelectPanel::on_deactivate() {
         return_home_activation_count_ = 0;
     }
 
-    // Clear detail view state so file notifications aren't deferred while panel is hidden.
-    // If user navigates away via navbar with detail view open, this flag would otherwise
-    // stay true and suppress all notify_filelist_changed updates until next detail close.
+    // A navbar switch already closes the overlay (NavigationManager tears it down
+    // before calling this), so is_visible() is false and clearing the flag is enough.
+    // A rebuild() calls on_deactivate() directly with no stack teardown, so a still-open
+    // overlay needs an explicit hide_detail_view()/go_back() here; gating on is_visible()
+    // keeps that from popping the wrong panel_stack_ entry in the navbar case.
     if (detail_view_open_) {
-        detail_view_open_ = false;
-        spdlog::debug("[{}] Cleared detail_view_open_ on deactivate", get_name());
+        if (detail_view_ && detail_view_->is_visible()) {
+            hide_detail_view();
+            spdlog::debug("[{}] Closed still-open detail view on deactivate", get_name());
+        } else {
+            detail_view_open_ = false;
+            spdlog::debug("[{}] Cleared detail_view_open_ on deactivate", get_name());
+        }
     }
 
     // Mark that the panel was fully deactivated so on_activate() knows to refresh
@@ -2374,6 +2381,12 @@ void PrintSelectPanel::update_sort_indicators() {
 }
 
 void PrintSelectPanel::create_detail_view() {
+    if (detail_view_) {
+        // The detail overlay lives under parent_screen_, not panel_, so it
+        // survives a panel rebuild. setup() is re-entrant; only the first
+        // call constructs the view.
+        return;
+    }
     detail_view_ = std::make_unique<helix::ui::PrintSelectDetailView>();
 
     // Initialize subjects BEFORE create() so XML bindings can find them [L004]
