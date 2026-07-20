@@ -1061,6 +1061,50 @@ std::unordered_map<int, FilamentSlotOverride> FilamentSlotOverrideStore::load_bl
         }
     }
 
+    // One-shot heal: records written before orca_match_type existed carry a
+    // `material` OrcaSlicer cannot match, which it silently resolves to a PLA
+    // preset — PLA temperatures on whatever is really loaded. Rewrite them so
+    // the fix reaches existing installs without requiring the user to re-edit
+    // every slot.
+    //
+    // ONLY records we authored, proven by a helix_locked_* key. AFC, Happy
+    // Hare and Mainsail share this namespace and their records are not ours to
+    // rewrite — same rule scan_lane_data_anomalies follows (see this file's
+    // header comment on LaneDataAnomalies).
+    //
+    // Self-limiting: a healed record gains helix_material, and the gate below
+    // skips any record that already has it — so after the first successful
+    // heal this loop does nothing for that slot on every subsequent boot.
+    for (auto it = received_copy.begin(); it != received_copy.end(); ++it) {
+        const std::string& key = it.key();
+        if (key == "seated" || !it.value().is_object())
+            continue;
+        const auto& rec = it.value();
+        const bool ours =
+            rec.contains("helix_locked_color") || rec.contains("helix_locked_material");
+        if (!ours || rec.contains("helix_material"))
+            continue; // not ours, or already healed
+        const std::string current = rec.value("material", "");
+        if (current.empty())
+            continue;
+        if (filament::orca_match_type(current) == current)
+            continue; // already the canonical matchable string — nothing to heal
+        auto parsed = from_lane_data_record(rec);
+        if (!parsed)
+            continue;
+        spdlog::info("[FilamentSlotOverrideStore:{}] healing lane_data {}: material '{}' is not "
+                     "Orca-matchable, rewriting with helix_material",
+                     backend_id_, key, current);
+        const std::string backend_id_copy = backend_id_;
+        save_async(parsed->first, parsed->second,
+                   [backend_id_copy, key](bool success, std::string err) {
+                       if (!success) {
+                           spdlog::warn("[FilamentSlotOverrideStore:{}] heal failed for {}: {}",
+                                        backend_id_copy, key, err);
+                       }
+                   });
+    }
+
     // Tool-changer backends converge on Mainsail's T<n> key. If we (or an older
     // HelixScreen build) previously wrote laneN records, rewrite them to T<n>
     // now — the DB round-trip just proved reachability (got_copy == true). This
