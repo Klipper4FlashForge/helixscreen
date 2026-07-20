@@ -157,6 +157,28 @@ def build_product(resolved: dict, base_type_range):
 # @System / @<printer> / @base suffixes to strip from profile names for display.
 _SUFFIX_RE = re.compile(r"\s*@.*$")
 
+# Type strings HelixScreen's catalog carries that OrcaSlicer's filament library
+# has no equivalent for. Mapping them to a library type is the difference
+# between a correct preset and Orca's silent PLA fallback (see the spec).
+#
+# DELIBERATELY ABSENT — these must emit NOTHING rather than a wrong match:
+#   PET, PET-GF  : polyethylene terephthalate is NOT PETG. Different polymer,
+#                  different temps. The library has PET-CF but no plain PET.
+#   PPS, PPS-CF  : no library equivalent; high-temp engineering material where
+#   PPA          : a wrong guess risks a ruined print or a damaged hotend.
+ORCA_TYPE_OVERRIDES = {
+    "rPLA": "PLA",
+    "rPETG": "PETG",
+    "TPE": "TPU",          # Orca files COEX's TPE presets under filament_type TPU
+    "TPU-95A": "TPU",
+    "TPU-85A": "TPU",
+    "SILK": "PLA",
+    "Color-Change": "PLA",
+    "PLA+": "PLA",
+    "ASA+": "ASA",
+    "ABS+": "ABS",
+}
+
 
 def _display_name(profile_name: str, brand: str) -> str:
     name = _SUFFIX_RE.sub("", profile_name).strip()
@@ -175,6 +197,7 @@ def build_catalog(orca_root, cfs_seed, type_ranges, library_marker="OrcaFilament
     by_name = load_profiles(load_root)
     products = []
     seen = set()
+    library_types = set()
     for pname, profile in by_name.items():
         if profile.get("instantiation") != "true":
             continue  # templates, not user-facing products
@@ -184,6 +207,10 @@ def build_catalog(orca_root, cfs_seed, type_ranges, library_marker="OrcaFilament
         brand = first_scalar(resolved.get("filament_vendor")) or "Generic"
         resolved["_product_name"] = _display_name(pname, brand)
         orca_type = first_scalar(resolved.get("filament_type")) or ""
+        # RAW type — this is the vocabulary Orca matches on. Must NOT be
+        # map_type()'d: our catalog deliberately carries finer types than Orca.
+        if orca_type:
+            library_types.add(orca_type)
         base_range = type_ranges.get(map_type(orca_type))
         product = build_product(resolved, base_range)
         key = (product["brand"], product["name"])
@@ -195,7 +222,7 @@ def build_catalog(orca_root, cfs_seed, type_ranges, library_marker="OrcaFilament
     _dedupe_ids(products)
     _assert_no_degenerate_ranges(products)
     products.sort(key=lambda p: (p.get("source", ""), p["brand"].lower(), p["name"].lower(), p["id"]))
-    return products
+    return products, sorted(library_types)
 
 
 def _merge_cfs_seed(products, cfs_seed):
@@ -333,17 +360,19 @@ def main(argv=None):
 
     with open(args.cfs_seed, encoding="utf-8") as f:
         seed = json.load(f)
-    catalog = build_catalog(args.orca, seed, _load_type_ranges(args.type_ranges))
+    catalog, library_types = build_catalog(args.orca, seed, _load_type_ranges(args.type_ranges))
     doc = {
         "_attribution": ("Factual filament data derived from OrcaSlicer "
                          f"(github.com/SoftFever/OrcaSlicer, tag {args.orca_tag}, "
                          "AGPL-3.0). No OrcaSlicer profile files are shipped."),
+        "orca_library_types": library_types,
+        "orca_type_overrides": ORCA_TYPE_OVERRIDES,
         "filaments": catalog,
     }
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(doc, f, indent=2, ensure_ascii=False)
         f.write("\n")
-    print(f"Wrote {len(catalog)} filaments to {args.out}")
+    print(f"Wrote {len(catalog)} filaments and {len(library_types)} Orca library types to {args.out}")
     return 0
 
 

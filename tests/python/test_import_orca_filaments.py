@@ -105,7 +105,7 @@ def test_build_product_emits_range_for_unmapped_type_with_no_base_range():
 def test_build_catalog_unions_orca_and_seed():
     seed = [{"id": "creality-hyper-pla", "brand": "Creality", "name": "Hyper PLA",
              "type": "PLA", "nozzle": 215, "codes": {"cfs": "01001"}, "source": "cfs-seed"}]
-    cat = imp.build_catalog(FIX, seed, type_ranges={"ABS": (245, 265)}, library_marker="")
+    cat, _ = imp.build_catalog(FIX, seed, type_ranges={"ABS": (245, 265)}, library_marker="")
     ids = {p["id"] for p in cat}
     assert "creality-hyper-pla" in ids                 # seed preserved
     assert any(p["brand"] == "Polymaker" for p in cat)  # orca product present
@@ -114,8 +114,8 @@ def test_build_catalog_unions_orca_and_seed():
 
 def test_build_catalog_is_deterministic():
     seed = []
-    a = imp.build_catalog(FIX, seed, type_ranges={"ABS": (245, 265)}, library_marker="")
-    b = imp.build_catalog(FIX, seed, type_ranges={"ABS": (245, 265)}, library_marker="")
+    a, _ = imp.build_catalog(FIX, seed, type_ranges={"ABS": (245, 265)}, library_marker="")
+    b, _ = imp.build_catalog(FIX, seed, type_ranges={"ABS": (245, 265)}, library_marker="")
     assert json.dumps(a) == json.dumps(b)               # stable order + shape
 
 
@@ -144,7 +144,7 @@ def test_build_catalog_scopes_inherits_to_library_avoiding_vendor_base_collision
     # and under a sibling vendor pack (Qidi, 250). Inheritance resolution for
     # library products must use ONLY the library's own base, not whichever
     # vendor copy happened to load last into the flat name->profile map.
-    cat = imp.build_catalog(FIX_COLLISION, [], type_ranges={})
+    cat, _ = imp.build_catalog(FIX_COLLISION, [], type_ranges={})
     assert len(cat) == 1
     product = cat[0]
     assert product["brand"] == "Generic"
@@ -164,7 +164,7 @@ def test_build_catalog_guards_against_id_collisions():
     assert imp._slug("Polymaker-ABS", "Pro") == colliding_id
     seed = [{"id": "whatever-gets-recomputed", "brand": "Polymaker-ABS", "name": "Pro",
              "type": "ABS", "nozzle": 260, "source": "cfs-seed"}]
-    cat = imp.build_catalog(FIX, seed, type_ranges={"ABS": (245, 265)}, library_marker="")
+    cat, _ = imp.build_catalog(FIX, seed, type_ranges={"ABS": (245, 265)}, library_marker="")
     ids = [p["id"] for p in cat]
     assert len(ids) == len(set(ids))                    # no collision survives
     assert colliding_id in ids
@@ -281,3 +281,38 @@ def test_merge_cfs_seed_does_not_clobber_an_existing_orca_code():
     imp._merge_cfs_seed(products, seed)
     assert len(products) == 1
     assert products[0]["codes"] == {"cfs": "99999", "other": "abc"}
+
+
+# ---------------------------------------------------------------------------
+# Orca library type tables (the silent-PLA-fallback fix)
+# ---------------------------------------------------------------------------
+
+def test_build_catalog_returns_raw_library_types():
+    # The allowlist must carry Orca's RAW filament_type, not map_type()'s
+    # remapped value — Orca matches on its own vocabulary, not ours.
+    seed = []
+    products, library_types = imp.build_catalog(FIX, seed, {}, library_marker="")
+    assert isinstance(library_types, list)
+    assert library_types == sorted(library_types)   # deterministic output
+    assert len(library_types) == len(set(library_types))  # deduped
+    assert "ABS" in library_types
+
+
+def test_library_types_excludes_non_instantiable_templates():
+    # @base templates are never selectable in Orca, so their types must not
+    # enter the allowlist.
+    seed = []
+    _products, library_types = imp.build_catalog(FIX, seed, {}, library_marker="")
+    by_name = imp.load_profiles(FIX)
+    template_only = {
+        imp.first_scalar(imp.resolve_inherits(p, by_name).get("filament_type"))
+        for p in by_name.values()
+        if p.get("instantiation") != "true"
+    }
+    selectable = {
+        imp.first_scalar(imp.resolve_inherits(p, by_name).get("filament_type"))
+        for p in by_name.values()
+        if p.get("instantiation") == "true"
+    }
+    for t in template_only - selectable:
+        assert t not in library_types
