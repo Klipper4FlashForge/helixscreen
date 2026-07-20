@@ -10,6 +10,7 @@
 #include "printer_state.h"
 #include "subject_managed_panel.h"
 
+#include <atomic>
 #include <chrono>
 
 /**
@@ -30,7 +31,17 @@ enum class RecoveryReason {
 namespace RecoverySuppression {
 static constexpr uint32_t SHORT = 5000;   ///< Brief operations (settings switch)
 static constexpr uint32_t NORMAL = 10000; ///< Standard restarts (firmware restart, power toggle)
-static constexpr uint32_t LONG = 15000;   ///< Extended operations (calibration, service install)
+/// Extended operations (calibration, service install).
+///
+/// Deliberately short. Widening this to cover printers that chain a second
+/// config write + restart (Creality K2 + CFS writes the CFS Tn_data via
+/// CXSAVE_CONFIG tens of seconds after SAVE_CONFIG) was tried and reverted: the
+/// suppression check is edge-triggered on the klippy state transition, so a
+/// window long enough to cover the chained restart also swallows a genuine
+/// unrecoverable shutdown landing in the same span — observed at 57s after
+/// SAVE_CONFIG, which a 60s window would have hidden from the user entirely.
+/// Prefer a spurious dialog over a silently-eaten shutdown.
+static constexpr uint32_t LONG = 15000;
 static constexpr uint32_t EXTRA = 30000;  ///< Multi-step operations (PID→MPC migration)
 } // namespace RecoverySuppression
 
@@ -181,8 +192,10 @@ class EmergencyStopOverlay {
     lv_obj_t* confirmation_dialog_ = nullptr;
     lv_obj_t* recovery_dialog_ = nullptr;
 
-    // Restart operation tracking - prevents recovery dialog during expected SHUTDOWN
-    bool restart_in_progress_ = false;
+    // Restart operation tracking - prevents recovery dialog during expected SHUTDOWN.
+    // Atomic: written from the klippy_state observer (may run on the WebSocket
+    // thread) and read by is_expected_restart() on the LVGL main thread.
+    std::atomic<bool> restart_in_progress_{false};
 
     // Skip the first klippy_state observer fire — it carries the subject's
     // default (SHUTDOWN) before Moonraker has reported real state. A real
@@ -193,8 +206,12 @@ class EmergencyStopOverlay {
     // Recovery dialog state
     RecoveryReason recovery_reason_ = RecoveryReason::NONE;
 
-    // Time-based suppression for expected restarts (SAVE_CONFIG, PID calibration)
-    uint32_t suppress_recovery_until_ = 0;
+    // Time-based suppression for expected restarts (SAVE_CONFIG, PID calibration).
+    // Atomic: suppress_recovery_dialog() is called from Moonraker gcode callbacks
+    // that run on the WebSocket background thread (e.g. z_offset_utils.cpp), while
+    // is_recovery_suppressed() / is_expected_restart() read it from the LVGL main
+    // thread. Plain uint32_t here was a data race.
+    std::atomic<uint32_t> suppress_recovery_until_{0};
 
     // Visibility subject (1=visible, 0=hidden) - drives XML bindings
     lv_subject_t estop_visible_;

@@ -407,19 +407,29 @@ void EmergencyStopOverlay::show_recovery_for(RecoveryReason reason) {
 }
 
 void EmergencyStopOverlay::suppress_recovery_dialog(uint32_t duration_ms) {
-    suppress_recovery_until_ = lv_tick_get() + duration_ms;
+    // Callable from the WebSocket background thread (Moonraker gcode callbacks) —
+    // the deadline is atomic so main-thread readers never see a torn value.
+    suppress_recovery_until_.store(lv_tick_get() + duration_ms, std::memory_order_relaxed);
     spdlog::info("[KlipperRecovery] Suppressing recovery dialog for {}ms", duration_ms);
 }
 
 bool EmergencyStopOverlay::is_recovery_suppressed() const {
-    if (suppress_recovery_until_ == 0) {
+    // Single load — re-reading the member would let a concurrent
+    // suppress_recovery_dialog() change the value between the zero check and the
+    // elapsed comparison.
+    const uint32_t deadline = suppress_recovery_until_.load(std::memory_order_relaxed);
+    if (deadline == 0) {
         return false;
     }
-    return lv_tick_elaps(suppress_recovery_until_) > (UINT32_MAX / 2);
+    return lv_tick_elaps(deadline) > (UINT32_MAX / 2);
 }
 
 bool EmergencyStopOverlay::is_expected_restart() const {
-    return is_recovery_suppressed() || restart_in_progress_;
+    // Load the restart flag first: a writer that sets restart_in_progress_ and
+    // then the deadline can otherwise slip between the two reads and produce a
+    // false negative for a restart that is genuinely in flight.
+    const bool restarting = restart_in_progress_.load(std::memory_order_relaxed);
+    return restarting || is_recovery_suppressed();
 }
 
 void EmergencyStopOverlay::update_recovery_dialog_content() {

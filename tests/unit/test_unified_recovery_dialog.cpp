@@ -64,6 +64,53 @@ TEST_CASE_METHOD(LVGLTestFixture, "Expected restart - tracks SAVE_CONFIG suppres
 }
 
 // ============================================================================
+// Suppression window sizing (must not swallow a genuine late shutdown)
+// ============================================================================
+//
+// Creality's stock K2 code chains a SECOND config write + Klipper restart after
+// a SAVE_CONFIG settles (motor_control_wrapper.py writes the CFS Tn_data via
+// CXSAVE_CONFIG). Widening LONG to 60000 to cover that was tried and REVERTED:
+// a real unrecoverable shutdown was observed landing 57s after SAVE_CONFIG, and
+// because the suppression check is edge-triggered on the klippy state
+// transition, a 60s window would have eaten it and shown the user nothing.
+//
+// These tests pin the window SHORT. A spurious recovery dialog for a chained
+// restart is the accepted cost of never hiding a real shutdown.
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "Recovery suppression - LONG window closes well before a late shutdown",
+                 "[recovery][suppress]") {
+    auto& estop = EmergencyStopOverlay::instance();
+
+    estop.suppress_recovery_dialog(RecoverySuppression::LONG);
+    REQUIRE(estop.is_recovery_suppressed());
+
+    // Still suppressed across the immediate SAVE_CONFIG restart it exists for.
+    lv_tick_inc(RecoverySuppression::LONG / 2);
+    REQUIRE(estop.is_recovery_suppressed());
+
+    // A genuine shutdown at ~57s (the observed real-world case) MUST reach the
+    // user. This assertion fails if LONG is widened to cover chained restarts.
+    lv_tick_inc(57000 - (RecoverySuppression::LONG / 2));
+    INFO("RecoverySuppression::LONG = " << RecoverySuppression::LONG);
+    REQUIRE_FALSE(estop.is_recovery_suppressed());
+    REQUIRE_FALSE(estop.is_expected_restart());
+}
+
+TEST_CASE("Recovery suppression - LONG stays short enough to surface a real shutdown",
+          "[recovery][suppress]") {
+    // Ordering invariant across the tiers.
+    REQUIRE(RecoverySuppression::SHORT < RecoverySuppression::NORMAL);
+    REQUIRE(RecoverySuppression::NORMAL < RecoverySuppression::LONG);
+
+    // Hard ceiling: a real unrecoverable shutdown was seen 57s after
+    // SAVE_CONFIG. The window must close comfortably before that, or the
+    // edge-triggered check swallows it. Do NOT raise this to chase chained
+    // config writes — that regression is why this bound exists.
+    REQUIRE(RecoverySuppression::LONG < 30000);
+}
+
+// ============================================================================
 // Recovery reason enum coverage
 // ============================================================================
 
