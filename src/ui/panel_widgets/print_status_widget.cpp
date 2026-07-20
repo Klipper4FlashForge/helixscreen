@@ -672,17 +672,6 @@ void PrintStatusWidget::on_print_state_changed(PrintJobState state) {
     // print_status_view). Recompute that subject; XML handles visibility.
     update_view_subject();
 
-    // print_card_printing is the active-state WRAPPER (holds preparing_info,
-    // print_card_layout, print_card_printing_detailed). Its padding occupies
-    // layout space even when its children are hidden, so the wrapper stays
-    // imperatively toggled. detach() nulls this pointer (no L075 needed).
-    if (print_card_printing_) {
-        if (is_active_)
-            lv_obj_remove_flag(print_card_printing_, LV_OBJ_FLAG_HIDDEN);
-        else
-            lv_obj_add_flag(print_card_printing_, LV_OBJ_FLAG_HIDDEN);
-    }
-
     if (is_active_) {
         spdlog::debug("[PrintStatusWidget] Print active - state updated via subject bindings");
     } else {

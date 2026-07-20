@@ -260,3 +260,33 @@ TEST_CASE("Display message: truncates long messages safely", "[print][display_me
     REQUIRE(std::strlen(msg) > 0);
     REQUIRE(std::strlen(msg) < 200); // Truncated
 }
+
+// ============================================================================
+// print_active parity (guards the declarative visibility binding)
+// ============================================================================
+
+TEST_CASE("print_active tracks PrintJobState across a full job lifecycle",
+          "[print][display_message]") {
+    lv_init_safe();
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    struct Step {
+        const char* moonraker_state;
+        int expected_active;
+    };
+    const Step steps[] = {
+        {"standby", 0}, {"printing", 1}, {"paused", 1},  {"printing", 1},
+        {"complete", 0}, {"standby", 0}, {"cancelled", 0}, {"error", 0},
+    };
+
+    for (const auto& s : steps) {
+        json status = {{"print_stats", {{"state", s.moonraker_state}}}};
+        state.update_from_status(status);
+        helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+        INFO("moonraker state: " << s.moonraker_state);
+        REQUIRE(lv_subject_get_int(state.get_print_active_subject()) == s.expected_active);
+    }
+}
