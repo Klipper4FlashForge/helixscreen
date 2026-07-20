@@ -282,8 +282,22 @@ class ControlsPanel : public PanelBase {
     helix::ui::ModalGuard save_z_offset_confirmation_dialog_;
     helix::ui::ModalGuard macro_run_confirmation_dialog_;
     OperationTimeoutGuard operation_guard_;
-    bool save_z_offset_in_progress_ = false; ///< Guard against double-click race condition
-    size_t pending_macro_run_index_ = 0;     ///< Slot index awaiting run confirmation
+
+    /// Guards against a double-click race on Save Z-Offset.
+    ///
+    /// A bounded timeout rather than a bare bool: SAVE_CONFIG restarts Klipper,
+    /// and MoonrakerClient::notify_klippy_disconnected() calls
+    /// tracker_.cleanup_all(), which drops the pending RPC — so neither the
+    /// success nor the error callback ever fires and a plain flag stayed latched
+    /// until app restart, leaving the Save button dead. The guard self-clears.
+    OperationTimeoutGuard save_z_offset_guard_;
+
+    /// Covers Z_OFFSET_APPLY_PROBE + SAVE_CONFIG plus the Klipper restart, with
+    /// headroom for stock code that chains a second config write (Creality K2 +
+    /// CFS writes CFS Tn_data via CXSAVE_CONFIG ~50s later).
+    static constexpr uint32_t SAVE_Z_OFFSET_TIMEOUT_MS = 90000;
+
+    size_t pending_macro_run_index_ = 0; ///< Slot index awaiting run confirmation
 
     //
     // === Dynamic UI Containers ===

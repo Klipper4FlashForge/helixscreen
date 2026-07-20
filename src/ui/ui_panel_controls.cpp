@@ -1060,17 +1060,23 @@ void ControlsPanel::handle_save_z_offset() {
 void ControlsPanel::handle_save_z_offset_confirm() {
     spdlog::debug("[{}] Save Z-offset confirmed", get_name());
 
-    if (save_z_offset_in_progress_) {
+    if (save_z_offset_guard_.is_active()) {
         spdlog::warn("[{}] Save Z-offset already in progress, ignoring", get_name());
         return;
     }
-    save_z_offset_in_progress_ = true;
+
+    // Bounded guard: SAVE_CONFIG restarts Klipper, which drops the in-flight RPC,
+    // so the success/error callbacks below are not guaranteed to fire. Without a
+    // timeout the button would stay disabled until the app restarts.
+    save_z_offset_guard_.begin(SAVE_Z_OFFSET_TIMEOUT_MS, [this] {
+        spdlog::warn("[{}] Save Z-offset guard timed out — re-enabling save", get_name());
+    });
 
     save_z_offset_confirmation_dialog_.hide();
 
     if (!api_) {
         NOTIFY_ERROR(lv_tr("No printer connection"));
-        save_z_offset_in_progress_ = false;
+        save_z_offset_guard_.end();
         return;
     }
 
@@ -1091,13 +1097,13 @@ void ControlsPanel::handle_save_z_offset_confirm() {
             tok.defer("ControlsPanel::save_z_offset_done", [this, offset_mm]() {
                 NOTIFY_SUCCESS(lv_tr("Z-offset saved ({:+.3f}mm). Klipper restarting..."),
                                offset_mm);
-                save_z_offset_in_progress_ = false;
+                save_z_offset_guard_.end();
             });
         },
         [this, tok](const std::string& error) {
             tok.defer("ControlsPanel::save_z_offset_done", [this, error]() {
                 NOTIFY_ERROR("{}", error);
-                save_z_offset_in_progress_ = false;
+                save_z_offset_guard_.end();
             });
         });
 }
