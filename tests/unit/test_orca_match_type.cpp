@@ -31,8 +31,8 @@ const std::map<std::string, std::string> kOverrides = {
     {"PLA+", "PLA"},   {"ASA+", "ASA"},   {"ABS+", "ABS"}};
 
 struct TableFixture {
-    TableFixture() { filament::set_orca_tables_for_testing(kLib, kOverrides); }
-    ~TableFixture() { filament::set_orca_tables_for_testing({}, {}); }
+    TableFixture() { filament::set_orca_tables(kLib, kOverrides); }
+    ~TableFixture() { filament::set_orca_tables({}, {}); }
 };
 
 } // namespace
