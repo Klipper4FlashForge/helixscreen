@@ -74,9 +74,32 @@ genuinely different text, side by side.
 
 ### Clearing policy
 
-Only Klipper clears M117. HelixScreen never writes `display_message` outside the parse
-site. This mirrors Fluidd exactly: same text, same lifetime. Accepted consequence: text
-can persist across print boundaries and remain visible while idle.
+`display_message` is cleared on **print end** — the transition from PRINTING to
+COMPLETE / CANCELLED / ERROR. Otherwise it is a pure mirror of `display_status.message`.
+
+**Why not "clear at new print start", the intuitive choice.** No initiation hook exists.
+`reset_for_new_print()` (`printer_print_state.cpp:190`) is reached only via the *observed*
+state delta: `print_stats.state == "printing"` → observer (`moonraker_manager.cpp:600-625`)
+→ `collector->start()` (:629) → `set_print_start_state()`
+(`print_start_collector.cpp:263`), whose body is wrapped in `queue_update`
+(`printer_print_state.cpp:917`) and therefore runs a queue tick *later* than the `:294`
+clear. Clearing there reproduces Defect 1 with a wider race window.
+
+There is no initiation-side alternative. Local print paths
+(`PrintPreparationManager::start_print()`, `api_->job().start_print()`) never touch the
+phase or the reset, so even a user-tapped print arrives only through the delta. Prints
+started externally (Fluidd/Mainsail, queue, resume) have no local hook at all. Other
+candidate keys fail too: `print_stats.filename` emits no delta on a same-file reprint
+(relied on at `:175-178`), and no `job_id` exists on the status channel.
+
+Print *end* is safe because the hazard is specific to print start, when PRINT_START is
+emitting M117s that a clear would destroy and Klipper would never re-send. At print end
+there is no such traffic. An `M117 Print complete` from an END_PRINT macro arrives after
+the state transition and survives normally.
+
+This yields the intended guarantee — last print's text never bleeds into the next print —
+without the delta hazard. Idle screens go blank after a job finishes; an M117 sent while
+idle thereafter displays normally.
 
 ### C++ changes
 
@@ -85,11 +108,17 @@ can persist across print boundaries and remain visible while idle.
 | Delete M117 pass-through (`update_message_only`) | `print_start_collector.cpp:243-253` |
 | Delete `is_preparing` from gate → `has_message ? 1 : 0` | `printer_print_state.cpp:831-843` |
 | Delete clear on →PRINTING | `printer_print_state.cpp:294` |
+| Delete clear in `reset_for_new_print()` | `printer_print_state.cpp:190` |
+| **Add** clear on PRINTING → COMPLETE/CANCELLED/ERROR | `printer_print_state.cpp` state-transition block (~:283-296) |
 
-**To verify before touching:** the clear at `printer_print_state.cpp:190` in
-`reset_for_new_print()`. Under this clearing policy it should likely be removed, but
-confirm whether that path also runs on disconnect — clearing *is* correct there, since
-reconnect re-seeds from the subscribe snapshot.
+The `:190` removal is safe, and the earlier open question about disconnect resolves in
+favor of removal: `reset_for_new_print()` has no disconnect caller anywhere in `src/`
+(its only production caller is `set_print_start_state()` at `:935`), and reconnect
+re-seeds `display_status` independently from the `printer.objects.subscribe` snapshot
+(`moonraker_discovery_sequence.cpp:1040`, `:1424-1445`).
+
+Net: `display_message` has exactly two writers — the parse site (`:534`) and the
+print-end clear. Neither can run while PRINT_START is emitting.
 
 ### XML surfaces
 
@@ -133,7 +162,12 @@ adequate for routing, useless for sequencing [L098, L093].
    including COMPLETE.
 3. **Writer independence** — collector phase transitions never mutate `display_message`;
    M117 never mutates `print_start_message`.
-4. Drain the update queue before assertions [L048].
+4. **Print-end clear** — M117 present during PRINTING is cleared on the transition to each
+   of COMPLETE, CANCELLED, ERROR.
+5. **END_PRINT M117 survives** — an M117 arriving in a notification *after* the print-end
+   transition displays and is not wiped. Guards against re-creating Defect 1 at the other
+   end of the job.
+6. Drain the update queue before assertions [L048].
 
 Runtime verification beyond green tests: headless launch with a mock M117, screenshot views
 0/2/3/4 and the panel mid-preheat.
