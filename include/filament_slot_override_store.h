@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 class IMoonrakerAPI;
 class FilamentSlotOverrideStoreTestAccess;
@@ -57,6 +58,15 @@ struct LaneDataAnomalies {
 // mutation. Skips the "seated" sibling scalar. Used for the one-shot load-time
 // diagnostic; also unit-tested directly.
 [[nodiscard]] LaneDataAnomalies scan_lane_data_anomalies(const nlohmann::json& namespace_doc);
+
+// Parse AFC-shaped record (+ our extensions) back into FilamentSlotOverride.
+// This is the wire-format parser: the shared shape read by scan_lane_data_anomalies,
+// the migration helpers, and load_blocking, and exercised directly by tests to
+// verify round-tripping without going through the full async load/save path.
+// Returns (slot_index, override), or nullopt if the record is malformed (non-object
+// or missing/invalid "lane" field).
+[[nodiscard]] std::optional<std::pair<int, FilamentSlotOverride>>
+from_lane_data_record(const nlohmann::json& j);
 
 class FilamentSlotOverrideStore {
   public:
