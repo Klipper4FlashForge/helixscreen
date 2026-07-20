@@ -461,7 +461,7 @@ Expected: no XML parse errors, no `unknown-widget`, no unresolved-subject warnin
 - [ ] **Step 5: Run the XML lint**
 
 ```bash
-make xml-lint
+make lint-xml
 ```
 
 Expected: PASS. No schema regeneration is needed — no new widget type was registered [L089].
@@ -670,9 +670,11 @@ git commit -m "refactor(ui): bind print_card_printing visibility to print_active
 
 Green tests are not sufficient here — the original bug shipped green, and two of the defects were pure-XML visibility problems that no unit test observes.
 
+**RUN THIS LAST.** Tasks 8 and 9 were added after this plan was first written; execute 5, 6, 8, 9, then 7. Task 8 in particular is a prerequisite — without it the mock cannot produce an arbitrary M117 and several steps below are not executable.
+
 **Files:** none modified.
 
-**Interfaces:** Consumes all prior tasks.
+**Interfaces:** Consumes all prior tasks, including 8 and 9.
 
 - [ ] **Step 1: Full test suite**
 
@@ -701,11 +703,16 @@ With the app running, confirm by eye and capture a screenshot of each (press `S`
 5. **Print status panel, mid-preheat** — the `preparing_overlay` heading shows the phase label, the metadata strip below shows M117. Different text, both visible.
 6. **Print status panel heading on first render** — confirm it is not blank (the accepted risk from Task 5, Step 2).
 
+**How to set an M117 against the mock:** Task 8 adds `M117` parsing to `MoonrakerClientMock::gcode_script()`. Send it from the in-app console — Settings → Advanced → Console (`AdvancedPanel::handle_console_clicked()`, `src/ui/ui_panel_advanced.cpp:136`) — by typing `M117 hello world`. That routes through `ConsolePanel::send_gcode_command()` → `printer.gcode.script` → the mock, and back out via `dispatch_status_update()`, i.e. the same path real hardware uses.
+
+Before Task 8 existed this was impossible: the mock never parsed `M117` and `display_status.message` was a hardcoded ternary (`moonraker_client_mock.cpp:3954-3966`). If for any reason Task 8 is not in place, the fallback is `HELIX_MOCK_AUTO_PRINT=1`, which drives the mock into PRINTING at low progress and emits the canned `"Purging nozzle"` through the real notification path — enough to prove the row renders, but the text cannot be chosen.
+
 - [ ] **Step 4: Verify the clearing behavior end to end**
 
-1. Start a mock print, set an M117 → row shows.
+1. Start a mock print, send `M117 layer 5` from the console → row shows.
 2. Let the print complete → row clears on all surfaces.
-3. Set an M117 while idle → row shows again.
+3. Send `M117 idle text` while idle → row shows again.
+4. Send `M117` with no argument (empty message) → row collapses.
 
 - [ ] **Step 5: Check the log for regressions**
 
@@ -731,6 +738,155 @@ Report any overlapping commits before merging.
 ```bash
 git status --short
 # stage explicit paths only — never git add -A in a worktree
+```
+
+---
+
+### Task 8: Teach the mock printer to handle M117
+
+Without this, M117 cannot be exercised at runtime at all: `MoonrakerClientMock::gcode_script()` has no `M117` branch, so the command is silently swallowed, and `display_status.message` comes from a hardcoded ternary. Task 7's runtime verification depends on this.
+
+**Files:**
+- Modify: `src/api/moonraker_client_mock.cpp` — add an `M117` branch to `gcode_script()` (parser starts ~`:1240`); the existing hardcoded `display_status.message` ternary is at ~`:3954-3966`
+- Modify: `include/moonraker_client_mock.h` — storage for the current message
+- Test: `tests/unit/test_moonraker_mock_behavior.cpp`
+
+**Interfaces:**
+- Consumes: nothing from earlier tasks.
+- Produces: sending `M117 <text>` through the mock sets `display_status.message` to `<text>`, delivered via the normal status-notification path. Task 7 relies on this.
+
+**Design constraints:**
+- The mock must emit the message through the SAME path real hardware uses — the `display_status` object in a status notification — so the production parse site is exercised unchanged. Do not add a side channel.
+- `M117` with no argument (or only whitespace) clears the message to `""`. That is Klipper's behavior.
+- Klipper strips a single leading space after `M117`; `M117 hello` yields `hello`, not ` hello`.
+- The user-set message must take precedence over the existing hardcoded phase strings (`"Heating..."`, `"Purging nozzle"`) rather than being overwritten by the next status tick. Preserve the canned strings only for the case where the user has never sent an `M117`.
+- Follow the file's existing patterns for gcode parsing and for how other commands mutate mock state and publish it.
+
+- [ ] **Step 1: Write the failing test**
+
+Add to `tests/unit/test_moonraker_mock_behavior.cpp`, matching the tag style of the surrounding tests in that file:
+
+```cpp
+TEST_CASE("MoonrakerClientMock: M117 sets display_status.message", "[mock][display_message]") {
+    TestableMoonrakerMock mock;
+
+    json captured;
+    mock.register_notify_update([&captured](const json& notif) {
+        if (notif.contains("params") && notif["params"].is_array() &&
+            !notif["params"].empty() && notif["params"][0].contains("display_status")) {
+            captured = notif["params"][0]["display_status"];
+        }
+    });
+
+    SECTION("sets the message text") {
+        mock.gcode_script("M117 Leveling 3/9");
+        REQUIRE(captured.contains("message"));
+        REQUIRE(captured["message"].get<std::string>() == "Leveling 3/9");
+    }
+
+    SECTION("bare M117 clears the message") {
+        mock.gcode_script("M117 something");
+        captured = json{};
+        mock.gcode_script("M117");
+        REQUIRE(captured.contains("message"));
+        REQUIRE(captured["message"].get<std::string>() == "");
+    }
+
+    SECTION("strips exactly one leading space, preserves the rest") {
+        mock.gcode_script("M117  two spaces");
+        REQUIRE(captured["message"].get<std::string>() == " two spaces");
+    }
+}
+```
+
+`TestableMoonrakerMock` already exists in this file (~`:205`) and re-exports `dispatch_status_update`. If `gcode_script()` is not directly callable in the same way, use whatever entry point the neighbouring mock tests use and say so in your report.
+
+- [ ] **Step 2: Run test to verify it fails**
+
+```bash
+make test-build && ./build/bin/helix-tests "[mock][display_message]"
+```
+
+Expected: FAIL — no `display_status` notification is emitted at all, because `gcode_script()` has no `M117` branch.
+
+- [ ] **Step 3: Implement**
+
+Add message storage to the mock and an `M117` branch to `gcode_script()` that stores the text and publishes `display_status`. Then change the hardcoded ternary at ~`:3954-3966` so a user-set message wins over the canned phase strings.
+
+Match the file's existing style for command parsing and state publication — read two or three neighbouring command branches (`M104`, `M140`, `PAUSE`) before writing.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+```bash
+make test-build && ./build/bin/helix-tests "[mock][display_message]"
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Confirm no regression in existing mock behavior**
+
+```bash
+./build/bin/helix-tests "[mock]"
+./build/bin/helix-tests "[display_message]"
+```
+
+Expected: PASS. The canned `"Heating..."` / `"Purging nozzle"` strings must still appear when no user `M117` has been sent — if an existing test covers them and now fails, that is a real regression, not a stale assumption.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/api/moonraker_client_mock.cpp include/moonraker_client_mock.h tests/unit/test_moonraker_mock_behavior.cpp
+git commit -m "feat(mock): handle M117 so display_status.message is settable in --test"
+```
+
+---
+
+### Task 9: Widget-level tests for M117 row visibility
+
+Task 4 added XML rows verified only by a parse check. Nothing asserts they actually render in the right views — which is precisely the gap that let the clipped view-4 row exist undetected.
+
+**Files:**
+- Test: `tests/unit/test_print_status_widget_m117.cpp` (new), or appended to `tests/unit/test_print_status_widget_recycle.cpp` if that fits the file's scope better — your judgment, say which and why.
+
+**Interfaces:**
+- Consumes: Task 4's XML rows (`idle_display_message` in `print_card_idle`; the view-3-scoped `display_message` in `print_card_printing`), and Tasks 2/3's subject semantics.
+- Produces: regression cover for XML row visibility.
+
+**The pattern already exists — do not invent one.** `tests/unit/test_header_bar_action_hidden.cpp` demonstrates set-subject → assert `LV_OBJ_FLAG_HIDDEN`. `tests/unit/test_print_status_widget_recycle.cpp` demonstrates instantiating this exact component under `LVGLUITestFixture` (needed over `XMLTestFixture` because the component pulls in `ui_card`, `progress_bar`, `icon`, and the nested detailed components). Read both before writing.
+
+Known obstacle, documented in the recycle test: `PrintStatusWidget` registers its own `print_status_view` and `print_status_colspan` subjects in its constructor (`src/ui/panel_widgets/print_status_widget.cpp:91,122`). They must exist BEFORE `lv_xml_create()` parses the component or the bindings silently no-op. The recycle test's setup sequence handles this — follow it.
+
+- [ ] **Step 1: Write the tests**
+
+Cover at minimum:
+
+1. **Idle row tracks the subject.** Instantiate the widget in library layout. Find `idle_display_message`. Assert HIDDEN when the message is empty; drive `state().update_from_status({{"display_status", {{"message", "Heating bed..."}}}})`, drain the UpdateQueue, assert NOT HIDDEN; clear with `nullptr`, drain, assert HIDDEN again.
+2. **The view-3 scoping holds.** With a non-empty message, assert the `print_card_printing` child row named `display_message` is HIDDEN when `print_status_view` is not 3, and NOT HIDDEN when it is 3. This is the assertion that would have caught the clipped/dead view-4 copy.
+
+Drive the message subject through `state().update_from_status(...)` — the real production entry point — never by poking the subject directly. Drain the UpdateQueue before every assertion (`UpdateQueueTestAccess::drain(UpdateQueue::instance())`), since observers defer.
+
+Check the recycle test for any required teardown (it calls `PrintStatusWidget::destroy_formatter_for_test()`); if this component needs it, do the same.
+
+- [ ] **Step 2: Prove the tests discriminate**
+
+A visibility test that passes regardless of the binding is worthless — that mistake has already happened twice on this branch.
+
+For the view-3 assertion: temporarily change the `bind_flag_if` condition in `ui_xml/components/panel_widget_print_status.xml` to something always-true (e.g. drop the `print_status_view` clause), re-run, and CONFIRM the test FAILS. Then revert the XML — verify with `git diff ui_xml/` showing no changes — and confirm the test passes again. Report both outputs.
+
+- [ ] **Step 3: Run the suite**
+
+```bash
+make test-build && ./build/bin/helix-tests "[print_status]"
+./build/bin/helix-tests "[print]~[slow]"
+```
+
+Expected: PASS.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add tests/unit/test_print_status_widget_m117.cpp
+git commit -m "test(ui): assert M117 row visibility across print status views"
 ```
 
 ---
