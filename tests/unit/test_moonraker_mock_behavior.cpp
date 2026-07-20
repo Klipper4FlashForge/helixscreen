@@ -680,6 +680,24 @@ TEST_CASE("MoonrakerClientMock G-code temperature parsing", "[connection][slow][
         mock.disconnect();
     }
 
+    SECTION("lowercase m104 Sxxx sets extruder target") {
+        // Command token normalization must cover more than just M117 - real
+        // Klipper uppercases the command word for every G/M-code, not just
+        // display messages.
+        MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
+        mock.register_notify_update(fixture.create_capture_callback());
+        mock.connect("ws://mock/websocket", []() {}, []() {});
+
+        int result = mock.gcode_script("m104 S220");
+        REQUIRE(result == 0);
+
+        // Verify the target actually changed in status notifications
+        REQUIRE(verify_extruder_target(220.0));
+
+        mock.stop_temperature_simulation();
+        mock.disconnect();
+    }
+
     SECTION("M109 Sxxx sets extruder target") {
         MoonrakerClientMock mock(MoonrakerClientMock::PrinterType::VORON_24);
         mock.register_notify_update(fixture.create_capture_callback());
@@ -3291,6 +3309,24 @@ TEST_CASE("MoonrakerClientMock: M117 sets display_status.message", "[mock][displ
         mock.gcode_script("M117 " + long_text);
         REQUIRE(captured.contains("message"));
         REQUIRE(captured["message"].get<std::string>() == long_text);
+    }
+
+    // Real Klipper uppercases the command word before dispatch, so "m117",
+    // "M117", and mixed case all reach the same handler. A user typing
+    // lowercase "m117 ..." in the console must not be silently swallowed.
+    SECTION("lowercase m117 sets the message text") {
+        mock.gcode_script("m117 some text");
+        REQUIRE(captured.contains("message"));
+        REQUIRE(captured["message"].get<std::string>() == "some text");
+    }
+
+    // Only the command token may be normalized - the payload must survive
+    // with its original case intact. A broad "uppercase the whole line" fix
+    // would turn this into "HELLO WORLD", which this test must catch.
+    SECTION("lowercase command preserves the payload's original case") {
+        mock.gcode_script("m117 Hello World");
+        REQUIRE(captured.contains("message"));
+        REQUIRE(captured["message"].get<std::string>() == "Hello World");
     }
 }
 

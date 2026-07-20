@@ -1237,11 +1237,36 @@ std::string MoonrakerClientMock::get_last_gcode_error() const {
     return last_gcode_error_;
 }
 
-int MoonrakerClientMock::gcode_script(const std::string& gcode) {
-    spdlog::trace("[MoonrakerClientMock] Mock gcode_script: {}", gcode);
+namespace {
+// Real Klipper uppercases only the leading command word before dispatch
+// (M117, m117, and M117 all route to the same handler) - it never touches
+// anything after that word. Mirror that here: every branch below matches on
+// the command name via gcode.find(...)/gcode == ..., so normalizing just the
+// token up to the first whitespace lets lowercase/mixed-case commands (as
+// typed in the console, or emitted by some slicers) match the same way they
+// would on real hardware, without mangling M117 message text, filenames
+// (SDCARD_PRINT_FILE FILENAME=...), or any other argument payload.
+std::string normalize_gcode_command_case(const std::string& raw) {
+    size_t token_end = raw.find_first_of(" \t");
+    std::string result = raw;
+    size_t end = (token_end == std::string::npos) ? raw.size() : token_end;
+    for (size_t i = 0; i < end; ++i) {
+        result[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(result[i])));
+    }
+    return result;
+}
+} // namespace
+
+int MoonrakerClientMock::gcode_script(const std::string& raw_gcode) {
+    spdlog::trace("[MoonrakerClientMock] Mock gcode_script: {}", raw_gcode);
 
     // Record for test inspection (ordered history of every script handled).
-    record_gcode_script(gcode);
+    // Uses the raw, un-normalized text so tests/logs see exactly what was sent.
+    record_gcode_script(raw_gcode);
+
+    // Normalize the command token only (see normalize_gcode_command_case above).
+    // Every subsequent use of `gcode` in this function refers to this copy.
+    const std::string gcode = normalize_gcode_command_case(raw_gcode);
 
     // Clear previous error at start
     {
