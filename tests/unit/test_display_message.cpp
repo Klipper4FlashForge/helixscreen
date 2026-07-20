@@ -156,10 +156,9 @@ TEST_CASE("Display message: visibility subject tracks non-empty state",
         REQUIRE(lv_subject_get_int(state.get_display_message_visible_subject()) == 0);
     }
 
-    SECTION("visible=0 during print preparation even with message present") {
-        // PrintStartCollector forwards display_status.message into print_start_message
-        // already, so the standalone display_message row would duplicate it on the
-        // print-status widget. Hide the row when phase != IDLE.
+    SECTION("visible=1 during print preparation (M117 shows through heating/QGL/purge)") {
+        // Pre-print is where macro authors put the most M117 traffic. The
+        // phase label lives in print_start_message; this row is the user's text.
         state.set_print_start_state(PrintStartPhase::HEATING_BED, "Heating Bed...", 30);
         helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
 
@@ -167,9 +166,15 @@ TEST_CASE("Display message: visibility subject tracks non-empty state",
         state.update_from_status(status);
         REQUIRE(std::string(lv_subject_get_string(state.get_display_message_subject())) ==
                 "Heating...");
-        REQUIRE(lv_subject_get_int(state.get_display_message_visible_subject()) == 0);
+        REQUIRE(lv_subject_get_int(state.get_display_message_visible_subject()) == 1);
 
-        // Returning to IDLE makes the row visible again
+        // Still visible at COMPLETE, which is itself a non-IDLE phase and
+        // previously suppressed the row for an entire print.
+        state.set_print_start_state(PrintStartPhase::COMPLETE, "Done", 100);
+        helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+        REQUIRE(lv_subject_get_int(state.get_display_message_visible_subject()) == 1);
+
+        // And after returning to IDLE.
         state.reset_print_start_state();
         helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
         REQUIRE(lv_subject_get_int(state.get_display_message_visible_subject()) == 1);

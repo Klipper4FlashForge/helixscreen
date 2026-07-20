@@ -258,11 +258,10 @@
               </lv_obj>
               <text_small name="print_percent" text="0%" bind_text="print_progress_text"/>
             </lv_obj>
-            <!-- Klipper display_status.message (M117) — collapses to zero height when -->
-            <!-- empty, so the overlay reads as the existing four rows. During pre-print -->
-            <!-- preparation this row stays hidden (display_message_visible is 0 in that -->
-            <!-- phase) because print_start_collector already pipes M117 into -->
-            <!-- print_start_message on the preparing_overlay above. -->
+            <!-- Klipper display_status.message (M117) — collapses to zero height -->
+            <!-- when empty. Shown during pre-print too: the collector's phase -->
+            <!-- label is a separate subject (print_start_message) rendered by -->
+            <!-- preparing_overlay above, so the two do not duplicate. -->
             <text_small name="display_message"
                         width="100%" bind_text="display_message" style_text_align="left"
                         long_mode="scroll_circular" style_text_color="#text_muted" hidden="true">

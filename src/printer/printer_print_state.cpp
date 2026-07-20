@@ -829,14 +829,11 @@ void PrinterPrintState::update_print_show_progress() {
 }
 
 void PrinterPrintState::update_display_message_visible() {
-    // Suppress the standalone display_message row during pre-print preparation:
-    // print_start_collector already pipes display_status.message into
-    // print_start_message, so showing it again on the print-status widget would
-    // duplicate the line (e.g. two "Heating..." rows on the preparing card).
-    bool has_message = strcmp(lv_subject_get_string(&display_message_), "") != 0;
-    bool is_preparing =
-        lv_subject_get_int(&print_start_phase_) != static_cast<int>(PrintStartPhase::IDLE);
-    int new_value = (has_message && !is_preparing) ? 1 : 0;
+    // The row mirrors display_status.message and is shown whenever there is
+    // text. Pre-print is deliberately included: PRINT_START macros are where
+    // most M117 traffic originates. The collector's phase label lives in a
+    // separate subject (print_start_message), so there is nothing to duplicate.
+    int new_value = (strcmp(lv_subject_get_string(&display_message_), "") != 0) ? 1 : 0;
     if (lv_subject_get_int(&display_message_visible_) != new_value) {
         lv_subject_set_int(&display_message_visible_, new_value);
     }
