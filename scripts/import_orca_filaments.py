@@ -121,12 +121,26 @@ def build_product(resolved: dict, base_type_range):
     # that some upstream profiles set inconsistently (recommended outside range),
     # and unmapped types have no base range at all.
     lo, hi = nmin, nmax
+    # Some upstream profiles set range_low == range_high (a single print temp
+    # written into both keys). That is not a range: it carries no information, the
+    # picker renders "200-200 C", and any range slider has zero travel. Discard it
+    # so the base type range supplies a real one. This is what shipped `generic-eva`
+    # as 200-200 when the EVA type row already had a sane 190-220.
+    if lo is not None and hi is not None and lo >= hi:
+        lo = hi = None
     if base_type_range is not None:
         lo = base_type_range[0] if lo is None else lo
         hi = base_type_range[1] if hi is None else hi
     if nozzle is not None:
         lo = nozzle if lo is None else min(lo, nozzle)
         hi = nozzle if hi is None else max(hi, nozzle)
+    # Second gate, for the one path the first cannot reach: an UNMAPPED type has no
+    # base range, so a profile carrying only a single nozzle_temperature still
+    # collapses to a point. Widen it rather than emitting a degenerate range —
+    # ±5 % keeps the declared temp centred and the range honestly narrow.
+    if lo is not None and hi is not None and lo >= hi:
+        span = max(5, int(round(lo * 0.05)))
+        lo, hi = lo - span, hi + span
     # Emit an explicit range unless it exactly matches the base type range (thin).
     if lo is not None and hi is not None and (lo, hi) != base_type_range:
         product["nozzle_min"] = lo
@@ -179,6 +193,7 @@ def build_catalog(orca_root, cfs_seed, type_ranges, library_marker="OrcaFilament
         products.append(product)
     _merge_cfs_seed(products, cfs_seed)
     _dedupe_ids(products)
+    _assert_no_degenerate_ranges(products)
     products.sort(key=lambda p: (p.get("source", ""), p["brand"].lower(), p["name"].lower(), p["id"]))
     return products
 
@@ -206,22 +221,71 @@ def _merge_cfs_seed(products, cfs_seed):
     via `make regen-filaments` re-derives assets/filaments.json from Orca + this seed,
     so hand-edits to assets/filaments.json alone would be wiped — the seed here is
     what makes the entry durable across regen.
+
+    Despite the `cfs_seed` name, the seed file is also the durable home for
+    `source: "helix-seed"` placeholder products: minimal Generic entries whose only
+    job is to make a filament_database.h type reachable in the material picker,
+    which builds its list from the catalog rather than from the type table. They
+    carry no temps or density on purpose — every value inherits from
+    filament_database.h so the two layers cannot drift. Orca has no profiles for
+    these types, so they always take the standalone-append path below.
     """
     def _name_key(s):
         return re.sub(r"[^a-z0-9]+", "", s.lower())  # fold "PLA-Silk" == "PLA Silk"
 
-    orca_by_key = {(p["brand"], p.get("type"), _name_key(p["name"])): p for p in products}
+    # Match on (brand, name) ONLY — deliberately NOT on `type`.
+    #
+    # Orca's `filament_type` is an open enum that upstream mislabels for filled
+    # grades: their Generic "PETG-CF" profile declares type "PETG". Including
+    # `type` in the key meant the seed's correctly-typed "PETG-CF" entry missed
+    # that product, appended as a second entry, and _dedupe_ids renamed it
+    # `generic-petg-cf-2` — two identical Generic/PETG-CF rows in the picker, one
+    # carrying the cfs code and one carrying the orca_id.
+    #
+    # Brand + name already identifies a product uniquely (build_catalog dedupes on
+    # exactly that pair), so dropping `type` from the key costs no precision, and
+    # a type disagreement now RESOLVES instead of forking.
+    orca_by_key = {(p["brand"], _name_key(p["name"])): p for p in products}
     for entry in cfs_seed:
         merged = dict(entry)
         merged["name"] = _display_name(entry.get("name", ""), entry.get("brand", ""))
         merged["id"] = _slug(entry.get("brand", ""), merged["name"])
-        match = orca_by_key.get((entry.get("brand"), entry.get("type"), _name_key(merged["name"])))
+        match = orca_by_key.get((entry.get("brand"), _name_key(merged["name"])))
         if match is not None:
+            seed_type = entry.get("type")
+            if seed_type and match.get("type") != seed_type:
+                # The seed is hand-curated against filament_database.h; Orca's
+                # open-enum type is not. The seed wins, and says so out loud.
+                print(f"NOTE: cfs_seed retypes {match['id']}: "
+                      f"{match.get('type')!r} -> {seed_type!r}", file=sys.stderr)
+                match["type"] = seed_type
             codes = match.setdefault("codes", {})
             for scheme, code in (entry.get("codes") or {}).items():
                 codes.setdefault(scheme, code)  # don't clobber an existing Orca code
         else:
             products.append(merged)
+
+
+def _assert_no_degenerate_ranges(products):
+    """Refuse to emit a catalog containing a zero-width or inverted nozzle range.
+
+    build_product() already reconciles Orca's ranges, but the cfs_seed path writes
+    nozzle_min/nozzle_max straight through unvalidated, so this is the one gate
+    every product passes regardless of source. A degenerate range is silently
+    useless in the UI, which is why it survived to ship once; failing the
+    regeneration is the cheapest place to catch it.
+    """
+    bad = [
+        f"{p['id']} ({p.get('nozzle_min')}-{p.get('nozzle_max')})"
+        for p in products
+        if p.get("nozzle_min") is not None
+        and p.get("nozzle_max") is not None
+        and p["nozzle_min"] >= p["nozzle_max"]
+    ]
+    if bad:
+        raise SystemExit(
+            "ERROR: degenerate nozzle range(s) in generated catalog: " + ", ".join(sorted(bad))
+        )
 
 
 def _dedupe_ids(products):

@@ -1029,10 +1029,11 @@ TEST_CASE("HTLF+TC mock slot materials and colors", "[ams][mock][htlf_tc]") {
     CHECK(s1->color_name == "Navy");
     CHECK(s1->status == SlotStatus::LOADED);
 
-    // Slot 2: ASA Sparkle, AVAILABLE
+    // Slot 2: ASA in a Navy Sparkle colorway, AVAILABLE
     const auto* s2 = info.get_slot_global(2);
     REQUIRE(s2 != nullptr);
-    CHECK(s2->material == "ASA Sparkle");
+    CHECK(s2->material == "ASA");
+    CHECK(s2->color_name == "Navy Sparkle");
     CHECK(s2->status == SlotStatus::AVAILABLE);
 
     // Slot 3: EMPTY

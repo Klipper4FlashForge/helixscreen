@@ -119,6 +119,8 @@ inline constexpr MaterialInfo MATERIALS[] = {
     {"PCTG",        240, 270, 80,  "Standard",      55, 360,  1.23f,  0,  "PETG"},      // PETG variant, clearer
     {"PET-CF",      270, 300, 80,  "Standard",      65, 480,  1.30f,  0,  "PETG"},      // Carbon fiber PET (Polymaker Fiberon)
     {"PET-GF",      270, 300, 80,  "Standard",      65, 480,  1.40f,  0,  "PETG"},      // Glass fiber PET (Polymaker Fiberon)
+    {"PET",         250, 270, 80,  "Standard",      65, 480,  1.38f,  0,  "PETG"},      // Unmodified PET - runs hotter than PETG
+    {"PHA",         190, 220, 60,  "Standard",      45, 240,  1.25f,  0,  "PLA"},       // Polyhydroxyalkanoate, usually sold as a PLA/PHA blend
 
     // === Engineering Materials (Enclosure recommended) ===
     {"ABS",         240, 270, 100, "Engineering",   60, 240,  1.04f,  50, "ABS_ASA"},
@@ -141,7 +143,17 @@ inline constexpr MaterialInfo MATERIALS[] = {
     {"PA66",        260, 290, 90,  "Engineering",   80, 480,  1.14f,  55, "PA"},        // Nylon 66
     {"PA-CF",       260, 290, 80,  "Engineering",   70, 480,  1.14f,  50, "PA"},        // Carbon fiber nylon
     {"PA-GF",       260, 290, 80,  "Engineering",   70, 480,  1.14f,  50, "PA"},        // Glass fiber nylon
+    {"PA6-CF",      270, 300, 90,  "Engineering",   80, 480,  1.15f,  50, "PA"},        // Carbon fiber nylon 6
     {"PPA",         280, 320, 100, "Engineering",   80, 480,  1.18f,  60, "PA"},        // Polyphthalamide
+    {"PPA-CF",      290, 320, 100, "Engineering",   80, 480,  1.17f,  60, "PA"},        // Carbon fiber polyphthalamide
+    {"PPA-GF",      290, 320, 100, "Engineering",   80, 480,  1.25f,  60, "PA"},        // Glass fiber polyphthalamide
+
+    // === Polyolefins (poor bed adhesion; each keeps its OWN compat group so
+    //     endless spool never cross-swaps them with a chemically unrelated material) ===
+    {"PP",          220, 250, 60,  "Engineering",   60, 240,  0.90f,  0,  "PP"},        // Polypropylene
+    {"PP-CF",       225, 255, 60,  "Engineering",   60, 240,  0.98f,  0,  "PP"},        // Carbon fiber PP
+    {"PP-GF",       225, 255, 60,  "Engineering",   60, 240,  1.05f,  0,  "PP"},        // Glass fiber PP
+    {"PE",          220, 250, 60,  "Engineering",   0,  0,    0.95f,  0,  "PE"},        // Polyethylene - negligible moisture uptake, no drying
 
     // === Flexible Materials ===
     {"TPU",         210, 240, 50,  "Flexible",      55, 240,  1.21f,  0,  "TPU"},       // Shore 95A typical
@@ -149,6 +161,11 @@ inline constexpr MaterialInfo MATERIALS[] = {
     {"TPE",         200, 230, 50,  "Flexible",      55, 240,  1.21f,  0,  "TPU"},
     {"TPU-95A",     210, 240, 50,  "Flexible",      55, 240,  1.21f,  0,  "TPU"},       // Shore 95A hardness
     {"TPU-85A",     200, 230, 50,  "Flexible",      55, 240,  1.19f,  0,  "TPU"},       // Shore 85A hardness (softer)
+    // CoPE/EVA/SBS get their own compat groups: they are semi-flexible but do NOT
+    // interchange with TPU, so endless spool must not treat them as swappable.
+    {"CoPE",        190, 240, 55,  "Flexible",      55, 240,  1.29f,  0,  "CoPE"},      // Copolyester elastomer - range taken from the only shipped product, uncertain
+    {"EVA",         190, 220, 50,  "Flexible",      0,  0,    0.95f,  0,  "EVA"},       // Ethylene-vinyl acetate - conservative range, uncertain; low Vicat so no drying
+    {"SBS",         215, 250, 70,  "Flexible",      50, 240,  1.02f,  0,  "SBS"},       // Styrene-butadiene-styrene
 
     // === Support Materials ===
     {"PVA",         180, 210, 60,  "Support",       45, 240,  1.23f,  0,  "PLA"},       // Water-soluble
@@ -161,6 +178,11 @@ inline constexpr MaterialInfo MATERIALS[] = {
     {"Metal PLA",   200, 230, 60,  "Specialty",     45, 240,  1.24f,  0,  "PLA"},       // Metal powder fill
     {"Glow PLA",    200, 230, 60,  "Specialty",     45, 240,  1.24f,  0,  "PLA"},       // Glow-in-the-dark
     {"Color-Change",200, 230, 60,  "Specialty",     45, 240,  1.24f,  0,  "PLA"},       // Temperature reactive
+    // Foaming ("Aero"/LW) grades: the wide nozzle range IS the control knob - hotter
+    // means more foaming. Density below is the UNFOAMED value; effective density
+    // drops with foaming ratio, so length-from-weight math is approximate.
+    {"PLA-AERO",    200, 260, 55,  "Specialty",     45, 240,  1.21f,  0,  "PLA"},       // Foaming/lightweight PLA (LW-PLA)
+    {"ASA-AERO",    240, 280, 100, "Specialty",     60, 240,  0.99f,  50, "ABS_ASA"},   // Foaming/lightweight ASA
 
     // === Recycled Materials ===
     {"rPLA",        190, 220, 60,  "Recycled",      45, 240,  1.24f,  0,  "PLA"},       // Recycled PLA
@@ -171,6 +193,8 @@ inline constexpr MaterialInfo MATERIALS[] = {
     {"PEI",         340, 380, 120, "High-Temp",     100, 720, 1.27f,  80, "HIGH_TEMP"}, // ULTEM
     {"PSU",         340, 380, 120, "High-Temp",     100, 720, 1.24f,  80, "HIGH_TEMP"}, // Polysulfone
     {"PPSU",        350, 390, 140, "High-Temp",     100, 720, 1.29f,  80, "HIGH_TEMP"}, // Medical grade
+    {"PPS",         320, 350, 120, "High-Temp",     100, 720, 1.35f,  80, "HIGH_TEMP"}, // Polyphenylene sulfide
+    {"PPS-CF",      320, 350, 120, "High-Temp",     100, 720, 1.42f,  80, "HIGH_TEMP"}, // Carbon fiber PPS
 };
 // clang-format on
 
@@ -349,7 +373,32 @@ struct DryingPreset {
 
 /**
  * @brief Get drying presets grouped by compatibility group (for dropdown)
- * @return Vector of unique drying presets
+ *
+ * MATERIALS[] is the ONLY source of drying data in this codebase. This function
+ * derives one preset per compatibility group by taking the group-wide MAXIMUM of
+ * both dry_temp_c and dry_time_min across that group's hygroscopic members.
+ *
+ * Why max and not first-member (the old behaviour), and why one preset per group
+ * rather than one per material:
+ *
+ *  - Max, because the two failure directions are not symmetric. Under-drying
+ *    leaves moisture in the filament and ruins the print; over-drying *within a
+ *    compat group* does not, because a compat group is by construction a set of
+ *    chemically interchangeable materials whose glass-transition temperatures sit
+ *    in the same band. Taking the first member silently under-dried 8 materials
+ *    (PET/PET-CF/PET-GF at 65 °C got the PETG row's 55 °C; PA66/PA6-CF/PPA/
+ *    PPA-CF/PPA-GF at 80 °C got the PA row's 70 °C).
+ *  - Per group, because the consumer is a dryer preset dropdown
+ *    (ams_types.h get_default_drying_presets() -> AMS environment overlay). One
+ *    entry per material would turn a 12-row list into a 60+ row scroll for no
+ *    added precision, and the preset `name` is displayed verbatim, so switching
+ *    to material names would also change strings users already recognise.
+ *
+ * The safety of the max is not assumed — it is enforced by an invariant test that
+ * checks each group's max drying temperature still clears the LOWEST nozzle_min
+ * in that group by 100 °C. See tests/unit/test_filament_data_invariants.cpp.
+ *
+ * @return Vector of unique drying presets, one per hygroscopic compat group
  */
 inline std::vector<DryingPreset> get_drying_presets_by_group() {
     std::vector<DryingPreset> presets;
@@ -359,21 +408,50 @@ inline std::vector<DryingPreset> get_drying_presets_by_group() {
             continue; // Skip non-hygroscopic materials
         }
 
-        // Check if we already have this group
-        bool found = false;
-        for (const auto& preset : presets) {
+        DryingPreset* existing = nullptr;
+        for (auto& preset : presets) {
             if (std::string_view(preset.name) == mat.compat_group) {
-                found = true;
+                existing = &preset;
                 break;
             }
         }
 
-        if (!found) {
+        if (existing == nullptr) {
             presets.push_back({mat.compat_group, mat.dry_temp_c, mat.dry_time_min});
+        } else {
+            // Widen to cover the most demanding member of the group.
+            existing->temp_c = std::max(existing->temp_c, mat.dry_temp_c);
+            existing->time_min = std::max(existing->time_min, mat.dry_time_min);
         }
     }
 
     return presets;
+}
+
+/**
+ * @brief Get the drying preset that covers a specific material
+ *
+ * Resolves the material (aliases included), then returns its compat group's
+ * preset from get_drying_presets_by_group(). Every consumer that needs "how do I
+ * dry this material" must route through here rather than reading dry_temp_c off a
+ * MaterialInfo directly, so that the answer a user sees in a per-material context
+ * is the same answer the dryer preset dropdown offers.
+ *
+ * @param material Material name or alias
+ * @return The covering preset, or nullopt if the material is unknown or its
+ *         entire compat group is non-hygroscopic (e.g. PE, EVA)
+ */
+inline std::optional<DryingPreset> get_drying_preset_for_material(std::string_view material) {
+    auto mat = find_material(material);
+    if (!mat.has_value()) {
+        return std::nullopt;
+    }
+    for (const auto& preset : get_drying_presets_by_group()) {
+        if (std::string_view(preset.name) == std::string_view(mat->compat_group)) {
+            return preset;
+        }
+    }
+    return std::nullopt;
 }
 
 /**
@@ -434,24 +512,181 @@ struct MaterialComfortRange {
 };
 
 /**
- * @brief Look up humidity comfort range and drying info for a material type
- * @param material Material name (e.g., "PLA", "PETG", "PA")
- * @return Pointer to static range data, or nullptr if material unknown
+ * @brief Humidity thresholds per compatibility group
+ *
+ * This is the ONLY comfort data that is not derivable from MATERIALS[], because
+ * there is no moisture-uptake field on MaterialInfo to derive it from. It is
+ * keyed by compat_group rather than by material name on purpose: a group is a set
+ * of chemically interchangeable materials, so one row covers every member and a
+ * newly added MATERIALS row inherits humidity coverage for free instead of
+ * silently falling off the AMS humidity indicator.
+ *
+ * The drying temperature and time that get_comfort_range() reports are NOT listed
+ * here — they come from get_drying_presets_by_group(), which derives them from
+ * MATERIALS[]. Adding dry_temp/dry_time columns to this table would recreate the
+ * third drying source that this layout exists to eliminate.
  */
-inline const MaterialComfortRange* get_comfort_range(const std::string& material) {
-    //                                material  good   warn  dry°C  hours
-    static const MaterialComfortRange ranges[] = {
-        {"PLA", 50.0f, 65.0f, 55, 4}, {"PETG", 40.0f, 55.0f, 65, 6},
-        {"ABS", 35.0f, 50.0f, 80, 4}, {"ASA", 35.0f, 50.0f, 80, 4},
-        {"PA", 20.0f, 35.0f, 70, 8},  {"Nylon", 20.0f, 35.0f, 70, 8},
-        {"TPU", 40.0f, 55.0f, 55, 4}, {"PC", 30.0f, 45.0f, 80, 8},
-        {"PVA", 15.0f, 30.0f, 45, 4}, {"HIPS", 40.0f, 55.0f, 70, 4},
-    };
-    for (const auto& r : ranges) {
-        if (material == r.material)
-            return &r;
+struct GroupHumidityRange {
+    const char* group;
+    float max_humidity_good; ///< Below this = green (safe)
+    float max_humidity_warn; ///< Below this = yellow, above = red
+};
+
+// clang-format off
+inline constexpr GroupHumidityRange GROUP_HUMIDITY_RANGES[] = {
+    //  group          good   warn
+    {"PLA",            50.0f, 65.0f},  // Tolerant; moisture shows as surface fuzz
+    {"PETG",           40.0f, 55.0f},
+    {"ABS_ASA",        35.0f, 50.0f},
+    {"PA",             20.0f, 35.0f},  // Nylons absorb aggressively from ambient air
+    {"PC",             30.0f, 45.0f},
+    {"TPU",            40.0f, 55.0f},
+    {"HIGH_TEMP",      20.0f, 35.0f},  // PEEK/PEI/PSU/PPSU/PPS - as hygroscopic as nylon
+    {"PP",             50.0f, 65.0f},  // Polyolefin, very low uptake
+    {"PE",             60.0f, 75.0f},  // Effectively non-hygroscopic
+    {"CoPE",           40.0f, 55.0f},  // Copolyester, behaves like PETG
+    {"EVA",            50.0f, 65.0f},
+    {"SBS",            45.0f, 60.0f},  // Styrenic, low uptake
+};
+// clang-format on
+
+/**
+ * @brief Per-material humidity overrides
+ *
+ * Deliberately tiny. An entry here is only justified when a material's moisture
+ * sensitivity is genuinely unlike the rest of its compat group — not merely a
+ * different number someone once typed. Anything that can be expressed at group
+ * level belongs in GROUP_HUMIDITY_RANGES above.
+ */
+// clang-format off
+inline constexpr GroupHumidityRange MATERIAL_HUMIDITY_OVERRIDES[] = {
+    //  material       good   warn
+    // Water-soluble supports dissolve in ambient humidity, so they need a far
+    // tighter band than the PLA group they print alongside and are grouped with.
+    {"PVA",            15.0f, 30.0f},
+    {"BVOH",           15.0f, 30.0f},
+    // HIPS is styrenic and only mildly hygroscopic; it groups with ABS/ASA for
+    // endless-spool interchange (same chamber/bed regime), not for moisture.
+    {"HIPS",           40.0f, 55.0f},
+};
+// clang-format on
+
+/**
+ * @brief Look up humidity comfort range and drying info for a material type
+ *
+ * Fully DERIVED: humidity thresholds come from the material's compat group (with
+ * a small per-material override table), and drying temp/time come from
+ * get_drying_presets_by_group(), which reads MATERIALS[]. There is no independent
+ * drying opinion in this function — that is the point.
+ *
+ * @param material Material name or alias (e.g., "PLA", "PETG", "Nylon")
+ * @return Comfort range, or nullopt if the material does not resolve
+ */
+inline std::optional<MaterialComfortRange> get_comfort_range(const std::string& material) {
+    auto mat = find_material(material);
+    if (!mat.has_value()) {
+        return std::nullopt;
     }
-    return nullptr;
+
+    MaterialComfortRange result{};
+    result.material = mat->name;
+
+    bool have_humidity = false;
+    for (const auto& ovr : MATERIAL_HUMIDITY_OVERRIDES) {
+        if (std::string_view(ovr.group) == std::string_view(mat->name)) {
+            result.max_humidity_good = ovr.max_humidity_good;
+            result.max_humidity_warn = ovr.max_humidity_warn;
+            have_humidity = true;
+            break;
+        }
+    }
+    if (!have_humidity) {
+        for (const auto& gr : GROUP_HUMIDITY_RANGES) {
+            if (std::string_view(gr.group) == std::string_view(mat->compat_group)) {
+                result.max_humidity_good = gr.max_humidity_good;
+                result.max_humidity_warn = gr.max_humidity_warn;
+                have_humidity = true;
+                break;
+            }
+        }
+    }
+    if (!have_humidity) {
+        // A compat group with no humidity row would otherwise report 0/0 and
+        // colour every reading red. Fail closed to "unknown" instead; the
+        // invariant test asserts this branch is unreachable for shipped data.
+        return std::nullopt;
+    }
+
+    // Drying: single source of truth, shared with the dryer preset dropdown.
+    auto preset = get_drying_preset_for_material(mat->name);
+    if (preset.has_value()) {
+        result.dry_temp_c = preset->temp_c;
+        result.dry_time_hours = preset->time_min / 60;
+    } else {
+        result.dry_temp_c = 0; // wholly non-hygroscopic group (PE, EVA)
+        result.dry_time_hours = 0;
+    }
+
+    return result;
+}
+
+// ============================================================================
+// Picker reachability
+// ============================================================================
+
+/**
+ * @brief Material types that intentionally have NO catalog product
+ *
+ * The material picker builds its list from the PRODUCT catalog
+ * (assets/filaments.json), not from MATERIALS[]. A type with no product is
+ * therefore invisible in the UI. For most rows that is a bug; for these it is the
+ * design — they exist so that a material string arriving from Orca, a printer's
+ * firmware, or Spoolman resolves to sane temperatures, and were never meant to be
+ * user-selectable.
+ *
+ * This list is the machine-readable form of that intent. An invariant test
+ * asserts the shipped catalog covers exactly MATERIALS minus this list, in both
+ * directions — so a new type with no product fails the build until someone
+ * decides which bucket it belongs in, and an entry here that DOES gain a product
+ * must be removed rather than rotting.
+ *
+ * Making one of these selectable is a one-line addition to
+ * scripts/fixtures/cfs_seed.json plus removing it here.
+ */
+// clang-format off
+inline constexpr const char* RESOLUTION_ONLY_MATERIALS[] = {
+    // No supported printer's stock hotend reaches these temperatures; the rows
+    // exist so an externally-supplied string still resolves to sane data rather
+    // than inheriting a 0 °C bed. (PPS/PPS-CF, the reachable end of HIGH_TEMP,
+    // DO ship products.)
+    "PEEK",     // 370-420 °C
+    "PEI",      // 340-380 °C (ULTEM)
+    "PSU",      // 340-380 °C
+    "PPSU",     // 350-390 °C
+    // Spec strings rather than shelf products. Users buy the named grade
+    // (TPU-85A, PA6, PA12), not the descriptor, so offering both would show two
+    // picker rows for one spool.
+    "TPU-Soft", // descriptor; the shelf product is TPU-85A
+    "PA66",     // unfilled PA66 is not sold as consumer filament; PA6-CF etc. are
+    "PC-ABS",   // blend spec string carried by vendor/Orca metadata
+};
+// clang-format on
+
+/// Number of resolution-only materials
+inline constexpr size_t RESOLUTION_ONLY_COUNT =
+    sizeof(RESOLUTION_ONLY_MATERIALS) / sizeof(RESOLUTION_ONLY_MATERIALS[0]);
+
+/**
+ * @brief Is this material deliberately absent from the product catalog?
+ * @param name Material name (exact MATERIALS[] spelling)
+ */
+inline bool is_resolution_only(std::string_view name) {
+    for (const auto* m : RESOLUTION_ONLY_MATERIALS) {
+        if (std::string_view(m) == name) {
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace filament

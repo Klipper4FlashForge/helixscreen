@@ -2492,8 +2492,11 @@ void AmsBackendMock::set_htlf_toolchanger_mode(bool enabled) {
         // lane1→T0 direct, lane2→T2 direct, lane3→T1 hub, lane4→T3 hub
         populate_slot(0, 0, "ABS", 0xFCFBFB, "White", SlotStatus::LOADED, 0, 39, 493.0f);
         populate_slot(1, 1, "ABS", 0x0D2441, "Navy", SlotStatus::LOADED, 2, 4, 430.0f);
-        populate_slot(2, 2, "ASA Sparkle", 0x0F274E, "Navy Sparkle", SlotStatus::AVAILABLE, 1, 28,
-                      581.0f);
+        // Sparkle is a colorant, not a material — it belongs in color_name. No
+        // vendor ships an "ASA Sparkle" grade (the Sparkle lines are PLA), and the
+        // string did not resolve in the material database, so this slot silently
+        // carried a 0 °C bed and no nozzle range via the find_material() lookup below.
+        populate_slot(2, 2, "ASA", 0x0F274E, "Navy Sparkle", SlotStatus::AVAILABLE, 1, 28, 581.0f);
         populate_slot(3, 3, "", 0x000000, "", SlotStatus::EMPTY, 3, -1, 0.0f);
 
         // Unit 1: Toolchanger Tools — 3 lanes, PARALLEL

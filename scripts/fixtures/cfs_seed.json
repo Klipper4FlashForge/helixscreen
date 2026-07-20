@@ -959,5 +959,166 @@
       "cfs": "00026"
     },
     "source": "cfs-seed"
+  },
+  {
+    "id": "generic-asa-gf",
+    "brand": "Generic",
+    "name": "ASA-GF",
+    "type": "ASA-GF",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-abs-cf",
+    "brand": "Generic",
+    "name": "ABS-CF",
+    "type": "ABS-CF",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-pc-cf",
+    "brand": "Generic",
+    "name": "PC-CF",
+    "type": "PC-CF",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-pc-gf",
+    "brand": "Generic",
+    "name": "PC-GF",
+    "type": "PC-GF",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-pet-gf",
+    "brand": "Generic",
+    "name": "PET-GF",
+    "type": "PET-GF",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-pla-gf",
+    "brand": "Generic",
+    "name": "PLA-GF",
+    "type": "PLA-GF",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-pla-plus",
+    "brand": "Generic",
+    "name": "PLA+",
+    "type": "PLA+",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-matte-pla",
+    "brand": "Generic",
+    "name": "Matte PLA",
+    "type": "Matte PLA",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-wood-pla",
+    "brand": "Generic",
+    "name": "Wood PLA",
+    "type": "Wood PLA",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-marble-pla",
+    "brand": "Generic",
+    "name": "Marble PLA",
+    "type": "Marble PLA",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-metal-pla",
+    "brand": "Generic",
+    "name": "Metal PLA",
+    "type": "Metal PLA",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-glow-pla",
+    "brand": "Generic",
+    "name": "Glow PLA",
+    "type": "Glow PLA",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-color-change",
+    "brand": "Generic",
+    "name": "Color-Change",
+    "type": "Color-Change",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-abs-plus",
+    "brand": "Generic",
+    "name": "ABS+",
+    "type": "ABS+",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-asa-plus",
+    "brand": "Generic",
+    "name": "ASA+",
+    "type": "ASA+",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-pa6",
+    "brand": "Generic",
+    "name": "PA6",
+    "type": "PA6",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-pa12",
+    "brand": "Generic",
+    "name": "PA12",
+    "type": "PA12",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-ppa",
+    "brand": "Generic",
+    "name": "PPA",
+    "type": "PPA",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-tpu-95a",
+    "brand": "Generic",
+    "name": "TPU-95A",
+    "type": "TPU-95A",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-tpu-85a",
+    "brand": "Generic",
+    "name": "TPU-85A",
+    "type": "TPU-85A",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-tpe",
+    "brand": "Generic",
+    "name": "TPE",
+    "type": "TPE",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-rpla",
+    "brand": "Generic",
+    "name": "rPLA",
+    "type": "rPLA",
+    "source": "helix-seed"
+  },
+  {
+    "id": "generic-rpetg",
+    "brand": "Generic",
+    "name": "rPETG",
+    "type": "rPETG",
+    "source": "helix-seed"
   }
 ]

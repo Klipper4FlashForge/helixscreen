@@ -1545,7 +1545,7 @@ void AmsState::sync_from_backend() {
                 int gi = unit.first_slot_global_index + si;
                 SlotInfo slot = backend->get_slot_info(gi);
                 if (!slot.material.empty()) {
-                    const auto* range = filament::get_comfort_range(slot.material);
+                    const auto range = filament::get_comfort_range(slot.material);
                     if (range) {
                         found_any_range = true;
                         if (range->max_humidity_good < most_restrictive_good) {
