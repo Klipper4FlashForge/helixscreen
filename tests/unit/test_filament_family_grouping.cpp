@@ -207,6 +207,16 @@ TEST_CASE("family derivation keeps the legacy compound-name fallback",
     CHECK(filament::display_family("") == "");
 }
 
+TEST_CASE("extract_base_material strips a trailing plus", "[filament][family][derivation]") {
+    CHECK(filament::extract_base_material("PLA+") == "PLA");
+    CHECK(filament::extract_base_material("ASA+") == "ASA");
+    CHECK(filament::extract_base_material("ABS+") == "ABS");
+    // Composes with affix stripping in either order.
+    CHECK(filament::extract_base_material("PLA+-CF") == "PLA");
+    // A bare "+" has no polymer left; return the input rather than "".
+    CHECK(filament::extract_base_material("+") == "+");
+}
+
 // ===========================================================================
 // Blast-radius guard: materials_match() must be unchanged
 // ===========================================================================

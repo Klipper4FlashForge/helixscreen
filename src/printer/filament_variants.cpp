@@ -146,6 +146,14 @@ bool strip_one_affix(std::string_view& s) {
         }
         break; // only the last token can be a trailing affix
     }
+    // Trailing "+": a vendor grade marker ("PLA+", "ASA+"), not a separate
+    // polymer. "+" is not in is_separator() because it never delimits an affix
+    // TOKEN — it is always fused to the polymer name, so it needs its own rule.
+    // Returning true re-enters the caller's loop, letting "PLA+-CF" reduce fully.
+    if (s.size() > 1 && s.back() == '+') {
+        s.remove_suffix(1);
+        return true;
+    }
     return false;
 }
 
