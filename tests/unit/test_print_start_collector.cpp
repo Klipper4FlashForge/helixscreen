@@ -987,6 +987,37 @@ TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
     }
 }
 
+// ============================================================================
+// Writer Independence (subject ownership)
+// ============================================================================
+
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
+                 "PrintStartCollector: M117 does not overwrite the phase label",
+                 "[print][collector][proactive][heating]") {
+    // Drive to a known phase that has its own label. Mirrors the existing
+    // proactive bed-heating section at :955-964.
+    collector().start();
+    drain_async_updates();
+    drain_async_updates(); // INITIALIZING settle
+    collector().enable_fallbacks();
+
+    set_all_temps(150, 600, 0, 0);
+    collector().check_fallback_completion();
+    drain_async_updates();
+    drain_async_updates();
+    REQUIRE(get_current_phase() == PrintStartPhase::HEATING_BED);
+    REQUIRE(get_current_message() == "Heating Bed...");
+
+    // A user M117 arrives on the same notify_status_update path the collector
+    // listens on. It must NOT clobber the collector's phase label — user text
+    // belongs in display_message, which PrinterPrintState owns.
+    client().dispatch_status_update({{"display_status", {{"message", "Leveling 3/9"}}}});
+    drain_async_updates();
+    drain_async_updates();
+
+    REQUIRE(get_current_message() == "Heating Bed...");
+}
+
 TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
                  "Proactive detection: bed heating stays HEATING_BED until bed reaches target",
                  "[print][collector][proactive][heating]") {

@@ -252,13 +252,6 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
     void update_phase(helix::PrintStartPhase phase, const std::string& message, int progress);
 
     /**
-     * @brief Update only the status message without changing phase or progress
-     *
-     * Used to pass through display_status.message (M117) from Klipper during preparation.
-     */
-    void update_message_only(const std::string& message);
-
-    /**
      * @brief Calculate overall progress based on detected phases
      */
     int calculate_progress() const;

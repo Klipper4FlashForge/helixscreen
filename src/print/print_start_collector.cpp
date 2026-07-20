@@ -240,20 +240,6 @@ void PrintStartCollector::start() {
             }
         }
 
-        // Pass through display_status.message (M117) during preparation.
-        // Many firmware/macros send M117 messages like "Homing...", "Probing...",
-        // "Heating bed..." during startup that provide useful status info.
-        if (status.contains("display_status")) {
-            const auto& ds = status["display_status"];
-            if (ds.contains("message") && ds["message"].is_string()) {
-                const auto& msg = ds["message"].get_ref<const std::string&>();
-                if (!msg.empty()) {
-                    spdlog::debug("[PrintStartCollector] display_status.message: {}", msg);
-                    // Update message without changing the current phase
-                    self->update_message_only(msg);
-                }
-            }
-        }
     });
 
     registered_.store(true);
@@ -1274,20 +1260,6 @@ void PrintStartCollector::update_phase(PrintStartPhase phase, const std::string&
     if (should_save) {
         save_prediction_entry();
     }
-}
-
-void PrintStartCollector::update_message_only(const std::string& message) {
-    PrintStartPhase phase;
-    int progress;
-    {
-        std::lock_guard<std::mutex> lock(state_mutex_);
-        phase = current_phase_;
-        if (phase == PrintStartPhase::IDLE || phase == PrintStartPhase::COMPLETE) {
-            return; // Don't update message when not preparing
-        }
-        progress = calculate_progress_locked();
-    }
-    state_.set_print_start_state(phase, message.c_str(), progress);
 }
 
 void PrintStartCollector::set_profile(std::shared_ptr<PrintStartProfile> profile) {
