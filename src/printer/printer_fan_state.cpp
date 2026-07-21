@@ -221,6 +221,44 @@ PrimaryFans PrinterFanState::classify_primary_fans() const {
             break;
         }
     }
+
+    // Fallback: some printers expose the real part-cooling fan as a NAMED Klipper
+    // object (e.g. "output_pin fan0", "fan_generic ...", a controller_fan) that
+    // isn't registered as roles_.part_fan, so it classifies as aux and leaves
+    // .part empty — or, if a stale bare "fan" object is also present, .part latches
+    // onto the bare "fan" which such printers never drive (stuck at 0%). Either way
+    // the print-status view then binds a 0% fan while the fan page
+    // (FanWidget::auto_select_first_fan -> fans_.front()) shows the live named fan.
+    // Promote the front-most part-eligible fan — skipping HEATER_FAN, which owns the
+    // hotend slot, so a leading hotend fan can never displace a working bare "fan"
+    // — so both views track the same live fan.
+    if (out.part.empty() || out.part == "fan") {
+        for (const auto& fan : fans_) {
+            if (fan.type == FanType::HEATER_FAN)
+                continue;
+            // First non-heater fan mirrors FanWidget's front-most selection. Take it
+            // when no part fan was found, or when it is a named fan superseding the
+            // stuck bare "fan"; a leading bare "fan" is left in place.
+            if (out.part.empty() || fan.object_name != "fan")
+                out.part = fan.object_name;
+            break;
+        }
+    }
+
+    // Avoid surfacing the promoted part fan a second time in the aux slot when a
+    // distinct aux-type fan exists; keep it if it is the only candidate.
+    if (!out.aux.empty() && out.aux == out.part) {
+        for (const auto& fan : fans_) {
+            if (fan.object_name == out.part)
+                continue;
+            if (fan.type == FanType::CONTROLLER_FAN || fan.type == FanType::TEMPERATURE_FAN ||
+                fan.type == FanType::GENERIC_FAN || fan.type == FanType::OUTPUT_PIN_FAN) {
+                out.aux = fan.object_name;
+                break;
+            }
+        }
+    }
+
     return out;
 }
 

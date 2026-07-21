@@ -82,6 +82,60 @@ TEST_CASE_METHOD(HelixTestFixture,
     }
 }
 
+TEST_CASE_METHOD(HelixTestFixture,
+                 "classify_primary_fans: lone named part fan (no bare 'fan') becomes .part",
+                 "[fan_state][drift]") {
+    // User Discord report: the real part-cooling fan is a NAMED Klipper object
+    // (output_pin fan0) with no bare "fan" and no configured part role. It classifies
+    // as aux, so without the fallback .part is empty and the print-status view shows
+    // 0% while the fan page (FanWidget -> fans_.front()) shows the live 80% fan.
+    PrinterFanState state;
+    std::vector<FanInfo> fans;
+    fans.push_back({"output_pin fan0", "Fan 0", FanType::OUTPUT_PIN_FAN, 80, true, std::nullopt});
+    PrinterFanStateTestAccess::set_fans(state, fans);
+
+    REQUIRE(state.classify_primary_fans().part == "output_pin fan0");
+}
+
+TEST_CASE_METHOD(HelixTestFixture,
+                 "classify_primary_fans: named part fan overrides stuck bare 'fan'",
+                 "[fan_state][drift]") {
+    // A stale/empty bare "fan" object (stuck at 0%) sits alongside the real named
+    // part fan (80%), which the fan page shows because FanWidget auto-selects the
+    // front-most fan. .part must follow the named fan, not the 0% stub. A distinct
+    // controller_fan also proves the promoted part fan is not duplicated into aux.
+    PrinterFanState state;
+    std::vector<FanInfo> fans;
+    fans.push_back({"output_pin fan0", "Fan 0", FanType::OUTPUT_PIN_FAN, 80, true, std::nullopt});
+    fans.push_back({"fan", "Part", FanType::PART_COOLING, 0, true, std::nullopt});
+    fans.push_back(
+        {"controller_fan board", "Board", FanType::CONTROLLER_FAN, 30, false, std::nullopt});
+    PrinterFanStateTestAccess::set_fans(state, fans);
+
+    auto picked = state.classify_primary_fans();
+    REQUIRE(picked.part == "output_pin fan0");
+    // The named fan is now the part fan; aux falls through to the distinct fan.
+    REQUIRE(picked.aux == "controller_fan board");
+}
+
+TEST_CASE_METHOD(HelixTestFixture,
+                 "classify_primary_fans: working bare 'fan' behind a heater stays .part",
+                 "[fan_state][drift]") {
+    // Regression guard: a working bare "fan" discovered AFTER a heater_fan must
+    // remain .part. The fallback skips HEATER_FAN so a leading hotend fan can never
+    // be promoted into the part slot.
+    PrinterFanState state;
+    std::vector<FanInfo> fans;
+    fans.push_back(
+        {"heater_fan hotend_fan", "Hotend", FanType::HEATER_FAN, 100, false, std::nullopt});
+    fans.push_back({"fan", "Part", FanType::PART_COOLING, 60, true, std::nullopt});
+    PrinterFanStateTestAccess::set_fans(state, fans);
+
+    auto picked = state.classify_primary_fans();
+    REQUIRE(picked.part == "fan");
+    REQUIRE(picked.hotend == "heater_fan hotend_fan");
+}
+
 TEST_CASE_METHOD(HelixTestFixture, "classify_primary_fans handles empty fan list",
                  "[fan_state][drift]") {
     PrinterFanState state;
