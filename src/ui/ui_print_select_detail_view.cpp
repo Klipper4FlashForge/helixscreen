@@ -387,6 +387,14 @@ void PrintSelectDetailView::show(const std::string& filename, const std::string&
     // Clear cached metadata when file selection changes — the new async fetch will repopulate it
     cached_file_metadata_.reset();
 
+    // Clear any used-tools filter carried over from the previously-selected
+    // file BEFORE the pre-parse update() below. The card is repopulated from
+    // this file's full palette and must show all tools until this file's own
+    // gcode parse pushes its real used set (viewer-parse or headless hook).
+    // Without this reset a disjoint prior set would mis-filter — or blank — the
+    // new file's card pre-parse.
+    filament_mapping_card_.set_used_tools(std::nullopt);
+
     // Update filament mapping card (shown when AMS is available)
     filament_mapping_card_.update(filament_colors, filament_materials);
 
@@ -1035,6 +1043,11 @@ void PrintSelectDetailView::try_extract_gcode_colors(lv_obj_t* viewer) {
     // filament_mismatch_ + empty_tools_warning_). Extracted so the native
     // remap flow can re-evaluate the gate after the backend mapping changes.
     recompute_preflight();
+
+    // Restrict the mapping card to the tools this file actually uses. The card
+    // was populated from the full slicer palette; now that the viewer has parsed
+    // we know the real used set. Empty/unknown ⇒ show all (safe default).
+    filament_mapping_card_.set_used_tools(tools_used_effective());
 }
 
 std::vector<helix::GcodeToolInfo> PrintSelectDetailView::get_used_tool_info() const {
@@ -1353,6 +1366,11 @@ void PrintSelectDetailView::kick_off_headless_tools_scan() {
             // Refresh pre-flight using the headless set (no-op on full
             // platforms where the viewer parse already populated it).
             recompute_preflight();
+
+            // Restrict the mapping card to the tools this file actually uses,
+            // sourced from the headless scan result. Empty/unknown ⇒ show all.
+            filament_mapping_card_.set_used_tools(tools_used_effective());
+
             // Release any deferred print attempt waiting on readiness.
             fire_on_preflight_ready();
         });
