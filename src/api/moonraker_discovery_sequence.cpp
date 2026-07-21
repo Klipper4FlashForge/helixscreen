@@ -534,6 +534,37 @@ void MoonrakerDiscoverySequence::continue_discovery_objects(uint64_t seq) {
                                 }
                             }
                         }
+                        // Guard against a stale ABSOLUTE webcam URL — e.g. an
+                        // install-time-detected LAN IP that has since changed via
+                        // DHCP, or an IOT-subnet address unreachable from here. A
+                        // registered-but-dead entry otherwise wins over (and
+                        // suppresses) the localhost probe below, leaving the camera
+                        // silently broken. Probe the SNAPSHOT url only — it returns
+                        // and closes, unlike an MJPEG stream that would hang until
+                        // the 2s timeout and read as a false negative. Relative URLs
+                        // are skipped: they resolve against the Moonraker base and
+                        // are the churn-immune case we don't need to second-guess.
+                        if (has_webcam && !snapshot_url.empty()) {
+                            auto is_absolute = [](const std::string& u) {
+                                return u.rfind("http://", 0) == 0 ||
+                                       u.rfind("https://", 0) == 0;
+                            };
+                            if (is_absolute(snapshot_url)) {
+                                auto req = std::make_shared<HttpRequest>();
+                                req->method = HTTP_GET;
+                                req->url = snapshot_url;
+                                req->timeout = 2;
+                                auto resp = requests::request(req);
+                                if (!resp || resp->status_code != 200) {
+                                    spdlog::warn(
+                                        "[Discovery] Configured webcam '{}' unreachable at {} "
+                                        "(status {}) — falling back to local camera probe",
+                                        chosen_name.empty() ? "<unnamed>" : chosen_name,
+                                        snapshot_url, resp ? resp->status_code : -1);
+                                    has_webcam = false;
+                                }
+                            }
+                        }
                         if (has_webcam) {
                             spdlog::info("[Discovery] Webcam selected: name='{}' service='{}' "
                                          "stream={} snapshot={}",
