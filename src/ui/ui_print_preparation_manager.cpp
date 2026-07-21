@@ -14,7 +14,6 @@
 #include "gcode_tool_remapper.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "macro_modification_manager.h"
-#include "macro_param_cache.h"
 #include "memory_monitor.h"
 #include "memory_utils.h"
 #include "moonraker_manager.h"
@@ -77,8 +76,7 @@ PrePrintOptionState PrintPreparationManager::get_option_state(const std::string&
     // collect_pre_start_gcode_lines skips it. (e.g. K2 AI detect requires
     // LOAD_AI_RUN — only present on Creality OS variants.)
     if (const PrePrintOption* opt = opts.find(id)) {
-        if (!opt->requires_macro.empty() &&
-            !MacroParamCache::instance().has_macro(opt->requires_macro)) {
+        if (is_macro_gate_closed(*opt)) {
             return PrePrintOptionState::NOT_APPLICABLE;
         }
     }
@@ -1027,8 +1025,7 @@ std::vector<std::string> PrintPreparationManager::collect_pre_start_gcode_lines(
         // Skip options whose required macro isn't registered with Klipper
         // (e.g. K2 AI detect uses LOAD_AI_RUN, which only exists on Creality
         // OS variants — sending it on stock K2 fires "Unknown command:key61").
-        if (!opt.requires_macro.empty() &&
-            !MacroParamCache::instance().has_macro(opt.requires_macro)) {
+        if (is_macro_gate_closed(opt)) {
             spdlog::debug("[PrintPreparationManager] Skipping pre-start option '{}': "
                           "required macro '{}' not registered",
                           opt.id, opt.requires_macro);

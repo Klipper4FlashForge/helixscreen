@@ -1690,11 +1690,10 @@ static void update_prep_time_label() {
 //
 // Per-row visibility: the renderer's `VisibilitySubjectLookup` callback is
 // invoked for each option; returning nullptr leaves the row unconditionally
-// visible. Today we always return nullptr — a printer's database entry
-// declaring an option is sufficient evidence that the option works on that
-// printer. The hook remains available for future plugin-/macro-gated options;
-// any new option needing gating should declare its own subject (the legacy
-// per-op can_show_* subjects were retired with no consumers).
+// visible. Today only the plugin-gated predicate returns a non-null subject
+// (the helix_plugin_installed tri-state); macro-gated options are filtered
+// out of the set BEFORE populate() is called (see
+// filter_macro_gated_options), so the lookup never sees them.
 
 void PrintSelectDetailView::populate_option_rows() {
     if (!pre_print_options_container_) {
@@ -1728,6 +1727,22 @@ void PrintSelectDetailView::populate_option_rows() {
     }
     last_rendered_printer_type_ = current_type;
 
+    // Honor `PrePrintOption::requires_macro`: hide options whose required
+    // macro isn't registered with Klipper. Their toggles would be inert —
+    // collect_pre_start_gcode_lines() already drops their gcode at print
+    // start (see ui_print_preparation_manager.cpp), so showing the row only
+    // confuses users. e.g. K2 Plus "AI Detect" without LOAD_AI_RUN installed.
+    //
+    // MacroParamCache is populated once during connection discovery and
+    // lives until disconnect; this panel rebuilds on printer-type change, so
+    // a populate-time filter is correct (no reactive subject needed, unlike
+    // the plugin-gated visibility_lookup below).
+    PrePrintOptionSet rendered = filter_macro_gated_options(option_set);
+    if (rendered.options.size() != option_set.options.size()) {
+        spdlog::debug("[DetailView] Filtered {} macro-gated option row(s) (printer='{}')",
+                      option_set.options.size() - rendered.options.size(), current_type);
+    }
+
     // Plugin-gated visibility: HIDE a toggle only when DISABLING it would
     // require the HelixPrint plugin (see
     // PrintPreparationManager::disabling_option_requires_plugin). For those
@@ -1751,7 +1766,7 @@ void PrintSelectDetailView::populate_option_rows() {
         return nullptr; // Not plugin-dependent: always visible for declared options.
     };
 
-    option_rows_renderer_.populate(pre_print_options_container_, option_set, visibility_lookup,
+    option_rows_renderer_.populate(pre_print_options_container_, rendered, visibility_lookup,
                                    [](const std::string& id, int new_state) {
                                        spdlog::debug("[DetailView] Option '{}' toggled: {}", id,
                                                      new_state);

@@ -5,6 +5,7 @@
 #include "ui_print_preparation_manager.h"
 
 #include "../lvgl_ui_test_fixture.h"
+#include "macro_param_cache.h"
 #include "pre_print_option.h"
 #include "printer_detector.h"
 
@@ -448,4 +449,173 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     renderer.clear();
     lv_subject_deinit(&plugin_installed);
+}
+
+// ============================================================================
+// PrePrintOption::requires_macro — is_macro_gate_closed + filter_macro_gated_options
+//
+// Issue #1122 regression: a `requires_macro` option whose macro isn't
+// registered with Klipper must NOT render a toggle row. The toggle would be
+// inert (collect_pre_start_gcode_lines drops its gcode), so showing it
+// contradicts PrePrintOption::requires_macro's doc ("Hide and skip this
+// option when the named macro is not present on the printer").
+//
+// populate_option_rows() now applies filter_macro_gated_options() before
+// handing the set to the renderer. These tests lock in the helper contract
+// AND an end-to-end "K2 Plus + no LOAD_AI_RUN -> zero ai_detect rows"
+// regression using the live printer DB entry.
+// ============================================================================
+
+TEST_CASE("is_macro_gate_closed: empty requires_macro is never gated",
+          "[print_file_detail][pre_print_options][requires_macro]") {
+    helix::MacroParamCache::instance().clear();
+
+    PrePrintOption opt;
+    opt.id = "bed_mesh";
+    opt.requires_macro = ""; // No gate declared.
+    REQUIRE_FALSE(is_macro_gate_closed(opt));
+}
+
+TEST_CASE("is_macro_gate_closed: declared macro absent -> gated",
+          "[print_file_detail][pre_print_options][requires_macro]") {
+    helix::MacroParamCache::instance().clear();
+
+    PrePrintOption opt;
+    opt.id = "ai_detect";
+    opt.requires_macro = "LOAD_AI_RUN"; // Not in the (cleared) cache.
+    REQUIRE(is_macro_gate_closed(opt));
+}
+
+TEST_CASE("is_macro_gate_closed: declared macro present -> not gated",
+          "[print_file_detail][pre_print_options][requires_macro]") {
+    helix::MacroParamCache::instance().clear();
+    nlohmann::json config = nlohmann::json::object();
+    config["gcode_macro LOAD_AI_RUN"] = {{"gcode", "{action_respond_info('ai run')}"}};
+    helix::MacroParamCache::instance().populate_from_configfile(config, {"LOAD_AI_RUN"});
+
+    PrePrintOption opt;
+    opt.id = "ai_detect";
+    opt.requires_macro = "LOAD_AI_RUN";
+    REQUIRE_FALSE(is_macro_gate_closed(opt));
+
+    helix::MacroParamCache::instance().clear();
+}
+
+TEST_CASE("is_macro_gate_closed: case-insensitive macro lookup",
+          "[print_file_detail][pre_print_options][requires_macro]") {
+    // MacroParamCache lowercases keys; requires_macro values in
+    // printer_database.json use uppercase ("LOAD_AI_RUN"). Confirms the
+    // predicate survives the case mismatch the same way has_macro() does.
+    helix::MacroParamCache::instance().clear();
+    nlohmann::json config = nlohmann::json::object();
+    config["gcode_macro LOAD_AI_RUN"] = {{"gcode", "{action_respond_info('ai run')}"}};
+    helix::MacroParamCache::instance().populate_from_configfile(config, {"LOAD_AI_RUN"});
+
+    PrePrintOption opt;
+    opt.id = "ai_detect";
+    opt.requires_macro = "load_ai_run"; // lowercase, should still match.
+    REQUIRE_FALSE(is_macro_gate_closed(opt));
+
+    helix::MacroParamCache::instance().clear();
+}
+
+TEST_CASE("filter_macro_gated_options: removes only macro-gated options",
+          "[print_file_detail][pre_print_options][requires_macro]") {
+    helix::MacroParamCache::instance().clear();
+
+    PrePrintOptionSet input;
+    input.macro_name = "START_PRINT";
+    input.setup_gcode = "PRINT_PREPARED";
+
+    PrePrintOption bed_mesh;
+    bed_mesh.id = "bed_mesh";
+    bed_mesh.requires_macro = ""; // No gate.
+    bed_mesh.strategy_kind = PrePrintStrategyKind::MacroParam;
+    bed_mesh.strategy = PrePrintStrategyMacroParam{"SKIP_BED_MESH", "0", "1", "0"};
+
+    PrePrintOption ai_detect;
+    ai_detect.id = "ai_detect";
+    ai_detect.requires_macro = "LOAD_AI_RUN"; // Gated, absent from cache.
+    ai_detect.strategy_kind = PrePrintStrategyKind::PreStartGcode;
+    ai_detect.strategy = PrePrintStrategyPreStartGcode{"LOAD_AI_RUN SWITCH={value}"};
+
+    input.options = {bed_mesh, ai_detect};
+
+    PrePrintOptionSet out = filter_macro_gated_options(input);
+
+    REQUIRE(out.options.size() == 1);
+    REQUIRE(out.options[0].id == "bed_mesh");
+    // macro_name + setup_gcode pass through untouched.
+    REQUIRE(out.macro_name == "START_PRINT");
+    REQUIRE(out.setup_gcode == "PRINT_PREPARED");
+}
+
+TEST_CASE("filter_macro_gated_options: preserves all options when no macros are gated",
+          "[print_file_detail][pre_print_options][requires_macro]") {
+    helix::MacroParamCache::instance().clear();
+    nlohmann::json config = nlohmann::json::object();
+    config["gcode_macro LOAD_AI_RUN"] = {{"gcode", "{action_respond_info('ai run')}"}};
+    helix::MacroParamCache::instance().populate_from_configfile(config, {"LOAD_AI_RUN"});
+
+    auto set = make_multi_category_set(); // bed_mesh, nozzle_clean, ai_detect
+    // make_multi_category_set's ai_detect has empty requires_macro by default;
+    // assign one to exercise the "macro present" path.
+    set.options[2].requires_macro = "LOAD_AI_RUN";
+
+    PrePrintOptionSet out = filter_macro_gated_options(set);
+    REQUIRE(out.options.size() == set.options.size());
+
+    helix::MacroParamCache::instance().clear();
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "PrePrintOptionsRenderer: K2 Plus without LOAD_AI_RUN renders no ai_detect row "
+                 "(issue #1122 regression)",
+                 "[print_file_detail][pre_print_options][requires_macro][db][ai_detect]") {
+    // Issue #1122: K2 Plus declares ai_detect with requires_macro=LOAD_AI_RUN.
+    // Stock firmware that doesn't register LOAD_AI_RUN must NOT render the
+    // ai_detect toggle — it would be inert. populate_option_rows() now applies
+    // filter_macro_gated_options() before handing the set to the renderer; this
+    // test reproduces that pipeline against the live DB entry.
+    helix::MacroParamCache::instance().clear(); // Stock K2 Plus, no LOAD_AI_RUN.
+
+    auto set = PrinterDetector::get_pre_print_option_set("Creality K2 Plus");
+    REQUIRE_FALSE(set.empty());
+
+    PrePrintOptionSet filtered = filter_macro_gated_options(set);
+
+    PrePrintOptionsRenderer renderer;
+    lv_obj_t* container = lv_obj_create(test_screen());
+    renderer.populate(container, filtered, nullptr, nullptr);
+
+    // bed_mesh still renders (no requires_macro).
+    REQUIRE(renderer.get_row("bed_mesh") != nullptr);
+    // ai_detect must be filtered out — its required macro isn't registered.
+    REQUIRE(renderer.get_row("ai_detect") == nullptr);
+    REQUIRE(renderer.row_count() == filtered.options.size());
+    REQUIRE(filtered.options.size() < set.options.size());
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "PrePrintOptionsRenderer: K2 Plus with LOAD_AI_RUN still renders ai_detect row",
+                 "[print_file_detail][pre_print_options][requires_macro][db][ai_detect]") {
+    // Positive-path companion to the regression above: when LOAD_AI_RUN IS
+    // registered (Creality OS variants), ai_detect renders normally.
+    helix::MacroParamCache::instance().clear();
+    nlohmann::json config = nlohmann::json::object();
+    config["gcode_macro LOAD_AI_RUN"] = {{"gcode", "{action_respond_info('ai run')}"}};
+    helix::MacroParamCache::instance().populate_from_configfile(config, {"LOAD_AI_RUN"});
+
+    auto set = PrinterDetector::get_pre_print_option_set("Creality K2 Plus");
+    PrePrintOptionSet filtered = filter_macro_gated_options(set);
+
+    PrePrintOptionsRenderer renderer;
+    lv_obj_t* container = lv_obj_create(test_screen());
+    renderer.populate(container, filtered, nullptr, nullptr);
+
+    REQUIRE(renderer.get_row("bed_mesh") != nullptr);
+    REQUIRE(renderer.get_row("ai_detect") != nullptr);
+    REQUIRE(renderer.row_count() == set.options.size());
+
+    helix::MacroParamCache::instance().clear();
 }

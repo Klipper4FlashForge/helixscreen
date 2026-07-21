@@ -3,6 +3,8 @@
 
 #include "pre_print_option.h"
 
+#include "macro_param_cache.h"
+
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -231,4 +233,20 @@ std::string render_pre_start_gcode(const PrePrintOption& opt, bool enabled) {
         return {};
     }
     return replace_all(p->gcode_template, "{value}", enabled ? "1" : "0");
+}
+
+bool is_macro_gate_closed(const PrePrintOption& opt) {
+    if (opt.requires_macro.empty()) {
+        return false;
+    }
+    return !helix::MacroParamCache::instance().has_macro(opt.requires_macro);
+}
+
+PrePrintOptionSet filter_macro_gated_options(const PrePrintOptionSet& input) {
+    PrePrintOptionSet out = input; // copies macro_name + setup_gcode + options
+    out.options.erase(
+        std::remove_if(out.options.begin(), out.options.end(),
+                       [](const PrePrintOption& o) { return is_macro_gate_closed(o); }),
+        out.options.end());
+    return out;
 }

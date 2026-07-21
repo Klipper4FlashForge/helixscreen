@@ -196,3 +196,28 @@ std::string render_macro_param(const PrePrintOption& opt, bool enabled);
  * Returns the empty string if the option is not a `PreStartGcode` strategy.
  */
 std::string render_pre_start_gcode(const PrePrintOption& opt, bool enabled);
+
+/**
+ * @brief True iff `opt` declares a `requires_macro` AND that macro is not
+ *        currently registered with Klipper (per `MacroParamCache`).
+ *
+ * Consolidates the `requires_macro` interpretation in one place so callers
+ * don't repeat the "empty string = no gate" check. Used to:
+ *   - drive `PrintPreparationManager::get_option_state()` -> NOT_APPLICABLE
+ *   - skip the option's gcode in `collect_pre_start_gcode_lines()`
+ *   - HIDE the option's row in `populate_option_rows()` (its toggle would be
+ *     inert — flipping it has no effect at print start)
+ *
+ * Empty `requires_macro` -> always returns false (option is never macro-gated).
+ */
+bool is_macro_gate_closed(const PrePrintOption& opt);
+
+/**
+ * @brief Returns a copy of `input` with macro-gated options (those for which
+ *        `is_macro_gate_closed()` is true) removed.
+ *
+ * `macro_name` and `setup_gcode` are preserved. Used by the print-detail
+ * panel's `populate_option_rows()` so the renderer only sees options whose
+ * toggles actually do something on the connected printer.
+ */
+PrePrintOptionSet filter_macro_gated_options(const PrePrintOptionSet& input);
