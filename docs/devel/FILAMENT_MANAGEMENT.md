@@ -339,6 +339,47 @@ Orca prefers it; the `mmu` object is the fallback.)
   resolve to a generic PLA preset. Emit canonical material strings (`PLA`,
   `PETG`, `ABS`…); marketing names won't match.
 
+#### Two-string identity: `material` (Orca wire) vs `helix_material` (HelixScreen)
+
+A lane's display type and its Orca match string are **not the same string**.
+HelixScreen stores the precise identity the user chose — `ASA-GF`, `PLA Silk`,
+`PPS-CF` — but Orca can only match a type string its own library carries. Writing
+the precise string verbatim is what caused the original bug: OrcaSlicer resolves an
+unmatched `material` to **the first library preset whose name contains "PLA"**
+(`Preset.cpp:3300`), and because that bogus id then resolves cleanly it
+**short-circuits the similarity search** that would otherwise have found a closer
+type (`PresetBundle.cpp:3320-3346`). So `ASA-GF` synced as *Generic PLA* — PLA
+temperatures on a glass-filled ASA — while the color came through untouched.
+(Verified against the pinned OrcaSlicer source, not secondhand docs.)
+
+`to_lane_data_record()` therefore emits two keys:
+
+- **`material`** — the Orca wire string, derived by `filament::orca_match_type()`
+  (`filament_variants.cpp`): explicit `orca_type_overrides` entry → the type itself
+  if Orca's library carries it → `extract_base_material()` base polymer if the
+  library carries *that* → otherwise **omitted entirely** (better an empty tray in
+  Orca than a confident wrong match). The library-type set and the override table
+  are generated into `assets/filaments.json` (`orca_library_types`,
+  `orca_type_overrides`) by `scripts/import_orca_filaments.py`.
+- **`helix_material`** — the precise identity, written unconditionally. Orca ignores
+  it; HelixScreen's reader (`from_lane_data_record()`) prefers it over `material`,
+  so the on-device AMS screen still shows `ASA-GF` even though the same lane synced
+  to Orca as `ASA`.
+
+**Healing existing installs.** Records written before this split carry an
+unmatchable `material` and no `helix_material`. `load_blocking()` rewrites
+helix-authored records — proven by a `helix_locked_*` key, never a foreign
+co-author's — in place: `helix_material` = the precise identity, `material` =
+`orca_match_type()` of it (or dropped if nothing matches). Mutating in place
+preserves `scan_time` and any co-author's fields. The heal is gated on
+`orca_tables_available()` — a missing or stale `assets/filaments.json` would
+otherwise strip `material` from every lane in one pass — and it re-runs on **drift**
+(a later library regeneration that drops a type we used to match), converging once
+`orca_match_type(material) == material`. The tables are pre-warmed on the main
+thread at startup (`filament::warm_orca_tables()`, called from
+`SubjectInitializer`) so the first match never parses the asset on a WebSocket
+background thread.
+
 #### Forward-compat aliases (`vendor_name` / `name`)
 
 HelixScreen's writer (`to_lane_data_record()` in
