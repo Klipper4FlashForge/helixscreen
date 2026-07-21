@@ -45,6 +45,7 @@
 #include "ams_state.h"
 #include "app_globals.h"
 #include "color_sensor_manager.h"
+#include "filament_catalog.h"
 #include "filament_sensor_manager.h"
 #include "filament_variants.h"
 #include "humidity_sensor_manager.h"
@@ -97,6 +98,13 @@ void SubjectInitializer::init_core_and_state() {
     // assets/filaments.json under g_orca_mutex on a WebSocket background
     // thread (see filament_variants.h warm_orca_tables()).
     filament::warm_orca_tables();
+
+    // Merge user-contributed Orca type overrides from config/user_filaments.json
+    // (object form, `orca_type_map` key). User entries win over shipped entries
+    // in orca_match_type() resolution. Same main-thread / pre-backend window as
+    // warm_orca_tables() above — see FILAMENT_MANAGEMENT.md § "User overlay format".
+    filament::merge_user_orca_overrides(
+        helix::printer::FilamentCatalog::load_user_orca_type_map());
 
     // Phase 3: AMS and filament sensor subjects
     init_ams_subjects();

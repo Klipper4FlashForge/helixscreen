@@ -535,6 +535,79 @@ richer and no longer CFS-gated. A user-editable overlay
 exists at the load-path level today; the UI to author it is Phase 3 (out of
 scope here).
 
+### User overlay format
+
+`config/user_filaments.json` is the on-disk shape for everything a user
+contributes about filaments — product entries (override/add to the built-in
+catalog) and Orca-type hints (so a display name not in our snapshot resolves
+correctly in OrcaSlicer without waiting for a HelixScreen release). The file
+does not exist by default; it is created the first time the Phase 3 edit UI
+writes a change. The on-disk format is an internal concern — users interact
+through the UI and never see JSON.
+
+```jsonc
+{
+  "filaments": [
+    // Product entries: override built-ins by id, or add new ones. Merged by
+    // FilamentCatalog::load_with_overlay(). See the "effective filament"
+    // structure in include/filament_catalog.h for the full field set.
+    {"id": "polymaker-abs-pro", "nozzle_min": 265, "nozzle_max": 285, "source": "user"},
+    {"id": "acme-custom-petg", "brand": "Acme", "name": "Custom PETG",
+     "type": "PETG", "nozzle": 240, "source": "user"}
+  ],
+  "orca_type_map": {
+    // Helix display name -> Orca wire string. Single map by design — users
+    // contribute *overrides*, not library-type membership, which stays a
+    // shipped-asset concept (assets/filaments.json's `orca_library_types`).
+    // Resolution at orca_match_type() step 1 makes user entries always win
+    // over shipped ones. An empty-string value is the documented "suppress"
+    // case: emit nothing for this type rather than a wrong match. See the
+    // spec's § Drift for the safety rationale.
+    "PLA-BioTough": "PLA",
+    "WeirdResin": "",
+    "CustomASA": "ASA"
+  }
+}
+```
+
+The two sections are independent: a user can carry only `filaments`, only
+`orca_type_map`, both, or neither. The shipped asset
+(`assets/filaments.json`) keeps its own split between `orca_library_types`
+(list) and `orca_type_overrides` (map) because the importer generates those
+two differently — that distinction does not propagate to the user overlay.
+
+**Wiring.** `SubjectInitializer::init_core_and_state()` warms the Orca tables
+on the main thread (`warm_orca_tables()`), then immediately calls
+`FilamentCatalog::load_user_orca_type_map()` and feeds the result to
+`filament::merge_user_orca_overrides()`. The merge runs under
+`g_orca_mutex`, so it is safe against concurrent `orca_match_type()` callers.
+User entries land in `g_orca_overrides`, where resolution step 1 picks them
+up before any shipped lookup. An empty `orca_type_map` (the common case when
+no user overlay exists) is a no-op.
+
+**Writing the overlay.** `FilamentCatalog::save_user_products(products)`
+replaces the `filaments` section via a temp-file + `rename` (POSIX rename is
+atomic within a filesystem, so a **process** crash mid-write never leaves a
+partial overlay — the rename either fully happens or doesn't). It does **not**
+`fsync`, so this is not a power-loss durability guarantee; on the rare power
+cut mid-save a filesystem could still surface a truncated file. That trade is
+deliberate: the overlay is written only on user filament edits, and the
+original is never modified until the rename succeeds. It performs
+read-modify-write to preserve any existing `orca_type_map`, migrates legacy
+bare-array overlays to object form on first save, recovers from a corrupt
+existing file rather than blocking the save (preserving the unparseable
+original as `<path>.bak` for hand-recovery), and creates missing parent
+directories. On a fresh install where no overlay exists yet, the write target
+falls back to the canonical `config/user_filaments.json` so the first save can
+create the file. The caller supplies pre-built
+`nlohmann::json` product objects (one per entry, minimum field `id`) —
+typically the modal's form-handler builds these. `orca_type_map` has no
+write API today: contributing Orca-type hints is a power-user hand-edit
+concern (see issue #1120 and the design spec's § Drift for the rationale —
+a UI that invites "add Orca type" misleads users into thinking HelixScreen
+can teach Orca new presets, which it cannot; Orca only matches against
+types already in its own library).
+
 ### Regenerating the catalog
 
 ```bash

@@ -301,6 +301,39 @@ void warm_orca_tables() {
     load_orca_tables_locked();
 }
 
+void merge_user_orca_overrides(const std::map<std::string, std::string>& overrides) {
+    if (overrides.empty())
+        return;
+    std::lock_guard<std::mutex> lock(g_orca_mutex);
+    // Ensure the shipped tables are present before merging on top — otherwise
+    // warm_orca_tables() would race to populate them after the merge and (being
+    // a no-op once g_orca_loaded latches) leave the user entries stranded in a
+    // set that never got loaded. Belt-and-suspenders: callers pair this with a
+    // warm_orca_tables() call, but the merge must be correct standalone too.
+    load_orca_tables_locked();
+    size_t added = 0, updated = 0;
+    for (const auto& [k, v] : overrides) {
+        // Case-insensitive replace: erase any existing entry whose key matches
+        // case-insensitively before inserting the user's. Shipped override keys
+        // are mixed-case (SILK, rPLA, Color-Change, ...); without this a
+        // case-variant user key would coexist with the shipped one, and
+        // orca_match_type()'s sorted iteration — not user precedence — would
+        // pick the winner, silently ignoring the user's override.
+        bool replaced = false;
+        for (auto it = g_orca_overrides.begin(); it != g_orca_overrides.end();) {
+            if (iequals(it->first, k)) {
+                it = g_orca_overrides.erase(it);
+                replaced = true;
+            } else {
+                ++it;
+            }
+        }
+        g_orca_overrides[k] = v;
+        replaced ? ++updated : ++added;
+    }
+    spdlog::debug("[filament] merged user orca_type_map: {} new, {} updated", added, updated);
+}
+
 std::string orca_match_type(std::string_view display_type) {
     std::string work(trim(display_type));
     if (work.empty())

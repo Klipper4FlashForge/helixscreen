@@ -160,3 +160,92 @@ TEST_CASE("warm_orca_tables loads the real asset without a prior match call", "[
     // now-latched-empty) state from this test.
     filament::set_orca_tables({}, {});
 }
+
+// merge_user_orca_overrides() injects user-contributed entries from
+// config/user_filaments.json's `orca_type_map` into the live override table.
+// It runs once at startup, AFTER warm_orca_tables(), and merges under
+// g_orca_mutex. User entries must win over shipped entries in resolution
+// (step 1 of orca_match_type beats step 2/3), and the empty-string "suppress"
+// case must round-trip verbatim.
+TEST_CASE_METHOD(TableFixture, "merge_user_orca_overrides adds and supersedes", "[orca_match][user_override]") {
+    // Baseline: "Unobtainium-Plus" is not in the shipped library or overrides,
+    // and its base material ("Unobtainium") isn't either, so it resolves to ""
+    // today (Orca shows the lane empty — the safe failure direction).
+    CHECK(filament::orca_match_type("Unobtainium-Plus") == "");
+
+    // PLA IS in the shipped library, so PLA-Silk would normally degrade to PLA
+    // via extract_base_material. Pretend a user wants to suppress that and emit
+    // nothing instead — that's the documented "value of \"\" means suppress"
+    // case from FILAMENT_MANAGEMENT.md.
+    CHECK(filament::orca_match_type("PLA-Silk") == "PLA");
+
+    std::map<std::string, std::string> user_map;
+    user_map["Unobtainium-Plus"] = "PLA";  // adds a new match where there was none
+    user_map["PLA-Silk"] = "";              // suppresses a previously-working match
+    user_map["rPLA"] = "PETG";              // supersedes a shipped override (was "PLA")
+
+    filament::merge_user_orca_overrides(user_map);
+
+    CHECK(filament::orca_match_type("Unobtainium-Plus") == "PLA");  // new entry applied
+    CHECK(filament::orca_match_type("PLA-Silk") == "");             // suppress honored
+    CHECK(filament::orca_match_type("rPLA") == "PETG");             // user wins over shipped
+    // Unrelated shipped entries are untouched.
+    CHECK(filament::orca_match_type("TPU-95A") == "TPU");
+    CHECK(filament::orca_match_type("ASA-CF") == "ASA-CF");
+}
+
+TEST_CASE_METHOD(TableFixture, "merge_user_orca_overrides empty map is a no-op",
+                 "[orca_match][user_override]") {
+    // Capture the resolution of a few representative inputs before/after an
+    // empty merge. Empty must not perturb the table — SubjectInitializer calls
+    // merge unconditionally with whatever load_user_orca_type_map() returned,
+    // and that returns empty when there's no user overlay on the device.
+    const std::string before1 = filament::orca_match_type("PLA");
+    const std::string before2 = filament::orca_match_type("rPLA");
+    const std::string before3 = filament::orca_match_type("ASA-GF");
+
+    filament::merge_user_orca_overrides({});
+
+    CHECK(filament::orca_match_type("PLA") == before1);
+    CHECK(filament::orca_match_type("rPLA") == before2);
+    CHECK(filament::orca_match_type("ASA-GF") == before3);
+}
+
+TEST_CASE_METHOD(TableFixture, "merge_user_orca_overrides is idempotent",
+                 "[orca_match][user_override]") {
+    // SubjectInitializer runs once at startup, but double-merging the same map
+    // (e.g. after a future hot-reload) must not duplicate or corrupt state —
+    // std::map::operator[] overwrites, so the second merge is a no-op.
+    std::map<std::string, std::string> user_map;
+    user_map["MyCustomPLA"] = "PLA";
+
+    filament::merge_user_orca_overrides(user_map);
+    CHECK(filament::orca_match_type("MyCustomPLA") == "PLA");
+
+    filament::merge_user_orca_overrides(user_map);
+    CHECK(filament::orca_match_type("MyCustomPLA") == "PLA");
+
+    // Change the value and merge again — last write wins.
+    user_map["MyCustomPLA"] = "PETG";
+    filament::merge_user_orca_overrides(user_map);
+    CHECK(filament::orca_match_type("MyCustomPLA") == "PETG");
+}
+
+TEST_CASE_METHOD(TableFixture, "merge_user_orca_overrides supersedes a case-variant shipped key",
+                 "[orca_match][user_override]") {
+    // Shipped overrides are mixed-case (kOverrides carries "SILK" -> "PLA"). A
+    // user hand-editing orca_type_map may not match that exact case. The merge
+    // must still let the user win: without case-insensitive replacement, "SILK"
+    // and "Silk" coexist and std::map's sorted iteration (upper before lower)
+    // returns the shipped "PLA", silently dropping the user's suppression.
+    CHECK(filament::orca_match_type("Silk") == "PLA");  // baseline: shipped SILK, case-insensitive
+
+    std::map<std::string, std::string> user_map;
+    user_map["Silk"] = "";  // suppress, using a different case than shipped "SILK"
+    filament::merge_user_orca_overrides(user_map);
+
+    // User wins outright regardless of the case in the query or the shipped key.
+    CHECK(filament::orca_match_type("Silk") == "");
+    CHECK(filament::orca_match_type("SILK") == "");
+    CHECK(filament::orca_match_type("silk") == "");
+}

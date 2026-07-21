@@ -107,4 +107,15 @@ void set_orca_tables(std::set<std::string> library_types,
 /// that background thread. A no-op if the tables are already loaded.
 void warm_orca_tables();
 
+/// Merge user-contributed overrides from config/user_filaments.json's
+/// `orca_type_map` into the live Orca override table. Each entry supersedes any
+/// shipped entry with a case-insensitively matching key (resolution step 1 wins
+/// outright, so user entries always beat shipped ones — even when the case
+/// differs from a shipped key). An empty-string value means "emit nothing for
+/// this type" — the documented suppress case. Call once from main-thread
+/// startup AFTER warm_orca_tables(); merges under g_orca_mutex so it is safe
+/// against concurrent orca_match_type() callers. Idempotent: a duplicate key
+/// simply overwrites. Empty input is a no-op.
+void merge_user_orca_overrides(const std::map<std::string, std::string>& overrides);
+
 } // namespace filament
