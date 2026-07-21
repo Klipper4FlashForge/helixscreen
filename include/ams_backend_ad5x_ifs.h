@@ -542,6 +542,14 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
         bool seen_head_drop = false;      // head sensor true→false (cut/retract started)
         bool seen_head_rise = false;      // head sensor false→true (filament reached nozzle)
         int target_deci = 0;              // heat target in deci-degrees (×10), 0 = unknown
+        // Set when load_filament() dispatches while another lane is currently
+        // seated (seated_chan_ != target). INSERT_PRUTOK_IFS then runs an
+        // IMPLICIT UNLOAD of the seated lane before the actual load, which
+        // easily runs past the 90s LOADING budget (bundle NJB2U558: ch4 seated
+        // → load ch2 took ~2min total, timed out at 90s mid-swap). The flag
+        // extends LOADING to SWAP_LOADING_TIMEOUT_SECONDS in check_action_timeout.
+        // Cleared by end_phase_tracking_locked on op completion.
+        bool swap_expected = false;
     };
     IfsPhaseTracker phase_tracker_;
     int last_extruder_temp_deci_ = 0;   // deci-degrees (×10)
@@ -828,6 +836,15 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // effectively "time since filament last moved" — a long-but-healthy purge is
     // never falsely failed, a genuinely stalled one still surfaces ERROR.
     static constexpr int PURGING_TIMEOUT_SECONDS = 240;
+    // INSERT_PRUTOK_IFS with another lane currently seated runs an implicit
+    // UNLOAD first (heat → cut → retract, ~50-90s) before the actual load
+    // begins. The 90s LOADING budget fires mid-swap on bundle NJB2U558
+    // (load ch2 while ch4 seated → "Loading error, feeding filament to nozzle
+    // (timed out)" popup even though the op completed). 180s covers the full
+    // swap with margin; the head-drop reset in on_head_transition_locked is
+    // the primary defence, this is the belt-and-suspenders backstop for
+    // firmware variants where the head sensor doesn't transition reliably.
+    static constexpr int SWAP_LOADING_TIMEOUT_SECONDS = 180;
     std::chrono::steady_clock::time_point action_start_time_;
 
     // Indeterminate ("Working…") detector (#1065 row 14). Distinct from the

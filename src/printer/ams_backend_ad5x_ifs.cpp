@@ -1275,6 +1275,19 @@ AmsError AmsBackendAd5xIfs::load_filament(int slot_index) {
         system_info_.action = AmsAction::HEATING;
         action_start_time_ = std::chrono::steady_clock::now();
         begin_phase_tracking_locked(/*is_unload=*/false);
+        // Swap detection (#1065 v0.99.94, bundle NJB2U558): if another lane is
+        // currently seated, INSERT_PRUTOK_IFS will run an implicit UNLOAD of
+        // it before loading the new lane. The default 90s LOADING budget
+        // would fire mid-swap; flip swap_expected so check_action_timeout
+        // applies SWAP_LOADING_TIMEOUT_SECONDS, and on_head_transition_locked
+        // resets the LOADING clock when the implicit-unload head drop fires.
+        // seated_chan_ is the live seated-port authority (1-based; 0 = none).
+        if (seated_chan_ > 0 && seated_chan_ != port) {
+            phase_tracker_.swap_expected = true;
+            spdlog::info("{} Load slot {} while slot {} seated — swap_expected "
+                         "(extended LOADING budget + head-drop clock reset)",
+                         backend_log_tag(), slot_index, seated_chan_ - 1);
+        }
         apply_phase_action_locked();
     }
     // Publish the busy state immediately (lock released) so the sidebar action
@@ -2886,27 +2899,75 @@ bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
         // #965 guards against (it rewrites the JSON WITHOUT emitting
         // CHANGE_ZCOLOR) never reach the clear, so the lock still protects the
         // user's material there.
+        //
+        // TYPE=/HEX= extraction (#1065 v0.99.94, bundle NJB2U558): the
+        // CHANGE_ZCOLOR token carries the user's intent at emission time:
+        //   CHANGE_ZCOLOR SLOT=N [TYPE=<material>] [HEX=<rgb>]
+        // Both parameters are OPTIONAL — zmod's "Change color" menu button omits
+        // HEX= (keeps current color, sets TYPE) and vice versa. The follow-up
+        // GET_ZCOLOR SILENT=1 query used to be the only path to refresh
+        // colors_/materials_, but it queues on Klipper's serial gcode line
+        // behind any running IFS op (INSERT_PRUTOK_IFS, IFS_F11 eject, even
+        // unrelated long macros) and can take 1-3 minutes to return — or hit
+        // the 60s RPC timeout and miss entirely. The user read that lag as
+        // "Failed to update material type" (mkleersn 07-18/07-20 sheets).
+        // Extracting TYPE=/HEX= directly from the gcode makes the refresh
+        // synchronous and lets GET_ZCOLOR degrade to a confirming no-op.
         if (line.find("CHANGE_ZCOLOR") != std::string::npos) {
             static const std::regex slot_re(R"(SLOT=(\d+))");
+            // Match TYPE= up to the next whitespace or end of string. zmod's
+            // stock whitelist is single-token (PLA, PLA-CF, PETG, PETG-CF, SILK,
+            // ABS, TPU), and custom [zmod_ifs] filament_<NAME> entries are
+            // single-word by construction. No quoted/multiword form exists.
+            static const std::regex type_re(R"(TYPE=(\S+))");
+            // HEX= is exactly 6 hex digits in zmod output. Tolerate lowercase
+            // (Mainsail console typing) — canonicalized to upper below.
+            static const std::regex hex_re(R"(HEX=([0-9A-Fa-f]{6}))");
             std::smatch m;
             if (std::regex_search(line, m, slot_re)) {
                 // zmod SLOT is 1-based; overrides_ is 0-based.
                 int slot0 = std::atoi(m[1].str().c_str()) - 1;
-                bool has_locked_override = false;
-                if (slot0 >= 0 && slot0 < NUM_PORTS) {
+
+                // Extract optional TYPE= / HEX= payloads BEFORE taking the lock
+                // (regex_search is the expensive part; do it once on the local
+                // line string). empty optional == "not present in this gcode".
+                std::optional<std::string> parsed_type;
+                std::smatch tm;
+                if (std::regex_search(line, tm, type_re)) {
+                    parsed_type = tm[1].str();
+                }
+                std::optional<std::string> parsed_hex;
+                std::smatch hm;
+                if (std::regex_search(line, hm, hex_re)) {
+                    parsed_hex = hm[1].str();
+                    // Canonicalize to upper-case so the follow-up GET_ZCOLOR
+                    // response (which parse_zcolor_silent also receives as
+                    // upper-case) compares equal — avoiding a spurious
+                    // "color changed" re-sync when the query finally returns.
+                    for (auto& c : *parsed_hex) {
+                        c = static_cast<char>(toupper(c));
+                    }
+                }
+
+                const bool slot_valid = (slot0 >= 0 && slot0 < NUM_PORTS);
+                const bool has_params = parsed_type.has_value() || parsed_hex.has_value();
+
+                // Decide under the lock whether there's real work: clearing a
+                // stale locked override (existing #981 path) and/or applying
+                // freshly-parsed TYPE=/HEX= parameters to colors_/materials_.
+                bool mutated = false;
+                if (slot_valid) {
                     std::lock_guard<std::mutex> lock(mutex_);
                     auto it = overrides_.find(slot0);
-                    has_locked_override =
+                    const bool has_locked_override =
                         (it != overrides_.end() &&
                          (it->second.user_locked_color || it->second.user_locked_material));
-                }
-                if (has_locked_override) {
-                    spdlog::info("{} External CHANGE_ZCOLOR for slot {} overrides an earlier "
-                                 "HelixScreen edit — clearing the stale locked override so the "
-                                 "new firmware color/type wins (#981)",
-                                 backend_log_tag(), slot0);
-                    {
-                        std::lock_guard<std::mutex> lock(mutex_);
+
+                    if (has_locked_override) {
+                        spdlog::info("{} External CHANGE_ZCOLOR for slot {} overrides an earlier "
+                                     "HelixScreen edit — clearing the stale locked override so the "
+                                     "new firmware color/type wins (#981)",
+                                     backend_log_tag(), slot0);
                         auto* entry = slots_.get_mut(slot0);
                         if (entry) {
                             // Erase + persist the stale override, then re-run
@@ -2916,9 +2977,55 @@ bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
                             // color/material for the next update to refresh, and
                             // we don't want to wait on the async re-read below.
                             clear_override_locked(slot0, entry->info);
-                            update_slot_from_state(slot0);
+                            mutated = true;
                         }
                     }
+
+                    if (has_params) {
+                        // Apply the user's intent directly to the firmware-truth
+                        // arrays. Baselines MUST advance too, so the next
+                        // check_external_*_change observation (e.g. from a
+                        // GET_ZCOLOR response or a parse_adventurer_json poll)
+                        // compares equal and doesn't fire a redundant
+                        // sync_override_to_firmware_locked round-trip.
+                        const auto idx = static_cast<size_t>(slot0);
+                        if (parsed_type) {
+                            materials_[idx] = *parsed_type;
+                            last_firmware_material_[slot0] = *parsed_type;
+                            spdlog::info("{} External CHANGE_ZCOLOR applied TYPE='{}' to slot {} "
+                                         "(#1065 gcode-path extraction)",
+                                         backend_log_tag(), *parsed_type, slot0);
+                            mutated = true;
+                        }
+                        if (parsed_hex) {
+                            colors_[idx] = *parsed_hex;
+                            try {
+                                const uint32_t color_value =
+                                    static_cast<uint32_t>(std::stoul(*parsed_hex, nullptr, 16));
+                                last_firmware_color_[slot0] = color_value;
+                                spdlog::info("{} External CHANGE_ZCOLOR applied HEX='{}' to slot {} "
+                                             "(#1065 gcode-path extraction)",
+                                             backend_log_tag(), *parsed_hex, slot0);
+                                mutated = true;
+                            } catch (...) {
+                                // std::stoul on a regex-validated 6-hex-digit
+                                // string can't realistically throw; defensive
+                                // only. Don't advance the baseline on the
+                                // off-chance the parse failed — the next
+                                // GET_ZCOLOR poll will recover.
+                            }
+                        }
+                    }
+
+                    if (mutated) {
+                        // Re-run apply_overrides + slot-state derivation so the
+                        // UI-visible SlotInfo picks up the new values. If a
+                        // locked override was cleared above, apply_overrides is
+                        // now a no-op and the firmware-truth arrays win.
+                        update_slot_from_state(slot0);
+                    }
+                }
+                if (mutated) {
                     emit_event(EVENT_SLOT_CHANGED, std::to_string(slot0));
                 }
             }
@@ -4323,7 +4430,25 @@ void AmsBackendAd5xIfs::on_head_transition_locked(bool detected) {
         // apply_phase_action_locked advance HEATING -> UNLOADING.
         phase_tracker_.seen_head_drop = true;
         phase_tracker_.reached_target_once = true;
-        spdlog::info("{} Phase: head sensor dropped (cut/retract started)", backend_log_tag());
+        // Swap-aware LOADING clock reset (#1065 v0.99.94, bundle NJB2U558):
+        // INSERT_PRUTOK_IFS with another lane currently seated runs an IMPLICIT
+        // UNLOAD before the actual load. The implicit-unload head drop is real
+        // progress for a LOAD op — the swap has begun, the new lane's feed
+        // hasn't started yet. Without resetting here, the LOADING budget
+        // (90s default, 180s with swap_expected) starts counting at heat-
+        // complete and times out mid-swap, surfacing a false "Loading error,
+        // feeding filament to nozzle (timed out)" popup. apply_phase_action_locked
+        // only resets on a phase TRANSITION, but for a LOAD op the head drop
+        // doesn't transition the phase (still LOADING) — so we reset here.
+        // (For an UNLOAD op the head drop DOES transition CUTTING → UNLOADING,
+        // so apply_phase_action_locked's reset covers it and this is a no-op.)
+        if (!phase_tracker_.is_unload) {
+            action_start_time_ = std::chrono::steady_clock::now();
+        }
+        spdlog::info("{} Phase: head sensor dropped (cut/retract started{}"
+                     ")",
+                     backend_log_tag(),
+                     phase_tracker_.is_unload ? "" : " — LOAD swap clock reset");
     } else {
         // Head sensor tripped: filament reached the nozzle (load) — advance to
         // the purge phase.
@@ -4588,13 +4713,22 @@ void AmsBackendAd5xIfs::check_action_timeout() {
     // HEATING from cold legitimately takes ~158s (longer for high-temp
     // materials), so it gets a longer dedicated budget. PURGING likewise runs
     // well past 90s and its clock is reset on motion-sensor activity (#1065
-    // Bug 2). Every other phase has its clock reset on transition (see
+    // Bug 2). LOADING with swap_expected gets the extended swap budget so the
+    // implicit unload before the load doesn't blow the 90s default. Every
+    // other phase has its clock reset on transition (see
     // apply_phase_action_locked) and keeps the short 90s window.
     int limit = ACTION_TIMEOUT_SECONDS;
     if (a == AmsAction::HEATING) {
         limit = HEATING_TIMEOUT_SECONDS;
     } else if (a == AmsAction::PURGING) {
         limit = PURGING_TIMEOUT_SECONDS;
+    } else if (a == AmsAction::LOADING && phase_tracker_.swap_expected) {
+        // Belt-and-suspenders for the implicit-unload-before-load case. The
+        // primary defence is the head-drop reset in on_head_transition_locked;
+        // this covers firmware variants where the head sensor doesn't
+        // transition reliably during a swap (bundle NJB2U558 ch4→ch2 swap
+        // surfaced the false timeout at 90s).
+        limit = SWAP_LOADING_TIMEOUT_SECONDS;
     }
     auto elapsed = std::chrono::steady_clock::now() - action_start_time_;
     if (elapsed >= std::chrono::seconds(limit)) {
