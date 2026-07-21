@@ -383,16 +383,28 @@ void WifiBackendWpaSupplicant::stop() {
     // THREAD SAFETY: cleanup_wpa() manipulates libhv I/O handles (hio_read_stop,
     // hio_close) which MUST run on the event loop thread. Schedule via runInLoop()
     // with synchronization to ensure cleanup completes before stop() returns.
+    //
+    // The promise is held in a shared_ptr captured BY VALUE into the lambda. This
+    // closes a use-after-free race (bundle WWZE4K9T, v0.99.96/pi32) where stop()'s
+    // 2s wait_for times out — typically because the event loop is still inside a
+    // prior init_wpa() blocked on wpa_ctrl_attach() for 5+ seconds — and the local
+    // promise is destroyed before the queued cleanup lambda runs. The lambda would
+    // then call set_value() on freed memory and crash in
+    // std::__future_base::_State_baseV2::_M_do_set with PC=0. The shared_ptr keeps
+    // the promise alive until the lambda releases its copy, regardless of whether
+    // stop() has already returned.
     if (event_loop_active() && loop()) {
-        std::promise<void> cleanup_done;
-        std::future<void> cleanup_future = cleanup_done.get_future();
+        auto cleanup_done = std::make_shared<std::promise<void>>();
+        std::future<void> cleanup_future = cleanup_done->get_future();
 
-        loop()->runInLoop([this, &cleanup_done]() {
+        loop()->runInLoop([this, cleanup_done]() {
             cleanup_wpa();
-            cleanup_done.set_value();
+            cleanup_done->set_value();
         });
 
-        // Wait for cleanup to complete (with timeout to prevent deadlock)
+        // Wait for cleanup to complete (with timeout to prevent deadlock). On
+        // timeout the promise stays valid — the captured shared_ptr keeps it
+        // alive until the deferred cleanup_wpa() eventually runs.
         if (cleanup_future.wait_for(std::chrono::seconds(2)) == std::future_status::timeout) {
             spdlog::warn("[WifiBackend] Cleanup timed out after 2 seconds");
         }

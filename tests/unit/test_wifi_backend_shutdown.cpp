@@ -6,6 +6,8 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <future>
+#include <memory>
 #include <mutex>
 #include <thread>
 
@@ -201,6 +203,95 @@ class SafeShutdownBackend : private hv::EventLoopThread {
     std::condition_variable init_cv_;
 };
 
+/**
+ * Regression for bundle WWZE4K9T (v0.99.96/pi32): SIGSEGV at PC=0x0 inside
+ * std::__future_base::_State_baseV2::_M_do_set, on the libhv event-loop
+ * background thread. The unsafe pattern was a LOCAL std::promise captured by
+ * reference into a runInLoop lambda:
+ *
+ *   std::promise<void> cleanup_done;
+ *   loop()->runInLoop([this, &cleanup_done]() {
+ *       cleanup_wpa();
+ *       cleanup_done.set_value();   // UAF if stop() already returned
+ *   });
+ *   if (cleanup_future.wait_for(2s) == timeout) { warn_only(); }
+ *
+ * Trigger: init_wpa() (queued ahead on the same event loop) blocks 5+ s in
+ * wpa_ctrl_attach(); stop()'s 2 s wait_for times out; stop() returns and the
+ * local promise is destroyed; init_wpa eventually returns and the event loop
+ * runs the cleanup lambda, which calls set_value() on freed memory, leading
+ * to a null function pointer call and a crash in _M_do_set.
+ *
+ * The fix captures a shared_ptr<std::promise<void>> BY VALUE into the lambda
+ * so the promise lives until the lambda releases it, regardless of whether
+ * stop() has already returned. This class mirrors that fixed pattern so the
+ * test exercises the exact runInLoop + wait_for + deferred-cleanup shape.
+ */
+class SafeDeferredCleanupBackend : private hv::EventLoopThread {
+  public:
+    SafeDeferredCleanupBackend() : hv::EventLoopThread(nullptr) {}
+
+    ~SafeDeferredCleanupBackend() {
+        shutdown_requested_ = true;
+        hv::EventLoopThread::stop(true);
+    }
+
+    /**
+     * Start the event loop with a long-running init task queued ahead of any
+     * subsequent runInLoop work. Mirrors init_wpa() blocked on wpa_ctrl_attach()
+     * for 5+ seconds while stop() is trying to schedule cleanup_wpa() behind it.
+     */
+    void start_with_blocked_init(unsigned init_iters = 30) {
+        hv::EventLoopThread::start(true, [this, init_iters]() -> int {
+            slow_init(init_iters);
+            return 0;
+        });
+    }
+
+    /**
+     * Mirrors WifiBackendWpaSupplicant::stop()'s fixed pattern: queue cleanup
+     * via runInLoop, wait briefly, return even if cleanup hasn't run yet.
+     * Returns the future so callers can observe the deferred set_value().
+     */
+    std::future<void> stop_with_deferred_cleanup(int timeout_ms) {
+        auto cleanup_done = std::make_shared<std::promise<void>>();
+        std::future<void> cleanup_future = cleanup_done->get_future();
+
+        loop()->runInLoop([this, cleanup_done]() {
+            cleanup_ran_ = true;
+            cleanup_done->set_value();
+        });
+
+        if (cleanup_future.wait_for(std::chrono::milliseconds(timeout_ms)) ==
+            std::future_status::timeout) {
+            cleanup_timed_out_ = true;
+        }
+        // After return, our local shared_ptr is destroyed; the promise lives
+        // only via the captured copy inside the still-pending runInLoop lambda.
+        return cleanup_future;
+    }
+
+    bool cleanup_ran() const {
+        return cleanup_ran_.load();
+    }
+    bool cleanup_timed_out() const {
+        return cleanup_timed_out_.load();
+    }
+
+  private:
+    void slow_init(unsigned iters) {
+        for (unsigned i = 0; i < iters && !shutdown_requested_.load(); i++) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            init_progress_ = static_cast<int>(i);
+        }
+    }
+
+    std::atomic<bool> shutdown_requested_{false};
+    std::atomic<bool> cleanup_ran_{false};
+    std::atomic<bool> cleanup_timed_out_{false};
+    std::atomic<int> init_progress_{0};
+};
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -283,5 +374,52 @@ TEST_CASE("Safe shutdown never accesses freed resources",
             // Destroy immediately
         }
         SUCCEED("All cycles completed without crash");
+    }
+}
+
+TEST_CASE("stop() with shared_ptr promise survives deferred cleanup",
+          "[network][backend][shutdown][wwze4k9t][eventloop][slow]") {
+    SECTION("Cleanup lambda runs after stop() timeout without UAF") {
+        // Reproduces the WWZE4K9T race shape:
+        // 1. Event loop is busy with a multi-second init task (init_wpa blocked
+        //    on wpa_ctrl_attach).
+        // 2. stop_with_deferred_cleanup() queues cleanup behind it and waits
+        //    200ms. slow_init is still running, so wait_for times out.
+        // 3. stop_with_deferred_cleanup returns, dropping its local shared_ptr.
+        //    With the OLD ref-capture pattern this would free the promise; with
+        //    the shared_ptr fix the lambda's captured copy keeps it alive.
+        // 4. slow_init finishes (~3s) and the event loop runs the cleanup
+        //    lambda. set_value() must succeed rather than crash in _M_do_set.
+
+        SafeDeferredCleanupBackend backend;
+        backend.start_with_blocked_init();
+
+        // Let slow_init get well underway on the event loop before queueing
+        // cleanup behind it.
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+        auto cleanup_future = backend.stop_with_deferred_cleanup(200);
+
+        // stop_with_deferred_cleanup returned on timeout — cleanup hasn't run.
+        REQUIRE(backend.cleanup_timed_out());
+        REQUIRE_FALSE(backend.cleanup_ran());
+
+        // The deferred cleanup eventually fires once slow_init finishes. With
+        // the shared_ptr fix, set_value() succeeds (promise still alive); with
+        // the original ref-capture bug this would crash in _M_do_set at PC=0.
+        REQUIRE(cleanup_future.wait_for(std::chrono::seconds(5)) == std::future_status::ready);
+        REQUIRE(backend.cleanup_ran());
+    }
+
+    SECTION("Repeated stop-with-deferred-cleanup cycles are safe") {
+        for (int i = 0; i < 3; i++) {
+            SafeDeferredCleanupBackend backend;
+            backend.start_with_blocked_init();
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            auto fut = backend.stop_with_deferred_cleanup(100);
+            REQUIRE(fut.wait_for(std::chrono::seconds(5)) == std::future_status::ready);
+            REQUIRE(backend.cleanup_ran());
+        }
+        SUCCEED("All cycles completed; promise stayed alive for deferred set_value");
     }
 }
