@@ -59,6 +59,7 @@ Most commonly needed:
 | **JSON include** | `#include <nlohmann/json.hpp>` | `#include "hv/json.hpp"` (libhv's bundled version) |
 | **Build system** | `cmake`, `ninja` | `make -j` (pure Makefile) |
 | **Bug commits** | `fix: thing` (no reference) | `fix(scope): thing (prestonbrown/helixscreen#123)` |
+| **Commit body length** | 3-paragraph Tests / Verification / Mutation essay | Subject + ~4-line paragraph (cf. `feat(z-offset)` 25e1505e7). Reserve the long form for genuine state-machine fixes that touch multiple subsystems (cf. `fix(ams): DRY unload API` 504905a2). |
 | **Submodule mods** | Edit `lib/lvgl/...` / `lib/libhv/...` directly | Add/amend `patches/*.patch` — `mk/patches.mk` auto-applies. Only `lib/helix-xml/` is direct-edit (not a submodule). |
 
 **ALWAYS:** Search the SAME FILE you're editing for similar patterns before implementing.
