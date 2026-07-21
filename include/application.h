@@ -218,6 +218,14 @@ class Application {
     // Guards the ZMOD persistent-z-offset enablement (SAVE_ZMOD_DATA LOAD_ZOFFSET=1)
     // so it is sent at most once per app session. Intentionally NOT reset on reconnect.
     bool m_zmod_zoffset_enabled = false;
+    // Hardware-shape fingerprint from the most recent on_discovery_complete.
+    // When a reconnect's fingerprint matches (hardware unchanged), expensive
+    // user-facing side-effects (LED chip population, hardware validation
+    // toasts, targeted reconfig wizard, telemetry snapshots) are skipped —
+    // only the subject-restoring work that the UI needs to rebind runs.
+    // See on_discovery_complete in application.cpp.
+    size_t m_last_hardware_fingerprint = 0;
+    bool m_first_discovery_complete = true;
     bool m_shutdown_complete = false;
     bool m_soft_restart_in_progress = false;
 
