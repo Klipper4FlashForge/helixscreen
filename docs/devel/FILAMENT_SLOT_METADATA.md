@@ -29,6 +29,23 @@ slot edit in HelixScreen round-trip to OrcaSlicer 2.3.2+ with no extra
 configuration on the slicer side — the convention is shared, not
 HelixScreen-specific.
 
+**Two-string material identity.** OrcaSlicer matches a lane to a preset by the
+`material` string alone, and an unmatched string resolves to a Generic PLA
+preset (wrong temperatures), not a near miss. So `to_lane_data_record()` emits
+`material` as a **slicer-matchable** string produced by
+`filament::orca_match_type()` (`src/printer/filament_variants.cpp`) — explicit
+`orca_type_overrides` entry → exact `orca_library_types` entry →
+`extract_base_material()` base polymer → the field is **omitted** when nothing
+matches — and separately emits `helix_material`, the user's precise identity
+(`ASA-GF`, `PLA Silk`), written unconditionally. `from_lane_data_record()`
+prefers `helix_material`, so HelixScreen's own screen keeps the exact type even
+though Orca sees the reduced `material`. The library-type set and override table
+are generated into `assets/filaments.json` by `scripts/import_orca_filaments.py`
+and pre-warmed on the main thread at startup (`filament::warm_orca_tables()`)
+so the first lookup never parses the asset on a WebSocket background thread. See
+[`FILAMENT_MANAGEMENT.md`](FILAMENT_MANAGEMENT.md) § "Two-string identity" for
+the full resolution order and the OrcaSlicer fallback mechanism.
+
 ---
 
 ## 2. Architecture
@@ -50,7 +67,7 @@ the local cache file can round-trip all four without collision.
 
 | Method | Threading | Purpose |
 |--------|-----------|---------|
-| `load_blocking()` | Called once from backend init, blocks the backend thread | Fetch `lane_data` from MR DB; on error/timeout, fall back to the local JSON cache. Returns `unordered_map<int, FilamentSlotOverride>`. Also triggers `try_migrate_legacy` if `lane_data` is empty and legacy namespaces have data. |
+| `load_blocking()` | Called once from backend init, blocks the backend thread | Fetch `lane_data` from MR DB; on error/timeout, fall back to the local JSON cache. Returns `unordered_map<int, FilamentSlotOverride>`. Also triggers `try_migrate_legacy` if `lane_data` is empty and legacy namespaces have data, and runs the one-shot **material heal** (below). |
 | `save_async(slot, override, cb)` | Main thread → HttpExecutor | POST the record to `lane_data/laneN`, refresh the local cache on success. Retries are the caller's responsibility. |
 | `clear_async(slot, cb)` | Main thread → HttpExecutor | DELETE the slot's `lane_data` entry and drop it from the local cache. |
 | `cache_path()` | Pure | Returns `helix::get_user_config_dir() / "filament_slot_overrides.json"`. |
@@ -247,6 +264,32 @@ don't re-scan unsalvageable data on every boot.
 
 Migration runs inline inside `load_blocking`, before the method returns, so
 the backend sees the migrated records immediately without a second round-trip.
+
+### Material heal
+
+Records written before the two-string split (see § 1) carry a `material` that
+may not be slicer-matchable and no `helix_material`. `load_blocking` runs a
+one-shot heal over the fetched `lane_data` to repair them without the user
+re-editing every slot:
+
+- **Only HelixScreen-authored records** are touched, proven by a `helix_locked_*`
+  key. AFC, Happy Hare, and Mainsail share this namespace; their records are not
+  ours to rewrite (same ownership rule the anomaly scanner follows).
+- The record is **mutated in place** — `helix_material` set to the precise
+  identity, `material` set to `orca_match_type()` of it (or erased if nothing
+  matches) — so `scan_time` and any co-author's fields survive. The POST targets
+  the **same key it read**, so on a `T<n>` tool-changer backend the stale `laneN`
+  record is healed before the key migration moves it, and the migration carries
+  the healed body.
+- **Gated on `orca_tables_available()`.** A missing or stale
+  `assets/filaments.json` would make `orca_match_type()` return empty for every
+  input and strip `material` from every lane in one pass, so the heal skips
+  entirely rather than heal against an empty table.
+- **Re-runs on drift.** The gate is "resolves to a different match string than it
+  carries," not "already has `helix_material`", so a later library regeneration
+  that drops a type we previously matched is repaired on the next boot. It
+  converges because `orca_match_type(material) == material` is a fixed point on
+  its own output.
 
 ---
 

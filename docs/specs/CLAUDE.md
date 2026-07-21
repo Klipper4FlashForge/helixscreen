@@ -8,9 +8,12 @@ spool-tracking tools), not as HelixScreen implementation docs.
 ## Current specs
 
 - [`filament_slots.md`](filament_slots.md) — the `lane_data` Moonraker-DB
-  filament slot metadata convention. Written by AFC and HelixScreen, read by
-  OrcaSlicer 2.3.2+ (verified unchanged through 2.4.0-beta). Note: Happy Hare
-  is read by OrcaSlicer from the live `mmu` object, not this namespace.
+  filament slot metadata convention. Written by AFC, Happy Hare, and
+  HelixScreen; read by OrcaSlicer 2.3.2+ (verified unchanged through
+  2.4.0-beta). Happy Hare writes `lane_data` directly via its Moonraker
+  component (`push_lane_data`), and OrcaSlicer prefers that over the live `mmu`
+  object. As of v1.5 the spec splits filament identity into a slicer-matchable
+  `material` and a precise `helix_material` (see the changelog).
 
 ## Style
 

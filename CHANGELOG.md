@@ -5,6 +5,12 @@ All notable changes to HelixScreen will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Filament synced to OrcaSlicer with the wrong material** — a slot set to a specific type like ASA-GF came across in OrcaSlicer as "Generic PLA", putting PLA temperatures on glass-filled ASA. OrcaSlicer matches a slot to a filament preset by its material name alone and quietly falls back to PLA whenever the name isn't one it recognizes. HelixScreen now sends OrcaSlicer the closest name it *does* recognize (ASA-GF → ASA), so it picks a correct preset, while your printer's own screen keeps showing the precise name. A truly unknown material syncs with its color and temperatures but no material selected, rather than a wrong guess. Existing slots are repaired automatically the next time HelixScreen starts.
+
 ## [0.99.97] - 2026-07-19
 
 > **0.99.96 was withdrawn.** Its phantom-edge-tap fix broke touch input entirely on

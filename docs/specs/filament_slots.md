@@ -1,6 +1,6 @@
 # Filament Slot Metadata — `lane_data` Convention
 
-**Status**: Informational, v1.3 (2026-06). See [Changelog](#changelog).
+**Status**: Informational, v1.5 (2026-07). See [Changelog](#changelog).
 
 This document describes HelixScreen's use of the `lane_data` Moonraker database
 namespace to share per-slot filament metadata with OrcaSlicer and other tools.
@@ -131,25 +131,30 @@ A full HelixScreen-emitted record looks like this:
 ```json
 {
   "lane": "0",
-  "color": "#FF5500",
-  "material": "PLA",
+  "color": "#1A1A1A",
+  "material": "ASA",
+  "helix_material": "ASA-GF",
   "vendor": "Polymaker",
   "vendor_name": "Polymaker",
   "spool_id": 42,
   "scan_time": "2026-04-18T12:34:56Z",
-  "bed_temp": 60,
-  "nozzle_temp": 215,
+  "bed_temp": 90,
+  "nozzle_temp": 250,
 
-  "spool_name": "PolyLite PLA Orange",
-  "name": "PolyLite PLA Orange",
+  "spool_name": "PolyLite ASA-GF Black",
+  "name": "PolyLite ASA-GF Black",
   "spoolman_vendor_id": 7,
   "remaining_weight_g": 850.0,
   "total_weight_g": 1000.0,
-  "color_name": "Orange"
+  "color_name": "Black"
 }
 ```
 
 The top group is AFC-standard. The bottom group is HelixScreen's extensions.
+Note the deliberate `material` / `helix_material` pair: `material` is `"ASA"`
+(the string OrcaSlicer can match to a preset), while `helix_material` is the
+precise `"ASA-GF"` identity HelixScreen shows on-device. See the field
+reference below.
 
 ### Field reference
 
@@ -159,7 +164,7 @@ The top group is AFC-standard. The bottom group is HelixScreen's extensions.
 |-------|------|----------|----------------|-----------|--------|
 | `lane` | string | yes | stringified integer, 0-based | Tool / slot index as interpreted by the slicer. Matches OrcaSlicer's tool-index convention. See §4 for the intentional off-by-one versus the outer DB key. | HelixScreen writes slot index as string. |
 | `color` | string | optional | `#RRGGBB` hex | Slot color. Leading `#` is conventional; HelixScreen's parser also accepts `0x`-prefixed forms on read. Emitted only when the override carries a non-zero RGB. | User-edited, or firmware-reported on backends where the user has no override. |
-| `material` | string | optional | short code (`PLA`, `PETG`, `ABS`, `TPU`, …) | Material family. Readers should treat unknown values as opaque strings — do NOT silently map them. | User-edited. |
+| `material` | string | optional | short code (`PLA`, `PETG`, `ABS`, `TPU`, …) | The **slicer-matchable** material string. OrcaSlicer matches a lane to a preset by this value alone, so a writer should emit a string the slicer's library actually carries. HelixScreen derives it from the user's precise type (see `helix_material`): explicit override → exact library type → base polymer, and **omits the field entirely** when nothing safely matches, rather than emit a string the slicer would resolve to a wrong (Generic PLA) preset. Readers should still treat unknown values as opaque strings — do NOT silently map them. | Derived by HelixScreen (`orca_match_type()`), or user-edited on writers without a match table. |
 | `vendor` | string | optional | free-form | Brand / manufacturer. Readers match case-insensitively when pairing with their own filament databases. | User-edited. |
 | `vendor_name` | string | optional | free-form | Alias of `vendor`, mirroring Happy Hare's key convention (`push_lane_data` in `components/mmu_server.py`). Emitted with the same value as `vendor` for forward-compat: as OrcaSlicer moves toward vendor-aware preset matching, `vendor_name` is the key it is most likely to consume. Zero-cost today — Orca ignores unknown keys. HelixScreen's reader accepts either key. | Same as `vendor`. |
 | `spool_id` | integer | optional | positive integer | Spoolman spool ID for the physical spool currently loaded. Omitted when zero. | User-selected from Spoolman, if configured. |
@@ -180,7 +185,8 @@ throw on unknown keys).
 
 | Field | Type | Required | Format / units | Semantics | Source |
 |-------|------|----------|----------------|-----------|--------|
-| `spool_name` | string | optional | free-form | Human-readable name for the spool (e.g. `"PolyLite PLA Orange"`). Distinct from `vendor` + `material` because users often want a friendlier label. | User-edited, or auto-filled from Spoolman. |
+| `helix_material` | string | optional | free-form material name | The **precise** material identity the user chose (`ASA-GF`, `PLA Silk`, `PPS-CF`), which may be more specific than the slicer-matchable `material`. HelixScreen's reader prefers this over `material`, so the on-device display keeps the exact type even when `material` was reduced (or omitted) for slicer matching. OrcaSlicer and other readers ignore it. Emitted unconditionally when HelixScreen authors the record. | HelixScreen (`to_lane_data_record()`). |
+| `spool_name` | string | optional | free-form | Human-readable name for the spool (e.g. `"PolyLite ASA-GF Black"`). Distinct from `vendor` + `material` because users often want a friendlier label. | User-edited, or auto-filled from Spoolman. |
 | `name` | string | optional | free-form | Alias of `spool_name`, mirroring Happy Hare's key convention (`push_lane_data` in `components/mmu_server.py`). Emitted with the same value as `spool_name` for forward-compat. HelixScreen's reader accepts either key. | Same as `spool_name`. |
 | `spoolman_vendor_id` | integer | optional | positive integer | Spoolman vendor ID, paired with `spool_id` for full Spoolman round-tripping. Omitted when zero. | From Spoolman when a spool is selected. |
 | `remaining_weight_g` | float | optional | grams | Remaining filament weight. Negative = unset / unknown. | Spoolman, or user-entered. |
@@ -311,13 +317,14 @@ Write AFC-shaped records using `POST /server/database/item`:
   "key": "lane1",
   "value": {
     "lane": "0",
-    "color": "#FF5500",
-    "material": "PLA",
+    "color": "#1A1A1A",
+    "material": "ASA",
+    "helix_material": "ASA-GF",
     "vendor": "Polymaker",
     "spool_id": 42,
     "scan_time": "2026-04-18T12:34:56Z",
-    "bed_temp": 60,
-    "nozzle_temp": 215
+    "bed_temp": 90,
+    "nozzle_temp": 250
   }
 }
 ```
@@ -325,6 +332,13 @@ Write AFC-shaped records using `POST /server/database/item`:
 Guidelines:
 
 - **Always emit** `lane`. OrcaSlicer requires it.
+- **Emit a slicer-matchable `material`.** OrcaSlicer picks a preset by the
+  `material` string alone; an unmatched string resolves to a Generic PLA preset
+  (wrong temperatures), not a near miss. Emit a value the slicer's library
+  carries, and omit the field rather than emit an unmatchable one. If you also
+  track a more precise type, carry it in `helix_material` — readers that
+  understand it can show the exact identity while the slicer still matches on
+  `material`.
 - **Stamp** `scan_time` on every write. Use ISO-8601 UTC with second
   precision; other readers will rely on it.
 - **Pick one key style and stay consistent within a slot.** Use `laneN`
@@ -416,6 +430,17 @@ reader can resolve.
 
 ## Changelog
 
+- **v1.5 (2026-07-20)**: Split filament material identity into two fields.
+  `material` is now the **slicer-matchable** string (OrcaSlicer matches a lane
+  to a preset by it alone; an unmatched value resolves to a Generic PLA preset,
+  not a near miss), and HelixScreen derives it from the user's precise type —
+  emitting a reduced string or omitting the field rather than a string the
+  slicer would mismatch. The new `helix_material` extension field carries the
+  **precise** identity (e.g. `ASA-GF`); HelixScreen's reader prefers it, so the
+  on-device display keeps the exact type while the slicer still matches on
+  `material`. HelixScreen also one-shot **heals** its own pre-existing records
+  to this two-field form on load. Also bumped the status header (it lagged the
+  changelog at v1.3).
 - **v1.4 (2026-07-16)**: Documented the `T<n>` tool-changer key style alongside
   `laneN`, made the top-level shape (§2) and key mapping (§4) key-agnostic, and
   added §8 "Interoperating readers and writers" (the three-way writer/reader
