@@ -184,6 +184,7 @@ class TempGraphController {
     AsyncLifetimeGuard lifetime_;
     uint32_t generation_ = 0;
     bool paused_ = false;
+    bool tearing_down_ = false; ///< Set by detach(); guards rebuild()/setup_observers()
     float y_axis_max_ = 100.0f;
 
     /// Debounce rapid rebuilds (e.g., reconnect flapping in Klipper error state)

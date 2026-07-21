@@ -210,8 +210,8 @@ TEST_CASE_METHOD(TempGraphControllerFixture,
 }
 
 TEST_CASE_METHOD(TempGraphControllerFixture,
-                 "Chamber series with temperature_fan prefix resolves to chamber subjects",
-                 "[controller][temp_graph_controller][chamber]") {
+                  "Chamber series with temperature_fan prefix resolves to chamber subjects",
+                  "[controller][temp_graph_controller][chamber]") {
     auto& ps = get_printer_state();
 
     // Set chamber temp/target to known values
@@ -245,4 +245,101 @@ TEST_CASE_METHOD(TempGraphControllerFixture,
     REQUIRE(y_points != nullptr);
     // 38.5°C → 385 in chart storage (deci-degrees)
     REQUIRE(y_points[0] == 385);
+}
+
+// ============================================================================
+// Regression tests for #1117 — deferred-delete / queued-callback races
+// ============================================================================
+//
+// Crash signature: SIGSEGV in TempGraphController::setup_observers() on K1
+// after ~6h uptime. Root cause: a queued connection-state observer fires
+// rebuild() → setup_observers() on a controller whose detach() has run but
+// whose memory is still valid (deferred-delete window in
+// ui_overlay_temp_graph.cpp:171). The connection_observer lambda deref'd
+// `self->generation_` before checking the lifetime token, hitting freed
+// memory if `self` was already gone.
+//
+// These tests exercise both shapes of the race:
+//   1. Synchronous destroy with a queued callback still pending
+//   2. The on_activate() "detach + release + async-delete" swap pattern
+
+TEST_CASE_METHOD(TempGraphControllerFixture,
+                  "Queued rebuild callback safely no-ops after synchronous destroy (#1117)",
+                  "[controller][temp_graph_controller][regression][uaf]") {
+    auto& ps = get_printer_state();
+    auto* conn_subj = ps.get_printer_connection_state_subject();
+    REQUIRE(conn_subj != nullptr);
+
+    TempGraphControllerConfig cfg;
+    cfg.series = {
+        {"extruder", lv_color_hex(0xFF4444), true},
+        {"heater_bed", lv_color_hex(0x88C0D0), true},
+    };
+
+    auto controller = std::make_unique<TempGraphController>(screen, cfg);
+    REQUIRE(controller->is_valid());
+
+    // Reset prev_state captured at construction so the test transitions are
+    // treated as real changes (otherwise the observer short-circuits on
+    // "state == *prev_state").
+    lv_subject_set_int(conn_subj, 0); // Disconnected
+    helix::ui::UpdateQueue::instance().drain();
+    lv_timer_handler_safe();
+
+    // Queue a reconnect callback but DON'T drain — leaves a rebuild()
+    // invocation pending in UpdateQueue targeting the controller.
+    lv_subject_set_int(conn_subj, 2); // Reconnected
+
+    // Destroy the controller synchronously (simulates the deferred-delete
+    // firing before the queued callback runs). Without the tearing_down_
+    // guard, the pending rebuild() would call setup_observers() on freed
+    // memory when the queue drains next.
+    controller.reset();
+
+    // Drain — must not crash. The pending callback should early-return via
+    // either weak_alive.expired() (ctx freed) or tearing_down_ check.
+    REQUIRE_NOTHROW(helix::ui::UpdateQueue::instance().drain());
+    lv_timer_handler_safe();
+}
+
+TEST_CASE_METHOD(TempGraphControllerFixture,
+                  "Detach + release + deferred-delete race is safe (#1117)",
+                  "[controller][temp_graph_controller][regression][uaf]") {
+    auto& ps = get_printer_state();
+    auto* conn_subj = ps.get_printer_connection_state_subject();
+    REQUIRE(conn_subj != nullptr);
+
+    TempGraphControllerConfig cfg;
+    cfg.series = {
+        {"extruder", lv_color_hex(0xFF4444), true},
+    };
+
+    auto controller = std::make_unique<TempGraphController>(screen, cfg);
+    REQUIRE(controller->is_valid());
+
+    // Prime the disconnect state so the next transition is a reconnect.
+    lv_subject_set_int(conn_subj, 0);
+    helix::ui::UpdateQueue::instance().drain();
+    lv_timer_handler_safe();
+
+    // Queue a reconnect.
+    lv_subject_set_int(conn_subj, 2);
+
+    // Reproduce the on_activate swap path from ui_overlay_temp_graph.cpp:171:
+    // detach observers synchronously, release ownership, defer deletion via
+    // lv_async_call. This is the exact window the K1 crash hit.
+    controller->detach();
+    TempGraphController* raw = controller.release();
+    REQUIRE(raw != nullptr);
+
+    // Drain the UpdateQueue — pending reconnect callback must no-op against
+    // the detached controller (tearing_down_ flag + lifetime token).
+    REQUIRE_NOTHROW(helix::ui::UpdateQueue::instance().drain());
+
+    // Fire the lv_async_call deletion (lv_timer_handler_safe runs one-shot
+    // timers). Controller must be safely destroyed without UAF.
+    REQUIRE_NOTHROW(lv_timer_handler_safe());
+
+    // raw is now a dangling pointer — don't touch it. unique_ptr is empty.
+    REQUIRE(controller == nullptr);
 }
