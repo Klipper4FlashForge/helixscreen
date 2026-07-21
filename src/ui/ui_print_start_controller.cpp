@@ -12,6 +12,7 @@
 
 #include "ui_error_reporting.h"
 #include "ui_event_safety.h"
+#include "ui_filament_mapping_card.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_panel_print_status.h"
@@ -741,13 +742,15 @@ void PrintStartController::show_color_mismatch_warning(
     std::string message = lv_tr("These tools have no matching filament loaded:");
     message += "\n\n";
     for (int tool_idx : unresolved_tools) {
-        if (tool_idx < static_cast<int>(tool_info.size())) {
-            const auto& tool = tool_info[tool_idx];
-            std::string color_name = helix::describe_color(tool.color_rgb);
+        // Look up by real tool_index — tool_info may be used-filtered (compacted),
+        // so its vector position no longer equals the tool number.
+        const auto* tool = helix::ui::FilamentMappingCard::find_by_tool_index(tool_info, tool_idx);
+        if (tool) {
+            std::string color_name = helix::describe_color(tool->color_rgb);
             message += "  " + std::string(LV_SYMBOL_BULLET) + " T" + std::to_string(tool_idx) +
                        ": " + color_name;
-            if (!tool.material.empty()) {
-                message += " (" + tool.material + ")";
+            if (!tool->material.empty()) {
+                message += " (" + tool->material + ")";
             }
             message += "\n";
         }
@@ -876,9 +879,12 @@ PrintStartController::find_material_mismatches() {
             MaterialMismatchDetail detail;
             detail.tool_index = m.tool_index;
 
-            // Get expected material from gcode tool info
-            if (m.tool_index >= 0 && m.tool_index < static_cast<int>(tool_info.size())) {
-                detail.expected_material = tool_info[m.tool_index].material;
+            // Get expected material from gcode tool info. Look up by real
+            // tool_index — tool_info may be used-filtered (compacted), so its
+            // vector position no longer equals the tool number.
+            if (const auto* tool =
+                    helix::ui::FilamentMappingCard::find_by_tool_index(tool_info, m.tool_index)) {
+                detail.expected_material = tool->material;
             }
 
             // Get loaded material from the mapped AMS slot
