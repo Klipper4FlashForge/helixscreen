@@ -113,10 +113,17 @@ static bool flush_on_vsync(esp_lcd_panel_handle_t panel,
 // pair (2x19.2KB) double-buffers render N+1 while N is staged, at half the
 // internal cost of the 24-line pair — the 48KB UI stack and 32KB RGB bounce DMA
 // must still find contiguous internal blocks (see the boot heap-gate logs).
-#define UI_DRAW_BUF_LINES 12
+/* One 24-line buffer instead of the earlier 12-line double-buffer pair — SAME
+ * 38.4KB internal total. Rationale: every chunk re-walks the widget tree and
+ * re-resolves styles for each widget it intersects, so chunk count is a direct
+ * multiplier on non-blend render overhead (measured: a 30-key buttonmatrix
+ * rendered ~3x slower per pixel across 26 chunks than plain content). Halving
+ * the chunks (40 -> 20 full-screen) buys more than double-buffering did: our
+ * flush_cb is a fast synchronous memcpy into the PSRAM shadow (~1ms/chunk),
+ * so render/stage overlap was worth almost nothing. */
+#define UI_DRAW_BUF_LINES 24
 #define UI_DRAW_BUF_BYTES (BOARD_LCD_H_RES * UI_DRAW_BUF_LINES * (int)FB_BPP)
 LV_ATTRIBUTE_MEM_ALIGN static uint8_t s_draw_buf1[UI_DRAW_BUF_BYTES];
-LV_ATTRIBUTE_MEM_ALIGN static uint8_t s_draw_buf2[UI_DRAW_BUF_BYTES];
 
 // XML/expat parsing recurses deeply during component registration and layout;
 // the audit ran the full app slice on a 32KB pthread stack. 48KB gives margin
@@ -130,6 +137,16 @@ LV_ATTRIBUTE_MEM_ALIGN static uint8_t s_draw_buf2[UI_DRAW_BUF_BYTES];
 #define PRESENT_STACK_BYTES 4096
 #define PRESENT_TASK_PRIO 10
 
+// Refresh-cycle cost tripwire: chunk count / staged px / first-to-last-chunk ms
+// for each completed LVGL refresh cycle, logged only when the cycle is
+// expensive (UI-thread stalls starve the polled touch indev — taps during a
+// long cycle are dropped, so slow cycles ARE user-visible input loss). Cheap:
+// three counters and one esp_timer read per chunk.
+static uint32_t s_cyc_chunks;
+static uint64_t s_cyc_px;
+static int64_t s_cyc_t0_us;
+#define CYCLE_LOG_MS 100
+
 static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
     // Stage this chunk into the PSRAM shadow at its screen offset (internal
     // partial buffer -> PSRAM, row by row: the chunk is w*h tightly packed, the
@@ -137,6 +154,11 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
     // LVGL is free to reuse px_map immediately.
     int32_t w = area->x2 - area->x1 + 1;
     int32_t h = area->y2 - area->y1 + 1;
+    if (s_cyc_chunks == 0) {
+        s_cyc_t0_us = esp_timer_get_time();
+    }
+    s_cyc_chunks++;
+    s_cyc_px += (uint64_t)w * (uint64_t)h;
     size_t row_bytes = (size_t)w * FB_BPP;
     for (int32_t r = 0; r < h; r++) {
         uint8_t *dst = s_shadow + (size_t)(area->y1 + r) * FB_STRIDE + (size_t)area->x1 * FB_BPP;
@@ -173,6 +195,15 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
         }
         portEXIT_CRITICAL(&s_present_mux);
         s_cur_valid = false;
+
+        int64_t cyc_ms = (esp_timer_get_time() - s_cyc_t0_us) / 1000;
+        if (cyc_ms >= CYCLE_LOG_MS) {
+            ESP_LOGW(TAG, "slow refresh cycle: %ldms, %lu chunks, %llu px, band y[%ld..%ld]",
+                     (long)cyc_ms, (unsigned long)s_cyc_chunks, (unsigned long long)s_cyc_px,
+                     (long)s_pub_y1, (long)s_pub_y2);
+        }
+        s_cyc_chunks = 0;
+        s_cyc_px = 0;
     }
 
     lv_display_flush_ready(disp); // immediate — LVGL never blocks on the panel
@@ -285,7 +316,7 @@ static void *ui_thread_main(void *arg) {
     }
 
     lv_display_t *disp = lv_display_create(BOARD_LCD_H_RES, BOARD_LCD_V_RES);
-    lv_display_set_buffers(disp, s_draw_buf1, s_draw_buf2, UI_DRAW_BUF_BYTES,
+    lv_display_set_buffers(disp, s_draw_buf1, NULL, UI_DRAW_BUF_BYTES,
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(disp, flush_cb);
 
@@ -303,7 +334,15 @@ static void *ui_thread_main(void *arg) {
     ota_health_confirm();
     ESP_LOGI(TAG, "ui: render loop");
     while (true) {
+        // Cycle-time tripwire: a long lv_timer_handler starves the polled touch
+        // indev — taps during the window are silently dropped. Pairs with the
+        // flush_cb slow-refresh log to split "render slow" from "handler slow".
+        int64_t t0 = esp_timer_get_time();
         uint32_t delay = lv_timer_handler();
+        int64_t handler_ms = (esp_timer_get_time() - t0) / 1000;
+        if (handler_ms >= CYCLE_LOG_MS) {
+            ESP_LOGW(TAG, "slow ui cycle: lv_timer_handler %ldms", (long)handler_ms);
+        }
         if (s_ui_tick) {
             s_ui_tick();
         }
