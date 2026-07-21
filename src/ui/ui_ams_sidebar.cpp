@@ -1042,7 +1042,7 @@ void AmsOperationSidebar::handle_bypass_toggle() {
             spdlog::info("[AmsSidebar] Unloading slot {} before enabling bypass",
                          info.current_slot);
             pending_bypass_enable_ = true;
-            error = backend->unload_filament();
+            error = backend->unload_active_filament();
             if (error.result == AmsResult::SUCCESS) {
                 NOTIFY_INFO(lv_tr("Unloading before bypass..."));
             } else {
@@ -1129,7 +1129,7 @@ void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
                 error = backend->change_tool(slot_info->mapped_tool);
             } else {
                 spdlog::info("[AmsSidebar] Preheat path: unload first, then load {}", slot_index);
-                error = backend->unload_filament();
+                error = backend->unload_active_filament();
             }
         } else {
             error = backend->load_filament(slot_index);
@@ -1221,7 +1221,7 @@ void AmsOperationSidebar::check_pending_load() {
                 } else {
                     spdlog::info("[AmsSidebar] Preheat complete, unloading first then load {}",
                                  slot);
-                    error = backend->unload_filament();
+                    error = backend->unload_active_filament();
                 }
             } else {
                 spdlog::info("[AmsSidebar] Preheat complete, loading slot {}", slot);

@@ -3550,7 +3550,7 @@ TEST_CASE("AFC unload_filament sends bare TOOL_UNLOAD in toolchanger mode (no sl
     helper.setup_toolchanger(2);
 
     // No slot specified (slot_index = -1): unload whatever is currently loaded.
-    auto result = helper.unload_filament();
+    auto result = helper.unload_active_filament();
 
     REQUIRE(result);
     REQUIRE(helper.has_gcode("TOOL_UNLOAD"));
@@ -3599,7 +3599,7 @@ TEST_CASE("AFC unload_filament sends bare TOOL_UNLOAD in single-extruder mode (n
     helper.set_running(true);
     helper.set_filament_loaded(true);
 
-    auto result = helper.unload_filament();
+    auto result = helper.unload_active_filament();
 
     REQUIRE(result);
     REQUIRE(helper.has_gcode("TOOL_UNLOAD"));

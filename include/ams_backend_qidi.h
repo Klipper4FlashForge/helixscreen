@@ -101,7 +101,7 @@ class AmsBackendQidi : public AmsSubscriptionBackend {
     }
 
     AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index = -1) override;
+    AmsError unload_filament(int slot_index) override;
     AmsError select_slot(int slot_index) override;
     AmsError change_tool(int tool_number) override;
 
@@ -206,9 +206,9 @@ class AmsBackendQidi : public AmsSubscriptionBackend {
     std::vector<QidiSlotRfid> slot_rfid_;
 
     // Dryer state for the box PTC heater (issue #1019).
-    std::vector<DryerInfo> dryer_info_;       ///< Per-unit (per-box) dryer state, index = unit
-    std::vector<std::time_t> dry_end_epoch_;  ///< Per-unit drying end time (epoch s), 0 = none
-    bool drying_timer_supported_ = false; ///< box_extras drying timer seen -> use ENABLE_BOX_DRY
+    std::vector<DryerInfo> dryer_info_;      ///< Per-unit (per-box) dryer state, index = unit
+    std::vector<std::time_t> dry_end_epoch_; ///< Per-unit drying end time (epoch s), 0 = none
+    bool drying_timer_supported_ = false;    ///< box_extras drying timer seen -> use ENABLE_BOX_DRY
     std::function<std::time_t()> now_fn_ = [] { return std::time(nullptr); };
 
   public:

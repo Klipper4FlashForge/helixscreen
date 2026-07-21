@@ -98,7 +98,7 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
      * types; the invariant and catalog-selector tests derive their expectations from
      * this array rather than re-typing it, so a change here propagates to its guards.
      */
-    static constexpr std::array<const char*, 7> kStockWhitelist{"PLA", "PLA-CF", "SILK", "TPU",
+    static constexpr std::array<const char*, 7> kStockWhitelist{"PLA", "PLA-CF", "SILK",   "TPU",
                                                                 "ABS", "PETG",   "PETG-CF"};
 
     /**
@@ -141,7 +141,7 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     [[nodiscard]] bool slot_unloads_to_toolhead(int slot_index, bool loaded_hint) const override;
 
     AmsError load_filament(int slot_index) override;
-    AmsError unload_filament(int slot_index = -1) override;
+    AmsError unload_filament(int slot_index) override;
     AmsError select_slot(int slot_index) override;
     AmsError change_tool(int tool_number) override;
 
@@ -658,7 +658,7 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // present->absent transition and any transition after the window still apply.
     std::array<std::chrono::steady_clock::time_point, NUM_PORTS> last_eject_time_{};
     static constexpr std::chrono::milliseconds kEjectPresenceSuppression{4000};
-    int active_tool_ = -1;                      // Current tool (-1 = none)
+    int active_tool_ = -1; // Current tool (-1 = none)
     // Physically seated port from IFS_STATUS "Chan" (1-4; 0 = none). Persists at
     // the seated port while loaded-idle (when GET_ZCOLOR's "Extruder:" reads
     // None), so it is the seated-channel authority for unload routing. Stored
@@ -702,8 +702,8 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // Atomic: written under mutex_ in apply_zcolor_result, read unlocked in the
     // schedule/query gates.
     std::atomic<bool> ifs_status_ports_seen_{false};
-    bool external_mode_ = false;          // Bypass/external spool mode
-    bool head_filament_ = false;          // Head sensor state
+    bool external_mode_ = false; // Bypass/external spool mode
+    bool head_filament_ = false; // Head sensor state
     // Toolhead SWITCH-sensor authority, tracked separately from the conflated
     // head_filament_. parse_head_sensor() writes head_filament_ from BOTH the
     // switch AND the ifs_motion_sensor, and the motion sensor is device-confirmed

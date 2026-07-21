@@ -541,14 +541,17 @@ class AmsBackend {
     virtual AmsError load_filament(int slot_index) = 0;
 
     /**
-     * @brief Unload filament (async)
+     * @brief Unload filament from a specific slot (async)
      *
      * Initiates filament unload from extruder back to its slot.
      * Results delivered via EVENT_UNLOAD_COMPLETE or EVENT_ERROR.
      *
-     * @param slot_index Slot to unload (-1 = unload current/default).
-     *        On toolchangers, specifies which tool to unmount.
-     *        On single-extruder systems, ignored (only one thing loaded).
+     * @param slot_index Slot to unload. MUST be explicit — there is no default.
+     *        Callers that mean "whatever is active" should call
+     *        unload_active_filament() instead, which resolves current_slot once
+     *        (single source of truth) and forwards here. Backends may still
+     *        receive slot_index < 0 via that path when current_slot is unknown
+     *        (no active tool); each backend's override documents its -1 behavior.
      *
      * Requires:
      * - Filament currently loaded
@@ -557,7 +560,29 @@ class AmsBackend {
      *
      * @return AmsError indicating if operation was started successfully
      */
-    virtual AmsError unload_filament(int slot_index = -1) = 0;
+    virtual AmsError unload_filament(int slot_index) = 0;
+
+    /**
+     * @brief Unload whichever slot the backend currently considers active.
+     *
+     * Convenience that resolves the active slot from system_info_.current_slot
+     * ONCE in the base class and forwards to unload_filament(int). Single
+     * source of truth for the "unload active" semantic — eliminates the
+     * per-backend "if (slot_index < 0) slot = current_slot" fallback that
+     * previously lived in each unload_filament override.
+     *
+     * That fallback let a callsite's snapshot of current_slot (read for a
+     * "is anything loaded?" guard) diverge from the backend's re-read inside
+     * unload_filament — causing the U1 Filament-panel-unload wrong-tool bug
+     * (Helix sent EXTRUDER=0 because the backend's stale read won over the
+     * UI's fresh one).
+     *
+     * If current_slot is -1 (no active slot known), -1 is forwarded to the
+     * backend override, which keeps its own per-backend "trust the firmware"
+     * behavior (Snapmaker: bare INNER_FILAMENT_UNLOAD, Toolchanger: not_loaded
+     * error, AFC: bare TOOL_UNLOAD, etc).
+     */
+    AmsError unload_active_filament();
 
     /**
      * @brief Select tool/slot without loading (async)

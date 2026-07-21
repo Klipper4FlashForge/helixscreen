@@ -605,7 +605,7 @@ TEST_CASE("ACE operations require API", "[ams][ace][preconditions]") {
     auto err = helper.load_filament(0);
     REQUIRE(!err.success());
 
-    err = helper.unload_filament();
+    err = helper.unload_active_filament();
     REQUIRE(!err.success());
 
     err = helper.start_drying(45.0f, 240);

@@ -355,18 +355,42 @@ TEST_CASE("Snapmaker unload routes through AUTO_FEEDING UNLOAD=1", "[ams][snapma
         REQUIRE(backend.captured_gcodes[0] == "AUTO_FEEDING EXTRUDER=2 UNLOAD=1");
     }
 
-    SECTION("no slot falls back to the currently loaded slot") {
+    SECTION("unload_active_filament dispatches the loaded slot's extruder") {
+        // Contract: unload_active_filament() reads current_slot from system_info_
+        // (single source of truth in the base class) and forwards it. This is
+        // the path the Filament panel's Unload button takes.
         CapturingSnapmakerBackend backend;
         backend.set_loaded_slot(1);
-        auto err = backend.unload_filament(); // default slot_index = -1
+        auto err = backend.unload_active_filament();
         REQUIRE(err.success());
         REQUIRE(backend.captured_gcodes.size() == 1);
         REQUIRE(backend.captured_gcodes[0] == "AUTO_FEEDING EXTRUDER=1 UNLOAD=1");
     }
 
-    SECTION("unknown loaded slot falls back to bare INNER_FILAMENT_UNLOAD") {
+    SECTION("unload_active_filament with T3 loaded dispatches EXTRUDER=3 (U1 field bug)") {
+        // Regression for the Snapmaker U1 Filament-panel-unload wrong-tool bug
+        // (Discord report from Bart, 2026-07-20): with T3 loaded, hitting Unload
+        // on the Filament panel sent EXTRUDER=0 (stale current_slot) and the
+        // firmware dutifully visited T0 first. The fix routes through
+        // unload_active_filament(), which resolves current_slot ONCE in the base
+        // class — same snapshot the UI's "is anything loaded?" guard used — so
+        // the two can never diverge.
+        CapturingSnapmakerBackend backend;
+        backend.set_loaded_slot(3);
+        auto err = backend.unload_active_filament();
+        REQUIRE(err.success());
+        REQUIRE(backend.captured_gcodes.size() == 1);
+        REQUIRE(backend.captured_gcodes[0] == "AUTO_FEEDING EXTRUDER=3 UNLOAD=1");
+        // Explicit guard against the bug returning: must NOT touch T0.
+        REQUIRE(backend.captured_gcodes[0].find("EXTRUDER=0") == std::string::npos);
+    }
+
+    SECTION("unload_active_filament with no active slot falls back to bare INNER_FILAMENT_UNLOAD") {
+        // current_slot = -1 (no tool picked up). The base helper forwards -1 to
+        // the backend override, which keeps its "trust the firmware" behavior
+        // (bare leaf macro, no AUTO_FEEDING state machine).
         CapturingSnapmakerBackend backend; // current_slot defaults to -1
-        auto err = backend.unload_filament();
+        auto err = backend.unload_active_filament();
         REQUIRE(err.success());
         REQUIRE(backend.captured_gcodes.size() == 1);
         REQUIRE(backend.captured_gcodes[0] == "INNER_FILAMENT_UNLOAD");
@@ -717,6 +741,36 @@ TEST_CASE("Snapmaker unload_finish clears the loaded latch even while motion sen
     // Filament is still physically in the buffer (detected=true) so the slot is
     // AVAILABLE, NOT EMPTY — the spool is present, just not at the toolhead.
     CHECK(backend.get_slot_info(2).status == SlotStatus::AVAILABLE);
+}
+
+TEST_CASE("Snapmaker unload_finish preserves current_slot for the picked-up tool",
+          "[ams][snapmaker][channel_state][unload]") {
+    // Bart's U1 field report (Discord 2026-07-20): T3 picked up on the carriage,
+    // channel_state=unload_finish (TPU loaded directly into the toolhead, bypassing
+    // the feeder state machine). With current_slot=-1 reset on every unload_finish,
+    // the Filament panel's Unload routed through the bare INNER_FILAMENT_UNLOAD
+    // leaf macro (no tool specifier), and the firmware defaulted to T0.
+    //
+    // current_slot / current_tool track which toolhead is PICKED UP (authority:
+    // toolhead.extruder, parsed at the top of handle_status_update). They are
+    // independent of whether feeder filament is at the nozzle. Only
+    // filament_loaded should flip on unload_finish.
+    AmsBackendSnapmaker backend(nullptr, nullptr);
+
+    // Simulate T2 picked up (toolhead.extruder = "extruder2").
+    json picked_up = json{{"toolhead", json{{"extruder", "extruder2"}}}};
+    SnapmakerTestAccess::handle_status(backend, picked_up);
+    REQUIRE(backend.get_system_info().current_slot == 2);
+    REQUIRE(backend.get_system_info().current_tool == 2);
+
+    // T2's feeder channel reaches unload_finish (filament retracted from nozzle,
+    // but toolhead still mounted). filament_loaded must clear; current_slot must NOT.
+    SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "unload_finish",
+                                                                /*filament_detected=*/true));
+
+    CHECK(backend.get_system_info().current_slot == 2);
+    CHECK(backend.get_system_info().current_tool == 2);
+    CHECK_FALSE(backend.get_system_info().filament_loaded);
 }
 
 TEST_CASE("Snapmaker wait_insert means not loaded", "[ams][snapmaker][channel_state]") {

@@ -499,8 +499,6 @@ void FilamentPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
 // PRIVATE HELPERS
 // ============================================================================
 
-
-
 void FilamentPanel::update_temp_display() {
     std::snprintf(temp_display_buf_, sizeof(temp_display_buf_), "%d / %d°C", nozzle_current_,
                   nozzle_target_);
@@ -1883,10 +1881,11 @@ void FilamentPanel::handle_spool_preset_button() {
     if (auto* c = get_temperature_controller()) {
         // Switching material via spool preset: hold the previous filament's temp
         // if hotter so the old material still purges cleanly (keep_previous_hot).
-        c->set_target(helix::HeaterType::Nozzle, static_cast<double>(nozzle_target_),
-                      {.toast = true, .keep_previous_hot = true, .on_success = [t = nozzle_target_]() {
-                           NOTIFY_SUCCESS(lv_tr("Nozzle target set to {}°C"), t);
-                       }});
+        c->set_target(
+            helix::HeaterType::Nozzle, static_cast<double>(nozzle_target_),
+            {.toast = true, .keep_previous_hot = true, .on_success = [t = nozzle_target_]() {
+                 NOTIFY_SUCCESS(lv_tr("Nozzle target set to {}°C"), t);
+             }});
         c->set_target(helix::HeaterType::Bed, static_cast<double>(bed_target_),
                       {.toast = true, .on_success = [t = bed_target_]() {
                            NOTIFY_SUCCESS(lv_tr("Bed target set to {}°C"), t);
@@ -2122,7 +2121,8 @@ void FilamentPanel::set_material(int material_id) {
     update_status();
 
     spdlog::info("[{}] Material set: {} (nozzle={}°C, bed={}°C, chamber={}°C)", get_name(),
-                 helix::presets::name(material_id), nozzle_target_, bed_target_, mat->chamber_temp_c);
+                 helix::presets::name(material_id), nozzle_target_, bed_target_,
+                 mat->chamber_temp_c);
 }
 
 bool FilamentPanel::is_extrusion_allowed() const {
@@ -2483,7 +2483,12 @@ void FilamentPanel::execute_unload() {
         backend_op_active_ = true;
         op_in_flight_ = FilamentOp::Unload;
         op_started(FilamentOp::Unload);
-        AmsError err = backend->unload_filament();
+        // Pass current_slot explicitly (via the base helper that resolves it once
+        // from the same sys_info snapshot we just checked above) so the unload
+        // can never diverge from the "is anything loaded?" guard. The U1
+        // Filament-panel-unload wrong-tool bug was the backend re-reading
+        // current_slot here and landing on a stale value.
+        AmsError err = backend->unload_active_filament();
         if (!err.success()) {
             operation_guard_.end();
             backend_op_active_ = false;

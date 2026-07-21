@@ -78,7 +78,7 @@ TEST_CASE("AmsBackend base defaults: slot LIVE accessors degrade gracefully",
         CHECK_FALSE(backend.slot_is_actively_loaded(2));
 
         // After an unload completes, no slot is actively loaded.
-        backend.unload_filament();
+        backend.unload_active_filament();
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         REQUIRE_FALSE(backend.is_filament_loaded());
         for (int i = 0; i < 4; ++i) {

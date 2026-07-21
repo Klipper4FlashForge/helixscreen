@@ -1337,11 +1337,27 @@ void AmsBackendSnapmaker::handle_status_update(const nlohmann::json& notificatio
                                 // A *_finish state resolves the operation.
                                 // unload_finish and preload_finish both retract
                                 // filament out of the toolhead: demote the slot from
-                                // LOADED to AVAILABLE and drop the active-lane
-                                // highlight so slot_is_actively_loaded / filament_loaded
-                                // clears immediately (the extruder pin-state path keeps
+                                // LOADED to AVAILABLE and clear filament_loaded so
+                                // slot_is_actively_loaded / filament_loaded clears
+                                // immediately (the extruder pin-state path keeps
                                 // active_pin set while parked, which otherwise leaves
                                 // the badge "active" after an idle unload).
+                                //
+                                // current_slot / current_tool are NOT reset here:
+                                // they track which toolhead is picked up on the
+                                // carriage (toolhead.extruder is the authority, set
+                                // in the extruder-pin parse above), which is
+                                // independent of whether feeder filament is at the
+                                // nozzle. A user running TPU without feeders (Bart's
+                                // field report, 2026-07-20) has the tool picked up
+                                // while the channel reports unload_finish
+                                // permanently — resetting current_slot=-1 there
+                                // made unload_active_filament() dispatch the bare
+                                // INNER_FILAMENT_UNLOAD leaf macro (no tool
+                                // specifier), and the firmware defaulted to T0.
+                                // filament_loaded is the right signal for "no
+                                // filament at the nozzle"; current_slot tracks the
+                                // picked-up tool, full stop.
                                 if (info.clears_loaded) {
                                     auto* slot = system_info_.units[0].get_slot(i);
                                     if (slot && slot->status == SlotStatus::LOADED) {
@@ -1351,8 +1367,6 @@ void AmsBackendSnapmaker::handle_status_update(const nlohmann::json& notificatio
                                     if (system_info_.current_slot == i ||
                                         system_info_.current_tool == i) {
                                         system_info_.filament_loaded = false;
-                                        system_info_.current_slot = -1;
-                                        system_info_.current_tool = -1;
                                         changed = true;
                                     }
                                 }
