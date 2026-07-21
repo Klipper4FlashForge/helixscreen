@@ -99,4 +99,12 @@ bool orca_tables_available();
 void set_orca_tables(std::set<std::string> library_types,
                      std::map<std::string, std::string> overrides);
 
+/// Force the Orca tables to load now, on the calling thread, instead of
+/// lazily on the first orca_match_type() call. Call once at startup, on the
+/// MAIN thread, before any AMS/filament backend can reach orca_match_type()
+/// from a WebSocket background thread — otherwise the first lane_data heal
+/// pays for the assets/filaments.json parse while holding the Orca mutex on
+/// that background thread. A no-op if the tables are already loaded.
+void warm_orca_tables();
+
 } // namespace filament

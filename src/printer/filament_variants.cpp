@@ -296,6 +296,11 @@ bool orca_tables_available() {
     return !g_orca_library_types.empty();
 }
 
+void warm_orca_tables() {
+    std::lock_guard<std::mutex> lock(g_orca_mutex);
+    load_orca_tables_locked();
+}
+
 std::string orca_match_type(std::string_view display_type) {
     std::string work(trim(display_type));
     if (work.empty())
