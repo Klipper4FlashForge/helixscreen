@@ -52,14 +52,31 @@ set(HELIX_FONT_SRCS
     ${CMAKE_CURRENT_LIST_DIR}/fonts/noto_sans_18.c
     ${CMAKE_CURRENT_LIST_DIR}/moved_fonts_shim.c)
 
+# ESP32-S3 PIE SIMD blend/fill assembly (vendored esp_lvgl_port, Apache-2.0 —
+# see simd/esp_lvgl_port_lv_blend.h for provenance). The *_esp32s3.S files
+# define the generic lv_*_esp symbols the glue header's static inlines call
+# from inside LVGL's blend translation units; lv_macro_*.S are include-only
+# macro libraries the others pull in.
+file(GLOB HELIX_SIMD_SRCS ${CMAKE_CURRENT_LIST_DIR}/simd/*_esp32s3.S)
+
 idf_component_register(
-    SRCS ${LVGL_SRCS} ${HELIX_XML_SRCS} ${HELIX_FONT_SRCS} anomaly_stub.c
-         helix_lvgl_abi_check.c
+    SRCS ${LVGL_SRCS} ${HELIX_XML_SRCS} ${HELIX_FONT_SRCS} ${HELIX_SIMD_SRCS}
+         anomaly_stub.c helix_lvgl_abi_check.c
     INCLUDE_DIRS
         ${CMAKE_CURRENT_LIST_DIR}      # adapted lv_conf.h (RGB565)
+        ${CMAKE_CURRENT_LIST_DIR}/simd # esp_lvgl_port_lv_blend.h (ASM_CUSTOM)
         ${REPO_ROOT}/lib/lvgl          # lvgl.h, lvgl_private.h
         ${REPO_ROOT}/lib/helix-xml     # helix_xml.h
     PRIV_REQUIRES pthread esp_timer)
+
+# Render hot path at -O2. The image ships -Os globally (a global -O2 measured
+# +1.4MB over BOTH ota slots — a hard overflow), but the software renderer's
+# blend/fill/glyph loops are where full-screen repaint time goes (measured
+# ~183ms/frame at -Os on the S3), so only lib/lvgl/src/draw/** gets -O2.
+# GCC honors the last -O flag, so appending -O2 per-source overrides the
+# global -Os for exactly these files.
+file(GLOB_RECURSE LVGL_DRAW_SRCS ${REPO_ROOT}/lib/lvgl/src/draw/*.c)
+set_source_files_properties(${LVGL_DRAW_SRCS} PROPERTIES COMPILE_OPTIONS "-O2")
 
 # LV_KCONFIG_IGNORE: helix-xml ships lv_conf_internal.h without the sibling
 # lv_conf_kconfig.h; we configure via lv_conf.h, not ESP-IDF Kconfig.

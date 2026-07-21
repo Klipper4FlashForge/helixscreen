@@ -183,6 +183,7 @@
     /* Enable native helium assembly to be compiled */
     #define LV_USE_NATIVE_HELIUM_ASM    0
 
+
     /* 0: use a simple renderer capable of drawing only simple rectangles with gradient, images, texts, and straight lines only
      * 1: use a complex renderer capable of drawing rounded corners, shadow, skew lines, and arcs too */
     #define LV_DRAW_SW_COMPLEX          1
@@ -200,16 +201,22 @@
         #define LV_DRAW_SW_CIRCLE_CACHE_SIZE 4
     #endif
 
-    /* Enable NEON SIMD for ARM platforms with NEON support (AD5M Cortex-A7, Pi ARMv8)
-     * This accelerates pixel blending operations significantly */
-    #if defined(__ARM_NEON) || defined(__ARM_NEON__)
+    /* SIMD blend acceleration. This block is the ONLY definition site for
+     * LV_USE_DRAW_SW_ASM — an earlier define gets silently clobbered here
+     * (learned the hard way: the vendored S3 asm linked as dead archive
+     * members while the hooks compiled to NONE).
+     * ESP32-S3: PIE 128-bit SIMD assembly vendored from espressif/esp-bsp
+     * esp_lvgl_port (see simd/esp_lvgl_port_lv_blend.h for provenance) —
+     * accelerates the RGB565 fill/blend loops that dominate full-screen
+     * repaint time. (NEON branch kept for template parity with the desktop
+     * lv_conf.h; this firmware conf only ever compiles for Xtensa.) */
+    #if defined(ESP_PLATFORM)
+        #define  LV_USE_DRAW_SW_ASM     LV_DRAW_SW_ASM_CUSTOM
+        #define  LV_DRAW_SW_ASM_CUSTOM_INCLUDE "esp_lvgl_port_lv_blend.h"
+    #elif defined(__ARM_NEON) || defined(__ARM_NEON__)
         #define  LV_USE_DRAW_SW_ASM     LV_DRAW_SW_ASM_NEON
     #else
         #define  LV_USE_DRAW_SW_ASM     LV_DRAW_SW_ASM_NONE
-    #endif
-
-    #if LV_USE_DRAW_SW_ASM == LV_DRAW_SW_ASM_CUSTOM
-        #define  LV_DRAW_SW_ASM_CUSTOM_INCLUDE ""
     #endif
 
     /* Enable drawing complex gradients in software: linear at an angle, radial or conical */
