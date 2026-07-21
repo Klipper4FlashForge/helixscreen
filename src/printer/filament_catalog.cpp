@@ -220,6 +220,41 @@ bool FilamentCatalog::save_user_products(const std::vector<nlohmann::json>& prod
                                  choose_overlay_write_path(kUserPaths, std::size(kUserPaths)));
 }
 
+std::vector<nlohmann::json> FilamentCatalog::load_user_products() {
+    return read_products(kUserPaths, std::size(kUserPaths));
+}
+
+std::vector<nlohmann::json> FilamentCatalog::load_user_products_from(const std::string& path) {
+    const char* paths[] = {path.c_str()};
+    return read_products(paths, 1);
+}
+
+bool FilamentCatalog::upsert_product(std::vector<nlohmann::json>& products,
+                                     const nlohmann::json& product) {
+    const std::string id = product.is_object() ? product.value("id", "") : "";
+    if (!id.empty()) {
+        for (auto& p : products) {
+            if (p.is_object() && p.value("id", "") == id) {
+                p = product;  // replace in place, preserving list order
+                return true;
+            }
+        }
+    }
+    products.push_back(product);
+    return false;
+}
+
+bool FilamentCatalog::remove_product(std::vector<nlohmann::json>& products,
+                                     const std::string& id) {
+    const size_t before = products.size();
+    products.erase(std::remove_if(products.begin(), products.end(),
+                                  [&](const nlohmann::json& p) {
+                                      return p.is_object() && p.value("id", "") == id;
+                                  }),
+                   products.end());
+    return products.size() != before;
+}
+
 bool FilamentCatalog::save_user_products_to(const std::vector<nlohmann::json>& products,
                                             const std::string& path) {
     if (path.empty()) {

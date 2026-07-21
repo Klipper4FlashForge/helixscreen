@@ -81,6 +81,25 @@ class FilamentCatalog {
     /// built-in user-path list.
     static std::string choose_overlay_write_path(const char* const* paths, std::size_t n);
 
+    /// Read the user overlay's authored `filaments` entries as raw JSON objects
+    /// (sparse — type inheritance is NOT applied), for read-modify-write by the
+    /// product-edit UI. Accepts both the object form and the legacy bare array.
+    /// Empty when no overlay exists or it can't be parsed. This is the read half
+    /// of the save_user_products round-trip.
+    static std::vector<nlohmann::json> load_user_products();
+    /// Explicit-path variant for tests / non-default locations.
+    static std::vector<nlohmann::json> load_user_products_from(const std::string& path);
+    /// Insert `product` into `products`, replacing an existing entry with the
+    /// same `"id"` (exact match) in place (preserving order), else appending.
+    /// Returns true if an existing entry was replaced (an edit), false if
+    /// appended (an add). A non-object `product`, or one with no/empty `"id"`,
+    /// is appended.
+    static bool upsert_product(std::vector<nlohmann::json>& products,
+                               const nlohmann::json& product);
+    /// Remove every entry whose `"id"` equals `id`. Returns true if one or more
+    /// were removed. Used by the edit UI's Delete / Restore-Defaults action.
+    static bool remove_product(std::vector<nlohmann::json>& products, const std::string& id);
+
     const EffectiveFilament* resolve_code(const std::string& scheme,
                                           const std::string& code) const;
     const EffectiveFilament* resolve_id(const std::string& id) const;

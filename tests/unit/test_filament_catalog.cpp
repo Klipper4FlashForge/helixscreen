@@ -360,3 +360,118 @@ TEST_CASE_METHOD(HelixTestFixture, "save_user_products_to empty product list wri
 
     remove_save_tmp();
 }
+
+// ---- load_user_products + upsert/remove (read-modify-write for the edit UI) ----
+
+TEST_CASE_METHOD(HelixTestFixture, "load_user_products_from reads authored products",
+                 "[filament_catalog][user_save]") {
+    remove_save_tmp();
+    // Object form: return the sparse authored entries verbatim, no inheritance.
+    {
+        std::ofstream out(SAVE_TMP);
+        out << R"({"filaments":[{"id":"a","type":"PLA"},{"id":"b","nozzle":250}],)"
+            << R"("orca_type_map":{"X":"PLA"}})";
+    }
+    auto products = FilamentCatalog::load_user_products_from(SAVE_TMP);
+    REQUIRE(products.size() == 2);
+    CHECK(products[0]["id"] == "a");
+    CHECK(products[1]["nozzle"] == 250);  // authored value, not resolved/inherited
+
+    // Legacy bare-array form is accepted too.
+    {
+        std::ofstream out(SAVE_TMP);
+        out << R"([{"id":"legacy","type":"ABS"}])";
+    }
+    auto legacy = FilamentCatalog::load_user_products_from(SAVE_TMP);
+    REQUIRE(legacy.size() == 1);
+    CHECK(legacy[0]["id"] == "legacy");
+
+    // Missing file -> empty, no throw.
+    CHECK(FilamentCatalog::load_user_products_from("/tmp/helix_no_such_overlay.json").empty());
+
+    remove_save_tmp();
+}
+
+TEST_CASE_METHOD(HelixTestFixture, "upsert_product replaces by id or appends",
+                 "[filament_catalog][user_save]") {
+    std::vector<nlohmann::json> products = {
+        {{"id", "a"}, {"type", "PLA"}},
+        {{"id", "b"}, {"type", "ABS"}},
+    };
+
+    // Edit: same id replaces in place, preserves order, returns true.
+    CHECK(FilamentCatalog::upsert_product(products, {{"id", "a"}, {"type", "PETG"}}));
+    REQUIRE(products.size() == 2);
+    CHECK(products[0]["id"] == "a");           // still first
+    CHECK(products[0]["type"] == "PETG");      // replaced
+    CHECK(products[1]["id"] == "b");           // untouched
+
+    // Add: new id appends, returns false.
+    CHECK_FALSE(FilamentCatalog::upsert_product(products, {{"id", "c"}, {"type", "TPU"}}));
+    REQUIRE(products.size() == 3);
+    CHECK(products[2]["id"] == "c");
+
+    // No/empty id appends rather than clobbering entry 0.
+    CHECK_FALSE(FilamentCatalog::upsert_product(products, {{"name", "nameless"}}));
+    REQUIRE(products.size() == 4);
+    CHECK(products[0]["id"] == "a");
+}
+
+TEST_CASE_METHOD(HelixTestFixture, "remove_product removes by id",
+                 "[filament_catalog][user_save]") {
+    std::vector<nlohmann::json> products = {
+        {{"id", "a"}, {"type", "PLA"}},
+        {{"id", "b"}, {"type", "ABS"}},
+    };
+    CHECK(FilamentCatalog::remove_product(products, "a"));
+    REQUIRE(products.size() == 1);
+    CHECK(products[0]["id"] == "b");
+    // Absent id: no-op, returns false.
+    CHECK_FALSE(FilamentCatalog::remove_product(products, "zzz"));
+    CHECK(products.size() == 1);
+}
+
+TEST_CASE_METHOD(HelixTestFixture, "product edit round-trip preserves orca_type_map",
+                 "[filament_catalog][user_save]") {
+    remove_save_tmp();
+    // Seed as the modal will find it: existing user products + an orca_type_map.
+    {
+        std::ofstream out(SAVE_TMP);
+        out << R"({"filaments":[{"id":"user-pla","type":"PLA","nozzle":215}],)"
+            << R"("orca_type_map":{"CustomPLA":"PLA"}})";
+    }
+
+    // --- Add a new product (the modal's "+ Add custom filament" flow) ---
+    auto products = FilamentCatalog::load_user_products_from(SAVE_TMP);
+    CHECK_FALSE(FilamentCatalog::upsert_product(
+        products, {{"id", "user-petg"}, {"type", "PETG"}, {"nozzle", 240}, {"source", "user"}}));
+    REQUIRE(FilamentCatalog::save_user_products_to(products, SAVE_TMP));
+
+    // Both products present; orca_type_map survived the products-only write.
+    auto after_add = FilamentCatalog::load_user_products_from(SAVE_TMP);
+    REQUIRE(after_add.size() == 2);
+    auto map1 = FilamentCatalog::load_user_orca_type_map_from(SAVE_TMP);
+    CHECK(map1.at("CustomPLA") == "PLA");
+
+    // --- Edit an existing product (override-by-id) ---
+    FilamentCatalog::upsert_product(
+        after_add, {{"id", "user-pla"}, {"type", "PLA"}, {"nozzle", 225}, {"source", "user"}});
+    REQUIRE(FilamentCatalog::save_user_products_to(after_add, SAVE_TMP));
+    auto cat = FilamentCatalog::load_with_overlay(FIX, SAVE_TMP);
+    const auto* edited = cat.resolve_id("user-pla");
+    REQUIRE(edited != nullptr);
+    CHECK(edited->nozzle_recommended == 225);  // edit applied
+
+    // --- Delete / Restore-Defaults (remove the overlay entry) ---
+    auto after_edit = FilamentCatalog::load_user_products_from(SAVE_TMP);
+    CHECK(FilamentCatalog::remove_product(after_edit, "user-petg"));
+    REQUIRE(FilamentCatalog::save_user_products_to(after_edit, SAVE_TMP));
+    auto final_products = FilamentCatalog::load_user_products_from(SAVE_TMP);
+    REQUIRE(final_products.size() == 1);
+    CHECK(final_products[0]["id"] == "user-pla");
+    // orca_type_map still intact after the whole add/edit/delete cycle.
+    auto map2 = FilamentCatalog::load_user_orca_type_map_from(SAVE_TMP);
+    CHECK(map2.at("CustomPLA") == "PLA");
+
+    remove_save_tmp();
+}
