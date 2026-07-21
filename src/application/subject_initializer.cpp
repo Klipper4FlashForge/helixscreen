@@ -46,6 +46,7 @@
 #include "app_globals.h"
 #include "color_sensor_manager.h"
 #include "filament_sensor_manager.h"
+#include "filament_variants.h"
 #include "humidity_sensor_manager.h"
 #include "led/ui_led_control_overlay.h"
 #include "lock_manager.h"
@@ -90,6 +91,12 @@ void SubjectInitializer::init_core_and_state() {
 
     // Phase 2: PrinterState subjects (panels depend on these)
     init_printer_state_subjects();
+
+    // Warm the Orca match tables on the main thread, before AmsState/backends
+    // start below — otherwise the first lane_data heal parses
+    // assets/filaments.json under g_orca_mutex on a WebSocket background
+    // thread (see filament_variants.h warm_orca_tables()).
+    filament::warm_orca_tables();
 
     // Phase 3: AMS and filament sensor subjects
     init_ams_subjects();

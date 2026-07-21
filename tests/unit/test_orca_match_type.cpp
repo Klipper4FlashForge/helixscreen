@@ -10,6 +10,7 @@
 
 #include "filament_variants.h"
 
+#include <filesystem>
 #include <map>
 #include <set>
 #include <string>
@@ -117,4 +118,45 @@ TEST_CASE("every catalog type resolves or is deliberately blank", "[orca_match][
         UNSCOPED_INFO("  unresolved type: " << t);
     }
     CHECK(unresolved.empty());
+}
+
+// warm_orca_tables() exists to load assets/filaments.json on the main thread
+// at startup, so the first orca_match_type() call from a WebSocket background
+// thread (the lane_data heal) finds the tables already populated instead of
+// parsing JSON while holding g_orca_mutex on that thread.
+//
+// orca_tables_available() and orca_match_type() are BOTH lazy-loading
+// themselves (by design, as a safety net), so asserting
+// orca_tables_available() right after warm_orca_tables() would pass even if
+// warm_orca_tables() were a no-op — the assertion call would just trigger the
+// lazy load itself. To actually discriminate, this test breaks the lazy path
+// (relative kOrcaTablePaths resolve from cwd) AFTER warm_orca_tables() has had
+// its chance to run from the real cwd: if warm already populated the tables,
+// the later orca_tables_available() call sees g_orca_loaded already true and
+// returns the cached result; if warm did nothing, that call performs the
+// FIRST load attempt from the broken cwd, fails to find the asset, and
+// (because load_orca_tables_locked only ever attempts once) latches in empty.
+TEST_CASE("warm_orca_tables loads the real asset without a prior match call", "[orca_match][warm]") {
+    // Some earlier TEST_CASE in this binary may have already loaded or
+    // injected tables; force back to fresh lazy mode first.
+    filament::set_orca_tables({}, {});
+
+    filament::warm_orca_tables();
+
+    const std::filesystem::path original_cwd = std::filesystem::current_path();
+    std::filesystem::current_path(std::filesystem::temp_directory_path());
+    bool available = false;
+    try {
+        available = filament::orca_tables_available();
+    } catch (...) {
+        std::filesystem::current_path(original_cwd);
+        throw;
+    }
+    std::filesystem::current_path(original_cwd);
+
+    CHECK(available);
+
+    // Restore lazy mode so later TEST_CASEs aren't left with the (possibly
+    // now-latched-empty) state from this test.
+    filament::set_orca_tables({}, {});
 }
