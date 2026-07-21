@@ -54,6 +54,7 @@ class PageScrollController {
 
   private:
     static void container_event_cb(lv_event_t* e);
+    static void gutter_event_cb(lv_event_t* e);
     static void up_clicked_cb(lv_event_t* e);
     static void down_clicked_cb(lv_event_t* e);
 
@@ -61,6 +62,7 @@ class PageScrollController {
     void apply_reserved_padding();
     void remove_reserved_padding();
     void on_container_deleted();
+    void on_gutter_deleted();
 
     lv_obj_t* container_ = nullptr;
     lv_obj_t* gutter_ = nullptr;
