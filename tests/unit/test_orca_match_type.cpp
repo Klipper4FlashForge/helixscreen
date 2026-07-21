@@ -33,8 +33,8 @@ const std::map<std::string, std::string> kOverrides = {
     {"PLA+", "PLA"},   {"ASA+", "ASA"},   {"ABS+", "ABS"}};
 
 struct TableFixture {
-    TableFixture() { filament::set_orca_tables(kLib, kOverrides); }
-    ~TableFixture() { filament::set_orca_tables({}, {}); }
+    TableFixture() { filament::FilamentVariantsTestAccess::set_orca_tables(kLib, kOverrides); }
+    ~TableFixture() { filament::FilamentVariantsTestAccess::set_orca_tables({}, {}); }
 };
 
 } // namespace
@@ -139,7 +139,7 @@ TEST_CASE("every catalog type resolves or is deliberately blank", "[orca_match][
 TEST_CASE("warm_orca_tables loads the real asset without a prior match call", "[orca_match][warm]") {
     // Some earlier TEST_CASE in this binary may have already loaded or
     // injected tables; force back to fresh lazy mode first.
-    filament::set_orca_tables({}, {});
+    filament::FilamentVariantsTestAccess::set_orca_tables({}, {});
 
     filament::warm_orca_tables();
 
@@ -158,7 +158,7 @@ TEST_CASE("warm_orca_tables loads the real asset without a prior match call", "[
 
     // Restore lazy mode so later TEST_CASEs aren't left with the (possibly
     // now-latched-empty) state from this test.
-    filament::set_orca_tables({}, {});
+    filament::FilamentVariantsTestAccess::set_orca_tables({}, {});
 }
 
 // merge_user_orca_overrides() injects user-contributed entries from

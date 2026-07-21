@@ -93,11 +93,19 @@ std::string orca_match_type(std::string_view display_type);
 /// record. Callers that WRITE based on orca_match_type must check this first.
 bool orca_tables_available();
 
-/// Inject the Orca tables directly, bypassing the lazy asset load. Empty
-/// containers for both arguments restore lazy loading from
-/// assets/filaments.json on the next orca_match_type() call.
-void set_orca_tables(std::set<std::string> library_types,
-                     std::map<std::string, std::string> overrides);
+/// Test-only access to the process-global Orca resolution tables. These tables
+/// are otherwise private to filament_variants.cpp — production reads them only
+/// through orca_match_type() / orca_tables_available(). Kept behind a named
+/// access class so the mutator can't be mistaken for public API; the method is
+/// defined in filament_variants.cpp, where the tables live.
+class FilamentVariantsTestAccess {
+public:
+    /// Inject the Orca tables directly, bypassing the lazy asset load. Empty
+    /// containers for both arguments restore lazy loading from
+    /// assets/filaments.json on the next orca_match_type() call.
+    static void set_orca_tables(std::set<std::string> library_types,
+                                std::map<std::string, std::string> overrides);
+};
 
 /// Force the Orca tables to load now, on the calling thread, instead of
 /// lazily on the first orca_match_type() call. Call once at startup, on the

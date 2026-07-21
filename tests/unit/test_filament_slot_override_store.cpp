@@ -2980,14 +2980,14 @@ TEST_CASE("load skips the heal entirely when Orca tables are unavailable",
     // that made the heal's gate ("current == match") false for every
     // helix-authored record, so it rewrote all of them and stripped
     // `material` — a data-loss bug (H1). Force the "tables unavailable"
-    // state via the public set_orca_tables() API: passing a non-empty
-    // overrides map alongside an empty library-types set is NOT the
-    // both-empty case that means "restore lazy load" (see set_orca_tables's
-    // doc comment), so it pins g_orca_loaded with an empty library — the
-    // same shape a stale/missing asset produces.
-    filament::set_orca_tables({}, {{"__test_sentinel__", "PLA"}});
+    // state via the FilamentVariantsTestAccess::set_orca_tables() test hook:
+    // passing a non-empty overrides map alongside an empty library-types set is
+    // NOT the both-empty case that means "restore lazy load" (see its doc
+    // comment), so it pins g_orca_loaded with an empty library — the same shape
+    // a stale/missing asset produces.
+    filament::FilamentVariantsTestAccess::set_orca_tables({}, {{"__test_sentinel__", "PLA"}});
     struct RestoreTables {
-        ~RestoreTables() { filament::set_orca_tables({}, {}); }
+        ~RestoreTables() { filament::FilamentVariantsTestAccess::set_orca_tables({}, {}); }
     } restore_tables;
 
     TmpCacheDir tmp("orca_heal_unavailable");
@@ -3075,9 +3075,9 @@ TEST_CASE("drift: heal repairs an already-healed record whose match no longer ex
     // restricting the table to a set that no longer contains "ASA", for a
     // record that was already healed (carries helix_material) on an earlier
     // boot when "ASA" was still matchable.
-    filament::set_orca_tables({"PLA"}, {});
+    filament::FilamentVariantsTestAccess::set_orca_tables({"PLA"}, {});
     struct RestoreTables {
-        ~RestoreTables() { filament::set_orca_tables({}, {}); }
+        ~RestoreTables() { filament::FilamentVariantsTestAccess::set_orca_tables({}, {}); }
     } restore_tables;
 
     TmpCacheDir tmp("orca_heal_drift");

@@ -281,8 +281,8 @@ std::string display_family(std::string_view type) {
     return base.empty() ? std::string(type) : base;
 }
 
-void set_orca_tables(std::set<std::string> library_types,
-                     std::map<std::string, std::string> overrides) {
+void FilamentVariantsTestAccess::set_orca_tables(std::set<std::string> library_types,
+                                                 std::map<std::string, std::string> overrides) {
     std::lock_guard<std::mutex> lock(g_orca_mutex);
     g_orca_library_types = std::move(library_types);
     g_orca_overrides = std::move(overrides);
