@@ -772,7 +772,16 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
             // owns the estimate (it tracks real geometry instead of the byte/time
             // progress fraction, which drifts high early in a print). This tier
             // stays for non-sliced jobs / prints with no height metadata.
-            if (!printer_reports_layers_ && layer_height_ <= 0.0) {
+            //
+            // Gated on print_duration > 0: Klipper advances print_duration only
+            // once real print/extrusion moves execute — never during PRINT_START
+            // (bed mesh / purge line / Z-hop). File-position progress, however,
+            // climbs while the START_PRINT macro streams through the file header,
+            // so without this gate a fabricated layer appears (and self-corrects
+            // only once printing begins). Deferring until print_duration > 0 shows
+            // the pre-print default instead of a bogus number.
+            if (!printer_reports_layers_ && layer_height_ <= 0.0 &&
+                lv_subject_get_int(&print_duration_) > 0) {
                 auto current_state =
                     static_cast<PrintJobState>(lv_subject_get_int(&print_state_enum_));
                 bool is_terminal_state = (current_state == PrintJobState::COMPLETE ||
@@ -818,7 +827,17 @@ void PrinterPrintState::update_from_status(const nlohmann::json& status) {
     // should_complete_preprint stays unaffected). It IS flagged layer_z_derived_,
     // which marks the value display-accurate (Mainsail parity) so the label drops
     // the "~" estimate prefix — the derivation tracks real commanded geometry.
-    if (!printer_reports_layers_ && layer_height_ > 0.0 && have_gcode_z_) {
+    //
+    // Gated on print_duration > 0 (see the Tier-2b note above): during
+    // PRINT_START the commanded Z is driven by bed probing and Z-hop, NOT model
+    // layers, so round((z - first) / height) + 1 fabricates a bogus layer
+    // (e.g. Z=2mm with 0.2mm layers => "layer 10"). Worse, this tier sets
+    // layer_z_derived_, so layer_is_accurate() would present that garbage WITHOUT
+    // the "~" estimate prefix. Klipper holds print_duration at 0 until real
+    // extrusion begins, so deferring the derivation until then keeps the layer at
+    // the pre-print default through bed mesh / purge / Z-hop.
+    if (!printer_reports_layers_ && layer_height_ > 0.0 && have_gcode_z_ &&
+        lv_subject_get_int(&print_duration_) > 0) {
         auto current_state = static_cast<PrintJobState>(lv_subject_get_int(&print_state_enum_));
         bool is_terminal_state =
             (current_state == PrintJobState::COMPLETE ||
