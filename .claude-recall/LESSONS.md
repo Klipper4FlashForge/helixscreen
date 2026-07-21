@@ -20,8 +20,8 @@
 - **Uses**: 4 | **Velocity**: 0 | **Learned**: 2025-12-14 | **Last**: 2026-04-15 | **Category**: gotcha | **Type**: constraint
 > No mutex locks in dtors during static destruction — other objects may already be gone, deadlocks/crashes on exit.
 
-### [L014] [***--|*----] Register all XML components
-- **Uses**: 38 | **Velocity**: 0.041015625 | **Learned**: 2025-12-14 | **Last**: 2026-05-17 | **Category**: gotcha | **Type**: constraint
+### [L014] [***--|****-] Register all XML components
+- **Uses**: 40 | **Velocity**: 2.041015625 | **Learned**: 2025-12-14 | **Last**: 2026-07-20 | **Category**: gotcha | **Type**: constraint
 > New XML components need `lv_xml_component_register_from_file()` in main.cpp. Forgetting = silent failure.
 
 ### [L020] [***--|*----] ObserverGuard for cleanup
@@ -60,8 +60,8 @@
 - **Uses**: 1 | **Velocity**: 0 | **Learned**: 2026-01-06 | **Last**: 2026-04-20 | **Category**: correction | **Type**: constraint
 > An XML `<subjects>` declaration shadows a same-named C++ subject (UI_SUBJECT_INIT_AND_REGISTER_*) — the local one wins, bindings stick at default. Don't declare XML subjects for values C++ owns.
 
-### [L048] [***--|*----] Async tests need queue drain
-- **Uses**: 11 | **Velocity**: 0.291015625 | **Learned**: 2026-01-08 | **Last**: 2026-06-16 | **Category**: pattern | **Type**: constraint
+### [L048] [***--|***--] Async tests need queue drain
+- **Uses**: 12 | **Velocity**: 1.291015625 | **Learned**: 2026-01-08 | **Last**: 2026-07-19 | **Category**: pattern | **Type**: constraint
 > Tests calling async setters (helix::async::invoke / ui_queue_update) must `UpdateQueue::instance().drain_queue_for_testing()` before assertions, else the update is still queued and the subject reads stale. Pattern: test_printer_state.cpp.
 
 ### [L051] [*----|*----] LVGL timer lifetime safety
@@ -146,8 +146,8 @@
 - **Uses**: 17 | **Velocity**: 1.01318359375 | **Learned**: 2026-02-21 | **Last**: 2026-07-18 | **Category**: ui | **Type**: constraint
 > Root with a click handler → every absorbing descendant needs `clickable="false" event_bubble="true"`. `lv_obj`/`ui_card`/`ui_dialog` are clickable by DEFAULT (`lv_obj_constructor`, lv_obj.c:584); only lv_image/label/line/menu/spinner aren't — tell: "thumbnail works, text area dead" (#1101). `lv_indev_search_obj` (lv_indev.c:618) recurses on GEOMETRY, deepest child wins → guard EVERY offender (#1101 needed 4). `clickable="true"` on lv_obj = no-op. Don't lint-"fix" the inverse: backdrop-dismiss roots (context_backdrop/menu) WANT absorb — test instead: `lv_indev_search_obj(test_screen(), &p)` in XMLTestFixture asserts tap target. Refs: test_print_file_card_hittest.cpp, ui_xml/setting_action_row.xml.
 
-### [L070] [***--|*----] Don't lv_tr() non-translatable strings
-- **Uses**: 21 | **Velocity**: 0.03857421875 | **Learned**: 2026-02-17 | **Last**: 2026-05-19 | **Category**: i18n
+### [L070] [***--|***--] Don't lv_tr() non-translatable strings
+- **Uses**: 22 | **Velocity**: 1.03857421875 | **Learned**: 2026-02-17 | **Last**: 2026-07-19 | **Category**: i18n
 > Don't `lv_tr()`: product names (Spoolman, Klipper, Moonraker, HelixScreen), URLs/domains, standalone tech abbreviations (AMS, QGL, ADXL), universal terms (OK, WiFi). Mark with `// i18n: do not translate`. Sentences containing product names ARE translatable ("Restarting HelixScreen…" — "Restarting" translates). Material names (PLA, PETG, ABS, TPU, PA) are also not translated, no translation_tag in XML.
 
 ### [L072] [***--|**---] Never capture bare this in async/WebSocket callbacks
@@ -170,8 +170,8 @@
 - **Uses**: 21 | **Velocity**: 2.0732421875 | **Learned**: 2026-02-22 | **Last**: 2026-07-01 | **Category**: gotcha
 > `lv_obj_is_valid()` = recursive O(n) walk of all screens+children → Pi stack-overflow SIGSEGV. NEVER in observer/anim/timer cbs, loops, dtors, `safe_delete_obj()`, async guards — use null checks. Deferred-delete guards: app tracking (ModalStack) or `lv_obj_delete_async()`. Can return TRUE on recycled memory → delete a live obj (#399). Only safe in one-shot click handlers.
 
-### [L077] [**---|***--] Dynamic subject observers MUST use SubjectLifetime tokens
-- **Uses**: 6 | **Velocity**: 1.28515625 | **Learned**: 2026-02-22 | **Last**: 2026-07-02 | **Category**: gotcha
+### [L077] [**---|****-] Dynamic subject observers MUST use SubjectLifetime tokens
+- **Uses**: 7 | **Velocity**: 2.28515625 | **Learned**: 2026-02-22 | **Last**: 2026-07-20 | **Category**: gotcha
 > Observing dynamic subjects (per-fan/per-sensor/per-extruder): always use the `get_*_subject(name, lifetime)` overload and pass the token to the observer factory. Without it, `lv_subject_deinit()` frees the observer; `ObserverGuard::reset()` then calls `lv_observer_remove()` on freed memory → SEGV. Static singleton subjects don't need tokens.
 
 ### [L078] [-----|-----] lv_obj transform_scale invisible without background
@@ -182,12 +182,12 @@
 - **Uses**: 1 | **Velocity**: 0.0166015625 | **Learned**: 2026-03-29 | **Last**: 2026-05-19 | **Category**: lvgl
 > LVGL 9.5: `DRAW_TASK_ADDED` cbs fire AFTER `DRAW_MAIN_END/DRAW_POST` — `lv_draw_rect/_triangle/_fill` from there draws nothing. Broke chart gradient fills that worked in 9.4-pre. Fix: do custom fills in `DRAW_MAIN_END`, compute positions via `lv_chart_get_y_array()` + `lv_map()`. Gotcha: `lv_draw_fill` VER gradient `frac=0` is BOTTOM, `frac=255` is TOP. Use `lv_draw_fill` (not `lv_draw_rect`) for gradient-only fills to avoid bg_color bleed.
 
-### [L080] [***--|***--] Verify deployment chain before user interaction
-- **Uses**: 34 | **Velocity**: 1.5078125 | **Learned**: 2026-04-16 | **Last**: 2026-07-15 | **Category**: gotcha
+### [L080] [***--|****-] Verify deployment chain before user interaction
+- **Uses**: 35 | **Velocity**: 2.5078125 | **Learned**: 2026-04-16 | **Last**: 2026-07-20 | **Category**: gotcha
 > Before asking user to interact on-device, verify in one pass: (1) NEW binary running (PID start time / version in log), (2) logs land where you expect (journalctl/file/console), (3) required state on (telemetry, debug level in helixscreen.env), (4) logs reachable via SSH. Each failed round-trip burns user patience. Pi: systemctl → journalctl; `deploy-pi-fg` uses `ssh -t` (console only); nohup drops output. Production log capture: systemd + journalctl.
 
-### [L081] [***--|***--] lifetime_.defer does NOT escape UpdateQueue batch
-- **Uses**: 27 | **Velocity**: 1.7470703125 | **Learned**: 2026-04-18 | **Last**: 2026-07-15 | **Category**: gotcha | **Type**: constraint
+### [L081] [***--|****-] lifetime_.defer does NOT escape UpdateQueue batch
+- **Uses**: 28 | **Velocity**: 2.7470703125 | **Learned**: 2026-04-18 | **Last**: 2026-07-20 | **Category**: gotcha | **Type**: constraint
 > `lifetime_.defer`/`tok.defer`/`helix::ui::async_call` are thin `queue_update` wrappers — cb fires next `process_pending` tick, STILL in a UpdateQueue batch. Gen counter guards `this`, not the LVGL event-list ("defer is outside process_pending" comments are wrong). Observer cbs (observe_int_sync/observe_string) also queued (#82). BANNED in any queued/deferred cb: `safe_delete`, `lv_obj_delete`, `lv_obj_clean`. USE: `safe_delete_deferred`, `lv_obj_delete_async`, `helix::ui::safe_clean_children` (LVGL async list, outside batch). Multiple sync deletes/batch → SIGSEGV `lv_event_mark_deleted` (#776/#190/#80).
 
 ### [L082] [*----|*----] Percent size inside LV_SIZE_CONTENT parent collapses to 0
@@ -209,8 +209,8 @@
 - **Uses**: 1 | **Velocity**: 0.046875 | **Learned**: 2026-04-22 | **Last**: 2026-05-17 | **Category**: correction | **Type**: constraint
 > New ObserverGuard cleanup: always `reset()` (handles shutdown via `s_subjects_valid`+`lv_is_initialized()`, safe mid-`lv_deinit`). `release()` is NOT "safer" — skips `lv_observer_remove()`, leaks context, zombie observer fires deferred cb on stale `this` (the 17× #579 misconception; the remove IS the point). `release()` only: (a) StaticSubjectRegistry::register_deinit cbs, (b) shutdown where subject already destroyed — NOT normal `LV_EVENT_DELETE`. Companion [L073].
 
-### [L086] [***--|*----] OpenWrt/procd silently skips plain SysV init scripts at boot
-- **Uses**: 13 | **Velocity**: 0.4453125 | **Learned**: 2026-04-28 | **Last**: 2026-06-14 | **Category**: gotcha | **Type**: constraint
+### [L086] [***--|***--] OpenWrt/procd silently skips plain SysV init scripts at boot
+- **Uses**: 14 | **Velocity**: 1.4453125 | **Learned**: 2026-04-28 | **Last**: 2026-07-20 | **Category**: gotcha | **Type**: constraint
 > OpenWrt/procd (Tina Linux K2, Allwinner) boot iterator only runs `/etc/init.d/<name>` with BOTH `#!/bin/sh /etc/rc.common` shebang AND a `DEPEND=`. Plain SysV silently skipped even if symlinked SXXname — no log. Symptom: hang at boot anim, no UI/helix procs/log, manual `/etc/init.d/SXX start` works. Fix: procd shim `/etc/init.d/<name>` (`START=99 STOP=01 DEPEND=done`, boot/start/stop delegate to SysV), then `<shim> enable`. See `install_procd_shim_k2()` service.sh. Check: `head -1` shows rc.common.
 
 ### [L087] [***--|***--] Default-constructed nlohmann::json is NULL — `.value()` throws
@@ -221,8 +221,8 @@
 - **Uses**: 3 | **Velocity**: 2.3125 | **Learned**: 2026-05-22 | **Last**: 2026-07-17 | **Category**: pattern
 > tests/shell/test_code_lint.bats forbids _for_testing suffix methods in include/*.h or src/*.cpp. Pattern: declare 'friend class FooTestAccess;' on the production class, define FooTestAccess in tests/test_helpers/foo_test_access.h with static methods that access private members (e.g., 'static void apply_sample(PerformanceState& ps, const PerfSample& s) { ps.apply_sample(s); }'). Mocks (*_mock.h) are exempt — whole file is test infra. Template: tests/test_helpers/update_queue_test_access.h.
 
-### [L089] [*----|*----] Regen XML linter schema after adding C++ widget
-- **Uses**: 1 | **Velocity**: 0.3125 | **Learned**: 2026-05-22 | **Last**: 2026-07-03 | **Category**: gotcha
+### [L089] [*----|***--] Regen XML linter schema after adding C++ widget
+- **Uses**: 2 | **Velocity**: 1.3125 | **Learned**: 2026-05-22 | **Last**: 2026-07-19 | **Category**: gotcha
 > After registering a new widget via lv_xml_register_widget() in src/ui/*.cpp (custom widgets like helix_sparkline, ui_card, helix_3d_viewer), run 'make regen-xml-schema' and commit tools/xml-linter/schema/schema.json. The linter auto-discovers from C++ source at schema-generation time but reads the *committed* schema in CI — forgetting this fails the XML Lint workflow with 'unknown-widget'. Analogous to L064 (translation artifacts).
 
 ### [L090] [**---|****-] resolve-backtrace.sh orphans addr2line against the big pi DWARF
@@ -234,11 +234,11 @@
 > "New version not showing on ANY device" = source of truth, not per-device: updater fetches releases.helixscreen.org/<ch>/manifest.json FIRST, trusts any HTTP-200 (update_checker.cpp fetch_stable_release), only falls back to GitHub on FETCH FAILURE not staleness. v0.99.76 cause: release.yml R2 upload non-blocking, manifest uploaded AFTER big zips; a 504 on k2.zip aborted before manifest → R2 pinned at .75, run green. Diagnose: curl live manifest .version vs tag; check the R2 upload job. Fixed 942bcbd51/d0034b282: manifest before zips, s3cp retry, read-back assert version==tag. Verify the SERVED artifact, never trust upload success.
 
 ### [L092] [***--|*****] make | tail masks exit code; -j hides the real build error
-- **Uses**: 27 | **Velocity**: 12.875 | **Learned**: 2026-06-12 | **Last**: 2026-07-17 | **Category**: gotcha
+- **Uses**: 28 | **Velocity**: 13.875 | **Learned**: 2026-06-12 | **Last**: 2026-07-20 | **Category**: gotcha
 > `make | tail/head` reports tail's exit 0 even on make failure — capture separately (`make …; echo $?>/tmp/exit`). Build dies with NO 'error:' + different failure point each run → suspect interleaved -j output or resource contention (`free -h`, `pgrep -af cc1plus` for sibling builds); drop to -j2 to surface the true first error. (Real cause once: missing $(LV_CONF) in sub-builds, invisible under -j.)
 
-### [L093] [-----|-----] Pure-decision-function tests need input realism
-- **Uses**: 0 | **Velocity**: 0 | **Learned**: 2026-06-16 | **Last**: 2026-06-16 | **Category**: gotcha
+### [L093] [*----|***--] Pure-decision-function tests need input realism
+- **Uses**: 1 | **Velocity**: 1 | **Learned**: 2026-06-16 | **Last**: 2026-07-20 | **Category**: gotcha
 > A pure decision function's tests are only as strong as whether their inputs match what the function actually receives at runtime. decide_preview_action() tests passed while it had a deadlock because they fed view_mode=1/2 (3D/2D), but at print start the view-mode subject is 0 (thumbnail) and only flips after gcode loads. Result: green tests + on-device failure. When a pure fn takes a runtime-derived input, assert against the value it actually holds at the call site (0 at print start), not a convenient one.
 
 ### [L094] [*----|***--] Don't gate a load/fetch on display-output state it produces
@@ -246,7 +246,7 @@
 > Gating a load decision on a state that only updates AFTER the load completes deadlocks. The print-status gcode download was gated on the view-mode subject being 3D/2D, but that subject only becomes 3D/2D once gcode is loaded -> gcode never downloads, mode never leaves thumbnail, 3D render never appears (user saw 'thumbnail not 3D'). Gate loads on intent/settings (want_viewer + render-mode setting), never on the rendered result. Found in PrintStatusPanel preview unification.
 
 ### [L095] [***--|*****] Verify feature existence in code, not from issue phrasing + commit messages
-- **Uses**: 10 | **Velocity**: 5.5 | **Learned**: 2026-07-01 | **Last**: 2026-07-19 | **Category**: correction
+- **Uses**: 12 | **Velocity**: 7.5 | **Learned**: 2026-07-01 | **Last**: 2026-07-20 | **Category**: correction
 > Don't claim a capability is absent from issue wording + commit messages — grep/read the actual code first (reporter "can't find X" usually = discoverability gap, not missing). Spoolman picker existed (AmsEditModal, behind "Choose Spool") despite 6 fix-commits implying otherwise (#1071). Corollary: don't inherit a subagent's "race" claim from a stale comment — verify current code.
 
 ### [L096] [**---|*****] queue_prev tag-ring names the victim, not the crash — resolve real frames first
@@ -257,11 +257,15 @@
 - **Uses**: 0 | **Velocity**: 0 | **Learned**: 2026-07-02 | **Last**: 2026-07-02 | **Category**: gotcha
 > Montserrat LV_SYMBOL_OK/CHECK aren't in body/text fonts → C++ `lv_label_set_text(lbl, LV_SYMBOL_OK)` renders tofu. For glyphs in C++-built rows: resolve icon font `lv_xml_get_font(nullptr, lv_xml_get_const(nullptr,"icon_font_xs"))` + `ui_icon::lookup_codepoint("check")`, apply to label, fixed-width column for alignment (mirror PrinterSwitchMenu/MaterialPickerMenu). Unit tests miss missing glyphs — caught in interactive verify. Related L009.
 
-### [L098] [*----|***--] Python Moonraker-plugin mocks must reflect the REAL API, not an imagined one
-- **Uses**: 2 | **Velocity**: 1.5 | **Learned**: 2026-07-12 | **Last**: 2026-07-16 | **Category**: gotcha
+### [L098] [*----|****-] Python Moonraker-plugin mocks must reflect the REAL API, not an imagined one
+- **Uses**: 3 | **Velocity**: 2.5 | **Learned**: 2026-07-12 | **Last**: 2026-07-19 | **Category**: gotcha
 > helix_print.py coded against a fantasy Moonraker API; hand-rolled mocks implemented the fantasy → wrong calls shipped GREEN a month (bundle RA6EPJTZ: `'KlippyConnection' has no attribute 'run_gcode'`). Real API (Moonraker d5ee171): Klipper via `lookup_component("klippy_apis")` (run_gcode/start_print/do_restart), NOT klippy_connection (only request(WebRequest)); `database`=sql_execute; `history`=get_job/save_job. FIX: mocks `MagicMock(spec_set=[real method names])` so nonexistent-method calls raise AttributeError (reproduces the crash, no Moonraker import). spec_set catches nonexistent attr, not wrong signature. Companion L088.
 
 ### [L099] [*----|-----] Recycled PanelWidget keeps layout bool → stale imperative DOM
 - **Uses**: 1 | **Velocity**: 0 | **Learned**: 2026-07-16 | **Last**: 2026-07-16 | **Category**: pattern
 > PanelWidgetManager reuses widget instances across rebuilds (attach(new)+on_size_changed on the SAME instance); a member layout flag (is_wide_/is_column_) persists but the fresh XML component starts at its defaults. on_size_changed's `if(mode==flag_)return` then skips the apply when the new size matches the stale flag → stuck at XML default (#1109 active_spool white spool; print_status card stuck column at 1x2/3x2). Fix: hoist the imperative apply to a helper, call from attach() too. Immune: widgets recomputing every call (nozzle_temps/tips) or driven by retained subjects.
 
+
+### [L100] [*----|-----] Lossy member vector leaks through every public getter
+- **Uses**: 1 | **Velocity**: 0 | **Learned**: 2026-07-20 | **Last**: 2026-07-20 | **Category**: correction
+> Compacting/filtering/reordering a class member vector silently changes the semantics of EVERY public getter that returns it — audit all accessor consumers, not just your feature's render path. FilamentMappingCard::set_used_tools compacted tool_info_ to used-tools-only (correct for the chip row), but that member is also returned by get_filament_tool_info(); two print-start dialogs indexed it positionally as tool_info[tool_index] (valid only while position==tool_index on the full palette). After compaction the "no matching filament" dialog rendered EMPTY and the material-mismatch warning was silently suppressed — for exactly the used-but-unresolved case the feature existed to surface. No crash (bounds guards), so unit tests + the chip screenshot were green; only adversarial review caught it. Fix: key consumers by identity (find_by_tool_index), or keep the member full and filter at render. Positional-access-by-domain-id is a latent fragility even before you make the member lossy. Merged 746dd0c74.
