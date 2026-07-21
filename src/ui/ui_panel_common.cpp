@@ -46,8 +46,7 @@ lv_obj_t* ui_panel_setup_content_padding(lv_obj_t* panel, lv_obj_t* parent_scree
 
     lv_obj_t* content = lv_obj_find_by_name(panel, content_name);
     if (content) {
-        lv_coord_t vertical_padding =
-            ui_get_header_content_padding(lv_obj_get_height(parent_screen));
+        lv_coord_t vertical_padding = ui_get_header_content_padding();
 
         // Set vertical padding (top/bottom) responsively, keep horizontal at space_md
         lv_obj_set_style_pad_top(content, vertical_padding, 0);
@@ -76,8 +75,7 @@ static void panel_resize_callback_wrapper(ui_panel_resize_context_t* context) {
 
     lv_obj_t* content = lv_obj_find_by_name(context->panel, context->content_name);
     if (content) {
-        lv_coord_t vertical_padding =
-            ui_get_header_content_padding(lv_obj_get_height(context->parent_screen));
+        lv_coord_t vertical_padding = ui_get_header_content_padding();
 
         // Update vertical padding (top/bottom) responsively, keep horizontal at space_md
         lv_obj_set_style_pad_top(content, vertical_padding, 0);

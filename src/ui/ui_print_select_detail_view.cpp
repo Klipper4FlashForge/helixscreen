@@ -201,7 +201,7 @@ lv_obj_t* PrintSelectDetailView::create(lv_obj_t* parent_screen) {
     // Set responsive padding for content area
     lv_obj_t* content_container = lv_obj_find_by_name(overlay_root_, "content_container");
     if (content_container) {
-        lv_coord_t padding = ui_get_header_content_padding(lv_obj_get_height(parent_screen_));
+        lv_coord_t padding = ui_get_header_content_padding();
         lv_obj_set_style_pad_all(content_container, padding, 0);
     }
 
@@ -697,7 +697,7 @@ void PrintSelectDetailView::handle_resize(lv_obj_t* parent_screen) {
 
     lv_obj_t* content_container = lv_obj_find_by_name(overlay_root_, "content_container");
     if (content_container) {
-        lv_coord_t padding = ui_get_header_content_padding(lv_obj_get_height(parent_screen));
+        lv_coord_t padding = ui_get_header_content_padding();
         lv_obj_set_style_pad_all(content_container, padding, 0);
     }
 }

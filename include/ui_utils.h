@@ -18,12 +18,13 @@
 /**
  * @brief Get responsive padding for content areas below headers
  *
- * Returns smaller padding on tiny/small screens for more compact layouts.
+ * Returns the current breakpoint's space_lg token, which the theme system
+ * scales per display size — smaller on tiny/small screens for more compact
+ * layouts.
  *
- * @param screen_height Current screen height in pixels
  * @return Padding value in pixels
  */
-lv_coord_t ui_get_header_content_padding(lv_coord_t screen_height);
+lv_coord_t ui_get_header_content_padding();
 
 /**
  * @brief Get responsive header height based on screen size

@@ -9,9 +9,7 @@
 // Responsive Layout
 // ============================================================================
 
-lv_coord_t ui_get_header_content_padding(lv_coord_t screen_height) {
-    (void)screen_height; // Parameter kept for API stability
-
+lv_coord_t ui_get_header_content_padding() {
     // Use unified space_* system - values are already responsive based on breakpoint
     // set during theme initialization (space_lg = 12/16/20px at small/medium/large)
     int32_t spacing = theme_manager_get_spacing("space_lg");
