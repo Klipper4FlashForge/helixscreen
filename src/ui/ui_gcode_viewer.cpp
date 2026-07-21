@@ -771,9 +771,11 @@ static void gcode_viewer_draw_cb(lv_event_t* e) {
     }
 }
 
-// Long-press threshold in milliseconds — shares the app-wide gesture timeout so
-// the 3D viewer's hold-to-context matches every other long-press in the UI.
-constexpr uint32_t LONG_PRESS_THRESHOLD_MS = AppConstants::Input::LONG_PRESS_MS;
+// Long-press threshold in milliseconds. Deliberately longer than the app-wide
+// gesture timeout (AppConstants::Input::LONG_PRESS_MS, 500ms): a hold here fires
+// EXCLUDE_OBJECT and cancels printing the object under the finger, so the gesture
+// is tuned to demand a deliberate hold and resist accidental cancels.
+constexpr uint32_t LONG_PRESS_THRESHOLD_MS = 1000;
 
 /**
  * @brief Timer callback for long-press detection
