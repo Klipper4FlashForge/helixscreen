@@ -59,6 +59,7 @@
 #include "printer_state.h"
 #include "temperature_sensor_manager.h"
 #include "tool_state.h"
+#include "ui_keyboard_manager.h"
 #include "runtime_config.h"
 #include "setting_group.h"
 #include "subject_initializer.h"
@@ -773,6 +774,16 @@ extern "C" void app_boot_ui(void) {
     subjects.init_panels(manager.api(), rc);
     subjects.init_post(rc);
     log_heap_milestone("subjects-up");
+
+    // Global software keyboard — one shared lv_keyboard, hidden until a
+    // registered textarea gains focus. Mirrors desktop's
+    // Application::init_moonraker() call (application.cpp:1875). Without this,
+    // KeyboardManager::register_textarea() is a silent no-op (keyboard_ ==
+    // nullptr guard) and no textarea on the device ever raises the keyboard —
+    // Change Printer Host, WiFi join password, and provisioning fallback all
+    // depend on it. show() move-foregrounds itself, so creating it before
+    // build_shell() below is z-order safe.
+    KeyboardManager::instance().init(lv_screen_active());
 
 #if CONFIG_HELIX_MOCK_PRINTER
     // Before the shell builds: seed READY/CONNECTED + the printer identity so the
