@@ -109,6 +109,8 @@ The Print Status panel shows:
 - **Filament used** — live consumption updated during printing
 - **Filename** and thumbnail
 
+> **Note:** Exact layer counts and the most accurate time-remaining estimate require your slicer to report layer info to Klipper via `SET_PRINT_STATS_INFO`. If the count or ETA looks off, see [Troubleshooting → Layer count is wrong, stuck at 0, or total layers missing](../TROUBLESHOOTING.md#layer-count-is-wrong-stuck-at-0-or-total-layers-missing).
+
 **Print controls:**
 
 | Button | Action |

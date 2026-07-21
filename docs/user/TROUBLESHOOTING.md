@@ -1153,6 +1153,50 @@ curl -X POST http://localhost:7125/printer/print/cancel
 
 ---
 
+### Layer count is wrong, stuck at 0, or total layers missing
+
+**Symptoms:**
+- The layer counter on the Print Status panel doesn't match the real layer being printed
+- Total layers shows as missing, 0, or a placeholder
+- The current layer looks like a rough guess rather than an exact count
+
+**Cause:**
+For an exact layer count, HelixScreen reads the current and total layer directly from Klipper. Those values are only available if your slicer tells Klipper about them by emitting the `SET_PRINT_STATS_INFO` command in the printed G-code. Many stock slicer profiles don't do this. When the values are absent, HelixScreen falls back to *estimating* the layer from print progress and Z-height, which is close but not always exact.
+
+**Fix — have your slicer emit the layer info:**
+
+In **PrusaSlicer, SuperSlicer, or OrcaSlicer**, add these to your printer's custom G-code (Printer Settings → Custom G-code):
+
+- **Start G-code** — report the total layer count once, at the start:
+  ```
+  SET_PRINT_STATS_INFO TOTAL_LAYER=[total_layer_count]
+  ```
+- **Before layer change G-code** (some slicers call it "Layer change G-code") — report each new layer as it begins:
+  ```
+  SET_PRINT_STATS_INFO CURRENT_LAYER={layer_num + 1}
+  ```
+
+Re-slice your file after adding these — the commands are baked into the G-code at slice time, so existing files won't have them. Once present, HelixScreen shows the exact layer and total for every print.
+
+> **Cura users:** Cura doesn't expose these layer placeholders directly and needs a post-processing script to inject `SET_PRINT_STATS_INFO`. See the Klipper community docs and forums for a Cura post-processing plugin that adds it.
+
+> **Note:** Some noise in the layer count during the print-start phase (bed mesh, purge/prime line, Z-hop) is normal. HelixScreen holds the layer at 0 until real printing begins, so it no longer jumps ahead before the first layer. The estimate only matters mid-print when the slicer macros above are missing.
+
+### Time remaining is inaccurate or slow to settle
+
+**Symptoms:**
+- The estimated time remaining is off, especially early in a print
+- The ETA jumps around or takes a while to steady out during the first layers
+- Time remaining doesn't track the slicer's estimate
+
+**Cause:**
+Time remaining is most accurate when your slicer reports layer information to Klipper via `SET_PRINT_STATS_INFO` (the same commands as the layer-count fix above). Without it, HelixScreen estimates progress from other signals, which are noisier at the very start of a print before enough data has accumulated.
+
+**Fix:**
+Add the `SET_PRINT_STATS_INFO` commands described in [Layer count is wrong, stuck at 0, or total layers missing](#layer-count-is-wrong-stuck-at-0-or-total-layers-missing) above, then re-slice. Expect some ETA drift during the print-start phase (bed mesh, priming) even with the macros in place — the estimate tightens up once printing is underway.
+
+---
+
 ## AMS/Multi-Material Issues
 
 ### AMS slots not detected

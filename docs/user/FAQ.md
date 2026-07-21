@@ -86,6 +86,10 @@ HelixScreen reads standard G-code, so most slicers work. But support is tiered:
 
 For the best results — accurate metadata, thumbnails, exclude-object support, and filament syncing — use **OrcaSlicer 2.3.2 or later**.
 
+### Why is my layer count or time remaining inaccurate?
+
+For an exact layer count and a reliable time-remaining estimate, HelixScreen needs your slicer to report layer info to Klipper via the `SET_PRINT_STATS_INFO` command in the printed G-code. Many stock slicer profiles don't emit it, so HelixScreen falls back to estimating from progress and Z-height — close, but not exact. Adding two short lines to your slicer's custom G-code fixes it. See [Troubleshooting → Layer count is wrong, stuck at 0, or total layers missing](TROUBLESHOOTING.md#layer-count-is-wrong-stuck-at-0-or-total-layers-missing) for the exact snippets per slicer.
+
 ### How is this different from KlipperScreen and GuppyScreen?
 
 | Feature | HelixScreen | KlipperScreen | GuppyScreen |
