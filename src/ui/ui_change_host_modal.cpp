@@ -10,6 +10,7 @@
 #include "config.h"
 #include "host_identity.h"
 #include "lvgl/lvgl.h"
+#include "moonraker_api.h"
 #include "moonraker_client.h"
 #include "theme_manager.h"
 #include "utils/network_validation.h"
@@ -196,6 +197,16 @@ void ChangeHostModal::handle_test_connection() {
     client->set_connection_timeout(5000);
 
     std::string ws_url = "ws://" + std::string(ip) + ":" + port_clean + "/websocket";
+    std::string http_url = "http://" + std::string(ip) + ":" + port_clean;
+
+    // Set HTTP base URL BEFORE connect: MoonrakerClient's on_connected handlers
+    // (proc_stats initial fetch, performance source, etc.) fire REST calls as
+    // soon as the WS opens. Without this, every test connection logs a burst of
+    // "HTTP base URL not configured" errors until the subsequent Save triggers
+    // manager->connect() (which sets it again). See bundle TV95LJGN.
+    if (MoonrakerAPI* api = get_moonraker_api()) {
+        api->set_http_base_url(http_url);
+    }
 
     int result = client->connect(
         ws_url.c_str(),
