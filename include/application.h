@@ -215,6 +215,9 @@ class Application {
     // Guards the discovery-triggered targeted hardware-reconfig wizard so it launches
     // at most once per connection. Reset when a new hardware discovery begins.
     bool m_targeted_reconfig_shown = false;
+    // Guards the ZMOD persistent-z-offset enablement (SAVE_ZMOD_DATA LOAD_ZOFFSET=1)
+    // so it is sent at most once per app session. Intentionally NOT reset on reconnect.
+    bool m_zmod_zoffset_enabled = false;
     bool m_shutdown_complete = false;
     bool m_soft_restart_in_progress = false;
 

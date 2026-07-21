@@ -191,6 +191,7 @@
 #include "tips_manager.h"
 #include "tool_state.h"
 #include "xml_registration.h"
+#include "zmod_zoffset.h"
 
 #include <lvgl/src/misc/cache/instance/lv_image_cache.h>
 #include <spdlog/spdlog.h>
@@ -2595,6 +2596,39 @@ void Application::setup_discovery_callbacks() {
                 hw.fan_max_power());
             crash_handler::breadcrumb::note("disc", "post_init_fans",
                                             static_cast<long>(hw.fans().size()));
+
+            // Enable ZMOD persistent z-offset reload once per session, only when
+            // idle. ZMOD saves any z-offset the user dials in, but reloading it on
+            // the next print is off by default — SAVE_ZMOD_DATA LOAD_ZOFFSET=1 turns
+            // it on so HelixScreen z-offset adjustments survive prints/reboots. The
+            // print_active subject is not yet applied from this discovery's status
+            // (see the reconfig-wizard gate below), so consult status_snapshot
+            // directly to avoid injecting gcode over a live print.
+            {
+                bool print_active =
+                    lv_subject_get_int(get_printer_state().get_print_active_subject()) != 0;
+                if (status_snapshot &&
+                    helix::PrinterPrintState::status_indicates_active_print(*status_snapshot)) {
+                    print_active = true;
+                }
+                if (helix::zmod::should_enable_persistent_zoffset(
+                        api->hardware().has_macro("SAVE_ZMOD_DATA"), print_active,
+                        app->m_zmod_zoffset_enabled)) {
+                    app->m_zmod_zoffset_enabled = true;
+                    spdlog::info("[ZMOD] Enabling persistent z-offset (SAVE_ZMOD_DATA "
+                                 "LOAD_ZOFFSET=1)");
+                    // Fire-and-forget: callbacks are LOG-ONLY and capture nothing that
+                    // can dangle, so the background response thread is lifetime-safe.
+                    api->execute_gcode(
+                        "SAVE_ZMOD_DATA LOAD_ZOFFSET=1",
+                        []() { spdlog::info("[ZMOD] Persistent z-offset enabled"); },
+                        [](const MoonrakerError& err) {
+                            spdlog::warn("[ZMOD] Failed to enable persistent z-offset: {}",
+                                         err.message);
+                        },
+                        0, /*silent=*/true);
+                }
+            }
 
             // Seed temperature graphs from Moonraker's cached history so they are
             // populated immediately instead of filling in live over several
