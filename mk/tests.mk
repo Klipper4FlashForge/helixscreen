@@ -29,13 +29,15 @@ SHARD_TIMEOUT := 300
 # Args: $(1) = test filter (e.g., "~[.] ~[slow]")
 # Collects PIDs and waits for all, failing if any shard fails
 # Each shard is wrapped in a timeout to prevent infinite hangs
+# Each shard log starts with a host/nproc/git/ts header so flakes (e.g. #1121)
+# are attributable to a shard/host instead of re-litigated each run.
 # Output is prefixed with [shard N] for clarity
 define run_tests_parallel
 	echo "$(CYAN)Running $(NPROCS) test shards in parallel (timeout=$(SHARD_TIMEOUT)s)...$(RESET)"; \
 	shard_dir=$$(mktemp -d); \
 	pids=""; \
 	for i in $$(seq 0 $$(($(NPROCS)-1))); do \
-		($(if $(TIMEOUT_CMD),$(TIMEOUT_CMD) $(SHARD_TIMEOUT)) $(TEST_BIN) $(1) --shard-count $(NPROCS) --shard-index $$i 2>&1; echo $$? > "$$shard_dir/$$i.exit") | \
+		(echo "=== shard $$i/$(NPROCS) host=$$(hostname) nproc=$$(nproc 2>/dev/null || echo '?') git=$$(git rev-parse --short HEAD 2>/dev/null || echo unknown) ts=$$(date -Iseconds) order=decl seed=0"; $(if $(TIMEOUT_CMD),$(TIMEOUT_CMD) $(SHARD_TIMEOUT)) $(TEST_BIN) $(1) --shard-count $(NPROCS) --shard-index $$i 2>&1; echo $$? > "$$shard_dir/$$i.exit") | \
 			tee "$$shard_dir/$$i.log" | sed "s/^/[shard $$i] /" & \
 		pids="$$pids $$!"; \
 	done; \
