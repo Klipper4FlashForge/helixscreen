@@ -520,9 +520,10 @@ void PrintStartCollector::check_fallback_completion() {
                          "(bed heating={}, nozzle heating={})",
                          static_cast<int>(current), static_cast<int>(resolved), bed_heating,
                          nozzle_heating);
-            update_phase(resolved, resolved == PrintStartPhase::HEATING_BED
-                                       ? lv_tr("Heating Bed...")
-                                       : lv_tr("Heating Nozzle..."));
+            // relabel_heating_phase re-checks current_phase_ under the lock, so a
+            // concurrent bg gcode signal that advanced past heating between the
+            // `current` snapshot above and here is never regressed.
+            relabel_heating_phase(resolved);
         }
     }
 
@@ -1282,6 +1283,47 @@ void PrintStartCollector::update_phase(PrintStartPhase phase, const std::string&
     if (should_save) {
         save_prediction_entry();
     }
+}
+
+void PrintStartCollector::relabel_heating_phase(PrintStartPhase resolved) {
+    int progress;
+    bool has_predictions;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        // CAS guard: only relabel while we are STILL in a heating phase. A
+        // background gcode signal may have advanced current_phase_ past heating
+        // (e.g. to QGL) between the caller's temperature snapshot and now —
+        // relabeling then would regress a newer, correct phase back to heating.
+        if (current_phase_ != PrintStartPhase::HEATING_BED &&
+            current_phase_ != PrintStartPhase::HEATING_NOZZLE) {
+            return;
+        }
+        if (current_phase_ == resolved) {
+            return; // already showing the right heater
+        }
+        current_phase_ = resolved;
+        detected_phases_.insert(resolved);
+        int phase_int = static_cast<int>(resolved);
+        if (phase_enter_times_.find(phase_int) == phase_enter_times_.end()) {
+            phase_enter_times_[phase_int] = std::chrono::steady_clock::now();
+        }
+        progress = calculate_progress_locked();
+        has_predictions = predictor_.has_predictions();
+    }
+
+    // When the predictor has data, time-based progress in update_eta_display() is
+    // the sole progress source — don't override it with phase-weight progress.
+    if (has_predictions) {
+        auto* subj = state_.get_print_start_progress_subject();
+        if (subj) {
+            progress = lv_subject_get_int(subj);
+        }
+    }
+
+    const char* message = resolved == PrintStartPhase::HEATING_BED ? lv_tr("Heating Bed...")
+                                                                   : lv_tr("Heating Nozzle...");
+    // Call PrinterState outside the lock to avoid potential deadlocks
+    state_.set_print_start_state(resolved, message, progress);
 }
 
 void PrintStartCollector::set_profile(std::shared_ptr<PrintStartProfile> profile) {

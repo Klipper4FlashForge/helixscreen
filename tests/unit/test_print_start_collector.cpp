@@ -1194,6 +1194,39 @@ TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
     REQUIRE(get_current_phase() == PrintStartPhase::HEATING_BED);
 }
 
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
+                 "Heater correction: CAS guard refuses to regress a phase that advanced past heating",
+                 "[print][collector][heating][heater_correction]") {
+    // Race guard. In production, check_fallback_completion() snapshots the phase
+    // under lock, releases it, reads temps, then relabels — a bg gcode signal can
+    // advance current_phase_ past heating in that gap. relabel_heating_phase()
+    // re-checks under the lock and must refuse, so the newer phase is never
+    // regressed. Here we reproduce that deterministically: drive the phase to QGL
+    // (a non-heating phase), then invoke the relabel as if a stale snapshot did.
+    collector().start();
+    drain_async_updates();
+    drain_async_updates();
+    collector().enable_fallbacks();
+
+    send_gcode_response("PRINT_START");
+    send_gcode_response("M109 S210"); // was heating...
+    REQUIRE(get_current_phase() == PrintStartPhase::HEATING_NOZZLE);
+    send_gcode_response("QUAD_GANTRY_LEVEL"); // ...but firmware advanced to QGL
+    REQUIRE(get_current_phase() == PrintStartPhase::QGL);
+
+    // Both heaters below target — a naive relabel would fire HEATING_BED.
+    set_all_temps(300, 1000, 500, 2100);
+
+    // Stale relabel, as check_fallback_completion() would attempt off its snapshot.
+    PrintStartCollectorTestAccess::relabel_heating_phase(collector(),
+                                                         PrintStartPhase::HEATING_BED);
+    drain_async_updates();
+    drain_async_updates();
+
+    // CAS refused: QGL survives, not regressed to HEATING_BED.
+    REQUIRE(get_current_phase() == PrintStartPhase::QGL);
+}
+
 // ============================================================================
 // Proactive Nozzle Heating Detection Tests
 // ============================================================================

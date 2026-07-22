@@ -252,6 +252,18 @@ class PrintStartCollector : public std::enable_shared_from_this<PrintStartCollec
     void update_phase(helix::PrintStartPhase phase, const std::string& message, int progress);
 
     /**
+     * @brief Relabel between the two heating phases from live temps (bed-first).
+     *
+     * Compare-and-swap: applies the relabel only if current_phase_ is STILL a
+     * heating phase (HEATING_BED/HEATING_NOZZLE) at write time. A background
+     * gcode signal may have advanced current_phase_ past heating between the
+     * caller's temperature snapshot and this call; the CAS refuses in that case
+     * so a newer non-heating phase is never regressed back to heating. The
+     * label is derived from `resolved`.
+     */
+    void relabel_heating_phase(helix::PrintStartPhase resolved);
+
+    /**
      * @brief Calculate overall progress based on detected phases
      */
     int calculate_progress() const;
