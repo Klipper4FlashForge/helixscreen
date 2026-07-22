@@ -504,6 +504,28 @@ void PrintStartCollector::check_fallback_completion() {
         }
     }
 
+    // Heating-phase heater correction: a latched firmware heating signal
+    // (e.g. K2's M109) can leave us in HEATING_NOZZLE while the bed is the
+    // real long pole. Re-derive the shown heater from live temps, bed-first.
+    // Scoped to when we're ALREADY in a heating phase, so it can never
+    // relabel a firmware's ordered non-heating phase (e.g. Snapmaker U1
+    // PRINT_BED_DETECTING) as a heating phase.
+    if (current == PrintStartPhase::HEATING_BED ||
+        current == PrintStartPhase::HEATING_NOZZLE) {
+        PrintStartPhase resolved = bed_heating     ? PrintStartPhase::HEATING_BED
+                                   : nozzle_heating ? PrintStartPhase::HEATING_NOZZLE
+                                                    : current;
+        if (resolved != current) {
+            spdlog::info("[PrintStartCollector] Heating correction: phase {} -> {} "
+                         "(bed heating={}, nozzle heating={})",
+                         static_cast<int>(current), static_cast<int>(resolved), bed_heating,
+                         nozzle_heating);
+            update_phase(resolved, resolved == PrintStartPhase::HEATING_BED
+                                       ? lv_tr("Heating Bed...")
+                                       : lv_tr("Heating Nozzle..."));
+        }
+    }
+
     // =========================================================================
     // SILENT-PHASE PROGRESSION: time-based phase advancement for firmwares
     // that run cleaning/purge as silent macros (no gcode echo between
