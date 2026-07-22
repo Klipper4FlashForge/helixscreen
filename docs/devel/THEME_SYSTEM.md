@@ -1,17 +1,6 @@
 # Theme System
 
-> **⚠️ STALE — needs manual rework (flagged for 1.0):** The "Layer 2" architecture,
-> data-flow diagram, C++ Integration, "Available Style Getters", and "Adding a New Themed
-> Widget" sections below describe a deleted `theme_core.c` / `theme_core.h` layer and its
-> `theme_core_get_*_style()` getters. **Those files and functions no longer exist** — the
-> theme system is now the table-driven `ThemeManager` (`src/ui/theme_manager.cpp`, see
-> `include/theme_manager.h`, which "Replaces theme_core.c + old theme_manager.cpp"). Per-widget
-> styling is applied through per-widget apply callbacks (`ui_text.cpp`, `ui_button.cpp`) driven
-> by `lv_obj_report_style_change`. These sections were left in place rather than half-corrected;
-> do not trust any `theme_core_*` symbol here until this doc is rewritten around `ThemeManager`.
-> Token names, JSON paths, and widget-tag names elsewhere in this doc have been corrected.
-
-> **For contributors:** If you're doing layout or styling work, start with the **[UI Contributor Guide](UI_CONTRIBUTOR_GUIDE.md)** instead. This document covers the internal architecture of the theme system — style objects, theme_core C API, and extending the system with new themed widgets.
+> **For contributors:** If you're doing layout or styling work, start with the **[UI Contributor Guide](UI_CONTRIBUTOR_GUIDE.md)** instead. This document covers the internal architecture of the theme system — the table-driven `ThemeManager`, shared `lv_style_t` objects, and extending the system with new themed widgets.
 
 ## Overview
 
@@ -25,62 +14,79 @@ The reactive theme system enables **live theme switching** (dark/light modes) wi
 
 - **Data** (C++): Printer state, temperatures, positions
 - **Appearance** (XML): Layout, colors via tokens, spacing via tokens
-- **Shared Styles** (`theme_core.c`): LVGL `lv_style_t` objects that apply colors and update reactively
+- **Shared Styles** (`ThemeManager`): a fixed table of LVGL `lv_style_t` objects — one per `StyleRole` — that widgets add by reference. Re-theming reconfigures the styles in place, so every widget that added them redraws with new colors.
 
 ### What Problem It Solves
 
 **Before:** Changing themes required restarting the app or manually updating hundreds of widgets.
 
-**After:** Call `theme_core_update_colors()` → all 47+ shared styles update in-place → `lv_obj_report_style_change(NULL)` triggers LVGL's style cascade → every widget using those styles redraws with new colors.
+**After:** Call `theme_manager_apply_theme(theme, dark)` → `ThemeManager` reconfigures every style in its table against the new palette → `lv_obj_report_style_change(nullptr)` triggers LVGL's style cascade → every widget that added a shared style redraws with new colors. Widgets with baked-in inline styles from XML are then re-styled by a widget-tree walk (`theme_manager_refresh_widget_tree` + `theme_apply_current_palette_to_tree`).
 
 ---
 
 ## Architecture
 
-### Two-Layer System
+The system has two cooperating pieces, both fronted by `theme_manager.h`:
 
-| Layer | File | Responsibility |
-|-------|------|----------------|
-| **theme_manager** (C++) | `src/ui/theme_manager.cpp` | Token lookup, XML parsing, responsive constants, theme loading |
-| **theme_core** (C) | `src/theme_core.c` | LVGL style objects, color application, update propagation |
+| Piece | File(s) | Responsibility |
+|-------|---------|----------------|
+| **`ThemeManager`** (singleton) | `src/ui/theme_manager_new.cpp`, style configs in `src/ui/style_configs.cpp` | Owns the fixed table of shared `lv_style_t` objects (one per `StyleRole`), reconfigures them against the active `ThemePalette`, and fires `lv_obj_report_style_change()` |
+| **Free functions** (`theme_manager_*`) | `src/ui/theme_manager.cpp` | Token lookup, XML constant registration, responsive spacing/font constants, theme loading, and the unified `theme_manager_apply_theme()` re-theme entry point |
+
+`ThemeManager` replaces the deleted `theme_core.c`. Instead of a getter per style, roles are enumerated in the `StyleRole` enum and stored in a `std::array<StyleEntry, StyleRole::COUNT>`. Each `StyleEntry` binds a role to its `lv_style_t` and a `StyleConfigureFn` (`configure_card`, `configure_button_primary`, … in `style_configs.cpp`) that writes palette colors into the style.
 
 ### When to Use Each
 
 | Task | Use |
 |------|-----|
 | Get a color token in C++ | `theme_manager_get_color("card_bg")` |
+| Get a color from the live palette struct | `ThemeManager::instance().get_color("card_bg")` |
 | Get responsive spacing | `theme_manager_get_spacing("space_lg")` |
 | Get responsive font | `theme_manager_get_font("font_body")` |
 | Toggle dark/light mode | `theme_manager_toggle_dark_mode()` |
+| Apply a whole theme (or preview) | `theme_manager_apply_theme(theme, dark)` |
 | Check current mode | `theme_manager_is_dark_mode()` |
-| Apply style to custom widget | `theme_core_get_card_style()` etc. |
+| Add a shared style to a custom widget | `ThemeManager::instance().get_style(StyleRole::Card)` |
 
 ### Data Flow
 
 ```
 Theme JSON (nord.json, etc.)
     ↓
-theme_manager.cpp (loads palette, registers tokens)
+theme_manager.cpp  (theme_loader parses JSON → ThemeData/ModePalette,
+                    builds a ThemePalette, registers _light/_dark XML consts)
     ↓
-theme_core.c (applies colors to 47+ lv_style_t objects)
+ThemeManager::apply_palette(palette)
     ↓
-Widgets (reference styles via XML bind_style or C++ add_style)
+For each StyleEntry: lv_style_reset() + entry.configure(&style, palette)
+    ↓
+Widgets that called get_style(role) + lv_obj_add_style(...) reference the shared styles
 ```
+
+Standard LVGL widgets (buttons, textareas, dropdowns, switches, sliders, …) receive their
+shared styles automatically from the LVGL theme apply callback `helix_theme_apply()` in
+`theme_manager.cpp`, keyed on widget class. Widget parts not covered by `StyleRole`
+(checkbox box, switch track/knob, slider track/knob) use file-static styles configured by
+`init_extra_styles()` / `update_handle_styles()` in the same file.
 
 ### How Changes Propagate
 
 ```
-User toggles dark mode
+theme_manager_apply_theme(theme, dark)   ← also reached via theme_manager_toggle_dark_mode()
     ↓
-theme_manager_toggle_dark_mode()
+theme_update_colors() → ThemeManager::set_palettes() → apply_palette()
     ↓
-theme_core_update_colors(&palette)
+Every style in the table is reset + reconfigured against the new palette
     ↓
-Updates all 47 style objects in-place
+lv_obj_report_style_change(nullptr)      ← CRITICAL: invalidates LVGL style caches / cascade
     ↓
-lv_obj_report_style_change(NULL)  ← CRITICAL: triggers LVGL cascade
+Re-register XML color/property consts; update screen bg
     ↓
-All widgets using shared styles redraw
+theme_manager_refresh_widget_tree()      ← lv_obj_refresh_style() on every widget (picks up inline styles)
+    ↓
+theme_apply_current_palette_to_tree()    ← re-colors widgets with baked XML inline colors
+    ↓
+theme_manager_notify_change()            ← bumps the theme-changed subject (generation counter)
 ```
 
 ---
@@ -250,7 +256,7 @@ Standard card surface with themed background, border, and radius.
 </ui_card>
 ```
 
-Uses `theme_core_get_card_style()` → `card_bg` color, `border` color, theme radius.
+Adds the shared `StyleRole::Card` style (`ThemeManager::instance().get_style(StyleRole::Card)`) → `card_bg` color, `border` color, theme radius. See `src/ui/ui_card.cpp`.
 
 #### ui_dialog
 Modal/overlay container with elevated surface color.
@@ -262,7 +268,7 @@ Modal/overlay container with elevated surface color.
 </ui_dialog>
 ```
 
-Uses `theme_core_get_dialog_style()` → `elevated_bg` color.
+Adds the shared `StyleRole::Dialog` style → `elevated_bg` color. See `src/ui/ui_dialog.cpp`.
 
 ### Buttons
 
@@ -365,7 +371,7 @@ Spinner sizes are **responsive** - the pixel values vary by screen height breakp
 <spinner size="md" align="center"/>
 ```
 
-Uses `theme_core_get_spinner_style()` → primary accent color.
+Adds the shared `StyleRole::Spinner` style → primary accent color. See `src/ui/ui_spinner.cpp`.
 
 #### severity_card
 Status card with severity-colored border:
@@ -383,7 +389,7 @@ Status card with severity-colored border:
 </severity_card>
 ```
 
-Uses `theme_core_get_severity_*_style()` functions.
+Adds one of the shared `StyleRole::SeverityInfo` / `SeveritySuccess` / `SeverityWarning` / `SeverityDanger` styles, selected by the `severity` attribute. See `src/ui/ui_severity_card.cpp`.
 
 ### Layout
 
@@ -403,12 +409,14 @@ Use `border` color from theme.
 ### Using Color Tokens
 
 ```xml
-<!-- In attributes -->
+<!-- Inline color tokens: resolved from the palette at parse time, and re-colored
+     on theme change by the widget-tree palette walk -->
 <lv_obj style_bg_color="#card_bg" style_border_color="#border"/>
-
-<!-- With bind_style for reactive updates -->
-<lv_obj bind_style="card_bg_style"/>
 ```
+
+For a reactive surface that updates automatically without a tree walk, use a semantic widget
+(`<ui_card>`, `<ui_dialog>`) — it adds the corresponding shared `StyleRole` style, which the
+`ThemeManager` reconfigures in place on every theme change.
 
 ### Using Spacing Tokens
 
@@ -450,67 +458,44 @@ Use `border` color from theme.
 
 ## C++ Integration
 
-### When to Use theme_core Styles Directly
+### When to Add Shared Styles Directly
 
-Use `theme_core_get_*_style()` when creating **custom widgets** that need reactive theming:
+Use `ThemeManager::instance().get_style(StyleRole::X)` when creating **custom widgets** that
+need reactive theming. The pointer refers into the manager's style table; because re-theming
+reconfigures that same style object in place, any widget that added it updates automatically.
 
 ```cpp
 // In your custom widget's create handler
-lv_style_t* card_style = theme_core_get_card_style();
-if (card_style) {
-    lv_obj_remove_style(obj, nullptr, LV_PART_MAIN);  // Remove LVGL defaults
-    lv_obj_add_style(obj, card_style, LV_PART_MAIN);  // Apply shared style
-}
+auto& tm = ThemeManager::instance();
+lv_style_t* card_style = tm.get_style(StyleRole::Card);  // never null after init
+lv_obj_add_style(obj, card_style, LV_PART_MAIN);
 ```
 
-### Available Style Getters
+This is exactly the pattern the built-in widgets use — see `ui_card.cpp` (`StyleRole::Card`),
+`ui_dialog.cpp` (`StyleRole::Dialog`), `ui_button.cpp` (variant → `StyleRole::Button*`),
+`ui_text.cpp` (`StyleRole::TextPrimary` / `TextMuted`), and `ui_severity_card.cpp`.
 
-**Surfaces:**
-- `theme_core_get_card_style()` - Card background
-- `theme_core_get_dialog_style()` - Dialog/modal background
+### Available Style Roles
 
-**Text:**
-- `theme_core_get_text_style()` - Primary text
-- `theme_core_get_text_muted_style()` - Secondary text
-- `theme_core_get_text_subtle_style()` - Tertiary text
+`StyleRole` (in `include/theme_manager.h`) is the complete list of shared styles. Highlights:
 
-**Icons (9 variants):**
-- `theme_core_get_icon_text_style()`
-- `theme_core_get_icon_muted_style()`
-- `theme_core_get_icon_primary_style()`
-- `theme_core_get_icon_secondary_style()`
-- `theme_core_get_icon_tertiary_style()`
-- `theme_core_get_icon_success_style()`
-- `theme_core_get_icon_warning_style()`
-- `theme_core_get_icon_danger_style()`
-- `theme_core_get_icon_info_style()`
+- **Surfaces:** `Card`, `Dialog`, `ObjBase`, `InputBg`
+- **States:** `Disabled`, `Pressed`, `Focused`
+- **Text:** `TextPrimary`, `TextMuted`, `TextSubtle`
+- **Icons:** `IconText`, `IconPrimary`, `IconSecondary`, `IconTertiary`, `IconInfo`, `IconSuccess`, `IconWarning`, `IconDanger`
+- **Buttons:** `Button`, `ButtonPrimary`, `ButtonSecondary`, `ButtonTertiary`, `ButtonDanger`, `ButtonGhost`, `ButtonTransparent`, `ButtonOutline`, `ButtonSuccess`, `ButtonWarning`, `ButtonDisabled`, `ButtonPressed`
+- **Status:** `Spinner`, `Arc`, `SeverityInfo`, `SeveritySuccess`, `SeverityWarning`, `SeverityDanger`
+- **Inputs:** `Dropdown`, `Checkbox`, `Switch`, `Slider`
 
-**Buttons (7 variants):**
-- `theme_core_get_button_primary_style()`
-- `theme_core_get_button_secondary_style()`
-- `theme_core_get_button_danger_style()`
-- `theme_core_get_button_success_style()`
-- `theme_core_get_button_warning_style()`
-- `theme_core_get_button_tertiary_style()`
-- `theme_core_get_button_ghost_style()`
-
-**Status:**
-- `theme_core_get_spinner_style()`
-- `theme_core_get_severity_info_style()`
-- `theme_core_get_severity_success_style()`
-- `theme_core_get_severity_warning_style()`
-- `theme_core_get_severity_danger_style()`
-
-**Contrast helpers:**
-- `theme_core_get_text_for_dark_bg()` - Light text color
-- `theme_core_get_text_for_light_bg()` - Dark text color
+Each role's colors are written by a matching `configure_*` function in `src/ui/style_configs.cpp`.
 
 ### When to Use theme_manager Tokens
 
-Use `theme_manager_get_*()` when you need **values** for dynamic styling:
+Use the free `theme_manager_*` functions when you need **values** for dynamic styling
+(custom drawing, layout math) rather than a shared style object:
 
 ```cpp
-// Get color for custom drawing
+// Get themed color (resolves _light/_dark variant for the current mode)
 lv_color_t primary = theme_manager_get_color("primary");
 
 // Get spacing for custom layout
@@ -518,23 +503,28 @@ int32_t padding = theme_manager_get_spacing("space_lg");
 
 // Get font for custom text
 const lv_font_t* font = theme_manager_get_font("font_body");
+
+// Pick readable text for a given background
+lv_color_t text = theme_manager_get_contrast_color(bg_color);
 ```
 
 ### Listening for Theme Changes
 
-For widgets that need custom update logic:
+For widgets that need custom update logic beyond a shared style, observe the theme-changed
+subject (a monotonically increasing generation counter) exposed by
+`theme_manager_get_changed_subject()`. Use an `ObserverGuard` member so cleanup is automatic
+(see `src/ui/ui_heating_animator.cpp`):
 
 ```cpp
-// In widget create
-lv_obj_add_event_cb(obj, style_changed_cb, LV_EVENT_STYLE_CHANGED, user_data);
-
-// Callback
-static void style_changed_cb(lv_event_t* e) {
-    lv_obj_t* obj = lv_event_get_target(e);
-    // Re-apply custom styling based on new theme colors
-    update_my_custom_colors(obj);
+lv_subject_t* theme_subject = theme_manager_get_changed_subject();
+if (theme_subject) {
+    theme_observer_ = ObserverGuard(theme_subject, theme_change_cb, this);
 }
 ```
+
+The observer fires after every `theme_manager_apply_theme()` (toggle, theme switch, preview).
+Widgets that only need color updates should add a shared `StyleRole` style instead — those
+refresh automatically without an observer.
 
 ---
 
@@ -542,22 +532,39 @@ static void style_changed_cb(lv_event_t* e) {
 
 ### Adding a New Themed Widget
 
-1. **Create shared style** in `theme_core.c`:
-   - Add `lv_style_t my_style_` to `helix_theme_t`
-   - Initialize in `theme_core_init()`
-   - Update in `theme_core_update_colors()` and `theme_core_preview_colors()`
-   - Add getter `theme_core_get_my_style()`
+1. **Add a role** to the `StyleRole` enum in `include/theme_manager.h` (before `COUNT`).
 
-2. **Apply style** in widget create handler:
+2. **Write its configure function** in `src/ui/style_configs.cpp` — declare it in the
+   `style_configs` namespace block and implement it to write palette colors into the style:
    ```cpp
-   lv_obj_remove_style(obj, nullptr, LV_PART_MAIN);
-   lv_obj_add_style(obj, theme_core_get_my_style(), LV_PART_MAIN);
+   void configure_my_style(lv_style_t* s, const ThemePalette& p) {
+       lv_style_set_bg_color(s, p.card_bg);
+       lv_style_set_bg_opa(s, LV_OPA_COVER);
+       // ...borders, radius, text color from p as needed
+   }
    ```
 
-3. **Register widget** with XML parser:
+3. **Bind role → configure fn** in `ThemeManager::register_style_configs()`
+   (`src/ui/theme_manager_new.cpp`):
+   ```cpp
+   styles_[static_cast<size_t>(StyleRole::MyStyle)].configure = configure_my_style;
+   ```
+   The manager inits and reconfigures every table entry automatically — there is no separate
+   init/update/preview step to touch.
+
+4. **Add the shared style** in your widget's create handler:
+   ```cpp
+   lv_obj_add_style(obj, ThemeManager::instance().get_style(StyleRole::MyStyle), LV_PART_MAIN);
+   ```
+
+5. **Register the widget** with the XML parser:
    ```cpp
    lv_xml_register_widget("my_widget", my_widget_create, my_widget_apply);
    ```
+
+Widget *parts* not modeled as a `StyleRole` (e.g. a custom knob or indicator) follow the
+file-static pattern in `theme_manager.cpp` instead — add an `lv_style_t`, configure it in
+`init_extra_styles()` / `update_handle_styles()`, and attach it in `helix_theme_apply()`.
 
 ### Adding a New Color Token
 
@@ -590,9 +597,10 @@ static void style_changed_cb(lv_event_t* e) {
 
 | File | Purpose |
 |------|---------|
-| `src/theme_core.c` | Shared lv_style_t objects, init/update/preview |
-| `include/theme_core.h` | Style getter function declarations |
-| `src/ui/theme_manager.cpp` | Token system, responsive constants, theme loading |
-| `include/theme_manager.h` | Token lookup API |
+| `include/theme_manager.h` | `ThemeManager` class, `StyleRole` enum, `ThemePalette` struct, free `theme_manager_*` API |
+| `src/ui/theme_manager_new.cpp` | `ThemeManager` implementation: style table, `apply_palette()`, `set_dark_mode()`, `get_style()`, `get_color()`, preview |
+| `src/ui/style_configs.cpp` | `configure_*` functions — one per `StyleRole`, writes palette colors into each shared style |
+| `src/ui/theme_manager.cpp` | Free functions: token/const registration, responsive spacing/fonts, `helix_theme_apply()`, `theme_manager_apply_theme()`, widget-tree refresh, contrast helpers |
+| `src/ui/theme_loader.cpp`, `include/theme_loader.h` | Parses theme JSON into `ThemeData` / `ModePalette` |
 | `ui_xml/globals.xml` | Spacing, font, and icon token definitions |
 | `assets/config/themes/defaults/*.json` | Theme color definitions |

@@ -10,22 +10,30 @@ Complete reference for HelixScreen configuration options.
 - [Configuration Structure](#configuration-structure)
 - [Multi-Printer Configuration](#multi-printer-configuration)
 - [General Settings](#general-settings)
+- [Sound Settings](#sound-settings)
 - [Theme Settings](#theme-settings)
 - [Logging Settings](#logging-settings)
 - [Display Settings](#display-settings)
+- [Appearance Settings](#appearance-settings)
 - [Input Settings](#input-settings)
 - [Output Settings](#output-settings)
 - [Network Settings](#network-settings)
 - [Printer Settings](#printer-settings)
 - [LED Settings](#led-settings)
 - [Moonraker Settings](#moonraker-settings)
+- [Standard Macros (Quick Action Buttons)](#standard-macros-quick-action-buttons)
 - [G-code Viewer Settings](#g-code-viewer-settings)
 - [AMS Settings](#ams-settings)
 - [Panel Widget Settings](#panel-widget-settings)
 - [Cache Settings](#cache-settings)
 - [Streaming Settings](#streaming-settings)
 - [Safety Settings](#safety-settings)
+- [Filament Settings](#filament-settings)
 - [Filament Sensor Settings](#filament-sensor-settings)
+- [Security Settings](#security-settings)
+- [Label Printer Settings](#label-printer-settings)
+- [Printer Switcher](#printer-switcher)
+- [Telemetry Settings](#telemetry-settings)
 - [Plugin Settings](#plugin-settings)
 - [Update Settings](#update-settings)
 - [Safety Limits](#safety-limits)
@@ -67,28 +75,38 @@ The configuration file is JSON format with several top-level sections:
   "dark_mode": false,
   "brightness": 80,
   "sounds_enabled": true,
-  "completion_alert": 2,
+  "ui_sounds_enabled": true,
+  "sound_theme": "default",
+  "completion_alert": 1,
   "wizard_completed": false,
   "wifi_expected": false,
   "language": "en",
   "beta_features": false,
+  "telemetry_enabled": false,
   "log_dest": "auto",
   "log_path": "",
   "log_level": "warn",
 
   "panel_widgets": { ... },
   "theme": { ... },
+  "sounds": { ... },
   "display": { ... },
+  "appearance": { ... },
   "input": { ... },
   "output": { ... },
   "network": { ... },
   "printer": { ... },
+  "standard_macros": { ... },
   "gcode_viewer": { ... },
   "ams": { ... },
   "cache": { ... },
   "streaming": { ... },
   "safety": { ... },
+  "filament": { ... },
   "filament_sensors": { ... },
+  "security": { ... },
+  "label_printer": { ... },
+  "printers": { ... },
   "plugins": { ... },
   "update": { ... }
 }
@@ -151,11 +169,22 @@ Each printer entry contains all printer-specific settings (connection details, h
 ### `sounds_enabled`
 **Type:** boolean
 **Default:** `true`
-**Description:** Enable UI sound effects (button clicks, navigation sounds).
+**Description:** Master switch for all sound effects. When `false`, no sounds play (UI or event). This is the "mute" toggle — it silences playback but still initializes the audio backend (see `disable_sound` to prevent initialization entirely).
+
+### `ui_sounds_enabled`
+**Type:** boolean
+**Default:** `true`
+**Description:** Enable UI interaction sounds specifically (button taps, navigation clicks). Independent of event sounds like the print-complete chime, so you can keep alerts while silencing tap feedback. Has no effect when `sounds_enabled` is `false`. Adjustable via **Settings > Display & Sound**.
+
+### `sound_theme`
+**Type:** string
+**Default:** `"default"`
+**Values:** `"default"`, `"minimal"`
+**Description:** The active sound theme, loaded from `config/sounds/<name>.json`. `"default"` uses the full set of tones; `"minimal"` uses a sparser, quieter set.
 
 ### `completion_alert`
 **Type:** integer
-**Default:** `2`
+**Default:** `1`
 **Values:** `0` (Off), `1` (Notification), `2` (Alert)
 **Description:** How HelixScreen notifies you when a print completes or is cancelled (while you're on a different screen):
 - `0` — **Off**: No notification (sound still plays if sounds are enabled)
@@ -191,6 +220,26 @@ This is different from `sounds_enabled` — that toggle mutes playback but still
 **Type:** boolean
 **Default:** `false`
 **Description:** Enable beta features that are still under testing. Gates several Advanced panel features (Macro Browser, Input Shaping, Z-Offset Calibration, HelixPrint plugin management, PRINT_START configuration, Timelapse), the Plugins section in Settings, and the Update Channel selector. Always enabled automatically when running in `--test` mode. Can also be toggled by tapping the version button 7 times in Settings → About. See the [Beta Features](guide/beta-features.md) guide for the full list.
+
+---
+
+## Sound Settings
+
+Located in the `sounds` section:
+
+```json
+{
+  "sounds": {
+    "volume": 80
+  }
+}
+```
+
+### `sounds.volume`
+**Type:** integer
+**Default:** `80`
+**Range:** `0` - `100`
+**Description:** Master playback volume as a percentage. `0` is silent, `100` is full volume. Adjustable via **Settings > Display & Sound**. This scales the level of all sounds; the `sounds_enabled` and `ui_sounds_enabled` toggles decide *whether* sounds play at all.
 
 ---
 
@@ -280,8 +329,11 @@ Located in the `display` section:
   "display": {
     "animations_enabled": true,
     "time_format": 0,
+    "timezone": "UTC",
+    "theme": "nord",
     "rotate": 0,
     "sleep_sec": 1200,
+    "sleep_while_printing": true,
     "dim_sec": 600,
     "dim_brightness": 30,
     "drm_device": "",
@@ -308,6 +360,17 @@ Located in the `display` section:
 **Values:** `0` (12-hour), `1` (24-hour)
 **Description:** Time display format. `0` shows "2:30 PM", `1` shows "14:30".
 
+### `timezone`
+**Type:** string
+**Default:** `"UTC"`
+**Example:** `"America/New_York"`, `"Europe/London"`
+**Description:** IANA timezone ID used for all displayed clocks and print time estimates. Set this so times shown on screen match your local time instead of UTC. Change via **Settings > Display & Sound > Timezone**.
+
+### `theme`
+**Type:** string
+**Default:** `"nord"`
+**Description:** Active color theme by name (e.g., `"nord"`, `"dracula"`, `"gruvbox"`). This is the string that actually determines the effective theme — the numeric `theme.preset` index is a legacy field. **Requires restart to take effect.** Easiest to change via **Settings > Appearance > Display Settings > Theme Colors**, which writes this value for you.
+
 ### `rotate`
 **Type:** integer
 **Default:** `0`
@@ -327,6 +390,11 @@ Located in the `display` section:
 **Type:** integer
 **Default:** `1200`
 **Description:** Seconds of inactivity before screen turns OFF. Set to `0` to disable sleep. Default is 20 minutes.
+
+### `sleep_while_printing`
+**Type:** boolean
+**Default:** `true`
+**Description:** Whether the screen is allowed to dim and sleep during an active print. When `true`, the normal `dim_sec`/`sleep_sec` timers apply while printing. Set to `false` to keep the display on for the whole print so you can glance at progress without touching the screen. Adjustable via **Settings > Display & Sound**.
 
 ### `dim_sec`
 **Type:** integer
@@ -400,6 +468,32 @@ This setting can also be changed via the Printer Manager overlay (tap the printe
 **Type:** object
 **Default:** `{"valid": false}`
 **Description:** Touch calibration coefficients. Set by the calibration wizard or manually. Contains calibration matrix values (`a` through `f`) when valid. If the wizard detects that the touchscreen's X/Y axes are swapped relative to the display, it bakes that correction directly into the `a`–`f` coefficients — there is no separate setting to configure.
+
+---
+
+## Appearance Settings
+
+Located in the `appearance` section:
+
+```json
+{
+  "appearance": {
+    "toolhead_style": 0,
+    "show_widget_labels": false
+  }
+}
+```
+
+### `toolhead_style`
+**Type:** integer
+**Default:** `0`
+**Values:** `0` (Default), `1` (Creality K1), `2` (Creality K2)
+**Description:** Which toolhead illustration is drawn on the temperature panel. Normally auto-detected from your printer type, so you rarely need to set it by hand. Override only if the wrong toolhead graphic is shown.
+
+### `show_widget_labels`
+**Type:** boolean
+**Default:** `false`
+**Description:** Show text labels beneath the Home panel widget icons. Leave `false` for a cleaner icon-only look, or set `true` if you prefer captions under each widget. Adjustable via the Home panel's Edit Mode.
 
 ---
 
@@ -572,6 +666,8 @@ Located in the `printer` section:
       "chamber": "",
       "exhaust": ""
     },
+    "chamber_heater": "auto",
+    "chamber_sensor": "auto",
     "leds": {
       "strip": "",
       "selected_strips": [],
@@ -643,6 +739,18 @@ Located in the `printer` section:
 **Type:** string
 **Default:** `""` (none)
 **Description:** Klipper fan name for exhaust fan (e.g., `"fan_generic exhaust_fan"`). Leave empty if not available.
+
+### `chamber_heater`
+**Type:** string
+**Default:** `"auto"`
+**Values:** `"auto"`, `"none"`, or a Klipper object name
+**Description:** Which heater warms the enclosure/chamber. `"auto"` lets HelixScreen pick it by name heuristics, `"none"` disables chamber-heater controls, or you can name the Klipper object explicitly (e.g., `"heater_generic chamber"`). Most printers work fine on `"auto"`.
+
+### `chamber_sensor`
+**Type:** string
+**Default:** `"auto"`
+**Values:** `"auto"`, `"none"`, or a Klipper object name
+**Description:** Which temperature sensor reports the enclosure/chamber temperature. `"auto"` detects it by name heuristics, `"none"` disables chamber-temperature display, or name the Klipper object explicitly (e.g., `"temperature_sensor enclosure_bme"`). Set this if your chamber temperature reads from the wrong sensor or isn't detected.
 
 ---
 
@@ -848,6 +956,31 @@ Connection settings are in the `printer` section:
 **Type:** integer
 **Default:** `2000`
 **Description:** Interval for checking request timeouts.
+
+---
+
+## Standard Macros (Quick Action Buttons)
+
+Located in the `standard_macros` section. These pick which built-in actions appear as the four quick-action buttons on the Controls panel:
+
+```json
+{
+  "standard_macros": {
+    "quick_button_1": "clean_nozzle",
+    "quick_button_2": "bed_level",
+    "quick_button_3": "",
+    "quick_button_4": ""
+  }
+}
+```
+
+### `quick_button_1` … `quick_button_4`
+**Type:** string
+**Default:** `"clean_nozzle"` (button 1), `"bed_level"` (button 2), `""` (buttons 3 and 4)
+**Values:** `"clean_nozzle"`, `"bed_level"`, `"heat_soak"`, `"purge"`, `"bed_mesh"`, or `""` (empty = hide the button)
+**Description:** Assigns a built-in action to each of the four Controls-panel quick buttons. An empty string hides that button. The action runs the matching macro on your printer (auto-detected from your Klipper config). Configured most easily via **Settings > Printer > Macro Buttons** rather than by editing JSON.
+
+> **Note:** This is separate from `printer.default_macros`, which customizes the Load/Unload/cooldown/custom-macro buttons elsewhere in the UI. See [Printer Settings › default_macros](#printer-settings).
 
 ---
 
@@ -1119,6 +1252,25 @@ Located in the `safety` section:
 
 ---
 
+## Filament Settings
+
+Located in the `filament` section:
+
+```json
+{
+  "filament": {
+    "cooldown_delay_seconds": 120
+  }
+}
+```
+
+### `cooldown_delay_seconds`
+**Type:** integer
+**Default:** `120`
+**Description:** How long to wait, in seconds, after a filament load or unload before automatically turning the extruder heater off. This lets you run several filament operations back-to-back without the nozzle cooling down between them. Default is 120 (2 minutes). Set to `0` to disable auto-cooldown and leave the heater on.
+
+---
+
 ## Filament Sensor Settings
 
 Located in the `filament_sensors` section:
@@ -1157,6 +1309,132 @@ Located in the `filament_sensors` section:
   ]
 }
 ```
+
+---
+
+## Security Settings
+
+Located in the `security` section. Controls the optional PIN lock screen:
+
+```json
+{
+  "security": {
+    "pin_hash": "",
+    "auto_lock": false
+  }
+}
+```
+
+### `security.pin_hash`
+**Type:** string
+**Default:** `""` (empty = lock screen disabled)
+**Description:** A SHA-256 hash of your lock-screen PIN. HelixScreen stores only this hash, never the PIN itself. **Do not edit this value by hand** — set, change, or clear your PIN through **Settings > System > Security**, which computes and writes the hash for you. An empty string means no PIN and no lock screen.
+
+### `security.auto_lock`
+**Type:** boolean
+**Default:** `false`
+**Description:** When `true`, the screen automatically locks whenever the display sleeps and wakes, requiring your PIN to get back in. Has no effect unless `pin_hash` is set (with no PIN there is nothing to lock). Toggle via **Settings > System > Security**.
+
+---
+
+## Label Printer Settings
+
+Located in the `label_printer` section. Configures the thermal label printer used to print filament spool labels. This is best set up through **Settings > Hardware & Devices > Spoolman > Label Printer** — scanning and selecting a printer fills these fields in for you. The keys are documented here for reference. See the [Label Printing guide](guide/label-printing.md) for the full walkthrough.
+
+```json
+{
+  "label_printer": {
+    "type": "network",
+    "address": "",
+    "port": 9100,
+    "protocol": "raw",
+    "label_size": 0,
+    "preset": 0,
+    "label_count": 1,
+    "usb_vid": 0,
+    "usb_pid": 0,
+    "usb_serial": "",
+    "bt_address": "",
+    "bt_name": "",
+    "bt_transport": "spp"
+  }
+}
+```
+
+### `type`
+**Type:** string
+**Default:** `"network"`
+**Values:** `"network"`, `"usb"`, `"bluetooth"`
+**Description:** How the label printer connects — Network (Brother QL over Ethernet/WiFi), USB (Phomemo over cable), or Bluetooth (any supported printer paired over Bluetooth). Bluetooth is only offered when your device has Bluetooth hardware.
+
+### `address`
+**Type:** string
+**Default:** `""`
+**Description:** IP address or hostname of a network label printer. Only used when `type` is `"network"`.
+
+### `port`
+**Type:** integer
+**Default:** `9100`
+**Description:** TCP port for a network label printer. `9100` is the standard RAW/JetDirect port used by Brother QL. Only used when `type` is `"network"`.
+
+### `protocol`
+**Type:** string
+**Default:** `"raw"`
+**Values:** `"raw"`, `"ipp"`
+**Description:** Network print protocol. `"raw"` (JetDirect, port 9100) works for most printers; `"ipp"` is used by some networked models.
+
+### `label_size`
+**Type:** integer
+**Default:** `0`
+**Description:** Index of the label/tape size preset for your printer. `0` selects that model's default size. The available sizes depend on the detected printer (a Niimbot D11 offers different sizes than a B21), so pick yours from the size list in the Label Printer settings overlay rather than guessing an index.
+
+### `preset`
+**Type:** integer
+**Default:** `0`
+**Description:** Label content layout preset. `0` = **Standard** (full label: spool name, material, color, temperatures, and QR code); other indices select the **Compact** or **QR Only** layouts. Choose it in the Label Printer settings overlay.
+
+### `label_count`
+**Type:** integer
+**Default:** `1`
+**Description:** Number of copies to print per label job.
+
+### `usb_vid` / `usb_pid` / `usb_serial`
+**Type:** integer / integer / string
+**Default:** `0` / `0` / `""`
+**Description:** USB vendor ID, product ID, and serial number identifying a USB label printer. `0` (and an empty serial) means auto-detect — you normally never set these by hand. Only used when `type` is `"usb"`.
+
+### `bt_address` / `bt_name` / `bt_transport`
+**Type:** string / string / string
+**Default:** `""` / `""` / `"spp"`
+**Description:** Bluetooth MAC address, advertised name, and transport of a Bluetooth label printer. `bt_transport` is `"spp"` (Bluetooth Classic / RFCOMM — used by Brother PT, Phomemo, and MakeID) or `"ble"` (Bluetooth Low Energy — used by Niimbot). These are filled in automatically when you scan and select a printer; you don't normally type the MAC address by hand. Only used when `type` is `"bluetooth"`.
+
+---
+
+## Printer Switcher
+
+Located in the `printers` section:
+
+```json
+{
+  "printers": {
+    "show_printer_switcher": false
+  }
+}
+```
+
+### `printers.show_printer_switcher`
+**Type:** boolean
+**Default:** `false`
+**Description:** Show a printer-switcher button on the Home panel for quickly jumping between configured printers. Off by default since single-printer setups don't need it; turn it on when you manage more than one printer. See [Multi-Printer Configuration](#multi-printer-configuration) above.
+
+---
+
+## Telemetry Settings
+
+### `telemetry_enabled`
+**Type:** boolean
+**Default:** `false`
+**Description:** Enables anonymous usage telemetry. This is a top-level key (not nested in a section). **OFF by default — you must opt in**, either during the setup wizard or via **Settings > Telemetry**. While `false`, nothing is collected, queued, or transmitted. For a full breakdown of exactly what is and isn't collected, and how the data is anonymized, see the [Telemetry](TELEMETRY.md) documentation.
 
 ---
 
@@ -1480,7 +1758,7 @@ Environment="HELIX_TOUCH_DEVICE=/dev/input/event0"
   "dark_mode": true,
   "brightness": 70,
   "sounds_enabled": true,
-  "completion_alert": 2,
+  "completion_alert": 1,
   "wizard_completed": true,
   "wifi_expected": true,
   "language": "en",

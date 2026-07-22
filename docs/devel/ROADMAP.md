@@ -150,6 +150,7 @@ Remaining items for production readiness:
 - **Timelapse:** Plugin detection, install wizard, settings UI, real-time event handling, render progress, video management
 - **Filament tracking:** Live consumption during printing, slicer estimate on completion
 - **Display rotation:** Support for 0/90/180/270 across all binaries
+- **Camera/Webcam:** Live MJPEG streaming — home/status-panel camera tiles (`CameraWidget`) plus a standalone fullscreen viewer from Settings → Hardware & Devices (shown only when `printer_has_webcam`), config modal for stream URLs (`src/system/camera_stream.cpp`, `src/ui/panel_widgets/camera_widget.cpp`, `src/ui/modals/camera_config_modal.cpp`)
 - **Telemetry:** Opt-in crash reporting, session analytics, and debug bundle upload via Cloudflare Worker backend
 - **Pre-print ETA prediction** using weighted-average historical timing data
 - **Exclude objects** with object list overlay, thumbnails, and confirmation flow
@@ -253,11 +254,10 @@ Remaining items for production readiness:
 
 | Feature | Effort | Notes |
 |---------|--------|-------|
-| **Camera/Webcam** | Low | Lower priority for local touchscreen use case |
 | **Belt tension visualization** | Future | Accelerometer-based CoreXY belt comparison; reuses frequency chart |
 | **OTA updates** | Future | UpdateChecker downloads + installs; needs auto-apply without user interaction |
 | ~~Update hash verification~~ | ~~Low~~ | ✅ Done — SHA256 verified from R2 manifest before install, graceful skip on GitHub fallback |
-| **Pre-migration config backup** | Low | Snapshot config before running versioned migrations, cleanup on success |
+| **Pre-migration config backup** | Low | Snapshot config *before* running versioned migrations, cleanup on success. Not yet built — `helix::config_backup::write_rolling_backup()` (`src/system/config_backup.cpp`) provides rolling primary+fallback backups on every save, but no migration-scoped snapshot exists. |
 | **Printer DB schema validation** | Low | Validate required fields in printer_database.json entries, detect duplicate IDs |
 | **Text overflow audit** | Medium | 226/282 XML files lack truncation/wrapping for long translated strings |
 | **Breakpoint coverage** | Medium | Only ~10 XML files implement responsive breakpoints; expand to more panels |
@@ -309,7 +309,6 @@ HelixScreen is a **local touchscreen** UI - users are physically present at the 
 - Real-time tuning (speed, flow, firmware retraction)
 
 **Lower priority for this form factor:**
-- Camera (you can see the printer with your eyes)
 - Job queue (requires manual print removal between jobs)
 - System stats (CPU/memory) — not diagnosing remote issues
 - Remote access/monitoring features

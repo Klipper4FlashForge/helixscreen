@@ -350,7 +350,7 @@ For printers that don't emit any G-code layer markers (like Forge-X), the collec
 - `set_profile()` must be called **before** `start()`. It is rejected (with a warning) if the collector is active.
 - `profile_` is a `shared_ptr` that is read-only after `start()`. No mutex needed for reads.
 - `state_mutex_` protects `detected_phases_`, `current_phase_`, `print_start_detected_`, and `printing_state_start_`. All writes happen under the lock.
-- `update_phase()` calls `state_.set_print_start_state()` **outside** the lock (it posts to the UI thread via `ui_async_call`).
+- `update_phase()` calls `state_.set_print_start_state()` **outside** the lock (it posts to the UI thread via `ui_queue_update()`).
 - WebSocket callbacks (`on_gcode_response`) run on a background thread. `check_fallback_completion()` runs on the main thread.
 
 ---

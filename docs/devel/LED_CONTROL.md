@@ -267,7 +267,7 @@ Opened from Settings panel. Configures which strips HelixScreen controls and how
 ## Threading Model
 
 - **Discovery**: Runs on main thread during printer connection
-- **WLED discovery**: Async via Moonraker HTTP — results marshaled to main thread via `ui_async_call()`
+- **WLED discovery**: Async via Moonraker HTTP — results marshaled to main thread via `ui_queue_update()`
 - **LED commands**: Sent via `MoonrakerAPI` (through WebSocket, runs on libhv thread)
 - **Status updates**: `NativeBackend::update_from_status()`, `OutputPinBackend::update_from_status()`, and `WledBackend::update_strip_state()` called from Moonraker subscription handler (background thread), change callbacks dispatched to main thread
 - **UI updates**: All subject updates and widget manipulation on main thread only

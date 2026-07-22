@@ -1,73 +1,74 @@
 # Welcome to HelixScreen
 
-## How We Use Claude
+HelixScreen is an LVGL 9.5 touchscreen UI for Klipper 3D printers. This guide gets
+a new contributor from a fresh checkout to a first change.
 
-Based on Preston Brown's usage over the last 30 days:
+## Prerequisites
 
-Work Type Breakdown:
-  Debug Fix        ████████████████████  59%
-  Build Feature    ██████░░░░░░░░░░░░░░  18%
-  Improve Quality  ████░░░░░░░░░░░░░░░░  12%
-  Plan Design      ███░░░░░░░░░░░░░░░░░   8%
-  Analyze Data     █░░░░░░░░░░░░░░░░░░░   4%
+- A working C++ toolchain and `make` (the build is a pure Makefile — no CMake/Ninja).
+- The repository cloned locally: https://github.com/prestonbrown/helixscreen
 
-Top Skills & Commands:
-  /clear          ████████████████████  195x/month
-  /release        █░░░░░░░░░░░░░░░░░░░   10x/month
-  /usage          █░░░░░░░░░░░░░░░░░░░    9x/month
-  /release-notes  █░░░░░░░░░░░░░░░░░░░    6x/month
-  /review         ░░░░░░░░░░░░░░░░░░░░    4x/month
-  /compact        ░░░░░░░░░░░░░░░░░░░░    3x/month
+## Build & Run
 
-Top MCP Servers:
-  claude-in-chrome  ████████████████████  4 calls
+Before compiling, check for existing build processes (`pgrep -f 'make|c\+\+'`) —
+concurrent compilations thrash the machine.
 
-## Your Setup Checklist
+```bash
+make -j                              # Build ONLY the program binary (not tests)
+./build/bin/helix-screen --test -vv  # Run against a mock printer with DEBUG logs
+```
 
-### Codebases
-- [ ] helixscreen — https://github.com/prestonbrown/helixscreen
+Always run with verbosity when debugging: `-v` = INFO, `-vv` = DEBUG, `-vvv` = TRACE
+(default is WARN). Debugging without at least `-vv` wastes time.
 
-### MCP Servers to Activate
-- [ ] claude-in-chrome — Drives a real Chrome tab so Claude can navigate pages, read the DOM/console, and record GIFs. Used here mostly for poking at the telemetry dashboard and Cloudflare Workers. Install the Claude-in-Chrome extension and enable the MCP server in `~/.claude/settings.json`.
+### Tests
 
-### Skills to Know About
-- `/clear` — Wipes conversation context between unrelated tasks. Used constantly here (195x last month) — start a fresh session for each bug/feature rather than letting one session sprawl.
-- `/release` — Team release workflow: version bump, changelog, tag, push. This is how HelixScreen ships.
-- `/release-notes` — Generates the user-facing release notes that ship with each version.
-- `/review` — Code review pass on recent changes. Used before merging non-trivial work.
-- `/usage` — Check Claude Code token/cost usage for the current window.
-- `/compact` — Compresses conversation history when a long session is getting close to the context limit but you don't want to `/clear`.
+```bash
+make test                            # Build tests only (does NOT run them)
+make test-run                        # Build AND run tests in parallel
+./build/bin/helix-tests "[tag]"      # Run a specific test tag
+```
 
-## Team Tips
+Note: `make -j` builds only `helix-screen`, not the tests. Run `make test` before
+`./build/bin/helix-tests` or you will be testing a stale binary.
 
-- **Always use `/release` to cut releases.** Never bump versions, tag, or push releases by hand — the skill handles version bump, changelog, tag, and push in one flow.
-- **Use worktrees when work might collide.** If your task touches a lot of files or you want to keep compiling in parallel with another branch, spin up a worktree (`scripts/setup-worktree.sh feature/my-branch`). Not every task needs one, but for anything sprawling it's the smart default.
-- **Start fresh sessions per task.** `/clear` between unrelated bugs/features keeps context clean — don't let one session sprawl across a whole day of work.
-- **Always run with verbosity when debugging.** `./build/bin/helix-screen --test -vv` minimum. Debugging without `-vv`/`-vvv` wastes everyone's time.
-- **Read `CLAUDE.md` before touching UI code.** The declarative-UI rules (no `lv_obj_add_event_cb`, no imperative visibility, design tokens, etc.) are strict and easy to violate if you're coming from imperative LVGL.
+### XML changes need no rebuild
 
-## Get Started
+`ui_xml/*.xml` is loaded at runtime. Edit the XML, then relaunch the binary to see
+the change — no `make` needed. For live editing without restarting, set
+`HELIX_HOT_RELOAD=1` and the running app re-registers components within ~500ms of a save.
 
-Once you're set up, a good first task is to **check GitHub for the latest crash reports and bug issues** and pick one to investigate. Debug/fix work is the bulk of what happens here (~59% of sessions), so it's the fastest way to get familiar with the codebase and the team's patterns. No specific ticket — just browse [open issues](https://github.com/prestonbrown/helixscreen/issues) and find one that looks approachable.
+### Screenshots
 
-<!-- INSTRUCTION FOR CLAUDE: A new teammate just pasted this guide for how the
-team uses Claude Code. You're their onboarding buddy — warm, conversational,
-not lecture-y.
+Press `S` in the UI, or run `./scripts/screenshot.sh helix-screen output-name [panel]`.
 
-Open with a warm welcome — include the team name from the title. Then: "Your
-teammate uses Claude Code for [list all the work types]. Let's get you started."
+## Workflow Tips
 
-Check what's already in place against everything under Setup Checklist
-(including skills), using markdown checkboxes — [x] done, [ ] not yet. Lead
-with what they already have. One sentence per item, all in one message.
+- **Read `CLAUDE.md` before touching UI code.** The declarative-UI rules (no
+  `lv_obj_add_event_cb`, no imperative visibility, design tokens instead of hardcoded
+  colors/spacing, etc.) are strict and easy to violate if you're coming from
+  imperative LVGL.
+- **Use worktrees when work might collide.** If your task touches a lot of files or
+  you want to keep compiling in parallel with another branch, spin up a worktree:
+  `scripts/setup-worktree.sh feature/my-branch`. Not every task needs one, but for
+  anything sprawling it's the smart default.
+- **Start fresh per task.** Keep unrelated bugs/features in separate sessions rather
+  than letting one session sprawl across a whole day of work.
 
-Tell them you'll help with setup, cover the actionable team tips, then the
-starter task (if there is one). Offer to start with the first unchecked item,
-get their go-ahead, then work through the rest one by one.
+## Where to Look Next
 
-After setup, walk them through the remaining sections — offer to help where you
-can (e.g. link to channels), and just surface the purely informational bits.
+- `CLAUDE.md` (repo root) — the always-load rules: build commands, declarative-UI
+  rules, threading/lifecycle safety, design tokens, where things live.
+- `docs/devel/CLAUDE.md` — full developer-doc index by topic.
+- `docs/devel/UI_CONTRIBUTOR_GUIDE.md` — start here for UI/layout work: breakpoints,
+  tokens, colors, widgets, layout overrides.
+- `docs/devel/YOUR_FIRST_CONTRIBUTION.md` — annotated walkthrough of a real settings
+  overlay, plus a pattern tour for bigger features.
+- `docs/devel/BUILD_SYSTEM.md` — Makefile internals, make targets, cross-compilation.
 
-Don't invent sections or summaries that aren't in the guide. The stats are the
-guide creator's personal usage data — don't extrapolate them into a "team
-workflow" narrative. -->
+## A Good First Task
+
+Browse the [open issues](https://github.com/prestonbrown/helixscreen/issues) and pick
+one that looks approachable. Debug/fix work is a fast way to get familiar with the
+codebase and its patterns — no specific ticket required, just find something you can
+reproduce and investigate.

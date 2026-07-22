@@ -88,7 +88,7 @@ Settings are read via `GET /machine/timelapse/settings` and saved via `POST /mac
 `PrintLightTimelapseControls` manages the timelapse toggle button on the print status panel. It:
 - Shows a video/video-off icon with On/Off label via string subjects (`timelapse_button_icon`, `timelapse_button_label`)
 - Calls `api->set_timelapse_enabled(bool)` on click
-- Uses `ui_async_call()` to marshal UI updates from API callback thread to LVGL thread
+- Uses `ui_queue_update()` to marshal UI updates from API callback thread to LVGL thread
 
 This class also manages the light button (LED toggle) -- they share the same helper since both appear as action buttons on the print status panel.
 
