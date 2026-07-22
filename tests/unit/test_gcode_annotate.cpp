@@ -41,13 +41,52 @@
 #include "../../include/moonraker_api.h"
 #include "../../include/moonraker_client.h"
 #include "../../include/moonraker_client_mock.h"
+#include "../../include/printer_detector.h"
 #include "../../include/printer_state.h"
+#include "../../src/api/moonraker_gcode_annotate.h"
 #include "../lvgl_test_fixture.h"
 
 #include "../catch_amalgamated.hpp"
 
 using namespace helix;
 using json = nlohmann::json;
+
+// Printer type NAME (matched case-insensitively against the printer database
+// "name" field) whose firmware re-echoes received G-code — the provenance
+// comment must be dropped for it. Kept as a constant so the gate tests and the
+// database entry stay in lockstep.
+static constexpr const char* kEchoingPrinterName = "FlashForge Adventurer 5X";
+static constexpr const char* kNonEchoingPrinterName = "FlashForge Adventurer 5M Pro";
+
+// ============================================================================
+// Site 0: the shared pure helper — helix::api::annotate_gcode(gcode, add_comment)
+// ============================================================================
+
+TEST_CASE("annotate_gcode: add_comment=false returns the input verbatim",
+          "[moonraker][gcode_annotate][gate]") {
+    CHECK(helix::api::annotate_gcode("G28", false) == "G28");
+    CHECK(helix::api::annotate_gcode("G1 X10 F3000", false) == "G1 X10 F3000");
+    // Even a multi-line ordinary script is untouched when the tag is disabled.
+    CHECK(helix::api::annotate_gcode("G28\nG1 X10", false) == "G28\nG1 X10");
+}
+
+TEST_CASE("annotate_gcode: add_comment=true tags ordinary commands",
+          "[moonraker][gcode_annotate][gate]") {
+    CHECK(helix::api::annotate_gcode("G28", true) == "G28 ; from helixscreen");
+    CHECK(helix::api::annotate_gcode("G1 X10\nG1 Y5", true) ==
+          "G1 X10 ; from helixscreen\nG1 Y5 ; from helixscreen");
+}
+
+TEST_CASE("annotate_gcode: add_comment=true never tags M117/M118 payloads",
+          "[moonraker][gcode_annotate][gate]") {
+    // Klipper hands the whole line to M117/M118 as literal text, so a trailing
+    // "; from helixscreen" would be stored/echoed verbatim — must be skipped.
+    CHECK(helix::api::annotate_gcode("M117 hi", true) == "M117 hi");
+    CHECK(helix::api::annotate_gcode("M118 x", true) == "M118 x");
+    CHECK(helix::api::annotate_gcode("m117 lower", true) == "m117 lower");
+    // But a command that merely starts with the token still gets tagged.
+    CHECK(helix::api::annotate_gcode("M1170", true) == "M1170 ; from helixscreen");
+}
 
 // ============================================================================
 // Site 1: moonraker_client.cpp — MoonrakerClient::gcode_script()
@@ -209,4 +248,108 @@ TEST_CASE_METHOD(ExecuteGcodeFixture,
     REQUIRE_FALSE(mock_client.gcode_script_history().empty());
     const std::string& sent = mock_client.gcode_script_history().back();
     REQUIRE(sent.find(" ; from helixscreen") != std::string::npos);
+}
+
+// ============================================================================
+// Provenance gate: source (console) + firmware echo, both routed through
+// MoonrakerAPI::execute_gcode. This is the core behavioral fix.
+// ============================================================================
+
+TEST_CASE_METHOD(ExecuteGcodeFixture,
+                 "execute_gcode(UserConsole) drops the provenance comment",
+                 "[moonraker][gcode_annotate][gate][mock]") {
+    // User-typed console G-code must never carry the tag, even on an ordinary
+    // (non-echoing) printer that would otherwise be tagged.
+    api->execute_gcode("G28", nullptr, nullptr, 0, false,
+                       MoonrakerAPI::GcodeSource::UserConsole);
+
+    REQUIRE_FALSE(mock_client.gcode_script_history().empty());
+    CHECK(mock_client.gcode_script_history().back() == "G28");
+}
+
+TEST_CASE_METHOD(ExecuteGcodeFixture,
+                 "execute_gcode(Internal) tags G-code on a non-echoing printer",
+                 "[moonraker][gcode_annotate][gate][mock]") {
+    // Default source is Internal; a normal printer keeps the tag.
+    api->execute_gcode("G28", nullptr, nullptr);
+
+    REQUIRE_FALSE(mock_client.gcode_script_history().empty());
+    CHECK(mock_client.gcode_script_history().back() == "G28 ; from helixscreen");
+}
+
+TEST_CASE_METHOD(ExecuteGcodeFixture,
+                 "execute_gcode(Internal) drops the tag when firmware echoes G-code",
+                 "[moonraker][gcode_annotate][gate][mock]") {
+    // AD5X re-echoes received G-code into a quoted RESPOND MSG="..."; the
+    // trailing "; from helixscreen" would leave an unterminated quote for
+    // Klipper. Setting the printer type resolves the DB flag into the atomic.
+    state.set_printer_type_sync(kEchoingPrinterName);
+    REQUIRE(state.firmware_echoes_gcode());
+
+    api->execute_gcode("G28", nullptr, nullptr);
+
+    REQUIRE_FALSE(mock_client.gcode_script_history().empty());
+    CHECK(mock_client.gcode_script_history().back() == "G28");
+}
+
+TEST_CASE_METHOD(ExecuteGcodeFixture,
+                 "motion execute_gcode drops the tag when firmware echoes G-code",
+                 "[moonraker][gcode_annotate][gate][mock][motion]") {
+    state.set_printer_type_sync(kEchoingPrinterName);
+    REQUIRE(state.firmware_echoes_gcode());
+
+    bool error_called = false;
+    api->motion().move_axis('X', 10.0, 6000.0, nullptr,
+                            [&](const MoonrakerError&) { error_called = true; });
+
+    CHECK_FALSE(error_called);
+    REQUIRE_FALSE(mock_client.gcode_script_history().empty());
+    CHECK(mock_client.gcode_script_history().back().find(" ; from helixscreen") ==
+          std::string::npos);
+}
+
+// ============================================================================
+// Phase 1: PrinterDetector DB reader + PrinterState atomic cache
+// ============================================================================
+
+TEST_CASE("PrinterDetector::firmware_echoes_gcode reads the database flag",
+          "[printer_detector][gate]") {
+    CHECK(PrinterDetector::firmware_echoes_gcode(kEchoingPrinterName));
+    // AD5M (and its Pro variant) must stay OFF — only the AD5X echoes.
+    CHECK_FALSE(PrinterDetector::firmware_echoes_gcode(kNonEchoingPrinterName));
+    CHECK_FALSE(PrinterDetector::firmware_echoes_gcode("FlashForge Adventurer 5M"));
+    // Unknown / generic printer defaults to false.
+    CHECK_FALSE(PrinterDetector::firmware_echoes_gcode("Some Generic Printer"));
+    CHECK_FALSE(PrinterDetector::firmware_echoes_gcode(""));
+}
+
+TEST_CASE_METHOD(ExecuteGcodeFixture,
+                 "PrinterState::firmware_echoes_gcode() reflects the printer type",
+                 "[printer_state][gate]") {
+    // Default (no type set) is false.
+    CHECK_FALSE(state.firmware_echoes_gcode());
+
+    state.set_printer_type_sync(kEchoingPrinterName);
+    CHECK(state.firmware_echoes_gcode());
+
+    // Switching to a non-echoing printer clears it.
+    state.set_printer_type_sync(kNonEchoingPrinterName);
+    CHECK_FALSE(state.firmware_echoes_gcode());
+}
+
+// ============================================================================
+// Phase 4: MoonrakerError factories
+// ============================================================================
+
+TEST_CASE("MoonrakerError::not_ready / validation_error factories set fields",
+          "[moonraker][error]") {
+    MoonrakerError nr = MoonrakerError::not_ready("printer.gcode.script", "Klipper is halted");
+    CHECK(nr.type == MoonrakerErrorType::NOT_READY);
+    CHECK(nr.method == "printer.gcode.script");
+    CHECK(nr.message == "Klipper is halted");
+
+    MoonrakerError ve = MoonrakerError::validation_error("motion.move", "NaN or Inf value");
+    CHECK(ve.type == MoonrakerErrorType::VALIDATION_ERROR);
+    CHECK(ve.method == "motion.move");
+    CHECK(ve.message == "NaN or Inf value");
 }

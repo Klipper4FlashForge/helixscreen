@@ -219,15 +219,24 @@ class MoonrakerAPI : public IMoonrakerAPI {
     // System Control Operations
     // ========================================================================
 
+    /// Origin of a G-code command routed through execute_gcode(). Internal
+    /// (HelixScreen-initiated) commands carry the "; from helixscreen"
+    /// provenance comment; UserConsole (user-typed console input) never does.
+    enum class GcodeSource { Internal, UserConsole };
+
     /**
      * @brief Execute custom G-code command
      *
      * @param gcode G-code command string
      * @param on_success Success callback
      * @param on_error Error callback
+     * @param timeout_ms Request timeout (0 = default)
+     * @param silent Suppress warning logs / error toasts on refusal
+     * @param source Command origin; UserConsole drops the provenance comment
      */
     void execute_gcode(const std::string& gcode, SuccessCallback on_success, ErrorCallback on_error,
-                       uint32_t timeout_ms = 0, bool silent = false);
+                       uint32_t timeout_ms = 0, bool silent = false,
+                       GcodeSource source = GcodeSource::Internal);
 
     /**
      * @brief Check if a string is safe to use as a G-code parameter

@@ -882,7 +882,11 @@ void ConsolePanel::send_gcode_command() {
                                if (token.expired())
                                    return;
                                NOTIFY_ERROR(lv_tr("Failed to send command: {}"), err.message);
-                           });
+                           },
+                           // User-typed console G-code must never carry the
+                           // "; from helixscreen" provenance comment.
+                           /*timeout_ms=*/0, /*silent=*/false,
+                           MoonrakerAPI::GcodeSource::UserConsole);
     } else {
         spdlog::warn("[{}] No MoonrakerAPI available", get_name());
     }

@@ -467,6 +467,7 @@
       "image": "flashforge-adventurer-5x.png",
       "preset": "ad5x",
       "z_offset_calibration_strategy": "firmware_managed",
+      "firmware_echoes_gcode": true,
       "heuristics": [
         {
           "type": "object_exists",

@@ -19,6 +19,7 @@
 #include "../../include/moonraker_api.h"
 #include "../../include/moonraker_client_mock.h"
 #include "../../include/printer_state.h"
+#include "../../src/api/moonraker_gcode_annotate.h"
 #include "../lvgl_test_fixture.h"
 
 #include "../catch_amalgamated.hpp"
@@ -186,5 +187,42 @@ TEST_CASE_METHOD(HomingGuardApiFixture, "motion home_axes blocked while printing
 
         CHECK_FALSE(error_called);
         REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
+    }
+}
+
+// ============================================================================
+// Case 6: reject_homing_during_active_print() shared helper, unit-tested directly
+// ============================================================================
+
+TEST_CASE_METHOD(HomingGuardApiFixture,
+                 "reject_homing_during_active_print rejects only homing during an active print",
+                 "[homing_guard][gcode]") {
+    auto cb = [this](const MoonrakerError& err) { error_cb(err); };
+
+    SECTION("G28 while PRINTING is rejected with the NOT_READY error") {
+        set_print_state(PrintJobState::PRINTING);
+        CHECK(helix::api::reject_homing_during_active_print("G28", state, false, cb, "[Test]"));
+        CHECK(error_called);
+        CHECK(captured_error.type == MoonrakerErrorType::NOT_READY);
+        CHECK(captured_error.message == "Homing is disabled while a print is in progress");
+    }
+
+    SECTION("G28 while PAUSED is rejected") {
+        set_print_state(PrintJobState::PAUSED);
+        CHECK(helix::api::reject_homing_during_active_print("G28 X", state, false, cb, "[Test]"));
+        CHECK(error_called);
+    }
+
+    SECTION("G28 while STANDBY passes through (returns false, no error)") {
+        set_print_state(PrintJobState::STANDBY);
+        CHECK_FALSE(helix::api::reject_homing_during_active_print("G28", state, false, cb, "[Test]"));
+        CHECK_FALSE(error_called);
+    }
+
+    SECTION("non-homing gcode while PRINTING passes through") {
+        set_print_state(PrintJobState::PRINTING);
+        CHECK_FALSE(
+            helix::api::reject_homing_during_active_print("G1 X10", state, false, cb, "[Test]"));
+        CHECK_FALSE(error_called);
     }
 }

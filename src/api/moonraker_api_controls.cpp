@@ -14,12 +14,13 @@
 #include "macro_param_cache.h"
 #include "moonraker_api.h"
 #include "moonraker_api_internal.h"
+#include "moonraker_gcode_annotate.h"
 #include "printer_state.h"
 #include "sensor_state.h"
 #include "spdlog/spdlog.h"
 
 #include <algorithm>
-#include <cctype> // For annotate_gcode() M117/M118 detection
+#include <cctype>
 #include <cmath>
 #include <sstream>
 
@@ -384,69 +385,15 @@ void MoonrakerAPI::get_sensors(SensorsCallback on_success, ErrorCallback on_erro
 // System Control Operations
 // ============================================================================
 
-namespace {
-constexpr const char* GCODE_SOURCE_COMMENT = " ; from helixscreen";
-
-// M117 (display message) and M118 (console echo) consume the rest of the
-// line as a literal text payload — Klipper does NOT strip a trailing
-// " ; ..." comment before storing/echoing it (confirmed live: "M117 Hello
-// World" rendered on-screen as "Hello World ; from helixscreen"). Every
-// other command treats ";" as an end-of-line comment Klipper safely
-// ignores, so only these two need to be skipped. Case-insensitive; tolerates
-// leading whitespace. This codebase never emits Nxxx line-number prefixes on
-// outgoing G-code, so that case is not handled.
-bool is_gcode_text_payload_command(const std::string& line) {
-    size_t start = line.find_first_not_of(" \t\r");
-    if (start == std::string::npos || line.size() < start + 4) {
-        return false;
-    }
-    char c0 = static_cast<char>(std::tolower(static_cast<unsigned char>(line[start])));
-    char c1 = static_cast<char>(std::tolower(static_cast<unsigned char>(line[start + 1])));
-    char c2 = line[start + 2];
-    char c3 = line[start + 3];
-    if (c0 != 'm' || c1 != '1' || c2 != '1' || (c3 != '7' && c3 != '8')) {
-        return false;
-    }
-    // Boundary check: the char after "M117"/"M118" (if any) must not continue
-    // the token — "M1170" is a different (unknown) command, not M117.
-    if (line.size() > start + 4 && std::isalnum(static_cast<unsigned char>(line[start + 4]))) {
-        return false;
-    }
-    return true;
-}
-
-// Annotate G-code with source comment for traceability
-// Handles multi-line G-code by adding comment to each line
-std::string annotate_gcode(const std::string& gcode) {
-    std::string result;
-    result.reserve(gcode.size() + 20 * std::count(gcode.begin(), gcode.end(), '\n') + 20);
-
-    std::istringstream stream(gcode);
-    std::string line;
-    bool first = true;
-
-    while (std::getline(stream, line)) {
-        if (!first) {
-            result += '\n';
-        }
-        first = false;
-
-        // Only add comment to non-empty lines, and never to M117/M118 whose
-        // argument is a literal text payload (see is_gcode_text_payload_command).
-        if (!line.empty() && line.find_first_not_of(" \t\r") != std::string::npos &&
-            !is_gcode_text_payload_command(line)) {
-            result += line + GCODE_SOURCE_COMMENT;
-        } else {
-            result += line;
-        }
-    }
-
-    return result;
-}
-} // namespace
-
 void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_success,
-                                 ErrorCallback on_error, uint32_t timeout_ms, bool silent) {
+                                 ErrorCallback on_error, uint32_t timeout_ms, bool silent,
+                                 GcodeSource source) {
+    // Provenance-comment policy: tag HelixScreen-initiated commands so they're
+    // traceable in Klipper logs, but never tag user-typed console input, and
+    // never tag anything when the printer's firmware re-echoes received G-code
+    // (AD5X: the echoed quoted RESPOND MSG="..." would be mis-parsed by Klipper).
+    const bool add_comment =
+        (source == GcodeSource::Internal) && !state_.firmware_echoes_gcode();
     // Refuse to ship gcode while Klipper is halted. The user-visible bug this
     // closes: dragging the fan slider on a K2 with `key298` produced a stream
     // of M106 commands that Klipper rejected on each tick (see /server/gcode_store
@@ -465,11 +412,8 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
                              klippy, gcode.substr(0, 60));
             }
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::NOT_READY;
-                err.method = "printer.gcode.script";
-                err.message = "Klipper is halted — restart firmware to continue";
-                on_error(err);
+                on_error(MoonrakerError::not_ready(
+                    "printer.gcode.script", "Klipper is halted — restart firmware to continue"));
             }
             return;
         }
@@ -480,23 +424,9 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
     // nozzle into the part -> collision -> ZMOD ZCONTROL_AUTO trip -> Klipper down.
     // "Active" = PRINTING or PAUSED (the head is parked over the print in both).
     // Only literal homing is blocked; all other gcode (including recovery) passes.
-    if (helix::is_homing_gcode(gcode)) {
-        const helix::PrintJobState pstate = state_.get_print_job_state();
-        if (pstate == helix::PrintJobState::PRINTING || pstate == helix::PrintJobState::PAUSED) {
-            if (!silent) {
-                spdlog::warn("[Moonraker API] Refusing homing G-code during active print "
-                             "(state={}): '{}'",
-                             static_cast<int>(pstate), gcode.substr(0, 60));
-            }
-            if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::NOT_READY;
-                err.method = "printer.gcode.script";
-                err.message = "Homing is disabled while a print is in progress";
-                on_error(err);
-            }
-            return;
-        }
+    if (helix::api::reject_homing_during_active_print(gcode, state_, silent, on_error,
+                                                      "[Moonraker API]")) {
+        return;
     }
 
     // Gate discretionary gcode (fan, temp, non-homing moves, LED) while a blocking
@@ -521,11 +451,8 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
                              gcode.substr(0, 60));
             }
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::NOT_READY;
-                err.method = "printer.gcode.script";
-                err.message = "Printer is busy — try again in a moment";
-                on_error(err);
+                on_error(MoonrakerError::not_ready("printer.gcode.script",
+                                                   "Printer is busy — try again in a moment"));
             }
             return;
         }
@@ -547,7 +474,7 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
             NOTIFY_INFO("Printer is busy — your {} will run when it's ready.",
                         helix::discretionary_gcode_noun(gcode));
         }
-        std::string queued = annotate_gcode(gcode);
+        std::string queued = helix::api::annotate_gcode(gcode, add_comment);
         json queued_params = {{"script", queued}};
         spdlog::debug("[Moonraker API] Queuing discretionary G-code behind blocking op: {}",
                       queued);
@@ -556,7 +483,7 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
         return;
     }
 
-    std::string annotated = annotate_gcode(gcode);
+    std::string annotated = helix::api::annotate_gcode(gcode, add_comment);
     json params = {{"script", annotated}};
 
     spdlog::trace("[Moonraker API] Executing G-code: {}", annotated);

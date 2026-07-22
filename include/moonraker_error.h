@@ -236,4 +236,32 @@ struct MoonrakerError {
         err.message = "JSON parse error: " + what;
         return err;
     }
+
+    /**
+     * @brief Create a "not ready" error (Klipper halted/busy/homing-blocked)
+     * @param method Method name that was refused
+     * @param message Human-readable explanation
+     * @return MoonrakerError configured as NOT_READY
+     */
+    static MoonrakerError not_ready(const std::string& method, const std::string& message) {
+        MoonrakerError err;
+        err.type = MoonrakerErrorType::NOT_READY;
+        err.method = method;
+        err.message = message;
+        return err;
+    }
+
+    /**
+     * @brief Create a validation error (bad request / rejected parameters)
+     * @param method Method name that failed validation
+     * @param message Human-readable explanation
+     * @return MoonrakerError configured as VALIDATION_ERROR
+     */
+    static MoonrakerError validation_error(const std::string& method, const std::string& message) {
+        MoonrakerError err;
+        err.type = MoonrakerErrorType::VALIDATION_ERROR;
+        err.method = method;
+        err.message = message;
+        return err;
+    }
 };
