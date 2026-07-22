@@ -7,10 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.99.98] - 2026-07-21
+
+This release is largely about filament: a new on-printer product-edit workflow for
+building your own catalog, correct OrcaSlicer material matching so synced spools land on
+the right preset, and automatic repair of mislabeled slots. It also sharpens print-status
+reporting (M117 messages and layer/ETA accuracy), adds automatic ZMOD z-offset
+persistence, and clears a cluster of crashes and small-screen layout issues.
+
+### Added
+
+- **Build your own filament catalog** — a new product-edit modal lets you add and edit filament products right on the printer. Your entries live in a user overlay that survives catalog regeneration, so updates never wipe them. (#1120)
+- **Automatic ZMOD z-offset persistence** — on printers with a ZMOD probe, HelixScreen enables persistent z-offset on connect, so a calibrated offset survives restarts instead of resetting.
+- **M117 messages on more screens** — status messages set via M117 now appear on the idle card and during pre-print heating, QGL and purge, not only mid-print.
+
 ### Fixed
 
-- **WiFi wizard crash during backend startup on Pi** (bundle WWZE4K9T) — `WifiBackendWpaSupplicant::stop()` captured a local `std::promise` by reference into a `runInLoop` lambda, then returned (destroying the promise) when its 2-second `wait_for` timed out. With `init_wpa()` blocked 5+ seconds inside `wpa_ctrl_attach()` on the same event loop, the queued cleanup lambda ran after the promise was already gone and crashed at PC=0x0 inside `std::__future_base::_State_baseV2::_M_do_set` — a null function pointer call on freed memory. The promise is now held in a `shared_ptr` captured by value into the lambda, so it stays alive until the deferred `set_value()` actually runs regardless of whether `stop()` has already returned. This was the root cause behind the heap-corruption signature previously mitigated (but not fixed) in `WizardWifiStep::apply_ethernet_status`.
 - **Filament synced to OrcaSlicer with the wrong material** — a slot set to a specific type like ASA-GF came across in OrcaSlicer as "Generic PLA", putting PLA temperatures on glass-filled ASA. OrcaSlicer matches a slot to a filament preset by its material name alone and quietly falls back to PLA whenever the name isn't one it recognizes. HelixScreen now sends OrcaSlicer the closest name it *does* recognize (ASA-GF → ASA), so it picks a correct preset, while your printer's own screen keeps showing the precise name. A truly unknown material syncs with its color and temperatures but no material selected, rather than a wrong guess. Existing slots are repaired automatically the next time HelixScreen starts.
+- **WiFi wizard crash during backend startup on Pi** (bundle WWZE4K9T) — `WifiBackendWpaSupplicant::stop()` captured a local `std::promise` by reference into a deferred `runInLoop` lambda, then returned and destroyed it when its wait timed out; the queued cleanup later called into freed memory and crashed at PC=0x0. The promise is now held in a `shared_ptr` captured by value, so it outlives the deferred completion regardless of whether `stop()` has already returned. This was the root cause behind the heap-corruption signature previously only mitigated in `WizardWifiStep::apply_ethernet_status`.
+- **Filament mapping showed unused tools** — the print filament-mapping card listed every tool on the palette; it now shows only the tools a print actually uses, and no longer suppresses the material-mismatch warning for used-but-unresolved slots.
+- **Garbage layer and ETA during print start** — fabricated layer/ETA figures are now gated on print duration, so they stop flashing nonsensical values during PRINT_START.
+- **M117 handling during prints** — messages are cleared at print end rather than print start, are no longer clobbered by routine status deltas, and no longer leak into the phase-label line.
+- **Camera stayed live across network changes** — the K2 webcam is registered with a relative URL, immune to DHCP lease changes and eth/wlan interface flips that previously stranded a baked-in IP.
+- **Several crashes** — scroll-container repopulate use-after-free (#1123), a temperature-graph observer race during deferred delete (#1117), hot-reload rebuild of the print-file detail overlay, and duplicated side-effects when reconnecting to unchanged hardware (#1117).
+- **AD5X filament loading** — corrected gcode-path TYPE=/HEX= extraction and made the loading-time budget swap-aware. (#1065)
+- **Small-screen history filter** — the history filter row collapses on small screens (Snapmaker U1) with an active-filter funnel indicator. (#1116)
+- **Pre-print options** — toggles gated on a macro that isn't installed are now hidden instead of doing nothing. (#1122)
+- **Touch, fans, installer** — released touch slots keep their coordinates instead of zeroing; a fan's `.part` role falls back to the front-most named fan; installer architecture validation reads the ELF header without `dd`.
+
+### Changed
+
+- **Inputs scale on larger screens** — text fields, dropdowns and toggles use a responsive height so they aren't cramped on big displays; small screens keep the compact 48px size.
+- **No more source comments on outgoing gcode** — HelixScreen no longer annotates M117/M118 and other commands with a "; from helixscreen" comment that some firmware echoed back into the console. (bundle A2TPH5V2)
 
 ## [0.99.97] - 2026-07-19
 
@@ -4427,6 +4455,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.98]: https://github.com/prestonbrown/helixscreen/compare/v0.99.97...v0.99.98
 [0.99.97]: https://github.com/prestonbrown/helixscreen/compare/v0.99.96...v0.99.97
 [0.99.96]: https://github.com/prestonbrown/helixscreen/compare/v0.99.95...v0.99.96
 [0.99.95]: https://github.com/prestonbrown/helixscreen/compare/v0.99.94...v0.99.95
