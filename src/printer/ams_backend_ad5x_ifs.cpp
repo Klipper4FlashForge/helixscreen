@@ -2915,11 +2915,24 @@ bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
         // synchronous and lets GET_ZCOLOR degrade to a confirming no-op.
         if (line.find("CHANGE_ZCOLOR") != std::string::npos) {
             static const std::regex slot_re(R"(SLOT=(\d+))");
-            // Match TYPE= up to the next whitespace or end of string. zmod's
-            // stock whitelist is single-token (PLA, PLA-CF, PETG, PETG-CF, SILK,
-            // ABS, TPU), and custom [zmod_ifs] filament_<NAME> entries are
+            // Match TYPE= up to the next whitespace, a '|', or end of string.
+            // zmod's stock whitelist is single-token (PLA, PLA-CF, PETG, PETG-CF,
+            // SILK, ABS, TPU), and custom [zmod_ifs] filament_<NAME> entries are
             // single-word by construction. No quoted/multiword form exists.
-            static const std::regex type_re(R"(TYPE=(\S+))");
+            //
+            // The '|' stop is load-bearing: zmod's prompt-render macro echoes the
+            // per-slot buttons as RESPOND action:prompt_button lines whose payload
+            // is `label|gcode|color|hex`, e.g.
+            //   action:prompt_button Change color|CHANGE_ZCOLOR SLOT=4 TYPE=SILK|primary|F72224
+            // Those lines contain the CHANGE_ZCOLOR substring, so they reach this
+            // extractor, and a greedy `TYPE=(\S+)` captured `SILK|primary|F72224`
+            // — poisoning materials_/last_firmware_material_ with the button
+            // descriptor. The later clean GET_ZCOLOR read then saw a
+            // `SILK|primary|F72224 -> SILK` delta and fired a spurious
+            // sync_override_to_firmware_locked that pinned a stale color into a
+            // fresh auto-mirror override (#1065 raza616 07-22, bundle H2X5QMCU).
+            // HEX= is already `{6}`-bounded so it stops at the '|' on its own.
+            static const std::regex type_re(R"(TYPE=([^\s|]+))");
             // HEX= is exactly 6 hex digits in zmod output. Tolerate lowercase
             // (Mainsail console typing) — canonicalized to upper below.
             static const std::regex hex_re(R"(HEX=([0-9A-Fa-f]{6}))");
@@ -3013,6 +3026,44 @@ bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
                                 // only. Don't advance the baseline on the
                                 // off-chance the parse failed — the next
                                 // GET_ZCOLOR poll will recover.
+                            }
+                        }
+
+                        // Refresh a pre-existing NON-locked auto-mirror override
+                        // to match what we just wrote. Without this, the values
+                        // above land in colors_/materials_ but apply_overrides
+                        // (below, via update_slot_from_state) re-masks them with
+                        // the override's stale color_rgb / material — so the
+                        // just-tapped value never surfaces. Concretely: change a
+                        // slot's type then its color from back-to-back COLOR
+                        // macros and the new color never appeared, because an
+                        // earlier external edit had created an auto-mirror
+                        // override still pinning the previous color (#1065
+                        // raza616 07-22, bundle H2X5QMCU).
+                        //
+                        // Only refresh an override that ALREADY exists. Never
+                        // create one here: mirror_firmware_to_lane_data
+                        // default-constructs the map entry, and zmod floods the
+                        // stream with echoed CHANGE_ZCOLOR button-definition
+                        // lines on every prompt render — syncing on each would
+                        // fabricate auto-mirror overrides for slots the user
+                        // never edited. When no override exists, apply_overrides
+                        // is already a no-op and firmware truth shows unaided.
+                        //
+                        // The #981 clear above erases any locked override before
+                        // we get here, so a surviving entry is auto-mirror
+                        // (locks false); sync_override_to_firmware_locked diffs
+                        // both fields and honors user_locked_* regardless, so it
+                        // updates only the dimension that actually changed. Skip
+                        // when no real firmware color baseline exists yet, so we
+                        // don't pin black (0x000000) onto the override.
+                        if (mutated) {
+                            auto ovr_it = overrides_.find(slot0);
+                            auto color_it = last_firmware_color_.find(slot0);
+                            if (ovr_it != overrides_.end() &&
+                                color_it != last_firmware_color_.end()) {
+                                sync_override_to_firmware_locked(slot0, color_it->second,
+                                                                 materials_[idx]);
                             }
                         }
                     }

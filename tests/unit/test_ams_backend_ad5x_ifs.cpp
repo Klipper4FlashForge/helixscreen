@@ -7543,6 +7543,23 @@ helix::ams::FilamentSlotOverride make_locked_override(uint32_t color_rgb,
     ovr.user_locked_material = true;
     return ovr;
 }
+
+// An auto-mirror override: color/material set from a prior external edit but
+// NEITHER field user-locked. This is what sync_override_to_firmware_locked
+// leaves behind after an external CHANGE_ZCOLOR — it masks firmware truth in
+// apply_overrides exactly like a locked one, but the OverwriteAlways mirror is
+// free to refresh it. Reproduces the raza616 state where an earlier edit had
+// already staged an override before the failing type-then-color sequence.
+helix::ams::FilamentSlotOverride make_auto_mirror_override(uint32_t color_rgb,
+                                                           const std::string& material) {
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.color_rgb = color_rgb;
+    ovr.color_set = true;
+    ovr.material = material;
+    ovr.user_locked_color = false;
+    ovr.user_locked_material = false;
+    return ovr;
+}
 } // namespace
 
 TEST_CASE("AD5X IFS external CHANGE_ZCOLOR clears a stale locked override so firmware wins (#981)",
@@ -7888,6 +7905,100 @@ TEST_CASE("AD5X IFS CHANGE_ZCOLOR with no TYPE= or HEX= preserves prior behavior
     // meant no synchronous material/color write — but the next GET_ZCOLOR
     // poll still drives the refresh exactly as before.
     REQUIRE_FALSE(Ad5xIfsTestAccess::get_override(backend, 0).has_value());
+}
+
+TEST_CASE("AD5X IFS CHANGE_ZCOLOR HEX= refreshes a stale auto-mirror override so the new "
+          "color surfaces (#1065 type-then-color)",
+          "[ams][ad5x_ifs][1065]") {
+    // raza616 07-22 (bundle H2X5QMCU): change a slot's type, then its color,
+    // from back-to-back COLOR macros — the new color never appeared. An earlier
+    // external edit had left a NON-locked auto-mirror override on the slot; the
+    // gcode-path extraction wrote colors_[idx] but never refreshed that
+    // override, so apply_overrides kept re-masking the fresh color with the
+    // override's stale one. Fix: the fast path refreshes an EXISTING override to
+    // match what it just applied.
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    Ad5xIfsTestAccess::set_port_presence(backend, 1, true);
+    Ad5xIfsTestAccess::set_color(backend, 1, "FFFFFF");
+    Ad5xIfsTestAccess::set_material(backend, 1, "PETG");
+    // Auto-mirror override from a prior external edit, pinning the OLD white.
+    Ad5xIfsTestAccess::seed_override(backend, 1, make_auto_mirror_override(0xFFFFFF, "PETG"));
+    // Re-bake entry->info so apply_overrides has layered the override on top,
+    // mirroring the production parse path (cf. the #981 tests' setup).
+    Ad5xIfsTestAccess::set_color(backend, 1, "FFFFFF");
+
+    // Precondition: the auto-mirror override masks firmware truth.
+    REQUIRE(backend.get_slot_info(1).color_rgb == 0xFFFFFF);
+
+    // Change the color via the COLOR macro. SLOT is 1-based -> slot 1.
+    REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
+        backend, "CHANGE_ZCOLOR SLOT=2 TYPE=PETG HEX=2750E0"));
+
+    // The just-tapped color surfaces (used to stay 0xFFFFFF, masked by the
+    // stale override) and the refreshed override now tracks it.
+    SlotInfo info = backend.get_slot_info(1);
+    REQUIRE(info.color_rgb == 0x2750E0);
+    REQUIRE(info.material == "PETG");
+    auto ovr = Ad5xIfsTestAccess::get_override(backend, 1);
+    REQUIRE(ovr.has_value());
+    REQUIRE(ovr->color_rgb == 0x2750E0);
+    // The refresh must not fabricate a lock on an auto-tracked field.
+    REQUIRE_FALSE(ovr->user_locked_color);
+    REQUIRE_FALSE(ovr->user_locked_material);
+}
+
+TEST_CASE("AD5X IFS CHANGE_ZCOLOR does NOT create an override for an auto-tracked slot "
+          "(#1065 echo-flood guard)",
+          "[ams][ad5x_ifs][1065]") {
+    // The refresh above must be surgical: a slot with NO override stays
+    // override-free. zmod re-emits CHANGE_ZCOLOR button-definition lines on
+    // every prompt render, so syncing unconditionally would fabricate an
+    // auto-mirror override (and a lane_data write) for a slot the user never
+    // touched. With no override, firmware truth already shows through unaided.
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    Ad5xIfsTestAccess::set_port_presence(backend, 2, true);
+    Ad5xIfsTestAccess::set_color(backend, 2, "0000FF");
+    Ad5xIfsTestAccess::set_material(backend, 2, "ABS");
+
+    REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
+        backend, "CHANGE_ZCOLOR SLOT=3 TYPE=ABS HEX=00FF00"));
+
+    // Value applied directly (no override to mask it) and none fabricated.
+    SlotInfo info = backend.get_slot_info(2);
+    REQUIRE(info.color_rgb == 0x00FF00);
+    REQUIRE(info.material == "ABS");
+    REQUIRE_FALSE(Ad5xIfsTestAccess::get_override(backend, 2).has_value());
+}
+
+TEST_CASE("AD5X IFS CHANGE_ZCOLOR TYPE= stops at '|' so echoed button payloads don't poison "
+          "the material (#1065 raza616)",
+          "[ams][ad5x_ifs][1065]") {
+    // zmod's prompt-render echoes the per-slot buttons as
+    //   action:prompt_button Change color|CHANGE_ZCOLOR SLOT=4 TYPE=SILK|primary|F72224
+    // The payload's `|color|hex` suffix rides right up against TYPE=. A greedy
+    // TYPE=(\S+) captured "SILK|primary|F72224" into materials_ +
+    // last_firmware_material_ — the pollution seen in bundle H2X5QMCU as
+    // "firmware material changed SILK|primary|F72224 -> SILK". The extractor
+    // must stop the TYPE token at the '|'.
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    Ad5xIfsTestAccess::set_port_presence(backend, 3, true);
+    Ad5xIfsTestAccess::set_color(backend, 3, "F72224");
+    Ad5xIfsTestAccess::set_material(backend, 3, "SILK");
+
+    REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
+        backend, "// action:prompt_button Change color|CHANGE_ZCOLOR SLOT=4 TYPE=SILK|primary|F72224"));
+
+    // Material is the clean token, not the button descriptor — both the
+    // UI-visible value and the change-detection baseline.
+    SlotInfo info = backend.get_slot_info(3);
+    REQUIRE(info.material == "SILK");
+    REQUIRE(Ad5xIfsTestAccess::last_firmware_material(backend, 3).value_or("") == "SILK");
 }
 
 // ==========================================================================
