@@ -419,10 +419,7 @@ class PIDCalibrateCollector : public std::enable_shared_from_this<PIDCalibrateCo
         spdlog::error("[PIDCalibrateCollector] Error: {}", message);
         unregister();
         if (on_error_) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-            err.message = message;
-            err.method = "PID_CALIBRATE";
+            MoonrakerError err = MoonrakerError::json_rpc_error("PID_CALIBRATE", message);
             on_error_(err);
         }
     }
@@ -647,10 +644,7 @@ class MPCCalibrateCollector : public std::enable_shared_from_this<MPCCalibrateCo
         spdlog::error("[MPCCalibrateCollector] Error: {}", message);
         unregister();
         if (on_error_) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-            err.message = message;
-            err.method = "MPC_CALIBRATE";
+            MoonrakerError err = MoonrakerError::json_rpc_error("MPC_CALIBRATE", message);
             on_error_(err);
         }
     }
@@ -914,10 +908,7 @@ class ScrewsTiltCollector : public std::enable_shared_from_this<ScrewsTiltCollec
         unregister();
 
         if (on_error_) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-            err.message = message;
-            err.method = "SCREWS_TILT_CALCULATE";
+            MoonrakerError err = MoonrakerError::json_rpc_error("SCREWS_TILT_CALCULATE", message);
             on_error_(err);
         }
     }
@@ -1280,10 +1271,7 @@ class InputShaperCollector : public std::enable_shared_from_this<InputShaperColl
         unregister();
 
         if (on_error_) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-            err.message = message;
-            err.method = "SHAPER_CALIBRATE";
+            MoonrakerError err = MoonrakerError::json_rpc_error("SHAPER_CALIBRATE", message);
             on_error_(err);
         }
     }
@@ -1465,10 +1453,7 @@ class NoiseCheckCollector : public std::enable_shared_from_this<NoiseCheckCollec
         unregister();
 
         if (on_error_) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-            err.message = message;
-            err.method = "MEASURE_AXES_NOISE";
+            MoonrakerError err = MoonrakerError::json_rpc_error("MEASURE_AXES_NOISE", message);
             on_error_(err);
         }
     }
@@ -1640,10 +1625,7 @@ class BedMeshProgressCollector : public std::enable_shared_from_this<BedMeshProg
         unregister();
 
         if (on_error_) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-            err.message = message;
-            err.method = "BED_MESH_CALIBRATE";
+            MoonrakerError err = MoonrakerError::json_rpc_error("BED_MESH_CALIBRATE", message);
             on_error_(err);
         }
     }
@@ -1743,9 +1725,7 @@ void MoonrakerAdvancedAPI::calculate_screws_tilt(ScrewTiltCallback on_success,
 void MoonrakerAdvancedAPI::run_qgl(SuccessCallback /*on_success*/, ErrorCallback on_error) {
     spdlog::warn("[Moonraker API] run_qgl() not yet implemented");
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::UNKNOWN;
-        err.message = "QGL not yet implemented";
+        MoonrakerError err = MoonrakerError::unknown("QGL not yet implemented");
         on_error(err);
     }
 }
@@ -1754,9 +1734,7 @@ void MoonrakerAdvancedAPI::run_z_tilt_adjust(SuccessCallback /*on_success*/,
                                              ErrorCallback on_error) {
     spdlog::warn("[Moonraker API] run_z_tilt_adjust() not yet implemented");
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::UNKNOWN;
-        err.message = "Z-tilt adjust not yet implemented";
+        MoonrakerError err = MoonrakerError::unknown("Z-tilt adjust not yet implemented");
         on_error(err);
     }
 }
@@ -1799,9 +1777,7 @@ void MoonrakerAdvancedAPI::start_klippain_shaper_calibration(const std::string& 
                                                              ErrorCallback on_error) {
     spdlog::warn("[Moonraker API] start_klippain_shaper_calibration() not yet implemented");
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::UNKNOWN;
-        err.message = "Klippain Shake&Tune not yet implemented";
+        MoonrakerError err = MoonrakerError::unknown("Klippain Shake&Tune not yet implemented");
         on_error(err);
     }
 }
@@ -1913,9 +1889,8 @@ void MoonrakerAdvancedAPI::get_input_shaper_config(InputShaperConfigCallback on_
             } catch (const std::exception& e) {
                 spdlog::error("[Moonraker API] Failed to parse input shaper config: {}", e.what());
                 if (on_error) {
-                    MoonrakerError err;
-                    err.type = MoonrakerErrorType::UNKNOWN;
-                    err.message = std::string("Failed to parse input shaper config: ") + e.what();
+                    MoonrakerError err = MoonrakerError::unknown(
+                        std::string("Failed to parse input shaper config: ") + e.what());
                     on_error(err);
                 }
             }
@@ -1938,9 +1913,7 @@ void MoonrakerAdvancedAPI::get_machine_limits(MachineLimitsCallback on_success,
                     !response["result"]["status"].contains("toolhead")) {
                     spdlog::warn("[Moonraker API] Toolhead object not available in response");
                     if (on_error) {
-                        MoonrakerError err;
-                        err.type = MoonrakerErrorType::UNKNOWN;
-                        err.message = "Toolhead object not available";
+                        MoonrakerError err = MoonrakerError::unknown("Toolhead object not available");
                         on_error(err);
                     }
                     return;
@@ -1969,9 +1942,8 @@ void MoonrakerAdvancedAPI::get_machine_limits(MachineLimitsCallback on_success,
             } catch (const std::exception& e) {
                 spdlog::error("[Moonraker API] Failed to parse machine limits: {}", e.what());
                 if (on_error) {
-                    MoonrakerError err;
-                    err.type = MoonrakerErrorType::UNKNOWN;
-                    err.message = std::string("Failed to parse machine limits: ") + e.what();
+                    MoonrakerError err = MoonrakerError::unknown(
+                        std::string("Failed to parse machine limits: ") + e.what());
                     on_error(err);
                 }
             }
@@ -2017,9 +1989,8 @@ void MoonrakerAdvancedAPI::set_machine_limits(const MachineLimits& limits,
     if (!has_params) {
         spdlog::warn("[Moonraker API] set_machine_limits called with no valid parameters");
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "No valid machine limit parameters provided";
+            MoonrakerError err =
+                MoonrakerError::validation_error("", "No valid machine limit parameters provided");
             on_error(err);
         }
         return;
@@ -2042,10 +2013,8 @@ void MoonrakerAdvancedAPI::execute_macro(const std::string& name,
     if (name.empty()) {
         spdlog::error("[Moonraker API] execute_macro() called with empty name");
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Macro name cannot be empty";
-            err.method = "execute_macro";
+            MoonrakerError err =
+                MoonrakerError::validation_error("execute_macro", "Macro name cannot be empty");
             on_error(err);
         }
         return;
@@ -2056,10 +2025,8 @@ void MoonrakerAdvancedAPI::execute_macro(const std::string& name,
             spdlog::error("[Moonraker API] Invalid macro name '{}' contains illegal character '{}'",
                           name, c);
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::VALIDATION_ERROR;
-                err.message = "Macro name contains illegal characters";
-                err.method = "execute_macro";
+                MoonrakerError err = MoonrakerError::validation_error(
+                    "execute_macro", "Macro name contains illegal characters");
                 on_error(err);
             }
             return;
@@ -2139,11 +2106,8 @@ void MoonrakerAdvancedAPI::get_heater_pid_values(
                     !response["result"]["status"]["configfile"].contains("settings")) {
                     spdlog::debug("[Moonraker API] configfile.settings not available in response");
                     if (on_error) {
-                        on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                                0,
-                                                "configfile.settings not available",
-                                                "get_pid_values",
-                                                {}});
+                        on_error(MoonrakerError::unknown("configfile.settings not available",
+                                                         "get_pid_values"));
                     }
                     return;
                 }
@@ -2152,11 +2116,8 @@ void MoonrakerAdvancedAPI::get_heater_pid_values(
 
                 if (!settings.contains(heater)) {
                     if (on_error) {
-                        on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                                0,
-                                                "Heater '" + heater + "' not in config",
-                                                "get_pid_values",
-                                                {}});
+                        on_error(MoonrakerError::unknown("Heater '" + heater + "' not in config",
+                                                         "get_pid_values"));
                     }
                     return;
                 }
@@ -2174,21 +2135,15 @@ void MoonrakerAdvancedAPI::get_heater_pid_values(
                     }
                 } else {
                     if (on_error) {
-                        on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                                0,
-                                                "No PID values for heater '" + heater + "'",
-                                                "get_pid_values",
-                                                {}});
+                        on_error(MoonrakerError::unknown("No PID values for heater '" + heater + "'",
+                                                         "get_pid_values"));
                     }
                 }
             } catch (const std::exception& ex) {
                 spdlog::warn("[Moonraker API] Error parsing PID values: {}", ex.what());
                 if (on_error) {
-                    on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                            0,
-                                            std::string("Parse error: ") + ex.what(),
-                                            "get_pid_values",
-                                            {}});
+                    on_error(MoonrakerError::unknown(std::string("Parse error: ") + ex.what(),
+                                                     "get_pid_values"));
                 }
             }
         },
@@ -2215,11 +2170,8 @@ void MoonrakerAdvancedAPI::get_heater_control_type(
                     spdlog::debug(
                         "[Moonraker API] configfile.settings not available for control type query");
                     if (on_error) {
-                        on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                                0,
-                                                "configfile.settings not available",
-                                                "get_heater_control_type",
-                                                {}});
+                        on_error(MoonrakerError::unknown("configfile.settings not available",
+                                                         "get_heater_control_type"));
                     }
                     return;
                 }
@@ -2228,11 +2180,8 @@ void MoonrakerAdvancedAPI::get_heater_control_type(
 
                 if (!settings.contains(heater)) {
                     if (on_error) {
-                        on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                                0,
-                                                "Heater '" + heater + "' not in config",
-                                                "get_heater_control_type",
-                                                {}});
+                        on_error(MoonrakerError::unknown("Heater '" + heater + "' not in config",
+                                                         "get_heater_control_type"));
                     }
                     return;
                 }
@@ -2246,11 +2195,8 @@ void MoonrakerAdvancedAPI::get_heater_control_type(
             } catch (const std::exception& ex) {
                 spdlog::warn("[Moonraker API] Error parsing heater control type: {}", ex.what());
                 if (on_error) {
-                    on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                            0,
-                                            std::string("Parse error: ") + ex.what(),
-                                            "get_heater_control_type",
-                                            {}});
+                    on_error(MoonrakerError::unknown(std::string("Parse error: ") + ex.what(),
+                                                     "get_heater_control_type"));
                 }
             }
         },
@@ -2376,12 +2322,8 @@ void MoonrakerAdvancedAPI::detect_belt_hardware(BeltHardwareCallback on_complete
             } catch (const std::exception& e) {
                 spdlog::error("[MoonrakerAPI] Failed to parse object list: {}", e.what());
                 if (on_error)
-                    on_error(
-                        MoonrakerError{MoonrakerErrorType::JSON_RPC_ERROR,
-                                       0,
-                                       fmt::format("Failed to parse printer objects: {}", e.what()),
-                                       {},
-                                       {}});
+                    on_error(MoonrakerError::json_rpc_error(
+                        "", fmt::format("Failed to parse printer objects: {}", e.what())));
                 return;
             }
 
@@ -2424,12 +2366,8 @@ void MoonrakerAdvancedAPI::detect_belt_hardware(BeltHardwareCallback on_complete
                     } catch (const std::exception& e) {
                         spdlog::error("[MoonrakerAPI] Failed to parse kinematics: {}", e.what());
                         if (on_error)
-                            on_error(MoonrakerError{
-                                MoonrakerErrorType::JSON_RPC_ERROR,
-                                0,
-                                fmt::format("Failed to detect kinematics: {}", e.what()),
-                                {},
-                                {}});
+                            on_error(MoonrakerError::json_rpc_error(
+                                "", fmt::format("Failed to detect kinematics: {}", e.what())));
                     }
                 },
                 [on_error](const MoonrakerError& err) {
@@ -2548,22 +2486,16 @@ void MoonrakerAdvancedAPI::download_accel_csv(const std::string& name,
                 if (!response.contains("result")) {
                     spdlog::error("[MoonrakerAPI] File list response missing 'result' field");
                     if (on_error)
-                        on_error(MoonrakerError{MoonrakerErrorType::JSON_RPC_ERROR,
-                                                0,
-                                                "File list response missing 'result' field",
-                                                {},
-                                                {}});
+                        on_error(MoonrakerError::json_rpc_error(
+                            "", "File list response missing 'result' field"));
                     return;
                 }
                 const auto& result = response["result"];
                 if (!result.is_array()) {
                     spdlog::error("[MoonrakerAPI] File list 'result' is not an array");
                     if (on_error)
-                        on_error(MoonrakerError{MoonrakerErrorType::JSON_RPC_ERROR,
-                                                0,
-                                                "File list 'result' is not an array",
-                                                {},
-                                                {}});
+                        on_error(
+                            MoonrakerError::json_rpc_error("", "File list 'result' is not an array"));
                     return;
                 }
                 for (const auto& file : result) {
@@ -2578,22 +2510,14 @@ void MoonrakerAdvancedAPI::download_accel_csv(const std::string& name,
             } catch (const std::exception& e) {
                 spdlog::error("[MoonrakerAPI] Failed to parse file list: {}", e.what());
                 if (on_error)
-                    on_error(MoonrakerError{MoonrakerErrorType::JSON_RPC_ERROR,
-                                            0,
-                                            "Failed to find CSV data file",
-                                            {},
-                                            {}});
+                    on_error(MoonrakerError::json_rpc_error("", "Failed to find CSV data file"));
                 return;
             }
 
             if (best_file.empty()) {
                 spdlog::error("[MoonrakerAPI] No CSV file found matching: {}", target_prefix);
                 if (on_error)
-                    on_error(MoonrakerError{MoonrakerErrorType::JSON_RPC_ERROR,
-                                            0,
-                                            "No accelerometer data file found",
-                                            {},
-                                            {}});
+                    on_error(MoonrakerError::json_rpc_error("", "No accelerometer data file found"));
                 return;
             }
 
@@ -2625,12 +2549,8 @@ void MoonrakerAdvancedAPI::download_accel_csv(const std::string& name,
                     } catch (const std::exception& e) {
                         spdlog::error("[MoonrakerAPI] Failed to read CSV data: {}", e.what());
                         if (on_error)
-                            on_error(
-                                MoonrakerError{MoonrakerErrorType::JSON_RPC_ERROR,
-                                               0,
-                                               fmt::format("Failed to read CSV data: {}", e.what()),
-                                               {},
-                                               {}});
+                            on_error(MoonrakerError::json_rpc_error(
+                                "", fmt::format("Failed to read CSV data: {}", e.what())));
                     }
                 },
                 [on_error](const MoonrakerError& err) {

@@ -212,13 +212,15 @@ struct MoonrakerError {
     /**
      * @brief Create connection lost error
      * @param method_name Optional method name when connection was lost
+     * @param message Human-readable explanation (defaults to the generic transport message)
      * @return MoonrakerError configured as connection lost
      */
-    static MoonrakerError connection_lost(const std::string& method_name = "") {
+    static MoonrakerError connection_lost(const std::string& method_name = "",
+                                          const std::string& message = "WebSocket connection lost") {
         MoonrakerError err;
         err.type = MoonrakerErrorType::CONNECTION_LOST;
         err.method = method_name;
-        err.message = "WebSocket connection lost";
+        err.message = message;
         return err;
     }
 
@@ -262,6 +264,66 @@ struct MoonrakerError {
         err.type = MoonrakerErrorType::VALIDATION_ERROR;
         err.method = method;
         err.message = message;
+        return err;
+    }
+
+    /**
+     * @brief Create an UNKNOWN error (uncategorized failure)
+     * @param message Human-readable explanation
+     * @param method Optional method name that failed
+     * @return MoonrakerError configured as UNKNOWN
+     */
+    static MoonrakerError unknown(const std::string& message, const std::string& method = "") {
+        MoonrakerError err;
+        err.type = MoonrakerErrorType::UNKNOWN;
+        err.method = method;
+        err.message = message;
+        return err;
+    }
+
+    /**
+     * @brief Create an UNKNOWN error from a non-2xx HTTP response
+     * @param method Method name that issued the request
+     * @param status_code HTTP status code returned
+     * @return MoonrakerError with code=status_code and message "HTTP <code>"
+     */
+    static MoonrakerError http_status_error(const std::string& method, int status_code) {
+        MoonrakerError err;
+        err.type = MoonrakerErrorType::UNKNOWN;
+        err.code = status_code;
+        err.method = method;
+        err.message = "HTTP " + std::to_string(status_code);
+        return err;
+    }
+
+    /**
+     * @brief Create a FILE_NOT_FOUND error
+     * @param method Method name that requested the file
+     * @param message Human-readable explanation
+     * @return MoonrakerError configured as FILE_NOT_FOUND
+     */
+    static MoonrakerError file_not_found(const std::string& method, const std::string& message) {
+        MoonrakerError err;
+        err.type = MoonrakerErrorType::FILE_NOT_FOUND;
+        err.method = method;
+        err.message = message;
+        return err;
+    }
+
+    /**
+     * @brief Create a JSON_RPC_ERROR with an explicit message (not parsed from an error object)
+     * @param method Method name that failed
+     * @param message Human-readable explanation
+     * @param details Optional raw response payload for diagnostics
+     * @return MoonrakerError configured as JSON_RPC_ERROR
+     */
+    static MoonrakerError json_rpc_error(const std::string& method, const std::string& message,
+                                         const json& details = json()) {
+        MoonrakerError err;
+        err.type = MoonrakerErrorType::JSON_RPC_ERROR;
+        err.method = method;
+        err.message = message;
+        err.details = details;
         return err;
     }
 };

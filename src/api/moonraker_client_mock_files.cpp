@@ -332,10 +332,8 @@ void register_file_handlers(std::unordered_map<std::string, MethodHandler>& regi
                 success_cb(response);
             }
         } else if (error_cb) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Missing filename parameter";
-            err.method = "server.files.metadata";
+            MoonrakerError err =
+                MoonrakerError::validation_error("server.files.metadata", "Missing filename parameter");
             error_cb(err);
         }
         return true;
@@ -359,10 +357,8 @@ void register_file_handlers(std::unordered_map<std::string, MethodHandler>& regi
                 success_cb(response);
             }
         } else if (error_cb) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Missing filename parameter";
-            err.method = "server.files.metascan";
+            MoonrakerError err =
+                MoonrakerError::validation_error("server.files.metascan", "Missing filename parameter");
             error_cb(err);
         }
         return true;
@@ -385,10 +381,8 @@ void register_file_handlers(std::unordered_map<std::string, MethodHandler>& regi
 
         if (filename.empty()) {
             if (error_cb) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::VALIDATION_ERROR;
-                err.message = "Missing filename parameter";
-                err.method = "server.files.get_file";
+                MoonrakerError err = MoonrakerError::validation_error("server.files.get_file",
+                                                                      "Missing filename parameter");
                 error_cb(err);
             }
             return true;
@@ -436,10 +430,8 @@ void register_file_handlers(std::unordered_map<std::string, MethodHandler>& regi
                 success_cb(response);
             }
         } else if (error_cb) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Missing path parameter";
-            err.method = "server.files.delete";
+            MoonrakerError err =
+                MoonrakerError::validation_error("server.files.delete", "Missing path parameter");
             error_cb(err);
         }
         return true;
@@ -465,10 +457,8 @@ void register_file_handlers(std::unordered_map<std::string, MethodHandler>& regi
                 success_cb(response);
             }
         } else if (error_cb) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Missing source or dest parameter";
-            err.method = "server.files.move";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "server.files.move", "Missing source or dest parameter");
             error_cb(err);
         }
         return true;
@@ -494,10 +484,8 @@ void register_file_handlers(std::unordered_map<std::string, MethodHandler>& regi
                 success_cb(response);
             }
         } else if (error_cb) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Missing source or dest parameter";
-            err.method = "server.files.copy";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "server.files.copy", "Missing source or dest parameter");
             error_cb(err);
         }
         return true;
@@ -520,10 +508,8 @@ void register_file_handlers(std::unordered_map<std::string, MethodHandler>& regi
                 success_cb(response);
             }
         } else if (error_cb) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Missing path parameter";
-            err.method = "server.files.post_directory";
+            MoonrakerError err = MoonrakerError::validation_error("server.files.post_directory",
+                                                                  "Missing path parameter");
             error_cb(err);
         }
         return true;
@@ -546,10 +532,8 @@ void register_file_handlers(std::unordered_map<std::string, MethodHandler>& regi
                 success_cb(response);
             }
         } else if (error_cb) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Missing path parameter";
-            err.method = "server.files.delete_directory";
+            MoonrakerError err = MoonrakerError::validation_error("server.files.delete_directory",
+                                                                  "Missing path parameter");
             error_cb(err);
         }
         return true;

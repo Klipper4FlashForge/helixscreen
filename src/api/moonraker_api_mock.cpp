@@ -157,9 +157,7 @@ void MoonrakerAPIMock::database_get_item(const std::string& namespace_name, cons
         }
     } else {
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::UNKNOWN;
-            err.message = "Key not found in mock DB";
+            MoonrakerError err = MoonrakerError::unknown("Key not found in mock DB");
             on_error(err);
         }
     }
@@ -179,10 +177,7 @@ nlohmann::json MoonrakerAPIMock::mock_get_db_value(const std::string& namespace_
 }
 
 void MoonrakerAPIMock::mock_reject_next_db_post() {
-    MoonrakerError err;
-    err.type = MoonrakerErrorType::UNKNOWN;
-    err.message = "Mock: database_post_item rejected";
-    next_db_post_rejection_ = std::move(err);
+    next_db_post_rejection_ = MoonrakerError::unknown("Mock: database_post_item rejected");
 }
 
 void MoonrakerAPIMock::mock_reject_next_db_post(MoonrakerError err) {
@@ -190,10 +185,7 @@ void MoonrakerAPIMock::mock_reject_next_db_post(MoonrakerError err) {
 }
 
 void MoonrakerAPIMock::mock_reject_next_db_delete() {
-    MoonrakerError err;
-    err.type = MoonrakerErrorType::UNKNOWN;
-    err.message = "Mock: database_delete_item rejected";
-    next_db_delete_rejection_ = std::move(err);
+    next_db_delete_rejection_ = MoonrakerError::unknown("Mock: database_delete_item rejected");
 }
 
 void MoonrakerAPIMock::mock_reject_next_db_delete(MoonrakerError err) {
@@ -201,10 +193,7 @@ void MoonrakerAPIMock::mock_reject_next_db_delete(MoonrakerError err) {
 }
 
 void MoonrakerAPIMock::mock_reject_next_db_get() {
-    MoonrakerError err;
-    err.type = MoonrakerErrorType::UNKNOWN;
-    err.message = "Mock: database_get_namespace rejected";
-    next_db_get_rejection_ = std::move(err);
+    next_db_get_rejection_ = MoonrakerError::unknown("Mock: database_get_namespace rejected");
 }
 
 void MoonrakerAPIMock::mock_reject_next_db_get(MoonrakerError err) {
@@ -477,10 +466,8 @@ void MoonrakerFileTransferAPIMock::download_file(const std::string& root, const 
         spdlog::warn("[MoonrakerAPIMock] File not found in test directories: {}", filename);
 
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::FILE_NOT_FOUND;
-            err.message = "Mock file not found: " + filename;
-            err.method = "download_file";
+            MoonrakerError err =
+                MoonrakerError::file_not_found("download_file", "Mock file not found: " + filename);
             on_error(err);
         }
         return;
@@ -503,10 +490,8 @@ void MoonrakerFileTransferAPIMock::download_file(const std::string& root, const 
         spdlog::error("[MoonrakerAPIMock] Failed to read file that exists: {}", local_path);
 
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::FILE_NOT_FOUND;
-            err.message = "Failed to read test file: " + filename;
-            err.method = "download_file";
+            MoonrakerError err = MoonrakerError::file_not_found(
+                "download_file", "Failed to read test file: " + filename);
             on_error(err);
         }
     }
@@ -532,10 +517,8 @@ void MoonrakerFileTransferAPIMock::download_file_partial(const std::string& root
     if (local_path.empty()) {
         spdlog::warn("[MoonrakerAPIMock] File not found in test directories: {}", filename);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::FILE_NOT_FOUND;
-            err.message = "Mock file not found: " + filename;
-            err.method = "download_file_partial";
+            MoonrakerError err = MoonrakerError::file_not_found(
+                "download_file_partial", "Mock file not found: " + filename);
             on_error(err);
         }
         return;
@@ -559,10 +542,8 @@ void MoonrakerFileTransferAPIMock::download_file_partial(const std::string& root
     } else {
         spdlog::error("[MoonrakerAPIMock] Failed to read file: {}", local_path);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::FILE_NOT_FOUND;
-            err.message = "Failed to read test file: " + filename;
-            err.method = "download_file_partial";
+            MoonrakerError err = MoonrakerError::file_not_found(
+                "download_file_partial", "Failed to read test file: " + filename);
             on_error(err);
         }
     }
@@ -608,10 +589,8 @@ void MoonrakerFileTransferAPIMock::download_file_to_path(
         spdlog::warn("[MoonrakerAPIMock] File not found in test directories: {}", filename);
 
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::FILE_NOT_FOUND;
-            err.message = "Mock file not found: " + filename;
-            err.method = "download_file_to_path";
+            MoonrakerError err = MoonrakerError::file_not_found(
+                "download_file_to_path", "Mock file not found: " + filename);
             on_error(err);
         }
         return;
@@ -622,10 +601,8 @@ void MoonrakerFileTransferAPIMock::download_file_to_path(
     if (!src) {
         spdlog::error("[MoonrakerAPIMock] Failed to open source file: {}", local_path);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::FILE_NOT_FOUND;
-            err.message = "Failed to read test file: " + filename;
-            err.method = "download_file_to_path";
+            MoonrakerError err = MoonrakerError::file_not_found(
+                "download_file_to_path", "Failed to read test file: " + filename);
             on_error(err);
         }
         return;
@@ -635,10 +612,8 @@ void MoonrakerFileTransferAPIMock::download_file_to_path(
     if (!dst) {
         spdlog::error("[MoonrakerAPIMock] Failed to create destination file: {}", dest_path);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::UNKNOWN;
-            err.message = "Failed to create destination file: " + dest_path;
-            err.method = "download_file_to_path";
+            MoonrakerError err = MoonrakerError::unknown(
+                "Failed to create destination file: " + dest_path, "download_file_to_path");
             on_error(err);
         }
         return;
@@ -1608,10 +1583,8 @@ void MoonrakerSpoolmanAPIMock::fail_spoolman_unavailable(const std::string& meth
     spdlog::debug("[MoonrakerAPIMock] {}() -> Spoolman disabled, failing like the real proxy",
                   method);
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-        err.message = "Spoolman component not available";
-        err.method = method;
+        MoonrakerError err =
+            MoonrakerError::json_rpc_error(method, "Spoolman component not available");
         on_error(err);
     }
 }

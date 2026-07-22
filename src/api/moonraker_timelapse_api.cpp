@@ -32,10 +32,8 @@ void MoonrakerTimelapseAPI::get_timelapse_settings(TimelapseSettingsCallback on_
     if (http_base_url_.empty()) {
         spdlog::error("[Timelapse API] HTTP base URL not configured for timelapse");
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::CONNECTION_LOST;
-            err.message = "Not connected to Moonraker";
-            err.method = "get_timelapse_settings";
+            MoonrakerError err =
+                MoonrakerError::connection_lost("get_timelapse_settings", "Not connected to Moonraker");
             on_error(err);
         }
         return;
@@ -50,10 +48,8 @@ void MoonrakerTimelapseAPI::get_timelapse_settings(TimelapseSettingsCallback on_
         if (!resp) {
             spdlog::error("[Timelapse API] HTTP request failed for timelapse settings");
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::CONNECTION_LOST;
-                err.message = "HTTP request failed";
-                err.method = "get_timelapse_settings";
+                MoonrakerError err =
+                    MoonrakerError::connection_lost("get_timelapse_settings", "HTTP request failed");
                 on_error(err);
             }
             return;
@@ -63,11 +59,8 @@ void MoonrakerTimelapseAPI::get_timelapse_settings(TimelapseSettingsCallback on_
             spdlog::error("[Timelapse API] Timelapse settings request failed: HTTP {}",
                           static_cast<int>(resp->status_code));
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::UNKNOWN;
-                err.code = static_cast<int>(resp->status_code);
-                err.message = "HTTP " + std::to_string(static_cast<int>(resp->status_code));
-                err.method = "get_timelapse_settings";
+                MoonrakerError err = MoonrakerError::http_status_error(
+                    "get_timelapse_settings", static_cast<int>(resp->status_code));
                 on_error(err);
             }
             return;
@@ -97,10 +90,7 @@ void MoonrakerTimelapseAPI::get_timelapse_settings(TimelapseSettingsCallback on_
         } catch (const std::exception& e) {
             spdlog::error("[Timelapse API] Failed to parse timelapse settings: {}", e.what());
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::UNKNOWN;
-                err.message = e.what();
-                err.method = "get_timelapse_settings";
+                MoonrakerError err = MoonrakerError::unknown(e.what(), "get_timelapse_settings");
                 on_error(err);
             }
         }
@@ -113,10 +103,8 @@ void MoonrakerTimelapseAPI::set_timelapse_settings(const TimelapseSettings& sett
     if (http_base_url_.empty()) {
         spdlog::error("[Timelapse API] HTTP base URL not configured for timelapse");
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::CONNECTION_LOST;
-            err.message = "Not connected to Moonraker";
-            err.method = "set_timelapse_settings";
+            MoonrakerError err =
+                MoonrakerError::connection_lost("set_timelapse_settings", "Not connected to Moonraker");
             on_error(err);
         }
         return;
@@ -126,10 +114,9 @@ void MoonrakerTimelapseAPI::set_timelapse_settings(const TimelapseSettings& sett
     if (settings.mode != "layermacro" && settings.mode != "hyperlapse") {
         spdlog::error("[Timelapse API] Invalid timelapse mode: {}", settings.mode);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Invalid timelapse mode (must be 'layermacro' or 'hyperlapse')";
-            err.method = "set_timelapse_settings";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "set_timelapse_settings",
+                "Invalid timelapse mode (must be 'layermacro' or 'hyperlapse')");
             on_error(err);
         }
         return;
@@ -139,10 +126,8 @@ void MoonrakerTimelapseAPI::set_timelapse_settings(const TimelapseSettings& sett
     if (settings.output_framerate < 1 || settings.output_framerate > 120) {
         spdlog::error("[Timelapse API] Invalid timelapse framerate: {}", settings.output_framerate);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Invalid timelapse framerate (must be 1-120)";
-            err.method = "set_timelapse_settings";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "set_timelapse_settings", "Invalid timelapse framerate (must be 1-120)");
             on_error(err);
         }
         return;
@@ -169,10 +154,8 @@ void MoonrakerTimelapseAPI::set_timelapse_settings(const TimelapseSettings& sett
         if (!resp) {
             spdlog::error("[Timelapse API] HTTP request failed for timelapse settings update");
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::CONNECTION_LOST;
-                err.message = "HTTP request failed";
-                err.method = "set_timelapse_settings";
+                MoonrakerError err =
+                    MoonrakerError::connection_lost("set_timelapse_settings", "HTTP request failed");
                 on_error(err);
             }
             return;
@@ -182,11 +165,8 @@ void MoonrakerTimelapseAPI::set_timelapse_settings(const TimelapseSettings& sett
             spdlog::error("[Timelapse API] Timelapse settings update failed: HTTP {}",
                           static_cast<int>(resp->status_code));
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::UNKNOWN;
-                err.code = static_cast<int>(resp->status_code);
-                err.message = "HTTP " + std::to_string(static_cast<int>(resp->status_code));
-                err.method = "set_timelapse_settings";
+                MoonrakerError err = MoonrakerError::http_status_error(
+                    "set_timelapse_settings", static_cast<int>(resp->status_code));
                 on_error(err);
             }
             return;
@@ -204,10 +184,8 @@ void MoonrakerTimelapseAPI::set_timelapse_enabled(bool enabled, SuccessCallback 
     if (http_base_url_.empty()) {
         spdlog::error("[Timelapse API] HTTP base URL not configured for timelapse");
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::CONNECTION_LOST;
-            err.message = "Not connected to Moonraker";
-            err.method = "set_timelapse_enabled";
+            MoonrakerError err =
+                MoonrakerError::connection_lost("set_timelapse_enabled", "Not connected to Moonraker");
             on_error(err);
         }
         return;
@@ -225,10 +203,8 @@ void MoonrakerTimelapseAPI::set_timelapse_enabled(bool enabled, SuccessCallback 
         if (!resp) {
             spdlog::error("[Timelapse API] HTTP request failed for timelapse enable");
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::CONNECTION_LOST;
-                err.message = "HTTP request failed";
-                err.method = "set_timelapse_enabled";
+                MoonrakerError err =
+                    MoonrakerError::connection_lost("set_timelapse_enabled", "HTTP request failed");
                 on_error(err);
             }
             return;
@@ -238,11 +214,8 @@ void MoonrakerTimelapseAPI::set_timelapse_enabled(bool enabled, SuccessCallback 
             spdlog::error("[Timelapse API] Timelapse enable failed: HTTP {}",
                           static_cast<int>(resp->status_code));
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::UNKNOWN;
-                err.code = static_cast<int>(resp->status_code);
-                err.message = "HTTP " + std::to_string(static_cast<int>(resp->status_code));
-                err.method = "set_timelapse_enabled";
+                MoonrakerError err = MoonrakerError::http_status_error(
+                    "set_timelapse_enabled", static_cast<int>(resp->status_code));
                 on_error(err);
             }
             return;

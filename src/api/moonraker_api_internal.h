@@ -258,10 +258,8 @@ inline bool reject_invalid_path(const std::string& path, const char* method,
     }
 
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::VALIDATION_ERROR;
-        err.message = "Invalid path contains directory traversal or illegal characters";
-        err.method = method;
+        MoonrakerError err = MoonrakerError::validation_error(
+            method, "Invalid path contains directory traversal or illegal characters");
         on_error(err);
     }
     return true; // Invalid, caller should return
@@ -290,10 +288,8 @@ inline bool reject_invalid_identifier(const std::string& id, const char* method,
     }
 
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::VALIDATION_ERROR;
-        err.message = "Invalid identifier contains illegal characters";
-        err.method = method;
+        MoonrakerError err =
+            MoonrakerError::validation_error(method, "Invalid identifier contains illegal characters");
         on_error(err);
     }
     return true; // Invalid, caller should return
@@ -314,10 +310,8 @@ inline bool reject_invalid_file_root(const std::string& root, const char* method
     }
 
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::VALIDATION_ERROR;
-        err.message = "Invalid file root contains illegal characters";
-        err.method = method;
+        MoonrakerError err =
+            MoonrakerError::validation_error(method, "Invalid file root contains illegal characters");
         on_error(err);
     }
     return true; // Invalid, caller should return
@@ -350,10 +344,8 @@ inline bool reject_out_of_range(double value, double min, double max, const char
     }
 
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::VALIDATION_ERROR;
-        err.message = std::string(param_name) + " value out of allowed range";
-        err.method = method;
+        MoonrakerError err = MoonrakerError::validation_error(
+            method, std::string(param_name) + " value out of allowed range");
         on_error(err);
     }
     return true; // Invalid, caller should return
@@ -378,10 +370,8 @@ inline bool reject_non_finite(std::initializer_list<double> values, const char* 
                          "invalid value (NaN/Inf)",
                          method);
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::VALIDATION_ERROR;
-                err.message = "Parameter contains NaN or Inf value";
-                err.method = method;
+                MoonrakerError err =
+                    MoonrakerError::validation_error(method, "Parameter contains NaN or Inf value");
                 on_error(err);
             }
             return true; // Invalid, caller should return

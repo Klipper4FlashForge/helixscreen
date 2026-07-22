@@ -246,9 +246,7 @@ void MoonrakerSpoolmanAPI::get_spool_usage_history(
     ErrorCallback on_error) {
     spdlog::warn("[SpoolmanAPI] get_spool_usage_history() not yet implemented");
     if (on_error) {
-        MoonrakerError err;
-        err.type = MoonrakerErrorType::UNKNOWN;
-        err.message = "Spoolman usage history not yet implemented";
+        MoonrakerError err = MoonrakerError::unknown("Spoolman usage history not yet implemented");
         on_error(err);
     }
 }
@@ -430,11 +428,8 @@ void MoonrakerSpoolmanAPI::create_spoolman_vendor(const nlohmann::json& vendor_d
             } else {
                 spdlog::error("[SpoolmanAPI] create_spoolman_vendor: unexpected response format");
                 if (on_error) {
-                    on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                            0,
-                                            "Unexpected response format",
-                                            "create_spoolman_vendor",
-                                            {}});
+                    on_error(MoonrakerError::unknown("Unexpected response format",
+                                                     "create_spoolman_vendor"));
                 }
             }
         },
@@ -465,11 +460,8 @@ void MoonrakerSpoolmanAPI::create_spoolman_filament(const nlohmann::json& filame
             } else {
                 spdlog::error("[SpoolmanAPI] create_spoolman_filament: unexpected response format");
                 if (on_error) {
-                    on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                            0,
-                                            "Unexpected response format",
-                                            "create_spoolman_filament",
-                                            {}});
+                    on_error(MoonrakerError::unknown("Unexpected response format",
+                                                     "create_spoolman_filament"));
                 }
             }
         },
@@ -498,11 +490,8 @@ void MoonrakerSpoolmanAPI::create_spoolman_spool(const nlohmann::json& spool_dat
             } else {
                 spdlog::error("[SpoolmanAPI] create_spoolman_spool: unexpected response format");
                 if (on_error) {
-                    on_error(MoonrakerError{MoonrakerErrorType::UNKNOWN,
-                                            0,
-                                            "Unexpected response format",
-                                            "create_spoolman_spool",
-                                            {}});
+                    on_error(MoonrakerError::unknown("Unexpected response format",
+                                                     "create_spoolman_spool"));
                 }
             }
         },

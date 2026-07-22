@@ -198,11 +198,7 @@ void MoonrakerAPI::set_phase_tracking_enabled(bool enabled,
                 }
                 spdlog::warn("[MoonrakerAPI] {} failed: {}", method, msg);
                 if (on_error) {
-                    MoonrakerError err;
-                    err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-                    err.message = msg;
-                    err.method = method;
-                    err.details = result;
+                    MoonrakerError err = MoonrakerError::json_rpc_error(method, msg, result);
                     on_error(err);
                 } else if (on_success) {
                     on_success(false);

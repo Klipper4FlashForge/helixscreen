@@ -60,10 +60,8 @@ RequestId MoonrakerRequestTracker::send(hv::WebSocketClient& ws, const std::stri
 
     if (queue_full) {
         if (error_cb) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::CONNECTION_LOST;
-            err.method = method;
-            err.message = "Request queue full — too many pending requests";
+            MoonrakerError err =
+                MoonrakerError::connection_lost(method, "Request queue full — too many pending requests");
             try {
                 error_cb(err);
             } catch (const std::exception& e) {

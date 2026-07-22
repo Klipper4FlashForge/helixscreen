@@ -41,10 +41,8 @@ void MoonrakerAPI::set_temperature(const std::string& heater, double temperature
     if (!is_safe_identifier(heater)) {
         NOTIFY_ERROR("Invalid heater name '{}'. Contains unsafe characters.", heater);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Invalid heater name contains illegal characters";
-            err.method = "set_temperature";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "set_temperature", "Invalid heater name contains illegal characters");
             on_error(err);
         }
         return;
@@ -56,14 +54,13 @@ void MoonrakerAPI::set_temperature(const std::string& heater, double temperature
                      temperature, safety_limits_.min_temperature_celsius,
                      safety_limits_.max_temperature_celsius);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message =
+            MoonrakerError err = MoonrakerError::validation_error(
+                "set_temperature",
                 "Temperature " + std::to_string(static_cast<int>(temperature)) +
-                "°C exceeds safety limits (" +
-                std::to_string(static_cast<int>(safety_limits_.min_temperature_celsius)) + "-" +
-                std::to_string(static_cast<int>(safety_limits_.max_temperature_celsius)) + "°C)";
-            err.method = "set_temperature";
+                    "°C exceeds safety limits (" +
+                    std::to_string(static_cast<int>(safety_limits_.min_temperature_celsius)) + "-" +
+                    std::to_string(static_cast<int>(safety_limits_.max_temperature_celsius)) +
+                    "°C)");
             on_error(err);
         }
         return;
@@ -82,10 +79,8 @@ void MoonrakerAPI::set_temperature(const std::string& heater, double temperature
     if (!gcode) {
         spdlog::error("[Moonraker API] Cannot build gcode for empty heater name");
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Empty heater name";
-            err.method = "set_temperature";
+            MoonrakerError err =
+                MoonrakerError::validation_error("set_temperature", "Empty heater name");
             on_error(err);
         }
         return;
@@ -108,10 +103,8 @@ void MoonrakerAPI::set_fan_speed(const std::string& fan, double speed, SuccessCa
     if (!is_safe_identifier(fan)) {
         NOTIFY_ERROR("Invalid fan name '{}'. Contains unsafe characters.", fan);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Invalid fan name contains illegal characters";
-            err.method = "set_fan_speed";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "set_fan_speed", "Invalid fan name contains illegal characters");
             on_error(err);
         }
         return;
@@ -122,14 +115,12 @@ void MoonrakerAPI::set_fan_speed(const std::string& fan, double speed, SuccessCa
         NOTIFY_ERROR("Fan speed {:.0f}% is out of range. Valid: {:.0f}% to {:.0f}%.", speed,
                      safety_limits_.min_fan_speed_percent, safety_limits_.max_fan_speed_percent);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message =
+            MoonrakerError err = MoonrakerError::validation_error(
+                "set_fan_speed",
                 "Fan speed " + std::to_string(static_cast<int>(speed)) +
-                "% exceeds safety limits (" +
-                std::to_string(static_cast<int>(safety_limits_.min_fan_speed_percent)) + "-" +
-                std::to_string(static_cast<int>(safety_limits_.max_fan_speed_percent)) + "%)";
-            err.method = "set_fan_speed";
+                    "% exceeds safety limits (" +
+                    std::to_string(static_cast<int>(safety_limits_.min_fan_speed_percent)) + "-" +
+                    std::to_string(static_cast<int>(safety_limits_.max_fan_speed_percent)) + "%)");
             on_error(err);
         }
         return;
@@ -149,10 +140,8 @@ void MoonrakerAPI::get_power_devices(PowerDevicesCallback on_success, ErrorCallb
     if (http_base_url_.empty()) {
         spdlog::error("[Moonraker API] HTTP base URL not configured for power devices");
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::CONNECTION_LOST;
-            err.message = "Not connected to Moonraker";
-            err.method = "get_power_devices";
+            MoonrakerError err =
+                MoonrakerError::connection_lost("get_power_devices", "Not connected to Moonraker");
             on_error(err);
         }
         return;
@@ -167,10 +156,8 @@ void MoonrakerAPI::get_power_devices(PowerDevicesCallback on_success, ErrorCallb
         if (!resp) {
             spdlog::error("[Moonraker API] HTTP request failed for power devices");
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::CONNECTION_LOST;
-                err.message = "HTTP request failed";
-                err.method = "get_power_devices";
+                MoonrakerError err =
+                    MoonrakerError::connection_lost("get_power_devices", "HTTP request failed");
                 on_error(err);
             }
             return;
@@ -180,11 +167,8 @@ void MoonrakerAPI::get_power_devices(PowerDevicesCallback on_success, ErrorCallb
             spdlog::error("[Moonraker API] Power devices request failed: HTTP {}",
                           static_cast<int>(resp->status_code));
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::UNKNOWN;
-                err.code = static_cast<int>(resp->status_code);
-                err.message = "HTTP " + std::to_string(static_cast<int>(resp->status_code));
-                err.method = "get_power_devices";
+                MoonrakerError err = MoonrakerError::http_status_error(
+                    "get_power_devices", static_cast<int>(resp->status_code));
                 on_error(err);
             }
             return;
@@ -215,10 +199,7 @@ void MoonrakerAPI::get_power_devices(PowerDevicesCallback on_success, ErrorCallb
         } catch (const std::exception& e) {
             spdlog::error("[Moonraker API] Failed to parse power devices: {}", e.what());
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::UNKNOWN;
-                err.message = e.what();
-                err.method = "get_power_devices";
+                MoonrakerError err = MoonrakerError::unknown(e.what(), "get_power_devices");
                 on_error(err);
             }
         }
@@ -231,10 +212,8 @@ void MoonrakerAPI::set_device_power(const std::string& device, const std::string
     if (!is_safe_identifier(device)) {
         spdlog::error("[Moonraker API] Invalid device name: {}", device);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Invalid device name";
-            err.method = "set_device_power";
+            MoonrakerError err =
+                MoonrakerError::validation_error("set_device_power", "Invalid device name");
             on_error(err);
         }
         return;
@@ -244,10 +223,8 @@ void MoonrakerAPI::set_device_power(const std::string& device, const std::string
     if (action != "on" && action != "off" && action != "toggle") {
         spdlog::error("[Moonraker API] Invalid power action: {}", action);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Invalid action (must be on, off, or toggle)";
-            err.method = "set_device_power";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "set_device_power", "Invalid action (must be on, off, or toggle)");
             on_error(err);
         }
         return;
@@ -256,10 +233,8 @@ void MoonrakerAPI::set_device_power(const std::string& device, const std::string
     if (http_base_url_.empty()) {
         spdlog::error("[Moonraker API] HTTP base URL not configured for power device control");
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::CONNECTION_LOST;
-            err.message = "Not connected to Moonraker";
-            err.method = "set_device_power";
+            MoonrakerError err =
+                MoonrakerError::connection_lost("set_device_power", "Not connected to Moonraker");
             on_error(err);
         }
         return;
@@ -289,10 +264,8 @@ void MoonrakerAPI::set_device_power(const std::string& device, const std::string
         if (!resp) {
             spdlog::error("[Moonraker API] HTTP request failed for power device");
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::CONNECTION_LOST;
-                err.message = "HTTP request failed";
-                err.method = "set_device_power";
+                MoonrakerError err =
+                    MoonrakerError::connection_lost("set_device_power", "HTTP request failed");
                 on_error(err);
             }
             return;
@@ -302,11 +275,8 @@ void MoonrakerAPI::set_device_power(const std::string& device, const std::string
             spdlog::error("[Moonraker API] Power device command failed: HTTP {}",
                           static_cast<int>(resp->status_code));
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::UNKNOWN;
-                err.code = static_cast<int>(resp->status_code);
-                err.message = "HTTP " + std::to_string(static_cast<int>(resp->status_code));
-                err.method = "set_device_power";
+                MoonrakerError err = MoonrakerError::http_status_error(
+                    "set_device_power", static_cast<int>(resp->status_code));
                 on_error(err);
             }
             return;
@@ -519,10 +489,8 @@ void MoonrakerAPI::exclude_object(const std::string& object_name, SuccessCallbac
                      object_name);
         NOTIFY_ERROR("Invalid object name '{}'. Contains unsafe characters.", object_name);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Invalid object name contains illegal characters";
-            err.method = "exclude_object";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "exclude_object", "Invalid object name contains illegal characters");
             on_error(err);
         }
         return;

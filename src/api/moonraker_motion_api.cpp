@@ -110,10 +110,8 @@ void MoonrakerMotionAPI::home_axes(const std::string& axes, SuccessCallback on_s
             if (!is_valid_axis(axis)) {
                 NOTIFY_ERROR("Invalid axis '{}' in homing command. Must be X, Y, Z, or E.", axis);
                 if (on_error) {
-                    MoonrakerError err;
-                    err.type = MoonrakerErrorType::VALIDATION_ERROR;
-                    err.message = "Invalid axis character (must be X, Y, Z, or E)";
-                    err.method = "home_axes";
+                    MoonrakerError err = MoonrakerError::validation_error(
+                        "home_axes", "Invalid axis character (must be X, Y, Z, or E)");
                     on_error(err);
                 }
                 return;
@@ -138,10 +136,8 @@ void MoonrakerMotionAPI::move_axis(char axis, double distance, double feedrate,
     if (!is_valid_axis(axis)) {
         NOTIFY_ERROR("Invalid axis '{}'. Must be X, Y, Z, or E.", axis);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Invalid axis: " + std::string(1, axis) + " (must be X, Y, Z, or E)";
-            err.method = "move_axis";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "move_axis", "Invalid axis: " + std::string(1, axis) + " (must be X, Y, Z, or E)");
             on_error(err);
         }
         return;
@@ -152,12 +148,11 @@ void MoonrakerMotionAPI::move_axis(char axis, double distance, double feedrate,
         NOTIFY_ERROR("Move distance {:.1f}mm is too large. Maximum: {:.1f}mm.", std::abs(distance),
                      safety_limits_.max_relative_distance_mm);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Distance " + std::to_string(distance) + "mm exceeds safety limits (" +
-                          std::to_string(safety_limits_.min_relative_distance_mm) + "-" +
-                          std::to_string(safety_limits_.max_relative_distance_mm) + "mm)";
-            err.method = "move_axis";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "move_axis",
+                "Distance " + std::to_string(distance) + "mm exceeds safety limits (" +
+                    std::to_string(safety_limits_.min_relative_distance_mm) + "-" +
+                    std::to_string(safety_limits_.max_relative_distance_mm) + "mm)");
             on_error(err);
         }
         return;
@@ -168,13 +163,11 @@ void MoonrakerMotionAPI::move_axis(char axis, double distance, double feedrate,
         NOTIFY_ERROR("Speed {:.0f}mm/min is too fast. Maximum: {:.0f}mm/min.", feedrate,
                      safety_limits_.max_feedrate_mm_min);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Feedrate " + std::to_string(feedrate) +
-                          "mm/min exceeds safety limits (" +
-                          std::to_string(safety_limits_.min_feedrate_mm_min) + "-" +
-                          std::to_string(safety_limits_.max_feedrate_mm_min) + "mm/min)";
-            err.method = "move_axis";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "move_axis",
+                "Feedrate " + std::to_string(feedrate) + "mm/min exceeds safety limits (" +
+                    std::to_string(safety_limits_.min_feedrate_mm_min) + "-" +
+                    std::to_string(safety_limits_.max_feedrate_mm_min) + "mm/min)");
             on_error(err);
         }
         return;
@@ -203,11 +196,10 @@ void MoonrakerMotionAPI::move_relative(double dx, double dy, double dz, double x
             NOTIFY_ERROR("Move distance {:.1f}mm is too large. Maximum: {:.1f}mm.",
                          std::abs(d.dist), safety_limits_.max_relative_distance_mm);
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::VALIDATION_ERROR;
-                err.message = "Distance " + std::to_string(d.dist) +
-                              "mm exceeds safety limits on axis " + std::string(1, d.axis);
-                err.method = "move_relative";
+                MoonrakerError err = MoonrakerError::validation_error(
+                    "move_relative", "Distance " + std::to_string(d.dist) +
+                                         "mm exceeds safety limits on axis " +
+                                         std::string(1, d.axis));
                 on_error(err);
             }
             return;
@@ -218,10 +210,9 @@ void MoonrakerMotionAPI::move_relative(double dx, double dy, double dz, double x
             NOTIFY_ERROR("Speed {:.0f}mm/min is too fast. Maximum: {:.0f}mm/min.", f,
                          safety_limits_.max_feedrate_mm_min);
             if (on_error) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::VALIDATION_ERROR;
-                err.message = "Feedrate " + std::to_string(f) + "mm/min exceeds safety limits";
-                err.method = "move_relative";
+                MoonrakerError err = MoonrakerError::validation_error(
+                    "move_relative",
+                    "Feedrate " + std::to_string(f) + "mm/min exceeds safety limits");
                 on_error(err);
             }
             return;
@@ -250,10 +241,8 @@ void MoonrakerMotionAPI::move_to_position(char axis, double position, double fee
     if (!is_valid_axis(axis)) {
         NOTIFY_ERROR("Invalid axis '{}'. Must be X, Y, Z, or E.", axis);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Invalid axis character (must be X, Y, Z, or E)";
-            err.method = "move_to_position";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "move_to_position", "Invalid axis character (must be X, Y, Z, or E)");
             on_error(err);
         }
         return;
@@ -265,12 +254,11 @@ void MoonrakerMotionAPI::move_to_position(char axis, double position, double fee
                      safety_limits_.min_absolute_position_mm,
                      safety_limits_.max_absolute_position_mm);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Position " + std::to_string(position) + "mm exceeds safety limits (" +
-                          std::to_string(safety_limits_.min_absolute_position_mm) + "-" +
-                          std::to_string(safety_limits_.max_absolute_position_mm) + "mm)";
-            err.method = "move_to_position";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "move_to_position",
+                "Position " + std::to_string(position) + "mm exceeds safety limits (" +
+                    std::to_string(safety_limits_.min_absolute_position_mm) + "-" +
+                    std::to_string(safety_limits_.max_absolute_position_mm) + "mm)");
             on_error(err);
         }
         return;
@@ -281,13 +269,11 @@ void MoonrakerMotionAPI::move_to_position(char axis, double position, double fee
         NOTIFY_ERROR("Speed {:.0f}mm/min is too fast. Maximum: {:.0f}mm/min.", feedrate,
                      safety_limits_.max_feedrate_mm_min);
         if (on_error) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Feedrate " + std::to_string(feedrate) +
-                          "mm/min exceeds safety limits (" +
-                          std::to_string(safety_limits_.min_feedrate_mm_min) + "-" +
-                          std::to_string(safety_limits_.max_feedrate_mm_min) + "mm/min)";
-            err.method = "move_to_position";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "move_to_position",
+                "Feedrate " + std::to_string(feedrate) + "mm/min exceeds safety limits (" +
+                    std::to_string(safety_limits_.min_feedrate_mm_min) + "-" +
+                    std::to_string(safety_limits_.max_feedrate_mm_min) + "mm/min)");
             on_error(err);
         }
         return;

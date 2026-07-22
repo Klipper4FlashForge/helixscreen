@@ -88,10 +88,8 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
             // G-code execution failed (e.g., out-of-range move)
             // Return error like real Moonraker does
             if (error_cb) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::JSON_RPC_ERROR;
-                err.message = script_error;
-                err.method = "printer.gcode.script";
+                MoonrakerError err =
+                    MoonrakerError::json_rpc_error("printer.gcode.script", script_error);
                 // Mirror MoonrakerRequestTracker::route_response: a caller with its
                 // own error_cb is handling the error UI, so record the message and
                 // let the `!!` broadcast handler suppress its duplicate toast.
@@ -122,17 +120,13 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
                     success_cb(json::object());
                 }
             } else if (error_cb) {
-                MoonrakerError err;
-                err.type = MoonrakerErrorType::VALIDATION_ERROR;
-                err.message = "Failed to start print";
-                err.method = "printer.print.start";
+                MoonrakerError err = MoonrakerError::validation_error("printer.print.start",
+                                                                      "Failed to start print");
                 error_cb(err);
             }
         } else if (error_cb) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Missing filename parameter";
-            err.method = "printer.print.start";
+            MoonrakerError err = MoonrakerError::validation_error("printer.print.start",
+                                                                  "Missing filename parameter");
             error_cb(err);
         }
         return true;
@@ -149,10 +143,8 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
                 success_cb(json::object());
             }
         } else if (error_cb) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Cannot pause - not currently printing";
-            err.method = "printer.print.pause";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "printer.print.pause", "Cannot pause - not currently printing");
             error_cb(err);
         }
         return true;
@@ -169,10 +161,8 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
                 success_cb(json::object());
             }
         } else if (error_cb) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Cannot resume - not currently paused";
-            err.method = "printer.print.resume";
+            MoonrakerError err = MoonrakerError::validation_error(
+                "printer.print.resume", "Cannot resume - not currently paused");
             error_cb(err);
         }
         return true;
@@ -189,10 +179,8 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
                 success_cb(json::object());
             }
         } else if (error_cb) {
-            MoonrakerError err;
-            err.type = MoonrakerErrorType::VALIDATION_ERROR;
-            err.message = "Cannot cancel - no active print";
-            err.method = "printer.print.cancel";
+            MoonrakerError err = MoonrakerError::validation_error("printer.print.cancel",
+                                                                  "Cannot cancel - no active print");
             error_cb(err);
         }
         return true;
