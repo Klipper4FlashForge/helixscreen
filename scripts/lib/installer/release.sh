@@ -23,14 +23,27 @@ _R2_MANIFEST=""
 # Which archive format is in use for this install. Set by download_release() or
 # use_local_tarball() based on what was found/provided. Consumed by
 # extract_release() and validate_tarball() to dispatch to the right tooling.
-# Values: "zip" (preferred, unversioned filename) or "tar.gz" (legacy fallback).
+# Values: "zip" (preferred) or "tar.gz" (legacy fallback).
 _ARCHIVE_FORMAT="tar.gz"
 
-# Resolve the staged archive path in TMP_DIR for the current _ARCHIVE_FORMAT.
+# Version tag and platform of a DOWNLOADED archive, recorded by download_release()
+# after it normalizes the version. When set, the staged file carries them
+# (helixscreen-<plat>-<ver>.zip) so a kept or aborted download shows which build
+# it is. Empty by default so every other path (--local installs, tests that
+# pre-stage an archive) keeps the bare helixscreen.<ext> name.
+_ARCHIVE_VERSION=""
+_ARCHIVE_PLATFORM=""
+
+# Resolve the staged archive path in TMP_DIR for the current format. Versioned
+# only when download_release() has recorded a platform+version; bare otherwise.
 _archive_tmp_path() {
+    local stem="helixscreen"
+    if [ -n "${_ARCHIVE_PLATFORM:-}" ] && [ -n "${_ARCHIVE_VERSION:-}" ]; then
+        stem="helixscreen-${_ARCHIVE_PLATFORM}-${_ARCHIVE_VERSION}"
+    fi
     case "${_ARCHIVE_FORMAT:-tar.gz}" in
-        zip) echo "${TMP_DIR}/helixscreen.zip" ;;
-        *)   echo "${TMP_DIR}/helixscreen.tar.gz" ;;
+        zip) echo "${TMP_DIR}/${stem}.zip" ;;
+        *)   echo "${TMP_DIR}/${stem}.tar.gz" ;;
     esac
 }
 
@@ -532,13 +545,21 @@ download_release() {
         [0-9]*) version="v${version}" ;;
     esac
 
+    # Stage downloads under an identifiable local name (helixscreen-<plat>-<ver>.zip);
+    # extract_release()/use_local_tarball() read it back via _archive_tmp_path().
+    _ARCHIVE_VERSION="$version"
+    _ARCHIVE_PLATFORM="$platform"
+
     mkdir -p "$TMP_DIR"
     CLEANUP_TMP=true
 
+    # NOTE: *_filename are the fixed server-side asset names (fetch URLs); *_dest are
+    # the local staged paths. Only the local names carry the version — keep them in
+    # sync with _archive_tmp_path() above.
     local zip_filename="helixscreen-${platform}.zip"
-    local zip_dest="${TMP_DIR}/helixscreen.zip"
+    local zip_dest="${TMP_DIR}/helixscreen-${platform}-${version}.zip"
     local tar_filename="helixscreen-${platform}-${version}.tar.gz"
-    local tar_dest="${TMP_DIR}/helixscreen.tar.gz"
+    local tar_dest="${TMP_DIR}/helixscreen-${platform}-${version}.tar.gz"
 
     # Build candidate URL lists. Zip gets tried before tar at every transport.
     local zip_r2="${R2_BASE_URL}/releases/${version}/${zip_filename}"
