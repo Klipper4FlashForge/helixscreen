@@ -387,124 +387,16 @@ TEST_CASE("MockInputShaperCalibrator tracks calls correctly", "[mock][input_shap
 }
 
 // ============================================================================
-// Panel Integration Contract Tests (document expected behavior)
+// Panel↔Calibrator delegation contract
 // ============================================================================
-
-TEST_CASE("Panel-Calibrator integration contract", "[panel][input_shaper][integration][!mayfail]") {
-    // These tests document the expected contract after refactoring
-    // InputShaperPanel to delegate to InputShaperCalibrator
-
-    SECTION("Panel should create calibrator on set_api()") {
-        // After refactoring:
-        // - Panel creates InputShaperCalibrator with the API
-        // - Panel stores calibrator as member
-        // - All button handlers delegate to calibrator methods
-        WARN("Implement: Panel creates calibrator internally in set_api()");
-    }
-
-    SECTION("Calibrate X delegates to run_calibration('X')") {
-        // Expected flow after refactoring:
-        // 1. User clicks "Calibrate X"
-        // 2. Panel calls calibrator_->run_calibration('X', progress_cb, result_cb, error_cb)
-        // 3. Panel updates UI based on calibrator callbacks
-        WARN(
-            "Implement: handle_calibrate_x_clicked() calls calibrator_->run_calibration('X', ...)");
-    }
-
-    SECTION("Calibrate Y delegates to run_calibration('Y')") {
-        WARN(
-            "Implement: handle_calibrate_y_clicked() calls calibrator_->run_calibration('Y', ...)");
-    }
-
-    SECTION("Measure Noise delegates to check_accelerometer()") {
-        WARN("Implement: handle_measure_noise_clicked() calls calibrator_->check_accelerometer()");
-    }
-
-    SECTION("Apply delegates to apply_settings()") {
-        // Expected flow:
-        // 1. User clicks "Apply"
-        // 2. Panel constructs ApplyConfig from current results
-        // 3. Panel calls calibrator_->apply_settings(config, success_cb, error_cb)
-        WARN("Implement: handle_apply_clicked() calls calibrator_->apply_settings()");
-    }
-
-    SECTION("Save Config delegates to save_to_config()") {
-        WARN("Implement: handle_save_config_clicked() calls calibrator_->save_to_config()");
-    }
-
-    SECTION("Cancel delegates to cancel()") {
-        WARN("Implement: handle_cancel_clicked() calls calibrator_->cancel()");
-    }
-}
-
-TEST_CASE("Panel state transitions from calibrator callbacks",
-          "[panel][input_shaper][integration][!mayfail]") {
-    SECTION("Successful calibration transitions to RESULTS state") {
-        // When calibrator's result callback fires with valid result:
-        // 1. Panel stores the result
-        // 2. Panel transitions to RESULTS state
-        // 3. Panel updates result display subjects
-        WARN("Implement: Result callback updates panel state and UI");
-    }
-
-    SECTION("Calibration error transitions to ERROR state") {
-        // When calibrator's error callback fires:
-        // 1. Panel stores error message
-        // 2. Panel transitions to ERROR state
-        // 3. Panel shows error message and retry button
-        WARN("Implement: Error callback updates panel to ERROR state");
-    }
-
-    SECTION("Progress callback updates UI progress indicator") {
-        // When calibrator's progress callback fires with percent:
-        // 1. Panel updates status label with "Testing... X%"
-        // 2. Panel may update progress bar if one exists
-        WARN("Implement: Progress callback updates status label");
-    }
-}
-
-TEST_CASE("Panel lifecycle with calibrator", "[panel][input_shaper][integration][!mayfail]") {
-    SECTION("Deactivate cancels in-progress calibration") {
-        // When panel's on_deactivate() is called:
-        // 1. Panel calls calibrator_->cancel()
-        // 2. Panel resets to IDLE state
-        WARN("Implement: on_deactivate() cancels calibration");
-    }
-
-    SECTION("Activate resets to IDLE state") {
-        // When panel's on_activate() is called:
-        // 1. Panel ensures calibrator is in IDLE state
-        // 2. Panel resets UI to idle view
-        WARN("Implement: on_activate() ensures clean state");
-    }
-}
-
-// ============================================================================
-// Expected API after refactoring
-// ============================================================================
-
-TEST_CASE("Expected InputShaperPanel API after refactoring",
-          "[panel][input_shaper][api][!mayfail]") {
-    // Document the expected panel interface after refactoring
-
-    SECTION("Panel should expose get_calibrator() for testing") {
-        // Optional: Allow injecting mock calibrator for unit tests
-        // InputShaperPanel panel;
-        // panel.set_calibrator(std::move(mock_calibrator));
-        // OR
-        // auto* calibrator = panel.get_calibrator();
-        WARN("Consider: Expose calibrator for testing or use dependency injection");
-    }
-
-    SECTION("Panel should NOT directly call MoonrakerAPI after refactoring") {
-        // All API calls should go through the calibrator:
-        // - NO api_->start_resonance_test()
-        // - NO api_->execute_gcode("MEASURE_AXES_NOISE")
-        // - NO api_->set_input_shaper()
-        // - NO api_->save_config()
-        WARN("Verify: Remove direct MoonrakerAPI calls from panel");
-    }
-}
+// The InputShaperPanel -> InputShaperCalibrator delegation these once described
+// as "expected after refactoring" has shipped: the panel creates the calibrator
+// in set_api() and every button handler delegates to it (src/ui/ui_panel_input_shaper.cpp).
+// The former [!mayfail] cases here were pure WARN() placeholders that asserted
+// nothing (and one was already stale — the panel still calls the API directly in
+// on_activate()). The real contract is verified by test_input_shaper_calibrator.cpp
+// (calibrator behavior) and the mock-based panel tests above/below (delegation).
+// Removed 2026-07-22.
 
 // ============================================================================
 // Phase 7: Test Print Pattern Feature

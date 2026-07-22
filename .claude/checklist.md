@@ -50,8 +50,7 @@ Use these checklists before starting common tasks to avoid frequent mistakes.
 - [ ] **Reference existing patterns:** Study similar code before implementing
 
 ### Documentation
-- [ ] **Update HANDOFF.md:** If changing active work or priorities
-- [ ] **Keep HANDOFF lean:** Delete completed work, max 150 lines
+- [ ] **Update affected docs:** If behavior or architecture changed, update the relevant `docs/devel/` doc
 
 ### Git
 - [ ] **Meaningful commit message:** Use `.gitmessage` template format
@@ -75,12 +74,11 @@ Use these checklists before starting common tasks to avoid frequent mistakes.
 ## 🎯 Before Starting New Feature
 
 - [ ] **Check ROADMAP.md:** Is this feature already planned?
-- [ ] **Check HANDOFF.md:** Any blockers or related active work?
 - [ ] **Study existing patterns:** Find similar feature, review implementation
 - [ ] **Use appropriate agent/skill:** Widget-maker (UI), moonraker skill (backend), etc.
 - [ ] **Reference architecture:** Read ARCHITECTURE.md for system design
 
-**Reference:** ARCHITECTURE.md, ROADMAP.md, HANDOFF.md
+**Reference:** ARCHITECTURE.md, ROADMAP.md
 
 ---
 

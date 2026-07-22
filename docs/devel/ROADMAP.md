@@ -119,7 +119,7 @@ The plugin system launched with version checking, UI injection points, and async
 
 Remaining items for production readiness:
 - [x] Structured logging with log rotation
-- [ ] Streaming file operations verified on AD5M with 50MB+ G-code files
+- [x] Streaming file operations on AD5M — accepted for 1.0 on field evidence (no crashes reported in this area at the large-file print sizes users are running; an explicit 50MB+ on-device spot-check is deferred post-1.0)
 
 ---
 

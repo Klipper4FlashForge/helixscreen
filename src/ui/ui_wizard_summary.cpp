@@ -361,8 +361,7 @@ lv_obj_t* WizardSummaryStep::create(lv_obj_t* parent) {
 void WizardSummaryStep::cleanup() {
     spdlog::debug("[{}] Cleaning up resources", get_name());
 
-    // NOTE: Wizard framework handles object deletion - we only null the pointer
-    // See HANDOFF.md Pattern #9: Wizard Screen Lifecycle
+    // NOTE: Wizard framework handles object deletion - we only null the pointer.
     screen_root_ = nullptr;
 }
 

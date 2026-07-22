@@ -29,7 +29,6 @@
 #include "static_panel_registry.h"
 #include "theme_manager.h"
 
-// TEMPORARY — removed in Task 6
 #include "first_run_tour.h"
 
 #include <spdlog/spdlog.h>
