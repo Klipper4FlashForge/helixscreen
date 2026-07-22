@@ -7,7 +7,7 @@
 
 LVGL removed XML support from the core library on January 27, 2026. The XML functionality is now part of **LVGL Pro**, a paid subscription product. HelixScreen relies heavily on XML for its entire UI system.
 
-**Resolution (2026-02-18):** We extracted the MIT-licensed XML engine into `lib/helix-xml/` as a standalone library and upgraded LVGL to v9.5.0. See `docs/devel/plans/2026-02-18-helix-xml-plan.md` for full details.
+**Resolution (2026-02-18):** We extracted the MIT-licensed XML engine into `lib/helix-xml/` as a standalone library and upgraded LVGL to v9.5.0. The extracted engine lives in `lib/helix-xml/`; its parsers are under `lib/helix-xml/src/xml/parsers/`.
 
 ## Timeline
 
@@ -241,7 +241,7 @@ We extracted the MIT-licensed XML engine into `lib/helix-xml/` and upgraded LVGL
 - No dependency on LVGL Pro or its subscription model
 - Collaboration path with lui-xml (Kevin/coevin) for future improvements
 
-**Branch:** `feature/helix-xml` | **Plan:** `docs/devel/plans/2026-02-18-helix-xml-plan.md`
+**Branch:** `feature/helix-xml` (merged) | **Engine:** `lib/helix-xml/`
 
 ### Previous Recommendation (obsolete)
 

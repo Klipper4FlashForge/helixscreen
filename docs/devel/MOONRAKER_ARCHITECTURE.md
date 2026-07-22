@@ -455,6 +455,5 @@ Each AMS backend manages its own Moonraker subscriptions independently. When `Am
 
 ## See Also
 
-- `docs/TESTING_MOONRAKER_API.md` - Manual testing procedures
-- `docs/TESTING.md` - General testing guide
+- `docs/devel/TESTING.md` - General testing guide
 - `include/moonraker_api.h` - Full API documentation (Doxygen)

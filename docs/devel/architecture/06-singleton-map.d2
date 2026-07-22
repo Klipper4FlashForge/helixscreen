@@ -36,7 +36,7 @@ sensors: {
   humidity: HumiditySensorManager
   color: ColorSensorManager
   width: WidthSensorManager
-  probe: ProbeOffsetSensorManager
+  probe: ProbeSensorManager
   accel: AccelSensorManager
 }
 
@@ -97,7 +97,7 @@ plugins: {
   style.fill: "#5c4827"
   style.font-color: "#fff"
 
-  plg: "PluginManager\nLifecycle" { shape: rectangle }
+  plg: "PluginManager\n(Application-owned, not ::instance())" { shape: rectangle }
   pr: "PluginRegistry\nService locator" { shape: rectangle }
   ipm: "InjectionPointManager\nUI injection" { shape: rectangle }
   ed: "EventDispatcher" { shape: rectangle }

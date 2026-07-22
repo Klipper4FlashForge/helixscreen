@@ -61,10 +61,9 @@ Welcome to the HelixScreen documentation. Choose your path:
 | Document | Description |
 |----------|-------------|
 | [**Label Printer System**](devel/LABEL_PRINTER_SYSTEM.md) | Brother QL, Phomemo, Niimbot, MakeID; USB/TCP/Bluetooth |
-| [**Filament Management**](devel/FILAMENT_MANAGEMENT.md) | AMS, AFC, Happy Hare, ACE, Tool Changer |
+| [**Filament Management**](devel/FILAMENT_MANAGEMENT.md) | AFC, Happy Hare, ACE, CFS, AD5X IFS, Snapmaker U1, tool changers |
 | [**Filament Slot Metadata (internal)**](devel/FILAMENT_SLOT_METADATA.md) | `FilamentSlotOverrideStore` implementation: per-backend hooks, hardware-event clearing, cache, migration |
 | [**Filament Slots Spec (public)**](specs/filament_slots.md) | Wire-format convention for the `lane_data` Moonraker DB namespace — readable by any third party |
-| [**Spoolman Spool Wizard**](devel/plans/2026-02-15-spool-wizard-status.md) | 3-step spool creation wizard, API methods, visual test plan |
 | [**Input Shaper & PID**](devel/INPUT_SHAPER.md) | Calibration, frequency response charts, CSV parser |
 | [**Preprint Prediction**](devel/PREPRINT_PREDICTION.md) | ETA prediction engine, phase timing, history |
 | [**Exclude Objects**](devel/EXCLUDE_OBJECTS.md) | Object exclusion, thumbnails, slicer setup |
@@ -72,7 +71,7 @@ Welcome to the HelixScreen documentation. Choose your path:
 | [**Print Start Integration**](devel/PRINT_START_INTEGRATION.md) | User-facing macro setup guide |
 | [**Update System**](devel/UPDATE_SYSTEM.md) | Channels, R2 CDN, downloads, Moonraker updater |
 | [**Sound System**](devel/SOUND_SYSTEM.md) | Audio architecture, JSON themes, backends |
-| [**LED Control**](devel/LED_CONTROL.md) | LED system: 4 backends, auto-state lighting, overlays |
+| [**LED Control**](devel/LED_CONTROL.md) | LED system: 5 backends, auto-state lighting, overlays |
 | [**Printer Manager**](devel/PRINTER_MANAGER.md) | Printer overlay, custom images, inline editing |
 | [**Timelapse**](devel/TIMELAPSE.md) | Moonraker timelapse plugin integration |
 | [**Crash Reporter**](devel/CRASH_REPORTER.md) | Crash detection, delivery pipeline, CF Worker |
@@ -84,7 +83,7 @@ Welcome to the HelixScreen documentation. Choose your path:
 | Document | Description |
 |----------|-------------|
 | [**Installer**](devel/INSTALLER.md) | Installation system, KIAUH, platforms, shell tests |
-| [**QIDI Support**](devel/printers/QIDI_SUPPORT.md) | QIDI Q1 Pro / Plus platform guide |
+| [**QIDI Support**](devel/printers/QIDI_SUPPORT.md) | QIDI 3-series / 4-series platform guide (Q2, Max 4) |
 | [**Snapmaker U1 Support**](devel/printers/SNAPMAKER_U1_SUPPORT.md) | Snapmaker U1 toolchanger platform guide |
 | [**Creality K2 Support**](devel/printers/CREALITY_K2_SUPPORT.md) | Creality K2 series platform guide |
 | [**FlashForge AD5X Support**](devel/printers/FLASHFORGE_AD5X_SUPPORT.md) | FlashForge Adventurer 5X (MIPS, ZMOD) |

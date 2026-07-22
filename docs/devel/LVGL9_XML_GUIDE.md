@@ -81,24 +81,25 @@ helixscreen/
 │   ├── *_panel.xml            # Main panels (home, controls, motion, etc.)
 │   ├── *_overlay.xml          # Modal overlays
 │   ├── *_modal.xml            # Dialog modals
-│   ├── icon.xml               # Icon custom widget
-│   ├── text_heading.xml       # Semantic typography
-│   ├── text_body.xml
-│   ├── text_small.xml
-│   └── spinner.xml            # Loading indicator
+│   └── icon.xml               # Icon custom widget
+│                              # (text_heading/text_body/text_small/spinner are
+│                              #  C++-registered widgets, not XML files — see below)
 ├── src/
 │   ├── main.cpp               # Entry point, initialization
 │   ├── xml_registration.cpp   # Component registration
-│   ├── ui_theme.cpp           # Responsive token registration
-│   ├── ui_nav.cpp             # Navigation system
-│   └── ui_panel_*.cpp         # Panel logic with subjects
+│   └── ui/
+│       ├── theme_manager.cpp  # Responsive token + theme registration
+│       ├── ui_text.cpp        # text_heading/text_body/text_small widgets
+│       ├── ui_spinner.cpp     # spinner widget
+│       ├── ui_nav_manager.cpp # Navigation system
+│       └── ui_panel_*.cpp     # Panel logic with subjects
 ├── include/
 │   ├── ui_icon_codepoints.h   # MDI icon definitions
 │   └── ui_*.h                 # Panel headers
 ├── assets/
 │   ├── fonts/                 # MDI icon fonts, Montserrat
 │   └── images/                # UI images
-└── docs/
+└── docs/devel/
     ├── LVGL9_XML_GUIDE.md             # This file
     └── LVGL9_XML_ATTRIBUTES_REFERENCE.md  # Quick-lookup cheatsheet
 ```
@@ -113,9 +114,9 @@ lv_xml_register_font(NULL, "montserrat_20", &lv_font_montserrat_20);
 // 2. Register globals FIRST (constants must be available)
 lv_xml_register_component_from_file("A:ui_xml/globals.xml");
 
-// 3. Register responsive spacing tokens
-ui_theme_register_responsive_spacing();  // Sets #space_md, #space_lg, etc.
-ui_theme_register_responsive_fonts();    // Sets #font_body, etc.
+// 3. Register responsive spacing tokens (both take the lv_display_t*)
+theme_manager_register_responsive_spacing(display);  // Sets #space_md, #space_lg, etc.
+theme_manager_register_responsive_fonts(display);    // Sets #font_body, etc.
 
 // 4. Register components (order doesn't matter after globals)
 lv_xml_register_component_from_file("A:ui_xml/icon.xml");
@@ -246,10 +247,12 @@ The `@` prefix on `ui_button`'s `text` attribute marks a value as a subject refe
 
 <!-- Bind slider value to integer subject -->
 <lv_slider bind_value="volume" range="0 100"/>
-
-<!-- Bind color to subject -->
-<lv_label bind_style_text_color="icon_color" text="#icon_home"/>
 ```
+
+> **Reactive color:** there is no `bind_style_<prop>` attribute handler. To make a
+> color react to a subject, define two `<style>`s and swap them with a
+> `bind_style_if_eq` / `bind_style_if` on the widget (see the "Reactive styles"
+> section below), or drive the color through a themed token.
 
 > **Note:** Standard LVGL widgets (`lv_label`, `lv_slider`) resolve `bind_text` directly as a subject name. The `@` prefix convention is specific to `ui_button`, which needs to disambiguate between literal button labels and subject references.
 
@@ -905,13 +908,13 @@ Semantic button with variant-based styling and auto-contrast text.
 <ui_button variant="ghost" icon="settings"/>
 
 <!-- Destructive action -->
-<ui_button variant="destructive" text="Delete"/>
+<ui_button variant="danger" text="Delete"/>
 
 <!-- Icon + text -->
 <ui_button variant="primary" icon="check" text="Confirm"/>
 ```
 
-**Variants:** `primary`, `secondary`, `ghost`, `destructive`
+**Variants:** `primary`, `secondary`, `danger`, `success`, `tertiary`, `warning`, `ghost`, `transparent`, `outline` (an unknown variant falls back to `primary`)
 
 **Built-in defaults:** Responsive `button_height` (48/52/72px), `border_radius`, auto-contrast text color
 
@@ -1128,14 +1131,14 @@ Many widgets have styleable parts:
 
 ```cpp
 // ✅ For theme tokens - handles light/dark mode:
-lv_color_t bg = ui_theme_get_color("card_bg");
-lv_color_t ok = ui_theme_get_color("success_color");
+lv_color_t bg = theme_manager_get_color("card_bg");
+lv_color_t ok = theme_manager_get_color("success_color");
 
 // ✅ For literal hex strings:
-lv_color_t custom = ui_theme_parse_color("#FF4444");
+lv_color_t custom = theme_manager_parse_hex_color("#FF4444");
 
-// ❌ WRONG - parse_color doesn't look up tokens:
-// lv_color_t bg = ui_theme_parse_color("#card_bg");  // Garbage!
+// ❌ WRONG - parse_hex_color doesn't look up tokens:
+// lv_color_t bg = theme_manager_parse_hex_color("#card_bg");  // Garbage!
 ```
 
 ---
@@ -1506,6 +1509,6 @@ lv_obj_t* w = lv_obj_find_by_name(parent, "widget_name");
 
 - **LVGL XML Docs:** https://docs.lvgl.io/master/details/xml/
 - **Subject-Observer:** https://docs.lvgl.io/master/details/auxiliary-modules/observer/
-- **Quick Reference:** `docs/LVGL9_XML_ATTRIBUTES_REFERENCE.md`
+- **Quick Reference:** `LVGL9_XML_ATTRIBUTES_REFERENCE.md`
 - **Example Panels:** `ui_xml/bed_mesh_panel.xml` (gold standard)
 

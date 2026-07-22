@@ -10,7 +10,7 @@ This page is the detailed breakdown of what actually works on those specially-su
 
 **1. You don't have to run it on the printer.** Some printers can run HelixScreen directly on their own built-in touchscreen (see the list below). But HelixScreen is a Moonraker client, so for *any* printer you can also run it on a separate Raspberry Pi, mini PC, or tablet with a touchscreen and control the printer over the network. See [Can I run HelixScreen on a separate device?](../FAQ.md#can-i-run-helixscreen-on-a-separate-device-instead-of-on-my-printer) and [Remote Screen Setup](../INSTALL.md#remote-screen-setup-run-on-a-separate-device).
 
-**2. Your printer is auto-detected.** The first-run setup wizard identifies your printer from a database of 80+ models — filling in the right name, image, bed size, probe type, and preset options automatically. If it guesses wrong, you can pick your model by hand, and if your printer isn't in the database at all, it still works fully via generic detection (see [Every Other Klipper Printer](#every-other-klipper-printer) below).
+**2. Your printer is auto-detected.** The first-run setup wizard identifies your printer from a database of 90+ models — filling in the right name, image, bed size, probe type, and preset options automatically. If it guesses wrong, you can pick your model by hand, and if your printer isn't in the database at all, it still works fully via generic detection (see [Every Other Klipper Printer](#every-other-klipper-printer) below).
 
 > **What the status labels mean:** Throughout this page and the FAQ, **Tested** = the HelixScreen team verified it on real hardware; **Supported** = works, with the noted firmware; **Community** = a community user confirmed it, but we haven't tested it ourselves; **Preliminary** = support exists from the printer's published config but isn't hardware-verified. If you run HelixScreen on hardware we haven't tested, [let us know](settings/help-about.md) — reports are how printers move up the list.
 
@@ -69,7 +69,7 @@ Runs on the K1's built-in screen. K1C and K1 Max are the most thoroughly tested 
 
 ---
 
-### Creality K2 Plus / K2 Pro / K2 SE
+### Creality K2 Plus / K2 Pro
 
 Runs on the K2's built-in screen and — unlike the K1 — **works with stock firmware and stock Moonraker**, no custom firmware required. This is the flagship CFS integration.
 
@@ -189,7 +189,7 @@ If your printer isn't in the list above, it still works — it just uses generic
 - Firmware retraction, chamber heating, input shaper, exclude-objects, and [Spoolman](filament-tracking.md) — each when detected
 - Timelapse, when the Moonraker-Timelapse plugin is installed
 
-The printer database (80+ models across Voron, RatRig, Prusa-on-Klipper, Elegoo Neptune, Sovol, Anycubic, Artillery, FLSUN, Kingroon, Zero G, and more) adds the finishing touches — your printer's name, image, bed size, and preset options. A printer that isn't in the database misses only those cosmetic and preset details; every control above still works.
+The printer database (90+ models across Voron, RatRig, Prusa-on-Klipper, Elegoo Neptune, Sovol, Anycubic, Artillery, FLSUN, Kingroon, Zero G, and more) adds the finishing touches — your printer's name, image, bed size, and preset options. A printer that isn't in the database misses only those cosmetic and preset details; every control above still works.
 
 ---
 

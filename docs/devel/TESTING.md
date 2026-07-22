@@ -1,7 +1,7 @@
 # Testing Infrastructure
 
 **Status:** Active
-**Last Updated:** 2026-02-06
+**Last Updated:** 2026-07-22
 
 ---
 
@@ -91,7 +91,7 @@ These validate fundamental functionality:
 
 **Print Start** (`test_print_start_collector.cpp`): PRINT_START marker, completion marker, homing/heating phase detection
 
-**UI** (`test_ui_temp_graph.cpp`): Graph create/destroy
+**UI** (`test_temp_graph.cpp`, `test_temp_graph_controller.cpp`, `test_temp_graph_overlay.cpp`, `test_temp_graph_scaling.cpp`, `test_panel_widget_temp_graph.cpp`): Graph create/destroy
 
 ---
 
@@ -169,12 +169,13 @@ The default `make test-run` uses filter `~[.] ~[slow]` to exclude tests that wou
 
 | Category | Count | Notes |
 |----------|------:|-------|
-| **Test files** | 203 | All in `tests/unit/` |
-| **TEST_CASE macros** | ~2,050 | Individual test definitions |
-| **SECTION blocks** | ~4,680 | Subsections within test cases |
-| **Total test paths** | ~6,700+ | Each section path is a unique test run |
-| **Slow tests** `[slow]` | ~185 | Excluded from `test-run` |
-| **Hidden tests** `[.]` | ~57 | Require explicit invocation |
+| **Test files** | 627 | All in `tests/unit/` |
+| **TEST_CASE macros** | thousands | Individual test definitions |
+| **SECTION blocks** | thousands | Subsections within test cases |
+| **Slow tests** `[slow]` | ~200 | Excluded from `test-run` |
+| **Hidden tests** `[.]` | dozens | Require explicit invocation |
+
+*Counts drift as the suite grows — regenerate with `grep -rc` if you need exact figures.*
 
 *Note: Some overlap exists between [slow] and [.]*
 
@@ -340,8 +341,9 @@ tests/
 ├── integration/                # Integration tests (mocks)
 │   └── test_mock_example.cpp
 └── mocks/                      # Mock implementations
-    ├── mock_lvgl.cpp
-    └── mock_moonraker_client.cpp
+    ├── mock_websocket_server.{h,cpp}
+    ├── mock_mdns_discovery.h
+    └── mock_printer_state.h
 
 experimental/src/              # Standalone test binaries
 ```
@@ -409,7 +411,7 @@ The Makefile auto-discovers test files in `tests/unit/` and `tests/integration/`
 ### MoonrakerClientMock
 
 ```cpp
-#include "tests/mocks/moonraker_client_mock.h"
+#include "moonraker_client_mock.h"
 
 MoonrakerClientMock client;
 client.connect(url, on_connected, on_disconnected);
@@ -420,9 +422,9 @@ client.reset();               // Reset for next test
 
 ### Available Mocks
 
-- **MoonrakerClientMock:** WebSocket simulation
-- **MockLVGL:** Minimal LVGL stubs for integration tests
-- **MockPrintFiles:** Filesystem operations
+- **MoonrakerClientMock:** WebSocket simulation (`include/moonraker_client_mock.h`)
+- **mock_websocket_server** (`tests/mocks/mock_websocket_server.{h,cpp}`): WebSocket server stub
+- **mock_mdns_discovery** / **mock_printer_state** (`tests/mocks/`): discovery and printer-state stubs
 
 ### Mock Drift Protection
 
@@ -434,14 +436,21 @@ Covered: `AmsBackend`, `EthernetBackend`, `UsbBackend`, `WifiBackend` (already p
 
 ## UI Testing Utilities
 
-```cpp
-#include "../ui_test_utils.h"
+The real API is the `UITest::` namespace in `tests/ui_test_utils.h`:
 
-void setup_lvgl_for_testing();
-lv_display_t* create_test_display(int width, int height);
-void simulate_click(lv_obj_t* obj);
-void simulate_swipe(lv_obj_t* obj, lv_dir_t direction);
+```cpp
+#include "ui_test_utils.h"
+
+UITest::init(screen);                      // Set up the test indev on a screen
+lv_obj_t* w = UITest::find_by_name(root, "my_button");
+UITest::click(w);                          // Simulate a click/touch on a widget
+UITest::click_at(x, y);                    // Or at explicit coordinates
+UITest::type_text(textarea, "hello");
+UITest::wait_until([]{ return done; });    // Pump timers until a condition
+UITest::cleanup();
 ```
+
+See UI_TESTING.md for the full utility list and the mandated base fixtures.
 
 ---
 

@@ -265,4 +265,4 @@ bluetoothctl select <MAC_ADDRESS>
 
 ---
 
-**Next:** [Label Printing](label-printing.md) | **Prev:** [Filament Management](filament.md) | [Back to User Guide](../USER_GUIDE.md)
+**Next:** [Label Printing](label-printing.md) | **Prev:** [Filament Tracking & Spoolman](filament-tracking.md) | [Back to User Guide](../USER_GUIDE.md)

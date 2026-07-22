@@ -38,8 +38,10 @@ Tap a preset to set the target temperature immediately. If your printer has a ch
 
 ### Reassigning a Preset's Filament Type
 
-The four preset buttons (PLA, PETG, ABS, TPU) aren't fixed — you can point any of
-them at a different filament type from the built-in materials database.
+The three preset buttons shown on the temperature panel (PLA, PETG, ABS) aren't
+fixed — you can point any of them at a different filament type from the built-in
+materials database. (A fourth default, TPU, ships with the presets but isn't shown
+on the temperature panel; it surfaces on the filament and PID calibration panels.)
 
 ![Choosing a filament type for a preset button](../../images/user/filament-preset-picker.png)
 
@@ -47,7 +49,7 @@ them at a different filament type from the built-in materials database.
 2. Scroll the list and tap the filament type you want. The button's label and its
    temperatures update immediately, and the choice is remembered across restarts.
 3. To undo all changes, long-press any preset button and tap **Reset to
-   defaults** at the top of the list — this restores PLA / PETG / ABS / TPU.
+   defaults** at the top of the list — this restores PLA / PETG / ABS.
 
 > **Tip:** A short tap still just applies the button's temperatures. Only a long-press opens the picker.
 

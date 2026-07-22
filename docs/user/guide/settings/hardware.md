@@ -50,7 +50,7 @@ Tap to open a standalone fullscreen camera viewer showing the live feed from you
 
 > Only shown when a multi-filament system is detected.
 
-Tap to open Device Operations for quick actions, calibration, and speed settings for multi-material systems. Supports AFC, Happy Hare, ACE, and other Klipper-based filament changers.
+Tap to open Device Operations for quick actions, calibration, and speed settings for multi-material systems. Supports AFC, Happy Hare, ACE, and other detected filament systems.
 
 ---
 

@@ -467,7 +467,7 @@ Tap the G-code Console widget on the Home Panel. A full-screen console overlay o
 **Navigating history:**
 - Press the **Up arrow** to recall previous commands
 - Press the **Down arrow** to move forward through history
-- Commands are loaded from Moonraker's G-code store (up to 200 entries)
+- The arrows recall your last 20 sent commands (the scrolling log above shows a larger history loaded from Moonraker's G-code store)
 
 **Reading output:**
 - Commands you sent appear in the scrolling log

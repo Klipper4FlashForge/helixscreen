@@ -75,4 +75,4 @@ From the detail view you can:
 
 ---
 
-**Prev:** [Camera](camera.md) | [Back to User Guide](../USER_GUIDE.md)
+**Prev:** [Camera](camera.md) | **Next:** [Advanced Features](advanced.md) | [Back to User Guide](../USER_GUIDE.md)

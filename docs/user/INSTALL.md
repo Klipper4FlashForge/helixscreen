@@ -264,7 +264,7 @@ ZMOD installs HelixScreen into a chroot rooted at `/usr/data/.mod/.zmod/`. When 
 ssh root@<printer-ip>
 chroot /usr/data/.mod/.zmod
 # now you're in the same view HelixScreen runs from:
-curl -fsSL https://get.helixscreen.org | sh
+curl -fsSL https://releases.helixscreen.org/install.sh | sh
 ```
 
 The same applies to the uninstaller — run `sh /tmp/install.sh --uninstall` from inside the chroot.
@@ -731,7 +731,7 @@ The wizard will test the connection before proceeding.
 ### Step 5: Printer Identification
 HelixScreen will try to identify your printer from its configuration. You can:
 - Confirm the detected printer type
-- Select from a database of 80+ printers
+- Select from a database of 90+ printers
 - Enter custom settings
 
 ### Step 6: Heater Selection
@@ -823,7 +823,7 @@ Touch coordinates are automatically adjusted to match the rotation — no separa
 
 If you experience any display issues with rotation, you can also force the framebuffer backend manually by setting `HELIX_DISPLAY_BACKEND=fbdev` (see below).
 
-### GPU Rendering (Experimental)
+### GPU Rendering
 
 By default, HelixScreen uses GPU-accelerated rendering via DRM/KMS when available. On boards where DRM is not supported, it falls back to CPU-based software rendering (`fbdev` backend).
 
@@ -974,7 +974,7 @@ Or via SSH:
 # Path varies by platform:
 #   Pi: ~/helixscreen/bin/helix-screen (or /opt/helixscreen if no Klipper ecosystem)
 #   K1: /usr/data/helixscreen/bin/helix-screen
-#   K2: /opt/helixscreen/bin/helix-screen (assumed, untested)
+#   K2: /opt/helixscreen/bin/helix-screen
 #   AD5M Klipper Mod: /root/printer_software/helixscreen/bin/helix-screen
 ~/helixscreen/bin/helix-screen --version
 ```

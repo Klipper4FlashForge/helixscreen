@@ -2,7 +2,7 @@
 
 This document describes the HelixScreen prototype build system, including automatic patch application, multi-display support, and development workflows.
 
-**For common development tasks**, see **[DEVELOPMENT.md](../DEVELOPMENT.md)** - this document covers advanced build system internals.
+**For common development tasks**, see **[DEVELOPMENT.md](DEVELOPMENT.md)** - this document covers advanced build system internals.
 
 ## Cross-Compilation (Embedded Targets)
 
@@ -183,7 +183,10 @@ docker/
 ├── Dockerfile.cc1         # CC1 toolchain (Debian Bookworm, ARM GCC 10.3)
 ├── Dockerfile.k1          # K1 static toolchain (Bootlin mips32el-musl, GCC 12)
 ├── Dockerfile.k1-dynamic  # K1 dynamic toolchain (crosstool-NG, GCC 7.5, glibc 2.29)
-└── Dockerfile.k2          # K2 toolchain (Bootlin armv7-eabihf-musl, GCC 12)
+├── Dockerfile.k2          # K2 toolchain (Bootlin armv7-eabihf-musl, GCC 12)
+├── Dockerfile.ad5x        # AD5X toolchain (MIPS, ZMOD)
+├── Dockerfile.snapmaker-u1 # Snapmaker U1 toolchain
+└── Dockerfile.x86         # x86 native/container build
 ```
 
 The Dockerfiles handle:
@@ -553,7 +556,7 @@ git worktree remove --force .worktrees/my-feature
 ## Build System Overview
 
 The project uses **GNU Make** with a modular architecture:
-- **Modular design**: ~4,300 lines split across 14 files for maintainability
+- **Modular design**: ~9,100 lines split across the top-level `Makefile` plus 17 `mk/*.mk` modules for maintainability
 - **Color-coded output** for easy visual parsing
 - **Verbosity control** to show/hide full compiler commands
 - **Automatic dependency checking** before builds with smart canvas detection
@@ -569,21 +572,24 @@ The build system is organized into focused modules:
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `Makefile` | ~630 | Configuration, variables, platform detection, module includes |
-| `mk/tests.mk` | ~880 | All test targets (unit, integration, by-feature) |
-| `mk/cross.mk` | ~750 | Cross-compilation, toolchain setup, display backends |
-| `mk/deps.mk` | ~500 | Dependency checking, installation, libhv/wpa_supplicant |
-| `mk/rules.mk` | ~340 | Compilation rules, linking, main build targets |
-| `mk/remote.mk` | ~280 | Remote deployment (Pi, AD5M) |
-| `mk/images.mk` | ~200 | Image conversion (PNG, SVG) |
-| `mk/patches.mk` | ~130 | LVGL patch application |
-| `mk/fonts.mk` | ~120 | Font/icon generation, Material icons |
-| `mk/watchdog.mk` | ~120 | Hardware watchdog support |
+| `Makefile` | ~1095 | Configuration, variables, platform detection, module includes |
+| `mk/cross.mk` | ~2990 | Cross-compilation, toolchain setup, display backends |
+| `mk/tests.mk` | ~924 | All test targets (unit, integration, by-feature) |
+| `mk/deps.mk` | ~672 | Dependency checking, installation, libhv/wpa_supplicant |
+| `mk/patches.mk` | ~666 | LVGL patch application |
+| `mk/rules.mk` | ~561 | Compilation rules, linking, main build targets |
+| `mk/remote.mk` | ~297 | Remote deployment (Pi, AD5M) |
+| `mk/fonts.mk` | ~283 | Font/icon generation, Material icons |
+| `mk/images.mk` | ~264 | Image conversion (PNG, SVG) |
+| `mk/tools.mk` | ~251 | Development tool targets |
+| `mk/pi-dual-link.mk` | ~249 | Pi dual-link build (compile once, link DRM + fbdev) |
+| `mk/watchdog.mk` | ~198 | Hardware watchdog support |
+| `mk/splash.mk` | ~183 | Splash screen generation |
+| `mk/translations.mk` | ~168 | Translation string generation |
 | `mk/format.mk` | ~110 | Code and XML formatting |
-| `mk/splash.mk` | ~110 | Splash screen generation |
-| `mk/tools.mk` | ~110 | Development tool targets |
-| `mk/display-lib.mk` | ~60 | Display library configuration |
-| `mk/pi-dual-link.mk` | ~200 | Pi dual-link build (compile once, link DRM + fbdev) |
+| `mk/bluetooth.mk` | ~86 | Bluetooth support |
+| `mk/display-lib.mk` | ~77 | Display library configuration |
+| `mk/filaments.mk` | ~22 | Filament database generation |
 
 Each module is self-contained with GPL-3 copyright headers and clear separation of concerns.
 
@@ -1070,10 +1076,10 @@ make validate-fonts
 **Manual font generation:**
 ```bash
 # Generate specific size
-npm run convert-font-24
+npm run convert-noto-24
 
 # Generate all fonts
-npm run convert-all-fonts
+npm run convert-noto-all
 ```
 
 ## Icon Generation
@@ -1284,7 +1290,7 @@ Usually invoked after editing icons/images. See **[Font Generation](#font-genera
 
 | Target | What it does |
 |--------|--------------|
-| `make regen-fonts` | Regenerate MDI icon fonts from `codepoints.h` |
+| `make regen-fonts` | Regenerate MDI icon fonts via `scripts/regen_mdi_fonts.sh` |
 | `make regen-text-fonts` | Regenerate Noto Sans text fonts (incl. CJK) |
 | `make regen-icon-consts` | Regenerate icon string constants in `globals.xml` |
 | `make validate-fonts` | Verify every codepoint is present in the compiled fonts |
@@ -1608,4 +1614,4 @@ Only use `make clean && make` when:
 - **[DEVELOPMENT.md](DEVELOPMENT.md)** - Development environment, workflow, and contributing
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - System design and technical patterns
 - **[CLAUDE.md](../CLAUDE.md)** - Development context and AI assistant guidelines
-- **[patches/README.md](../patches/README.md)** - Patch documentation
+- **[patches/README.md](../../patches/README.md)** - Patch documentation

@@ -26,7 +26,7 @@ Every config file has an integer `config_version` at the root level:
 
 ```json
 {
-    "config_version": 2,
+    "config_version": 19,
     "printer": { ... },
     "display": { ... }
 }
@@ -35,8 +35,12 @@ Every config file has an integer `config_version` at the root level:
 The current version is defined in `config.h`:
 
 ```cpp
-static constexpr int CURRENT_CONFIG_VERSION = 2;
+static constexpr int CURRENT_CONFIG_VERSION = 19;
 ```
+
+The two migrations enumerated below (v0->v1, v1->v2) are the earliest examples; the
+full migration ladder up to the current head lives in `config.cpp`. The "how to add a
+migration" mechanism shown later still applies to every step in that ladder.
 
 ### Fresh Install vs. Upgrade
 
@@ -84,7 +88,7 @@ static void migrate_v0_to_v1(json& config) {
 }
 ```
 
-**Note:** Tests for the v1->v2 migration are not yet implemented.
+**Note:** Dedicated tests for this specific v1->v2 migration are not yet implemented. Later migrations in the ladder are covered (e.g. `tests/unit/test_config_migration_v18.cpp`).
 
 ### v1 -> v2: Single LED string to multi-LED array
 

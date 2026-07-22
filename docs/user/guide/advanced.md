@@ -251,7 +251,7 @@ View past print jobs:
 
 Review past system notifications:
 
-1. Tap the **bell icon** in the status bar
+1. Tap the **Notifications** widget on the Home screen
 2. Scroll through history
 3. Tap **Clear All** to dismiss
 
@@ -317,4 +317,4 @@ When frames have been captured during a print, a **render section** appears abov
 
 ---
 
-**Next:** [Beta Features](beta-features.md) | **Prev:** [Settings](settings.md) | [Back to User Guide](../USER_GUIDE.md)
+**Next:** [Beta Features](beta-features.md) | **Prev:** [Print History](print-history.md) | [Back to User Guide](../USER_GUIDE.md)

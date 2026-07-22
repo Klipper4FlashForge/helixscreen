@@ -1,5 +1,16 @@
 # Theme System
 
+> **⚠️ STALE — needs manual rework (flagged for 1.0):** The "Layer 2" architecture,
+> data-flow diagram, C++ Integration, "Available Style Getters", and "Adding a New Themed
+> Widget" sections below describe a deleted `theme_core.c` / `theme_core.h` layer and its
+> `theme_core_get_*_style()` getters. **Those files and functions no longer exist** — the
+> theme system is now the table-driven `ThemeManager` (`src/ui/theme_manager.cpp`, see
+> `include/theme_manager.h`, which "Replaces theme_core.c + old theme_manager.cpp"). Per-widget
+> styling is applied through per-widget apply callbacks (`ui_text.cpp`, `ui_button.cpp`) driven
+> by `lv_obj_report_style_change`. These sections were left in place rather than half-corrected;
+> do not trust any `theme_core_*` symbol here until this doc is rewritten around `ThemeManager`.
+> Token names, JSON paths, and widget-tag names elsewhere in this doc have been corrected.
+
 > **For contributors:** If you're doing layout or styling work, start with the **[UI Contributor Guide](UI_CONTRIBUTOR_GUIDE.md)** instead. This document covers the internal architecture of the theme system — style objects, theme_core C API, and extending the system with new themed widgets.
 
 ## Overview
@@ -82,7 +93,7 @@ All colors are referenced as tokens with `#` prefix in XML:
 
 | Token | Purpose |
 |-------|---------|
-| `#app_bg` | Main application background |
+| `#screen_bg` | Main application background |
 | `#overlay_bg` | Sidebar/panel backgrounds |
 | `#card_bg` | Card surfaces |
 | `#elevated_bg` | Elevated/control surfaces (dialogs, inputs) |
@@ -101,7 +112,12 @@ All colors are referenced as tokens with `#` prefix in XML:
 
 ### Light/Dark Variants
 
-Theme-aware colors have `_light` and `_dark` suffixes defined in the theme JSON. The system automatically selects the right one:
+Theme-aware colors resolve to a light or dark value depending on the current mode. Note
+the `_light`/`_dark` **suffix convention is internal to the XML const registration** — it
+is how `theme_manager.cpp` registers each palette color into the `ui_xml` global scope
+(e.g. `card_bg_light`, `card_bg_dark`). The **theme JSON itself does not use suffixed
+keys**; it nests `"light": { ... }` and `"dark": { ... }` objects. The system automatically
+selects the right one:
 
 ```xml
 <!-- In your XML - just use the base name -->
@@ -351,7 +367,7 @@ Spinner sizes are **responsive** - the pixel values vary by screen height breakp
 
 Uses `theme_core_get_spinner_style()` → primary accent color.
 
-#### ui_severity_card
+#### severity_card
 Status card with severity-colored border:
 
 | Severity | Border Color |
@@ -362,9 +378,9 @@ Status card with severity-colored border:
 | `error` | Danger red |
 
 ```xml
-<ui_severity_card severity="warning">
+<severity_card severity="warning">
   <text_body text="Nozzle temperature is high"/>
-</ui_severity_card>
+</severity_card>
 ```
 
 Uses `theme_core_get_severity_*_style()` functions.
@@ -545,7 +561,7 @@ static void style_changed_cb(lv_event_t* e) {
 
 ### Adding a New Color Token
 
-1. Add to theme JSON files (`themes/*.json`):
+1. Add to theme JSON files (`assets/config/themes/defaults/*.json`):
    ```json
    "dark": { "my_color": "#hexvalue" },
    "light": { "my_color": "#hexvalue" }
@@ -579,4 +595,4 @@ static void style_changed_cb(lv_event_t* e) {
 | `src/ui/theme_manager.cpp` | Token system, responsive constants, theme loading |
 | `include/theme_manager.h` | Token lookup API |
 | `ui_xml/globals.xml` | Spacing, font, and icon token definitions |
-| `themes/*.json` | Theme color definitions |
+| `assets/config/themes/defaults/*.json` | Theme color definitions |

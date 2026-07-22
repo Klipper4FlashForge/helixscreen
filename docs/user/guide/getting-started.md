@@ -62,7 +62,7 @@ When disconnected, a toast notification appears and HelixScreen attempts to reco
 
 ## First-Time Setup
 
-When you first start HelixScreen, the Setup Wizard guides you through initial configuration. You can re-run the wizard anytime via **Settings > Factory Reset**.
+When you first start HelixScreen, the Setup Wizard guides you through initial configuration. You can re-run the wizard anytime via **Settings > System > Factory Reset**.
 
 ### Setup Wizard
 

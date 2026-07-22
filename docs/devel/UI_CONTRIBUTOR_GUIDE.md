@@ -66,7 +66,7 @@ This requires ImageMagick. You can also press **S** while the app is running for
 
 Breakpoints are based on screen **height**, because vertical space is always the constraint. Width varies wildly (480 to 1920+), but it's running out of vertical room that causes clipping, overlapping, and broken layouts.
 
-### The 6-tier system
+### The 7-tier system
 
 | Tier | Index | Suffix | Height Range | Target Devices | Fallback |
 |------|-------|--------|-------------|----------------|----------|
@@ -75,9 +75,10 @@ Breakpoints are based on screen **height**, because vertical space is always the
 | SMALL | 2 | `_small` | 391 -- 460px | 480x400, 1920x440 | **Required** (core tier) |
 | MEDIUM | 3 | `_medium` | 461 -- 550px | 800x480 | **Required** (core tier) |
 | LARGE | 4 | `_large` | 551 -- 700px | 1024x600 | **Required** (core tier) |
-| XLARGE | 5 | `_xlarge` | > 700px | 1280x720+ | Falls back to `_large` |
+| XLARGE | 5 | `_xlarge` | 701 -- 1000px | 1280x720, 1024x768 | Falls back to `_large` |
+| XXLARGE | 6 | `_xxlarge` | > 1000px | 1440p, 4K | Falls back to `_xlarge` |
 
-Every responsive value needs three core variants: `_small`, `_medium`, and `_large`. The `_tiny`, `_micro`, and `_xlarge` tiers are optional -- define them only when values actually need to differ from their fallback tier.
+Every responsive value needs three core variants: `_small`, `_medium`, and `_large`. The `_tiny`, `_micro`, `_xlarge`, and `_xxlarge` tiers are optional -- define them only when values actually need to differ from their fallback tier.
 
 The **index** column matters for XML reactive bindings. The `ui_breakpoint` subject holds the current breakpoint as an integer, and you can use `bind_flag_if_*` or `bind_style_if_*` with these values. For example, `ref_value="0"` means Micro, `ref_value="2"` means Small.
 
@@ -536,8 +537,14 @@ HelixScreen supports layout-specific XML overrides so you can rearrange panels f
 | `standard` | Normal landscape (4:3 to 16:9) | 800x480, 1024x600, 1280x720 |
 | `ultrawide` | Aspect ratio > 2.5:1 | 1920x480, 1920x400 |
 | `portrait` | Aspect ratio < 0.8:1 | 480x800, 600x1024 |
+| `micro` | Min dimension <= 272, landscape | 480x272 |
+| `micro_portrait` | Min dimension <= 272, portrait | 272x480 |
 | `tiny` | Max dimension <= 480, landscape | 480x320, 320x240 |
-| `tiny-portrait` | Max dimension <= 480, portrait | 320x480, 240x320 |
+| `tiny_portrait` | Max dimension <= 480, portrait | 320x480, 240x320 |
+
+Detection lives in `LayoutManager::detect()` (`src/layout_manager.cpp`). Portrait
+sub-classes (`micro_portrait`, `tiny_portrait`) fall back through the shared
+`portrait/` layer before the standard layout -- see `variant_chain()`.
 
 Force a layout with `--layout ultrawide` on the command line, or set `display.layout` in `settings.json`.
 
@@ -548,11 +555,15 @@ ui_xml/
   globals.xml              <-- Shared by ALL layouts (never override this)
   home_panel.xml           <-- Standard home panel
   controls_panel.xml       <-- Standard controls panel
-  ...                      <-- ~169 XML files total
-  ultrawide/               <-- Ultrawide overrides
-    home_panel.xml         <-- The only override that exists so far
-  portrait/                <-- Doesn't exist yet
-  tiny/                    <-- Doesn't exist yet
+  ...                      <-- 226 XML files total
+  micro/                   <-- Micro (480x272) overrides (4 files)
+    controls_panel.xml
+    header_bar.xml
+    ...
+  portrait/                <-- Portrait overrides (app_layout.xml, navigation_bar.xml)
+  micro_portrait/          <-- Micro-portrait overrides (dir present, empty)
+  ultrawide/               <-- Does NOT exist yet (no overrides created)
+  tiny/, tiny_portrait/    <-- Do NOT exist yet
 ```
 
 ### How overrides work
@@ -713,13 +724,17 @@ These panels work well and can serve as reference for how to do things right:
 
 ### Ultrawide Status
 
-- Only `home_panel.xml` has an override (and it needs refinement).
-- Every other panel uses the standard layout and would benefit from ultrawide-specific arrangements.
+- Not started -- `ui_xml/ultrawide/` does not exist yet, so ultrawide screens
+  currently fall through to the standard layout.
+- Wide open for contributions. Force it with `--layout ultrawide -s 1920x480`.
 
-### Portrait / Tiny-Portrait Status
+### Portrait / Micro Status
 
-- Not started at all. The directories don't even exist yet.
-- Wide open for contributions. If you have a portrait display, this is a great place to make a big impact.
+- `ui_xml/portrait/` exists with two overrides (`app_layout.xml`, `navigation_bar.xml`).
+- `ui_xml/micro/` exists with four overrides (`controls_panel.xml`, `header_bar.xml`,
+  `theme_editor_overlay.xml`, `theme_preview_overlay.xml`).
+- `ui_xml/micro_portrait/` exists as a directory but has no overrides yet.
+- `tiny/`, `tiny_portrait/` do not exist yet. Wide open for contributions.
 
 ---
 

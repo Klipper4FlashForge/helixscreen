@@ -37,7 +37,7 @@ The HelixScreen macro file provides:
 
 **Manual Installation:**
 
-1. Copy `config/helix_macros.cfg` to your Klipper config directory
+1. Copy `assets/config/helix_macros.cfg` to your Klipper config directory
 2. Add to your `printer.cfg`:
 
 ```ini
@@ -258,7 +258,7 @@ If detection takes the full 45-second timeout:
 
 HelixScreen uses a modular profile system to match different printer firmware. Known printers (like the FlashForge AD5M with Forge-X firmware) have custom profiles that map firmware-specific output to preparation phases with accurate progress tracking. Unknown printers use generic regex patterns that work with standard G-code commands.
 
-Profiles are JSON files in `config/print_start_profiles/`. Each profile can define:
+Profiles are JSON files in `assets/config/print_start_profiles/`. Each profile can define:
 - **Signal formats**: Exact prefix + value matching for structured firmware output
 - **Response patterns**: Regex patterns for G-code console parsing
 - **Progress mode**: `sequential` (known firmware) or `weighted` (generic heuristics)
@@ -311,8 +311,8 @@ For printers that don't emit G-code layer markers, HelixScreen has additional fa
 |------|---------|
 | `src/print/print_start_collector.cpp` | Detection engine and fallback implementation |
 | `src/print/print_start_profile.cpp` | Profile loading and signal/pattern matching |
-| `config/print_start_profiles/*.json` | Printer-specific profile definitions |
-| `config/helix_macros.cfg` | Klipper macros for detection and phase tracking |
+| `assets/config/print_start_profiles/*.json` | Printer-specific profile definitions |
+| `assets/config/helix_macros.cfg` | Klipper macros for detection and phase tracking |
 | `src/printer/macro_manager.cpp` | Macro installation management |
 | `src/api/moonraker_client.cpp` | Object subscription setup |
-| `docs/PRINT_START_PROFILES.md` | Developer guide for creating new profiles |
+| `docs/devel/PRINT_START_PROFILES.md` | Developer guide for creating new profiles |

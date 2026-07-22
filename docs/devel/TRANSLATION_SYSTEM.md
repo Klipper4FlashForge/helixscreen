@@ -301,9 +301,17 @@ Plural forms follow the [CLDR standard](https://unicode-org.github.io/cldr-stagi
 - 5-20, 25-30... → many ("5 элементов")
 - Decimals → other
 
-### Generated Plural Functions
+### How plurals resolve at runtime
 
-Each language gets a plural function implementing its rules:
+Plurals resolve through LVGL's native `lv_translation_*` API on the generated XML packs —
+each locale's XML carries the plural-category strings, and LVGL picks the category for a
+given count at lookup time. There is no compiled plural table in the normal build.
+
+> The C plural functions shown below are **only** emitted (into
+> `src/generated/lv_i18n_translations.c`) when you run
+> `generate_translations.py --emit-lv-i18n`, which normal work never needs. They are
+> included here as a reference for the CLDR plural logic the generator encodes, not as code
+> that ships.
 
 ```c
 // English: simple one/other
@@ -318,6 +326,7 @@ static uint8_t en_plural_fn(int32_t num) {
 // Russian: one/few/many/other
 static uint8_t ru_plural_fn(int32_t num) {
     uint32_t i = op_i(op_n(num));
+    uint32_t v = op_v(op_n(num));
     uint32_t i10 = i % 10;
     uint32_t i100 = i % 100;
 
@@ -405,7 +414,7 @@ This shows what keys would be added without modifying files.
 | `ui_xml/translations/<lang>.xml` | Generated per-locale packs (loaded at runtime) |
 | `src/system/translation_loader.cpp` | Per-locale pack loader (`ensure_translation_loaded()`) |
 | `src/application/application.cpp` | Translation startup / language switching |
-| `src/system/settings_manager.cpp` | Locale switching |
+| `src/system/system_settings_manager.cpp` | Locale switching (`ensure_translation_loaded()` + `lv_translation_set_language()`) |
 
 ## Troubleshooting
 

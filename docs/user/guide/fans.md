@@ -61,4 +61,4 @@ The custom name is saved and appears everywhere that fan is shown in HelixScreen
 
 ---
 
-**Next:** [Sensors](sensors.md) | [Back to User Guide](../USER_GUIDE.md)
+**Prev:** [Settings](settings.md) | **Next:** [Sensors](sensors.md) | [Back to User Guide](../USER_GUIDE.md)

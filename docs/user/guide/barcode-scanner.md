@@ -127,3 +127,7 @@ After the restart, HelixScreen no longer opens that device, and your other scann
 
 - Only one scanner (USB or Bluetooth) is used at a time. If both are configured, the paired Bluetooth scanner wins.
 - When a Bluetooth scanner is selected, HelixScreen captures its keystrokes exclusively so they don't leak into other UI widgets. USB scanners run in passive mode (some scanners rely on this) — if USB scanner keystrokes leak into focused text inputs, that is a known limitation.
+
+---
+
+**Next:** [Calibration & Tuning](calibration.md) | **Prev:** [Label Printing](label-printing.md) | [Back to User Guide](../USER_GUIDE.md)

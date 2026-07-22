@@ -393,8 +393,6 @@ If you have multiple Box units connected, each unit has its own dryer with indep
 
 ---
 
----
-
 ## See Also
 
 - [Filament Tracking & Spoolman](filament-tracking.md) — How remaining weight is tracked, with and without Spoolman, and how to connect a Spoolman server

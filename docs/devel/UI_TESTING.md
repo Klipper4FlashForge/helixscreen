@@ -115,7 +115,9 @@ int count = UITest::count_children_with_marker(parent, "network_item");
 
 ## Writing Test Fixtures
 
-### Basic Test Fixture Pattern
+> **Prefer the base fixtures.** New tests should derive from `LVGLTestFixture` / `XMLTestFixture` (which inherit `HelixTestFixture` and run `reset_all()` on ctor/dtor) rather than hand-rolling `lv_init()`/`lv_display_create()`/`lv_display_delete()`. The manual pattern below is shown only to illustrate what those base fixtures do for you; using it directly bypasses the mandated cross-test isolation (see "Known Limitations & Workarounds" § 1).
+
+### Basic Test Fixture Pattern (illustrative — use the base fixtures instead)
 
 ```cpp
 class MyUIFixture {
@@ -329,40 +331,16 @@ TEST_CASE_METHOD(Fixture, "Test", "[macos]") { ... }
 
 ## Known Limitations & Workarounds
 
-### 1. Multiple Fixture Instances Cause Segfaults 🚨 CRITICAL
+### 1. Use the Base Fixtures for Cross-Test Isolation
 
-**Problem:** Creating multiple LVGL UI instances in sequence causes crashes.
+**Problem:** Hand-rolling `lv_init()`/`lv_display_create()`/`lv_display_delete()` in a fixture bypasses the drain-and-reset that keeps LVGL state clean between tests, and multiple such instances in sequence can crash on stale observers or subjects.
 
-**Symptoms:**
-- First test passes
-- Second test segfaults during fixture construction
-- Error: "Segmentation violation signal"
+**Fix:** Derive from the mandated base fixtures instead of managing LVGL yourself:
+- `HelixTestFixture` (`tests/helix_test_fixture.h`) — ctor + dtor call `reset_all()` (drains `UpdateQueue`, clears `ModalStack`, resets language).
+- `LVGLTestFixture` — inherits `HelixTestFixture` and manages the LVGL display/indev lifecycle.
+- `XMLTestFixture` — owns per-instance `PrinterState` / `MoonrakerClient` / `MoonrakerAPI` and refreshes subjects via `init_subjects(true)`.
 
-**Root Cause:** Incomplete LVGL object hierarchy cleanup between tests.
-
-**Current Status (2025-10-27):**
-- WiFi wizard UI tests: 10 tests written, only 1 passing
-- 9 tests disabled with `[.disabled]` tag
-- First test runs successfully (9 assertions pass)
-- Second test crashes during `WizardWiFiUIFixture()` construction
-- Location: `tests/unit/test_wizard_wifi_ui.cpp`
-
-**Workaround:**
-```cpp
-// Disable problematic tests
-TEST_CASE_METHOD(Fixture, "Test 2", "[.disabled]") { ... }
-
-// Run tests individually
-./build/bin/helix-tests "Test 1"
-./build/bin/helix-tests "Test 2"
-```
-
-**Proper Fix (TODO):**
-1. Investigate wizard cleanup in `~WizardWiFiUIFixture()` destructor
-2. Ensure all LVGL objects deleted before display deletion
-3. Verify subject cleanup in `ui_wizard_init_subjects()`
-4. Add explicit `lv_obj_clean()` calls in fixture destructor
-5. Test with simpler fixtures first to isolate the issue
+These handle the cleanup that a bespoke fixture forgets; a bespoke fixture is the usual cause of a "first test passes, second segfaults" pattern.
 
 ### 2. Virtual Input Events Don't Trigger ui_switch
 
@@ -383,7 +361,7 @@ lv_subject_set_int(&my_subject, 42);
 REQUIRE(lv_subject_get_int(&my_subject) == 42);
 
 // Option 3: Manually trigger event
-lv_event_send(widget, LV_EVENT_VALUE_CHANGED, nullptr);
+lv_obj_send_event(widget, LV_EVENT_VALUE_CHANGED, nullptr);
 ```
 
 **Proper Fix (TODO):** Investigate why custom widgets don't receive indev events in test environment.
@@ -555,6 +533,6 @@ void print_children(lv_obj_t* parent, int depth = 0) {
 ## References
 
 - **Test Utilities Implementation:** `tests/ui_test_utils.h/cpp`
-- **Example Test File:** `tests/unit/test_wizard_wifi_ui.cpp`
+- **Example Test Files:** `tests/unit/test_wizard_connection_ui.cpp`, `tests/unit/test_ui_panel_bindings.cpp`
 - **Catch2 Documentation:** https://github.com/catchorg/Catch2
-- **LVGL Testing Guide:** `docs/LVGL9_XML_GUIDE.md`
+- **LVGL Testing Guide:** `LVGL9_XML_GUIDE.md`

@@ -51,7 +51,7 @@ MacrosPanel (overlay)
 | `include/standard_macros.h` | 10 standard macro slots with auto-detection |
 | `include/macro_manager.h` | HelixScreen helper macro (helix_macros.cfg) install/update |
 | `include/macro_modification_manager.h` | PRINT_START enhancement wizard (beta-gated) |
-| `src/ui/ui_settings_macro_buttons.h` | Settings overlay for quick buttons + standard macro config |
+| `include/ui_settings_macro_buttons.h` | Settings overlay for quick buttons + standard macro config |
 | `include/favorite_macro_widget.h` | Home panel 1x1 widget for favorite macro execution |
 | `src/ui/panel_widgets/macros_widget.h` | Home panel 1x1 widget to open Macros overlay |
 | `ui_xml/components/panel_widget_macros.xml` | XML for macros home panel widget |
@@ -239,7 +239,7 @@ Gated behind `Config::is_beta_features_enabled()`.
 
 - `MacroModificationManager` + `MacroEnhanceWizard`
 - Step-by-step wizard to enhance PRINT_START for phase tracking
-- TODO: `create_backup` parameter support when Moonraker API supports it
+- Future: `create_backup` parameter support, pending Moonraker API support upstream
 
 ---
 

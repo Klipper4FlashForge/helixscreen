@@ -65,7 +65,7 @@ The configuration file is JSON format with several top-level sections:
 ```json
 {
   "dark_mode": false,
-  "brightness": 50,
+  "brightness": 80,
   "sounds_enabled": true,
   "completion_alert": 2,
   "wizard_completed": false,
@@ -144,7 +144,7 @@ Each printer entry contains all printer-specific settings (connection details, h
 
 ### `brightness`
 **Type:** integer
-**Default:** `50`
+**Default:** `80`
 **Range:** `1` - `100`
 **Description:** Screen brightness percentage. Adjustable via Settings panel.
 
@@ -190,7 +190,7 @@ This is different from `sounds_enabled` — that toggle mutes playback but still
 ### `beta_features`
 **Type:** boolean
 **Default:** `false`
-**Description:** Enable beta features that are still under testing. Gates several Advanced panel features (Macro Browser, Input Shaping, Z-Offset Calibration, HelixPrint plugin management, PRINT_START configuration, Timelapse), the Plugins section in Settings, and the Update Channel selector. Always enabled automatically when running in `--test` mode. Can also be toggled by tapping the version button 7 times in Settings → About. See the [Beta Features](USER_GUIDE.md#beta-features) section in the User Guide for the full list.
+**Description:** Enable beta features that are still under testing. Gates several Advanced panel features (Macro Browser, Input Shaping, Z-Offset Calibration, HelixPrint plugin management, PRINT_START configuration, Timelapse), the Plugins section in Settings, and the Update Channel selector. Always enabled automatically when running in `--test` mode. Can also be toggled by tapping the version button 7 times in Settings → About. See the [Beta Features](guide/beta-features.md) guide for the full list.
 
 ---
 
@@ -281,8 +281,8 @@ Located in the `display` section:
     "animations_enabled": true,
     "time_format": 0,
     "rotate": 0,
-    "sleep_sec": 1800,
-    "dim_sec": 300,
+    "sleep_sec": 1200,
+    "dim_sec": 600,
     "dim_brightness": 30,
     "drm_device": "",
     "gcode_render_mode": 2,
@@ -325,13 +325,13 @@ Located in the `display` section:
 
 ### `sleep_sec`
 **Type:** integer
-**Default:** `1800`
-**Description:** Seconds of inactivity before screen turns OFF. Set to `0` to disable sleep. Default is 30 minutes.
+**Default:** `1200`
+**Description:** Seconds of inactivity before screen turns OFF. Set to `0` to disable sleep. Default is 20 minutes.
 
 ### `dim_sec`
 **Type:** integer
-**Default:** `300`
-**Description:** Seconds of inactivity before screen dims. Set to `0` to disable dimming. Must be less than `sleep_sec`. Default is 5 minutes.
+**Default:** `600`
+**Description:** Seconds of inactivity before screen dims. Set to `0` to disable dimming. Must be less than `sleep_sec`. Default is 10 minutes.
 
 ### `dim_brightness`
 **Type:** integer
@@ -355,9 +355,10 @@ Auto-detection finds the first device with dumb buffer support and a connected d
 ### `gcode_render_mode`
 **Type:** integer
 **Default:** `2`
-**Values:** `0` (Auto/2D), `2` (2D Layer)
+**Values:** `0` (Auto/2D), `1` (3D GLES), `2` (2D Layer)
 **Description:** G-code visualization mode:
 - `0` - Auto (currently uses 2D)
+- `1` - 3D GLES-accelerated view
 - `2` - 2D Layer view (default, recommended)
 
 Can also be overridden via `HELIX_GCODE_MODE` env var (`3D` or `2D`).
@@ -468,7 +469,7 @@ Matches LVGL's native default of 10.
 ### `jitter_threshold`
 **Type:** integer
 **Default:** `5`
-**Range:** `0` - `200`
+**Range:** `0` - `30`
 **Description:** Touch jitter filter dead zone in pixels. Capacitive touch controllers (notably Goodix GT9xx on FlashForge displays) report 2–5 px of coordinate drift even with a stationary finger. Without filtering, that drift accumulates past `scroll_limit` and a stationary tap gets cancelled as if it were a scroll. The filter freezes reported coordinates to the initial press point while movement stays within this radius.
 
 - **Raise** if stationary taps are still being misread as swipes or scrolls on a noisy panel (typical fix: 15–25).
@@ -1445,6 +1446,9 @@ These can be set in the systemd service file or before running the binary:
 | `HELIX_TOUCH_CALIBRATE` | Force touch calibration on next launch (`1` to enable) |
 | `HELIX_MOUSE_DEVICE` | Override USB mouse device (e.g., `/dev/input/event4`) |
 | `HELIX_KEYBOARD_DEVICE` | Override USB keyboard device (e.g., `/dev/input/event5`) |
+| `HELIX_TOUCH_JITTER` | Override `jitter_threshold` dead zone in pixels (`0`–`30`) |
+| `HELIX_SCROLL_GUARD` | Override `scroll_guard` post-scroll tap suppression (`1` to enable) |
+| `HELIX_SCROLL_GUARD_COOLDOWN_MS` | Override `scroll_guard_cooldown_ms` window in milliseconds |
 
 **Theme & Rendering:**
 
@@ -1492,8 +1496,8 @@ Environment="HELIX_TOUCH_DEVICE=/dev/input/event0"
     "animations_enabled": true,
     "time_format": 0,
     "rotate": 0,
-    "sleep_sec": 1800,
-    "dim_sec": 300,
+    "sleep_sec": 1200,
+    "dim_sec": 600,
     "dim_brightness": 30,
     "drm_device": "",
     "gcode_render_mode": 2,
@@ -1625,22 +1629,21 @@ Environment="HELIX_TOUCH_DEVICE=/dev/input/event0"
   },
 
   "panel_widgets": {
-    "home": [
-      {"id": "temperature", "enabled": true},
-      {"id": "network", "enabled": true},
-      {"id": "led", "enabled": true},
-      {"id": "ams", "enabled": true},
-      {"id": "notifications", "enabled": true},
-      {"id": "power", "enabled": true},
-      {"id": "firmware_restart", "enabled": false},
-      {"id": "humidity", "enabled": false},
-      {"id": "width_sensor", "enabled": false},
-      {"id": "probe", "enabled": false},
-      {"id": "filament", "enabled": false},
-      {"id": "temp_stack", "enabled": false},
-      {"id": "fan_stack", "enabled": true},
-      {"id": "thermistor", "enabled": false}
-    ]
+    "home": {
+      "pages": [
+        {
+          "id": "main",
+          "widgets": [
+            {"id": "printer_image", "enabled": true, "col": 0, "row": 0, "colspan": 2, "rowspan": 2},
+            {"id": "print_status", "enabled": true, "col": 0, "row": 2, "colspan": 2, "rowspan": 2},
+            {"id": "temperature", "enabled": true, "col": 2, "row": 0, "colspan": 1, "rowspan": 1},
+            {"id": "fan_stack", "enabled": true, "col": 3, "row": 0, "colspan": 1, "rowspan": 1}
+          ]
+        }
+      ],
+      "main_page_index": 0,
+      "next_page_id": 1
+    }
   },
 
   "ams": {

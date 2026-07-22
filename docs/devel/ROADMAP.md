@@ -21,7 +21,7 @@
 | **Filament Database** | 48 materials with temp/drying/compatibility data |
 | **Theme System** | Dynamic JSON themes with live preview |
 | **Layout System** | Auto-detection for ultrawide (1920x480) and small (480x320) displays |
-| **Sound System** | Multi-backend synthesizer (SDL, PWM, M300), JSON themes |
+| **Sound System** | Multi-backend synthesizer (SDL, ALSA, PWM, M300), JSON themes |
 | **Telemetry** | Opt-in crash reporting + session analytics + debug bundle upload |
 
 ---
@@ -40,7 +40,7 @@ Declarative repetition for the helix-xml engine: `<repeat count="N">…body…</
 
 Extracted the LVGL XML engine into standalone `lib/helix-xml/` library and upgraded LVGL from 9.4-pre to v9.5.0, gaining 274 commits of improvements (blur, drop shadow, flex rounding fixes, memory leak fixes, gesture threshold API, slot support). XML patches baked permanently into helix-xml; LVGL patches regenerated for v9.5. New umbrella headers (`helix_xml.h`), standalone globals, and forward declaration files decouple helix-xml from LVGL internals.
 
-**Branch:** `feature/helix-xml` | **Plan:** `docs/devel/plans/2026-02-18-helix-xml-plan.md`
+**Branch:** `feature/helix-xml`
 
 ### Power Panel Integration ✅
 **Completed:** 2026-02-18
@@ -111,7 +111,7 @@ The plugin system launched with version checking, UI injection points, and async
 - [ ] Additional plugin examples for community
 - [ ] Plugin documentation refinement
 
-**Files:** `src/plugin_manager.cpp`, `docs/PLUGIN_DEVELOPMENT.md`
+**Files:** `src/plugin/plugin_manager.cpp`, `docs/devel/PLUGIN_DEVELOPMENT.md`
 
 ### 2. Production Hardening
 
@@ -146,7 +146,7 @@ Remaining items for production readiness:
 - **First-Run Wizard:** Touch Cal → Language → WiFi → Moonraker → Printer ID → Heaters → Fans → AMS → LEDs → Filament Sensors → Probe Sensors → Input Shaper → Summary (13 steps, conditional skipping)
 - **Calibration Workflows:** PID tuning (live graph, fan control, material presets), Z-offset with live adjust, Screws Tilt, Input Shaper (frequency response charts, CSV parser, per-axis results)
 - **Bed Mesh:** 3D visualization with touch rotation, profile switching, 38 FPS optimized rendering
-- **Sound system:** Multi-backend audio (SDL, PWM, M300) with JSON themes and volume control
+- **Sound system:** Multi-backend audio (SDL, ALSA, PWM, M300) with JSON themes and volume control
 - **Timelapse:** Plugin detection, install wizard, settings UI, real-time event handling, render progress, video management
 - **Filament tracking:** Live consumption during printing, slicer estimate on completion
 - **Display rotation:** Support for 0/90/180/270 across all binaries
@@ -274,8 +274,6 @@ See `docs/devel/IDEAS.md` for additional ideas and design rationale.
 
 ## Known Technical Debt
 
-See `docs/ARCHITECTURAL_DEBT.md` for the full register.
-
 **Resolved (2026-01):**
 - ~~PrinterState god class~~ → Decomposed into 13 domain classes
 - ~~PrintStatusPanel~~ → Extracted 8 focused components
@@ -339,10 +337,10 @@ Don't copy features from web UIs just because "competitors have it" — evaluate
 
 ## Contributing
 
-See `docs/DEVELOPMENT.md#contributing` for code standards and git workflow.
+See `docs/devel/DEVELOPMENT.md#contributing` for code standards and git workflow.
 
 **Key references:**
 - `CLAUDE.md` - Project patterns and critical rules
-- `docs/ARCHITECTURE.md` - System design and principles
-- `docs/LVGL9_XML_GUIDE.md` - XML layout reference
-- `docs/DEVELOPMENT.md` - Build and workflow guide
+- `docs/devel/ARCHITECTURE.md` - System design and principles
+- `docs/devel/LVGL9_XML_GUIDE.md` - XML layout reference
+- `docs/devel/DEVELOPMENT.md` - Build and workflow guide

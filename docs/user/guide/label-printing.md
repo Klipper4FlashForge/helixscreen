@@ -149,4 +149,4 @@ A toast notification confirms success or shows an error message.
 
 ---
 
-**Next:** [Calibration & Tuning](calibration.md) | **Prev:** [Filament Tracking & Spoolman](filament-tracking.md) | [Back to User Guide](../USER_GUIDE.md)
+**Next:** [Barcode Scanner](barcode-scanner.md) | **Prev:** [Bluetooth Setup](bluetooth-setup.md) | [Back to User Guide](../USER_GUIDE.md)

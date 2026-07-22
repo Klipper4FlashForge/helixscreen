@@ -8,7 +8,7 @@ Developer guide for the HelixScreen installer infrastructure: modular shell scri
 
 ## Architecture Overview
 
-The installer is a **modular POSIX shell system** with 10 library modules that get bundled into monolithic scripts for end-user distribution. All shell code targets `/bin/sh` for maximum compatibility, including BusyBox on embedded platforms (AD5M, K1).
+The installer is a **modular POSIX shell system** with 17 library modules (in `scripts/lib/installer/`) that get bundled into monolithic scripts for end-user distribution. All shell code targets `/bin/sh` for maximum compatibility, including BusyBox on embedded platforms (AD5M, K1).
 
 ```
 scripts/
@@ -18,7 +18,8 @@ scripts/
   bundle-installer.sh         # Generates install.sh from modules
   bundle-uninstaller.sh       # Generates uninstall.sh from modules
   helix-launcher.sh           # Runtime launcher with watchdog supervision
-  lib/installer/
+  lib/installer/              # 17 modules (subset shown)
+    main.sh                   # Orchestrator: arg parsing, install flow, KIAUH call
     common.sh                 # Logging, colors, error handler, process killing
     platform.sh               # Platform/firmware detection, install paths, tmp dir
     permissions.sh             # Root/sudo checks
@@ -28,6 +29,11 @@ scripts/
     release.sh                 # Download from R2 CDN/GitHub, extract, validate arch
     service.sh                 # systemd/SysV service install, platform hooks
     moonraker.sh               # Moonraker update_manager configuration
+    klipper_include.sh         # Klipper config include management
+    printer_seed.sh            # Seed default printer config
+    audio.sh                   # Audio device setup
+    camera.sh                  # Camera setup
+    recovery.sh                # Recovery/rollback support
     uninstall.sh               # Uninstall, clean, re-enable previous UIs
     kiauh.sh                   # KIAUH extension auto-detection and install
   kiauh/helixscreen/
@@ -112,7 +118,7 @@ From a repo checkout, the modular installer sources modules directly:
 
 The `main()` function orchestrates this sequence:
 
-1. **Platform detection** -- `detect_platform()` returns `ad5m`, `k1`, `pi`, `pi32`, or `unsupported`
+1. **Platform detection** -- `detect_platform()` returns one of `cc1`, `k2`, `ad5m`, `ad5x`, `k1`, `snapmaker-u1`, `m1`, `pi`, `pi32`, `x86`, or `unsupported` (plus zmod/guilouz sub-detectors)
 2. **Firmware detection** -- AD5M: `klipper_mod` or `forge_x`; K1: `simple_af` or `stock_klipper`
 3. **Path configuration** -- `set_install_paths()` sets `INSTALL_DIR`, `INIT_SCRIPT_DEST`, `PREVIOUS_UI_SCRIPT`, `TMP_DIR`
 4. **Permission check** -- Root required on AD5M/K1; sudo on Pi
@@ -125,7 +131,7 @@ The `main()` function orchestrates this sequence:
 11. **Platform hooks** -- Deploys `hooks-{platform}.sh` to `$INSTALL_DIR/platform/hooks.sh`
 12. **Install service** -- systemd unit or SysV init script (templated with `@@HELIX_USER@@`, etc.)
 13. **Moonraker integration** -- Adds `[update_manager helixscreen]` section, writes `release_info.json`
-14. **KIAUH extension** -- Auto-installs if KIAUH detected. **Note:** The `kiauh.sh` module exists but is not currently integrated into the installer flow. KIAUH extension files are installed manually or via the KIAUH UI.
+14. **KIAUH extension** -- Auto-installs if KIAUH detected. `main.sh` calls `install_kiauh_extension` (honoring a `--skip-kiauh-registration` flag), as described in the "How the Extension Gets Installed" section below.
 15. **Install-time printer detection** -- Tier-1 model fingerprint, falling back to Tier-2 Moonraker detection with a B/C confidence gate. Seeds device defaults (and, when confident, a full preset) into `settings.json` before first launch. See [Install-Time Printer Detection](#install-time-printer-detection) below.
 16. **Config symlink** -- `printer_data/config/helixscreen` symlink for Mainsail/Fluidd access
 17. **Start service** -- Waits up to 5 seconds for startup confirmation
@@ -330,7 +336,7 @@ sudo rm -rf ~/helixscreen.old
 
 ### K2 / Other Platforms
 
-K2 support exists in the `release_info.json` asset naming (`helixscreen-k2.zip`) but platform detection is not yet implemented in `detect_platform()`.
+K2 is fully detected by `detect_platform()` (which echoes `k2`), alongside `cc1`, `ad5m`, `ad5x`, `k1`, `snapmaker-u1`, `m1`, `pi`, `pi32`, and `x86`.
 
 ---
 
@@ -502,7 +508,7 @@ This prevents installing a Pi binary on AD5M or vice versa.
 
 ## Shell Test Infrastructure (bats)
 
-The installer has **543 test cases** across **30 bats files** (~6700 lines of test code), making it one of the most thoroughly tested shell installer systems for 3D printer firmware.
+The installer has **1149 test cases** across **71 bats files**, making it one of the most thoroughly tested shell installer systems for 3D printer firmware.
 
 ### Running Tests
 
@@ -530,7 +536,7 @@ bats --verbose-run tests/shell/test_platform_detection.bats
 | `test_download_validation.bats` | Archive validation, HTTPS capability |
 | `test_r2_installer.bats` | R2 CDN manifest parsing, fallback to GitHub |
 | `test_extract_release.bats` | Extraction, atomic swap, rollback |
-| `test_release_packaging.bats` | Release archive structure |
+| `test_release_packaging_make.bats` / `_artifacts.bats` | Release archive structure |
 | `test_service_install.bats` | systemd/SysV service installation |
 | `test_service_template.bats` | Service template placeholder substitution |
 | `test_moonraker_config.bats` | update_manager section add/remove/migrate |
@@ -544,13 +550,15 @@ bats --verbose-run tests/shell/test_platform_detection.bats
 | `test_kiauh_installer.bats` | KIAUH extension install/update logic |
 | `test_klipper_check.bats` | Klipper/Moonraker ecosystem pre-flight |
 | `test_monolithic_installer.bats` | Bundled install.sh/uninstall.sh structural checks |
-| `test_helix_launcher.bats` | Launcher script, env file sourcing, watchdog |
+| `test_helix_launcher_e2e.bats` / `_env` / `_nice` / `_respawn` | Launcher script, env file sourcing, watchdog |
 | `test_generate_manifest.bats` | Release manifest generation |
 | `test_no_echo_ansi.bats` | No raw ANSI in echo (BusyBox compat) |
 | `test_code_lint.bats` | Shell code quality checks |
-| `test_symbol_extraction.bats` | Debug symbol extraction for crash reporting |
-| `test_telemetry_pull.bats` | Telemetry data pull scripts |
+| `test_symbol_ci.bats` / `test_symbol_makefile.bats` | Debug symbol extraction for crash reporting |
+| `test_telemetry_pull_args.bats` / `_download.bats` | Telemetry data pull scripts |
 | `test_resolve_backtrace.bats` | Backtrace symbol resolution |
+
+_The table above is a representative subset; the suite has 71 bats files in `tests/shell/`._
 
 ### Test Helpers
 
@@ -700,7 +708,7 @@ ssh root@printer-ip "sh /data/install.sh --local /data/helixscreen-ad5m.zip"
 
 **Fix**:
 1. Check `release_info.json` exists in install dir
-2. Verify section is `type: zip` (not `git_repo`)
+2. Verify section is `type: web` (the updater migrates away from `git_repo`/`zip`)
 3. Ensure `helixscreen` is in `printer_data/moonraker.asvc`
 4. Restart Moonraker: `systemctl restart moonraker`
 

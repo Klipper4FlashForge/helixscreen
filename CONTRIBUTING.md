@@ -38,7 +38,7 @@ Pick the row that matches what you want to do. Each links to the doc that will a
 | **Add a settings overlay or feature overlay** (the most common "real" contribution) | → [Your First Contribution](docs/devel/YOUR_FIRST_CONTRIBUTION.md) |
 | **Add a modal dialog** | → [Modal System](docs/devel/MODAL_SYSTEM.md) |
 | **Add a new widget** or semantic component | → [LVGL 9 XML Guide](docs/devel/LVGL9_XML_GUIDE.md) + [UI Contributor Guide](docs/devel/UI_CONTRIBUTOR_GUIDE.md) |
-| **Add a printer to the database** | Edit `assets/printer_database.json`. Follow the existing entries. No C++ needed. |
+| **Add a printer to the database** | Edit `assets/config/printer_database.json`. Follow the existing entries. No C++ needed. |
 | **Add a new filament backend** (AMS / IFS / CFS / etc.) | → [Filament Management](docs/devel/FILAMENT_MANAGEMENT.md) |
 | **Add support for a new platform** (a new SBC, a new stock firmware) | Open a GitHub Discussion first — these contributions span build system, cross-compile, and deployment. → [Build System](docs/devel/BUILD_SYSTEM.md) |
 | **Write or improve documentation** | → [docs/CLAUDE.md](docs/CLAUDE.md) for the doc structure. User docs in `docs/user/`, developer docs in `docs/devel/`. |

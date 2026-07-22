@@ -134,6 +134,8 @@ HelixScreen is an **add-on** to existing Klipper installations. We don't ship cu
 
 ## Platform Test Matrix
 
+> **Note:** This matrix is a representative subset of the supported platforms, chosen to exercise the distinct install mechanisms (systemd Pi, framebuffer init scripts, BusyBox). For the full list of supported printers and their install paths, see [INSTALL.md](INSTALL.md).
+
 | Test Case | MainsailOS | KIAUH Pi | Manual Pi | AD5M/ForgeX | AD5M/Klipper Mod | K1/Simple AF |
 |-----------|:----------:|:--------:|:---------:|:-----------:|:----------------:|:------------:|
 | Clean install | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
@@ -436,19 +438,19 @@ ps --no-headers -o comm 1
    # Should NOT have 'x' permission
    ```
 
-7. **Reboot test:**
+6. **Reboot test:**
    ```bash
    reboot
    ```
    After reboot, HelixScreen should appear on touchscreen.
 
-8. **Post-reboot verification:**
+7. **Post-reboot verification:**
    ```bash
    # Service running
    /etc/init.d/S80helixscreen status
 
    # Check logs (both streams: structured app log + launcher capture)
-   { grep helix-screen /var/log/messages | tail -20; tail -20 /opt/helixscreen/logs/launcher.log 2>/dev/null; } | grep -i error || echo "No errors"
+   { grep helix-screen /var/log/messages | tail -20; tail -20 /root/printer_software/helixscreen/logs/launcher.log 2>/dev/null; } | grep -i error || echo "No errors"
    ```
 
 #### Uninstall Test

@@ -10,7 +10,7 @@ Multi-printer management allows users to configure, switch between, add, and del
 
 Key properties:
 
-- **Beta-gated** -- all entry points are wrapped in `<beta_feature>` XML tags, requiring both `show_beta_features` and `multi_printer_enabled` subjects to be true for full visibility
+- **Opt-in via a user setting** -- the navbar printer badge is gated on the `show_printer_switcher` setting (Settings > Printers). The old `<beta_feature>` wrappers around the entry points were removed; the `multi_printer_enabled` subject still exists and reflects whether more than one printer is configured.
 - **Config schema v4** -- per-printer data lives under `/printers/{id}/`, with `df()` routing dynamically to the active printer
 - **Soft restart** -- switching printers tears down and reinitializes the entire printer state without restarting the application or LVGL display
 
@@ -35,10 +35,8 @@ Key properties:
 | `ui_xml/printer_switch_menu.xml` | Context menu layout (backdrop, printer list, add button) |
 | `ui_xml/printer_list_overlay.xml` | Overlay layout (overlay_panel, list container, add button) |
 | `ui_xml/printer_list_item.xml` | Reusable row component (name, check icon, delete button, active state) |
-| `ui_xml/navigation_bar.xml` | Navbar badge with dual `bind_flag_if_eq` gating |
-| `ui_xml/printer_manager_overlay.xml` | Section 4: "Manage Printers" button in `<beta_feature>` |
-| `ui_xml/settings_panel.xml` | "Printers" action row in `<beta_feature>` |
-| `ui_xml/beta_feature.xml` | Reusable wrapper: auto-hides when `show_beta_features` is 0, adds orange left border + BETA badge |
+| `ui_xml/navigation_bar.xml` | Navbar badge (`nav_printer_badge`) gated on the `show_printer_switcher` subject |
+| `ui_xml/printer_manager_overlay.xml` | Section 4: "Manage Printers" button (`pm_manage_printers_btn`) |
 
 ---
 
@@ -76,25 +74,28 @@ NavigationManager (callback bridge)
 | Subject | Type | Description |
 |---------|------|-------------|
 | `active_printer_name` | string | Human-readable name of the active printer, bound to navbar badge label |
-| `multi_printer_enabled` | int (0/1) | 1 when more than one printer configured. Controls badge visibility. |
-| `show_beta_features` | int (0/1) | Global beta features toggle. Required alongside `multi_printer_enabled` for badge. |
+| `multi_printer_enabled` | int (0/1) | 1 when more than one printer is configured. Reflects printer count. |
+| `show_printer_switcher` | int (0/1) | User setting (Settings > Printers). Controls navbar badge visibility. |
 
-The navbar badge uses dual gating:
+The navbar badge is gated on the `show_printer_switcher` setting:
 
 ```xml
 <ui_button name="nav_printer_badge" hidden="true">
-  <bind_flag_if_eq subject="multi_printer_enabled" flag="hidden" ref_value="0"/>
-  <bind_flag_if_eq subject="show_beta_features" flag="hidden" ref_value="0"/>
+  <bind_flag_if_eq subject="show_printer_switcher" flag="hidden" ref_value="0"/>
 </ui_button>
 ```
 
-Both subjects must be non-zero for the badge to appear.
+The badge appears when `show_printer_switcher` is non-zero.
 
 ---
 
 ## Config Schema (v4)
 
 ### Structure
+
+<!-- config_version 4 below is illustrative of the v3->v4 migration that introduced
+     the /printers/{id}/ structure, not the current schema head (see CURRENT_CONFIG_VERSION
+     in config.h). -->
 
 ```json
 {
@@ -369,28 +370,18 @@ if (data["printers"].size() <= 1) {
 
 ---
 
-## Beta Gating
+## Entry-Point Visibility
 
-All multi-printer UI entry points are wrapped in the `<beta_feature>` XML component:
+The multi-printer entry points are no longer beta-gated. The `<beta_feature>` wrappers
+that once surrounded them have been removed; visibility is now driven by the
+`show_printer_switcher` user setting (toggled from Settings > Printers).
 
-```xml
-<beta_feature>
-  <ui_button text="Manage Printers">
-    <event_cb trigger="clicked" callback="pm_manage_printers_clicked"/>
-  </ui_button>
-</beta_feature>
-```
+Entry points:
+- **Navbar printer badge** (`nav_printer_badge`) -- gated on the `show_printer_switcher` subject
+- **Printer Manager > Manage Printers** button (`pm_manage_printers_btn`) -- always present in the Printer Manager overlay
 
-The `<beta_feature>` component (`ui_xml/beta_feature.xml`) is a reusable wrapper that:
-- Hides its contents when `show_beta_features` subject is 0
-- Adds an orange left border accent and floating BETA badge when visible
-
-Gated entry points:
-- **Navbar printer badge** -- dual binding on `multi_printer_enabled` AND `show_beta_features`
-- **Settings > Printers** row -- wrapped in `<beta_feature>`
-- **Printer Manager > Manage Printers** button -- wrapped in `<beta_feature>`
-
-The `show_beta_features` subject is initialized from `Config::is_beta_features_enabled()` which returns true if the `beta_features` config key is true, or if running in `--test` mode.
+The `show_printer_switcher` setting persists to `/printers/show_printer_switcher` in config
+(default false) and is mirrored into an LVGL subject by `SettingsManager`.
 
 ---
 

@@ -1,6 +1,6 @@
 # Environment Variables Reference
 
-This document provides a comprehensive reference for all environment variables used in HelixScreen.
+This document is a reference for the commonly used environment variables in HelixScreen. It is not exhaustive — additional `HELIX_*` vars exist in code (e.g. `HELIX_MOCK_PRINTER`, `HELIX_CONFIG_DIR`, `HELIX_DISABLE_AUTO_UPDATES`, `HELIX_STRICT_BG_THREAD_CHECK`, `HELIX_TMP_DIR`, `HELIX_REMOTE_SCREEN_FB0`, log-ring vars, and several mock knobs). Grep `EnvironmentConfig` / `getenv("HELIX_` for the full set. The per-category counts below are approximate and drift as vars are added.
 
 ## Quick Reference
 
@@ -54,7 +54,7 @@ Override the automatic display backend detection.
 |----------|-------|
 | **Values** | `sdl`, `drm`, `fbdev` |
 | **Default** | `fbdev` (CPU rendering, maximum compatibility) |
-| **File** | `src/display_backend.cpp` |
+| **File** | `src/api/display_backend.cpp` |
 
 **Backend comparison:**
 
@@ -104,7 +104,7 @@ Specify which DRM device to use when the DRM backend is active. Needed when mult
 |----------|-------|
 | **Values** | Device path (e.g., `/dev/dri/card0`, `/dev/dri/card1`) |
 | **Default** | `/dev/dri/card0` (auto-detect scans for first device with a connected display) |
-| **File** | `src/display_backend_drm.cpp` |
+| **File** | `src/api/display_backend_drm.cpp` |
 
 ```bash
 # Use secondary GPU / display controller
@@ -128,7 +128,7 @@ Override automatic touch input device detection.
 |----------|-------|
 | **Values** | Device path (e.g., `/dev/input/event0`) |
 | **Default** | Auto-detect |
-| **Files** | `src/display_backend_fbdev.cpp`, `src/display_backend_drm.cpp` |
+| **Files** | `src/api/display_backend_fbdev.cpp`, `src/api/display_backend_drm.cpp` |
 
 ```bash
 # Specify touch device explicitly
@@ -356,7 +356,7 @@ Select which monitor to use when running with SDL backend on multi-monitor syste
 |----------|-------|
 | **Values** | Display index (`0`, `1`, `2`, ...) |
 | **Default** | `0` (primary display) |
-| **File** | `src/main.cpp` |
+| **File** | `src/application/application.cpp` (set via `setenv()` in `init_display()`, consumed by the SDL driver) |
 
 ```bash
 # Run on second monitor
@@ -371,7 +371,7 @@ Position the SDL window at exact screen coordinates.
 |----------|-------|
 | **Values** | Pixel coordinates (integers) |
 | **Default** | Centered on selected display |
-| **File** | `src/main.cpp` |
+| **File** | `src/application/application.cpp` (set via `setenv()` in `init_display()`, consumed by the SDL driver) |
 
 ```bash
 # Position window at specific coordinates
@@ -543,7 +543,7 @@ Force the G-code preview rendering mode.
 |----------|-------|
 | **Values** | `2D`, `3D` |
 | **Default** | `2D` |
-| **Files** | `src/ui_gcode_viewer.cpp`, `src/ui_panel_print_status.cpp`, `src/ui_panel_gcode_test.cpp` |
+| **Files** | `src/ui/ui_gcode_viewer.cpp`, `src/ui/ui_panel_print_status.cpp`, `src/ui/ui_panel_gcode_test.cpp` |
 
 ```bash
 # Force 2D layer view
@@ -558,7 +558,7 @@ Force the G-code memory safety check to fail, simulating a memory-constrained de
 |----------|-------|
 | **Values** | `1` (force failure), unset (normal behavior) |
 | **Default** | Unset (normal memory checking) |
-| **File** | `src/memory_utils.cpp` |
+| **File** | `src/system/memory_utils.cpp` |
 
 ```bash
 # Force memory check to fail - viewer falls back to thumbnail mode
@@ -576,7 +576,7 @@ Control G-code streaming mode for memory-efficient loading of large files. Strea
 | **Values** | `on` (always stream), `off` (always full load), `auto` (calculate based on RAM) |
 | **Default** | `auto` |
 | **Config** | `gcode_viewer.streaming_mode` in `settings.json` |
-| **File** | `src/gcode_streaming_config.cpp` |
+| **File** | `src/rendering/gcode_streaming_config.cpp` |
 
 **Priority order:**
 1. Environment variable (highest) - for testing/debugging
@@ -642,7 +642,7 @@ Force the bed mesh visualization to use 2D heatmap mode instead of 3D surface re
 |----------|-------|
 | **Values** | `1` (enable), unset (disable) |
 | **Default** | Off (3D surface when available) |
-| **File** | `src/ui_bed_mesh.cpp` |
+| **File** | `src/ui/ui_bed_mesh.cpp` |
 
 ```bash
 # Force 2D heatmap visualization
@@ -684,7 +684,7 @@ Set the number of filament gates in the mock AMS (Automatic Material System).
 |----------|-------|
 | **Values** | `1` to `16` |
 | **Default** | `4` |
-| **File** | `src/main.cpp` |
+| **File** | `src/config/environment_config.cpp` (surfaced via `src/application/application.cpp`) |
 
 ```bash
 # Simulate 8-slot AMS
@@ -808,7 +808,7 @@ Enable filament dryer simulation in mock mode.
 |----------|-------|
 | **Values** | `1` or `true` |
 | **Default** | Disabled |
-| **File** | `src/ams_backend.cpp` |
+| **File** | `src/printer/ams_backend.cpp` |
 
 ```bash
 # Enable mock dryer
@@ -823,7 +823,7 @@ Speed multiplier for dryer simulation (for faster testing).
 |----------|-------|
 | **Values** | Integer multiplier (e.g., `2` = 2x speed) |
 | **Default** | `1` (real-time) |
-| **File** | `src/ams_backend_mock.cpp` |
+| **File** | `src/printer/ams_backend_mock.cpp` |
 
 ```bash
 # Run dryer simulation at 10x speed
@@ -875,7 +875,7 @@ Enable or disable mock Spoolman integration. When disabled, `get_spoolman_status
 |----------|-------|
 | **Values** | `0` or `off` to disable; any other value keeps enabled |
 | **Default** | Enabled (mock Spoolman always connected in test mode) |
-| **File** | `src/main.cpp` |
+| **File** | `src/api/moonraker_client_mock.cpp` (set via `src/application/moonraker_manager.cpp`) |
 
 ```bash
 # Disable mock Spoolman to test "no Spoolman" scenarios
@@ -890,7 +890,7 @@ Configure custom filament sensor configurations for testing.
 |----------|-------|
 | **Values** | Comma-separated `type:name` pairs, or `"none"` |
 | **Default** | Single runout switch sensor |
-| **File** | `src/moonraker_client_mock.cpp` |
+| **File** | `src/api/moonraker_client_mock.cpp` |
 
 **Sensor Types:**
 - `switch` - Simple on/off runout switch
@@ -912,7 +912,7 @@ Set the initial state of filament sensors.
 |----------|-------|
 | **Values** | `sensor_name:state` (e.g., `fsensor:empty`, `fsensor:detected`) |
 | **Default** | Detected |
-| **File** | `src/moonraker_client_mock.cpp` |
+| **File** | `src/api/moonraker_client_mock.cpp` |
 
 ```bash
 # Start with empty filament sensor
@@ -947,7 +947,7 @@ Return an empty power devices list from mock Moonraker API.
 |----------|-------|
 | **Values** | Any value (presence enables) |
 | **Default** | Populated power device list |
-| **File** | `src/moonraker_api_mock.cpp` |
+| **File** | `src/api/moonraker_api_mock.cpp` |
 
 ```bash
 # Simulate printer with no controllable power devices
@@ -968,7 +968,7 @@ Automatically quit the application after a specified duration.
 |----------|-------|
 | **Values** | `100` to `3600000` (milliseconds) |
 | **Default** | No timeout (run indefinitely) |
-| **File** | `src/main.cpp` |
+| **File** | `src/config/environment_config.cpp` (surfaced via `src/application/application.cpp`) |
 
 ```bash
 # Quit after 5 seconds
@@ -986,7 +986,7 @@ Automatically capture a screenshot before quitting (use with `HELIX_AUTO_QUIT_MS
 |----------|-------|
 | **Values** | `1` (enable) |
 | **Default** | Disabled |
-| **File** | `src/main.cpp` |
+| **File** | `src/config/environment_config.cpp` (surfaced via `src/application/application.cpp`) |
 
 ```bash
 # Automated screenshot capture
@@ -1001,7 +1001,7 @@ Enable frame counting and FPS reporting for performance testing.
 |----------|-------|
 | **Values** | Any value (presence enables) |
 | **Default** | Disabled |
-| **File** | `src/main.cpp` |
+| **File** | `src/config/environment_config.cpp` (surfaced via `src/application/application.cpp`) |
 
 ```bash
 # Run performance benchmark
@@ -1022,7 +1022,7 @@ Auto-start X-axis input shaper calibration when the panel loads.
 |----------|-------|
 | **Values** | Any value (presence enables) |
 | **Default** | Disabled |
-| **File** | `src/ui_panel_input_shaper.cpp` |
+| **File** | `src/ui/ui_panel_input_shaper.cpp` |
 
 ```bash
 # Test input shaper panel with auto-start
@@ -1037,7 +1037,7 @@ Auto-start bed screw probing when the screws tilt panel loads.
 |----------|-------|
 | **Values** | Any value (presence enables) |
 | **Default** | Disabled |
-| **File** | `src/ui_panel_screws_tilt.cpp` |
+| **File** | `src/ui/ui_panel_screws_tilt.cpp` |
 
 ```bash
 # Test screws panel with auto-start
@@ -1314,7 +1314,7 @@ XDG base directory specification for application data storage.
 |----------|-------|
 | **Values** | Directory path |
 | **Default** | `~/.local/share` |
-| **File** | `src/logging_init.cpp` |
+| **File** | `src/system/logging_init.cpp` |
 
 HelixScreen stores logs and data in `$XDG_DATA_HOME/helixscreen/`.
 
@@ -1326,7 +1326,7 @@ User home directory (standard Unix variable).
 |----------|-------|
 | **Values** | Directory path |
 | **Default** | (from system) |
-| **File** | `src/logging_init.cpp` |
+| **File** | `src/system/logging_init.cpp` |
 
 Used as fallback when `XDG_DATA_HOME` is not set.
 

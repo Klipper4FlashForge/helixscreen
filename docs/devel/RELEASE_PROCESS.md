@@ -66,16 +66,11 @@ git push origin v1.2.0
 └──────────────────────────────┬──────────────────────────────┘
                                │
                                ▼
-┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
-│ build-pi │ │build-pi32│ │build-ad5m│ │ build-k1 │ │ build-k2 │
-│ (45 min) │ │ (45 min) │ │ (45 min) │ │ (45 min) │ │ (45 min) │
-│          │ │          │ │          │ │          │ │          │
-│ • Docker │ │ • Docker │ │ • Docker │ │ • Docker │ │ • Docker │
-│ • arm64  │ │ • armhf  │ │ • armv7l │ │ • mips32 │ │ • mips32 │
-│ • Package│ │ • Package│ │ • Package│ │ • Package│ │ • Package│
-└────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘
-     │            │            │            │            │
-     └────────────┼────────────┼────────────┼────────────┘
+  validate-shell gate → build-platforms matrix (9):
+    pi · pi32 · ad5m · cc1 · k1 · ad5x · k2 · x86 · snapmaker-u1
+  plus build-android → publish-android
+
+  Each platform job: Docker cross-toolchain → target arch → package .zip
                                │
                                ▼
                      ┌──────────────────┐
@@ -96,10 +91,15 @@ git push origin v1.2.0
 | Raspberry Pi (64-bit) | `helixscreen-pi.zip` | aarch64 binary, assets, configs |
 | Raspberry Pi (32-bit) | `helixscreen-pi32.zip` | armhf binary, assets, configs |
 | AD5M | `helixscreen-ad5m.zip` | armv7l binary (static), assets, configs |
-| K1/Simple AF | `helixscreen-k1.zip` | MIPS32 binary (static, musl), assets, configs |
-| K2/Simple AF | `helixscreen-k2.zip` | ARM binary (static, musl), assets, configs |
+| CC1 | `helixscreen-cc1.zip` | ARM binary, assets, configs |
+| K1 | `helixscreen-k1.zip` | MIPS32 binary (static, musl), assets, configs |
+| AD5X | `helixscreen-ad5x.zip` | MIPS binary (ZMOD), assets, configs |
+| K2 | `helixscreen-k2.zip` | ARM binary (static, musl), assets, configs |
+| x86 | `helixscreen-x86.zip` | x86 binary, assets, configs |
+| Snapmaker U1 | `helixscreen-snapmaker-u1.zip` | ARM binary, assets, configs |
+| Android | Play Store bundle | via `build-android` / `publish-android` |
 
-> **Bridge release note:** Starting with vX.Y.Z (the version you're currently preparing), the primary release asset is `helixscreen-{platform}.zip` (unversioned filename). The legacy `helixscreen-{platform}-v{version}.tar.gz` is still published during this bridge release for backwards compatibility with older installed versions; it will be removed in the following release.
+> **Bridge release note:** Starting with v1.0.0 (the version you're currently preparing), the primary release asset is `helixscreen-{platform}.zip` (unversioned filename). The legacy `helixscreen-{platform}-v{version}.tar.gz` is still published during this bridge release for backwards compatibility with older installed versions; it will be removed in the following release.
 
 ---
 
@@ -344,4 +344,4 @@ If one platform's build fails:
 
 ---
 
-*Related: [CI/CD Guide](CI_CD_GUIDE.md) | [Testing Installation](user/TESTING_INSTALLATION.md)*
+*Related: [CI/CD Guide](CI_CD_GUIDE.md) | [Testing Installation](../user/TESTING_INSTALLATION.md)*

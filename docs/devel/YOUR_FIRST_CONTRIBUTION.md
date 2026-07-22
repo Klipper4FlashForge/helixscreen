@@ -375,7 +375,7 @@ AMS spans roughly 1700 lines of C++ (`src/ui/ui_panel_ams.cpp`) and 11 XML files
 | `ams_current_tool.xml` | "Currently loaded" display at the top |
 | `ams_device_section_detail.xml` | Detail pane showing humidity, temp, etc. |
 | `ams_device_operations.xml` | Action buttons (load, unload, purge) |
-| `ams_edit_modal.xml` | Edit filament assigned to a slot |
+| `ams_edit_overlay.xml` | Edit filament assigned to a slot |
 | `ams_context_menu.xml` | Long-press context menu |
 | `ams_loading_error_modal.xml` | Error state dialog |
 | `ams_environment_overlay.xml` | Humidity / temp details |
@@ -418,7 +418,7 @@ If you're adding a new filament backend, the pattern is: implement a backend cla
 
 ### 5. Modals and overlays are peers, not children
 
-`ams_edit_modal.xml` and `ams_environment_overlay.xml` are standalone classes (`Modal` subclass and `OverlayBase` subclass respectively). The main AMS panel launches them via `NavigationManager::push_overlay()` or `Modal::show()` — it doesn't own their widgets. This keeps each concern bounded.
+`ams_loading_error_modal.xml` and `ams_edit_overlay.xml` are standalone classes (`AmsLoadingErrorModal : Modal` and `AmsEditOverlay : OverlayBase` respectively). The main AMS panel launches them via `NavigationManager::push_overlay()` or `Modal::show()` — it doesn't own their widgets. This keeps each concern bounded.
 
 ---
 

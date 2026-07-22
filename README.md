@@ -193,7 +193,7 @@ make test-run
 
 **Controls:** Click navigation icons, press 'S' for screenshot, use `-v` (INFO), `-vv` (DEBUG), or `-vvv` (TRACE) for logging.
 
-**Test suite:** 5,000+ test cases across 460+ test files covering printer state, UI components, XML parsing, multi-material, and more.
+**Test suite:** 5,000+ test cases across 600+ test files covering printer state, UI components, XML parsing, multi-material, and more.
 
 See [docs/devel/DEVELOPMENT.md](docs/devel/DEVELOPMENT.md) for detailed setup, cross-compilation, and contributing guidelines.
 

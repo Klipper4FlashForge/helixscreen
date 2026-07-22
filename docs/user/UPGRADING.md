@@ -35,7 +35,7 @@ If that fails (you see an error toast like `Error updating helixscreen: [Errno 9
 ```bash
 ssh root@<printer-ip>
 chroot /usr/data/.mod/.zmod
-curl -fsSL https://get.helixscreen.org | sh -s -- --update
+curl -fsSL https://releases.helixscreen.org/install.sh | sh -s -- --update
 ```
 
 The `chroot` step is required. ZMOD installs HelixScreen inside `/usr/data/.mod/.zmod/`, and a plain `curl … | sh` from outside the chroot writes to the wrong filesystem view — the installer detects this and refuses to run.

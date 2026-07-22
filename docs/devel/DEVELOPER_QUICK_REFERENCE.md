@@ -10,7 +10,7 @@ HelixScreen uses class-based patterns for all new code. For architectural ration
 
 ### Panel Pattern
 
-**Canonical example:** `include/ui_panel_motion.h` + `src/ui_panel_motion.cpp`
+**Canonical example:** `include/ui_panel_motion.h` + `src/ui/ui_panel_motion.cpp`
 
 ```cpp
 class ExamplePanel : public PanelBase {  // Use SubjectManager subjects_; member for auto cleanup
@@ -27,6 +27,7 @@ private:
     void setup_observers();  // Wire reactive bindings
 
     lv_obj_t* root_ = nullptr;
+    SubjectManager subjects_;  // Owns subjects + observers, auto-cleans on destruction
     lv_subject_t my_subject_{};
     char buf_[128]{};  // Static storage for string subjects
 };
@@ -36,7 +37,7 @@ private:
 
 ### Manager Pattern (Backend)
 
-**Canonical example:** `include/wifi_manager.h` + `src/wifi_manager.cpp`
+**Canonical example:** `include/wifi_manager.h` + `src/api/wifi_manager.cpp`
 
 ```cpp
 class WiFiManager {
@@ -87,7 +88,7 @@ public:
     void reset_for_testing();   // Test reset
 
     lv_subject_t* nozzle_temp_subject();   // Accessor for binding
-    void set_nozzle_temp(int temp);        // Update via ui_async_call
+    void set_nozzle_temp(int temp);        // Update via helix::ui::queue_update
 
 private:
     lv_subject_t nozzle_temp_{};
@@ -158,11 +159,14 @@ add_observer(observe_string<MyPanel>(
     }
 ));
 
-// Connection state observer (special case)
+// Connection state observer (special case).
+// Signature: observe_connection_state(subject, panel, on_connected);
+// on_connected is void(Panel*) — fired when the state becomes CONNECTED.
 add_observer(observe_connection_state<MyPanel>(
+    &printer_connection_state_subject,
     this,
-    [](MyPanel* self, bool connected) {
-        self->set_controls_enabled(connected);
+    [](MyPanel* self) {
+        self->set_controls_enabled(true);
     }
 ));
 ```
@@ -233,17 +237,17 @@ void on_ws_message(const json& data) {
     lv_subject_set_int(&temp_subject_, data["temp"]);  // CRASH!
 }
 
-// ✅ CORRECT - queue to LVGL thread
+// ✅ CORRECT - queue to LVGL thread (helix::ui::queue_update)
 void on_ws_message(const json& data) {
     int temp = data["temp"];
-    ui_async_call([this, temp]() {
+    helix::ui::queue_update([this, temp]() {
         lv_subject_set_int(&temp_subject_, temp);
     });
 }
 
-// ✅ BETTER - use ui_queue_update for batching
+// The tagged overload names the work for logging/telemetry:
 void on_ws_message(const json& data) {
-    ui_queue_update([this, data]() {
+    helix::ui::queue_update("Panel::on_ws_message", [this, data]() {
         lv_subject_set_int(&temp_subject_, data["temp"]);
         lv_subject_set_int(&bed_subject_, data["bed"]);
     });
@@ -451,8 +455,8 @@ style_flex_cross_place="center"
 | `<lv_label><lv_label-bind_text subject="x"/></lv_label>` | `<lv_label bind_text="x"/>` (attribute, not child) | |
 | `lv_obj_add_event_cb()` in C++ | XML `<event_cb trigger="clicked" callback="name"/>` | [ARCHITECTURE.md - Reactive-First](ARCHITECTURE.md#critical-reactive-first-principle---the-helixscreen-way) |
 | `lv_label_set_text()` for reactive data | `bind_text` subject binding | [ARCHITECTURE.md - Reactive Patterns](ARCHITECTURE.md#reactive-patterns-for-common-ui-tasks) |
-| Hardcoded colors in C++ | `ui_theme_get_color("card_bg")` | [Responsive Design Tokens](#responsive-design-tokens) |
-| `lv_subject_set_*()` from WebSocket | `ui_async_call()` or `ui_queue_update()` | [Threading Model](#threading-model) |
+| Hardcoded colors in C++ | `theme_manager_get_color("card_bg")` | [Responsive Design Tokens](#responsive-design-tokens) |
+| `lv_subject_set_*()` from WebSocket | `helix::ui::queue_update()` | [Threading Model](#threading-model) |
 | Raw `lv_subject_add_observer_*()` | `observe_int_async<Panel>()` from factory | [Observer Factory](#observer-factory-critical) |
 
 ---
@@ -577,13 +581,13 @@ Unified modal system with RAII lifecycle, backdrop, stacking, and animations.
 lv_obj_t* dialog = Modal::show("print_cancel_confirm_modal");
 Modal::hide(dialog);
 
-// Confirmation dialog helper:
-ui_modal_show_confirmation("Delete?", "Cannot undo.",
+// Confirmation dialog helper (helix::ui):
+modal_show_confirmation("Delete?", "Cannot undo.",
     ModalSeverity::Warning, "Delete",
     on_confirm_cb, on_cancel_cb, this);
 
 // Alert (single OK button):
-ui_modal_show_alert("Done", "Operation complete.");
+modal_show_alert("Done", "Operation complete.");
 
 // Subclassed modal:
 class MyModal : public Modal {

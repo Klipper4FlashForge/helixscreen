@@ -12,8 +12,8 @@ This doc is for people creating or contributing themes. If you want to understan
 
 A HelixScreen theme is a single JSON file. It defines:
 
-- A **dark** palette (17 colors)
-- A **light** palette (same 17 colors)
+- A **dark** palette (16 colors)
+- A **light** palette (same 16 colors)
 - A handful of **style properties** (border radius, border width, shadow intensity)
 
 That's it. Users pick your theme in Settings → Display & Sound, and the UI re-renders using your colors instantly — no restart needed.
@@ -76,9 +76,9 @@ Here's the full `ayu.json` — use this as a reference while reading:
 
 ---
 
-## The 17 color tokens
+## The 16 color tokens
 
-Each palette (`dark` and `light`) has the same 17 tokens. What each one is used for:
+Each palette (`dark` and `light`) has the same 16 tokens. What each one is used for:
 
 ### Backgrounds (4)
 
@@ -148,8 +148,8 @@ Below the two palettes, a theme can also set:
 |---|---|---|---|
 | `border_radius_size` | 0–7 (index) | 3 | Corner roundness preset. 0 = sharp, 7 = fully rounded. Try 2 for classic, 4 for modern-soft, 6 for bubbly. |
 | `border_width` | 0–4 (px) | 1 | Width of borders in pixels. 0 disables borders entirely. |
-| `border_opacity` | 0–100 | 40 | How opaque borders are, percent. Low values (20–40) make borders subtle. |
-| `shadow_intensity` | 0–100 | 0 | Blur radius of drop shadows. 0 disables. |
+| `border_opacity` | 0–255 | 40 | How opaque borders are (0 = transparent, 255 = fully opaque). The default 40 is ≈16%, i.e. subtle; low values (20–60) keep borders faint. |
+| `shadow_intensity` | px | 0 | Blur radius of drop shadows, in pixels (not a 0–100 scale). 0 disables. |
 | `shadow_opa` | 0–100 | 0 | Opacity of drop shadows. 0 disables. Shadows need both intensity AND opa to show. |
 | `shadow_offset_y` | int | 2 | Vertical shadow offset in pixels. |
 

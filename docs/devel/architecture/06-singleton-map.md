@@ -18,7 +18,7 @@ graph TB
         HUM["HumiditySensorManager"]
         COLOR["ColorSensorManager"]
         WIDTH["WidthSensorManager"]
-        PROBE["ProbeOffsetSensorManager"]
+        PROBE["ProbeSensorManager"]
         ACCEL["AccelSensorManager"]
     end
 
@@ -29,7 +29,6 @@ graph TB
         TOM["ToastManager<br/>Toast lifecycle"]
         KBM["KeyboardManager<br/>Numeric keypad"]
         NH["NotificationHistory"]
-        UNH["UINotificationHistory"]
     end
 
     subgraph DisplayRender["Display / Rendering"]
@@ -56,7 +55,7 @@ graph TB
     end
 
     subgraph Plugins["Plugin System"]
-        PLG["PluginManager"]
+        PLG["PluginManager<br/>(Application-owned, not ::instance())"]
         PR["PluginRegistry<br/>Service locator"]
         IPM["InjectionPointManager<br/>UI injection"]
         ED["EventDispatcher"]
@@ -121,7 +120,7 @@ graph TB
 | | HumiditySensorManager | Yes | Yes | `humidity_sensor_manager.h` |
 | | ColorSensorManager | Yes | Yes | `color_sensor_manager.h` |
 | | WidthSensorManager | Yes | Yes | `width_sensor_manager.h` |
-| | ProbeOffsetSensorManager | Yes | Yes | `probe_sensor_manager.h` |
+| | ProbeSensorManager | Yes | Yes | `probe_sensor_manager.h` |
 | | AccelSensorManager | Yes | Yes | `accel_sensor_manager.h` |
 | **UI/Nav** | NavigationManager | Yes | - | `ui_nav_manager.h` |
 | | ModalStack | - | - | `ui_modal.h` |
@@ -139,7 +138,7 @@ graph TB
 | | CrashReporter | - | - | `system/crash_reporter.h` |
 | | TelemetryManager | Yes | - | `system/telemetry_manager.h` |
 | | MemoryMonitor | - | - | `memory_monitor.h` |
-| **Plugins** | PluginManager | - | - | `plugin_manager.h` |
+| **Plugins** | PluginManager (Application-owned, not `::instance()`) | - | - | `plugin_manager.h` |
 | | PluginRegistry | - | - | `plugin_registry.h` |
 | | EventDispatcher | - | - | `plugin_events.h` |
 | **LED** | LedController | - | - | `led/led_controller.h` |

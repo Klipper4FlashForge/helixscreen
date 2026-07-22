@@ -28,12 +28,12 @@ any theme works with any layout.
 | Layout | Status | What Exists |
 |--------|--------|-------------|
 | `standard` | **Complete** | All panels — this is the default UI everyone uses today |
-| `ultrawide` | **Started** | `home_panel.xml` only (initial draft, needs refinement) |
-| `portrait` | Not started | Directory doesn't exist yet |
-| `micro` | **Started** | Controls panel, display settings, theme preview/editor, settings components |
-| `micro-portrait` | Not started | Directory exists (.gitkeep only) |
+| `ultrawide` | Not started | Directory doesn't exist yet |
+| `portrait` | **Started** | `app_layout.xml`, `navigation_bar.xml` |
+| `micro` | **Started** | `controls_panel.xml`, `header_bar.xml`, `theme_editor_overlay.xml`, `theme_preview_overlay.xml` |
+| `micro_portrait` | Not started | Directory exists (empty) |
 | `tiny` | Not started | Directory doesn't exist yet |
-| `tiny-portrait` | Not started | Directory doesn't exist yet |
+| `tiny_portrait` | Not started | Directory doesn't exist yet |
 
 ## How It Works
 
@@ -45,17 +45,20 @@ When HelixScreen starts up, it detects your screen's aspect ratio and picks a la
 | `ultrawide` | Very wide (ratio > 2.5:1) | 1920x480, 1920x400 |
 | `portrait` | Tall/narrow (ratio < 0.8:1) | 480x800, 600x1024 |
 | `micro` | Very small landscape (max dimension ≤ 480 and min dimension ≤ 272) | 480x272 |
-| `micro-portrait` | Very small portrait (max dimension ≤ 480 and min dimension ≤ 272) | 272x480 |
+| `micro_portrait` | Very small portrait (max dimension ≤ 480 and min dimension ≤ 272) | 272x480 |
 | `tiny` | Small landscape (max dimension ≤ 480, min dimension > 272) | 480x320, 480x400 |
-| `tiny-portrait` | Small portrait (max dimension ≤ 480, min dimension > 272) | 320x480, 400x480 |
+| `tiny_portrait` | Small portrait (max dimension ≤ 480, min dimension > 272) | 320x480, 400x480 |
 
 You can also force a layout manually:
 - **CLI flag:** `--layout ultrawide`
 - **Config file:** Set `display.layout` to `"ultrawide"` in `settings.json`
 
-When a layout is active, HelixScreen checks for an override file in the layout's subdirectory.
-If it finds one, it uses it. If not, it falls back to the standard file. This means you can
-override one panel at a time — you don't have to recreate everything from scratch.
+When a layout is active, HelixScreen searches an ordered chain of override directories
+(most specific first) for each file. Portrait sub-classes look in their own dir, then the
+shared `portrait/` dir, then the standard file; other layouts check their one override dir,
+then the standard file. The first match wins. This means you can override one panel at a
+time — you don't have to recreate everything from scratch. See `variant_chain()` under the
+Developer Reference below.
 
 ## Directory Structure
 
@@ -65,17 +68,16 @@ ui_xml/
   app_layout.xml           ← Standard app chrome (navbar + content area)
   home_panel.xml           ← Standard home panel
   controls_panel.xml       ← Standard controls panel
-  settings_panel.xml       ← ...and ~50 more XML files
+  settings_panel.xml       ← ...and ~200 more XML files (226 total)
   ...
 
-  ultrawide/               ← Ultrawide overrides (only files that differ)
-    home_panel.xml         ← Ultrawide home panel (exists, needs work)
-
-  portrait/                ← Portrait overrides (doesn't exist yet — create it!)
+  portrait/                ← Portrait overrides (app_layout.xml, navigation_bar.xml)
   micro/                   ← Micro landscape overrides (480x272, e.g. Ender 3 V3 KE)
-  micro-portrait/          ← Micro portrait overrides (not started)
+  micro_portrait/          ← Micro portrait overrides (dir exists, empty)
+
+  ultrawide/               ← Doesn't exist yet — create it to override for ultrawide!
   tiny/                    ← Tiny landscape overrides (doesn't exist yet)
-  tiny-portrait/           ← Tiny portrait overrides (doesn't exist yet)
+  tiny_portrait/           ← Tiny portrait overrides (doesn't exist yet)
 ```
 
 **The rule is simple:** to override `controls_panel.xml` for ultrawide screens, create
@@ -92,7 +94,7 @@ know C++ — all layout work is pure XML.
 
 1. A clone of the HelixScreen repo
 2. A working build (see the project README)
-3. Familiarity with the XML layout system (see `docs/LVGL9_XML_GUIDE.md`)
+3. Familiarity with the XML layout system (see `LVGL9_XML_GUIDE.md`)
 
 ### Step-by-Step: Creating a New Layout Override
 
@@ -279,7 +281,7 @@ Not every panel needs a layout-specific version. Start with the ones that matter
 - **`width="50%"` / `height="100%"`** for fixed proportions.
 - **`scrollable="false"`** prevents unintended scroll behavior on containers.
 - **`hidden="true"`** + `bind_flag_if_*` = conditional visibility (driven by data).
-- See `docs/LVGL9_XML_GUIDE.md` for the full XML reference.
+- See `LVGL9_XML_GUIDE.md` for the full XML reference.
 
 ### Testing Your Layout
 
@@ -315,18 +317,39 @@ This section is for developers working on the layout infrastructure itself (C++ 
 class LayoutManager {
 public:
     static LayoutManager& instance();
-    void init(int display_width, int display_height);
-    void set_override(const std::string& layout_name);
+    void init(int width, int height);
+    void set_override(const std::string& name);
 
     LayoutType type() const;             // Enum value
     const std::string& name() const;     // "standard", "ultrawide", etc.
     bool is_standard() const;
     bool has_override(const std::string& filename) const;
+    int width() const;
+    int height() const;
 
-    // Returns "ui_xml/<layout>/filename.xml" if override exists,
-    // otherwise "ui_xml/filename.xml"
+    // Returns the first matching "ui_xml/<variant>/filename.xml" along the
+    // variant chain, otherwise "ui_xml/filename.xml"
     std::string resolve_xml_path(const std::string& filename) const;
+
+private:
+    LayoutType detect(int width, int height) const;      // aspect-ratio → LayoutType
+    std::vector<std::string> variant_chain() const;      // ordered override search
 };
+```
+
+`resolve_xml_path()` / `has_override()` walk `variant_chain()` — an ordered list of
+override directories, most specific first, with base `ui_xml/` as the final fallback.
+For portrait sub-classes the chain layers the shared `portrait/` dir before base:
+
+```cpp
+// LayoutManager::variant_chain(), src/layout_manager.cpp
+MICRO_PORTRAIT → {"micro_portrait", "portrait"}
+TINY_PORTRAIT  → {"tiny_portrait", "portrait"}
+PORTRAIT       → {"portrait"}
+ULTRAWIDE      → {"ultrawide"}
+MICRO          → {"micro"}
+TINY           → {"tiny"}
+STANDARD       → {}   // base ui_xml/ only
 ```
 
 ### How XML Registration Works
@@ -366,9 +389,9 @@ CLI flag `--layout <name>` overrides the config file.
 ratio = width / height
 
 if (max dimension ≤ 480 and min dimension ≤ 272)
-    → micro (landscape) or micro-portrait (portrait)
+    → micro (landscape) or micro_portrait (portrait)
 else if (max dimension ≤ 480)
-    → tiny (landscape) or tiny-portrait (portrait)
+    → tiny (landscape) or tiny_portrait (portrait)
 else if (ratio > 2.5)
     → ultrawide
 else if (ratio < 0.8)

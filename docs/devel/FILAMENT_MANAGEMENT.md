@@ -2,7 +2,7 @@
 
 Multi-material system support in HelixScreen: architecture, backend implementations, mock testing, and extension guide.
 
-**User-facing doc**: [docs/user/USER_GUIDE.md](user/USER_GUIDE.md) (filament panel usage, slot operations, troubleshooting)
+**User-facing doc**: [docs/user/USER_GUIDE.md](../user/USER_GUIDE.md) (filament panel usage, slot operations, troubleshooting)
 
 ---
 

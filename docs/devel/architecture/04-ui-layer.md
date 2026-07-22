@@ -107,7 +107,6 @@ graph TB
     subgraph Modals["Modals (Modal base)"]
         MCANCEL["PrintCancelModal"]
         MZOFF["SaveZOffsetModal"]
-        MEDIT["AmsEditModal"]
         MAMERR["AmsLoadingErrorModal"]
         MEXCL["ExcludeObjectModal"]
         MHOST["ChangeHostModal"]
@@ -133,7 +132,7 @@ graph TB
 
     %% Overlay → Modal triggers
     PSTAT -->|"cancel"| MCANCEL
-    AMS -->|"edit slot"| MEDIT
+    AMS -->|"edit slot"| MSPOOL
     AMS -->|"load error"| MAMERR
 
     style Panels fill:#533483,stroke:#16213e,color:#fff
@@ -194,7 +193,7 @@ classDiagram
     OverlayBase <|-- NetworkSettingsOverlay
 
     Modal <|-- PrintCancelModal
-    Modal <|-- AmsEditModal
+    Modal <|-- SpoolEditModal
     Modal <|-- ChangeHostModal
     Modal <|-- RunoutGuidanceModal
 ```

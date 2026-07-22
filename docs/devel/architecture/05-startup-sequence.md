@@ -19,7 +19,7 @@ sequenceDiagram
     Note over A: Phase 1: Bootstrap
     A->>A: logging::init_early()
     A->>A: parse_cli_args()
-    A->>C: Config::init(helixscreen.json)
+    A->>C: Config::init(settings.json)
     A->>A: logging::init_full(verbosity)
 
     Note over A: Phase 2: Display

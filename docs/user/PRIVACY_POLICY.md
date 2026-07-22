@@ -2,8 +2,8 @@
 
 # HelixScreen Privacy Policy
 
-**Effective date**: February 2026
-**Last updated**: February 2026
+**Effective date**: July 2026
+**Last updated**: July 2026
 
 ---
 
@@ -38,7 +38,7 @@ Because the data we collect is fully anonymized through irreversible cryptograph
 
 ## 4. Data Collected
 
-When telemetry is enabled, HelixScreen collects three categories of events:
+When telemetry is enabled, HelixScreen collects the categories of events described below. The three most detailed categories (Session, Print Outcome, Crash) have full field tables here; the remaining diagnostic and usage events are summarized in Section 4.4, with complete field-by-field detail in the user-facing [Telemetry documentation](TELEMETRY.md).
 
 ### 4.1 Session Events
 
@@ -50,7 +50,7 @@ Recorded once per application launch.
 | `event` | string | Always `"session"` |
 | `device_id` | string | Double-hashed anonymous device identifier (64-char hex) |
 | `timestamp` | string | ISO 8601 UTC timestamp (e.g., `"2026-02-08T14:30:00Z"`) |
-| `app.version` | string | HelixScreen software version (e.g., `"0.9.6"`) |
+| `app.version` | string | HelixScreen software version (e.g., `"1.0.0"`) |
 | `app.platform` | string | Hardware platform (e.g., `"rpi4"`, `"rpi5"`, `"x86_64"`) |
 | `app.display` | string | Display resolution (e.g., `"800x480"`) |
 
@@ -88,6 +88,38 @@ Written to local storage at crash time using async-signal-safe functions. Picked
 | `uptime_sec` | integer | Application uptime in seconds at time of crash |
 | `backtrace` | array of strings | Stack frame addresses in hexadecimal |
 
+### 4.4 Diagnostic and Usage Events
+
+In addition to the three categories above, HelixScreen records the following diagnostic and usage events. Each contains only the data described; none contains filenames, G-code content, credentials, or free-text you have entered. Full field tables are in the [Telemetry documentation](TELEMETRY.md).
+
+| Event | When recorded | What it contains |
+|-------|---------------|------------------|
+| Update events | When the in-app updater runs | Whether an update attempt succeeded or failed, and version/platform context |
+| Memory snapshots | Hourly and at startup | Resident/virtual memory usage and uptime (for leak detection) |
+| Memory warnings | When memory pressure is detected | The same memory-usage figures at the moment of a warning |
+| Hardware profile | Once per session | Detected printer model, kinematics, MCU, extruder/fan counts, capability flags, and Klipper configuration identifiers (see Section 4.5) |
+| Settings snapshot | Once per session | A subset of your preferences (theme, brightness, locale, animations on/off) |
+| Settings changes | Batched over 30 seconds after a change | The name of a changed setting and its old/new value — enumerated category values only, never free text |
+| Panel usage | Every 4 hours and at close | Time spent on and visit counts for each UI panel (no actions or content) |
+| Performance snapshots | Every 4 hours | Frame-render timing percentiles and dropped-frame counts (no user content) |
+| Feature adoption | 5 minutes after startup | Boolean flags for which built-in features have been used |
+| Connection stability | Every 4 hours and at close | Connect/disconnect counts and total connected time |
+| Print start context | When a print begins | Print source, whether the file has a thumbnail, a bucketed file-size range, and slicer name — never the filename |
+| Error events | When a non-fatal error occurs (rate-limited) | An error category, code, and the operation being attempted |
+
+### 4.5 Klipper Configuration Identifiers
+
+The Hardware Profile event (Section 4.4) includes **firmware-defined object names** from your Klipper configuration, so we can accurately detect printer models and understand which hardware and features are in use. Specifically, it may include:
+
+- The auto-detected printer model (e.g., `"Voron 2.4"`)
+- G-code macro names (e.g., `"PRINT_START"`, `"CLEAN_NOZZLE"`) — up to 200
+- Stepper motor names (e.g., `"stepper_x"`)
+- Temperature sensor and filament sensor names
+- LED / neopixel names
+- The list of active Klipper objects (e.g., `"toolhead"`, `"bed_mesh"`)
+
+These are **configuration identifiers defined by your printer's firmware and config files**, not personal data. We do **not** collect the *contents* of your configuration (parameter values, macro bodies, or G-code), and these identifiers are not serial numbers, hostnames, or network identifiers. They are transmitted alongside the anonymized `device_id` and cannot be linked back to you (see Section 6).
+
 ---
 
 ## 5. Data NOT Collected
@@ -104,7 +136,7 @@ HelixScreen **does not** collect, process, or transmit any of the following:
 - Camera images, video, or webcam streams
 - WiFi SSIDs, network topology, or connection details
 - Device serial numbers (printer, control board, display)
-- Macro names or custom Klipper configuration
+- The **contents** of your Klipper configuration — parameter values, macro bodies, or G-code (only firmware-defined object *names* are collected, as disclosed in Section 4.5)
 - Email addresses or other contact information
 - Location data or timezone information
 - Browsing history or usage patterns outside of HelixScreen

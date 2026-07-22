@@ -145,7 +145,6 @@ modals: {
 
   cancel: PrintCancelModal
   z_save: SaveZOffsetModal
-  ams_edit: AmsEditModal
   ams_err: AmsLoadingErrorModal
   exclude: ExcludeObjectModal
   host: ChangeHostModal
@@ -170,7 +169,7 @@ panels.advanced -> overlays.features.power: "power"
 
 # Overlay → Modal triggers
 overlays.status.print_status -> modals.cancel: "cancel button" { style.stroke: "#ef476f" }
-overlays.features.ams -> modals.ams_edit: "edit slot" { style.stroke: "#ef476f" }
+overlays.features.ams -> modals.spool_edit: "edit slot" { style.stroke: "#ef476f" }
 overlays.features.ams -> modals.ams_err: "load error" { style.stroke: "#ef476f" }
 
 navmgr.panel_stack -> panels: "activate" { style.stroke: "#00b4d8" }

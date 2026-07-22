@@ -131,4 +131,4 @@ You can start without Spoolman and add it whenever you like — connecting it do
 
 ---
 
-**Next:** [Label Printing](label-printing.md) | **Prev:** [Filament Management](filament.md) | [Back to User Guide](../USER_GUIDE.md)
+**Next:** [Bluetooth Setup](bluetooth-setup.md) | **Prev:** [Filament Management](filament.md) | [Back to User Guide](../USER_GUIDE.md)

@@ -67,7 +67,7 @@ When the U1's detector flags a spaghetti-type failure, the printer pauses the pr
 
 > **Note:** Only spaghetti-type failures are surfaced this way today. The U1's other defect codes (dirty bed, residue, dirty nozzle) are recognized internally but don't currently raise this dialog.
 
-> **Note:** A camera-frame preview is designed into this dialog but isn't wired up yet — for now the dialog shows the text description without a live still image.
+> **Note:** The dialog shows the text description of the detected issue; it does not include a live camera still.
 
 ### Is it always on?
 

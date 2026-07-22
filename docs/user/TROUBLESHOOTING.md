@@ -46,9 +46,11 @@ The file lives at `<install dir>/config/helixscreen.env` (or `/etc/helixscreen/h
 
 ```bash
 sudo systemctl restart helixscreen        # Raspberry Pi
-/etc/init.d/S99helixscreen restart        # K1 / K2 / Snapmaker U1
-/etc/init.d/S80helixscreen restart        # AD5M
+/etc/init.d/S99helixscreen restart        # K1 / K2
+/etc/init.d/S80helixscreen restart        # AD5M (Klipper Mod)
+/etc/init.d/S90helixscreen restart        # AD5M (Forge-X)
 /etc/init.d/helixscreen restart           # CC1
+<install dir>/config/helixscreen.init restart   # Snapmaker U1
 ```
 
 Then tail the log:
@@ -109,7 +111,7 @@ Quick form, from a Mainsail Shell or SSH:
 ```bash
 ssh root@<printer-ip>
 chroot /usr/data/.mod/.zmod
-curl -fsSL https://get.helixscreen.org | sh -s -- --update
+curl -fsSL https://releases.helixscreen.org/install.sh | sh -s -- --update
 ```
 
 The `chroot` step is required — see UPGRADING.md for why.
@@ -705,7 +707,7 @@ This keeps the normal sleep timeout but prevents the backlight from being cut, w
 Caveat: the panel stays fully lit 24/7 with this option. If long-term backlight wear is a concern, prefer Workaround 1 and manually power off the screen when not needed.
 
 **Helping us fix it:**
-If you are experiencing this and are willing to help, please send a debug bundle from **Settings → Help & About → Send Debug Bundle**. Include a note that mentions the sleep color issue so we can correlate configs and logs.
+If you are experiencing this and are willing to help, please send a debug bundle from **Settings → Help & About → Upload Debug Bundle**. Include a note that mentions the sleep color issue so we can correlate configs and logs.
 
 ---
 
@@ -1046,17 +1048,16 @@ This is common on devices where the touch controller is mounted at a different o
 
 **Solutions:**
 
-**1. Update to the latest version (recommended):**
+**1. Recalibrate (recommended):**
 
-HelixScreen v0.9+ automatically detects swapped touch axes during calibration and corrects them. Update and recalibrate:
+HelixScreen automatically detects swapped touch axes during calibration and corrects them. Just recalibrate:
 ```bash
-# Update HelixScreen, then recalibrate:
 # Settings > System > Recalibrate Touch
 ```
 
-**2. Manual workaround (older versions):**
+**2. Manual axis swap (fallback):**
 
-Set the axis swap environment variable, then recalibrate:
+If auto-detection doesn't resolve it, set the axis swap environment variable, then recalibrate:
 ```bash
 # Add to your helixscreen.env:
 HELIX_TOUCH_SWAP_AXES=1
@@ -1306,7 +1307,7 @@ sudo journalctl -u moonraker | grep -i spoolman
 HelixScreen currently fetches up to 1,000 spools from Spoolman in a single request. If you have more than 1,000 spools, the rest will not appear.
 
 **Workaround:**
-Archive or delete unused spools in Spoolman to stay under 1,000 active spools. A future release will add continuous scroll pagination to handle larger collections.
+Archive or delete unused spools in Spoolman to stay under 1,000 active spools.
 
 ---
 

@@ -1,6 +1,6 @@
 # Architecture Guide
 
-This document explains the HelixScreen prototype's system design, data flow patterns, and architectural decisions.
+This document explains HelixScreen's system design, data flow patterns, and architectural decisions.
 
 > **Visual diagrams:** See [`architecture/`](architecture/README.md) for D2 diagrams covering system overview, data flow, threading, UI layer, startup sequence, and singleton map.
 
@@ -1233,14 +1233,23 @@ Background-thread callbacks (WebSocket, HTTP, timers) that need to update UI mus
 // In your class (Modal and OverlayBase provide this automatically):
 helix::AsyncLifetimeGuard lifetime_;
 
-// In a background-thread callback:
-auto token = lifetime_.token();
-api->fetch([this, token]() {
-    if (token.expired()) return;          // Owner was dismissed
-    lifetime_.defer([this]() {            // Queue to main thread, auto-guarded
+// From a background-thread callback: capture a token, then tok.defer(...).
+// The defer body runs on the main thread and is skipped atomically if the
+// owner was dismissed — NEVER write `if (tok.expired()) return;` followed by
+// `this`/member access on the background thread (L081 Mechanism C; the lint
+// gate scripts/check_l081_anti_pattern.py rejects it).
+auto tok = lifetime_.token();
+api->fetch([this, tok]() {
+    tok.defer("MyClass::on_fetch", [this]() {   // main thread, auto-guarded
         update_ui();
     });
 });
+
+// When there is no background-side parsing to keep off the main thread,
+// lifetime_.bg_cb() is the cleanest form — it auto-defers the whole body:
+api->fetch(lifetime_.bg_cb("MyClass::on_fetch", [this]() {
+    update_ui();
+}));
 ```
 
 **Cancel-and-retry** (e.g., re-test connection while previous test is in flight):
@@ -1586,16 +1595,16 @@ Spoolman is now decoupled from AMS backends — spool assignments are tracked pe
 
 ### Config Migration System
 
-Versioned schema migration for `settings.json` that automatically upgrades configuration between releases. The `Config` class tracks a `config_version` integer (currently `CURRENT_CONFIG_VERSION = 2`) and applies migrations sequentially on load:
+Versioned schema migration for `settings.json` that automatically upgrades configuration between releases. The `Config` class tracks a `config_version` integer (currently `CURRENT_CONFIG_VERSION = 19`) and applies migrations sequentially on load:
 
 - **Version tracking** - Each config file stores its schema version; missing version implies v0
-- **Sequential migrations** - Migrations run in order (v0->v1->v2) on startup, each transforming the JSON structure
+- **Sequential migrations** - Migrations run in order (each version step transforms the JSON structure) on startup
 - **Key consolidation** - Example: flat keys (`display_rotate`, `display_sleep_sec`, `touch_calibrated`) migrated into nested objects (`/display/rotate`, `/input/calibration/valid`)
 - **Non-destructive** - Existing new-format values are preserved; only old-format keys are migrated and removed
 - **Auto-save** - Config is saved after migration completes
 
 **Files:** `include/config.h`, `src/system/config.cpp`
-**Tests:** 20+ migration test cases in `tests/unit/test_config.cpp`
+**Tests:** 150+ migration assertions in `tests/unit/test_config.cpp`
 
 ### Exclude Objects System
 
@@ -1659,7 +1668,7 @@ Modular system for detecting preparation phases (homing, heating, leveling) duri
 
 ### Moonraker Plugin
 
-Optional plugin for enhanced print phase tracking. See [moonraker-plugin/README.md](../moonraker-plugin/README.md) for installation and details.
+Optional plugin for enhanced print phase tracking. See [moonraker-plugin/README.md](../../moonraker-plugin/README.md) for installation and details.
 
 - **helix_print.py** - Tracks print phases (heating, mesh, purge, etc.)
 - **HelixPluginInstaller** - Auto-detects and installs plugin (local) or shows install command (remote)

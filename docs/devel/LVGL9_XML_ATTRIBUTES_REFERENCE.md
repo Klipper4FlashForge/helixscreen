@@ -1,6 +1,6 @@
-# LVGL 9.4 XML Attributes Reference
+# LVGL 9.5 / helix-xml Attributes Reference
 
-**Source:** `lvgl/src/others/xml/parsers/*.c` | **Updated:** 2025-12-18
+**Source:** `lib/helix-xml/src/xml/parsers/*.c` | **Updated:** 2026-07-22
 
 ---
 

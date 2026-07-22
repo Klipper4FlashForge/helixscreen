@@ -95,7 +95,7 @@ K1 / K1C / K1 Max.
 The Debian firmware that turns the Creality Sonic Pad into a target HelixScreen
 can run on.
 
-### PAXX — [SnapmakerU1-Extended-Firmware](https://github.com/paxx12/SnapmakerU1-Extended-Firmware)
+### PAXX — [SnapmakerU1-Extended-Firmware](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware)
 Extended firmware enabling SSH (and thus HelixScreen) on the Snapmaker U1.
 
 ### Phil1988 — [FreeDi / FreeQIDI](https://github.com/Phil1988/FreeDi)
