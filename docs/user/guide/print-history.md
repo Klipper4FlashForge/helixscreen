@@ -16,7 +16,7 @@ A row of filter buttons sets the time range for the statistics and charts:
 
 **Day · Week · Month · Year · All**
 
-All is the default (still all-time). For accurate lifetime totals, the All Time view uses Moonraker's server-side history totals rather than the recently cached jobs.
+All is the default. For accurate lifetime figures, the All Time view pulls Total Prints, Print Time, and Filament Used from Moonraker's server-side history totals rather than the recently cached jobs; the Success Rate and the charts are still based on your most recent jobs.
 
 ### Statistics
 

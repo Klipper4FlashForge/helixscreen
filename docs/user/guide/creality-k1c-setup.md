@@ -23,6 +23,8 @@ On the K1C touchscreen:
 
 That's it. Root is now enabled.
 
+> **Newer K1C units (2025 hardware revision):** Some recent K1C units ship without the **Root Account Information** option in the Settings menu. If you don't see it, your unit needs a community rooting workaround — check the Simple AF or Guilouz project pages (Step 3) for the current method.
+
 ---
 
 ## Step 2: SSH Into the Printer

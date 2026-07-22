@@ -116,6 +116,7 @@ Workflow shortcuts, quick troubleshooting table, and a "which panel do I use?" r
 - [Configuration](CONFIGURATION.md) — Detailed configuration options
 - [FAQ](FAQ.md) — Frequently asked questions
 - [Installation](INSTALL.md) — Installation instructions
+- [Creality K1C Setup](guide/creality-k1c-setup.md) — Rooting, community firmware, and HelixScreen install for the K1/K1C/K1 Max
 - [Upgrading](UPGRADING.md) — Version upgrade instructions
 
 ---

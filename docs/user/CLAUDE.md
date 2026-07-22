@@ -19,6 +19,7 @@ These docs are **end-user facing**. They must be written for people who are NOT 
 | `USER_GUIDE.md` | Landing page with links to all guide sub-pages |
 | `guide/getting-started.md` | Navigation, touch gestures, setup wizard, keyboard |
 | `guide/supported-printers.md` | Per-printer feature detail for deeply-integrated models (AD5X IFS, K1/K2 CFS, QIDI Box, Snapmaker U1, ACE), generic auto-detection baseline |
+| `guide/creality-k1c-setup.md` | End-to-end K1/K1C/K1 Max setup: root access, Simple AF / Guilouz firmware, HelixScreen install, updating, firmware upgrade path |
 | `guide/home-panel.md` | Home dashboard, printer manager, custom images |
 | `guide/printing.md` | File selection, printing, tune overlay, Z-offset |
 | `guide/print-monitoring.md` | Pre-print filament check (empty-slot block), camera-based failure detection (Snapmaker U1 dialog, Creality K2 AI toggle) |

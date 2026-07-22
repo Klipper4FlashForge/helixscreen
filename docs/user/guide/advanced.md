@@ -225,25 +225,9 @@ When the print finishes (or if `locked_while_printing` isn't set for that device
 
 ![Print History](../../images/user/advanced-history.png)
 
-View past print jobs:
+HelixScreen keeps a record of your completed, failed, and cancelled prints, sourced from Moonraker's job history. Open it from **Advanced > Print History**. You get a dashboard of statistics and trend charts, a searchable and sortable list of past jobs, and per-job details with reprint and delete.
 
-**Dashboard view:**
-
-- Total prints, success rate
-- Print time and filament usage statistics
-- Trend graphs over time
-
-**List view:**
-
-- Search by filename
-- Filter by status (completed, failed, cancelled)
-- Sort by date, duration, or name
-
-**Detail view:**
-
-- Tap any job for full details
-- **Reprint**: Start the same file again
-- **Delete**: Remove from history
+See [Print History](print-history.md) for the full guide.
 
 ---
 

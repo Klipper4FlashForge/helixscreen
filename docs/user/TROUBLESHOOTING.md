@@ -402,6 +402,38 @@ sudo systemctl restart systemd-timesyncd
 
 ---
 
+### When the Printer Errors or Disconnects (Recovery Dialog)
+
+If Klipper shuts down, hits an error, or loses contact with the printer's control board, HelixScreen automatically pops up a full-screen **recovery dialog** with a warning icon, a short explanation, and one or more recovery buttons. You don't have to go looking for it — it appears on top of whatever you were doing.
+
+**What it looks like and when it appears:**
+
+| Dialog title | When it appears | What it usually means |
+|--------------|-----------------|-----------------------|
+| **Printer Shutdown** | Klipper has entered a shutdown state | An emergency stop was triggered, a thermal runaway was detected, or a configuration problem stopped the printer. When Klipper reports a specific reason (for example "Max force exceeded"), that exact message is shown instead of the generic text. |
+| **Printer Error** | Klipper has entered an error state | Usually the control board (MCU) lost its connection, or there's a configuration error. |
+| **Printer Firmware Disconnected** | The printer's firmware has disconnected from the host | The host software lost its link to the printer's control board. |
+
+**The buttons and when to use each:**
+
+| Button | What it does | When to use it |
+|--------|--------------|----------------|
+| **Restart Klipper** | Performs a soft restart of Klipper — it reloads your configuration and reconnects to the printer without power-cycling anything. | The quickest first thing to try after a **Printer Shutdown** or **Printer Error**. Good when nothing physical is wrong and you just need Klipper to come back to a ready state. |
+| **Firmware Restart** | Does everything Restart Klipper does, and also resets the printer's control board (MCU) firmware. | Use when a plain Restart Klipper isn't enough — for example after fixing a configuration error, or when the control board itself shut down or lost communication. |
+| **Dismiss** | Closes the dialog without doing anything. The printer stays exactly as it was — still shut down, errored, or disconnected. | When you want to read logs, check wiring, or fix a config file first, and you'll restart afterward. Dismiss does **not** fix anything on its own. |
+
+> **Note:** When the printer is fully disconnected, HelixScreen can't send restart commands to it, so only **Dismiss** is available. Once the connection comes back, the restart buttons return.
+
+**Common causes:**
+
+- **Thermal runaway** — a heater isn't reaching or holding the temperature Klipper expects (loose heater or thermistor, a fan blowing on the sensor, or a failing part). Klipper shuts down for safety.
+- **Configuration error** — a recent edit to your `printer.cfg` has a mistake. Klipper will shut down again immediately after a restart until the config is fixed.
+- **Lost control-board communication** — a USB/serial cable came loose, the board lost power, or the connection was interrupted.
+
+**Important:** A restart only sticks if the underlying problem is resolved. If a bad config or a wiring fault caused the shutdown, Klipper will just shut down again. Fix the root cause first — correct the `printer.cfg` (through Mainsail or Fluidd), reseat cables, or check heater and thermistor wiring — then use **Firmware Restart** to bring the printer back.
+
+---
+
 ## Display Issues
 
 ### Black screen on startup
