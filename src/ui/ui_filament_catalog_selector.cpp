@@ -49,7 +49,37 @@ void FilamentCatalogSelector::register_callbacks() {
         if (auto* self = from_event(e))
             self->handle_type_changed();
     });
+    // Row callbacks fired by the catalog_row / catalog_add_row XML components.
+    lv_xml_register_event_cb(nullptr, "catalog_row_clicked_cb", on_row_clicked_cb);
+    lv_xml_register_event_cb(nullptr, "catalog_row_edit_cb", on_row_edit_cb);
+    lv_xml_register_event_cb(nullptr, "catalog_add_custom_cb", on_add_custom_cb);
     callbacks_registered_ = true;
+}
+
+void FilamentCatalogSelector::on_row_clicked_cb(lv_event_t* e) {
+    // The row carries the click event_cb, so current_target IS the row whose
+    // name is the product id (L069). Edit-icon taps hit-test to the icon (its
+    // own clickable target) and never reach here.
+    auto* row = lv_event_get_current_target_obj(e);
+    FilamentCatalogSelector* self = from_event(e);
+    const char* id = row ? lv_obj_get_name(row) : nullptr;
+    if (self && id)
+        self->handle_row_selected(id);
+}
+
+void FilamentCatalogSelector::on_row_edit_cb(lv_event_t* e) {
+    // Fired by the edit_icon; its parent is the row whose name is the product id.
+    auto* icon = lv_event_get_current_target_obj(e);
+    lv_obj_t* row = icon ? lv_obj_get_parent(icon) : nullptr;
+    const char* id = row ? lv_obj_get_name(row) : nullptr;
+    FilamentCatalogSelector* self = from_event(e);
+    if (self && id)
+        self->handle_edit_product(id);
+}
+
+void FilamentCatalogSelector::on_add_custom_cb(lv_event_t* e) {
+    if (auto* self = from_event(e))
+        self->handle_add_custom();
 }
 
 FilamentCatalogSelector::~FilamentCatalogSelector() {
@@ -384,90 +414,65 @@ void FilamentCatalogSelector::rebuild_product_list() {
         return;
     helix::ui::safe_clean_children(list);
 
+    // Leading "+ Add custom filament" affordance — declarative component with its
+    // own click callback (catalog_add_custom_cb -> handle_add_custom). First row
+    // so it reads as a "create new" action and never gets buried under the list.
+    lv_xml_create(list, "filament_catalog_add_row", nullptr);
+
+    // Data-driven theme colors (accent/text/muted) are set in C++ — the row's
+    // structure, fonts, padding, radii and pressed styling all live in
+    // ui_xml/components/filament_catalog_row.xml.
     lv_color_t accent = theme_manager_get_color("primary");
     lv_color_t text_color = theme_manager_get_color("text");
-    lv_color_t muted_color = theme_manager_get_color("text_muted");
-    const char* body_font_name = lv_xml_get_const(nullptr, "font_body");
-    const lv_font_t* body_font =
-        body_font_name ? lv_xml_get_font(nullptr, body_font_name) : lv_font_get_default();
-    const char* icon_font_name = lv_xml_get_const(nullptr, "icon_font_xs");
-    const lv_font_t* icon_font =
-        icon_font_name ? lv_xml_get_font(nullptr, icon_font_name) : body_font;
-    const char* check_codepoint = ui_icon::lookup_codepoint("check");
-
+    lv_color_t muted = theme_manager_get_color("text_muted");
+    const char* check = ui_icon::lookup_codepoint("check");
+    const char* pencil = ui_icon::lookup_codepoint("pencil");
     const std::string family = current_type();
-    auto products = ordered_products_for(current_vendor(), family);
-    for (const auto* p : products) {
-        bool is_current = (highlighted_id_ == p->id);
-        lv_obj_t* row = lv_obj_create(list);
-        lv_obj_remove_style_all(row);
-        lv_obj_set_width(row, LV_PCT(100));
-        lv_obj_set_height(row, LV_SIZE_CONTENT);
-        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_pad_hor(row, 10, 0);
-        lv_obj_set_style_pad_ver(row, 8, 0);
-        lv_obj_set_style_pad_gap(row, 8, 0);
-        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_style_bg_color(row, accent, LV_STATE_PRESSED);
-        lv_obj_set_style_bg_opa(row, LV_OPA_30, LV_STATE_PRESSED);
-        lv_obj_set_style_radius(row, 4, 0);
-        lv_obj_set_name(row, p->id.c_str()); // identity for click handler (L069)
 
-        lv_obj_t* indicator = lv_label_create(row);
-        lv_obj_set_style_text_font(indicator, icon_font, 0);
-        lv_obj_set_style_min_width(indicator, 16, 0);
-        if (is_current && check_codepoint) {
-            lv_label_set_text(indicator, check_codepoint);
-            lv_obj_set_style_text_color(indicator, accent, 0);
-        } else {
-            lv_label_set_text(indicator, "");
+    for (const auto* p : ordered_products_for(current_vendor(), family)) {
+        const bool is_current = (highlighted_id_ == p->id);
+        auto* row = static_cast<lv_obj_t*>(lv_xml_create(list, "filament_catalog_row", nullptr));
+        if (!row)
+            continue;
+        lv_obj_set_name(row, p->id.c_str()); // identity for click handlers (L069)
+
+        if (auto* ind = lv_obj_find_by_name(row, "check_indicator")) {
+            lv_label_set_text(ind, (is_current && check) ? check : "");
+            lv_obj_set_style_text_color(ind, accent, 0);
         }
-        lv_obj_remove_flag(indicator, LV_OBJ_FLAG_CLICKABLE);
-
-        lv_obj_t* name_lbl = lv_label_create(row);
-        lv_label_set_text(name_lbl, p->name.c_str());
-        lv_obj_set_style_text_font(name_lbl, body_font, 0);
-        lv_obj_set_style_text_color(name_lbl, is_current ? accent : text_color, 0);
-        lv_obj_set_flex_grow(name_lbl, 1);
-        lv_obj_remove_flag(name_lbl, LV_OBJ_FLAG_CLICKABLE);
-
+        if (auto* nm = lv_obj_find_by_name(row, "name_label")) {
+            lv_label_set_text(nm, p->name.c_str());
+            lv_obj_set_style_text_color(nm, is_current ? accent : text_color, 0);
+        }
         // Variant chip: under a collapsed family heading the row's own type is
         // the only thing separating ASA-CF from ASA-GF, and it is exactly the
         // string this selection emits. Base-type rows carry no chip — the
         // heading already says it. Untranslated: material names are identifiers
         // (L070).
-        if (!p->type.empty() && p->type != family) {
-            lv_obj_t* variant_lbl = lv_label_create(row);
-            lv_label_set_text(variant_lbl, p->type.c_str());
-            lv_obj_set_style_text_font(variant_lbl, body_font, 0);
-            lv_obj_set_style_text_color(variant_lbl, is_current ? accent : muted_color, 0);
-            lv_obj_remove_flag(variant_lbl, LV_OBJ_FLAG_CLICKABLE);
+        if (auto* chip = lv_obj_find_by_name(row, "variant_chip")) {
+            if (!p->type.empty() && p->type != family) {
+                lv_label_set_text(chip, p->type.c_str());
+                lv_obj_set_style_text_color(chip, is_current ? accent : muted, 0);
+                lv_obj_remove_flag(chip, LV_OBJ_FLAG_HIDDEN);
+            }
         }
-
-        char temps[32];
-        snprintf(temps, sizeof(temps), "%d\xC2\xB0 / %d\xC2\xB0", p->nozzle_recommended,
-                 p->bed_temp);
-        lv_obj_t* temp_lbl = lv_label_create(row);
-        lv_label_set_text(temp_lbl, temps);
-        lv_obj_set_style_text_font(temp_lbl, body_font, 0);
-        lv_obj_set_style_text_color(temp_lbl, text_color, 0);
-        lv_obj_remove_flag(temp_lbl, LV_OBJ_FLAG_CLICKABLE);
-
-        // Dynamic row — moved code keeps its direct event hookup; instance is
-        // resolved by walking up to the registered fragment root.
-        lv_obj_add_event_cb(
-            row,
-            [](lv_event_t* e) {
-                lv_obj_t* row = lv_event_get_current_target_obj(e);
-                if (!row)
-                    return;
-                FilamentCatalogSelector* self = from_event(e);
-                const char* id = lv_obj_get_name(row);
-                if (self && id)
-                    self->handle_row_selected(id);
-            },
-            LV_EVENT_CLICKED, nullptr);
+        if (auto* temp = lv_obj_find_by_name(row, "temp_label")) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%d\xC2\xB0 / %d\xC2\xB0", p->nozzle_recommended,
+                     p->bed_temp);
+            lv_label_set_text(temp, buf);
+        }
+        // Edit pencil: shown only where the host opts in (standalone picker),
+        // not the AMS slot-assignment selector. The icon intercepts its own tap
+        // declaratively (clickable, no event_bubble in the XML), so editing
+        // never triggers row-select.
+        if (auto* edit = lv_obj_find_by_name(row, "edit_icon")) {
+            if (show_edit_affordances_) {
+                if (pencil)
+                    lv_label_set_text(edit, pencil); // XML already sets #icon_pencil
+                lv_obj_remove_flag(edit, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
     }
 }
 
@@ -497,6 +502,72 @@ void FilamentCatalogSelector::handle_row_selected(const std::string& product_id)
     rebuild_product_list(); // redraw to move the checkmark
     if (on_selection_changed_)
         on_selection_changed_(highlighted());
+}
+
+void FilamentCatalogSelector::handle_add_custom() {
+    edit_modal_.set_on_saved([this](const std::string& saved_id) { refresh_after_edit(saved_id); });
+    edit_modal_.show_for_add(lv_screen_active());
+}
+
+void FilamentCatalogSelector::handle_edit_product(const std::string& product_id) {
+    edit_modal_.set_on_saved([this](const std::string& saved_id) { refresh_after_edit(saved_id); });
+    edit_modal_.show_for_edit(lv_screen_active(), product_id);
+}
+
+void FilamentCatalogSelector::select_vendor(const std::string& brand) {
+    lv_obj_t* dd = find_child("vendor_dropdown");
+    if (!dd)
+        return;
+    for (size_t i = 0; i < vendor_order_.size(); ++i) {
+        if (vendor_order_[i] == brand) {
+            lv_dropdown_set_selected(dd, static_cast<uint32_t>(i));
+            return;
+        }
+    }
+}
+
+void FilamentCatalogSelector::select_type_family(const std::string& family) {
+    lv_obj_t* dd = find_child("type_dropdown");
+    if (!dd)
+        return;
+    const std::string opts = lv_dropdown_get_options(dd);
+    uint32_t idx = 0;
+    size_t start = 0;
+    for (size_t i = 0; i <= opts.size(); ++i) {
+        if (i == opts.size() || opts[i] == '\n') {
+            if (opts.compare(start, i - start, family) == 0) {
+                lv_dropdown_set_selected(dd, idx);
+                return;
+            }
+            ++idx;
+            start = i + 1;
+        }
+    }
+}
+
+void FilamentCatalogSelector::refresh_after_edit(const std::string& focus_id) {
+    // Re-read the overlay from disk so the just-saved/removed product is
+    // reflected, then rebuild dropdowns (a new brand may have appeared).
+    catalog_ = helix::printer::FilamentCatalog::load_full();
+    populate_vendor_dropdown();
+
+    if (!focus_id.empty()) {
+        if (const auto* ef = catalog_.resolve_id(focus_id)) {
+            select_vendor(ef->brand.empty() ? std::string("Generic") : ef->brand);
+            populate_type_dropdown();
+            select_type_family(family_of(ef->type));
+            highlighted_id_ = focus_id;
+            rebuild_product_list();
+            if (on_selection_changed_)
+                on_selection_changed_(highlighted());
+            return;
+        }
+    }
+
+    // Delete/restore, or the product no longer resolves: keep the current
+    // vendor/type view and just repaint.
+    populate_type_dropdown();
+    rebuild_product_list();
 }
 
 } // namespace helix::ui

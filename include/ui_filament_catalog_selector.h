@@ -3,6 +3,7 @@
 
 #include "filament_catalog.h"
 #include "lvgl.h"
+#include "ui_filament_product_edit_modal.h"
 
 #include <functional>
 #include <map>
@@ -72,6 +73,12 @@ class FilamentCatalogSelector {
 
     void set_selection_changed(SelectionChangedCallback cb);
 
+    /// Show the per-row edit pencil (standalone catalog picker opts in; the AMS
+    /// slot-assignment selector leaves it off, where catalog editing is out of
+    /// place). Set before populate(). The "+ Add custom filament" row shows in
+    /// both contexts regardless.
+    void set_show_edit_affordances(bool v) { show_edit_affordances_ = v; }
+
     // === Introspection (tests + hosts) ===
     [[nodiscard]] std::string current_vendor() const;
     /// Selected Type-dropdown text. Since grouping, this is a material FAMILY
@@ -125,6 +132,16 @@ class FilamentCatalogSelector {
     void handle_vendor_changed();
     void handle_type_changed();
     void handle_row_selected(const std::string& product_id);
+    /// Open the product-edit modal in add mode (the "+ Add custom filament" row).
+    void handle_add_custom();
+    /// Open the product-edit modal in edit mode for @p product_id (row edit icon).
+    void handle_edit_product(const std::string& product_id);
+    /// Reload the catalog after a save/delete and, when @p focus_id resolves,
+    /// navigate the dropdowns to its vendor+family and highlight it.
+    void refresh_after_edit(const std::string& focus_id);
+    /// Select a vendor / type-family in the dropdowns by string (no-op if absent).
+    void select_vendor(const std::string& brand);
+    void select_type_family(const std::string& family);
     /// After a dropdown rebuild with preselect_on_change_ set: highlight the
     /// anchor product if present in the new list, else the first row; notify
     /// nullptr only when the list is genuinely empty.
@@ -136,6 +153,14 @@ class FilamentCatalogSelector {
     static std::map<lv_obj_t*, FilamentCatalogSelector*>& registry();
     static bool callbacks_registered_;
 
+    // Declarative row event callbacks (registered in register_callbacks(),
+    // wired from the catalog_row / catalog_add_row XML components). Each resolves
+    // its owning instance via from_event() and the row identity via
+    // lv_obj_get_name (L069).
+    static void on_row_clicked_cb(lv_event_t* e);
+    static void on_row_edit_cb(lv_event_t* e);
+    static void on_add_custom_cb(lv_event_t* e);
+
     lv_obj_t* root_ = nullptr;
     helix::printer::FilamentCatalog catalog_;
     std::optional<std::string> seed_type_;
@@ -143,8 +168,13 @@ class FilamentCatalogSelector {
     std::string highlighted_id_;
     std::string preselect_anchor_id_; // product to restore on a dropdown round-trip
     bool preselect_on_change_ = false;
+    bool show_edit_affordances_ = false; // per-row edit pencil (picker opts in)
     std::vector<std::string> vendor_order_; // dropdown index -> brand
     SelectionChangedCallback on_selection_changed_;
+
+    // Product add/edit modal, opened from the list affordances. Owned here so
+    // its completion callback can refresh this selector in place.
+    FilamentProductEditModal edit_modal_;
 };
 
 } // namespace helix::ui

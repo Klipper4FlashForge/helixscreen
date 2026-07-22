@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "filament_catalog.h"
+#include "filament_product_form.h"
 #include "helix_test_fixture.h"
 #include "../catch_amalgamated.hpp"
 
@@ -13,6 +14,10 @@
 #include "hv/json.hpp"
 
 using helix::printer::FilamentCatalog;
+using helix::ui::build_product_json;
+using helix::ui::derive_product_id;
+using helix::ui::FilamentFormValues;
+using helix::ui::validate_product_form;
 
 namespace {
 constexpr const char* FIX = "tests/fixtures/filaments_test.json";
@@ -474,4 +479,130 @@ TEST_CASE_METHOD(HelixTestFixture, "product edit round-trip preserves orca_type_
     CHECK(map2.at("CustomPLA") == "PLA");
 
     remove_save_tmp();
+}
+
+// ---------------------------------------------------------------------------
+// FilamentProductEditModal form logic (pure, LVGL-free): build_product_json,
+// derive_product_id, validate_product_form. Tag [user_save] with the rest of
+// the write-path tests.
+// ---------------------------------------------------------------------------
+
+TEST_CASE_METHOD(HelixTestFixture, "build_product_json always emits id, type, source",
+                 "[filament_catalog][user_save]") {
+    FilamentFormValues v;
+    v.id = "my-pla";
+    v.type = "PLA";
+    auto j = build_product_json(v);
+    CHECK(j.value("id", "") == "my-pla");
+    CHECK(j.value("type", "") == "PLA");
+    CHECK(j.value("source", "") == "user");
+    // Blank optional fields are omitted entirely (must not clobber inheritance).
+    CHECK_FALSE(j.contains("brand"));
+    CHECK_FALSE(j.contains("name"));
+    CHECK_FALSE(j.contains("nozzle_min"));
+    CHECK_FALSE(j.contains("nozzle_max"));
+    CHECK_FALSE(j.contains("nozzle"));
+    CHECK_FALSE(j.contains("bed"));
+    CHECK_FALSE(j.contains("density"));
+}
+
+TEST_CASE_METHOD(HelixTestFixture, "build_product_json emits provided fields with correct keys",
+                 "[filament_catalog][user_save]") {
+    FilamentFormValues v;
+    v.id = "poly-x";
+    v.brand = "Polymaker";
+    v.name = "PolyTerra";
+    v.type = "PLA";
+    v.nozzle_min = "195";
+    v.nozzle_max = "230";
+    v.nozzle = "210"; // recommended -> key "nozzle"
+    v.bed = "55";     // bed_temp   -> key "bed"
+    v.density = "1.24";
+    auto j = build_product_json(v);
+
+    CHECK(j.value("brand", "") == "Polymaker");
+    CHECK(j.value("name", "") == "PolyTerra");
+    CHECK(j.value("nozzle_min", 0) == 195);
+    CHECK(j.value("nozzle_max", 0) == 230);
+    CHECK(j.value("nozzle", 0) == 210);
+    CHECK(j.value("bed", 0) == 55);
+    CHECK(j["density"].get<float>() == Catch::Approx(1.24f));
+    // The struct field names must NOT appear as JSON keys.
+    CHECK_FALSE(j.contains("nozzle_recommended"));
+    CHECK_FALSE(j.contains("bed_temp"));
+    CHECK_FALSE(j.contains("density_g_cm3"));
+}
+
+TEST_CASE_METHOD(HelixTestFixture, "build_product_json omits blank numerics but keeps explicit zero",
+                 "[filament_catalog][user_save]") {
+    FilamentFormValues v;
+    v.id = "z";
+    v.type = "PLA";
+    v.nozzle_min = "";  // blank -> omit
+    v.bed = "0";        // explicit zero -> keep (user intent)
+    auto j = build_product_json(v);
+    CHECK_FALSE(j.contains("nozzle_min"));
+    REQUIRE(j.contains("bed"));
+    CHECK(j.value("bed", -1) == 0);
+}
+
+TEST_CASE_METHOD(HelixTestFixture, "derive_product_id slugs brand+name when id blank",
+                 "[filament_catalog][user_save]") {
+    FilamentFormValues v;
+    v.brand = "Poly Maker";
+    v.name = "PolyTerra PLA";
+    CHECK(derive_product_id(v) == "poly-maker-polyterra-pla");
+    // The built product carries the derived id.
+    v.type = "PLA";
+    CHECK(build_product_json(v).value("id", "") == "poly-maker-polyterra-pla");
+
+    // An explicit id wins verbatim.
+    v.id = "explicit-id";
+    CHECK(derive_product_id(v) == "explicit-id");
+}
+
+TEST_CASE_METHOD(HelixTestFixture, "validate_product_form rejects blank id and blank type",
+                 "[filament_catalog][user_save]") {
+    std::string err;
+    FilamentFormValues blank;
+    CHECK_FALSE(validate_product_form(blank, err)); // no id derivable
+    CHECK_FALSE(err.empty());
+
+    FilamentFormValues no_type;
+    no_type.id = "x";
+    err.clear();
+    CHECK_FALSE(validate_product_form(no_type, err)); // type required
+    CHECK_FALSE(err.empty());
+
+    FilamentFormValues ok;
+    ok.id = "x";
+    ok.type = "PLA";
+    err.clear();
+    CHECK(validate_product_form(ok, err));
+    CHECK(err.empty());
+}
+
+TEST_CASE_METHOD(HelixTestFixture, "validate_product_form rejects nozzle min greater than max",
+                 "[filament_catalog][user_save]") {
+    std::string err;
+    FilamentFormValues bad;
+    bad.id = "x";
+    bad.type = "PLA";
+    bad.nozzle_min = "250";
+    bad.nozzle_max = "200";
+    CHECK_FALSE(validate_product_form(bad, err));
+    CHECK_FALSE(err.empty());
+
+    // Equal is allowed; only one bound provided is allowed.
+    FilamentFormValues eq = bad;
+    eq.nozzle_max = "250";
+    err.clear();
+    CHECK(validate_product_form(eq, err));
+
+    FilamentFormValues one_bound;
+    one_bound.id = "x";
+    one_bound.type = "PLA";
+    one_bound.nozzle_min = "250"; // max blank -> no comparison
+    err.clear();
+    CHECK(validate_product_form(one_bound, err));
 }
