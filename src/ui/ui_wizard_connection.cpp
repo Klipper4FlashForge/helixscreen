@@ -893,7 +893,7 @@ void WizardConnectionStep::cleanup() {
 // ============================================================================
 
 void WizardConnectionStep::on_printers_discovered(const std::vector<DiscoveredPrinter>& printers) {
-    // NOTE: This callback comes from the mDNS discovery thread via ui_async_call
+    // NOTE: This callback comes from the mDNS discovery thread via ui_queue_update()
     // but MdnsDiscovery already handles thread marshaling, so we're on main thread here
 
     discovered_printers_ = printers;

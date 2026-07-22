@@ -2283,7 +2283,7 @@ AmsError AmsBackendAfc::execute_gcode_notify(const std::string& gcode,
 
     spdlog::info("[AMS AFC] Executing G-code: {}", gcode);
 
-    // Capture messages by value for async callbacks (thread-safe via ui_async_call)
+    // Capture messages by value for async callbacks (thread-safe via ui_queue_update())
     api_->execute_gcode(
         gcode,
         [success_msg]() {

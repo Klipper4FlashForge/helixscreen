@@ -138,7 +138,7 @@ FilamentPanel::FilamentPanel(PrinterState& printer_state, MoonrakerAPI* api)
     });
 
     // Subscribe to PrinterState temperatures using bundle pattern
-    // NOTE: Observers must defer UI updates via ui_async_call to avoid render-phase assertions
+    // NOTE: Observers must defer UI updates via ui_queue_update() to avoid render-phase assertions
     // [L029]
     temp_observers_.setup_async(
         this, printer_state_,

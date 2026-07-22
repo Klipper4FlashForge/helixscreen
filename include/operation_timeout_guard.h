@@ -23,7 +23,7 @@ class SubjectManager;
  * // Before API call:
  * operation_guard_.begin(30000, [this] { NOTIFY_WARNING("Operation timed out"); });
  *
- * // In success/error callbacks (via ui_async_call):
+ * // In success/error callbacks (via ui_queue_update()):
  * operation_guard_.end();
  * @endcode
  */

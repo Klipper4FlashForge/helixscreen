@@ -71,7 +71,7 @@ void PrinterNetworkState::deinit_subjects() {
 }
 
 void PrinterNetworkState::set_printer_connection_state_internal(int state, const char* message) {
-    // Called from main thread via ui_async_call
+    // Called from main thread via ui_queue_update()
     // Log "Connected" at info level, transitional states at debug to reduce noise
     if (state == static_cast<int>(ConnectionState::CONNECTED)) {
         spdlog::info("[PrinterNetworkState] Printer connection state: Connected");

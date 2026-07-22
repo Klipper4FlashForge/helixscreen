@@ -3245,7 +3245,7 @@ void Application::init_action_prompt() {
         });
     }
 
-    // Wire on_show callback to display modal (uses ui_async_call for thread safety)
+    // Wire on_show callback to display modal (uses ui_queue_update() for thread safety)
     m_action_prompt_manager->set_on_show([this](const helix::PromptData& data) {
         spdlog::info("[ActionPrompt] Showing prompt: {}", data.title);
         // WebSocket callbacks run on background thread - must use ui_queue_update

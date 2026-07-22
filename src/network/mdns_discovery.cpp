@@ -447,7 +447,7 @@ class MdnsDiscovery::Impl {
     }
 
     /**
-     * @brief Dispatch update to main thread via ui_async_call
+     * @brief Dispatch update to main thread via ui_queue_update()
      *
      * Must be called with mutex_ held.
      */

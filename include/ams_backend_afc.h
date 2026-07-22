@@ -522,7 +522,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
      * @brief Execute a G-code command with user-facing toast notifications
      *
      * Like execute_gcode() but shows a success or error toast when the
-     * async Moonraker callback fires. Thread-safe (uses ui_async_call).
+     * async Moonraker callback fires. Thread-safe (uses ui_queue_update()).
      *
      * @param gcode The G-code command to execute
      * @param success_msg Toast message on success (empty = no toast)

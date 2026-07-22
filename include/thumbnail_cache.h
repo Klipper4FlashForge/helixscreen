@@ -151,7 +151,7 @@ class ThumbnailCache {
      * @param on_success Called with LVGL path on success (may be called synchronously if cached)
      * @param on_error Called with error message on failure
      *
-     * @note Callbacks may be invoked from background thread - use ui_async_call_safe for UI updates
+     * @note Callbacks may be invoked from background thread - use ui_queue_update() for UI updates
      */
     void fetch(MoonrakerAPI* api, const std::string& relative_path, SuccessCallback on_success,
                ErrorCallback on_error);
@@ -231,7 +231,7 @@ class ThumbnailCache {
      * @param on_success Called with LVGL path on success (only if ctx.is_valid())
      * @param on_error Optional error callback (NOT guarded - always called on error)
      *
-     * @note Callbacks may be invoked from background thread - use ui_async_call_safe for UI updates
+     * @note Callbacks may be invoked from background thread - use ui_queue_update() for UI updates
      * @see ThumbnailLoadContext::create
      */
     void fetch_for_detail_view(MoonrakerAPI* api, const std::string& relative_path,
@@ -259,7 +259,7 @@ class ThumbnailCache {
      * @param on_error Optional error callback (NOT guarded - always called on error)
      * @param source_modified Optional source file modification time for cache invalidation
      *
-     * @note Callbacks may be invoked from background thread - use ui_async_call_safe for UI updates
+     * @note Callbacks may be invoked from background thread - use ui_queue_update() for UI updates
      * @see ThumbnailLoadContext::create
      */
     void fetch_for_card_view(MoonrakerAPI* api, const std::string& relative_path,

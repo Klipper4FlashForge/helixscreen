@@ -1256,7 +1256,7 @@ class PrinterState {
 
     /**
      * @brief Internal: set connection state on main thread
-     * @note Called via ui_async_call from set_printer_connection_state()
+     * @note Called via ui_queue_update() from set_printer_connection_state()
      */
     void set_printer_connection_state_internal(int state, const char* message);
 

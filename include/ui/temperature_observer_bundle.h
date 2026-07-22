@@ -103,7 +103,7 @@ template <typename Panel> class TemperatureObserverBundle {
      *
      * Use when updates come from background threads and need thread-safe
      * caching followed by a single UI update. The value handlers cache
-     * data directly, then update_handler is called via ui_async_call.
+     * data directly, then update_handler is called via ui_queue_update().
      *
      * @param panel Panel instance (must outlive observers)
      * @param state PrinterState reference for temperature subjects

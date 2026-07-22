@@ -9,7 +9,7 @@
  * All observers return ObserverGuard for automatic cleanup.
  *
  * Three observer patterns supported:
- * 1. Value observer - stores value directly, calls update method via ui_async_call
+ * 1. Value observer - stores value directly, calls update method via ui_queue_update()
  * 2. Transform observer - applies transformation before storing, then async update
  * 3. Raw observer - stores raw value without async call (for timer-based updates)
  *
@@ -180,7 +180,7 @@ void raw_observer_cb(lv_observer_t* observer, lv_subject_t* subject) {
  * @tparam Panel Panel class type
  * @param subject LVGL subject to observe
  * @param member Pointer-to-member for value storage
- * @param on_update Member function called via ui_async_call after value update
+ * @param on_update Member function called via ui_queue_update() after value update
  * @param panel Panel instance
  * @return ObserverGuard for RAII cleanup
  *
@@ -218,7 +218,7 @@ ObserverGuard create_value_observer(lv_subject_t* subject, T Panel::*member,
  * @param subject LVGL subject to observe
  * @param transform Function to transform raw int value to T
  * @param member Pointer-to-member for transformed value storage
- * @param on_update Member function called via ui_async_call after value update
+ * @param on_update Member function called via ui_queue_update() after value update
  * @param panel Panel instance
  * @return ObserverGuard for RAII cleanup
  *
@@ -424,7 +424,7 @@ ObserverGuard observe_int_immediate(lv_subject_t* subject, Panel* panel, Handler
 /**
  * @brief Create async int observer with value and update handlers
  *
- * Value handler is called synchronously, update handler via ui_async_call.
+ * Value handler is called synchronously, update handler via ui_queue_update().
  *
  * @tparam Panel Panel class type
  * @tparam ValueHandler Callable: void(Panel*, int)

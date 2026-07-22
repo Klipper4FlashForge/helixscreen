@@ -889,7 +889,7 @@ std::vector<std::pair<std::string, std::string>>
 PrintPreparationManager::collect_macro_skip_params() const {
     // THREADING: This method reads macro_analysis_ and checkbox states.
     // Must be called from the main LVGL thread (same thread that updates these via
-    // ui_async_call_safe callbacks). LVGL's single-threaded model ensures no races.
+    // ui_queue_update() callbacks). LVGL's single-threaded model ensures no races.
 
     std::vector<std::pair<std::string, std::string>> skip_params;
     std::set<std::string> handled_ids; // option ids already covered by DB
