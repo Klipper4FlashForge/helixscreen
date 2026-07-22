@@ -246,13 +246,22 @@
     <px name="dialog_content_max_xxlarge" value="800"/>
 
 
-    <!-- Row height for button containers -->
-    <px name="input_height" value="48"/>
-    <!-- Standard height for all input fields (textareas, dropdowns, etc.) -->
-    <px name="slider_height" value="8"/>
+    <!-- input_height: standard height for all input fields (textareas, dropdowns,
+         icon toggles). Static 48px historically — now a responsive ladder so inputs
+         scale up on bigger screens instead of looking cramped (history panel search
+         box, spoolman search, modal text inputs, wifi password row, etc.). Small
+         breakpoints keep 48 (no regression on cramped Snapmaker U1 / 480x320). -->
+    <px name="input_height_micro" value="48"/>
+    <px name="input_height_tiny" value="48"/>
+    <px name="input_height_small" value="48"/>
+    <px name="input_height_medium" value="52"/>
+    <px name="input_height_large" value="56"/>
+    <px name="input_height_xlarge" value="60"/>
+    <px name="input_height_xxlarge" value="64"/>
     <!-- Standard slider track height -->
-    <px name="icon_button_size" value="32"/>
+    <px name="slider_height" value="8"/>
     <!-- Icon-only buttons (close, edit, etc.) -->
+    <px name="icon_button_size" value="32"/>
 
     <!-- ===================================================================== -->
     <!-- Typography - Responsive Semantic Fonts                              -->
