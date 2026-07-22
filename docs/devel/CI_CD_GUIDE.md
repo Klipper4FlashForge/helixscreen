@@ -341,7 +341,7 @@ s3://helixscreen-releases/
   dev/helixscreen-*.tar.gz     ← Legacy (bridge release only)
 ```
 
-> **Bridge release:** The `.tar.gz` glob ships alongside `.zip` during the current bridge release for backwards compatibility with older installed versions. It will be removed in the following release.
+> **Bridge release:** The manifest now advertises `zip_url`/`zip_sha256` as the **preferred** asset by default, so the `.zip` artifacts are manifest-referenced. The upload step puts both the `.tar.gz` and `.zip` artifacts up **before** the manifest goes live (clients following `zip_url` — or the legacy `url` — never 404 mid-download); `install.sh` and symbol maps upload *after* the manifest. The `.tar.gz` still ships alongside `.zip` during this bridge release — its `url`/`sha256` remain the fallback for pre-v0.99.31 clients, which never read `zip_url` — and will be removed in a following release. Pass `generate-manifest.sh --no-include-zip` to suppress the zip fields.
 
 ### Channel Upload Routing
 
