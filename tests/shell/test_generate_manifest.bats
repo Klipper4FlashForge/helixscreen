@@ -108,6 +108,56 @@ teardown() {
     [[ "$output" == "https://releases.helixscreen.org/dev/helixscreen-pi-v0.9.5.tar.gz" ]]
 }
 
+@test "zip_url is emitted by default when a .zip is present; url stays tar.gz" {
+    printf 'PK\003\004dummyzip' > "$TEST_DIR/helixscreen-pi.zip"
+    bash "$SCRIPT" \
+        --version "0.9.5" --tag "v0.9.5" --notes "Test" \
+        --dir "$TEST_DIR" \
+        --base-url "https://releases.helixscreen.org/dev" \
+        --output "$TEST_DIR/manifest.json"
+
+    # Legacy url still points at the tarball — pre-v0.99.31 clients read this.
+    run jq -re '.assets.pi.url' "$TEST_DIR/manifest.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"helixscreen-pi-v0.9.5.tar.gz" ]]
+
+    # zip_url is the preferred asset for v0.99.31+ clients.
+    run jq -re '.assets.pi.zip_url' "$TEST_DIR/manifest.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "https://releases.helixscreen.org/dev/helixscreen-pi.zip" ]]
+
+    run jq -re '.assets.pi.zip_sha256' "$TEST_DIR/manifest.json"
+    [ "$status" -eq 0 ]
+    [ "${#output}" -eq 64 ]
+}
+
+@test "--no-include-zip suppresses zip_url even when a .zip is present" {
+    printf 'PK\003\004dummyzip' > "$TEST_DIR/helixscreen-pi.zip"
+    bash "$SCRIPT" \
+        --version "0.9.5" --tag "v0.9.5" --notes "Test" \
+        --dir "$TEST_DIR" \
+        --base-url "https://releases.helixscreen.org/dev" \
+        --output "$TEST_DIR/manifest.json" --no-include-zip
+
+    run jq -e '.assets.pi.zip_url' "$TEST_DIR/manifest.json"
+    [ "$status" -ne 0 ]
+    # Legacy tarball url is unaffected by suppression.
+    run jq -re '.assets.pi.url' "$TEST_DIR/manifest.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"helixscreen-pi-v0.9.5.tar.gz" ]]
+}
+
+@test "no zip_url when a platform has no .zip (default on, skips gracefully)" {
+    bash "$SCRIPT" \
+        --version "0.9.5" --tag "v0.9.5" --notes "Test" \
+        --dir "$TEST_DIR" \
+        --base-url "https://releases.helixscreen.org/dev" \
+        --output "$TEST_DIR/manifest.json"
+
+    run jq -e '.assets.pi.zip_url' "$TEST_DIR/manifest.json"
+    [ "$status" -ne 0 ]
+}
+
 @test "manifest includes published_at timestamp" {
     bash "$SCRIPT" \
         --version "0.9.5" --tag "v0.9.5" --notes "Test" \

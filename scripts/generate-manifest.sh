@@ -13,7 +13,7 @@ NOTES=""
 DIR=""
 BASE_URL=""
 OUTPUT=""
-INCLUDE_ZIP=false
+INCLUDE_ZIP=true
 
 usage() {
     cat <<EOF
@@ -29,11 +29,14 @@ Options:
   --base-url URL      Base URL for download links (e.g., "https://releases.helixscreen.org/dev")
   --output FILE       Output manifest.json path
   --include-zip       Include zip_url/zip_sha256 fields when a .zip is present.
-                      Off by default: pre-v0.99.31 in-app updaters call gunzip
-                      on whatever URL the manifest hands them, so a .zip in the
-                      manifest causes 'Corrupt download' for users still on
-                      v0.99.30 or earlier (#797 follow-up). Re-enable once
-                      adoption telemetry shows v0.99.30 is gone.
+                      ON by default (adoption telemetry 2026-07 shows the
+                      pre-v0.99.31 population is ~0.6% and no longer updating).
+                      The legacy url/sha256 fields still point at the .tar.gz, so
+                      pre-v0.99.31 in-app updaters — which never read zip_url —
+                      keep working; v0.99.31+ clients prefer zip_url. Accepted as
+                      a no-op for backward compatibility.
+  --no-include-zip    Suppress the zip_url/zip_sha256 fields (legacy behavior;
+                      only needed to protect a resurgent pre-v0.99.31 fleet).
   --help              Show this help message
 EOF
     exit 0
@@ -48,7 +51,8 @@ while [[ $# -gt 0 ]]; do
         --dir)         DIR="$2";         shift 2 ;;
         --base-url)    BASE_URL="$2";    shift 2 ;;
         --output)      OUTPUT="$2";      shift 2 ;;
-        --include-zip) INCLUDE_ZIP=true; shift ;;
+        --include-zip)    INCLUDE_ZIP=true;  shift ;;
+        --no-include-zip) INCLUDE_ZIP=false; shift ;;
         --help)        usage ;;
         *)
             echo "Error: Unknown option $1" >&2
@@ -140,8 +144,10 @@ for plat in "${PLATFORMS[@]}"; do
         --argjson size "$size" \
         '.[$plat] = {url: $url, sha256: $sha256, size: $size}')
 
-    # Check for corresponding ZIP file (used by Moonraker type:zip updates).
-    # Gated behind --include-zip until pre-v0.99.31 in-app updaters age out.
+    # Add the corresponding ZIP as the preferred asset (used by Moonraker
+    # type:zip updates and v0.99.31+ in-app updaters). The tar.gz url/sha256
+    # above stay as the legacy fallback for pre-v0.99.31 clients. On by default;
+    # --no-include-zip restores the old suppression.
     if [[ "$INCLUDE_ZIP" == true ]]; then
         zipfile="$DIR/helixscreen-${plat}.zip"
         if [[ -f "$zipfile" ]]; then
