@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.99.99] - 2026-07-22
+
+### Fixed
+
+- **AD5X filament type-then-colour edit** — choosing a filament type and then a colour dropped the new colour, and the button payload could poison the stored material. Both are corrected. (#1065)
+- **Pre-print heating label** — the heating-phase label now tracks the actual long-pole heater (the one that gates print start) instead of an arbitrary one, and is guarded against a background-signal race that could relabel it mid-transition.
+
+### Changed
+
+- **Update downloads use zip** — release manifests now advertise the zip archive as the preferred asset (the first phase of retiring tar.gz), and a downloaded update is staged with its platform and version in the filename.
+
 ## [0.99.98] - 2026-07-21
 
 This release is largely about filament: a new on-printer product-edit workflow for
@@ -4455,6 +4466,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.99]: https://github.com/prestonbrown/helixscreen/compare/v0.99.98...v0.99.99
 [0.99.98]: https://github.com/prestonbrown/helixscreen/compare/v0.99.97...v0.99.98
 [0.99.97]: https://github.com/prestonbrown/helixscreen/compare/v0.99.96...v0.99.97
 [0.99.96]: https://github.com/prestonbrown/helixscreen/compare/v0.99.95...v0.99.96
