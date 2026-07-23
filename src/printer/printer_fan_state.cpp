@@ -69,6 +69,7 @@ void PrinterFanState::init_subjects(bool register_xml) {
     // Fan subjects
     INIT_SUBJECT_INT(fan_speed, 0, subjects_, register_xml);
     INIT_SUBJECT_INT(fans_version, 0, subjects_, register_xml);
+    INIT_SUBJECT_INT(primary_fans_version, 0, subjects_, register_xml);
 
     subjects_initialized_ = true;
     spdlog::trace("[PrinterFanState] Subjects initialized successfully");
@@ -222,28 +223,8 @@ PrimaryFans PrinterFanState::classify_primary_fans() const {
         }
     }
 
-    // Fallback: some printers expose the real part-cooling fan as a NAMED Klipper
-    // object (e.g. "output_pin fan0", "fan_generic ...", a controller_fan) that
-    // isn't registered as roles_.part_fan, so it classifies as aux and leaves
-    // .part empty — or, if a stale bare "fan" object is also present, .part latches
-    // onto the bare "fan" which such printers never drive (stuck at 0%). Either way
-    // the print-status view then binds a 0% fan while the fan page
-    // (FanWidget::auto_select_first_fan -> fans_.front()) shows the live named fan.
-    // Promote the front-most part-eligible fan — skipping HEATER_FAN, which owns the
-    // hotend slot, so a leading hotend fan can never displace a working bare "fan"
-    // — so both views track the same live fan.
-    if (out.part.empty() || out.part == "fan") {
-        for (const auto& fan : fans_) {
-            if (fan.type == FanType::HEATER_FAN)
-                continue;
-            // First non-heater fan mirrors FanWidget's front-most selection. Take it
-            // when no part fan was found, or when it is a named fan superseding the
-            // stuck bare "fan"; a leading bare "fan" is left in place.
-            if (out.part.empty() || fan.object_name != "fan")
-                out.part = fan.object_name;
-            break;
-        }
-    }
+    // Resolve the part-cooling slot with runtime awareness (see resolve_part_fan).
+    out.part = resolve_part_fan(out.part);
 
     // Avoid surfacing the promoted part fan a second time in the aux slot when a
     // distinct aux-type fan exists; keep it if it is the only candidate.
@@ -251,8 +232,7 @@ PrimaryFans PrinterFanState::classify_primary_fans() const {
         for (const auto& fan : fans_) {
             if (fan.object_name == out.part)
                 continue;
-            if (fan.type == FanType::CONTROLLER_FAN || fan.type == FanType::TEMPERATURE_FAN ||
-                fan.type == FanType::GENERIC_FAN || fan.type == FanType::OUTPUT_PIN_FAN) {
+            if (is_aux_fan(fan.type)) {
                 out.aux = fan.object_name;
                 break;
             }
@@ -260,6 +240,56 @@ PrimaryFans PrinterFanState::classify_primary_fans() const {
     }
 
     return out;
+}
+
+std::string PrinterFanState::resolve_part_fan(const std::string& configured) const {
+    // The bare [fan] is Klipper's canonical part cooling object, but some printers
+    // leave it a stale 0% stub and drive a manually-commandable named fan instead
+    // (output_pin fanN / fan_generic; user Discord report, e3f92c3f4). Auto-controlled
+    // fans (heater/controller/temperature) can never be the M106 part fan, so they are
+    // never candidates — promoting an idle controller_fan/temperature_fan over the
+    // live [fan] is what stuck the Sovol SV08 part fan at 0% (#1124).
+    //
+    // Pick by what is actually running so the slot tracks the live part fan; classify
+    // re-runs on fan start/stop via primary_fans_version:
+    //   1. configured part fan is running          -> keep it
+    //   2. else a running commandable named fan     -> promote it
+    //   3. else keep the configured part fan; if none configured, the front-most
+    //      commandable fan (the real part fan is a named object).
+    auto speed_of = [this](const std::string& name) -> int {
+        for (const auto& fan : fans_)
+            if (fan.object_name == name)
+                return fan.speed_percent;
+        return -1; // absent
+    };
+
+    if (!configured.empty() && speed_of(configured) > 0)
+        return configured; // (1) live configured part fan wins
+
+    std::string first_candidate;
+    for (const auto& fan : fans_) {
+        if (!is_fan_controllable(fan.type) || fan.object_name == configured)
+            continue;
+        if (first_candidate.empty())
+            first_candidate = fan.object_name;
+        if (fan.speed_percent > 0)
+            return fan.object_name; // (2) a running commandable named fan is the part fan
+    }
+
+    if (!configured.empty())
+        return configured;     // (3a) keep canonical part fan (idle, or no commandable peer)
+    return first_candidate;    // (3b) no configured part fan -> front-most commandable, may be empty
+}
+
+void PrinterFanState::refresh_primary_fans_selection() {
+    PrimaryFans now = classify_primary_fans();
+    if (now != primary_fans_cache_) {
+        primary_fans_cache_ = now;
+        lv_subject_set_int(&primary_fans_version_,
+                           lv_subject_get_int(&primary_fans_version_) + 1);
+        spdlog::debug("[PrinterFanState] Primary fans reassigned: part='{}' hotend='{}' aux='{}'",
+                      now.part, now.hotend, now.aux);
+    }
 }
 
 std::string PrinterFanState::get_role_display_name(const std::string& object_name) const {
@@ -294,6 +324,11 @@ std::string PrinterFanState::disambiguate_chamber_fan_name(const std::string& ob
 bool PrinterFanState::is_fan_controllable(FanType type) {
     return type == FanType::PART_COOLING || type == FanType::GENERIC_FAN ||
            type == FanType::OUTPUT_PIN_FAN;
+}
+
+bool PrinterFanState::is_aux_fan(FanType type) {
+    return type == FanType::CONTROLLER_FAN || type == FanType::TEMPERATURE_FAN ||
+           type == FanType::GENERIC_FAN || type == FanType::OUTPUT_PIN_FAN;
 }
 
 double PrinterFanState::normalize_speed(const std::string& object_name, double raw_speed) const {
@@ -433,7 +468,12 @@ void PrinterFanState::init_fans(const std::vector<std::string>& fan_objects,
     fan_speed_subjects_ = std::move(new_subjects);
     fan_speed_lifetimes_ = std::move(new_lifetimes);
 
-    // Initialize and bump version to notify UI
+    // Seed the primary-role cache from the fresh (idle) fan set so the first
+    // fan start/stop after discovery is compared against a known baseline.
+    primary_fans_cache_ = classify_primary_fans();
+
+    // Initialize and bump version to notify UI. fans_version signals the
+    // structural change; primary_fans_version follows once speeds arrive.
     lv_subject_set_int(&fans_version_, lv_subject_get_int(&fans_version_) + 1);
     spdlog::debug("[PrinterFanState] Initialized {} fans with {} speed subjects (version {})",
                   fans_.size(), fan_speed_subjects_.size(), lv_subject_get_int(&fans_version_));
@@ -445,6 +485,7 @@ void PrinterFanState::update_fan_speed(const std::string& object_name, double sp
     for (auto& fan : fans_) {
         if (fan.object_name == object_name) {
             if (fan.speed_percent != speed_pct) {
+                bool was_running = fan.speed_percent > 0;
                 fan.speed_percent = speed_pct;
 
                 // Fire per-fan subject for reactive UI updates
@@ -457,6 +498,13 @@ void PrinterFanState::update_fan_speed(const std::string& object_name, double sp
                     spdlog::debug("[PrinterFanState] Dropping speed update for '{}' — subject "
                                   "not initialized",
                                   object_name);
+                }
+
+                // A fan starting or stopping can change which fan owns the part
+                // slot (runtime-adaptive selection). Only a zero-crossing can flip
+                // it, so skip the recompute for same-running-state changes (#1124).
+                if (was_running != (speed_pct > 0)) {
+                    refresh_primary_fans_selection();
                 }
             }
             return;

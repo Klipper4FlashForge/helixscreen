@@ -426,7 +426,8 @@ void PrintStatusPanel::init_subjects() {
     UI_MANAGED_SUBJECT_INT(aux_short_visible_subject_, 0, "print_status_aux_short_visible",
                            subjects_);
 
-    // Fan classification refresh on discovery
+    // Fan classification refresh: on discovery (structural, fans_version) and on
+    // runtime part-fan reassignment as fans start/stop (primary_fans_version, #1124).
     {
         auto token = lifetime_.token();
         fans_version_observer_ =
@@ -436,6 +437,16 @@ void PrintStatusPanel::init_subjects() {
                                                        return;
                                                    self->bind_fan_observers();
                                                });
+    }
+    {
+        auto token = lifetime_.token();
+        primary_fans_version_observer_ = observe_int_sync<PrintStatusPanel>(
+            printer_state_.get_primary_fans_version_subject(), this,
+            [token](PrintStatusPanel* self, int /*v*/) {
+                if (token.expired())
+                    return;
+                self->bind_fan_observers();
+            });
     }
 
     // Density + fit recompute on breakpoint change
@@ -659,6 +670,7 @@ void PrintStatusPanel::deinit_subjects() {
 
     // Fan-row observers — lifetimes BEFORE observer guards per [L084]
     fans_version_observer_.reset();
+    primary_fans_version_observer_.reset();
     animations_enabled_observer_.reset();
     breakpoint_observer_.reset();
     filament_sensor_count_observer_.reset();

@@ -19,6 +19,9 @@ class PrinterFanStateTestAccess {
     static void set_fans(PrinterFanState& state, std::vector<FanInfo> fans) {
         state.fans_ = std::move(fans);
     }
+    static void refresh_primary_fans(PrinterFanState& state) {
+        state.refresh_primary_fans_selection();
+    }
 };
 } // namespace helix
 
@@ -145,6 +148,104 @@ TEST_CASE_METHOD(HelixTestFixture, "classify_primary_fans handles empty fan list
     REQUIRE(picked.part.empty());
     REQUIRE(picked.hotend.empty());
     REQUIRE(picked.aux.empty());
+}
+
+// -----------------------------------------------------------------------------
+// #1124 — runtime-adaptive part-fan selection (Sovol SV08 regression)
+// -----------------------------------------------------------------------------
+// The e3f92c3f4 fallback promoted the front-most non-heater fan whenever .part
+// was the bare "fan", which stuck the SV08's real toolhead [fan] behind an idle
+// controller_fan / temperature_fan that sorted ahead of it. controller_fan and
+// temperature_fan are auto-controlled by Klipper and can never be the M106 part
+// fan, so they must never be promoted into .part.
+
+TEST_CASE_METHOD(HelixTestFixture,
+                 "classify_primary_fans: bare 'fan' keeps .part over idle auto-controlled fans "
+                 "(#1124)",
+                 "[fan_state][drift]") {
+    // SV08 at idle: a controller_fan (running from steppers) and a temperature_fan
+    // chamber sort ahead of the bare [fan]. Neither is M106-commandable, so .part
+    // must stay "fan" — not latch onto the board/chamber fan.
+    PrinterFanState state;
+    std::vector<FanInfo> fans;
+    fans.push_back({"controller_fan controller_fan", "Board", FanType::CONTROLLER_FAN, 30, false,
+                    std::nullopt});
+    fans.push_back(
+        {"temperature_fan chamber", "Chamber", FanType::TEMPERATURE_FAN, 0, false, std::nullopt});
+    fans.push_back({"fan", "Part", FanType::PART_COOLING, 0, true, std::nullopt});
+    fans.push_back(
+        {"heater_fan hotend_fan", "Hotend", FanType::HEATER_FAN, 0, false, std::nullopt});
+    PrinterFanStateTestAccess::set_fans(state, fans);
+
+    auto picked = state.classify_primary_fans();
+    REQUIRE(picked.part == "fan");
+    REQUIRE(picked.hotend == "heater_fan hotend_fan");
+    REQUIRE(picked.aux == "controller_fan controller_fan");
+}
+
+TEST_CASE_METHOD(HelixTestFixture,
+                 "classify_primary_fans: running bare 'fan' is never displaced (#1124)",
+                 "[fan_state][drift]") {
+    // Mid-print: the bare [fan] runs at 100% while the controller_fan also spins.
+    // The live part fan must win regardless of discovery order.
+    PrinterFanState state;
+    std::vector<FanInfo> fans;
+    fans.push_back({"controller_fan controller_fan", "Board", FanType::CONTROLLER_FAN, 40, false,
+                    std::nullopt});
+    fans.push_back({"fan", "Part", FanType::PART_COOLING, 100, true, std::nullopt});
+    PrinterFanStateTestAccess::set_fans(state, fans);
+
+    REQUIRE(state.classify_primary_fans().part == "fan");
+}
+
+TEST_CASE_METHOD(HelixTestFixture,
+                 "classify_primary_fans: stale bare 'fan' yields to a RUNNING commandable fan "
+                 "(#1124)",
+                 "[fan_state][drift]") {
+    // Stale-[fan] printer whose real part fan (output_pin) sorts AFTER the bare
+    // "fan" — the e3f92c3f4 front-most heuristic missed this order. While the
+    // commandable fan is idle, keep the canonical "fan"; once it runs, it is the
+    // real part fan.
+    PrinterFanState state;
+    std::vector<FanInfo> idle;
+    idle.push_back({"fan", "Part", FanType::PART_COOLING, 0, true, std::nullopt});
+    idle.push_back({"output_pin fan0", "Fan 0", FanType::OUTPUT_PIN_FAN, 0, true, std::nullopt});
+    PrinterFanStateTestAccess::set_fans(state, idle);
+    REQUIRE(state.classify_primary_fans().part == "fan");
+
+    std::vector<FanInfo> running;
+    running.push_back({"fan", "Part", FanType::PART_COOLING, 0, true, std::nullopt});
+    running.push_back({"output_pin fan0", "Fan 0", FanType::OUTPUT_PIN_FAN, 90, true, std::nullopt});
+    PrinterFanStateTestAccess::set_fans(state, running);
+    REQUIRE(state.classify_primary_fans().part == "output_pin fan0");
+}
+
+TEST_CASE_METHOD(HelixTestFixture,
+                 "primary_fans_version bumps when the part-fan selection changes (#1124)",
+                 "[fan_state][drift]") {
+    // The print-status compact row re-binds on primary_fans_version. It must tick
+    // when a fan start/stop changes which fan owns the part slot.
+    PrinterFanState state;
+    state.init_subjects(false);
+    auto* ver = state.get_primary_fans_version_subject();
+    REQUIRE(ver != nullptr);
+
+    std::vector<FanInfo> idle;
+    idle.push_back({"fan", "Part", FanType::PART_COOLING, 0, true, std::nullopt});
+    idle.push_back({"output_pin fan0", "Fan 0", FanType::OUTPUT_PIN_FAN, 0, true, std::nullopt});
+    PrinterFanStateTestAccess::set_fans(state, idle);
+    PrinterFanStateTestAccess::refresh_primary_fans(state);
+    int v_idle = lv_subject_get_int(ver);
+    REQUIRE(state.classify_primary_fans().part == "fan");
+
+    // The commandable fan spins up → part slot must move to it and version tick.
+    std::vector<FanInfo> running;
+    running.push_back({"fan", "Part", FanType::PART_COOLING, 0, true, std::nullopt});
+    running.push_back({"output_pin fan0", "Fan 0", FanType::OUTPUT_PIN_FAN, 90, true, std::nullopt});
+    PrinterFanStateTestAccess::set_fans(state, running);
+    PrinterFanStateTestAccess::refresh_primary_fans(state);
+    REQUIRE(lv_subject_get_int(ver) > v_idle);
+    REQUIRE(state.classify_primary_fans().part == "output_pin fan0");
 }
 
 // =============================================================================

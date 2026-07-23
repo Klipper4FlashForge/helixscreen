@@ -683,6 +683,7 @@ class PrintStatusPanel : public OverlayBase {
 
     // Static-subject observers (singleton lifetime — no SubjectLifetime token needed).
     ObserverGuard fans_version_observer_;
+    ObserverGuard primary_fans_version_observer_;
     ObserverGuard animations_enabled_observer_;
     ObserverGuard breakpoint_observer_;
     ObserverGuard filament_sensor_count_observer_;

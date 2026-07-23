@@ -955,6 +955,10 @@ class PrinterState {
         return fan_state_.get_fans_version_subject();
     }
 
+    lv_subject_t* get_primary_fans_version_subject() {
+        return fan_state_.get_primary_fans_version_subject();
+    }
+
     /**
      * @brief Get speed subject for a specific fan (with lifetime token for observer safety)
      *

@@ -72,10 +72,17 @@ struct FanInfo {
  * the discovered fan list (in fan-discovery order), or empty if none.
  */
 struct PrimaryFans {
-    std::string part;   ///< First PART_COOLING fan, or empty
+    std::string part;   ///< PART_COOLING fan (runtime-resolved), or empty
     std::string hotend; ///< First HEATER_FAN, or empty
     std::string aux;    ///< First of CONTROLLER_FAN, TEMPERATURE_FAN,
                         ///< GENERIC_FAN, OUTPUT_PIN_FAN — or empty
+
+    bool operator==(const PrimaryFans& o) const {
+        return part == o.part && hotend == o.hotend && aux == o.aux;
+    }
+    bool operator!=(const PrimaryFans& o) const {
+        return !(*this == o);
+    }
 };
 
 /**
@@ -144,6 +151,14 @@ class PrinterFanState {
         return &fans_version_;
     }
 
+    /// Increments whenever the runtime-resolved primary fan roles change (e.g. a
+    /// fan starts/stops and the part slot moves to it). The print-status compact
+    /// row re-binds on this, distinct from fans_version which signals structural
+    /// (fan set) changes to every fan consumer (#1124).
+    lv_subject_t* get_primary_fans_version_subject() {
+        return &primary_fans_version_;
+    }
+
     /**
      * @brief Get speed subject for a specific fan (dynamic — requires lifetime token!)
      *
@@ -182,8 +197,27 @@ class PrinterFanState {
     /// Classify fan type from object name (considers configured part fan)
     FanType classify_fan_type(const std::string& object_name) const;
 
-    /// Check if fan type is user-controllable
+    /// Check if fan type is user-controllable, i.e. M106-commandable and thus
+    /// eligible to be the part cooling fan: PART_COOLING, GENERIC_FAN,
+    /// OUTPUT_PIN_FAN. Auto-controlled fans (heater/controller/temperature) are
+    /// excluded — they can never be driven as a part fan.
     static bool is_fan_controllable(FanType type);
+
+    /// Check if fan type belongs in the aux slot (anything that isn't the part
+    /// cooling or hotend fan): CONTROLLER_FAN, TEMPERATURE_FAN, GENERIC_FAN,
+    /// OUTPUT_PIN_FAN.
+    static bool is_aux_fan(FanType type);
+
+    /// Resolve the part-cooling slot with runtime awareness. Given the
+    /// type-classified candidate (the configured bare "fan"/role, or empty),
+    /// prefer it while it is running; otherwise promote a running commandable
+    /// named fan (stale-"fan" printers); otherwise keep the canonical candidate.
+    std::string resolve_part_fan(const std::string& configured) const;
+
+    /// Recompute classify_primary_fans() and bump primary_fans_version_ if the
+    /// resolved roles changed. Called on fan start/stop so the compact row tracks
+    /// the live part fan.
+    void refresh_primary_fans_selection();
 
     /// Get role-based display name override, or empty string if none
     std::string get_role_display_name(const std::string& object_name) const;
@@ -205,8 +239,13 @@ class PrinterFanState {
     bool subjects_initialized_ = false;
 
     // Static fan subjects
-    lv_subject_t fan_speed_{};    ///< Main part-cooling fan, 0-100%
-    lv_subject_t fans_version_{}; ///< Increments on fan list changes
+    lv_subject_t fan_speed_{};             ///< Main part-cooling fan, 0-100%
+    lv_subject_t fans_version_{};          ///< Increments on fan list (structural) changes
+    lv_subject_t primary_fans_version_{};  ///< Increments on primary-role reassignment (#1124)
+
+    /// Last resolved primary roles — compared in refresh_primary_fans_selection()
+    /// so primary_fans_version_ only ticks on an actual change.
+    PrimaryFans primary_fans_cache_;
 
     // Dynamic per-fan subjects (unique_ptr prevents invalidation on rehash)
     std::unordered_map<std::string, std::unique_ptr<lv_subject_t>> fan_speed_subjects_;
