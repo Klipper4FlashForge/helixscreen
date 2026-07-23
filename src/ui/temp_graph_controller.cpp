@@ -15,6 +15,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <vector>
@@ -92,9 +93,23 @@ const lv_color_t TEMP_GRAPH_SERIES_COLORS[TEMP_GRAPH_PALETTE_SIZE] = {
 // Construction / Destruction
 // ============================================================================
 
+namespace {
+// Registry of live controllers so refresh_all_from_history() can re-backfill
+// every persistent graph after the history manager is (re)seeded. Main-thread
+// only: controllers are created, destroyed, and refreshed on the UI thread, so
+// no lock is needed. Function-local static keeps init order well-defined vs the
+// controllers that register into it (#1124).
+std::vector<TempGraphController*>& live_controllers() {
+    static std::vector<TempGraphController*> instances;
+    return instances;
+}
+} // namespace
+
 TempGraphController::TempGraphController(lv_obj_t* container,
                                          const TempGraphControllerConfig& config)
     : config_(config), container_(container) {
+    live_controllers().push_back(this);
+
     create_graph();
     if (!graph_) {
         spdlog::error("[TempGraphController] Failed to create graph");
@@ -129,6 +144,9 @@ void TempGraphController::detach() {
 }
 
 TempGraphController::~TempGraphController() {
+    auto& reg = live_controllers();
+    reg.erase(std::remove(reg.begin(), reg.end(), this), reg.end());
+
     // Safe to call multiple times — idempotent (invalidate + reset are no-ops
     // if detach() was already called before deferred deletion)
     detach();
@@ -159,7 +177,24 @@ void TempGraphController::pause() {
 
 void TempGraphController::resume() {
     paused_ = false;
+    refresh_from_history();
+}
+
+void TempGraphController::refresh_from_history() {
     backfill_history();
+}
+
+void TempGraphController::refresh_all_from_history() {
+    // Copy the registry first: backfill_history() itself never mutates the
+    // registry, but keep this defensive against reentrancy during teardown.
+    auto snapshot = live_controllers();
+    for (auto* c : snapshot) {
+        if (c) {
+            c->refresh_from_history();
+        }
+    }
+    spdlog::debug("[TempGraphController] Refreshed {} live graph(s) from history",
+                  snapshot.size());
 }
 
 void TempGraphController::rebuild() {

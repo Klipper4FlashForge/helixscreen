@@ -7,7 +7,11 @@
 #include "../ui_test_utils.h"
 #include "app_globals.h"
 #include "lvgl/lvgl.h"
+#include "moonraker_types.h"
 #include "printer_state.h"
+#include "temperature_history_manager.h"
+
+#include <chrono>
 
 #include "../catch_amalgamated.hpp"
 
@@ -245,6 +249,105 @@ TEST_CASE_METHOD(TempGraphControllerFixture,
     REQUIRE(y_points != nullptr);
     // 38.5°C → 385 in chart storage (deci-degrees)
     REQUIRE(y_points[0] == 385);
+}
+
+// ============================================================================
+// Regression test for #1124 — persistent graph misses post-connect history
+// ============================================================================
+//
+// A graph built before the WebSocket connects (persistent panels created at
+// app startup: filament mini graph, home dashboard widget) runs its
+// construction-time backfill against an empty history manager. #944's
+// seed_from_store populates history only after discovery, and the connection
+// observer deliberately skips the initial connect — so without the seed-time
+// broadcast the graph stays empty until slowly repainted by live samples.
+// refresh_all_from_history() (called right after seed_from_store) must pull the
+// now-available history into every live controller.
+
+namespace {
+// RAII: install a real history manager for the duration of a test and restore
+// the nullptr default on scope exit, even if a REQUIRE throws.
+struct ScopedTestHistoryManager {
+    explicit ScopedTestHistoryManager(TemperatureHistoryManager* mgr) {
+        set_test_temperature_history_manager(mgr);
+    }
+    ~ScopedTestHistoryManager() {
+        set_test_temperature_history_manager(nullptr);
+    }
+};
+
+// Count chart points in a series that carry a given deci-degree value.
+int count_series_points_eq(ui_temp_graph_t* graph, int32_t deci_value) {
+    lv_obj_t* chart = ui_temp_graph_get_chart(graph);
+    if (!chart)
+        return 0;
+    lv_chart_series_t* ser = lv_chart_get_series_next(chart, nullptr);
+    if (!ser)
+        return 0;
+    int32_t* y = lv_chart_get_series_y_array(chart, ser);
+    if (!y)
+        return 0;
+    uint32_t pc = lv_chart_get_point_count(chart);
+    int n = 0;
+    for (uint32_t i = 0; i < pc; ++i)
+        if (y[i] == deci_value)
+            ++n;
+    return n;
+}
+} // namespace
+
+TEST_CASE_METHOD(TempGraphControllerFixture,
+                 "Persistent graph backfills seeded history via refresh_all (#1124)",
+                 "[controller][temp_graph_controller][backfill][regression]") {
+    auto& ps = get_printer_state();
+
+    // Real history manager (the test harness stubs this to nullptr by default).
+    TemperatureHistoryManager mgr(ps);
+    ScopedTestHistoryManager installed(&mgr);
+
+    // Build the controller while history is EMPTY — mirrors a persistent panel
+    // graph constructed at startup before the socket connects. Its
+    // construction-time backfill finds nothing.
+    TempGraphControllerConfig cfg;
+    cfg.series = {
+        {"extruder", lv_color_hex(0xFF4444), true},
+    };
+    auto controller = std::make_unique<TempGraphController>(screen, cfg);
+    REQUIRE(controller->is_valid());
+    REQUIRE(controller->series_id_for("extruder") >= 0);
+
+    // Drain queued observer callbacks. The extruder subject defaults to 0, and
+    // the live observer drops non-positive readings, so the chart stays empty.
+    auto& queue = helix::ui::UpdateQueue::instance();
+    queue.drain();
+    lv_timer_handler_safe();
+
+    // Precondition: no seeded value has been plotted yet.
+    REQUIRE(count_series_points_eq(controller->graph(), 2000) == 0);
+
+    // History arrives post-connect (simulates #944 seed_from_store): a steady
+    // 200.0°C nozzle. seed_from_store spaces samples ending at now_ms so they
+    // land inside the chart's backfill window.
+    TemperatureStore store;
+    TemperatureStoreSeries series;
+    for (int i = 0; i < 40; ++i) {
+        series.temperatures.push_back(200.0f);
+        series.targets.push_back(210.0f);
+        series.powers.push_back(0.5f);
+    }
+    store["extruder"] = series;
+    int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         std::chrono::system_clock::now().time_since_epoch())
+                         .count();
+    mgr.seed_from_store(store, now_ms);
+
+    // The seed-time broadcast must reach the live controller and repopulate it.
+    TempGraphController::refresh_all_from_history();
+    queue.drain();
+    lv_timer_handler_safe();
+
+    // The chart now carries the seeded 200.0°C (2000 deci) history.
+    REQUIRE(count_series_points_eq(controller->graph(), 2000) > 0);
 }
 
 // ============================================================================

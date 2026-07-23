@@ -33,6 +33,12 @@
  */
 void lv_init_safe();
 
+// Install a real TemperatureHistoryManager for get_temperature_history_manager()
+// to return (tests default to nullptr). Lets a test exercise history backfill
+// paths; pass nullptr to restore the default. See #1124.
+class TemperatureHistoryManager;
+void set_test_temperature_history_manager(TemperatureHistoryManager* mgr);
+
 namespace helix {
 namespace ui {
 

@@ -58,6 +58,7 @@
 #include "static_subject_registry.h"
 #include "streaming_policy.h"
 #include "subject_initializer.h"
+#include "temp_graph_controller.h"
 #include "temperature_history_manager.h"
 #include "thermal_rate_model.h"
 #include "timelapse_state.h"
@@ -2675,6 +2676,11 @@ void Application::setup_discovery_callbacks() {
                             duration_cast<milliseconds>(system_clock::now().time_since_epoch())
                                 .count();
                         mgr->seed_from_store(*store_copy, now_ms);
+                        // Persistent graphs (home dashboard widget, filament mini
+                        // graph) are built at startup before this seed arrives, so
+                        // their construction-time backfill was empty. Re-backfill
+                        // them now that history is available (#1124).
+                        helix::TempGraphController::refresh_all_from_history();
                     });
                 },
                 [](const MoonrakerError& err) {

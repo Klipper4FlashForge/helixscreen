@@ -934,10 +934,16 @@ PrintHistoryManager* get_print_history_manager() {
     return nullptr;
 }
 
-// Stub for get_temperature_history_manager (tests don't have manager)
+// Stub for get_temperature_history_manager. Tests default to no manager, but a
+// test can install a real one via set_test_temperature_history_manager() to
+// exercise history backfill paths (e.g. #1124).
 class TemperatureHistoryManager;
+static TemperatureHistoryManager* g_test_history_manager = nullptr;
 TemperatureHistoryManager* get_temperature_history_manager() {
-    return nullptr;
+    return g_test_history_manager;
+}
+void set_test_temperature_history_manager(TemperatureHistoryManager* mgr) {
+    g_test_history_manager = mgr;
 }
 
 // Stub for get_job_queue_state (tests don't have state manager)
