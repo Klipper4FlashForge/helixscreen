@@ -136,6 +136,7 @@ translations:
   Add Hidden Network: Add Hidden Network
   Add Vendor: Add Vendor
   Add Widget: Add Widget
+  Add custom filament: Add custom filament
   Added to Spoolman: Added to Spoolman
   Address: Address
   Adjust belt tension until the belt appears stationary: Adjust belt tension until
@@ -286,6 +287,7 @@ translations:
   Both: Both
   Both belts are overtightened.: Both belts are overtightened.
   Both belts need tightening.: Both belts need tightening.
+  Brand: Brand
   Brightness: Brightness
   Brightness level when LEDs turn on at startup: Brightness level when LEDs turn on
     at startup
@@ -564,7 +566,9 @@ translations:
   Could not parse tips database: Could not parse tips database
   Could not reach Spoolman at: Could not reach Spoolman at
   Could not resolve printer RFCOMM channel: Could not resolve printer RFCOMM channel
+  Could not save filament: Could not save filament
   Could not start Bluetooth discovery: Could not start Bluetooth discovery
+  Could not update filaments: Could not update filaments
   Could not verify Spoolman status. Moonraker may still be restarting.: Could not
     verify Spoolman status. Moonraker may still be restarting.
   Couldn't update Spoolman — saved locally: Couldn't update Spoolman — saved locally
@@ -624,6 +628,7 @@ translations:
   Debug: Debug
   Default border thickness: Default border thickness
   'Default: %d-%d°C nozzle, %d°C bed': 'Default: %d-%d°C nozzle, %d°C bed'
+  Defaults restored: Defaults restored
   Define macros in your printer.cfg: Define macros in your printer.cfg
   Delete: Delete
   Delete File?: Delete File?
@@ -632,6 +637,7 @@ translations:
   Delete Video: Delete Video
   Delete {}?: Delete {}?
   'Delta:': 'Delta:'
+  Density: Density
   Deploy: Deploy
   Describe the issue (optional): Describe the issue (optional)
   Detailed: Detailed
@@ -696,6 +702,7 @@ translations:
   EMPTY: EMPTY
   Each fan can only be selected once: Each fan can only be selected once
   Edit: Edit
+  Edit Filament: Edit Filament
   Edit Slot: Edit Slot
   Edit Spool: Edit Spool
   'Edit Spool #{}': 'Edit Spool #{}'
@@ -931,6 +938,7 @@ translations:
   Filament Used: Filament Used
   Filament already exists: Filament already exists
   Filament by Type: Filament by Type
+  Filament deleted: Filament deleted
   Filament diameter sensors for flow compensation: Filament diameter sensors for flow
     compensation
   Filament is loose: Filament is loose
@@ -943,6 +951,7 @@ translations:
   Filament runout: Filament runout
   Filament runout and motion detection sensors: Filament runout and motion detection
     sensors
+  Filament saved: Filament saved
   Filament sensor available for runout detection: Filament sensor available for runout
     detection
   Filament tension is balanced: Filament tension is balanced
@@ -1102,6 +1111,7 @@ translations:
   Hyperlapse: Hyperlapse
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: Hyperlapse
     captures frames at fixed time intervals. Good for very long prints.
+  ID (optional): ID (optional)
   IMPORT FROM USB: IMPORT FROM USB
   IP Address / Hostname: IP Address / Hostname
   'IP:': 'IP:'
@@ -1269,6 +1279,7 @@ translations:
   Loading...: Loading...
   Locale: Locale
   'Locale: ': 'Locale: '
+  Locating Spoolman configuration...: Locating Spoolman configuration...
   Location: Location
   Lock: Lock
   Lock A: Lock A
@@ -1289,6 +1300,7 @@ translations:
   MACRO DEVICES: MACRO DEVICES
   MAIN POWER BUTTON: MAIN POWER BUTTON
   MANUAL: MANUAL
+  MAPPING: MAPPING
   MB RAM: MB RAM
   MCU: MCU
   MCU, host, and auxiliary temperature monitoring: MCU, host, and auxiliary temperature
@@ -1524,6 +1536,9 @@ translations:
   Notification: Notification
   Notifications: Notifications
   Notify when print finishes: Notify when print finishes
+  Noz max: Noz max
+  Noz min: Noz min
+  Noz rec: Noz rec
   Nozzle: Nozzle
   Nozzle / Bed: Nozzle / Bed
   Nozzle Clean: Nozzle Clean
@@ -1917,6 +1932,7 @@ translations:
   Restarting screen...: Restarting screen...
   Restarting with the new version...: Restarting with the new version...
   Restarting...: Restarting...
+  Restore Defaults: Restore Defaults
   Resume: Resume
   Resume Print: Resume Print
   Resume interrupted print?: Resume interrupted print?
@@ -2144,6 +2160,7 @@ translations:
   Skip: Skip
   Sleep While Printing: Sleep While Printing
   Sleep adjusted to match dim timeout: Sleep adjusted to match dim timeout
+  Sliced colors: Sliced colors
   Slicer: Slicer
   Slot: Slot
   Slot %d: Slot %d
@@ -2194,9 +2211,11 @@ translations:
   Spoolman connected!: Spoolman connected!
   Spoolman found! Configuring...: Spoolman found! Configuring...
   Spoolman has no spools configured: Spoolman has no spools configured
+  Spoolman is not configured — nothing to remove.: Spoolman is not configured — nothing to remove.
   Spoolman removed.: Spoolman removed.
   Spoolman unavailable — filament weights may be stale: Spoolman unavailable — filament
     weights may be stale
+  Spoolman was not configured.: Spoolman was not configured.
   'Spoolman: %zu Spool%s': 'Spoolman: %zu Spool%s'
   'Spoolman: %zu/%zu Spool%s': 'Spoolman: %zu/%zu Spool%s'
   Square Corner Velocity: Square Corner Velocity
@@ -2537,6 +2556,7 @@ translations:
   Update anyway: Update anyway
   Update installed!: Update installed!
   Update your security PIN: Update your security PIN
+  Updates aren't available on this installation.: Updates aren't available on this installation.
   Updating Configuration...: Updating Configuration...
   Upload: Upload
   Upload Debug Bundle: Upload Debug Bundle

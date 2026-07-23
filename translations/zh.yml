@@ -86,7 +86,7 @@ translations:
   A: 辅
   ABS: ABS
   ACCELEROMETERS: 加速度计
-  ACE Moonraker bridge not found. Install ace_status.py for full support.: ''
+  ACE Moonraker bridge not found. Install ace_status.py for full support.: 未找到 ACE Moonraker 桥接。请安装 ace_status.py 以获得完整支持。
   ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: 未找到
     ACE Moonraker 桥接。请从 ValgACE 安装 ace_status.py 以获得完整支持。
   ACTIONS: 操作
@@ -133,6 +133,7 @@ translations:
   Add Hidden Network: 添加隐藏网络
   Add Vendor: 添加供应商
   Add Widget: 添加小组件
+  Add custom filament: 添加自定义耗材
   Added to Spoolman: 已添加到 Spoolman
   Address: 地址
   Adjust belt tension until the belt appears stationary: 调整皮带张力,直到皮带看起来静止不动
@@ -268,6 +269,7 @@ translations:
   Both: 两者
   Both belts are overtightened.: 两条皮带都过紧。
   Both belts need tightening.: 两条皮带都需要拉紧。
+  Brand: 品牌
   Brightness: 亮度
   Brightness level when LEDs turn on at startup: 启动时 LED 开启的亮度级别
   BrightnessCLI: 亮度 CLI
@@ -512,7 +514,9 @@ translations:
   Could not parse tips database: 无法解析提示数据库
   Could not reach Spoolman at: 无法连接 Spoolman：
   Could not resolve printer RFCOMM channel: 无法解析打印机 RFCOMM 通道
+  Could not save filament: 无法保存耗材
   Could not start Bluetooth discovery: 无法启动蓝牙发现
+  Could not update filaments: 无法更新耗材
   Could not verify Spoolman status. Moonraker may still be restarting.: 无法验证 Spoolman
     状态。Moonraker 可能仍在重启中。
   Couldn't update Spoolman — saved locally: 无法更新 Spoolman — 已保存在本地
@@ -572,6 +576,7 @@ translations:
   Debug: 调试
   Default border thickness: 默认边框厚度
   'Default: %d-%d°C nozzle, %d°C bed': '默认: 喷嘴 %d-%d°C,热床 %d°C'
+  Defaults restored: 已恢复默认设置
   Define macros in your printer.cfg: 在 printer.cfg 中定义宏
   Delete: 删除
   Delete File?: 删除文件？
@@ -580,6 +585,7 @@ translations:
   Delete Video: 删除视频
   Delete {}?: 删除 {}?
   'Delta:': 差值：
+  Density: 密度
   Deploy: 部署
   Describe the issue (optional): 描述问题（可选）
   Detailed: 详细
@@ -642,6 +648,7 @@ translations:
   EMPTY: 空
   Each fan can only be selected once: 每个风扇只能选择一次
   Edit: 编辑
+  Edit Filament: 编辑耗材
   Edit Slot: 编辑料仓
   Edit Spool: 编辑料盘
   'Edit Spool #{}': '编辑线轴 #{}'
@@ -762,7 +769,7 @@ translations:
   Failed to delete file: 删除文件失败
   Failed to delete profile: 删除配置文件失败
   Failed to delete spool: 删除料盘失败
-  'Failed to discard recovery data: {}': ''
+  'Failed to discard recovery data: {}': '放弃恢复数据失败: {}'
   'Failed to download G-code for modification: {}': '下载 G-code 进行修改失败: {}'
   'Failed to download G-code for remap: {}': 下载用于重新映射的 G-code 失败：{}
   Failed to download helixscreen.conf.\nCheck printer connection.: 下载 helixscreen.conf
@@ -863,6 +870,7 @@ translations:
   Filament Used: 已用耗材
   Filament already exists: 耗材已存在
   Filament by Type: 按类型分类的耗材
+  Filament deleted: 耗材已删除
   Filament diameter sensors for flow compensation: 耗材直径传感器用于流量补偿
   Filament is loose: 耗材松弛
   Filament is pulling tight: 耗材拉紧
@@ -873,6 +881,7 @@ translations:
   Filament operation timed out: 耗材操作超时
   Filament runout: 耗材用尽
   Filament runout and motion detection sensors: 耗材用尽和运动检测传感器
+  Filament saved: 耗材已保存
   Filament sensor available for runout detection: 耗材传感器可用于耗尽检测
   Filament tension is balanced: 耗材张力平衡
   Filament tracking & label printing: 耗材跟踪和标签打印
@@ -959,7 +968,7 @@ translations:
   Heat Soak: 预热浸泡
   Heat bed before calibrating for accurate offset with thermal expansion.: 校准前加热热床，以获得考虑热膨胀的精确偏移。
   Heat nozzle: 加热喷嘴
-  Heat to at least %d°C for filament operations: ''
+  Heat to at least %d°C for filament operations: 请加热至至少 %d°C 以进行耗材操作
   Heatbed Temperature: 热床温度
   Heated Bed: 加热床
   Heated Bed MPC Calibration: 热床 MPC 校准
@@ -989,7 +998,7 @@ translations:
   Hide Firmware Noise: 隐藏固件噪声
   Hide Temperature Reports: 隐藏温度报告
   High Water Mark: 峰值标记
-  Holding nozzle at {}°C to purge previous filament.: ''
+  Holding nozzle at {}°C to purge previous filament.: 将喷嘴保持在 {}°C 以清洗之前的耗材。
   Home: 归位
   Home failed: 归位失败
   Home selector: 选择器归位
@@ -1021,6 +1030,7 @@ translations:
   Humidity: 湿度
   Hyperlapse: 延时摄影
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: 延时拍摄以固定时间间隔捕获帧。适合超长时间打印。
+  ID (optional): ID（可选）
   IMPORT FROM USB: 从 USB 导入
   IP Address / Hostname: IP 地址 / 主机名
   'IP:': IP：
@@ -1081,7 +1091,7 @@ translations:
   Invalid status response from printer: 打印机返回的状态响应无效
   Issue description: 问题描述
   Job Queue: 任务队列
-  'Jog failed: {}': ''
+  'Jog failed: {}': '移动失败: {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: 加入
     HelixScreen 的 Discord 社区，参与讨论、获取技巧、故障排除帮助和功能请求。
   Just now: 刚刚
@@ -1165,6 +1175,7 @@ translations:
   Loading...: 正在加载...
   Locale: 区域设置
   'Locale: ': '区域设置: '
+  Locating Spoolman configuration...: 正在定位 Spoolman 配置...
   Location: 位置
   Lock: 锁定
   Lock A: 锁定 A
@@ -1185,6 +1196,7 @@ translations:
   MACRO DEVICES: 宏设备
   MAIN POWER BUTTON: 主电源按钮
   MANUAL: 手动
+  MAPPING: 映射
   MB RAM: MB 内存
   MCU: MCU
   MCU, host, and auxiliary temperature monitoring: MCU、主机及辅助温度监控
@@ -1221,7 +1233,7 @@ translations:
   Manage: 管理
   Manage Printers: 管理打印机
   Manage configured printers: 管理已配置的打印机
-  Managed by your firmware: ''
+  Managed by your firmware: 由固件管理
   Manual: 手动
   Manual Bed Leveling: 手动热床调平
   Map to closest colors with matching material: 按匹配材料映射最接近的颜色
@@ -1405,6 +1417,9 @@ translations:
   Notification: 通知
   Notifications: 通知
   Notify when print finishes: 打印完成时通知
+  Noz max: 喷嘴最高
+  Noz min: 喷嘴最低
+  Noz rec: 喷嘴推荐
   Nozzle: 喷嘴
   Nozzle / Bed: 喷嘴 / 热床
   Nozzle Clean: 喷嘴清洁
@@ -1711,7 +1726,7 @@ translations:
   Recovering AFC system...: AFC系统恢复中...
   Recovery failed: 恢复失败
   'Recovery failed: ': '恢复失败: '
-  'Recovery failed: {}': ''
+  'Recovery failed: {}': '恢复失败: {}'
   Reduce Sensitivity: 降低灵敏度
   Reduce ringing and ghosting artifacts: 减少振纹和残影
   Reduce vibration artifacts like ringing and ghosting: 减少振纹和残影等振动伪影
@@ -1774,9 +1789,10 @@ translations:
   Restarting screen...: 正在重启屏幕...
   Restarting with the new version...: 正在以新版本重启...
   Restarting...: 正在重启...
+  Restore Defaults: 恢复默认设置
   Resume: 恢复
   Resume Print: 恢复打印
-  Resume interrupted print?: ''
+  Resume interrupted print?: 恢复中断的打印？
   Resume macro not configured: 恢复宏未配置
   'Resume preparation failed: {}': 恢复准备失败：{}
   Resuming...: 恢复中...
@@ -1955,13 +1971,13 @@ translations:
   Show detailed print preparation status: 显示详细的打印准备状态
   Show instead of dimming: 显示而非变暗
   Show printer icon in navigation bar: 在导航栏中显示打印机图标
-  Show sliced colors: ''
+  Show sliced colors: 显示切片颜色
   Show temp for: 显示温度
   Show text labels on icon-only home screen widgets: 在仅图标的主屏小组件上显示文字标签
   Show up/down buttons on long lists: 在长列表中显示上/下按钮
   Show whatever curves you last had visible on the full graph.: 显示您上次在完整图表上可见的曲线。
-  Showing loaded colors: ''
-  Showing sliced colors: ''
+  Showing loaded colors: 正在显示已装载颜色
+  Showing sliced colors: 正在显示切片颜色
   Shutdown: 关机
   Shutdown / Reboot: 关机 / 重启
   Shutdown failed: 关机失败
@@ -1977,6 +1993,7 @@ translations:
   Skip: 跳过
   Sleep While Printing: 打印时休眠
   Sleep adjusted to match dim timeout: 休眠超时已调整
+  Sliced colors: 切片颜色
   Slicer: 切片软件
   Slot: 料仓
   Slot %d: 料仓 %d
@@ -1989,7 +2006,7 @@ translations:
   Snapmaker SnapSwap: Snapmaker SnapSwap
   Snapmaker U1: Snapmaker U1
   Soft: 柔和
-  Software Updates: ''
+  Software Updates: 软件更新
   Some filaments don't match the slicer's intent.: 部分耗材与切片软件的意图不符。
   Some settings will take effect after restart.: 某些设置将在重启后生效。
   Sound Theme: 声音主题
@@ -2023,8 +2040,10 @@ translations:
   Spoolman connected!: Spoolman 已连接！
   Spoolman found! Configuring...: 已找到 Spoolman！正在配置...
   Spoolman has no spools configured: Spoolman 未配置料盘
+  Spoolman is not configured — nothing to remove.: Spoolman 未配置 — 无需移除。
   Spoolman removed.: Spoolman 已移除。
   Spoolman unavailable — filament weights may be stale: Spoolman不可用 — 耗材重量可能已过期
+  Spoolman was not configured.: Spoolman 未配置。
   'Spoolman: %zu Spool%s': 'Spoolman: %zu 个线轴%s'
   'Spoolman: %zu/%zu Spool%s': 'Spoolman: %zu/%zu 个线轴%s'
   Square Corner Velocity: 直角转弯速度
@@ -2152,8 +2171,8 @@ translations:
     then lock the reading.
   : 电机振动皮带的同时,频闪灯以相同频率闪烁。当皮带看起来静止不动(冻结)时,即找到了共振频率。\n\n使用频率按钮扫描各数值,直到皮带看起来静止,然后锁定读数。
   The printer halted this print and cannot resume it. Restart from the beginning?: 打印机已停止此打印且无法恢复。从头重新开始？
-  The printer lost power during a print. It can resume where it left off.: ''
-  The printer lost power while printing {}. Resume where it left off?: ''
+  The printer lost power during a print. It can resume where it left off.: 打印机在打印过程中断电。可以从中断处继续。
+  The printer lost power while printing {}. Resume where it left off?: 打印机在打印 {} 时断电。是否从中断处继续？
   The printer rejected the filament configuration. The print was not started.: 打印机拒绝了该耗材配置。打印未启动。
   The runout sensor indicates no filament is loaded. Start print anyway?: 断料传感器显示未装载耗材。仍要开始打印吗？
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: 工具头传感器显示耗材已装载。仍要继续装载吗？
@@ -2320,6 +2339,7 @@ translations:
   Update anyway: 仍要更新
   Update installed!: 更新已安装！
   Update your security PIN: 更新您的安全 PIN
+  Updates aren't available on this installation.: 此安装版本无法使用更新。
   Updating Configuration...: 正在更新配置...
   Upload: 上传
   Upload Debug Bundle: 上传调试捆绑包

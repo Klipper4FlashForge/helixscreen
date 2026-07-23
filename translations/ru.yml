@@ -91,7 +91,7 @@ translations:
   A: A
   ABS: ABS
   ACCELEROMETERS: АКСЕЛЕРОМЕТРЫ
-  ACE Moonraker bridge not found. Install ace_status.py for full support.: ''
+  ACE Moonraker bridge not found. Install ace_status.py for full support.: Мост ACE Moonraker не найден. Установите ace_status.py для полной поддержки.
   ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: Мост
     ACE Moonraker не найден. Установите ace_status.py из ValgACE для полной поддержки.
   ACTIONS: ДЕЙСТВИЯ
@@ -140,6 +140,7 @@ translations:
   Add Hidden Network: Добавить скрытую сеть
   Add Vendor: Добавить производителя
   Add Widget: Добавить виджет
+  Add custom filament: Добавить свой филамент
   Added to Spoolman: Добавлено в Spoolman
   Address: Адрес
   Adjust belt tension until the belt appears stationary: Регулируйте натяжение ремня,
@@ -293,6 +294,7 @@ translations:
   Both: Оба
   Both belts are overtightened.: Оба ремня перетянуты.
   Both belts need tightening.: Оба ремня нужно подтянуть.
+  Brand: Бренд
   Brightness: Яркость
   Brightness level when LEDs turn on at startup: Уровень яркости при включении LED
     при запуске
@@ -580,7 +582,9 @@ translations:
   Could not parse tips database: Не удалось разобрать базу данных советов
   Could not reach Spoolman at: Не удалось связаться со Spoolman по адресу
   Could not resolve printer RFCOMM channel: Не удалось определить RFCOMM-канал принтера
+  Could not save filament: Не удалось сохранить филамент
   Could not start Bluetooth discovery: Не удалось запустить поиск Bluetooth
+  Could not update filaments: Не удалось обновить филаменты
   Could not verify Spoolman status. Moonraker may still be restarting.: Не удалось
     проверить статус Spoolman. Moonraker может ещё перезапускаться.
   Couldn't update Spoolman — saved locally: Не удалось обновить Spoolman — сохранено
@@ -641,6 +645,7 @@ translations:
   Debug: Отладка
   Default border thickness: Толщина границы по умолчанию
   'Default: %d-%d°C nozzle, %d°C bed': 'По умолчанию: сопло %d-%d°C, стол %d°C'
+  Defaults restored: Настройки по умолчанию восстановлены
   Define macros in your printer.cfg: Определите макросы в вашем printer.cfg
   Delete: Удалить
   Delete File?: Удалить файл?
@@ -649,6 +654,7 @@ translations:
   Delete Video: Удалить видео
   Delete {}?: Удалить {}?
   'Delta:': 'Дельта:'
+  Density: Плотность
   Deploy: Развернуть
   Describe the issue (optional): Опишите проблему (необязательно)
   Detailed: Подробно
@@ -714,6 +720,7 @@ translations:
   Each fan can only be selected once: Каждый вентилятор можно выбрать только один
     раз
   Edit: Редактировать
+  Edit Filament: Редактировать филамент
   Edit Slot: Редактировать слот
   Edit Spool: Редактировать катушку
   'Edit Spool #{}': 'Изменить катушку #{}'
@@ -843,7 +850,7 @@ translations:
   Failed to delete file: Не удалось удалить файл
   Failed to delete profile: Не удалось удалить профиль
   Failed to delete spool: Не удалось удалить катушку
-  'Failed to discard recovery data: {}': ''
+  'Failed to discard recovery data: {}': 'Не удалось удалить данные восстановления: {}'
   'Failed to download G-code for modification: {}': 'Не удалось скачать G-code для
     изменения: {}'
   'Failed to download G-code for remap: {}': 'Не удалось скачать G-code для переназначения:
@@ -952,6 +959,7 @@ translations:
   Filament Used: Использовано филамента
   Filament already exists: Такой филамент уже существует
   Filament by Type: Филамент по типу
+  Filament deleted: Филамент удалён
   Filament diameter sensors for flow compensation: Датчики диаметра филамента для
     компенсации потока
   Filament is loose: Филамент ослаблен
@@ -963,6 +971,7 @@ translations:
   Filament operation timed out: Операция с филаментом — время ожидания истекло
   Filament runout: Окончание филамента
   Filament runout and motion detection sensors: Датчики окончания и движения филамента
+  Filament saved: Филамент сохранён
   Filament sensor available for runout detection: Датчик филамента доступен для обнаружения
     окончания
   Filament tension is balanced: Натяжение филамента сбалансировано
@@ -1056,7 +1065,7 @@ translations:
   Heat bed before calibrating for accurate offset with thermal expansion.: Нагрейте
     стол перед калибровкой для точного смещения с учётом теплового расширения.
   Heat nozzle: Нагреть сопло
-  Heat to at least %d°C for filament operations: ''
+  Heat to at least %d°C for filament operations: Нагрейте минимум до %d°C для операций с филаментом
   Heatbed Temperature: Температура стола
   Heated Bed: Подогреваемый стол
   Heated Bed MPC Calibration: Калибровка MPC стола
@@ -1087,7 +1096,7 @@ translations:
   Hide Firmware Noise: Скрыть служебные сообщения прошивки
   Hide Temperature Reports: Скрыть отчёты о температуре
   High Water Mark: Пиковое значение
-  Holding nozzle at {}°C to purge previous filament.: ''
+  Holding nozzle at {}°C to purge previous filament.: Удержание сопла при {}°C для очистки от предыдущего филамента.
   Home: Главная
   Home failed: Парковка не удалась
   Home selector: Парковать селектор
@@ -1124,6 +1133,7 @@ translations:
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: Гиперлапс
     захватывает кадры через фиксированные интервалы времени. Подходит для очень долгих
     печатей.
+  ID (optional): ID (необязательно)
   IMPORT FROM USB: ИМПОРТ С USB
   IP Address / Hostname: IP-адрес / Имя хоста
   'IP:': 'IP:'
@@ -1197,7 +1207,7 @@ translations:
   Invalid status response from printer: Недопустимый ответ статуса от принтера
   Issue description: Описание проблемы
   Job Queue: Очередь заданий
-  'Jog failed: {}': ''
+  'Jog failed: {}': 'Перемещение не удалось: {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: Присоединяйтесь
     к сообществу HelixScreen в Discord для обсуждений, советов, помощи в устранении
     неполадок и предложений новых функций.
@@ -1294,6 +1304,7 @@ translations:
   Loading...: Загрузка...
   Locale: Локаль
   'Locale: ': 'Локаль: '
+  Locating Spoolman configuration...: Поиск конфигурации Spoolman...
   Location: Расположение
   Lock: Блокировка
   Lock A: Блокировка A
@@ -1315,6 +1326,7 @@ translations:
   MACRO DEVICES: МАКРО-УСТРОЙСТВА
   MAIN POWER BUTTON: ГЛАВНАЯ КНОПКА ПИТАНИЯ
   MANUAL: ВРУЧНУЮ
+  MAPPING: СОПОСТАВЛЕНИЕ
   MB RAM: МБ ОЗУ
   MCU: MCU
   MCU, host, and auxiliary temperature monitoring: Мониторинг температуры MCU, хоста
@@ -1354,7 +1366,7 @@ translations:
   Manage: Управление
   Manage Printers: Управление принтерами
   Manage configured printers: Управление настроенными принтерами
-  Managed by your firmware: ''
+  Managed by your firmware: Управляется прошивкой
   Manual: Вручную
   Manual Bed Leveling: Ручное выравнивание стола
   Map to closest colors with matching material: Подобрать ближайшие цвета с подходящим
@@ -1552,6 +1564,9 @@ translations:
   Notification: Уведомление
   Notifications: Уведомления
   Notify when print finishes: Уведомить о завершении печати
+  Noz max: Соп макс
+  Noz min: Соп мин
+  Noz rec: Соп рек
   Nozzle: Сопло
   Nozzle / Bed: Сопло / Стол
   Nozzle Clean: Очистка сопла
@@ -1881,7 +1896,7 @@ translations:
   Recovering AFC system...: Восстановление системы AFC...
   Recovery failed: Восстановление не удалось
   'Recovery failed: ': 'Восстановление не удалось: '
-  'Recovery failed: {}': ''
+  'Recovery failed: {}': 'Восстановление не удалось: {}'
   Reduce Sensitivity: Снизить чувствительность
   Reduce ringing and ghosting artifacts: Уменьшить артефакты звона и двоения
   Reduce vibration artifacts like ringing and ghosting: Уменьшить артефакты вибрации,
@@ -1948,9 +1963,10 @@ translations:
   Restarting screen...: Перезапуск экрана...
   Restarting with the new version...: Перезапуск с новой версией...
   Restarting...: Перезапуск...
+  Restore Defaults: Восстановить по умолчанию
   Resume: Продолжить
   Resume Print: Продолжить печать
-  Resume interrupted print?: ''
+  Resume interrupted print?: Продолжить прерванную печать?
   Resume macro not configured: Макрос возобновления не настроен
   'Resume preparation failed: {}': 'Не удалось подготовиться к возобновлению: {}'
   Resuming...: Возобновление...
@@ -2156,15 +2172,15 @@ translations:
     печати
   Show instead of dimming: Показывать вместо затемнения
   Show printer icon in navigation bar: Показывать значок принтера в панели навигации
-  Show sliced colors: ''
+  Show sliced colors: Показать цвета из слайсера
   Show temp for: Показывать темп. для
   Show text labels on icon-only home screen widgets: Показывать текстовые подписи
     на виджетах главного экрана
   Show up/down buttons on long lists: Показывать кнопки вверх/вниз в длинных списках
   Show whatever curves you last had visible on the full graph.: Показывать те кривые,
     что были видны на полном графике в последний раз.
-  Showing loaded colors: ''
-  Showing sliced colors: ''
+  Showing loaded colors: Показаны загруженные цвета
+  Showing sliced colors: Показаны цвета из слайсера
   Shutdown: Выключение
   Shutdown / Reboot: Выключение / Перезагрузка
   Shutdown failed: Ошибка выключения
@@ -2181,6 +2197,7 @@ translations:
   Skip: Пропустить
   Sleep While Printing: Спящий режим при печати
   Sleep adjusted to match dim timeout: Таймаут сна изменён
+  Sliced colors: Цвета из слайсера
   Slicer: Слайсер
   Slot: Слот
   Slot %d: Слот %d
@@ -2194,7 +2211,7 @@ translations:
   Snapmaker SnapSwap: Snapmaker SnapSwap
   Snapmaker U1: Snapmaker U1
   Soft: Мягкий
-  Software Updates: ''
+  Software Updates: Обновления ПО
   Some filaments don't match the slicer's intent.: Некоторые филаменты не соответствуют
     замыслу слайсера.
   Some settings will take effect after restart.: Некоторые настройки вступят в силу
@@ -2231,9 +2248,11 @@ translations:
   Spoolman connected!: Spoolman подключен!
   Spoolman found! Configuring...: Spoolman найден! Настройка...
   Spoolman has no spools configured: В Spoolman нет настроенных катушек
+  Spoolman is not configured — nothing to remove.: Spoolman не настроен — удалять нечего.
   Spoolman removed.: Spoolman удалён.
   Spoolman unavailable — filament weights may be stale: Spoolman недоступен — вес
     филамента может быть устаревшим
+  Spoolman was not configured.: Spoolman не был настроен.
   'Spoolman: %zu Spool%s': 'Spoolman: %zu катушк%s'
   'Spoolman: %zu/%zu Spool%s': 'Spoolman: %zu/%zu катушк%s'
   Square Corner Velocity: Скорость прохождения углов
@@ -2378,8 +2397,8 @@ translations:
     затем зафиксируйте показание.
   The printer halted this print and cannot resume it. Restart from the beginning?: Принтер
     остановил эту печать и не может её возобновить. Начать с начала?
-  The printer lost power during a print. It can resume where it left off.: ''
-  The printer lost power while printing {}. Resume where it left off?: ''
+  The printer lost power during a print. It can resume where it left off.: Принтер потерял питание во время печати. Он может продолжить с места остановки.
+  The printer lost power while printing {}. Resume where it left off?: Принтер потерял питание при печати {}. Продолжить с места остановки?
   The printer rejected the filament configuration. The print was not started.: Принтер
     отклонил конфигурацию филамента. Печать не была запущена.
   The runout sensor indicates no filament is loaded. Start print anyway?: Датчик окончания
@@ -2581,6 +2600,7 @@ translations:
   Update anyway: Всё равно обновить
   Update installed!: Обновление установлено!
   Update your security PIN: Обновите ваш PIN-код
+  Updates aren't available on this installation.: Обновления недоступны в этой установке.
   Updating Configuration...: Обновление конфигурации...
   Upload: Отправить
   Upload Debug Bundle: Отправить пакет диагностики

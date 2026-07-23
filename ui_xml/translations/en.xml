@@ -131,6 +131,7 @@
   <translation tag="Add Hidden Network" en="Add Hidden Network"/>
   <translation tag="Add Vendor" en="Add Vendor"/>
   <translation tag="Add Widget" en="Add Widget"/>
+  <translation tag="Add custom filament" en="Add custom filament"/>
   <translation tag="Added to Spoolman" en="Added to Spoolman"/>
   <translation tag="Address" en="Address"/>
   <translation tag="Adjust belt tension until the belt appears stationary" en="Adjust belt tension until the belt appears stationary"/>
@@ -264,6 +265,7 @@
   <translation tag="Both" en="Both"/>
   <translation tag="Both belts are overtightened." en="Both belts are overtightened."/>
   <translation tag="Both belts need tightening." en="Both belts need tightening."/>
+  <translation tag="Brand" en="Brand"/>
   <translation tag="Brightness" en="Brightness"/>
   <translation tag="Brightness level when LEDs turn on at startup" en="Brightness level when LEDs turn on at startup"/>
   <translation tag="BrightnessCLI" en="BrightnessCLI"/>
@@ -505,7 +507,9 @@
   <translation tag="Could not parse tips database" en="Could not parse tips database"/>
   <translation tag="Could not reach Spoolman at" en="Could not reach Spoolman at"/>
   <translation tag="Could not resolve printer RFCOMM channel" en="Could not resolve printer RFCOMM channel"/>
+  <translation tag="Could not save filament" en="Could not save filament"/>
   <translation tag="Could not start Bluetooth discovery" en="Could not start Bluetooth discovery"/>
+  <translation tag="Could not update filaments" en="Could not update filaments"/>
   <translation tag="Could not verify Spoolman status. Moonraker may still be restarting." en="Could not verify Spoolman status. Moonraker may still be restarting."/>
   <translation tag="Couldn&apos;t update Spoolman — saved locally" en="Couldn&apos;t update Spoolman — saved locally"/>
   <translation tag="Cover open" en="Cover open"/>
@@ -563,6 +567,7 @@
   <translation tag="Debug" en="Debug"/>
   <translation tag="Default border thickness" en="Default border thickness"/>
   <translation tag="Default: %d-%d°C nozzle, %d°C bed" en="Default: %d-%d°C nozzle, %d°C bed"/>
+  <translation tag="Defaults restored" en="Defaults restored"/>
   <translation tag="Define macros in your printer.cfg" en="Define macros in your printer.cfg"/>
   <translation tag="Delete" en="Delete"/>
   <translation tag="Delete File?" en="Delete File?"/>
@@ -571,6 +576,7 @@
   <translation tag="Delete Video" en="Delete Video"/>
   <translation tag="Delete {}?" en="Delete {}?"/>
   <translation tag="Delta:" en="Delta:"/>
+  <translation tag="Density" en="Density"/>
   <translation tag="Deploy" en="Deploy"/>
   <translation tag="Describe the issue (optional)" en="Describe the issue (optional)"/>
   <translation tag="Detailed" en="Detailed"/>
@@ -631,6 +637,7 @@
   <translation tag="EMPTY" en="EMPTY"/>
   <translation tag="Each fan can only be selected once" en="Each fan can only be selected once"/>
   <translation tag="Edit" en="Edit"/>
+  <translation tag="Edit Filament" en="Edit Filament"/>
   <translation tag="Edit Slot" en="Edit Slot"/>
   <translation tag="Edit Spool" en="Edit Spool"/>
   <translation tag="Edit Spool #{}" en="Edit Spool #{}"/>
@@ -850,6 +857,7 @@
   <translation tag="Filament Used" en="Filament Used"/>
   <translation tag="Filament already exists" en="Filament already exists"/>
   <translation tag="Filament by Type" en="Filament by Type"/>
+  <translation tag="Filament deleted" en="Filament deleted"/>
   <translation tag="Filament diameter sensors for flow compensation" en="Filament diameter sensors for flow compensation"/>
   <translation tag="Filament is loose" en="Filament is loose"/>
   <translation tag="Filament is pulling tight" en="Filament is pulling tight"/>
@@ -860,6 +868,7 @@
   <translation tag="Filament operation timed out" en="Filament operation timed out"/>
   <translation tag="Filament runout" en="Filament runout"/>
   <translation tag="Filament runout and motion detection sensors" en="Filament runout and motion detection sensors"/>
+  <translation tag="Filament saved" en="Filament saved"/>
   <translation tag="Filament sensor available for runout detection" en="Filament sensor available for runout detection"/>
   <translation tag="Filament tension is balanced" en="Filament tension is balanced"/>
   <translation tag="Filament tracking &amp; label printing" en="Filament tracking &amp; label printing"/>
@@ -1000,6 +1009,7 @@
   <translation tag="Humidity" en="Humidity"/>
   <translation tag="Hyperlapse" en="Hyperlapse"/>
   <translation tag="Hyperlapse captures frames at fixed time intervals. Good for very long prints." en="Hyperlapse captures frames at fixed time intervals. Good for very long prints."/>
+  <translation tag="ID (optional)" en="ID (optional)"/>
   <translation tag="IMPORT FROM USB" en="IMPORT FROM USB"/>
   <translation tag="IP Address / Hostname" en="IP Address / Hostname"/>
   <translation tag="IP:" en="IP:"/>
@@ -1136,6 +1146,7 @@
   <translation tag="Loading..." en="Loading..."/>
   <translation tag="Locale" en="Locale"/>
   <translation tag="Locale: " en="Locale: "/>
+  <translation tag="Locating Spoolman configuration..." en="Locating Spoolman configuration..."/>
   <translation tag="Location" en="Location"/>
   <translation tag="Lock" en="Lock"/>
   <translation tag="Lock A" en="Lock A"/>
@@ -1156,6 +1167,7 @@
   <translation tag="MACRO DEVICES" en="MACRO DEVICES"/>
   <translation tag="MAIN POWER BUTTON" en="MAIN POWER BUTTON"/>
   <translation tag="MANUAL" en="MANUAL"/>
+  <translation tag="MAPPING" en="MAPPING"/>
   <translation tag="MB RAM" en="MB RAM"/>
   <translation tag="MCU" en="MCU"/>
   <translation tag="MCU, host, and auxiliary temperature monitoring" en="MCU, host, and auxiliary temperature monitoring"/>
@@ -1372,6 +1384,9 @@
   <translation tag="Notification" en="Notification"/>
   <translation tag="Notifications" en="Notifications"/>
   <translation tag="Notify when print finishes" en="Notify when print finishes"/>
+  <translation tag="Noz max" en="Noz max"/>
+  <translation tag="Noz min" en="Noz min"/>
+  <translation tag="Noz rec" en="Noz rec"/>
   <translation tag="Nozzle" en="Nozzle"/>
   <translation tag="Nozzle / Bed" en="Nozzle / Bed"/>
   <translation tag="Nozzle Clean" en="Nozzle Clean"/>
@@ -1733,6 +1748,7 @@
   <translation tag="Restarting screen..." en="Restarting screen..."/>
   <translation tag="Restarting with the new version..." en="Restarting with the new version..."/>
   <translation tag="Restarting..." en="Restarting..."/>
+  <translation tag="Restore Defaults" en="Restore Defaults"/>
   <translation tag="Resume" en="Resume"/>
   <translation tag="Resume Print" en="Resume Print"/>
   <translation tag="Resume interrupted print?" en="Resume interrupted print?"/>
@@ -1925,6 +1941,7 @@
   <translation tag="Skip" en="Skip"/>
   <translation tag="Sleep While Printing" en="Sleep While Printing"/>
   <translation tag="Sleep adjusted to match dim timeout" en="Sleep adjusted to match dim timeout"/>
+  <translation tag="Sliced colors" en="Sliced colors"/>
   <translation tag="Slicer" en="Slicer"/>
   <translation tag="Slot" en="Slot"/>
   <translation tag="Slot %d" en="Slot %d"/>
@@ -1970,8 +1987,10 @@
   <translation tag="Spoolman connected!" en="Spoolman connected!"/>
   <translation tag="Spoolman found! Configuring..." en="Spoolman found! Configuring..."/>
   <translation tag="Spoolman has no spools configured" en="Spoolman has no spools configured"/>
+  <translation tag="Spoolman is not configured — nothing to remove." en="Spoolman is not configured — nothing to remove."/>
   <translation tag="Spoolman removed." en="Spoolman removed."/>
   <translation tag="Spoolman unavailable — filament weights may be stale" en="Spoolman unavailable — filament weights may be stale"/>
+  <translation tag="Spoolman was not configured." en="Spoolman was not configured."/>
   <translation tag="Spoolman: %zu Spool%s" en="Spoolman: %zu Spool%s"/>
   <translation tag="Spoolman: %zu/%zu Spool%s" en="Spoolman: %zu/%zu Spool%s"/>
   <translation tag="Square Corner Velocity" en="Square Corner Velocity"/>
@@ -2235,6 +2254,7 @@
   <translation tag="Update anyway" en="Update anyway"/>
   <translation tag="Update installed!" en="Update installed!"/>
   <translation tag="Update your security PIN" en="Update your security PIN"/>
+  <translation tag="Updates aren&apos;t available on this installation." en="Updates aren&apos;t available on this installation."/>
   <translation tag="Updating Configuration..." en="Updating Configuration..."/>
   <translation tag="Upload" en="Upload"/>
   <translation tag="Upload Debug Bundle" en="Upload Debug Bundle"/>

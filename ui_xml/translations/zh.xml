@@ -86,7 +86,7 @@
   <translation tag="A" zh="辅"/>
   <translation tag="ABS" zh="ABS"/>
   <translation tag="ACCELEROMETERS" zh="加速度计"/>
-  <translation tag="ACE Moonraker bridge not found. Install ace_status.py for full support."/>
+  <translation tag="ACE Moonraker bridge not found. Install ace_status.py for full support." zh="未找到 ACE Moonraker 桥接。请安装 ace_status.py 以获得完整支持。"/>
   <translation tag="ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support." zh="未找到 ACE Moonraker 桥接。请从 ValgACE 安装 ace_status.py 以获得完整支持。"/>
   <translation tag="ACTIONS" zh="操作"/>
   <translation tag="ADXL" zh="ADXL"/>
@@ -131,6 +131,7 @@
   <translation tag="Add Hidden Network" zh="添加隐藏网络"/>
   <translation tag="Add Vendor" zh="添加供应商"/>
   <translation tag="Add Widget" zh="添加小组件"/>
+  <translation tag="Add custom filament" zh="添加自定义耗材"/>
   <translation tag="Added to Spoolman" zh="已添加到 Spoolman"/>
   <translation tag="Address" zh="地址"/>
   <translation tag="Adjust belt tension until the belt appears stationary" zh="调整皮带张力,直到皮带看起来静止不动"/>
@@ -264,6 +265,7 @@
   <translation tag="Both" zh="两者"/>
   <translation tag="Both belts are overtightened." zh="两条皮带都过紧。"/>
   <translation tag="Both belts need tightening." zh="两条皮带都需要拉紧。"/>
+  <translation tag="Brand" zh="品牌"/>
   <translation tag="Brightness" zh="亮度"/>
   <translation tag="Brightness level when LEDs turn on at startup" zh="启动时 LED 开启的亮度级别"/>
   <translation tag="BrightnessCLI" zh="亮度 CLI"/>
@@ -505,7 +507,9 @@
   <translation tag="Could not parse tips database" zh="无法解析提示数据库"/>
   <translation tag="Could not reach Spoolman at" zh="无法连接 Spoolman："/>
   <translation tag="Could not resolve printer RFCOMM channel" zh="无法解析打印机 RFCOMM 通道"/>
+  <translation tag="Could not save filament" zh="无法保存耗材"/>
   <translation tag="Could not start Bluetooth discovery" zh="无法启动蓝牙发现"/>
+  <translation tag="Could not update filaments" zh="无法更新耗材"/>
   <translation tag="Could not verify Spoolman status. Moonraker may still be restarting." zh="无法验证 Spoolman 状态。Moonraker 可能仍在重启中。"/>
   <translation tag="Couldn&apos;t update Spoolman — saved locally" zh="无法更新 Spoolman — 已保存在本地"/>
   <translation tag="Cover open" zh="盖子未关闭"/>
@@ -563,6 +567,7 @@
   <translation tag="Debug" zh="调试"/>
   <translation tag="Default border thickness" zh="默认边框厚度"/>
   <translation tag="Default: %d-%d°C nozzle, %d°C bed" zh="默认: 喷嘴 %d-%d°C,热床 %d°C"/>
+  <translation tag="Defaults restored" zh="已恢复默认设置"/>
   <translation tag="Define macros in your printer.cfg" zh="在 printer.cfg 中定义宏"/>
   <translation tag="Delete" zh="删除"/>
   <translation tag="Delete File?" zh="删除文件？"/>
@@ -571,6 +576,7 @@
   <translation tag="Delete Video" zh="删除视频"/>
   <translation tag="Delete {}?" zh="删除 {}?"/>
   <translation tag="Delta:" zh="差值："/>
+  <translation tag="Density" zh="密度"/>
   <translation tag="Deploy" zh="部署"/>
   <translation tag="Describe the issue (optional)" zh="描述问题（可选）"/>
   <translation tag="Detailed" zh="详细"/>
@@ -631,6 +637,7 @@
   <translation tag="EMPTY" zh="空"/>
   <translation tag="Each fan can only be selected once" zh="每个风扇只能选择一次"/>
   <translation tag="Edit" zh="编辑"/>
+  <translation tag="Edit Filament" zh="编辑耗材"/>
   <translation tag="Edit Slot" zh="编辑料仓"/>
   <translation tag="Edit Spool" zh="编辑料盘"/>
   <translation tag="Edit Spool #{}" zh="编辑线轴 #{}"/>
@@ -751,7 +758,7 @@
   <translation tag="Failed to delete file" zh="删除文件失败"/>
   <translation tag="Failed to delete profile" zh="删除配置文件失败"/>
   <translation tag="Failed to delete spool" zh="删除料盘失败"/>
-  <translation tag="Failed to discard recovery data: {}"/>
+  <translation tag="Failed to discard recovery data: {}" zh="放弃恢复数据失败: {}"/>
   <translation tag="Failed to download G-code for modification: {}" zh="下载 G-code 进行修改失败: {}"/>
   <translation tag="Failed to download G-code for remap: {}" zh="下载用于重新映射的 G-code 失败：{}"/>
   <translation tag="Failed to download helixscreen.conf.\nCheck printer connection." zh="下载 helixscreen.conf 失败。\n请检查打印机连接。"/>
@@ -850,6 +857,7 @@
   <translation tag="Filament Used" zh="已用耗材"/>
   <translation tag="Filament already exists" zh="耗材已存在"/>
   <translation tag="Filament by Type" zh="按类型分类的耗材"/>
+  <translation tag="Filament deleted" zh="耗材已删除"/>
   <translation tag="Filament diameter sensors for flow compensation" zh="耗材直径传感器用于流量补偿"/>
   <translation tag="Filament is loose" zh="耗材松弛"/>
   <translation tag="Filament is pulling tight" zh="耗材拉紧"/>
@@ -860,6 +868,7 @@
   <translation tag="Filament operation timed out" zh="耗材操作超时"/>
   <translation tag="Filament runout" zh="耗材用尽"/>
   <translation tag="Filament runout and motion detection sensors" zh="耗材用尽和运动检测传感器"/>
+  <translation tag="Filament saved" zh="耗材已保存"/>
   <translation tag="Filament sensor available for runout detection" zh="耗材传感器可用于耗尽检测"/>
   <translation tag="Filament tension is balanced" zh="耗材张力平衡"/>
   <translation tag="Filament tracking &amp; label printing" zh="耗材跟踪和标签打印"/>
@@ -939,7 +948,7 @@
   <translation tag="Heat Soak" zh="预热浸泡"/>
   <translation tag="Heat bed before calibrating for accurate offset with thermal expansion." zh="校准前加热热床，以获得考虑热膨胀的精确偏移。"/>
   <translation tag="Heat nozzle" zh="加热喷嘴"/>
-  <translation tag="Heat to at least %d°C for filament operations"/>
+  <translation tag="Heat to at least %d°C for filament operations" zh="请加热至至少 %d°C 以进行耗材操作"/>
   <translation tag="Heatbed Temperature" zh="热床温度"/>
   <translation tag="Heated Bed" zh="加热床"/>
   <translation tag="Heated Bed MPC Calibration" zh="热床 MPC 校准"/>
@@ -968,7 +977,7 @@
   <translation tag="Hide Firmware Noise" zh="隐藏固件噪声"/>
   <translation tag="Hide Temperature Reports" zh="隐藏温度报告"/>
   <translation tag="High Water Mark" zh="峰值标记"/>
-  <translation tag="Holding nozzle at {}°C to purge previous filament."/>
+  <translation tag="Holding nozzle at {}°C to purge previous filament." zh="将喷嘴保持在 {}°C 以清洗之前的耗材。"/>
   <translation tag="Home" zh="归位"/>
   <translation tag="Home failed" zh="归位失败"/>
   <translation tag="Home selector" zh="选择器归位"/>
@@ -1000,6 +1009,7 @@
   <translation tag="Humidity" zh="湿度"/>
   <translation tag="Hyperlapse" zh="延时摄影"/>
   <translation tag="Hyperlapse captures frames at fixed time intervals. Good for very long prints." zh="延时拍摄以固定时间间隔捕获帧。适合超长时间打印。"/>
+  <translation tag="ID (optional)" zh="ID（可选）"/>
   <translation tag="IMPORT FROM USB" zh="从 USB 导入"/>
   <translation tag="IP Address / Hostname" zh="IP 地址 / 主机名"/>
   <translation tag="IP:" zh="IP："/>
@@ -1057,7 +1067,7 @@
   <translation tag="Invalid status response from printer" zh="打印机返回的状态响应无效"/>
   <translation tag="Issue description" zh="问题描述"/>
   <translation tag="Job Queue" zh="任务队列"/>
-  <translation tag="Jog failed: {}"/>
+  <translation tag="Jog failed: {}" zh="移动失败: {}"/>
   <translation tag="Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests." zh="加入 HelixScreen 的 Discord 社区，参与讨论、获取技巧、故障排除帮助和功能请求。"/>
   <translation tag="Just now" zh="刚刚"/>
   <translation tag="KEYBOARD LAYOUT" zh="键盘布局"/>
@@ -1136,6 +1146,7 @@
   <translation tag="Loading..." zh="正在加载..."/>
   <translation tag="Locale" zh="区域设置"/>
   <translation tag="Locale: " zh="区域设置: "/>
+  <translation tag="Locating Spoolman configuration..." zh="正在定位 Spoolman 配置..."/>
   <translation tag="Location" zh="位置"/>
   <translation tag="Lock" zh="锁定"/>
   <translation tag="Lock A" zh="锁定 A"/>
@@ -1156,6 +1167,7 @@
   <translation tag="MACRO DEVICES" zh="宏设备"/>
   <translation tag="MAIN POWER BUTTON" zh="主电源按钮"/>
   <translation tag="MANUAL" zh="手动"/>
+  <translation tag="MAPPING" zh="映射"/>
   <translation tag="MB RAM" zh="MB 内存"/>
   <translation tag="MCU" zh="MCU"/>
   <translation tag="MCU, host, and auxiliary temperature monitoring" zh="MCU、主机及辅助温度监控"/>
@@ -1192,7 +1204,7 @@
   <translation tag="Manage" zh="管理"/>
   <translation tag="Manage Printers" zh="管理打印机"/>
   <translation tag="Manage configured printers" zh="管理已配置的打印机"/>
-  <translation tag="Managed by your firmware"/>
+  <translation tag="Managed by your firmware" zh="由固件管理"/>
   <translation tag="Manual" zh="手动"/>
   <translation tag="Manual Bed Leveling" zh="手动热床调平"/>
   <translation tag="Map to closest colors with matching material" zh="按匹配材料映射最接近的颜色"/>
@@ -1372,6 +1384,9 @@
   <translation tag="Notification" zh="通知"/>
   <translation tag="Notifications" zh="通知"/>
   <translation tag="Notify when print finishes" zh="打印完成时通知"/>
+  <translation tag="Noz max" zh="喷嘴最高"/>
+  <translation tag="Noz min" zh="喷嘴最低"/>
+  <translation tag="Noz rec" zh="喷嘴推荐"/>
   <translation tag="Nozzle" zh="喷嘴"/>
   <translation tag="Nozzle / Bed" zh="喷嘴 / 热床"/>
   <translation tag="Nozzle Clean" zh="喷嘴清洁"/>
@@ -1670,7 +1685,7 @@
   <translation tag="Recovering AFC system..." zh="AFC系统恢复中..."/>
   <translation tag="Recovery failed" zh="恢复失败"/>
   <translation tag="Recovery failed: " zh="恢复失败: "/>
-  <translation tag="Recovery failed: {}"/>
+  <translation tag="Recovery failed: {}" zh="恢复失败: {}"/>
   <translation tag="Reduce Sensitivity" zh="降低灵敏度"/>
   <translation tag="Reduce ringing and ghosting artifacts" zh="减少振纹和残影"/>
   <translation tag="Reduce vibration artifacts like ringing and ghosting" zh="减少振纹和残影等振动伪影"/>
@@ -1733,9 +1748,10 @@
   <translation tag="Restarting screen..." zh="正在重启屏幕..."/>
   <translation tag="Restarting with the new version..." zh="正在以新版本重启..."/>
   <translation tag="Restarting..." zh="正在重启..."/>
+  <translation tag="Restore Defaults" zh="恢复默认设置"/>
   <translation tag="Resume" zh="恢复"/>
   <translation tag="Resume Print" zh="恢复打印"/>
-  <translation tag="Resume interrupted print?"/>
+  <translation tag="Resume interrupted print?" zh="恢复中断的打印？"/>
   <translation tag="Resume macro not configured" zh="恢复宏未配置"/>
   <translation tag="Resume preparation failed: {}" zh="恢复准备失败：{}"/>
   <translation tag="Resuming..." zh="恢复中..."/>
@@ -1903,13 +1919,13 @@
   <translation tag="Show detailed print preparation status" zh="显示详细的打印准备状态"/>
   <translation tag="Show instead of dimming" zh="显示而非变暗"/>
   <translation tag="Show printer icon in navigation bar" zh="在导航栏中显示打印机图标"/>
-  <translation tag="Show sliced colors"/>
+  <translation tag="Show sliced colors" zh="显示切片颜色"/>
   <translation tag="Show temp for" zh="显示温度"/>
   <translation tag="Show text labels on icon-only home screen widgets" zh="在仅图标的主屏小组件上显示文字标签"/>
   <translation tag="Show up/down buttons on long lists" zh="在长列表中显示上/下按钮"/>
   <translation tag="Show whatever curves you last had visible on the full graph." zh="显示您上次在完整图表上可见的曲线。"/>
-  <translation tag="Showing loaded colors"/>
-  <translation tag="Showing sliced colors"/>
+  <translation tag="Showing loaded colors" zh="正在显示已装载颜色"/>
+  <translation tag="Showing sliced colors" zh="正在显示切片颜色"/>
   <translation tag="Shutdown" zh="关机"/>
   <translation tag="Shutdown / Reboot" zh="关机 / 重启"/>
   <translation tag="Shutdown failed" zh="关机失败"/>
@@ -1925,6 +1941,7 @@
   <translation tag="Skip" zh="跳过"/>
   <translation tag="Sleep While Printing" zh="打印时休眠"/>
   <translation tag="Sleep adjusted to match dim timeout" zh="休眠超时已调整"/>
+  <translation tag="Sliced colors" zh="切片颜色"/>
   <translation tag="Slicer" zh="切片软件"/>
   <translation tag="Slot" zh="料仓"/>
   <translation tag="Slot %d" zh="料仓 %d"/>
@@ -1937,7 +1954,7 @@
   <translation tag="Snapmaker SnapSwap" zh="Snapmaker SnapSwap"/>
   <translation tag="Snapmaker U1" zh="Snapmaker U1"/>
   <translation tag="Soft" zh="柔和"/>
-  <translation tag="Software Updates"/>
+  <translation tag="Software Updates" zh="软件更新"/>
   <translation tag="Some filaments don&apos;t match the slicer&apos;s intent." zh="部分耗材与切片软件的意图不符。"/>
   <translation tag="Some settings will take effect after restart." zh="某些设置将在重启后生效。"/>
   <translation tag="Sound Theme" zh="声音主题"/>
@@ -1970,8 +1987,10 @@
   <translation tag="Spoolman connected!" zh="Spoolman 已连接！"/>
   <translation tag="Spoolman found! Configuring..." zh="已找到 Spoolman！正在配置..."/>
   <translation tag="Spoolman has no spools configured" zh="Spoolman 未配置料盘"/>
+  <translation tag="Spoolman is not configured — nothing to remove." zh="Spoolman 未配置 — 无需移除。"/>
   <translation tag="Spoolman removed." zh="Spoolman 已移除。"/>
   <translation tag="Spoolman unavailable — filament weights may be stale" zh="Spoolman不可用 — 耗材重量可能已过期"/>
+  <translation tag="Spoolman was not configured." zh="Spoolman 未配置。"/>
   <translation tag="Spoolman: %zu Spool%s" zh="Spoolman: %zu 个线轴%s"/>
   <translation tag="Spoolman: %zu/%zu Spool%s" zh="Spoolman: %zu/%zu 个线轴%s"/>
   <translation tag="Square Corner Velocity" zh="直角转弯速度"/>
@@ -2086,8 +2105,8 @@
   <translation tag="The heater will cycle on and off several times." zh="加热器将多次开关循环。"/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." zh="电机振动皮带的同时,频闪灯以相同频率闪烁。当皮带看起来静止不动(冻结)时,即找到了共振频率。\n\n使用频率按钮扫描各数值,直到皮带看起来静止,然后锁定读数。"/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" zh="打印机已停止此打印且无法恢复。从头重新开始？"/>
-  <translation tag="The printer lost power during a print. It can resume where it left off."/>
-  <translation tag="The printer lost power while printing {}. Resume where it left off?"/>
+  <translation tag="The printer lost power during a print. It can resume where it left off." zh="打印机在打印过程中断电。可以从中断处继续。"/>
+  <translation tag="The printer lost power while printing {}. Resume where it left off?" zh="打印机在打印 {} 时断电。是否从中断处继续？"/>
   <translation tag="The printer rejected the filament configuration. The print was not started." zh="打印机拒绝了该耗材配置。打印未启动。"/>
   <translation tag="The runout sensor indicates no filament is loaded. Start print anyway?" zh="断料传感器显示未装载耗材。仍要开始打印吗？"/>
   <translation tag="The toolhead sensor indicates filament is already loaded. Proceed with load anyway?" zh="工具头传感器显示耗材已装载。仍要继续装载吗？"/>
@@ -2235,6 +2254,7 @@
   <translation tag="Update anyway" zh="仍要更新"/>
   <translation tag="Update installed!" zh="更新已安装！"/>
   <translation tag="Update your security PIN" zh="更新您的安全 PIN"/>
+  <translation tag="Updates aren&apos;t available on this installation." zh="此安装版本无法使用更新。"/>
   <translation tag="Updating Configuration..." zh="正在更新配置..."/>
   <translation tag="Upload" zh="上传"/>
   <translation tag="Upload Debug Bundle" zh="上传调试捆绑包"/>

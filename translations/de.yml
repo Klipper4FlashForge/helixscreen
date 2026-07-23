@@ -94,7 +94,8 @@ translations:
   A: A
   ABS: ABS
   ACCELEROMETERS: BESCHLEUNIGUNGSSENSOREN
-  ACE Moonraker bridge not found. Install ace_status.py for full support.: ''
+  ACE Moonraker bridge not found. Install ace_status.py for full support.: ACE Moonraker-Bridge
+    nicht gefunden. Installieren Sie ace_status.py für volle Unterstützung.
   ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: ACE-Moonraker-Brücke
     nicht gefunden. Installieren Sie ace_status.py von ValgACE für volle Unterstützung.
   ACTIONS: AKTIONEN
@@ -145,6 +146,7 @@ translations:
   Add Hidden Network: Verstecktes Netzwerk hinzufügen
   Add Vendor: Hersteller hinzufügen
   Add Widget: Widget hinzufügen
+  Add custom filament: Benutzerdefiniertes Filament hinzufügen
   Added to Spoolman: Zu Spoolman hinzugefügt
   Address: Adresse
   Adjust belt tension until the belt appears stationary: Riemenspannung anpassen,
@@ -305,6 +307,7 @@ translations:
   Both: Beide
   Both belts are overtightened.: Beide Riemen sind zu stark gespannt.
   Both belts need tightening.: Beide Riemen müssen nachgespannt werden.
+  Brand: Marke
   Brightness: Helligkeit
   Brightness level when LEDs turn on at startup: Helligkeitsstufe beim Einschalten
     der LEDs beim Start
@@ -596,8 +599,10 @@ translations:
   Could not reach Spoolman at: 'Spoolman nicht erreichbar unter:'
   Could not resolve printer RFCOMM channel: RFCOMM-Kanal des Druckers konnte nicht
     ermittelt werden
+  Could not save filament: Filament konnte nicht gespeichert werden
   Could not start Bluetooth discovery: Bluetooth-Erkennung konnte nicht gestartet
     werden
+  Could not update filaments: Filamente konnten nicht aktualisiert werden
   Could not verify Spoolman status. Moonraker may still be restarting.: Spoolman-Status
     konnte nicht überprüft werden. Moonraker startet möglicherweise noch neu.
   Couldn't update Spoolman — saved locally: Spoolman konnte nicht aktualisiert werden
@@ -658,6 +663,7 @@ translations:
   Debug: Debug
   Default border thickness: Standard-Rahmendicke
   'Default: %d-%d°C nozzle, %d°C bed': 'Standard: %d-%d°C Düse, %d°C Bett'
+  Defaults restored: Standardeinstellungen wiederhergestellt
   Define macros in your printer.cfg: Makros in Ihrer printer.cfg definieren
   Delete: Löschen
   Delete File?: Datei löschen?
@@ -666,6 +672,7 @@ translations:
   Delete Video: Video löschen
   Delete {}?: '{} löschen?'
   'Delta:': 'Delta:'
+  Density: Dichte
   Deploy: Ausfahren
   Describe the issue (optional): Problem beschreiben (optional)
   Detailed: Detailliert
@@ -731,6 +738,7 @@ translations:
   EMPTY: LEER
   Each fan can only be selected once: Jeder Lüfter kann nur einmal ausgewählt werden
   Edit: Bearbeiten
+  Edit Filament: Filament bearbeiten
   Edit Slot: Slot bearbeiten
   Edit Spool: Spule bearbeiten
   'Edit Spool #{}': 'Spule #{} bearbeiten'
@@ -865,7 +873,8 @@ translations:
   Failed to delete file: Datei löschen fehlgeschlagen
   Failed to delete profile: Profil löschen fehlgeschlagen
   Failed to delete spool: Spule konnte nicht gelöscht werden
-  'Failed to discard recovery data: {}': ''
+  'Failed to discard recovery data: {}': 'Wiederherstellungsdaten konnten nicht verworfen
+    werden: {}'
   'Failed to download G-code for modification: {}': 'G-Code-Download zur Änderung
     fehlgeschlagen: {}'
   'Failed to download G-code for remap: {}': 'G-code für Neuzuordnung konnte nicht
@@ -978,6 +987,7 @@ translations:
   Filament Used: Filament verwendet
   Filament already exists: Filament bereits vorhanden
   Filament by Type: Filament nach Typ
+  Filament deleted: Filament gelöscht
   Filament diameter sensors for flow compensation: Filamentdurchmessersensoren für
     Flusskompensation
   Filament is loose: Filament ist locker
@@ -989,6 +999,7 @@ translations:
   Filament operation timed out: Filament-Vorgang Zeitüberschreitung
   Filament runout: Filament aufgebraucht
   Filament runout and motion detection sensors: Filament-Auslauf- und Bewegungserkennungssensoren
+  Filament saved: Filament gespeichert
   Filament sensor available for runout detection: Filamentsensor zur Auslauferkennung
     verfügbar
   Filament tension is balanced: Filamentspannung ist ausgeglichen
@@ -1083,7 +1094,8 @@ translations:
   Heat bed before calibrating for accurate offset with thermal expansion.: Bett vor
     der Kalibrierung heizen für genauen Offset mit Wärmeausdehnung.
   Heat nozzle: Düse aufheizen
-  Heat to at least %d°C for filament operations: ''
+  Heat to at least %d°C for filament operations: Für Filamentvorgänge auf mindestens
+    %d°C aufheizen
   Heatbed Temperature: Heizbett-Temperatur
   Heated Bed: Heizbett
   Heated Bed MPC Calibration: Heizbett MPC-Kalibrierung
@@ -1114,7 +1126,8 @@ translations:
   Hide Firmware Noise: Firmware-Rauschen ausblenden
   Hide Temperature Reports: Temperaturberichte ausblenden
   High Water Mark: Höchststand
-  Holding nozzle at {}°C to purge previous filament.: ''
+  Holding nozzle at {}°C to purge previous filament.: Düse wird bei {}°C gehalten, um
+    vorheriges Filament auszuspülen.
   Home: Home
   Home failed: Referenzfahrt fehlgeschlagen
   Home selector: Selektor referenzieren
@@ -1150,6 +1163,7 @@ translations:
   Hyperlapse: Hyperlapse
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: Hyperlapse
     erfasst Bilder in festen Zeitintervallen. Gut für sehr lange Drucke.
+  ID (optional): ID (optional)
   IMPORT FROM USB: VON USB IMPORTIEREN
   IP Address / Hostname: IP-Adresse / Hostname
   'IP:': 'IP:'
@@ -1223,7 +1237,7 @@ translations:
   Invalid status response from printer: Ungültige Statusantwort vom Drucker
   Issue description: Problembeschreibung
   Job Queue: Auftragswarteschlange
-  'Jog failed: {}': ''
+  'Jog failed: {}': 'Bewegung fehlgeschlagen: {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: Tritt
     der HelixScreen-Community auf Discord bei für Diskussionen, Tipps, Hilfe zur Fehlerbehebung
     und Funktionswünsche.
@@ -1321,6 +1335,7 @@ translations:
   Loading...: Lade...
   Locale: Gebietsschema
   'Locale: ': 'Gebietsschema: '
+  Locating Spoolman configuration...: Spoolman-Konfiguration wird gesucht...
   Location: Standort
   Lock: Sperren
   Lock A: Sperre A
@@ -1342,6 +1357,7 @@ translations:
   MACRO DEVICES: MAKRO-GERÄTE
   MAIN POWER BUTTON: HAUPTSCHALTER
   MANUAL: MANUELL
+  MAPPING: ZUORDNUNG
   MB RAM: MB RAM
   MCU: MCU
   MCU, host, and auxiliary temperature monitoring: MCU-, Host- und Zusatztemperaturüberwachung
@@ -1381,7 +1397,7 @@ translations:
   Manage: Verwalten
   Manage Printers: Drucker verwalten
   Manage configured printers: Konfigurierte Drucker verwalten
-  Managed by your firmware: ''
+  Managed by your firmware: Von Ihrer Firmware verwaltet
   Manual: Manuell
   Manual Bed Leveling: Manuelle Bettnivellierung
   Map to closest colors with matching material: Nächste Farben mit passendem Material
@@ -1580,6 +1596,9 @@ translations:
   Notification: Benachrichtigung
   Notifications: Benachrichtigungen
   Notify when print finishes: Benachrichtigen wenn Druck beendet
+  Noz max: Düse max
+  Noz min: Düse min
+  Noz rec: Düse empf.
   Nozzle: Düse
   Nozzle / Bed: Düse / Bett
   Nozzle Clean: Düsenreinigung
@@ -1913,7 +1932,7 @@ translations:
   Recovering AFC system...: AFC-Wiederherstellung...
   Recovery failed: Wiederherstellung fehlgeschlagen
   'Recovery failed: ': 'Wiederherstellung fehlgeschlagen: '
-  'Recovery failed: {}': ''
+  'Recovery failed: {}': 'Wiederherstellung fehlgeschlagen: {}'
   Reduce Sensitivity: Empfindlichkeit verringern
   Reduce ringing and ghosting artifacts: Klingel- und Geisterartefakte reduzieren
   Reduce vibration artifacts like ringing and ghosting: Vibrationsartefakte wie Klingeln
@@ -1980,9 +1999,10 @@ translations:
   Restarting screen...: Bildschirm wird neu gestartet...
   Restarting with the new version...: Neustart mit der neuen Version...
   Restarting...: Wird neu gestartet...
+  Restore Defaults: Standardeinstellungen wiederherstellen
   Resume: Fortsetzen
   Resume Print: Druck fortsetzen
-  Resume interrupted print?: ''
+  Resume interrupted print?: Unterbrochenen Druck fortsetzen?
   Resume macro not configured: Fortsetzen-Makro nicht konfiguriert
   'Resume preparation failed: {}': 'Vorbereitung zum Fortsetzen fehlgeschlagen: {}'
   Resuming...: Fortsetzen...
@@ -2190,15 +2210,15 @@ translations:
   Show detailed print preparation status: Detaillierten Druckvorbereitungsstatus anzeigen
   Show instead of dimming: Anzeigen statt Abdunkeln
   Show printer icon in navigation bar: Druckersymbol in Navigationsleiste anzeigen
-  Show sliced colors: ''
+  Show sliced colors: Slice-Farben anzeigen
   Show temp for: Temperatur anzeigen für
   Show text labels on icon-only home screen widgets: Textbeschriftungen auf Icon-Widgets
     des Startbildschirms anzeigen
   Show up/down buttons on long lists: Hoch-/Runter-Schaltflächen bei langen Listen anzeigen
   Show whatever curves you last had visible on the full graph.: Zeigt die zuletzt
     im vollständigen Diagramm sichtbaren Kurven an.
-  Showing loaded colors: ''
-  Showing sliced colors: ''
+  Showing loaded colors: Geladene Farben werden angezeigt
+  Showing sliced colors: Slice-Farben werden angezeigt
   Shutdown: Herunterfahren
   Shutdown / Reboot: Herunterfahren / Neustart
   Shutdown failed: Herunterfahren fehlgeschlagen
@@ -2216,6 +2236,7 @@ translations:
   Skip: Überspringen
   Sleep While Printing: Ruhemodus beim Drucken
   Sleep adjusted to match dim timeout: Ruhemodus-Zeitlimit angepasst
+  Sliced colors: Slice-Farben
   Slicer: Slicer
   Slot: Slot
   Slot %d: Slot %d
@@ -2229,7 +2250,7 @@ translations:
   Snapmaker SnapSwap: Snapmaker SnapSwap
   Snapmaker U1: Snapmaker U1
   Soft: Weich
-  Software Updates: ''
+  Software Updates: Software-Updates
   Some filaments don't match the slicer's intent.: Einige Filamente stimmen nicht
     mit der Vorgabe des Slicers überein.
   Some settings will take effect after restart.: Einige Einstellungen werden nach
@@ -2266,9 +2287,12 @@ translations:
   Spoolman connected!: Spoolman verbunden!
   Spoolman found! Configuring...: Spoolman gefunden! Wird konfiguriert...
   Spoolman has no spools configured: Spoolman hat keine Spulen konfiguriert
+  Spoolman is not configured — nothing to remove.: Spoolman ist nicht konfiguriert –
+    nichts zu entfernen.
   Spoolman removed.: Spoolman entfernt.
   Spoolman unavailable — filament weights may be stale: Spoolman nicht verfügbar —
     Filamentgewichte können veraltet sein
+  Spoolman was not configured.: Spoolman war nicht konfiguriert.
   'Spoolman: %zu Spool%s': 'Spoolman: %zu Spule%s'
   'Spoolman: %zu/%zu Spool%s': 'Spoolman: %zu/%zu Spule%s'
   Square Corner Velocity: Eckgeschwindigkeit
@@ -2413,8 +2437,11 @@ translations:
   The printer halted this print and cannot resume it. Restart from the beginning?: Der
     Drucker hat diesen Druck angehalten und kann ihn nicht fortsetzen. Von vorne neu
     starten?
-  The printer lost power during a print. It can resume where it left off.: ''
-  The printer lost power while printing {}. Resume where it left off?: ''
+  The printer lost power during a print. It can resume where it left off.: Der Drucker
+    hatte während eines Drucks einen Stromausfall. Er kann dort fortsetzen, wo er aufgehört
+    hat.
+  The printer lost power while printing {}. Resume where it left off?: Der Drucker hatte
+    einen Stromausfall während des Drucks von {}. Dort fortsetzen, wo er aufgehört hat?
   The printer rejected the filament configuration. The print was not started.: Der
     Drucker hat die Filamentkonfiguration abgelehnt. Der Druck wurde nicht gestartet.
   The runout sensor indicates no filament is loaded. Start print anyway?: Der Auslaufsensor
@@ -2621,6 +2648,8 @@ translations:
   Update anyway: Trotzdem aktualisieren
   Update installed!: Update installiert!
   Update your security PIN: Sicherheits-PIN aktualisieren
+  Updates aren't available on this installation.: Updates sind bei dieser Installation
+    nicht verfügbar.
   Updating Configuration...: Konfiguration wird aktualisiert...
   Upload: Hochladen
   Upload Debug Bundle: Debug-Paket hochladen
