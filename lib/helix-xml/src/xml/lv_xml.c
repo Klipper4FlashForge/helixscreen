@@ -1652,10 +1652,16 @@ static xml_frag_record_t * xml_frag_retain(lv_xml_parser_state_t * state, xml_fr
  *  delete cb, or unlink from `frag_ll` — the two callers do that differently. */
 static void xml_frag_record_free_heap(xml_frag_record_t * r)
 {
-    if(r->observer) {
-        lv_observer_remove(r->observer);
-        r->observer = NULL;
-    }
+    /*<repeat> reactive count observer: it is obj-bound to r->view_root, so on the
+     *instance-delete path (this function, called from xml_frag_instance_delete_cb)
+     *LVGL's unsubscribe_on_delete_cb on that same view root removes it — and if the
+     *count subject was deinited first, lv_subject_deinit already freed the node and
+     *removed that unsubscribe cb. Either way the node must NOT be removed again here;
+     *doing so double-frees / reads a freed observer (UAF at shutdown). Just drop the
+     *pointer. The unregister-sweep path (lv_xml_frag_record_free) removes it BEFORE
+     *reaching this function, while the instance + subject are still alive. Mirrors the
+     *r->bind handling just below.*/
+    r->observer = NULL;
     /*<if> reactive bind: on the instance-delete path (this function, called from
      *xml_frag_instance_delete_cb) the bind's OWN expr_bind_delete_cb is also
      *registered on this SAME view_root's LV_EVENT_DELETE and frees the bind itself
@@ -1704,6 +1710,16 @@ static void xml_frag_instance_delete_cb(lv_event_t * e)
 void lv_xml_frag_record_free(xml_frag_record_t * r)
 {
     if(r == NULL) return;
+    /*<repeat> reactive count observer: the instance and its count subject are still
+     *alive on this unregister-sweep path (called BEFORE subjects_ll teardown), so
+     *remove the observer here — free_heap no longer does. lv_observer_remove also
+     *strips the view root's unsubscribe_on_delete_cb (for_obj+target), so the later
+     *instance delete cannot re-remove a freed node. Done before nulling view_root so
+     *the target is still valid; a no-op for <if> records (observer is NULL).*/
+    if(r->observer) {
+        lv_observer_remove(r->observer);
+        r->observer = NULL;
+    }
     if(r->view_root) {
         lv_obj_remove_event_cb_with_user_data(r->view_root, xml_frag_instance_delete_cb, r);
         r->view_root = NULL;
@@ -2184,7 +2200,19 @@ static void view_end_element_handler(void * user_data, const char * name)
                     xml_frag_record_t * r = xml_frag_retain(state, cap);
                     if(r) {
                         r->count_subject = cs;
-                        r->observer = lv_subject_add_observer(cs, xml_frag_rebuild_cb, r);
+                        /*Bind the count observer to the INSTANCE view root (not a
+                         *plain observer). This makes the observer node co-owned by
+                         *LVGL's standard machinery: whichever dies first — the view
+                         *root (unsubscribe_on_delete_cb) or the count subject
+                         *(lv_subject_deinit sweeping subs_ll) — removes the node and
+                         *disarms the other side. A plain lv_subject_add_observer is
+                         *removed only by the frag record's own view-root delete cb, so
+                         *if the subject is deinited first (e.g. a panel frees its
+                         *scalar subjects at shutdown, BEFORE lv_deinit deletes the
+                         *repeat widgets) the record keeps a dangling r->observer and
+                         *the later free_heap double-removes a freed node (UAF).*/
+                        r->observer = lv_subject_add_observer_obj(cs, xml_frag_rebuild_cb,
+                                                                  r->view_root, r);
                         return;
                     }
                     /*retain failed: fall through to the one-shot path below
