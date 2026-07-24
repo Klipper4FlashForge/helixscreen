@@ -22,7 +22,9 @@ scripts/setup-worktree.sh feature/my-branch  # Symlinks deps, builds fast
 
 **XML changes need no rebuild:** `ui_xml/*.xml` is loaded at runtime — edit XML, then **relaunch** the binary to see changes (no `make` needed). For live editing without restarting, set `HELIX_HOT_RELOAD=1` and the running app will re-register components within ~500ms of a save and rebuild the active panel/overlay/modal in place. Invalid XML (mid-write truncation, syntax errors) is silently skipped on the polling thread — the existing UI stays live and the next poll retries.
 
-**Screenshots:** Press 'S' in UI, or `./scripts/screenshot.sh helix-screen output-name [panel]`
+**Screenshots:** Press 'S' in UI, or `./scripts/screenshot.sh helix-screen output-name [token]` (drives a fresh instance via helixctl; token = panel/overlay/`demo` screen from `scripts/screenshot-recipes.sh`).
+
+**Driving the UI (screenshots, debugging, bringing up any panel/overlay/modal):** `helixctl` remote-controls a running instance — `navigate`/`click`/`ls`/`set_value`/`scroll`/`demo`/`screenshot`, or a bare `helixctl` REPL. The server auto-starts in `--test` (or `--remote`). See `docs/devel/HELIXCTL.md`. (Replaces the removed `-p`/`--panel` flags.)
 
 ---
 

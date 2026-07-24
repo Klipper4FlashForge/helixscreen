@@ -96,10 +96,15 @@ Composable pipeline for improving `printer_database.json` from real-world teleme
 | `verify_mdi_codepoints.py` | Verify MDI codepoint mappings are correct |
 
 ### Screenshots & Testing
+Screenshots are captured by driving a freshly-booted instance with `helixctl`
+(the remote-control tool — see `docs/devel/HELIXCTL.md`). Each screen maps to a
+navigation recipe in `screenshot-recipes.sh` (the single source of truth).
+
 | Script | Purpose |
 |--------|---------|
-| `screenshot.sh` | Capture screenshot from running HelixScreen (`./scripts/screenshot.sh helix-screen output [panel]`) |
-| `screenshot-all.sh` | Capture screenshots of all panels |
+| `screenshot.sh` | Boot an instance, drive it to a screen, capture (`./scripts/screenshot.sh helix-screen output [token] [flags]`). Token = a base panel, overlay, or `demo` screen from `screenshot-recipes.sh` |
+| `screenshot-recipes.sh` | Token → helixctl navigation-recipe table (sourced by screenshot.sh + screenshot-all.sh) |
+| `screenshot-all.sh` | Capture all documentation screenshots |
 | `ad5m-screenshot.sh` | Remote screenshot capture from AD5M printer |
 | `generate-screenshots.sh` | Generate screenshots for documentation/marketing |
 | `generate-test-data.py` | Generate mock test data for test suites |

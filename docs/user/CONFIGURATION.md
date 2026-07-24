@@ -1652,8 +1652,9 @@ HelixScreen accepts command-line options for overriding configuration and debugg
 | Option | Description |
 |--------|-------------|
 | `-w, --wizard` | Force first-run configuration wizard |
+| `--skip-wizard` | Suppress the first-run wizard (for automation/screenshots) |
 
-> Developers: to drive the UI to a specific panel or overlay, see `docs/devel/HELIXCTL.md` (the `helixctl` remote-control tool).
+> Developers: to drive the UI to a specific panel or overlay, see `docs/devel/HELIXCTL.md` (the `helixctl` remote-control tool). The control server it talks to is auto-enabled in `--test` mode, or opt-in with `--remote` (and `--remote-socket <path>` to override the socket location).
 
 ### Connection Options
 
