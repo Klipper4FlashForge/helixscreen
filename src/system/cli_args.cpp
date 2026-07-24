@@ -172,6 +172,8 @@ static void print_help(const char* program_name) {
     printf("  Print: print-select (cards), print-select-list, print-detail\n");
     printf("  Controls: motion, nozzle-temp, bed-temp, fan, led, bed-mesh, pid\n");
     printf("  Settings: display, sensors, touch-cal, hardware-health, network, theme\n");
+    printf("  Settings: fan-settings, barcode-scanner, label-printer, security, lock-screen\n");
+    printf("  Settings: camera (standalone fullscreen viewer; needs a webcam)\n");
     printf("  Advanced: zoffset, screws, input-shaper, spoolman, history-dashboard, macros\n");
     printf("  Print: print-status, print-tune\n");
     printf("  Dev: ams, step-test, test, gcode-test, glyphs\n");
@@ -291,6 +293,23 @@ static bool parse_panel_arg(const char* panel_arg, CliArgs& args) {
     } else if (strcmp(panel_arg, "network") == 0 || strcmp(panel_arg, "network-settings") == 0) {
         args.initial_panel = static_cast<int>(PanelId::Settings);
         args.overlays.network_settings = true;
+    } else if (strcmp(panel_arg, "fan-settings") == 0 || strcmp(panel_arg, "fans") == 0) {
+        args.initial_panel = static_cast<int>(PanelId::Settings);
+        args.overlays.fan_settings = true;
+    } else if (strcmp(panel_arg, "barcode-scanner") == 0 || strcmp(panel_arg, "barcode") == 0) {
+        args.initial_panel = static_cast<int>(PanelId::Settings);
+        args.overlays.barcode_scanner = true;
+    } else if (strcmp(panel_arg, "label-printer") == 0 || strcmp(panel_arg, "label") == 0) {
+        args.initial_panel = static_cast<int>(PanelId::Settings);
+        args.overlays.label_printer = true;
+    } else if (strcmp(panel_arg, "security") == 0) {
+        args.initial_panel = static_cast<int>(PanelId::Settings);
+        args.overlays.security = true;
+    } else if (strcmp(panel_arg, "lock-screen") == 0 || strcmp(panel_arg, "lock") == 0) {
+        args.overlays.lock_screen = true;
+    } else if (strcmp(panel_arg, "camera") == 0) {
+        args.initial_panel = static_cast<int>(PanelId::Settings);
+        args.overlays.camera = true;
     }
     // Advanced overlays
     else if (strcmp(panel_arg, "macros") == 0) {

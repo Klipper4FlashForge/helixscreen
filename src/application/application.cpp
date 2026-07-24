@@ -114,9 +114,14 @@
 #include "ui_print_tune_overlay.h"
 #include "ui_printer_status_icon.h"
 #include "ui_probe_overlay.h"
+#include "ui_lock_screen.h"
 #include "ui_settings_about.h"
+#include "ui_settings_barcode_scanner.h"
 #include "ui_settings_display_sound.h"
+#include "ui_settings_fans.h"
 #include "ui_settings_hardware_health.h"
+#include "ui_settings_label_printer.h"
+#include "ui_settings_security.h"
 #include "ui_settings_sensors.h"
 #include "ui_severity_card.h"
 #include "ui_spaghetti_detection_modal.h"
@@ -225,6 +230,15 @@
 #endif
 
 using namespace helix;
+
+#if HELIX_HAS_CAMERA
+// Defined in src/ui/panel_widgets/camera_widget.cpp; that directory is not on
+// application.cpp's include path, so forward-declare rather than including the
+// header (same pattern as ui_settings_hardware.cpp).
+namespace helix {
+void open_standalone_camera_fullscreen(lv_obj_t* parent_screen);
+}
+#endif
 
 // External globals for logging (defined in cli_args.cpp, populated by parse_cli_args)
 extern std::string g_log_dest_cli;
@@ -2422,6 +2436,42 @@ void Application::create_overlays() {
             NavigationManager::instance().push_overlay(panel_obj);
             spdlog::info("[Application] Opened network settings overlay via CLI");
         }
+    }
+
+    if (m_args.overlays.fan_settings) {
+        helix::settings::get_fan_settings_overlay().show(m_screen);
+        spdlog::info("[Application] Opened fan settings overlay via CLI");
+    }
+
+    if (m_args.overlays.barcode_scanner) {
+        helix::ui::get_barcode_scanner_settings_overlay().show(m_screen);
+        spdlog::info("[Application] Opened barcode scanner settings overlay via CLI");
+    }
+
+    if (m_args.overlays.label_printer) {
+        helix::settings::get_label_printer_settings_overlay().show(m_screen);
+        spdlog::info("[Application] Opened label printer settings overlay via CLI");
+    }
+
+    if (m_args.overlays.security) {
+        helix::settings::get_security_settings_overlay().show(m_screen);
+        spdlog::info("[Application] Opened security settings overlay via CLI");
+    }
+
+    if (m_args.overlays.lock_screen) {
+        helix::ui::LockScreenOverlay::instance().show();
+        spdlog::info("[Application] Opened lock screen overlay via CLI");
+    }
+
+    if (m_args.overlays.camera) {
+#if HELIX_HAS_CAMERA
+        // No-ops if no webcam is discovered yet; point at a live Moonraker with a
+        // webcam (--moonraker ws://host:7125) for a real feed.
+        helix::open_standalone_camera_fullscreen(m_screen);
+        spdlog::info("[Application] Opened standalone camera viewer via CLI");
+#else
+        spdlog::warn("[Application] Camera viewer requested but HELIX_HAS_CAMERA is off");
+#endif
     }
 
     if (m_args.overlays.macros) {

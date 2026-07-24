@@ -63,6 +63,7 @@ class CameraWidget : public PanelWidget {
     // Fullscreen overlay state
     lv_obj_t* fullscreen_overlay_ = nullptr;
     lv_obj_t* fullscreen_image_ = nullptr;
+    lv_obj_t* fullscreen_spinner_ = nullptr; // "Connecting…" overlay in fullscreen, hidden on first frame
 
     std::unique_ptr<CameraStream> stream_;
     bool active_ = false;              // true when on_activate() has been called

@@ -4,13 +4,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # Capture all screenshots for the documentation gallery
-# Uses Nord theme in dark mode for consistency
+# Uses the default HelixScreen theme in dark mode for consistency
 
 set -e
 cd "$(dirname "$0")/.."
 
 # Configuration
-THEME="${HELIX_THEME:-nord}"
+THEME="${HELIX_THEME:-helixscreen}"
 MODE="--dark"
 FLAGS="--test"
 OUTPUT_DIR="docs/images/user"
@@ -45,6 +45,11 @@ PANELS=(
     "settings-theme:theme"
     "settings-network:network"
     "settings-hardware:hardware-health"
+    "settings-fans:fan-settings"
+    "settings-barcode-scanner:barcode-scanner"
+    "settings-label-printer:label-printer"
+    "settings-security:security"
+    "screen-lock:lock-screen"
 
     # Advanced overlays
     "advanced-shaper:input-shaper"

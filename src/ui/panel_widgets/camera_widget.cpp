@@ -348,9 +348,12 @@ void CameraWidget::start_stream() {
                 if (target) {
                     lv_image_set_src(target, frame);
                     set_status_text("");
-                    // Hide spinner overlay on first frame
-                    if (camera_overlay_ && !lv_obj_has_flag(camera_overlay_, LV_OBJ_FLAG_HIDDEN)) {
-                        lv_obj_add_flag(camera_overlay_, LV_OBJ_FLAG_HIDDEN);
+                    // Hide the spinner overlay matching the active view on first frame.
+                    // In fullscreen the frame goes to fullscreen_image_, so the fullscreen
+                    // overlay's own spinner must be hidden — not the inline widget's.
+                    lv_obj_t* spinner = fullscreen_image_ ? fullscreen_spinner_ : camera_overlay_;
+                    if (spinner && !lv_obj_has_flag(spinner, LV_OBJ_FLAG_HIDDEN)) {
+                        lv_obj_add_flag(spinner, LV_OBJ_FLAG_HIDDEN);
                     }
                 }
             });
@@ -547,6 +550,7 @@ void CameraWidget::open_fullscreen() {
 
     fullscreen_overlay_ = overlay;
     fullscreen_image_ = lv_obj_find_by_name(overlay, "fullscreen_camera_image");
+    fullscreen_spinner_ = lv_obj_find_by_name(overlay, "fullscreen_spinner");
     s_fullscreen_owner = this;
 
     if (fullscreen_image_) {
@@ -571,6 +575,7 @@ void CameraWidget::open_fullscreen() {
             lv_image_set_src(fullscreen_image_, nullptr);
         }
         fullscreen_image_ = nullptr;
+        fullscreen_spinner_ = nullptr;
         s_fullscreen_owner = nullptr;
 
         // Delete the overlay widget tree

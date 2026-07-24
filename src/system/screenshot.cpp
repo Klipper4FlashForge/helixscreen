@@ -78,6 +78,34 @@ std::string save_screenshot() {
         return {};
     }
 
+    // lv_snapshot_take() only captures the active screen. Full-screen overlays that
+    // live on the top layer (e.g. the PIN lock screen) are rendered separately and
+    // would otherwise be missing. Composite the top layer over the base when present.
+    lv_obj_t* top = lv_layer_top();
+    if (top && lv_obj_get_child_count(top) > 0) {
+        lv_draw_buf_t* top_snap = lv_snapshot_take(top, LV_COLOR_FORMAT_ARGB8888);
+        if (top_snap && top_snap->header.w == snapshot->header.w &&
+            top_snap->header.h == snapshot->header.h) {
+            // ARGB8888 memory order is B,G,R,A per pixel. Alpha-blend top over base.
+            uint8_t* base = snapshot->data;
+            const uint8_t* over = top_snap->data;
+            size_t px = static_cast<size_t>(snapshot->header.w) * snapshot->header.h;
+            for (size_t i = 0; i < px; i++) {
+                size_t o = i * 4;
+                uint32_t a = over[o + 3];
+                if (a == 0)
+                    continue; // fully transparent — keep base pixel
+                uint32_t ia = 255U - a;
+                base[o + 0] = static_cast<uint8_t>((over[o + 0] * a + base[o + 0] * ia) / 255U);
+                base[o + 1] = static_cast<uint8_t>((over[o + 1] * a + base[o + 1] * ia) / 255U);
+                base[o + 2] = static_cast<uint8_t>((over[o + 2] * a + base[o + 2] * ia) / 255U);
+                base[o + 3] = 255;
+            }
+        }
+        if (top_snap)
+            lv_draw_buf_destroy(top_snap);
+    }
+
     // Write BMP file
     if (write_bmp(filename.c_str(), snapshot->data, snapshot->header.w, snapshot->header.h)) {
         spdlog::info("[Screenshot] saved: {}", filename);

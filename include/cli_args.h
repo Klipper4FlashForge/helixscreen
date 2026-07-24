@@ -61,6 +61,12 @@ struct OverlayFlags {
     bool touch_calibration = false;
     bool hardware_health = false;
     bool network_settings = false;
+    bool fan_settings = false;      // Fan rename/settings overlay
+    bool barcode_scanner = false;   // Barcode scanner settings overlay
+    bool label_printer = false;     // Label printer settings overlay
+    bool security = false;          // Security settings overlay
+    bool lock_screen = false;       // Full-screen PIN lock overlay
+    bool camera = false;            // Standalone fullscreen camera viewer
 
     // Advanced overlays
     bool macros = false;
@@ -74,7 +80,8 @@ struct OverlayFlags {
     /** @brief Check if any overlay requiring Moonraker data is requested */
     bool needs_moonraker() const {
         return motion || nozzle_temp || bed_temp || fan || print_status || bed_mesh || zoffset ||
-               pid || screws_tilt || input_shaper || file_detail || history_dashboard || spoolman;
+               pid || screws_tilt || input_shaper || file_detail || history_dashboard || spoolman ||
+               camera;
     }
 };
 
