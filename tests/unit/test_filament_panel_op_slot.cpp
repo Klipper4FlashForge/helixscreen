@@ -30,6 +30,8 @@
 #include "ams_backend_mock.h"
 #include "ams_state.h"
 #include "ams_types.h"
+#include "post_op_cooldown_manager.h"
+#include "printer_state.h"
 #include "tool_state.h"
 #include "ui_panel_filament.h"
 
@@ -56,15 +58,21 @@ class RecordingBackend : public AmsBackendMock {
 
     AmsSystemInfo sys_{}; ///< Snapshot returned to the panel (test sets fields)
     int loaded_slot_ = -1; ///< Which slot reports "loaded at toolhead"
+    PathTopology topology_ = PathTopology::HUB; ///< Simulated path topology (test sets)
 
     // Observed dispatches
     int last_load_slot = -999;
     int load_calls = 0;
     int last_unload_slot = -999;
     int unload_calls = 0;
+    int last_change_tool = -999; ///< Tool passed to change_tool()
+    int change_tool_calls = 0;   ///< How many times change_tool() dispatched
 
     [[nodiscard]] AmsSystemInfo get_system_info() const override {
         return sys_;
+    }
+    [[nodiscard]] PathTopology get_topology() const override {
+        return topology_;
     }
     [[nodiscard]] AmsType get_type() const override {
         return sys_.type;
@@ -88,6 +96,11 @@ class RecordingBackend : public AmsBackendMock {
     AmsError unload_filament(int slot) override {
         last_unload_slot = slot;
         ++unload_calls;
+        return AmsErrorHelper::success();
+    }
+    AmsError change_tool(int t) override {
+        last_change_tool = t;
+        ++change_tool_calls;
         return AmsErrorHelper::success();
     }
 };
@@ -245,4 +258,149 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     REQUIRE(h.mock->load_calls == 1);
     CHECK(h.mock->last_load_slot == 3); // NOT 0 (bare default / stuck current_slot)
+}
+
+// ============================================================================
+// Bug A guard: the dropdown must NOT issue a physical tool change on a
+// shared-extruder AMS (HUB / LINEAR). Selecting a tool is selection-only there;
+// the explicit Load button performs the swap. Only a true PARALLEL toolchanger
+// (each tool = its own toolhead) changes tool on select. active_tool = T0 in
+// identity_topo(), so selecting T1 clears the "already active" early-return and
+// reaches the topology gate.
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "AFC/BoxTurtle (HUB): dropdown selection issues NO physical tool change",
+                 "[filament][op_slot][panel]") {
+    OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
+    h.mock->topology_ = PathTopology::HUB;
+    h.select_tool(1); // != active T0
+
+    TA::handle_extruder_changed(*h.panel);
+
+    CHECK(h.mock->change_tool_calls == 0); // no cut/unload/load swap
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "AD5X IFS (LINEAR): dropdown selection issues NO physical tool change",
+                 "[filament][op_slot][panel]") {
+    OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
+    h.mock->topology_ = PathTopology::LINEAR;
+    h.select_tool(2); // != active T0
+
+    TA::handle_extruder_changed(*h.panel);
+
+    CHECK(h.mock->change_tool_calls == 0);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "Toolchanger (PARALLEL): dropdown selection changes tool to the selected index",
+                 "[filament][op_slot][panel]") {
+    OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
+    h.mock->topology_ = PathTopology::PARALLEL;
+    h.select_tool(1); // != active T0
+
+    TA::handle_extruder_changed(*h.panel);
+
+    REQUIRE(h.mock->change_tool_calls == 1);
+    CHECK(h.mock->last_change_tool == 1);
+}
+
+// ============================================================================
+// Bug C guard: after a filament op, the extruder must cool back down. Two halves:
+//
+//   1. restore_heater_after_preheat() schedules the post-op cooldown whenever the
+//      printer is IDLE, and skips it while printing/paused (a real print manages
+//      its own heat — cooling under it would fight the job).
+//   2. Fire-and-forget AMS backend ops (AFC/BoxTurtle) complete via
+//      ams_action_observer_ returning to IDLE — NOT the gcode/macro success
+//      callback that used to be the only caller of restore_heater_after_preheat().
+//      That completion block must reach restore, or the nozzle holds the material
+//      temp indefinitely after a swap (the reported bug).
+//
+// The 120s timer -> M104 S0 machinery itself lives in PostOpCooldownManager and is
+// shared/pre-existing; these tests pin only the panel's NEW scheduling behavior,
+// observed via PostOpCooldownManager::has_pending_timer().
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "Bug C: restore_heater_after_preheat schedules a cooldown when idle",
+                 "[filament][op_slot][panel]") {
+    OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
+
+    auto& cd = PostOpCooldownManager::instance();
+    cd.init();
+    cd.cancel();
+    process_lvgl(10);
+    REQUIRE_FALSE(cd.has_pending_timer()); // clean baseline
+
+    lv_subject_set_int(state().get_print_state_enum_subject(),
+                       static_cast<int>(helix::PrintJobState::STANDBY));
+
+    TA::restore_heater_after_preheat(*h.panel);
+    process_lvgl(30); // observer/schedule hops -> queued timer creation
+
+    CHECK(cd.has_pending_timer());
+
+    cd.cancel();
+    process_lvgl(10);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "Bug C: restore_heater_after_preheat does NOT schedule while printing",
+                 "[filament][op_slot][panel]") {
+    OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
+
+    auto& cd = PostOpCooldownManager::instance();
+    cd.init();
+    cd.cancel();
+    process_lvgl(10);
+    REQUIRE_FALSE(cd.has_pending_timer());
+
+    lv_subject_set_int(state().get_print_state_enum_subject(),
+                       static_cast<int>(helix::PrintJobState::PRINTING));
+
+    TA::restore_heater_after_preheat(*h.panel);
+    process_lvgl(30);
+
+    CHECK_FALSE(cd.has_pending_timer()); // a print manages its own heat
+
+    cd.cancel();
+    process_lvgl(10);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "Bug C: AFC backend load completion schedules the post-op cooldown",
+                 "[filament][op_slot][panel]") {
+    // End-to-end: an AFC load is dispatched fire-and-forget, then the AMS action
+    // returns to IDLE (backend finished). The ams_action_observer_ completion
+    // block must run restore_heater_after_preheat() and leave a cooldown pending.
+    // Mutation target: delete the restore_heater_after_preheat() call in that block
+    // (ui_panel_filament.cpp) and this fails — no timer pending after completion.
+    OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
+    h.select_tool(0); // slot 0 is NOT loaded (only slot 3 is) -> load proceeds
+
+    lv_subject_set_int(state().get_print_state_enum_subject(),
+                       static_cast<int>(helix::PrintJobState::STANDBY));
+
+    auto& cd = PostOpCooldownManager::instance();
+    cd.init();
+    cd.cancel();
+    process_lvgl(10);
+    REQUIRE_FALSE(cd.has_pending_timer());
+
+    TA::execute_load(*h.panel); // fire-and-forget backend load; op guard now active
+    REQUIRE(h.mock->load_calls == 1);
+
+    // Backend signals progress, then completion, via the shared AMS action subject.
+    lv_subject_t* action = AmsState::instance().get_ams_action_subject();
+    lv_subject_set_int(action, static_cast<int>(AmsAction::LOADING));
+    process_lvgl(10);
+    lv_subject_set_int(action, static_cast<int>(AmsAction::IDLE));
+    process_lvgl(30); // deferred observer -> op_succeeded + restore -> schedule
+
+    CHECK(cd.has_pending_timer());
+
+    cd.cancel();
+    process_lvgl(10);
 }

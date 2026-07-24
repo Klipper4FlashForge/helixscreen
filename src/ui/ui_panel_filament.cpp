@@ -441,6 +441,11 @@ void FilamentPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
                     self->backend_op_active_ = false;
                     self->op_in_flight_.reset();
                     self->op_succeeded(op);
+                    // Backend (AFC/etc.) ops complete HERE, not via the gcode/macro
+                    // success callbacks that call restore_heater_after_preheat().
+                    // Without this the post-op cooldown is never scheduled and the
+                    // nozzle holds the material temp indefinitely after a swap.
+                    self->restore_heater_after_preheat();
                 }
             }
         });
@@ -1723,6 +1728,20 @@ void FilamentPanel::handle_extruder_changed() {
         return;
     }
 
+    // Divergent behavior by topology: on a shared-extruder AMS (AFC BoxTurtle =
+    // HUB, AD5X IFS = LINEAR), selecting a tool in the dropdown must NOT trigger a
+    // physical filament swap — that's a multi-minute cut/unload/load at the single
+    // toolhead. The dropdown is selection-only; the explicit Load button performs
+    // the swap (execute_load acts on selected_op_slot()). Only a true PARALLEL
+    // toolchanger (each tool is its own toolhead) changes tool on select. With no
+    // backend (plain multi-extruder / external spool) keep the gcode Tn fallback.
+    AmsBackend* backend = AmsState::instance().get_backend();
+    if (backend && backend->get_topology() != PathTopology::PARALLEL) {
+        spdlog::info("[{}] Tool T{} selected (AMS: selection only; Load performs the swap)",
+                     get_name(), selected);
+        return;
+    }
+
     spdlog::info("[{}] User selected tool T{}", get_name(), selected);
 
     ts.request_tool_change(
@@ -2326,7 +2345,18 @@ void FilamentPanel::cancel_pending_preheat() {
 }
 
 void FilamentPanel::restore_heater_after_preheat() {
-    if (prior_nozzle_target_ == 0) {
+    // Schedule the post-op cooldown whenever the printer is idle (not printing or
+    // paused), regardless of the pre-op nozzle target. The old prior_nozzle_target_
+    // == 0 guard was meant to preserve a deliberate manual preheat, but it could not
+    // tell a real user-set target from one left stale by a PRIOR filament op that
+    // never cooled — so after a swap the nozzle held the material temp indefinitely
+    // (AFC's auto-heat on load makes this the common case). A real print re-heats or
+    // cancels the pending cooldown, so cooling 120s after an idle swap is safe.
+    auto state = static_cast<helix::PrintJobState>(
+        lv_subject_get_int(printer_state_.get_print_state_enum_subject()));
+    bool printing =
+        (state == helix::PrintJobState::PRINTING || state == helix::PrintJobState::PAUSED);
+    if (!printing) {
         PostOpCooldownManager::instance().schedule();
     }
     prior_nozzle_target_ = 0;
