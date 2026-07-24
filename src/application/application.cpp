@@ -582,7 +582,6 @@ int Application::run(int argc, char** argv) {
     spdlog::debug("[Application] Target: {}x{}", m_screen_width, m_screen_height);
     spdlog::debug("[Application] DPI: {}{}", (m_args.dpi > 0 ? m_args.dpi : LV_DPI_DEF),
                   (m_args.dpi > 0 ? " (custom)" : " (default)"));
-    spdlog::debug("[Application] Initial Panel: {}", m_args.initial_panel);
 
     // Headless one-shot: detect printer via Moonraker REST, print JSON verdict, exit.
     // Must run after logging init but before any display/LVGL init.
@@ -1080,9 +1079,6 @@ bool Application::parse_args(int argc, char** argv) {
         return false;
     }
 
-    // Auto-configure mock state based on requested panel (after parsing args)
-    auto_configure_mock_state();
-
     // Apply environment variable overrides using type-safe EnvironmentConfig
     using EnvConfig = helix::config::EnvironmentConfig;
 
@@ -1125,41 +1121,6 @@ bool Application::parse_args(int argc, char** argv) {
     }
 
     return true;
-}
-
-void Application::auto_configure_mock_state() {
-    RuntimeConfig* config = get_runtime_config();
-
-    if (config->test_mode && !config->use_real_moonraker) {
-        if (m_args.overlays.print_status) {
-            config->mock_auto_start_print = true;
-            if (!config->gcode_test_file) {
-                config->gcode_test_file = RuntimeConfig::get_default_test_file_path();
-            }
-            spdlog::info("[Auto] Mock will simulate active print with '{}'",
-                         config->gcode_test_file);
-        }
-
-        // When requesting the detail view (print-detail), honor an explicit
-        // --select-file if one was given; otherwise fall back to the default test
-        // file so the panel always has something to render. Never override a
-        // user-requested file with the default (or the first file in the list).
-        if (m_args.overlays.file_detail) {
-            if (!config->select_file) {
-                config->select_file = RuntimeConfig::DEFAULT_TEST_FILE;
-                spdlog::info("[Auto] Auto-selecting '{}' for print-detail panel",
-                             RuntimeConfig::DEFAULT_TEST_FILE);
-            } else {
-                spdlog::info("[Auto] Honoring requested --select-file '{}' for print-detail panel",
-                             config->select_file);
-            }
-        }
-
-        if (m_args.overlays.history_dashboard) {
-            config->mock_auto_history = true;
-            spdlog::info("[Auto] Mock will generate history data for history panel");
-        }
-    }
 }
 
 bool Application::init_config() {
@@ -2037,12 +1998,8 @@ bool Application::init_plugins() {
 }
 
 bool Application::run_wizard() {
-    bool wizard_required = (m_args.force_wizard || m_config->is_wizard_required()) &&
-                           !m_args.skip_wizard &&
-                           !m_args.overlays.step_test && !m_args.overlays.test_panel &&
-                           !m_args.overlays.keypad && !m_args.overlays.keyboard &&
-                           !m_args.overlays.gcode_test && !m_args.overlays.wizard_ams_identify &&
-                           !m_args.panel_requested;
+    bool wizard_required =
+        (m_args.force_wizard || m_config->is_wizard_required()) && !m_args.skip_wizard;
 
     if (!wizard_required) {
         return false;
@@ -2148,264 +2105,6 @@ bool Application::run_wizard() {
 }
 
 void Application::create_overlays() {
-    // Navigate to initial panel
-    if (m_args.initial_panel >= 0) {
-        NavigationManager::instance().set_active(static_cast<PanelId>(m_args.initial_panel));
-    }
-
-    // Create requested overlay panels
-    if (m_args.overlays.motion) {
-        auto& motion = get_global_motion_panel();
-
-        // Initialize subjects and callbacks if not already done
-        if (!motion.are_subjects_initialized()) {
-            motion.init_subjects();
-        }
-        motion.register_callbacks();
-
-        // Create overlay UI
-        auto* p = motion.create(m_screen);
-        if (p) {
-            m_overlay_panels.motion = p;
-            NavigationManager::instance().register_overlay_instance(p, &motion);
-            NavigationManager::instance().push_overlay(p);
-        }
-    }
-
-    if (m_args.overlays.nozzle_temp) {
-        if (auto* p = create_overlay_panel(m_screen, "nozzle_temp_panel", "nozzle temp")) {
-            m_overlay_panels.nozzle_temp = p;
-            m_subjects->temp_control_panel()->setup_nozzle_panel(p, m_screen);
-            NavigationManager::instance().push_overlay(p);
-        }
-    }
-
-    if (m_args.overlays.bed_temp) {
-        if (auto* p = create_overlay_panel(m_screen, "bed_temp_panel", "bed temp")) {
-            m_overlay_panels.bed_temp = p;
-            m_subjects->temp_control_panel()->setup_bed_panel(p, m_screen);
-            NavigationManager::instance().push_overlay(p);
-        }
-    }
-
-    if (m_args.overlays.fan) {
-        auto& overlay = get_fan_control_overlay();
-
-        // Initialize subjects and callbacks if not already done
-        if (!overlay.are_subjects_initialized()) {
-            overlay.init_subjects();
-        }
-        overlay.register_callbacks();
-
-        // Pass API reference for fan commands
-        overlay.set_api(get_moonraker_api());
-
-        // Create overlay UI
-        auto* p = overlay.create(m_screen);
-        if (p) {
-            NavigationManager::instance().register_overlay_instance(p, &overlay);
-            NavigationManager::instance().push_overlay(p);
-        }
-    }
-
-    if (m_args.overlays.led) {
-        auto& overlay = get_led_control_overlay();
-
-        // Initialize subjects and callbacks if not already done
-        if (!overlay.are_subjects_initialized()) {
-            overlay.init_subjects();
-        }
-        overlay.register_callbacks();
-
-        // Pass API reference for LED commands
-        overlay.set_api(get_moonraker_api());
-
-        // Create overlay UI
-        auto* p = overlay.create(m_screen);
-        if (p) {
-            NavigationManager::instance().register_overlay_instance(p, &overlay);
-            NavigationManager::instance().push_overlay(p);
-        }
-    }
-
-    if (m_args.overlays.print_status) {
-        PrintStatusPanel::push_overlay(m_screen);
-    }
-
-    if (m_args.overlays.bed_mesh) {
-        auto& overlay = get_global_bed_mesh_panel();
-
-        // Initialize subjects and callbacks if not already done
-        if (!overlay.are_subjects_initialized()) {
-            overlay.init_subjects();
-        }
-        overlay.register_callbacks();
-
-        // Create overlay UI
-        auto* p = overlay.create(m_screen);
-        if (p) {
-            m_overlay_panels.bed_mesh = p;
-            NavigationManager::instance().register_overlay_instance(p, &overlay);
-            NavigationManager::instance().push_overlay(p);
-        }
-    }
-
-    if (m_args.overlays.zoffset) {
-        auto& overlay = get_global_zoffset_cal_panel();
-        // init_subjects already called by SubjectInitializer
-        overlay.set_api(m_moonraker->api());
-        if (overlay.create(m_screen)) {
-            overlay.show();
-        }
-    }
-
-    if (m_args.overlays.pid) {
-        auto& overlay = get_global_pid_cal_panel();
-        // init_subjects already called by SubjectInitializer
-        overlay.set_api(m_moonraker->api());
-        if (get_runtime_config()->test_mode) {
-            overlay.request_demo_inject();
-        }
-        if (overlay.create(m_screen)) {
-            overlay.show();
-        }
-    }
-
-    if (m_args.overlays.screws_tilt) {
-        auto& overlay = get_global_screws_tilt_panel();
-        // init_subjects already called by SubjectInitializer
-        overlay.set_client(m_moonraker->client(), m_moonraker->api());
-        if (overlay.create(m_screen)) {
-            overlay.show();
-        }
-    }
-
-    if (m_args.overlays.input_shaper) {
-        auto& panel = get_global_input_shaper_panel();
-        panel.set_api(m_moonraker->client(), m_moonraker->api());
-        if (get_runtime_config()->test_mode) {
-            panel.request_demo_inject();
-        }
-        if (panel.create(m_screen)) {
-            panel.show();
-        }
-    }
-
-    if (m_args.overlays.history_dashboard) {
-        auto& overlay = get_global_history_dashboard_panel();
-        if (!overlay.are_subjects_initialized()) {
-            overlay.init_subjects();
-        }
-        overlay.register_callbacks();
-        auto* p = overlay.create(m_screen);
-        if (p) {
-            NavigationManager::instance().register_overlay_instance(p, &overlay);
-            NavigationManager::instance().push_overlay(p);
-        }
-    }
-
-    if (m_args.overlays.step_test) {
-        get_global_step_test_panel().init_subjects();
-        if (auto* p = create_overlay_panel(m_screen, "step_test_panel", "step progress")) {
-            get_global_step_test_panel().setup(p, m_screen);
-            NavigationManager::instance().push_overlay(p);
-        }
-    }
-
-    if (m_args.overlays.test_panel) {
-        if (auto* p = create_overlay_panel(m_screen, "test_panel", "test")) {
-            get_global_test_panel().setup(p, m_screen);
-        }
-    }
-
-    if (m_args.overlays.gcode_test) {
-        ui_panel_gcode_test_create(m_screen);
-    }
-
-    if (m_args.overlays.glyphs) {
-        ui_panel_glyphs_create(m_screen);
-    }
-
-    if (m_args.overlays.gradient_test) {
-        create_overlay_panel(m_screen, "gradient_test_panel", "gradient test");
-    }
-
-    if (m_args.overlays.ams) {
-        // Use multi-unit-aware navigation: shows overview for multi-unit,
-        // detail panel directly for single-unit
-        navigate_to_ams_panel();
-    }
-
-    if (m_args.overlays.ams_environment) {
-        // Filament Environment / dryer overlay for unit 0 (CLI screenshot/testing)
-        helix::ui::get_ams_environment_overlay().show(m_screen, 0);
-    }
-
-    if (m_args.overlays.spoolman) {
-        auto& spoolman = get_global_spoolman_panel();
-        if (!spoolman.are_subjects_initialized()) {
-            spoolman.init_subjects();
-        }
-        spoolman.register_callbacks();
-        lv_obj_t* panel_obj = spoolman.create(m_screen);
-        if (panel_obj) {
-            NavigationManager::instance().register_overlay_instance(panel_obj, &spoolman);
-            NavigationManager::instance().push_overlay(panel_obj);
-        }
-    }
-
-    if (m_args.overlays.wizard_ams_identify) {
-        auto* step = get_wizard_ams_identify_step();
-        step->init_subjects();
-        lv_obj_t* panel_obj = step->create(m_screen);
-        if (panel_obj) {
-            NavigationManager::instance().push_overlay(panel_obj);
-        }
-    }
-
-    if (m_args.overlays.theme) {
-        // Use the proper flow through DisplaySettingsOverlay which handles:
-        // - callback registration
-        // - dropdown population
-        // - theme preview creation
-        auto& display_settings = helix::settings::get_display_sound_settings_overlay();
-        display_settings.show_theme_preview(m_screen);
-        spdlog::info("[Application] Opened theme preview overlay via CLI");
-    }
-
-    if (m_args.overlays.theme_edit) {
-        // Push theme preview first, then theme editor on top
-        auto& display_settings = helix::settings::get_display_sound_settings_overlay();
-        display_settings.show_theme_preview(m_screen);
-
-        // Now push theme editor overlay on top
-        auto& theme_editor = get_theme_editor_overlay();
-        theme_editor.register_callbacks();
-        theme_editor.init_subjects();
-        lv_obj_t* editor_panel = theme_editor.create(m_screen);
-        if (editor_panel) {
-            // Load current theme for editing
-            std::string current_theme = DisplaySettingsManager::instance().get_theme_name();
-            theme_editor.set_editing_dark_mode(DisplaySettingsManager::instance().get_dark_mode());
-            theme_editor.load_theme(current_theme);
-            NavigationManager::instance().push_overlay(editor_panel);
-            spdlog::info("[Application] Opened theme editor overlay via CLI");
-        }
-    }
-
-    // Settings overlays (for CLI screenshot automation)
-    if (m_args.overlays.display_settings) {
-        auto& overlay = helix::settings::get_display_sound_settings_overlay();
-        overlay.show(m_screen);
-        spdlog::info("[Application] Opened display settings overlay via CLI");
-    }
-
-    if (m_args.overlays.sensor_settings) {
-        auto& overlay = helix::settings::get_sensor_settings_overlay();
-        overlay.show(m_screen);
-        spdlog::info("[Application] Opened sensor settings overlay via CLI");
-    }
-
     // Force touch calibration: --calibrate-touch flag, env var, OR config force_calibration option
     bool force_touch_cal = m_args.calibrate_touch;
     if (!force_touch_cal) {
@@ -2415,7 +2114,7 @@ void Application::create_overlays() {
         force_touch_cal = m_config->get<bool>("/input/force_calibration", false);
     }
 
-    if (force_touch_cal || m_args.overlays.touch_calibration) {
+    if (force_touch_cal) {
         auto& overlay = helix::ui::get_touch_calibration_overlay();
         overlay.init_subjects();
         overlay.register_callbacks();
@@ -2433,136 +2132,8 @@ void Application::create_overlays() {
         spdlog::info("[Application] Opened touch calibration overlay (force={})", force_touch_cal);
     }
 
-    if (m_args.overlays.hardware_health) {
-        auto& overlay = helix::settings::get_hardware_health_overlay();
-        overlay.show(m_screen);
-        spdlog::info("[Application] Opened hardware health overlay via CLI");
-    }
-
-    if (m_args.overlays.about) {
-        auto& overlay = helix::settings::get_about_settings_overlay();
-        overlay.show(m_screen);
-        spdlog::info("[Application] Opened about overlay via CLI");
-    }
-
-    if (m_args.overlays.network_settings) {
-        auto& overlay = get_network_settings_overlay();
-        overlay.init_subjects();
-        lv_obj_t* panel_obj = overlay.create(m_screen);
-        if (panel_obj) {
-            NavigationManager::instance().push_overlay(panel_obj);
-            spdlog::info("[Application] Opened network settings overlay via CLI");
-        }
-    }
-
-    if (m_args.overlays.fan_settings) {
-        helix::settings::get_fan_settings_overlay().show(m_screen);
-        spdlog::info("[Application] Opened fan settings overlay via CLI");
-    }
-
-    if (m_args.overlays.barcode_scanner) {
-        helix::ui::get_barcode_scanner_settings_overlay().show(m_screen);
-        spdlog::info("[Application] Opened barcode scanner settings overlay via CLI");
-    }
-
-    if (m_args.overlays.label_printer) {
-        helix::settings::get_label_printer_settings_overlay().show(m_screen);
-        spdlog::info("[Application] Opened label printer settings overlay via CLI");
-    }
-
-    if (m_args.overlays.security) {
-        helix::settings::get_security_settings_overlay().show(m_screen);
-        spdlog::info("[Application] Opened security settings overlay via CLI");
-    }
-
-    if (m_args.overlays.lock_screen) {
-        helix::ui::LockScreenOverlay::instance().show();
-        spdlog::info("[Application] Opened lock screen overlay via CLI");
-    }
-
-    if (m_args.overlays.camera) {
-#if HELIX_HAS_CAMERA
-        // No-ops if no webcam is discovered yet; point at a live Moonraker with a
-        // webcam (--moonraker ws://host:7125) for a real feed.
-        helix::open_standalone_camera_fullscreen(m_screen);
-        spdlog::info("[Application] Opened standalone camera viewer via CLI");
-#else
-        spdlog::warn("[Application] Camera viewer requested but HELIX_HAS_CAMERA is off");
-#endif
-    }
-
-    if (m_args.overlays.preflight_check) {
-        // Representative pre-print filament check: one matching tool, one color
-        // mismatch (advisory), one empty required slot (the blocking case). Seated
-        // colors come from the live (mock) AMS slots via collect_available_slots().
-        helix::PreflightResult pf;
-        helix::ToolCheck ok;
-        ok.tool_index = 0;
-        ok.intended_material = "PLA";
-        ok.intended_color = 0x2E8B57;
-        ok.mapped_slot = 0;
-        ok.slot_present = true;
-        ok.severity = helix::ToolCheck::Severity::Ok;
-        helix::ToolCheck color;
-        color.tool_index = 1;
-        color.intended_material = "PLA";
-        color.intended_color = 0xE23B3B;
-        color.mapped_slot = 1;
-        color.slot_present = true;
-        color.color_ok = false;
-        color.severity = helix::ToolCheck::Severity::ColorMismatch;
-        helix::ToolCheck empty;
-        empty.tool_index = 2;
-        empty.intended_material = "PETG";
-        empty.intended_color = 0xF5A623;
-        empty.mapped_slot = -1;
-        empty.slot_present = false;
-        empty.severity = helix::ToolCheck::Severity::EmptySlot;
-        pf.checks = {ok, color, empty};
-        auto* modal = new helix::ui::PreflightCheckModal();
-        modal->set_checks(pf);
-        modal->show(m_screen);
-        spdlog::info("[Application] Opened preflight check modal via CLI");
-    }
-
-    if (m_args.overlays.runout_modal) {
-        // Heap-allocated so it outlives this scope; a --screenshot run quits before
-        // any interaction, so the leak is harmless.
-        auto* modal = new RunoutGuidanceModal();
-        modal->set_autofeed_capable(false);
-        modal->set_resume_blocked(false);
-        modal->show(m_screen);
-        spdlog::info("[Application] Opened runout guidance modal via CLI");
-    }
-
-    if (m_args.overlays.macros) {
-        auto& overlay = get_global_macros_panel();
-        overlay.register_callbacks();
-        overlay.init_subjects();
-        lv_obj_t* panel_obj = overlay.create(m_screen);
-        if (panel_obj) {
-            NavigationManager::instance().push_overlay(panel_obj);
-            spdlog::info("[Application] Opened macros overlay via CLI");
-        }
-    }
-
-    if (m_args.overlays.print_tune) {
-        auto& overlay = get_print_tune_overlay();
-        overlay.init_subjects();
-        lv_obj_t* panel_obj = overlay.create(m_screen);
-        if (panel_obj) {
-            NavigationManager::instance().push_overlay(panel_obj);
-            spdlog::info("[Application] Opened print tune overlay via CLI");
-        }
-    }
-
-    if (m_args.overlays.timelapse_videos) {
-        open_timelapse_videos();
-        spdlog::info("[Application] Opened timelapse videos overlay via CLI");
-    }
-
     // Handle --release-notes flag: fetch latest release notes and show in modal
-    if (m_args.overlays.release_notes) {
+    if (m_args.release_notes) {
         auto& checker = UpdateChecker::instance();
         spdlog::info("[Application] Fetching latest release notes via CLI...");
         // check_for_updates callback runs on the LVGL thread (dispatched by report_result)
@@ -2675,6 +2246,18 @@ bool show_demo_overlay(const std::string& name) {
         // backend in --test mode).
         navigate_to_ams_panel();
         return true;
+    }
+
+    if (name == "camera") {
+#if HELIX_HAS_CAMERA
+        // No-ops if no webcam is discovered yet; point at a live Moonraker with a
+        // webcam (--moonraker ws://host:7125) for a real feed.
+        open_standalone_camera_fullscreen(screen);
+        return true;
+#else
+        spdlog::warn("[demo] camera viewer requested but HELIX_HAS_CAMERA is off");
+        return false;
+#endif
     }
 
     return false;

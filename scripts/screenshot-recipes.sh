@@ -69,6 +69,7 @@ declare -gA SCREENSHOT_RECIPE=(
     [print-tune]="demo print-tune"
     [preflight-check]="demo preflight-check"
     [runout-modal]="demo runout-modal"
+    [camera]="demo camera"
 )
 
 # Resolve a token to its recipe. Falls back to `navigate <token>` for anything

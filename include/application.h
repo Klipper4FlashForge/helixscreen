@@ -115,7 +115,6 @@ class Application {
 
     // Helper functions
     void ensure_project_root_cwd();
-    void auto_configure_mock_state();
 #ifdef HELIX_ENABLE_SCREENSAVER
     void show_screensaver_migration_notice_if_pending();
 #endif

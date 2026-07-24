@@ -54,7 +54,7 @@ static void print_usage() {
     printf("  wake                    Reset idle timer / dismiss the screensaver\n");
     printf("  demo <name>             Show a sample-data overlay unreachable in mock mode\n");
     printf("                          (preflight-check, runout-modal, lock-screen,\n");
-    printf("                           print-status, print-tune, ams)\n");
+    printf("                           print-status, print-tune, ams, camera)\n");
     printf("\nSubjects:\n");
     printf("  get <subject>           Read current value of named subject\n");
     printf("  set <subject> <value>   Set subject value\n");
@@ -296,7 +296,7 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
     } else if (cmd == "demo") {
         if (tokens.size() < 2) {
             fprintf(stderr, "Error: demo requires a name (preflight-check, runout-modal, ams, "
-                            "lock-screen, print-status, print-tune)\n");
+                            "lock-screen, print-status, print-tune, ams, camera)\n");
             return {};
         }
         return build_request("demo", {{"name", tokens[1]}});
