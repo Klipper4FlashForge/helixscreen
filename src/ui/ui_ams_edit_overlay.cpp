@@ -1860,7 +1860,59 @@ bool AmsEditOverlay::setup_details_selector() {
     // An already-defined filament should show its matching variant checked;
     // a fresh list pre-checks the first product so Save is one tap.
     details_selector_.preselect_first();
+    // A Spoolman-only vendor (present on the server but absent from the bundled
+    // catalog) isn't in the catalog brand list, so the seed above snapped it to
+    // Generic. Fetch the live vendor list and merge it in so the seed resolves.
+    maybe_merge_spoolman_vendors();
     return true;
+}
+
+void AmsEditOverlay::maybe_merge_spoolman_vendors() {
+    // Same availability gate the rest of this overlay uses — skip the RPC (and
+    // its "method not found" warn) on a Spoolman-less printer, where the catalog-
+    // only vendor list is the accepted behavior.
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    if (!spoolman_subj || lv_subject_get_int(spoolman_subj) != 1) {
+        return;
+    }
+    if (!api_) {
+        api_ = get_moonraker_api();
+    }
+    if (!api_) {
+        return;
+    }
+
+    auto tok = lifetime_.token();
+    api_->spoolman().get_spoolman_vendors(
+        [this, tok](const std::vector<VendorInfo>& vendors) {
+            // Background thread: build a plain name list. No `this`/member access
+            // here — L081-safe (the defer wrapper does the atomic liveness check
+            // on the main thread).
+            std::vector<std::string> names;
+            names.reserve(vendors.size());
+            for (const auto& v : vendors) {
+                if (!v.name.empty()) {
+                    names.push_back(v.name);
+                }
+            }
+            tok.defer("AmsEditOverlay::merge_spoolman_vendors_apply",
+                      [this, names = std::move(names)]() mutable {
+                          // Only meaningful while the spool-edit view is still up.
+                          if (lv_subject_get_int(&view_mode_subject_) != kViewSpoolEdit) {
+                              return;
+                          }
+                          details_selector_.set_additional_vendors(std::move(names));
+                          // Re-check the product matching the now-resolved seed
+                          // vendor+type. For a pure-Spoolman vendor the catalog
+                          // has no product, so the list stays empty and nothing
+                          // is checked — handle_spool_edit_save() then keeps the
+                          // dropdown's vendor string, preserving the brand.
+                          details_selector_.preselect_first();
+                      });
+        },
+        [](const MoonrakerError& err) {
+            spdlog::debug("[AmsEditOverlay] Spoolman vendor merge skipped: {}", err.message);
+        });
 }
 
 // ============================================================================

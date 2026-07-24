@@ -6,6 +6,8 @@
 
 #include "../catch_amalgamated.hpp"
 
+#include <sstream>
+
 using helix::printer::EffectiveFilament;
 using helix::ui::FilamentCatalogSelector;
 
@@ -38,6 +40,70 @@ TEST_CASE_METHOD(XMLTestFixture, "selector populates and reports a highlighted p
     REQUIRE(sel.highlighted() != nullptr);
     REQUIRE(got != nullptr);
     CHECK(got->type == "PLA");
+
+    sel.detach();
+    helix::ui::UpdateQueue::instance().drain();
+}
+
+TEST_CASE_METHOD(XMLTestFixture,
+                 "selector merges host additional vendors and seeds a Spoolman-only one",
+                 "[filament_picker][catalog_selector][preselect][spoolman]") {
+    lv_obj_t* root = make_fragment();
+    REQUIRE(root != nullptr);
+
+    FilamentCatalogSelector sel;
+    sel.attach(root);
+    // Seed the vendor to a brand absent from the bundled catalog. Without the
+    // additional-vendor merge the seed can't resolve, so it snaps to Generic.
+    sel.configure(std::nullopt, std::nullopt, std::string("PolyTerra"));
+    sel.populate();
+    REQUIRE(sel.current_vendor() == "Generic"); // not in the catalog yet
+
+    // The host supplies the live (e.g. Spoolman) vendor list; the seed resolves.
+    sel.set_additional_vendors({"PolyTerra"});
+    CHECK(sel.current_vendor() == "PolyTerra");
+
+    // Generic stays pinned at index 0 — the merge appends, never reorders.
+    sel.change_vendor_for_test(0);
+    CHECK(sel.current_vendor() == "Generic");
+
+    sel.detach();
+    helix::ui::UpdateQueue::instance().drain();
+}
+
+TEST_CASE_METHOD(XMLTestFixture,
+                 "selector additional-vendor merge dedups against the catalog case-insensitively",
+                 "[filament_picker][catalog_selector][spoolman]") {
+    lv_obj_t* root = make_fragment();
+    REQUIRE(root != nullptr);
+
+    FilamentCatalogSelector sel;
+    sel.attach(root);
+    sel.configure(std::nullopt, std::nullopt);
+    sel.populate();
+
+    // "Overture" is a catalog brand; a differently-cased duplicate must NOT be
+    // appended, and "Generic" (already pinned) must not double up either.
+    sel.set_additional_vendors({"overture", "Generic", "PolyTerra"});
+
+    // Walk the dropdown and count occurrences via the index-aligned order.
+    lv_obj_t* dd = lv_obj_find_by_name(root, "vendor_dropdown");
+    REQUIRE(dd != nullptr);
+    std::string opts = lv_dropdown_get_options(dd);
+    auto count_token = [&](const std::string& name) {
+        int n = 0;
+        std::string line;
+        std::stringstream ss(opts);
+        while (std::getline(ss, line)) {
+            if (line == name)
+                ++n;
+        }
+        return n;
+    };
+    CHECK(count_token("Overture") == 1);  // catalog entry kept, dup dropped
+    CHECK(count_token("overture") == 0);  // lowercased dup not appended
+    CHECK(count_token("Generic") == 1);   // pinned once
+    CHECK(count_token("PolyTerra") == 1); // genuinely new -> appended
 
     sel.detach();
     helix::ui::UpdateQueue::instance().drain();
