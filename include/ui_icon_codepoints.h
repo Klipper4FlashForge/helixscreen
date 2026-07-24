@@ -79,6 +79,8 @@ static const IconMapping ICON_MAP[] = {
     {"chart_line",         "\xF3\xB0\x84\xAA"},  // F012A chart-line
     {"check",              "\xF3\xB0\x84\xAC"},  // F012C check
     {"check_bold",         "\xF3\xB0\xB8\x9E"},  // F0E1E check-bold
+    {"check_box",               "\xF3\xB0\x84\xB2"},  // F0132 checkbox-marked (filled/checked)
+    {"check_box_outline_blank", "\xF3\xB0\x84\xB1"},  // F0131 checkbox-blank-outline (empty/unchecked)
     {"check_circle",       "\xF3\xB0\x97\xA1"},  // F05E1 check-circle-outline
     {"chevron_down",       "\xF3\xB0\x85\x80"},  // F0140 chevron-down
     {"chevron_left",       "\xF3\xB0\x85\x81"},  // F0141 chevron-left

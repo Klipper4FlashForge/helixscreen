@@ -108,6 +108,18 @@ const void * lv_xml_get_image(lv_xml_component_scope_t * scope, const char * nam
 lv_result_t lv_xml_register_subject(lv_xml_component_scope_t * scope, const char * name, lv_subject_t * subject);
 
 /**
+ * Remove a subject name from the XML registry. Non-owning: unlinks the
+ * internal record and frees only the strdup'd name copy. Does NOT call
+ * `lv_subject_deinit()` or free the `lv_subject_t` itself — the caller
+ * still owns the subject's lifetime.
+ * @param scope     The scope to remove the subject from. If `NULL` the
+ *                  `"globals"` scope is used (mirrors `lv_xml_register_subject`).
+ * @param name      Name of the subject to remove.
+ * @return          `LV_RESULT_OK` if removed, `LV_RESULT_INVALID` if not found or no scope.
+ */
+lv_result_t lv_xml_unregister_subject(lv_xml_component_scope_t * scope, const char * name);
+
+/**
  * Get a subject by name.
  * @param scope     If specified start searching in that component's subject list,
  *                  and if not found search in the global space.

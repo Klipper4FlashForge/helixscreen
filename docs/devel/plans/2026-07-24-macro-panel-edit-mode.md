@@ -285,15 +285,18 @@ git commit -m "feat(icons): add check_box / check_box_outline_blank glyphs"
 
 **Interfaces:**
 - Consumes: global subject `macro_edit_mode` (int; Task 7 registers it) and per-row subjects named by the props below (Task 7 pool-registers them).
-- Produces: `macro_card` component accepting props:
-  - `name_subject` (string subject name) → `bind_text` for the label.
-  - `visible_subject` (int subject name) → checkbox checked state.
-  - `row_index` (string) → `user_data` on the row + checkbox event_cb.
-  Retains existing look (icon + name/description column). Chevron hidden in edit mode; checkbox shown only in edit mode.
+- Produces: `macro_card` component accepting props (all `type="string"`, default empty — they carry SUBJECT NAMES, spliced per-row by `<repeat>`):
+  - `name_subject` → `bind_text` for the name label.
+  - `desc_subject` → `bind_text` for the description label (preserves today's description row).
+  - `visible_subject` (int subject) → checkbox checked state.
+  - `desc_hidden_subject` (int subject) → hides the description label per-row (C++ folds "has description" + "edit mode" into it).
+  - `chevron_hidden_subject` (int subject) → hides the chevron per-row (C++ folds "no params" + "edit mode" into it).
+  - `row_index` → `user_data` on the row for click identity.
+  Retains existing look (icon + name/description column + chevron). Checkbox shown only in edit mode (driven by the global `macro_edit_mode` subject). Description and chevron visibility are per-row ints the controller computes per mode (both forced hidden in edit mode for a compact toggle list).
 
 - [ ] **Step 1: Read** current `macro_card.xml` and note its `<view extends="lv_button">`, existing props (`macro_name`, `macro_description`, `hide_description`, `hide_chevron`), and the existing `<event_cb trigger="clicked" callback="on_macro_card_clicked"/>`.
 
-- [ ] **Step 2: Add props** in `<api>`: `name_subject`, `visible_subject`, `row_index` (type `string`, defaults empty).
+- [ ] **Step 2: Add props** in `<api>`: `name_subject`, `desc_subject`, `visible_subject`, `desc_hidden_subject`, `chevron_hidden_subject`, `row_index` — all `type="string"`, default empty. (The `*_subject` props carry subject NAMES; `bind_*`/`$prop` resolve them.)
 
 - [ ] **Step 3: Add the checkbox** as the leading child (before the icon). Use the new glyphs, bound to the row's visible subject and gated on edit mode. Because `<if>` can't nest in the (future) `<repeat>`, use reactive flags. Use a single exclusive-visibility binding per widget to avoid the multi-`bind_flag_if_eq` race ([L042]/`reference_bind_flag_multi_eq_conflict`):
 
@@ -314,11 +317,11 @@ git commit -m "feat(icons): add check_box / check_box_outline_blank glyphs"
 
 (Two stacked icons toggled by inverse ref_values on *different* widgets — no conflict. `clickable="false" event_bubble="true"` so taps pass through to the row per [L071].)
 
-- [ ] **Step 4: Bind the name** — change the name label to `bind_text="$name_subject"` (replacing the static `macro_name` prop usage). Keep description handling as-is or drop if unused in the new flow (confirm against Task 7's needs).
+- [ ] **Step 4: Bind name + description** — name label `bind_text="$name_subject"` (replacing the static `macro_name` prop). Description label `bind_text="$desc_subject"` and its own single hidden binding `<bind_flag_if_eq subject="$desc_hidden_subject" flag="hidden" ref_value="1"/>` (replacing the old `hidden="$hide_description"`). Keep the `text_small` styling (`#text_muted`, `long_mode="dots"`, `width="100%"`).
 
-- [ ] **Step 5: Chevron hidden in edit mode** — on the existing chevron, add `<bind_flag_if_eq subject="macro_edit_mode" flag="hidden" ref_value="1"/>` (its own widget, its own single binding).
+- [ ] **Step 5: Chevron hidden per-row** — on the existing chevron, replace `hidden="$hide_chevron"` with its own single binding `<bind_flag_if_eq subject="$chevron_hidden_subject" flag="hidden" ref_value="1"/>`. (The controller folds both "macro has no params" and "edit mode" into this per-row int, so the chevron correctly disappears in edit mode AND for param-less macros in normal mode — one widget, one binding, no [L042] conflict.)
 
-- [ ] **Step 6: Row identity** — set `user_data="$row_index"` on the root and on the click event_cb. Keep the click callback name but Task 7 reworks the handler to branch on edit mode.
+- [ ] **Step 6: Row identity** — set `user_data="$row_index"` on the root `<view>` and change the existing `<event_cb trigger="clicked" ...>` callback to `on_macro_row_clicked` with `user_data="$row_index"`. (NOTE: supersedes any "keep `on_macro_card_clicked`" wording — Task 7 registers `on_macro_row_clicked`, which branches on edit mode. Use the new name so the two tasks agree.)
 
 - [ ] **Step 7: Verify** by relaunch (Task 7 wires data). Defer runtime verification to Task 8 when the panel provides subjects. Commit the XML now:
 
@@ -335,7 +338,7 @@ git commit -m "feat(macros): declarative macro_card row with edit-mode checkbox"
 - Modify: `ui_xml/macro_panel.xml`
 
 **Interfaces:**
-- Consumes: global subjects `macro_row_count` (int), `macros_edit_save_hidden` (int), and pool subjects `macro_name_${i}` / `macro_visible_${i}` (Task 7).
+- Consumes: global subjects `macro_row_count` (int), `macros_edit_save_hidden` (int), and pool subjects `macro_name_${i}` / `macro_desc_${i}` / `macro_visible_${i}` / `macro_desc_hidden_${i}` / `macro_chevron_hidden_${i}` (Task 7).
 - Produces: a `rows_container` holding a reactive `<repeat>` of `macro_card`, and a header Save button bound to `macros_edit_save_hidden`.
 
 - [ ] **Step 1: Read** current `macro_panel.xml` — note `<view ... extends="overlay_panel">`, the `macro_list` container, `empty_state`, and that no action-button props are currently set.
@@ -356,7 +359,10 @@ action_button_hidden_subject="macros_edit_save_hidden"
         flex_flow="column" style_pad_row="#space_xs">
   <repeat count="macro_row_count">
     <macro_card name_subject="macro_name_${i}"
+                desc_subject="macro_desc_${i}"
                 visible_subject="macro_visible_${i}"
+                desc_hidden_subject="macro_desc_hidden_${i}"
+                chevron_hidden_subject="macro_chevron_hidden_${i}"
                 row_index="${i}"/>
   </repeat>
 </lv_obj>
@@ -398,8 +404,12 @@ std::set<std::string>    pending_hidden_;
 std::vector<std::string> displayed_;
 bool edit_mode_ = false;
 helix::xml::IndexedSubjectPool name_pool_{"macro_name", helix::xml::IndexedSubjectPool::Type::String};
+helix::xml::IndexedSubjectPool desc_pool_{"macro_desc", helix::xml::IndexedSubjectPool::Type::String, 256};  // descriptions can exceed the 64-char default
 helix::xml::IndexedSubjectPool visible_pool_{"macro_visible", helix::xml::IndexedSubjectPool::Type::Int};
+helix::xml::IndexedSubjectPool desc_hidden_pool_{"macro_desc_hidden", helix::xml::IndexedSubjectPool::Type::Int};
+helix::xml::IndexedSubjectPool chevron_hidden_pool_{"macro_chevron_hidden", helix::xml::IndexedSubjectPool::Type::Int};
 ```
+All five pools grow-only within a panel session and are `reclaim()`ed together in `on_ui_destroyed` (reclaim-on-close).
 
 - [ ] **Step 1: Read** the full `ui_panel_macros.cpp` + `.h`. Map: `populate_macro_list` (:176), `create_macro_card` (:236), `on_macro_card_clicked` (:411, card-pointer identity), `clear_macro_list` (:164, `safe_clean_children`), `on_activate` (:127 deferred rebuild), `on_ui_destroyed` (:149). Note the dead `system_toggle_` lookup (:108) and `show_system_macros_` to remove.
 
@@ -426,7 +436,14 @@ If a safe test-only accessor is needed, use a `MacrosPanelTestAccess` friend per
 
 - [ ] **Step 4: Implement.**
   - Register the 3 int subjects (`macro_row_count`=0, `macro_edit_mode`=0, `macros_edit_save_hidden`=1) in `init_subjects()` with `register_deinit`.
-  - `rebuild_rows()`: `all_macros_` = sorted `api->hardware().macros()` (include `_`-prefixed). `displayed_` = edit_mode_ ? all_macros_ : filter(not in saved hidden set). `name_pool_.ensure_size(displayed_.size()); visible_pool_.ensure_size(displayed_.size());` populate names + visible (`edit_mode_ ? !pending_hidden_.count(m) : 1`) **before** `lv_subject_set_int(&macro_row_count_, displayed_.size())`.
+  - `rebuild_rows()`: `all_macros_` = sorted `api->hardware().macros()` (include `_`-prefixed). `displayed_` = edit_mode_ ? all_macros_ : filter(not in saved hidden set). Grow ALL FIVE pools to `displayed_.size()` (`name_pool_`, `desc_pool_`, `visible_pool_`, `desc_hidden_pool_`, `chevron_hidden_pool_`). For each row `i` with macro `m = displayed_[i]`, look up its display name via `prettify_macro_name(m)` and its description/param knowledge via `helix::MacroParamCache::instance().get(m)` (see current `create_macro_card`, ui_panel_macros.cpp:236), then set:
+    - `name_pool_.set_string(i, display_name)`
+    - `desc_pool_.set_string(i, cached.description)`  // empty if none
+    - `visible_pool_.set_int(i, edit_mode_ ? !pending_hidden_.count(m) : 1)`
+    - `desc_hidden_pool_.set_int(i, (edit_mode_ || cached.description.empty()) ? 1 : 0)`  // no desc row in edit mode, or when macro has none
+    - `chevron_hidden_pool_.set_int(i, (edit_mode_ || no_params(cached)) ? 1 : 0)`  // matches old `hide_chevron = no_params`, plus always-hidden in edit mode
+
+    Set all values **before** `lv_subject_set_int(&macro_row_count_, displayed_.size())` (populate-then-count avoids a first-frame flash). `no_params(cached)` mirrors the current `cached.knowledge == helix::MacroParamKnowledge::KNOWN_NO_PARAMS`.
   - `seed_default_hidden()`: if `!SettingsManager::hidden_macros_key_exists()`, return `_`-prefixed names of all_macros_; else return saved set as `std::set`.
   - `enter_edit_mode()`: `pending_hidden_` = current effective hidden set (saved, or seed if absent); `edit_mode_=true`; `lv_subject_set_int(&macro_edit_mode_,1)`; `lv_subject_set_int(&macros_edit_save_hidden_,0)`; `rebuild_rows()`.
   - `exit_edit_mode(save)`: if save, `SettingsManager::set_hidden_macros({pending_hidden_.begin(), end()})` (seed-write on first save); `edit_mode_=false`; `macro_edit_mode_`=0; `macros_edit_save_hidden_`=1; `rebuild_rows()`.
@@ -434,7 +451,7 @@ If a safe test-only accessor is needed, use a `MacrosPanelTestAccess` friend per
   - `on_macro_row_clicked`: `i = atoi(user_data)`; if `edit_mode_` → `toggle_row(i)` else run `displayed_[i]` (existing run path).
   - `on_macro_card_long_press`: reuse home guards (`should_suppress_edit_mode`/`finger_drifted_since_press` — extract to a shared helper or copy with attribution); if not suppressed → `enter_edit_mode()`.
   - `on_macros_edit_save`: `exit_edit_mode(true)`.
-  - `on_ui_destroyed`: null cached ptrs (existing), then `name_pool_.reclaim(); visible_pool_.reclaim();`.
+  - `on_ui_destroyed`: null cached ptrs (existing), then reclaim ALL FIVE pools: `name_pool_.reclaim(); desc_pool_.reclaim(); visible_pool_.reclaim(); desc_hidden_pool_.reclaim(); chevron_hidden_pool_.reclaim();`.
   - Delete `create_macro_card`, `macro_entries_`, card-pointer identity, dead `system_toggle_` lookup, `show_system_macros_`.
   - Register the callbacks (`lv_xml_register_event_cb`) and the `macro_card` component if not already ([L014]).
 
