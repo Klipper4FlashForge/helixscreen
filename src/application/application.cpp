@@ -905,8 +905,16 @@ int Application::run(int argc, char** argv) {
         // Auto-enabled in --test mode, opt-in via --remote otherwise
 #ifdef HELIX_ENABLE_REMOTE_CONTROL
         if (m_args.remote_control || get_runtime_config()->test_mode) {
-            auto socket_path = helix::resolve_socket_path(m_args.remote_socket);
-            if (!helix::RemoteControlServer::instance().start(socket_path)) {
+            helix::RemoteConfig rc;
+            if (m_args.remote_transport == "http") {
+                rc.transport = helix::RemoteConfig::Transport::Http;
+                rc.http_bind = m_args.remote_http_bind;
+                rc.http_port = m_args.remote_http_port;
+            } else {
+                rc.transport = helix::RemoteConfig::Transport::UnixSocket;
+                rc.socket_path = helix::resolve_socket_path(m_args.remote_socket);
+            }
+            if (!helix::RemoteControlServer::instance().start(rc)) {
                 spdlog::warn("[Application] Remote control server failed to start (non-fatal)");
             }
         }

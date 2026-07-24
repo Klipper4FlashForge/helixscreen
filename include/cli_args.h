@@ -82,6 +82,9 @@ struct CliArgs {
     // Remote control server
     bool remote_control = false; // --remote: enable remote control server
     std::string remote_socket;   // --remote-socket: override socket path
+    std::string remote_transport = "socket"; // --remote-transport: socket|http
+    std::string remote_http_bind = "127.0.0.1"; // --remote-http-bind: HTTP bind host
+    int remote_http_port = 7130;                 // --remote-http-port: HTTP TCP port
 };
 
 /**

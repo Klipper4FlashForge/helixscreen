@@ -29,14 +29,8 @@
 #include <mutex>
 #include <optional>
 
-// POSIX socket headers
-#include <poll.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/un.h>
-#include <unistd.h>
-
-static constexpr size_t MAX_CLIENT_BUFFER = 65536; // 64KB max per request line
+#include "http_transport.h"
+#include "unix_socket_transport.h"
 
 namespace helix {
 
@@ -105,78 +99,32 @@ std::string resolve_socket_path(const std::string& override_path) {
     return "/tmp/helixscreen-control.sock";
 }
 
-bool RemoteControlServer::start(const std::string& socket_path) {
+bool RemoteControlServer::start(const RemoteConfig& config) {
     if (running_.load()) {
         spdlog::warn("[RemoteControl] Server already running");
         return false;
     }
 
-    socket_path_ = socket_path;
-
-    // Create self-pipe for shutdown signaling
-    if (pipe(shutdown_pipe_) < 0) {
-        spdlog::error("[RemoteControl] Failed to create shutdown pipe: {}", strerror(errno));
-        return false;
-    }
-
-    // Remove stale socket file
-    unlink(socket_path_.c_str());
-
-    // Create Unix domain socket
-    server_fd_ = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (server_fd_ < 0) {
-        spdlog::error("[RemoteControl] Failed to create socket: {}", strerror(errno));
-        close(shutdown_pipe_[0]);
-        close(shutdown_pipe_[1]);
-        shutdown_pipe_[0] = shutdown_pipe_[1] = -1;
-        return false;
-    }
-
-    struct sockaddr_un addr{};
-    addr.sun_family = AF_UNIX;
-
-    if (socket_path_.length() >= sizeof(addr.sun_path)) {
-        spdlog::error("[RemoteControl] Socket path too long: {}", socket_path_);
-        close(server_fd_);
-        server_fd_ = -1;
-        close(shutdown_pipe_[0]);
-        close(shutdown_pipe_[1]);
-        shutdown_pipe_[0] = shutdown_pipe_[1] = -1;
-        return false;
-    }
-    strncpy(addr.sun_path, socket_path_.c_str(), sizeof(addr.sun_path) - 1);
-
-    if (bind(server_fd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
-        spdlog::error("[RemoteControl] Failed to bind socket at {}: {}", socket_path_,
-                      strerror(errno));
-        close(server_fd_);
-        server_fd_ = -1;
-        close(shutdown_pipe_[0]);
-        close(shutdown_pipe_[1]);
-        shutdown_pipe_[0] = shutdown_pipe_[1] = -1;
-        return false;
-    }
-
-    // Restrict socket access to owner only
-    chmod(socket_path_.c_str(), 0600);
-
-    if (listen(server_fd_, 1) < 0) {
-        spdlog::error("[RemoteControl] Failed to listen on socket: {}", strerror(errno));
-        close(server_fd_);
-        server_fd_ = -1;
-        unlink(socket_path_.c_str());
-        close(shutdown_pipe_[0]);
-        close(shutdown_pipe_[1]);
-        shutdown_pipe_[0] = shutdown_pipe_[1] = -1;
-        return false;
+    switch (config.transport) {
+    case RemoteConfig::Transport::Http:
+        transport_ = std::make_unique<HttpTransport>(config.http_bind, config.http_port);
+        break;
+    case RemoteConfig::Transport::UnixSocket:
+    default:
+        transport_ = std::make_unique<UnixSocketTransport>(config.socket_path);
+        break;
     }
 
     register_builtin_handlers();
 
-    running_.store(true);
-    accept_thread_ = std::thread(&RemoteControlServer::accept_loop, this);
+    if (!transport_->start([this](const std::string& line) { return process_request(line); })) {
+        transport_.reset();
+        handlers_.clear();
+        return false;
+    }
 
-    spdlog::info("[RemoteControl] Server started on {}", socket_path_);
+    running_.store(true);
+    spdlog::info("[RemoteControl] Server started on {}", transport_->endpoint());
     return true;
 }
 
@@ -188,37 +136,9 @@ void RemoteControlServer::stop() {
     spdlog::info("[RemoteControl] Stopping server...");
     running_.store(false);
 
-    // Signal the accept loop to wake up
-    if (shutdown_pipe_[1] >= 0) {
-        char c = 'x';
-        (void)write(shutdown_pipe_[1], &c, 1);
-    }
-
-    // Close server socket to unblock accept()
-    if (server_fd_ >= 0) {
-        close(server_fd_);
-        server_fd_ = -1;
-    }
-
-    // Wait for accept thread
-    if (accept_thread_.joinable()) {
-        accept_thread_.join();
-    }
-
-    // Clean up shutdown pipe
-    if (shutdown_pipe_[0] >= 0) {
-        close(shutdown_pipe_[0]);
-        shutdown_pipe_[0] = -1;
-    }
-    if (shutdown_pipe_[1] >= 0) {
-        close(shutdown_pipe_[1]);
-        shutdown_pipe_[1] = -1;
-    }
-
-    // Clean up socket file
-    if (!socket_path_.empty()) {
-        unlink(socket_path_.c_str());
-        spdlog::debug("[RemoteControl] Removed socket file: {}", socket_path_);
+    if (transport_) {
+        transport_->stop();
+        transport_.reset();
     }
 
     handlers_.clear();
@@ -227,113 +147,6 @@ void RemoteControlServer::stop() {
 
 void RemoteControlServer::register_handler(const std::string& method, CommandHandler handler) {
     handlers_[method] = std::move(handler);
-}
-
-void RemoteControlServer::accept_loop() {
-    spdlog::debug("[RemoteControl] Accept loop started");
-
-    while (running_.load()) {
-        // Use poll() to wait for either a new connection or shutdown signal
-        struct pollfd fds[2];
-        fds[0].fd = server_fd_;
-        fds[0].events = POLLIN;
-        fds[1].fd = shutdown_pipe_[0];
-        fds[1].events = POLLIN;
-
-        int ret = poll(fds, 2, -1); // Block indefinitely
-        if (ret < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            if (running_.load()) {
-                spdlog::error("[RemoteControl] poll() failed: {}", strerror(errno));
-            }
-            break;
-        }
-
-        // Check shutdown pipe
-        if (fds[1].revents & POLLIN) {
-            break;
-        }
-
-        // Check for new connection
-        if (fds[0].revents & POLLIN) {
-            int client_fd = accept(server_fd_, nullptr, nullptr);
-            if (client_fd < 0) {
-                if (running_.load() && errno != EINVAL) {
-                    spdlog::warn("[RemoteControl] accept() failed: {}", strerror(errno));
-                }
-                continue;
-            }
-
-            spdlog::debug("[RemoteControl] Client connected (fd={})", client_fd);
-            handle_client(client_fd);
-            close(client_fd);
-            spdlog::debug("[RemoteControl] Client disconnected");
-        }
-    }
-
-    spdlog::debug("[RemoteControl] Accept loop ended");
-}
-
-static bool write_all(int fd, const char* buf, size_t len) {
-    while (len > 0) {
-        ssize_t n = write(fd, buf, len);
-        if (n < 0) {
-            if (errno == EINTR)
-                continue;
-            return false;
-        }
-        buf += n;
-        len -= static_cast<size_t>(n);
-    }
-    return true;
-}
-
-void RemoteControlServer::handle_client(int client_fd) {
-    // Read newline-delimited JSON-RPC messages
-    std::string buffer;
-    char chunk[4096];
-
-    // Set a read timeout so we don't hang forever on a bad client
-    struct timeval tv;
-    tv.tv_sec = 30;
-    tv.tv_usec = 0;
-    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-    while (running_.load()) {
-        ssize_t n = read(client_fd, chunk, sizeof(chunk) - 1);
-        if (n <= 0) {
-            break; // Client disconnected or error
-        }
-        chunk[n] = '\0';
-        buffer.append(chunk, static_cast<size_t>(n));
-
-        // Guard against unbounded buffer growth from malicious/buggy clients
-        if (buffer.size() > MAX_CLIENT_BUFFER) {
-            spdlog::warn("[RemoteControl] Client buffer overflow (>64KB), disconnecting");
-            return;
-        }
-
-        // Process complete lines
-        size_t pos;
-        while ((pos = buffer.find('\n')) != std::string::npos) {
-            std::string line = buffer.substr(0, pos);
-            buffer.erase(0, pos + 1);
-
-            if (line.empty()) {
-                continue;
-            }
-
-            std::string response = process_request(line);
-            response += '\n';
-
-            if (!write_all(client_fd, response.c_str(), response.length())) {
-                spdlog::warn("[RemoteControl] Failed to write response: {}", strerror(errno));
-                return;
-            }
-        }
-    }
 }
 
 std::string RemoteControlServer::process_request(const std::string& request_line) {

@@ -18,16 +18,33 @@
 
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <string>
-#include <thread>
 #include <unordered_map>
 
 #include "hv/json.hpp"
+#include "remote_transport.h"
 
 namespace helix {
 
 /**
- * @brief JSON-RPC 2.0 remote control server over Unix domain socket
+ * @brief Configuration for the remote-control server's wire transport.
+ *
+ * The default is a local Unix domain socket. HTTP/TCP is opt-in (LAN control +
+ * the base for the post-1.0 web config UI) and binds loopback unless a bind
+ * host is given.
+ */
+struct RemoteConfig {
+    enum class Transport { UnixSocket, Http };
+
+    Transport transport = Transport::UnixSocket;
+    std::string socket_path;              // UnixSocket: resolved socket path.
+    std::string http_bind = "127.0.0.1";  // Http: bind address.
+    int http_port = 7130;                 // Http: TCP port.
+};
+
+/**
+ * @brief JSON-RPC 2.0 remote control server over a pluggable transport
  *
  * Singleton that listens on a Unix socket for JSON-RPC requests.
  * All UI-affecting commands are dispatched to the LVGL main thread
@@ -47,14 +64,14 @@ class RemoteControlServer {
     RemoteControlServer& operator=(const RemoteControlServer&) = delete;
 
     /**
-     * @brief Start the server
-     * @param socket_path Path for the Unix domain socket
+     * @brief Start the server on the configured transport
+     * @param config Transport selection and parameters
      * @return true on success, false on error
      */
-    bool start(const std::string& socket_path);
+    bool start(const RemoteConfig& config);
 
     /**
-     * @brief Stop the server and clean up the socket
+     * @brief Stop the server and release the transport
      */
     void stop();
 
@@ -66,10 +83,10 @@ class RemoteControlServer {
     }
 
     /**
-     * @brief Get the socket path
+     * @brief Human-readable endpoint of the active transport (empty if stopped)
      */
-    const std::string& socket_path() const {
-        return socket_path_;
+    std::string endpoint() const {
+        return transport_ ? transport_->endpoint() : std::string();
     }
 
     using CommandHandler = std::function<nlohmann::json(const nlohmann::json& params)>;
@@ -86,13 +103,8 @@ class RemoteControlServer {
     RemoteControlServer() = default;
     ~RemoteControlServer();
 
-    // Accept loop (runs in background thread)
-    void accept_loop();
-
-    // Handle a single connected client
-    void handle_client(int client_fd);
-
-    // Process a single JSON-RPC request and return response
+    // Process a single JSON-RPC request and return the response string.
+    // Passed to the transport as its RequestHandler.
     std::string process_request(const std::string& request_line);
 
     // Dispatch a JSON-RPC method call
@@ -138,12 +150,7 @@ class RemoteControlServer {
 
     // State
     std::atomic<bool> running_{false};
-    int server_fd_ = -1;
-    std::string socket_path_;
-    std::thread accept_thread_;
-
-    // Self-pipe for waking up accept() during shutdown
-    int shutdown_pipe_[2] = {-1, -1};
+    std::unique_ptr<IRemoteTransport> transport_;
 
     // Command registry
     std::unordered_map<std::string, CommandHandler> handlers_;

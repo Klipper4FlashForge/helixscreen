@@ -124,6 +124,9 @@ static void print_help(const char* program_name) {
     printf("                       (use with --host/--port; default 127.0.0.1:7125)\n");
     printf("  --remote             Enable remote control server (auto in --test mode)\n");
     printf("  --remote-socket <p>  Override remote control socket path\n");
+    printf("  --remote-transport <t>  Transport: socket (default) or http\n");
+    printf("  --remote-http-bind <h>  HTTP bind host (default 127.0.0.1; implies http)\n");
+    printf("  --remote-http-port <n>  HTTP port (default 7130; implies http)\n");
     printf("  --rotate <degrees>   Display rotation: 0, 90, 180, 270\n");
     printf("  --layout <type>      Override auto-detected layout (auto, standard, ultrawide, "
            "portrait, micro, micro-portrait, tiny, tiny-portrait)\n");
@@ -596,6 +599,51 @@ bool parse_cli_args(int argc, char** argv, CliArgs& args, int& screen_width, int
             }
             args.remote_socket = value;
             args.remote_control = true; // Implies --remote
+        } else if (strcmp(argv[i], "--remote-transport") == 0 ||
+                   strncmp(argv[i], "--remote-transport=", 19) == 0) {
+            const char* value = nullptr;
+            if (strncmp(argv[i], "--remote-transport=", 19) == 0) {
+                value = argv[i] + 19;
+            } else if (i + 1 < argc) {
+                value = argv[++i];
+            } else {
+                printf("Error: --remote-transport requires socket|http\n");
+                return false;
+            }
+            if (strcmp(value, "socket") != 0 && strcmp(value, "http") != 0) {
+                printf("Error: --remote-transport must be 'socket' or 'http'\n");
+                return false;
+            }
+            args.remote_transport = value;
+            args.remote_control = true; // Implies --remote
+        } else if (strcmp(argv[i], "--remote-http-bind") == 0 ||
+                   strncmp(argv[i], "--remote-http-bind=", 19) == 0) {
+            const char* value = nullptr;
+            if (strncmp(argv[i], "--remote-http-bind=", 19) == 0) {
+                value = argv[i] + 19;
+            } else if (i + 1 < argc) {
+                value = argv[++i];
+            } else {
+                printf("Error: --remote-http-bind requires a host argument\n");
+                return false;
+            }
+            args.remote_http_bind = value;
+            args.remote_transport = "http"; // Selecting an HTTP option implies http
+            args.remote_control = true;
+        } else if (strcmp(argv[i], "--remote-http-port") == 0 ||
+                   strncmp(argv[i], "--remote-http-port=", 19) == 0) {
+            const char* value = nullptr;
+            if (strncmp(argv[i], "--remote-http-port=", 19) == 0) {
+                value = argv[i] + 19;
+            } else if (i + 1 < argc) {
+                value = argv[++i];
+            } else {
+                printf("Error: --remote-http-port requires a port argument\n");
+                return false;
+            }
+            args.remote_http_port = atoi(value);
+            args.remote_transport = "http"; // Selecting an HTTP option implies http
+            args.remote_control = true;
         }
         // Log destination
         else if (strcmp(argv[i], "--log-dest") == 0 || strncmp(argv[i], "--log-dest=", 11) == 0) {
