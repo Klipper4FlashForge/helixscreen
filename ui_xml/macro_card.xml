@@ -47,5 +47,7 @@
     </lv_obj>
     <!-- Event callback: branches on edit mode (toggle visibility vs. run macro) -->
     <event_cb trigger="clicked" callback="on_macro_row_clicked" user_data="$row_index"/>
+    <!-- Long-press enters edit mode (suppressed mid-scroll in C++) -->
+    <event_cb trigger="long_pressed" callback="on_macro_card_long_press" user_data="$row_index"/>
   </view>
 </component>
