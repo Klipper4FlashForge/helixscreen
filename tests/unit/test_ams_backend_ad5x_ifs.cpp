@@ -7634,6 +7634,96 @@ TEST_CASE("AD5X IFS CHANGE_ZCOLOR with no locked override is a harmless no-op (#
 }
 
 // ==========================================================================
+// Bug B — external CHANGE_ZCOLOR must NOT wipe the user's BRAND override
+// (regression from 726747c71 / #981).
+//
+// The #981 clear-on-external-edit path (clear_override_locked) erases the
+// ENTIRE per-slot override — color, material AND brand/spool_name/spoolman_id.
+// That is correct for the firmware-carried fields (color/type): an external
+// CHANGE_ZCOLOR is a deliberate edit and firmware truth should win. But brand
+// is metadata the firmware CANNOT carry, and the AD5X native LCD emits a bare
+// `CHANGE_ZCOLOR SLOT=N TYPE=<material>` (no brand) on every load/insert. So a
+// routine physical load silently resets the user's saved vendor to empty.
+//
+// The #1071 insert/eject presence paths already retain the override across a
+// physical spool event; this external-clear path must retain brand the same
+// way. Uses the persist-capable setup (real MoonrakerAPIMock + injected
+// FilamentSlotOverrideStore, same as the Task 10 "stores override" test) so the
+// user edit runs through the PRODUCTION set_slot_info(persist=true) path — which
+// stages a user-locked override the #981 external-clear then fires on — instead
+// of seeding the override directly. Then feeds the bare firmware CHANGE_ZCOLOR
+// and asserts the brand survives.
+// ==========================================================================
+TEST_CASE("AD5X IFS external CHANGE_ZCOLOR preserves the user brand override (#981/726747c71)",
+          "[ams][ad5x_ifs][filament_slot_override]") {
+    Ad5xIfsTmpCacheDir tmp("bugB_brand_survives_change_zcolor");
+    MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
+    helix::PrinterState state;
+    state.init_subjects(false);
+    MoonrakerAPIMock api(client, state);
+
+    AmsBackendAd5xIfs backend(&api, nullptr);
+    Ad5xIfsTestAccess::set_running(backend, true);
+    // Native-ZMOD path skipped (has_ifs_vars_ true) — same as the Task 10 test;
+    // set_slot_info's persist write still succeeds. GET_ZCOLOR SILENT flagged
+    // unsupported so schedule_zcolor_query() early-returns and the CHANGE_ZCOLOR
+    // handling stays synchronous (no HttpExecutor debounce, L052).
+    Ad5xIfsTestAccess::set_has_ifs_vars(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    auto store = std::make_unique<helix::ams::FilamentSlotOverrideStore>(&api, "ifs");
+    FilamentSlotOverrideStoreTestAccess::set_cache_directory(*store, tmp.path);
+    Ad5xIfsTestAccess::inject_override_store(backend, std::move(store));
+
+    // Firmware truth for slot 0: yellow PLA present.
+    Ad5xIfsTestAccess::set_port_presence(backend, 0, true);
+    Ad5xIfsTestAccess::set_color(backend, 0, "FEF043");
+    Ad5xIfsTestAccess::set_material(backend, 0, "PLA");
+
+    // User edit through the AMS slot editor: brand "Sunlu" for a PLA spool at
+    // the firmware color. set_slot_info(persist=true) stages a user-LOCKED
+    // override (so the #981 external-clear path fires) that ALSO carries the
+    // firmware-can't-carry brand metadata. REQUIRE success — this is the
+    // precondition that must REACH the clear path (previously the repro seeded
+    // the override directly, sidestepping the production persist path).
+    SlotInfo edit;
+    edit.brand = "Sunlu";
+    edit.material = "PLA";
+    edit.color_rgb = 0xFEF043;
+    REQUIRE(backend.set_slot_info(0, edit, /*persist=*/true).success());
+
+    // Precondition: the brand override is live and user-locked (so the #981
+    // external-clear path will fire on the CHANGE_ZCOLOR below).
+    {
+        SlotInfo before = backend.get_slot_info(0);
+        REQUIRE(before.brand == "Sunlu");
+        auto staged = Ad5xIfsTestAccess::get_override(backend, 0);
+        REQUIRE(staged.has_value());
+        REQUIRE(staged->brand == "Sunlu");
+        REQUIRE(staged->user_locked_material); // material provided -> locked
+    }
+
+    // AD5X native LCD load/insert: a bare CHANGE_ZCOLOR with the material only,
+    // NO brand. SLOT is 1-based -> slot 0.
+    REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
+        backend, "CHANGE_ZCOLOR SLOT=1 TYPE=PLA"));
+
+    // REGRESSION: the firmware-can't-carry brand must survive the external
+    // edit. Before the fix, clear_override_locked() wiped the whole override, so
+    // the brand dropped to empty ("Generic" at the UI layer) on every load.
+    SlotInfo after = backend.get_slot_info(0);
+    CHECK(after.brand == "Sunlu");
+    CHECK(after.material == "PLA"); // firmware truth still wins for material
+    auto ovr_after = Ad5xIfsTestAccess::get_override(backend, 0);
+    CHECK(ovr_after.has_value());
+    if (ovr_after.has_value()) {
+        CHECK(ovr_after->brand == "Sunlu");
+        // The color/material user-locks are released so firmware truth wins.
+        CHECK_FALSE(ovr_after->user_locked_material);
+        CHECK_FALSE(ovr_after->user_locked_color);
+    }
+}
+
+// ==========================================================================
 // CHANGE_ZCOLOR TYPE=/HEX= in-gcode parameter extraction (#1065 v0.99.94).
 //
 // When zmod's COLOR macro is invoked (from Mainsail, the AD5X LCD, or — most

@@ -446,6 +446,22 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // spoolman_*, weights, color_name), and fires clear_async on the override
     // store. Firmware-sourced fields are left untouched.
     void clear_override_locked(int slot_index, SlotInfo& slot);
+    // External-CHANGE_ZCOLOR counterpart to clear_override_locked. Caller must
+    // hold mutex_. An external CHANGE_ZCOLOR is a deliberate firmware edit of
+    // color/material — firmware truth must win for THOSE fields — but brand /
+    // spool_name / spoolman_id / spoolman_vendor_id / weights / color_name are
+    // HelixScreen-only metadata the firmware CANNOT carry. A routine AD5X LCD
+    // load emits a bare `CHANGE_ZCOLOR SLOT=N TYPE=<material>` (no brand), so a
+    // full clear_override_locked() would silently drop the user's saved vendor
+    // on every physical load (Bug B / #981 regression). This helper instead
+    // releases the color/material user-locks and strips the firmware-carryable
+    // override fields (color_set/color_rgb/color_name/material) so
+    // apply_overrides lets firmware truth through, while RETAINING the identity
+    // metadata — mirroring the #1071 insert/eject retention. If nothing but
+    // firmware fields were in the override (no identity to keep), it falls back
+    // to a full clear_override_locked() erase so the pre-existing #981 tests
+    // (locked-but-no-brand overrides) still see a clean wipe.
+    void release_locked_override_keep_identity_locked(int slot_index, SlotInfo& slot);
     // Called on the empty->present (physical insert) edge for a lane. Drops the
     // color/material user-lock flags on an AUTO-TRACKED override (one with no
     // real Spoolman binding) so firmware truth for the freshly inserted spool
