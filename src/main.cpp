@@ -17,6 +17,9 @@
 #include "data_root_resolver.h"
 #include "helix_version.h"
 #include "system/crash_handler.h"
+#ifdef HELIX_ENABLE_REMOTE_CONTROL
+#include "remote_client.h"
+#endif
 
 #include <cerrno>
 #include <csignal>
@@ -96,6 +99,15 @@ static void terminate_handler() {
 }
 
 int main(int argc, char** argv) {
+#ifdef HELIX_ENABLE_REMOTE_CONTROL
+    // Client subcommands dispatch before any app/display init: `helix-screen ctl
+    // <cmd>` and `helix-screen repl` run the folded helixctl client and exit.
+    // argv is forwarded with the subcommand as argv[0] (e.g. {"ctl", ...}).
+    if (argc >= 2 && (strcmp(argv[1], "ctl") == 0 || strcmp(argv[1], "repl") == 0)) {
+        return helix::remote_client_main(argc - 1, argv + 1);
+    }
+#endif
+
     // Record the main thread id before any thread that uses LifetimeToken
     // can spawn. The bg-thread expired() detector compares against this.
     helix::internal::set_main_thread_id();

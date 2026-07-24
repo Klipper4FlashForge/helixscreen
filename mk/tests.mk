@@ -169,6 +169,7 @@ TEST_APP_OBJS := $(filter-out \
     $(OBJ_DIR)/ui/ui_button.o \
     $(OBJ_DIR)/application/application.o \
     $(OBJ_DIR)/remote/remote_control_server.o \
+    $(OBJ_DIR)/remote/remote_client.o \
     $(OBJ_DIR)/application/lvgl_initializer.o \
     $(OBJ_DIR)/application/subject_initializer.o \
     $(OBJ_DIR)/application/moonraker_manager.o \

@@ -387,10 +387,23 @@ else
     ENABLE_REMOTE_CONTROL ?= no
 endif
 
-ifneq ($(ENABLE_REMOTE_CONTROL),yes)
+ifeq ($(ENABLE_REMOTE_CONTROL),yes)
+    # The helixctl client is folded into helix-screen (src/remote/remote_client.cpp,
+    # reached via the `ctl`/`repl` subcommands); it needs linenoise for the REPL.
+    REMOTE_LINENOISE_OBJ := $(OBJ_DIR)/linenoise.o
+else
+    REMOTE_LINENOISE_OBJ :=
     APP_SRCS := $(filter-out $(wildcard $(SRC_DIR)/remote/*.cpp),$(APP_SRCS))
 endif
 APP_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(APP_SRCS))
+
+# Linenoise (bundled line-editing library) for the folded REPL. Built as C99 with
+# _GNU_SOURCE so strdup/fchmod/fileno are declared — without it they are implicit
+# int, truncating strdup's 64-bit pointer to 32 bits (corrupt history -> SIGSEGV).
+$(OBJ_DIR)/linenoise.o: lib/linenoise/linenoise.c
+	$(Q)mkdir -p $(dir $@)
+	$(ECHO) "$(BLUE)[CC]$(RESET) $<"
+	$(Q)$(CC) -std=c99 -D_GNU_SOURCE -Wall -Os -c $< -o $@
 
 # libhv dns_resolv.c — needed by safe_resolve.h on statically-linked ARM/MIPS
 # targets (avoids glibc __check_pf SIGSEGV). Only compiled for cross builds.
@@ -602,6 +615,11 @@ PCH_FLAGS := -include $(PCH_HEADER)
 # stb_image headers (used for thumbnail processing)
 STB_INC := -isystem lib/stb
 INCLUDES := -I. -I$(INC_DIR) -Isrc/generated -I$(BUILD_DIR)/generated -isystem lib -isystem lib/glm $(LVGL_INC) $(LIBHV_INC) $(SPDLOG_INC) $(STB_INC) $(LV_MARKDOWN_INC) $(QUIRC_INC) $(WPA_INC) $(SDL2_INC)
+
+# The folded helixctl client (src/remote/remote_client.cpp) includes linenoise.h.
+ifeq ($(ENABLE_REMOTE_CONTROL),yes)
+    INCLUDES += -I lib/linenoise
+endif
 
 # Common linker flags (used by both macOS and Linux)
 LDFLAGS_COMMON := $(SDL2_LIBS) $(LIBHV_LIBS) $(FMT_LIBS) -lz -lm -lpthread
@@ -1028,7 +1046,6 @@ include mk/tests.mk
 include mk/images.mk
 include mk/format.mk
 include mk/tools.mk
-include mk/helixctl.mk
 include mk/display-lib.mk
 include mk/bluetooth.mk
 include mk/splash.mk

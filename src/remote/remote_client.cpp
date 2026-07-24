@@ -2,19 +2,23 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 /**
- * @file helixctl.cpp
- * @brief CLI tool for remote control of a running HelixScreen instance
+ * @file remote_client.cpp
+ * @brief The helixctl client, folded into helix-screen as a subcommand.
  *
  * Sends JSON-RPC 2.0 commands over a Unix domain socket to HelixScreen's
- * RemoteControlServer. Standalone binary — no LVGL or libhv dependencies.
+ * RemoteControlServer. Reached via `helix-screen ctl <cmd>` / `helix-screen
+ * repl` (main.cpp dispatches to remote_client_main before the app starts).
+ * No separate binary. Dev/test-only — compiled out of release builds.
  *
  * Usage:
- *   helixctl ping
- *   helixctl navigate controls
- *   helixctl screenshot
- *   helixctl status
- *   helixctl repl                  # Interactive REPL with line editing
+ *   helix-screen ctl ping
+ *   helix-screen ctl navigate controls
+ *   helix-screen ctl screenshot
+ *   helix-screen ctl status
+ *   helix-screen repl                  # Interactive REPL with line editing
  */
+
+#include "remote_client.h"
 
 #include <cerrno>
 #include <cstdio>
@@ -35,7 +39,7 @@
 // Line editing for REPL
 #include "linenoise.h"
 
-static const char* PROGRAM_NAME = "helixctl";
+static const char* PROGRAM_NAME = "helix-screen ctl";
 
 // ---------------------------------------------------------------------------
 // Help text
@@ -670,7 +674,8 @@ static int run_repl(const std::string& socket_path) {
     // loss mid-session and keeps the REPL stateless. The server does support
     // multiple requests per connection if we want to optimize later.
 
-    printf("helixctl REPL — type 'help' for commands, Tab for completion, Ctrl-D to quit\n");
+    printf("helix-screen control REPL — type 'help' for commands, Tab for completion, "
+           "Ctrl-D to quit\n");
 
     // Set up linenoise
     linenoiseSetCompletionCallback(repl_completion);
@@ -784,7 +789,7 @@ static int run_repl(const std::string& socket_path) {
 // Main
 // ---------------------------------------------------------------------------
 
-int main(int argc, char** argv) {
+int helix::remote_client_main(int argc, char** argv) {
     std::string socket_path;
     int arg_start = 1;
 

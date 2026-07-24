@@ -148,7 +148,9 @@ endif
 .PHONY: tools moonraker-inspector validate-xml-constants validate-xml-attrs
 
 # Build all tools
-tools: moonraker-inspector validate-xml-constants validate-xml-attrs helixctl
+# Note: the former standalone `helixctl` tool is folded into helix-screen — build
+# the app and use `helix-screen ctl <cmd>` / `helix-screen repl` instead.
+tools: moonraker-inspector validate-xml-constants validate-xml-attrs
 
 # Individual tool targets
 moonraker-inspector: $(MOONRAKER_INSPECTOR)
