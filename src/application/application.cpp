@@ -114,7 +114,10 @@
 #include "ui_print_tune_overlay.h"
 #include "ui_printer_status_icon.h"
 #include "ui_probe_overlay.h"
+#include "preflight_validator.h"
 #include "ui_lock_screen.h"
+#include "ui_preflight_check_modal.h"
+#include "ui_runout_guidance_modal.h"
 #include "ui_settings_about.h"
 #include "ui_settings_barcode_scanner.h"
 #include "ui_settings_display_sound.h"
@@ -2472,6 +2475,50 @@ void Application::create_overlays() {
 #else
         spdlog::warn("[Application] Camera viewer requested but HELIX_HAS_CAMERA is off");
 #endif
+    }
+
+    if (m_args.overlays.preflight_check) {
+        // Representative pre-print filament check: one matching tool, one color
+        // mismatch (advisory), one empty required slot (the blocking case). Seated
+        // colors come from the live (mock) AMS slots via collect_available_slots().
+        helix::PreflightResult pf;
+        helix::ToolCheck ok;
+        ok.tool_index = 0;
+        ok.intended_material = "PLA";
+        ok.intended_color = 0x2E8B57;
+        ok.mapped_slot = 0;
+        ok.slot_present = true;
+        ok.severity = helix::ToolCheck::Severity::Ok;
+        helix::ToolCheck color;
+        color.tool_index = 1;
+        color.intended_material = "PLA";
+        color.intended_color = 0xE23B3B;
+        color.mapped_slot = 1;
+        color.slot_present = true;
+        color.color_ok = false;
+        color.severity = helix::ToolCheck::Severity::ColorMismatch;
+        helix::ToolCheck empty;
+        empty.tool_index = 2;
+        empty.intended_material = "PETG";
+        empty.intended_color = 0xF5A623;
+        empty.mapped_slot = -1;
+        empty.slot_present = false;
+        empty.severity = helix::ToolCheck::Severity::EmptySlot;
+        pf.checks = {ok, color, empty};
+        auto* modal = new helix::ui::PreflightCheckModal();
+        modal->set_checks(pf);
+        modal->show(m_screen);
+        spdlog::info("[Application] Opened preflight check modal via CLI");
+    }
+
+    if (m_args.overlays.runout_modal) {
+        // Heap-allocated so it outlives this scope; a --screenshot run quits before
+        // any interaction, so the leak is harmless.
+        auto* modal = new RunoutGuidanceModal();
+        modal->set_autofeed_capable(false);
+        modal->set_resume_blocked(false);
+        modal->show(m_screen);
+        spdlog::info("[Application] Opened runout guidance modal via CLI");
     }
 
     if (m_args.overlays.macros) {

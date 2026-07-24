@@ -136,7 +136,9 @@ void PreflightCheckModal::build_rows(lv_obj_t* list) {
 
 lv_obj_t* PreflightCheckModal::create_tool_row(lv_obj_t* list, const helix::ToolCheck& check,
                                                const std::vector<helix::AvailableSlot>& slots) {
-    auto* row = static_cast<lv_obj_t*>(lv_xml_create(list, "preflight_tool_row", nullptr));
+    // Component is registered under its filename (preflight_check_tool_row), not
+    // its <view name>; lv_xml_create resolves by the registered name.
+    auto* row = static_cast<lv_obj_t*>(lv_xml_create(list, "preflight_check_tool_row", nullptr));
     if (!row) {
         return nullptr;
     }

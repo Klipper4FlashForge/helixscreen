@@ -174,6 +174,7 @@ static void print_help(const char* program_name) {
     printf("  Settings: display, sensors, touch-cal, hardware-health, network, theme\n");
     printf("  Settings: fan-settings, barcode-scanner, label-printer, security, lock-screen\n");
     printf("  Settings: camera (standalone fullscreen viewer; needs a webcam)\n");
+    printf("  Modals: preflight-check, runout-modal (sample-data dialogs for docs)\n");
     printf("  Advanced: zoffset, screws, input-shaper, spoolman, history-dashboard, macros\n");
     printf("  Print: print-status, print-tune\n");
     printf("  Dev: ams, step-test, test, gcode-test, glyphs\n");
@@ -310,6 +311,11 @@ static bool parse_panel_arg(const char* panel_arg, CliArgs& args) {
     } else if (strcmp(panel_arg, "camera") == 0) {
         args.initial_panel = static_cast<int>(PanelId::Settings);
         args.overlays.camera = true;
+    } else if (strcmp(panel_arg, "preflight-check") == 0 || strcmp(panel_arg, "preflight") == 0) {
+        args.initial_panel = static_cast<int>(PanelId::PrintSelect);
+        args.overlays.preflight_check = true;
+    } else if (strcmp(panel_arg, "runout-modal") == 0 || strcmp(panel_arg, "runout") == 0) {
+        args.overlays.runout_modal = true;
     }
     // Advanced overlays
     else if (strcmp(panel_arg, "macros") == 0) {

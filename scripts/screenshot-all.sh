@@ -62,6 +62,10 @@ PANELS=(
     # Print overlays
     "print-status:print-status"
     "print-tune:print-tune"
+
+    # Sample-data modals
+    "preflight-check:preflight-check"
+    "runout-modal:runout-modal"
 )
 
 # Track results
