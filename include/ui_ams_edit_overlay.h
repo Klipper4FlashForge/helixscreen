@@ -257,6 +257,15 @@ class AmsEditOverlay : public OverlayBase {
     // reattach path deliberately must not (re-seeding would make the
     // "Different filament?" dialog vanish on re-Save).
     bool setup_details_selector();
+    // When Spoolman is connected, fetch the live vendor list and merge it into
+    // details_selector_ so a Spoolman-only vendor (one present on the server but
+    // absent from the bundled filaments.json catalog) reaches the vendor
+    // dropdown and a seeded brand round-trips instead of snapping to "Generic".
+    // No-op when Spoolman is not connected. The fetch is async (HTTP/bg thread):
+    // the dropdown is catalog-only until the vendors arrive, then re-populates
+    // and re-runs the seed selection. Keeps the selector Spoolman-agnostic — the
+    // fetch lives here and only hands the selector a list of vendor names.
+    void maybe_merge_spoolman_vendors();
 #if HELIX_HAS_LABEL_PRINTER
     void handle_print_label();
 #endif

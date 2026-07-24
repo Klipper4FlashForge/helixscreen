@@ -462,6 +462,153 @@ TEST_CASE_METHOD(LVGLUITestFixture, "spool-edit Save applies color locally with 
     close_editor_overlay();
 }
 
+// Bug A — the spool-edit round-trip drops the user's existing brand.
+//
+// A slot already carries a non-Generic vendor (e.g. "Sunlu"). The user opens
+// spool-edit to tweak something unrelated and taps Save without ever touching
+// the vendor dropdown. setup_details_selector() seeds the catalog selector
+// with the MATERIAL only (no vendor), and populate_vendor_dropdown() forces the
+// vendor to index 0 = "Generic". preselect_first() then highlights the Generic
+// product, so handle_spool_edit_save() reads details_selector_.highlighted()
+// and overwrites working_info_.brand with that product's brand ("Generic").
+// The user's "Sunlu" is silently lost even though they never edited the vendor.
+//
+// The fix will seed the selector's vendor from the slot's existing brand so an
+// untouched Save round-trips it. This test opens the editor on a Sunlu slot,
+// enters spool-edit, saves without changing the dropdown, and asserts the brand
+// survives.
+TEST_CASE_METHOD(LVGLUITestFixture, "spool-edit Save preserves an existing non-Generic brand",
+                 "[ams_edit_overlay][spool_edit][brand]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    // Untracked slot whose vendor is a real non-Generic brand the user chose.
+    SlotInfo sunlu;
+    sunlu.slot_index = 0;
+    sunlu.spoolman_id = 0;
+    sunlu.brand = "Sunlu";
+    sunlu.material = "PLA";
+    sunlu.color_rgb = 0xFEF043;
+    sunlu.color_name = "Yellow";
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, sunlu, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Save WITHOUT touching the vendor dropdown — the user only meant to confirm.
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // REGRESSION: the brand must round-trip. Currently the selector forced
+    // vendor=Generic on open, so the highlighted Generic product clobbers it.
+    CHECK(access.working_info().brand == "Sunlu");
+    CHECK(access.working_info().material == "PLA"); // material unchanged
+
+    close_editor_overlay();
+}
+
+// Regression — a Spoolman-only vendor no longer reaches the vendor dropdown.
+//
+// A vendor can live on the Spoolman server without a matching entry in the
+// bundled assets/filaments.json catalog (e.g. "PolyTerra"). The branded rework
+// dropped the live vendor fetch, so populate_vendor_dropdown() built the vendor
+// list from the catalog ALONE: such a vendor never appeared, the dropdown
+// snapped it to "Generic" on open, and an untouched Save baked "Generic" in —
+// silently overwriting the user's saved vendor.
+//
+// The fix: when Spoolman is connected, the host fetches the live vendor list and
+// merges it into the selector (which stays Spoolman-agnostic — it just receives
+// the names). The seed vendor then resolves and the brand string round-trips.
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool-edit surfaces a Spoolman-only vendor and Save keeps it",
+                 "[ams_edit_overlay][spool_edit][brand][spoolman]") {
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+    api.spoolman_mock().set_mock_spoolman_enabled(true);
+    // A vendor that exists on the Spoolman server but NOT in the bundled catalog.
+    api.spoolman_mock().get_mock_spools().clear();
+    api.spoolman_mock().add_vendor(42, "PolyTerra");
+
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 1);
+
+    // Untracked slot (spoolman_id = 0 keeps the open-time id-sync fetch out of
+    // it) whose brand is the Spoolman-only vendor.
+    SlotInfo slot;
+    slot.slot_index = 0;
+    slot.spoolman_id = 0;
+    slot.brand = "PolyTerra";
+    slot.material = "PLA";
+    slot.color_rgb = 0x66CC33;
+    slot.color_name = "Green";
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, &api, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain(); // resolve the async vendor fetch's tok.defer
+    process_lvgl(10);
+
+    // The Spoolman-only vendor is now in the dropdown AND selected (seed honored).
+    CHECK(access.details_selector().current_vendor() == "PolyTerra");
+
+    // Save WITHOUT touching the dropdown -> the brand string round-trips.
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    CHECK(access.working_info().brand == "PolyTerra");
+
+    close_editor_overlay();
+}
+
+// Regression guard — with no Spoolman, a catalog-absent vendor stays Generic.
+//
+// This is the ACCEPTED behavior for a Spoolman-less printer: the dropdown is
+// catalog-only, so an unknown brand has nowhere to resolve and falls to Generic.
+// The fix must NOT start a doomed vendor fetch when Spoolman is not connected.
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "spool-edit without Spoolman leaves a catalog-absent vendor at Generic",
+                 "[ams_edit_overlay][spool_edit][brand]") {
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    REQUIRE(spoolman_subj != nullptr);
+    lv_subject_set_int(spoolman_subj, 0); // no Spoolman -> no vendor fetch
+
+    SlotInfo slot;
+    slot.slot_index = 0;
+    slot.spoolman_id = 0;
+    slot.brand = "PolyTerra"; // absent from the bundled catalog
+    slot.material = "PLA";
+    slot.color_rgb = 0x66CC33;
+
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, slot, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // No fetch fired -> the dropdown stayed catalog-only -> Generic.
+    CHECK(access.details_selector().current_vendor() == "Generic");
+
+    close_editor_overlay();
+}
+
 TEST_CASE_METHOD(LVGLUITestFixture, "spool-edit Save with toggle off unlinks a managed slot",
                  "[ams_edit_overlay][spool_edit][toggle]") {
     auto& overlay = get_ams_edit_overlay();

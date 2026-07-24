@@ -42,9 +42,29 @@ class FilamentCatalogSelector {
     void detach();
 
     /// seed_type: pre-select the Type dropdown; allowed_types: whitelist
-    /// filter (case-insensitive), nullopt = all types.
+    /// filter (case-insensitive), nullopt = all types. seed_vendor: pre-select
+    /// the Vendor dropdown to this brand (case-insensitive match) when it exists
+    /// in the catalog; nullopt/empty or a brand absent from the catalog falls
+    /// back to "Generic" (index 0). Lets a host that opens on an already-branded
+    /// slot round-trip the vendor instead of snapping it to Generic.
     void configure(std::optional<std::string> seed_type,
-                   std::optional<std::vector<std::string>> allowed_types);
+                   std::optional<std::vector<std::string>> allowed_types,
+                   std::optional<std::string> seed_vendor = std::nullopt);
+
+    /// Extra vendor names to merge into the Vendor dropdown beyond the catalog
+    /// brands — e.g. a host that fetched a live Spoolman vendor list and wants
+    /// server-only vendors selectable so a seeded brand round-trips instead of
+    /// snapping to Generic. Case-insensitively deduped against "Generic" + the
+    /// catalog brands; genuinely new names are appended after the catalog list
+    /// (Generic stays pinned at index 0). Keeps the selector data-source-agnostic
+    /// — it receives a plain string list and never fetches anything itself.
+    ///
+    /// Default empty, so callers that never set it are unaffected. If the
+    /// selector is already populated, this rebuilds the Vendor dropdown (and the
+    /// dependent Type/product views) and re-applies the seed vendor so a late
+    /// async fetch selects it; the caller may follow with preselect_first() to
+    /// re-check the matching product.
+    void set_additional_vendors(std::vector<std::string> vendors);
 
     /// Load the catalog fresh and (re)fill dropdowns + product list.
     void populate();
@@ -164,12 +184,14 @@ class FilamentCatalogSelector {
     lv_obj_t* root_ = nullptr;
     helix::printer::FilamentCatalog catalog_;
     std::optional<std::string> seed_type_;
+    std::optional<std::string> seed_vendor_; // pre-select the Vendor dropdown
     std::optional<std::vector<std::string>> allowed_types_;
     std::string highlighted_id_;
     std::string preselect_anchor_id_; // product to restore on a dropdown round-trip
     bool preselect_on_change_ = false;
     bool show_edit_affordances_ = false; // per-row edit pencil (picker opts in)
-    std::vector<std::string> vendor_order_; // dropdown index -> brand
+    std::vector<std::string> vendor_order_;       // dropdown index -> brand
+    std::vector<std::string> additional_vendors_; // host-supplied, merged into the vendor list
     SelectionChangedCallback on_selection_changed_;
 
     // Product add/edit modal, opened from the list affordances. Owned here so

@@ -1049,6 +1049,70 @@ void AmsBackendAd5xIfs::clear_override_locked(int slot_index, SlotInfo& slot) {
     }
 }
 
+void AmsBackendAd5xIfs::release_locked_override_keep_identity_locked(int slot_index,
+                                                                    SlotInfo& slot) {
+    // Caller must hold mutex_. See the header for the full rationale. Short
+    // version: an external CHANGE_ZCOLOR legitimately re-authors color/material
+    // (firmware truth wins), but the firmware can't carry brand/spool_name/
+    // spoolman_id/weights — those are the user's identity metadata and must
+    // survive a routine physical load (Bug B / #981). Release the locks + strip
+    // the firmware-carryable fields so apply_overrides stops masking firmware
+    // truth for color/material, but keep the identity fields. When there is no
+    // identity to preserve, fall back to a full erase.
+    auto it = overrides_.find(slot_index);
+    if (it == overrides_.end())
+        return;
+    auto& ovr = it->second;
+
+    // Firmware-uncarryable identity/metadata worth preserving across the edit.
+    // Weights are consumption-tracker / Spoolman data, independent of color, so
+    // they ride along too. (>= 0.0f — the -1.0f default is "unknown".)
+    const bool has_identity = !ovr.brand.empty() || !ovr.spool_name.empty() ||
+                              ovr.spoolman_id > 0 || ovr.spoolman_vendor_id > 0 ||
+                              ovr.remaining_weight_g >= 0.0f || ovr.total_weight_g >= 0.0f;
+
+    if (!has_identity) {
+        // Nothing firmware-uncarryable to keep — behave exactly like the
+        // pre-existing #981 clear so those tests still see a clean wipe.
+        clear_override_locked(slot_index, slot);
+        return;
+    }
+
+    spdlog::info("{} External CHANGE_ZCOLOR for slot {} — releasing the color/material locks so "
+                 "firmware truth wins, but RETAINING the user's brand/spool metadata the firmware "
+                 "can't carry (#1071-style retention, Bug B)",
+                 backend_log_tag(), slot_index);
+
+    // Release the user-locks and strip the firmware-carryable override fields.
+    // apply_overrides only masks a field when the override still carries a real
+    // value (non-empty string / color_set / >0 id), so clearing these lets the
+    // firmware-truth color_rgb/material (refreshed by update_slot_from_state)
+    // show through. The identity fields (brand, spool_name, spoolman_id,
+    // spoolman_vendor_id, weights) stay put.
+    ovr.user_locked_color = false;
+    ovr.user_locked_material = false;
+    ovr.color_set = false;
+    ovr.color_rgb = 0;
+    ovr.color_name.clear();
+    ovr.material.clear();
+
+    // Persist the trimmed override so a restart reloads the retained identity
+    // (and the released locks) instead of the pre-edit locked record. Capture
+    // by value — the callback can fire long after this returns.
+    if (override_store_) {
+        helix::ams::FilamentSlotOverride snapshot = ovr;
+        const std::string tag = backend_log_tag();
+        override_store_->save_async(slot_index, snapshot,
+                                    [tag, slot_index](bool ok, std::string err) {
+                                        if (!ok) {
+                                            spdlog::warn("{} identity-retain persist failed for "
+                                                         "slot {}: {}",
+                                                         tag, slot_index, err);
+                                        }
+                                    });
+    }
+}
+
 void AmsBackendAd5xIfs::unlock_auto_tracked_override_on_insert_locked(int slot_index) {
     // Caller holds mutex_. See the header doc + FILAMENT_MANAGEMENT.md for the
     // full model. Short version: a lane's material/color override can be
@@ -2978,18 +3042,21 @@ bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
 
                     if (has_locked_override) {
                         spdlog::info("{} External CHANGE_ZCOLOR for slot {} overrides an earlier "
-                                     "HelixScreen edit — clearing the stale locked override so the "
-                                     "new firmware color/type wins (#981)",
+                                     "HelixScreen edit — releasing the stale color/material locks so "
+                                     "the new firmware color/type wins (#981)",
                                      backend_log_tag(), slot0);
                         auto* entry = slots_.get_mut(slot0);
                         if (entry) {
-                            // Erase + persist the stale override, then re-run
+                            // Release the stale color/material locks + strip the
+                            // firmware-carryable override fields, then re-run
                             // update_slot_from_state so entry->info is refreshed
-                            // from firmware truth (colors_/materials_) NOW —
-                            // clear_override_locked deliberately leaves the baked
-                            // color/material for the next update to refresh, and
-                            // we don't want to wait on the async re-read below.
-                            clear_override_locked(slot0, entry->info);
+                            // from firmware truth (colors_/materials_) NOW — we
+                            // don't want to wait on the async re-read below. The
+                            // firmware CAN'T carry brand/spool metadata, so this
+                            // RETAINS it (Bug B): a bare LCD-load CHANGE_ZCOLOR
+                            // must not drop the user's saved vendor. Falls back to
+                            // a full erase when there is no identity to keep.
+                            release_locked_override_keep_identity_locked(slot0, entry->info);
                             mutated = true;
                         }
                     }

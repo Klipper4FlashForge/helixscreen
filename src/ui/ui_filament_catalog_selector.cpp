@@ -102,11 +102,36 @@ void FilamentCatalogSelector::detach() {
 }
 
 void FilamentCatalogSelector::configure(std::optional<std::string> seed_type,
-                                        std::optional<std::vector<std::string>> allowed_types) {
+                                        std::optional<std::vector<std::string>> allowed_types,
+                                        std::optional<std::string> seed_vendor) {
     seed_type_ = std::move(seed_type);
+    seed_vendor_ = std::move(seed_vendor);
     allowed_types_ = std::move(allowed_types);
+    // Each open starts from the catalog-only vendor list; a host that has extra
+    // vendors (e.g. a live Spoolman list) re-supplies them via
+    // set_additional_vendors() after populate(). Prevents a prior open's list
+    // from leaking into an unrelated caller.
+    additional_vendors_.clear();
     highlighted_id_.clear();
     preselect_anchor_id_.clear();
+}
+
+void FilamentCatalogSelector::set_additional_vendors(std::vector<std::string> vendors) {
+    additional_vendors_ = std::move(vendors);
+    // Not yet populated (no attached fragment / dropdown not built): populate()
+    // will read additional_vendors_ when it next runs. Nothing to rebuild.
+    if (!root_ || vendor_order_.empty())
+        return;
+    // Already populated -> rebuild the Vendor dropdown with the merged list and
+    // re-apply the seed vendor. Also rebuild the dependent Type/product views and
+    // drop any stale highlight so a product left checked under the pre-merge
+    // vendor can't survive into a host Save. The caller may follow with
+    // preselect_first() to re-check the matching product for the resolved vendor.
+    highlighted_id_.clear();
+    preselect_anchor_id_.clear();
+    populate_vendor_dropdown();
+    populate_type_dropdown();
+    rebuild_product_list();
 }
 
 void FilamentCatalogSelector::populate() {
@@ -241,12 +266,32 @@ void FilamentCatalogSelector::populate_vendor_dropdown() {
     lv_obj_t* dd = find_child("vendor_dropdown");
     if (!dd)
         return;
-    // "Generic" pinned first, then the rest (all_brands() is already sorted+deduped).
+    auto ieq = [](const std::string& a, const std::string& b) {
+        if (a.size() != b.size())
+            return false;
+        return std::equal(a.begin(), a.end(), b.begin(), [](unsigned char x, unsigned char y) {
+            return std::tolower(x) == std::tolower(y);
+        });
+    };
+    // "Generic" pinned first, then the catalog brands (all_brands() is already
+    // sorted+deduped), then any host-supplied extra vendors not already present.
+    // The extra list (e.g. a live Spoolman vendor list) is merged case-
+    // insensitively so a differently-cased server spelling never doubles a
+    // catalog brand, and it is only appended — Generic stays index 0 and the
+    // catalog order is untouched.
     vendor_order_.clear();
     vendor_order_.push_back("Generic");
     for (const auto& b : catalog_.all_brands()) {
         if (b != "Generic")
             vendor_order_.push_back(b);
+    }
+    for (const auto& extra : additional_vendors_) {
+        if (extra.empty())
+            continue;
+        bool present = std::any_of(vendor_order_.begin(), vendor_order_.end(),
+                                   [&](const std::string& v) { return ieq(v, extra); });
+        if (!present)
+            vendor_order_.push_back(extra);
     }
     std::string options;
     for (size_t i = 0; i < vendor_order_.size(); ++i) {
@@ -255,7 +300,23 @@ void FilamentCatalogSelector::populate_vendor_dropdown() {
         options += vendor_order_[i];
     }
     lv_dropdown_set_options(dd, options.c_str());
-    lv_dropdown_set_selected(dd, 0); // Generic
+
+    // Seed the vendor to the host-provided brand (case-insensitive) when it
+    // exists in the merged list; otherwise pin "Generic" (index 0). This lets a
+    // host opening on an already-branded slot round-trip the vendor instead of
+    // the selector silently snapping it to Generic (which a subsequent Save would
+    // then bake in, dropping the user's saved vendor). A Spoolman-only vendor
+    // resolves here once its name arrives via set_additional_vendors().
+    uint32_t seed_idx = 0; // Generic
+    if (seed_vendor_ && !seed_vendor_->empty()) {
+        for (size_t i = 0; i < vendor_order_.size(); ++i) {
+            if (ieq(vendor_order_[i], *seed_vendor_)) {
+                seed_idx = static_cast<uint32_t>(i);
+                break;
+            }
+        }
+    }
+    lv_dropdown_set_selected(dd, seed_idx);
 }
 
 namespace {
