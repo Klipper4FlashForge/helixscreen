@@ -319,6 +319,8 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
         return build_request("scenario", {{"name", tokens[1]}});
     } else if (cmd == "list_scenarios") {
         return build_request("list_scenarios");
+    } else if (cmd == "describe_screen" || cmd == "ls") {
+        return build_request("describe_screen");
     }
 
     fprintf(stderr, "Unknown command: %s\n", cmd.c_str());

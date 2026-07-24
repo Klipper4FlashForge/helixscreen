@@ -444,6 +444,11 @@ void RemoteControlServer::register_builtin_handlers() {
     handlers_["list_scenarios"] = [this](const nlohmann::json& p) {
         return handle_list_scenarios(p);
     };
+
+    // Introspection
+    handlers_["describe_screen"] = [this](const nlohmann::json& p) {
+        return handle_describe_screen(p);
+    };
 }
 
 nlohmann::json RemoteControlServer::handle_ping(const nlohmann::json& /*params*/) {
@@ -891,6 +896,105 @@ nlohmann::json RemoteControlServer::handle_set_widget_value(const nlohmann::json
         } else {
             throw std::invalid_argument("Value must be a number or string");
         }
+    });
+}
+
+// Classify a widget into a short type string for introspection output.
+static const char* describe_widget_type(lv_obj_t* o) {
+    if (lv_obj_check_type(o, &lv_switch_class))
+        return "switch";
+    if (lv_obj_check_type(o, &lv_checkbox_class))
+        return "checkbox";
+    if (lv_obj_check_type(o, &lv_slider_class))
+        return "slider";
+    if (lv_obj_check_type(o, &lv_arc_class))
+        return "arc";
+    if (lv_obj_check_type(o, &lv_bar_class))
+        return "bar";
+    if (lv_obj_check_type(o, &lv_dropdown_class))
+        return "dropdown";
+    if (lv_obj_check_type(o, &lv_textarea_class))
+        return "textarea";
+    if (lv_obj_check_type(o, &lv_button_class))
+        return "button";
+    if (lv_obj_check_type(o, &lv_label_class))
+        return "label";
+    if (lv_obj_check_type(o, &lv_image_class))
+        return "image";
+    return "obj";
+}
+
+// Build the descriptor for one named widget: type, what you can do to it, and
+// its current value where that's meaningful.
+static nlohmann::json describe_one(lv_obj_t* o, const char* name) {
+    nlohmann::json entry;
+    entry["name"] = name;
+    entry["type"] = describe_widget_type(o);
+
+    nlohmann::json actions = nlohmann::json::array();
+    if (lv_obj_has_flag(o, LV_OBJ_FLAG_CLICKABLE)) {
+        actions.push_back("click");
+    }
+    if (lv_obj_check_type(o, &lv_textarea_class)) {
+        actions.push_back("fill");
+        const char* txt = lv_textarea_get_text(o);
+        entry["value"] = txt ? txt : "";
+    } else if (lv_obj_check_type(o, &lv_switch_class) ||
+               lv_obj_check_type(o, &lv_checkbox_class)) {
+        actions.push_back("toggle");
+        entry["value"] = lv_obj_has_state(o, LV_STATE_CHECKED) ? 1 : 0;
+    } else if (lv_obj_check_type(o, &lv_slider_class)) {
+        actions.push_back("set");
+        entry["value"] = lv_slider_get_value(o);
+    } else if (lv_obj_check_type(o, &lv_arc_class)) {
+        actions.push_back("set");
+        entry["value"] = lv_arc_get_value(o);
+    } else if (lv_obj_check_type(o, &lv_bar_class)) {
+        entry["value"] = lv_bar_get_value(o);
+    } else if (lv_obj_check_type(o, &lv_dropdown_class)) {
+        actions.push_back("set");
+        entry["value"] = static_cast<int>(lv_dropdown_get_selected(o));
+    }
+    entry["actions"] = actions;
+    return entry;
+}
+
+// Recursively collect named, non-hidden widgets under `parent` into `out`.
+// Only named widgets are emitted (unnamed ones can't be addressed), but the
+// walk still descends through them to reach named descendants.
+static void describe_walk(lv_obj_t* parent, nlohmann::json& out) {
+    if (!parent) {
+        return;
+    }
+    uint32_t count = lv_obj_get_child_count(parent);
+    for (uint32_t i = 0; i < count; ++i) {
+        lv_obj_t* child = lv_obj_get_child(parent, i);
+        if (!child) {
+            continue;
+        }
+        if (lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN)) {
+            continue; // hidden subtree — not on screen
+        }
+        const char* raw = lv_obj_get_name(child);
+        if (raw && raw[0] != '\0') {
+            // Resolve "foo_#" index placeholders to the concrete "foo_2" name
+            // so the reported name is actually addressable via find_by_name.
+            char resolved[128];
+            lv_obj_get_name_resolved(child, resolved, sizeof(resolved));
+            out.push_back(describe_one(child, resolved[0] != '\0' ? resolved : raw));
+        }
+        describe_walk(child, out);
+    }
+}
+
+nlohmann::json RemoteControlServer::handle_describe_screen(const nlohmann::json& /*params*/) {
+    return execute_on_ui_thread([]() -> nlohmann::json {
+        nlohmann::json widgets = nlohmann::json::array();
+        // Active screen holds panels + pushed overlays; the top layer holds
+        // modals and their backdrops. Walk both so nothing on screen is missed.
+        describe_walk(lv_screen_active(), widgets);
+        describe_walk(lv_layer_top(), widgets);
+        return {{"widgets", widgets}};
     });
 }
 

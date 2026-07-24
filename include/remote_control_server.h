@@ -123,6 +123,9 @@ class RemoteControlServer {
     nlohmann::json handle_scenario(const nlohmann::json& params);
     nlohmann::json handle_list_scenarios(const nlohmann::json& params);
 
+    // Introspection: enumerate named, interactable widgets on the live screen
+    nlohmann::json handle_describe_screen(const nlohmann::json& params);
+
     // Execute a function on the UI thread and wait for result
     nlohmann::json execute_on_ui_thread(std::function<nlohmann::json()> fn);
 
