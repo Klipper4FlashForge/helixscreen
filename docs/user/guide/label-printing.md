@@ -29,6 +29,8 @@ HelixScreen supports five families of label printers:
 1. Go to **Settings → Hardware & Devices → Spoolman → Label Printer**
 2. Tap to open the Label Printer settings overlay
 
+![Label Printer Settings](../../images/user/settings-label-printer.png)
+
 ### Step 2: Select Connection Type
 
 Choose your printer's connection method:

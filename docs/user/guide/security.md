@@ -8,6 +8,8 @@ Open the Security overlay from **Settings > System > Security**.
 
 ## Setting a PIN
 
+![Security Settings](../../images/user/settings-security.png)
+
 When no PIN is configured, the only option shown is **Set PIN**:
 
 1. Tap **Set PIN**.
@@ -46,6 +48,8 @@ The Lock widget shows a closed padlock when a PIN is set and an open padlock whe
 ---
 
 ## While the Screen Is Locked
+
+![Locked Screen](../../images/user/screen-lock.png)
 
 When locked, a full-screen overlay covers the UI with a numeric keypad:
 

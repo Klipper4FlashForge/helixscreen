@@ -4,6 +4,8 @@ HelixScreen discovers the sensors your printer reports to Klipper and groups the
 
 Open the Sensor Settings overlay from **Settings > Hardware & Devices > Sensors**.
 
+![Sensor Settings](../../images/user/settings-sensors.png)
+
 ---
 
 ## Switch Sensors (Filament Runout & Motion)

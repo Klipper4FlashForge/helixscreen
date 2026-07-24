@@ -8,6 +8,8 @@ Open it from **Advanced > Print History**.
 
 ## History Dashboard
 
+![Print History Dashboard](../../images/user/advanced-history.png)
+
 The dashboard opens with a summary across a selectable time range and two charts.
 
 ### Time filters
@@ -57,6 +59,8 @@ Each row shows the job's filename, status, and key details. When filters are act
 ---
 
 ## Print Details & Reprinting
+
+![Print Details](../../images/user/print-history-detail.png)
 
 Tap a job to open its detail view, which shows:
 

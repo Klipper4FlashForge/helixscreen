@@ -6,6 +6,10 @@ This guide covers both USB and Bluetooth scanners, and how to fix the most commo
 
 Scanning is a shortcut for assigning spools — see [Filament Tracking & Spoolman](filament-tracking.md) for what happens once a spool is linked.
 
+![Barcode Scanner Settings](../../images/user/settings-barcode-scanner.png)
+
+The Barcode Scanner settings overlay lives at **Settings → Hardware & Devices → Spoolman → Barcode Scanner**.
+
 ---
 
 ## USB Scanners
