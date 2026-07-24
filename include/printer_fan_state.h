@@ -63,6 +63,10 @@ struct FanInfo {
     int speed_percent = 0;        ///< Current speed 0-100%
     bool is_controllable = false; ///< true for fan_generic, false for heater_fan/controller_fan
     std::optional<int> rpm;       ///< RPM from fan_feedback or Klipper rpm field
+    bool ever_ran = false;        ///< true once speed_percent has been > 0 this session —
+                                  ///< lets the part slot stay on a real [fan] that is only
+                                  ///< momentarily off (first layer, bridges) instead of
+                                  ///< flicking to a running auxiliary fan (#1124)
 };
 
 /**
@@ -210,9 +214,16 @@ class PrinterFanState {
 
     /// Resolve the part-cooling slot with runtime awareness. Given the
     /// type-classified candidate (the configured bare "fan"/role, or empty),
-    /// prefer it while it is running; otherwise promote a running commandable
-    /// named fan (stale-"fan" printers); otherwise keep the canonical candidate.
+    /// prefer it once it has run (sticky); otherwise promote a commandable named
+    /// fan that has run (stale-"fan" printers); otherwise keep the canonical
+    /// candidate. "Has run" = ever_ran || currently spinning.
     std::string resolve_part_fan(const std::string& configured) const;
+
+    /// Resolve the aux slot, preferring a user-commandable fan (fan_generic /
+    /// output_pin) over an auto-controlled one (controller_fan / temperature_fan)
+    /// — the commandable fan is the one worth glancing at in the compact row.
+    /// Excludes the already-assigned part and hotend fans (#1124).
+    std::string resolve_aux_fan(const std::string& part, const std::string& hotend) const;
 
     /// Recompute classify_primary_fans() and bump primary_fans_version_ if the
     /// resolved roles changed. Called on fan start/stop so the compact row tracks

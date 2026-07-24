@@ -203,42 +203,18 @@ FanType PrinterFanState::classify_fan_type(const std::string& object_name) const
 
 PrimaryFans PrinterFanState::classify_primary_fans() const {
     PrimaryFans out;
+
+    // Seed part/hotend from the first fan of each type; aux is resolved separately
+    // (it prefers commandable fans and must exclude the resolved part fan).
     for (const auto& fan : fans_) {
-        switch (fan.type) {
-        case FanType::PART_COOLING:
-            if (out.part.empty())
-                out.part = fan.object_name;
-            break;
-        case FanType::HEATER_FAN:
-            if (out.hotend.empty())
-                out.hotend = fan.object_name;
-            break;
-        case FanType::CONTROLLER_FAN:
-        case FanType::TEMPERATURE_FAN:
-        case FanType::GENERIC_FAN:
-        case FanType::OUTPUT_PIN_FAN:
-            if (out.aux.empty())
-                out.aux = fan.object_name;
-            break;
-        }
+        if (fan.type == FanType::PART_COOLING && out.part.empty())
+            out.part = fan.object_name;
+        else if (fan.type == FanType::HEATER_FAN && out.hotend.empty())
+            out.hotend = fan.object_name;
     }
 
-    // Resolve the part-cooling slot with runtime awareness (see resolve_part_fan).
     out.part = resolve_part_fan(out.part);
-
-    // Avoid surfacing the promoted part fan a second time in the aux slot when a
-    // distinct aux-type fan exists; keep it if it is the only candidate.
-    if (!out.aux.empty() && out.aux == out.part) {
-        for (const auto& fan : fans_) {
-            if (fan.object_name == out.part)
-                continue;
-            if (is_aux_fan(fan.type)) {
-                out.aux = fan.object_name;
-                break;
-            }
-        }
-    }
-
+    out.aux = resolve_aux_fan(out.part, out.hotend);
     return out;
 }
 
@@ -250,21 +226,23 @@ std::string PrinterFanState::resolve_part_fan(const std::string& configured) con
     // never candidates — promoting an idle controller_fan/temperature_fan over the
     // live [fan] is what stuck the Sovol SV08 part fan at 0% (#1124).
     //
-    // Pick by what is actually running so the slot tracks the live part fan; classify
-    // re-runs on fan start/stop via primary_fans_version:
-    //   1. configured part fan is running          -> keep it
-    //   2. else a running commandable named fan     -> promote it
+    // Pick by which fan has actually spun (sticky: ever_ran survives a fan turning
+    // off, so the slot doesn't flick to a running auxiliary fan while the real [fan]
+    // is briefly idle at first layer / on a bridge). classify re-runs on fan
+    // start/stop via primary_fans_version:
+    //   1. configured part fan has run             -> keep it
+    //   2. else a commandable named fan that ran   -> promote it (stale-"fan" printers)
     //   3. else keep the configured part fan; if none configured, the front-most
     //      commandable fan (the real part fan is a named object).
-    auto speed_of = [this](const std::string& name) -> int {
+    auto has_run = [this](const std::string& name) -> bool {
         for (const auto& fan : fans_)
             if (fan.object_name == name)
-                return fan.speed_percent;
-        return -1; // absent
+                return fan.ever_ran || fan.speed_percent > 0;
+        return false;
     };
 
-    if (!configured.empty() && speed_of(configured) > 0)
-        return configured; // (1) live configured part fan wins
+    if (!configured.empty() && has_run(configured))
+        return configured; // (1) the configured part fan proved itself
 
     std::string first_candidate;
     for (const auto& fan : fans_) {
@@ -272,13 +250,36 @@ std::string PrinterFanState::resolve_part_fan(const std::string& configured) con
             continue;
         if (first_candidate.empty())
             first_candidate = fan.object_name;
-        if (fan.speed_percent > 0)
-            return fan.object_name; // (2) a running commandable named fan is the part fan
+        if (fan.ever_ran || fan.speed_percent > 0)
+            return fan.object_name; // (2) a commandable named fan that ran is the part fan
     }
 
     if (!configured.empty())
-        return configured;     // (3a) keep canonical part fan (idle, or no commandable peer)
+        return configured;     // (3a) keep canonical part fan (never ran, or no commandable peer)
     return first_candidate;    // (3b) no configured part fan -> front-most commandable, may be empty
+}
+
+std::string PrinterFanState::resolve_aux_fan(const std::string& part,
+                                             const std::string& hotend) const {
+    // The compact row has one aux slot. Prefer a user-commandable fan (fan_generic /
+    // output_pin) — the one a user actually toggles and wants to see — over an
+    // auto-controlled controller_fan / temperature_fan whose reading rarely changes
+    // and looks "stuck". Falls back to the first auto-controlled fan when there is no
+    // commandable candidate. Excludes the fans already shown in part/hotend (#1124).
+    std::string commandable, auto_controlled;
+    for (const auto& fan : fans_) {
+        if (fan.object_name == part || fan.object_name == hotend || !is_aux_fan(fan.type))
+            continue;
+        bool user_commandable =
+            fan.type == FanType::GENERIC_FAN || fan.type == FanType::OUTPUT_PIN_FAN;
+        if (user_commandable) {
+            if (commandable.empty())
+                commandable = fan.object_name;
+        } else if (auto_controlled.empty()) {
+            auto_controlled = fan.object_name;
+        }
+    }
+    return !commandable.empty() ? commandable : auto_controlled;
 }
 
 void PrinterFanState::refresh_primary_fans_selection() {
@@ -487,6 +488,8 @@ void PrinterFanState::update_fan_speed(const std::string& object_name, double sp
             if (fan.speed_percent != speed_pct) {
                 bool was_running = fan.speed_percent > 0;
                 fan.speed_percent = speed_pct;
+                if (speed_pct > 0)
+                    fan.ever_ran = true;
 
                 // Fire per-fan subject for reactive UI updates
                 auto it = fan_speed_subjects_.find(object_name);

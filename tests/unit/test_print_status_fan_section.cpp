@@ -73,15 +73,29 @@ TEST_CASE_METHOD(HelixTestFixture, "classify_primary_fans picks first not extras
 }
 
 TEST_CASE_METHOD(HelixTestFixture,
-                 "classify_primary_fans treats controller/temp/generic/output as aux",
+                 "classify_primary_fans: auto-controlled lone fan -> aux, commandable lone fan -> part",
                  "[fan_state][drift]") {
-    for (FanType aux_type : {FanType::CONTROLLER_FAN, FanType::TEMPERATURE_FAN,
-                             FanType::GENERIC_FAN, FanType::OUTPUT_PIN_FAN}) {
+    // controller_fan / temperature_fan are auto-controlled and can't be the part
+    // fan, so a lone one lands in the aux slot.
+    for (FanType aux_type : {FanType::CONTROLLER_FAN, FanType::TEMPERATURE_FAN}) {
         PrinterFanState state;
         std::vector<FanInfo> fans;
         fans.push_back({"fan_x", "X", aux_type, 0, false, std::nullopt});
         PrinterFanStateTestAccess::set_fans(state, fans);
-        REQUIRE_FALSE(state.classify_primary_fans().aux.empty());
+        auto picked = state.classify_primary_fans();
+        REQUIRE(picked.part.empty());
+        REQUIRE(picked.aux == "fan_x");
+    }
+    // fan_generic / output_pin ARE commandable, so a lone one is the part cooling
+    // fan (not duplicated into aux).
+    for (FanType part_type : {FanType::GENERIC_FAN, FanType::OUTPUT_PIN_FAN}) {
+        PrinterFanState state;
+        std::vector<FanInfo> fans;
+        fans.push_back({"fan_x", "X", part_type, 0, true, std::nullopt});
+        PrinterFanStateTestAccess::set_fans(state, fans);
+        auto picked = state.classify_primary_fans();
+        REQUIRE(picked.part == "fan_x");
+        REQUIRE(picked.aux.empty());
     }
 }
 
@@ -246,6 +260,50 @@ TEST_CASE_METHOD(HelixTestFixture,
     PrinterFanStateTestAccess::refresh_primary_fans(state);
     REQUIRE(lv_subject_get_int(ver) > v_idle);
     REQUIRE(state.classify_primary_fans().part == "output_pin fan0");
+}
+
+TEST_CASE_METHOD(HelixTestFixture,
+                 "classify_primary_fans: part fan that has run stays selected when idle (#1124)",
+                 "[fan_state][drift]") {
+    // Sticky selection: the bare [fan] has run (ever_ran) but is momentarily off
+    // (first layer / bridge) while a running fan_generic (Nevermore) spins. The
+    // part slot must stay on [fan], NOT flick to the running auxiliary fan.
+    PrinterFanState state;
+    std::vector<FanInfo> fans;
+    // {name, display, type, speed, controllable, rpm, ever_ran}
+    fans.push_back({"fan", "Part", FanType::PART_COOLING, 0, true, std::nullopt, true});
+    fans.push_back(
+        {"fan_generic nevermore", "Nevermore", FanType::GENERIC_FAN, 40, true, std::nullopt, false});
+    PrinterFanStateTestAccess::set_fans(state, fans);
+
+    auto picked = state.classify_primary_fans();
+    REQUIRE(picked.part == "fan");                     // sticky: stays on the proven part fan
+    REQUIRE(picked.aux == "fan_generic nevermore");    // the running commandable fan goes to aux
+}
+
+TEST_CASE_METHOD(HelixTestFixture,
+                 "classify_primary_fans: aux prefers commandable fan over auto-controlled (SV08, #1124)",
+                 "[fan_state][drift]") {
+    // Full Sovol SV08 fan set in real discovery order. The aux slot must surface
+    // the user-commandable Nevermore, not the idle chamber temperature_fan that
+    // sorts ahead of it.
+    PrinterFanState state;
+    std::vector<FanInfo> fans;
+    fans.push_back(
+        {"temperature_fan chamber", "Chamber", FanType::TEMPERATURE_FAN, 0, false, std::nullopt});
+    fans.push_back({"fan", "Part", FanType::PART_COOLING, 100, true, std::nullopt});
+    fans.push_back(
+        {"fan_generic nevermore", "Nevermore", FanType::GENERIC_FAN, 40, true, std::nullopt});
+    fans.push_back(
+        {"temperature_fan MCU_fan", "MCU", FanType::TEMPERATURE_FAN, 0, false, std::nullopt});
+    fans.push_back(
+        {"heater_fan hotend_fan", "Hotend", FanType::HEATER_FAN, 0, false, std::nullopt});
+    PrinterFanStateTestAccess::set_fans(state, fans);
+
+    auto picked = state.classify_primary_fans();
+    REQUIRE(picked.part == "fan");
+    REQUIRE(picked.hotend == "heater_fan hotend_fan");
+    REQUIRE(picked.aux == "fan_generic nevermore");
 }
 
 // =============================================================================
