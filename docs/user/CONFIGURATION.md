@@ -1651,8 +1651,9 @@ HelixScreen accepts command-line options for overriding configuration and debugg
 
 | Option | Description |
 |--------|-------------|
-| `-p, --panel <panel>` | Start on specific panel (home, controls, filament, settings, advanced, print-select) |
 | `-w, --wizard` | Force first-run configuration wizard |
+
+> Developers: to drive the UI to a specific panel or overlay, see `docs/devel/HELIXCTL.md` (the `helixctl` remote-control tool).
 
 ### Connection Options
 
@@ -1687,8 +1688,8 @@ HelixScreen accepts command-line options for overriding configuration and debugg
 ### Examples
 
 ```bash
-# Start in dark mode on the settings panel
-helix-screen --dark --panel settings
+# Start in dark mode, skipping the splash screen
+helix-screen --dark --skip-splash
 
 # Override Moonraker connection
 helix-screen --moonraker ws://192.168.1.50:7125

@@ -911,7 +911,7 @@ The prototype supports multi-monitor development workflows with automatic window
 ./build/bin/helix-screen -x 1500 -y -500  # Works with negative Y (display above)
 
 # Combined with other options
-./build/bin/helix-screen -d 1 -s small --panel home
+./build/bin/helix-screen -d 1 -s small --skip-splash
 ```
 
 ### Implementation Details

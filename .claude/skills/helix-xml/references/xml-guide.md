@@ -126,7 +126,7 @@ Every `bind_flag_if_*`/`bind_state_if_*`/`bind_style_if_*` element compares **on
 - `cond="EXPR"` works inline on `bind_flag_if`, `bind_state_if`, `bind_style_if` — no `subject_expr` needed for a one-off condition.
 - Grammar (integer-only, nonzero = truthy): comparison `eq ne lt le gt ge` (or `== != < <= > >=`), boolean `and or not` (or `&& || !`), arithmetic `+ - * / %` (div/mod by zero → `0`).
 - **House style: word forms** (`and`/`or`/`gt`/...). Symbolic `&&`/`<` are XML metacharacters and need `&amp;&amp;`/`&lt;` escaping — word forms don't.
-- Live testbed: `ui_xml/test_panel.xml` (`-p test`), all four constructs wired to sliders/switch.
+- Live testbed: `ui_xml/test_panel.xml` (`helixctl navigate test`), all four constructs wired to sliders/switch.
 
 ## Repeating Fragments (`<repeat>`)
 
