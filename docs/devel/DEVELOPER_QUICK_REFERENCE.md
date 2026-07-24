@@ -1,6 +1,6 @@
 # Developer Quick Reference
 
-Quick patterns and cheat sheets for developers working on the HelixScreen codebase. For system design and architectural rationale, see [ARCHITECTURE.md](ARCHITECTURE.md). For comprehensive XML syntax, see [LVGL9_XML_GUIDE.md](LVGL9_XML_GUIDE.md).
+Quick patterns and cheat sheets for developers working on the HelixScreen codebase. For system design and architectural rationale, see [ARCHITECTURE.md](ARCHITECTURE.md). For comprehensive XML syntax, see [LVGL9_XML_GUIDE.md](LVGL9_XML_GUIDE.md). For driving a running instance — navigate, click, set values, capture screenshots, or an interactive REPL via `helix-screen ctl`/`repl` — see [HELIXCTL.md](HELIXCTL.md).
 
 ---
 

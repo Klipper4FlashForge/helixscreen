@@ -130,6 +130,42 @@ state, constructed with representative sample data and the real lifecycle:
 | `wait_for <subject> <value> [--timeout N]` | Block until a subject matches |
 | `scenario <name>` / `list_scenarios` | Apply / list mock scenarios |
 
+## Interactive REPL
+
+`helix-screen repl` (or `helix-screen ctl` with no command) opens an interactive
+session with line editing, persistent history, and Tab completion (over commands,
+subject names, panels, and scenarios). It reconnects per command, so it survives
+the app restarting mid-session — handy while iterating on XML with hot reload.
+
+The prompt is a **live breadcrumb of the navigation stack**, so you always know
+where you are. It uses the filesystem metaphor — `cd` to descend, `cd ..`
+(`back`) to pop, `pwd` (`current`) to show the stack, `ls` to list what's here:
+
+```text
+$ helix-screen repl
+helix-screen control REPL — type 'help' for commands, Tab for completion, Ctrl-D to quit
+
+> cd controls
+controls > ls
+  navigate  btn_motion btn_nozzle_temp btn_extrusion btn_fan btn_bed_mesh ...
+  (42 widgets — `ls` shows all; @path targets any one)
+controls > cd btn_motion
+controls / motion_panel_0 > set_value jog_distance 10
+controls / motion_panel_0 > back
+controls > pwd
+  panel: controls, overlays: []
+controls > quit
+```
+
+Every command from the tables above works at the prompt. A handful are
+REPL-only:
+
+| Command | Meaning |
+|---------|---------|
+| `help` | Show the in-REPL command summary |
+| `refresh` | Reload the Tab-completion caches (subjects/scenarios/panels) after state changes |
+| `quit`, `exit`, `Ctrl-D` | Leave the REPL |
+
 ## Bringing up a panel or overlay (replaces `-p`)
 
 | Old | New |
