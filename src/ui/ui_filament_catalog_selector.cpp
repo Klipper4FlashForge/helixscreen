@@ -102,8 +102,10 @@ void FilamentCatalogSelector::detach() {
 }
 
 void FilamentCatalogSelector::configure(std::optional<std::string> seed_type,
-                                        std::optional<std::vector<std::string>> allowed_types) {
+                                        std::optional<std::vector<std::string>> allowed_types,
+                                        std::optional<std::string> seed_vendor) {
     seed_type_ = std::move(seed_type);
+    seed_vendor_ = std::move(seed_vendor);
     allowed_types_ = std::move(allowed_types);
     highlighted_id_.clear();
     preselect_anchor_id_.clear();
@@ -255,7 +257,29 @@ void FilamentCatalogSelector::populate_vendor_dropdown() {
         options += vendor_order_[i];
     }
     lv_dropdown_set_options(dd, options.c_str());
-    lv_dropdown_set_selected(dd, 0); // Generic
+
+    // Seed the vendor to the host-provided brand (case-insensitive) when it
+    // exists in the catalog; otherwise pin "Generic" (index 0). This lets a host
+    // opening on an already-branded slot round-trip the vendor instead of the
+    // selector silently snapping it to Generic (which a subsequent Save would
+    // then bake in, dropping the user's saved vendor).
+    uint32_t seed_idx = 0; // Generic
+    if (seed_vendor_ && !seed_vendor_->empty()) {
+        auto ieq = [](const std::string& a, const std::string& b) {
+            if (a.size() != b.size())
+                return false;
+            return std::equal(a.begin(), a.end(), b.begin(), [](unsigned char x, unsigned char y) {
+                return std::tolower(x) == std::tolower(y);
+            });
+        };
+        for (size_t i = 0; i < vendor_order_.size(); ++i) {
+            if (ieq(vendor_order_[i], *seed_vendor_)) {
+                seed_idx = static_cast<uint32_t>(i);
+                break;
+            }
+        }
+    }
+    lv_dropdown_set_selected(dd, seed_idx);
 }
 
 namespace {

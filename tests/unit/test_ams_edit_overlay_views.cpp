@@ -462,6 +462,56 @@ TEST_CASE_METHOD(LVGLUITestFixture, "spool-edit Save applies color locally with 
     close_editor_overlay();
 }
 
+// Bug A — the spool-edit round-trip drops the user's existing brand.
+//
+// A slot already carries a non-Generic vendor (e.g. "Sunlu"). The user opens
+// spool-edit to tweak something unrelated and taps Save without ever touching
+// the vendor dropdown. setup_details_selector() seeds the catalog selector
+// with the MATERIAL only (no vendor), and populate_vendor_dropdown() forces the
+// vendor to index 0 = "Generic". preselect_first() then highlights the Generic
+// product, so handle_spool_edit_save() reads details_selector_.highlighted()
+// and overwrites working_info_.brand with that product's brand ("Generic").
+// The user's "Sunlu" is silently lost even though they never edited the vendor.
+//
+// The fix will seed the selector's vendor from the slot's existing brand so an
+// untouched Save round-trips it. This test opens the editor on a Sunlu slot,
+// enters spool-edit, saves without changing the dropdown, and asserts the brand
+// survives.
+TEST_CASE_METHOD(LVGLUITestFixture, "spool-edit Save preserves an existing non-Generic brand",
+                 "[ams_edit_overlay][spool_edit][brand]") {
+    auto& overlay = get_ams_edit_overlay();
+    AmsEditOverlayViewTestAccess access(overlay);
+
+    // Untracked slot whose vendor is a real non-Generic brand the user chose.
+    SlotInfo sunlu;
+    sunlu.slot_index = 0;
+    sunlu.spoolman_id = 0;
+    sunlu.brand = "Sunlu";
+    sunlu.material = "PLA";
+    sunlu.color_rgb = 0xFEF043;
+    sunlu.color_name = "Yellow";
+
+    REQUIRE(overlay.show_for_slot(test_screen(), 0, sunlu, nullptr, nullptr));
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    access.call_enter_spool_edit();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // Save WITHOUT touching the vendor dropdown — the user only meant to confirm.
+    access.call_handle_spool_edit_save();
+    UpdateQueue::instance().drain();
+    process_lvgl(10);
+
+    // REGRESSION: the brand must round-trip. Currently the selector forced
+    // vendor=Generic on open, so the highlighted Generic product clobbers it.
+    CHECK(access.working_info().brand == "Sunlu");
+    CHECK(access.working_info().material == "PLA"); // material unchanged
+
+    close_editor_overlay();
+}
+
 TEST_CASE_METHOD(LVGLUITestFixture, "spool-edit Save with toggle off unlinks a managed slot",
                  "[ams_edit_overlay][spool_edit][toggle]") {
     auto& overlay = get_ams_edit_overlay();

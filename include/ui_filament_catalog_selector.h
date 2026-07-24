@@ -42,9 +42,14 @@ class FilamentCatalogSelector {
     void detach();
 
     /// seed_type: pre-select the Type dropdown; allowed_types: whitelist
-    /// filter (case-insensitive), nullopt = all types.
+    /// filter (case-insensitive), nullopt = all types. seed_vendor: pre-select
+    /// the Vendor dropdown to this brand (case-insensitive match) when it exists
+    /// in the catalog; nullopt/empty or a brand absent from the catalog falls
+    /// back to "Generic" (index 0). Lets a host that opens on an already-branded
+    /// slot round-trip the vendor instead of snapping it to Generic.
     void configure(std::optional<std::string> seed_type,
-                   std::optional<std::vector<std::string>> allowed_types);
+                   std::optional<std::vector<std::string>> allowed_types,
+                   std::optional<std::string> seed_vendor = std::nullopt);
 
     /// Load the catalog fresh and (re)fill dropdowns + product list.
     void populate();
@@ -164,6 +169,7 @@ class FilamentCatalogSelector {
     lv_obj_t* root_ = nullptr;
     helix::printer::FilamentCatalog catalog_;
     std::optional<std::string> seed_type_;
+    std::optional<std::string> seed_vendor_; // pre-select the Vendor dropdown
     std::optional<std::vector<std::string>> allowed_types_;
     std::string highlighted_id_;
     std::string preselect_anchor_id_; // product to restore on a dropdown round-trip

@@ -789,10 +789,24 @@ void AmsEditOverlay::handle_spool_edit_save(bool finish) {
     //     filament-details apply path) ---
     // Apply catalog pick (if any) — brand/material/temps from the branded
     // catalog (spec §5: EffectiveFilament -> slot mapping reused).
+    auto iequals = [](const std::string& a, const std::string& b) {
+        if (a.size() != b.size())
+            return false;
+        return std::equal(a.begin(), a.end(), b.begin(), [](unsigned char x, unsigned char y) {
+            return std::tolower(x) == std::tolower(y);
+        });
+    };
     const helix::printer::EffectiveFilament* ef = details_selector_.highlighted();
     if (ef) {
         working_info_.material = ef->type;
-        working_info_.brand = ef->brand;
+        // Preserve the user's stored brand string when the highlighted product
+        // is the SAME vendor (case-insensitive). The selector is seeded to the
+        // slot's brand, so an untouched Save re-highlights that vendor's first
+        // product — adopting ef->brand would rewrite the user's "Sunlu" to the
+        // catalog's canonical "SUNLU" casing (and, before the seed fix, clobber
+        // it to "Generic"). A genuine vendor change still adopts the new brand.
+        if (!iequals(ef->brand, working_info_.brand))
+            working_info_.brand = ef->brand;
         working_info_.nozzle_temp_min = ef->nozzle_min;
         working_info_.nozzle_temp_max = ef->nozzle_max;
         working_info_.bed_temp = ef->bed_temp;
@@ -802,24 +816,26 @@ void AmsEditOverlay::handle_spool_edit_save(bool finish) {
         // No product highlighted. With preselect-on-change enabled this only
         // happens when the rebuilt product list was empty — a type the firmware
         // whitelists but the catalog has no product for yet. If the user did
-        // change the type, apply a Generic identity so Save doesn't silently
-        // drop it; temps are left as-is (no catalog data to source them from).
-        // When the selected type still equals the slot's material the identity
-        // is unchanged and the old skip behavior is correct.
+        // change the type, keep the vendor the dropdown still shows (it was
+        // seeded to the slot's brand and the user didn't change it here) rather
+        // than forcing Generic — only fall back to Generic when the selection
+        // genuinely is Generic/empty. Temps are left as-is (no catalog data to
+        // source them from). When the selected type still equals the slot's
+        // material the identity is unchanged and the old skip behavior is right.
         std::string sel_type = details_selector_.current_type();
-        auto iequals = [](const std::string& a, const std::string& b) {
-            if (a.size() != b.size())
-                return false;
-            return std::equal(a.begin(), a.end(), b.begin(), [](unsigned char x, unsigned char y) {
-                return std::tolower(x) == std::tolower(y);
-            });
-        };
         if (!sel_type.empty() && !iequals(sel_type, working_info_.material)) {
             working_info_.material = sel_type; // material names are not translated (L070)
-            working_info_.brand = "Generic";
-            spdlog::info("[AmsEditOverlay] Spool-edit type change with no catalog product: "
-                         "'Generic {}'",
-                         sel_type);
+            std::string sel_vendor = details_selector_.current_vendor();
+            if (iequals(sel_vendor, working_info_.brand)) {
+                // Same vendor as the slot already had — preserve the user's
+                // exact brand string (casing) rather than the dropdown's copy.
+            } else if (!sel_vendor.empty()) {
+                working_info_.brand = sel_vendor;
+            } else {
+                working_info_.brand = "Generic";
+            }
+            spdlog::info("[AmsEditOverlay] Spool-edit type change with no catalog product: '{} {}'",
+                         working_info_.brand, sel_type);
         }
     }
 
@@ -1826,8 +1842,15 @@ bool AmsEditOverlay::setup_details_selector() {
     std::optional<std::string> seed = working_info_.material.empty()
                                           ? std::nullopt
                                           : std::optional<std::string>(working_info_.material);
+    // Seed the Vendor dropdown from the slot's existing brand so an untouched
+    // Save round-trips it (the selector otherwise snaps vendor to Generic and
+    // preselect_first() would then paint a Generic product over the user's
+    // saved brand). Empty brand -> nullopt -> Generic default, unchanged.
+    std::optional<std::string> vendor_seed =
+        working_info_.brand.empty() ? std::nullopt
+                                    : std::optional<std::string>(working_info_.brand);
     details_selector_.attach(fragment);
-    details_selector_.configure(std::move(seed), std::move(allowed));
+    details_selector_.configure(std::move(seed), std::move(allowed), std::move(vendor_seed));
     // A vendor/type dropdown change must always leave a product checked so a
     // subsequent header Save can't silently drop the identity change (the
     // rebuilt list would otherwise be all-unchecked and Save would skip
