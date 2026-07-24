@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.99.100] - 2026-07-24
+
+Macros get an edit mode so you can hide the ones you never use, filament handling on
+multi-lane AMS units acts on the slot you actually picked, and fan selection tracks the
+fan that is really cooling the part. All nine translations reach 100% coverage.
+
+### Added
+
+- **Hide macros you don't use** — long-press the macros list to enter edit mode, uncheck the macros you want out of the way, and Save. The hidden set is remembered per printer, so each machine keeps its own list.
+- **Complete translations** — all nine languages are at 100% coverage. The 34 remaining untranslated strings across German, Spanish, French, Italian, Japanese, Portuguese, Russian and Chinese are filled in.
+- **More illustrated documentation** — the user guide now shows the screens it describes: fan control, sensors, camera, security and the PIN lock, barcode scanner, label printing, print history, the pre-print filament check and the runout recovery dialog.
+
+### Fixed
+
+- **Load and Unload acted on the wrong slot** — on a multi-lane AMS (AFC/BoxTurtle) where a lane other than your selection was loaded to the toolhead, Load operated on the loaded lane instead of the one picked in the dropdown. Both buttons now resolve the slot the same way the button gating does, so the operation can never disagree with what you see.
+- **Selecting a filament in the dropdown triggered a physical swap** — on a shared-extruder AMS the dropdown is now selection-only, and the explicit Load button performs the swap. Only a true parallel toolchanger still changes tools on select.
+- **Nozzle stayed hot after an AFC swap** — the post-operation cooldown was only scheduled on the gcode path, so a swap that completed through the AMS backend left the nozzle at material temperature indefinitely.
+- **Brand lost when saving a spool edit** — opening spool edit on an already-branded slot (say Sunlu) and saving without touching the vendor dropdown overwrote the brand with Generic.
+- **A vendor known only to Spoolman could not be selected** — the vendor dropdown was rebuilt from the bundled catalog alone, so a Spoolman-only brand showed as Generic and saved as Generic. Live Spoolman vendors are now merged into the list.
+- **AD5X: a routine load wiped your brand override** (#981) — the native LCD emits a material-only colour change on every physical load, which erased the entire per-slot override, reverting Sunlu PETG to Generic PETG and losing the temperatures that drive loading. Firmware truth now wins only for colour and material; brand, spool name and weights are kept.
+- **Print status showed 0% for a running part fan** (#1124) — Klipper's auto-controlled `controller_fan` and `temperature_fan` could be promoted ahead of the real toolhead fan (seen on the Sovol SV08). Auto-controlled fans are now excluded, the part-fan choice sticks to the fan that has actually run, and the auxiliary slot prefers a fan you can command over an idle chamber fan.
+- **Temperature graphs were empty until reopened** (#1124) — graphs built at startup ran their history backfill before the connection was up. Persistent graphs now refill once history arrives, and again after a reconnect.
+- **Pre-print filament check showed no rows** — the "Check filament" dialog collapsed to its one-line explanation instead of listing the per-tool colour swatches.
+- **Crash on shutdown** — a reactive row list left a dangling observer when a panel's subjects were torn down before its widgets.
+- **Macros empty state** — the empty-state message now uses the full panel area and is centred.
+
+### Changed
+
+- **Developer tooling: remote control** — a running instance can be driven with `helix-screen ctl` (navigate, click, ls, set_value, scroll, screenshot) or an interactive `helix-screen repl`, over a Unix socket or HTTP. This replaces the `-p`/`--panel` launch flags, which are removed, and a new `--skip-wizard` flag suppresses the first-run wizard. Dev and test builds only — shipped device builds do not include it.
+
 ## [0.99.99] - 2026-07-22
 
 ### Fixed
@@ -4466,6 +4496,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.100]: https://github.com/prestonbrown/helixscreen/compare/v0.99.99...v0.99.100
 [0.99.99]: https://github.com/prestonbrown/helixscreen/compare/v0.99.98...v0.99.99
 [0.99.98]: https://github.com/prestonbrown/helixscreen/compare/v0.99.97...v0.99.98
 [0.99.97]: https://github.com/prestonbrown/helixscreen/compare/v0.99.96...v0.99.97
