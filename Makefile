@@ -375,6 +375,21 @@ ifneq ($(ENABLE_MOCKS),yes)
     APP_SRCS := $(filter-out $(SRC_DIR)/printer/ams_backend_mock.cpp,$(APP_SRCS))
     APP_SRCS := $(filter-out $(SRC_DIR)/api/moonraker_api_mock.cpp,$(APP_SRCS))
 endif
+
+# Remote-control subsystem (helixctl server + socket/HTTP transport + the folded
+# `ctl`/`repl` client). Dev/test-only: default ON for the native dev build, OFF
+# for release/cross builds so shipped devices don't build it or pay the overhead.
+# Force it into a device dev/test image by overriding on the command line:
+#   make PLATFORM_TARGET=pi ENABLE_REMOTE_CONTROL=yes
+ifeq ($(PLATFORM_TARGET),native)
+    ENABLE_REMOTE_CONTROL ?= yes
+else
+    ENABLE_REMOTE_CONTROL ?= no
+endif
+
+ifneq ($(ENABLE_REMOTE_CONTROL),yes)
+    APP_SRCS := $(filter-out $(wildcard $(SRC_DIR)/remote/*.cpp),$(APP_SRCS))
+endif
 APP_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(APP_SRCS))
 
 # libhv dns_resolv.c — needed by safe_resolve.h on statically-linked ARM/MIPS
@@ -561,6 +576,13 @@ else
     MOCK_DEFINES :=
 endif
 
+# Remote-control subsystem define (see ENABLE_REMOTE_CONTROL above)
+ifeq ($(ENABLE_REMOTE_CONTROL),yes)
+    REMOTE_CONTROL_DEFINES := -DHELIX_ENABLE_REMOTE_CONTROL
+else
+    REMOTE_CONTROL_DEFINES :=
+endif
+
 # wpa_supplicant (WiFi control via wpa_ctrl interface)
 WPA_DIR := lib/wpa_supplicant
 # Output to $(BUILD_DIR)/lib/ for architecture isolation (native/pi/ad5m)
@@ -725,6 +747,10 @@ CXXFLAGS += $(SCREENSAVER_DEFINES)
 # Add mock defines to compiler flags
 CFLAGS += $(MOCK_DEFINES)
 CXXFLAGS += $(MOCK_DEFINES)
+
+# Add remote-control defines to compiler flags
+CFLAGS += $(REMOTE_CONTROL_DEFINES)
+CXXFLAGS += $(REMOTE_CONTROL_DEFINES)
 
 # Add systemd defines to C++ compiler flags (for logging_init.cpp)
 CXXFLAGS += $(SYSTEMD_CXXFLAGS)

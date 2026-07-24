@@ -50,7 +50,9 @@
 #include "print_history_manager.h"
 #include "printer_recovery_service.h"
 #include "recovery_modal_presenter.h"
+#ifdef HELIX_ENABLE_REMOTE_CONTROL
 #include "remote_control_server.h"
+#endif
 #include "rpc_error_correlation.h"
 #include "screenshot.h"
 #include "sensor_state.h"
@@ -899,14 +901,16 @@ int Application::run(int argc, char** argv) {
         // Phase 14b: Check WiFi availability if expected
         check_wifi_availability();
 
-        // Phase 14c: Start remote control server
+        // Phase 14c: Start remote control server (dev/test builds only)
         // Auto-enabled in --test mode, opt-in via --remote otherwise
+#ifdef HELIX_ENABLE_REMOTE_CONTROL
         if (m_args.remote_control || get_runtime_config()->test_mode) {
             auto socket_path = helix::resolve_socket_path(m_args.remote_socket);
             if (!helix::RemoteControlServer::instance().start(socket_path)) {
                 spdlog::warn("[Application] Remote control server failed to start (non-fatal)");
             }
         }
+#endif
 
         // Phase 15: Start memory monitoring (logs at TRACE level, -vvv)
         helix::MemoryMonitor::instance().start(5000);
@@ -2176,6 +2180,7 @@ void Application::apply_startup_cli_actions() {
     }
 }
 
+#ifdef HELIX_ENABLE_REMOTE_CONTROL
 namespace helix {
 
 // Bring up a demo overlay/modal with representative sample data. These screens
@@ -2268,6 +2273,7 @@ bool show_demo_overlay(const std::string& name) {
 }
 
 } // namespace helix
+#endif // HELIX_ENABLE_REMOTE_CONTROL
 
 void Application::reapply_hardware_roles() {
     helix::ui::queue_update("Application::reapply_hardware_roles", [this]() {
@@ -4250,7 +4256,9 @@ void Application::shutdown() {
     }
 
     // Stop remote control server first (before tearing down UI state)
+#ifdef HELIX_ENABLE_REMOTE_CONTROL
     helix::RemoteControlServer::instance().stop();
+#endif
 
     // Stop memory monitor
     helix::MemoryMonitor::instance().stop();
