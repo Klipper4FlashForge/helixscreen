@@ -1655,6 +1655,25 @@ void FilamentPanel::populate_extruder_dropdown() {
                   ts.tool_count(), active);
 }
 
+int FilamentPanel::selected_op_slot() const {
+    // Map the selected tool (dropdown index == tool index) to a global slot.
+    // resolve_op_button_slot() prefers an explicit tool→slot map, then falls
+    // back by topology: tool index == slot index on a multi-tool toolchanger,
+    // but current_slot on a single-extruder multi-lane AMS (AD5X IFS), where
+    // the loaded lane is NOT the tool index (prestonbrown/helixscreen#1065).
+    AmsBackend* backend = AmsState::instance().get_backend();
+    if (!backend) {
+        return -1;
+    }
+    AmsSystemInfo sys = backend->get_system_info();
+    int selected_tool = helix::ToolState::instance().active_tool_index();
+    if (extruder_dropdown_) {
+        selected_tool = static_cast<int>(lv_dropdown_get_selected(extruder_dropdown_));
+    }
+    return helix::ui::resolve_op_button_slot(sys, selected_tool,
+                                             helix::ToolState::instance().tool_count());
+}
+
 void FilamentPanel::update_filament_op_buttons() {
     // Recompute Load/Unload/Purge gating from the SELECTED tool's LIVE load
     // state (Task 5). Without an AMS backend (single-extruder / external-spool
@@ -1667,19 +1686,9 @@ void FilamentPanel::update_filament_op_buttons() {
         return;
     }
 
-    // Map the selected tool (dropdown index == tool index) to a global slot.
-    // resolve_op_button_slot() prefers an explicit tool→slot map, then falls
-    // back by topology: tool index == slot index on a multi-tool toolchanger,
-    // but current_slot on a single-extruder multi-lane AMS (AD5X IFS), where
-    // the loaded lane is NOT the tool index (prestonbrown/helixscreen#1065).
-    AmsSystemInfo sys = backend->get_system_info();
-    int selected_tool = helix::ToolState::instance().active_tool_index();
-    if (extruder_dropdown_) {
-        selected_tool = static_cast<int>(lv_dropdown_get_selected(extruder_dropdown_));
-    }
-
-    int slot = helix::ui::resolve_op_button_slot(sys, selected_tool,
-                                                 helix::ToolState::instance().tool_count());
+    // Single source of truth for the acted-on slot — the same resolution the
+    // Load/Unload executors use, so gating can never diverge from the op.
+    int slot = selected_op_slot();
 
     bool is_loaded = false;
     if (slot >= 0) {
@@ -1690,9 +1699,9 @@ void FilamentPanel::update_filament_op_buttons() {
     // Load disabled when already loaded; Unload/Purge disabled when NOT loaded.
     lv_subject_set_int(&load_disabled_subject_, is_loaded ? 1 : 0);
     lv_subject_set_int(&unload_disabled_subject_, is_loaded ? 0 : 1);
-    spdlog::debug("[FilamentPanel] Op buttons: tool={} slot={} loaded={} "
+    spdlog::debug("[FilamentPanel] Op buttons: slot={} loaded={} "
                   "(load_disabled={}, unload_disabled={})",
-                  selected_tool, slot, is_loaded, is_loaded ? 1 : 0, is_loaded ? 0 : 1);
+                  slot, is_loaded, is_loaded ? 1 : 0, is_loaded ? 0 : 1);
 }
 
 void FilamentPanel::handle_extruder_changed() {
@@ -2352,10 +2361,12 @@ void FilamentPanel::execute_load() {
     // when no slot is currently active (e.g. cold start, no tool selected).
     AmsBackend* backend = AmsState::instance().get_backend();
     if (backend && backend->requires_slot_selection_for_load()) {
-        AmsSystemInfo sys = backend->get_system_info();
-        if (sys.current_slot >= 0) {
-            spdlog::info("[{}] Loading filament directly into active slot {} (no redirect)",
-                         get_name(), sys.current_slot);
+        // Single source of truth: act on the dropdown-selected tool's slot, the
+        // same one the button gating uses — never a divergent current_slot read.
+        int slot = selected_op_slot();
+        if (slot >= 0) {
+            spdlog::info("[{}] Loading filament directly into selected slot {} (no redirect)",
+                         get_name(), slot);
             // Backend load is fire-and-forget: completion is signaled by
             // ams_action_observer_ when AmsAction returns to IDLE. Start the guard
             // + on-button spinner here; backend_op_active_ gates the observer so it
@@ -2365,7 +2376,7 @@ void FilamentPanel::execute_load() {
             backend_op_active_ = true;
             op_in_flight_ = FilamentOp::Load;
             op_started(FilamentOp::Load);
-            AmsError err = backend->load_filament(sys.current_slot);
+            AmsError err = backend->load_filament(slot);
             if (!err.success()) {
                 operation_guard_.end();
                 backend_op_active_ = false;
@@ -2467,28 +2478,32 @@ void FilamentPanel::execute_unload() {
     // unload_filament macro itself when bypass is enabled.
     AmsBackend* backend = AmsState::instance().get_backend();
     if (backend) {
-        AmsSystemInfo sys_info = backend->get_system_info();
-        if (!sys_info.filament_loaded && sys_info.current_slot < 0) {
+        // Single source of truth: act on the dropdown-selected tool's slot, the
+        // same one the button gating uses — never a divergent current_slot read.
+        int slot = selected_op_slot();
+        bool loaded = slot >= 0 && (backend->slot_is_actively_loaded(slot) ||
+                                    backend->slot_has_filament_at_toolhead(slot));
+        if (!loaded) {
             NOTIFY_WARNING(lv_tr("No filament loaded to unload"));
             return;
         }
 
         operation_guard_.begin(OPERATION_TIMEOUT_MS,
                                [] { NOTIFY_WARNING(lv_tr("Filament operation timed out")); });
-        spdlog::info("[{}] Unloading filament via AMS backend ({})", get_name(),
-                     ams_type_to_string(backend->get_type()));
+        spdlog::info("[{}] Unloading filament from selected slot {} via AMS backend ({})",
+                     get_name(), slot, ams_type_to_string(backend->get_type()));
         // On-button spinner replaces the start toast. Completion is signaled by
         // ams_action_observer_ when AmsAction returns to IDLE; backend_op_active_
         // gates that observer to backend ops only.
         backend_op_active_ = true;
         op_in_flight_ = FilamentOp::Unload;
         op_started(FilamentOp::Unload);
-        // Pass current_slot explicitly (via the base helper that resolves it once
-        // from the same sys_info snapshot we just checked above) so the unload
-        // can never diverge from the "is anything loaded?" guard. The U1
-        // Filament-panel-unload wrong-tool bug was the backend re-reading
-        // current_slot here and landing on a stale value.
-        AmsError err = backend->unload_active_filament();
+        // Pass the panel's single-source selected_op_slot() explicitly rather than
+        // letting the backend re-resolve current_slot: the callsite's intended slot
+        // is authoritative, so the unload can never diverge from the gating or the
+        // "is anything loaded?" guard above. Re-reading current_slot in the backend
+        // was the U1 Filament-panel-unload wrong-tool bug.
+        AmsError err = backend->unload_filament(slot);
         if (!err.success()) {
             operation_guard_.end();
             backend_op_active_ = false;

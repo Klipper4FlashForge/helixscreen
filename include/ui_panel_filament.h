@@ -26,6 +26,10 @@ namespace helix::filament_presets {
 bool validate_reassignment(int slot, const std::string& material);
 } // namespace helix::filament_presets
 
+namespace helix::ui {
+struct FilamentPanelTestAccess; // test-only friend (tests/test_helpers/)
+} // namespace helix::ui
+
 /**
  * @file ui_panel_filament.h
  * @brief Filament panel - Filament loading/unloading operations with safety checks
@@ -59,6 +63,8 @@ bool validate_reassignment(int slot, const std::string& material);
  */
 
 class FilamentPanel : public PanelBase {
+    friend struct helix::ui::FilamentPanelTestAccess;
+
   public:
     /**
      * @brief Construct FilamentPanel with injected dependencies
@@ -238,6 +244,11 @@ class FilamentPanel : public PanelBase {
     ObserverGuard ams_loaded_observer_;       ///< Re-eval gating on live load change
     ObserverGuard ams_current_slot_observer_; ///< Re-eval gating on active-slot change
     void update_filament_op_buttons(); ///< Recompute Load/Unload/Purge gating from live state
+
+    // Single source of truth for which global AMS slot the Load/Unload/gating
+    // operate on: the dropdown-selected tool resolved through resolve_op_button_slot.
+    // Returns -1 when there is no AMS backend or no resolvable slot.
+    int selected_op_slot() const;
 
     // Cooldown button visibility (1 when nozzle target > 0, 0 otherwise)
     lv_subject_t nozzle_heating_subject_;
