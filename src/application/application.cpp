@@ -2035,6 +2035,7 @@ bool Application::init_plugins() {
 
 bool Application::run_wizard() {
     bool wizard_required = (m_args.force_wizard || m_config->is_wizard_required()) &&
+                           !m_args.skip_wizard &&
                            !m_args.overlays.step_test && !m_args.overlays.test_panel &&
                            !m_args.overlays.keypad && !m_args.overlays.keyboard &&
                            !m_args.overlays.gcode_test && !m_args.overlays.wizard_ams_identify &&

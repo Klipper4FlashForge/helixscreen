@@ -110,7 +110,9 @@ struct CliArgs {
 
     // Wizard
     bool force_wizard = false;
-    int wizard_step = -1; // -1 = not set
+    int wizard_step = -1;         // -1 = not set
+    bool skip_wizard = false;     // --skip-wizard: suppress the first-run wizard
+                                  // (e.g. for screenshots/automation via helixctl)
 
     // Touch calibration
     bool calibrate_touch = false; ///< Force touch calibration on startup

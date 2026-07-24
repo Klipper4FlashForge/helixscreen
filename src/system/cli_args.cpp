@@ -117,6 +117,7 @@ static void print_help(const char* program_name) {
     printf("  --keyboard           Show keyboard for testing (no textarea)\n");
     printf("  -w, --wizard         Force first-run configuration wizard\n");
     printf("  --wizard-step <step> Jump to specific wizard step for testing\n");
+    printf("  --skip-wizard        Suppress the first-run wizard (for automation)\n");
     printf("  --calibrate-touch    Force touch calibration on startup\n");
     printf("  -d, --display <n>    Display number for window placement (0, 1, 2...)\n");
     printf("  -x, --x-pos <n>      X coordinate for window position\n");
@@ -485,6 +486,8 @@ bool parse_cli_args(int argc, char** argv, CliArgs& args, int& screen_width, int
             args.overlays.keyboard = true;
         } else if (strcmp(argv[i], "-w") == 0 || strcmp(argv[i], "--wizard") == 0) {
             args.force_wizard = true;
+        } else if (strcmp(argv[i], "--skip-wizard") == 0) {
+            args.skip_wizard = true;
         }
         // Touch calibration
         else if (strcmp(argv[i], "--calibrate-touch") == 0) {
