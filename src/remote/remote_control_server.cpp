@@ -73,6 +73,15 @@ static std::optional<helix::PanelId> name_to_panel_id(const std::string& name) {
     return std::nullopt;
 }
 
+// Reset the LVGL inactivity timer as if the user touched the screen. Since
+// helixctl injects synthetic events (not through the input device), the idle
+// timer never resets on its own, so DisplayManager would start the screensaver
+// mid-drive. Calling this on every interaction both prevents that and makes
+// DisplayManager close an already-active screensaver on its next tick. UI thread.
+static void wake_display() {
+    lv_display_trigger_activity(nullptr);
+}
+
 RemoteControlServer& RemoteControlServer::instance() {
     static RemoteControlServer instance;
     return instance;
@@ -449,6 +458,8 @@ void RemoteControlServer::register_builtin_handlers() {
     handlers_["describe_screen"] = [this](const nlohmann::json& p) {
         return handle_describe_screen(p);
     };
+    handlers_["scroll"] = [this](const nlohmann::json& p) { return handle_scroll(p); };
+    handlers_["wake"] = [this](const nlohmann::json& p) { return handle_wake(p); };
 }
 
 nlohmann::json RemoteControlServer::handle_ping(const nlohmann::json& /*params*/) {
@@ -466,6 +477,7 @@ nlohmann::json RemoteControlServer::handle_navigate(const nlohmann::json& params
     auto panel_id = name_to_panel_id(target);
     if (panel_id) {
         return execute_on_ui_thread([panel_id]() -> nlohmann::json {
+            wake_display();
             NavigationManager::instance().set_active(*panel_id);
             return {{"navigated_to", panel_id_to_name(*panel_id)}, {"kind", "panel"}};
         });
@@ -477,6 +489,7 @@ nlohmann::json RemoteControlServer::handle_navigate(const nlohmann::json& params
     //    (init_subjects/create/on_activate) -- never a raw lv_xml_create shell.
     //    It is the fs-metaphor "cd into something ls showed you".
     return execute_on_ui_thread([target]() -> nlohmann::json {
+        wake_display();
         lv_obj_t* widget = nullptr;
         if (lv_obj_t* screen = lv_screen_active()) {
             widget = lv_obj_find_by_name(screen, target.c_str());
@@ -837,50 +850,111 @@ nlohmann::json RemoteControlServer::handle_wait_for(const nlohmann::json& params
 // Phase 3: Widget interaction + scenario handlers
 // =============================================================================
 
+// Resolve a path locator like "s/3/1/4" (s = active screen, t = top layer) to a
+// live widget by following child indices. Paths come from describe_screen and
+// uniquely address any widget, including duplicate-named ones. UI thread only.
+static lv_obj_t* resolve_path(const std::string& path) {
+    if (path.empty()) {
+        return nullptr;
+    }
+    size_t pos = path.find('/');
+    std::string root = path.substr(0, pos);
+    lv_obj_t* cur = (root == "t") ? lv_layer_top() : lv_screen_active();
+    while (cur && pos != std::string::npos) {
+        size_t next = path.find('/', pos + 1);
+        std::string tok =
+            path.substr(pos + 1, next == std::string::npos ? std::string::npos : next - pos - 1);
+        pos = next;
+        if (tok.empty()) {
+            continue;
+        }
+        uint32_t idx = static_cast<uint32_t>(std::stoul(tok));
+        if (idx >= lv_obj_get_child_count(cur)) {
+            return nullptr;
+        }
+        cur = lv_obj_get_child(cur, idx);
+    }
+    return cur;
+}
+
+// Resolve a target widget from command params: an explicit "path" wins, else
+// fall back to "name" (searched on the active screen then the top layer).
+static lv_obj_t* resolve_widget(const nlohmann::json& params) {
+    if (params.contains("path") && params["path"].is_string()) {
+        return resolve_path(params["path"].get<std::string>());
+    }
+    if (params.contains("name") && params["name"].is_string()) {
+        std::string name = params["name"];
+        lv_obj_t* o = nullptr;
+        if (lv_obj_t* screen = lv_screen_active()) {
+            o = lv_obj_find_by_name(screen, name.c_str());
+        }
+        if (!o) {
+            o = lv_obj_find_by_name(lv_layer_top(), name.c_str());
+        }
+        return o;
+    }
+    return nullptr;
+}
+
+// Human-readable label for a target (path or name), for result messages.
+static std::string target_label(const nlohmann::json& params) {
+    if (params.contains("path") && params["path"].is_string()) {
+        return params["path"].get<std::string>();
+    }
+    if (params.contains("name") && params["name"].is_string()) {
+        return params["name"].get<std::string>();
+    }
+    return "?";
+}
+
 nlohmann::json RemoteControlServer::handle_click(const nlohmann::json& params) {
-    if (!params.contains("name") || !params["name"].is_string()) {
-        throw std::invalid_argument("Missing required parameter: name");
+    if (!params.contains("name") && !params.contains("path")) {
+        throw std::invalid_argument("Missing required parameter: name or path");
     }
 
-    std::string widget_name = params["name"];
-
-    return execute_on_ui_thread([widget_name]() -> nlohmann::json {
-        lv_obj_t* screen = lv_screen_active();
-        if (!screen) {
-            throw std::runtime_error("No active screen");
-        }
-
-        lv_obj_t* widget = lv_obj_find_by_name(screen, widget_name.c_str());
+    return execute_on_ui_thread([params]() -> nlohmann::json {
+        wake_display();
+        lv_obj_t* widget = resolve_widget(params);
         if (!widget) {
-            throw std::invalid_argument("Widget not found: " + widget_name);
+            throw std::invalid_argument("Widget not found: " + target_label(params));
         }
-
+        // A synthetic CLICKED does not flip a switch/checkbox (LVGL toggles those
+        // on the indev press/release). Toggle the state explicitly and notify, so
+        // `click <switch>` behaves like a real tap.
+        if (lv_obj_check_type(widget, &lv_switch_class) ||
+            lv_obj_check_type(widget, &lv_checkbox_class)) {
+            bool now = !lv_obj_has_state(widget, LV_STATE_CHECKED);
+            if (now) {
+                lv_obj_add_state(widget, LV_STATE_CHECKED);
+            } else {
+                lv_obj_remove_state(widget, LV_STATE_CHECKED);
+            }
+            lv_obj_send_event(widget, LV_EVENT_VALUE_CHANGED, nullptr);
+            return {{"clicked", target_label(params)}, {"toggled_to", now ? 1 : 0}};
+        }
         lv_obj_send_event(widget, LV_EVENT_CLICKED, nullptr);
-        return {{"clicked", widget_name}};
+        return {{"clicked", target_label(params)}};
     });
 }
 
 nlohmann::json RemoteControlServer::handle_set_widget_value(const nlohmann::json& params) {
-    if (!params.contains("name") || !params["name"].is_string()) {
-        throw std::invalid_argument("Missing required parameter: name");
+    if (!params.contains("name") && !params.contains("path")) {
+        throw std::invalid_argument("Missing required parameter: name or path");
     }
     if (!params.contains("value")) {
         throw std::invalid_argument("Missing required parameter: value");
     }
 
-    std::string widget_name = params["name"];
     auto value_json = params["value"];
 
-    return execute_on_ui_thread([widget_name, value_json]() -> nlohmann::json {
-        lv_obj_t* screen = lv_screen_active();
-        if (!screen) {
-            throw std::runtime_error("No active screen");
-        }
-
-        lv_obj_t* widget = lv_obj_find_by_name(screen, widget_name.c_str());
+    return execute_on_ui_thread([params, value_json]() -> nlohmann::json {
+        wake_display();
+        lv_obj_t* widget = resolve_widget(params);
         if (!widget) {
-            throw std::invalid_argument("Widget not found: " + widget_name);
+            throw std::invalid_argument("Widget not found: " + target_label(params));
         }
+        std::string widget_name = target_label(params);
 
         // Try to set value based on widget type
         if (value_json.is_number()) {
@@ -892,21 +966,32 @@ nlohmann::json RemoteControlServer::handle_set_widget_value(const nlohmann::json
                 lv_bar_set_value(widget, val, LV_ANIM_OFF);
             } else if (lv_obj_check_type(widget, &lv_arc_class)) {
                 lv_arc_set_value(widget, val);
-            } else if (lv_obj_check_type(widget, &lv_switch_class)) {
+            } else if (lv_obj_check_type(widget, &lv_switch_class) ||
+                       lv_obj_check_type(widget, &lv_checkbox_class)) {
                 if (val) {
                     lv_obj_add_state(widget, LV_STATE_CHECKED);
                 } else {
                     lv_obj_remove_state(widget, LV_STATE_CHECKED);
                 }
+            } else if (lv_obj_check_type(widget, &lv_dropdown_class)) {
+                lv_dropdown_set_selected(widget, static_cast<uint32_t>(val));
+            } else if (lv_obj_check_type(widget, &lv_textarea_class)) {
+                // Accept a number for a textarea by stringifying it, so
+                // `set_value <textarea> 220` fills it like the keypad would.
+                lv_textarea_set_text(widget, std::to_string(val).c_str());
             } else {
                 throw std::invalid_argument("Widget type does not support numeric value");
             }
+            // Notify the app as if the user changed it, so bound handlers /
+            // observers run instead of the widget silently moving.
+            lv_obj_send_event(widget, LV_EVENT_VALUE_CHANGED, nullptr);
             return {{"widget", widget_name}, {"set", val}};
 
         } else if (value_json.is_string()) {
             std::string val = value_json.get<std::string>();
             if (lv_obj_check_type(widget, &lv_textarea_class)) {
                 lv_textarea_set_text(widget, val.c_str());
+                lv_obj_send_event(widget, LV_EVENT_VALUE_CHANGED, nullptr);
             } else if (lv_obj_check_type(widget, &lv_label_class)) {
                 lv_label_set_text(widget, val.c_str());
             } else {
@@ -947,14 +1032,27 @@ static const char* describe_widget_type(lv_obj_t* o) {
 
 // Build the descriptor for one named widget: type, what you can do to it, and
 // its current value where that's meaningful.
-static nlohmann::json describe_one(lv_obj_t* o, const char* name) {
+static nlohmann::json describe_one(lv_obj_t* o, const char* name, const std::string& path) {
     nlohmann::json entry;
     entry["name"] = name;
+    entry["path"] = path; // unique locator for click/set/scroll (see resolve_path)
     entry["type"] = describe_widget_type(o);
 
     nlohmann::json actions = nlohmann::json::array();
     if (lv_obj_has_flag(o, LV_OBJ_FLAG_CLICKABLE)) {
         actions.push_back("click");
+    }
+    // Report containers that can actually scroll (flag set AND content overflows),
+    // so callers know what to target with `scroll`.
+    if (lv_obj_has_flag(o, LV_OBJ_FLAG_SCROLLABLE)) {
+        int32_t below = lv_obj_get_scroll_bottom(o);
+        int32_t above = lv_obj_get_scroll_top(o);
+        int32_t right = lv_obj_get_scroll_right(o);
+        int32_t left = lv_obj_get_scroll_left(o);
+        if (below > 0 || above > 0 || right > 0 || left > 0) {
+            actions.push_back("scroll");
+            entry["scroll"] = {{"top", above}, {"bottom", below}, {"left", left}, {"right", right}};
+        }
     }
     if (lv_obj_check_type(o, &lv_textarea_class)) {
         actions.push_back("fill");
@@ -983,7 +1081,7 @@ static nlohmann::json describe_one(lv_obj_t* o, const char* name) {
 // Recursively collect named, non-hidden widgets under `parent` into `out`.
 // Only named widgets are emitted (unnamed ones can't be addressed), but the
 // walk still descends through them to reach named descendants.
-static void describe_walk(lv_obj_t* parent, nlohmann::json& out) {
+static void describe_walk(lv_obj_t* parent, const std::string& path_prefix, nlohmann::json& out) {
     if (!parent) {
         return;
     }
@@ -996,26 +1094,61 @@ static void describe_walk(lv_obj_t* parent, nlohmann::json& out) {
         if (lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN)) {
             continue; // hidden subtree — not on screen
         }
+        // Path uses real child indices (not the filtered emit order) so it stays
+        // resolvable regardless of hidden/unnamed siblings.
+        std::string child_path = path_prefix + "/" + std::to_string(i);
         const char* raw = lv_obj_get_name(child);
         if (raw && raw[0] != '\0') {
             // Resolve "foo_#" index placeholders to the concrete "foo_2" name
             // so the reported name is actually addressable via find_by_name.
             char resolved[128];
             lv_obj_get_name_resolved(child, resolved, sizeof(resolved));
-            out.push_back(describe_one(child, resolved[0] != '\0' ? resolved : raw));
+            out.push_back(describe_one(child, resolved[0] != '\0' ? resolved : raw, child_path));
         }
-        describe_walk(child, out);
+        describe_walk(child, child_path, out);
     }
 }
 
 nlohmann::json RemoteControlServer::handle_describe_screen(const nlohmann::json& /*params*/) {
     return execute_on_ui_thread([]() -> nlohmann::json {
         nlohmann::json widgets = nlohmann::json::array();
-        // Active screen holds panels + pushed overlays; the top layer holds
-        // modals and their backdrops. Walk both so nothing on screen is missed.
-        describe_walk(lv_screen_active(), widgets);
-        describe_walk(lv_layer_top(), widgets);
+        // Active screen ("s") holds panels + pushed overlays; the top layer ("t")
+        // holds modals and their backdrops. Walk both so nothing on screen is missed.
+        describe_walk(lv_screen_active(), "s", widgets);
+        describe_walk(lv_layer_top(), "t", widgets);
         return {{"widgets", widgets}};
+    });
+}
+
+nlohmann::json RemoteControlServer::handle_scroll(const nlohmann::json& params) {
+    if (!params.contains("name") && !params.contains("path")) {
+        throw std::invalid_argument("Missing required parameter: name or path");
+    }
+    bool has_delta = params.contains("dx") || params.contains("dy");
+    int dx = params.value("dx", 0);
+    int dy = params.value("dy", 0);
+
+    return execute_on_ui_thread([params, has_delta, dx, dy]() -> nlohmann::json {
+        wake_display();
+        lv_obj_t* obj = resolve_widget(params);
+        if (!obj) {
+            throw std::invalid_argument("Widget not found: " + target_label(params));
+        }
+        if (has_delta) {
+            // Scroll the container's content by the requested delta.
+            lv_obj_scroll_by(obj, dx, dy, LV_ANIM_OFF);
+            return {{"scrolled", target_label(params)}, {"dx", dx}, {"dy", dy}};
+        }
+        // Bring the target into its scroll parent's viewport (walks ancestors).
+        lv_obj_scroll_to_view(obj, LV_ANIM_OFF);
+        return {{"scrolled_into_view", target_label(params)}};
+    });
+}
+
+nlohmann::json RemoteControlServer::handle_wake(const nlohmann::json& /*params*/) {
+    return execute_on_ui_thread([]() -> nlohmann::json {
+        wake_display();
+        return {{"awake", true}};
     });
 }
 

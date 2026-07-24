@@ -126,6 +126,12 @@ class RemoteControlServer {
     // Introspection: enumerate named, interactable widgets on the live screen
     nlohmann::json handle_describe_screen(const nlohmann::json& params);
 
+    // Scroll a named widget into view, or scroll a container by a delta
+    nlohmann::json handle_scroll(const nlohmann::json& params);
+
+    // Reset the inactivity timer / dismiss the screensaver (like a real touch)
+    nlohmann::json handle_wake(const nlohmann::json& params);
+
     // Execute a function on the UI thread and wait for result
     nlohmann::json execute_on_ui_thread(std::function<nlohmann::json()> fn);
 

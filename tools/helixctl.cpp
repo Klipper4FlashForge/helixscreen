@@ -42,23 +42,26 @@ static const char* PROGRAM_NAME = "helixctl";
 
 static void print_usage() {
     printf("Usage: %s [options] <command> [args...]\n", PROGRAM_NAME);
-    printf("\nNavigation:\n");
+    printf("\nNavigation (fs metaphor):\n");
     printf("  ping                    Health check\n");
-    printf("  navigate <panel>        Switch to panel/overlay\n");
-    printf("  go_back                 Pop current overlay\n");
+    printf("  navigate, cd <target>   Go to a panel, or click a widget to descend\n");
+    printf("  go_back, back, cd ..     Pop the current overlay/level\n");
+    printf("  current, pwd            Show current panel and overlay stack\n");
     printf("  list_panels             List available panels\n");
-    printf("  current                 Show current panel and overlay stack\n");
     printf("  screenshot              Take a screenshot\n");
     printf("  status                  Show panel, connection state, printer status\n");
+    printf("  wake                    Reset idle timer / dismiss the screensaver\n");
     printf("\nSubjects:\n");
     printf("  get <subject>           Read current value of named subject\n");
     printf("  set <subject> <value>   Set subject value\n");
     printf("  list_subjects           List all registered subjects\n");
     printf("  wait_for <subject> <value> [--timeout N]\n");
     printf("                          Block until subject matches value (default 30s)\n");
-    printf("\nWidgets:\n");
-    printf("  click <widget>          Send click event to named widget\n");
-    printf("  set_value <widget> <v>  Set widget value (slider, switch, textarea)\n");
+    printf("\nWidgets (targets: a name, or @path from `ls`):\n");
+    printf("  ls, describe_screen     List on-screen widgets: name, path, type, actions\n");
+    printf("  click <target>          Click (toggles switches/checkboxes)\n");
+    printf("  set_value <target> <v>  Set value (slider, switch, dropdown, textarea)\n");
+    printf("  scroll <target> [dx dy] Scroll into view, or by a delta\n");
     printf("\nScenarios:\n");
     printf("  scenario <name>         Apply named mock scenario\n");
     printf("  list_scenarios          List available mock scenarios\n");
@@ -245,6 +248,16 @@ static nlohmann::json parse_value(const std::string& val_str) {
     }
 }
 
+/// Build a target param object for click/set/scroll. "@s/3/1" addresses a widget
+/// by its describe_screen path (unique even for duplicate names); anything else
+/// is treated as a widget name.
+static nlohmann::json target_param(const std::string& t) {
+    if (!t.empty() && t[0] == '@') {
+        return {{"path", t.substr(1)}};
+    }
+    return {{"name", t}};
+}
+
 /// Build a JSON-RPC request from a command + args vector.
 /// Returns empty json on parse error (with error printed to stderr).
 static nlohmann::json build_request_from_tokens(const std::vector<std::string>& tokens) {
@@ -305,17 +318,18 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
         return build_request("wait_for", params);
     } else if (cmd == "click") {
         if (tokens.size() < 2) {
-            fprintf(stderr, "Error: click requires a widget name\n");
+            fprintf(stderr, "Error: click requires a widget name or @path\n");
             return {};
         }
-        return build_request("click", {{"name", tokens[1]}});
+        return build_request("click", target_param(tokens[1]));
     } else if (cmd == "set_value") {
         if (tokens.size() < 3) {
-            fprintf(stderr, "Error: set_value requires a widget name and value\n");
+            fprintf(stderr, "Error: set_value requires a widget name/@path and value\n");
             return {};
         }
-        return build_request("set_widget_value",
-                             {{"name", tokens[1]}, {"value", parse_value(tokens[2])}});
+        nlohmann::json p = target_param(tokens[1]);
+        p["value"] = parse_value(tokens[2]);
+        return build_request("set_widget_value", p);
     } else if (cmd == "scenario") {
         if (tokens.size() < 2) {
             fprintf(stderr, "Error: scenario requires a name\n");
@@ -324,8 +338,22 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
         return build_request("scenario", {{"name", tokens[1]}});
     } else if (cmd == "list_scenarios") {
         return build_request("list_scenarios");
+    } else if (cmd == "wake" || cmd == "screensaver") {
+        // `wake` or `screensaver off` — reset the idle timer / dismiss the saver.
+        return build_request("wake");
     } else if (cmd == "describe_screen" || cmd == "ls") {
         return build_request("describe_screen");
+    } else if (cmd == "scroll") {
+        if (tokens.size() < 2) {
+            fprintf(stderr, "Error: scroll requires a widget name/@path [dx dy]\n");
+            return {};
+        }
+        nlohmann::json params = target_param(tokens[1]);
+        if (tokens.size() >= 4) {
+            params["dx"] = std::atoi(tokens[2].c_str());
+            params["dy"] = std::atoi(tokens[3].c_str());
+        }
+        return build_request("scroll", params);
     }
 
     fprintf(stderr, "Unknown command: %s\n", cmd.c_str());
@@ -337,11 +365,13 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
 // ---------------------------------------------------------------------------
 
 // All known commands for tab completion
-static const char* REPL_COMMANDS[] = {"ping",      "navigate",      "go_back",        "list_panels",
-                                      "current",   "screenshot",    "status",         "get",
-                                      "set",       "list_subjects", "wait_for",       "click",
-                                      "set_value", "scenario",      "list_scenarios", "help",
-                                      "refresh",   "quit",          "exit",           nullptr};
+static const char* REPL_COMMANDS[] = {
+    "ping",        "navigate",   "cd",         "go_back",   "back",
+    "list_panels", "current",    "pwd",        "screenshot", "status",
+    "wake",        "get",        "set",        "list_subjects", "wait_for",
+    "ls",          "describe_screen", "click",  "set_value", "scroll",
+    "scenario",    "list_scenarios",  "help",   "refresh",   "quit",
+    "exit",        nullptr};
 
 // Cached subject names for tab completion (populated lazily)
 static std::vector<std::string> g_cached_subjects;
