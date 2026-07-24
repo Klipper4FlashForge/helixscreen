@@ -22,6 +22,9 @@
       <lv_obj name="macro_list"
               width="100%" flex_grow="1" scrollable="true" flex_flow="column" style_pad_gap="#space_xs"
               style_pad_top="0" style_pad_bottom="0">
+        <!-- Hide the list when there are no rows so the empty_state gets the
+             full content area (not a 50/50 split of two flex_grow=1 siblings). -->
+        <bind_flag_if_eq subject="macro_row_count" flag="hidden" ref_value="0"/>
         <!-- Rows container: sole child is the reactive repeat. The repeat
              MUST be the only/last child here — rebuilt rows are appended
              to the end of their parent container. -->
