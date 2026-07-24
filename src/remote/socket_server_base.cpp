@@ -16,7 +16,10 @@ namespace helix {
 
 bool SocketServerBase::write_all(int fd, const char* buf, size_t len) {
     while (len > 0) {
-        ssize_t n = write(fd, buf, len);
+        // MSG_NOSIGNAL: a client that closed its read end mid-write must yield
+        // EPIPE, never a SIGPIPE that would terminate the whole process. (Same
+        // pattern as src/system/label_printer_utils.cpp.)
+        ssize_t n = send(fd, buf, len, MSG_NOSIGNAL);
         if (n < 0) {
             if (errno == EINTR)
                 continue;
@@ -69,10 +72,19 @@ void SocketServerBase::stop() {
         (void)write(shutdown_pipe_[1], &c, 1);
     }
 
+    // Unblock a read()/write() in serve_client() on the current connection so
+    // the accept thread returns promptly instead of stalling on the receive
+    // timeout. shutdown() (not close()) leaves accept_loop to close the fd it
+    // owns; a stale/-1 fd just yields a harmless ENOTCONN/EBADF.
+    int cf = client_fd_.load();
+    if (cf >= 0) {
+        shutdown(cf, SHUT_RDWR);
+    }
+
     // Close the listener to unblock accept().
-    if (listener_fd_ >= 0) {
-        close(listener_fd_);
-        listener_fd_ = -1;
+    int lf = listener_fd_.exchange(-1);
+    if (lf >= 0) {
+        close(lf);
     }
 
     if (accept_thread_.joinable()) {
@@ -128,7 +140,9 @@ void SocketServerBase::accept_loop() {
             }
 
             spdlog::debug("[RemoteControl] Client connected (fd={})", client_fd);
+            client_fd_.store(client_fd);
             serve_client(client_fd);
+            client_fd_.store(-1);
             close(client_fd);
             spdlog::debug("[RemoteControl] Client disconnected");
         }

@@ -115,3 +115,100 @@ TEST_CASE("ScreenSize enum values", "[cli_args]") {
         REQUIRE(args.screen_size == ScreenSize::MEDIUM);
     }
 }
+
+// ============================================================================
+// Remote-control flags
+// ============================================================================
+
+TEST_CASE("parse_cli_args: remote-control flag defaults", "[cli_args][remote]") {
+    CliArgs args;
+    REQUIRE_FALSE(args.remote_control);
+    REQUIRE(args.remote_transport == "socket");
+    REQUIRE(args.remote_http_bind == "127.0.0.1");
+    REQUIRE(args.remote_http_port == 7130);
+    REQUIRE(args.remote_socket.empty());
+    REQUIRE_FALSE(args.skip_wizard);
+}
+
+TEST_CASE("parse_cli_args: --remote enables the control server", "[cli_args][remote]") {
+    const char* argv[] = {"helix-screen", "--remote"};
+    CliArgs args;
+    int w = 0, h = 0;
+    REQUIRE(parse_cli_args(2, const_cast<char**>(argv), args, w, h));
+    REQUIRE(args.remote_control);
+    REQUIRE(args.remote_transport == "socket"); // unchanged default
+}
+
+TEST_CASE("parse_cli_args: --skip-wizard sets the flag", "[cli_args][remote]") {
+    const char* argv[] = {"helix-screen", "--skip-wizard"};
+    CliArgs args;
+    int w = 0, h = 0;
+    REQUIRE(parse_cli_args(2, const_cast<char**>(argv), args, w, h));
+    REQUIRE(args.skip_wizard);
+}
+
+TEST_CASE("parse_cli_args: --remote-socket overrides path and implies --remote",
+          "[cli_args][remote]") {
+    const char* argv[] = {"helix-screen", "--remote-socket", "/tmp/custom.sock"};
+    CliArgs args;
+    int w = 0, h = 0;
+    REQUIRE(parse_cli_args(3, const_cast<char**>(argv), args, w, h));
+    REQUIRE(args.remote_socket == "/tmp/custom.sock");
+    REQUIRE(args.remote_control);
+}
+
+TEST_CASE("parse_cli_args: --remote-transport validates socket|http", "[cli_args][remote]") {
+    SECTION("http is accepted") {
+        const char* argv[] = {"helix-screen", "--remote-transport", "http"};
+        CliArgs args;
+        int w = 0, h = 0;
+        REQUIRE(parse_cli_args(3, const_cast<char**>(argv), args, w, h));
+        REQUIRE(args.remote_transport == "http");
+    }
+    SECTION("an unknown transport is rejected") {
+        const char* argv[] = {"helix-screen", "--remote-transport", "carrierpigeon"};
+        CliArgs args;
+        int w = 0, h = 0;
+        REQUIRE_FALSE(parse_cli_args(3, const_cast<char**>(argv), args, w, h));
+    }
+}
+
+TEST_CASE("parse_cli_args: HTTP options imply http transport", "[cli_args][remote]") {
+    SECTION("--remote-http-bind implies http") {
+        const char* argv[] = {"helix-screen", "--remote-http-bind", "0.0.0.0"};
+        CliArgs args;
+        int w = 0, h = 0;
+        REQUIRE(parse_cli_args(3, const_cast<char**>(argv), args, w, h));
+        REQUIRE(args.remote_http_bind == "0.0.0.0");
+        REQUIRE(args.remote_transport == "http");
+        REQUIRE(args.remote_control);
+    }
+    SECTION("--remote-http-port sets port and implies http") {
+        const char* argv[] = {"helix-screen", "--remote-http-port", "8080"};
+        CliArgs args;
+        int w = 0, h = 0;
+        REQUIRE(parse_cli_args(3, const_cast<char**>(argv), args, w, h));
+        REQUIRE(args.remote_http_port == 8080);
+        REQUIRE(args.remote_transport == "http");
+    }
+}
+
+TEST_CASE("parse_cli_args: --remote-http-port rejects out-of-range values", "[cli_args][remote]") {
+    int w = 0, h = 0;
+    SECTION("zero is rejected") {
+        const char* argv[] = {"helix-screen", "--remote-http-port", "0"};
+        CliArgs args;
+        REQUIRE_FALSE(parse_cli_args(3, const_cast<char**>(argv), args, w, h));
+    }
+    SECTION("above 65535 is rejected") {
+        const char* argv[] = {"helix-screen", "--remote-http-port", "70000"};
+        CliArgs args;
+        REQUIRE_FALSE(parse_cli_args(3, const_cast<char**>(argv), args, w, h));
+    }
+    SECTION("a valid port is accepted") {
+        const char* argv[] = {"helix-screen", "--remote-http-port", "7130"};
+        CliArgs args;
+        REQUIRE(parse_cli_args(3, const_cast<char**>(argv), args, w, h));
+        REQUIRE(args.remote_http_port == 7130);
+    }
+}

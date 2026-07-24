@@ -249,13 +249,21 @@ static int handle_response(const std::string& raw_response, nlohmann::json* out_
 // Command building from tokens (shared by CLI and REPL)
 // ---------------------------------------------------------------------------
 
-/// Try to parse a string as int, return JSON int on success, JSON string otherwise
+/// Try to parse a string as int, return JSON int on success, JSON string otherwise.
+/// Only treats the token as an int when the ENTIRE string is numeric — otherwise
+/// std::stoi("3dbenchy") would silently send 3, and a digit-leading string value
+/// (e.g. a filename) could never be set on a string subject/widget.
 static nlohmann::json parse_value(const std::string& val_str) {
     try {
-        return std::stoi(val_str);
+        size_t consumed = 0;
+        int v = std::stoi(val_str, &consumed);
+        if (consumed == val_str.size()) {
+            return v;
+        }
     } catch (...) {
-        return val_str;
+        // fall through to string
     }
+    return val_str;
 }
 
 /// Build a target param object for click/set/scroll. "@s/3/1" addresses a widget

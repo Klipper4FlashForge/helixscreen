@@ -229,13 +229,21 @@ nlohmann::json RemoteControlServer::execute_on_ui_thread(std::function<nlohmann:
         }
     });
 
-    // Wait with timeout
-    auto status = future.wait_for(std::chrono::seconds(10));
-    if (status == std::future_status::timeout) {
-        throw std::runtime_error("UI thread timeout (10s)");
+    // Wait with timeout, polling running_ so a concurrent stop() unblocks this
+    // promptly. This runs on the transport accept thread; at app teardown the
+    // main loop has already stopped servicing the update queue, so the queued fn
+    // would otherwise never resolve and stop()'s join() would stall for the full
+    // timeout. stop() clears running_ before joining, so bail as soon as we see
+    // it — the queued fn is dropped when the queue shuts down.
+    for (int i = 0; i < 100; ++i) { // 100 * 100ms = 10s
+        if (future.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready) {
+            return future.get();
+        }
+        if (!running_.load()) {
+            throw std::runtime_error("remote server shutting down");
+        }
     }
-
-    return future.get();
+    throw std::runtime_error("UI thread timeout (10s)");
 }
 
 // =============================================================================

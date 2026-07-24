@@ -53,7 +53,12 @@ class SocketServerBase : public IRemoteTransport {
   private:
     void accept_loop();
 
-    int listener_fd_ = -1;
+    // Atomic: written by stop() on the caller thread, read by accept_loop().
+    std::atomic<int> listener_fd_{-1};
+    // The connection currently being served (or -1). stop() shuts it down to
+    // unblock a serve_client() read() that would otherwise pin the accept thread
+    // for the full receive timeout during teardown.
+    std::atomic<int> client_fd_{-1};
     int shutdown_pipe_[2] = {-1, -1};
     std::thread accept_thread_;
 };

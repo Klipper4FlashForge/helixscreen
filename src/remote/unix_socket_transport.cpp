@@ -41,14 +41,22 @@ int UnixSocketTransport::create_listener() {
     }
     strncpy(addr.sun_path, socket_path_.c_str(), sizeof(addr.sun_path) - 1);
 
-    if (bind(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
+    // Create the socket file owner-only from the moment bind() makes it, closing
+    // the TOCTOU window between bind() and the chmod below where another local
+    // user could connect to the control channel. bind() applies mode & ~umask.
+    mode_t old_umask = umask(0077);
+    int bind_rc = bind(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
+    int bind_errno = errno;
+    umask(old_umask);
+    if (bind_rc < 0) {
         spdlog::error("[RemoteControl] Failed to bind socket at {}: {}", socket_path_,
-                      strerror(errno));
+                      strerror(bind_errno));
         close(fd);
         return -1;
     }
 
-    // Restrict access to the owner only.
+    // Belt-and-suspenders: enforce owner-only even if the umask above was a no-op
+    // on this platform's AF_UNIX permission semantics.
     chmod(socket_path_.c_str(), 0600);
 
     if (listen(fd, 1) < 0) {

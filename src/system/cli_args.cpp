@@ -641,7 +641,12 @@ bool parse_cli_args(int argc, char** argv, CliArgs& args, int& screen_width, int
                 printf("Error: --remote-http-port requires a port argument\n");
                 return false;
             }
-            args.remote_http_port = atoi(value);
+            int port = atoi(value);
+            if (port < 1 || port > 65535) {
+                printf("Error: --remote-http-port must be 1..65535 (got '%s')\n", value);
+                return false;
+            }
+            args.remote_http_port = port;
             args.remote_transport = "http"; // Selecting an HTTP option implies http
             args.remote_control = true;
         }
