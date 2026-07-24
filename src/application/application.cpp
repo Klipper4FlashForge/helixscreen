@@ -501,8 +501,11 @@ int Application::run(int argc, char** argv) {
         return 1;
     }
 
-    // Crash loop detection: track rapid restarts via marker file
-    {
+    // Crash loop detection: track rapid restarts via marker file. Skipped in
+    // test mode — automation (screenshot pipeline, helixctl-driven runs) relaunches
+    // the binary rapidly by design, and this guard exists to protect users on a
+    // real device from an infinite restart loop, never a dev running --test.
+    if (!get_runtime_config()->is_test_mode()) {
         constexpr size_t MAX_CRASH_RESTARTS = 3;
         constexpr long long CRASH_WINDOW_SEC = 120;
         auto now_epoch = std::chrono::duration_cast<std::chrono::seconds>(
@@ -2597,6 +2600,87 @@ void Application::create_overlays() {
         }
     }
 }
+
+namespace helix {
+
+// Bring up a demo overlay/modal with representative sample data. These screens
+// only appear in response to a real printer event (pre-print check, runout,
+// active print) or configured state (lock PIN), so mock-mode navigation can't
+// reach them — the remote-control `demo` command uses this to capture them for
+// screenshots with the real widget lifecycle. Must run on the UI thread.
+bool show_demo_overlay(const std::string& name) {
+    lv_obj_t* screen = lv_screen_active();
+
+    if (name == "preflight-check") {
+        // Representative pre-print filament check: one matching tool, one color
+        // mismatch (advisory), one empty required slot (the blocking case).
+        helix::PreflightResult pf;
+        helix::ToolCheck ok;
+        ok.tool_index = 0;
+        ok.intended_material = "PLA";
+        ok.intended_color = 0x2E8B57;
+        ok.mapped_slot = 0;
+        ok.slot_present = true;
+        ok.severity = helix::ToolCheck::Severity::Ok;
+        helix::ToolCheck color;
+        color.tool_index = 1;
+        color.intended_material = "PLA";
+        color.intended_color = 0xE23B3B;
+        color.mapped_slot = 1;
+        color.slot_present = true;
+        color.color_ok = false;
+        color.severity = helix::ToolCheck::Severity::ColorMismatch;
+        helix::ToolCheck empty;
+        empty.tool_index = 2;
+        empty.intended_material = "PETG";
+        empty.intended_color = 0xF5A623;
+        empty.mapped_slot = -1;
+        empty.slot_present = false;
+        empty.severity = helix::ToolCheck::Severity::EmptySlot;
+        pf.checks = {ok, color, empty};
+        auto* modal = new helix::ui::PreflightCheckModal();
+        modal->set_checks(pf);
+        modal->show(screen);
+        return true;
+    }
+
+    if (name == "runout-modal") {
+        auto* modal = new RunoutGuidanceModal();
+        modal->set_autofeed_capable(false);
+        modal->set_resume_blocked(false);
+        modal->show(screen);
+        return true;
+    }
+
+    if (name == "lock-screen") {
+        helix::ui::LockScreenOverlay::instance().show();
+        return true;
+    }
+
+    if (name == "print-status") {
+        PrintStatusPanel::push_overlay(screen);
+        return true;
+    }
+
+    if (name == "print-tune") {
+        // show() is the real entry point (create() alone builds a hidden panel
+        // that never gets pushed) — it wires api + printer state and pushes.
+        get_print_tune_overlay().show(screen, get_moonraker_api(), get_printer_state());
+        return true;
+    }
+
+    if (name == "ams") {
+        // The filament panel's AMS row no-ops without a configured backend, so
+        // reach the dedicated AMS management panel directly (mock provides the
+        // backend in --test mode).
+        navigate_to_ams_panel();
+        return true;
+    }
+
+    return false;
+}
+
+} // namespace helix
 
 void Application::reapply_hardware_roles() {
     helix::ui::queue_update("Application::reapply_hardware_roles", [this]() {

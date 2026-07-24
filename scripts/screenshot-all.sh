@@ -21,7 +21,9 @@ echo "Capturing screenshots with HELIX_THEME=$THEME $MODE $FLAGS"
 echo "Output: $OUTPUT_DIR/"
 echo ""
 
-# Define all panels: "output-name:panel-arg"
+# Define all screens: "output-name:token". The token resolves to a helixctl
+# navigation recipe (see scripts/screenshot-recipes.sh) — screenshot.sh boots a
+# fresh instance, drives it to that screen, and captures it.
 PANELS=(
     # Base panels
     "home:home"

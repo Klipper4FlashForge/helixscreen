@@ -110,6 +110,7 @@ class RemoteControlServer {
     nlohmann::json handle_get_current(const nlohmann::json& params);
     nlohmann::json handle_screenshot(const nlohmann::json& params);
     nlohmann::json handle_status(const nlohmann::json& params);
+    nlohmann::json handle_demo(const nlohmann::json& params);
 
     // Phase 2 handlers
     nlohmann::json handle_get_subject(const nlohmann::json& params);

@@ -8,33 +8,45 @@ set -e
 # Show help
 show_help() {
     cat << 'EOF'
-Usage: screenshot.sh [BINARY] [NAME] [PANEL] [FLAGS...]
+Usage: screenshot.sh [BINARY] [NAME] [TOKEN] [FLAGS...]
 
-Capture a screenshot of the HelixScreen UI.
+Capture a screenshot of the HelixScreen UI, driven by helixctl.
+
+Launches the binary with its remote-control server on a private socket, drives
+the UI to the requested screen with a navigation recipe, captures a screenshot,
+converts it to PNG, and shuts the instance down. Each capture is an isolated,
+freshly-booted process — no state leaks between shots.
 
 Arguments:
   BINARY    Binary name in build/bin/ (default: helix-screen)
   NAME      Output filename suffix (default: timestamp)
             Screenshot saved to: /tmp/ui-screenshot-<NAME>.png
-  PANEL     Panel to display (optional)
-            Valid panels: home, controls, motion, nozzle-temp, bed-temp,
-            extrusion, filament, fan, settings, advanced, print-select
-  FLAGS     Additional flags passed to the binary (e.g., --test, -s large)
+  TOKEN     Screen to capture (optional; default: home). May be a base panel
+            (home, controls, filament, settings, advanced, print-select), an
+            overlay (motion, bed-mesh, network, zoffset, ...), or a sample-data
+            screen (preflight-check, runout-modal, lock-screen, print-status,
+            print-tune). See scripts/screenshot-recipes.sh for the full list.
+            An unknown token is tried as a bare `navigate <token>`.
+  FLAGS     Additional flags passed to the binary (e.g., --test, --dark,
+            -s 800x480, --layout ultrawide). Pass --wizard to capture the
+            first-run wizard (suppresses --skip-wizard).
 
 Environment Variables:
-  HELIX_SCREENSHOT_DISPLAY   Display number to open window on (default: 1)
-  HELIX_SCREENSHOT_TIMEOUT   Seconds before auto-quit (default: 3, use 15 for real printer)
-  HELIX_SCREENSHOT_OPEN      If set, opens the screenshot in Preview (macOS)
+  HELIX_SCREENSHOT_DISPLAY   Display index to open the window on (default: auto)
+  HELIX_SCREENSHOT_TIMEOUT   Max seconds to wait for the control socket (default: 20)
+  HELIX_SCREENSHOT_DELAY     Settle seconds after the recipe before capture (default: 1.5)
+  HELIX_SCREENSHOT_OPEN      If set, opens the screenshot in a viewer
 
 Examples:
-  ./scripts/screenshot.sh                           # Default binary, timestamp name
-  ./scripts/screenshot.sh helix-screen home-panel home
-  ./scripts/screenshot.sh helix-screen controls-test controls --test
-  ./scripts/screenshot.sh helix-screen motion-large motion -s large
+  ./scripts/screenshot.sh                                 # default binary, home
+  ./scripts/screenshot.sh helix-screen home-panel home --test
+  ./scripts/screenshot.sh helix-screen motion motion --test -s small
+  ./scripts/screenshot.sh helix-screen zoffset zoffset --test
+  ./scripts/screenshot.sh helix-screen preflight preflight-check --test
+  ./scripts/screenshot.sh helix-screen wizard-wifi "" --wizard --test
 
 Output:
-  Screenshots are saved to /tmp/ui-screenshot-<NAME>.png
-  BMP files are automatically converted to PNG and cleaned up.
+  Screenshots are saved to /tmp/ui-screenshot-<NAME>.png (BMP auto-converted).
 
 Dependencies:
   - ImageMagick (apt install imagemagick / brew install imagemagick)
@@ -42,203 +54,159 @@ EOF
     exit 0
 }
 
-# Check for help flag
 case "${1:-}" in
-    -h|--help|help)
-        show_help
-        ;;
+    -h|--help|help) show_help ;;
 esac
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Print colored message
+# Colors
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 info() { echo -e "${BLUE}ℹ${NC} $1"; }
 success() { echo -e "${GREEN}✓${NC} $1"; }
 warn() { echo -e "${YELLOW}⚠${NC} $1"; }
 error() { echo -e "${RED}✗${NC} $1"; }
 
-# Detect script directory and change to project root
+# Project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-# Get binary name (first arg) or default
+# shellcheck source=screenshot-recipes.sh
+source "$SCRIPT_DIR/screenshot-recipes.sh"
+
 BINARY="${1:-helix-screen}"
 BINARY_PATH="./build/bin/${BINARY}"
+HELIXCTL="./build/bin/helixctl"
 
-# Get unique name or use timestamp
 NAME="${2:-$(date +%s)}"
 BMP_FILE="/tmp/ui-screenshot-${NAME}.bmp"
 PNG_FILE="/tmp/ui-screenshot-${NAME}.png"
 
-# Get panel name (third arg) or treat as flags if starts with -
-# This allows: ./screenshot.sh binary name panel [flags]
-#          OR: ./screenshot.sh binary name [flags] (no panel)
-PANEL=""
-EXTRA_ARGS=""
+# Third arg: TOKEN (a screen) unless it starts with '-', in which case it's a flag.
+TOKEN=""
 if [ $# -ge 3 ]; then
     if [[ "${3}" == -* ]]; then
-        # Third arg is a flag, treat it and everything after as extra args
-        shift 2
-        EXTRA_ARGS="$@"
+        shift 2; EXTRA_ARGS=("$@")
     else
-        # Third arg is a panel name
-        PANEL="${3}"
-        shift 3 2>/dev/null || true
-        EXTRA_ARGS="$@"
+        TOKEN="${3}"; shift 3 2>/dev/null || true; EXTRA_ARGS=("$@")
     fi
 else
-    shift 2 2>/dev/null || true
-    EXTRA_ARGS="$@"
+    shift 2 2>/dev/null || true; EXTRA_ARGS=("$@")
 fi
 
-# Note: Panel validation is handled by the binary itself
+# Wizard capture: the first-run wizard shows itself on boot, so don't skip it and
+# run no recipe (we just capture the boot screen).
+WIZARD_MODE=0
+for a in "${EXTRA_ARGS[@]}"; do
+    [ "$a" = "--wizard" ] && WIZARD_MODE=1
+done
 
-# On a Wayland desktop, force SDL's native Wayland driver. LVGL's SDL window
-# requests an OpenGL context (SDL_WINDOW_OPENGL); on the default X11/XWayland
-# path that triggers X_GLXCreateContext -> "X Error BadValue" and the process
-# dies before rendering anything. The native wayland driver uses EGL and works
-# (falling back to software EGL if the GPU's DRI driver is unavailable).
+# On a Wayland desktop, force SDL's native Wayland driver (avoids XWayland GLX crash).
 if [ -n "$WAYLAND_DISPLAY" ] && [ -z "$SDL_VIDEODRIVER" ]; then
     export SDL_VIDEODRIVER=wayland
-    info "Wayland session detected — using SDL_VIDEODRIVER=wayland (avoids XWayland GLX crash)"
+    info "Wayland session detected — using SDL_VIDEODRIVER=wayland"
 fi
 
-# Detect which display to use
+# Display index
 if [ -z "$HELIX_SCREENSHOT_DISPLAY" ]; then
-    if [ -n "$WAYLAND_DISPLAY" ]; then
-        # Wayland: a single logical output at index 0. The X11 "terminal on
-        # display 0, open UI on display 1" assumption doesn't hold, and index 1
-        # is out of range on a single-output setup.
-        HELIX_SCREENSHOT_DISPLAY=0
-    else
-        # X11: default to display 1 (assumes terminal is on display 0)
-        HELIX_SCREENSHOT_DISPLAY=1
-    fi
-    info "Opening UI on display $HELIX_SCREENSHOT_DISPLAY (override with HELIX_SCREENSHOT_DISPLAY env var)"
-else
-    info "Using display $HELIX_SCREENSHOT_DISPLAY from HELIX_SCREENSHOT_DISPLAY env var"
+    if [ -n "$WAYLAND_DISPLAY" ]; then HELIX_SCREENSHOT_DISPLAY=0; else HELIX_SCREENSHOT_DISPLAY=1; fi
 fi
 
-# Timeout configuration (override with HELIX_SCREENSHOT_TIMEOUT env var)
-# HELIX_SCREENSHOT_DELAY adds extra wait before taking screenshot (for hardware init)
-EXTRA_DELAY="${HELIX_SCREENSHOT_DELAY:-0}"
-BASE_TIMEOUT="${HELIX_SCREENSHOT_TIMEOUT:-3}"
-SCREENSHOT_TIMEOUT=$((BASE_TIMEOUT + EXTRA_DELAY))
-SCREENSHOT_DELAY=$((SCREENSHOT_TIMEOUT - 1))
-if [ "$SCREENSHOT_DELAY" -lt 1 ]; then
-    SCREENSHOT_DELAY=1
-fi
+SOCKET_TIMEOUT="${HELIX_SCREENSHOT_TIMEOUT:-20}"
+SETTLE="${HELIX_SCREENSHOT_DELAY:-1.5}"
 
-# Add display, screenshot, timeout, and skip-splash arguments to extra args
-# Screenshot 1 second before timeout, then auto-quit
-# Skip splash screen for faster automation
-EXTRA_ARGS="--display $HELIX_SCREENSHOT_DISPLAY --screenshot $SCREENSHOT_DELAY --timeout $SCREENSHOT_TIMEOUT --skip-splash $EXTRA_ARGS"
+# ImageMagick
+if command -v magick &> /dev/null; then MAGICK_CMD="magick"
+elif command -v convert &> /dev/null; then MAGICK_CMD="convert"
+else error "ImageMagick not found (install with: sudo apt install imagemagick)"; exit 1; fi
 
-# Check dependencies — ImageMagick v7 uses 'magick', v6 uses 'convert'
-info "Checking dependencies..."
-MAGICK_CMD=""
-if command -v magick &> /dev/null; then
-    MAGICK_CMD="magick"
-elif command -v convert &> /dev/null; then
-    MAGICK_CMD="convert"
-else
-    error "ImageMagick not found (install with: sudo apt install imagemagick)"
-    exit 1
-fi
-
-# Verify binary exists
+# Binary present + executable
 if [ ! -f "$BINARY_PATH" ]; then
-    error "Binary not found: $BINARY_PATH"
-    info "Build the binary first with: make"
-    ls -la build/bin/ 2>/dev/null || info "build/bin/ directory doesn't exist yet"
-    exit 1
+    error "Binary not found: $BINARY_PATH"; info "Build first with: make"; exit 1
+fi
+[ -x "$BINARY_PATH" ] || chmod +x "$BINARY_PATH"
+if [ ! -x "$HELIXCTL" ]; then
+    error "helixctl not found: $HELIXCTL"; info "Build it with: make helixctl"; exit 1
 fi
 
-if [ ! -x "$BINARY_PATH" ]; then
-    error "Binary not executable: $BINARY_PATH"
-    chmod +x "$BINARY_PATH"
-    success "Made binary executable"
-fi
+# Private per-invocation socket so we never collide with a dev instance.
+SOCK="/tmp/helix-shot-$$.sock"
+LOG="/tmp/helix-shot-$$.log"
+rm -f "$SOCK" /tmp/ui-screenshot-*.bmp 2>/dev/null || true
 
-# Clean old screenshots
-rm -f /tmp/ui-screenshot-*.bmp 2>/dev/null || true
+HELIX_PID=""
+cleanup() {
+    [ -n "$HELIX_PID" ] && kill "$HELIX_PID" 2>/dev/null || true
+    rm -f "$SOCK" "$LOG" 2>/dev/null || true
+}
+trap cleanup EXIT
 
-# Prepare run command and args
-if [ -n "$PANEL" ]; then
-    info "Running ${BINARY} with panel: ${PANEL} (auto-quit after ${SCREENSHOT_TIMEOUT}s)..."
-    PANEL_ARG="-p ${PANEL}"
+# Assemble launch flags. --skip-splash for speed; --remote for the control server.
+LAUNCH_FLAGS=(--remote --remote-socket "$SOCK" --skip-splash
+              --display "$HELIX_SCREENSHOT_DISPLAY")
+[ "$WIZARD_MODE" = "0" ] && LAUNCH_FLAGS+=(--skip-wizard)
+
+info "Launching ${BINARY} (private socket $SOCK)..."
+"$BINARY_PATH" "${LAUNCH_FLAGS[@]}" "${EXTRA_ARGS[@]}" > "$LOG" 2>&1 &
+HELIX_PID=$!
+
+# Wait for the control socket.
+waited=0
+while [ ! -S "$SOCK" ]; do
+    if ! kill -0 "$HELIX_PID" 2>/dev/null; then
+        error "Binary exited before the control socket appeared"
+        tail -15 "$LOG" 2>/dev/null
+        exit 1
+    fi
+    if [ "$waited" -ge "$((SOCKET_TIMEOUT * 2))" ]; then
+        error "Timed out after ${SOCKET_TIMEOUT}s waiting for control socket"
+        exit 1
+    fi
+    sleep 0.5; waited=$((waited + 1))
+done
+
+# Run the navigation recipe (skip in wizard mode — the wizard shows itself).
+if [ "$WIZARD_MODE" = "0" ]; then
+    RECIPE="$(screenshot_recipe_for "${TOKEN:-home}")"
+    info "Recipe: $RECIPE"
+    IFS=';' read -ra STEPS <<< "$RECIPE"
+    for step in "${STEPS[@]}"; do
+        # trim leading/trailing whitespace
+        step="$(echo "$step" | sed 's/^ *//;s/ *$//')"
+        [ -z "$step" ] && continue
+        if ! "$HELIXCTL" -s "$SOCK" $step >/dev/null 2>&1; then
+            warn "Recipe step failed: '$step'"
+        fi
+    done
 else
-    info "Running ${BINARY} (auto-quit after ${SCREENSHOT_TIMEOUT}s)..."
-    PANEL_ARG=""
+    info "Wizard mode: capturing boot screen (no recipe)"
 fi
 
-# Run and capture output (binary will auto-quit after timeout)
-# IMPORTANT: Panel arg must come BEFORE other args for correct parsing
-RUN_OUTPUT=$(${BINARY_PATH} ${PANEL_ARG} ${EXTRA_ARGS} 2>&1 || true)
-
-# Check for errors in output
-if echo "$RUN_OUTPUT" | grep -qi "error"; then
-    warn "Errors detected during run:"
-    echo "$RUN_OUTPUT" | grep -i "error"
+# Let animations/transitions settle, then capture.
+sleep "$SETTLE"
+if ! "$HELIXCTL" -s "$SOCK" screenshot >/dev/null 2>&1; then
+    error "helixctl screenshot failed"; exit 1
 fi
 
-# Show relevant output
-echo "$RUN_OUTPUT" | grep -E "(LVGL initialized|Screenshot saved|Window centered|display)" || true
-
-# Find the most recent screenshot
-info "Looking for screenshot..."
+# Locate the newest BMP (save_screenshot writes /tmp/ui-screenshot-<timestamp>.bmp).
 LATEST_BMP=$(ls -t /tmp/ui-screenshot-*.bmp 2>/dev/null | head -1)
-
 if [ -z "$LATEST_BMP" ]; then
-    error "Screenshot not captured"
-    warn "Binary should take screenshot after 2 seconds and quit after 3 seconds"
-    echo ""
-    echo "Last 10 lines of output:"
-    echo "$RUN_OUTPUT" | tail -10
-    exit 1
+    error "Screenshot not captured"; tail -10 "$LOG" 2>/dev/null; exit 1
 fi
-
-# Rename to requested name
-if [ "$LATEST_BMP" != "$BMP_FILE" ]; then
-    mv "$LATEST_BMP" "$BMP_FILE"
-fi
-
-BMP_SIZE=$(ls -lh "$BMP_FILE" | awk '{print $5}')
-success "Screenshot captured: $BMP_FILE ($BMP_SIZE)"
+[ "$LATEST_BMP" != "$BMP_FILE" ] && mv "$LATEST_BMP" "$BMP_FILE"
 
 # Convert to PNG
-info "Converting BMP to PNG..."
 if ! $MAGICK_CMD "$BMP_FILE" "$PNG_FILE" 2>/dev/null; then
-    error "PNG conversion failed"
-    warn "BMP file available at: $BMP_FILE"
-    exit 1
+    error "PNG conversion failed"; warn "BMP left at: $BMP_FILE"; exit 1
 fi
-
-# Cleanup BMP
 rm -f "$BMP_FILE"
 
-# Show result
 PNG_SIZE=$(ls -lh "$PNG_FILE" | awk '{print $5}')
 echo ""
 success "Screenshot ready!"
-echo "  File: $PNG_FILE"
-echo "  Size: $PNG_SIZE"
-echo "  Panel: ${PANEL:-default}"
-echo "  Display: $HELIX_SCREENSHOT_DISPLAY"
+echo "  File:  $PNG_FILE ($PNG_SIZE)"
+echo "  Token: ${TOKEN:-home}"
 echo ""
 
-# Optional: open screenshot in viewer
 if [ -n "$HELIX_SCREENSHOT_OPEN" ]; then
-    info "Opening screenshot..."
-    if command -v open &> /dev/null; then
-        open "$PNG_FILE"
-    elif command -v xdg-open &> /dev/null; then
-        xdg-open "$PNG_FILE"
-    fi
+    command -v open &>/dev/null && open "$PNG_FILE" || { command -v xdg-open &>/dev/null && xdg-open "$PNG_FILE"; }
 fi

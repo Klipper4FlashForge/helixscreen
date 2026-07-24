@@ -8,6 +8,7 @@
 #include "ui_update_queue.h"
 
 #include "app_globals.h"
+#include "demo_overlays.h"
 #include "mock_scenarios.h"
 #include "printer_state.h"
 #include "screenshot.h"
@@ -435,6 +436,7 @@ void RemoteControlServer::register_builtin_handlers() {
     handlers_["get_current"] = [this](const nlohmann::json& p) { return handle_get_current(p); };
     handlers_["screenshot"] = [this](const nlohmann::json& p) { return handle_screenshot(p); };
     handlers_["status"] = [this](const nlohmann::json& p) { return handle_status(p); };
+    handlers_["demo"] = [this](const nlohmann::json& p) { return handle_demo(p); };
 
     // Phase 2: Subject get/set/list/wait_for
     handlers_["get"] = [this](const nlohmann::json& p) { return handle_get_subject(p); };
@@ -537,6 +539,21 @@ nlohmann::json RemoteControlServer::handle_screenshot(const nlohmann::json& /*pa
     return execute_on_ui_thread([]() -> nlohmann::json {
         helix::save_screenshot();
         return {{"saved", true}};
+    });
+}
+
+nlohmann::json RemoteControlServer::handle_demo(const nlohmann::json& params) {
+    if (!params.contains("name") || !params["name"].is_string()) {
+        throw std::invalid_argument("Missing required parameter: name");
+    }
+    std::string name = params["name"];
+
+    return execute_on_ui_thread([name]() -> nlohmann::json {
+        wake_display();
+        if (!helix::show_demo_overlay(name)) {
+            throw std::invalid_argument("Unknown demo overlay: " + name);
+        }
+        return {{"shown", true}, {"name", name}};
     });
 }
 
