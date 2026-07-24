@@ -460,20 +460,41 @@ nlohmann::json RemoteControlServer::handle_navigate(const nlohmann::json& params
         throw std::invalid_argument("Missing required parameter: panel");
     }
 
-    std::string panel_name = params["panel"];
+    std::string target = params["panel"];
 
-    // Try base panel first
-    auto panel_id = name_to_panel_id(panel_name);
+    // 1. Base panel -> switch to it.
+    auto panel_id = name_to_panel_id(target);
     if (panel_id) {
         return execute_on_ui_thread([panel_id]() -> nlohmann::json {
             NavigationManager::instance().set_active(*panel_id);
-            return {{"navigated_to", panel_id_to_name(*panel_id)}};
+            return {{"navigated_to", panel_id_to_name(*panel_id)}, {"kind", "panel"}};
         });
     }
 
-    // Try overlay names - look up from registered overlay instances
-    // For now, return an error for unknown panels
-    throw std::invalid_argument("Unknown panel: " + panel_name);
+    // 2. Otherwise treat it as a named, clickable widget on the current screen
+    //    and click it. This descends into whatever overlay/modal that widget's
+    //    real handler opens, running the full production lifecycle
+    //    (init_subjects/create/on_activate) -- never a raw lv_xml_create shell.
+    //    It is the fs-metaphor "cd into something ls showed you".
+    return execute_on_ui_thread([target]() -> nlohmann::json {
+        lv_obj_t* widget = nullptr;
+        if (lv_obj_t* screen = lv_screen_active()) {
+            widget = lv_obj_find_by_name(screen, target.c_str());
+        }
+        if (!widget) {
+            // Overlays/modals can live on the top layer -- look there too.
+            widget = lv_obj_find_by_name(lv_layer_top(), target.c_str());
+        }
+        if (!widget) {
+            throw std::invalid_argument("Not a panel, and no widget named '" + target +
+                                        "' on screen");
+        }
+        if (!lv_obj_has_flag(widget, LV_OBJ_FLAG_CLICKABLE)) {
+            throw std::invalid_argument("Widget '" + target + "' is not clickable");
+        }
+        lv_obj_send_event(widget, LV_EVENT_CLICKED, nullptr);
+        return {{"navigated_to", target}, {"kind", "widget"}};
+    });
 }
 
 nlohmann::json RemoteControlServer::handle_go_back(const nlohmann::json& /*params*/) {

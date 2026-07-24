@@ -255,17 +255,22 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
 
     if (cmd == "ping") {
         return build_request("ping");
-    } else if (cmd == "navigate") {
+    } else if (cmd == "navigate" || cmd == "cd") {
+        // fs metaphor: `cd ..` pops a level, `cd <name>` descends into a panel
+        // or a clickable widget (overlay/modal trigger).
+        if (cmd == "cd" && tokens.size() >= 2 && tokens[1] == "..") {
+            return build_request("go_back");
+        }
         if (tokens.size() < 2) {
-            fprintf(stderr, "Error: navigate requires a panel name\n");
+            fprintf(stderr, "Error: %s requires a target (panel or widget name)\n", cmd.c_str());
             return {};
         }
         return build_request("navigate", {{"panel", tokens[1]}});
-    } else if (cmd == "go_back") {
+    } else if (cmd == "go_back" || cmd == "back") {
         return build_request("go_back");
     } else if (cmd == "list_panels") {
         return build_request("list_panels");
-    } else if (cmd == "current") {
+    } else if (cmd == "current" || cmd == "pwd") {
         return build_request("get_current");
     } else if (cmd == "screenshot") {
         return build_request("screenshot");
