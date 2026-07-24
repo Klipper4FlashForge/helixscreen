@@ -5,6 +5,7 @@
   <view name="macro_panel" extends="overlay_panel" title="Macros" title_tag="Macros"
         hide_action_button="false"
         action_button_text="Save"
+        action_button_text_tag="Save"
         action_button_callback="on_macros_edit_save"
         action_button_hidden_subject="macros_edit_save_hidden">
     <!-- Content Area -->
