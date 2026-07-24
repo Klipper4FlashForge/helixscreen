@@ -23,6 +23,8 @@ For every tool the file uses (T0, T1, T2, …), HelixScreen compares the slot ma
 
 ### The Check filament dialog
 
+![Check filament dialog](../../images/user/preflight-check.png)
+
 The dialog appears **only when at least one required tool maps to an empty slot** — that's the one condition serious enough to stop a print. When it opens, you see one row per tool:
 
 - A **`Tx`** label (the tool number)
@@ -46,6 +48,23 @@ Below the rows, a short explanation calls out the first blocking problem, for ex
 > **Note:** An empty slot is the only thing that raises this dialog. A **material or color mismatch does not stop the print** — those are advisory. They show up as a warning icon on the filament mapping card when you pick the file (see [Tool Mapping](filament.md#tool-mapping)), and if the dialog is already open for an empty slot, mismatched tools show an amber warning glyph on their row too.
 
 > **Tip:** If you meant to load that filament, tap **Cancel**, sort out the slot from the [AMS panel](filament.md#ams--multi-material-systems), and start the print again — the check re-runs each time.
+
+---
+
+## Filament Runout During a Print
+
+If the runout sensor stops detecting filament while a print is running, HelixScreen pauses the print and shows the **Filament Runout** modal so you can recover without dropping to the console.
+
+![Filament runout modal](../../images/user/runout-modal.png)
+
+| Button | Action |
+|--------|--------|
+| **Load** | Runs your load sequence (heat → feed → purge) to bring fresh filament to the nozzle. On an AMS system this loads from the active slot. |
+| **Unload** | Retracts the remaining filament so you can swap the spool before loading. |
+| **Purge** | Extrudes a little filament to clear the old color or confirm flow. |
+| **Close** | Dismisses the modal — resume the print from the status screen once filament is loaded. |
+
+On tool-changer and single-extruder printers (and any AMS in bypass), this same modal handles the recovery; hub-topology AMS systems that manage their own swaps suppress it.
 
 ---
 
