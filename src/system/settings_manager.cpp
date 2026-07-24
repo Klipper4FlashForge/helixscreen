@@ -570,6 +570,33 @@ void SettingsManager::set_console_filter_user_remove(const std::vector<std::stri
 }
 
 // ============================================================================
+// Macro Panel (per-printer hidden macro set)
+// ============================================================================
+
+std::vector<std::string> SettingsManager::get_hidden_macros() const {
+    Config* config = Config::get_instance();
+    try {
+        return config->get<std::vector<std::string>>(config->df() + "macros/hidden",
+                                                      std::vector<std::string>{});
+    } catch (const std::exception& e) {
+        spdlog::warn("[SettingsManager] {} malformed, ignoring: {}", config->df() + "macros/hidden",
+                     e.what());
+        return {};
+    }
+}
+
+void SettingsManager::set_hidden_macros(const std::vector<std::string>& names) {
+    Config* config = Config::get_instance();
+    config->set<std::vector<std::string>>(config->df() + "macros/hidden", names);
+    config->save();
+}
+
+bool SettingsManager::hidden_macros_key_exists() const {
+    Config* config = Config::get_instance();
+    return config->exists(config->df() + "macros/hidden");
+}
+
+// ============================================================================
 // Spaghetti Detection Settings
 // ============================================================================
 

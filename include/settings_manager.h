@@ -345,6 +345,26 @@ class SettingsManager {
     void set_console_filter_user_remove(const std::vector<std::string>& patterns);
 
     // =========================================================================
+    // MACRO PANEL (owned by SettingsManager — per-printer hidden macro set)
+    // =========================================================================
+
+    /**
+     * @brief Get the set of macro names the user has hidden from the macro panel
+     *        on the active printer. Empty if never configured or malformed.
+     */
+    std::vector<std::string> get_hidden_macros() const;
+
+    /** @brief Replace the hidden-macro set for the active printer. Persists immediately. */
+    void set_hidden_macros(const std::vector<std::string>& names);
+
+    /**
+     * @brief Whether the hidden-macro key has ever been written for the active
+     *        printer. Lets callers distinguish "never configured" (seed
+     *        defaults) from "configured to an empty set" (user unhid everything).
+     */
+    bool hidden_macros_key_exists() const;
+
+    // =========================================================================
     // SPAGHETTI DETECTION (owned by SettingsManager — master toggle + per-source policy)
     // =========================================================================
 
