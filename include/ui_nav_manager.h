@@ -296,6 +296,13 @@ class NavigationManager {
     helix::PanelId get_active() const;
 
     /**
+     * @brief Names of the overlays currently stacked on top of the base panel,
+     *        bottom to top. Read-only; used by the remote-control breadcrumb.
+     * @return Resolved widget names of panel_stack_ entries above the base.
+     */
+    std::vector<std::string> overlay_stack_names() const;
+
+    /**
      * @brief Get the active panel subject for observation
      * @return Pointer to the LVGL subject tracking active panel ID
      */

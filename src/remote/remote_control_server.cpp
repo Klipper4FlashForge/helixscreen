@@ -529,7 +529,7 @@ nlohmann::json RemoteControlServer::handle_get_current(const nlohmann::json& /*p
     return execute_on_ui_thread([]() -> nlohmann::json {
         auto& nav = NavigationManager::instance();
         std::string current_panel = panel_id_to_name(nav.get_active());
-        return {{"panel", current_panel}};
+        return {{"panel", current_panel}, {"overlays", nav.overlay_stack_names()}};
     });
 }
 
@@ -550,6 +550,7 @@ nlohmann::json RemoteControlServer::handle_status(const nlohmann::json& /*params
         int klippy_state = lv_subject_get_int(ps.get_klippy_state_subject());
 
         return {{"panel", current_panel},
+                {"overlays", nav.overlay_stack_names()},
                 {"connection_state", conn_state},
                 {"klippy_state", klippy_state}};
     });

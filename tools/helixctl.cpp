@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -570,6 +571,90 @@ static std::string resolve_history_path() {
     return dir + "/helixctl_history";
 }
 
+// Fetch the JSON-RPC result for a request; returns false on any failure.
+static bool query_result(const std::string& socket_path, const nlohmann::json& request,
+                         nlohmann::json& out) {
+    int fd = connect_to_server(socket_path);
+    if (fd < 0) {
+        return false;
+    }
+    bool ok = false;
+    if (send_request(fd, request)) {
+        auto raw = read_response(fd, 10);
+        ok = (handle_response(raw, &out) == 0);
+    }
+    close(fd);
+    return ok;
+}
+
+// Filesystem-style breadcrumb prompt from the server's current location,
+// e.g. "controls / fan_control_overlay > ".
+static std::string build_prompt(const std::string& socket_path) {
+    nlohmann::json r;
+    if (!query_result(socket_path, build_request("get_current"), r)) {
+        return "helixctl(offline)> ";
+    }
+    std::string crumb = r.value("panel", std::string("?"));
+    if (r.contains("overlays") && r["overlays"].is_array()) {
+        for (auto& o : r["overlays"]) {
+            if (o.is_string()) {
+                crumb += " / " + o.get<std::string>();
+            }
+        }
+    }
+    return crumb + " > ";
+}
+
+// Pretty-print describe_screen output (`ls`) grouped by what you can do to each
+// widget. Duplicate-named widgets get their @path appended so they stay
+// addressable.
+static void print_describe_grouped(const nlohmann::json& result) {
+    if (!result.contains("widgets") || !result["widgets"].is_array()) {
+        printf("%s\n", result.dump(2).c_str());
+        return;
+    }
+    const auto& widgets = result["widgets"];
+    std::map<std::string, int> name_count;
+    for (const auto& w : widgets) {
+        name_count[w.value("name", std::string())]++;
+    }
+    const char* verbs[] = {"click", "fill", "toggle", "set", "scroll"};
+    for (const char* verb : verbs) {
+        std::vector<std::string> items;
+        for (const auto& w : widgets) {
+            bool has = false;
+            for (const auto& a : w["actions"]) {
+                if (a == verb) {
+                    has = true;
+                    break;
+                }
+            }
+            if (!has) {
+                continue;
+            }
+            std::string name = w.value("name", std::string("?"));
+            std::string label = name;
+            if (name_count[name] > 1) {
+                label += " @" + w.value("path", std::string());
+            }
+            if (w.contains("value")) {
+                label += "=" + (w["value"].is_string() ? w["value"].get<std::string>()
+                                                       : w["value"].dump());
+            }
+            items.push_back(label);
+        }
+        if (items.empty()) {
+            continue;
+        }
+        printf("  %-7s", verb);
+        for (const auto& it : items) {
+            printf(" %s", it.c_str());
+        }
+        printf("\n");
+    }
+    printf("  (%zu widgets — `ls` shows all; @path targets any one)\n", widgets.size());
+}
+
 static int run_repl(const std::string& socket_path) {
     // We reconnect for each command for simplicity — avoids handling connection
     // loss mid-session and keeps the REPL stateless. The server does support
@@ -602,7 +687,7 @@ static int run_repl(const std::string& socket_path) {
     int last_result = 0;
     char* line;
 
-    while ((line = linenoise("helixctl> ")) != nullptr) {
+    while ((line = linenoise(build_prompt(socket_path).c_str())) != nullptr) {
         std::string input(line);
         linenoiseFree(line);
 
@@ -629,6 +714,15 @@ static int run_repl(const std::string& socket_path) {
                 close(fd);
                 printf("Caches refreshed (%zu subjects, %zu scenarios, %zu panels)\n",
                        g_cached_subjects.size(), g_cached_scenarios.size(), g_cached_panels.size());
+            }
+            continue;
+        }
+
+        // `ls` gets a grouped, human-readable rendering instead of raw JSON.
+        if (tokens[0] == "ls" || tokens[0] == "describe_screen") {
+            nlohmann::json r;
+            if (query_result(socket_path, build_request("describe_screen"), r)) {
+                print_describe_grouped(r);
             }
             continue;
         }
@@ -702,14 +796,14 @@ int main(int argc, char** argv) {
         }
     }
 
+    // No command → drop into the interactive fs-style REPL.
     if (arg_start >= argc) {
-        print_usage();
-        return 1;
+        return run_repl(resolve_socket_path(socket_path));
     }
 
     std::string command = argv[arg_start];
 
-    // REPL mode
+    // Explicit REPL mode
     if (command == "repl") {
         std::string resolved_path = resolve_socket_path(socket_path);
         return run_repl(resolved_path);

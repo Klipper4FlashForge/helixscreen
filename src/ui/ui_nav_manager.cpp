@@ -1219,6 +1219,21 @@ PanelId NavigationManager::get_active() const {
     return active_panel_;
 }
 
+std::vector<std::string> NavigationManager::overlay_stack_names() const {
+    std::vector<std::string> names;
+    // panel_stack_[0] is the base panel; entries above it are pushed overlays.
+    for (size_t i = 1; i < panel_stack_.size(); ++i) {
+        lv_obj_t* w = panel_stack_[i];
+        if (!w) {
+            continue;
+        }
+        char buf[128];
+        lv_obj_get_name_resolved(w, buf, sizeof(buf));
+        names.emplace_back(buf[0] != '\0' ? buf : "overlay");
+    }
+    return names;
+}
+
 void NavigationManager::set_panels(lv_obj_t** panels) {
     if (!panels) {
         spdlog::error("[NavigationManager] NULL panels array provided");

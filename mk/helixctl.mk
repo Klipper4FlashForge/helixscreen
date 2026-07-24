@@ -48,10 +48,13 @@ endif
 	}
 
 # Compile linenoise (C, not C++)
+# _GNU_SOURCE is required so strdup/fchmod/fileno are declared; without it they
+# are implicitly int under -std=c99, truncating strdup's 64-bit pointer return
+# to 32 bits -> corrupt history entries -> SIGSEGV in linenoiseHistoryAdd.
 $(LINENOISE_OBJ): $(LINENOISE_SRC)
 	$(Q)mkdir -p $(dir $@)
 	$(ECHO) "$(BLUE)[CC]$(RESET) $<"
-	$(Q)$(CC) -std=c99 -Wall -Os -c $< -o $@ || { \
+	$(Q)$(CC) -std=c99 -D_GNU_SOURCE -Wall -Os -c $< -o $@ || { \
 		echo "$(RED)$(BOLD)✗ Compilation failed:$(RESET) $<"; \
 		exit 1; \
 	}
