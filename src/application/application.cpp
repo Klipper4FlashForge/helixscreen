@@ -871,9 +871,9 @@ int Application::run(int argc, char** argv) {
             set_wizard_active(true);
         }
 
-        // Phase 13: Create overlay panels (if not in wizard)
+        // Phase 13: Apply startup CLI actions (if not in wizard)
         if (!m_wizard_active) {
-            create_overlays();
+            apply_startup_cli_actions();
             // No wizard will run — finalize the home panel immediately so its
             // default layout reflects currently-connected hardware.
             get_global_home_panel().finalize_setup();
@@ -2064,7 +2064,7 @@ bool Application::run_wizard() {
     // Touch-calibration force must work even when the first-run wizard is
     // pending. Without this, the wizard's step-0 auto-skip (already-calibrated
     // check) wins and the request is silently ignored — the standalone
-    // overlay in create_overlays() is unreachable while m_wizard_active is
+    // overlay in apply_startup_cli_actions() is unreachable while m_wizard_active is
     // true. Pin the wizard to step 0 and disable the skip so users can
     // recalibrate from a stale-affine state. Mirror the three sources the
     // standalone-overlay handler accepts: --calibrate-touch CLI, the env
@@ -2104,7 +2104,11 @@ bool Application::run_wizard() {
     return true;
 }
 
-void Application::create_overlays() {
+// Applies one-shot startup actions requested on the command line: force touch
+// calibration (--calibrate-touch / env / config), the --release-notes update
+// modal, and --select-file navigation. (Historically also launched panels/overlays
+// via -p, now removed — that job belongs to helixctl; see docs/devel/HELIXCTL.md.)
+void Application::apply_startup_cli_actions() {
     // Force touch calibration: --calibrate-touch flag, env var, OR config force_calibration option
     bool force_touch_cal = m_args.calibrate_touch;
     if (!force_touch_cal) {
@@ -4193,13 +4197,13 @@ void Application::init_printer_state() {
         set_wizard_active(true);
     }
 
-    // 7. Create CLI overlay panels (if any). Finalize the home panel here so
+    // 7. Apply startup CLI actions (if any). Finalize the home panel here so
     //    its carousel + widget grid get built — HomePanel::setup() is
     //    deliberately minimal; finalize_setup() is what creates the visible
     //    content. Mirrors run()'s startup path; without it the home panel
     //    renders blank after a printer switch.
     if (!m_wizard_active) {
-        create_overlays();
+        apply_startup_cli_actions();
         get_global_home_panel().finalize_setup();
     }
 

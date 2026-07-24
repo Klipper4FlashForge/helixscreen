@@ -93,7 +93,7 @@ class Application {
     bool init_ui();
     bool init_moonraker();
     bool connect_moonraker();
-    void create_overlays();
+    void apply_startup_cli_actions();
     bool run_wizard();
     bool init_plugins();
 
