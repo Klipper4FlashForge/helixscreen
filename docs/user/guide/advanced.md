@@ -67,7 +67,7 @@ Browse and execute all of your Klipper macros.
 
 1. All macros from your Klipper configuration are listed alphabetically
 2. Names are prettified for readability: `CLEAN_NOZZLE` becomes "Clean Nozzle"
-3. System macros (starting with `_`) are hidden by default — use the toggle to show them
+3. System macros (starting with `_`) are hidden by default — reveal them using edit mode (below)
 4. Tap any macro to execute it
 
 **Macro parameters:**
@@ -88,6 +88,23 @@ These macros show a confirmation dialog before executing:
 - `FIRMWARE_RESTART` / `RESTART` — restarts Klipper
 - `SHUTDOWN` — shuts down the printer host
 - `M112` / `EMERGENCY_STOP` — emergency stop
+
+**Hiding macros you don't use:**
+
+<!-- Screenshot: macros panel in edit mode, showing checkboxes and the header Save button -->
+
+If your macro list is cluttered with macros you never run, you can hide them from the list:
+
+1. **Press and hold** any macro for about a second to enter edit mode
+2. Every macro now shows a **checkbox** on the left, and a **Save** button appears at the top of the panel
+   - **Checked** = the macro stays visible in the normal list
+   - **Unchecked** = the macro will be hidden
+3. System macros (the ones starting with `_`, normally hidden) also show up here unchecked, so you can reveal one if you need it
+4. Tap a macro's checkbox to change its state — tapping the row itself no longer runs the macro while you're in edit mode
+5. Tap **Save** to apply your changes. Hidden macros disappear from the normal list immediately
+6. To leave edit mode without saving, tap **Back** — your checkbox changes are discarded and the list is unchanged
+
+> **Note:** Your hidden-macro choices are saved per printer and stick around across restarts, so switching to a different printer profile shows that printer's own macro list.
 
 ---
 
