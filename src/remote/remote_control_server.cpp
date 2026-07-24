@@ -3,6 +3,7 @@
 
 #include "remote_control_server.h"
 
+#include "panel_factory.h"
 #include "ui_nav_manager.h"
 #include "ui_update_queue.h"
 
@@ -13,9 +14,9 @@
 #include "subject_debug_registry.h"
 
 // LVGL XML subject lookup
-#include "xml/lv_xml.h"
-#include "xml/lv_xml_component.h"
-#include "xml/lv_xml_component_private.h"
+#include "helix-xml/src/xml/lv_xml.h"
+#include "helix-xml/src/xml/lv_xml_component.h"
+#include "helix-xml/src/xml/lv_xml_component_private.h"
 
 #include <spdlog/spdlog.h>
 
@@ -38,39 +39,37 @@ static constexpr size_t MAX_CLIENT_BUFFER = 65536; // 64KB max per request line
 
 namespace helix {
 
-// Local panel name ↔ ID mappings (avoids dependency on cli_args.o)
-static const char* panel_id_to_name(ui_panel_id_t id) {
-    switch (id) {
-    case UI_PANEL_HOME:
-        return "home";
-    case UI_PANEL_PRINT_SELECT:
-        return "print-select";
-    case UI_PANEL_CONTROLS:
-        return "controls";
-    case UI_PANEL_FILAMENT:
-        return "filament";
-    case UI_PANEL_SETTINGS:
-        return "settings";
-    case UI_PANEL_ADVANCED:
-        return "advanced";
-    default:
-        return "unknown";
+// Panel name ↔ ID mappings, derived dynamically from the panel registry
+// (PanelFactory::PANEL_NAMES) so new panels are picked up with no edits here.
+// The registry stores widget names ("home_panel"); the CLI protocol uses short
+// names ("home", "print-select") — strip a trailing "_panel" and map '_' -> '-'.
+static std::string panel_short_name(int idx) {
+    std::string n = PanelFactory::PANEL_NAMES[idx];
+    static const std::string kSuffix = "_panel";
+    if (n.size() > kSuffix.size() &&
+        n.compare(n.size() - kSuffix.size(), kSuffix.size(), kSuffix) == 0) {
+        n.erase(n.size() - kSuffix.size());
     }
+    std::replace(n.begin(), n.end(), '_', '-');
+    return n;
 }
 
-static std::optional<ui_panel_id_t> name_to_panel_id(const std::string& name) {
-    if (name == "home")
-        return UI_PANEL_HOME;
-    if (name == "controls")
-        return UI_PANEL_CONTROLS;
-    if (name == "filament")
-        return UI_PANEL_FILAMENT;
-    if (name == "settings")
-        return UI_PANEL_SETTINGS;
-    if (name == "advanced")
-        return UI_PANEL_ADVANCED;
-    if (name == "print-select" || name == "print_select")
-        return UI_PANEL_PRINT_SELECT;
+static std::string panel_id_to_name(helix::PanelId id) {
+    int idx = static_cast<int>(id);
+    if (idx < 0 || idx >= UI_PANEL_COUNT) {
+        return "unknown";
+    }
+    return panel_short_name(idx);
+}
+
+static std::optional<helix::PanelId> name_to_panel_id(const std::string& name) {
+    std::string norm = name;
+    std::replace(norm.begin(), norm.end(), '_', '-');
+    for (int i = 0; i < UI_PANEL_COUNT; ++i) {
+        if (name == PanelFactory::PANEL_NAMES[i] || norm == panel_short_name(i)) {
+            return static_cast<helix::PanelId>(i);
+        }
+    }
     return std::nullopt;
 }
 
@@ -398,7 +397,7 @@ nlohmann::json RemoteControlServer::execute_on_ui_thread(std::function<nlohmann:
     auto promise = std::make_shared<std::promise<nlohmann::json>>();
     auto future = promise->get_future();
 
-    ui_queue_update([promise, fn = std::move(fn)]() {
+    helix::ui::queue_update([promise, fn = std::move(fn)]() {
         try {
             promise->set_value(fn());
         } catch (const std::exception& e) {
@@ -481,13 +480,9 @@ nlohmann::json RemoteControlServer::handle_go_back(const nlohmann::json& /*param
 
 nlohmann::json RemoteControlServer::handle_list_panels(const nlohmann::json& /*params*/) {
     nlohmann::json panels = nlohmann::json::array();
-    panels.push_back("home");
-    panels.push_back("print-select");
-    panels.push_back("controls");
-    panels.push_back("filament");
-    panels.push_back("settings");
-    panels.push_back("advanced");
-
+    for (int i = 0; i < UI_PANEL_COUNT; ++i) {
+        panels.push_back(panel_short_name(i));
+    }
     return {{"panels", panels}};
 }
 
@@ -703,7 +698,7 @@ nlohmann::json RemoteControlServer::handle_wait_for(const nlohmann::json& params
 
     // Prevent WaitState from being destroyed while observer is alive by capturing
     // shared_ptr in the observer's setup closure (ensures ref count stays > 0)
-    ui_queue_update([name, state, setup_promise]() {
+    helix::ui::queue_update([name, state, setup_promise]() {
         lv_subject_t* subject = find_subject_by_name(name);
         if (!subject) {
             setup_promise->set_value(false);
@@ -792,7 +787,7 @@ nlohmann::json RemoteControlServer::handle_wait_for(const nlohmann::json& params
         auto cleanup_promise = std::make_shared<std::promise<void>>();
         auto cleanup_future = cleanup_promise->get_future();
 
-        ui_queue_update([state, cleanup_promise]() {
+        helix::ui::queue_update([state, cleanup_promise]() {
             if (state->observer) {
                 lv_observer_remove(state->observer);
                 state->observer = nullptr;

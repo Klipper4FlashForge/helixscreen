@@ -8,7 +8,7 @@
 #include <lvgl.h>
 
 // LVGL XML subject lookup
-#include "xml/lv_xml.h"
+#include "helix-xml/src/xml/lv_xml.h"
 
 namespace helix {
 
