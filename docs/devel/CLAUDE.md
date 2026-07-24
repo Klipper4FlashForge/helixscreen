@@ -7,7 +7,7 @@ All developer documentation lives here. When working on features, look up the re
 | Doc | When to read |
 |-----|-------------|
 | `DEVELOPMENT.md` | Build setup, dev environment, contributing |
-| `HELIXCTL.md` | Driving the UI / screenshots via helixctl (replaces the old `-p`/`--panel` flags) |
+| `HELIXCTL.md` | Driving the UI / screenshots via `helix-screen ctl` (replaces the old `-p`/`--panel` flags) |
 | `ARCHITECTURE.md` | System design, component relationships, extended systems |
 | `BUILD_SYSTEM.md` | Makefile internals, make target reference, cross-compilation, worktree workflow, ccache, patches |
 | `TESTING.md` | Catch2 test infrastructure, test patterns |

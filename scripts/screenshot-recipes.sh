@@ -5,7 +5,7 @@
 
 # Navigation recipes for the screenshot pipeline.
 #
-# Each token maps to a sequence of `helixctl` commands (semicolon-separated) that
+# Each token maps to a sequence of `helix-screen ctl` commands (semicolon-separated) that
 # brings the UI to the screen we want to capture, run from a clean base (no open
 # overlays). Base panels are a single `navigate`; overlays are a `navigate` into
 # a base panel followed by one or more `click`s that fire the real open handler
@@ -19,7 +19,7 @@
 # This table is the single source of truth, sourced by both screenshot.sh (single
 # shot) and screenshot-all.sh (long-lived batch). Discover a new recipe by driving
 # the app: launch `helix-screen --test --skip-wizard --remote`, then
-# `helixctl navigate <panel>`, `helixctl ls`, find the trigger widget.
+# `helix-screen ctl navigate <panel>`, `helix-screen ctl ls`, find the trigger widget.
 
 declare -gA SCREENSHOT_RECIPE=(
     # Base panels
@@ -73,7 +73,7 @@ declare -gA SCREENSHOT_RECIPE=(
 )
 
 # Resolve a token to its recipe. Falls back to `navigate <token>` for anything
-# not in the table (helixctl resolves a bare panel or on-screen widget name),
+# not in the table (helix-screen ctl resolves a bare panel or on-screen widget name),
 # so ad-hoc single-panel captures keep working without a table entry.
 screenshot_recipe_for() {
     local token="$1"

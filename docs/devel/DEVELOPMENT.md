@@ -260,7 +260,7 @@ HELIX_SCREENSHOT_OPEN=1 ./scripts/screenshot.sh helix-screen review home
 Output: `/tmp/ui-screenshot-[name].png`
 
 To bring up an arbitrary panel/overlay for debugging (the old `-p`/`--panel`
-flags are gone), drive a running instance with `helixctl` — see
+flags are gone), drive a running instance with `helix-screen ctl` — see
 `docs/devel/HELIXCTL.md`.
 
 ## Icon & Font Workflow

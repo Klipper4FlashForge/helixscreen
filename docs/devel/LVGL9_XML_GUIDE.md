@@ -516,7 +516,7 @@ Both symbolic and word forms tokenize identically — `a && b` and `a and b` com
 <bind_flag_if cond="demo_error &amp;&amp; demo_temp &gt; demo_threshold" flag="hidden"/>
 ```
 
-A full working demo of all four constructs (sliders/switch driving `demo_temp`, `demo_threshold`, `demo_error`, all four binding types reacting live) is in `ui_xml/test_panel.xml` (reachable via `helixctl navigate test`) — use it as the canonical reference and a live testbed when writing new expressions.
+A full working demo of all four constructs (sliders/switch driving `demo_temp`, `demo_threshold`, `demo_error`, all four binding types reacting live) is in `ui_xml/test_panel.xml` (reachable via `helix-screen ctl navigate test`) — use it as the canonical reference and a live testbed when writing new expressions.
 
 #### Parse-Time Conditional Hidden Attributes
 

@@ -249,7 +249,7 @@ make -j
 # Profile normal mode (all panels)
 ./build/bin/helix-screen -s small --test &
 PID=$!
-./build/bin/helixctl navigate home
+./build/bin/helix-screen ctl navigate home
 sleep 4
 ps -o pid,rss,vsz -p $PID
 heap $PID | head -35

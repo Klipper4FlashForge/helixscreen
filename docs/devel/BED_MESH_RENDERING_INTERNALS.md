@@ -633,7 +633,7 @@ Run with `-vvv` (trace level) to see detailed performance metrics:
 ```bash
 # Boot mock, then bring up the bed-mesh overlay (see docs/devel/HELIXCTL.md)
 ./build/bin/helix-screen --test -vvv 2>&1 | grep "\[PERF\]" &
-./build/bin/helixctl navigate controls; ./build/bin/helixctl click btn_bed_mesh
+./build/bin/helix-screen ctl navigate controls; ./build/bin/helix-screen ctl click btn_bed_mesh
 ```
 
 **Output:**
@@ -679,16 +679,16 @@ spdlog::trace("[PERF] Render: ...");
 
 **2. macOS Instruments**
 ```bash
-# Profile CPU usage — bring up the bed-mesh overlay via helixctl after launch
+# Profile CPU usage — bring up the bed-mesh overlay via helix-screen ctl after launch
 instruments -t "Time Profiler" ./build/bin/helix-screen --test &
-./build/bin/helixctl navigate controls; ./build/bin/helixctl click btn_bed_mesh
+./build/bin/helix-screen ctl navigate controls; ./build/bin/helix-screen ctl click btn_bed_mesh
 ```
 
 **3. Valgrind (Linux)**
 ```bash
-# Check for memory leaks — bring up the bed-mesh overlay via helixctl after launch
+# Check for memory leaks — bring up the bed-mesh overlay via helix-screen ctl after launch
 valgrind --leak-check=full ./build/bin/helix-screen --test &
-./build/bin/helixctl navigate controls; ./build/bin/helixctl click btn_bed_mesh
+./build/bin/helix-screen ctl navigate controls; ./build/bin/helix-screen ctl click btn_bed_mesh
 ```
 
 **4. gprof (GCC)**
@@ -696,7 +696,7 @@ valgrind --leak-check=full ./build/bin/helix-screen --test &
 # Compile with profiling
 make CXXFLAGS="-pg" clean build
 ./build/bin/helix-screen --test &
-./build/bin/helixctl navigate controls; ./build/bin/helixctl click btn_bed_mesh
+./build/bin/helix-screen ctl navigate controls; ./build/bin/helix-screen ctl click btn_bed_mesh
 gprof build/bin/helix-screen gmon.out > profile.txt
 ```
 

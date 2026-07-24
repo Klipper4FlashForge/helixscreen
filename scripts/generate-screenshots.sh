@@ -27,7 +27,7 @@ echo
 
 # Define all screenshots to capture
 # Format: output_name:token:additional_flags
-# The token resolves to a helixctl navigation recipe (scripts/screenshot-recipes.sh).
+# The token resolves to a helix-screen ctl navigation recipe (scripts/screenshot-recipes.sh).
 SCREENSHOTS=(
     "home-panel:home:--test"
     "print-select-card:print-select:--test"

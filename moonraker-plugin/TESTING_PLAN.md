@@ -67,7 +67,7 @@ Test the full flow using HelixScreen's mock Moonraker client:
 
 ```bash
 ./build/bin/helix-screen --test -vv &
-./build/bin/helixctl navigate print-select
+./build/bin/helix-screen ctl navigate print-select
 ```
 
 **Manual Test Steps:**

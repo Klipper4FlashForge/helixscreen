@@ -10,7 +10,7 @@ show_help() {
     cat << 'EOF'
 Usage: screenshot.sh [BINARY] [NAME] [TOKEN] [FLAGS...]
 
-Capture a screenshot of the HelixScreen UI, driven by helixctl.
+Capture a screenshot of the HelixScreen UI, driven by helix-screen ctl.
 
 Launches the binary with its remote-control server on a private socket, drives
 the UI to the requested screen with a navigation recipe, captures a screenshot,
@@ -75,7 +75,7 @@ source "$SCRIPT_DIR/screenshot-recipes.sh"
 
 BINARY="${1:-helix-screen}"
 BINARY_PATH="./build/bin/${BINARY}"
-HELIXCTL="./build/bin/helixctl"
+HELIXCTL=("./build/bin/helix-screen" ctl)
 
 NAME="${2:-$(date +%s)}"
 BMP_FILE="/tmp/ui-screenshot-${NAME}.bmp"
@@ -124,8 +124,8 @@ if [ ! -f "$BINARY_PATH" ]; then
     error "Binary not found: $BINARY_PATH"; info "Build first with: make"; exit 1
 fi
 [ -x "$BINARY_PATH" ] || chmod +x "$BINARY_PATH"
-if [ ! -x "$HELIXCTL" ]; then
-    error "helixctl not found: $HELIXCTL"; info "Build it with: make helixctl"; exit 1
+if [ ! -x "./build/bin/helix-screen" ]; then
+    error "helix-screen not found: ./build/bin/helix-screen"; info "Build it with: make -j"; exit 1
 fi
 
 # Private per-invocation socket so we never collide with a dev instance.
@@ -173,7 +173,7 @@ if [ "$WIZARD_MODE" = "0" ]; then
         # trim leading/trailing whitespace
         step="$(echo "$step" | sed 's/^ *//;s/ *$//')"
         [ -z "$step" ] && continue
-        if ! "$HELIXCTL" -s "$SOCK" $step >/dev/null 2>&1; then
+        if ! "${HELIXCTL[@]}" -s "$SOCK" $step >/dev/null 2>&1; then
             warn "Recipe step failed: '$step'"
         fi
     done
@@ -183,8 +183,8 @@ fi
 
 # Let animations/transitions settle, then capture.
 sleep "$SETTLE"
-if ! "$HELIXCTL" -s "$SOCK" screenshot >/dev/null 2>&1; then
-    error "helixctl screenshot failed"; exit 1
+if ! "${HELIXCTL[@]}" -s "$SOCK" screenshot >/dev/null 2>&1; then
+    error "helix-screen ctl screenshot failed"; exit 1
 fi
 
 # Locate the newest BMP (save_screenshot writes /tmp/ui-screenshot-<timestamp>.bmp).

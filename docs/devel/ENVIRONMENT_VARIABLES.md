@@ -562,9 +562,9 @@ Force the G-code memory safety check to fail, simulating a memory-constrained de
 
 ```bash
 # Force memory check to fail - viewer falls back to thumbnail mode
-# (drive the UI with helixctl — see docs/devel/HELIXCTL.md)
+# (drive the UI with helix-screen ctl — see docs/devel/HELIXCTL.md)
 HELIX_FORCE_GCODE_MEMORY_FAIL=1 ./build/bin/helix-screen --test -vv &
-./build/bin/helixctl demo print-status
+./build/bin/helix-screen ctl demo print-status
 ```
 
 **Use case:** Testing that the thumbnail displays immediately when G-code rendering is unavailable, without needing to deploy to memory-constrained hardware.
@@ -588,14 +588,14 @@ Control G-code streaming mode for memory-efficient loading of large files. Strea
 ```bash
 # Force streaming mode (useful for testing streaming behavior)
 HELIX_GCODE_STREAMING=on ./build/bin/helix-screen --test -vv &
-./build/bin/helixctl demo print-status
+./build/bin/helix-screen ctl demo print-status
 
 # Force full load mode (may crash on large files with low RAM!)
 HELIX_GCODE_STREAMING=off ./build/bin/helix-screen --test --gcode-file large.gcode -vv
 
 # Use auto-detection (default)
 HELIX_GCODE_STREAMING=auto ./build/bin/helix-screen --test -vv &
-./build/bin/helixctl demo print-status
+./build/bin/helix-screen ctl demo print-status
 ```
 
 **Auto-detection thresholds** (at 40% RAM threshold, 15x expansion factor):
@@ -624,7 +624,7 @@ Control enhanced 2D G-code shading. When enabled (default), the 2D layer rendere
 # Disable enhanced shading (use original flat rendering)
 # The gcode viewer is reached via the print-status panel's 3D viewer (--gcode-file):
 HELIX_SSAO=0 ./build/bin/helix-screen --test --gcode-file model.gcode -vv &
-./build/bin/helixctl demo print-status
+./build/bin/helix-screen ctl demo print-status
 ```
 
 **What it adds:**
@@ -853,7 +853,7 @@ real mock countdown thread, so it honors `HELIX_MOCK_DRYER_SPEED`. Requires
 # Active drying, ticking at 10x, no humidity sensor, 600x480
 HELIX_SCREEN_SIZE=600x480 HELIX_MOCK_DRYER=1 HELIX_MOCK_DRYING=1 \
   HELIX_MOCK_DRYER_SPEED=10 ./build/bin/helix-screen --test &
-./build/bin/helixctl demo ams
+./build/bin/helix-screen ctl demo ams
 ```
 
 ### `HELIX_MOCK_NO_HUMIDITY`
@@ -983,7 +983,7 @@ HELIX_AUTO_QUIT_MS=5000 ./build/bin/helix-screen --test
 
 # CI test run (3 second timeout)
 HELIX_AUTO_QUIT_MS=3000 ./build/bin/helix-screen --test &
-./build/bin/helixctl navigate home
+./build/bin/helix-screen ctl navigate home
 ```
 
 ### `HELIX_AUTO_SCREENSHOT`
@@ -997,7 +997,7 @@ Automatically capture a screenshot before quitting (use with `HELIX_AUTO_QUIT_MS
 | **File** | `src/config/environment_config.cpp` (surfaced via `src/application/application.cpp`) |
 
 ```bash
-# Automated screenshot capture (screenshot.sh drives helixctl end to end)
+# Automated screenshot capture (screenshot.sh drives helix-screen ctl end to end)
 ./scripts/screenshot.sh helix-screen motion motion --test
 ```
 
@@ -1033,10 +1033,10 @@ Auto-start X-axis input shaper calibration when the panel loads.
 | **File** | `src/ui/ui_panel_input_shaper.cpp` |
 
 ```bash
-# Test input shaper panel with auto-start (drive the UI with helixctl —
+# Test input shaper panel with auto-start (drive the UI with helix-screen ctl —
 # see docs/devel/HELIXCTL.md)
 INPUT_SHAPER_AUTO_START=1 ./build/bin/helix-screen --test &
-./build/bin/helixctl navigate advanced; ./build/bin/helixctl click row_input_shaping
+./build/bin/helix-screen ctl navigate advanced; ./build/bin/helix-screen ctl click row_input_shaping
 ```
 
 ### `SCREWS_AUTO_START`
@@ -1052,7 +1052,7 @@ Auto-start bed screw probing when the screws tilt panel loads.
 ```bash
 # Test screws panel with auto-start
 SCREWS_AUTO_START=1 ./build/bin/helix-screen --test &
-./build/bin/helixctl navigate advanced; ./build/bin/helixctl click row_bed_mesh
+./build/bin/helix-screen ctl navigate advanced; ./build/bin/helix-screen ctl click row_bed_mesh
 ```
 
 ---
@@ -1406,7 +1406,7 @@ See `docs/user/CONFIGURATION.md` for systemd deployment details.
 
 ### Development Testing
 
-Boot once, then drive the UI to a panel/overlay with `helixctl` (see
+Boot once, then drive the UI to a panel/overlay with `helix-screen ctl` (see
 `docs/devel/HELIXCTL.md`).
 
 ```bash
@@ -1415,17 +1415,17 @@ Boot once, then drive the UI to a panel/overlay with `helixctl` (see
 
 # Test a specific overlay with verbose logging
 ./build/bin/helix-screen --test -vv &
-./build/bin/helixctl navigate controls; ./build/bin/helixctl click btn_motion
+./build/bin/helix-screen ctl navigate controls; ./build/bin/helix-screen ctl click btn_motion
 
 # Multi-slot AMS testing
 HELIX_AMS_GATES=8 ./build/bin/helix-screen --test &
-./build/bin/helixctl navigate filament
+./build/bin/helix-screen ctl navigate filament
 ```
 
 ### CI/CD Screenshots
 
 ```bash
-# Automated panel screenshots (screenshot.sh drives helixctl end to end)
+# Automated panel screenshots (screenshot.sh drives helix-screen ctl end to end)
 ./scripts/screenshot.sh helix-screen home home --test
 ./scripts/screenshot.sh helix-screen motion motion --test
 ./scripts/screenshot.sh helix-screen settings settings --test
@@ -1436,7 +1436,7 @@ HELIX_AMS_GATES=8 ./build/bin/helix-screen --test &
 ```bash
 # Run 10-second benchmark
 HELIX_BENCHMARK=1 HELIX_AUTO_QUIT_MS=10000 ./build/bin/helix-screen --test -v &
-./build/bin/helixctl navigate home
+./build/bin/helix-screen ctl navigate home
 ```
 
 ### Hardware Override (Embedded)
