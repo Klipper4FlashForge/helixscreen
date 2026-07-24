@@ -141,14 +141,21 @@ TEST_CASE("per-row values: normal mode shows desc/chevron per macro facts",
     REQUIRE(b.chevron_hidden == 1);
 }
 
-TEST_CASE("per-row values: edit mode hides desc+chevron, visible tracks hidden",
+TEST_CASE("per-row values: edit mode hides chevron but keeps desc, visible tracks hidden",
           "[macros][editmode]") {
-    // Edit mode always hides desc + chevron regardless of macro facts.
+    // Edit mode always hides the chevron regardless of macro facts, but the
+    // description stays visible (depends only on has_desc) so the row doesn't
+    // jump vertically when entering/exiting edit mode.
     auto shown = compute_row_values(/*edit=*/true, /*hidden=*/false, /*has_desc=*/true,
                                     /*no_params=*/false);
     REQUIRE(shown.visible == 1); // not hidden -> checked
-    REQUIRE(shown.desc_hidden == 1);
+    REQUIRE(shown.desc_hidden == 0);
     REQUIRE(shown.chevron_hidden == 1);
+
+    // Edit mode, no description -> desc stays hidden regardless of edit mode.
+    auto no_desc = compute_row_values(true, /*hidden=*/false, /*has_desc=*/false,
+                                      /*no_params=*/false);
+    REQUIRE(no_desc.desc_hidden == 1);
 
     auto hidden = compute_row_values(true, /*hidden=*/true, true, false);
     REQUIRE(hidden.visible == 0); // hidden -> unchecked

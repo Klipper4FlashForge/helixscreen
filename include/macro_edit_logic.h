@@ -62,7 +62,8 @@ struct RowValues {
 };
 
 // Compute a row's display state.
-//   edit_mode  : panel is in edit mode (checkboxes shown, no desc/chevron)
+//   edit_mode  : panel is in edit mode (checkboxes shown in place of the code
+//                icon, no chevron; description stays visible)
 //   is_hidden  : this macro is in the pending-hidden set (edit mode only)
 //   has_desc   : the macro has a non-empty cached description
 //   no_params  : the macro is KNOWN_NO_PARAMS (no chevron in normal mode)
@@ -71,8 +72,10 @@ inline RowValues compute_row_values(bool edit_mode, bool is_hidden, bool has_des
     // In edit mode the checkbox reflects visibility (un-hidden == checked);
     // in normal mode every displayed row is visible.
     rv.visible = edit_mode ? (is_hidden ? 0 : 1) : 1;
-    // No description row in edit mode, or when the macro has no description.
-    rv.desc_hidden = (edit_mode || !has_desc) ? 1 : 0;
+    // Description visibility depends only on whether the macro has one — it
+    // stays visible in edit mode too, so the row doesn't jump vertically when
+    // toggling modes (the checkbox/icon swap in the leading slot is enough).
+    rv.desc_hidden = !has_desc ? 1 : 0;
     // No chevron in edit mode, or when the macro takes no parameters.
     rv.chevron_hidden = (edit_mode || no_params) ? 1 : 0;
     return rv;

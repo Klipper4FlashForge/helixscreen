@@ -101,6 +101,7 @@ void MacrosPanel::register_callbacks() {
     lv_xml_register_event_cb(nullptr, "on_macro_row_clicked", on_macro_row_clicked);
     lv_xml_register_event_cb(nullptr, "on_macro_card_long_press", on_macro_card_long_press);
     lv_xml_register_event_cb(nullptr, "on_macros_edit_save", on_macros_edit_save);
+    lv_xml_register_event_cb(nullptr, "on_macros_back_clicked", on_macros_back_clicked);
 
     callbacks_registered_ = true;
     spdlog::debug("[{}] Event callbacks registered", get_name());
@@ -122,6 +123,10 @@ lv_obj_t* MacrosPanel::create(lv_obj_t* parent) {
         return nullptr;
     }
     ui_alive_ = true;
+
+    // Cache the scrollable rows container so edit-mode transitions can reset
+    // scroll position (see enter_edit_mode()/exit_edit_mode()).
+    scroll_container_ = lv_obj_find_by_name(overlay_root_, "macro_list");
 
     // Rebuild reactively as macros arrive. When opened at startup (e.g.
     // `--test -p macros`) the panel is created before the queued
@@ -182,6 +187,7 @@ void MacrosPanel::on_ui_destroyed() {
     // subjects are unregistered + freed while LVGL is still live (reclaim runs
     // synchronously here, before the async row deletion tick).
     ui_alive_ = false;
+    scroll_container_ = nullptr;
     nav_enabled_observer_.reset();
 
     name_pool_.reclaim();
@@ -272,6 +278,7 @@ void MacrosPanel::enter_edit_mode() {
     lv_subject_set_int(&macro_edit_mode_, 1);
     lv_subject_set_int(&macros_edit_save_hidden_, 0); // show Save
     rebuild_rows();
+    scroll_list_to_top();
     spdlog::info("[{}] Entered edit mode ({} hidden seeded)", get_name(), pending_hidden_.size());
 }
 
@@ -288,6 +295,23 @@ void MacrosPanel::exit_edit_mode(bool save) {
     lv_subject_set_int(&macro_edit_mode_, 0);
     lv_subject_set_int(&macros_edit_save_hidden_, 1); // hide Save
     rebuild_rows();
+    scroll_list_to_top();
+}
+
+void MacrosPanel::scroll_list_to_top() {
+    // The row-count change on rebuild_rows() drives a <repeat> rebuild that
+    // leaves the scrollable list scrolled to the bottom. Reset to top after
+    // the mode-change rebuild. Rows are created synchronously when
+    // macro_row_count is set, but layout may still be pending, so defer to
+    // the next main-thread tick (lifetime_.defer is safe here — main thread,
+    // `this`/singleton stays valid).
+    if (scroll_container_) {
+        lifetime_.defer("MacrosPanel::scroll_top", [this]() {
+            if (scroll_container_) {
+                lv_obj_scroll_to_y(scroll_container_, 0, LV_ANIM_OFF);
+            }
+        });
+    }
 }
 
 void MacrosPanel::toggle_row(size_t display_index) {
@@ -481,5 +505,17 @@ void MacrosPanel::on_macros_edit_save(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_BEGIN("[MacrosPanel] on_macros_edit_save");
     (void)e;
     get_global_macros_panel().exit_edit_mode(true);
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void MacrosPanel::on_macros_back_clicked(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[MacrosPanel] on_macros_back_clicked");
+    (void)e;
+    auto& self = get_global_macros_panel();
+    if (self.edit_mode_) {
+        self.exit_edit_mode(false); // discard pending changes, stay on panel
+    } else {
+        NavigationManager::instance().go_back(); // normal Back: close the overlay
+    }
     LVGL_SAFE_EVENT_CB_END();
 }

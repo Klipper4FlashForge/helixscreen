@@ -79,6 +79,7 @@ class MacrosPanel : public OverlayBase {
     static void on_macro_row_clicked(lv_event_t* e);    ///< tap: toggle (edit) or run
     static void on_macro_card_long_press(lv_event_t* e); ///< long-press: enter edit mode
     static void on_macros_edit_save(lv_event_t* e);      ///< header Save: persist + exit edit
+    static void on_macros_back_clicked(lv_event_t* e);   ///< header Back: exit edit mode, else pop overlay
 
   private:
     friend struct MacrosPanelTestAccess;
@@ -104,6 +105,11 @@ class MacrosPanel : public OverlayBase {
     /// Exit edit mode. When @p save, persist pending_hidden_ via SettingsManager.
     void exit_edit_mode(bool save);
 
+    /// Reset the row list's scroll position to the top (deferred). Called after
+    /// enter/exit edit-mode rebuilds so the mode-change row-count swap never
+    /// leaves the list scrolled to the bottom.
+    void scroll_list_to_top();
+
     /// Edit-mode row tap: flip pending_hidden_ membership and the visible pool.
     void toggle_row(size_t display_index);
 
@@ -126,6 +132,7 @@ class MacrosPanel : public OverlayBase {
     std::vector<std::string> displayed_;    ///< macros currently rendered (row order)
     bool edit_mode_ = false;                ///< true while in edit mode
     bool ui_alive_ = false;                 ///< true between create() and on_ui_destroyed()
+    lv_obj_t* scroll_container_ = nullptr;   ///< "macro_list" — reset to top on edit-mode transitions
 
     // Flags
     bool callbacks_registered_ = false;

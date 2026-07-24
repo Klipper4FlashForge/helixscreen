@@ -18,20 +18,26 @@
     <lv_obj width="100%"
             height="content" flex_flow="row" style_flex_cross_place="center" style_pad_gap="#space_sm"
             scrollable="false" clickable="false">
-      <!-- Visibility checkbox: shown only in edit mode -->
-      <lv_obj name="check_wrap" width="content" height="content" clickable="false" event_bubble="true">
-        <bind_flag_if_eq subject="macro_edit_mode" flag="hidden" ref_value="0"/>
-        <!-- checked box: shown when visible_subject == 1 -->
-        <icon name="chk_on" src="check_box" clickable="false" event_bubble="true">
-          <bind_flag_if_eq subject="$visible_subject" flag="hidden" ref_value="0"/>
+      <!-- Leading slot: code icon (normal) OR visibility checkbox (edit mode). Same
+           footprint so the row does not shift between modes. -->
+      <lv_obj name="lead_slot" width="content" height="content" clickable="false" event_bubble="true">
+        <!-- code icon: shown when NOT editing -->
+        <icon name="macro_icon" src="code_tags" size="sm" variant="primary"
+              align="center" clickable="false" event_bubble="true">
+          <bind_flag_if_eq subject="macro_edit_mode" flag="hidden" ref_value="1"/>
         </icon>
-        <!-- empty box: shown when visible_subject == 0 -->
-        <icon name="chk_off" src="check_box_outline_blank" clickable="false" event_bubble="true">
-          <bind_flag_if_eq subject="$visible_subject" flag="hidden" ref_value="1"/>
-        </icon>
+        <!-- checkbox (outline box + light check overlaid): shown when editing -->
+        <lv_obj name="check_wrap" width="content" height="content" align="center"
+                clickable="false" event_bubble="true">
+          <bind_flag_if_eq subject="macro_edit_mode" flag="hidden" ref_value="0"/>
+          <icon name="chk_box" src="check_box_outline_blank" size="sm" variant="secondary"
+                align="center" clickable="false" event_bubble="true"/>
+          <icon name="chk_mark" src="check" size="xs" variant="secondary"
+                align="center" clickable="false" event_bubble="true">
+            <bind_flag_if_eq subject="$visible_subject" flag="hidden" ref_value="0"/>
+          </icon>
+        </lv_obj>
       </lv_obj>
-      <!-- Code/script icon -->
-      <icon name="macro_icon" src="code_tags" size="sm" variant="primary"/>
       <!-- Text container: name + optional description -->
       <lv_obj flex_grow="1" flex_flow="column" style_pad_gap="#space_xs" scrollable="false" clickable="false">
         <text_body name="macro_label" bind_text="$name_subject"/>
