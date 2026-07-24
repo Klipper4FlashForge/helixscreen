@@ -21,6 +21,12 @@
 using namespace helix;
 
 TEST_CASE_METHOD(HelixTestFixture, "hidden macros round-trip per printer", "[settings][macros]") {
+    // Config's in-memory JSON is a process singleton that HelixTestFixture::reset_all()
+    // does NOT clear, and other tests (e.g. the macro edit-mode suite) write the
+    // "macros/hidden" key. Reset so the "never configured" assertions below hold
+    // regardless of test run order.
+    helix::Config::get_instance()->reset_to_defaults();
+
     auto& sm = SettingsManager::instance();
     REQUIRE(sm.get_hidden_macros().empty());
     REQUIRE_FALSE(sm.hidden_macros_key_exists());
