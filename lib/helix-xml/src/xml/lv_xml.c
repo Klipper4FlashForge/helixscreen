@@ -657,6 +657,23 @@ lv_subject_t * lv_xml_get_subject(lv_xml_component_scope_t * scope, const char *
     return NULL;
 }
 
+lv_result_t lv_xml_unregister_subject(lv_xml_component_scope_t * scope, const char * name)
+{
+    if(scope == NULL) scope = lv_xml_component_get_scope("globals");
+    if(scope == NULL) return LV_RESULT_INVALID;
+
+    lv_xml_subject_t * s;
+    LV_LL_READ(&scope->subjects_ll, s) {
+        if(lv_streq(s->name, name)) {
+            lv_free((char *)s->name);          /* free the name copy only */
+            lv_ll_remove(&scope->subjects_ll, s);
+            lv_free(s);                        /* free the record, NOT s->subject */
+            return LV_RESULT_OK;
+        }
+    }
+    return LV_RESULT_INVALID;
+}
+
 
 lv_result_t lv_xml_register_timeline(lv_xml_component_scope_t * scope, const char * name)
 {
