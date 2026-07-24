@@ -143,6 +143,16 @@ lv_xml_component_scope_t * lv_xml_component_get_scope(const char * component_nam
     return NULL;
 }
 
+void lv_xml_component_foreach(lv_xml_component_iter_cb_t cb, void * user_data)
+{
+    if(cb == NULL) return;
+
+    lv_xml_component_scope_t * scope;
+    LV_LL_READ(&component_scope_ll, scope) {
+        cb(scope->name, user_data);
+    }
+}
+
 lv_result_t lv_xml_register_component_from_data(const char * name, const char * xml_def)
 {
     bool globals = false;

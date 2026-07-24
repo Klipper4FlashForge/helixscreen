@@ -28,6 +28,7 @@
 #include <future>
 #include <mutex>
 #include <optional>
+#include <vector>
 
 #include "http_transport.h"
 #include "unix_socket_transport.h"
@@ -246,6 +247,8 @@ void RemoteControlServer::register_builtin_handlers() {
     handlers_["navigate"] = [this](const nlohmann::json& p) { return handle_navigate(p); };
     handlers_["go_back"] = [this](const nlohmann::json& p) { return handle_go_back(p); };
     handlers_["list_panels"] = [this](const nlohmann::json& p) { return handle_list_panels(p); };
+    handlers_["list_components"] = [this](const nlohmann::json& p) { return handle_list_components(p); };
+    handlers_["list_callbacks"] = [this](const nlohmann::json& p) { return handle_list_callbacks(p); };
     handlers_["get_current"] = [this](const nlohmann::json& p) { return handle_get_current(p); };
     handlers_["screenshot"] = [this](const nlohmann::json& p) { return handle_screenshot(p); };
     handlers_["status"] = [this](const nlohmann::json& p) { return handle_status(p); };
@@ -338,6 +341,59 @@ nlohmann::json RemoteControlServer::handle_list_panels(const nlohmann::json& /*p
         panels.push_back(panel_short_name(i));
     }
     return {{"panels", panels}};
+}
+
+nlohmann::json RemoteControlServer::handle_list_components(const nlohmann::json& /*params*/) {
+    // Enumerate the live XML component registry, rather than any hardcoded list.
+    // Unlike list_panels (the fixed set of PanelId-bound base panels), this
+    // surfaces every registered component -- panels, overlays, modals, cards,
+    // rows -- so the full navigable/introspectable surface is discoverable at
+    // runtime. Runs on the UI thread because the hot-reload poller can register
+    // components concurrently.
+    return execute_on_ui_thread([]() -> nlohmann::json {
+        std::vector<std::string> names;
+        lv_xml_component_foreach(
+            [](const char* name, void* ud) {
+                auto* out = static_cast<std::vector<std::string>*>(ud);
+                if (name && std::strcmp(name, "globals") != 0) {
+                    out->emplace_back(name);
+                }
+            },
+            &names);
+        std::sort(names.begin(), names.end());
+        nlohmann::json arr = nlohmann::json::array();
+        for (const auto& n : names) {
+            arr.push_back(n);
+        }
+        return {{"components", arr}};
+    });
+}
+
+nlohmann::json RemoteControlServer::handle_list_callbacks(const nlohmann::json& /*params*/) {
+    // Enumerate the event callbacks registered in the global scope -- where
+    // overlay/modal open-handlers, button callbacks, etc. register via
+    // lv_xml_register_event_cb(nullptr, ...). Read-only discovery surface: it
+    // lists names, it does NOT fire anything (firing an open-handler with a
+    // synthetic event needs the arg-ignore allowlist, a separate follow-on).
+    // Runs on the UI thread; hot-reload can register callbacks concurrently.
+    return execute_on_ui_thread([]() -> nlohmann::json {
+        std::vector<std::string> names;
+        lv_xml_event_cb_foreach(
+            nullptr,  // NULL -> the "globals" scope
+            [](const char* name, lv_event_cb_t /*cb*/, void* ud) {
+                auto* out = static_cast<std::vector<std::string>*>(ud);
+                if (name) {
+                    out->emplace_back(name);
+                }
+            },
+            &names);
+        std::sort(names.begin(), names.end());
+        nlohmann::json arr = nlohmann::json::array();
+        for (const auto& n : names) {
+            arr.push_back(n);
+        }
+        return {{"callbacks", arr}};
+    });
 }
 
 nlohmann::json RemoteControlServer::handle_get_current(const nlohmann::json& /*params*/) {

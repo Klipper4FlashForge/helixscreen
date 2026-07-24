@@ -94,13 +94,15 @@ live breadcrumb of the navigation stack, e.g. `controls / motion_panel_0 > `.
 | `navigate`, `cd <target>` | Go to a base panel, or click a named widget to descend into an overlay |
 | `go_back`, `back`, `cd ..` | Pop the current overlay |
 | `current`, `pwd` | Show the current panel + overlay stack |
-| `list_panels` | List the registered base panels |
+| `list_panels` | List the registered base panels (the fixed `PanelId` set) |
 | `wake`, `screensaver` | Reset the idle timer / dismiss the screensaver |
 
 ### Introspection & widget interaction
 | Command | Meaning |
 |---------|---------|
 | `ls`, `describe_screen` | List on-screen widgets: name, `path`, type, available actions |
+| `list_components` | List **every** registered XML component (live registry): panels, overlays, modals, cards, rows — the full introspectable surface |
+| `list_callbacks` | List every registered event-callback name (overlay/modal open-handlers, button callbacks). Names only — nothing is fired |
 | `click <target>` | Click a widget (also toggles switches/checkboxes) |
 | `set_value <target> <v>` | Set a value (slider, switch, dropdown, textarea) |
 | `scroll <target> [dx dy]` | Scroll a widget into view, or by a delta |

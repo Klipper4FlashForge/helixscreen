@@ -119,6 +119,8 @@ class RemoteControlServer {
     nlohmann::json handle_navigate(const nlohmann::json& params);
     nlohmann::json handle_go_back(const nlohmann::json& params);
     nlohmann::json handle_list_panels(const nlohmann::json& params);
+    nlohmann::json handle_list_components(const nlohmann::json& params);
+    nlohmann::json handle_list_callbacks(const nlohmann::json& params);
     nlohmann::json handle_get_current(const nlohmann::json& params);
     nlohmann::json handle_screenshot(const nlohmann::json& params);
     nlohmann::json handle_status(const nlohmann::json& params);

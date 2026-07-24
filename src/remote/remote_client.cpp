@@ -53,6 +53,8 @@ static void print_usage() {
     printf("  go_back, back, cd ..     Pop the current overlay/level\n");
     printf("  current, pwd            Show current panel and overlay stack\n");
     printf("  list_panels             List available panels\n");
+    printf("  list_components         List every registered XML component (live registry)\n");
+    printf("  list_callbacks          List every registered event-callback name\n");
     printf("  screenshot              Take a screenshot\n");
     printf("  status                  Show panel, connection state, printer status\n");
     printf("  wake                    Reset idle timer / dismiss the screensaver\n");
@@ -291,6 +293,10 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
         return build_request("go_back");
     } else if (cmd == "list_panels") {
         return build_request("list_panels");
+    } else if (cmd == "list_components") {
+        return build_request("list_components");
+    } else if (cmd == "list_callbacks") {
+        return build_request("list_callbacks");
     } else if (cmd == "current" || cmd == "pwd") {
         return build_request("get_current");
     } else if (cmd == "screenshot") {
@@ -382,8 +388,8 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
 // All known commands for tab completion
 static const char* REPL_COMMANDS[] = {
     "ping",        "navigate",   "cd",         "go_back",   "back",
-    "list_panels", "current",    "pwd",        "screenshot", "status",
-    "wake",        "demo",       "get",        "set",       "list_subjects",
+    "list_panels", "list_components", "list_callbacks", "current",  "pwd",       "screenshot",
+    "status",      "wake",       "demo",       "get",       "set",       "list_subjects",
     "wait_for",    "ls",         "describe_screen", "click",  "set_value",
     "scroll",      "scenario",   "list_scenarios",  "help",   "refresh",
     "quit",        "exit",       nullptr};
@@ -548,6 +554,8 @@ static void repl_print_help() {
     printf("  navigate <panel>          Switch to panel/overlay\n");
     printf("  go_back                   Pop current overlay\n");
     printf("  list_panels               List available panels\n");
+    printf("  list_components           List every registered XML component\n");
+    printf("  list_callbacks            List every registered event-callback name\n");
     printf("  current                   Show current panel and overlay stack\n");
     printf("  screenshot                Take a screenshot\n");
     printf("  status                    Full status summary\n");

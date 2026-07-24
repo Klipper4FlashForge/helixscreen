@@ -927,6 +927,18 @@ lv_event_cb_t lv_xml_get_event_cb(lv_xml_component_scope_t * scope, const char *
     return NULL;
 }
 
+void lv_xml_event_cb_foreach(lv_xml_component_scope_t * scope, lv_xml_event_cb_iter_cb_t cb, void * user_data)
+{
+    if(cb == NULL) return;
+    if(scope == NULL) scope = lv_xml_component_get_scope("globals");
+    if(scope == NULL) return;
+
+    lv_xml_event_cb_t * e;
+    LV_LL_READ(&scope->event_ll, e) {
+        cb(e->name, e->cb, user_data);
+    }
+}
+
 /**********************
  *   STATIC FUNCTIONS
  **********************/

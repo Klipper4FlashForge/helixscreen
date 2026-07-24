@@ -129,6 +129,25 @@ lv_result_t lv_xml_register_event_cb(lv_xml_component_scope_t * scope, const cha
 
 lv_event_cb_t lv_xml_get_event_cb(lv_xml_component_scope_t * scope, const char * name);
 
+/**
+ * Callback for `lv_xml_event_cb_foreach`, invoked once per registered event cb.
+ * @param name       the registered callback name
+ * @param cb         the registered `lv_event_cb_t`
+ * @param user_data  the opaque pointer passed to `lv_xml_event_cb_foreach`
+ */
+typedef void (*lv_xml_event_cb_iter_cb_t)(const char * name, lv_event_cb_t cb, void * user_data);
+
+/**
+ * Iterate every event callback registered in `scope`, invoking `cb` per entry.
+ * Companion enumeration primitive to `lv_xml_get_event_cb` (which only looks up
+ * by name). Does NOT fall back to the global scope — pass the "globals" scope
+ * explicitly (or NULL, which resolves to it) to walk global registrations.
+ * @param scope       scope to walk; NULL resolves to the "globals" scope
+ * @param cb          callback invoked per entry (no-op if NULL)
+ * @param user_data   opaque pointer forwarded to every `cb` invocation
+ */
+void lv_xml_event_cb_foreach(lv_xml_component_scope_t * scope, lv_xml_event_cb_iter_cb_t cb, void * user_data);
+
 lv_result_t lv_xml_register_timeline(lv_xml_component_scope_t * scope, const char * name);
 
 void * lv_xml_get_timeline(lv_xml_component_scope_t * scope, const char * name);
