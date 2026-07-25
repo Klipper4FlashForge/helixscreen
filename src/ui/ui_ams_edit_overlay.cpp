@@ -259,6 +259,16 @@ lv_obj_t* AmsEditOverlay::create(lv_obj_t* parent) {
         lv_label_bind_text(header_title, &slot_indicator_subject_, nullptr);
     }
 
+    // header_bar's optional trailing badge. The image and the group's visibility
+    // are wired from XML; only the label text is bound here, so the shared
+    // component needs no bind_text of its own (an unset one warns on every
+    // header without a badge). Tracked slots therefore show the Spoolman mark
+    // and spool number together, on every view of the editor.
+    lv_obj_t* badge_text = find_widget("header_title_badge_text");
+    if (badge_text) {
+        lv_label_bind_text(badge_text, &spoolman_id_subject_, nullptr);
+    }
+
     lv_obj_t* temp_nozzle_label = find_widget("temp_nozzle_label");
     if (temp_nozzle_label) {
         lv_label_bind_text(temp_nozzle_label, &temp_nozzle_subject_, nullptr);
@@ -1318,6 +1328,16 @@ void AmsEditOverlay::update_ui() {
         return;
     }
 
+    // Managed-vs-untracked signal (drives mark, details row, toggle default).
+    // Fresh synchronous read — the XML binding fires asynchronously (#311);
+    // mirrors update_spoolman_button_state(). A slot can carry a stale
+    // spoolman_id even when Spoolman itself is unavailable, so gate on both.
+    // Computed before the title because the title carries the spool number.
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    bool has_spoolman = spoolman_subj && lv_subject_get_int(spoolman_subj) == 1;
+    const bool managed = has_spoolman && working_info_.spoolman_id > 0;
+    lv_subject_set_int(&is_managed_subject_, managed ? 1 : 0);
+
     // Header title via subject
     if (slot_index_ < 0) {
         snprintf(slot_indicator_buf_, sizeof(slot_indicator_buf_), "%s",
@@ -1327,15 +1347,6 @@ void AmsEditOverlay::update_ui() {
                  slot_index_ + 1);
     }
     lv_subject_copy_string(&slot_indicator_subject_, slot_indicator_buf_);
-
-    // Managed-vs-untracked signal (drives mark, details row, toggle default).
-    // Fresh synchronous read — the XML binding fires asynchronously (#311);
-    // mirrors update_spoolman_button_state(). A slot can carry a stale
-    // spoolman_id even when Spoolman itself is unavailable, so gate on both.
-    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
-    bool has_spoolman = spoolman_subj && lv_subject_get_int(spoolman_subj) == 1;
-    const bool managed = has_spoolman && working_info_.spoolman_id > 0;
-    lv_subject_set_int(&is_managed_subject_, managed ? 1 : 0);
 
     // Identity chip: tracked = spool name (+ mark via binding);
     // untracked = "Brand · Material" (spec §3.8 locked format).
