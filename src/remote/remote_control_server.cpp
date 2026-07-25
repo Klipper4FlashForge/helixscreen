@@ -868,6 +868,28 @@ static std::vector<lv_obj_t*> glob_widgets(const std::string& pattern) {
     return out;
 }
 
+// Drop matches that sit inside another match. `ls row_*` on a settings page hits
+// both each row and the `row_icon` nested in it; listing every match as its own
+// scope would then emit the icon twice — once as a scope root, once inside its
+// parent row's subtree walk — and report a match count that double-counts. Only
+// the outermost matches are real scopes; the rest are already covered.
+static std::vector<lv_obj_t*> drop_nested_matches(const std::vector<lv_obj_t*>& matches) {
+    std::vector<lv_obj_t*> out;
+    for (lv_obj_t* o : matches) {
+        bool nested = false;
+        for (lv_obj_t* p = lv_obj_get_parent(o); p != nullptr; p = lv_obj_get_parent(p)) {
+            if (std::find(matches.begin(), matches.end(), p) != matches.end()) {
+                nested = true;
+                break;
+            }
+        }
+        if (!nested) {
+            out.push_back(o);
+        }
+    }
+    return out;
+}
+
 // Report a resolved widget's describe_screen-style path, so a caller that got
 // descended into a child can address it directly next time.
 static std::string path_of(lv_obj_t* o) {
@@ -1391,7 +1413,7 @@ nlohmann::json RemoteControlServer::handle_describe_screen(const nlohmann::json&
             std::vector<lv_obj_t*> roots;
             if (params.contains("name") && params["name"].is_string() &&
                 is_glob(params["name"].get<std::string>())) {
-                roots = glob_widgets(params["name"].get<std::string>());
+                roots = drop_nested_matches(glob_widgets(params["name"].get<std::string>()));
             } else if (lv_obj_t* one = resolve_widget(params)) {
                 roots.push_back(one);
             }
