@@ -61,6 +61,13 @@ lv_state_t lv_xml_state_to_enum(const char * txt)
 
 int32_t lv_xml_to_size(const char * txt)
 {
+    /*An empty value is what a failed ${expr} splices in. Without this guard the
+     *percent check below reads txt[-1] -- one byte BEFORE the buffer -- so the
+     *result depends on unrelated memory: a stray '%' there turns a plain 0 into
+     *lv_pct(0), which lays out completely differently. That made
+     *test_xml_expr_compose flaky in full-suite runs only (#1121).*/
+    if(txt == NULL || txt[0] == '\0') return 0;
+
     if(lv_streq(txt, "content")) return LV_SIZE_CONTENT;
 
     int32_t v = lv_xml_atoi(txt);
