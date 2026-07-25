@@ -18,9 +18,11 @@
 // can also serve as a passive regression tripwire); grep stderr for
 // "[ISOLATION-LEAK]".
 
+#include "ui_observer_guard.h"
+
+#include "../helix_test_fixture.h"
 #include "http_executor.h"
 #include "thumbnail_processor.h"
-#include "ui_observer_guard.h"
 
 #include <array>
 #include <cstdio>
@@ -101,6 +103,14 @@ class IsolationListener : public Catch::EventListenerBase {
     }
 
     void testCaseStarting(Catch::TestCaseInfo const& info) override {
+        // The Config singleton outlives every test, so whatever the previous
+        // test left in it — a path pointing at a deleted temp dir, an LED
+        // selection, a stale active_printer_id_ — is what this test starts
+        // with. Resetting HERE rather than only in HelixTestFixture is what
+        // makes the guarantee unconditional: plenty of TEST_CASEs (all of
+        // test_led_config.cpp, for one) use no fixture at all.
+        helix::test::reset_config_singleton();
+
         name_ = info.name;
         cwd_ = current_cwd();
         data_dir_ = env_or("HELIX_DATA_DIR");

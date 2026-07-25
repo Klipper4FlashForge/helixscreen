@@ -8,14 +8,20 @@
 #include "ui_test_utils.h"
 #include "ui_update_queue.h"
 
+#include "app_constants.h"
 #include "async_lifetime_guard.h"
 #include "config.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "src/ui/panel_widgets/print_status_widget.h"
 #include "system_settings_manager.h"
+#include "test_helpers/config_test_access.h"
 #include "test_helpers/print_control_buttons_test_access.h"
+#include "tool_state.h"
 
 #include <cstdlib>
+#include <filesystem>
+#include <string>
+#include <unistd.h>
 
 namespace {
 // Force SDL's dummy audio driver for the WHOLE test binary, before any code can
@@ -36,7 +42,110 @@ struct ForceDummyAudioDriver {
     }
 };
 const ForceDummyAudioDriver g_force_dummy_audio_driver;
+
+namespace fs = std::filesystem;
+
+// Per-process sandbox for everything the test binary persists.
+//
+// Created before main() so no static initializer or first-touch Meyer's
+// singleton can cache a real config path ahead of us. Torn down at exit.
+//
+// What this closes, measured on this repo before the change: a full
+// `make test-run` DELETED and rewrote the developer's real
+// $HOME/.helixscreen/settings.json.backup and helixscreen.env.backup on every
+// run. Mechanism: test_external_spool.cpp and
+// test_filament_consumption_tracker.cpp remove the fallback backups to stop
+// Config::init() restoring stale data over their temp config, then init() —
+// which unconditionally writes a rolling backup — recreates them from test
+// defaults. The rolling-backup tiers (/var/lib/helixscreen, $HOME/.helixscreen)
+// are resolved independently of HELIX_CONFIG_DIR and of the config path, so
+// the only way to keep a test off them is to redirect the tiers themselves.
+//
+// NOT redirected here: HELIX_CONFIG_DIR. That var is not a sandbox switch —
+// Config::init() treats it as an authoritative override that REPLACES the
+// directory of whatever path the caller passed, keeping only the filename.
+// Setting it process-wide silently rewrites every `config.init(<my temp
+// path>)` in the suite to the same file (measured: 34 failing assertions in
+// test_config.cpp + test_display_manager.cpp). Path-shaped isolation is done
+// per-subsystem instead — see reset_config_singleton().
+struct ConfigSandbox {
+    std::string dir;
+
+    ConfigSandbox() {
+        std::error_code ec;
+        // Prefer tmpfs. Config::save() fsyncs the temp file AND the parent
+        // directory (#943 durability fix), so with the sandbox on a disk-backed
+        // /tmp every save() in the suite costs two real disk syncs — measured at
+        // ~10s added to a 82s `make test-run`, because save() used to be a
+        // silent no-op whenever the singleton had no path. On tmpfs the fsyncs
+        // are free and the suite runs at its previous speed.
+        fs::path base = "/dev/shm";
+        if (!fs::is_directory(base, ec)) {
+            base = fs::temp_directory_path(ec);
+            if (ec || base.empty()) {
+                base = "/tmp";
+            }
+        }
+        // pid keeps the parallel Catch2 shards from sharing a sandbox.
+        base /= "helix-test-config-" + std::to_string(::getpid());
+        fs::remove_all(base, ec);
+        fs::create_directories(base / "state", ec);
+        fs::create_directories(base / "backup", ec);
+        dir = base.string();
+        apply();
+    }
+
+    // Re-point the rolling-backup tiers at the sandbox. Called per test as well
+    // as at construction: several tests legitimately move these refs and then
+    // "restore" them by RECOMPUTING $HOME/.helixscreen rather than by putting
+    // back what was there, which would otherwise silently un-sandbox every
+    // later test in the shard.
+    void apply() const {
+        AppConstants::Update::detail::state_dir_ref() = dir + "/state";
+        AppConstants::Update::detail::backup_fallback_dir_ref() = dir + "/backup";
+    }
+
+    ~ConfigSandbox() {
+        std::error_code ec;
+        fs::remove_all(dir, ec);
+    }
+};
+const ConfigSandbox g_config_sandbox;
+
 } // namespace
+
+namespace helix::test {
+
+const std::string& config_sandbox_dir() {
+    return g_config_sandbox.dir;
+}
+
+void reset_config_singleton() {
+    g_config_sandbox.apply();
+
+    // ToolState persists tool_spools.json into helix::get_user_config_dir(),
+    // which defaults to the RELATIVE dir "config" — i.e. the repo's own
+    // config/ under the test binary's CWD. It really did write there during
+    // `make test-run`, which also means a later run could load another run's
+    // spool assignments. set_config_dir() is the supported override.
+    helix::ToolState::instance().set_config_dir(config_sandbox_dir());
+
+    helix::Config* cfg = helix::Config::get_instance();
+    if (cfg == nullptr) {
+        return;
+    }
+    helix::ConfigTestAccess::path(*cfg) = config_sandbox_dir() + "/settings.json";
+    helix::ConfigTestAccess::data(*cfg) = nlohmann::json::object();
+    helix::ConfigTestAccess::active_printer_id(*cfg).clear();
+    helix::ConfigTestAccess::read_only_mode(*cfg) = false;
+
+    // Drop any file a previous test's save() left behind, so a test that
+    // re-init()s the singleton at this path sees a fresh install.
+    std::error_code ec;
+    fs::remove(helix::ConfigTestAccess::path(*cfg), ec);
+}
+
+} // namespace helix::test
 
 HelixTestFixture::HelixTestFixture() {
     // Tests opt into strict L081 detection: any bg-thread tok.expired() check
@@ -69,8 +178,12 @@ void HelixTestFixture::reset_all() {
     // calls are no-ops. Required because set_language() writes to an LVGL subject.
     //
     // Force Config singleton creation — SystemSettingsManager::init_subjects() below
-    // dereferences Config::get_instance() to read defaults.
-    helix::Config::get_instance();
+    // dereferences Config::get_instance() to read defaults — and return it to a
+    // clean, sandboxed state. Doing this here (rather than only in the isolation
+    // listener) also covers each SECTION leaf and undoes any init(<temp dir>) a
+    // derived fixture did, which is what the scattered clear_path() calls in
+    // individual tests were working around.
+    helix::test::reset_config_singleton();
     helix::SystemSettingsManager::instance().init_subjects();
     helix::SystemSettingsManager::instance().set_language("en");
 

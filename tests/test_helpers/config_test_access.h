@@ -20,6 +20,12 @@ class ConfigTestAccess {
     static std::string& active_printer_id(Config& c) {
         return c.active_printer_id_;
     }
+    // Latched by init() when the config dir is unwritable; sticky for the
+    // process once set, which would silently disable save() in every later
+    // test sharing the singleton.
+    static bool& read_only_mode(Config& c) {
+        return c.read_only_mode_;
+    }
     // Swap the Config singleton pointer (used by the change-host fixture).
     static Config*& instance_ref() {
         return Config::instance;

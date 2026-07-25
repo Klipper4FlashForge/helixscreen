@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "../helix_test_fixture.h"
 #include "../test_helpers/update_queue_test_access.h"
 #include "../ui_test_utils.h"
 #include "app_globals.h"
@@ -1339,7 +1340,7 @@ TEST_CASE("LedController: led_controllable subject reflects selected_strips empt
 // Mock-API fixture for tests that verify actual color values sent
 // ============================================================================
 
-struct LedMockApiFixture {
+struct LedMockApiFixture : public HelixTestFixture {
     MoonrakerClientMock mock_client{MoonrakerClientMock::PrinterType::VORON_24};
     helix::PrinterState state;
     std::unique_ptr<MoonrakerAPIMock> mock_api;
