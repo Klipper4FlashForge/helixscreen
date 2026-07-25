@@ -215,7 +215,7 @@ std::vector<TempGraphSeriesSpec> TempGraphWidget::build_series_from_config() con
 
     int color_idx = 0;
     for (const auto& entry : config_["sensors"]) {
-        if (!entry.contains("name"))
+        if (!entry.contains("name") || !entry["name"].is_string())
             continue;
 
         const std::string klipper_name = entry["name"].get<std::string>();
@@ -232,7 +232,7 @@ std::vector<TempGraphSeriesSpec> TempGraphWidget::build_series_from_config() con
         TempGraphSeriesSpec spec;
         spec.klipper_name = klipper_name;
         spec.display_name = TempGraphConfigModal::sensor_display_name(klipper_name);
-        if (entry.contains("color")) {
+        if (entry.contains("color") && entry["color"].is_number_integer()) {
             spec.color = lv_color_hex(entry["color"].get<uint32_t>());
         } else {
             spec.color = TEMP_GRAPH_SERIES_COLORS[color_idx % TEMP_GRAPH_PALETTE_SIZE];

@@ -133,22 +133,32 @@ PanelWidgetManager::populate_widgets(const std::string& panel_id, lv_obj_t* cont
         slot.widget_id = entry.id;
         slot.config = entry.config;
 
-        // Acquire instance: reuse existing or create via factory
-        auto reuse_it = reuse.find(entry.id);
-        if (reuse_it != reuse.end()) {
-            slot.instance = std::move(reuse_it->second);
-            reuse.erase(reuse_it);
-            spdlog::debug("[PanelWidgetManager] Reusing widget instance '{}'", entry.id);
-        } else if (def && def->factory) {
-            slot.instance = def->factory(entry.id);
-        }
+        // Build + configure the widget defensively: a malformed per-widget config
+        // (or a throwing factory/set_config) must skip only THIS widget, not abort
+        // the whole dashboard rebuild. Guard per-iteration so one bad entry never
+        // takes the page down with it.
+        try {
+            // Acquire instance: reuse existing or create via factory
+            auto reuse_it = reuse.find(entry.id);
+            if (reuse_it != reuse.end()) {
+                slot.instance = std::move(reuse_it->second);
+                reuse.erase(reuse_it);
+                spdlog::debug("[PanelWidgetManager] Reusing widget instance '{}'", entry.id);
+            } else if (def && def->factory) {
+                slot.instance = def->factory(entry.id);
+            }
 
-        if (slot.instance) {
-            slot.instance->set_panel_id(panel_id);
-            slot.instance->set_config(entry.config);
-            slot.component_name = slot.instance->get_component_name();
-        } else {
-            slot.component_name = "panel_widget_" + entry.id;
+            if (slot.instance) {
+                slot.instance->set_panel_id(panel_id);
+                slot.instance->set_config(entry.config);
+                slot.component_name = slot.instance->get_component_name();
+            } else {
+                slot.component_name = "panel_widget_" + entry.id;
+            }
+        } catch (const std::exception& e) {
+            spdlog::error("[PanelWidgetManager] Widget '{}' configuration failed: {}", entry.id,
+                          e.what());
+            continue;
         }
 
         slot.hardware_gated = gated;

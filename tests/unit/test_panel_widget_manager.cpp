@@ -521,6 +521,114 @@ TEST_CASE_METHOD(XMLTestFixture,
     mgr.clear_panel_config(panel_id);
 }
 
+namespace {
+
+// Spy PanelWidget whose set_config() throws — models a widget with a malformed
+// persisted config (e.g. a temp_graph entry that hits a JSON type_error). Used
+// by the collection-loop guard regression test below.
+struct ThrowingConfigWidget : helix::PanelWidget {
+    void set_config(const nlohmann::json&) override {
+        throw std::runtime_error("simulated malformed widget config");
+    }
+    void attach(lv_obj_t*, lv_obj_t*) override {}
+    void detach() override {}
+    const char* id() const override {
+        return "clock";
+    }
+    std::string get_component_name() const override {
+        return "test_grid_spy_widget";
+    }
+};
+
+} // namespace
+
+// Regression: a widget whose factory/set_config throws during the populate_widgets
+// COLLECTION loop used to let the exception escape the Home Panel dashboard
+// rebuild -> std::terminate -> SIGABRT, taking every OTHER widget on the page down
+// with it. The collection loop now guards each iteration: a throwing widget is
+// logged and skipped, and well-formed siblings on the same page still build.
+TEST_CASE_METHOD(XMLTestFixture,
+                 "PanelWidgetManager skips a widget whose config throws and keeps the rest",
+                 "[panel_widget][manager][regression][crash-safety]") {
+    helix::init_widget_registrations();
+
+    lv_xml_register_component_from_data(
+        "test_grid_spy_widget",
+        "<component><view extends=\"lv_obj\" width=\"100%\" height=\"100%\"/></component>");
+
+    // Route "clock" -> a widget that throws in set_config (the bad entry), and
+    // "shutdown" -> a well-formed spy widget (must still attach).
+    const auto* clock_def = helix::find_widget_def("clock");
+    const auto* shutdown_def = helix::find_widget_def("shutdown");
+    REQUIRE(clock_def != nullptr);
+    REQUIRE(shutdown_def != nullptr);
+    WidgetFactory orig_clock = clock_def->factory;
+    WidgetFactory orig_shutdown = shutdown_def->factory;
+    helix::register_widget_factory("clock", [](const std::string&) -> std::unique_ptr<PanelWidget> {
+        return std::make_unique<ThrowingConfigWidget>();
+    });
+    helix::register_widget_factory("shutdown",
+                                   [](const std::string&) -> std::unique_ptr<PanelWidget> {
+                                       return std::make_unique<GridSpyWidget>();
+                                   });
+
+    GridSpyWidget::s_attach_count = 0;
+    GridSpyWidget::s_attached_widget = nullptr;
+
+    // Keep Klipper READY so no firmware_restart widget is injected.
+    lv_subject_set_int(lv_xml_get_subject(nullptr, "printer_connection_state"),
+                       static_cast<int>(ConnectionState::CONNECTED));
+    lv_subject_set_int(lv_xml_get_subject(nullptr, "klippy_state"),
+                       static_cast<int>(KlippyState::READY));
+
+    const std::string panel_id = "test_throwing_widget";
+
+    // Page 1 (secondary page, no registry-default append): the throwing "clock"
+    // at 0,0 and the well-formed "shutdown" at 1,0.
+    auto* cfg = Config::get_instance();
+    nlohmann::json widget_cfg = {{"main_page_index", 0},
+                                 {"next_page_id", 2},
+                                 {"pages",
+                                  {{{"id", "main"}, {"widgets", nlohmann::json::array()}},
+                                   {{"id", "spy"},
+                                    {"widgets",
+                                     {{{"id", "clock"},
+                                       {"enabled", true},
+                                       {"col", 0},
+                                       {"row", 0},
+                                       {"colspan", 1},
+                                       {"rowspan", 1}},
+                                      {{"id", "shutdown"},
+                                       {"enabled", true},
+                                       {"col", 1},
+                                       {"row", 0},
+                                       {"colspan", 1},
+                                       {"rowspan", 1}}}}}}}};
+    cfg->set<nlohmann::json>(cfg->df() + "panel_widgets/" + panel_id, widget_cfg);
+
+    auto& mgr = PanelWidgetManager::instance();
+    mgr.get_widget_config(panel_id).mark_dirty();
+    mgr.clear_panel_config(panel_id);
+
+    lv_obj_t* container = lv_obj_create(test_screen());
+    lv_obj_set_size(container, 400, 300);
+    process_lvgl(10);
+
+    // The throwing widget must NOT bring the rebuild down — populate returns.
+    std::vector<std::unique_ptr<PanelWidget>> widgets;
+    REQUIRE_NOTHROW(widgets = mgr.populate_widgets(panel_id, container, /*page_index=*/1));
+
+    // The well-formed sibling still attached exactly once; the throwing one was
+    // skipped (only one PanelWidget instance survives in the result).
+    REQUIRE(GridSpyWidget::s_attach_count == 1);
+    REQUIRE(GridSpyWidget::s_attached_widget != nullptr);
+    REQUIRE(widgets.size() == 1);
+
+    helix::register_widget_factory("clock", orig_clock);
+    helix::register_widget_factory("shutdown", orig_shutdown);
+    mgr.clear_panel_config(panel_id);
+}
+
 // ============================================================================
 // Per-printer config cache invalidation on printer switch (#804 regression)
 // ============================================================================

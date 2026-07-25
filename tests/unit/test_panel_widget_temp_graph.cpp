@@ -379,6 +379,45 @@ TEST_CASE("TempGraphWidget: set_config tolerates JSON null/non-object configs",
     REQUIRE_NOTHROW(widget.set_config(nlohmann::json::object())); // empty object — the happy path
 }
 
+// Regression: build_series_from_config() used to throw nlohmann::type_error
+// when a persisted sensor entry carried the wrong JSON type for "name" (not a
+// string) or "color" (not an integer). The contains()-only guards let the
+// subsequent .get<std::string>() / .get<uint32_t>() throw, which escaped the
+// Home Panel dashboard rebuild and aborted the process (std::terminate).
+// Malformed entries must now be skipped/defaulted, and well-formed sibling
+// entries on the same card must still render.
+TEST_CASE("TempGraphWidget: build_series tolerates malformed name/color JSON types",
+          "[temp_graph][panel_widget][crash-safety]") {
+    TempGraphWidget widget("test_malformed_types");
+
+    nlohmann::json config = {
+        {"sensors",
+         {
+             // Malformed "name": a number, not a string — must be skipped.
+             {{"name", 12345}, {"enabled", true}, {"color", 0xFF4444}},
+             // Malformed "color": a string, not a number — entry survives with
+             // a palette default color.
+             {{"name", "heater_bed"}, {"enabled", true}, {"color", "not_a_color"}},
+             // Well-formed sibling — must still render.
+             {{"name", "extruder"}, {"enabled", true}, {"color", 0x88C0D0}},
+         }}};
+
+    widget.set_config(config);
+
+    std::vector<TempGraphSeriesSpec> specs;
+    REQUIRE_NOTHROW(specs = TempGraphWidgetTestAccess::build_series(widget));
+
+    std::vector<std::string> names;
+    for (const auto& s : specs)
+        names.push_back(s.klipper_name);
+
+    // Malformed-name entry dropped entirely.
+    REQUIRE(std::find(names.begin(), names.end(), "12345") == names.end());
+    // Both well-formed-name entries survive (bad color just falls back to default).
+    REQUIRE(std::find(names.begin(), names.end(), "heater_bed") != names.end());
+    REQUIRE(std::find(names.begin(), names.end(), "extruder") != names.end());
+}
+
 // ============================================================================
 // Generation counter rejects stale callbacks
 // ============================================================================
