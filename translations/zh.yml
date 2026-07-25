@@ -87,8 +87,6 @@ translations:
   ABS: ABS
   ACCELEROMETERS: 加速度计
   ACE Moonraker bridge not found. Install ace_status.py for full support.: 未找到 ACE Moonraker 桥接。请安装 ace_status.py 以获得完整支持。
-  ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: 未找到
-    ACE Moonraker 桥接。请从 ValgACE 安装 ace_status.py 以获得完整支持。
   ACTIONS: 操作
   ADXL: ADXL
   AFC: AFC
@@ -142,7 +140,6 @@ translations:
   Adjust until belt appears frozen: 调整直到皮带看起来静止
   Adjustments stay active until restart. Save after print completes.: 调整在重启前保持有效。打印完成后保存。
   Adjusts individual characteristics of your heaters for optimal control: 调整加热器的各项参数以实现最佳控制
-  Advanced Setting: 高级设置
   After running the commands, tap Check Again below.: 执行命令后，点击下方的重新检查。
   Alert: 警报
   Alerts: 警报
@@ -241,7 +238,6 @@ translations:
   Bed target set to {}°C: 热床目标已设为 {}°C
   Bed temp must be 0-200°C: 热床温度必须为 0-200°C
   Bed warming timed out: 热床加热超时
-  'Bed:': 热床：
   Belt A frequency locked: 皮带 A 频率已锁定
   Belt B frequency locked: 皮带 B 频率已锁定
   Belt Tension: 皮带张力
@@ -276,7 +272,6 @@ translations:
   Brother PT (Bluetooth): Brother PT (蓝牙)
   Brother QL: Brother QL
   Brother QL (Bluetooth): Brother QL（蓝牙）
-  Browse: 浏览
   Browse and play recorded timelapses: 浏览和播放录制的延时摄影
   Browse guides, configuration references, and troubleshooting resources for HelixScreen.: 浏览
     HelixScreen 的指南、配置参考和故障排除资源。
@@ -553,7 +548,6 @@ translations:
   Currently printing: 正在打印
   Custom: 自定义
   Custom...: 自定义...
-  Customize Macro: 自定义宏
   Customize Macro Button: 自定义宏按钮
   Customize preset temperatures: 自定义预设温度
   Cut filament: 切断耗材
@@ -627,7 +621,6 @@ translations:
   Don't Save: 不保存
   Don't ask again: 不再询问
   Done: 完成
-  Down: 向下
   Download update?: 下载更新？
   Download v{}?: 下载 v{}？
   Downloading...: 下载中...
@@ -635,7 +628,6 @@ translations:
   Draw a ripple at each touch — helps diagnose offsets: 在每次触摸时绘制涟漪 — 有助于诊断偏移
   Drive Cal: 驱动校准
   Drop shadow strength (0 = disabled): 阴影强度（0 = 禁用）
-  Dryer Controls: 烘干机控制
   Drying: 烘干中
   Drying started: 已开始烘干
   Drying stopped: 已停止烘干
@@ -750,7 +742,6 @@ translations:
   Extruder PID Tuning: 挤出机 PID 调优
   Extruder heats automatically based on material: 挤出机根据材料自动加热
   FAILED: 失败
-  FILAMENT MAPPING: 耗材映射
   FILAMENTS: 耗材
   FILTERS: 筛选
   Factory Reset: 恢复出厂设置
@@ -888,13 +879,10 @@ translations:
   Filament tracking & label printing: 耗材跟踪和标签打印
   Filament tracking and inventory: 耗材跟踪和库存
   'Filament unload failed: {}': '耗材卸载失败: {}'
-  Filament unloaded: 耗材已卸载
   FilamentSensor: 耗材传感器
   File: 文件
-  File Info: 文件信息
   File Size: 文件大小
   Filename: 文件名
-  'Fill: 100% / 75% / 40% / 10%': 填充：100% / 75% / 40% / 10%
   Fine: 细调
   Fine-Tune: 微调
   Finish: 完成
@@ -904,7 +892,6 @@ translations:
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
   FlashForge IFS: FlashForge IFS
-  Flat Concentric Rings (existing ams_slot): 扁平同心环（现有 ams_slot）
   Flip: 翻转
   Flow: 流量
   Flow Compensation: '流量补偿'
@@ -928,7 +915,6 @@ translations:
     70% 说明张力不均。'
   From Buffer: 来自缓冲区
   From Version: 起始版本
-  Front: 前
   Full: 完整
   G-code Console: G-code 控制台
   G-code Preview: G-code 预览
@@ -937,7 +923,6 @@ translations:
   Gear sync: 齿轮同步
   Generic: 通用
   Get help and share feedback: 获取帮助和反馈
-  'Ghost:': 残影：
   Good: 良好
   Good Accuracy: 精度良好
   Got it: 知道了
@@ -953,7 +938,6 @@ translations:
   Hardware: 硬件
   Hardware & Devices: 硬件与设备
   Hardware Health: 硬件状态
-  Hardware Issues: 硬件问题
   Hardware Name: 硬件名称
   Hardware Profile: 硬件配置
   Hardware is validated on startup and reconnection: 硬件在启动和重新连接时进行验证
@@ -1017,13 +1001,11 @@ translations:
   Homing timed out — printer may still be homing: 回零超时 — 打印机可能仍在回零
   Homing...: 正在归零...
   Horizontal: 水平
-  Horizontal Progress (Leveling Wizard): 水平进度（调平向导）
   Host: 主机
   'Host: ': '主机: '
   Hotend: 热端
   Hotend Fan: 热端风扇
   Hotend Heater: 热端加热器
-  Hours: 小时
   How Z-axis movement is displayed: Z 轴移动的显示方式
   How far filament is pushed back into the box on eject (mm): 弹出时耗材被推回料盒的距离（mm）
   How many labels to print: 打印多少张标签
@@ -1101,7 +1083,6 @@ translations:
   Keep Navigation Bar: 保留导航栏
   Keep Printing: 继续打印
   Keep Required: 保持必需
-  Keyboard Test (Gboard-style): 键盘测试（Gboard 风格）
   Kinematics: 运动学
   Klipper: Klipper
   Klipper Error: Klipper 错误
@@ -1145,7 +1126,6 @@ translations:
   Layer Height: 层高
   Layer Macro captures one frame per layer change. Best for most prints.: 层变化宏在每次层变化时捕获一帧。适合大多数打印。
   Layer mode captures one frame per layer change. Best for most prints.: 层模式在每次换层时捕获一帧。适用于大多数打印。
-  'Layer:': 层：
   Layers: 层
   Layout: 布局
   Learn More: 了解更多
@@ -1239,13 +1219,10 @@ translations:
   Manual Bed Leveling: 手动热床调平
   Map to closest colors with matching material: 按匹配材料映射最接近的颜色
   Marginal: 偏高
-  Markdown Viewer: Markdown 查看器
   Master volume level: 主音量
   Match your typical print fan speed: 匹配您常用的打印风扇速度
   Material: 材料
-  Material Comfort: 材料舒适度
   'Material Comfort:': 材料适配度：
-  Material Design Spinner: Material Design 加载动画
   Material Mismatch: 材料不匹配
   Material Temperatures: 材料温度
   Max: 最大
@@ -1264,7 +1241,6 @@ translations:
   Measurement Failed: 测量失败
   Measuring Path A... %d%%: 正在测量路径 A... %d%%
   Measuring Path B... %d%%: 正在测量路径 B... %d%%
-  Mechanical setup: 机械设置
   Memory: 内存
   Memory (MB): 内存 (MB)
   Memory Snapshot: 内存快照
@@ -1321,7 +1297,6 @@ translations:
   Network Test: 网络测试
   Network name cannot be empty: 网络名称不能为空
   Never: 从不
-  'New Spool: Step ': '新料盘：步骤 '
   'New Spool: Step 1 of 3': 新料盘：步骤 1 / 3
   'New Spool: Step {} of {}': '新线轴: 第 {} 步,共 {} 步'
   New Version Available: 发现新版本
@@ -1368,7 +1343,6 @@ translations:
   No jobs in queue: 队列中无任务
   No macro devices configured: 未配置宏设备
   No macros available: 无可用宏
-  No macros found: 未找到宏
   No matching prints: 没有匹配的打印
   No media installed: 未安装介质
   No mesh data: 没有网格数据
@@ -1446,7 +1420,6 @@ translations:
   Objects: 对象
   'Off': 关
   'Off:': '关:'
-  Off\nFlying Toasters\nStarfield\n3D Pipes: 关\n飞行烤面包机\n星空\n3D 管道
   'On': 开
   On and Off macros must be different: 开和关的宏必须不同
   On/Off: 开/关
@@ -1579,7 +1552,6 @@ translations:
   Press Scan to search: 按扫描搜索
   'Pressure:': '压力:'
   Preview Sounds: 预览声音
-  Previous: 上一步
   Price: 价格
   Primary: 主要
   Priming...: 正在预挤...
@@ -1671,10 +1643,8 @@ translations:
   Profile name (e.g., default): 配置名称（例如：default）
   Profile renamed: 配置文件已重命名
   Profiles: 配置
-  Progress Bar Tests: 进度条测试
   Pulling filament back: 正在回抽耗材
   Purge: 排料
-  Purge complete: 清洗完成
   'Purge failed: {}': '清洗失败: {}'
   Purge macro not configured: 清洗宏未配置
   Purge may still be running — response timed out: 清洗可能仍在运行 — 响应超时
@@ -1736,7 +1706,6 @@ translations:
   Refresh: 刷新
   Refresh Interval: 刷新间隔
   Release all stepper motors. Position will be lost.: 释放所有步进电机。位置信息将丢失。
-  Remaining: 剩余
   Remaining (g): 剩余 (g)
   Remaining Weight (g): 剩余重量（克）
   Remap Tool: 重映射工具
@@ -1927,7 +1896,6 @@ translations:
   Selecting slot...: 正在选择料仓...
   Selector: 选择器
   Self-Test: 自检
-  Semantic Size Parameter Tests: 语义大小参数测试
   Send Report: 发送报告
   Send commands directly to printer: 直接向打印机发送命令
   Send this crash report to help improve HelixScreen.: 发送此崩溃报告以帮助改进 HelixScreen。
@@ -1964,7 +1932,6 @@ translations:
   'Share this code in Discord or support:': 请将此代码分享至 Discord 或支持渠道：
   Sheet Label Print: 标签纸打印
   Shelf A: 货架A
-  'Shininess:': 光泽度：
   Show Printer Switcher: 显示打印机切换器
   Show Sections: 显示区段
   Show Touch Points: 显示触摸点
@@ -1977,8 +1944,6 @@ translations:
   Show text labels on icon-only home screen widgets: 在仅图标的主屏小组件上显示文字标签
   Show up/down buttons on long lists: 在长列表中显示上/下按钮
   Show whatever curves you last had visible on the full graph.: 显示您上次在完整图表上可见的曲线。
-  Showing loaded colors: 正在显示已装载颜色
-  Showing sliced colors: 正在显示切片颜色
   Shutdown: 关机
   Shutdown / Reboot: 关机 / 重启
   Shutdown failed: 关机失败
@@ -1986,7 +1951,6 @@ translations:
   Shutting down printer...: 正在关闭打印机...
   Shutting down screen...: 正在关闭屏幕...
   Shutting down...: 正在关机...
-  Side: 侧面
   Signal: 信号
   'Signal #': '信号 #'
   Single toggle macro. State is not tracked.: 单个切换宏。不跟踪状态。
@@ -2017,7 +1981,6 @@ translations:
     Kaarlonen
   Spaghetti detected — print paused: 检测到拉丝故障 — 打印已暂停
   Speaker: 扬声器
-  'Specular:': 镜面反射：
   Speed: 速度
   'Speed change failed: {}': '速度更改失败: {}'
   Speed of prime movement: 预挤移动速度
@@ -2027,9 +1990,7 @@ translations:
   'Spool ': '线轴 '
   'Spool #': '线轴 #'
   'Spool #{}': '线轴 #{}'
-  Spool Details: 料盘详情
   Spool Info: 料盘信息
-  Spool Visualization (Pseudo-3D Canvas): 料盘可视化（伪 3D 画布）
   Spool Weight (g): 料盘重量（克）
   Spool created successfully: 料盘创建成功
   Spool deleted: 料盘已删除
@@ -2049,7 +2010,6 @@ translations:
   'Spoolman: %zu/%zu Spool%s': 'Spoolman: %zu/%zu 个线轴%s'
   Square Corner Velocity: 直角转弯速度
   Stable: 稳定版
-  Stable\nBeta\nDev: 稳定版\n测试版\n开发版
   Standard: 标准
   Standby: 待机
   Starfield: 星空
@@ -2076,7 +2036,6 @@ translations:
   Std Deviation: 标准差
   Step: 步骤
   Step 1 of 3: 第 1 步，共 3 步
-  Step Progress Widget Test: 步骤进度组件测试
   Still working... taking longer than usual: 仍在处理……耗时比平常更长
   Stop: 停止
   Stop Drying: 停止干燥
@@ -2096,7 +2055,6 @@ translations:
   Suppress raw debug output from printer firmware modules: 抑制打印机固件模块的原始调试输出
   Surfaces inherit app background tokens for light and dark modes.: 表面继承应用背景色用于浅色和深色模式。
   Switch Printer: 切换打印机
-  Switch Tests: 开关测试
   Switch between light and dark themes: 切换浅色和深色主题
   Switched to T{}: 已切换到 T{}
   Switching heater control to MPC. Klipper will restart.: 正在将加热控制切换为 MPC。Klipper 将重启。
@@ -2128,7 +2086,6 @@ translations:
   Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: 点击十字准星（第 %1$d
     个点，共 3 个）\xe2\x80\x94 触摸 %2$d / %3$d
   Tap to assign: 点击分配
-  Tap to show keyboard...: 点击显示键盘...
   Target Frequency: 目标频率
   Target Temperature: 目标温度
   Target Version: 目标版本
@@ -2248,7 +2205,6 @@ translations:
   Tips database not found: 未找到提示数据库
   Toggle: 切换
   Toggle (fire-and-forget): 切换（无状态跟踪）
-  Toggle Feature: 切换功能
   'Toggle:': '切换:'
   Too humid: 湿度过高
   Tool: 工具
@@ -2261,7 +2217,6 @@ translations:
   Toolhead, G-code, limits, and materials: 打印头、G代码、限制和材料
   Tools Used: 已使用工具
   'Tools: ': '工具: '
-  Top: 顶部
   Total Prints: 总打印数
   Touch & Input: 触摸和输入
   Touch Cal: 触摸校准
@@ -2274,7 +2229,6 @@ translations:
     个点，共 3 个）\xe2\x80\x94 触摸 %2$d / %3$d
   TouchCalibration: 触摸校准
   Trace: 跟踪
-  Travels: 空驶
   Trigger: 触发器
   'Troubleshooting:': 故障排除：
   Try adjusting your search or filters: 尝试调整搜索或筛选条件
@@ -2315,7 +2269,6 @@ translations:
   Unknown Spool: 未知料盘
   Unknown Step: 未知步骤
   Unknown error: 未知错误
-  Unlink: 取消关联
   Unload: 卸载
   Unload Filament: 卸载耗材
   'Unload failed: {}': '卸载失败: {}'
@@ -2331,7 +2284,6 @@ translations:
   Unretract Speed: 回抽恢复速度
   Unsupported tape width: 不支持的标签带宽度
   'Unsupported tape width: ': '不支持的标签带宽度: '
-  Up: 向上
   Up to date: 已是最新
   Update: 更新
   Update Available: 有可用更新
@@ -2368,14 +2320,12 @@ translations:
   Version: 版本
   Version, updates, and printer info: 版本、更新和打印机信息
   Vertical: 垂直
-  Vertical Progress (Retract Wizard): 垂直进度（回抽向导）
   Vibration: 振动
   Vibration compensation active: 振动补偿已启用
   Video playback speed: 视频播放速度
   View: 查看
   View Changelog: 查看更新日志
   View Full History: 查看完整历史
-  View Presets: 查看预设
   View Telemetry Data: 查看遥测数据
   View Timelapse: 查看延时摄影
   View and rename fans: 查看和重命名风扇
@@ -2438,14 +2388,12 @@ translations:
   X Offset: X 偏移
   X axis applied, but Y axis failed: X 轴已应用，但 Y 轴失败
   X jog blocked at bed edge: X 轴移动已限制在热床边缘
-  'X jog failed: {}': 'X 轴移动失败: {}'
   'X:': X：
   XY: XY
   Y: Y
   Y Axis: Y 轴
   Y Offset: Y 偏移
   Y jog blocked at bed edge: Y 轴移动已限制在热床边缘
-  'Y jog failed: {}': 'Y 轴移动失败: {}'
   'Y:': Y：
   Year: 年
   'Yes': 是
@@ -2466,7 +2414,6 @@ translations:
   Z Offset: Z 偏移
   Z Range: Z 范围
   Z Tilt Adjust...: 正在调整Z倾斜...
-  'Z jog failed: {}': 'Z 轴移动失败: {}'
   Z probes for bed leveling and mesh generation: 用于热床调平和网格生成的 Z 探针
   'Z-Off:': Z 偏移：
   Z-Offset: Z 偏移
@@ -2486,7 +2433,6 @@ translations:
   Z-offset saved - Klipper restarting...: Z 偏移已保存 - Klipper 重启中...
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
-  Zoom: 缩放
   \"%s\" failed to load: \"%s\" 加载失败
   bed: 热床
   by Preston Brown: by Preston Brown

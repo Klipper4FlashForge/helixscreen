@@ -88,8 +88,6 @@ translations:
   ABS: ABS
   ACCELEROMETERS: 加速度センサー
   ACE Moonraker bridge not found. Install ace_status.py for full support.: ACE Moonraker ブリッジが見つかりません。完全なサポートには ace_status.py をインストールしてください。
-  ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: ACE
-    Moonraker ブリッジが見つかりません。完全なサポートには ValgACE から ace_status.py をインストールしてください。
   ACTIONS: アクション
   ADXL: ADXL
   AFC: AFC
@@ -143,7 +141,6 @@ translations:
   Adjust until belt appears frozen: ベルトが静止して見えるまで調整
   Adjustments stay active until restart. Save after print completes.: 調整は再起動まで有効です。印刷完了後に保存してください。
   Adjusts individual characteristics of your heaters for optimal control: ヒーターの個別特性を調整して最適な制御を実現します
-  Advanced Setting: 詳細設定
   After running the commands, tap Check Again below.: コマンド実行後、下の「再確認」をタップしてください。
   Alert: アラート
   Alerts: アラート
@@ -242,7 +239,6 @@ translations:
   Bed target set to {}°C: ベッド目標温度を {}°C に設定しました
   Bed temp must be 0-200°C: ベッド温度は 0〜200°C にしてください
   Bed warming timed out: ベッド加熱がタイムアウトしました
-  'Bed:': 'ベッド:'
   Belt A frequency locked: ベルト A の周波数を固定しました
   Belt B frequency locked: ベルト B の周波数を固定しました
   Belt Tension: ベルトテンション
@@ -277,7 +273,6 @@ translations:
   Brother PT (Bluetooth): Brother PT (Bluetooth)
   Brother QL: Brother QL
   Brother QL (Bluetooth): Brother QL (Bluetooth)
-  Browse: 参照
   Browse and play recorded timelapses: 録画済みタイムラプスを閲覧・再生
   Browse guides, configuration references, and troubleshooting resources for HelixScreen.: HelixScreen
     のガイド、設定リファレンス、トラブルシューティング資料を参照します。
@@ -557,7 +552,6 @@ translations:
   Currently printing: 印刷中
   Custom: カスタム
   Custom...: カスタム...
-  Customize Macro: マクロをカスタマイズ
   Customize Macro Button: マクロボタンをカスタマイズ
   Customize preset temperatures: プリセット温度をカスタマイズ
   Cut filament: フィラメントを切断
@@ -632,7 +626,6 @@ translations:
   Don't Save: 保存しない
   Don't ask again: 今後表示しない
   Done: 完了
-  Down: 下へ
   Download update?: アップデートをダウンロードしますか？
   Download v{}?: v{}をダウンロードしますか？
   Downloading...: ダウンロード中...
@@ -640,7 +633,6 @@ translations:
   Draw a ripple at each touch — helps diagnose offsets: タッチごとに波紋を描画 — ズレの診断に役立ちます
   Drive Cal: ドライブキャリブレーション
   Drop shadow strength (0 = disabled): 影の強さ (0 = 無効)
-  Dryer Controls: 乾燥機の操作
   Drying: 乾燥中
   Drying started: 乾燥を開始しました
   Drying stopped: 乾燥を停止しました
@@ -756,7 +748,6 @@ translations:
   Extruder PID Tuning: エクストルーダー PID チューニング
   Extruder heats automatically based on material: 素材に基づいてエクストルーダーが自動加熱
   FAILED: 失敗
-  FILAMENT MAPPING: フィラメントマッピング
   FILAMENTS: フィラメント
   FILTERS: フィルター
   Factory Reset: 工場出荷時リセット
@@ -892,13 +883,10 @@ translations:
   Filament tracking & label printing: フィラメント追跡とラベル印刷
   Filament tracking and inventory: フィラメント追跡と在庫管理
   'Filament unload failed: {}': 'フィラメントの取出しに失敗しました: {}'
-  Filament unloaded: フィラメントを取出しました
   FilamentSensor: フィラメントセンサー
   File: ファイル
-  File Info: ファイル情報
   File Size: ファイルサイズ
   Filename: ファイル名
-  'Fill: 100% / 75% / 40% / 10%': '塗りつぶし: 100% / 75% / 40% / 10%'
   Fine: 微動
   Fine-Tune: 微調整
   Finish: 完了
@@ -908,7 +896,6 @@ translations:
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
   FlashForge IFS: FlashForge IFS
-  Flat Concentric Rings (existing ams_slot): 同心円リング（既存の ams_slot）
   Flip: 反転
   Flow: フロー
   Flow Compensation: 'フロー補正'
@@ -932,7 +919,6 @@ translations:
     を超えれば優秀で、70% を下回ると張力が不均一なことを示します。'
   From Buffer: バッファから
   From Version: 更新前バージョン
-  Front: 正面
   Full: フル
   G-code Console: G-code コンソール
   G-code Preview: G-code プレビュー
@@ -941,7 +927,6 @@ translations:
   Gear sync: ギア同期
   Generic: 汎用
   Get help and share feedback: ヘルプとフィードバック
-  'Ghost:': 'Ghost:'
   Good: 良好
   Good Accuracy: 良好な精度
   Got it: 了解
@@ -957,7 +942,6 @@ translations:
   Hardware: ハードウェア
   Hardware & Devices: ハードウェアとデバイス
   Hardware Health: ハードウェア状態
-  Hardware Issues: ハードウェアの問題
   Hardware Name: ハードウェア名
   Hardware Profile: ハードウェアプロファイル
   Hardware is validated on startup and reconnection: ハードウェアは起動時と再接続時に検証されます
@@ -1021,13 +1005,11 @@ translations:
   Homing timed out — printer may still be homing: ホーミングがタイムアウトしました — プリンターはまだホーミング中の可能性があります
   Homing...: ホーミング中...
   Horizontal: 水平
-  Horizontal Progress (Leveling Wizard): 水平プログレス（レベリングウィザード）
   Host: ホスト
   'Host: ': 'ホスト: '
   Hotend: ホットエンド
   Hotend Fan: ホットエンドファン
   Hotend Heater: ホットエンドヒーター
-  Hours: 時間
   How Z-axis movement is displayed: Z軸の移動表示方法
   How far filament is pushed back into the box on eject (mm): 取り出し時にフィラメントをボックスへ押し戻す距離
     (mm)
@@ -1105,7 +1087,6 @@ translations:
   Keep Navigation Bar: ナビゲーションバーを維持
   Keep Printing: 印刷を続行
   Keep Required: 必須を維持
-  Keyboard Test (Gboard-style): キーボードテスト（Gboard風）
   Kinematics: キネマティクス
   Klipper: Klipper
   Klipper Error: Klipper エラー
@@ -1150,7 +1131,6 @@ translations:
   Layer Macro captures one frame per layer change. Best for most prints.: レイヤーマクロはレイヤーが変わるごとに
     1 フレームを撮影します。ほとんどの印刷に最適です。
   Layer mode captures one frame per layer change. Best for most prints.: レイヤーモードはレイヤー変更ごとに1フレームをキャプチャします。ほとんどの印刷に最適です。
-  'Layer:': 'レイヤー:'
   Layers: レイヤー
   Layout: レイアウト
   Learn More: 詳細を見る
@@ -1244,13 +1224,10 @@ translations:
   Manual Bed Leveling: 手動ベッドレベリング
   Map to closest colors with matching material: 一致する素材で最も近い色に割り当て
   Marginal: やや不良
-  Markdown Viewer: Markdownビューアー
   Master volume level: マスター音量
   Match your typical print fan speed: 通常の印刷ファン速度に合わせてください
   Material: 素材
-  Material Comfort: 素材コンフォート
   'Material Comfort:': '素材の適合度:'
-  Material Design Spinner: マテリアルデザインスピナー
   Material Mismatch: 素材の不一致
   Material Temperatures: 素材温度
   Max: 最大
@@ -1269,7 +1246,6 @@ translations:
   Measurement Failed: 測定失敗
   Measuring Path A... %d%%: パス A を測定中... %d%%
   Measuring Path B... %d%%: パス B を測定中... %d%%
-  Mechanical setup: 機械的セットアップ
   Memory: メモリ
   Memory (MB): メモリ (MB)
   Memory Snapshot: メモリースナップショット
@@ -1326,7 +1302,6 @@ translations:
   Network Test: ネットワークテスト
   Network name cannot be empty: ネットワーク名は空にできません
   Never: なし
-  'New Spool: Step ': '新しいスプール: ステップ '
   'New Spool: Step 1 of 3': '新しいスプール: ステップ 1 / 3'
   'New Spool: Step {} of {}': '新規スプール: ステップ {} / {}'
   New Version Available: 新バージョンあり
@@ -1374,7 +1349,6 @@ translations:
   No jobs in queue: キューにジョブがありません
   No macro devices configured: マクロデバイスが設定されていません
   No macros available: 利用可能なマクロがありません
-  No macros found: マクロが見つかりません
   No matching prints: 一致する印刷なし
   No media installed: メディアが挿入されていません
   No mesh data: メッシュデータなし
@@ -1452,7 +1426,6 @@ translations:
   Objects: オブジェクト
   'Off': オフ
   'Off:': 'オフ:'
-  Off\nFlying Toasters\nStarfield\n3D Pipes: オフ\nFlying Toasters\nStarfield\n3D Pipes
   'On': オン
   On and Off macros must be different: オンとオフのマクロは異なるものにしてください
   On/Off: オン/オフ
@@ -1585,7 +1558,6 @@ translations:
   Press Scan to search: スキャンを押して検索
   'Pressure:': '圧力:'
   Preview Sounds: サウンドをプレビュー
-  Previous: 前へ
   Price: 価格
   Primary: プライマリ
   Priming...: プライミング中...
@@ -1678,10 +1650,8 @@ translations:
   Profile name (e.g., default): 'プロファイル名（例: default）'
   Profile renamed: プロファイル名を変更しました
   Profiles: プロファイル
-  Progress Bar Tests: プログレスバーテスト
   Pulling filament back: フィラメントを引き戻し中
   Purge: パージ
-  Purge complete: パージ完了
   'Purge failed: {}': 'パージに失敗しました: {}'
   Purge macro not configured: パージマクロが未設定です
   Purge may still be running — response timed out: パージがまだ実行中の可能性があります — 応答タイムアウト
@@ -1744,7 +1714,6 @@ translations:
   Refresh: 更新
   Refresh Interval: 更新間隔
   Release all stepper motors. Position will be lost.: すべてのステッピングモーターを解放します。位置情報は失われます。
-  Remaining: 残り
   Remaining (g): 残量 (g)
   Remaining Weight (g): 残量（g）
   Remap Tool: ツールを再割当
@@ -1935,7 +1904,6 @@ translations:
   Selecting slot...: スロットを選択中...
   Selector: セレクター
   Self-Test: セルフテスト
-  Semantic Size Parameter Tests: セマンティックサイズパラメータテスト
   Send Report: レポートを送信
   Send commands directly to printer: プリンターに直接コマンドを送信
   Send this crash report to help improve HelixScreen.: HelixScreen の改善にこのクラッシュレポートを送信してください。
@@ -1972,7 +1940,6 @@ translations:
   'Share this code in Discord or support:': 'このコードをDiscordまたはサポートで共有してください:'
   Sheet Label Print: シートラベル印刷
   Shelf A: 棚A
-  'Shininess:': '光沢:'
   Show Printer Switcher: プリンター切替を表示
   Show Sections: セクションを表示
   Show Touch Points: タッチポイントを表示
@@ -1985,8 +1952,6 @@ translations:
   Show text labels on icon-only home screen widgets: アイコンのみのホーム画面ウィジェットにテキストラベルを表示
   Show up/down buttons on long lists: 長いリストに上下ボタンを表示
   Show whatever curves you last had visible on the full graph.: フルグラフで最後に表示していた曲線を表示します。
-  Showing loaded colors: ロードした色を表示中
-  Showing sliced colors: スライスした色を表示中
   Shutdown: シャットダウン
   Shutdown / Reboot: シャットダウン / 再起動
   Shutdown failed: シャットダウンに失敗しました
@@ -1994,7 +1959,6 @@ translations:
   Shutting down printer...: プリンターをシャットダウン中...
   Shutting down screen...: 画面をシャットダウン中...
   Shutting down...: シャットダウン中...
-  Side: 側面
   Signal: 信号
   'Signal #': 信号番号
   Single toggle macro. State is not tracked.: 単一のトグルマクロ。状態は追跡されません。
@@ -2025,7 +1989,6 @@ translations:
     Kaarlonen
   Spaghetti detected — print paused: スパゲッティを検出しました — 印刷を一時停止しました
   Speaker: スピーカー
-  'Specular:': 'スペキュラー:'
   Speed: 速度
   'Speed change failed: {}': '速度変更に失敗しました: {}'
   Speed of prime movement: プライム動作の速度
@@ -2035,9 +1998,7 @@ translations:
   'Spool ': 'スプール '
   'Spool #': 'スプール #'
   'Spool #{}': 'スプール #{}'
-  Spool Details: スプール詳細
   Spool Info: スプール情報
-  Spool Visualization (Pseudo-3D Canvas): スプール可視化（疑似3Dキャンバス）
   Spool Weight (g): スプール重量（g）
   Spool created successfully: スプールを作成しました
   Spool deleted: スプールを削除しました
@@ -2057,7 +2018,6 @@ translations:
   'Spoolman: %zu/%zu Spool%s': 'Spoolman: %zu/%zu 個のスプール%s'
   Square Corner Velocity: 直角コーナー速度
   Stable: 安定版
-  Stable\nBeta\nDev: 安定版\nベータ\n開発版
   Standard: スタンダード
   Standby: スタンバイ
   Starfield: 星空
@@ -2084,7 +2044,6 @@ translations:
   Std Deviation: 標準偏差
   Step: ステップ
   Step 1 of 3: ステップ 1/3
-  Step Progress Widget Test: ステッププログレスウィジェットテスト
   Still working... taking longer than usual: まだ処理中です... 通常より時間がかかっています
   Stop: 停止
   Stop Drying: 乾燥を停止
@@ -2104,7 +2063,6 @@ translations:
   Suppress raw debug output from printer firmware modules: プリンターファームウェアモジュールからの生のデバッグ出力を抑制
   Surfaces inherit app background tokens for light and dark modes.: サーフェスはライトモードとダークモードのアプリ背景トークンを継承します。
   Switch Printer: プリンターを切り替え
-  Switch Tests: スイッチテスト
   Switch between light and dark themes: ライトテーマとダークテーマを切り替え
   Switched to T{}: T{} に切替えました
   Switching heater control to MPC. Klipper will restart.: ヒーター制御をMPCに切り替えます。Klipperが再起動します。
@@ -2135,7 +2093,6 @@ translations:
   Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: 十字をタップ（ポイント
     %1$d / 3）\xe2\x80\x94 タッチ %2$d / %3$d
   Tap to assign: タップして割当
-  Tap to show keyboard...: タップしてキーボードを表示...
   Target Frequency: 目標周波数
   Target Temperature: 目標温度
   Target Version: 目標バージョン
@@ -2257,7 +2214,6 @@ translations:
   Tips database not found: ヒントデータベースが見つかりません
   Toggle: トグル
   Toggle (fire-and-forget): トグル（状態追跡なし）
-  Toggle Feature: 機能を切り替え
   'Toggle:': '切り替え:'
   Too humid: 湿度が高すぎます
   Tool: ツール
@@ -2270,7 +2226,6 @@ translations:
   Toolhead, G-code, limits, and materials: ツールヘッド、Gコード、制限、材料
   Tools Used: 使用したツール
   'Tools: ': 'ツール: '
-  Top: 上
   Total Prints: 総印刷数
   Touch & Input: タッチと入力
   Touch Cal: タッチキャリブレーション
@@ -2283,7 +2238,6 @@ translations:
     %1$d / 3）\xe2\x80\x94 タッチ %2$d / %3$d
   TouchCalibration: タッチキャリブレーション
   Trace: トレース
-  Travels: 移動
   Trigger: トリガー
   'Troubleshooting:': 'トラブルシューティング:'
   Try adjusting your search or filters: 検索やフィルターを調整してみてください
@@ -2324,7 +2278,6 @@ translations:
   Unknown Spool: 不明なスプール
   Unknown Step: 不明なステップ
   Unknown error: 不明なエラー
-  Unlink: 連携解除
   Unload: 排出
   Unload Filament: フィラメントを排出
   'Unload failed: {}': 'アンロードに失敗しました: {}'
@@ -2340,7 +2293,6 @@ translations:
   Unretract Speed: アンリトラクト速度
   Unsupported tape width: サポートされていないテープ幅
   'Unsupported tape width: ': 'サポートされていないテープ幅: '
-  Up: 上へ
   Up to date: 最新の状態です
   Update: 更新
   Update Available: 更新あり
@@ -2377,14 +2329,12 @@ translations:
   Version: バージョン
   Version, updates, and printer info: バージョン、アップデート、プリンター情報
   Vertical: 垂直
-  Vertical Progress (Retract Wizard): 垂直プログレス（リトラクトウィザード）
   Vibration: 振動
   Vibration compensation active: 振動補正が有効です
   Video playback speed: 動画再生速度
   View: 表示
   View Changelog: 変更履歴を表示
   View Full History: 全履歴を表示
-  View Presets: プリセットを表示
   View Telemetry Data: テレメトリデータを表示
   View Timelapse: タイムラプスを表示
   View and rename fans: ファンの表示と名前変更
@@ -2447,14 +2397,12 @@ translations:
   X Offset: Xオフセット
   X axis applied, but Y axis failed: X軸は適用されましたが、Y軸は失敗しました
   X jog blocked at bed edge: X軸移動はベッド端でブロックされました
-  'X jog failed: {}': 'X軸移動に失敗しました: {}'
   'X:': 'X:'
   XY: XY
   Y: Y
   Y Axis: Y軸
   Y Offset: Yオフセット
   Y jog blocked at bed edge: Y軸移動はベッド端でブロックされました
-  'Y jog failed: {}': 'Y軸移動に失敗しました: {}'
   'Y:': 'Y:'
   Year: 年
   'Yes': はい
@@ -2475,7 +2423,6 @@ translations:
   Z Offset: Zオフセット
   Z Range: Z 範囲
   Z Tilt Adjust...: Zチルト調整中...
-  'Z jog failed: {}': 'Z軸移動に失敗しました: {}'
   Z probes for bed leveling and mesh generation: ベッドレベリングとメッシュ生成用 Z プローブ
   'Z-Off:': 'Z-Off:'
   Z-Offset: Z-Offset
@@ -2496,7 +2443,6 @@ translations:
   Z-offset saved - Klipper restarting...: Z-offset を保存しました - Klipper を再起動中...
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
-  Zoom: ズーム
   \"%s\" failed to load: \"%s\" の読み込みに失敗しました
   bed: ベッド
   by Preston Brown: by Preston Brown

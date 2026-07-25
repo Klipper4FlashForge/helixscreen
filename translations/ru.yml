@@ -92,8 +92,6 @@ translations:
   ABS: ABS
   ACCELEROMETERS: АКСЕЛЕРОМЕТРЫ
   ACE Moonraker bridge not found. Install ace_status.py for full support.: Мост ACE Moonraker не найден. Установите ace_status.py для полной поддержки.
-  ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: Мост
-    ACE Moonraker не найден. Установите ace_status.py из ValgACE для полной поддержки.
   ACTIONS: ДЕЙСТВИЯ
   ADXL: ADXL
   AFC: AFC
@@ -152,7 +150,6 @@ translations:
     до перезагрузки. Сохраните после завершения печати.
   Adjusts individual characteristics of your heaters for optimal control: Настраивает
     индивидуальные характеристики нагревателей для оптимального контроля
-  Advanced Setting: Расширенные настройки
   After running the commands, tap Check Again below.: После выполнения команд нажмите
     «Проверить снова» ниже.
   Alert: Оповещение
@@ -264,7 +261,6 @@ translations:
   Bed target set to {}°C: Целевая температура стола {}°C
   Bed temp must be 0-200°C: Температура стола должна быть 0-200°C
   Bed warming timed out: Нагрев стола — время ожидания истекло
-  'Bed:': 'Стол:'
   Belt A frequency locked: Частота ремня A зафиксирована
   Belt B frequency locked: Частота ремня B зафиксирована
   Belt Tension: Натяжение ремня
@@ -302,7 +298,6 @@ translations:
   Brother PT (Bluetooth): Brother PT (Bluetooth)
   Brother QL: Brother QL
   Brother QL (Bluetooth): Brother QL (Bluetooth)
-  Browse: Обзор
   Browse and play recorded timelapses: Просмотр и воспроизведение записанных таймлапсов
   Browse guides, configuration references, and troubleshooting resources for HelixScreen.: Руководства,
     справочники по настройке и ресурсы по устранению неполадок для HelixScreen.
@@ -622,7 +617,6 @@ translations:
   Currently printing: Сейчас печатается
   Custom: Свой
   Custom...: Настроить...
-  Customize Macro: Настроить макрос
   Customize Macro Button: Настроить кнопку макроса
   Customize preset temperatures: Настройка пресетов температур
   Cut filament: Обрезать филамент
@@ -697,7 +691,6 @@ translations:
   Don't Save: Не сохранять
   Don't ask again: Больше не спрашивать
   Done: Готово
-  Down: Вниз
   Download update?: Загрузить обновление?
   Download v{}?: Загрузить v{}?
   Downloading...: Загрузка...
@@ -706,7 +699,6 @@ translations:
     — помогает диагностировать смещения
   Drive Cal: Кал. привода
   Drop shadow strength (0 = disabled): Интенсивность тени (0 = отключено)
-  Dryer Controls: Управление сушилкой
   Drying: Сушка
   Drying started: Сушка запущена
   Drying stopped: Сушка остановлена
@@ -831,7 +823,6 @@ translations:
   Extruder heats automatically based on material: Экструдер нагревается автоматически
     в зависимости от материала
   FAILED: ОШИБКА
-  FILAMENT MAPPING: НАЗНАЧЕНИЕ ФИЛАМЕНТА
   FILAMENTS: ФИЛАМЕНТЫ
   FILTERS: ФИЛЬТРЫ
   Factory Reset: Сброс к заводским настройкам
@@ -979,13 +970,10 @@ translations:
   Filament tracking & label printing: Учёт филамента и печать этикеток
   Filament tracking and inventory: Отслеживание и учёт филамента
   'Filament unload failed: {}': 'Ошибка выгрузки филамента: {}'
-  Filament unloaded: Филамент выгружен
   FilamentSensor: Датчик филамента
   File: Файл
-  File Info: Информация о файле
   File Size: Размер файла
   Filename: Имя файла
-  'Fill: 100% / 75% / 40% / 10%': 'Заполнение: 100% / 75% / 40% / 10%'
   Fine: Точно
   Fine-Tune: Тонкая настройка
   Finish: Завершить
@@ -995,8 +983,6 @@ translations:
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
   FlashForge IFS: FlashForge IFS
-  Flat Concentric Rings (existing ams_slot): Плоские концентрические кольца (существующий
-    ams_slot)
   Flip: Отразить
   Flow: Поток
   Flow Compensation: 'Компенсация потока'
@@ -1021,7 +1007,6 @@ translations:
     Выше 90% — отлично; ниже 70% указывает на неравномерное натяжение.'
   From Buffer: Из буфера
   From Version: С версии
-  Front: Спереди
   Full: Полный
   G-code Console: Консоль G-code
   G-code Preview: Просмотр G-code
@@ -1030,7 +1015,6 @@ translations:
   Gear sync: Синхронизация шестерни
   Generic: Общий
   Get help and share feedback: Получить помощь и поделиться отзывом
-  'Ghost:': 'Тень:'
   Good: Хорошо
   Good Accuracy: Хорошая точность
   Got it: Понятно
@@ -1046,7 +1030,6 @@ translations:
   Hardware: Оборудование
   Hardware & Devices: Оборудование и устройства
   Hardware Health: Состояние оборудования
-  Hardware Issues: Проблемы оборудования
   Hardware Name: Название оборудования
   Hardware Profile: Профиль оборудования
   Hardware is validated on startup and reconnection: Оборудование проверяется при
@@ -1117,13 +1100,11 @@ translations:
     всё ещё выполнять парковку
   Homing...: Парковка...
   Horizontal: Горизонтально
-  Horizontal Progress (Leveling Wizard): Горизонтальный прогресс (мастер выравнивания)
   Host: Хост
   'Host: ': 'Хост: '
   Hotend: Хотенд
   Hotend Fan: Вентилятор хотенда
   Hotend Heater: Нагреватель хотенда
-  Hours: Часы
   How Z-axis movement is displayed: Как отображается движение по оси Z
   How far filament is pushed back into the box on eject (mm): Насколько глубоко филамент
     задвигается обратно в коробку при извлечении (мм)
@@ -1218,7 +1199,6 @@ translations:
   Keep Navigation Bar: Сохранить панель навигации
   Keep Printing: Продолжить печать
   Keep Required: Оставить обязательным
-  Keyboard Test (Gboard-style): Тест клавиатуры (стиль Gboard)
   Kinematics: Кинематика
   Klipper: Klipper
   Klipper Error: Ошибка Klipper
@@ -1271,7 +1251,6 @@ translations:
   Layer mode captures one frame per layer change. Best for most prints.: Послойный
     режим захватывает один кадр на каждую смену слоя. Лучший выбор для большинства
     печатей.
-  'Layer:': 'Слой:'
   Layers: Слои
   Layout: Раскладка
   Learn More: Подробнее
@@ -1373,13 +1352,10 @@ translations:
   Map to closest colors with matching material: Подобрать ближайшие цвета с подходящим
     материалом
   Marginal: Допустимо
-  Markdown Viewer: Просмотр Markdown
   Master volume level: Основной уровень громкости
   Match your typical print fan speed: Настройте типичную скорость вентилятора печати
   Material: Материал
-  Material Comfort: Комфорт материала
   'Material Comfort:': 'Комфорт материала:'
-  Material Design Spinner: Индикатор загрузки Material Design
   Material Mismatch: Несоответствие материала
   Material Temperatures: Температуры материалов
   Max: Макс
@@ -1398,7 +1374,6 @@ translations:
   Measurement Failed: Измерение не удалось
   Measuring Path A... %d%%: Измерение пути A... %d%%
   Measuring Path B... %d%%: Измерение пути B... %d%%
-  Mechanical setup: Механическая настройка
   Memory: Память
   Memory (MB): Память (МБ)
   Memory Snapshot: Снимок памяти
@@ -1460,7 +1435,6 @@ translations:
   Network Test: Тест сети
   Network name cannot be empty: Имя сети не может быть пустым
   Never: Никогда
-  'New Spool: Step ': 'Новая катушка: Шаг '
   'New Spool: Step 1 of 3': 'Новая катушка: Шаг 1 из 3'
   'New Spool: Step {} of {}': 'Новая катушка: шаг {} из {}'
   New Version Available: Доступна новая версия
@@ -1512,7 +1486,6 @@ translations:
   No jobs in queue: Очередь пуста
   No macro devices configured: Макро-устройства не настроены
   No macros available: Нет доступных макросов
-  No macros found: Макросы не найдены
   No matching prints: Нет совпадающих печатей
   No media installed: Носитель не установлен
   No mesh data: Нет данных сетки
@@ -1593,7 +1566,6 @@ translations:
   Objects: Объекты
   'Off': Выкл
   'Off:': 'Выкл:'
-  Off\nFlying Toasters\nStarfield\n3D Pipes: Выкл\nЛетающие тостеры\nЗвёздное поле\n3D-трубы
   'On': Вкл
   On and Off macros must be different: Макросы включения и выключения должны отличаться
   On/Off: Вкл/Выкл
@@ -1734,7 +1706,6 @@ translations:
   Press Scan to search: Нажмите «Поиск» для сканирования
   'Pressure:': 'Давление:'
   Preview Sounds: Предпросмотр звуков
-  Previous: Назад
   Price: Цена
   Primary: Основной
   Priming...: Грунтование...
@@ -1836,10 +1807,8 @@ translations:
   Profile name (e.g., default): Имя профиля (например, default)
   Profile renamed: Профиль переименован
   Profiles: Профили
-  Progress Bar Tests: Тесты прогресс-бара
   Pulling filament back: Откат филамента
   Purge: Продуть
-  Purge complete: Прочистка завершена
   'Purge failed: {}': 'Ошибка прочистки: {}'
   Purge macro not configured: Макрос прочистки не настроен
   Purge may still be running — response timed out: Прочистка может ещё выполняться
@@ -1909,7 +1878,6 @@ translations:
   Refresh Interval: Интервал обновления
   Release all stepper motors. Position will be lost.: Отпустить все шаговые моторы.
     Позиция будет потеряна.
-  Remaining: Осталось
   Remaining (g): Осталось (г)
   Remaining Weight (g): Оставшийся вес (г)
   Remap Tool: Переназначить инструмент
@@ -2119,7 +2087,6 @@ translations:
   Selecting slot...: Выбор слота...
   Selector: Селектор
   Self-Test: Самотестирование
-  Semantic Size Parameter Tests: Тесты семантических параметров размера
   Send Report: Отправить отчёт
   Send commands directly to printer: Отправлять команды напрямую принтеру
   Send this crash report to help improve HelixScreen.: Отправьте этот отчёт об ошибке,
@@ -2163,7 +2130,6 @@ translations:
     поддержкой:'
   Sheet Label Print: Печать этикеток на листе
   Shelf A: Полка A
-  'Shininess:': 'Блеск:'
   Show Printer Switcher: Показывать переключатель принтеров
   Show Sections: Показать разделы
   Show Touch Points: Показывать точки касания
@@ -2180,8 +2146,6 @@ translations:
   Show up/down buttons on long lists: Показывать кнопки вверх/вниз в длинных списках
   Show whatever curves you last had visible on the full graph.: Показывать те кривые,
     что были видны на полном графике в последний раз.
-  Showing loaded colors: Показаны загруженные цвета
-  Showing sliced colors: Показаны цвета из слайсера
   Shutdown: Выключение
   Shutdown / Reboot: Выключение / Перезагрузка
   Shutdown failed: Ошибка выключения
@@ -2189,7 +2153,6 @@ translations:
   Shutting down printer...: Выключение принтера...
   Shutting down screen...: Выключение экрана...
   Shutting down...: Выключение...
-  Side: Сбоку
   Signal: Сигнал
   'Signal #': Сигнал №
   Single toggle macro. State is not tracked.: Один макрос переключения. Состояние
@@ -2224,7 +2187,6 @@ translations:
     Kaarlonen
   Spaghetti detected — print paused: Обнаружены «спагетти» — печать приостановлена
   Speaker: Динамик
-  'Specular:': 'Отражение:'
   Speed: Скорость
   'Speed change failed: {}': 'Ошибка изменения скорости: {}'
   Speed of prime movement: Скорость движения подачи
@@ -2235,9 +2197,7 @@ translations:
   'Spool ': 'Катушка '
   'Spool #': Катушка №
   'Spool #{}': 'Катушка #{}'
-  Spool Details: Детали катушки
   Spool Info: Информация о катушке
-  Spool Visualization (Pseudo-3D Canvas): Визуализация катушки (псевдо-3D)
   Spool Weight (g): Вес катушки (г)
   Spool created successfully: Катушка успешно создана
   Spool deleted: Катушка удалена
@@ -2258,7 +2218,6 @@ translations:
   'Spoolman: %zu/%zu Spool%s': 'Spoolman: %zu/%zu катушк%s'
   Square Corner Velocity: Скорость прохождения углов
   Stable: Стабильная
-  Stable\nBeta\nDev: Стабильная\nБета\nDev
   Standard: Стандартный
   Standby: Режим ожидания
   Starfield: Звёздное небо
@@ -2285,7 +2244,6 @@ translations:
   Std Deviation: Станд. отклонение
   Step: Шаг
   Step 1 of 3: Шаг 1 из 3
-  Step Progress Widget Test: Тест виджета пошагового прогресса
   Still working... taking longer than usual: Всё ещё выполняется... дольше обычного
   Stop: Стоп
   Stop Drying: Остановить сушку
@@ -2310,7 +2268,6 @@ translations:
   Surfaces inherit app background tokens for light and dark modes.: Поверхности наследуют
     токены фона приложения для светлого и тёмного режимов.
   Switch Printer: Переключить принтер
-  Switch Tests: Тесты переключателей
   Switch between light and dark themes: Переключение между светлой и тёмной темами
   Switched to T{}: Переключено на T{}
   Switching heater control to MPC. Klipper will restart.: Переключение управления
@@ -2345,7 +2302,6 @@ translations:
   Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: Нажмите на
     перекрестие (точка %1$d из 3) \xe2\x80\x94 касание %2$d из %3$d
   Tap to assign: Нажмите для назначения
-  Tap to show keyboard...: Нажмите для показа клавиатуры...
   Target Frequency: Целевая частота
   Target Temperature: Целевая температура
   Target Version: Целевая версия
@@ -2500,7 +2456,6 @@ translations:
   Tips database not found: База данных советов не найдена
   Toggle: Переключить
   Toggle (fire-and-forget): Переключение (без отслеживания)
-  Toggle Feature: Переключить функцию
   'Toggle:': 'Переключить:'
   Too humid: Слишком влажно
   Tool: Инструмент
@@ -2514,7 +2469,6 @@ translations:
   Toolhead, G-code, limits, and materials: Печатающая головка, G-code, лимиты и материалы
   Tools Used: Использовано инструментов
   'Tools: ': 'Инструменты: '
-  Top: Сверху
   Total Prints: Всего печатей
   Touch & Input: Касание и ввод
   Touch Cal: Кал. касания
@@ -2527,7 +2481,6 @@ translations:
     (точка %1$d из 3) \xe2\x80\x94 касание %2$d из %3$d
   TouchCalibration: Калибровка касания
   Trace: Трассировка
-  Travels: Перемещения
   Trigger: Триггер
   'Troubleshooting:': 'Устранение неполадок:'
   Try adjusting your search or filters: Попробуйте изменить поиск или фильтры
@@ -2575,7 +2528,6 @@ translations:
   Unknown Spool: Неизвестная катушка
   Unknown Step: Неизвестный шаг
   Unknown error: Неизвестная ошибка
-  Unlink: Отвязать
   Unload: Выгрузить
   Unload Filament: Выгрузить филамент
   'Unload failed: {}': 'Ошибка выгрузки: {}'
@@ -2592,7 +2544,6 @@ translations:
   Unretract Speed: Скорость возврата
   Unsupported tape width: Неподдерживаемая ширина ленты
   'Unsupported tape width: ': 'Неподдерживаемая ширина ленты: '
-  Up: Вверх
   Up to date: Актуальная версия
   Update: Обновить
   Update Available: Доступно обновление
@@ -2630,14 +2581,12 @@ translations:
   Version: Версия
   Version, updates, and printer info: Версия, обновления и сведения о принтере
   Vertical: Вертикально
-  Vertical Progress (Retract Wizard): Вертикальный прогресс (мастер ретракта)
   Vibration: Вибрация
   Vibration compensation active: Компенсация вибраций активна
   Video playback speed: Скорость воспроизведения видео
   View: Просмотр
   View Changelog: Просмотр изменений
   View Full History: Просмотреть полную историю
-  View Presets: Просмотр пресетов
   View Telemetry Data: Просмотр данных телеметрии
   View Timelapse: Просмотр таймлапса
   View and rename fans: Просмотр и переименование вентиляторов
@@ -2706,14 +2655,12 @@ translations:
   X Offset: Смещение X
   X axis applied, but Y axis failed: Ось X применена, но ось Y не удалась
   X jog blocked at bed edge: Перемещение по X заблокировано на краю стола
-  'X jog failed: {}': 'Ошибка перемещения X: {}'
   'X:': 'X:'
   XY: XY
   Y: Y
   Y Axis: Ось Y
   Y Offset: Смещение Y
   Y jog blocked at bed edge: Перемещение по Y заблокировано на краю стола
-  'Y jog failed: {}': 'Ошибка перемещения Y: {}'
   'Y:': 'Y:'
   Year: Год
   'Yes': Да
@@ -2739,7 +2686,6 @@ translations:
   Z Offset: Z Offset
   Z Range: Диапазон Z
   Z Tilt Adjust...: Регулировка наклона Z...
-  'Z jog failed: {}': 'Ошибка перемещения Z: {}'
   Z probes for bed leveling and mesh generation: Z-зонды для выравнивания стола и
     создания сетки
   'Z-Off:': 'Z-Off:'
@@ -2762,7 +2708,6 @@ translations:
   Z-offset saved - Klipper restarting...: Z-смещение сохранено — Klipper перезапускается...
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
-  Zoom: Масштаб
   \"%s\" failed to load: Не удалось загрузить «%s»
   bed: стол
   by Preston Brown: от Preston Brown

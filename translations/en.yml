@@ -88,8 +88,6 @@ translations:
   ABS: ABS
   ACCELEROMETERS: ACCELEROMETERS
   ACE Moonraker bridge not found. Install ace_status.py for full support.: ACE Moonraker bridge not found. Install ace_status.py for full support.
-  ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: ACE
-    Moonraker bridge not found. Install ace_status.py from ValgACE for full support.
   ACTIONS: ACTIONS
   ADXL: ADXL
   AFC: AFC
@@ -148,7 +146,6 @@ translations:
     stay active until restart. Save after print completes.
   Adjusts individual characteristics of your heaters for optimal control: Adjusts
     individual characteristics of your heaters for optimal control
-  Advanced Setting: Advanced Setting
   After running the commands, tap Check Again below.: After running the commands,
     tap Check Again below.
   Alert: Alert
@@ -257,7 +254,6 @@ translations:
   Bed target set to {}°C: Bed target set to {}°C
   Bed temp must be 0-200°C: Bed temp must be 0-200°C
   Bed warming timed out: Bed warming timed out
-  'Bed:': 'Bed:'
   Belt A frequency locked: Belt A frequency locked
   Belt B frequency locked: Belt B frequency locked
   Belt Tension: Belt Tension
@@ -295,7 +291,6 @@ translations:
   Brother PT (Bluetooth): Brother PT (Bluetooth)
   Brother QL: Brother QL
   Brother QL (Bluetooth): Brother QL (Bluetooth)
-  Browse: Browse
   Browse and play recorded timelapses: Browse and play recorded timelapses
   Browse guides, configuration references, and troubleshooting resources for HelixScreen.: Browse
     guides, configuration references, and troubleshooting resources for HelixScreen.
@@ -605,7 +600,6 @@ translations:
   Currently printing: Currently printing
   Custom: Custom
   Custom...: Custom...
-  Customize Macro: Customize Macro
   Customize Macro Button: Customize Macro Button
   Customize preset temperatures: Customize preset temperatures
   Cut filament: Cut filament
@@ -680,7 +674,6 @@ translations:
   Don't Save: Don't Save
   Don't ask again: Don't ask again
   Done: Done
-  Down: Down
   Download update?: Download update?
   Download v{}?: Download v{}?
   Downloading...: Downloading...
@@ -689,7 +682,6 @@ translations:
     — helps diagnose offsets
   Drive Cal: Drive Cal
   Drop shadow strength (0 = disabled): Drop shadow strength (0 = disabled)
-  Dryer Controls: Dryer Controls
   Drying: Drying
   Drying started: Drying started
   Drying stopped: Drying stopped
@@ -813,7 +805,6 @@ translations:
   Extruder heats automatically based on material: Extruder heats automatically based
     on material
   FAILED: FAILED
-  FILAMENT MAPPING: FILAMENT MAPPING
   FILAMENTS: FILAMENTS
   FILTERS: FILTERS
   Factory Reset: Factory Reset
@@ -959,13 +950,10 @@ translations:
   Filament tracking & label printing: Filament tracking & label printing
   Filament tracking and inventory: Filament tracking and inventory
   'Filament unload failed: {}': 'Filament unload failed: {}'
-  Filament unloaded: Filament unloaded
   FilamentSensor: FilamentSensor
   File: File
-  File Info: File Info
   File Size: File Size
   Filename: Filename
-  'Fill: 100% / 75% / 40% / 10%': 'Fill: 100% / 75% / 40% / 10%'
   Fine: Fine
   Fine-Tune: Fine-Tune
   Finish: Finish
@@ -975,7 +963,6 @@ translations:
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
   FlashForge IFS: FlashForge IFS
-  Flat Concentric Rings (existing ams_slot): Flat Concentric Rings (existing ams_slot)
   Flip: Flip
   Flow: Flow
   Flow Compensation: Flow Compensation
@@ -1000,7 +987,6 @@ translations:
     Above 90% is excellent; below 70% suggests uneven tension.'
   From Buffer: From Buffer
   From Version: From Version
-  Front: Front
   Full: Full
   G-code Console: G-code Console
   G-code Preview: G-code Preview
@@ -1009,7 +995,6 @@ translations:
   Gear sync: Gear sync
   Generic: Generic
   Get help and share feedback: Get help and share feedback
-  'Ghost:': 'Ghost:'
   Good: Good
   Good Accuracy: Good Accuracy
   Got it: Got it
@@ -1025,7 +1010,6 @@ translations:
   Hardware: Hardware
   Hardware & Devices: Hardware & Devices
   Hardware Health: Hardware Health
-  Hardware Issues: Hardware Issues
   Hardware Name: Hardware Name
   Hardware Profile: Hardware Profile
   Hardware is validated on startup and reconnection: Hardware is validated on startup
@@ -1096,13 +1080,11 @@ translations:
     be homing
   Homing...: Homing...
   Horizontal: Horizontal
-  Horizontal Progress (Leveling Wizard): Horizontal Progress (Leveling Wizard)
   Host: Host
   'Host: ': 'Host: '
   Hotend: Hotend
   Hotend Fan: Hotend Fan
   Hotend Heater: Hotend Heater
-  Hours: Hours
   How Z-axis movement is displayed: How Z-axis movement is displayed
   How far filament is pushed back into the box on eject (mm): How far filament is
     pushed back into the box on eject (mm)
@@ -1196,7 +1178,6 @@ translations:
   Keep Navigation Bar: Keep Navigation Bar
   Keep Printing: Keep Printing
   Keep Required: Keep Required
-  Keyboard Test (Gboard-style): Keyboard Test (Gboard-style)
   Kinematics: Kinematics
   Klipper: Klipper
   Klipper Error: Klipper Error
@@ -1246,7 +1227,6 @@ translations:
     captures one frame per layer change. Best for most prints.
   Layer mode captures one frame per layer change. Best for most prints.: Layer mode
     captures one frame per layer change. Best for most prints.
-  'Layer:': 'Layer:'
   Layers: Layers
   Layout: Layout
   Learn More: Learn More
@@ -1346,13 +1326,10 @@ translations:
   Map to closest colors with matching material: Map to closest colors with matching
     material
   Marginal: Marginal
-  Markdown Viewer: Markdown Viewer
   Master volume level: Master volume level
   Match your typical print fan speed: Match your typical print fan speed
   Material: Material
-  Material Comfort: Material Comfort
   'Material Comfort:': 'Material Comfort:'
-  Material Design Spinner: Material Design Spinner
   Material Mismatch: Material Mismatch
   Material Temperatures: Material Temperatures
   Max: Max
@@ -1371,7 +1348,6 @@ translations:
   Measurement Failed: Measurement Failed
   Measuring Path A... %d%%: Measuring Path A... %d%%
   Measuring Path B... %d%%: Measuring Path B... %d%%
-  Mechanical setup: Mechanical setup
   Memory: Memory
   Memory (MB): Memory (MB)
   Memory Snapshot: Memory Snapshot
@@ -1434,7 +1410,6 @@ translations:
   Network Test: Network Test
   Network name cannot be empty: Network name cannot be empty
   Never: Never
-  'New Spool: Step ': 'New Spool: Step '
   'New Spool: Step 1 of 3': 'New Spool: Step 1 of 3'
   'New Spool: Step {} of {}': 'New Spool: Step {} of {}'
   New Version Available: New Version Available
@@ -1484,7 +1459,6 @@ translations:
   No jobs in queue: No jobs in queue
   No macro devices configured: No macro devices configured
   No macros available: No macros available
-  No macros found: No macros found
   No matching prints: No matching prints
   No media installed: No media installed
   No mesh data: No mesh data
@@ -1565,7 +1539,6 @@ translations:
   Objects: Objects
   'Off': 'Off'
   'Off:': 'Off:'
-  Off\nFlying Toasters\nStarfield\n3D Pipes: Off\nFlying Toasters\nStarfield\n3D Pipes
   'On': 'On'
   On and Off macros must be different: On and Off macros must be different
   On/Off: On/Off
@@ -1706,7 +1679,6 @@ translations:
   Press Scan to search: Press Scan to search
   'Pressure:': 'Pressure:'
   Preview Sounds: Preview Sounds
-  Previous: Previous
   Price: Price
   Primary: Primary
   Priming...: Priming...
@@ -1805,10 +1777,8 @@ translations:
   Profile name (e.g., default): Profile name (e.g., default)
   Profile renamed: Profile renamed
   Profiles: Profiles
-  Progress Bar Tests: Progress Bar Tests
   Pulling filament back: Pulling filament back
   Purge: Purge
-  Purge complete: Purge complete
   'Purge failed: {}': 'Purge failed: {}'
   Purge macro not configured: Purge macro not configured
   Purge may still be running — response timed out: Purge may still be running — response
@@ -1878,7 +1848,6 @@ translations:
   Refresh Interval: Refresh Interval
   Release all stepper motors. Position will be lost.: Release all stepper motors.
     Position will be lost.
-  Remaining: Remaining
   Remaining (g): Remaining (g)
   Remaining Weight (g): Remaining Weight (g)
   Remap Tool: Remap Tool
@@ -2087,7 +2056,6 @@ translations:
   Selecting slot...: Selecting slot...
   Selector: Selector
   Self-Test: Self-Test
-  Semantic Size Parameter Tests: Semantic Size Parameter Tests
   Send Report: Send Report
   Send commands directly to printer: Send commands directly to printer
   Send this crash report to help improve HelixScreen.: Send this crash report to help
@@ -2128,7 +2096,6 @@ translations:
   'Share this code in Discord or support:': 'Share this code in Discord or support:'
   Sheet Label Print: Sheet Label Print
   Shelf A: Shelf A
-  'Shininess:': 'Shininess:'
   Show Printer Switcher: Show Printer Switcher
   Show Sections: Show Sections
   Show Touch Points: Show Touch Points
@@ -2144,8 +2111,6 @@ translations:
   Show up/down buttons on long lists: Show up/down buttons on long lists
   Show whatever curves you last had visible on the full graph.: Show whatever curves
     you last had visible on the full graph.
-  Showing loaded colors: Showing loaded colors
-  Showing sliced colors: Showing sliced colors
   Shutdown: Shutdown
   Shutdown / Reboot: Shutdown / Reboot
   Shutdown failed: Shutdown failed
@@ -2153,7 +2118,6 @@ translations:
   Shutting down printer...: Shutting down printer...
   Shutting down screen...: Shutting down screen...
   Shutting down...: Shutting down...
-  Side: Side
   Signal: Signal
   'Signal #': 'Signal #'
   Single toggle macro. State is not tracked.: Single toggle macro. State is not tracked.
@@ -2187,7 +2151,6 @@ translations:
     Kaarlonen
   Spaghetti detected — print paused: Spaghetti detected — print paused
   Speaker: Speaker
-  'Specular:': 'Specular:'
   Speed: Speed
   'Speed change failed: {}': 'Speed change failed: {}'
   Speed of prime movement: Speed of prime movement
@@ -2198,9 +2161,7 @@ translations:
   'Spool ': 'Spool '
   'Spool #': 'Spool #'
   'Spool #{}': 'Spool #{}'
-  Spool Details: Spool Details
   Spool Info: Spool Info
-  Spool Visualization (Pseudo-3D Canvas): Spool Visualization (Pseudo-3D Canvas)
   Spool Weight (g): Spool Weight (g)
   Spool created successfully: Spool created successfully
   Spool deleted: Spool deleted
@@ -2221,7 +2182,6 @@ translations:
   'Spoolman: %zu/%zu Spool%s': 'Spoolman: %zu/%zu Spool%s'
   Square Corner Velocity: Square Corner Velocity
   Stable: Stable
-  Stable\nBeta\nDev: Stable\nBeta\nDev
   Standard: Standard
   Standby: Standby
   Starfield: Starfield
@@ -2248,7 +2208,6 @@ translations:
   Std Deviation: Std Deviation
   Step: Step
   Step 1 of 3: Step 1 of 3
-  Step Progress Widget Test: Step Progress Widget Test
   Still working... taking longer than usual: Still working... taking longer than usual
   Stop: Stop
   Stop Drying: Stop Drying
@@ -2273,7 +2232,6 @@ translations:
   Surfaces inherit app background tokens for light and dark modes.: Surfaces inherit
     app background tokens for light and dark modes.
   Switch Printer: Switch Printer
-  Switch Tests: Switch Tests
   Switch between light and dark themes: Switch between light and dark themes
   Switched to T{}: Switched to T{}
   Switching heater control to MPC. Klipper will restart.: Switching heater control
@@ -2308,7 +2266,6 @@ translations:
   Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: Tap the crosshair
     (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d
   Tap to assign: Tap to assign
-  Tap to show keyboard...: Tap to show keyboard...
   Target Frequency: Target Frequency
   Target Temperature: Target Temperature
   Target Version: Target Version
@@ -2458,7 +2415,6 @@ translations:
   Tips database not found: Tips database not found
   Toggle: Toggle
   Toggle (fire-and-forget): Toggle (fire-and-forget)
-  Toggle Feature: Toggle Feature
   'Toggle:': 'Toggle:'
   Too humid: Too humid
   Tool: Tool
@@ -2471,7 +2427,6 @@ translations:
   Toolhead, G-code, limits, and materials: Toolhead, G-code, limits, and materials
   Tools Used: Tools Used
   'Tools: ': 'Tools: '
-  Top: Top
   Total Prints: Total Prints
   Touch & Input: Touch & Input
   Touch Cal: Touch Cal
@@ -2484,7 +2439,6 @@ translations:
     (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d
   TouchCalibration: TouchCalibration
   Trace: Trace
-  Travels: Travels
   Trigger: Trigger
   'Troubleshooting:': 'Troubleshooting:'
   Try adjusting your search or filters: Try adjusting your search or filters
@@ -2531,7 +2485,6 @@ translations:
   Unknown Spool: Unknown Spool
   Unknown Step: Unknown Step
   Unknown error: Unknown error
-  Unlink: Unlink
   Unload: Unload
   Unload Filament: Unload Filament
   'Unload failed: {}': 'Unload failed: {}'
@@ -2548,7 +2501,6 @@ translations:
   Unretract Speed: Unretract Speed
   Unsupported tape width: Unsupported tape width
   'Unsupported tape width: ': 'Unsupported tape width: '
-  Up: Up
   Up to date: Up to date
   Update: Update
   Update Available: Update Available
@@ -2586,14 +2538,12 @@ translations:
   Version: Version
   Version, updates, and printer info: Version, updates, and printer info
   Vertical: Vertical
-  Vertical Progress (Retract Wizard): Vertical Progress (Retract Wizard)
   Vibration: Vibration
   Vibration compensation active: Vibration compensation active
   Video playback speed: Video playback speed
   View: View
   View Changelog: View Changelog
   View Full History: View Full History
-  View Presets: View Presets
   View Telemetry Data: View Telemetry Data
   View Timelapse: View Timelapse
   View and rename fans: View and rename fans
@@ -2663,14 +2613,12 @@ translations:
   X Offset: X Offset
   X axis applied, but Y axis failed: X axis applied, but Y axis failed
   X jog blocked at bed edge: X jog blocked at bed edge
-  'X jog failed: {}': 'X jog failed: {}'
   'X:': 'X:'
   XY: XY
   Y: Y
   Y Axis: Y Axis
   Y Offset: Y Offset
   Y jog blocked at bed edge: Y jog blocked at bed edge
-  'Y jog failed: {}': 'Y jog failed: {}'
   'Y:': 'Y:'
   Year: Year
   'Yes': 'Yes'
@@ -2696,7 +2644,6 @@ translations:
   Z Offset: Z Offset
   Z Range: Z Range
   Z Tilt Adjust...: Z Tilt Adjust...
-  'Z jog failed: {}': 'Z jog failed: {}'
   Z probes for bed leveling and mesh generation: Z probes for bed leveling and mesh
     generation
   'Z-Off:': 'Z-Off:'
@@ -2719,7 +2666,6 @@ translations:
   Z-offset saved - Klipper restarting...: Z-offset saved - Klipper restarting...
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
-  Zoom: Zoom
   \"%s\" failed to load: \"%s\" failed to load
   bed: bed
   by Preston Brown: by Preston Brown

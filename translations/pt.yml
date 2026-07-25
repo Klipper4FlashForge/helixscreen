@@ -94,9 +94,6 @@ translations:
   ACCELEROMETERS: ACELERÔMETROS
   ACE Moonraker bridge not found. Install ace_status.py for full support.: Ponte
     ACE Moonraker não encontrada. Instale ace_status.py para suporte completo.
-  ACE Moonraker bridge not found. Install ace_status.py from ValgACE for full support.: Ponte
-    ACE do Moonraker não encontrada. Instale ace_status.py do ValgACE para suporte
-    completo.
   ACTIONS: AÇÕES
   ADXL: ADXL
   AFC: AFC
@@ -157,7 +154,6 @@ translations:
     ativos até reiniciar. Salve após a impressão terminar.
   Adjusts individual characteristics of your heaters for optimal control: Ajusta características
     individuais dos seus aquecedores para controle ideal
-  Advanced Setting: Configuração Avançada
   After running the commands, tap Check Again below.: Após executar os comandos, toque
     em Verificar Novamente abaixo.
   Alert: Alerta
@@ -271,7 +267,6 @@ translations:
   Bed target set to {}°C: Mesa configurada para {}°C
   Bed temp must be 0-200°C: A temperatura da mesa deve ser 0-200°C
   Bed warming timed out: Aquecimento da mesa — tempo esgotado
-  'Bed:': 'Mesa:'
   Belt A frequency locked: Frequência da correia A travada
   Belt B frequency locked: Frequência da correia B travada
   Belt Tension: Tensão da correia
@@ -309,7 +304,6 @@ translations:
   Brother PT (Bluetooth): Brother PT (Bluetooth)
   Brother QL: Brother QL
   Brother QL (Bluetooth): Brother QL (Bluetooth)
-  Browse: Navegar
   Browse and play recorded timelapses: Navegar e reproduzir timelapses gravados
   Browse guides, configuration references, and troubleshooting resources for HelixScreen.: Consulte
     guias, referências de configuração e recursos de solução de problemas para o HelixScreen.
@@ -637,7 +631,6 @@ translations:
   Currently printing: Imprimindo atualmente
   Custom: Personalizado
   Custom...: Personalizado...
-  Customize Macro: Personalizar Macro
   Customize Macro Button: Personalizar Botão de Macro
   Customize preset temperatures: Personalizar temperaturas predefinidas
   Cut filament: Cortar filamento
@@ -712,7 +705,6 @@ translations:
   Don't Save: Não Salvar
   Don't ask again: Não perguntar novamente
   Done: Concluído
-  Down: Para baixo
   Download update?: Baixar atualização?
   Download v{}?: Baixar v{}?
   Downloading...: Baixando...
@@ -721,7 +713,6 @@ translations:
     — ajuda a diagnosticar deslocamentos
   Drive Cal: Cal de Drive
   Drop shadow strength (0 = disabled): Intensidade da sombra (0 = desabilitado)
-  Dryer Controls: Controles do secador
   Drying: Secando
   Drying started: Secagem iniciada
   Drying stopped: Secagem interrompida
@@ -847,7 +838,6 @@ translations:
   Extruder heats automatically based on material: O extrusor aquece automaticamente
     com base no material
   FAILED: FALHOU
-  FILAMENT MAPPING: MAPEAMENTO DE FILAMENTO
   FILAMENTS: FILAMENTOS
   FILTERS: FILTROS
   Factory Reset: Restauração de Fábrica
@@ -995,13 +985,10 @@ translations:
   Filament tracking & label printing: Rastreamento de filamento e impressão de etiquetas
   Filament tracking and inventory: Rastreamento e inventário de filamento
   'Filament unload failed: {}': 'Falha ao descarregar filamento: {}'
-  Filament unloaded: Filamento descarregado
   FilamentSensor: Sensor de Filamento
   File: Arquivo
-  File Info: Informações do Arquivo
   File Size: Tamanho do Arquivo
   Filename: Nome do Arquivo
-  'Fill: 100% / 75% / 40% / 10%': 'Preenchimento: 100% / 75% / 40% / 10%'
   Fine: Fino
   Fine-Tune: Ajuste Fino
   Finish: Finalizar
@@ -1011,7 +998,6 @@ translations:
   FlashForge Adventurer 5M: FlashForge Adventurer 5M
   FlashForge Adventurer 5X: FlashForge Adventurer 5X
   FlashForge IFS: FlashForge IFS
-  Flat Concentric Rings (existing ams_slot): Anéis Concêntricos Planos (ams_slot existente)
   Flip: Inverter
   Flow: Fluxo
   Flow Compensation: 'Compensação de fluxo'
@@ -1037,7 +1023,6 @@ translations:
     tensão desigual.'
   From Buffer: Do buffer
   From Version: Da Versão
-  Front: Frente
   Full: Completo
   G-code Console: Console G-code
   G-code Preview: Visualização G-code
@@ -1046,7 +1031,6 @@ translations:
   Gear sync: Sincronização de engrenagem
   Generic: Genérico
   Get help and share feedback: Obter ajuda e enviar feedback
-  'Ghost:': 'Fantasma:'
   Good: Bom
   Good Accuracy: Boa Precisão
   Got it: Entendi
@@ -1062,7 +1046,6 @@ translations:
   Hardware: Hardware
   Hardware & Devices: Hardware e dispositivos
   Hardware Health: Saúde do Hardware
-  Hardware Issues: Problemas de Hardware
   Hardware Name: Nome do Hardware
   Hardware Profile: Perfil de Hardware
   Hardware is validated on startup and reconnection: O hardware é validado na inicialização
@@ -1137,13 +1120,11 @@ translations:
     — a impressora ainda pode estar referenciando
   Homing...: Posicionando...
   Horizontal: Horizontal
-  Horizontal Progress (Leveling Wizard): Progresso Horizontal (Assistente de Nivelamento)
   Host: Host
   'Host: ': 'Host: '
   Hotend: Hotend
   Hotend Fan: Ventoinha do Hotend
   Hotend Heater: Aquecedor do Hotend
-  Hours: Horas
   How Z-axis movement is displayed: Como o movimento do eixo Z é exibido
   How far filament is pushed back into the box on eject (mm): Quão longe o filamento
     é empurrado de volta para a caixa na ejeção (mm)
@@ -1238,7 +1219,6 @@ translations:
   Keep Navigation Bar: Manter barra de navegação
   Keep Printing: Continuar Imprimindo
   Keep Required: Manter Obrigatório
-  Keyboard Test (Gboard-style): Teste de Teclado (estilo Gboard)
   Kinematics: Cinemática
   Klipper: Klipper
   Klipper Error: Erro do Klipper
@@ -1292,7 +1272,6 @@ translations:
     de Camada captura um quadro por mudança de camada. Melhor para a maioria das impressões.
   Layer mode captures one frame per layer change. Best for most prints.: O modo por
     camada captura um quadro por mudança de camada. Melhor para a maioria das impressões.
-  'Layer:': 'Camada:'
   Layers: Camadas
   Layout: Disposição
   Learn More: Saiba Mais
@@ -1394,13 +1373,10 @@ translations:
   Map to closest colors with matching material: Mapear para cores mais próximas com
     material compatível
   Marginal: Marginal
-  Markdown Viewer: Visualizador Markdown
   Master volume level: Nível de volume principal
   Match your typical print fan speed: Ajuste a velocidade típica da ventoinha de impressão
   Material: Material
-  Material Comfort: Conforto do material
   'Material Comfort:': 'Conforto do Material:'
-  Material Design Spinner: Indicador de Carregamento Material Design
   Material Mismatch: Material Incompatível
   Material Temperatures: Temperaturas de Material
   Max: Máx
@@ -1420,7 +1396,6 @@ translations:
   Measurement Failed: Medição falhou
   Measuring Path A... %d%%: Medindo Caminho A... %d%%
   Measuring Path B... %d%%: Medindo Caminho B... %d%%
-  Mechanical setup: Configuração mecânica
   Memory: Memória
   Memory (MB): Memória (MB)
   Memory Snapshot: Captura de Memória
@@ -1483,7 +1458,6 @@ translations:
   Network Test: Teste de Rede
   Network name cannot be empty: O nome da rede não pode estar vazio
   Never: Nunca
-  'New Spool: Step ': 'Nova Bobina: Etapa '
   'New Spool: Step 1 of 3': 'Nova Bobina: Etapa 1 de 3'
   'New Spool: Step {} of {}': 'Nova Bobina: Passo {} de {}'
   New Version Available: Nova Versão Disponível
@@ -1536,7 +1510,6 @@ translations:
   No jobs in queue: Nenhum trabalho na fila
   No macro devices configured: Nenhum dispositivo de macro configurado
   No macros available: Nenhuma macro disponível
-  No macros found: Nenhuma macro encontrada
   No matching prints: Nenhuma impressão correspondente
   No media installed: Nenhuma mídia instalada
   No mesh data: Sem dados de malha
@@ -1617,8 +1590,6 @@ translations:
   Objects: Objetos
   'Off': Desligado
   'Off:': 'Desligado:'
-  Off\nFlying Toasters\nStarfield\n3D Pipes: Desligado\nTorradeiras Voadoras\nCampo
-    Estelar\nCanos 3D
   'On': Ligado
   On and Off macros must be different: Macros de Ligar e Desligar devem ser diferentes
   On/Off: Liga/Desliga
@@ -1761,7 +1732,6 @@ translations:
   Press Scan to search: Pressione Escanear para buscar
   'Pressure:': 'Pressão:'
   Preview Sounds: Visualizar Sons
-  Previous: Anterior
   Price: Preço
   Primary: Primário
   Priming...: Preparando...
@@ -1864,10 +1834,8 @@ translations:
   Profile name (e.g., default): 'Nome do perfil (ex.: padrão)'
   Profile renamed: Perfil renomeado
   Profiles: Perfis
-  Progress Bar Tests: Testes de Barra de Progresso
   Pulling filament back: Retraindo filamento
   Purge: Purgar
-  Purge complete: Purga completa
   'Purge failed: {}': 'Falha ao purgar: {}'
   Purge macro not configured: Macro de purga não configurado
   Purge may still be running — response timed out: A purga pode ainda estar em execução
@@ -1938,7 +1906,6 @@ translations:
   Refresh Interval: Intervalo de Atualização
   Release all stepper motors. Position will be lost.: Liberar todos os motores de
     passo. A posição será perdida.
-  Remaining: Restante
   Remaining (g): Restante (g)
   Remaining Weight (g): Peso Restante (g)
   Remap Tool: Remapear Ferramenta
@@ -2152,7 +2119,6 @@ translations:
   Selecting slot...: Selecionando slot...
   Selector: Seletor
   Self-Test: Autoteste
-  Semantic Size Parameter Tests: Testes de Parâmetros de Tamanho Semântico
   Send Report: Enviar Relatório
   Send commands directly to printer: Enviar comandos diretamente para a impressora
   Send this crash report to help improve HelixScreen.: Envie este relatório de erro
@@ -2197,7 +2163,6 @@ translations:
     suporte:'
   Sheet Label Print: Impressão de etiquetas em folha
   Shelf A: Prateleira A
-  'Shininess:': 'Brilho:'
   Show Printer Switcher: Mostrar Seletor de Impressora
   Show Sections: Mostrar Seções
   Show Touch Points: Mostrar pontos de toque
@@ -2214,8 +2179,6 @@ translations:
   Show up/down buttons on long lists: Mostrar botões para cima/baixo em listas longas
   Show whatever curves you last had visible on the full graph.: Mostrar as curvas
     que estavam visíveis por último no gráfico completo.
-  Showing loaded colors: Mostrando cores carregadas
-  Showing sliced colors: Mostrando cores fatiadas
   Shutdown: Desligar
   Shutdown / Reboot: Desligar / Reiniciar
   Shutdown failed: Falha ao desligar
@@ -2224,7 +2187,6 @@ translations:
   Shutting down printer...: Desligando impressora...
   Shutting down screen...: Desligando tela...
   Shutting down...: Desligando...
-  Side: Lateral
   Signal: Sinal
   'Signal #': 'Sinal #'
   Single toggle macro. State is not tracked.: Macro de alternância única. O estado
@@ -2259,7 +2221,6 @@ translations:
     Kaarlonen
   Spaghetti detected — print paused: Espaguete detectado — impressão pausada
   Speaker: Alto-falante
-  'Specular:': 'Especular:'
   Speed: Velocidade
   'Speed change failed: {}': 'Falha ao alterar velocidade: {}'
   Speed of prime movement: Velocidade do movimento de prime
@@ -2270,9 +2231,7 @@ translations:
   'Spool ': 'Bobina '
   'Spool #': 'Bobina #'
   'Spool #{}': 'Bobina #{}'
-  Spool Details: Detalhes da Bobina
   Spool Info: Info da bobina
-  Spool Visualization (Pseudo-3D Canvas): Visualização de Carretel (Canvas Pseudo-3D)
   Spool Weight (g): Peso do Carretel (g)
   Spool created successfully: Bobina criada com sucesso
   Spool deleted: Carretel excluído
@@ -2294,7 +2253,6 @@ translations:
   'Spoolman: %zu/%zu Spool%s': 'Spoolman: %zu/%zu Bobina%s'
   Square Corner Velocity: Velocidade em Cantos Retos
   Stable: Estável
-  Stable\nBeta\nDev: Estável\nBeta\nDev
   Standard: Padrão
   Standby: Em Espera
   Starfield: Campo Estelar
@@ -2322,7 +2280,6 @@ translations:
   Std Deviation: Desvio Padrão
   Step: Etapa
   Step 1 of 3: Etapa 1 de 3
-  Step Progress Widget Test: Teste do Widget de Progresso por Etapa
   Still working... taking longer than usual: Ainda processando... está demorando mais
     que o normal
   Stop: Parar
@@ -2348,7 +2305,6 @@ translations:
   Surfaces inherit app background tokens for light and dark modes.: Superfícies herdam
     tokens de fundo do aplicativo para modos claro e escuro.
   Switch Printer: Trocar Impressora
-  Switch Tests: Testes de Switch
   Switch between light and dark themes: Alternar entre temas claro e escuro
   Switched to T{}: Alterado para T{}
   Switching heater control to MPC. Klipper will restart.: Alterando controle do aquecedor
@@ -2383,7 +2339,6 @@ translations:
   Tap the crosshair (point %1$d of 3) \xe2\x80\x94 touch %2$d of %3$d: Toque na mira
     (ponto %1$d de 3) \xe2\x80\x94 toque %2$d de %3$d
   Tap to assign: Toque para atribuir
-  Tap to show keyboard...: Toque para mostrar o teclado...
   Target Frequency: Frequência alvo
   Target Temperature: Temperatura Alvo
   Target Version: Versão Alvo
@@ -2545,7 +2500,6 @@ translations:
   Tips database not found: Banco de dados de dicas não encontrado
   Toggle: Alternar
   Toggle (fire-and-forget): Alternar (sem rastreamento)
-  Toggle Feature: Alternar Recurso
   'Toggle:': 'Alternar:'
   Too humid: Muito úmido
   Tool: Ferramenta
@@ -2559,7 +2513,6 @@ translations:
   Toolhead, G-code, limits, and materials: Cabeçote, G-code, limites e materiais
   Tools Used: Ferramentas Usadas
   'Tools: ': 'Ferramentas: '
-  Top: Topo
   Total Prints: Total de Impressões
   Touch & Input: Toque e entrada
   Touch Cal: Cal de Toque
@@ -2572,7 +2525,6 @@ translations:
     (ponto %1$d de 3) \xe2\x80\x94 toque %2$d de %3$d
   TouchCalibration: Calibração do Toque
   Trace: Rastreamento
-  Travels: Deslocamentos
   Trigger: Gatilho
   'Troubleshooting:': 'Solução de Problemas:'
   Try adjusting your search or filters: Tente ajustar sua busca ou filtros
@@ -2620,7 +2572,6 @@ translations:
   Unknown Spool: Carretel Desconhecido
   Unknown Step: Etapa Desconhecida
   Unknown error: Erro desconhecido
-  Unlink: Desvincular
   Unload: Descarregar
   Unload Filament: Descarregar Filamento
   'Unload failed: {}': 'Falha ao descarregar: {}'
@@ -2637,7 +2588,6 @@ translations:
   Unretract Speed: Velocidade de Desretração
   Unsupported tape width: Largura de fita não suportada
   'Unsupported tape width: ': 'Largura de fita não suportada: '
-  Up: Para cima
   Up to date: Atualizado
   Update: Atualizar
   Update Available: Atualização Disponível
@@ -2676,14 +2626,12 @@ translations:
   Version: Versão
   Version, updates, and printer info: Versão, atualizações e informações da impressora
   Vertical: Vertical
-  Vertical Progress (Retract Wizard): Progresso Vertical (Assistente de Retração)
   Vibration: Vibração
   Vibration compensation active: Compensação de vibração ativa
   Video playback speed: Velocidade de reprodução do vídeo
   View: Visualizar
   View Changelog: Ver Registro de Alterações
   View Full History: Ver Histórico Completo
-  View Presets: Ver Predefinições
   View Telemetry Data: Ver Dados de Telemetria
   View Timelapse: Ver Timelapse
   View and rename fans: Ver e renomear ventoinhas
@@ -2755,14 +2703,12 @@ translations:
   X Offset: Offset X
   X axis applied, but Y axis failed: Eixo X aplicado, mas eixo Y falhou
   X jog blocked at bed edge: Movimento X bloqueado na borda da mesa
-  'X jog failed: {}': 'Falha no movimento X: {}'
   'X:': 'X:'
   XY: XY
   Y: Y
   Y Axis: Eixo Y
   Y Offset: Offset Y
   Y jog blocked at bed edge: Movimento Y bloqueado na borda da mesa
-  'Y jog failed: {}': 'Falha no movimento Y: {}'
   'Y:': 'Y:'
   Year: Ano
   'Yes': Sim
@@ -2788,7 +2734,6 @@ translations:
   Z Offset: Z Offset
   Z Range: Alcance Z
   Z Tilt Adjust...: Ajuste de inclinação Z...
-  'Z jog failed: {}': 'Falha no movimento Z: {}'
   Z probes for bed leveling and mesh generation: Sondas Z para nivelamento da mesa
     e geração de malha
   'Z-Off:': 'Z-Offset:'
@@ -2811,7 +2756,6 @@ translations:
   Z-offset saved - Klipper restarting...: Z-offset salvo - Klipper reiniciando...
   'Z:': 'Z:'
   'Z: 0.000': 'Z: 0.000'
-  Zoom: Zoom
   \"%s\" failed to load: \"%s\" falhou ao carregar
   bed: mesa
   by Preston Brown: por Preston Brown
