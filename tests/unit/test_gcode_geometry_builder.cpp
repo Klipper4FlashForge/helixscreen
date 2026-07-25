@@ -1189,3 +1189,40 @@ TEST_CASE("Geometry Builder: affine dequantization matches the matrix fold",
         CHECK(gpu.w == Approx(1.0f));
     }
 }
+
+TEST_CASE("Geometry Builder: moving RibbonGeometry preserves every member",
+          "[gcode][geometry][move]") {
+    // The move operations are hand-written, so a member added to the struct is
+    // silently dropped unless it is also added here. layer_height_mm was being
+    // reset to its 0.2f default on every move — and ui_gcode_viewer moves the
+    // built geometry into its owning pointer, so the real renderer never saw a
+    // non-default layer height.
+    RibbonGeometry src;
+    src.layer_height_mm = 0.32f;
+    src.max_layer_index = 7;
+    src.quantization.scale_factor = 123.5f;
+    src.quantization.min_bounds = {1.0f, 2.0f, 3.0f};
+    src.prepared_buffers.resize(3);
+    src.prepared_buffers[1].vertex_count = 42;
+    src.prepared_buffers[1].data.assign(42 * PackedVertex::stride(), uint8_t{7});
+
+    SECTION("move construction") {
+        RibbonGeometry dst(std::move(src));
+        CHECK(dst.layer_height_mm == Approx(0.32f));
+        CHECK(dst.max_layer_index == 7);
+        CHECK(dst.quantization.scale_factor == Approx(123.5f));
+        REQUIRE(dst.prepared_buffers.size() == 3);
+        CHECK(dst.prepared_buffers[1].vertex_count == 42);
+        CHECK(dst.prepared_buffers[1].data.size() == 42 * PackedVertex::stride());
+    }
+
+    SECTION("move assignment") {
+        RibbonGeometry dst;
+        dst = std::move(src);
+        CHECK(dst.layer_height_mm == Approx(0.32f));
+        CHECK(dst.max_layer_index == 7);
+        CHECK(dst.quantization.scale_factor == Approx(123.5f));
+        REQUIRE(dst.prepared_buffers.size() == 3);
+        CHECK(dst.prepared_buffers[1].vertex_count == 42);
+    }
+}

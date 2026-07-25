@@ -869,31 +869,8 @@ void GCodeGLESRenderer::upload_geometry(const RibbonGeometry& geom, std::vector<
             buf.resize(buf_bytes);
         }
 
-        auto* out = reinterpret_cast<PackedVertex*>(buf.data());
-        for (size_t s = 0; s < strip_count; ++s) {
-            const auto& strip = geom.strips[first_strip + s];
-            // Strip order: BL(0), BR(1), TL(2), TR(3)
-            // Triangle 1: BL-BR-TL,  Triangle 2: BR-TR-TL
-            static constexpr int kTriIndices[6] = {0, 1, 2, 1, 3, 2};
-
-            for (int ti = 0; ti < 6; ++ti) {
-                const auto& vert = geom.vertices[strip[static_cast<size_t>(kTriIndices[ti])]];
-                const glm::vec3& normal = geom.normal_palette[vert.normal_index];
-
-                // Quantized straight through; dequantization is folded into the matrices.
-                out->position[0] = vert.position.x;
-                out->position[1] = vert.position.y;
-                out->position[2] = vert.position.z;
-
-                uint32_t rgb = 0x26A69A; // Default teal
-                if (vert.color_index < geom.color_palette.size()) {
-                    rgb = geom.color_palette[vert.color_index];
-                }
-                PackedVertex::encode_color(rgb, out->color);
-                PackedVertex::encode_normal(normal, out->normal);
-                ++out;
-            }
-        }
+        geom.expand_strips(first_strip, strip_count,
+                           reinterpret_cast<PackedVertex*>(buf.data()));
 
         GLBufferHandle vbo_handle;
         glGenBuffers(1, &vbo_handle.id);
@@ -980,29 +957,8 @@ bool GCodeGLESRenderer::upload_geometry_chunk(const RibbonGeometry& geom,
                 buf.resize(buf_bytes);
             }
 
-            auto* out = reinterpret_cast<PackedVertex*>(buf.data());
-            for (size_t s = 0; s < strip_count; ++s) {
-                const auto& strip = geom.strips[first_strip + s];
-                static constexpr int kTriIndices[6] = {0, 1, 2, 1, 3, 2};
-
-                for (int ti = 0; ti < 6; ++ti) {
-                    const auto& vert = geom.vertices[strip[static_cast<size_t>(kTriIndices[ti])]];
-                    const glm::vec3& normal = geom.normal_palette[vert.normal_index];
-
-                    // Quantized straight through; dequantization is folded into the matrices.
-                    out->position[0] = vert.position.x;
-                    out->position[1] = vert.position.y;
-                    out->position[2] = vert.position.z;
-
-                    uint32_t rgb = 0x26A69A;
-                    if (vert.color_index < geom.color_palette.size()) {
-                        rgb = geom.color_palette[vert.color_index];
-                    }
-                    PackedVertex::encode_color(rgb, out->color);
-                    PackedVertex::encode_normal(normal, out->normal);
-                    ++out;
-                }
-            }
+            geom.expand_strips(first_strip, strip_count,
+                               reinterpret_cast<PackedVertex*>(buf.data()));
 
             GLBufferHandle vbo_handle;
             glGenBuffers(1, &vbo_handle.id);

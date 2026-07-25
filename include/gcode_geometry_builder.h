@@ -100,6 +100,11 @@ struct QuantizationParams {
  * Centralizes the vertex attribute layout so upload code (geometry builder)
  * and draw code (renderer) stay in sync.
  */
+/// Fallback toolpath color (teal) used when a vertex's color_index has no
+/// entry in the palette. Not to be confused with GCodeGLESRenderer's
+/// kDefaultFilamentColor, which is the same shade as a normalized glm::vec4.
+constexpr uint32_t kDefaultToolpathColor = 0x26A69A;
+
 struct PackedVertex {
     /// Quantized position, uploaded as GL_SHORT *unnormalized* and turned back
     /// into millimetres on the GPU. Dequantization is affine
@@ -276,11 +281,24 @@ struct RibbonGeometry {
     std::vector<PreparedLayerBuffer> prepared_buffers;
 
     /**
+     * @brief Expand a run of triangle strips into packed GPU vertices.
+     *
+     * Each strip becomes 6 vertices (two triangles), so @p out must have room
+     * for `strip_count * 6` PackedVertex entries.
+     *
+     * Single definition of the strip→vertex expansion, shared by
+     * prepare_interleaved_buffers() and both of the renderer's upload paths.
+     * These had drifted as three hand-maintained copies of the same loop, so a
+     * change to the vertex layout meant finding every one of them.
+     */
+    void expand_strips(size_t first_strip, size_t strip_count, PackedVertex* out) const;
+
+    /**
      * @brief Pre-compute interleaved vertex buffers for GPU upload.
      *
      * Call from background thread after build(). Expands strips into the
-     * packed 20-byte PackedVertex layout per layer. The renderer can then
-     * upload directly to VBOs without CPU work.
+     * packed PackedVertex layout per layer. The renderer can then upload
+     * directly to VBOs without CPU work.
      */
     void prepare_interleaved_buffers();
 

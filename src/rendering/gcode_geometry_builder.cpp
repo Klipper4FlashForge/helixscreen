@@ -149,8 +149,10 @@ RibbonGeometry::RibbonGeometry(RibbonGeometry&& other) noexcept
       layer_strip_ranges(std::move(other.layer_strip_ranges)),
       max_layer_index(other.max_layer_index), layer_bboxes(std::move(other.layer_bboxes)),
       normal_cache(std::move(other.normal_cache)), color_cache(std::move(other.color_cache)),
+      prepared_buffers(std::move(other.prepared_buffers)),
       extrusion_triangle_count(other.extrusion_triangle_count),
-      travel_triangle_count(other.travel_triangle_count), quantization(other.quantization) {}
+      travel_triangle_count(other.travel_triangle_count), quantization(other.quantization),
+      layer_height_mm(other.layer_height_mm) {}
 
 RibbonGeometry& RibbonGeometry::operator=(RibbonGeometry&& other) noexcept {
     if (this != &other) {
@@ -167,11 +169,43 @@ RibbonGeometry& RibbonGeometry::operator=(RibbonGeometry&& other) noexcept {
         max_layer_index = other.max_layer_index;
         normal_cache = std::move(other.normal_cache);
         color_cache = std::move(other.color_cache);
+        prepared_buffers = std::move(other.prepared_buffers);
         extrusion_triangle_count = other.extrusion_triangle_count;
         travel_triangle_count = other.travel_triangle_count;
         quantization = other.quantization;
+        layer_height_mm = other.layer_height_mm;
     }
     return *this;
+}
+
+void RibbonGeometry::expand_strips(size_t first_strip, size_t strip_count,
+                                   PackedVertex* out) const {
+    // Strip order: BL(0), BR(1), TL(2), TR(3)
+    // Triangle 1: BL-BR-TL,  Triangle 2: BR-TR-TL
+    static constexpr int kTriIndices[6] = {0, 1, 2, 1, 3, 2};
+
+    for (size_t s = 0; s < strip_count; ++s) {
+        const auto& strip = strips[first_strip + s];
+
+        for (int ti = 0; ti < 6; ++ti) {
+            const auto& vert = vertices[strip[static_cast<size_t>(kTriIndices[ti])]];
+            const glm::vec3& normal = normal_palette[vert.normal_index];
+
+            // Quantized coordinates go to the GPU as-is; the renderer folds the
+            // dequantization into its matrices.
+            out->position[0] = vert.position.x;
+            out->position[1] = vert.position.y;
+            out->position[2] = vert.position.z;
+
+            uint32_t rgb = kDefaultToolpathColor;
+            if (vert.color_index < color_palette.size()) {
+                rgb = color_palette[vert.color_index];
+            }
+            PackedVertex::encode_color(rgb, out->color);
+            PackedVertex::encode_normal(normal, out->normal);
+            ++out;
+        }
+    }
 }
 
 void RibbonGeometry::prepare_interleaved_buffers() {
@@ -204,31 +238,8 @@ void RibbonGeometry::prepare_interleaved_buffers() {
         prepared.vertex_count = total_verts;
         prepared.data.resize(total_verts * kStride);
 
-        static constexpr int kTriIndices[6] = {0, 1, 2, 1, 3, 2};
-        auto* out = reinterpret_cast<PackedVertex*>(prepared.data.data());
-
-        for (size_t s = 0; s < strip_count; ++s) {
-            const auto& strip = strips[first_strip + s];
-
-            for (int ti = 0; ti < 6; ++ti) {
-                const auto& vert = vertices[strip[static_cast<size_t>(kTriIndices[ti])]];
-                const glm::vec3& normal = normal_palette[vert.normal_index];
-
-                // Quantized coordinates go to the GPU as-is; the renderer folds
-                // the dequantization into its matrices.
-                out->position[0] = vert.position.x;
-                out->position[1] = vert.position.y;
-                out->position[2] = vert.position.z;
-
-                uint32_t rgb = 0x26A69A; // Default teal
-                if (vert.color_index < color_palette.size()) {
-                    rgb = color_palette[vert.color_index];
-                }
-                PackedVertex::encode_color(rgb, out->color);
-                PackedVertex::encode_normal(normal, out->normal);
-                ++out;
-            }
-        }
+        expand_strips(first_strip, strip_count,
+                      reinterpret_cast<PackedVertex*>(prepared.data.data()));
     }
 
     spdlog::debug("[GCode Geometry] Prepared {} layer buffers for GPU upload", num_layers);
@@ -246,6 +257,10 @@ void RibbonGeometry::patch_prepared_buffer_colors() {
         return;
     }
 
+    // Same traversal order as expand_strips(), but rewrites only the color bytes
+    // in place rather than re-emitting whole vertices — the point is to avoid
+    // regenerating megabytes of buffer for a recolor. Any change to the vertex
+    // ordering in expand_strips() must be mirrored here.
     static constexpr int kTriIndices[6] = {0, 1, 2, 1, 3, 2};
 
     for (size_t layer = 0; layer < num_layers; ++layer) {
@@ -269,7 +284,7 @@ void RibbonGeometry::patch_prepared_buffer_colors() {
             const auto& strip = strips[first_strip + s];
             for (int ti = 0; ti < 6; ++ti) {
                 const auto& vert = vertices[strip[static_cast<size_t>(kTriIndices[ti])]];
-                uint32_t rgb = 0x26A69A;
+                uint32_t rgb = kDefaultToolpathColor;
                 if (vert.color_index < color_palette.size()) {
                     rgb = color_palette[vert.color_index];
                 }
