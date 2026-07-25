@@ -115,13 +115,13 @@ teardown_file() {
 }
 
 @test "--json result is parseable and structured for object results" {
-    run "$BIN" ctl -s "$SOCK" --json get_current
+    run "$BIN" ctl -s "$SOCK" --json current
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.panel' >/dev/null
 }
 
 @test "--json emits one line, not pretty-printed" {
-    run "$BIN" ctl -s "$SOCK" --json get_current
+    run "$BIN" ctl -s "$SOCK" --json current
     [ "$status" -eq 0 ]
     [ "$(echo "$output" | wc -l)" -eq 1 ]
 }
@@ -237,7 +237,7 @@ produces a sentence rather than a protocol object.
 
 The REPL ignores `--json` — formatted output is the reason the REPL exists.
 
-    helix-screen ctl --json get_current | jq -r .panel
+    helix-screen ctl --json current | jq -r .panel
 ```
 
 - [ ] **Step 8: Commit**
@@ -495,7 +495,8 @@ class HelixApp:
         return self.ctl("set", subject, value)
 
     def current(self) -> dict:
-        return self.ctl("get_current")
+        # CLI token is `current`; `get_current` is the wire method name.
+        return self.ctl("current")
 
     def log(self, n: int = 50) -> list[str]:
         result = self.ctl("log", "-n", n)
