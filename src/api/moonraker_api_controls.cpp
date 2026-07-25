@@ -435,11 +435,17 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
         // announce it ONCE per blocking episode so a late-firing change isn't a
         // surprise. #1108.
         //
-        // Trade-off: dropping the caller's callbacks means a command that Klipper
-        // genuinely rejects when it finally runs (e.g. a macro emitting an out-of-
-        // range target) surfaces no error — same as the silent-queue frontends. The
-        // controls path stamps no motion activity, so there is no inflight/counter
-        // to leak by skipping the callbacks.
+        // Callers may hold an in-flight counter keyed to these callbacks and will
+        // wedge if neither fires — LedController::note_command_dispatched() bumps
+        // a counter at dispatch and only decrements it from on_success/on_error,
+        // driving the `led_command_in_flight` subject that disables the light
+        // buttons. Dropping both callbacks left that counter stuck at >=1 until the
+        // printer disconnected, greying the buttons out for the whole session
+        // (#1129). So the caller is settled via on_success below: the command WAS
+        // accepted for execution and Klipper will run it once the gcode lock frees.
+        // What is genuinely dropped is only the RPC *response* — a late rejection
+        // (e.g. a macro emitting an out-of-range target) surfaces no error, same as
+        // the silent-queue frontends. Never let that mean the caller never settles.
         if (state_.claim_busy_queue_toast()) {
             NOTIFY_INFO("Printer is busy — your {} will run when it's ready.",
                         helix::discretionary_gcode_noun(gcode));
@@ -450,6 +456,11 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
                       queued);
         client_.send_jsonrpc("printer.gcode.script", queued_params, nullptr, nullptr, timeout_ms,
                              /*silent=*/true);
+        // Settle the CALLER's callback directly, not via the RPC response — waiting
+        // on the response is exactly the ~60s timeout toast #1108 removed.
+        if (on_success) {
+            on_success();
+        }
         return;
     }
 

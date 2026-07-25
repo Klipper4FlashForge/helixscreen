@@ -112,6 +112,63 @@ TEST_CASE_METHOD(BusyGuardApiFixture,
 }
 
 // ============================================================================
+// The queued path must still SETTLE the caller's callbacks (#1129)
+// ============================================================================
+
+TEST_CASE_METHOD(BusyGuardApiFixture,
+                 "queued discretionary gcode settles exactly one caller callback",
+                 "[busy_guard][mock][led]") {
+    // #1129: the queue-fire-and-forget path dropped BOTH on_success and on_error.
+    // Callers that pair a dispatch counter with those callbacks (LedController's
+    // note_command_dispatched/note_command_settled, which drives the
+    // led_command_in_flight subject the light buttons disable on) then never
+    // settle — the buttons grey out permanently until the printer disconnects.
+    // The contract this pins: execute_gcode ALWAYS invokes exactly one of the two
+    // callbacks, on every return path.
+    set_idle_printing(true); // homing/leveling holds the gcode lock
+    set_print_state(PrintJobState::STANDBY);
+
+    int success_calls = 0;
+
+    SECTION("raw SET_LED through execute_gcode") {
+        api->execute_gcode(
+            "SET_LED LED=my_leds RED=1.00 GREEN=1.00 BLUE=1.00 SYNC=0 TRANSMIT=1",
+            [&success_calls]() { success_calls++; },
+            [this](const MoonrakerError& err) { error_cb(err); });
+
+        // Still queued fire-and-forget — the fix must not un-queue the command.
+        REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
+        CHECK_FALSE(mock_client.gcode_script_history().empty());
+
+        // Exactly one callback settles the caller.
+        CHECK(success_calls + (error_called ? 1 : 0) == 1);
+        CHECK(success_calls == 1);
+        CHECK_FALSE(error_called);
+    }
+
+    SECTION("set_led() — the real LedController route") {
+        api->set_led(
+            "my_leds", 1.0, 0.5, 0.25, 0.0, [&success_calls]() { success_calls++; },
+            [this](const MoonrakerError& err) { error_cb(err); });
+
+        REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
+        CHECK(success_calls + (error_called ? 1 : 0) == 1);
+        CHECK(success_calls == 1);
+        CHECK_FALSE(error_called);
+    }
+
+    SECTION("fan command settles too") {
+        api->execute_gcode(
+            "M106 S255", [&success_calls]() { success_calls++; },
+            [this](const MoonrakerError& err) { error_cb(err); });
+
+        REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
+        CHECK(success_calls == 1);
+        CHECK_FALSE(error_called);
+    }
+}
+
+// ============================================================================
 // A physical MOVE is still REFUSED while a blocking op is active
 // ============================================================================
 
