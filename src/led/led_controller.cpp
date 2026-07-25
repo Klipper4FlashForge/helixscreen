@@ -1652,66 +1652,34 @@ void LedController::load_config() {
         return;
     }
 
-    // === One-time migration from old /led/ paths ===
-    auto& old_strips = cfg->get_json("/led/selected_strips");
-    if (old_strips.is_array() && !old_strips.empty()) {
-        auto& new_strips = cfg->get_json(cfg->df() + "leds/selected_strips");
-        if (!new_strips.is_array() || new_strips.empty()) {
-            spdlog::info("[LedController] Migrating config from /led/ to active printer leds/");
-            cfg->set(cfg->df() + "leds/selected_strips", old_strips);
-
-            auto& old_color_json = cfg->get_json("/led/last_color");
-            if (old_color_json.is_number()) {
-                cfg->set(cfg->df() + "leds/last_color", old_color_json.get<int>());
-            }
-            auto& old_brightness_json = cfg->get_json("/led/last_brightness");
-            if (old_brightness_json.is_number()) {
-                cfg->set(cfg->df() + "leds/last_brightness", old_brightness_json.get<int>());
-            }
-            auto& old_presets = cfg->get_json("/led/color_presets");
-            if (old_presets.is_array() && !old_presets.empty()) {
-                cfg->set(cfg->df() + "leds/color_presets", old_presets);
-            }
-            auto& old_macros = cfg->get_json("/led/macro_devices");
-            if (old_macros.is_array() && !old_macros.empty()) {
-                cfg->set(cfg->df() + "leds/macro_devices", old_macros);
-            }
-            cfg->save();
-        }
-    }
+    // NOTE: the one-time fold of the legacy top-level /led block into the
+    // active printer's leds/ section lives in migrate_v19_to_v20() (config.cpp).
+    // It used to run here on every load_config(), and its get_json() probes
+    // re-created the /led orphan on every boot (#1129).
 
     // Selected strips
-    selected_strips_.clear();
-    auto& strips_json = cfg->get_json(cfg->df() + "leds/selected_strips");
-    if (strips_json.is_array()) {
-        for (const auto& s : strips_json) {
-            if (s.is_string()) {
-                selected_strips_.push_back(s.get<std::string>());
-            }
-        }
-    }
+    selected_strips_ = cfg->get_string_array(cfg->df() + "leds/selected_strips");
 
     // Legacy migration: leds/selected (JSON array from old SettingsManager)
     if (selected_strips_.empty()) {
-        auto& legacy_selected = cfg->get_json(cfg->df() + "leds/selected");
-        if (legacy_selected.is_array()) {
-            for (const auto& s : legacy_selected) {
-                if (s.is_string() && !s.get<std::string>().empty()) {
-                    selected_strips_.push_back(s.get<std::string>());
-                }
+        for (auto& s : cfg->get_string_array(cfg->df() + "leds/selected")) {
+            if (!s.empty()) {
+                selected_strips_.push_back(std::move(s));
             }
-            if (!selected_strips_.empty()) {
-                spdlog::info("[LedController] Migrated {} strip(s) from leds/selected",
-                             selected_strips_.size());
-            }
+        }
+        if (!selected_strips_.empty()) {
+            spdlog::info("[LedController] Migrated {} strip(s) from leds/selected",
+                         selected_strips_.size());
         }
     }
 
     // Legacy migration: leds/strip (single string, oldest format)
     if (selected_strips_.empty()) {
-        auto& legacy_strip_json = cfg->get_json(cfg->df() + "leds/strip");
+        const nlohmann::json* legacy_strip_json = cfg->try_get_json(cfg->df() + "leds/strip");
         std::string legacy_strip =
-            legacy_strip_json.is_string() ? legacy_strip_json.get<std::string>() : "";
+            (legacy_strip_json != nullptr && legacy_strip_json->is_string())
+                ? legacy_strip_json->get<std::string>()
+                : "";
         if (!legacy_strip.empty()) {
             selected_strips_.push_back(legacy_strip);
             spdlog::info("[LedController] Migrated legacy single strip: {}", legacy_strip);
@@ -1719,19 +1687,23 @@ void LedController::load_config() {
     }
 
     // Last color & brightness
-    auto& color_json = cfg->get_json(cfg->df() + "leds/last_color");
-    last_color_.rgb = parse_json_color(color_json, 0xFFFFFF);
-    auto& brightness_json = cfg->get_json(cfg->df() + "leds/last_brightness");
-    last_brightness_ = brightness_json.is_number() ? brightness_json.get<int>() : 100;
-    auto& white_json = cfg->get_json(cfg->df() + "leds/last_white");
-    last_color_.white =
-        white_json.is_number() ? std::clamp(white_json.get<double>(), 0.0, 1.0) : 0.0;
+    const nlohmann::json* color_json = cfg->try_get_json(cfg->df() + "leds/last_color");
+    last_color_.rgb =
+        color_json != nullptr ? parse_json_color(*color_json, 0xFFFFFF) : 0xFFFFFFu;
+    const nlohmann::json* brightness_json = cfg->try_get_json(cfg->df() + "leds/last_brightness");
+    last_brightness_ = (brightness_json != nullptr && brightness_json->is_number())
+                           ? brightness_json->get<int>()
+                           : 100;
+    const nlohmann::json* white_json = cfg->try_get_json(cfg->df() + "leds/last_white");
+    last_color_.white = (white_json != nullptr && white_json->is_number())
+                            ? std::clamp(white_json->get<double>(), 0.0, 1.0)
+                            : 0.0;
 
     // Color presets
     color_presets_.clear();
-    auto& presets_json = cfg->get_json(cfg->df() + "leds/color_presets");
-    if (presets_json.is_array()) {
-        for (const auto& p : presets_json) {
+    const nlohmann::json* presets_json = cfg->try_get_json(cfg->df() + "leds/color_presets");
+    if (presets_json != nullptr && presets_json->is_array()) {
+        for (const auto& p : *presets_json) {
             uint32_t c = parse_json_color(p, UINT32_MAX);
             if (c != UINT32_MAX) {
                 color_presets_.push_back(c);
@@ -1745,9 +1717,9 @@ void LedController::load_config() {
 
     // Configured macros
     configured_macros_.clear();
-    auto& macros_json = cfg->get_json(cfg->df() + "leds/macro_devices");
-    if (macros_json.is_array()) {
-        for (const auto& m : macros_json) {
+    const nlohmann::json* macros_json = cfg->try_get_json(cfg->df() + "leds/macro_devices");
+    if (macros_json != nullptr && macros_json->is_array()) {
+        for (const auto& m : *macros_json) {
             if (!m.is_object()) {
                 continue;
             }
@@ -1865,13 +1837,16 @@ void LedController::load_config() {
     }
 
     // LED on at start preference
-    auto& on_at_start_json = cfg->get_json(cfg->df() + "leds/led_on_at_start");
-    led_on_at_start_ = on_at_start_json.is_boolean() ? on_at_start_json.get<bool>() : false;
+    const nlohmann::json* on_at_start_json = cfg->try_get_json(cfg->df() + "leds/led_on_at_start");
+    led_on_at_start_ =
+        on_at_start_json != nullptr && on_at_start_json->is_boolean() && on_at_start_json->get<bool>();
 
-    auto& startup_brightness_json = cfg->get_json(cfg->df() + "leds/startup_brightness");
-    startup_brightness_ = startup_brightness_json.is_number_integer()
-                              ? std::clamp(startup_brightness_json.get<int>(), 0, 100)
-                              : 80;
+    const nlohmann::json* startup_brightness_json =
+        cfg->try_get_json(cfg->df() + "leds/startup_brightness");
+    startup_brightness_ =
+        (startup_brightness_json != nullptr && startup_brightness_json->is_number_integer())
+            ? std::clamp(startup_brightness_json->get<int>(), 0, 100)
+            : 80;
 
     spdlog::debug("[LedController] Loaded config: {} strips, {} presets, {} macros",
                   selected_strips_.size(), color_presets_.size(), configured_macros_.size());

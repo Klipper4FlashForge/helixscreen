@@ -348,9 +348,9 @@ void ProbeSensorManager::load_config_from_file() {
     std::string base_path = cfg->df() + "probe_sensors";
 
     try {
-        json& sensors_json = cfg->get_json(base_path + "/sensors");
-        if (sensors_json.is_array()) {
-            for (const auto& sensor_json : sensors_json) {
+        const json* sensors_node = cfg->try_get_json(base_path + "/sensors");
+        if (sensors_node != nullptr && sensors_node->is_array()) {
+            for (const auto& sensor_json : *sensors_node) {
                 if (!sensor_json.contains("klipper_name")) {
                     continue;
                 }

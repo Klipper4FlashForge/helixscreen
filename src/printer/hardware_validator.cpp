@@ -266,14 +266,15 @@ std::optional<HardwareSnapshot> HardwareValidator::load_session_snapshot(Config*
         return std::nullopt;
     }
 
+    // from_json() parses untrusted on-disk data — keep the catch.
     try {
-        json& snapshot_json = config->get_json(config->df() + "hardware/last_snapshot");
-        if (snapshot_json.is_null() || snapshot_json.empty()) {
+        const json* snapshot_json = config->try_get_json(config->df() + "hardware/last_snapshot");
+        if (snapshot_json == nullptr || snapshot_json->is_null() || snapshot_json->empty()) {
             spdlog::debug("[HardwareValidator] No previous session snapshot found");
             return std::nullopt;
         }
 
-        auto snapshot = HardwareSnapshot::from_json(snapshot_json);
+        auto snapshot = HardwareSnapshot::from_json(*snapshot_json);
         if (snapshot.is_empty()) {
             return std::nullopt;
         }
@@ -292,22 +293,10 @@ bool HardwareValidator::is_hardware_optional(Config* config, const std::string& 
         return false;
     }
 
-    try {
-        json& optional_list = config->get_json(config->df() + "hardware/optional");
-        if (optional_list.is_null() || !optional_list.is_array()) {
-            return false;
-        }
-
-        for (const auto& item : optional_list) {
-            if (item.is_string() && item.get<std::string>() == hardware_name) {
-                return true;
-            }
-        }
-    } catch (const std::exception& e) {
-        spdlog::trace("[HardwareValidator] Error checking optional status: {}", e.what());
-    }
-
-    return false;
+    // Read-only probe — get_string_array() never creates the node (#1129).
+    const auto optional_list = config->get_string_array(config->df() + "hardware/optional");
+    return std::find(optional_list.begin(), optional_list.end(), hardware_name) !=
+           optional_list.end();
 }
 
 void HardwareValidator::set_hardware_optional(Config* config, const std::string& hardware_name,
@@ -320,8 +309,7 @@ void HardwareValidator::set_hardware_optional(Config* config, const std::string&
         // Ensure the hardware/optional array exists
         json& optional_list = config->get_json(config->df() + "hardware/optional");
         if (optional_list.is_null() || !optional_list.is_array()) {
-            config->set<json>(config->df() + "hardware/optional", json::array());
-            optional_list = config->get_json(config->df() + "hardware/optional");
+            optional_list = json::array();
         }
 
         // Find if already in list
@@ -354,8 +342,7 @@ void HardwareValidator::add_expected_hardware(Config* config, const std::string&
         // Ensure the hardware/expected array exists
         json& expected_list = config->get_json(config->df() + "hardware/expected");
         if (expected_list.is_null() || !expected_list.is_array()) {
-            config->set<json>(config->df() + "hardware/expected", json::array());
-            expected_list = config->get_json(config->df() + "hardware/expected");
+            expected_list = json::array();
         }
 
         // Check if already in list
@@ -488,28 +475,21 @@ void HardwareValidator::validate_configured_hardware(Config* config,
     }
 
     // Check configured LEDs (array format: LED_SELECTED, legacy single: LED_STRIP)
-    try {
-        std::vector<std::string> configured_leds;
-
+    {
         // Try new array format first
-        json& led_selected = config->get_json(config->df() + helix::wizard::LED_SELECTED);
-        if (!led_selected.is_null() && led_selected.is_array()) {
-            for (const auto& item : led_selected) {
-                if (item.is_string()) {
-                    std::string name = item.get<std::string>();
-                    if (!name.empty()) {
-                        configured_leds.push_back(name);
-                    }
-                }
-            }
-        }
+        std::vector<std::string> configured_leds =
+            config->get_string_array(config->df() + helix::wizard::LED_SELECTED);
+        configured_leds.erase(
+            std::remove_if(configured_leds.begin(), configured_leds.end(),
+                           [](const std::string& n) { return n.empty(); }),
+            configured_leds.end());
 
         // Fall back to legacy single string
         if (configured_leds.empty()) {
-            std::string led_strip =
-                config->get<std::string>(config->df() + helix::wizard::LED_STRIP, "");
-            if (!led_strip.empty()) {
-                configured_leds.push_back(led_strip);
+            const json* led_strip = config->try_get_json(config->df() + helix::wizard::LED_STRIP);
+            if (led_strip != nullptr && led_strip->is_string() &&
+                !led_strip->get<std::string>().empty()) {
+                configured_leds.push_back(led_strip->get<std::string>());
             }
         }
 
@@ -519,16 +499,16 @@ void HardwareValidator::validate_configured_hardware(Config* config,
                     led_name, HardwareType::LED, "Configured LED strip not found"));
             }
         }
-    } catch (...) {
     }
 
     // Check configured filament sensors
-    try {
-        json& sensors_config = config->get_json(config->df() + "filament_sensors/sensors");
-        if (sensors_config.is_array()) {
-            for (const auto& sensor : sensors_config) {
-                if (sensor.is_object() && sensor.contains("name")) {
-                    std::string sensor_name = sensor["name"].get<std::string>();
+    {
+        const json* sensors_config =
+            config->try_get_json(config->df() + "filament_sensors/sensors");
+        if (sensors_config != nullptr && sensors_config->is_array()) {
+            for (const auto& sensor : *sensors_config) {
+                if (sensor.is_object() && sensor.value("name", "") != "") {
+                    std::string sensor_name = sensor.value("name", "");
                     if (!contains_name(filament_sensors, sensor_name) &&
                         !is_hardware_optional(config, sensor_name)) {
                         result.expected_missing.push_back(
@@ -538,19 +518,13 @@ void HardwareValidator::validate_configured_hardware(Config* config,
                 }
             }
         }
-    } catch (...) {
     }
 
     // Check expected hardware array (includes AMS and other generic hardware)
     // Items are added by wizard completion
-    try {
-        json& expected_list = config->get_json(config->df() + "hardware/expected");
-        if (expected_list.is_array()) {
-            for (const auto& item : expected_list) {
-                if (!item.is_string())
-                    continue;
-
-                std::string hw_name = item.get<std::string>();
+    {
+        for (const auto& hw_name : config->get_string_array(config->df() + "hardware/expected")) {
+            {
                 if (hw_name.empty())
                     continue;
 
@@ -581,8 +555,6 @@ void HardwareValidator::validate_configured_hardware(Config* config,
                 // Non-AMS hardware is already checked above via specific config paths
             }
         }
-    } catch (const std::exception& e) {
-        spdlog::debug("[HardwareValidator] Error checking expected hardware: {}", e.what());
     }
 }
 
@@ -592,17 +564,7 @@ void HardwareValidator::validate_new_hardware(Config* config,
     // Load hardware/expected list — items the user has already acknowledged via Save
     std::vector<std::string> expected_hardware;
     if (config) {
-        try {
-            json& expected_list = config->get_json(config->df() + "hardware/expected");
-            if (expected_list.is_array()) {
-                for (const auto& item : expected_list) {
-                    if (item.is_string()) {
-                        expected_hardware.push_back(item.get<std::string>());
-                    }
-                }
-            }
-        } catch (...) {
-        }
+        expected_hardware = config->get_string_array(config->df() + "hardware/expected");
     }
 
     const auto& leds = hardware.leds();
@@ -611,21 +573,14 @@ void HardwareValidator::validate_new_hardware(Config* config,
     // Only suggest if user hasn't configured any LED yet
     bool has_configured_led = false;
     if (config) {
-        try {
-            // Try new array format first
-            json& led_selected = config->get_json(config->df() + helix::wizard::LED_SELECTED);
-            if (!led_selected.is_null() && led_selected.is_array() && !led_selected.empty()) {
-                has_configured_led = true;
-            }
-            // Fall back to legacy single string
-            if (!has_configured_led) {
-                std::string led_strip =
-                    config->get<std::string>(config->df() + helix::wizard::LED_STRIP, "");
-                if (!led_strip.empty()) {
-                    has_configured_led = true;
-                }
-            }
-        } catch (...) {
+        // Try new array format first
+        has_configured_led =
+            !config->get_string_array(config->df() + helix::wizard::LED_SELECTED).empty();
+        // Fall back to legacy single string
+        if (!has_configured_led) {
+            const json* led_strip = config->try_get_json(config->df() + helix::wizard::LED_STRIP);
+            has_configured_led = led_strip != nullptr && led_strip->is_string() &&
+                                 !led_strip->get<std::string>().empty();
         }
     }
 
@@ -690,17 +645,14 @@ void HardwareValidator::validate_new_hardware(Config* config,
     std::vector<std::string> configured_names;
 
     if (config) {
-        try {
-            json& sensors_config = config->get_json(config->df() + "filament_sensors/sensors");
-            if (sensors_config.is_array()) {
-                for (const auto& sensor : sensors_config) {
-                    if (sensor.is_object() && sensor.contains("klipper_name")) {
-                        configured_names.push_back(sensor["klipper_name"].get<std::string>());
-                    }
+        const json* sensors_config =
+            config->try_get_json(config->df() + "filament_sensors/sensors");
+        if (sensors_config != nullptr && sensors_config->is_array()) {
+            for (const auto& sensor : *sensors_config) {
+                if (sensor.is_object() && sensor.value("klipper_name", "") != "") {
+                    configured_names.push_back(sensor.value("klipper_name", ""));
                 }
             }
-        } catch (...) {
-            // No config, configured_names stays empty
         }
     }
 
@@ -809,33 +761,19 @@ void HardwareValidator::log_ignored_hardware(Config* config) {
         return;
     }
 
-    try {
-        json& optional_list = config->get_json(config->df() + "hardware/optional");
-        if (optional_list.is_null() || !optional_list.is_array() || optional_list.empty()) {
-            return;
-        }
-
-        std::vector<std::string> names;
-        names.reserve(optional_list.size());
-        for (const auto& item : optional_list) {
-            if (item.is_string()) {
-                names.push_back(item.get<std::string>());
-            }
-        }
-        if (names.empty()) {
-            return;
-        }
-
-        std::stringstream joined;
-        for (size_t i = 0; i < names.size(); ++i) {
-            if (i > 0) {
-                joined << ", ";
-            }
-            joined << names[i];
-        }
-        spdlog::info("[HardwareValidator] {} hardware item(s) silenced (ignored): {}", names.size(),
-                     joined.str());
-    } catch (const std::exception& e) {
-        spdlog::trace("[HardwareValidator] Error reading optional list: {}", e.what());
+    const std::vector<std::string> names =
+        config->get_string_array(config->df() + "hardware/optional");
+    if (names.empty()) {
+        return;
     }
+
+    std::stringstream joined;
+    for (size_t i = 0; i < names.size(); ++i) {
+        if (i > 0) {
+            joined << ", ";
+        }
+        joined << names[i];
+    }
+    spdlog::info("[HardwareValidator] {} hardware item(s) silenced (ignored): {}", names.size(),
+                 joined.str());
 }

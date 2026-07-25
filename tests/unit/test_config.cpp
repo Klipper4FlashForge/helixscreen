@@ -250,8 +250,11 @@ TEST_CASE_METHOD(ConfigTestFixture, "Config: get() with missing key throws excep
                  "[core][config][get]") {
     setup_default_config();
 
+    // out_of_range, not type_error: get() uses at() so a missing key never
+    // vivifies a null on the way to failing (#1129).
     REQUIRE_THROWS_AS(config.get<std::string>(config.df() + "nonexistent_key"),
-                      nlohmann::detail::type_error);
+                      nlohmann::detail::out_of_range);
+    REQUIRE_FALSE(config.exists(config.df() + "nonexistent_key"));
 }
 
 TEST_CASE_METHOD(ConfigTestFixture, "Config: get() with missing nested key throws exception",
@@ -259,7 +262,9 @@ TEST_CASE_METHOD(ConfigTestFixture, "Config: get() with missing nested key throw
     setup_default_config();
 
     REQUIRE_THROWS_AS(config.get<std::string>(config.df() + "hardware_map/missing"),
-                      nlohmann::detail::type_error);
+                      nlohmann::detail::out_of_range);
+    // The failed lookup must not have created the missing leaf (#1129).
+    REQUIRE_FALSE(config.exists(config.df() + "hardware_map/missing"));
 }
 
 TEST_CASE_METHOD(ConfigTestFixture, "Config: get() with type mismatch throws exception",

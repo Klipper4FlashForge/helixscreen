@@ -820,6 +820,96 @@ static void migrate_v18_to_v19(json& config) {
                  converted);
 }
 
+/// Recursively erase object members whose value is null.
+///
+/// Array elements are deliberately left alone: erasing one shifts every later
+/// index, and no config consumer treats a null array slot as removable.
+/// Audited 2026-07-25 — no config setting uses null as a meaningful tri-state
+/// value; every `.is_null()` check on config data (hardware_validator,
+/// panel_widget_config, config.cpp's own default-filling) means "absent, use
+/// the default", which is exactly what erasing the key produces.
+static int strip_null_leaves(json& node) {
+    int removed = 0;
+    if (node.is_object()) {
+        for (auto it = node.begin(); it != node.end();) {
+            if (it.value().is_null()) {
+                it = node.erase(it);
+                ++removed;
+            } else {
+                removed += strip_null_leaves(it.value());
+                ++it;
+            }
+        }
+    } else if (node.is_array()) {
+        for (auto& element : node) {
+            removed += strip_null_leaves(element);
+        }
+    }
+    return removed;
+}
+
+/// Migration v19→v20: purge the null-node garbage that read-only probes through
+/// Config::get_json() vivified into settings.json (#1129), and retire the
+/// legacy top-level /led block for good.
+///
+/// Previously the /led → printers/<id>/leds fold lived in
+/// LedController::load_config() and LedAutoState::load_config(), which run on
+/// EVERY boot — so the probes there re-created the /led orphan each time and
+/// erasing it would have been pointless. Doing the fold here (once, guarded by
+/// the version number, using non-vivifying contains()) is what makes the
+/// erase stick.
+///
+/// The /printer erase matters beyond tidiness: migrate_v3_to_v4() gates on
+/// `config.contains("printer") && config["printer"].is_object()`, so a
+/// resurrected /printer node would be split into a bogus printers/default entry
+/// if that migration ever re-ran.
+static void migrate_v19_to_v20(json& config) {
+    // --- 1. Fold any real legacy /led values into the active printer ---
+    std::string active;
+    if (config.contains("active_printer_id") && config["active_printer_id"].is_string()) {
+        active = config["active_printer_id"].get<std::string>();
+    }
+
+    const bool have_target = !active.empty() && config.contains("printers") &&
+                             config["printers"].is_object() && config["printers"].contains(active);
+
+    if (have_target && config.contains("led") && config["led"].is_object()) {
+        const std::string base = "/printers/" + active + "/leds";
+        std::vector<std::pair<std::string, std::string>> moves;
+        for (const char* key : {"selected_strips", "last_color", "last_brightness", "last_white",
+                                "color_presets", "macro_devices", "led_on_at_start",
+                                "startup_brightness"}) {
+            moves.emplace_back(std::string("/led/") + key, base + "/" + key);
+        }
+        for (const char* key : {"enabled", "mappings"}) {
+            moves.emplace_back(std::string("/led/auto_state/") + key,
+                               base + "/auto_state/" + key);
+        }
+        // migrate_config_keys() skips (and drops) sources whose target already
+        // exists, so per-printer values already in place are never clobbered.
+        if (migrate_config_keys(config, moves)) {
+            spdlog::info("[Config] Migration v20: folded legacy /led into /printers/{}/leds",
+                         active);
+        }
+    }
+
+    // --- 2. Erase the orphan top-level nodes ---
+    if (config.contains("led")) {
+        config.erase("led");
+        spdlog::info("[Config] Migration v20: erased orphan top-level /led node");
+    }
+    if (config.contains("printer")) {
+        config.erase("printer");
+        spdlog::info("[Config] Migration v20: erased orphan top-level /printer node");
+    }
+
+    // --- 3. Strip the null leaves left behind by vivifying probes ---
+    int removed = strip_null_leaves(config);
+    if (removed > 0) {
+        spdlog::info("[Config] Migration v20: removed {} null config leaf/leaves", removed);
+    }
+}
+
 /// Run all versioned migrations in sequence from current version to CURRENT_CONFIG_VERSION
 static void run_versioned_migrations(json& config, const std::string& config_path = "") {
     int version = 0;
@@ -865,6 +955,8 @@ static void run_versioned_migrations(json& config, const std::string& config_pat
         migrate_v17_to_v18(config);
     if (version < 19)
         migrate_v18_to_v19(config);
+    if (version < 20)
+        migrate_v19_to_v20(config);
 
     config["config_version"] = CURRENT_CONFIG_VERSION;
 }
@@ -1249,18 +1341,13 @@ void Config::init(const std::string& config_path) {
             // Ensure leds/selected array exists (for multi-LED support)
             auto& leds_selected = data[json::json_pointer(df() + "leds/selected")];
             if (leds_selected.is_null()) {
-                // Check if there's a legacy strip value to migrate
-                auto& strip = data[json::json_pointer(df() + "leds/strip")];
-                if (!strip.is_null() && strip.is_string()) {
-                    std::string led = strip.get<std::string>();
-                    if (!led.empty()) {
-                        data[json::json_pointer(df() + "leds/selected")] = json::array({led});
-                    } else {
-                        data[json::json_pointer(df() + "leds/selected")] = json::array();
-                    }
-                } else {
-                    data[json::json_pointer(df() + "leds/selected")] = json::array();
-                }
+                // Check if there's a legacy strip value to migrate. Read it
+                // through the non-vivifying accessor — get_json()/operator[]
+                // would leave a permanent "leds/strip": null behind (#1129).
+                const json* strip = try_get_json(df() + "leds/strip");
+                std::string led =
+                    (strip != nullptr && strip->is_string()) ? strip->get<std::string>() : "";
+                leds_selected = led.empty() ? json::array() : json::array({led});
                 config_modified = true;
             }
 
@@ -1523,6 +1610,29 @@ std::string Config::get_path() {
 
 json& Config::get_json(const std::string& json_path) {
     return data[json::json_pointer(json_path)];
+}
+
+const json* Config::try_get_json(const std::string& json_path) const {
+    json::json_pointer ptr(json_path);
+    if (!data.contains(ptr)) {
+        return nullptr;
+    }
+    return &data.at(ptr);
+}
+
+std::vector<std::string> Config::get_string_array(const std::string& json_path) const {
+    std::vector<std::string> out;
+    const json* node = try_get_json(json_path);
+    if (node == nullptr || !node->is_array()) {
+        return out;
+    }
+    out.reserve(node->size());
+    for (const auto& element : *node) {
+        if (element.is_string()) {
+            out.push_back(element.get<std::string>());
+        }
+    }
+    return out;
 }
 
 /// Map common errno values to user-friendly descriptions
