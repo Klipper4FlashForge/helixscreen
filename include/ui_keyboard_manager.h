@@ -5,6 +5,9 @@
 
 #include "lvgl.h"
 
+#include <string>
+#include <unordered_map>
+
 /**
  * @brief Singleton manager for global keyboard handling
  *
@@ -110,6 +113,31 @@ class KeyboardManager {
      */
     void reset();
 
+    /**
+     * @brief Place an alternate-character hint glyph inside a key.
+     *
+     * Anchors the hint to the key's top-right corner with an inset proportional to
+     * the glyph height, falling back to a 1px inset on keys too tight for that.
+     *
+     * The returned rect is guaranteed to lie fully inside @p btn, so callers draw
+     * it unclipped and a hint can never bleed onto a neighbouring key. Key sizes
+     * vary widely — a 2-unit `?123` against a 12-unit spacebar, across every
+     * breakpoint from micro panels to 1024px displays — so containment is checked
+     * rather than assumed.
+     *
+     * Static and free of widget state so the containment invariant is testable
+     * without building a keyboard.
+     *
+     * @param btn     Key rect
+     * @param hint_w  Hint glyph width
+     * @param hint_h  Hint glyph height
+     * @param out     Receives the hint rect; untouched when this returns false
+     * @return false when the glyph cannot fit inside the key at any supported
+     *         inset — draw nothing in that case
+     */
+    [[nodiscard]] static bool compute_hint_area(const lv_area_t& btn, int32_t hint_w,
+                                                int32_t hint_h, lv_area_t* out);
+
   private:
     // Private constructor for singleton
     KeyboardManager() = default;
@@ -137,9 +165,35 @@ class KeyboardManager {
     void overlay_cleanup();
     void longpress_reset();
     void show_overlay(const lv_area_t* key_area, const char* alternatives);
-    const char* find_alternatives(char base_char) const;
     bool point_in_area(const lv_area_t* area, const lv_point_t* point) const;
 
+  public:
+    /**
+     * @brief Alternate characters reachable by long-pressing @p base_char.
+     *
+     * Returns the session's current order for that key — element 0 is what a plain
+     * long-press yields and what the on-key hint draws. nullptr when the key has no
+     * alternates.
+     *
+     * @warning The returned pointer is invalidated by promote_alternative() for the
+     *          same key, which rewrites the backing string in place.
+     */
+    const char* find_alternatives(char base_char) const;
+
+    /**
+     * @brief Make @p chosen the default alternate for @p base_char.
+     *
+     * Moves the character to the front of that key's alternate list, so the next
+     * plain long-press yields it and the on-key hint — which draws element 0 —
+     * updates to match. Session-lifetime only; nothing is persisted, so the
+     * shipped order is restored on restart.
+     *
+     * No-op when the key has no alternates, or when @p chosen is already the
+     * default. Only meaningful for keys with more than one alternate.
+     */
+    void promote_alternative(char base_char, char chosen);
+
+  private:
     // Event callbacks (static to work with LVGL API)
     static void textarea_focus_event_cb(lv_event_t* e);
     static void textarea_delete_event_cb(lv_event_t* e);
@@ -180,4 +234,10 @@ class KeyboardManager {
 
     // Static alternative character mapping table
     static const AltCharMapping alt_char_map_[];
+
+    /// Per-key reordering of alt_char_map_ entries, seeded lazily on first promotion.
+    /// Absent key = shipped order. Node-based so a string's address is stable across
+    /// rehash, but a promoted string is rewritten in place — never hold a c_str()
+    /// from find_alternatives() across a promote_alternative() call for that key.
+    std::unordered_map<char, std::string> alt_order_;
 };
