@@ -551,6 +551,11 @@ class LedController {
     lv_subject_t led_command_in_flight_{}; // 0/1: a light toggle is awaiting its gcode ACK
     int in_flight_count_ = 0;              // outstanding toggle commands awaiting ACK
     ObserverGuard conn_observer_;          // clears in-flight count on any non-CONNECTED transition
+    // Clears in-flight count on any exit from klippy READY. A Klipper restart leaves
+    // the Moonraker WebSocket up, so conn_observer_ above never sees it (#1129).
+    // No paired SubjectLifetime: PrinterState::get_klippy_state_subject() is a static
+    // singleton-lifetime subject (no lifetime-token overload).
+    ObserverGuard klippy_observer_;
     bool version_subject_initialized_ = false;
 
     /// Push the current selected_strips_ emptiness into led_controllable_.

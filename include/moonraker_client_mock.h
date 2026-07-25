@@ -989,6 +989,31 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
         return err;
     }
 
+    /// Test helper: force the next matching printer.gcode.script RPC to invoke NEITHER
+    /// callback — the request is sent, Klipper still runs the gcode, but the RPC
+    /// response never arrives. This is the real-world wedge #1129 reported: a Klippy
+    /// restart (or any dropped response) leaves a caller's in-flight counter pinned
+    /// because neither on_success nor on_error ever fires. One-shot: cleared once it
+    /// fires. When @p script_substr is non-empty, only a gcode.script whose script
+    /// contains that substring has its response dropped.
+    void force_next_gcode_dropped_response(const std::string& script_substr = "") {
+        std::lock_guard<std::mutex> lock(forced_gcode_error_mutex_);
+        forced_gcode_drop_ = script_substr;
+    }
+
+    /// Consume a pending forced response-drop if it matches @p script. Returns true
+    /// (and clears the pending state) when the handler must return without invoking
+    /// either callback. Used by the gcode.script mock handler.
+    bool take_forced_gcode_drop(const std::string& script) {
+        std::lock_guard<std::mutex> lock(forced_gcode_error_mutex_);
+        if (!forced_gcode_drop_.has_value())
+            return false;
+        if (!forced_gcode_drop_->empty() && script.find(*forced_gcode_drop_) == std::string::npos)
+            return false;
+        forced_gcode_drop_.reset();
+        return true;
+    }
+
     /// Test inspection: every gcode script string passed through the
     /// printer.gcode.script handler, in order. Lets tests assert multi-step
     /// gcode sequences (e.g. the #991 split config-reassert + heat/feed chain).
@@ -1037,6 +1062,9 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
         std::string script_substr;
     };
     std::optional<ForcedGcodeError> forced_gcode_error_;
+    // One-shot forced response-drop for printer.gcode.script (test helper). Holds the
+    // script substring filter; empty string matches any script. Shares the mutex above.
+    std::optional<std::string> forced_gcode_drop_;
     mutable std::mutex forced_gcode_error_mutex_;
 
     // Temperature simulation state

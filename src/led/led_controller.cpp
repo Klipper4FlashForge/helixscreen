@@ -95,6 +95,23 @@ void LedController::init(MoonrakerAPI* api, MoonrakerClient* client) {
             }
         });
 
+    // Second half of the same safety net, for the case the observer above cannot
+    // see: printer_connection_state tracks the MOONRAKER WebSocket only. A Klipper
+    // restart (M112, FIRMWARE_RESTART, a klippy crash) leaves Moonraker itself up,
+    // so that subject never leaves CONNECTED and a leaked dispatch would stay
+    // pinned for the rest of the session — both light buttons greyed out for hours
+    // (#1129). Any exit from READY kills every RPC Klipper had in flight, so clear.
+    // force_clear_in_flight() is a no-op at count 0, so a simultaneous
+    // disconnect firing both observers is harmless.
+    // No paired SubjectLifetime: get_klippy_state_subject() is a static
+    // singleton-lifetime subject on PrinterState (no lifetime-token overload).
+    klippy_observer_ = helix::ui::observe_int_sync(
+        get_printer_state().get_klippy_state_subject(), this, [](LedController* self, int state) {
+            if (state != static_cast<int>(helix::KlippyState::READY)) {
+                self->force_clear_in_flight();
+            }
+        });
+
     initialized_ = true;
     load_config();
     publish_controllable_state();
@@ -104,9 +121,10 @@ void LedController::init(MoonrakerAPI* api, MoonrakerClient* client) {
 void LedController::deinit() {
     lifetime_.invalidate();
 
-    // Unsubscribe the connection-state observer before clearing in-flight state
-    // so any queued observer callbacks are neutralised before we reset.
+    // Unsubscribe the connection-state and klippy-state observers before clearing
+    // in-flight state so any queued observer callbacks are neutralised before we reset.
     conn_observer_.reset();
+    klippy_observer_.reset();
 
     // Clear any in-flight count so the subject is reset to 0 before the next
     // init. Deferred settle callbacks from the previous session are now dead

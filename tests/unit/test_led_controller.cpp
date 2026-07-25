@@ -1814,6 +1814,124 @@ TEST_CASE_METHOD(LedMockApiFixture, "LedController: disconnect clears in-flight 
 }
 
 // ============================================================================
+// A Klippy restart leaves the Moonraker WebSocket UP (#1129)
+//
+// printer_connection_state only tracks the Moonraker WebSocket, so a Klipper
+// restart never moves it off CONNECTED and the conn_observer_ above can never
+// fire. The reporter's journal proves it: led_command_in_flight stuck at 1
+// across a Klippy recovery with zero "force-clearing" lines. The klippy-state
+// observer is the safety net for any dispatch that leaks its settle callback.
+// ============================================================================
+
+namespace {
+
+/// Arrange the #1129 wedge: Moonraker CONNECTED, then dispatch an LED command whose
+/// RPC response is dropped so the settle callback never fires. Leaves
+/// in_flight_count_ pinned at 1 with a fully drained UpdateQueue.
+/// @p global_klippy is the klippy state the LedController sees at dispatch time.
+void wedge_in_flight_led_command(helix::PrinterState& api_state, MoonrakerClientMock& mock_client,
+                                 helix::KlippyState global_klippy = helix::KlippyState::READY) {
+    // execute_gcode() refuses gcode outright while Klipper is halted, and the API
+    // reads the PrinterState it was constructed with (the fixture's own instance),
+    // which defaults to SHUTDOWN. Make the dispatch actually reach the wire.
+    api_state.set_klippy_state_sync(helix::KlippyState::READY);
+
+    // The LedController observes the GLOBAL PrinterState, not the API's.
+    auto& ps = get_printer_state();
+    lv_subject_set_int(ps.get_printer_connection_state_subject(),
+                       static_cast<int>(helix::ConnectionState::CONNECTED));
+    ps.set_klippy_state_sync(global_klippy);
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    // The RPC goes out; the response never comes back. Neither on_success nor
+    // on_error ever runs, so note_command_settled() is never reached.
+    mock_client.force_next_gcode_dropped_response("SET_LED");
+    helix::led::LedController::instance().light_set(true);
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+}
+
+} // namespace
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "LedController: a dropped LED ACK really does wedge the in-flight counter",
+                 "[led][controller][inflight]") {
+    // Harness guard for the test below: without a genuinely lost response the
+    // mock ACKs synchronously and the counter clears on its own, which would make
+    // the klippy-restart test pass for the wrong reason.
+    setup_controller_with_strip();
+    auto& ctrl = helix::led::LedController::instance();
+    lv_subject_t* s = ctrl.get_led_command_in_flight_subject();
+
+    wedge_in_flight_led_command(state, mock_client);
+
+    // The SET_LED did reach Klipper — only its response was lost.
+    CHECK_FALSE(mock_client.gcode_script_history().empty());
+    // ...and the button is stuck greyed out.
+    REQUIRE(lv_subject_get_int(s) == 1);
+    REQUIRE(ctrl.light_command_in_flight());
+}
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "LedController: Klippy leaving READY clears in-flight LED state (#1129)",
+                 "[led][controller][inflight]") {
+    setup_controller_with_strip();
+    auto& ctrl = helix::led::LedController::instance();
+    lv_subject_t* s = ctrl.get_led_command_in_flight_subject();
+    auto& ps = get_printer_state();
+
+    wedge_in_flight_led_command(state, mock_client);
+    REQUIRE(lv_subject_get_int(s) == 1);
+
+    // Klippy dies / restarts. Moonraker itself never went away, so the WebSocket
+    // stays up and printer_connection_state does NOT move.
+    helix::KlippyState non_ready = helix::KlippyState::SHUTDOWN;
+    SECTION("M112 shutdown") {
+        non_ready = helix::KlippyState::SHUTDOWN;
+    }
+    SECTION("klippy error") {
+        non_ready = helix::KlippyState::ERROR;
+    }
+    SECTION("FIRMWARE_RESTART startup") {
+        // Klipper re-inits: any RPC issued before the restart is gone for good.
+        non_ready = helix::KlippyState::STARTUP;
+    }
+    CAPTURE(static_cast<int>(non_ready));
+
+    ps.set_klippy_state_sync(non_ready);
+    REQUIRE(lv_subject_get_int(ps.get_printer_connection_state_subject()) ==
+            static_cast<int>(helix::ConnectionState::CONNECTED));
+
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+    CHECK(lv_subject_get_int(s) == 0);
+    CHECK_FALSE(ctrl.light_command_in_flight());
+}
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "LedController: Klippy coming back READY does not clear an in-flight command",
+                 "[led][controller][inflight]") {
+    // The new observer must fire only on a READY *exit*. A klippy transition INTO
+    // READY (recovery finished) must leave a genuinely in-flight toggle greyed out,
+    // or the button un-greys before its command has landed.
+    // Note: lv_subject_set_int() uses notify_if_changed, so this has to be a real
+    // value transition — re-asserting the same value notifies nobody and would make
+    // this test vacuous.
+    setup_controller_with_strip();
+    auto& ctrl = helix::led::LedController::instance();
+    lv_subject_t* s = ctrl.get_led_command_in_flight_subject();
+    auto& ps = get_printer_state();
+
+    wedge_in_flight_led_command(state, mock_client, helix::KlippyState::SHUTDOWN);
+    REQUIRE(lv_subject_get_int(s) == 1);
+
+    ps.set_klippy_state_sync(helix::KlippyState::READY);
+    REQUIRE(lv_subject_get_int(ps.get_klippy_state_subject()) ==
+            static_cast<int>(helix::KlippyState::READY));
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+    CHECK(lv_subject_get_int(s) == 1);
+    CHECK(ctrl.light_command_in_flight());
+}
+
+// ============================================================================
 // WLED in-flight parity: REST toggle must grey the button the same as native
 // ============================================================================
 
