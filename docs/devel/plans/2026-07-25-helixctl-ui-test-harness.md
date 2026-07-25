@@ -19,6 +19,11 @@
 - The whole remote-control subsystem is behind `HELIX_ENABLE_REMOTE_CONTROL`. Every new server handler lives in files already inside that gate; no new `#ifdef` is needed.
 - New RPC handlers register in `RemoteControlServer::register_default_handlers()` (`src/remote/remote_control_server.cpp:255-295`) and run widget work through `execute_on_ui_thread(...)`.
 - `make -j` builds only the binary. Run `make test` before `./build/bin/helix-tests`.
+- **Run Python through the repo venv: `./.venv/bin/python -m pytest ...`, never bare `python3`.**
+  `.venv` is a symlink to the main tree's virtualenv and is the only interpreter here with
+  pytest (9.1.1), Pillow, and numpy (2.4.3). Bare `python3` has none of them and will fail
+  with `ModuleNotFoundError`. Every `pytest` invocation in the task steps below means
+  `./.venv/bin/python -m pytest`.
 - Python deps already in `requirements.txt`: `Pillow>=10.0.0`, `pandas`, `PyYAML`. `numpy` arrives via pandas.
 - Commit style: subject line + one ~4-line paragraph. Reference issues as `fix(scope): thing (prestonbrown/helixscreen#123)` when one applies.
 
@@ -2070,25 +2075,51 @@ Run: `python3 -m pytest tests/ui/test_screens.py -v`
 Expected: every case FAILS with "No golden at ... create it with `pytest --accept-goldens`".
 This confirms the fail-on-missing rule is doing its job.
 
-- [ ] **Step 4: Generate the goldens, then review them**
+- [ ] **Step 4: Generate candidate goldens into a scratch directory — do NOT commit them**
 
-Run: `python3 -m pytest tests/ui/test_screens.py --accept-goldens`
+**Golden acceptance is a human gate. You must not accept goldens yourself.** A golden
+generated from a broken screen locks that breakage in permanently and every later run passes
+against it, so the person who knows what these screens should look like has to approve them.
 
-Then **look at every generated PNG** in `tests/ui/goldens/` before committing. A golden
-generated from a broken screen locks the breakage in permanently. Any that shows a blank panel,
-a missing widget, or an obviously wrong layout is a bug to fix — not a golden to accept.
+Generate candidates outside the repo so nothing can be committed by accident:
 
-- [ ] **Step 5: Verify they now pass, twice**
+```bash
+HELIX_UI_ARTIFACTS=/tmp/golden-candidates \
+  ./.venv/bin/python -m pytest tests/ui/test_screens.py --accept-goldens \
+  --override-ini "addopts=" -q
+```
 
-Run: `python3 -m pytest tests/ui/test_screens.py -v && python3 -m pytest tests/ui/test_screens.py -v`
-Expected: all PASS both runs. A second run that fails means capture is not actually
-deterministic and the freeze/stable path needs work before the corpus is worth committing.
+If `--accept-goldens` writes into `tests/ui/goldens/` regardless (it does — `GOLDENS_DIR` is
+fixed in `conftest.py`), then instead: run it, immediately `mv tests/ui/goldens
+/tmp/golden-candidates`, and confirm `git status --short tests/ui/goldens` shows nothing
+staged or untracked.
+
+- [ ] **Step 5: Verify capture is actually deterministic**
+
+With the candidates restored to `tests/ui/goldens/` **in your working tree only** (still
+unstaged), run the suite twice:
+
+```bash
+./.venv/bin/python -m pytest tests/ui/test_screens.py -v
+./.venv/bin/python -m pytest tests/ui/test_screens.py -v
+```
+
+Expected: all PASS both runs. A second run that fails means capture is not deterministic and
+the freeze/stable path needs work — report that as a concern rather than proceeding.
 
 - [ ] **Step 6: Verify the goldens are load-bearing**
 
-Open one golden in an image editor, change a handful of pixels, save, and re-run that test.
-Expected: FAIL, with `.actual.png` and `.diff.png` written into `ui-artifacts/`. Restore the
-golden with `git checkout` (an explicit path, not a bare `git checkout .`).
+Open one golden, change a handful of pixels with Pillow, and re-run that single test.
+Expected: FAIL, with `.actual.png` and `.diff.png` written into `ui-artifacts/`. Restore it
+from the candidate directory afterward.
+
+- [ ] **Step 6b: Hand the candidates off — stop here**
+
+Commit **only** `test_screens.py` and the docs (Step 7), with the goldens left uncommitted in
+`/tmp/golden-candidates/`. In your report, list every candidate PNG with its full path and
+pixel dimensions, and note anything that looked wrong to you. Report status
+DONE_WITH_CONCERNS and state plainly that the goldens await human review. Do **not** `git add
+tests/ui/goldens`.
 
 - [ ] **Step 7: Document the harness**
 
@@ -2116,8 +2147,10 @@ design spec's Risks section.
 
 - [ ] **Step 8: Commit**
 
+Goldens are deliberately excluded from this commit — see Step 6b.
+
 ```bash
-git add tests/ui/test_screens.py tests/ui/goldens docs/devel/UI_TESTING.md
+git add tests/ui/test_screens.py docs/devel/UI_TESTING.md
 git commit -m "test(ui): seed the golden corpus from the screenshot recipes" \
   -m "Parameterized captures for the screens scripts/screenshot-recipes.sh already knows how to reach, each frozen and stable-captured before comparison. Goldens live in tests/ui/goldens/ and are deliberately separate from docs/images/: doc screenshots should change whenever the UI improves, regression goldens should not, and merging the two meanings trains you to accept every diff."
 ```
