@@ -19,22 +19,22 @@ GCodeLayerCache::GCodeLayerCache(size_t memory_budget_bytes) : memory_budget_(me
 
 size_t GCodeLayerCache::estimate_memory(const std::vector<ToolpathSegment>& segments) {
     // Base cost: vector overhead + segment data
-    // Each ToolpathSegment is approximately:
+    // Each ToolpathSegment is exactly 40 bytes (static_assert in gcode_parser.h):
     // - glm::vec3 start: 12 bytes
     // - glm::vec3 end: 12 bytes
-    // - bool is_extrusion: 1 byte (+ padding)
-    // - std::string object_name: 32 bytes (SSO buffer) + potential heap
     // - float extrusion_amount: 4 bytes
     // - float width: 4 bytes
-    // - int tool_index: 4 bytes
-    // Total: ~80 bytes base + string heap allocation
+    // - int16_t object_name_index: 2 bytes (interned — no string heap)
+    // - uint16_t layer_index: 2 bytes
+    // - int8_t tool_index, bool is_extrusion, FeatureType, padding: 4 bytes
 
     size_t base_cost = sizeof(std::vector<ToolpathSegment>) + 64; // Vector overhead + some slack
 
     size_t per_segment = BYTES_PER_SEGMENT;
 
-    // No string overhead: object names are interned as int16_t indices
-    return base_cost + (segments.size() * per_segment);
+    // Charge capacity, not size: a vector grown by repeated push_back (multi-sub-layer
+    // parses) can hold up to 2x the live element count.
+    return base_cost + (segments.capacity() * per_segment);
 }
 
 GCodeLayerCache::CacheResult

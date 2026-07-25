@@ -240,12 +240,18 @@ struct RibbonGeometry {
      * @brief Calculate total memory usage in bytes
      */
     size_t memory_usage() const {
-        return vertices.size() * sizeof(RibbonVertex) + indices.size() * sizeof(TriangleIndices) +
-               strips.size() * sizeof(TriangleStrip) + normal_palette.size() * sizeof(glm::vec3) +
-               color_palette.size() * sizeof(uint32_t) +
-               strip_layer_index.size() * sizeof(uint16_t) +
-               layer_strip_ranges.size() * sizeof(std::pair<size_t, size_t>) +
-               layer_bboxes.size() * sizeof(AABB);
+        size_t total =
+            vertices.size() * sizeof(RibbonVertex) + indices.size() * sizeof(TriangleIndices) +
+            strips.size() * sizeof(TriangleStrip) + normal_palette.size() * sizeof(glm::vec3) +
+            color_palette.size() * sizeof(uint32_t) + strip_layer_index.size() * sizeof(uint16_t) +
+            layer_strip_ranges.size() * sizeof(std::pair<size_t, size_t>) +
+            layer_bboxes.size() * sizeof(AABB);
+        // prepared_buffers is empty during build() (it is filled afterwards on a background
+        // thread), so this term only affects post-build reporting, not the budget check.
+        for (const auto& pb : prepared_buffers) {
+            total += pb.data.capacity();
+        }
+        return total;
     }
 
     /// Pre-computed interleaved vertex buffers for GPU upload (packed 20-byte layout — see

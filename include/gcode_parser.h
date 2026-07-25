@@ -302,8 +302,8 @@ struct ParsedGCodeFile {
     size_t clear_segments() {
         size_t freed = 0;
         for (auto& layer : layers) {
-            // Estimate ~40 bytes per segment (packed struct with interned names)
-            freed += layer.segments.size() * 40;
+            // Packed struct with interned names — see the static_assert on ToolpathSegment
+            freed += layer.segments.size() * sizeof(ToolpathSegment);
             layer.segments.clear();
             layer.segments.shrink_to_fit();
         }
@@ -406,6 +406,48 @@ class GCodeParser {
      */
     void set_initial_feature_type(FeatureType t) {
         current_feature_type_ = t;
+    }
+
+    /**
+     * @brief Seed the extrusion mode and running E value before parsing a chunk.
+     *
+     * M82 (absolute E) / M83 (relative E) are emitted once in the file prologue,
+     * before any layer's byte range. A fresh per-layer parser therefore defaults
+     * to absolute E and reads each relative E delta as an absolute position, so
+     * `e_delta = new_e - current_e_` measures the difference *between consecutive
+     * deltas* instead of the delta itself.
+     *
+     * Spiral-vase G-code makes that fatal: the spiral is emitted as fixed-length
+     * polygon steps, so consecutive lines carry an identical E value and the
+     * computed delta is exactly zero — the entire wall is classified as travel
+     * and never drawn (#1127). Ordinary G-code merely loses a majority of its
+     * extrusion flags, which is invisible because enough segments survive.
+     *
+     * @param absolute  true for M82 (absolute E), false for M83 (relative E)
+     * @param initial_e Running E value in effect at the chunk boundary. Only
+     *                  meaningful in absolute mode; relative deltas are
+     *                  independent of the starting value.
+     */
+    void set_initial_extrusion_mode(bool absolute, float initial_e = 0.0f) {
+        is_absolute_extrusion_ = absolute;
+        current_e_ = initial_e;
+    }
+
+    /**
+     * @brief Seed layer-marker mode before parsing a chunk.
+     *
+     * `;LAYER_CHANGE` sits at the *end* of the preceding layer's byte range, so
+     * a per-layer parse never sees one and falls back to legacy "every Z change
+     * is a new layer" splitting. With spiral-vase G-code every move carries a Z,
+     * which produced one Layer object (and its segment vector) per move — 65
+     * sub-layers for a single real layer. Segments are concatenated afterwards
+     * so output was correct, but the allocation churn was not.
+     *
+     * The index knows file-wide whether markers are in use; this hands that
+     * knowledge to each per-layer parser.
+     */
+    void set_use_layer_markers(bool use_markers) {
+        use_layer_markers_ = use_markers;
     }
 
     /**

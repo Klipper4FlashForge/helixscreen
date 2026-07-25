@@ -1099,7 +1099,7 @@ void GCodeGLESRenderer::render(lv_layer_t* layer, const ParsedGCodeFile& gcode,
             // the compact vertices/strips directly, so these aren't needed.
             size_t freed = 0;
             for (auto& pb : geometry_->prepared_buffers) {
-                freed += pb.data.capacity() * sizeof(float);
+                freed += pb.data.capacity(); // data is std::vector<uint8_t> — capacity is bytes
                 pb.data.clear();
                 pb.data.shrink_to_fit();
             }
