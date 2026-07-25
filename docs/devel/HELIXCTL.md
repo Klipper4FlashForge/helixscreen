@@ -130,7 +130,12 @@ helix-screen ctl click '*auto_cooldown*'
 Quote the pattern so your shell doesn't expand it against the filesystem first.
 
 `ls` lists **all** matches — that is the point of it — and reports `scope` as an
-array plus a `matched` count when there is more than one. `click`, `set_value`
+array plus a `matched` count when there is more than one. A match nested inside
+another match is not a scope of its own: `row_*` on a settings page hits both
+each row and the `row_icon` within it, and listing both would emit the icon
+twice (once as a scope root, once inside its parent's subtree) and report a
+doubled count. Only the outermost matches become scopes; the inner ones still
+appear, in their parent's listing. `click`, `set_value`
 and `scroll` instead require the pattern to identify **exactly one** widget: on
 multiple matches they fail with the candidate names and `@path`s rather than
 acting on whichever came first, since driving the UI somewhere unintended is
