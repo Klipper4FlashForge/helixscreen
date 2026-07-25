@@ -285,28 +285,6 @@ static nlohmann::json parse_value(const std::string& val_str) {
     return val_str;
 }
 
-/// True for a describe_screen locator written without the '@' prefix: an "s" or
-/// "t" root followed by one or more "/<index>" segments, and nothing else.
-bool helix::is_bare_path(const std::string& t) {
-    if (t.size() < 3 || (t[0] != 's' && t[0] != 't') || t[1] != '/') {
-        return false;
-    }
-    bool digit_in_segment = false;
-    for (size_t i = 2; i < t.size(); ++i) {
-        if (t[i] == '/') {
-            if (!digit_in_segment) {
-                return false; // empty segment: "s//1" or a trailing slash
-            }
-            digit_in_segment = false;
-        } else if (isdigit(static_cast<unsigned char>(t[i]))) {
-            digit_in_segment = true;
-        } else {
-            return false;
-        }
-    }
-    return digit_in_segment;
-}
-
 /// Build a target param object for click/set/scroll. "@s/3/1" (or a bare
 /// "s/3/1") addresses a widget by its describe_screen path, unique even for
 /// duplicate names; anything else is treated as a widget name.

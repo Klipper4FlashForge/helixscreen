@@ -14,7 +14,7 @@
   </api>
   <consts>
     <!-- Fallback values. Overridden at runtime by
-         register_color_swatch_grid_constants() (xml_registration.cpp):
+         register_swatch_grid_constants() (xml_registration.cpp):
          swatch 24/28/32 by screen height, width computed as 6 columns so the
          30 swatches always form 5 even rows at every breakpoint. -->
     <px name="grid_swatch_size" value="32"/>
