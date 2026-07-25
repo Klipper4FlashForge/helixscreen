@@ -36,6 +36,23 @@
 namespace helix {
 namespace gcode {
 
+namespace {
+
+/// Matrix that turns a raw quantized int16 position back into millimetres:
+/// `mm = q / scale_factor + min_bounds`. Composed into u_mvp / u_model_view so
+/// the GPU can consume PackedVertex positions directly and the vertex shader
+/// needs no knowledge of quantization. See PackedVertex in
+/// include/gcode_geometry_builder.h.
+glm::mat4 dequant_matrix(const QuantizationParams& q) {
+    // A zero scale would produce a degenerate matrix and collapse the model to a
+    // point; fall back to identity-scale rather than emit NaNs.
+    const float inv = (q.scale_factor != 0.0f) ? (1.0f / q.scale_factor) : 1.0f;
+    return glm::translate(glm::mat4(1.0f), q.min_bounds) *
+           glm::scale(glm::mat4(1.0f), glm::vec3(inv));
+}
+
+} // namespace
+
 // ============================================================
 // RAII GL Handle Destructors
 // ============================================================
@@ -861,12 +878,12 @@ void GCodeGLESRenderer::upload_geometry(const RibbonGeometry& geom, std::vector<
 
             for (int ti = 0; ti < 6; ++ti) {
                 const auto& vert = geom.vertices[strip[static_cast<size_t>(kTriIndices[ti])]];
-                glm::vec3 pos = geom.quantization.dequantize_vec3(vert.position);
                 const glm::vec3& normal = geom.normal_palette[vert.normal_index];
 
-                out->position[0] = pos.x;
-                out->position[1] = pos.y;
-                out->position[2] = pos.z;
+                // Quantized straight through; dequantization is folded into the matrices.
+                out->position[0] = vert.position.x;
+                out->position[1] = vert.position.y;
+                out->position[2] = vert.position.z;
 
                 uint32_t rgb = 0x26A69A; // Default teal
                 if (vert.color_index < geom.color_palette.size()) {
@@ -970,12 +987,12 @@ bool GCodeGLESRenderer::upload_geometry_chunk(const RibbonGeometry& geom,
 
                 for (int ti = 0; ti < 6; ++ti) {
                     const auto& vert = geom.vertices[strip[static_cast<size_t>(kTriIndices[ti])]];
-                    glm::vec3 pos = geom.quantization.dequantize_vec3(vert.position);
                     const glm::vec3& normal = geom.normal_palette[vert.normal_index];
 
-                    out->position[0] = pos.x;
-                    out->position[1] = pos.y;
-                    out->position[2] = pos.z;
+                    // Quantized straight through; dequantization is folded into the matrices.
+                    out->position[0] = vert.position.x;
+                    out->position[1] = vert.position.y;
+                    out->position[2] = vert.position.z;
 
                     uint32_t rgb = 0x26A69A;
                     if (vert.color_index < geom.color_palette.size()) {
@@ -1263,11 +1280,22 @@ void GCodeGLESRenderer::render_to_fbo(const ParsedGCodeFile& gcode, const GCodeC
     glm::mat4 view = camera.get_view_matrix();
     glm::mat3 normal_mat = glm::transpose(glm::inverse(glm::mat3(view * model)));
 
+    // Vertex positions arrive as raw quantized int16. Dequantization is affine
+    // (mm = q / scale_factor + min_bounds), so it composes into the matrices we
+    // already upload instead of costing a uniform and a shader edit. Applied on
+    // the right so it runs first, before model/view/projection.
+    //
+    // Normals are unaffected: they are a separate octahedral attribute, and this
+    // transform is a uniform positive scale plus a translation, which cannot
+    // skew a normal or flip winding.
+    const glm::mat4 dequant = dequant_matrix(active_geometry_->quantization);
+
     // Set uniforms
-    glUniformMatrix4fv(u_mvp_, 1, GL_FALSE, glm::value_ptr(mvp));
+    glm::mat4 mvp_dequant = mvp * dequant;
+    glUniformMatrix4fv(u_mvp_, 1, GL_FALSE, glm::value_ptr(mvp_dequant));
     glUniformMatrix3fv(u_normal_matrix_, 1, GL_FALSE, glm::value_ptr(normal_mat));
 
-    glm::mat4 model_view = view * model;
+    glm::mat4 model_view = view * model * dequant;
     glUniformMatrix4fv(u_model_view_, 1, GL_FALSE, glm::value_ptr(model_view));
 
     // Light 0: Camera-following directional light (tracks camera position)
@@ -1369,7 +1397,9 @@ void GCodeGLESRenderer::draw_layers(const std::vector<LayerVBO>& vbos, int layer
 
         glBindBuffer(GL_ARRAY_BUFFER, lv.vbo);
 
-        glVertexAttribPointer(static_cast<GLuint>(a_position_), 3, GL_FLOAT, GL_FALSE,
+        // Position: quantized int16, NOT normalized — the raw integer reaches the
+        // shader and u_mvp / u_model_view carry the dequantization.
+        glVertexAttribPointer(static_cast<GLuint>(a_position_), 3, GL_SHORT, GL_FALSE,
                               static_cast<GLsizei>(kStride),
                               reinterpret_cast<void*>(PackedVertex::position_offset()));
 

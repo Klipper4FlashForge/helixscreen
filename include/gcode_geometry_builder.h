@@ -85,20 +85,32 @@ struct QuantizationParams {
 /**
  * @brief Compact interleaved vertex format for GPU upload.
  *
- * Layout (20 bytes per vertex, down from the prior 36-byte 9-float format):
- *   position : 3 × float           (12 B, offset 0)
- *   color    : 4 × uint8 RGBA8     ( 4 B, offset 12)  GL_UNSIGNED_BYTE, normalized
- *   normal   : 2 × int8 octahedral ( 2 B, offset 16)  GL_BYTE, normalized
- *   (2 B implicit struct-alignment padding to bring sizeof to 20)
+ * Layout (12 bytes per vertex, down from 20 B float-position and an original
+ * 36-byte 9-float format):
+ *   position : 3 × int16 quantized ( 6 B, offset 0)  GL_SHORT, NOT normalized
+ *   normal   : 2 × int8 octahedral ( 2 B, offset 6)  GL_BYTE, normalized
+ *   color    : 4 × uint8 RGBA8     ( 4 B, offset 8)  GL_UNSIGNED_BYTE, normalized
+ *   (no padding; stride is a multiple of 4, which GL drivers prefer)
+ *
+ * Positions were previously dequantized to float on the CPU purely so they
+ * could be uploaded — the source data in RibbonVertex is already int16. Passing
+ * the int16 straight through is both smaller and less work: on a 28 MB gcode
+ * this is 3.4 GB → 2.0 GB of upload buffers.
  *
  * Centralizes the vertex attribute layout so upload code (geometry builder)
  * and draw code (renderer) stay in sync.
  */
 struct PackedVertex {
-    float position[3];
+    /// Quantized position, uploaded as GL_SHORT *unnormalized* and turned back
+    /// into millimetres on the GPU. Dequantization is affine
+    /// (`mm = q / scale_factor + min_bounds`), so instead of a dedicated
+    /// uniform the renderer folds that transform into the u_mvp and
+    /// u_model_view matrices it already uploads — the shader is unaware.
+    /// See GCodeGLESRenderer::dequant_matrix().
+    int16_t position[3];
+    int8_t normal[2]; ///< Octahedral-encoded unit normal; decode in vertex shader.
     uint8_t color[4]; ///< RGBA8 — alpha unused (filled with 255) but pads the color attribute to a
                       ///< sane 4-byte unit.
-    int8_t normal[2]; ///< Octahedral-encoded unit normal; decode in vertex shader.
 
     static constexpr size_t stride() {
         return sizeof(PackedVertex);

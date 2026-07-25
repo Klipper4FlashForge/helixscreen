@@ -179,7 +179,8 @@ TEST_CASE("Geometry data supports CPU re-expansion after prepared_buffers cleare
     REQUIRE(!geom->layer_strip_ranges.empty());
 
     // Manually re-expand first layer (mirrors upload_geometry_chunk CPU fallback,
-    // packed 20-byte PackedVertex layout).
+    // packed 12-byte PackedVertex layout — quantized int16 positions go to the
+    // GPU as-is, with dequantization folded into the renderer's matrices).
     auto [first_strip, strip_count] = geom->layer_strip_ranges[0];
     REQUIRE(strip_count > 0);
 
@@ -192,12 +193,11 @@ TEST_CASE("Geometry data supports CPU re-expansion after prepared_buffers cleare
         const auto& strip = geom->strips[first_strip + s];
         for (int ti = 0; ti < 6; ++ti) {
             const auto& vert = geom->vertices[strip[static_cast<size_t>(kTriIndices[ti])]];
-            glm::vec3 pos = geom->quantization.dequantize_vec3(vert.position);
             const glm::vec3& normal = geom->normal_palette[vert.normal_index];
 
-            out->position[0] = pos.x;
-            out->position[1] = pos.y;
-            out->position[2] = pos.z;
+            out->position[0] = vert.position.x;
+            out->position[1] = vert.position.y;
+            out->position[2] = vert.position.z;
 
             uint32_t rgb = 0x26A69A;
             if (vert.color_index < geom->color_palette.size()) {

@@ -212,12 +212,13 @@ void RibbonGeometry::prepare_interleaved_buffers() {
 
             for (int ti = 0; ti < 6; ++ti) {
                 const auto& vert = vertices[strip[static_cast<size_t>(kTriIndices[ti])]];
-                glm::vec3 pos = quantization.dequantize_vec3(vert.position);
                 const glm::vec3& normal = normal_palette[vert.normal_index];
 
-                out->position[0] = pos.x;
-                out->position[1] = pos.y;
-                out->position[2] = pos.z;
+                // Quantized coordinates go to the GPU as-is; the renderer folds
+                // the dequantization into its matrices.
+                out->position[0] = vert.position.x;
+                out->position[1] = vert.position.y;
+                out->position[2] = vert.position.z;
 
                 uint32_t rgb = 0x26A69A; // Default teal
                 if (vert.color_index < color_palette.size()) {

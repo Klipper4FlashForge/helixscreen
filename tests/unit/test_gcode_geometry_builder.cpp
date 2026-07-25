@@ -3,6 +3,7 @@
 
 #include "gcode_geometry_builder.h"
 #include "gcode_parser.h"
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "../catch_amalgamated.hpp"
 
@@ -1074,9 +1075,19 @@ TEST_CASE("prepare_interleaved_buffers data matches manual expansion",
         PackedVertex::encode_normal(normal, expected_normal);
 
         const auto& pv = packed[ti];
-        REQUIRE(pv.position[0] == Approx(pos.x).margin(0.01f));
-        REQUIRE(pv.position[1] == Approx(pos.y).margin(0.01f));
-        REQUIRE(pv.position[2] == Approx(pos.z).margin(0.01f));
+        // Positions are stored quantized and dequantized on the GPU, so the
+        // packed bytes must be the raw int16 …
+        REQUIRE(pv.position[0] == vert.position.x);
+        REQUIRE(pv.position[1] == vert.position.y);
+        REQUIRE(pv.position[2] == vert.position.z);
+        // … and dequantizing them must still land on the mm coordinate the
+        // renderer's matrix fold will produce.
+        REQUIRE(geom.quantization.dequantize(pv.position[0], geom.quantization.min_bounds.x) ==
+                Approx(pos.x).margin(0.01f));
+        REQUIRE(geom.quantization.dequantize(pv.position[1], geom.quantization.min_bounds.y) ==
+                Approx(pos.y).margin(0.01f));
+        REQUIRE(geom.quantization.dequantize(pv.position[2], geom.quantization.min_bounds.z) ==
+                Approx(pos.z).margin(0.01f));
         REQUIRE(pv.color[0] == expected_color[0]);
         REQUIRE(pv.color[1] == expected_color[1]);
         REQUIRE(pv.color[2] == expected_color[2]);
@@ -1121,4 +1132,60 @@ TEST_CASE("prepare_interleaved_buffers cleared by clearing prepared_buffers",
     // Simulate color-override invalidation path
     geom.prepared_buffers.clear();
     REQUIRE(geom.prepared_buffers.empty());
+}
+
+// ============================================================================
+// PackedVertex GPU layout
+// ============================================================================
+
+TEST_CASE("Geometry Builder: PackedVertex is 12 bytes with GL-friendly offsets",
+          "[gcode][geometry][packed_vertex]") {
+    // Positions ride to the GPU as raw quantized int16 and are dequantized by a
+    // transform folded into u_mvp / u_model_view. Sending float positions
+    // instead cost 8 bytes a vertex — 1.4 GB on a 28 MB gcode.
+    STATIC_REQUIRE(sizeof(PackedVertex) == 12);
+    STATIC_REQUIRE(PackedVertex::stride() == 12);
+
+    // Offsets must stay put: the renderer hands these to glVertexAttribPointer.
+    CHECK(PackedVertex::position_offset() == 0);
+    CHECK(PackedVertex::normal_offset() == 6);
+    CHECK(PackedVertex::color_offset() == 8);
+
+    // Stride a multiple of 4 keeps GL drivers off the slow path, and the 4-byte
+    // color attribute stays naturally aligned.
+    CHECK(PackedVertex::stride() % 4 == 0);
+    CHECK(PackedVertex::color_offset() % 4 == 0);
+}
+
+TEST_CASE("Geometry Builder: affine dequantization matches the matrix fold",
+          "[gcode][geometry][packed_vertex]") {
+    // The renderer replaces the CPU-side dequantize_vec3() with
+    // translate(min_bounds) * scale(1/scale_factor) baked into its matrices.
+    // If those two ever disagree the model silently renders at the wrong scale
+    // or position, so pin the equivalence here.
+    AABB bbox;
+    bbox.min = {12.5f, -30.0f, 0.0f};
+    bbox.max = {212.5f, 170.0f, 250.0f};
+
+    QuantizationParams q;
+    q.calculate_scale(bbox);
+
+    const float inv = 1.0f / q.scale_factor;
+    const glm::mat4 dequant = glm::translate(glm::mat4(1.0f), q.min_bounds) *
+                              glm::scale(glm::mat4(1.0f), glm::vec3(inv));
+
+    for (const glm::vec3& p : {glm::vec3{12.5f, -30.0f, 0.0f}, glm::vec3{100.0f, 20.0f, 125.0f},
+                               glm::vec3{212.5f, 170.0f, 250.0f}}) {
+        const QuantizedVertex qv = q.quantize_vec3(p);
+        const glm::vec3 cpu = q.dequantize_vec3(qv);
+        const glm::vec4 gpu =
+            dequant * glm::vec4(static_cast<float>(qv.x), static_cast<float>(qv.y),
+                                static_cast<float>(qv.z), 1.0f);
+
+        INFO("point " << p.x << "," << p.y << "," << p.z);
+        CHECK(gpu.x == Approx(cpu.x).margin(0.001));
+        CHECK(gpu.y == Approx(cpu.y).margin(0.001));
+        CHECK(gpu.z == Approx(cpu.z).margin(0.001));
+        CHECK(gpu.w == Approx(1.0f));
+    }
 }
