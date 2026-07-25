@@ -8,11 +8,25 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <lvgl.h>
 #include <memory>
 #include <string>
+#include <vector>
+
+// lodepng.h declares its C++ convenience overloads inside its own extern "C"
+// block, so including it from C++ fails to compile. We need exactly one entry
+// point out of it — declare that directly. (Built in via LV_USE_LODEPNG.)
+//
+// Encode to memory, not lodepng_encode32_file(): LVGL routes lodepng's disk I/O
+// through lv_fs, which rejects a plain filesystem path for want of a driver
+// letter. We write the encoded buffer ourselves.
+extern "C" unsigned lodepng_encode32(unsigned char** out, size_t* outsize,
+                                     const unsigned char* image, unsigned w, unsigned h);
 
 namespace helix {
 
@@ -64,10 +78,70 @@ bool write_bmp(const char* filename, const uint8_t* data, int width, int height)
     return true;
 }
 
-std::string save_screenshot() {
-    // Generate unique filename with timestamp in the writable runtime dir
-    std::string filename = app_get_runtime_dir() + "/ui-screenshot-" +
-                           std::to_string(static_cast<unsigned long>(time(nullptr))) + ".bmp";
+std::vector<uint8_t> argb8888_to_rgba(const uint8_t* src, size_t pixel_count) {
+    std::vector<uint8_t> rgba(pixel_count * 4);
+    for (size_t i = 0; i < pixel_count; i++) {
+        size_t o = i * 4;
+        rgba[o + 0] = src[o + 2]; // R  <- ARGB8888 byte 2
+        rgba[o + 1] = src[o + 1]; // G
+        rgba[o + 2] = src[o + 0]; // B  <- ARGB8888 byte 0
+        rgba[o + 3] = src[o + 3]; // A
+    }
+    return rgba;
+}
+
+bool write_png(const char* filename, const uint8_t* data, int width, int height) {
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+    size_t px = static_cast<size_t>(width) * static_cast<size_t>(height);
+    std::vector<uint8_t> rgba = argb8888_to_rgba(data, px);
+    unsigned char* encoded = nullptr;
+    size_t encoded_size = 0;
+    unsigned err = lodepng_encode32(&encoded, &encoded_size, rgba.data(),
+                                    static_cast<unsigned>(width), static_cast<unsigned>(height));
+    // LVGL builds lodepng with lv_malloc/lv_free as its allocators, so the
+    // encoded buffer MUST go back through lv_free — libc free() on an LVGL pool
+    // pointer corrupts the heap on any build with a real custom allocator.
+    std::unique_ptr<unsigned char, void (*)(void*)> owned(encoded, lv_free);
+    if (err != 0 || !encoded) {
+        spdlog::error("[Screenshot] PNG encode failed ({}): {}", err, filename);
+        return false;
+    }
+
+    std::unique_ptr<FILE, decltype(&fclose)> f(fopen(filename, "wb"), fclose);
+    if (!f) {
+        spdlog::error("[Screenshot] Cannot open for writing: {}", filename);
+        return false;
+    }
+    if (fwrite(encoded, 1, encoded_size, f.get()) != encoded_size) {
+        spdlog::error("[Screenshot] Short write: {}", filename);
+        return false;
+    }
+    return true;
+}
+
+namespace {
+
+bool has_suffix_ci(const std::string& s, const std::string& suffix) {
+    if (s.size() < suffix.size()) {
+        return false;
+    }
+    return std::equal(suffix.rbegin(), suffix.rend(), s.rbegin(), [](char a, char b) {
+        return std::tolower(static_cast<unsigned char>(a)) ==
+               std::tolower(static_cast<unsigned char>(b));
+    });
+}
+
+} // namespace
+
+std::string save_screenshot(const std::string& out_path) {
+    // No destination given -> timestamped BMP in the writable runtime dir.
+    std::string filename =
+        out_path.empty() ? app_get_runtime_dir() + "/ui-screenshot-" +
+                               std::to_string(static_cast<unsigned long>(time(nullptr))) + ".bmp"
+                         : out_path;
+    bool as_png = has_suffix_ci(filename, ".png");
 
     // Take snapshot using LVGL's native API (platform-independent)
     lv_obj_t* screen = lv_screen_active();
@@ -106,8 +180,11 @@ std::string save_screenshot() {
             lv_draw_buf_destroy(top_snap);
     }
 
-    // Write BMP file
-    if (write_bmp(filename.c_str(), snapshot->data, snapshot->header.w, snapshot->header.h)) {
+    bool ok = as_png ? write_png(filename.c_str(), snapshot->data, snapshot->header.w,
+                                 snapshot->header.h)
+                     : write_bmp(filename.c_str(), snapshot->data, snapshot->header.w,
+                                 snapshot->header.h);
+    if (ok) {
         spdlog::info("[Screenshot] saved: {}", filename);
     } else {
         NOTIFY_ERROR("Failed to save screenshot");

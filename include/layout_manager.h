@@ -28,6 +28,13 @@ class LayoutManager {
     const std::string& name() const;
     std::string resolve_xml_path(const std::string& filename) const;
     bool has_override(const std::string& filename) const;
+    /// Variant directory currently supplying `filename`, or "" when the base
+    /// ui_xml/ copy is in effect. `filename` takes the same form as
+    /// resolve_xml_path() ("home_panel.xml", "components/progress_bar.xml").
+    std::string active_variant_dir(const std::string& filename) const;
+    /// True when `dir` names a layout-variant directory under ui_xml/, as
+    /// opposed to a content subdirectory such as components/.
+    static bool is_variant_dir(const std::string& dir);
     bool is_standard() const;
     int width() const {
         return width_;

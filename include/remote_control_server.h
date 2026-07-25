@@ -143,9 +143,17 @@ class RemoteControlServer {
 
     // Scroll a named widget into view, or scroll a container by a delta
     nlohmann::json handle_scroll(const nlohmann::json& params);
+    nlohmann::json handle_geom(const nlohmann::json& params);
+    nlohmann::json handle_get_const(const nlohmann::json& params);
 
     // Reset the inactivity timer / dismiss the screensaver (like a real touch)
     nlohmann::json handle_wake(const nlohmann::json& params);
+
+    // Ask the app to exit its main loop (app_request_quit)
+    nlohmann::json handle_shutdown(const nlohmann::json& params);
+
+    // Tail the in-memory log ring buffer
+    nlohmann::json handle_log(const nlohmann::json& params);
 
     // Execute a function on the UI thread and wait for result
     nlohmann::json execute_on_ui_thread(std::function<nlohmann::json()> fn);

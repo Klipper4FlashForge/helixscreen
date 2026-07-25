@@ -100,27 +100,121 @@ live breadcrumb of the navigation stack, e.g. `controls / motion_panel_0 > `.
 ### Introspection & widget interaction
 | Command | Meaning |
 |---------|---------|
-| `ls`, `describe_screen` | List on-screen widgets: name, `path`, type, available actions |
+| `ls`, `describe_screen` `[target]` | List on-screen widgets: name, `path`, type, available actions. With a target, list only that widget's subtree (plus the widget itself) |
 | `list_components` | List **every** registered XML component (live registry): panels, overlays, modals, cards, rows — the full introspectable surface |
 | `list_callbacks` | List every registered event-callback name (overlay/modal open-handlers, button callbacks). Names only — nothing is fired |
 | `click <target>` | Click a widget (also toggles switches/checkboxes) |
 | `set_value <target> <v>` | Set a value (slider, switch, dropdown, textarea) |
 | `scroll <target> [dx dy]` | Scroll a widget into view, or by a delta |
+| `geom <target> [depth]` | Measured geometry: position, size, declared-vs-computed size, flex/scroll state |
+| `get_const [scope] <name>` | Resolve an XML `#const` to the value the renderer actually sees |
 
 A **target** is either a widget `name` or an `@path` locator taken from `ls`
 (e.g. `@s/15/1/1/2`). Use `@path` when a name is duplicated on screen (reusable
 components share names — a settings page can have six `toggle`s).
 
+A full-screen `ls` on a settings page runs to hundreds of entries. Scope it once
+you know the row you want — `ls row_filament_auto_cooldown` returns that row and
+its handful of children, `scope` in the response echoing the subtree root.
+
+**Wildcards.** A target name containing `*` (any run of characters, including
+none) or `?` (exactly one) is matched as a glob against every visible named
+widget on the active screen and the top layer:
+
+```bash
+helix-screen ctl ls 'row_*'          # every settings row, each with its subtree
+helix-screen ctl ls '*cooldown*'     # find it without knowing the full name
+helix-screen ctl click '*auto_cooldown*'
+```
+
+Quote the pattern so your shell doesn't expand it against the filesystem first.
+
+`ls` lists **all** matches — that is the point of it — and reports `scope` as an
+array plus a `matched` count when there is more than one. `click`, `set_value`
+and `scroll` instead require the pattern to identify **exactly one** widget: on
+multiple matches they fail with the candidate names and `@path`s rather than
+acting on whichever came first, since driving the UI somewhere unintended is
+much worse than an error. Glob matching skips hidden subtrees, same as `ls`.
+
+**Composite rows resolve to the control inside them.** A settings row is a
+clickable container wrapping the actual switch/dropdown, so a naive
+`click <row>` would fire CLICKED on the container and do nothing visible.
+`click` and `set_value` therefore descend to a **value-control** (switch,
+checkbox, slider, arc, dropdown, textarea) when the target isn't one itself and
+its visible subtree holds exactly one — the response reports `descended_to` with
+that child's path. Rows with no value-control (a category row that opens an
+overlay) are clicked as-is, so navigation is unaffected. If several candidates
+exist the container is clicked and they are listed under `candidates`, so you
+can re-issue against a specific `@path`.
+
+#### `geom` — why a widget is the size it is
+
+`ls` tells you a widget exists; `geom` tells you how big it ended up and what it
+asked for. The pair is what distinguishes "my widget is missing" from "my widget
+is present but computed to zero", which look identical on screen.
+
+```bash
+helix-screen ctl geom details_catalog_selector
+helix-screen ctl geom details_view 2      # recurse 2 levels into children
+```
+
+| Field | Meaning |
+|-------|---------|
+| `x`, `y` | Absolute screen coordinates (comparable against a screenshot) |
+| `w`, `h` | Computed size |
+| `content_w`, `content_h` | Inner area, padding excluded |
+| `req_w`, `req_h` | The size **as authored**: `"content"`, `"50%"`, or a pixel count |
+| `flex_grow` | Flex grow factor |
+| `hidden`, `scrollable` | Flag state |
+| `scroll` | `top`/`bottom`/`left`/`right` scrollable extents |
+
+`req_*` reports the authored form rather than the raw coord, because LVGL packs
+`LV_SIZE_CONTENT` and percentages into the integer — printed raw they surface as
+meaningless sentinels. A `req_h` of `content` or a nonzero `flex_grow` sitting
+next to a computed `h` of `0` is the signature of a flex child collapsing in a
+content-sized parent, which has no free space to distribute.
+
+#### `get_const` — what value the renderer actually resolved
+
+```bash
+helix-screen ctl get_const color_swatch_grid grid_width   # scoped lookup
+helix-screen ctl get_const space_md                       # globals
+helix-screen ctl get_const @color_swatch_grid             # dump every const in a scope
+```
+
+A scoped lookup falls back to `globals` when the name is not in the component's
+own scope, mirroring how the renderer resolves an unqualified `#const`; the
+`scope` field in the reply says which one answered. Consts registered from C++
+can silently disagree with what XML resolves — `lv_xml_register_const()` is a
+no-op when the name already exists in the scope, so a component's fallback
+`<consts>` win unless the C++ side uses `lv_xml_update_const()`. This command
+reads the resolved value, so it shows which one is really in effect.
+
 ### Screenshots & sample-data screens
 | Command | Meaning |
 |---------|---------|
-| `screenshot` | Capture a screenshot (`/tmp/ui-screenshot-<timestamp>.bmp`) |
+| `screenshot [path]` | Capture a screenshot. With no path, a timestamped `.bmp` in the runtime dir; a path ending in `.png` is encoded as PNG (in-app, via lodepng). The response reports the file actually written under `path` |
 | `demo <name>` | Bring up a screen that can't be reached by navigation in mock mode |
 
 `demo` covers screens that only appear on a real printer event or configured
 state, constructed with representative sample data and the real lifecycle:
 `preflight-check`, `runout-modal`, `lock-screen`, `print-status`, `print-tune`,
 `ams`, `camera`.
+
+### Diagnostics & lifecycle
+| Command | Meaning |
+|---------|---------|
+| `log [-n N]` | Tail the app's in-memory log ring buffer (default 50 lines). Printed as raw lines, so it pipes to `grep` |
+| `shutdown` | Ask the app to exit its main loop (`app_request_quit`), running the normal shutdown path |
+
+`log` reads the same ring buffer the debug bundle's `log_tail` uses — capacity
+is `HELIX_LOG_RING_LINES` (default 2000). It means a scripted run can read the
+app's own log without redirecting stdout to a file first.
+
+From the one-shot client, `quit` and `exit` are accepted as aliases for
+`shutdown`. **In the REPL they are not** — there, `quit`/`exit`/Ctrl-D leave the
+REPL and `shutdown` stops the app, which is the only reading that keeps both
+meanings available.
 
 ### Subjects & scenarios
 | Command | Meaning |

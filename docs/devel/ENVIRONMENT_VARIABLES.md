@@ -1090,6 +1090,9 @@ HELIX_HOT_RELOAD=0 ./build/bin/helix-screen --test -vv
 **Limitations:**
 - **New files are not detected.** Only files present when the app starts are tracked. Adding a new XML file requires a restart.
 - **Component re-registration only.** If the XML change requires new subjects, callbacks, or C++ code, a full rebuild + restart is needed.
+- **`globals.xml`, `color_picker.xml` and `components/color_swatch_grid.xml` never reload.** Their registered scopes are extended from C++ after startup — `globals` owns every XML subject in the app plus the runtime theme constants, and unregistering it frees storage LVGL does not own. Editing them logs a warning and requires a restart.
+- **Breakpoint overrides only reload the copy in effect.** A component with a `micro/` or `portrait/` variant exists as several files that all register under one name. Only the copy the active layout resolves to reloads; editing a shadowed copy logs at debug and takes effect on the next launch at that breakpoint.
+- **Rebuilt views lose transient widget state.** `rebuild_active_views()` recreates from XML, so unsaved form input, scroll position and the current carousel page reset. Modals rebuild via `Modal::show(component_name)`, which drops any per-invocation attributes the original caller passed.
 
 **Typical workflow:**
 ```bash

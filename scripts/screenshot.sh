@@ -31,6 +31,10 @@ Arguments:
             -s 800x480, --layout ultrawide). Pass --wizard to capture the
             first-run wizard (suppresses --skip-wizard).
 
+            --recipe '<steps>'  Drive the UI with these `helix-screen ctl`
+            steps (semicolon-separated) instead of a recipe-table lookup —
+            for a screen with no table entry yet. Overrides TOKEN's recipe.
+
 Environment Variables:
   HELIX_SCREENSHOT_DISPLAY   Display index to open the window on (default: auto)
   HELIX_SCREENSHOT_TIMEOUT   Max seconds to wait for the control socket (default: 20)
@@ -44,12 +48,14 @@ Examples:
   ./scripts/screenshot.sh helix-screen zoffset zoffset --test
   ./scripts/screenshot.sh helix-screen preflight preflight-check --test
   ./scripts/screenshot.sh helix-screen wizard-wifi "" --wizard --test
+  ./scripts/screenshot.sh helix-screen safety "" --test \
+      --recipe 'navigate settings; click row_safety'
 
 Output:
-  Screenshots are saved to /tmp/ui-screenshot-<NAME>.png (BMP auto-converted).
+  Screenshots are saved to /tmp/ui-screenshot-<NAME>.png, encoded by the app.
 
 Dependencies:
-  - ImageMagick (apt install imagemagick / brew install imagemagick)
+  - none beyond the built binary (PNG is encoded in-app via lodepng)
 EOF
     exit 0
 }
@@ -93,6 +99,18 @@ else
     shift 2 2>/dev/null || true; EXTRA_ARGS=("$@")
 fi
 
+# --recipe '<ctl steps>' captures a screen with no table entry, without having to
+# add one first. Pull it (and its value) out of the flags forwarded to the binary.
+INLINE_RECIPE=""
+FILTERED_ARGS=()
+skip_next=0
+for a in "${EXTRA_ARGS[@]}"; do
+    if [ "$skip_next" = "1" ]; then INLINE_RECIPE="$a"; skip_next=0; continue; fi
+    if [ "$a" = "--recipe" ]; then skip_next=1; continue; fi
+    FILTERED_ARGS+=("$a")
+done
+EXTRA_ARGS=("${FILTERED_ARGS[@]}")
+
 # Wizard capture: the first-run wizard shows itself on boot, so don't skip it and
 # run no recipe (we just capture the boot screen).
 WIZARD_MODE=0
@@ -114,11 +132,6 @@ fi
 SOCKET_TIMEOUT="${HELIX_SCREENSHOT_TIMEOUT:-20}"
 SETTLE="${HELIX_SCREENSHOT_DELAY:-1.5}"
 
-# ImageMagick
-if command -v magick &> /dev/null; then MAGICK_CMD="magick"
-elif command -v convert &> /dev/null; then MAGICK_CMD="convert"
-else error "ImageMagick not found (install with: sudo apt install imagemagick)"; exit 1; fi
-
 # Binary present + executable
 if [ ! -f "$BINARY_PATH" ]; then
     error "Binary not found: $BINARY_PATH"; info "Build first with: make"; exit 1
@@ -131,11 +144,20 @@ fi
 # Private per-invocation socket so we never collide with a dev instance.
 SOCK="/tmp/helix-shot-$$.sock"
 LOG="/tmp/helix-shot-$$.log"
-rm -f "$SOCK" /tmp/ui-screenshot-*.bmp 2>/dev/null || true
+rm -f "$SOCK" 2>/dev/null || true
 
 HELIX_PID=""
 cleanup() {
-    [ -n "$HELIX_PID" ] && kill "$HELIX_PID" 2>/dev/null || true
+    if [ -n "$HELIX_PID" ] && kill -0 "$HELIX_PID" 2>/dev/null; then
+        # Ask it to exit cleanly (flushes logs, runs shutdown paths); fall back
+        # to a signal if the control socket is already gone.
+        "${HELIXCTL[@]}" -s "$SOCK" shutdown >/dev/null 2>&1 || kill "$HELIX_PID" 2>/dev/null || true
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            kill -0 "$HELIX_PID" 2>/dev/null || break
+            sleep 0.2
+        done
+        kill -0 "$HELIX_PID" 2>/dev/null && kill "$HELIX_PID" 2>/dev/null || true
+    fi
     rm -f "$SOCK" "$LOG" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -166,45 +188,49 @@ done
 
 # Run the navigation recipe (skip in wizard mode — the wizard shows itself).
 if [ "$WIZARD_MODE" = "0" ]; then
-    RECIPE="$(screenshot_recipe_for "${TOKEN:-home}")"
-    info "Recipe: $RECIPE"
+    if [ -n "$INLINE_RECIPE" ]; then
+        RECIPE="$INLINE_RECIPE"
+        info "Recipe (inline): $RECIPE"
+    else
+        RECIPE="$(screenshot_recipe_for "${TOKEN:-home}")"
+        info "Recipe: $RECIPE"
+    fi
     IFS=';' read -ra STEPS <<< "$RECIPE"
     for step in "${STEPS[@]}"; do
         # trim leading/trailing whitespace
         step="$(echo "$step" | sed 's/^ *//;s/ *$//')"
         [ -z "$step" ] && continue
-        if ! "${HELIXCTL[@]}" -s "$SOCK" $step >/dev/null 2>&1; then
-            warn "Recipe step failed: '$step'"
+        # Surface the control server's error text — a silently-skipped step
+        # produces a screenshot of the wrong screen, which is worse than a fail.
+        if ! STEP_ERR=$("${HELIXCTL[@]}" -s "$SOCK" $step 2>&1 >/dev/null); then
+            warn "Recipe step failed: '$step'${STEP_ERR:+ — $STEP_ERR}"
         fi
     done
 else
     info "Wizard mode: capturing boot screen (no recipe)"
 fi
 
-# Let animations/transitions settle, then capture.
+# Let animations/transitions settle, then capture straight to PNG. The app
+# encodes it (lodepng), so there is no BMP hop and no ImageMagick dependency.
 sleep "$SETTLE"
-if ! "${HELIXCTL[@]}" -s "$SOCK" screenshot >/dev/null 2>&1; then
-    error "helix-screen ctl screenshot failed"; exit 1
+if ! CAPTURE_ERR=$("${HELIXCTL[@]}" -s "$SOCK" screenshot "$PNG_FILE" 2>&1 >/dev/null); then
+    error "helix-screen ctl screenshot failed${CAPTURE_ERR:+: $CAPTURE_ERR}"
+    tail -10 "$LOG" 2>/dev/null
+    exit 1
 fi
-
-# Locate the newest BMP (save_screenshot writes /tmp/ui-screenshot-<timestamp>.bmp).
-LATEST_BMP=$(ls -t /tmp/ui-screenshot-*.bmp 2>/dev/null | head -1)
-if [ -z "$LATEST_BMP" ]; then
-    error "Screenshot not captured"; tail -10 "$LOG" 2>/dev/null; exit 1
+if [ ! -f "$PNG_FILE" ]; then
+    error "Screenshot not written: $PNG_FILE"; tail -10 "$LOG" 2>/dev/null; exit 1
 fi
-[ "$LATEST_BMP" != "$BMP_FILE" ] && mv "$LATEST_BMP" "$BMP_FILE"
-
-# Convert to PNG
-if ! $MAGICK_CMD "$BMP_FILE" "$PNG_FILE" 2>/dev/null; then
-    error "PNG conversion failed"; warn "BMP left at: $BMP_FILE"; exit 1
-fi
-rm -f "$BMP_FILE"
 
 PNG_SIZE=$(ls -lh "$PNG_FILE" | awk '{print $5}')
 echo ""
 success "Screenshot ready!"
 echo "  File:  $PNG_FILE ($PNG_SIZE)"
-echo "  Token: ${TOKEN:-home}"
+if [ -n "$INLINE_RECIPE" ]; then
+    echo "  Recipe: $INLINE_RECIPE"
+else
+    echo "  Token: ${TOKEN:-home}"
+fi
 echo ""
 
 if [ -n "$HELIX_SCREENSHOT_OPEN" ]; then

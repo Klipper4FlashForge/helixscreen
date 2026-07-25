@@ -2,6 +2,7 @@
 
 #include "xml_hot_reloader.h"
 
+#include "layout_manager.h"
 #include "ui_update_queue.h"
 
 #include <spdlog/spdlog.h>
@@ -19,6 +20,28 @@ extern "C" {
 namespace fs = std::filesystem;
 
 namespace {
+
+/// Components whose registered scope is extended from C++ after startup, so
+/// re-registering them from XML alone cannot reproduce the live scope.
+///
+/// - globals: not a UI component at all. It owns every XML subject in the app
+///   (~1000 of them, most backed by C++-owned storage) plus the runtime theme
+///   constants ThemeManager injects. lv_xml_component_unregister("globals")
+///   deinits all of them and frees storage LVGL does not own — an immediate
+///   heap abort (munmap_chunk: invalid pointer).
+/// - color_picker / color_swatch_grid: register_xml_components() pushes
+///   breakpoint-computed constants into their scopes after registration. A
+///   fresh registration would resolve those tokens to nothing.
+constexpr const char* NON_RELOADABLE_COMPONENTS[] = {"globals", "color_picker",
+                                                     "color_swatch_grid"};
+
+bool is_non_reloadable(const std::string& component) {
+    for (const auto* name : NON_RELOADABLE_COMPONENTS) {
+        if (component == name)
+            return true;
+    }
+    return false;
+}
 
 /// Read a file into `out`. Returns false on open/read failure (e.g. file is
 /// mid-rename, briefly empty, or permission-denied). Sets `err_out` for logging.
@@ -114,6 +137,8 @@ void XmlHotReloader::stop() {
 void XmlHotReloader::initial_scan(const std::vector<std::string>& xml_dirs) {
     file_mtimes_.clear();
     file_to_lvgl_path_.clear();
+    file_to_logical_path_.clear();
+    file_to_variant_.clear();
 
     static constexpr const char* SKIP_DIRS[] = {"translations", ".claude-recall"};
     auto is_skipped = [](const fs::path& p) {
@@ -171,6 +196,29 @@ void XmlHotReloader::initial_scan(const std::vector<std::string>& xml_dirs) {
                 auto rel_path = entry.path().string();
                 file_to_lvgl_path_[abs_path] = "A:" + rel_path;
 
+                // Split the path-under-the-watch-root into the layout variant
+                // it belongs to and the filename LayoutManager resolves with,
+                // so scan_and_reload() can tell whether this copy is the one
+                // the running layout is actually using.
+                std::string variant;
+                fs::path logical = fs::relative(entry.path(), dir, ec);
+                if (ec) {
+                    logical = entry.path().filename();
+                    ec.clear();
+                }
+                auto first = logical.begin();
+                if (first != logical.end() &&
+                    helix::LayoutManager::is_variant_dir(first->string())) {
+                    variant = first->string();
+                    fs::path stripped;
+                    for (auto it = ++logical.begin(); it != logical.end(); ++it) {
+                        stripped /= *it;
+                    }
+                    logical = stripped;
+                }
+                file_to_logical_path_[abs_path] = logical.generic_string();
+                file_to_variant_[abs_path] = variant;
+
                 auto parent = entry.path().parent_path().filename().string();
                 per_dir_counts[parent.empty() ? dir : parent]++;
 
@@ -219,6 +267,31 @@ void XmlHotReloader::scan_and_reload() {
 
         auto comp_name = component_name_from_path(fs::path(abs_path));
         auto lvgl_path = file_to_lvgl_path_[abs_path];
+
+        if (is_non_reloadable(comp_name)) {
+            cached_mtime = current_mtime;
+            spdlog::warn("[HotReload] '{}' cannot be hot-reloaded (its scope is extended from "
+                         "C++ after registration) — restart to pick up the change",
+                         comp_name);
+            continue;
+        }
+
+        // A component that has a breakpoint override exists in several copies
+        // under ui_xml/ (base, micro/, portrait/, …) that all register under
+        // the same name. Registering the copy that just changed would replace
+        // the live component with a layout the running display isn't using, so
+        // only the copy the active layout resolves to is allowed to reload.
+        // Editing a shadowed copy still takes effect on the next launch at that
+        // breakpoint. Committing the mtime keeps it from re-checking each poll.
+        const auto& variant = file_to_variant_[abs_path];
+        if (helix::LayoutManager::instance().active_variant_dir(
+                file_to_logical_path_[abs_path]) != variant) {
+            cached_mtime = current_mtime;
+            spdlog::debug("[HotReload] '{}' changed in {} layout, but the active layout uses a "
+                          "different copy — not reloading",
+                          comp_name, variant.empty() ? "base" : variant);
+            continue;
+        }
 
         // PRE-FLIGHT (parse-then-swap): read the file and validate XML
         // well-formedness BEFORE touching the registered component. If the file

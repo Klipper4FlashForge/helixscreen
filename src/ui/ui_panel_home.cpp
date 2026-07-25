@@ -721,6 +721,22 @@ void HomePanel::finalize_setup() {
     spdlog::debug("[{}] Finalize complete", get_name());
 }
 
+bool HomePanel::rebuild() {
+    if (!PanelBase::rebuild()) {
+        return false;
+    }
+
+    // setup() only stores the new panel pointer — the carousel, the widget grid
+    // and every PanelWidget attachment are built by finalize_setup(). Its
+    // one-shot guard already fired during startup, so clear it and re-run the
+    // pass against the new tree. Without this the rebuilt panel renders empty
+    // and the recycled PanelWidget instances keep raw lv_obj_t* pointers into
+    // the old tree, which crashes as soon as an observer fires on them.
+    finalized_ = false;
+    finalize_setup();
+    return true;
+}
+
 void HomePanel::on_activate() {
     panel_active_ = true;
 

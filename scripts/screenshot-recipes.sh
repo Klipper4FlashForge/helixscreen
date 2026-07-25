@@ -54,6 +54,7 @@ declare -gA SCREENSHOT_RECIPE=(
     [barcode-scanner]="navigate settings; click row_hardware; click row_spoolman_settings; click row_barcode_scanner"
     [label-printer]="navigate settings; click row_hardware; click row_spoolman_settings; click row_label_printer"
     [security]="navigate settings; click row_system; click row_security"
+    [safety]="navigate settings; click row_safety"
 
     # Advanced overlays
     [input-shaper]="navigate advanced; click row_input_shaping"
