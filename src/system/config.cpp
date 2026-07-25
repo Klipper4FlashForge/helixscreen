@@ -189,7 +189,26 @@ void erase_at_pointer(json& data, const json::json_pointer& ptr) {
     }
 }
 
+/// True when @p data has a non-null value at @p ptr. Both contains() and at()
+/// are non-vivifying, so this probes without creating nodes.
+///
+/// The distinction matters because nlohmann's contains() answers TRUE for a key
+/// whose value is null, and null keys are exactly what the pre-#1129
+/// Config::get_json() probes wrote all over user configs. Treating one of those
+/// as "a value is already here" makes a migration erase the real legacy source
+/// and keep the garbage.
+bool has_value_at(const json& data, const json::json_pointer& ptr) {
+    return data.contains(ptr) && !data.at(ptr).is_null();
+}
+
 /// Migrate config keys from old paths to new paths
+///
+/// A null at either end counts as ABSENT, never as a value:
+///   - null TARGET  → the move proceeds and overwrites the null (a null target
+///                    is probe pollution, not a user setting).
+///   - null SOURCE  → nothing worth moving; the source is dropped and the
+///                    target is left alone rather than being overwritten with null.
+///
 /// @param data JSON config data to migrate (modified in place)
 /// @param migrations Vector of {from_path, to_path} pairs (JSON pointer format)
 /// @return true if any migration occurred, false if no migration needed
@@ -206,8 +225,17 @@ bool migrate_config_keys(json& data,
             continue;
         }
 
-        // Skip if target already exists (don't overwrite)
-        if (data.contains(to_ptr)) {
+        // A null source carries nothing. Drop it rather than writing null over
+        // whatever the target holds.
+        if (data.at(from_ptr).is_null()) {
+            spdlog::debug("[Config] Migration dropped null source: {}", from_path);
+            erase_at_pointer(data, from_ptr);
+            any_migrated = true;
+            continue;
+        }
+
+        // Skip if the target already holds a real value (don't overwrite)
+        if (has_value_at(data, to_ptr)) {
             spdlog::debug("[Config] Migration skipped: {} already exists", to_path);
             erase_at_pointer(data, from_ptr);
             any_migrated = true;
@@ -848,6 +876,25 @@ static int strip_null_leaves(json& node) {
     return removed;
 }
 
+/// True when @p node holds anything a user could have set — i.e. any leaf that
+/// is not null. An empty object/array counts as nothing, and so does a tree that
+/// bottoms out entirely in nulls (the shape read-only probes left behind).
+/// Used to decide whether a legacy node is safe to erase.
+static bool has_any_value(const json& node) {
+    if (node.is_null()) {
+        return false;
+    }
+    if (node.is_object() || node.is_array()) {
+        for (const auto& child : node) {
+            if (has_any_value(child)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    return true;
+}
+
 /// Migration v19→v20: purge the null-node garbage that read-only probes through
 /// Config::get_json() vivified into settings.json (#1129), and retire the
 /// legacy top-level /led block for good.
@@ -865,13 +912,35 @@ static int strip_null_leaves(json& node) {
 /// if that migration ever re-ran.
 static void migrate_v19_to_v20(json& config) {
     // --- 1. Fold any real legacy /led values into the active printer ---
+    //
+    // Resolve the fold target exactly the way Config::init() resolves the active
+    // printer, INCLUDING its "active_printer_id is empty or dangling → take the
+    // first printer object" fallback. We cannot lean on init()'s own copy of that
+    // fallback: it runs after run_versioned_migrations(), by which point
+    // config_version is already 20 and this migration will never run again.
     std::string active;
     if (config.contains("active_printer_id") && config["active_printer_id"].is_string()) {
         active = config["active_printer_id"].get<std::string>();
     }
 
-    const bool have_target = !active.empty() && config.contains("printers") &&
-                             config["printers"].is_object() && config["printers"].contains(active);
+    const bool printers_ok = config.contains("printers") && config["printers"].is_object();
+    const bool active_resolves = printers_ok && !active.empty() &&
+                                 config["printers"].contains(active) &&
+                                 config["printers"][active].is_object();
+    if (printers_ok && !active_resolves) {
+        active.clear();
+        for (auto& [key, val] : config["printers"].items()) {
+            // The printers map can hold non-printer keys (show_printer_switcher
+            // is a bool), so require an object — same test init() applies.
+            if (val.is_object()) {
+                active = key;
+                break;
+            }
+        }
+    }
+
+    const bool have_target = printers_ok && !active.empty();
+    bool folded = false;
 
     if (have_target && config.contains("led") && config["led"].is_object()) {
         const std::string base = "/printers/" + active + "/leds";
@@ -886,21 +955,43 @@ static void migrate_v19_to_v20(json& config) {
                                base + "/auto_state/" + key);
         }
         // migrate_config_keys() skips (and drops) sources whose target already
-        // exists, so per-printer values already in place are never clobbered.
-        if (migrate_config_keys(config, moves)) {
+        // holds a REAL value, so per-printer values already in place are never
+        // clobbered — while a probe-vivified null target is correctly treated as
+        // absent and gets overwritten by the legacy value.
+        folded = migrate_config_keys(config, moves);
+        if (folded) {
             spdlog::info("[Config] Migration v20: folded legacy /led into /printers/{}/leds",
                          active);
         }
     }
 
     // --- 2. Erase the orphan top-level nodes ---
+    //
+    // Only ever erase a node we have finished with. Erasing unconditionally
+    // destroyed the whole /led block whenever the fold above was skipped (no
+    // printers map at all, for instance) — the user's settings deleted with
+    // nothing put in their place. If there is still something of value in there,
+    // leave it: a later boot that can resolve a printer gets another chance.
     if (config.contains("led")) {
-        config.erase("led");
-        spdlog::info("[Config] Migration v20: erased orphan top-level /led node");
+        if (folded || !has_any_value(config["led"])) {
+            config.erase("led");
+            spdlog::info("[Config] Migration v20: erased orphan top-level /led node");
+        } else {
+            spdlog::warn("[Config] Migration v20: keeping legacy /led — no printer to fold it "
+                         "into yet");
+        }
     }
+    // /printer at this point is probe pollution: a real legacy /printer block was
+    // already split out by migrate_v3_to_v4(). Erase it only when it truly holds
+    // nothing, so an unexpected real one is never silently destroyed.
     if (config.contains("printer")) {
-        config.erase("printer");
-        spdlog::info("[Config] Migration v20: erased orphan top-level /printer node");
+        if (!has_any_value(config["printer"])) {
+            config.erase("printer");
+            spdlog::info("[Config] Migration v20: erased orphan top-level /printer node");
+        } else {
+            spdlog::warn("[Config] Migration v20: keeping top-level /printer — it still holds "
+                         "values");
+        }
     }
 
     // --- 3. Strip the null leaves left behind by vivifying probes ---

@@ -24,6 +24,28 @@
 
 using namespace helix;
 
+namespace {
+
+/// Read a string member of @p obj without throwing, returning "" when the key is
+/// absent OR holds a non-string.
+///
+/// json::value(key, default) is NOT a safe probe: it throws type_error.302 the
+/// moment the key exists with a different type, and a hand-edited or
+/// half-written settings.json ("name": 3, "name": null) hits exactly that.
+/// validate_configured_hardware() runs inside the discovery-complete callback
+/// (application.cpp) with no enclosing try/catch, so a throw there escapes an
+/// LVGL/queue frame. Type-check instead of blanket-catching, so genuine
+/// programming errors still surface.
+std::string json_string_member(const json& obj, const char* key) {
+    const auto it = obj.find(key);
+    if (it == obj.end() || !it->is_string()) {
+        return {};
+    }
+    return it->get<std::string>();
+}
+
+} // namespace
+
 // =============================================================================
 // HardwareSnapshot Implementation
 // =============================================================================
@@ -507,14 +529,18 @@ void HardwareValidator::validate_configured_hardware(Config* config,
             config->try_get_json(config->df() + "filament_sensors/sensors");
         if (sensors_config != nullptr && sensors_config->is_array()) {
             for (const auto& sensor : *sensors_config) {
-                if (sensor.is_object() && sensor.value("name", "") != "") {
-                    std::string sensor_name = sensor.value("name", "");
-                    if (!contains_name(filament_sensors, sensor_name) &&
-                        !is_hardware_optional(config, sensor_name)) {
-                        result.expected_missing.push_back(
-                            HardwareIssue::warning(sensor_name, HardwareType::FILAMENT_SENSOR,
-                                                   "Configured filament sensor not found"));
-                    }
+                if (!sensor.is_object()) {
+                    continue;
+                }
+                const std::string sensor_name = json_string_member(sensor, "name");
+                if (sensor_name.empty()) {
+                    continue;
+                }
+                if (!contains_name(filament_sensors, sensor_name) &&
+                    !is_hardware_optional(config, sensor_name)) {
+                    result.expected_missing.push_back(
+                        HardwareIssue::warning(sensor_name, HardwareType::FILAMENT_SENSOR,
+                                               "Configured filament sensor not found"));
                 }
             }
         }
@@ -649,8 +675,12 @@ void HardwareValidator::validate_new_hardware(Config* config,
             config->try_get_json(config->df() + "filament_sensors/sensors");
         if (sensors_config != nullptr && sensors_config->is_array()) {
             for (const auto& sensor : *sensors_config) {
-                if (sensor.is_object() && sensor.value("klipper_name", "") != "") {
-                    configured_names.push_back(sensor.value("klipper_name", ""));
+                if (!sensor.is_object()) {
+                    continue;
+                }
+                std::string klipper_name = json_string_member(sensor, "klipper_name");
+                if (!klipper_name.empty()) {
+                    configured_names.push_back(std::move(klipper_name));
                 }
             }
         }

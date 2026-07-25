@@ -1932,6 +1932,53 @@ TEST_CASE_METHOD(LedMockApiFixture,
 }
 
 // ============================================================================
+// A toggle QUEUED behind an external blocking op must still settle (#1129)
+// ============================================================================
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "LedController: a toggle queued behind a blocking op settles in-flight (#1129)",
+                 "[led][controller][inflight]") {
+    // SET_LED is discretionary, so while an external blocking op (BED_MESH_CALIBRATE,
+    // QGL, a manual probe) holds Klipper's gcode lock, MoonrakerAPI queues it
+    // fire-and-forget and deliberately drops the RPC response — that is what stops
+    // the ~60s timeout toast #1108 removed. Neither on_success nor on_error will
+    // ever fire, so the settle has to come from the queued disposition or the
+    // counter stays pinned and both light buttons grey out for the session.
+    //
+    // Forcing the response drop is what makes this test honest: if the queued path
+    // regressed to passing the caller's callbacks straight through to send_jsonrpc,
+    // the drop wedges the counter and this fails.
+    setup_controller_with_strip();
+    auto& ctrl = helix::led::LedController::instance();
+    lv_subject_t* s = ctrl.get_led_command_in_flight_subject();
+
+    // Pin the two safety-net observers OPEN (Moonraker connected, Klippy READY) so
+    // neither can force-clear the counter and make this pass for the wrong reason.
+    auto& ps = get_printer_state();
+    lv_subject_set_int(ps.get_printer_connection_state_subject(),
+                       static_cast<int>(helix::ConnectionState::CONNECTED));
+    ps.set_klippy_state_sync(helix::KlippyState::READY);
+
+    // The API reads the PrinterState it was constructed with. READY + idle_timeout
+    // "Printing" without a file print == an external blocking op holds the lock.
+    state.set_klippy_state_sync(helix::KlippyState::READY);
+    lv_subject_set_int(state.get_print_state_enum_subject(),
+                       static_cast<int>(helix::PrintJobState::STANDBY));
+    lv_subject_set_int(state.get_idle_timeout_printing_subject(), 1);
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    mock_client.force_next_gcode_dropped_response("SET_LED");
+    ctrl.light_set(true);
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    // The command really did go out (queued in Klipper, not refused)...
+    CHECK_FALSE(mock_client.gcode_script_history().empty());
+    // ...and the buttons came back.
+    REQUIRE(lv_subject_get_int(s) == 0);
+    REQUIRE_FALSE(ctrl.light_command_in_flight());
+}
+
+// ============================================================================
 // WLED in-flight parity: REST toggle must grey the button the same as native
 // ============================================================================
 

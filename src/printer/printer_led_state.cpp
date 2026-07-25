@@ -64,8 +64,10 @@ void PrinterLedState::update_from_status(const nlohmann::json& status) {
     if (!led.contains("color_data") && tracked_led_name_.rfind("output_pin ", 0) == 0) {
         if (led.contains("value") && led["value"].is_number()) {
             double val = led["value"].get<double>();
-            int brightness = std::clamp(static_cast<int>(val * 100.0 + 0.5), 0, 100);
             int intensity = led::to_channel_byte(val);
+            // Share the native path's conversion: a dim-but-lit pin (value 0.004)
+            // must not round to 0% while led_state below still reports ON.
+            int brightness = led::channel_to_percent(static_cast<uint8_t>(intensity));
 
             if (lv_subject_get_int(&led_r_) != intensity)
                 lv_subject_set_int(&led_r_, intensity);

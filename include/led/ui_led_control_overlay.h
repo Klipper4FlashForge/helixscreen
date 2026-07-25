@@ -84,8 +84,21 @@ class LedControlOverlay : public OverlayBase {
 
     // Helpers
     void apply_current_color();
-    /// Native strips a color/turn-off action applies to: the whole selection, or
-    /// the first native strip when nothing is selected.
+    /// Selected strips a @p type backend's commands may address.
+    ///
+    /// The selection is mixed by design — tapping a chip front-inserts rather than
+    /// collapsing — so a backend must never fan out across the whole list. Sending
+    /// an output_pin id down the native path yields `SET_LED LED="enclosure"`
+    /// ("Unknown LED"), a `macro:` id is rejected outright by is_safe_identifier()
+    /// and toasts once per slider step, and the output_pin path would emit
+    /// `SET_PIN PIN=a` for a neopixel.
+    ///
+    /// Falls back to the first strip the backend owns when the selection contains
+    /// none of its strips, preserving the implicit target the color/turn-off paths
+    /// have always used. Returns empty when the backend owns nothing.
+    static std::vector<std::string> target_strips_for(LedBackendType type);
+
+    /// Native strips a color/turn-off action applies to.
     static std::vector<std::string> native_target_strips();
     void send_color_to_strips(double r, double g, double b, double w);
     void update_brightness_text(int brightness);

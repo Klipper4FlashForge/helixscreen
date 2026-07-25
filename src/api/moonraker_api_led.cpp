@@ -18,7 +18,8 @@ using namespace moonraker_internal;
 // ============================================================================
 
 void MoonrakerAPI::set_led(const std::string& led, double red, double green, double blue,
-                           double white, SuccessCallback on_success, ErrorCallback on_error) {
+                           double white, SuccessCallback on_success, ErrorCallback on_error,
+                           SuccessCallback on_queued) {
     // Reject NaN/Inf before any G-code generation
     if (reject_non_finite({red, green, blue, white}, "set_led", on_error)) {
         return;
@@ -64,5 +65,6 @@ void MoonrakerAPI::set_led(const std::string& led, double red, double green, dou
     spdlog::info("[Moonraker API] Setting LED {}: R={:.2f} G={:.2f} B={:.2f} W={:.2f}", led_name,
                  red, green, blue, white);
 
-    execute_gcode(gcode.str(), on_success, on_error);
+    execute_gcode(gcode.str(), std::move(on_success), std::move(on_error), 0, false,
+                  GcodeSource::Internal, std::move(on_queued));
 }

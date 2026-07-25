@@ -325,10 +325,9 @@ void LedController::discover_from_hardware(const helix::PrinterDiscovery& hardwa
                      discovered_led_macros_.size());
     }
 
-    // Populate macro backend from configured macro devices (loaded from config)
-    for (const auto& macro_cfg : configured_macros_) {
-        macro_.add_macro(macro_cfg);
-    }
+    // Repopulate the macro backend — the clear() above wiped what load_config()
+    // installed. Same single rebuild path, so the two lists cannot drift.
+    rebuild_macro_backend();
 
     if (macro_.is_available()) {
         spdlog::info("[LedController] Loaded {} configured macro device(s)",
@@ -708,7 +707,8 @@ void NativeBackend::clear() {
 }
 
 void NativeBackend::set_color(const std::string& strip_id, double r, double g, double b, double w,
-                              SuccessCallback on_success, ErrorCallback on_error) {
+                              SuccessCallback on_success, ErrorCallback on_error,
+                              SuccessCallback on_queued) {
     if (!api_) {
         spdlog::warn("[NativeBackend] set_color called with no API (strip={})", strip_id);
         if (on_error) {
@@ -752,16 +752,19 @@ void NativeBackend::set_color(const std::string& strip_id, double r, double g, d
     spdlog::debug("[NativeBackend] set_color: {} r={:.2f} g={:.2f} b={:.2f} w={:.2f}", strip_id, r,
                   g, b, w);
 
-    api_->set_led(strip_id, r, g, b, w, on_success, [on_error](const MoonrakerError& err) {
-        if (on_error) {
-            on_error(err.message);
-        }
-    });
+    api_->set_led(
+        strip_id, r, g, b, w, std::move(on_success),
+        [on_error](const MoonrakerError& err) {
+            if (on_error) {
+                on_error(err.message);
+            }
+        },
+        std::move(on_queued));
 }
 
 void NativeBackend::set_brightness(const std::string& strip_id, int brightness_pct, double r,
                                    double g, double b, double w, SuccessCallback on_success,
-                                   ErrorCallback on_error) {
+                                   ErrorCallback on_error, SuccessCallback on_queued) {
     if (!api_) {
         spdlog::warn("[NativeBackend] set_brightness called with no API (strip={})", strip_id);
         if (on_error) {
@@ -777,11 +780,12 @@ void NativeBackend::set_brightness(const std::string& strip_id, int brightness_p
     spdlog::debug("[NativeBackend] set_brightness: {} {}% (scale={:.2f})", strip_id, brightness_pct,
                   scale);
 
-    set_color(strip_id, r * scale, g * scale, b * scale, w * scale, on_success, on_error);
+    set_color(strip_id, r * scale, g * scale, b * scale, w * scale, std::move(on_success),
+              std::move(on_error), std::move(on_queued));
 }
 
 void NativeBackend::turn_on(const std::string& strip_id, SuccessCallback on_success,
-                            ErrorCallback on_error) {
+                            ErrorCallback on_error, SuccessCallback on_queued) {
     if (!api_) {
         spdlog::warn("[NativeBackend] turn_on called with no API (strip={})", strip_id);
         if (on_error) {
@@ -793,11 +797,12 @@ void NativeBackend::turn_on(const std::string& strip_id, SuccessCallback on_succ
     spdlog::debug("[NativeBackend] turn_on: {}", strip_id);
     // Use cached color if available, otherwise default to full white
     StripColor cached = get_strip_color(strip_id);
-    set_color(strip_id, cached.r, cached.g, cached.b, cached.w, on_success, on_error);
+    set_color(strip_id, cached.r, cached.g, cached.b, cached.w, std::move(on_success),
+              std::move(on_error), std::move(on_queued));
 }
 
 void NativeBackend::turn_off(const std::string& strip_id, SuccessCallback on_success,
-                             ErrorCallback on_error) {
+                             ErrorCallback on_error, SuccessCallback on_queued) {
     if (!api_) {
         spdlog::warn("[NativeBackend] turn_off called with no API (strip={})", strip_id);
         if (on_error) {
@@ -808,7 +813,8 @@ void NativeBackend::turn_off(const std::string& strip_id, SuccessCallback on_suc
 
     spdlog::debug("[NativeBackend] turn_off: {}", strip_id);
     // Set all channels to zero
-    set_color(strip_id, 0.0, 0.0, 0.0, 0.0, on_success, on_error);
+    set_color(strip_id, 0.0, 0.0, 0.0, 0.0, std::move(on_success), std::move(on_error),
+              std::move(on_queued));
 }
 
 void NativeBackend::StripColor::decompose(uint32_t& base_color, int& brightness_pct,
@@ -1751,6 +1757,14 @@ void LedController::load_config() {
         }
     }
 
+    // The persisted list is the source of truth; mirror it into the backend now.
+    // Without this, macro devices exist for the overlay (which renders chips from
+    // configured_macros()) but not for MacroBackend, whose macros_ was only ever
+    // filled by discover_from_hardware(). Between init() and discovery — and
+    // forever on a printer where discovery never runs — every macro chip rendered
+    // a button whose execute_toggle() found nothing and silently no-opped.
+    rebuild_macro_backend();
+
     // Config migration: ensure macro strips have "macro:" prefix
     bool needs_resave = false;
     for (auto& s : selected_strips_) {
@@ -1922,19 +1936,44 @@ void LedController::toggle_all(bool on) {
     }
 
     // Factory for settle callbacks: increments the in-flight counter at dispatch
-    // and returns a (success, error) pair that each decrement it on the main thread
-    // via tok.defer() once the gcode ACK (or error) lands.
+    // and returns a (success, error, queued) triple that each decrement it on the
+    // main thread via tok.defer() once the gcode ACK (or error, or queue
+    // acceptance) lands.
+    //
+    // The third one is not decoration. SET_LED is discretionary, so while an
+    // external blocking op (BED_MESH_CALIBRATE, QGL, a manual probe) holds
+    // Klipper's gcode lock, MoonrakerAPI queues the command fire-and-forget and
+    // drops its RPC response — neither of the first two will EVER fire, and the
+    // counter would stay pinned, greying both light buttons out for the whole
+    // session (#1129). on_queued is the only settle signal on that path.
+    //
+    // Only the NATIVE branch below passes it, and that is not an oversight:
+    // is_discretionary_gcode() lists SET_LED and nothing else the LED backends
+    // emit. output_pin sends SET_PIN, macro devices send user macros (both
+    // non-discretionary, so they pass the guard and get a real response), and WLED
+    // goes over HTTP without touching the gcode lock at all.
+    struct Settle {
+        NativeBackend::SuccessCallback done;
+        NativeBackend::ErrorCallback fail;
+        NativeBackend::SuccessCallback queued;
+    };
     auto tok = lifetime_.token();
     auto make_settle = [this, tok]() {
         note_command_dispatched();
-        NativeBackend::SuccessCallback on_done = [this, tok]() {
+        auto settle = [this, tok]() {
             tok.defer("LedController::led_cmd_settled", [this]() { note_command_settled(); });
         };
-        NativeBackend::ErrorCallback on_fail = [this, tok](const std::string& msg) {
+        NativeBackend::SuccessCallback on_done = settle;
+        NativeBackend::ErrorCallback on_fail = [settle](const std::string& msg) {
             spdlog::warn("[LedController] LED toggle command failed: {}", msg);
-            tok.defer("LedController::led_cmd_settled", [this]() { note_command_settled(); });
+            settle();
         };
-        return std::make_pair(on_done, on_fail);
+        NativeBackend::SuccessCallback on_queued = [settle]() {
+            spdlog::debug("[LedController] LED toggle queued behind a blocking op — settling "
+                          "without an ACK");
+            settle();
+        };
+        return Settle{on_done, on_fail, on_queued};
     };
 
     for (const auto& strip_id : selected_strips_) {
@@ -1947,19 +1986,20 @@ void LedController::toggle_all(bool on) {
                 // brightness==0-but-color-nonzero restore-at-100% semantics.
                 auto c = compute_scaled_last_color(last_brightness_);
                 auto cbs = make_settle();
-                native_.set_color(strip_id, c.r, c.g, c.b, c.w, cbs.first, cbs.second);
+                native_.set_color(strip_id, c.r, c.g, c.b, c.w, cbs.done, cbs.fail,
+                                  cbs.queued);
             } else {
                 auto cbs = make_settle();
-                native_.turn_off(strip_id, cbs.first, cbs.second);
+                native_.turn_off(strip_id, cbs.done, cbs.fail, cbs.queued);
             }
             break;
 
         case LedBackendType::WLED: {
             auto cbs = make_settle();
             if (on) {
-                wled_.set_on(strip_id, cbs.first, cbs.second);
+                wled_.set_on(strip_id, cbs.done, cbs.fail);
             } else {
-                wled_.set_off(strip_id, cbs.first, cbs.second);
+                wled_.set_off(strip_id, cbs.done, cbs.fail);
             }
             break;
         }
@@ -1977,25 +2017,25 @@ void LedController::toggle_all(bool on) {
             case MacroLedType::ON_OFF: {
                 auto cbs = make_settle();
                 if (on) {
-                    macro_.execute_on(macro->display_name, cbs.first, cbs.second);
+                    macro_.execute_on(macro->display_name, cbs.done, cbs.fail);
                 } else {
-                    macro_.execute_off(macro->display_name, cbs.first, cbs.second);
+                    macro_.execute_off(macro->display_name, cbs.done, cbs.fail);
                 }
                 break;
             }
             case MacroLedType::TOGGLE: {
                 auto cbs = make_settle();
-                macro_.execute_toggle(macro->display_name, cbs.first, cbs.second);
+                macro_.execute_toggle(macro->display_name, cbs.done, cbs.fail);
                 break;
             }
             case MacroLedType::PRESET: {
                 // For preset type, use on/off macros if available
                 if (on && !macro->on_macro.empty()) {
                     auto cbs = make_settle();
-                    macro_.execute_on(macro->display_name, cbs.first, cbs.second);
+                    macro_.execute_on(macro->display_name, cbs.done, cbs.fail);
                 } else if (!on && !macro->off_macro.empty()) {
                     auto cbs = make_settle();
-                    macro_.execute_off(macro->display_name, cbs.first, cbs.second);
+                    macro_.execute_off(macro->display_name, cbs.done, cbs.fail);
                 }
                 break;
             }
@@ -2006,9 +2046,9 @@ void LedController::toggle_all(bool on) {
         case LedBackendType::OUTPUT_PIN: {
             auto cbs = make_settle();
             if (on) {
-                output_pin_.turn_on(strip_id, cbs.first, cbs.second);
+                output_pin_.turn_on(strip_id, cbs.done, cbs.fail);
             } else {
-                output_pin_.turn_off(strip_id, cbs.first, cbs.second);
+                output_pin_.turn_off(strip_id, cbs.done, cbs.fail);
             }
             break;
         }
@@ -2341,6 +2381,8 @@ void LedController::set_configured_macros(const std::vector<LedMacroInfo>& macro
             spdlog::warn("[LedController] Skipping macro with empty display name");
         }
     }
+    // Keep MacroBackend in lockstep so no caller can leave the two out of sync.
+    rebuild_macro_backend();
 }
 
 void LedController::rebuild_macro_backend() {

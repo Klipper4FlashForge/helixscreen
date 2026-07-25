@@ -681,11 +681,12 @@ void LedControlOverlay::handle_brightness_change(int brightness) {
     current_brightness_ = brightness;
     update_brightness_text(brightness);
 
-    // Route brightness to output_pin backend directly (no color to apply)
+    // Route brightness to output_pin backend directly (no color to apply).
+    // Only the output_pin members of the selection: a mixed selection would
+    // otherwise turn "neopixel a" into SET_PIN PIN=a.
     if (selected_backend_type_ == LedBackendType::OUTPUT_PIN) {
         auto& controller = LedController::instance();
-        const auto& selected = controller.selected_strips();
-        for (const auto& strip_id : selected) {
+        for (const auto& strip_id : target_strips_for(LedBackendType::OUTPUT_PIN)) {
             controller.output_pin().set_brightness(strip_id, brightness);
         }
     } else {
@@ -779,19 +780,49 @@ void LedControlOverlay::handle_native_turn_off() {
     }
 }
 
-std::vector<std::string> LedControlOverlay::native_target_strips() {
+std::vector<std::string> LedControlOverlay::target_strips_for(LedBackendType type) {
     auto& controller = LedController::instance();
-    const auto& selected = controller.selected_strips();
-    if (!selected.empty()) {
-        return selected;
+
+    // Keep only the strips this backend actually owns. backend_for_strip() is the
+    // same lookup the controller dispatches on, so the filter cannot drift from
+    // where the command would really be sent.
+    std::vector<std::string> targets;
+    for (const auto& strip_id : controller.selected_strips()) {
+        if (controller.backend_for_strip(strip_id) == type) {
+            targets.push_back(strip_id);
+        }
     }
-    // Nothing selected: fall back to the first native strip, the implicit
-    // target the color/turn-off paths have always used.
-    const auto& strips = controller.native().strips();
-    if (strips.empty()) {
+    if (!targets.empty()) {
+        return targets;
+    }
+
+    // Nothing of this backend is selected: fall back to its first strip, the
+    // implicit target the color/turn-off paths have always used.
+    const std::vector<LedStripInfo>* pool = nullptr;
+    switch (type) {
+    case LedBackendType::NATIVE:
+        pool = &controller.native().strips();
+        break;
+    case LedBackendType::OUTPUT_PIN:
+        pool = &controller.output_pin().pins();
+        break;
+    case LedBackendType::WLED:
+        pool = &controller.wled().strips();
+        break;
+    case LedBackendType::MACRO:
+    case LedBackendType::LED_EFFECT:
+        // Macro devices and effects are addressed by name from their own lists;
+        // there is no meaningful "first strip" to fall back to.
+        break;
+    }
+    if (pool == nullptr || pool->empty()) {
         return {};
     }
-    return {strips[0].id};
+    return {(*pool)[0].id};
+}
+
+std::vector<std::string> LedControlOverlay::native_target_strips() {
+    return target_strips_for(LedBackendType::NATIVE);
 }
 
 void LedControlOverlay::handle_wled_toggle() {

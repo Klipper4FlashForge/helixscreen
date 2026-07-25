@@ -69,15 +69,23 @@ class NativeBackend {
     using SuccessCallback = std::function<void()>;
     using ErrorCallback = std::function<void(const std::string&)>;
 
+    // `on_queued` is the third disposition MoonrakerAPI::execute_gcode offers:
+    // SET_LED is discretionary, so while an external blocking op holds Klipper's
+    // gcode lock the command is queued fire-and-forget and its RPC response is
+    // dropped — neither on_success nor on_error will ever fire. Pass on_queued to
+    // release a caller-side in-flight counter on that path. It means "accepted for
+    // later execution", never "the strip changed", and it runs synchronously on
+    // the calling thread. See moonraker_api.h for the full contract.
     void set_color(const std::string& strip_id, double r, double g, double b, double w,
-                   SuccessCallback on_success = nullptr, ErrorCallback on_error = nullptr);
+                   SuccessCallback on_success = nullptr, ErrorCallback on_error = nullptr,
+                   SuccessCallback on_queued = nullptr);
     void set_brightness(const std::string& strip_id, int brightness_pct, double r, double g,
                         double b, double w, SuccessCallback on_success = nullptr,
-                        ErrorCallback on_error = nullptr);
+                        ErrorCallback on_error = nullptr, SuccessCallback on_queued = nullptr);
     void turn_on(const std::string& strip_id, SuccessCallback on_success = nullptr,
-                 ErrorCallback on_error = nullptr);
+                 ErrorCallback on_error = nullptr, SuccessCallback on_queued = nullptr);
     void turn_off(const std::string& strip_id, SuccessCallback on_success = nullptr,
-                  ErrorCallback on_error = nullptr);
+                  ErrorCallback on_error = nullptr, SuccessCallback on_queued = nullptr);
 
     /// Update per-strip color cache from Moonraker status update JSON
     void update_from_status(const nlohmann::json& status);

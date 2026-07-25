@@ -69,6 +69,12 @@ class LedControlOverlayTestAccess {
         return s != nullptr ? std::string(s) : std::string();
     }
 
+    // The backend fan-out gate: which selected strips a given backend's commands
+    // are allowed to reach.
+    [[nodiscard]] std::vector<std::string> targets_for(LedBackendType type) {
+        return overlay_.target_strips_for(type);
+    }
+
   private:
     helix::led::LedControlOverlay overlay_;
 };
@@ -269,6 +275,81 @@ TEST_CASE_METHOD(LVGLTestFixture,
     REQUIRE(ctrl.selected_strips().front() == "output_pin enclosure");
     REQUIRE(access.backend() == LedBackendType::OUTPUT_PIN);
     REQUIRE(access.active_strip_name() == "Enclosure LEDs");
+
+    ctrl.deinit();
+}
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "LedControlOverlay: a mixed selection only sends to matching-backend strips",
+                 "[led][control_overlay]") {
+    // Multi-strip selections became the normal case once tapping a chip stopped
+    // collapsing the selection, so a native strip, an output_pin and a macro
+    // device routinely sit in selected_strips() together. Fanning a backend's
+    // commands across the whole selection sends nonsense to Klipper:
+    //   SET_LED LED="enclosure"  -> "Unknown LED"
+    //   SET_LED LED="macro:Lamp" -> rejected by is_safe_identifier (the ':'),
+    //                               which toasts an error once per slider step
+    //   SET_PIN PIN=a            -> for a neopixel, from the output_pin branch
+    auto& ctrl = LedController::instance();
+    ctrl.deinit();
+    ctrl.init(nullptr, nullptr);
+
+    ctrl.native().add_strip(make_native_strip("neopixel rgb", /*color=*/true, /*white=*/false));
+
+    LedStripInfo pin;
+    pin.name = "Enclosure LEDs";
+    pin.id = "output_pin enclosure";
+    pin.backend = LedBackendType::OUTPUT_PIN;
+    ctrl.output_pin().add_pin(pin);
+
+    LedMacroInfo lamp;
+    lamp.display_name = "Lamp";
+    lamp.type = MacroLedType::TOGGLE;
+    lamp.toggle_macro = "LAMP_TOGGLE";
+    ctrl.set_configured_macros({lamp});
+    ctrl.rebuild_macro_backend();
+
+    ctrl.set_selected_strips({"neopixel rgb", "output_pin enclosure", "macro:Lamp"});
+
+    helix::PrinterState ps;
+    LedControlOverlayTestAccess access(ps);
+
+    REQUIRE(access.targets_for(LedBackendType::NATIVE) ==
+            std::vector<std::string>{"neopixel rgb"});
+    REQUIRE(access.targets_for(LedBackendType::OUTPUT_PIN) ==
+            std::vector<std::string>{"output_pin enclosure"});
+
+    ctrl.deinit();
+}
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "LedControlOverlay: a selection with no native strip still falls back",
+                 "[led][control_overlay]") {
+    // The implicit-target fallback must survive the backend filter: with only an
+    // output_pin selected, the native color path still addresses the first native
+    // strip rather than the output_pin's id.
+    auto& ctrl = LedController::instance();
+    ctrl.deinit();
+    ctrl.init(nullptr, nullptr);
+
+    ctrl.native().add_strip(make_native_strip("neopixel rgb", /*color=*/true, /*white=*/false));
+
+    LedStripInfo pin;
+    pin.name = "Enclosure LEDs";
+    pin.id = "output_pin enclosure";
+    pin.backend = LedBackendType::OUTPUT_PIN;
+    ctrl.output_pin().add_pin(pin);
+
+    ctrl.set_selected_strips({"output_pin enclosure"});
+
+    helix::PrinterState ps;
+    LedControlOverlayTestAccess access(ps);
+
+    REQUIRE(access.targets_for(LedBackendType::NATIVE) ==
+            std::vector<std::string>{"neopixel rgb"});
+    // ...and the output_pin path never picks up the native strip.
+    REQUIRE(access.targets_for(LedBackendType::OUTPUT_PIN) ==
+            std::vector<std::string>{"output_pin enclosure"});
 
     ctrl.deinit();
 }
