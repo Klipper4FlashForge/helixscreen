@@ -25,11 +25,28 @@ namespace helix {
 bool write_bmp(const char* filename, const uint8_t* data, int width, int height);
 
 /**
- * @brief Take a screenshot of the active LVGL screen and save to /tmp
+ * @brief Write raw ARGB8888 pixel data to a PNG file
  *
- * Generates a unique filename with timestamp: /tmp/ui-screenshot-<timestamp>.bmp
- * @return The filename on success, empty string on failure
+ * Encodes via lodepng (already linked for LV_USE_LODEPNG). Input is LVGL's
+ * ARGB8888, whose memory order is B,G,R,A — the channels are swizzled to the
+ * R,G,B,A order lodepng expects.
+ *
+ * @param filename Output file path
+ * @param data Pixel data (ARGB8888 format)
+ * @param width Image width in pixels
+ * @param height Image height in pixels
+ * @return true on success, false on failure
  */
-std::string save_screenshot();
+bool write_png(const char* filename, const uint8_t* data, int width, int height);
+
+/**
+ * @brief Take a screenshot of the active LVGL screen
+ *
+ * @param out_path Destination file. Empty (the default) writes a timestamped
+ *        `ui-screenshot-<timestamp>.bmp` in the runtime dir. A path ending in
+ *        `.png` is encoded as PNG; anything else is written as BMP.
+ * @return The filename actually written, empty string on failure
+ */
+std::string save_screenshot(const std::string& out_path = "");
 
 } // namespace helix

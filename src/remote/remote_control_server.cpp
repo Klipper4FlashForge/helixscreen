@@ -9,6 +9,7 @@
 
 #include "app_globals.h"
 #include "demo_overlays.h"
+#include "logging_init.h"
 #include "mock_scenarios.h"
 #include "printer_state.h"
 #include "screenshot.h"
@@ -286,6 +287,10 @@ void RemoteControlServer::register_builtin_handlers() {
     };
     handlers_["scroll"] = [this](const nlohmann::json& p) { return handle_scroll(p); };
     handlers_["wake"] = [this](const nlohmann::json& p) { return handle_wake(p); };
+
+    // Lifecycle + diagnostics
+    handlers_["shutdown"] = [this](const nlohmann::json& p) { return handle_shutdown(p); };
+    handlers_["log"] = [this](const nlohmann::json& p) { return handle_log(p); };
 }
 
 nlohmann::json RemoteControlServer::handle_ping(const nlohmann::json& /*params*/) {
@@ -334,6 +339,44 @@ nlohmann::json RemoteControlServer::handle_navigate(const nlohmann::json& params
         lv_obj_send_event(widget, LV_EVENT_CLICKED, nullptr);
         return {{"navigated_to", target}, {"kind", "widget"}};
     });
+}
+
+nlohmann::json RemoteControlServer::handle_shutdown(const nlohmann::json& /*params*/) {
+    // Answer before the main loop tears down: app_request_quit() only sets a
+    // flag, so the reply is written and flushed on the way out. Doing this on
+    // the UI thread would race the loop we are asking to end.
+    spdlog::info("[RemoteControl] shutdown requested");
+    app_request_quit();
+    return {{"shutting_down", true}};
+}
+
+nlohmann::json RemoteControlServer::handle_log(const nlohmann::json& params) {
+    // Serve the in-memory ring buffer the debug bundle already fills, so a
+    // scripted run can read the app's own log without tee-ing it to a file.
+    int lines = 50;
+    if (params.contains("lines") && params["lines"].is_number_integer()) {
+        lines = params["lines"].get<int>();
+    }
+    if (lines <= 0) {
+        lines = 50;
+    }
+
+    std::string tail = helix::logging::tail_ring_buffer(lines);
+    nlohmann::json arr = nlohmann::json::array();
+    size_t pos = 0;
+    while (pos <= tail.size()) {
+        size_t nl = tail.find('\n', pos);
+        std::string line =
+            tail.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+        if (!line.empty()) {
+            arr.push_back(line);
+        }
+        if (nl == std::string::npos) {
+            break;
+        }
+        pos = nl + 1;
+    }
+    return {{"lines", arr}, {"count", arr.size()}, {"capacity", helix::logging::ring_buffer_capacity()}};
 }
 
 nlohmann::json RemoteControlServer::handle_go_back(const nlohmann::json& /*params*/) {
@@ -412,10 +455,22 @@ nlohmann::json RemoteControlServer::handle_get_current(const nlohmann::json& /*p
     });
 }
 
-nlohmann::json RemoteControlServer::handle_screenshot(const nlohmann::json& /*params*/) {
-    return execute_on_ui_thread([]() -> nlohmann::json {
-        helix::save_screenshot();
-        return {{"saved", true}};
+nlohmann::json RemoteControlServer::handle_screenshot(const nlohmann::json& params) {
+    // Optional destination. A ".png" suffix selects PNG encoding; the default
+    // (no path) stays a timestamped BMP in the runtime dir.
+    std::string out_path;
+    if (params.contains("path") && params["path"].is_string()) {
+        out_path = params["path"].get<std::string>();
+    }
+    return execute_on_ui_thread([out_path]() -> nlohmann::json {
+        std::string written = helix::save_screenshot(out_path);
+        if (written.empty()) {
+            throw std::runtime_error("Screenshot failed" +
+                                     (out_path.empty() ? std::string() : ": " + out_path));
+        }
+        // Report where it actually landed — callers scripting a capture should
+        // never have to guess the filename.
+        return {{"saved", true}, {"path", written}};
     });
 }
 
@@ -792,6 +847,84 @@ static lv_obj_t* resolve_widget(const nlohmann::json& params) {
     return nullptr;
 }
 
+// A widget that carries a value the user manipulates directly, as opposed to a
+// container that merely happens to be clickable. Composite rows (a settings
+// toggle row, a dropdown row) are clickable shells wrapping one of these.
+static bool is_value_control(lv_obj_t* o) {
+    return lv_obj_check_type(o, &lv_switch_class) || lv_obj_check_type(o, &lv_checkbox_class) ||
+           lv_obj_check_type(o, &lv_slider_class) || lv_obj_check_type(o, &lv_arc_class) ||
+           lv_obj_check_type(o, &lv_dropdown_class) || lv_obj_check_type(o, &lv_textarea_class);
+}
+
+// Collect visible value-controls in a subtree (excluding the root itself).
+// Hidden subtrees are skipped for the same reason describe_screen skips them:
+// they are not on screen, so they are not targets.
+static void collect_value_controls(lv_obj_t* parent, std::vector<lv_obj_t*>& out) {
+    if (!parent) {
+        return;
+    }
+    uint32_t count = lv_obj_get_child_count(parent);
+    for (uint32_t i = 0; i < count; ++i) {
+        lv_obj_t* child = lv_obj_get_child(parent, i);
+        if (!child || lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN)) {
+            continue;
+        }
+        if (is_value_control(child)) {
+            out.push_back(child);
+        }
+        collect_value_controls(child, out);
+    }
+}
+
+// Resolve the widget a click/set should actually land on.
+//
+// `click row_foo` on a composite settings row used to send CLICKED to the row
+// container — which does nothing, because the control the user meant is the
+// switch nested inside it. Prefer a value-control descendant when the target
+// itself isn't one; fall back to the literal target (a category row that opens
+// an overlay is clickable and has no value-control, and must stay that way).
+//
+// `descended_to` is set to the resolved child when it differs from the target.
+// `ambiguous` is filled when several candidates exist, so the caller can report
+// them instead of silently picking one.
+static lv_obj_t* resolve_actionable(lv_obj_t* target, lv_obj_t** descended_to,
+                                    std::vector<lv_obj_t*>* ambiguous) {
+    *descended_to = nullptr;
+    if (!target || is_value_control(target)) {
+        return target;
+    }
+    std::vector<lv_obj_t*> found;
+    collect_value_controls(target, found);
+    if (found.size() == 1) {
+        *descended_to = found[0];
+        return found[0];
+    }
+    if (found.size() > 1 && ambiguous) {
+        *ambiguous = found;
+    }
+    // Zero candidates, or too many to choose between: act on the target itself
+    // if it is clickable at all, so buttons and overlay-opening rows are
+    // unaffected by this resolution step.
+    return target;
+}
+
+// Report a resolved widget's describe_screen-style path, so a caller that got
+// descended into a child can address it directly next time.
+static std::string path_of(lv_obj_t* o) {
+    if (!o) {
+        return {};
+    }
+    std::string suffix;
+    lv_obj_t* cur = o;
+    while (lv_obj_t* parent = lv_obj_get_parent(cur)) {
+        uint32_t idx = lv_obj_get_index(cur);
+        suffix = "/" + std::to_string(idx) + suffix;
+        cur = parent;
+    }
+    // cur is now a screen root: the active screen ("s") or the top layer ("t").
+    return (cur == lv_layer_top() ? "t" : "s") + suffix;
+}
+
 // Human-readable label for a target (path or name), for result messages.
 static std::string target_label(const nlohmann::json& params) {
     if (params.contains("path") && params["path"].is_string()) {
@@ -810,10 +943,28 @@ nlohmann::json RemoteControlServer::handle_click(const nlohmann::json& params) {
 
     return execute_on_ui_thread([params]() -> nlohmann::json {
         wake_display();
-        lv_obj_t* widget = resolve_widget(params);
-        if (!widget) {
+        lv_obj_t* target = resolve_widget(params);
+        if (!target) {
             throw std::invalid_argument("Widget not found: " + target_label(params));
         }
+        // Composite rows wrap the real control — descend to it when unambiguous.
+        lv_obj_t* descended = nullptr;
+        std::vector<lv_obj_t*> ambiguous;
+        lv_obj_t* widget = resolve_actionable(target, &descended, &ambiguous);
+
+        nlohmann::json result;
+        result["clicked"] = target_label(params);
+        if (descended) {
+            result["descended_to"] = path_of(descended);
+        }
+        if (!ambiguous.empty()) {
+            nlohmann::json cands = nlohmann::json::array();
+            for (lv_obj_t* c : ambiguous) {
+                cands.push_back(path_of(c));
+            }
+            result["candidates"] = cands; // clicked the container; @path one of these
+        }
+
         // A synthetic CLICKED does not flip a switch/checkbox (LVGL toggles those
         // on the indev press/release). Toggle the state explicitly and notify, so
         // `click <switch>` behaves like a real tap.
@@ -826,10 +977,11 @@ nlohmann::json RemoteControlServer::handle_click(const nlohmann::json& params) {
                 lv_obj_remove_state(widget, LV_STATE_CHECKED);
             }
             lv_obj_send_event(widget, LV_EVENT_VALUE_CHANGED, nullptr);
-            return {{"clicked", target_label(params)}, {"toggled_to", now ? 1 : 0}};
+            result["toggled_to"] = now ? 1 : 0;
+            return result;
         }
         lv_obj_send_event(widget, LV_EVENT_CLICKED, nullptr);
-        return {{"clicked", target_label(params)}};
+        return result;
     });
 }
 
@@ -845,10 +997,14 @@ nlohmann::json RemoteControlServer::handle_set_widget_value(const nlohmann::json
 
     return execute_on_ui_thread([params, value_json]() -> nlohmann::json {
         wake_display();
-        lv_obj_t* widget = resolve_widget(params);
-        if (!widget) {
+        lv_obj_t* target = resolve_widget(params);
+        if (!target) {
             throw std::invalid_argument("Widget not found: " + target_label(params));
         }
+        // Same container-to-control descent as click: `set_value <row> <v>`
+        // should reach the row's slider/dropdown/switch.
+        lv_obj_t* descended = nullptr;
+        lv_obj_t* widget = resolve_actionable(target, &descended, nullptr);
         std::string widget_name = target_label(params);
 
         // Try to set value based on widget type
@@ -1004,9 +1160,30 @@ static void describe_walk(lv_obj_t* parent, const std::string& path_prefix, nloh
     }
 }
 
-nlohmann::json RemoteControlServer::handle_describe_screen(const nlohmann::json& /*params*/) {
-    return execute_on_ui_thread([]() -> nlohmann::json {
+nlohmann::json RemoteControlServer::handle_describe_screen(const nlohmann::json& params) {
+    // Optional scoping: `ls <name|@path>` lists only that widget's subtree.
+    // A full-screen dump on a busy panel runs to hundreds of entries, which is
+    // unreadable when you already know which row you care about.
+    bool scoped = params.contains("name") || params.contains("path");
+
+    return execute_on_ui_thread([params, scoped]() -> nlohmann::json {
         nlohmann::json widgets = nlohmann::json::array();
+        if (scoped) {
+            lv_obj_t* root = resolve_widget(params);
+            if (!root) {
+                throw std::invalid_argument("Widget not found: " + target_label(params));
+            }
+            std::string root_path = path_of(root);
+            // Include the root itself, then its subtree, so the listing is
+            // self-contained (you can see what you scoped to).
+            char resolved[128];
+            lv_obj_get_name_resolved(root, resolved, sizeof(resolved));
+            const char* raw = lv_obj_get_name(root);
+            widgets.push_back(describe_one(
+                root, resolved[0] != '\0' ? resolved : (raw ? raw : ""), root_path));
+            describe_walk(root, root_path, widgets);
+            return {{"widgets", widgets}, {"scope", root_path}};
+        }
         // Active screen ("s") holds panels + pushed overlays; the top layer ("t")
         // holds modals and their backdrops. Walk both so nothing on screen is missed.
         describe_walk(lv_screen_active(), "s", widgets);

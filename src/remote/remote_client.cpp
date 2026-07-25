@@ -55,7 +55,8 @@ static void print_usage() {
     printf("  list_panels             List available panels\n");
     printf("  list_components         List every registered XML component (live registry)\n");
     printf("  list_callbacks          List every registered event-callback name\n");
-    printf("  screenshot              Take a screenshot\n");
+    printf("  screenshot [path]       Capture the screen (a .png path encodes PNG;\n");
+    printf("                          default: timestamped .bmp in the runtime dir)\n");
     printf("  status                  Show panel, connection state, printer status\n");
     printf("  wake                    Reset idle timer / dismiss the screensaver\n");
     printf("  demo <name>             Show a sample-data overlay unreachable in mock mode\n");
@@ -68,10 +69,16 @@ static void print_usage() {
     printf("  wait_for <subject> <value> [--timeout N]\n");
     printf("                          Block until subject matches value (default 30s)\n");
     printf("\nWidgets (targets: a name, or @path from `ls`):\n");
-    printf("  ls, describe_screen     List on-screen widgets: name, path, type, actions\n");
-    printf("  click <target>          Click (toggles switches/checkboxes)\n");
+    printf("  ls, describe_screen [target]\n");
+    printf("                          List on-screen widgets: name, path, type, actions.\n");
+    printf("                          With a target, list only that widget's subtree.\n");
+    printf("  click <target>          Click (toggles switches/checkboxes). On a composite\n");
+    printf("                          row, descends to the control inside it.\n");
     printf("  set_value <target> <v>  Set value (slider, switch, dropdown, textarea)\n");
     printf("  scroll <target> [dx dy] Scroll into view, or by a delta\n");
+    printf("\nDiagnostics & lifecycle:\n");
+    printf("  log [-n N]              Tail the app's in-memory log ring (default 50 lines)\n");
+    printf("  shutdown, quit          Ask the running app to exit\n");
     printf("\nScenarios:\n");
     printf("  scenario <name>         Apply named mock scenario\n");
     printf("  list_scenarios          List available mock scenarios\n");
@@ -229,6 +236,15 @@ static int handle_response(const std::string& raw_response, nlohmann::json* out_
                 auto& result = response["result"];
                 if (result.is_string()) {
                     printf("%s\n", result.get<std::string>().c_str());
+                } else if (result.is_object() && result.contains("lines") &&
+                           result["lines"].is_array()) {
+                    // Log tail: print the lines as lines. JSON-escaped log output
+                    // is unreadable and defeats piping it to grep.
+                    for (const auto& line : result["lines"]) {
+                        if (line.is_string()) {
+                            printf("%s\n", line.get<std::string>().c_str());
+                        }
+                    }
                 } else {
                     printf("%s\n", result.dump(2).c_str());
                 }
@@ -308,7 +324,27 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
     } else if (cmd == "current" || cmd == "pwd") {
         return build_request("get_current");
     } else if (cmd == "screenshot") {
+        // Optional destination; a .png suffix asks the app to encode PNG.
+        if (tokens.size() >= 2) {
+            return build_request("screenshot", {{"path", tokens[1]}});
+        }
         return build_request("screenshot");
+    } else if (cmd == "shutdown" || cmd == "quit" || cmd == "exit") {
+        // In the REPL, quit/exit are intercepted before dispatch (they leave the
+        // REPL); reaching here means the one-shot client, where stopping the app
+        // is the only sensible reading.
+        return build_request("shutdown");
+    } else if (cmd == "log") {
+        nlohmann::json params = nlohmann::json::object();
+        for (size_t i = 1; i < tokens.size(); i++) {
+            if ((tokens[i] == "-n" || tokens[i] == "--lines") && i + 1 < tokens.size()) {
+                params["lines"] = std::atoi(tokens[i + 1].c_str());
+                i++;
+            } else {
+                params["lines"] = std::atoi(tokens[i].c_str());
+            }
+        }
+        return build_request("log", params);
     } else if (cmd == "status") {
         return build_request("status");
     } else if (cmd == "demo") {
@@ -371,6 +407,10 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
         // `wake` or `screensaver off` — reset the idle timer / dismiss the saver.
         return build_request("wake");
     } else if (cmd == "describe_screen" || cmd == "ls") {
+        // `ls` lists the whole screen; `ls <name|@path>` scopes to a subtree.
+        if (tokens.size() >= 2) {
+            return build_request("describe_screen", target_param(tokens[1]));
+        }
         return build_request("describe_screen");
     } else if (cmd == "scroll") {
         if (tokens.size() < 2) {
@@ -400,7 +440,7 @@ static const char* REPL_COMMANDS[] = {
     "status",      "wake",       "demo",       "get",       "set",       "list_subjects",
     "wait_for",    "ls",         "describe_screen", "click",  "set_value",
     "scroll",      "scenario",   "list_scenarios",  "help",   "refresh",
-    "quit",        "exit",       nullptr};
+    "log",         "shutdown",   "quit",       "exit",      nullptr};
 
 // Cached subject names for tab completion (populated lazily)
 static std::vector<std::string> g_cached_subjects;
@@ -565,19 +605,22 @@ static void repl_print_help() {
     printf("  list_components           List every registered XML component\n");
     printf("  list_callbacks            List every registered event-callback name\n");
     printf("  current                   Show current panel and overlay stack\n");
-    printf("  screenshot                Take a screenshot\n");
+    printf("  screenshot [path]         Capture the screen (.png path encodes PNG)\n");
     printf("  status                    Full status summary\n");
     printf("  get <subject>             Read subject value\n");
     printf("  set <subject> <value>     Set subject value\n");
     printf("  list_subjects             List all subjects\n");
     printf("  wait_for <s> <v> [-t N]   Wait for subject to match value\n");
-    printf("  click <widget>            Click a named widget\n");
+    printf("  ls [target]               List widgets here, or one widget's subtree\n");
+    printf("  click <widget>            Click a widget (descends into composite rows)\n");
     printf("  set_value <widget> <v>    Set widget value\n");
     printf("  scenario <name>           Apply mock scenario\n");
     printf("  list_scenarios            List available scenarios\n");
+    printf("  log [-n N]                Tail the app's in-memory log ring\n");
     printf("\n");
     printf("  refresh                   Reload tab-completion caches\n");
     printf("  help                      Show this help\n");
+    printf("  shutdown                  Stop the running app (not just this REPL)\n");
     printf("  quit, exit, Ctrl-D        Exit REPL\n");
     printf("\nTab completion works for commands, subjects, panels, and scenarios.\n");
     printf("Emacs keybindings: Ctrl-A/E, Ctrl-B/F, Ctrl-K/U, Ctrl-W, Ctrl-D, etc.\n");
