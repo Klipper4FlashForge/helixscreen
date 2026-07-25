@@ -20,6 +20,7 @@
 
 #include "remote_client.h"
 
+#include <cctype>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -48,6 +49,7 @@ static const char* PROGRAM_NAME = "helix-screen ctl";
 static void print_usage() {
     printf("Usage: %s [options] <command> [args...]\n", PROGRAM_NAME);
     printf("\nNavigation (fs metaphor):\n");
+    printf("  help, ?                 Show this help\n");
     printf("  ping                    Health check\n");
     printf("  navigate, cd <target>   Go to a panel, or click a widget to descend\n");
     printf("  go_back, back, cd ..     Pop the current overlay/level\n");
@@ -283,12 +285,40 @@ static nlohmann::json parse_value(const std::string& val_str) {
     return val_str;
 }
 
-/// Build a target param object for click/set/scroll. "@s/3/1" addresses a widget
-/// by its describe_screen path (unique even for duplicate names); anything else
-/// is treated as a widget name.
+/// True for a describe_screen locator written without the '@' prefix: an "s" or
+/// "t" root followed by one or more "/<index>" segments, and nothing else.
+bool helix::is_bare_path(const std::string& t) {
+    if (t.size() < 3 || (t[0] != 's' && t[0] != 't') || t[1] != '/') {
+        return false;
+    }
+    bool digit_in_segment = false;
+    for (size_t i = 2; i < t.size(); ++i) {
+        if (t[i] == '/') {
+            if (!digit_in_segment) {
+                return false; // empty segment: "s//1" or a trailing slash
+            }
+            digit_in_segment = false;
+        } else if (isdigit(static_cast<unsigned char>(t[i]))) {
+            digit_in_segment = true;
+        } else {
+            return false;
+        }
+    }
+    return digit_in_segment;
+}
+
+/// Build a target param object for click/set/scroll. "@s/3/1" (or a bare
+/// "s/3/1") addresses a widget by its describe_screen path, unique even for
+/// duplicate names; anything else is treated as a widget name.
 static nlohmann::json target_param(const std::string& t) {
     if (!t.empty() && t[0] == '@') {
         return {{"path", t.substr(1)}};
+    }
+    // Accept a bare path too, so a locator pasted straight out of `ls` works
+    // without remembering the '@'. Widget names never contain '/', so the
+    // "s/1/2" / "t/0" shape is unambiguous.
+    if (helix::is_bare_path(t)) {
+        return {{"path", t}};
     }
     return {{"name", t}};
 }
@@ -904,6 +934,13 @@ int helix::remote_client_main(int argc, char** argv) {
     }
 
     std::string command = argv[arg_start];
+
+    // `ctl help` is the first thing anyone types; make it work as a command and
+    // not just as the -h/--help option.
+    if (command == "help" || command == "?") {
+        print_usage();
+        return 0;
+    }
 
     // Explicit REPL mode
     if (command == "repl") {
