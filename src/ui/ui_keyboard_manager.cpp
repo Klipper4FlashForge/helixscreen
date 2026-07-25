@@ -416,7 +416,12 @@ void KeyboardManager::textarea_focus_event_cb(lv_event_t* e) {
     if (code == LV_EVENT_FOCUSED) {
         // Suppress keyboard when focus is a side effect of scrolling — LVGL fires
         // FOCUSED on whatever the finger lands on, even during a swipe gesture.
-        lv_indev_t* indev = lv_indev_active();
+        // The device that raised the focus, so a second pointer's scroll state
+        // cannot suppress a keyboard the user legitimately asked for.
+        lv_indev_t* indev = lv_event_get_indev(e);
+        if (!indev) {
+            indev = lv_indev_active();
+        }
         if (indev && lv_indev_get_scroll_obj(indev)) {
             spdlog::debug("[KeyboardManager] Suppressed keyboard — input device is scrolling");
             return;
@@ -477,7 +482,15 @@ void KeyboardManager::longpress_event_handler(lv_event_t* e) {
         mgr.pressed_btn_id_ = btn_id;
         mgr.pressed_char_ = (btn_text && btn_text[0]) ? btn_text[0] : 0;
 
-        lv_indev_t* indev = lv_indev_active();
+        // The device that delivered THIS event, not "whichever device is active".
+        // Those differ once more than one pointer indev exists — a touchscreen plus a
+        // USB mouse (which HelixScreen supports), or the ctl synthetic pointer — and
+        // lv_indev_active() can then hand back the other device, making press_point_
+        // the mouse's idle position instead of where the finger actually landed.
+        lv_indev_t* indev = lv_event_get_indev(e);
+        if (!indev) {
+            indev = lv_indev_active();
+        }
         if (indev) {
             lv_indev_get_point(indev, &mgr.press_point_);
         }
@@ -500,10 +513,21 @@ void KeyboardManager::longpress_event_handler(lv_event_t* e) {
             // and swallowed neighbouring keys on small ones.
             lv_area_t btn_area;
             if (!buttonmatrix_button_area(keyboard, mgr.pressed_btn_id_, &btn_area)) {
-                btn_area.x1 = mgr.press_point_.x - 25;
-                btn_area.x2 = mgr.press_point_.x + 25;
-                btn_area.y1 = mgr.press_point_.y - 25;
-                btn_area.y2 = mgr.press_point_.y + 25;
+                // No real rect for this key, so abandon the long-press rather than
+                // invent one. The previous fallback — a fixed 50px box around
+                // press_point_ — turned "unknown" into "wrong": if press_point_ did
+                // not match the button (a second pointer device, a stale sample), the
+                // box landed on a different key, the popover drew over it, and the
+                // release was judged outside, silently cancelling. Staying in
+                // LP_PRESSED instead lets the release fall through to the normal
+                // VALUE_CHANGED path, so the key types its primary character. Losing
+                // the alternate is a far better failure than typing nothing.
+                spdlog::warn("[KeyboardManager] No button rect for id {} — long-press skipped",
+                             mgr.pressed_btn_id_);
+                mgr.longpress_state_ = LP_PRESSED;
+                // Return inside the SAFE_EVENT_CB try block; the single _END at the
+                // bottom closes it. Calling _END here would double-close the try.
+                return;
             }
 
             mgr.pressed_key_area_ = btn_area;
@@ -524,7 +548,12 @@ void KeyboardManager::longpress_event_handler(lv_event_t* e) {
 
         if (mgr.longpress_state_ == LP_LONG_DETECTED && mgr.overlay_ != nullptr) {
             // Slide-to-select mode: check release position to pick a character
-            lv_indev_t* indev = lv_indev_active();
+            // Same reasoning as the press: read the release position from the device
+            // that delivered this event, not from whichever happens to be active.
+            lv_indev_t* indev = lv_event_get_indev(e);
+            if (!indev) {
+                indev = lv_indev_active();
+            }
             lv_point_t release_point;
 
             spdlog::info("[KeyboardManager] Long-press mode active, checking release position");
