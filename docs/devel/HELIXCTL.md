@@ -30,6 +30,19 @@ helix-screen ctl                      # no command → also drops into the REPL
 > builds it; to put it in a device dev image, build with
 > `make PLATFORM_TARGET=<t> ENABLE_REMOTE_CONTROL=yes`.
 
+### Machine-readable output — `--json`
+
+`helix-screen ctl --json <command>` prints the raw JSON-RPC `result` on one line and
+exits 0. A **server** error prints the raw `error` object to stderr and exits non-zero;
+a **client-side** usage error (unknown command, missing argument, no instance at the
+socket) stays human-readable on stderr and also exits non-zero. This split means a
+script can trust the exit code without inspecting the payload, while a typo still
+produces a sentence rather than a protocol object.
+
+The REPL ignores `--json` — formatted output is the reason the REPL exists.
+
+    helix-screen ctl --json current | jq -r .panel
+
 ## Enabling the server
 
 The control server runs as a background thread inside `helix-screen`.

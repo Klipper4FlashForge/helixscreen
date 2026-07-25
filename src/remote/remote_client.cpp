@@ -89,6 +89,7 @@ static void print_usage() {
     printf("  repl                    Interactive REPL with line editing and history\n");
     printf("\nOptions:\n");
     printf("  -s, --socket <path>     Socket path (default: auto-detect)\n");
+    printf("  --json                  Emit the raw JSON-RPC result/error (one-shot only)\n");
     printf("  -h, --help              Show this help\n");
     printf("\nSocket path resolution:\n");
     printf("  1. --socket <path>  (explicit)\n");
@@ -209,6 +210,12 @@ static std::string read_response(int fd, int timeout_sec = 30) {
 
 static int g_request_id = 1;
 
+/// When set, the one-shot client emits the raw JSON-RPC `result` instead of the
+/// human-formatted rendering. Errors from the server go to stderr as the raw
+/// `error` object. Client-side usage errors stay human-readable — a caller that
+/// mistyped a command name needs prose, not a protocol object.
+static bool g_json_output = false;
+
 static nlohmann::json build_request(const std::string& method,
                                     const nlohmann::json& params = nlohmann::json::object()) {
     return {{"jsonrpc", "2.0"}, {"method", method}, {"params", params}, {"id", g_request_id++}};
@@ -227,14 +234,22 @@ static int handle_response(const std::string& raw_response, nlohmann::json* out_
 
         if (response.contains("error")) {
             auto& error = response["error"];
-            fprintf(stderr, "Error: %s (code %d)\n",
-                    error.value("message", "Unknown error").c_str(), error.value("code", -1));
+            if (g_json_output) {
+                fprintf(stderr, "%s\n", error.dump().c_str());
+            } else {
+                fprintf(stderr, "Error: %s (code %d)\n",
+                        error.value("message", "Unknown error").c_str(),
+                        error.value("code", -1));
+            }
             return 1;
         }
 
         if (response.contains("result")) {
             if (out_result) {
                 *out_result = response["result"];
+            } else if (g_json_output) {
+                // Raw, single-line. Callers pipe this to jq or json.loads.
+                printf("%s\n", response["result"].dump().c_str());
             } else {
                 auto& result = response["result"];
                 if (result.is_string()) {
@@ -894,6 +909,11 @@ int helix::remote_client_main(int argc, char** argv) {
             print_usage();
             return 0;
         }
+        if (strcmp(argv[arg_start], "--json") == 0) {
+            g_json_output = true;
+            arg_start++;
+            continue;
+        }
         if (strcmp(argv[arg_start], "-s") == 0 || strcmp(argv[arg_start], "--socket") == 0) {
             if (arg_start + 1 >= argc) {
                 fprintf(stderr, "Error: --socket requires a path argument\n");
@@ -908,6 +928,7 @@ int helix::remote_client_main(int argc, char** argv) {
 
     // No command → drop into the interactive fs-style REPL.
     if (arg_start >= argc) {
+        g_json_output = false; // --json is a one-shot flag; the REPL always formats
         return run_repl(resolve_socket_path(socket_path));
     }
 
@@ -922,6 +943,7 @@ int helix::remote_client_main(int argc, char** argv) {
 
     // Explicit REPL mode
     if (command == "repl") {
+        g_json_output = false; // --json is a one-shot flag; the REPL always formats
         std::string resolved_path = resolve_socket_path(socket_path);
         return run_repl(resolved_path);
     }
