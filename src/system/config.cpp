@@ -189,7 +189,26 @@ void erase_at_pointer(json& data, const json::json_pointer& ptr) {
     }
 }
 
+/// True when @p data has a non-null value at @p ptr. Both contains() and at()
+/// are non-vivifying, so this probes without creating nodes.
+///
+/// The distinction matters because nlohmann's contains() answers TRUE for a key
+/// whose value is null, and null keys are exactly what the pre-#1129
+/// Config::get_json() probes wrote all over user configs. Treating one of those
+/// as "a value is already here" makes a migration erase the real legacy source
+/// and keep the garbage.
+bool has_value_at(const json& data, const json::json_pointer& ptr) {
+    return data.contains(ptr) && !data.at(ptr).is_null();
+}
+
 /// Migrate config keys from old paths to new paths
+///
+/// A null at either end counts as ABSENT, never as a value:
+///   - null TARGET  → the move proceeds and overwrites the null (a null target
+///                    is probe pollution, not a user setting).
+///   - null SOURCE  → nothing worth moving; the source is dropped and the
+///                    target is left alone rather than being overwritten with null.
+///
 /// @param data JSON config data to migrate (modified in place)
 /// @param migrations Vector of {from_path, to_path} pairs (JSON pointer format)
 /// @return true if any migration occurred, false if no migration needed
@@ -206,8 +225,17 @@ bool migrate_config_keys(json& data,
             continue;
         }
 
-        // Skip if target already exists (don't overwrite)
-        if (data.contains(to_ptr)) {
+        // A null source carries nothing. Drop it rather than writing null over
+        // whatever the target holds.
+        if (data.at(from_ptr).is_null()) {
+            spdlog::debug("[Config] Migration dropped null source: {}", from_path);
+            erase_at_pointer(data, from_ptr);
+            any_migrated = true;
+            continue;
+        }
+
+        // Skip if the target already holds a real value (don't overwrite)
+        if (has_value_at(data, to_ptr)) {
             spdlog::debug("[Config] Migration skipped: {} already exists", to_path);
             erase_at_pointer(data, from_ptr);
             any_migrated = true;
@@ -820,6 +848,159 @@ static void migrate_v18_to_v19(json& config) {
                  converted);
 }
 
+/// Recursively erase object members whose value is null.
+///
+/// Array elements are deliberately left alone: erasing one shifts every later
+/// index, and no config consumer treats a null array slot as removable.
+/// Audited 2026-07-25 — no config setting uses null as a meaningful tri-state
+/// value; every `.is_null()` check on config data (hardware_validator,
+/// panel_widget_config, config.cpp's own default-filling) means "absent, use
+/// the default", which is exactly what erasing the key produces.
+static int strip_null_leaves(json& node) {
+    int removed = 0;
+    if (node.is_object()) {
+        for (auto it = node.begin(); it != node.end();) {
+            if (it.value().is_null()) {
+                it = node.erase(it);
+                ++removed;
+            } else {
+                removed += strip_null_leaves(it.value());
+                ++it;
+            }
+        }
+    } else if (node.is_array()) {
+        for (auto& element : node) {
+            removed += strip_null_leaves(element);
+        }
+    }
+    return removed;
+}
+
+/// True when @p node holds anything a user could have set — i.e. any leaf that
+/// is not null. An empty object/array counts as nothing, and so does a tree that
+/// bottoms out entirely in nulls (the shape read-only probes left behind).
+/// Used to decide whether a legacy node is safe to erase.
+static bool has_any_value(const json& node) {
+    if (node.is_null()) {
+        return false;
+    }
+    if (node.is_object() || node.is_array()) {
+        for (const auto& child : node) {
+            if (has_any_value(child)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    return true;
+}
+
+/// Migration v19→v20: purge the null-node garbage that read-only probes through
+/// Config::get_json() vivified into settings.json (#1129), and retire the
+/// legacy top-level /led block for good.
+///
+/// Previously the /led → printers/<id>/leds fold lived in
+/// LedController::load_config() and LedAutoState::load_config(), which run on
+/// EVERY boot — so the probes there re-created the /led orphan each time and
+/// erasing it would have been pointless. Doing the fold here (once, guarded by
+/// the version number, using non-vivifying contains()) is what makes the
+/// erase stick.
+///
+/// The /printer erase matters beyond tidiness: migrate_v3_to_v4() gates on
+/// `config.contains("printer") && config["printer"].is_object()`, so a
+/// resurrected /printer node would be split into a bogus printers/default entry
+/// if that migration ever re-ran.
+static void migrate_v19_to_v20(json& config) {
+    // --- 1. Fold any real legacy /led values into the active printer ---
+    //
+    // Resolve the fold target exactly the way Config::init() resolves the active
+    // printer, INCLUDING its "active_printer_id is empty or dangling → take the
+    // first printer object" fallback. We cannot lean on init()'s own copy of that
+    // fallback: it runs after run_versioned_migrations(), by which point
+    // config_version is already 20 and this migration will never run again.
+    std::string active;
+    if (config.contains("active_printer_id") && config["active_printer_id"].is_string()) {
+        active = config["active_printer_id"].get<std::string>();
+    }
+
+    const bool printers_ok = config.contains("printers") && config["printers"].is_object();
+    const bool active_resolves = printers_ok && !active.empty() &&
+                                 config["printers"].contains(active) &&
+                                 config["printers"][active].is_object();
+    if (printers_ok && !active_resolves) {
+        active.clear();
+        for (auto& [key, val] : config["printers"].items()) {
+            // The printers map can hold non-printer keys (show_printer_switcher
+            // is a bool), so require an object — same test init() applies.
+            if (val.is_object()) {
+                active = key;
+                break;
+            }
+        }
+    }
+
+    const bool have_target = printers_ok && !active.empty();
+    bool folded = false;
+
+    if (have_target && config.contains("led") && config["led"].is_object()) {
+        const std::string base = "/printers/" + active + "/leds";
+        std::vector<std::pair<std::string, std::string>> moves;
+        for (const char* key : {"selected_strips", "last_color", "last_brightness", "last_white",
+                                "color_presets", "macro_devices", "led_on_at_start",
+                                "startup_brightness"}) {
+            moves.emplace_back(std::string("/led/") + key, base + "/" + key);
+        }
+        for (const char* key : {"enabled", "mappings"}) {
+            moves.emplace_back(std::string("/led/auto_state/") + key,
+                               base + "/auto_state/" + key);
+        }
+        // migrate_config_keys() skips (and drops) sources whose target already
+        // holds a REAL value, so per-printer values already in place are never
+        // clobbered — while a probe-vivified null target is correctly treated as
+        // absent and gets overwritten by the legacy value.
+        folded = migrate_config_keys(config, moves);
+        if (folded) {
+            spdlog::info("[Config] Migration v20: folded legacy /led into /printers/{}/leds",
+                         active);
+        }
+    }
+
+    // --- 2. Erase the orphan top-level nodes ---
+    //
+    // Only ever erase a node we have finished with. Erasing unconditionally
+    // destroyed the whole /led block whenever the fold above was skipped (no
+    // printers map at all, for instance) — the user's settings deleted with
+    // nothing put in their place. If there is still something of value in there,
+    // leave it: a later boot that can resolve a printer gets another chance.
+    if (config.contains("led")) {
+        if (folded || !has_any_value(config["led"])) {
+            config.erase("led");
+            spdlog::info("[Config] Migration v20: erased orphan top-level /led node");
+        } else {
+            spdlog::warn("[Config] Migration v20: keeping legacy /led — no printer to fold it "
+                         "into yet");
+        }
+    }
+    // /printer at this point is probe pollution: a real legacy /printer block was
+    // already split out by migrate_v3_to_v4(). Erase it only when it truly holds
+    // nothing, so an unexpected real one is never silently destroyed.
+    if (config.contains("printer")) {
+        if (!has_any_value(config["printer"])) {
+            config.erase("printer");
+            spdlog::info("[Config] Migration v20: erased orphan top-level /printer node");
+        } else {
+            spdlog::warn("[Config] Migration v20: keeping top-level /printer — it still holds "
+                         "values");
+        }
+    }
+
+    // --- 3. Strip the null leaves left behind by vivifying probes ---
+    int removed = strip_null_leaves(config);
+    if (removed > 0) {
+        spdlog::info("[Config] Migration v20: removed {} null config leaf/leaves", removed);
+    }
+}
+
 /// Run all versioned migrations in sequence from current version to CURRENT_CONFIG_VERSION
 static void run_versioned_migrations(json& config, const std::string& config_path = "") {
     int version = 0;
@@ -865,6 +1046,8 @@ static void run_versioned_migrations(json& config, const std::string& config_pat
         migrate_v17_to_v18(config);
     if (version < 19)
         migrate_v18_to_v19(config);
+    if (version < 20)
+        migrate_v19_to_v20(config);
 
     config["config_version"] = CURRENT_CONFIG_VERSION;
 }
@@ -1249,18 +1432,13 @@ void Config::init(const std::string& config_path) {
             // Ensure leds/selected array exists (for multi-LED support)
             auto& leds_selected = data[json::json_pointer(df() + "leds/selected")];
             if (leds_selected.is_null()) {
-                // Check if there's a legacy strip value to migrate
-                auto& strip = data[json::json_pointer(df() + "leds/strip")];
-                if (!strip.is_null() && strip.is_string()) {
-                    std::string led = strip.get<std::string>();
-                    if (!led.empty()) {
-                        data[json::json_pointer(df() + "leds/selected")] = json::array({led});
-                    } else {
-                        data[json::json_pointer(df() + "leds/selected")] = json::array();
-                    }
-                } else {
-                    data[json::json_pointer(df() + "leds/selected")] = json::array();
-                }
+                // Check if there's a legacy strip value to migrate. Read it
+                // through the non-vivifying accessor — get_json()/operator[]
+                // would leave a permanent "leds/strip": null behind (#1129).
+                const json* strip = try_get_json(df() + "leds/strip");
+                std::string led =
+                    (strip != nullptr && strip->is_string()) ? strip->get<std::string>() : "";
+                leds_selected = led.empty() ? json::array() : json::array({led});
                 config_modified = true;
             }
 
@@ -1523,6 +1701,29 @@ std::string Config::get_path() {
 
 json& Config::get_json(const std::string& json_path) {
     return data[json::json_pointer(json_path)];
+}
+
+const json* Config::try_get_json(const std::string& json_path) const {
+    json::json_pointer ptr(json_path);
+    if (!data.contains(ptr)) {
+        return nullptr;
+    }
+    return &data.at(ptr);
+}
+
+std::vector<std::string> Config::get_string_array(const std::string& json_path) const {
+    std::vector<std::string> out;
+    const json* node = try_get_json(json_path);
+    if (node == nullptr || !node->is_array()) {
+        return out;
+    }
+    out.reserve(node->size());
+    for (const auto& element : *node) {
+        if (element.is_string()) {
+            out.push_back(element.get<std::string>());
+        }
+    }
+    return out;
 }
 
 /// Map common errno values to user-friendly descriptions

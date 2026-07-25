@@ -1157,14 +1157,11 @@ void LedSettingsOverlay::populate_auto_state_rows() {
     auto& ctrl = helix::led::LedController::instance();
     bool has_color = false;
     for (const auto& strip_id : ctrl.selected_strips()) {
-        for (const auto& s : ctrl.native().strips()) {
-            if (s.id == strip_id && s.supports_color) {
-                has_color = true;
-                break;
-            }
-        }
-        if (has_color)
+        const auto* s = helix::led::find_strip(ctrl.native().strips(), strip_id);
+        if (s != nullptr && s->supports_color) {
+            has_color = true;
             break;
+        }
     }
     if (has_color)
         action_type_options_.push_back("color");

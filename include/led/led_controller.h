@@ -33,11 +33,13 @@ class NativeBackend {
     struct StripColor {
         double r = 0.0, g = 0.0, b = 0.0, w = 0.0;
 
-        /// Convert to packed RGB uint32 (ignoring W channel)
-        [[nodiscard]] uint32_t to_rgb() const;
-
-        /// Decompose into base color (max brightness) + brightness percentage
-        void decompose(uint32_t& base_color, int& brightness_pct) const;
+        /// Decompose into base color (max brightness) + brightness percentage +
+        /// the W level scaled back up to full brightness. All four channels
+        /// feed the brightness max: a white-only Klipper `[led]` reports its
+        /// entire level in W, so excluding it reads back as 0% (#1129).
+        /// Re-applying `base_color`/`base_white` at `brightness_pct`
+        /// reproduces the original color.
+        void decompose(uint32_t& base_color, int& brightness_pct, double& base_white) const;
     };
 
     NativeBackend() = default;
@@ -67,15 +69,23 @@ class NativeBackend {
     using SuccessCallback = std::function<void()>;
     using ErrorCallback = std::function<void(const std::string&)>;
 
+    // `on_queued` is the third disposition MoonrakerAPI::execute_gcode offers:
+    // SET_LED is discretionary, so while an external blocking op holds Klipper's
+    // gcode lock the command is queued fire-and-forget and its RPC response is
+    // dropped — neither on_success nor on_error will ever fire. Pass on_queued to
+    // release a caller-side in-flight counter on that path. It means "accepted for
+    // later execution", never "the strip changed", and it runs synchronously on
+    // the calling thread. See moonraker_api.h for the full contract.
     void set_color(const std::string& strip_id, double r, double g, double b, double w,
-                   SuccessCallback on_success = nullptr, ErrorCallback on_error = nullptr);
+                   SuccessCallback on_success = nullptr, ErrorCallback on_error = nullptr,
+                   SuccessCallback on_queued = nullptr);
     void set_brightness(const std::string& strip_id, int brightness_pct, double r, double g,
                         double b, double w, SuccessCallback on_success = nullptr,
-                        ErrorCallback on_error = nullptr);
+                        ErrorCallback on_error = nullptr, SuccessCallback on_queued = nullptr);
     void turn_on(const std::string& strip_id, SuccessCallback on_success = nullptr,
-                 ErrorCallback on_error = nullptr);
+                 ErrorCallback on_error = nullptr, SuccessCallback on_queued = nullptr);
     void turn_off(const std::string& strip_id, SuccessCallback on_success = nullptr,
-                  ErrorCallback on_error = nullptr);
+                  ErrorCallback on_error = nullptr, SuccessCallback on_queued = nullptr);
 
     /// Update per-strip color cache from Moonraker status update JSON
     void update_from_status(const nlohmann::json& status);
@@ -261,16 +271,12 @@ class MacroBackend {
                                NativeBackend::SuccessCallback on_success = nullptr,
                                NativeBackend::ErrorCallback on_error = nullptr);
 
-    /// Check if a macro is currently "on" (optimistic tracking)
-    [[nodiscard]] bool is_on(const std::string& macro_name) const;
-
     /// Check if a macro's state can be tracked (ON_OFF = yes, TOGGLE = no)
     [[nodiscard]] bool has_known_state(const std::string& macro_name) const;
 
   private:
     MoonrakerAPI* api_ = nullptr;
     std::vector<LedMacroInfo> macros_;
-    std::unordered_map<std::string, bool> macro_states_; // Optimistic state tracking
 };
 
 class OutputPinBackend {
@@ -310,25 +316,15 @@ class OutputPinBackend {
     void update_from_status(const nlohmann::json& status);
 
     [[nodiscard]] double get_value(const std::string& pin_id) const;
-    [[nodiscard]] bool is_on(const std::string& pin_id) const;
     [[nodiscard]] int brightness_pct(const std::string& pin_id) const;
     [[nodiscard]] bool is_pwm(const std::string& pin_id) const;
 
     void set_pin_pwm(const std::string& pin_id, bool is_pwm);
 
-    using ValueChangeCallback = std::function<void(const std::string& pin_id, double value)>;
-    void set_value_change_callback(ValueChangeCallback cb) {
-        value_change_cb_ = std::move(cb);
-    }
-    void clear_value_change_callback() {
-        value_change_cb_ = nullptr;
-    }
-
   private:
     MoonrakerAPI* api_ = nullptr;
     std::vector<LedStripInfo> pins_;
     std::unordered_map<std::string, double> pin_values_;
-    ValueChangeCallback value_change_cb_;
 };
 
 class LedController {
@@ -563,6 +559,11 @@ class LedController {
     lv_subject_t led_command_in_flight_{}; // 0/1: a light toggle is awaiting its gcode ACK
     int in_flight_count_ = 0;              // outstanding toggle commands awaiting ACK
     ObserverGuard conn_observer_;          // clears in-flight count on any non-CONNECTED transition
+    // Clears in-flight count on any exit from klippy READY. A Klipper restart leaves
+    // the Moonraker WebSocket up, so conn_observer_ above never sees it (#1129).
+    // No paired SubjectLifetime: PrinterState::get_klippy_state_subject() is a static
+    // singleton-lifetime subject (no lifetime-token overload).
+    ObserverGuard klippy_observer_;
     bool version_subject_initialized_ = false;
 
     /// Push the current selected_strips_ emptiness into led_controllable_.

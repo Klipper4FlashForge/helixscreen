@@ -747,13 +747,11 @@ void SettingsManager::set_chamber_sensor_assignment(const std::string& value) {
 
 void SettingsManager::clear_external_spool_info() {
     Config* config = Config::get_instance();
-    try {
-        auto& filament = config->get_json(config->df() + "filament");
-        if (filament.is_object() && filament.contains("external_spool")) {
-            filament.erase("external_spool");
-        }
-    } catch (...) {
-        // /filament doesn't exist or isn't an object, nothing to clear
+    // Probe first: get_json() would vivify "filament": null on every call and
+    // the unconditional save() below would persist it (#1129).
+    const json* existing = config->try_get_json(config->df() + "filament");
+    if (existing != nullptr && existing->is_object() && existing->contains("external_spool")) {
+        config->get_json(config->df() + "filament").erase("external_spool");
     }
     config->save();
 }

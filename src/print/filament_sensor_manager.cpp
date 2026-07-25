@@ -268,9 +268,9 @@ void FilamentSensorManager::load_config_from_file() {
 
     // Load per-sensor config
     try {
-        json& sensors_json = config->get_json(base_path + "/sensors");
-        if (sensors_json.is_array()) {
-            for (const auto& sensor_json : sensors_json) {
+        const json* sensors_node = config->try_get_json(base_path + "/sensors");
+        if (sensors_node != nullptr && sensors_node->is_array()) {
+            for (const auto& sensor_json : *sensors_node) {
                 if (!sensor_json.contains("klipper_name")) {
                     continue;
                 }

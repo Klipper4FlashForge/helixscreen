@@ -73,6 +73,13 @@ void register_print_handlers(std::unordered_map<std::string, MethodHandler>& reg
             line_start = nl + 1;
         }
 
+        // Test injection: simulate a response that never comes back at all (Klippy
+        // restarted, connection stalled). Klipper still processed the gcode above;
+        // NEITHER callback fires, so any caller-side in-flight counter stays pinned.
+        if (self->take_forced_gcode_drop(script)) {
+            return true;
+        }
+
         // Test injection: simulate an RPC-layer failure (e.g. timeout) for this command
         // while Klipper still processed the gcode above. The collector-based APIs rely on
         // this to exercise paths where the RPC response is lost but Klipper keeps running.

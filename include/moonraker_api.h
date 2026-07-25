@@ -145,31 +145,14 @@ class MoonrakerAPI : public IMoonrakerAPI {
      * @param white Optional white component for RGBW LEDs (0.0-1.0, default 0.0)
      * @param on_success Success callback
      * @param on_error Error callback
+     * @param on_queued Optional "queued behind a blocking op" disposition — see
+     *        execute_gcode() for the full contract. SET_LED is discretionary, so
+     *        this is the LED path's only settle signal while Klipper's gcode lock
+     *        is held.
      */
     void set_led(const std::string& led, double red, double green, double blue, double white,
-                 SuccessCallback on_success, ErrorCallback on_error);
-
-    /**
-     * @brief Turn LED on (full white)
-     *
-     * Convenience method to turn LED on at full brightness.
-     *
-     * @param led LED name
-     * @param on_success Success callback
-     * @param on_error Error callback
-     */
-    void set_led_on(const std::string& led, SuccessCallback on_success, ErrorCallback on_error);
-
-    /**
-     * @brief Turn LED off
-     *
-     * Convenience method to turn LED off.
-     *
-     * @param led LED name
-     * @param on_success Success callback
-     * @param on_error Error callback
-     */
-    void set_led_off(const std::string& led, SuccessCallback on_success, ErrorCallback on_error);
+                 SuccessCallback on_success, ErrorCallback on_error,
+                 SuccessCallback on_queued = nullptr);
 
     // ========================================================================
     // Power Device Control Operations
@@ -233,10 +216,25 @@ class MoonrakerAPI : public IMoonrakerAPI {
      * @param timeout_ms Request timeout (0 = default)
      * @param silent Suppress warning logs / error toasts on refusal
      * @param source Command origin; UserConsole drops the provenance comment
+     * @param on_queued Optional THIRD disposition, distinct from success and error.
+     *        Fires when a benign discretionary command (fan/temp/LED) was handed to
+     *        Klipper to run behind a blocking op and its RPC response was
+     *        deliberately dropped, so neither @p on_success nor @p on_error will
+     *        ever fire. It means "accepted for later execution", NOT "done" —
+     *        opt in only to release a caller-side in-flight counter, never to
+     *        report completion. Callers that omit it get nothing on that path.
+     *
+     *        THREADING: unlike @p on_success / @p on_error, which arrive on the
+     *        libhv response thread, @p on_queued runs SYNCHRONOUSLY on the calling
+     *        thread — typically the main thread inside an LVGL LV_EVENT_CLICKED
+     *        frame. A handler here must therefore obey the input-handler rules:
+     *        no synchronous widget deletion (lv_obj_delete / lv_obj_clean /
+     *        safe_delete); use the deferred forms. See CLAUDE.md § Threading.
      */
     void execute_gcode(const std::string& gcode, SuccessCallback on_success, ErrorCallback on_error,
                        uint32_t timeout_ms = 0, bool silent = false,
-                       GcodeSource source = GcodeSource::Internal);
+                       GcodeSource source = GcodeSource::Internal,
+                       SuccessCallback on_queued = nullptr);
 
     /**
      * @brief Check if a string is safe to use as a G-code parameter

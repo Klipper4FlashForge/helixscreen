@@ -357,7 +357,7 @@ void MoonrakerAPI::get_sensors(SensorsCallback on_success, ErrorCallback on_erro
 
 void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_success,
                                  ErrorCallback on_error, uint32_t timeout_ms, bool silent,
-                                 GcodeSource source) {
+                                 GcodeSource source, SuccessCallback on_queued) {
     // Provenance-comment policy: tag HelixScreen-initiated commands so they're
     // traceable in Klipper logs, but never tag user-typed console input, and
     // never tag anything when the printer's firmware re-echoes received G-code
@@ -435,11 +435,31 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
         // announce it ONCE per blocking episode so a late-firing change isn't a
         // surprise. #1108.
         //
-        // Trade-off: dropping the caller's callbacks means a command that Klipper
-        // genuinely rejects when it finally runs (e.g. a macro emitting an out-of-
-        // range target) surfaces no error — same as the silent-queue frontends. The
-        // controls path stamps no motion activity, so there is no inflight/counter
-        // to leak by skipping the callbacks.
+        // Settling the caller needs its own disposition — it is neither success
+        // nor error.
+        //
+        // Callers may hold an in-flight counter keyed to the callback pair and
+        // wedge if neither fires: LedController::note_command_dispatched() bumps a
+        // counter at dispatch and only decrements it from on_success/on_error,
+        // driving the `led_command_in_flight` subject the light buttons disable on.
+        // Dropping both left that counter stuck at >=1 until the printer
+        // disconnected, greying the buttons out for the whole session (#1129).
+        //
+        // But on_success cannot be the settle. For every other caller on_success
+        // means "the printer did it", and acting on that here is a lie the user
+        // sees: cooldown sends SET_HEATER_TEMPERATURE TARGET=0 with
+        // on_success = NOTIFY_SUCCESS("Heaters off"), and temperature_service pairs
+        // its "target set to N°C" toast with a go_back() that closes the overlay —
+        // all while the heaters sit at target for the rest of the calibration.
+        // claim_busy_queue_toast() is once per episode, so every command after the
+        // first in a burst would show only the false success with no caveat.
+        //
+        // So the settle goes to on_queued, an explicit opt-in that means "accepted
+        // for later execution", nothing more. Callers that do not opt in get
+        // exactly the #1108 behaviour: fire-and-forget, no callback. What is
+        // genuinely dropped either way is the RPC *response* — a late rejection
+        // (e.g. a macro emitting an out-of-range target) surfaces no error, same as
+        // the silent-queue frontends.
         if (state_.claim_busy_queue_toast()) {
             NOTIFY_INFO("Printer is busy — your {} will run when it's ready.",
                         helix::discretionary_gcode_noun(gcode));
@@ -450,6 +470,15 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
                       queued);
         client_.send_jsonrpc("printer.gcode.script", queued_params, nullptr, nullptr, timeout_ms,
                              /*silent=*/true);
+        // Settle the CALLER directly, not via the RPC response — waiting on the
+        // response is exactly the ~60s timeout toast #1108 removed. NOTE: this runs
+        // synchronously on the calling thread, not the libhv response thread, so it
+        // is typically inside an LVGL LV_EVENT_CLICKED frame. A handler here must
+        // not delete widgets synchronously (see the on_queued docs in
+        // moonraker_api.h and CLAUDE.md § Threading).
+        if (on_queued) {
+            on_queued();
+        }
         return;
     }
 

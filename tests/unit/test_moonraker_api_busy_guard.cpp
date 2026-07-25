@@ -112,6 +112,117 @@ TEST_CASE_METHOD(BusyGuardApiFixture,
 }
 
 // ============================================================================
+// The queued path settles callers through a DISTINCT "queued" outcome (#1129)
+// ============================================================================
+
+TEST_CASE_METHOD(BusyGuardApiFixture,
+                 "queued discretionary gcode settles via on_queued, never on_success",
+                 "[busy_guard][mock][led]") {
+    // Two failure modes bracket this path.
+    //
+    // Dropping BOTH callbacks (the original #1108 shape) wedges callers that pair
+    // a dispatch counter with them — LedController's note_command_dispatched /
+    // note_command_settled drive the led_command_in_flight subject the light
+    // buttons disable on, so the buttons greyed out permanently (#1129).
+    //
+    // Settling via on_success is a different bug: for every other caller
+    // on_success means "the printer did it". Cooldown sends
+    // SET_HEATER_TEMPERATURE TARGET=0 with on_success = NOTIFY_SUCCESS("Heaters
+    // off"), and temperature_service pairs its toast with a go_back() — so a
+    // success settle tells the user the heaters are off, and closes the overlay,
+    // while they sit at target for the rest of the calibration.
+    //
+    // The contract: the queued path fires ONLY on_queued, and only for callers
+    // that asked for it. on_success and on_error stay untouched.
+    set_idle_printing(true); // homing/leveling holds the gcode lock
+    set_print_state(PrintJobState::STANDBY);
+
+    int success_calls = 0;
+    int queued_calls = 0;
+    auto note_success = [&success_calls]() { success_calls++; };
+    auto note_queued = [&queued_calls]() { queued_calls++; };
+
+    SECTION("raw SET_LED through execute_gcode") {
+        api->execute_gcode("SET_LED LED=my_leds RED=1.00 GREEN=1.00 BLUE=1.00 SYNC=0 TRANSMIT=1",
+                           note_success, [this](const MoonrakerError& err) { error_cb(err); }, 0,
+                           false, MoonrakerAPI::GcodeSource::Internal, note_queued);
+
+        // Still queued fire-and-forget — the fix must not un-queue the command.
+        REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
+        CHECK_FALSE(mock_client.gcode_script_history().empty());
+
+        CHECK(queued_calls == 1);
+        CHECK(success_calls == 0);
+        CHECK_FALSE(error_called);
+    }
+
+    SECTION("set_led() — the real LedController route") {
+        api->set_led("my_leds", 1.0, 0.5, 0.25, 0.0, note_success,
+                     [this](const MoonrakerError& err) { error_cb(err); }, note_queued);
+
+        REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
+        CHECK(queued_calls == 1);
+        CHECK(success_calls == 0);
+        CHECK_FALSE(error_called);
+    }
+
+    SECTION("a caller that does NOT opt in is left alone entirely") {
+        // Cooldown's shape: on_success = "Heaters off" toast. Nothing may fire.
+        api->execute_gcode("SET_HEATER_TEMPERATURE HEATER=extruder TARGET=0", note_success,
+                           [this](const MoonrakerError& err) { error_cb(err); });
+
+        REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
+        CHECK(success_calls == 0);
+        CHECK(queued_calls == 0);
+        CHECK_FALSE(error_called);
+    }
+
+    SECTION("fan command, no opt-in") {
+        api->execute_gcode("M106 S255", note_success,
+                           [this](const MoonrakerError& err) { error_cb(err); });
+
+        REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
+        CHECK(success_calls == 0);
+        CHECK(queued_calls == 0);
+        CHECK_FALSE(error_called);
+    }
+}
+
+TEST_CASE_METHOD(BusyGuardApiFixture, "on_queued does not fire when the command is not queued",
+                 "[busy_guard][mock][led]") {
+    // The opt-in must be inert on the normal path: an idle printer runs the
+    // command for real and only on_success may fire.
+    set_idle_printing(false);
+    set_manual_probe(false);
+    set_print_state(PrintJobState::STANDBY);
+
+    int queued_calls = 0;
+    api->execute_gcode("SET_LED LED=my_leds RED=1.00 GREEN=1.00 BLUE=1.00 SYNC=0 TRANSMIT=1",
+                       nullptr, [this](const MoonrakerError& err) { error_cb(err); }, 0, false,
+                       MoonrakerAPI::GcodeSource::Internal, [&queued_calls]() { queued_calls++; });
+
+    REQUIRE(mock_client.last_send_method() == "printer.gcode.script");
+    CHECK(queued_calls == 0);
+    CHECK_FALSE(error_called);
+}
+
+TEST_CASE_METHOD(BusyGuardApiFixture, "a refused move never fires on_queued",
+                 "[busy_guard][mock][led]") {
+    // Refusal is an error, not a queue. Both dispositions must not blur.
+    set_idle_printing(true);
+    set_print_state(PrintJobState::STANDBY);
+
+    int queued_calls = 0;
+    api->execute_gcode("G0 X10 F3000", nullptr,
+                       [this](const MoonrakerError& err) { error_cb(err); }, 0, false,
+                       MoonrakerAPI::GcodeSource::Internal, [&queued_calls]() { queued_calls++; });
+
+    CHECK(error_called);
+    CHECK(queued_calls == 0);
+    CHECK(mock_client.gcode_script_history().empty());
+}
+
+// ============================================================================
 // A physical MOVE is still REFUSED while a blocking op is active
 // ============================================================================
 

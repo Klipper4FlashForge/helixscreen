@@ -55,7 +55,7 @@ struct MacroConfig {
  * ```
  */
 /// Current config schema version — bump when adding new migrations
-static constexpr int CURRENT_CONFIG_VERSION = 19;
+static constexpr int CURRENT_CONFIG_VERSION = 20;
 
 class Config {
   private:
@@ -115,13 +115,16 @@ class Config {
      * Throws nlohmann::json::exception if path doesn't exist.
      * Use the overload with default_value for safer access.
      *
+     * Non-vivifying: uses at() rather than operator[], so a missing path
+     * throws instead of silently inserting nulls along the way (#1129).
+     *
      * @tparam T Value type to retrieve
      * @param json_ptr JSON pointer path (e.g., "/printer/moonraker_host")
      * @return Configuration value of type T
      * @throws nlohmann::json::exception if path not found
      */
-    template <typename T> T get(const std::string& json_ptr) {
-        return data[json::json_pointer(json_ptr)].template get<T>();
+    template <typename T> T get(const std::string& json_ptr) const {
+        return data.at(json::json_pointer(json_ptr)).template get<T>();
     };
 
     /**
@@ -134,10 +137,10 @@ class Config {
      * @param default_value Fallback value if path not found
      * @return Configuration value or default_value
      */
-    template <typename T> T get(const std::string& json_ptr, const T& default_value) {
+    template <typename T> T get(const std::string& json_ptr, const T& default_value) const {
         json::json_pointer ptr(json_ptr);
-        if (data.contains(ptr) && !data[ptr].is_null()) {
-            return data[ptr].template get<T>();
+        if (data.contains(ptr) && !data.at(ptr).is_null()) {
+            return data.at(ptr).template get<T>();
         }
         return default_value;
     };
@@ -148,7 +151,7 @@ class Config {
      * @param json_ptr JSON pointer path (e.g., "/display/rotate")
      * @return true if the key exists in the configuration
      */
-    bool exists(const std::string& json_ptr) {
+    bool exists(const std::string& json_ptr) const {
         return data.contains(json::json_pointer(json_ptr));
     }
 
@@ -168,14 +171,47 @@ class Config {
     };
 
     /**
-     * @brief Get JSON sub-object at path
+     * @brief Get a mutable JSON sub-object at path, CREATING it if absent
      *
-     * Returns mutable reference to JSON object for complex operations.
+     * @warning This vivifies. nlohmann's non-const `operator[](json_pointer)`
+     * calls get_and_create(), inserting a `null` at every missing component of
+     * the path — and Config::save() writes those nulls to settings.json
+     * verbatim (it does no pruning). A config full of authoritative-looking
+     * `"led": {"selected_strips": null}` garbage is exactly how #1129 cost a
+     * reporter hours of debugging.
+     *
+     * Use this ONLY when you are about to assign through the returned
+     * reference. For read-only access use try_get_json(), get_string_array(),
+     * get<T>(path, default) or exists() — all non-vivifying.
      *
      * @param json_path JSON pointer path
-     * @return Reference to JSON object at path
+     * @return Mutable reference to the JSON node at path (created if missing)
      */
     json& get_json(const std::string& json_path);
+
+    /**
+     * @brief Non-vivifying read-only lookup of a JSON sub-object
+     *
+     * The safe counterpart to get_json(): returns nullptr when the path is
+     * absent and never mutates the config (#1129).
+     *
+     * @param json_path JSON pointer path
+     * @return Pointer to the node at path, or nullptr if it doesn't exist
+     */
+    const json* try_get_json(const std::string& json_path) const;
+
+    /**
+     * @brief Read an array of strings at a JSON pointer path
+     *
+     * Non-vivifying. Returns an empty vector when the path is absent, is not
+     * an array, or holds no string elements; non-string elements are skipped.
+     * Collapses the "probe-then-iterate string array" block that was
+     * hand-rolled at ~10 call sites.
+     *
+     * @param json_path JSON pointer path
+     * @return String elements of the array at path (empty if absent/not an array)
+     */
+    std::vector<std::string> get_string_array(const std::string& json_path) const;
 
     /**
      * @brief Get macro configuration with label and G-code command
