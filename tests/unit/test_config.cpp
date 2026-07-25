@@ -1539,12 +1539,14 @@ struct BackupGuard {
     std::string temp_dir;
     std::string original_home;
     std::string prev_state_dir;
+    std::string prev_fallback_dir;
     bool had_home;
 
     BackupGuard()
         : temp_dir(std::filesystem::temp_directory_path().string() + "/helix_nobackup_" +
                    std::to_string(getpid()) + "_" + std::to_string(rand())),
           prev_state_dir(AppConstants::Update::detail::state_dir_ref()),
+          prev_fallback_dir(AppConstants::Update::detail::backup_fallback_dir_ref()),
           had_home(std::getenv("HOME") != nullptr) {
         if (had_home)
             original_home = std::getenv("HOME");
@@ -1559,8 +1561,10 @@ struct BackupGuard {
             setenv("HOME", original_home.c_str(), 1);
         else
             unsetenv("HOME");
-        AppConstants::Update::detail::backup_fallback_dir_ref() =
-            AppConstants::Update::sanitize_home(std::getenv("HOME")) + "/.helixscreen";
+        // Restore the SAVED value, never a freshly-computed $HOME/.helixscreen:
+        // the test sandbox points this at a temp dir, and recomputing it here
+        // un-sandboxes every later test in the shard onto the real backup.
+        AppConstants::Update::detail::backup_fallback_dir_ref() = prev_fallback_dir;
         AppConstants::Update::detail::state_dir_ref() = prev_state_dir;
         std::error_code ec;
         std::filesystem::remove_all(temp_dir, ec);
@@ -2510,9 +2514,11 @@ namespace {
 struct HomeGuard {
     std::string original;
     std::string prev_state_dir;
+    std::string prev_fallback_dir;
     bool had_home;
     explicit HomeGuard(const std::string& new_home)
         : prev_state_dir(AppConstants::Update::detail::state_dir_ref()),
+          prev_fallback_dir(AppConstants::Update::detail::backup_fallback_dir_ref()),
           had_home(std::getenv("HOME") != nullptr) {
         if (had_home)
             original = std::getenv("HOME");
@@ -2526,8 +2532,8 @@ struct HomeGuard {
             setenv("HOME", original.c_str(), 1);
         else
             unsetenv("HOME");
-        AppConstants::Update::detail::backup_fallback_dir_ref() =
-            AppConstants::Update::sanitize_home(std::getenv("HOME")) + "/.helixscreen";
+        // Restore the SAVED value — see the note in ~BackupGuard().
+        AppConstants::Update::detail::backup_fallback_dir_ref() = prev_fallback_dir;
         AppConstants::Update::detail::state_dir_ref() = prev_state_dir;
     }
 };

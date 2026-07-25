@@ -147,9 +147,18 @@ class ToolState {
         return spool_assignments_loaded_;
     }
 
-    /// Set the config directory for local JSON persistence (default: "config")
+    /// Set the config directory for local JSON persistence (default: "config").
+    /// An explicit override wins over the value init_subjects() derives from
+    /// helix::get_user_config_dir(), so re-initialising subjects can't silently
+    /// move tool_spools.json back to the default location.
     void set_config_dir(const std::string& dir) {
         config_dir_ = dir;
+        config_dir_explicit_ = true;
+    }
+
+    /// Directory tool_spools.json is read from and written to.
+    [[nodiscard]] const std::string& get_config_dir() const {
+        return config_dir_;
     }
 
     lv_subject_t* get_active_tool_subject() {
@@ -185,6 +194,7 @@ class ToolState {
     std::vector<ToolInfo> tools_;
     int active_tool_index_ = 0;
     std::string config_dir_ = "config";     ///< Directory for local JSON persistence
+    bool config_dir_explicit_ = false;      ///< set_config_dir() pinned it; don't re-derive
     bool spool_dirty_ = false;              ///< True when spool data changed since last save
     bool spool_assignments_loaded_ = false; ///< True after load_spool_assignments() completes
 

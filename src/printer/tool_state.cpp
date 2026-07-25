@@ -47,8 +47,11 @@ void ToolState::init_subjects(bool register_xml) {
         return;
     }
 
-    // Persist tool_spools.json to the user-writable config dir.
-    config_dir_ = helix::get_user_config_dir();
+    // Persist tool_spools.json to the user-writable config dir, unless a
+    // caller already pinned one via set_config_dir().
+    if (!config_dir_explicit_) {
+        config_dir_ = helix::get_user_config_dir();
+    }
 
     spdlog::trace("[ToolState] Initializing subjects (register_xml={})", register_xml);
 
