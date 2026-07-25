@@ -62,6 +62,16 @@
                           description_tag="Run filament load/unload even when the nozzle is cold (for macros that heat the nozzle themselves)"
                           subject="settings_allow_cold_extrude" callback="on_allow_cold_extrude_changed"/>
       <!-- ================================================================== -->
+      <!-- POST-OP NOZZLE COOLDOWN -->
+      <!-- ================================================================== -->
+      <setting_toggle_row name="row_filament_auto_cooldown"
+                          label="Cool nozzle after filament ops"
+                          label_tag="Cool nozzle after filament ops"
+                          icon="cooldown"
+                          description="Turn the extruder heater off after a load or unload finishes"
+                          description_tag="Turn the extruder heater off after a load or unload finishes"
+                          subject="filament_auto_cooldown" callback="on_filament_auto_cooldown_changed"/>
+      <!-- ================================================================== -->
       <!-- PRINT COMPLETION ALERT -->
       <!-- ================================================================== -->
       <setting_dropdown_row name="row_completion_alert"

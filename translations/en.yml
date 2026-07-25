@@ -551,6 +551,7 @@ translations:
   Controlled by hardware sensor: Controlled by hardware sensor
   Controller: Controller
   Cool Down: Cool Down
+  Cool nozzle after filament ops: Cool nozzle after filament ops
   Cooling: Cooling
   Copied to clipboard!: Copied to clipboard!
   Copy Command: Copy Command
@@ -2494,6 +2495,7 @@ translations:
   Turn Off: Turn Off
   Turn On: Turn On
   Turn on LEDs when printer starts: Turn on LEDs when printer starts
+  Turn the extruder heater off after a load or unload finishes: Turn the extruder heater off after a load or unload finishes
   Type: Type
   Type to preview input field...: Type to preview input field...
   'Type:': 'Type:'

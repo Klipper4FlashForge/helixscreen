@@ -1259,15 +1259,22 @@ Located in the `filament` section:
 ```json
 {
   "filament": {
+    "auto_cooldown": true,
     "cooldown_delay_seconds": 120
   }
 }
 ```
 
+### `auto_cooldown`
+**Type:** boolean
+**Default:** `true`
+**UI:** Settings > Safety & Notifications > **Cool nozzle after filament ops**
+**Description:** Whether HelixScreen turns the extruder heater off after a filament load or unload completes. Turn this off if your filament system runs its own post-operation cooldown — AFC does, in recent versions — so the two aren't both driving the same heater.
+
 ### `cooldown_delay_seconds`
 **Type:** integer
 **Default:** `120`
-**Description:** How long to wait, in seconds, after a filament load or unload before automatically turning the extruder heater off. This lets you run several filament operations back-to-back without the nozzle cooling down between them. Default is 120 (2 minutes). Set to `0` to disable auto-cooldown and leave the heater on.
+**Description:** How long to wait, in seconds, after a filament load or unload before automatically turning the extruder heater off. This lets you run several filament operations back-to-back without the nozzle cooling down between them. Default is 120 (2 minutes). Setting this to `0` also disables auto-cooldown, but prefer `auto_cooldown` — it's the one the UI toggle writes.
 
 ---
 

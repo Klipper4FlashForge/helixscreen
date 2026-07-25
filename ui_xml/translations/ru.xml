@@ -494,6 +494,7 @@
   <translation tag="Controlled by hardware sensor" ru="Управляется аппаратным датчиком"/>
   <translation tag="Controller" ru="Контроллер"/>
   <translation tag="Cool Down" ru="Охладить"/>
+  <translation tag="Cool nozzle after filament ops"/>
   <translation tag="Cooling" ru="Охлаждение"/>
   <translation tag="Copied to clipboard!" ru="Скопировано в буфер обмена!"/>
   <translation tag="Copy Command" ru="Копировать команду"/>
@@ -2203,6 +2204,7 @@
   <translation tag="Turn Off" ru="Выключить"/>
   <translation tag="Turn On" ru="Включить"/>
   <translation tag="Turn on LEDs when printer starts" ru="Включать LED при запуске принтера"/>
+  <translation tag="Turn the extruder heater off after a load or unload finishes"/>
   <translation tag="Type" ru="Тип"/>
   <translation tag="Type to preview input field..." ru="Введите для предпросмотра поля ввода..."/>
   <translation tag="Type:" ru="Тип:"/>

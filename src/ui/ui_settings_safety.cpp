@@ -14,7 +14,9 @@
 #include "ui_nav_manager.h"
 
 #include "audio_settings_manager.h"
+#include "post_op_cooldown_manager.h"
 #include "safety_settings_manager.h"
+#include "settings_manager.h"
 #include "static_panel_registry.h"
 
 #include <spdlog/spdlog.h>
@@ -75,6 +77,7 @@ void SafetySettingsOverlay::register_callbacks() {
         {"on_completion_alert_changed", on_completion_alert_changed},
         {"on_macro_confirm_changed", on_macro_confirm_changed},
         {"on_allow_cold_extrude_changed", on_allow_cold_extrude_changed},
+        {"on_filament_auto_cooldown_changed", on_filament_auto_cooldown_changed},
     });
 
     spdlog::debug("[{}] Callbacks registered", get_name());
@@ -223,6 +226,15 @@ void SafetySettingsOverlay::handle_allow_cold_extrude_changed(bool enabled) {
     SafetySettingsManager::instance().set_allow_cold_extrude(enabled);
 }
 
+void SafetySettingsOverlay::handle_filament_auto_cooldown_changed(bool enabled) {
+    spdlog::info("[{}] Post-op nozzle cooldown toggled: {}", get_name(), enabled ? "ON" : "OFF");
+    SettingsManager::instance().set_filament_auto_cooldown(enabled);
+    // Turning it off mid-countdown should take effect now, not in two minutes.
+    if (!enabled) {
+        PostOpCooldownManager::instance().cancel();
+    }
+}
+
 // ============================================================================
 // STATIC CALLBACKS
 // ============================================================================
@@ -272,6 +284,14 @@ void SafetySettingsOverlay::on_allow_cold_extrude_changed(lv_event_t* e) {
     auto* toggle = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
     bool enabled = lv_obj_has_state(toggle, LV_STATE_CHECKED);
     get_safety_settings_overlay().handle_allow_cold_extrude_changed(enabled);
+    LVGL_SAFE_EVENT_CB_END();
+}
+
+void SafetySettingsOverlay::on_filament_auto_cooldown_changed(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[SafetySettingsOverlay] on_filament_auto_cooldown_changed");
+    auto* toggle = static_cast<lv_obj_t*>(lv_event_get_current_target(e));
+    bool enabled = lv_obj_has_state(toggle, LV_STATE_CHECKED);
+    get_safety_settings_overlay().handle_filament_auto_cooldown_changed(enabled);
     LVGL_SAFE_EVENT_CB_END();
 }
 

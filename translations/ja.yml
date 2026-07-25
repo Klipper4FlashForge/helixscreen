@@ -504,6 +504,7 @@ translations:
   Controlled by hardware sensor: ハードウェアセンサーで制御
   Controller: コントローラー
   Cool Down: 冷却
+  Cool nozzle after filament ops: ''
   Cooling: 冷却中
   Copied to clipboard!: クリップボードにコピーしました！
   Copy Command: コマンドをコピー
@@ -2292,6 +2293,7 @@ translations:
   Turn Off: オフにする
   Turn On: オンにする
   Turn on LEDs when printer starts: プリンター起動時に LED を点灯
+  Turn the extruder heater off after a load or unload finishes: ''
   Type: タイプ
   Type to preview input field...: 入力フィールドをプレビューするには入力してください...
   'Type:': 'タイプ:'

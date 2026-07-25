@@ -306,6 +306,29 @@ class SettingsManager {
     }
 
     // =========================================================================
+    // POST-OP COOLDOWN (owned by SettingsManager — per-printer filament behavior)
+    // =========================================================================
+
+    /**
+     * @brief Get whether the nozzle cools down after a filament load/unload.
+     *
+     * When enabled (default), PostOpCooldownManager turns the extruder heater
+     * off `filament/cooldown_delay_seconds` after an operation completes. Some
+     * filament systems — AFC, for one — implement their own post-operation
+     * cooldown, so users on those need to turn ours off to avoid two
+     * independent timers fighting over the heater.
+     */
+    bool get_filament_auto_cooldown() const;
+
+    /** @brief Set whether the nozzle cools down after a filament load/unload */
+    void set_filament_auto_cooldown(bool enabled);
+
+    /** @brief Post-op cooldown subject (integer: 0=off, 1=on) */
+    lv_subject_t* subject_filament_auto_cooldown() {
+        return &filament_auto_cooldown_subject_;
+    }
+
+    // =========================================================================
     // CONSOLE FILTERS (owned by SettingsManager — gcode console noise toggles)
     // =========================================================================
 
@@ -449,6 +472,7 @@ class SettingsManager {
     lv_subject_t show_widget_labels_subject_;
     lv_subject_t auto_color_map_subject_;
     lv_subject_t afc_unload_after_print_subject_;
+    lv_subject_t filament_auto_cooldown_subject_;
     lv_subject_t console_filter_temps_subject_;
     lv_subject_t console_filter_firmware_noise_subject_;
     lv_subject_t detection_enabled_subject_;

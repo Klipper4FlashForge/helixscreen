@@ -494,6 +494,7 @@
   <translation tag="Controlled by hardware sensor" de="Durch Hardware-Sensor gesteuert" en="Controlled by hardware sensor" es="Controlado por sensor de hardware" fr="Contrôlé par capteur matériel" it="Controllato da sensore hardware" ja="ハードウェアセンサーで制御" pt="Controlado por sensor de hardware" ru="Управляется аппаратным датчиком" zh="由硬件传感器控制"/>
   <translation tag="Controller" de="Controller" en="Controller" es="Controlador" fr="Contrôleur" it="Controller" ja="コントローラー" pt="Controlador" ru="Контроллер" zh="控制器"/>
   <translation tag="Cool Down" de="Abkühlen" en="Cool Down" es="Enfriar" fr="Refroidir" it="Raffredda" ja="冷却" pt="Resfriar" ru="Охладить" zh="冷却"/>
+  <translation tag="Cool nozzle after filament ops" en="Cool nozzle after filament ops"/>
   <translation tag="Cooling" de="Kühlung" en="Cooling" es="Enfriamiento" fr="Refroidissement" it="Raffreddamento" ja="冷却中" pt="Resfriamento" ru="Охлаждение" zh="冷却中"/>
   <translation tag="Copied to clipboard!" de="In Zwischenablage kopiert!" en="Copied to clipboard!" es="¡Copiado al portapapeles!" fr="Copié dans le presse-papiers !" it="Copiato negli appunti!" ja="クリップボードにコピーしました！" pt="Copiado para a área de transferência!" ru="Скопировано в буфер обмена!" zh="已复制到剪贴板！"/>
   <translation tag="Copy Command" de="Befehl kopieren" en="Copy Command" es="Copiar Comando" fr="Copier la commande" it="Copia comando" ja="コマンドをコピー" pt="Copiar Comando" ru="Копировать команду" zh="复制命令"/>
@@ -2203,6 +2204,7 @@
   <translation tag="Turn Off" de="Ausschalten" en="Turn Off" es="Apagar" fr="Éteindre" it="Spegni" ja="オフにする" pt="Desligar" ru="Выключить" zh="关闭"/>
   <translation tag="Turn On" de="Einschalten" en="Turn On" es="Encender" fr="Allumer" it="Accendi" ja="オンにする" pt="Ligar" ru="Включить" zh="开启"/>
   <translation tag="Turn on LEDs when printer starts" de="LEDs beim Druckerstart einschalten" en="Turn on LEDs when printer starts" es="Encender LEDs cuando la impresora inicia" fr="Allumer les LED au démarrage de l&apos;imprimante" it="Accendi LED all&apos;avvio della stampante" ja="プリンター起動時に LED を点灯" pt="Ligar LEDs quando a impressora iniciar" ru="Включать LED при запуске принтера" zh="打印机启动时开启 LED"/>
+  <translation tag="Turn the extruder heater off after a load or unload finishes" en="Turn the extruder heater off after a load or unload finishes"/>
   <translation tag="Type" de="Typ" en="Type" es="Tipo" fr="Type" it="Tipo" ja="タイプ" pt="Tipo" ru="Тип" zh="类型"/>
   <translation tag="Type to preview input field..." de="Tippen Sie zur Vorschau des Eingabefeldes..." en="Type to preview input field..." es="Escriba para previsualizar campo de entrada..." fr="Tapez pour prévisualiser le champ de saisie..." it="Digita per visualizzare anteprima campo input..." ja="入力フィールドをプレビューするには入力してください..." pt="Digite para visualizar o campo de entrada..." ru="Введите для предпросмотра поля ввода..." zh="输入以预览输入框..."/>
   <translation tag="Type:" de="Typ:" en="Type:" es="Tipo:" fr="Type :" it="Tipo:" ja="タイプ:" pt="Tipo:" ru="Тип:" zh="类型:"/>

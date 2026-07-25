@@ -500,6 +500,7 @@ translations:
   Controlled by hardware sensor: 由硬件传感器控制
   Controller: 控制器
   Cool Down: 冷却
+  Cool nozzle after filament ops: ''
   Cooling: 冷却中
   Copied to clipboard!: 已复制到剪贴板！
   Copy Command: 复制命令
@@ -2283,6 +2284,7 @@ translations:
   Turn Off: 关闭
   Turn On: 开启
   Turn on LEDs when printer starts: 打印机启动时开启 LED
+  Turn the extruder heater off after a load or unload finishes: ''
   Type: 类型
   Type to preview input field...: 输入以预览输入框...
   'Type:': '类型:'

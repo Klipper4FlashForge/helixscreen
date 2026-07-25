@@ -573,6 +573,7 @@ translations:
   Controlled by hardware sensor: Controllato da sensore hardware
   Controller: Controller
   Cool Down: Raffredda
+  Cool nozzle after filament ops: ''
   Cooling: Raffreddamento
   Copied to clipboard!: Copiato negli appunti!
   Copy Command: Copia comando
@@ -2570,6 +2571,7 @@ translations:
   Turn Off: Spegni
   Turn On: Accendi
   Turn on LEDs when printer starts: Accendi LED all'avvio della stampante
+  Turn the extruder heater off after a load or unload finishes: ''
   Type: Tipo
   Type to preview input field...: Digita per visualizzare anteprima campo input...
   'Type:': 'Tipo:'

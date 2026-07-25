@@ -323,6 +323,12 @@ For layout customization, you can edit XML files in `ui_xml/` (no recompilation 
 
 **Yes.** Go to **Settings > Printer > Macro Buttons** and scroll to the **Standard Macros** section. Each button has a dropdown where you can select any macro from your Klipper config, or choose **(Auto)** to let HelixScreen detect it automatically. This works with or without an AMS system — see the [Filament guide](guide/filament.md#customizing-which-macro-runs) for details.
 
+### Why does my nozzle cool down after a filament change?
+
+**That's deliberate.** A load or unload heats the nozzle to material temperature, and HelixScreen turns the heater back off two minutes later so it doesn't sit hot indefinitely. The delay lets you run several operations back to back, and a running print is never interfered with.
+
+If your filament system already does its own post-operation cooldown — AFC does — turn ours off at **Settings > Safety & Notifications > Cool nozzle after filament ops** so the two aren't both driving the heater. It's a per-printer setting, so your other machines keep the built-in behavior. See [Safety settings](guide/settings/safety.md#cool-nozzle-after-filament-ops).
+
 ### Can I customize the printer image on the home screen?
 
 **Yes.** Tap the printer image on the Home Panel to open the Printer Manager, then tap the image again to open the Printer Image picker. You have three options:

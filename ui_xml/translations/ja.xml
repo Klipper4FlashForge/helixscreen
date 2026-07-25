@@ -494,6 +494,7 @@
   <translation tag="Controlled by hardware sensor" ja="ハードウェアセンサーで制御"/>
   <translation tag="Controller" ja="コントローラー"/>
   <translation tag="Cool Down" ja="冷却"/>
+  <translation tag="Cool nozzle after filament ops"/>
   <translation tag="Cooling" ja="冷却中"/>
   <translation tag="Copied to clipboard!" ja="クリップボードにコピーしました！"/>
   <translation tag="Copy Command" ja="コマンドをコピー"/>
@@ -2203,6 +2204,7 @@
   <translation tag="Turn Off" ja="オフにする"/>
   <translation tag="Turn On" ja="オンにする"/>
   <translation tag="Turn on LEDs when printer starts" ja="プリンター起動時に LED を点灯"/>
+  <translation tag="Turn the extruder heater off after a load or unload finishes"/>
   <translation tag="Type" ja="タイプ"/>
   <translation tag="Type to preview input field..." ja="入力フィールドをプレビューするには入力してください..."/>
   <translation tag="Type:" ja="タイプ:"/>

@@ -494,6 +494,7 @@
   <translation tag="Controlled by hardware sensor" zh="由硬件传感器控制"/>
   <translation tag="Controller" zh="控制器"/>
   <translation tag="Cool Down" zh="冷却"/>
+  <translation tag="Cool nozzle after filament ops"/>
   <translation tag="Cooling" zh="冷却中"/>
   <translation tag="Copied to clipboard!" zh="已复制到剪贴板！"/>
   <translation tag="Copy Command" zh="复制命令"/>
@@ -2203,6 +2204,7 @@
   <translation tag="Turn Off" zh="关闭"/>
   <translation tag="Turn On" zh="开启"/>
   <translation tag="Turn on LEDs when printer starts" zh="打印机启动时开启 LED"/>
+  <translation tag="Turn the extruder heater off after a load or unload finishes"/>
   <translation tag="Type" zh="类型"/>
   <translation tag="Type to preview input field..." zh="输入以预览输入框..."/>
   <translation tag="Type:" zh="类型:"/>

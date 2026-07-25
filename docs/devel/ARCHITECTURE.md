@@ -1717,6 +1717,10 @@ complete. All filament operation paths (FilamentPanel, AMS sidebar, AMS backends
 this single manager instead of implementing their own cooldown timers.
 
 - `schedule()` — starts a configurable delay timer (default 120s, setting: `/filament/cooldown_delay_seconds`)
+- `schedule()` is also the single opt-out point: it returns early when `/filament/auto_cooldown`
+  is false (Settings > Safety toggle — filament systems like AFC run their own cooldown) or when
+  the delay is `<= 0`. Both read config directly, not the SettingsManager subject, because
+  `schedule()` is callable from any thread.
 - `cancel()` — cancels pending cooldown (called when user manually heats or new op starts)
 - At fire time, checks: extruder target > 0 AND print state != PRINTING/PAUSED
 - Calling `schedule()` resets any existing pending timer

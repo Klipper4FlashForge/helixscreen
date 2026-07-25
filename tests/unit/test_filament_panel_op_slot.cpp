@@ -30,10 +30,12 @@
 #include "ams_backend_mock.h"
 #include "ams_state.h"
 #include "ams_types.h"
+#include "config.h"
 #include "post_op_cooldown_manager.h"
 #include "printer_state.h"
 #include "tool_state.h"
 #include "ui_panel_filament.h"
+#include "ui_update_queue.h"
 
 #include <lvgl.h>
 #include <memory>
@@ -400,6 +402,102 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     process_lvgl(30); // deferred observer -> op_succeeded + restore -> schedule
 
     CHECK(cd.has_pending_timer());
+
+    cd.cancel();
+    process_lvgl(10);
+}
+
+// ============================================================================
+// Opt-out guards: AFC (and other filament systems) run their own post-operation
+// cooldown, so ours has to be switchable off — otherwise two timers fight over
+// the same heater. Both off-switches are read inside PostOpCooldownManager::
+// schedule(), the single choke point every caller funnels through.
+//
+// Mutation targets: delete either early-return in schedule() and the matching
+// test fails (a timer is left pending when the user asked for none).
+// ============================================================================
+
+namespace {
+
+/// Sets a per-printer config key for the duration of a test, then puts back what
+/// was there. Config has no key-erase, so an absent key restores to `fallback` —
+/// pass the same default the production reader uses and the state is equivalent.
+template <typename T> class ScopedConfigValue {
+  public:
+    ScopedConfigValue(std::string key, T value, T fallback) : key_(std::move(key)) {
+        auto* cfg = helix::Config::get_instance();
+        prev_ = cfg->get<T>(key_, fallback);
+        cfg->set<T>(key_, value);
+    }
+    ~ScopedConfigValue() {
+        helix::Config::get_instance()->set<T>(key_, prev_);
+    }
+
+  private:
+    std::string key_;
+    T prev_;
+};
+
+} // namespace
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "Post-op cooldown: disabled in settings schedules nothing",
+                 "[filament][op_slot][panel]") {
+    OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
+
+    auto* cfg = helix::Config::get_instance();
+    ScopedConfigValue<bool> off(cfg->df() + "filament/auto_cooldown", false, true);
+
+    auto& cd = PostOpCooldownManager::instance();
+    cd.init();
+    cd.cancel();
+    process_lvgl(10);
+    REQUIRE_FALSE(cd.has_pending_timer());
+
+    lv_subject_set_int(state().get_print_state_enum_subject(),
+                       static_cast<int>(helix::PrintJobState::STANDBY));
+
+    TA::restore_heater_after_preheat(*h.panel);
+    process_lvgl(30);
+
+    CHECK_FALSE(cd.has_pending_timer()); // the filament system owns the cooldown
+
+    cd.cancel();
+    process_lvgl(10);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "Post-op cooldown: a zero delay means off, not fire-immediately",
+                 "[filament][op_slot][panel]") {
+    // CONFIGURATION.md documents cooldown_delay_seconds=0 as "disable auto-cooldown".
+    // A 0ms lv_timer would instead fire on the next tick and cut the heater at once.
+    OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
+
+    auto* cfg = helix::Config::get_instance();
+    ScopedConfigValue<bool> on(cfg->df() + "filament/auto_cooldown", true, true);
+    ScopedConfigValue<int> zero(cfg->df() + "filament/cooldown_delay_seconds", 0, 120);
+
+    auto& cd = PostOpCooldownManager::instance();
+    cd.init();
+    cd.cancel();
+    process_lvgl(10);
+    REQUIRE_FALSE(cd.has_pending_timer());
+
+    lv_subject_set_int(state().get_print_state_enum_subject(),
+                       static_cast<int>(helix::PrintJobState::STANDBY));
+
+    TA::restore_heater_after_preheat(*h.panel);
+
+    // Drain the update queue WITHOUT lv_timer_handler. schedule() creates the timer
+    // from a queued lambda, but a 0ms timer would then fire and null itself inside
+    // the same process_lvgl() sweep — making "fired instantly" (the bug) read
+    // identical to "never scheduled" (the fix). Draining alone lets the timer be
+    // created but never run, so its mere existence is the failure signal.
+    for (int i = 0; i < 5; ++i) {
+        helix::ui::UpdateQueue::instance().drain();
+    }
+
+    CHECK_FALSE(cd.has_pending_timer());
 
     cd.cancel();
     process_lvgl(10);

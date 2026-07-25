@@ -164,6 +164,12 @@ void SettingsManager::init_subjects() {
     UI_MANAGED_SUBJECT_INT(afc_unload_after_print_subject_, afc_unload_after_print ? 1 : 0,
                            "afc_unload_after_print", subjects_);
 
+    // Post-filament-operation nozzle cooldown (default: on). Filament systems that
+    // run their own cooldown (AFC) want ours out of the way. Per-printer setting.
+    bool filament_auto_cooldown = config->get<bool>(config->df() + "filament/auto_cooldown", true);
+    UI_MANAGED_SUBJECT_INT(filament_auto_cooldown_subject_, filament_auto_cooldown ? 1 : 0,
+                           "filament_auto_cooldown", subjects_);
+
     // Console filters (defaults: both on — keeps the gcode console clean by default)
     bool filter_temps = config->get<bool>("/console/filter_temps", true);
     UI_MANAGED_SUBJECT_INT(console_filter_temps_subject_, filter_temps ? 1 : 0,
@@ -503,6 +509,18 @@ void SettingsManager::set_afc_unload_after_print(bool enabled) {
     lv_subject_set_int(&afc_unload_after_print_subject_, enabled ? 1 : 0);
     Config* config = Config::get_instance();
     config->set<bool>(config->df() + "ams/afc_unload_after_print", enabled);
+    config->save();
+}
+
+bool SettingsManager::get_filament_auto_cooldown() const {
+    return lv_subject_get_int(const_cast<lv_subject_t*>(&filament_auto_cooldown_subject_)) != 0;
+}
+
+void SettingsManager::set_filament_auto_cooldown(bool enabled) {
+    spdlog::info("[SettingsManager] set_filament_auto_cooldown({})", enabled);
+    lv_subject_set_int(&filament_auto_cooldown_subject_, enabled ? 1 : 0);
+    Config* config = Config::get_instance();
+    config->set<bool>(config->df() + "filament/auto_cooldown", enabled);
     config->save();
 }
 

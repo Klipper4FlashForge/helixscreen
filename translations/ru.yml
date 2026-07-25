@@ -566,6 +566,7 @@ translations:
   Controlled by hardware sensor: Управляется аппаратным датчиком
   Controller: Контроллер
   Cool Down: Охладить
+  Cool nozzle after filament ops: ''
   Cooling: Охлаждение
   Copied to clipboard!: Скопировано в буфер обмена!
   Copy Command: Копировать команду
@@ -2537,6 +2538,7 @@ translations:
   Turn Off: Выключить
   Turn On: Включить
   Turn on LEDs when printer starts: Включать LED при запуске принтера
+  Turn the extruder heater off after a load or unload finishes: ''
   Type: Тип
   Type to preview input field...: Введите для предпросмотра поля ввода...
   'Type:': 'Тип:'

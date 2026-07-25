@@ -494,6 +494,7 @@
   <translation tag="Controlled by hardware sensor" pt="Controlado por sensor de hardware"/>
   <translation tag="Controller" pt="Controlador"/>
   <translation tag="Cool Down" pt="Resfriar"/>
+  <translation tag="Cool nozzle after filament ops"/>
   <translation tag="Cooling" pt="Resfriamento"/>
   <translation tag="Copied to clipboard!" pt="Copiado para a área de transferência!"/>
   <translation tag="Copy Command" pt="Copiar Comando"/>
@@ -2203,6 +2204,7 @@
   <translation tag="Turn Off" pt="Desligar"/>
   <translation tag="Turn On" pt="Ligar"/>
   <translation tag="Turn on LEDs when printer starts" pt="Ligar LEDs quando a impressora iniciar"/>
+  <translation tag="Turn the extruder heater off after a load or unload finishes"/>
   <translation tag="Type" pt="Tipo"/>
   <translation tag="Type to preview input field..." pt="Digite para visualizar o campo de entrada..."/>
   <translation tag="Type:" pt="Tipo:"/>

@@ -29,8 +29,23 @@ void PostOpCooldownManager::schedule() {
     }
 
     auto* cfg = helix::Config::get_instance();
+
+    // Read config rather than the SettingsManager subject: schedule() is callable
+    // from any thread, and the config accessors are the only thread-safe half.
+    if (cfg && !cfg->get<bool>(cfg->df() + "filament/auto_cooldown", true)) {
+        spdlog::debug("[PostOpCooldown] Skipping — auto-cooldown disabled in settings");
+        return;
+    }
+
     int delay_seconds =
         cfg ? cfg->get<int>(cfg->df() + "filament/cooldown_delay_seconds", 120) : 120;
+
+    // A zero/negative delay means "off" — an lv_timer with a 0ms period would
+    // otherwise fire on the next tick and cool the nozzle immediately.
+    if (delay_seconds <= 0) {
+        spdlog::debug("[PostOpCooldown] Skipping — cooldown_delay_seconds={}", delay_seconds);
+        return;
+    }
 
     spdlog::info("[PostOpCooldown] Scheduling cooldown in {}s", delay_seconds);
 
