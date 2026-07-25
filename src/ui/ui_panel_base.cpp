@@ -147,11 +147,25 @@ bool PanelBase::rebuild() {
     lv_obj_t* old_widget = panel_;
     panel_ = nullptr;
 
+    // Condemn the old subtree BEFORE creating the replacement. The caller
+    // re-registered the component, and lv_xml_component_unregister() reset and
+    // freed every lv_style_t in the old scope — styles the old widgets still
+    // point at. Creating the new tree under the same parent triggers a layout
+    // pass across all of the parent's children, which would walk the old
+    // subtree and dereference those freed styles. safe_delete_subtree()
+    // detaches it synchronously into an off-tree, layout-less container so no
+    // layout or draw pass can reach it, then async-deletes from there.
+    //
+    // This is also why there is no restore-the-old-widget fallback below: once
+    // its styles are gone the old tree is unusable, so a failed create leaves
+    // the panel empty rather than crashing later.
+    helix::ui::safe_delete_subtree(old_widget);
+
     auto* new_widget = static_cast<lv_obj_t*>(lv_xml_create(parent, component, nullptr));
     if (!new_widget) {
-        spdlog::error("[PanelBase::rebuild] {} — lv_xml_create failed, leaving old widget in place",
+        spdlog::error("[PanelBase::rebuild] {} — lv_xml_create failed; panel is now empty, "
+                      "restart to recover",
                       component);
-        panel_ = old_widget;
         return false;
     }
 
@@ -164,8 +178,6 @@ bool PanelBase::rebuild() {
     setup(new_widget, parent_screen_);
 
     nav.replace_panel_widget(id, new_widget);
-
-    helix::ui::safe_delete_deferred(old_widget);
 
     if (!was_hidden) {
         on_activate();
