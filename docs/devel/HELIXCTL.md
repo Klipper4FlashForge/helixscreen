@@ -100,7 +100,7 @@ live breadcrumb of the navigation stack, e.g. `controls / motion_panel_0 > `.
 ### Introspection & widget interaction
 | Command | Meaning |
 |---------|---------|
-| `ls`, `describe_screen` | List on-screen widgets: name, `path`, type, available actions |
+| `ls`, `describe_screen` `[target]` | List on-screen widgets: name, `path`, type, available actions. With a target, list only that widget's subtree (plus the widget itself) |
 | `list_components` | List **every** registered XML component (live registry): panels, overlays, modals, cards, rows — the full introspectable surface |
 | `list_callbacks` | List every registered event-callback name (overlay/modal open-handlers, button callbacks). Names only — nothing is fired |
 | `click <target>` | Click a widget (also toggles switches/checkboxes) |
@@ -111,16 +111,46 @@ A **target** is either a widget `name` or an `@path` locator taken from `ls`
 (e.g. `@s/15/1/1/2`). Use `@path` when a name is duplicated on screen (reusable
 components share names — a settings page can have six `toggle`s).
 
+A full-screen `ls` on a settings page runs to hundreds of entries. Scope it once
+you know the row you want — `ls row_filament_auto_cooldown` returns that row and
+its handful of children, `scope` in the response echoing the subtree root.
+
+**Composite rows resolve to the control inside them.** A settings row is a
+clickable container wrapping the actual switch/dropdown, so a naive
+`click <row>` would fire CLICKED on the container and do nothing visible.
+`click` and `set_value` therefore descend to a **value-control** (switch,
+checkbox, slider, arc, dropdown, textarea) when the target isn't one itself and
+its visible subtree holds exactly one — the response reports `descended_to` with
+that child's path. Rows with no value-control (a category row that opens an
+overlay) are clicked as-is, so navigation is unaffected. If several candidates
+exist the container is clicked and they are listed under `candidates`, so you
+can re-issue against a specific `@path`.
+
 ### Screenshots & sample-data screens
 | Command | Meaning |
 |---------|---------|
-| `screenshot` | Capture a screenshot (`/tmp/ui-screenshot-<timestamp>.bmp`) |
+| `screenshot [path]` | Capture a screenshot. With no path, a timestamped `.bmp` in the runtime dir; a path ending in `.png` is encoded as PNG (in-app, via lodepng). The response reports the file actually written under `path` |
 | `demo <name>` | Bring up a screen that can't be reached by navigation in mock mode |
 
 `demo` covers screens that only appear on a real printer event or configured
 state, constructed with representative sample data and the real lifecycle:
 `preflight-check`, `runout-modal`, `lock-screen`, `print-status`, `print-tune`,
 `ams`, `camera`.
+
+### Diagnostics & lifecycle
+| Command | Meaning |
+|---------|---------|
+| `log [-n N]` | Tail the app's in-memory log ring buffer (default 50 lines). Printed as raw lines, so it pipes to `grep` |
+| `shutdown` | Ask the app to exit its main loop (`app_request_quit`), running the normal shutdown path |
+
+`log` reads the same ring buffer the debug bundle's `log_tail` uses — capacity
+is `HELIX_LOG_RING_LINES` (default 2000). It means a scripted run can read the
+app's own log without redirecting stdout to a file first.
+
+From the one-shot client, `quit` and `exit` are accepted as aliases for
+`shutdown`. **In the REPL they are not** — there, `quit`/`exit`/Ctrl-D leave the
+REPL and `shutdown` stops the app, which is the only reading that keeps both
+meanings available.
 
 ### Subjects & scenarios
 | Command | Meaning |
