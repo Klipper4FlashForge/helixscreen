@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Fixtures for the helixctl-driven UI tests."""
 
 from __future__ import annotations

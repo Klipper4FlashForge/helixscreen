@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Navigation smoke tests — the automated replacement for test-navigation.sh."""
 
 import pytest

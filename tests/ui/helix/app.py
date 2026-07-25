@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Drive a live HelixScreen instance through `helix-screen ctl --json`.
 
 The C++ ctl client is the only JSON-RPC implementation in the tree. This module
@@ -64,7 +66,15 @@ class HelixApp:
         self.log_file = self.log_path.open("w")
         self.proc = subprocess.Popen(args, stdout=self.log_file,
                                      stderr=subprocess.STDOUT, env=env)
-        self._await_ready()
+        try:
+            self._await_ready()
+        except Exception:
+            # __enter__ raising skips __exit__, so a boot that never answers
+            # ping would otherwise leak this process — kill it ourselves.
+            if self.proc is not None and self.proc.poll() is None:
+                self.proc.kill()
+                self.proc.wait(timeout=5)
+            raise
         return self
 
     def _await_ready(self) -> None:
@@ -89,6 +99,8 @@ class HelixApp:
 
     def stop(self) -> None:
         if self.proc is None or self.proc.poll() is not None:
+            if hasattr(self, "log_file"):
+                self.log_file.close()
             return
         try:
             self.ctl("shutdown")
@@ -102,6 +114,7 @@ class HelixApp:
                 self.proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 self.proc.kill()
+                self.proc.wait(timeout=5)
         finally:
             if hasattr(self, "log_file"):
                 self.log_file.close()
@@ -132,18 +145,22 @@ class HelixApp:
             stderr = completed.stderr.strip()
             try:
                 err = json.loads(stderr)
+            except json.JSONDecodeError:
+                err = None
+
+            if err is not None:
                 raise HelixCtlError(err.get("message", stderr),
                                     int(err.get("code", -1)), command)
-            except (json.JSONDecodeError, ValueError):
-                # Client-side usage error, or the app died. Distinguish them,
-                # because "no instance at socket" and "you typo'd" need
-                # different reactions from whoever reads the failure.
-                if self.proc is not None and self.proc.poll() is not None:
-                    raise HelixAppError(
-                        f"helix-screen died (exit {self.proc.returncode})\n"
-                        f"{self._log_tail_from_file()}"
-                    ) from None
-                raise HelixCtlError(stderr or "ctl failed", -1, command) from None
+
+            # Client-side usage error, or the app died. Distinguish them,
+            # because "no instance at socket" and "you typo'd" need
+            # different reactions from whoever reads the failure.
+            if self.proc is not None and self.proc.poll() is not None:
+                raise HelixAppError(
+                    f"helix-screen died (exit {self.proc.returncode})\n"
+                    f"{self._log_tail_from_file()}"
+                )
+            raise HelixCtlError(stderr or "ctl failed", -1, command)
 
         out = completed.stdout.strip()
         return json.loads(out) if out else None
