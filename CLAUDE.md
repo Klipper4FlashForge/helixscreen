@@ -11,6 +11,15 @@ make -j                              # Build ONLY the program binary (NOT tests)
 ./build/bin/helix-screen --test -vv  # Mock printer + DEBUG logs
 # ALWAYS use verbosity: -v=INFO, -vv=DEBUG, -vvv=TRACE (default=WARN)
 
+# Verifying anything that needs an ACTIVE PRINT — use --sim-speed, don't wait.
+# A default mock run sits in Preparing ~95s before reaching Printing.
+HELIX_MOCK_AUTO_PRINT=1 ./build/bin/helix-screen --test --sim-speed 6 -vv
+#   --sim-speed <1.0-1000.0> fast-forwards the simulated clock (--test only).
+#   4-10x = reach Printing in ~15s, still slow enough to observe async UI work.
+#   50x+ = the print STARTS AND FINISHES in ~8s, outrunning async loads (e.g. the
+#   print-status gcode preview) — only use high factors to reach print completion.
+#   Confirm via log: "[MoonrakerManager] Creating MOCK client (<printer>, <n>x speed)"
+
 make test                            # Build tests only (does NOT run them)
 make test-run                        # Build AND run tests in parallel
 ./build/bin/helix-tests "[tag]"      # Run specific test tags
