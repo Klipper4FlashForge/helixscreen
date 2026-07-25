@@ -953,6 +953,110 @@ class TestObsoleteDetection:
         assert "Another Unused" in result
         assert "Used Key" not in result
 
+    def _repo(self, tmp_path, en_keys):
+        """Build a miniature checkout: ui_xml/ + src/ + include/ + assets/."""
+        yaml_dir = tmp_path / "translations"
+        yaml_dir.mkdir()
+        body = "".join(f'  "{k}": "{k}"\n' for k in en_keys)
+        (yaml_dir / "en.yml").write_text(f"locale: en\ntranslations:\n{body}")
+
+        xml_dir = tmp_path / "ui_xml"
+        xml_dir.mkdir()
+        (xml_dir / "panel.xml").write_text(
+            '<?xml version="1.0"?>\n<component><text_body text="Used Key"/></component>\n'
+        )
+        for sub in ("src", "include", "assets"):
+            (tmp_path / sub).mkdir()
+        return xml_dir, yaml_dir
+
+    def test_indirect_tag_in_struct_initializer_is_not_obsolete(self, tmp_path):
+        """A key named as a bare literal (resolved later via lv_tr(var)) is in use.
+
+        Mirrors src/ui/tour/tour_steps.cpp, whose tour.step.* tags the
+        lv_tr("literal") extractor pattern cannot see.
+        """
+        xml_dir, yaml_dir = self._repo(tmp_path, ["Used Key", "tour.step.welcome.title"])
+        (tmp_path / "src" / "tour_steps.cpp").write_text(
+            'steps.push_back({"", "tour.step.welcome.title", Anchor::Center});\n'
+        )
+
+        from translations.obsolete import find_obsolete_keys
+
+        result = find_obsolete_keys(xml_dir, yaml_dir, cpp_dir=tmp_path / "src",
+                                    repo_root=tmp_path)
+        assert "tour.step.welcome.title" not in result
+
+    def test_tag_stored_as_json_data_is_not_obsolete(self, tmp_path):
+        """Tags living in assets/config/printer_database.json are in use."""
+        xml_dir, yaml_dir = self._repo(
+            tmp_path, ["Used Key", "pre_print_option.ai_detect.label"]
+        )
+        (tmp_path / "assets" / "printer_database.json").write_text(
+            '{"label_tag": "pre_print_option.ai_detect.label"}\n'
+        )
+
+        from translations.obsolete import find_obsolete_keys
+
+        result = find_obsolete_keys(xml_dir, yaml_dir, cpp_dir=tmp_path / "src",
+                                    repo_root=tmp_path)
+        assert "pre_print_option.ai_detect.label" not in result
+
+    def test_label_text_in_header_is_not_obsolete(self, tmp_path):
+        """include/ is scanned — cpp_dir only ever pointed at src/."""
+        xml_dir, yaml_dir = self._repo(tmp_path, ["Used Key", "Nozzle:"])
+        (tmp_path / "include" / "ui_panel_controls.h").write_text(
+            'constexpr const char* kNozzle = "Nozzle:";\n'
+        )
+
+        from translations.obsolete import find_obsolete_keys
+
+        result = find_obsolete_keys(xml_dir, yaml_dir, cpp_dir=tmp_path / "src",
+                                    repo_root=tmp_path)
+        assert "Nozzle:" not in result
+
+    def test_generated_translation_packs_are_not_usage(self, tmp_path):
+        """ui_xml/translations/*.xml lists every key, so it can't prove usage."""
+        xml_dir, yaml_dir = self._repo(tmp_path, ["Used Key", "Dead Key"])
+        packs = xml_dir / "translations"
+        packs.mkdir()
+        (packs / "de.xml").write_text(
+            '<translations><translation tag="Dead Key" de="Toter"/></translations>\n'
+        )
+
+        from translations.obsolete import find_obsolete_keys
+
+        result = find_obsolete_keys(xml_dir, yaml_dir, cpp_dir=tmp_path / "src",
+                                    repo_root=tmp_path)
+        assert "Dead Key" in result
+
+    def test_skip_file_dev_panel_usage_stays_obsolete(self, tmp_path):
+        """`i18n: skip-file` panels opt out, so their strings are not keys."""
+        xml_dir, yaml_dir = self._repo(tmp_path, ["Used Key", "Switch Tests"])
+        (xml_dir / "test_panel.xml").write_text(
+            '<?xml version="1.0"?>\n<!-- i18n: skip-file -->\n'
+            '<component><text_body text="Switch Tests"/></component>\n'
+        )
+
+        from translations.obsolete import find_obsolete_keys
+
+        result = find_obsolete_keys(xml_dir, yaml_dir, cpp_dir=tmp_path / "src",
+                                    repo_root=tmp_path)
+        assert "Switch Tests" in result
+
+    def test_substring_occurrence_is_not_a_reference(self, tmp_path):
+        """Only delimited literals count — "Up" inside prose is not usage."""
+        xml_dir, yaml_dir = self._repo(tmp_path, ["Used Key", "Up"])
+        (tmp_path / "src" / "notes.cpp").write_text(
+            "// Unlink and Up are handled by the caller\n"
+            'spdlog::debug("Updating the spool now");\n'
+        )
+
+        from translations.obsolete import find_obsolete_keys
+
+        result = find_obsolete_keys(xml_dir, yaml_dir, cpp_dir=tmp_path / "src",
+                                    repo_root=tmp_path)
+        assert "Up" in result
+
 
 class TestObsoleteActions:
     """Test actions for handling obsolete keys."""

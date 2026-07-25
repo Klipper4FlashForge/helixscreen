@@ -398,7 +398,51 @@ This shows what keys would be added without modifying files.
 | `make translation-sync-dry-run` | Preview sync without modifying files |
 | `make translation-coverage` | Show translation coverage statistics |
 | `make translation-glossary` | Regenerate `translations/GLOSSARY.md` from the YAML |
-| `make translation-obsolete` | Find translation keys not used in XML |
+| `make translation-obsolete` | Find translation keys not referenced anywhere |
+
+### How `obsolete` decides a key is unused
+
+Extraction and obsolete-detection ask opposite questions, so they use different
+oracles:
+
+- **`sync`** asks *"should this string be translated?"* It is tuned for
+  **precision** — the `lv_tr()` / `text="…"` patterns in `scripts/translations/extractor.py`
+  keep junk (subject names, hex colors, numbers) out of the YAML.
+- **`obsolete`** asks *"is this key mentioned at all?"* It is tuned for
+  **recall** — `collect_referenced_strings()` in `scripts/translations/obsolete.py`
+  scans `src/`, `include/`, `ui_xml/`, `assets/`, `config/`, and `tests/` for the
+  key as a delimited literal (a complete C/JSON string, an XML attribute value,
+  or an XML text node).
+
+Using the precision-tuned extractor as the usage oracle reports live keys as
+dead, because keys reached *indirectly* are invisible to it:
+
+| Indirect pattern | Example |
+|------------------|---------|
+| Tag in a struct initializer, resolved via `lv_tr(var)` | `tour.step.*` in `src/ui/tour/tour_steps.cpp` |
+| Tag stored as JSON data | `pre_print_option.*` in `assets/config/printer_database.json` |
+| Label text declared in a header | `include/ui_panel_controls.h` |
+
+Matching is deliberately **delimited, not substring** — otherwise the word
+`Unlink` inside a code comment would count as a use of the `Unlink` key and hide
+a genuinely dead entry. The scan errs toward reporting a reference: a key that
+also appears in an unrelated log message just leaves a stale entry behind,
+whereas a missed reference deletes a string users see.
+
+Two categories are reported obsolete **by design**:
+
+- Strings that live only in a dev/test panel carrying an `<!-- i18n: skip-file -->`
+  marker (`test_panel.xml`, `gcode_test_panel.xml`, `step_test_panel.xml`) — the
+  marker opts the file out, so its strings should not be keys.
+- Strings containing a literal `\n` (multi-line dropdown option labels), which
+  `should_skip_text()` no longer extracts.
+
+The generated packs under `ui_xml/translations/` are excluded from the scan;
+they list every key by definition and so can never prove usage.
+
+If a key is being wrongly reported, prefer making the reference visible (or add
+an `// i18n:` note explaining the indirection, as in `tour_steps.cpp`) over
+re-adding it after a delete.
 
 ## Key Files Reference
 

@@ -95,6 +95,12 @@ using PrePrintStrategyPayload =
  *
  * Definitions live in `printer_database.json` per-printer. Labels and
  * descriptions are i18n keys resolved by the UI layer.
+ *
+ * i18n: the `pre_print_option.*` keys these fields hold are stored as JSON data
+ * in assets/config/printer_database.json (plus a few built in C++, e.g. the
+ * timelapse option in printer_state.cpp), so no lv_tr("...") call names them.
+ * `translation_sync obsolete` picks them up via its reference scan over
+ * assets/; they must stay in the per-locale YAML under translations/.
  */
 struct PrePrintOption {
     std::string id;              ///< Stable identifier, e.g. "bed_mesh", "ai_detect"
