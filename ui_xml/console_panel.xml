@@ -13,10 +13,10 @@
       <text_small name="status_message" width="100%" text="" bind_text="console_status" style_text_align="center">
         <bind_flag_if_eq subject="console_status_visible" flag="hidden" ref_value="0"/>
       </text_small>
-      <!-- Console output container (scrollable, subtle background) -->
+      <!-- Console output (transparent — entries sit directly on the panel card) -->
       <lv_obj name="console_container"
-              width="100%" flex_grow="1" style_bg_color="#screen_bg" style_bg_opa="255" style_radius="#border_radius"
-              style_pad_all="#space_md" scrollable="true" flex_flow="column" style_pad_gap="#space_xxs">
+              width="100%" flex_grow="1" style_bg_opa="0" style_pad_all="0" style_pad_right="#space_xs"
+              scrollable="true" flex_flow="column" style_pad_gap="#space_xxs">
         <!-- Console entries populated dynamically by C++ (text_small labels) -->
         <!-- Empty state (shown when no history available, inside console bg) -->
         <lv_obj name="empty_state"
@@ -29,23 +29,29 @@
           <text_muted text="G-code commands will appear here" translation_tag="G-code commands will appear here" width="content" style_text_align="center"/>
         </lv_obj>
       </lv_obj>
-      <!-- G-code input row -->
+      <!-- G-code composer: one recessed field with the actions living inside it.
+           The row itself carries the input background; the textarea is transparent
+           so the field reads as a single control rather than four adjacent ones. -->
       <lv_obj name="input_row"
-              width="100%" height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_sm"
-              style_flex_cross_place="center" scrollable="false">
-        <!-- G-code text input -->
-        <text_input name="gcode_input" flex_grow="1" placeholder="Enter G-code command..." placeholder_tag="Enter G-code command..." one_line="true"/>
-        <!-- Send button -->
-        <ui_button name="send_btn" width="60" icon="send">
-          <event_cb trigger="clicked" callback="on_console_send_clicked"/>
-        </ui_button>
+              width="100%" height="content" style_bg_color="#screen_bg" style_bg_opa="255"
+              style_border_width="#border_width" style_border_color="#border"
+              style_radius="#border_radius" style_pad_all="#space_xs" style_pad_left="#space_sm"
+              flex_flow="row" style_pad_gap="#space_xxs" style_flex_cross_place="center"
+              scrollable="false">
+        <!-- G-code text input (chrome removed — the row provides it) -->
+        <text_input name="gcode_input" flex_grow="1" placeholder="Enter G-code command..." placeholder_tag="Enter G-code command..." one_line="true"
+                    style_bg_opa="0" style_border_width="0" style_radius="0" style_pad_hor="0"/>
         <!-- Clear button -->
-        <ui_button name="clear_btn" width="60" height="100%" variant="secondary" icon="delete">
+        <ui_button name="clear_btn" width="#button_height_sm" height="#button_height_sm" style_radius="#button_height_sm" variant="ghost" icon="delete">
           <event_cb trigger="clicked" callback="on_console_clear_clicked"/>
         </ui_button>
         <!-- Settings gear: opens console_settings_overlay (filter toggles, future per-pattern editor) -->
-        <ui_button name="settings_btn" width="60" height="100%" variant="secondary" icon="cog">
+        <ui_button name="settings_btn" width="#button_height_sm" height="#button_height_sm" style_radius="#button_height_sm" variant="ghost" icon="cog">
           <event_cb trigger="clicked" callback="on_console_settings_clicked"/>
+        </ui_button>
+        <!-- Send button: the one accented action, kept last so it reads as commit -->
+        <ui_button name="send_btn" width="#button_height_sm" height="#button_height_sm" style_radius="#button_height_sm" icon="send">
+          <event_cb trigger="clicked" callback="on_console_send_clicked"/>
         </ui_button>
       </lv_obj>
     </lv_obj>
