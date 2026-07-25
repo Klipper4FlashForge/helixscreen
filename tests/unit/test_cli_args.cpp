@@ -10,6 +10,9 @@
  */
 
 #include "cli_args.h"
+#include "runtime_config.h"
+
+#include <vector>
 
 #include "../catch_amalgamated.hpp"
 
@@ -211,4 +214,87 @@ TEST_CASE("parse_cli_args: --remote-http-port rejects out-of-range values", "[cl
         REQUIRE(parse_cli_args(3, const_cast<char**>(argv), args, w, h));
         REQUIRE(args.remote_http_port == 7130);
     }
+}
+
+// --- wizard suppression under --test ------------------------------------
+//
+// Mock mode sets the active printer to "mock-printer", and the wizard gate
+// reads printers.<active>.wizard_completed — a key no real settings.json
+// carries. So a --test boot always landed on the first-run wizard, which
+// swallowed every ctl navigate/click while each command still reported
+// success. --test now implies --skip-wizard; -w/--wizard is the escape the
+// screenshot pipeline uses to capture the wizard itself.
+
+namespace {
+
+/// --test sets test_mode on the process-wide RuntimeConfig, which parse_cli_args
+/// never clears. Restore it so a later test parsing an argv *without* --test
+/// still sees a clean slate.
+struct TestModeGuard {
+    bool saved = get_runtime_config()->test_mode;
+    ~TestModeGuard() {
+        get_runtime_config()->test_mode = saved;
+    }
+};
+
+bool parse(std::vector<const char*> argv, CliArgs& args) {
+    int w = 0, h = 0;
+    return parse_cli_args(static_cast<int>(argv.size()), const_cast<char**>(argv.data()), args, w,
+                          h);
+}
+
+} // namespace
+
+TEST_CASE("parse_cli_args: --test implies --skip-wizard", "[cli_args][wizard]") {
+    TestModeGuard guard;
+    CliArgs args;
+    REQUIRE(parse({"helix-screen", "--test"}, args));
+    REQUIRE(args.skip_wizard);
+    REQUIRE_FALSE(args.force_wizard);
+}
+
+TEST_CASE("parse_cli_args: --wizard overrides the --test implication", "[cli_args][wizard]") {
+    TestModeGuard guard;
+    CliArgs args;
+    REQUIRE(parse({"helix-screen", "--test", "--wizard"}, args));
+    REQUIRE(args.force_wizard);
+    REQUIRE_FALSE(args.skip_wizard); // else the wizard capture path breaks
+}
+
+TEST_CASE("parse_cli_args: --wizard wins regardless of flag order", "[cli_args][wizard]") {
+    // The implication is applied after the whole parse, so -w before --test
+    // must behave identically to -w after it.
+    TestModeGuard guard;
+    CliArgs args;
+    REQUIRE(parse({"helix-screen", "-w", "--test"}, args));
+    REQUIRE(args.force_wizard);
+    REQUIRE_FALSE(args.skip_wizard);
+}
+
+TEST_CASE("parse_cli_args: --wizard-step still forces the wizard under --test",
+          "[cli_args][wizard]") {
+    TestModeGuard guard;
+    CliArgs args;
+    REQUIRE(parse({"helix-screen", "--test", "--wizard-step", "3"}, args));
+    REQUIRE(args.force_wizard);
+    REQUIRE(args.wizard_step == 3);
+    REQUIRE_FALSE(args.skip_wizard);
+}
+
+TEST_CASE("parse_cli_args: an explicit --skip-wizard is still honoured under --test",
+          "[cli_args][wizard]") {
+    TestModeGuard guard;
+    CliArgs args;
+    REQUIRE(parse({"helix-screen", "--test", "--skip-wizard"}, args));
+    REQUIRE(args.skip_wizard);
+    REQUIRE_FALSE(args.force_wizard);
+}
+
+TEST_CASE("parse_cli_args: without --test the wizard gate is untouched", "[cli_args][wizard]") {
+    TestModeGuard guard;
+    get_runtime_config()->test_mode = false; // isolate from a prior --test parse
+    CliArgs args;
+    REQUIRE(parse({"helix-screen"}, args));
+    REQUIRE_FALSE(args.skip_wizard);
+    REQUIRE_FALSE(args.force_wizard);
 }

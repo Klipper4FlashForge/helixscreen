@@ -111,8 +111,9 @@ for a in "${EXTRA_ARGS[@]}"; do
 done
 EXTRA_ARGS=("${FILTERED_ARGS[@]}")
 
-# Wizard capture: the first-run wizard shows itself on boot, so don't skip it and
-# run no recipe (we just capture the boot screen).
+# Wizard capture: --wizard is forwarded to the binary, where it sets force_wizard
+# and overrides the --skip-wizard that --test otherwise implies. We also withhold
+# our own --skip-wizard and run no recipe (we just capture the boot screen).
 WIZARD_MODE=0
 for a in "${EXTRA_ARGS[@]}"; do
     [ "$a" = "--wizard" ] && WIZARD_MODE=1
