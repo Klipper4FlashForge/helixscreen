@@ -14,16 +14,17 @@
         flex_flow="column" style_flex_main_place="start" style_flex_cross_place="center">
 
     <ui_card width="100%"
-             flex_grow="1" style_radius="#border_radius" style_pad_all="#space_lg" style_pad_gap="#space_md"
-             flex_flow="column" style_flex_main_place="start" style_flex_cross_place="center">
+             flex_grow="1" style_radius="#border_radius" style_pad_all="#space_lg" style_pad_gap="#space_lg"
+             flex_flow="row" style_flex_main_place="center" style_flex_cross_place="center">
 
-      <!-- Animated Welcome Header - cycles through all supported languages -->
+      <!-- Animated Welcome Header - cycles through all supported languages.
+           Sits to the left of the picker so the list can use the full card height. -->
       <text_heading name="welcome_header" bind_text="wizard_welcome_text"
-                    width="100%" style_text_align="center" style_pad_top="#space_md" style_pad_bottom="#space_lg"/>
+                    flex_grow="1" style_text_align="center"/>
 
-      <!-- Language list - scrollable, centered content -->
+      <!-- Language list - scrollable, centered content, full card height -->
       <lv_obj name="language_list"
-              width="240" flex_grow="1"
+              width="240" height="100%"
               style_pad_all="#space_sm" style_pad_gap="#space_xs"
               style_bg_color="#screen_bg" style_bg_opa="255" style_radius="#border_radius"
               scrollable="true" flex_flow="column" style_flex_cross_place="center">
