@@ -68,10 +68,11 @@ static void print_usage() {
     printf("  list_subjects           List all registered subjects\n");
     printf("  wait_for <subject> <value> [--timeout N]\n");
     printf("                          Block until subject matches value (default 30s)\n");
-    printf("\nWidgets (targets: a name, or @path from `ls`):\n");
+    printf("\nWidgets (targets: a name, a 'glob*' pattern, or @path from `ls`):\n");
     printf("  ls, describe_screen [target]\n");
     printf("                          List on-screen widgets: name, path, type, actions.\n");
-    printf("                          With a target, list only that widget's subtree.\n");
+    printf("                          With a target, list only that widget's subtree;\n");
+    printf("                          with a pattern ('row_*'), every match. Quote it.\n");
     printf("  click <target>          Click (toggles switches/checkboxes). On a composite\n");
     printf("                          row, descends to the control inside it.\n");
     printf("  set_value <target> <v>  Set value (slider, switch, dropdown, textarea)\n");

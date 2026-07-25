@@ -78,20 +78,24 @@ bool write_bmp(const char* filename, const uint8_t* data, int width, int height)
     return true;
 }
 
+std::vector<uint8_t> argb8888_to_rgba(const uint8_t* src, size_t pixel_count) {
+    std::vector<uint8_t> rgba(pixel_count * 4);
+    for (size_t i = 0; i < pixel_count; i++) {
+        size_t o = i * 4;
+        rgba[o + 0] = src[o + 2]; // R  <- ARGB8888 byte 2
+        rgba[o + 1] = src[o + 1]; // G
+        rgba[o + 2] = src[o + 0]; // B  <- ARGB8888 byte 0
+        rgba[o + 3] = src[o + 3]; // A
+    }
+    return rgba;
+}
+
 bool write_png(const char* filename, const uint8_t* data, int width, int height) {
     if (width <= 0 || height <= 0) {
         return false;
     }
-    // LVGL's ARGB8888 is B,G,R,A in memory; lodepng wants R,G,B,A.
     size_t px = static_cast<size_t>(width) * static_cast<size_t>(height);
-    std::vector<uint8_t> rgba(px * 4);
-    for (size_t i = 0; i < px; i++) {
-        size_t o = i * 4;
-        rgba[o + 0] = data[o + 2];
-        rgba[o + 1] = data[o + 1];
-        rgba[o + 2] = data[o + 0];
-        rgba[o + 3] = data[o + 3];
-    }
+    std::vector<uint8_t> rgba = argb8888_to_rgba(data, px);
     unsigned char* encoded = nullptr;
     size_t encoded_size = 0;
     unsigned err = lodepng_encode32(&encoded, &encoded_size, rgba.data(),

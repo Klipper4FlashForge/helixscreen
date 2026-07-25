@@ -115,6 +115,25 @@ A full-screen `ls` on a settings page runs to hundreds of entries. Scope it once
 you know the row you want — `ls row_filament_auto_cooldown` returns that row and
 its handful of children, `scope` in the response echoing the subtree root.
 
+**Wildcards.** A target name containing `*` (any run of characters, including
+none) or `?` (exactly one) is matched as a glob against every visible named
+widget on the active screen and the top layer:
+
+```bash
+helix-screen ctl ls 'row_*'          # every settings row, each with its subtree
+helix-screen ctl ls '*cooldown*'     # find it without knowing the full name
+helix-screen ctl click '*auto_cooldown*'
+```
+
+Quote the pattern so your shell doesn't expand it against the filesystem first.
+
+`ls` lists **all** matches — that is the point of it — and reports `scope` as an
+array plus a `matched` count when there is more than one. `click`, `set_value`
+and `scroll` instead require the pattern to identify **exactly one** widget: on
+multiple matches they fail with the candidate names and `@path`s rather than
+acting on whichever came first, since driving the UI somewhere unintended is
+much worse than an error. Glob matching skips hidden subtrees, same as `ls`.
+
 **Composite rows resolve to the control inside them.** A settings row is a
 clickable container wrapping the actual switch/dropdown, so a naive
 `click <row>` would fire CLICKED on the container and do nothing visible.

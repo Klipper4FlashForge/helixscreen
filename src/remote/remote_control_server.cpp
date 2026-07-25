@@ -800,6 +800,89 @@ nlohmann::json RemoteControlServer::handle_wait_for(const nlohmann::json& params
 // Phase 3: Widget interaction + scenario handlers
 // =============================================================================
 
+// ---------------------------------------------------------------------------
+// Name globbing
+// ---------------------------------------------------------------------------
+
+static bool is_glob(const std::string& s) {
+    return s.find('*') != std::string::npos || s.find('?') != std::string::npos;
+}
+
+// Shell-style glob: '*' matches any run (including empty), '?' exactly one char.
+// Iterative with backtracking, so a pathological pattern can't blow the stack.
+static bool glob_match(const char* pat, const char* str) {
+    const char* star = nullptr;
+    const char* retry = str;
+    while (*str) {
+        if (*pat == '?' || *pat == *str) {
+            pat++;
+            str++;
+        } else if (*pat == '*') {
+            star = pat++;    // remember where the star was
+            retry = str;     // and how much of str it had consumed
+        } else if (star) {
+            pat = star + 1;  // backtrack: let the star eat one more char
+            str = ++retry;
+        } else {
+            return false;
+        }
+    }
+    while (*pat == '*') {
+        pat++;
+    }
+    return *pat == '\0';
+}
+
+// Every visible, named widget in a subtree whose name matches the pattern.
+static void collect_glob_matches(lv_obj_t* parent, const std::string& pattern,
+                                 std::vector<lv_obj_t*>& out) {
+    if (!parent) {
+        return;
+    }
+    uint32_t count = lv_obj_get_child_count(parent);
+    for (uint32_t i = 0; i < count; ++i) {
+        lv_obj_t* child = lv_obj_get_child(parent, i);
+        if (!child || lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN)) {
+            continue; // hidden subtree — not on screen, same rule as describe_walk
+        }
+        const char* raw = lv_obj_get_name(child);
+        if (raw && raw[0] != '\0') {
+            char resolved[128];
+            lv_obj_get_name_resolved(child, resolved, sizeof(resolved));
+            const char* name = resolved[0] != '\0' ? resolved : raw;
+            if (glob_match(pattern.c_str(), name)) {
+                out.push_back(child);
+            }
+        }
+        collect_glob_matches(child, pattern, out);
+    }
+}
+
+// Match a name pattern across the active screen and the top layer (modals).
+static std::vector<lv_obj_t*> glob_widgets(const std::string& pattern) {
+    std::vector<lv_obj_t*> out;
+    collect_glob_matches(lv_screen_active(), pattern, out);
+    collect_glob_matches(lv_layer_top(), pattern, out);
+    return out;
+}
+
+// Report a resolved widget's describe_screen-style path, so a caller that got
+// descended into a child can address it directly next time.
+static std::string path_of(lv_obj_t* o) {
+    if (!o) {
+        return {};
+    }
+    std::string suffix;
+    lv_obj_t* cur = o;
+    while (lv_obj_t* parent = lv_obj_get_parent(cur)) {
+        uint32_t idx = lv_obj_get_index(cur);
+        suffix = "/" + std::to_string(idx) + suffix;
+        cur = parent;
+    }
+    // cur is now a screen root: the active screen ("s") or the top layer ("t").
+    return (cur == lv_layer_top() ? "t" : "s") + suffix;
+}
+
 // Resolve a path locator like "s/3/1/4" (s = active screen, t = top layer) to a
 // live widget by following child indices. Paths come from describe_screen and
 // uniquely address any widget, including duplicate-named ones. UI thread only.
@@ -829,12 +912,38 @@ static lv_obj_t* resolve_path(const std::string& path) {
 
 // Resolve a target widget from command params: an explicit "path" wins, else
 // fall back to "name" (searched on the active screen then the top layer).
+//
+// A name containing '*' or '?' is a glob. Acting on a glob requires it to match
+// exactly one widget — clicking whichever of several matches happened to come
+// first is the kind of thing that silently drives the UI somewhere unintended,
+// so ambiguity is an error that names the candidates instead.
 static lv_obj_t* resolve_widget(const nlohmann::json& params) {
     if (params.contains("path") && params["path"].is_string()) {
         return resolve_path(params["path"].get<std::string>());
     }
     if (params.contains("name") && params["name"].is_string()) {
         std::string name = params["name"];
+        if (is_glob(name)) {
+            std::vector<lv_obj_t*> matches = glob_widgets(name);
+            if (matches.empty()) {
+                return nullptr; // caller reports "not found" with the pattern
+            }
+            if (matches.size() > 1) {
+                std::string msg = "Pattern '" + name + "' matches " +
+                                  std::to_string(matches.size()) + " widgets: ";
+                for (size_t i = 0; i < matches.size() && i < 8; i++) {
+                    char nm[128];
+                    lv_obj_get_name_resolved(matches[i], nm, sizeof(nm));
+                    msg += (i ? ", " : "") + std::string(nm) + " (@" + path_of(matches[i]) + ")";
+                }
+                if (matches.size() > 8) {
+                    msg += ", ...";
+                }
+                msg += " — narrow the pattern or use one @path";
+                throw std::invalid_argument(msg);
+            }
+            return matches[0];
+        }
         lv_obj_t* o = nullptr;
         if (lv_obj_t* screen = lv_screen_active()) {
             o = lv_obj_find_by_name(screen, name.c_str());
@@ -906,23 +1015,6 @@ static lv_obj_t* resolve_actionable(lv_obj_t* target, lv_obj_t** descended_to,
     // if it is clickable at all, so buttons and overlay-opening rows are
     // unaffected by this resolution step.
     return target;
-}
-
-// Report a resolved widget's describe_screen-style path, so a caller that got
-// descended into a child can address it directly next time.
-static std::string path_of(lv_obj_t* o) {
-    if (!o) {
-        return {};
-    }
-    std::string suffix;
-    lv_obj_t* cur = o;
-    while (lv_obj_t* parent = lv_obj_get_parent(cur)) {
-        uint32_t idx = lv_obj_get_index(cur);
-        suffix = "/" + std::to_string(idx) + suffix;
-        cur = parent;
-    }
-    // cur is now a screen root: the active screen ("s") or the top layer ("t").
-    return (cur == lv_layer_top() ? "t" : "s") + suffix;
 }
 
 // Human-readable label for a target (path or name), for result messages.
@@ -1169,20 +1261,35 @@ nlohmann::json RemoteControlServer::handle_describe_screen(const nlohmann::json&
     return execute_on_ui_thread([params, scoped]() -> nlohmann::json {
         nlohmann::json widgets = nlohmann::json::array();
         if (scoped) {
-            lv_obj_t* root = resolve_widget(params);
-            if (!root) {
+            // Unlike click/set_value, a glob here is not ambiguous — listing
+            // several subtrees is exactly what `ls row_*` should do.
+            std::vector<lv_obj_t*> roots;
+            if (params.contains("name") && params["name"].is_string() &&
+                is_glob(params["name"].get<std::string>())) {
+                roots = glob_widgets(params["name"].get<std::string>());
+            } else if (lv_obj_t* one = resolve_widget(params)) {
+                roots.push_back(one);
+            }
+            if (roots.empty()) {
                 throw std::invalid_argument("Widget not found: " + target_label(params));
             }
-            std::string root_path = path_of(root);
-            // Include the root itself, then its subtree, so the listing is
-            // self-contained (you can see what you scoped to).
-            char resolved[128];
-            lv_obj_get_name_resolved(root, resolved, sizeof(resolved));
-            const char* raw = lv_obj_get_name(root);
-            widgets.push_back(describe_one(
-                root, resolved[0] != '\0' ? resolved : (raw ? raw : ""), root_path));
-            describe_walk(root, root_path, widgets);
-            return {{"widgets", widgets}, {"scope", root_path}};
+            nlohmann::json scopes = nlohmann::json::array();
+            for (lv_obj_t* root : roots) {
+                std::string root_path = path_of(root);
+                scopes.push_back(root_path);
+                // Include the root itself, then its subtree, so the listing is
+                // self-contained (you can see what you scoped to).
+                char resolved[128];
+                lv_obj_get_name_resolved(root, resolved, sizeof(resolved));
+                const char* raw = lv_obj_get_name(root);
+                widgets.push_back(describe_one(
+                    root, resolved[0] != '\0' ? resolved : (raw ? raw : ""), root_path));
+                describe_walk(root, root_path, widgets);
+            }
+            if (scopes.size() == 1) {
+                return {{"widgets", widgets}, {"scope", scopes[0]}};
+            }
+            return {{"widgets", widgets}, {"scope", scopes}, {"matched", scopes.size()}};
         }
         // Active screen ("s") holds panels + pushed overlays; the top layer ("t")
         // holds modals and their backdrops. Walk both so nothing on screen is missed.

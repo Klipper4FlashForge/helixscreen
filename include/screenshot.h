@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace helix {
 
@@ -23,6 +24,19 @@ namespace helix {
  * @return true on success, false on failure
  */
 bool write_bmp(const char* filename, const uint8_t* data, int width, int height);
+
+/**
+ * @brief Convert LVGL ARGB8888 pixels to the RGBA byte order PNG encoders want
+ *
+ * LVGL's ARGB8888 is B,G,R,A in memory. Swapping the R and B channels is the
+ * whole of the conversion — get it wrong and images encode with red and blue
+ * transposed, which is valid output and easy to miss.
+ *
+ * @param src Source pixels, ARGB8888 (B,G,R,A per pixel)
+ * @param pixel_count Number of pixels (not bytes)
+ * @return Freshly allocated R,G,B,A buffer of pixel_count * 4 bytes
+ */
+std::vector<uint8_t> argb8888_to_rgba(const uint8_t* src, size_t pixel_count);
 
 /**
  * @brief Write raw ARGB8888 pixel data to a PNG file
