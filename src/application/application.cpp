@@ -4413,6 +4413,13 @@ void Application::shutdown() {
     // cleanly without firing stale unsubscribe callbacks on corrupted linked lists.
     StaticSubjectRegistry::instance().deinit_all();
 
+    // Sweep any panel singleton a deinit callback lazily re-created on its way
+    // out (a callback reaching through an auto-creating get_global_*_panel()
+    // getter builds a replacement instance). Destroying it here, while LVGL and
+    // spdlog are still up, keeps its destructor off the static-destruction path
+    // where those subsystems are already gone. No-op when nothing resurrected.
+    StaticPanelRegistry::instance().destroy_all();
+
     // Destroy JobQueueState AFTER deinit_all() so its registered cleanup lambda runs
     // while the object is still alive. Must still be before m_moonraker.reset() so
     // client unregistration works. (Mirrors soft-restart path ordering.)

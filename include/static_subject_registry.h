@@ -76,6 +76,18 @@ class StaticSubjectRegistry {
     void deinit_all();
 
     /**
+     * @brief Run and remove a single registered deinit callback by name
+     *
+     * Test hook. Exercises one subsystem's shutdown callback without firing the
+     * whole registry — deinit_all() in a test binary would also run entries left
+     * behind by earlier fixtures (some of which capture destroyed objects).
+     *
+     * @param name Name used at registration
+     * @return true if an entry was found and run
+     */
+    bool deinit_one(const char* name);
+
+    /**
      * @brief Clear all registered entries without running callbacks
      *
      * Used during soft restart (printer switching) after deinit_all() has run,
