@@ -63,8 +63,21 @@ def pytest_runtest_makereport(item, call):
 
 
 @pytest.fixture
-def artifacts(request, helix_app):
-    """A directory for this test's diagnostics. Populated only if the test fails."""
+def artifacts(request):
+    """A directory for this test's diagnostics. Populated only if the test fails.
+
+    Resolves whichever app fixture the failing test actually requested —
+    `fresh_helix_app` first (a test requesting both wants its private
+    instance), falling back to the shared `helix_app`. A test that requests
+    `artifacts` without either app fixture gets a clean no-op teardown rather
+    than an error.
+    """
+    app = None
+    for name in ("fresh_helix_app", "helix_app"):
+        if name in request.fixturenames:
+            app = request.getfixturevalue(name)
+            break
+
     target = ARTIFACT_ROOT / request.node.name
     yield target
 
@@ -73,22 +86,22 @@ def artifacts(request, helix_app):
         and getattr(request.node, f"rep_{phase}").failed
         for phase in ("setup", "call", "teardown")
     )
-    if not failed:
+    if not failed or app is None:
         return
 
     target.mkdir(parents=True, exist_ok=True)
     # Each dump is independently best-effort: the app may be wedged or dead, and
     # losing the screenshot must not cost us the log.
     try:
-        helix_app.screenshot(str((target / "screen.png").resolve()))
+        app.screenshot(str((target / "screen.png").resolve()))
     except Exception as exc:  # noqa: BLE001 - diagnostics must never mask the real failure
         (target / "screen.png.error").write_text(str(exc))
     try:
-        (target / "app.log").write_text("\n".join(helix_app.log(200)))
+        (target / "app.log").write_text("\n".join(app.log(200)))
     except Exception:  # noqa: BLE001
-        (target / "app.log").write_text(helix_app._log_tail_from_file(200))
+        (target / "app.log").write_text(app._log_tail_from_file(200))
     try:
-        state = [f"current: {helix_app.current()}", "", f"ls: {helix_app.ls()}"]
+        state = [f"current: {app.current()}", "", f"ls: {app.ls()}"]
         (target / "state.txt").write_text("\n".join(state))
     except Exception as exc:  # noqa: BLE001
         (target / "state.txt").write_text(f"state dump failed: {exc}")

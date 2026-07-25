@@ -35,8 +35,14 @@ def test_artifacts_written_when_a_test_fails(pytester, monkeypatch):
     result = pytester.runpytest("-p", "no:cacheprovider")
     result.assert_outcomes(failed=1)
 
-    dumps = list(pytester.path.glob("**/ui-artifacts/test_deliberate_failure/*"))
-    names = {p.name for p in dumps}
+    dump_dir = next(pytester.path.glob("**/ui-artifacts/test_deliberate_failure"))
+    names = {p.name for p in dump_dir.iterdir()}
     assert "screen.png" in names
     assert "app.log" in names
     assert "state.txt" in names
+
+    # Filenames existing isn't enough — a zero-byte PNG or an empty log would
+    # pass a bare presence check while telling a debugging session nothing.
+    assert (dump_dir / "screen.png").stat().st_size > 0
+    assert (dump_dir / "app.log").read_text().strip() != ""
+    assert (dump_dir / "state.txt").read_text().strip() != ""
