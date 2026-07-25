@@ -672,3 +672,35 @@ TEST_CASE("Shutdown observer release contract — every ObserverGuard member is 
         }
     }
 }
+
+TEST_CASE("should_complete_preprint - completes when the layer-zero sample is never delivered",
+          "[application][print_start][regression]") {
+    // notify_status_update is coalesced, so the 0 sample is not guaranteed to be
+    // observed: a fast first layer, or a reconnect part-way in, can make the
+    // first value the app ever sees >= 1. Requiring the 0 -> >=1 edge alone left
+    // the collector active forever, so PrintLifecycleState never left Preparing
+    // and the pre-print overlay covered the entire print. Reproduced with the
+    // mock at --sim-speed 15, where current_layer arrives as 3, 8, 13, ...
+    SECTION("Zero never seen, but the counter advanced — completes") {
+        REQUIRE(MoonrakerManager::should_complete_preprint(
+            /*printer_reports_layers=*/true, /*current_layer=*/8, /*print_duration=*/42,
+            /*seen_layer_zero=*/false, /*layer_advanced=*/true));
+    }
+    SECTION("Zero never seen and no advance yet — still waits") {
+        // A single positive sample proves nothing: it could be a stale value
+        // carried over from the previous print.
+        REQUIRE_FALSE(MoonrakerManager::should_complete_preprint(
+            /*printer_reports_layers=*/true, /*current_layer=*/8, /*print_duration=*/42,
+            /*seen_layer_zero=*/false, /*layer_advanced=*/false));
+    }
+    SECTION("Advance still cannot complete while the layer is below 1") {
+        REQUIRE_FALSE(MoonrakerManager::should_complete_preprint(
+            /*printer_reports_layers=*/true, /*current_layer=*/0, /*print_duration=*/600,
+            /*seen_layer_zero=*/false, /*layer_advanced=*/true));
+    }
+    SECTION("Original zero-edge route is unchanged") {
+        REQUIRE(MoonrakerManager::should_complete_preprint(
+            /*printer_reports_layers=*/true, /*current_layer=*/1, /*print_duration=*/0,
+            /*seen_layer_zero=*/true, /*layer_advanced=*/false));
+    }
+}
