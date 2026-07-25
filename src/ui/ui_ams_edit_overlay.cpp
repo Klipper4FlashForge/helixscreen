@@ -375,6 +375,12 @@ void AmsEditOverlay::init_subjects() {
                                "");
         subjects_.register_subject(&chip_text_subject_);
 
+        // Spoolman spool number shown beside the tracked mark on the overview
+        // card ("#19"). Named so the label binds via bind_text in XML rather than
+        // an imperative lv_label_set_text from update_ui().
+        UI_MANAGED_SUBJECT_STRING(spoolman_id_subject_, spoolman_id_buf_, "",
+                                  "ams_edit_spoolman_id", subjects_);
+
 #if HELIX_HAS_LABEL_PRINTER
         // Expose the label-printer readiness flag to XML so
         // btn_detail_print_label can bind its `hidden` flag declaratively and
@@ -1302,6 +1308,15 @@ void AmsEditOverlay::update_ui() {
         snprintf(chip_text_buf_, sizeof(chip_text_buf_), "%s \xC2\xB7 %s", brand, material);
     }
     lv_subject_copy_string(&chip_text_subject_, chip_text_buf_);
+
+    // Spool number beside the tracked mark. Empty for untracked slots; the label's
+    // own hidden-flag binding on ams_edit_is_managed keeps it off screen there.
+    if (managed) {
+        snprintf(spoolman_id_buf_, sizeof(spoolman_id_buf_), "#%d", working_info_.spoolman_id);
+    } else {
+        spoolman_id_buf_[0] = '\0';
+    }
+    lv_subject_copy_string(&spoolman_id_subject_, spoolman_id_buf_);
 
     // Card color swatch (grandfathered dynamic bg-color write, same as the old
     // big overview swatch).

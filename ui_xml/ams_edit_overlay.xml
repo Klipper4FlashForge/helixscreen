@@ -23,6 +23,31 @@
     <px name="notes_height_small" value="44"/>
     <px name="notes_height_medium" value="72"/>
     <px name="notes_height_large" value="88"/>
+    <!-- Spool-edit field widths, sized to their content so several fields share a
+         row (row_wrap falls back to stacked at micro). A flex_grow field would
+         stretch an 8-digit gram value across half the overlay.
+         Numeric = up to 8 digits, text = a short label. -->
+    <px name="field_w_num_small" value="76"/>
+    <px name="field_w_num_medium" value="96"/>
+    <px name="field_w_num_large" value="110"/>
+    <px name="field_w_text_small" value="120"/>
+    <px name="field_w_text_medium" value="150"/>
+    <px name="field_w_text_large" value="180"/>
+    <!-- Height of the spool-edit color column, so the catalog selector beside it
+         can be pinned to the same height and its product list lands flush with the
+         bottom swatch row (LVGL flex has no cross-axis stretch, so the selector
+         needs a definite height for its flex_grow list to have slack — #1128).
+         = swatch grid (5 rows) + the 28px "Color ▣ ✎" header + one space_xs gap.
+         KEEP IN SYNC with the swatch/gap ladder in
+         register_color_swatch_grid_constants() (src/xml_registration.cpp):
+           micro 24px/6gap, tiny+small 28/8, medium+ 32/8. -->
+    <px name="swatch_col_height_micro" value="174"/>
+    <px name="swatch_col_height_tiny" value="202"/>
+    <px name="swatch_col_height_small" value="204"/>
+    <px name="swatch_col_height_medium" value="225"/>
+    <px name="swatch_col_height_large" value="226"/>
+    <px name="swatch_col_height_xlarge" value="228"/>
+    <px name="swatch_col_height_xxlarge" value="230"/>
   </consts>
   <view name="ams_edit_overlay"
         extends="overlay_panel" width="#overlay_panel_width"
@@ -35,7 +60,7 @@
         back_button_callback="ams_edit_back_cb">
     <lv_obj name="overlay_content"
             width="100%" flex_grow="1" style_pad_all="0" flex_flow="column"
-            style_pad_gap="0" scrollbar_mode="auto">
+            style_pad_gap="0" scrollable="true" scrollbar_mode="auto">
 
       <!-- ============================================================ -->
       <!-- OVERVIEW VIEW: slot state + manual edit (ams_edit_view=0)    -->
@@ -87,6 +112,14 @@
                         hidden="true" clickable="false" event_bubble="true">
                 <bind_flag_if_eq subject="ams_edit_is_managed" flag="hidden" ref_value="0"/>
               </lv_image>
+              <!-- Spoolman spool number ("#19") next to the mark. The mark alone
+                   says "tracked" but not *which* spool; the id is what the user
+                   cross-references against Spoolman's own list. -->
+              <text_small name="chip_spoolman_id" bind_text="ams_edit_spoolman_id"
+                          style_text_color="#text_muted" hidden="true" clickable="false"
+                          event_bubble="true">
+                <bind_flag_if_eq subject="ams_edit_is_managed" flag="hidden" ref_value="0"/>
+              </text_small>
               <icon src="pencil" size="sm" variant="muted" clickable="false" event_bubble="true"/>
             </lv_obj>
             <!-- Row 2: remaining (display-only). remaining_progress_container's
@@ -210,12 +243,14 @@
               style_pad_gap="#space_md" scrollable="false" hidden="true">
         <bind_flag_if_not_eq subject="ams_edit_view" flag="hidden" ref_value="2"/>
 
-        <text_heading text="Spool" translation_tag="Spool"/>
-
         <!-- Identity + color side by side: the color palette (LEFT) fits the
              fixed-width swatch grid; the catalog identity (RIGHT) takes the
              remaining width. Horizontal space is plentiful here, vertical is
-             scarce — so the two stacks share a row instead of stacking. -->
+             scarce — so the two stacks share a row instead of stacking.
+             The selector carries a DEFINITE height (#swatch_col_height above) so its
+             children can fill it: LVGL flex has no cross-axis stretch, and a
+             content-sized column would leave the flex_grow product list collapsed to
+             its min-height instead of running down to the swatch baseline (#1128). -->
         <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row"
                 style_pad_gap="#space_lg" style_flex_cross_place="start" scrollable="false">
           <!-- LEFT: inline color — shared full preset palette (one palette
@@ -238,33 +273,52 @@
             </lv_obj>
             <color_swatch_grid swatch_callback="ams_edit_quick_swatch_cb"/>
           </lv_obj>
-          <!-- RIGHT: Brand / Material / product — shared catalog selector -->
+          <!-- RIGHT: Brand / Material / product + the gram fields. The selector is
+               pinned to the color column's exact height (#swatch_col_height) so its
+               flex_grow product list has real slack and lands flush with the bottom
+               of the last swatch row; the weights then sit directly under the list
+               box, extending the column past the swatch baseline. -->
           <lv_obj flex_grow="1" height="content" style_pad_all="0" flex_flow="column"
                   style_pad_gap="#space_xs" scrollable="false">
-            <filament_catalog_selector name="details_catalog_selector"/>
-          </lv_obj>
-        </lv_obj>
-
-        <!-- Quantity: remaining + spool weight. Applies to tracked AND
-             untracked slots (local weight overrides), so it stays OUTSIDE the
-             logistics wrapper. Moved from the retired spool-details view. -->
-        <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row"
-                style_pad_gap="#space_md" scrollable="false">
-          <lv_obj height="content" flex_grow="1" style_pad_all="0" flex_flow="column"
-                  style_pad_gap="#space_xxs" scrollable="false">
-            <text_small text="Remaining (g)" translation_tag="Remaining (g)"/>
-            <text_input name="detail_field_remaining" width="100%" keyboard_hint="numeric"
-                        placeholder="1000" max_length="8">
-              <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
-            </text_input>
-          </lv_obj>
-          <lv_obj height="content" flex_grow="1" style_pad_all="0" flex_flow="column"
-                  style_pad_gap="#space_xxs" scrollable="false">
-            <text_small text="Spool wt (g)" translation_tag="Spool wt (g)"/>
-            <text_input name="detail_field_spool_weight" width="100%" keyboard_hint="numeric"
-                        placeholder="0" max_length="8">
-              <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
-            </text_input>
+            <filament_catalog_selector name="details_catalog_selector"
+                                       height="#swatch_col_height"/>
+            <!-- Quantity: remaining + spool weight. Applies to tracked AND
+                 untracked slots (local weight overrides), so it stays OUTSIDE the
+                 logistics wrapper. Moved from the retired spool-details view. -->
+            <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row_wrap"
+                    style_pad_gap="#space_md" scrollable="false">
+              <lv_obj width="content" height="content" style_pad_all="0" flex_flow="column"
+                      style_pad_gap="#space_xxs" scrollable="false">
+                <text_small text="Remaining (g)" translation_tag="Remaining (g)"/>
+                <text_input name="detail_field_remaining" width="#field_w_num"
+                            keyboard_hint="numeric" placeholder="1000" max_length="8">
+                  <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
+                </text_input>
+              </lv_obj>
+              <lv_obj width="content" height="content" style_pad_all="0" flex_flow="column"
+                      style_pad_gap="#space_xxs" scrollable="false">
+                <text_small text="Spool wt (g)" translation_tag="Spool wt (g)"/>
+                <text_input name="detail_field_spool_weight" width="#field_w_num"
+                            keyboard_hint="numeric" placeholder="0" max_length="8">
+                  <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
+                </text_input>
+              </lv_obj>
+              <!-- Save to Spoolman toggle — locked naming (spec §3.8). Absent when
+                   Spoolman is disconnected; defaults to the slot's managed state.
+                   Rides the free width beside the two gram fields instead of owning
+                   a full-width row. Gated on printer_has_spoolman (NOT is_managed):
+                   it must stay reachable on an untracked slot, since it is how the
+                   user opts that slot into Spoolman in the first place. -->
+              <lv_obj name="save_to_spoolman_row" flex_grow="1" height="content" style_pad_all="0"
+                      style_min_width="170" flex_flow="row" style_flex_main_place="end"
+                      style_flex_cross_place="end" style_pad_gap="#space_sm" scrollable="false">
+                <bind_flag_if_eq subject="printer_has_spoolman" flag="hidden" ref_value="0"/>
+                <text_small text="Save to Spoolman" translation_tag="Save to Spoolman"/>
+                <ui_switch name="save_to_spoolman_switch" size="small">
+                  <bind_state_if_eq subject="ams_edit_is_managed" state="checked" ref_value="1"/>
+                </ui_switch>
+              </lv_obj>
+            </lv_obj>
           </lv_obj>
         </lv_obj>
 
@@ -274,29 +328,31 @@
         <lv_obj name="spool_edit_logistics" width="100%" height="content" style_pad_all="0"
                 flex_flow="column" style_pad_gap="#space_sm" scrollable="false" hidden="true">
           <bind_flag_if_eq subject="ams_edit_is_managed" flag="hidden" ref_value="0"/>
-          <!-- Row: Price | Location | Lot -->
-          <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row"
+          <!-- Row: Price | Location | Lot — content-width groups in a row_wrap so
+               all three share one row on medium+ and wrap cleanly at micro. -->
+          <lv_obj width="100%" height="content" style_pad_all="0" flex_flow="row_wrap"
                   style_pad_gap="#space_md" scrollable="false">
-            <lv_obj height="content" flex_grow="1" style_pad_all="0" flex_flow="column"
+            <lv_obj width="content" height="content" style_pad_all="0" flex_flow="column"
                     style_pad_gap="#space_xxs" scrollable="false">
               <text_small text="Price" translation_tag="Price"/>
-              <text_input name="detail_field_price" width="100%" keyboard_hint="numeric"
+              <text_input name="detail_field_price" width="#field_w_num" keyboard_hint="numeric"
                           placeholder="0.00" max_length="10">
                 <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
               </text_input>
             </lv_obj>
-            <lv_obj height="content" flex_grow="1" style_pad_all="0" flex_flow="column"
+            <lv_obj width="content" height="content" style_pad_all="0" flex_flow="column"
                     style_pad_gap="#space_xxs" scrollable="false">
               <text_small text="Location" translation_tag="Location"/>
-              <text_input name="detail_field_location" width="100%" placeholder="Shelf A"
+              <text_input name="detail_field_location" width="#field_w_text" placeholder="Shelf A"
                           placeholder_tag="Shelf A" max_length="64">
                 <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
               </text_input>
             </lv_obj>
-            <lv_obj height="content" flex_grow="1" style_pad_all="0" flex_flow="column"
+            <lv_obj width="content" height="content" style_pad_all="0" flex_flow="column"
                     style_pad_gap="#space_xxs" scrollable="false">
               <text_small text="Lot/Batch Nr" translation_tag="Lot/Batch Nr"/>
-              <text_input name="detail_field_lot_nr" width="100%" placeholder="" max_length="32">
+              <text_input name="detail_field_lot_nr" width="#field_w_text" placeholder=""
+                          max_length="32">
                 <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
               </text_input>
             </lv_obj>
@@ -310,18 +366,6 @@
               <event_cb trigger="value_changed" callback="ams_edit_detail_field_changed_cb"/>
             </text_input>
           </lv_obj>
-        </lv_obj>
-
-        <!-- Save to Spoolman toggle — locked naming (spec §3.8). Absent when
-             Spoolman is disconnected; defaults to the slot's managed state. -->
-        <lv_obj name="save_to_spoolman_row" width="100%" height="content" style_pad_all="0"
-                flex_flow="row" style_flex_main_place="space_between"
-                style_flex_cross_place="center" scrollable="false">
-          <bind_flag_if_eq subject="printer_has_spoolman" flag="hidden" ref_value="0"/>
-          <text_body text="Save to Spoolman" translation_tag="Save to Spoolman"/>
-          <ui_switch name="save_to_spoolman_switch" size="small">
-            <bind_state_if_eq subject="ams_edit_is_managed" state="checked" ref_value="1"/>
-          </ui_switch>
         </lv_obj>
 
         <!-- Save lives in the header bar on this view (visible on overview AND

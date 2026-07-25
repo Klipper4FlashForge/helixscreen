@@ -191,9 +191,12 @@ static void register_color_swatch_grid_constants() {
 
     lv_xml_component_scope_t* scope = lv_xml_component_get_scope("color_swatch_grid");
     if (scope) {
-        lv_xml_register_const(scope, "grid_swatch_size", swatch_buf);
-        lv_xml_register_const(scope, "grid_gap", gap_buf);
-        lv_xml_register_const(scope, "grid_width", width_buf);
+        // update_, NOT register_: the component declares all three as fallback
+        // <consts>, and lv_xml_register_const() is a no-op once the name exists in
+        // the scope, which would pin the grid to those fallbacks at every breakpoint.
+        lv_xml_update_const(scope, "grid_swatch_size", swatch_buf);
+        lv_xml_update_const(scope, "grid_gap", gap_buf);
+        lv_xml_update_const(scope, "grid_width", width_buf);
         spdlog::debug("[SwatchGrid] Registered swatch={} gap={} width={} for min_dim {}px",
                       swatch_buf, gap_buf, width_buf, resp_res);
     }
