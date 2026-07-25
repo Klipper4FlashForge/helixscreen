@@ -152,8 +152,9 @@ TEST_CASE("LED characterization: LED updates from JSON", "[characterization][led
         REQUIRE(lv_subject_get_int(state.get_led_g_subject()) == 64);
         REQUIRE(lv_subject_get_int(state.get_led_b_subject()) == 191);
         REQUIRE(lv_subject_get_int(state.get_led_w_subject()) == 0);
-        // brightness = max(128, 64, 191, 0) * 100 / 255 = 191 * 100 / 255 = 74
-        REQUIRE(lv_subject_get_int(state.get_led_brightness_subject()) == 74);
+        // brightness = round(max(128, 64, 191, 0) * 100 / 255) = round(74.9) = 75
+        // (helix::led::channel_to_percent rounds; the old truncating form gave 74)
+        REQUIRE(lv_subject_get_int(state.get_led_brightness_subject()) == 75);
     }
 
     SECTION("RGB only LED (no W channel in data)") {
@@ -207,7 +208,7 @@ TEST_CASE("LED characterization: brightness calculation", "[characterization][le
                                     lv_subject_get_int(state.get_led_b_subject()),
                                     lv_subject_get_int(state.get_led_w_subject())});
 
-        int expected_brightness = (max_channel * 100) / 255;
+        int expected_brightness = (max_channel * 100 + 127) / 255;
         REQUIRE(lv_subject_get_int(state.get_led_brightness_subject()) == expected_brightness);
     }
 

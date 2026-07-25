@@ -8,6 +8,7 @@
 #include "color_utils.h"
 #include "config.h"
 #include "helix/xml/scoped_subject_registry.h"
+#include "led/led_color_utils.h"
 #include "moonraker_api.h"
 #include "moonraker_client.h"
 #include "moonraker_error.h"
@@ -811,29 +812,39 @@ void NativeBackend::turn_off(const std::string& strip_id, SuccessCallback on_suc
 }
 
 uint32_t NativeBackend::StripColor::to_rgb() const {
-    uint8_t ri = static_cast<uint8_t>(std::clamp(r, 0.0, 1.0) * 255.0 + 0.5);
-    uint8_t gi = static_cast<uint8_t>(std::clamp(g, 0.0, 1.0) * 255.0 + 0.5);
-    uint8_t bi = static_cast<uint8_t>(std::clamp(b, 0.0, 1.0) * 255.0 + 0.5);
-    return (ri << 16) | (gi << 8) | bi;
+    return (static_cast<uint32_t>(to_channel_byte(r)) << 16) |
+           (static_cast<uint32_t>(to_channel_byte(g)) << 8) | to_channel_byte(b);
 }
 
-void NativeBackend::StripColor::decompose(uint32_t& base_color, int& brightness_pct) const {
-    uint8_t ri = static_cast<uint8_t>(std::clamp(r, 0.0, 1.0) * 255.0 + 0.5);
-    uint8_t gi = static_cast<uint8_t>(std::clamp(g, 0.0, 1.0) * 255.0 + 0.5);
-    uint8_t bi = static_cast<uint8_t>(std::clamp(b, 0.0, 1.0) * 255.0 + 0.5);
-    uint8_t max_c = std::max({ri, gi, bi});
+void NativeBackend::StripColor::decompose(uint32_t& base_color, int& brightness_pct,
+                                          double& base_white) const {
+    const uint8_t ri = to_channel_byte(r);
+    const uint8_t gi = to_channel_byte(g);
+    const uint8_t bi = to_channel_byte(b);
+    const uint8_t wi = to_channel_byte(w);
 
-    brightness_pct = (max_c * 100 + 127) / 255;
-    if (brightness_pct < 1 && max_c > 0)
-        brightness_pct = 1;
+    // W participates in the brightness max. A Klipper white-only [led] section
+    // (white_pin only) puts its entire level in the 4th channel — color_data
+    // [[0.0, 0.0, 0.0, 0.15]] — so an RGB-only max reads back as 0%, and
+    // re-applying 0% writes the user's light off (#1129).
+    const uint8_t max_c = std::max({ri, gi, bi, wi});
 
-    if (max_c > 0 && max_c < 255) {
-        uint8_t fr = static_cast<uint8_t>(std::min(255, ri * 255 / max_c));
-        uint8_t fg = static_cast<uint8_t>(std::min(255, gi * 255 / max_c));
-        uint8_t fb = static_cast<uint8_t>(std::min(255, bi * 255 / max_c));
-        base_color = (fr << 16) | (fg << 8) | fb;
+    brightness_pct = channel_to_percent(max_c);
+
+    // base_white is the W level scaled back up to full brightness, so that
+    // base_white * (brightness_pct / 100) reproduces the reported W exactly.
+    base_white = static_cast<double>(scale_channel_to_full(wi, max_c)) / 255.0;
+
+    if (ri == 0 && gi == 0 && bi == 0 && wi > 0) {
+        // White-only output: there is no hue to recover from all-zero RGB.
+        // Report neutral white as the base so the swatch and the color presets
+        // show a dimmed white rather than black. The actual write still goes
+        // out on the W channel (see LedControlOverlay::apply_current_color).
+        base_color = 0xFFFFFFu;
     } else {
-        base_color = (ri << 16) | (gi << 8) | bi;
+        base_color = (static_cast<uint32_t>(scale_channel_to_full(ri, max_c)) << 16) |
+                     (static_cast<uint32_t>(scale_channel_to_full(gi, max_c)) << 8) |
+                     scale_channel_to_full(bi, max_c);
     }
 }
 
@@ -842,30 +853,19 @@ void NativeBackend::update_from_status(const nlohmann::json& status) {
         if (!status.contains(strip.id))
             continue;
 
-        const auto& led = status[strip.id];
-        if (!led.contains("color_data") || !led["color_data"].is_array() ||
-            led["color_data"].empty())
-            continue;
-
-        const auto& first = led["color_data"][0];
-        if (!first.is_array() || first.size() < 3)
-            continue;
-        // Field-restricted Moonraker subscriptions can deliver null channel
-        // values for strips that don't expose a particular component; guard
-        // each get<double>() so a null doesn't throw type_error.302 and
-        // unwind into main() (#filament_motion_sensor / f75b961d8 family).
-        if (!first[0].is_number() || !first[1].is_number() || !first[2].is_number())
+        RgbwF parsed;
+        if (!parse_color_data(status[strip.id], parsed))
             continue;
 
         StripColor color;
-        color.r = first[0].get<double>();
-        color.g = first[1].get<double>();
-        color.b = first[2].get<double>();
-        color.w = (first.size() >= 4 && first[3].is_number()) ? first[3].get<double>() : 0.0;
+        color.r = parsed.r;
+        color.g = parsed.g;
+        color.b = parsed.b;
+        color.w = parsed.w;
         strip_colors_[strip.id] = color;
 
         // Detect RGBW capability from actual color_data size (overrides prefix guess)
-        bool has_white = (first.size() >= 4);
+        bool has_white = (parsed.channels >= 4);
         for (auto& s : strips_) {
             if (s.id == strip.id) {
                 if (s.supports_white != has_white) {
@@ -1961,9 +1961,8 @@ LedController::ScaledColor LedController::compute_scaled_last_color(int brightne
     // than silently falling back to white.
     const int effective = brightness_pct > 0 ? brightness_pct : 100;
     const double scale = effective / 100.0;
-    const double r = ((last_color_.rgb >> 16) & 0xFF) / 255.0;
-    const double g = ((last_color_.rgb >> 8) & 0xFF) / 255.0;
-    const double b = (last_color_.rgb & 0xFF) / 255.0;
+    double r = 0.0, g = 0.0, b = 0.0;
+    unpack_rgb(last_color_.rgb, r, g, b);
     return {r * scale, g * scale, b * scale, last_color_.white * scale};
 }
 

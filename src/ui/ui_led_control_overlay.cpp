@@ -15,6 +15,7 @@
 
 #include "app_globals.h"
 #include "helix-xml/src/xml/lv_xml.h"
+#include "led/led_color_utils.h"
 #include "led/led_controller.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
@@ -165,8 +166,7 @@ void LedControlOverlay::on_activate() {
                 current_color_ = controller.last_color();
                 current_white_ = controller.last_white();
             } else {
-                color.decompose(current_color_, current_brightness_);
-                current_white_ = color.w;
+                color.decompose(current_color_, current_brightness_, current_white_);
             }
         } else if (selected_backend_type_ != LedBackendType::WLED &&
                    selected_backend_type_ != LedBackendType::MACRO) {
@@ -240,9 +240,9 @@ void LedControlOverlay::on_activate() {
                 return;
 
             // Queue UI update to main thread — this callback runs on background thread
-            uint8_t r = static_cast<uint8_t>(color.r * 255.0);
-            uint8_t g = static_cast<uint8_t>(color.g * 255.0);
-            uint8_t b = static_cast<uint8_t>(color.b * 255.0);
+            uint8_t r = to_channel_byte(color.r);
+            uint8_t g = to_channel_byte(color.g);
+            uint8_t b = to_channel_byte(color.b);
             lv_obj_t* swatch = current_color_swatch_;
             helix::ui::queue_widget_update(swatch, [r, g, b](lv_obj_t* s) {
                 lv_obj_set_style_bg_color(s, lv_color_make(r, g, b), 0);
@@ -759,26 +759,17 @@ void LedControlOverlay::handle_custom_color() {
     color_picker.set_color_callback([this](uint32_t rgb, const std::string& name) {
         spdlog::info("[{}] Custom color selected: 0x{:06X} ({})", get_name(), rgb, name);
 
-        // Decompose picked color into HSV to extract brightness (V)
-        // and store the full-brightness base color
-        uint8_t r = (rgb >> 16) & 0xFF;
-        uint8_t g = (rgb >> 8) & 0xFF;
-        uint8_t b = rgb & 0xFF;
-        uint8_t max_c = std::max({r, g, b});
+        // Split the picked color into brightness (V) + full-brightness base
+        // color using the same decomposition the strip cache goes through.
+        NativeBackend::StripColor picked;
+        unpack_rgb(rgb, picked.r, picked.g, picked.b);
 
-        // V = max component (0-255), map to brightness 0-100
-        int brightness = (max_c * 100 + 127) / 255;
+        uint32_t full_color = 0;
+        int brightness = 0;
+        double picked_white = 0.0;
+        picked.decompose(full_color, brightness, picked_white);
         if (brightness < 1)
             brightness = 1; // Avoid zero brightness from very dark picks
-
-        // Reconstruct full-brightness color (scale RGB so max component = 255)
-        uint32_t full_color = rgb;
-        if (max_c > 0 && max_c < 255) {
-            uint8_t fr = static_cast<uint8_t>(std::min(255, r * 255 / max_c));
-            uint8_t fg = static_cast<uint8_t>(std::min(255, g * 255 / max_c));
-            uint8_t fb = static_cast<uint8_t>(std::min(255, b * 255 / max_c));
-            full_color = (fr << 16) | (fg << 8) | fb;
-        }
 
         // Apply the full-brightness base color first, then sync brightness
         spdlog::debug("[{}] Custom color decomposed: base=0x{:06X} brightness={}%", get_name(),
@@ -920,12 +911,16 @@ void LedControlOverlay::handle_wled_preset(int preset_id) {
 }
 
 void LedControlOverlay::handle_wled_brightness(int brightness) {
-    spdlog::debug("[{}] WLED brightness: {}%", get_name(), brightness);
     update_wled_brightness_text(brightness);
 
+    // The wled_brightness subject observer fires immediately on registration
+    // with its default value, so logging unconditionally here reported "WLED
+    // brightness: 100%" on every activation even with no WLED device present.
+    // Log only where the write actually happens.
     auto& controller = LedController::instance();
     const auto& selected = controller.selected_strips();
     if (!selected.empty() && selected_backend_type_ == LedBackendType::WLED) {
+        spdlog::debug("[{}] WLED brightness: {}%", get_name(), brightness);
         controller.wled().set_brightness(selected[0], brightness);
     }
 }
@@ -1057,7 +1052,7 @@ void LedControlOverlay::handle_strip_selected(const std::string& strip_id) {
     } else {
         // Native strip selected: update color/brightness from cache
         auto strip_color = controller.native().get_strip_color(strip_id);
-        strip_color.decompose(current_color_, current_brightness_);
+        strip_color.decompose(current_color_, current_brightness_, current_white_);
         update_brightness_text(current_brightness_);
         update_current_color_swatch();
         lv_subject_set_int(&brightness_subject_, current_brightness_);
@@ -1106,9 +1101,8 @@ void LedControlOverlay::apply_current_color() {
         // RGBW white mode: use dedicated white LED, not RGB
         send_color_to_strips(0.0, 0.0, 0.0, current_white_ * bf);
     } else {
-        double r = static_cast<double>((current_color_ >> 16) & 0xFF) / 255.0;
-        double g = static_cast<double>((current_color_ >> 8) & 0xFF) / 255.0;
-        double b = static_cast<double>(current_color_ & 0xFF) / 255.0;
+        double r = 0.0, g = 0.0, b = 0.0;
+        unpack_rgb(current_color_, r, g, b);
         send_color_to_strips(r * bf, g * bf, b * bf, 0.0);
     }
     update_current_color_swatch();
@@ -1144,10 +1138,12 @@ void LedControlOverlay::update_current_color_swatch() {
 
     // Show the actual output color (base color × brightness)
     double bf = static_cast<double>(current_brightness_) / 100.0;
-    uint8_t r = static_cast<uint8_t>(((current_color_ >> 16) & 0xFF) * bf);
-    uint8_t g = static_cast<uint8_t>(((current_color_ >> 8) & 0xFF) * bf);
-    uint8_t b = static_cast<uint8_t>((current_color_ & 0xFF) * bf);
-    lv_obj_set_style_bg_color(current_color_swatch_, lv_color_make(r, g, b), 0);
+    double r = 0.0, g = 0.0, b = 0.0;
+    unpack_rgb(current_color_, r, g, b);
+    lv_obj_set_style_bg_color(
+        current_color_swatch_,
+        lv_color_make(to_channel_byte(r * bf), to_channel_byte(g * bf), to_channel_byte(b * bf)),
+        0);
 }
 
 void LedControlOverlay::update_wled_brightness_text(int brightness) {

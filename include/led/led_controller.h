@@ -36,8 +36,13 @@ class NativeBackend {
         /// Convert to packed RGB uint32 (ignoring W channel)
         [[nodiscard]] uint32_t to_rgb() const;
 
-        /// Decompose into base color (max brightness) + brightness percentage
-        void decompose(uint32_t& base_color, int& brightness_pct) const;
+        /// Decompose into base color (max brightness) + brightness percentage +
+        /// the W level scaled back up to full brightness. All four channels
+        /// feed the brightness max: a white-only Klipper `[led]` reports its
+        /// entire level in W, so excluding it reads back as 0% (#1129).
+        /// Re-applying `base_color`/`base_white` at `brightness_pct`
+        /// reproduces the original color.
+        void decompose(uint32_t& base_color, int& brightness_pct, double& base_white) const;
     };
 
     NativeBackend() = default;

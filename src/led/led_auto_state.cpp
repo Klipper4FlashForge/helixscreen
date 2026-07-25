@@ -4,6 +4,7 @@
 
 #include "color_utils.h"
 #include "config.h"
+#include "led/led_color_utils.h"
 #include "led/led_controller.h"
 #include "observer_factory.h"
 #include "printer_state.h"
@@ -159,9 +160,8 @@ void LedAutoState::apply_action(const LedStateAction& action) {
     if (action.action_type == "off") {
         ctrl.turn_off_all();
     } else if (action.action_type == "color") {
-        double r = ((action.color >> 16) & 0xFF) / 255.0;
-        double g = ((action.color >> 8) & 0xFF) / 255.0;
-        double b = (action.color & 0xFF) / 255.0;
+        double r = 0.0, g = 0.0, b = 0.0;
+        unpack_rgb(action.color, r, g, b);
         double scale = action.brightness / 100.0;
         ctrl.set_color_all(r * scale, g * scale, b * scale, 0.0);
     } else if (action.action_type == "brightness") {
