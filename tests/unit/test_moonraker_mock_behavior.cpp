@@ -174,19 +174,18 @@ class MockBehaviorTestFixture {
      * @return true if matching notification found, false on timeout
      */
     bool wait_for_matching(std::function<bool(const json&)> predicate, int timeout_ms = 2000) {
-        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
-        while (std::chrono::steady_clock::now() < deadline) {
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                for (const auto& n : notifications_) {
-                    if (predicate(n)) {
-                        return true;
-                    }
+        // Condition-variable driven rather than polled: waking on the notification
+        // itself keeps the return precise enough for callers that time how long a
+        // simulated operation took.
+        std::unique_lock<std::mutex> lock(mutex_);
+        return cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [this, &predicate] {
+            for (const auto& n : notifications_) {
+                if (predicate(n)) {
+                    return true;
                 }
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        }
-        return false;
+            return false;
+        });
     }
 
   private:
@@ -2832,14 +2831,27 @@ TEST_CASE("MoonrakerClientMock restart simulation", "[slow][mock][restart]") {
     }
 
     SECTION("FIRMWARE_RESTART takes longer than RESTART") {
-        // At 100x speedup: RESTART = 20ms, FIRMWARE_RESTART = 30ms
+        // At 100x speedup: RESTART = 20ms, FIRMWARE_RESTART = 30ms.
+        //
+        // Time to the webhooks "ready" notification, NOT to an arbitrary notification
+        // count: the mock's physics thread dispatches a status update every
+        // SIMULATION_INTERVAL_MS (250ms of REAL time — the speedup scales the physics
+        // step, not the tick period), so a stray temperature tick can push the
+        // notification count past a threshold while the restart is still in flight.
         auto start = std::chrono::steady_clock::now();
         mock.gcode_script("FIRMWARE_RESTART");
-        fixture.wait_for_callbacks(2, 200);
+        REQUIRE(fixture.wait_for_matching(
+            [](const json& n) {
+                return n.contains("params") && n["params"][0].contains("webhooks") &&
+                       n["params"][0]["webhooks"]["state"] == "ready";
+            },
+            2000));
         auto duration = std::chrono::steady_clock::now() - start;
 
-        // FIRMWARE_RESTART should take at least 25ms (with margin)
-        REQUIRE(std::chrono::duration_cast<std::chrono::milliseconds>(duration).count() >= 20);
+        // The restart thread sleeps in 10ms slices, so the firmware path floors at
+        // 30ms and can only overshoot. 25ms keeps a margin while still excluding the
+        // 20ms plain-RESTART delay.
+        REQUIRE(std::chrono::duration_cast<std::chrono::milliseconds>(duration).count() >= 25);
     }
 
     (void)sub_id; // Callback auto-unregisters when mock destructs
