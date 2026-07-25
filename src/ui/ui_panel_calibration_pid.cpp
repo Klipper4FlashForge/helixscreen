@@ -46,6 +46,11 @@ static bool s_callbacks_registered = false;
 static constexpr uint32_t PID_OVERTIME_EXTRUDER_MS = 12u * 60u * 1000u; // 12 min
 static constexpr uint32_t PID_OVERTIME_BED_MS = 30u * 60u * 1000u;      // 30 min
 
+// Non-creating view of the global instance (defined with it at the bottom of
+// this file). Returns nullptr when the panel does not currently exist, so
+// shutdown callbacks can skip instead of resurrecting it through the getter.
+static PIDCalibrationPanel* existing_pid_cal_panel();
+
 // ============================================================================
 // CONSTRUCTOR / DESTRUCTOR
 // ============================================================================
@@ -164,9 +169,17 @@ void PIDCalibrationPanel::init_subjects() {
 
     subjects_initialized_ = true;
 
-    // Register shutdown cleanup to prevent crashes during lv_deinit()
-    StaticSubjectRegistry::instance().register_deinit(
-        "PIDCalibrationPanel", []() { get_global_pid_cal_panel().deinit_subjects(); });
+    // Register shutdown cleanup to prevent crashes during lv_deinit().
+    // Test the pointer instead of calling get_global_pid_cal_panel(): this
+    // callback runs from StaticSubjectRegistry::deinit_all(), which is sequenced
+    // AFTER StaticPanelRegistry::destroy_all() has already destroyed the panel.
+    // The auto-creating getter would build a replacement whose destructor then
+    // runs during static destruction, with LVGL and spdlog already gone.
+    StaticSubjectRegistry::instance().register_deinit("PIDCalibrationPanel", []() {
+        if (auto* panel = existing_pid_cal_panel()) {
+            panel->deinit_subjects();
+        }
+    });
 
     // Register XML event callbacks (once globally)
     if (!s_callbacks_registered) {
@@ -1660,6 +1673,10 @@ PIDCalibrationPanel& get_global_pid_cal_panel() {
                                                          []() { g_pid_cal_panel.reset(); });
     }
     return *g_pid_cal_panel;
+}
+
+static PIDCalibrationPanel* existing_pid_cal_panel() {
+    return g_pid_cal_panel.get();
 }
 
 void destroy_pid_cal_panel() {

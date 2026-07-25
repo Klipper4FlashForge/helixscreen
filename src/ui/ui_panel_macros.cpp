@@ -72,8 +72,17 @@ void MacrosPanel::init_subjects() {
         UI_MANAGED_SUBJECT_INT(macros_edit_save_hidden_, 1, "macros_edit_save_hidden", subjects_);
 
         // Self-register cleanup so subjects deinit before lv_deinit().
-        StaticSubjectRegistry::instance().register_deinit(
-            "MacrosPanel", []() { get_global_macros_panel().deinit_subjects(); });
+        // Test the pointer instead of calling get_global_macros_panel(): this
+        // callback runs from StaticSubjectRegistry::deinit_all(), which is
+        // sequenced AFTER StaticPanelRegistry::destroy_all() has already
+        // destroyed the panel. The auto-creating getter would build a
+        // replacement whose destructor then runs during static destruction,
+        // with LVGL and spdlog already gone.
+        StaticSubjectRegistry::instance().register_deinit("MacrosPanel", []() {
+            if (g_macros_panel) {
+                g_macros_panel->deinit_subjects();
+            }
+        });
     });
 }
 
