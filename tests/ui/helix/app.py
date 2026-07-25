@@ -1,0 +1,186 @@
+"""Drive a live HelixScreen instance through `helix-screen ctl --json`.
+
+The C++ ctl client is the only JSON-RPC implementation in the tree. This module
+shells out to it rather than speaking the protocol directly, so there is nothing
+to keep in sync when the server changes.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import signal
+import subprocess
+import time
+from pathlib import Path
+from typing import Any
+
+
+class HelixCtlError(RuntimeError):
+    """A command the server rejected."""
+
+    def __init__(self, message: str, code: int, command: list[str]):
+        super().__init__(f"{message} (code {code}) while running: {' '.join(command)}")
+        self.message = message
+        self.code = code
+        self.command = command
+
+
+class HelixAppError(RuntimeError):
+    """The app failed to start, or died while we were driving it."""
+
+
+class HelixApp:
+    """A running helix-screen instance on a private control socket."""
+
+    #: Seconds to wait for the control socket to appear and answer ping.
+    BOOT_TIMEOUT = 30.0
+
+    def __init__(self, binary: Path, socket_path: Path, log_path: Path,
+                 extra_args: list[str] | None = None):
+        self.binary = Path(binary)
+        self.socket_path = Path(socket_path)
+        self.log_path = Path(log_path)
+        self.extra_args = list(extra_args or [])
+        self.proc: subprocess.Popen | None = None
+
+    # -- lifecycle ---------------------------------------------------------
+
+    def start(self) -> "HelixApp":
+        env = os.environ.copy()
+        # Mirrors scripts/screenshot.sh: XWayland's GLX path crashes, so a
+        # Wayland session must use SDL's native driver.
+        if env.get("WAYLAND_DISPLAY") and not env.get("SDL_VIDEODRIVER"):
+            env["SDL_VIDEODRIVER"] = "wayland"
+        display_index = "0" if env.get("WAYLAND_DISPLAY") else "1"
+
+        args = [
+            str(self.binary),
+            "--test", "--skip-wizard", "--skip-splash",
+            "--remote", "--remote-socket", str(self.socket_path),
+            "--display", display_index,
+            *self.extra_args,
+        ]
+        self.log_file = self.log_path.open("w")
+        self.proc = subprocess.Popen(args, stdout=self.log_file,
+                                     stderr=subprocess.STDOUT, env=env)
+        self._await_ready()
+        return self
+
+    def _await_ready(self) -> None:
+        deadline = time.monotonic() + self.BOOT_TIMEOUT
+        while time.monotonic() < deadline:
+            if self.proc.poll() is not None:
+                raise HelixAppError(
+                    f"helix-screen exited with {self.proc.returncode} during boot\n"
+                    f"{self._log_tail_from_file()}"
+                )
+            if self.socket_path.exists():
+                try:
+                    if self.ctl("ping") == "pong":
+                        return
+                except (HelixCtlError, HelixAppError):
+                    pass  # server thread not up yet
+            time.sleep(0.1)
+        raise HelixAppError(
+            f"helix-screen never answered ping within {self.BOOT_TIMEOUT}s\n"
+            f"{self._log_tail_from_file()}"
+        )
+
+    def stop(self) -> None:
+        if self.proc is None or self.proc.poll() is not None:
+            return
+        try:
+            self.ctl("shutdown")
+        except (HelixCtlError, HelixAppError):
+            pass
+        try:
+            self.proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.proc.send_signal(signal.SIGTERM)
+            try:
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+        finally:
+            if hasattr(self, "log_file"):
+                self.log_file.close()
+
+    def __enter__(self) -> "HelixApp":
+        return self.start()
+
+    def __exit__(self, *exc_info) -> None:
+        self.stop()
+
+    def _log_tail_from_file(self, n: int = 30) -> str:
+        """Read the app's stdout log directly — used when the RPC channel is dead."""
+        try:
+            lines = self.log_path.read_text(errors="replace").splitlines()
+        except OSError:
+            return "(no log available)"
+        return "\n".join(lines[-n:])
+
+    # -- raw command -------------------------------------------------------
+
+    def ctl(self, *args: Any) -> Any:
+        """Run one `ctl --json` command; return the parsed result."""
+        command = [str(self.binary), "ctl", "-s", str(self.socket_path), "--json",
+                   *[str(a) for a in args]]
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=180)
+
+        if completed.returncode != 0:
+            stderr = completed.stderr.strip()
+            try:
+                err = json.loads(stderr)
+                raise HelixCtlError(err.get("message", stderr),
+                                    int(err.get("code", -1)), command)
+            except (json.JSONDecodeError, ValueError):
+                # Client-side usage error, or the app died. Distinguish them,
+                # because "no instance at socket" and "you typo'd" need
+                # different reactions from whoever reads the failure.
+                if self.proc is not None and self.proc.poll() is not None:
+                    raise HelixAppError(
+                        f"helix-screen died (exit {self.proc.returncode})\n"
+                        f"{self._log_tail_from_file()}"
+                    ) from None
+                raise HelixCtlError(stderr or "ctl failed", -1, command) from None
+
+        out = completed.stdout.strip()
+        return json.loads(out) if out else None
+
+    # -- typed wrappers ----------------------------------------------------
+
+    def navigate(self, target: str) -> dict:
+        return self.ctl("navigate", target)
+
+    def go_back(self) -> dict:
+        return self.ctl("go_back")
+
+    def click(self, target: str) -> dict:
+        return self.ctl("click", target)
+
+    def ls(self, target: str | None = None) -> dict:
+        return self.ctl("ls", target) if target else self.ctl("ls")
+
+    def geom(self, target: str, depth: int = 0) -> dict:
+        return self.ctl("geom", target, depth) if depth else self.ctl("geom", target)
+
+    def get(self, subject: str) -> Any:
+        return self.ctl("get", subject)
+
+    def set(self, subject: str, value: Any) -> dict:
+        return self.ctl("set", subject, value)
+
+    def current(self) -> dict:
+        # CLI token is `current`; `get_current` is the wire method name.
+        return self.ctl("current")
+
+    def log(self, n: int = 50) -> list[str]:
+        result = self.ctl("log", "-n", n)
+        return result.get("lines", []) if isinstance(result, dict) else []
+
+    def screenshot(self, path: str) -> str:
+        return self.ctl("screenshot", path)["path"]
+
+    def shutdown(self) -> None:
+        self.stop()

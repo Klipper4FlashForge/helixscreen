@@ -2,7 +2,13 @@
 
 ## Overview
 
-HelixScreen uses headless LVGL testing with virtual input devices to test UI components without requiring a display. This allows automated testing of widget hierarchies, user interactions, and state changes.
+HelixScreen has two UI test layers, covering different things:
+
+- **In-process (this doc, below):** headless LVGL testing with virtual input devices,
+  building widgets inside the test binary. Fast, fine-grained, but structurally can't
+  reach app lifecycle, navigation, or async population.
+- **Out-of-process (`tests/ui/`):** pytest drives a real running `helix-screen` instance
+  through `helix-screen ctl`. See "Out-of-process tests" below.
 
 **Test Framework:** Catch2 v3.5.1
 **Test Utilities:** `tests/ui_test_utils.h/cpp`
@@ -328,6 +334,51 @@ TEST_CASE_METHOD(Fixture, "Test", "[macos]") { ... }
 ./build/bin/helix-tests --list-tests
 ./build/bin/helix-tests "[wizard]" --list-tests
 ```
+
+## Out-of-Process Tests (`tests/ui/`)
+
+**Test Framework:** pytest
+**Test Utilities:** `tests/ui/helix/app.py` (`HelixApp`)
+**Test Location:** `tests/ui/test_*.py`
+
+Catch2 tests build widgets inside the test binary — real widget code, but no real app
+lifecycle. `tests/ui/` instead boots the actual `helix-screen` binary on a private
+control socket and drives it through `helix-screen ctl --json` (see `HELIXCTL.md`),
+covering things the in-process layer structurally cannot reach: app boot, panel/overlay
+navigation, and async population.
+
+`HelixApp` (`tests/ui/helix/app.py`) wraps each `ctl --json` call as a subprocess and
+raises on failure:
+
+- `HelixCtlError` — the server rejected the command (unknown widget, bad subject, ...).
+  Carries `.message`, `.code`, and `.command` (the full argv, so a failure message names
+  exactly what was run).
+- `HelixAppError` — the app itself failed to boot or died mid-test. Carries the tail of
+  its log.
+
+```python
+def test_navigate_to_controls(helix_app):
+    helix_app.navigate("controls")
+    assert helix_app.current()["panel"] == "controls"
+```
+
+Two fixtures in `tests/ui/conftest.py`:
+
+- `helix_app` (session-scoped) — one instance shared by the whole run. Use this by
+  default; a boot costs ~2s and most tests don't dirty global state.
+- `fresh_helix_app` (function-scoped) — a private instance for a test that does dirty
+  global state (e.g. changes a persistent setting).
+
+Run with the repo's venv, not bare `python3` (it lacks pytest):
+
+```bash
+make -j                                  # build the binary tests/ui/ drives
+./.venv/bin/python -m pytest tests/ui/ -v
+```
+
+`HelixApp` boots the same way `scripts/screenshot.sh` does — `--test --skip-wizard
+--skip-splash --remote --remote-socket <private>`, `SDL_VIDEODRIVER=wayland` under a
+Wayland session — so a test failure investigates the same way a screenshot failure does.
 
 ## Known Limitations & Workarounds
 
