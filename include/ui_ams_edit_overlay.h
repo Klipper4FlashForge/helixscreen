@@ -169,7 +169,9 @@ class AmsEditOverlay : public OverlayBase {
     lv_subject_t save_hidden_subject_;    ///< 1=header Save hidden ("ams_edit_save_hidden")
     lv_subject_t is_managed_subject_;     ///< 1=linked Spoolman spool ("ams_edit_is_managed")
     lv_subject_t chip_text_subject_;      ///< card identity label text
+    lv_subject_t spoolman_id_subject_;    ///< "#19" beside the Spoolman mark, "" when untracked
     char chip_text_buf_[96] = {0};
+    char spoolman_id_buf_[16] = {0};
 
     char slot_indicator_buf_[32] = {0};
     char temp_nozzle_buf_[32] = {0};

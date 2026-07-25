@@ -424,6 +424,32 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
             params["dy"] = std::atoi(tokens[3].c_str());
         }
         return build_request("scroll", params);
+    } else if (cmd == "geom") {
+        if (tokens.size() < 2) {
+            fprintf(stderr, "Error: geom requires a widget name/@path [depth]\n");
+            return {};
+        }
+        nlohmann::json params = target_param(tokens[1]);
+        if (tokens.size() >= 3) {
+            params["depth"] = std::atoi(tokens[2].c_str());
+        }
+        return build_request("geom", params);
+    } else if (cmd == "get_const") {
+        if (tokens.size() < 2) {
+            fprintf(stderr, "Error: get_const requires <name>, <scope> <name>, or <scope> \n");
+            return {};
+        }
+        nlohmann::json params;
+        if (tokens.size() >= 3) {
+            params["scope"] = tokens[1];
+            params["name"] = tokens[2];
+        } else if (tokens[1].rfind("@", 0) == 0) {
+            // @scope with no name dumps every const in that scope.
+            params["scope"] = tokens[1].substr(1);
+        } else {
+            params["name"] = tokens[1];
+        }
+        return build_request("get_const", params);
     }
 
     fprintf(stderr, "Unknown command: %s\n", cmd.c_str());
@@ -441,7 +467,8 @@ static const char* REPL_COMMANDS[] = {
     "status",      "wake",       "demo",       "get",       "set",       "list_subjects",
     "wait_for",    "ls",         "describe_screen", "click",  "set_value",
     "scroll",      "scenario",   "list_scenarios",  "help",   "refresh",
-    "log",         "shutdown",   "quit",       "exit",      nullptr};
+    "log",         "shutdown",   "geom",       "get_const", "quit",
+    "exit",        nullptr};
 
 // Cached subject names for tab completion (populated lazily)
 static std::vector<std::string> g_cached_subjects;

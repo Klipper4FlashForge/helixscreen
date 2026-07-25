@@ -143,6 +143,8 @@ class RemoteControlServer {
 
     // Scroll a named widget into view, or scroll a container by a delta
     nlohmann::json handle_scroll(const nlohmann::json& params);
+    nlohmann::json handle_geom(const nlohmann::json& params);
+    nlohmann::json handle_get_const(const nlohmann::json& params);
 
     // Reset the inactivity timer / dismiss the screensaver (like a real touch)
     nlohmann::json handle_wake(const nlohmann::json& params);

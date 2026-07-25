@@ -286,6 +286,8 @@ void RemoteControlServer::register_builtin_handlers() {
         return handle_describe_screen(p);
     };
     handlers_["scroll"] = [this](const nlohmann::json& p) { return handle_scroll(p); };
+    handlers_["geom"] = [this](const nlohmann::json& p) { return handle_geom(p); };
+    handlers_["get_const"] = [this](const nlohmann::json& p) { return handle_get_const(p); };
     handlers_["wake"] = [this](const nlohmann::json& p) { return handle_wake(p); };
 
     // Lifecycle + diagnostics
@@ -1321,6 +1323,120 @@ nlohmann::json RemoteControlServer::handle_scroll(const nlohmann::json& params) 
         // Bring the target into its scroll parent's viewport (walks ancestors).
         lv_obj_scroll_to_view(obj, LV_ANIM_OFF);
         return {{"scrolled_into_view", target_label(params)}};
+    });
+}
+
+/**
+ * Render a raw style size coord as the value the XML author wrote.
+ *
+ * LVGL packs LV_SIZE_CONTENT and percentages into the coord, so a bare integer
+ * print turns "content" into a sentinel like 2001 and "50%" into 2049. Reporting
+ * the authored form is what makes a collapsed widget diagnosable: a declared
+ * "content" or "50%" sitting next to a computed 0 localises the layout fault.
+ */
+static std::string describe_style_size(int32_t v) {
+    if (v == LV_SIZE_CONTENT) {
+        return "content";
+    }
+    if (LV_COORD_IS_PCT(v)) {
+        return std::to_string(LV_COORD_GET_PCT(v)) + "%";
+    }
+    return std::to_string(v);
+}
+
+/** Collect one widget's geometry, then recurse `depth` more levels. */
+static void geom_walk(lv_obj_t* obj, const std::string& path, int depth, nlohmann::json& out) {
+    lv_obj_update_layout(obj);
+
+    nlohmann::json e;
+    e["path"] = path;
+    const char* name = lv_obj_get_name(obj);
+    e["name"] = name ? name : "";
+    // Coordinates are relative to the parent; absolute screen coords come from the
+    // object's own area, which is what a screenshot measurement compares against.
+    lv_area_t area;
+    lv_obj_get_coords(obj, &area);
+    e["x"] = area.x1;
+    e["y"] = area.y1;
+    e["w"] = lv_obj_get_width(obj);
+    e["h"] = lv_obj_get_height(obj);
+    e["content_w"] = lv_obj_get_content_width(obj);
+    e["content_h"] = lv_obj_get_content_height(obj);
+    // Declared vs computed is the whole point of this command.
+    e["req_w"] = describe_style_size(lv_obj_get_style_width(obj, LV_PART_MAIN));
+    e["req_h"] = describe_style_size(lv_obj_get_style_height(obj, LV_PART_MAIN));
+    e["flex_grow"] = lv_obj_get_style_flex_grow(obj, LV_PART_MAIN);
+    e["hidden"] = lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    e["scrollable"] = lv_obj_has_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+    e["scroll"] = {{"top", lv_obj_get_scroll_top(obj)},
+                   {"bottom", lv_obj_get_scroll_bottom(obj)},
+                   {"left", lv_obj_get_scroll_left(obj)},
+                   {"right", lv_obj_get_scroll_right(obj)}};
+    out.push_back(e);
+
+    if (depth <= 0) {
+        return;
+    }
+    uint32_t count = lv_obj_get_child_count(obj);
+    for (uint32_t i = 0; i < count; i++) {
+        geom_walk(lv_obj_get_child(obj, i), path + "/" + std::to_string(i), depth - 1, out);
+    }
+}
+
+nlohmann::json RemoteControlServer::handle_geom(const nlohmann::json& params) {
+    if (!params.contains("name") && !params.contains("path")) {
+        throw std::invalid_argument("Missing required parameter: name or path");
+    }
+    int depth = params.value("depth", 0);
+
+    return execute_on_ui_thread([params, depth]() -> nlohmann::json {
+        lv_obj_t* obj = resolve_widget(params);
+        if (!obj) {
+            throw std::invalid_argument("Widget not found: " + target_label(params));
+        }
+        nlohmann::json widgets = nlohmann::json::array();
+        geom_walk(obj, target_label(params), depth, widgets);
+        return {{"widgets", widgets}};
+    });
+}
+
+nlohmann::json RemoteControlServer::handle_get_const(const nlohmann::json& params) {
+    // Resolution order mirrors the XML engine: a named scope first, then the
+    // implicit "globals" fallback that unqualified #consts resolve against.
+    std::string scope_name = params.value("scope", "globals");
+    bool want_all = !params.contains("name");
+    std::string const_name = params.value("name", "");
+
+    return execute_on_ui_thread([scope_name, const_name, want_all]() -> nlohmann::json {
+        lv_xml_component_scope_t* scope = lv_xml_component_get_scope(scope_name.c_str());
+        if (!scope) {
+            throw std::invalid_argument("No such component scope: " + scope_name);
+        }
+        if (!want_all) {
+            const char* value = lv_xml_get_const_silent(scope, const_name.c_str());
+            if (!value) {
+                // Unqualified consts fall back to globals, so mirror that here
+                // rather than reporting a miss the renderer would have resolved.
+                lv_xml_component_scope_t* g = lv_xml_component_get_scope("globals");
+                if (g && g != scope) {
+                    value = lv_xml_get_const_silent(g, const_name.c_str());
+                }
+                if (value) {
+                    return {{"scope", "globals"}, {"name", const_name}, {"value", value}};
+                }
+                throw std::invalid_argument("No const '" + const_name + "' in scope " + scope_name);
+            }
+            return {{"scope", scope_name}, {"name", const_name}, {"value", value}};
+        }
+        nlohmann::json consts = nlohmann::json::object();
+        // LV_LL_READ is a C macro that relies on implicit void* conversion — expand it
+        // manually for C++ so the element pointer can be cast explicitly.
+        for (void* node = lv_ll_get_head(&scope->const_ll); node != nullptr;
+             node = lv_ll_get_next(&scope->const_ll, node)) {
+            auto* c = static_cast<lv_xml_const_t*>(node);
+            consts[c->name] = c->value;
+        }
+        return {{"scope", scope_name}, {"consts", consts}};
     });
 }
 
