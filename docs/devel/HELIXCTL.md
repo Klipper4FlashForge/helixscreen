@@ -82,6 +82,41 @@ curl -s -X POST http://127.0.0.1:7130/rpc \
 # {"id":1,"jsonrpc":"2.0","result":"pong"}
 ```
 
+### More than one instance
+
+The well-known socket path is a fixed per-user location, so two instances want
+the same file. On a device there is only ever one; on a dev box there are easily
+two — two agent sessions, two worktrees, or an accidental double start.
+
+The first instance owns the well-known path. A second one **does not take it**:
+it probes with a `connect()`, finds a live owner, and parks on
+`helixscreen-control-<pid>.sock` beside it, logging a warning. Both stay
+reachable, and neither gets silently hijacked.
+
+The client resolves in the same spirit. If the well-known path is live it uses
+it — so with two apps running, a bare `helix-screen ctl` drives whichever one
+started first, silently. If the well-known path is dead or absent, the client
+looks for pid-suffixed instances: exactly one is used automatically, and
+several make it refuse to guess:
+
+```
+$ helix-screen ctl ls
+Error: several HelixScreen instances are running. Pick one with -s:
+  --socket /run/user/1000/helixscreen-control-48211.sock
+  --socket /run/user/1000/helixscreen-control-51907.sock
+```
+
+**With more than one app up, check which one you are driving before trusting a
+UI or gesture result.** A command that lands on the wrong instance still
+reports success. `pgrep -x helix-screen` is the quick sanity check.
+
+Stale socket files are cleaned up at server start, not at exit: a `SIGTERM`
+fast-exit deliberately skips teardown, so files outlive their process. Each
+start sweeps `helixscreen-control-<pid>.sock` files whose pid is gone. The
+sweep keys on that pid rather than a `connect()` probe — a probe cannot tell a
+crashed instance from one that has called `bind()` but not yet `listen()`, and
+unlinking that one would strand it.
+
 ## Commands
 
 `helix-screen repl` (or `helix-screen ctl` with no command) drops into an
