@@ -221,17 +221,3 @@ TEST_CASE("MemoryDataSource empty content", "[gcode][datasource]") {
         REQUIRE(line->empty());
     }
 }
-
-// MoonrakerDataSource tests would require mocking HTTP
-// or an actual Moonraker instance. We test the interface contract.
-TEST_CASE("MoonrakerDataSource construction", "[gcode][datasource][.network]") {
-    // This test is disabled by default (.network tag) because it requires
-    // an actual Moonraker instance
-
-    SECTION("handles invalid URL gracefully") {
-        // Should not crash, just report invalid
-        MoonrakerDataSource source("http://localhost:99999", "test.gcode");
-        // Will fail to connect but shouldn't throw
-        REQUIRE_FALSE(source.is_valid());
-    }
-}

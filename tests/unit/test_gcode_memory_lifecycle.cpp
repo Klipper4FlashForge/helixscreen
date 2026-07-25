@@ -67,8 +67,8 @@ TEST_CASE("prepared_buffers consume significant memory relative to compact data"
     REQUIRE(!geom->vertices.empty());
     REQUIRE(!geom->strips.empty());
 
-    // prepared_buffers hold one packed 20-byte vertex per expanded triangle vertex,
-    // versus a compact 9-byte RibbonVertex in the indexed mesh. With strip expansion
+    // prepared_buffers hold one packed 12-byte vertex per expanded triangle vertex,
+    // versus a compact 8-byte RibbonVertex in the indexed mesh. With strip expansion
     // (6 verts per strip vs 4 indexed) the prepared buffers should be substantially
     // larger than the compact vertex pool.
     size_t prepared_bytes = 0;
@@ -146,7 +146,7 @@ TEST_CASE("RibbonGeometry::clear() releases all data", "[gcode][geometry][memory
     REQUIRE(geom->color_palette.empty());
     REQUIRE(geom->layer_strip_ranges.empty());
     REQUIRE(geom->strip_layer_index.empty());
-    REQUIRE(geom->normal_palette.empty());
+    REQUIRE(geom->strip_color_index.empty());
     REQUIRE(geom->max_layer_index == 0);
     REQUIRE(geom->memory_usage() == 0);
 }
@@ -175,11 +175,12 @@ TEST_CASE("Geometry data supports CPU re-expansion after prepared_buffers cleare
     // Verify the raw data needed for CPU fallback re-expansion is intact
     REQUIRE(!geom->strips.empty());
     REQUIRE(!geom->vertices.empty());
-    REQUIRE(!geom->normal_palette.empty());
+    REQUIRE(geom->strip_color_index.size() == geom->strips.size());
     REQUIRE(!geom->layer_strip_ranges.empty());
 
     // Manually re-expand first layer (mirrors upload_geometry_chunk CPU fallback,
-    // packed 20-byte PackedVertex layout).
+    // packed 12-byte PackedVertex layout — quantized int16 positions go to the
+    // GPU as-is, with dequantization folded into the renderer's matrices).
     auto [first_strip, strip_count] = geom->layer_strip_ranges[0];
     REQUIRE(strip_count > 0);
 
@@ -189,22 +190,26 @@ TEST_CASE("Geometry data supports CPU re-expansion after prepared_buffers cleare
 
     auto* out = reinterpret_cast<PackedVertex*>(re_expanded.data());
     for (size_t s = 0; s < strip_count; ++s) {
-        const auto& strip = geom->strips[first_strip + s];
+        const size_t strip_idx = first_strip + s;
+        const auto& strip = geom->strips[strip_idx];
+
+        // Color is per-strip; normals come pre-encoded off the vertex.
+        uint32_t rgb = 0x26A69A;
+        if (strip_idx < geom->strip_color_index.size() &&
+            geom->strip_color_index[strip_idx] < geom->color_palette.size()) {
+            rgb = geom->color_palette[geom->strip_color_index[strip_idx]];
+        }
+
         for (int ti = 0; ti < 6; ++ti) {
             const auto& vert = geom->vertices[strip[static_cast<size_t>(kTriIndices[ti])]];
-            glm::vec3 pos = geom->quantization.dequantize_vec3(vert.position);
-            const glm::vec3& normal = geom->normal_palette[vert.normal_index];
 
-            out->position[0] = pos.x;
-            out->position[1] = pos.y;
-            out->position[2] = pos.z;
+            out->position[0] = vert.position.x;
+            out->position[1] = vert.position.y;
+            out->position[2] = vert.position.z;
 
-            uint32_t rgb = 0x26A69A;
-            if (vert.color_index < geom->color_palette.size()) {
-                rgb = geom->color_palette[vert.color_index];
-            }
             PackedVertex::encode_color(rgb, out->color);
-            PackedVertex::encode_normal(normal, out->normal);
+            out->normal[0] = vert.normal[0];
+            out->normal[1] = vert.normal[1];
             ++out;
         }
     }

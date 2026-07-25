@@ -135,22 +135,24 @@ glm::vec3 QuantizationParams::dequantize_vec3(const QuantizedVertex& qv) const {
 // ============================================================================
 
 RibbonGeometry::RibbonGeometry()
-    : normal_cache(std::make_unique<NormalCache>()), color_cache(std::make_unique<ColorCache>()),
-      extrusion_triangle_count(0), travel_triangle_count(0) {}
+    : color_cache(std::make_unique<ColorCache>()), extrusion_triangle_count(0),
+      travel_triangle_count(0) {}
 
 RibbonGeometry::~RibbonGeometry() = default;
 
 RibbonGeometry::RibbonGeometry(RibbonGeometry&& other) noexcept
     : vertices(std::move(other.vertices)), indices(std::move(other.indices)),
-      strips(std::move(other.strips)), normal_palette(std::move(other.normal_palette)),
+      strips(std::move(other.strips)), strip_color_index(std::move(other.strip_color_index)),
       color_palette(std::move(other.color_palette)),
       tool_palette_map(std::move(other.tool_palette_map)),
       strip_layer_index(std::move(other.strip_layer_index)),
       layer_strip_ranges(std::move(other.layer_strip_ranges)),
       max_layer_index(other.max_layer_index), layer_bboxes(std::move(other.layer_bboxes)),
-      normal_cache(std::move(other.normal_cache)), color_cache(std::move(other.color_cache)),
+      color_cache(std::move(other.color_cache)),
+      prepared_buffers(std::move(other.prepared_buffers)),
       extrusion_triangle_count(other.extrusion_triangle_count),
-      travel_triangle_count(other.travel_triangle_count), quantization(other.quantization) {}
+      travel_triangle_count(other.travel_triangle_count), quantization(other.quantization),
+      layer_height_mm(other.layer_height_mm) {}
 
 RibbonGeometry& RibbonGeometry::operator=(RibbonGeometry&& other) noexcept {
     if (this != &other) {
@@ -158,20 +160,58 @@ RibbonGeometry& RibbonGeometry::operator=(RibbonGeometry&& other) noexcept {
         vertices = std::move(other.vertices);
         indices = std::move(other.indices);
         strips = std::move(other.strips);
-        normal_palette = std::move(other.normal_palette);
+        strip_color_index = std::move(other.strip_color_index);
         color_palette = std::move(other.color_palette);
         tool_palette_map = std::move(other.tool_palette_map);
         strip_layer_index = std::move(other.strip_layer_index);
         layer_strip_ranges = std::move(other.layer_strip_ranges);
         layer_bboxes = std::move(other.layer_bboxes);
         max_layer_index = other.max_layer_index;
-        normal_cache = std::move(other.normal_cache);
         color_cache = std::move(other.color_cache);
+        prepared_buffers = std::move(other.prepared_buffers);
         extrusion_triangle_count = other.extrusion_triangle_count;
         travel_triangle_count = other.travel_triangle_count;
         quantization = other.quantization;
+        layer_height_mm = other.layer_height_mm;
     }
     return *this;
+}
+
+void RibbonGeometry::expand_strips(size_t first_strip, size_t strip_count,
+                                   PackedVertex* out) const {
+    // Strip order: BL(0), BR(1), TL(2), TR(3)
+    // Triangle 1: BL-BR-TL,  Triangle 2: BR-TR-TL
+    static constexpr int kTriIndices[6] = {0, 1, 2, 1, 3, 2};
+
+    for (size_t s = 0; s < strip_count; ++s) {
+        const size_t strip_idx = first_strip + s;
+        const auto& strip = strips[strip_idx];
+
+        // Color is per-strip (a strip is exactly one face), so resolve it once
+        // per strip rather than once per expanded vertex.
+        uint8_t rgba[4];
+        PackedVertex::encode_color(strip_color(strip_idx), rgba);
+
+        for (int ti = 0; ti < 6; ++ti) {
+            const auto& vert = vertices[strip[static_cast<size_t>(kTriIndices[ti])]];
+
+            // Quantized coordinates go to the GPU as-is; the renderer folds the
+            // dequantization into its matrices.
+            out->position[0] = vert.position.x;
+            out->position[1] = vert.position.y;
+            out->position[2] = vert.position.z;
+
+            out->color[0] = rgba[0];
+            out->color[1] = rgba[1];
+            out->color[2] = rgba[2];
+            out->color[3] = rgba[3];
+
+            // Already octahedral-encoded at build time — straight copy.
+            out->normal[0] = vert.normal[0];
+            out->normal[1] = vert.normal[1];
+            ++out;
+        }
+    }
 }
 
 void RibbonGeometry::prepare_interleaved_buffers() {
@@ -204,30 +244,8 @@ void RibbonGeometry::prepare_interleaved_buffers() {
         prepared.vertex_count = total_verts;
         prepared.data.resize(total_verts * kStride);
 
-        static constexpr int kTriIndices[6] = {0, 1, 2, 1, 3, 2};
-        auto* out = reinterpret_cast<PackedVertex*>(prepared.data.data());
-
-        for (size_t s = 0; s < strip_count; ++s) {
-            const auto& strip = strips[first_strip + s];
-
-            for (int ti = 0; ti < 6; ++ti) {
-                const auto& vert = vertices[strip[static_cast<size_t>(kTriIndices[ti])]];
-                glm::vec3 pos = quantization.dequantize_vec3(vert.position);
-                const glm::vec3& normal = normal_palette[vert.normal_index];
-
-                out->position[0] = pos.x;
-                out->position[1] = pos.y;
-                out->position[2] = pos.z;
-
-                uint32_t rgb = 0x26A69A; // Default teal
-                if (vert.color_index < color_palette.size()) {
-                    rgb = color_palette[vert.color_index];
-                }
-                PackedVertex::encode_color(rgb, out->color);
-                PackedVertex::encode_normal(normal, out->normal);
-                ++out;
-            }
-        }
+        expand_strips(first_strip, strip_count,
+                      reinterpret_cast<PackedVertex*>(prepared.data.data()));
     }
 
     spdlog::debug("[GCode Geometry] Prepared {} layer buffers for GPU upload", num_layers);
@@ -245,7 +263,12 @@ void RibbonGeometry::patch_prepared_buffer_colors() {
         return;
     }
 
-    static constexpr int kTriIndices[6] = {0, 1, 2, 1, 3, 2};
+    // Same traversal order as expand_strips(), but rewrites only the color bytes
+    // in place rather than re-emitting whole vertices — the point is to avoid
+    // regenerating megabytes of buffer for a recolor. Any change to the vertex
+    // ordering in expand_strips() must be mirrored here. Color is per-strip, so
+    // the within-strip vertex permutation is irrelevant here: all 6 expanded
+    // vertices of a strip get the same bytes.
 
     for (size_t layer = 0; layer < num_layers; ++layer) {
         size_t first_strip = 0;
@@ -265,14 +288,13 @@ void RibbonGeometry::patch_prepared_buffer_colors() {
 
         auto* out = reinterpret_cast<PackedVertex*>(prepared.data.data());
         for (size_t s = 0; s < strip_count; ++s) {
-            const auto& strip = strips[first_strip + s];
+            uint8_t rgba[4];
+            PackedVertex::encode_color(strip_color(first_strip + s), rgba);
             for (int ti = 0; ti < 6; ++ti) {
-                const auto& vert = vertices[strip[static_cast<size_t>(kTriIndices[ti])]];
-                uint32_t rgb = 0x26A69A;
-                if (vert.color_index < color_palette.size()) {
-                    rgb = color_palette[vert.color_index];
-                }
-                PackedVertex::encode_color(rgb, out->color);
+                out->color[0] = rgba[0];
+                out->color[1] = rgba[1];
+                out->color[2] = rgba[2];
+                out->color[3] = rgba[3];
                 ++out;
             }
         }
@@ -289,8 +311,8 @@ void RibbonGeometry::clear() {
     indices.shrink_to_fit();
     strips.clear();
     strips.shrink_to_fit();
-    normal_palette.clear();
-    normal_palette.shrink_to_fit();
+    strip_color_index.clear();
+    strip_color_index.shrink_to_fit();
     color_palette.clear();
     color_palette.shrink_to_fit();
     tool_palette_map.clear();
@@ -305,9 +327,6 @@ void RibbonGeometry::clear() {
     max_layer_index = 0;
 
     // Clear caches
-    if (normal_cache) {
-        normal_cache->clear();
-    }
     if (color_cache) {
         color_cache->clear();
     }
@@ -355,19 +374,22 @@ void RibbonGeometry::validate() const {
         }
     }
 
-    // Validate color palette indices in vertices (spot-check)
+    // strip_color_index is parallel to strips — a length mismatch means some
+    // strip push_back lost its matching color push_back and every strip past
+    // that point renders the wrong color.
+    if (strip_color_index.size() != strips.size()) {
+        spdlog::warn("[GCode::Builder] strip_color_index size {} != strips size {}",
+                     strip_color_index.size(), strips.size());
+        ++issues;
+    }
+
+    // Validate per-strip color palette indices (spot-check)
     size_t color_palette_size = color_palette.size();
-    size_t normal_palette_size = normal_palette.size();
-    for (size_t i = 0; i < vertices.size(); i += std::max(size_t(1), vertices.size() / 200)) {
-        const auto& v = vertices[i];
-        if (v.color_index >= color_palette_size) {
-            spdlog::warn("[GCode::Builder] Vertex {} color_index {} >= palette size {}", i,
-                         v.color_index, color_palette_size);
-            ++issues;
-        }
-        if (v.normal_index >= normal_palette_size) {
-            spdlog::warn("[GCode::Builder] Vertex {} normal_index {} >= palette size {}", i,
-                         v.normal_index, normal_palette_size);
+    for (size_t i = 0; i < strip_color_index.size();
+         i += std::max(size_t(1), strip_color_index.size() / 200)) {
+        if (strip_color_index[i] >= color_palette_size) {
+            spdlog::warn("[GCode::Builder] Strip {} color_index {} >= palette size {}", i,
+                         strip_color_index[i], color_palette_size);
             ++issues;
         }
     }
@@ -442,52 +464,6 @@ GeometryBuilder::GeometryBuilder() {
 // ============================================================================
 // Palette Management
 // ============================================================================
-
-uint16_t GeometryBuilder::add_to_normal_palette(RibbonGeometry& geometry, const glm::vec3& normal) {
-    // Light quantization to merge nearly-identical normals without visible banding
-    constexpr float QUANT_STEP = 0.002f; // Balanced: reduces banding while still deduplicating
-    glm::vec3 quantized;
-    quantized.x = std::round(normal.x / QUANT_STEP) * QUANT_STEP;
-    quantized.y = std::round(normal.y / QUANT_STEP) * QUANT_STEP;
-    quantized.z = std::round(normal.z / QUANT_STEP) * QUANT_STEP;
-
-    // Renormalize to ensure unit vector
-    float length = glm::length(quantized);
-    if (length > 0.0001f) {
-        quantized /= length;
-    } else {
-        quantized = normal; // Fallback if quantization created zero vector
-    }
-
-    // Check cache first (O(1) lookup)
-    auto it = geometry.normal_cache->find(quantized);
-    if (it != geometry.normal_cache->end()) {
-        return it->second; // Cache hit!
-    }
-
-    // Not in cache - add to palette
-    if (geometry.normal_palette.size() >= 65536) {
-        static bool warned = false;
-        if (!warned) {
-            spdlog::warn(
-                "[GCode Geometry] Normal palette full (65536 entries), reusing last entry");
-            warned = true;
-        }
-        return 65535;
-    }
-
-    uint16_t index = static_cast<uint16_t>(geometry.normal_palette.size());
-    geometry.normal_palette.push_back(quantized);
-    (*geometry.normal_cache)[quantized] = index; // Add to cache
-
-    // Log palette size periodically
-    if (geometry.normal_palette.size() % 1000 == 0) {
-        spdlog::trace("[GCode Geometry] Normal palette: {} entries",
-                      geometry.normal_palette.size());
-    }
-
-    return index;
-}
 
 uint8_t GeometryBuilder::add_to_color_palette(RibbonGeometry& geometry, uint32_t color_rgb) {
     // Check cache first (O(1) lookup)
@@ -648,12 +624,14 @@ RibbonGeometry GeometryBuilder::build(const ParsedGCodeFile& gcode,
         const size_t strip_count = extrusion_segments * (2 * n - 2);
         const size_t projected_bytes = vertex_count * sizeof(RibbonVertex) +
                                        strip_count * sizeof(decltype(geometry.strips)::value_type) +
-                                       strip_count * sizeof(uint16_t);
+                                       strip_count * sizeof(uint16_t) + // strip_layer_index
+                                       strip_count * sizeof(uint8_t);   // strip_color_index
 
         if (budget_limit_bytes_ == 0 || projected_bytes <= budget_limit_bytes_) {
             geometry.vertices.reserve(vertex_count);
             geometry.strips.reserve(strip_count);
             geometry.strip_layer_index.reserve(strip_count);
+            geometry.strip_color_index.reserve(strip_count);
         } else {
             spdlog::debug("[GCode::Builder] Skipping pre-size: projected {}MB exceeds {}MB budget",
                           projected_bytes / (1024 * 1024), budget_limit_bytes_ / (1024 * 1024));
@@ -757,10 +735,10 @@ RibbonGeometry GeometryBuilder::build(const ParsedGCodeFile& gcode,
     geometry.vertices.shrink_to_fit();
     geometry.strips.shrink_to_fit();
     geometry.strip_layer_index.shrink_to_fit();
+    geometry.strip_color_index.shrink_to_fit();
 
-    // The palettes are final; the lookup caches are build-only scratch. Drop them entirely —
+    // The palette is final; the lookup cache is build-only scratch. Drop it entirely —
     // ->clear() would keep the bucket arrays alive for the lifetime of the geometry.
-    geometry.normal_cache.reset();
     geometry.color_cache.reset();
 
     // Build layer_strip_ranges from accumulated data
@@ -1054,28 +1032,38 @@ GeometryBuilder::generate_ribbon_vertices(const ToolpathSegment& segment, Ribbon
         }
     }
 
+    // Octahedral-encode the per-vertex normals once per segment. RibbonVertex stores
+    // the GPU-ready encoding directly, so expansion never has to re-encode.
+    std::vector<std::array<int8_t, 2>> vertex_normals_enc(static_cast<size_t>(N));
+    for (int i = 0; i < N; i++) {
+        PackedVertex::encode_normal(vertex_normals[static_cast<size_t>(i)],
+                                    vertex_normals_enc[static_cast<size_t>(i)].data());
+    }
+
+    // Both caps face backward along the segment (-dir).
+    std::array<int8_t, 2> cap_normal_enc{};
+    PackedVertex::encode_normal(-dir, cap_normal_enc.data());
+
     // Phase 3: N-based vertex generation (replaces hardcoded N=4 logic)
     uint32_t idx_start = static_cast<uint32_t>(geometry.vertices.size());
     bool is_first_segment = !prev_start_cap.has_value();
 
+    // Declared out here because the start-cap *strips* below need the same color.
+    uint8_t start_cap_color_idx = 0;
+
     // ========== START CAP VERTICES (first segment only) ==========
     if (is_first_segment) {
-        // START CAP: All normals point BACKWARD along segment (-dir)
-        glm::vec3 cap_normal_start = -dir;
-        uint16_t cap_normal_idx = add_to_normal_palette(geometry, cap_normal_start);
-
         // Use unique START_CAP color for debug visualization
-        uint8_t start_cap_color_idx = debug_face_colors_
-                                          ? add_to_color_palette(geometry, DebugColors::START_CAP)
-                                          : face_colors[0]; // Use first face color if not debugging
+        start_cap_color_idx = debug_face_colors_
+                                  ? add_to_color_palette(geometry, DebugColors::START_CAP)
+                                  : face_colors[0]; // Use first face color if not debugging
 
         // Generate N start cap vertices
         for (int i = 0; i < N; i++) {
             glm::vec3 pos = prev_pos + vertex_offsets[static_cast<size_t>(i)];
             geometry.vertices.push_back({
                 quant.quantize_vec3(pos),
-                cap_normal_idx,     // Axial normal pointing backward
-                start_cap_color_idx // MAGENTA for start cap in debug mode
+                {cap_normal_enc[0], cap_normal_enc[1]} // Axial normal pointing backward
             });
         }
         idx_start += static_cast<uint32_t>(N);
@@ -1090,15 +1078,11 @@ GeometryBuilder::generate_ribbon_vertices(const ToolpathSegment& segment, Ribbon
         glm::vec3 pos_v1 =
             prev_pos + vertex_offsets[static_cast<size_t>(next_i)]; // REVERSED: next_i first
         glm::vec3 pos_v2 = prev_pos + vertex_offsets[static_cast<size_t>(i)]; // then i
-        uint16_t normal_idx_v1 =
-            add_to_normal_palette(geometry, vertex_normals[static_cast<size_t>(next_i)]);
-        uint16_t normal_idx_v2 =
-            add_to_normal_palette(geometry, vertex_normals[static_cast<size_t>(i)]);
+        const auto& n_v1 = vertex_normals_enc[static_cast<size_t>(next_i)];
+        const auto& n_v2 = vertex_normals_enc[static_cast<size_t>(i)];
 
-        geometry.vertices.push_back(
-            {quant.quantize_vec3(pos_v1), normal_idx_v1, face_colors[static_cast<size_t>(i)]});
-        geometry.vertices.push_back(
-            {quant.quantize_vec3(pos_v2), normal_idx_v2, face_colors[static_cast<size_t>(i)]});
+        geometry.vertices.push_back({quant.quantize_vec3(pos_v1), {n_v1[0], n_v1[1]}});
+        geometry.vertices.push_back({quant.quantize_vec3(pos_v2), {n_v2[0], n_v2[1]}});
     }
     idx_start += static_cast<uint32_t>(2 * N);
 
@@ -1111,15 +1095,11 @@ GeometryBuilder::generate_ribbon_vertices(const ToolpathSegment& segment, Ribbon
         glm::vec3 pos_v1 =
             curr_pos + vertex_offsets[static_cast<size_t>(next_i)]; // REVERSED: next_i first
         glm::vec3 pos_v2 = curr_pos + vertex_offsets[static_cast<size_t>(i)]; // then i
-        uint16_t normal_idx_v1 =
-            add_to_normal_palette(geometry, vertex_normals[static_cast<size_t>(next_i)]);
-        uint16_t normal_idx_v2 =
-            add_to_normal_palette(geometry, vertex_normals[static_cast<size_t>(i)]);
+        const auto& n_v1 = vertex_normals_enc[static_cast<size_t>(next_i)];
+        const auto& n_v2 = vertex_normals_enc[static_cast<size_t>(i)];
 
-        geometry.vertices.push_back(
-            {quant.quantize_vec3(pos_v1), normal_idx_v1, face_colors[static_cast<size_t>(i)]});
-        geometry.vertices.push_back(
-            {quant.quantize_vec3(pos_v2), normal_idx_v2, face_colors[static_cast<size_t>(i)]});
+        geometry.vertices.push_back({quant.quantize_vec3(pos_v1), {n_v1[0], n_v1[1]}});
+        geometry.vertices.push_back({quant.quantize_vec3(pos_v2), {n_v2[0], n_v2[1]}});
     }
     idx_start += static_cast<uint32_t>(2 * N);
 
@@ -1152,6 +1132,9 @@ GeometryBuilder::generate_ribbon_vertices(const ToolpathSegment& segment, Ribbon
 
     // Generate N side face strips (one strip per face)
     // Each face connects vertex i to vertex (i+1)%N
+    //
+    // Every strips.push_back() below MUST be matched by a strip_color_index.push_back()
+    // — the two vectors are parallel and expand_strips() indexes them together.
     for (int i = 0; i < N; i++) {
         geometry.strips.push_back({
             prev_faces_base + static_cast<uint32_t>(2 * i),     // prev ring, vertex i
@@ -1159,6 +1142,7 @@ GeometryBuilder::generate_ribbon_vertices(const ToolpathSegment& segment, Ribbon
             curr_faces_base + static_cast<uint32_t>(2 * i),     // curr ring, vertex i
             curr_faces_base + static_cast<uint32_t>(2 * i + 1)  // curr ring, vertex i+1
         });
+        geometry.strip_color_index.push_back(face_colors[static_cast<size_t>(i)]);
     }
 
     // Start cap (first segment only) - Triangle fan encoded as 4-vertex strips
@@ -1174,6 +1158,7 @@ GeometryBuilder::generate_ribbon_vertices(const ToolpathSegment& segment, Ribbon
                 start_cap_base + static_cast<uint32_t>(i + 1), // vi+1 (next edge)
                 start_cap_base + static_cast<uint32_t>(i + 1)  // Duplicate (degenerate triangle)
             });
+            geometry.strip_color_index.push_back(start_cap_color_idx);
         }
     }
 
@@ -1181,9 +1166,6 @@ GeometryBuilder::generate_ribbon_vertices(const ToolpathSegment& segment, Ribbon
     // Create N new vertices at the SAME POSITIONS as end_cap vertices but with axial normals
     uint8_t end_cap_color_idx =
         debug_face_colors_ ? add_to_color_palette(geometry, DebugColors::END_CAP) : face_colors[0];
-
-    glm::vec3 cap_normal_end = -dir; // Same as start cap
-    uint16_t end_cap_normal_idx = add_to_normal_palette(geometry, cap_normal_end);
 
     uint32_t idx_end_cap_start = idx_start;
 
@@ -1196,7 +1178,7 @@ GeometryBuilder::generate_ribbon_vertices(const ToolpathSegment& segment, Ribbon
             continue;
         }
         geometry.vertices.push_back(
-            {geometry.vertices[src_idx].position, end_cap_normal_idx, end_cap_color_idx});
+            {geometry.vertices[src_idx].position, {cap_normal_enc[0], cap_normal_enc[1]}});
     }
     idx_start += static_cast<uint32_t>(N);
 
@@ -1209,6 +1191,7 @@ GeometryBuilder::generate_ribbon_vertices(const ToolpathSegment& segment, Ribbon
             idx_end_cap_start + static_cast<uint32_t>(N - i - 1), // vN-i-1
             idx_end_cap_start + static_cast<uint32_t>(N - i - 1)  // Duplicate (degenerate)
         });
+        geometry.strip_color_index.push_back(end_cap_color_idx);
     }
 
     // ========== TRIANGLE COUNT VALIDATION ==========

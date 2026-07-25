@@ -221,17 +221,6 @@ class GCodeStreamingController {
                          std::function<void(bool)> on_complete = nullptr);
 
     /**
-     * @brief Open a G-code file via Moonraker API
-     *
-     * Uses HTTP range requests for efficient streaming access.
-     *
-     * @param moonraker_url Base Moonraker URL (e.g., "http://192.168.1.100:7125")
-     * @param gcode_path G-code file path on printer
-     * @return true if successful
-     */
-    bool open_moonraker(const std::string& moonraker_url, const std::string& gcode_path);
-
-    /**
      * @brief Open from an existing data source
      *
      * Takes ownership of the data source. Useful for custom sources.

@@ -704,12 +704,14 @@ void MoonrakerManager::init_print_start_collector() {
             // active) can't complete the new pre-print phase instantly.
             collector->note_current_layer(current_layer);
             if (should_complete_preprint(printer_reports_layers, current_layer, print_duration,
-                                         collector->has_seen_layer_zero())) {
+                                         collector->has_seen_layer_zero(),
+                                         collector->has_seen_layer_advance())) {
                 spdlog::info("[MoonrakerManager] Authoritative: first real layer detected "
-                             "(current_layer={}, printer_reports_layers={}, seen_zero={}), "
-                             "completing pre-print phase",
+                             "(current_layer={}, printer_reports_layers={}, seen_zero={}, "
+                             "advanced={}), completing pre-print phase",
                              current_layer, printer_reports_layers,
-                             collector->has_seen_layer_zero());
+                             collector->has_seen_layer_zero(),
+                             collector->has_seen_layer_advance());
                 collector->complete_from_external_signal("first layer");
             }
         },
@@ -750,7 +752,8 @@ void MoonrakerManager::init_print_start_collector() {
                 collector->note_priming();
             }
             if (should_complete_preprint(printer_reports_layers, current_layer, print_duration,
-                                         collector->has_seen_layer_zero())) {
+                                         collector->has_seen_layer_zero(),
+                                         collector->has_seen_layer_advance())) {
                 spdlog::info("[MoonrakerManager] Authoritative: pre-print complete via "
                              "print_duration fallback (print_duration={}s, "
                              "printer_reports_layers={}), completing pre-print phase",
