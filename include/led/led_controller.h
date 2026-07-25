@@ -442,7 +442,9 @@ class LedController {
     [[nodiscard]] int get_startup_brightness() const;
     void set_startup_brightness(int brightness_pct);
 
-    // Apply startup preference (call at boot after printer is ready)
+    /// Apply the "LED on at start" preference. Called from the discovery-complete
+    /// handler, which re-runs on every Klippy restart — this applies at most once
+    /// per printer session (see startup_preference_applied_).
     void apply_startup_preference();
 
     // Config accessors
@@ -540,6 +542,13 @@ class LedController {
     bool led_on_at_start_ = false;
     int startup_brightness_ = 80;
     bool light_on_ = false; // Internal light state for abstract API
+
+    /// One-shot latch for apply_startup_preference(). Deliberately NOT reset by
+    /// init(): printer_discovery re-runs init() on every discovery, and a Klippy
+    /// restart re-triggers discovery for the life of the session. Only deinit()
+    /// clears it, which happens on teardown (printer switch / shutdown) — the one
+    /// case that really is a fresh start.
+    bool startup_preference_applied_ = false;
 
     /// Dispatch on/off to all selected strips (low-level — callers should use light_set())
     void toggle_all(bool on);

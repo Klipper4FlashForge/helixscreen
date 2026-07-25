@@ -1526,6 +1526,169 @@ TEST_CASE_METHOD(LedMockApiFixture,
 }
 
 // ============================================================================
+// "LED on at start" means AT START — not on every rediscovery
+//
+// notify_klippy_ready re-triggers the connected callback unconditionally, and the
+// tail of that callback calls apply_startup_preference(). printer_discovery also
+// re-runs LedController::init() on every discovery. So a user who turned the
+// lights off and then restarted Klipper (FIRMWARE_RESTART, M112, a klippy crash)
+// got them switched back on behind their back.
+// ============================================================================
+
+namespace {
+
+/// Put both PrinterStates in the state a real dispatch needs. execute_gcode()
+/// refuses gcode outright while Klipper is halted, and MoonrakerAPI reads the
+/// PrinterState it was constructed with (the fixture's own instance, which
+/// defaults to SHUTDOWN) — without this, nothing reaches the mock wire and any
+/// "no gcode was sent" assertion passes for the wrong reason.
+void make_led_dispatch_real(helix::PrinterState& api_state) {
+    api_state.set_klippy_state_sync(helix::KlippyState::READY);
+    auto& ps = get_printer_state();
+    lv_subject_set_int(ps.get_printer_connection_state_subject(),
+                       static_cast<int>(helix::ConnectionState::CONNECTED));
+    ps.set_klippy_state_sync(helix::KlippyState::READY);
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+}
+
+/// Count SET_LED commands that actually hit the mock wire.
+size_t count_set_led(const std::vector<std::string>& history) {
+    size_t n = 0;
+    for (const auto& script : history) {
+        if (script.find("SET_LED") != std::string::npos)
+            ++n;
+    }
+    return n;
+}
+
+} // namespace
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "LedController: startup preference applies once, not on every rediscovery",
+                 "[led][controller][regression]") {
+    setup_controller_with_strip();
+    auto& ctrl = helix::led::LedController::instance();
+    make_led_dispatch_real(state);
+
+    ctrl.set_led_on_at_start(true);
+    ctrl.set_last_color(0xFFFFFF);
+    ctrl.set_startup_brightness(80);
+
+    // --- First discovery completes: the preference applies, lights come up. ---
+    mock_client.clear_gcode_script_history();
+    ctrl.apply_startup_preference();
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    REQUIRE(ctrl.light_is_on());
+    // Assert on the wire, not just the flag: a SET_LED really went to Klipper.
+    REQUIRE(count_set_led(mock_client.gcode_script_history()) == 1);
+    REQUIRE(ctrl.native().get_strip_color("neopixel chamber").r == Catch::Approx(0.8).margin(0.01));
+
+    // --- The user turns the lights off. ---
+    ctrl.light_set(false);
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+    REQUIRE_FALSE(ctrl.light_is_on());
+    REQUIRE(ctrl.native().get_strip_color("neopixel chamber").r == Catch::Approx(0.0).margin(0.01));
+
+    // --- Klipper restarts. Moonraker itself never went away, so
+    // notify_klippy_ready re-fires the connected callback → full rediscovery.
+    // printer_discovery re-runs init() WITHOUT a deinit() and re-selects the
+    // strips; init()'s load_config() restores the persisted preference (stood in
+    // for here by the explicit setters — the values are written by save_config).
+    mock_client.clear_gcode_script_history();
+    ctrl.init(mock_api.get(), &mock_client);
+    ctrl.set_selected_strips({"neopixel chamber"});
+    ctrl.set_led_on_at_start(true);
+    ctrl.set_startup_brightness(80);
+    make_led_dispatch_real(state);
+
+    // ...and the connected callback calls apply_startup_preference() again.
+    ctrl.apply_startup_preference();
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    // The user's OFF has to survive the restart: startup already happened.
+    CHECK(count_set_led(mock_client.gcode_script_history()) == 0);
+    CHECK_FALSE(ctrl.light_is_on());
+    CHECK(ctrl.native().get_strip_color("neopixel chamber").r == Catch::Approx(0.0).margin(0.01));
+}
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "LedController: startup preference still fires when strips arrive late",
+                 "[led][controller][regression]") {
+    // The guard must not burn its one shot on a discovery that had no strips to
+    // act on — WLED strips are discovered asynchronously, so the first
+    // discovery-complete callback can legitimately find selected_strips_ empty.
+    auto& ctrl = helix::led::LedController::instance();
+    ctrl.deinit();
+    ctrl.init(mock_api.get(), &mock_client);
+    // init() reloads the persisted selection; this machine's config may carry one.
+    ctrl.set_selected_strips({});
+    make_led_dispatch_real(state);
+
+    ctrl.set_led_on_at_start(true);
+    ctrl.set_last_color(0xFFFFFF);
+    ctrl.set_startup_brightness(80);
+
+    // First discovery: nothing selected yet — no-op, and no shot spent.
+    REQUIRE(ctrl.selected_strips().empty());
+    ctrl.apply_startup_preference();
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+    REQUIRE_FALSE(ctrl.light_is_on());
+
+    // Strips show up on the next pass.
+    helix::led::LedStripInfo strip;
+    strip.name = "Chamber";
+    strip.id = "neopixel chamber";
+    strip.backend = helix::led::LedBackendType::NATIVE;
+    strip.supports_color = true;
+    ctrl.native().add_strip(strip);
+    ctrl.set_selected_strips({"neopixel chamber"});
+
+    mock_client.clear_gcode_script_history();
+    ctrl.apply_startup_preference();
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    CHECK(ctrl.light_is_on());
+    CHECK(count_set_led(mock_client.gcode_script_history()) == 1);
+}
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "LedController: switching printers re-arms the startup preference",
+                 "[led][controller][regression]") {
+    // A printer switch runs Application::tear_down_printer_state() (which calls
+    // LedController::deinit()) followed by a fresh init — that is a genuine
+    // startup for the new printer, so the preference must apply again.
+    setup_controller_with_strip();
+    auto& ctrl = helix::led::LedController::instance();
+    make_led_dispatch_real(state);
+
+    ctrl.set_led_on_at_start(true);
+    ctrl.set_last_color(0xFFFFFF);
+    ctrl.set_startup_brightness(80);
+    ctrl.apply_startup_preference();
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+    REQUIRE(ctrl.light_is_on());
+
+    ctrl.light_set(false);
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+    REQUIRE_FALSE(ctrl.light_is_on());
+
+    // Printer switch: teardown + re-init.
+    setup_controller_with_strip();
+    ctrl.set_led_on_at_start(true);
+    ctrl.set_last_color(0xFFFFFF);
+    ctrl.set_startup_brightness(80);
+    make_led_dispatch_real(state);
+
+    mock_client.clear_gcode_script_history();
+    ctrl.apply_startup_preference();
+    helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+
+    CHECK(ctrl.light_is_on());
+    CHECK(count_set_led(mock_client.gcode_script_history()) == 1);
+}
+
+// ============================================================================
 // RGBW support: white channel toggle and brightness (#737)
 // ============================================================================
 

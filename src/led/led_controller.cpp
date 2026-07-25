@@ -158,6 +158,10 @@ void LedController::deinit() {
     led_on_at_start_ = false;
     startup_brightness_ = 80;
     light_on_ = false;
+    // Re-arm the startup preference. deinit() only runs from
+    // Application::tear_down_printer_state() (printer switch, add-printer wizard)
+    // and shutdown — a rediscovery re-runs init() alone and must NOT re-arm it.
+    startup_preference_applied_ = false;
 
     spdlog::info("[LedController] Deinitialized");
 }
@@ -2281,13 +2285,28 @@ void LedController::set_startup_brightness(int brightness_pct) {
 }
 
 void LedController::apply_startup_preference() {
-    if (!led_on_at_start_) {
-        spdlog::debug("[LedController] LED on at start disabled - skipping");
+    if (startup_preference_applied_) {
+        spdlog::debug("[LedController] Startup preference already applied this session - skipping");
         return;
     }
 
     if (selected_strips_.empty()) {
-        spdlog::debug("[LedController] LED on at start enabled but no strips selected");
+        // Not our shot yet. WLED strips are discovered asynchronously, so an early
+        // discovery can legitimately have nothing to act on — leave the latch clear
+        // so a later discovery still gets its one chance.
+        spdlog::debug("[LedController] No strips selected - startup preference deferred");
+        return;
+    }
+
+    // The startup opportunity for this printer session is now spent, whether or not
+    // the preference is enabled. This runs from the discovery-complete handler, and
+    // notify_klippy_ready re-triggers discovery unconditionally, so every
+    // FIRMWARE_RESTART / M112 / klippy crash used to switch the lights back on over
+    // the user's manual OFF. "At start" means at start.
+    startup_preference_applied_ = true;
+
+    if (!led_on_at_start_) {
+        spdlog::debug("[LedController] LED on at start disabled - skipping");
         return;
     }
 
