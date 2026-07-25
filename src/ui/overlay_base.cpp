@@ -154,6 +154,10 @@ bool OverlayBase::rebuild() {
 
     NavigationManager::instance().rekey_overlay_widget(old_root, new_root);
 
+    // create() reproduces the XML; anything this overlay populated into the old
+    // tree from a separate entry point has to be re-applied by hand.
+    repopulate();
+
     if (was_visible) {
         on_activate();
     }

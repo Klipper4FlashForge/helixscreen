@@ -259,6 +259,16 @@ lv_obj_t* AmsEditOverlay::create(lv_obj_t* parent) {
         lv_label_bind_text(header_title, &slot_indicator_subject_, nullptr);
     }
 
+    // header_bar's optional trailing badge. The image and the group's visibility
+    // are wired from XML; only the label text is bound here, so the shared
+    // component needs no bind_text of its own (an unset one warns on every
+    // header without a badge). Tracked slots therefore show the Spoolman mark
+    // and spool number together, on every view of the editor.
+    lv_obj_t* badge_text = find_widget("header_title_badge_text");
+    if (badge_text) {
+        lv_label_bind_text(badge_text, &spoolman_id_subject_, nullptr);
+    }
+
     lv_obj_t* temp_nozzle_label = find_widget("temp_nozzle_label");
     if (temp_nozzle_label) {
         lv_label_bind_text(temp_nozzle_label, &temp_nozzle_subject_, nullptr);
@@ -693,6 +703,50 @@ void AmsEditOverlay::handle_change_filament() {
     enter_spool_edit();
 }
 
+bool AmsEditOverlay::populate_spool_edit_view() {
+    // Everything the spool-edit view shows that XML alone cannot produce: the
+    // catalog selector's vendor/type dropdown options and product rows, the
+    // pending-color swatch, and the logistics field text. Reads only state this
+    // object already holds, so it is safe to re-run against a rebuilt tree
+    // without disturbing an edit in progress.
+    if (!setup_details_selector()) {
+        return false;
+    }
+
+    lv_obj_t* preview = find_widget("details_color_preview");
+    if (preview) {
+        helix::ui::apply_swatch_color(preview, details_color_, {});
+    }
+
+    populate_detail_fields();
+    return true;
+}
+
+void AmsEditOverlay::repopulate() {
+    // The view subject is C++-owned, so it keeps its value across the rebuild
+    // and the fresh widgets bind to the right branch on their own. What does
+    // not survive is the content each view populates on entry, so re-apply it
+    // for whichever view is showing. The overview is entirely subject-bound and
+    // on_activate() refreshes it.
+    const int view = lv_subject_get_int(&view_mode_subject_);
+    switch (view) {
+    case kViewSpoolPicker:
+        populate_picker();
+        break;
+    case kViewSpoolEdit:
+        populate_spool_edit_view();
+        break;
+    case kViewColor:
+        // Reached from spool-edit, which stays built underneath it.
+        populate_spool_edit_view();
+        populate_color_view();
+        break;
+    default:
+        break;
+    }
+    spdlog::debug("[AmsEditOverlay] Repopulated view {}", view);
+}
+
 void AmsEditOverlay::enter_spool_edit() {
     // Single identity+color+logistics editor (spec §3.3): fresh untracked setup
     // and editing the current filament. Pre-fill from the working slot; the
@@ -704,18 +758,10 @@ void AmsEditOverlay::enter_spool_edit() {
     // stage Spoolman's core spool-weight over the real total (Finding 1).
     spool_edit_entered_tracked_ = working_info_.spoolman_id > 0;
 
-    if (!setup_details_selector()) {
-        return;
-    }
-
     // Seed the pending color from the working slot so Save without a color tap
     // keeps the current color.
     details_color_ = working_info_.color_rgb;
     details_color_set_ = false;
-    lv_obj_t* preview = find_widget("details_color_preview");
-    if (preview) {
-        helix::ui::apply_swatch_color(preview, details_color_, {});
-    }
 
     if (!api_) {
         api_ = get_moonraker_api();
@@ -745,7 +791,11 @@ void AmsEditOverlay::enter_spool_edit() {
         detail_original_.color_hex = hex_buf;
     }
     detail_working_ = detail_original_;
-    populate_detail_fields();
+    // A missing catalog fragment means the view cannot be filled in, so stay
+    // where we are rather than switching to a half-built editor.
+    if (!populate_spool_edit_view()) {
+        return;
+    }
 
     // Print Label visibility is declarative — btn_detail_print_label binds its
     // hidden flag to `label_printer_configured` in ams_edit_overlay.xml, so
@@ -1278,6 +1328,16 @@ void AmsEditOverlay::update_ui() {
         return;
     }
 
+    // Managed-vs-untracked signal (drives mark, details row, toggle default).
+    // Fresh synchronous read — the XML binding fires asynchronously (#311);
+    // mirrors update_spoolman_button_state(). A slot can carry a stale
+    // spoolman_id even when Spoolman itself is unavailable, so gate on both.
+    // Computed before the title because the title carries the spool number.
+    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
+    bool has_spoolman = spoolman_subj && lv_subject_get_int(spoolman_subj) == 1;
+    const bool managed = has_spoolman && working_info_.spoolman_id > 0;
+    lv_subject_set_int(&is_managed_subject_, managed ? 1 : 0);
+
     // Header title via subject
     if (slot_index_ < 0) {
         snprintf(slot_indicator_buf_, sizeof(slot_indicator_buf_), "%s",
@@ -1287,15 +1347,6 @@ void AmsEditOverlay::update_ui() {
                  slot_index_ + 1);
     }
     lv_subject_copy_string(&slot_indicator_subject_, slot_indicator_buf_);
-
-    // Managed-vs-untracked signal (drives mark, details row, toggle default).
-    // Fresh synchronous read — the XML binding fires asynchronously (#311);
-    // mirrors update_spoolman_button_state(). A slot can carry a stale
-    // spoolman_id even when Spoolman itself is unavailable, so gate on both.
-    auto* spoolman_subj = lv_xml_get_subject(nullptr, "printer_has_spoolman");
-    bool has_spoolman = spoolman_subj && lv_subject_get_int(spoolman_subj) == 1;
-    const bool managed = has_spoolman && working_info_.spoolman_id > 0;
-    lv_subject_set_int(&is_managed_subject_, managed ? 1 : 0);
 
     // Identity chip: tracked = spool name (+ mark via binding);
     // untracked = "Brand · Material" (spec §3.8 locked format).
@@ -1474,6 +1525,12 @@ void AmsEditOverlay::open_color_view() {
     if (custom_color_ == 0) {
         custom_color_ = 0x808080;
     }
+    populate_color_view();
+    set_view(kViewColor);
+    spdlog::debug("[AmsEditOverlay] Color view opened (returns to spool-edit)");
+}
+
+void AmsEditOverlay::populate_color_view() {
     lv_obj_t* hsv = find_widget("ams_color_hsv");
     if (hsv) {
         ui_hsv_picker_set_color_rgb(hsv, custom_color_);
@@ -1488,8 +1545,6 @@ void AmsEditOverlay::open_color_view() {
         snprintf(buf, sizeof(buf), "#%06X", custom_color_);
         lv_textarea_set_text(hex_input, buf);
     }
-    set_view(kViewColor);
-    spdlog::debug("[AmsEditOverlay] Color view opened (returns to spool-edit)");
 }
 
 void AmsEditOverlay::apply_color(uint32_t rgb) {

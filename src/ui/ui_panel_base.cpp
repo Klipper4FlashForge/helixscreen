@@ -179,6 +179,10 @@ bool PanelBase::rebuild() {
 
     nav.replace_panel_widget(id, new_widget);
 
+    // setup() reproduces the XML; anything this panel populated into the old
+    // tree from a separate entry point has to be re-applied by hand.
+    repopulate();
+
     if (!was_hidden) {
         on_activate();
     }
