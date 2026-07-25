@@ -115,12 +115,25 @@ class GCodeViewerState {
                          "driver crash) — using 2D renderer");
         }
 
-        // Enhanced shading is ON by default. Set HELIX_SSAO=0 to disable.
-        ssao_enabled_at_init_ = true;
+        // Enhanced shading is ON by default, but OFF on constrained devices: the
+        // SSAO cache is a full-canvas ARGB8888 buffer (~592KB at 368x402, more at
+        // larger sizes) held for the life of the viewer, and it is the third such
+        // buffer alongside cache_buf_ and ghost_buf_. On a 47MB AD5M that is real
+        // money for a shading nicety. HELIX_SSAO overrides in either direction so
+        // the effect can still be forced on for comparison.
+        const bool constrained = helix::get_system_memory_info().is_constrained_device();
+        ssao_enabled_at_init_ = !constrained;
+        if (constrained) {
+            spdlog::info("[GCode Viewer] Constrained device - enhanced shading off by default "
+                         "(HELIX_SSAO=1 to force on)");
+        }
         const char* ssao_env = std::getenv("HELIX_SSAO");
         if (ssao_env && std::strcmp(ssao_env, "0") == 0) {
             ssao_enabled_at_init_ = false;
             spdlog::info("[GCode Viewer] HELIX_SSAO=0: enhanced shading disabled");
+        } else if (ssao_env && std::strcmp(ssao_env, "1") == 0) {
+            ssao_enabled_at_init_ = true;
+            spdlog::info("[GCode Viewer] HELIX_SSAO=1: enhanced shading forced on");
         }
     }
 
