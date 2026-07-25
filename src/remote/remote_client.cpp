@@ -32,6 +32,8 @@
 #include "hv/json.hpp"
 
 // POSIX headers
+#include "unix_socket_transport.h"
+
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -114,15 +116,32 @@ static std::string resolve_socket_path(const std::string& override_path) {
     }
 
     const char* xdg_runtime = getenv("XDG_RUNTIME_DIR");
-    if (xdg_runtime && xdg_runtime[0] != '\0') {
-        std::string path = std::string(xdg_runtime) + "/helixscreen-control.sock";
-        // Check if the socket exists
-        if (access(path.c_str(), F_OK) == 0) {
-            return path;
-        }
+    const std::string dir =
+        (xdg_runtime && xdg_runtime[0] != '\0') ? std::string(xdg_runtime) : std::string("/tmp");
+    const std::string well_known = dir + "/helixscreen-control.sock";
+
+    // Liveness, not mere existence: a crashed instance leaves the file behind, and
+    // connecting to it fails with a confusing error instead of finding the app that
+    // is actually running on a pid-suffixed path.
+    if (helix::UnixSocketTransport::path_is_live(well_known)) {
+        return well_known;
     }
 
-    return "/tmp/helixscreen-control.sock";
+    std::vector<std::string> instances = helix::UnixSocketTransport::discover_instances(dir);
+    if (instances.size() == 1) {
+        return instances[0];
+    }
+    if (instances.size() > 1) {
+        // Guessing here would silently drive the wrong app — exactly the failure
+        // this whole change exists to prevent. Make the user choose.
+        fprintf(stderr, "Error: several HelixScreen instances are running. Pick one with -s:\n");
+        for (const std::string& path : instances) {
+            fprintf(stderr, "  --socket %s\n", path.c_str());
+        }
+        exit(1);
+    }
+
+    return well_known; // Nothing running; report against the expected path.
 }
 
 static int connect_to_server(const std::string& socket_path) {
@@ -132,7 +151,7 @@ static int connect_to_server(const std::string& socket_path) {
         return -1;
     }
 
-    struct sockaddr_un addr{};
+    struct sockaddr_un addr {};
     addr.sun_family = AF_UNIX;
 
     if (socket_path.length() >= sizeof(addr.sun_path)) {
@@ -500,15 +519,44 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
 // ---------------------------------------------------------------------------
 
 // All known commands for tab completion
-static const char* REPL_COMMANDS[] = {
-    "ping",        "navigate",   "cd",         "go_back",   "back",
-    "list_panels", "list_components", "list_callbacks", "current",  "pwd",       "screenshot",
-    "status",      "wake",       "demo",       "get",       "set",       "list_subjects",
-    "wait_for",    "ls",         "describe_screen", "click",  "set_value",
-    "focus",       "press",      "move",            "release",
-    "scroll",      "scenario",   "list_scenarios",  "help",   "refresh",
-    "log",         "shutdown",   "geom",       "get_const", "quit",
-    "exit",        nullptr};
+static const char* REPL_COMMANDS[] = {"ping",
+                                      "navigate",
+                                      "cd",
+                                      "go_back",
+                                      "back",
+                                      "list_panels",
+                                      "list_components",
+                                      "list_callbacks",
+                                      "current",
+                                      "pwd",
+                                      "screenshot",
+                                      "status",
+                                      "wake",
+                                      "demo",
+                                      "get",
+                                      "set",
+                                      "list_subjects",
+                                      "wait_for",
+                                      "ls",
+                                      "describe_screen",
+                                      "click",
+                                      "set_value",
+                                      "focus",
+                                      "press",
+                                      "move",
+                                      "release",
+                                      "scroll",
+                                      "scenario",
+                                      "list_scenarios",
+                                      "help",
+                                      "refresh",
+                                      "log",
+                                      "shutdown",
+                                      "geom",
+                                      "get_const",
+                                      "quit",
+                                      "exit",
+                                      nullptr};
 
 // Cached subject names for tab completion (populated lazily)
 static std::vector<std::string> g_cached_subjects;

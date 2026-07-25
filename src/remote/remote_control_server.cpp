@@ -3,8 +3,6 @@
 
 #include "remote_control_server.h"
 
-#include "panel_factory.h"
-#include "remote_pointer.h"
 #include "ui_keyboard_manager.h"
 #include "ui_nav_manager.h"
 #include "ui_update_queue.h"
@@ -13,7 +11,9 @@
 #include "demo_overlays.h"
 #include "logging_init.h"
 #include "mock_scenarios.h"
+#include "panel_factory.h"
 #include "printer_state.h"
+#include "remote_pointer.h"
 #include "screenshot.h"
 #include "subject_debug_registry.h"
 
@@ -21,6 +21,8 @@
 #include "helix-xml/src/xml/lv_xml.h"
 #include "helix-xml/src/xml/lv_xml_component.h"
 #include "helix-xml/src/xml/lv_xml_component_private.h"
+#include "http_transport.h"
+#include "unix_socket_transport.h"
 
 #include <spdlog/spdlog.h>
 
@@ -34,9 +36,6 @@
 #include <optional>
 #include <thread>
 #include <vector>
-
-#include "http_transport.h"
-#include "unix_socket_transport.h"
 
 namespace helix {
 
@@ -94,15 +93,31 @@ RemoteControlServer::~RemoteControlServer() {
 
 std::string resolve_socket_path(const std::string& override_path) {
     if (!override_path.empty()) {
-        return override_path;
+        return override_path; // Explicit --remote-socket always wins.
     }
 
     const char* xdg_runtime = getenv("XDG_RUNTIME_DIR");
-    if (xdg_runtime && xdg_runtime[0] != '\0') {
-        return std::string(xdg_runtime) + "/helixscreen-control.sock";
+    const std::string dir =
+        (xdg_runtime && xdg_runtime[0] != '\0') ? std::string(xdg_runtime) : std::string("/tmp");
+    const std::string well_known = dir + "/helixscreen-control.sock";
+
+    // Clear sockets left by instances that died without teardown before deciding
+    // anything, so a run of crashed sessions cannot litter the directory forever.
+    UnixSocketTransport::sweep_stale_instances(dir);
+
+    // The well-known path is what a bare `helix-screen ctl` looks for, so the first
+    // instance should own it — on a device there is only ever one. A second instance
+    // (two dev sessions, or an accidental double start) takes a pid-suffixed path
+    // instead of stealing it, so both stay reachable and neither is silently
+    // hijacked. The client discovers these; see remote_client.cpp.
+    if (!UnixSocketTransport::path_is_live(well_known)) {
+        return well_known;
     }
 
-    return "/tmp/helixscreen-control.sock";
+    std::string fallback = dir + "/helixscreen-control-" + std::to_string(getpid()) + ".sock";
+    spdlog::warn("[RemoteControl] {} is in use by another instance; using {}", well_known,
+                 fallback);
+    return fallback;
 }
 
 bool RemoteControlServer::start(const RemoteConfig& config) {
@@ -260,8 +275,12 @@ void RemoteControlServer::register_builtin_handlers() {
     handlers_["navigate"] = [this](const nlohmann::json& p) { return handle_navigate(p); };
     handlers_["go_back"] = [this](const nlohmann::json& p) { return handle_go_back(p); };
     handlers_["list_panels"] = [this](const nlohmann::json& p) { return handle_list_panels(p); };
-    handlers_["list_components"] = [this](const nlohmann::json& p) { return handle_list_components(p); };
-    handlers_["list_callbacks"] = [this](const nlohmann::json& p) { return handle_list_callbacks(p); };
+    handlers_["list_components"] = [this](const nlohmann::json& p) {
+        return handle_list_components(p);
+    };
+    handlers_["list_callbacks"] = [this](const nlohmann::json& p) {
+        return handle_list_callbacks(p);
+    };
     handlers_["get_current"] = [this](const nlohmann::json& p) { return handle_get_current(p); };
     handlers_["screenshot"] = [this](const nlohmann::json& p) { return handle_screenshot(p); };
     handlers_["status"] = [this](const nlohmann::json& p) { return handle_status(p); };
@@ -291,7 +310,9 @@ void RemoteControlServer::register_builtin_handlers() {
     };
     handlers_["scroll"] = [this](const nlohmann::json& p) { return handle_scroll(p); };
     handlers_["focus"] = [this](const nlohmann::json& p) { return handle_focus(p); };
-    handlers_["pointer_press"] = [this](const nlohmann::json& p) { return handle_pointer_press(p); };
+    handlers_["pointer_press"] = [this](const nlohmann::json& p) {
+        return handle_pointer_press(p);
+    };
     handlers_["pointer_move"] = [this](const nlohmann::json& p) { return handle_pointer_move(p); };
     handlers_["pointer_release"] = [this](const nlohmann::json& p) {
         return handle_pointer_release(p);
@@ -378,8 +399,7 @@ nlohmann::json RemoteControlServer::handle_log(const nlohmann::json& params) {
     size_t pos = 0;
     while (pos <= tail.size()) {
         size_t nl = tail.find('\n', pos);
-        std::string line =
-            tail.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+        std::string line = tail.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
         if (!line.empty()) {
             arr.push_back(line);
         }
@@ -388,7 +408,9 @@ nlohmann::json RemoteControlServer::handle_log(const nlohmann::json& params) {
         }
         pos = nl + 1;
     }
-    return {{"lines", arr}, {"count", arr.size()}, {"capacity", helix::logging::ring_buffer_capacity()}};
+    return {{"lines", arr},
+            {"count", arr.size()},
+            {"capacity", helix::logging::ring_buffer_capacity()}};
 }
 
 nlohmann::json RemoteControlServer::handle_go_back(const nlohmann::json& /*params*/) {
@@ -442,7 +464,7 @@ nlohmann::json RemoteControlServer::handle_list_callbacks(const nlohmann::json& 
     return execute_on_ui_thread([]() -> nlohmann::json {
         std::vector<std::string> names;
         lv_xml_event_cb_foreach(
-            nullptr,  // NULL -> the "globals" scope
+            nullptr, // NULL -> the "globals" scope
             [](const char* name, lv_event_cb_t /*cb*/, void* ud) {
                 auto* out = static_cast<std::vector<std::string>*>(ud);
                 if (name) {
@@ -830,10 +852,10 @@ static bool glob_match(const char* pat, const char* str) {
             pat++;
             str++;
         } else if (*pat == '*') {
-            star = pat++;    // remember where the star was
-            retry = str;     // and how much of str it had consumed
+            star = pat++; // remember where the star was
+            retry = str;  // and how much of str it had consumed
         } else if (star) {
-            pat = star + 1;  // backtrack: let the star eat one more char
+            pat = star + 1; // backtrack: let the star eat one more char
             str = ++retry;
         } else {
             return false;
@@ -1358,8 +1380,7 @@ static nlohmann::json describe_one(lv_obj_t* o, const char* name, const std::str
         actions.push_back("fill");
         const char* txt = lv_textarea_get_text(o);
         entry["value"] = txt ? txt : "";
-    } else if (lv_obj_check_type(o, &lv_switch_class) ||
-               lv_obj_check_type(o, &lv_checkbox_class)) {
+    } else if (lv_obj_check_type(o, &lv_switch_class) || lv_obj_check_type(o, &lv_checkbox_class)) {
         actions.push_back("toggle");
         entry["value"] = lv_obj_has_state(o, LV_STATE_CHECKED) ? 1 : 0;
     } else if (lv_obj_check_type(o, &lv_slider_class)) {
