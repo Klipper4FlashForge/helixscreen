@@ -1948,9 +1948,9 @@ void ControlsPanel::populate_secondary_temps() {
         SubjectLifetime lt;
         auto* subj = tsm.get_temp_subject(sensor.klipper_name, lt);
         int decidegrees = subj ? lv_subject_get_int(subj) : 0;
-        int temp_c = decidegrees / 100;
         char temp_buf[16];
-        std::snprintf(temp_buf, sizeof(temp_buf), "%d\u00B0C", temp_c);
+        helix::ui::temperature::format_temperature(
+            helix::ui::temperature::deci_to_degrees(decidegrees), temp_buf, sizeof(temp_buf));
         lv_obj_t* temp_label = lv_label_create(row);
         lv_label_set_text(temp_label, temp_buf);
         lv_obj_set_style_text_color(temp_label, theme_manager_get_color("text"), 0);
@@ -2047,8 +2047,8 @@ void ControlsPanel::update_secondary_temp(const std::string& klipper_name, int d
     for (const auto& row : secondary_temp_rows_) {
         if (row.klipper_name == klipper_name && row.temp_label) {
             char temp_buf[16];
-            int temp_c = decidegrees / 100;
-            std::snprintf(temp_buf, sizeof(temp_buf), "%d\u00B0C", temp_c);
+            helix::ui::temperature::format_temperature(
+                helix::ui::temperature::deci_to_degrees(decidegrees), temp_buf, sizeof(temp_buf));
             lv_label_set_text(row.temp_label, temp_buf);
             spdlog::trace("[{}] Updated secondary temp '{}' to {}", get_name(), klipper_name,
                           temp_buf);

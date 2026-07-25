@@ -20,6 +20,10 @@
 // Forward declarations
 struct FileInfo;
 
+namespace helix::ui {
+struct HistoryListPanelTestAccess; // test-only friend (tests/test_helpers/)
+}
+
 /**
  * @file ui_panel_history_list.h
  * @brief Print History List Panel - Scrollable list of print jobs with filter/sort
@@ -192,6 +196,8 @@ class HistoryListPanel : public OverlayBase {
     void associate_timelapse_files(const std::vector<FileInfo>& timelapse_files);
 
   private:
+    friend struct helix::ui::HistoryListPanelTestAccess;
+
     //
     // === Widget References ===
     //

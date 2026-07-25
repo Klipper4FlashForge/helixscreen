@@ -97,9 +97,21 @@ setup() {
 #
 # The regex matches a temperature identifier (target/temp/deci/nozzle/bed/chamber/
 # heater) or a bare keypad `value`, optionally closing a paren, then `* 10` or
-# `/ 10` — but NOT `* 100` / `/ 100` (the (\.0?f?)?([^0-9.]|$) tail rejects a
-# trailing digit so centimm/centi conversions are untouched). `//` comments are
-# stripped first so the "value * 10" explanatory comments don't trip the gate.
+# `/ 10` — the (\.0?f?)?([^0-9.]|$) tail rejects a trailing digit. `//` comments
+# are stripped first so the "value * 10" explanatory comments don't trip the gate.
+#
+# A SECOND pattern catches the x100 form. Decidegrees are degrees x10, so a
+# temperature never converts by 100 — `decidegrees / 100` is always the
+# controls-panel class of bug (secondary sensors rendered at 1/10 scale: 45°C
+# shown as "4°C"). That form slipped past the x10 gate precisely because the tail
+# rejects a trailing digit, which is what keeps genuine centimillimetre `/ 100`
+# conversions from being flagged.
+#
+# The x100 pattern therefore uses a NARROWER identifier set than the x10 one:
+#   - `value` is dropped: the keypad legitimately converts centimm via `value / 100`.
+#   - `bed` is dropped: bed-mesh Z values are distances, not temperatures.
+# Everything left (target/temp/deci/nozzle/chamber/heater) is unambiguously a
+# temperature in these files. Verified to produce zero hits on the clean tree.
 
 @test "migrated temp files do not convert decidegrees inline (use unit helpers)" {
     local files="src/print/print_start_collector.cpp \
@@ -119,7 +131,8 @@ setup() {
         src/ui/ui_print_preparation_manager.cpp \
         src/ui/ui_temp_display.cpp"
     local pat='(target|temp|deci|nozzle|bed|chamber|heater|value)[A-Za-z_]*(\s*\))?\s*[*/]\s*10(\.0?f?)?([^0-9.]|$)'
-    run bash -c "sed -E 's@//.*@@' $files | grep -nE '$pat'"
+    local pat100='(target|temp|deci|nozzle|chamber|heater)[A-Za-z_]*(\s*\))?\s*[*/]\s*100(\.0?f?)?([^0-9.]|$)'
+    run bash -c "sed -E 's@//.*@@' $files | grep -nE '$pat|$pat100'"
     [ "$status" -ne 0 ]  # non-zero == no inline decidegree conversion found
 }
 
