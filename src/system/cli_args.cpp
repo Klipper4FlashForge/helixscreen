@@ -96,9 +96,10 @@ static void print_help(const char* program_name) {
     printf("Options:\n");
     printf("  -s, --size <size>    Screen size: micro, tiny, small, medium, large, xlarge (or "
            "WxH)\n");
-    printf("  -w, --wizard         Force first-run configuration wizard\n");
+    printf("  -w, --wizard         Force first-run configuration wizard (overrides the\n");
+    printf("                       --skip-wizard that --test implies)\n");
     printf("  --wizard-step <step> Jump to specific wizard step for testing\n");
-    printf("  --skip-wizard        Suppress the first-run wizard (for automation)\n");
+    printf("  --skip-wizard        Suppress the first-run wizard (implied by --test)\n");
     printf("  --calibrate-touch    Force touch calibration on startup\n");
     printf("  -d, --display <n>    Display number for window placement (0, 1, 2...)\n");
     printf("  -x, --x-pos <n>      X coordinate for window position\n");
@@ -737,6 +738,17 @@ bool parse_cli_args(int argc, char** argv, CliArgs& args, int& screen_width, int
     if (config.mock_crash && !config.test_mode) {
         printf("Error: --mock-crash requires --test mode\n");
         return false;
+    }
+
+    // --test implies --skip-wizard. Mock mode sets the active printer to
+    // "mock-printer", and the wizard gate reads
+    // printers.<active>.wizard_completed — a key no real settings.json carries,
+    // so a mock boot always landed on the wizard and silently swallowed every
+    // ctl navigate/click. Applied after the full parse so flag order does not
+    // matter; -w/--wizard still wins, which is how the screenshot pipeline
+    // captures the wizard itself.
+    if (config.test_mode && !args.force_wizard) {
+        args.skip_wizard = true;
     }
 
     // Print test mode banner if enabled

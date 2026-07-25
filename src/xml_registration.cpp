@@ -163,13 +163,15 @@ static void register_color_picker_component_constants() {
 }
 
 /**
- * Register responsive constants into the color_swatch_grid component scope.
- * Must be called AFTER register_xml("components/color_swatch_grid.xml").
+ * Register responsive constants into a swatch-grid component scope.
+ * Must be called AFTER register_xml() for that component. Shared by
+ * color_swatch_grid (general/filament presets) and theme_swatch_grid (theme
+ * editor presets) — both are 6-column, 30-swatch grids with identical sizing.
  * Swatch size follows the color_picker ladder (24/28/32 by screen height);
  * grid width is computed as 6 columns so the 30 swatches always form 5 even
  * rows at every breakpoint.
  */
-static void register_color_swatch_grid_constants() {
+static void register_swatch_grid_constants(const char* component_name) {
     lv_display_t* display = lv_display_get_default();
     // Square-tile grid: size tiles + gap off the constrained axis so the grid
     // fits a narrow portrait screen instead of overflowing off its tall axis.
@@ -189,7 +191,7 @@ static void register_color_swatch_grid_constants() {
     snprintf(gap_buf, sizeof(gap_buf), "%d", gap);
     snprintf(width_buf, sizeof(width_buf), "%d", width);
 
-    lv_xml_component_scope_t* scope = lv_xml_component_get_scope("color_swatch_grid");
+    lv_xml_component_scope_t* scope = lv_xml_component_get_scope(component_name);
     if (scope) {
         // update_, NOT register_: the component declares all three as fallback
         // <consts>, and lv_xml_register_const() is a no-op once the name exists in
@@ -197,8 +199,8 @@ static void register_color_swatch_grid_constants() {
         lv_xml_update_const(scope, "grid_swatch_size", swatch_buf);
         lv_xml_update_const(scope, "grid_gap", gap_buf);
         lv_xml_update_const(scope, "grid_width", width_buf);
-        spdlog::debug("[SwatchGrid] Registered swatch={} gap={} width={} for min_dim {}px",
-                      swatch_buf, gap_buf, width_buf, resp_res);
+        spdlog::debug("[SwatchGrid] {}: registered swatch={} gap={} width={} for min_dim {}px",
+                      component_name, swatch_buf, gap_buf, width_buf, resp_res);
     }
 }
 
@@ -322,7 +324,12 @@ void register_xml_components() {
     // AMS slot editor (single overlay, internal views — spec §13)
     helix::ui::get_ams_edit_overlay().register_callbacks();
     register_xml("components/color_swatch_grid.xml");
-    register_color_swatch_grid_constants();
+    register_swatch_grid_constants("color_swatch_grid");
+    // Theme-editor preset palette — surface ramp + hue families, sized by the
+    // same ladder as the general grid. Must precede color_picker.xml, whose
+    // <if> picks between the two.
+    register_xml("components/theme_swatch_grid.xml");
+    register_swatch_grid_constants("theme_swatch_grid");
     register_xml("ams_edit_overlay.xml");
 
     // Spoolman components (MUST be after spool_canvas registration)

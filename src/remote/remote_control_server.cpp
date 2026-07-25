@@ -941,6 +941,112 @@ static lv_obj_t* resolve_path(const std::string& path) {
 // exactly one widget — clicking whichever of several matches happened to come
 // first is the kind of thing that silently drives the UI somewhere unintended,
 // so ambiguity is an error that names the candidates instead.
+// Path of a widget's top-level ancestor — the stacking layer it belongs to.
+// "s/19" for the 19th child of the active screen, "t/0" for a modal on the top
+// layer. UI thread only.
+static std::string layer_of(lv_obj_t* o) {
+    if (!o) {
+        return {};
+    }
+    lv_obj_t* cur = o;
+    while (lv_obj_t* parent = lv_obj_get_parent(cur)) {
+        if (!lv_obj_get_parent(parent)) {
+            break; // parent is a root; cur is the top-level container
+        }
+        cur = parent;
+    }
+    return path_of(cur);
+}
+
+// The layer a click would land on: the highest-index visible child of the top
+// layer if a modal is up, else of the active screen.
+static std::string topmost_layer() {
+    for (lv_obj_t* root : {lv_layer_top(), lv_screen_active()}) {
+        if (!root) {
+            continue;
+        }
+        uint32_t count = lv_obj_get_child_count(root);
+        for (uint32_t i = count; i > 0; --i) {
+            lv_obj_t* child = lv_obj_get_child(root, static_cast<int32_t>(i - 1));
+            if (child && !lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN)) {
+                return path_of(child);
+            }
+        }
+    }
+    return {};
+}
+
+// "settings > display_sound_overlay > theme_preview_overlay" — the breadcrumb
+// of what is on screen right now. Echoed in mutating responses so a caller can
+// tell at a glance that it is driving the screen it thinks it is (a first-run
+// wizard swallows every navigate/click otherwise, and every response still
+// reads as success). UI thread only.
+static std::string active_screen_label() {
+    auto& nav = NavigationManager::instance();
+    std::string label = panel_id_to_name(nav.get_active());
+    for (const std::string& overlay : nav.overlay_stack_names()) {
+        label += " > " + overlay;
+    }
+    return label;
+}
+
+// Collect every visible widget with this exact resolved name. Mirrors
+// collect_glob_matches: hidden subtrees are skipped, because a widget the user
+// cannot see is never what `click <name>` meant.
+static void collect_by_name(lv_obj_t* parent, const std::string& name,
+                            std::vector<lv_obj_t*>& out) {
+    if (!parent) {
+        return;
+    }
+    uint32_t count = lv_obj_get_child_count(parent);
+    for (uint32_t i = 0; i < count; ++i) {
+        lv_obj_t* child = lv_obj_get_child(parent, i);
+        if (!child || lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN)) {
+            continue;
+        }
+        const char* raw = lv_obj_get_name(child);
+        if (raw && raw[0] != '\0') {
+            char resolved[128];
+            lv_obj_get_name_resolved(child, resolved, sizeof(resolved));
+            if (name == (resolved[0] != '\0' ? resolved : raw)) {
+                out.push_back(child);
+            }
+        }
+        collect_by_name(child, name, out);
+    }
+}
+
+// Pick the match the user is actually looking at. Overlays stack as increasing
+// child indices under the screen, and the top layer (modals) sits above all of
+// them, so rank by (top layer, top-level ancestor index, discovery order) and
+// take the highest. Without this, a name that exists in both a background
+// overlay and the visible one resolves to the background copy and the click
+// becomes a silent no-op.
+static lv_obj_t* topmost_visible(const std::vector<lv_obj_t*>& matches) {
+    lv_obj_t* best = nullptr;
+    long best_key = -1;
+    for (size_t i = 0; i < matches.size(); ++i) {
+        lv_obj_t* cur = matches[i];
+        lv_obj_t* top_ancestor = cur;
+        while (lv_obj_t* parent = lv_obj_get_parent(top_ancestor)) {
+            if (!lv_obj_get_parent(parent)) {
+                break; // parent is the screen/layer root; top_ancestor is its child
+            }
+            top_ancestor = parent;
+        }
+        lv_obj_t* root = lv_obj_get_parent(top_ancestor);
+        const long layer_rank = (root == lv_layer_top()) ? 1 : 0;
+        const long key = (layer_rank << 40) |
+                         (static_cast<long>(lv_obj_get_index(top_ancestor)) << 20) |
+                         static_cast<long>(i);
+        if (key > best_key) {
+            best_key = key;
+            best = cur;
+        }
+    }
+    return best;
+}
+
 static lv_obj_t* resolve_widget(const nlohmann::json& params) {
     if (params.contains("path") && params["path"].is_string()) {
         return resolve_path(params["path"].get<std::string>());
@@ -968,14 +1074,19 @@ static lv_obj_t* resolve_widget(const nlohmann::json& params) {
             }
             return matches[0];
         }
-        lv_obj_t* o = nullptr;
+        // lv_obj_find_by_name() returns the first depth-first hit, which on a
+        // screen with stacked overlays is the one in the *bottom* overlay — a
+        // widget the user cannot see. Clicking it looks like a successful no-op.
+        // Collect every match instead and prefer the topmost visible one.
+        std::vector<lv_obj_t*> matches;
         if (lv_obj_t* screen = lv_screen_active()) {
-            o = lv_obj_find_by_name(screen, name.c_str());
+            collect_by_name(screen, name, matches);
         }
-        if (!o) {
-            o = lv_obj_find_by_name(lv_layer_top(), name.c_str());
+        collect_by_name(lv_layer_top(), name, matches);
+        if (matches.empty()) {
+            return nullptr;
         }
-        return o;
+        return topmost_visible(matches);
     }
     return nullptr;
 }
@@ -1070,6 +1181,12 @@ nlohmann::json RemoteControlServer::handle_click(const nlohmann::json& params) {
 
         nlohmann::json result;
         result["clicked"] = target_label(params);
+        // Always report the widget actually hit, and whether anything is
+        // listening. A click on a widget with no handlers is a no-op, and
+        // without this the response is indistinguishable from a real one.
+        result["path"] = path_of(widget);
+        result["handlers"] = lv_obj_get_event_count(widget);
+        result["active_screen"] = active_screen_label();
         if (descended) {
             result["descended_to"] = path_of(descended);
         }
@@ -1205,6 +1322,12 @@ static nlohmann::json describe_one(lv_obj_t* o, const char* name, const std::str
     entry["path"] = path; // unique locator for click/set/scroll (see resolve_path)
     entry["type"] = describe_widget_type(o);
 
+    // Which stacking layer this widget lives in — the path of its top-level
+    // ancestor ("s/19"). Overlays stacked behind the visible one are not
+    // LV_OBJ_FLAG_HIDDEN, so a flat listing gives no way to tell two same-named
+    // widgets apart. Compare against the response's "topmost_layer".
+    entry["layer"] = layer_of(o);
+
     nlohmann::json actions = nlohmann::json::array();
     if (lv_obj_has_flag(o, LV_OBJ_FLAG_CLICKABLE)) {
         actions.push_back("click");
@@ -1311,15 +1434,24 @@ nlohmann::json RemoteControlServer::handle_describe_screen(const nlohmann::json&
                 describe_walk(root, root_path, widgets);
             }
             if (scopes.size() == 1) {
-                return {{"widgets", widgets}, {"scope", scopes[0]}};
+                return {{"widgets", widgets},
+                        {"scope", scopes[0]},
+                        {"topmost_layer", topmost_layer()},
+                        {"active_screen", active_screen_label()}};
             }
-            return {{"widgets", widgets}, {"scope", scopes}, {"matched", scopes.size()}};
+            return {{"widgets", widgets},
+                    {"scope", scopes},
+                    {"matched", scopes.size()},
+                    {"topmost_layer", topmost_layer()},
+                    {"active_screen", active_screen_label()}};
         }
         // Active screen ("s") holds panels + pushed overlays; the top layer ("t")
         // holds modals and their backdrops. Walk both so nothing on screen is missed.
         describe_walk(lv_screen_active(), "s", widgets);
         describe_walk(lv_layer_top(), "t", widgets);
-        return {{"widgets", widgets}};
+        return {{"widgets", widgets},
+                {"topmost_layer", topmost_layer()},
+                {"active_screen", active_screen_label()}};
     });
 }
 

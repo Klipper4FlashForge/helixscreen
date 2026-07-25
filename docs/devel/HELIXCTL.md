@@ -93,6 +93,7 @@ live breadcrumb of the navigation stack, e.g. `controls / motion_panel_0 > `.
 |---------|---------|
 | `navigate`, `cd <target>` | Go to a base panel, or click a named widget to descend into an overlay |
 | `go_back`, `back`, `cd ..` | Pop the current overlay |
+| `help`, `?` | Print the command list (same as `-h`/`--help`) |
 | `current`, `pwd` | Show the current panel + overlay stack |
 | `list_panels` | List the registered base panels (the fixed `PanelId` set) |
 | `wake`, `screensaver` | Reset the idle timer / dismiss the screensaver |
@@ -100,7 +101,7 @@ live breadcrumb of the navigation stack, e.g. `controls / motion_panel_0 > `.
 ### Introspection & widget interaction
 | Command | Meaning |
 |---------|---------|
-| `ls`, `describe_screen` `[target]` | List on-screen widgets: name, `path`, type, available actions. With a target, list only that widget's subtree (plus the widget itself) |
+| `ls`, `describe_screen` `[target]` | List on-screen widgets: name, `path`, `layer`, type, available actions. With a target, list only that widget's subtree (plus the widget itself). The response also carries `topmost_layer` and `active_screen` — compare an entry's `layer` against `topmost_layer` to tell a frontmost widget from one stacked behind it |
 | `list_components` | List **every** registered XML component (live registry): panels, overlays, modals, cards, rows — the full introspectable surface |
 | `list_callbacks` | List every registered event-callback name (overlay/modal open-handlers, button callbacks). Names only — nothing is fired |
 | `click <target>` | Click a widget (also toggles switches/checkboxes) |
@@ -109,9 +110,24 @@ live breadcrumb of the navigation stack, e.g. `controls / motion_panel_0 > `.
 | `geom <target> [depth]` | Measured geometry: position, size, declared-vs-computed size, flex/scroll state |
 | `get_const [scope] <name>` | Resolve an XML `#const` to the value the renderer actually sees |
 
-A **target** is either a widget `name` or an `@path` locator taken from `ls`
-(e.g. `@s/15/1/1/2`). Use `@path` when a name is duplicated on screen (reusable
-components share names — a settings page can have six `toggle`s).
+A **target** is either a widget `name` or a path locator taken from `ls`
+(e.g. `@s/15/1/1/2`, or bare `s/15/1/1/2` — the `@` is optional, since widget
+names never contain `/`). Use a path when a name is duplicated on screen
+(reusable components share names — a settings page can have six `toggle`s).
+
+Name lookup resolves to the **topmost visible** match: hidden subtrees are
+skipped, and among what remains the widget in the frontmost overlay wins
+(the top layer outranks the active screen; later siblings outrank earlier
+ones). Overlays stay in the tree when another is pushed on top of them, so
+without this a name present in both would resolve to the one behind — a click
+that reports success and does nothing.
+
+Mutating responses echo `path` (the widget actually hit), `handlers` (its
+registered event count — `0` means the click cannot do anything), and
+`active_screen` (a `panel > overlay > overlay` breadcrumb). Check
+`active_screen` first when a command appears to do nothing: a first-run wizard
+or an unexpected modal swallows input while every response still reads as
+success.
 
 A full-screen `ls` on a settings page runs to hundreds of entries. Scope it once
 you know the row you want — `ls row_filament_auto_cooldown` returns that row and

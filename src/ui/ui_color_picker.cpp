@@ -8,6 +8,7 @@
 #include "ui_modal.h"
 
 #include "color_utils.h"
+#include "static_subject_registry.h"
 #include "theme_manager.h"
 
 #include <spdlog/spdlog.h>
@@ -43,6 +44,35 @@ namespace helix::ui {
 bool ColorPicker::callbacks_registered_ = false;
 ColorPicker* ColorPicker::active_instance_ = nullptr;
 
+namespace {
+
+// Drives the <if cond="color_picker_palette eq 1"> in color_picker.xml, which
+// builds either the general or the theme preset grid — never both. Process-wide
+// rather than per-instance: only one picker is visible at a time, and the XML
+// name must outlive any individual ColorPicker (the LED overlay holds a static
+// one, the theme editor a unique_ptr).
+lv_subject_t s_palette_subject;
+bool s_palette_subject_ready = false;
+
+void ensure_palette_subject() {
+    if (s_palette_subject_ready) {
+        return;
+    }
+    lv_subject_init_int(&s_palette_subject, static_cast<int>(ColorPicker::Palette::General));
+    lv_xml_register_subject(nullptr, "color_picker_palette", &s_palette_subject);
+    s_palette_subject_ready = true;
+
+    // Self-register cleanup so the subject is torn down before lv_deinit().
+    StaticSubjectRegistry::instance().register_deinit("ColorPickerPalette", []() {
+        if (s_palette_subject_ready) {
+            lv_subject_deinit(&s_palette_subject);
+            s_palette_subject_ready = false;
+        }
+    });
+}
+
+} // namespace
+
 // ============================================================================
 // Construction / Destruction
 // ============================================================================
@@ -58,7 +88,7 @@ ColorPicker::~ColorPicker() {
 }
 
 ColorPicker::ColorPicker(ColorPicker&& other) noexcept
-    : Modal(std::move(other)), selected_color_(other.selected_color_),
+    : Modal(std::move(other)), selected_color_(other.selected_color_), palette_(other.palette_),
       color_callback_(std::move(other.color_callback_)),
       dismiss_callback_(std::move(other.dismiss_callback_)),
       subjects_initialized_(other.subjects_initialized_) {
@@ -77,6 +107,7 @@ ColorPicker& ColorPicker::operator=(ColorPicker&& other) noexcept {
     if (this != &other) {
         Modal::operator=(std::move(other));
         selected_color_ = other.selected_color_;
+        palette_ = other.palette_;
         color_callback_ = std::move(other.color_callback_);
         dismiss_callback_ = std::move(other.dismiss_callback_);
         subjects_initialized_ = other.subjects_initialized_;
@@ -102,6 +133,10 @@ void ColorPicker::set_dismiss_callback(std::function<void()> callback) {
     dismiss_callback_ = std::move(callback);
 }
 
+void ColorPicker::set_palette(Palette palette) {
+    palette_ = palette;
+}
+
 bool ColorPicker::show_with_color(lv_obj_t* parent, uint32_t initial_color) {
     // Register callbacks once (idempotent)
     register_callbacks();
@@ -111,6 +146,11 @@ bool ColorPicker::show_with_color(lv_obj_t* parent, uint32_t initial_color) {
 
     // Set initial color before showing
     selected_color_ = initial_color;
+
+    // Select the preset grid BEFORE Modal::show() builds the tree — the <if>
+    // in color_picker.xml reads this subject as it constructs the view.
+    ensure_palette_subject();
+    lv_subject_set_int(&s_palette_subject, static_cast<int>(palette_));
 
     // Show the modal via Modal
     if (!Modal::show(parent)) {

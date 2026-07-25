@@ -435,6 +435,28 @@ echo "native" > "$WORKTREE_PATH/build/.build-target"
 touch "$WORKTREE_PATH/.fonts.stamp"
 echo -e "${GREEN}✓ Build markers created${RESET}"
 
+# Step 9c: Seed runtime config from the main tree
+#
+# config/settings.json is gitignored, so a fresh worktree has none and the app
+# boots straight into the first-run wizard — every ctl navigate/click then lands
+# on a screen that isn't there. Copy (never symlink) the main tree's settings so
+# the worktree starts on the home panel: a symlink would let a worktree run
+# mutate the main tree's config, and worktrees exist to be disposable.
+echo -e "${CYAN}Seeding runtime config...${RESET}"
+for cfg in settings.json printer_database.json; do
+    MAIN_CFG="$MAIN_TREE/config/$cfg"
+    WORKTREE_CFG="$WORKTREE_PATH/config/$cfg"
+    if [[ ! -f "$MAIN_CFG" ]]; then
+        echo -e "  $cfg: ${YELLOW}not in main tree (skipping)${RESET}"
+    elif [[ -e "$WORKTREE_CFG" ]]; then
+        echo -e "  $cfg: ${GREEN}already present${RESET}"
+    else
+        mkdir -p "$WORKTREE_PATH/config"
+        cp "$MAIN_CFG" "$WORKTREE_CFG"
+        echo -e "  $cfg: ${GREEN}copied from main tree${RESET}"
+    fi
+done
+
 # Step 9b: Configure ccache for cross-worktree reuse
 #
 # The native build compiles with -g (debug info). With ccache's default

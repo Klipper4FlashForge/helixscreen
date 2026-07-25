@@ -39,7 +39,7 @@
          needs a definite height for its flex_grow list to have slack — #1128).
          = swatch grid (5 rows) + the 28px "Color ▣ ✎" header + one space_xs gap.
          KEEP IN SYNC with the swatch/gap ladder in
-         register_color_swatch_grid_constants() (src/xml_registration.cpp):
+         register_swatch_grid_constants() (src/xml_registration.cpp):
            micro 24px/6gap, tiny+small 28/8, medium+ 32/8. -->
     <px name="swatch_col_height_micro" value="174"/>
     <px name="swatch_col_height_tiny" value="202"/>
