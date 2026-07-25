@@ -1,5 +1,9 @@
 #!/usr/bin/env bats
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
 # CLI-level smoke coverage for `helix-screen ctl --json`.
+
+bats_require_minimum_version 1.5.0
 
 BIN="./build/bin/helix-screen"
 
@@ -19,6 +23,7 @@ setup_file() {
     done
     echo "app never became responsive; log:" >&2
     tail -20 "$APP_LOG" >&2
+    kill "$(cat "${BATS_FILE_TMPDIR}/app.pid")" 2>/dev/null || true
     return 1
 }
 
