@@ -263,14 +263,27 @@ class MoonrakerManager {
      * @return true if the pre-print phase should be marked COMPLETE
      */
     static inline bool should_complete_preprint(bool printer_reports_layers, int current_layer,
-                                                int print_duration, bool seen_layer_zero) {
+                                                int print_duration, bool seen_layer_zero,
+                                                bool layer_advanced = false) {
         if (printer_reports_layers) {
-            // Authoritative: only a genuine 0 -> >=1 transition within this
-            // print ends Preparing. seen_layer_zero rejects a stale positive
+            // Authoritative: layer data proven to belong to THIS print, plus a
+            // layer >= 1. Two ways to prove it, because either alone hangs:
+            //
+            //  - seen_layer_zero: a genuine 0 -> >=1 edge.
+            //  - layer_advanced: the counter moved while we were collecting.
+            //
+            // Both reject the case the guard exists for — a stale positive
             // carried over from the previous print before reset_for_new_print()
-            // has zeroed the subject. The print_duration fallback is NEVER used
-            // for a layer-reporting printer — that was the U1 regression.
-            return seen_layer_zero && current_layer >= 1;
+            // zeroes the subject — because a stale value is static and is never
+            // preceded by a zero. Requiring the zero edge *alone* was a hang:
+            // notify_status_update is coalesced, so a fast first layer or a
+            // reconnect part-way in can make the first observed sample >= 1,
+            // after which nothing ever completes the pre-print phase and the
+            // overlay covers the whole print.
+            //
+            // The print_duration fallback is NEVER used for a layer-reporting
+            // printer — that was the U1 regression.
+            return (seen_layer_zero || layer_advanced) && current_layer >= 1;
         }
         // Printer never reported a layer field — fall back to the old
         // first-extrusion signal so genuine non-reporters still complete.

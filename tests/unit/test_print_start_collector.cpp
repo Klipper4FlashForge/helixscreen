@@ -2730,3 +2730,29 @@ TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
         REQUIRE(PrintStartCollectorTestAccess::get_mesh_probe_total(collector()) == 16);
     }
 }
+
+TEST_CASE_METHOD(PrintStartCollectorHeaterFixture,
+                 "PrintStartCollector - layer advance latch", "[print_start][regression]") {
+    // The pre-print phase can only end once layer data is proven to belong to
+    // THIS print. A zero sample proves it, but is not guaranteed to arrive —
+    // notify_status_update is coalesced. The advance latch is the second route;
+    // it must not fire on a stale positive carried over from a previous print,
+    // which is static by definition.
+    SECTION("repeated stale value never arms the latch") {
+        for (int i = 0; i < 5; ++i) {
+            collector().note_current_layer(97);
+        }
+        CHECK_FALSE(collector().has_seen_layer_advance());
+        CHECK_FALSE(collector().has_seen_layer_zero());
+    }
+    SECTION("an increase arms it") {
+        collector().note_current_layer(3);
+        CHECK_FALSE(collector().has_seen_layer_advance());
+        collector().note_current_layer(8);
+        CHECK(collector().has_seen_layer_advance());
+    }
+    SECTION("a zero sample arms the original latch") {
+        collector().note_current_layer(0);
+        CHECK(collector().has_seen_layer_zero());
+    }
+}
