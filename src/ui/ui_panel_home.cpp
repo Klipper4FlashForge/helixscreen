@@ -721,11 +721,7 @@ void HomePanel::finalize_setup() {
     spdlog::debug("[{}] Finalize complete", get_name());
 }
 
-bool HomePanel::rebuild() {
-    if (!PanelBase::rebuild()) {
-        return false;
-    }
-
+void HomePanel::repopulate() {
     // setup() only stores the new panel pointer — the carousel, the widget grid
     // and every PanelWidget attachment are built by finalize_setup(). Its
     // one-shot guard already fired during startup, so clear it and re-run the
@@ -734,7 +730,6 @@ bool HomePanel::rebuild() {
     // the old tree, which crashes as soon as an observer fires on them.
     finalized_ = false;
     finalize_setup();
-    return true;
 }
 
 void HomePanel::on_activate() {

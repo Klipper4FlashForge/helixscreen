@@ -63,6 +63,28 @@ class IPanelLifecycle {
     }
 
     /**
+     * @brief Re-apply C++-side content to a freshly rebuilt widget tree
+     *
+     * rebuild() re-runs setup()/create() and nothing else, so it reproduces
+     * exactly what the XML describes. Content a view writes into its widgets
+     * afterwards is not in the XML and does not come back on its own: dropdown
+     * option lists, imperatively built rows, text set with lv_textarea_set_text,
+     * colors applied to a swatch. Views that populate from a separate entry
+     * point — a show_for_*(), a click handler — override this to re-apply that
+     * content from the state they already hold, and must not re-seed that state
+     * (doing so would discard the user's in-progress edits).
+     *
+     * Nothing is needed here for content bound to a subject: the rebuilt widgets
+     * read the subject's current value when they bind. Nothing is needed either
+     * for content populated inside create()/setup() or on_activate(), both of
+     * which rebuild() already re-runs.
+     *
+     * Called after the new tree exists and before on_activate(). Dev-only path,
+     * reached only via XML hot-reload.
+     */
+    virtual void repopulate() {}
+
+    /**
      * @brief Get human-readable name for logging
      * @return Panel/overlay name (e.g., "Motion Panel", "Network Settings")
      */
