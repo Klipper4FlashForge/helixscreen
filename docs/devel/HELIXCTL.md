@@ -107,8 +107,56 @@ live breadcrumb of the navigation stack, e.g. `controls / motion_panel_0 > `.
 | `click <target>` | Click a widget (also toggles switches/checkboxes) |
 | `set_value <target> <v>` | Set a value (slider, switch, dropdown, textarea) |
 | `scroll <target> [dx dy]` | Scroll a widget into view, or by a delta |
+| `focus <target>` | Focus a widget through its input group. Fires the real `LV_EVENT_FOCUSED`, so a registered textarea raises the on-screen keyboard — `click` does not, and leaves it hidden. Fails if the widget is not in an input group |
 | `geom <target> [depth]` | Measured geometry: position, size, declared-vs-computed size, flex/scroll state |
 | `get_const [scope] <name>` | Resolve an XML `#const` to the value the renderer actually sees |
+
+### Synthetic pointer — testing gestures
+
+`click` is `lv_obj_send_event(obj, LV_EVENT_CLICKED)`: a widget-level event with no
+input device and no coordinates behind it. That is right for "press this button",
+but it cannot exercise anything gestural. Code that reads `lv_indev_active()` or
+`lv_indev_get_point()` sees nothing, long-press timers never start, and LVGL's
+scroll-versus-click arbitration never runs.
+
+These commands drive a second, `ctl`-owned pointer device through **LVGL's real
+input pipeline**, so gestures behave exactly as they do under a finger.
+
+| Command | Meaning |
+|---------|---------|
+| `press <x> <y>` | Put the pointer down at screen coordinates x,y |
+| `move <x> <y>` | Move it — a drag while pressed, a hover while released |
+| `release [x y]` | Lift it, at x,y if given, otherwise where it currently is |
+
+Each command returns only after LVGL has sampled the device twice, so sequences do
+not race the indev timer. Timing that matters to the gesture is yours to control
+from the shell:
+
+```bash
+# Long-press a key and lift in place
+helix-screen ctl press 100 300
+sleep 0.6                       # exceed the long-press threshold
+helix-screen ctl release
+
+# Long-press, then slide onto the popover above it before lifting
+helix-screen ctl press 100 300
+sleep 0.6
+helix-screen ctl move 100 260
+helix-screen ctl release
+
+# Drag to scroll a list, proving a tap does NOT fire mid-scroll
+helix-screen ctl press 400 200
+helix-screen ctl move 400 160
+helix-screen ctl move 400 120
+helix-screen ctl release
+```
+
+Get coordinates from `geom <target>` — it reports each widget's absolute `x`, `y`,
+`w` and `h`, so aim at a rect's centre rather than guessing.
+
+The device is created lazily on the first pointer command and coexists with the
+real SDL/evdev pointer; LVGL supports multiple pointer indevs. Instances that never
+receive a pointer command never register it.
 
 A **target** is either a widget `name` or a path locator taken from `ls`
 (e.g. `@s/15/1/1/2`, or bare `s/15/1/1/2` — the `@` is optional, since widget

@@ -79,6 +79,14 @@ static void print_usage() {
     printf("                          row, descends to the control inside it.\n");
     printf("  set_value <target> <v>  Set value (slider, switch, dropdown, textarea)\n");
     printf("  scroll <target> [dx dy] Scroll into view, or by a delta\n");
+    printf("  focus <target>          Focus a widget through its input group. Raises the\n");
+    printf("                          on-screen keyboard for a textarea (click does not).\n");
+    printf("\nSynthetic pointer (drives LVGL's real input pipeline — gestures, long-press,\n");
+    printf("scroll-vs-tap — unlike `click`, which sends a bare widget event):\n");
+    printf("  press <x> <y>           Put the pointer down at x,y\n");
+    printf("  move <x> <y>            Move it (a drag while pressed, a hover while not)\n");
+    printf("  release [x y]           Lift it, at x,y if given, else where it is\n");
+    printf("                          e.g. long-press: press 100 300; sleep 0.6; release\n");
     printf("\nDiagnostics & lifecycle:\n");
     printf("  log [-n N]              Tail the app's in-memory log ring (default 50 lines)\n");
     printf("  shutdown, quit          Ask the running app to exit\n");
@@ -396,6 +404,29 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
             return {};
         }
         return build_request("click", target_param(tokens[1]));
+    } else if (cmd == "focus") {
+        if (tokens.size() < 2) {
+            fprintf(stderr, "Error: focus requires a widget name or @path\n");
+            return {};
+        }
+        return build_request("focus", target_param(tokens[1]));
+    } else if (cmd == "press" || cmd == "move") {
+        if (tokens.size() < 3) {
+            fprintf(stderr, "Error: %s requires x and y coordinates\n", cmd.c_str());
+            return {};
+        }
+        nlohmann::json params;
+        params["x"] = std::atoi(tokens[1].c_str());
+        params["y"] = std::atoi(tokens[2].c_str());
+        return build_request(cmd == "press" ? "pointer_press" : "pointer_move", params);
+    } else if (cmd == "release") {
+        nlohmann::json params;
+        // Optional coordinates; without them the pointer lifts where it already is.
+        if (tokens.size() >= 3) {
+            params["x"] = std::atoi(tokens[1].c_str());
+            params["y"] = std::atoi(tokens[2].c_str());
+        }
+        return build_request("pointer_release", params);
     } else if (cmd == "set_value") {
         if (tokens.size() < 3) {
             fprintf(stderr, "Error: set_value requires a widget name/@path and value\n");
@@ -474,6 +505,7 @@ static const char* REPL_COMMANDS[] = {
     "list_panels", "list_components", "list_callbacks", "current",  "pwd",       "screenshot",
     "status",      "wake",       "demo",       "get",       "set",       "list_subjects",
     "wait_for",    "ls",         "describe_screen", "click",  "set_value",
+    "focus",       "press",      "move",            "release",
     "scroll",      "scenario",   "list_scenarios",  "help",   "refresh",
     "log",         "shutdown",   "geom",       "get_const", "quit",
     "exit",        nullptr};

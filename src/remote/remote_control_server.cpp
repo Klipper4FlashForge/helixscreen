@@ -4,6 +4,8 @@
 #include "remote_control_server.h"
 
 #include "panel_factory.h"
+#include "remote_pointer.h"
+#include "ui_keyboard_manager.h"
 #include "ui_nav_manager.h"
 #include "ui_update_queue.h"
 
@@ -24,11 +26,13 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <condition_variable>
 #include <cstring>
 #include <future>
 #include <mutex>
 #include <optional>
+#include <thread>
 #include <vector>
 
 #include "http_transport.h"
@@ -286,6 +290,12 @@ void RemoteControlServer::register_builtin_handlers() {
         return handle_describe_screen(p);
     };
     handlers_["scroll"] = [this](const nlohmann::json& p) { return handle_scroll(p); };
+    handlers_["focus"] = [this](const nlohmann::json& p) { return handle_focus(p); };
+    handlers_["pointer_press"] = [this](const nlohmann::json& p) { return handle_pointer_press(p); };
+    handlers_["pointer_move"] = [this](const nlohmann::json& p) { return handle_pointer_move(p); };
+    handlers_["pointer_release"] = [this](const nlohmann::json& p) {
+        return handle_pointer_release(p);
+    };
     handlers_["geom"] = [this](const nlohmann::json& p) { return handle_geom(p); };
     handlers_["get_const"] = [this](const nlohmann::json& p) { return handle_get_const(p); };
     handlers_["wake"] = [this](const nlohmann::json& p) { return handle_wake(p); };
@@ -1453,6 +1463,99 @@ nlohmann::json RemoteControlServer::handle_describe_screen(const nlohmann::json&
                 {"topmost_layer", topmost_layer()},
                 {"active_screen", active_screen_label()}};
     });
+}
+
+nlohmann::json RemoteControlServer::handle_focus(const nlohmann::json& params) {
+    if (!params.contains("name") && !params.contains("path")) {
+        throw std::invalid_argument("Missing required parameter: name or path");
+    }
+
+    return execute_on_ui_thread([params]() -> nlohmann::json {
+        wake_display();
+        lv_obj_t* obj = resolve_widget(params);
+        if (!obj) {
+            throw std::invalid_argument("Widget not found: " + target_label(params));
+        }
+
+        // Focus through the group rather than by sending LV_EVENT_FOCUSED directly,
+        // so the production path runs: the group defocuses whatever held focus, and
+        // KeyboardManager's LV_EVENT_FOCUSED handler raises the on-screen keyboard
+        // for a registered textarea. A synthesized CLICKED never triggers any of it,
+        // which is why `ctl click <textarea>` leaves the keyboard hidden.
+        lv_group_t* group = lv_obj_get_group(obj);
+        if (!group) {
+            throw std::invalid_argument("Widget is not in an input group (not focusable): " +
+                                        target_label(params));
+        }
+        lv_group_focus_obj(obj);
+
+        return {{"focused", target_label(params)},
+                {"keyboard_visible", KeyboardManager::instance().is_visible()},
+                {"active_screen", active_screen_label()}};
+    });
+}
+
+nlohmann::json RemoteControlServer::apply_pointer_state(int32_t x, int32_t y, bool pressed,
+                                                        const char* what) {
+    uint64_t baseline = 0;
+
+    nlohmann::json result = execute_on_ui_thread([&baseline, x, y, pressed]() -> nlohmann::json {
+        wake_display();
+        auto& pointer = helix::remote::RemotePointer::instance();
+        if (!pointer.ensure_created()) {
+            throw std::runtime_error("No display available for the synthetic pointer");
+        }
+        pointer.set_state(x, y, pressed);
+        baseline = pointer.read_count();
+        return {{"x", x}, {"y", y}, {"pressed", pressed}};
+    });
+
+    // Indevs are sampled on a timer, so the state above is not visible to LVGL yet.
+    // Wait for two reads: the first delivers the new state, the second lets LVGL's
+    // press/release state machine act on it before the next command lands. Without
+    // this, a fast press-then-release sequence can be coalesced into a single sample
+    // and the press is never seen at all.
+    auto& pointer = helix::remote::RemotePointer::instance();
+    const uint64_t target = baseline + 2;
+    for (int i = 0; i < 400; ++i) { // 400 * 5ms = 2s
+        if (pointer.read_count() >= target) {
+            result["what"] = what;
+            result["reads"] = pointer.read_count();
+            return result;
+        }
+        if (!running_.load()) {
+            throw std::runtime_error("remote server shutting down");
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    throw std::runtime_error("Timed out waiting for the synthetic pointer to be sampled");
+}
+
+nlohmann::json RemoteControlServer::handle_pointer_press(const nlohmann::json& params) {
+    if (!params.contains("x") || !params.contains("y")) {
+        throw std::invalid_argument("Missing required parameters: x and y");
+    }
+    return apply_pointer_state(params["x"].get<int32_t>(), params["y"].get<int32_t>(), true,
+                               "press");
+}
+
+nlohmann::json RemoteControlServer::handle_pointer_move(const nlohmann::json& params) {
+    if (!params.contains("x") || !params.contains("y")) {
+        throw std::invalid_argument("Missing required parameters: x and y");
+    }
+    // Keeps the current button state, so this is a drag while pressed and a hover
+    // while released.
+    return apply_pointer_state(params["x"].get<int32_t>(), params["y"].get<int32_t>(),
+                               helix::remote::RemotePointer::instance().pressed(), "move");
+}
+
+nlohmann::json RemoteControlServer::handle_pointer_release(const nlohmann::json& params) {
+    auto& pointer = helix::remote::RemotePointer::instance();
+    // Release where the pointer already is unless told otherwise — the common case
+    // is lifting after a drag, and repeating the coordinates is noise.
+    const int32_t x = params.contains("x") ? params["x"].get<int32_t>() : pointer.x();
+    const int32_t y = params.contains("y") ? params["y"].get<int32_t>() : pointer.y();
+    return apply_pointer_state(x, y, false, "release");
 }
 
 nlohmann::json RemoteControlServer::handle_scroll(const nlohmann::json& params) {
