@@ -56,11 +56,30 @@ Determinism therefore has two independent halves.
 
 One `freeze` command combining:
 
-- `lv_timer_enable(false)` (`lib/lvgl/src/misc/lv_timer.h:164`) — note this is separate from
-  animations; the codebase has 85 `lv_timer_create` sites driving periodic repaints.
-- `animations_enabled = 0` — an existing setting with a subject, already honored at 51 call
-  sites, so this half may need no new code beyond wiring the command.
+- `lv_anim_delete_all()` to stop animations already running.
+- `animations_enabled = 0` (`DisplaySettingsManager`) to prevent new ones — an existing
+  setting with a subject, already honored at 51 call sites, so this half needs no new code
+  beyond wiring the command.
+- Pausing periodic timers individually, **with a skip list** (see below); the codebase has 85
+  `lv_timer_create` sites driving repaints.
 - Pinning the simulated clock.
+
+**The global `lv_timer_enable(false)` is not usable here, despite being the obvious lever.**
+`UpdateQueue`'s processor is itself an `lv_timer` (`ui_update_queue.h:108`), and
+`RemoteControlServer::execute_on_ui_thread` dispatches every handler through
+`helix::ui::queue_update`. Disabling timers globally therefore stops the update queue, and
+every subsequent ctl command — `unfreeze` included — blocks for the 10s UI-thread timeout and
+throws. Freeze would brick the control channel it was issued over.
+
+Timers are instead paused individually by walking `lv_timer_get_next(NULL)` and calling
+`lv_timer_pause()` on each, skipping exactly two:
+
+1. `UpdateQueue`'s processor, or the control server cannot dispatch.
+2. The display refresh timer (`lv_display_get_refr_timer()`), or nothing renders and the
+   frame-hash gate never observes a new frame.
+
+`unfreeze` resumes the set it paused, tracked as a vector of `lv_timer_t*` on the server so it
+never resumes a timer it did not pause.
 
 `unfreeze` reverses it. A launch flag is deliberately not added; if boot-time nondeterminism
 proves to be a problem in practice, one can follow.
@@ -111,7 +130,7 @@ exposed as `screenshot --stable`.
 |---|---|
 | `--json` | One-shot client flag. Emits the raw JSON-RPC `result` as one line on stdout, nothing else. Errors go to stderr as the `error` object and the process exits non-zero, so `set -e` and `subprocess.run(check=True)` both work without inspecting the payload. Ignored by the REPL. |
 | `wait_idle [--timeout N]` | Structural quiescence, above. |
-| `freeze` / `unfreeze` | Determinism toggle, above. |
+| `freeze` / `unfreeze` | Determinism toggle, above. Note the skip list — a naive global timer disable deadlocks the control channel. |
 | `screenshot --stable [--target <w>]` | Frame-hash gate folded into capture. `--target` crops to a widget's bounding box. |
 | `text <target>` | Read a label's text. Currently impossible — `ls` entries carry `name`, `path`, `layer`, `type`, `actions`, and `value` for switches/sliders/dropdowns/textareas (`remote_control_server.cpp:1364-1375`), but the only text extraction anywhere in the server is `lv_textarea_get_text` at line 1359. |
 | `reset` | Pop all overlays, dismiss modals and toasts, return to home. |
