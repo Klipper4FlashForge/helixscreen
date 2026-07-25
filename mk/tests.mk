@@ -25,6 +25,12 @@ TIMEOUT_CMD := $(shell command -v timeout 2>/dev/null || command -v gtimeout 2>/
 # Must be generous: some shards with threading tests take 60-90s under load.
 SHARD_TIMEOUT := 300
 
+# Where per-shard logs land. Kept (not deleted) whenever a shard fails, crashes,
+# or times out, so there is something to read afterwards — see diagnose_shards.
+# Override to collect artifacts elsewhere, e.g. SHARD_ARTIFACT_ROOT=$(PWD)/build
+# in CI so the logs are inside the workspace and get uploaded.
+SHARD_ARTIFACT_ROOT ?= /tmp
+
 # Run tests in parallel using Catch2 sharding
 # Args: $(1) = test filter (e.g., "~[.] ~[slow]")
 # Collects PIDs and waits for all, failing if any shard fails
@@ -34,7 +40,7 @@ SHARD_TIMEOUT := 300
 # Output is prefixed with [shard N] for clarity
 define run_tests_parallel
 	echo "$(CYAN)Running $(NPROCS) test shards in parallel (timeout=$(SHARD_TIMEOUT)s)...$(RESET)"; \
-	shard_dir=$$(mktemp -d); \
+	shard_dir=$$(mktemp -d "$(SHARD_ARTIFACT_ROOT)/helix-shards-XXXXXX"); \
 	pids=""; \
 	for i in $$(seq 0 $$(($(NPROCS)-1))); do \
 		(echo "=== shard $$i/$(NPROCS) host=$$(hostname) nproc=$$(nproc 2>/dev/null || echo '?') git=$$(git rev-parse --short HEAD 2>/dev/null || echo unknown) ts=$$(date -Iseconds) order=decl seed=0"; $(if $(TIMEOUT_CMD),$(TIMEOUT_CMD) $(SHARD_TIMEOUT)) $(TEST_BIN) $(1) --shard-count $(NPROCS) --shard-index $$i 2>&1; echo $$? > "$$shard_dir/$$i.exit") | \
@@ -45,31 +51,86 @@ define run_tests_parallel
 		wait $$pid 2>/dev/null || true; \
 	done; \
 	failed=0; \
+	suspect=""; \
 	for i in $$(seq 0 $$(($(NPROCS)-1))); do \
 		if [ ! -f "$$shard_dir/$$i.exit" ]; then \
 			echo "$(RED)$(BOLD)✗ Shard $$i timed out after $(SHARD_TIMEOUT)s!$(RESET)"; \
-			failed=1; \
+			failed=1; suspect="$$suspect $$i"; \
 		else \
 			ec=$$(cat "$$shard_dir/$$i.exit" 2>/dev/null | tr -d '[:space:]'); \
 			if [ "$$ec" != "0" ] 2>/dev/null; then \
 				if grep -q "test cases.*|.*failed" "$$shard_dir/$$i.log" 2>/dev/null; then \
 					echo "$(RED)$(BOLD)✗ Shard $$i had test failures (exit $$ec)$(RESET)"; \
-					failed=1; \
+					failed=1; suspect="$$suspect $$i"; \
 				elif [ "$$ec" -gt 128 ] 2>/dev/null; then \
 					sig=$$((ec - 128)); \
-					echo "$(YELLOW)⚠ Shard $$i crashed during teardown (signal $$sig) — tests passed$(RESET)"; \
+					echo "$(YELLOW)⚠ Shard $$i crashed after its assertions passed (signal $$sig)$(RESET)"; \
+					suspect="$$suspect $$i"; \
 				else \
 					echo "$(RED)$(BOLD)✗ Shard $$i failed (exit $$ec)$(RESET)"; \
-					failed=1; \
+					failed=1; suspect="$$suspect $$i"; \
 				fi; \
 			fi; \
 		fi; \
 	done; \
-	rm -rf "$$shard_dir"; \
+	if [ -n "$$suspect" ]; then \
+		$(call diagnose_shards,$$shard_dir,$$suspect,$(1)); \
+	else \
+		rm -rf "$$shard_dir"; \
+	fi; \
 	if [ $$failed -eq 1 ]; then \
 		echo "$(RED)$(BOLD)✗ One or more test shards failed!$(RESET)"; \
 		exit 1; \
 	fi
+endef
+
+# Post-mortem for shards that failed, crashed, or timed out.
+#
+# Exists because the harness used to delete its scratch dir unconditionally: a
+# shard could abort *after* every assertion passed and leave nothing to read,
+# so "is this my diff or a flake?" cost a manual re-run cycle every time. Now
+# the evidence survives and the question is answered inline.
+#
+# For each suspect shard: keep its log, name the tests it ran, and re-run it
+# alone. A shard that is green in isolation but red under a full parallel run
+# is a load/timing flake, not a fault in the diff under review — and adding or
+# removing ANY test reshuffles Catch2's shard composition, so the shard number
+# moving between runs is not evidence either.
+#
+# Args: $(1) = shard dir, $(2) = space-separated shard indices, $(3) = filter
+define diagnose_shards
+	echo ""; \
+	echo "$(CYAN)$(BOLD)── shard diagnostics ──$(RESET)"; \
+	echo "$(CYAN)logs preserved: $(1)$(RESET)"; \
+	for s in $(2); do \
+		echo ""; \
+		echo "$(BOLD)shard $$s$(RESET)"; \
+		$(TEST_BIN) $(3) --shard-count $(NPROCS) --shard-index $$s --list-tests 2>/dev/null \
+			| grep -E '^  ' | sed 's/^  //' > "$(1)/$$s.tests" 2>/dev/null || true; \
+		n=$$(wc -l < "$(1)/$$s.tests" 2>/dev/null | tr -d ' '); \
+		echo "  ran $${n:-?} test case(s) → $(1)/$$s.tests"; \
+		fails=$$(grep -oE '^[A-Za-z0-9_/.-]+\.cpp:[0-9]+: FAILED' "$(1)/$$s.log" 2>/dev/null \
+			| sed 's/: FAILED$$//' | sort -u | tr '\n' ' '); \
+		if [ -n "$$fails" ]; then \
+			echo "  failing assertion(s): $$fails"; \
+		else \
+			echo "  no FAILED marker — died after its assertions passed (teardown/static dtor)"; \
+		fi; \
+		printf '  reproduce: %s %s --shard-count %s --shard-index %s\n' \
+			"$(TEST_BIN)" '$(3)' "$(NPROCS)" "$$s"; \
+		echo "  $(CYAN)re-running alone…$(RESET)"; \
+		if $(if $(TIMEOUT_CMD),$(TIMEOUT_CMD) $(SHARD_TIMEOUT)) $(TEST_BIN) $(3) \
+				--shard-count $(NPROCS) --shard-index $$s > "$(1)/$$s.retry.log" 2>&1; then \
+			echo "  $(YELLOW)→ passed in isolation: load/timing FLAKE, not the diff$(RESET)"; \
+			echo "     (shard composition shifts whenever tests are added or removed)"; \
+		else \
+			rc=$$?; \
+			echo "  $(RED)$(BOLD)→ REPRODUCED alone (exit $$rc): a real fault, not a flake$(RESET)"; \
+			echo "     retry log: $(1)/$$s.retry.log"; \
+			tail -25 "$(1)/$$s.retry.log" | sed 's/^/     | /'; \
+		fi; \
+	done; \
+	echo ""
 endef
 
 # Report the result of the immediately-preceding test command, timing it and
@@ -206,8 +267,34 @@ clean-tests:
 	$(ECHO) "$(GREEN)✓ Test artifacts cleaned$(RESET)"
 
 # Build tests — delegates to $(TEST_BIN) which handles -j detection via Phase 1
-test-build: $(TEST_BIN)
+test-build: prune-orphan-test-objs $(TEST_BIN)
 	@true
+
+# Delete object files whose test source no longer exists, and drop the binary so
+# it relinks without them.
+#
+# Deleting a test .cpp does NOT make $(TEST_BIN) out of date — the removed file
+# is simply absent from the prerequisite list, nothing the binary depends on got
+# newer, so make skips the link and the stale .o keeps its tests in the binary.
+# The deleted tests then keep running (and can keep failing) with no source to
+# read, which is deeply confusing. Cheap to check, so do it every build.
+.PHONY: prune-orphan-test-objs
+prune-orphan-test-objs:
+	@orphans=""; \
+	for obj in $(OBJ_DIR)/tests/test_*.o $(OBJ_DIR)/tests/application/test_*.o; do \
+		[ -f "$$obj" ] || continue; \
+		base=$$(basename "$$obj"); \
+		case "$$base" in \
+			test_main.o|test_fixtures.o) continue;; \
+		esac; \
+		src=$$(echo "$$obj" | sed 's|$(OBJ_DIR)/tests/|$(TEST_UNIT_DIR)/|; s|\.o$$|.cpp|'); \
+		[ -f "$$src" ] || orphans="$$orphans $$obj"; \
+	done; \
+	if [ -n "$$orphans" ]; then \
+		echo "$(YELLOW)Pruning orphaned test objects (source deleted):$(RESET)"; \
+		for o in $$orphans; do echo "  $$(basename $$o)"; rm -f "$$o"; done; \
+		rm -f $(TEST_BIN); \
+	fi
 
 # ============================================================================
 # Main Test Targets

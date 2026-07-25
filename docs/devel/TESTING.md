@@ -159,6 +159,39 @@ wait
 
 Use `make test-serial` when debugging failures or reading output.
 
+### When a shard fails, crashes, or times out
+
+The harness diagnoses it for you instead of leaving you to re-run by hand. For
+each suspect shard it prints:
+
+```
+── shard diagnostics ──
+logs preserved: /tmp/helix-shards-TINI6P
+
+shard 95
+  ran 194 test case(s) → /tmp/helix-shards-TINI6P/95.tests
+  failing assertion(s): tests/unit/test_foo.cpp:27
+  reproduce: build/bin/helix-tests "~[.] ~[slow]" --shard-count 96 --shard-index 95
+  re-running alone…
+  → REPRODUCED alone (exit 1): a real fault, not a flake
+```
+
+- **Logs are kept** (`$SHARD_ARTIFACT_ROOT`, default `/tmp`) whenever anything
+  goes wrong, and deleted only on a fully clean run. `<n>.log` is the shard's
+  output, `<n>.tests` the test cases it ran, `<n>.retry.log` the isolation re-run.
+  Set `SHARD_ARTIFACT_ROOT=$(PWD)/build` in CI to collect them as artifacts.
+- **Each suspect shard is re-run alone.** Green in isolation but red under the
+  full parallel run means a load/timing flake, not a fault in the diff under
+  review. Red both times is real.
+- **A shard that dies with no `FAILED` marker** crashed *after* its assertions
+  passed — a teardown or static-destructor fault. It is reported as a warning
+  and does not fail the run, but the log survives so it can be investigated.
+
+> **Shard numbers are not stable.** Catch2 distributes test cases across shards
+> by position, so adding or removing *any* test reshuffles every shard's
+> contents. A failure moving from shard 51 to shard 85 between runs is not
+> evidence that your change caused it — the isolation re-run is.
+
 ---
 
 ## Excluded Tests Breakdown
