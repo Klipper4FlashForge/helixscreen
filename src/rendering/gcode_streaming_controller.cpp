@@ -10,7 +10,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
-#include <sstream>
+#include <cstring>
 #include <thread>
 
 namespace helix {
@@ -646,11 +646,36 @@ std::vector<ToolpathSegment> GCodeStreamingController::load_layer(size_t layer_i
     // prologue (purge under ;TYPE:Custom) get tagged Unknown and the bbox
     // filter in auto_fit can't exclude them from the viewport.
     parser.set_initial_feature_type(entry.start_feature_type);
-    std::istringstream stream(std::string(bytes.begin(), bytes.end()));
-    std::string line;
+    // Seed with the M82/M83 extrusion mode and running E value. Without this a
+    // fresh parser assumes absolute E and reads relative deltas as absolute
+    // positions, so its computed delta is the difference between consecutive
+    // deltas. Spiral-vase G-code repeats one E value for the whole spiral, which
+    // makes that difference exactly zero and classifies the entire model as
+    // travel (#1127); ordinary G-code just loses most of its extrusion flags.
+    parser.set_initial_extrusion_mode(entry.is_absolute_extrusion(), entry.start_e);
+    // Seed layer-marker mode. `;LAYER_CHANGE` lives at the end of the *previous*
+    // layer's byte range, so a chunk parse never sees one and would fall back to
+    // legacy "every Z change starts a layer" splitting — one Layer object per
+    // move for vase-mode G-code.
+    parser.set_use_layer_markers(index_.uses_layer_markers());
 
-    while (std::getline(stream, line)) {
+    // Walk lines directly out of the byte buffer into a reused scratch string. Feeding an
+    // istringstream instead would hold three copies of the layer bytes simultaneously
+    // (vector + temporary std::string + the stream's internal buffer).
+    // Line splitting matches std::getline: '\n' terminated and excluded, any trailing '\r'
+    // left on the line for the parser to trim, final line without a newline still parsed.
+    const char* data = reinterpret_cast<const char*>(bytes.data());
+    const size_t byte_count = bytes.size();
+    std::string line;
+    size_t pos = 0;
+
+    while (pos < byte_count) {
+        const void* nl = std::memchr(data + pos, '\n', byte_count - pos);
+        size_t line_end =
+            nl ? static_cast<size_t>(static_cast<const char*>(nl) - data) : byte_count;
+        line.assign(data + pos, line_end - pos);
         parser.parse_line(line);
+        pos = nl ? line_end + 1 : byte_count;
     }
 
     // Get parsed result
@@ -672,9 +697,14 @@ std::vector<ToolpathSegment> GCodeStreamingController::load_layer(size_t layer_i
     }
 
     // Collect all segments from all parsed layers
-    // (usually just one layer, but parser may split on Z changes)
-    for (const auto& layer : result.layers) {
-        segments.insert(segments.end(), layer.segments.begin(), layer.segments.end());
+    // (usually just one layer, but parser may split on Z changes).
+    // `result` dies with this call, so steal the single-layer vector rather than copying it.
+    if (result.layers.size() == 1) {
+        segments = std::move(result.layers[0].segments);
+    } else {
+        for (const auto& layer : result.layers) {
+            segments.insert(segments.end(), layer.segments.begin(), layer.segments.end());
+        }
     }
 
     // Remap local object name indices to the merged string table

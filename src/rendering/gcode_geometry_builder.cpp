@@ -282,15 +282,26 @@ void RibbonGeometry::patch_prepared_buffer_colors() {
 }
 
 void RibbonGeometry::clear() {
+    // shrink_to_fit on every buffer — clear() alone keeps the (multi-MB) allocations alive.
     vertices.clear();
+    vertices.shrink_to_fit();
     indices.clear();
+    indices.shrink_to_fit();
     strips.clear();
+    strips.shrink_to_fit();
     normal_palette.clear();
+    normal_palette.shrink_to_fit();
     color_palette.clear();
+    color_palette.shrink_to_fit();
     tool_palette_map.clear();
     strip_layer_index.clear();
+    strip_layer_index.shrink_to_fit();
     layer_strip_ranges.clear();
+    layer_strip_ranges.shrink_to_fit();
     layer_bboxes.clear();
+    layer_bboxes.shrink_to_fit();
+    prepared_buffers.clear();
+    prepared_buffers.shrink_to_fit();
     max_layer_index = 0;
 
     // Clear caches
@@ -544,6 +555,7 @@ RibbonGeometry GeometryBuilder::build(const ParsedGCodeFile& gcode,
 
     // Collect all segments from all layers, stamping each with its source layer index
     std::vector<ToolpathSegment> all_segments;
+    all_segments.reserve(gcode.total_segments);
     for (size_t li = 0; li < gcode.layers.size(); ++li) {
         for (const auto& seg : gcode.layers[li].segments) {
             all_segments.push_back(seg);
@@ -577,15 +589,22 @@ RibbonGeometry GeometryBuilder::build(const ParsedGCodeFile& gcode,
     std::vector<ToolpathSegment> simplified;
     if (validated_opts.enable_merging) {
         simplified = simplify_segments(all_segments, validated_opts);
+
+        // all_segments is dead from here on — release it before generating geometry so the
+        // raw and simplified copies never coexist with the vertex buffer.
+        const size_t raw_segment_count = all_segments.size();
+        all_segments.clear();
+        all_segments.shrink_to_fit();
+
         stats_.output_segments = simplified.size();
         stats_.simplification_ratio =
-            1.0f - (static_cast<float>(simplified.size()) / all_segments.size());
+            1.0f - (static_cast<float>(simplified.size()) / raw_segment_count);
 
         spdlog::info(
             "[GCode::Builder] Toolpath simplification: {} → {} segments ({:.1f}% reduction)",
-            all_segments.size(), simplified.size(), stats_.simplification_ratio * 100.0f);
+            raw_segment_count, simplified.size(), stats_.simplification_ratio * 100.0f);
     } else {
-        simplified = all_segments;
+        simplified = std::move(all_segments);
         stats_.output_segments = simplified.size();
         stats_.simplification_ratio = 0.0f;
         spdlog::info("[GCode::Builder] Toolpath simplification DISABLED: using {} raw segments",
@@ -597,14 +616,49 @@ RibbonGeometry GeometryBuilder::build(const ParsedGCodeFile& gcode,
     std::optional<TubeCap> prev_end_cap;
     glm::vec3 prev_end_pos{0.0f};
 
-    // Layer tracking for ghost layer rendering
-    // Temporary map to accumulate strips per layer, then convert to ranges
-    std::unordered_map<uint16_t, std::vector<size_t>> layer_to_strip_indices;
+    // Layer tracking for ghost layer rendering. Only the first index, the last index and the
+    // count are ever needed to derive the per-layer strip range, so accumulate those three
+    // scalars per layer instead of retaining every strip index.
+    const size_t layer_count = gcode.layers.size();
+    std::vector<size_t> layer_first_strip(layer_count, 0);
+    std::vector<size_t> layer_last_strip(layer_count, 0);
+    std::vector<size_t> layer_strip_totals(layer_count, 0);
+
     geometry.max_layer_index =
         gcode.layers.empty() ? 0 : static_cast<uint16_t>(gcode.layers.size() - 1);
 
     // Initialize per-layer bounding boxes for frustum culling
     geometry.layer_bboxes.resize(gcode.layers.size());
+
+    // Pre-size the output buffers: every extrusion segment emits exactly 5N vertices and
+    // (2N-2) strips (the extra start-cap vertices/strips on the very first segment are
+    // absorbed by the steady-state figure). Travel moves are skipped entirely.
+    //
+    // Only pre-size when the projection fits the budget. A build that is going to
+    // blow the budget must be allowed to grow incrementally so the progressive
+    // check below aborts it after a few MB — reserving the full projection first
+    // would hand the allocator the whole request up front and OOM the device
+    // instead of falling back to the 2D renderer.
+    {
+        const size_t extrusion_segments = static_cast<size_t>(
+            std::count_if(simplified.begin(), simplified.end(),
+                          [](const ToolpathSegment& s) { return s.is_extrusion; }));
+        const size_t n = static_cast<size_t>(tube_sides_);
+        const size_t vertex_count = extrusion_segments * 5 * n;
+        const size_t strip_count = extrusion_segments * (2 * n - 2);
+        const size_t projected_bytes = vertex_count * sizeof(RibbonVertex) +
+                                       strip_count * sizeof(decltype(geometry.strips)::value_type) +
+                                       strip_count * sizeof(uint16_t);
+
+        if (budget_limit_bytes_ == 0 || projected_bytes <= budget_limit_bytes_) {
+            geometry.vertices.reserve(vertex_count);
+            geometry.strips.reserve(strip_count);
+            geometry.strip_layer_index.reserve(strip_count);
+        } else {
+            spdlog::debug("[GCode::Builder] Skipping pre-size: projected {}MB exceeds {}MB budget",
+                          projected_bytes / (1024 * 1024), budget_limit_bytes_ / (1024 * 1024));
+        }
+    }
 
     size_t segments_since_budget_check = 0;
 
@@ -685,7 +739,13 @@ RibbonGeometry GeometryBuilder::build(const ParsedGCodeFile& gcode,
         size_t strips_after = geometry.strips.size();
         for (size_t s = strips_before; s < strips_after; ++s) {
             geometry.strip_layer_index.push_back(layer_idx);
-            layer_to_strip_indices[layer_idx].push_back(s);
+            if (layer_idx < layer_count) {
+                if (layer_strip_totals[layer_idx] == 0) {
+                    layer_first_strip[layer_idx] = s;
+                }
+                layer_last_strip[layer_idx] = s;
+                layer_strip_totals[layer_idx]++;
+            }
         }
 
         // Store for next iteration
@@ -693,22 +753,33 @@ RibbonGeometry GeometryBuilder::build(const ParsedGCodeFile& gcode,
         prev_end_pos = segment.end;
     }
 
+    // Release the over-reserve: an early budget abort leaves the reserved tail unused.
+    geometry.vertices.shrink_to_fit();
+    geometry.strips.shrink_to_fit();
+    geometry.strip_layer_index.shrink_to_fit();
+
+    // The palettes are final; the lookup caches are build-only scratch. Drop them entirely —
+    // ->clear() would keep the bucket arrays alive for the lifetime of the geometry.
+    geometry.normal_cache.reset();
+    geometry.color_cache.reset();
+
     // Build layer_strip_ranges from accumulated data
     // Initialize with empty ranges for all layers
     geometry.layer_strip_ranges.resize(gcode.layers.size(), {0, 0});
     size_t non_contiguous_layers = 0;
-    for (const auto& [layer_idx, strip_indices] : layer_to_strip_indices) {
-        if (!strip_indices.empty() && layer_idx < geometry.layer_strip_ranges.size()) {
-            size_t first = strip_indices.front();
-            size_t last = strip_indices.back();
+    for (size_t layer_idx = 0; layer_idx < layer_count; ++layer_idx) {
+        size_t strip_total = layer_strip_totals[layer_idx];
+        if (strip_total > 0) {
+            size_t first = layer_first_strip[layer_idx];
+            size_t last = layer_last_strip[layer_idx];
             size_t span = last - first + 1;
 
             // Contiguity check: if the span exceeds the index count, there are gaps
-            if (span != strip_indices.size()) {
+            if (span != strip_total) {
                 non_contiguous_layers++;
                 spdlog::trace("[GCode::Builder] Layer {} strips are non-contiguous: "
                               "{} indices spanning {} slots (gaps present)",
-                              layer_idx, strip_indices.size(), span);
+                              layer_idx, strip_total, span);
             }
 
             // Use the full span range (first, span) to cover all strips including gaps.
@@ -823,6 +894,9 @@ GeometryBuilder::simplify_segments(const std::vector<ToolpathSegment>& segments,
 
     // Add final segment
     simplified.push_back(current);
+
+    // The reserve above is a worst-case upper bound; give back the unused tail.
+    simplified.shrink_to_fit();
 
     return simplified;
 }

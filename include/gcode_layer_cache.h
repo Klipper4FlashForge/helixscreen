@@ -39,7 +39,7 @@ class GCodeDataSource;
  *   }
  * @endcode
  *
- * Memory usage: ~80 bytes per segment + cache bookkeeping
+ * Memory usage: 40 bytes per segment (BYTES_PER_SEGMENT) + cache bookkeeping
  */
 class GCodeLayerCache {
   public:
