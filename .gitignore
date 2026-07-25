@@ -21,6 +21,9 @@ __pycache__/
 *.pyc
 *.pyo
 
+# UI test harness failure diagnostics (tests/ui/test_diagnostics.py)
+ui-artifacts/
+
 # ============================================================================
 # Configuration
 # ============================================================================
