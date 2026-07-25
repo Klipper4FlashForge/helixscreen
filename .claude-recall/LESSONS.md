@@ -118,8 +118,8 @@
 - **Uses**: 8 | **Velocity**: 0.022216796875 | **Learned**: 2026-02-07 | **Last**: 2026-05-19 | **Category**: build
 > AD5M build: `make ad5m-docker` (Docker ARM cross), NOT `make pi-test` (Pi). Deploy: `AD5M_HOST=192.168.1.67 make ad5m-deploy`.
 
-### [L064] [***--|**---] Commit generated translation artifacts
-- **Uses**: 38 | **Velocity**: 0.62353515625 | **Learned**: 2026-02-10 | **Last**: 2026-07-15 | **Category**: i18n
+### [L064] [***--|****-] Commit generated translation artifacts
+- **Uses**: 41 | **Velocity**: 3.62353515625 | **Learned**: 2026-02-10 | **Last**: 2026-07-25 | **Category**: i18n
 > After `make translation-sync`, also stage generated XML: `ui_xml/translations/translations.xml` + per-lang `ui_xml/translations/*.xml` (from `make translations`). Tracked, not auto-staged. Flow: wrap strings `lv_tr("…")` / `label_tag=` → `translation-sync` (adds keys to 9 langs) → `make translations` → stage YAMLs + those XML. (Old `src/generated/lv_i18n_translations.{c,h}` retired `8fb3ca3de`, gone.)
 
 ### [L065] [***--|*----] No test-only methods on production classes
@@ -142,8 +142,8 @@
 - **Uses**: 10 | **Velocity**: 0.04541015625 | **Learned**: 2026-02-15 | **Last**: 2026-06-13 | **Category**: architecture
 > `lv_obj_set_user_data()` = single shared slot; XML widgets/handlers/LVGL internals may already own it (ui_button→button_data_t*, severity_card→string). NEVER free/cast user_data you didn't set on THAT exact obj. NEVER walk the parent chain for non-null user_data (finds ui_button's → miscast SEGV, AmsOperationSidebar/AmsDryerCard). Find by `lv_obj_get_name()`, read user_data from that named obj. Per-item data: per-cb event user_data, C++ map keyed by ptr, or hidden named child.
 
-### [L071] [***--|**---] XML child click passthrough — lv_obj is clickable by default, and clickable="false" does NOT inherit
-- **Uses**: 17 | **Velocity**: 0.506591796875 | **Learned**: 2026-02-21 | **Last**: 2026-07-18 | **Category**: ui | **Type**: constraint
+### [L071] [***--|***--] XML child click passthrough — lv_obj is clickable by default, and clickable="false" does NOT inherit
+- **Uses**: 18 | **Velocity**: 1.506591796875 | **Learned**: 2026-02-21 | **Last**: 2026-07-25 | **Category**: ui | **Type**: constraint
 > Root with a click handler → every absorbing descendant needs `clickable="false" event_bubble="true"`. `lv_obj`/`ui_card`/`ui_dialog` are clickable by DEFAULT (`lv_obj_constructor`, lv_obj.c:584); only lv_image/label/line/menu/spinner aren't — tell: "thumbnail works, text area dead" (#1101). `lv_indev_search_obj` (lv_indev.c:618) recurses on GEOMETRY, deepest child wins → guard EVERY offender (#1101 needed 4). `clickable="true"` on lv_obj = no-op. Don't lint-"fix" the inverse: backdrop-dismiss roots (context_backdrop/menu) WANT absorb — test instead: `lv_indev_search_obj(test_screen(), &p)` in XMLTestFixture asserts tap target. Refs: test_print_file_card_hittest.cpp, ui_xml/setting_action_row.xml.
 
 ### [L070] [***--|**---] Don't lv_tr() non-translatable strings
@@ -229,12 +229,12 @@
 - **Uses**: 6 | **Velocity**: 1.71875 | **Learned**: 2026-06-12 | **Last**: 2026-07-17 | **Category**: gotcha
 > scripts/resolve-backtrace.sh forks one addr2line PER address vs multi-GB pi.debug DWARF (~2.6G); each child grows lazily 4→8G+. Kill it → subshell+addr2line children ORPHAN, invisible to pkill (name truncates 'aarch64-linux-g'); 3 parallel resolves once ~26G, near-OOM. RULES: (1) run_in_background:true from the START (harness owns the tree); (2) don't hand-fork addr2line in a chainable shell; (3) one resolver, no parallel retries; (4) cleanup = kill PARENT resolve-backtrace.sh (`pgrep -af resolve-backtrace`), find big procs via /proc/PID/cmdline.
 
-### [L091] [*----|*----] Stale-but-200 R2 manifest silently suppresses updates fleet-wide
-- **Uses**: 2 | **Velocity**: 0.15625 | **Learned**: 2026-06-12 | **Last**: 2026-06-18 | **Category**: gotcha
+### [L091] [**---|****-] Stale-but-200 R2 manifest silently suppresses updates fleet-wide
+- **Uses**: 5 | **Velocity**: 3.15625 | **Learned**: 2026-06-12 | **Last**: 2026-07-25 | **Category**: gotcha
 > "New version not showing on ANY device" = source of truth, not per-device: updater fetches releases.helixscreen.org/<ch>/manifest.json FIRST, trusts any HTTP-200 (update_checker.cpp fetch_stable_release), only falls back to GitHub on FETCH FAILURE not staleness. v0.99.76 cause: release.yml R2 upload non-blocking, manifest uploaded AFTER big zips; a 504 on k2.zip aborted before manifest → R2 pinned at .75, run green. Diagnose: curl live manifest .version vs tag; check the R2 upload job. Fixed 942bcbd51/d0034b282: manifest before zips, s3cp retry, read-back assert version==tag. Verify the SERVED artifact, never trust upload success.
 
 ### [L092] [***--|*****] make | tail masks exit code; -j hides the real build error
-- **Uses**: 34 | **Velocity**: 12.9375 | **Learned**: 2026-06-12 | **Last**: 2026-07-24 | **Category**: gotcha
+- **Uses**: 36 | **Velocity**: 14.9375 | **Learned**: 2026-06-12 | **Last**: 2026-07-25 | **Category**: gotcha
 > `make | tail/head` reports tail's exit 0 even on make failure — capture separately (`make …; echo $?>/tmp/exit`). Build dies with NO 'error:' + different failure point each run → suspect interleaved -j output or resource contention (`free -h`, `pgrep -af cc1plus` for sibling builds); drop to -j2 to surface the true first error. (Real cause once: missing $(LV_CONF) in sub-builds, invisible under -j.)
 
 ### [L093] [*----|***--] Pure-decision-function tests need input realism
@@ -246,7 +246,7 @@
 > Gating a load decision on a state that only updates AFTER the load completes deadlocks. The print-status gcode download was gated on the view-mode subject being 3D/2D, but that subject only becomes 3D/2D once gcode is loaded -> gcode never downloads, mode never leaves thumbnail, 3D render never appears (user saw 'thumbnail not 3D'). Gate loads on intent/settings (want_viewer + render-mode setting), never on the rendered result. Found in PrintStatusPanel preview unification.
 
 ### [L095] [***--|*****] Verify feature existence in code, not from issue phrasing + commit messages
-- **Uses**: 22 | **Velocity**: 13.25 | **Learned**: 2026-07-01 | **Last**: 2026-07-24 | **Category**: correction
+- **Uses**: 24 | **Velocity**: 15.25 | **Learned**: 2026-07-01 | **Last**: 2026-07-25 | **Category**: correction
 > Don't claim a capability is absent from issue wording + commit messages — grep/read the actual code first (reporter "can't find X" usually = discoverability gap, not missing). Spoolman picker existed (AmsEditModal, behind "Choose Spool") despite 6 fix-commits implying otherwise (#1071). Corollary: don't inherit a subagent's "race" claim from a stale comment — verify current code. **Extends to reporter-proposed root-cause MECHANISMS, not just existence:** #1124's two bugs each had detailed, plausible reporter archaeology pointing at the WRONG cause — bug 2 "panel graph never migrated to the backfill path" (it uses TempGraphController + backfill already; real cause = persistent graph backfilled pre-WebSocket-connect), bug 1 "init_fans resets the subject to 0" (struct+subject zero in lockstep, snapshot re-fires; real cause = e3f92c3f4's front-most fan fallback, a 2-day-old regression). Both real causes were RECENT commits. Trace the suspect area in current code AND `git log -S`/blame it before adopting the reporter's mechanism; a confident, well-argued mechanism from a technical reporter is still a hypothesis.
 
 ### [L096] [**---|*****] queue_prev tag-ring names the victim, not the crash — resolve real frames first
