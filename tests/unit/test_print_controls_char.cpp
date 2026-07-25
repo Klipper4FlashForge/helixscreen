@@ -599,8 +599,8 @@ TEST_CASE("CHAR: Z-offset icons for Cartesian/Delta (head moves)",
  *
  * 1. Light Button:
  *    - Initial state: LED off, icon = lightbulb_outline (F0336)
- *    - Toggle on: calls api_->set_led_on(configured_led_)
- *    - Toggle off: calls api_->set_led_off(configured_led_)
+ *    - Toggle on: calls api_->set_led(configured_led_, 1, 1, 1, 1)
+ *    - Toggle off: calls api_->set_led(configured_led_, 0, 0, 0, 0)
  *    - State update comes from PrinterState observer (led_state_subject)
  *    - On state icon: lightbulb_on (F06E8)
  *    - No-op if no LED configured (configured_led_ empty)

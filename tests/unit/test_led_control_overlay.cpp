@@ -21,6 +21,10 @@
 #include "led/ui_led_control_overlay.h"
 #include "printer_state.h"
 
+#include <algorithm>
+#include <string>
+#include <vector>
+
 #include "../catch_amalgamated.hpp"
 
 using namespace helix;
@@ -49,6 +53,20 @@ class LedControlOverlayTestAccess {
     int compute_color_visible() {
         overlay_.update_section_visibility();
         return lv_subject_get_int(&overlay_.color_visible_);
+    }
+
+    // Drives the chip-tap path so the selection semantics can be asserted.
+    void tap_chip(const std::string& strip_id) {
+        overlay_.handle_strip_selected(strip_id);
+    }
+
+    [[nodiscard]] LedBackendType backend() const {
+        return overlay_.selected_backend_type_;
+    }
+
+    [[nodiscard]] std::string active_strip_name() {
+        const char* s = lv_subject_get_string(&overlay_.strip_name_subject_);
+        return s != nullptr ? std::string(s) : std::string();
     }
 
   private:
@@ -137,6 +155,120 @@ TEST_CASE_METHOD(LVGLTestFixture,
     // Selection includes a color-capable strip -> shown.
     ctrl.set_selected_strips({"led white_only", "neopixel rgb"});
     REQUIRE(access.compute_color_visible() == 1);
+
+    ctrl.deinit();
+}
+
+// ============================================================================
+// Strip-chip selection semantics
+//
+// The chip row renders every strip in the selection as "selected" (std::find
+// over the whole vector), and every consumer of selected_strips() iterates the
+// whole vector (toggle_all, set_color_all, set_brightness_all,
+// light_state_trackable, send_color_to_strips). The tap handler must therefore
+// be additive: replacing the selection silently discarded a multi-strip choice
+// made in Settings, and on_deactivate() persisted the loss to settings.json.
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLTestFixture, "LedControlOverlay: tapping an unselected chip adds to selection",
+                 "[led][control_overlay]") {
+    auto& ctrl = LedController::instance();
+    ctrl.deinit();
+    ctrl.init(nullptr, nullptr);
+
+    for (const char* id : {"neopixel a", "neopixel b", "neopixel c", "neopixel d"}) {
+        ctrl.native().add_strip(make_native_strip(id, /*color=*/true, /*white=*/false));
+    }
+    ctrl.set_selected_strips({"neopixel a", "neopixel b", "neopixel c"});
+
+    helix::PrinterState ps;
+    LedControlOverlayTestAccess access(ps);
+    access.tap_chip("neopixel d");
+
+    const auto& sel = ctrl.selected_strips();
+    REQUIRE(sel.size() == 4);
+    for (const char* id : {"neopixel a", "neopixel b", "neopixel c", "neopixel d"}) {
+        INFO("expected strip still selected: " << id);
+        REQUIRE(std::find(sel.begin(), sel.end(), std::string(id)) != sel.end());
+    }
+    // The tapped strip owns the front slot: selected_strips()[0] is what drives
+    // the header, the effects/WLED sections and query_tracked_led_state().
+    REQUIRE(sel.front() == "neopixel d");
+
+    ctrl.deinit();
+}
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "LedControlOverlay: tapping a selected chip removes only that one",
+                 "[led][control_overlay]") {
+    auto& ctrl = LedController::instance();
+    ctrl.deinit();
+    ctrl.init(nullptr, nullptr);
+
+    for (const char* id : {"neopixel a", "neopixel b", "neopixel c"}) {
+        ctrl.native().add_strip(make_native_strip(id, /*color=*/true, /*white=*/false));
+    }
+    ctrl.set_selected_strips({"neopixel a", "neopixel b", "neopixel c"});
+
+    helix::PrinterState ps;
+    LedControlOverlayTestAccess access(ps);
+    access.tap_chip("neopixel b");
+
+    const auto& sel = ctrl.selected_strips();
+    REQUIRE(sel == std::vector<std::string>{"neopixel a", "neopixel c"});
+    // Focus falls back to the new front so the header and the visible section
+    // describe a strip that is actually still selected.
+    REQUIRE(access.active_strip_name() == "neopixel a");
+
+    ctrl.deinit();
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "LedControlOverlay: the last selected chip cannot be deselected",
+                 "[led][control_overlay]") {
+    auto& ctrl = LedController::instance();
+    ctrl.deinit();
+    ctrl.init(nullptr, nullptr);
+
+    ctrl.native().add_strip(make_native_strip("neopixel a", /*color=*/true, /*white=*/false));
+    ctrl.set_selected_strips({"neopixel a"});
+
+    helix::PrinterState ps;
+    LedControlOverlayTestAccess access(ps);
+    access.tap_chip("neopixel a");
+
+    REQUIRE(ctrl.selected_strips() == std::vector<std::string>{"neopixel a"});
+
+    ctrl.deinit();
+}
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "LedControlOverlay: tapped chip drives the header name and section backend",
+                 "[led][control_overlay]") {
+    auto& ctrl = LedController::instance();
+    ctrl.deinit();
+    ctrl.init(nullptr, nullptr);
+
+    ctrl.native().add_strip(make_native_strip("neopixel rgb", /*color=*/true, /*white=*/false));
+
+    LedStripInfo pin;
+    pin.name = "Enclosure LEDs";
+    pin.id = "output_pin enclosure";
+    pin.backend = LedBackendType::OUTPUT_PIN;
+    pin.supports_color = false;
+    pin.supports_white = false;
+    ctrl.output_pin().add_pin(pin);
+
+    ctrl.set_selected_strips({"neopixel rgb"});
+
+    helix::PrinterState ps;
+    LedControlOverlayTestAccess access(ps);
+    access.tap_chip("output_pin enclosure");
+
+    // Both strips stay selected, but the tapped one owns the header + sections.
+    REQUIRE(ctrl.selected_strips().size() == 2);
+    REQUIRE(ctrl.selected_strips().front() == "output_pin enclosure");
+    REQUIRE(access.backend() == LedBackendType::OUTPUT_PIN);
+    REQUIRE(access.active_strip_name() == "Enclosure LEDs");
 
     ctrl.deinit();
 }

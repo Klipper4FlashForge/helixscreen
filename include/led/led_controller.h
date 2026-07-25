@@ -33,9 +33,6 @@ class NativeBackend {
     struct StripColor {
         double r = 0.0, g = 0.0, b = 0.0, w = 0.0;
 
-        /// Convert to packed RGB uint32 (ignoring W channel)
-        [[nodiscard]] uint32_t to_rgb() const;
-
         /// Decompose into base color (max brightness) + brightness percentage +
         /// the W level scaled back up to full brightness. All four channels
         /// feed the brightness max: a white-only Klipper `[led]` reports its
@@ -266,16 +263,12 @@ class MacroBackend {
                                NativeBackend::SuccessCallback on_success = nullptr,
                                NativeBackend::ErrorCallback on_error = nullptr);
 
-    /// Check if a macro is currently "on" (optimistic tracking)
-    [[nodiscard]] bool is_on(const std::string& macro_name) const;
-
     /// Check if a macro's state can be tracked (ON_OFF = yes, TOGGLE = no)
     [[nodiscard]] bool has_known_state(const std::string& macro_name) const;
 
   private:
     MoonrakerAPI* api_ = nullptr;
     std::vector<LedMacroInfo> macros_;
-    std::unordered_map<std::string, bool> macro_states_; // Optimistic state tracking
 };
 
 class OutputPinBackend {
@@ -315,25 +308,15 @@ class OutputPinBackend {
     void update_from_status(const nlohmann::json& status);
 
     [[nodiscard]] double get_value(const std::string& pin_id) const;
-    [[nodiscard]] bool is_on(const std::string& pin_id) const;
     [[nodiscard]] int brightness_pct(const std::string& pin_id) const;
     [[nodiscard]] bool is_pwm(const std::string& pin_id) const;
 
     void set_pin_pwm(const std::string& pin_id, bool is_pwm);
 
-    using ValueChangeCallback = std::function<void(const std::string& pin_id, double value)>;
-    void set_value_change_callback(ValueChangeCallback cb) {
-        value_change_cb_ = std::move(cb);
-    }
-    void clear_value_change_callback() {
-        value_change_cb_ = nullptr;
-    }
-
   private:
     MoonrakerAPI* api_ = nullptr;
     std::vector<LedStripInfo> pins_;
     std::unordered_map<std::string, double> pin_values_;
-    ValueChangeCallback value_change_cb_;
 };
 
 class LedController {

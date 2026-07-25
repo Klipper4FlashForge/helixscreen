@@ -9,11 +9,12 @@
 #include "subject_managed_panel.h"
 
 #include <memory>
+#include <string>
+#include <vector>
 
 namespace helix {
 class PrinterState;
 }
-class MoonrakerAPI;
 
 namespace helix::led {
 
@@ -53,10 +54,6 @@ class LedControlOverlay : public OverlayBase {
     void on_deactivate() override;
     void cleanup() override;
 
-    void set_api(MoonrakerAPI* api) {
-        api_ = api;
-    }
-
   private:
     // Section population
     void populate_sections();
@@ -87,6 +84,9 @@ class LedControlOverlay : public OverlayBase {
 
     // Helpers
     void apply_current_color();
+    /// Native strips a color/turn-off action applies to: the whole selection, or
+    /// the first native strip when nothing is selected.
+    static std::vector<std::string> native_target_strips();
     void send_color_to_strips(double r, double g, double b, double w);
     void update_brightness_text(int brightness);
     void update_wled_brightness_text(int brightness);
@@ -108,10 +108,6 @@ class LedControlOverlay : public OverlayBase {
     static void on_wled_toggle_cb(lv_event_t* e);
     static void on_color_preset_cb(lv_event_t* e);
     static void on_brightness_changed_cb(lv_event_t* e);
-
-    // Dependencies
-    helix::PrinterState& printer_state_;
-    MoonrakerAPI* api_ = nullptr;
 
     // Widget references (owned by LVGL, not us)
     // Section visibility handled declaratively via bind_flag_if_eq subjects

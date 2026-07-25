@@ -66,13 +66,3 @@ void MoonrakerAPI::set_led(const std::string& led, double red, double green, dou
 
     execute_gcode(gcode.str(), on_success, on_error);
 }
-
-void MoonrakerAPI::set_led_on(const std::string& led, SuccessCallback on_success,
-                              ErrorCallback on_error) {
-    set_led(led, 1.0, 1.0, 1.0, 1.0, on_success, on_error);
-}
-
-void MoonrakerAPI::set_led_off(const std::string& led, SuccessCallback on_success,
-                               ErrorCallback on_error) {
-    set_led(led, 0.0, 0.0, 0.0, 0.0, on_success, on_error);
-}

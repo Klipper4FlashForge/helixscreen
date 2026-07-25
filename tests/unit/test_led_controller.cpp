@@ -696,7 +696,7 @@ TEST_CASE("LedController: first_available_strip skips PRESET macros", "[led][con
 // Phase 4: MacroBackend state tracking + abstract API
 // ============================================================================
 
-TEST_CASE("MacroBackend: optimistic state tracking", "[led][macro]") {
+TEST_CASE("MacroBackend: ON_OFF has known state", "[led][macro]") {
     helix::led::MacroBackend backend;
 
     helix::led::LedMacroInfo on_off;
@@ -706,19 +706,14 @@ TEST_CASE("MacroBackend: optimistic state tracking", "[led][macro]") {
     on_off.off_macro = "LIGHTS_OFF";
     backend.add_macro(on_off);
 
-    // Initially off
-    REQUIRE(!backend.is_on("Cabinet Light"));
-
-    // ON_OFF has known state
     REQUIRE(backend.has_known_state("Cabinet Light"));
 
-    // After execute_on (will warn about no API, but state should track)
-    backend.execute_on("Cabinet Light");
-    REQUIRE(!backend.is_on("Cabinet Light")); // No API -> state NOT tracked (early return)
+    // Unknown macro names are not trackable
+    REQUIRE(!backend.has_known_state("No Such Macro"));
 
-    // Clear resets state
+    // clear() drops the macro list, so nothing is trackable afterwards
     backend.clear();
-    REQUIRE(!backend.is_on("Cabinet Light"));
+    REQUIRE(!backend.has_known_state("Cabinet Light"));
 }
 
 TEST_CASE("MacroBackend: TOGGLE has unknown state", "[led][macro]") {
@@ -853,21 +848,21 @@ TEST_CASE("OutputPinBackend: cached value from status", "[led][output_pin]") {
     REQUIRE(backend.get_value("output_pin test_led") == Catch::Approx(0.75));
 }
 
-TEST_CASE("OutputPinBackend: is_on", "[led][output_pin]") {
+TEST_CASE("OutputPinBackend: status updates overwrite the cached value", "[led][output_pin]") {
     helix::led::OutputPinBackend backend;
     helix::led::LedStripInfo pin;
     pin.id = "output_pin test_led";
     backend.add_pin(pin);
 
-    REQUIRE_FALSE(backend.is_on("output_pin test_led"));
+    REQUIRE(backend.get_value("output_pin test_led") == Catch::Approx(0.0));
 
     nlohmann::json status = {{"output_pin test_led", {{"value", 0.5}}}};
     backend.update_from_status(status);
-    REQUIRE(backend.is_on("output_pin test_led"));
+    REQUIRE(backend.get_value("output_pin test_led") == Catch::Approx(0.5));
 
     status = {{"output_pin test_led", {{"value", 0.0}}}};
     backend.update_from_status(status);
-    REQUIRE_FALSE(backend.is_on("output_pin test_led"));
+    REQUIRE(backend.get_value("output_pin test_led") == Catch::Approx(0.0));
 }
 
 TEST_CASE("OutputPinBackend: brightness_pct", "[led][output_pin]") {
@@ -894,24 +889,17 @@ TEST_CASE("OutputPinBackend: is_pwm check", "[led][output_pin]") {
     REQUIRE_FALSE(backend.is_pwm("output_pin test_led"));
 }
 
-TEST_CASE("OutputPinBackend: value change callback", "[led][output_pin]") {
+TEST_CASE("OutputPinBackend: status for an unknown pin is ignored", "[led][output_pin]") {
     helix::led::OutputPinBackend backend;
     helix::led::LedStripInfo pin;
     pin.id = "output_pin test_led";
     backend.add_pin(pin);
 
-    std::string cb_pin;
-    double cb_value = -1.0;
-    backend.set_value_change_callback([&](const std::string& id, double val) {
-        cb_pin = id;
-        cb_value = val;
-    });
-
-    nlohmann::json status = {{"output_pin test_led", {{"value", 0.42}}}};
+    nlohmann::json status = {{"output_pin other_led", {{"value", 0.42}}}};
     backend.update_from_status(status);
 
-    REQUIRE(cb_pin == "output_pin test_led");
-    REQUIRE(cb_value == Catch::Approx(0.42));
+    REQUIRE(backend.get_value("output_pin test_led") == Catch::Approx(0.0));
+    REQUIRE(backend.get_value("output_pin other_led") == Catch::Approx(0.0));
 }
 
 TEST_CASE("OutputPinBackend: no API safety", "[led][output_pin]") {

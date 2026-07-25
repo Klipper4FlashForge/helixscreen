@@ -81,7 +81,6 @@ void LedControlsWidget::handle_clicked() {
             overlay.init_subjects();
         }
         overlay.register_callbacks();
-        overlay.set_api(api_);
 
         led_control_panel_ = overlay.create(parent_screen_);
         if (!led_control_panel_) {
@@ -92,7 +91,6 @@ void LedControlsWidget::handle_clicked() {
     }
 
     if (led_control_panel_) {
-        get_led_control_overlay().set_api(api_);
         NavigationManager::instance().push_overlay(led_control_panel_);
     }
 }

@@ -33,6 +33,10 @@ static void chip_delete_cb(lv_event_t* e) {
     delete data;
 }
 
+/// Apply a chip's selected/unselected styling. Chips are rebuilt wholesale by
+/// their owning panels, so the only caller is create_led_chip() below.
+static void update_led_chip_state(lv_obj_t* chip, bool selected);
+
 lv_obj_t* create_led_chip(lv_obj_t* parent, const std::string& led_name,
                           const std::string& display_name, bool selected,
                           std::function<void(const std::string&)> on_click) {
@@ -77,7 +81,7 @@ lv_obj_t* create_led_chip(lv_obj_t* parent, const std::string& led_name,
     return chip;
 }
 
-void update_led_chip_state(lv_obj_t* chip, bool selected) {
+static void update_led_chip_state(lv_obj_t* chip, bool selected) {
     lv_obj_t* icon = lv_obj_find_by_name(chip, "check_icon");
     auto& tm = ThemeManager::instance();
 

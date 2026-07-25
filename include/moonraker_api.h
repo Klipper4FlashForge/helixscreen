@@ -149,28 +149,6 @@ class MoonrakerAPI : public IMoonrakerAPI {
     void set_led(const std::string& led, double red, double green, double blue, double white,
                  SuccessCallback on_success, ErrorCallback on_error);
 
-    /**
-     * @brief Turn LED on (full white)
-     *
-     * Convenience method to turn LED on at full brightness.
-     *
-     * @param led LED name
-     * @param on_success Success callback
-     * @param on_error Error callback
-     */
-    void set_led_on(const std::string& led, SuccessCallback on_success, ErrorCallback on_error);
-
-    /**
-     * @brief Turn LED off
-     *
-     * Convenience method to turn LED off.
-     *
-     * @param led LED name
-     * @param on_success Success callback
-     * @param on_error Error callback
-     */
-    void set_led_off(const std::string& led, SuccessCallback on_success, ErrorCallback on_error);
-
     // ========================================================================
     // Power Device Control Operations
     // ========================================================================

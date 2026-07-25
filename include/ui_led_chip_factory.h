@@ -28,13 +28,5 @@ lv_obj_t* create_led_chip(lv_obj_t* parent, const std::string& led_name,
                           const std::string& display_name, bool selected,
                           std::function<void(const std::string&)> on_click);
 
-/**
- * @brief Update a chip's visual selected/unselected state
- *
- * @param chip Chip widget to update
- * @param selected New selection state
- */
-void update_led_chip_state(lv_obj_t* chip, bool selected);
-
 } // namespace ui
 } // namespace helix
