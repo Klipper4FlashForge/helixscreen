@@ -207,27 +207,17 @@ void SensorSettingsOverlay::populate_switch_sensors() {
             continue;
         }
 
-        // Store klipper_name as user data for callbacks
-        char* klipper_name = static_cast<char*>(lv_malloc(sensor.klipper_name.size() + 1));
-        if (!klipper_name) {
-            spdlog::error("[{}] Failed to allocate memory for sensor name: {}", get_name(),
+        // Store klipper_name as user data for callbacks. The helper owns the
+        // copy and frees it on LV_EVENT_DELETE; the row is created here, so the
+        // user_data slot is ours (L069).
+        if (!helix::ui::set_owned_user_string(row, sensor.klipper_name)) {
+            spdlog::error("[{}] Failed to attach sensor name to row: {}", get_name(),
                           sensor.klipper_name);
             continue;
         }
-        strcpy(klipper_name, sensor.klipper_name.c_str());
-        lv_obj_set_user_data(row, klipper_name);
-
-        // Register cleanup to free allocated string when row is deleted
-        lv_obj_add_event_cb(
-            row,
-            [](lv_event_t* e) {
-                lv_obj_t* obj = lv_event_get_target_obj(e);
-                char* data = static_cast<char*>(lv_obj_get_user_data(obj));
-                if (data) {
-                    lv_free(data);
-                }
-            },
-            LV_EVENT_DELETE, nullptr);
+        // Borrowed pointer into the row-owned copy; valid until the row dies,
+        // which is also when the child handlers below stop firing.
+        char* klipper_name = const_cast<char*>(helix::ui::get_owned_user_string(row));
 
         // Wire up enable toggle
         lv_obj_t* enable_toggle = lv_obj_find_by_name(row, "enable_toggle");
@@ -441,27 +431,17 @@ void SensorSettingsOverlay::populate_width_sensors() {
             continue;
         }
 
-        // Store klipper_name as user data for callbacks
-        char* klipper_name = static_cast<char*>(lv_malloc(sensor.klipper_name.size() + 1));
-        if (!klipper_name) {
-            spdlog::error("[{}] Failed to allocate memory for sensor name: {}", get_name(),
+        // Store klipper_name as user data for callbacks. The helper owns the
+        // copy and frees it on LV_EVENT_DELETE; the row is created here, so the
+        // user_data slot is ours (L069).
+        if (!helix::ui::set_owned_user_string(row, sensor.klipper_name)) {
+            spdlog::error("[{}] Failed to attach sensor name to row: {}", get_name(),
                           sensor.klipper_name);
             continue;
         }
-        strcpy(klipper_name, sensor.klipper_name.c_str());
-        lv_obj_set_user_data(row, klipper_name);
-
-        // Register cleanup to free allocated string when row is deleted
-        lv_obj_add_event_cb(
-            row,
-            [](lv_event_t* e) {
-                lv_obj_t* obj = lv_event_get_target_obj(e);
-                char* data = static_cast<char*>(lv_obj_get_user_data(obj));
-                if (data) {
-                    lv_free(data);
-                }
-            },
-            LV_EVENT_DELETE, nullptr);
+        // Borrowed pointer into the row-owned copy; valid until the row dies,
+        // which is also when the child handlers below stop firing.
+        char* klipper_name = const_cast<char*>(helix::ui::get_owned_user_string(row));
 
         // Wire up enable toggle
         lv_obj_t* enable_toggle = lv_obj_find_by_name(row, "enable_toggle");

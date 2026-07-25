@@ -8,6 +8,7 @@
 #include "panel_widget_registry.h"
 #include "static_subject_registry.h"
 #include "subject_debug_registry.h"
+#include "ui_filename_utils.h"
 
 #include <spdlog/spdlog.h>
 
@@ -290,13 +291,9 @@ void PrintStatsWidget::update_stats() {
     // Last print info
     if (!jobs.empty()) {
         const auto& last = jobs.front();
-        std::string name = last.filename;
-        auto slash = name.rfind('/');
-        if (slash != std::string::npos)
-            name = name.substr(slash + 1);
-        auto dot = name.rfind(".gcode");
-        if (dot != std::string::npos)
-            name = name.substr(0, dot);
+        // Same display name the rest of the UI shows: basename with any of
+        // .gcode/.gco/.g/.3mf stripped case-insensitively.
+        std::string name = helix::gcode::get_display_filename(last.filename);
         if (name.length() > 20)
             name = name.substr(0, 18) + "..";
 

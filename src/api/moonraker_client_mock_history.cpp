@@ -3,6 +3,7 @@
 
 #include "moonraker_client_mock_internal.h"
 #include "runtime_config.h"
+#include "ui_filename_utils.h"
 
 #include <spdlog/spdlog.h>
 
@@ -122,11 +123,11 @@ void register_history_handlers(std::unordered_map<std::string, MethodHandler>& r
             if (since > 0 && start_time < since)
                 continue;
 
-            // Generate thumbnail path from filename (strip .gcode, add thumbnail suffix)
-            std::string base_name = filename;
-            if (base_name.size() > 6 && base_name.substr(base_name.size() - 6) == ".gcode") {
-                base_name = base_name.substr(0, base_name.size() - 6);
-            }
+            // Generate thumbnail path from filename (strip the gcode extension,
+            // add thumbnail suffix). Path is preserved — Moonraker thumbnail
+            // paths are relative to the gcode's own directory — so this strips
+            // the extension only, not the basename.
+            std::string base_name = helix::gcode::strip_gcode_extension(filename);
             std::string thumb_path = ".thumbnails/" + base_name + "-300x300.png";
 
             // Generate mock UUID and get real file size for history matching
