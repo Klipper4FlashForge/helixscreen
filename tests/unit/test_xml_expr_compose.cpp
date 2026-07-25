@@ -213,6 +213,12 @@ TEST_CASE_METHOD(LVGLTestFixture, "expr: non-numeric param in arithmetic degrade
     lv_obj_t * g = lv_obj_find_by_name(v, "g");
     process_lvgl(20);
     lv_obj_update_layout(g);
+    // Assert the parsed style value, not just the laid-out width: this used to
+    // read as a flake (#1121) because lv_xml_to_size("") indexed txt[-1] and a
+    // stray '%' in the preceding byte produced lv_pct(0) instead of 0, which then
+    // laid out to some other number. Checking width_def points a regression at
+    // the parser directly. See test_xml_size_parsing.cpp.
+    REQUIRE((int32_t)lv_obj_get_style_width(g, LV_PART_MAIN) == 0);
     REQUIRE(lv_obj_get_width(g) == 0);   // empty width string -> 0
     lv_obj_delete(v);
     lv_xml_component_unregister("t_expr8");
