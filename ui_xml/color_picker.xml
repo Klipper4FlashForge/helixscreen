@@ -82,8 +82,15 @@
           <text_small text="Presets" translation_tag="Presets"/>
         </lv_obj>
         <!-- BOTTOM: Presets grid (pushed to bottom via space_between) -->
-        <!-- Preset grid: 6 columns x 5 rows -->
-        <color_swatch_grid swatch_callback="color_swatch_clicked_cb"/>
+        <!-- Preset grid: 6 columns x 5 rows. ColorPicker::set_palette() drives
+             color_picker_palette, so only the matching grid is ever built.
+             Must stay the LAST child — a reactive <if> appends its rebuilt body
+             to the end of the parent's child list. -->
+        <if cond="color_picker_palette eq 1">
+          <theme_swatch_grid swatch_callback="color_swatch_clicked_cb"/>
+          <else/>
+          <color_swatch_grid swatch_callback="color_swatch_clicked_cb"/>
+        </if>
       </lv_obj>
     </lv_obj>
 
@@ -98,7 +105,13 @@
       <lv_obj name="presets_content" width="100%" height="content"
               style_pad_all="#space_md" flex_flow="row_wrap" style_pad_gap="#space_xs"
               style_flex_main_place="center" scrollable="false">
-        <color_swatch_grid width="100%" swatch_callback="color_swatch_clicked_cb"/>
+        <!-- Only child of presets_content, so the reactive <if> ordering
+             constraint is satisfied. -->
+        <if cond="color_picker_palette eq 1">
+          <theme_swatch_grid width="100%" swatch_callback="color_swatch_clicked_cb"/>
+          <else/>
+          <color_swatch_grid width="100%" swatch_callback="color_swatch_clicked_cb"/>
+        </if>
       </lv_obj>
 
       <!-- Custom tab content (hidden by default, C++ toggles via tab switching) -->
