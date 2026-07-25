@@ -84,6 +84,10 @@ class AmsEditOverlay : public OverlayBase {
     void on_activate() override;
     void on_deactivate() override;
     void on_ui_destroyed() override;
+    /// The catalog selector's options, the color swatch and the logistics field
+    /// text are populated on view entry, not by the XML — re-apply them for the
+    /// view that is showing when a hot-reload rebuilds the tree.
+    void repopulate() override;
 
     /**
      * @brief Open the editor for a specific slot (pushes the overlay)
@@ -148,6 +152,8 @@ class AmsEditOverlay : public OverlayBase {
     uint32_t custom_color_ = 0x808080;
 
     void open_color_view();
+    /// Paint the HSV picker, preview swatch and hex field from custom_color_.
+    void populate_color_view();
     void apply_color(uint32_t rgb);
     void handle_color_swatch(lv_obj_t* swatch);
     void handle_custom_color_changed(uint32_t rgb);
@@ -197,6 +203,10 @@ class AmsEditOverlay : public OverlayBase {
     void render_spool_list(const std::string& filter);
     void handle_spool_selected(int spool_id);
     void enter_spool_edit();
+    /// Apply the spool-edit view's non-XML content (catalog selector options,
+    /// color swatch, logistics fields) from state this object already holds.
+    /// @return false if the catalog fragment is missing from the tree
+    bool populate_spool_edit_view();
     // Apply the spool-edit view's identity/color/logistics edits to the slot.
     // finish=true (header Save) completes + closes the editor on a successful
     // apply; finish=false returns to the overview (tests / non-terminal calls).
