@@ -159,12 +159,17 @@ struct PackedVertex {
  * - 2 triangles sharing the diagonal edge
  * - Horizontal normal (0, 0, 1) for lighting
  *
- * Uses palette indices for normals and colors to reduce memory (9 bytes per vertex)
+ * 8 bytes per vertex: quantized position plus an octahedral-encoded normal.
+ *
+ * The normal is stored in the same encoding the GPU consumes (see
+ * PackedVertex::normal), so expansion is a 2-byte copy rather than a palette
+ * lookup + encode. Color is NOT stored per-vertex — it is constant across every
+ * vertex of a strip, so it lives in RibbonGeometry::strip_color_index. Keeping it
+ * here would pad the struct back to 10 bytes for no benefit.
  */
 struct RibbonVertex {
     QuantizedVertex position; ///< Quantized 3D position (6 bytes)
-    uint16_t normal_index;    ///< Index into normal palette (2 bytes, supports 65536 normals)
-    uint8_t color_index;      ///< Index into color palette (1 byte)
+    int8_t normal[2];         ///< Octahedral-encoded unit normal (2 bytes)
 };
 
 /**
@@ -184,38 +189,6 @@ using TriangleStrip = std::array<uint32_t, 4>;
 // Palette Cache Types
 // ============================================================================
 
-/**
- * @brief Hash function for quantized normals (use in unordered_map)
- */
-struct Vec3Hash {
-    std::size_t operator()(const glm::vec3& v) const {
-        // Quantize to grid for hashing (same as QUANT_STEP = 0.001)
-        int32_t x = static_cast<int32_t>(std::round(v.x * 1000.0f));
-        int32_t y = static_cast<int32_t>(std::round(v.y * 1000.0f));
-        int32_t z = static_cast<int32_t>(std::round(v.z * 1000.0f));
-
-        // Combine hashes (boost::hash_combine pattern)
-        std::size_t h = 0;
-        h ^= std::hash<int32_t>{}(x) + 0x9e3779b9 + (h << 6) + (h >> 2);
-        h ^= std::hash<int32_t>{}(y) + 0x9e3779b9 + (h << 6) + (h >> 2);
-        h ^= std::hash<int32_t>{}(z) + 0x9e3779b9 + (h << 6) + (h >> 2);
-        return h;
-    }
-};
-
-/**
- * @brief Equality operator for quantized normals (needed for unordered_map)
- */
-struct Vec3Equal {
-    bool operator()(const glm::vec3& a, const glm::vec3& b) const {
-        constexpr float EPSILON = 0.0001f;
-        return glm::length(a - b) < EPSILON;
-    }
-};
-
-/// Type alias for normal palette cache (O(1) lookup)
-using NormalCache = std::unordered_map<glm::vec3, uint16_t, Vec3Hash, Vec3Equal>;
-
 /// Type alias for color palette cache (O(1) lookup)
 using ColorCache = std::unordered_map<uint32_t, uint8_t>;
 
@@ -227,9 +200,14 @@ struct RibbonGeometry {
     std::vector<TriangleIndices> indices; ///< Index buffer (triangles) - DEPRECATED, use strips
     std::vector<TriangleStrip> strips;    ///< Index buffer (triangle strips) - OPTIMIZED
 
-    // Palette-based compression (normals and colors stored once, indexed from vertices)
-    std::vector<glm::vec3> normal_palette; ///< Unique normals (max 256)
-    std::vector<uint32_t> color_palette;   ///< Unique colors in RGB format (max 256)
+    /// Color palette index per strip (parallel to `strips`, MUST stay the same size).
+    /// A strip is exactly one tube face (or one cap fan quad), and every vertex of a
+    /// face carries the same color in both normal and debug_face_colors modes — so a
+    /// per-strip index is exact and keeps RibbonVertex at 8 bytes.
+    std::vector<uint8_t> strip_color_index;
+
+    // Palette-based compression (colors stored once, indexed per strip)
+    std::vector<uint32_t> color_palette; ///< Unique colors in RGB format (max 256)
 
     /// Maps tool_index → color_palette index. Allows recoloring VBOs by tool
     /// (e.g., AMS slot colors) without rebuilding geometry.
@@ -244,9 +222,8 @@ struct RibbonGeometry {
     // Per-layer bounding boxes for frustum culling (indexed by layer)
     std::vector<AABB> layer_bboxes; ///< AABB per layer for frustum culling
 
-    // Palette lookup caches (O(1) lookup instead of O(N) linear search)
-    std::unique_ptr<NormalCache> normal_cache; ///< Cache for normal palette lookups
-    std::unique_ptr<ColorCache> color_cache;   ///< Cache for color palette lookups
+    // Palette lookup cache (O(1) lookup instead of O(N) linear search)
+    std::unique_ptr<ColorCache> color_cache; ///< Cache for color palette lookups
 
     size_t extrusion_triangle_count; ///< Triangles for extrusion moves
     size_t travel_triangle_count;    ///< Triangles for travel moves
@@ -254,12 +231,29 @@ struct RibbonGeometry {
     float layer_height_mm{0.2f};     ///< Layer height for Z-offset calculations during LOD
 
     /**
+     * @brief Resolve a strip's RGB color through strip_color_index + color_palette.
+     *
+     * Falls back to kDefaultToolpathColor when the strip has no recorded index or
+     * the index is stale relative to the palette.
+     */
+    uint32_t strip_color(size_t strip_idx) const {
+        if (strip_idx >= strip_color_index.size()) {
+            return kDefaultToolpathColor;
+        }
+        uint8_t ci = strip_color_index[strip_idx];
+        if (ci >= color_palette.size()) {
+            return kDefaultToolpathColor;
+        }
+        return color_palette[ci];
+    }
+
+    /**
      * @brief Calculate total memory usage in bytes
      */
     size_t memory_usage() const {
         size_t total =
             vertices.size() * sizeof(RibbonVertex) + indices.size() * sizeof(TriangleIndices) +
-            strips.size() * sizeof(TriangleStrip) + normal_palette.size() * sizeof(glm::vec3) +
+            strips.size() * sizeof(TriangleStrip) + strip_color_index.size() * sizeof(uint8_t) +
             color_palette.size() * sizeof(uint32_t) + strip_layer_index.size() * sizeof(uint16_t) +
             layer_strip_ranges.size() * sizeof(std::pair<size_t, size_t>) +
             layer_bboxes.size() * sizeof(AABB);
@@ -290,6 +284,9 @@ struct RibbonGeometry {
      * prepare_interleaved_buffers() and both of the renderer's upload paths.
      * These had drifted as three hand-maintained copies of the same loop, so a
      * change to the vertex layout meant finding every one of them.
+     *
+     * Normals come straight from the vertex (already octahedral-encoded); color
+     * comes from strip_color_index[first_strip + s], one lookup per strip.
      */
     void expand_strips(size_t first_strip, size_t strip_count, PackedVertex* out) const;
 
@@ -525,7 +522,6 @@ class GeometryBuilder {
 
   private:
     // Palette management
-    uint16_t add_to_normal_palette(RibbonGeometry& geometry, const glm::vec3& normal);
     uint8_t add_to_color_palette(RibbonGeometry& geometry, uint32_t color_rgb);
 
     // Simplification pipeline

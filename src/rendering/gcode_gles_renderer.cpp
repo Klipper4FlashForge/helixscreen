@@ -1809,7 +1809,7 @@ size_t GCodeGLESRenderer::get_memory_usage() const {
     if (geometry_) {
         total += geometry_->vertices.size() * sizeof(RibbonVertex);
         total += geometry_->strips.size() * sizeof(TriangleStrip);
-        total += geometry_->normal_palette.size() * sizeof(glm::vec3);
+        total += geometry_->strip_color_index.size() * sizeof(uint8_t);
     }
     if (draw_buf_) {
         total += static_cast<size_t>(draw_buf_width_ * draw_buf_height_ * 3);

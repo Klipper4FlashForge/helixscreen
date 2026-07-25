@@ -129,14 +129,14 @@ TEST_CASE("gcode memory probe", "[.memprobe]") {
 
     // ---- 3D geometry -----------------------------------------------------
     auto geometry = std::make_unique<RibbonGeometry>();
-    size_t verts = 0, strips = 0, normal_palette = 0;
+    size_t verts = 0, strips = 0, strip_colors = 0;
     {
         GeometryBuilder builder;
         SimplificationOptions opts; // defaults: merging on, 0.01mm tolerance
         *geometry = builder.build(*parsed, opts);
         verts = geometry->vertices.size();
         strips = geometry->strips.size();
-        normal_palette = geometry->normal_palette.size();
+        strip_colors = geometry->strip_color_index.size();
     }
     p.sample("2 GeometryBuilder::build");
     const size_t mem_after_build = geometry->memory_usage();
@@ -176,8 +176,8 @@ TEST_CASE("gcode memory probe", "[.memprobe]") {
     std::printf("\n-- counts ------------------------------------------------------\n");
     std::printf("parse        : layers=%zu segments=%zu capacity=%zu\n", parsed_layers,
                 parsed_segments, seg_capacity);
-    std::printf("geometry     : vertices=%zu strips=%zu normal_palette=%zu\n", verts, strips,
-                normal_palette);
+    std::printf("geometry     : vertices=%zu strips=%zu strip_colors=%zu\n", verts, strips,
+                strip_colors);
     std::printf("memory_usage : after_build=%.2f MB after_prepare=%.2f MB\n",
                 mem_after_build / 1048576.0, mem_after_prepare / 1048576.0);
     std::printf("layer index  : bytes=%zu\n", index_bytes);
