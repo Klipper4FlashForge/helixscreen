@@ -106,10 +106,55 @@ live breadcrumb of the navigation stack, e.g. `controls / motion_panel_0 > `.
 | `click <target>` | Click a widget (also toggles switches/checkboxes) |
 | `set_value <target> <v>` | Set a value (slider, switch, dropdown, textarea) |
 | `scroll <target> [dx dy]` | Scroll a widget into view, or by a delta |
+| `geom <target> [depth]` | Measured geometry: position, size, declared-vs-computed size, flex/scroll state |
+| `get_const [scope] <name>` | Resolve an XML `#const` to the value the renderer actually sees |
 
 A **target** is either a widget `name` or an `@path` locator taken from `ls`
 (e.g. `@s/15/1/1/2`). Use `@path` when a name is duplicated on screen (reusable
 components share names — a settings page can have six `toggle`s).
+
+#### `geom` — why a widget is the size it is
+
+`ls` tells you a widget exists; `geom` tells you how big it ended up and what it
+asked for. The pair is what distinguishes "my widget is missing" from "my widget
+is present but computed to zero", which look identical on screen.
+
+```bash
+helix-screen ctl geom details_catalog_selector
+helix-screen ctl geom details_view 2      # recurse 2 levels into children
+```
+
+| Field | Meaning |
+|-------|---------|
+| `x`, `y` | Absolute screen coordinates (comparable against a screenshot) |
+| `w`, `h` | Computed size |
+| `content_w`, `content_h` | Inner area, padding excluded |
+| `req_w`, `req_h` | The size **as authored**: `"content"`, `"50%"`, or a pixel count |
+| `flex_grow` | Flex grow factor |
+| `hidden`, `scrollable` | Flag state |
+| `scroll` | `top`/`bottom`/`left`/`right` scrollable extents |
+
+`req_*` reports the authored form rather than the raw coord, because LVGL packs
+`LV_SIZE_CONTENT` and percentages into the integer — printed raw they surface as
+meaningless sentinels. A `req_h` of `content` or a nonzero `flex_grow` sitting
+next to a computed `h` of `0` is the signature of a flex child collapsing in a
+content-sized parent, which has no free space to distribute.
+
+#### `get_const` — what value the renderer actually resolved
+
+```bash
+helix-screen ctl get_const color_swatch_grid grid_width   # scoped lookup
+helix-screen ctl get_const space_md                       # globals
+helix-screen ctl get_const @color_swatch_grid             # dump every const in a scope
+```
+
+A scoped lookup falls back to `globals` when the name is not in the component's
+own scope, mirroring how the renderer resolves an unqualified `#const`; the
+`scope` field in the reply says which one answered. Consts registered from C++
+can silently disagree with what XML resolves — `lv_xml_register_const()` is a
+no-op when the name already exists in the scope, so a component's fallback
+`<consts>` win unless the C++ side uses `lv_xml_update_const()`. This command
+reads the resolved value, so it shows which one is really in effect.
 
 ### Screenshots & sample-data screens
 | Command | Meaning |
