@@ -5,7 +5,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -18,8 +17,7 @@ namespace gcode {
  *
  * Provides a uniform interface for reading G-code from various sources:
  * - Local files (FileDataSource)
- * - Moonraker HTTP API with range requests (MoonrakerDataSource)
- * - In-memory buffers (for testing)
+ * - In-memory buffers (MemoryDataSource, for testing)
  *
  * This abstraction enables streaming G-code parsing on memory-constrained
  * devices by loading only the needed byte ranges rather than entire files.
@@ -72,7 +70,6 @@ class GCodeDataSource {
      *
      * Returns a path that can be used for file-based indexing.
      * For file sources, this is the original filepath.
-     * For Moonraker sources, this may be a temp file path after download.
      * For memory sources, this returns empty string (no file available).
      *
      * @return Local file path, or empty string if no file is available
@@ -84,14 +81,12 @@ class GCodeDataSource {
     /**
      * @brief Ensure the source is ready for indexing
      *
-     * For sources that may need preparation before indexing (e.g., downloading
-     * a remote file), this method performs that preparation.
+     * For sources that may need preparation before indexing (e.g., staging a
+     * remote file on disk), this method performs that preparation. The layer
+     * indexer requires filesystem access for memory-mapped parsing, so any
+     * such source must materialize a local file here.
      *
      * For local files and memory sources, this is a no-op (returns true).
-     * For Moonraker sources, downloads the file to a temp location because
-     * the layer indexer requires filesystem access for memory-mapped parsing.
-     * This happens even if range requests are supported - range requests are
-     * used for streaming, but indexing needs a local file.
      *
      * @return true if the source is now ready for indexing
      */
@@ -165,106 +160,6 @@ class FileDataSource : public GCodeDataSource {
     std::string filepath_;
     FILE* file_{nullptr};
     uint64_t size_{0};
-};
-
-/**
- * @brief Data source for Moonraker HTTP API
- *
- * Attempts to use HTTP Range requests for efficient streaming.
- * If Range requests aren't supported by the server, falls back to
- * downloading the entire file to a temporary location.
- *
- * The fallback behavior is transparent - callers don't need to
- * handle it differently.
- */
-class MoonrakerDataSource : public GCodeDataSource {
-  public:
-    /**
-     * @brief Create data source from Moonraker file path
-     *
-     * @param moonraker_url Base Moonraker URL (e.g., "http://192.168.1.100:7125")
-     * @param gcode_path G-code file path on the printer (e.g., "model.gcode")
-     */
-    MoonrakerDataSource(const std::string& moonraker_url, const std::string& gcode_path);
-
-    ~MoonrakerDataSource() override;
-
-    // Non-copyable
-    MoonrakerDataSource(const MoonrakerDataSource&) = delete;
-    MoonrakerDataSource& operator=(const MoonrakerDataSource&) = delete;
-
-    std::vector<char> read_range(uint64_t offset, uint32_t length) override;
-    uint64_t file_size() const override;
-    bool supports_range_requests() const override;
-    std::string source_name() const override;
-    bool is_valid() const override;
-    std::string indexable_file_path() const override;
-    bool ensure_indexable() override;
-
-    /**
-     * @brief Force download of entire file to temp storage
-     *
-     * After this, read_range() uses local temp file.
-     * Useful if you know you'll need the whole file.
-     *
-     * @return true if download succeeded
-     */
-    bool download_to_temp();
-
-    /**
-     * @brief Check if we've fallen back to temp file
-     * @return true if using local temp file
-     */
-    bool is_using_temp_file() const {
-        return fallback_source_ != nullptr;
-    }
-
-    /**
-     * @brief Get the download URL
-     * @return Full URL for the G-code file
-     */
-    std::string get_download_url() const;
-
-    /**
-     * @brief Get temp file path (if downloaded)
-     * @return Path to local temp file, or empty if not downloaded
-     */
-    const std::string& temp_file_path() const {
-        return temp_file_path_;
-    }
-
-  private:
-    /**
-     * @brief Test if server supports Range requests
-     * @return true if Range requests work
-     */
-    bool probe_range_support();
-
-    /**
-     * @brief Fetch file metadata (size) from Moonraker
-     * @return true if successful
-     */
-    bool fetch_metadata();
-
-    /**
-     * @brief Perform HTTP range request
-     * @param offset Start position
-     * @param length Bytes to read
-     * @return Data or empty vector on failure
-     */
-    std::vector<char> http_range_request(uint64_t offset, uint32_t length);
-
-    std::string moonraker_url_;
-    std::string gcode_path_;
-    uint64_t size_{0};
-    bool range_support_probed_{false};
-    bool range_support_{false};
-    bool metadata_fetched_{false};
-    bool valid_{false};
-
-    // Fallback to local temp file if range requests don't work
-    std::unique_ptr<FileDataSource> fallback_source_;
-    std::string temp_file_path_;
 };
 
 /**

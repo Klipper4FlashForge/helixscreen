@@ -364,37 +364,6 @@ void GCodeStreamingController::open_file_async(const std::string& filepath,
     });
 }
 
-bool GCodeStreamingController::open_moonraker(const std::string& moonraker_url,
-                                              const std::string& gcode_path) {
-    close();
-
-    spdlog::info("[StreamingController] Opening via Moonraker: {} / {}", moonraker_url, gcode_path);
-
-    auto source = std::make_unique<MoonrakerDataSource>(moonraker_url, gcode_path);
-    if (!source->is_valid()) {
-        spdlog::error("[StreamingController] Failed to connect to Moonraker");
-        return false;
-    }
-
-    data_source_ = std::move(source);
-
-    // Ensure the source is ready for indexing (may download to temp file)
-    if (!data_source_->ensure_indexable()) {
-        spdlog::error("[StreamingController] Failed to prepare source for indexing");
-        data_source_.reset();
-        return false;
-    }
-
-    if (!build_index()) {
-        spdlog::error("[StreamingController] Failed to build index");
-        data_source_.reset();
-        return false;
-    }
-
-    is_open_.store(true);
-    return true;
-}
-
 bool GCodeStreamingController::open_source(std::unique_ptr<GCodeDataSource> source) {
     close();
 
@@ -724,8 +693,8 @@ bool GCodeStreamingController::build_index() {
     }
 
     // Use the virtual method to get an indexable file path
-    // This works for FileDataSource (returns original filepath) and
-    // MoonrakerDataSource (returns temp file path after download)
+    // FileDataSource returns its original filepath; sources that stage data on
+    // disk return the staged path once ensure_indexable() has materialized it
     std::string file_path = data_source_->indexable_file_path();
 
     if (!file_path.empty()) {
