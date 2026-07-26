@@ -21,6 +21,62 @@ HelixScreen has two UI test layers, covering different things:
 > test needs the full application lifecycle rather than a fixture-built widget
 > tree.
 
+## Out-of-process UI tests (`tests/ui/`)
+
+The Catch2 tests below build widgets inside the test process. The pytest suite in
+`tests/ui/` instead drives a real running instance through `helix-screen ctl --json`,
+so it covers app lifecycle, navigation, and async population — including panels that
+have no safe in-process lifetime.
+
+    make -j                                    # the harness needs the binary
+    python3 -m pytest tests/ui/ -v
+    python3 -m pytest tests/ui/ --accept-goldens   # after reviewing a diff
+
+Failures write a screenshot, the app's log tail, and a screen-state dump to
+`ui-artifacts/<test-name>/`.
+
+Golden images are **local-only** for now. They are sensitive to renderer and font
+rasterization, so a golden captured on a desktop will not match a CI runner; see the
+design spec's Risks section.
+
+### Golden corpus scope (`tests/ui/test_screens.py`)
+
+The screen list is *sourced from*, not hand-copied from,
+`scripts/screenshot-recipes.sh`'s `SCREENSHOT_RECIPE` table: the test shells out to
+`bash -c 'source scripts/screenshot-recipes.sh; ...'` and dumps the array, so a
+recipe added or renamed there shows up here without a second edit to keep in sync.
+
+Only 8 of the ~38 known recipe tokens are golden'd so far — deliberately, because
+`freeze()` cannot pin down everything a screen might show:
+
+- **Live mock telemetry** (`home`, `controls`, `filament`, `fan`, and any screen that
+  leaves the Controls temperature card visible) drifts via the mock backend's
+  `simulation_thread_` (`moonraker_client_mock.cpp`) — a raw background thread, not
+  an LVGL timer, so it's invisible to both `freeze()` and `wait_idle()`.
+- **Wall-clock content** (`console`'s gcode log timestamps, `filament`'s usage-chart
+  x-axis) is never the same twice by construction.
+- **Free-running spinners** (`camera`'s "Connecting Camera..." indicator) animate via
+  `lv_anim` independent of `settings_animations_enabled`, so `freeze()` catches an
+  arbitrary arc position — the same category of issue the design spec calls out for
+  the print-select loading spinner.
+- **Modal backdrops** (`preflight-check`) can inherit jitter faintly through the dim
+  scrim over a jittery panel underneath.
+
+Each of these was confirmed empirically (byte-identical captures compared across
+independent app boots, not just within one `capture(stable=True)` call) before being
+excluded — see the task-10 report for the evidence. Adding one of them later needs
+either a mock-side way to pin the drifting value, or accepting a masked/cropped
+comparison region; don't just re-add the token and hope.
+
+Every currently-golden'd screen also needs `settings_animations_enabled` forced off
+once per session (`test_screens.py`'s `_no_transition_animations` fixture): each
+`HelixApp` boots with its own private `HELIX_CONFIG_DIR` (to avoid lock-file
+collisions between instances — see `helix/app.py`), which bypasses
+`config/settings-test.json`'s `animations_enabled: false` and starts from the
+platform-capability default instead (`true` on native/desktop). Without forcing it
+off, `NavigationManager`'s overlay slide+fade can still be mid-flight when `freeze()`
+runs, locking in a half-transitioned frame.
+
 ## Architecture
 
 ```
