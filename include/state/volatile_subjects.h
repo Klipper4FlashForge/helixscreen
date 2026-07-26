@@ -25,7 +25,7 @@
 #include <lvgl.h>
 #include <vector>
 
-namespace helix::state {
+namespace helix::subjects {
 
 class VolatileSubjects {
   public:
@@ -64,4 +64,4 @@ class VolatileSubjects {
     std::vector<Entry> entries_;
 };
 
-} // namespace helix::state
+} // namespace helix::subjects

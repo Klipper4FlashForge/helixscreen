@@ -12,7 +12,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "VolatileSubjects restores each subject to its
     lv_subject_init_int(&zero_default, 0);
     lv_subject_init_int(&one_default, 1);
 
-    helix::state::VolatileSubjects v;
+    helix::subjects::VolatileSubjects v;
     v.register_subject(&zero_default, 0);
     v.register_subject(&one_default, 1);
     REQUIRE(v.size() == 2);
@@ -36,7 +36,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "VolatileSubjects::clear drops registrations",
     lv_subject_t s{};
     lv_subject_init_int(&s, 0);
 
-    helix::state::VolatileSubjects v;
+    helix::subjects::VolatileSubjects v;
     v.register_subject(&s, 0);
     v.clear();
     CHECK(v.size() == 0);

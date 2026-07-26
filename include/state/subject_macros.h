@@ -112,7 +112,7 @@
  * @param name        Base name (without trailing underscore)
  * @param default_val Initial integer value; also the value reset restores
  * @param subjects    SubjectManager instance to register with
- * @param volatiles   helix::state::VolatileSubjects instance to register with
+ * @param volatiles   helix::subjects::VolatileSubjects instance to register with
  * @param register_xml If true, register with the LVGL XML binding system
  */
 #define INIT_SUBJECT_INT_VOLATILE(name, default_val, subjects, volatiles, register_xml)            \
