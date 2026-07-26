@@ -269,11 +269,11 @@ TEST_CASE("Narration matching survives punctuation and separator rewording",
     AfcStateStringHelper afc;
 
     // Upstream's actual v1.2.0 string (config/macros/Brush.cfg).
-    REQUIRE(afc.match_narration_phase("AFC_Brush: Clean Nozzle") == "clean");
+    REQUIRE(afc.match_narration_phase("AFC_Brush: Clean Nozzle") == "brush");
     // Plausible rewordings that must not break the step bar.
-    REQUIRE(afc.match_narration_phase("AFC Brush - Clean nozzle") == "clean");
-    REQUIRE(afc.match_narration_phase("afc_brush:clean") == "clean");
-    REQUIRE(afc.match_narration_phase("[AFC_Brush] Clean Nozzle!") == "clean");
+    REQUIRE(afc.match_narration_phase("AFC Brush - Clean nozzle") == "brush");
+    REQUIRE(afc.match_narration_phase("afc_brush:clean") == "brush");
+    REQUIRE(afc.match_narration_phase("[AFC_Brush] Clean Nozzle!") == "brush");
 }
 
 TEST_CASE("Narration phrases from upstream v1.2.0 still resolve", "[afc][narration][resilience]") {
@@ -284,15 +284,21 @@ TEST_CASE("Narration phrases from upstream v1.2.0 still resolve", "[afc][narrati
     REQUIRE(afc.match_narration_phase("AFC_Brush: Move to Brush.") == "brush");
     REQUIRE(afc.match_narration_phase("Loading lane: lane2") == "feed");
     REQUIRE(afc.match_narration_phase("Moving to hub") == "feed");
+    REQUIRE(afc.match_narration_phase("Unloading lane1") == "unload");
+    REQUIRE(afc.match_narration_phase("AFC_Poop: Starting poop") == "poop");
+    REQUIRE(afc.match_narration_phase("AFC_Kick: Starting Filament Kick") == "kick");
+    REQUIRE(afc.match_narration_phase("AFC_Cut: Cut Filament") == "cut");
 }
 
 TEST_CASE("Narration phase precedence is preserved", "[afc][narration][resilience]") {
     AfcStateStringHelper afc;
 
-    // "clean nozzle" must beat the bare "brush" alternate.
-    REQUIRE(afc.match_narration_phase("AFC_Brush: Clean Nozzle") == "clean");
-    // purge/purging is its own phase, never folded into feed.
-    REQUIRE(afc.match_narration_phase("Purging filament") == "purge");
+    // Both of AFC_BRUSH's spellings land on the one brush phase.
+    REQUIRE(afc.match_narration_phase("AFC_Brush: Clean Nozzle") == "brush");
+    // purge wording belongs to the poop macro, never folded into feed.
+    REQUIRE(afc.match_narration_phase("Purging filament") == "poop");
+    // "unloading lane1" contains "loading lane" — the unload check must win.
+    REQUIRE(afc.match_narration_phase("Unloading lane1") == "unload");
     // load-complete beats a generic "loading" mention.
     REQUIRE(afc.match_narration_phase("lane1 is now loaded in toolhead") == "load");
     // Unrelated chatter matches nothing.
