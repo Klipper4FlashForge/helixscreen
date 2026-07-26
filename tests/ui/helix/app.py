@@ -50,9 +50,21 @@ class HelixApp:
 
     def start(self) -> "HelixApp":
         env = os.environ.copy()
-        # Mirrors scripts/screenshot.sh: XWayland's GLX path crashes, so a
-        # Wayland session must use SDL's native driver.
-        if env.get("WAYLAND_DISPLAY") and not env.get("SDL_VIDEODRIVER"):
+        # Default to SDL's headless driver: a visible window steals focus and
+        # swallows the developer's keystrokes every time a test spawns an app,
+        # and a suite run spawns many. Verified that dummy renders normally —
+        # navigate and screenshot both work and produce correct pixels, so the
+        # golden-image tests are unaffected.
+        #
+        # Explicitly exporting SDL_VIDEODRIVER still wins, so a visible
+        # instance remains one env var away when you want to watch one. In
+        # that case honour the Wayland rule from scripts/screenshot.sh:
+        # XWayland's GLX path crashes, so a Wayland session needs SDL's
+        # native driver rather than the default.
+        if not env.get("SDL_VIDEODRIVER"):
+            env["SDL_VIDEODRIVER"] = "dummy"
+        headless = env["SDL_VIDEODRIVER"] == "dummy"
+        if not headless and env.get("WAYLAND_DISPLAY"):
             env["SDL_VIDEODRIVER"] = "wayland"
         display_index = "0" if env.get("WAYLAND_DISPLAY") else "1"
 
