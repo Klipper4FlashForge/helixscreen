@@ -26,6 +26,13 @@ setup() {
 
     mkdir -p "$INSTALL_DIR/config" "$INSTALL_DIR/bin"
 
+    # No Moonraker source tree by default, so moonraker_asset_name_support()
+    # reports "undetermined" and configure_moonraker_updates() keeps its
+    # pre-gate behaviour. Tests that exercise the gate set this explicitly via
+    # fake_moonraker_src(). Without the override the probe would find whatever
+    # Moonraker happens to be installed on the machine running the suite.
+    export MOONRAKER_SRC_PATHS=""
+
     # moonraker.sh edits conf files with GNU-style `sed -i EXPR FILE`, which BSD
     # sed misreads as a backup suffix. The shim makes the GNU form work here, so
     # macOS exercises the same branch the Linux devices take.
@@ -96,6 +103,313 @@ setup_moonraker_home() {
     KLIPPER_HOME="$BATS_TEST_TMPDIR/home/testuser"
     export KLIPPER_HOME
     echo "$conf_dir/moonraker.conf"
+}
+
+# Helper: build a fake Moonraker source tree and point MOONRAKER_SRC_PATHS at it.
+# Args: $1 = update_manager module filename (net_deploy.py / zip_deploy.py / ...)
+#       $2 = module body (optional; include "asset_name" to signal support)
+#       $3 = layout: "checkout" (default, <root>/moonraker/components/...) or
+#            "package" (<root>/components/...)
+# Echoes the source root.
+fake_moonraker_src() {
+    local module="$1"
+    local body="${2:-}"
+    local layout="${3:-checkout}"
+    local root="$BATS_TEST_TMPDIR/moonraker-src"
+    local um
+
+    if [ "$layout" = "package" ]; then
+        um="$root/components/update_manager"
+    else
+        um="$root/moonraker/components/update_manager"
+    fi
+
+    mkdir -p "$um"
+    # Every real layout has these siblings; include them so a probe that keys
+    # off "some file exists" rather than the specific module would be caught.
+    : > "$um/__init__.py"
+    : > "$um/update_manager.py"
+    : > "$um/app_deploy.py"
+    : > "$um/git_deploy.py"
+    printf '%s\n' "$body" > "$um/$module"
+
+    MOONRAKER_SRC_PATHS="$root"
+    export MOONRAKER_SRC_PATHS
+    echo "$root"
+}
+
+# grep that must NOT match. Written as a function rather than inline
+# `! grep -q …` because the `!` reserved word suppresses errexit — a mid-test
+# `! grep` that fails is silently swallowed by bats and only the LAST command
+# decides the result. Calling a plain command keeps every negative assertion load-bearing.
+refute_grep() {
+    local pattern="$1"
+    local file="$2"
+    if grep -q "$pattern" "$file"; then
+        echo "refute_grep: unexpectedly matched /$pattern/ in $file" >&2
+        cat "$file" >&2
+        return 1
+    fi
+}
+
+# Body of a modern net_deploy.py — the decisive token is asset_name.
+NET_DEPLOY_MODERN='class NetDeploy(AppDeploy):
+    async def _get_remote_version(self):
+        asset_name = self.release_info.get("asset_name")
+        release_asset = assets[0]'
+
+# Body of a net_deploy.py from a fork that stripped asset_name handling.
+NET_DEPLOY_NO_ASSET='class NetDeploy(AppDeploy):
+    async def _get_remote_version(self):
+        release_asset = result.get("assets", [{}])[0]'
+
+# =============================================================================
+# find_moonraker_update_manager_dir / moonraker_asset_name_support
+# =============================================================================
+
+@test "moonraker_asset_name_support: net_deploy.py containing asset_name is supported" {
+    fake_moonraker_src "net_deploy.py" "$NET_DEPLOY_MODERN" >/dev/null
+
+    run moonraker_asset_name_support
+    [ "$status" -eq 0 ]
+    [ "$output" = "supported" ]
+}
+
+@test "moonraker_asset_name_support: net_deploy.py without asset_name is unsupported" {
+    fake_moonraker_src "net_deploy.py" "$NET_DEPLOY_NO_ASSET" >/dev/null
+
+    run moonraker_asset_name_support
+    [ "$output" = "unsupported" ]
+}
+
+@test "moonraker_asset_name_support: zip_deploy.py only is unsupported" {
+    # Pre-530f1c2016 Moonraker (Snapmaker U1 ships exactly this today).
+    fake_moonraker_src "zip_deploy.py" "class ZipDeploy(AppDeploy): pass" >/dev/null
+
+    run moonraker_asset_name_support
+    [ "$output" = "unsupported" ]
+}
+
+@test "moonraker_asset_name_support: web_deploy.py only is unsupported" {
+    fake_moonraker_src "web_deploy.py" "class WebClientDeploy(BaseDeploy): pass" >/dev/null
+
+    run moonraker_asset_name_support
+    [ "$output" = "unsupported" ]
+}
+
+@test "moonraker_asset_name_support: no Moonraker source found is undetermined" {
+    MOONRAKER_SRC_PATHS="/nonexistent/moonraker"
+    KLIPPER_HOME="$BATS_TEST_TMPDIR/nonexistent"
+
+    run moonraker_asset_name_support
+    [ "$output" = "undetermined" ]
+}
+
+@test "moonraker_asset_name_support: unknown module set is undetermined, not a guess" {
+    # update_manager package present but neither net_/zip_/web_deploy.py.
+    fake_moonraker_src "future_deploy.py" "asset_name = 1" >/dev/null
+
+    run moonraker_asset_name_support
+    [ "$output" = "undetermined" ]
+}
+
+@test "moonraker_asset_name_support: package layout (<root>/components) is probed too" {
+    fake_moonraker_src "net_deploy.py" "$NET_DEPLOY_MODERN" "package" >/dev/null
+
+    run moonraker_asset_name_support
+    [ "$output" = "supported" ]
+}
+
+@test "find_moonraker_update_manager_dir: KLIPPER_HOME wins over the static list" {
+    # Static list points at an old zip_deploy tree...
+    fake_moonraker_src "zip_deploy.py" "old" >/dev/null
+
+    # ...but the detected Klipper user's home has a modern one.
+    KLIPPER_HOME="$BATS_TEST_TMPDIR/home/klipperuser"
+    local um="$KLIPPER_HOME/moonraker/moonraker/components/update_manager"
+    mkdir -p "$um"
+    printf '%s\n' "$NET_DEPLOY_MODERN" > "$um/net_deploy.py"
+
+    run find_moonraker_update_manager_dir
+    [ "$output" = "$um" ]
+
+    run moonraker_asset_name_support
+    [ "$output" = "supported" ]
+}
+
+@test "find_moonraker_update_manager_dir: nothing found echoes empty string" {
+    MOONRAKER_SRC_PATHS="/nonexistent/moonraker"
+    KLIPPER_HOME="$BATS_TEST_TMPDIR/nonexistent"
+
+    run find_moonraker_update_manager_dir
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+# =============================================================================
+# configure_moonraker_updates: asset_name capability gate (#993)
+# =============================================================================
+
+@test "configure_moonraker_updates: supported Moonraker gets the stanza" {
+    local conf
+    conf=$(setup_moonraker_home)
+    create_moonraker_conf "$conf"
+    MOONRAKER_CONF_PATHS="$conf"
+    rm -f "$INSTALL_DIR/bin/helix-screen"
+    fake_moonraker_src "net_deploy.py" "$NET_DEPLOY_MODERN" >/dev/null
+    mock_command_script "systemctl" 'exit 0'
+
+    configure_moonraker_updates "pi"
+
+    grep -q '^\[update_manager helixscreen\]' "$conf"
+}
+
+@test "configure_moonraker_updates: unsupported Moonraker does NOT get the stanza" {
+    local conf
+    conf=$(setup_moonraker_home)
+    create_moonraker_conf "$conf"
+    MOONRAKER_CONF_PATHS="$conf"
+    rm -f "$INSTALL_DIR/bin/helix-screen"
+    fake_moonraker_src "zip_deploy.py" "class ZipDeploy(AppDeploy): pass" >/dev/null
+    mock_command_script "systemctl" 'exit 0'
+
+    # Capture stderr to a file rather than using `run` — remove_update_manager_section
+    # shells out via `sh -c`, which breaks bats' run subshell on macOS.
+    configure_moonraker_updates "pi" 2>"$BATS_TEST_TMPDIR/gate.log"
+
+    refute_grep '^\[update_manager helixscreen\]' "$conf"
+    # And the user is told why, plus what to do instead.
+    grep -q 'predates release_info.json asset_name support' "$BATS_TEST_TMPDIR/gate.log"
+    grep -q 'v0.10.0' "$BATS_TEST_TMPDIR/gate.log"
+    grep -q 'Settings -> Updates' "$BATS_TEST_TMPDIR/gate.log"
+    # Unrelated sections are left alone.
+    grep -q '^\[update_manager mainsail\]' "$conf"
+}
+
+@test "configure_moonraker_updates: net_deploy.py without asset_name is also gated" {
+    local conf
+    conf=$(setup_moonraker_home)
+    create_moonraker_conf "$conf"
+    MOONRAKER_CONF_PATHS="$conf"
+    rm -f "$INSTALL_DIR/bin/helix-screen"
+    fake_moonraker_src "net_deploy.py" "$NET_DEPLOY_NO_ASSET" >/dev/null
+    mock_command_script "systemctl" 'exit 0'
+
+    configure_moonraker_updates "pi" 2>"$BATS_TEST_TMPDIR/gate.log"
+
+    refute_grep '^\[update_manager helixscreen\]' "$conf"
+}
+
+@test "configure_moonraker_updates: undetermined still writes the stanza, with a warning" {
+    local conf
+    conf=$(setup_moonraker_home)
+    create_moonraker_conf "$conf"
+    MOONRAKER_CONF_PATHS="$conf"
+    MOONRAKER_SRC_PATHS="/nonexistent/moonraker"
+    rm -f "$INSTALL_DIR/bin/helix-screen"
+    mock_command_script "systemctl" 'exit 0'
+
+    configure_moonraker_updates "pi" 2>"$BATS_TEST_TMPDIR/gate.log"
+
+    # Don't regress installs we can't reason about.
+    grep -q '^\[update_manager helixscreen\]' "$conf"
+    grep -q 'Could not locate the Moonraker source' "$BATS_TEST_TMPDIR/gate.log"
+}
+
+@test "configure_moonraker_updates: unsupported removes a pre-existing stanza" {
+    local conf
+    conf=$(setup_moonraker_home)
+    # Previous install (before this gate existed) already armed the updater.
+    create_moonraker_conf_with_helix "$conf"
+    MOONRAKER_CONF_PATHS="$conf"
+    rm -f "$INSTALL_DIR/bin/helix-screen"
+    fake_moonraker_src "zip_deploy.py" "class ZipDeploy(AppDeploy): pass" >/dev/null
+    mock_command_script "systemctl" 'exit 0'
+
+    grep -q '^\[update_manager helixscreen\]' "$conf"
+
+    configure_moonraker_updates "pi" 2>"$BATS_TEST_TMPDIR/gate.log"
+
+    # Gun unloaded.
+    refute_grep '^\[update_manager helixscreen\]' "$conf"
+    refute_grep 'repo: prestonbrown/helixscreen' "$conf"
+    grep -q 'Removing the existing' "$BATS_TEST_TMPDIR/gate.log"
+    # Everything else survives.
+    grep -q '^\[server\]' "$conf"
+    grep -q '^\[update_manager mainsail\]' "$conf"
+}
+
+@test "configure_moonraker_updates: unsupported does not migrate an old git_repo stanza" {
+    local conf
+    conf=$(setup_moonraker_home)
+    create_moonraker_conf_with_git_repo "$conf"
+    MOONRAKER_CONF_PATHS="$conf"
+    rm -f "$INSTALL_DIR/bin/helix-screen"
+    fake_moonraker_src "zip_deploy.py" "class ZipDeploy(AppDeploy): pass" >/dev/null
+    mock_command_script "systemctl" 'exit 0'
+
+    configure_moonraker_updates "pi" 2>"$BATS_TEST_TMPDIR/gate.log"
+
+    # The gate runs before the migration branch — no type: web section appears.
+    refute_grep '^\[update_manager helixscreen\]' "$conf"
+}
+
+@test "configure_moonraker_updates: unsupported leaves a conf with no stanza untouched" {
+    local conf
+    conf=$(setup_moonraker_home)
+    create_moonraker_conf "$conf"
+    MOONRAKER_CONF_PATHS="$conf"
+    rm -f "$INSTALL_DIR/bin/helix-screen"
+    fake_moonraker_src "zip_deploy.py" "class ZipDeploy(AppDeploy): pass" >/dev/null
+    fake_non_buildroot_os_release
+    mock_command_script "systemctl" 'exit 0'
+
+    local before
+    before=$(cat "$conf")
+
+    configure_moonraker_updates "pi" 2>/dev/null
+
+    [ "$(cat "$conf")" = "$before" ]
+}
+
+@test "configure_moonraker_updates: unsupported still writes the asvc allowlist entry" {
+    # The service allowlist is orthogonal to the updater — skipping the stanza
+    # must not cost the user the ability to restart HelixScreen from Mainsail.
+    local conf
+    conf=$(setup_moonraker_home)
+    create_moonraker_conf "$conf"
+    MOONRAKER_CONF_PATHS="$conf"
+    rm -f "$INSTALL_DIR/bin/helix-screen"
+    fake_moonraker_src "zip_deploy.py" "class ZipDeploy(AppDeploy): pass" >/dev/null
+    fake_non_buildroot_os_release
+    mock_command_script "systemctl" 'exit 0'
+
+    local printer_data
+    printer_data="$(dirname "$(dirname "$conf")")"
+    printf "klipper\nmoonraker\n" > "$printer_data/moonraker.asvc"
+
+    configure_moonraker_updates "pi" 2>/dev/null
+
+    grep -q '^helixscreen$' "$printer_data/moonraker.asvc"
+    refute_grep '^\[update_manager helixscreen\]' "$conf"
+}
+
+@test "configure_moonraker_updates: unsupported on buildroot still disables system updates" {
+    # The System Update Provider warning is triggered by the mainsail/fluidd
+    # update_manager sections, not ours — suppress it either way.
+    local conf
+    conf=$(setup_moonraker_home)
+    create_moonraker_conf "$conf"
+    MOONRAKER_CONF_PATHS="$conf"
+    rm -f "$INSTALL_DIR/bin/helix-screen"
+    fake_moonraker_src "zip_deploy.py" "class ZipDeploy(AppDeploy): pass" >/dev/null
+    fake_buildroot_os_release
+    mock_command_script "systemctl" 'exit 0'
+
+    configure_moonraker_updates "snapmaker-u1" 2>/dev/null
+
+    refute_grep '^\[update_manager helixscreen\]' "$conf"
+    grep -q '^enable_system_updates: False' "$conf"
 }
 
 # =============================================================================

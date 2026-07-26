@@ -15,6 +15,26 @@ BASE_URL=""
 OUTPUT=""
 INCLUDE_ZIP=true
 
+# Platforms whose ALREADY-DEPLOYED clients cannot verify a zip, so the manifest
+# must keep pointing them at the tar.gz (prestonbrown/helixscreen#993).
+#
+# Pre-v0.99.102 in-app updaters verify a download with `unzip -tqq`. BusyBox
+# only grew `unzip -t` in 1.32 — the K1 ships 1.31.1 and the AD5M 1.29.3 — and
+# the K2's OpenWrt has no unzip binary or applet at all. Those clients reject a
+# byte-perfect zip as "Corrupt download" (bundle YDECJ4FZ: a K1 on v0.99.97
+# downloaded all 63130591 bytes of helixscreen-k1.zip, then failed verification
+# 16 ms later — the tool rejected the invocation, not the archive).
+#
+# v0.99.102 fixes the verifier, but that fix ships INSIDE the update the broken
+# verifier refuses to install. A client-side fix cannot bootstrap itself, so the
+# manifest is the only lever that reaches a deployed binary. Serving these
+# platforms the tar.gz keeps `gunzip -t` — which works on every BusyBox in the
+# fleet — on the verification path.
+#
+# Retire a platform from this list once telemetry shows its population is on
+# v0.99.102+; use --zip-exclude to do that without editing this file.
+ZIP_EXCLUDE_PLATFORMS="ad5m ad5x cc1 k1 k2 snapmaker-u1"
+
 usage() {
     cat <<EOF
 Usage: generate-manifest.sh --version VERSION --tag TAG --notes NOTES --dir DIR --base-url URL --output FILE [--include-zip]
@@ -37,6 +57,14 @@ Options:
                       a no-op for backward compatibility.
   --no-include-zip    Suppress the zip_url/zip_sha256 fields (legacy behavior;
                       only needed to protect a resurgent pre-v0.99.31 fleet).
+  --zip-exclude LIST  Space-separated platforms to withhold zip_url from, even
+                      when a .zip is present. REPLACES the built-in list
+                      ("$ZIP_EXCLUDE_PLATFORMS"),
+                      so pass "" to offer zip everywhere. These platforms still
+                      get a complete tar.gz asset. Default covers the
+                      BusyBox/OpenWrt devices whose deployed pre-v0.99.102
+                      updaters reject an intact zip (helixscreen#993); drop a
+                      platform once its fleet is on v0.99.102+.
   --help              Show this help message
 EOF
     exit 0
@@ -53,6 +81,7 @@ while [[ $# -gt 0 ]]; do
         --output)      OUTPUT="$2";      shift 2 ;;
         --include-zip)    INCLUDE_ZIP=true;  shift ;;
         --no-include-zip) INCLUDE_ZIP=false; shift ;;
+        --zip-exclude) ZIP_EXCLUDE_PLATFORMS="$2"; shift 2 ;;
         --help)        usage ;;
         *)
             echo "Error: Unknown option $1" >&2
@@ -103,6 +132,7 @@ fi
 FOUND_ANY=false
 ASSETS_JSON="{}"
 PLATFORMS=()
+ZIP_GATED=()
 for f in "$DIR"/helixscreen-*-*.tar.gz; do
     [[ -f "$f" ]] || continue
     base=$(basename "$f")
@@ -148,9 +178,13 @@ for plat in "${PLATFORMS[@]}"; do
     # type:zip updates and v0.99.31+ in-app updaters). The tar.gz url/sha256
     # above stay as the legacy fallback for pre-v0.99.31 clients. On by default;
     # --no-include-zip restores the old suppression.
+    # ...unless this platform's deployed clients can't verify a zip, in which
+    # case the tar.gz above is all they get. See ZIP_EXCLUDE_PLATFORMS.
     if [[ "$INCLUDE_ZIP" == true ]]; then
         zipfile="$DIR/helixscreen-${plat}.zip"
-        if [[ -f "$zipfile" ]]; then
+        if [[ -f "$zipfile" && " $ZIP_EXCLUDE_PLATFORMS " == *" $plat "* ]]; then
+            ZIP_GATED+=("$plat")
+        elif [[ -f "$zipfile" ]]; then
             zip_sha256=$($SHA256_CMD "$zipfile" | awk '{print $1}')
             zip_size=$(wc -c < "$zipfile" | tr -d ' ')
             zip_url="${BASE_URL}/helixscreen-${plat}.zip"
@@ -189,3 +223,10 @@ jq -n \
     }' > "$OUTPUT"
 
 echo "Generated $OUTPUT with platforms: $(echo "$ASSETS_JSON" | jq -r 'keys | join(", ")')"
+
+# Never let a withheld asset pass silently — a gate that hides what it dropped
+# reads as "everything shipped".
+if [[ ${#ZIP_GATED[@]} -gt 0 ]]; then
+    echo "  zip gated off (deployed clients can't verify zip, helixscreen#993): ${ZIP_GATED[*]}"
+    echo "  -> these platforms self-update via the tar.gz url instead"
+fi

@@ -136,6 +136,7 @@ Fields:
   - `sha256` — SHA-256 hash of the tar.gz archive
   - `size` — Size in bytes of the tar.gz archive
   - The update checker prefers `zip_url` / `zip_sha256` when present and falls back to `url` / `sha256` otherwise. The `zip_*` fields are emitted **by default** — telemetry showed only ~0.6% of active devices remained on pre-v0.99.31 builds (which never read `zip_url` and keep using the legacy `url`); v0.99.31+ clients prefer the zip. Pass `generate-manifest.sh --no-include-zip` (documented in the script's `--help`) to restore the old suppression.
+  - **Per-platform zip gate (helixscreen#993).** `zip_url` is withheld from the BusyBox/OpenWrt platforms listed in `ZIP_EXCLUDE_PLATFORMS` (`ad5m ad5x cc1 k1 k2 snapmaker-u1`); they keep a complete tar.gz asset. Pre-v0.99.102 in-app updaters verify a download with `unzip -tqq`, but BusyBox only grew `unzip -t` in 1.32 (K1 ships 1.31.1, AD5M 1.29.3) and the K2 has no unzip at all, so those clients reject a byte-perfect zip as "Corrupt download". **This is the only lever that reaches an already-deployed binary** — v0.99.102 fixes the verifier, but that fix ships inside the very update the broken verifier refuses to install, so a client-side fix cannot bootstrap itself. Shrink the list with `--zip-exclude` once telemetry shows a platform's population is on v0.99.102+; when it is empty, Phase 2 (dropping tar.gz entirely) becomes safe.
 
 ### URL Structure
 
@@ -292,6 +293,16 @@ Key points:
 - `release_info.json` -- Written to the install directory so Moonraker can detect the installed version
 - A systemd path unit (`helixscreen-update.path`) watches `release_info.json` and restarts the service after Moonraker extracts an update
 - As a self-healing fallback, `helixscreen.service` runs `refresh-service-units.sh` on every start to re-template systemd units and install missing watcher units
+
+#### Moonraker version requirement (helixscreen#993)
+
+**This stanza requires Moonraker >= v0.10.0 (or a git checkout newer than 2025-01-19).** The installer probes for the capability and skips writing the stanza when it isn't there — see `moonraker_asset_name_support()` in `scripts/lib/installer/moonraker.sh`, which inspects the installed Moonraker source (found via `find_moonraker_update_manager_dir()`) rather than parsing a version string, since `v0.9.3-73-gfab6c5c1`-style descriptions can't be ordered across branches. It returns three states: `supported` (net_deploy.py containing `asset_name`), `unsupported` (zip_deploy.py/web_deploy.py, or a net_deploy.py without it), and `undetermined` (no source found — preserves the previous behavior and warns, rather than guessing). On `unsupported` the installer also *removes* an already-written stanza.
+
+Asset selection lives in Moonraker's `NetDeploy._get_remote_version()` (`moonraker/components/update_manager/net_deploy.py`). It seeds `release_asset = assets[0]` and only overrides it when `release_info.json`'s `asset_name` **exactly** matches an asset name; a miss logs `Asset '<name>' not found` at INFO and downloads `assets[0]` anyway. Support for `asset_name` arrived in commit `530f1c2016` (2025-01-19), which also renamed `zip_deploy.py` to `net_deploy.py`; the first tag containing it is **v0.10.0** (2026-01-21). Every earlier version reads `assets[0]` unconditionally and never looks at `asset_name`.
+
+That matters because the GitHub API returns release assets **sorted by name**, and `_extract_release()` runs `shutil.rmtree(self.path)` *before* opening the archive. On an unsupported Moonraker the in-UI update button therefore wipes the install directory and then fails with `zipfile.BadZipFile: File is not a zip file`. Release symbol assets are named `symbols-<platform>.sym.zst` specifically so they sort after the `helixscreen-*` artifacts and never land in `assets[0]` (see the guard in `.github/workflows/release.yml`).
+
+**Rollback is unsupported on every Moonraker version, including master.** `NetDeploy.rollback()` ignores `asset_name` entirely — it is still hardcoded to `result.get('assets', [{}])[0]`. The Mainsail/Fluidd rollback button will always fetch the alphabetically-first asset regardless of what `release_info.json` says, so it cannot be made to work from our side. Use HelixScreen's built-in updater or re-run the installer pinned to a version instead.
 
 ### Service Allowlist
 
