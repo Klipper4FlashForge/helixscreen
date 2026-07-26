@@ -215,13 +215,13 @@ bool AmsBackendAfc::auto_unloads_after_print() const {
 // ============================================================================
 
 void AmsBackendAfc::on_started() {
-    // Detect AFC version (async - results come via callback)
-    // This will set has_lane_data_db_ for v1.0.32+
+    // Version is informational only (see apply_afc_version_response) — nothing
+    // below depends on the result, so this does not need to complete first.
     detect_afc_version();
 
     // If we have discovered lanes (from PrinterCapabilities), initialize them now.
-    // This provides immediate lane data for ALL AFC versions (including < 1.0.32).
-    // For v1.0.32+, query_lane_data() may later supplement this with richer data.
+    // This provides immediate lane data for every AFC version. query_lane_data()
+    // may later supplement it with colors/materials/spool IDs from the database.
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!discovered_lane_names_.empty() && !slots_.is_initialized()) {
@@ -230,6 +230,15 @@ void AmsBackendAfc::on_started() {
             initialize_slots(discovered_lane_names_);
         }
     }
+
+    // Always attempt the lane_data query. There is no reliable capability flag to
+    // gate on: AFC's `lane_data_enabled` reports whether Moonraker has the (now
+    // unused) [lane_data] section, NOT whether the database namespace holds data —
+    // send_lane_data() writes to the database unconditionally. A live BoxTurtle on
+    // 2026-07-26 had lane_data_enabled=false with a fully populated namespace.
+    // Attempting and adapting is the only correct detection: a missing namespace
+    // just errors, and the probe is silent.
+    query_lane_data();
 
     // Note: With the early hardware discovery callback architecture, this backend is
     // created and started BEFORE printer.objects.subscribe is called. The notification
@@ -527,27 +536,37 @@ AmsBackendAfc::classify_error(const std::string& raw_line,
 
 std::vector<AmsBackend::ToolchangePhase>
 AmsBackendAfc::toolchange_phase_template(StepOperationType op) const {
+    // Mirrors AFC's real CHANGE_TOOL, which is TOOL_UNLOAD(old) then
+    // TOOL_LOAD(new). The purge-to-bucket, kick and wipe all live in
+    // do_poop_kick_wipe(), which TOOL_LOAD calls only AFTER load_sequence()
+    // succeeds — the poop purges the old colour out THROUGH the newly fed
+    // filament, so it cannot precede the feed. Verified against upstream
+    // v1.1.0 and v1.2.0.
+    //
+    // AFC has exactly one purge (the poop macro, `poop_cmd`) and one wipe
+    // (`wipe_cmd`/AFC_BRUSH), so there is no "Purge" distinct from the poop and
+    // no "Clean nozzle" distinct from the brush. The wipe actually runs twice
+    // (before and after the kick); the bar has no notion of a repeated step, so
+    // it collapses to the single trailing brush.
     switch (op) {
     case StepOperationType::LOAD_SWAP:
         return {
-            {"heat", "Heat nozzle", false},    {"cut", "Cut tip", true},
-            {"poop", "Purge to bucket", true}, {"kick", "Kick away", true},
-            {"feed", "Feed filament", false},  {"purge", "Purge", true},
-            {"brush", "Brush nozzle", true},   {"clean", "Clean nozzle", true},
-            {"load", "Load complete", false},
+            {"heat", "Heat nozzle", false},     {"cut", "Cut tip", true},
+            {"unload", "Unload filament", false}, {"feed", "Feed filament", false},
+            {"poop", "Purge to bucket", true},  {"kick", "Kick away", true},
+            {"brush", "Brush nozzle", true},    {"load", "Load complete", false},
         };
     case StepOperationType::LOAD_FRESH:
         return {
-            {"heat", "Heat nozzle", false},
-            {"feed", "Feed filament", false},
-            {"purge", "Purge", true},
-            {"load", "Load complete", false},
+            {"heat", "Heat nozzle", false},    {"feed", "Feed filament", false},
+            {"poop", "Purge to bucket", true}, {"kick", "Kick away", true},
+            {"brush", "Brush nozzle", true},   {"load", "Load complete", false},
         };
     case StepOperationType::UNLOAD:
         return {
             {"heat", "Heat nozzle", false},
             {"cut", "Cut tip", true},
-            {"retract", "Retract", false},
+            {"unload", "Retract filament", false},
         };
     }
     return {};
@@ -581,20 +600,30 @@ AmsBackendAfc::match_narration_phase(const std::string& narration) const {
     // Order matters: more specific phrases first.
     if (has("is now loaded in toolhead") || has("load complete") || has("loaded in toolhead"))
         return "load";
-    if (has("clean nozzle") || has("cleaning nozzle") || has("brush clean"))
-        return "clean";
-    if (has("move to brush") || has("brush"))
+    // Must precede the "feed" needles below: AFC announces the old lane coming
+    // out as "Unloading lane1", and normalized "unloading lane1" CONTAINS the
+    // substring "loading lane" — checked later it would resolve to feed and the
+    // bar would skip forward over the unload.
+    if (has("unload"))
+        return "unload";
+    // AFC_BRUSH is the only wipe. It emits "AFC_Brush: Clean Nozzle" at the
+    // default variable_verbose=1 and "AFC_Brush: Move to Brush." only at
+    // verbose>1, so both spellings must land on the same phase or the step never
+    // lights on a stock install.
+    if (has("clean nozzle") || has("cleaning nozzle") || has("brush"))
         return "brush";
-    if (has("purg")) // S1: purge/purging is its own phase, not "feed"
-        return "purge";
+    // The poop macro IS the purge; it says "Starting poop" at verbose 1 and
+    // "Move To Purge Location" at verbose>1. One phase, both spellings.
+    if (has("purg") || has("poop"))
+        return "poop";
     if (has("kick"))
         return "kick";
-    if (has("poop"))
-        return "poop";
+    // Before the retract needle: AFC_Cut says "Retract Filament for Cut", which
+    // is part of the cut, not the old filament coming out of the toolhead.
     if (has("cut"))
         return "cut";
-    if (has("retract")) // UNLOAD ends on a retract step; keep it reachable (#1046)
-        return "retract";
+    if (has("retract")) // UNLOAD ends on this step; keep it reachable (#1046)
+        return "unload";
     if (has("to hub") || has("feed") || has("loading lane"))
         return "feed";
     if (has("heat"))
@@ -1304,7 +1333,6 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
                         ext_data["tool_sensor_after_extruder"].get<float>();
                 }
 
-
                 spdlog::debug("[AMS AFC] Extruder '{}': lane_loaded='{}', {} lanes", ext_name,
                               info.lane_loaded, info.available_lanes.size());
                 extruders_.push_back(std::move(info));
@@ -1927,12 +1955,15 @@ bool AmsBackendAfc::apply_afc_version_response(const nlohmann::json& response) {
         std::lock_guard<std::mutex> lock(mutex_);
         afc_version_ = version->get<std::string>();
         system_info_.version = afc_version_;
-
-        // Set capability flags based on version
-        has_lane_data_db_ = version_at_least("1.0.32");
     }
-    spdlog::info("[AMS AFC] Detected AFC version: {} (lane_data DB: {})", afc_version_,
-                 has_lane_data_db_ ? "yes" : "no");
+    // Informational only — never gate behavior on this. AFC removed the code that
+    // writes the afc-install namespace (its commit 7d20db7, #451, 2025-06-16), so
+    // the value is either absent or frozen at whatever it was before that date. A
+    // live BoxTurtle reported "1.0.0" on 2026-07-26 while its payload proved
+    // 1.0.32-era. Capabilities are detected from the data itself instead.
+    spdlog::info("[AMS AFC] Reported AFC version: {} (informational; capabilities are "
+                 "feature-detected)",
+                 afc_version_);
     return true;
 }
 
@@ -1964,27 +1995,8 @@ void AmsBackendAfc::detect_afc_version() {
         "server.database.get_item", params,
         [this, token](const nlohmann::json& response) {
             // L081 Mechanism C: marshal member writes + downstream calls to main.
-            token.defer("AmsBackendAfc::detect_afc_version_success", [this, response]() {
-                if (!apply_afc_version_response(response))
-                    return;
-
-                // Warn if AFC version is older than minimum supported
-                if (!version_at_least("1.0.35")) {
-                    auto warning =
-                        fmt::format(lv_tr("AFC version {} may have compatibility issues. "
-                                          "Please upgrade to v1.0.35 or later."),
-                                    afc_version_);
-                    spdlog::warn("[AMS AFC] {}", warning);
-                    helix::ui::modal_show_alert(lv_tr("AFC Version Warning"), warning.c_str(),
-                                                ModalSeverity::Warning, "OK");
-                }
-
-                // For v1.0.32+, query lane_data database for richer data
-                // This supplements the basic lane info from printer.objects.list
-                if (has_lane_data_db_) {
-                    query_lane_data();
-                }
-            });
+            token.defer("AmsBackendAfc::detect_afc_version_success",
+                        [this, response]() { apply_afc_version_response(response); });
         },
         [this, token](const MoonrakerError& err) {
             // L081 Mechanism C: marshal member writes to main.
@@ -1999,32 +2011,6 @@ void AmsBackendAfc::detect_afc_version() {
         0,   // default timeout
         true // silent — probe only, don't show toast or log at error level
     );
-}
-
-bool AmsBackendAfc::version_at_least(const std::string& required) const {
-    // Parse semantic version strings (e.g., "1.0.32")
-    // Returns true if afc_version_ >= required
-
-    if (afc_version_ == "unknown" || afc_version_.empty()) {
-        return false;
-    }
-
-    auto parse_version = [](const std::string& v) -> std::tuple<int, int, int> {
-        int major = 0, minor = 0, patch = 0;
-        std::istringstream iss(v);
-        char dot;
-        iss >> major >> dot >> minor >> dot >> patch;
-        return {major, minor, patch};
-    };
-
-    auto [cur_maj, cur_min, cur_patch] = parse_version(afc_version_);
-    auto [req_maj, req_min, req_patch] = parse_version(required);
-
-    if (cur_maj != req_maj)
-        return cur_maj > req_maj;
-    if (cur_min != req_min)
-        return cur_min > req_min;
-    return cur_patch >= req_patch;
 }
 
 // ============================================================================
@@ -2119,10 +2105,18 @@ void AmsBackendAfc::query_lane_data() {
         return;
     }
 
-    // Query Moonraker database for AFC lane_data
-    // Method: server.database.get_item
-    // Params: { "namespace": "AFC", "key": "lane_data" }
-    nlohmann::json params = {{"namespace", "AFC"}, {"key", "lane_data"}};
+    // Query Moonraker database for AFC lane_data.
+    //
+    // The namespace is top-level "lane_data" with one key per lane — AFC's
+    // send_lane_data() POSTs {"namespace":"lane_data","key":<lane>,"value":{…}}.
+    // We previously asked for namespace "AFC" key "lane_data", which Moonraker
+    // answers with a 404 ("Key 'lane_data' in namespace 'AFC' not found"), so this
+    // query could never have succeeded. It went unnoticed because the version gate
+    // above it meant the call was almost never reached.
+    //
+    // No key: fetch the whole namespace so result.value is {lane → data}, which is
+    // the shape parse_lane_data expects.
+    nlohmann::json params = {{"namespace", "lane_data"}};
 
     auto token = lifetime_.token();
     client_->send_jsonrpc(
@@ -2183,9 +2177,15 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
         }
         auto& slot = entry->info;
 
-        // Parse color (AFC uses hex string without 0x prefix)
+        // Parse color. AFC writes "#RRGGBB" here (verified against a live
+        // BoxTurtle's lane_data namespace); std::stoul cannot parse the '#', so
+        // without stripping it every lane fell back to the default grey. Bare hex
+        // is also accepted. Matches the handling in parse_afc_stepper.
         if (lane.contains("color") && lane["color"].is_string()) {
             std::string color_str = lane["color"].get<std::string>();
+            if (!color_str.empty() && color_str[0] == '#') {
+                color_str = color_str.substr(1);
+            }
             try {
                 slot.color_rgb = static_cast<uint32_t>(std::stoul(color_str, nullptr, 16));
             } catch (...) {
@@ -2198,9 +2198,19 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
             slot.material = lane["material"].get<std::string>();
         }
 
-        // Parse loaded state
-        // AFC "loaded" means hub-loaded, not toolhead-loaded
-        // Only tool_loaded == true means filament is at the extruder
+        // Parse loaded state.
+        // AFC "loaded" means hub-loaded, not toolhead-loaded — only
+        // tool_loaded == true means filament is at the extruder.
+        //
+        // AFC's real lane_data payload carries NONE of these keys (it is metadata
+        // only: color/material/temps/spool_id/td). Defaulting to AVAILABLE when no
+        // status key is present would clobber the status already derived from the
+        // AFC_stepper objects and show empty lanes as loaded. Absent means
+        // unchanged, matching how status deltas are treated elsewhere.
+        const bool has_status_key =
+            lane.contains("tool_loaded") || lane.contains("loaded") ||
+            lane.contains("available") || lane.contains("empty");
+
         bool tool_loaded = false;
         if (lane.contains("tool_loaded") && lane["tool_loaded"].is_boolean()) {
             tool_loaded = lane["tool_loaded"].get<bool>();
@@ -2214,7 +2224,7 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
                    lane["loaded"].get<bool>()) {
             // Hub-loaded: filament is present and ready, not at toolhead
             slot.status = SlotStatus::AVAILABLE;
-        } else {
+        } else if (has_status_key) {
             if (lane.contains("available") && lane["available"].is_boolean() &&
                 lane["available"].get<bool>()) {
                 slot.status = SlotStatus::AVAILABLE;
@@ -2871,14 +2881,12 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
         // sync_from_backend → refresh_spoolman_weights → set_slot_info again,
         // creating an infinite feedback loop that saturates the CPU.
         //
-        // Send gcode even when version is unknown — SET_SPOOL_ID has existed
-        // since well before v1.0.20. Silently skipping gcode for unknown
-        // versions caused issue #644 (spool assignment bypassed AFC).
-        if (persist &&
-            (version_at_least("1.0.20") || afc_version_ == "unknown" || afc_version_.empty())) {
-            if (afc_version_ == "unknown" || afc_version_.empty()) {
-                spdlog::debug("[AMS AFC] Version unknown, attempting gcode persistence anyway");
-            }
+        // Persistence is never version-gated. These SET_* commands have existed
+        // since well before any version we would recognize, and the version string
+        // is not a usable signal (AFC stopped writing it — see
+        // apply_afc_version_response). Skipping gcode on an unrecognized version
+        // caused issue #644, where spool assignment silently bypassed AFC.
+        if (persist) {
             std::string lane_name = slots_.name_of(slot_index);
             if (!lane_name.empty()) {
                 // Color (only if changed and valid - not 0 or default grey)
@@ -2920,10 +2928,6 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
                         fmt::format("SET_MAP LANE={} MAP=T{}", lane_name, info.mapped_tool));
                 }
             }
-        } else if (persist && afc_version_ != "unknown" && !afc_version_.empty()) {
-            spdlog::info("[AMS AFC] Version {} - slot changes stored locally only (upgrade to "
-                         "1.0.20+ for persistence)",
-                         afc_version_);
         }
     }
 

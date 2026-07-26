@@ -45,9 +45,6 @@ class AfcDatabaseResponseHelper : public AmsBackendAfc {
     std::string version() const {
         return afc_version_;
     }
-    bool lane_data_db() const {
-        return has_lane_data_db_;
-    }
 };
 
 namespace {
@@ -99,16 +96,24 @@ TEST_CASE("AFC version is applied from a real database envelope", "[afc][databas
 
     REQUIRE(afc.apply_version(envelope("afc-install", {{"version", "1.0.40"}})));
     CHECK(afc.version() == "1.0.40");
-    CHECK(afc.lane_data_db());
 }
 
-// has_lane_data_db_ gates the lane_data query on >= 1.0.32. With the version
-// never applied it compared against an empty string, so the gate never opened.
-TEST_CASE("lane_data capability is gated on the applied version", "[afc][database]") {
+// lane_data is NOT gated on a version any more. AFC deleted the code that wrote
+// the afc-install namespace in its commit 7d20db7 (#451, 2025-06-16), so the
+// version string is either absent or frozen at whatever it was before that date.
+// A real BoxTurtle on 2026-07-26 reported "1.0.0" while its payload proved
+// 1.0.32-era, and its lane_data namespace was fully populated — gating on the
+// version threw that data away.
+TEST_CASE("lane_data does not depend on the reported version", "[afc][database]") {
     AfcDatabaseResponseHelper old_afc;
-    REQUIRE(old_afc.apply_version(envelope("afc-install", {{"version", "1.0.31"}})));
-    CHECK(old_afc.version() == "1.0.31");
-    CHECK_FALSE(old_afc.lane_data_db());
+    REQUIRE(old_afc.apply_version(envelope("afc-install", {{"version", "1.0.0"}})));
+    CHECK(old_afc.version() == "1.0.0");
+
+    // A stale/ancient version must not stop lane_data from being applied.
+    const json lanes = {{"lane1", {{"material", "ASA"}, {"color", "#c1c1c1"}, {"spool_id", 127}}}};
+    REQUIRE(old_afc.apply_lanes(envelope("lane_data", lanes)));
+    CHECK(old_afc.get_slot_info(0).material == "ASA");
+    CHECK(old_afc.get_slot_info(0).spoolman_id == 127);
 }
 
 TEST_CASE("a malformed version reply applies nothing", "[afc][database]") {
@@ -123,6 +128,66 @@ TEST_CASE("a malformed version reply applies nothing", "[afc][database]") {
 // ============================================================================
 // Lane data application
 // ============================================================================
+
+// AFC writes colors with a leading '#' ("#c1c1c1"), which std::stoul cannot
+// parse — every lane silently fell back to the default grey. Verified against a
+// live BoxTurtle's lane_data namespace on 2026-07-26.
+TEST_CASE("lane_data color accepts AFC's '#' prefix", "[afc][database]") {
+    AfcDatabaseResponseHelper afc;
+    const json lanes = {{"lane1", {{"color", "#c1c1c1"}}}, {"lane2", {{"color", "00ff00"}}}};
+    REQUIRE(afc.apply_lanes(envelope("lane_data", lanes)));
+
+    CHECK(afc.get_slot_info(0).color_rgb == 0xc1c1c1);
+    // Bare hex (no '#') must keep working.
+    CHECK(afc.get_slot_info(1).color_rgb == 0x00ff00);
+}
+
+TEST_CASE("lane_data leaves an unparseable color at the default", "[afc][database]") {
+    AfcDatabaseResponseHelper afc;
+    const json lanes = {{"lane1", {{"color", "not-a-color"}}}};
+    REQUIRE(afc.apply_lanes(envelope("lane_data", lanes)));
+    CHECK(afc.get_slot_info(0).color_rgb == AMS_DEFAULT_SLOT_COLOR);
+}
+
+// AFC's real lane_data payload carries NO status keys — no tool_loaded, loaded,
+// available or empty. Defaulting to AVAILABLE in that case would clobber the
+// status already derived from the AFC_stepper objects, marking empty lanes as
+// loaded. Absent means unchanged, consistent with how we treat status deltas.
+TEST_CASE("lane_data does not clobber slot status when it carries none",
+          "[afc][database][regression]") {
+    AfcDatabaseResponseHelper afc;
+
+    // First pass establishes EMPTY via an explicit status key.
+    REQUIRE(afc.apply_lanes(envelope("lane_data", {{"lane1", {{"empty", true}}}})));
+    REQUIRE(afc.get_slot_info(0).status == SlotStatus::EMPTY);
+
+    // Second pass is shaped like AFC's actual payload: metadata only.
+    const json real_shape = {{"lane1",
+                              {{"color", "#000000"},
+                               {"material", "ASA"},
+                               {"bed_temp", nullptr},
+                               {"nozzle_temp", nullptr},
+                               {"scan_time", ""},
+                               {"td", ""},
+                               {"lane", "0"},
+                               {"spool_id", 86}}}};
+    REQUIRE(afc.apply_lanes(envelope("lane_data", real_shape)));
+
+    CHECK(afc.get_slot_info(0).status == SlotStatus::EMPTY);
+    // ...while the metadata it DOES carry still lands.
+    CHECK(afc.get_slot_info(0).material == "ASA");
+    CHECK(afc.get_slot_info(0).spoolman_id == 86);
+}
+
+TEST_CASE("lane_data still applies an explicit status when present", "[afc][database]") {
+    AfcDatabaseResponseHelper afc;
+    REQUIRE(afc.apply_lanes(envelope("lane_data", {{"lane1", {{"tool_loaded", true}}}})));
+    CHECK(afc.get_slot_info(0).status == SlotStatus::LOADED);
+
+    AfcDatabaseResponseHelper afc2;
+    REQUIRE(afc2.apply_lanes(envelope("lane_data", {{"lane1", {{"available", true}}}})));
+    CHECK(afc2.get_slot_info(0).status == SlotStatus::AVAILABLE);
+}
 
 TEST_CASE("lane_data is parsed from a real database envelope", "[afc][database]") {
     AfcDatabaseResponseHelper afc;

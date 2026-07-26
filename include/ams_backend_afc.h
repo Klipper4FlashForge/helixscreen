@@ -475,14 +475,6 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     bool apply_lane_data_response(const nlohmann::json& response);
 
     /**
-     * @brief Check if installed AFC version meets minimum requirement
-     *
-     * @param required Minimum version string (e.g., "1.0.32")
-     * @return true if installed version >= required version
-     */
-    bool version_at_least(const std::string& required) const;
-
-    /**
      * @brief Parse AFC_stepper lane object for sensor states and filament info
      *
      * Caller passes the slot index directly (the enclosing loop already knows
@@ -615,9 +607,11 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // Key: unit name, Value: lane names belonging to that unit
     std::unordered_map<std::string, std::vector<std::string>> unit_lane_map_;
 
-    // Version detection
-    std::string afc_version_{"unknown"}; ///< Detected AFC version (e.g., "1.0.0")
-    bool has_lane_data_db_{false};       ///< v1.0.32+ has lane_data in Moonraker DB
+    // Reported AFC version. DISPLAY AND DIAGNOSTICS ONLY — never gate behavior on
+    // it. AFC removed the code that writes the afc-install namespace (its commit
+    // 7d20db7, #451, 2025-06-16), so this is either "unknown" or a value frozen
+    // before that date. Detect capabilities from the data instead.
+    std::string afc_version_{"unknown"};
 
     // Per-lane hub routing: lane_name → hub name ("direct" for direct lanes)
     std::unordered_map<std::string, std::string> lane_hub_routing_;
