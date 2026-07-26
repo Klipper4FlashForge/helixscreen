@@ -8,6 +8,7 @@
 #include "app_globals.h"
 #include "config.h"
 #include "data_root_resolver.h"
+#include "json_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "print_start_analyzer.h"
 #include "printer_discovery.h"
@@ -77,8 +78,13 @@ struct PrinterDatabase {
 
             data = json::parse(file);
             loaded_files.push_back(db_path);
+            // safe_string, not .value(): a null "version" would throw
+            // type_error.302 from inside this log statement, and the catch below
+            // returns false — taking the ENTIRE printer database out for the
+            // process lifetime (detection fails, the roller collapses to
+            // Custom/Other) over a field used only for a debug line.
             spdlog::debug("[PrinterDetector] Loaded bundled printer database version {}",
-                          data.value("version", "unknown"));
+                          helix::json_util::safe_string(data, "version", "unknown"));
         } catch (const std::exception& e) {
             NOTIFY_ERROR(lv_tr("Printer database format error"));
             LOG_ERROR_INTERNAL("[PrinterDetector] Failed to parse printer database: {}", e.what());
