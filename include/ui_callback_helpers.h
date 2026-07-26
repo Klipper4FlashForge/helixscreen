@@ -3,7 +3,10 @@
 
 /**
  * @file ui_callback_helpers.h
- * @brief Helpers to reduce boilerplate in panel/overlay callback registration and widget lookup
+ * @brief Helpers to reduce boilerplate in panel/overlay callback registration
+ *
+ * For widget lookup by name, use the FIND_WIDGET / FIND_WIDGET_REQUIRED /
+ * FIND_WIDGET_OPTIONAL macros in include/ui/ui_widget_helpers.h.
  *
  * @pattern Batch registration replaces repetitive lv_xml_register_event_cb() calls
  * @threading Main thread only
@@ -50,29 +53,4 @@ inline void register_xml_callbacks(std::initializer_list<XmlCallbackEntry> callb
     for (const auto& cb : callbacks) {
         lv_xml_register_event_cb(nullptr, cb.name, cb.callback);
     }
-}
-
-/**
- * @brief Find a widget by name with error logging on failure
- *
- * Combines lv_obj_find_by_name() + error log into a single call.
- * Returns nullptr if the widget is not found.
- *
- * @param parent    Parent object to search within
- * @param name      Widget name to find (matches XML name= attribute)
- * @param panel_tag Log tag for error messages (e.g., "[BedMesh]")
- * @return Widget pointer, or nullptr if not found
- *
- * Example:
- * @code
- * lv_obj_t* btn = find_required_widget(overlay_root_, "save_btn", "[BedMesh]");
- * if (!btn) return;
- * @endcode
- */
-inline lv_obj_t* find_required_widget(lv_obj_t* parent, const char* name, const char* panel_tag) {
-    lv_obj_t* obj = lv_obj_find_by_name(parent, name);
-    if (!obj) {
-        spdlog::error("{} Required widget '{}' not found", panel_tag, name);
-    }
-    return obj;
 }
