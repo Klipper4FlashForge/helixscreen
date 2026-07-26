@@ -1891,6 +1891,63 @@ void AmsBackendAfc::rebuild_unit_map_from_klipper() {
 // Version Detection
 // ============================================================================
 
+const nlohmann::json& AmsBackendAfc::database_item_value(const nlohmann::json& response) {
+    static const nlohmann::json kNull;
+    if (!response.is_object())
+        return kNull;
+
+    // send_jsonrpc delivers the whole JSON-RPC message, so the payload is at
+    // result.value: {"jsonrpc","id","result":{"namespace","key","value":…}}.
+    // Reading "value" off the top level found nothing, silently, on every reply
+    // (prestonbrown/helixscreen#1148).
+    //
+    // Deliberately strict about the envelope rather than also accepting a bare
+    // payload: a payload is an arbitrary object, so "envelope or payload?" is
+    // undecidable — the afc-install payload is {"version":…}, which carries no
+    // "value" key to key off. Callers that route through
+    // MoonrakerAPI::database_get_item get the payload pre-unwrapped and must
+    // not pass it here.
+    const auto result = response.find("result");
+    if (result == response.end() || !result->is_object())
+        return kNull;
+    const auto value = result->find("value");
+    return value != result->end() ? *value : kNull;
+}
+
+bool AmsBackendAfc::apply_afc_version_response(const nlohmann::json& response) {
+    const nlohmann::json& value = database_item_value(response);
+    if (!value.is_object())
+        return false;
+
+    const auto version = value.find("version");
+    if (version == value.end() || !version->is_string())
+        return false;
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        afc_version_ = version->get<std::string>();
+        system_info_.version = afc_version_;
+
+        // Set capability flags based on version
+        has_lane_data_db_ = version_at_least("1.0.32");
+    }
+    spdlog::info("[AMS AFC] Detected AFC version: {} (lane_data DB: {})", afc_version_,
+                 has_lane_data_db_ ? "yes" : "no");
+    return true;
+}
+
+bool AmsBackendAfc::apply_lane_data_response(const nlohmann::json& response) {
+    const nlohmann::json& value = database_item_value(response);
+    if (!value.is_object())
+        return false;
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        parse_lane_data(value);
+    }
+    return true;
+}
+
 void AmsBackendAfc::detect_afc_version() {
     if (!client_) {
         spdlog::warn("[AMS AFC] Cannot detect version: client is null");
@@ -1908,40 +1965,23 @@ void AmsBackendAfc::detect_afc_version() {
         [this, token](const nlohmann::json& response) {
             // L081 Mechanism C: marshal member writes + downstream calls to main.
             token.defer("AmsBackendAfc::detect_afc_version_success", [this, response]() {
-                bool should_query_lane_data = false;
+                if (!apply_afc_version_response(response))
+                    return;
 
-                if (response.contains("value") && response["value"].is_object()) {
-                    const auto& value = response["value"];
-                    if (value.contains("version") && value["version"].is_string()) {
-                        {
-                            std::lock_guard<std::mutex> lock(mutex_);
-                            afc_version_ = value["version"].get<std::string>();
-                            system_info_.version = afc_version_;
-
-                            // Set capability flags based on version
-                            has_lane_data_db_ = version_at_least("1.0.32");
-                            should_query_lane_data = has_lane_data_db_;
-                        }
-                        spdlog::info("[AMS AFC] Detected AFC version: {} (lane_data DB: {})",
-                                     afc_version_, has_lane_data_db_ ? "yes" : "no");
-
-                        // Warn if AFC version is older than minimum supported
-                        if (!version_at_least("1.0.35")) {
-                            auto warning =
-                                fmt::format(lv_tr("AFC version {} may have compatibility issues. "
-                                                  "Please upgrade to v1.0.35 or later."),
-                                            afc_version_);
-                            spdlog::warn("[AMS AFC] {}", warning);
-                            helix::ui::modal_show_alert(lv_tr("AFC Version Warning"),
-                                                        warning.c_str(), ModalSeverity::Warning,
-                                                        "OK");
-                        }
-                    }
+                // Warn if AFC version is older than minimum supported
+                if (!version_at_least("1.0.35")) {
+                    auto warning =
+                        fmt::format(lv_tr("AFC version {} may have compatibility issues. "
+                                          "Please upgrade to v1.0.35 or later."),
+                                    afc_version_);
+                    spdlog::warn("[AMS AFC] {}", warning);
+                    helix::ui::modal_show_alert(lv_tr("AFC Version Warning"), warning.c_str(),
+                                                ModalSeverity::Warning, "OK");
                 }
 
                 // For v1.0.32+, query lane_data database for richer data
                 // This supplements the basic lane info from printer.objects.list
-                if (should_query_lane_data) {
+                if (has_lane_data_db_) {
                     query_lane_data();
                 }
             });
@@ -2090,12 +2130,9 @@ void AmsBackendAfc::query_lane_data() {
         [this, token](const nlohmann::json& response) {
             // L081 Mechanism C: parse_lane_data mutates members under lock; emit on main.
             token.defer("AmsBackendAfc::query_lane_data_success", [this, response]() {
-                if (response.contains("value") && response["value"].is_object()) {
-                    {
-                        std::lock_guard<std::mutex> lock(mutex_);
-                        parse_lane_data(response["value"]);
-                    }
-                    // Emit OUTSIDE the lock to avoid deadlock with callbacks
+                // apply_lane_data_response takes the lock; emit OUTSIDE it to
+                // avoid deadlock with callbacks.
+                if (apply_lane_data_response(response)) {
                     emit_event(EVENT_STATE_CHANGED);
                 }
             });

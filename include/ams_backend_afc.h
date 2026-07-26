@@ -368,6 +368,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcToolchangeTestHelper;
     friend class AfcToolchangerLaneHelper;
     friend class AfcStateStringHelper;
+    friend class AfcDatabaseResponseHelper;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;
@@ -441,6 +442,37 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
      * contains version information. Sets afc_version_ and capability flags.
      */
     void detect_afc_version();
+
+    /**
+     * @brief Extract the payload of a server.database.get_item reply
+     *
+     * send_jsonrpc delivers the full JSON-RPC envelope, so the payload lives at
+     * result.value. Strict about that shape: a payload is an arbitrary object,
+     * so it cannot be told apart from an envelope in general. Replies obtained
+     * via MoonrakerAPI::database_get_item are already unwrapped and must not be
+     * passed here.
+     *
+     * @return the payload, or a null json when absent
+     */
+    static const nlohmann::json& database_item_value(const nlohmann::json& response);
+
+    /**
+     * @brief Apply an afc-install database reply (sets version + capability flags)
+     *
+     * Split out from the RPC callback so the parse is testable without a live
+     * client. Does not raise the version-warning modal or trigger the lane_data
+     * query — the caller does both, keyed off the members this sets.
+     *
+     * @return true when a version string was found and applied
+     */
+    bool apply_afc_version_response(const nlohmann::json& response);
+
+    /**
+     * @brief Apply an AFC/lane_data database reply
+     *
+     * @return true when a lane_data object was found and parsed
+     */
+    bool apply_lane_data_response(const nlohmann::json& response);
 
     /**
      * @brief Check if installed AFC version meets minimum requirement

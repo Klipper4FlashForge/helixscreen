@@ -1,0 +1,139 @@
+// Copyright (C) 2025-2026 356C LLC
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+/**
+ * @file test_afc_database_response.cpp
+ * @brief Tests for AFC's server.database.get_item response handling
+ *
+ * send_jsonrpc hands its callback the full JSON-RPC envelope, so a
+ * server.database.get_item payload lives at result.value — the shape documented
+ * and unwrapped at moonraker_api.cpp:227. AFC read "value" off the top level
+ * instead, so the guard was always false: the version was never applied,
+ * has_lane_data_db_ stayed false, the lane_data query was never issued, and
+ * parse_lane_data never ran (prestonbrown/helixscreen#1148).
+ *
+ * The mock does not implement server.database.get_item, so nothing exercised
+ * these callbacks. These tests drive the parse directly.
+ */
+
+#include "../lvgl_test_fixture.h"
+#include "ams_backend_afc.h"
+#include "ams_types.h"
+
+#include <string>
+
+#include "../catch_amalgamated.hpp"
+#include "hv/json.hpp"
+
+using namespace helix;
+using json = nlohmann::json;
+
+/// Reaches the response-application methods without needing a live client.
+class AfcDatabaseResponseHelper : public AmsBackendAfc {
+  public:
+    AfcDatabaseResponseHelper() : AmsBackendAfc(nullptr, nullptr) {}
+
+    bool apply_version(const json& response) {
+        return apply_afc_version_response(response);
+    }
+    bool apply_lanes(const json& response) {
+        return apply_lane_data_response(response);
+    }
+    static const json& item_value(const json& response) {
+        return database_item_value(response);
+    }
+    std::string version() const {
+        return afc_version_;
+    }
+    bool lane_data_db() const {
+        return has_lane_data_db_;
+    }
+};
+
+namespace {
+
+/// The envelope Moonraker actually sends for server.database.get_item.
+json envelope(const char* ns, const json& value) {
+    return {{"jsonrpc", "2.0"}, {"id", 1}, {"result", {{"namespace", ns}, {"value", value}}}};
+}
+
+} // namespace
+
+// ============================================================================
+// database_item_value — envelope level
+// ============================================================================
+
+TEST_CASE("database_item_value reads the payload from result.value", "[afc][database]") {
+    const json resp = envelope("afc-install", {{"version", "1.0.40"}});
+    const json& value = AfcDatabaseResponseHelper::item_value(resp);
+    REQUIRE(value.is_object());
+    CHECK(value.value("version", "") == "1.0.40");
+}
+
+// Strict about the envelope on purpose. A payload is an arbitrary object, so
+// there is no reliable way to tell one from an envelope — the afc-install
+// payload is {"version":…} and carries no "value" key to test. Accepting a bare
+// object here would mean treating any unrecognised reply as a payload.
+TEST_CASE("database_item_value does not treat a bare payload as an envelope", "[afc][database]") {
+    const json bare = {{"version", "1.0.40"}};
+    CHECK_FALSE(AfcDatabaseResponseHelper::item_value(bare).is_object());
+}
+
+TEST_CASE("database_item_value yields null when the key is missing", "[afc][database]") {
+    CHECK_FALSE(AfcDatabaseResponseHelper::item_value(json::object()).is_object());
+    // An envelope whose result carries no value is not a bare payload — do not
+    // fall back to the top level and mistake the envelope itself for one.
+    const json no_value = {{"jsonrpc", "2.0"}, {"result", {{"namespace", "afc-install"}}}};
+    CHECK_FALSE(AfcDatabaseResponseHelper::item_value(no_value).is_object());
+}
+
+// ============================================================================
+// Version application
+// ============================================================================
+
+TEST_CASE("AFC version is applied from a real database envelope", "[afc][database]") {
+    AfcDatabaseResponseHelper afc;
+    // Unset default. Note this is what version_at_least() has actually been
+    // comparing against in the field, since no version was ever applied.
+    REQUIRE(afc.version() == "unknown");
+
+    REQUIRE(afc.apply_version(envelope("afc-install", {{"version", "1.0.40"}})));
+    CHECK(afc.version() == "1.0.40");
+    CHECK(afc.lane_data_db());
+}
+
+// has_lane_data_db_ gates the lane_data query on >= 1.0.32. With the version
+// never applied it compared against an empty string, so the gate never opened.
+TEST_CASE("lane_data capability is gated on the applied version", "[afc][database]") {
+    AfcDatabaseResponseHelper old_afc;
+    REQUIRE(old_afc.apply_version(envelope("afc-install", {{"version", "1.0.31"}})));
+    CHECK(old_afc.version() == "1.0.31");
+    CHECK_FALSE(old_afc.lane_data_db());
+}
+
+TEST_CASE("a malformed version reply applies nothing", "[afc][database]") {
+    AfcDatabaseResponseHelper afc;
+    CHECK_FALSE(afc.apply_version(envelope("afc-install", json::object())));
+    CHECK_FALSE(afc.apply_version(envelope("afc-install", {{"version", nullptr}})));
+    CHECK_FALSE(afc.apply_version(envelope("afc-install", "not-an-object")));
+    CHECK_FALSE(afc.apply_version(json::object()));
+    CHECK(afc.version() == "unknown");
+}
+
+// ============================================================================
+// Lane data application
+// ============================================================================
+
+TEST_CASE("lane_data is parsed from a real database envelope", "[afc][database]") {
+    AfcDatabaseResponseHelper afc;
+    const json lanes = {{"lane1", {{"material", "PLA"}, {"color", "FF0000"}}},
+                        {"lane2", {{"material", "PETG"}, {"color", "00FF00"}}}};
+    REQUIRE(afc.apply_lanes(envelope("AFC", lanes)));
+}
+
+TEST_CASE("a non-object lane_data reply is rejected", "[afc][database]") {
+    AfcDatabaseResponseHelper afc;
+    CHECK_FALSE(afc.apply_lanes(envelope("AFC", nullptr)));
+    CHECK_FALSE(afc.apply_lanes(envelope("AFC", json::array())));
+    CHECK_FALSE(afc.apply_lanes(json::object()));
+}
