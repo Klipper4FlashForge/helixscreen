@@ -30,6 +30,13 @@ class PrintStatusIdleThumbFixture : public LVGLTestFixture {
             PanelWidgetManager::instance().init_widget_subjects();
             s_widget_registered = true;
         }
+        // PrintStatusWidget's static-inline subjects are initialized by its
+        // constructor, NOT by init_widget_subjects() — the "print_status" row in
+        // panel_widget_registry.cpp carries a null init_subjects hook. Tests that
+        // touch those subjects before constructing a widget therefore need this
+        // explicitly, the same reason ensure_formatter_for_test() calls it.
+        // Idempotent (guarded by the *_initialized_ flags inside).
+        PrintStatusWidget::init_static_subjects();
     }
 
     /// Create minimal mock widget tree matching the XML names
@@ -171,7 +178,15 @@ TEST_CASE_METHOD(PrintStatusIdleThumbFixture,
                  "PrintStatusWidget: attach() defers initial idle reset (no sync subject notify)",
                  "[print_status_widget][idle_thumb][regression]") {
     auto* subj = PrintStatusWidgetTestAccess::idle_thumb_path_subject();
-    REQUIRE(subj != nullptr);
+    // `subj` is the address of a static member, so a null check proves nothing —
+    // it is non-null whether or not lv_subject_init_string() has ever run. Assert
+    // the subject is actually a live string subject instead: an uninitialized
+    // lv_subject_t is zeroed, so type would be 0 (not STRING) and the backing
+    // buffer pointer would be null, and lv_subject_copy_string() below would
+    // silently no-op.
+    REQUIRE(subj->type == LV_SUBJECT_TYPE_STRING);
+    REQUIRE(subj->value.pointer != nullptr);
+    REQUIRE(subj->size > 0);
 
     // Seed the subject buffer with a sentinel so we can detect whether
     // reset_print_card_to_idle() (which rewrites to benchy) ran before
