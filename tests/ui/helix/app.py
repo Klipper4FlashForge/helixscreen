@@ -220,6 +220,16 @@ class HelixApp:
     def set(self, subject: str, value: Any) -> dict:
         return self.ctl("set", subject, value)
 
+    def wait_for(self, subject: str, value: Any, timeout: float = 30.0) -> dict:
+        """Block until a subject's value equals `value` (exact match), or raise on timeout.
+
+        Event-driven: the server attaches an LVGL subject observer rather than
+        polling, so this returns the instant the value changes to match —
+        faster than a fixed sleep in the common case, and immune to the flake
+        a fixed margin has under load.
+        """
+        return self.ctl("wait_for", subject, value, "--timeout", timeout)
+
     def wait_idle(self, timeout: float = 10.0) -> dict:
         """Block until the UI has settled.
 

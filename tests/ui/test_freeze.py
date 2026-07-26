@@ -68,22 +68,33 @@ def test_unfreeze_actually_resumes_a_paused_timer(helix_app):
     # resumed by unfreeze, so its value is direct behavioral proof rather than
     # a count the server reports about itself.
     #
-    # This is the one test in the file that needs a real wall-clock wait —
-    # there's no way to observe "a periodic timer is still ticking" without
-    # letting real time pass. Margins are generous (2x the 1s tick period)
-    # against scheduling jitter.
+    # Two different shapes here. "Still advancing after unfreeze" is a
+    # positive assertion, so it's event-driven: perf_history_tick increments
+    # by exactly 1 per tick (PerformanceState::update — `tick = current + 1`),
+    # so the exact next value is known up front and wait_for's exact-match
+    # semantics fit it precisely. That resolves the instant the tick actually
+    # fires instead of guessing how long to sleep, so it is *faster* than a
+    # fixed sleep in the common case and immune to the flake a fixed margin
+    # has under load (this used to sleep 2.2s against the 1s period and
+    # failed once under concurrent load).
+    #
+    # "Stays flat while frozen" is the opposite shape — asserting an absence
+    # has no event to wait for, so it still needs a real wall-clock wait.
+    # 1.3s (one tick period plus a modest margin) is enough: if freeze()
+    # failed to actually pause the timer, it would have ticked within that
+    # window regardless.
     helix_app.wait_idle()
     before = helix_app.get("perf_history_tick")["value"]
 
     helix_app.freeze()
     try:
-        time.sleep(2.2)
+        time.sleep(1.3)
         during = helix_app.get("perf_history_tick")["value"]
         assert during == before, "perf_history_tick advanced while frozen"
     finally:
         helix_app.unfreeze()
 
-    time.sleep(2.2)
+    helix_app.wait_for("perf_history_tick", during + 1, timeout=5)
     after = helix_app.get("perf_history_tick")["value"]
     assert after > during, "perf_history_tick did not resume advancing after unfreeze"
 
