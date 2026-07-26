@@ -108,8 +108,9 @@ setup_moonraker_home() {
 # Helper: build a fake Moonraker source tree and point MOONRAKER_SRC_PATHS at it.
 # Args: $1 = update_manager module filename (net_deploy.py / zip_deploy.py / ...)
 #       $2 = module body (optional; include "asset_name" to signal support)
-#       $3 = layout: "checkout" (default, <root>/moonraker/components/...) or
-#            "package" (<root>/components/...)
+#       $3 = layout: "checkout" (default, <root>/moonraker/components/...),
+#            "package" (<root>/components/...), or
+#            "nested"  (<root>/moonraker/moonraker/components/...)
 # Echoes the source root.
 fake_moonraker_src() {
     local module="$1"
@@ -120,6 +121,8 @@ fake_moonraker_src() {
 
     if [ "$layout" = "package" ]; then
         um="$root/components/update_manager"
+    elif [ "$layout" = "nested" ]; then
+        um="$root/moonraker/moonraker/components/update_manager"
     else
         um="$root/moonraker/components/update_manager"
     fi
@@ -138,10 +141,10 @@ fake_moonraker_src() {
     echo "$root"
 }
 
-# grep that must NOT match. Written as a function rather than inline
-# `! grep -q …` because the `!` reserved word suppresses errexit — a mid-test
-# `! grep` that fails is silently swallowed by bats and only the LAST command
-# decides the result. Calling a plain command keeps every negative assertion load-bearing.
+# Negative assertions here use refute_grep/refute from tests/shell/helpers.bash,
+# never inline `! grep -q …`: the `!` reserved word suppresses errexit, so a
+# mid-test negative assertion is silently swallowed and only the LAST command
+# decides the result.
 
 # Body of a modern net_deploy.py — the decisive token is asset_name.
 NET_DEPLOY_MODERN='class NetDeploy(AppDeploy):
@@ -157,6 +160,42 @@ NET_DEPLOY_NO_ASSET='class NetDeploy(AppDeploy):
 # =============================================================================
 # find_moonraker_update_manager_dir / moonraker_asset_name_support
 # =============================================================================
+
+@test "find_moonraker_update_manager_dir: finds Creality's nested repo layout" {
+    # Measured on a K1C (192.168.30.182, Moonraker v0.10.0-10): the install dir
+    # is /usr/data/moonraker, the git repo is cloned to
+    # /usr/data/moonraker/moonraker, and the python package sits one level below
+    # that, so update_manager lives at
+    #   /usr/data/moonraker/moonraker/moonraker/components/update_manager
+    # Neither the plain-checkout nor the package form reaches it. Before this
+    # layout was covered the probe returned "undetermined" on every K1/K2 --
+    # the platforms the gate exists to protect.
+    # Discard the helper's stdout rather than capturing it: command
+    # substitution would run it in a subshell and its `export
+    # MOONRAKER_SRC_PATHS` would never reach us. The root is deterministic.
+    fake_moonraker_src "net_deploy.py" "$NET_DEPLOY_MODERN" "nested" >/dev/null
+    local root="$BATS_TEST_TMPDIR/moonraker-src"
+
+    run find_moonraker_update_manager_dir
+    [ "$status" -eq 0 ]
+    [ "$output" = "$root/moonraker/moonraker/components/update_manager" ]
+}
+
+@test "moonraker_asset_name_support: Creality nested layout resolves, not undetermined" {
+    fake_moonraker_src "net_deploy.py" "$NET_DEPLOY_MODERN" "nested" >/dev/null
+
+    run moonraker_asset_name_support
+    [ "$status" -eq 0 ]
+    [ "$output" = "supported" ]
+}
+
+@test "moonraker_asset_name_support: nested layout without asset_name is unsupported" {
+    fake_moonraker_src "net_deploy.py" "$NET_DEPLOY_NO_ASSET" "nested" >/dev/null
+
+    run moonraker_asset_name_support
+    [ "$status" -eq 0 ]
+    [ "$output" = "unsupported" ]
+}
 
 @test "moonraker_asset_name_support: net_deploy.py containing asset_name is supported" {
     fake_moonraker_src "net_deploy.py" "$NET_DEPLOY_MODERN" >/dev/null

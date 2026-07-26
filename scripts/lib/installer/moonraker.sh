@@ -52,9 +52,18 @@ MOONRAKER_SRC_PATHS="
 "
 
 # Locate Moonraker's update_manager component package.
-# Two on-disk layouts are covered:
-#   <root>/moonraker/components/update_manager  -- git checkout (~/moonraker)
-#   <root>/components/update_manager            -- the package dir itself
+# Three on-disk layouts are covered:
+#   <root>/moonraker/components/update_manager            -- git checkout (~/moonraker)
+#   <root>/components/update_manager                      -- the package dir itself
+#   <root>/moonraker/moonraker/components/update_manager  -- repo nested in an install dir
+#
+# The third form is Creality's. Measured on a K1C (192.168.30.182) running
+# Moonraker v0.10.0-10: the install dir is /usr/data/moonraker, the git repo is
+# cloned to /usr/data/moonraker/moonraker, and the python package is a further
+# level down, so the real path is
+#   /usr/data/moonraker/moonraker/moonraker/components/update_manager
+# Both of the first two forms miss that, which would have made the probe return
+# "undetermined" on every K1/K2 -- exactly the platforms the gate exists for.
 # Returns: path to the update_manager directory, or empty string.
 find_moonraker_update_manager_dir() {
     local root
@@ -65,7 +74,8 @@ find_moonraker_update_manager_dir() {
     for root in ${KLIPPER_HOME:+"${KLIPPER_HOME}/moonraker"} $MOONRAKER_SRC_PATHS; do
         [ -n "$root" ] || continue
         for sub in "$root/moonraker/components/update_manager" \
-                   "$root/components/update_manager"; do
+                   "$root/components/update_manager" \
+                   "$root/moonraker/moonraker/components/update_manager"; do
             if [ -d "$sub" ]; then
                 echo "$sub"
                 return 0
