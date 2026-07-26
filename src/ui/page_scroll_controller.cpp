@@ -40,6 +40,15 @@ bool PageScrollController::attach(lv_obj_t* container) {
     }
     up_btn_ = lv_obj_find_by_name(gutter_, "up");
     down_btn_ = lv_obj_find_by_name(gutter_, "down");
+    if (up_btn_ == nullptr || down_btn_ == nullptr) {
+        spdlog::error("[PageScroll] page_scroll_gutter is missing its up/down buttons");
+        lv_obj_delete_async(gutter_);
+        gutter_ = nullptr;
+        up_btn_ = nullptr;
+        down_btn_ = nullptr;
+        container_ = nullptr;
+        return false;
+    }
 
     // Measure the gutter's natural width to size the reserved strip.
     lv_obj_update_layout(gutter_);
