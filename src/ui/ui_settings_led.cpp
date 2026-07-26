@@ -280,6 +280,12 @@ void LedSettingsOverlay::populate_macro_devices_impl() {
         // --- Card container ---
         auto* card =
             static_cast<lv_obj_t*>(lv_xml_create(container, "setting_macro_card", nullptr));
+        // Guard the parent: lv_obj_create(nullptr) creates a SCREEN, so a failed
+        // card create would silently spawn a stray screen nothing owns or deletes.
+        if (!card) {
+            spdlog::error("[{}] Failed to build macro card for device {} from XML", get_name(), i);
+            continue;
+        }
 
         // --- Header row (collapsed view) ---
         auto* header_row = lv_obj_create(card);
