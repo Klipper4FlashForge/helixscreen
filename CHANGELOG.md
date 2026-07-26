@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.99.102] - 2026-07-26
+
+### Fixed
+
+- **In-app updates failed on printers with older BusyBox (#993)** — release zips were verified with `unzip -tqq`, but BusyBox only gained `unzip -t` in 1.32, so the AD5M (1.29.3) and K1 (1.31.1) rejected an intact download outright and every in-app update and Moonraker install failed. Validation now tries `python3 zipfile.testzip()` first, gated on zlib since the AD5M's Python 3.7 has none, and degrades to a structural `unzip -l` probe rather than declaring a good archive corrupt. Verified on K1, AD5M and CC1 hardware.
+- **The K2 could not install a zip release at all** — its OpenWrt firmware ships no `unzip` binary and no BusyBox applet, only `python3`, so the pre-download check rejected every update with an `apt-get` hint that does not apply there. The check now asks whether the system can read a zip by any means, extraction gained a Python fallback, and both paths force the exec bit on `install.sh` and `bin/` members so the extracted installer can actually run. Verified on K2 hardware.
+
+### Changed
+
+- **Sonic Pad documentation now states that SonicPad-Debian is the only tested firmware.**
+
 ## [0.99.101] - 2026-07-25
 
 LED control gets a round of correctness work, the 3D G-code preview costs noticeably less
@@ -4530,6 +4541,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.102]: https://github.com/prestonbrown/helixscreen/compare/v0.99.101...v0.99.102
 [0.99.101]: https://github.com/prestonbrown/helixscreen/compare/v0.99.100...v0.99.101
 [0.99.100]: https://github.com/prestonbrown/helixscreen/compare/v0.99.99...v0.99.100
 [0.99.99]: https://github.com/prestonbrown/helixscreen/compare/v0.99.98...v0.99.99
