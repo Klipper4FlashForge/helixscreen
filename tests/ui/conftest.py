@@ -51,6 +51,20 @@ def fresh_helix_app(tmp_path):
         yield app
 
 
+@pytest.fixture(autouse=True)
+def clean_screen(request):
+    """Reset to a known screen before each test that uses the shared instance.
+
+    Autouse so a test that navigates somewhere cannot leak that state into the
+    next one. Tests using `fresh_helix_app` get a new process and skip this.
+    """
+    if "helix_app" not in request.fixturenames:
+        return
+    app = request.getfixturevalue("helix_app")
+    app.reset()
+    app.wait_idle()
+
+
 ARTIFACT_ROOT = Path(os.environ.get("HELIX_UI_ARTIFACTS", "ui-artifacts"))
 
 

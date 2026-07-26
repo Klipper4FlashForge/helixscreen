@@ -218,6 +218,10 @@ class HelixApp:
         # CLI token is `current`; `get_current` is the wire method name.
         return self.ctl("current")
 
+    def reset(self) -> dict:
+        """Return to home with no overlays or modals. Cheaper than a reboot."""
+        return self.ctl("reset")
+
     def log(self, n: int = 50) -> list[str]:
         result = self.ctl("log", "-n", n)
         return result.get("lines", []) if isinstance(result, dict) else []

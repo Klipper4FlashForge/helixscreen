@@ -178,6 +178,10 @@ class RemoteControlServer {
     // Ask the app to exit its main loop (app_request_quit)
     nlohmann::json handle_shutdown(const nlohmann::json& params);
 
+    // Return to a known screen (home, no overlays/modals) so one app instance
+    // can serve a whole test session instead of paying a boot per test.
+    nlohmann::json handle_reset(const nlohmann::json& params);
+
     // Tail the in-memory log ring buffer
     nlohmann::json handle_log(const nlohmann::json& params);
 

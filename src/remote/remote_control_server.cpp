@@ -6,7 +6,9 @@
 #include "http_executor.h"
 #include "panel_factory.h"
 #include "ui_keyboard_manager.h"
+#include "ui_modal.h"
 #include "ui_nav_manager.h"
+#include "ui_toast_manager.h"
 #include "ui_update_queue.h"
 
 #include "app_globals.h"
@@ -330,6 +332,7 @@ void RemoteControlServer::register_builtin_handlers() {
 
     // Lifecycle + diagnostics
     handlers_["shutdown"] = [this](const nlohmann::json& p) { return handle_shutdown(p); };
+    handlers_["reset"] = [this](const nlohmann::json& p) { return handle_reset(p); };
     handlers_["log"] = [this](const nlohmann::json& p) { return handle_log(p); };
 }
 
@@ -388,6 +391,67 @@ nlohmann::json RemoteControlServer::handle_shutdown(const nlohmann::json& /*para
     spdlog::info("[RemoteControl] shutdown requested");
     app_request_quit();
     return {{"shutting_down", true}};
+}
+
+nlohmann::json RemoteControlServer::handle_reset(const nlohmann::json& /*params*/) {
+    return execute_on_ui_thread([]() -> nlohmann::json {
+        wake_display();
+
+        // Modals first: Modal::hide() is the live-safe dismiss path (marks the
+        // stack entry "exiting" synchronously, then always finishes with
+        // safe_delete_deferred_raw() -- never a synchronous lv_obj_delete()).
+        // ModalStack::clear() looked tempting but is a teardown-only helper
+        // (its only caller is Application::shutdown()): it calls lv_obj_delete()
+        // directly in a loop, which is exactly the "multiple sync deletions in
+        // one UpdateQueue batch" pattern that corrupts LVGL's event list from
+        // inside a queued callback (this handler runs via execute_on_ui_thread,
+        // itself dispatched through UpdateQueue). empty() only counts
+        // non-exiting entries, so it flips to true as soon as every modal has
+        // been marked -- no need to wait out the exit animation here.
+        int modals_cleared = 0;
+        constexpr int kMaxModalDepth = 16; // matching kMaxDepth's reasoning below
+        while (!ModalStack::instance().empty() && modals_cleared < kMaxModalDepth) {
+            lv_obj_t* top = Modal::get_top();
+            if (!top) {
+                break;
+            }
+            Modal::hide(top);
+            modals_cleared++;
+        }
+
+        // Toasts: ToastManager::hide() dismisses every visible toast (also via
+        // safe_delete_deferred_raw internally). There is no public exact count --
+        // visible_count() is private and the brief for this task says not to add
+        // a ToastManager API here -- so toasts_cleared is presence-only (0 or 1),
+        // not an exact count. See HELIXCTL.md for the caveat.
+        auto& toasts = ToastManager::instance();
+        int toasts_cleared = toasts.is_visible() ? 1 : 0;
+        toasts.hide();
+
+        // Overlays: NavigationManager::go_back() defers its actual work via
+        // queue_update() -- even called from the UI thread, it does not pop
+        // panel_stack_ synchronously, it enqueues a callback for the *next*
+        // UpdateQueue::process_pending() tick. So overlay_stack_names() must be
+        // read exactly once, before any go_back() call, to get the true depth --
+        // rereading it in a loop condition would never observe a decrease within
+        // this same callback and would just spin to kMaxDepth every time.
+        // Bounded rather than unbounded: a nav stack that will not drain is a
+        // bug, and spinning forever here would hang the UI thread.
+        auto& nav = NavigationManager::instance();
+        constexpr int kMaxDepth = 32;
+        int overlays_popped =
+            std::min(static_cast<int>(nav.overlay_stack_names().size()), kMaxDepth);
+        for (int i = 0; i < overlays_popped; ++i) {
+            nav.go_back();
+        }
+
+        nav.set_active(helix::PanelId::Home);
+
+        return {{"panel", panel_id_to_name(nav.get_active())},
+                {"overlays_popped", overlays_popped},
+                {"modals_cleared", modals_cleared},
+                {"toasts_cleared", toasts_cleared}};
+    });
 }
 
 nlohmann::json RemoteControlServer::handle_log(const nlohmann::json& params) {

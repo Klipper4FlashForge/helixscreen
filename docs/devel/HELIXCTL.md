@@ -352,10 +352,41 @@ state, constructed with representative sample data and the real lifecycle:
 | `unfreeze` | Reverse `freeze`: resume exactly the timers it paused, re-enable animations. Returns `{"frozen": false, "timers_resumed": N}` |
 | `log [-n N]` | Tail the app's in-memory log ring buffer (default 50 lines). Printed as raw lines, so it pipes to `grep` |
 | `shutdown` | Ask the app to exit its main loop (`app_request_quit`), running the normal shutdown path |
+| `reset` | Return to the home panel with no overlays or modals open. Returns `{"panel": "home", "overlays_popped": N, "modals_cleared": N, "toasts_cleared": N}` |
 
 `log` reads the same ring buffer the debug bundle's `log_tail` uses — capacity
 is `HELIX_LOG_RING_LINES` (default 2000). It means a scripted run can read the
 app's own log without redirecting stdout to a file first.
+
+#### `reset` — a cheap alternative to rebooting between tests
+
+Booting `helix-screen` costs about two seconds, so a full test corpus shares
+one instance (`tests/ui/conftest.py`'s session-scoped `helix_app` fixture) and
+resets it between tests instead of restarting it. `reset` pops every overlay
+off the navigation stack, dismisses every modal, dismisses every toast, and
+switches the base panel to `home` — all through the same live-safe paths the
+UI itself uses (`NavigationManager::go_back()`, `Modal::hide()`,
+`ToastManager::hide()`), never the synchronous, teardown-only
+`ModalStack::clear()` (its only other caller is `Application::shutdown()`,
+where deleting everything synchronously is fine because nothing else is
+running).
+
+`overlays_popped` and `modals_cleared` are exact counts, sampled once before
+any popping starts (rereading them mid-loop wouldn't reflect anything —
+`go_back()` defers its actual work to the next `UpdateQueue` tick even when
+called from the UI thread, and `Modal::hide()`'s own bookkeeping update *is*
+synchronous, but only the widget deletion is deferred). Both loops are capped
+at 32 iterations: a stack that will not drain is a bug, and looping
+unboundedly on the UI thread would turn it into a hang instead of a report.
+
+`toasts_cleared` is 0 or 1 — "were there any" — not an exact count.
+`ToastManager` exposes a dismiss-all (`hide()`) but its visible-toast counter
+is private, and adding a public accessor was out of scope for this change; a
+real count is a follow-up for whichever future `toasts` command Tier 2 adds.
+
+`reset()` does not touch mock printer/backend state (`scenario`, subject
+values set via `set`) — only navigation, modals, and toasts. A test that
+leaves the mock in a particular scenario still needs to clean that up itself.
 
 From the one-shot client, `quit` and `exit` are accepted as aliases for
 `shutdown`. **In the REPL they are not** — there, `quit`/`exit`/Ctrl-D leave the

@@ -102,6 +102,8 @@ static void print_usage() {
     printf("                          animations\n");
     printf("  log [-n N]              Tail the app's in-memory log ring (default 50 lines)\n");
     printf("  shutdown, quit          Ask the running app to exit\n");
+    printf("  reset                   Return to home with no overlays/modals (cheaper than\n");
+    printf("                          a reboot — see docs/devel/HELIXCTL.md)\n");
     printf("\nScenarios:\n");
     printf("  scenario <name>         Apply named mock scenario\n");
     printf("  list_scenarios          List available mock scenarios\n");
@@ -552,6 +554,8 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
             params["name"] = tokens[1];
         }
         return build_request("get_const", params);
+    } else if (cmd == "reset") {
+        return build_request("reset");
     }
 
     fprintf(stderr, "Unknown command: %s\n", cmd.c_str());
@@ -599,6 +603,7 @@ static const char* REPL_COMMANDS[] = {"ping",
                                       "refresh",
                                       "log",
                                       "shutdown",
+                                      "reset",
                                       "geom",
                                       "text",
                                       "get_const",
@@ -788,6 +793,7 @@ static void repl_print_help() {
     printf("  scenario <name>           Apply mock scenario\n");
     printf("  list_scenarios            List available scenarios\n");
     printf("  log [-n N]                Tail the app's in-memory log ring\n");
+    printf("  reset                     Return to home with no overlays/modals\n");
     printf("\n");
     printf("  refresh                   Reload tab-completion caches\n");
     printf("  help                      Show this help\n");
