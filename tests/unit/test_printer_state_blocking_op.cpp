@@ -272,3 +272,80 @@ TEST_CASE_METHOD(LVGLTestFixture, "re-running init_subjects does not duplicate v
     cs.reset_klippy_volatile();
     CHECK(lv_subject_get_int(cs.get_idle_timeout_printing_subject()) == 0);
 }
+
+TEST_CASE_METHOD(BlockingOpFixture,
+                 "a Klippy restart clears a stale idle_timeout busy flag (#1129)",
+                 "[printer_state][blocking_op][1129]") {
+    // Klipper is mid-G28: idle_timeout says "Printing" with no file print.
+    set_idle_timeout_printing(1);
+    REQUIRE(state.is_blocking_operation_active());
+
+    // Klipper dies. Everything it was doing died with it.
+    state.set_klippy_state_sync(KlippyState::SHUTDOWN);
+
+    CHECK_FALSE(state.is_blocking_operation_active());
+}
+
+TEST_CASE_METHOD(BlockingOpFixture,
+                 "returning to READY clears a busy flag that went stale while down (#1129)",
+                 "[printer_state][blocking_op][1129]") {
+    // This is the reporter's exact shape: the stale value survived PAST the return
+    // to READY, which is why a live `klippy != READY` predicate would not have helped.
+    state.set_klippy_state_sync(KlippyState::SHUTDOWN);
+    set_idle_timeout_printing(1);
+
+    state.set_klippy_state_sync(KlippyState::READY);
+
+    CHECK_FALSE(state.is_blocking_operation_active());
+}
+
+TEST_CASE_METHOD(BlockingOpFixture, "a stale manual_probe flag is cleared by a Klippy restart",
+                 "[printer_state][blocking_op][1129]") {
+    // A klippy crash mid-PROBE_CALIBRATE wedges the same gate by a different input.
+    set_manual_probe(1);
+    REQUIRE(state.is_blocking_operation_active());
+
+    state.set_klippy_state_sync(KlippyState::SHUTDOWN);
+
+    CHECK_FALSE(state.is_blocking_operation_active());
+}
+
+TEST_CASE_METHOD(BlockingOpFixture,
+                 "a webhooks-driven Klippy transition also clears stale busy state",
+                 "[printer_state][blocking_op][1129]") {
+    // The JSON path must reach the same hook as set_klippy_state_sync. Before the
+    // two paths are unified this fails: printer_state.cpp:459 bypasses the hook.
+    set_idle_timeout_printing(1);
+    REQUIRE(state.is_blocking_operation_active());
+
+    nlohmann::json status = {{"webhooks", {{"state", "shutdown"}}}};
+    state.update_from_status(status);
+
+    CHECK_FALSE(state.is_blocking_operation_active());
+}
+
+TEST_CASE_METHOD(BlockingOpFixture,
+                 "fresh idle_timeout in the same payload wins over the transition reset",
+                 "[printer_state][blocking_op][1129]") {
+    // Ordering guarantee: the webhooks block resets, THEN the calibration parse
+    // applies fresh data. A payload that says both "ready" and "Printing" must end
+    // up busy, not reset to idle.
+    state.set_klippy_state_sync(KlippyState::SHUTDOWN);
+    set_idle_timeout_printing(0);
+
+    nlohmann::json status = {{"webhooks", {{"state", "ready"}}},
+                             {"idle_timeout", {{"state", "Printing"}}}};
+    state.update_from_status(status);
+
+    CHECK(lv_subject_get_int(state.get_idle_timeout_printing_subject()) == 1);
+}
+
+TEST_CASE_METHOD(BlockingOpFixture, "a repeated Klippy state is not treated as a transition",
+                 "[printer_state][blocking_op][1129]") {
+    // Guards against resetting on every status payload, which would stomp a
+    // legitimately-busy printer mid-G28.
+    set_idle_timeout_printing(1);
+    state.set_klippy_state_sync(KlippyState::READY); // already READY — no edge
+
+    CHECK(state.is_blocking_operation_active());
+}
