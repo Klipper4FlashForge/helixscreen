@@ -95,3 +95,27 @@
             helix::xml::register_subject_in_current_scope(#name, &name##_);                        \
         }                                                                                          \
     } while (0)
+
+/**
+ * @brief Initialize an integer subject AND mark it Klippy-volatile
+ *
+ * Identical to INIT_SUBJECT_INT, plus it records the subject and its default in
+ * @p volatiles so a Klippy state transition can restore it. Use for subjects fed by
+ * Moonraker DELTA-only status fields whose stale value gates behaviour (#1129).
+ *
+ * The default is written ONCE, here — init and reset cannot drift apart.
+ *
+ * @note @p default_val is expanded twice. Pass a literal or a constant expression,
+ *       never a call with side effects.
+ *
+ * @param name        Base name (without trailing underscore)
+ * @param default_val Initial integer value; also the value reset restores
+ * @param subjects    SubjectManager instance to register with
+ * @param volatiles   helix::state::VolatileSubjects instance to register with
+ * @param register_xml If true, register with the LVGL XML binding system
+ */
+#define INIT_SUBJECT_INT_VOLATILE(name, default_val, subjects, volatiles, register_xml)            \
+    do {                                                                                           \
+        INIT_SUBJECT_INT(name, (default_val), subjects, register_xml);                             \
+        (volatiles).register_subject(&name##_, (default_val));                                     \
+    } while (0)
