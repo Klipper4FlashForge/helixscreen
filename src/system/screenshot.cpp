@@ -12,6 +12,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <lvgl.h>
 #include <memory>
@@ -135,21 +136,14 @@ bool has_suffix_ci(const std::string& s, const std::string& suffix) {
 
 } // namespace
 
-std::string save_screenshot(const std::string& out_path) {
-    // No destination given -> timestamped BMP in the writable runtime dir.
-    std::string filename =
-        out_path.empty() ? app_get_runtime_dir() + "/ui-screenshot-" +
-                               std::to_string(static_cast<unsigned long>(time(nullptr))) + ".bmp"
-                         : out_path;
-    bool as_png = has_suffix_ci(filename, ".png");
-
+bool capture_frame(CapturedFrame& out, lv_obj_t* crop_to) {
     // Take snapshot using LVGL's native API (platform-independent)
     lv_obj_t* screen = lv_screen_active();
     lv_draw_buf_t* snapshot = lv_snapshot_take(screen, LV_COLOR_FORMAT_ARGB8888);
 
     if (!snapshot) {
         spdlog::error("[Screenshot] Failed to take screenshot");
-        return {};
+        return false;
     }
 
     // lv_snapshot_take() only captures the active screen. Full-screen overlays that
@@ -180,20 +174,101 @@ std::string save_screenshot(const std::string& out_path) {
             lv_draw_buf_destroy(top_snap);
     }
 
-    bool ok = as_png ? write_png(filename.c_str(), snapshot->data, snapshot->header.w,
-                                 snapshot->header.h)
-                     : write_bmp(filename.c_str(), snapshot->data, snapshot->header.w,
-                                 snapshot->header.h);
-    if (ok) {
-        spdlog::info("[Screenshot] saved: {}", filename);
-    } else {
-        NOTIFY_ERROR("Failed to save screenshot");
-        LOG_ERROR_INTERNAL("Failed to save screenshot to {}", filename);
-        filename.clear();
+    const int width = static_cast<int>(snapshot->header.w);
+    const int height = static_cast<int>(snapshot->header.h);
+    std::vector<uint8_t> rgba =
+        argb8888_to_rgba(snapshot->data, static_cast<size_t>(width) * static_cast<size_t>(height));
+    lv_draw_buf_destroy(snapshot);
+
+    if (!crop_to) {
+        out.rgba = std::move(rgba);
+        out.width = width;
+        out.height = height;
+        return true;
     }
 
-    // Free snapshot buffer
-    lv_draw_buf_destroy(snapshot);
+    // Clamp to the captured buffer — a widget can extend past the screen
+    // edge, and a partially-offscreen crop must not read out of bounds.
+    lv_area_t area;
+    lv_obj_get_coords(crop_to, &area);
+    int x0 = std::max<int>(0, area.x1);
+    int y0 = std::max<int>(0, area.y1);
+    int x1 = std::min<int>(width, area.x2 + 1);
+    int y1 = std::min<int>(height, area.y2 + 1);
+    if (x1 <= x0 || y1 <= y0) {
+        spdlog::error("[Screenshot] Crop region is empty (widget offscreen or zero-size)");
+        return false;
+    }
+
+    const int crop_w = x1 - x0;
+    const int crop_h = y1 - y0;
+    std::vector<uint8_t> cropped(static_cast<size_t>(crop_w) * static_cast<size_t>(crop_h) * 4);
+    for (int y = 0; y < crop_h; y++) {
+        const uint8_t* src_row =
+            rgba.data() + (static_cast<size_t>(y0 + y) * static_cast<size_t>(width) +
+                          static_cast<size_t>(x0)) * 4;
+        uint8_t* dst_row = cropped.data() + static_cast<size_t>(y) * static_cast<size_t>(crop_w) * 4;
+        std::memcpy(dst_row, src_row, static_cast<size_t>(crop_w) * 4);
+    }
+    out.rgba = std::move(cropped);
+    out.width = crop_w;
+    out.height = crop_h;
+    return true;
+}
+
+uint64_t frame_hash(const CapturedFrame& frame) {
+    uint64_t h = 1469598103934665603ULL; // FNV-1a 64-bit offset basis
+    for (uint8_t b : frame.rgba) {
+        h ^= b;
+        h *= 1099511628211ULL; // FNV-1a 64-bit prime
+    }
+    return h;
+}
+
+std::string write_frame(const CapturedFrame& frame, const std::string& out_path) {
+    if (frame.width <= 0 || frame.height <= 0) {
+        spdlog::error("[Screenshot] Cannot write an empty frame");
+        return {};
+    }
+
+    // No destination given -> timestamped BMP in the writable runtime dir.
+    std::string filename =
+        out_path.empty() ? app_get_runtime_dir() + "/ui-screenshot-" +
+                               std::to_string(static_cast<unsigned long>(time(nullptr))) + ".bmp"
+                         : out_path;
+    bool as_png = has_suffix_ci(filename, ".png");
+
+    // write_png()/write_bmp() both expect LVGL's native ARGB8888 byte order
+    // (B,G,R,A); CapturedFrame stores true RGBA (R,G,B,A) per capture_frame().
+    // Swap the channels back before handing off to those (already-tested)
+    // encoders — the R/B swap is its own inverse, so this is the same helper
+    // capture_frame() used to build the frame in the first place.
+    std::vector<uint8_t> argb = argb8888_to_rgba(
+        frame.rgba.data(), static_cast<size_t>(frame.width) * static_cast<size_t>(frame.height));
+
+    bool ok = as_png ? write_png(filename.c_str(), argb.data(), frame.width, frame.height)
+                     : write_bmp(filename.c_str(), argb.data(), frame.width, frame.height);
+    if (!ok) {
+        spdlog::error("[Screenshot] Failed to write: {}", filename);
+        return {};
+    }
+    spdlog::info("[Screenshot] saved: {}", filename);
+    return filename;
+}
+
+std::string save_screenshot(const std::string& out_path) {
+    CapturedFrame frame;
+    if (!capture_frame(frame)) {
+        NOTIFY_ERROR("Failed to save screenshot");
+        LOG_ERROR_INTERNAL("Failed to capture screenshot frame");
+        return {};
+    }
+    std::string filename = write_frame(frame, out_path);
+    if (filename.empty()) {
+        NOTIFY_ERROR("Failed to save screenshot");
+        LOG_ERROR_INTERNAL("Failed to save screenshot to {}",
+                           out_path.empty() ? std::string("(default path)") : out_path);
+    }
     return filename;
 }
 

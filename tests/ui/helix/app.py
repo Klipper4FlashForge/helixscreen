@@ -13,6 +13,7 @@ import json
 import os
 import signal
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -264,8 +265,33 @@ class HelixApp:
         result = self.ctl("log", "-n", n)
         return result.get("lines", []) if isinstance(result, dict) else []
 
-    def screenshot(self, path: str) -> str:
-        return self.ctl("screenshot", path)["path"]
+    def screenshot(self, path: str, target: str | None = None,
+                   stable: bool = False) -> str:
+        args = ["screenshot", path]
+        if target:
+            args += ["--target", target]
+        if stable:
+            args += ["--stable"]
+        return self.ctl(*args)["path"]
+
+    def capture(self, target: str | None = None, stable: bool = True):
+        """Capture to a temp PNG and return it as a Pillow image.
+
+        `stable` defaults to True here (unlike the raw `screenshot` command)
+        because this is the golden/pixel-comparison entry point — a caller
+        reaching for an in-memory image almost always wants the frame-hash
+        gate, not a best-effort snapshot that might land mid-repaint.
+        """
+        from PIL import Image
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            path = tmp.name
+        try:
+            self.screenshot(path, target=target, stable=stable)
+            with Image.open(path) as img:
+                return img.convert("RGBA").copy()
+        finally:
+            os.unlink(path)
 
     def shutdown(self) -> None:
         self.stop()

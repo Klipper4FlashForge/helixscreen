@@ -59,8 +59,11 @@ static void print_usage() {
     printf("  list_panels             List available panels\n");
     printf("  list_components         List every registered XML component (live registry)\n");
     printf("  list_callbacks          List every registered event-callback name\n");
-    printf("  screenshot [path]       Capture the screen (a .png path encodes PNG;\n");
-    printf("                          default: timestamped .bmp in the runtime dir)\n");
+    printf("  screenshot [path] [--target W] [--stable]\n");
+    printf("                          Capture the screen (a .png path encodes PNG;\n");
+    printf("                          default: timestamped .bmp in the runtime dir).\n");
+    printf("                          --target crops to a widget's bounds; --stable\n");
+    printf("                          polls until pixels stop changing (see `freeze`)\n");
     printf("  status                  Show panel, connection state, printer status\n");
     printf("  wake                    Reset idle timer / dismiss the screensaver\n");
     printf("  demo <name>             Show a sample-data overlay unreachable in mock mode\n");
@@ -388,10 +391,22 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
         return build_request("get_current");
     } else if (cmd == "screenshot") {
         // Optional destination; a .png suffix asks the app to encode PNG.
-        if (tokens.size() >= 2) {
-            return build_request("screenshot", {{"path", tokens[1]}});
+        // Optional --target <widget> crops to its bounds; --stable polls
+        // until the pixels stop changing before capturing (see `freeze`).
+        nlohmann::json params = nlohmann::json::object();
+        size_t i = 1;
+        if (i < tokens.size() && tokens[i].compare(0, 2, "--") != 0) {
+            params["path"] = tokens[i];
+            i++;
         }
-        return build_request("screenshot");
+        for (; i < tokens.size(); i++) {
+            if (tokens[i] == "--stable") {
+                params["stable"] = true;
+            } else if (tokens[i] == "--target" && i + 1 < tokens.size()) {
+                params["target"] = tokens[++i];
+            }
+        }
+        return build_request("screenshot", params);
     } else if (cmd == "shutdown" || cmd == "quit" || cmd == "exit") {
         // In the REPL, quit/exit are intercepted before dispatch (they leave the
         // REPL); reaching here means the one-shot client, where stopping the app
@@ -682,6 +697,8 @@ static char* repl_hints(const char* buf, int* color, int* bold) {
         return strdup(" <subject> <value> [--timeout N]");
     if (input == "wait_idle")
         return strdup(" [--timeout N]");
+    if (input == "screenshot")
+        return strdup(" [path] [--target W] [--stable]");
 
     return nullptr;
 }
@@ -778,7 +795,8 @@ static void repl_print_help() {
     printf("  list_components           List every registered XML component\n");
     printf("  list_callbacks            List every registered event-callback name\n");
     printf("  current                   Show current panel and overlay stack\n");
-    printf("  screenshot [path]         Capture the screen (.png path encodes PNG)\n");
+    printf("  screenshot [path] [--target W] [--stable]\n");
+    printf("                            Capture the screen (.png path encodes PNG)\n");
     printf("  status                    Full status summary\n");
     printf("  get <subject>             Read subject value\n");
     printf("  set <subject> <value>     Set subject value\n");

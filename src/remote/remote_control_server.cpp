@@ -18,6 +18,7 @@
 #include "mock_scenarios.h"
 #include "panel_factory.h"
 #include "printer_state.h"
+#include "remote_client.h"
 #include "remote_pointer.h"
 #include "screenshot.h"
 #include "subject_debug_registry.h"
@@ -270,6 +271,11 @@ nlohmann::json RemoteControlServer::execute_on_ui_thread(std::function<nlohmann:
     }
     throw std::runtime_error("UI thread timeout (10s)");
 }
+
+// Forward declaration: the widget-resolution helpers live further down in this
+// file, alongside the other widget-interaction handlers, but handle_screenshot
+// (below) needs to resolve its --target before that point.
+static lv_obj_t* resolve_widget(const nlohmann::json& params);
 
 // =============================================================================
 // Built-in handlers
@@ -571,22 +577,93 @@ nlohmann::json RemoteControlServer::handle_get_current(const nlohmann::json& /*p
     });
 }
 
+// Build resolve_widget()-compatible params from a plain locator string, the
+// same rule the ctl client's target_param() applies before it ever reaches
+// the wire for click/set_value/scroll: "@s/3/1" (or a bare "s/3/1") addresses
+// a describe_screen path, anything else is a widget name.
+static nlohmann::json widget_target_params(const std::string& target) {
+    if (!target.empty() && target[0] == '@') {
+        return {{"path", target.substr(1)}};
+    }
+    if (helix::is_bare_path(target)) {
+        return {{"path", target}};
+    }
+    return {{"name", target}};
+}
+
 nlohmann::json RemoteControlServer::handle_screenshot(const nlohmann::json& params) {
     // Optional destination. A ".png" suffix selects PNG encoding; the default
     // (no path) stays a timestamped BMP in the runtime dir.
-    std::string out_path;
-    if (params.contains("path") && params["path"].is_string()) {
-        out_path = params["path"].get<std::string>();
+    std::string out_path = params.value("path", "");
+    std::string target = params.value("target", "");
+    bool stable = params.value("stable", false);
+
+    // Resolved fresh on the UI thread every time it's needed (once per
+    // stability sample, then once more for the final capture) rather than
+    // resolved once up front — a widget pointer must never cross the
+    // transport/UI thread boundary or outlive the UI-thread call that found it.
+    auto resolve_crop = [target]() -> lv_obj_t* {
+        if (target.empty()) {
+            return nullptr;
+        }
+        lv_obj_t* w = resolve_widget(widget_target_params(target));
+        if (!w) {
+            throw std::invalid_argument("Widget not found: " + target);
+        }
+        return w;
+    };
+
+    // Stability is sampled across frames, so this loop must live on the
+    // transport thread and hop to the UI thread per sample — a loop *on* the
+    // UI thread would block the very redraws it is waiting to observe.
+    int stable_frames = 0;
+    if (stable) {
+        constexpr int kRequired = 3;
+        constexpr int kMaxSamples = 180; // ~3s at 16ms
+        uint64_t last = 0;
+        int run = 0;
+        for (int i = 0; i < kMaxSamples; i++) {
+            uint64_t h = execute_on_ui_thread([resolve_crop]() -> nlohmann::json {
+                                  lv_obj_t* crop = resolve_crop();
+                                  helix::CapturedFrame f;
+                                  if (!helix::capture_frame(f, crop)) {
+                                      throw std::runtime_error("Frame capture failed");
+                                  }
+                                  return helix::frame_hash(f);
+                              })
+                             .get<uint64_t>();
+
+            run = (i > 0 && h == last) ? run + 1 : 1;
+            last = h;
+            if (run >= kRequired) {
+                stable_frames = run;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
+        if (stable_frames < kRequired) {
+            throw std::runtime_error(
+                "Screen never stabilized: no " + std::to_string(kRequired) +
+                " identical consecutive frames within 3s. Try `freeze` first.");
+        }
     }
-    return execute_on_ui_thread([out_path]() -> nlohmann::json {
-        std::string written = helix::save_screenshot(out_path);
+
+    return execute_on_ui_thread([out_path, resolve_crop, stable_frames]() -> nlohmann::json {
+        lv_obj_t* crop = resolve_crop();
+        helix::CapturedFrame f;
+        if (!helix::capture_frame(f, crop)) {
+            throw std::runtime_error("Frame capture failed");
+        }
+        std::string written = helix::write_frame(f, out_path);
         if (written.empty()) {
             throw std::runtime_error("Screenshot failed" +
                                      (out_path.empty() ? std::string() : ": " + out_path));
         }
         // Report where it actually landed — callers scripting a capture should
         // never have to guess the filename.
-        return {{"saved", true}, {"path", written}};
+        return {{"saved", true}, {"path", written},
+                {"w", f.width}, {"h", f.height},
+                {"stable_frames", stable_frames}};
     });
 }
 

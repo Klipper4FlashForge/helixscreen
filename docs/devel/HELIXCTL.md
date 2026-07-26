@@ -336,7 +336,7 @@ reads the resolved value, so it shows which one is really in effect.
 ### Screenshots & sample-data screens
 | Command | Meaning |
 |---------|---------|
-| `screenshot [path]` | Capture a screenshot. With no path, a timestamped `.bmp` in the runtime dir; a path ending in `.png` is encoded as PNG (in-app, via lodepng). The response reports the file actually written under `path` |
+| `screenshot [path] [--target W] [--stable]` | Capture a screenshot. With no path, a timestamped `.bmp` in the runtime dir; a path ending in `.png` is encoded as PNG (in-app, via lodepng). `--target` crops to a named widget's bounds; `--stable` polls until the pixels stop changing before capturing. The response reports the file actually written under `path`, plus `w`/`h` and `stable_frames` |
 | `demo <name>` | Bring up a screen that can't be reached by navigation in mock mode |
 
 `demo` covers screens that only appear on a real printer event or configured
@@ -486,6 +486,42 @@ guard whether `freeze` actually ran first.
 
 See `docs/devel/specs/2026-07-25-helixctl-ui-test-harness-design.md`
 § "Determinism model" for the full design rationale.
+
+#### `screenshot --stable` / `--target` — the frame-hash gate
+
+`wait_idle` and `freeze` are both best-effort: neither one can see raw
+`lv_async_call` work, the gcode/thumbnail build threads, or the mock
+backends' own threads (see the gap table above). `--stable` is the black-box
+backstop — it hashes the actual captured pixels (FNV-1a over the composited
+RGBA buffer) and polls, at most 180 samples 16ms apart (~3s), until three
+consecutive frames hash identically. It throws rather than returning a
+possibly-mid-repaint frame if the screen never settles in that window, naming
+the likely fix:
+
+```
+Screen never stabilized: no 3 identical consecutive frames within 3s. Try `freeze` first.
+```
+
+`--stable` measures pixels, not timers — it complements `freeze` (which stops
+the *known* movers) rather than replacing it. The common pattern is both
+together: `freeze` first to kill animations and pause timers, then
+`screenshot --stable` to also rule out whatever `freeze` doesn't enumerate.
+
+`--target <widget>` crops the capture to that widget's bounding box instead of
+the whole screen, clamped to the captured buffer (a widget can extend past the
+screen edge). This is what keeps a golden corpus maintainable: a widget-scoped
+golden only changes when that widget's own pixels change, instead of going red
+every time anything else on screen moves. The crop's `w`/`h` in the response
+match `geom <widget>`'s reported `w`/`h` exactly.
+
+Internally, the server exposes this as three C++ pieces so capture and
+encoding are independent: `helix::capture_frame(CapturedFrame&, lv_obj_t*
+crop_to = nullptr)` (snapshot + top-layer composite + optional crop, no disk
+I/O), `helix::frame_hash(const CapturedFrame&)` (the FNV-1a hash the stability
+loop compares), and `helix::write_frame(const CapturedFrame&, out_path)`
+(encode + write). `save_screenshot()` — still the entry point its three
+`application.cpp` callers use (SIGUSR1, the 'S' key, the auto-screenshot loop
+handler) — is now a thin wrapper over the two.
 
 ### Subjects & scenarios
 | Command | Meaning |
