@@ -1296,6 +1296,41 @@ describe("Dashboard endpoints", () => {
       expect(data.versions[0].print_success_rate).toBeCloseTo(0.88);
       expect(data.versions[0].total_sessions).toBe(200);
       expect(data.versions[0].total_crashes).toBe(4);
+      // Absent update columns must degrade to 0/null, not NaN or undefined —
+      // rows predating the update_* mapping still come back from the dataset.
+      expect(data.versions[0].update_failures).toBe(0);
+      expect(data.versions[0].update_successes).toBe(0);
+      expect(data.versions[0].update_success_rate).toBeNull();
+    });
+
+    it("reports self-update health per running version", async () => {
+      mockExecuteQuery
+        .mockResolvedValueOnce({
+          data: [
+            {
+              ver: "0.99.97",
+              total_sessions: 100,
+              total_crashes: 1,
+              update_failures: 9,
+              update_successes: 1,
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ data: [{ ver: "0.99.97", active_devices: 40 }] })
+        .mockResolvedValueOnce({
+          data: [{ ver: "0.99.97", print_successes: 10, print_total: 10 }],
+        });
+
+      const res = await worker.fetch(
+        dashboardRequest("/v1/dashboard/releases?versions=v0.99.97"),
+        env,
+      );
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      // A version that cannot update itself — the helixscreen#993 signature.
+      expect(data.versions[0].update_failures).toBe(9);
+      expect(data.versions[0].update_successes).toBe(1);
+      expect(data.versions[0].update_success_rate).toBeCloseTo(0.1);
     });
 
     it("requires versions parameter", async () => {
