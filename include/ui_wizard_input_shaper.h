@@ -261,4 +261,3 @@ class WizardInputShaperStep : public helix::wizard::Step {
 // ============================================================================
 
 WizardInputShaperStep* get_wizard_input_shaper_step();
-void destroy_wizard_input_shaper_step();

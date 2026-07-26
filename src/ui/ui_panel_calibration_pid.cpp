@@ -1679,6 +1679,3 @@ static PIDCalibrationPanel* existing_pid_cal_panel() {
     return g_pid_cal_panel.get();
 }
 
-void destroy_pid_cal_panel() {
-    g_pid_cal_panel.reset();
-}

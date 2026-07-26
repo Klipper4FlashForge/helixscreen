@@ -949,10 +949,6 @@ ZOffsetCalibrationPanel& get_global_zoffset_cal_panel() {
     return *g_zoffset_cal_panel;
 }
 
-void destroy_zoffset_cal_panel() {
-    g_zoffset_cal_panel.reset();
-}
-
 void init_zoffset_row_handler() {
     lv_xml_register_event_cb(nullptr, "on_zoffset_row_clicked", on_zoffset_row_clicked);
     spdlog::trace("[ZOffsetCal] Row click callback registered");

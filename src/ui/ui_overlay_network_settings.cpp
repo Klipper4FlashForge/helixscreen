@@ -43,10 +43,6 @@ NetworkSettingsOverlay& get_network_settings_overlay() {
     return *g_network_settings_overlay;
 }
 
-void destroy_network_settings_overlay() {
-    g_network_settings_overlay.reset();
-}
-
 // ============================================================================
 // Helper Types
 // ============================================================================

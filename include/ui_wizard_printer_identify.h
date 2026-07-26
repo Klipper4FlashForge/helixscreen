@@ -207,10 +207,3 @@ struct PrinterDetectionHint {
  * Creates the instance on first call. Used by wizard framework.
  */
 WizardPrinterIdentifyStep* get_wizard_printer_identify_step();
-
-/**
- * @brief Destroy the global WizardPrinterIdentifyStep instance
- *
- * Call during application shutdown.
- */
-void destroy_wizard_printer_identify_step();
