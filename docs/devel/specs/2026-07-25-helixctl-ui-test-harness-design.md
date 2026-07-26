@@ -78,11 +78,10 @@ Timers are instead paused individually by walking `lv_timer_get_next(NULL)` and 
 2. The display refresh timer (`lv_display_get_refr_timer()`), or nothing renders and the
    frame-hash gate never observes a new frame.
 
-`unfreeze` resumes the set it paused, tracked as a vector of `lv_timer_t*` on the server so it
-never resumes a timer it did not pause.
-
-`unfreeze` reverses it. A launch flag is deliberately not added; if boot-time nondeterminism
-proves to be a problem in practice, one can follow.
+`unfreeze` reverses all of it, resuming the set of timers it paused — tracked as a vector of
+`lv_timer_t*` on the server so it never resumes a timer it did not pause. A launch flag is
+deliberately not added; if boot-time nondeterminism proves to be a problem in practice, one
+can follow.
 
 ### Settle — know when async work finished
 
