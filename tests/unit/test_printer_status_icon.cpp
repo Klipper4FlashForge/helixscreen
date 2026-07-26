@@ -24,53 +24,55 @@ constexpr int kStartup = static_cast<int>(KlippyState::STARTUP);
 constexpr int kShutdown = static_cast<int>(KlippyState::SHUTDOWN);
 constexpr int kKlippyError = static_cast<int>(KlippyState::ERROR);
 
-PrinterIconState state(int conn, int klippy, bool ever_connected, bool expected_restart) {
+PrinterIconState compute_icon_state(int conn, int klippy, bool ever_connected,
+                                    bool expected_restart) {
     return PrinterStatusIcon::compute_state(conn, klippy, ever_connected, expected_restart);
 }
 } // namespace
 
 TEST_CASE("PrinterStatusIcon::compute_state - connected klippy states", "[status_icon]") {
     SECTION("READY -> READY") {
-        REQUIRE(state(kConnected, kReady, true, false) == PrinterIconState::READY);
+        REQUIRE(compute_icon_state(kConnected, kReady, true, false) == PrinterIconState::READY);
     }
     SECTION("STARTUP -> WARNING") {
-        REQUIRE(state(kConnected, kStartup, true, false) == PrinterIconState::WARNING);
+        REQUIRE(compute_icon_state(kConnected, kStartup, true, false) == PrinterIconState::WARNING);
     }
     SECTION("SHUTDOWN with no restart pending -> ERROR") {
-        REQUIRE(state(kConnected, kShutdown, true, false) == PrinterIconState::ERROR);
+        REQUIRE(compute_icon_state(kConnected, kShutdown, true, false) == PrinterIconState::ERROR);
     }
     SECTION("klippy ERROR -> ERROR") {
-        REQUIRE(state(kConnected, kKlippyError, true, false) == PrinterIconState::ERROR);
+        REQUIRE(compute_icon_state(kConnected, kKlippyError, true, false) ==
+                PrinterIconState::ERROR);
     }
 }
 
 TEST_CASE("PrinterStatusIcon::compute_state - expected restart suppresses SHUTDOWN error",
           "[status_icon][suppress]") {
     SECTION("transient SHUTDOWN during expected restart shows WARNING, not ERROR") {
-        REQUIRE(state(kConnected, kShutdown, true, /*expected_restart=*/true) ==
+        REQUIRE(compute_icon_state(kConnected, kShutdown, true, /*expected_restart=*/true) ==
                 PrinterIconState::WARNING);
     }
     SECTION("expected_restart does NOT mask a genuine klippy ERROR state") {
         // Only the transient SHUTDOWN is softened; a real ERROR still shows red.
-        REQUIRE(state(kConnected, kKlippyError, true, /*expected_restart=*/true) ==
+        REQUIRE(compute_icon_state(kConnected, kKlippyError, true, /*expected_restart=*/true) ==
                 PrinterIconState::ERROR);
     }
     SECTION("expected_restart is irrelevant when klippy is READY") {
-        REQUIRE(state(kConnected, kReady, true, /*expected_restart=*/true) ==
+        REQUIRE(compute_icon_state(kConnected, kReady, true, /*expected_restart=*/true) ==
                 PrinterIconState::READY);
     }
 }
 
 TEST_CASE("PrinterStatusIcon::compute_state - disconnected states", "[status_icon]") {
     SECTION("connection FAILED -> ERROR") {
-        REQUIRE(state(kFailed, kReady, true, false) == PrinterIconState::ERROR);
+        REQUIRE(compute_icon_state(kFailed, kReady, true, false) == PrinterIconState::ERROR);
     }
     SECTION("disconnected but was connected -> WARNING") {
-        REQUIRE(state(kDisconnected, kReady, /*ever_connected=*/true, false) ==
+        REQUIRE(compute_icon_state(kDisconnected, kReady, /*ever_connected=*/true, false) ==
                 PrinterIconState::WARNING);
     }
     SECTION("disconnected and never connected -> DISCONNECTED") {
-        REQUIRE(state(kDisconnected, kReady, /*ever_connected=*/false, false) ==
+        REQUIRE(compute_icon_state(kDisconnected, kReady, /*ever_connected=*/false, false) ==
                 PrinterIconState::DISCONNECTED);
     }
 }

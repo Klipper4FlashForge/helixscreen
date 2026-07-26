@@ -32,6 +32,7 @@
 
 #include "helix/xml/scoped_subject_registry.h"
 #include "lvgl/lvgl.h"
+#include "state/volatile_subjects.h"
 
 /**
  * @brief Initialize an integer subject with optional XML registration
