@@ -714,25 +714,16 @@ void on_temp_increase(lv_event_t* e) {
 
 ### Dynamic Subject Safety (SubjectLifetime)
 
-Per-fan, per-sensor, and per-extruder subjects are **dynamic** — they are destroyed and recreated when hardware is rediscovered after a disconnect/reconnect. Observing a dynamic subject without a `SubjectLifetime` token causes a **use-after-free crash**: `lv_subject_deinit()` frees the subject's observer list, but `ObserverGuard` still holds a dangling pointer into that list.
+Per-fan, per-sensor, and per-extruder subjects are **dynamic** — they are destroyed and
+recreated when hardware is rediscovered after a disconnect/reconnect. Observing one without a
+`SubjectLifetime` token is a use-after-free: `lv_subject_deinit()` frees the subject's observer
+list, but `ObserverGuard` still holds a pointer into it.
 
-| ❌ Crash | ✅ Safe |
-|----------|---------|
-| `auto* s = state.get_fan_speed_subject(name);` | `SubjectLifetime lt;` |
-| `obs = observe_int_sync(s, this, handler);` | `auto* s = state.get_fan_speed_subject(name, lt);` |
-| | `obs = observe_int_sync(s, this, handler, lt);` |
-
-**Dynamic subject sources** (always require a `SubjectLifetime` token when observing):
-
-| Source | Method |
-|--------|--------|
-| `PrinterFanState` | `get_fan_speed_subject(name, lifetime)` — per-fan speeds |
-| `TemperatureSensorManager` | `get_temp_subject(name, lifetime)` — per-sensor temperatures |
-| `PrinterTemperatureState` | `get_extruder_temp_subject(name, lifetime)`, `get_extruder_target_subject(name, lifetime)` |
-
-**Static subjects** (singleton lifetime, no token needed): `get_fan_speed_subject()` with no args, `get_bed_temp_subject()`, `get_nozzle_temp_subject()`, etc.
-
-See `include/ui_observer_guard.h` for full `SubjectLifetime` documentation. For real usage, see `FanStackWidget::bind_fans()` in `src/ui/panel_widgets/fan_stack_widget.cpp`.
+The token must be a **member** paired with the observer — a local `SubjectLifetime` dies at
+function exit and leaves the member observer dangling — and the lifetime resets *before* the
+observer. See [`THREADING.md`](THREADING.md) §5 for the pairing rule, the dynamic-subject
+source table, the collection pattern, and reset ordering (#705). Real usage:
+`FanStackWidget::bind_fans()` in `src/ui/panel_widgets/fan_stack_widget.cpp`.
 
 ### Widget Management
 
@@ -1001,16 +992,20 @@ MyPanel::~MyPanel() {
 
 ### ⚠️ Shutdown Order: StaticPanelRegistry & StaticSubjectRegistry
 
-**Problem:** The "Static Destruction Order Fiasco" - C++ doesn't guarantee destruction order of static/global objects across translation units. When `lv_deinit()` runs, it deletes widgets which try to remove their observers from subjects. If singleton subjects (PrinterState, AmsState, SettingsManager) haven't been deinitialized first, this causes crashes in `lv_observer_remove` due to linked list corruption.
+**Problem:** the "static destruction order fiasco" — C++ doesn't guarantee destruction order of
+statics across translation units. When `lv_deinit()` runs it deletes widgets, which try to
+remove their observers from subjects. If singleton subjects (PrinterState, AmsState,
+SettingsManager) haven't been deinitialized first, that corrupts a linked list and crashes in
+`lv_observer_remove`.
 
-**Solution:** Two self-registration pattern registries ensure proper cleanup order:
+**Solution:** two self-registration registries enforce the order.
 
 | Registry | Purpose | What it cleans up |
 |----------|---------|-------------------|
 | **StaticPanelRegistry** | UI panels/overlays with widgets | EmergencyStopOverlay, StatusBar, Keypad, Wizard subjects |
 | **StaticSubjectRegistry** | Core state singletons with subjects | PrinterState, AmsState, SettingsManager, FilamentSensorManager |
 
-**Shutdown Order (in Application::shutdown()):**
+**Shutdown order (in `Application::shutdown()`):**
 
 ```
 1. StaticPanelRegistry::destroy_all()     ← Panels destroy their own subjects
@@ -1018,57 +1013,12 @@ MyPanel::~MyPanel() {
 3. lv_deinit()                            ← Now safe - all observers disconnected
 ```
 
-**Self-Registration Pattern (MANDATORY):**
+Registration is **mandatory and always self-registration**: each component's `init_subjects()`
+registers its own `deinit_subjects()`, never an external caller. See
+[`THREADING.md`](THREADING.md) §7 for the registration and `deinit_subjects()` patterns, LIFO
+ordering, and idempotency rules.
 
-Each component's `init_subjects()` method MUST self-register its own cleanup. Registration is **never** done externally (e.g., in SubjectInitializer). This prevents forgotten registrations that cause shutdown crashes.
-
-```cpp
-// Inside the component's own init_subjects():
-void PrinterState::init_subjects() {
-    if (subjects_initialized_) return;
-    // ... create subjects ...
-    subjects_initialized_ = true;
-
-    // Self-register cleanup (co-located with init)
-    StaticSubjectRegistry::instance().register_deinit(
-        "PrinterState", []() { PrinterState::instance().deinit_subjects(); });
-}
-```
-
-SubjectInitializer just calls `init_subjects()` — it does NOT register cleanup:
-```cpp
-// In SubjectInitializer::init_core_and_state():
-PrinterState::instance().init_subjects();   // Self-registers internally
-AmsState::instance().init_subjects();       // Self-registers internally
-ToolState::instance().init_subjects();      // Self-registers internally
-```
-
-**deinit_subjects() Pattern:**
-
-Each singleton with LVGL subjects must implement `deinit_subjects()`:
-
-```cpp
-void AmsState::deinit_subjects() {
-    if (!initialized_) return;
-
-    spdlog::debug("[AMS State] Deinitializing subjects");
-
-    // Call lv_subject_deinit() on every subject
-    lv_subject_deinit(&ams_type_);
-    lv_subject_deinit(&ams_action_);
-    // ... all other subjects ...
-
-    initialized_ = false;
-}
-```
-
-**Key Points:**
-- **Reverse order:** Both registries deinitialize in reverse registration order (LIFO)
-- **Idempotent:** Guard with `initialized_` flag to prevent double-cleanup
-- **Panels before singletons:** Panels have observers on singleton subjects, so panels must be destroyed first
-- **Debug logging:** Always log cleanup for debugging shutdown issues
-
-**Reference Implementations:**
+**Reference implementations:**
 - `src/application/static_subject_registry.cpp` - Core singleton registry
 - `src/application/static_panel_registry.cpp` - Panel/overlay registry
 - `src/application/subject_initializer.cpp` - Registration during init
@@ -1076,253 +1026,53 @@ void AmsState::deinit_subjects() {
 
 ## Thread Safety
 
-### ⚠️ CRITICAL: LVGL Main Thread Requirement
+**LVGL is not thread-safe.** All widget creation and modification must happen on the main
+thread — and `lv_subject_set_*()` counts, because a subject update fires its observers, which
+call widget APIs. A background-thread subject write landing mid-render trips LVGL's
+`!disp->rendering_in_progress` assertion, which on embedded targets is an infinite loop, not a
+clean abort.
 
-**LVGL is NOT thread-safe.** All widget creation and modification MUST happen on the main thread.
+`UpdateQueue` is the single safe bridge. Background threads enqueue lambdas with
+`helix::ui::queue_update()`; they drain on the main thread at the start of each
+`lv_timer_handler()` cycle, before rendering begins:
 
-### ⚠️ Subject Updates Are NOT Thread-Safe
-
-**CRITICAL MISCONCEPTION:** You might assume `lv_subject_set_*()` is thread-safe because it's just updating a value. **THIS IS WRONG.**
-
-```cpp
-// ❌ DANGEROUS - looks safe but isn't!
-void update_from_websocket_thread(int temp) {
-    lv_subject_set_int(temp_subject, temp);  // Triggers observers!
-    // If LVGL is rendering → assertion failure → infinite loop
-}
+```
+1. UpdateQueue::process_pending()  ← drains all queued lambdas (highest priority)
+2. LVGL timers (input polling, animations)
+3. process_notifications()         ← dequeue Moonraker JSON
+4. lv_refr_now()                   ← render to framebuffer
 ```
 
-**Why this fails:** Subject updates trigger bound observers. Those observers often:
-1. Call `lv_label_set_text()` → triggers `lv_obj_invalidate()`
-2. Call `lv_obj_add_flag()` → triggers `lv_obj_invalidate()`
-3. Any widget modification during `lv_timer_handler()` rendering → **ASSERTION FAILURE**
+This ordering is why `queue_update()` exists instead of LVGL's native `lv_async_call()`, which
+can fire *during* the render phase.
 
-The LVGL assertion `!disp->rendering_in_progress` will fire, and on embedded targets this causes an infinite `while(1)` loop.
-
-**Real-world example:** WebSocket callback calls `FilamentSensorManager::discover_sensors()` which calls `lv_subject_set_int()`. If LVGL happens to be rendering, the app hangs and stops responding to pings.
-
-### Safe Pattern: Defer to Main Thread
-
-**Always use `helix::ui::queue_update()` for subject updates from background threads:**
-
-```cpp
-#include "ui_update_queue.h"
-
-// ✅ CORRECT - defers to main thread via queue_update()
-void update_from_websocket_thread(int temp) {
-    helix::ui::queue_update([temp]() {
-        lv_subject_set_int(&temp_subject, temp);  // Safe: runs on main thread
-    });
-}
-
-// With captured data (unique_ptr overload for RAII):
-auto data = std::make_unique<MyData>(value, text);
-helix::ui::queue_update(std::move(data), [](MyData* d) {
-    lv_subject_set_int(&my_subject, d->value);
-    // d is automatically deleted after callback
-});
+```
+MAIN THREAD              LIBHV THREAD           UTILITY THREADS
+─────────────            ─────────────          ───────────────
+lv_timer_handler()       libhv Event Loop       UpdateChecker
+  ├ process_pending()      ├ WebSocket conn     TelemetryManager
+  ├ LVGL timers            ├ JSON-RPC parse     CrashReporter
+  ├ process_notifs()       ├ Auto-reconnect     ───────────────
+  └ lv_refr_now()          └ HTTP transfers            │
+         ▲                        │                     │
+         │                        │ queue_update(λ)     │ queue_update(λ)
+         │                        ▼                     ▼
+         └──────────────── UpdateQueue (mutex) ◄────────┘
 ```
 
-**Why `helix::ui::queue_update()` not `lv_async_call()`?** LVGL's native `lv_async_call()` can fire *during* the render phase, causing assertion failures. Our `queue_update()` processes all queued lambdas at the START of each `lv_timer_handler()` cycle, *before* rendering begins.
+Beyond libhv's event loop, background work runs on the `HttpExecutor` fast (4 workers) and slow
+(1 worker) pools, `BusThread` for BlueZ DBus calls, and a few long-lived utility threads.
+Everything that touches UI funnels back through `UpdateQueue`.
 
-**Reference Implementation:** See `printer_state.cpp` for the `set_*_internal()` pattern used by:
-- `set_printer_capabilities()` → `set_printer_capabilities_internal()`
-- `set_klipper_version()` → `set_klipper_version_internal()`
-- `set_klippy_state()` → `set_klippy_state_internal()`
+Two RAII guards cover object lifetime across that boundary: `AsyncLifetimeGuard`
+(`include/async_lifetime_guard.h`) for callbacks whose owner may be dismissed before they fire,
+and `SubjectLifetime` (`include/ui_observer_guard.h`) for observers on subjects that are
+destroyed and recreated when hardware is rediscovered.
 
-### Unsafe Operations (Main Thread Only)
-
-**Widget manipulation requires main thread:**
-```cpp
-// Main thread only
-void handle_ui_event(lv_event_t* e) {
-    lv_obj_t* btn = lv_event_get_target(e);
-    lv_obj_add_flag(btn, LV_OBJ_FLAG_CHECKED);  // NOT safe from background threads
-}
-```
-
-### ⚠️ No Object Deletion During Input Event Processing
-
-**Never call `lv_obj_delete()` on container children from inside an input event callback** (`LV_EVENT_CLICKED`, `LV_EVENT_RELEASED`, etc. triggered by `indev_proc_release`/`indev_proc_press`). LVGL may be iterating the parent's child list during input dispatch — synchronous deletion corrupts the iteration state, causing `lv_obj_get_parent` to dereference freed memory → SIGSEGV.
-
-```cpp
-// ❌ CRASH — deleting container child during input event processing
-void on_done_clicked(lv_event_t* e) {
-    lv_obj_delete(overlay_);    // Corrupts child list mid-iteration
-    overlay_ = nullptr;
-    rebuild_widgets();           // lv_obj_clean() would have handled it
-}
-
-// ✅ CORRECT — null pointer, let rebuild's lv_obj_clean() handle deletion
-void on_done_clicked(lv_event_t* e) {
-    overlay_ = nullptr;          // Just drop the reference
-    rebuild_widgets();           // lv_obj_clean(container) safely destroys all children
-}
-```
-
-**When a rebuild follows:** If the event handler triggers a rebuild (`lv_obj_clean(container)` → recreate children), individual `lv_obj_delete()` calls on container children are both redundant and dangerous. Just null the pointers and let the rebuild's `lv_obj_clean()` handle cleanup — it runs after input processing completes.
-
-**When no rebuild follows:** Use `lv_obj_delete_async()` to defer deletion until after the current event processing cycle, or use `helix::ui::safe_delete()`.
-
-**Note:** `lv_obj_delete_async()` is NOT safe if a subsequent `lv_obj_clean()` on the parent runs before the async delete fires — this causes a double-free. Only use it when no parent cleanup follows.
-
-### ⚠️ No Sync Widget Deletion Inside UpdateQueue Callbacks
-
-**Every synchronous widget deletion inside a UpdateQueue-drained callback is a latent #776 crash.** Multiple sync deletions batched together by `UpdateQueue::process_pending()` corrupt LVGL's global event linked list → SIGSEGV in `lv_event_mark_deleted` (same failure mode as input-event deletion above).
-
-**What counts as "inside a UpdateQueue callback":** everything that ultimately runs through `process_pending()`:
-
-- `helix::ui::queue_update(...)` / `ui_queue_update(...)` lambdas
-- `helix::ui::async_call(cb, ud)` (wrapper, NOT the LVGL native — see below)
-- `register_overlay_close_callback(...)` lambdas
-- `AsyncLifetimeGuard::defer(...)` / `lifetime_.defer(...)` lambdas
-- `LifetimeToken::defer(...)` / `tok.defer(...)` lambdas
-- Observer callbacks registered via `observe_int_sync` / `observe_string` (deferred through queue_update since #82)
-
-**`lifetime_.defer` does NOT escape the batch.** The generation guard protects `this` against use-after-free. It does *not* move the callback out of `process_pending()` — the callback runs in the *next* batch, which still contains whatever else was queued for that tick. Any "SAFETY: defer outside process_pending()" comment paired with `lifetime_.defer` is wrong.
-
-**Banned APIs inside queued callbacks** and their safe replacements:
-
-| ❌ Banned | ✅ Use instead |
-|-----------|---------------|
-| `safe_delete(ptr)` | `safe_delete_deferred(ptr)` |
-| `lv_obj_delete(obj)` | `lv_obj_delete_async(obj)` |
-| `lv_obj_clean(container)` | `helix::ui::safe_clean_children(container)` |
-
-**Why the replacements are safe:** they route deletion through `lv_obj_delete_async()`, which posts to LVGL's *own* async list (processed at end of `lv_timer_handler`, after our `process_pending` returns). Deletions hit one-at-a-time across ticks, not batched in our drain. `safe_clean_children()` reparents each child to `lv_layer_top()` and async-deletes it — the container appears empty immediately, so callers can add new children right after.
-
-**Escape routes (truly outside UpdateQueue batches):**
-- `safe_delete_deferred()` / `safe_delete_deferred_raw()` (`include/ui_utils.h`)
-- `helix::ui::safe_clean_children()` (`include/ui_utils.h`)
-- `helix::ui::safe_delete_subtree(obj)` (`include/ui_utils.h`) — teardown-safe deletion of a whole grid/flex subtree before a rebuild. Synchronously detaches `obj` into an off-tree, layout-less condemned container (so an ancestor relayout of the original parent can no longer iterate it), sets `LV_LAYOUT_NONE` on `obj`, then async-deletes the condemned subtree. Makes a `grid_update` / `flex_update` pass over a being-deleted subtree *structurally impossible* rather than merely time-shifted (#983 teardown counterpart — relayout racing the TEARDOWN of a grid during a modal close / panel rebuild).
-- `lv_obj_delete_async(obj)` (raw LVGL)
-- `lv_async_call(cb, ud)` (raw LVGL — *not* our wrapper `helix::ui::async_call`)
-
-```cpp
-// ❌ CRASH — synchronous deletion inside UpdateQueue batch
-helix::ui::async_call([dialog]() {
-    helix::ui::safe_delete(dialog);  // Corrupts event list if batched with other deletions
-});
-
-// ❌ STILL CRASH — lifetime_.defer goes through queue_update
-lifetime_.defer([this]() {
-    lv_obj_clean(container_);        // Sync child-delete cascade in next batch
-});
-
-// ✅ CORRECT — replace the sync deletion itself, keep the outer defer if needed
-lifetime_.defer([this]() {
-    helix::ui::safe_clean_children(container_);
-    rebuild(container_);
-});
-
-// ✅ CORRECT — safe_delete_deferred for a single owned pointer
-helix::ui::queue_update("cleanup", [this]() {
-    helix::ui::safe_delete_deferred(overlay_);
-});
-```
-
-**Rule of thumb:** inside any queued callback, treat sync widget deletion as banned. Pick the replacement from the table above — the outer queue/defer is fine, the inner deletion is not.
-
-### Async Callback Safety: AsyncLifetimeGuard
-
-Background-thread callbacks (WebSocket, HTTP, timers) that need to update UI must be guarded against the owning modal/overlay/panel being dismissed before the callback fires. Use `AsyncLifetimeGuard` — a generation-counter-based utility in `include/async_lifetime_guard.h`.
-
-**Basic pattern** (90% of cases):
-
-```cpp
-// In your class (Modal and OverlayBase provide this automatically):
-helix::AsyncLifetimeGuard lifetime_;
-
-// From a background-thread callback: capture a token, then tok.defer(...).
-// The defer body runs on the main thread and is skipped atomically if the
-// owner was dismissed — NEVER write `if (tok.expired()) return;` followed by
-// `this`/member access on the background thread (L081 Mechanism C; the lint
-// gate scripts/check_l081_anti_pattern.py rejects it).
-auto tok = lifetime_.token();
-api->fetch([this, tok]() {
-    tok.defer("MyClass::on_fetch", [this]() {   // main thread, auto-guarded
-        update_ui();
-    });
-});
-
-// When there is no background-side parsing to keep off the main thread,
-// lifetime_.bg_cb() is the cleanest form — it auto-defers the whole body:
-api->fetch(lifetime_.bg_cb("MyClass::on_fetch", [this]() {
-    update_ui();
-}));
-```
-
-**Cancel-and-retry** (e.g., re-test connection while previous test is in flight):
-
-```cpp
-lifetime_.invalidate();                   // Expire all outstanding tokens
-auto token = lifetime_.token();           // Fresh token for new operation
-api->test([this, token]() { ... });
-```
-
-**Key properties:**
-- `Modal::hide()` and `OverlayBase::cleanup()`/`on_deactivate()` call `invalidate()` automatically — subclasses don't need to remember
-- `defer()` queues work via `queue_update()`, silently skipping if invalidated before execution
-- `token()` returns a `LifetimeToken` for manual checking in non-queue callbacks (e.g., timers, state machine handlers)
-- Safe after owner destruction — tokens hold a `shared_ptr` to the generation counter, not a pointer to the owner
-- Subclasses may call `invalidate()` manually for cancel-and-retry scenarios
-
-**Standalone panels** (not inheriting Modal/OverlayBase) should add `helix::AsyncLifetimeGuard lifetime_;` as a member directly. The destructor calls `invalidate()` automatically.
-
-**Do NOT use these deprecated patterns for new code:**
-- `shared_ptr<bool> callback_guard_` / `alive_guard_`
-- `shared_ptr<atomic<bool>> alive_`
-- `shared_ptr<atomic<uint64_t>>` generation counters
-- `weak_ptr<bool>` for callback safety
-- `async_call(guard_widget, cb, data)` for modal/overlay callback guards
-
-### Backend Integration Pattern: helix::ui::queue_update()
-
-**Problem:** Backend threads (networking, file I/O, WiFi scanning) need to update UI but cannot call LVGL APIs directly.
-
-**Solution:** Use `helix::ui::queue_update()` to marshal widget updates to the main thread:
-
-```cpp
-#include "ui_update_queue.h"
-
-// Backend callback running in std::thread
-void WiFiManager::handle_scan_complete(const std::string& data) {
-    // Parse results (safe - no LVGL calls)
-    auto networks = parse_networks(data);
-
-    // Dispatch to LVGL main thread (safe - runs before render)
-    helix::ui::queue_update([networks = std::move(networks), cb = scan_callback_]() {
-        // NOW safe to create/modify widgets
-        cb(networks);  // Calls populate_network_list()
-    });
-}
-```
-
-**Key Points:**
-1. **Backend thread:** Parse data, capture into lambda
-2. **`helix::ui::queue_update()`:** Queues lambda for main thread, runs BEFORE rendering
-3. **Main thread lambda:** Creates/modifies widgets safely
-4. **Memory management:** Lambda captures handle lifetime automatically
-
-**Without this pattern:** Race conditions, segfaults, undefined behavior when backend thread creates widgets while LVGL is rendering.
-
-**Reference Implementation:** `src/api/wifi_manager.cpp` (all event handlers use this pattern)
-
-### When to Use helix::ui::queue_update()
-
-✅ **ALWAYS use when on a background thread and:**
-- Need to create/modify widgets (`lv_obj_*()` functions)
-- Need to update subjects (`lv_subject_set_*()`) - **subjects trigger observers!**
-- WebSocket callbacks (libhv event loop thread)
-- Network/file I/O completion handlers
-- Timer callbacks from non-LVGL timers
-
-❌ **Don't need when:**
-- Already on main thread (LVGL event handlers, `lv_timer_create()` callbacks)
-- Pure computation with no LVGL calls at all
-- Just logging or updating non-LVGL state
-
-**Key insight:** If you're in a callback from libhv, std::thread, or any networking library, assume you're on a background thread and use `helix::ui::queue_update()`.
+> **The rules for writing this code live in [`THREADING.md`](THREADING.md)** — which API to
+> call from where, what is banned inside a queued callback, how to guard a background callback,
+> shutdown ordering, testing patterns, and a symptom index. Every rule there cost a production
+> crash to learn. Read it before writing cross-thread code.
 
 ### Multi-Backend AmsState Coordination
 

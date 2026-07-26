@@ -810,7 +810,7 @@ Replacements table:
 | `lv_obj_delete(obj)` / `lv_obj_del(obj)` | `lv_obj_delete_async(obj)` |
 | `lv_obj_clean(container)` | `helix::ui::safe_clean_children(container)` |
 
-See `include/ui_utils.h` and `ARCHITECTURE.md` § "No Sync Widget Deletion Inside UpdateQueue Callbacks" for the full rationale.
+See `include/ui_utils.h` and [`THREADING.md`](THREADING.md) §3 for the full rationale.
 
 ### Verification checklist
 

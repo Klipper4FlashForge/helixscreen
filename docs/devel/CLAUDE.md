@@ -9,6 +9,7 @@ All developer documentation lives here. When working on features, look up the re
 | `DEVELOPMENT.md` | Build setup, dev environment, contributing |
 | `HELIXCTL.md` | Driving the UI / screenshots via `helix-screen ctl` (replaces the old `-p`/`--panel` flags) |
 | `ARCHITECTURE.md` | System design, component relationships, extended systems |
+| `THREADING.md` | **Single source of truth** for threading, async-callback, and object-lifetime rules. Read before any code that crosses a thread boundary, observes a subject, or destroys a widget |
 | `BUILD_SYSTEM.md` | Makefile internals, make target reference, cross-compilation, worktree workflow, ccache, patches |
 | `TESTING.md` | Catch2 test infrastructure, test patterns |
 | `LOGGING.md` | spdlog levels, when to use info vs debug vs trace |

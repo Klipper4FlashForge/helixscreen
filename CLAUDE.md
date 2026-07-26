@@ -114,114 +114,32 @@ Note: `theme_manager_get_color()` for tokens, `theme_manager_parse_hex_color()` 
 
 ## Threading & Lifecycle
 
-> **Deep reference + code examples:** `.claude/skills/helix-threading/` (auto-triggers on src/ threading edits). The rules below are the always-loaded safety net — every rule exists because something crashed in production.
+> **Full rules: `docs/devel/THREADING.md`** (routed by the `helix-threading` skill). Read it
+> before writing code that crosses a thread boundary, observes a subject, or destroys a widget.
+> The invariants below are the always-loaded safety net — each one fails silently at compile
+> time and crashes later, usually on a customer's printer.
 
-WebSocket/libhv callbacks = background thread. **NEVER** call `lv_subject_set_*()` directly.
-Use `ui_queue_update()` from `ui_update_queue.h`. Pattern: `printer_state.cpp` `set_*_internal()`.
+1. **Never touch LVGL from a background thread.** WebSocket/libhv, HTTP, and timer callbacks
+   are background threads; `lv_subject_set_*()` counts, because it fires observers that call
+   widget APIs. Route through `ui_queue_update()` (`ui_update_queue.h`). Pattern:
+   `printer_state.cpp` `set_*_internal()`.
+2. **Never write bare `if (tok.expired()) return;` on a background thread** and then touch
+   `this` — TOCTOU use-after-free (L081 Mechanism C, #707). Use `lifetime_.bg_cb(tag, fn)`, or
+   `tok.defer(tag, fn)` when you have bg-side parsing worth keeping off the main thread.
+   `lifetime_.defer()` is main-thread only. Gate: `scripts/check_l081_anti_pattern.py`.
+3. **Never delete synchronously inside a queued callback.** `safe_delete()`,
+   `lv_obj_delete()`, and `lv_obj_clean()` corrupt LVGL's event list mid-batch (#776, #190,
+   #80). Use `safe_delete_deferred()`, `lv_obj_delete_async()`, `safe_clean_children()`.
+   **`lifetime_.defer` does NOT escape the batch** — it fires in the next `process_pending`
+   tick, which is still a batch.
+4. **Never observe a dynamic subject (per-fan/sensor/extruder) without a paired member
+   `SubjectLifetime`** — a local one is a UAF. Declare both as members, and reset the lifetime
+   *before* the observer (#705).
 
-Use `ObserverGuard` for RAII cleanup. See `observer_factory.h` for `observe_int_sync`, `observe_int_async`, `observe_string`, `observe_string_async`.
-
-**Observer safety:** `observe_int_sync` and `observe_string` **defer callbacks** via `ui_queue_update()` to prevent re-entrant observer destruction crashes (#82). Use `*_immediate` variants ONLY if you're certain the callback won't modify observer lifecycle (no reassignment, no widget destruction).
-
-**UpdateQueue ScopedFreeze (MANDATORY for drain+destroy):** Closes the race window where the WebSocket background thread enqueues new callbacks between `drain()` and widget destruction. Pattern: `auto freeze = UpdateQueue::instance().scoped_freeze();` then drain + destroy. While the freeze is held, new `queue_update` / `tok.defer` enqueues land in `frozen_buffer_` instead of `pending_`; on the last `ScopedFreeze` destruction the buffer is spliced back so the work fires on the next `process_pending` tick — generation tokens on the apply side handle UAF if the owner died. There is no `defer_critical` / `queue_critical` variant; one path covers all cases. `shut_down_` still drops (post-shutdown enqueues are unrecoverable). See `include/ui_update_queue.h` and `.claude/skills/helix-threading/SKILL.md`.
-
-**Async callback safety (MANDATORY):** Background threads (WebSocket, HTTP, timers) updating UI must use `AsyncLifetimeGuard` to prevent UAF if the owner is dismissed. `Modal` / `OverlayBase` provide `lifetime_` automatically; standalone classes declare their own (`helix::AsyncLifetimeGuard lifetime_;`).
-
-- **From BG threads:** use `auto tok = lifetime_.token();` then capture `tok` and call `tok.defer(...)`. **NOT `lifetime_.defer()`** — that's a TOCTOU race (#707).
-- **From main thread:** `lifetime_.defer(...)` is safe (`this` guaranteed valid).
-- **Cancel-and-retry:** `lifetime_.invalidate();` then fresh `lifetime_.token()`.
-
-Do **NOT** use `shared_ptr<bool> alive_`, `callback_guard_`, `alive_guard_`, `weak_ptr<bool>`, or `shared_ptr<atomic<bool>>` for callback safety. Deprecated; replaced by `AsyncLifetimeGuard`. See `include/async_lifetime_guard.h`.
-
-**FORBIDDEN: bare `if (tok.expired()) return;` on a bg thread followed by `this`/member access (MANDATORY).** This is the L081 Mechanism C anti-pattern (cluster:pstat-async-delete) — TOCTOU race that causes UAF if the owner is destroyed between the check and the access. The `set_main_thread_id()` runtime detector emits a `cluster:pstat-async-delete Mechanism C` warning per first-fire callsite; native/dev builds running `HELIX_STRICT_BG_THREAD_CHECK=1` (and `HelixTestFixture` opts in by default) abort on hit so any new instance fails the test. **Release builds (`HELIX_RELEASE_BUILD` defined in `mk/cross.mk` cross-targets) compile out the abort branch and ignore the env var** — the detector still emits the telemetry anomaly + debug log, but never crashes a user (Snapmaker U1 dev=6d10417c hit a stray strict-mode abort 2026-05-14, sig 307b6f48, fixed by gating to non-release builds). The lint gate `scripts/check_l081_anti_pattern.py` blocks new instances at commit time. **Cleaned up across the codebase 2026-05-09 (107 sites swept).**
-
-| ❌ FORBIDDEN bg-thread idiom | ✅ Two correct forms |
-|---|---|
-| `[this, tok](const Resp& r) {`<br>`  if (tok.expired()) return;`<br>`  member_ = r;            // UAF risk`<br>`  emit_event(EVENT);     // UAF risk`<br>`}` | **Long-form (when bg-side parsing is worth keeping off main):**<br>`[this, tok](const Resp& r) {`<br>`  // bg: parse, validate, build LOCAL objects (no this!)`<br>`  Local out = parse(r);`<br>`  // main: only the mutation`<br>`  tok.defer("Class::on_resp_apply", [this, out = std::move(out)]() mutable {`<br>`    member_ = std::move(out);`<br>`    emit_event(EVENT);`<br>`  });`<br>`}`<br><br>**Short-form (when there's nothing to parse on bg):**<br>`api_->rest().get_x(`<br>`  lifetime_.bg_cb("Class::on_x", [this](const Resp& r) {`<br>`    member_ = r;`<br>`    emit_event(EVENT);`<br>`  }), …);` |
-
-`bg_cb(tag, fn)` returns a callable that auto-defers the body — the cleanest fix when you have no bg-only parsing to keep off the main thread. When you DO have heavy bg-side work to preserve (large JSON parse), use the long-form `tok.defer(...)` explicitly. Either way, **never write `if (tok.expired()) return;` on a bg thread** — the defer wrapper checks atomically on the main thread.
-
-Per-line opt-out (rare; only for dtor-joined worker threads with thread-private state): `if (tok.expired()) return; // L081_OK: <reason>`. See `src/system/camera_stream.cpp` for examples.
-
-**HTTP work runs on HttpExecutor, NOT raw `std::thread`.** Two process-wide lanes:
-`HttpExecutor::fast()` (4 workers) for REST/API/timelapse/thumbnails/small uploads,
-`HttpExecutor::slow()` (1 worker) for large file transfers. Submitted lambdas run on a
-worker thread — callbacks still need `ui_queue_update()` / `tok.defer()` for UI work.
-Never spawn a raw `std::thread` for HTTP — unbounded spawning crashed with EAGAIN under
-thread exhaustion on RatOS (#811-adjacent). See `docs/devel/MOONRAKER_ARCHITECTURE.md`
-§ "HTTP Work Execution (HttpExecutor)".
-
-**No `std::thread(...).detach()` for fire-and-forget work (MANDATORY):** On
-AD5M/CC1/MIPS32, `pthread_create` returns EAGAIN under thread exhaustion; the
-`std::thread` constructor then throws `std::system_error`, which — propagating through
-an LVGL C event-dispatch frame or a `noexcept` boundary — aborts the process with
-`std::terminate without active exception`. Crashes look like unrelated code paths
-(#724 wizard camera probe, #837 debug-bundle upload, #811-adjacent HTTP storm).
-
-| Workload | ✅ Use |
-|----------|-------|
-| HTTP (REST/thumbnails/small uploads) | `helix::http::HttpExecutor::fast().submit(fn)` |
-| HTTP (bundles/gcode/large transfers) | `helix::http::HttpExecutor::slow().submit(fn)` |
-| sd-bus / BlueZ DBus call | `helix::bluetooth::BusThread::run_sync(fn)` |
-| BT-over-RFCOMM / USB print / QR decode / device discovery | `try { std::thread([...]{}).detach(); } catch (const std::system_error& e) { /* toast + error callback */ }` |
-| Long-lived worker (member variable, joined in dtor) | `std::thread` is fine — the issue is one-shot detached spawns |
-
-Before adding a new `std::thread`, grep for an existing managed pool that covers that
-domain. Adding a raw detached spawn reintroduces the anti-pattern and will crash on the
-smallest device you ship to. See `include/http_executor.h`, `include/bt_bus_thread.h`,
-memory `feedback_no_bare_threads_arm.md`, lesson [L083].
-
-**No sync widget deletion in queued callbacks (MANDATORY):** Never call these synchronous deletion APIs from inside `queue_update()` / `async_call()` / `lifetime_.defer()` / `tok.defer()` / observer callbacks (`observe_int_sync`, `observe_string` — also deferred via queue_update since #82):
-
-| ❌ BANNED inside queued callbacks | ✅ USE INSTEAD |
-|-----------------------------------|-----------------|
-| `safe_delete(ptr)` | `safe_delete_deferred(ptr)` |
-| `lv_obj_delete(obj)` | `lv_obj_delete_async(obj)` |
-| `lv_obj_clean(container)` | `helix::ui::safe_clean_children(container)` |
-
-Multiple sync deletions in the same `UpdateQueue::process_pending()` batch corrupt LVGL's global event linked list → SIGSEGV in `lv_event_mark_deleted` (#776, #190, #80).
-
-**`lifetime_.defer` / `tok.defer` do NOT escape the batch.** They are thin wrappers around `queue_update` — the callback fires in the *next* `process_pending` tick, which is still a UpdateQueue batch that may contain other sync deletions. The generation guard protects against use-after-free of `this`, NOT against event-list corruption. If you see a comment claiming `lifetime_.defer` "runs outside process_pending", it's wrong — fix it.
-
-**Safe escape routes (truly outside UpdateQueue batches):** `safe_delete_deferred()`, `safe_delete_deferred_raw()`, `helix::ui::safe_clean_children()`, `helix::ui::safe_delete_subtree()` (teardown-safe deletion of a whole grid/flex subtree before a rebuild — synchronously detaches the subtree into an off-tree layout-less condemned container + `LV_LAYOUT_NONE`, then async-deletes; makes a `grid_update`/`flex_update` pass over a being-torn-down grid structurally impossible, #983 teardown counterpart), `lv_obj_delete_async()`, and raw `lv_async_call(cb, ud)`. Note: our wrapper `helix::ui::async_call` does NOT escape — it routes through `queue_update`. See `include/ui_utils.h` and `ARCHITECTURE.md` § "No safe_delete() Inside UpdateQueue Callbacks".
-
-**Subject shutdown safety (MANDATORY):** Any class creating LVGL subjects MUST self-register its cleanup inside `init_subjects()` via `StaticSubjectRegistry::instance().register_deinit(name, deinit_fn)`. Prevents observer removal on freed subjects during `lv_deinit`. **Never** register externally (e.g., in `SubjectInitializer`) — co-locating init+cleanup prevents forgotten registrations. See `static_subject_registry.h`.
-
-**Dynamic subject lifetime safety (MANDATORY):** Per-fan, per-sensor, and per-extruder subjects are **dynamic** — they can be destroyed and recreated during reconnection/rediscovery. Observing a dynamic subject without a `SubjectLifetime` token causes **use-after-free crashes** when `lv_subject_deinit()` frees observers but `ObserverGuard` still holds a dangling pointer.
-
-**The lifetime token MUST outlive the observer.** A local `SubjectLifetime lt;` paired with a member `ObserverGuard` is a UAF: when `lt` falls off the stack, the observer's `weak_ptr` is dead but the observer itself is still registered against the (potentially recreated) subject. **When you add a member `ObserverGuard` on a dynamic subject, add a paired member `SubjectLifetime` next to it in the header — do not use a local.** (Codebase-wide audit 2026-04-22 confirmed no existing violations; this rule applies to new code.)
-
-| ❌ CRASH (local lifetime + member observer) | ✅ SAFE (parallel members) |
-|---|---|
-| `// in .cpp function body:` | `// in header, alongside ObserverGuard:` |
-| `SubjectLifetime lt;` | `ObserverGuard temp_observer_;` |
-| `auto* s = tsm.get_temp_subject(n, lt);` | `SubjectLifetime temp_lifetime_;` |
-| `temp_observer_ = observe_int_sync(s,…lt);` | `// in .cpp:` |
-| `// lt dies at function exit → UAF on rediscover` | `temp_lifetime_.reset();` |
-| | `temp_observer_.reset();` |
-| | `auto* s = tsm.get_temp_subject(n, temp_lifetime_);` |
-| | `temp_observer_ = observe_int_sync(s,…temp_lifetime_);` |
-
-**For per-item observers (carousel pages, slot lists, etc.) use parallel vectors** — and keep them aligned (push/pop in lockstep):
-```cpp
-std::vector<ObserverGuard>     carousel_observers_;
-std::vector<SubjectLifetime>   carousel_lifetimes_;   // MUST clear before observers
-```
-
-**Read-only access is the only valid case for a local `SubjectLifetime`.** If you call `get_temp_subject(name, lt)` and never create an observer, the lifetime can be local — but prefer the no-lifetime overload (`tsm.get_temp_subject(name)`) which exists for exactly this case.
-
-**Dynamic subject sources** (always require lifetime token when observing):
-- `PrinterFanState::get_fan_speed_subject(name, lifetime)` — per-fan speeds
-- `TemperatureSensorManager::get_temp_subject(name, lifetime)` — per-sensor temps
-- `PrinterTemperatureState::get_extruder_temp_subject(name, lifetime)` / `get_extruder_target_subject(name, lifetime)` — per-extruder temps
-
-**Static subjects** (singleton lifetime, no token needed): `get_fan_speed_subject()` (no args), `get_bed_temp_subject()`, etc.
-
-**SubjectLifetime reset ordering (MANDATORY):** Reset the lifetime BEFORE the observer when rebinding. The observer guard's `weak_ptr` only expires if the `SubjectLifetime` is destroyed first. Wrong order = `lv_observer_remove()` on a freed subject (#705). Pattern: `speed_lifetime_.reset(); speed_observer_.reset();` — never the reverse.
-
-**`ObserverGuard::reset()` is the default — `release()` is NOT (MANDATORY).** Use `reset()` for all normal cleanup (panel teardown, widget `LV_EVENT_DELETE` callbacks, repopulate paths). `reset()` already handles the shutdown case via `s_subjects_valid` + `lv_is_initialized()` guards. `release()` is **only** for the very last pre-deinit cleanup (`StaticSubjectRegistry::register_deinit()` callbacks) where the subject is already destroyed. If you reason *"`release()` skips `lv_observer_remove()` so it's safer"* — that's the misconception that caused 17 #579 reports. Skipping the remove call leaks the `LambdaObserverContext` and corrupts rendering state. Don't write `release()` in new cleanup code. See `ui_observer_guard.h`.
-
-**No `lv_obj_delete()` in input event handlers:** Never delete container children synchronously inside `LV_EVENT_CLICKED`/`LV_EVENT_RELEASED` handlers — LVGL may be iterating the child list during `indev_proc_release`. If a rebuild (`lv_obj_clean`) follows, just null pointers and let the rebuild handle deletion. See `docs/devel/ARCHITECTURE.md` § "No Object Deletion During Input Event Processing".
+Also: no `std::thread(...).detach()` for one-shot work — `EAGAIN` → `std::terminate` on
+AD5M/CC1 (#724, #837); use `HttpExecutor::fast()/slow()` or `BusThread`. `ObserverGuard::reset()`
+for all normal cleanup, never `release()` (#579). Every `init_subjects()` self-registers its
+`deinit_subjects()` with `StaticSubjectRegistry`.
 
 ---
 
