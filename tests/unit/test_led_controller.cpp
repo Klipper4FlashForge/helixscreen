@@ -2171,3 +2171,51 @@ TEST_CASE_METHOD(LedMockApiFixture, "LedController: WLED toggle marks in-flight 
     REQUIRE(lv_subject_get_int(s) == 0);
     REQUIRE_FALSE(ctrl.light_command_in_flight());
 }
+
+// ============================================================================
+// on_queued forwarding — prerequisite for widening the discretionary table (#1129)
+// ============================================================================
+
+TEST_CASE_METHOD(LedMockApiFixture, "OutputPinBackend accepts and forwards on_queued",
+                 "[led][1129]") {
+    // Compile-level contract: these overloads must exist before SET_PIN may be
+    // added to the discretionary table, or the queue path drops the settle.
+    helix::led::OutputPinBackend backend;
+    backend.set_api(mock_api.get());
+
+    helix::led::LedStripInfo pin;
+    pin.name = "Case Light";
+    pin.id = "output_pin case_light";
+    pin.backend = helix::led::LedBackendType::OUTPUT_PIN;
+    backend.add_pin(pin);
+
+    bool queued_fired = false;
+    auto on_queued = [&queued_fired]() { queued_fired = true; };
+
+    backend.turn_on("output_pin case_light", nullptr, nullptr, on_queued);
+    backend.turn_off("output_pin case_light", nullptr, nullptr, on_queued);
+    backend.set_value("output_pin case_light", 0.5, nullptr, nullptr, on_queued);
+    backend.set_brightness("output_pin case_light", 50, nullptr, nullptr, on_queued);
+
+    // The mock is not busy, so the normal path runs and on_queued must NOT fire.
+    CHECK_FALSE(queued_fired);
+}
+
+TEST_CASE_METHOD(LedMockApiFixture, "LedEffectBackend accepts and forwards on_queued",
+                 "[led][1129]") {
+    helix::led::LedEffectBackend backend;
+    backend.set_api(mock_api.get());
+
+    helix::led::LedEffectInfo effect;
+    effect.name = "led_effect rainbow";
+    backend.add_effect(effect);
+
+    bool queued_fired = false;
+    auto on_queued = [&queued_fired]() { queued_fired = true; };
+
+    backend.activate_effect("led_effect rainbow", nullptr, nullptr, on_queued);
+    backend.stop_effect("led_effect rainbow", nullptr, nullptr, on_queued);
+    backend.stop_all_effects(nullptr, nullptr, on_queued);
+
+    CHECK_FALSE(queued_fired);
+}
