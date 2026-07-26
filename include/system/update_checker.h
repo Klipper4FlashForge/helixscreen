@@ -338,6 +338,39 @@ class UpdateChecker {
      */
     static ZipIntegrity verify_zip_integrity(const std::string& zip_path);
 
+    /** @brief Which tool this system can use to read a .zip. */
+    enum class ZipTool {
+        Unzip,  ///< An `unzip` binary is available.
+        Python, ///< No unzip, but python3 with zipfile+zlib can do the job.
+        None,   ///< Neither — zip releases cannot be handled at all.
+    };
+
+    /**
+     * @brief Decide how (or whether) this system can read zip archives.
+     *
+     * Not every supported platform ships `unzip`: the Creality K2's OpenWrt
+     * firmware has no unzip binary and no BusyBox unzip applet, but does carry
+     * python3 with zipfile+zlib. Requiring unzip outright made every in-app
+     * update on that firmware fail before it even downloaded, with an
+     * apt-get hint that does not apply there.
+     */
+    static ZipTool available_zip_tool();
+
+    /**
+     * @brief Extract a single member from a .zip archive.
+     *
+     * Prefers `unzip -q -o`, falling back to python3's zipfile when no unzip
+     * binary exists (K2). Restores the member's mode bits on the python path —
+     * zipfile.extract() drops them, and an install.sh or bin/helix-screen that
+     * lands without its exec bit is useless.
+     *
+     * Public and static so it can be unit-tested directly.
+     *
+     * @return 0 on success, non-zero on failure.
+     */
+    static int extract_zip_member(const std::string& zip_path, const std::string& extract_dir,
+                                  const std::string& member);
+
   private:
     UpdateChecker() = default;
     ~UpdateChecker();

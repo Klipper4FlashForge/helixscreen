@@ -27,9 +27,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <string>
+#include <sys/stat.h>
 #include <thread>
+#include <unistd.h>
 
 #include "../catch_amalgamated.hpp"
 #include "hv/json.hpp"
@@ -1709,4 +1712,94 @@ TEST_CASE("verify_zip_integrity never reports Unverifiable when python3 exists",
 
     REQUIRE(UpdateChecker::verify_zip_integrity(path) != UpdateChecker::ZipIntegrity::Unverifiable);
     std::remove(path.c_str());
+}
+
+// ============================================================================
+// Zip member extraction / tool availability
+//
+// Not every platform ships `unzip`: the Creality K2's OpenWrt firmware has no
+// unzip binary and no BusyBox unzip applet, only python3 with zipfile+zlib.
+// Demanding unzip made every in-app update there fail before downloading.
+//
+// NOTE: these tests exercise whichever tool the host actually has (unzip on
+// dev/CI machines). The python fallback cannot be forced here — the
+// implementation resolves tools from absolute system directories, so a test
+// cannot shadow them via PATH. That branch was verified on K2 hardware.
+// ============================================================================
+
+TEST_CASE("available_zip_tool finds a usable tool on this system", "[update_checker][zip]") {
+    // A dev/CI host has unzip, python3, or both; None would mean zip releases
+    // are uninstallable here.
+    REQUIRE(UpdateChecker::available_zip_tool() != UpdateChecker::ZipTool::None);
+}
+
+TEST_CASE("extract_zip_member extracts a member's exact contents", "[update_checker][zip]") {
+    if (!zip_fixture_tooling_available()) {
+        SKIP("python3 with zipfile/zlib required to build zip fixtures");
+    }
+    const auto zip = zip_fixture_path("extract");
+    const std::string dir = "/tmp/helix_zip_fixture_extract_dir";
+    std::system(("rm -rf '" + dir + "'").c_str());
+    REQUIRE(mkdir(dir.c_str(), 0750) == 0);
+
+    // Build a zip holding a shell member with known contents.
+    REQUIRE(run_python_fixture("import sys,zipfile;"
+                               "z=zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED);"
+                               "z.writestr('helixscreen/install.sh','#!/bin/sh\\necho hi\\n');"
+                               "z.close()",
+                               zip));
+
+    REQUIRE(UpdateChecker::extract_zip_member(zip, dir, "helixscreen/install.sh") == 0);
+
+    std::ifstream f(dir + "/helixscreen/install.sh");
+    REQUIRE(f.good());
+    std::string contents((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    f.close();
+    REQUIRE(contents == "#!/bin/sh\necho hi\n");
+
+    std::system(("rm -rf '" + dir + "'").c_str());
+    std::remove(zip.c_str());
+}
+
+TEST_CASE("extract_zip_member leaves an extracted installer executable", "[update_checker][zip]") {
+    // An install.sh or bin/helix-screen that lands without its exec bit is
+    // useless — the updater runs it straight after extraction.
+    if (!zip_fixture_tooling_available()) {
+        SKIP("python3 with zipfile/zlib required to build zip fixtures");
+    }
+    const auto zip = zip_fixture_path("mode");
+    const std::string dir = "/tmp/helix_zip_fixture_mode_dir";
+    std::system(("rm -rf '" + dir + "'").c_str());
+    REQUIRE(mkdir(dir.c_str(), 0750) == 0);
+
+    // Store the member with no mode bits at all, the hostile case for the
+    // python path (zipfile.extract() would leave it 0600).
+    REQUIRE(run_python_fixture("import sys,zipfile;"
+                               "z=zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED);"
+                               "z.writestr('bin/helix-screen','#!/bin/sh\\nexit 0\\n');"
+                               "z.close()",
+                               zip));
+
+    REQUIRE(UpdateChecker::extract_zip_member(zip, dir, "bin/helix-screen") == 0);
+    REQUIRE(access((dir + "/bin/helix-screen").c_str(), X_OK) == 0);
+
+    std::system(("rm -rf '" + dir + "'").c_str());
+    std::remove(zip.c_str());
+}
+
+TEST_CASE("extract_zip_member fails for a member that isn't in the archive",
+          "[update_checker][zip]") {
+    if (!zip_fixture_tooling_available()) {
+        SKIP("python3 with zipfile/zlib required to build zip fixtures");
+    }
+    const auto zip = zip_fixture_path("absent");
+    const std::string dir = "/tmp/helix_zip_fixture_absent_dir";
+    std::system(("rm -rf '" + dir + "'").c_str());
+    REQUIRE(mkdir(dir.c_str(), 0750) == 0);
+    REQUIRE(make_valid_zip(zip));
+
+    REQUIRE(UpdateChecker::extract_zip_member(zip, dir, "no/such/member") != 0);
+
+    std::system(("rm -rf '" + dir + "'").c_str());
+    std::remove(zip.c_str());
 }
