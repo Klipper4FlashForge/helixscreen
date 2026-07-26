@@ -4,6 +4,7 @@ lxml>=5.0.0
 Pillow>=10.0.0
 PyYAML>=6.0
 ruamel.yaml>=0.18.0
+numpy>=1.24
 pandas>=2.0
 # Pinned EXACTLY so clang-format output is byte-identical on every machine + CI.
 # The pip wheel is the single source of truth — the hook prefers .venv/bin/clang-format

@@ -107,3 +107,29 @@ def artifacts(request):
         (target / "state.txt").write_text(f"state dump failed: {exc}")
 
     print(f"\n[ui-artifacts] failure diagnostics written to {target}")
+
+
+GOLDENS_DIR = Path(__file__).parent / "goldens"
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--accept-goldens", action="store_true", default=False,
+        help="Overwrite golden images with the current rendering. Review the diff first.",
+    )
+
+
+@pytest.fixture
+def golden(request):
+    """Assert an image matches its golden. Name defaults to the test's name."""
+    from helix.goldens import assert_golden
+
+    accept = request.config.getoption("--accept-goldens")
+
+    def _check(image, name: str | None = None) -> None:
+        assert_golden(image, name or request.node.name,
+                      goldens_dir=GOLDENS_DIR,
+                      artifacts_dir=ARTIFACT_ROOT / request.node.name,
+                      accept=accept)
+
+    return _check
