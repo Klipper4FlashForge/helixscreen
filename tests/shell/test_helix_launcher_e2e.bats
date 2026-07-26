@@ -242,7 +242,7 @@ EOF
         sh "$MOCK_INSTALL/bin/helix-launcher.sh" 2>/dev/null || true
 
     if [ -f "$MOCK_INSTALL/helix_screen_args.txt" ]; then
-        ! grep -q '^-vv$' "$MOCK_INSTALL/helix_screen_args.txt"
+        refute grep -q '^-vv$' "$MOCK_INSTALL/helix_screen_args.txt"
     fi
 }
 
@@ -324,7 +324,7 @@ EOF
         sh "$MOCK_INSTALL/bin/helix-launcher.sh" 2>/dev/null || true
 
     if [ -f "$MOCK_INSTALL/helix_screen_args.txt" ]; then
-        ! grep -q '^--log-level' "$MOCK_INSTALL/helix_screen_args.txt"
+        refute grep -q '^--log-level' "$MOCK_INSTALL/helix_screen_args.txt"
     fi
 }
 

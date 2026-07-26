@@ -5,6 +5,8 @@
 # Guards against the shallow-clone regression where CI produced a
 # contributors.h containing only the last committer.
 
+load helpers
+
 SCRIPT="scripts/gen-contributors.sh"
 
 setup() {
@@ -80,7 +82,7 @@ Alice Example
 Bob Example
 EOF
     BUILD_DIR=build ./scripts/gen-contributors.sh
-    ! grep -q 'comment' build/generated/contributors.h
+    refute grep -q 'comment' build/generated/contributors.h
     count=$(grep -cE '^    "' build/generated/contributors.h)
     [ "$count" -eq 2 ]
 }

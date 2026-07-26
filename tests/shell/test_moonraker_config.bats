@@ -142,15 +142,6 @@ fake_moonraker_src() {
 # `! grep -q …` because the `!` reserved word suppresses errexit — a mid-test
 # `! grep` that fails is silently swallowed by bats and only the LAST command
 # decides the result. Calling a plain command keeps every negative assertion load-bearing.
-refute_grep() {
-    local pattern="$1"
-    local file="$2"
-    if grep -q "$pattern" "$file"; then
-        echo "refute_grep: unexpectedly matched /$pattern/ in $file" >&2
-        cat "$file" >&2
-        return 1
-    fi
-}
 
 # Body of a modern net_deploy.py — the decisive token is asset_name.
 NET_DEPLOY_MODERN='class NetDeploy(AppDeploy):
@@ -474,7 +465,9 @@ NET_DEPLOY_NO_ASSET='class NetDeploy(AppDeploy):
     migrate_to_web_type "$conf"
 
     # Old git_repo type should be gone
-    ! awk '/^\[update_manager helixscreen\]/{found=1; next} found && /^\[/{exit} found && /^type:/{print; exit}' "$conf" | grep -q 'git_repo'
+    local hs_type
+    hs_type=$(awk '/^\[update_manager helixscreen\]/{found=1; next} found && /^\[/{exit} found && /^type:/{print; exit}' "$conf")
+    refute grep -q 'git_repo' <<<"$hs_type"
     # New web section should exist
     grep -q '^\[update_manager helixscreen\]' "$conf"
     awk '/^\[update_manager helixscreen\]/{found=1; next} found && /^\[/{exit} found && /^type:/{print; exit}' "$conf" | grep -q 'web'
@@ -587,8 +580,8 @@ BINEOF
     configure_moonraker_updates "pi"
 
     # persistent_files should have been removed (config now lives outside managed path)
-    ! grep -q 'persistent_files:' "$conf"
-    ! grep -q 'config/settings.json' "$conf"
+    refute grep -q 'persistent_files:' "$conf"
+    refute grep -q 'config/settings.json' "$conf"
     # Section header still present
     grep -q '^\[update_manager helixscreen\]' "$conf"
 }
@@ -681,7 +674,7 @@ MOONEOF
     remove_update_manager_section
 
     # helixscreen section should be gone
-    ! grep -q '^\[update_manager helixscreen\]' "$conf"
+    refute grep -q '^\[update_manager helixscreen\]' "$conf"
     # Other sections still present
     grep -q '^\[server\]' "$conf"
     grep -q '^\[update_manager mainsail\]' "$conf"
@@ -714,14 +707,14 @@ CONF
     remove_update_manager_section
 
     # helixscreen section should be gone
-    ! grep -q '^\[update_manager helixscreen\]' "$conf"
+    refute grep -q '^\[update_manager helixscreen\]' "$conf"
     # All other sections intact
     grep -q '^\[server\]' "$conf"
     grep -q '^\[authorization\]' "$conf"
     grep -q '^\[update_manager mainsail\]' "$conf"
     grep -q '^\[update_manager klipper\]' "$conf"
     # Comment lines also removed
-    ! grep -q '# HelixScreen Update Manager' "$conf"
+    refute grep -q '# HelixScreen Update Manager' "$conf"
     ! grep -q '# Added by HelixScreen installer' "$conf"
 }
 
@@ -857,9 +850,11 @@ CONF
     cleanup_unsupported_options "$conf"
 
     # persistent_files should have been removed
-    ! awk '/^\[update_manager helixscreen\]/{found=1} found && /^\[update_manager klipper\]/{exit} found' "$conf" | grep -q 'persistent_files:'
-    ! awk '/^\[update_manager helixscreen\]/{found=1} found && /^\[update_manager klipper\]/{exit} found' "$conf" | grep -q 'config/settings.json'
-    ! awk '/^\[update_manager helixscreen\]/{found=1} found && /^\[update_manager klipper\]/{exit} found' "$conf" | grep -q 'config/helixscreen.env'
+    local hs_section
+    hs_section=$(awk '/^\[update_manager helixscreen\]/{found=1} found && /^\[update_manager klipper\]/{exit} found' "$conf")
+    refute grep -q 'persistent_files:' <<<"$hs_section"
+    refute grep -q 'config/settings.json' <<<"$hs_section"
+    refute grep -q 'config/helixscreen.env' <<<"$hs_section"
 }
 
 @test "cleanup_unsupported_options: no-op when persistent_files already absent" {
@@ -909,7 +904,7 @@ CONF
     cleanup_unsupported_options "$conf"
 
     # persistent_files removed
-    ! grep -q 'persistent_files:' "$conf"
+    refute grep -q 'persistent_files:' "$conf"
     # Other sections preserved
     grep -q '^\[server\]' "$conf"
     grep -q '^\[authorization\]' "$conf"
@@ -937,8 +932,8 @@ CONF
     cleanup_unsupported_options "$conf"
 
     # persistent_files and its continuation lines should be gone
-    ! grep -q 'persistent_files:' "$conf"
-    ! grep -q 'config/settings.json' "$conf"
+    refute grep -q 'persistent_files:' "$conf"
+    refute grep -q 'config/settings.json' "$conf"
     # path: line should still be present
     grep -q 'path: /usr/data/helixscreen' "$conf"
     # type: line should still be present
@@ -1055,7 +1050,7 @@ CONF
 
     # User's True value is untouched
     grep -q '^enable_system_updates: True' "$conf"
-    ! grep -q '^enable_system_updates: False' "$conf"
+    refute grep -q '^enable_system_updates: False' "$conf"
     # No backup needed (early return, no edit)
     [ ! -f "${conf}.bak.helixscreen" ]
 }
@@ -1086,8 +1081,8 @@ CONF
 
     # Nothing added, nothing changed
     [ "$(cat "$conf")" = "$before" ]
-    ! grep -qE '^\[update_manager\][[:space:]]*$' "$conf"
-    ! grep -q 'enable_system_updates' "$conf"
+    refute grep -qE '^\[update_manager\][[:space:]]*$' "$conf"
+    refute grep -q 'enable_system_updates' "$conf"
     [ ! -f "${conf}.bak.helixscreen" ]
 }
 
@@ -1127,7 +1122,7 @@ CONF
     configure_moonraker_updates "pi"
 
     grep -q '^\[update_manager helixscreen\]' "$conf"
-    ! grep -qE '^\[update_manager\][[:space:]]*$' "$conf"
+    refute grep -qE '^\[update_manager\][[:space:]]*$' "$conf"
     ! grep -q 'enable_system_updates' "$conf"
 }
 

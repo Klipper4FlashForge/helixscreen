@@ -6,6 +6,8 @@
 # INSTALL_DIR requires sudo (which fails under NoNewPrivileges=true in systemd),
 # causing the running process's CWD to be renamed and all relative paths to break.
 
+load helpers
+
 WORKTREE_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 RELEASE_SH="$WORKTREE_ROOT/scripts/lib/installer/release.sh"
 INSTALL_SH="$WORKTREE_ROOT/scripts/install.sh"
@@ -33,7 +35,7 @@ INSTALL_SH="$WORKTREE_ROOT/scripts/install.sh"
 
 @test "release.sh: config restore uses file_sudo" {
     # Old pattern: $SUDO mkdir -p "${INSTALL_DIR}/config"
-    ! grep -E '\$SUDO mkdir -p "\$\{INSTALL_DIR\}/config"' "$RELEASE_SH"
+    refute grep -E '\$SUDO mkdir -p "\$\{INSTALL_DIR\}/config"' "$RELEASE_SH"
     # Old pattern: $SUDO cp "$BACKUP_CONFIG"
     ! grep -E '\$SUDO cp "\$BACKUP_CONFIG"' "$RELEASE_SH"
 }
@@ -60,7 +62,7 @@ INSTALL_SH="$WORKTREE_ROOT/scripts/install.sh"
 }
 
 @test "install.sh: config restore uses file_sudo" {
-    ! grep -E '\$SUDO mkdir -p "\$\{INSTALL_DIR\}/config"' "$INSTALL_SH"
+    refute grep -E '\$SUDO mkdir -p "\$\{INSTALL_DIR\}/config"' "$INSTALL_SH"
     ! grep -E '\$SUDO cp "\$BACKUP_CONFIG"' "$INSTALL_SH"
 }
 
