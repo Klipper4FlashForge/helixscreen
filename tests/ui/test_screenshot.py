@@ -2,7 +2,19 @@
 
 """Stable capture and widget cropping."""
 
+import os
+from pathlib import Path
+
+import pytest
 from PIL import Image
+
+from helix.app import HelixApp, HelixCtlError
+
+# Mirrors conftest.py's BINARY: this file's own HELIX_MOCK_AUTO_PRINT test boots
+# a private instance with boot-time flags (--sim-speed) the shared fixtures
+# don't parametrize, so it can't just request `fresh_helix_app`.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_BINARY = Path(os.environ.get("HELIX_UI_BINARY", str(_REPO_ROOT / "build" / "bin" / "helix-screen")))
 
 
 def test_stable_capture_is_reproducible_when_frozen(helix_app, tmp_path):
@@ -40,6 +52,68 @@ def test_crop_matches_the_widgets_reported_geometry(helix_app):
     finally:
         helix_app.unfreeze()
     assert (cropped.width, cropped.height) == (g["w"], g["h"])
+
+
+def test_crop_reads_from_the_widgets_actual_position_not_just_its_size(helix_app):
+    # The size-only assertions above would still pass if the crop read the
+    # right *dimensions* from the wrong *offset* (e.g. a swapped x/y, or a
+    # crop anchored at the screen origin instead of the widget's own
+    # position). Prove the pixel content is right, not just its shape: crop
+    # the full-screen capture in PIL using geom's x/y/w/h (screen-absolute,
+    # like capture_frame()'s own crop_to) and byte-compare against the
+    # server's own --target crop.
+    helix_app.navigate("controls")
+    helix_app.wait_idle()
+    g = helix_app.geom("btn_motion")["widgets"][0]
+    helix_app.freeze()
+    try:
+        full = helix_app.capture(stable=True)
+        cropped = helix_app.capture(target="btn_motion", stable=True)
+    finally:
+        helix_app.unfreeze()
+    expected = full.crop((g["x"], g["y"], g["x"] + g["w"], g["y"] + g["h"]))
+    assert cropped.tobytes() == expected.tobytes()
+
+
+def test_stable_times_out_with_an_actionable_message_on_a_genuinely_moving_screen(tmp_path):
+    # Every other --stable test in this file calls freeze() first, so the
+    # server's poll loop matches on its very first repeated hash — the
+    # multi-sample branch and the timeout throw are never actually executed,
+    # only inspected by reading the code. Drive a screen that keeps
+    # genuinely repainting on its own: a live mock print with animations
+    # re-enabled (--test's settings-test.json defaults them off).
+    # PrintStatusPanel restarts a ~300ms ease-out progress-bar animation on
+    # every mock physics tick (~250ms, independent of --sim-speed), so
+    # pixels never hold still for 3 consecutive 16ms samples — this
+    # reliably drives the timeout branch rather than merely asserting it
+    # exists.
+    #
+    # Boots its own instance (HELIX_MOCK_AUTO_PRINT env + --sim-speed) since
+    # this needs boot-time flags the shared `helix_app`/`fresh_helix_app`
+    # fixtures don't support, and dirties env/settings state a shared
+    # instance shouldn't carry into other tests.
+    if not _BINARY.exists():
+        pytest.skip(f"{_BINARY} not built — run `make -j`")
+
+    env_before = os.environ.get("HELIX_MOCK_AUTO_PRINT")
+    os.environ["HELIX_MOCK_AUTO_PRINT"] = "1"
+    try:
+        app = HelixApp(binary=_BINARY, socket_path=tmp_path / "control.sock",
+                       log_path=tmp_path / "app.log",
+                       extra_args=["--sim-speed", "8"])
+        with app:
+            app.set("settings_animations_enabled", 1)
+            app.wait_for("print_progress", 1, timeout=15)
+            with pytest.raises(HelixCtlError) as exc:
+                app.screenshot(str(tmp_path / "moving.png"), stable=True)
+            message = exc.value.message
+            assert "never stabilized" in message, message
+            assert "freeze" in message, message
+    finally:
+        if env_before is None:
+            os.environ.pop("HELIX_MOCK_AUTO_PRINT", None)
+        else:
+            os.environ["HELIX_MOCK_AUTO_PRINT"] = env_before
 
 
 def test_png_path_still_writes_a_readable_file(helix_app, tmp_path):
