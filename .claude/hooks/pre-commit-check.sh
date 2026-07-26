@@ -53,7 +53,7 @@ echo "📋 [2/4] Checking for printf/cout/LV_LOG..."
 if git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(cpp|c)$' | xargs grep -nE '(printf\(|std::cout|std::cerr|LV_LOG_)' 2>/dev/null; then
     echo "❌ Found printf/cout/LV_LOG_* usage"
     echo "   → Use spdlog instead: spdlog::info(), spdlog::debug(), etc."
-    echo "   → See: .claude/quickref/spdlog-patterns.md"
+    echo "   → See: docs/devel/LOGGING.md"
     echo ""
     ((ERROR_COUNT++))
 else
