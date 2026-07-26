@@ -86,9 +86,10 @@ Most commonly needed:
 **Absolute for new code.** The tree still has 389 sites that break these rules
 (`scripts/check_imperative_ui.py --list`). Some were deliberate pragmatism from when the XML
 engine could not express what was needed; some are plain mistakes that got through review.
-Both are debt, tracked and being ported. **Existing imperative code is not precedent** — do
-not imitate a nearby site just because it is there, and do not opportunistically refactor one
-as a side effect of an unrelated change. The gate ratchets: the count may fall, never rise.
+Both are debt, tracked in prestonbrown/helixscreen#1140 and being ported. **Existing imperative
+code is not precedent** — do not imitate a nearby site just because it is there, and do not
+opportunistically refactor one as a side effect of an unrelated change. The gate ratchets: the
+count may fall, never rise.
 
 | # | Rule | ❌ NEVER | ✅ ALWAYS |
 |---|------|----------|----------|
