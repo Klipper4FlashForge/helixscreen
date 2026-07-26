@@ -1517,13 +1517,16 @@ ui_image_scale_to_cover(img, container);     // Works correctly
 Use the navigation system for consistent overlay management:
 
 ```cpp
-// When showing overlay
-ui_nav_push_overlay(motion_panel);  // Pushes current to history, shows overlay
+auto& nav = NavigationManager::instance();
+
+// When showing overlay — register first, or on_deactivate() never fires on dismiss
+nav.register_overlay_instance(overlay_root, this);
+nav.push_overlay(overlay_root);  // Pushes current to history, shows overlay
 
 // In back button callback
-if (!ui_nav_go_back()) {
+if (!nav.go_back()) {
     // Fallback: manual navigation if history is empty
-    ui_nav_show_panel(home_panel);
+    nav.set_active(helix::PanelId::Home);
 }
 ```
 

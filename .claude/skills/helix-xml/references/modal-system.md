@@ -21,7 +21,7 @@ Modal class (C++ RAII lifecycle, show/hide, button wiring)
 | **Panel** | Main navigation content |
 
 - User must respond before continuing → **Modal**
-- Replaces current screen but can back out → **Overlay** (`ui_nav_push_overlay()`)
+- Replaces current screen but can back out → **Overlay** (`NavigationManager::instance().push_overlay()`)
 - Primary navigation destination → **Panel**
 
 ## Three Ways to Create Modals

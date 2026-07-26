@@ -231,7 +231,7 @@ std::vector<SubjectLifetime>   carousel_lifetimes_;   // MUST clear before obser
 |---------|-----------|
 | Subject init order | Register components → init subjects → create XML |
 | Widget lookup | `lv_obj_find_by_name()` not `lv_obj_get_child()` |
-| Overlays | `ui_nav_push_overlay()`/`ui_nav_go_back()` |
+| Overlays | `NavigationManager::instance().push_overlay(root)` / `.go_back()` (`ui_nav_manager.h`) — pair every push with `register_overlay_instance(root, this)` or `on_deactivate()` never fires (tests abort; `HELIX_STRICT_OVERLAY_CHECK=1`) |
 | Modals (simple) | `Modal::show("component_name")` / `Modal::hide(dialog)` |
 | Modals (subclass) | Extend `Modal`, implement `get_name()` + `component_name()`, override `on_ok()`/`on_cancel()` |
 | Confirmation dialog | `modal_show_confirmation(title, msg, severity, btn_text, on_confirm, on_cancel, data)` (in `helix::ui`) |
