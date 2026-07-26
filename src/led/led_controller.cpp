@@ -1974,11 +1974,12 @@ void LedController::toggle_all(bool on) {
     // counter would stay pinned, greying both light buttons out for the whole
     // session (#1129). on_queued is the only settle signal on that path.
     //
-    // Every branch that emits G-code passes it. NATIVE emits SET_LED, OUTPUT_PIN
-    // emits SET_PIN, LED_EFFECT emits SET_LED_EFFECT — all discretionary, so all
-    // can take the fire-and-forget queue path. MACRO emits user-defined macros,
-    // which stay non-discretionary under the default-allow rule and get a real
-    // response; WLED goes over HTTP without touching the gcode lock at all.
+    // NATIVE and OUTPUT_PIN emit discretionary gcode (SET_LED, SET_PIN) below and
+    // pass cbs.queued. MACRO emits user-defined macros, which stay non-discretionary
+    // under the default-allow rule and get a real response; WLED goes over HTTP
+    // without touching the gcode lock at all. LED_EFFECT's case in this switch is a
+    // no-op — it emits nothing and bumps no counter here. Effects are driven
+    // separately via activate/stop, none of which hold this in-flight counter.
     struct Settle {
         NativeBackend::SuccessCallback done;
         NativeBackend::ErrorCallback fail;
