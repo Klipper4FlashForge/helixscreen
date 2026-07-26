@@ -203,8 +203,8 @@
 - **Uses**: 6 | **Velocity**: 0.859375 | **Learned**: 2026-06-12 | **Last**: 2026-07-17 | **Category**: gotcha
 > scripts/resolve-backtrace.sh forks one addr2line PER address vs multi-GB pi.debug DWARF (~2.6G); each child grows lazily 4→8G+. Kill it → subshell+addr2line children ORPHAN, invisible to pkill (name truncates 'aarch64-linux-g'); 3 parallel resolves once ~26G, near-OOM. RULES: (1) run_in_background:true from the START (harness owns the tree); (2) don't hand-fork addr2line in a chainable shell; (3) one resolver, no parallel retries; (4) cleanup = kill PARENT resolve-backtrace.sh (`pgrep -af resolve-backtrace`), find big procs via /proc/PID/cmdline.
 
-### [L091] [**---|****-] Stale-but-200 R2 manifest silently suppresses updates fleet-wide
-- **Uses**: 8 | **Velocity**: 3.078125 | **Learned**: 2026-06-12 | **Last**: 2026-07-26 | **Category**: gotcha
+### [L091] [**---|*****] Stale-but-200 R2 manifest silently suppresses updates fleet-wide
+- **Uses**: 9 | **Velocity**: 4.078125 | **Learned**: 2026-06-12 | **Last**: 2026-07-26 | **Category**: gotcha
 > "New version not showing on ANY device" = source of truth, not per-device: updater fetches releases.helixscreen.org/<ch>/manifest.json FIRST, trusts any HTTP-200 (update_checker.cpp fetch_stable_release), only falls back to GitHub on FETCH FAILURE not staleness. v0.99.76 cause: release.yml R2 upload non-blocking, manifest uploaded AFTER big zips; a 504 on k2.zip aborted before manifest → R2 pinned at .75, run green. Diagnose: curl live manifest .version vs tag; check the R2 upload job. Fixed 942bcbd51/d0034b282: manifest before zips, s3cp retry, read-back assert version==tag. Verify the SERVED artifact, never trust upload success.
 
 ### [L092] [***--|*****] make | tail masks exit code; -j hides the real build error
@@ -220,7 +220,7 @@
 > Gating a load decision on a state that only updates AFTER the load completes deadlocks. The print-status gcode download was gated on the view-mode subject being 3D/2D, but that subject only becomes 3D/2D once gcode is loaded -> gcode never downloads, mode never leaves thumbnail, 3D render never appears (user saw 'thumbnail not 3D'). Gate loads on intent/settings (want_viewer + render-mode setting), never on the rendered result. Found in PrintStatusPanel preview unification.
 
 ### [L095] [***--|*****] Verify feature existence in code, not from issue phrasing + commit messages
-- **Uses**: 32 | **Velocity**: 11.625 | **Learned**: 2026-07-01 | **Last**: 2026-07-26 | **Category**: correction
+- **Uses**: 33 | **Velocity**: 12.625 | **Learned**: 2026-07-01 | **Last**: 2026-07-26 | **Category**: correction
 > Don't claim a capability is absent from issue wording + commit messages — grep/read the actual code first (reporter "can't find X" usually = discoverability gap, not missing). Spoolman picker existed (AmsEditModal, behind "Choose Spool") despite 6 fix-commits implying otherwise (#1071). Corollary: don't inherit a subagent's "race" claim from a stale comment — verify current code. **Extends to reporter-proposed root-cause MECHANISMS, not just existence:** #1124's two bugs each had detailed, plausible reporter archaeology pointing at the WRONG cause — bug 2 "panel graph never migrated to the backfill path" (it uses TempGraphController + backfill already; real cause = persistent graph backfilled pre-WebSocket-connect), bug 1 "init_fans resets the subject to 0" (struct+subject zero in lockstep, snapshot re-fires; real cause = e3f92c3f4's front-most fan fallback, a 2-day-old regression). Both real causes were RECENT commits. Trace the suspect area in current code AND `git log -S`/blame it before adopting the reporter's mechanism; a confident, well-argued mechanism from a technical reporter is still a hypothesis.
 
 ### [L096] [**---|****-] queue_prev tag-ring names the victim, not the crash — resolve real frames first
