@@ -725,6 +725,22 @@ observer. See [`THREADING.md`](THREADING.md) §5 for the pairing rule, the dynam
 source table, the collection pattern, and reset ordering (#705). Real usage:
 `FanStackWidget::bind_fans()` in `src/ui/panel_widgets/fan_stack_widget.cpp`.
 
+### Klippy-Volatile Subjects
+
+Moonraker sends **delta** status updates — changed fields only. A subject fed by a delta-only
+field keeps its last value across a Klipper restart, because the field is simply absent from
+later payloads until it next changes. When such a stale value *gates behaviour*, it is a live
+bug: a cached `idle_timeout.state == "Printing"` from mid-`G28` made the app treat a
+freshly-restarted, idle printer as busy and wedge the LED in-flight counter for a whole
+session (#1129).
+
+Declare those subjects with `INIT_SUBJECT_INT_VOLATILE` rather than `INIT_SUBJECT_INT`
+(`include/state/subject_macros.h`); `PrinterState::set_klippy_state_internal()` — the single
+chokepoint for every Klippy state change — resets them on a genuine transition, in both
+directions. See [`THREADING.md`](THREADING.md) §5 for the membership rules, why the reset is
+edge-triggered rather than a live `klippy != READY` predicate, and why `motors_enabled` is
+deliberately excluded. Real usage: `src/printer/printer_calibration_state.cpp`.
+
 ### Widget Management
 
 - **Creation:** Automatic during `lv_xml_create()`

@@ -21,8 +21,7 @@ using namespace helix;
 // Case 1: is_discretionary_gcode() token matcher
 // ============================================================================
 
-TEST_CASE("is_discretionary_gcode recognizes the discretionary command set",
-          "[gcode][classify]") {
+TEST_CASE("is_discretionary_gcode recognizes the discretionary command set", "[gcode][classify]") {
     SECTION("fan commands are discretionary (upper + lower case)") {
         CHECK(is_discretionary_gcode("M106"));
         CHECK(is_discretionary_gcode("m106"));
@@ -48,7 +47,8 @@ TEST_CASE("is_discretionary_gcode recognizes the discretionary command set",
         // heaters (build_heater_gcode): these also route through the guarded execute_gcode.
         CHECK(is_discretionary_gcode("M141 S50"));
         CHECK(is_discretionary_gcode("m141 s50"));
-        CHECK(is_discretionary_gcode("SET_TEMPERATURE_FAN_TARGET TEMPERATURE_FAN=chamber TARGET=40"));
+        CHECK(
+            is_discretionary_gcode("SET_TEMPERATURE_FAN_TARGET TEMPERATURE_FAN=chamber TARGET=40"));
     }
 
     SECTION("non-homing moves are discretionary (upper + lower case)") {
@@ -120,22 +120,20 @@ TEST_CASE("is_discretionary_gcode never blocks recovery or critical commands",
 // Case 3: whole-token matching (no substring / prefix false positives)
 // ============================================================================
 
-TEST_CASE("is_discretionary_gcode matches whole tokens only",
-          "[gcode][classify]") {
-    CHECK_FALSE(is_discretionary_gcode("M1090"));    // not M109
-    CHECK_FALSE(is_discretionary_gcode("M1060"));    // not M106
-    CHECK_FALSE(is_discretionary_gcode("G10"));      // not G0/G1
-    CHECK_FALSE(is_discretionary_gcode("M10"));      // not M104/M106/M107
+TEST_CASE("is_discretionary_gcode matches whole tokens only", "[gcode][classify]") {
+    CHECK_FALSE(is_discretionary_gcode("M1090"));                     // not M109
+    CHECK_FALSE(is_discretionary_gcode("M1060"));                     // not M106
+    CHECK_FALSE(is_discretionary_gcode("G10"));                       // not G0/G1
+    CHECK_FALSE(is_discretionary_gcode("M10"));                       // not M104/M106/M107
     CHECK_FALSE(is_discretionary_gcode("SET_FAN_SPEED_EXTRA FAN=x")); // not SET_FAN_SPEED
-    CHECK_FALSE(is_discretionary_gcode("SET_LED_EFFECT EFFECT=x"));   // not SET_LED
+    CHECK_FALSE(is_discretionary_gcode("SET_LEDX R=1"));              // not SET_LED
 }
 
 // ============================================================================
 // Case 4: empty / blank input is NOT discretionary
 // ============================================================================
 
-TEST_CASE("is_discretionary_gcode returns false for empty or blank scripts",
-          "[gcode][classify]") {
+TEST_CASE("is_discretionary_gcode returns false for empty or blank scripts", "[gcode][classify]") {
     CHECK_FALSE(is_discretionary_gcode(""));
     CHECK_FALSE(is_discretionary_gcode("   "));
     CHECK_FALSE(is_discretionary_gcode("\n\n"));
@@ -167,8 +165,7 @@ TEST_CASE("is_discretionary_gcode requires every non-blank line to be discretion
 // Case 6: inline comments are stripped (comment-only line counts as blank)
 // ============================================================================
 
-TEST_CASE("is_discretionary_gcode strips inline comments",
-          "[gcode][classify]") {
+TEST_CASE("is_discretionary_gcode strips inline comments", "[gcode][classify]") {
     CHECK(is_discretionary_gcode("M106 S128 ; cool"));
     CHECK(is_discretionary_gcode("M104 S200 ; set nozzle"));
     // comment-only line among discretionary lines is treated as blank
@@ -249,4 +246,55 @@ TEST_CASE("discretionary_gcode_noun names the command type", "[gcode][classify][
         CHECK(discretionary_gcode_noun("G90") == "change");
         CHECK(discretionary_gcode_noun("") == "change");
     }
+}
+
+TEST_CASE("newly discretionary commands are gated when busy", "[gcode_classify][1129]") {
+    CHECK(helix::is_discretionary_gcode("SET_PIN PIN=case_light VALUE=1.0000"));
+    CHECK(helix::is_discretionary_gcode("SET_LED_EFFECT EFFECT=rainbow"));
+    CHECK(helix::is_discretionary_gcode("SET_LED_EFFECT EFFECT=rainbow STOP=1"));
+    CHECK(helix::is_discretionary_gcode("M220 S100"));
+    CHECK(helix::is_discretionary_gcode("M221 S95"));
+    CHECK(helix::is_discretionary_gcode("M117 Hello"));
+}
+
+TEST_CASE("SET_GCODE_OFFSET is never discretionary", "[gcode_classify][1129]") {
+    // It CONTROLS a blocking op: z-offset calibration sends it mid-probe
+    // (ui_panel_calibration_zoffset.cpp). Queuing it behind the very operation it
+    // steers would break calibration. Same class as TESTZ/ACCEPT/ABORT.
+    CHECK_FALSE(helix::is_discretionary_gcode("SET_GCODE_OFFSET Z=0.100"));
+    CHECK_FALSE(helix::is_discretionary_gcode("SET_GCODE_OFFSET Z_ADJUST=-0.010"));
+}
+
+TEST_CASE("widened table keeps whole-token matching", "[gcode_classify][1129]") {
+    // Prefix collisions must not trip the new entries.
+    CHECK_FALSE(helix::is_discretionary_gcode("SET_PIN_EXTRA PIN=x"));
+    CHECK_FALSE(helix::is_discretionary_gcode("M2200 S1"));
+    CHECK_FALSE(helix::is_discretionary_gcode("M1170"));
+}
+
+TEST_CASE("new commands do not register as physical moves", "[gcode_classify][1129]") {
+    CHECK_FALSE(helix::gcode_contains_move("SET_PIN PIN=case_light VALUE=1.0000"));
+    CHECK_FALSE(helix::gcode_contains_move("M220 S100"));
+}
+
+TEST_CASE("nouns name the new command kinds", "[gcode_classify][1129]") {
+    // SET_PIN drives output_pin LEDs AND non-numeric output_pin fans (fan_gcode.h)
+    // — the token alone can't tell which, so it gets the generic noun, not "LED
+    // change". SET_LED_EFFECT is unambiguously an LED write.
+    CHECK(helix::discretionary_gcode_noun("SET_PIN PIN=case_light VALUE=1.0000") == "change");
+    CHECK(helix::discretionary_gcode_noun("SET_LED_EFFECT EFFECT=rainbow") == "LED change");
+    CHECK(helix::discretionary_gcode_noun("M220 S100") == "speed change");
+    CHECK(helix::discretionary_gcode_noun("M221 S95") == "flow change");
+    CHECK(helix::discretionary_gcode_noun("M117 Hello") == "display message");
+}
+
+TEST_CASE("SET_PIN stays discretionary but is not misnamed as an LED",
+          "[gcode][classify][gcode_classify][noun]") {
+    // SET_PIN also drives non-LED output_pin fans (fan_gcode.h:51 emits
+    // "SET_PIN PIN=<name> VALUE=..." for non-numeric output_pin fans). A user
+    // nudging such a fan mid-bed-mesh must not see "your LED change will run
+    // when it's ready" — but the command must still take the discretionary
+    // queue path so it doesn't time out behind the blocking op.
+    CHECK(helix::is_discretionary_gcode("SET_PIN PIN=x VALUE=1"));
+    CHECK(helix::discretionary_gcode_noun("SET_PIN PIN=x VALUE=1") != "LED change");
 }

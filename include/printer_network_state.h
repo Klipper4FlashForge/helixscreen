@@ -88,8 +88,11 @@ class PrinterNetworkState {
      * helix::ui::queue_update() by PrinterState, which handles the async dispatch.
      *
      * @param state KlippyState enum value
+     * @return true if the state actually changed (a genuine transition), false if
+     *         it already held @p state. Callers use the edge to invalidate state
+     *         that a Klipper restart makes meaningless (#1129).
      */
-    void set_klippy_state_internal(KlippyState state);
+    bool set_klippy_state_internal(KlippyState state);
 
     /**
      * @brief Set Klipper state message (error/shutdown reason from webhooks)

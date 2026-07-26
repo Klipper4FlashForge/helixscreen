@@ -512,6 +512,54 @@ exactly this case.
 
 Real usage: `FanStackWidget::bind_fans()` in `src/ui/panel_widgets/fan_stack_widget.cpp`.
 
+### Klippy-volatile subjects
+
+Moonraker sends **delta** status updates — changed fields only. A subject fed by a
+delta-only field keeps its last value indefinitely across a Klipper restart, because the
+field is simply absent from later payloads until it next changes. When a stale value like
+that *gates behaviour*, it is a live bug rather than a cosmetic one.
+
+That is #1129: a cached `idle_timeout.state == "Printing"`, captured mid-`G28`, survived a
+Klipper restart. `is_blocking_operation_active()` therefore treated a freshly-restarted,
+idle printer as busy, routed LED/fan/temp commands down the fire-and-forget queue path, and
+left the LED in-flight counter pinned — both light buttons greyed out for the rest of the
+session.
+
+Declare such a subject with `INIT_SUBJECT_INT_VOLATILE` instead of `INIT_SUBJECT_INT`
+(`include/state/subject_macros.h`). It registers the subject and its default into a
+`helix::subjects::VolatileSubjects` member, writing that default exactly once so init and
+reset cannot drift apart:
+
+```cpp
+INIT_SUBJECT_INT(retract_length, 0, subjects_, register_xml);                     // config-derived
+INIT_SUBJECT_INT_VOLATILE(idle_timeout_printing, 0, subjects_, volatile_, register_xml);
+```
+
+`PrinterState::set_klippy_state_internal()` is the single chokepoint for every Klippy state
+change — the webhooks JSON parse, the `helix::async::call_method` wrapper, and
+`set_klippy_state_sync()` all funnel through it — and it calls `reset_klippy_volatile()`
+on a genuine edge only.
+
+**The reset is edge-triggered, in both directions**, and that is load-bearing: a live
+`if (klippy_state != READY)` predicate would *not* have fixed #1129, because the stale value
+survived past the return to READY. `READY → dead` means nothing Klipper was doing survives;
+`dead → READY` means a fresh Klipper with nothing blocking yet.
+
+**Membership is deliberately narrow.** Two rules:
+
+- Only include a subject if its field is delta-only *and* a stale value gates behaviour.
+  Continuously-streamed state (temperatures, positions) self-heals within a tick — resetting
+  it just causes visible flicker.
+- Only include it if the reset value is *more* correct than the stale one. `motors_enabled`
+  was tried and removed for exactly this reason: right after a Klipper shutdown the steppers
+  are affirmatively de-energized, so the stale `0` was truer than a reset to `1`.
+
+Current members, all on `PrinterCalibrationState`: `idle_timeout_printing`,
+`manual_probe_active`, `manual_probe_z_position`.
+
+Real usage: `src/printer/printer_calibration_state.cpp`, dispatched from
+`src/printer/printer_state.cpp`.
+
 ---
 
 ## 6. Observers
