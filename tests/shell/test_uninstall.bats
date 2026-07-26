@@ -8,6 +8,7 @@ WORKTREE_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 
 setup() {
     load helpers
+    install_gnu_sed_shim
 
     # Source the bundled uninstall.sh (the case guard skips main)
     . "$WORKTREE_ROOT/scripts/uninstall.sh"
@@ -323,17 +324,15 @@ CONF
     local auto_run="$BATS_TEST_TMPDIR/auto_run.sh"
     echo "# Disabled by HelixScreen: /opt/PROGRAM/ffstartup-arm" > "$auto_run"
 
-    # Override to use test path (original is hardcoded to /opt/auto_run.sh)
-    # Use awk instead of sed -i to avoid macOS/GNU incompatibility
+    # Override only to retarget the path (the original hardcodes /opt/auto_run.sh).
+    # The sed line mirrors forgex.sh exactly; install_gnu_sed_shim makes its GNU
+    # -i form work on a BSD host.
     restore_stock_firmware_ui() {
         local auto_run="$BATS_TEST_TMPDIR/auto_run.sh"
-        if [ -f "$auto_run" ]; then
-            if grep -q "^# Disabled by HelixScreen: /opt/PROGRAM/ffstartup-arm" "$auto_run"; then
-                local tmp="${auto_run}.tmp"
-                awk '{gsub(/^# Disabled by HelixScreen: \/opt\/PROGRAM\/ffstartup-arm/, "/opt/PROGRAM/ffstartup-arm"); print}' "$auto_run" > "$tmp"
-                mv "$tmp" "$auto_run"
-                return 0
-            fi
+        if [ -f "$auto_run" ] && \
+           grep -q "^# Disabled by HelixScreen: /opt/PROGRAM/ffstartup-arm" "$auto_run"; then
+            sed -i 's|^# Disabled by HelixScreen: /opt/PROGRAM/ffstartup-arm|/opt/PROGRAM/ffstartup-arm|' "$auto_run"
+            return 0
         fi
         return 1
     }

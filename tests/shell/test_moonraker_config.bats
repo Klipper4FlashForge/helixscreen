@@ -26,24 +26,10 @@ setup() {
 
     mkdir -p "$INSTALL_DIR/config" "$INSTALL_DIR/bin"
 
-    # macOS sed workaround: GNU-style 'sed -i EXPR FILE' hangs on macOS because
-    # it interprets EXPR as backup suffix and reads stdin. Wrap sed to detect
-    # this pattern and fail fast, so the '||' fallback to BSD-style works.
-    if [ "$(uname)" = "Darwin" ]; then
-        mkdir -p "$BATS_TEST_TMPDIR/sedbin"
-        cat > "$BATS_TEST_TMPDIR/sedbin/sed" << 'SEDWRAP'
-#!/bin/sh
-if [ "$1" = "-i" ] && [ -n "$2" ] && [ "$2" != "" ]; then
-    case "$2" in
-        s\|*|s/*|/*) exit 1 ;;
-        '') exec /usr/bin/sed "$@" ;;
-    esac
-fi
-exec /usr/bin/sed "$@"
-SEDWRAP
-        chmod +x "$BATS_TEST_TMPDIR/sedbin/sed"
-        export PATH="$BATS_TEST_TMPDIR/sedbin:$PATH"
-    fi
+    # moonraker.sh edits conf files with GNU-style `sed -i EXPR FILE`, which BSD
+    # sed misreads as a backup suffix. The shim makes the GNU form work here, so
+    # macOS exercises the same branch the Linux devices take.
+    install_gnu_sed_shim
 }
 
 # Helper: create a moonraker.conf with basic content
