@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.99.103] - 2026-07-26
+
+### Added
+
+- **Speed, flow, message and LED-effect commands go through while the printer is busy (#1129)** — `M220`, `M221`, `M117`, `SET_LED_EFFECT` and `SET_PIN` are treated as discretionary now, so they are not held behind a long-running operation, and nudging an `output_pin` fan is no longer announced as an "LED change".
+
+### Fixed
+
+- **AFC lane colors and materials from the AFC database were silently unused (#1148)** — the reply to AFC's database query was read from the wrong level of the JSON-RPC envelope, so the guard was false on every successful response: the version stayed "unknown", the per-lane query was never issued, and every lane fell back to default grey. The query also asked for the wrong namespace and could not parse the `#RRGGBB` colors AFC writes there.
+- **A current AFC install could be nagged to upgrade** — AFC stopped writing its version to Moonraker in June 2025, so the string we read is either absent or frozen: a live BoxTurtle reports "1.0.0" while its payload proves 1.0.32-era. Nothing keys off that string any more — capabilities are feature-detected — and the version stays only for display and debug bundles.
+- **AFC 1.2.0 toolchanges showed a raw state token and lost their toasts** — upstream renamed "Tool swap" to "ToolSwap" and added ToolDock and ToolPickup; none were recognized, so the camelCase token reached the screen verbatim and the swap reported as idle, which also defeated toast suppression. Matching now ignores case, spacing and separators, and an unrecognized state is humanized rather than passed through. Per-extruder status, next pickup and standalone flags are parsed for toolchangers.
+- **In-app updates could not bootstrap the fix that repairs them (#993)** — BusyBox and OpenWrt printers (K1, AD5M, K2) verify a download with `unzip -t`, which their BusyBox is too old to have or which is missing entirely, so they rejected a byte-perfect zip as a corrupt download — including the release that fixes the verifier. Those platforms are served the `tar.gz` now, which they can verify with `gunzip -t`.
+- **Pressing update in Mainsail could delete a HelixScreen install (#993)** — Moonraker versions before v0.10.0 ignore `asset_name` and download the first release asset by name, after deleting the install directory, which meant a symbol archive rather than the release. Symbol assets are renamed so a real release sorts first, and the installer no longer writes the Moonraker update stanza on a Moonraker that cannot honor it, removing any stanza an earlier install left behind.
+- **Moonraker went undetected on Creality's nested layout (#993)** — on a K1/K2 the repo is cloned a level below the install dir, so the probe missed and returned undetermined on exactly the platforms the check exists for. Verified on a K1C.
+- **Belt-tension hardware was never detected (#1137)** — the objects list was read from the wrong level of the JSON-RPC envelope and returned its empty default with no error and no log line, so belted-Z and PWM-LED detection was dead code on every printer.
+- **Two malformed replies aborted the app rather than failing (#1139)** — a `/printer/info` response with no hostname killed printer detection outright, and a non-object `error` member in a remote-control reply reached `std::terminate`.
+- **Klipper-derived busy state survived a Klipper restart (#1129)** — idle-timeout and manual-probe state carried over across a Klippy transition because Moonraker only sends deltas; those subjects are cleared on the transition now.
+
+### Changed
+
+- **The jog pad's diagonal dividers read as gaps cut through the pad** instead of lines drawn over it.
+- **Release packages no longer ship the four developer showcase panels (#1135)** — their code was already excluded from release builds; the XML was not.
+- **Update telemetry reports self-update success per running version, and whether a device can read a zip at all (#993)** — the signal needed to tell when a platform is safe to serve zip-only. Update events previously had no handler, so the dashboard showed bare counts with no version or reason.
+- **Contributor docs and gates** — threading rules are consolidated into `docs/devel/THREADING.md`, the review bar is written down as a rubric, and new lint gates ratchet imperative-UI, logging and design-token debt so it can shrink but not grow.
+
 ## [0.99.102] - 2026-07-26
 
 ### Fixed
@@ -4541,6 +4566,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.103]: https://github.com/prestonbrown/helixscreen/compare/v0.99.102...v0.99.103
 [0.99.102]: https://github.com/prestonbrown/helixscreen/compare/v0.99.101...v0.99.102
 [0.99.101]: https://github.com/prestonbrown/helixscreen/compare/v0.99.100...v0.99.101
 [0.99.100]: https://github.com/prestonbrown/helixscreen/compare/v0.99.99...v0.99.100
