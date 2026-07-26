@@ -64,6 +64,23 @@ struct AfcExtruderInfo {
 };
 
 /**
+ * @brief Per-tool toolchanger state from the AFC_extruder Klipper object
+ *
+ * AFC v1.2.0 (#768) added these so UIs can show which toolhead is being docked
+ * versus picked up during a swap. Absent on older AFC, so the defaults must read
+ * as "nothing special happening".
+ *
+ * Kept in a name-keyed map rather than on AfcExtruderInfo because that vector is
+ * indexed POSITIONALLY as a tool number and is rebuilt from AFC.system.extruders
+ * on every status update.
+ */
+struct AfcToolState {
+    std::string status;         ///< Per-tool AFC State ("ToolDock", "ToolPickup", "Idle", …)
+    bool next_pickup = false;   ///< True on the tool about to be picked up
+    bool is_standalone = false; ///< Standalone toolhead (own lane) vs lane-fed
+};
+
+/**
  * @brief Per-unit info parsed from flat string units and unit-level Klipper objects
  *
  * When AFC reports units as flat strings (e.g., "OpenAMS AMS_1", "Box_Turtle Turtle_1"),
@@ -350,6 +367,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcCharHelper;
     friend class AfcToolchangeTestHelper;
     friend class AfcToolchangerLaneHelper;
+    friend class AfcStateStringHelper;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;
@@ -372,6 +390,20 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
      */
     void parse_afc_state(const nlohmann::json& afc_data, std::string& deferred_error_event,
                          bool& current_slot_set_by_afc_state);
+
+    /**
+     * @brief Apply an AFC state string to action + operation_detail
+     *
+     * Maps the raw firmware string to an AmsAction via normalized matching and
+     * sets a human, translated detail string (never the raw wire token — AFC
+     * emits camelCase since v1.2.0 and operation_detail reaches the UI
+     * verbatim). Warns once per distinct unrecognized string so a rewording
+     * upstream surfaces in logs instead of silently reading as IDLE.
+     *
+     * @param raw    Raw state string from AFC
+     * @param source Field it came from ("status" / "current_state"), for logs
+     */
+    void apply_state_string(const std::string& raw, const char* source);
 
     /**
      * @brief Query current AFC state from Moonraker
@@ -561,6 +593,13 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // Lanes whose "map" field arrived as a non-string (array/object) — dedupes the
     // multi-tool tripwire warning so it fires once per lane, not per update.
     std::set<std::string> map_non_string_warned_lanes_;
+
+    // AFC state strings outside our known vocabulary — dedupes the schema-drift
+    // warning so it fires once per distinct string, not once per status update.
+    std::set<std::string> unknown_state_warned_;
+
+    // Per-tool toolchanger state, keyed by AFC_extruder name (AFC v1.2.0 #768).
+    std::unordered_map<std::string, AfcToolState> tool_states_;
 
     // Hub and toolhead sensors (from AFC_hub and AFC_extruder objects)
     std::unordered_map<std::string, bool> hub_sensors_; ///< Per-hub sensor state, keyed by hub name

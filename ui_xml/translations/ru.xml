@@ -607,6 +607,7 @@
   <translation tag="Do not power off your printer." ru="Не выключайте принтер."/>
   <translation tag="Do not touch the printer during calibration" ru="Не трогайте принтер во время калибровки"/>
   <translation tag="Dock" ru="Парковать"/>
+  <translation tag="Docking tool"/>
   <translation tag="Documentation" ru="Документация"/>
   <translation tag="Don&apos;t Save" ru="Не сохранять"/>
   <translation tag="Don&apos;t ask again" ru="Больше не спрашивать"/>
@@ -644,6 +645,7 @@
   <translation tag="Eject Velocity" ru="Скорость извлечения"/>
   <translation tag="Eject failed: {}" ru="Ошибка извлечения: {}"/>
   <translation tag="Eject needs [force_move] enabled in printer config" ru="Для извлечения нужно включить [force_move] в конфигурации принтера"/>
+  <translation tag="Ejecting"/>
   <translation tag="Elegoo Centauri Carbon" ru="Elegoo Centauri Carbon"/>
   <translation tag="Emergency Stop" ru="Аварийная остановка"/>
   <translation tag="Emergency Stop?" ru="Аварийная остановка?"/>
@@ -1011,6 +1013,7 @@
   <translation tag="Incompatible materials: {} cannot use {} as backup" ru="Несовместимые материалы: {} не может использовать {} в качестве резерва"/>
   <translation tag="Indexing G-code..." ru="Индексация G-code..."/>
   <translation tag="Info" ru="Инфо"/>
+  <translation tag="Initialized"/>
   <translation tag="Initializing..." ru="Инициализация..."/>
   <translation tag="Input" ru="Ввод"/>
   <translation tag="Input Shaper" ru="Input Shaper"/>
@@ -1241,6 +1244,7 @@
   <translation tag="Move paper back and forth while adjusting. Stop when paper catches slightly but still slides." ru="Перемещайте бумагу вперёд-назад во время регулировки. Остановитесь, когда бумага слегка цепляется, но ещё скользит."/>
   <translation tag="Move selector" ru="Двигать селектор"/>
   <translation tag="Moves the print head to measure vibration frequencies on each axis. Takes 2-3 minutes. The printer will make noise — this is normal." ru="Перемещает печатающую головку для измерения частот вибрации по каждой оси. Занимает 2-3 минуты. Принтер будет шуметь — это нормально."/>
+  <translation tag="Moving lane"/>
   <translation tag="Multi-Filament" ru="Мульти-филамент"/>
   <translation tag="Multi-Filament Overview" ru="Обзор мульти-филамента"/>
   <translation tag="Multi-Filament System" ru="Мультифиламентная система"/>
@@ -1465,6 +1469,7 @@
   <translation tag="Phomemo M110" ru="Phomemo M110"/>
   <translation tag="Pick" ru="Выбрать"/>
   <translation tag="Pick Color" ru="Выбрать цвет"/>
+  <translation tag="Picking up tool"/>
   <translation tag="Pill" ru="Овал"/>
   <translation tag="Pixels before a press becomes a scroll (lower = scrolls engage sooner)" ru="Пикселей до того, как нажатие станет прокруткой (меньше = прокрутка начинается раньше)"/>
   <translation tag="Place image files (PNG, JPEG, BMP, GIF) in config/custom_images/. Max size: 2048×2048 pixels." ru="Поместите файлы изображений (PNG, JPEG, BMP, GIF) в config/custom_images/. Макс. размер: 2048×2048 пикселей."/>
@@ -1720,6 +1725,7 @@
   <translation tag="Restarting with the new version..." ru="Перезапуск с новой версией..."/>
   <translation tag="Restarting..." ru="Перезапуск..."/>
   <translation tag="Restore Defaults" ru="Восстановить по умолчанию"/>
+  <translation tag="Restoring position"/>
   <translation tag="Resume" ru="Продолжить"/>
   <translation tag="Resume Print" ru="Продолжить печать"/>
   <translation tag="Resume interrupted print?" ru="Продолжить прерванную печать?"/>
@@ -2132,6 +2138,7 @@
   <translation tag="Tool" ru="Инструмент"/>
   <translation tag="Tool Changer" ru="Сменщик инструментов"/>
   <translation tag="Tool change failed: {}" ru="Ошибка смены инструмента: {}"/>
+  <translation tag="Tool swap"/>
   <translation tag="Tool {} → Lane {}: no filament loaded." ru="Инструмент {} → Слот {}: филамент не загружен."/>
   <translation tag="Toolhead" ru="Печатающая головка"/>
   <translation tag="Toolhead Style" ru="Стиль печатающей головки"/>

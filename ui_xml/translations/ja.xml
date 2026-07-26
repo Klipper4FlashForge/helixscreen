@@ -607,6 +607,7 @@
   <translation tag="Do not power off your printer." ja="プリンターの電源を切らないでください。"/>
   <translation tag="Do not touch the printer during calibration" ja="キャリブレーション中はプリンターに触れないでください"/>
   <translation tag="Dock" ja="ドック"/>
+  <translation tag="Docking tool"/>
   <translation tag="Documentation" ja="ドキュメント"/>
   <translation tag="Don&apos;t Save" ja="保存しない"/>
   <translation tag="Don&apos;t ask again" ja="今後表示しない"/>
@@ -644,6 +645,7 @@
   <translation tag="Eject Velocity" ja="取り出し速度"/>
   <translation tag="Eject failed: {}" ja="イジェクトに失敗しました: {}"/>
   <translation tag="Eject needs [force_move] enabled in printer config" ja="取り出しにはプリンター設定で [force_move] を有効にする必要があります"/>
+  <translation tag="Ejecting"/>
   <translation tag="Elegoo Centauri Carbon" ja="Elegoo Centauri Carbon"/>
   <translation tag="Emergency Stop" ja="緊急停止"/>
   <translation tag="Emergency Stop?" ja="緊急停止しますか？"/>
@@ -1011,6 +1013,7 @@
   <translation tag="Incompatible materials: {} cannot use {} as backup" ja="非対応の素材: {} は {} をバックアップとして使用できません"/>
   <translation tag="Indexing G-code..." ja="G-codeをインデックス中..."/>
   <translation tag="Info" ja="情報"/>
+  <translation tag="Initialized"/>
   <translation tag="Initializing..." ja="初期化中..."/>
   <translation tag="Input" ja="入力"/>
   <translation tag="Input Shaper" ja="インプットシェーパー"/>
@@ -1241,6 +1244,7 @@
   <translation tag="Move paper back and forth while adjusting. Stop when paper catches slightly but still slides." ja="調整中は紙を前後に動かしてください。紙がわずかに引っかかりながらも滑る状態で止めてください。"/>
   <translation tag="Move selector" ja="セレクターを移動"/>
   <translation tag="Moves the print head to measure vibration frequencies on each axis. Takes 2-3 minutes. The printer will make noise — this is normal." ja="プリントヘッドを移動させて各軸の振動周波数を測定します。2〜3分かかります。プリンターから音がしますが、これは正常です。"/>
+  <translation tag="Moving lane"/>
   <translation tag="Multi-Filament" ja="マルチフィラメント"/>
   <translation tag="Multi-Filament Overview" ja="マルチフィラメント概要"/>
   <translation tag="Multi-Filament System" ja="マルチフィラメントシステム"/>
@@ -1465,6 +1469,7 @@
   <translation tag="Phomemo M110" ja="Phomemo M110"/>
   <translation tag="Pick" ja="選択"/>
   <translation tag="Pick Color" ja="色を選択"/>
+  <translation tag="Picking up tool"/>
   <translation tag="Pill" ja="ピル"/>
   <translation tag="Pixels before a press becomes a scroll (lower = scrolls engage sooner)" ja="押下がスクロールに変わるまでのピクセル数 (低いほどスクロールが早く開始)"/>
   <translation tag="Place image files (PNG, JPEG, BMP, GIF) in config/custom_images/. Max size: 2048×2048 pixels." ja="画像ファイル (PNG, JPEG, BMP, GIF) を config/custom_images/ に配置してください。最大サイズ: 2048×2048 ピクセル。"/>
@@ -1720,6 +1725,7 @@
   <translation tag="Restarting with the new version..." ja="新しいバージョンで再起動中..."/>
   <translation tag="Restarting..." ja="再起動中..."/>
   <translation tag="Restore Defaults" ja="デフォルトに戻す"/>
+  <translation tag="Restoring position"/>
   <translation tag="Resume" ja="再開"/>
   <translation tag="Resume Print" ja="印刷を再開"/>
   <translation tag="Resume interrupted print?" ja="中断した印刷を再開しますか？"/>
@@ -2132,6 +2138,7 @@
   <translation tag="Tool" ja="ツール"/>
   <translation tag="Tool Changer" ja="ツールチェンジャー"/>
   <translation tag="Tool change failed: {}" ja="ツール変更に失敗しました: {}"/>
+  <translation tag="Tool swap"/>
   <translation tag="Tool {} → Lane {}: no filament loaded." ja="ツール {} → レーン {}: フィラメントが装填されていません。"/>
   <translation tag="Toolhead" ja="ツールヘッド"/>
   <translation tag="Toolhead Style" ja="ツールヘッドスタイル"/>

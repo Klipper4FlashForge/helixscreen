@@ -709,6 +709,7 @@ translations:
   Do not touch the printer during calibration: Ne touchez pas l'imprimante pendant
     la calibration
   Dock: Ranger
+  Docking tool: ''
   Documentation: Documentation
   Don't Save: Ne pas enregistrer
   Don't ask again: Ne plus demander
@@ -749,6 +750,7 @@ translations:
   'Eject failed: {}': 'Échec de l''éjection : {}'
   Eject needs [force_move] enabled in printer config: L'éjection nécessite l'activation
     de [force_move] dans la configuration de l'imprimante
+  Ejecting: ''
   Elegoo Centauri Carbon: Elegoo Centauri Carbon
   Emergency Stop: Arrêt d'urgence
   Emergency Stop?: Arrêt d'urgence ?
@@ -1172,6 +1174,7 @@ translations:
     {} ne peut pas utiliser {} comme secours'
   Indexing G-code...: Indexation du G-code...
   Info: Info
+  Initialized: ''
   Initializing...: Initialisation...
   Input: Entrée
   Input Shaper: Input Shaper
@@ -1447,6 +1450,7 @@ translations:
     minutes. The printer will make noise — this is normal.
   : Déplace la tête d'impression pour mesurer les fréquences de vibration sur chaque
     axe. Prend 2-3 minutes. L'imprimante fera du bruit — c'est normal.
+  Moving lane: ''
   Multi-Filament: Multi-filament
   Multi-Filament Overview: Vue d'ensemble multi-filament
   Multi-Filament System: Système multi-filament
@@ -1690,6 +1694,7 @@ translations:
   Phomemo M110: Phomemo M110
   Pick: Choisir
   Pick Color: Choisir la couleur
+  Picking up tool: ''
   Pill: Pilule
   Pixels before a press becomes a scroll (lower = scrolls engage sooner): Pixels avant
     qu'un appui ne devienne un défilement (plus bas = défilement plus rapide)
@@ -1984,6 +1989,7 @@ translations:
   Restarting with the new version...: Redémarrage avec la nouvelle version...
   Restarting...: Redémarrage...
   Restore Defaults: Restaurer les valeurs par défaut
+  Restoring position: ''
   Resume: Reprendre
   Resume Print: Reprendre l'impression
   Resume interrupted print?: 'Reprendre l''impression interrompue ?'
@@ -2538,6 +2544,7 @@ translations:
   Tool: Outil
   Tool Changer: Changeur d'outils
   'Tool change failed: {}': 'Échec du changement d''outil : {}'
+  Tool swap: ''
   'Tool {} → Lane {}: no filament loaded.': 'Outil {} → Voie {} : aucun filament chargé.'
   Toolhead: 'Tête d''outil'
   Toolhead Style: Style de tête d'outil

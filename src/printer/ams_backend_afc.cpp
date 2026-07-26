@@ -48,6 +48,96 @@ bool natural_less(const std::string& a, const std::string& b) {
     return a < b;
 }
 
+// Split a firmware state token into sentence-case words:
+//   "ToolSwap"        → "Tool swap"
+//   "SOME_LOUD_STATE" → "Some loud state"
+//   "purging_bucket"  → "Purging bucket"
+//
+// Used as the display fallback for states we have no translation for. AFC emits
+// camelCase state values (v1.2.0), and those must never reach the screen raw —
+// operation_detail is passed through to the UI verbatim.
+std::string humanize_state(std::string_view raw) {
+    std::string out;
+    out.reserve(raw.size() + 4);
+    bool word_start = true;
+    for (size_t i = 0; i < raw.size(); ++i) {
+        auto c = static_cast<unsigned char>(raw[i]);
+        if (std::isalnum(c) == 0) {
+            // Any separator run collapses to a single space.
+            if (!out.empty() && out.back() != ' ')
+                out.push_back(' ');
+            word_start = true;
+            continue;
+        }
+        // camelCase boundary: an uppercase letter that either follows a
+        // lowercase/digit ("ToolSwap") or begins a word after an acronym run
+        // ("HUBLoading" → "HUB loading").
+        if (std::isupper(c) != 0 && i > 0) {
+            auto prev = static_cast<unsigned char>(raw[i - 1]);
+            bool after_lower = std::isalnum(prev) != 0 && std::isupper(prev) == 0;
+            bool acronym_end = std::isupper(prev) != 0 && i + 1 < raw.size() &&
+                               std::islower(static_cast<unsigned char>(raw[i + 1])) != 0;
+            if (after_lower || acronym_end) {
+                if (!out.empty() && out.back() != ' ')
+                    out.push_back(' ');
+                word_start = true;
+            }
+        }
+        // Sentence case: capitalize only the very first character.
+        if (word_start && out.empty()) {
+            out.push_back(static_cast<char>(std::toupper(c)));
+        } else {
+            out.push_back(static_cast<char>(std::tolower(c)));
+        }
+        word_start = false;
+    }
+    // Trim a trailing separator-induced space.
+    while (!out.empty() && out.back() == ' ')
+        out.pop_back();
+    return out;
+}
+
+// Translated display text for AFC's known state vocabulary, keyed by normalized
+// token so a rewording (AFC's "Tool swap" → "ToolSwap") keeps its translation.
+// Unknown states fall back to humanize_state() — untranslated, but readable.
+std::string afc_state_detail(std::string_view raw) {
+    struct StateLabel {
+        const char* token;
+        const char* label;
+    };
+    static constexpr StateLabel kLabels[] = {
+        {"idle", "Idle"},
+        {"initialized", "Initialized"},
+        {"loading", "Loading"},
+        {"unloading", "Unloading"},
+        {"error", "Error"},
+        {"ejecting", "Ejecting"},
+        {"moving", "Moving lane"},
+        {"restoring", "Restoring position"},
+        {"toolswap", "Tool swap"},
+        {"tooldock", "Docking tool"},
+        {"toolpickup", "Picking up tool"},
+    };
+    const std::string token = ams_normalize_state_token(raw);
+    for (const auto& e : kLabels) {
+        if (token == e.token)
+            return lv_tr(e.label);
+    }
+    return humanize_state(raw);
+}
+
+// [L067] kLabels feeds lv_tr() through a variable, which the translation
+// extractor cannot see. Name each label literally here so it lands in the
+// catalogs. Keep in sync with kLabels above.
+// clang-format off
+void afc_state_translation_hints_() {
+    (void)lv_tr("Idle"); (void)lv_tr("Initialized"); (void)lv_tr("Loading");
+    (void)lv_tr("Unloading"); (void)lv_tr("Error"); (void)lv_tr("Ejecting");
+    (void)lv_tr("Moving lane"); (void)lv_tr("Restoring position");
+    (void)lv_tr("Tool swap"); (void)lv_tr("Docking tool"); (void)lv_tr("Picking up tool");
+}
+// clang-format on
+
 } // namespace
 
 // ============================================================================
@@ -467,14 +557,31 @@ std::optional<std::string>
 AmsBackendAfc::match_narration_phase(const std::string& narration) const {
     if (narration.empty())
         return std::nullopt;
-    std::string s = narration;
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    // Normalize to lowercase words joined by single spaces. Punctuation and
+    // separator style then stop mattering, so "AFC_Brush: Clean Nozzle",
+    // "AFC Brush - Clean nozzle" and "[AFC_Brush] Clean Nozzle!" all match the
+    // same needle. This matcher IS the step-bar model and upstream owns the
+    // wording, so it has to tolerate rewording that keeps the same words.
+    std::string s;
+    s.reserve(narration.size());
+    for (unsigned char c : narration) {
+        if (std::isalnum(c) != 0) {
+            s.push_back(static_cast<char>(std::tolower(c)));
+        } else if (!s.empty() && s.back() != ' ') {
+            s.push_back(' ');
+        }
+    }
+    while (!s.empty() && s.back() == ' ')
+        s.pop_back();
+    if (s.empty())
+        return std::nullopt;
+
     auto has = [&](const char* needle) { return s.find(needle) != std::string::npos; };
     // Order matters: more specific phrases first.
-    if (has("is now loaded in toolhead") || has("load complete"))
+    if (has("is now loaded in toolhead") || has("load complete") || has("loaded in toolhead"))
         return "load";
-    if (has("clean nozzle") || has("afc_brush: clean"))
+    if (has("clean nozzle") || has("cleaning nozzle") || has("brush clean"))
         return "clean";
     if (has("move to brush") || has("brush"))
         return "brush";
@@ -799,6 +906,27 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
     }
 }
 
+void AmsBackendAfc::apply_state_string(const std::string& raw, const char* source) {
+    bool recognized = true;
+    system_info_.action = ams_action_from_string(raw, &recognized);
+    system_info_.operation_detail = afc_state_detail(raw);
+
+    if (!recognized && !raw.empty() && unknown_state_warned_.insert(raw).second) {
+        // Schema drift: AFC reported a state outside our known vocabulary. The
+        // fuzzy fallback picked an action, but the mapping is a guess and the
+        // detail text is machine-humanized rather than translated. Logged once
+        // per distinct string so a rename shows up in logs instead of silently
+        // reading as IDLE.
+        spdlog::warn("[AMS AFC] Unrecognized {} '{}' — mapped to {} by fallback. AFC may have "
+                     "reworded its state vocabulary; update ams_action_from_string().",
+                     source, raw, ams_action_to_string(system_info_.action));
+    }
+
+    spdlog::trace("[AMS AFC] {}: {} ({} -> '{}')", source,
+                  ams_action_to_string(system_info_.action), raw,
+                  system_info_.operation_detail);
+}
+
 void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
                                     std::string& deferred_error_event,
                                     bool& current_slot_set_by_afc_state) {
@@ -877,22 +1005,13 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
                       has_explicit_tool);
     }
 
-    // Parse action/status
+    // Parse action/status ("status" is the legacy spelling; "current_state" is
+    // authoritative and applied second so it wins when both are present).
     if (afc_data.contains("status") && afc_data["status"].is_string()) {
-        std::string status_str = afc_data["status"].get<std::string>();
-        system_info_.action = ams_action_from_string(status_str);
-        system_info_.operation_detail = status_str;
-        spdlog::trace("[AMS AFC] Status: {} ({})", ams_action_to_string(system_info_.action),
-                      status_str);
+        apply_state_string(afc_data["status"].get<std::string>(), "status");
     }
-
-    // Parse current_state field (preferred over status when present)
     if (afc_data.contains("current_state") && afc_data["current_state"].is_string()) {
-        std::string state_str = afc_data["current_state"].get<std::string>();
-        system_info_.action = ams_action_from_string(state_str);
-        system_info_.operation_detail = state_str;
-        spdlog::trace("[AMS AFC] Current state: {} ({})", ams_action_to_string(system_info_.action),
-                      state_str);
+        apply_state_string(afc_data["current_state"].get<std::string>(), "current_state");
     }
 
     // Parse tool change progress (AFC tracks swap count during multi-color prints)
@@ -1184,6 +1303,7 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
                     info.tool_sensor_after_extruder =
                         ext_data["tool_sensor_after_extruder"].get<float>();
                 }
+
 
                 spdlog::debug("[AMS AFC] Extruder '{}': lane_loaded='{}', {} lanes", ext_name,
                               info.lane_loaded, info.available_lanes.size());
@@ -1550,6 +1670,23 @@ void AmsBackendAfc::parse_afc_extruder(const std::string& ext_name, const nlohma
 
     if (data.contains("tool_end_status") && data["tool_end_status"].is_boolean()) {
         tool_end_sensor_ = data["tool_end_status"].get<bool>();
+    }
+
+    // Toolchanger state (AFC v1.2.0 #768). An entry is created for every
+    // AFC_extruder object we see so callers can distinguish "tool known, nothing
+    // happening" from "tool never reported". Older AFC omits all three fields
+    // and simply leaves the defaults in place.
+    {
+        AfcToolState& ts = tool_states_[ext_name];
+        if (data.contains("status") && data["status"].is_string()) {
+            ts.status = data["status"].get<std::string>();
+        }
+        if (data.contains("next_pickup") && data["next_pickup"].is_boolean()) {
+            ts.next_pickup = data["next_pickup"].get<bool>();
+        }
+        if (data.contains("is_standalone") && data["is_standalone"].is_boolean()) {
+            ts.is_standalone = data["is_standalone"].get<bool>();
+        }
     }
 
     if (data.contains("lane_loaded") && !data["lane_loaded"].is_null()) {

@@ -617,6 +617,7 @@ translations:
   Do not power off your printer.: 请勿关闭打印机电源。
   Do not touch the printer during calibration: 校准期间请勿触碰打印机
   Dock: 归位
+  Docking tool: ''
   Documentation: 文档
   Don't Save: 不保存
   Don't ask again: 不再询问
@@ -654,6 +655,7 @@ translations:
   Eject Velocity: 弹出速度
   'Eject failed: {}': '弹出失败: {}'
   Eject needs [force_move] enabled in printer config: 弹出需要在打印机配置中启用 [force_move]
+  Ejecting: ''
   Elegoo Centauri Carbon: Elegoo Centauri Carbon
   Emergency Stop: 紧急停止
   Emergency Stop?: 紧急停止？
@@ -1032,6 +1034,7 @@ translations:
   'Incompatible materials: {} cannot use {} as backup': '材料不兼容: {} 无法使用 {} 作为备用'
   Indexing G-code...: 正在索引 G-code...
   Info: 信息
+  Initialized: ''
   Initializing...: 初始化中...
   Input: 输入
   Input Shaper: 输入整形器
@@ -1272,6 +1275,7 @@ translations:
   ? Moves the print head to measure vibration frequencies on each axis. Takes 2-3
     minutes. The printer will make noise — this is normal.
   : 移动打印头以测量每个轴上的振动频率。需要 2-3 分钟。打印机会发出噪音——这是正常的。
+  Moving lane: ''
   Multi-Filament: 多耗材
   Multi-Filament Overview: 多耗材概览
   Multi-Filament System: 多耗材系统
@@ -1500,6 +1504,7 @@ translations:
   Phomemo M110: Phomemo M110
   Pick: 选取
   Pick Color: 选择颜色
+  Picking up tool: ''
   Pill: 胶囊
   Pixels before a press becomes a scroll (lower = scrolls engage sooner): 按下转为滚动前的像素数(越低
     = 滚动越快触发)
@@ -1760,6 +1765,7 @@ translations:
   Restarting with the new version...: 正在以新版本重启...
   Restarting...: 正在重启...
   Restore Defaults: 恢复默认设置
+  Restoring position: ''
   Resume: 恢复
   Resume Print: 恢复打印
   Resume interrupted print?: 恢复中断的打印？
@@ -2210,6 +2216,7 @@ translations:
   Tool: 工具
   Tool Changer: 换刀器
   'Tool change failed: {}': '工具切换失败: {}'
+  Tool swap: ''
   'Tool {} → Lane {}: no filament loaded.': '工具 {} → 料仓 {}: 未加载耗材。'
   Toolhead: '工具头'
   Toolhead Style: 工具头样式

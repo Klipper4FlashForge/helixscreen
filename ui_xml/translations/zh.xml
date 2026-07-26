@@ -607,6 +607,7 @@
   <translation tag="Do not power off your printer." zh="请勿关闭打印机电源。"/>
   <translation tag="Do not touch the printer during calibration" zh="校准期间请勿触碰打印机"/>
   <translation tag="Dock" zh="归位"/>
+  <translation tag="Docking tool"/>
   <translation tag="Documentation" zh="文档"/>
   <translation tag="Don&apos;t Save" zh="不保存"/>
   <translation tag="Don&apos;t ask again" zh="不再询问"/>
@@ -644,6 +645,7 @@
   <translation tag="Eject Velocity" zh="弹出速度"/>
   <translation tag="Eject failed: {}" zh="弹出失败: {}"/>
   <translation tag="Eject needs [force_move] enabled in printer config" zh="弹出需要在打印机配置中启用 [force_move]"/>
+  <translation tag="Ejecting"/>
   <translation tag="Elegoo Centauri Carbon" zh="Elegoo Centauri Carbon"/>
   <translation tag="Emergency Stop" zh="紧急停止"/>
   <translation tag="Emergency Stop?" zh="紧急停止？"/>
@@ -1011,6 +1013,7 @@
   <translation tag="Incompatible materials: {} cannot use {} as backup" zh="材料不兼容: {} 无法使用 {} 作为备用"/>
   <translation tag="Indexing G-code..." zh="正在索引 G-code..."/>
   <translation tag="Info" zh="信息"/>
+  <translation tag="Initialized"/>
   <translation tag="Initializing..." zh="初始化中..."/>
   <translation tag="Input" zh="输入"/>
   <translation tag="Input Shaper" zh="输入整形器"/>
@@ -1241,6 +1244,7 @@
   <translation tag="Move paper back and forth while adjusting. Stop when paper catches slightly but still slides." zh="调整时前后移动纸张。当纸张有轻微阻力但仍能滑动时停止。"/>
   <translation tag="Move selector" zh="移动选择器"/>
   <translation tag="Moves the print head to measure vibration frequencies on each axis. Takes 2-3 minutes. The printer will make noise — this is normal." zh="移动打印头以测量每个轴上的振动频率。需要 2-3 分钟。打印机会发出噪音——这是正常的。"/>
+  <translation tag="Moving lane"/>
   <translation tag="Multi-Filament" zh="多耗材"/>
   <translation tag="Multi-Filament Overview" zh="多耗材概览"/>
   <translation tag="Multi-Filament System" zh="多耗材系统"/>
@@ -1465,6 +1469,7 @@
   <translation tag="Phomemo M110" zh="Phomemo M110"/>
   <translation tag="Pick" zh="选取"/>
   <translation tag="Pick Color" zh="选择颜色"/>
+  <translation tag="Picking up tool"/>
   <translation tag="Pill" zh="胶囊"/>
   <translation tag="Pixels before a press becomes a scroll (lower = scrolls engage sooner)" zh="按下转为滚动前的像素数(越低 = 滚动越快触发)"/>
   <translation tag="Place image files (PNG, JPEG, BMP, GIF) in config/custom_images/. Max size: 2048×2048 pixels." zh="将图片文件 (PNG, JPEG, BMP, GIF) 放入 config/custom_images/。最大尺寸: 2048×2048 像素。"/>
@@ -1720,6 +1725,7 @@
   <translation tag="Restarting with the new version..." zh="正在以新版本重启..."/>
   <translation tag="Restarting..." zh="正在重启..."/>
   <translation tag="Restore Defaults" zh="恢复默认设置"/>
+  <translation tag="Restoring position"/>
   <translation tag="Resume" zh="恢复"/>
   <translation tag="Resume Print" zh="恢复打印"/>
   <translation tag="Resume interrupted print?" zh="恢复中断的打印？"/>
@@ -2132,6 +2138,7 @@
   <translation tag="Tool" zh="工具"/>
   <translation tag="Tool Changer" zh="换刀器"/>
   <translation tag="Tool change failed: {}" zh="工具切换失败: {}"/>
+  <translation tag="Tool swap"/>
   <translation tag="Tool {} → Lane {}: no filament loaded." zh="工具 {} → 料仓 {}: 未加载耗材。"/>
   <translation tag="Toolhead" zh="工具头"/>
   <translation tag="Toolhead Style" zh="工具头样式"/>

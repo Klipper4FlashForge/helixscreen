@@ -701,6 +701,7 @@ translations:
   Do not power off your printer.: No apague la impresora.
   Do not touch the printer during calibration: No toque la impresora durante la calibración
   Dock: Acoplar
+  Docking tool: ''
   Documentation: Documentación
   Don't Save: No Guardar
   Don't ask again: No volver a preguntar
@@ -741,6 +742,7 @@ translations:
   'Eject failed: {}': 'Error al expulsar: {}'
   Eject needs [force_move] enabled in printer config: La expulsión requiere [force_move]
     habilitado en la configuración de la impresora
+  Ejecting: ''
   Elegoo Centauri Carbon: Elegoo Centauri Carbon
   Emergency Stop: Parada de Emergencia
   Emergency Stop?: ¿Parada de Emergencia?
@@ -1156,6 +1158,7 @@ translations:
     {} no puede usar {} como respaldo'
   Indexing G-code...: Indexando G-code...
   Info: Info
+  Initialized: ''
   Initializing...: Inicializando...
   Input: Entrada
   Input Shaper: Moldeador de Entrada
@@ -1430,6 +1433,7 @@ translations:
     minutes. The printer will make noise — this is normal.
   : Mueve el cabezal para medir frecuencias de vibración en cada eje. Tarda 2-3 minutos.
     La impresora hará ruido — esto es normal.
+  Moving lane: ''
   Multi-Filament: Multi-Filamento
   Multi-Filament Overview: Vista general multi-filamento
   Multi-Filament System: Sistema multi-filamento
@@ -1672,6 +1676,7 @@ translations:
   Phomemo M110: Phomemo M110
   Pick: Elegir
   Pick Color: Elegir Color
+  Picking up tool: ''
   Pill: Píldora
   Pixels before a press becomes a scroll (lower = scrolls engage sooner): Píxeles
     antes de que una pulsación se convierta en desplazamiento (menor = se activa antes)
@@ -1961,6 +1966,7 @@ translations:
   Restarting with the new version...: Reiniciando con la nueva versión...
   Restarting...: Reiniciando...
   Restore Defaults: Restaurar valores predeterminados
+  Restoring position: ''
   Resume: Reanudar
   Resume Print: Reanudar Impresión
   Resume interrupted print?: ¿Reanudar impresión interrumpida?
@@ -2499,6 +2505,7 @@ translations:
   Tool: Herramienta
   Tool Changer: Cambiador de Herramientas
   'Tool change failed: {}': 'Error al cambiar herramienta: {}'
+  Tool swap: ''
   'Tool {} → Lane {}: no filament loaded.': 'Herramienta {} → Carril {}: no hay filamento
     cargado.'
   Toolhead: 'Cabezal'

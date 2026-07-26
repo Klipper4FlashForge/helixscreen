@@ -622,6 +622,7 @@ translations:
   Do not power off your printer.: プリンターの電源を切らないでください。
   Do not touch the printer during calibration: キャリブレーション中はプリンターに触れないでください
   Dock: ドック
+  Docking tool: ''
   Documentation: ドキュメント
   Don't Save: 保存しない
   Don't ask again: 今後表示しない
@@ -660,6 +661,7 @@ translations:
   'Eject failed: {}': 'イジェクトに失敗しました: {}'
   Eject needs [force_move] enabled in printer config: 取り出しにはプリンター設定で [force_move]
     を有効にする必要があります
+  Ejecting: ''
   Elegoo Centauri Carbon: Elegoo Centauri Carbon
   Emergency Stop: 緊急停止
   Emergency Stop?: 緊急停止しますか？
@@ -1037,6 +1039,7 @@ translations:
   'Incompatible materials: {} cannot use {} as backup': '非対応の素材: {} は {} をバックアップとして使用できません'
   Indexing G-code...: G-codeをインデックス中...
   Info: 情報
+  Initialized: ''
   Initializing...: 初期化中...
   Input: 入力
   Input Shaper: インプットシェーパー
@@ -1277,6 +1280,7 @@ translations:
   ? Moves the print head to measure vibration frequencies on each axis. Takes 2-3
     minutes. The printer will make noise — this is normal.
   : プリントヘッドを移動させて各軸の振動周波数を測定します。2〜3分かかります。プリンターから音がしますが、これは正常です。
+  Moving lane: ''
   Multi-Filament: マルチフィラメント
   Multi-Filament Overview: マルチフィラメント概要
   Multi-Filament System: マルチフィラメントシステム
@@ -1506,6 +1510,7 @@ translations:
   Phomemo M110: Phomemo M110
   Pick: 選択
   Pick Color: 色を選択
+  Picking up tool: ''
   Pill: ピル
   Pixels before a press becomes a scroll (lower = scrolls engage sooner): 押下がスクロールに変わるまでのピクセル数
     (低いほどスクロールが早く開始)
@@ -1768,6 +1773,7 @@ translations:
   Restarting with the new version...: 新しいバージョンで再起動中...
   Restarting...: 再起動中...
   Restore Defaults: デフォルトに戻す
+  Restoring position: ''
   Resume: 再開
   Resume Print: 印刷を再開
   Resume interrupted print?: 中断した印刷を再開しますか？
@@ -2219,6 +2225,7 @@ translations:
   Tool: ツール
   Tool Changer: ツールチェンジャー
   'Tool change failed: {}': 'ツール変更に失敗しました: {}'
+  Tool swap: ''
   'Tool {} → Lane {}: no filament loaded.': 'ツール {} → レーン {}: フィラメントが装填されていません。'
   Toolhead: 'ツールヘッド'
   Toolhead Style: ツールヘッドスタイル
