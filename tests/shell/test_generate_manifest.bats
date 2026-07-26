@@ -158,6 +158,162 @@ teardown() {
     [ "$status" -ne 0 ]
 }
 
+#
+# Per-platform zip gate (prestonbrown/helixscreen#993)
+#
+# Pre-v0.99.102 in-app updaters verify a downloaded zip with `unzip -tqq`.
+# BusyBox only grew `unzip -t` in 1.32, and the K2 ships no unzip at all, so
+# those clients reject an intact zip as "Corrupt download" and can never reach
+# the release that fixes them. Serving those platforms the tar.gz keeps the
+# self-update path alive. The gate is the ONLY lever that reaches an already
+# deployed binary — the client-side fix cannot bootstrap itself.
+#
+
+@test "zip_url is gated off by default for BusyBox platforms" {
+    printf 'PK\003\004dummyzip' > "$TEST_DIR/helixscreen-pi.zip"
+    printf 'PK\003\004dummyzip' > "$TEST_DIR/helixscreen-k1.zip"
+    printf 'PK\003\004dummyzip' > "$TEST_DIR/helixscreen-ad5m.zip"
+
+    bash "$SCRIPT" \
+        --version "0.9.5" --tag "v0.9.5" --notes "Test" \
+        --dir "$TEST_DIR" \
+        --base-url "https://releases.helixscreen.org/dev" \
+        --output "$TEST_DIR/manifest.json"
+
+    # k1 and ad5m must NOT be offered a zip.
+    run jq -e '.assets.k1.zip_url' "$TEST_DIR/manifest.json"
+    [ "$status" -ne 0 ]
+    run jq -e '.assets.ad5m.zip_url' "$TEST_DIR/manifest.json"
+    [ "$status" -ne 0 ]
+
+    # pi has a real unzip and keeps the preferred zip asset.
+    run jq -re '.assets.pi.zip_url' "$TEST_DIR/manifest.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "https://releases.helixscreen.org/dev/helixscreen-pi.zip" ]]
+}
+
+@test "gated platforms still get a complete tar.gz asset" {
+    printf 'PK\003\004dummyzip' > "$TEST_DIR/helixscreen-k1.zip"
+
+    bash "$SCRIPT" \
+        --version "0.9.5" --tag "v0.9.5" --notes "Test" \
+        --dir "$TEST_DIR" \
+        --base-url "https://releases.helixscreen.org/dev" \
+        --output "$TEST_DIR/manifest.json"
+
+    # A gated platform is not a dropped platform — the tar.gz must be intact,
+    # or the client has nothing at all to download.
+    run jq -re '.assets.k1.url' "$TEST_DIR/manifest.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "https://releases.helixscreen.org/dev/helixscreen-k1-v0.9.5.tar.gz" ]]
+
+    run jq -re '.assets.k1.sha256' "$TEST_DIR/manifest.json"
+    [ "$status" -eq 0 ]
+    [ "${#output}" -eq 64 ]
+
+    run jq -re '.assets.k1.size' "$TEST_DIR/manifest.json"
+    [ "$status" -eq 0 ]
+    [ "$output" -gt 0 ]
+}
+
+@test "default gate covers every BusyBox/OpenWrt platform in the release matrix" {
+    for plat in ad5m ad5x cc1 k1 k2 snapmaker-u1; do
+        dd if=/dev/zero bs=1024 count=1 2>/dev/null | gzip \
+            > "$TEST_DIR/helixscreen-${plat}-v0.9.5.tar.gz"
+        printf 'PK\003\004dummyzip' > "$TEST_DIR/helixscreen-${plat}.zip"
+    done
+
+    bash "$SCRIPT" \
+        --version "0.9.5" --tag "v0.9.5" --notes "Test" \
+        --dir "$TEST_DIR" \
+        --base-url "https://releases.helixscreen.org/dev" \
+        --output "$TEST_DIR/manifest.json"
+
+    for plat in ad5m ad5x cc1 k1 k2 snapmaker-u1; do
+        run jq -e ".assets[\"${plat}\"].zip_url" "$TEST_DIR/manifest.json"
+        [ "$status" -ne 0 ]
+    done
+}
+
+@test "--zip-exclude replaces the default gate list" {
+    printf 'PK\003\004dummyzip' > "$TEST_DIR/helixscreen-pi.zip"
+    printf 'PK\003\004dummyzip' > "$TEST_DIR/helixscreen-k1.zip"
+
+    bash "$SCRIPT" \
+        --version "0.9.5" --tag "v0.9.5" --notes "Test" \
+        --dir "$TEST_DIR" \
+        --base-url "https://releases.helixscreen.org/dev" \
+        --output "$TEST_DIR/manifest.json" \
+        --zip-exclude "pi"
+
+    # pi is now gated...
+    run jq -e '.assets.pi.zip_url' "$TEST_DIR/manifest.json"
+    [ "$status" -ne 0 ]
+    # ...and k1 is not, because the flag REPLACES the default list.
+    run jq -re '.assets.k1.zip_url' "$TEST_DIR/manifest.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "https://releases.helixscreen.org/dev/helixscreen-k1.zip" ]]
+}
+
+@test "--zip-exclude '' re-enables zip for every platform" {
+    printf 'PK\003\004dummyzip' > "$TEST_DIR/helixscreen-k1.zip"
+    printf 'PK\003\004dummyzip' > "$TEST_DIR/helixscreen-ad5m.zip"
+
+    bash "$SCRIPT" \
+        --version "0.9.5" --tag "v0.9.5" --notes "Test" \
+        --dir "$TEST_DIR" \
+        --base-url "https://releases.helixscreen.org/dev" \
+        --output "$TEST_DIR/manifest.json" \
+        --zip-exclude ""
+
+    run jq -re '.assets.k1.zip_url' "$TEST_DIR/manifest.json"
+    [ "$status" -eq 0 ]
+    run jq -re '.assets.ad5m.zip_url' "$TEST_DIR/manifest.json"
+    [ "$status" -eq 0 ]
+}
+
+@test "--no-include-zip beats --zip-exclude and suppresses zip everywhere" {
+    printf 'PK\003\004dummyzip' > "$TEST_DIR/helixscreen-pi.zip"
+    printf 'PK\003\004dummyzip' > "$TEST_DIR/helixscreen-k1.zip"
+
+    bash "$SCRIPT" \
+        --version "0.9.5" --tag "v0.9.5" --notes "Test" \
+        --dir "$TEST_DIR" \
+        --base-url "https://releases.helixscreen.org/dev" \
+        --output "$TEST_DIR/manifest.json" \
+        --zip-exclude "" --no-include-zip
+
+    run jq -e '.assets.pi.zip_url' "$TEST_DIR/manifest.json"
+    [ "$status" -ne 0 ]
+    run jq -e '.assets.k1.zip_url' "$TEST_DIR/manifest.json"
+    [ "$status" -ne 0 ]
+}
+
+@test "gated platforms are reported on stdout, never silently dropped" {
+    printf 'PK\003\004dummyzip' > "$TEST_DIR/helixscreen-k1.zip"
+
+    run bash "$SCRIPT" \
+        --version "0.9.5" --tag "v0.9.5" --notes "Test" \
+        --dir "$TEST_DIR" \
+        --base-url "https://releases.helixscreen.org/dev" \
+        --output "$TEST_DIR/manifest.json"
+    [ "$status" -eq 0 ]
+    # A gate that hides what it dropped reads as "everything shipped".
+    [[ "$output" == *"k1"* ]]
+    [[ "$output" == *"zip"* ]]
+}
+
+@test "no zip gate noise when the gated platform has no .zip at all" {
+    # k1 tarball exists but no k1 zip — nothing was withheld, so nothing to report.
+    run bash "$SCRIPT" \
+        --version "0.9.5" --tag "v0.9.5" --notes "Test" \
+        --dir "$TEST_DIR" \
+        --base-url "https://releases.helixscreen.org/dev" \
+        --output "$TEST_DIR/manifest.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"gated"* ]]
+}
+
 @test "manifest includes published_at timestamp" {
     bash "$SCRIPT" \
         --version "0.9.5" --tag "v0.9.5" --notes "Test" \
