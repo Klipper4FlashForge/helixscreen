@@ -23,6 +23,7 @@
  * PrinterCalibrationState::update_from_status via PrinterState::update_from_status.
  */
 
+#include "../../include/printer_calibration_state.h"
 #include "../../include/printer_state.h"
 #include "../lvgl_test_fixture.h"
 
@@ -110,8 +111,7 @@ TEST_CASE_METHOD(BlockingOpFixture,
 // Case 1b: is_external_blocking_operation_active attributes self-inflicted busy
 // ============================================================================
 
-TEST_CASE_METHOD(BlockingOpFixture,
-                 "is_external_blocking_operation_active attributes self-busy",
+TEST_CASE_METHOD(BlockingOpFixture, "is_external_blocking_operation_active attributes self-busy",
                  "[printer_state][busy_guard]") {
     // Arrange like the "idle_timeout Printing while STANDBY -> blocking" section:
     // idle_timeout_printing = 1, print job state STANDBY, no manual probe.
@@ -143,8 +143,7 @@ TEST_CASE_METHOD(BlockingOpFixture,
 // Case 2: idle_timeout.state JSON parse -> idle_timeout_printing_ subject
 // ============================================================================
 
-TEST_CASE_METHOD(BlockingOpFixture,
-                 "update_from_status parses idle_timeout.state into subject",
+TEST_CASE_METHOD(BlockingOpFixture, "update_from_status parses idle_timeout.state into subject",
                  "[printer_state][blocking_op]") {
     lv_subject_t* subj = state.get_idle_timeout_printing_subject();
 
@@ -223,9 +222,9 @@ TEST_CASE_METHOD(BlockingOpFixture, "claim_busy_queue_toast fires once per block
         CHECK_FALSE(state.claim_busy_queue_toast());
 
         idle_timeout("Ready");                       // idle bounce, probe still active
-        CHECK_FALSE(state.claim_busy_queue_toast());  // STILL suppressed
+        CHECK_FALSE(state.claim_busy_queue_toast()); // STILL suppressed
         idle_timeout("Printing");                    // next TESTZ move
-        CHECK_FALSE(state.claim_busy_queue_toast());  // STILL the same episode
+        CHECK_FALSE(state.claim_busy_queue_toast()); // STILL the same episode
 
         // Episode ends only when BOTH signals clear.
         manual_probe(false);
@@ -233,4 +232,43 @@ TEST_CASE_METHOD(BlockingOpFixture, "claim_busy_queue_toast fires once per block
         idle_timeout("Printing"); // a fresh homing/leveling episode
         CHECK(state.claim_busy_queue_toast());
     }
+}
+
+// ============================================================================
+// Klippy-volatile state (#1129)
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "reset_klippy_volatile clears activity state but leaves config alone",
+                 "[printer_state][volatile][1129]") {
+    helix::PrinterCalibrationState cs;
+    cs.init_subjects(false);
+
+    // Activity state, all driven away from their defaults.
+    lv_subject_set_int(cs.get_idle_timeout_printing_subject(), 1);
+    lv_subject_set_int(cs.get_manual_probe_active_subject(), 1);
+    lv_subject_set_int(cs.get_manual_probe_z_position_subject(), 125);
+    lv_subject_set_int(cs.get_motors_enabled_subject(), 0);
+    // Config-derived: NOT volatile, must survive.
+    lv_subject_set_int(cs.get_retract_length_subject(), 80);
+
+    cs.reset_klippy_volatile();
+
+    CHECK(lv_subject_get_int(cs.get_idle_timeout_printing_subject()) == 0);
+    CHECK(lv_subject_get_int(cs.get_manual_probe_active_subject()) == 0);
+    CHECK(lv_subject_get_int(cs.get_manual_probe_z_position_subject()) == 0);
+    // motors_enabled defaults to 1, not 0 — proves per-subject defaults are honoured.
+    CHECK(lv_subject_get_int(cs.get_motors_enabled_subject()) == 1);
+    CHECK(lv_subject_get_int(cs.get_retract_length_subject()) == 80);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "re-running init_subjects does not duplicate volatile entries",
+                 "[printer_state][volatile][1129]") {
+    helix::PrinterCalibrationState cs;
+    cs.init_subjects(false);
+    cs.init_subjects(false);
+
+    lv_subject_set_int(cs.get_idle_timeout_printing_subject(), 1);
+    cs.reset_klippy_volatile();
+    CHECK(lv_subject_get_int(cs.get_idle_timeout_printing_subject()) == 0);
 }

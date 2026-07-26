@@ -27,6 +27,10 @@ void PrinterCalibrationState::init_subjects(bool register_xml) {
     spdlog::trace("[PrinterCalibrationState] Initializing subjects (register_xml={})",
                   register_xml);
 
+    // init_subjects() may run more than once (tests re-init per case). Drop stale
+    // registrations first so entries do not accumulate.
+    volatile_.clear();
+
     // Firmware retraction settings (defaults: disabled)
     INIT_SUBJECT_INT(retract_length, 0, subjects_, register_xml);         // 0 = disabled
     INIT_SUBJECT_INT(retract_speed, 20, subjects_, register_xml);         // 20 mm/s default
@@ -34,16 +38,19 @@ void PrinterCalibrationState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT(unretract_speed, 10, subjects_, register_xml);       // 10 mm/s default
 
     // Manual probe subjects (for Z-offset calibration)
-    INIT_SUBJECT_INT(manual_probe_active, 0, subjects_, register_xml);     // 0=inactive, 1=active
-    INIT_SUBJECT_INT(manual_probe_z_position, 0, subjects_, register_xml); // Z position in microns
+    // Klippy-volatile: delta-only fields whose stale value gates behaviour (#1129).
+    INIT_SUBJECT_INT_VOLATILE(manual_probe_active, 0, subjects_, volatile_,
+                              register_xml); // 0=inactive, 1=active
+    INIT_SUBJECT_INT_VOLATILE(manual_probe_z_position, 0, subjects_, volatile_,
+                              register_xml); // Z position in microns
 
     // Motor enabled state (from toolhead.homed_axes - defaults to enabled)
-    INIT_SUBJECT_INT(motors_enabled, 1, subjects_,
-                     register_xml); // 1=enabled (Ready/Printing), 0=disabled (Idle)
+    INIT_SUBJECT_INT_VOLATILE(motors_enabled, 1, subjects_, volatile_,
+                              register_xml); // 1=enabled (Ready/Printing), 0=disabled (Idle)
 
     // idle_timeout.state == "Printing" busy flag (default: not busy)
-    INIT_SUBJECT_INT(idle_timeout_printing, 0, subjects_,
-                     register_xml); // 1 if idle_timeout.state == "Printing", else 0
+    INIT_SUBJECT_INT_VOLATILE(idle_timeout_printing, 0, subjects_, volatile_,
+                              register_xml); // 1 if idle_timeout.state == "Printing", else 0
 
     subjects_initialized_ = true;
     spdlog::trace("[PrinterCalibrationState] Subjects initialized successfully");
@@ -55,6 +62,7 @@ void PrinterCalibrationState::deinit_subjects() {
     }
 
     spdlog::debug("[PrinterCalibrationState] Deinitializing subjects");
+    volatile_.clear();
     subjects_.deinit_all();
     subjects_initialized_ = false;
 }
