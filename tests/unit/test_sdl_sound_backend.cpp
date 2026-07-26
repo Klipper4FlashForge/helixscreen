@@ -6,6 +6,8 @@
 #include "sdl_sound_backend.h"
 #include "sound_synthesis.h"
 
+#include <SDL.h>
+
 #include <cmath>
 #include <vector>
 
@@ -51,6 +53,53 @@ static int count_positive(const float* buffer, int num_samples) {
 // ============================================================================
 // Backend capability flags
 // ============================================================================
+
+// ============================================================================
+// Subsystem lifecycle
+// ============================================================================
+
+// initialize() takes a reference on SDL's audio subsystem. shutdown() used to
+// close the device but never release that reference, so the subsystem stayed up
+// afterwards — reaped only later, incidentally, by the SDL_Quit() in
+// lv_sdl_quit() during *display* teardown. Closing the device does not stop the
+// backend's own threads (SDL's PulseAudio backend keeps a mainloop thread),
+// which is how a shutdown-time use-after-free was observed under valgrind:
+// pa_pdispatch_run reading a block SDL_CloseAudioDevice had already freed.
+//
+// That race is timing-dependent and reproduced in roughly 1 run in 14, so this
+// test does NOT try to catch it. It locks the property that is deterministic and
+// verifiable: init and quit are balanced.
+TEST_CASE("SDL sound backend releases the audio subsystem on shutdown",
+          "[sound][sdl][lifecycle]") {
+    // Run with no sound hardware — CI machines have none.
+    SDL_setenv("SDL_AUDIODRIVER", "dummy", 1);
+
+    // Another test in this shard may already hold an audio reference; what
+    // matters is that we hand back exactly what we took.
+    const Uint32 before = SDL_WasInit(SDL_INIT_AUDIO);
+
+    {
+        SDLSoundBackend backend;
+        if (!backend.initialize()) {
+            // No usable device even with the dummy driver. The failure path has
+            // its own balance requirement, so assert that and stop.
+            REQUIRE(SDL_WasInit(SDL_INIT_AUDIO) == before);
+            SUCCEED("no audio device available; failure path left the refcount balanced");
+            return;
+        }
+
+        REQUIRE(SDL_WasInit(SDL_INIT_AUDIO) != 0);
+        backend.shutdown();
+
+        // The regression: without SDL_QuitSubSystem(SDL_INIT_AUDIO) in
+        // shutdown(), this still reports the subsystem as initialized.
+        REQUIRE(SDL_WasInit(SDL_INIT_AUDIO) == before);
+    }
+
+    // The destructor calls shutdown() a second time; it must stay balanced and
+    // must not double-release.
+    REQUIRE(SDL_WasInit(SDL_INIT_AUDIO) == before);
+}
 
 TEST_CASE("SDL backend reports correct capabilities", "[sound][sdl]") {
     SDLSoundBackend backend;
