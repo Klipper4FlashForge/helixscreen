@@ -10,7 +10,7 @@
 
 ### [L008] [***--|*----] Design tokens and semantic widgets
 - **Uses**: 26 | **Velocity**: 0.033203125 | **Learned**: 2025-12-14 | **Last**: 2026-05-19 | **Category**: pattern | **Type**: informational
-> No hardcoded colors/spacing. Use semantic widgets (ui_card, ui_button, text_*, divider_*) — they apply tokens. Don't restate built-in defaults (style_radius on ui_card, button_height on ui_button). Defaults: docs/LVGL9_XML_GUIDE.md § "Custom Semantic Widgets".
+> No hardcoded colors/spacing. Use semantic widgets (ui_card, ui_button, text_*, divider_*) — they apply tokens. Do not restate built-in defaults (style_radius on ui_card, button_height on ui_button). Defaults: `docs/devel/LVGL9_XML_GUIDE.md` § "Custom Semantic Widgets".
 
 ### [L009] [***--|*----] Icon font sync workflow
 - **Uses**: 25 | **Velocity**: 0.014892578125 | **Learned**: 2025-12-14 | **Last**: 2026-05-19 | **Category**: gotcha | **Type**: constraint
@@ -22,15 +22,11 @@
 
 ### [L014] [***--|****-] Register all XML components
 - **Uses**: 41 | **Velocity**: 2.0205078125 | **Learned**: 2025-12-14 | **Last**: 2026-07-23 | **Category**: gotcha | **Type**: constraint
-> New XML components need `lv_xml_component_register_from_file()` in main.cpp. Forgetting = silent failure.
+> New XML components need a `lv_xml_register_component_from_file()` call in `src/xml_registration.cpp` (via the local `register_xml()` helper) — NOT main.cpp, and note the word order: `register_component`, not `component_register`. Forgetting = silent failure (component resolves to nothing, no error).
 
 ### [L020] [**---|-----] ObserverGuard for cleanup
 - **Uses**: 9 | **Velocity**: 0 | **Learned**: 2025-12-14 | **Last**: 2026-05-19 | **Category**: gotcha | **Type**: constraint
 > Use `ObserverGuard` RAII for `lv_subject` observers. Manual cleanup → UAF on panel destruction.
-
-### [L021] [*----|-----] Centidegrees for temps
-- **Uses**: 1 | **Velocity**: 0 | **Learned**: 2025-12-14 | **Last**: 2025-12-31 | **Category**: pattern | **Type**: informational
-> Centidegrees (int) for temp subjects to keep 0.1°C resolution. Float subjects lose precision in LVGL bindings.
 
 ### [L025] [*----|*----] Button content centering
 - **Uses**: 1 | **Velocity**: 0.03125 | **Learned**: 2025-12-21 | **Last**: 2026-06-12 | **Category**: pattern | **Type**: constraint
@@ -66,7 +62,7 @@
 
 ### [L051] [*----|*----] LVGL timer lifetime safety
 - **Uses**: 1 | **Velocity**: 0.03173828125 | **Learned**: 2026-01-08 | **Last**: 2026-05-18 | **Category**: gotcha | **Type**: constraint
-> `lv_timer_create` cb fires after the owning object may be destroyed. Don't pass raw `this` as user_data. Use `AsyncLifetimeGuard::token()` (CLAUDE.md § Threading): capture `tok` in the timer cb, call `tok.defer([this](){ ... })` so the body only runs if `this` is still alive. Older `alive_guard` / `weak_ptr<bool>` patterns are deprecated.
+> `lv_timer_create` cb fires after the owning object may be destroyed. Do not pass raw `this` as user_data. Use `AsyncLifetimeGuard::token()`: capture `tok` in the timer cb, then `tok.defer([this](){ ... })` so the body only runs if `this` is still alive. Older `alive_guard` / `weak_ptr<bool>` patterns are deprecated. Full rules: `docs/devel/THREADING.md` §2.
 
 ### [L052] [***--|***--] Tag thread/network tests as [slow] to prevent hangs
 - **Uses**: 34 | **Velocity**: 1.84375 | **Learned**: 2026-01-09 | **Last**: 2026-07-16 | **Category**: gotcha | **Type**: constraint
@@ -94,21 +90,11 @@
 
 ### [L059] [**---|**---] LVGL object deletion: pick the RIGHT strategy
 - **Uses**: 7 | **Velocity**: 0.767822265625 | **Learned**: 2026-01-20 | **Last**: 2026-07-15 | **Category**: pattern | **Type**: constraint
-> Pick by scenario:
-> 1. `safe_delete(obj)` — sync, shutdown-safe, auto-nulls. Use in dtors/teardown when NOT inside an UpdateQueue/async batch.
-> 2. `safe_delete_deferred(obj)` — UpdateQueue-deferred. Use inside async cbs (timers, network responses). Nulls now, deletes next drain.
-> 3. `lv_obj_delete_async(obj)` — LVGL builtin; auto-cancelled by `obj_delete_core()`. Use when another path may delete first. Custom `lv_async_call` lambdas are NOT cancelled (#399).
-> 4. `lv_obj_delete(obj)` — raw, no guards. LVGL internals only.
-> NEVER `lv_async_call(..., lv_obj_delete)` — uncancellable. NEVER `safe_delete()` inside `queue_update`/`async_call` lambdas — multiple sync deletes in one batch corrupt LVGL's event list (#356). ALWAYS cancel anims first ([L068]).
+> Pick by scenario: (1) `safe_delete(obj)` — sync, shutdown-safe, auto-nulls; use in dtors/teardown when NOT inside an UpdateQueue/async batch. (2) `safe_delete_deferred(obj)` — routes through LVGL own async list, so it escapes the batch; use inside async cbs (timers, network responses). (3) `lv_obj_delete_async(obj)` — LVGL builtin, auto-cancelled by `obj_delete_core()`; use when another path may delete first, but NOT if a parent `lv_obj_clean()` may run before it fires (double-free). (4) `lv_obj_delete(obj)` — raw, no guards, LVGL internals only. (5) `helix::ui::safe_delete_subtree(obj)` — teardown-safe for a whole grid/flex subtree before a rebuild (#983). NEVER `lv_async_call(..., lv_obj_delete)` — uncancellable (#399). NEVER `safe_delete`/`lv_obj_delete`/`lv_obj_clean` inside any queued or deferred cb — multiple sync deletes in one batch corrupt LVGL event list → SIGSEGV in `lv_event_mark_deleted` (#776, #190, #80). ALWAYS cancel anims first ([L068]). Full rules: `docs/devel/THREADING.md` §3.
 
-### [L060] [*****|****-] Interactive UI testing requires user
+### [L060] [*****|****-] Drive the UI with ctl; ask the user only for visual confirmation
 - **Uses**: 100 | **Velocity**: 2.36279541015625 | **Learned**: 2026-02-01 | **Last**: 2026-07-23 | **Category**: correction | **Type**: constraint
-> Don't fake automation with timed delays. Pattern:
-> 1. `Bash` with `run_in_background: true`: `./build/bin/helix-screen --test -vv -p panel_name 2>&1 | tee /tmp/test.log` — NOT shell `&` or `timeout`.
-> 2. Tell user exactly what to click.
-> 3. Wait for confirmation.
-> 4. `Read /tmp/test.log`.
-> Failures: shell `&`, `timeout X cmd &`, retrying, assuming auto-nav. One bg task, tee to log, user interacts, you read.
+> The `-p/--panel` flag is GONE — use `helix-screen ctl` (navigate/click/ls/set_value/scroll/screenshot, or `repl`); the server auto-starts under `--test`. Reaching a panel, clicking a widget, and capturing a screenshot are all scriptable now, so do NOT ask the user for those. What still needs a human is judging what the pixels look like. When you do need that: (1) `Bash` with `run_in_background: true`: `./build/bin/helix-screen --test -vv 2>&1 | tee /tmp/test.log` — NOT shell `&` or `timeout`; (2) drive it to the state with `ctl`; (3) tell the user exactly what to look at; (4) wait for confirmation; (5) `Read /tmp/test.log`. Never fake verification with timed delays. For an active print use `--sim-speed 4..10` instead of waiting ~95s.
 
 ### [L061] [**---|*----] AD5M test printer environment
 - **Uses**: 5 | **Velocity**: 0.064697265625 | **Learned**: 2026-02-07 | **Last**: 2026-06-13 | **Category**: system
@@ -152,11 +138,11 @@
 
 ### [L072] [***--|*----] Never capture bare this in async/WebSocket callbacks
 - **Uses**: 30 | **Velocity**: 0.34423828125 | **Learned**: 2026-02-22 | **Last**: 2026-07-02 | **Category**: gotcha | **Type**: constraint
-> Callbacks to `execute_gcode()` / `send_jsonrpc()` / Moonraker fire from the WS thread, possibly after the widget is gone. Never capture raw `[this]`. Use `AsyncLifetimeGuard::token()` + `tok.defer(...)` (CLAUDE.md § Threading). Older `weak_ptr<bool>` / `shared_ptr<atomic<bool>>` patterns are deprecated.
+> Callbacks to `execute_gcode()` / `send_jsonrpc()` / Moonraker fire from the WS thread, possibly after the widget is gone. Never capture raw `[this]`. Use `lifetime_.bg_cb(tag, fn)`, or `AsyncLifetimeGuard::token()` + `tok.defer(...)`. Never write a bare `if (tok.expired()) return;` on a bg thread — that is the TOCTOU anti-pattern the lint gate rejects. Older `weak_ptr<bool>` / `shared_ptr<atomic<bool>>` patterns are deprecated. Full rules: `docs/devel/THREADING.md` §2.
 
-### [L073] [*----|-----] ObserverGuard release vs reset
+### [L073] [*----|-----] ObserverGuard: reset() is the default, release() almost never
 - **Uses**: 3 | **Velocity**: 0 | **Learned**: 2026-02-22 | **Last**: 2026-04-22 | **Category**: gotcha | **Type**: constraint
-> `obs.reset()` when subjects ALIVE (normal cleanup/repopulate) — unsubs, frees context, expires weak_alive. `obs.release()` ONLY when subjects may be DESTROYED (shutdown/pre-deinit). reset-on-dead = double-free; release-on-live = zombie observer (deferred cb on stale `this`), 17× #579 (release in unregister_slot_data → NEON blend SIGSEGV). See [L085].
+> Always `reset()` for normal cleanup (panel teardown, LV_EVENT_DELETE, repopulate) — it unsubscribes, frees the context, and expires weak_alive, and it already handles shutdown via `s_subjects_valid` + `lv_is_initialized()`. `release()` is NOT "safer": it skips `lv_observer_remove()`, leaks the context, and leaves a zombie observer that fires a deferred cb on stale `this` — the misconception behind 17 separate #579 reports (release in unregister_slot_data → NEON blend SIGSEGV). The remove IS the point. `release()` only for StaticSubjectRegistry::register_deinit cbs where the subject is already destroyed. Full rules: `docs/devel/THREADING.md` §6.
 
 ### [L074] [**---|*----] Generation counter for deferred observer callbacks
 - **Uses**: 6 | **Velocity**: 0.0361328125 | **Learned**: 2026-02-22 | **Last**: 2026-06-10 | **Category**: pattern | **Type**: informational
@@ -164,15 +150,15 @@
 
 ### [L075] [*----|****-] Validate lv_obj before accessing children
 - **Uses**: 3 | **Velocity**: 2.027587890625 | **Learned**: 2026-02-22 | **Last**: 2026-07-23 | **Category**: gotcha | **Type**: constraint
-> Before `lv_obj_find_by_name()` / `lv_obj_get_child()` / `lv_obj_get_child_count()` on a cached pointer: null-check + `AsyncLifetimeGuard` token check. NOT `lv_obj_is_valid()` (O(n), stack-overflows on Pi — see [L076]). Use `safe_delete_obj()` to null pointers post-delete. For async cbs detecting panel destruction: capture `tok = lifetime_.token()` and gate with `tok.defer(...)` (CLAUDE.md § Threading); older `weak_ptr<bool>` alive-guard pattern is deprecated.
+> Before `lv_obj_find_by_name()` / `lv_obj_get_child()` / `lv_obj_get_child_count()` on a cached pointer: null-check + `AsyncLifetimeGuard` token check. NOT `lv_obj_is_valid()` (O(n), stack-overflows on Pi — see [L076]). Use `safe_delete_obj()` to null pointers post-delete. For async cbs detecting panel destruction: capture `tok = lifetime_.token()` and gate with `tok.defer(...)` (`docs/devel/THREADING.md` §2); the older `weak_ptr<bool>` alive-guard pattern is deprecated.
 
 ### [L076] [***--|***--] NEVER use lv_obj_is_valid() in hot paths or async guards
 - **Uses**: 21 | **Velocity**: 1.03662109375 | **Learned**: 2026-02-22 | **Last**: 2026-07-01 | **Category**: gotcha
 > `lv_obj_is_valid()` = recursive O(n) walk of all screens+children → Pi stack-overflow SIGSEGV. NEVER in observer/anim/timer cbs, loops, dtors, `safe_delete_obj()`, async guards — use null checks. Deferred-delete guards: app tracking (ModalStack) or `lv_obj_delete_async()`. Can return TRUE on recycled memory → delete a live obj (#399). Only safe in one-shot click handlers.
 
-### [L077] [**---|****-] Dynamic subject observers MUST use SubjectLifetime tokens
+### [L077] [**---|****-] Dynamic subject observers need a MEMBER SubjectLifetime
 - **Uses**: 9 | **Velocity**: 3.142578125 | **Learned**: 2026-02-22 | **Last**: 2026-07-24 | **Category**: gotcha
-> Observing dynamic subjects (per-fan/per-sensor/per-extruder): always use the `get_*_subject(name, lifetime)` overload and pass the token to the observer factory. Without it, `lv_subject_deinit()` frees the observer; `ObserverGuard::reset()` then calls `lv_observer_remove()` on freed memory → SEGV. Static singleton subjects don't need tokens.
+> Observing a dynamic subject (per-fan/sensor/extruder): use the `get_*_subject(name, lifetime)` overload and pass the token to the observer factory. Without it, `lv_subject_deinit()` frees the observer list and `ObserverGuard::reset()` then calls `lv_observer_remove()` on freed memory → SEGV. The token MUST be a member, never a local — a local dies at function exit, leaving the observer weak_ptr dead but still registered against the recreated subject (UAF on rediscover). Every member `ObserverGuard` on a dynamic subject gets a paired member `SubjectLifetime`; reset the lifetime BEFORE the observer (#705). Collections (carousels, slot lists) → parallel vectors, lifetimes cleared first. Read-only one-shot → prefer the no-lifetime overload. Static singleton subjects need no token. Ref `fan_widget.cpp:218`; full rules `docs/devel/THREADING.md` §5.
 
 ### [L078] [-----|-----] lv_obj transform_scale invisible without background
 - **Uses**: 0 | **Velocity**: 0 | **Learned**: 2026-03-13 | **Last**: 2026-03-13 | **Category**: gotcha
@@ -186,10 +172,6 @@
 - **Uses**: 36 | **Velocity**: 2.25390625 | **Learned**: 2026-04-16 | **Last**: 2026-07-23 | **Category**: gotcha
 > Before asking user to interact on-device, verify in one pass: (1) NEW binary running (PID start time / version in log), (2) logs land where you expect (journalctl/file/console), (3) required state on (telemetry, debug level in helixscreen.env), (4) logs reachable via SSH. Each failed round-trip burns user patience. Pi: systemctl → journalctl; `deploy-pi-fg` uses `ssh -t` (console only); nohup drops output. Production log capture: systemd + journalctl.
 
-### [L081] [***--|***--] lifetime_.defer does NOT escape UpdateQueue batch
-- **Uses**: 28 | **Velocity**: 1.37353515625 | **Learned**: 2026-04-18 | **Last**: 2026-07-20 | **Category**: gotcha | **Type**: constraint
-> `lifetime_.defer`/`tok.defer`/`helix::ui::async_call` are thin `queue_update` wrappers — cb fires next `process_pending` tick, STILL in a UpdateQueue batch. Gen counter guards `this`, not the LVGL event-list ("defer is outside process_pending" comments are wrong). Observer cbs (observe_int_sync/observe_string) also queued (#82). BANNED in any queued/deferred cb: `safe_delete`, `lv_obj_delete`, `lv_obj_clean`. USE: `safe_delete_deferred`, `lv_obj_delete_async`, `helix::ui::safe_clean_children` (LVGL async list, outside batch). Multiple sync deletes/batch → SIGSEGV `lv_event_mark_deleted` (#776/#190/#80).
-
 ### [L082] [*----|*----] Percent size inside LV_SIZE_CONTENT parent collapses to 0
 - **Uses**: 3 | **Velocity**: 0.0712890625 | **Learned**: 2026-04-20 | **Last**: 2026-06-16 | **Category**: gotcha | **Type**: constraint
 > LVGL percent size (`width="50%"`, `min_width="50%"`) resolves vs parent content area; parent `LV_SIZE_CONTENT` → circular dep, collapses to 0, child vanishes. Symptom: `long_mode="wrap"`+`flex_grow` wraps near-per-char (super-tall cards); grown flex child squeezed out. Fix: explicit parent width, then child `100%`. Never nest percent kids in content-sized parents (toast stack 26573f1f2).
@@ -200,14 +182,6 @@
 > HTTP: `HttpExecutor::fast()` (4w: REST/thumbs/small uploads) / `::slow()` (1w: big transfers). Lambdas still need `queue_update`/`tok.defer` for UI. `include/http_executor.h`.
 > Non-HTTP IO (BT/USB/RFCOMM/QR/discovery): managed pool/BusThread, OR wrap detach in `try{…}catch(std::system_error){toast+err cb}`.
 > Member `std::thread` joined in dtor is fine; issue is one-shot detached spawns. Check for an existing pool first.
-
-### [L084] [**---|****-] SubjectLifetime must be a member, never a local
-- **Uses**: 7 | **Velocity**: 2.1669921875 | **Learned**: 2026-04-22 | **Last**: 2026-07-24 | **Category**: gotcha | **Type**: constraint
-> Dynamic subject (per-fan/sensor/extruder) observer: `SubjectLifetime` token MUST outlive the observer → MUST be a member, never local (local dies → observer weak_ptr dead but still registered vs recreated subject → UAF). Every member `ObserverGuard` on a dynamic subject → paired member `SubjectLifetime`. Collections (carousel/slot lists) → parallel vectors, lifetimes cleared BEFORE observers (#705). Read-only one-shot → prefer no-lifetime overload. Ref fan_widget.cpp:218. Companion [L077].
-
-### [L085] [*----|*----] release() is NEVER the default — reset() is
-- **Uses**: 1 | **Velocity**: 0.0234375 | **Learned**: 2026-04-22 | **Last**: 2026-05-17 | **Category**: correction | **Type**: constraint
-> New ObserverGuard cleanup: always `reset()` (handles shutdown via `s_subjects_valid`+`lv_is_initialized()`, safe mid-`lv_deinit`). `release()` is NOT "safer" — skips `lv_observer_remove()`, leaks context, zombie observer fires deferred cb on stale `this` (the 17× #579 misconception; the remove IS the point). `release()` only: (a) StaticSubjectRegistry::register_deinit cbs, (b) shutdown where subject already destroyed — NOT normal `LV_EVENT_DELETE`. Companion [L073].
 
 ### [L086] [***--|**---] OpenWrt/procd silently skips plain SysV init scripts at boot
 - **Uses**: 14 | **Velocity**: 0.72265625 | **Learned**: 2026-04-28 | **Last**: 2026-07-20 | **Category**: gotcha | **Type**: constraint
@@ -229,8 +203,8 @@
 - **Uses**: 6 | **Velocity**: 1.71875 | **Learned**: 2026-06-12 | **Last**: 2026-07-17 | **Category**: gotcha
 > scripts/resolve-backtrace.sh forks one addr2line PER address vs multi-GB pi.debug DWARF (~2.6G); each child grows lazily 4→8G+. Kill it → subshell+addr2line children ORPHAN, invisible to pkill (name truncates 'aarch64-linux-g'); 3 parallel resolves once ~26G, near-OOM. RULES: (1) run_in_background:true from the START (harness owns the tree); (2) don't hand-fork addr2line in a chainable shell; (3) one resolver, no parallel retries; (4) cleanup = kill PARENT resolve-backtrace.sh (`pgrep -af resolve-backtrace`), find big procs via /proc/PID/cmdline.
 
-### [L091] [**---|****-] Stale-but-200 R2 manifest silently suppresses updates fleet-wide
-- **Uses**: 5 | **Velocity**: 3.15625 | **Learned**: 2026-06-12 | **Last**: 2026-07-25 | **Category**: gotcha
+### [L091] [**---|*****] Stale-but-200 R2 manifest silently suppresses updates fleet-wide
+- **Uses**: 8 | **Velocity**: 6.15625 | **Learned**: 2026-06-12 | **Last**: 2026-07-26 | **Category**: gotcha
 > "New version not showing on ANY device" = source of truth, not per-device: updater fetches releases.helixscreen.org/<ch>/manifest.json FIRST, trusts any HTTP-200 (update_checker.cpp fetch_stable_release), only falls back to GitHub on FETCH FAILURE not staleness. v0.99.76 cause: release.yml R2 upload non-blocking, manifest uploaded AFTER big zips; a 504 on k2.zip aborted before manifest → R2 pinned at .75, run green. Diagnose: curl live manifest .version vs tag; check the R2 upload job. Fixed 942bcbd51/d0034b282: manifest before zips, s3cp retry, read-back assert version==tag. Verify the SERVED artifact, never trust upload success.
 
 ### [L092] [***--|*****] make | tail masks exit code; -j hides the real build error
@@ -246,7 +220,7 @@
 > Gating a load decision on a state that only updates AFTER the load completes deadlocks. The print-status gcode download was gated on the view-mode subject being 3D/2D, but that subject only becomes 3D/2D once gcode is loaded -> gcode never downloads, mode never leaves thumbnail, 3D render never appears (user saw 'thumbnail not 3D'). Gate loads on intent/settings (want_viewer + render-mode setting), never on the rendered result. Found in PrintStatusPanel preview unification.
 
 ### [L095] [***--|*****] Verify feature existence in code, not from issue phrasing + commit messages
-- **Uses**: 25 | **Velocity**: 16.25 | **Learned**: 2026-07-01 | **Last**: 2026-07-25 | **Category**: correction
+- **Uses**: 30 | **Velocity**: 21.25 | **Learned**: 2026-07-01 | **Last**: 2026-07-26 | **Category**: correction
 > Don't claim a capability is absent from issue wording + commit messages — grep/read the actual code first (reporter "can't find X" usually = discoverability gap, not missing). Spoolman picker existed (AmsEditModal, behind "Choose Spool") despite 6 fix-commits implying otherwise (#1071). Corollary: don't inherit a subagent's "race" claim from a stale comment — verify current code. **Extends to reporter-proposed root-cause MECHANISMS, not just existence:** #1124's two bugs each had detailed, plausible reporter archaeology pointing at the WRONG cause — bug 2 "panel graph never migrated to the backfill path" (it uses TempGraphController + backfill already; real cause = persistent graph backfilled pre-WebSocket-connect), bug 1 "init_fans resets the subject to 0" (struct+subject zero in lockstep, snapshot re-fires; real cause = e3f92c3f4's front-most fan fallback, a 2-day-old regression). Both real causes were RECENT commits. Trace the suspect area in current code AND `git log -S`/blame it before adopting the reporter's mechanism; a confident, well-argued mechanism from a technical reporter is still a hypothesis.
 
 ### [L096] [**---|*****] queue_prev tag-ring names the victim, not the crash — resolve real frames first
