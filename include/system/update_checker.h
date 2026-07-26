@@ -307,6 +307,70 @@ class UpdateChecker {
     /** @brief Hide the update notification modal */
     void hide_update_notification();
 
+    /** @brief Result of a portable zip integrity probe. */
+    enum class ZipIntegrity {
+        Ok,           ///< Archive verified intact.
+        Corrupt,      ///< Archive is damaged or not a zip at all.
+        Unverifiable, ///< No tool on this system can test it — caller falls back to SHA256.
+    };
+
+    /**
+     * @brief Test a .zip archive's integrity with whatever tool can do it.
+     *
+     * `unzip -t` cannot be the primary check: support depends on the firmware's
+     * BusyBox vintage (prestonbrown/helixscreen#993). Verified on-device:
+     *
+     * | Platform                 | BusyBox | `unzip -t`            |
+     * |--------------------------|---------|-----------------------|
+     * | FlashForge AD5M          | 1.29.3  | absent — rejects `-t` |
+     * | Creality K1              | 1.31.1  | absent — rejects `-t` |
+     * | Elegoo Centauri Carbon   | 1.36.1  | present, correct      |
+     *
+     * On the first two, `unzip -tqq` exits 1 with "invalid option -- 't'", so an
+     * intact download was reported as a corrupt archive and every in-app update
+     * failed. python3's `zipfile.testzip()` does a real per-entry CRC check and
+     * behaves identically everywhere, so it is tried first — but it needs zlib
+     * as well as zipfile (release zips are deflated, and the AD5M's python3.7
+     * has no zlib), so a python that cannot test reports Unverifiable rather
+     * than Corrupt and we fall back to `unzip -l`.
+     *
+     * Public and static so it can be unit-tested directly.
+     */
+    static ZipIntegrity verify_zip_integrity(const std::string& zip_path);
+
+    /** @brief Which tool this system can use to read a .zip. */
+    enum class ZipTool {
+        Unzip,  ///< An `unzip` binary is available.
+        Python, ///< No unzip, but python3 with zipfile+zlib can do the job.
+        None,   ///< Neither — zip releases cannot be handled at all.
+    };
+
+    /**
+     * @brief Decide how (or whether) this system can read zip archives.
+     *
+     * Not every supported platform ships `unzip`: the Creality K2's OpenWrt
+     * firmware has no unzip binary and no BusyBox unzip applet, but does carry
+     * python3 with zipfile+zlib. Requiring unzip outright made every in-app
+     * update on that firmware fail before it even downloaded, with an
+     * apt-get hint that does not apply there.
+     */
+    static ZipTool available_zip_tool();
+
+    /**
+     * @brief Extract a single member from a .zip archive.
+     *
+     * Prefers `unzip -q -o`, falling back to python3's zipfile when no unzip
+     * binary exists (K2). Restores the member's mode bits on the python path —
+     * zipfile.extract() drops them, and an install.sh or bin/helix-screen that
+     * lands without its exec bit is useless.
+     *
+     * Public and static so it can be unit-tested directly.
+     *
+     * @return 0 on success, non-zero on failure.
+     */
+    static int extract_zip_member(const std::string& zip_path, const std::string& extract_dir,
+                                  const std::string& member);
+
   private:
     UpdateChecker() = default;
     ~UpdateChecker();
