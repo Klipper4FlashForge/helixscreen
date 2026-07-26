@@ -9,6 +9,7 @@
 #include "app_globals.h"
 #include "filament_slot_override.h"
 #include "filament_slot_override_store.h"
+#include "json_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
 #include "pause_cause.h"
@@ -1222,26 +1223,37 @@ void AmsBackendSnapmaker::handle_status_update(const nlohmann::json& notificatio
                     std::string ext_key = (i == 0) ? "extruder0" : fmt::format("extruder{}", i);
                     if (feed.contains(ext_key) && feed[ext_key].is_object()) {
                         const auto& ch = feed[ext_key];
-                        bool detected = ch.value("filament_detected", false);
-                        // Mirror into port_sensor_filament_present_ so
-                        // is_stuck_motion_sensor_runout can distinguish a real
-                        // runout (both sensors false) from a stale motion-sensor
-                        // false positive (motion=false, port=true). Tracked
-                        // independent of slot->status because slot status flips
-                        // to AVAILABLE/LOADED based on extruder pin state which
-                        // is orthogonal to the port sensor reading.
-                        if (i >= 0 && i < NUM_TOOLS) {
-                            port_sensor_filament_present_[i] = detected;
-                        }
-                        auto* slot = system_info_.units[0].get_slot(i);
-                        if (slot) {
-                            if (detected && (slot->status == SlotStatus::EMPTY ||
-                                             slot->status == SlotStatus::UNKNOWN)) {
-                                slot->status = SlotStatus::AVAILABLE;
-                                changed = true;
-                            } else if (!detected && slot->status != SlotStatus::LOADED) {
-                                slot->status = SlotStatus::EMPTY;
-                                changed = true;
+                        // filament_detected: use .find() + is_boolean() (per
+                        // [L087], matching the motion-sensor loop below) rather
+                        // than .value(), which throws on the null Klipper
+                        // publishes before the sensor's first reading. Because
+                        // status frames are deltas, an omitted field means "no
+                        // change" — treating it as false would clear the port
+                        // sensor and drop the slot to EMPTY on a frame that
+                        // said nothing about filament at all.
+                        auto fd_it = ch.find("filament_detected");
+                        if (fd_it != ch.end() && fd_it->is_boolean()) {
+                            const bool detected = fd_it->get<bool>();
+                            // Mirror into port_sensor_filament_present_ so
+                            // is_stuck_motion_sensor_runout can distinguish a real
+                            // runout (both sensors false) from a stale motion-sensor
+                            // false positive (motion=false, port=true). Tracked
+                            // independent of slot->status because slot status flips
+                            // to AVAILABLE/LOADED based on extruder pin state which
+                            // is orthogonal to the port sensor reading.
+                            if (i >= 0 && i < NUM_TOOLS) {
+                                port_sensor_filament_present_[i] = detected;
+                            }
+                            auto* slot = system_info_.units[0].get_slot(i);
+                            if (slot) {
+                                if (detected && (slot->status == SlotStatus::EMPTY ||
+                                                 slot->status == SlotStatus::UNKNOWN)) {
+                                    slot->status = SlotStatus::AVAILABLE;
+                                    changed = true;
+                                } else if (!detected && slot->status != SlotStatus::LOADED) {
+                                    slot->status = SlotStatus::EMPTY;
+                                    changed = true;
+                                }
                             }
                         }
 
@@ -1251,8 +1263,13 @@ void AmsBackendSnapmaker::handle_status_update(const nlohmann::json& notificatio
                         // terminal, fail, latch set/clear}; the parse reads off that
                         // one table rather than scattered string compares. See
                         // u1_channel_state_reference.md.
-                        auto state = ch.value("channel_state", "");
-                        auto error = ch.value("channel_error", "ok");
+                        // safe_string, not .value(): both fields are string-or-null
+                        // on U1 firmware, and .value() throws on the null. The
+                        // defaults below are already the intended "nothing to
+                        // report" sentinels — "" is checked by the !state.empty()
+                        // gate, "ok" by classify_channel_state.
+                        auto state = helix::json_util::safe_string(ch, "channel_state", "");
+                        auto error = helix::json_util::safe_string(ch, "channel_error", "ok");
                         const ChannelStateInfo info = classify_channel_state(state);
 
                         // Mirror the granular firmware sub-phase into the system
