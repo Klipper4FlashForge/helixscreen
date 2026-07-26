@@ -44,9 +44,13 @@ void PrinterCalibrationState::init_subjects(bool register_xml) {
     INIT_SUBJECT_INT_VOLATILE(manual_probe_z_position, 0, subjects_, volatile_,
                               register_xml); // Z position in microns
 
-    // Motor enabled state (from toolhead.homed_axes - defaults to enabled)
-    INIT_SUBJECT_INT_VOLATILE(motors_enabled, 1, subjects_, volatile_,
-                              register_xml); // 1=enabled (Ready/Printing), 0=disabled (Idle)
+    // Motor enabled state (from toolhead.homed_axes - defaults to enabled).
+    // NOT Klippy-volatile: right after a Klipper shutdown the steppers are
+    // affirmatively de-energized, so a stale 0 is correct, not stale. Resetting
+    // it to 1 on a Klippy transition would briefly claim motors are on when they
+    // are not. Self-heals on the next stepper_enable/homed_axes snapshot anyway.
+    INIT_SUBJECT_INT(motors_enabled, 1, subjects_,
+                     register_xml); // 1=enabled (Ready/Printing), 0=disabled (Idle)
 
     // idle_timeout.state == "Printing" busy flag (default: not busy)
     INIT_SUBJECT_INT_VOLATILE(idle_timeout_printing, 0, subjects_, volatile_,

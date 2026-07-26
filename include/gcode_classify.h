@@ -46,7 +46,7 @@ inline std::string gcode_first_token_upper(const std::string& line) {
 
 /// Coarse category of a single (already-uppercased, whole) g-code token.
 /// `Other` means "not in the discretionary set" — recovery/homing/probe/macro.
-enum class GcodeCat { Other, Fan, Temp, Move, Modal, Led, Tune, Message };
+enum class GcodeCat { Other, Fan, Temp, Move, Modal, Led, Pin, Tune, Message };
 
 inline GcodeCat categorize_gcode_token(const std::string& t) {
     if (t == "M106" || t == "M107" || t == "SET_FAN_SPEED") {
@@ -62,10 +62,16 @@ inline GcodeCat categorize_gcode_token(const std::string& t) {
     if (t == "G90" || t == "G91") {
         return GcodeCat::Modal;
     }
-    // SET_PIN drives output_pin LEDs; SET_LED_EFFECT drives led_effect strips.
-    // Both are LED writes and both are safe to run late (#1129).
-    if (t == "SET_LED" || t == "SET_PIN" || t == "SET_LED_EFFECT") {
+    // SET_LED_EFFECT drives led_effect strips — an unambiguous LED write.
+    if (t == "SET_LED" || t == "SET_LED_EFFECT") {
         return GcodeCat::Led;
+    }
+    // SET_PIN drives ANY output_pin — an LED strip (case light, neopixel-as-pin)
+    // OR a non-numeric output_pin fan (fan_gcode.h). The token alone can't tell
+    // which, so it gets its own category rather than being misnamed "LED change".
+    // Still safe to run late either way.
+    if (t == "SET_PIN") {
+        return GcodeCat::Pin;
     }
     // Speed/flow factor: pure scaling, harmless if it lands a moment late.
     if (t == "M220" || t == "M221") {
@@ -95,7 +101,10 @@ inline GcodeCat categorize_gcode_token(const std::string& t) {
 ///   - Move: G0, G1  (non-homing moves)
 ///   - Positioning mode: G90, G91 (absolute/relative — wrap our own jog moves,
 ///     which are emitted as "G91\nG0 X..\nG90"; pure modal state, safe to defer)
-///   - LED:  SET_LED, SET_PIN (output_pin strips), SET_LED_EFFECT
+///   - LED:  SET_LED, SET_LED_EFFECT
+///   - Pin:  SET_PIN — drives ANY output_pin (an LED strip OR a non-numeric
+///     output_pin fan, see fan_gcode.h); kept separate from LED so the toast
+///     noun doesn't misname a fan pin as an "LED change"
 ///   - Tune: M220 (speed factor), M221 (flow factor)
 ///   - Message: M117
 ///
@@ -158,7 +167,8 @@ inline bool gcode_contains_move(const std::string& script) {
 /// "LED change", "speed change", "flow change", "display message", or a generic
 /// "change". Returns the first meaningful line's kind (modal G90/G91 wrappers and
 /// unrecognized lines are skipped), so a jog-style "G91\nM106" is named for its
-/// fan line.
+/// fan line. SET_PIN (GcodeCat::Pin) always falls through to the generic "change"
+/// — it can't be told apart from a non-LED output_pin fan at this layer.
 inline std::string discretionary_gcode_noun(const std::string& script) {
     std::istringstream lines(script);
     std::string line;
@@ -175,6 +185,10 @@ inline std::string discretionary_gcode_noun(const std::string& script) {
             return token == "M221" ? "flow change" : "speed change";
         case detail::GcodeCat::Message:
             return "display message";
+        case detail::GcodeCat::Pin:
+            // SET_PIN can't be told apart from a fan pin at this layer — fall
+            // through to the generic noun rather than claiming "LED change".
+            break;
         case detail::GcodeCat::Move:
         case detail::GcodeCat::Modal:
         case detail::GcodeCat::Other:

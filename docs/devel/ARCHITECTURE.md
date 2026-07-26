@@ -744,7 +744,9 @@ Moonraker sends DELTA status updates — changed fields only. A subject fed by a
 
 `PrinterState::set_klippy_state_internal()` (`src/printer/printer_state.cpp`) is the single chokepoint for every Klippy state change — the webhooks JSON parse, the `helix::async::call_method` wrapper, and `set_klippy_state_sync()` all land here — and it calls `PrinterCalibrationState::reset_klippy_volatile()` on a genuine state transition. This is edge-triggered, not a live `klippy != READY` predicate: in #1129 the stale value survived PAST the return to READY, so a live guard would not have helped. Both transition directions matter — READY-to-dead means nothing it was doing survives; dead-to-READY means a fresh Klipper with nothing blocking yet.
 
-Current members (all `PrinterCalibrationState`, `src/printer/printer_calibration_state.cpp`): `idle_timeout_printing`, `manual_probe_active`, `manual_probe_z_position`, `motors_enabled`.
+Current members (all `PrinterCalibrationState`, `src/printer/printer_calibration_state.cpp`): `idle_timeout_printing`, `manual_probe_active`, `manual_probe_z_position`.
+
+`motors_enabled` is deliberately NOT on this list: right after a Klipper shutdown the steppers are affirmatively de-energized, so a stale `0` is the correct value, not a stale one — resetting it to the enabled default on a Klippy transition would briefly claim motors are on when they are not. It uses plain `INIT_SUBJECT_INT` and self-heals on the next `stepper_enable`/`homed_axes` snapshot.
 
 ### Widget Management
 

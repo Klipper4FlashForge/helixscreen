@@ -2248,7 +2248,47 @@ TEST_CASE_METHOD(LedMockApiFixture,
 
     // Klipper is busy with a blocking non-print op, so both sends take the queue path.
     lv_subject_set_int(state.get_idle_timeout_printing_subject(), 1);
-    REQUIRE(state.is_blocking_operation_active());
+    REQUIRE(state.is_external_blocking_operation_active());
+
+    ctrl.light_toggle();
+
+    // The settle runs through tok.defer(...), so the subject still reads its
+    // pre-settle value without a drain ([L048]).
+    helix::ui::UpdateQueue::instance().drain();
+
+    CHECK(lv_subject_get_int(ctrl.get_led_command_in_flight_subject()) == 0);
+}
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "OUTPUT_PIN strip queued behind a blocking op settles the in-flight counter",
+                 "[led][1129]") {
+    // Behavioural counterpart of "OutputPinBackend accepts and forwards on_queued"
+    // (compile-contract only): SET_PIN became discretionary alongside SET_LED, so
+    // an output_pin strip toggled while Klipper is busy must take the queue path
+    // and still settle the in-flight counter back to 0. If on_queued were dropped
+    // from set_value()/toggle_all()'s OUTPUT_PIN branch, this send would rely on
+    // on_success/on_error alone, which never fire on the queue path, and the
+    // counter would wedge at 1.
+    auto& ctrl = helix::led::LedController::instance();
+    ctrl.deinit();
+    ctrl.init(mock_api.get(), &mock_client);
+
+    helix::led::LedStripInfo pin;
+    pin.name = "Case Light";
+    pin.id = "output_pin case_light";
+    pin.backend = helix::led::LedBackendType::OUTPUT_PIN;
+    ctrl.output_pin().add_pin(pin);
+    ctrl.set_selected_strips({"output_pin case_light"});
+
+    // ORDERING IS LOAD-BEARING (see Task 3, Step 5). Klippy subjects initialize to
+    // SHUTDOWN, so this call is a transition that resets the volatile subjects.
+    // It MUST come before idle_timeout is set, or the reset wipes it and the test
+    // silently exercises the non-busy path instead.
+    state.set_klippy_state_sync(helix::KlippyState::READY);
+
+    // Klipper is busy with a blocking non-print op, so the send takes the queue path.
+    lv_subject_set_int(state.get_idle_timeout_printing_subject(), 1);
+    REQUIRE(state.is_external_blocking_operation_active());
 
     ctrl.light_toggle();
 

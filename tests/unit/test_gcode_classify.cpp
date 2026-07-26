@@ -278,9 +278,23 @@ TEST_CASE("new commands do not register as physical moves", "[gcode_classify][11
 }
 
 TEST_CASE("nouns name the new command kinds", "[gcode_classify][1129]") {
-    CHECK(helix::discretionary_gcode_noun("SET_PIN PIN=case_light VALUE=1.0000") == "LED change");
+    // SET_PIN drives output_pin LEDs AND non-numeric output_pin fans (fan_gcode.h)
+    // — the token alone can't tell which, so it gets the generic noun, not "LED
+    // change". SET_LED_EFFECT is unambiguously an LED write.
+    CHECK(helix::discretionary_gcode_noun("SET_PIN PIN=case_light VALUE=1.0000") == "change");
     CHECK(helix::discretionary_gcode_noun("SET_LED_EFFECT EFFECT=rainbow") == "LED change");
     CHECK(helix::discretionary_gcode_noun("M220 S100") == "speed change");
     CHECK(helix::discretionary_gcode_noun("M221 S95") == "flow change");
     CHECK(helix::discretionary_gcode_noun("M117 Hello") == "display message");
+}
+
+TEST_CASE("SET_PIN stays discretionary but is not misnamed as an LED",
+          "[gcode][classify][gcode_classify][noun]") {
+    // SET_PIN also drives non-LED output_pin fans (fan_gcode.h:51 emits
+    // "SET_PIN PIN=<name> VALUE=..." for non-numeric output_pin fans). A user
+    // nudging such a fan mid-bed-mesh must not see "your LED change will run
+    // when it's ready" — but the command must still take the discretionary
+    // queue path so it doesn't time out behind the blocking op.
+    CHECK(helix::is_discretionary_gcode("SET_PIN PIN=x VALUE=1"));
+    CHECK(helix::discretionary_gcode_noun("SET_PIN PIN=x VALUE=1") != "LED change");
 }

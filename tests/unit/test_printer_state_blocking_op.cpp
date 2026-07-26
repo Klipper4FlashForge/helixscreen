@@ -257,8 +257,10 @@ TEST_CASE_METHOD(LVGLTestFixture,
     CHECK(lv_subject_get_int(cs.get_idle_timeout_printing_subject()) == 0);
     CHECK(lv_subject_get_int(cs.get_manual_probe_active_subject()) == 0);
     CHECK(lv_subject_get_int(cs.get_manual_probe_z_position_subject()) == 0);
-    // motors_enabled defaults to 1, not 0 — proves per-subject defaults are honoured.
-    CHECK(lv_subject_get_int(cs.get_motors_enabled_subject()) == 1);
+    // motors_enabled is NOT Klippy-volatile: right after a Klipper shutdown the
+    // steppers are affirmatively de-energized, so a value set before the reset
+    // must survive it unchanged rather than bouncing back to the enabled default.
+    CHECK(lv_subject_get_int(cs.get_motors_enabled_subject()) == 0);
     CHECK(lv_subject_get_int(cs.get_retract_length_subject()) == 80);
 }
 
