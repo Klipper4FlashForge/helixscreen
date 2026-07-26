@@ -294,6 +294,16 @@ Key points:
 - A systemd path unit (`helixscreen-update.path`) watches `release_info.json` and restarts the service after Moonraker extracts an update
 - As a self-healing fallback, `helixscreen.service` runs `refresh-service-units.sh` on every start to re-template systemd units and install missing watcher units
 
+#### Moonraker version requirement (helixscreen#993)
+
+**This stanza requires Moonraker >= v0.10.0 (or a git checkout newer than 2025-01-19).** The installer probes for the capability and skips writing the stanza when it isn't there — see `moonraker_asset_name_support()` in `scripts/lib/installer/moonraker.sh`, which inspects the installed Moonraker source (found via `find_moonraker_update_manager_dir()`) rather than parsing a version string, since `v0.9.3-73-gfab6c5c1`-style descriptions can't be ordered across branches. It returns three states: `supported` (net_deploy.py containing `asset_name`), `unsupported` (zip_deploy.py/web_deploy.py, or a net_deploy.py without it), and `undetermined` (no source found — preserves the previous behavior and warns, rather than guessing). On `unsupported` the installer also *removes* an already-written stanza.
+
+Asset selection lives in Moonraker's `NetDeploy._get_remote_version()` (`moonraker/components/update_manager/net_deploy.py`). It seeds `release_asset = assets[0]` and only overrides it when `release_info.json`'s `asset_name` **exactly** matches an asset name; a miss logs `Asset '<name>' not found` at INFO and downloads `assets[0]` anyway. Support for `asset_name` arrived in commit `530f1c2016` (2025-01-19), which also renamed `zip_deploy.py` to `net_deploy.py`; the first tag containing it is **v0.10.0** (2026-01-21). Every earlier version reads `assets[0]` unconditionally and never looks at `asset_name`.
+
+That matters because the GitHub API returns release assets **sorted by name**, and `_extract_release()` runs `shutil.rmtree(self.path)` *before* opening the archive. On an unsupported Moonraker the in-UI update button therefore wipes the install directory and then fails with `zipfile.BadZipFile: File is not a zip file`. Release symbol assets are named `symbols-<platform>.sym.zst` specifically so they sort after the `helixscreen-*` artifacts and never land in `assets[0]` (see the guard in `.github/workflows/release.yml`).
+
+**Rollback is unsupported on every Moonraker version, including master.** `NetDeploy.rollback()` ignores `asset_name` entirely — it is still hardcoded to `result.get('assets', [{}])[0]`. The Mainsail/Fluidd rollback button will always fetch the alphabetically-first asset regardless of what `release_info.json` says, so it cannot be made to work from our side. Use HelixScreen's built-in updater or re-run the installer pinned to a version instead.
+
 ### Service Allowlist
 
 The installer also adds `helixscreen` to `moonraker.asvc` (the service management allowlist in the printer_data directory).
