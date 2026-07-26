@@ -86,10 +86,30 @@ proves to be a problem in practice, one can follow.
 
 ### Settle — know when async work finished
 
-`wait_idle [--timeout N]` blocks until `UpdateQueue` pending is 0, `lv_anim_count_running()`
-is 0, and `HttpExecutor` in-flight is 0 on both lanes, held stable across two consecutive
-frames. `UpdateQueue` has the size internally but no public accessor; `HttpExecutor` has no
-in-flight count at all. Both are small additions.
+`wait_idle [--timeout N]` blocks until `UpdateQueue` pending is 0 and `HttpExecutor` in-flight
+is 0 on both lanes, held stable across two consecutive frames. `UpdateQueue` has the size
+internally but no public accessor; `HttpExecutor` has no in-flight count at all. Both are
+small additions.
+
+**Animations are deliberately NOT counted**, though an earlier draft of this design included
+`lv_anim_count_running()`. A real UI has legitimately perpetual animations, so "zero
+animations running" is not a reachable idle state in general — it is a property of a
+particular screen and a particular settings configuration, not of the app having finished
+its work. Implementation found this concretely: `print_file_detail`'s loading spinner lives
+inside the eagerly-built `print_select_panel`, so its three infinite animations run from boot
+onward regardless of which screen is displayed. Counting animations made `wait_idle` succeed
+only when the `animations_enabled` setting happened to be off, which is a configuration
+accident rather than a contract.
+
+Animation-driven pixel churn is covered instead by the frame-hash screenshot gate below,
+which measures the thing that actually matters for a capture — whether the pixels stopped
+changing — rather than inferring it from an animation count.
+
+Separately, that spinner should not animate while it is invisible: an eagerly-built widget
+burning three animation timers forever is wasted CPU on the smallest devices we ship to.
+That is a real defect on its own merits, fixed by gating `ui_spinner`'s animation start on
+`animations_enabled` alongside every other decorative animation — but it is a performance
+fix, not part of the determinism contract.
 
 `wait_idle` is best-effort by design, because the enumeration surface is large and grows. A
 scan of the codebase found these sources it cannot see:

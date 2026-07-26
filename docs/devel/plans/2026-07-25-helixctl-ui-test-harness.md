@@ -738,7 +738,8 @@ git commit -m "test(ui): dump screenshot, log tail, and screen state on failure"
   - `size_t UpdateQueue::pending_count() const`
   - `size_t HttpExecutor::inflight() const noexcept`
   - RPC `wait_idle` → `{"idle": true, "waited_ms": <int>}`, or a JSON-RPC error whose message
-    names the nonzero counters
+    names the nonzero counters (update_queue, http). Animations are NOT counted — see the
+    design spec's determinism section.
   - `HelixApp.wait_idle(timeout: float = 10.0) -> dict`
 
 - [ ] **Step 1: Write the failing test**
