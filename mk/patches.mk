@@ -58,7 +58,16 @@ LVGL_PATCHED_FILES := \
 	src/layouts/flex/lv_flex.c \
 	src/layouts/grid/lv_grid.c \
 	src/misc/lv_assert.h \
+	src/drivers/sdl/lv_sdl_sw.c \
+	src/core/lv_global.h \
+	src/misc/lv_event_private.h \
+	src/widgets/label/lv_label.c \
+	src/widgets/label/lv_label.h \
+	src/widgets/label/lv_label_private.h \
 	lv_conf_template.h
+# NOTE: src/misc/lv_check_arg.h is deliberately absent — the backport patch
+# CREATES it, so it is untracked upstream and `git checkout` cannot restore it.
+# reset-patches removes it explicitly instead.
 
 # Files modified by libhv patches
 LIBHV_PATCHED_FILES := \
