@@ -6,7 +6,7 @@ This document is a reference for the commonly used environment variables in Heli
 
 | Category | Count | Prefix |
 |----------|-------|--------|
-| [Display & Backend](#display--backend-configuration) | 14 | `HELIX_` |
+| [Display & Backend](#display--backend-configuration) | 15 | `HELIX_` |
 | [Touch Calibration](#touch-calibration) | 8 | `HELIX_TOUCH_*` |
 | [G-Code Viewer](#g-code-viewer) | 4 | `HELIX_` |
 | [Bed Mesh](#bed-mesh) | 1 | `HELIX_` |
@@ -377,6 +377,28 @@ Position the SDL window at exact screen coordinates.
 # Position window at specific coordinates
 HELIX_SDL_XPOS=100 HELIX_SDL_YPOS=200 ./build/bin/helix-screen
 ```
+
+### `HELIX_HEADLESS`
+
+Make `scripts/screenshot.sh` run without a display server by forcing SDL's dummy
+video driver. Already the default when neither `DISPLAY` nor `WAYLAND_DISPLAY`
+is set, so this is only needed to force headless on a desktop.
+
+| Property | Value |
+|----------|-------|
+| **Values** | `1` (force headless) / unset |
+| **Default** | Auto — headless when no `DISPLAY` and no `WAYLAND_DISPLAY` |
+| **File** | `scripts/screenshot.sh` |
+
+```bash
+# Capture on a CI runner / over ssh with no display
+HELIX_HEADLESS=1 ./scripts/screenshot.sh helix-screen filament-panel filament
+```
+
+The binary itself needs no HelixScreen-specific variable — `SDL_VIDEODRIVER=dummy`
+is enough, and the SDL backend falls back to the software renderer on its own
+when the accelerated one is unavailable. See `docs/devel/HELIXCTL.md`
+§ "Running headless".
 
 ---
 

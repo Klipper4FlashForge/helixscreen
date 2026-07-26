@@ -53,6 +53,31 @@ The control server runs as a background thread inside `helix-screen`.
 panel. (It replaces the old side effect where `-p <panel>` implicitly skipped
 the wizard.)
 
+## Running headless (CI, ssh, containers)
+
+Driving the UI needs no display server. SDL's dummy video driver is enough:
+
+```bash
+SDL_VIDEODRIVER=dummy ./build/bin/helix-screen --test -vv --remote-socket /tmp/hs.sock &
+./build/bin/helix-screen ctl --socket /tmp/hs.sock navigate filament
+./build/bin/helix-screen ctl --socket /tmp/hs.sock screenshot /tmp/filament.png
+```
+
+LVGL asks SDL for an accelerated renderer, which the dummy driver cannot
+provide. The SDL backend catches that and retries with the software renderer, so
+no extra environment variable is needed — you'll see
+`Using software renderer (no GPU acceleration)` in the log. (Setting
+`SDL_RENDER_DRIVER=software` yourself also works and skips the failed first
+attempt.)
+
+Screenshots are fully rendered in headless mode: capture goes through
+`lv_snapshot_take()`, which re-renders the object tree into its own buffer
+rather than reading back the display surface.
+
+`scripts/screenshot.sh` switches to the dummy driver on its own when neither
+`DISPLAY` nor `WAYLAND_DISPLAY` is set; `HELIX_HEADLESS=1` forces it on a
+machine that does have a display.
+
 ## Transports (socket | HTTP)
 
 The server speaks JSON-RPC over one of two transports, selectable at runtime:
