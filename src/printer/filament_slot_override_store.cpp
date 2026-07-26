@@ -532,13 +532,16 @@ FilamentSlotOverride from_json(const nlohmann::json& j) {
     o.spoolman_vendor_id = helix::json_util::safe_int(j, "spoolman_vendor_id", 0);
     o.remaining_weight_g = helix::json_util::safe_float(j, "remaining_weight_g", -1.0f);
     o.total_weight_g = helix::json_util::safe_float(j, "total_weight_g", -1.0f);
-    // Read color_rgb directly rather than through safe_int: the field is a full
-    // 24-bit RGB value and a hand-edited or third-party record can carry the
-    // high byte set, which a narrowing get<int>() would mangle. find + is_number
-    // _unsigned gives the same null-tolerance without the width question.
-    if (auto color_it = j.find("color_rgb");
-        color_it != j.end() && color_it->is_number_unsigned()) {
-        o.color_rgb = color_it->get<uint32_t>();
+    // Read color_rgb through the u64 helper rather than safe_int: the field is a
+    // full 24-bit RGB value and a hand-edited or third-party record can carry the
+    // high byte set, which a narrowing get<int>() would mangle. The helper also
+    // accepts a signed integer, which matters because nlohmann only tags a value
+    // unsigned when it was built from an unsigned C++ type — a record assembled
+    // in memory from an int literal arrives as number_integer and an
+    // is_number_unsigned() gate silently drops the color.
+    const std::uint64_t color_raw = helix::json_util::safe_uint64(j, "color_rgb", o.color_rgb);
+    if (color_raw <= 0xFFFFFFFFu) {
+        o.color_rgb = static_cast<std::uint32_t>(color_raw);
     }
     // Pre-fix caches don't have color_set; reconstruct from the old "0 = unset"
     // convention so a returning user's pre-existing overrides keep their
