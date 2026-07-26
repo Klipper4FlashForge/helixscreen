@@ -1241,11 +1241,8 @@ nlohmann::json RemoteControlServer::handle_wait_idle(const nlohmann::json& param
 
 nlohmann::json RemoteControlServer::handle_freeze(const nlohmann::json& /*params*/) {
     return execute_on_ui_thread([this]() -> nlohmann::json {
-        // Stop animations already in flight, then prevent new ones from
-        // starting. animations_enabled is an existing setting honored at
-        // ~51 call sites, so this half needs no new plumbing.
+        // Stop animations already in flight.
         lv_anim_delete_all();
-        DisplaySettingsManager::instance().set_animations_enabled(false);
 
         // Idempotent: a second freeze() while already frozen must not
         // re-scan and clobber paused_timers_ — every timer would already be
@@ -1254,6 +1251,16 @@ nlohmann::json RemoteControlServer::handle_freeze(const nlohmann::json& /*params
         if (frozen_) {
             return {{"frozen", true}, {"timers_paused", static_cast<int>(paused_timers_.size())}};
         }
+
+        // Prevent new animations from starting by flipping the subject
+        // directly rather than through DisplaySettingsManager::set_animations_enabled(),
+        // which calls Config::save() on every call. freeze is a transient
+        // test-mode toggle — persisting it would mean a --remote dev
+        // instance killed or crashed between freeze and unfreeze leaves the
+        // user's real settings.json with animations permanently disabled.
+        // Remember the real value so unfreeze restores it exactly, not "on".
+        pre_freeze_animations_enabled_ = DisplaySettingsManager::instance().get_animations_enabled();
+        lv_subject_set_int(DisplaySettingsManager::instance().subject_animations_enabled(), 0);
 
         // Pause periodic timers one at a time rather than lv_timer_enable(false):
         // UpdateQueue's processor is itself an lv_timer, and this very handler
@@ -1313,7 +1320,11 @@ nlohmann::json RemoteControlServer::handle_unfreeze(const nlohmann::json& /*para
         }
         paused_timers_.clear();
         frozen_ = false;
-        DisplaySettingsManager::instance().set_animations_enabled(true);
+        // Restore the exact pre-freeze value (not a hardcoded "on") via the
+        // subject directly — see handle_freeze() for why set_animations_enabled()
+        // (which persists to settings.json) must not be used here.
+        lv_subject_set_int(DisplaySettingsManager::instance().subject_animations_enabled(),
+                            pre_freeze_animations_enabled_ ? 1 : 0);
 
         spdlog::debug("[RemoteControl] unfreeze: resumed {} timers", resumed);
         return {{"frozen", false}, {"timers_resumed", resumed}};

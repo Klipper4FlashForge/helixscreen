@@ -297,9 +297,19 @@ waits for async work to *land*, `freeze` stops the moving parts so a captured
 frame doesn't change again a moment later. It combines three things:
 
 - `lv_anim_delete_all()` — stop animations already running.
-- `DisplaySettingsManager`'s existing `animations_enabled` setting, set to
-  `false` — prevents new animations from starting. This setting already has a
-  subject and is honored at ~51 call sites, so no new plumbing was needed here.
+- Flipping the existing `animations_enabled` **subject** to `0` to prevent new
+  animations from starting (honored at ~51 call sites) — but **not** via
+  `DisplaySettingsManager::set_animations_enabled()`. That setter calls
+  `Config::save()` on every call, so going through it would persist the
+  change to `settings.json` on every `freeze` and write it back on every
+  `unfreeze`. `freeze` is a transient test-mode toggle; a `--remote` dev
+  instance killed or crashed between the two would otherwise leave a real
+  user's config with animations permanently disabled — automated tests never
+  see this because `--test` uses `settings-test.json`. The handler instead
+  reads and writes `DisplaySettingsManager::subject_animations_enabled()`
+  directly (an accessor already public and already used by several widgets to
+  observe this setting), and remembers the real pre-freeze value so `unfreeze`
+  restores it exactly rather than assuming "on".
 - Pausing every periodic `lv_timer` one at a time via `lv_timer_pause()`,
   **with a two-entry skip list**.
 
@@ -318,7 +328,8 @@ Two timers are therefore left running by identity:
    renders and a frame-hash screenshot gate never observes a new frame.
 
 `unfreeze` resumes exactly the set of timers `freeze` paused — tracked as a
-`std::vector<lv_timer_t*>` on the server — and re-enables animations. A timer
+`std::vector<lv_timer_t*>` on the server — and restores `animations_enabled`
+to its captured pre-freeze value (not unconditionally "on"). A timer
 legitimately deleted while frozen (e.g. panel teardown) is skipped rather than
 dereferenced: `unfreeze` walks the live timer list to confirm each tracked
 pointer still exists before resuming it.

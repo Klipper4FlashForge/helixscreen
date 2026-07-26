@@ -182,6 +182,11 @@ class RemoteControlServer {
     /// which would find every timer already paused, track none of them, and
     /// make `unfreeze` forget the original set — leaving it paused forever.
     bool frozen_ = false;
+
+    /// The real animations_enabled value at the moment `freeze` was called,
+    /// so `unfreeze` restores it exactly rather than assuming "on". Captured
+    /// once per freeze/unfreeze cycle, not on an idempotent re-freeze.
+    bool pre_freeze_animations_enabled_ = true;
 };
 
 /**
