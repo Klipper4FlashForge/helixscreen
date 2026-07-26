@@ -48,7 +48,8 @@ def compare(actual: Image.Image, golden_path: Path) -> ComparisonResult:
     diff_img = Image.fromarray(amplified, mode="L").convert("RGBA")
     return ComparisonResult(
         False,
-        f"{differing} pixel{'s' if differing != 1 else ''} differ "
+        f"{differing} pixel{'s' if differing != 1 else ''} "
+        f"{'differ' if differing != 1 else 'differs'} "
         f"({differing / total:.4%} of {total})",
         diff_img,
     )
