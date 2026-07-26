@@ -5,14 +5,25 @@
 # in scripts/lib/installer/release.sh
 
 RELEASE_SH="scripts/lib/installer/release.sh"
+COMMON_SH="scripts/lib/installer/common.sh"
+
+# release.sh depends on helpers that live in common.sh (_has_python, _PY_BIN,
+# ...). The bundled install.sh always carries both, so sourcing release.sh
+# alone leaves `_has_python` undefined and silently drives every
+# `elif _has_python` branch down its else path — the tests then pass while
+# exercising code production never runs. Always load both, and clear the python
+# probe cache so each test re-resolves the interpreter for its own PATH.
+source_installer_modules() {
+    unset _HELIX_RELEASE_SOURCED _HELIX_COMMON_SOURCED _PY_BIN _PY_PROBED
+    source "$COMMON_SH"
+    source "$RELEASE_SH"
+}
 
 setup() {
     source tests/shell/helpers.bash
     export GITHUB_REPO="prestonbrown/helixscreen"
 
-    # Reset source guard so module re-sources cleanly
-    unset _HELIX_RELEASE_SOURCED
-    source "$RELEASE_SH"
+    source_installer_modules
 
     # Pre-set the _has_real_curl cache so mock curl scripts don't need to
     # handle --version.  Tests that exercise the "no curl" path use subshells
@@ -77,7 +88,8 @@ MOCK
     # On macOS /usr/bin/curl exists so this test skips there.
     run env PATH="$bin:/usr/bin" /bin/bash -c '
         source tests/shell/helpers.bash
-        unset _HELIX_RELEASE_SOURCED
+        unset _HELIX_RELEASE_SOURCED _HELIX_COMMON_SOURCED _PY_BIN _PY_PROBED
+        source scripts/lib/installer/common.sh
         source scripts/lib/installer/release.sh
         fetch_url "http://example.com/test"
     '
@@ -97,7 +109,8 @@ MOCK
     # Symlink only the essentials we need (command is a shell built-in)
     run env PATH="$bin" /bin/bash -c '
         source tests/shell/helpers.bash
-        unset _HELIX_RELEASE_SOURCED
+        unset _HELIX_RELEASE_SOURCED _HELIX_COMMON_SOURCED _PY_BIN _PY_PROBED
+        source scripts/lib/installer/common.sh
         source scripts/lib/installer/release.sh
         fetch_url "http://example.com/test"
     '
@@ -202,7 +215,8 @@ MOCK
 
     run env PATH="$bin" /bin/bash -c '
         source tests/shell/helpers.bash
-        unset _HELIX_RELEASE_SOURCED
+        unset _HELIX_RELEASE_SOURCED _HELIX_COMMON_SOURCED _PY_BIN _PY_PROBED
+        source scripts/lib/installer/common.sh
         source scripts/lib/installer/release.sh
         download_file "http://example.com/test" "/tmp/test.tar.gz"
     '
@@ -253,7 +267,8 @@ MOCK
 
     run env PATH="$bin:/usr/bin:/bin" /bin/bash -c "
         source tests/shell/helpers.bash
-        unset _HELIX_RELEASE_SOURCED
+        unset _HELIX_RELEASE_SOURCED _HELIX_COMMON_SOURCED _PY_BIN _PY_PROBED
+        source scripts/lib/installer/common.sh
         source scripts/lib/installer/release.sh
         download_file 'http://example.com/test' '$TMP_DIR/wget_test.tar.gz'
     "
@@ -311,6 +326,274 @@ MOCK
 }
 
 # =========================================================================
+# validate_archive: .zip path (prestonbrown/helixscreen#993)
+#
+# Release archives ship as .zip, and `unzip -t` support depends on the
+# firmware's BusyBox vintage. Verified on-device:
+#
+#   BusyBox 1.29.3 (FlashForge AD5M)    no -t -> "invalid option -- 't'"
+#   BusyBox 1.31.1 (Creality K1)        no -t -> "invalid option -- 't'"
+#   BusyBox 1.36.1 (Elegoo Centauri)    -t present and correct
+#   info-zip 6.00  (Debian/Pi/desktop)  -t present and correct
+#
+# Preferring `unzip -t` therefore failed every AD5M and K1 update on a
+# perfectly good download. The python zipfile check needs zlib as well as
+# zipfile -- the AD5M's python3.7 has none -- so it must degrade to the
+# structural check rather than declaring a good archive corrupt.
+# =========================================================================
+
+# Build a zip larger than validate_archive's 1MB floor. Args: dest
+create_valid_zip() {
+    local dest=$1
+    python3 - "$dest" << 'PY'
+import os, sys, zipfile
+with zipfile.ZipFile(sys.argv[1], "w", zipfile.ZIP_DEFLATED) as z:
+    z.writestr("bin/helix-screen", b"\x7fELF" + os.urandom(1536 * 1024))
+PY
+}
+
+# Build a zip whose compressed payload has a flipped byte, so the stored CRC no
+# longer matches. Structurally intact: only a real CRC test catches this.
+create_crc_corrupt_zip() {
+    local dest=$1
+    create_valid_zip "$dest"
+    python3 - "$dest" << 'PY'
+import sys
+p = sys.argv[1]
+data = bytearray(open(p, "rb").read())
+data[len(data) // 2] ^= 0xFF
+open(p, "wb").write(bytes(data))
+PY
+}
+
+# Write a fake `unzip` emulating a BusyBox/info-zip flavour into a PATH dir.
+# Args: bindir flavour(busybox131|busybox136)
+make_fake_unzip() {
+    local bindir=$1 flavour=$2
+    mkdir -p "$bindir"
+    case "$flavour" in
+        busybox131)
+            # BusyBox 1.31: -t is not a recognised option at all.
+            cat > "$bindir/unzip" << 'MOCK'
+#!/bin/sh
+for arg in "$@"; do
+    case "$arg" in
+        -*t*) echo "unzip: invalid option -- 't'" >&2; exit 1 ;;
+    esac
+done
+exec /usr/bin/unzip "$@"
+MOCK
+            ;;
+        busybox136)
+            # BusyBox 1.36: -t is accepted and always succeeds, testing nothing.
+            cat > "$bindir/unzip" << 'MOCK'
+#!/bin/sh
+for arg in "$@"; do
+    case "$arg" in
+        -*t*) exit 0 ;;
+    esac
+done
+exec /usr/bin/unzip "$@"
+MOCK
+            ;;
+    esac
+    chmod +x "$bindir/unzip"
+}
+
+@test "validate_archive: accepts valid zip" {
+    create_valid_zip "$TMP_DIR/good.zip"
+    run validate_archive "$TMP_DIR/good.zip" "Test "
+    [ "$status" -eq 0 ]
+}
+
+@test "validate_archive: rejects CRC-corrupt zip" {
+    create_crc_corrupt_zip "$TMP_DIR/crc.zip"
+    run validate_archive "$TMP_DIR/crc.zip" "Downloaded "
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not a valid zip archive"* ]]
+}
+
+@test "validate_archive: rejects non-zip file named .zip" {
+    dd if=/dev/urandom bs=1024 count=2048 of="$TMP_DIR/garbage.zip" 2>/dev/null
+    run validate_archive "$TMP_DIR/garbage.zip" "Test "
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not a valid zip archive"* ]]
+}
+
+@test "validate_archive: rejects truncated zip (central directory lost)" {
+    create_valid_zip "$TMP_DIR/trunc.zip"
+    # Lop off the tail, destroying the end-of-central-directory record.
+    python3 - "$TMP_DIR/trunc.zip" << 'PY'
+import sys
+p = sys.argv[1]
+data = open(p, "rb").read()
+open(p, "wb").write(data[: len(data) // 2])
+PY
+    run validate_archive "$TMP_DIR/trunc.zip" "Test "
+    [ "$status" -ne 0 ]
+}
+
+@test "validate_archive: rejects valid zip that is too small" {
+    python3 - "$TMP_DIR/tiny.zip" << 'PY'
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1], "w") as z:
+    z.writestr("a.txt", "tiny")
+PY
+    run validate_archive "$TMP_DIR/tiny.zip" "Test "
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"too small"* ]]
+}
+
+@test "validate_archive: rejects nonexistent zip" {
+    run validate_archive "$TMP_DIR/does_not_exist.zip" "Test "
+    [ "$status" -ne 0 ]
+}
+
+# --- BusyBox flavour regressions -----------------------------------------
+
+@test "validate_archive: accepts valid zip when unzip rejects -t (BusyBox 1.31 / K1, 1.29 / AD5M)" {
+    # The #993 regression: every K1 and AD5M in-app update and Moonraker
+    # install failed here with "file is not a valid zip archive" on an intact
+    # download.
+    local bin="$BATS_TEST_TMPDIR/bb131"
+    make_fake_unzip "$bin" busybox131
+    create_valid_zip "$TMP_DIR/good.zip"
+
+    run env PATH="$bin:$PATH" /bin/bash -c '
+        source tests/shell/helpers.bash
+        log_error() { echo "ERROR: $*"; }
+        unset _HELIX_RELEASE_SOURCED _HELIX_COMMON_SOURCED _PY_BIN _PY_PROBED
+        source scripts/lib/installer/common.sh
+        source scripts/lib/installer/release.sh
+        validate_archive "$1" "Test "
+    ' _ "$TMP_DIR/good.zip"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"not a valid zip archive"* ]]
+}
+
+@test "validate_archive: rejects corrupt zip even when unzip -t always succeeds" {
+    # Defensive: some firmware could ship a -t that reports success without
+    # testing anything. The real CRC check must not be delegated to it.
+    local bin="$BATS_TEST_TMPDIR/bb136"
+    make_fake_unzip "$bin" busybox136
+    create_crc_corrupt_zip "$TMP_DIR/crc.zip"
+
+    run env PATH="$bin:$PATH" /bin/bash -c '
+        source tests/shell/helpers.bash
+        log_error() { echo "ERROR: $*"; }
+        unset _HELIX_RELEASE_SOURCED _HELIX_COMMON_SOURCED _PY_BIN _PY_PROBED
+        source scripts/lib/installer/common.sh
+        source scripts/lib/installer/release.sh
+        validate_archive "$1" "Downloaded "
+    ' _ "$TMP_DIR/crc.zip"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"not a valid zip archive"* ]]
+}
+
+@test "validate_archive: falls back to unzip -l when python is unavailable" {
+    # python-less system: the structural check must still accept a good zip
+    # (never false-fail) while rejecting garbage.
+    # (See also the AD5M case below: python present but built without zlib.)
+    local bin="$BATS_TEST_TMPDIR/nopy"
+    make_fake_unzip "$bin" busybox131
+    for t in dd du cut sed grep head basename; do
+        real=$(command -v "$t" 2>/dev/null) && ln -sf "$real" "$bin/$t"
+    done
+    ln -sf /bin/sh "$bin/sh"
+    create_valid_zip "$TMP_DIR/good.zip"
+    dd if=/dev/urandom bs=1024 count=2048 of="$TMP_DIR/garbage.zip" 2>/dev/null
+
+    run env PATH="$bin" /bin/bash -c '
+        source tests/shell/helpers.bash
+        log_error() { echo "ERROR: $*"; }
+        unset _HELIX_RELEASE_SOURCED _HELIX_COMMON_SOURCED _PY_BIN _PY_PROBED
+        source scripts/lib/installer/common.sh
+        source scripts/lib/installer/release.sh
+        validate_archive "$1" "Test "
+    ' _ "$TMP_DIR/good.zip"
+    [ "$status" -eq 0 ]
+
+    run env PATH="$bin" /bin/bash -c '
+        source tests/shell/helpers.bash
+        log_error() { echo "ERROR: $*"; }
+        unset _HELIX_RELEASE_SOURCED _HELIX_COMMON_SOURCED _PY_BIN _PY_PROBED
+        source scripts/lib/installer/common.sh
+        source scripts/lib/installer/release.sh
+        validate_archive "$1" "Test "
+    ' _ "$TMP_DIR/garbage.zip"
+    [ "$status" -ne 0 ]
+}
+
+@test "validate_archive: accepts valid zip when python has no zlib (AD5M)" {
+    # The AD5M's python3.7 is built without zlib, so zipfile.ZipFile() raises
+    # "Compression requires the (missing) zlib module" on a deflated release
+    # zip. Reading that as corruption would swap one broken platform for
+    # another, so the check must degrade to the structural probe instead.
+    local bin="$BATS_TEST_TMPDIR/nozlib"
+    make_fake_unzip "$bin" busybox131
+    for t in dd du cut sed grep head basename; do
+        real=$(command -v "$t" 2>/dev/null) && ln -sf "$real" "$bin/$t"
+    done
+    ln -sf /bin/sh "$bin/sh"
+
+    # python3 shim whose zlib import always fails, mimicking the AD5M build.
+    cat > "$bin/python3" << MOCK
+#!/bin/sh
+exec $(command -v python3) -c 'import sys; sys.modules["zlib"] = None; del sys.modules["zlib"]
+import builtins
+_real = builtins.__import__
+def _blocked(name, *a, **k):
+    if name == "zlib":
+        raise ImportError("No module named zlib")
+    return _real(name, *a, **k)
+builtins.__import__ = _blocked
+_argv = sys.argv[1:]
+if _argv and _argv[0] == "-c":
+    sys.argv = ["-c"] + _argv[2:]
+    exec(_argv[1])
+else:
+    sys.argv = _argv or ["-"]
+    exec(sys.stdin.read())
+' "\$@"
+MOCK
+    chmod +x "$bin/python3"
+
+    create_valid_zip "$TMP_DIR/good.zip"
+
+    run env PATH="$bin" /bin/bash -c '
+        source tests/shell/helpers.bash
+        log_error() { echo "ERROR: $*"; }
+        unset _HELIX_RELEASE_SOURCED _HELIX_COMMON_SOURCED _PY_BIN _PY_PROBED
+        source scripts/lib/installer/common.sh
+        source scripts/lib/installer/release.sh
+        validate_archive "$1" "Test "
+    ' _ "$TMP_DIR/good.zip"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"not a valid zip archive"* ]]
+}
+
+@test "validate_archive: errors when neither python nor unzip can validate" {
+    local bin="$BATS_TEST_TMPDIR/notools"
+    mkdir -p "$bin"
+    for t in dd du cut sed grep head basename; do
+        real=$(command -v "$t" 2>/dev/null) && ln -sf "$real" "$bin/$t"
+    done
+    ln -sf /bin/sh "$bin/sh"
+    create_valid_zip "$TMP_DIR/good.zip"
+
+    run env PATH="$bin" /bin/bash -c '
+        source tests/shell/helpers.bash
+        log_error() { echo "ERROR: $*"; }
+        unset _HELIX_RELEASE_SOURCED _HELIX_COMMON_SOURCED _PY_BIN _PY_PROBED
+        source scripts/lib/installer/common.sh
+        source scripts/lib/installer/release.sh
+        validate_archive "$1" "Test "
+    ' _ "$TMP_DIR/good.zip"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"neither unzip nor python3"* ]]
+}
+
+# =========================================================================
 # check_https_capability
 # =========================================================================
 
@@ -320,7 +603,8 @@ MOCK
 
     run env PATH="$bin" /bin/bash -c '
         source tests/shell/helpers.bash
-        unset _HELIX_RELEASE_SOURCED
+        unset _HELIX_RELEASE_SOURCED _HELIX_COMMON_SOURCED _PY_BIN _PY_PROBED
+        source scripts/lib/installer/common.sh
         source scripts/lib/installer/release.sh
         check_https_capability
     '
@@ -350,7 +634,8 @@ MOCK
 
     run env PATH="$bin" /bin/bash -c '
         source tests/shell/helpers.bash
-        unset _HELIX_RELEASE_SOURCED
+        unset _HELIX_RELEASE_SOURCED _HELIX_COMMON_SOURCED _PY_BIN _PY_PROBED
+        source scripts/lib/installer/common.sh
         source scripts/lib/installer/release.sh
         check_https_capability
     '

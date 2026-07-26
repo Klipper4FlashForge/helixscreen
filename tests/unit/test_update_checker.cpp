@@ -1553,3 +1553,160 @@ TEST_CASE("get_platform_display_name returns correct strings for known platforms
     // Unknown keys fall back to the key itself.
     REQUIRE(UpdateChecker::get_platform_display_name("unknown-platform") == "unknown-platform");
 }
+
+// ============================================================================
+// Zip integrity verification (prestonbrown/helixscreen#993)
+//
+// Release archives ship as .zip, and `unzip -t` support depends on the
+// firmware's BusyBox vintage. Verified on-device:
+//
+//   BusyBox 1.29.3 (FlashForge AD5M)    no -t: "invalid option -- 't'"
+//   BusyBox 1.31.1 (Creality K1)        no -t: "invalid option -- 't'"
+//   BusyBox 1.36.1 (Elegoo Centauri)    -t present and correct
+//   info-zip 6.00  (Debian/Pi/desktop)  -t present and correct
+//
+// Using `unzip -t` as the primary check therefore failed every AD5M and K1
+// update on an intact download ("Error: Corrupt download").
+// verify_zip_integrity() prefers python3's zipfile.testzip(), which behaves
+// identically everywhere.
+//
+// NOTE: the Unverifiable path (python present but built without zlib, as on the
+// AD5M, or no tools at all) cannot be exercised here -- verify_zip_integrity
+// resolves python3/unzip from absolute system directories, so a test cannot
+// shadow them via PATH. That path is covered by the installer's bats suite
+// ("python has no zlib (AD5M)") and was verified on the device itself.
+// ============================================================================
+
+namespace {
+
+/// True when a python3 capable of building zip fixtures is on this system.
+bool zip_fixture_tooling_available() {
+    return std::system("python3 -c 'import zipfile, zlib' >/dev/null 2>&1") == 0;
+}
+
+/// Run a python snippet with `path` as argv[1]. Returns true on exit 0.
+bool run_python_fixture(const std::string& script, const std::string& path) {
+    // Fixture construction only — the code under test never uses a shell.
+    std::string cmd = "python3 -c \"" + script + "\" '" + path + "' >/dev/null 2>&1";
+    return std::system(cmd.c_str()) == 0;
+}
+
+/// Build a zip containing one deflated, incompressible member.
+bool make_valid_zip(const std::string& path) {
+    return run_python_fixture("import os,sys,zipfile;"
+                              "z=zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED);"
+                              "z.writestr('bin/helix-screen', b'\\x7fELF'+os.urandom(65536));"
+                              "z.close()",
+                              path);
+}
+
+/// Flip a byte in the middle of the compressed payload. The archive stays
+/// structurally valid, so only a real per-entry CRC test can catch it — this is
+/// exactly what BusyBox 1.36's no-op `-t` waves through.
+bool corrupt_zip_payload(const std::string& path) {
+    return run_python_fixture("import sys;"
+                              "p=sys.argv[1];"
+                              "d=bytearray(open(p,'rb').read());"
+                              "d[len(d)//2]^=0xFF;"
+                              "open(p,'wb').write(bytes(d))",
+                              path);
+}
+
+/// Truncate the file, destroying the end-of-central-directory record.
+bool truncate_zip(const std::string& path) {
+    return run_python_fixture("import sys;"
+                              "p=sys.argv[1];"
+                              "d=open(p,'rb').read();"
+                              "open(p,'wb').write(d[:len(d)//2])",
+                              path);
+}
+
+std::string zip_fixture_path(const char* name) {
+    return std::string("/tmp/helix_zip_fixture_") + name + ".zip";
+}
+
+} // namespace
+
+TEST_CASE("verify_zip_integrity accepts an intact zip", "[update_checker][zip][993]") {
+    if (!zip_fixture_tooling_available()) {
+        SKIP("python3 with zipfile/zlib required to build zip fixtures");
+    }
+    const auto path = zip_fixture_path("good");
+    REQUIRE(make_valid_zip(path));
+
+    REQUIRE(UpdateChecker::verify_zip_integrity(path) == UpdateChecker::ZipIntegrity::Ok);
+    std::remove(path.c_str());
+}
+
+TEST_CASE("verify_zip_integrity rejects a CRC-corrupt zip", "[update_checker][zip][993]") {
+    // The archive is structurally intact — catching this REQUIRES a real
+    // per-entry CRC test, not `unzip -t` on BusyBox 1.36.
+    if (!zip_fixture_tooling_available()) {
+        SKIP("python3 with zipfile/zlib required to build zip fixtures");
+    }
+    const auto path = zip_fixture_path("crc");
+    REQUIRE(make_valid_zip(path));
+    REQUIRE(corrupt_zip_payload(path));
+
+    REQUIRE(UpdateChecker::verify_zip_integrity(path) == UpdateChecker::ZipIntegrity::Corrupt);
+    std::remove(path.c_str());
+}
+
+TEST_CASE("verify_zip_integrity rejects a truncated zip", "[update_checker][zip][993]") {
+    if (!zip_fixture_tooling_available()) {
+        SKIP("python3 with zipfile/zlib required to build zip fixtures");
+    }
+    const auto path = zip_fixture_path("trunc");
+    REQUIRE(make_valid_zip(path));
+    REQUIRE(truncate_zip(path));
+
+    REQUIRE(UpdateChecker::verify_zip_integrity(path) == UpdateChecker::ZipIntegrity::Corrupt);
+    std::remove(path.c_str());
+}
+
+TEST_CASE("verify_zip_integrity rejects non-zip and missing files", "[update_checker][zip][993]") {
+    if (!zip_fixture_tooling_available()) {
+        SKIP("python3 with zipfile/zlib required to build zip fixtures");
+    }
+
+    SECTION("HTML error page saved with a .zip name") {
+        // What a CDN 404/504 actually leaves on disk — issue #993's original
+        // "File is not a zip file" report.
+        const auto path = zip_fixture_path("html");
+        std::ofstream f(path);
+        f << "<!DOCTYPE html><html><body>504 Gateway Timeout</body></html>";
+        f.close();
+
+        REQUIRE(UpdateChecker::verify_zip_integrity(path) == UpdateChecker::ZipIntegrity::Corrupt);
+        std::remove(path.c_str());
+    }
+
+    SECTION("empty file") {
+        const auto path = zip_fixture_path("empty");
+        std::ofstream f(path);
+        f.close();
+
+        REQUIRE(UpdateChecker::verify_zip_integrity(path) == UpdateChecker::ZipIntegrity::Corrupt);
+        std::remove(path.c_str());
+    }
+
+    SECTION("nonexistent path") {
+        REQUIRE(UpdateChecker::verify_zip_integrity("/tmp/helix_zip_fixture_does_not_exist.zip") ==
+                UpdateChecker::ZipIntegrity::Corrupt);
+    }
+}
+
+TEST_CASE("verify_zip_integrity never reports Unverifiable when python3 exists",
+          "[update_checker][zip][993]") {
+    // Unverifiable must be reserved for systems with neither python3 nor unzip.
+    // On such a system the caller falls back to SHA256 rather than failing the
+    // update — but a normal device must always get a definitive answer.
+    if (!zip_fixture_tooling_available()) {
+        SKIP("python3 with zipfile/zlib required to build zip fixtures");
+    }
+    const auto path = zip_fixture_path("definitive");
+    REQUIRE(make_valid_zip(path));
+
+    REQUIRE(UpdateChecker::verify_zip_integrity(path) != UpdateChecker::ZipIntegrity::Unverifiable);
+    std::remove(path.c_str());
+}

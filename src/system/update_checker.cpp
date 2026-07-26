@@ -1214,13 +1214,26 @@ void UpdateChecker::do_download() {
     report_download_status(DownloadStatus::Verifying, 100, lv_tr("Verifying download..."));
 
     // Verify archive integrity (fork/exec to avoid shell injection)
-    int ret;
+    bool corrupt = false;
     if (path_is_zip(download_path)) {
-        ret = safe_exec({resolve_tool("unzip"), "-tqq", download_path});
+        switch (verify_zip_integrity(download_path)) {
+        case ZipIntegrity::Ok:
+            break;
+        case ZipIntegrity::Corrupt:
+            corrupt = true;
+            break;
+        case ZipIntegrity::Unverifiable:
+            // Nothing on this system can test the archive. Don't fail the
+            // update on a missing tool — the SHA256 check below is the real
+            // integrity gate whenever the manifest supplies a hash.
+            spdlog::warn("[UpdateChecker] No tool available to test zip integrity; "
+                         "relying on SHA256 verification");
+            break;
+        }
     } else {
-        ret = safe_exec({resolve_tool("gunzip"), "-t", download_path});
+        corrupt = safe_exec({resolve_tool("gunzip"), "-t", download_path}) != 0;
     }
-    if (ret != 0) {
+    if (corrupt) {
         spdlog::error("[UpdateChecker] Archive verification failed");
         std::remove(download_path.c_str());
         report_download_status(DownloadStatus::Error, 0, lv_tr("Error: Corrupt download"),
@@ -1285,6 +1298,51 @@ void UpdateChecker::do_download() {
     }
 
     do_install(download_path);
+}
+
+UpdateChecker::ZipIntegrity UpdateChecker::verify_zip_integrity(const std::string& zip_path) {
+    // python3's zipfile does a real per-entry CRC test. Prefer it over
+    // `unzip -t`, which is either rejected outright or a silent no-op on the
+    // BusyBox builds we ship to (see the header comment for the specifics).
+    const std::string py_bin = find_tool_path("python3");
+    if (!py_bin.empty()) {
+        // Exit codes: 0 = intact, 1 = corrupt, 2 = this python cannot test zips.
+        // Code 2 matters on the AD5M, whose python3.7 is built without zlib:
+        // ZipFile() raises "Compression requires the (missing) zlib module" for
+        // a deflated release zip, which must NOT be read as corruption.
+        static constexpr const char* kTestScript =
+            "import sys\n"
+            "try:\n"
+            "    import zipfile, zlib\n"
+            "except Exception:\n"
+            "    sys.exit(2)\n"
+            "try:\n"
+            "    with zipfile.ZipFile(sys.argv[1]) as zf:\n"
+            "        sys.exit(1 if zf.testzip() is not None else 0)\n"
+            "except RuntimeError:\n"
+            "    sys.exit(2)\n"
+            "except Exception:\n"
+            "    sys.exit(1)\n";
+        int ret = safe_exec({py_bin, "-c", kTestScript, zip_path});
+        if (ret == 0) {
+            return ZipIntegrity::Ok;
+        }
+        if (ret == 1) {
+            return ZipIntegrity::Corrupt;
+        }
+        // ret == 2 (or a crashed interpreter): fall through to the unzip probe.
+    }
+
+    // No usable python zipfile. Fall back to `unzip -l`, which reads the central
+    // directory on both BusyBox and info-zip: it catches truncation and garbage
+    // without false-failing a valid archive the way `-t` does on BusyBox 1.31.
+    const std::string unzip_bin = find_tool_path("unzip");
+    if (!unzip_bin.empty()) {
+        int ret = safe_exec({unzip_bin, "-l", zip_path});
+        return (ret == 0) ? ZipIntegrity::Ok : ZipIntegrity::Corrupt;
+    }
+
+    return ZipIntegrity::Unverifiable;
 }
 
 bool UpdateChecker::validate_elf_architecture(const std::string& tarball_path) {

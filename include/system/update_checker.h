@@ -307,6 +307,37 @@ class UpdateChecker {
     /** @brief Hide the update notification modal */
     void hide_update_notification();
 
+    /** @brief Result of a portable zip integrity probe. */
+    enum class ZipIntegrity {
+        Ok,           ///< Archive verified intact.
+        Corrupt,      ///< Archive is damaged or not a zip at all.
+        Unverifiable, ///< No tool on this system can test it — caller falls back to SHA256.
+    };
+
+    /**
+     * @brief Test a .zip archive's integrity with whatever tool can do it.
+     *
+     * `unzip -t` cannot be the primary check: support depends on the firmware's
+     * BusyBox vintage (prestonbrown/helixscreen#993). Verified on-device:
+     *
+     * | Platform                 | BusyBox | `unzip -t`            |
+     * |--------------------------|---------|-----------------------|
+     * | FlashForge AD5M          | 1.29.3  | absent — rejects `-t` |
+     * | Creality K1              | 1.31.1  | absent — rejects `-t` |
+     * | Elegoo Centauri Carbon   | 1.36.1  | present, correct      |
+     *
+     * On the first two, `unzip -tqq` exits 1 with "invalid option -- 't'", so an
+     * intact download was reported as a corrupt archive and every in-app update
+     * failed. python3's `zipfile.testzip()` does a real per-entry CRC check and
+     * behaves identically everywhere, so it is tried first — but it needs zlib
+     * as well as zipfile (release zips are deflated, and the AD5M's python3.7
+     * has no zlib), so a python that cannot test reports Unverifiable rather
+     * than Corrupt and we fall back to `unzip -l`.
+     *
+     * Public and static so it can be unit-tested directly.
+     */
+    static ZipIntegrity verify_zip_integrity(const std::string& zip_path);
+
   private:
     UpdateChecker() = default;
     ~UpdateChecker();

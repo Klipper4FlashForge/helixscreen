@@ -283,9 +283,54 @@ parse_manifest_platform_url() {
         sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
 }
 
+# Test a zip archive's integrity with whatever tool can actually do it.
+# Echoes "ok" / "corrupt" / "unverifiable" and always returns 0, so callers
+# can distinguish "this archive is bad" from "nothing here can check it".
+#
+# `unzip -t` cannot be the first choice because support for it varies by
+# firmware vintage (prestonbrown/helixscreen#993):
+#   - BusyBox 1.31.1 (Creality K1, verified on-device) has no -t at all:
+#     "unzip: invalid option -- 't'", exit 1. An intact download is then
+#     reported as a corrupt archive and every update fails.
+#   - BusyBox 1.32+ (verified on 1.36.1, Elegoo Centauri Carbon) does support
+#     -t and reports CRC errors correctly.
+#   - info-zip (Debian/Pi/desktop) supports -t correctly.
+# python3's zipfile.testzip() does a real per-entry CRC check and behaves
+# identically everywhere, so it goes first and we never have to probe unzip's
+# feature set. It needs zlib as well as zipfile: release zips are deflated, and
+# the AD5M's python3.7 is built without zlib, where ZipFile() raises
+# "Compression requires the (missing) zlib module" on a perfectly good archive.
+_zip_integrity() {
+    local archive=$1
+
+    if _py_has_module zipfile zlib; then
+        if _py_unzip_test "$archive"; then
+            echo "ok"
+        else
+            echo "corrupt"
+        fi
+        return 0
+    fi
+
+    # No usable python zipfile (absent, or built without zlib -- AD5M).
+    # `unzip -l` reads the central directory on both BusyBox and info-zip, so it
+    # catches truncation and garbage without ever false-failing a valid archive
+    # the way -t does on BusyBox 1.31 and older.
+    if command -v unzip >/dev/null 2>&1; then
+        if unzip -l "$archive" >/dev/null 2>&1; then
+            echo "ok"
+        else
+            echo "corrupt"
+        fi
+        return 0
+    fi
+
+    echo "unverifiable"
+}
+
 # Validate an archive is readable and not truncated.
-# Dispatches on the archive's filename extension: *.zip uses `unzip -tqq`,
-# everything else uses `gunzip -t`. Exits on failure.
+# Dispatches on the archive's filename extension: *.zip uses the portable
+# integrity check above, everything else uses `gunzip -t`. Exits on failure.
 # Args: archive_path, context (e.g., "Downloaded " or "Local ")
 validate_archive() {
     local archive=$1
@@ -293,22 +338,17 @@ validate_archive() {
 
     case "$archive" in
         *.zip)
-            if command -v unzip >/dev/null 2>&1; then
-                if ! unzip -tqq "$archive" >/dev/null 2>&1; then
+            case "$(_zip_integrity "$archive")" in
+                corrupt)
                     log_error "${context}file is not a valid zip archive."
                     [ -n "$context" ] && log_error "The ${context}may have been corrupted or incomplete."
                     exit 1
-                fi
-            elif _has_python; then
-                if ! _py_unzip_test "$archive"; then
-                    log_error "${context}file is not a valid zip archive."
-                    [ -n "$context" ] && log_error "The ${context}may have been corrupted or incomplete."
+                    ;;
+                unverifiable)
+                    log_error "${context}file is a zip but neither unzip nor python3 is available to validate it."
                     exit 1
-                fi
-            else
-                log_error "${context}file is a zip but neither unzip nor python3 is available to validate it."
-                exit 1
-            fi
+                    ;;
+            esac
             ;;
         *)
             if ! gunzip -t "$archive" 2>/dev/null; then
