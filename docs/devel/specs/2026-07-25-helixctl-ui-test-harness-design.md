@@ -57,9 +57,14 @@ Determinism therefore has two independent halves.
 One `freeze` command combining:
 
 - `lv_anim_delete_all()` to stop animations already running.
-- `animations_enabled = 0` (`DisplaySettingsManager`) to prevent new ones — an existing
-  setting with a subject, already honored at 51 call sites, so this half needs no new code
-  beyond wiring the command.
+- `animations_enabled = 0` to prevent new ones — an existing setting honored at 51 call sites.
+  **This must not go through `DisplaySettingsManager::set_animations_enabled()`**, which calls
+  `config->save()` and therefore writes the change to `settings.json` on disk. `freeze` is a
+  transient test-mode action; persisting it means a `--remote` dev instance that is killed or
+  crashes between `freeze` and `unfreeze` leaves the user's real config with animations
+  permanently disabled. Set the subject directly, or add a non-persisting setter for this
+  case. Automated tests are insulated by the `settings-test.json` split, which is exactly why
+  this would not have surfaced in testing.
 - Pausing periodic timers individually, **with a skip list** (see below); the codebase has 85
   `lv_timer_create` sites driving repaints.
 - Pinning the simulated clock.
