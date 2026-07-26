@@ -1001,6 +1001,17 @@ describe("Dashboard endpoints", () => {
   beforeEach(() => {
     env = createEnv();
     mockExecuteQuery.mockReset();
+    // Default every query to an empty result set. Each test still chains
+    // mockResolvedValueOnce for the queries its assertions care about; this
+    // only backstops the rest.
+    //
+    // Without it, a handler that issues more queries than the test mocks gets
+    // `undefined` back, and reading `.data` off it throws — surfacing as an
+    // opaque 502 rather than a useful assertion failure. That is exactly how
+    // these tests drifted: overviewQueries grew to 7 while the tests still
+    // mocked 5, and the whole Dashboard block had been red long enough that
+    // nobody noticed (the worker suite is not wired into CI).
+    mockExecuteQuery.mockResolvedValue({ data: [] } as never);
   });
 
   // -- Shared auth/config tests --
@@ -1236,6 +1247,8 @@ describe("Dashboard endpoints", () => {
         signal: "SIGSEGV",
         platform: "pi",
         uptime_sec: 325,
+        // deduplicateCrashes collapses repeats and reports how many it merged.
+        occurrences: 1,
       });
     });
 
@@ -1254,17 +1267,41 @@ describe("Dashboard endpoints", () => {
     it("clamps limit to 1-200 range", async () => {
       mockExecuteQuery.mockResolvedValue({ data: [] });
 
-      // Default limit (no param)
+      // The handler over-fetches 5x the requested limit so dedup still has
+      // enough rows to work with, then slices back down. So the SQL LIMIT is
+      // always limit*5, not limit.
+
+      // Default limit (no param) -> 50, SQL asks for 250
       await worker.fetch(dashboardRequest("/v1/dashboard/crash-list"), env);
       const firstCall = mockExecuteQuery.mock.calls[0][1] as string;
-      expect(firstCall).toContain("LIMIT 50");
+      expect(firstCall).toContain("LIMIT 250");
 
       mockExecuteQuery.mockClear();
 
-      // Over 200 gets clamped
+      // Over 200 gets clamped to 200, SQL asks for 1000
       await worker.fetch(dashboardRequest("/v1/dashboard/crash-list?limit=500"), env);
       const secondCall = mockExecuteQuery.mock.calls[0][1] as string;
-      expect(secondCall).toContain("LIMIT 200");
+      expect(secondCall).toContain("LIMIT 1000");
+
+      mockExecuteQuery.mockClear();
+
+      // A negative is what the Math.max(1, ...) floor actually guards against:
+      // -5 clamps to 1, so the SQL asks for 5.
+      await worker.fetch(dashboardRequest("/v1/dashboard/crash-list?limit=-5"), env);
+      expect(mockExecuteQuery.mock.calls[0][1] as string).toContain("LIMIT 5");
+
+      mockExecuteQuery.mockClear();
+
+      // limit=0 and a non-numeric limit both fall back to the default 50
+      // (-> 250) rather than reaching the floor: the handler uses `|| 50`, and
+      // 0 is falsy. Asserted so the fallback is deliberate rather than assumed.
+      await worker.fetch(dashboardRequest("/v1/dashboard/crash-list?limit=0"), env);
+      expect(mockExecuteQuery.mock.calls[0][1] as string).toContain("LIMIT 250");
+
+      mockExecuteQuery.mockClear();
+
+      await worker.fetch(dashboardRequest("/v1/dashboard/crash-list?limit=abc"), env);
+      expect(mockExecuteQuery.mock.calls[0][1] as string).toContain("LIMIT 250");
     });
   });
 
