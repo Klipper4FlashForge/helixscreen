@@ -129,7 +129,7 @@ lv_timer_handler()       libhv Event Loop       UpdateChecker
 
 ### Reference implementations
 
-- `src/printer_state.cpp` — the `set_*_internal()` pattern (`set_printer_capabilities()` →
+- `src/printer/printer_state.cpp` — the `set_*_internal()` pattern (`set_printer_capabilities()` →
   `set_printer_capabilities_internal()`, and likewise for `set_klipper_version()`,
   `set_klippy_state()`)
 - `src/api/wifi_manager.cpp` — every event handler parses on the background thread, then
@@ -785,10 +785,10 @@ Relevant tags: `[state]` (subjects/observers), `[connection]` (WebSocket lifecyc
 | `include/ui_utils.h` | `safe_delete_deferred`, `safe_clean_children`, `safe_delete_subtree` |
 | `include/static_subject_registry.h` | Shutdown cleanup registry |
 | `include/http_executor.h` | `HttpExecutor::fast()` / `slow()` pools |
-| `include/bt_bus_thread.h` | BlueZ `BusThread` |
+| `src/bluetooth/bt_bus_thread.h` | BlueZ `BusThread` |
 | `include/ui_timer_guard.h` | `LvglTimerGuard` RAII |
 | `include/ui_widget_memory.h` | `lvgl_unique_ptr` / `lvgl_make_unique` |
-| `src/printer_state.cpp` | `set_*_internal()` reference pattern |
+| `src/printer/printer_state.cpp` | `set_*_internal()` reference pattern |
 | `src/api/wifi_manager.cpp` | Backend integration reference |
 | `src/application/application.cpp` | Main loop and shutdown order |
 | `scripts/check_l081_anti_pattern.py` | L081 lint gate |
