@@ -99,3 +99,55 @@ create_fake_mips_elf() {
 create_fake_aarch64_elf() {
     create_fake_elf "$1" "02" "b7"
 }
+
+# ---------------------------------------------------------------------------
+# BSD/macOS portability
+#
+# The installer scripts ship to Linux devices, so their GNU idioms (sed -i EXPR,
+# stat -c) are correct there. Only the test host may differ, so the shims live
+# here rather than in scripts/lib/installer/.
+# ---------------------------------------------------------------------------
+
+# Put a GNU-compatible `sed` on PATH when the host sed is BSD (macOS).
+#
+# BSD sed reads the argument after -i as a backup suffix, so GNU-style
+# `sed -i EXPR FILE` either errors ("sed: -e: No such file or directory") or
+# consumes EXPR as the suffix and then blocks reading stdin. Call this from
+# setup() in any test that runs `sed -i` itself or sources installer code
+# that does.
+install_gnu_sed_shim() {
+    [ -n "${_HELIX_GNU_SED_SHIM:-}" ] && return 0
+
+    local real
+    real=$(command -v sed) || return 1
+    # Probe the REAL sed before the shim can shadow it on PATH.
+    if "$real" --version >/dev/null 2>&1; then
+        _HELIX_GNU_SED_SHIM=gnu   # already GNU, nothing to do
+        return 0
+    fi
+
+    mkdir -p "$BATS_TEST_TMPDIR/gnubin"
+    cat > "$BATS_TEST_TMPDIR/gnubin/sed" <<SHIM
+#!/bin/sh
+# Translate GNU 'sed -i EXPR...' into BSD 'sed -i "" EXPR...'.
+if [ "\$1" = "-i" ]; then
+    shift
+    exec $real -i '' "\$@"
+fi
+exec $real "\$@"
+SHIM
+    chmod +x "$BATS_TEST_TMPDIR/gnubin/sed"
+    export PATH="$BATS_TEST_TMPDIR/gnubin:$PATH"
+    _HELIX_GNU_SED_SHIM=shim
+}
+
+# Modification time in epoch seconds (GNU `stat -c %Y`, BSD `stat -f %m`).
+stat_mtime() {
+    stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"
+}
+
+# Last element of bats' $lines array. bash 3.2 (macOS) has no negative
+# subscripts, so ${lines[-1]} is a "bad array subscript" error there.
+last_line() {
+    printf '%s' "${lines[$((${#lines[@]} - 1))]}"
+}

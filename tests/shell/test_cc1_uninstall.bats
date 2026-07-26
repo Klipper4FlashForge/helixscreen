@@ -30,6 +30,9 @@ EOF
 
 setup() {
     load helpers
+    # This test rewrites paths with `sed -i` and sources uninstall.sh, which
+    # does the same. Both need GNU -i semantics.
+    install_gnu_sed_shim
 
     log_info() { echo "INFO: $*"; }
     log_warn() { echo "WARN: $*"; }

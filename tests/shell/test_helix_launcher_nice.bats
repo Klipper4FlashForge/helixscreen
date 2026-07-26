@@ -154,7 +154,7 @@ skip_if_real_klipper_sockets() {
     run env "PATH=$EMPTY" "$SH" -c \
         ". '$BATS_TEST_TMPDIR/co_hosted.sh' && helix_klipper_co_hosted; echo \$?"
     [ "$status" -eq 0 ]            # `echo` always succeeds
-    [ "${lines[-1]}" = "1" ]        # function itself returned 1
+    [ "$(last_line)" = "1" ]        # function itself returned 1
 }
 
 @test "co-host detection: socket fallback only fires if sockets exist" {

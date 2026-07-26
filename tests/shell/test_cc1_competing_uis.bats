@@ -41,6 +41,9 @@ EOF
 
 setup() {
     load helpers
+    # competing_uis.sh falls back to `sed -i` on cosmos.conf when config-manager
+    # refuses the value; that GNU form needs translating on a BSD host.
+    install_gnu_sed_shim
 
     log_info() { echo "INFO: $*"; }
     log_warn() { echo "WARN: $*"; }
