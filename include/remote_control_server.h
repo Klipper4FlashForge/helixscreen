@@ -21,9 +21,12 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "hv/json.hpp"
 #include "remote_transport.h"
+
+struct _lv_timer_t;
 
 namespace helix {
 
@@ -133,6 +136,11 @@ class RemoteControlServer {
     nlohmann::json handle_wait_for(const nlohmann::json& params);
     nlohmann::json handle_wait_idle(const nlohmann::json& params);
 
+    // Determinism toggle: stop/resume animations + periodic timers for
+    // reproducible captures. See docs/devel/HELIXCTL.md "Diagnostics & lifecycle".
+    nlohmann::json handle_freeze(const nlohmann::json& params);
+    nlohmann::json handle_unfreeze(const nlohmann::json& params);
+
     // Phase 3 handlers
     nlohmann::json handle_click(const nlohmann::json& params);
     nlohmann::json handle_set_widget_value(const nlohmann::json& params);
@@ -165,6 +173,15 @@ class RemoteControlServer {
 
     // Command registry
     std::unordered_map<std::string, CommandHandler> handlers_;
+
+    /// Timers `freeze` paused, so `unfreeze` resumes exactly that set and
+    /// never resumes one that was already paused by its own owner.
+    std::vector<_lv_timer_t*> paused_timers_;
+
+    /// Guards against a second `freeze` re-scanning while already frozen,
+    /// which would find every timer already paused, track none of them, and
+    /// make `unfreeze` forget the original set — leaving it paused forever.
+    bool frozen_ = false;
 };
 
 /**

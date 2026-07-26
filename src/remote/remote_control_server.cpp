@@ -10,6 +10,7 @@
 
 #include "app_globals.h"
 #include "demo_overlays.h"
+#include "display_settings_manager.h"
 #include "logging_init.h"
 #include "mock_scenarios.h"
 #include "printer_state.h"
@@ -274,6 +275,8 @@ void RemoteControlServer::register_builtin_handlers() {
     };
     handlers_["wait_for"] = [this](const nlohmann::json& p) { return handle_wait_for(p); };
     handlers_["wait_idle"] = [this](const nlohmann::json& p) { return handle_wait_idle(p); };
+    handlers_["freeze"] = [this](const nlohmann::json& p) { return handle_freeze(p); };
+    handlers_["unfreeze"] = [this](const nlohmann::json& p) { return handle_unfreeze(p); };
 
     // Phase 3: Widget interaction + scenarios
     handlers_["click"] = [this](const nlohmann::json& p) { return handle_click(p); };
@@ -1234,6 +1237,87 @@ nlohmann::json RemoteControlServer::handle_wait_idle(const nlohmann::json& param
         last = now;
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
+}
+
+nlohmann::json RemoteControlServer::handle_freeze(const nlohmann::json& /*params*/) {
+    return execute_on_ui_thread([this]() -> nlohmann::json {
+        // Stop animations already in flight, then prevent new ones from
+        // starting. animations_enabled is an existing setting honored at
+        // ~51 call sites, so this half needs no new plumbing.
+        lv_anim_delete_all();
+        DisplaySettingsManager::instance().set_animations_enabled(false);
+
+        // Idempotent: a second freeze() while already frozen must not
+        // re-scan and clobber paused_timers_ — every timer would already be
+        // paused, so the scan would track none of them and unfreeze() would
+        // forget the original set, leaving it paused forever.
+        if (frozen_) {
+            return {{"frozen", true}, {"timers_paused", static_cast<int>(paused_timers_.size())}};
+        }
+
+        // Pause periodic timers one at a time rather than lv_timer_enable(false):
+        // UpdateQueue's processor is itself an lv_timer, and this very handler
+        // was dispatched through it via execute_on_ui_thread(). A global disable
+        // would stop the queue that delivers unfreeze, wedging the channel.
+        lv_timer_t* const queue_timer = helix::ui::UpdateQueue::instance().timer();
+        lv_timer_t* const refr_timer = lv_display_get_refr_timer(lv_display_get_default());
+
+        paused_timers_.clear();
+        lv_timer_t* t = lv_timer_get_next(nullptr);
+        while (t) {
+            lv_timer_t* next = lv_timer_get_next(t);
+            const bool skip = (t == queue_timer) || (t == refr_timer);
+            // A no-op lv_timer_pause() on an already-paused timer is harmless,
+            // but resuming it later would not be — only track timers we
+            // actually changed, so unfreeze never touches one paused by its
+            // own owner for an unrelated reason.
+            if (!skip && !lv_timer_get_paused(t)) {
+                lv_timer_pause(t);
+                paused_timers_.push_back(t);
+            }
+            t = next;
+        }
+        frozen_ = true;
+
+        spdlog::debug("[RemoteControl] freeze: paused {} timers (skipped queue+refresh)",
+                      paused_timers_.size());
+        return {{"frozen", true}, {"timers_paused", static_cast<int>(paused_timers_.size())}};
+    });
+}
+
+nlohmann::json RemoteControlServer::handle_unfreeze(const nlohmann::json& /*params*/) {
+    return execute_on_ui_thread([this]() -> nlohmann::json {
+        // Not frozen: a no-op rather than an error, so a defensive `finally:
+        // unfreeze()` never needs its own guard around whether freeze ran.
+        if (!frozen_) {
+            return {{"frozen", false}, {"timers_resumed", 0}};
+        }
+
+        int resumed = 0;
+        for (lv_timer_t* t : paused_timers_) {
+            // A tracked timer may have been deleted while frozen (e.g. panel
+            // teardown), so confirm it is still in LVGL's live list before
+            // touching what would otherwise be a dangling pointer.
+            bool still_live = false;
+            for (lv_timer_t* live = lv_timer_get_next(nullptr); live;
+                 live = lv_timer_get_next(live)) {
+                if (live == t) {
+                    still_live = true;
+                    break;
+                }
+            }
+            if (still_live) {
+                lv_timer_resume(t);
+                resumed++;
+            }
+        }
+        paused_timers_.clear();
+        frozen_ = false;
+        DisplaySettingsManager::instance().set_animations_enabled(true);
+
+        spdlog::debug("[RemoteControl] unfreeze: resumed {} timers", resumed);
+        return {{"frozen", false}, {"timers_resumed", resumed}};
+    });
 }
 
 nlohmann::json RemoteControlServer::handle_click(const nlohmann::json& params) {

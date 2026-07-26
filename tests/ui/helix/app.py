@@ -197,6 +197,19 @@ class HelixApp:
         """
         return self.ctl("wait_idle", "--timeout", timeout)
 
+    def freeze(self) -> dict:
+        """Stop animations and pause periodic timers for deterministic capture.
+
+        Skips the UpdateQueue processor and display-refresh timers so the
+        control channel keeps working and screenshots still render — see
+        docs/devel/HELIXCTL.md "Diagnostics & lifecycle".
+        """
+        return self.ctl("freeze")
+
+    def unfreeze(self) -> dict:
+        """Reverse freeze(): resume the timers it paused, re-enable animations."""
+        return self.ctl("unfreeze")
+
     def current(self) -> dict:
         # CLI token is `current`; `get_current` is the wire method name.
         return self.ctl("current")

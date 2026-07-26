@@ -239,6 +239,8 @@ state, constructed with representative sample data and the real lifecycle:
 | Command | Meaning |
 |---------|---------|
 | `wait_idle [--timeout N]` | Block until `UpdateQueue` and `HttpExecutor` are both quiet (default 10s), so a script can gate on real async work instead of a fixed `sleep` |
+| `freeze` | Stop the moving parts for a reproducible capture: `lv_anim_delete_all()` plus `animations_enabled = 0`, and pause every periodic `lv_timer` except two (see below). Returns `{"frozen": true, "timers_paused": N}` |
+| `unfreeze` | Reverse `freeze`: resume exactly the timers it paused, re-enable animations. Returns `{"frozen": false, "timers_resumed": N}` |
 | `log [-n N]` | Tail the app's in-memory log ring buffer (default 50 lines). Printed as raw lines, so it pipes to `grep` |
 | `shutdown` | Ask the app to exit its main loop (`app_request_quit`), running the normal shutdown path |
 
@@ -288,11 +290,48 @@ large and grows. Known gaps:
 | Mock backends | `moonraker_client_mock.cpp` (`simulation_thread_` + 3 timers), `moonraker_client_mock_print.cpp` (2 timers), `ams_backend_mock.cpp` (6 threads), `wifi_backend_mock.cpp` (2) | Mock mode **adds** nondeterminism |
 | Deferred deletion | `safe_delete_deferred` / `lv_obj_delete_async` / `safe_clean_children` sites | Escapes the queue by design — `pending == 0` does not mean the old subtree is gone |
 
-A separate `freeze` command (stop animations, pause timers, pin the clock) is
-planned to pair with `wait_idle` for screenshot-quality stability — see
-`docs/devel/specs/2026-07-25-helixctl-ui-test-harness-design.md`
-§ "Determinism model" for the full design, including why a global
-`lv_timer_enable(false)` can't be used.
+#### `freeze` / `unfreeze` — the other half of determinism
+
+`freeze` pairs with `wait_idle` for screenshot-quality stability: `wait_idle`
+waits for async work to *land*, `freeze` stops the moving parts so a captured
+frame doesn't change again a moment later. It combines three things:
+
+- `lv_anim_delete_all()` — stop animations already running.
+- `DisplaySettingsManager`'s existing `animations_enabled` setting, set to
+  `false` — prevents new animations from starting. This setting already has a
+  subject and is honored at ~51 call sites, so no new plumbing was needed here.
+- Pausing every periodic `lv_timer` one at a time via `lv_timer_pause()`,
+  **with a two-entry skip list**.
+
+**The skip list, and why a global `lv_timer_enable(false)` cannot be used
+instead:** `UpdateQueue`'s processor is itself an `lv_timer`
+(`include/ui_update_queue.h`), and `RemoteControlServer::execute_on_ui_thread`
+dispatches every handler — including `unfreeze` itself — through
+`helix::ui::queue_update()`. A global timer disable stops that processor along
+with everything else, so the very next command blocks for the 10s UI-thread
+timeout and throws. `freeze` would brick the control channel it arrived on.
+Two timers are therefore left running by identity:
+
+1. `UpdateQueue`'s own timer (exposed via a `timer()` accessor), or the
+   control server can never dispatch another command, `unfreeze` included.
+2. The display refresh timer (`lv_display_get_refr_timer()`), or nothing
+   renders and a frame-hash screenshot gate never observes a new frame.
+
+`unfreeze` resumes exactly the set of timers `freeze` paused — tracked as a
+`std::vector<lv_timer_t*>` on the server — and re-enables animations. A timer
+legitimately deleted while frozen (e.g. panel teardown) is skipped rather than
+dereferenced: `unfreeze` walks the live timer list to confirm each tracked
+pointer still exists before resuming it.
+
+Both ends are idempotent: a `freeze` while already frozen returns the existing
+`timers_paused` count rather than re-scanning (every timer would already read
+paused, so a naive re-scan would track none of them and orphan the original
+set); an `unfreeze` with no prior `freeze` is a no-op returning
+`timers_resumed: 0`, so a defensive `try/finally: unfreeze()` never needs to
+guard whether `freeze` actually ran first.
+
+See `docs/devel/specs/2026-07-25-helixctl-ui-test-harness-design.md`
+§ "Determinism model" for the full design rationale.
 
 ### Subjects & scenarios
 | Command | Meaning |

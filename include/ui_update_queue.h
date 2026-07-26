@@ -314,6 +314,18 @@ class UpdateQueue {
     }
 
     /**
+     * @brief The processing timer itself, for callers that pause LVGL timers
+     * en masse and must skip this one by identity.
+     *
+     * Pausing it stops all queued UI work — including remote-control
+     * dispatch, since RemoteControlServer::execute_on_ui_thread() posts
+     * through this same queue. See RemoteControlServer::handle_freeze().
+     */
+    lv_timer_t* timer() const {
+        return timer_;
+    }
+
+    /**
      * @brief Number of callbacks waiting to run, including frozen ones.
      *
      * Frozen work counts: a ScopedFreeze buffers rather than drops, so those

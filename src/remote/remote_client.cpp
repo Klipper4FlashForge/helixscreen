@@ -83,6 +83,11 @@ static void print_usage() {
     printf("  wait_idle [--timeout N] Block until UpdateQueue and HttpExecutor are both\n");
     printf("                          quiet (default 10s). Best-effort — see\n");
     printf("                          docs/devel/HELIXCTL.md for what it cannot see\n");
+    printf("  freeze                  Stop animations + pause periodic timers for a\n");
+    printf("                          reproducible capture (skips the update-queue and\n");
+    printf("                          display-refresh timers so the channel stays alive)\n");
+    printf("  unfreeze                Reverse freeze: resume paused timers, re-enable\n");
+    printf("                          animations\n");
     printf("  log [-n N]              Tail the app's in-memory log ring (default 50 lines)\n");
     printf("  shutdown, quit          Ask the running app to exit\n");
     printf("\nScenarios:\n");
@@ -417,6 +422,10 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
             }
         }
         return build_request("wait_idle", params);
+    } else if (cmd == "freeze") {
+        return build_request("freeze");
+    } else if (cmd == "unfreeze") {
+        return build_request("unfreeze");
     } else if (cmd == "click") {
         if (tokens.size() < 2) {
             fprintf(stderr, "Error: click requires a widget name or @path\n");
@@ -500,7 +509,7 @@ static const char* REPL_COMMANDS[] = {
     "ping",        "navigate",   "cd",         "go_back",   "back",
     "list_panels", "list_components", "list_callbacks", "current",  "pwd",       "screenshot",
     "status",      "wake",       "demo",       "get",       "set",       "list_subjects",
-    "wait_for",    "wait_idle",  "ls",         "describe_screen", "click",  "set_value",
+    "wait_for",    "wait_idle",  "freeze",     "unfreeze",  "ls",         "describe_screen", "click",  "set_value",
     "scroll",      "scenario",   "list_scenarios",  "help",   "refresh",
     "log",         "shutdown",   "geom",       "get_const", "quit",
     "exit",        nullptr};
@@ -677,6 +686,8 @@ static void repl_print_help() {
     printf("  list_subjects             List all subjects\n");
     printf("  wait_for <s> <v> [-t N]   Wait for subject to match value\n");
     printf("  wait_idle [-t N]          Block until the UI has settled (default 10s)\n");
+    printf("  freeze                    Stop animations + pause timers for capture\n");
+    printf("  unfreeze                  Reverse freeze\n");
     printf("  ls [target]               List widgets here, or one widget's subtree\n");
     printf("  click <widget>            Click a widget (descends into composite rows)\n");
     printf("  set_value <widget> <v>    Set widget value\n");
