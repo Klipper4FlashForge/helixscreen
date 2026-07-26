@@ -95,13 +95,31 @@ _RECIPES = _load_recipes()
 #     the same category of issue the design spec flags for the print-select
 #     loading spinner), so `freeze()` catches it at a different arc position
 #     each time — confirmed as a small (~15px) but real diff across runs.
+#   - `print-select`: was in this list and briefly golden'd, then pulled after
+#     discovering it isn't safe under normal full-suite execution.
+#     `UsbBackendMock::start()` (usb_backend_mock.cpp) spawns a background
+#     thread that inserts a demo USB drive exactly 1.5s after boot — a fixed
+#     delay, not open-ended jitter, but one with no subject to `wait_for`:
+#     `PrintSelectUsbSource::on_drive_inserted()` shows the Printer/USB source
+#     selector row via a bare `lv_obj_remove_flag(..., LV_OBJ_FLAG_HIDDEN)`,
+#     invisible to both `wait_idle()` and `freeze()`. A capture taken before
+#     1.5s has elapsed since boot shows the plain file grid (no selector row,
+#     content starts higher); one taken after shows the full selector row
+#     (content shifted down) with correct full-color thumbnails. Isolated runs
+#     of just this file reliably land before the 1.5s mark; a full `pytest
+#     tests/ui/` run reliably lands after it (other files' setup alone burns
+#     >1.5s). Confirmed with matching log lines ("Source selector configured
+#     (hidden until USB drive inserted)" at boot, "USB drive inserted -
+#     showing source selector" ~1.5s later) and byte-for-byte comparison of
+#     both states. Needs a real decision (wait on a fixed, bounded delay vs.
+#     exposing a subject vs. deferring) before it can be golden'd again.
 #
 # Kept: every base panel except the temp-bearing ones above, a representative
 # handful of overlays reached through their real click handlers (each a
 # full-screen replacement with no backdrop bleed-through), and the one `demo`
 # screen (`ams`) that renders no live telemetry.
 _SUBSET = [
-    "settings", "advanced", "print-select",
+    "settings", "advanced",
     "motion", "bed-mesh", "zoffset", "macros",
     "ams",
 ]
