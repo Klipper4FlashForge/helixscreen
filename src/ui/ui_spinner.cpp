@@ -261,7 +261,8 @@ static void* ui_spinner_create(lv_xml_parser_state_t* state, const char** attrs)
     // slot pulse). Matters beyond cosmetics: spinners embedded in overlays
     // that are built once and hidden (e.g. print_file_detail's loading
     // overlay, part of the always-built print_select_panel) would otherwise
-    // animate forever in the background regardless of visibility.
+    // burn three animation timers forever in the background regardless of
+    // visibility — wasted CPU on the smallest devices this ships to.
     if (helix::DisplaySettingsManager::instance().get_animations_enabled()) {
         start_material_spinner_animations(arc);
     }

@@ -238,7 +238,7 @@ state, constructed with representative sample data and the real lifecycle:
 ### Diagnostics & lifecycle
 | Command | Meaning |
 |---------|---------|
-| `wait_idle [--timeout N]` | Block until `UpdateQueue`, running animations, and `HttpExecutor` are all quiet (default 10s), so a script can gate on real async work instead of a fixed `sleep` |
+| `wait_idle [--timeout N]` | Block until `UpdateQueue` and `HttpExecutor` are both quiet (default 10s), so a script can gate on real async work instead of a fixed `sleep` |
 | `log [-n N]` | Tail the app's in-memory log ring buffer (default 50 lines). Printed as raw lines, so it pipes to `grep` |
 | `shutdown` | Ask the app to exit its main loop (`app_request_quit`), running the normal shutdown path |
 
@@ -253,12 +253,28 @@ meanings available.
 
 #### `wait_idle` — what it can and cannot see
 
-`wait_idle` polls three counters from the transport thread — `UpdateQueue`
-pending work (including anything buffered by a `freeze`), `lv_anim_count_running()`,
-and `HttpExecutor` in-flight items on both lanes — and returns once all three read
-zero on two consecutive samples (a single zero reading can land in the gap between
-one callback finishing and the next being enqueued by the work it just completed).
-A timeout names the nonzero counter(s) rather than just saying time ran out.
+`wait_idle` polls two counters from the transport thread — `UpdateQueue` pending
+work (including anything buffered by a `freeze`) and `HttpExecutor` in-flight
+items on both lanes — and returns once both read zero on two consecutive
+samples (a single zero reading can land in the gap between one callback
+finishing and the next being enqueued by the work it just completed). A
+timeout names the nonzero counter(s) rather than just saying time ran out.
+
+**Animations are deliberately not one of the counters.** An earlier version of
+this design also counted `lv_anim_count_running()`, but a real UI has
+legitimately perpetual animations, so "zero animations running" is not a
+reachable idle state in general — it is a property of one screen in one
+settings configuration, not of the app having finished its work. Concretely:
+`print_file_detail`'s loading spinner lives inside the eagerly-built
+`print_select_panel`, so its animations run from boot onward regardless of
+which screen is displayed — counting them made `wait_idle` succeed only when
+the `animations_enabled` setting happened to be off. Animation-driven pixel
+churn is covered instead by the frame-hash screenshot gate, which measures
+whether pixels actually stopped changing rather than inferring it from a
+counter. (Separately, that spinner not animating while invisible is a real
+performance fix — an eagerly-built widget burning three animation timers
+forever is wasted CPU on the smallest devices shipped — but it's independent
+of the `wait_idle` contract.)
 
 It is **best-effort by design**, not a hard guarantee: the enumeration surface is
 large and grows. Known gaps:
@@ -272,13 +288,9 @@ large and grows. Known gaps:
 | Mock backends | `moonraker_client_mock.cpp` (`simulation_thread_` + 3 timers), `moonraker_client_mock_print.cpp` (2 timers), `ams_backend_mock.cpp` (6 threads), `wifi_backend_mock.cpp` (2) | Mock mode **adds** nondeterminism |
 | Deferred deletion | `safe_delete_deferred` / `lv_obj_delete_async` / `safe_clean_children` sites | Escapes the queue by design — `pending == 0` does not mean the old subtree is gone |
 
-A screen is not stable just because animations stop — and not everything that's
-running is a bug: a heater icon pulsing while genuinely heating, or a fan icon
-spinning while genuinely spinning, are correct, real, perpetually-running
-animations that `wait_idle` will never see finish, which is why it's a settling
-check, not a screenshot-stability gate. A separate `freeze` command (stop
-animations, pause timers, pin the clock) is planned to pair with `wait_idle` for
-that purpose — see `docs/devel/specs/2026-07-25-helixctl-ui-test-harness-design.md`
+A separate `freeze` command (stop animations, pause timers, pin the clock) is
+planned to pair with `wait_idle` for screenshot-quality stability — see
+`docs/devel/specs/2026-07-25-helixctl-ui-test-harness-design.md`
 § "Determinism model" for the full design, including why a global
 `lv_timer_enable(false)` can't be used.
 

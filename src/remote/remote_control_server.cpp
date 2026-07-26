@@ -1175,27 +1175,35 @@ nlohmann::json RemoteControlServer::handle_wait_idle(const nlohmann::json& param
     // Sampled on the UI thread; compared on this (transport) thread. Polling
     // rather than blocking is deliberate — a handler that spun on the UI thread
     // would prevent the very work it is waiting for from running.
+    //
+    // Animations are deliberately NOT counted here. A real UI has legitimately
+    // perpetual animations (a heater icon pulsing while genuinely heating, a
+    // fan icon spinning while genuinely spinning), so "zero animations
+    // running" is not a reachable idle state in general — it is a property of
+    // one screen in one settings configuration, not of the app having
+    // finished its work. See the design spec's "Determinism model" for the
+    // concrete case that proved this (print_file_detail's loading spinner).
+    // Animation-driven pixel churn is the frame-hash screenshot gate's job,
+    // which measures whether pixels actually stopped changing instead of
+    // inferring it from a counter.
     struct Counters {
         size_t queue = 0;
-        size_t anims = 0;
         size_t http = 0;
-        bool idle() const { return queue == 0 && anims == 0 && http == 0; }
+        bool idle() const { return queue == 0 && http == 0; }
     };
 
     auto sample = [this]() -> Counters {
         auto j = execute_on_ui_thread([]() -> nlohmann::json {
             return {{"queue", helix::ui::UpdateQueue::instance().pending_count()},
-                    {"anims", static_cast<size_t>(lv_anim_count_running())},
                     {"http", helix::http::HttpExecutor::fast().inflight() +
                                  helix::http::HttpExecutor::slow().inflight()}};
         });
-        return Counters{j["queue"].get<size_t>(), j["anims"].get<size_t>(),
-                        j["http"].get<size_t>()};
+        return Counters{j["queue"].get<size_t>(), j["http"].get<size_t>()};
     };
 
     const auto start = std::chrono::steady_clock::now();
     const auto deadline = start + std::chrono::duration<double>(timeout_s);
-    Counters last{1, 1, 1}; // force at least two samples before declaring idle
+    Counters last{1, 1}; // force at least two samples before declaring idle
 
     while (true) {
         Counters now = sample();
@@ -1211,7 +1219,6 @@ nlohmann::json RemoteControlServer::handle_wait_idle(const nlohmann::json& param
             throw std::runtime_error(
                 "wait_idle timed out after " + std::to_string(timeout_s) +
                 "s — update_queue=" + std::to_string(now.queue) +
-                " animations=" + std::to_string(now.anims) +
                 " http=" + std::to_string(now.http));
         }
         last = now;

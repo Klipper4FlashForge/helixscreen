@@ -31,6 +31,9 @@ def test_wait_idle_reports_which_counter_was_busy_on_timeout(helix_app):
     with pytest.raises(HelixCtlError) as exc:
         helix_app.wait_idle(timeout=0.0)
     # The message must name a counter, not just say "timeout" — a bare timeout
-    # costs an hour of guessing which subsystem was busy.
+    # costs an hour of guessing which subsystem was busy. Animations are
+    # deliberately not one of the counters wait_idle can name — see the design
+    # spec's "Determinism model" for why a real UI can have legitimately
+    # perpetual animations that would make "zero" unreachable.
     assert any(k in exc.value.message
-               for k in ("update_queue", "animations", "http")), exc.value.message
+               for k in ("update_queue", "http")), exc.value.message
