@@ -1,3 +1,5 @@
+diff --git a/src/drivers/sdl/lv_sdl_window.c b/src/drivers/sdl/lv_sdl_window.c
+index 15a87ab12..5826c31bf 100644
 --- a/src/drivers/sdl/lv_sdl_window.c
 +++ b/src/drivers/sdl/lv_sdl_window.c
 @@ -21,6 +21,10 @@
@@ -11,7 +13,7 @@
  #if LV_COLOR_DEPTH == 1 && LV_SDL_RENDER_MODE != LV_DISPLAY_RENDER_MODE_PARTIAL
      #error SDL LV_COLOR_DEPTH 1 requires LV_SDL_RENDER_MODE LV_DISPLAY_RENDER_MODE_PARTIAL
  #endif
-@@ -42,6 +46,9 @@
+@@ -42,6 +46,9 @@ static lv_result_t window_create(lv_display_t * disp);
  static void sdl_event_handler(lv_timer_t * t);
  static void release_disp_cb(lv_event_t * e);
  static void res_chg_event_cb(lv_event_t * e);
@@ -21,7 +23,26 @@
  
  /**********************
   *  STATIC VARIABLES
-@@ -83,17 +90,24 @@
+@@ -49,6 +56,18 @@ static void res_chg_event_cb(lv_event_t * e);
+ static bool inited = false;
+ static lv_timer_t * event_handler_timer;
+ 
++/* Wayland CSD (client-side decorations) state -- see the SDL_WINDOWEVENT_RESIZED
++ * handler.  File-scope rather than per-display because the compensation targets
++ * the single top-level application window. */
++static int32_t csd_target_w = 0;
++static int32_t csd_target_h = 0;
++static uint8_t csd_attempts = 0;
++static bool    csd_settled  = false;
++
++/* Bounded so a compositor that genuinely cannot honour the size (tiled, maximized,
++ * or a screen smaller than the requested resolution) can't trap us in a resize loop. */
++#define CSD_MAX_ATTEMPTS 5
++
+ /**********************
+  *      MACROS
+  **********************/
+@@ -83,17 +102,24 @@ lv_display_t * lv_sdl_window_create(int32_t hor_res, int32_t ver_res)
          return NULL;
      }
      lv_display_set_driver_data(disp, dsc);
@@ -50,7 +71,7 @@
      /*Process the initial events*/
      sdl_event_handler(NULL);
  
-@@ -122,7 +136,13 @@
+@@ -122,7 +148,13 @@ void lv_sdl_window_set_zoom(lv_display_t * disp, float zoom)
  
  float lv_sdl_window_get_zoom(lv_display_t * disp)
  {
@@ -64,7 +85,7 @@
      return dsc->zoom;
  }
  
-@@ -256,12 +276,50 @@
+@@ -256,12 +288,79 @@ static void sdl_event_handler(lv_timer_t * t)
                      lv_sdl_backend_ops.redraw(disp);
                      break;
                  case SDL_WINDOWEVENT_RESIZED:
@@ -92,23 +113,52 @@
 +                        /* Wayland CSD (client-side decorations) can shrink the content
 +                         * area below the requested size.  When that happens, grow the
 +                         * window to compensate so LVGL keeps its original resolution.
-+                         * Only attempt once to avoid infinite loops when the compositor
-+                         * constrains the window (tiled/maximized). */
-+                        static bool csd_compensated = false;
-+                        int32_t orig_w = lv_display_get_horizontal_resolution(disp);
-+                        int32_t orig_h = lv_display_get_vertical_resolution(disp);
-+                        if(!csd_compensated && (hres < orig_w || vres < orig_h) && !dsc->ignore_size_chg) {
-+                            csd_compensated = true;
-+                            int32_t dw = orig_w - hres;
-+                            int32_t dh = orig_h - vres;
-+                            int win_w = 0, win_h = 0;
-+                            SDL_GetWindowSize(dsc->window, &win_w, &win_h);
-+                            SDL_SetWindowSize(dsc->window, win_w + dw, win_h + dh);
-+                            LV_LOG_USER("CSD compensation: content %dx%d < expected %dx%d, "
-+                                        "grew window by %dx%d",
-+                                        (int)hres, (int)vres, (int)orig_w, (int)orig_h,
-+                                        (int)dw, (int)dh);
-+                            break;
++                         *
++                         * A single attempt is not enough: a compositor may re-assert the
++                         * shrunken size seconds after the first compensation, long after a
++                         * one-shot guard has been spent.  Keep compensating until the
++                         * content actually reaches the requested size, then latch
++                         * `csd_settled` so a later deliberate user resize is honoured
++                         * rather than fought. */
++                        if(!dsc->ignore_size_chg && !csd_settled && csd_target_w > 0) {
++                            if(hres >= csd_target_w && vres >= csd_target_h) {
++                                /* Target reached -- stop compensating from here on. */
++                                csd_settled = true;
++                            }
++                            else if(csd_attempts < CSD_MAX_ATTEMPTS) {
++                                csd_attempts++;
++                                /* SDL_CreateWindow() and SDL_SetWindowSize() do not agree
++                                 * about decorations under Wayland/libdecor: the creation
++                                 * size behaves as the OUTER size (the compositor carves the
++                                 * title bar out of it, so 800x480 yields 800x444 of
++                                 * content), while SDL_SetWindowSize() sets the CONTENT size
++                                 * and the title bar is added on top.
++                                 *
++                                 * So re-assert the target verbatim.  Adding the observed
++                                 * shortfall here would over-grow the window and leave an
++                                 * unpainted band below LVGL's canvas; using
++                                 * SDL_GetWindowSize() + shortfall reproduces the original
++                                 * request and never converges. */
++                                SDL_SetWindowSize(dsc->window,
++                                                  (int)csd_target_w, (int)csd_target_h);
++                                LV_LOG_USER("CSD compensation (attempt %d/%d): content %dx%d < "
++                                            "requested %dx%d, re-asserting content size",
++                                            (int)csd_attempts, (int)CSD_MAX_ATTEMPTS,
++                                            (int)hres, (int)vres,
++                                            (int)csd_target_w, (int)csd_target_h);
++                                break;
++                            }
++                            else {
++                                /* Give up, but say so loudly: the running resolution now
++                                 * differs from what was requested, which can select a
++                                 * different responsive breakpoint than intended. */
++                                csd_settled = true;
++                                LV_LOG_WARN("CSD compensation failed after %d attempts: running at "
++                                            "%dx%d instead of requested %dx%d -- responsive "
++                                            "breakpoints will reflect the smaller size",
++                                            (int)CSD_MAX_ATTEMPTS, (int)hres, (int)vres,
++                                            (int)csd_target_w, (int)csd_target_h);
++                            }
 +                        }
 +
 +                        dsc->ignore_size_chg = 1;
@@ -120,7 +170,7 @@
                      break;
                  case SDL_WINDOWEVENT_CLOSE:
                      lv_display_delete(disp);
-@@ -271,15 +329,108 @@
+@@ -271,15 +370,108 @@ static void sdl_event_handler(lv_timer_t * t)
              }
          }
          if(event.type == SDL_QUIT) {
@@ -199,7 +249,7 @@
 +            scale = s;
 +            break;
 +        }
-+    }
+     }
 +
 +    int32_t logical_w = native_w / scale;
 +    int32_t logical_h = native_h / scale;
@@ -213,7 +263,7 @@
 +            "logical resolution unchanged: %dx%d (native %dx%d, %dx)",
 +            logical_w, logical_h, native_w, native_h, scale);
 +        return;
-     }
++    }
 +
 +    lv_sdl_window_t * dsc = lv_display_get_driver_data(disp);
 +    dsc->ignore_size_chg = 1;
@@ -232,7 +282,7 @@
  
  static lv_result_t window_create(lv_display_t * disp)
  {
-@@ -294,24 +445,97 @@
+@@ -294,24 +486,121 @@ static lv_result_t window_create(lv_display_t * disp)
  #if LV_SDL_FULLSCREEN
      flag |= SDL_WINDOW_FULLSCREEN;
  #endif
@@ -241,6 +291,22 @@
 +     * matches the native surface size. Without this, the EGL surface
 +     * gets invalidated when Android resizes it, causing EGL_BAD_SURFACE. */
 +    flag |= SDL_WINDOW_FULLSCREEN_DESKTOP;
++#else
++    /* Decorations are kept so the window stays draggable by its title bar.  A
++     * compositor drawing client-side decorations carves them out of the content
++     * area (800x480 -> 800x444 under Wayland/libdecor), which would leave LVGL a
++     * canvas smaller than requested and silently select the wrong responsive
++     * breakpoint -- the SDL_WINDOWEVENT_RESIZED handler measures that shortfall
++     * and grows the window to cancel it out.
++     *
++     * HELIX_SDL_BORDERLESS=1 drops decorations instead, for a compositor where
++     * that compensation can't converge. */
++    {
++        const char * borderless_env = getenv("HELIX_SDL_BORDERLESS");
++        if(borderless_env != NULL && borderless_env[0] != '0') {
++            flag |= SDL_WINDOW_BORDERLESS;
++        }
++    }
 +#endif
  
      int32_t hor_res = (int32_t)((float)(disp->hor_res) * dsc->zoom);
@@ -290,6 +356,14 @@
 +        LV_LOG_USER("Window position set to exact coordinates (%d, %d)", x_pos, y_pos);
 +    }
 +
++    /* Remember what was actually asked for.  The live display resolution can't be
++     * used as the compensation target: once a shrunken size is accepted it becomes
++     * the resolution, and the original request is lost. */
++    csd_target_w = hor_res;
++    csd_target_h = ver_res;
++    csd_attempts = 0;
++    csd_settled  = false;
++
 +    dsc->window = SDL_CreateWindow("HelixScreen",
 +                                   x_pos, y_pos,
                                     hor_res, ver_res, flag);       /*last param. SDL_WINDOW_BORDERLESS to hide borders*/
@@ -332,7 +406,7 @@
      return LV_RESULT_OK;
  }
  
-@@ -333,16 +557,22 @@
+@@ -333,16 +622,22 @@ static void res_chg_event_cb(lv_event_t * e)
  
  static void release_disp_cb(lv_event_t * e)
  {
