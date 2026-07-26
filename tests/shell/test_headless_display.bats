@@ -30,6 +30,17 @@ require_binary() {
     [ -x "$BIN" ] || skip "helix-screen not built (run 'make -j')"
 }
 
+# The patched LVGL sources only exist once the submodule is checked out and
+# mk/patches.mk has run. Jobs that validate shell scripts without building
+# (release.yml's validate-shell) have neither, so assert the patch files —
+# which are the source of truth for what ships — before reaching for the
+# working-tree copy, then skip the source half.
+require_lvgl_src() {
+    for src in "$@"; do
+        [ -r "$src" ] || skip "lvgl submodule not checked out ($(basename "$src"))"
+    done
+}
+
 # Unique per-test socket. Unix socket paths cap at ~108 bytes, and
 # BATS_TEST_TMPDIR is often too long, so anchor in /tmp directly.
 headless_socket() {
@@ -102,6 +113,9 @@ headless_socket() {
 @test "lv_sdl_window_create failure path deletes the display before freeing dsc" {
     # Freeing dsc first leaves release_disp_cb reading a dangling pointer.
     # Lock the ordering in both the live source and the patch that recreates it.
+    grep -q "lv_display_delete" "$WINDOW_PATCH"
+
+    require_lvgl_src "$WINDOW_SRC"
     local body
     body="$(sed -n '/Failed to initialize window/,/return NULL;/p' "$WINDOW_SRC")"
     [ -n "$body" ]
@@ -116,30 +130,30 @@ headless_socket() {
         [ "$del_line" -lt "$free_line" ]
     fi
     grep -q "lv_display_delete" <<< "$body"
-
-    grep -q "lv_display_delete" "$WINDOW_PATCH"
 }
 
 @test "window_create clears dsc->window after destroying it on init failure" {
     # SDL_DestroyWindow() without nulling the field lets release_disp_cb destroy
     # the same window a second time.
+    grep -q "dsc->window = NULL" "$WINDOW_PATCH"
+
+    require_lvgl_src "$WINDOW_SRC"
     local body
     body="$(sed -n '/Failed to initialize SDL backend/,/LV_RESULT_INVALID;/p' "$WINDOW_SRC")"
     [ -n "$body" ]
     grep -q "dsc->window = NULL" <<< "$body"
-
-    grep -q "dsc->window = NULL" "$WINDOW_PATCH"
 }
 
 @test "deinit_display null-guards the backend display data" {
     # When init_display() fails, backend_data was never set. LV_ASSERT_NULL is
     # compiled out in our lv_conf, so an unguarded ddata->texture is a NULL deref.
+    grep -qE 'if\s*\(\s*!\s*ddata\s*\)' "$SW_PATCH"
+
+    require_lvgl_src "$SW_SRC"
     local body
     body="$(sed -n '/^static void deinit_display/,/^}/p' "$SW_SRC")"
     [ -n "$body" ]
     grep -qE 'if\s*\(\s*!\s*ddata\s*\)' <<< "$body"
-
-    grep -qE 'if\s*\(\s*!\s*ddata\s*\)' "$SW_PATCH"
 }
 
 @test "screenshot.sh honors HELIX_HEADLESS over Wayland auto-detection" {
@@ -177,6 +191,9 @@ headless_socket() {
     # SDL_Quit() tears down the video subsystem that owns the texture, renderer
     # and window. Quitting first leaves deinit_display() destroying dangling
     # handles.
+    grep -q "lv_sdl_quit" "$WINDOW_PATCH"
+
+    require_lvgl_src "$WINDOW_SRC"
     local body
     body="$(sed -n '/^static void release_disp_cb/,/^}/p' "$WINDOW_SRC")"
     [ -n "$body" ]
@@ -188,8 +205,6 @@ headless_socket() {
     [ -n "$deinit_line" ]
     [ -n "$quit_line" ]
     [ "$deinit_line" -lt "$quit_line" ]
-
-    grep -q "lv_sdl_quit" "$WINDOW_PATCH"
 }
 
 @test "headless smoke script exists, is executable and has valid syntax" {
