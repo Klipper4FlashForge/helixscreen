@@ -234,11 +234,11 @@
 > "New version not showing on ANY device" = source of truth, not per-device: updater fetches releases.helixscreen.org/<ch>/manifest.json FIRST, trusts any HTTP-200 (update_checker.cpp fetch_stable_release), only falls back to GitHub on FETCH FAILURE not staleness. v0.99.76 cause: release.yml R2 upload non-blocking, manifest uploaded AFTER big zips; a 504 on k2.zip aborted before manifest → R2 pinned at .75, run green. Diagnose: curl live manifest .version vs tag; check the R2 upload job. Fixed 942bcbd51/d0034b282: manifest before zips, s3cp retry, read-back assert version==tag. Verify the SERVED artifact, never trust upload success.
 
 ### [L092] [***--|*****] make | tail masks exit code; -j hides the real build error
-- **Uses**: 39 | **Velocity**: 17.9375 | **Learned**: 2026-06-12 | **Last**: 2026-07-25 | **Category**: gotcha
+- **Uses**: 40 | **Velocity**: 18.9375 | **Learned**: 2026-06-12 | **Last**: 2026-07-26 | **Category**: gotcha
 > `make | tail/head` reports tail's exit 0 even on make failure — capture separately (`make …; echo $?>/tmp/exit`). Build dies with NO 'error:' + different failure point each run → suspect interleaved -j output or resource contention (`free -h`, `pgrep -af cc1plus` for sibling builds); drop to -j2 to surface the true first error. (Real cause once: missing $(LV_CONF) in sub-builds, invisible under -j.)
 
 ### [L093] [*----|****-] Pure-decision-function tests need input realism
-- **Uses**: 3 | **Velocity**: 2 | **Learned**: 2026-06-16 | **Last**: 2026-07-25 | **Category**: gotcha
+- **Uses**: 4 | **Velocity**: 3 | **Learned**: 2026-06-16 | **Last**: 2026-07-26 | **Category**: gotcha
 > A pure decision function's tests are only as strong as whether their inputs match what the function actually receives at runtime. decide_preview_action() tests passed while it had a deadlock because they fed view_mode=1/2 (3D/2D), but at print start the view-mode subject is 0 (thumbnail) and only flips after gcode loads. Result: green tests + on-device failure. When a pure fn takes a runtime-derived input, assert against the value it actually holds at the call site (0 at print start), not a convenient one.
 
 ### [L094] [*----|**---] Don't gate a load/fetch on display-output state it produces
