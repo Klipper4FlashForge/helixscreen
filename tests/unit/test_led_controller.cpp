@@ -2219,3 +2219,42 @@ TEST_CASE_METHOD(LedMockApiFixture, "LedEffectBackend accepts and forwards on_qu
 
     CHECK_FALSE(queued_fired);
 }
+
+TEST_CASE_METHOD(LedMockApiFixture,
+                 "two strips queued behind a blocking op both settle the in-flight counter",
+                 "[led][1129]") {
+    // The reporter's 17:04:29 pair: a print cancel fired auto-state SET_LED for
+    // main_led and neopixel toolhead_rgb at once, both took the discretionary queue
+    // path, and both settled. If either drops its settle the counter never returns
+    // to 0 and both light buttons grey out for the rest of the session.
+    auto& ctrl = helix::led::LedController::instance();
+    ctrl.deinit();
+    ctrl.init(mock_api.get(), &mock_client);
+
+    for (const auto& id : {std::string("led main_led"), std::string("neopixel toolhead_rgb")}) {
+        helix::led::LedStripInfo strip;
+        strip.name = id;
+        strip.id = id;
+        strip.backend = helix::led::LedBackendType::NATIVE;
+        ctrl.native().add_strip(strip);
+    }
+    ctrl.set_selected_strips({"led main_led", "neopixel toolhead_rgb"});
+
+    // ORDERING IS LOAD-BEARING (see Task 3, Step 5). Klippy subjects initialize to
+    // SHUTDOWN, so this call is a transition that resets the volatile subjects.
+    // It MUST come before idle_timeout is set, or the reset wipes it and the test
+    // silently exercises the non-busy path instead.
+    state.set_klippy_state_sync(helix::KlippyState::READY);
+
+    // Klipper is busy with a blocking non-print op, so both sends take the queue path.
+    lv_subject_set_int(state.get_idle_timeout_printing_subject(), 1);
+    REQUIRE(state.is_blocking_operation_active());
+
+    ctrl.light_toggle();
+
+    // The settle runs through tok.defer(...), so the subject still reads its
+    // pre-settle value without a drain ([L048]).
+    helix::ui::UpdateQueue::instance().drain();
+
+    CHECK(lv_subject_get_int(ctrl.get_led_command_in_flight_subject()) == 0);
+}
