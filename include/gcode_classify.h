@@ -37,8 +37,7 @@ inline std::string gcode_first_token_upper(const std::string& line) {
         return {};
     }
     const size_t end = l.find_first_of(" \t\r", start);
-    std::string token =
-        l.substr(start, end == std::string::npos ? std::string::npos : end - start);
+    std::string token = l.substr(start, end == std::string::npos ? std::string::npos : end - start);
     for (char& c : token) {
         c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     }
@@ -47,7 +46,7 @@ inline std::string gcode_first_token_upper(const std::string& line) {
 
 /// Coarse category of a single (already-uppercased, whole) g-code token.
 /// `Other` means "not in the discretionary set" — recovery/homing/probe/macro.
-enum class GcodeCat { Other, Fan, Temp, Move, Modal, Led };
+enum class GcodeCat { Other, Fan, Temp, Move, Modal, Led, Tune, Message };
 
 inline GcodeCat categorize_gcode_token(const std::string& t) {
     if (t == "M106" || t == "M107" || t == "SET_FAN_SPEED") {
@@ -63,8 +62,17 @@ inline GcodeCat categorize_gcode_token(const std::string& t) {
     if (t == "G90" || t == "G91") {
         return GcodeCat::Modal;
     }
-    if (t == "SET_LED") {
+    // SET_PIN drives output_pin LEDs; SET_LED_EFFECT drives led_effect strips.
+    // Both are LED writes and both are safe to run late (#1129).
+    if (t == "SET_LED" || t == "SET_PIN" || t == "SET_LED_EFFECT") {
         return GcodeCat::Led;
+    }
+    // Speed/flow factor: pure scaling, harmless if it lands a moment late.
+    if (t == "M220" || t == "M221") {
+        return GcodeCat::Tune;
+    }
+    if (t == "M117") {
+        return GcodeCat::Message;
     }
     return GcodeCat::Other;
 }
@@ -87,7 +95,18 @@ inline GcodeCat categorize_gcode_token(const std::string& t) {
 ///   - Move: G0, G1  (non-homing moves)
 ///   - Positioning mode: G90, G91 (absolute/relative — wrap our own jog moves,
 ///     which are emitted as "G91\nG0 X..\nG90"; pure modal state, safe to defer)
-///   - LED:  SET_LED
+///   - LED:  SET_LED, SET_PIN (output_pin strips), SET_LED_EFFECT
+///   - Tune: M220 (speed factor), M221 (flow factor)
+///   - Message: M117
+///
+/// DELIBERATELY EXCLUDED: SET_GCODE_OFFSET. It CONTROLS a blocking op — z-offset
+/// calibration sends it mid-probe — so queuing it behind that op would break
+/// calibration. Same class as TESTZ/ACCEPT/ABORT. Do not add it.
+///
+/// Before adding any command here, confirm every caller that emits it either holds
+/// no in-flight counter or passes execute_gcode's on_queued. Marking a command
+/// discretionary routes it down the fire-and-forget queue path, which DROPS the RPC
+/// response — a caller counting on on_success/on_error alone will wedge (#1129).
 ///
 /// Multi-line: returns true ONLY if the script is non-empty AND every non-blank
 /// command line's first token is in the discretionary set. If ANY non-blank line
@@ -136,9 +155,10 @@ inline bool gcode_contains_move(const std::string& script) {
 
 /// A short human noun naming what a benign discretionary @p script changes, for
 /// the "queued — runs when it's ready" toast: "temperature change", "fan change",
-/// "LED change", or a generic "change". Returns the first meaningful line's kind
-/// (modal G90/G91 wrappers and unrecognized lines are skipped), so a jog-style
-/// "G91\nM106" is named for its fan line.
+/// "LED change", "speed change", "flow change", "display message", or a generic
+/// "change". Returns the first meaningful line's kind (modal G90/G91 wrappers and
+/// unrecognized lines are skipped), so a jog-style "G91\nM106" is named for its
+/// fan line.
 inline std::string discretionary_gcode_noun(const std::string& script) {
     std::istringstream lines(script);
     std::string line;
@@ -151,6 +171,10 @@ inline std::string discretionary_gcode_noun(const std::string& script) {
             return "fan change";
         case detail::GcodeCat::Led:
             return "LED change";
+        case detail::GcodeCat::Tune:
+            return token == "M221" ? "flow change" : "speed change";
+        case detail::GcodeCat::Message:
+            return "display message";
         case detail::GcodeCat::Move:
         case detail::GcodeCat::Modal:
         case detail::GcodeCat::Other:
