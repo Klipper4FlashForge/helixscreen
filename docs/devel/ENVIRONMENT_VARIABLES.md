@@ -6,7 +6,7 @@ This document is a reference for the environment variables HelixScreen reads at 
 
 | Category | Count | Prefix |
 |----------|-------|--------|
-| [Display & Backend](#display--backend-configuration) | 21 | `HELIX_` |
+| [Display & Backend](#display--backend-configuration) | 22 | `HELIX_` |
 | [Touch Calibration](#touch-calibration) | 11 | `HELIX_TOUCH_*` / `HELIX_SCROLL_*` |
 | [G-Code Viewer](#g-code-viewer) | 4 | `HELIX_` |
 | [Bed Mesh](#bed-mesh) | 1 | `HELIX_` |
@@ -465,6 +465,28 @@ Requires a build with `HELIX_ENABLE_SCREENSAVER` — the whole block is `#ifdef`
 | **Files** | `config/helixscreen.env` (commented out), `tests/shell/test_helix_launcher_env.bats` (env-file passthrough test only) |
 
 The fbdev backend picks its device by auto-detection. If you need to steer display selection, use [`HELIX_DISPLAY_BACKEND`](#helix_display_backend) or [`HELIX_DRM_DEVICE`](#helix_drm_device) instead. Do not remove the commented line from `helixscreen.env` — the bats test covers env-file parsing through it.
+
+### `HELIX_HEADLESS`
+
+Make `scripts/screenshot.sh` run without a display server by forcing SDL's dummy
+video driver. Already the default when neither `DISPLAY` nor `WAYLAND_DISPLAY`
+is set, so this is only needed to force headless on a desktop.
+
+| Property | Value |
+|----------|-------|
+| **Values** | `1` (force headless) / unset |
+| **Default** | Auto — headless when no `DISPLAY` and no `WAYLAND_DISPLAY` |
+| **File** | `scripts/screenshot.sh` |
+
+```bash
+# Capture on a CI runner / over ssh with no display
+HELIX_HEADLESS=1 ./scripts/screenshot.sh helix-screen filament-panel filament
+```
+
+The binary itself needs no HelixScreen-specific variable — `SDL_VIDEODRIVER=dummy`
+is enough, and the SDL backend falls back to the software renderer on its own
+when the accelerated one is unavailable. See `docs/devel/HELIXCTL.md`
+§ "Running headless".
 
 ---
 
