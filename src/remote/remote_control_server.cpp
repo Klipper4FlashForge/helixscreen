@@ -418,6 +418,11 @@ nlohmann::json RemoteControlServer::handle_reset(const nlohmann::json& /*params*
             Modal::hide(top);
             modals_cleared++;
         }
+        if (modals_cleared == kMaxModalDepth && !ModalStack::instance().empty()) {
+            spdlog::warn("[RemoteControlServer] reset: modal stack still non-empty after "
+                        "{} dismissals -- hit the safety cap, something isn't draining",
+                        kMaxModalDepth);
+        }
 
         // Toasts: ToastManager::hide() dismisses every visible toast (also via
         // safe_delete_deferred_raw internally). There is no public exact count --
@@ -439,8 +444,14 @@ nlohmann::json RemoteControlServer::handle_reset(const nlohmann::json& /*params*
         // bug, and spinning forever here would hang the UI thread.
         auto& nav = NavigationManager::instance();
         constexpr int kMaxDepth = 32;
-        int overlays_popped =
-            std::min(static_cast<int>(nav.overlay_stack_names().size()), kMaxDepth);
+        int actual_depth = static_cast<int>(nav.overlay_stack_names().size());
+        int overlays_popped = std::min(actual_depth, kMaxDepth);
+        if (actual_depth > kMaxDepth) {
+            spdlog::warn("[RemoteControlServer] reset: overlay stack depth {} exceeds the "
+                        "safety cap of {} -- popping {} and leaving the rest, something "
+                        "isn't draining",
+                        actual_depth, kMaxDepth, kMaxDepth);
+        }
         for (int i = 0; i < overlays_popped; ++i) {
             nav.go_back();
         }

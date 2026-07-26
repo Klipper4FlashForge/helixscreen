@@ -26,11 +26,42 @@ def test_reset_is_idempotent(helix_app):
 
 
 def test_reset_dismisses_a_modal(helix_app):
-    helix_app.ctl("demo", "runout-modal")
-    helix_app.wait_idle()
-    helix_app.reset()
-    # A lingering modal swallows input while every later command still reports
-    # success — the exact failure the design doc warns about.
-    assert helix_app.current()["overlays"] == []
-    helix_app.navigate("settings")
-    assert helix_app.current()["panel"] == "settings"
+    # Modal::hide()'s widget deletion is deferred behind a real ~150ms exit
+    # fade (MODAL_EXIT_DURATION_MS) when animations are on — wait_idle()
+    # deliberately does not count animations (see handle_wait_idle), so an
+    # `ls` taken right after reset() would race that fade. freeze() disables
+    # animations, which routes Modal::hide() through its no-animation branch
+    # (synchronous stack removal, deletion deferred only to the next LVGL
+    # tick) so the widget-gone check below is deterministic rather than
+    # depending on how much wall-clock time two subprocess round trips
+    # happened to burn.
+    helix_app.freeze()
+    try:
+        helix_app.ctl("demo", "runout-modal")
+        helix_app.wait_idle()
+
+        widgets_before = {w["name"] for w in helix_app.ls()["widgets"] if w.get("name")}
+        assert any("runout_guidance_modal" in n for n in widgets_before), \
+            "setup failed — modal never appeared"
+
+        result = helix_app.reset()
+        # A modal is tracked in ModalStack, not NavigationManager's overlay
+        # stack (RunoutGuidanceModal is a Modal, never pushed as an overlay)
+        # — checking `overlays` here would pass even if the modal were never
+        # touched. Assert on the count reset() itself reports, plus a
+        # widget-level check that the dialog is actually gone rather than
+        # just marked "exiting".
+        assert result["modals_cleared"] >= 1
+
+        widgets_after = {w["name"] for w in helix_app.ls()["widgets"] if w.get("name")}
+        assert not any("runout_guidance_modal" in n for n in widgets_after), \
+            "modal widget still present after reset"
+
+        # A lingering modal swallows input while every later command still
+        # reports success — the exact failure the design doc warns about.
+        # Confirm the screen is actually interactive again, not just
+        # visually clear.
+        helix_app.navigate("settings")
+        assert helix_app.current()["panel"] == "settings"
+    finally:
+        helix_app.unfreeze()

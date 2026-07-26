@@ -56,6 +56,22 @@ class HelixApp:
             env["SDL_VIDEODRIVER"] = "wayland"
         display_index = "0" if env.get("WAYLAND_DISPLAY") else "1"
 
+        # Application::acquire_instance_lock() flocks a lock file resolved
+        # from HELIX_CONFIG_DIR (default: "config", relative to whatever the
+        # process's CWD happens to be) — taken unconditionally, even under
+        # --test, before Config::init() ever runs (so it can't rely on that
+        # to create the directory). Without an override every HelixApp
+        # spawned from the same CWD (the shared instance, a fresh_helix_app,
+        # and test_diagnostics.py's pytester sub-process) shares one lock
+        # file and only one can ever hold it. socket_path already lives under
+        # a private tmp_path per instance, so anchor the config dir there too
+        # — it's unique for free — and create it ourselves; open(O_CREAT)
+        # makes the lock file but not its parent directory.
+        if not env.get("HELIX_CONFIG_DIR"):
+            config_dir = self.socket_path.parent / "helix-config"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            env["HELIX_CONFIG_DIR"] = str(config_dir)
+
         args = [
             str(self.binary),
             "--test", "--skip-wizard", "--skip-splash",

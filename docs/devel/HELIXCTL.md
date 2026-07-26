@@ -371,13 +371,16 @@ UI itself uses (`NavigationManager::go_back()`, `Modal::hide()`,
 where deleting everything synchronously is fine because nothing else is
 running).
 
-`overlays_popped` and `modals_cleared` are exact counts, sampled once before
-any popping starts (rereading them mid-loop wouldn't reflect anything —
-`go_back()` defers its actual work to the next `UpdateQueue` tick even when
-called from the UI thread, and `Modal::hide()`'s own bookkeeping update *is*
-synchronous, but only the widget deletion is deferred). Both loops are capped
-at 32 iterations: a stack that will not drain is a bug, and looping
-unboundedly on the UI thread would turn it into a hang instead of a report.
+`overlays_popped` and `modals_cleared` are exact counts. The overlay count is
+sampled once before any popping starts — rereading it mid-loop wouldn't
+reflect anything, since `go_back()` defers its actual work to the next
+`UpdateQueue` tick even when called from the UI thread. The modal count is
+re-checked per iteration instead, since `Modal::hide()`'s own bookkeeping
+(marking the entry "exiting") *is* synchronous — only the widget deletion is
+deferred. Both loops are capped (overlays at 32, modals at 16): a stack that
+will not drain is a bug, and looping unboundedly on the UI thread would turn
+it into a hang instead of a report. Hitting either cap logs a `spdlog::warn`
+so it doesn't pass silently as "reset just didn't have much to do."
 
 `toasts_cleared` is 0 or 1 — "were there any" — not an exact count.
 `ToastManager` exposes a dismiss-all (`hide()`) but its visible-toast counter
