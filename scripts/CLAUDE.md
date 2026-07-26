@@ -18,7 +18,6 @@ Build, asset generation, deployment, and developer tooling for HelixScreen.
 ### Release & Packaging
 | Script | Purpose |
 |--------|---------|
-| `package.sh` | Creates release archives for all platforms |
 | `dev-release.sh` | Local dev release workflow (build + package + upload) |
 | `generate-manifest.sh` | Generates `manifest.json` from release archives. Used by CI and dev-release |
 
@@ -39,7 +38,7 @@ Build, asset generation, deployment, and developer tooling for HelixScreen.
 ### Icon Pipeline
 | Script | Purpose |
 |--------|---------|
-| `gen_icon_consts.py` | `codepoints.h` → `globals.xml` icon string constants |
+| `gen_icon_consts.py` | `include/ui_icon_codepoints.h` → `ui_xml/globals.xml` icon string constants |
 | `generate_icon_header.py` | Embed PNG icon data into C headers |
 | `validate_icon_fonts.sh` | Bidirectional check: codepoints ↔ fonts ↔ XML usage |
 

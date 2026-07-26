@@ -64,7 +64,7 @@ Most commonly needed:
 | **RAII widgets** | `lv_malloc()` / `lv_free()` | `lvgl_make_unique<T>()` + `release()` |
 | **Class-based** | `ui_panel_*_init()` functions | Classes: `MotionPanel`, `WiFiManager` |
 | **Observer factory** | Static callback + `lv_observer_get_user_data()` | `observe_int_sync<Panel>()` from `observer_factory.h` |
-| **Icon sync** | Add icon, forget fonts | codepoints.h + `make regen-fonts` + rebuild |
+| **Icon sync** | Add icon, forget fonts | `include/ui_icon_codepoints.h` + `make regen-fonts` + rebuild |
 | **Formatting** | Manual formatting | Let pre-commit hook (clang-format) fix |
 | **No auto-mock** | `if(!start()) return Mock()` | Check `RuntimeConfig::should_mock_*()` |
 | **JSON include** | `#include <nlohmann/json.hpp>` | `#include "hv/json.hpp"` (libhv's bundled version) |
@@ -229,7 +229,7 @@ When given autonomous control, Claude works independently to improve HelixScreen
 - Ideas and feature concepts
 - Research notes and findings
 - Work-in-progress designs
-- Lessons learned (like `animated_value_use_cases.md`)
+- Lessons learned and deep dives (see `.claude/scratchpad/` for past examples)
 
 **Mission**: Make HelixScreen the best damn touchscreen UI for Klipper printers.
 

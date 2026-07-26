@@ -208,7 +208,7 @@ Style widget parts: `main`, `indicator`, `knob`, `items`, `scrollbar`
 
 ## Implementation Workflow
 
-1. **Create XML layout** in `ui_xml/panel.xml`
+1. **Create XML layout** in `ui_xml/<panel_name>.xml`
 2. **Create C++ wrapper** with `init_subjects()` (subjects + callbacks) and `create()` (calls `lv_xml_create`)
 3. **Register** component in `xml_registration.cpp`
 4. **Register subjects BEFORE creating XML**

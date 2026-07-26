@@ -729,6 +729,32 @@ fi
 echo ""
 
 # ====================================================================
+# Agent-facing docs: references resolve, doc index is complete
+# ====================================================================
+SECTION_START=$(date +%s)
+echo -n "📚 Checking doc references and index..."
+
+if [ -f "scripts/check_doc_refs.py" ]; then
+  if python3 scripts/check_doc_refs.py >/tmp/doc_refs.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/doc_refs.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/doc_refs.out
+    echo "   Run: python3 scripts/check_doc_refs.py"
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_doc_refs.py not found — skipping"
+fi
+
+echo ""
+
+# ====================================================================
 # Translation format-specifier parity (crash #1073)
 # ====================================================================
 # Background: format strings passed to snprintf/fmt::format via lv_tr() are
