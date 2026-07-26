@@ -121,6 +121,15 @@ jobs:
         ./build/bin/helix-screen --help || true
         echo "Binary verified"
 
+    # Actually run the UI. --help only proves the binary links; this boots the
+    # real application headless (SDL dummy driver + software renderer), builds a
+    # few panels over the control socket, captures a screenshot and requires a
+    # clean exit. Catches startup/shutdown crashes and broken panels that a
+    # compile-only check cannot see.
+    - name: Headless smoke test
+      timeout-minutes: 5
+      run: ./scripts/smoke-headless.sh
+
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7
       with:

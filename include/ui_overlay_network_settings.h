@@ -312,10 +312,3 @@ class NetworkSettingsOverlay : public OverlayBase {
  * Creates the instance on first call. Singleton pattern.
  */
 NetworkSettingsOverlay& get_network_settings_overlay();
-
-/**
- * @brief Destroy the global NetworkSettingsOverlay instance
- *
- * Call during application shutdown.
- */
-void destroy_network_settings_overlay();

@@ -20,21 +20,24 @@ namespace helix::ui {
  * @file ui_print_select_file_provider.h
  * @brief Moonraker file data provider for print selection panel
  *
- * Handles fetching file lists and metadata from Moonraker API.
- * Uses callbacks to deliver data, keeping async handling clean.
+ * Handles fetching directory listings from the Moonraker API and delivering
+ * them via callbacks, keeping async handling clean.
  *
  * ## Key Features:
  * - Async file list fetching from Moonraker
- * - Lazy metadata loading for visible files only
- * - Thumbnail downloading and caching
- * - Thread-safe updates via LVGL async dispatch
+ * - Preserves cached metadata/thumbnails for files that have not changed
+ * - Per-request generation counter discards superseded responses
+ *
+ * ## Scope:
+ * Per-file metadata (and its thumbnails) is NOT fetched here — that lives in
+ * PrintSelectPanel::fetch_metadata_range() / process_metadata_result(), which
+ * owns file_list_ and drives schedule_view_refresh() directly.
  *
  * ## Usage:
  * @code
  * PrintSelectFileProvider provider;
  * provider.set_api(api);
  * provider.set_on_files_ready([](auto files) { ... });
- * provider.set_on_metadata_updated([](size_t idx, const PrintFileData& file) { ... });
  *
  * // Fetch file list (existing files preserved if unchanged):
  * provider.refresh_files("/subdir", existing_file_list);
@@ -46,13 +49,6 @@ namespace helix::ui {
  * @param files Vector of PrintFileData from Moonraker (each file has metadata_fetched field)
  */
 using FilesReadyCallback = std::function<void(std::vector<PrintFileData>&& files)>;
-
-/**
- * @brief Callback when a file's metadata is updated
- * @param index Index of updated file in list
- * @param file Updated file data
- */
-using MetadataUpdatedCallback = std::function<void(size_t index, const PrintFileData& file)>;
 
 /**
  * @brief Callback for file list refresh errors
@@ -95,13 +91,6 @@ class PrintSelectFileProvider {
     }
 
     /**
-     * @brief Set callback for metadata updates
-     */
-    void set_on_metadata_updated(MetadataUpdatedCallback callback) {
-        on_metadata_updated_ = std::move(callback);
-    }
-
-    /**
      * @brief Set callback for errors
      */
     void set_on_error(FileErrorCallback callback) {
@@ -134,7 +123,6 @@ class PrintSelectFileProvider {
 
     // === Callbacks ===
     FilesReadyCallback on_files_ready_;
-    MetadataUpdatedCallback on_metadata_updated_;
     FileErrorCallback on_error_;
 
     // === Internal State ===

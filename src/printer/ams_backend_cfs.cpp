@@ -940,9 +940,18 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
 
     if (params.contains("filament_switch_sensor filament_sensor")) {
         const auto& sensor = params["filament_switch_sensor filament_sensor"];
-        if (sensor.contains("filament_detected")) {
+        // filament_detected: Klipper publishes this as null until the sensor
+        // takes its first reading. Use .find() + is_boolean() (per [L087])
+        // rather than a bare get<bool>(), which throws type_error.302 on that
+        // null — and because the throw escapes into UpdateQueue's catch, it
+        // would take the extruder-temp and motor_control blocks below down
+        // with it and skip the EVENT_STATE_CHANGED emit, freezing the UI on
+        // stale AMS state. A null means "no reading", not "no filament", so
+        // there is no safe default here: skip and keep the previous value.
+        auto fd_it = sensor.find("filament_detected");
+        if (fd_it != sensor.end() && fd_it->is_boolean()) {
             std::lock_guard<std::mutex> lock(mutex_);
-            bool detected = sensor["filament_detected"].get<bool>();
+            bool detected = fd_it->get<bool>();
             system_info_.filament_loaded = detected;
 
             // The filament_switch_sensor sits at the toolhead extruder. It
@@ -988,9 +997,13 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
 
     if (params.contains("motor_control")) {
         const auto& motor = params["motor_control"];
-        if (motor.contains("motor_ready")) {
+        // Same null hazard as filament_detected above — .find() + is_boolean()
+        // so a null reading leaves motor_ready_ at its previous value instead
+        // of throwing out of the handler.
+        auto mr_it = motor.find("motor_ready");
+        if (mr_it != motor.end() && mr_it->is_boolean()) {
             std::lock_guard<std::mutex> lock(mutex_);
-            motor_ready_ = motor["motor_ready"].get<bool>();
+            motor_ready_ = mr_it->get<bool>();
         }
         changed = true;
     }

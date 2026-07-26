@@ -249,6 +249,11 @@ TEST_CASE("restore_from_backup falls back to second backup", "[config_backup]") 
 
 TEST_CASE("backup_fallback_dir uses HOME env var", "[config_backup]") {
     const char* original = std::getenv("HOME");
+    // Restore the PREVIOUS ref, not a freshly computed $HOME/.helixscreen:
+    // the test binary deliberately points this at its own sandbox, and
+    // recomputing would silently aim every later test in the shard at the
+    // developer's real backup directory.
+    const std::string prev_ref = AppConstants::Update::detail::backup_fallback_dir_ref();
     setenv("HOME", "/tmp/fake_home", 1);
     AppConstants::Update::detail::backup_fallback_dir_ref() =
         AppConstants::Update::sanitize_home(std::getenv("HOME")) + "/.helixscreen";
@@ -260,12 +265,12 @@ TEST_CASE("backup_fallback_dir uses HOME env var", "[config_backup]") {
         setenv("HOME", original, 1);
     else
         unsetenv("HOME");
-    AppConstants::Update::detail::backup_fallback_dir_ref() =
-        AppConstants::Update::sanitize_home(std::getenv("HOME")) + "/.helixscreen";
+    AppConstants::Update::detail::backup_fallback_dir_ref() = prev_ref;
 }
 
 TEST_CASE("backup_fallback_dir falls back to /tmp when HOME unset", "[config_backup]") {
     const char* original = std::getenv("HOME");
+    const std::string prev_ref = AppConstants::Update::detail::backup_fallback_dir_ref();
     unsetenv("HOME");
     AppConstants::Update::detail::backup_fallback_dir_ref() =
         AppConstants::Update::sanitize_home(std::getenv("HOME")) + "/.helixscreen";
@@ -275,8 +280,7 @@ TEST_CASE("backup_fallback_dir falls back to /tmp when HOME unset", "[config_bac
 
     if (original)
         setenv("HOME", original, 1);
-    AppConstants::Update::detail::backup_fallback_dir_ref() =
-        AppConstants::Update::sanitize_home(std::getenv("HOME")) + "/.helixscreen";
+    AppConstants::Update::detail::backup_fallback_dir_ref() = prev_ref;
 }
 
 // ─── end-to-end: rolling backup + restore cycle ──────────────────────────────

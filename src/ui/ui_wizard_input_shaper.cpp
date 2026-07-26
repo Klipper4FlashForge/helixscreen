@@ -46,10 +46,6 @@ WizardInputShaperStep* get_wizard_input_shaper_step() {
     return g_wizard_input_shaper_step.get();
 }
 
-void destroy_wizard_input_shaper_step() {
-    g_wizard_input_shaper_step.reset();
-}
-
 // ============================================================================
 // Constructor / Destructor
 // ============================================================================

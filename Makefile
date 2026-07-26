@@ -395,6 +395,26 @@ else
     REMOTE_LINENOISE_OBJ :=
     APP_SRCS := $(filter-out $(wildcard $(SRC_DIR)/remote/*.cpp),$(APP_SRCS))
 endif
+
+# Developer-only showcase panels. Not reachable from the shipped navigation
+# (no PanelId, no PanelFactory wiring) — they exist as live testbeds: XML
+# binding/repeat demos (test_panel), wizard step-progress (step_test_panel),
+# the 3D G-code viewer harness (gcode_test_panel), and icon-font coverage
+# (glyphs_panel). Dev-only: default ON for the native dev build, OFF for
+# release/cross builds. Force into a device dev image with:
+#   make PLATFORM_TARGET=pi ENABLE_DEV_PANELS=yes
+ifeq ($(PLATFORM_TARGET),native)
+    ENABLE_DEV_PANELS ?= yes
+else
+    ENABLE_DEV_PANELS ?= no
+endif
+
+ifneq ($(ENABLE_DEV_PANELS),yes)
+    APP_SRCS := $(filter-out $(SRC_DIR)/ui/ui_panel_test.cpp,$(APP_SRCS))
+    APP_SRCS := $(filter-out $(SRC_DIR)/ui/ui_panel_step_test.cpp,$(APP_SRCS))
+    APP_SRCS := $(filter-out $(SRC_DIR)/ui/ui_panel_gcode_test.cpp,$(APP_SRCS))
+    APP_SRCS := $(filter-out $(SRC_DIR)/ui/ui_panel_glyphs.cpp,$(APP_SRCS))
+endif
 APP_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(APP_SRCS))
 
 # Linenoise (bundled line-editing library) for the folded REPL. Built as C99 with
@@ -596,6 +616,13 @@ else
     REMOTE_CONTROL_DEFINES :=
 endif
 
+# Developer-only showcase panels define (see ENABLE_DEV_PANELS above)
+ifeq ($(ENABLE_DEV_PANELS),yes)
+    DEV_PANELS_DEFINES := -DHELIX_ENABLE_DEV_PANELS
+else
+    DEV_PANELS_DEFINES :=
+endif
+
 # wpa_supplicant (WiFi control via wpa_ctrl interface)
 WPA_DIR := lib/wpa_supplicant
 # Output to $(BUILD_DIR)/lib/ for architecture isolation (native/pi/ad5m)
@@ -769,6 +796,10 @@ CXXFLAGS += $(MOCK_DEFINES)
 # Add remote-control defines to compiler flags
 CFLAGS += $(REMOTE_CONTROL_DEFINES)
 CXXFLAGS += $(REMOTE_CONTROL_DEFINES)
+
+# Add developer-panel defines to compiler flags
+CFLAGS += $(DEV_PANELS_DEFINES)
+CXXFLAGS += $(DEV_PANELS_DEFINES)
 
 # Add systemd defines to C++ compiler flags (for logging_init.cpp)
 CXXFLAGS += $(SYSTEMD_CXXFLAGS)

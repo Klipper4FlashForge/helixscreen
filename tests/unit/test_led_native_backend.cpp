@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "../helix_test_fixture.h"
 #include "../ui_test_utils.h"
 #include "config.h"
 #include "led/led_controller.h"
@@ -17,7 +18,7 @@ using namespace helix;
 // Fixture for tests that need mock API + configurable LED strips
 // ============================================================================
 
-struct LedPinConfigFixture {
+struct LedPinConfigFixture : public HelixTestFixture {
     MoonrakerClientMock mock_client{MoonrakerClientMock::PrinterType::VORON_24};
     helix::PrinterState state;
     std::unique_ptr<MoonrakerAPIMock> mock_api;

@@ -106,36 +106,3 @@ TEST_CASE_METHOD(LVGLTestFixture,
     REQUIRE(g_callback_b_count == 1);
     REQUIRE(g_callback_a_count == 0);
 }
-
-// ============================================================================
-// find_required_widget Tests
-// ============================================================================
-
-TEST_CASE_METHOD(LVGLTestFixture, "find_required_widget returns widget when found",
-                 "[callback_helpers]") {
-    lv_obj_t* parent = lv_obj_create(test_screen());
-    lv_obj_t* child = lv_obj_create(parent);
-    lv_obj_set_name(child, "test_widget");
-
-    lv_obj_t* found = find_required_widget(parent, "test_widget", "[Test]");
-    REQUIRE(found == child);
-}
-
-TEST_CASE_METHOD(LVGLTestFixture, "find_required_widget returns nullptr for missing widget",
-                 "[callback_helpers]") {
-    lv_obj_t* parent = lv_obj_create(test_screen());
-
-    lv_obj_t* found = find_required_widget(parent, "nonexistent_widget", "[Test]");
-    REQUIRE(found == nullptr);
-}
-
-TEST_CASE_METHOD(LVGLTestFixture, "find_required_widget finds nested widget",
-                 "[callback_helpers]") {
-    lv_obj_t* parent = lv_obj_create(test_screen());
-    lv_obj_t* container = lv_obj_create(parent);
-    lv_obj_t* nested = lv_obj_create(container);
-    lv_obj_set_name(nested, "deeply_nested");
-
-    lv_obj_t* found = find_required_widget(parent, "deeply_nested", "[Test]");
-    REQUIRE(found == nested);
-}

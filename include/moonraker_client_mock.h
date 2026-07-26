@@ -546,6 +546,48 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     }
 
     /**
+     * @brief Report stepper_z position_endstop as JSON null
+     *
+     * Klipper emits `position_endstop: null` for any printer configured with
+     * `endstop_pin: probe:z_virtual_endstop` — i.e. most probe-equipped
+     * machines. Lets tests reproduce that payload, which is otherwise
+     * unrepresentable against the mock's hardcoded 235.0.
+     *
+     * @param null_endstop True to emit null instead of a number (default: false)
+     */
+    void set_stepper_z_endstop_null(bool null_endstop) {
+        stepper_z_endstop_null_ = null_endstop;
+    }
+
+    /**
+     * @brief Check whether stepper_z position_endstop is reported as null
+     */
+    [[nodiscard]] bool is_stepper_z_endstop_null() const {
+        return stepper_z_endstop_null_;
+    }
+
+    /**
+     * @brief Override the extruder max_temp reported in configfile.settings
+     *
+     * The default 300.0 sits below SafetyLimits::max_temperature_celsius (400.0),
+     * so parsing it produces no observable change — which makes it useless as a
+     * signal for "did the temperature-limit loop actually run?". Tests that need
+     * that signal raise this above 400.0.
+     *
+     * @param max_temp Extruder max_temp in celsius (default: 300.0)
+     */
+    void set_extruder_max_temp(double max_temp) {
+        extruder_max_temp_ = max_temp;
+    }
+
+    /**
+     * @brief Get the extruder max_temp reported in configfile.settings
+     */
+    [[nodiscard]] double get_extruder_max_temp() const {
+        return extruder_max_temp_;
+    }
+
+    /**
      * @brief Check if mock accelerometer is enabled
      * @return true if accelerometer should be reported as available
      */
@@ -1269,6 +1311,8 @@ class MoonrakerClientMock : public helix::MoonrakerClient {
     bool accelerometer_available_{true}; ///< Accelerometer available for input shaper tests
     bool input_shaper_configured_{true}; ///< Input shaper configured for config query tests
     bool shaper_csv_writable_{true};     ///< When false, SHAPER_CALIBRATE skips writing the CSV
+    bool stepper_z_endstop_null_{false}; ///< When true, position_endstop is reported as JSON null
+    double extruder_max_temp_{300.0};    ///< Extruder max_temp reported in configfile.settings
     bool mmu_enabled_{true};             ///< MMU available (default true for existing tests)
 
     // Additional objects for testing (e.g., "mmu", "AFC", "toolchanger")

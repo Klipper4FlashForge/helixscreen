@@ -128,6 +128,8 @@ void PrintStartCollector::start() {
         // seed layer_zero_seen_ from it — only a freshly observed current_layer<1
         // (post-reset) latches it. See MoonrakerManager::should_complete_preprint().
         layer_zero_seen_.store(false, std::memory_order_relaxed);
+        first_layer_observed_.store(-1, std::memory_order_relaxed);
+        layer_advanced_.store(false, std::memory_order_relaxed);
         // Snapshot stale subject values so fallbacks only trigger on real changes
         baseline_layer_ = lv_subject_get_int(state_.get_print_layer_current_subject());
         baseline_progress_ = lv_subject_get_int(state_.get_print_progress_subject());
@@ -322,6 +324,8 @@ void PrintStartCollector::reset() {
         silent_progression_idx_ = 0;
         real_signal_seen_.store(false, std::memory_order_relaxed);
         layer_zero_seen_.store(false, std::memory_order_relaxed);
+        first_layer_observed_.store(-1, std::memory_order_relaxed);
+        layer_advanced_.store(false, std::memory_order_relaxed);
     }
     fallbacks_enabled_.store(false);
 

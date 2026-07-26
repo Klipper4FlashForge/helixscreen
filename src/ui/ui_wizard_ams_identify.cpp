@@ -34,10 +34,6 @@ WizardAmsIdentifyStep* get_wizard_ams_identify_step() {
     return g_wizard_ams_identify_step.get();
 }
 
-void destroy_wizard_ams_identify_step() {
-    g_wizard_ams_identify_step.reset();
-}
-
 // ============================================================================
 // Constructor / Destructor
 // ============================================================================

@@ -12,6 +12,7 @@
 #include "subject_managed_panel.h"
 
 #include <chrono>
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <string>
@@ -69,7 +70,6 @@ class ConsolePanel : public OverlayBase {
     /// Clear all entries from the console display and show empty state
     void clear_display();
 
-  private:
     struct GcodeEntry {
         std::string message;    ///< The G-code command or response text
         double timestamp = 0.0; ///< Unix timestamp from Moonraker
@@ -78,8 +78,26 @@ class ConsolePanel : public OverlayBase {
             RESPONSE ///< Klipper response (ok, error, info)
         } type = Type::COMMAND;
         bool is_error = false; ///< True if response contains error (!! prefix)
+        /// Monotonic identity, assigned when the entry enters entries_.
+        /// 0 means "never assigned" and is never tappable. Never reused, not even
+        /// after clear_entries() — a widget that outlives its entry must resolve to
+        /// nothing rather than to whatever command later took its slot.
+        uint64_t id = 0;
     };
 
+    /// Resolve a tapped widget's entry id back to its entry.
+    ///
+    /// Returns nullptr when the id is 0 (unassigned) or when the entry has already
+    /// been pruned from the buffer, which is the normal outcome for a tap that races
+    /// a burst of incoming responses. Callers must handle nullptr; it is not an error.
+    ///
+    /// Static and container-taking so it is testable without constructing a panel
+    /// (see the lifetime trap in
+    /// docs/devel/specs/2026-07-20-print-status-panel-test-isolation.md).
+    [[nodiscard]] static const GcodeEntry* find_entry_by_id(const std::deque<GcodeEntry>& entries,
+                                                            uint64_t id);
+
+  private:
     /// Fetch initial history from Moonraker's server.gcode_store
     void fetch_history();
 
@@ -120,6 +138,14 @@ class ConsolePanel : public OverlayBase {
     /// True if message is a periodic temperature report (e.g. "ok T:210.0 /210.0 B:60.0 /60.0")
     static bool is_temp_message(const std::string& message);
 
+    /// Tap handler for a command line: paste it back into the input field.
+    /// Refills only — never sends. A mis-tap must not re-run a printer command.
+    static void on_entry_clicked(lv_event_t* e);
+
+    /// Copy the command identified by `id` into gcode_input_ and neutralise the
+    /// readline browse cursor. No-op if the entry has been pruned.
+    void paste_entry(uint64_t id);
+
     // Widget references
     lv_obj_t* console_container_ = nullptr; ///< Scrollable container for entries
     lv_obj_t* empty_state_ = nullptr;       ///< Shown when no entries
@@ -130,6 +156,9 @@ class ConsolePanel : public OverlayBase {
     std::deque<GcodeEntry> entries_;           ///< History buffer
     static constexpr size_t MAX_ENTRIES = 200; ///< Maximum entries to display
     static constexpr int FETCH_COUNT = 100;    ///< Number of entries to fetch
+    /// Source of GcodeEntry::id. Starts at 1 so 0 stays reserved for "unassigned".
+    /// Deliberately never reset, including across clear_entries().
+    uint64_t next_entry_id_ = 1;
 
     // Command history (up/down arrow navigation)
     std::deque<std::string> command_history_; ///< Previously sent commands (newest first)

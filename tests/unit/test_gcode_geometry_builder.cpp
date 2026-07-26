@@ -3,6 +3,7 @@
 
 #include "gcode_geometry_builder.h"
 #include "gcode_parser.h"
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "../catch_amalgamated.hpp"
 
@@ -152,35 +153,47 @@ TEST_CASE("Geometry Builder: RibbonGeometry - construction and destruction",
     REQUIRE(geometry.vertices.empty());
     REQUIRE(geometry.indices.empty());
     REQUIRE(geometry.strips.empty());
-    REQUIRE(geometry.normal_palette.empty());
+    REQUIRE(geometry.strip_color_index.empty());
     REQUIRE(geometry.color_palette.empty());
-    REQUIRE(geometry.normal_cache != nullptr);
     REQUIRE(geometry.color_cache != nullptr);
+}
+
+TEST_CASE("Geometry Builder: RibbonVertex is 8 bytes", "[gcode][geometry][ribbon]") {
+    // The vertex pool dominates geometry memory on large gcode (millions of
+    // entries), so every byte here is multiplied by ~5N per extrusion segment.
+    // 6 B quantized position + 2 B octahedral normal, no padding at align 2.
+    // Adding a per-vertex color_index back would pad this to 10 B for no gain —
+    // color lives in RibbonGeometry::strip_color_index instead.
+    STATIC_REQUIRE(sizeof(RibbonVertex) == 8);
+    STATIC_REQUIRE(alignof(RibbonVertex) == 2);
+    STATIC_REQUIRE(offsetof(RibbonVertex, normal) == 6);
 }
 
 TEST_CASE("Geometry Builder: RibbonGeometry - move semantics", "[gcode][geometry][ribbon]") {
     RibbonGeometry geom1;
-    geom1.vertices.push_back({{100, 200, 300}, 0, 0});
+    geom1.vertices.push_back({{100, 200, 300}, {0, 0}});
     geom1.extrusion_triangle_count = 42;
 
     RibbonGeometry geom2(std::move(geom1));
 
     REQUIRE(geom2.vertices.size() == 1);
     REQUIRE(geom2.extrusion_triangle_count == 42);
-    REQUIRE(geom2.normal_cache != nullptr);
+    REQUIRE(geom2.color_cache != nullptr);
 }
 
 TEST_CASE("Geometry Builder: RibbonGeometry - clear", "[gcode][geometry][ribbon]") {
     RibbonGeometry geometry;
-    geometry.vertices.push_back({{100, 200, 300}, 0, 0});
-    geometry.normal_palette.push_back(glm::vec3(0, 0, 1));
+    geometry.vertices.push_back({{100, 200, 300}, {0, 0}});
+    geometry.strips.push_back({0, 1, 2, 3});
+    geometry.strip_color_index.push_back(0);
     geometry.color_palette.push_back(0xFF0000);
     geometry.extrusion_triangle_count = 10;
 
     geometry.clear();
 
     REQUIRE(geometry.vertices.empty());
-    REQUIRE(geometry.normal_palette.empty());
+    REQUIRE(geometry.strips.empty());
+    REQUIRE(geometry.strip_color_index.empty());
     REQUIRE(geometry.color_palette.empty());
     REQUIRE(geometry.extrusion_triangle_count == 0);
 }
@@ -192,13 +205,18 @@ TEST_CASE("Geometry Builder: RibbonGeometry - memory usage", "[gcode][geometry][
     REQUIRE(empty_memory == 0);
 
     // Add some data
-    geometry.vertices.push_back({{100, 200, 300}, 0, 0});
+    geometry.vertices.push_back({{100, 200, 300}, {0, 0}});
     geometry.strips.push_back({0, 1, 2, 3});
-    geometry.normal_palette.push_back(glm::vec3(0, 0, 1));
+    geometry.strip_color_index.push_back(0);
     geometry.color_palette.push_back(0xFF0000);
 
     size_t used_memory = geometry.memory_usage();
     REQUIRE(used_memory > empty_memory);
+
+    // strip_color_index must be accounted for, not silently omitted.
+    size_t before_colors = geometry.memory_usage();
+    geometry.strip_color_index.resize(1000, 0);
+    REQUIRE(geometry.memory_usage() == before_colors + 999);
 }
 
 // ============================================================================
@@ -528,8 +546,52 @@ TEST_CASE("Geometry Builder: Geometry generation - single segment",
     // Should have generated vertices and triangles
     REQUIRE(geometry.vertices.size() > 0);
     REQUIRE(geometry.strips.size() > 0);
-    REQUIRE(geometry.normal_palette.size() > 0);
+    REQUIRE(geometry.strip_color_index.size() == geometry.strips.size());
     REQUIRE(geometry.color_palette.size() > 0);
+}
+
+TEST_CASE("Geometry Builder: strips and strip_color_index stay in lockstep after build()",
+          "[gcode][geometry][generation]") {
+    // The two vectors are pushed from three separate sites in
+    // generate_ribbon_vertices (side faces, start cap fan, end cap fan). A
+    // missed push on any of them silently shifts every later strip's color.
+    GeometryBuilder builder;
+
+    ParsedGCodeFile gcode;
+    gcode.global_bounding_box.min = glm::vec3(0, 0, 0);
+    gcode.global_bounding_box.max = glm::vec3(100, 100, 10);
+
+    // Several layers with several segments each, so both cap paths and the
+    // vertex-sharing path between connected segments are all exercised.
+    for (int l = 0; l < 4; ++l) {
+        Layer layer;
+        layer.z_height = 0.2f * static_cast<float>(l + 1);
+        for (int s = 0; s < 5; ++s) {
+            ToolpathSegment seg;
+            seg.start = {10.0f + static_cast<float>(s) * 5.0f, 10.0f, layer.z_height};
+            seg.end = {15.0f + static_cast<float>(s) * 5.0f, 10.0f, layer.z_height};
+            seg.is_extrusion = true;
+            seg.width = 0.4f;
+            seg.layer_index = static_cast<uint16_t>(l);
+            layer.segments.push_back(seg);
+        }
+        gcode.layers.push_back(std::move(layer));
+    }
+    gcode.total_segments = 20;
+
+    SimplificationOptions options;
+    options.enable_merging = false;
+    RibbonGeometry geometry = builder.build(gcode, options);
+
+    REQUIRE(geometry.strips.size() > 0);
+    REQUIRE(geometry.strip_color_index.size() == geometry.strips.size());
+    REQUIRE(geometry.strip_layer_index.size() == geometry.strips.size());
+
+    // Every recorded index must resolve inside the palette — an out-of-range
+    // entry would silently fall back to the default teal at expansion time.
+    for (uint8_t ci : geometry.strip_color_index) {
+        REQUIRE(ci < geometry.color_palette.size());
+    }
 }
 
 TEST_CASE("Geometry Builder: Geometry generation - empty G-code",
@@ -1062,21 +1124,33 @@ TEST_CASE("prepare_interleaved_buffers data matches manual expansion",
     for (int ti = 0; ti < 6; ++ti) {
         const auto& vert = geom.vertices[strip[static_cast<size_t>(kTriIndices[ti])]];
         glm::vec3 pos = geom.quantization.dequantize_vec3(vert.position);
-        const glm::vec3& normal = geom.normal_palette[vert.normal_index];
 
+        // Color is per-strip, not per-vertex.
         uint32_t rgb = 0x26A69A; // Default teal
-        if (vert.color_index < geom.color_palette.size()) {
-            rgb = geom.color_palette[vert.color_index];
+        if (!geom.strip_color_index.empty() &&
+            geom.strip_color_index[0] < geom.color_palette.size()) {
+            rgb = geom.color_palette[geom.strip_color_index[0]];
         }
         uint8_t expected_color[4];
         PackedVertex::encode_color(rgb, expected_color);
-        int8_t expected_normal[2];
-        PackedVertex::encode_normal(normal, expected_normal);
+        // Normals are stored pre-encoded in the vertex — the packed bytes must
+        // be a straight copy, not a re-encode.
+        const int8_t expected_normal[2] = {vert.normal[0], vert.normal[1]};
 
         const auto& pv = packed[ti];
-        REQUIRE(pv.position[0] == Approx(pos.x).margin(0.01f));
-        REQUIRE(pv.position[1] == Approx(pos.y).margin(0.01f));
-        REQUIRE(pv.position[2] == Approx(pos.z).margin(0.01f));
+        // Positions are stored quantized and dequantized on the GPU, so the
+        // packed bytes must be the raw int16 …
+        REQUIRE(pv.position[0] == vert.position.x);
+        REQUIRE(pv.position[1] == vert.position.y);
+        REQUIRE(pv.position[2] == vert.position.z);
+        // … and dequantizing them must still land on the mm coordinate the
+        // renderer's matrix fold will produce.
+        REQUIRE(geom.quantization.dequantize(pv.position[0], geom.quantization.min_bounds.x) ==
+                Approx(pos.x).margin(0.01f));
+        REQUIRE(geom.quantization.dequantize(pv.position[1], geom.quantization.min_bounds.y) ==
+                Approx(pos.y).margin(0.01f));
+        REQUIRE(geom.quantization.dequantize(pv.position[2], geom.quantization.min_bounds.z) ==
+                Approx(pos.z).margin(0.01f));
         REQUIRE(pv.color[0] == expected_color[0]);
         REQUIRE(pv.color[1] == expected_color[1]);
         REQUIRE(pv.color[2] == expected_color[2]);
@@ -1121,4 +1195,115 @@ TEST_CASE("prepare_interleaved_buffers cleared by clearing prepared_buffers",
     // Simulate color-override invalidation path
     geom.prepared_buffers.clear();
     REQUIRE(geom.prepared_buffers.empty());
+}
+
+// ============================================================================
+// PackedVertex GPU layout
+// ============================================================================
+
+TEST_CASE("Geometry Builder: PackedVertex is 12 bytes with GL-friendly offsets",
+          "[gcode][geometry][packed_vertex]") {
+    // Positions ride to the GPU as raw quantized int16 and are dequantized by a
+    // transform folded into u_mvp / u_model_view. Sending float positions
+    // instead cost 8 bytes a vertex — 1.4 GB on a 28 MB gcode.
+    STATIC_REQUIRE(sizeof(PackedVertex) == 12);
+    STATIC_REQUIRE(PackedVertex::stride() == 12);
+
+    // Offsets must stay put: the renderer hands these to glVertexAttribPointer.
+    CHECK(PackedVertex::position_offset() == 0);
+    CHECK(PackedVertex::normal_offset() == 6);
+    CHECK(PackedVertex::color_offset() == 8);
+
+    // Stride a multiple of 4 keeps GL drivers off the slow path, and the 4-byte
+    // color attribute stays naturally aligned.
+    CHECK(PackedVertex::stride() % 4 == 0);
+    CHECK(PackedVertex::color_offset() % 4 == 0);
+}
+
+TEST_CASE("Geometry Builder: affine dequantization matches the matrix fold",
+          "[gcode][geometry][packed_vertex]") {
+    // The renderer replaces the CPU-side dequantize_vec3() with
+    // translate(min_bounds) * scale(1/scale_factor) baked into its matrices.
+    // If those two ever disagree the model silently renders at the wrong scale
+    // or position, so pin the equivalence here.
+    AABB bbox;
+    bbox.min = {12.5f, -30.0f, 0.0f};
+    bbox.max = {212.5f, 170.0f, 250.0f};
+
+    QuantizationParams q;
+    q.calculate_scale(bbox);
+
+    const float inv = 1.0f / q.scale_factor;
+    const glm::mat4 dequant = glm::translate(glm::mat4(1.0f), q.min_bounds) *
+                              glm::scale(glm::mat4(1.0f), glm::vec3(inv));
+
+    for (const glm::vec3& p : {glm::vec3{12.5f, -30.0f, 0.0f}, glm::vec3{100.0f, 20.0f, 125.0f},
+                               glm::vec3{212.5f, 170.0f, 250.0f}}) {
+        const QuantizedVertex qv = q.quantize_vec3(p);
+        const glm::vec3 cpu = q.dequantize_vec3(qv);
+        const glm::vec4 gpu =
+            dequant * glm::vec4(static_cast<float>(qv.x), static_cast<float>(qv.y),
+                                static_cast<float>(qv.z), 1.0f);
+
+        INFO("point " << p.x << "," << p.y << "," << p.z);
+        CHECK(gpu.x == Approx(cpu.x).margin(0.001));
+        CHECK(gpu.y == Approx(cpu.y).margin(0.001));
+        CHECK(gpu.z == Approx(cpu.z).margin(0.001));
+        CHECK(gpu.w == Approx(1.0f));
+    }
+}
+
+TEST_CASE("Geometry Builder: moving RibbonGeometry preserves every member",
+          "[gcode][geometry][move]") {
+    // The move operations are hand-written, so a member added to the struct is
+    // silently dropped unless it is also added here. layer_height_mm was being
+    // reset to its 0.2f default on every move — and ui_gcode_viewer moves the
+    // built geometry into its owning pointer, so the real renderer never saw a
+    // non-default layer height.
+    RibbonGeometry src;
+    src.layer_height_mm = 0.32f;
+    src.max_layer_index = 7;
+    src.quantization.scale_factor = 123.5f;
+    src.quantization.min_bounds = {1.0f, 2.0f, 3.0f};
+    src.prepared_buffers.resize(3);
+    src.prepared_buffers[1].vertex_count = 42;
+    src.prepared_buffers[1].data.assign(42 * PackedVertex::stride(), uint8_t{7});
+    src.strips.push_back({0, 1, 2, 3});
+    src.strips.push_back({4, 5, 6, 7});
+    src.strip_color_index = {3, 9};
+    src.strip_layer_index = {0, 1};
+    src.color_palette = {0x111111, 0x222222, 0x333333, 0x444444, 0x555555,
+                         0x666666, 0x777777, 0x888888, 0x999999, 0xAAAAAA};
+
+    SECTION("move construction") {
+        RibbonGeometry dst(std::move(src));
+        CHECK(dst.layer_height_mm == Approx(0.32f));
+        CHECK(dst.max_layer_index == 7);
+        CHECK(dst.quantization.scale_factor == Approx(123.5f));
+        REQUIRE(dst.prepared_buffers.size() == 3);
+        CHECK(dst.prepared_buffers[1].vertex_count == 42);
+        CHECK(dst.prepared_buffers[1].data.size() == 42 * PackedVertex::stride());
+        // Dropping strip_color_index on a move would recolor the whole model to
+        // the default teal, since strip_color() falls back when the index is missing.
+        REQUIRE(dst.strip_color_index.size() == dst.strips.size());
+        CHECK(dst.strip_color_index[0] == 3);
+        CHECK(dst.strip_color_index[1] == 9);
+        CHECK(dst.strip_color(1) == 0xAAAAAA);
+        CHECK(dst.strip_layer_index.size() == 2);
+    }
+
+    SECTION("move assignment") {
+        RibbonGeometry dst;
+        dst = std::move(src);
+        CHECK(dst.layer_height_mm == Approx(0.32f));
+        CHECK(dst.max_layer_index == 7);
+        CHECK(dst.quantization.scale_factor == Approx(123.5f));
+        REQUIRE(dst.prepared_buffers.size() == 3);
+        CHECK(dst.prepared_buffers[1].vertex_count == 42);
+        REQUIRE(dst.strip_color_index.size() == dst.strips.size());
+        CHECK(dst.strip_color_index[0] == 3);
+        CHECK(dst.strip_color_index[1] == 9);
+        CHECK(dst.strip_color(1) == 0xAAAAAA);
+        CHECK(dst.strip_layer_index.size() == 2);
+    }
 }

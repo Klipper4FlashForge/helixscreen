@@ -1,6 +1,7 @@
 // Copyright (C) 2025-2026 356C LLC
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "../helix_test_fixture.h"
 #include "ams_state.h"
 #include "ams_types.h"
 #include "app_constants.h"
@@ -21,7 +22,7 @@ using namespace helix;
 
 namespace {
 
-struct TempConfigFixture {
+struct TempConfigFixture : public HelixTestFixture {
     std::string temp_dir;
     std::string config_path;
 

@@ -539,6 +539,10 @@ void ConsolePanel::populate_entries(const std::vector<GcodeEntry>& entries) {
     size_t start = (entries.size() > MAX_ENTRIES) ? entries.size() - MAX_ENTRIES : 0;
     for (size_t i = start; i < entries.size(); i++) {
         entries_.push_back(entries[i]);
+        // Stamp identity here rather than at the call site: this is the only other
+        // door into entries_ besides add_entry(), and an unstamped entry is silently
+        // untappable rather than loudly broken.
+        entries_.back().id = next_entry_id_++;
     }
 
     for (const auto& entry : entries_) {
@@ -589,6 +593,30 @@ void ConsolePanel::create_entry_widget(const GcodeEntry& entry) {
 
     bool has_html = contains_html_spans(entry.message);
 
+    // Tap-to-paste: a sent command can be tapped to refill the input field.
+    // Applied to BOTH render paths below — show_timestamps_ and HTML spans decide
+    // which one runs at runtime, so wiring only one silently breaks the feature
+    // when a user toggles timestamps or firmware emits coloured output.
+    //
+    // lv_obj_add_event_cb() rather than a declarative XML <event_cb> because these
+    // are streaming log lines: variable count, two render shapes, up to MAX_ENTRIES
+    // of them, rebuilt as responses arrive. <repeat> would rebuild the whole list
+    // on every incoming line.
+    auto make_tappable = [&](lv_obj_t* widget) {
+        if (!is_command || entry.id == 0) {
+            return; // Responses stay inert; an unstamped entry can't be resolved.
+        }
+        lv_obj_add_flag(widget, LV_OBJ_FLAG_CLICKABLE);
+        // Identity travels as an integer VALUE, not a pointer. Nothing to free and
+        // nothing to dangle when this widget is pruned — a recycled widget address
+        // carrying a stale pointer is the #924/#1111 footgun.
+        lv_obj_set_user_data(widget, reinterpret_cast<void*>(static_cast<uintptr_t>(entry.id)));
+        lv_obj_add_event_cb(widget, on_entry_clicked, LV_EVENT_CLICKED, nullptr);
+        // Touch has no hover, so the pressed state is the only tap confirmation.
+        lv_obj_set_style_bg_color(widget, theme_manager_get_color("card_bg"), LV_STATE_PRESSED);
+        lv_obj_set_style_bg_opa(widget, LV_OPA_COVER, LV_STATE_PRESSED);
+    };
+
     // Use spangroup when timestamps or HTML spans need mixed colors
     if (show_timestamps_ || has_html) {
         lv_obj_t* spangroup = lv_spangroup_create(console_container_);
@@ -620,6 +648,7 @@ void ConsolePanel::create_entry_widget(const GcodeEntry& entry) {
         }
 
         lv_spangroup_refresh(spangroup);
+        make_tappable(spangroup);
     } else {
         // No timestamps, no HTML: plain label (fastest path)
         lv_obj_t* label = lv_label_create(console_container_);
@@ -632,7 +661,58 @@ void ConsolePanel::create_entry_widget(const GcodeEntry& entry) {
         lv_obj_set_width(label, LV_PCT(100));
         lv_obj_set_style_text_color(label, entry_color(), 0);
         lv_obj_set_style_text_font(label, font, 0);
+        make_tappable(label);
     }
+}
+
+const ConsolePanel::GcodeEntry* ConsolePanel::find_entry_by_id(const std::deque<GcodeEntry>& entries,
+                                                               uint64_t id) {
+    if (id == 0) {
+        return nullptr; // Reserved for "never stamped" — must never match.
+    }
+    for (const auto& entry : entries) {
+        if (entry.id == id) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+void ConsolePanel::paste_entry(uint64_t id) {
+    if (!gcode_input_) {
+        return;
+    }
+
+    const GcodeEntry* entry = find_entry_by_id(entries_, id);
+    if (!entry) {
+        // Normal outcome when a tap races a burst of responses that pruned the
+        // entry out from under the widget. Leave the input alone.
+        spdlog::debug("[{}] Tapped entry {} no longer in buffer, ignoring", get_name(), id);
+        return;
+    }
+
+    // entry->message is the bare command; the "> " prefix is added at render time.
+    lv_textarea_set_text(gcode_input_, entry->message.c_str());
+
+    // Neutralise the readline browse cursor. Without this a later Up-arrow resumes
+    // a stale walk from wherever history_index_ was left, and a Down-arrow past the
+    // newest restores a saved_input_ that no longer relates to anything on screen.
+    history_index_ = -1;
+    saved_input_.clear();
+
+    spdlog::info("[{}] Pasted command to input: {}", get_name(), entry->message);
+}
+
+void ConsolePanel::on_entry_clicked(lv_event_t* e) {
+    LVGL_SAFE_EVENT_CB_BEGIN("[Console] on_entry_clicked");
+
+    auto* widget = static_cast<lv_obj_t*>(lv_event_get_target(e));
+    if (widget) {
+        auto id = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(lv_obj_get_user_data(widget)));
+        get_global_console_panel().paste_entry(id);
+    }
+
+    LVGL_SAFE_EVENT_CB_END();
 }
 
 void ConsolePanel::clear_entries() {
@@ -815,6 +895,7 @@ void ConsolePanel::on_gcode_response(const nlohmann::json& msg) {
 void ConsolePanel::add_entry(const GcodeEntry& entry) {
     // Add to deque
     entries_.push_back(entry);
+    entries_.back().id = next_entry_id_++;
 
     // Enforce max size (remove oldest)
     while (entries_.size() > MAX_ENTRIES && console_container_) {
@@ -827,8 +908,10 @@ void ConsolePanel::add_entry(const GcodeEntry& entry) {
         helix::ui::safe_delete(first_child);
     }
 
-    // Create widget for new entry
-    create_entry_widget(entry);
+    // Create widget for the STORED entry, not the caller's copy — the caller's still
+    // has id 0 and would build an untappable widget. Pruning above only pops the
+    // front, so back() is still the entry just added.
+    create_entry_widget(entries_.back());
 
     // Update visibility state
     update_visibility();

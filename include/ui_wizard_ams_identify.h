@@ -143,8 +143,3 @@ class WizardAmsIdentifyStep : public helix::wizard::Step {
  * @return Pointer to the step instance
  */
 WizardAmsIdentifyStep* get_wizard_ams_identify_step();
-
-/**
- * @brief Destroy the wizard AMS identify step instance
- */
-void destroy_wizard_ams_identify_step();

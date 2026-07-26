@@ -342,7 +342,6 @@ Multi-state modal driven by `download_status` subject:
 | Subject | Type | Purpose |
 |---------|------|---------|
 | `update_status` | int | `Status` enum (Idle/Checking/UpdateAvailable/UpToDate/Error) |
-| `update_checking` | int | 1 while check is in progress, 0 otherwise |
 | `update_version_text` | string | Status text for the Check for Updates row |
 | `update_new_version` | string | New version number (e.g., "0.9.6") |
 | `update_current_version` | string | Current installed version. **Note:** This subject is owned by AboutSettingsOverlay, not UpdateChecker. |

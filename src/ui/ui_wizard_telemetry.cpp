@@ -35,10 +35,6 @@ WizardTelemetryStep* get_wizard_telemetry_step() {
     return g_wizard_telemetry_step.get();
 }
 
-void destroy_wizard_telemetry_step() {
-    g_wizard_telemetry_step.reset();
-}
-
 // ============================================================================
 // Subject Initialization
 // ============================================================================

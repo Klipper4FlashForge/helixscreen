@@ -63,6 +63,7 @@ declare -gA SCREENSHOT_RECIPE=(
     [spoolman]="navigate advanced; click row_spoolman"
     [history-dashboard]="navigate advanced; click row_print_history"
     [macros]="navigate advanced; click row_macros"
+    [console]="navigate advanced; click row_console"
 
     # Sample-data / event-only screens (need programmatic setup — see demo command)
     [lock-screen]="demo lock-screen"

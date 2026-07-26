@@ -349,102 +349,6 @@ void bed_mesh_renderer_set_dragging(bed_mesh_renderer_t* renderer, bool is_dragg
     renderer->view_state.is_dragging = is_dragging;
 }
 
-void bed_mesh_renderer_set_z_scale(bed_mesh_renderer_t* renderer, double z_scale) {
-    if (!renderer) {
-        return;
-    }
-    // Clamp to valid range
-    z_scale = std::max(BED_MESH_MIN_Z_SCALE, std::min(BED_MESH_MAX_Z_SCALE, z_scale));
-
-    // Check if z_scale actually changed
-    bool changed = (renderer->view_state.z_scale != z_scale);
-    renderer->view_state.z_scale = z_scale;
-
-    // Z-scale affects quad vertex Z coordinates - regenerate if changed
-    if (changed && renderer->has_mesh_data) {
-        helix::mesh::generate_mesh_quads(renderer);
-        spdlog::debug("[Bed Mesh Renderer] Regenerated quads due to z_scale change to {:.2f}",
-                      z_scale);
-
-        // State transition: READY_TO_RENDER → MESH_LOADED (quads regenerated, projections invalid)
-        if (renderer->state == RendererState::READY_TO_RENDER) {
-            renderer->state = RendererState::MESH_LOADED;
-        }
-    }
-}
-
-void bed_mesh_renderer_set_fov_scale(bed_mesh_renderer_t* renderer, double fov_scale) {
-    if (!renderer) {
-        return;
-    }
-    renderer->view_state.fov_scale = fov_scale;
-
-    // FOV changes invalidate cached projections (READY_TO_RENDER → MESH_LOADED)
-    if (renderer->state == RendererState::READY_TO_RENDER) {
-        renderer->state = RendererState::MESH_LOADED;
-    }
-}
-
-void bed_mesh_renderer_set_color_range(bed_mesh_renderer_t* renderer, double min_z, double max_z) {
-    if (!renderer) {
-        return;
-    }
-
-    // Check if color range actually changed
-    bool changed = (renderer->color_min_z != min_z || renderer->color_max_z != max_z);
-
-    renderer->auto_color_range = false;
-    renderer->color_min_z = min_z;
-    renderer->color_max_z = max_z;
-
-    spdlog::debug("[Bed Mesh Renderer] Manual color range set: min={:.3f}, max={:.3f}", min_z,
-                  max_z);
-
-    // Color range affects quad vertex colors - regenerate if changed
-    if (changed && renderer->has_mesh_data) {
-        helix::mesh::generate_mesh_quads(renderer);
-        spdlog::debug("[Bed Mesh Renderer] Regenerated quads due to color range change");
-
-        // State transition: READY_TO_RENDER → MESH_LOADED (quads regenerated, projections invalid)
-        if (renderer->state == RendererState::READY_TO_RENDER) {
-            renderer->state = RendererState::MESH_LOADED;
-        }
-    }
-}
-
-void bed_mesh_renderer_auto_color_range(bed_mesh_renderer_t* renderer) {
-    if (!renderer) {
-        return;
-    }
-
-    // Check if color range will change
-    bool changed = false;
-    if (renderer->has_mesh_data) {
-        changed = (renderer->color_min_z != renderer->mesh_min_z ||
-                   renderer->color_max_z != renderer->mesh_max_z);
-    }
-
-    renderer->auto_color_range = true;
-    if (renderer->has_mesh_data) {
-        renderer->color_min_z = renderer->mesh_min_z;
-        renderer->color_max_z = renderer->mesh_max_z;
-
-        // Regenerate quads if color range changed
-        if (changed) {
-            helix::mesh::generate_mesh_quads(renderer);
-            spdlog::debug("[Bed Mesh Renderer] Regenerated quads due to auto color range change");
-
-            // State transition: READY_TO_RENDER → MESH_LOADED (quads regenerated, projections
-            // invalid)
-            if (renderer->state == RendererState::READY_TO_RENDER) {
-                renderer->state = RendererState::MESH_LOADED;
-            }
-        }
-    }
-
-    spdlog::debug("[Bed Mesh Renderer] Auto color range enabled");
-}
-
 bool bed_mesh_renderer_render(bed_mesh_renderer_t* renderer, lv_layer_t* layer, int canvas_width,
                               int canvas_height, int widget_x, int widget_y) {
     if (!renderer || !layer) {
@@ -1810,12 +1714,6 @@ void bed_mesh_renderer_evaluate_render_mode(bed_mesh_renderer_t* renderer) {
     // Note: We don't auto-upgrade back to 3D (user must explicitly request via settings)
 }
 
-float bed_mesh_renderer_get_average_fps(bed_mesh_renderer_t* renderer) {
-    if (!renderer)
-        return 60.0f;
-    return calculate_average_fps(renderer);
-}
-
 // ============================================================================
 // Public API: Touch Handling for 2D Mode
 // ============================================================================
@@ -1870,21 +1768,6 @@ bool bed_mesh_renderer_handle_touch(bed_mesh_renderer_t* renderer, int touch_x, 
     return true;
 }
 
-bool bed_mesh_renderer_get_touched_cell(bed_mesh_renderer_t* renderer, int* out_row, int* out_col,
-                                        float* out_z) {
-    if (!renderer || !renderer->touch_valid)
-        return false;
-
-    if (out_row)
-        *out_row = renderer->touched_row;
-    if (out_col)
-        *out_col = renderer->touched_col;
-    if (out_z)
-        *out_z = renderer->touched_z;
-
-    return true;
-}
-
 void bed_mesh_renderer_clear_touch(bed_mesh_renderer_t* renderer) {
     if (!renderer)
         return;
@@ -1914,39 +1797,6 @@ void bed_mesh_renderer_set_zero_plane_visible(bed_mesh_renderer_t* renderer, boo
             renderer->state = RendererState::MESH_LOADED;
         }
     }
-}
-
-bool bed_mesh_renderer_get_zero_plane_visible(bed_mesh_renderer_t* renderer) {
-    if (!renderer)
-        return false;
-    return renderer->show_zero_plane;
-}
-
-void bed_mesh_renderer_set_zero_plane_offset(bed_mesh_renderer_t* renderer, double z_offset_mm) {
-    if (!renderer)
-        return;
-
-    if (renderer->zero_plane_z_offset == z_offset_mm)
-        return; // No change
-
-    renderer->zero_plane_z_offset = z_offset_mm;
-    spdlog::debug("[Bed Mesh Renderer] Zero plane Z-offset set to {:.4f}mm", z_offset_mm);
-
-    // Regenerate quads if plane is visible
-    if (renderer->show_zero_plane && renderer->has_mesh_data) {
-        helix::mesh::generate_mesh_quads(renderer);
-
-        // State transition: READY_TO_RENDER → MESH_LOADED (quads regenerated, projections invalid)
-        if (renderer->state == RendererState::READY_TO_RENDER) {
-            renderer->state = RendererState::MESH_LOADED;
-        }
-    }
-}
-
-double bed_mesh_renderer_get_zero_plane_offset(bed_mesh_renderer_t* renderer) {
-    if (!renderer)
-        return 0.0;
-    return renderer->zero_plane_z_offset;
 }
 
 void bed_mesh_renderer_set_z_display_offset(bed_mesh_renderer_t* renderer, double offset_mm) {

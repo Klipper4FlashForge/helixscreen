@@ -184,8 +184,9 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                 config_section.merge_patch(get_mock_gcode_macro_config());
 
                 // Build extruder settings based on HELIX_MOCK_KALICO env var
-                json extruder_settings = {
-                    {"min_temp", 0.0}, {"max_temp", 300.0}, {"min_extrude_temp", 170.0}};
+                json extruder_settings = {{"min_temp", 0.0},
+                                          {"max_temp", self->get_extruder_max_temp()},
+                                          {"min_extrude_temp", 170.0}};
                 if (is_mock_kalico()) {
                     extruder_settings["control"] = "mpc";
                     extruder_settings["heater_power"] = 50.0;
@@ -196,6 +197,17 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                     extruder_settings["pid_kd"] = 101.178;
                 }
 
+                // Probe-equipped printers (endstop_pin: probe:z_virtual_endstop)
+                // get a JSON null here rather than a number — see
+                // set_stepper_z_endstop_null().
+                json stepper_z_settings = {{"position_min", 0.0},
+                                           {"position_max", MOCK_BED_Z_MAX}};
+                if (self->is_stepper_z_endstop_null()) {
+                    stepper_z_settings["position_endstop"] = nullptr;
+                } else {
+                    stepper_z_settings["position_endstop"] = 235.0;
+                }
+
                 status_obj["configfile"] = {
                     {"settings",
                      {{"printer", {{"max_velocity", 500.0}, {"max_accel", 10000.0}}},
@@ -203,10 +215,7 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                        {{"position_min", MOCK_BED_X_MIN}, {"position_max", MOCK_BED_X_MAX}}},
                       {"stepper_y",
                        {{"position_min", MOCK_BED_Y_MIN}, {"position_max", MOCK_BED_Y_MAX}}},
-                      {"stepper_z",
-                       {{"position_min", 0.0},
-                        {"position_max", MOCK_BED_Z_MAX},
-                        {"position_endstop", 235.0}}},
+                      {"stepper_z", stepper_z_settings},
                       {"extruder", extruder_settings},
                       {"heater_bed",
                        {{"min_temp", 0.0},

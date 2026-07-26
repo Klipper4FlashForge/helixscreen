@@ -17,6 +17,8 @@
 // SDL2 headers
 #include <SDL.h>
 
+#include <string_view>
+
 bool DisplayBackendSDL::is_available() const {
     // SDL is always "available" on desktop - actual initialization
     // happens in create_display() which can fail more gracefully
@@ -33,6 +35,39 @@ lv_display_t* DisplayBackendSDL::create_display(int width, int height) {
     SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
     // LVGL's SDL driver handles SDL_Init and window creation internally
     display_ = lv_sdl_window_create(width, height);
+
+    if (display_ == nullptr) {
+        // Two very different failures land here, and only one is worth a retry.
+        //
+        // No video subsystem at all (bad SDL_VIDEODRIVER, no display server and
+        // no fallback driver): SDL_CreateWindow failed. A different render
+        // driver cannot help, and LVGL latches its `inited` flag on the first
+        // call so SDL_Init is not even retried. Report the real reason instead
+        // of blaming the renderer, and let DisplayManager move on to fbdev.
+        //
+        // Video subsystem up but no accelerated renderer: LVGL asks for
+        // SDL_RENDERER_ACCELERATED (LV_SDL_ACCELERATED in lv_conf.h), which the
+        // dummy/offscreen drivers, GPU-less containers and CI machines cannot
+        // provide. That one retries cleanly with the software renderer, so
+        // headless works without the caller knowing to set SDL_RENDER_DRIVER.
+        if (SDL_WasInit(SDL_INIT_VIDEO) == 0) {
+            spdlog::error("[SDL Backend] No usable SDL video driver: {}", SDL_GetError());
+        } else {
+            // OVERRIDE priority so it also beats a user-set SDL_RENDER_DRIVER
+            // that just failed.
+            const char* current = SDL_GetHint(SDL_HINT_RENDER_DRIVER);
+            if (current == nullptr || std::string_view(current) != "software") {
+                spdlog::warn("[SDL Backend] Accelerated renderer unavailable ({}) - "
+                             "retrying with the software renderer",
+                             SDL_GetError());
+                SDL_SetHintWithPriority(SDL_HINT_RENDER_DRIVER, "software", SDL_HINT_OVERRIDE);
+                display_ = lv_sdl_window_create(width, height);
+                if (display_ != nullptr) {
+                    spdlog::info("[SDL Backend] Using software renderer (no GPU acceleration)");
+                }
+            }
+        }
+    }
 
     if (display_ == nullptr) {
         spdlog::error("[SDL Backend] Failed to create SDL display");

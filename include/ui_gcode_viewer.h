@@ -71,8 +71,6 @@ extern "C" {
  * @code
  *   lv_obj_t* viewer = ui_gcode_viewer_create(parent);
  *   ui_gcode_viewer_load_file(viewer, "/path/to/file.gcode");
- *   // or:
- *   ui_gcode_viewer_set_gcode_data(viewer, parsed_data);
  * @endcode
  *
  * @see docs/GCODE_VISUALIZATION.md for complete design
@@ -122,17 +120,6 @@ void ui_gcode_viewer_set_load_callback(lv_obj_t* obj, gcode_viewer_load_callback
                                        void* user_data);
 
 /**
- * @brief Set G-code data directly (already parsed)
- * @param obj Viewer widget
- * @param gcode_data Parsed G-code file (widget takes ownership, must be heap-allocated)
- *
- * Use this when you've already parsed the file elsewhere.
- * The widget takes ownership of the data and will free it on clear/destroy.
- * Caller must NOT use or free gcode_data after this call.
- */
-void ui_gcode_viewer_set_gcode_data(lv_obj_t* obj, void* gcode_data);
-
-/**
  * @brief Clear loaded G-code
  * @param obj Viewer widget
  *
@@ -167,16 +154,9 @@ void ui_gcode_viewer_set_clear_callback(lv_obj_t* obj, ui_gcode_viewer_clear_cb_
                                         void* user_data);
 
 /**
- * @brief Get current loading state
- * @param obj Viewer widget
- * @return Current state
- */
-helix::GcodeViewerState ui_gcode_viewer_get_state(lv_obj_t* obj);
-
-/**
  * @brief Query whether the viewer currently holds renderable geometry
  *
- * Returns true after a successful load_file / set_gcode_data, false after
+ * Returns true after a successful load_file, false after
  * ui_gcode_viewer_clear() or before any load (and false if @p obj is null).
  * Used by the print status panel to reconcile the preview against the real
  * widget state on re-entry instead of trusting intent bools.
@@ -238,23 +218,6 @@ void ui_gcode_viewer_force_redraw(lv_obj_t* obj);
 void ui_gcode_viewer_set_render_mode(lv_obj_t* obj, helix::GcodeViewerRenderMode mode);
 
 /**
- * @brief Get current render mode setting
- * @param obj Viewer widget
- * @return Current render mode
- */
-helix::GcodeViewerRenderMode ui_gcode_viewer_get_render_mode(lv_obj_t* obj);
-
-/**
- * @brief Evaluate FPS history and potentially switch render mode (for AUTO mode)
- * @param obj Viewer widget
- *
- * Call this after enough frames have been rendered to have FPS data.
- * In AUTO mode, if average FPS drops below threshold (15 FPS), switches to 2D layer view.
- * Has no effect in forced 3D or 2D modes.
- */
-void ui_gcode_viewer_evaluate_render_mode(lv_obj_t* obj);
-
-/**
  * @brief Check if currently using 2D layer renderer
  * @param obj Viewer widget
  * @return true if 2D layer renderer is active (either forced or via AUTO fallback)
@@ -270,35 +233,9 @@ bool ui_gcode_viewer_is_using_2d_mode(lv_obj_t* obj);
  */
 void ui_gcode_viewer_disable_streaming(lv_obj_t* obj);
 
-/**
- * @brief Show/hide support structures in 2D layer view
- * @param obj Viewer widget
- * @param show true to show supports, false to hide
- *
- * Only affects 2D layer renderer. Support detection relies on EXCLUDE_OBJECT
- * metadata from the slicer.
- */
-void ui_gcode_viewer_set_show_supports(lv_obj_t* obj, bool show);
-
 // ==============================================
 // Camera Controls
 // ==============================================
-
-/**
- * @brief Rotate camera view
- * @param obj Viewer widget
- * @param delta_azimuth Horizontal rotation in degrees
- * @param delta_elevation Vertical rotation in degrees
- */
-void ui_gcode_viewer_rotate(lv_obj_t* obj, float delta_azimuth, float delta_elevation);
-
-/**
- * @brief Pan camera view
- * @param obj Viewer widget
- * @param delta_x Horizontal pan in world units
- * @param delta_y Vertical pan in world units
- */
-void ui_gcode_viewer_pan(lv_obj_t* obj, float delta_x, float delta_y);
 
 /**
  * @brief Zoom camera
@@ -359,28 +296,6 @@ void ui_gcode_viewer_set_debug_colors(lv_obj_t* obj, bool enable);
  */
 void ui_gcode_viewer_set_show_travels(lv_obj_t* obj, bool show);
 
-/**
- * @brief Show/hide extrusion moves
- * @param obj Viewer widget
- * @param show true to show, false to hide
- */
-void ui_gcode_viewer_set_show_extrusions(lv_obj_t* obj, bool show);
-
-/**
- * @brief Set visible layer range
- * @param obj Viewer widget
- * @param start_layer First layer (0-based, inclusive)
- * @param end_layer Last layer (-1 for all remaining)
- */
-void ui_gcode_viewer_set_layer_range(lv_obj_t* obj, int start_layer, int end_layer);
-
-/**
- * @brief Set highlighted object
- * @param obj Viewer widget
- * @param object_name Object name to highlight (NULL to clear)
- */
-void ui_gcode_viewer_set_highlighted_object(lv_obj_t* obj, const char* object_name);
-
 // ==============================================
 // Object Picking (for exclusion UI)
 // ==============================================
@@ -410,42 +325,6 @@ const char* ui_gcode_viewer_pick_object(lv_obj_t* obj, int x, int y);
 void ui_gcode_viewer_set_extrusion_color(lv_obj_t* obj, lv_color_t color);
 
 /**
- * @brief Set custom travel move color
- * @param obj Viewer widget
- * @param color Color for travel moves
- *
- * Overrides theme default color for travels.
- */
-void ui_gcode_viewer_set_travel_color(lv_obj_t* obj, lv_color_t color);
-
-/**
- * @brief Enable/disable automatic filament color from G-code metadata
- * @param obj Viewer widget
- * @param enable true to use parsed filament color, false to use theme/custom colors
- *
- * When enabled, extrusion color is automatically set from G-code metadata (if available).
- */
-void ui_gcode_viewer_use_filament_color(lv_obj_t* obj, bool enable);
-
-/**
- * @brief Set global rendering opacity
- * @param obj Viewer widget
- * @param opacity Opacity value (0-255, where 255 = fully opaque)
- *
- * Affects all rendered segments. Useful for fade effects or overlays.
- */
-void ui_gcode_viewer_set_opacity(lv_obj_t* obj, lv_opa_t opacity);
-
-/**
- * @brief Set brightness factor
- * @param obj Viewer widget
- * @param factor Brightness multiplier (0.5-2.0, where 1.0 = normal)
- *
- * Values > 1.0 brighten colors, < 1.0 darken them.
- */
-void ui_gcode_viewer_set_brightness(lv_obj_t* obj, float factor);
-
-/**
  * @brief Set material specular lighting parameters (3D only)
  * @param obj Viewer widget
  * @param intensity Specular intensity (0.0-0.2, where 0.0 = matte, 0.075 = OrcaSlicer default)
@@ -460,29 +339,6 @@ void ui_gcode_viewer_set_specular(lv_obj_t* obj, float intensity, float shinines
 // ==============================================
 // Layer Control Extensions
 // ==============================================
-
-/**
- * @brief Set single layer mode
- * @param obj Viewer widget
- * @param layer Layer number (0-based) to display alone
- *
- * Convenience function equivalent to set_layer_range(layer, layer).
- */
-void ui_gcode_viewer_set_single_layer(lv_obj_t* obj, int layer);
-
-/**
- * @brief Get current layer range start
- * @param obj Viewer widget
- * @return Starting layer index
- */
-int ui_gcode_viewer_get_current_layer_start(lv_obj_t* obj);
-
-/**
- * @brief Get current layer range end
- * @param obj Viewer widget
- * @return Ending layer index (-1 = all layers)
- */
-int ui_gcode_viewer_get_current_layer_end(lv_obj_t* obj);
 
 // ==============================================
 // Print Progress / Ghost Layer Visualization
@@ -505,15 +361,6 @@ int ui_gcode_viewer_get_current_layer_end(lv_obj_t* obj);
 void ui_gcode_viewer_set_print_progress(lv_obj_t* obj, int current_layer);
 
 /**
- * @brief Set ghost layer opacity
- * @param obj Viewer widget
- * @param opacity Opacity value (0=invisible, 255=fully opaque, default: 77 = ~30%)
- *
- * Controls how visible the ghost (unprinted) layers appear.
- */
-void ui_gcode_viewer_set_ghost_opacity(lv_obj_t* obj, lv_opa_t opacity);
-
-/**
  * @brief Set ghost layer rendering mode
  * @param obj Viewer widget
  * @param mode Rendering mode: 0=Dimmed, 1=Stipple, 2=Wireframe, 4=DepthOnly
@@ -525,24 +372,6 @@ void ui_gcode_viewer_set_ghost_opacity(lv_obj_t* obj, lv_opa_t opacity);
  * - 4 (DepthOnly): No depth write - see through to solid layers
  */
 void ui_gcode_viewer_set_ghost_mode(lv_obj_t* obj, int mode);
-
-/**
- * @brief Enable/disable screen-space ambient occlusion post-processing
- * @param obj Viewer widget
- * @param enable true to enable SSAO
- *
- * Applies a post-processing pass that darkens pixels in concavities for
- * improved depth perception. Only active in FRONT view when cache is complete.
- * Toggle with HELIX_SSAO=1 environment variable for testing.
- */
-void ui_gcode_viewer_set_ssao_enabled(lv_obj_t* obj, bool enable);
-
-/**
- * @brief Check if SSAO is enabled
- * @param obj Viewer widget
- * @return true if SSAO post-processing is enabled
- */
-bool ui_gcode_viewer_get_ssao_enabled(lv_obj_t* obj);
 
 /**
  * @brief Set vertical content offset (shifts render center up/down)
@@ -567,62 +396,11 @@ int ui_gcode_viewer_get_max_layer(lv_obj_t* obj);
 // ==============================================
 
 /**
- * @brief Get filament color from G-code metadata
- * @param obj Viewer widget
- * @return Hex color string (e.g., "#26A69A") or NULL if not available
- *
- * String is valid until next file load.
- */
-const char* ui_gcode_viewer_get_filament_color(lv_obj_t* obj);
-
-/**
  * @brief Get filament type from metadata
  * @param obj Viewer widget
  * @return Filament type (e.g., "PLA", "PETG") or NULL if not available
  */
 const char* ui_gcode_viewer_get_filament_type(lv_obj_t* obj);
-
-/**
- * @brief Get printer model from metadata
- * @param obj Viewer widget
- * @return Printer model name or NULL if not available
- */
-const char* ui_gcode_viewer_get_printer_model(lv_obj_t* obj);
-
-/**
- * @brief Get estimated print time
- * @param obj Viewer widget
- * @return Print time in minutes, or 0.0 if not available
- */
-float ui_gcode_viewer_get_estimated_time_minutes(lv_obj_t* obj);
-
-/**
- * @brief Get filament weight
- * @param obj Viewer widget
- * @return Filament weight in grams, or 0.0 if not available
- */
-float ui_gcode_viewer_get_filament_weight_g(lv_obj_t* obj);
-
-/**
- * @brief Get filament length
- * @param obj Viewer widget
- * @return Filament length in mm, or 0.0 if not available
- */
-float ui_gcode_viewer_get_filament_length_mm(lv_obj_t* obj);
-
-/**
- * @brief Get filament cost
- * @param obj Viewer widget
- * @return Estimated cost, or 0.0 if not available
- */
-float ui_gcode_viewer_get_filament_cost(lv_obj_t* obj);
-
-/**
- * @brief Get nozzle diameter
- * @param obj Viewer widget
- * @return Nozzle diameter in mm, or 0.0 if not available
- */
-float ui_gcode_viewer_get_nozzle_diameter_mm(lv_obj_t* obj);
 
 // ==============================================
 // Statistics
@@ -644,13 +422,6 @@ const char* ui_gcode_viewer_get_filename(lv_obj_t* obj);
  * @return Layer count or 0 if no file loaded
  */
 int ui_gcode_viewer_get_layer_count(lv_obj_t* obj);
-
-/**
- * @brief Get number of segments rendered in last frame
- * @param obj Viewer widget
- * @return Segment count
- */
-int ui_gcode_viewer_get_segments_rendered(lv_obj_t* obj);
 
 // ==============================================
 // LVGL XML Component Registration

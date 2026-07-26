@@ -5,6 +5,11 @@
 
 #include "theme_manager.h"
 
+#include <spdlog/spdlog.h>
+
+#include <cstring>
+#include <limits>
+
 // ============================================================================
 // Responsive Layout
 // ============================================================================
@@ -76,3 +81,94 @@ const char* ui_brightness_to_lightbulb_icon(int brightness) {
     }
     return "lightbulb_on"; // 100%
 }
+
+// ============================================================================
+// Owned user_data strings
+// ============================================================================
+
+namespace helix::ui {
+
+namespace {
+
+/// Frees the owned string and clears the slot. Registered exactly once per
+/// object; nulling the slot makes a repeated DELETE delivery a no-op.
+void owned_user_string_delete_cb(lv_event_t* e) {
+    lv_obj_t* obj = lv_event_get_target_obj(e);
+    if (!obj) {
+        return;
+    }
+    auto* owned = static_cast<char*>(lv_obj_get_user_data(obj));
+    if (owned) {
+        lv_free(owned);
+        lv_obj_set_user_data(obj, nullptr);
+    }
+}
+
+/// True when this helper installed the cleanup handler on @p obj — i.e. the
+/// user_data slot belongs to us and may be read/freed (lesson L069).
+bool owns_user_string(lv_obj_t* obj) {
+    uint32_t count = lv_obj_get_event_count(obj);
+    for (uint32_t i = 0; i < count; ++i) {
+        lv_event_dsc_t* dsc = lv_obj_get_event_dsc(obj, i);
+        if (dsc && lv_event_dsc_get_cb(dsc) == owned_user_string_delete_cb) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+bool set_owned_user_string(lv_obj_t* obj, std::string_view s) {
+    if (!obj) {
+        return false;
+    }
+
+    // `s.size() + 1` must not wrap: a wrapped 0 would make lv_malloc succeed and
+    // the copy below run off the end of the heap.
+    if (s.size() == std::numeric_limits<size_t>::max()) {
+        spdlog::error("[ui_utils] set_owned_user_string: length overflows");
+        return false;
+    }
+
+    const bool mine = owns_user_string(obj);
+    if (!mine && lv_obj_get_user_data(obj) != nullptr) {
+        // L069: somebody else owns this slot. Never stomp it, never free it.
+        spdlog::error("[ui_utils] set_owned_user_string: user_data already owned elsewhere");
+        return false;
+    }
+
+    auto* copy = static_cast<char*>(lv_malloc(s.size() + 1));
+    if (!copy) {
+        // Allocation failed — leave user_data exactly as it was. Constrained
+        // devices (AD5M/CC1) reach this under memory pressure; the pre-helper
+        // code memcpy'd into the null result and took the process down.
+        spdlog::error("[ui_utils] set_owned_user_string: failed to allocate {} bytes",
+                      s.size() + 1);
+        return false;
+    }
+    if (!s.empty()) {
+        std::memcpy(copy, s.data(), s.size());
+    }
+    copy[s.size()] = '\0';
+
+    if (mine) {
+        // Replace our own previous copy; the cleanup handler stays registered.
+        auto* previous = static_cast<char*>(lv_obj_get_user_data(obj));
+        lv_free(previous);
+        lv_obj_set_user_data(obj, copy);
+    } else {
+        lv_obj_set_user_data(obj, copy);
+        lv_obj_add_event_cb(obj, owned_user_string_delete_cb, LV_EVENT_DELETE, nullptr);
+    }
+    return true;
+}
+
+const char* get_owned_user_string(lv_obj_t* obj) {
+    if (!obj || !owns_user_string(obj)) {
+        return nullptr;
+    }
+    return static_cast<const char*>(lv_obj_get_user_data(obj));
+}
+
+} // namespace helix::ui

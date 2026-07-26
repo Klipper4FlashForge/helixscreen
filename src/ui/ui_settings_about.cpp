@@ -74,10 +74,6 @@ AboutSettingsOverlay& get_about_settings_overlay() {
     return *g_about_settings_overlay;
 }
 
-void destroy_about_settings_overlay() {
-    g_about_settings_overlay.reset();
-}
-
 // ============================================================================
 // CONSTRUCTOR / DESTRUCTOR
 // ============================================================================

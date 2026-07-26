@@ -7,6 +7,7 @@
 #include "data_root_resolver.h"
 #include "grid_layout.h"
 #include "helix-xml/src/xml/lv_xml.h"
+#include "json_utils.h"
 #include "panel_widget_registry.h"
 #include "theme_manager.h"
 
@@ -153,17 +154,33 @@ void PanelWidgetConfig::load() {
 
     // Format detection: object with "pages" key = new multi-page format
     if (saved.is_object() && saved.contains("pages") && saved["pages"].is_array()) {
-        // New multi-page format
-        main_page_index_ = saved.value("main_page_index", 0);
-        next_page_id_ = saved.value("next_page_id", 0);
+        // New multi-page format.
+        //
+        // settings.json is hand-editable, so every read here goes through the
+        // safe_* helpers: .value() throws type_error.302 on a key that is
+        // PRESENT with a null value (missing keys are fine), and one such key
+        // would abort the whole panel load instead of costing one field.
+        main_page_index_ = static_cast<size_t>(helix::json_util::safe_int(saved, "main_page_index"));
+        next_page_id_ = helix::json_util::safe_int(saved, "next_page_id");
 
         size_t page_idx = 0;
         for (const auto& page_json : saved["pages"]) {
+            // Degrade per-page, not per-dashboard. `"pages": ["main"]` — an
+            // easy hand-edit slip — makes page_json a string, and .value() on a
+            // non-object throws type_error.306.
+            if (!page_json.is_object()) {
+                spdlog::warn("[PanelWidgetConfig] Skipping non-object page entry at index {}",
+                             page_idx);
+                ++page_idx;
+                continue;
+            }
             PageConfig page;
-            page.id = page_json.value("id", "");
+            page.id = helix::json_util::safe_string(page_json, "id");
             if (page_json.contains("widgets") && page_json["widgets"].is_array()) {
-                // Only append registry defaults for the first page (main/default page)
-                bool append_defaults = (page_idx == 0);
+                // Only append registry defaults for the first page (main/default
+                // page). Keyed off pages_ rather than page_idx so a skipped
+                // leading entry doesn't cost the first real page its defaults.
+                bool append_defaults = pages_.empty();
                 page.widgets = parse_widget_array(page_json["widgets"], append_defaults);
             }
             pages_.push_back(std::move(page));
@@ -277,15 +294,26 @@ bool PanelWidgetConfig::try_populate_from_preset_seed() {
         return false;
     }
 
-    main_page_index_ = seed.value("main_page_index", 0);
-    next_page_id_ = seed.value("next_page_id", 0);
+    // The try above covers only json::parse — these reads were outside it. Same
+    // null/non-object hazard as the settings.json path in load(); see the
+    // comments there. A seed that fails here would otherwise unwind out of
+    // load(), taking dashboard construction with it.
+    main_page_index_ = static_cast<size_t>(helix::json_util::safe_int(seed, "main_page_index"));
+    next_page_id_ = helix::json_util::safe_int(seed, "next_page_id");
 
     size_t page_idx = 0;
     for (const auto& page_json : seed["pages"]) {
+        if (!page_json.is_object()) {
+            spdlog::warn("[PanelWidgetConfig] Preset seed '{}': skipping non-object page entry "
+                         "at index {}",
+                         seed_path, page_idx);
+            ++page_idx;
+            continue;
+        }
         PageConfig page;
-        page.id = page_json.value("id", "");
+        page.id = helix::json_util::safe_string(page_json, "id");
         if (page_json.contains("widgets") && page_json["widgets"].is_array()) {
-            bool append_defaults = (page_idx == 0);
+            bool append_defaults = pages_.empty();
             page.widgets = parse_widget_array(page_json["widgets"], append_defaults);
         }
         pages_.push_back(std::move(page));
@@ -513,12 +541,26 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
     if (layout_file.is_open()) {
         try {
             nlohmann::json layout = nlohmann::json::parse(layout_file);
-            for (const auto& anchor : layout.value("anchors", nlohmann::json::array())) {
-                std::string id = anchor.value("id", "");
+            // find + is_array rather than .value("anchors", array()): default_
+            // layout.json is runtime-editable, and .value() throws type_error
+            // .302 on a key present with a null value. The catch below would
+            // turn that into "no anchors at all" — every anchor lost to one bad
+            // key. Each read below degrades to its own default instead.
+            auto anchors_it = layout.is_object() ? layout.find("anchors") : layout.end();
+            const nlohmann::json empty_array = nlohmann::json::array();
+            const nlohmann::json& anchor_list =
+                (anchors_it != layout.end() && anchors_it->is_array()) ? *anchors_it : empty_array;
+            for (const auto& anchor : anchor_list) {
+                if (!anchor.is_object())
+                    continue;
+                std::string id = helix::json_util::safe_string(anchor, "id");
                 if (id.empty() || !find_widget_def(id))
                     continue;
 
-                auto placements = anchor.value("placements", nlohmann::json::object());
+                auto placements_it = anchor.find("placements");
+                if (placements_it == anchor.end() || !placements_it->is_object())
+                    continue;
+                const nlohmann::json& placements = *placements_it;
 
                 // Fallback chain: micro→tiny→small, xlarge→large (matches theme_manager)
                 static const char* fallback_order[][3] = {
@@ -540,9 +582,17 @@ std::vector<PanelWidgetEntry> PanelWidgetConfig::build_default_grid() {
                     }
                 }
                 if (chosen_name) {
-                    auto& p = placements[chosen_name];
-                    anchors.push_back({id, p.value("col", 0), p.value("row", 0),
-                                       p.value("colspan", 1), p.value("rowspan", 1)});
+                    // find, not operator[]: `placements` is a const reference
+                    // now, and const operator[] on a missing key is only
+                    // JSON_ASSERT-guarded — under NDEBUG it dereferences end().
+                    auto p_it = placements.find(chosen_name);
+                    if (p_it == placements.end() || !p_it->is_object())
+                        continue;
+                    const nlohmann::json& p = *p_it;
+                    anchors.push_back({id, helix::json_util::safe_int(p, "col", 0),
+                                       helix::json_util::safe_int(p, "row", 0),
+                                       helix::json_util::safe_int(p, "colspan", 1),
+                                       helix::json_util::safe_int(p, "rowspan", 1)});
                 }
             }
             spdlog::debug("[PanelWidgetConfig] Loaded {} anchors from default_layout.json (bp={})",

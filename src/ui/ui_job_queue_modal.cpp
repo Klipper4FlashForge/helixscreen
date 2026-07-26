@@ -27,11 +27,26 @@ struct RowData {
     char* filename;
 };
 
+// NOTE: this site owns TWO strings behind one pointer, so it cannot use
+// helix::ui::set_owned_user_string() (single char* slot). It keeps its own
+// allocator, but with the same contract: every lv_malloc is checked and a
+// partial allocation is rolled back rather than left half-built.
 RowData* make_row_data(const std::string& job_id, const std::string& filename) {
     auto* rd = static_cast<RowData*>(lv_malloc(sizeof(RowData)));
+    if (!rd) {
+        spdlog::error("[JobQueueModal] Failed to allocate row data for '{}'", filename);
+        return nullptr;
+    }
     rd->job_id = static_cast<char*>(lv_malloc(job_id.size() + 1));
-    std::memcpy(rd->job_id, job_id.c_str(), job_id.size() + 1);
     rd->filename = static_cast<char*>(lv_malloc(filename.size() + 1));
+    if (!rd->job_id || !rd->filename) {
+        spdlog::error("[JobQueueModal] Failed to allocate row strings for '{}'", filename);
+        lv_free(rd->job_id);
+        lv_free(rd->filename);
+        lv_free(rd);
+        return nullptr;
+    }
+    std::memcpy(rd->job_id, job_id.c_str(), job_id.size() + 1);
     std::memcpy(rd->filename, filename.c_str(), filename.size() + 1);
     return rd;
 }

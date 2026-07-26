@@ -721,7 +721,6 @@ void UpdateChecker::init_subjects() {
 
     UI_MANAGED_SUBJECT_INT(status_subject_, static_cast<int>(Status::Idle), "update_status",
                            subjects_);
-    UI_MANAGED_SUBJECT_INT(checking_subject_, 0, "update_checking", subjects_);
     UI_MANAGED_SUBJECT_STRING(version_text_subject_, version_text_buf_, "", "update_version_text",
                               subjects_);
     UI_MANAGED_SUBJECT_STRING(new_version_subject_, new_version_buf_, "", "update_new_version",
@@ -749,9 +748,6 @@ void UpdateChecker::init_subjects() {
 
 lv_subject_t* UpdateChecker::status_subject() {
     return &status_subject_;
-}
-lv_subject_t* UpdateChecker::checking_subject() {
-    return &checking_subject_;
 }
 lv_subject_t* UpdateChecker::version_text_subject() {
     return &version_text_subject_;
@@ -2132,7 +2128,6 @@ void UpdateChecker::check_for_updates(Callback callback) {
     // Update subjects on LVGL thread (check_for_updates is public, could be called from any thread)
     if (subjects_initialized_) {
         helix::ui::queue_update([this]() {
-            lv_subject_set_int(&checking_subject_, 1);
             lv_subject_set_int(&status_subject_, static_cast<int>(Status::Checking));
             lv_subject_copy_string(&version_text_subject_, lv_tr("Checking..."));
         });
@@ -2154,7 +2149,6 @@ void UpdateChecker::check_for_updates(Callback callback) {
         error_message_ = "system busy";
         if (subjects_initialized_) {
             helix::ui::queue_update([this]() {
-                lv_subject_set_int(&checking_subject_, 0);
                 lv_subject_set_int(&status_subject_, static_cast<int>(Status::Error));
             });
         }
@@ -2828,7 +2822,6 @@ void UpdateChecker::report_result(Status status, std::optional<ReleaseInfo> info
         // Update LVGL subjects
         if (subjects_initialized_) {
             lv_subject_set_int(&status_subject_, static_cast<int>(status));
-            lv_subject_set_int(&checking_subject_, 0); // Done checking
 
             if (status == Status::UpdateAvailable && info) {
                 snprintf(version_text_buf_, sizeof(version_text_buf_), lv_tr("v%s available"),

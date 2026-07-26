@@ -4,6 +4,7 @@
 #include "ui_panel_history_list.h"
 
 #include "ui_callback_helpers.h"
+#include "ui_filename_utils.h"
 #include "ui_fonts.h"
 #include "ui_format_utils.h"
 #include "ui_nav_manager.h"
@@ -558,16 +559,10 @@ void HistoryListPanel::associate_timelapse_files(const std::vector<FileInfo>& ti
         if (job.filename.empty())
             continue;
 
-        // Get job filename without extension and path
-        std::string job_base = job.filename;
-        size_t slash_pos = job_base.rfind('/');
-        if (slash_pos != std::string::npos) {
-            job_base = job_base.substr(slash_pos + 1);
-        }
-        size_t dot_pos = job_base.rfind(".gcode");
-        if (dot_pos != std::string::npos) {
-            job_base = job_base.substr(0, dot_pos);
-        }
+        // Get job filename without extension and path. Must cover .gcode/.gco/
+        // .g/.3mf case-insensitively — a leftover extension is never present in
+        // the video's name, so the match below would silently never fire.
+        std::string job_base = helix::gcode::get_display_filename(job.filename);
 
         // Convert to lowercase for comparison
         std::string job_base_lower = job_base;

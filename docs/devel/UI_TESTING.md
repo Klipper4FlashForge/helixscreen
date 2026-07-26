@@ -14,6 +14,13 @@ HelixScreen has two UI test layers, covering different things:
 **Test Utilities:** `tests/ui_test_utils.h/cpp`
 **Test Location:** `tests/unit/test_*.cpp`
 
+> Driving the **real binary** headless — bringing up an actual panel and
+> screenshotting it with no display server — is a separate path: run
+> `helix-screen` under `SDL_VIDEODRIVER=dummy` and control it with
+> `helix-screen ctl`. See `HELIXCTL.md` § "Running headless". Use that when a
+> test needs the full application lifecycle rather than a fixture-built widget
+> tree.
+
 ## Architecture
 
 ```

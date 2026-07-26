@@ -41,8 +41,13 @@ MoonrakerAPI* get_moonraker_api();
 ScrewsTiltPanel& get_global_screws_tilt_panel() {
     if (!s_screws_tilt_panel) {
         s_screws_tilt_panel = std::make_unique<ScrewsTiltPanel>();
-        StaticPanelRegistry::instance().register_destroy("ScrewsTiltPanel",
-                                                         []() { s_screws_tilt_panel.reset(); });
+        // Delegate to destroy_screws_tilt_panel() rather than resetting the
+        // pointer directly: it runs ScrewsTiltPanel::cleanup() first, which
+        // unregisters the overlay instance and sets the cleanup_called_ flag
+        // that the panel's deferred probe callbacks check before touching
+        // widgets.
+        StaticPanelRegistry::instance().register_destroy(
+            "ScrewsTiltPanel", []() { destroy_screws_tilt_panel(); });
     }
     return *s_screws_tilt_panel;
 }

@@ -18,6 +18,7 @@
 #include "display_settings_manager.h"
 #include "filament_sensor_manager.h"
 #include "hv/requests.h"
+#include "json_utils.h"
 #include "moonraker_api.h"
 #include "moonraker_client.h"
 #include "moonraker_types.h"
@@ -794,14 +795,27 @@ void TelemetryManager::check_previous_update() {
     // Always clean up the flag file
     std::remove(flag_path.c_str());
 
+    // The try above covers only json::parse, and it catches parse_error only —
+    // neither protects the reads below. A flag file that parsed but isn't an
+    // object carries nothing worth reporting, so drop it rather than enqueue an
+    // event whose every field reads "unknown".
+    if (!flag.is_object()) {
+        spdlog::warn("[TelemetryManager] Update success flag is not an object; discarding");
+        return;
+    }
+
     if (enabled_.load()) {
+        // safe_string, not .value(): the installer writes this file, and a null
+        // field (e.g. an unresolved platform) would throw type_error.302 out of
+        // .value() — uncaught here, and this runs during telemetry init.
+        const std::string version = helix::json_util::safe_string(flag, "version", "unknown");
         auto event = build_update_success_event(
-            flag.value("version", "unknown"), flag.value("from_version", "unknown"),
-            flag.value("platform", "unknown"), flag.value("timestamp", get_timestamp()));
+            version, helix::json_util::safe_string(flag, "from_version", "unknown"),
+            helix::json_util::safe_string(flag, "platform", "unknown"),
+            helix::json_util::safe_string(flag, "timestamp", get_timestamp()));
         enqueue_event(std::move(event));
         save_queue();
-        spdlog::info("[TelemetryManager] Enqueued update_success event (version={})",
-                     flag.value("version", "unknown"));
+        spdlog::info("[TelemetryManager] Enqueued update_success event (version={})", version);
     } else {
         spdlog::debug("[TelemetryManager] Update success event discarded (telemetry disabled)");
     }

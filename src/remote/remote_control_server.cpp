@@ -5,6 +5,7 @@
 
 #include "http_executor.h"
 #include "panel_factory.h"
+#include "ui_keyboard_manager.h"
 #include "ui_nav_manager.h"
 #include "ui_update_queue.h"
 
@@ -13,7 +14,9 @@
 #include "display_settings_manager.h"
 #include "logging_init.h"
 #include "mock_scenarios.h"
+#include "panel_factory.h"
 #include "printer_state.h"
+#include "remote_pointer.h"
 #include "screenshot.h"
 #include "subject_debug_registry.h"
 
@@ -21,6 +24,8 @@
 #include "helix-xml/src/xml/lv_xml.h"
 #include "helix-xml/src/xml/lv_xml_component.h"
 #include "helix-xml/src/xml/lv_xml_component_private.h"
+#include "http_transport.h"
+#include "unix_socket_transport.h"
 
 #include <spdlog/spdlog.h>
 
@@ -34,9 +39,6 @@
 #include <optional>
 #include <thread>
 #include <vector>
-
-#include "http_transport.h"
-#include "unix_socket_transport.h"
 
 namespace helix {
 
@@ -94,15 +96,31 @@ RemoteControlServer::~RemoteControlServer() {
 
 std::string resolve_socket_path(const std::string& override_path) {
     if (!override_path.empty()) {
-        return override_path;
+        return override_path; // Explicit --remote-socket always wins.
     }
 
     const char* xdg_runtime = getenv("XDG_RUNTIME_DIR");
-    if (xdg_runtime && xdg_runtime[0] != '\0') {
-        return std::string(xdg_runtime) + "/helixscreen-control.sock";
+    const std::string dir =
+        (xdg_runtime && xdg_runtime[0] != '\0') ? std::string(xdg_runtime) : std::string("/tmp");
+    const std::string well_known = dir + "/helixscreen-control.sock";
+
+    // Clear sockets left by instances that died without teardown before deciding
+    // anything, so a run of crashed sessions cannot litter the directory forever.
+    UnixSocketTransport::sweep_stale_instances(dir);
+
+    // The well-known path is what a bare `helix-screen ctl` looks for, so the first
+    // instance should own it — on a device there is only ever one. A second instance
+    // (two dev sessions, or an accidental double start) takes a pid-suffixed path
+    // instead of stealing it, so both stay reachable and neither is silently
+    // hijacked. The client discovers these; see remote_client.cpp.
+    if (!UnixSocketTransport::path_is_live(well_known)) {
+        return well_known;
     }
 
-    return "/tmp/helixscreen-control.sock";
+    std::string fallback = dir + "/helixscreen-control-" + std::to_string(getpid()) + ".sock";
+    spdlog::warn("[RemoteControl] {} is in use by another instance; using {}", well_known,
+                 fallback);
+    return fallback;
 }
 
 bool RemoteControlServer::start(const RemoteConfig& config) {
@@ -260,8 +278,12 @@ void RemoteControlServer::register_builtin_handlers() {
     handlers_["navigate"] = [this](const nlohmann::json& p) { return handle_navigate(p); };
     handlers_["go_back"] = [this](const nlohmann::json& p) { return handle_go_back(p); };
     handlers_["list_panels"] = [this](const nlohmann::json& p) { return handle_list_panels(p); };
-    handlers_["list_components"] = [this](const nlohmann::json& p) { return handle_list_components(p); };
-    handlers_["list_callbacks"] = [this](const nlohmann::json& p) { return handle_list_callbacks(p); };
+    handlers_["list_components"] = [this](const nlohmann::json& p) {
+        return handle_list_components(p);
+    };
+    handlers_["list_callbacks"] = [this](const nlohmann::json& p) {
+        return handle_list_callbacks(p);
+    };
     handlers_["get_current"] = [this](const nlohmann::json& p) { return handle_get_current(p); };
     handlers_["screenshot"] = [this](const nlohmann::json& p) { return handle_screenshot(p); };
     handlers_["status"] = [this](const nlohmann::json& p) { return handle_status(p); };
@@ -293,6 +315,14 @@ void RemoteControlServer::register_builtin_handlers() {
         return handle_describe_screen(p);
     };
     handlers_["scroll"] = [this](const nlohmann::json& p) { return handle_scroll(p); };
+    handlers_["focus"] = [this](const nlohmann::json& p) { return handle_focus(p); };
+    handlers_["pointer_press"] = [this](const nlohmann::json& p) {
+        return handle_pointer_press(p);
+    };
+    handlers_["pointer_move"] = [this](const nlohmann::json& p) { return handle_pointer_move(p); };
+    handlers_["pointer_release"] = [this](const nlohmann::json& p) {
+        return handle_pointer_release(p);
+    };
     handlers_["geom"] = [this](const nlohmann::json& p) { return handle_geom(p); };
     handlers_["get_const"] = [this](const nlohmann::json& p) { return handle_get_const(p); };
     handlers_["wake"] = [this](const nlohmann::json& p) { return handle_wake(p); };
@@ -375,8 +405,7 @@ nlohmann::json RemoteControlServer::handle_log(const nlohmann::json& params) {
     size_t pos = 0;
     while (pos <= tail.size()) {
         size_t nl = tail.find('\n', pos);
-        std::string line =
-            tail.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+        std::string line = tail.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
         if (!line.empty()) {
             arr.push_back(line);
         }
@@ -385,7 +414,9 @@ nlohmann::json RemoteControlServer::handle_log(const nlohmann::json& params) {
         }
         pos = nl + 1;
     }
-    return {{"lines", arr}, {"count", arr.size()}, {"capacity", helix::logging::ring_buffer_capacity()}};
+    return {{"lines", arr},
+            {"count", arr.size()},
+            {"capacity", helix::logging::ring_buffer_capacity()}};
 }
 
 nlohmann::json RemoteControlServer::handle_go_back(const nlohmann::json& /*params*/) {
@@ -439,7 +470,7 @@ nlohmann::json RemoteControlServer::handle_list_callbacks(const nlohmann::json& 
     return execute_on_ui_thread([]() -> nlohmann::json {
         std::vector<std::string> names;
         lv_xml_event_cb_foreach(
-            nullptr,  // NULL -> the "globals" scope
+            nullptr, // NULL -> the "globals" scope
             [](const char* name, lv_event_cb_t /*cb*/, void* ud) {
                 auto* out = static_cast<std::vector<std::string>*>(ud);
                 if (name) {
@@ -827,10 +858,10 @@ static bool glob_match(const char* pat, const char* str) {
             pat++;
             str++;
         } else if (*pat == '*') {
-            star = pat++;    // remember where the star was
-            retry = str;     // and how much of str it had consumed
+            star = pat++; // remember where the star was
+            retry = str;  // and how much of str it had consumed
         } else if (star) {
-            pat = star + 1;  // backtrack: let the star eat one more char
+            pat = star + 1; // backtrack: let the star eat one more char
             str = ++retry;
         } else {
             return false;
@@ -1516,8 +1547,7 @@ static nlohmann::json describe_one(lv_obj_t* o, const char* name, const std::str
         actions.push_back("fill");
         const char* txt = lv_textarea_get_text(o);
         entry["value"] = txt ? txt : "";
-    } else if (lv_obj_check_type(o, &lv_switch_class) ||
-               lv_obj_check_type(o, &lv_checkbox_class)) {
+    } else if (lv_obj_check_type(o, &lv_switch_class) || lv_obj_check_type(o, &lv_checkbox_class)) {
         actions.push_back("toggle");
         entry["value"] = lv_obj_has_state(o, LV_STATE_CHECKED) ? 1 : 0;
     } else if (lv_obj_check_type(o, &lv_slider_class)) {
@@ -1621,6 +1651,99 @@ nlohmann::json RemoteControlServer::handle_describe_screen(const nlohmann::json&
                 {"topmost_layer", topmost_layer()},
                 {"active_screen", active_screen_label()}};
     });
+}
+
+nlohmann::json RemoteControlServer::handle_focus(const nlohmann::json& params) {
+    if (!params.contains("name") && !params.contains("path")) {
+        throw std::invalid_argument("Missing required parameter: name or path");
+    }
+
+    return execute_on_ui_thread([params]() -> nlohmann::json {
+        wake_display();
+        lv_obj_t* obj = resolve_widget(params);
+        if (!obj) {
+            throw std::invalid_argument("Widget not found: " + target_label(params));
+        }
+
+        // Focus through the group rather than by sending LV_EVENT_FOCUSED directly,
+        // so the production path runs: the group defocuses whatever held focus, and
+        // KeyboardManager's LV_EVENT_FOCUSED handler raises the on-screen keyboard
+        // for a registered textarea. A synthesized CLICKED never triggers any of it,
+        // which is why `ctl click <textarea>` leaves the keyboard hidden.
+        lv_group_t* group = lv_obj_get_group(obj);
+        if (!group) {
+            throw std::invalid_argument("Widget is not in an input group (not focusable): " +
+                                        target_label(params));
+        }
+        lv_group_focus_obj(obj);
+
+        return {{"focused", target_label(params)},
+                {"keyboard_visible", KeyboardManager::instance().is_visible()},
+                {"active_screen", active_screen_label()}};
+    });
+}
+
+nlohmann::json RemoteControlServer::apply_pointer_state(int32_t x, int32_t y, bool pressed,
+                                                        const char* what) {
+    uint64_t baseline = 0;
+
+    nlohmann::json result = execute_on_ui_thread([&baseline, x, y, pressed]() -> nlohmann::json {
+        wake_display();
+        auto& pointer = helix::remote::RemotePointer::instance();
+        if (!pointer.ensure_created()) {
+            throw std::runtime_error("No display available for the synthetic pointer");
+        }
+        pointer.set_state(x, y, pressed);
+        baseline = pointer.read_count();
+        return {{"x", x}, {"y", y}, {"pressed", pressed}};
+    });
+
+    // Indevs are sampled on a timer, so the state above is not visible to LVGL yet.
+    // Wait for two reads: the first delivers the new state, the second lets LVGL's
+    // press/release state machine act on it before the next command lands. Without
+    // this, a fast press-then-release sequence can be coalesced into a single sample
+    // and the press is never seen at all.
+    auto& pointer = helix::remote::RemotePointer::instance();
+    const uint64_t target = baseline + 2;
+    for (int i = 0; i < 400; ++i) { // 400 * 5ms = 2s
+        if (pointer.read_count() >= target) {
+            result["what"] = what;
+            result["reads"] = pointer.read_count();
+            return result;
+        }
+        if (!running_.load()) {
+            throw std::runtime_error("remote server shutting down");
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    throw std::runtime_error("Timed out waiting for the synthetic pointer to be sampled");
+}
+
+nlohmann::json RemoteControlServer::handle_pointer_press(const nlohmann::json& params) {
+    if (!params.contains("x") || !params.contains("y")) {
+        throw std::invalid_argument("Missing required parameters: x and y");
+    }
+    return apply_pointer_state(params["x"].get<int32_t>(), params["y"].get<int32_t>(), true,
+                               "press");
+}
+
+nlohmann::json RemoteControlServer::handle_pointer_move(const nlohmann::json& params) {
+    if (!params.contains("x") || !params.contains("y")) {
+        throw std::invalid_argument("Missing required parameters: x and y");
+    }
+    // Keeps the current button state, so this is a drag while pressed and a hover
+    // while released.
+    return apply_pointer_state(params["x"].get<int32_t>(), params["y"].get<int32_t>(),
+                               helix::remote::RemotePointer::instance().pressed(), "move");
+}
+
+nlohmann::json RemoteControlServer::handle_pointer_release(const nlohmann::json& params) {
+    auto& pointer = helix::remote::RemotePointer::instance();
+    // Release where the pointer already is unless told otherwise — the common case
+    // is lifting after a drag, and repeating the coordinates is noise.
+    const int32_t x = params.contains("x") ? params["x"].get<int32_t>() : pointer.x();
+    const int32_t y = params.contains("y") ? params["y"].get<int32_t>() : pointer.y();
+    return apply_pointer_state(x, y, false, "release");
 }
 
 nlohmann::json RemoteControlServer::handle_scroll(const nlohmann::json& params) {

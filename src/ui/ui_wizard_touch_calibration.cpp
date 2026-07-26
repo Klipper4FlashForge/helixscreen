@@ -58,10 +58,6 @@ WizardTouchCalibrationStep* get_wizard_touch_calibration_step() {
     return g_wizard_touch_calibration_step.get();
 }
 
-void destroy_wizard_touch_calibration_step() {
-    g_wizard_touch_calibration_step.reset();
-}
-
 // ============================================================================
 // Constructor / Destructor
 // ============================================================================

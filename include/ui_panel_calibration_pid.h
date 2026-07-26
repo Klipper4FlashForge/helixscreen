@@ -441,6 +441,3 @@ class PIDCalibrationPanel : public OverlayBase {
 
 // Global instance accessor
 PIDCalibrationPanel& get_global_pid_cal_panel();
-
-// Destroy the global instance (call during shutdown)
-void destroy_pid_cal_panel();

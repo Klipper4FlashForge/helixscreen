@@ -60,9 +60,9 @@
 - **Uses**: 1 | **Velocity**: 0 | **Learned**: 2026-01-06 | **Last**: 2026-04-20 | **Category**: correction | **Type**: constraint
 > An XML `<subjects>` declaration shadows a same-named C++ subject (UI_SUBJECT_INIT_AND_REGISTER_*) — the local one wins, bindings stick at default. Don't declare XML subjects for values C++ owns.
 
-### [L048] [***--|***--] Async tests need queue drain
-- **Uses**: 13 | **Velocity**: 1.1455078125 | **Learned**: 2026-01-08 | **Last**: 2026-07-21 | **Category**: pattern | **Type**: constraint
-> Tests calling async setters (helix::async::invoke / ui_queue_update) must `UpdateQueue::instance().drain_queue_for_testing()` before assertions, else the update is still queued and the subject reads stale. Pattern: test_printer_state.cpp.
+### [L048] [***--|****-] Async tests need queue drain
+- **Uses**: 15 | **Velocity**: 3.1455078125 | **Learned**: 2026-01-08 | **Last**: 2026-07-25 | **Category**: pattern | **Type**: constraint
+> Tests calling async setters (helix::async::invoke / ui_queue_update) must `UpdateQueue::instance().drain()` before assertions, else the update is still queued and the subject reads stale. Pattern: test_printer_state.cpp. NOTE: this lesson previously named `drain_queue_for_testing()`, which does not exist anywhere in the tree — verified by repo-wide grep 2026-07-25 after it was cited into a subagent brief and correctly rejected. The API is `drain()`, declared include/ui_update_queue.h:218.
 
 ### [L051] [*----|*----] LVGL timer lifetime safety
 - **Uses**: 1 | **Velocity**: 0.03173828125 | **Learned**: 2026-01-08 | **Last**: 2026-05-18 | **Category**: gotcha | **Type**: constraint
@@ -213,8 +213,8 @@
 - **Uses**: 14 | **Velocity**: 0.72265625 | **Learned**: 2026-04-28 | **Last**: 2026-07-20 | **Category**: gotcha | **Type**: constraint
 > OpenWrt/procd (Tina Linux K2, Allwinner) boot iterator only runs `/etc/init.d/<name>` with BOTH `#!/bin/sh /etc/rc.common` shebang AND a `DEPEND=`. Plain SysV silently skipped even if symlinked SXXname — no log. Symptom: hang at boot anim, no UI/helix procs/log, manual `/etc/init.d/SXX start` works. Fix: procd shim `/etc/init.d/<name>` (`START=99 STOP=01 DEPEND=done`, boot/start/stop delegate to SysV), then `<shim> enable`. See `install_procd_shim_k2()` service.sh. Check: `head -1` shows rc.common.
 
-### [L087] [***--|**---] Default-constructed nlohmann::json is NULL — `.value()` throws
-- **Uses**: 13 | **Velocity**: 0.578125 | **Learned**: 2026-05-06 | **Last**: 2026-07-08 | **Category**: gotcha | **Type**: constraint
+### [L087] [***--|***--] Default-constructed nlohmann::json is NULL — `.value()` throws
+- **Uses**: 14 | **Velocity**: 1.578125 | **Learned**: 2026-05-06 | **Last**: 2026-07-25 | **Category**: gotcha | **Type**: constraint
 > `nlohmann::json j;` = JSON null, not `{}`; `.value("k",def)` throws type_error::306 on null. Bites loaders: absent key stays null → consumer `.value()` blows up (5ac58e051→c3835003f). Fix both: init `json::object()`; consume `j.is_object() && j.value(...)`.
 
 ### [L088] [*----|***--] Test-only methods belong in TestAccess friend classes
@@ -234,11 +234,11 @@
 > "New version not showing on ANY device" = source of truth, not per-device: updater fetches releases.helixscreen.org/<ch>/manifest.json FIRST, trusts any HTTP-200 (update_checker.cpp fetch_stable_release), only falls back to GitHub on FETCH FAILURE not staleness. v0.99.76 cause: release.yml R2 upload non-blocking, manifest uploaded AFTER big zips; a 504 on k2.zip aborted before manifest → R2 pinned at .75, run green. Diagnose: curl live manifest .version vs tag; check the R2 upload job. Fixed 942bcbd51/d0034b282: manifest before zips, s3cp retry, read-back assert version==tag. Verify the SERVED artifact, never trust upload success.
 
 ### [L092] [***--|*****] make | tail masks exit code; -j hides the real build error
-- **Uses**: 36 | **Velocity**: 14.9375 | **Learned**: 2026-06-12 | **Last**: 2026-07-25 | **Category**: gotcha
+- **Uses**: 39 | **Velocity**: 17.9375 | **Learned**: 2026-06-12 | **Last**: 2026-07-25 | **Category**: gotcha
 > `make | tail/head` reports tail's exit 0 even on make failure — capture separately (`make …; echo $?>/tmp/exit`). Build dies with NO 'error:' + different failure point each run → suspect interleaved -j output or resource contention (`free -h`, `pgrep -af cc1plus` for sibling builds); drop to -j2 to surface the true first error. (Real cause once: missing $(LV_CONF) in sub-builds, invisible under -j.)
 
-### [L093] [*----|***--] Pure-decision-function tests need input realism
-- **Uses**: 2 | **Velocity**: 1 | **Learned**: 2026-06-16 | **Last**: 2026-07-21 | **Category**: gotcha
+### [L093] [*----|****-] Pure-decision-function tests need input realism
+- **Uses**: 3 | **Velocity**: 2 | **Learned**: 2026-06-16 | **Last**: 2026-07-25 | **Category**: gotcha
 > A pure decision function's tests are only as strong as whether their inputs match what the function actually receives at runtime. decide_preview_action() tests passed while it had a deadlock because they fed view_mode=1/2 (3D/2D), but at print start the view-mode subject is 0 (thumbnail) and only flips after gcode loads. Result: green tests + on-device failure. When a pure fn takes a runtime-derived input, assert against the value it actually holds at the call site (0 at print start), not a convenient one.
 
 ### [L094] [*----|**---] Don't gate a load/fetch on display-output state it produces
@@ -246,7 +246,7 @@
 > Gating a load decision on a state that only updates AFTER the load completes deadlocks. The print-status gcode download was gated on the view-mode subject being 3D/2D, but that subject only becomes 3D/2D once gcode is loaded -> gcode never downloads, mode never leaves thumbnail, 3D render never appears (user saw 'thumbnail not 3D'). Gate loads on intent/settings (want_viewer + render-mode setting), never on the rendered result. Found in PrintStatusPanel preview unification.
 
 ### [L095] [***--|*****] Verify feature existence in code, not from issue phrasing + commit messages
-- **Uses**: 24 | **Velocity**: 15.25 | **Learned**: 2026-07-01 | **Last**: 2026-07-25 | **Category**: correction
+- **Uses**: 25 | **Velocity**: 16.25 | **Learned**: 2026-07-01 | **Last**: 2026-07-25 | **Category**: correction
 > Don't claim a capability is absent from issue wording + commit messages — grep/read the actual code first (reporter "can't find X" usually = discoverability gap, not missing). Spoolman picker existed (AmsEditModal, behind "Choose Spool") despite 6 fix-commits implying otherwise (#1071). Corollary: don't inherit a subagent's "race" claim from a stale comment — verify current code. **Extends to reporter-proposed root-cause MECHANISMS, not just existence:** #1124's two bugs each had detailed, plausible reporter archaeology pointing at the WRONG cause — bug 2 "panel graph never migrated to the backfill path" (it uses TempGraphController + backfill already; real cause = persistent graph backfilled pre-WebSocket-connect), bug 1 "init_fans resets the subject to 0" (struct+subject zero in lockstep, snapshot re-fires; real cause = e3f92c3f4's front-most fan fallback, a 2-day-old regression). Both real causes were RECENT commits. Trace the suspect area in current code AND `git log -S`/blame it before adopting the reporter's mechanism; a confident, well-argued mechanism from a technical reporter is still a hypothesis.
 
 ### [L096] [**---|*****] queue_prev tag-ring names the victim, not the crash — resolve real frames first
@@ -269,7 +269,7 @@
 - **Uses**: 2 | **Velocity**: 0.5 | **Learned**: 2026-07-20 | **Last**: 2026-07-21 | **Category**: correction
 > Compacting/filtering/reordering a class member vector silently changes the semantics of EVERY public getter that returns it — audit all accessor consumers, not just your feature's render path. FilamentMappingCard::set_used_tools compacted tool_info_ to used-tools-only (correct for the chip row), but that member is also returned by get_filament_tool_info(); two print-start dialogs indexed it positionally as tool_info[tool_index] (valid only while position==tool_index on the full palette). After compaction the "no matching filament" dialog rendered EMPTY and the material-mismatch warning was silently suppressed — for exactly the used-but-unresolved case the feature existed to surface. No crash (bounds guards), so unit tests + the chip screenshot were green; only adversarial review caught it. Fix: key consumers by identity (find_by_tool_index), or keep the member full and filter at render. Positional-access-by-domain-id is a latent fragility even before you make the member lossy. Merged 746dd0c74.
 
-### [L101] [-----|-----] No auto-creating getter in shutdown callbacks
-- **Uses**: 0 | **Velocity**: 0 | **Learned**: 2026-07-24 | **Last**: 2026-07-24 | **Category**: gotcha
+### [L101] [*----|****-] No auto-creating getter in shutdown callbacks
+- **Uses**: 2 | **Velocity**: 2 | **Learned**: 2026-07-24 | **Last**: 2026-07-25 | **Category**: gotcha
 > StaticSubjectRegistry::deinit_all() runs AFTER StaticPanelRegistry::destroy_all(), so a deinit lambda calling get_global_X_panel() RESURRECTS the singleton. The replacement is never destroyed while LVGL/spdlog are alive — its dtor runs in __run_exit_handlers and reads the freed spdlog registry (43 valgrind invalid accesses in ~Modal, MacrosPanel + PIDCalibrationPanel). Test the pointer instead: register_deinit("X", []{ if (g_x_panel) g_x_panel->deinit_subjects(); }). Same rule for any teardown callback reaching a lazy getter.
 

@@ -15,6 +15,7 @@
 #include "config_backup.h"
 #include "config_testing.h"
 #include "data_root_resolver.h"
+#include "json_utils.h"
 #include "platform_capabilities.h"
 #include "printer_detector.h"
 #include "runtime_config.h"
@@ -1280,12 +1281,16 @@ void Config::init(const std::string& config_path) {
             // extracts the release tarball fresh — the tarball includes a preset-based
             // settings.json with wizard_completed=false and no config_version.  If a
             // rolling backup with real user data exists, prefer it.
-            if (data.value("config_version", 0) == 0) {
+            // safe_int, not .value(): a hand-edited "config_version": null throws
+            // type_error.302, which lands in the catch below and destroys the
+            // user's settings.json (renamed .corrupt, then reset to defaults)
+            // over a single bad field.
+            if (helix::json_util::safe_int(data, "config_version", 0) == 0) {
                 std::string backup_src = find_backup(config_backup_search_paths());
                 if (!backup_src.empty()) {
                     try {
                         auto backup_data = json::parse(std::fstream(backup_src));
-                        if (backup_data.value("config_version", 0) > 0) {
+                        if (helix::json_util::safe_int(backup_data, "config_version", 0) > 0) {
                             spdlog::warn("[Config] Loaded config is a tarball default "
                                          "(no config_version) — restoring from backup: {}",
                                          backup_src);
@@ -1333,23 +1338,45 @@ void Config::init(const std::string& config_path) {
             config_modified = true;
         }
 
-        // Run display config migration (moves root-level display_* to /display/)
-        if (migrate_display_config(data)) {
-            config_modified = true;
-        }
+        // The migrations below get their own try/catch, deliberately separate
+        // from the parse recovery above.
+        //
+        // They used to sit outside every handler: Config::init() has no other
+        // try, and neither does its caller Application::init_config(), so a
+        // single null field anywhere in a migration threw straight out of app
+        // startup. But they must NOT share the parse handler either — that one
+        // renames settings.json to .corrupt and resets to factory defaults,
+        // which is far too destructive a response to a migration bug. A failed
+        // migration should leave the user's config un-migrated and loudly
+        // logged, not discarded. config_version is left unstamped, so the
+        // migration is retried on the next boot.
+        try {
+            // Run display config migration (moves root-level display_* to /display/)
+            if (migrate_display_config(data)) {
+                config_modified = true;
+            }
 
-        // Migrate touch settings from /display/ to /input/
-        if (migrate_config_keys(data, {{"/display/calibration", "/input/calibration"},
-                                       {"/display/touch_device", "/input/touch_device"}})) {
-            config_modified = true;
-        }
+            // Migrate touch settings from /display/ to /input/
+            if (migrate_config_keys(data, {{"/display/calibration", "/input/calibration"},
+                                           {"/display/touch_device", "/input/touch_device"}})) {
+                config_modified = true;
+            }
 
-        // Run versioned migrations (v0→v1: disable sounds for existing configs, etc.)
-        // Pass path so v13→v14 can find the legacy telemetry_config.json sidecar.
-        int version_before = data.value("config_version", 0);
-        run_versioned_migrations(data, path);
-        if (data["config_version"].get<int>() != version_before) {
-            config_modified = true;
+            // Run versioned migrations (v0→v1: disable sounds for existing configs, etc.)
+            // Pass path so v13→v14 can find the legacy telemetry_config.json sidecar.
+            int version_before = helix::json_util::safe_int(data, "config_version", 0);
+            run_versioned_migrations(data, path);
+            // safe_int, not data["config_version"] — operator[] on the non-const
+            // `data` VIVIFIES a null if a migration failed to stamp the version,
+            // and .get<int>() then throws on it (#1129 is the same hazard).
+            if (helix::json_util::safe_int(data, "config_version", 0) != version_before) {
+                config_modified = true;
+            }
+        } catch (const std::exception& e) {
+            spdlog::error("[Config] Migration failed, continuing with un-migrated config: {}",
+                          e.what());
+            CONFIG_RECORD_ERROR("migration", "config_migration_failed",
+                                fmt::format("migration error: {}", e.what()));
         }
     } else {
         // Create default config

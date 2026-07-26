@@ -247,23 +247,10 @@ void ExcludeObjectSideList::create_row(lv_obj_t* parent, int index, const std::s
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
 
         // L069: row was created via lv_obj_create (not lv_xml_create) so the
-        // user_data slot is ours to use. Free in LV_EVENT_DELETE handler.
-        char* name_copy = static_cast<char*>(lv_malloc(name.size() + 1));
-        if (name_copy) {
-            std::memcpy(name_copy, name.c_str(), name.size() + 1);
-            lv_obj_set_user_data(row, name_copy);
+        // user_data slot is ours to use. The helper owns the copy and frees it
+        // on LV_EVENT_DELETE.
+        if (helix::ui::set_owned_user_string(row, name)) {
             lv_obj_add_event_cb(row, on_row_clicked, LV_EVENT_CLICKED, this);
-            lv_obj_add_event_cb(
-                row,
-                [](lv_event_t* e) {
-                    lv_obj_t* obj = lv_event_get_target_obj(e);
-                    char* data = static_cast<char*>(lv_obj_get_user_data(obj));
-                    if (data) {
-                        lv_free(data);
-                        lv_obj_set_user_data(obj, nullptr);
-                    }
-                },
-                LV_EVENT_DELETE, nullptr);
         }
 
         lv_obj_set_style_bg_color(row, theme_manager_get_color("primary"), LV_STATE_PRESSED);
@@ -277,7 +264,7 @@ void ExcludeObjectSideList::on_row_clicked(lv_event_t* e) {
     if (!self || !self->manager_ || !target) {
         return;
     }
-    const char* name = static_cast<const char*>(lv_obj_get_user_data(target));
+    const char* name = helix::ui::get_owned_user_string(target);
     if (!name) {
         return;
     }

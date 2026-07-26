@@ -5,6 +5,7 @@
 
 #include "border_radius_sizes.h"
 #include "data_root_resolver.h"
+#include "json_utils.h"
 
 #include <spdlog/spdlog.h>
 
@@ -183,6 +184,18 @@ static void parse_mode_palette(const nlohmann::json& palette_json, ModePalette& 
     const ThemeData defaults = get_default_nord_theme();
     const ModePalette& default_palette = (mode_name == "light") ? defaults.light : defaults.dark;
 
+    // A palette key present as null (or any non-object) resolves to the same
+    // all-defaults result via the contains() checks below, but doing it here
+    // costs one log line instead of sixteen.
+    if (!palette_json.is_object()) {
+        spdlog::warn("[ThemeLoader] '{}' palette in {} is not an object, using defaults", mode_name,
+                     filename);
+        for (size_t i = 0; i < 16; ++i) {
+            palette.at(i) = default_palette.at(i);
+        }
+        return;
+    }
+
     for (size_t i = 0; i < 16; ++i) {
         const char* name = names[i];
         std::string value;
@@ -207,55 +220,76 @@ ThemeData parse_theme_json(const std::string& json_str, const std::string& filen
         theme.filename = theme.filename.substr(0, theme.filename.size() - 5);
     }
 
+    // The try covers the parse and nothing else, deliberately. Syntactically
+    // broken JSON is the one failure where "this file is not a theme" is true
+    // and falling back to built-in Nord is right. Every read below degrades on
+    // its own instead: they go through the safe_* helpers, because .value()
+    // throws type_error.302 on a key that is PRESENT with a null value (a
+    // missing key is fine) and type_error.306 when the receiver is not an
+    // object. Under the old wide try, one `"shadow_intensity": null` threw into
+    // the catch and replaced the user's ENTIRE theme — both palettes, every
+    // property — with built-in Nord. A bad property is now worth exactly that
+    // property.
+    nlohmann::json json;
     try {
-        auto json = nlohmann::json::parse(json_str);
-
-        theme.name = json.value("name", "Unnamed Theme");
-
-        // Theme must have "dark" and/or "light" palette objects
-        bool has_dark = json.contains("dark");
-        bool has_light = json.contains("light");
-
-        if (!has_dark && !has_light) {
-            spdlog::error("[ThemeLoader] No 'dark' or 'light' palette in {}", filename);
-            return get_default_nord_theme();
-        }
-
-        spdlog::trace("[ThemeLoader] Parsing {} with dark={}, light={}", filename, has_dark,
-                      has_light);
-
-        if (has_dark) {
-            parse_mode_palette(json["dark"], theme.dark, filename, "dark");
-        }
-        if (has_light) {
-            parse_mode_palette(json["light"], theme.light, filename, "light");
-        }
-
-        // Parse properties with defaults
-        // New format: border_radius_size (0-7 index)
-        // Old format: border_radius (raw pixels) — auto-migrate
-        if (json.contains("border_radius_size")) {
-            theme.properties.border_radius_size = std::clamp(json.value("border_radius_size", 3), 0,
-                                                             helix::BorderRadiusSizes::count() - 1);
-        } else {
-            int raw = json.value("border_radius", 12);
-            theme.properties.border_radius_size = helix::BorderRadiusSizes::nearest_size_index(raw);
-            spdlog::info("[ThemeLoader] Migrated border_radius={} -> border_radius_size={} ({})",
-                         raw, theme.properties.border_radius_size,
-                         helix::BorderRadiusSizes::name(theme.properties.border_radius_size));
-        }
-        theme.properties.border_width = json.value("border_width", 1);
-        theme.properties.border_opacity = json.value("border_opacity", 40);
-        theme.properties.shadow_intensity = json.value("shadow_intensity", 0);
-        theme.properties.shadow_opa = json.value("shadow_opa", 0);
-        theme.properties.shadow_offset_y = json.value("shadow_offset_y", 2);
-        theme.properties.handle_style = json.value("handle_style", "round");
-        theme.properties.handle_color = json.value("handle_color", "primary");
-
+        json = nlohmann::json::parse(json_str);
     } catch (const nlohmann::json::exception& e) {
         spdlog::error("[ThemeLoader] Failed to parse {}: {}", filename, e.what());
         return get_default_nord_theme();
     }
+
+    if (!json.is_object()) {
+        spdlog::error("[ThemeLoader] {} is not a JSON object", filename);
+        return get_default_nord_theme();
+    }
+
+    theme.name = helix::json_util::safe_string(json, "name", "Unnamed Theme");
+
+    // Theme must have "dark" and/or "light" palette objects
+    bool has_dark = json.contains("dark");
+    bool has_light = json.contains("light");
+
+    if (!has_dark && !has_light) {
+        spdlog::error("[ThemeLoader] No 'dark' or 'light' palette in {}", filename);
+        return get_default_nord_theme();
+    }
+
+    spdlog::trace("[ThemeLoader] Parsing {} with dark={}, light={}", filename, has_dark, has_light);
+
+    if (has_dark) {
+        parse_mode_palette(json["dark"], theme.dark, filename, "dark");
+    }
+    if (has_light) {
+        parse_mode_palette(json["light"], theme.light, filename, "light");
+    }
+
+    // Parse properties with defaults
+    // New format: border_radius_size (0-7 index)
+    // Old format: border_radius (raw pixels) — auto-migrate
+    //
+    // Note the migration branch keys off contains(), so a null border_radius
+    // _size takes the new-format branch and safe_int yields 3 ("Soft"), the
+    // same value the old default argument carried. It does NOT fall through to
+    // the legacy border_radius migration, which is correct: the key is present,
+    // so this is a new-format theme with one unreadable field.
+    if (json.contains("border_radius_size")) {
+        theme.properties.border_radius_size =
+            std::clamp(helix::json_util::safe_int(json, "border_radius_size", 3), 0,
+                       helix::BorderRadiusSizes::count() - 1);
+    } else {
+        int raw = helix::json_util::safe_int(json, "border_radius", 12);
+        theme.properties.border_radius_size = helix::BorderRadiusSizes::nearest_size_index(raw);
+        spdlog::info("[ThemeLoader] Migrated border_radius={} -> border_radius_size={} ({})", raw,
+                     theme.properties.border_radius_size,
+                     helix::BorderRadiusSizes::name(theme.properties.border_radius_size));
+    }
+    theme.properties.border_width = helix::json_util::safe_int(json, "border_width", 1);
+    theme.properties.border_opacity = helix::json_util::safe_int(json, "border_opacity", 40);
+    theme.properties.shadow_intensity = helix::json_util::safe_int(json, "shadow_intensity", 0);
+    theme.properties.shadow_opa = helix::json_util::safe_int(json, "shadow_opa", 0);
+    theme.properties.shadow_offset_y = helix::json_util::safe_int(json, "shadow_offset_y", 2);
+    theme.properties.handle_style = helix::json_util::safe_string(json, "handle_style", "round");
+    theme.properties.handle_color = helix::json_util::safe_string(json, "handle_color", "primary");
 
     return theme;
 }

@@ -7,6 +7,9 @@ Access via the **More** icon in the navigation bar.
 ---
 
 ## G-code Console
+
+![G-code Console](../../images/user/advanced-console.png)
+
 A full-featured G-code terminal for sending commands directly to your printer and viewing Klipper responses in real time.
 
 **Opening the console:**
@@ -20,10 +23,18 @@ A full-featured G-code terminal for sending commands directly to your printer an
 2. Press **Enter** on the keyboard or tap the **send button**
 3. The command appears with a `>` prefix, and Klipper's response streams in below
 
-**Command history:**
+**Reusing a command (tap to paste):**
 
-- Press **Up/Down arrow keys** to recall previously sent commands
-- Up to 20 recent commands are remembered within the session
+Tap any command in the console — the lines prefixed with `>` — and it drops straight back into the input field, ready to edit and send again. This is the quickest way to re-run a macro you use often, or to fix a typo without retyping the whole line.
+
+- Tapping **only fills the input**. Nothing is sent until you tap the send button or press Enter, so a stray tap can never re-run a command by accident.
+- Only commands are tappable. Klipper's responses (green) and errors (red) do nothing when tapped.
+- Commands sent from **Mainsail, Fluidd, or a terminal** appear in the console too, and they can be tapped just the same.
+- Scrolling still works normally — flicking the log to scroll won't paste anything.
+
+**Command history with a USB keyboard:**
+
+If you have a USB keyboard attached, press the **Up/Down arrow keys** in the input field to walk back through commands you've sent, the same way a terminal works. Up to 20 recent commands are remembered within the session. Tap to paste reaches further back — the log holds up to 200 lines — so on a touchscreen it's usually the better option.
 
 **Color coding:**
 

@@ -194,14 +194,7 @@ class UpdateQueue {
         // Drain pending callbacks while panels are still alive, then gate off
         // new enqueues so background threads (libhv WebSocket) that arrive late
         // silently discard instead of pushing stale panel pointers.
-        process_pending();
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            initialized_ = false;
-            shut_down_ = true;
-            std::queue<TaggedCallback>().swap(pending_); // Discard any stragglers
-        }
-        timer_ = nullptr;
+        shutdown_internal(/*drain_pending=*/true);
     }
 
     /**
@@ -346,7 +339,36 @@ class UpdateQueue {
     friend class UpdateQueueTestAccess;
     UpdateQueue() = default;
     ~UpdateQueue() {
-        shutdown();
+        // Discard without draining. This runs from __run_exit_handlers, and the
+        // singleton is constructed during static initialization — earlier than
+        // PrinterState and spdlog's registry, so it is destroyed after them.
+        // Executing a queued callback here writes through pointers into objects
+        // that were already freed: a pending set_webcam_available assigns to a
+        // PrinterCapabilitiesState std::string whose buffer is gone, corrupting
+        // the allocator's bin metadata. Explicit shutdown() still drains,
+        // because there the panels are all alive.
+        shutdown_internal(/*drain_pending=*/false);
+    }
+
+    /**
+     * @brief Shared teardown for shutdown() and the destructor
+     *
+     * @param drain_pending Run queued callbacks first. Only safe while the
+     *                      objects those callbacks reference are still alive,
+     *                      which is true at explicit shutdown and false during
+     *                      static destruction.
+     */
+    void shutdown_internal(bool drain_pending) {
+        if (drain_pending) {
+            process_pending();
+        }
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            initialized_ = false;
+            shut_down_ = true;
+            std::queue<TaggedCallback>().swap(pending_); // Discard any stragglers
+        }
+        timer_ = nullptr;
     }
 
     // Non-copyable

@@ -66,6 +66,31 @@ The control server runs as a background thread inside `helix-screen`.
 panel. (It replaces the old side effect where `-p <panel>` implicitly skipped
 the wizard.)
 
+## Running headless (CI, ssh, containers)
+
+Driving the UI needs no display server. SDL's dummy video driver is enough:
+
+```bash
+SDL_VIDEODRIVER=dummy ./build/bin/helix-screen --test -vv --remote-socket /tmp/hs.sock &
+./build/bin/helix-screen ctl --socket /tmp/hs.sock navigate filament
+./build/bin/helix-screen ctl --socket /tmp/hs.sock screenshot /tmp/filament.png
+```
+
+LVGL asks SDL for an accelerated renderer, which the dummy driver cannot
+provide. The SDL backend catches that and retries with the software renderer, so
+no extra environment variable is needed — you'll see
+`Using software renderer (no GPU acceleration)` in the log. (Setting
+`SDL_RENDER_DRIVER=software` yourself also works and skips the failed first
+attempt.)
+
+Screenshots are fully rendered in headless mode: capture goes through
+`lv_snapshot_take()`, which re-renders the object tree into its own buffer
+rather than reading back the display surface.
+
+`scripts/screenshot.sh` switches to the dummy driver on its own when neither
+`DISPLAY` nor `WAYLAND_DISPLAY` is set; `HELIX_HEADLESS=1` forces it on a
+machine that does have a display.
+
 ## Transports (socket | HTTP)
 
 The server speaks JSON-RPC over one of two transports, selectable at runtime:
@@ -95,6 +120,41 @@ curl -s -X POST http://127.0.0.1:7130/rpc \
 # {"id":1,"jsonrpc":"2.0","result":"pong"}
 ```
 
+### More than one instance
+
+The well-known socket path is a fixed per-user location, so two instances want
+the same file. On a device there is only ever one; on a dev box there are easily
+two — two agent sessions, two worktrees, or an accidental double start.
+
+The first instance owns the well-known path. A second one **does not take it**:
+it probes with a `connect()`, finds a live owner, and parks on
+`helixscreen-control-<pid>.sock` beside it, logging a warning. Both stay
+reachable, and neither gets silently hijacked.
+
+The client resolves in the same spirit. If the well-known path is live it uses
+it — so with two apps running, a bare `helix-screen ctl` drives whichever one
+started first, silently. If the well-known path is dead or absent, the client
+looks for pid-suffixed instances: exactly one is used automatically, and
+several make it refuse to guess:
+
+```
+$ helix-screen ctl ls
+Error: several HelixScreen instances are running. Pick one with -s:
+  --socket /run/user/1000/helixscreen-control-48211.sock
+  --socket /run/user/1000/helixscreen-control-51907.sock
+```
+
+**With more than one app up, check which one you are driving before trusting a
+UI or gesture result.** A command that lands on the wrong instance still
+reports success. `pgrep -x helix-screen` is the quick sanity check.
+
+Stale socket files are cleaned up at server start, not at exit: a `SIGTERM`
+fast-exit deliberately skips teardown, so files outlive their process. Each
+start sweeps `helixscreen-control-<pid>.sock` files whose pid is gone. The
+sweep keys on that pid rather than a `connect()` probe — a probe cannot tell a
+crashed instance from one that has called `bind()` but not yet `listen()`, and
+unlinking that one would strand it.
+
 ## Commands
 
 `helix-screen repl` (or `helix-screen ctl` with no command) drops into an
@@ -120,8 +180,56 @@ live breadcrumb of the navigation stack, e.g. `controls / motion_panel_0 > `.
 | `click <target>` | Click a widget (also toggles switches/checkboxes) |
 | `set_value <target> <v>` | Set a value (slider, switch, dropdown, textarea) |
 | `scroll <target> [dx dy]` | Scroll a widget into view, or by a delta |
+| `focus <target>` | Focus a widget through its input group. Fires the real `LV_EVENT_FOCUSED`, so a registered textarea raises the on-screen keyboard — `click` does not, and leaves it hidden. Fails if the widget is not in an input group |
 | `geom <target> [depth]` | Measured geometry: position, size, declared-vs-computed size, flex/scroll state |
 | `get_const [scope] <name>` | Resolve an XML `#const` to the value the renderer actually sees |
+
+### Synthetic pointer — testing gestures
+
+`click` is `lv_obj_send_event(obj, LV_EVENT_CLICKED)`: a widget-level event with no
+input device and no coordinates behind it. That is right for "press this button",
+but it cannot exercise anything gestural. Code that reads `lv_indev_active()` or
+`lv_indev_get_point()` sees nothing, long-press timers never start, and LVGL's
+scroll-versus-click arbitration never runs.
+
+These commands drive a second, `ctl`-owned pointer device through **LVGL's real
+input pipeline**, so gestures behave exactly as they do under a finger.
+
+| Command | Meaning |
+|---------|---------|
+| `press <x> <y>` | Put the pointer down at screen coordinates x,y |
+| `move <x> <y>` | Move it — a drag while pressed, a hover while released |
+| `release [x y]` | Lift it, at x,y if given, otherwise where it currently is |
+
+Each command returns only after LVGL has sampled the device twice, so sequences do
+not race the indev timer. Timing that matters to the gesture is yours to control
+from the shell:
+
+```bash
+# Long-press a key and lift in place
+helix-screen ctl press 100 300
+sleep 0.6                       # exceed the long-press threshold
+helix-screen ctl release
+
+# Long-press, then slide onto the popover above it before lifting
+helix-screen ctl press 100 300
+sleep 0.6
+helix-screen ctl move 100 260
+helix-screen ctl release
+
+# Drag to scroll a list, proving a tap does NOT fire mid-scroll
+helix-screen ctl press 400 200
+helix-screen ctl move 400 160
+helix-screen ctl move 400 120
+helix-screen ctl release
+```
+
+Get coordinates from `geom <target>` — it reports each widget's absolute `x`, `y`,
+`w` and `h`, so aim at a rect's centre rather than guessing.
+
+The device is created lazily on the first pointer command and coexists with the
+real SDL/evdev pointer; LVGL supports multiple pointer indevs. Instances that never
+receive a pointer command never register it.
 
 A **target** is either a widget `name` or a path locator taken from `ls`
 (e.g. `@s/15/1/1/2`, or bare `s/15/1/1/2` — the `@` is optional, since widget

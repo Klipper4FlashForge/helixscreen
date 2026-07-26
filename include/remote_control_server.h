@@ -152,6 +152,19 @@ class RemoteControlServer {
 
     // Scroll a named widget into view, or scroll a container by a delta
     nlohmann::json handle_scroll(const nlohmann::json& params);
+    nlohmann::json handle_focus(const nlohmann::json& params);
+
+    // Synthetic pointer: drives LVGL's real input pipeline so gestures
+    // (long-press, drag, slide-to-select, scroll-vs-tap) are testable. Widget-level
+    // `click` cannot reach any of that — see remote_pointer.h.
+    nlohmann::json handle_pointer_press(const nlohmann::json& params);
+    nlohmann::json handle_pointer_move(const nlohmann::json& params);
+    nlohmann::json handle_pointer_release(const nlohmann::json& params);
+
+    /// Apply a synthetic pointer state on the UI thread, then block (on the calling
+    /// transport thread) until LVGL has sampled the device, so callers can sequence
+    /// press/move/release without racing the indev timer.
+    nlohmann::json apply_pointer_state(int32_t x, int32_t y, bool pressed, const char* what);
     nlohmann::json handle_geom(const nlohmann::json& params);
     nlohmann::json handle_get_const(const nlohmann::json& params);
 

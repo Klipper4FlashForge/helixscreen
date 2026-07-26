@@ -182,11 +182,4 @@ class AboutSettingsOverlay : public OverlayBase {
  */
 AboutSettingsOverlay& get_about_settings_overlay();
 
-/**
- * @brief Destroy the global AboutSettingsOverlay instance
- *
- * Called during shutdown cleanup.
- */
-void destroy_about_settings_overlay();
-
 } // namespace helix::settings

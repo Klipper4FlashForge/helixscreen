@@ -60,6 +60,7 @@ PANELS=(
     "advanced-spoolman:spoolman"
     "advanced-history:history-dashboard"
     "advanced-macros:macros"
+    "advanced-console:console"
 
     # Print overlays
     "print-status:print-status"

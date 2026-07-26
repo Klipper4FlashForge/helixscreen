@@ -226,13 +226,6 @@ class WizardTouchCalibrationStep : public helix::wizard::Step {
 WizardTouchCalibrationStep* get_wizard_touch_calibration_step();
 
 /**
- * @brief Destroy the global WizardTouchCalibrationStep instance
- *
- * Call during application shutdown to ensure proper cleanup.
- */
-void destroy_wizard_touch_calibration_step();
-
-/**
  * @brief Force touch calibration step to show (for visual testing)
  *
  * When set to true, should_skip() returns false even on non-fbdev displays.

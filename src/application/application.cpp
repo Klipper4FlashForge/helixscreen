@@ -99,8 +99,6 @@
 #include "ui_panel_calibration_pid.h"
 #include "ui_panel_calibration_zoffset.h"
 #include "ui_panel_filament.h"
-#include "ui_panel_gcode_test.h"
-#include "ui_panel_glyphs.h"
 #include "ui_panel_history_dashboard.h"
 #include "ui_panel_home.h"
 #include "ui_panel_input_shaper.h"
@@ -112,8 +110,6 @@
 #include "ui_panel_screws_tilt.h"
 #include "ui_panel_settings.h"
 #include "ui_panel_spoolman.h"
-#include "ui_panel_step_test.h"
-#include "ui_panel_test.h"
 #include "ui_print_tune_overlay.h"
 #include "ui_printer_status_icon.h"
 #include "ui_probe_overlay.h"
@@ -143,6 +139,16 @@
 #include "ui_wizard_language_chooser.h"
 #include "ui_wizard_touch_calibration.h"
 #include "ui_wizard_wifi.h"
+
+// Developer-only showcase panels (ENABLE_DEV_PANELS, excluded from release
+// builds). Not wired into PanelFactory — kept as live testbeds for XML
+// bindings, wizard step progress, the 3D G-code viewer and icon-font coverage.
+#ifdef HELIX_ENABLE_DEV_PANELS
+#include "ui_panel_gcode_test.h"
+#include "ui_panel_glyphs.h"
+#include "ui_panel_step_test.h"
+#include "ui_panel_test.h"
+#endif
 
 #include "active_print_media_manager.h"
 #include "android_asset_extractor.h"

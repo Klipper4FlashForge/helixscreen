@@ -2,6 +2,7 @@
 #include "filament_catalog.h"
 
 #include "filament_database.h"
+#include "json_utils.h"
 
 #include <spdlog/spdlog.h>
 
@@ -29,12 +30,20 @@ int get_int(const nlohmann::json& j, const char* key, int def) {
 }
 
 /// Resolve one product JSON into an EffectiveFilament, inheriting from its type.
+///
+/// The string fields go through safe_string for the same reason get_int above
+/// uses find + is_number: config/user_filaments.json is hand-editable, and
+/// nlohmann's .value() throws type_error.302 on a key that is PRESENT with a
+/// null value (a missing key is fine). This function is the single resolution
+/// point for every catalog load path, so one `"brand": null` used to unwind out
+/// of FilamentCatalog::load_full() and take the whole catalog with it — a
+/// per-field default keeps the cost to that field.
 EffectiveFilament to_effective(const nlohmann::json& p) {
     EffectiveFilament e;
-    e.id = p.value("id", "");
-    e.brand = p.value("brand", "");
-    e.name = p.value("name", "");
-    e.type = p.value("type", "");
+    e.id = helix::json_util::safe_string(p, "id");
+    e.brand = helix::json_util::safe_string(p, "brand");
+    e.name = helix::json_util::safe_string(p, "name");
+    e.type = helix::json_util::safe_string(p, "type");
 
     auto base = filament::find_material(e.type);  // std::optional<MaterialInfo>
     const int type_min = base ? base->nozzle_min : 0;
@@ -61,6 +70,25 @@ EffectiveFilament to_effective(const nlohmann::json& p) {
     return e;
 }
 
+/// Copy a product array, dropping entries that are not JSON objects.
+///
+/// The one gate every product passes through. A hand-edited overlay can easily
+/// contain a stray scalar, and letting one through would produce a product with
+/// an empty id — which then collides in by_id_ with every other malformed entry
+/// and can shadow a real product. Dropping it costs exactly that entry.
+std::vector<nlohmann::json> object_entries(const nlohmann::json& arr, const char* path) {
+    std::vector<nlohmann::json> out;
+    out.reserve(arr.size());
+    for (const auto& item : arr) {
+        if (item.is_object()) {
+            out.push_back(item);
+        } else {
+            spdlog::warn("[filament] skipping non-object product entry in {}", path);
+        }
+    }
+    return out;
+}
+
 std::vector<nlohmann::json> read_products(const char* const* paths, size_t n) {
     for (size_t i = 0; i < n; ++i) {
         std::ifstream f(paths[i]);
@@ -69,9 +97,9 @@ std::vector<nlohmann::json> read_products(const char* const* paths, size_t n) {
         try {
             auto doc = nlohmann::json::parse(f);
             if (doc.is_object() && doc.contains("filaments") && doc["filaments"].is_array())
-                return doc["filaments"].get<std::vector<nlohmann::json>>();
+                return object_entries(doc["filaments"], paths[i]);
             if (doc.is_array())  // user overlay is a bare array
-                return doc.get<std::vector<nlohmann::json>>();
+                return object_entries(doc, paths[i]);
         } catch (const std::exception& e) {
             spdlog::warn("[filament] parse failed {}: {}", paths[i], e.what());
         }
@@ -115,13 +143,13 @@ FilamentCatalog FilamentCatalog::load_with_overlay(const std::string& builtin_pa
     std::unordered_map<std::string, nlohmann::json> merged;
     std::vector<std::string> order;
     for (const auto& jp : read_products(bpaths, 1)) {
-        std::string id = jp.value("id", "");
+        std::string id = helix::json_util::safe_string(jp, "id");
         if (merged.find(id) == merged.end())
             order.push_back(id);
         merged[id] = jp;
     }
     for (const auto& jp : read_products(opaths, 1)) {
-        std::string id = jp.value("id", "");
+        std::string id = helix::json_util::safe_string(jp, "id");
         if (merged.find(id) == merged.end()) {
             order.push_back(id);
             merged[id] = jp;
@@ -231,10 +259,14 @@ std::vector<nlohmann::json> FilamentCatalog::load_user_products_from(const std::
 
 bool FilamentCatalog::upsert_product(std::vector<nlohmann::json>& products,
                                      const nlohmann::json& product) {
-    const std::string id = product.is_object() ? product.value("id", "") : "";
+    // safe_string handles both hazards .value() has here: a non-object receiver
+    // (type_error.306) and a key present with a null value (type_error.302).
+    // The is_object() checks stay for their non-throwing role — see the note in
+    // remove_product below.
+    const std::string id = helix::json_util::safe_string(product, "id");
     if (!id.empty()) {
         for (auto& p : products) {
-            if (p.is_object() && p.value("id", "") == id) {
+            if (p.is_object() && helix::json_util::safe_string(p, "id") == id) {
                 p = product;  // replace in place, preserving list order
                 return true;
             }
@@ -249,7 +281,12 @@ bool FilamentCatalog::remove_product(std::vector<nlohmann::json>& products,
     const size_t before = products.size();
     products.erase(std::remove_if(products.begin(), products.end(),
                                   [&](const nlohmann::json& p) {
-                                      return p.is_object() && p.value("id", "") == id;
+                                      // is_object() stays: it is not redundant
+                                      // with safe_string when `id` is empty,
+                                      // where dropping it would start matching
+                                      // (and erasing) non-object entries.
+                                      return p.is_object() &&
+                                             helix::json_util::safe_string(p, "id") == id;
                                   }),
                    products.end());
     return products.size() != before;

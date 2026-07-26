@@ -280,6 +280,12 @@ void LedSettingsOverlay::populate_macro_devices_impl() {
         // --- Card container ---
         auto* card =
             static_cast<lv_obj_t*>(lv_xml_create(container, "setting_macro_card", nullptr));
+        // Guard the parent: lv_obj_create(nullptr) creates a SCREEN, so a failed
+        // card create would silently spawn a stray screen nothing owns or deletes.
+        if (!card) {
+            spdlog::error("[{}] Failed to build macro card for device {} from XML", get_name(), i);
+            continue;
+        }
 
         // --- Header row (collapsed view) ---
         auto* header_row = lv_obj_create(card);
@@ -456,7 +462,13 @@ void LedSettingsOverlay::rebuild_macro_edit_controls(lv_obj_t* container, int in
                                 nullptr};
     auto* name_row =
         static_cast<lv_obj_t*>(lv_xml_create(container, "setting_form_input", name_attrs));
-    auto* name_ta = lv_obj_find_by_name(name_row, "input");
+    // Guard the parent: lv_obj_find_by_name(nullptr, ...) falls back to searching
+    // the active screen and would return an unrelated same-named widget.
+    auto* name_ta = name_row ? lv_obj_find_by_name(name_row, "input") : nullptr;
+    if (!name_ta) {
+        spdlog::error("[{}] Failed to build name input row from XML", get_name());
+        return;
+    }
     lv_obj_set_name(name_ta, "macro_name_input");
     lv_textarea_set_text(name_ta, macro.display_name.c_str());
 
@@ -464,7 +476,11 @@ void LedSettingsOverlay::rebuild_macro_edit_controls(lv_obj_t* container, int in
     const char* type_attrs[] = {"label", lv_tr("Type:"), nullptr};
     auto* type_row =
         static_cast<lv_obj_t*>(lv_xml_create(container, "setting_form_dropdown", type_attrs));
-    auto* type_dd = lv_obj_find_by_name(type_row, "dropdown");
+    auto* type_dd = type_row ? lv_obj_find_by_name(type_row, "dropdown") : nullptr;
+    if (!type_dd) {
+        spdlog::error("[{}] Failed to build type dropdown row from XML", get_name());
+        return;
+    }
     std::string type_options = std::string(lv_tr("On/Off (state-aware)")) + "\n" +
                                lv_tr("Toggle (fire-and-forget)") + "\n" + lv_tr("Preset");
     lv_dropdown_set_options(type_dd, type_options.c_str());
@@ -572,7 +588,11 @@ void LedSettingsOverlay::rebuild_macro_edit_controls(lv_obj_t* container, int in
             const char* on_attrs[] = {"label", lv_tr("On:"), nullptr};
             auto* on_row =
                 static_cast<lv_obj_t*>(lv_xml_create(container, "setting_form_dropdown", on_attrs));
-            auto* on_dd = lv_obj_find_by_name(on_row, "dropdown");
+            auto* on_dd = on_row ? lv_obj_find_by_name(on_row, "dropdown") : nullptr;
+            if (!on_dd) {
+                spdlog::error("[{}] Failed to build on-macro dropdown row from XML", get_name());
+                return;
+            }
             lv_dropdown_set_options(on_dd, macro_options.c_str());
             lv_obj_set_name(on_dd, "macro_on_dropdown");
             if (!macro.on_macro.empty()) {
@@ -583,7 +603,11 @@ void LedSettingsOverlay::rebuild_macro_edit_controls(lv_obj_t* container, int in
             const char* off_attrs[] = {"label", lv_tr("Off:"), nullptr};
             auto* off_row = static_cast<lv_obj_t*>(
                 lv_xml_create(container, "setting_form_dropdown", off_attrs));
-            auto* off_dd = lv_obj_find_by_name(off_row, "dropdown");
+            auto* off_dd = off_row ? lv_obj_find_by_name(off_row, "dropdown") : nullptr;
+            if (!off_dd) {
+                spdlog::error("[{}] Failed to build off-macro dropdown row from XML", get_name());
+                return;
+            }
             lv_dropdown_set_options(off_dd, macro_options.c_str());
             lv_obj_set_name(off_dd, "macro_off_dropdown");
             if (!macro.off_macro.empty()) {
@@ -595,7 +619,12 @@ void LedSettingsOverlay::rebuild_macro_edit_controls(lv_obj_t* container, int in
             const char* toggle_attrs[] = {"label", lv_tr("Toggle:"), nullptr};
             auto* toggle_row = static_cast<lv_obj_t*>(
                 lv_xml_create(container, "setting_form_dropdown", toggle_attrs));
-            auto* toggle_dd = lv_obj_find_by_name(toggle_row, "dropdown");
+            auto* toggle_dd = toggle_row ? lv_obj_find_by_name(toggle_row, "dropdown") : nullptr;
+            if (!toggle_dd) {
+                spdlog::error("[{}] Failed to build toggle-macro dropdown row from XML",
+                              get_name());
+                return;
+            }
             lv_dropdown_set_options(toggle_dd, macro_options.c_str());
             lv_obj_set_name(toggle_dd, "macro_toggle_dropdown");
             if (!macro.toggle_macro.empty()) {
@@ -1206,7 +1235,11 @@ void LedSettingsOverlay::populate_auto_state_rows() {
         const char* row_attrs[] = {"label", lv_tr(state.display_name), "icon", state.icon, nullptr};
         auto* row =
             static_cast<lv_obj_t*>(lv_xml_create(container, "setting_state_row", row_attrs));
-        auto* dropdown = lv_obj_find_by_name(row, "dropdown");
+        auto* dropdown = row ? lv_obj_find_by_name(row, "dropdown") : nullptr;
+        if (!dropdown) {
+            spdlog::error("[{}] Failed to build state row '{}' from XML", get_name(), key);
+            continue;
+        }
         lv_dropdown_set_options(dropdown, options_str.c_str());
 
         // Set dropdown to current action type
@@ -1249,8 +1282,13 @@ void LedSettingsOverlay::populate_auto_state_rows() {
 
         auto* detail =
             static_cast<lv_obj_t*>(lv_xml_create(container, "setting_detail_panel", nullptr));
+        auto* ctx_container = detail ? lv_obj_find_by_name(detail, "controls") : nullptr;
+        if (!ctx_container) {
+            spdlog::error("[{}] Failed to build detail panel for state '{}' from XML", get_name(),
+                          key);
+            continue;
+        }
         lv_obj_set_name(detail, fmt::format("detail_{}", key).c_str());
-        auto* ctx_container = lv_obj_find_by_name(detail, "controls");
         lv_obj_set_name(ctx_container, fmt::format("ctx_{}", key).c_str());
 
         if (!needs_detail) {

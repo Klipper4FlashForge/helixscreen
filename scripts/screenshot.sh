@@ -119,6 +119,20 @@ for a in "${EXTRA_ARGS[@]}"; do
     [ "$a" = "--wizard" ] && WIZARD_MODE=1
 done
 
+# Headless: no display server at all (CI, ssh session, container). SDL's dummy
+# video driver needs no window system, and the SDL backend falls back to the
+# software renderer on its own. Screenshots still come out correct because
+# capture goes through lv_snapshot_take(), which re-renders the object tree
+# into its own buffer rather than reading back the display. HELIX_HEADLESS=1
+# forces this on a machine that does have a display, so it is checked before the
+# Wayland auto-detect below — otherwise that branch would claim SDL_VIDEODRIVER
+# first and the request would be silently ignored.
+if [ -z "$SDL_VIDEODRIVER" ] && { [ "${HELIX_HEADLESS:-0}" = "1" ] ||
+    { [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ]; }; }; then
+    export SDL_VIDEODRIVER=dummy
+    info "Headless — using SDL_VIDEODRIVER=dummy (software renderer)"
+fi
+
 # On a Wayland desktop, force SDL's native Wayland driver (avoids XWayland GLX crash).
 if [ -n "$WAYLAND_DISPLAY" ] && [ -z "$SDL_VIDEODRIVER" ]; then
     export SDL_VIDEODRIVER=wayland
