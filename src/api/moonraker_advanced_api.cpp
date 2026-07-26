@@ -2295,7 +2295,18 @@ void MoonrakerAdvancedAPI::detect_belt_hardware(BeltHardwareCallback on_complete
             helix::calibration::BeltTensionHardware hw;
 
             try {
-                auto objects = response.value("objects", json::array());
+                // The array lives under the JSON-RPC envelope's result member —
+                // send_jsonrpc hands the callback the whole envelope, not the
+                // unwrapped result. Reading "objects" off the top level always
+                // yielded the empty default, which left every flag below false on
+                // every printer (prestonbrown/helixscreen#1137).
+                json objects = json::array();
+                const auto result_it = response.find("result");
+                if (result_it != response.end() && result_it->is_object()) {
+                    const auto objects_it = result_it->find("objects");
+                    if (objects_it != result_it->end() && objects_it->is_array())
+                        objects = *objects_it;
+                }
 
                 // Use AccelSensorManager as the single source of truth for
                 // accelerometer detection (discovers from configfile.config,
@@ -2303,6 +2314,8 @@ void MoonrakerAdvancedAPI::detect_belt_hardware(BeltHardwareCallback on_complete
                 hw.has_adxl = helix::sensors::AccelSensorManager::instance().has_sensors();
 
                 for (const auto& obj : objects) {
+                    if (!obj.is_string())
+                        continue;
                     std::string name = obj.get<std::string>();
                     if (name == "quad_gantry_level") {
                         hw.has_belted_z = true;
