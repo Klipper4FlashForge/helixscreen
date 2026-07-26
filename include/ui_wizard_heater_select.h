@@ -136,4 +136,3 @@ class WizardHeaterSelectStep : public helix::wizard::Step {
 // ============================================================================
 
 WizardHeaterSelectStep* get_wizard_heater_select_step();
-void destroy_wizard_heater_select_step();

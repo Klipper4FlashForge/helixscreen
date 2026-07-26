@@ -250,10 +250,3 @@ class WizardConnectionStep : public helix::wizard::Step {
  * Creates the instance on first call. Used by wizard framework.
  */
 WizardConnectionStep* get_wizard_connection_step();
-
-/**
- * @brief Destroy the global WizardConnectionStep instance
- *
- * Call during application shutdown.
- */
-void destroy_wizard_connection_step();

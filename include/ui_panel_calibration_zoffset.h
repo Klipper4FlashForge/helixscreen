@@ -253,9 +253,6 @@ class ZOffsetCalibrationPanel : public OverlayBase {
 // Global instance accessor
 ZOffsetCalibrationPanel& get_global_zoffset_cal_panel();
 
-// Destroy the global instance (call during shutdown)
-void destroy_zoffset_cal_panel();
-
 /**
  * @brief Initialize row click callback for opening from Advanced panel
  *

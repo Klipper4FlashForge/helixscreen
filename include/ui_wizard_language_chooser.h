@@ -180,7 +180,6 @@ class WizardLanguageChooserStep : public helix::wizard::Step {
 // ============================================================================
 
 WizardLanguageChooserStep* get_wizard_language_chooser_step();
-void destroy_wizard_language_chooser_step();
 
 /**
  * @brief Force-show the language chooser step (for testing)

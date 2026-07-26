@@ -187,10 +187,3 @@ class WizardSummaryStep : public helix::wizard::Step {
  * @return Pointer to the singleton instance
  */
 WizardSummaryStep* get_wizard_summary_step();
-
-/**
- * @brief Destroy the global WizardSummaryStep instance
- *
- * Call during application shutdown to ensure proper cleanup.
- */
-void destroy_wizard_summary_step();

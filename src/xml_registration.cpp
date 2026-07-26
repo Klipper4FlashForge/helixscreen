@@ -671,11 +671,17 @@ void register_xml_components() {
 
     // Additional panels
     register_xml("advanced_panel.xml");
-    register_xml("test_panel.xml");
     register_xml("print_select_panel.xml");
+
+    // Developer-only showcase panels (ENABLE_DEV_PANELS). Their C++ classes are
+    // excluded from release builds, so skip the component registration too —
+    // nothing navigates to them and the XML files are never instantiated.
+#ifdef HELIX_ENABLE_DEV_PANELS
+    register_xml("test_panel.xml");
     register_xml("gcode_test_panel.xml");
     register_xml("step_test_panel.xml");
     register_xml("glyphs_panel.xml");
+#endif
 
     // App layout
     register_xml("app_layout.xml");

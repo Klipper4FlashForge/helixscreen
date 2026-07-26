@@ -170,7 +170,6 @@ class UpdateChecker {
 
     // LVGL subjects for UI binding (update check)
     lv_subject_t* status_subject();
-    lv_subject_t* checking_subject();
     lv_subject_t* version_text_subject();
     lv_subject_t* new_version_subject();
 
@@ -364,7 +363,6 @@ class UpdateChecker {
 
     // LVGL subjects for UI binding (update check)
     lv_subject_t status_subject_{};
-    lv_subject_t checking_subject_{};
     lv_subject_t version_text_subject_{};
     lv_subject_t new_version_subject_{};
 

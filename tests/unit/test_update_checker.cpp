@@ -649,7 +649,6 @@ TEST_CASE("UpdateChecker subject initialization", "[update_checker][subjects]") 
 
     SECTION("all subject accessors return non-null after init") {
         REQUIRE(checker.status_subject() != nullptr);
-        REQUIRE(checker.checking_subject() != nullptr);
         REQUIRE(checker.version_text_subject() != nullptr);
         REQUIRE(checker.new_version_subject() != nullptr);
     }
@@ -657,7 +656,6 @@ TEST_CASE("UpdateChecker subject initialization", "[update_checker][subjects]") 
     SECTION("integer subjects have correct initial values") {
         REQUIRE(lv_subject_get_int(checker.status_subject()) ==
                 static_cast<int>(UpdateChecker::Status::Idle));
-        REQUIRE(lv_subject_get_int(checker.checking_subject()) == 0);
     }
 
     SECTION("string subjects start empty") {
@@ -681,14 +679,12 @@ TEST_CASE("UpdateChecker subject accessors remain stable after shutdown",
 
     // Verify subjects exist before shutdown
     REQUIRE(checker.status_subject() != nullptr);
-    REQUIRE(checker.checking_subject() != nullptr);
 
     checker.shutdown();
 
     // Accessors return member addresses, so they remain non-null even after shutdown.
     // (The subjects themselves are deinitialized, but the pointers are stable.)
     REQUIRE(checker.status_subject() != nullptr);
-    REQUIRE(checker.checking_subject() != nullptr);
     REQUIRE(checker.version_text_subject() != nullptr);
     REQUIRE(checker.new_version_subject() != nullptr);
 }

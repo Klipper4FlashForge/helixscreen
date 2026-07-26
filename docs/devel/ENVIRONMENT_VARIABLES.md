@@ -634,8 +634,6 @@ HELIX_SSAO=0 ./build/bin/helix-screen --test --gcode-file model.gcode -vv &
 
 Performance impact is minimal (~2ms post-process pass for the outline, negligible overhead for AA lines and normal shading).
 
-Can also be toggled programmatically via `ui_gcode_viewer_set_ssao_enabled()`.
-
 ---
 
 ## Bed Mesh
