@@ -11,12 +11,17 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import tempfile
 import time
 from pathlib import Path
 from typing import Any
+
+# tests/ui/helix/app.py -> repo root is three levels up.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_TEST_SETTINGS_TEMPLATE = _REPO_ROOT / "config" / "settings-test.json"
 
 
 class HelixCtlError(RuntimeError):
@@ -84,6 +89,30 @@ class HelixApp:
             config_dir = self.socket_path.parent / "helix-config"
             config_dir.mkdir(parents=True, exist_ok=True)
             env["HELIX_CONFIG_DIR"] = str(config_dir)
+
+            # Config::init(TEST_CONFIG_PATH) resolves to
+            # "<HELIX_CONFIG_DIR>/settings-test.json" (config.cpp keeps the
+            # caller's filename, only redirects the directory). The lock-file
+            # isolation above solves one problem (every instance sharing one
+            # lock) but silently created another: a brand-new private
+            # directory has no settings-test.json in it, so Config falls
+            # through to compiled-in defaults instead of this repo's
+            # `config/settings-test.json` — including
+            # `display.animations_enabled: false`, which real overlay
+            # push/pop transitions rely on to render instantly rather than
+            # animate. Copy (never symlink — each instance must be free to
+            # write its own copy without one instance's edits leaking into
+            # another's) the template in before boot so instances get both
+            # lock isolation and the intended test defaults.
+            if _TEST_SETTINGS_TEMPLATE.exists():
+                shutil.copy(_TEST_SETTINGS_TEMPLATE, config_dir / "settings-test.json")
+            else:
+                # Don't hard-fail the boot over a missing template — the app
+                # falls back to compiled-in defaults and still runs — but
+                # don't stay quiet about it either, since that fallback is
+                # exactly what silently flipped animations_enabled before.
+                print(f"[HelixApp] warning: {_TEST_SETTINGS_TEMPLATE} not found — "
+                      f"booting without the repo's test config defaults")
 
         args = [
             str(self.binary),

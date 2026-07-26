@@ -11,6 +11,15 @@ here in Python is splitting `"navigate x; click y"` into steps. That's more
 robust than hand-rolling a parser for bash's quoting/comment syntax, and it
 means a renamed or added recipe token shows up here automatically instead of
 needing a second edit that someone eventually forgets to make.
+
+Overlay/panel transitions must render instantly, not animate, or `freeze()`
+can catch one mid-slide (see `_SUBSET`'s comment below for the details this
+corpus depends on). That used to require a local `settings_animations_enabled`
+override in this file; it's now guaranteed by `HelixApp.start()` itself
+(`helix/app.py` seeds each instance's private config dir from
+`config/settings-test.json` before boot), so no per-test workaround remains
+here — if animations ever come back on by default, the right fix is back in
+`helix/app.py`, not a re-added fixture in this file.
 """
 
 from __future__ import annotations
@@ -98,33 +107,6 @@ _SUBSET = [
 ]
 
 SCREENS = [(name, _steps_for(_RECIPES[name])) for name in _SUBSET]
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _no_transition_animations(helix_app):
-    """Force panel/overlay transitions off before any capture in this module.
-
-    Every `HelixApp` boots with its own private `HELIX_CONFIG_DIR` (so the
-    shared instance, a `fresh_helix_app`, and the diagnostics pytester
-    sub-process never collide over one lock file — see `helix/app.py`'s
-    `start()`). A side effect: it never inherits
-    `config/settings-test.json`'s `display.animations_enabled: false` — that
-    file only seeds the *default* config path, which a private dir bypasses —
-    so the app starts from the platform-capability default instead, which is
-    `true` on native/desktop (confirmed via boot log: "[DisplaySettingsManager]
-    Subjects initialized: ... animations=true").
-
-    With that default, `NavigationManager`'s overlay push/pop runs a real
-    ~250ms slide+fade (`ui_nav_manager.cpp`'s `overlay_animate_slide_in`), and
-    `wait_idle()` + `freeze()` do not reliably outrun it: `wait_idle()` only
-    tracks `UpdateQueue`/`HttpExecutor`, not `lv_anim` state, so `freeze()`'s
-    `lv_anim_delete_all()` can fire mid-flight and lock in whatever half-slid
-    frame the animation had reached. Confirmed empirically (see the task-10
-    report): captures of the `ams` and `camera` demo screens reproducibly came
-    back mid-transition — home panel still half-visible behind the incoming
-    overlay — until this fixture forced animations off first.
-    """
-    helix_app.set("settings_animations_enabled", 0)
 
 
 @pytest.mark.parametrize("name,steps", SCREENS, ids=[s[0] for s in SCREENS])

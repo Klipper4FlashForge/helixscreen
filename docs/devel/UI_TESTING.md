@@ -68,14 +68,17 @@ excluded — see the task-10 report for the evidence. Adding one of them later n
 either a mock-side way to pin the drifting value, or accepting a masked/cropped
 comparison region; don't just re-add the token and hope.
 
-Every currently-golden'd screen also needs `settings_animations_enabled` forced off
-once per session (`test_screens.py`'s `_no_transition_animations` fixture): each
+Every golden'd screen also depends on `settings_animations_enabled` being off, or
+`NavigationManager`'s overlay slide+fade can still be mid-flight when `freeze()`
+runs, locking in a half-transitioned frame. This used to be a real bug: each
 `HelixApp` boots with its own private `HELIX_CONFIG_DIR` (to avoid lock-file
-collisions between instances — see `helix/app.py`), which bypasses
-`config/settings-test.json`'s `animations_enabled: false` and starts from the
-platform-capability default instead (`true` on native/desktop). Without forcing it
-off, `NavigationManager`'s overlay slide+fade can still be mid-flight when `freeze()`
-runs, locking in a half-transitioned frame.
+collisions between instances), which bypassed `config/settings-test.json` entirely
+and fell back to the platform-capability default instead (`true` on native/desktop —
+confirmed via boot log: "animations=true"). `HelixApp.start()` (`helix/app.py`) now
+seeds each private config dir with `config/settings-test.json` before boot, so every
+instance gets the intended test defaults *and* lock isolation — no per-test
+workaround needed. If a future screen animates unexpectedly, check whether that
+seeding step is still wired up before adding a local fixture to paper over it again.
 
 ## Architecture
 

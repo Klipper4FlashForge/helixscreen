@@ -81,7 +81,10 @@ def test_stable_times_out_with_an_actionable_message_on_a_genuinely_moving_scree
     # multi-sample branch and the timeout throw are never actually executed,
     # only inspected by reading the code. Drive a screen that keeps
     # genuinely repainting on its own: a live mock print with animations
-    # re-enabled (--test's settings-test.json defaults them off).
+    # re-enabled (`HelixApp.start()` seeds each instance's private config dir
+    # from config/settings-test.json, whose `animations_enabled: false` is
+    # what needs overriding here — see the seeding comment in helix/app.py
+    # for why that seeding step exists at all).
     # PrintStatusPanel restarts a ~300ms ease-out progress-bar animation on
     # every mock physics tick (~250ms, independent of --sim-speed), so
     # pixels never hold still for 3 consecutive 16ms samples — this
