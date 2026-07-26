@@ -819,6 +819,74 @@ describe("mapEventToDataPoints", () => {
     expect(dp.doubles).toHaveLength(8);
   });
 
+  it("maps session zip_tool into blob10", () => {
+    const event = {
+      event: "session",
+      device_id: "dev-zip",
+      app: { version: "0.99.102", platform: "k2", zip_tool: "python" },
+    };
+    const dp = mapEventToDataPoints(event)[0];
+    expect(dp.blobs![9]).toBe("python");
+    expect(dp.blobs).toHaveLength(12);
+  });
+
+  it("leaves session zip_tool empty for clients that do not send it", () => {
+    const event = { event: "session", device_id: "dev-old", app: { version: "0.99.90" } };
+    const dp = mapEventToDataPoints(event)[0];
+    expect(dp.blobs![9]).toBe("");
+  });
+
+  it("maps update_failed event to real slots, not the unknown fallback", () => {
+    const event = {
+      event: "update_failed",
+      device_id: "dev-uf",
+      reason: "corrupt_download",
+      version: "0.99.103",
+      from_version: "0.99.100",
+      platform: "ad5m",
+      http_code: 200,
+      file_size: 1048576,
+      exit_code: 127,
+    };
+    const dp = mapEventToDataPoints(event)[0];
+    expect(dp.indexes).toEqual(["update_failed"]);
+    expect(dp.blobs![0]).toBe("dev-uf");
+    // blob2 is the RUNNING version, not the target. The default dashboard
+    // filter maps version=blob2, and the target is always the newest release —
+    // keying on it would collapse every failure into one bucket. What we need
+    // is which deployed versions are failing (helixscreen#993).
+    expect(dp.blobs![1]).toBe("0.99.100");
+    expect(dp.blobs![2]).toBe("ad5m");
+    expect(dp.blobs![3]).toBe("corrupt_download");
+    expect(dp.blobs![4]).toBe("0.99.103"); // target
+    expect(dp.blobs).toHaveLength(12);
+    expect(dp.doubles![0]).toBe(200);
+    expect(dp.doubles![1]).toBe(1048576);
+    expect(dp.doubles![2]).toBe(127);
+    expect(dp.doubles).toHaveLength(8);
+    // The unknown-event fallback would have put the event name in blob2.
+    expect(dp.blobs![1]).not.toBe("update_failed");
+  });
+
+  it("maps update_success event to real slots, not the unknown fallback", () => {
+    const event = {
+      event: "update_success",
+      device_id: "dev-us",
+      version: "0.99.103",
+      from_version: "0.99.100",
+      platform: "pi",
+    };
+    const dp = mapEventToDataPoints(event)[0];
+    expect(dp.indexes).toEqual(["update_success"]);
+    expect(dp.blobs![0]).toBe("dev-us");
+    expect(dp.blobs![1]).toBe("0.99.103");
+    expect(dp.blobs![2]).toBe("pi");
+    expect(dp.blobs![3]).toBe("0.99.100");
+    expect(dp.blobs).toHaveLength(12);
+    expect(dp.doubles).toHaveLength(8);
+    expect(dp.blobs![1]).not.toBe("update_success");
+  });
+
   it("maps unknown event type with basic info", () => {
     const event = {
       event: "custom_thing",

@@ -391,6 +391,35 @@ class TelemetryAnalyzer:
             s, "printer.klipper_version"
         )
         result["host_arch_distribution"] = self._distribution(s, "host.arch")
+        result["zip_tool_distribution"] = self._distribution(s, "app.zip_tool")
+
+        # Zip readiness per platform (#993 .tar.gz retirement gate).
+        # A platform can be served zip-only once every active device on it
+        # reports a usable zip tool. Clients too old to send app.zip_tool count
+        # as NOT ready -- their absence of the field is exactly the risk.
+        if "app.platform" in s.columns:
+            tool = (
+                s["app.zip_tool"]
+                if "app.zip_tool" in s.columns
+                else pd.Series([None] * len(s), index=s.index)
+            )
+            capable_ids = set(
+                s.loc[tool.notna() & (tool != "none"), "device_id"]
+            )
+            readiness = {}
+            for platform, grp in s.groupby("app.platform"):
+                total = grp["device_id"].nunique()
+                if total == 0:
+                    continue
+                ready = grp[grp["device_id"].isin(capable_ids)][
+                    "device_id"
+                ].nunique()
+                readiness[str(platform)] = {
+                    "devices": int(total),
+                    "zip_capable_devices": int(ready),
+                    "zip_capable_pct": round(ready / total * 100, 1),
+                }
+            result["zip_readiness_by_platform"] = readiness
 
         # RAM distribution (bucketed)
         if "host.ram_total_mb" in s.columns:
