@@ -161,3 +161,48 @@ headless_socket() {
     grep -q "SDL_HINT_RENDER_DRIVER" "$src"
     grep -q "software" "$src"
 }
+
+@test "SDL backend does not blame the renderer when there is no video driver" {
+    # Two distinct failures reach the same branch. If SDL_CreateWindow failed
+    # because no video driver exists, a different render driver cannot help and
+    # LVGL will not re-run SDL_Init anyway (its `inited` flag is already set) —
+    # so retrying is pointless and "accelerated renderer unavailable" is a wrong
+    # diagnosis that sends people debugging the GPU instead of the driver.
+    local src="$REPO_ROOT/src/api/display_backend_sdl.cpp"
+    grep -q "SDL_WasInit(SDL_INIT_VIDEO)" "$src"
+    grep -q "No usable SDL video driver" "$src"
+}
+
+@test "release_disp_cb quits SDL only after destroying its resources" {
+    # SDL_Quit() tears down the video subsystem that owns the texture, renderer
+    # and window. Quitting first leaves deinit_display() destroying dangling
+    # handles.
+    local body
+    body="$(sed -n '/^static void release_disp_cb/,/^}/p' "$WINDOW_SRC")"
+    [ -n "$body" ]
+
+    local deinit_line quit_line
+    deinit_line="$(printf '%s\n' "$body" | grep -n 'deinit_display' | head -1 | cut -d: -f1)"
+    quit_line="$(printf '%s\n' "$body" | grep -n 'lv_sdl_quit' | head -1 | cut -d: -f1)"
+
+    [ -n "$deinit_line" ]
+    [ -n "$quit_line" ]
+    [ "$deinit_line" -lt "$quit_line" ]
+
+    grep -q "lv_sdl_quit" "$WINDOW_PATCH"
+}
+
+@test "headless smoke script exists, is executable and has valid syntax" {
+    local script="$REPO_ROOT/scripts/smoke-headless.sh"
+    [ -x "$script" ]
+    bash -n "$script"
+}
+
+@test "CI runs the headless smoke test, not just --help" {
+    # build.yml's only runtime check used to be `helix-screen --help || true`,
+    # which cannot fail — a startup segfault shipped green.
+    local wf="$REPO_ROOT/.github/workflows/build.yml"
+    grep -q "smoke-headless.sh" "$wf"
+    # And it must not be neutered with `|| true`.
+    ! grep -qE "smoke-headless\.sh.*\|\| *true" "$wf"
+}
