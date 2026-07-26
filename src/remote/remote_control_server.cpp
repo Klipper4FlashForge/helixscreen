@@ -324,6 +324,7 @@ void RemoteControlServer::register_builtin_handlers() {
         return handle_pointer_release(p);
     };
     handlers_["geom"] = [this](const nlohmann::json& p) { return handle_geom(p); };
+    handlers_["text"] = [this](const nlohmann::json& p) { return handle_text(p); };
     handlers_["get_const"] = [this](const nlohmann::json& p) { return handle_get_const(p); };
     handlers_["wake"] = [this](const nlohmann::json& p) { return handle_wake(p); };
 
@@ -1680,6 +1681,77 @@ nlohmann::json RemoteControlServer::handle_focus(const nlohmann::json& params) {
         return {{"focused", target_label(params)},
                 {"keyboard_visible", KeyboardManager::instance().is_visible()},
                 {"active_screen", active_screen_label()}};
+    });
+}
+
+namespace {
+
+// Read text out of whichever widget type carries it. Returns false when the
+// widget has no text concept at all — distinct from having empty text, which
+// is why this can't just return an empty string for both cases.
+bool read_widget_text(lv_obj_t* o, std::string& out, std::string& source) {
+    if (lv_obj_check_type(o, &lv_label_class)) {
+        const char* t = lv_label_get_text(o);
+        out = t ? t : "";
+        source = "label";
+        return true;
+    }
+    if (lv_obj_check_type(o, &lv_textarea_class)) {
+        const char* t = lv_textarea_get_text(o);
+        out = t ? t : "";
+        source = "textarea";
+        return true;
+    }
+    if (lv_obj_check_type(o, &lv_dropdown_class)) {
+        char buf[128];
+        lv_dropdown_get_selected_str(o, buf, sizeof(buf));
+        out = buf;
+        source = "dropdown";
+        return true;
+    }
+    return false;
+}
+
+// Depth-first search for the first descendant carrying text. Mirrors how
+// resolve_actionable() descends a composite row to its value-control — a
+// button (ui_button) carries no text of its own; the text lives on the
+// lv_label it creates internally.
+lv_obj_t* find_text_descendant(lv_obj_t* root) {
+    uint32_t n = lv_obj_get_child_count(root);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t* child = lv_obj_get_child(root, i);
+        std::string ignored_text, ignored_source;
+        if (read_widget_text(child, ignored_text, ignored_source)) {
+            return child;
+        }
+        if (lv_obj_t* deeper = find_text_descendant(child)) {
+            return deeper;
+        }
+    }
+    return nullptr;
+}
+
+} // namespace
+
+nlohmann::json RemoteControlServer::handle_text(const nlohmann::json& params) {
+    if (!params.contains("name") && !params.contains("path")) {
+        throw std::invalid_argument("Missing required parameter: name or path");
+    }
+
+    return execute_on_ui_thread([params]() -> nlohmann::json {
+        lv_obj_t* widget = resolve_widget(params);
+        if (!widget) {
+            throw std::invalid_argument("Widget not found: " + target_label(params));
+        }
+        std::string value, source;
+        lv_obj_t* holder = widget;
+        if (!read_widget_text(holder, value, source)) {
+            holder = find_text_descendant(widget);
+            if (!holder || !read_widget_text(holder, value, source)) {
+                throw std::invalid_argument("Widget has no text: " + target_label(params));
+            }
+        }
+        return {{"text", value}, {"path", path_of(holder)}, {"source", source}};
     });
 }
 

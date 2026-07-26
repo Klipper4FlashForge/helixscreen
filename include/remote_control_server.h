@@ -154,6 +154,10 @@ class RemoteControlServer {
     nlohmann::json handle_scroll(const nlohmann::json& params);
     nlohmann::json handle_focus(const nlohmann::json& params);
 
+    // Read a widget's text (label/textarea/dropdown), descending into a
+    // composite (e.g. a button) to find the first text-bearing descendant.
+    nlohmann::json handle_text(const nlohmann::json& params);
+
     // Synthetic pointer: drives LVGL's real input pipeline so gestures
     // (long-press, drag, slide-to-select, scroll-vs-tap) are testable. Widget-level
     // `click` cannot reach any of that — see remote_pointer.h.

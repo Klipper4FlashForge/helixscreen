@@ -83,6 +83,8 @@ static void print_usage() {
     printf("  scroll <target> [dx dy] Scroll into view, or by a delta\n");
     printf("  focus <target>          Focus a widget through its input group. Raises the\n");
     printf("                          on-screen keyboard for a textarea (click does not).\n");
+    printf("  text <target>           Read a widget's text (label/textarea/dropdown),\n");
+    printf("                          descending into a composite (e.g. a button) to find it.\n");
     printf("\nSynthetic pointer (drives LVGL's real input pipeline — gestures, long-press,\n");
     printf("scroll-vs-tap — unlike `click`, which sends a bare widget event):\n");
     printf("  press <x> <y>           Put the pointer down at x,y\n");
@@ -518,6 +520,12 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
             params["dy"] = std::atoi(tokens[3].c_str());
         }
         return build_request("scroll", params);
+    } else if (cmd == "text") {
+        if (tokens.size() < 2) {
+            fprintf(stderr, "Error: text requires a widget name/@path\n");
+            return {};
+        }
+        return build_request("text", target_param(tokens[1]));
     } else if (cmd == "geom") {
         if (tokens.size() < 2) {
             fprintf(stderr, "Error: geom requires a widget name/@path [depth]\n");
@@ -592,6 +600,7 @@ static const char* REPL_COMMANDS[] = {"ping",
                                       "log",
                                       "shutdown",
                                       "geom",
+                                      "text",
                                       "get_const",
                                       "quit",
                                       "exit",
@@ -657,6 +666,8 @@ static char* repl_hints(const char* buf, int* color, int* bold) {
     if (input == "set")
         return strdup(" <subject> <value>");
     if (input == "click")
+        return strdup(" <widget>");
+    if (input == "text")
         return strdup(" <widget>");
     if (input == "set_value")
         return strdup(" <widget> <value>");

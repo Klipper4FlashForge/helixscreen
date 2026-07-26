@@ -182,6 +182,10 @@ class HelixApp:
     def geom(self, target: str, depth: int = 0) -> dict:
         return self.ctl("geom", target, depth) if depth else self.ctl("geom", target)
 
+    def text(self, target: str) -> str:
+        """Read a widget's text. Raises if the widget carries no text at all."""
+        return self.ctl("text", target)["text"]
+
     def get(self, subject: str) -> Any:
         return self.ctl("get", subject)
 

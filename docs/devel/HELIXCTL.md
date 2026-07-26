@@ -181,6 +181,7 @@ live breadcrumb of the navigation stack, e.g. `controls / motion_panel_0 > `.
 | `set_value <target> <v>` | Set a value (slider, switch, dropdown, textarea) |
 | `scroll <target> [dx dy]` | Scroll a widget into view, or by a delta |
 | `focus <target>` | Focus a widget through its input group. Fires the real `LV_EVENT_FOCUSED`, so a registered textarea raises the on-screen keyboard — `click` does not, and leaves it hidden. Fails if the widget is not in an input group |
+| `text <target>` | Read a widget's text: `lv_label`, `lv_textarea`, or `lv_dropdown` (its selected option). Descends into a composite (e.g. a button wrapping a label) the same way `click` descends to a value-control. Raises rather than returning `""` if the widget has no text concept at all — an empty label and "not a text widget" are different facts |
 | `geom <target> [depth]` | Measured geometry: position, size, declared-vs-computed size, flex/scroll state |
 | `get_const [scope] <name>` | Resolve an XML `#const` to the value the renderer actually sees |
 
