@@ -126,7 +126,7 @@ TEST_CASE("is_discretionary_gcode matches whole tokens only", "[gcode][classify]
     CHECK_FALSE(is_discretionary_gcode("G10"));                       // not G0/G1
     CHECK_FALSE(is_discretionary_gcode("M10"));                       // not M104/M106/M107
     CHECK_FALSE(is_discretionary_gcode("SET_FAN_SPEED_EXTRA FAN=x")); // not SET_FAN_SPEED
-    CHECK_FALSE(is_discretionary_gcode("SET_LED_EFFECT EFFECT=x"));   // not SET_LED
+    CHECK_FALSE(is_discretionary_gcode("SET_LEDX R=1"));              // not SET_LED
 }
 
 // ============================================================================
