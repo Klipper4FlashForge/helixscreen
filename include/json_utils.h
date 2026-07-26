@@ -3,7 +3,11 @@
 
 #pragma once
 
+#include <cctype>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <string>
 
 #include "hv/json.hpp"
@@ -24,24 +28,9 @@ inline std::string safe_string(const nlohmann::json& j, const char* key,
     return def;
 }
 
-/// Safely extract an int from a JSON field that may be number, string, or null.
-inline int safe_int(const nlohmann::json& j, const char* key, int def = 0) {
-    if (!j.contains(key) || j[key].is_null()) {
-        return def;
-    }
-    const auto& v = j[key];
-    if (v.is_number()) {
-        return v.get<int>();
-    }
-    if (v.is_string()) {
-        try {
-            return std::stoi(v.get<std::string>());
-        } catch (...) {
-            return def;
-        }
-    }
-    return def;
-}
+// Forward declaration: safe_int is defined below the detail:: converters it uses,
+// but is declared here to keep the four original helpers together.
+inline int safe_int(const nlohmann::json& j, const char* key, int def = 0);
 
 /// Safely extract a float from a JSON field that may be number, string, or null.
 inline float safe_float(const nlohmann::json& j, const char* key, float def = 0.0f) {
@@ -79,6 +68,207 @@ inline double safe_double(const nlohmann::json& j, const char* key, double def =
         }
     }
     return std::isfinite(result) ? result : def;
+}
+
+/// Safely extract a bool from a JSON field that may be bool, number, string, or null.
+///
+/// Coercion policy (deliberate — do not widen without thought):
+///   - JSON bool              -> used directly
+///   - JSON number            -> 0 is false, any other finite value is true.
+///                               Non-finite (NaN/Inf) returns `def`.
+///   - JSON string            -> ONLY an exact, case-insensitive match against
+///                               "true"/"false", "1"/"0", "yes"/"no", "on"/"off"
+///                               is honored. Anything else returns `def`.
+///   - null / missing / other -> `def`
+///
+/// The string whitelist is closed on purpose. The tempting shorthand — treating
+/// any non-empty string as true — reads the string "false" as TRUE, which is
+/// strictly worse than having no value at all. An unrecognized spelling is a
+/// payload we do not understand, so we return the caller's default rather than
+/// guess at it.
+///
+/// Prefer `.find()` + `is_boolean()` at sites where a wrong-typed value should
+/// be treated as "no reading available" and skipped entirely, rather than
+/// silently collapsing to `def` — see ams_backend_snapmaker.cpp for that idiom.
+/// Use this helper when a default genuinely is the right answer.
+inline bool safe_bool(const nlohmann::json& j, const char* key, bool def = false) {
+    if (!j.contains(key) || j[key].is_null()) {
+        return def;
+    }
+    const auto& v = j[key];
+    if (v.is_boolean()) {
+        return v.get<bool>();
+    }
+    if (v.is_number()) {
+        const double d = v.get<double>();
+        if (!std::isfinite(d)) {
+            return def;
+        }
+        return d != 0.0;
+    }
+    if (v.is_string()) {
+        std::string s = v.get<std::string>();
+        for (char& c : s) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        if (s == "true" || s == "1" || s == "yes" || s == "on") {
+            return true;
+        }
+        if (s == "false" || s == "0" || s == "no" || s == "off") {
+            return false;
+        }
+        return def;
+    }
+    return def;
+}
+
+namespace detail {
+
+/// Convert a JSON value to int64_t. Returns false (leaving `out` untouched) if
+/// the value is not a number/numeric-string or does not fit in an int64_t.
+inline bool to_i64(const nlohmann::json& v, std::int64_t& out) {
+    if (v.is_number_unsigned()) {
+        const std::uint64_t u = v.get<std::uint64_t>();
+        if (u > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+            return false;
+        }
+        out = static_cast<std::int64_t>(u);
+        return true;
+    }
+    if (v.is_number_integer()) {
+        out = v.get<std::int64_t>();
+        return true;
+    }
+    if (v.is_number_float()) {
+        const double d = v.get<double>();
+        // -2^63 is exactly representable as a double; 2^63 is too, hence the
+        // asymmetric comparison (values >= 2^63 do not fit).
+        if (!std::isfinite(d) || d < -9223372036854775808.0 || d >= 9223372036854775808.0) {
+            return false;
+        }
+        out = static_cast<std::int64_t>(d);
+        return true;
+    }
+    if (v.is_string()) {
+        try {
+            out = std::stoll(v.get<std::string>());
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+    return false;
+}
+
+/// Convert a JSON value to uint64_t. Returns false (leaving `out` untouched) if
+/// the value is not a number/numeric-string, is negative, or overflows.
+inline bool to_u64(const nlohmann::json& v, std::uint64_t& out) {
+    if (v.is_number_unsigned()) {
+        out = v.get<std::uint64_t>();
+        return true;
+    }
+    if (v.is_number_integer()) {
+        const std::int64_t i = v.get<std::int64_t>();
+        if (i < 0) {
+            return false;
+        }
+        out = static_cast<std::uint64_t>(i);
+        return true;
+    }
+    if (v.is_number_float()) {
+        const double d = v.get<double>();
+        // 2^64 is exactly representable as a double; values >= it do not fit.
+        if (!std::isfinite(d) || d < 0.0 || d >= 18446744073709551616.0) {
+            return false;
+        }
+        out = static_cast<std::uint64_t>(d);
+        return true;
+    }
+    if (v.is_string()) {
+        const std::string s = v.get<std::string>();
+        // std::stoull silently WRAPS a negative literal ("-1" -> 2^64-1), so
+        // reject a sign explicitly before parsing.
+        for (char c : s) {
+            if (std::isspace(static_cast<unsigned char>(c))) {
+                continue;
+            }
+            if (c == '-') {
+                return false;
+            }
+            break;
+        }
+        try {
+            out = std::stoull(s);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+    return false;
+}
+
+} // namespace detail
+
+/// Safely extract an int from a JSON field that may be number, string, or null.
+/// Returns `def` for null/missing/wrong-type, for non-finite floats, and for
+/// values outside the int range — a JSON 5000000000 yields `def`, not a
+/// truncated 705032704.
+inline int safe_int(const nlohmann::json& j, const char* key, int def) {
+    if (!j.contains(key) || j[key].is_null()) {
+        return def;
+    }
+    std::int64_t out = 0;
+    if (!detail::to_i64(j[key], out)) {
+        return def;
+    }
+    if (out < static_cast<std::int64_t>(std::numeric_limits<int>::min()) ||
+        out > static_cast<std::int64_t>(std::numeric_limits<int>::max())) {
+        return def;
+    }
+    return static_cast<int>(out);
+}
+
+/// Safely extract an int64_t from a JSON field that may be number, string, or null.
+/// Returns `def` for null/missing/wrong-type, for non-finite floats, and for
+/// values outside the int64_t range.
+inline std::int64_t safe_int64(const nlohmann::json& j, const char* key, std::int64_t def = 0) {
+    if (!j.contains(key) || j[key].is_null()) {
+        return def;
+    }
+    std::int64_t out = 0;
+    return detail::to_i64(j[key], out) ? out : def;
+}
+
+/// Safely extract a uint64_t from a JSON field that may be number, string, or null.
+/// Returns `def` for null/missing/wrong-type, for non-finite floats, for negative
+/// values (including the string "-1", which std::stoull would otherwise wrap), and
+/// for values outside the uint64_t range.
+inline std::uint64_t safe_uint64(const nlohmann::json& j, const char* key, std::uint64_t def = 0) {
+    if (!j.contains(key) || j[key].is_null()) {
+        return def;
+    }
+    std::uint64_t out = 0;
+    return detail::to_u64(j[key], out) ? out : def;
+}
+
+/// Safely extract a size_t from a JSON field that may be number, string, or null.
+/// As safe_uint64, plus a narrowing guard: on 32-bit targets (AD5M/MIPS32, K1
+/// armv7) a value that fits in a uint64_t but not a size_t returns `def` rather
+/// than truncating.
+inline std::size_t safe_size_t(const nlohmann::json& j, const char* key, std::size_t def = 0) {
+    if (!j.contains(key) || j[key].is_null()) {
+        return def;
+    }
+    std::uint64_t out = 0;
+    if (!detail::to_u64(j[key], out)) {
+        return def;
+    }
+    if constexpr (sizeof(std::size_t) < sizeof(std::uint64_t)) {
+        if (out > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+            return def;
+        }
+    }
+    return static_cast<std::size_t>(out);
 }
 
 } // namespace helix::json_util
