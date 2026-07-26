@@ -273,6 +273,21 @@ Opened from Settings panel. Configures which strips HelixScreen controls and how
 - **UI updates**: All subject updates and widget manipulation on main thread only
 - **Auto-state lifecycle**: `LedAutoState::init()` / `deinit()` run on the main thread only (init via the `init_subsystems_from_hardware()` discovery path inside a `queue_update()` drain; deinit via `Application::tear_down_printer_state()`). Its `observe_int_sync` subscriptions defer callbacks through the UpdateQueue, so auto-state actions always apply on the main thread
 
+## In-Flight Command Tracking
+
+`led_command_in_flight` (an `lv_subject_t` on `LedController`) is the subject both light buttons — the home panel widget and the controls-panel toggle — disable on while a toggle command is outstanding.
+
+`LedController::toggle_all()` (`src/led/led_controller.cpp`) builds a per-dispatch `Settle{done, fail, queued}` triple via a `make_settle()` factory: `make_settle()` increments the in-flight counter immediately, and whichever of the three settle callbacks fires later decrements it. Not every backend branch in `toggle_all()`'s switch calls `make_settle()`:
+
+- **`NATIVE`** and **`OUTPUT_PIN`** emit discretionary G-code (`SET_LED`, `SET_PIN`) and pass `cbs.queued` — while an external blocking op holds Klipper's gcode lock, the command is queued fire-and-forget and its RPC response is dropped, so `on_queued` is the only settle signal that will ever fire on that path.
+- **`WLED`** goes over HTTP and never touches the gcode lock, so it only passes `cbs.done`/`cbs.fail`.
+- **`MACRO`** calls user-defined macros, which stay non-discretionary under the default-allow rule in `gcode_classify.h` and always get a real ACK, so it only passes `cbs.done`/`cbs.fail`.
+- **`LED_EFFECT`**'s case in that switch is a bare `break` — it emits no gcode and never calls `make_settle()`, so it never bumps the counter. Effects are driven separately via `activate`/`stop`, neither of which touches this counter.
+
+A new backend branch that emits gcode MUST pass `on_queued` (or route through something that does) — otherwise a command queued behind a blocking op wedges the counter and greys out both light buttons for the rest of the session (#1129, see `ARCHITECTURE.md` § "Klippy-Volatile Subjects" for the root cause and `MOONRAKER_ARCHITECTURE.md` § "MoonrakerAPI (Domain Logic Layer)" for the `execute_gcode()` contract).
+
+As a last-resort safety net, `LedController` also force-clears the counter (`force_clear_in_flight()`) on a Moonraker disconnect and on any Klippy state leaving `READY`, so a leaked dispatch cannot stay pinned across a reconnect or firmware restart.
+
 ## Home Panel Widget Integration
 
 The lightbulb button on the home panel is implemented by `LedWidget` (`src/ui/panel_widgets/led_widget.cpp`). It uses the version-observer self-binding pattern documented in `ARCHITECTURE.md`.

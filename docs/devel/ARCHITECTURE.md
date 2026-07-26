@@ -734,6 +734,18 @@ Per-fan, per-sensor, and per-extruder subjects are **dynamic** — they are dest
 
 See `include/ui_observer_guard.h` for full `SubjectLifetime` documentation. For real usage, see `FanStackWidget::bind_fans()` in `src/ui/panel_widgets/fan_stack_widget.cpp`.
 
+### Klippy-Volatile Subjects
+
+Moonraker sends DELTA status updates — changed fields only. A subject fed by a delta-only field keeps its last value indefinitely across a Klipper restart, because the field is simply absent from later payloads until it next changes. A cached `idle_timeout.state == "Printing"` captured mid-`G28` made the app treat a freshly-restarted, idle printer as busy and queue LED/fan/temp commands fire-and-forget, wedging an in-flight counter for the whole session (#1129).
+
+**Membership criterion:** a delta-only field whose stale value gates behavior. This is explicitly NOT for continuously-streamed state (temperatures, positions) — those self-heal within a tick, and resetting them only produces visible flicker.
+
+**Declaring one:** use `INIT_SUBJECT_INT_VOLATILE(name, default, subjects_, volatile_, register_xml)` from `include/state/subject_macros.h` instead of `INIT_SUBJECT_INT`. It writes the default exactly once, so init and reset cannot drift apart.
+
+`PrinterState::set_klippy_state_internal()` (`src/printer/printer_state.cpp`) is the single chokepoint for every Klippy state change — the webhooks JSON parse, the `helix::async::call_method` wrapper, and `set_klippy_state_sync()` all land here — and it calls `PrinterCalibrationState::reset_klippy_volatile()` on a genuine state transition. This is edge-triggered, not a live `klippy != READY` predicate: in #1129 the stale value survived PAST the return to READY, so a live guard would not have helped. Both transition directions matter — READY-to-dead means nothing it was doing survives; dead-to-READY means a fresh Klipper with nothing blocking yet.
+
+Current members (all `PrinterCalibrationState`, `src/printer/printer_calibration_state.cpp`): `idle_timeout_printing`, `manual_probe_active`, `manual_probe_z_position`, `motors_enabled`.
+
 ### Widget Management
 
 - **Creation:** Automatic during `lv_xml_create()`
