@@ -3,6 +3,7 @@
 
 #include "pre_print_option.h"
 
+#include "json_utils.h"
 #include "macro_param_cache.h"
 
 #include <spdlog/spdlog.h>
@@ -87,12 +88,22 @@ std::optional<PrePrintOption> parse_pre_print_option(const nlohmann::json& j) {
     opt.strategy_kind = *kind;
 
     // --- optional metadata ---
-    opt.label_key = j.value("label_key", "");
-    opt.description_key = j.value("description_key", "");
-    opt.icon = j.value("icon", "");
-    opt.default_enabled = j.value("default_enabled", false);
-    opt.order = j.value("order", 0);
-    opt.requires_macro = j.value("requires_macro", "");
+    //
+    // safe_* rather than .value() throughout this function: .value() throws
+    // type_error.302 on a key that is PRESENT with a null value (a missing key
+    // is fine), and there is no try/catch anywhere on this path — not here, not
+    // in parse_pre_print_option_set, not at the printer_detector.cpp call site.
+    // A null would have unwound out of printer detection entirely. The existing
+    // design already degrades per-option (return nullopt, caller skips it), so
+    // the required-field checks below now do that job for nulls too: a null
+    // `param_name` reads as empty and is rejected with the accurate "requires
+    // non-empty 'param_name'" message instead of throwing.
+    opt.label_key = helix::json_util::safe_string(j, "label_key");
+    opt.description_key = helix::json_util::safe_string(j, "description_key");
+    opt.icon = helix::json_util::safe_string(j, "icon");
+    opt.default_enabled = helix::json_util::safe_bool(j, "default_enabled", false);
+    opt.order = helix::json_util::safe_int(j, "order", 0);
+    opt.requires_macro = helix::json_util::safe_string(j, "requires_macro");
 
     // category — defaults to Mechanical if absent or unknown (warned).
     if (j.contains("category") && j["category"].is_string()) {
@@ -110,13 +121,13 @@ std::optional<PrePrintOption> parse_pre_print_option(const nlohmann::json& j) {
     switch (opt.strategy_kind) {
     case PrePrintStrategyKind::MacroParam: {
         PrePrintStrategyMacroParam p;
-        p.param_name = j.value("param_name", "");
-        p.enable_value = j.value("enable_value", "");
-        p.skip_value = j.value("skip_value", "");
-        p.default_value = j.value("default_value", "");
+        p.param_name = helix::json_util::safe_string(j, "param_name");
+        p.enable_value = helix::json_util::safe_string(j, "enable_value");
+        p.skip_value = helix::json_util::safe_string(j, "skip_value");
+        p.default_value = helix::json_util::safe_string(j, "default_value");
         // Optional adaptive-mesh modifier (see PrePrintStrategyMacroParam doc).
-        p.adaptive_param = j.value("adaptive_param", "");
-        p.adaptive_value = j.value("adaptive_value", "1");
+        p.adaptive_param = helix::json_util::safe_string(j, "adaptive_param");
+        p.adaptive_value = helix::json_util::safe_string(j, "adaptive_value", "1");
         if (p.param_name.empty()) {
             spdlog::warn("[PrePrintOption] Skipping option '{}': MacroParam strategy requires "
                          "non-empty 'param_name'",
@@ -136,7 +147,7 @@ std::optional<PrePrintOption> parse_pre_print_option(const nlohmann::json& j) {
     }
     case PrePrintStrategyKind::PreStartGcode: {
         PrePrintStrategyPreStartGcode p;
-        p.gcode_template = j.value("gcode_template", "");
+        p.gcode_template = helix::json_util::safe_string(j, "gcode_template");
         if (p.gcode_template.empty()) {
             spdlog::warn("[PrePrintOption] Skipping option '{}': PreStartGcode strategy requires "
                          "non-empty 'gcode_template'",
@@ -148,7 +159,7 @@ std::optional<PrePrintOption> parse_pre_print_option(const nlohmann::json& j) {
     }
     case PrePrintStrategyKind::QueueAheadJob: {
         PrePrintStrategyQueueAheadJob p;
-        p.job_path = j.value("job_path", "");
+        p.job_path = helix::json_util::safe_string(j, "job_path");
         if (p.job_path.empty()) {
             spdlog::warn("[PrePrintOption] Skipping option '{}': QueueAheadJob strategy requires "
                          "non-empty 'job_path'",
@@ -160,8 +171,8 @@ std::optional<PrePrintOption> parse_pre_print_option(const nlohmann::json& j) {
     }
     case PrePrintStrategyKind::RuntimeCommand: {
         PrePrintStrategyRuntimeCommand p;
-        p.command_enabled = j.value("command_enabled", "");
-        p.command_disabled = j.value("command_disabled", "");
+        p.command_enabled = helix::json_util::safe_string(j, "command_enabled");
+        p.command_disabled = helix::json_util::safe_string(j, "command_disabled");
         if (p.command_enabled.empty() && p.command_disabled.empty()) {
             spdlog::warn("[PrePrintOption] Skipping option '{}': RuntimeCommand strategy requires "
                          "at least one of 'command_enabled' / 'command_disabled'",
@@ -184,8 +195,8 @@ PrePrintOptionSet parse_pre_print_option_set(const nlohmann::json& j) {
         return set;
     }
 
-    set.macro_name = j.value("macro_name", "");
-    set.setup_gcode = j.value("setup_gcode", "");
+    set.macro_name = helix::json_util::safe_string(j, "macro_name");
+    set.setup_gcode = helix::json_util::safe_string(j, "setup_gcode");
 
     if (j.contains("options")) {
         const auto& arr = j["options"];
