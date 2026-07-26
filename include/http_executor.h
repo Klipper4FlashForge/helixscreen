@@ -78,6 +78,11 @@ class HttpExecutor {
     /// between multiple HttpExecutor instances.
     bool on_thread() const noexcept;
 
+    /// Items submitted but not yet finished, across queue and workers.
+    /// 0 if the executor isn't running — same convention as submit() finding
+    /// nothing to reject into.
+    std::size_t inflight() const noexcept;
+
     /// Process-wide executors.
     static HttpExecutor& fast(); ///< REST/API/timelapse/thumbnails (4 workers)
     static HttpExecutor& slow(); ///< large file transfers (1 worker)
@@ -96,6 +101,10 @@ class HttpExecutor {
         std::condition_variable cv;
         std::deque<std::pair<HttpWork, std::promise<void>>> queue;
         bool stopping = false; // guarded by mu
+        // Items submitted but not yet finished — incremented in submit() at
+        // enqueue time, decremented by the worker once the item returns
+        // (including via exception, see InflightGuard in loop()).
+        std::atomic<std::size_t> inflight{0};
     };
 
     struct Worker {

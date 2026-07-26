@@ -238,6 +238,7 @@ state, constructed with representative sample data and the real lifecycle:
 ### Diagnostics & lifecycle
 | Command | Meaning |
 |---------|---------|
+| `wait_idle [--timeout N]` | Block until `UpdateQueue`, running animations, and `HttpExecutor` are all quiet (default 10s), so a script can gate on real async work instead of a fixed `sleep` |
 | `log [-n N]` | Tail the app's in-memory log ring buffer (default 50 lines). Printed as raw lines, so it pipes to `grep` |
 | `shutdown` | Ask the app to exit its main loop (`app_request_quit`), running the normal shutdown path |
 
@@ -249,6 +250,37 @@ From the one-shot client, `quit` and `exit` are accepted as aliases for
 `shutdown`. **In the REPL they are not** — there, `quit`/`exit`/Ctrl-D leave the
 REPL and `shutdown` stops the app, which is the only reading that keeps both
 meanings available.
+
+#### `wait_idle` — what it can and cannot see
+
+`wait_idle` polls three counters from the transport thread — `UpdateQueue`
+pending work (including anything buffered by a `freeze`), `lv_anim_count_running()`,
+and `HttpExecutor` in-flight items on both lanes — and returns once all three read
+zero on two consecutive samples (a single zero reading can land in the gap between
+one callback finishing and the next being enqueued by the work it just completed).
+A timeout names the nonzero counter(s) rather than just saying time ran out.
+
+It is **best-effort by design**, not a hard guarantee: the enumeration surface is
+large and grows. Known gaps:
+
+| Source | Where | Note |
+|---|---|---|
+| Raw `lv_async_call` | `panel_widget_manager.cpp` (home-panel widget-gate rebuild), `ui_nav_manager.cpp` (overlay-close), `ui_filament_path_layers.cpp`, `grid_edit_mode.cpp` | LVGL exposes only call/cancel — no count API |
+| Thumbnail render thread | `gcode_object_thumbnail_renderer.cpp` | Own `std::thread`, not `HttpExecutor` |
+| GCode geometry build | `ui_gcode_viewer.cpp` (`build_thread_`) | Same |
+| GCode layer/streaming | `gcode_layer_renderer.h`, `gcode_streaming_controller.h` | Same |
+| Mock backends | `moonraker_client_mock.cpp` (`simulation_thread_` + 3 timers), `moonraker_client_mock_print.cpp` (2 timers), `ams_backend_mock.cpp` (6 threads), `wifi_backend_mock.cpp` (2) | Mock mode **adds** nondeterminism |
+| Deferred deletion | `safe_delete_deferred` / `lv_obj_delete_async` / `safe_clean_children` sites | Escapes the queue by design — `pending == 0` does not mean the old subtree is gone |
+
+A screen is not stable just because animations stop — and not everything that's
+running is a bug: a heater icon pulsing while genuinely heating, or a fan icon
+spinning while genuinely spinning, are correct, real, perpetually-running
+animations that `wait_idle` will never see finish, which is why it's a settling
+check, not a screenshot-stability gate. A separate `freeze` command (stop
+animations, pause timers, pin the clock) is planned to pair with `wait_idle` for
+that purpose — see `docs/devel/specs/2026-07-25-helixctl-ui-test-harness-design.md`
+§ "Determinism model" for the full design, including why a global
+`lv_timer_enable(false)` can't be used.
 
 ### Subjects & scenarios
 | Command | Meaning |

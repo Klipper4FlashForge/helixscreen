@@ -3,6 +3,7 @@
 
 #include "remote_control_server.h"
 
+#include "http_executor.h"
 #include "panel_factory.h"
 #include "ui_nav_manager.h"
 #include "ui_update_queue.h"
@@ -24,11 +25,13 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <condition_variable>
 #include <cstring>
 #include <future>
 #include <mutex>
 #include <optional>
+#include <thread>
 #include <vector>
 
 #include "http_transport.h"
@@ -270,6 +273,7 @@ void RemoteControlServer::register_builtin_handlers() {
         return handle_list_subjects(p);
     };
     handlers_["wait_for"] = [this](const nlohmann::json& p) { return handle_wait_for(p); };
+    handlers_["wait_idle"] = [this](const nlohmann::json& p) { return handle_wait_idle(p); };
 
     // Phase 3: Widget interaction + scenarios
     handlers_["click"] = [this](const nlohmann::json& p) { return handle_click(p); };
@@ -1161,6 +1165,58 @@ static std::string target_label(const nlohmann::json& params) {
         return params["name"].get<std::string>();
     }
     return "?";
+}
+
+nlohmann::json RemoteControlServer::handle_wait_idle(const nlohmann::json& params) {
+    // Default generous enough for a gcode preview to land, short enough that a
+    // wedged test fails inside a coffee break.
+    double timeout_s = params.value("timeout", 10.0);
+
+    // Sampled on the UI thread; compared on this (transport) thread. Polling
+    // rather than blocking is deliberate — a handler that spun on the UI thread
+    // would prevent the very work it is waiting for from running.
+    struct Counters {
+        size_t queue = 0;
+        size_t anims = 0;
+        size_t http = 0;
+        bool idle() const { return queue == 0 && anims == 0 && http == 0; }
+    };
+
+    auto sample = [this]() -> Counters {
+        auto j = execute_on_ui_thread([]() -> nlohmann::json {
+            return {{"queue", helix::ui::UpdateQueue::instance().pending_count()},
+                    {"anims", static_cast<size_t>(lv_anim_count_running())},
+                    {"http", helix::http::HttpExecutor::fast().inflight() +
+                                 helix::http::HttpExecutor::slow().inflight()}};
+        });
+        return Counters{j["queue"].get<size_t>(), j["anims"].get<size_t>(),
+                        j["http"].get<size_t>()};
+    };
+
+    const auto start = std::chrono::steady_clock::now();
+    const auto deadline = start + std::chrono::duration<double>(timeout_s);
+    Counters last{1, 1, 1}; // force at least two samples before declaring idle
+
+    while (true) {
+        Counters now = sample();
+        // Require idle on two consecutive samples: a single zero reading can
+        // land in the gap between one callback finishing and the next being
+        // enqueued by the work it just completed.
+        if (now.idle() && last.idle()) {
+            auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - start);
+            return {{"idle", true}, {"waited_ms", waited.count()}};
+        }
+        if (std::chrono::steady_clock::now() >= deadline) {
+            throw std::runtime_error(
+                "wait_idle timed out after " + std::to_string(timeout_s) +
+                "s — update_queue=" + std::to_string(now.queue) +
+                " animations=" + std::to_string(now.anims) +
+                " http=" + std::to_string(now.http));
+        }
+        last = now;
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+    }
 }
 
 nlohmann::json RemoteControlServer::handle_click(const nlohmann::json& params) {

@@ -131,6 +131,7 @@ class RemoteControlServer {
     nlohmann::json handle_set_subject(const nlohmann::json& params);
     nlohmann::json handle_list_subjects(const nlohmann::json& params);
     nlohmann::json handle_wait_for(const nlohmann::json& params);
+    nlohmann::json handle_wait_idle(const nlohmann::json& params);
 
     // Phase 3 handlers
     nlohmann::json handle_click(const nlohmann::json& params);

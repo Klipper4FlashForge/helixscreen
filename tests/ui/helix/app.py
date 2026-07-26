@@ -188,6 +188,15 @@ class HelixApp:
     def set(self, subject: str, value: Any) -> dict:
         return self.ctl("set", subject, value)
 
+    def wait_idle(self, timeout: float = 10.0) -> dict:
+        """Block until the UI has settled.
+
+        Best-effort: raw lv_async_call work, the gcode/thumbnail build threads,
+        and the mock backends' own threads are invisible to this. See the design
+        spec's determinism section.
+        """
+        return self.ctl("wait_idle", "--timeout", timeout)
+
     def current(self) -> dict:
         # CLI token is `current`; `get_current` is the wire method name.
         return self.ctl("current")

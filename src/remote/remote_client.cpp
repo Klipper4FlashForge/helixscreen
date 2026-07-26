@@ -80,6 +80,9 @@ static void print_usage() {
     printf("  set_value <target> <v>  Set value (slider, switch, dropdown, textarea)\n");
     printf("  scroll <target> [dx dy] Scroll into view, or by a delta\n");
     printf("\nDiagnostics & lifecycle:\n");
+    printf("  wait_idle [--timeout N] Block until UpdateQueue, animations, and HttpExecutor\n");
+    printf("                          are all quiet (default 10s). Best-effort — see\n");
+    printf("                          docs/devel/HELIXCTL.md for what it cannot see\n");
     printf("  log [-n N]              Tail the app's in-memory log ring (default 50 lines)\n");
     printf("  shutdown, quit          Ask the running app to exit\n");
     printf("\nScenarios:\n");
@@ -405,6 +408,15 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
             }
         }
         return build_request("wait_for", params);
+    } else if (cmd == "wait_idle") {
+        nlohmann::json params = nlohmann::json::object();
+        for (size_t i = 1; i < tokens.size(); i++) {
+            if ((tokens[i] == "--timeout" || tokens[i] == "-t") && i + 1 < tokens.size()) {
+                params["timeout"] = std::atof(tokens[i + 1].c_str());
+                i++;
+            }
+        }
+        return build_request("wait_idle", params);
     } else if (cmd == "click") {
         if (tokens.size() < 2) {
             fprintf(stderr, "Error: click requires a widget name or @path\n");
@@ -488,7 +500,7 @@ static const char* REPL_COMMANDS[] = {
     "ping",        "navigate",   "cd",         "go_back",   "back",
     "list_panels", "list_components", "list_callbacks", "current",  "pwd",       "screenshot",
     "status",      "wake",       "demo",       "get",       "set",       "list_subjects",
-    "wait_for",    "ls",         "describe_screen", "click",  "set_value",
+    "wait_for",    "wait_idle",  "ls",         "describe_screen", "click",  "set_value",
     "scroll",      "scenario",   "list_scenarios",  "help",   "refresh",
     "log",         "shutdown",   "geom",       "get_const", "quit",
     "exit",        nullptr};
@@ -560,6 +572,8 @@ static char* repl_hints(const char* buf, int* color, int* bold) {
         return strdup(" <name>");
     if (input == "wait_for")
         return strdup(" <subject> <value> [--timeout N]");
+    if (input == "wait_idle")
+        return strdup(" [--timeout N]");
 
     return nullptr;
 }
@@ -662,6 +676,7 @@ static void repl_print_help() {
     printf("  set <subject> <value>     Set subject value\n");
     printf("  list_subjects             List all subjects\n");
     printf("  wait_for <s> <v> [-t N]   Wait for subject to match value\n");
+    printf("  wait_idle [-t N]          Block until the UI has settled (default 10s)\n");
     printf("  ls [target]               List widgets here, or one widget's subtree\n");
     printf("  click <widget>            Click a widget (descends into composite rows)\n");
     printf("  set_value <widget> <v>    Set widget value\n");
@@ -868,8 +883,9 @@ static int run_repl(const std::string& socket_path) {
             continue;
         }
 
-        // Use longer timeout for wait_for
-        int timeout = (tokens[0] == "wait_for") ? 120 : 30;
+        // Use longer timeout for the blocking commands — the caller's own
+        // --timeout can exceed the default socket read window otherwise.
+        int timeout = (tokens[0] == "wait_for" || tokens[0] == "wait_idle") ? 120 : 30;
         auto raw = read_response(fd, timeout);
         close(fd);
 
@@ -971,8 +987,9 @@ int helix::remote_client_main(int argc, char** argv) {
         return 1;
     }
 
-    // Use longer timeout for wait_for
-    int timeout = (command == "wait_for") ? 120 : 30;
+    // Use longer timeout for the blocking commands — the caller's own
+    // --timeout can exceed the default socket read window otherwise.
+    int timeout = (command == "wait_for" || command == "wait_idle") ? 120 : 30;
     std::string response = read_response(fd, timeout);
     close(fd);
 

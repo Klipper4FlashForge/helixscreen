@@ -313,6 +313,17 @@ class UpdateQueue {
         }
     }
 
+    /**
+     * @brief Number of callbacks waiting to run, including frozen ones.
+     *
+     * Frozen work counts: a ScopedFreeze buffers rather than drops, so those
+     * callbacks will fire on a later tick and the UI is not yet settled.
+     */
+    size_t pending_count() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return pending_.size() + frozen_buffer_.size();
+    }
+
   private:
     friend class UpdateQueueTestAccess;
     UpdateQueue() = default;
@@ -383,7 +394,7 @@ class UpdateQueue {
         }
     }
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::queue<TaggedCallback> pending_;
     // Callbacks enqueued while freeze_depth_ > 0 land here; ScopedFreeze::~
     // splices them back to pending_ when the depth returns to 0. Protected
