@@ -1184,7 +1184,7 @@ git commit -m "feat(helixctl): add freeze/unfreeze for deterministic capture" \
 
 **Interfaces:**
 - Consumes: `HelixApp` (Task 2).
-- Produces: RPC `text` → `{"text": "<string>", "path": "<@path>", "source": "label|textarea|button|dropdown"}`;
+- Produces: RPC `text` → `{"text": "<string>", "path": "<@path>", "source": "label|textarea|dropdown"}`;
   `HelixApp.text(target: str) -> str`.
 
 Today the server's only text extraction is `lv_textarea_get_text` at
