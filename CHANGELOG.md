@@ -7,13 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.99.101] - 2026-07-25
+
+LED control gets a round of correctness work, the 3D G-code preview costs noticeably less
+memory on small boards, and a batch of null-tolerance fixes stop malformed config or
+printer data from taking out a whole screen.
+
 ### Added
 
+- **The theme editor has its own preset palette** — picking colors no longer means starting from the active theme's swatches every time.
+- **Tap a sent command in the console to paste it back** — reruns and small edits no longer mean retyping. The composer's actions also moved inside the input field.
+- **Spoolman mark and spool number in the spool editor header** — you can tell at a glance which physical spool a slot is bound to.
 - **Post-operation nozzle cooldown can be switched off** — **Settings > Safety & Notifications > Cool nozzle after filament ops**, on by default and set per printer. AFC runs its own cooldown after a swap, so on those machines you can hand the job to AFC and keep a single timer in charge of the heater.
+- **Keyboard long-press and slide-to-select** — the accent/alternate hint now appears in the right place, and sliding onto a hint selects it instead of dismissing the popup.
+- **Side-by-side welcome text and language picker** in the setup wizard.
+- **`helixscreen ctl` gained screenshots, log tail, shutdown, subtree listing, glob widget targets, geometry and constant introspection, and a synthetic pointer for gesture testing** — the remote-control CLI used for driving and debugging a running instance.
 
 ### Fixed
 
+- **LED strips (#1129)** — white-only strips read the W channel instead of showing nothing; a command queued while Klippy is busy now settles its caller callback instead of hanging; in-flight LED state is cleared when Klippy leaves READY; and the startup LED preference is applied once per session rather than re-firing on every rediscovery. Multi-strip selection is no longer collapsed by the overlay, and a macro card whose layout fails to build is skipped instead of taking the row with it.
+- **A metadata miss blanked an already-loaded 3D preview** — the preview went blank for the rest of the print whenever G-code metadata was unavailable but the file itself was not (a cached copy, a local path Moonraker cannot resolve, or a scan still in progress). The error is silent, so nothing explained the blank panel.
+- **The pre-print overlay never dismissed when layer 0 was never observed** — prints that skipped straight past the first layer left the overlay up.
+- **Streaming layer parses lost the extrusion mode (#1127)** — relative-extrusion files could render wrong when parsed incrementally.
+- **Spool editing on AMS units** — the filament type selector went missing in spool edit (#1128), the slot editor lost its contents after a rebuild, and `color_rgb` was dropped from in-memory records (#1138). A null sensor reading no longer aborts the whole AMS status frame.
+- **Malformed data no longer takes out a screen** — nulls in the config version, printer database and job history are survived rather than fatal; a loader failure is scoped to the offending item instead of discarding the file; read-only probes stopped writing null keys into `settings.json`; temperature limits keep loading when `position_endstop` is null; and the dashboard guards its widget rebuild against config exceptions.
+- **Crashes on shutdown and rebuild** — the update queue discards instead of draining in its destructor (#1132), subject deinit can no longer resurrect panel singletons, a rebuild condemns the old subtree before creating its replacement, and an empty size string no longer reads one byte out of bounds in the XML parser (#1121).
+- **Desktop/SDL builds** — no more segfault when no accelerated renderer is available, window decorations stop stealing resolution from the emulated panel, Wayland client-side-decoration compensation is bounded, and the SDL audio subsystem is released on shutdown.
 - **A cooldown delay of `0` cooled the nozzle immediately** — `filament/cooldown_delay_seconds` is documented as "0 disables auto-cooldown", but a zero delay instead cut the heater on the next tick. It now means off, as written.
+- **Smaller UI defects** — an accidental flex gap between the navbar and content, the home panel skipping its finalize pass after a rebuild, key press/release positions read from the wrong input device, and page-scroll setup silently succeeding with no gutter buttons.
+
+### Changed
+
+- **The 3D G-code preview uses less memory** — vertex positions upload as quantized int16 (20 bytes to 12), `RibbonVertex` shrank from 10 bytes to 8 with the normal palette dropped, and enhanced shading now defaults off on constrained devices, where its full-canvas cache was a third large buffer. `HELIX_SSAO=1` forces it back on.
+- **43 previously undocumented environment variables are now documented**, along with what a hot reload does and does not restore.
 
 ## [0.99.100] - 2026-07-24
 
@@ -4504,6 +4530,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.101]: https://github.com/prestonbrown/helixscreen/compare/v0.99.100...v0.99.101
 [0.99.100]: https://github.com/prestonbrown/helixscreen/compare/v0.99.99...v0.99.100
 [0.99.99]: https://github.com/prestonbrown/helixscreen/compare/v0.99.98...v0.99.99
 [0.99.98]: https://github.com/prestonbrown/helixscreen/compare/v0.99.97...v0.99.98
