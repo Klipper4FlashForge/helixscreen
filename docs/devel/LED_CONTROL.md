@@ -128,12 +128,49 @@ Executes user-configured Klipper macros for LED control. Three device types:
 
 Controls Klipper `[output_pin]` devices used for chamber lights, enclosure LEDs, and other single-channel lighting. These are brightness-only (no color) — either PWM (0-100% brightness slider) or digital on/off.
 
-- **Discovery**: Auto-detected from `printer.objects.list` — `output_pin *` objects with "light", "led", or "lamp" in the name
+- **Discovery**: Auto-detected from `printer.objects.list` — `output_pin *` objects with "light", "led", or "lamp" in the name (see the safety note below)
 - **PWM detection**: Checks Klipper config object for `pwm: true` — determines slider vs toggle UI
 - **Control**: `SET_PIN PIN=<name> VALUE=<0.0-1.0>` via `MoonrakerAPI`
 - **State tracking**: Subscribes to `output_pin <name>` Moonraker status objects; reported `value` (0.0-1.0) maps to brightness percentage
 - **Value change callback**: Notifies UI when pin value changes from external sources (macros, other UIs)
 - **Strip info flags**: `supports_color = false`, `supports_white = false`, `is_pwm` determines brightness slider vs on/off toggle
+
+#### ⚠️ The `output_pin` name heuristic is safety logic — do not loosen it
+
+`[output_pin]` is a generic Klipper primitive. Users wire it to whatever they like, and
+the object name is the *only* signal we get about what a pin actually does. The full
+classifier lives in `PrinterDiscovery::parse_objects()` (`include/printer_discovery.h`)
+and is a deliberately narrow allowlist:
+
+| Pin name (upper-cased, after the `output_pin ` prefix) | Classified as |
+|---|---|
+| starts with `FAN` | fan |
+| contains `LIGHT`, `LED`, or `LAMP` | LED |
+| contains `BEEPER`, `BUZZER`, or `SPEAKER` | speaker (enables M300) |
+| anything else | **ignored entirely** |
+
+Anything we classify becomes writable from the UI via `SET_PIN PIN=<name> VALUE=<v>`.
+That is why the default is to ignore: a pin we do not recognise is a pin we never touch.
+
+Real hardware makes the stakes concrete. The Snapmaker U1 defines `output_pin e0_heat_sw`
+through `e3_heat_sw` — per-extruder **hotend heater power switches**. They fall through
+to "ignored" only because they match none of the patterns above. Widen the LED test to
+something like a bare `SW` substring and HelixScreen would list four heater switches as
+chamber lights and let a user toggle them from the LED overlay.
+
+`tests/unit/test_printer_discovery_real_hardware.cpp` guards this with object lists
+captured verbatim from real machines (K1C, Snapmaker U1, Voron V2.4). The U1 case exists
+specifically to fail if the heuristic ever stops excluding those heater switches. This
+was verified by mutation: adding `SW` to the LED patterns fails 5 assertions in that file.
+
+Synthetic fixtures cannot catch this class of regression, because whoever loosens the
+heuristic writes the synthetic fixture too. Re-capture with
+`curl -s http://<printer>:7125/printer/objects/list` if you add a machine.
+
+Note that the same `SET_PIN` command drives both categories — on the K1C, `output_pin LED`
+is a light while `output_pin fan0/1/2` are fans. Nothing but the name distinguishes them,
+which is also why `SET_PIN` carries the generic "change" noun rather than "LED change" in
+the busy-queue toast (see `include/gcode_classify.h`).
 
 ## Auto-State Lighting (LedAutoState)
 
