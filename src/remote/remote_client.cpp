@@ -80,8 +80,8 @@ static void print_usage() {
     printf("  set_value <target> <v>  Set value (slider, switch, dropdown, textarea)\n");
     printf("  scroll <target> [dx dy] Scroll into view, or by a delta\n");
     printf("\nDiagnostics & lifecycle:\n");
-    printf("  wait_idle [--timeout N] Block until UpdateQueue, animations, and HttpExecutor\n");
-    printf("                          are all quiet (default 10s). Best-effort — see\n");
+    printf("  wait_idle [--timeout N] Block until UpdateQueue and HttpExecutor are both\n");
+    printf("                          quiet (default 10s). Best-effort — see\n");
     printf("                          docs/devel/HELIXCTL.md for what it cannot see\n");
     printf("  log [-n N]              Tail the app's in-memory log ring (default 50 lines)\n");
     printf("  shutdown, quit          Ask the running app to exit\n");

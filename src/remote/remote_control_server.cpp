@@ -1194,9 +1194,18 @@ nlohmann::json RemoteControlServer::handle_wait_idle(const nlohmann::json& param
 
     auto sample = [this]() -> Counters {
         auto j = execute_on_ui_thread([]() -> nlohmann::json {
-            return {{"queue", helix::ui::UpdateQueue::instance().pending_count()},
-                    {"http", helix::http::HttpExecutor::fast().inflight() +
-                                 helix::http::HttpExecutor::slow().inflight()}};
+            // Read http before queue (list-init evaluates left-to-right): a
+            // worker decrements its inflight count only after the job body
+            // returns, and any UI work that job posted via queue_update() is
+            // already sitting in pending_ by then. Reading http first means
+            // "http already dropped to 0" implies "its queued follow-up work,
+            // if any, is already visible in queue" — reading queue first
+            // could catch it empty a moment before the worker's own
+            // queue_update() call lands, then see http already decremented
+            // too, missing both signals in one sample.
+            return {{"http", helix::http::HttpExecutor::fast().inflight() +
+                                 helix::http::HttpExecutor::slow().inflight()},
+                    {"queue", helix::ui::UpdateQueue::instance().pending_count()}};
         });
         return Counters{j["queue"].get<size_t>(), j["http"].get<size_t>()};
     };
@@ -1216,10 +1225,11 @@ nlohmann::json RemoteControlServer::handle_wait_idle(const nlohmann::json& param
             return {{"idle", true}, {"waited_ms", waited.count()}};
         }
         if (std::chrono::steady_clock::now() >= deadline) {
-            throw std::runtime_error(
-                "wait_idle timed out after " + std::to_string(timeout_s) +
-                "s — update_queue=" + std::to_string(now.queue) +
-                " http=" + std::to_string(now.http));
+            // fmt::format, not std::to_string(double) — the latter renders
+            // "0.000000s", unreadable in the log someone reads at 2am.
+            throw std::runtime_error(fmt::format(
+                "wait_idle timed out after {:.1f}s — update_queue={} http={}", timeout_s,
+                now.queue, now.http));
         }
         last = now;
         std::this_thread::sleep_for(std::chrono::milliseconds(16));

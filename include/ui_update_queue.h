@@ -318,6 +318,12 @@ class UpdateQueue {
      *
      * Frozen work counts: a ScopedFreeze buffers rather than drops, so those
      * callbacks will fire on a later tick and the UI is not yet settled.
+     *
+     * This is "nothing enqueued after me", not "nothing left to run": inside
+     * process_pending(), pending_ is swapped into a local queue before its
+     * callbacks execute, so a call made mid-batch (e.g. from a callback that
+     * itself queues further work) can read 0 while callbacks from that same
+     * batch are still running.
      */
     size_t pending_count() const {
         std::lock_guard<std::mutex> lock(mutex_);

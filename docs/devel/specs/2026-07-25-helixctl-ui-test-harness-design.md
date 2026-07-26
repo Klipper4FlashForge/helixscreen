@@ -87,7 +87,7 @@ proves to be a problem in practice, one can follow.
 ### Settle — know when async work finished
 
 `wait_idle [--timeout N]` blocks until `UpdateQueue` pending is 0 and `HttpExecutor` in-flight
-is 0 on both lanes, held stable across two consecutive frames. `UpdateQueue` has the size
+is 0 on both lanes, held stable across two consecutive samples. `UpdateQueue` has the size
 internally but no public accessor; `HttpExecutor` has no in-flight count at all. Both are
 small additions.
 
@@ -107,9 +107,32 @@ changing — rather than inferring it from an animation count.
 
 Separately, that spinner should not animate while it is invisible: an eagerly-built widget
 burning three animation timers forever is wasted CPU on the smallest devices we ship to.
-That is a real defect on its own merits, fixed by gating `ui_spinner`'s animation start on
-`animations_enabled` alongside every other decorative animation — but it is a performance
-fix, not part of the determinism contract.
+That is a real defect on its own merits and independent of the determinism contract above —
+but it is **not fixed here**. Two attempts were made and both reverted:
+
+1. Gating `ui_spinner`'s animation start on `animations_enabled`, matching every other
+   decorative animation. Rejected on review: `animations_default()` resolves to
+   `caps.supports_animations`, which is false for EMBEDDED and BASIC platform tiers
+   (`platform_capabilities.cpp:78,84`) — the exact devices this was meant to help. It would
+   have frozen every loading spinner in the app on AD5M/K1/SonicPad permanently, which reads
+   as hung, not idle.
+2. A visibility-based gate: start the animation on `LV_EVENT_DRAW_MAIN_BEGIN` (a widget only
+   gets this when LVGL actually renders it, which requires it and every ancestor to be
+   non-hidden), self-stop inside the running animation's own `exec_cb` via `lv_obj_is_visible()`
+   (calling `lv_anim_delete()` from inside an exec_cb is an LVGL-supported pattern —
+   `anim_timer()` explicitly detects list mutation and restarts from the head — so this part
+   isn't the problem). Reverted because `LV_EVENT_DRAW_MAIN_BEGIN` was empirically confirmed,
+   via a temporary `lv_anim_count_running()`/`stop_if_hidden()` instrumentation, to **never
+   fire** on this widget even when it was genuinely visible on screen (subject-flipped from
+   hidden to shown, modal left open, no draw-begin observed) — meaning the animation would
+   never (re)start at all. Root cause not identified before the revert; plausibly LVGL 9's
+   dirty-rectangle redraw only sends `DRAW_MAIN_BEGIN` to objects within an invalidated
+   region on a given frame, and un-hiding via the `bind_flag_if_eq` binding may not be
+   invalidating the area the way a direct `lv_obj_remove_flag()` call would.
+
+The CPU-waste defect remains open. A future fix needs to verify the chosen start/stop
+mechanism actually drives the animation on a real visible spinner (not just assume the event
+fires) before landing.
 
 `wait_idle` is best-effort by design, because the enumeration surface is large and grows. A
 scan of the codebase found these sources it cannot see:

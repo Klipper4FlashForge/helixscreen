@@ -254,7 +254,7 @@ meanings available.
 #### `wait_idle` — what it can and cannot see
 
 `wait_idle` polls two counters from the transport thread — `UpdateQueue` pending
-work (including anything buffered by a `freeze`) and `HttpExecutor` in-flight
+work (including anything buffered by a `ScopedFreeze` held internally) and `HttpExecutor` in-flight
 items on both lanes — and returns once both read zero on two consecutive
 samples (a single zero reading can land in the gap between one callback
 finishing and the next being enqueued by the work it just completed). A
@@ -271,10 +271,10 @@ which screen is displayed — counting them made `wait_idle` succeed only when
 the `animations_enabled` setting happened to be off. Animation-driven pixel
 churn is covered instead by the frame-hash screenshot gate, which measures
 whether pixels actually stopped changing rather than inferring it from a
-counter. (Separately, that spinner not animating while invisible is a real
-performance fix — an eagerly-built widget burning three animation timers
-forever is wasted CPU on the smallest devices shipped — but it's independent
-of the `wait_idle` contract.)
+counter. (Separately, that spinner burning three animation timers forever
+while invisible is a real, still-open performance defect, independent of the
+`wait_idle` contract — see the design spec's "Determinism model" for two
+attempted fixes, both reverted, and why.)
 
 It is **best-effort by design**, not a hard guarantee: the enumeration surface is
 large and grows. Known gaps:

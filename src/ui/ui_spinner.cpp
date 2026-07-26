@@ -3,7 +3,6 @@
 
 #include "ui_spinner.h"
 
-#include "display_settings_manager.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "helix-xml/src/xml/lv_xml_parser.h"
 #include "helix-xml/src/xml/lv_xml_utils.h"
@@ -256,16 +255,8 @@ static void* ui_spinner_create(lv_xml_parser_state_t* state, const char** attrs)
     // start=0, end=270 gives a large initial arc
     lv_arc_set_angles(arc, 0, ARC_MAX_SWEEP);
 
-    // Skip the animation when animations are disabled, same as every other
-    // decorative animation (fan spin, heating pulse, notification badge, AMS
-    // slot pulse). Matters beyond cosmetics: spinners embedded in overlays
-    // that are built once and hidden (e.g. print_file_detail's loading
-    // overlay, part of the always-built print_select_panel) would otherwise
-    // burn three animation timers forever in the background regardless of
-    // visibility — wasted CPU on the smallest devices this ships to.
-    if (helix::DisplaySettingsManager::instance().get_animations_enabled()) {
-        start_material_spinner_animations(arc);
-    }
+    // Start the Material Design animations
+    start_material_spinner_animations(arc);
 
     // Register cleanup callback to stop animations when spinner is deleted
     lv_obj_add_event_cb(arc, spinner_delete_cb, LV_EVENT_DELETE, nullptr);
