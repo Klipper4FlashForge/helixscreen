@@ -10,6 +10,7 @@
 #include "config.h"
 #include "host_identity.h"
 #include "http_executor.h"
+#include "json_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "moonraker_api.h"
 #include "moonraker_client.h"
@@ -4103,7 +4104,12 @@ AmsBackendAd5xIfs::parse_zcolor_silent(const std::vector<std::string>& lines, co
                     result.saw_valid_response = true;
                     // Diagnostic: log the seated channel + presence view so the
                     // next field bundle proves Chan's loaded-idle behavior.
-                    int state = obj.value("State", -1);
+                    // safe_int, not .value(): the catch below is parse_error
+                    // only, so a line like {"Chan":1,"State":null} would throw
+                    // type_error.302 straight past it — breaking the promise
+                    // that comment makes. Every other read in this block is
+                    // already find + is_*() guarded; this was the lone gap.
+                    int state = helix::json_util::safe_int(obj, "State", -1);
                     std::string ports_str;
                     if (auto ports_it = obj.find("Ports"); ports_it != obj.end() &&
                                                            ports_it->is_array() &&

@@ -77,7 +77,12 @@ class FilamentSlotOverrideStore {
                               LaneKeyStyle key_style = LaneKeyStyle::Lane);
 
     // Blocking load from Moonraker database (called only at backend init time).
-    // Later tasks will add local-cache fallback.
+    // Falls back to the local read-cache when the DB round-trip fails.
+    //
+    // Never throws. lane_data is a namespace shared with AFC, Happy Hare,
+    // Mainsail and hand edits, so a malformed or null-bearing record is an
+    // expected input, not a bug — it costs at most the affected slots. See the
+    // exception-boundary comment on the definition.
     std::unordered_map<int, FilamentSlotOverride> load_blocking();
 
     using SaveCallback = std::function<void(bool success, std::string error)>;
@@ -111,6 +116,10 @@ class FilamentSlotOverrideStore {
     // Test-only access to mutate load_timeout_ without exposing a public
     // setter. Per L065, prefer friend-class over test-only public methods.
     friend class ::FilamentSlotOverrideStoreTestAccess;
+
+    // Real body of load_blocking(). Split out so load_blocking() itself is a
+    // thin never-throws boundary that no caller has to remember to guard.
+    std::unordered_map<int, FilamentSlotOverride> load_blocking_impl();
 
     IMoonrakerAPI* api_;
     std::string backend_id_;
