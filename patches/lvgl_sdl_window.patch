@@ -1,5 +1,5 @@
 diff --git a/src/drivers/sdl/lv_sdl_window.c b/src/drivers/sdl/lv_sdl_window.c
-index 15a87ab12..116d82b45 100644
+index 15a87ab12..5826c31bf 100644
 --- a/src/drivers/sdl/lv_sdl_window.c
 +++ b/src/drivers/sdl/lv_sdl_window.c
 @@ -21,6 +21,10 @@
@@ -85,7 +85,7 @@ index 15a87ab12..116d82b45 100644
      return dsc->zoom;
  }
  
-@@ -256,12 +288,73 @@ static void sdl_event_handler(lv_timer_t * t)
+@@ -256,12 +288,79 @@ static void sdl_event_handler(lv_timer_t * t)
                      lv_sdl_backend_ops.redraw(disp);
                      break;
                  case SDL_WINDOWEVENT_RESIZED:
@@ -127,19 +127,25 @@ index 15a87ab12..116d82b45 100644
 +                            }
 +                            else if(csd_attempts < CSD_MAX_ATTEMPTS) {
 +                                csd_attempts++;
-+                                int32_t dw = csd_target_w - hres;
-+                                int32_t dh = csd_target_h - vres;
-+                                if(dw < 0) dw = 0;
-+                                if(dh < 0) dh = 0;
-+                                int win_w = 0, win_h = 0;
-+                                SDL_GetWindowSize(dsc->window, &win_w, &win_h);
-+                                SDL_SetWindowSize(dsc->window, win_w + dw, win_h + dh);
++                                /* SDL_CreateWindow() and SDL_SetWindowSize() do not agree
++                                 * about decorations under Wayland/libdecor: the creation
++                                 * size behaves as the OUTER size (the compositor carves the
++                                 * title bar out of it, so 800x480 yields 800x444 of
++                                 * content), while SDL_SetWindowSize() sets the CONTENT size
++                                 * and the title bar is added on top.
++                                 *
++                                 * So re-assert the target verbatim.  Adding the observed
++                                 * shortfall here would over-grow the window and leave an
++                                 * unpainted band below LVGL's canvas; using
++                                 * SDL_GetWindowSize() + shortfall reproduces the original
++                                 * request and never converges. */
++                                SDL_SetWindowSize(dsc->window,
++                                                  (int)csd_target_w, (int)csd_target_h);
 +                                LV_LOG_USER("CSD compensation (attempt %d/%d): content %dx%d < "
-+                                            "requested %dx%d, grew window by %dx%d",
++                                            "requested %dx%d, re-asserting content size",
 +                                            (int)csd_attempts, (int)CSD_MAX_ATTEMPTS,
 +                                            (int)hres, (int)vres,
-+                                            (int)csd_target_w, (int)csd_target_h,
-+                                            (int)dw, (int)dh);
++                                            (int)csd_target_w, (int)csd_target_h);
 +                                break;
 +                            }
 +                            else {
@@ -164,7 +170,7 @@ index 15a87ab12..116d82b45 100644
                      break;
                  case SDL_WINDOWEVENT_CLOSE:
                      lv_display_delete(disp);
-@@ -271,15 +364,108 @@ static void sdl_event_handler(lv_timer_t * t)
+@@ -271,15 +370,108 @@ static void sdl_event_handler(lv_timer_t * t)
              }
          }
          if(event.type == SDL_QUIT) {
@@ -276,7 +282,7 @@ index 15a87ab12..116d82b45 100644
  
  static lv_result_t window_create(lv_display_t * disp)
  {
-@@ -294,24 +480,119 @@ static lv_result_t window_create(lv_display_t * disp)
+@@ -294,24 +486,121 @@ static lv_result_t window_create(lv_display_t * disp)
  #if LV_SDL_FULLSCREEN
      flag |= SDL_WINDOW_FULLSCREEN;
  #endif
@@ -286,16 +292,18 @@ index 15a87ab12..116d82b45 100644
 +     * gets invalidated when Android resizes it, causing EGL_BAD_SURFACE. */
 +    flag |= SDL_WINDOW_FULLSCREEN_DESKTOP;
 +#else
-+    /* The desktop window emulates a fixed-size device panel, so decorations are
-+     * pure cost: a compositor drawing client-side decorations carves them out of
-+     * the content area, leaving LVGL a canvas smaller than the requested
-+     * resolution (e.g. 800x480 -> 800x444 under Wayland/libdecor).  That silently
-+     * selects a different responsive breakpoint than the device being emulated.
-+     * Borderless keeps the content area exactly as requested.  Set
-+     * HELIX_SDL_DECORATED=1 to restore decorations. */
++    /* Decorations are kept so the window stays draggable by its title bar.  A
++     * compositor drawing client-side decorations carves them out of the content
++     * area (800x480 -> 800x444 under Wayland/libdecor), which would leave LVGL a
++     * canvas smaller than requested and silently select the wrong responsive
++     * breakpoint -- the SDL_WINDOWEVENT_RESIZED handler measures that shortfall
++     * and grows the window to cancel it out.
++     *
++     * HELIX_SDL_BORDERLESS=1 drops decorations instead, for a compositor where
++     * that compensation can't converge. */
 +    {
-+        const char * decorated_env = getenv("HELIX_SDL_DECORATED");
-+        if(decorated_env == NULL || decorated_env[0] == '0') {
++        const char * borderless_env = getenv("HELIX_SDL_BORDERLESS");
++        if(borderless_env != NULL && borderless_env[0] != '0') {
 +            flag |= SDL_WINDOW_BORDERLESS;
 +        }
 +    }
@@ -398,7 +406,7 @@ index 15a87ab12..116d82b45 100644
      return LV_RESULT_OK;
  }
  
-@@ -333,16 +614,22 @@ static void res_chg_event_cb(lv_event_t * e)
+@@ -333,16 +622,22 @@ static void res_chg_event_cb(lv_event_t * e)
  
  static void release_disp_cb(lv_event_t * e)
  {
