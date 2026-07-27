@@ -68,12 +68,23 @@ class SafetyLimitsFixture {
         mock_client_.set_extruder_max_temp(kProbeExtruderMaxTemp);
     }
     ~SafetyLimitsFixture() {
-        // MoonrakerAPI::notify_build_volume_changed() queues a lambda capturing
-        // `this` and &build_volume_version_. Draining while api_ is still alive
-        // is what keeps that callback from running against freed memory in a
-        // later test's HelixTestFixture::reset_all().
+        // Ordered teardown: drain before each owner dies, so no queued callback
+        // outlives the state it captured. Whatever is still queued when this
+        // body returns gets executed by the NEXT test's HelixTestFixture ctor
+        // drain, notifying freed subjects — a SIGSEGV in lv_subject_notify
+        // blamed on whichever unrelated test constructs a fixture next. Same
+        // rule ~XMLTestFixture follows for its own PrinterState.
+
+        // notify_build_volume_changed() queues a lambda capturing `this` and
+        // &build_volume_version_; run it while api_ is still alive.
         helix::ui::UpdateQueue::instance().drain();
         api_.reset();
+
+        // update_safety_limits_from_printer() lands its results through
+        // ui_queue_update(); those callbacks capture state_'s subjects, which
+        // die the moment this body returns.
+        helix::ui::UpdateQueue::instance().drain();
+        state_.deinit_subjects();
     }
 
     /// Drive update_safety_limits_from_printer to completion.
