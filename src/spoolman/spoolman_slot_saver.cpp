@@ -92,6 +92,38 @@ std::string SpoolmanSlotSaver::color_to_hex(uint32_t rgb) {
 
 void SpoolmanSlotSaver::save(const SlotInfo& original, const SlotInfo& edited,
                              CompletionCallback on_complete) {
+    // Back-compat: reproduce the old inference exactly.
+    save(original, edited,
+         edited.spoolman_id ? LinkIntent::UpdateLinked : LinkIntent::CreateAndRebind,
+         std::move(on_complete));
+}
+
+void SpoolmanSlotSaver::save(const SlotInfo& original, const SlotInfo& edited, LinkIntent intent,
+                             CompletionCallback on_complete) {
+    // UnlinkLocalOnly never touches Spoolman: the lane stops being tracked and
+    // its values stay local. Nothing to write, so report success immediately.
+    if (intent == LinkIntent::UnlinkLocalOnly) {
+        if (on_complete)
+            on_complete(SaveResult{.success = true});
+        return;
+    }
+
+    // CreateAndRebind means "this is a different physical spool". Force the
+    // create path even when the slot still carries a link, and leave the
+    // previously linked spool completely alone.
+    if (intent == LinkIntent::CreateAndRebind) {
+        SlotInfo fresh = edited;
+        fresh.spoolman_id = 0;
+        fresh.spoolman_filament_id = 0;
+        save_impl(original, fresh, std::move(on_complete));
+        return;
+    }
+
+    save_impl(original, edited, std::move(on_complete));
+}
+
+void SpoolmanSlotSaver::save_impl(const SlotInfo& original, const SlotInfo& edited,
+                                  CompletionCallback on_complete) {
     // New-spool-on-save path — user entered manual filament info on an unlinked slot.
     if (!edited.spoolman_id) {
         if (!is_filament_complete(edited)) {

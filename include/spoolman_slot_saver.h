@@ -3,13 +3,14 @@
 #pragma once
 
 #include "ams_types.h"
-#include "hv/json.hpp"
 #include "moonraker_error.h"
 #include "spoolman_types.h"
 
 #include <cmath>
 #include <functional>
 #include <string>
+
+#include "hv/json.hpp"
 
 class MoonrakerAPI;
 
@@ -121,8 +122,35 @@ class SpoolmanSlotSaver {
      * @param on_complete Called with the SaveResult (success flag and any
      *                    new vendor/filament IDs assigned along the way)
      */
+    /**
+     * @brief What the user meant by this save.
+     *
+     * save() used to INFER create-vs-update from `if (!edited.spoolman_id)`.
+     * That is why a lane could never create a new spool once it carried a link —
+     * and lanes keep their link across an eject by design, so a user who put a
+     * genuinely different spool in a lane had no way to say so: the save patched
+     * the OLD spool instead. Nothing can detect a spool swap (no RFID, no colour
+     * sensing), so the user's answer is the only signal and it must be explicit.
+     */
+    enum class LinkIntent {
+        UpdateLinked,    ///< Correct the linked spool's details
+        CreateAndRebind, ///< Different physical spool: create a new one, leave the old alone
+        UnlinkLocalOnly, ///< Stop tracking in Spoolman; keep values lane-local
+    };
+
+    void save(const SlotInfo& original, const SlotInfo& edited, LinkIntent intent,
+              CompletionCallback on_complete);
+
+    /// Back-compat overload: infers the intent the old way (create only when the
+    /// slot is unlinked). Prefer the explicit form.
     void save(const SlotInfo& original, const SlotInfo& edited, CompletionCallback on_complete);
 
+  private:
+    /// The original state-inferring body, now reached through save().
+    void save_impl(const SlotInfo& original, const SlotInfo& edited,
+                   CompletionCallback on_complete);
+
+  public:
     /**
      * @brief Resolve a vendor name to a Spoolman vendor_id, creating a new vendor if none matches.
      *
