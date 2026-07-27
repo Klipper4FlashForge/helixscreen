@@ -57,10 +57,26 @@ INDEX_EXEMPT = {
 
 
 def repo_files():
-    """Every file in the repo, for suffix resolution."""
+    """Every file in the repo, for suffix resolution.
+
+    followlinks=True because setup-worktree.sh symlinks the lib/ submodules back
+    into the main tree. Without it a worktree indexes none of them, and a doc
+    citing a submodule file (lv_sdl_window.c in the patch workflow) reads as
+    broken there while resolving fine on the main tree. `seen` guards against a
+    symlink cycle, which followlinks would otherwise recurse into forever.
+    """
     out = set()
-    for root, dirs, files in os.walk('.'):
+    seen = set()
+    for root, dirs, files in os.walk('.', followlinks=True):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        keep = []
+        for d in dirs:
+            real = os.path.realpath(os.path.join(root, d))
+            if real in seen:
+                continue
+            seen.add(real)
+            keep.append(d)
+        dirs[:] = keep
         for f in files:
             out.add(os.path.join(root, f)[2:])
     return out

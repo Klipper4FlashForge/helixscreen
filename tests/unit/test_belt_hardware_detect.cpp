@@ -30,8 +30,8 @@ namespace {
 /// Run detect_belt_hardware against a mock printer, returning the detected
 /// hardware. The mock invokes JSON-RPC callbacks synchronously, so the whole
 /// two-step chain has completed by the time this returns.
-helix::calibration::BeltTensionHardware
-detect_for(MoonrakerClientMock::PrinterType type, bool& completed, std::string& error_out) {
+helix::calibration::BeltTensionHardware detect_for(MoonrakerClientMock::PrinterType type,
+                                                   bool& completed, std::string& error_out) {
     PrinterState state;
     state.init_subjects(false);
     MoonrakerClientMock client(type);
@@ -100,8 +100,8 @@ TEST_CASE("detect_belt_hardware tolerates an object list of non-strings",
 
     bool completed = false;
     bool errored = false;
-    REQUIRE_NOTHROW(advanced.detect_belt_hardware([&](const helix::calibration::BeltTensionHardware&)
-                                                  { completed = true; },
-                                                  [&](const MoonrakerError&) { errored = true; }));
+    REQUIRE_NOTHROW(advanced.detect_belt_hardware(
+        [&](const helix::calibration::BeltTensionHardware&) { completed = true; },
+        [&](const MoonrakerError&) { errored = true; }));
     CHECK((completed || errored));
 }

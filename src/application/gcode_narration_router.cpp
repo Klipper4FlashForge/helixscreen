@@ -81,8 +81,7 @@ void GcodeNarrationRouter::process_line(const std::string& line) {
         std::string lowered = body;
         std::transform(lowered.begin(), lowered.end(), lowered.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (lowered.find("afc") != std::string::npos &&
-            unmatched_logged_.insert(body).second) {
+        if (lowered.find("afc") != std::string::npos && unmatched_logged_.insert(body).second) {
             spdlog::debug("[GcodeNarration] no phase matched for '{}' — narration wording may "
                           "have changed upstream; check match_narration_phase()",
                           body);

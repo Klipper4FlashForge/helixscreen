@@ -1913,7 +1913,8 @@ void MoonrakerAdvancedAPI::get_machine_limits(MachineLimitsCallback on_success,
                     !response["result"]["status"].contains("toolhead")) {
                     spdlog::warn("[Moonraker API] Toolhead object not available in response");
                     if (on_error) {
-                        MoonrakerError err = MoonrakerError::unknown("Toolhead object not available");
+                        MoonrakerError err =
+                            MoonrakerError::unknown("Toolhead object not available");
                         on_error(err);
                     }
                     return;
@@ -2135,8 +2136,8 @@ void MoonrakerAdvancedAPI::get_heater_pid_values(
                     }
                 } else {
                     if (on_error) {
-                        on_error(MoonrakerError::unknown("No PID values for heater '" + heater + "'",
-                                                         "get_pid_values"));
+                        on_error(MoonrakerError::unknown(
+                            "No PID values for heater '" + heater + "'", "get_pid_values"));
                     }
                 }
             } catch (const std::exception& ex) {
@@ -2507,8 +2508,8 @@ void MoonrakerAdvancedAPI::download_accel_csv(const std::string& name,
                 if (!result.is_array()) {
                     spdlog::error("[MoonrakerAPI] File list 'result' is not an array");
                     if (on_error)
-                        on_error(
-                            MoonrakerError::json_rpc_error("", "File list 'result' is not an array"));
+                        on_error(MoonrakerError::json_rpc_error(
+                            "", "File list 'result' is not an array"));
                     return;
                 }
                 for (const auto& file : result) {
@@ -2530,7 +2531,8 @@ void MoonrakerAdvancedAPI::download_accel_csv(const std::string& name,
             if (best_file.empty()) {
                 spdlog::error("[MoonrakerAPI] No CSV file found matching: {}", target_prefix);
                 if (on_error)
-                    on_error(MoonrakerError::json_rpc_error("", "No accelerometer data file found"));
+                    on_error(
+                        MoonrakerError::json_rpc_error("", "No accelerometer data file found"));
                 return;
             }
 

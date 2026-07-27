@@ -498,7 +498,8 @@ void AmsState::init_subjects(bool register_xml) {
                            ENV_IND_TEXT_BUF_SIZE, "---");
     subjects_.register_subject(&env_ind_detail_temp_text_);
     if (register_xml)
-        lv_xml_register_subject(nullptr, "ams_env_ind_detail_temp_text", &env_ind_detail_temp_text_);
+        lv_xml_register_subject(nullptr, "ams_env_ind_detail_temp_text",
+                                &env_ind_detail_temp_text_);
 
     lv_subject_init_string(&env_ind_detail_humidity_text_, env_ind_detail_humidity_text_buf_,
                            nullptr, ENV_IND_TEXT_BUF_SIZE, "---");
@@ -1438,13 +1439,30 @@ void AmsState::sync_from_backend() {
         spdlog::debug("[AmsState] tool_to_slot_map changed, version now {}", v + 1);
     }
 
-    // Sync spool assignments to ToolState for slots with mapped tools
+    // Sync spool assignments to ToolState for slots with mapped tools.
+    //
+    // The clear branch matters as much as the assign one: this only ever
+    // assigned, so a lane that lost its spool (eject, or an explicit unlink)
+    // left the old assignment behind in ToolState — and ToolState persists to
+    // tool_spools.json plus a Moonraker DB key, so the stale spool outlived
+    // restarts. Observed on the .112 BoxTurtle: "Assigned spool 86 () to tool 0"
+    // fired during an EJECT, and ToolState::clear_spool() had no callers at all.
     for (int i = 0; i < std::min(info.total_slots, MAX_SLOTS); ++i) {
         const SlotInfo* slot = info.get_slot_global(i);
-        if (slot && slot->mapped_tool >= 0 && slot->spoolman_id > 0) {
+        if (!slot || slot->mapped_tool < 0) {
+            continue;
+        }
+        if (slot->spoolman_id > 0) {
             ToolState::instance().assign_spool(slot->mapped_tool, slot->spoolman_id,
                                                slot->spool_name, slot->remaining_weight_g,
                                                slot->total_weight_g);
+        } else if (backend->has_firmware_spool_persistence()) {
+            // Only clear when the SLOT is authoritative. For backends without
+            // firmware spool persistence (toolchanger) the flow runs the other
+            // way — ToolState is the source of truth and slots start empty — so
+            // clearing here would destroy the assignment the reverse sync below
+            // is about to propagate.
+            ToolState::instance().clear_spool(slot->mapped_tool);
         }
     }
 

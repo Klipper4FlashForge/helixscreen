@@ -1327,8 +1327,15 @@ TEST_CASE_METHOD(
 
     CHECK(fire_count == 1);
     CHECK(captured.saved);
-    CHECK((!api.spoolman_mock().spool_updates.empty() ||
-           !api.spoolman_mock().filament_updates.empty()));
+    // The primary action is now "It's a new spool": it CREATES and rebinds
+    // rather than patching the linked spool, so the previously linked spool
+    // must come through untouched. Reaching this outcome at all was the point
+    // of the change — before it, a different physical spool in a linked lane
+    // could only overwrite the old spool's identity.
+    CHECK(captured.slot_info.spoolman_id != 0);
+    for (const auto& rec : api.spoolman_mock().spool_updates) {
+        CHECK(rec.spool_id != 7); // linked_a.id — never patched
+    }
 
     get_printer_state().set_spoolman_available(false); // restore clean slate
     UpdateQueue::instance().drain();
@@ -1405,13 +1412,21 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     // Count every PATCH that set the remaining weight, across BOTH paths: the
     // combined update_spoolman_spool() body and the dedicated
     // update_spoolman_spool_weight() path.
-    int weight_patches = static_cast<int>(api.spoolman_mock().weight_updates.size());
-    for (const auto& rec : api.spoolman_mock().spool_updates) {
-        if (rec.patch.contains("remaining_weight")) {
-            weight_patches++;
-        }
+    // Confirming now creates a NEW spool instead of patching the linked one, so
+    // the invariant this test guards changes shape: the linked spool must
+    // receive NO weight PATCH at all. (The single-PATCH rule still applies to
+    // the update path, which the LinkIntent tests in
+    // test_spoolman_slot_saver.cpp cover directly.)
+    int linked_weight_patches = 0;
+    for (const auto& rec : api.spoolman_mock().weight_updates) {
+        if (rec.spool_id == 7)
+            linked_weight_patches++;
     }
-    CHECK(weight_patches == 1);
+    for (const auto& rec : api.spoolman_mock().spool_updates) {
+        if (rec.spool_id == 7 && rec.patch.contains("remaining_weight"))
+            linked_weight_patches++;
+    }
+    CHECK(linked_weight_patches == 0);
 
     get_printer_state().set_spoolman_available(false); // restore clean slate
     UpdateQueue::instance().drain();

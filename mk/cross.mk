@@ -1003,7 +1003,7 @@ pi-docker: ensure-docker
 	fi
 	$(call ensure-ccache-dir,pi)
 	$(Q)scripts/cross-compile-lock.sh docker run --rm --user $$(id -u):$$(id -g) -v "$(PWD)":/src $(DOCKER_WORKTREE_MOUNT) -w /src $(call docker-ccache-args,pi) helixscreen/toolchain-pi \
-		make PLATFORM_TARGET=pi SKIP_OPTIONAL_DEPS=1 -j$(NPROC_DOCKER_RUN)
+		make PLATFORM_TARGET=pi SKIP_OPTIONAL_DEPS=1 $(if $(ENABLE_REMOTE_CONTROL),ENABLE_REMOTE_CONTROL=$(ENABLE_REMOTE_CONTROL)) -j$(NPROC_DOCKER_RUN)
 	@$(MAKE) --no-print-directory maybe-stop-colima
 
 # AddressSanitizer build for the Pi (DRM). Output lands in build/pi-asan/.

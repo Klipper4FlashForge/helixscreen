@@ -217,6 +217,23 @@ bool AmsBackendAfc::auto_unloads_after_print() const {
 void AmsBackendAfc::on_started() {
     // Version is informational only (see apply_afc_version_response) — nothing
     // below depends on the result, so this does not need to complete first.
+    // Load persisted per-slot overrides BEFORE any status callback can parse a
+    // lane, so the first frame already carries the user's identity. Private
+    // namespace: lane_data belongs to AFC's own plugin (it deletes that whole
+    // namespace on every boot), so sharing it would both lose our records and
+    // ingest AFC's as if the user had authored them.
+    if (api_) {
+        override_store_ = std::make_unique<helix::ams::FilamentSlotOverrideStore>(
+            api_, "afc", helix::ams::lane_key_style_for(get_type()), kOverrideNamespace);
+        auto loaded = override_store_->load_blocking();
+        const auto loaded_count = loaded.size();
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            overrides_ = std::move(loaded);
+        }
+        spdlog::info("[AMS AFC] Loaded {} slot overrides", loaded_count);
+    }
+
     detect_afc_version();
 
     // If we have discovered lanes (from PrinterCapabilities), initialize them now.
@@ -551,10 +568,10 @@ AmsBackendAfc::toolchange_phase_template(StepOperationType op) const {
     switch (op) {
     case StepOperationType::LOAD_SWAP:
         return {
-            {"heat", "Heat nozzle", false},     {"cut", "Cut tip", true},
+            {"heat", "Heat nozzle", false},       {"cut", "Cut tip", true},
             {"unload", "Unload filament", false}, {"feed", "Feed filament", false},
-            {"poop", "Purge to bucket", true},  {"kick", "Kick away", true},
-            {"brush", "Brush nozzle", true},    {"load", "Load complete", false},
+            {"poop", "Purge to bucket", true},    {"kick", "Kick away", true},
+            {"brush", "Brush nozzle", true},      {"load", "Load complete", false},
         };
     case StepOperationType::LOAD_FRESH:
         return {
@@ -952,8 +969,7 @@ void AmsBackendAfc::apply_state_string(const std::string& raw, const char* sourc
     }
 
     spdlog::trace("[AMS AFC] {}: {} ({} -> '{}')", source,
-                  ams_action_to_string(system_info_.action), raw,
-                  system_info_.operation_detail);
+                  ams_action_to_string(system_info_.action), raw, system_info_.operation_detail);
 }
 
 void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
@@ -1412,17 +1428,28 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
     // Get slot info for filament data update
     auto& slot = entry->info;
 
-    // Parse color
+    // Parse color.
+    //
+    // An EMPTY value is a deliberate clear, not a parse failure. AFC's
+    // clear_values() sets color='' on eject, and SET_COLOR with an empty value
+    // stores the literal '#'. Both strip to "" here. Previously std::stoul("")
+    // threw and was swallowed as "keep existing", so an ejected lane kept
+    // painting the previous spool's colour. Genuinely malformed input still
+    // keeps the old value — only emptiness clears.
     if (data.contains("color") && data["color"].is_string()) {
         std::string color_str = data["color"].get<std::string>();
         // Remove '#' prefix if present
         if (!color_str.empty() && color_str[0] == '#') {
             color_str = color_str.substr(1);
         }
-        try {
-            slot.color_rgb = std::stoul(color_str, nullptr, 16);
-        } catch (...) {
-            // Keep existing color on parse failure
+        if (color_str.empty()) {
+            slot.color_rgb = AMS_DEFAULT_SLOT_COLOR;
+        } else {
+            try {
+                slot.color_rgb = std::stoul(color_str, nullptr, 16);
+            } catch (...) {
+                // Keep existing color on parse failure
+            }
         }
     }
 
@@ -1431,15 +1458,30 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
         slot.material = data["material"].get<std::string>();
     }
 
-    // Parse Spoolman ID
-    if (data.contains("spool_id") && data["spool_id"].is_number_integer()) {
-        slot.spoolman_id = data["spool_id"].get<int>();
+    // Parse Spoolman ID.
+    //
+    // JSON null is AFC telling us the link is GONE — clear_values() sets
+    // spool_id=None on eject. is_number_integer() is false for null, so this
+    // previously retained the old id and an ejected lane stayed "linked",
+    // which is what later aimed an edit's Spoolman write at the wrong spool.
+    // An ABSENT key still means "unchanged": these are deltas, not snapshots.
+    if (data.contains("spool_id")) {
+        if (data["spool_id"].is_number_integer()) {
+            slot.spoolman_id = data["spool_id"].get<int>();
+        } else if (data["spool_id"].is_null()) {
+            slot.spoolman_id = 0;
+        }
     }
 
     // Parse weight
     if (data.contains("weight") && data["weight"].is_number()) {
         slot.remaining_weight_g = data["weight"].get<float>();
     }
+
+    // Re-supply the user's attached identity on top of firmware truth. This is
+    // what keeps a lane's spool across an eject now that the parser honours
+    // AFC's clears.
+    apply_overrides(slot, slot.global_index >= 0 ? slot.global_index : slot.slot_index);
 
     // Derive slot status from sensors and status string.
     // Only recompute status when at least one status-related field is present
@@ -2207,9 +2249,8 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
         // status key is present would clobber the status already derived from the
         // AFC_stepper objects and show empty lanes as loaded. Absent means
         // unchanged, matching how status deltas are treated elsewhere.
-        const bool has_status_key =
-            lane.contains("tool_loaded") || lane.contains("loaded") ||
-            lane.contains("available") || lane.contains("empty");
+        const bool has_status_key = lane.contains("tool_loaded") || lane.contains("loaded") ||
+                                    lane.contains("available") || lane.contains("empty");
 
         bool tool_loaded = false;
         if (lane.contains("tool_loaded") && lane["tool_loaded"].is_boolean()) {
@@ -2667,6 +2708,115 @@ AmsError AmsBackendAfc::reset() {
                                 lv_tr("AFC reset failed"));
 }
 
+void AmsBackendAfc::apply_overrides(SlotInfo& slot, int slot_index) {
+    // Callers hold mutex_ (the parse path does). Merge policy matches ACE/IFS:
+    // the override wins only where it carries a real value; default sentinels
+    // (empty string, id 0, weight -1, colour unset) fall through to firmware.
+    auto it = overrides_.find(slot_index);
+    if (it == overrides_.end()) {
+        return;
+    }
+    const auto& o = it->second;
+    if (!o.brand.empty())
+        slot.brand = o.brand;
+    if (!o.spool_name.empty())
+        slot.spool_name = o.spool_name;
+    if (o.spoolman_id > 0)
+        slot.spoolman_id = o.spoolman_id;
+    if (o.spoolman_vendor_id > 0)
+        slot.spoolman_vendor_id = o.spoolman_vendor_id;
+    if (o.remaining_weight_g >= 0.0f)
+        slot.remaining_weight_g = o.remaining_weight_g;
+    if (o.total_weight_g >= 0.0f)
+        slot.total_weight_g = o.total_weight_g;
+    if (o.color_set)
+        slot.color_rgb = o.color_rgb;
+    if (!o.color_name.empty())
+        slot.color_name = o.color_name;
+    if (!o.material.empty())
+        slot.material = o.material;
+}
+
+void AmsBackendAfc::persist_override(int slot_index, const SlotInfo& info) {
+    // Callers hold mutex_.
+    helix::ams::FilamentSlotOverride o;
+    o.brand = info.brand;
+    o.spool_name = info.spool_name;
+    o.spoolman_id = info.spoolman_id;
+    o.spoolman_vendor_id = info.spoolman_vendor_id;
+    o.remaining_weight_g = info.remaining_weight_g;
+    o.total_weight_g = info.total_weight_g;
+    o.color_name = info.color_name;
+    o.material = info.material;
+    if (info.color_rgb != 0 && info.color_rgb != AMS_DEFAULT_SLOT_COLOR) {
+        o.color_rgb = info.color_rgb;
+        o.color_set = true;
+    }
+    overrides_[slot_index] = o;
+
+    if (override_store_) {
+        override_store_->save_async(slot_index, o, [slot_index](bool ok, std::string err) {
+            if (!ok) {
+                spdlog::warn("[AMS AFC] override save failed for slot {}: {}", slot_index, err);
+            }
+        });
+    }
+}
+
+void AmsBackendAfc::clear_slot_override(int slot_index) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        overrides_.erase(slot_index);
+
+        // Also reset the override-exclusive fields on the live slot, so the
+        // clear shows up in the very next get_slot_info(). AFC has no concept
+        // of brand / spool_name / total weight / colour name, so no firmware
+        // update will ever clear them for us — dropping only the store entry
+        // would leave the previous spool's identity on screen indefinitely.
+        // colour and material are left alone: those DO come from the parse, so
+        // the lane's actual firmware values should surface.
+        if (helix::printer::SlotEntry* entry = slots_.get_mut(slot_index)) {
+            entry->info.brand.clear();
+            entry->info.spool_name.clear();
+            entry->info.spoolman_id = 0;
+            entry->info.spoolman_vendor_id = 0;
+            entry->info.spoolman_filament_id = 0;
+            entry->info.remaining_weight_g = -1.0f;
+            entry->info.total_weight_g = -1.0f;
+            entry->info.color_name.clear();
+        }
+    }
+    emit_event(EVENT_SLOT_CHANGED, std::to_string(slot_index));
+    if (override_store_) {
+        override_store_->clear_async(slot_index, [slot_index](bool ok, std::string err) {
+            if (!ok) {
+                spdlog::warn("[AMS AFC] override clear failed for slot {}: {}", slot_index, err);
+            }
+        });
+    }
+}
+
+bool AmsBackendAfc::can_reset_lane(int slot_index) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // Mirrors cmd_AFC_LANE_RESET's own guards (AFC_functions.py). It retracts
+    // filament from the bowden back to the hub, so it needs something AT the
+    // hub — upstream rejects with "Hub is already clear while trying to reset
+    // '<lane>'" otherwise — and it refuses while the toolhead is loaded.
+    //
+    // loaded_to_hub is our per-lane view of that hub state. Gating on it stops
+    // us offering a reset the firmware will refuse, which is what left a latched
+    // error in printer.AFC.message re-firing toasts for a whole session.
+    const helix::printer::SlotEntry* entry = slots_.get(slot_index);
+    if (!entry) {
+        return false;
+    }
+    if (system_info_.filament_loaded) {
+        return false;
+    }
+    return entry->sensors.loaded_to_hub;
+}
+
 AmsError AmsBackendAfc::reset_lane(int slot_index) {
     std::string lane_name;
     {
@@ -2881,6 +3031,14 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
         // sync_from_backend → refresh_spoolman_weights → set_slot_info again,
         // creating an infinite feedback loop that saturates the CPU.
         //
+        // Record the user's identity in the override store as well. AFC cannot
+        // hold brand / spool_name / total_weight / colour name / filament+vendor
+        // ids at all, and the fields it DOES hold get cleared by its own
+        // clear_values() on eject.
+        if (persist) {
+            persist_override(slot_index, info);
+        }
+
         // Persistence is never version-gated. These SET_* commands have existed
         // since well before any version we would recognize, and the version string
         // is not a usable signal (AFC stopped writing it — see
@@ -2889,6 +3047,22 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
         if (persist) {
             std::string lane_name = slots_.name_of(slot_index);
             if (!lane_name.empty()) {
+                // Spoolman ID FIRST — both branches of AFC's set_spoolID() rewrite the
+                // lane's material/color/weight/temps, so this must precede our own
+                // writes or it clobbers them:
+                //   valid id  -> AFC fetches the spool from Spoolman and overwrites
+                //               material, color, weight, temps, density, diameter
+                //   empty id  -> AFC runs clear_values() and wipes all of the above
+                // Emitting it last made a single save set the data and then destroy it,
+                // which is why an edit needed two passes to stick.
+                if (info.spoolman_id > 0) {
+                    execute_gcode(fmt::format("SET_SPOOL_ID LANE={} SPOOL_ID={}", lane_name,
+                                              info.spoolman_id));
+                } else if (info.spoolman_id == 0 && old_spoolman_id > 0) {
+                    // Clear Spoolman link with empty string (not -1)
+                    execute_gcode(fmt::format("SET_SPOOL_ID LANE={} SPOOL_ID=", lane_name));
+                }
+
                 // Color (only if changed and valid - not 0 or default grey)
                 if (info.color_rgb != 0 && info.color_rgb != AMS_DEFAULT_SLOT_COLOR) {
                     char color_hex[8];
@@ -2909,15 +3083,6 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
                 if (info.remaining_weight_g > 0) {
                     execute_gcode(fmt::format("SET_WEIGHT LANE={} WEIGHT={:.0f}", lane_name,
                                               info.remaining_weight_g));
-                }
-
-                // Spoolman ID
-                if (info.spoolman_id > 0) {
-                    execute_gcode(fmt::format("SET_SPOOL_ID LANE={} SPOOL_ID={}", lane_name,
-                                              info.spoolman_id));
-                } else if (info.spoolman_id == 0 && old_spoolman_id > 0) {
-                    // Clear Spoolman link with empty string (not -1)
-                    execute_gcode(fmt::format("SET_SPOOL_ID LANE={} SPOOL_ID=", lane_name));
                 }
 
                 // Tool mapping (lane → tool number) via SET_MAP.

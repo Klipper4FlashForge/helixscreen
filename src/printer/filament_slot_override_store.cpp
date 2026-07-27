@@ -592,8 +592,9 @@ void populate_temps_from_slot_info(FilamentSlotOverride& ovr, const SlotInfo& in
 // ============================================================================
 
 FilamentSlotOverrideStore::FilamentSlotOverrideStore(IMoonrakerAPI* api, std::string backend_id,
-                                                     LaneKeyStyle key_style)
-    : api_(api), backend_id_(std::move(backend_id)), key_style_(key_style) {}
+                                                     LaneKeyStyle key_style, std::string ns)
+    : api_(api), backend_id_(std::move(backend_id)), key_style_(key_style),
+      namespace_(std::move(ns)) {}
 
 std::filesystem::path FilamentSlotOverrideStore::cache_dir_effective() const {
     return cache_dir_.empty() ? std::filesystem::path(helix::get_user_config_dir()) : cache_dir_;
@@ -967,13 +968,13 @@ void try_migrate_lane_keys_to_tool_keys(IMoonrakerAPI* api, const std::string& b
             });
     }
     for (const auto& deleted_key : to_drop) {
-        api->database_delete_item(
-            "lane_data", deleted_key, nullptr,
-            [backend_id, deleted_key](const MoonrakerError& err) {
-                spdlog::warn("[FilamentSlotOverrideStore:{}] failed to delete stale "
-                             "lane_data:{}: {} (non-fatal, re-migrates next boot)",
-                             backend_id, deleted_key, err.message);
-            });
+        api->database_delete_item("lane_data", deleted_key, nullptr,
+                                  [backend_id, deleted_key](const MoonrakerError& err) {
+                                      spdlog::warn(
+                                          "[FilamentSlotOverrideStore:{}] failed to delete stale "
+                                          "lane_data:{}: {} (non-fatal, re-migrates next boot)",
+                                          backend_id, deleted_key, err.message);
+                                  });
     }
 
     spdlog::info("[FilamentSlotOverrideStore:{}] migrated {} lane_data key(s) to T<n> style "

@@ -242,6 +242,14 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         captured_gcodes.clear();
     }
 
+    void clear_slot_override(int slot_index) {
+        AmsBackendAfc::clear_slot_override(slot_index);
+    }
+
+    bool can_reset_lane(int slot_index) const {
+        return AmsBackendAfc::can_reset_lane(slot_index);
+    }
+
     bool has_gcode(const std::string& expected) const {
         return std::find(captured_gcodes.begin(), captured_gcodes.end(), expected) !=
                captured_gcodes.end();
@@ -253,6 +261,17 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
                 return true;
         }
         return false;
+    }
+
+    // Position of the first gcode starting with `prefix`, or -1 if absent.
+    // Emission order matters on AFC: SET_SPOOL_ID with an empty value runs
+    // AFC's clear_values(), which wipes material/color/weight/temps.
+    int gcode_index_of(const std::string& prefix) const {
+        for (size_t i = 0; i < captured_gcodes.size(); ++i) {
+            if (captured_gcodes[i].rfind(prefix, 0) == 0)
+                return static_cast<int>(i);
+        }
+        return -1;
     }
 
     // Feed a Moonraker notify_status_update notification through the backend
@@ -771,6 +790,10 @@ TEST_CASE("AFC persistence: persist=false is the only thing that skips G-code",
 
     helper.set_slot_info(0, info);
     REQUIRE_FALSE(helper.captured_gcodes.empty());
+    REQUIRE(helper.has_gcode("SET_COLOR LANE=lane1 COLOR=FF0000"));
+    REQUIRE(helper.has_gcode("SET_MATERIAL LANE=lane1 MATERIAL=PLA"));
+    REQUIRE(helper.has_gcode("SET_WEIGHT LANE=lane1 WEIGHT=850"));
+    REQUIRE(helper.has_gcode("SET_SPOOL_ID LANE=lane1 SPOOL_ID=42"));
 }
 
 TEST_CASE("AFC persistence: SET_COLOR command format", "[ams][afc][persistence]") {
@@ -873,6 +896,116 @@ TEST_CASE("AFC persistence: SET_SPOOL_ID clear with empty string", "[ams][afc][p
     // Should send: SET_SPOOL_ID LANE=lane1 SPOOL_ID= (empty to clear)
     // FAILS: set_slot_info doesn't call execute_gcode yet
     REQUIRE(helper.has_gcode("SET_SPOOL_ID LANE=lane1 SPOOL_ID="));
+}
+
+// Persistence must NOT be gated on the afc-install database version.
+//
+// Nothing in the AFC source writes the Moonraker `afc-install` namespace, so it
+// is never updated on upgrade. A BoxTurtle running v1.1.0-4-g2921371 still
+// reports {"version": "1.0.0"} there. The old gate was
+// version_at_least("1.0.20"), which on that reading silently skipped EVERY
+// SET_COLOR / SET_MATERIAL / SET_WEIGHT / SET_SPOOL_ID and logged only an
+// "upgrade for persistence" info line. Saves survived purely because the DB
+// query often lost the race and fell into the "unknown" escape hatch (#644).
+// A stale-but-successful read is the dangerous case: total silent data loss.
+TEST_CASE("AFC persistence: a stale afc-install version does not suppress gcode",
+          "[ams][afc][persistence]") {
+    AmsBackendAfcTestHelper helper;
+
+    // Exactly what the .112 BoxTurtle's afc-install namespace reports today,
+    // while actually running v1.1.0-4.
+    helper.set_afc_version("1.0.0");
+    helper.initialize_test_lanes_with_slots(4);
+
+    SlotInfo info;
+    info.material = "PLA";
+    info.color_rgb = 0xE53935;
+    info.remaining_weight_g = 500.0f;
+
+    helper.set_slot_info(0, info);
+
+    REQUIRE(helper.has_gcode("SET_MATERIAL LANE=lane1 MATERIAL=PLA"));
+    REQUIRE(helper.has_gcode("SET_COLOR LANE=lane1 COLOR=E53935"));
+    REQUIRE(helper.has_gcode("SET_WEIGHT LANE=lane1 WEIGHT=500"));
+}
+
+// On AFC, SET_SPOOL_ID with an empty value is not a narrow unlink: AFC_spool.py's
+// set_spoolID() routes an empty/None id into clear_values(), which wipes material,
+// color, weight and both temps (and calls clear_lane_data()). Emitting it LAST
+// therefore destroys the SET_COLOR / SET_MATERIAL / SET_WEIGHT sent earlier in the
+// same save. Observed on the .112 BoxTurtle: a save emitted COLOR/MATERIAL/WEIGHT
+// then SPOOL_ID=, and the editor reopened 3s later with material empty.
+TEST_CASE("AFC persistence: spool-link clear is emitted before the data writes",
+          "[ams][afc][persistence]") {
+    AmsBackendAfcTestHelper helper;
+
+    helper.set_afc_version("1.0.20");
+    helper.initialize_test_lanes_with_slots(4);
+
+    // Lane starts linked to a Spoolman spool.
+    SlotInfo* existing_slot = helper.get_mutable_slot(0);
+    REQUIRE(existing_slot != nullptr);
+    existing_slot->spoolman_id = 86;
+
+    // Unlink and set fresh identity in the SAME save — the exact shape of the
+    // real-world failure.
+    SlotInfo info;
+    info.spoolman_id = 0;
+    info.material = "PLA";
+    info.color_rgb = 0xE53935;
+    info.remaining_weight_g = 500.0f;
+
+    helper.set_slot_info(0, info);
+
+    const int clear_idx = helper.gcode_index_of("SET_SPOOL_ID LANE=lane1 SPOOL_ID=");
+    const int color_idx = helper.gcode_index_of("SET_COLOR LANE=lane1");
+    const int material_idx = helper.gcode_index_of("SET_MATERIAL LANE=lane1");
+    const int weight_idx = helper.gcode_index_of("SET_WEIGHT LANE=lane1");
+
+    REQUIRE(clear_idx >= 0);
+    REQUIRE(color_idx >= 0);
+    REQUIRE(material_idx >= 0);
+    REQUIRE(weight_idx >= 0);
+
+    // The clear must precede every data write, or AFC wipes what we just set.
+    REQUIRE(clear_idx < color_idx);
+    REQUIRE(clear_idx < material_idx);
+    REQUIRE(clear_idx < weight_idx);
+}
+
+// The link branch is destructive in the opposite direction: AFC_spool.py's
+// set_spoolID() with a valid id fetches the spool from Spoolman and overwrites
+// material, color, weight, both temps, density, diameter and empty_spool_weight
+// from that record. Emitting it after our own writes replaces them with
+// Spoolman's values, so it must precede them too.
+TEST_CASE("AFC persistence: spool-link set is emitted before the data writes",
+          "[ams][afc][persistence]") {
+    AmsBackendAfcTestHelper helper;
+
+    helper.set_afc_version("1.0.20");
+    helper.initialize_test_lanes_with_slots(4);
+
+    SlotInfo info;
+    info.spoolman_id = 86;
+    info.material = "PLA";
+    info.color_rgb = 0xE53935;
+    info.remaining_weight_g = 500.0f;
+
+    helper.set_slot_info(0, info);
+
+    const int link_idx = helper.gcode_index_of("SET_SPOOL_ID LANE=lane1 SPOOL_ID=86");
+    const int color_idx = helper.gcode_index_of("SET_COLOR LANE=lane1");
+    const int material_idx = helper.gcode_index_of("SET_MATERIAL LANE=lane1");
+    const int weight_idx = helper.gcode_index_of("SET_WEIGHT LANE=lane1");
+
+    REQUIRE(link_idx >= 0);
+    REQUIRE(color_idx >= 0);
+    REQUIRE(material_idx >= 0);
+    REQUIRE(weight_idx >= 0);
+
+    REQUIRE(link_idx < color_idx);
+    REQUIRE(link_idx < material_idx);
+    REQUIRE(link_idx < weight_idx);
 }
 
 TEST_CASE("AFC persistence: SET_MAP fires when mapped_tool changes via set_slot_info",
@@ -1359,8 +1492,7 @@ TEST_CASE("AFC tool mapping resets when map transitions string to null",
     REQUIRE(helper.get_tool_mapping()[2] == -1);
 }
 
-TEST_CASE("AFC tool mapping survives an update with no map field",
-          "[ams][afc][tool_mapping]") {
+TEST_CASE("AFC tool mapping survives an update with no map field", "[ams][afc][tool_mapping]") {
     // parse_afc_stepper receives Moonraker notify_status_update DELTAS: a partial
     // update (e.g. weight-only) that omits "map" means "unchanged", NOT "unmapped".
     // Clearing on absent would wipe a live tool mapping mid-print — the mapping must
@@ -4399,8 +4531,7 @@ TEST_CASE("AFC ignores non-error lines", "[ams][afc][classify]") {
     REQUIRE_FALSE(helper.classify_error("ok", ctx).has_value());
 }
 
-TEST_CASE("AFC narration folds purge wording into the poop phase",
-          "[unit][ams][afc][narration]") {
+TEST_CASE("AFC narration folds purge wording into the poop phase", "[unit][ams][afc][narration]") {
     AmsBackendAfcTestHelper afc;
     // AFC has exactly one purge in a toolchange: the poop macro. "purge" wording
     // comes out of that same macro ("AFC_Poop: Move To Purge Location"), so it
@@ -4502,8 +4633,7 @@ TEST_CASE("AFC LOAD_FRESH and UNLOAD templates match the real sequences",
     REQUIRE(ids(StepOperationType::LOAD_FRESH) ==
             std::vector<std::string>{"heat", "feed", "poop", "kick", "brush", "load"});
     // TOOL_UNLOAD alone: heat, cut/form tip, then pull back to the lane.
-    REQUIRE(ids(StepOperationType::UNLOAD) ==
-            std::vector<std::string>{"heat", "cut", "unload"});
+    REQUIRE(ids(StepOperationType::UNLOAD) == std::vector<std::string>{"heat", "cut", "unload"});
 }
 
 TEST_CASE("AFC get_operation_step_model mirrors the narration phase template",
@@ -4532,4 +4662,197 @@ TEST_CASE("AFC get_operation_step_index_subject is the narration toolchange-step
     // base default returns it for any operation with a non-empty template.
     CHECK(afc.get_operation_step_index_subject(StepOperationType::LOAD_SWAP) ==
           AmsState::instance().get_toolchange_step_subject());
+}
+
+// ============================================================================
+// parse_afc_stepper must represent AFC's CLEARS, not just its values
+// ============================================================================
+//
+// AFC clears a lane's identity itself. LANE_UNLOAD ends with
+// set_spoolID(lane, None), which (when remember_spool is false, the default)
+// runs clear_values(): spool_id=None, material='', color='', weight=0.
+//
+// Helix could not represent any of that. `spool_id: null` fails
+// is_number_integer() and kept the old id; `color: ""` threw inside std::stoul
+// and was caught as "keep existing colour"; AFC's SET_COLOR with an empty value
+// stores the literal '#', which stripped to "" and threw the same way. Only
+// `material: ""` actually cleared. So an ejected lane kept showing the previous
+// spool's identity and, worse, kept its Spoolman link — which is what aimed a
+// later edit at the wrong spool.
+//
+// The parser's job is firmware truth, including absence. Retention across an
+// eject is a policy decision that belongs one layer up, in the override store.
+
+TEST_CASE("AFC parse: null spool_id clears the Spoolman link", "[ams][afc][status]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    helper.feed_afc_stepper("lane1", {{"spool_id", 86}});
+    REQUIRE(helper.get_system_info().get_slot_global(0)->spoolman_id == 86);
+
+    // AFC's clear_values() emits spool_id: null
+    helper.feed_afc_stepper("lane1", {{"spool_id", nullptr}});
+    REQUIRE(helper.get_system_info().get_slot_global(0)->spoolman_id == 0);
+}
+
+TEST_CASE("AFC parse: empty colour clears rather than sticking", "[ams][afc][status]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    helper.feed_afc_stepper("lane1", {{"color", "#E53935"}});
+    REQUIRE(helper.get_system_info().get_slot_global(0)->color_rgb == 0xE53935);
+
+    helper.feed_afc_stepper("lane1", {{"color", ""}});
+    REQUIRE(helper.get_system_info().get_slot_global(0)->color_rgb == AMS_DEFAULT_SLOT_COLOR);
+}
+
+TEST_CASE("AFC parse: bare '#' colour clears (AFC SET_COLOR with empty value)",
+          "[ams][afc][status]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    helper.feed_afc_stepper("lane1", {{"color", "#E53935"}});
+    REQUIRE(helper.get_system_info().get_slot_global(0)->color_rgb == 0xE53935);
+
+    // SET_COLOR LANE=x COLOR=  ->  cur_lane.color = '#'
+    helper.feed_afc_stepper("lane1", {{"color", "#"}});
+    REQUIRE(helper.get_system_info().get_slot_global(0)->color_rgb == AMS_DEFAULT_SLOT_COLOR);
+}
+
+TEST_CASE("AFC parse: a malformed colour still keeps the previous value", "[ams][afc][status]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    helper.feed_afc_stepper("lane1", {{"color", "#E53935"}});
+    // Garbage is a parse failure, NOT a clear — only empty means cleared.
+    helper.feed_afc_stepper("lane1", {{"color", "#zzzzzz"}});
+    REQUIRE(helper.get_system_info().get_slot_global(0)->color_rgb == 0xE53935);
+}
+
+TEST_CASE("AFC parse: absent fields are retained (deltas, not snapshots)", "[ams][afc][status]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    helper.feed_afc_stepper("lane1", {{"spool_id", 86}, {"material", "ASA"}, {"color", "#E53935"}});
+
+    // A weight-only delta must not disturb identity.
+    helper.feed_afc_stepper("lane1", {{"weight", 500.0}});
+
+    const auto* slot = helper.get_system_info().get_slot_global(0);
+    REQUIRE(slot->spoolman_id == 86);
+    REQUIRE(slot->material == "ASA");
+    REQUIRE(slot->color_rgb == 0xE53935);
+    REQUIRE(slot->remaining_weight_g == Catch::Approx(500.0));
+}
+
+// ============================================================================
+// can_reset_lane — AFC_LANE_RESET has real preconditions
+// ============================================================================
+//
+// supports_lane_reset() is a static capability, so the "Reset" menu entry was
+// offered on every AFC lane regardless of state. But AFC_LANE_RESET means
+// "retract filament from the bowden back to the hub" (AFC_functions.py), and it
+// refuses unless the lane's filament is actually at the hub:
+//     if not CUR_HUB.state: AFC_error("Hub is already clear while trying to
+//                                      reset '<lane>'"); return
+// It also refuses while the toolhead is loaded. Offering it on an ejected lane
+// produced exactly that error, which then LATCHED in printer.AFC.message and
+// kept re-firing error toasts for the rest of the session (seen on the .112
+// BoxTurtle). Reported upstream as AFCProject/AFC-Klipper-Add-On#803.
+
+TEST_CASE("AFC can_reset_lane requires filament at the hub", "[ams][afc][reset]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    SECTION("filament at the hub, toolhead free -> reset is possible") {
+        helper.feed_afc_stepper("lane1", {{"loaded_to_hub", true}, {"prep", true}, {"load", true}});
+        CHECK(helper.can_reset_lane(0));
+    }
+
+    SECTION("ejected lane (nothing at the hub) -> reset refused") {
+        helper.feed_afc_stepper("lane1",
+                                {{"loaded_to_hub", false}, {"prep", false}, {"load", false}});
+        CHECK_FALSE(helper.can_reset_lane(0));
+    }
+
+    SECTION("toolhead loaded -> reset refused even with filament at the hub") {
+        helper.feed_afc_stepper("lane1", {{"loaded_to_hub", true}, {"prep", true}, {"load", true}});
+        helper.feed_afc_state({{"filament_loaded", true}, {"current_load", "lane1"}});
+        CHECK_FALSE(helper.can_reset_lane(0));
+    }
+
+    SECTION("out-of-range slot is never resettable") {
+        CHECK_FALSE(helper.can_reset_lane(99));
+        CHECK_FALSE(helper.can_reset_lane(-1));
+    }
+}
+
+// ============================================================================
+// Override store — user identity survives AFC's own clears
+// ============================================================================
+//
+// parse_afc_stepper now honours AFC's clears (spool_id null, empty colour), so
+// firmware truth genuinely clears on eject. Retention lives one layer up: the
+// override store re-supplies the identity the user attached. Without it, the
+// parser change alone would LOSE metadata on eject, which is the opposite of
+// what the maintainer asked for (a lane keeps its spool until told otherwise,
+// because pulling a spool for maintenance and putting the same one back is the
+// common case).
+//
+// AFC firmware also structurally cannot hold brand / spool_name /
+// total_weight_g / colour name / filament+vendor ids — verified against a live
+// lane payload and its lane_data record — so those only ever live here.
+
+TEST_CASE("AFC override survives an eject that clears firmware fields", "[ams][afc][override]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    // User attaches identity to lane 1.
+    SlotInfo info;
+    info.brand = "Likesilk";
+    info.spool_name = "Black ASA";
+    info.spoolman_id = 86;
+    info.material = "ASA";
+    info.color_rgb = 0x1A1A1A;
+    info.total_weight_g = 1000.0f;
+    helper.set_slot_info(0, info);
+
+    // AFC ejects the lane: clear_values() nulls spool_id and empties
+    // colour/material, and parse_afc_stepper now represents that faithfully.
+    helper.feed_afc_stepper(
+        "lane1", {{"spool_id", nullptr}, {"material", ""}, {"color", ""}, {"status", "None"}});
+
+    const SlotInfo after = helper.get_slot_info(0);
+
+    // Identity the user attached is re-supplied by the override layer.
+    CHECK(after.brand == "Likesilk");
+    CHECK(after.spool_name == "Black ASA");
+    CHECK(after.spoolman_id == 86);
+    CHECK(after.total_weight_g == Catch::Approx(1000.0f));
+}
+
+TEST_CASE("AFC clear_slot_override drops the retained identity", "[ams][afc][override]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    SlotInfo info;
+    info.brand = "Likesilk";
+    info.spoolman_id = 86;
+    info.material = "ASA";
+    helper.set_slot_info(0, info);
+
+    helper.clear_slot_override(0);
+    helper.feed_afc_stepper("lane1", {{"spool_id", nullptr}, {"material", ""}});
+
+    const SlotInfo after = helper.get_slot_info(0);
+    CHECK(after.brand.empty());
+    CHECK(after.spoolman_id == 0);
 }

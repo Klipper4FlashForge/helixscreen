@@ -413,8 +413,13 @@ void AmsPanel::on_activate() {
     // Sync Spoolman active spool with currently loaded slot
     sync_spoolman_active_spool();
 
-    // Start Spoolman polling for slot weight updates
-    SpoolmanManager::instance().start_spoolman_polling();
+    // Start Spoolman polling for slot weight updates. Guarded: on_activate()
+    // can fire more than once per visit, and each unguarded call took another
+    // reference that on_deactivate() never gave back.
+    if (!holds_poll_ref_) {
+        SpoolmanManager::instance().start_spoolman_polling();
+        holds_poll_ref_ = true;
+    }
 }
 
 void AmsPanel::sync_spoolman_active_spool() {
@@ -445,7 +450,10 @@ void AmsPanel::sync_spoolman_active_spool() {
 }
 
 void AmsPanel::on_deactivate() {
-    SpoolmanManager::instance().stop_spoolman_polling();
+    if (holds_poll_ref_) {
+        SpoolmanManager::instance().stop_spoolman_polling();
+        holds_poll_ref_ = false;
+    }
 
     // Stop filament path animations to avoid burning CPU in the background
     if (path_canvas_) {
@@ -1474,8 +1482,10 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
                 cleared.color_name.clear();
                 cleared.multi_color_hexes.clear();
                 cleared.brand.clear();
-                cleared.spool_name.clear();
-                cleared.spoolman_id = 0;
+                // Drops spoolman_id AND the filament/vendor handles — leaving
+                // those behind fed a later repoint comparison against a spool
+                // this lane is no longer linked to.
+                cleared.clear_spoolman_link();
                 cleared.remaining_weight_g = -1;
                 cleared.total_weight_g = -1;
                 auto error = backend->set_slot_info(slot, cleared);

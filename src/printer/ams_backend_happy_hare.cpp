@@ -824,6 +824,12 @@ void AmsBackendHappyHare::parse_mmu_state(const nlohmann::json& mmu_data) {
                 }
             }
         }
+        // Re-supply user-attached identity the gate map cannot carry.
+        for (size_t i = 0; i < spool_ids.size(); ++i) {
+            if (auto* entry = slots_.get_mut(static_cast<int>(i))) {
+                apply_overrides(entry->info, static_cast<int>(i));
+            }
+        }
         spdlog::trace("[AMS HappyHare] Parsed gate_spool_id for {} gates", spool_ids.size());
     }
 
@@ -2313,6 +2319,83 @@ AmsError AmsBackendHappyHare::cancel() {
 // Configuration Operations
 // ============================================================================
 
+void AmsBackendHappyHare::apply_overrides(SlotInfo& slot, int slot_index) {
+    // Callers hold mutex_. Same merge policy as AFC/ACE: the override wins only
+    // where it carries a real value; sentinels fall through to firmware.
+    auto it = overrides_.find(slot_index);
+    if (it == overrides_.end()) {
+        return;
+    }
+    const auto& o = it->second;
+    if (!o.brand.empty())
+        slot.brand = o.brand;
+    if (!o.spool_name.empty())
+        slot.spool_name = o.spool_name;
+    if (o.spoolman_id > 0)
+        slot.spoolman_id = o.spoolman_id;
+    if (o.spoolman_vendor_id > 0)
+        slot.spoolman_vendor_id = o.spoolman_vendor_id;
+    if (o.remaining_weight_g >= 0.0f)
+        slot.remaining_weight_g = o.remaining_weight_g;
+    if (o.total_weight_g >= 0.0f)
+        slot.total_weight_g = o.total_weight_g;
+    if (o.color_set)
+        slot.color_rgb = o.color_rgb;
+    if (!o.color_name.empty())
+        slot.color_name = o.color_name;
+    if (!o.material.empty())
+        slot.material = o.material;
+}
+
+void AmsBackendHappyHare::persist_override(int slot_index, const SlotInfo& info) {
+    // Callers hold mutex_.
+    helix::ams::FilamentSlotOverride o;
+    o.brand = info.brand;
+    o.spool_name = info.spool_name;
+    o.spoolman_id = info.spoolman_id;
+    o.spoolman_vendor_id = info.spoolman_vendor_id;
+    o.remaining_weight_g = info.remaining_weight_g;
+    o.total_weight_g = info.total_weight_g;
+    o.color_name = info.color_name;
+    o.material = info.material;
+    if (info.color_rgb != 0 && info.color_rgb != AMS_DEFAULT_SLOT_COLOR) {
+        o.color_rgb = info.color_rgb;
+        o.color_set = true;
+    }
+    overrides_[slot_index] = o;
+
+    if (override_store_) {
+        override_store_->save_async(slot_index, o, [slot_index](bool ok, std::string err) {
+            if (!ok) {
+                spdlog::warn("[AMS HappyHare] override save failed for gate {}: {}", slot_index,
+                             err);
+            }
+        });
+    }
+}
+
+void AmsBackendHappyHare::clear_slot_override(int slot_index) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        overrides_.erase(slot_index);
+
+        // Reset the override-exclusive fields on the live slot too: Happy Hare's
+        // gate map has no concept of brand / spool_name / total weight / colour
+        // name, so no firmware update will ever clear them.
+        if (helix::printer::SlotEntry* entry = slots_.get_mut(slot_index)) {
+            entry->info.brand.clear();
+            entry->info.spool_name.clear();
+            entry->info.spoolman_id = 0;
+            entry->info.spoolman_vendor_id = 0;
+            entry->info.spoolman_filament_id = 0;
+            entry->info.remaining_weight_g = -1.0f;
+            entry->info.total_weight_g = -1.0f;
+            entry->info.color_name.clear();
+        }
+    }
+    emit_event(EVENT_SLOT_CHANGED, std::to_string(slot_index));
+}
+
 AmsError AmsBackendHappyHare::set_slot_info(int slot_index, const SlotInfo& info, bool persist) {
     int old_spoolman_id = 0;
     int old_mapped_tool = -1;
@@ -2366,6 +2449,12 @@ AmsError AmsBackendHappyHare::set_slot_info(int slot_index, const SlotInfo& info
         if (changed) {
             spdlog::info("[AMS HappyHare] Updated slot {} info: {} {}", slot_index, info.material,
                          info.color_name);
+        }
+
+        // Record the user's identity in the override store: the gate map cannot
+        // hold brand / spool_name / total weight / colour name at all.
+        if (persist) {
+            persist_override(slot_index, info);
         }
     }
 

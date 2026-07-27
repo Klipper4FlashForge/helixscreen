@@ -24,6 +24,9 @@ usage() {
     echo ""
     echo "Options:"
     echo "  --setup-only    Only set up an existing worktree, don't create it"
+    echo "  --unlink        Replace lib/ symlinks with what git expects, so git"
+    echo "                  status/merge/rebase/stash work in this worktree"
+    echo "  --relink        Restore the lib/ symlinks after --unlink"
     echo "  --no-build      Skip the initial build after setup"
     echo "  -h, --help      Show this help message"
     echo ""
@@ -31,6 +34,15 @@ usage() {
     echo "  $0 feature/new-panel           # Create worktree in .worktrees/new-panel"
     echo "  $0 feature/foo /tmp/foo        # Create worktree in /tmp/foo"
     echo "  $0 --setup-only feature/i18n   # Just set up existing worktree"
+    echo ""
+    echo "  # Merging or rebasing inside a worktree (git cannot scan symlinked submodules):"
+    echo "  $0 --unlink                    # from inside the worktree"
+    echo "  git merge origin/main           # resolve any conflicts now"
+    echo "  $0 --relink                    # REQUIRED before committing, and to build"
+    echo "  git commit                      # hook compiles, so relink must come first"
+    echo ""
+    echo "  Commits do NOT need --unlink; only whole-tree ops (status/merge/rebase/stash) do."
+    echo "  Never run --unlink/--relink while a build is in flight."
     echo ""
     echo "Strategy:"
     echo "  - Configures ccache for cross-worktree reuse (no cold rebuild per worktree)"
@@ -42,9 +54,61 @@ usage() {
     echo "  - Uses .git/info/exclude for clean git status"
 }
 
+# --- lib/ link management ---------------------------------------------------
+# A worktree shares the main tree's submodule checkouts, and their IN-TREE build
+# artifacts, by symlinking each lib/ entry. That sharing is the whole point: it
+# is why a fresh worktree builds in seconds instead of recompiling every
+# submodule from cold.
+#
+# The cost is that git refuses to scan a tree where a gitlink path is a symlink:
+#   error: expected submodule path 'lib/cpp-terminal' not to be a symbolic link
+# which aborts `git status`, `merge`, `rebase` and `stash` outright.
+#
+# So: --unlink before a merge/rebase, --relink after. Relinking is NOT optional;
+# the empty submodule dirs left by --unlink have no headers, so the build fails
+# with 'lvgl.h file not found' until the symlinks are back.
+#
+# Do NOT unlink to commit. `git add <paths>` and `git commit` both work fine with
+# the symlinks in place, and the pre-commit hook compiles the tree — so committing
+# while unlinked fails with "Build failed - fix compilation errors". That includes
+# concluding a merge: resolve conflicts unlinked, then --relink, THEN commit.
+#
+# Nothing here may run while a build is in flight: pulling lib/ out from under a
+# compile fails it with missing headers, and re-linking mid-compile is no better.
+LIB_NON_SUBMODULE_ITEMS=("tuibox.h" "mdns")
+
+lib_submodule_paths() {
+    git -C "$MAIN_TREE" config --file .gitmodules --get-regexp path \
+        | grep "^submodule\." | awk '{print $2}' | grep "^lib/"
+}
+
+# Replace symlinks with what git expects: an empty directory for a submodule
+# (i.e. "not initialized", which git tolerates), and real content for the
+# tracked non-submodule entries, which would otherwise read as deleted.
+unlink_lib_for_git() {
+    echo -e "${CYAN}Unlinking lib/ so git can scan this worktree...${RESET}"
+    local submod name
+    for submod in $(lib_submodule_paths); do
+        if [[ -L "$WORKTREE_PATH/$submod" ]]; then
+            rm "$WORKTREE_PATH/$submod"
+            mkdir -p "$WORKTREE_PATH/$submod"
+            echo -e "  $submod: ${YELLOW}symlink -> empty dir${RESET}"
+        fi
+    done
+    for name in "${LIB_NON_SUBMODULE_ITEMS[@]}"; do
+        if [[ -L "$WORKTREE_PATH/lib/$name" ]]; then
+            rm "$WORKTREE_PATH/lib/$name"
+            cp -R "$MAIN_TREE/lib/$name" "$WORKTREE_PATH/lib/$name"
+            echo -e "  lib/$name: ${YELLOW}symlink -> real copy (tracked content)${RESET}"
+        fi
+    done
+    echo -e "${GREEN}✓ git operations enabled — run --relink when done${RESET}"
+}
+
 # Parse arguments
 SETUP_ONLY=false
 NO_BUILD=false
+LINK_MODE=""
 BRANCH=""
 WORKTREE_PATH=""
 
@@ -56,6 +120,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-build)
             NO_BUILD=true
+            shift
+            ;;
+        --unlink|--relink)
+            LINK_MODE="${1#--}"
             shift
             ;;
         -h|--help)
@@ -155,54 +223,71 @@ fi
 cd "$WORKTREE_PATH"
 
 # Step 2: Symlink lib/ submodules from main tree (instead of cloning fresh)
-# This includes source headers AND generated files (like libhv/include/hv/)
-# We symlink each submodule directory individually to preserve lib/ structure
-echo -e "${CYAN}Symlinking lib/ submodules from main tree...${RESET}"
+link_lib_from_main() {
+    # Step 2: Symlink lib/ submodules from main tree (instead of cloning fresh)
+    # This includes source headers AND generated files (like libhv/include/hv/)
+    # We symlink each submodule directory individually to preserve lib/ structure
+    echo -e "${CYAN}Symlinking lib/ submodules from main tree...${RESET}"
 
-# Get list of submodules in lib/
-SUBMODULES=$(git -C "$MAIN_TREE" config --file .gitmodules --get-regexp path | grep "^submodule\." | awk '{print $2}' | grep "^lib/")
-# Also include non-submodule files in lib/
-LIB_ITEMS=("tuibox.h" "mdns")
+    # Get list of submodules in lib/
+    SUBMODULES=$(git -C "$MAIN_TREE" config --file .gitmodules --get-regexp path | grep "^submodule\." | awk '{print $2}' | grep "^lib/")
+    # Also include non-submodule files in lib/
+    LIB_ITEMS=("tuibox.h" "mdns")
 
-# Ensure lib/ directory exists
-mkdir -p "$WORKTREE_PATH/lib"
+    # Ensure lib/ directory exists
+    mkdir -p "$WORKTREE_PATH/lib"
 
-# Symlink each submodule directory
-for submod in $SUBMODULES; do
-    SUBMOD_NAME=$(basename "$submod")
-    MAIN_SUBMOD="$MAIN_TREE/$submod"
-    WORKTREE_SUBMOD="$WORKTREE_PATH/$submod"
+    # Symlink each submodule directory
+    for submod in $SUBMODULES; do
+        MAIN_SUBMOD="$MAIN_TREE/$submod"
+        WORKTREE_SUBMOD="$WORKTREE_PATH/$submod"
 
-    if [[ -L "$WORKTREE_SUBMOD" ]]; then
-        echo -e "  $submod: ${GREEN}already symlinked${RESET}"
-    elif [[ -d "$WORKTREE_SUBMOD" ]]; then
-        echo -e "  $submod: ${YELLOW}replacing with symlink${RESET}"
-        rm -rf "$WORKTREE_SUBMOD"
-        ln -s "$MAIN_SUBMOD" "$WORKTREE_SUBMOD"
-    else
-        ln -s "$MAIN_SUBMOD" "$WORKTREE_SUBMOD"
-        echo -e "  $submod: ${GREEN}symlinked${RESET}"
-    fi
-done
-
-# Symlink non-submodule items
-for item in "${LIB_ITEMS[@]}"; do
-    MAIN_ITEM="$MAIN_TREE/lib/$item"
-    WORKTREE_ITEM="$WORKTREE_PATH/lib/$item"
-
-    if [[ -e "$MAIN_ITEM" ]]; then
-        if [[ -L "$WORKTREE_ITEM" ]]; then
-            echo -e "  lib/$item: ${GREEN}already symlinked${RESET}"
-        elif [[ -e "$WORKTREE_ITEM" ]]; then
-            rm -rf "$WORKTREE_ITEM"
-            ln -s "$MAIN_ITEM" "$WORKTREE_ITEM"
-            echo -e "  lib/$item: ${GREEN}symlinked${RESET}"
+        if [[ -L "$WORKTREE_SUBMOD" ]]; then
+            echo -e "  $submod: ${GREEN}already symlinked${RESET}"
+        elif [[ -d "$WORKTREE_SUBMOD" ]]; then
+            echo -e "  $submod: ${YELLOW}replacing with symlink${RESET}"
+            rm -rf "$WORKTREE_SUBMOD"
+            ln -s "$MAIN_SUBMOD" "$WORKTREE_SUBMOD"
         else
-            ln -s "$MAIN_ITEM" "$WORKTREE_ITEM"
-            echo -e "  lib/$item: ${GREEN}symlinked${RESET}"
+            ln -s "$MAIN_SUBMOD" "$WORKTREE_SUBMOD"
+            echo -e "  $submod: ${GREEN}symlinked${RESET}"
         fi
+    done
+
+    # Symlink non-submodule items
+    for item in "${LIB_ITEMS[@]}"; do
+        MAIN_ITEM="$MAIN_TREE/lib/$item"
+        WORKTREE_ITEM="$WORKTREE_PATH/lib/$item"
+
+        if [[ -e "$MAIN_ITEM" ]]; then
+            if [[ -L "$WORKTREE_ITEM" ]]; then
+                echo -e "  lib/$item: ${GREEN}already symlinked${RESET}"
+            elif [[ -e "$WORKTREE_ITEM" ]]; then
+                rm -rf "$WORKTREE_ITEM"
+                ln -s "$MAIN_ITEM" "$WORKTREE_ITEM"
+                echo -e "  lib/$item: ${GREEN}symlinked${RESET}"
+            else
+                ln -s "$MAIN_ITEM" "$WORKTREE_ITEM"
+                echo -e "  lib/$item: ${GREEN}symlinked${RESET}"
+            fi
+        fi
+    done
+}
+
+# --unlink / --relink operate on lib/ only and then stop. They must NOT fall
+# through to the rest of setup: that re-clones build/obj from the main tree,
+# which would discard this worktree's build state mid-merge.
+if [[ -n "$LINK_MODE" ]]; then
+    if [[ "$LINK_MODE" == "unlink" ]]; then
+        unlink_lib_for_git
+    else
+        link_lib_from_main
+        echo -e "${GREEN}✓ lib/ relinked — builds will reuse the main tree again${RESET}"
     fi
-done
+    exit 0
+fi
+
+link_lib_from_main
 
 # Step 3: Create build directory structure and clone object files
 echo -e "${CYAN}Setting up build directory...${RESET}"
