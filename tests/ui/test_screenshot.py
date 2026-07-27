@@ -18,7 +18,18 @@ _BINARY = Path(os.environ.get("HELIX_UI_BINARY", str(_REPO_ROOT / "build" / "bin
 
 
 def test_stable_capture_is_reproducible_when_frozen(helix_app, tmp_path):
-    helix_app.navigate("home")
+    # Deliberately "settings", not "home". Home carries a live temperature
+    # readout driven by moonraker_client_mock.cpp's temperature_simulation_loop
+    # — a perpetual sine wave on a raw background thread, invisible to
+    # freeze() (LVGL timers/animations only). Targeting Home here used to make
+    # this test intermittently assert something we've documented as
+    # impossible: two frozen captures of a screen that never stops changing
+    # matching byte-for-byte. Confirmed via a controlled A/B under heavy load
+    # (identical logic, identical load, only the screen differs): Home failed,
+    # Settings passed 20/20. See test_screens.py's deferred-screens comment for
+    # the full list of screens this applies to — don't retarget this back to
+    # one of them.
+    helix_app.navigate("settings")
     helix_app.wait_idle()
     helix_app.freeze()
     try:

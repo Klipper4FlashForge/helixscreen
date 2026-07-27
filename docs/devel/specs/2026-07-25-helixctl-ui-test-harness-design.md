@@ -169,6 +169,41 @@ freeze → wait_idle → require 3 consecutive identical frame hashes → captur
 
 exposed as `screenshot --stable`.
 
+### Known gap: the stability check and the capture are not atomic
+
+`handle_screenshot` (`remote_control_server.cpp:594-668`) does the stability loop
+and the final capture as **two separate `execute_on_ui_thread` round trips**: the
+loop (lines 619-649) samples `frame_hash` until 3 consecutive samples match, then a
+fresh, independent call (line 651) does its own `capture_frame()` — it does not
+reuse the buffer from the last verified-stable sample. There is a real gap between
+"verified stable" and "captured" during which nothing prevents a repaint.
+
+This was investigated as a suspected cause of golden-capture non-reproducibility
+under machine load and **ruled out**. A controlled A/B — identical freeze +
+double-capture logic, identical heavy CPU load (32-core box oversubscribed to
+~50-60 busy processes), the only variable being which screen was targeted — showed
+Home failing (captured a 25.9°C vs 26.1°C temperature-label mismatch, tracing to
+`moonraker_client_mock.cpp`'s `temperature_simulation_loop`, a perpetual sine wave
+on a background thread invisible to `freeze()`) while Settings passed 20/20 under
+the same load. The gap exists structurally, but it isn't what was causing the
+observed failures.
+
+Why it's currently harmless: **every golden screen is static by construction** —
+"does the screen ever repaint on its own" is exactly the selection criterion the
+corpus already applies (see "Initial corpus" below and `test_screens.py`'s
+deferred-screens list). With nothing changing on the screen, the gap has nothing to
+catch mid-change, regardless of how wide load makes it.
+
+The condition under which it *would* matter: golden-ing a screen with any
+self-driven repaint — live telemetry, a free-running spinner, wall-clock content,
+anything the mock backend or LVGL itself updates without the test driving it. That
+is precisely the category the corpus selection rule already excludes. The gap stays
+harmless as long as that rule holds; it becomes live the moment someone goldens an
+animated screen and assumes `--stable` makes it safe anyway. A real fix, if one is
+ever needed, is to capture the frame *inside* the same UI-thread call that confirms
+the last stable sample, rather than a second round trip — not done here, since there
+was nothing to fix it against.
+
 ## helixctl additions
 
 ### Tier 1 — required
