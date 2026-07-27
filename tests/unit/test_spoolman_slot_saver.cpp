@@ -107,6 +107,35 @@ TEST_CASE("SpoolmanSlotSaver detect_changes: weight within threshold is not a ch
     REQUIRE_FALSE(changes.any());
 }
 
+// A user-entered change to the spool's TOTAL weight is a real spool-level change.
+// Without this, the header Save button lights up (is_dirty() includes total_weight_g)
+// and the value is stored locally, while Spoolman keeps its old initial_weight forever
+// — total_weight_g was only ever sent to Spoolman at spool-creation time.
+TEST_CASE("SpoolmanSlotSaver detect_changes: total weight changed sets spool_level",
+          "[spoolman][slot_saver]") {
+    SlotInfo original = make_test_slot();
+    SlotInfo edited = original;
+    edited.total_weight_g = 750.0f; // was 1000g
+
+    auto changes = SpoolmanSlotSaver::detect_changes(original, edited);
+
+    REQUIRE_FALSE(changes.filament_level);
+    REQUIRE(changes.spool_level);
+    REQUIRE(changes.any());
+}
+
+TEST_CASE("SpoolmanSlotSaver detect_changes: total weight within threshold is not a change",
+          "[spoolman][slot_saver]") {
+    SlotInfo original = make_test_slot();
+    SlotInfo edited = original;
+    edited.total_weight_g = original.total_weight_g + 0.05f; // within 0.1 threshold
+
+    auto changes = SpoolmanSlotSaver::detect_changes(original, edited);
+
+    REQUIRE_FALSE(changes.spool_level);
+    REQUIRE_FALSE(changes.any());
+}
+
 TEST_CASE("SpoolmanSlotSaver detect_changes: both filament and weight changed sets both",
           "[spoolman][slot_saver]") {
     SlotInfo original = make_test_slot();

@@ -41,8 +41,13 @@ ChangeSet SpoolmanSlotSaver::detect_changes(const SlotInfo& original, const Slot
         changes.filament_level = true;
     }
 
-    // Spool-level: remaining_weight_g (float comparison with threshold) or spoolman_id
+    // Spool-level: remaining_weight_g / total_weight_g (float comparison with
+    // threshold) or spoolman_id. total_weight_g maps to Spoolman's initial_weight
+    // and was previously only ever sent at spool-creation time, so an edit to it on
+    // a linked spool lit up Save and persisted locally while Spoolman kept the old
+    // value indefinitely.
     if (std::abs(original.remaining_weight_g - edited.remaining_weight_g) > WEIGHT_THRESHOLD ||
+        std::abs(original.total_weight_g - edited.total_weight_g) > WEIGHT_THRESHOLD ||
         original.spoolman_id != edited.spoolman_id) {
         changes.spool_level = true;
     }
