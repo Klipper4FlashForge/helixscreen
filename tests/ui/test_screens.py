@@ -100,29 +100,76 @@ _RECIPES = _load_recipes()
 #     loading spinner), so `freeze()` catches it at a different arc position
 #     each time — confirmed as a small (~15px) but real diff across runs.
 #   - `ams`: the "Bypass" spool icon's custom canvas fill graphic
-#     (`ui_bypass_spool_widget.cpp`'s `ui_spool_canvas_set_fill_level`) renders
-#     322 px (0.08%) differently than the committed golden, isolated to that
-#     one icon's curved edge. Investigated and ruled out two data-driven
-#     explanations before landing here: (1) an async Spoolman sync race —
-#     hypothesized because `Application`'s `sync_external_spool` populates the
+#     (`ui_bypass_spool_widget.cpp`) renders 322 px (0.08%) differently than
+#     the committed golden, isolated to that one icon's curved edge. This one
+#     took two passes to root-cause — recorded in full because the bisection
+#     was the expensive part and shouldn't have to be redone.
+#
+#     First pass wrongly concluded "rasterizer precision" after disproving an
+#     async-race hypothesis (`Application::sync_external_spool` populates the
 #     spool assignment via a queued UI-thread callback, not synchronously at
-#     boot — DISPROVEN by direct measurement: `ams_external_spool_color`
-#     already reads the synced value (`1710638`, mock spool #1's hardcoded
-#     "Jet Black" PLA) within ~1-2s of boot, well before any navigation or
-#     capture, so there's no window where a capture could land "before" the
-#     assignment landed. (2) a weight-driven fill level — ruled out because
-#     `fill_level` is a hardcoded `0.75` constant whenever a spool is assigned,
-#     not derived from `remaining_weight_g`/`total_weight_g` at all. Also
-#     confirmed NOT a live per-tick animation: two `freeze()`d captures 1s
-#     apart, same boot, diff to 0 pixels against each other. So it's a stable,
-#     deterministic-within-this-machine rendering of that one canvas-drawn
-#     graphic that just doesn't match the golden's stored pixels — most likely
-#     floating-point/rasterizer precision in the custom draw routine, which is
-#     exactly the kind of thing that isn't guaranteed portable across
-#     renderer/library versions or machines. Not root-caused further; deferred
-#     rather than chased indefinitely. `tests/ui/goldens/ams.png` is left in
-#     place (still Preston-approved, not discarded) for whenever this gets
-#     revisited.
+#     boot — but `ams_external_spool_color` already reads the synced value,
+#     `1710638`/mock spool #1's "Jet Black" PLA, within ~1-2s of boot, well
+#     before any capture, so there's no race window) and a weight-driven-fill
+#     hypothesis (`fill_level` is a hardcoded `0.75` whenever a spool is
+#     assigned, not derived from `remaining_weight_g` at all). Both correctly
+#     disproven, but "not those two, so it must be the renderer" was a leap
+#     the evidence didn't support — flagged from outside and worth taking
+#     seriously rather than defended.
+#
+#     Second pass: booting with the exact `settings-test.json` the golden was
+#     originally captured under (before this suite stopped copying that
+#     gitignored file — see `HelixApp`'s docstring) reproduces the golden at
+#     **0 diff**. So it IS config-state after all — just not the color.
+#     Bisecting `printers.default` down to find which key:
+#
+#       | seed contents                                          | diff (px) |
+#       |---------------------------------------------------------|-----------|
+#       | full `printers.default`, minus `filament_sensors`       | 0         |
+#       | full `printers.default`, minus `filament` entirely      | 322       |
+#       | `filament.external_spool: {assigned: true}` only        | 322       |
+#       | `...{assigned: true, spoolman_id: 1}` (matches mock)     | 567       |
+#       | full `filament.external_spool` (assigned, spoolman_id,  | 0         |
+#       |   color_rgb, material, spool_name, weights — all        |           |
+#       |   matching the synced identity)                         |           |
+#
+#     `ams_external_spool_color` reads identically (`1710638`) in every one
+#     of these — so the color was never the variable. The actual mechanism:
+#     `AmsState::set_external_spool_info()`'s sync guard skips re-fetching
+#     when `existing->spoolman_id` already matches. A seed with the full
+#     block pre-populated makes the sync skip — the bypass widget's
+#     `refresh_bypass_display()` runs exactly ONCE, synchronously, with final
+#     values. An empty/partial seed makes the sync proceed — the widget
+#     builds once with default/empty values, then a SECOND
+#     `refresh_bypass_display()` fires once the async callback lands, ending
+#     at the identical final color (`1710638`) and fill (`0.75`) either way.
+#     Despite that, the twice-refreshed canvas differs from the
+#     once-refreshed one by 322 px at the edge. Checked for stale
+#     compositing (a redraw that doesn't clear before repainting) as the
+#     obvious explanation for a refresh-count-dependent result — ruled out:
+#     `ui_spool_canvas.cpp`'s redraw calls `lv_canvas_fill_bg(..., LV_OPA_TRANSP)`
+#     unconditionally on every pass, before either draw. Not root-caused
+#     further than that.
+#
+#     The golden CAN be made to reproduce byte-identically — pre-populate
+#     `printers.default.filament.external_spool` in `_TEST_SEED_SETTINGS`
+#     with the exact synced identity (assigned, spoolman_id=1,
+#     color_rgb=1710638, material="PLA", spool_name="Polymaker PLA - Jet
+#     Black", the weights). This was deliberately NOT done: it passes only
+#     because it makes the app skip the second `refresh_bypass_display()`
+#     call, not because the harness needs that specific spool identity — it
+#     would test less than the suite tests today, and it's fake business
+#     data standing in for a rendering setting, which is exactly the seed's
+#     line ("only what a fresh install needs") from ballooning back into
+#     accumulated fixture state. If a future reader finds this same
+#     "fix" — don't apply it without addressing the double-refresh first.
+#
+#     Net: this is a genuine, if purely cosmetic, application defect — a
+#     widget that renders 322 px differently depending on how many times it
+#     was refreshed to reach the *same* final state, not on what that state
+#     is. Worth its own bug report (ask Preston/whoever triages next); not
+#     filed as part of this pass. `tests/ui/goldens/ams.png` is left in
+#     place, untouched, for whenever the widget gets fixed.
 #
 # Kept: every base panel except the temp-bearing ones above, a representative
 # handful of overlays reached through their real click handlers (each a
