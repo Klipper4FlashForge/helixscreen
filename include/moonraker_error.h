@@ -171,12 +171,19 @@ struct MoonrakerError {
         err.type = MoonrakerErrorType::JSON_RPC_ERROR;
         err.method = method_name;
 
-        if (error_obj.contains("code")) {
-            err.code = error_obj["code"].get<int>();
+        // Type-check before .get<T>(): a wrong-typed field (a string "code", a
+        // null "message") throws nlohmann::type_error, and this runs on the
+        // WebSocket thread inside the request tracker's dispatch path. A throw
+        // there strands the caller's callback. Treat a wrong-typed field as
+        // absent instead.
+        const auto code_it = error_obj.find("code");
+        if (code_it != error_obj.end() && code_it->is_number()) {
+            err.code = code_it->get<int>();
         }
 
-        if (error_obj.contains("message")) {
-            err.message = extract_friendly_message(error_obj["message"].get<std::string>());
+        const auto msg_it = error_obj.find("message");
+        if (msg_it != error_obj.end() && msg_it->is_string()) {
+            err.message = extract_friendly_message(msg_it->get<std::string>());
         }
 
         if (error_obj.contains("data")) {
@@ -215,8 +222,9 @@ struct MoonrakerError {
      * @param message Human-readable explanation (defaults to the generic transport message)
      * @return MoonrakerError configured as connection lost
      */
-    static MoonrakerError connection_lost(const std::string& method_name = "",
-                                          const std::string& message = "WebSocket connection lost") {
+    static MoonrakerError
+    connection_lost(const std::string& method_name = "",
+                    const std::string& message = "WebSocket connection lost") {
         MoonrakerError err;
         err.type = MoonrakerErrorType::CONNECTION_LOST;
         err.method = method_name;

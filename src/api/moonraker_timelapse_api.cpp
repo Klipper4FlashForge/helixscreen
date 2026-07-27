@@ -5,6 +5,7 @@
 
 #include "http_executor.h"
 #include "hv/requests.h"
+#include "json_utils.h"
 #include "moonraker_client.h"
 #include "spdlog/spdlog.h"
 
@@ -32,8 +33,8 @@ void MoonrakerTimelapseAPI::get_timelapse_settings(TimelapseSettingsCallback on_
     if (http_base_url_.empty()) {
         spdlog::error("[Timelapse API] HTTP base URL not configured for timelapse");
         if (on_error) {
-            MoonrakerError err =
-                MoonrakerError::connection_lost("get_timelapse_settings", "Not connected to Moonraker");
+            MoonrakerError err = MoonrakerError::connection_lost("get_timelapse_settings",
+                                                                 "Not connected to Moonraker");
             on_error(err);
         }
         return;
@@ -48,8 +49,8 @@ void MoonrakerTimelapseAPI::get_timelapse_settings(TimelapseSettingsCallback on_
         if (!resp) {
             spdlog::error("[Timelapse API] HTTP request failed for timelapse settings");
             if (on_error) {
-                MoonrakerError err =
-                    MoonrakerError::connection_lost("get_timelapse_settings", "HTTP request failed");
+                MoonrakerError err = MoonrakerError::connection_lost("get_timelapse_settings",
+                                                                     "HTTP request failed");
                 on_error(err);
             }
             return;
@@ -69,30 +70,40 @@ void MoonrakerTimelapseAPI::get_timelapse_settings(TimelapseSettingsCallback on_
         // Parse JSON response
         // Note: Moonraker-Timelapse returns settings directly as a flat object,
         // not wrapped in "result.settings" like standard Moonraker responses.
+        // Only the parse belongs in the try: with on_success() inside it, a throw
+        // from the caller's own settings-UI handler would be reported back
+        // through on_error as a Moonraker parse failure, after on_success had
+        // already run.
+        TimelapseSettings settings;
         try {
             json j = json::parse(resp->body);
-            TimelapseSettings settings;
 
-            // Moonraker-Timelapse returns the config dict directly
-            settings.enabled = j.value("enabled", false);
-            settings.mode = j.value("mode", "layermacro");
-            settings.output_framerate = j.value("output_framerate", 30);
-            settings.autorender = j.value("autorender", true);
-            settings.park_retract_distance = j.value("park_retract_distance", 1);
-            settings.park_extrude_speed = j.value("park_extrude_speed", 15.0);
-            settings.hyperlapse_cycle = j.value("hyperlapse_cycle", 30);
-
-            spdlog::info("[Timelapse API] Timelapse settings: enabled={}, mode={}, fps={}",
-                         settings.enabled, settings.mode, settings.output_framerate);
-            if (on_success) {
-                on_success(settings);
-            }
+            // Moonraker-Timelapse returns the config dict directly.
+            // json_util::safe_* rather than .value(): nlohmann's .value() throws
+            // type_error.302 on a JSON null, and the plugin writes null for
+            // options it has not been configured with.
+            settings.enabled = helix::json_util::safe_bool(j, "enabled", false);
+            settings.mode = helix::json_util::safe_string(j, "mode", "layermacro");
+            settings.output_framerate = helix::json_util::safe_int(j, "output_framerate", 30);
+            settings.autorender = helix::json_util::safe_bool(j, "autorender", true);
+            settings.park_retract_distance =
+                helix::json_util::safe_int(j, "park_retract_distance", 1);
+            settings.park_extrude_speed =
+                helix::json_util::safe_double(j, "park_extrude_speed", 15.0);
+            settings.hyperlapse_cycle = helix::json_util::safe_int(j, "hyperlapse_cycle", 30);
         } catch (const std::exception& e) {
             spdlog::error("[Timelapse API] Failed to parse timelapse settings: {}", e.what());
             if (on_error) {
                 MoonrakerError err = MoonrakerError::unknown(e.what(), "get_timelapse_settings");
                 on_error(err);
             }
+            return;
+        }
+
+        spdlog::info("[Timelapse API] Timelapse settings: enabled={}, mode={}, fps={}",
+                     settings.enabled, settings.mode, settings.output_framerate);
+        if (on_success) {
+            on_success(settings);
         }
     });
 }
@@ -103,8 +114,8 @@ void MoonrakerTimelapseAPI::set_timelapse_settings(const TimelapseSettings& sett
     if (http_base_url_.empty()) {
         spdlog::error("[Timelapse API] HTTP base URL not configured for timelapse");
         if (on_error) {
-            MoonrakerError err =
-                MoonrakerError::connection_lost("set_timelapse_settings", "Not connected to Moonraker");
+            MoonrakerError err = MoonrakerError::connection_lost("set_timelapse_settings",
+                                                                 "Not connected to Moonraker");
             on_error(err);
         }
         return;
@@ -154,8 +165,8 @@ void MoonrakerTimelapseAPI::set_timelapse_settings(const TimelapseSettings& sett
         if (!resp) {
             spdlog::error("[Timelapse API] HTTP request failed for timelapse settings update");
             if (on_error) {
-                MoonrakerError err =
-                    MoonrakerError::connection_lost("set_timelapse_settings", "HTTP request failed");
+                MoonrakerError err = MoonrakerError::connection_lost("set_timelapse_settings",
+                                                                     "HTTP request failed");
                 on_error(err);
             }
             return;
@@ -184,8 +195,8 @@ void MoonrakerTimelapseAPI::set_timelapse_enabled(bool enabled, SuccessCallback 
     if (http_base_url_.empty()) {
         spdlog::error("[Timelapse API] HTTP base URL not configured for timelapse");
         if (on_error) {
-            MoonrakerError err =
-                MoonrakerError::connection_lost("set_timelapse_enabled", "Not connected to Moonraker");
+            MoonrakerError err = MoonrakerError::connection_lost("set_timelapse_enabled",
+                                                                 "Not connected to Moonraker");
             on_error(err);
         }
         return;

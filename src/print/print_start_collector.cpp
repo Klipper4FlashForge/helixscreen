@@ -241,7 +241,6 @@ void PrintStartCollector::start() {
                 return;
             }
         }
-
     });
 
     registered_.store(true);
@@ -514,9 +513,8 @@ void PrintStartCollector::check_fallback_completion() {
     // Scoped to when we're ALREADY in a heating phase, so it can never
     // relabel a firmware's ordered non-heating phase (e.g. Snapmaker U1
     // PRINT_BED_DETECTING) as a heating phase.
-    if (current == PrintStartPhase::HEATING_BED ||
-        current == PrintStartPhase::HEATING_NOZZLE) {
-        PrintStartPhase resolved = bed_heating     ? PrintStartPhase::HEATING_BED
+    if (current == PrintStartPhase::HEATING_BED || current == PrintStartPhase::HEATING_NOZZLE) {
+        PrintStartPhase resolved = bed_heating      ? PrintStartPhase::HEATING_BED
                                    : nozzle_heating ? PrintStartPhase::HEATING_NOZZLE
                                                     : current;
         if (resolved != current) {
@@ -674,6 +672,10 @@ void PrintStartCollector::on_gcode_response(const json& msg) {
         return;
     }
 
+    // I4: Type-check params[0] before extracting string reference
+    if (!msg["params"][0].is_string()) {
+        return;
+    }
     const std::string& line = msg["params"][0].get_ref<const std::string&>();
 
     // Skip empty lines and common noise

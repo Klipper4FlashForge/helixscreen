@@ -60,8 +60,8 @@ RequestId MoonrakerRequestTracker::send(hv::WebSocketClient& ws, const std::stri
 
     if (queue_full) {
         if (error_cb) {
-            MoonrakerError err =
-                MoonrakerError::connection_lost(method, "Request queue full — too many pending requests");
+            MoonrakerError err = MoonrakerError::connection_lost(
+                method, "Request queue full — too many pending requests");
             try {
                 error_cb(err);
             } catch (const std::exception& e) {
@@ -173,10 +173,11 @@ bool MoonrakerRequestTracker::route_response(
             method_name = request.method;
             is_silent = request.silent;
 
-            // Check for JSON-RPC error
+            // Check for JSON-RPC error. Only the *classification* happens here —
+            // parsing the error payload is deliberately deferred until after the
+            // erase below, so a malformed payload cannot strand the entry.
             if (msg.contains("error")) {
                 has_error = true;
-                error = MoonrakerError::from_json_rpc(msg["error"], request.method);
                 error_cb = request.error_callback;
             } else {
                 success_cb = request.success_callback;
@@ -188,6 +189,14 @@ bool MoonrakerRequestTracker::route_response(
 
     if (!found) {
         return false;
+    }
+
+    // Parse the error payload only after the pending entry is gone and the lock
+    // is released. Everything it needs (method_name, msg) is already copied or
+    // outlives us, so a throw in here cannot leave the request pending until the
+    // 60s timeout fires a bogus "timed out" toast at the user.
+    if (has_error) {
+        error = MoonrakerError::from_json_rpc(msg["error"], method_name);
     }
 
     // Invoke callbacks outside the lock to avoid deadlock
