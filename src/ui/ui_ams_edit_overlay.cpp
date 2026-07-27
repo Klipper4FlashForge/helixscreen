@@ -175,7 +175,11 @@ bool AmsEditOverlay::show_for_slot(lv_obj_t* parent, int slot_index, const SlotI
         api_->spoolman().get_spoolman_spool(
             spool_id,
             [this, token, spool_id](const std::optional<SpoolInfo>& spool) {
-                if (!spool || token.expired())
+                // No bare token.expired() here: that is the L081 Mechanism C
+                // TOCTOU shape (checked on a bg thread, acted on afterwards) and
+                // it is what the bg_tok_expired_check telemetry recorded on
+                // editor open. token.defer() below already gates on liveness.
+                if (!spool)
                     return;
                 // Capture Spoolman's authoritative data for the spool
                 int fetched_filament_id = spool->filament_id;
@@ -477,8 +481,8 @@ void AmsEditOverlay::populate_picker() {
 
     api_->spoolman().get_spoolman_spools(
         [this, token](const std::vector<SpoolInfo>& spools) {
-            if (token.expired())
-                return;
+            // Liveness is token.defer()'s job — a bare expired() check here is
+            // the L081 Mechanism C anti-pattern.
             spdlog::debug("[AmsEditOverlay] Spoolman returned {} spools", spools.size());
             token.defer([this, spools]() {
                 if (!overlay_root_) {
@@ -815,9 +819,10 @@ void AmsEditOverlay::enter_spool_edit() {
         api_->spoolman().get_spoolman_spool(
             spool_id,
             [this, token, spool_id](const std::optional<SpoolInfo>& spool) {
-                if (!spool || token.expired()) {
+                if (!spool) {
                     return;
                 }
+                // Liveness handled by token.defer(), not a bare expired() check.
                 token.defer([this, spool = *spool]() {
                     detail_original_ = spool;
                     detail_working_ = spool;
@@ -1810,9 +1815,6 @@ void AmsEditOverlay::do_spoolman_save() {
     auto saver = std::make_shared<helix::SpoolmanSlotSaver>(api_);
     saver->save(
         original_info_, working_info_, [this, token, saver](const helix::SaveResult& result) {
-            if (token.expired()) {
-                return;
-            }
             // Spoolman callback arrives on a background thread — defer
             // to the UI thread before touching LVGL subjects/widgets.
             token.defer([this, result]() {
