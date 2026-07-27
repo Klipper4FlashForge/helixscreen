@@ -116,6 +116,13 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         return compute_filament_segment_unlocked();
     }
 
+    void test_parse_afc_state(const nlohmann::json& data) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::string deferred_error_event;
+        bool current_slot_set_by_afc_state = false;
+        parse_afc_state(data, deferred_error_event, current_slot_set_by_afc_state);
+    }
+
     // Discovery testing helpers
     int get_slot_count() const {
         return slots_.slot_count();
@@ -4928,4 +4935,25 @@ TEST_CASE("AFC clear_slot_override drops the retained identity", "[ams][afc][ove
     const SlotInfo after = helper.get_slot_info(0);
     CHECK(after.brand.empty());
     CHECK(after.spoolman_id == 0);
+}
+
+TEST_CASE("AFC clears the operation detail when its message empties",
+          "[ams][afc][recovery]") {
+    // operation_detail outranks the action- and print-state-derived strings in
+    // AmsState::recompute_action_detail(), so a value left behind here pins the
+    // AMS sidebar status label to a stale error for the rest of the session.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+
+    helper.test_parse_afc_state(nlohmann::json{
+        {"message", {{"message", "Hub is already clear while trying to reset 'lane1'"},
+                     {"type", "error"}}}});
+    REQUIRE(helper.get_system_info().operation_detail ==
+            "Hub is already clear while trying to reset 'lane1'");
+
+    // AFC_CLEAR_MESSAGE lands: the message object empties.
+    helper.test_parse_afc_state(nlohmann::json{
+        {"message", {{"message", ""}, {"type", ""}}}});
+    REQUIRE(helper.get_system_info().operation_detail.empty());
 }

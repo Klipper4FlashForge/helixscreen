@@ -1087,7 +1087,11 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
 
             // Handle message text changes for toast/notification dispatch
             if (msg_text.empty()) {
-                // Error cleared - reset dedup tracking
+                // Error cleared - reset dedup tracking and the visible detail.
+                // operation_detail outranks the action-derived string in
+                // AmsState::recompute_action_detail(), so leaving it set pins the
+                // sidebar status label to a stale error indefinitely.
+                system_info_.operation_detail.clear();
                 last_seen_message_.clear();
                 last_error_msg_.clear();
                 last_message_type_.clear();
