@@ -21,6 +21,54 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # once the file has been copied into a temp directory.
 BINARY = Path(os.environ.get("HELIX_UI_BINARY", str(REPO_ROOT / "build" / "bin" / "helix-screen")))
 
+# moonraker_client_mock_files.cpp's scan_mock_gcode_files() + server.files.list
+# mock report each fixture's REAL on-disk mtime via stat() — and the
+# print-select panel shows the 10 most-recently-modified of the 15 files here.
+# Git checkout doesn't preserve original commit timestamps, so without this,
+# which 10 files show (and their order) varies by checkout/clone/machine —
+# print-select's golden was never reproducible on a fresh clone by
+# construction, not flaky. Newest first, matching the order the committed
+# golden was captured under; anything past the 10th doesn't appear in the
+# panel so its relative order among the remaining 5 doesn't matter.
+_TEST_GCODE_DIR = REPO_ROOT / "assets" / "test_gcodes"
+_TEST_GCODE_MTIME_ORDER = [
+    "xyz-10mm-calibration-cube.gcode",
+    "vaso_voronoi_V2_abajo.gcode",
+    "u1_4color_ring.gcode",
+    "stand_s.gcode",
+    "ssr_heat_sink_orca.gcode",
+    "exclude_object_test.gcode",
+    "calicat_calico.gcode",
+    "Weighted Baseplate 3x2.gcode",
+    "Torture_Calibration_Cube_New.gcode",
+    "SimpleCuraTest.gcode",
+    "Benchbin_MK4_MMU3.gcode",
+    "3DBenchy.gcode",
+    "Night Spirit_v1_2_og.gcode",
+    "Low poly vase v1.1 flat top.gcode",
+    "ECC_0.4_stand_PLA0.2_2h42m.gcode",
+]
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _pin_test_gcode_mtimes():
+    """Normalize assets/test_gcodes/*.gcode mtimes before any test boots an app.
+
+    Idempotent (sets a fixed timestamp, doesn't touch content) and runs once
+    per session before the first app boots. The only side effect is these 15
+    files' mtimes changing on disk — scripts/screenshot.sh and the doc
+    pipeline also read this directory, but neither depends on a *specific*
+    mtime (only content), so this is safe to run unconditionally rather than
+    gating it on which test actually needs print-select.
+    """
+    base = 1_700_000_000  # arbitrary fixed epoch; only the relative order matters
+    for i, name in enumerate(reversed(_TEST_GCODE_MTIME_ORDER)):
+        path = _TEST_GCODE_DIR / name
+        if not path.exists():
+            continue
+        ts = base + i
+        os.utime(path, (ts, ts))
+
 
 @pytest.fixture(scope="session")
 def helix_app(tmp_path_factory):

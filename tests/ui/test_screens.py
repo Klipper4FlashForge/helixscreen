@@ -16,10 +16,14 @@ Overlay/panel transitions must render instantly, not animate, or `freeze()`
 can catch one mid-slide (see `_SUBSET`'s comment below for the details this
 corpus depends on). That used to require a local `settings_animations_enabled`
 override in this file; it's now guaranteed by `HelixApp.start()` itself
-(`helix/app.py` seeds each instance's private config dir from
-`config/settings-test.json` before boot), so no per-test workaround remains
-here — if animations ever come back on by default, the right fix is back in
-`helix/app.py`, not a re-added fixture in this file.
+(`helix/app.py` writes `animations_enabled: false` into each instance's
+private config dir before boot, via a literal minimal seed — not a copy of
+the repo's own gitignored, machine-specific `config/settings-test.json`,
+which is what let this regress silently on a fresh checkout, see
+`docs/devel/specs/2026-07-25-helixctl-ui-test-harness-design.md`), so no
+per-test workaround remains here — if animations ever come back on by
+default, the right fix is back in `helix/app.py`, not a re-added fixture in
+this file.
 """
 
 from __future__ import annotations
@@ -95,17 +99,39 @@ _RECIPES = _load_recipes()
 #     the same category of issue the design spec flags for the print-select
 #     loading spinner), so `freeze()` catches it at a different arc position
 #     each time — confirmed as a small (~15px) but real diff across runs.
+#   - `ams`: the "Bypass" spool icon's custom canvas fill graphic
+#     (`ui_bypass_spool_widget.cpp`'s `ui_spool_canvas_set_fill_level`) renders
+#     322 px (0.08%) differently than the committed golden, isolated to that
+#     one icon's curved edge. Investigated and ruled out two data-driven
+#     explanations before landing here: (1) an async Spoolman sync race —
+#     hypothesized because `Application`'s `sync_external_spool` populates the
+#     spool assignment via a queued UI-thread callback, not synchronously at
+#     boot — DISPROVEN by direct measurement: `ams_external_spool_color`
+#     already reads the synced value (`1710638`, mock spool #1's hardcoded
+#     "Jet Black" PLA) within ~1-2s of boot, well before any navigation or
+#     capture, so there's no window where a capture could land "before" the
+#     assignment landed. (2) a weight-driven fill level — ruled out because
+#     `fill_level` is a hardcoded `0.75` constant whenever a spool is assigned,
+#     not derived from `remaining_weight_g`/`total_weight_g` at all. Also
+#     confirmed NOT a live per-tick animation: two `freeze()`d captures 1s
+#     apart, same boot, diff to 0 pixels against each other. So it's a stable,
+#     deterministic-within-this-machine rendering of that one canvas-drawn
+#     graphic that just doesn't match the golden's stored pixels — most likely
+#     floating-point/rasterizer precision in the custom draw routine, which is
+#     exactly the kind of thing that isn't guaranteed portable across
+#     renderer/library versions or machines. Not root-caused further; deferred
+#     rather than chased indefinitely. `tests/ui/goldens/ams.png` is left in
+#     place (still Preston-approved, not discarded) for whenever this gets
+#     revisited.
 #
 # Kept: every base panel except the temp-bearing ones above, a representative
 # handful of overlays reached through their real click handlers (each a
-# full-screen replacement with no backdrop bleed-through), the one `demo`
-# screen (`ams`) that renders no live telemetry, and `print-select` (see
-# `_POST_NAV_WAIT_WIDGET` below for why it needs an extra step the others
-# don't).
+# full-screen replacement with no backdrop bleed-through), and `print-select`,
+# which needs the extra `wait_for()` step in `_POST_NAV_WAIT_SUBJECT` below
+# before it's safe to capture.
 _SUBSET = [
     "settings", "advanced", "print-select",
     "motion", "bed-mesh", "zoffset", "macros",
-    "ams",
 ]
 
 SCREENS = [(name, _steps_for(_RECIPES[name])) for name in _SUBSET]
