@@ -4856,3 +4856,80 @@ TEST_CASE("AFC clear_slot_override drops the retained identity", "[ams][afc][ove
     CHECK(after.brand.empty());
     CHECK(after.spoolman_id == 0);
 }
+
+// ============================================================================
+// Upstream follow-ups: version in status (#807) and lane vendor_name (#808)
+// ============================================================================
+
+TEST_CASE("AFC version is read from the status object when upstream supplies it",
+          "[ams][afc][version]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_zero_based(4);
+    helper.initialize_slots_from_discovery();
+
+    // AFC is moving the version signal out of the dead afc-install DB namespace
+    // and into the status object (AFCProject/AFC-Klipper-Add-On PR #807 adds
+    // AFC.version to get_status()). Read it where they are putting it.
+    helper.feed_afc_state({{"version", "1.2.1"}});
+    CHECK(helper.get_system_info().version == "1.2.1");
+
+    // Absent on every release predating #807 — must not clobber what we already
+    // have, or the display flips to empty on the next status tick.
+    helper.feed_afc_state({{"current_load", "lane1"}});
+    CHECK(helper.get_system_info().version == "1.2.1");
+
+    // Equally, an empty string is not a version.
+    helper.feed_afc_state({{"version", ""}});
+    CHECK(helper.get_system_info().version == "1.2.1");
+}
+
+TEST_CASE("AFC version never gates behaviour", "[ams][afc][version]") {
+    // AFC_VERSION is a hand-bumped literal that already drifted from the release
+    // tag — it sat at 1.1.37 through the whole v1.2.0 release. Presence of the
+    // field is the only trustworthy signal, so a comically old version must not
+    // disable anything.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_zero_based(4);
+    helper.initialize_slots_from_discovery();
+
+    helper.feed_afc_state({{"version", "0.0.1"}});
+
+    // NOTE: parse_lane_data re-initializes the slot registry whenever the payload
+    // lane count differs from the current slot count, so a lane_data payload must
+    // carry EVERY lane. A single-lane payload silently collapses the registry to
+    // one slot and any get_slot_info(i>0) then reads a default-constructed slot.
+    nlohmann::json lanes;
+    for (int i = 0; i < 4; ++i) {
+        lanes["lane" + std::to_string(i)] = {{"color", "#FF5500"}, {"material", "PLA"}};
+    }
+    helper.feed_afc_state({{"lanes", lanes}});
+
+    auto slot = helper.get_slot_info(0);
+    CHECK(slot.color_rgb == 0xFF5500u);
+    CHECK(slot.material == "PLA");
+}
+
+TEST_CASE("AFC lane_data reads vendor_name for the brand, with brand as fallback (#808)",
+          "[ams][afc][lane_data]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_zero_based(4);
+    helper.initialize_slots_from_discovery();
+
+    // Upstream is naming this vendor_name, NOT vendor, to match Happy Hare's
+    // mmu_server.py so both backends share one spelling.
+    //
+    // All four lanes in ONE payload: parse_lane_data re-initializes the registry
+    // when the lane count changes, so feeding lanes piecemeal would collapse it
+    // to a single slot and make these assertions read default-constructed slots.
+    nlohmann::json lanes;
+    lanes["lane0"] = {{"brand", "Prusament"}};                              // legacy spelling
+    lanes["lane1"] = {{"vendor_name", "Polymaker"}, {"brand", "Prusament"}}; // both -> upstream wins
+    lanes["lane2"] = {{"vendor_name", "Polymaker"}};                        // upstream spelling
+    lanes["lane3"] = {{"material", "PLA"}};                                 // neither
+    helper.feed_afc_state({{"lanes", lanes}});
+
+    CHECK(helper.get_slot_info(0).brand == "Prusament");
+    CHECK(helper.get_slot_info(1).brand == "Polymaker");
+    CHECK(helper.get_slot_info(2).brand == "Polymaker");
+    CHECK(helper.get_slot_info(3).brand.empty());
+}

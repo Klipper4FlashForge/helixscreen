@@ -975,6 +975,28 @@ void AmsBackendAfc::apply_state_string(const std::string& raw, const char* sourc
 void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
                                     std::string& deferred_error_event,
                                     bool& current_slot_set_by_afc_state) {
+    // Version, when upstream supplies it here. AFC is moving the signal into the
+    // status object (AFCProject/AFC-Klipper-Add-On PR #807 adds AFC.version to
+    // get_status()); the old afc-install DB namespace has been dead since their
+    // commit 7d20db7 and is not being repopulated. Prefer status when present and
+    // fall back to whatever detect_afc_version() found, so this is a no-op on
+    // releases that predate #807.
+    //
+    // INFORMATIONAL ONLY — do not gate behaviour on the value. AFC_VERSION is a
+    // hand-bumped literal that has already drifted from the release tag (it sat at
+    // 1.1.37 through the whole v1.2.0 release; #807 moves it to 1.2.1). Presence of
+    // the field is the only trustworthy signal. Capabilities stay feature-detected.
+    if (afc_data.contains("version") && afc_data["version"].is_string()) {
+        std::string v = afc_data["version"].get<std::string>();
+        if (!v.empty() && v != afc_version_) {
+            afc_version_ = v;
+            system_info_.version = v;
+            spdlog::info("[AMS AFC] AFC version from status: {} (informational; capabilities "
+                         "are feature-detected)",
+                         v);
+        }
+    }
+
     // Parse current lane — try "current_lane" first, fall back to "current_load".
     // An empty string is treated as absent (fall through to check the other field).
     std::string loaded_lane;
@@ -2282,7 +2304,14 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
             slot.spoolman_id = lane["spool_id"].get<int>();
         }
 
-        if (lane.contains("brand") && lane["brand"].is_string()) {
+        // Vendor/brand. Upstream is adding this as `vendor_name`, NOT `vendor`
+        // (AFCProject/AFC-Klipper-Add-On #808) — jimmyjon711 chose the name to match
+        // Happy Hare's mmu_server.py so both backends share one spelling. `brand` is
+        // kept as a fallback for any payload that already uses it; neither key is
+        // present in current releases, so this is inert until #808 ships.
+        if (lane.contains("vendor_name") && lane["vendor_name"].is_string()) {
+            slot.brand = lane["vendor_name"].get<std::string>();
+        } else if (lane.contains("brand") && lane["brand"].is_string()) {
             slot.brand = lane["brand"].get<std::string>();
         }
 
