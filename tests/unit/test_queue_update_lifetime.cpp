@@ -16,6 +16,8 @@
  * dropped rather than applied.
  */
 
+#include "ui_panel_belt_tension.h"
+#include "ui_panel_input_shaper.h"
 #include "ui_spool_wizard.h"
 #include "ui_update_queue.h"
 
@@ -315,4 +317,173 @@ TEST_CASE_METHOD(LVGLTestFixture, "MoonrakerAPI build-volume notify applies whil
     // The guard must not swallow the notification on a live API, or observers
     // of the build volume would silently stop updating.
     CHECK(lv_subject_get_int(api.get_build_volume_version_subject()) == 1);
+}
+
+// ============================================================================
+// Calibration panels — async results applied after the panel is dismissed
+//
+// Both panels are process-lifetime singletons (get_global_*_panel()), so the
+// exposure is not freed memory: it is a dismissed panel's subjects being
+// written and repainted from a reply that arrived too late. The tests use the
+// real global instances, because their subjects are what the XML-registered
+// names resolve to.
+// ============================================================================
+
+namespace {
+
+/// Wires a global calibration panel to a stack-allocated mock and unwires it on
+/// scope exit. Without this the singleton keeps a dangling MoonrakerAPI* after
+/// the test returns, and the next test to open the panel dereferences it.
+/// Declare after the mocks it borrows so it is destroyed first.
+template <typename Panel> class ScopedPanelApi {
+  public:
+    ScopedPanelApi(Panel& panel, helix::MoonrakerClient* client, MoonrakerAPI* api)
+        : panel_(panel) {
+        panel_.set_api(client, api);
+    }
+    ~ScopedPanelApi() {
+        panel_.on_deactivate();
+        panel_.set_api(nullptr, nullptr);
+    }
+    ScopedPanelApi(const ScopedPanelApi&) = delete;
+    ScopedPanelApi& operator=(const ScopedPanelApi&) = delete;
+
+  private:
+    Panel& panel_;
+};
+
+} // namespace
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "BeltTensionPanel drops hardware detection once subjects are deinited",
+                 "[belt_tension][lifetime][queue_update]") {
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    auto& panel = get_global_belt_tension_panel();
+    panel.deinit_subjects(); // Known-clean subject state regardless of shard order
+    panel.init_subjects();
+    ScopedPanelApi<BeltTensionPanel> wired(panel, &client, &api);
+
+    UpdateQueue::instance().drain();
+
+    panel.on_activate();
+
+    // The calibrator marshals its own reply through the queue, so the first
+    // drain is what hands the hardware to the panel — which then queues its
+    // own apply. process_pending() swaps the queue once, so work enqueued
+    // during a drain lands in the next one.
+    UpdateQueue::instance().drain();
+    REQUIRE(UpdateQueue::instance().pending_count() > 0);
+
+    // Tear the subjects down and stand them back up on the same live panel —
+    // what StaticSubjectRegistry and test isolation do, and the shape no
+    // destructor hook would ever catch.
+    panel.deinit_subjects();
+    panel.init_subjects();
+
+    lv_subject_t* adxl = lv_xml_get_subject(nullptr, "bt_hw_adxl");
+    REQUIRE(adxl != nullptr);
+    const std::string before = lv_subject_get_string(adxl);
+
+    UpdateQueue::instance().drain();
+
+    // Pre-fix the queued apply wrote the detection result into a subject that
+    // had been deinited and re-inited underneath it.
+    CHECK(std::string(lv_subject_get_string(adxl)) == before);
+    CHECK(UpdateQueue::instance().pending_count() == 0);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "BeltTensionPanel applies hardware detection while subjects are live",
+                 "[belt_tension][lifetime][queue_update]") {
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    auto& panel = get_global_belt_tension_panel();
+    panel.deinit_subjects();
+    panel.init_subjects();
+    ScopedPanelApi<BeltTensionPanel> wired(panel, &client, &api);
+
+    UpdateQueue::instance().drain();
+
+    lv_subject_t* adxl = lv_xml_get_subject(nullptr, "bt_hw_adxl");
+    REQUIRE(adxl != nullptr);
+    const std::string before = lv_subject_get_string(adxl);
+
+    panel.on_activate();
+    UpdateQueue::instance().drain(); // calibrator hop
+    UpdateQueue::instance().drain(); // panel apply
+
+    // Counterpart to the case above: the guard must not swallow the result on a
+    // live panel, or the drop test would pass vacuously. Both the success and
+    // the Klippy-not-ready error branch overwrite the "Detecting..." default,
+    // so this holds whatever the mock's klippy state happens to be.
+    CHECK(std::string(lv_subject_get_string(adxl)) != before);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "InputShaperPanel drops the config query once the overlay closes",
+                 "[input_shaper][lifetime][queue_update]") {
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    auto& panel = get_global_input_shaper_panel();
+    panel.init_subjects();
+    ScopedPanelApi<InputShaperPanel> wired(panel, &client, &api);
+
+    UpdateQueue::instance().drain();
+
+    lv_subject_t* configured = lv_xml_get_subject(nullptr, "is_shaper_configured");
+    REQUIRE(configured != nullptr);
+
+    // The panel has no deinit_subjects(), so establish the "configured" state
+    // through the panel itself rather than assuming what an earlier test left.
+    client.set_input_shaper_configured(true);
+    panel.on_activate();
+    UpdateQueue::instance().drain();
+    REQUIRE(lv_subject_get_int(configured) == 1);
+
+    // Now queue the opposite answer and back out before it is applied.
+    client.set_input_shaper_configured(false);
+    panel.on_activate();
+    REQUIRE(UpdateQueue::instance().pending_count() > 0);
+
+    panel.on_deactivate(); // OverlayBase::on_deactivate() invalidates lifetime_
+
+    UpdateQueue::instance().drain();
+
+    // Pre-fix the unconfigured result repainted a panel the user had left.
+    CHECK(lv_subject_get_int(configured) == 1);
+    CHECK(UpdateQueue::instance().pending_count() == 0);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "InputShaperPanel applies the config query while the overlay is live",
+                 "[input_shaper][lifetime][queue_update]") {
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    auto& panel = get_global_input_shaper_panel();
+    panel.init_subjects();
+    ScopedPanelApi<InputShaperPanel> wired(panel, &client, &api);
+
+    UpdateQueue::instance().drain();
+
+    lv_subject_t* configured = lv_xml_get_subject(nullptr, "is_shaper_configured");
+    REQUIRE(configured != nullptr);
+
+    client.set_input_shaper_configured(true);
+    panel.on_activate();
+    UpdateQueue::instance().drain();
+    REQUIRE(lv_subject_get_int(configured) == 1);
+
+    // The guard must not swallow an answer that arrives while the panel is up.
+    client.set_input_shaper_configured(false);
+    panel.on_activate();
+    UpdateQueue::instance().drain();
+    CHECK(lv_subject_get_int(configured) == 0);
 }

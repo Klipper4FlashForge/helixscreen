@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "async_lifetime_guard.h"
 #include "subject_managed_panel.h"
 
 #include <atomic>
@@ -111,6 +112,16 @@ class TimelapseState {
 
     SubjectManager subjects_;
     std::atomic<bool> subjects_initialized_{false};
+
+    /// Generation guard for the event/reset handlers that defer their subject
+    /// writes to the main thread. Invalidated by `deinit_subjects()`, so a
+    /// callback still queued when the subjects go away is dropped instead of
+    /// writing into a subject that was deinited underneath it (#1165, #1146).
+    /// This class is a process-lifetime singleton, so the exposure is the
+    /// deinit/re-init shape rather than a freed `this`. Declared after
+    /// `subjects_` so it is destroyed first, ahead of the SubjectManager whose
+    /// destructor deinits what those callbacks write.
+    AsyncLifetimeGuard async_lifetime_;
 
     // Subjects
     lv_subject_t timelapse_render_progress_{};

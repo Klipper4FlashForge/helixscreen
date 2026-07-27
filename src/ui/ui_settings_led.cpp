@@ -222,7 +222,7 @@ void LedSettingsOverlay::populate_macro_devices() {
     // SAFETY: Defer the clean+rebuild. This function is called from many event
     // callbacks (dropdown change, remove/add/edit/save buttons) where the event-
     // firing widget is a child of the container being cleaned (issue #80).
-    helix::ui::queue_update("LedSettingsOverlay::populate_macro_devices", [this]() {
+    lifetime_.defer("LedSettingsOverlay::populate_macro_devices", [this]() {
         if (cleanup_called())
             return;
         populate_macro_devices_impl();
@@ -1032,7 +1032,7 @@ void LedSettingsOverlay::populate_led_chips() {
 
     // SAFETY: Defer the clean+rebuild. Called from handle_led_chip_toggle() where
     // the clicked chip is a child of chip_container being cleaned (issue #80).
-    helix::ui::queue_update([this]() {
+    lifetime_.defer("LedSettingsOverlay::populate_led_chips", [this]() {
         if (cleanup_called())
             return;
         populate_led_chips_impl();
@@ -1658,7 +1658,7 @@ void LedSettingsOverlay::handle_action_type_changed(const std::string& state_key
 
     // SAFETY: Defer rebuild — the dropdown that fired this VALUE_CHANGED event is a
     // child of the container that rebuild_contextual_controls() will clean (issue #80).
-    helix::ui::queue_update([this, state_key]() {
+    lifetime_.defer("LedSettingsOverlay::action_type_rebuild", [this, state_key]() {
         if (!overlay_root_)
             return;
         std::string ctx_name = fmt::format("ctx_{}", state_key);
@@ -1696,7 +1696,7 @@ void LedSettingsOverlay::handle_color_selected(const std::string& state_key, uin
     // SAFETY: Defer rebuild — the clicked color swatch is a child of the container
     // that rebuild_contextual_controls() will clean. Destroying it mid-callback
     // causes use-after-free (see issue #80).
-    helix::ui::queue_update([this, state_key]() {
+    lifetime_.defer("LedSettingsOverlay::color_selected_rebuild", [this, state_key]() {
         if (!overlay_root_)
             return;
         std::string ctx_name = fmt::format("ctx_{}", state_key);
