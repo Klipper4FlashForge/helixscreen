@@ -23,7 +23,7 @@ printer rather than your desk.
 | 1 | Never call `lv_*` or `lv_subject_set_*` from a background thread | LVGL assertion → infinite `while(1)` on ARM; app hangs | — |
 | 2 | Never write bare `if (tok.expired()) return;` on a bg thread, then touch `this` | TOCTOU use-after-free | L081, #707 |
 | 3 | Never delete a widget synchronously inside a queued callback | Event-list corruption → SIGSEGV in `lv_event_mark_deleted` | #776, #190, #80 |
-| 4 | Never observe a dynamic subject without a **member** `SubjectLifetime` | Use-after-free on reconnect/rediscovery | #705 |
+| 4 | Never observe a dynamic subject without passing its `SubjectLifetime` to the `observe_*` factory | Use-after-free on reconnect/rediscovery | #705 |
 | 5 | Never `std::thread(...).detach()` for one-shot work | `EAGAIN` → `std::system_error` → `std::terminate` | #724, #837, L083 |
 | 6 | Never `ObserverGuard::release()` in normal cleanup — use `reset()` | Leaks `LambdaObserverContext`, corrupts rendering | #579 |
 | 7 | Never delete container children inside an input event handler | Child-list iteration corrupted → SIGSEGV | — |
@@ -428,8 +428,9 @@ enqueueing after `update_queue_shutdown()` ran — that is a real bug, not noise
 
 ### Static vs dynamic
 
-**Static subjects** have singleton lifetime and need no lifetime token:
-`get_fan_speed_subject()` (no args), `get_bed_temp_subject()`, `get_nozzle_temp_subject()`.
+**Static subjects** exist for the whole app run and need no lifetime token — e.g. the
+primary-fan `get_fan_speed_subject()` (the genuinely no-argument overload). Teardown across a
+soft restart is covered by `ObserverGuard`'s invalidation epoch instead (§6).
 
 **Dynamic subjects** are destroyed and recreated when hardware is rediscovered after a
 disconnect. Observing one without a `SubjectLifetime` is a use-after-free:
@@ -442,75 +443,140 @@ dangling pointer into it.
 | `TemperatureSensorManager` | `get_temp_subject(name, lifetime)` — per-sensor temperatures |
 | `PrinterTemperatureState` | `get_extruder_temp_subject(name, lifetime)`, `get_extruder_target_subject(name, lifetime)` |
 
-### The pairing rule: parallel **members**
+The bed and chamber subjects sit between the two: they are owned directly by
+`PrinterTemperatureState` for its whole life, but `init_subjects()` / `deinit_subjects()` do
+create and expire real tokens for them, and token'd overloads exist
+(`get_bed_temp_subject(lifetime)`, `get_bed_target_subject(lifetime)`, and the chamber
+equivalents in `include/printer_temperature_state.h`). Use the token'd overload when you
+create an observer; the no-argument one is for one-shot reads.
 
-A `SubjectLifetime` is a `shared_ptr` wrapper. When it is destroyed, any `ObserverGuard`
-created with it sees its `weak_ptr` expire, which is what stops the observer from touching a
-freed or recreated subject.
+### The pairing rule: hand the token to `observe_*`
 
-**The lifetime must outlive the observer.** A local `SubjectLifetime` paired with a *member*
-`ObserverGuard` is a use-after-free: when the local falls off the stack the observer's
-`weak_ptr` is dead, but the observer itself is still registered against the (possibly
-recreated) subject. Declare them as parallel members in the header:
-
-```cpp
-// ✅ Header — parallel members
-ObserverGuard  temp_observer_;
-SubjectLifetime temp_lifetime_;
-
-// ✅ .cpp — reset lifetime FIRST, then observer, then rebind
-temp_lifetime_.reset();
-temp_observer_.reset();
-auto* s = tsm.get_temp_subject(name, temp_lifetime_);
-temp_observer_ = observe_int_sync(s, handler, temp_lifetime_);
-```
+`SubjectLifetime` is `std::shared_ptr<bool>` (`include/ui_observer_guard.h`), and every
+token'd accessor is an **out-param that hands you a copy of a token the owner keeps**:
 
 ```cpp
-// ❌ UAF — local lifetime dies at function exit, member observer survives
-void bind() {
-    SubjectLifetime lt;
-    auto* s = tsm.get_temp_subject(name, lt);
-    temp_observer_ = observe_int_sync(s, handler, lt);
-}
+// src/sensors/temperature_sensor_manager.cpp, TemperatureSensorManager::get_temp_subject()
+lifetime = it->second->lifetime;   // copy of the manager's own shared_ptr
 ```
 
-A codebase-wide audit on 2026-04-22 confirmed no existing violations; the rule governs new
-code.
+The same shape is in `PrinterFanState::get_fan_speed_subject()`
+(`src/printer/printer_fan_state.cpp`) and `PrinterTemperatureState::get_extruder_temp_subject()`
+(`src/printer/printer_temperature_state.cpp`).
 
-### Reset ordering is mandatory
-
-Lifetime **before** observer. The observer guard's `weak_ptr` only expires if the
-`shared_ptr` (the `SubjectLifetime`) is destroyed first. The wrong order calls
-`lv_observer_remove()` on a freed subject (#705).
+Death is signalled by the **value**, not by the refcount. Before deiniting a subject the owner
+writes `*lifetime = false` and only then drops its own copy — `printer_fan_state.cpp`
+(orphaned-fan sweep), `temperature_sensor_manager.cpp` (`// Signal death (#816)`),
+`printer_temperature_state.cpp` (`init_extruders()` / `deinit_subjects()`).
+`ObserverGuard::reset()` treats either signal as death:
 
 ```cpp
-speed_lifetime_.reset();   // ✅ FIRST
-speed_observer_.reset();   // ✅ SECOND
+auto locked = alive_token_.lock();
+subject_dead = !locked || !*locked;   // include/ui_observer_guard.h
 ```
+
+**The rule that actually matters: if you fetch a token, you must pass it to the `observe_*`
+factory.**
+
+```cpp
+// ❌ Token fetched, never handed to the observer
+SubjectLifetime lt;
+auto* s = tsm.get_temp_subject(name, lt);
+obs_ = observe_int_sync<Panel>(s, this, handler);          // lifetime arg defaults to {}
+
+// ✅
+obs_ = observe_int_sync<Panel>(s, this, handler, lt);
+```
+
+The lifetime parameter of `observe_int_sync` / `observe_string` / `AnimatedValue::bind` defaults
+to `{}` (`include/observer_factory.h`), so omitting it compiles silently. The guard's
+`has_alive_token_` stays `false`, `subject_dead` can therefore never become `true`, and
+`reset()` calls `lv_observer_remove()` on a subject `lv_subject_deinit()` already freed.
+
+### Local or member? Not what decides correctness
+
+An earlier revision of this section claimed that a caller-local `SubjectLifetime` paired with a
+*member* `ObserverGuard` was itself a use-after-free, and the "2026-04-22 audit found no
+violations" note rested on that claim. **Both were wrong.** The owner keeps its copy of the
+token, so the caller's copy falling off the stack does not drop the refcount to zero and does
+not expire the guard's `weak_ptr`.
+
+Correct-today examples that the old rule would have flagged:
+`FanStackWidget::bind_fan_observer()` (`src/ui/panel_widgets/fan_stack_widget.cpp`),
+`ControlsPanel::subscribe_to_secondary_temp_subjects()` (`src/ui/ui_panel_controls.cpp`),
+`FanControlOverlay::subscribe_to_fan_speeds()` (`src/ui/ui_fan_control_overlay.cpp`),
+`src/ui/widgets/power_device_widget.cpp`.
+
+Parallel **members** are still the shape to reach for, but for weaker reasons than "otherwise it
+crashes": it is self-documenting at the declaration site that the observer sits on a dynamic
+subject, and it stays correct if the token ever becomes exclusively owned by the observing code
+(next section).
+
+### Declaration and reset order: either works, given owner-held tokens
+
+For every token in the tree today, order is **not** load-bearing. The caller's copy is never the
+last reference while the subject is alive, so destroying it first does not expire the guard's
+`weak_ptr` and destroying it last changes nothing. Both of these shipped shapes are safe:
+
+```cpp
+// include/ui/temperature_observer_bundle.h — lifetimes declared FIRST,
+// so reverse-declaration order destroys the observers first.
+SubjectLifetime nozzle_temp_lifetime_;
+ObserverGuard   nozzle_temp_observer_;
+
+// include/ui_panel_controls.h — lifetimes declared AFTER the observers,
+// so the tokens are destroyed first.
+std::vector<ObserverGuard>   secondary_fan_observers_;
+std::vector<SubjectLifetime> secondary_fan_lifetimes_;
+```
+
+Order **would** matter for a token the observing code exclusively owns — one it created with
+`make_shared<bool>` with nobody else holding a copy. No such token exists today: every
+`make_shared<bool>` lifetime token in the tree is created by a subject *owner*
+(`grep -rn 'make_shared<bool>' src include`). If you introduce one, destroy the **observer
+first, token second** — i.e. declare the token **before** the observer:
+
+- **Observer first (token still alive):** `lock()` succeeds, `*token == true`, so
+  `lv_observer_remove()` runs against a live subject. Correct.
+- **Token first:** the `weak_ptr` expires, `reset()` *skips* `lv_observer_remove()`, and a live
+  observer is left orphaned on a live subject while its `LambdaObserverContext` is freed — UAF on
+  the next notify. Same failure family the `created_epoch_` machinery exists to prevent
+  (`include/ui_observer_guard.h`, debug bundles 449TVQ82 / X3RA4252).
+
+When the subject is already dead, both orders are safe: the owner set `*token = false` before
+freeing it, and that flag is visible regardless of who dropped their copy when.
 
 ### Collections (carousels, slot lists)
 
+Parallel vectors, kept index-aligned, so the declaration reads as a pair:
+
 ```cpp
 std::vector<ObserverGuard>   carousel_observers_;
-std::vector<SubjectLifetime> carousel_lifetimes_;   // MUST clear before observers
+std::vector<SubjectLifetime> carousel_lifetimes_;
 
 // Clear
 carousel_lifetimes_.clear();
 carousel_observers_.clear();
 
 // Add, in lockstep
-carousel_lifetimes_.emplace_back();
-auto* s = state.get_subject(name, carousel_lifetimes_.back());
-carousel_observers_.push_back(observe_int_sync(s, handler, carousel_lifetimes_.back()));
+auto& lt = carousel_lifetimes_.emplace_back();
+auto* s = state.get_subject(name, lt);
+carousel_observers_.push_back(observe_int_sync<Panel>(s, this, handler, lt));
 ```
+
+Real usage: `ThermistorWidget::bind_carousel_sensors()` in
+`src/ui/panel_widgets/thermistor_widget.cpp`. If a subject lookup fails, `pop_back()` the
+lifetime slot so the two vectors stay aligned.
 
 ### Read-only access
 
-A local `SubjectLifetime` is only valid when you never create an observer. If you just want
-to read a value, prefer the no-lifetime overload — `tsm.get_temp_subject(name)` exists for
-exactly this case.
+If you only need to read a value once, use the no-token overload —
+`tsm.get_temp_subject(name)` and `ps.get_extruder_temp_subject(name)` exist for exactly that, and
+they make the intent obvious at the call site. Taking a token and never observing is harmless,
+just misleading.
 
-Real usage: `FanStackWidget::bind_fans()` in `src/ui/panel_widgets/fan_stack_widget.cpp`.
+Real usage: `ThermistorWidget::update_display()` in
+`src/ui/panel_widgets/thermistor_widget.cpp`.
 
 ### Klippy-volatile subjects
 
@@ -587,7 +653,11 @@ observer lifecycle — no reassignment, no widget destruction.
 
 - **`reset()`** — for all normal cleanup: panel teardown, `LV_EVENT_DELETE` callbacks,
   repopulate paths. It already handles the shutdown case internally via the
-  `s_subjects_valid` and `lv_is_initialized()` guards.
+  `s_invalidation_epoch` comparison (bumped by `ObserverGuard::invalidate_all()` after
+  `StaticSubjectRegistry::deinit_all()`) and the `lv_is_initialized()` guard. The epoch
+  replaced an older global `s_subjects_valid` boolean, which could not distinguish an observer
+  created *during* a reinit window — on a live subject, so it must be removed — from one
+  created before teardown.
 - **`release()`** — *only* for the last pre-deinit cleanup inside
   `StaticSubjectRegistry::register_deinit()` callbacks, where the subject is already
   destroyed.
@@ -808,7 +878,7 @@ Relevant tags: `[state]` (subjects/observers), `[connection]` (WebSocket lifecyc
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Crash on reconnect or panel rebuild in an observer callback | Dynamic subject observed without a `SubjectLifetime`, or with a local one that died first | Parallel **member** `ObserverGuard` + `SubjectLifetime`; reset lifetime first (§5) |
+| Crash on reconnect or panel rebuild in an observer callback | Dynamic subject observed with a token that was fetched but never passed to `observe_*` | Pass the token as the factory's `lifetime` argument (§5) |
 | `lifetime_.defer()` from a background thread crashes | Reads `this->lifetime_` — TOCTOU (#707) | `tok.defer()` or `lifetime_.bg_cb()` (§2) |
 | `std::terminate without active exception` on K1/AD5M/CC1 | Detached `std::thread` hit `EAGAIN` | Managed pool, or try/catch around the spawn (§8) |
 | SIGSEGV in `lv_event_mark_deleted` | Sync widget deletion inside a queued callback | `*_deferred` / `_async` / `safe_clean_children` (§3) |

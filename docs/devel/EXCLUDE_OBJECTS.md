@@ -11,7 +11,7 @@ Exclude Objects lets users stop printing individual objects mid-print without ab
 HelixScreen provides two ways to exclude objects:
 
 1. **Long-press** on an object in the G-code viewer (direct interaction)
-2. **Print Objects list overlay** (tap the Objects button on the print status panel)
+2. **Print Objects side list** (tap the Objects button on the print status panel)
 
 Both methods feed through the same confirmation flow: modal dialog, 5-second undo window, then the `EXCLUDE_OBJECT` G-code command is sent to Klipper via Moonraker.
 
@@ -49,7 +49,7 @@ Klipper [exclude_object] module
 
 UI entry points:
   - Long-press on gcode viewer --> PrintExcludeObjectManager
-  - Print Objects list overlay --> ExcludeObjectsListOverlay
+  - Print Objects side list --> ExcludeObjectSideList
 ```
 
 ### Key Files
@@ -62,12 +62,13 @@ UI entry points:
 | `src/ui/ui_print_exclude_object_manager.cpp` | Implementation of the exclusion state machine |
 | `include/ui_exclude_object_modal.h` | Confirmation dialog ("Exclude Object?") |
 | `ui_xml/exclude_object_modal.xml` | XML layout for the confirmation modal |
-| `include/ui_exclude_objects_list_overlay.h` | Scrollable list of all objects with status indicators |
-| `src/ui/ui_exclude_objects_list_overlay.cpp` | List population, thumbnail integration, tap-to-exclude |
-| `ui_xml/exclude_objects_list_overlay.xml` | XML layout for the list overlay |
+| `include/ui_exclude_object_side_list.h` | Side list of all objects with status indicators |
+| `src/ui/ui_exclude_object_side_list.cpp` | List population, thumbnail integration, tap-to-exclude |
+| `include/ui_exclude_object_map_view.h` | Object map view with 3D selection brackets |
+| `src/ui/ui_exclude_object_map_view.cpp` | Map rendering and hit-testing |
 | `include/gcode_renderer.h` | 2D renderer with excluded object visual style |
 | `include/gcode_object_thumbnail_renderer.h` | Per-object toolpath thumbnail renderer |
-| `src/api/moonraker_api_motion.cpp` | `MoonrakerAPI::exclude_object()` with input validation |
+| `src/api/moonraker_motion_api.cpp` | `MoonrakerAPI::exclude_object()` with input validation |
 | `src/api/moonraker_client_mock.cpp` | Mock mode: EXCLUDE_OBJECT handling and status dispatch |
 
 ---
@@ -174,7 +175,7 @@ The `PrintExcludeObjectManager` implements a state machine with three states:
 
 ### Step-by-step
 
-1. **Initiation**: User long-presses an object in the G-code viewer (500ms threshold) or taps an object in the Print Objects list overlay.
+1. **Initiation**: User long-presses an object in the G-code viewer (500ms threshold) or taps an object in the Print Objects side list.
 
 2. **Guard checks**: Empty names, already-excluded objects, and pending exclusions are rejected.
 
@@ -196,9 +197,9 @@ Objects excluded by other clients (Mainsail, Fluidd, KlipperScreen) are automati
 
 ---
 
-## Print Objects List Overlay
+## Print Objects Side List
 
-`ExcludeObjectsListOverlay` provides a scrollable list of all defined objects in the current print. Each row shows:
+`ExcludeObjectSideList` provides a scrollable list of all defined objects in the current print, shown alongside `ExcludeObjectMapView` (the object map with 3D selection brackets). Both are owned by `PrintStatusPanel`. Each row shows:
 
 - **Thumbnail** (40x40 per-object toolpath rendering, if available)
 - **Status dot** (green = idle/printing, red = excluded)
@@ -210,17 +211,17 @@ Objects excluded by other clients (Mainsail, Fluidd, KlipperScreen) are automati
 - Tapping a non-excluded row triggers the same `PrintExcludeObjectManager::request_exclude()` confirmation flow as a long-press
 - Excluded rows are non-clickable and displayed at reduced opacity
 - The list auto-refreshes via observers on both `excluded_objects_version_` and `defined_objects_version_`
-- The overlay is accessed from PrintStatusPanel via `on_objects_clicked()` event callback
+- The list is accessed from PrintStatusPanel via `on_objects_clicked()` event callback
 
 ### XML Layout
 
-The overlay uses `exclude_objects_list_overlay.xml` which extends `overlay_panel`. Rows are populated dynamically in C++ because the object list is not known at compile time (this is an allowed exception to the "no `lv_obj_add_event_cb()`" rule noted in the code).
+The side list is built from `ui_xml/components/exclude_object_side_list.xml`, the map from `ui_xml/components/exclude_object_map.xml`. Rows are populated dynamically in C++ because the object list is not known at compile time (this is an allowed exception to the "no `lv_obj_add_event_cb()`" rule noted in the code).
 
 ---
 
 ## Per-Object GCode Toolpath Thumbnails
 
-`GCodeObjectThumbnailRenderer` generates small ARGB8888 thumbnails of each object's toolpath for display in the list overlay.
+`GCodeObjectThumbnailRenderer` generates small ARGB8888 thumbnails of each object's toolpath for display in the side list.
 
 ### Rendering Pipeline
 
@@ -262,7 +263,7 @@ The 2D layer renderer (`GCodeLayerRenderer`) is the default rendering mode. It s
 
 In streaming mode (`GCodeStreamingController`), the layer renderer operates on per-layer segment data fetched on demand rather than the full parsed file. Object picking still works because `pick_object_at()` checks if a streaming controller is available and queries its segment data for the current layer.
 
-Note: Per-object thumbnails require `ParsedGCodeFile` segment data. In streaming mode, `ui_gcode_viewer_get_parsed_file()` returns `nullptr`, so thumbnails are not available and the list overlay displays rows without thumbnail images.
+Note: Per-object thumbnails require `ParsedGCodeFile` segment data. In streaming mode, `ui_gcode_viewer_get_parsed_file()` returns `nullptr`, so thumbnails are not available and the side list displays rows without thumbnail images.
 
 ---
 
@@ -309,7 +310,7 @@ The `MoonrakerClientMock` fully simulates the `exclude_object` feature for testi
 #   - Cylinder_id_2_copy_0
 ```
 
-Start a mock print, then long-press objects in the G-code viewer or open the Print Objects list overlay to test the exclusion flow.
+Start a mock print, then long-press objects in the G-code viewer or open the Print Objects side list to test the exclusion flow.
 
 ---
 

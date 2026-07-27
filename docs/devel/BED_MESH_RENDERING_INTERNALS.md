@@ -788,9 +788,9 @@ which clamps the tilt and wraps the spin.
 
 ### Code Files
 
-- `src/bed_mesh_renderer.cpp` - Core 3D rendering engine
-- `src/ui_bed_mesh.cpp` - LVGL widget wrapper
-- `src/ui_panel_bed_mesh.cpp` - UI integration and data binding
+- `src/rendering/bed_mesh_renderer.cpp` - Core 3D rendering engine
+- `src/ui/ui_bed_mesh.cpp` - LVGL widget wrapper
+- `src/ui/ui_panel_bed_mesh.cpp` - UI integration and data binding
 - `include/bed_mesh_renderer.h` - Public API and data structures
 
 ### External Resources

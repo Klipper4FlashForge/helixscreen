@@ -313,9 +313,12 @@ class ControlsPanel : public PanelBase {
     std::vector<SecondaryFanRow> secondary_fan_rows_;    ///< Tracked for reactive updates
     std::vector<ObserverGuard> secondary_fan_observers_; ///< Per-fan speed observers
     /// Lifetime tokens for the dynamic per-fan speed subjects observed above. Per-fan
-    /// subjects are destroyed/recreated on fan rediscovery; each token must outlive its
-    /// paired ObserverGuard so the guard's weak_ptr expires before the subject is freed.
-    /// Kept aligned with secondary_fan_observers_ and cleared FIRST during teardown.
+    /// subjects are destroyed/recreated on fan rediscovery; what makes the guards safe is
+    /// that each token is handed to observe_int_sync(), not where the token is stored.
+    /// These are copies of shared_ptrs PrinterFanState owns — it signals subject death by
+    /// writing *token = false — so declaring them after the observers (destroyed first) is
+    /// equivalent to declaring them before. Kept index-aligned with
+    /// secondary_fan_observers_. See docs/devel/THREADING.md § 5.
     std::vector<SubjectLifetime> secondary_fan_lifetimes_;
     uint32_t fan_populate_gen_ = 0; ///< Incremented on each populate; stale callbacks skip
 

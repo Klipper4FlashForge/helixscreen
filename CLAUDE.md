@@ -152,9 +152,12 @@ Note: `theme_manager_get_color()` for tokens, `theme_manager_parse_hex_color()` 
    #80). Use `safe_delete_deferred()`, `lv_obj_delete_async()`, `safe_clean_children()`.
    **`lifetime_.defer` does NOT escape the batch** — it fires in the next `process_pending`
    tick, which is still a batch.
-4. **Never observe a dynamic subject (per-fan/sensor/extruder) without a paired member
-   `SubjectLifetime`** — a local one is a UAF. Declare both as members, and reset the lifetime
-   *before* the observer (#705).
+4. **If you fetch a `SubjectLifetime`, you must hand it to `observe_*`.** The factories take it
+   as a defaulted 4th parameter (`const SubjectLifetime& lifetime = {}`), so omitting it is
+   silent: the guard gets no token, never sees the subject die, and `reset()` calls
+   `lv_observer_remove()` on freed memory (#705). Local vs member is *not* what decides
+   correctness — the `get_*_subject(name, lifetime)` accessors assign the owner's own
+   `shared_ptr`, so a caller's copy dying never expires the guard.
 
 Also: no `std::thread(...).detach()` for one-shot work — `EAGAIN` → `std::terminate` on
 AD5M/CC1 (#724, #837); use `HttpExecutor::fast()/slow()` or `BusThread`. `ObserverGuard::reset()`

@@ -719,11 +719,14 @@ recreated when hardware is rediscovered after a disconnect/reconnect. Observing 
 `SubjectLifetime` token is a use-after-free: `lv_subject_deinit()` frees the subject's observer
 list, but `ObserverGuard` still holds a pointer into it.
 
-The token must be a **member** paired with the observer — a local `SubjectLifetime` dies at
-function exit and leaves the member observer dangling — and the lifetime resets *before* the
-observer. See [`THREADING.md`](THREADING.md) §5 for the pairing rule, the dynamic-subject
-source table, the collection pattern, and reset ordering (#705). Real usage:
-`FanStackWidget::bind_fans()` in `src/ui/panel_widgets/fan_stack_widget.cpp`.
+What matters is that the token is **passed to the `observe_*` factory** — its `lifetime`
+parameter defaults to `{}`, so omitting it compiles silently and leaves the guard with no way
+to learn the subject died. Whether the token itself lives in a local or a member does not
+decide correctness: the accessors hand out a copy of a token the *owner* keeps, and death is
+signalled by writing `*lifetime = false`, not by the refcount reaching zero. See
+[`THREADING.md`](THREADING.md) §5 for the full reasoning, the dynamic-subject source table, the
+collection pattern, and when declaration order does start to matter. Real usage:
+`FanStackWidget::bind_fan_observer()` in `src/ui/panel_widgets/fan_stack_widget.cpp`.
 
 ### Klippy-Volatile Subjects
 
@@ -1381,10 +1384,11 @@ Allows users to exclude individual objects from the current print (Klipper's `ex
 
 - **PrinterExcludedObjectsState** - Domain class managing excluded/defined object lists with a version subject that increments on changes. Uses `SubjectManager` for subject lifecycle and `std::unordered_set` for excluded object names (sets are not natively supported by LVGL subjects).
 - **PrintExcludeObjectManager** - Coordinates the confirmation flow for excluding objects, preventing accidental exclusion.
-- **ExcludeObjectsListOverlay** - Scrollable list overlay showing all defined objects with status indicators (current/idle/excluded), tap-to-exclude, and optional G-code object thumbnails via `GCodeObjectThumbnailRenderer`.
+- **ExcludeObjectSideList** - Side list showing all defined objects with status indicators (current/idle/excluded), tap-to-exclude, and optional G-code object thumbnails via `GCodeObjectThumbnailRenderer`.
+- **ExcludeObjectMapView** - Object map with 3D selection brackets, paired with the side list.
 - **ExcludeObjectModal** - Confirmation modal before excluding an object.
 
-**Files:** `include/printer_excluded_objects_state.h`, `include/ui_exclude_objects_list_overlay.h`, `include/ui_print_exclude_object_manager.h`, `ui_xml/exclude_objects_list_overlay.xml`, `ui_xml/exclude_object_modal.xml`
+**Files:** `include/printer_excluded_objects_state.h`, `include/ui_exclude_object_side_list.h`, `include/ui_exclude_object_map_view.h`, `include/ui_print_exclude_object_manager.h`, `ui_xml/exclude_object_modal.xml`
 
 ### Frequency Response Chart Widget
 
