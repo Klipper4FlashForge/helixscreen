@@ -695,7 +695,7 @@ if [ -f "scripts/check_raw_this_queue_update.py" ]; then
   # failing outright — the gate counts the debt, it does not adjudicate which sites
   # are lethal. The number may go DOWN (guard a site with lifetime_.bg_cb /
   # tok.defer, then lower this) but must never go up.
-  if python3 scripts/check_raw_this_queue_update.py --max-allowed 49 --summary >/tmp/raw_this_qu.out 2>&1; then
+  if python3 scripts/check_raw_this_queue_update.py --max-allowed 26 --summary >/tmp/raw_this_qu.out 2>&1; then
     section_time $SECTION_START
     echo ""
     tail -1 /tmp/raw_this_qu.out

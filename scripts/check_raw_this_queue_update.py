@@ -360,9 +360,14 @@ def main() -> int:
     limit = args.max_allowed
     if limit is None:
         if total:
-            print(f'❌ Raw `this` in queue_update: {total} site(s). The lambda outlives '
-                  f'nothing — it runs at the next drain, whether or not the owner is '
-                  f'still alive (#1146).')
+            print(f'❌ Raw `this` in queue_update: {total} site(s). The lambda runs at the '
+                  f'next drain whether or not the owner is still alive (#1146).')
+            print('   NOT every hit is a live use-after-free. A body whose first statement '
+                  'is `if (tok.expired()) return;` is already safe — the token holds a '
+                  'shared_ptr to the generation counter, so it stays valid after the owner '
+                  'dies, and `this` is never dereferenced before the check. Those count as '
+                  'debt to migrate to the sanctioned form, not as bugs. This gate cannot '
+                  'see the guard, nor tell a singleton owner from a short-lived one.')
             if not (args.list or args.summary):
                 for path, ln, kind, _ in hits[:20]:
                     print(f'   {path}:{ln}: [{kind}]')
