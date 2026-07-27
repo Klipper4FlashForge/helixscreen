@@ -374,14 +374,15 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
         }
     }
 
-    // Show Clear Spool button when an empty slot still has a sticky assignment.
-    // btn_edit ("Spool Info") stays visible so users can reopen the edit modal
-    // to correct metadata without first clearing.
-    if (!slot_has_filament && backend_) {
+    // Show Clear Spool whenever the slot carries an assignment, present or not
+    // (should_show_clear_spool). It used to be gated on an EMPTY slot, so it
+    // disappeared the moment a spool went in — exactly when stale metadata does
+    // damage, since that is when it gets printed with and when an edit aims a
+    // Spoolman write at the previous spool.
+    if (backend_) {
         SlotInfo slot_info = backend_->get_slot_info(slot_index);
-        bool has_assignment = (slot_info.spoolman_id > 0 || !slot_info.material.empty());
         lv_obj_t* btn_clear = lv_obj_find_by_name(menu_obj, "btn_clear_spool");
-        if (btn_clear && has_assignment) {
+        if (btn_clear && should_show_clear_spool(slot_info)) {
             lv_obj_clear_flag(btn_clear, LV_OBJ_FLAG_HIDDEN);
         }
     }
@@ -467,6 +468,10 @@ void AmsContextMenu::handle_gate_check() {
 void AmsContextMenu::handle_edit() {
     spdlog::info("[AmsContextMenu] Edit requested for slot {}", get_item_index());
     dispatch_ams_action(MenuAction::EDIT);
+}
+
+bool AmsContextMenu::should_show_clear_spool(const SlotInfo& slot) {
+    return slot.spoolman_id > 0 || !slot.material.empty();
 }
 
 void AmsContextMenu::handle_clear_spool() {
