@@ -8,6 +8,7 @@
 #include "ui_event_safety.h"
 #include "ui_nav_manager.h"
 #include "ui_temperature_utils.h"
+#include "ui_timer_guard.h"
 
 #include "app_globals.h"
 #include "config.h"
@@ -27,9 +28,9 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
-#include <string>
 #include <lvgl.h>
 #include <memory>
+#include <string>
 
 // ============================================================================
 // STATIC SUBJECT
@@ -78,6 +79,12 @@ PIDCalibrationPanel::PIDCalibrationPanel() {
 
 PIDCalibrationPanel::~PIDCalibrationPanel() {
     deinit_subjects();
+
+    // stop_progress_tracking() cancels this on the normal path, but a teardown
+    // that destroys the panel mid-calibration skips it. StaticPanelRegistry::
+    // destroy_all() runs BEFORE lv_deinit(), so a live tick would then fire into
+    // a freed `this` (#1173).
+    cancel_eta_timer();
 
     // Clear widget pointers (owned by LVGL)
     overlay_root_ = nullptr;
@@ -1071,10 +1078,22 @@ void PIDCalibrationPanel::stop_progress_tracking() {
     progress_temp_lifetime_.reset();
     progress_temp_observer_.reset();
 
-    if (eta_update_timer_) {
-        lv_timer_delete(eta_update_timer_);
-        eta_update_timer_ = nullptr;
+    cancel_eta_timer();
+}
+
+void PIDCalibrationPanel::arm_eta_timer_for_test() {
+    cancel_eta_timer();
+    eta_update_timer_ = lv_timer_create(on_eta_timer_tick, 1000, this);
+}
+
+void PIDCalibrationPanel::cancel_eta_timer() {
+    // Neuter rather than delete: the tick runs inside lv_timer_handler, where
+    // deleting a timer can corrupt the list (#750, #751). lv_timer_cancel_safe()
+    // also no-ops once LVGL is gone, so the destructor can share this.
+    if (eta_update_timer_ && lv_is_initialized()) {
+        helix::ui::lv_timer_cancel_safe(eta_update_timer_);
     }
+    eta_update_timer_ = nullptr;
 }
 
 void PIDCalibrationPanel::on_progress_temperature(int temp_tenths) {
@@ -1678,4 +1697,3 @@ PIDCalibrationPanel& get_global_pid_cal_panel() {
 static PIDCalibrationPanel* existing_pid_cal_panel() {
     return g_pid_cal_panel.get();
 }
-
