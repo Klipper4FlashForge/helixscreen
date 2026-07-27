@@ -1953,6 +1953,7 @@ translations:
   Requires Moonraker-Timelapse plugin: Erfordert Moonraker-Timelapse-Plugin
   Resend write failed at chunk {}: Erneuter Schreibvorgang bei Block {} fehlgeschlagen
   Reset: Zurücksetzen
+  Reset CFS: CFS zurücksetzen
   Reset Home Screen?: Startbildschirm zurücksetzen?
   Reset Speed & Flow to 100%: Geschwindigkeit & Fluss auf 100% zurücksetzen
   Reset all settings and restart wizard: Alle Einstellungen zurücksetzen und Assistenten

@@ -1745,6 +1745,7 @@ translations:
   Requires Moonraker-Timelapse plugin: 需要 Moonraker-Timelapse 插件
   Resend write failed at chunk {}: 区块 {} 重发写入失败
   Reset: 重置
+  Reset CFS: 重置 CFS
   Reset Home Screen?: 重置主屏幕？
   Reset Speed & Flow to 100%: 重置速度和流量为 100%
   Reset all settings and restart wizard: 重置所有设置并重新启动向导

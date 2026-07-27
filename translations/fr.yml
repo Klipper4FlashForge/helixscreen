@@ -1968,6 +1968,7 @@ translations:
   Requires Moonraker-Timelapse plugin: Nécessite le plugin Moonraker-Timelapse
   Resend write failed at chunk {}: Échec du renvoi de lécriture au bloc {}
   Reset: Réinitialiser
+  Reset CFS: Réinitialiser le CFS
   Reset Home Screen?: Réinitialiser l'écran d'accueil ?
   Reset Speed & Flow to 100%: Réinitialiser vitesse & débit à 100%
   Reset all settings and restart wizard: Réinitialiser tous les paramètres et redémarrer

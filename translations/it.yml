@@ -1942,6 +1942,7 @@ translations:
   Requires Moonraker-Timelapse plugin: Richiede plugin Moonraker-Timelapse
   Resend write failed at chunk {}: Reinvio scrittura fallito al chunk {}
   Reset: Ripristina
+  Reset CFS: Ripristina CFS
   Reset Home Screen?: Ripristinare la schermata iniziale?
   Reset Speed & Flow to 100%: Ripristina velocità e flusso al 100%
   Reset all settings and restart wizard: Ripristina tutte le impostazioni e riavvia

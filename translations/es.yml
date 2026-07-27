@@ -1945,6 +1945,7 @@ translations:
   Resend write failed at chunk {}: Error al reenviar la escritura en el fragmento
     {}
   Reset: Restablecer
+  Reset CFS: Restablecer CFS
   Reset Home Screen?: ¿Restablecer pantalla de inicio?
   Reset Speed & Flow to 100%: Restablecer Velocidad y Flujo a 100%
   Reset all settings and restart wizard: Restablecer todos los ajustes y reiniciar

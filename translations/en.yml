@@ -1888,6 +1888,7 @@ translations:
   Requires Moonraker-Timelapse plugin: Requires Moonraker-Timelapse plugin
   Resend write failed at chunk {}: Resend write failed at chunk {}
   Reset: Reset
+  Reset CFS: Reset CFS
   Reset Home Screen?: Reset Home Screen?
   Reset Speed & Flow to 100%: Reset Speed & Flow to 100%
   Reset all settings and restart wizard: Reset all settings and restart wizard

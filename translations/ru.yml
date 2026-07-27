@@ -1918,6 +1918,7 @@ translations:
   Requires Moonraker-Timelapse plugin: Требуется плагин Moonraker-Timelapse
   Resend write failed at chunk {}: Не удалось повторно отправить запись в блоке {}
   Reset: Сброс
+  Reset CFS: Сброс CFS
   Reset Home Screen?: Сбросить главный экран?
   Reset Speed & Flow to 100%: Сбросить скорость и поток на 100%
   Reset all settings and restart wizard: Сбросить все настройки и перезапустить мастер

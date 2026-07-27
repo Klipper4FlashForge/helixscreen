@@ -1753,6 +1753,7 @@ translations:
   Requires Moonraker-Timelapse plugin: Moonraker-Timelapse プラグインが必要です
   Resend write failed at chunk {}: チャンク {} で再送信の書き込みに失敗しました
   Reset: リセット
+  Reset CFS: CFSをリセット
   Reset Home Screen?: ホーム画面をリセットしますか？
   Reset Speed & Flow to 100%: 速度とフローを100%にリセット
   Reset all settings and restart wizard: すべての設定をリセットしてウィザードを再開

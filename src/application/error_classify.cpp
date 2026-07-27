@@ -2,6 +2,7 @@
 #include "error_classify.h"
 
 #include "gcode_error_router.h" // clean_error_text
+#include "lvgl/src/others/translation/lv_translation.h"
 
 #include <cctype>
 
@@ -65,11 +66,11 @@ std::optional<ErrorEvent> classify(const std::string& raw_line, const ClassifyCo
             e.severity = ErrorSeverity::CRITICAL;
             if (code == "key840") {
                 e.recovery_actions.push_back(
-                    {"Reset CFS", "BOX_ERROR_CLEAR", "error_classify::key840_reset"});
+                    {lv_tr("Reset CFS"), "BOX_ERROR_CLEAR", "error_classify::key840_reset"});
             }
         } else if (code == "key298") {
             e.severity = ErrorSeverity::WARNING;
-            e.recovery_actions.push_back({"Recover", "", "error_classify::key298_recover"});
+            e.recovery_actions.push_back({lv_tr("Recover"), "", "error_classify::key298_recover"});
         } else {
             e.severity = ErrorSeverity::WARNING;
         }
@@ -97,7 +98,7 @@ std::optional<ErrorEvent> classify(const std::string& raw_line, const ClassifyCo
             // BOTH neutral: the cause of this line is unknown by definition --
             // this is the arm nobody claimed -- so the UI must not nudge toward
             // resuming a print that may not be safe to resume.
-            e.recovery_actions.push_back({"Resume", "RESUME", "error_classify::resume"});
+            e.recovery_actions.push_back({lv_tr("Resume"), "RESUME", "error_classify::resume"});
             // Without this the modal has exactly one way out and a user who does
             // NOT want to resume is trapped: ActionPromptModal builds its buttons
             // solely from this vector and has no intrinsic close affordance (same
@@ -105,7 +106,8 @@ std::optional<ErrorEvent> classify(const std::string& raw_line, const ClassifyCo
             // nothing -- and it must stay non-empty, because create_buttons()
             // falls back to sending the LABEL as gcode when it is blank
             // (action_prompt_modal.cpp:282).
-            e.recovery_actions.push_back({"OK", "; error-dismiss", "error_classify::dismiss"});
+            e.recovery_actions.push_back(
+                {lv_tr("OK"), "; error-dismiss", "error_classify::dismiss"});
         }
     }
 
