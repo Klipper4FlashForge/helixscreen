@@ -382,6 +382,49 @@ AmsError AmsBackendAfc::clear_message_queue() {
     return execute_gcode("AFC_CLEAR_MESSAGE");
 }
 
+AmsError AmsBackendAfc::clear_fault(int slot_index) {
+    // AFC has no per-lane fault clear; both commands are system-scoped.
+    (void)slot_index;
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Arm the drain. printer.AFC.message is a FIFO head — one clear pops one
+        // entry, so a second queued error would otherwise stay on screen and look
+        // exactly like the Reset having done nothing.
+        message_drain_budget_ = kMessageDrainBudget;
+        message_drain_pending_ = false;
+    }
+
+    // Deliberately does NOT route through cancel(): cancel() returns early when
+    // the action is IDLE, which is the common case for a queued message — AFC
+    // keeps printer.AFC.message populated long after current_state returns to
+    // Idle, and AFC_RESET does not touch it.
+    spdlog::info("[AMS AFC] Clearing fault (drain budget {})", kMessageDrainBudget);
+    AmsError failure_reset = execute_gcode("RESET_FAILURE");
+    AmsError message_clear = clear_message_queue();
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (message_drain_budget_ > 0) {
+            --message_drain_budget_;
+        }
+    }
+    return failure_reset.success() ? message_clear : failure_reset;
+}
+
+void AmsBackendAfc::maybe_drain_message_queue() {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!message_drain_pending_ || message_drain_budget_ <= 0) {
+            return;
+        }
+        message_drain_pending_ = false;
+        --message_drain_budget_;
+    }
+
+    spdlog::debug("[AMS AFC] Draining next queued message");
+    clear_message_queue();
+}
+
 SlotInfo AmsBackendAfc::get_slot_info(int slot_index) const {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -943,6 +986,11 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
     if (!deferred_error_event.empty()) {
         emit_event(EVENT_ERROR, deferred_error_event);
     }
+
+    // Pop the next queued AFC message if a clear_fault() drain is in flight.
+    // Must be outside the lock — clear_message_queue() sends gcode.
+    maybe_drain_message_queue();
+
     if (state_changed) {
         emit_event(EVENT_STATE_CHANGED);
     }
@@ -1074,6 +1122,12 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
             std::string msg_text = msg["message"].get<std::string>();
             if (!msg_text.empty()) {
                 system_info_.operation_detail = msg_text;
+
+                // A message is still queued behind the one we just cleared. Ask
+                // the caller to pop another once it has released mutex_.
+                if (message_drain_budget_ > 0) {
+                    message_drain_pending_ = true;
+                }
             }
 
             // Get message type (error, warning, or empty)
@@ -1095,6 +1149,8 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
                 last_seen_message_.clear();
                 last_error_msg_.clear();
                 last_message_type_.clear();
+                message_drain_budget_ = 0;
+                message_drain_pending_ = false;
             } else if (msg_text != last_seen_message_) {
                 // New or changed message - update dedup tracker
                 last_seen_message_ = msg_text;

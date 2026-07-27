@@ -275,6 +275,19 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         return false;
     }
 
+    // How many recorded gcodes equal `expected` exactly. Used to verify the
+    // message-queue drain sends AFC_CLEAR_MESSAGE once per queued entry.
+    int gcode_count(const std::string& expected) const {
+        return static_cast<int>(
+            std::count(captured_gcodes.begin(), captured_gcodes.end(), expected));
+    }
+
+    static constexpr int kMessageDrainBudget = AmsBackendAfc::kMessageDrainBudget;
+
+    void test_maybe_drain_message_queue() {
+        maybe_drain_message_queue();
+    }
+
     // Position of the first gcode starting with `prefix`, or -1 if absent.
     // Emission order matters on AFC: SET_SPOOL_ID with an empty value runs
     // AFC's clear_values(), which wipes material/color/weight/temps.
@@ -2118,6 +2131,94 @@ TEST_CASE("AFC error message surfaces in EVENT_ERROR data", "[ams][afc][recovery
     REQUIRE(helper.has_event(AmsBackend::EVENT_ERROR));
     std::string error_data = helper.get_event_data(AmsBackend::EVENT_ERROR);
     REQUIRE(error_data.find("filament jam detected") != std::string::npos);
+}
+
+TEST_CASE("AFC clear_fault sends RESET_FAILURE and AFC_CLEAR_MESSAGE",
+          "[ams][afc][recovery]") {
+    // Measured 2026-07-27: AFC_RESET leaves printer.AFC.message untouched. Only
+    // AFC_CLEAR_MESSAGE pops it, and RESET_FAILURE clears the failure flag.
+    // Both must fire, and unlike cancel() this must work from IDLE — that is
+    // exactly the state a queued message outlives its operation in.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+
+    auto result = helper.clear_fault(0);
+
+    REQUIRE(result.success());
+    REQUIRE(helper.has_gcode("RESET_FAILURE"));
+    REQUIRE(helper.has_gcode("AFC_CLEAR_MESSAGE"));
+}
+
+TEST_CASE("AFC clear_fault is scope-independent of the slot argument",
+          "[ams][afc][recovery]") {
+    // AFC has no per-lane fault clear; both commands are system-scoped. Passing a
+    // slot must neither fail nor change the gcode emitted.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+
+    REQUIRE(helper.clear_fault(-1).success());
+    REQUIRE(helper.has_gcode("AFC_CLEAR_MESSAGE"));
+}
+
+TEST_CASE("AFC drains the message queue until it empties", "[ams][afc][recovery]") {
+    // printer.AFC.message is a FIFO head; one AFC_CLEAR_MESSAGE pops one entry.
+    // A second queued error surfaces only after the first is popped, so the
+    // backend must keep clearing while deltas still carry a message.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+
+    helper.clear_fault(0);
+    const int after_first = helper.gcode_count("AFC_CLEAR_MESSAGE");
+    REQUIRE(after_first == 1);
+
+    // Delta still carries a message: the next queue entry surfaced. Drain again.
+    helper.test_parse_afc_state(nlohmann::json{
+        {"message", {{"message", "Hub is already clear while trying to reset 'lane2'"},
+                     {"type", "error"}}}});
+    helper.test_maybe_drain_message_queue();
+    REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") == 2);
+
+    // Queue now empty: stop. No further clears.
+    helper.test_parse_afc_state(nlohmann::json{
+        {"message", {{"message", ""}, {"type", ""}}}});
+    helper.test_maybe_drain_message_queue();
+    REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") == 2);
+}
+
+TEST_CASE("AFC message drain is bounded", "[ams][afc][recovery]") {
+    // A fault that re-enqueues as fast as we pop must not spin forever. The
+    // budget caps total clears per clear_fault() at kMessageDrainBudget.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+
+    helper.clear_fault(0);
+    for (int i = 0; i < 50; ++i) {
+        helper.test_parse_afc_state(nlohmann::json{
+            {"message", {{"message", "still failing"}, {"type", "error"}}}});
+        helper.test_maybe_drain_message_queue();
+    }
+
+    REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") <=
+            AmsBackendAfcTestHelper::kMessageDrainBudget);
+}
+
+TEST_CASE("AFC drain does not fire without a preceding clear_fault",
+          "[ams][afc][recovery]") {
+    // Messages arrive constantly in normal operation. Only an explicit
+    // clear_fault() arms the drain; otherwise the UI just displays them.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+
+    helper.test_parse_afc_state(nlohmann::json{
+        {"message", {{"message", "Lane 1 loaded"}, {"type", ""}}}});
+    helper.test_maybe_drain_message_queue();
+
+    REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") == 0);
 }
 
 // ============================================================================

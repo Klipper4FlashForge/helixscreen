@@ -633,6 +633,28 @@ class AmsBackend {
     virtual AmsError reset() = 0;
 
     /**
+     * @brief Clear a latched fault so the system stops reporting an error
+     *
+     * Bookkeeping only — this never moves filament. Distinct from
+     * recover_lane_position(), which is a physical retract.
+     *
+     * Scope is backend-defined. AFC has no per-lane fault clear, so it ignores
+     * slot_index and clears system-wide (RESET_FAILURE + AFC_CLEAR_MESSAGE).
+     * Happy Hare clears per-gate (MMU_RECOVER GATE=n). Callers always pass the
+     * slot they mean and let the backend decide what it can honour.
+     *
+     * Must be safe to call from IDLE: a latched fault routinely outlives the
+     * operation that produced it, which is precisely when clearing matters.
+     *
+     * @param slot_index Slot the user acted on, or -1 for "no particular slot"
+     * @return AmsError indicating if the operation was started
+     */
+    virtual AmsError clear_fault(int slot_index) {
+        (void)slot_index;
+        return cancel();
+    }
+
+    /**
      * @brief Reset a specific lane/slot
      *
      * Resets an individual lane to a known good state without affecting others.

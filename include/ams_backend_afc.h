@@ -186,6 +186,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // Recovery
     AmsError recover() override;
     AmsError reset() override;
+    AmsError clear_fault(int slot_index) override;
     AmsError reset_lane(int slot_index) override;
     [[nodiscard]] bool supports_lane_reset() const override {
         return true;
@@ -662,6 +663,25 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     std::unordered_map<std::string, bool> hub_sensors_; ///< Per-hub sensor state, keyed by hub name
     bool tool_start_sensor_{false};                     ///< Toolhead entry sensor
     bool tool_end_sensor_{false};                       ///< Toolhead exit/nozzle sensor
+
+    /// Remaining AFC_CLEAR_MESSAGE sends allowed for the in-flight clear_fault().
+    /// printer.AFC.message is a FIFO head and each clear pops one entry, so a
+    /// single send leaves the next queued error on screen. Armed by clear_fault(),
+    /// spent one per status delta that still carries a message.
+    int message_drain_budget_ = 0;
+
+    /// Set by parse_afc_state() while holding mutex_; consumed by
+    /// handle_status_update() after the lock is released. parse_afc_state() must
+    /// never send gcode itself — same reason deferred_error_event exists.
+    bool message_drain_pending_ = false;
+
+    /// Caps total clears per clear_fault() so a fault that re-enqueues as fast as
+    /// we pop cannot spin. Overshoot is safe: clearing an empty queue is a no-op.
+    static constexpr int kMessageDrainBudget = 10;
+
+    /// Sends one queued AFC_CLEAR_MESSAGE if the drain is armed and a message is
+    /// still present. Must be called WITHOUT mutex_ held.
+    void maybe_drain_message_queue();
 
     // Global state
     bool error_state_{false};       ///< AFC error state
