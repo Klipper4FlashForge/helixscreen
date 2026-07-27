@@ -77,6 +77,9 @@ class AmsEditOverlayTestAccess {
         return AmsEditOverlay::decide_weight_staging(entered_tracked, remaining_filled,
                                                      total_filled);
     }
+    static bool may_write_spoolman_now(const SlotInfo& original, const SlotInfo& edited) {
+        return AmsEditOverlay::may_write_spoolman_now(original, edited);
+    }
 
   private:
     AmsEditOverlay& overlay_;
@@ -364,6 +367,62 @@ TEST_CASE("AmsEditOverlay::decide_weight_staging stages remaining even when unli
             /*entered_tracked=*/false, /*remaining_filled=*/false, /*total_filled=*/true);
         CHECK_FALSE(s.stage_remaining);
         CHECK(s.stage_total);
+    }
+}
+
+// The logistics two-PATCH in handle_spool_edit_save() ran BEFORE
+// commit_and_close() evaluated needs_identity_confirmation(), so a save that was
+// about to ask "Different filament?" had already written to Spoolman by the time
+// the dialog appeared — and Cancel, documented as a true abort, could not take it
+// back. Observed on the .112 BoxTurtle:
+//
+//   19:11:55  Updating spool 86 with 1 fields
+//   19:11:55  Spool 86 updated successfully
+//   19:11:55  set_active_spool(86)
+//   19:11:56  Confirmation dialog shown: 'Different filament?'
+//   19:12:17  fire_completion saved=false        <- user cancelled
+//
+// Invariant: if the edit will prompt, nothing may be written first.
+TEST_CASE("AmsEditOverlay::may_write_spoolman_now withholds writes until identity is confirmed",
+          "[ams][edit_overlay][spoolman]") {
+    SlotInfo linked;
+    linked.spoolman_id = 86;
+    linked.brand = "Likesilk";
+    linked.material = "ASA";
+    linked.color_rgb = 0x1A1A1A;
+    linked.remaining_weight_g = 509.0f;
+
+    SECTION("materially different identity must not write before the prompt") {
+        SlotInfo edited = linked;
+        edited.material = "PLA";
+        edited.color_rgb = 0xE53935;
+
+        REQUIRE(AmsEditOverlayTestAccess::needs_identity_confirmation(linked, edited));
+        CHECK_FALSE(AmsEditOverlayTestAccess::may_write_spoolman_now(linked, edited));
+    }
+
+    SECTION("weight-only edit on a linked spool writes immediately, no prompt") {
+        SlotInfo edited = linked;
+        edited.remaining_weight_g = 400.0f;
+
+        REQUIRE_FALSE(AmsEditOverlayTestAccess::needs_identity_confirmation(linked, edited));
+        CHECK(AmsEditOverlayTestAccess::may_write_spoolman_now(linked, edited));
+    }
+
+    SECTION("unlinked slot has no spool to clobber, so writes are always allowed") {
+        SlotInfo untracked;
+        untracked.spoolman_id = 0;
+        untracked.material = "PLA";
+        untracked.color_rgb = 0xE53935;
+
+        SlotInfo edited = untracked;
+        edited.material = "PETG";
+
+        CHECK(AmsEditOverlayTestAccess::may_write_spoolman_now(untracked, edited));
+    }
+
+    SECTION("unchanged linked spool writes immediately") {
+        CHECK(AmsEditOverlayTestAccess::may_write_spoolman_now(linked, linked));
     }
 }
 

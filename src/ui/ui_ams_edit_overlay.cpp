@@ -939,7 +939,30 @@ void AmsEditOverlay::handle_spool_edit_save(bool finish) {
 
     // --- Logistics two-PATCH for slots that stay managed (merged from the old
     //     spool-details save path) ---
-    if (working_info_.spoolman_id > 0) {
+    if (working_info_.spoolman_id > 0 && !may_write_spoolman_now(original_info_, working_info_)) {
+        // This save is going to raise "Different filament?" in commit_and_close().
+        // Write NOTHING to Spoolman until the user answers: Cancel is a true abort
+        // and cannot retract a PATCH that has already gone out. The identity
+        // outcome (update / create-new / unlink) owns the write from here.
+        //
+        // Logistics-only fields typed in the same save (price, lot, notes,
+        // location) are not carried through the prompt yet — Wave C's LinkIntent
+        // refactor makes the whole decision one ordered plan.
+        spdlog::info("[AmsEditOverlay] Withholding Spoolman write for slot {} pending "
+                     "identity confirmation",
+                     slot_index_);
+
+        // Still stage the edited weights LOCALLY. The logistics block was doing
+        // double duty — sending the PATCH and copying detail_working_ into
+        // working_info_ — so withholding it alone would silently drop the user's
+        // weight edit and leave do_spoolman_save() with no delta to write on
+        // confirm. Deliberately do NOT touch original_info_: the delta is what
+        // makes the post-confirm save PATCH the weight exactly once.
+        working_info_.remaining_weight_g = static_cast<float>(detail_working_.remaining_weight_g);
+        if (detail_working_.initial_weight_g > 0) {
+            working_info_.total_weight_g = static_cast<float>(detail_working_.initial_weight_g);
+        }
+    } else if (working_info_.spoolman_id > 0) {
         nlohmann::json spool_patch;
         nlohmann::json filament_patch;
         SpoolmanSlotSaver::build_spool_patches(detail_original_, detail_working_, spool_patch,
@@ -1831,6 +1854,10 @@ void AmsEditOverlay::do_spoolman_save() {
                 close_editor(true);
             });
         });
+}
+
+bool AmsEditOverlay::may_write_spoolman_now(const SlotInfo& original, const SlotInfo& edited) {
+    return !needs_identity_confirmation(original, edited);
 }
 
 AmsEditOverlay::WeightStaging AmsEditOverlay::decide_weight_staging(bool entered_tracked,

@@ -271,6 +271,15 @@ class AmsEditOverlay : public OverlayBase {
     // (spec §6; formerly AD5X-only).
     static bool needs_identity_confirmation(const SlotInfo& original, const SlotInfo& edited);
 
+    // Pure. False when this save is going to raise the "Different filament?"
+    // prompt, and therefore must not write to Spoolman yet.
+    //
+    // The logistics two-PATCH in handle_spool_edit_save() runs well before
+    // commit_and_close() evaluates the prompt, so without this gate a save that
+    // was about to ask had already written — and Cancel, documented as a true
+    // abort, could not take it back.
+    static bool may_write_spoolman_now(const SlotInfo& original, const SlotInfo& edited);
+
     void do_spoolman_save();
     void prompt_identity_change_then_save();
     static void on_identity_confirm_cb(lv_event_t* e);
