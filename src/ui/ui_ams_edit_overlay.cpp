@@ -1810,51 +1810,51 @@ void AmsEditOverlay::commit_and_close() {
     close_editor(true);
 }
 
-void AmsEditOverlay::do_spoolman_save() {
+void AmsEditOverlay::do_spoolman_save(helix::SpoolmanSlotSaver::LinkIntent intent) {
     auto token = lifetime_.token();
     auto saver = std::make_shared<helix::SpoolmanSlotSaver>(api_);
-    saver->save(
-        original_info_, working_info_, [this, token, saver](const helix::SaveResult& result) {
-            // Spoolman callback arrives on a background thread — defer
-            // to the UI thread before touching LVGL subjects/widgets.
-            token.defer([this, result]() {
-                if (!result.success) {
-                    // Local save still proceeds; only the Spoolman mirror failed.
-                    spdlog::error("[AmsEditOverlay] Spoolman save failed, saving locally");
-                    ToastManager::instance().show(ToastSeverity::ERROR,
-                                                  lv_tr("Couldn't update Spoolman — saved locally"),
-                                                  3000);
-                } else if (result.created_new_spool || result.repointed_filament) {
-                    // Persist new Spoolman IDs into working_info_ so the
-                    // completion callback's backend->set_slot_info() writes
-                    // the link back to the slot. Without this, a subsequent
-                    // edit would not know the spool exists and would create
-                    // a duplicate.
-                    if (result.new_spool_id != 0) {
-                        working_info_.spoolman_id = result.new_spool_id;
-                    }
-                    if (result.new_filament_id != 0) {
-                        working_info_.spoolman_filament_id = result.new_filament_id;
-                    }
-                    if (result.new_vendor_id != 0) {
-                        working_info_.spoolman_vendor_id = result.new_vendor_id;
-                    }
-                    // The early sync_active_spool() above was skipped because
-                    // spoolman_id was 0 on both sides (creation hadn't happened
-                    // yet). Notify Moonraker now so Mainsail/Fluidd show the
-                    // new spool as active and filament tracking starts.
-                    if (result.created_new_spool && result.new_spool_id != 0 && api_) {
-                        sync_active_spool(api_, result.new_spool_id);
-                    }
-                    if (result.created_new_spool) {
-                        ToastManager::instance().show(ToastSeverity::INFO,
-                                                      lv_tr("Added to Spoolman"), 2500);
-                    }
-                    // Repoint is silent — IDs change but no toast.
-                }
-                close_editor(true);
-            });
-        });
+    saver->save(original_info_, working_info_, intent,
+                [this, token, saver](const helix::SaveResult& result) {
+                    // Spoolman callback arrives on a background thread — defer
+                    // to the UI thread before touching LVGL subjects/widgets.
+                    token.defer([this, result]() {
+                        if (!result.success) {
+                            // Local save still proceeds; only the Spoolman mirror failed.
+                            spdlog::error("[AmsEditOverlay] Spoolman save failed, saving locally");
+                            ToastManager::instance().show(
+                                ToastSeverity::ERROR,
+                                lv_tr("Couldn't update Spoolman — saved locally"), 3000);
+                        } else if (result.created_new_spool || result.repointed_filament) {
+                            // Persist new Spoolman IDs into working_info_ so the
+                            // completion callback's backend->set_slot_info() writes
+                            // the link back to the slot. Without this, a subsequent
+                            // edit would not know the spool exists and would create
+                            // a duplicate.
+                            if (result.new_spool_id != 0) {
+                                working_info_.spoolman_id = result.new_spool_id;
+                            }
+                            if (result.new_filament_id != 0) {
+                                working_info_.spoolman_filament_id = result.new_filament_id;
+                            }
+                            if (result.new_vendor_id != 0) {
+                                working_info_.spoolman_vendor_id = result.new_vendor_id;
+                            }
+                            // The early sync_active_spool() above was skipped because
+                            // spoolman_id was 0 on both sides (creation hadn't happened
+                            // yet). Notify Moonraker now so Mainsail/Fluidd show the
+                            // new spool as active and filament tracking starts.
+                            if (result.created_new_spool && result.new_spool_id != 0 && api_) {
+                                sync_active_spool(api_, result.new_spool_id);
+                            }
+                            if (result.created_new_spool) {
+                                ToastManager::instance().show(ToastSeverity::INFO,
+                                                              lv_tr("Added to Spoolman"), 2500);
+                            }
+                            // Repoint is silent — IDs change but no toast.
+                        }
+                        close_editor(true);
+                    });
+                });
 }
 
 bool AmsEditOverlay::may_write_spoolman_now(const SlotInfo& original, const SlotInfo& edited) {
@@ -1878,26 +1878,32 @@ bool AmsEditOverlay::is_material_identity_change(const SlotInfo& original, const
 }
 
 void AmsEditOverlay::prompt_identity_change_then_save() {
-    // Dismiss-safe binary confirmation. "Update anyway" -> PATCH the linked
-    // Spoolman spool to match the edited identity, then save+close. "Cancel"
-    // -> TRUE ABORT: nothing is written anywhere, not even locally — a silent
-    // local commit here would show the "different" color/material in the AMS
-    // panel while Spoolman still has the old one, which is worse than either
-    // option this dialog offers. Tapping outside behaves the same as Cancel
-    // (Modal::hide with no completion). No path writes a materially-different
-    // spool, local or remote, without an explicit "Update anyway" confirm.
+    // Nothing can detect a spool swap on these systems — no RFID, no colour
+    // sensing — so the user's answer is the only signal, and the dialog has to
+    // offer the outcome they actually want.
+    //
+    // PRIMARY is "It's a new spool": create a new Spoolman spool and rebind the
+    // lane, leaving the linked one untouched. That is the case a lane keeps its
+    // link across an eject for, and it used to be unreachable — the save
+    // silently patched the OLD spool instead, which is the reported corruption.
+    //
+    // Cancel stays a TRUE ABORT: nothing written, locally or remotely. That
+    // guarantee is worth more than a third button, so "update the linked spool
+    // to match" is deliberately NOT offered here — correcting a mislabelled
+    // spool belongs in the Spoolman panel's own edit, where it is not one
+    // mis-tap away from overwriting a different spool's identity.
     lv_obj_t* dlg = modal_show_confirmation(
         lv_tr("Different filament?"),
-        lv_tr("This looks like a different filament than the linked Spoolman spool. Update the "
-              "Spoolman spool to match?"),
-        ModalSeverity::Warning, lv_tr("Update anyway"), on_identity_confirm_cb,
+        lv_tr("This doesn't match the linked Spoolman spool. Add it as a new spool, or update "
+              "the linked one to match?"),
+        ModalSeverity::Warning, lv_tr("It's a new spool"), on_identity_confirm_cb,
         on_identity_cancel_cb, nullptr);
     if (!dlg) {
-        // Couldn't show the dialog — fall back to the pre-gate behavior rather
-        // than stranding the save (which would never fire_completion).
-        spdlog::warn(
-            "[AmsEditOverlay] identity-change confirmation failed to show; updating anyway");
-        do_spoolman_save();
+        // Couldn't show the dialog — abort rather than guess. Falling through to
+        // a write here would pick one of two destructive outcomes on the user's
+        // behalf, which is exactly what this gate exists to prevent.
+        spdlog::warn("[AmsEditOverlay] identity confirmation failed to show; aborting save");
+        close_editor(false);
     }
 }
 
@@ -1906,7 +1912,9 @@ void AmsEditOverlay::on_identity_confirm_cb(lv_event_t* /*e*/) {
     // leaving it up would keep the buttons re-tappable, double-firing the
     // Spoolman write. Confirmation modals still stack above the overlay (§13.6).
     Modal::hide(Modal::get_top());
-    get_ams_edit_overlay().do_spoolman_save();
+    // "It's a new spool" — create and rebind; the previously linked spool is
+    // left exactly as it was.
+    get_ams_edit_overlay().do_spoolman_save(helix::SpoolmanSlotSaver::LinkIntent::CreateAndRebind);
 }
 
 void AmsEditOverlay::on_identity_cancel_cb(lv_event_t* /*e*/) {

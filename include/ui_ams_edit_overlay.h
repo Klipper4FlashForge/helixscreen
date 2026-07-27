@@ -9,6 +9,7 @@
 
 #include "ams_types.h"
 #include "overlay_base.h"
+#include "spoolman_slot_saver.h"
 #include "spoolman_types.h"
 #include "subject_managed_panel.h"
 
@@ -280,8 +281,12 @@ class AmsEditOverlay : public OverlayBase {
     // abort, could not take it back.
     static bool may_write_spoolman_now(const SlotInfo& original, const SlotInfo& edited);
 
-    void do_spoolman_save();
+    /// @param intent What the user chose in the identity prompt. Defaults to the
+    /// legacy inference for the paths that never prompt.
+    void do_spoolman_save(helix::SpoolmanSlotSaver::LinkIntent intent =
+                              helix::SpoolmanSlotSaver::LinkIntent::UpdateLinked);
     void prompt_identity_change_then_save();
+    /// Primary action: "It's a new spool" — create + rebind, old spool untouched.
     static void on_identity_confirm_cb(lv_event_t* e);
     static void on_identity_cancel_cb(lv_event_t* e);
     // Re-bind + repopulate details_selector_ against the still-open spool-edit
