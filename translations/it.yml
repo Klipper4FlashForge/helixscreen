@@ -697,6 +697,7 @@ translations:
   Do not touch the printer during calibration: Non toccare la stampante durante la
     calibrazione
   Dock: Aggancia
+  Docking tool: ''
   Documentation: Documentazione
   Don't Save: Non salvare
   Don't ask again: Non chiedere più
@@ -737,6 +738,7 @@ translations:
   'Eject failed: {}': 'Espulsione fallita: {}'
   Eject needs [force_move] enabled in printer config: L'espulsione richiede [force_move]
     abilitato nella configurazione della stampante
+  Ejecting: ''
   Elegoo Centauri Carbon: Elegoo Centauri Carbon
   Emergency Stop: Arresto emergenza
   Emergency Stop?: Arresto emergenza?
@@ -1154,6 +1156,7 @@ translations:
     {} non può usare {} come riserva'
   Indexing G-code...: Indicizzazione G-code...
   Info: Info
+  Initialized: ''
   Initializing...: Inizializzazione...
   Input: Input
   Input Shaper: Input Shaper
@@ -1430,6 +1433,7 @@ translations:
     minutes. The printer will make noise — this is normal.
   : Muove la testina per misurare le frequenze di vibrazione su ogni asse. Richiede
     2-3 minuti. La stampante farà rumore — è normale.
+  Moving lane: ''
   Multi-Filament: Multi-filamento
   Multi-Filament Overview: Panoramica multi-filamento
   Multi-Filament System: Sistema multi-filamento
@@ -1672,6 +1676,7 @@ translations:
   Phomemo M110: Phomemo M110
   Pick: Scegli
   Pick Color: Scegli colore
+  Picking up tool: ''
   Pill: Pillola
   Pixels before a press becomes a scroll (lower = scrolls engage sooner): Pixel prima
     che una pressione diventi scorrimento (più basso = scorrimento più rapido)
@@ -1958,6 +1963,7 @@ translations:
   Restarting with the new version...: Riavvio con la nuova versione...
   Restarting...: Riavvio in corso...
   Restore Defaults: Ripristina predefiniti
+  Restoring position: ''
   Resume: Riprendi
   Resume Print: Riprendi stampa
   Resume interrupted print?: Riprendere la stampa interrotta?
@@ -2494,6 +2500,7 @@ translations:
   Tool: Strumento
   Tool Changer: Cambia utensile
   'Tool change failed: {}': 'Cambio utensile fallito: {}'
+  Tool swap: ''
   'Tool {} → Lane {}: no filament loaded.': 'Strumento {} → Corsia {}: nessun filamento
     caricato.'
   Toolhead: 'Testina'

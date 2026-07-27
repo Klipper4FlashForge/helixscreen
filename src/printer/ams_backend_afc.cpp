@@ -48,6 +48,96 @@ bool natural_less(const std::string& a, const std::string& b) {
     return a < b;
 }
 
+// Split a firmware state token into sentence-case words:
+//   "ToolSwap"        → "Tool swap"
+//   "SOME_LOUD_STATE" → "Some loud state"
+//   "purging_bucket"  → "Purging bucket"
+//
+// Used as the display fallback for states we have no translation for. AFC emits
+// camelCase state values (v1.2.0), and those must never reach the screen raw —
+// operation_detail is passed through to the UI verbatim.
+std::string humanize_state(std::string_view raw) {
+    std::string out;
+    out.reserve(raw.size() + 4);
+    bool word_start = true;
+    for (size_t i = 0; i < raw.size(); ++i) {
+        auto c = static_cast<unsigned char>(raw[i]);
+        if (std::isalnum(c) == 0) {
+            // Any separator run collapses to a single space.
+            if (!out.empty() && out.back() != ' ')
+                out.push_back(' ');
+            word_start = true;
+            continue;
+        }
+        // camelCase boundary: an uppercase letter that either follows a
+        // lowercase/digit ("ToolSwap") or begins a word after an acronym run
+        // ("HUBLoading" → "HUB loading").
+        if (std::isupper(c) != 0 && i > 0) {
+            auto prev = static_cast<unsigned char>(raw[i - 1]);
+            bool after_lower = std::isalnum(prev) != 0 && std::isupper(prev) == 0;
+            bool acronym_end = std::isupper(prev) != 0 && i + 1 < raw.size() &&
+                               std::islower(static_cast<unsigned char>(raw[i + 1])) != 0;
+            if (after_lower || acronym_end) {
+                if (!out.empty() && out.back() != ' ')
+                    out.push_back(' ');
+                word_start = true;
+            }
+        }
+        // Sentence case: capitalize only the very first character.
+        if (word_start && out.empty()) {
+            out.push_back(static_cast<char>(std::toupper(c)));
+        } else {
+            out.push_back(static_cast<char>(std::tolower(c)));
+        }
+        word_start = false;
+    }
+    // Trim a trailing separator-induced space.
+    while (!out.empty() && out.back() == ' ')
+        out.pop_back();
+    return out;
+}
+
+// Translated display text for AFC's known state vocabulary, keyed by normalized
+// token so a rewording (AFC's "Tool swap" → "ToolSwap") keeps its translation.
+// Unknown states fall back to humanize_state() — untranslated, but readable.
+std::string afc_state_detail(std::string_view raw) {
+    struct StateLabel {
+        const char* token;
+        const char* label;
+    };
+    static constexpr StateLabel kLabels[] = {
+        {"idle", "Idle"},
+        {"initialized", "Initialized"},
+        {"loading", "Loading"},
+        {"unloading", "Unloading"},
+        {"error", "Error"},
+        {"ejecting", "Ejecting"},
+        {"moving", "Moving lane"},
+        {"restoring", "Restoring position"},
+        {"toolswap", "Tool swap"},
+        {"tooldock", "Docking tool"},
+        {"toolpickup", "Picking up tool"},
+    };
+    const std::string token = ams_normalize_state_token(raw);
+    for (const auto& e : kLabels) {
+        if (token == e.token)
+            return lv_tr(e.label);
+    }
+    return humanize_state(raw);
+}
+
+// [L067] kLabels feeds lv_tr() through a variable, which the translation
+// extractor cannot see. Name each label literally here so it lands in the
+// catalogs. Keep in sync with kLabels above.
+// clang-format off
+void afc_state_translation_hints_() {
+    (void)lv_tr("Idle"); (void)lv_tr("Initialized"); (void)lv_tr("Loading");
+    (void)lv_tr("Unloading"); (void)lv_tr("Error"); (void)lv_tr("Ejecting");
+    (void)lv_tr("Moving lane"); (void)lv_tr("Restoring position");
+    (void)lv_tr("Tool swap"); (void)lv_tr("Docking tool"); (void)lv_tr("Picking up tool");
+}
+// clang-format on
+
 } // namespace
 
 // ============================================================================
@@ -125,13 +215,13 @@ bool AmsBackendAfc::auto_unloads_after_print() const {
 // ============================================================================
 
 void AmsBackendAfc::on_started() {
-    // Detect AFC version (async - results come via callback)
-    // This will set has_lane_data_db_ for v1.0.32+
+    // Version is informational only (see apply_afc_version_response) — nothing
+    // below depends on the result, so this does not need to complete first.
     detect_afc_version();
 
     // If we have discovered lanes (from PrinterCapabilities), initialize them now.
-    // This provides immediate lane data for ALL AFC versions (including < 1.0.32).
-    // For v1.0.32+, query_lane_data() may later supplement this with richer data.
+    // This provides immediate lane data for every AFC version. query_lane_data()
+    // may later supplement it with colors/materials/spool IDs from the database.
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!discovered_lane_names_.empty() && !slots_.is_initialized()) {
@@ -140,6 +230,15 @@ void AmsBackendAfc::on_started() {
             initialize_slots(discovered_lane_names_);
         }
     }
+
+    // Always attempt the lane_data query. There is no reliable capability flag to
+    // gate on: AFC's `lane_data_enabled` reports whether Moonraker has the (now
+    // unused) [lane_data] section, NOT whether the database namespace holds data —
+    // send_lane_data() writes to the database unconditionally. A live BoxTurtle on
+    // 2026-07-26 had lane_data_enabled=false with a fully populated namespace.
+    // Attempting and adapting is the only correct detection: a missing namespace
+    // just errors, and the probe is silent.
+    query_lane_data();
 
     // Note: With the early hardware discovery callback architecture, this backend is
     // created and started BEFORE printer.objects.subscribe is called. The notification
@@ -437,27 +536,37 @@ AmsBackendAfc::classify_error(const std::string& raw_line,
 
 std::vector<AmsBackend::ToolchangePhase>
 AmsBackendAfc::toolchange_phase_template(StepOperationType op) const {
+    // Mirrors AFC's real CHANGE_TOOL, which is TOOL_UNLOAD(old) then
+    // TOOL_LOAD(new). The purge-to-bucket, kick and wipe all live in
+    // do_poop_kick_wipe(), which TOOL_LOAD calls only AFTER load_sequence()
+    // succeeds — the poop purges the old colour out THROUGH the newly fed
+    // filament, so it cannot precede the feed. Verified against upstream
+    // v1.1.0 and v1.2.0.
+    //
+    // AFC has exactly one purge (the poop macro, `poop_cmd`) and one wipe
+    // (`wipe_cmd`/AFC_BRUSH), so there is no "Purge" distinct from the poop and
+    // no "Clean nozzle" distinct from the brush. The wipe actually runs twice
+    // (before and after the kick); the bar has no notion of a repeated step, so
+    // it collapses to the single trailing brush.
     switch (op) {
     case StepOperationType::LOAD_SWAP:
         return {
-            {"heat", "Heat nozzle", false},    {"cut", "Cut tip", true},
-            {"poop", "Purge to bucket", true}, {"kick", "Kick away", true},
-            {"feed", "Feed filament", false},  {"purge", "Purge", true},
-            {"brush", "Brush nozzle", true},   {"clean", "Clean nozzle", true},
-            {"load", "Load complete", false},
+            {"heat", "Heat nozzle", false},       {"cut", "Cut tip", true},
+            {"unload", "Unload filament", false}, {"feed", "Feed filament", false},
+            {"poop", "Purge to bucket", true},    {"kick", "Kick away", true},
+            {"brush", "Brush nozzle", true},      {"load", "Load complete", false},
         };
     case StepOperationType::LOAD_FRESH:
         return {
-            {"heat", "Heat nozzle", false},
-            {"feed", "Feed filament", false},
-            {"purge", "Purge", true},
-            {"load", "Load complete", false},
+            {"heat", "Heat nozzle", false},    {"feed", "Feed filament", false},
+            {"poop", "Purge to bucket", true}, {"kick", "Kick away", true},
+            {"brush", "Brush nozzle", true},   {"load", "Load complete", false},
         };
     case StepOperationType::UNLOAD:
         return {
             {"heat", "Heat nozzle", false},
             {"cut", "Cut tip", true},
-            {"retract", "Retract", false},
+            {"unload", "Retract filament", false},
         };
     }
     return {};
@@ -467,27 +576,54 @@ std::optional<std::string>
 AmsBackendAfc::match_narration_phase(const std::string& narration) const {
     if (narration.empty())
         return std::nullopt;
-    std::string s = narration;
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    // Normalize to lowercase words joined by single spaces. Punctuation and
+    // separator style then stop mattering, so "AFC_Brush: Clean Nozzle",
+    // "AFC Brush - Clean nozzle" and "[AFC_Brush] Clean Nozzle!" all match the
+    // same needle. This matcher IS the step-bar model and upstream owns the
+    // wording, so it has to tolerate rewording that keeps the same words.
+    std::string s;
+    s.reserve(narration.size());
+    for (unsigned char c : narration) {
+        if (std::isalnum(c) != 0) {
+            s.push_back(static_cast<char>(std::tolower(c)));
+        } else if (!s.empty() && s.back() != ' ') {
+            s.push_back(' ');
+        }
+    }
+    while (!s.empty() && s.back() == ' ')
+        s.pop_back();
+    if (s.empty())
+        return std::nullopt;
+
     auto has = [&](const char* needle) { return s.find(needle) != std::string::npos; };
     // Order matters: more specific phrases first.
-    if (has("is now loaded in toolhead") || has("load complete"))
+    if (has("is now loaded in toolhead") || has("load complete") || has("loaded in toolhead"))
         return "load";
-    if (has("clean nozzle") || has("afc_brush: clean"))
-        return "clean";
-    if (has("move to brush") || has("brush"))
+    // Must precede the "feed" needles below: AFC announces the old lane coming
+    // out as "Unloading lane1", and normalized "unloading lane1" CONTAINS the
+    // substring "loading lane" — checked later it would resolve to feed and the
+    // bar would skip forward over the unload.
+    if (has("unload"))
+        return "unload";
+    // AFC_BRUSH is the only wipe. It emits "AFC_Brush: Clean Nozzle" at the
+    // default variable_verbose=1 and "AFC_Brush: Move to Brush." only at
+    // verbose>1, so both spellings must land on the same phase or the step never
+    // lights on a stock install.
+    if (has("clean nozzle") || has("cleaning nozzle") || has("brush"))
         return "brush";
-    if (has("purg")) // S1: purge/purging is its own phase, not "feed"
-        return "purge";
+    // The poop macro IS the purge; it says "Starting poop" at verbose 1 and
+    // "Move To Purge Location" at verbose>1. One phase, both spellings.
+    if (has("purg") || has("poop"))
+        return "poop";
     if (has("kick"))
         return "kick";
-    if (has("poop"))
-        return "poop";
+    // Before the retract needle: AFC_Cut says "Retract Filament for Cut", which
+    // is part of the cut, not the old filament coming out of the toolhead.
     if (has("cut"))
         return "cut";
-    if (has("retract")) // UNLOAD ends on a retract step; keep it reachable (#1046)
-        return "retract";
+    if (has("retract")) // UNLOAD ends on this step; keep it reachable (#1046)
+        return "unload";
     if (has("to hub") || has("feed") || has("loading lane"))
         return "feed";
     if (has("heat"))
@@ -799,6 +935,26 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
     }
 }
 
+void AmsBackendAfc::apply_state_string(const std::string& raw, const char* source) {
+    bool recognized = true;
+    system_info_.action = ams_action_from_string(raw, &recognized);
+    system_info_.operation_detail = afc_state_detail(raw);
+
+    if (!recognized && !raw.empty() && unknown_state_warned_.insert(raw).second) {
+        // Schema drift: AFC reported a state outside our known vocabulary. The
+        // fuzzy fallback picked an action, but the mapping is a guess and the
+        // detail text is machine-humanized rather than translated. Logged once
+        // per distinct string so a rename shows up in logs instead of silently
+        // reading as IDLE.
+        spdlog::warn("[AMS AFC] Unrecognized {} '{}' — mapped to {} by fallback. AFC may have "
+                     "reworded its state vocabulary; update ams_action_from_string().",
+                     source, raw, ams_action_to_string(system_info_.action));
+    }
+
+    spdlog::trace("[AMS AFC] {}: {} ({} -> '{}')", source,
+                  ams_action_to_string(system_info_.action), raw, system_info_.operation_detail);
+}
+
 void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
                                     std::string& deferred_error_event,
                                     bool& current_slot_set_by_afc_state) {
@@ -877,22 +1033,13 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
                       has_explicit_tool);
     }
 
-    // Parse action/status
+    // Parse action/status ("status" is the legacy spelling; "current_state" is
+    // authoritative and applied second so it wins when both are present).
     if (afc_data.contains("status") && afc_data["status"].is_string()) {
-        std::string status_str = afc_data["status"].get<std::string>();
-        system_info_.action = ams_action_from_string(status_str);
-        system_info_.operation_detail = status_str;
-        spdlog::trace("[AMS AFC] Status: {} ({})", ams_action_to_string(system_info_.action),
-                      status_str);
+        apply_state_string(afc_data["status"].get<std::string>(), "status");
     }
-
-    // Parse current_state field (preferred over status when present)
     if (afc_data.contains("current_state") && afc_data["current_state"].is_string()) {
-        std::string state_str = afc_data["current_state"].get<std::string>();
-        system_info_.action = ams_action_from_string(state_str);
-        system_info_.operation_detail = state_str;
-        spdlog::trace("[AMS AFC] Current state: {} ({})", ams_action_to_string(system_info_.action),
-                      state_str);
+        apply_state_string(afc_data["current_state"].get<std::string>(), "current_state");
     }
 
     // Parse tool change progress (AFC tracks swap count during multi-color prints)
@@ -1573,6 +1720,23 @@ void AmsBackendAfc::parse_afc_extruder(const std::string& ext_name, const nlohma
         tool_end_sensor_ = data["tool_end_status"].get<bool>();
     }
 
+    // Toolchanger state (AFC v1.2.0 #768). An entry is created for every
+    // AFC_extruder object we see so callers can distinguish "tool known, nothing
+    // happening" from "tool never reported". Older AFC omits all three fields
+    // and simply leaves the defaults in place.
+    {
+        AfcToolState& ts = tool_states_[ext_name];
+        if (data.contains("status") && data["status"].is_string()) {
+            ts.status = data["status"].get<std::string>();
+        }
+        if (data.contains("next_pickup") && data["next_pickup"].is_boolean()) {
+            ts.next_pickup = data["next_pickup"].get<bool>();
+        }
+        if (data.contains("is_standalone") && data["is_standalone"].is_boolean()) {
+            ts.is_standalone = data["is_standalone"].get<bool>();
+        }
+    }
+
     if (data.contains("lane_loaded") && !data["lane_loaded"].is_null()) {
         if (data["lane_loaded"].is_string()) {
             std::string lane = data["lane_loaded"].get<std::string>();
@@ -1775,6 +1939,66 @@ void AmsBackendAfc::rebuild_unit_map_from_klipper() {
 // Version Detection
 // ============================================================================
 
+const nlohmann::json& AmsBackendAfc::database_item_value(const nlohmann::json& response) {
+    static const nlohmann::json kNull;
+    if (!response.is_object())
+        return kNull;
+
+    // send_jsonrpc delivers the whole JSON-RPC message, so the payload is at
+    // result.value: {"jsonrpc","id","result":{"namespace","key","value":…}}.
+    // Reading "value" off the top level found nothing, silently, on every reply
+    // (prestonbrown/helixscreen#1148).
+    //
+    // Deliberately strict about the envelope rather than also accepting a bare
+    // payload: a payload is an arbitrary object, so "envelope or payload?" is
+    // undecidable — the afc-install payload is {"version":…}, which carries no
+    // "value" key to key off. Callers that route through
+    // MoonrakerAPI::database_get_item get the payload pre-unwrapped and must
+    // not pass it here.
+    const auto result = response.find("result");
+    if (result == response.end() || !result->is_object())
+        return kNull;
+    const auto value = result->find("value");
+    return value != result->end() ? *value : kNull;
+}
+
+bool AmsBackendAfc::apply_afc_version_response(const nlohmann::json& response) {
+    const nlohmann::json& value = database_item_value(response);
+    if (!value.is_object())
+        return false;
+
+    const auto version = value.find("version");
+    if (version == value.end() || !version->is_string())
+        return false;
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        afc_version_ = version->get<std::string>();
+        system_info_.version = afc_version_;
+    }
+    // Informational only — never gate behavior on this. AFC removed the code that
+    // writes the afc-install namespace (its commit 7d20db7, #451, 2025-06-16), so
+    // the value is either absent or frozen at whatever it was before that date. A
+    // live BoxTurtle reported "1.0.0" on 2026-07-26 while its payload proved
+    // 1.0.32-era. Capabilities are detected from the data itself instead.
+    spdlog::info("[AMS AFC] Reported AFC version: {} (informational; capabilities are "
+                 "feature-detected)",
+                 afc_version_);
+    return true;
+}
+
+bool AmsBackendAfc::apply_lane_data_response(const nlohmann::json& response) {
+    const nlohmann::json& value = database_item_value(response);
+    if (!value.is_object())
+        return false;
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        parse_lane_data(value);
+    }
+    return true;
+}
+
 void AmsBackendAfc::detect_afc_version() {
     if (!client_) {
         spdlog::warn("[AMS AFC] Cannot detect version: client is null");
@@ -1791,44 +2015,8 @@ void AmsBackendAfc::detect_afc_version() {
         "server.database.get_item", params,
         [this, token](const nlohmann::json& response) {
             // L081 Mechanism C: marshal member writes + downstream calls to main.
-            token.defer("AmsBackendAfc::detect_afc_version_success", [this, response]() {
-                bool should_query_lane_data = false;
-
-                if (response.contains("value") && response["value"].is_object()) {
-                    const auto& value = response["value"];
-                    if (value.contains("version") && value["version"].is_string()) {
-                        {
-                            std::lock_guard<std::mutex> lock(mutex_);
-                            afc_version_ = value["version"].get<std::string>();
-                            system_info_.version = afc_version_;
-
-                            // Set capability flags based on version
-                            has_lane_data_db_ = version_at_least("1.0.32");
-                            should_query_lane_data = has_lane_data_db_;
-                        }
-                        spdlog::info("[AMS AFC] Detected AFC version: {} (lane_data DB: {})",
-                                     afc_version_, has_lane_data_db_ ? "yes" : "no");
-
-                        // Warn if AFC version is older than minimum supported
-                        if (!version_at_least("1.0.35")) {
-                            auto warning =
-                                fmt::format(lv_tr("AFC version {} may have compatibility issues. "
-                                                  "Please upgrade to v1.0.35 or later."),
-                                            afc_version_);
-                            spdlog::warn("[AMS AFC] {}", warning);
-                            helix::ui::modal_show_alert(lv_tr("AFC Version Warning"),
-                                                        warning.c_str(), ModalSeverity::Warning,
-                                                        "OK");
-                        }
-                    }
-                }
-
-                // For v1.0.32+, query lane_data database for richer data
-                // This supplements the basic lane info from printer.objects.list
-                if (should_query_lane_data) {
-                    query_lane_data();
-                }
-            });
+            token.defer("AmsBackendAfc::detect_afc_version_success",
+                        [this, response]() { apply_afc_version_response(response); });
         },
         [this, token](const MoonrakerError& err) {
             // L081 Mechanism C: marshal member writes to main.
@@ -1843,32 +2031,6 @@ void AmsBackendAfc::detect_afc_version() {
         0,   // default timeout
         true // silent — probe only, don't show toast or log at error level
     );
-}
-
-bool AmsBackendAfc::version_at_least(const std::string& required) const {
-    // Parse semantic version strings (e.g., "1.0.32")
-    // Returns true if afc_version_ >= required
-
-    if (afc_version_ == "unknown" || afc_version_.empty()) {
-        return false;
-    }
-
-    auto parse_version = [](const std::string& v) -> std::tuple<int, int, int> {
-        int major = 0, minor = 0, patch = 0;
-        std::istringstream iss(v);
-        char dot;
-        iss >> major >> dot >> minor >> dot >> patch;
-        return {major, minor, patch};
-    };
-
-    auto [cur_maj, cur_min, cur_patch] = parse_version(afc_version_);
-    auto [req_maj, req_min, req_patch] = parse_version(required);
-
-    if (cur_maj != req_maj)
-        return cur_maj > req_maj;
-    if (cur_min != req_min)
-        return cur_min > req_min;
-    return cur_patch >= req_patch;
 }
 
 // ============================================================================
@@ -1963,10 +2125,18 @@ void AmsBackendAfc::query_lane_data() {
         return;
     }
 
-    // Query Moonraker database for AFC lane_data
-    // Method: server.database.get_item
-    // Params: { "namespace": "AFC", "key": "lane_data" }
-    nlohmann::json params = {{"namespace", "AFC"}, {"key", "lane_data"}};
+    // Query Moonraker database for AFC lane_data.
+    //
+    // The namespace is top-level "lane_data" with one key per lane — AFC's
+    // send_lane_data() POSTs {"namespace":"lane_data","key":<lane>,"value":{…}}.
+    // We previously asked for namespace "AFC" key "lane_data", which Moonraker
+    // answers with a 404 ("Key 'lane_data' in namespace 'AFC' not found"), so this
+    // query could never have succeeded. It went unnoticed because the version gate
+    // above it meant the call was almost never reached.
+    //
+    // No key: fetch the whole namespace so result.value is {lane → data}, which is
+    // the shape parse_lane_data expects.
+    nlohmann::json params = {{"namespace", "lane_data"}};
 
     auto token = lifetime_.token();
     client_->send_jsonrpc(
@@ -1974,12 +2144,9 @@ void AmsBackendAfc::query_lane_data() {
         [this, token](const nlohmann::json& response) {
             // L081 Mechanism C: parse_lane_data mutates members under lock; emit on main.
             token.defer("AmsBackendAfc::query_lane_data_success", [this, response]() {
-                if (response.contains("value") && response["value"].is_object()) {
-                    {
-                        std::lock_guard<std::mutex> lock(mutex_);
-                        parse_lane_data(response["value"]);
-                    }
-                    // Emit OUTSIDE the lock to avoid deadlock with callbacks
+                // apply_lane_data_response takes the lock; emit OUTSIDE it to
+                // avoid deadlock with callbacks.
+                if (apply_lane_data_response(response)) {
                     emit_event(EVENT_STATE_CHANGED);
                 }
             });
@@ -2030,9 +2197,15 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
         }
         auto& slot = entry->info;
 
-        // Parse color (AFC uses hex string without 0x prefix)
+        // Parse color. AFC writes "#RRGGBB" here (verified against a live
+        // BoxTurtle's lane_data namespace); std::stoul cannot parse the '#', so
+        // without stripping it every lane fell back to the default grey. Bare hex
+        // is also accepted. Matches the handling in parse_afc_stepper.
         if (lane.contains("color") && lane["color"].is_string()) {
             std::string color_str = lane["color"].get<std::string>();
+            if (!color_str.empty() && color_str[0] == '#') {
+                color_str = color_str.substr(1);
+            }
             try {
                 slot.color_rgb = static_cast<uint32_t>(std::stoul(color_str, nullptr, 16));
             } catch (...) {
@@ -2045,9 +2218,18 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
             slot.material = lane["material"].get<std::string>();
         }
 
-        // Parse loaded state
-        // AFC "loaded" means hub-loaded, not toolhead-loaded
-        // Only tool_loaded == true means filament is at the extruder
+        // Parse loaded state.
+        // AFC "loaded" means hub-loaded, not toolhead-loaded — only
+        // tool_loaded == true means filament is at the extruder.
+        //
+        // AFC's real lane_data payload carries NONE of these keys (it is metadata
+        // only: color/material/temps/spool_id/td). Defaulting to AVAILABLE when no
+        // status key is present would clobber the status already derived from the
+        // AFC_stepper objects and show empty lanes as loaded. Absent means
+        // unchanged, matching how status deltas are treated elsewhere.
+        const bool has_status_key = lane.contains("tool_loaded") || lane.contains("loaded") ||
+                                    lane.contains("available") || lane.contains("empty");
+
         bool tool_loaded = false;
         if (lane.contains("tool_loaded") && lane["tool_loaded"].is_boolean()) {
             tool_loaded = lane["tool_loaded"].get<bool>();
@@ -2061,7 +2243,7 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
                    lane["loaded"].get<bool>()) {
             // Hub-loaded: filament is present and ready, not at toolhead
             slot.status = SlotStatus::AVAILABLE;
-        } else {
+        } else if (has_status_key) {
             if (lane.contains("available") && lane["available"].is_boolean() &&
                 lane["available"].get<bool>()) {
                 slot.status = SlotStatus::AVAILABLE;
@@ -2718,17 +2900,11 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
         // sync_from_backend → refresh_spoolman_weights → set_slot_info again,
         // creating an infinite feedback loop that saturates the CPU.
         //
-        // Persistence is NOT gated on the reported AFC version.
-        //
-        // The version comes from the Moonraker `afc-install` namespace, and
-        // nothing in the AFC source writes it — it is never refreshed on
-        // upgrade. A BoxTurtle running v1.1.0-4 still reports "1.0.0" there.
-        // The old version_at_least("1.0.20") gate therefore silently dropped
-        // every SET_* on such a printer, logging only an "upgrade for
-        // persistence" line; saves survived only when the DB query lost the
-        // race and hit the unknown-version escape hatch (#644). These commands
-        // all long predate v1.0.20, so just send them and let AFC reject
-        // anything it does not understand.
+        // Persistence is never version-gated. These SET_* commands have existed
+        // since well before any version we would recognize, and the version string
+        // is not a usable signal (AFC stopped writing it — see
+        // apply_afc_version_response). Skipping gcode on an unrecognized version
+        // caused issue #644, where spool assignment silently bypassed AFC.
         if (persist) {
             std::string lane_name = slots_.name_of(slot_index);
             if (!lane_name.empty()) {

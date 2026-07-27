@@ -67,12 +67,13 @@ TEST_CASE_METHOD(LVGLTestFixture, "Narration router advances toolchange_step on 
     reset_step_baseline();
 
     GcodeNarrationRouter router(nullptr, nullptr);
-    // "Clean Nozzle" -> matcher returns "clean"; "clean" is index 7 in the
-    // LOAD_SWAP template (heat,cut,poop,kick,feed,purge,brush,clean,load).
+    // "Clean Nozzle" is AFC_BRUSH's verbose=1 wording, so the matcher returns
+    // "brush"; "brush" is index 6 in the LOAD_SWAP template
+    // (heat,cut,unload,feed,poop,kick,brush,load).
     GcodeNarrationRouterTestAccess::feed(router, "// AFC_Brush: Clean Nozzle");
     helix::ui::UpdateQueue::instance().drain();
 
-    REQUIRE(lv_subject_get_int(AmsState::instance().get_toolchange_step_subject()) == 7);
+    REQUIRE(lv_subject_get_int(AmsState::instance().get_toolchange_step_subject()) == 6);
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "Narration router ignores unrecognized // lines",

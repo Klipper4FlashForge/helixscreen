@@ -136,7 +136,7 @@ EOF
         [ -f "$MOCK_ROOT/etc/init.d/$s.helix-bak" ]
         grep -q "Stock COSMOS $s" "$MOCK_ROOT/etc/init.d/$s.helix-bak"
         # The backup must be the real UI, never our own wrapper.
-        ! grep -q "HELIXSCREEN_WRAPPER" "$MOCK_ROOT/etc/init.d/$s.helix-bak"
+        refute grep -q "HELIXSCREEN_WRAPPER" "$MOCK_ROOT/etc/init.d/$s.helix-bak"
     done
 }
 
@@ -167,7 +167,7 @@ EOF
     [ "$status" -eq 0 ]
     for s in grumpyscreen guppyscreen atomscreen; do
         diff "$MOCK_ROOT/$s.bak1" "$MOCK_ROOT/etc/init.d/$s.helix-bak"
-        ! grep -q "HELIXSCREEN_WRAPPER" "$MOCK_ROOT/etc/init.d/$s.helix-bak"
+        refute grep -q "HELIXSCREEN_WRAPPER" "$MOCK_ROOT/etc/init.d/$s.helix-bak"
     done
 }
 
@@ -185,7 +185,7 @@ EOF
     # function must leave screen_ui untouched — and must NEVER write 'helixscreen'.
     found_any=false
     stop_cc1_competing_uis >/dev/null
-    ! grep -q "screen_ui = helixscreen" "$MOCK_ROOT/etc/klipper/config/cosmos.conf"
+    refute grep -q "screen_ui = helixscreen" "$MOCK_ROOT/etc/klipper/config/cosmos.conf"
     grep -q "^screen_ui = grumpyscreen" "$MOCK_ROOT/etc/klipper/config/cosmos.conf"
 }
 

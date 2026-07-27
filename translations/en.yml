@@ -670,6 +670,7 @@ translations:
   Do not power off your printer.: Do not power off your printer.
   Do not touch the printer during calibration: Do not touch the printer during calibration
   Dock: Dock
+  Docking tool: Docking tool
   Documentation: Documentation
   Don't Save: Don't Save
   Don't ask again: Don't ask again
@@ -709,6 +710,7 @@ translations:
   'Eject failed: {}': 'Eject failed: {}'
   Eject needs [force_move] enabled in printer config: Eject needs [force_move] enabled
     in printer config
+  Ejecting: Ejecting
   Elegoo Centauri Carbon: Elegoo Centauri Carbon
   Emergency Stop: Emergency Stop
   Emergency Stop?: Emergency Stop?
@@ -1116,6 +1118,7 @@ translations:
     cannot use {} as backup'
   Indexing G-code...: Indexing G-code...
   Info: Info
+  Initialized: Initialized
   Initializing...: Initializing...
   Input: Input
   Input Shaper: Input Shaper
@@ -1384,6 +1387,7 @@ translations:
     minutes. The printer will make noise — this is normal.
   : Moves the print head to measure vibration frequencies on each axis. Takes 2-3
     minutes. The printer will make noise — this is normal.
+  Moving lane: Moving lane
   Multi-Filament: Multi-Filament
   Multi-Filament Overview: Multi-Filament Overview
   Multi-Filament System: Multi-Filament System
@@ -1621,6 +1625,7 @@ translations:
   Phomemo M110: Phomemo M110
   Pick: Pick
   Pick Color: Pick Color
+  Picking up tool: Picking up tool
   Pill: Pill
   Pixels before a press becomes a scroll (lower = scrolls engage sooner): Pixels before
     a press becomes a scroll (lower = scrolls engage sooner)
@@ -1903,6 +1908,7 @@ translations:
   Restarting with the new version...: Restarting with the new version...
   Restarting...: Restarting...
   Restore Defaults: Restore Defaults
+  Restoring position: Restoring position
   Resume: Resume
   Resume Print: Resume Print
   Resume interrupted print?: Resume interrupted print?
@@ -2420,6 +2426,7 @@ translations:
   Tool: Tool
   Tool Changer: Tool Changer
   'Tool change failed: {}': 'Tool change failed: {}'
+  Tool swap: Tool swap
   'Tool {} → Lane {}: no filament loaded.': 'Tool {} → Lane {}: no filament loaded.'
   Toolhead: Toolhead
   Toolhead Style: Toolhead Style

@@ -179,8 +179,8 @@ EOF
     remove_legacy_moonraker_block "$conf"
 
     # Block gone:
-    ! grep -q "\[shell_command helix_recover\]" "$conf"
-    ! grep -q "/etc/init.d/klipper restart" "$conf"
+    refute grep -q "\[shell_command helix_recover\]" "$conf"
+    refute grep -q "/etc/init.d/klipper restart" "$conf"
     # Surrounding sections preserved:
     grep -q "\[server\]" "$conf"
     grep -q "\[update_manager helixscreen\]" "$conf"

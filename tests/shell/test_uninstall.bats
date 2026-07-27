@@ -286,7 +286,7 @@ CONF
     remove_update_manager_section
 
     # helixscreen section should be gone
-    ! grep -q 'update_manager helixscreen' "$conf"
+    refute grep -q 'update_manager helixscreen' "$conf"
     # mainsail section should remain
     grep -q 'update_manager mainsail' "$conf"
     # server section should remain

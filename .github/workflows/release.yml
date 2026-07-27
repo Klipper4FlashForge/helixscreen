@@ -441,17 +441,39 @@ jobs:
       run: |
         mkdir -p release-files/symbols
         # Flatten symbol artifacts (same logic as upload-r2 job)
+        #
+        # The GitHub-release copies are named `symbols-<platform>.sym.zst`, NOT
+        # `<platform>.sym.zst`. The prefix exists purely to lose an alphabetical
+        # race (prestonbrown/helixscreen#993): the GitHub API returns release
+        # assets sorted by name, and Moonraker's NetDeploy falls back to
+        # assets[0] whenever release_info.json's asset_name doesn't match — which
+        # is always, on any Moonraker predating commit 530f1c2016 (2025-01-19,
+        # first tagged v0.10.0), since those versions don't read asset_name at
+        # all. Unprefixed, `ad5m.sym.zst` sorted first and Moonraker downloaded a
+        # zstd symbol file, then died in zipfile with "File is not a zip file" —
+        # after `shutil.rmtree(self.path)` had already wiped the install dir.
+        # `symbols-` sorts after `helixscreen-`, so assets[0] is a real release
+        # artifact instead.
+        #
+        # This does not by itself make old Moonraker safe (a .tar.gz isn't a zip
+        # either) — the installer's asset_name capability probe is what actually
+        # prevents the wipe. This just stops a debug file being the first thing
+        # anyone's tooling reaches for.
+        #
+        # R2 naming is deliberately NOT changed: resolve-backtrace.sh's primary
+        # path is `${R2_BASE_URL}/symbols/v<ver>/<platform>.sym.zst` and R2 has no
+        # alphabetical-fallback problem.
         for dir in artifacts/symbols-*/; do
           [ -d "$dir" ] || continue
           platform=$(basename "$dir" | sed 's/symbols-//')
 
           # DRM symbols (not in -fbdev path)
           sym=$(find "$dir" -name 'helix-screen.sym' -not -path '*-fbdev*' | head -1)
-          [ -n "$sym" ] && cp "$sym" "release-files/${platform}.sym"
+          [ -n "$sym" ] && cp "$sym" "release-files/symbols-${platform}.sym"
 
           # fbdev symbols (Pi variants)
           sym_fb=$(find "$dir" -name 'helix-screen.sym' -path '*-fbdev*' | head -1)
-          [ -n "$sym_fb" ] && cp "$sym_fb" "release-files/${platform}-fbdev.sym"
+          [ -n "$sym_fb" ] && cp "$sym_fb" "release-files/symbols-${platform}-fbdev.sym"
         done
 
         # Compress the symbol maps before attaching them to the release.
@@ -462,9 +484,20 @@ jobs:
           zstd -19 --rm -q "$symfile"
         done
 
-        sym_count=$(find release-files -maxdepth 1 -name '*.sym.zst' 2>/dev/null | wc -l)
-        echo "Symbol files attached to release ($sym_count .sym.zst files):"
-        ls -lh release-files/*.sym.zst 2>/dev/null || echo "  (none)"
+        sym_count=$(find release-files -maxdepth 1 -name 'symbols-*.sym.zst' 2>/dev/null | wc -l)
+        echo "Symbol files attached to release ($sym_count symbols-*.sym.zst files):"
+        ls -lh release-files/symbols-*.sym.zst 2>/dev/null || echo "  (none)"
+
+        # Guard the alphabetical-ordering property this naming exists to hold.
+        # If a future asset ever sorts before the helixscreen-* artifacts, an old
+        # Moonraker's assets[0] fallback goes back to grabbing the wrong thing.
+        first_asset=$(cd release-files && ls -1 | sort | head -1)
+        case "$first_asset" in
+          helixscreen-*) echo "assets[0] = $first_asset (ok)" ;;
+          *) echo "::error::assets[0] would be '$first_asset', not a helixscreen-* artifact." \
+                  "Moonraker's NetDeploy falls back to assets[0]; see helixscreen#993."
+             exit 1 ;;
+        esac
 
     - name: Extract version from tag
       id: version

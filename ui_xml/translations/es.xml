@@ -607,6 +607,7 @@
   <translation tag="Do not power off your printer." es="No apague la impresora."/>
   <translation tag="Do not touch the printer during calibration" es="No toque la impresora durante la calibración"/>
   <translation tag="Dock" es="Acoplar"/>
+  <translation tag="Docking tool"/>
   <translation tag="Documentation" es="Documentación"/>
   <translation tag="Don&apos;t Save" es="No Guardar"/>
   <translation tag="Don&apos;t ask again" es="No volver a preguntar"/>
@@ -644,6 +645,7 @@
   <translation tag="Eject Velocity" es="Velocidad de expulsión"/>
   <translation tag="Eject failed: {}" es="Error al expulsar: {}"/>
   <translation tag="Eject needs [force_move] enabled in printer config" es="La expulsión requiere [force_move] habilitado en la configuración de la impresora"/>
+  <translation tag="Ejecting"/>
   <translation tag="Elegoo Centauri Carbon" es="Elegoo Centauri Carbon"/>
   <translation tag="Emergency Stop" es="Parada de Emergencia"/>
   <translation tag="Emergency Stop?" es="¿Parada de Emergencia?"/>
@@ -1011,6 +1013,7 @@
   <translation tag="Incompatible materials: {} cannot use {} as backup" es="Materiales incompatibles: {} no puede usar {} como respaldo"/>
   <translation tag="Indexing G-code..." es="Indexando G-code..."/>
   <translation tag="Info" es="Info"/>
+  <translation tag="Initialized"/>
   <translation tag="Initializing..." es="Inicializando..."/>
   <translation tag="Input" es="Entrada"/>
   <translation tag="Input Shaper" es="Moldeador de Entrada"/>
@@ -1241,6 +1244,7 @@
   <translation tag="Move paper back and forth while adjusting. Stop when paper catches slightly but still slides." es="Mueva el papel hacia adelante y atrás mientras ajusta. Deténgase cuando el papel se enganche ligeramente pero aún se deslice."/>
   <translation tag="Move selector" es="Mover selector"/>
   <translation tag="Moves the print head to measure vibration frequencies on each axis. Takes 2-3 minutes. The printer will make noise — this is normal." es="Mueve el cabezal para medir frecuencias de vibración en cada eje. Tarda 2-3 minutos. La impresora hará ruido — esto es normal."/>
+  <translation tag="Moving lane"/>
   <translation tag="Multi-Filament" es="Multi-Filamento"/>
   <translation tag="Multi-Filament Overview" es="Vista general multi-filamento"/>
   <translation tag="Multi-Filament System" es="Sistema multi-filamento"/>
@@ -1465,6 +1469,7 @@
   <translation tag="Phomemo M110" es="Phomemo M110"/>
   <translation tag="Pick" es="Elegir"/>
   <translation tag="Pick Color" es="Elegir Color"/>
+  <translation tag="Picking up tool"/>
   <translation tag="Pill" es="Píldora"/>
   <translation tag="Pixels before a press becomes a scroll (lower = scrolls engage sooner)" es="Píxeles antes de que una pulsación se convierta en desplazamiento (menor = se activa antes)"/>
   <translation tag="Place image files (PNG, JPEG, BMP, GIF) in config/custom_images/. Max size: 2048×2048 pixels." es="Coloque archivos de imagen (PNG, JPEG, BMP, GIF) en config/custom_images/. Tamaño máx.: 2048×2048 píxeles."/>
@@ -1720,6 +1725,7 @@
   <translation tag="Restarting with the new version..." es="Reiniciando con la nueva versión..."/>
   <translation tag="Restarting..." es="Reiniciando..."/>
   <translation tag="Restore Defaults" es="Restaurar valores predeterminados"/>
+  <translation tag="Restoring position"/>
   <translation tag="Resume" es="Reanudar"/>
   <translation tag="Resume Print" es="Reanudar Impresión"/>
   <translation tag="Resume interrupted print?" es="¿Reanudar impresión interrumpida?"/>
@@ -2132,6 +2138,7 @@
   <translation tag="Tool" es="Herramienta"/>
   <translation tag="Tool Changer" es="Cambiador de Herramientas"/>
   <translation tag="Tool change failed: {}" es="Error al cambiar herramienta: {}"/>
+  <translation tag="Tool swap"/>
   <translation tag="Tool {} → Lane {}: no filament loaded." es="Herramienta {} → Carril {}: no hay filamento cargado."/>
   <translation tag="Toolhead" es="Cabezal"/>
   <translation tag="Toolhead Style" es="Estilo de Cabezal"/>

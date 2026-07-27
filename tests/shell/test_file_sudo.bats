@@ -189,7 +189,7 @@ SEDWRAP
 
     remove_update_manager_section
 
-    ! grep -q '^\[update_manager helixscreen\]' "$conf"
+    refute grep -q '^\[update_manager helixscreen\]' "$conf"
     grep -q '^\[server\]' "$conf"
 }
 

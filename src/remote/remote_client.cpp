@@ -253,9 +253,24 @@ static int handle_response(const std::string& raw_response, nlohmann::json* out_
         auto response = nlohmann::json::parse(raw_response);
 
         if (response.contains("error")) {
-            auto& error = response["error"];
-            fprintf(stderr, "Error: %s (code %d)\n",
-                    error.value("message", "Unknown error").c_str(), error.value("code", -1));
+            const auto& error = response["error"];
+            // A server is free to send a non-object error ("error": null, or a bare
+            // string). value() throws type_error.306 on those, so probe the type
+            // first. The message is held in a named string because c_str() on the
+            // value() temporary only survives to the end of the full expression.
+            std::string message = "Unknown error";
+            int code = -1;
+            if (error.is_object()) {
+                const auto it = error.find("message");
+                if (it != error.end() && it->is_string())
+                    message = it->get<std::string>();
+                const auto ic = error.find("code");
+                if (ic != error.end() && ic->is_number_integer())
+                    code = ic->get<int>();
+            } else if (error.is_string()) {
+                message = error.get<std::string>();
+            }
+            fprintf(stderr, "Error: %s (code %d)\n", message.c_str(), code);
             return 1;
         }
 
@@ -287,6 +302,12 @@ static int handle_response(const std::string& raw_response, nlohmann::json* out_
 
     } catch (const nlohmann::json::parse_error& e) {
         fprintf(stderr, "Error: Failed to parse response: %s\n", e.what());
+        return 1;
+    } catch (const nlohmann::json::exception& e) {
+        // Backstop for type_error/out_of_range from a well-formed but
+        // unexpectedly shaped response. This runs on a main() path, so an
+        // escaping exception is std::terminate rather than a usable message.
+        fprintf(stderr, "Error: Unexpected response content: %s\n", e.what());
         return 1;
     }
 }

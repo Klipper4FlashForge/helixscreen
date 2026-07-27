@@ -60,3 +60,28 @@ TEST_CASE("populate_discovery: missing/null fields are skipped safely", "[detect
     REQUIRE(disc.hostname().empty());
     REQUIRE(disc.kinematics().empty());
 }
+
+// Regression: an info object that omits "hostname" entirely is distinct from one
+// carrying a null hostname. The const json operator[] does not insert on a miss —
+// it is only JSON_ASSERT-guarded, so a missing key aborts where asserts are live
+// and is undefined behaviour where they are not. Reading via find() is the only
+// safe form on a const reference.
+TEST_CASE("populate_discovery: info object without a hostname key is safe", "[detect_cmd]") {
+    helix::PrinterDiscovery disc;
+    nlohmann::json objects = nlohmann::json::array({"extruder"});
+    nlohmann::json info = {{"software_version", "v0.12.0"}}; // object, but no hostname
+    nlohmann::json cfg = nlohmann::json::object();
+    REQUIRE_NOTHROW(helix::detect::populate_discovery(disc, objects, info, cfg));
+    REQUIRE(disc.hostname().empty());
+}
+
+// Klipper's /printer/info is fetched over the network, so the result is not
+// guaranteed to be an object at all. A scalar must be skipped, not indexed:
+// the const operator[] throws type_error.305 on a non-object.
+TEST_CASE("populate_discovery: non-object info is skipped", "[detect_cmd]") {
+    helix::PrinterDiscovery disc;
+    nlohmann::json objects = nlohmann::json::array({"extruder"});
+    nlohmann::json cfg = nlohmann::json::object();
+    REQUIRE_NOTHROW(helix::detect::populate_discovery(disc, objects, nlohmann::json("oops"), cfg));
+    REQUIRE(disc.hostname().empty());
+}

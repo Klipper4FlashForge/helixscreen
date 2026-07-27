@@ -151,3 +151,46 @@ stat_mtime() {
 last_line() {
     printf '%s' "${lines[$((${#lines[@]} - 1))]}"
 }
+
+# ---------------------------------------------------------------------------
+# Negative assertions
+#
+# POSIX makes the `!` reserved word exempt from errexit, and bats runs each
+# @test body under `set -e`. So a bare `! some_command` that is NOT the final
+# statement of the body is a silent no-op: when the assertion should fail, the
+# non-zero status is swallowed and whatever runs last decides the test result.
+# 65 such assertions were proving nothing before this helper landed.
+#
+#     ! grep -q oops "$conf"        # swallowed unless it is the last line
+#     refute grep -q oops "$conf"   # fails the test, as intended
+#
+# Use `refute` for a simple command, `refute_sh` when you need a pipeline or
+# other shell syntax, and `refute_grep` for the common file case (it dumps the
+# file on failure, which is usually what you want to see).
+# ---------------------------------------------------------------------------
+
+# Assert that a command FAILS. Returns non-zero if it unexpectedly succeeds.
+refute() {
+    if "$@"; then
+        printf 'refute: expected failure, but succeeded: %s\n' "$*" >&2
+        return 1
+    fi
+}
+
+# refute for a pipeline or anything else needing shell parsing.
+refute_sh() {
+    if eval "$1"; then
+        printf 'refute_sh: expected failure, but succeeded: %s\n' "$1" >&2
+        return 1
+    fi
+}
+
+# Assert a pattern is ABSENT from a file. Dumps the file on failure.
+refute_grep() {
+    local pattern="$1" file="$2"
+    if grep -q "$pattern" "$file"; then
+        printf 'refute_grep: unexpectedly matched /%s/ in %s\n' "$pattern" "$file" >&2
+        cat "$file" >&2
+        return 1
+    fi
+}

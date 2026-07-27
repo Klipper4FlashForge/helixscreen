@@ -706,6 +706,7 @@ translations:
   Do not touch the printer during calibration: Drucker während der Kalibrierung nicht
     berühren
   Dock: Andocken
+  Docking tool: ''
   Documentation: Dokumentation
   Don't Save: Nicht speichern
   Don't ask again: Nicht erneut fragen
@@ -745,6 +746,7 @@ translations:
   'Eject failed: {}': 'Auswerfen fehlgeschlagen: {}'
   Eject needs [force_move] enabled in printer config: Auswerfen erfordert [force_move]
     aktiviert in der Druckerkonfiguration
+  Ejecting: ''
   Elegoo Centauri Carbon: Elegoo Centauri Carbon
   Emergency Stop: Notaus
   Emergency Stop?: Notaus?
@@ -1167,6 +1169,7 @@ translations:
     {} kann {} nicht als Reserve verwenden'
   Indexing G-code...: G-Code wird indiziert...
   Info: Info
+  Initialized: ''
   Initializing...: Initialisiere...
   Input: Eingabe
   Input Shaper: Input Shaper
@@ -1441,6 +1444,7 @@ translations:
     minutes. The printer will make noise — this is normal.
   : Bewegt den Druckkopf, um Vibrationsfrequenzen auf jeder Achse zu messen. Dauert
     2-3 Minuten. Der Drucker wird Geräusche machen — das ist normal.
+  Moving lane: ''
   Multi-Filament: Multi-Filament
   Multi-Filament Overview: Multi-Filament-Übersicht
   Multi-Filament System: Multi-Filament
@@ -1682,6 +1686,7 @@ translations:
   Phomemo M110: Phomemo M110
   Pick: Auswählen
   Pick Color: Farbe wählen
+  Picking up tool: ''
   Pill: Pille
   Pixels before a press becomes a scroll (lower = scrolls engage sooner): Pixel, bevor
     ein Druck zum Scrollen wird (niedriger = Scrollen beginnt früher)
@@ -1969,6 +1974,7 @@ translations:
   Restarting with the new version...: Neustart mit der neuen Version...
   Restarting...: Wird neu gestartet...
   Restore Defaults: Standardeinstellungen wiederherstellen
+  Restoring position: ''
   Resume: Fortsetzen
   Resume Print: Druck fortsetzen
   Resume interrupted print?: Unterbrochenen Druck fortsetzen?
@@ -2507,6 +2513,7 @@ translations:
   Tool: Werkzeug
   Tool Changer: Werkzeugwechsler
   'Tool change failed: {}': 'Werkzeugwechsel fehlgeschlagen: {}'
+  Tool swap: ''
   'Tool {} → Lane {}: no filament loaded.': 'Werkzeug {} → Spur {}: kein Filament
     geladen.'
   Toolhead: 'Werkzeugkopf'

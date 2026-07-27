@@ -819,6 +819,74 @@ describe("mapEventToDataPoints", () => {
     expect(dp.doubles).toHaveLength(8);
   });
 
+  it("maps session zip_tool into blob10", () => {
+    const event = {
+      event: "session",
+      device_id: "dev-zip",
+      app: { version: "0.99.102", platform: "k2", zip_tool: "python" },
+    };
+    const dp = mapEventToDataPoints(event)[0];
+    expect(dp.blobs![9]).toBe("python");
+    expect(dp.blobs).toHaveLength(12);
+  });
+
+  it("leaves session zip_tool empty for clients that do not send it", () => {
+    const event = { event: "session", device_id: "dev-old", app: { version: "0.99.90" } };
+    const dp = mapEventToDataPoints(event)[0];
+    expect(dp.blobs![9]).toBe("");
+  });
+
+  it("maps update_failed event to real slots, not the unknown fallback", () => {
+    const event = {
+      event: "update_failed",
+      device_id: "dev-uf",
+      reason: "corrupt_download",
+      version: "0.99.103",
+      from_version: "0.99.100",
+      platform: "ad5m",
+      http_code: 200,
+      file_size: 1048576,
+      exit_code: 127,
+    };
+    const dp = mapEventToDataPoints(event)[0];
+    expect(dp.indexes).toEqual(["update_failed"]);
+    expect(dp.blobs![0]).toBe("dev-uf");
+    // blob2 is the RUNNING version, not the target. The default dashboard
+    // filter maps version=blob2, and the target is always the newest release —
+    // keying on it would collapse every failure into one bucket. What we need
+    // is which deployed versions are failing (helixscreen#993).
+    expect(dp.blobs![1]).toBe("0.99.100");
+    expect(dp.blobs![2]).toBe("ad5m");
+    expect(dp.blobs![3]).toBe("corrupt_download");
+    expect(dp.blobs![4]).toBe("0.99.103"); // target
+    expect(dp.blobs).toHaveLength(12);
+    expect(dp.doubles![0]).toBe(200);
+    expect(dp.doubles![1]).toBe(1048576);
+    expect(dp.doubles![2]).toBe(127);
+    expect(dp.doubles).toHaveLength(8);
+    // The unknown-event fallback would have put the event name in blob2.
+    expect(dp.blobs![1]).not.toBe("update_failed");
+  });
+
+  it("maps update_success event to real slots, not the unknown fallback", () => {
+    const event = {
+      event: "update_success",
+      device_id: "dev-us",
+      version: "0.99.103",
+      from_version: "0.99.100",
+      platform: "pi",
+    };
+    const dp = mapEventToDataPoints(event)[0];
+    expect(dp.indexes).toEqual(["update_success"]);
+    expect(dp.blobs![0]).toBe("dev-us");
+    expect(dp.blobs![1]).toBe("0.99.103");
+    expect(dp.blobs![2]).toBe("pi");
+    expect(dp.blobs![3]).toBe("0.99.100");
+    expect(dp.blobs).toHaveLength(12);
+    expect(dp.doubles).toHaveLength(8);
+    expect(dp.blobs![1]).not.toBe("update_success");
+  });
+
   it("maps unknown event type with basic info", () => {
     const event = {
       event: "custom_thing",
@@ -933,6 +1001,17 @@ describe("Dashboard endpoints", () => {
   beforeEach(() => {
     env = createEnv();
     mockExecuteQuery.mockReset();
+    // Default every query to an empty result set. Each test still chains
+    // mockResolvedValueOnce for the queries its assertions care about; this
+    // only backstops the rest.
+    //
+    // Without it, a handler that issues more queries than the test mocks gets
+    // `undefined` back, and reading `.data` off it throws — surfacing as an
+    // opaque 502 rather than a useful assertion failure. That is exactly how
+    // these tests drifted: overviewQueries grew to 7 while the tests still
+    // mocked 5, and the whole Dashboard block had been red long enough that
+    // nobody noticed (the worker suite is not wired into CI).
+    mockExecuteQuery.mockResolvedValue({ data: [] } as never);
   });
 
   // -- Shared auth/config tests --
@@ -1168,6 +1247,8 @@ describe("Dashboard endpoints", () => {
         signal: "SIGSEGV",
         platform: "pi",
         uptime_sec: 325,
+        // deduplicateCrashes collapses repeats and reports how many it merged.
+        occurrences: 1,
       });
     });
 
@@ -1186,17 +1267,41 @@ describe("Dashboard endpoints", () => {
     it("clamps limit to 1-200 range", async () => {
       mockExecuteQuery.mockResolvedValue({ data: [] });
 
-      // Default limit (no param)
+      // The handler over-fetches 5x the requested limit so dedup still has
+      // enough rows to work with, then slices back down. So the SQL LIMIT is
+      // always limit*5, not limit.
+
+      // Default limit (no param) -> 50, SQL asks for 250
       await worker.fetch(dashboardRequest("/v1/dashboard/crash-list"), env);
       const firstCall = mockExecuteQuery.mock.calls[0][1] as string;
-      expect(firstCall).toContain("LIMIT 50");
+      expect(firstCall).toContain("LIMIT 250");
 
       mockExecuteQuery.mockClear();
 
-      // Over 200 gets clamped
+      // Over 200 gets clamped to 200, SQL asks for 1000
       await worker.fetch(dashboardRequest("/v1/dashboard/crash-list?limit=500"), env);
       const secondCall = mockExecuteQuery.mock.calls[0][1] as string;
-      expect(secondCall).toContain("LIMIT 200");
+      expect(secondCall).toContain("LIMIT 1000");
+
+      mockExecuteQuery.mockClear();
+
+      // A negative is what the Math.max(1, ...) floor actually guards against:
+      // -5 clamps to 1, so the SQL asks for 5.
+      await worker.fetch(dashboardRequest("/v1/dashboard/crash-list?limit=-5"), env);
+      expect(mockExecuteQuery.mock.calls[0][1] as string).toContain("LIMIT 5");
+
+      mockExecuteQuery.mockClear();
+
+      // limit=0 and a non-numeric limit both fall back to the default 50
+      // (-> 250) rather than reaching the floor: the handler uses `|| 50`, and
+      // 0 is falsy. Asserted so the fallback is deliberate rather than assumed.
+      await worker.fetch(dashboardRequest("/v1/dashboard/crash-list?limit=0"), env);
+      expect(mockExecuteQuery.mock.calls[0][1] as string).toContain("LIMIT 250");
+
+      mockExecuteQuery.mockClear();
+
+      await worker.fetch(dashboardRequest("/v1/dashboard/crash-list?limit=abc"), env);
+      expect(mockExecuteQuery.mock.calls[0][1] as string).toContain("LIMIT 250");
     });
   });
 
@@ -1228,6 +1333,41 @@ describe("Dashboard endpoints", () => {
       expect(data.versions[0].print_success_rate).toBeCloseTo(0.88);
       expect(data.versions[0].total_sessions).toBe(200);
       expect(data.versions[0].total_crashes).toBe(4);
+      // Absent update columns must degrade to 0/null, not NaN or undefined —
+      // rows predating the update_* mapping still come back from the dataset.
+      expect(data.versions[0].update_failures).toBe(0);
+      expect(data.versions[0].update_successes).toBe(0);
+      expect(data.versions[0].update_success_rate).toBeNull();
+    });
+
+    it("reports self-update health per running version", async () => {
+      mockExecuteQuery
+        .mockResolvedValueOnce({
+          data: [
+            {
+              ver: "0.99.97",
+              total_sessions: 100,
+              total_crashes: 1,
+              update_failures: 9,
+              update_successes: 1,
+            },
+          ],
+        })
+        .mockResolvedValueOnce({ data: [{ ver: "0.99.97", active_devices: 40 }] })
+        .mockResolvedValueOnce({
+          data: [{ ver: "0.99.97", print_successes: 10, print_total: 10 }],
+        });
+
+      const res = await worker.fetch(
+        dashboardRequest("/v1/dashboard/releases?versions=v0.99.97"),
+        env,
+      );
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      // A version that cannot update itself — the helixscreen#993 signature.
+      expect(data.versions[0].update_failures).toBe(9);
+      expect(data.versions[0].update_successes).toBe(1);
+      expect(data.versions[0].update_success_rate).toBeCloseTo(0.1);
     });
 
     it("requires versions parameter", async () => {

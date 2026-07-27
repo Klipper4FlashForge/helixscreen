@@ -687,6 +687,7 @@ translations:
   Do not power off your printer.: Не выключайте принтер.
   Do not touch the printer during calibration: Не трогайте принтер во время калибровки
   Dock: Парковать
+  Docking tool: ''
   Documentation: Документация
   Don't Save: Не сохранять
   Don't ask again: Больше не спрашивать
@@ -727,6 +728,7 @@ translations:
   'Eject failed: {}': 'Ошибка извлечения: {}'
   Eject needs [force_move] enabled in printer config: Для извлечения нужно включить
     [force_move] в конфигурации принтера
+  Ejecting: ''
   Elegoo Centauri Carbon: Elegoo Centauri Carbon
   Emergency Stop: Аварийная остановка
   Emergency Stop?: Аварийная остановка?
@@ -1137,6 +1139,7 @@ translations:
     {} не может использовать {} в качестве резерва'
   Indexing G-code...: Индексация G-code...
   Info: Инфо
+  Initialized: ''
   Initializing...: Инициализация...
   Input: Ввод
   Input Shaper: Input Shaper
@@ -1409,6 +1412,7 @@ translations:
     minutes. The printer will make noise — this is normal.
   : Перемещает печатающую головку для измерения частот вибрации по каждой оси. Занимает
     2-3 минуты. Принтер будет шуметь — это нормально.
+  Moving lane: ''
   Multi-Filament: Мульти-филамент
   Multi-Filament Overview: Обзор мульти-филамента
   Multi-Filament System: Мультифиламентная система
@@ -1648,6 +1652,7 @@ translations:
   Phomemo M110: Phomemo M110
   Pick: Выбрать
   Pick Color: Выбрать цвет
+  Picking up tool: ''
   Pill: Овал
   Pixels before a press becomes a scroll (lower = scrolls engage sooner): Пикселей
     до того, как нажатие станет прокруткой (меньше = прокрутка начинается раньше)
@@ -1933,6 +1938,7 @@ translations:
   Restarting with the new version...: Перезапуск с новой версией...
   Restarting...: Перезапуск...
   Restore Defaults: Восстановить по умолчанию
+  Restoring position: ''
   Resume: Продолжить
   Resume Print: Продолжить печать
   Resume interrupted print?: Продолжить прерванную печать?
@@ -2461,6 +2467,7 @@ translations:
   Tool: Инструмент
   Tool Changer: Сменщик инструментов
   'Tool change failed: {}': 'Ошибка смены инструмента: {}'
+  Tool swap: ''
   'Tool {} → Lane {}: no filament loaded.': 'Инструмент {} → Слот {}: филамент не
     загружен.'
   Toolhead: 'Печатающая головка'

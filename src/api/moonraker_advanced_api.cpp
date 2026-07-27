@@ -1913,7 +1913,8 @@ void MoonrakerAdvancedAPI::get_machine_limits(MachineLimitsCallback on_success,
                     !response["result"]["status"].contains("toolhead")) {
                     spdlog::warn("[Moonraker API] Toolhead object not available in response");
                     if (on_error) {
-                        MoonrakerError err = MoonrakerError::unknown("Toolhead object not available");
+                        MoonrakerError err =
+                            MoonrakerError::unknown("Toolhead object not available");
                         on_error(err);
                     }
                     return;
@@ -2135,8 +2136,8 @@ void MoonrakerAdvancedAPI::get_heater_pid_values(
                     }
                 } else {
                     if (on_error) {
-                        on_error(MoonrakerError::unknown("No PID values for heater '" + heater + "'",
-                                                         "get_pid_values"));
+                        on_error(MoonrakerError::unknown(
+                            "No PID values for heater '" + heater + "'", "get_pid_values"));
                     }
                 }
             } catch (const std::exception& ex) {
@@ -2295,7 +2296,18 @@ void MoonrakerAdvancedAPI::detect_belt_hardware(BeltHardwareCallback on_complete
             helix::calibration::BeltTensionHardware hw;
 
             try {
-                auto objects = response.value("objects", json::array());
+                // The array lives under the JSON-RPC envelope's result member —
+                // send_jsonrpc hands the callback the whole envelope, not the
+                // unwrapped result. Reading "objects" off the top level always
+                // yielded the empty default, which left every flag below false on
+                // every printer (prestonbrown/helixscreen#1137).
+                json objects = json::array();
+                const auto result_it = response.find("result");
+                if (result_it != response.end() && result_it->is_object()) {
+                    const auto objects_it = result_it->find("objects");
+                    if (objects_it != result_it->end() && objects_it->is_array())
+                        objects = *objects_it;
+                }
 
                 // Use AccelSensorManager as the single source of truth for
                 // accelerometer detection (discovers from configfile.config,
@@ -2303,6 +2315,8 @@ void MoonrakerAdvancedAPI::detect_belt_hardware(BeltHardwareCallback on_complete
                 hw.has_adxl = helix::sensors::AccelSensorManager::instance().has_sensors();
 
                 for (const auto& obj : objects) {
+                    if (!obj.is_string())
+                        continue;
                     std::string name = obj.get<std::string>();
                     if (name == "quad_gantry_level") {
                         hw.has_belted_z = true;
@@ -2494,8 +2508,8 @@ void MoonrakerAdvancedAPI::download_accel_csv(const std::string& name,
                 if (!result.is_array()) {
                     spdlog::error("[MoonrakerAPI] File list 'result' is not an array");
                     if (on_error)
-                        on_error(
-                            MoonrakerError::json_rpc_error("", "File list 'result' is not an array"));
+                        on_error(MoonrakerError::json_rpc_error(
+                            "", "File list 'result' is not an array"));
                     return;
                 }
                 for (const auto& file : result) {
@@ -2517,7 +2531,8 @@ void MoonrakerAdvancedAPI::download_accel_csv(const std::string& name,
             if (best_file.empty()) {
                 spdlog::error("[MoonrakerAPI] No CSV file found matching: {}", target_prefix);
                 if (on_error)
-                    on_error(MoonrakerError::json_rpc_error("", "No accelerometer data file found"));
+                    on_error(
+                        MoonrakerError::json_rpc_error("", "No accelerometer data file found"));
                 return;
             }
 

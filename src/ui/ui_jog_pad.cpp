@@ -116,10 +116,12 @@ static void load_colors(jog_pad_state_t* state, const char* /*component_scope_na
     state->jog_color_home_border_unhomed = theme_manager_get_color("warning");
     state->jog_color_home_text_unhomed = theme_manager_get_color("warning");
 
-    // Divider lines use a dark border color for subtle separation
-    lv_color_t border = theme_manager_get_color("border");
-    state->jog_color_grid_lines = border;
-    state->jog_color_boundary_lines = border;
+    // The two main quadrant dividers are drawn in the surrounding card background color
+    // so they read as gaps cut through the pad rather than lines painted on top of it.
+    state->jog_color_grid_lines = theme_manager_get_color("card_bg");
+
+    // The 8 zone boundaries stay a subtle dark border line
+    state->jog_color_boundary_lines = theme_manager_get_color("border");
 
     // Labels and highlight still need contrast against ring backgrounds
     lv_color_t ring_contrast = theme_manager_get_contrast_color(state->jog_color_outer_ring);
@@ -270,8 +272,8 @@ static void jog_pad_draw_cb(lv_event_t* e) {
     lv_draw_line_dsc_t line_dsc;
     lv_draw_line_dsc_init(&line_dsc);
     line_dsc.color = state->jog_color_grid_lines;
-    line_dsc.width = 4;
-    line_dsc.opa = LV_OPA_50;
+    line_dsc.width = 6;
+    line_dsc.opa = LV_OPA_COVER;
 
     // NE-SW diagonal (45°-225°)
     line_dsc.p1.x = center_x + radius * 0.707f;

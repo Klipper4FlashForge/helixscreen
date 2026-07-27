@@ -27,9 +27,14 @@ Arguments:
             screen (preflight-check, runout-modal, lock-screen, print-status,
             print-tune). See scripts/screenshot-recipes.sh for the full list.
             An unknown token is tried as a bare `navigate <token>`.
-  FLAGS     Additional flags passed to the binary (e.g., --test, --dark,
+  FLAGS     Additional flags passed to the binary (e.g., --dark,
             -s 800x480, --layout ultrawide). Pass --wizard to capture the
             first-run wizard (suppresses --skip-wizard).
+
+            Captures run against mock data (--test) by default. Pass --real to
+            capture against the configured printer instead — that runs the app
+            in production mode, which rewrites your real config/settings.json
+            and ~/.helixscreen/*.backup, so it is opt-in.
 
             --recipe '<steps>'  Drive the UI with these `helix-screen ctl`
             steps (semicolon-separated) instead of a recipe-table lookup —
@@ -43,13 +48,14 @@ Environment Variables:
 
 Examples:
   ./scripts/screenshot.sh                                 # default binary, home
-  ./scripts/screenshot.sh helix-screen home-panel home --test
-  ./scripts/screenshot.sh helix-screen motion motion --test -s small
-  ./scripts/screenshot.sh helix-screen zoffset zoffset --test
-  ./scripts/screenshot.sh helix-screen preflight preflight-check --test
-  ./scripts/screenshot.sh helix-screen wizard-wifi "" --wizard --test
-  ./scripts/screenshot.sh helix-screen safety "" --test \
+  ./scripts/screenshot.sh helix-screen home-panel home
+  ./scripts/screenshot.sh helix-screen motion motion -s small
+  ./scripts/screenshot.sh helix-screen zoffset zoffset
+  ./scripts/screenshot.sh helix-screen preflight preflight-check
+  ./scripts/screenshot.sh helix-screen wizard-wifi "" --wizard
+  ./scripts/screenshot.sh helix-screen safety "" \
       --recipe 'navigate settings; click row_safety'
+  ./scripts/screenshot.sh helix-screen live-home home --real   # real printer
 
 Output:
   Screenshots are saved to /tmp/ui-screenshot-<NAME>.png, encoded by the app.
@@ -119,6 +125,22 @@ for a in "${EXTRA_ARGS[@]}"; do
     [ "$a" = "--wizard" ] && WIZARD_MODE=1
 done
 
+# Mock by default. Without --test the app runs in PRODUCTION mode: it reads and
+# rewrites the developer's real config/settings.json, drops tool_spools.json and
+# telemetry_queue.json into the repo, and — because /var/lib/helixscreen is
+# root-owned — falls through to rewriting ~/.helixscreen/*.backup. Screenshots
+# are overwhelmingly taken against mock data, so that has to be opt-in, not the
+# accident you get by forgetting a flag. --real captures against the configured
+# printer instead; it is consumed here and never forwarded to the binary.
+REAL_MODE=0
+FILTERED_ARGS=()
+for a in "${EXTRA_ARGS[@]}"; do
+    if [ "$a" = "--real" ]; then REAL_MODE=1; continue; fi
+    [ "$a" = "--test" ] && REAL_MODE=0
+    FILTERED_ARGS+=("$a")
+done
+EXTRA_ARGS=("${FILTERED_ARGS[@]}")
+
 # Headless: no display server at all (CI, ssh session, container). SDL's dummy
 # video driver needs no window system, and the SDL backend falls back to the
 # software renderer on its own. Screenshots still come out correct because
@@ -181,6 +203,13 @@ trap cleanup EXIT
 LAUNCH_FLAGS=(--remote --remote-socket "$SOCK" --skip-splash
               --display "$HELIX_SCREENSHOT_DISPLAY")
 [ "$WIZARD_MODE" = "0" ] && LAUNCH_FLAGS+=(--skip-wizard)
+if [ "$REAL_MODE" = "1" ]; then
+    warn "Capturing in PRODUCTION mode (--real): this run reads and rewrites your real config."
+else
+    # Only add --test when the caller did not already pass it explicitly, so the
+    # flag never appears twice on the command line.
+    printf '%s\n' "${EXTRA_ARGS[@]}" | grep -qx -- '--test' || LAUNCH_FLAGS+=(--test)
+fi
 
 info "Launching ${BINARY} (private socket $SOCK)..."
 "$BINARY_PATH" "${LAUNCH_FLAGS[@]}" "${EXTRA_ARGS[@]}" > "$LOG" 2>&1 &

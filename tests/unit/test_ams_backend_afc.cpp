@@ -28,13 +28,11 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
   public:
     AmsBackendAfcTestHelper() : AmsBackendAfc(nullptr, nullptr) {}
 
-    // Version testing helpers
+    // Version is display/diagnostics only — nothing gates on it (AFC stopped
+    // writing the afc-install namespace in its #451). Kept so tests can assert
+    // that behavior is INDEPENDENT of whatever version is reported.
     void set_afc_version(const std::string& version) {
         afc_version_ = version;
-    }
-
-    bool test_version_at_least(const std::string& required) const {
-        return version_at_least(required);
     }
 
     // Sensor state setters for compute_filament_segment_unlocked testing
@@ -427,87 +425,40 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
 };
 
 // ============================================================================
-// version_at_least() - Semantic Version Comparison Tests
+// AFC version is informational only
 // ============================================================================
+//
+// version_at_least() is gone. AFC removed the code that writes the afc-install
+// Moonraker namespace in its commit 7d20db7 (#451, 2025-06-16), so the version
+// string is either absent or frozen at whatever it was before that date. A live
+// BoxTurtle reported "1.0.0" on 2026-07-26 while its payload proved 1.0.32-era.
+// Capabilities are feature-detected from the data; these tests pin that no
+// behavior keys off the reported version.
 
-TEST_CASE("AFC version_at_least: equal versions", "[ams][afc][version]") {
-    AmsBackendAfcTestHelper helper;
-    helper.set_afc_version("1.0.32");
+TEST_CASE("AFC persistence is independent of the reported version", "[ams][afc][version]") {
+    for (const char* version : {"1.0.0", "1.0.19", "unknown", "", "9.9.9"}) {
+        AmsBackendAfcTestHelper helper;
+        CAPTURE(version);
+        helper.set_afc_version(version);
+        helper.initialize_test_lanes_with_slots(4);
 
-    REQUIRE(helper.test_version_at_least("1.0.32") == true);
-}
+        SlotInfo info;
+        info.color_rgb = 0xFF0000;
+        info.material = "PLA";
+        info.remaining_weight_g = 850;
+        info.spoolman_id = 42;
+        helper.set_slot_info(0, info);
 
-TEST_CASE("AFC version_at_least: greater patch version", "[ams][afc][version]") {
-    AmsBackendAfcTestHelper helper;
-    helper.set_afc_version("1.0.33");
-
-    REQUIRE(helper.test_version_at_least("1.0.32") == true);
-}
-
-TEST_CASE("AFC version_at_least: greater minor version", "[ams][afc][version]") {
-    AmsBackendAfcTestHelper helper;
-    helper.set_afc_version("1.1.0");
-
-    REQUIRE(helper.test_version_at_least("1.0.32") == true);
-}
-
-TEST_CASE("AFC version_at_least: greater major version", "[ams][afc][version]") {
-    AmsBackendAfcTestHelper helper;
-    helper.set_afc_version("2.0.0");
-
-    REQUIRE(helper.test_version_at_least("1.0.32") == true);
-}
-
-TEST_CASE("AFC version_at_least: lesser patch version fails", "[ams][afc][version]") {
-    AmsBackendAfcTestHelper helper;
-    helper.set_afc_version("1.0.31");
-
-    REQUIRE(helper.test_version_at_least("1.0.32") == false);
-}
-
-TEST_CASE("AFC version_at_least: unknown version fails", "[ams][afc][version]") {
-    AmsBackendAfcTestHelper helper;
-    helper.set_afc_version("unknown");
-
-    REQUIRE(helper.test_version_at_least("1.0.32") == false);
-}
-
-TEST_CASE("AFC version_at_least: empty version fails", "[ams][afc][version]") {
-    AmsBackendAfcTestHelper helper;
-    helper.set_afc_version("");
-
-    REQUIRE(helper.test_version_at_least("1.0.32") == false);
-}
-
-TEST_CASE("AFC version_at_least: lesser minor version fails", "[ams][afc][version]") {
-    AmsBackendAfcTestHelper helper;
-    helper.set_afc_version("1.0.0");
-
-    REQUIRE(helper.test_version_at_least("1.1.0") == false);
-}
-
-TEST_CASE("AFC version_at_least: lesser major version fails", "[ams][afc][version]") {
-    AmsBackendAfcTestHelper helper;
-    helper.set_afc_version("1.99.99");
-
-    REQUIRE(helper.test_version_at_least("2.0.0") == false);
-}
-
-TEST_CASE("AFC version_at_least: high patch vs low minor", "[ams][afc][version]") {
-    AmsBackendAfcTestHelper helper;
-    helper.set_afc_version("1.0.100");
-
-    // 1.0.100 is still < 1.1.0 because minor takes precedence
-    REQUIRE(helper.test_version_at_least("1.1.0") == false);
-}
-
-TEST_CASE("AFC version_at_least: handles two-part version", "[ams][afc][version]") {
-    AmsBackendAfcTestHelper helper;
-    // Version parsing uses istringstream which may handle partial versions
-    helper.set_afc_version("1.0");
-
-    // Should treat missing patch as 0, so 1.0.0 >= 1.0.0
-    REQUIRE(helper.test_version_at_least("1.0.0") == true);
+        // Every version, including the ones that used to be gated out, must
+        // persist through G-code. Skipping this was issue #644.
+        REQUIRE_FALSE(helper.captured_gcodes.empty());
+        bool saw_spool_id = false;
+        for (const auto& g : helper.captured_gcodes) {
+            if (g.find("SET_SPOOL_ID") != std::string::npos)
+                saw_spool_id = true;
+        }
+        REQUIRE(saw_spool_id);
+    }
 }
 
 // ============================================================================
@@ -683,16 +634,6 @@ TEST_CASE("AFC segment: current lane not in map uses fallback scan", "[ams][afc]
     REQUIRE(helper.test_compute_filament_segment() == PathSegment::PREP);
 }
 
-TEST_CASE("AFC version_at_least: dev version string", "[ams][afc][version][edge]") {
-    AmsBackendAfcTestHelper helper;
-    // Some systems may have dev/beta suffixes, but our parser ignores them
-    // "1.0.32-dev" will parse as 1.0.32 (istringstream stops at non-digit)
-    helper.set_afc_version("1.0.32-dev");
-
-    // This should still satisfy >= 1.0.32 since the numeric parts match
-    REQUIRE(helper.test_version_at_least("1.0.32") == true);
-}
-
 TEST_CASE("AFC segment: multiple lanes with sensors uses first match in order",
           "[ams][afc][segment]") {
     AmsBackendAfcTestHelper helper;
@@ -819,17 +760,15 @@ TEST_CASE("AFC segment: works with discovered lanes", "[ams][afc][discovery][seg
 // for these tests to pass.
 // ============================================================================
 
-// Was "old version skips G-code commands", asserting the version_at_least("1.0.20")
-// gate. That gate is deliberately gone: the version it read comes from the Moonraker
-// `afc-install` namespace, which nothing in AFC ever updates on upgrade, so a current
-// printer can report an ancient version and lose all persistence silently. The
-// commands predate v1.0.20 anyway. Kept at the old just-below-threshold boundary so
-// the removal stays pinned; see the 1.0.0 case for the value a real device reports.
-TEST_CASE("AFC persistence: a below-threshold version still sends G-code",
+// Inverted deliberately. This used to assert that an "old" version suppressed
+// persistence; the version is not a usable signal (AFC stopped writing it), and
+// suppressing G-code on an unrecognized version was issue #644 — spool
+// assignment silently bypassed AFC. persist=false remains the only way to skip.
+TEST_CASE("AFC persistence: persist=false is the only thing that skips G-code",
           "[ams][afc][persistence]") {
     AmsBackendAfcTestHelper helper;
 
-    helper.set_afc_version("1.0.19"); // was below the retired 1.0.20 threshold
+    helper.set_afc_version("1.0.19"); // Formerly below the 1.0.20 gate
     helper.initialize_test_lanes_with_slots(4);
 
     SlotInfo info;
@@ -838,8 +777,10 @@ TEST_CASE("AFC persistence: a below-threshold version still sends G-code",
     info.remaining_weight_g = 850;
     info.spoolman_id = 42;
 
-    helper.set_slot_info(0, info);
+    helper.set_slot_info(0, info, /*persist=*/false);
+    REQUIRE(helper.captured_gcodes.empty());
 
+    helper.set_slot_info(0, info);
     REQUIRE_FALSE(helper.captured_gcodes.empty());
     REQUIRE(helper.has_gcode("SET_COLOR LANE=lane1 COLOR=FF0000"));
     REQUIRE(helper.has_gcode("SET_MATERIAL LANE=lane1 MATERIAL=PLA"));
@@ -4582,19 +4523,26 @@ TEST_CASE("AFC ignores non-error lines", "[ams][afc][classify]") {
     REQUIRE_FALSE(helper.classify_error("ok", ctx).has_value());
 }
 
-TEST_CASE("AFC narration maps purge to purge not feed (S1)", "[unit][ams][afc][narration]") {
+TEST_CASE("AFC narration folds purge wording into the poop phase", "[unit][ams][afc][narration]") {
     AmsBackendAfcTestHelper afc;
-    REQUIRE(afc.match_narration_phase("Purge") == std::optional<std::string>("purge"));
+    // AFC has exactly one purge in a toolchange: the poop macro. "purge" wording
+    // comes out of that same macro ("AFC_Poop: Move To Purge Location"), so it
+    // must land on `poop` rather than a phase of its own.
+    REQUIRE(afc.match_narration_phase("Purge") == std::optional<std::string>("poop"));
     REQUIRE(afc.match_narration_phase("Purging old filament") ==
-            std::optional<std::string>("purge"));
+            std::optional<std::string>("poop"));
+    REQUIRE(afc.match_narration_phase("AFC_Poop: Move To Purge Location") ==
+            std::optional<std::string>("poop"));
     REQUIRE(afc.match_narration_phase("Loading lane 2 to hub") ==
             std::optional<std::string>("feed"));
 }
-TEST_CASE("AFC narration recognizes brush/clean/cut/poop/kick (S2)",
-          "[unit][ams][afc][narration]") {
+TEST_CASE("AFC narration recognizes brush/cut/poop/kick (S2)", "[unit][ams][afc][narration]") {
     AmsBackendAfcTestHelper afc;
+    // AFC_BRUSH is the only wipe. It announces itself as "Clean Nozzle" at the
+    // default verbose=1 and "Move to Brush." only at verbose>1, so both spellings
+    // have to resolve to the same phase or the step never lights on a stock install.
     REQUIRE(afc.match_narration_phase("AFC_Brush: Clean Nozzle") ==
-            std::optional<std::string>("clean"));
+            std::optional<std::string>("brush"));
     REQUIRE(afc.match_narration_phase("Move to Brush") == std::optional<std::string>("brush"));
     REQUIRE(afc.match_narration_phase("Cutting tip") == std::optional<std::string>("cut"));
     REQUIRE(afc.match_narration_phase("Poop") == std::optional<std::string>("poop"));
@@ -4602,21 +4550,31 @@ TEST_CASE("AFC narration recognizes brush/clean/cut/poop/kick (S2)",
     REQUIRE(afc.match_narration_phase("lane 2 is now loaded in toolhead") ==
             std::optional<std::string>("load"));
 }
-TEST_CASE("AFC narration recognizes retract for the unload sequence (#1046)",
+TEST_CASE("AFC narration recognizes the old-filament unload (#1046)",
           "[unit][ams][afc][narration]") {
     AmsBackendAfcTestHelper afc;
-    // The UNLOAD template ends with a `retract` step; without a matcher case the
+    // Both templates end/continue on an `unload` step; without a matcher case the
     // final unload step could never highlight (issue #1046 I-1).
     REQUIRE(afc.match_narration_phase("Retracting filament") ==
-            std::optional<std::string>("retract"));
-    REQUIRE(afc.match_narration_phase("Retract") == std::optional<std::string>("retract"));
+            std::optional<std::string>("unload"));
+    REQUIRE(afc.match_narration_phase("Retract") == std::optional<std::string>("unload"));
+    // AFC's actual console line when it pulls the old filament back to its lane.
+    REQUIRE(afc.match_narration_phase("Unloading lane1") == std::optional<std::string>("unload"));
+    REQUIRE(afc.match_narration_phase("Lane lane1 unload done") ==
+            std::optional<std::string>("unload"));
+    // Guard the substring trap: "unloading lane1" contains "loading lane", so a
+    // naive ordering resolves the unload to `feed` and the bar jumps forward.
+    REQUIRE(afc.match_narration_phase("Unloading lane1") != std::optional<std::string>("feed"));
+    // ...while the cut macro's own retract wording stays on `cut`.
+    REQUIRE(afc.match_narration_phase("AFC_Cut: Retract Filament for Cut") ==
+            std::optional<std::string>("cut"));
 }
 TEST_CASE("AFC narration ignores unrelated lines", "[unit][ams][afc][narration]") {
     AmsBackendAfcTestHelper afc;
     REQUIRE_FALSE(afc.match_narration_phase("Klipper state: ready").has_value());
     REQUIRE_FALSE(afc.match_narration_phase("").has_value());
 }
-TEST_CASE("AFC LOAD_SWAP template ordering puts purge after feed, brush after purge",
+TEST_CASE("AFC LOAD_SWAP template mirrors AFC's real CHANGE_TOOL order",
           "[unit][ams][afc][narration]") {
     AmsBackendAfcTestHelper afc;
     auto tmpl = afc.toolchange_phase_template(StepOperationType::LOAD_SWAP);
@@ -4627,11 +4585,47 @@ TEST_CASE("AFC LOAD_SWAP template ordering puts purge after feed, brush after pu
                 return static_cast<int>(i);
         return -1;
     };
+    // AFC's CHANGE_TOOL is TOOL_UNLOAD(old) then TOOL_LOAD(new):
+    //   heat -> cut/form tip -> retract old to lane      (TOOL_UNLOAD)
+    //   -> feed new to toolhead -> poop -> kick -> brush (TOOL_LOAD)
+    // Verified against upstream v1.1.0 and v1.2.0 (AFC.py do_poop_kick_wipe is
+    // called *after* load_sequence succeeds), 2026-07-26.
     REQUIRE(idx("heat") == 0);
-    REQUIRE(idx("feed") >= 0);
-    REQUIRE(idx("purge") > idx("feed"));
-    REQUIRE(idx("brush") > idx("purge"));
-    REQUIRE(idx("clean") > idx("brush"));
+    REQUIRE(idx("cut") == 1);
+    REQUIRE(idx("unload") == 2);
+    REQUIRE(idx("feed") == 3);
+    REQUIRE(idx("poop") == 4);
+    REQUIRE(idx("kick") == 5);
+    REQUIRE(idx("brush") == 6);
+    REQUIRE(idx("load") == 7);
+
+    // The purge-to-bucket and the kick happen AFTER the new filament is fed —
+    // that is the entire point of the poop, it purges the old colour out through
+    // the new filament. Listing them before `feed` was the bug this pins.
+    REQUIRE(idx("poop") > idx("feed"));
+    REQUIRE(idx("kick") > idx("feed"));
+
+    // AFC has no purge separate from the poop and no nozzle clean separate from
+    // the brush. Both phantom steps must stay gone.
+    REQUIRE(idx("purge") == -1);
+    REQUIRE(idx("clean") == -1);
+}
+
+TEST_CASE("AFC LOAD_FRESH and UNLOAD templates match the real sequences",
+          "[unit][ams][afc][narration]") {
+    AmsBackendAfcTestHelper afc;
+    auto ids = [&](StepOperationType op) {
+        std::vector<std::string> out;
+        for (const auto& p : afc.toolchange_phase_template(op))
+            out.push_back(p.id);
+        return out;
+    };
+    // A fresh load is TOOL_LOAD alone: no cut, no unload of a previous lane, but
+    // do_poop_kick_wipe still runs afterwards.
+    REQUIRE(ids(StepOperationType::LOAD_FRESH) ==
+            std::vector<std::string>{"heat", "feed", "poop", "kick", "brush", "load"});
+    // TOOL_UNLOAD alone: heat, cut/form tip, then pull back to the lane.
+    REQUIRE(ids(StepOperationType::UNLOAD) == std::vector<std::string>{"heat", "cut", "unload"});
 }
 
 TEST_CASE("AFC get_operation_step_model mirrors the narration phase template",
@@ -4720,8 +4714,7 @@ TEST_CASE("AFC parse: bare '#' colour clears (AFC SET_COLOR with empty value)",
     REQUIRE(helper.get_system_info().get_slot_global(0)->color_rgb == AMS_DEFAULT_SLOT_COLOR);
 }
 
-TEST_CASE("AFC parse: a malformed colour still keeps the previous value",
-          "[ams][afc][status]") {
+TEST_CASE("AFC parse: a malformed colour still keeps the previous value", "[ams][afc][status]") {
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes(4);
     helper.initialize_slots_from_discovery();
@@ -4732,8 +4725,7 @@ TEST_CASE("AFC parse: a malformed colour still keeps the previous value",
     REQUIRE(helper.get_system_info().get_slot_global(0)->color_rgb == 0xE53935);
 }
 
-TEST_CASE("AFC parse: absent fields are retained (deltas, not snapshots)",
-          "[ams][afc][status]") {
+TEST_CASE("AFC parse: absent fields are retained (deltas, not snapshots)", "[ams][afc][status]") {
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes(4);
     helper.initialize_slots_from_discovery();
