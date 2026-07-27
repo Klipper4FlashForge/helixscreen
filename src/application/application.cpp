@@ -30,9 +30,9 @@
 #include "environment_config.h"
 #include "gcode_error_router.h"
 #include "gcode_narration_router.h"
+#include "hardware_fingerprint.h"
 #include "hardware_role_registry.h"
 #include "hardware_validator.h"
-#include "hardware_fingerprint.h"
 #include "helix_version.h"
 #include "http_executor.h"
 #include "job_queue_state.h"
@@ -85,6 +85,7 @@
 #include "ui_icon.h"
 #include "ui_icon_loader.h"
 #include "ui_keyboard_manager.h"
+#include "ui_lock_screen.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_notification.h"
@@ -110,12 +111,10 @@
 #include "ui_panel_screws_tilt.h"
 #include "ui_panel_settings.h"
 #include "ui_panel_spoolman.h"
+#include "ui_preflight_check_modal.h"
 #include "ui_print_tune_overlay.h"
 #include "ui_printer_status_icon.h"
 #include "ui_probe_overlay.h"
-#include "preflight_validator.h"
-#include "ui_lock_screen.h"
-#include "ui_preflight_check_modal.h"
 #include "ui_runout_guidance_modal.h"
 #include "ui_settings_about.h"
 #include "ui_settings_barcode_scanner.h"
@@ -139,6 +138,8 @@
 #include "ui_wizard_language_chooser.h"
 #include "ui_wizard_touch_calibration.h"
 #include "ui_wizard_wifi.h"
+
+#include "preflight_validator.h"
 
 // Developer-only showcase panels (ENABLE_DEV_PANELS, excluded from release
 // builds). Not wired into PanelFactory — kept as live testbeds for XML
@@ -866,7 +867,11 @@ int Application::run(int argc, char** argv) {
                 spdlog::info("[Application] Recovering from stale printer '{}' — "
                              "switching to completed printer '{}'",
                              active_id, fallback_id);
-                m_config->remove_printer(active_id);
+                // Archive rather than erase: the user never asked for this
+                // deletion, and a wizard_completed flag that got cleared by
+                // something other than a real interrupted setup would otherwise
+                // silently destroy a fully configured printer.
+                m_config->archive_printer(active_id);
                 m_config->set_active_printer(fallback_id);
                 m_config->save();
             }
@@ -2360,7 +2365,7 @@ void Application::setup_discovery_callbacks() {
             // only reference we own and nobody else aliases it, so this copy is
             // race-free (#789, #799).
             crash_handler::breadcrumb::note("disc", "pre_api_hw",
-                                           static_cast<long>(snapshot->macros().size()));
+                                            static_cast<long>(snapshot->macros().size()));
             api->hardware() = *snapshot;
             crash_handler::breadcrumb::note("disc", "post_api_hw", n);
 
@@ -2372,8 +2377,8 @@ void Application::setup_discovery_callbacks() {
             // Computed from api->hardware() (post-copy) — *snapshot is moved
             // into set_hardware below and is empty after that point.
             const size_t new_fingerprint = helix::compute_hardware_fingerprint(api->hardware());
-            const bool hw_changed =
-                app->m_first_discovery_complete || (new_fingerprint != app->m_last_hardware_fingerprint);
+            const bool hw_changed = app->m_first_discovery_complete ||
+                                    (new_fingerprint != app->m_last_hardware_fingerprint);
             app->m_last_hardware_fingerprint = new_fingerprint;
             app->m_first_discovery_complete = false;
             crash_handler::breadcrumb::note("disc", "hw_changed", hw_changed ? 1L : 0L);
@@ -2386,7 +2391,6 @@ void Application::setup_discovery_callbacks() {
                              "(fingerprint=0x{:x}), skipping user-facing side-effects",
                              n, new_fingerprint);
             }
-
 
             // Mark discovery complete so splash can exit
             app->m_splash_manager.on_discovery_complete();
