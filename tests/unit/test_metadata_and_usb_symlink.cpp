@@ -186,6 +186,68 @@ TEST_CASE("PrintSelectUsbSource on_drive_inserted does nothing when symlink acti
     REQUIRE(usb_source.get_current_source() == FileSource::PRINTER);
 }
 
+TEST_CASE("PrintSelectUsbSource on_drive_removed switches from USB to PRINTER",
+          "[usb][symlink]") {
+    helix::ui::PrintSelectUsbSource usb_source;
+
+    FileSource last_source = FileSource::PRINTER;
+    bool callback_fired = false;
+    usb_source.set_on_source_changed([&](FileSource source) {
+        last_source = source;
+        callback_fired = true;
+    });
+
+    // select_usb_source() calls refresh_files(), which is a safe no-op with
+    // no UsbManager attached (warns, reports an empty file list).
+    usb_source.select_usb_source();
+    REQUIRE(usb_source.is_usb_active());
+
+    usb_source.on_drive_removed();
+
+    REQUIRE(usb_source.get_current_source() == FileSource::PRINTER);
+    REQUIRE_FALSE(usb_source.is_usb_active());
+    REQUIRE(callback_fired);
+    REQUIRE(last_source == FileSource::PRINTER);
+}
+
+TEST_CASE("PrintSelectUsbSource on_drive_removed while already on PRINTER does not fire the "
+          "source-changed callback",
+          "[usb][symlink]") {
+    helix::ui::PrintSelectUsbSource usb_source;
+
+    bool callback_fired = false;
+    usb_source.set_on_source_changed([&](FileSource) { callback_fired = true; });
+
+    // Already on PRINTER (the default) — removal has nothing to switch away from.
+    usb_source.on_drive_removed();
+
+    REQUIRE(usb_source.get_current_source() == FileSource::PRINTER);
+    REQUIRE_FALSE(callback_fired);
+}
+
+TEST_CASE("PrintSelectUsbSource::set_moonraker_has_usb_access reacts to access being revoked, "
+          "not just granted",
+          "[usb][symlink]") {
+    // Pre-existing gap this change fixes: the old imperative version only ever
+    // hid the selector when has_access became true, with no code path to show
+    // it again if access were later revoked. The new subject-driven version
+    // (print_source_moonraker_usb_access, bound in print_select_panel.xml)
+    // reacts to both directions — this test covers the class-level half of
+    // that (the getter/member state); the widget-visibility half is verified
+    // live via `ctl` (see the task report), since this fixture builds no
+    // real widget tree.
+    helix::ui::PrintSelectUsbSource usb_source;
+
+    usb_source.set_moonraker_has_usb_access(true);
+    REQUIRE(usb_source.moonraker_has_usb_access());
+
+    usb_source.set_moonraker_has_usb_access(false);
+    REQUIRE_FALSE(usb_source.moonraker_has_usb_access());
+
+    usb_source.set_moonraker_has_usb_access(true);
+    REQUIRE(usb_source.moonraker_has_usb_access());
+}
+
 TEST_CASE("PrintSelectUsbSource switches from USB to PRINTER when symlink detected",
           "[usb][symlink]") {
     helix::ui::PrintSelectUsbSource usb_source;

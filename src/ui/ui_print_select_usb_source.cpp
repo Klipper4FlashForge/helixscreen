@@ -9,6 +9,7 @@
 #include "gcode_parser.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "print_file_data.h"
+#include "static_subject_registry.h"
 #include "subject_debug_registry.h"
 #include "thumbnail_cache.h"
 #include "usb_manager.h"
@@ -19,6 +20,12 @@ namespace helix::ui {
 
 // Subject for source tab state: 0 = Printer (default), 1 = USB
 static lv_subject_t s_print_source_is_usb;
+// Whether at least one USB drive is currently connected.
+static lv_subject_t s_print_source_usb_present;
+// Whether Moonraker has direct symlink access to USB files (e.g. Klipper's
+// mod creates gcodes/usb -> /media/sda1) — when true, our own source
+// selector is redundant, since the files already show up under Printer.
+static lv_subject_t s_print_source_moonraker_usb_access;
 static bool s_source_subject_initialized = false;
 
 void PrintSelectUsbSource::init_subjects() {
@@ -28,8 +35,43 @@ void PrintSelectUsbSource::init_subjects() {
     lv_xml_register_subject(nullptr, "print_source_is_usb", &s_print_source_is_usb);
     SubjectDebugRegistry::instance().register_subject(&s_print_source_is_usb, "print_source_is_usb",
                                                       LV_SUBJECT_TYPE_INT, __FILE__, __LINE__);
+
+    lv_subject_init_int(&s_print_source_usb_present, 0);
+    lv_xml_register_subject(nullptr, "print_source_usb_present", &s_print_source_usb_present);
+    SubjectDebugRegistry::instance().register_subject(&s_print_source_usb_present,
+                                                      "print_source_usb_present",
+                                                      LV_SUBJECT_TYPE_INT, __FILE__, __LINE__);
+
+    lv_subject_init_int(&s_print_source_moonraker_usb_access, 0);
+    lv_xml_register_subject(nullptr, "print_source_moonraker_usb_access",
+                            &s_print_source_moonraker_usb_access);
+    SubjectDebugRegistry::instance().register_subject(&s_print_source_moonraker_usb_access,
+                                                      "print_source_moonraker_usb_access",
+                                                      LV_SUBJECT_TYPE_INT, __FILE__, __LINE__);
+
     s_source_subject_initialized = true;
-    spdlog::debug("[UsbSource] Subject print_source_is_usb initialized");
+
+    // Self-register cleanup with StaticSubjectRegistry (co-located with init
+    // — see CLAUDE.md's "Subject shutdown safety"), for the two subjects
+    // this change adds.
+    //
+    // NOT included: s_print_source_is_usb, the pre-existing tab-selection
+    // subject above. It was never registered for deinit before this change
+    // either — a pre-existing gap unrelated to the Rule #2 (imperative
+    // visibility) fix this function is here for. Deliberately left as-is
+    // rather than folded in silently; reported separately (see the task
+    // report) so it can be fixed and reviewed on its own.
+    StaticSubjectRegistry::instance().register_deinit("PrintSelectUsbSourceSubjects", []() {
+        if (s_source_subject_initialized && lv_is_initialized()) {
+            lv_subject_deinit(&s_print_source_usb_present);
+            lv_subject_deinit(&s_print_source_moonraker_usb_access);
+            s_source_subject_initialized = false;
+            spdlog::trace("[UsbSource] Subjects deinitialized (usb_present, moonraker_usb_access)");
+        }
+    });
+
+    spdlog::debug("[UsbSource] Subjects initialized (print_source_is_usb, "
+                  "print_source_usb_present, print_source_moonraker_usb_access)");
 }
 
 // ============================================================================
@@ -48,13 +90,17 @@ bool PrintSelectUsbSource::setup(lv_obj_t* panel) {
         return false;
     }
 
-    // Hide selector by default - only show when USB drive is present
-    lv_obj_add_flag(source_selector_, LV_OBJ_FLAG_HIDDEN);
+    // Visibility is declarative (print_select_panel.xml's bind_flag_if on
+    // source_selector, driven by print_source_usb_present and
+    // print_source_moonraker_usb_access) — no imperative hide/show here.
+    // Both subjects default to 0 at init, so the selector already starts
+    // hidden by the time this runs.
 
     // Set initial state - Printer is selected by default
     update_button_states();
 
-    spdlog::debug("[UsbSource] Source selector configured (hidden until USB drive inserted)");
+    spdlog::debug("[UsbSource] Source selector found (visibility bound to "
+                  "print_source_usb_present / print_source_moonraker_usb_access)");
     return true;
 }
 
@@ -66,11 +112,19 @@ void PrintSelectUsbSource::set_usb_manager(UsbManager* manager) {
         refresh_files();
     }
 
-    // Check if drive is already inserted (startup race: drive detected before panel exists)
-    if (manager && !manager->get_drives().empty() && !moonraker_has_usb_access_ &&
-        source_selector_) {
-        spdlog::info("[UsbSource] USB drive already present at setup - showing source selector");
-        lv_obj_remove_flag(source_selector_, LV_OBJ_FLAG_HIDDEN);
+    // Reflect current drive presence — covers the startup race where a
+    // drive was detected (UsbBackendMock's demo-insert thread, or a real
+    // drive already plugged in) before this panel existed to be told about
+    // it. Whether the selector actually shows is decided declaratively in
+    // XML from this subject combined with print_source_moonraker_usb_access
+    // — not decided here, and not conditioned on moonraker_has_usb_access_
+    // the way the old imperative check was (that's now the binding's job).
+    const bool has_drives = manager && !manager->get_drives().empty();
+    if (s_source_subject_initialized) {
+        lv_subject_set_int(&s_print_source_usb_present, has_drives ? 1 : 0);
+    }
+    if (has_drives) {
+        spdlog::info("[UsbSource] USB drive already present at setup");
     }
 
     spdlog::debug("[UsbSource] UsbManager set");
@@ -116,31 +170,35 @@ void PrintSelectUsbSource::select_usb_source() {
 // ============================================================================
 
 void PrintSelectUsbSource::on_drive_inserted() {
-    if (!source_selector_) {
-        return;
+    // A drive is now present. Whether the selector actually shows — i.e.
+    // whether Moonraker also lacks symlink access — is the XML binding's
+    // job (print_select_panel.xml combines this with
+    // print_source_moonraker_usb_access), not this method's.
+    spdlog::debug("[UsbSource] USB drive inserted");
+    if (s_source_subject_initialized) {
+        lv_subject_set_int(&s_print_source_usb_present, 1);
     }
-
-    // If Moonraker has symlink access to USB files, don't show the source selector
-    if (moonraker_has_usb_access_) {
-        spdlog::debug("[UsbSource] USB drive inserted - but Moonraker has symlink access, keeping "
-                      "source selector hidden");
-        return;
-    }
-
-    spdlog::debug("[UsbSource] USB drive inserted - showing source selector");
-    lv_obj_remove_flag(source_selector_, LV_OBJ_FLAG_HIDDEN);
 }
 
 void PrintSelectUsbSource::set_moonraker_has_usb_access(bool has_access) {
     moonraker_has_usb_access_ = has_access;
 
-    if (has_access && source_selector_) {
-        // Hide source selector permanently - files are accessible via Printer source
-        spdlog::debug(
-            "[UsbSource] Moonraker has USB symlink access - hiding source selector permanently");
-        lv_obj_add_flag(source_selector_, LV_OBJ_FLAG_HIDDEN);
+    // Mirror into the subject that drives source_selector's visibility
+    // binding — declarative, not an imperative show/hide here. Unlike the
+    // old imperative version (which only ever hid on has_access==true, with
+    // no path back to visible if access were revoked), this reacts to
+    // has_access going false too: if a drive is still present, the
+    // selector correctly reappears.
+    if (s_source_subject_initialized) {
+        lv_subject_set_int(&s_print_source_moonraker_usb_access, has_access ? 1 : 0);
+    }
 
-        // If currently viewing USB source, switch to Printer
+    if (has_access) {
+        // Files are accessible via Printer source; our own picker becomes
+        // redundant (the binding hides it) — but if the user was actively
+        // viewing the now-redundant USB tab, still switch back to Printer.
+        spdlog::debug("[UsbSource] Moonraker has USB symlink access - source selector will hide");
+
         if (current_source_ == FileSource::USB) {
             current_source_ = FileSource::PRINTER;
             update_button_states();
@@ -152,11 +210,15 @@ void PrintSelectUsbSource::set_moonraker_has_usb_access(bool has_access) {
 }
 
 void PrintSelectUsbSource::on_drive_removed() {
-    spdlog::info("[UsbSource] USB drive removed - hiding source selector");
+    spdlog::info("[UsbSource] USB drive removed");
 
-    // Hide source selector container
-    if (source_selector_) {
-        lv_obj_add_flag(source_selector_, LV_OBJ_FLAG_HIDDEN);
+    // No drive is present now — matches the old imperative behavior of
+    // hiding unconditionally on ANY removal event without checking whether
+    // other drives remain connected (multi-drive isn't otherwise supported;
+    // see the TODO in refresh_files()). Not a new limitation, just ported
+    // as-is rather than silently improved.
+    if (s_source_subject_initialized) {
+        lv_subject_set_int(&s_print_source_usb_present, 0);
     }
 
     // If USB source is currently active, switch to Printer source
