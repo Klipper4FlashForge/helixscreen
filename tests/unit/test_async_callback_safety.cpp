@@ -32,8 +32,10 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -528,10 +530,21 @@ TEST_CASE("Callback safety: multiple pending callbacks", "[callback][async]") {
     REQUIRE(dead_callbacks.load() == 3);
 }
 
+// The property under test is memory visibility across a thread boundary: a
+// reader running on a thread other than the one that ran the destructor must
+// observe the destructor's store to the flag. Ordering is established by a
+// condition variable, not by sleeping — a sleep-based version only asserts
+// that the destroying thread happened to be rescheduled inside the sleep
+// window, which is a statement about machine load rather than about the code.
 TEST_CASE("Callback safety: callback in separate thread", "[callback][async][thread][slow]") {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool object_destroyed = false;
+
     std::atomic<bool> callback_started{false};
     std::atomic<bool> callback_finished{false};
     std::atomic<bool> was_alive_in_callback{false};
+    std::atomic<bool> wait_timed_out{false};
 
     std::thread callback_thread;
 
@@ -539,12 +552,20 @@ TEST_CASE("Callback safety: callback in separate thread", "[callback][async][thr
         auto obj = std::make_unique<ObjectWithDestructionFlag>();
         auto alive = obj->get_alive_flag();
 
-        // Start a thread that will check alive flag
+        // Start a thread that reads the alive flag only after destruction
         callback_thread = std::thread([&, alive]() {
             callback_started.store(true);
 
-            // Busy wait a bit to increase chance of racing with destruction
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            // Block until the owner is definitively gone. The bound is
+            // generous so a genuine regression surfaces as a failed assertion
+            // instead of hanging the suite.
+            {
+                std::unique_lock<std::mutex> lock(mtx);
+                if (!cv.wait_for(lock, std::chrono::seconds(5),
+                                 [&object_destroyed]() { return object_destroyed; })) {
+                    wait_timed_out.store(true);
+                }
+            }
 
             was_alive_in_callback.store(alive->load());
             callback_finished.store(true);
@@ -555,13 +576,21 @@ TEST_CASE("Callback safety: callback in separate thread", "[callback][async][thr
             std::this_thread::yield();
         }
 
-        // Destroy object while thread is sleeping
+        // Destroy object while the reader thread is blocked on the CV
         obj.reset();
     }
+
+    // Release the reader now that destruction has definitely completed
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        object_destroyed = true;
+    }
+    cv.notify_all();
 
     // Wait for callback thread to finish
     callback_thread.join();
 
+    REQUIRE(wait_timed_out.load() == false);
     REQUIRE(callback_finished.load() == true);
     REQUIRE(was_alive_in_callback.load() == false);
 }
