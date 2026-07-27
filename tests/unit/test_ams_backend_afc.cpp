@@ -819,10 +819,17 @@ TEST_CASE("AFC segment: works with discovered lanes", "[ams][afc][discovery][seg
 // for these tests to pass.
 // ============================================================================
 
-TEST_CASE("AFC persistence: old version skips G-code commands", "[ams][afc][persistence]") {
+// Was "old version skips G-code commands", asserting the version_at_least("1.0.20")
+// gate. That gate is deliberately gone: the version it read comes from the Moonraker
+// `afc-install` namespace, which nothing in AFC ever updates on upgrade, so a current
+// printer can report an ancient version and lose all persistence silently. The
+// commands predate v1.0.20 anyway. Kept at the old just-below-threshold boundary so
+// the removal stays pinned; see the 1.0.0 case for the value a real device reports.
+TEST_CASE("AFC persistence: a below-threshold version still sends G-code",
+          "[ams][afc][persistence]") {
     AmsBackendAfcTestHelper helper;
 
-    helper.set_afc_version("1.0.19"); // Below 1.0.20 threshold
+    helper.set_afc_version("1.0.19"); // was below the retired 1.0.20 threshold
     helper.initialize_test_lanes_with_slots(4);
 
     SlotInfo info;
@@ -833,9 +840,11 @@ TEST_CASE("AFC persistence: old version skips G-code commands", "[ams][afc][pers
 
     helper.set_slot_info(0, info);
 
-    // Old version should NOT send any persistence commands
-    // This test PASSES currently since no G-code is sent at all
-    REQUIRE(helper.captured_gcodes.empty());
+    REQUIRE_FALSE(helper.captured_gcodes.empty());
+    REQUIRE(helper.has_gcode("SET_COLOR LANE=lane1 COLOR=FF0000"));
+    REQUIRE(helper.has_gcode("SET_MATERIAL LANE=lane1 MATERIAL=PLA"));
+    REQUIRE(helper.has_gcode("SET_WEIGHT LANE=lane1 WEIGHT=850"));
+    REQUIRE(helper.has_gcode("SET_SPOOL_ID LANE=lane1 SPOOL_ID=42"));
 }
 
 TEST_CASE("AFC persistence: SET_COLOR command format", "[ams][afc][persistence]") {
@@ -938,6 +947,37 @@ TEST_CASE("AFC persistence: SET_SPOOL_ID clear with empty string", "[ams][afc][p
     // Should send: SET_SPOOL_ID LANE=lane1 SPOOL_ID= (empty to clear)
     // FAILS: set_slot_info doesn't call execute_gcode yet
     REQUIRE(helper.has_gcode("SET_SPOOL_ID LANE=lane1 SPOOL_ID="));
+}
+
+// Persistence must NOT be gated on the afc-install database version.
+//
+// Nothing in the AFC source writes the Moonraker `afc-install` namespace, so it
+// is never updated on upgrade. A BoxTurtle running v1.1.0-4-g2921371 still
+// reports {"version": "1.0.0"} there. The old gate was
+// version_at_least("1.0.20"), which on that reading silently skipped EVERY
+// SET_COLOR / SET_MATERIAL / SET_WEIGHT / SET_SPOOL_ID and logged only an
+// "upgrade for persistence" info line. Saves survived purely because the DB
+// query often lost the race and fell into the "unknown" escape hatch (#644).
+// A stale-but-successful read is the dangerous case: total silent data loss.
+TEST_CASE("AFC persistence: a stale afc-install version does not suppress gcode",
+          "[ams][afc][persistence]") {
+    AmsBackendAfcTestHelper helper;
+
+    // Exactly what the .112 BoxTurtle's afc-install namespace reports today,
+    // while actually running v1.1.0-4.
+    helper.set_afc_version("1.0.0");
+    helper.initialize_test_lanes_with_slots(4);
+
+    SlotInfo info;
+    info.material = "PLA";
+    info.color_rgb = 0xE53935;
+    info.remaining_weight_g = 500.0f;
+
+    helper.set_slot_info(0, info);
+
+    REQUIRE(helper.has_gcode("SET_MATERIAL LANE=lane1 MATERIAL=PLA"));
+    REQUIRE(helper.has_gcode("SET_COLOR LANE=lane1 COLOR=E53935"));
+    REQUIRE(helper.has_gcode("SET_WEIGHT LANE=lane1 WEIGHT=500"));
 }
 
 // On AFC, SET_SPOOL_ID with an empty value is not a narrow unlink: AFC_spool.py's

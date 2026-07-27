@@ -2697,14 +2697,18 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
         // sync_from_backend → refresh_spoolman_weights → set_slot_info again,
         // creating an infinite feedback loop that saturates the CPU.
         //
-        // Send gcode even when version is unknown — SET_SPOOL_ID has existed
-        // since well before v1.0.20. Silently skipping gcode for unknown
-        // versions caused issue #644 (spool assignment bypassed AFC).
-        if (persist &&
-            (version_at_least("1.0.20") || afc_version_ == "unknown" || afc_version_.empty())) {
-            if (afc_version_ == "unknown" || afc_version_.empty()) {
-                spdlog::debug("[AMS AFC] Version unknown, attempting gcode persistence anyway");
-            }
+        // Persistence is NOT gated on the reported AFC version.
+        //
+        // The version comes from the Moonraker `afc-install` namespace, and
+        // nothing in the AFC source writes it — it is never refreshed on
+        // upgrade. A BoxTurtle running v1.1.0-4 still reports "1.0.0" there.
+        // The old version_at_least("1.0.20") gate therefore silently dropped
+        // every SET_* on such a printer, logging only an "upgrade for
+        // persistence" line; saves survived only when the DB query lost the
+        // race and hit the unknown-version escape hatch (#644). These commands
+        // all long predate v1.0.20, so just send them and let AFC reject
+        // anything it does not understand.
+        if (persist) {
             std::string lane_name = slots_.name_of(slot_index);
             if (!lane_name.empty()) {
                 // Spoolman ID FIRST — both branches of AFC's set_spoolID() rewrite the
@@ -2753,10 +2757,6 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
                         fmt::format("SET_MAP LANE={} MAP=T{}", lane_name, info.mapped_tool));
                 }
             }
-        } else if (persist && afc_version_ != "unknown" && !afc_version_.empty()) {
-            spdlog::info("[AMS AFC] Version {} - slot changes stored locally only (upgrade to "
-                         "1.0.20+ for persistence)",
-                         afc_version_);
         }
     }
 
