@@ -230,28 +230,29 @@ void bed_mesh_renderer_set_bounds(bed_mesh_renderer_t* renderer, double bed_x_mi
 /**
  * @brief Set camera rotation angles
  *
+ * The renderer owns the camera orientation: angle_x is clamped to
+ * [BED_MESH_ANGLE_X_MIN, BED_MESH_ANGLE_X_MAX] and angle_z is normalized to
+ * [0, 360). Callers driving an interactive orbit should read the current angles
+ * from bed_mesh_renderer_get_view_state() and pass back the accumulated values
+ * rather than tracking their own copy.
+ *
  * @param renderer Renderer instance
- * @param angle_x Tilt angle in degrees (typically -85 to -10, negative = looking down)
- * @param angle_z Spin angle in degrees (horizontal rotation around vertical axis)
+ * @param angle_x Tilt angle in degrees (negative = looking down; clamped)
+ * @param angle_z Spin angle in degrees (horizontal rotation around vertical axis; wrapped)
  */
 void bed_mesh_renderer_set_rotation(bed_mesh_renderer_t* renderer, double angle_x, double angle_z);
 
 /**
  * @brief Get current view state (for interactive controls)
  *
+ * The returned pointer aliases the renderer's live state — it stays valid for
+ * the lifetime of the renderer and reflects later mutations (e.g. a subsequent
+ * bed_mesh_renderer_set_rotation() call).
+ *
  * @param renderer Renderer instance
  * @return Pointer to internal view state, or NULL if renderer is NULL
  */
 const bed_mesh_view_state_t* bed_mesh_renderer_get_view_state(bed_mesh_renderer_t* renderer);
-
-/**
- * @brief Set view state (for interactive controls)
- *
- * @param renderer Renderer instance
- * @param state New view state to apply
- */
-void bed_mesh_renderer_set_view_state(bed_mesh_renderer_t* renderer,
-                                      const bed_mesh_view_state_t* state);
 
 /**
  * @brief Set dragging state (affects rendering quality)
