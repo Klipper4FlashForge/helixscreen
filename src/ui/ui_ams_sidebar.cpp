@@ -990,6 +990,14 @@ void AmsOperationSidebar::handle_reset() {
         return;
     }
 
+    // Clear any latched fault before re-prepping. AFC_RESET alone leaves
+    // printer.AFC.message populated, so the sidebar kept showing an error the
+    // user had just asked to reset away.
+    AmsError cleared = backend->clear_fault(backend->get_system_info().current_slot);
+    if (!cleared.success()) {
+        spdlog::warn("[AmsSidebar] Fault clear during reset failed: {}", cleared.user_msg);
+    }
+
     AmsError error = backend->reset();
     if (error.result != AmsResult::SUCCESS) {
         NOTIFY_ERROR(lv_tr("Reset failed: {}"), error.user_msg);

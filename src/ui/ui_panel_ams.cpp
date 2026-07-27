@@ -1621,22 +1621,19 @@ void AmsPanel::show_loading_error_modal() {
     // AFC maintains a persistent message_queue and error_state that won't clear
     // until RESET_FAILURE + AFC_CLEAR_MESSAGE are sent. Without this, the error
     // dialog reappears immediately because AFC keeps reporting ERROR. (#497)
-    error_modal_->set_dismiss_callback([this]() {
+    error_modal_->set_dismiss_callback([this, retry_slot]() {
         error_modal_dismiss_time_ = std::chrono::steady_clock::now();
         AmsBackend* backend = AmsState::instance().get_backend();
         if (!backend) {
             return;
         }
 
+        // Backends with a persistent message/error queue (AFC) must clear it on
+        // dismiss or the error dialog re-fires immediately (#497). clear_fault()
+        // owns that sequence for every backend.
         spdlog::info("[AmsPanel] Clearing error state on dismiss (type={})",
                      ams_type_to_string(backend->get_type()));
-        backend->cancel();
-
-        // Backends with a persistent message/error queue (AFC) must clear it on
-        // dismiss or the error dialog re-fires immediately (#497).
-        if (backend->supports_clear_message_queue()) {
-            backend->clear_message_queue();
-        }
+        backend->clear_fault(retry_slot);
     });
 
     // Show the error modal with retry callback
