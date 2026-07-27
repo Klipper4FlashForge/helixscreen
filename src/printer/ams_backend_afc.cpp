@@ -1050,9 +1050,15 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
         loaded_lane = afc_data["current_load"].get<std::string>();
     }
 
-    // Track the lane AFC names as active, independent of slots_ lookup below —
-    // used only to attribute the shared hub sensor in can_recover_lane_position().
-    active_load_lane_ = loaded_lane;
+    // Delta semantics: only reconsider the active lane when AFC actually mentions
+    // it. A present string sets it, a present null clears it, and absence leaves
+    // it alone — AFC omits unchanged keys, and clearing on absence would drop the
+    // attribution on the next unrelated delta (message, state, toolchange count).
+    const bool mentions_lane = afc_data.contains("current_lane");
+    const bool mentions_load = afc_data.contains("current_load");
+    if (mentions_lane || mentions_load) {
+        active_load_lane_ = loaded_lane;
+    }
 
     if (!loaded_lane.empty()) {
         int slot_index = slots_.index_of(loaded_lane);

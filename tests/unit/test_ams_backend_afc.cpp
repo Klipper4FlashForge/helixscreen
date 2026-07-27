@@ -2210,6 +2210,32 @@ TEST_CASE("AFC active_load_lane_ is populated from a current_load delta and "
     REQUIRE(helper.get_active_load_lane().empty());
 }
 
+TEST_CASE("AFC active_load_lane_ survives a delta that omits both lane keys",
+          "[ams][afc][recovery]") {
+    // parse_afc_state() is fed notify_status_update DELTAS, not snapshots — an
+    // absent key means "unchanged," never "clear." AFC.current_toolchange,
+    // message, and current_state each trigger a parse independently of
+    // current_lane/current_load. An unconditional assignment would wipe the
+    // attribution on the very next such delta, re-exposing Recover on every
+    // lane on the hub within one update — the original bug, back immediately.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_state({{"current_lane", "lane1"},
+                           {"current_state", "Idle"},
+                           {"lanes", {"lane1", "lane2", "lane3", "lane4"}}});
+    REQUIRE(helper.get_active_load_lane() == "lane1");
+
+    // A delta that mentions neither current_lane nor current_load — only a
+    // toolchange counter changed. Attribution must be untouched.
+    helper.feed_afc_state({{"current_toolchange", 3}});
+    REQUIRE(helper.get_active_load_lane() == "lane1");
+
+    // Same for a message-only delta.
+    helper.feed_afc_state({{"message", {{"message", "some notice"}, {"type", "info"}}}});
+    REQUIRE(helper.get_active_load_lane() == "lane1");
+}
+
 TEST_CASE("AFC reset_lane fails when not running", "[ams][afc][recovery][phase4]") {
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
