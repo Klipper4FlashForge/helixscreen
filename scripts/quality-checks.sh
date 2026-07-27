@@ -687,6 +687,34 @@ fi
 
 echo ""
 
+if [ -f "scripts/check_raw_this_queue_update.py" ]; then
+  # Ratcheting baseline. queue_update([this, ...]) runs at the next drain whether or
+  # not the owner is still alive; if the body touches a member lv_subject_t,
+  # lv_subject_notify walks a freed observer list (#1146, #1165). Most survivors are
+  # owned by process-lifetime singletons, which is why this ratchets instead of
+  # failing outright — the gate counts the debt, it does not adjudicate which sites
+  # are lethal. The number may go DOWN (guard a site with lifetime_.bg_cb /
+  # tok.defer, then lower this) but must never go up.
+  if python3 scripts/check_raw_this_queue_update.py --max-allowed 49 --summary >/tmp/raw_this_qu.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/raw_this_qu.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/raw_this_qu.out
+    echo "   Run: python3 scripts/check_raw_this_queue_update.py --list"
+    echo "   Guard with lifetime_.bg_cb() / tok.defer(); see docs/devel/THREADING.md §2."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_raw_this_queue_update.py not found — skipping"
+fi
+
+echo ""
+
 # ====================================================================
 # spdlog only: no printf/cout/cerr/LV_LOG_ outside CLI subcommands
 # ====================================================================
