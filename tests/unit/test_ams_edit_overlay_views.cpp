@@ -5,14 +5,14 @@
 // view transitions. Uses the full-UI fixture (real XML tree) plus the
 // AmsEditOverlayViewTestAccess friend shim.
 
-#include "app_globals.h"
-#include "display_settings_manager.h"
 #include "ui_ams_edit_overlay.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_update_queue.h"
 
 #include "../lvgl_ui_test_fixture.h"
+#include "app_globals.h"
+#include "display_settings_manager.h"
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
 #include "printer_state.h"
@@ -161,8 +161,8 @@ SlotInfo untracked_slot_without_weights() {
 // can reach test_screen()/process_lvgl() (both LVGLUITestFixture members).
 void show_overlay_for_mock_slot_without_weights(LVGLUITestFixture& fixture) {
     auto& overlay = get_ams_edit_overlay();
-    REQUIRE(
-        overlay.show_for_slot(fixture.test_screen(), 0, untracked_slot_without_weights(), nullptr, nullptr));
+    REQUIRE(overlay.show_for_slot(fixture.test_screen(), 0, untracked_slot_without_weights(),
+                                  nullptr, nullptr));
     UpdateQueue::instance().drain();
     fixture.process_lvgl(10);
 }
@@ -524,8 +524,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "spool-edit Save preserves an existing non-G
 // The fix: when Spoolman is connected, the host fetches the live vendor list and
 // merges it into the selector (which stays Spoolman-agnostic — it just receives
 // the names). The seed vendor then resolves and the brand string round-trips.
-TEST_CASE_METHOD(LVGLUITestFixture,
-                 "spool-edit surfaces a Spoolman-only vendor and Save keeps it",
+TEST_CASE_METHOD(LVGLUITestFixture, "spool-edit surfaces a Spoolman-only vendor and Save keeps it",
                  "[ams_edit_overlay][spool_edit][brand][spoolman]") {
     PrinterState state;
     MoonrakerClientMock client;
@@ -965,8 +964,7 @@ TEST_CASE_METHOD(LVGLUITestFixture, "picker pre-selects the first row for unlink
     close_editor_overlay();
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture,
-                 "picker-entry spool selection commits and closes the editor",
+TEST_CASE_METHOD(LVGLUITestFixture, "picker-entry spool selection commits and closes the editor",
                  "[ams_edit_overlay][picker][header_save]") {
     // Task #13: when the editor is opened directly on the picker (context-menu
     // "Select spool"), choosing a spool is a one-tap commit — apply + close the
@@ -982,12 +980,13 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     bool fired = false;
     AmsEditOverlay::EditResult captured;
-    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), nullptr,
-                                  [&](const AmsEditOverlay::EditResult& r) {
-                                      fired = true;
-                                      captured = r;
-                                  },
-                                  /*open_on_picker=*/true));
+    REQUIRE(overlay.show_for_slot(
+        test_screen(), 0, untracked_slot(), nullptr,
+        [&](const AmsEditOverlay::EditResult& r) {
+            fired = true;
+            captured = r;
+        },
+        /*open_on_picker=*/true));
     UpdateQueue::instance().drain();
     process_lvgl(10);
     REQUIRE(access.view() == AmsEditOverlay::kViewSpoolPicker);
@@ -1044,12 +1043,13 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     bool fired = false;
     AmsEditOverlay::EditResult captured;
-    REQUIRE(overlay.show_for_slot(test_screen(), 0, tracked_slot(), &api,
-                                  [&](const AmsEditOverlay::EditResult& r) {
-                                      fired = true;
-                                      captured = r;
-                                  },
-                                  /*open_on_picker=*/true));
+    REQUIRE(overlay.show_for_slot(
+        test_screen(), 0, tracked_slot(), &api,
+        [&](const AmsEditOverlay::EditResult& r) {
+            fired = true;
+            captured = r;
+        },
+        /*open_on_picker=*/true));
     UpdateQueue::instance().drain();
     process_lvgl(10);
     REQUIRE(access.view() == AmsEditOverlay::kViewSpoolPicker);
@@ -1203,8 +1203,8 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     // modal is up (completion pending) or the fallback save fired against the
     // linked spool — but never a silent no-op relink close.
     const bool confirm_pending = !ModalStack::instance().stack_empty() && !fired;
-    const bool save_ran = !api.spoolman_mock().spool_updates.empty() ||
-                          !api.spoolman_mock().filament_updates.empty();
+    const bool save_ran =
+        !api.spoolman_mock().spool_updates.empty() || !api.spoolman_mock().filament_updates.empty();
     CHECK((confirm_pending || save_ran));
 
     // Dismiss any modal so teardown is clean.
@@ -1328,7 +1328,7 @@ TEST_CASE_METHOD(
     CHECK(fire_count == 1);
     CHECK(captured.saved);
     CHECK((!api.spoolman_mock().spool_updates.empty() ||
-          !api.spoolman_mock().filament_updates.empty()));
+           !api.spoolman_mock().filament_updates.empty()));
 
     get_printer_state().set_spoolman_available(false); // restore clean slate
     UpdateQueue::instance().drain();
@@ -1503,9 +1503,10 @@ TEST_CASE_METHOD(LVGLUITestFixture, "picker pre-selects the current spool when l
     close_editor_overlay();
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture,
-                 "spool-edit Save after a type change stages the checked product, not the old identity",
-                 "[ams_edit_overlay][catalog_selector]") {
+TEST_CASE_METHOD(
+    LVGLUITestFixture,
+    "spool-edit Save after a type change stages the checked product, not the old identity",
+    "[ams_edit_overlay][catalog_selector]") {
     // Regression for the silent-drop bug: user changes the Type dropdown, the
     // product list rebuilds, then taps header Save. Before the fix the rebuilt
     // list had nothing highlighted and Save skipped the identity entirely,
@@ -1547,9 +1548,10 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     close_editor_overlay();
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture,
-                 "spool-edit Save applies Generic identity when a whitelisted type has no catalog product",
-                 "[ams_edit_overlay][catalog_selector]") {
+TEST_CASE_METHOD(
+    LVGLUITestFixture,
+    "spool-edit Save applies Generic identity when a whitelisted type has no catalog product",
+    "[ams_edit_overlay][catalog_selector]") {
     // A firmware-whitelisted material with no seeded catalog product yields an
     // empty (all-unchecked) product list. Save must not silently no-op the
     // identity change: apply vendor Generic + the selected type string.
@@ -1585,7 +1587,8 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     close_editor_overlay();
 }
 
-TEST_CASE_METHOD(LVGLUITestFixture, "header Save shows on overview + spool-edit, hides on picker/color",
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "header Save shows on overview + spool-edit, hides on picker/color",
                  "[ams_edit_overlay][views]") {
     auto& overlay = get_ams_edit_overlay();
     AmsEditOverlayViewTestAccess access(overlay);
@@ -1758,8 +1761,7 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     const auto& updates = api.spoolman_mock().spool_updates;
     bool price_patched = false;
     for (const auto& u : updates) {
-        if (u.patch.contains("price") &&
-            std::abs(u.patch["price"].get<double>() - 29.99) < 0.001) {
+        if (u.patch.contains("price") && std::abs(u.patch["price"].get<double>() - 29.99) < 0.001) {
             price_patched = true;
         }
     }
@@ -1780,8 +1782,8 @@ TEST_CASE_METHOD(LVGLUITestFixture, "weightless slot opens clean — no fabricat
     REQUIRE_FALSE(access.is_dirty());
     auto* save_dis = lv_xml_get_subject(nullptr, "ams_edit_save_disabled");
     REQUIRE(save_dis != nullptr);
-    REQUIRE(lv_subject_get_int(save_dis) == 1);          // Save stays disabled
-    REQUIRE(access.working_info().total_weight_g <= 0);  // untouched
+    REQUIRE(lv_subject_get_int(save_dis) == 1);             // Save stays disabled
+    REQUIRE(access.working_info().total_weight_g <= 0);     // untouched
     REQUIRE(access.working_info().remaining_weight_g <= 0); // untouched
 
     close_editor_overlay();
@@ -1834,7 +1836,6 @@ TEST_CASE("build_spool_patches splits spool-level vs filament-level fields",
     CHECK(empty_filament.empty());
 }
 
-
 TEST_CASE_METHOD(LVGLUITestFixture,
                  "ams edit overlay reclaims its widget tree on close and rebuilds on reopen",
                  "[ams_edit_overlay][lifecycle]") {
@@ -1886,7 +1887,12 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     lv_obj_t* root2 = overlay.get_root();
     REQUIRE(root2 != nullptr);
     REQUIRE(lv_obj_is_valid(root2));
-    CHECK(root2 != root1);
+    // Deliberately NOT CHECK(root2 != root1): the allocator reuses the block the
+    // first tree just released, so that comparison fails ~7 runs in 8 while the
+    // teardown is working perfectly. Freshness is already established above by
+    // CHECK_FALSE(lv_obj_is_valid(root1)) — the old tree really was reclaimed —
+    // and by the functional assertions below, neither of which depends on where
+    // the allocator happens to place the new root.
     AmsEditOverlayViewTestAccess access(overlay);
     access.call_enter_spool_edit();
     UpdateQueue::instance().drain();
@@ -1944,12 +1950,13 @@ TEST_CASE_METHOD(LVGLUITestFixture,
 
     bool fired = false;
     AmsEditOverlay::EditResult captured;
-    REQUIRE(overlay.show_for_slot(test_screen(), 0, untracked_slot(), &api,
-                                  [&](const AmsEditOverlay::EditResult& r) {
-                                      fired = true;
-                                      captured = r;
-                                  },
-                                  /*open_on_picker=*/true));
+    REQUIRE(overlay.show_for_slot(
+        test_screen(), 0, untracked_slot(), &api,
+        [&](const AmsEditOverlay::EditResult& r) {
+            fired = true;
+            captured = r;
+        },
+        /*open_on_picker=*/true));
     UpdateQueue::instance().drain();
     process_lvgl(10);
     REQUIRE(access.view() == AmsEditOverlay::kViewSpoolPicker);
