@@ -53,7 +53,7 @@ class AmsContextMenu : public ContextMenu {
         LOAD,        ///< Load filament from this slot
         UNLOAD,      ///< Unload filament from toolhead
         EJECT,       ///< Eject filament from lane (release spool)
-        RESET_LANE,  ///< Reset lane to known-good state
+        RECOVER_POSITION, ///< Retract filament stranded past the hub back into the lane
         SELECT_GATE, ///< Select this gate as the active gate (Happy Hare)
         CHECK_GATE,  ///< Check filament state of this gate (Happy Hare)
         EDIT,        ///< Edit slot properties
@@ -144,17 +144,24 @@ class AmsContextMenu : public ContextMenu {
     // Gates BOTH the Unload action (enabled) and the Load action (suppressed) —
     // a slot the firmware considers seated should not offer Load.
     bool pending_is_loaded_ = false;
-    bool eject_mode_ = false; ///< True when showing "Eject" instead of "Unload"
-    /// True when showing a force-eject/recover affordance for an idle lane that reports EMPTY —
-    /// AD5X IFS cold retract, ignores presence (#996).
-    bool force_eject_mode_ = false;
+
+    /// Which operation the Unload button performs for the open slot. Selected in
+    /// on_created() from live backend state; drives both label and dispatch.
+    enum class UnloadMode {
+        Unload,          ///< Heated unload from the toolhead
+        RecoverPosition, ///< Retract filament stranded past the hub (AFC)
+        Eject,           ///< Cold retract of lane filament to the spool
+        ForceEject,      ///< Presence-ignoring retract of an empty lane (AD5X)
+        Unavailable,     ///< Nothing to do for this slot
+    };
+    UnloadMode unload_mode_ = UnloadMode::Unavailable;
+
     bool external_spool_mode_ = false; ///< True when showing menu for external spool (bypass)
 
     // === Event Handlers ===
     void handle_backdrop_clicked();
     void handle_load();
     void handle_unload();
-    void handle_reset_lane();
     void handle_gate_select();
     void handle_gate_check();
     void handle_edit();
@@ -192,7 +199,6 @@ class AmsContextMenu : public ContextMenu {
     static void on_backdrop_cb(lv_event_t* e);
     static void on_load_cb(lv_event_t* e);
     static void on_unload_cb(lv_event_t* e);
-    static void on_reset_lane_cb(lv_event_t* e);
     static void on_gate_select_cb(lv_event_t* e);
     static void on_gate_check_cb(lv_event_t* e);
     static void on_edit_cb(lv_event_t* e);

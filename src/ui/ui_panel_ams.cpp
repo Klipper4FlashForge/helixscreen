@@ -1402,15 +1402,15 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
             }
             break;
 
-        case helix::ui::AmsContextMenu::MenuAction::RESET_LANE:
+        case helix::ui::AmsContextMenu::MenuAction::RECOVER_POSITION:
             if (!backend) {
                 NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
                 return;
             }
             {
-                AmsError error = backend->reset_lane(slot);
+                AmsError error = backend->recover_lane_position(slot);
                 if (error.result != AmsResult::SUCCESS) {
-                    NOTIFY_ERROR(lv_tr("Reset failed: {}"), error.user_msg);
+                    NOTIFY_ERROR(lv_tr("Recovery failed: {}"), error.user_msg);
                 }
             }
             break;
