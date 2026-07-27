@@ -242,6 +242,10 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         captured_gcodes.clear();
     }
 
+    void clear_slot_override(int slot_index) {
+        AmsBackendAfc::clear_slot_override(slot_index);
+    }
+
     bool can_reset_lane(int slot_index) const {
         return AmsBackendAfc::can_reset_lane(slot_index);
     }
@@ -4787,4 +4791,68 @@ TEST_CASE("AFC can_reset_lane requires filament at the hub", "[ams][afc][reset]"
         CHECK_FALSE(helper.can_reset_lane(99));
         CHECK_FALSE(helper.can_reset_lane(-1));
     }
+}
+
+// ============================================================================
+// Override store — user identity survives AFC's own clears
+// ============================================================================
+//
+// parse_afc_stepper now honours AFC's clears (spool_id null, empty colour), so
+// firmware truth genuinely clears on eject. Retention lives one layer up: the
+// override store re-supplies the identity the user attached. Without it, the
+// parser change alone would LOSE metadata on eject, which is the opposite of
+// what the maintainer asked for (a lane keeps its spool until told otherwise,
+// because pulling a spool for maintenance and putting the same one back is the
+// common case).
+//
+// AFC firmware also structurally cannot hold brand / spool_name /
+// total_weight_g / colour name / filament+vendor ids — verified against a live
+// lane payload and its lane_data record — so those only ever live here.
+
+TEST_CASE("AFC override survives an eject that clears firmware fields", "[ams][afc][override]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    // User attaches identity to lane 1.
+    SlotInfo info;
+    info.brand = "Likesilk";
+    info.spool_name = "Black ASA";
+    info.spoolman_id = 86;
+    info.material = "ASA";
+    info.color_rgb = 0x1A1A1A;
+    info.total_weight_g = 1000.0f;
+    helper.set_slot_info(0, info);
+
+    // AFC ejects the lane: clear_values() nulls spool_id and empties
+    // colour/material, and parse_afc_stepper now represents that faithfully.
+    helper.feed_afc_stepper(
+        "lane1", {{"spool_id", nullptr}, {"material", ""}, {"color", ""}, {"status", "None"}});
+
+    const SlotInfo after = helper.get_slot_info(0);
+
+    // Identity the user attached is re-supplied by the override layer.
+    CHECK(after.brand == "Likesilk");
+    CHECK(after.spool_name == "Black ASA");
+    CHECK(after.spoolman_id == 86);
+    CHECK(after.total_weight_g == Catch::Approx(1000.0f));
+}
+
+TEST_CASE("AFC clear_slot_override drops the retained identity", "[ams][afc][override]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    SlotInfo info;
+    info.brand = "Likesilk";
+    info.spoolman_id = 86;
+    info.material = "ASA";
+    helper.set_slot_info(0, info);
+
+    helper.clear_slot_override(0);
+    helper.feed_afc_stepper("lane1", {{"spool_id", nullptr}, {"material", ""}});
+
+    const SlotInfo after = helper.get_slot_info(0);
+    CHECK(after.brand.empty());
+    CHECK(after.spoolman_id == 0);
 }

@@ -7,6 +7,7 @@
 #include "ams_subscription_backend.h"
 #include "async_lifetime_guard.h"
 #include "error_event.h"
+#include "filament_slot_override_store.h"
 #include "slot_registry.h"
 
 #include <deque>
@@ -193,6 +194,10 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// needs the lane's filament to actually be at the hub and the toolhead
     /// free. See can_reset_lane() in the base class.
     [[nodiscard]] bool can_reset_lane(int slot_index) const override;
+
+    /// Delete this slot's user override ("Clear Spool"). AFC previously
+    /// inherited the no-op default, so the button did nothing here.
+    void clear_slot_override(int slot_index) override;
     AmsError eject_lane(int slot_index) override;
     [[nodiscard]] bool supports_lane_eject() const override {
         return true;
@@ -382,6 +387,28 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     }
 
   private:
+    // === User-attached slot identity (FilamentSlotOverrideStore) =============
+    //
+    // AFC firmware cannot hold brand, spool_name, total_weight_g, color_name or
+    // the Spoolman filament/vendor ids — verified against a live lane payload
+    // and its lane_data record — so those live only here.
+    //
+    // The namespace is PRIVATE, deliberately NOT the shared "lane_data": AFC's
+    // own plugin owns that one, deletes the whole namespace on every Klipper
+    // boot and full-POSTs each lane record, so our data would not survive and
+    // AFC's records would be ingested as if the user had authored them.
+    //
+    // This is also what restores retention across an eject now that
+    // parse_afc_stepper honours AFC's clears: firmware truth clears, and the
+    // override re-supplies the identity the user attached.
+    static constexpr const char* kOverrideNamespace = "helix-screen-afc-overrides";
+    std::unique_ptr<helix::ams::FilamentSlotOverrideStore> override_store_;
+    std::unordered_map<int, helix::ams::FilamentSlotOverride> overrides_;
+    /// Layer the user override over firmware values. Callers hold mutex_.
+    void apply_overrides(SlotInfo& slot, int slot_index);
+    /// Build + persist an override from a user edit. Callers hold mutex_.
+    void persist_override(int slot_index, const SlotInfo& info);
+
     /// Async callback safety guard. Tokens shared with AfcConfigManager instances.
     helix::AsyncLifetimeGuard lifetime_;
 

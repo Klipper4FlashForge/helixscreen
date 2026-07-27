@@ -217,6 +217,23 @@ bool AmsBackendAfc::auto_unloads_after_print() const {
 void AmsBackendAfc::on_started() {
     // Version is informational only (see apply_afc_version_response) — nothing
     // below depends on the result, so this does not need to complete first.
+    // Load persisted per-slot overrides BEFORE any status callback can parse a
+    // lane, so the first frame already carries the user's identity. Private
+    // namespace: lane_data belongs to AFC's own plugin (it deletes that whole
+    // namespace on every boot), so sharing it would both lose our records and
+    // ingest AFC's as if the user had authored them.
+    if (api_) {
+        override_store_ = std::make_unique<helix::ams::FilamentSlotOverrideStore>(
+            api_, "afc", helix::ams::lane_key_style_for(get_type()), kOverrideNamespace);
+        auto loaded = override_store_->load_blocking();
+        const auto loaded_count = loaded.size();
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            overrides_ = std::move(loaded);
+        }
+        spdlog::info("[AMS AFC] Loaded {} slot overrides", loaded_count);
+    }
+
     detect_afc_version();
 
     // If we have discovered lanes (from PrinterCapabilities), initialize them now.
@@ -1461,6 +1478,11 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
         slot.remaining_weight_g = data["weight"].get<float>();
     }
 
+    // Re-supply the user's attached identity on top of firmware truth. This is
+    // what keeps a lane's spool across an eject now that the parser honours
+    // AFC's clears.
+    apply_overrides(slot, slot.global_index >= 0 ? slot.global_index : slot.slot_index);
+
     // Derive slot status from sensors and status string.
     // Only recompute status when at least one status-related field is present
     // in the update. Partial updates (e.g., weight-only) must not regress the
@@ -2686,6 +2708,94 @@ AmsError AmsBackendAfc::reset() {
                                 lv_tr("AFC reset failed"));
 }
 
+void AmsBackendAfc::apply_overrides(SlotInfo& slot, int slot_index) {
+    // Callers hold mutex_ (the parse path does). Merge policy matches ACE/IFS:
+    // the override wins only where it carries a real value; default sentinels
+    // (empty string, id 0, weight -1, colour unset) fall through to firmware.
+    auto it = overrides_.find(slot_index);
+    if (it == overrides_.end()) {
+        return;
+    }
+    const auto& o = it->second;
+    if (!o.brand.empty())
+        slot.brand = o.brand;
+    if (!o.spool_name.empty())
+        slot.spool_name = o.spool_name;
+    if (o.spoolman_id > 0)
+        slot.spoolman_id = o.spoolman_id;
+    if (o.spoolman_vendor_id > 0)
+        slot.spoolman_vendor_id = o.spoolman_vendor_id;
+    if (o.remaining_weight_g >= 0.0f)
+        slot.remaining_weight_g = o.remaining_weight_g;
+    if (o.total_weight_g >= 0.0f)
+        slot.total_weight_g = o.total_weight_g;
+    if (o.color_set)
+        slot.color_rgb = o.color_rgb;
+    if (!o.color_name.empty())
+        slot.color_name = o.color_name;
+    if (!o.material.empty())
+        slot.material = o.material;
+}
+
+void AmsBackendAfc::persist_override(int slot_index, const SlotInfo& info) {
+    // Callers hold mutex_.
+    helix::ams::FilamentSlotOverride o;
+    o.brand = info.brand;
+    o.spool_name = info.spool_name;
+    o.spoolman_id = info.spoolman_id;
+    o.spoolman_vendor_id = info.spoolman_vendor_id;
+    o.remaining_weight_g = info.remaining_weight_g;
+    o.total_weight_g = info.total_weight_g;
+    o.color_name = info.color_name;
+    o.material = info.material;
+    if (info.color_rgb != 0 && info.color_rgb != AMS_DEFAULT_SLOT_COLOR) {
+        o.color_rgb = info.color_rgb;
+        o.color_set = true;
+    }
+    overrides_[slot_index] = o;
+
+    if (override_store_) {
+        override_store_->save_async(slot_index, o, [slot_index](bool ok, std::string err) {
+            if (!ok) {
+                spdlog::warn("[AMS AFC] override save failed for slot {}: {}", slot_index, err);
+            }
+        });
+    }
+}
+
+void AmsBackendAfc::clear_slot_override(int slot_index) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        overrides_.erase(slot_index);
+
+        // Also reset the override-exclusive fields on the live slot, so the
+        // clear shows up in the very next get_slot_info(). AFC has no concept
+        // of brand / spool_name / total weight / colour name, so no firmware
+        // update will ever clear them for us — dropping only the store entry
+        // would leave the previous spool's identity on screen indefinitely.
+        // colour and material are left alone: those DO come from the parse, so
+        // the lane's actual firmware values should surface.
+        if (helix::printer::SlotEntry* entry = slots_.get_mut(slot_index)) {
+            entry->info.brand.clear();
+            entry->info.spool_name.clear();
+            entry->info.spoolman_id = 0;
+            entry->info.spoolman_vendor_id = 0;
+            entry->info.spoolman_filament_id = 0;
+            entry->info.remaining_weight_g = -1.0f;
+            entry->info.total_weight_g = -1.0f;
+            entry->info.color_name.clear();
+        }
+    }
+    emit_event(EVENT_SLOT_CHANGED, std::to_string(slot_index));
+    if (override_store_) {
+        override_store_->clear_async(slot_index, [slot_index](bool ok, std::string err) {
+            if (!ok) {
+                spdlog::warn("[AMS AFC] override clear failed for slot {}: {}", slot_index, err);
+            }
+        });
+    }
+}
+
 bool AmsBackendAfc::can_reset_lane(int slot_index) const {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -2921,6 +3031,14 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
         // sync_from_backend → refresh_spoolman_weights → set_slot_info again,
         // creating an infinite feedback loop that saturates the CPU.
         //
+        // Record the user's identity in the override store as well. AFC cannot
+        // hold brand / spool_name / total_weight / colour name / filament+vendor
+        // ids at all, and the fields it DOES hold get cleared by its own
+        // clear_values() on eject.
+        if (persist) {
+            persist_override(slot_index, info);
+        }
+
         // Persistence is never version-gated. These SET_* commands have existed
         // since well before any version we would recognize, and the version string
         // is not a usable signal (AFC stopped writing it — see
