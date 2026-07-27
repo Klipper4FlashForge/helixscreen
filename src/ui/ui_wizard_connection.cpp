@@ -82,6 +82,13 @@ WizardConnectionStep::~WizardConnectionStep() {
 
     // NOTE: Do NOT call LVGL functions here - LVGL may be destroyed first
     // NOTE: Do NOT log here - spdlog may be destroyed first
+
+    // Exception to the NOTE above: shutdown runs StaticPanelRegistry::destroy_all()
+    // BEFORE lv_deinit(), so a watchdog armed at this point is still in LVGL's timer
+    // list holding a freed `this`. The cancel goes through lv_timer_cancel_safe(),
+    // which no-ops when lv_is_initialized() is false, so it is safe either way.
+    cancel_discovery_watchdog();
+
     screen_root_ = nullptr;
 }
 
@@ -251,6 +258,10 @@ void WizardConnectionStep::handle_test_connection_clicked() {
     lifetime_.invalidate();
     auto tok = lifetime_.token();
 
+    // The previous attempt's discovery is abandoned along with its callbacks;
+    // its watchdog must not survive to unblock Next behind this new attempt.
+    cancel_discovery_watchdog();
+
     // Store IP/port for async callback (thread-safe)
     {
         std::lock_guard<std::mutex> lock(saved_values_mutex_);
@@ -337,12 +348,19 @@ void WizardConnectionStep::on_connection_success(const helix::LifetimeToken& tok
     // Trigger hardware discovery - only enable Next when this completes
     MoonrakerClient* client = get_moonraker_client();
     if (client) {
+        // discover_printer() can return without ever invoking either callback
+        // (stale generation / superseded sequence), which stranded the spinner
+        // and Next forever (#1161). Bound the wait from here.
+        start_discovery_watchdog();
+
         client->discover_printer(
             // Success callback (fires on background thread)
             [this, tok]() {
                 spdlog::info("[Wizard Connection] Hardware discovery complete!");
 
                 tok.defer("WizardConnectionStep::discovery_success", [this]() {
+                    cancel_discovery_watchdog();
+
                     MoonrakerAPI* api = get_moonraker_api();
                     MoonrakerClient* client = get_moonraker_client();
                     if (api) {
@@ -464,6 +482,7 @@ void WizardConnectionStep::attempt_auto_probe() {
     // Invalidate pending callbacks from any previous attempt, grab fresh token
     lifetime_.invalidate();
     auto tok = lifetime_.token();
+    cancel_discovery_watchdog();
 
     // Clear timer reference (it's already fired)
     auto_probe_timer_ = nullptr;
@@ -585,12 +604,17 @@ void WizardConnectionStep::on_auto_probe_success(const helix::LifetimeToken& tok
     // Trigger hardware discovery - only enable Next when this completes
     MoonrakerClient* client = get_moonraker_client();
     if (client) {
+        // Same unbounded-spinner hazard as the manual test path (#1161).
+        start_discovery_watchdog();
+
         client->discover_printer(
             // Success callback (fires on background thread)
             [this, tok]() {
                 spdlog::info("[Wizard Connection] Auto-probe: Hardware discovery complete");
 
                 tok.defer("WizardConnectionStep::auto_probe_discovery_success", [this]() {
+                    cancel_discovery_watchdog();
+
                     MoonrakerAPI* api = get_moonraker_api();
                     MoonrakerClient* client = get_moonraker_client();
                     if (api) {
@@ -659,6 +683,11 @@ void WizardConnectionStep::handle_ip_input_changed() {
         lv_subject_set_int(&connection_testing_, 0);
     }
 
+    // The user retargeted the connection, so any discovery still in flight is
+    // moot — its watchdog must not re-open the gate we clear just below.
+    cancel_discovery_watchdog();
+    lv_subject_set_int(&connection_discovering_, 0);
+
     // Reset to help text (user needs to test again after changing input)
     set_status(nullptr, StatusVariant::None,
                lv_tr("Connection must be tested successfully to continue"));
@@ -683,6 +712,11 @@ void WizardConnectionStep::handle_port_input_changed() {
         }
         lv_subject_set_int(&connection_testing_, 0);
     }
+
+    // The user retargeted the connection, so any discovery still in flight is
+    // moot — its watchdog must not re-open the gate we clear just below.
+    cancel_discovery_watchdog();
+    lv_subject_set_int(&connection_discovering_, 0);
 
     // Reset to help text (user needs to test again after changing input)
     set_status(nullptr, StatusVariant::None,
@@ -838,6 +872,10 @@ void WizardConnectionStep::cleanup() {
         helix::ui::lv_timer_cancel_safe(auto_probe_timer_);
         auto_probe_timer_ = nullptr;
     }
+
+    // Same for the discovery watchdog — it holds `this` and outliving the step
+    // would fire into a torn-down screen.
+    cancel_discovery_watchdog();
 
     // If a connection test or auto-probe is in progress, cancel it
     if (lv_subject_get_int(&connection_testing_) == 1 ||
@@ -1006,22 +1044,86 @@ void WizardConnectionStep::set_status(const char* icon_name, StatusVariant varia
     }
 }
 
-void WizardConnectionStep::allow_continue_without_klipper() {
+void WizardConnectionStep::unblock_after_incomplete_discovery(const char* message) {
+    cancel_discovery_watchdog();
+
     lv_subject_set_int(&connection_discovering_, 0);
     lv_subject_set_int(&connection_testing_, 0);
 
-    // Moonraker answered on this address, so the connection itself is good and
-    // is already persisted — only Klipper is unusable. Report that plainly and
-    // unblock Next: the app's own error surfaces show the actual Klipper fault,
-    // which is far more useful than a wizard the user cannot leave.
-    set_status("icon_triangle_exclamation", StatusVariant::Warning,
-               lv_tr("Connected to Moonraker, but Klipper is not running. You can continue "
-                     "— HelixScreen will show the Klipper error, and hardware detection "
-                     "stays limited until Klipper starts."));
+    set_status("icon_triangle_exclamation", StatusVariant::Warning, message);
 
     // Not a full validation: discovery never ran, so hardware lists are empty.
     connection_validated_ = false;
     lv_subject_set_int(&connection_test_passed, 1);
+}
+
+void WizardConnectionStep::allow_continue_without_klipper() {
+    // Moonraker answered on this address, so the connection itself is good and
+    // is already persisted — only Klipper is unusable. Report that plainly and
+    // unblock Next: the app's own error surfaces show the actual Klipper fault,
+    // which is far more useful than a wizard the user cannot leave.
+    unblock_after_incomplete_discovery(
+        lv_tr("Connected to Moonraker, but Klipper is not running. You can continue "
+              "— HelixScreen will show the Klipper error, and hardware detection "
+              "stays limited until Klipper starts."));
+}
+
+// ============================================================================
+// Discovery Watchdog (#1161)
+// ============================================================================
+
+void WizardConnectionStep::start_discovery_watchdog() {
+    cancel_discovery_watchdog();
+
+    if (!lv_is_initialized()) {
+        return;
+    }
+
+    discovery_in_flight_ = true;
+    discovery_watchdog_timer_ =
+        lv_timer_create(discovery_watchdog_timer_cb, discovery_watchdog_ms_, this);
+    lv_timer_set_repeat_count(discovery_watchdog_timer_, 1); // One-shot timer
+
+    spdlog::debug("[{}] Discovery watchdog armed ({} ms)", get_name(), discovery_watchdog_ms_);
+}
+
+void WizardConnectionStep::cancel_discovery_watchdog() {
+    discovery_in_flight_ = false;
+
+    // Same reasoning as the auto-probe timer: neuter rather than delete so a
+    // cancel from inside lv_timer_handler cannot corrupt the timer list.
+    if (discovery_watchdog_timer_ && lv_is_initialized()) {
+        helix::ui::lv_timer_cancel_safe(discovery_watchdog_timer_);
+    }
+    discovery_watchdog_timer_ = nullptr;
+}
+
+void WizardConnectionStep::discovery_watchdog_timer_cb(lv_timer_t* timer) {
+    auto* self = static_cast<WizardConnectionStep*>(lv_timer_get_user_data(timer));
+    if (self) {
+        // One-shot — LVGL deletes the timer as soon as this returns, so drop our
+        // reference first or cancel_discovery_watchdog() neuters freed memory
+        // (the UAF auto_probe_timer_cb documents).
+        self->discovery_watchdog_timer_ = nullptr;
+        self->discovery_watchdog_expired();
+    }
+}
+
+void WizardConnectionStep::discovery_watchdog_expired() {
+    if (!discovery_in_flight_) {
+        // Discovery already settled (or the step moved on) and cancelled us.
+        return;
+    }
+
+    spdlog::warn("[{}] Hardware discovery produced neither result nor error within {} ms — "
+                 "unblocking the wizard",
+                 get_name(), discovery_watchdog_ms_);
+
+    // Deliberately vaguer than the Klipper-down wording: a silent discovery
+    // tells us nothing about *why* it went quiet.
+    unblock_after_incomplete_discovery(
+        lv_tr("Connected to Moonraker, but printer discovery did not finish. You can "
+              "continue — hardware detection stays limited until the printer responds."));
 }
 
 // ============================================================================
