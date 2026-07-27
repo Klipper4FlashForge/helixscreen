@@ -33,9 +33,19 @@
             scrollable="false">
 
       <!-- Source selector (left side) - Segmented tab control -->
-      <lv_obj name="source_selector"
+      <!-- Hidden unless a USB drive is present AND Moonraker doesn't already
+           expose USB files via symlink (in which case our own picker is
+           redundant) — see PrintSelectUsbSource in ui_print_select_usb_source.cpp,
+           which owns print_source_usb_present / print_source_moonraker_usb_access. -->
+      <!-- hidden="true" base attribute is redundant once bind_flag_if fires at
+           creation (both subjects default to 0, which evaluates hidden too) —
+           kept as a failure-safe default matching the sibling buttons below,
+           not a Rule #6 inline-vs-binding conflict. -->
+      <lv_obj name="source_selector" hidden="true"
               width="content" height="content" style_radius="#space_sm" style_pad_all="#space_xxs" flex_flow="row"
               style_pad_gap="#space_md" scrollable="false">
+        <bind_flag_if cond="not print_source_usb_present or print_source_moonraker_usb_access"
+                      flag="hidden"/>
 
         <!-- Printer tab: filled (active) when source=printer -->
         <ui_button name="source_printer_active" width="content" height="#button_height_sm" text="Printer" translation_tag="Printer" hidden="true">

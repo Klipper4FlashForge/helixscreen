@@ -2,7 +2,13 @@
 
 ## Overview
 
-HelixScreen uses headless LVGL testing with virtual input devices to test UI components without requiring a display. This allows automated testing of widget hierarchies, user interactions, and state changes.
+HelixScreen has two UI test layers, covering different things:
+
+- **In-process (this doc, below):** headless LVGL testing with virtual input devices,
+  building widgets inside the test binary. Fast, fine-grained, but structurally can't
+  reach app lifecycle, navigation, or async population.
+- **Out-of-process (`tests/ui/`):** pytest drives a real running `helix-screen` instance
+  through `helix-screen ctl`. See "Out-of-Process Tests" below.
 
 **Test Framework:** Catch2 v3.5.1
 **Test Utilities:** `tests/ui_test_utils.h/cpp`
@@ -335,6 +341,153 @@ TEST_CASE_METHOD(Fixture, "Test", "[macos]") { ... }
 ./build/bin/helix-tests --list-tests
 ./build/bin/helix-tests "[wizard]" --list-tests
 ```
+
+## Out-of-Process Tests (`tests/ui/`)
+
+**Test Framework:** pytest
+**Test Utilities:** `tests/ui/helix/app.py` (`HelixApp`)
+**Test Location:** `tests/ui/test_*.py`
+
+Catch2 tests build widgets inside the test binary — real widget code, but no real app
+lifecycle. `tests/ui/` instead boots the actual `helix-screen` binary on a private
+control socket and drives it through `helix-screen ctl --json` (see `HELIXCTL.md`),
+covering things the in-process layer structurally cannot reach: app boot, panel/overlay
+navigation, and async population.
+
+`HelixApp` (`tests/ui/helix/app.py`) wraps each `ctl --json` call as a subprocess and
+raises on failure:
+
+- `HelixCtlError` — the server rejected the command (unknown widget, bad subject, ...).
+  Carries `.message`, `.code`, and `.command` (the full argv, so a failure message names
+  exactly what was run).
+- `HelixAppError` — the app itself failed to boot or died mid-test. Carries the tail of
+  its log.
+
+```python
+def test_navigate_to_controls(helix_app):
+    helix_app.navigate("controls")
+    assert helix_app.current()["panel"] == "controls"
+```
+
+Two fixtures in `tests/ui/conftest.py`:
+
+- `helix_app` (session-scoped) — one instance shared by the whole run. Use this by
+  default; a boot costs ~2s and most tests don't dirty global state.
+- `fresh_helix_app` (function-scoped) — a private instance for a test that does dirty
+  global state (e.g. changes a persistent setting).
+
+Run with the repo's venv, not bare `python3` (it lacks pytest):
+
+```bash
+make -j                                        # build the binary tests/ui/ drives
+make test-ui-pytest                            # full suite (incl. goldens), via .venv
+# or directly:
+./.venv/bin/python -m pytest tests/ui/ -v
+./.venv/bin/python -m pytest tests/ui/ --accept-goldens   # after reviewing a diff
+```
+
+`make test-ui-pytest` (not `make test-ui` — that name is already the in-process
+Catch2 `[navigation],[theme],[wizard]` convenience target, see `mk/tests.mk`) fails
+with a clear message pointing at `make venv-setup` or `make -j` if the venv or the
+binary is missing, rather than an opaque pytest error.
+
+`HelixApp` boots the same way `scripts/screenshot.sh` does — `--test --skip-wizard
+--skip-splash --remote --remote-socket <private>`. **By default it runs headless**
+(`SDL_VIDEODRIVER=dummy`) — verified to render identically for navigate/screenshot
+purposes, and necessary since a suite run boots many instances and a visible window
+would steal focus on every one. Exporting `SDL_VIDEODRIVER` yourself (e.g. `=wayland`
+to watch a run) switches the renderer away from the `dummy` driver every golden was
+captured under — a plausible way to turn the golden suite red for reasons that have
+nothing to do with the UI change under test. Unset it before running goldens for real.
+
+Two environment variables most tests never need to touch:
+
+- `HELIX_UI_BINARY` — overrides the `helix-screen` binary path (default:
+  `build/bin/helix-screen` relative to the repo root). Needed by a test that copies
+  `conftest.py` elsewhere (see `test_diagnostics.py`'s pytester sub-run), whose
+  `__file__`-relative path resolution no longer finds the real binary once copied.
+- `HELIX_UI_ARTIFACTS` — overrides where failure diagnostics land (default:
+  `ui-artifacts/`, relative to wherever pytest is invoked from).
+
+Failures write a screenshot, the app's log tail, and a screen-state dump to
+`ui-artifacts/<test-name>/` (or `$HELIX_UI_ARTIFACTS/<test-name>/`).
+
+Golden images are **local-only** for now. They are sensitive to renderer and font
+rasterization, so a golden captured on a desktop will not match a CI runner; see the
+design spec's Risks section.
+
+### Golden corpus scope (`tests/ui/test_screens.py`)
+
+The screen list is *sourced from*, not hand-copied from,
+`scripts/screenshot-recipes.sh`'s `SCREENSHOT_RECIPE` table: the test shells out to
+`bash -c 'source scripts/screenshot-recipes.sh; ...'` and dumps the array, so a
+recipe added or renamed there shows up here without a second edit to keep in sync.
+
+Only 8 of the ~38 known recipe tokens are golden'd so far — deliberately, because
+`freeze()` cannot pin down everything a screen might show:
+
+- **Live mock telemetry** (`home`, `controls`, `filament`, `fan`, and any screen that
+  leaves the Controls temperature card visible) drifts via the mock backend's
+  `simulation_thread_` (`moonraker_client_mock.cpp`) — a raw background thread, not
+  an LVGL timer, so it's invisible to both `freeze()` and `wait_idle()`.
+- **Wall-clock content** (`console`'s gcode log timestamps, `filament`'s usage-chart
+  x-axis) is never the same twice by construction.
+- **Free-running spinners** (`camera`'s "Connecting Camera..." indicator) animate via
+  `lv_anim` independent of `settings_animations_enabled`, so `freeze()` catches an
+  arbitrary arc position — the same category of issue the design spec calls out for
+  the print-select loading spinner.
+- **Modal backdrops** (`preflight-check`) can inherit jitter faintly through the dim
+  scrim over a jittery panel underneath.
+
+Each of these was confirmed empirically (byte-identical captures compared across
+independent app boots, not just within one `capture(stable=True)` call) before being
+excluded — see the task-10 report for the evidence. Adding one of them later needs
+either a mock-side way to pin the drifting value, or accepting a masked/cropped
+comparison region; don't just re-add the token and hope.
+
+Every golden'd screen also depends on `settings_animations_enabled` being off, or
+`NavigationManager`'s overlay slide+fade can still be mid-flight when `freeze()`
+runs, locking in a half-transitioned frame. This used to be a real bug: each
+`HelixApp` boots with its own private `HELIX_CONFIG_DIR` (to avoid lock-file
+collisions between instances), which bypassed `config/settings-test.json` entirely
+and fell back to the platform-capability default instead (`true` on native/desktop —
+confirmed via boot log: "animations=true"). `HelixApp.start()` (`helix/app.py`) now
+seeds each private config dir with `config/settings-test.json` before boot, so every
+instance gets the intended test defaults *and* lock isolation — no per-test
+workaround needed. If a future screen animates unexpectedly, check whether that
+seeding step is still wired up before adding a local fixture to paper over it again.
+
+### CI coverage: what runs, what doesn't, and why
+
+`.github/workflows/build.yml`'s `test-ubuntu` job runs the out-of-process suite
+**with the 8 golden-image tests excluded**
+(`pytest tests/ui/ -v --ignore=tests/ui/test_screens.py`) after the existing
+in-process Catch2 run, using `actions/setup-python` + `pip install pytest` +
+`requirements.txt` — not `make test-ui-pytest`, since that target's `.venv` check
+exists for a local dev who forgot `make venv-setup`, which doesn't apply to a
+runner provisioned by `actions/setup-python`.
+
+The 38 excluded-golden tests assert on behavior (navigation, `wait_idle`, text
+reading, capture mechanics, screen state, reset semantics) and are portable across
+machines. Verified they have zero coupling to the golden files themselves: they
+pass with `tests/ui/goldens/` removed entirely, not just with `test_screens.py`
+skipped. The golden tests compare pixels, and cross-machine font rasterization is
+exactly the golden-portability risk called out above and in the design spec's
+Risks section — they stay a **local-only** gate until someone deliberately captures
+them inside a fixed container with pinned fonts. If a future contributor sees 8
+tests missing from a CI run and "fixes" it by dropping `--ignore`, that trades a
+green build for pixel diffs unrelated to whatever change actually broke it — don't.
+
+**Relationship to `scripts/smoke-headless.sh`** (also run in `compile-ubuntu`):
+mostly, but not entirely, subsumed. The out-of-process suite exceeds the smoke
+test's boot/navigate/screenshot checks in every dimension (many more panels, golden
+comparisons, `wait_idle`, text reading, widget geometry) — but the smoke test does
+one thing the suite's teardown doesn't replicate: it explicitly inspects the exit
+status after a clean shutdown request and fails on `139`/`134` (SIGSEGV/SIGABRT) or
+a crash signature in the log. `HelixApp.stop()` waits for the process to exit but
+never checks *how* it exited, so a segfault during shutdown cleanup would currently
+go unnoticed by the pytest teardown path. Not acted on here — flagging it as a real,
+narrow gap rather than a reason to drop the smoke test.
 
 ## Known Limitations & Workarounds
 

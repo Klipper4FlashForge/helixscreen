@@ -151,25 +151,37 @@ class PrintSelectUsbSource {
     /**
      * @brief Handle USB drive insertion
      *
-     * Shows both source selector buttons, unless Moonraker has
-     * symlink access to USB files (same-host setup).
+     * Marks a drive as present (print_source_usb_present subject). Whether
+     * the source selector actually becomes visible is a declarative XML
+     * binding on that subject combined with print_source_moonraker_usb_access
+     * (print_select_panel.xml) — hidden if Moonraker already has symlink
+     * access to USB files.
      */
     void on_drive_inserted();
 
     /**
      * @brief Handle USB drive removal
      *
-     * Hides both source selector buttons. If USB source is active,
-     * switches to Printer and invokes source changed callback.
+     * Marks no drive as present (print_source_usb_present subject), which
+     * hides the source selector via the same declarative binding as
+     * on_drive_inserted(). If USB source was active, switches to Printer
+     * and invokes the source changed callback.
      */
     void on_drive_removed();
 
     /**
      * @brief Set whether Moonraker has direct access to USB files via symlink
      *
-     * When true, the USB tab is hidden permanently since files are accessible
-     * via the Printer source. This is the case when Klipper's mod creates
-     * a symlink like gcodes/usb -> /media/sda1.
+     * Mirrors into the print_source_moonraker_usb_access subject, which the
+     * source selector's visibility binding combines with
+     * print_source_usb_present: hidden whenever Moonraker has access,
+     * regardless of drive presence, since files are already reachable via
+     * the Printer source. This is the case when Klipper's mod creates
+     * a symlink like gcodes/usb -> /media/sda1. Reacts to `has_access` going
+     * false too — if a drive is still present, the selector reappears —
+     * though the only current call site (PrintSelectPanel::check_moonraker_usb_symlink,
+     * ui_panel_print_select.cpp) only ever passes true, so that direction is
+     * modeled correctly but not currently reachable from the app.
      *
      * @param has_access true if Moonraker can see USB files via symlink
      */

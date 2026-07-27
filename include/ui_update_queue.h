@@ -306,6 +306,35 @@ class UpdateQueue {
         }
     }
 
+    /**
+     * @brief The processing timer itself, for callers that pause LVGL timers
+     * en masse and must skip this one by identity.
+     *
+     * Pausing it stops all queued UI work — including remote-control
+     * dispatch, since RemoteControlServer::execute_on_ui_thread() posts
+     * through this same queue. See RemoteControlServer::handle_freeze().
+     */
+    lv_timer_t* timer() const {
+        return timer_;
+    }
+
+    /**
+     * @brief Number of callbacks waiting to run, including frozen ones.
+     *
+     * Frozen work counts: a ScopedFreeze buffers rather than drops, so those
+     * callbacks will fire on a later tick and the UI is not yet settled.
+     *
+     * This is "nothing enqueued after me", not "nothing left to run": inside
+     * process_pending(), pending_ is swapped into a local queue before its
+     * callbacks execute, so a call made mid-batch (e.g. from a callback that
+     * itself queues further work) can read 0 while callbacks from that same
+     * batch are still running.
+     */
+    size_t pending_count() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return pending_.size() + frozen_buffer_.size();
+    }
+
   private:
     friend class UpdateQueueTestAccess;
     UpdateQueue() = default;
@@ -405,7 +434,7 @@ class UpdateQueue {
         }
     }
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::queue<TaggedCallback> pending_;
     // Callbacks enqueued while freeze_depth_ > 0 land here; ScopedFreeze::~
     // splices them back to pending_ when the depth returns to 0. Protected

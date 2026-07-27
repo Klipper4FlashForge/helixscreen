@@ -21,9 +21,12 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "hv/json.hpp"
 #include "remote_transport.h"
+
+struct _lv_timer_t;
 
 namespace helix {
 
@@ -131,6 +134,12 @@ class RemoteControlServer {
     nlohmann::json handle_set_subject(const nlohmann::json& params);
     nlohmann::json handle_list_subjects(const nlohmann::json& params);
     nlohmann::json handle_wait_for(const nlohmann::json& params);
+    nlohmann::json handle_wait_idle(const nlohmann::json& params);
+
+    // Determinism toggle: stop/resume animations + periodic timers for
+    // reproducible captures. See docs/devel/HELIXCTL.md "Diagnostics & lifecycle".
+    nlohmann::json handle_freeze(const nlohmann::json& params);
+    nlohmann::json handle_unfreeze(const nlohmann::json& params);
 
     // Phase 3 handlers
     nlohmann::json handle_click(const nlohmann::json& params);
@@ -144,6 +153,10 @@ class RemoteControlServer {
     // Scroll a named widget into view, or scroll a container by a delta
     nlohmann::json handle_scroll(const nlohmann::json& params);
     nlohmann::json handle_focus(const nlohmann::json& params);
+
+    // Read a widget's text (label/textarea/dropdown), descending into a
+    // composite (e.g. a button) to find the first text-bearing descendant.
+    nlohmann::json handle_text(const nlohmann::json& params);
 
     // Synthetic pointer: drives LVGL's real input pipeline so gestures
     // (long-press, drag, slide-to-select, scroll-vs-tap) are testable. Widget-level
@@ -165,6 +178,10 @@ class RemoteControlServer {
     // Ask the app to exit its main loop (app_request_quit)
     nlohmann::json handle_shutdown(const nlohmann::json& params);
 
+    // Return to a known screen (home, no overlays/modals) so one app instance
+    // can serve a whole test session instead of paying a boot per test.
+    nlohmann::json handle_reset(const nlohmann::json& params);
+
     // Tail the in-memory log ring buffer
     nlohmann::json handle_log(const nlohmann::json& params);
 
@@ -177,6 +194,20 @@ class RemoteControlServer {
 
     // Command registry
     std::unordered_map<std::string, CommandHandler> handlers_;
+
+    /// Timers `freeze` paused, so `unfreeze` resumes exactly that set and
+    /// never resumes one that was already paused by its own owner.
+    std::vector<_lv_timer_t*> paused_timers_;
+
+    /// Guards against a second `freeze` re-scanning while already frozen,
+    /// which would find every timer already paused, track none of them, and
+    /// make `unfreeze` forget the original set — leaving it paused forever.
+    bool frozen_ = false;
+
+    /// The real animations_enabled value at the moment `freeze` was called,
+    /// so `unfreeze` restores it exactly rather than assuming "on". Captured
+    /// once per freeze/unfreeze cycle, not on an idempotent re-freeze.
+    bool pre_freeze_animations_enabled_ = true;
 };
 
 /**
