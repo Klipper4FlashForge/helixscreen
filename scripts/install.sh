@@ -3219,9 +3219,13 @@ if isinstance(preset.get("printer"), dict):
     merge(pnode, preset["printer"])
 
 # Top-level structural markers for multi-printer settings shape.
+# setdefault, never assign: this seeding runs on --update too, after the user's
+# settings.json has been restored. Overwriting wizard_completed would send a
+# configured user back through first-boot setup, and on a multi-printer config
+# the app's stale-entry recovery would then drop the printer node entirely.
 base["active_printer_id"] = active
-pnode["wizard_completed"] = False
-base["preset"] = preset.get("preset", preset_id)
+pnode.setdefault("wizard_completed", False)
+base.setdefault("preset", preset.get("preset", preset_id))
 
 with open(tmp_out, "w") as f:
     json.dump(base, f, indent=2)
