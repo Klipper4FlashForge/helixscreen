@@ -52,21 +52,16 @@ void PrintSelectUsbSource::init_subjects() {
     s_source_subject_initialized = true;
 
     // Self-register cleanup with StaticSubjectRegistry (co-located with init
-    // — see CLAUDE.md's "Subject shutdown safety"), for the two subjects
-    // this change adds.
-    //
-    // NOT included: s_print_source_is_usb, the pre-existing tab-selection
-    // subject above. It was never registered for deinit before this change
-    // either — a pre-existing gap unrelated to the Rule #2 (imperative
-    // visibility) fix this function is here for. Deliberately left as-is
-    // rather than folded in silently; reported separately (see the task
-    // report) so it can be fixed and reviewed on its own.
+    // — see CLAUDE.md's "Subject shutdown safety"). Covers all three
+    // subjects: s_print_source_is_usb predates this and was never
+    // registered before, so this also closes that pre-existing gap.
     StaticSubjectRegistry::instance().register_deinit("PrintSelectUsbSourceSubjects", []() {
         if (s_source_subject_initialized && lv_is_initialized()) {
+            lv_subject_deinit(&s_print_source_is_usb);
             lv_subject_deinit(&s_print_source_usb_present);
             lv_subject_deinit(&s_print_source_moonraker_usb_access);
             s_source_subject_initialized = false;
-            spdlog::trace("[UsbSource] Subjects deinitialized (usb_present, moonraker_usb_access)");
+            spdlog::trace("[UsbSource] Subjects deinitialized");
         }
     });
 

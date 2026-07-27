@@ -178,7 +178,10 @@ class PrintSelectUsbSource {
      * regardless of drive presence, since files are already reachable via
      * the Printer source. This is the case when Klipper's mod creates
      * a symlink like gcodes/usb -> /media/sda1. Reacts to `has_access` going
-     * false too — if a drive is still present, the selector reappears.
+     * false too — if a drive is still present, the selector reappears —
+     * though the only current call site (PrintSelectPanel::check_moonraker_usb_symlink,
+     * ui_panel_print_select.cpp) only ever passes true, so that direction is
+     * modeled correctly but not currently reachable from the app.
      *
      * @param has_access true if Moonraker can see USB files via symlink
      */
