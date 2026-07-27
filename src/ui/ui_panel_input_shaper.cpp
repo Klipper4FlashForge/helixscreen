@@ -437,25 +437,18 @@ void InputShaperPanel::on_activate() {
 
     // Query current input shaper configuration from printer
     if (api_) {
-        auto tok = lifetime_.token();
         api_->advanced().get_input_shaper_config(
-            [this, tok](const InputShaperConfig& config) {
-                helix::ui::queue_update([this, tok, config]() {
-                    if (tok.expired())
-                        return;
-                    populate_current_config(config);
-                });
-            },
-            [this, tok](const MoonrakerError& err) {
-                helix::ui::queue_update([this, tok, msg = err.message]() {
-                    if (tok.expired())
-                        return;
-                    spdlog::debug("[InputShaper] Could not query config: {}", msg);
-                    // Not an error - just means config not available
-                    InputShaperConfig empty;
-                    populate_current_config(empty);
-                });
-            });
+            lifetime_.bg_cb(
+                "InputShaperPanel::get_input_shaper_config",
+                [this](const InputShaperConfig& config) { populate_current_config(config); }),
+            lifetime_.bg_cb("InputShaperPanel::get_input_shaper_config_error",
+                            [this](const MoonrakerError& err) {
+                                spdlog::debug("[InputShaper] Could not query config: {}",
+                                              err.message);
+                                // Not an error - just means config not available
+                                InputShaperConfig empty;
+                                populate_current_config(empty);
+                            }));
     }
 
     // Auto-start calibration for testing (env var)
@@ -710,16 +703,14 @@ void InputShaperPanel::start_calibration(char axis) {
     set_state(State::MEASURING);
     spdlog::info("[InputShaper] Starting calibration for axis {}", axis);
 
-    // Capture tokens for async safety
-    auto tok = lifetime_.token();
-
-    // Delegate to calibrator
+    // Delegate to calibrator. lifetime_.bg_cb marshals each callback to the main
+    // thread and drops it if the panel has been torn down; cal_tok additionally
+    // discards callbacks from a superseded calibration run.
     calibrator_->run_calibration(
         axis,
-        [this, tok, cal_tok](int percent) {
-            helix::ui::queue_update([this, tok, cal_tok, percent]() {
-                if (tok.expired())
-                    return;
+        lifetime_.bg_cb(
+            "InputShaperPanel::calibration_progress",
+            [this, cal_tok](int percent) {
                 if (cal_tok.expired()) {
                     spdlog::debug("[InputShaper] Discarding stale progress callback");
                     return;
@@ -742,30 +733,23 @@ void InputShaperPanel::start_calibration(char axis) {
                     }
                 }
                 lv_subject_copy_string(&is_measuring_step_label_, is_measuring_step_label_buf_);
-            });
-        },
-        [this, tok, cal_tok](const InputShaperResult& result) {
-            helix::ui::queue_update([this, tok, cal_tok, result]() {
-                if (tok.expired())
-                    return;
-                if (cal_tok.expired()) {
-                    spdlog::debug("[InputShaper] Discarding stale result callback");
-                    return;
-                }
-                on_calibration_result(result);
-            });
-        },
-        [this, tok, cal_tok](const std::string& err) {
-            helix::ui::queue_update([this, tok, cal_tok, err]() {
-                if (tok.expired())
-                    return;
-                if (cal_tok.expired()) {
-                    spdlog::debug("[InputShaper] Discarding stale error callback");
-                    return;
-                }
-                on_calibration_error(err);
-            });
-        });
+            }),
+        lifetime_.bg_cb("InputShaperPanel::calibration_result",
+                        [this, cal_tok](const InputShaperResult& result) {
+                            if (cal_tok.expired()) {
+                                spdlog::debug("[InputShaper] Discarding stale result callback");
+                                return;
+                            }
+                            on_calibration_result(result);
+                        }),
+        lifetime_.bg_cb("InputShaperPanel::calibration_error",
+                        [this, cal_tok](const std::string& err) {
+                            if (cal_tok.expired()) {
+                                spdlog::debug("[InputShaper] Discarding stale error callback");
+                                return;
+                            }
+                            on_calibration_error(err);
+                        }));
 }
 
 void InputShaperPanel::measure_noise() {
@@ -783,34 +767,26 @@ void InputShaperPanel::measure_noise() {
     set_state(State::MEASURING);
     spdlog::info("[InputShaper] Starting accelerometer check via calibrator");
 
-    // Capture tokens for async safety
-    auto tok = lifetime_.token();
-
     calibrator_->check_accelerometer(
-        [this, tok, cal_tok](float noise_level) {
-            helix::ui::queue_update([this, tok, cal_tok, noise_level]() {
-                if (tok.expired())
-                    return;
-                if (cal_tok.expired())
-                    return;
-                spdlog::debug("[InputShaper] Accelerometer check complete, noise={:.4f}",
-                              noise_level);
-                char msg[64];
-                snprintf(msg, sizeof(msg), "Noise level: %.4f", noise_level);
-                ToastManager::instance().show(ToastSeverity::INFO, msg, 3000);
-                set_state(State::IDLE);
-            });
-        },
-        [this, tok, cal_tok](const std::string& err) {
-            helix::ui::queue_update([this, tok, cal_tok, err]() {
-                if (tok.expired())
-                    return;
-                if (cal_tok.expired())
-                    return;
-                spdlog::error("[InputShaper] Failed to measure noise: {}", err);
-                on_calibration_error(err);
-            });
-        });
+        lifetime_.bg_cb("InputShaperPanel::measure_noise_complete",
+                        [this, cal_tok](float noise_level) {
+                            if (cal_tok.expired())
+                                return;
+                            spdlog::debug(
+                                "[InputShaper] Accelerometer check complete, noise={:.4f}",
+                                noise_level);
+                            char msg[64];
+                            snprintf(msg, sizeof(msg), "Noise level: %.4f", noise_level);
+                            ToastManager::instance().show(ToastSeverity::INFO, msg, 3000);
+                            set_state(State::IDLE);
+                        }),
+        lifetime_.bg_cb("InputShaperPanel::measure_noise_error",
+                        [this, cal_tok](const std::string& err) {
+                            if (cal_tok.expired())
+                                return;
+                            spdlog::error("[InputShaper] Failed to measure noise: {}", err);
+                            on_calibration_error(err);
+                        }));
 }
 
 void InputShaperPanel::cancel_calibration() {
