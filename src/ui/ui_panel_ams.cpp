@@ -412,8 +412,13 @@ void AmsPanel::on_activate() {
     // Sync Spoolman active spool with currently loaded slot
     sync_spoolman_active_spool();
 
-    // Start Spoolman polling for slot weight updates
-    SpoolmanManager::instance().start_spoolman_polling();
+    // Start Spoolman polling for slot weight updates. Guarded: on_activate()
+    // can fire more than once per visit, and each unguarded call took another
+    // reference that on_deactivate() never gave back.
+    if (!holds_poll_ref_) {
+        SpoolmanManager::instance().start_spoolman_polling();
+        holds_poll_ref_ = true;
+    }
 }
 
 void AmsPanel::sync_spoolman_active_spool() {
@@ -444,7 +449,10 @@ void AmsPanel::sync_spoolman_active_spool() {
 }
 
 void AmsPanel::on_deactivate() {
-    SpoolmanManager::instance().stop_spoolman_polling();
+    if (holds_poll_ref_) {
+        SpoolmanManager::instance().stop_spoolman_polling();
+        holds_poll_ref_ = false;
+    }
 
     // Stop filament path animations to avoid burning CPU in the background
     if (path_canvas_) {

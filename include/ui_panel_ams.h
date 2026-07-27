@@ -71,6 +71,16 @@ class AmsPanel : public PanelBase {
     void on_activate() override;
     void on_deactivate() override;
 
+    /// Whether THIS panel currently holds a SpoolmanManager polling reference.
+    ///
+    /// on_activate() can fire more than once for a single visit (observed twice
+    /// per return to the AMS panel on the .112 BoxTurtle), while on_deactivate()
+    /// fires once — so unguarded start/stop calls leaked a reference every visit
+    /// and the poll refcount climbed 1→7 across one session, leaving the weight
+    /// poll timer running forever. This keeps the panel's contribution to the
+    /// refcount at exactly 0 or 1 no matter how often either hook runs.
+    bool holds_poll_ref_ = false;
+
     [[nodiscard]] const char* get_name() const override {
         return "AMS Panel";
     }
