@@ -10,7 +10,10 @@ from helix.app import HelixCtlError
 def test_reads_a_label_on_the_home_panel(helix_app):
     helix_app.navigate("home")
     helix_app.wait_idle()
-    # Find any label with non-empty text and confirm `text` agrees with `ls`.
+    # Only proves `text` doesn't raise on a real, named label widget — an
+    # empty string would still pass this. Content correctness is what
+    # test_text_matches_a_subject_we_set below actually checks, by driving a
+    # subject to a known value and confirming `text` reports it back.
     listing = helix_app.ls()
     labeled = [w for w in listing["widgets"]
                if w.get("name") and w.get("type", "").endswith("label")]

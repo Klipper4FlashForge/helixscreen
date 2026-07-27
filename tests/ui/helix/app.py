@@ -62,11 +62,20 @@ class HelixApp:
         # navigate and screenshot both work and produce correct pixels, so the
         # golden-image tests are unaffected.
         #
-        # Explicitly exporting SDL_VIDEODRIVER still wins, so a visible
-        # instance remains one env var away when you want to watch one. In
-        # that case honour the Wayland rule from scripts/screenshot.sh:
-        # XWayland's GLX path crashes, so a Wayland session needs SDL's
-        # native driver rather than the default.
+        # Explicitly exporting SDL_VIDEODRIVER=dummy or =wayland is respected
+        # as-is. Any OTHER explicit value (e.g. x11) does NOT "still win" —
+        # it gets silently corrected to wayland below whenever WAYLAND_DISPLAY
+        # is set, same as scripts/screenshot.sh's rule: XWayland's GLX path
+        # crashes, so an x11 request under a Wayland session would trade a
+        # focus-stealing window for a crash. To actually get X11/XWayland,
+        # run from an X11 session (no WAYLAND_DISPLAY) instead of exporting
+        # SDL_VIDEODRIVER=x11 under Wayland.
+        #
+        # Also worth knowing for anyone debugging a red golden suite: exporting
+        # SDL_VIDEODRIVER at all (even =wayland) switches the renderer away
+        # from the dummy driver every golden was captured under — a plausible
+        # way to turn goldens red for reasons that have nothing to do with the
+        # UI change under test. Unset it before running goldens for real.
         if not env.get("SDL_VIDEODRIVER"):
             env["SDL_VIDEODRIVER"] = "dummy"
         headless = env["SDL_VIDEODRIVER"] == "dummy"
@@ -113,6 +122,17 @@ class HelixApp:
                 # exactly what silently flipped animations_enabled before.
                 print(f"[HelixApp] warning: {_TEST_SETTINGS_TEMPLATE} not found — "
                       f"booting without the repo's test config defaults")
+        else:
+            # Caller supplied HELIX_CONFIG_DIR themselves — respected as-is,
+            # per-instance lock isolation and settings-test.json seeding are
+            # both skipped (see above). If that directory is shared with
+            # another live instance, acquire_instance_lock() blocks and the
+            # only visible symptom is a silent 30s boot timeout — flag the
+            # actual cause here instead of leaving that to be rediscovered.
+            print(f"[HelixApp] note: HELIX_CONFIG_DIR={env['HELIX_CONFIG_DIR']!r} set "
+                  f"by caller — no lock isolation from other instances and no "
+                  f"settings-test.json seeding; a hang at boot likely means this "
+                  f"directory is already locked by another running instance")
 
         args = [
             str(self.binary),

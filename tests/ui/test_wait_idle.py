@@ -47,16 +47,25 @@ def test_wait_idle_reports_which_counter_was_busy_on_timeout(helix_app):
     counter_pattern = re.compile(r"(update_queue|http)=[1-9]\d*")
     scenarios = ("printing", "idle")
     last_message = None
-    for attempt in range(5):
-        helix_app.ctl("scenario", scenarios[attempt % 2])
-        with pytest.raises(HelixCtlError) as exc:
-            helix_app.wait_idle(timeout=0.0)
-        last_message = exc.value.message
-        if counter_pattern.search(last_message):
-            return
-    pytest.fail(
-        "wait_idle never reported a genuinely nonzero counter across 5 "
-        f"attempts (last message: {last_message!r}) — either this harness "
-        "can't reliably win the sub-tick race, or the counter logic "
-        "regressed to always reporting zero"
-    )
+    try:
+        for attempt in range(5):
+            helix_app.ctl("scenario", scenarios[attempt % 2])
+            with pytest.raises(HelixCtlError) as exc:
+                helix_app.wait_idle(timeout=0.0)
+            last_message = exc.value.message
+            if counter_pattern.search(last_message):
+                return
+        pytest.fail(
+            "wait_idle never reported a genuinely nonzero counter across 5 "
+            f"attempts (last message: {last_message!r}) — either this harness "
+            "can't reliably win the sub-tick race, or the counter logic "
+            "regressed to always reporting zero"
+        )
+    finally:
+        # `reset()` (the autouse clean_screen fixture) deliberately doesn't
+        # touch mock-scenario state — it's a home/overlay/modal reset, not a
+        # printer-state reset. Without this, a run that returns on the
+        # "printing" attempt leaves the shared session mid-mock-print for
+        # whichever test happens to run next, with nothing but alphabetical
+        # file ordering keeping that invisible.
+        helix_app.ctl("scenario", "idle")

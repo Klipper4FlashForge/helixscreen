@@ -389,7 +389,17 @@ real count is a follow-up for whichever future `toasts` command Tier 2 adds.
 
 `reset()` does not touch mock printer/backend state (`scenario`, subject
 values set via `set`) — only navigation, modals, and toasts. A test that
-leaves the mock in a particular scenario still needs to clean that up itself.
+leaves the mock in a particular scenario still needs to clean that up itself
+(e.g. in a `try/finally`, so a scenario doesn't leak into whichever test runs
+next in a shared session regardless of how the current one exits).
+
+**`reset` itself is asynchronous — pair it with `wait_idle`.** As noted above,
+`overlays_popped` counts `go_back()` *calls*, each of which only enqueues its
+pop onto the next `UpdateQueue` tick; the RPC returns as soon as those calls
+are issued, not once the pops have actually landed. Calling `reset()` and
+immediately trusting the screen is at `home` with no overlays is exactly the
+race `wait_idle()` exists to close — `tests/ui/conftest.py`'s autouse fixture
+does `reset(); wait_idle()` as a pair for this reason, not `reset()` alone.
 
 From the one-shot client, `quit` and `exit` are accepted as aliases for
 `shutdown`. **In the REPL they are not** — there, `quit`/`exit`/Ctrl-D leave the
@@ -483,6 +493,20 @@ paused, so a naive re-scan would track none of them and orphan the original
 set); an `unfreeze` with no prior `freeze` is a no-op returning
 `timers_resumed: 0`, so a defensive `try/finally: unfreeze()` never needs to
 guard whether `freeze` actually ran first.
+
+**Issue `freeze` from a settled screen, not mid-transition.**
+`lv_anim_delete_all()` fires each animation's `deleted_cb`, not its
+`completed_cb` — and overlay teardown (`NavigationManager::overlay_slide_out_complete_cb`,
+`ui_nav_manager.cpp`) is wired to `completed_cb`, since that's what marks the
+close as genuinely finished rather than merely interrupted. Freezing while an
+overlay's close animation is still in flight therefore deletes the animation
+without ever running its completion logic, stranding the overlay: never
+popped, its close callback never invoked. Not reachable from this harness's
+own automated tests (they force `animations_enabled=0` before boot, so overlay
+transitions never animate to begin with — see "Golden corpus scope" in
+`UI_TESTING.md`), but real for a `--remote` dev instance with animations left
+on. Wait for a transition to finish (or don't fight it — freeze right after a
+`navigate`/`click` rather than while one is still resolving) before freezing.
 
 See `docs/devel/specs/2026-07-25-helixctl-ui-test-harness-design.md`
 § "Determinism model" for the full design rationale.

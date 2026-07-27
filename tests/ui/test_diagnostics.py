@@ -25,6 +25,12 @@ def test_artifacts_written_when_a_test_fails(pytester, monkeypatch):
     # too in case a future run uses `--runpytest=subprocess`.
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
     monkeypatch.setenv("HELIX_UI_BINARY", str(BINARY))
+    # This test's glob below hardcodes the "ui-artifacts" dirname the copied
+    # conftest defaults to. If the outer environment has HELIX_UI_ARTIFACTS
+    # set to something else, the pytester sub-run inherits it, writes
+    # artifacts under a different name, and the glob below matches nothing —
+    # next() on that empty iterator raises a bare, unhelpful StopIteration.
+    monkeypatch.delenv("HELIX_UI_ARTIFACTS", raising=False)
     pytester.makeconftest(CONFTEST_SRC)
     pytester.makepyfile(
         test_boom="""
