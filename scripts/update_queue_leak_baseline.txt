@@ -22,6 +22,7 @@ tag:Ad5xIfsBackend::zcolor_debounce_apply
 tag:AmsState::on_backend_event
 tag:AmsState::set_active_tool_port_present
 tag:LedController::led_cmd_settled
+tag:PrinterPrintState::set_estimated_print_time
 tag:PrinterState::on_status_update
 test:All panels are accessible
 test:AmsState: add_backend stores multiple backends

@@ -428,8 +428,18 @@ void set_moonraker_client(MoonrakerClient* client) {
     g_test_moonraker_client = client;
 }
 
+// Settable for the same reason as the client above: code under test reaches the
+// API through this global, so a test that needs it to answer installs its own and
+// restores the previous value in a dtor. Defaults to nullptr, which is what every
+// test that does not care has always seen.
+static MoonrakerAPI* g_test_moonraker_api = nullptr;
+
 MoonrakerAPI* get_moonraker_api() {
-    return nullptr;
+    return g_test_moonraker_api;
+}
+
+void set_moonraker_api(MoonrakerAPI* api) {
+    g_test_moonraker_api = api;
 }
 
 PrinterState& get_printer_state() {
