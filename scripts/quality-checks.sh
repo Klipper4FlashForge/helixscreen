@@ -715,6 +715,38 @@ fi
 
 echo ""
 
+SECTION_START=$(date +%s)
+echo -n "⏱️  Checking timer destructor cancels..."
+
+if [ -f "scripts/check_timer_destructor_cancel.py" ]; then
+  # Ratcheting baseline. A raw lv_timer_t* cancelled only in cleanup()/stop_*()
+  # stays armed on any teardown that destroys the owner without that call, and
+  # StaticPanelRegistry::destroy_all() runs BEFORE lv_deinit() — so the callback
+  # fires into a freed `this` (#1173, twice: the wizard auto-probe timer and the
+  # PID ETA tick). The check is transitive, so a destructor that reaches the
+  # cancel through cleanup()/detach()/deinit_subjects() passes. Timers whose
+  # callback is LifetimeToken-guarded or routed through a singleton accessor are
+  # safe by another mechanism — annotate those `// TIMER_DTOR_OK: <reason>`.
+  if python3 scripts/check_timer_destructor_cancel.py --max-allowed 3 >/tmp/timer_dtor.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/timer_dtor.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/timer_dtor.out
+    echo "   Run: python3 scripts/check_timer_destructor_cancel.py --list"
+    echo "   Cancel from the destructor via lv_timer_cancel_safe(); see CLAUDE.md § Threading."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_timer_destructor_cancel.py not found — skipping"
+fi
+
+echo ""
+
 # ====================================================================
 # spdlog only: no printf/cout/cerr/LV_LOG_ outside CLI subcommands
 # ====================================================================

@@ -54,6 +54,9 @@ class PostOpCooldownManager {
     PostOpCooldownManager(const PostOpCooldownManager&) = delete;
     PostOpCooldownManager& operator=(const PostOpCooldownManager&) = delete;
 
+    // TIMER_DTOR_OK: the callback reaches the owner through
+    // PostOpCooldownManager::instance() rather than a captured `this`, so
+    // destroying the manager cannot leave the timer holding freed memory.
     lv_timer_t* timer_ = nullptr;
     std::atomic<bool> initialized_{false};
 };

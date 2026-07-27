@@ -158,6 +158,14 @@ Note: `theme_manager_get_color()` for tokens, `theme_manager_parse_hex_color()` 
    `lv_observer_remove()` on freed memory (#705). Local vs member is *not* what decides
    correctness — the `get_*_subject(name, lifetime)` accessors assign the owner's own
    `shared_ptr`, so a caller's copy dying never expires the guard.
+5. **A raw `lv_timer_t*` cancelled in `cleanup()` must also be cancelled in the destructor.**
+   `StaticPanelRegistry::destroy_all()` runs *before* `lv_deinit()`, so any teardown that
+   skips the explicit stop leaves the timer armed on a freed `this` (#1173, twice). Share one
+   `cancel_*_timer()` between both paths and use `lv_timer_cancel_safe()` — it self-guards on
+   `lv_is_initialized()` and neuters instead of unlinking, so it is safe from a destructor and
+   from inside `lv_timer_handler` (#750, #751). A `LifetimeToken`-guarded callback is the other
+   valid answer; annotate those `// TIMER_DTOR_OK: <reason>`. Gate:
+   `scripts/check_timer_destructor_cancel.py`.
 
 Also: no `std::thread(...).detach()` for one-shot work — `EAGAIN` → `std::terminate` on
 AD5M/CC1 (#724, #837); use `HttpExecutor::fast()/slow()` or `BusThread`. `ObserverGuard::reset()`
