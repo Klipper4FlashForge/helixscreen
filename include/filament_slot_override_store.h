@@ -3,7 +3,6 @@
 
 #include "ams_types.h"
 #include "filament_slot_override.h"
-#include "hv/json.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -12,6 +11,8 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+
+#include "hv/json.hpp"
 
 class IMoonrakerAPI;
 class FilamentSlotOverrideStoreTestAccess;
@@ -73,8 +74,20 @@ class FilamentSlotOverrideStore {
     // key_style defaults to Lane so the many lane-based construction sites and
     // tests need no change. Production sites pass lane_key_style_for(get_type())
     // so the correct style is derived from the backend's AmsType.
+    // ns selects the Moonraker DB namespace. It defaults to the shared
+    // "lane_data" for the backends that legitimately live there (IFS, ACE, CFS,
+    // Snapmaker). AFC and Happy Hare MUST pass a private namespace: their own
+    // Klipper plugins own lane_data, AFC deletes that whole namespace on every
+    // boot and full-POSTs each lane record, and load_blocking() would otherwise
+    // ingest those foreign records as if they were user overrides.
     FilamentSlotOverrideStore(IMoonrakerAPI* api, std::string backend_id,
-                              LaneKeyStyle key_style = LaneKeyStyle::Lane);
+                              LaneKeyStyle key_style = LaneKeyStyle::Lane,
+                              std::string ns = "lane_data");
+
+    /// Test-only view of the configured namespace.
+    [[nodiscard]] const std::string& namespace_for_test() const {
+        return namespace_;
+    }
 
     // Blocking load from Moonraker database (called only at backend init time).
     // Falls back to the local read-cache when the DB round-trip fails.
