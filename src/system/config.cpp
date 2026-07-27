@@ -1001,6 +1001,62 @@ static void migrate_v19_to_v20(json& config) {
     }
 }
 
+/// Lift a legacy root-level "preset" marker into the active printer's node.
+///
+/// The marker predates multi-printer support and stayed at the config root while
+/// every other piece of printer configuration moved under /printers/<id>/. With
+/// two printers configured the second one's preset overwrote the first one's, and
+/// consumers of Config::get_preset() — the panel-widget seed loader, the wizard's
+/// step collapsing — then read a marker belonging to the wrong machine (#1162).
+///
+/// Deliberately NOT part of the versioned chain. scripts/lib/installer/
+/// printer_seed.sh writes the root key with setdefault() on --update as well as
+/// on first install, i.e. into configs whose config_version is already stamped at
+/// CURRENT_CONFIG_VERSION, so a `version < N` gate would never see those. This
+/// runs on every boot instead; the contains() checks make it a no-op once lifted.
+///
+/// Ordering: init() calls this AFTER run_versioned_migrations(), so
+/// migrate_v12_to_v13() and migrate_v14_to_v15() still read the root key raw for
+/// their AD5X detection before it is moved away.
+///
+/// @return true if the config was modified
+static bool lift_root_preset(json& config, const std::string& active_printer_id) {
+    if (!config.contains("preset")) {
+        return false;
+    }
+    // Only ever erase a node we have finished with (cf. migrate_v19_to_v20). With
+    // no printer to lift into, leave the root key so a later boot that can resolve
+    // one gets another chance.
+    if (active_printer_id.empty() || !config.contains("printers") ||
+        !config["printers"].is_object() || !config["printers"].contains(active_printer_id) ||
+        !config["printers"][active_printer_id].is_object()) {
+        return false;
+    }
+
+    const json& root = config["preset"];
+    const std::string name = root.is_string() ? root.get<std::string>() : "";
+    if (name.empty()) {
+        config.erase("preset");
+        spdlog::debug("[Config] Dropped empty root-level preset marker");
+        return true;
+    }
+
+    json& printer = config["printers"][active_printer_id];
+    const auto it = printer.find("preset");
+    const bool already_set =
+        it != printer.end() && it->is_string() && !it->get<std::string>().empty();
+    if (already_set) {
+        spdlog::debug("[Config] Printer '{}' already has preset '{}'; discarding root-level '{}'",
+                      active_printer_id, it->get<std::string>(), name);
+    } else {
+        printer["preset"] = name;
+        spdlog::info("[Config] Lifted root-level preset '{}' into printer '{}'", name,
+                     active_printer_id);
+    }
+    config.erase("preset");
+    return true;
+}
+
 /// Run all versioned migrations in sequence from current version to CURRENT_CONFIG_VERSION
 static void run_versioned_migrations(json& config, const std::string& config_path = "") {
     int version = 0;
@@ -1497,6 +1553,13 @@ void Config::init(const std::string& config_path) {
         }
     }
 
+    // Move a legacy root-level preset marker under the active printer. Must run
+    // after the active printer has been resolved and its node ensured, and after
+    // run_versioned_migrations() — see lift_root_preset().
+    if (lift_root_preset(data, active_printer_id_)) {
+        config_modified = true;
+    }
+
     // log_level intentionally NOT migrated - absence allows test_mode fallback
 
     // Ensure display section exists with defaults
@@ -1624,7 +1687,7 @@ void Config::init(const std::string& config_path) {
                   get<int>(df() + "moonraker_port", 7125));
 }
 
-std::string Config::df() {
+std::string Config::df() const {
     if (active_printer_id_.empty()) {
         spdlog::warn("[Config] df() called with no active printer, using 'default'");
         return "/printers/default/";
@@ -1909,15 +1972,18 @@ bool Config::is_read_only() const {
 }
 
 bool Config::has_preset() const {
-    if (data.contains("preset") && data["preset"].is_string()) {
-        return !data["preset"].get<std::string>().empty();
-    }
-    return false;
+    return !get_preset().empty();
 }
 
 std::string Config::get_preset() const {
-    if (data.contains("preset") && data["preset"].is_string()) {
-        return data["preset"].get<std::string>();
+    // Per-printer, alongside every other piece of printer configuration. There is
+    // deliberately no root-level fallback: a printer with no preset of its own
+    // must read empty, not inherit whichever marker another printer left at the
+    // root. init() lifts legacy root-level markers into the active printer, so
+    // by the time anything calls this the value is where it belongs.
+    const json* node = try_get_json(df() + "preset");
+    if (node != nullptr && node->is_string()) {
+        return node->get<std::string>();
     }
     return "";
 }
@@ -1926,14 +1992,29 @@ void Config::set_preset(const std::string& preset_name) {
     if (preset_name.empty()) {
         return;
     }
-    data["preset"] = preset_name;
-    spdlog::info("[Config] Preset set to '{}'", preset_name);
+    data[json::json_pointer(df() + "preset")] = preset_name;
+    spdlog::info("[Config] Preset set to '{}' for printer '{}'", preset_name, active_printer_id_);
 }
 
 void Config::clear_preset() {
+    bool cleared = false;
+    if (data.contains(json::json_pointer(df() + "preset"))) {
+        // df() ends in '/', which as a JSON pointer would name an empty-string
+        // key inside the printer node rather than the node itself.
+        std::string printer_path = df();
+        printer_path.pop_back();
+        data[json::json_pointer(printer_path)].erase("preset");
+        cleared = true;
+    }
+    // Drop any legacy root-level marker too. Leaving it would let lift_root_preset()
+    // put the preset straight back on the next boot, silently undoing the wizard
+    // re-run path in application.cpp that calls this to restore the full wizard.
     if (data.contains("preset")) {
         data.erase("preset");
-        spdlog::info("[Config] Preset marker cleared");
+        cleared = true;
+    }
+    if (cleared) {
+        spdlog::info("[Config] Preset marker cleared for printer '{}'", active_printer_id_);
     }
 }
 
