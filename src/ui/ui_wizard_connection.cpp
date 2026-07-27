@@ -370,16 +370,8 @@ void WizardConnectionStep::on_connection_success(const helix::LifetimeToken& tok
             [this, tok](const std::string& reason) {
                 spdlog::warn("[Wizard Connection] Discovery failed: {}", reason);
 
-                tok.defer("WizardConnectionStep::discovery_error", [this]() {
-                    lv_subject_set_int(&connection_discovering_, 0);
-                    set_status("icon_triangle_exclamation", StatusVariant::Warning,
-                               "Moonraker connected, but Klipper is not running. "
-                               "Start Klipper and retry.");
-
-                    lv_subject_set_int(&connection_testing_, 0);
-                    connection_validated_ = false;
-                    lv_subject_set_int(&connection_test_passed, 0);
-                });
+                tok.defer("WizardConnectionStep::discovery_error",
+                          [this]() { allow_continue_without_klipper(); });
             });
     } else {
         // No client available - still show success but warn
@@ -619,16 +611,8 @@ void WizardConnectionStep::on_auto_probe_success(const helix::LifetimeToken& tok
             [this, tok](const std::string& reason) {
                 spdlog::warn("[Wizard Connection] Auto-probe: Discovery failed: {}", reason);
 
-                tok.defer("WizardConnectionStep::auto_probe_discovery_error", [this]() {
-                    lv_subject_set_int(&connection_discovering_, 0);
-                    set_status("icon_triangle_exclamation", StatusVariant::Warning,
-                               "Moonraker connected, but Klipper is not running. "
-                               "Start Klipper and retry.");
-
-                    lv_subject_set_int(&connection_testing_, 0);
-                    connection_validated_ = false;
-                    lv_subject_set_int(&connection_test_passed, 0);
-                });
+                tok.defer("WizardConnectionStep::auto_probe_discovery_error",
+                          [this]() { allow_continue_without_klipper(); });
             });
     } else {
         // No client - still show success
@@ -1020,6 +1004,24 @@ void WizardConnectionStep::set_status(const char* icon_name, StatusVariant varia
     if (text_label) {
         lv_label_set_text(text_label, text ? text : "");
     }
+}
+
+void WizardConnectionStep::allow_continue_without_klipper() {
+    lv_subject_set_int(&connection_discovering_, 0);
+    lv_subject_set_int(&connection_testing_, 0);
+
+    // Moonraker answered on this address, so the connection itself is good and
+    // is already persisted — only Klipper is unusable. Report that plainly and
+    // unblock Next: the app's own error surfaces show the actual Klipper fault,
+    // which is far more useful than a wizard the user cannot leave.
+    set_status("icon_triangle_exclamation", StatusVariant::Warning,
+               lv_tr("Connected to Moonraker, but Klipper is not running. You can continue "
+                     "— HelixScreen will show the Klipper error, and hardware detection "
+                     "stays limited until Klipper starts."));
+
+    // Not a full validation: discovery never ran, so hardware lists are empty.
+    connection_validated_ = false;
+    lv_subject_set_int(&connection_test_passed, 1);
 }
 
 // ============================================================================

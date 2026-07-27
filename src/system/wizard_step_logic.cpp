@@ -3,7 +3,45 @@
 
 #include "wizard_step.h" // helix::wizard::StepId
 
+#include <atomic>
+
 namespace helix {
+
+namespace {
+/// Set once the printer-identify step applies a preset; never cleared in
+/// production. Process-local on purpose — it is exactly the "this wizard run
+/// is still going" signal that a persisted flag cannot express.
+std::atomic<bool> g_preset_applied_this_session{false};
+} // namespace
+
+bool wizard_preset_is_authoritative(bool preset_marker, bool provisional, bool wizard_completed,
+                                    bool applied_this_session) {
+    if (!preset_marker) {
+        return false;
+    }
+    if (wizard_completed) {
+        // The run that wrote it finished; the marker is settled.
+        return true;
+    }
+    if (!provisional) {
+        // Seeded before the wizard ran (install-time detection) — the fast path.
+        return true;
+    }
+    // Written by an unfinished wizard: honor it only while that run is live.
+    return applied_this_session;
+}
+
+void wizard_mark_preset_applied_this_session() {
+    g_preset_applied_this_session.store(true, std::memory_order_relaxed);
+}
+
+bool wizard_preset_applied_this_session() {
+    return g_preset_applied_this_session.load(std::memory_order_relaxed);
+}
+
+void wizard_reset_preset_session_state() {
+    g_preset_applied_this_session.store(false, std::memory_order_relaxed);
+}
 
 WizardPresetPlan wizard_preset_plan(bool has_preset, int printer_count) {
     WizardPresetPlan plan;

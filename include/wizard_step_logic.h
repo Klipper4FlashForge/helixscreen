@@ -21,6 +21,41 @@ struct WizardPresetPlan {
 };
 WizardPresetPlan wizard_preset_plan(bool has_preset, int printer_count);
 
+/// Config key (appended to Config::df()) recording that the top-level "preset"
+/// marker was written by a wizard run that had not finished yet.
+inline constexpr const char* kWizardPresetProvisional = "preset_provisional";
+
+/// Whether a persisted preset marker is allowed to collapse the wizard's
+/// printer-identify + hardware steps.
+///
+/// A preset seeded before the wizard ever ran (install-time detection, factory
+/// image) is authoritative immediately — that fast path is the whole point of
+/// shipping presets. A preset written *by* the printer-identify step is only
+/// provisional until the run finishes: the marker alone made an interrupted
+/// wizard (crash, power cut, user quits) come back with identify, every
+/// hardware picker and the summary gone, locking the user to a pick they never
+/// confirmed and offering no in-app way back.
+///
+/// Within the same process the preset stays authoritative, so the existing
+/// in-run "preset applied during identify cleanup → collapse the rest"
+/// redirect keeps working unchanged.
+///
+/// @param preset_marker    Config::has_preset() — a preset name is persisted
+/// @param provisional      kWizardPresetProvisional is set for this printer
+/// @param wizard_completed The active printer finished its wizard
+/// @param applied_this_session The wizard applied the preset in this process
+bool wizard_preset_is_authoritative(bool preset_marker, bool provisional, bool wizard_completed,
+                                    bool applied_this_session);
+
+/// Record that the printer-identify step applied a preset in this process.
+void wizard_mark_preset_applied_this_session();
+
+/// @see wizard_mark_preset_applied_this_session
+bool wizard_preset_applied_this_session();
+
+/// Clear the process-local flag. Tests only — no production caller.
+void wizard_reset_preset_session_state();
+
 // ============================================================================
 // Id-based pure navigation over the step registry. Operates on a vector of
 // {StepId, skipped} entries — the registry-driven representation. No LVGL;
