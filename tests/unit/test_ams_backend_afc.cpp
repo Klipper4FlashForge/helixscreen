@@ -672,6 +672,26 @@ TEST_CASE("AFC segment reports OUTPUT when the hub sensor is triggered",
     REQUIRE(helper.test_compute_filament_segment() == PathSegment::OUTPUT);
 }
 
+TEST_CASE("AFC get_slot_filament_segment ignores the latched loaded_to_hub field "
+          "for a non-active slot",
+          "[ams][afc][segment]") {
+    // Same defect as compute_filament_segment_unlocked(), in the per-slot accessor
+    // that drives per-lane path rendering on the AMS panel: loaded_to_hub is
+    // latched at prep and never updated, so a non-active lane that was ever
+    // prepped reads "at hub" forever, regardless of where its filament actually
+    // is. There is no per-slot hub sensor for a non-active slot, so load/prep
+    // remain the furthest this can honestly report.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_hub_sensor("Turtle_1", false);
+    helper.set_lane_loaded_to_hub(0, true);
+    helper.set_lane_load_sensor(0, true);
+
+    // Slot 0 is not the active slot (current_slot defaults to -1), so this
+    // exercises the non-active-slot branch of get_slot_filament_segment().
+    REQUIRE(helper.get_slot_filament_segment(0) == PathSegment::LANE);
+}
+
 // ============================================================================
 // Edge Cases
 // ============================================================================

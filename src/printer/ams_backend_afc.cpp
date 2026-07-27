@@ -504,10 +504,12 @@ PathSegment AmsBackendAfc::get_slot_filament_segment(int slot_index) const {
 
     const auto& sensors = entry->sensors;
 
-    // Check sensors from furthest to nearest
-    if (sensors.loaded_to_hub) {
-        return PathSegment::HUB; // Filament reached hub sensor
-    }
+    // Check sensors from furthest to nearest. PathSegment::HUB is deliberately
+    // unreachable here: AFC's per-lane loaded_to_hub is latched at prep and
+    // never updated, so it cannot distinguish "at hub" from "prepped once" —
+    // it read true on every prepped lane while the shared hub sensor read
+    // clear. There is no per-slot hub sensor to fall back on for a non-active
+    // slot, so below load/prep is the furthest this can honestly report.
     if (sensors.load) {
         return PathSegment::LANE; // Filament in lane (load sensor triggered)
     }
