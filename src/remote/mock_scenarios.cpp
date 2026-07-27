@@ -3,9 +3,14 @@
 
 #include "mock_scenarios.h"
 
+#include "http_executor.h"
+
 #include <spdlog/spdlog.h>
 
 #include <lvgl.h>
+
+#include <chrono>
+#include <thread>
 
 // LVGL XML subject lookup
 #include "helix-xml/src/xml/lv_xml.h"
@@ -187,6 +192,27 @@ static std::vector<MockScenario> build_scenarios() {
                                         "ERROR: Filament jam detected on Gate 1");
                              set_int("ams_filament_loaded", 0);
                          }});
+
+    // --- http_busy ---
+    // Not a printer state — a synthetic HTTP-lane busy condition for testing
+    // wait_idle()'s "which counter was busy" reporting deterministically.
+    // A burst of subject changes makes UpdateQueue's `pending_` nonzero for
+    // at most one LVGL tick (~16ms): process_pending() drains the entire
+    // batch every tick, so there's no way to widen that window from the
+    // subject side. HttpExecutor::inflight() instead stays incremented for
+    // the full wall-clock duration of the submitted job body (see
+    // http_executor.h's `submit()` — incremented there, decremented only on
+    // completion), so a deliberately slow job gives wait_idle(timeout=0.0) a
+    // multi-hundred-millisecond window to land in instead of a sub-tick race.
+    // 2s comfortably exceeds subprocess-spawn latency even under heavy load
+    // (confirmed via this test's own investigation: ~100-200ms round trips
+    // at load average 60+, nowhere near 2s).
+    scenarios.push_back(
+        {"http_busy", "Synthetic HttpExecutor busy state (test-only, not a printer condition)",
+         []() {
+             helix::http::HttpExecutor::fast().submit(
+                 []() { std::this_thread::sleep_for(std::chrono::milliseconds(2000)); });
+         }});
 
     return scenarios;
 }

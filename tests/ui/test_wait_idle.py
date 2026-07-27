@@ -35,37 +35,40 @@ def test_wait_idle_reports_which_counter_was_busy_on_timeout(helix_app):
     # its message. The property actually worth testing is that the embedded
     # counter is a REAL nonzero reading, not just present-looking text.
     #
-    # Applying a scenario pushes a burst of subject changes through
-    # deferred observe_int_sync/observe_string callbacks, which land in
-    # UpdateQueue fresh — but that shows up as nonzero for at most one UI
-    # tick (~16ms), raced against this process's own subprocess-spawn +
-    # socket round trip. Empirically that race is won the vast majority of
-    # the time (~95%+ in manual testing) but not deterministically, so retry
-    # a few times with alternating scenarios (guaranteeing a real state
-    # transition, not a same-value no-op, on every attempt) rather than
-    # accept a single flaky sample.
-    counter_pattern = re.compile(r"(update_queue|http)=[1-9]\d*")
-    scenarios = ("printing", "idle")
-    last_message = None
+    # A previous version of this test tried to win that reading by racing a
+    # burst of subject changes (via `scenario printing`/`idle`) against this
+    # process's own subprocess-spawn + socket round trip. That burst only
+    # shows up in UpdateQueue.pending_count() for at most one LVGL tick
+    # (~16ms) — process_pending() drains the ENTIRE queue every tick, so
+    # there is no way to widen that window from the subject side. Under load
+    # (spawn latency ballooning past 16ms) the race was lost most of the
+    # time, and no amount of retrying fixes a per-attempt probability that
+    # collapses exactly when the machine is busy enough to make spawning
+    # slow — confirmed failing 4-5 times out of 5-6 isolated runs under
+    # heavy build load.
+    #
+    # The "http_busy" mock scenario sidesteps the race instead of tuning it:
+    # it submits a 2-second synthetic job to HttpExecutor::fast(), whose
+    # inflight() counter is incremented at submission and only decremented
+    # on job completion (see http_executor.h). That gives wait_idle a
+    # multi-hundred-millisecond, load-insensitive window — 2s comfortably
+    # exceeds subprocess-spawn latency even under heavy load — so a single
+    # sample is enough; no retry loop needed.
+    counter_pattern = re.compile(r"http=[1-9]\d*")
     try:
-        for attempt in range(5):
-            helix_app.ctl("scenario", scenarios[attempt % 2])
-            with pytest.raises(HelixCtlError) as exc:
-                helix_app.wait_idle(timeout=0.0)
-            last_message = exc.value.message
-            if counter_pattern.search(last_message):
-                return
-        pytest.fail(
-            "wait_idle never reported a genuinely nonzero counter across 5 "
-            f"attempts (last message: {last_message!r}) — either this harness "
-            "can't reliably win the sub-tick race, or the counter logic "
-            "regressed to always reporting zero"
+        helix_app.ctl("scenario", "http_busy")
+        with pytest.raises(HelixCtlError) as exc:
+            helix_app.wait_idle(timeout=0.0)
+        message = exc.value.message
+        assert counter_pattern.search(message), (
+            f"wait_idle did not report a genuinely nonzero http counter "
+            f"(message: {message!r}) — either the http_busy scenario didn't "
+            "submit its job, or counter reporting regressed to always "
+            "showing zero"
         )
     finally:
-        # `reset()` (the autouse clean_screen fixture) deliberately doesn't
-        # touch mock-scenario state — it's a home/overlay/modal reset, not a
-        # printer-state reset. Without this, a run that returns on the
-        # "printing" attempt leaves the shared session mid-mock-print for
-        # whichever test happens to run next, with nothing but alphabetical
-        # file ordering keeping that invisible.
-        helix_app.ctl("scenario", "idle")
+        # The submitted job keeps running for its fixed 2s regardless of
+        # what this test does. Wait it out here rather than leaving it
+        # dangling — this is a session-scoped shared instance, and the next
+        # test to call wait_idle shouldn't inherit a surprise busy http=1.
+        helix_app.wait_idle(timeout=5.0)
