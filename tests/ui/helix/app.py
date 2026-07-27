@@ -175,24 +175,72 @@ class HelixApp:
             f"{self._log_tail_from_file()}"
         )
 
+    def _raise_if_crashed(self) -> None:
+        """Raise if the process's own exit code indicates a crash.
+
+        Only call this on a path where nothing WE did caused the process to
+        exit — a graceful `ctl shutdown` response, or finding it already gone.
+        Mirrors scripts/smoke-headless.sh's distinction: a segfault or abort
+        during shutdown cleanup is just as real a bug as one during normal
+        operation, but SIGTERM/SIGKILL that *we* send to force a stuck
+        process makes the exit code look "abnormal" (negative, signal-shaped)
+        on purpose — that must never be reported as a crash.
+        """
+        code = self.proc.returncode
+        if code == 0:
+            return
+        if code is not None and code < 0:
+            sig = -code
+            try:
+                name = signal.Signals(sig).name
+            except ValueError:
+                name = f"signal {sig}"
+            raise HelixAppError(
+                f"helix-screen crashed during shutdown ({name}, exit code {code})\n"
+                f"{self._log_tail_from_file()}"
+            )
+        raise HelixAppError(
+            f"helix-screen exited abnormally during shutdown (status {code})\n"
+            f"{self._log_tail_from_file()}"
+        )
+
     def stop(self) -> None:
-        if self.proc is None or self.proc.poll() is not None:
-            if hasattr(self, "log_file"):
-                self.log_file.close()
+        if self.proc is None:
+            return
+        if self.proc.poll() is not None:
+            # Already gone before we asked it to stop — nothing we did
+            # caused this exit, so an abnormal code here is a genuine crash,
+            # not shutdown-signal noise.
+            try:
+                self._raise_if_crashed()
+            finally:
+                if hasattr(self, "log_file"):
+                    self.log_file.close()
             return
         try:
             self.ctl("shutdown")
         except (HelixCtlError, HelixAppError):
             pass
         try:
-            self.proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            self.proc.send_signal(signal.SIGTERM)
             try:
                 self.proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                self.proc.kill()
-                self.proc.wait(timeout=5)
+                # It didn't respond to the graceful request in time. From
+                # here on every exit is caused by a signal we send ourselves
+                # — SIGTERM/SIGKILL make the code negative/"abnormal" on
+                # purpose, so it must not be flagged as a crash.
+                self.proc.send_signal(signal.SIGTERM)
+                try:
+                    self.proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.proc.kill()
+                    self.proc.wait(timeout=5)
+            else:
+                # Exited on its own after the graceful `ctl shutdown`
+                # request — nothing forced it, so a nonzero/signal exit
+                # code here is exactly the shutdown-cleanup crash this
+                # check exists to catch.
+                self._raise_if_crashed()
         finally:
             if hasattr(self, "log_file"):
                 self.log_file.close()
