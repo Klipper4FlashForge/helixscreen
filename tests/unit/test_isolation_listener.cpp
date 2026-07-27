@@ -26,12 +26,15 @@
 #include "thumbnail_processor.h"
 #include "ui_update_queue.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <string>
 #include <unistd.h>
+#include <utility>
+#include <vector>
 
 #if defined(__APPLE__)
 #include <libproc.h>
@@ -169,14 +172,39 @@ class IsolationListener : public Catch::EventListenerBase {
         // Discarding makes the failure class structurally impossible — no test
         // can hand queued work to the next one — while the warning ensures the
         // leaking test still gets fixed at the source.
-        if (size_t queued =
-                helix::ui::UpdateQueueTestAccess::discard_pending(helix::ui::UpdateQueue::instance());
-            queued > 0) {
+        // The tags name the producers, which is what makes a report actionable:
+        // a tag pointing at a process singleton is benign unflushed work, while
+        // one closing over a per-test object is a real UAF awaiting the next drain.
+        if (std::vector<const char*> tags = helix::ui::UpdateQueueTestAccess::discard_pending(
+                helix::ui::UpdateQueue::instance());
+            !tags.empty()) {
+            // Collapse repeats — a loop-driven test queues the same tag N times —
+            // but match tags EXACTLY. A substring test would hide any producer
+            // whose tag is a prefix of one already listed.
+            std::vector<std::pair<std::string, size_t>> counts;
+            for (const char* t : tags) {
+                auto it = std::find_if(counts.begin(), counts.end(),
+                                       [t](const auto& e) { return e.first == t; });
+                if (it == counts.end()) {
+                    counts.emplace_back(t, 1);
+                } else {
+                    ++it->second;
+                }
+            }
+            std::string detail;
+            for (const auto& [tag, n] : counts) {
+                if (!detail.empty()) {
+                    detail += ", ";
+                }
+                detail += tag;
+                if (n > 1) {
+                    detail += " x" + std::to_string(n);
+                }
+            }
             std::fprintf(stderr,
                          "\n[ISOLATION-LEAK] test \"%s\" left %zu queued UpdateQueue "
-                         "callback(s); discarded (running them would notify freed "
-                         "subjects in a later test)\n",
-                         name_.c_str(), queued);
+                         "callback(s); discarded. Producers: %s\n",
+                         name_.c_str(), tags.size(), detail.c_str());
         }
 
         // Thread leaks can't be healed; settle briefly to avoid flagging a thread
