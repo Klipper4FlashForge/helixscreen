@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import signal
 import subprocess
 import tempfile
@@ -19,9 +18,48 @@ import time
 from pathlib import Path
 from typing import Any
 
-# tests/ui/helix/app.py -> repo root is three levels up.
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_TEST_SETTINGS_TEMPLATE = _REPO_ROOT / "config" / "settings-test.json"
+# Seed written into every private HELIX_CONFIG_DIR at boot, as
+# "<HELIX_CONFIG_DIR>/settings-test.json". This used to be a copy of the
+# repo's own config/settings-test.json — but that file is gitignored (each
+# environment's own accumulated runtime state: whichever printer preset last
+# got applied, real mock-print history, spool weights drained by past runs,
+# theme/dark-mode toggled by hand...), so its actual values vary machine to
+# machine and session to session. The harness worked only by accident,
+# wherever that local file happened to have animations_enabled=false — on a
+# fresh checkout without one (or one that had simply never had the setting
+# toggled), goldens captured mid cross-fade at ~100% pixel diff (main went
+# red over exactly this, see
+# docs/devel/specs/2026-07-25-helixctl-ui-test-harness-design.md).
+#
+# Every key below is something the 8 committed goldens are actually
+# sensitive to — not accumulated state. Anything not listed here falls
+# through to the app's own compiled-in defaults (Config::get_default_config()
+# et al. in src/system/config.cpp), same as what a brand-new install sees, so
+# this seed can't silently drift out of sync with reality the way a copied
+# runtime file could.
+_TEST_SEED_SETTINGS: dict = {
+    # The actual root cause above: desktop/SDL's platform default is
+    # animations ON (PlatformCapabilities::detect().supports_animations),
+    # so every navigate()/click() lands on a mid-transition frame instead of
+    # the settled one a golden expects.
+    "display": {
+        "animations_enabled": False,
+        # DEFAULT_THEME already resolves to "helixscreen" (theme_loader.h),
+        # so this doesn't change behavior today — stated explicitly because
+        # it's one of the two settings (with dark_mode) that repaints every
+        # pixel in every golden, and a future default change shouldn't be
+        # able to silently take these goldens with it.
+        "theme": "helixscreen",
+    },
+    # Matches the compiled-in default (config.cpp's get_default_config():
+    # {"dark_mode": true}) — explicit for the same reason as theme above.
+    "dark_mode": True,
+    # Belt and braces alongside SDL_AUDIODRIVER=dummy below: this is already
+    # the compiled-in default (audio_settings_manager.cpp:
+    # get<bool>("/sounds_enabled", false)), stated explicitly so a headless
+    # test run can never audibly beep even if that default ever changes.
+    "sounds_enabled": False,
+}
 
 
 class HelixCtlError(RuntimeError):
@@ -83,6 +121,15 @@ class HelixApp:
             env["SDL_VIDEODRIVER"] = "wayland"
         display_index = "0" if env.get("WAYLAND_DISPLAY") else "1"
 
+        # Same story as SDL_VIDEODRIVER above, for audio: a headless run with
+        # no visible window is still audibly beeping without this. Respects
+        # an explicit caller value the same way — belt and braces alongside
+        # sounds_enabled=False in the seed config below, since the SDL driver
+        # only silences SDL-backed audio and this app has other sound
+        # backends (ALSA, PWM, M300 — see docs/devel/SOUND_SYSTEM.md).
+        if not env.get("SDL_AUDIODRIVER"):
+            env["SDL_AUDIODRIVER"] = "dummy"
+
         # Application::acquire_instance_lock() flocks a lock file resolved
         # from HELIX_CONFIG_DIR (default: "config", relative to whatever the
         # process's CWD happens to be) — taken unconditionally, even under
@@ -101,27 +148,14 @@ class HelixApp:
 
             # Config::init(TEST_CONFIG_PATH) resolves to
             # "<HELIX_CONFIG_DIR>/settings-test.json" (config.cpp keeps the
-            # caller's filename, only redirects the directory). The lock-file
-            # isolation above solves one problem (every instance sharing one
-            # lock) but silently created another: a brand-new private
-            # directory has no settings-test.json in it, so Config falls
-            # through to compiled-in defaults instead of this repo's
-            # `config/settings-test.json` — including
-            # `display.animations_enabled: false`, which real overlay
-            # push/pop transitions rely on to render instantly rather than
-            # animate. Copy (never symlink — each instance must be free to
-            # write its own copy without one instance's edits leaking into
-            # another's) the template in before boot so instances get both
-            # lock isolation and the intended test defaults.
-            if _TEST_SETTINGS_TEMPLATE.exists():
-                shutil.copy(_TEST_SETTINGS_TEMPLATE, config_dir / "settings-test.json")
-            else:
-                # Don't hard-fail the boot over a missing template — the app
-                # falls back to compiled-in defaults and still runs — but
-                # don't stay quiet about it either, since that fallback is
-                # exactly what silently flipped animations_enabled before.
-                print(f"[HelixApp] warning: {_TEST_SETTINGS_TEMPLATE} not found — "
-                      f"booting without the repo's test config defaults")
+            # caller's filename, only redirects the directory). Write our own
+            # literal seed (_TEST_SEED_SETTINGS, top of file) rather than
+            # copying anything from the repo checkout — see that constant's
+            # comment for why. Every instance gets its own file (never
+            # shared/symlinked) so one instance's edits can't leak into
+            # another's.
+            (config_dir / "settings-test.json").write_text(
+                json.dumps(_TEST_SEED_SETTINGS, indent=2))
         else:
             # Caller supplied HELIX_CONFIG_DIR themselves — respected as-is,
             # per-instance lock isolation and settings-test.json seeding are
