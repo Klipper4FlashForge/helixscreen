@@ -2686,6 +2686,27 @@ AmsError AmsBackendAfc::reset() {
                                 lv_tr("AFC reset failed"));
 }
 
+bool AmsBackendAfc::can_reset_lane(int slot_index) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // Mirrors cmd_AFC_LANE_RESET's own guards (AFC_functions.py). It retracts
+    // filament from the bowden back to the hub, so it needs something AT the
+    // hub — upstream rejects with "Hub is already clear while trying to reset
+    // '<lane>'" otherwise — and it refuses while the toolhead is loaded.
+    //
+    // loaded_to_hub is our per-lane view of that hub state. Gating on it stops
+    // us offering a reset the firmware will refuse, which is what left a latched
+    // error in printer.AFC.message re-firing toasts for a whole session.
+    const helix::printer::SlotEntry* entry = slots_.get(slot_index);
+    if (!entry) {
+        return false;
+    }
+    if (system_info_.filament_loaded) {
+        return false;
+    }
+    return entry->sensors.loaded_to_hub;
+}
+
 AmsError AmsBackendAfc::reset_lane(int slot_index) {
     std::string lane_name;
     {

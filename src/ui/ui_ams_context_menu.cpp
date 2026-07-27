@@ -341,8 +341,11 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
                       slot_index, system_busy, is_loaded, slot_is_loaded_live, slot_has_filament);
     }
 
-    // Show Reset Lane button if backend supports it
-    if (backend_ && backend_->supports_lane_reset()) {
+    // Show Reset Lane only when a reset is actually possible for THIS slot right
+    // now. Gating on the static supports_lane_reset() offered it on every AFC
+    // lane, and AFC_LANE_RESET then refused with an error that latches in
+    // printer.AFC.message and keeps re-firing toasts.
+    if (backend_ && backend_->can_reset_lane(slot_index)) {
         lv_obj_t* btn_reset = lv_obj_find_by_name(menu_obj, "btn_reset_lane");
         if (btn_reset) {
             lv_obj_remove_flag(btn_reset, LV_OBJ_FLAG_HIDDEN);

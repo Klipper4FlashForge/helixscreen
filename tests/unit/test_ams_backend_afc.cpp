@@ -242,6 +242,10 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         captured_gcodes.clear();
     }
 
+    bool can_reset_lane(int slot_index) const {
+        return AmsBackendAfc::can_reset_lane(slot_index);
+    }
+
     bool has_gcode(const std::string& expected) const {
         return std::find(captured_gcodes.begin(), captured_gcodes.end(), expected) !=
                captured_gcodes.end();
@@ -4740,4 +4744,47 @@ TEST_CASE("AFC parse: absent fields are retained (deltas, not snapshots)", "[ams
     REQUIRE(slot->material == "ASA");
     REQUIRE(slot->color_rgb == 0xE53935);
     REQUIRE(slot->remaining_weight_g == Catch::Approx(500.0));
+}
+
+// ============================================================================
+// can_reset_lane — AFC_LANE_RESET has real preconditions
+// ============================================================================
+//
+// supports_lane_reset() is a static capability, so the "Reset" menu entry was
+// offered on every AFC lane regardless of state. But AFC_LANE_RESET means
+// "retract filament from the bowden back to the hub" (AFC_functions.py), and it
+// refuses unless the lane's filament is actually at the hub:
+//     if not CUR_HUB.state: AFC_error("Hub is already clear while trying to
+//                                      reset '<lane>'"); return
+// It also refuses while the toolhead is loaded. Offering it on an ejected lane
+// produced exactly that error, which then LATCHED in printer.AFC.message and
+// kept re-firing error toasts for the rest of the session (seen on the .112
+// BoxTurtle). Reported upstream as AFCProject/AFC-Klipper-Add-On#803.
+
+TEST_CASE("AFC can_reset_lane requires filament at the hub", "[ams][afc][reset]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    SECTION("filament at the hub, toolhead free -> reset is possible") {
+        helper.feed_afc_stepper("lane1", {{"loaded_to_hub", true}, {"prep", true}, {"load", true}});
+        CHECK(helper.can_reset_lane(0));
+    }
+
+    SECTION("ejected lane (nothing at the hub) -> reset refused") {
+        helper.feed_afc_stepper("lane1",
+                                {{"loaded_to_hub", false}, {"prep", false}, {"load", false}});
+        CHECK_FALSE(helper.can_reset_lane(0));
+    }
+
+    SECTION("toolhead loaded -> reset refused even with filament at the hub") {
+        helper.feed_afc_stepper("lane1", {{"loaded_to_hub", true}, {"prep", true}, {"load", true}});
+        helper.feed_afc_state({{"filament_loaded", true}, {"current_load", "lane1"}});
+        CHECK_FALSE(helper.can_reset_lane(0));
+    }
+
+    SECTION("out-of-range slot is never resettable") {
+        CHECK_FALSE(helper.can_reset_lane(99));
+        CHECK_FALSE(helper.can_reset_lane(-1));
+    }
 }

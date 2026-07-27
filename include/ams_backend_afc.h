@@ -189,6 +189,10 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     [[nodiscard]] bool supports_lane_reset() const override {
         return true;
     }
+    /// AFC_LANE_RESET retracts filament from the bowden back to the hub, so it
+    /// needs the lane's filament to actually be at the hub and the toolhead
+    /// free. See can_reset_lane() in the base class.
+    [[nodiscard]] bool can_reset_lane(int slot_index) const override;
     AmsError eject_lane(int slot_index) override;
     [[nodiscard]] bool supports_lane_eject() const override {
         return true;
