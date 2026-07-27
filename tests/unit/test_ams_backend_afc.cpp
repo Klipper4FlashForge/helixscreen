@@ -524,17 +524,6 @@ TEST_CASE("AFC segment: prep and load sensors return LANE", "[ams][afc][segment]
     REQUIRE(helper.test_compute_filament_segment() == PathSegment::LANE);
 }
 
-TEST_CASE("AFC segment: loaded_to_hub returns HUB", "[ams][afc][segment]") {
-    AmsBackendAfcTestHelper helper;
-    helper.initialize_test_lanes(4);
-    helper.set_current_lane("lane1");
-    helper.set_lane_prep_sensor(0, true);
-    helper.set_lane_load_sensor(0, true);
-    helper.set_lane_loaded_to_hub(0, true);
-
-    REQUIRE(helper.test_compute_filament_segment() == PathSegment::HUB);
-}
-
 TEST_CASE("AFC segment: hub_sensor returns OUTPUT", "[ams][afc][segment]") {
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes(4);
@@ -593,13 +582,14 @@ TEST_CASE("AFC segment: fallback scans all lanes for load sensor", "[ams][afc][s
     REQUIRE(helper.test_compute_filament_segment() == PathSegment::LANE);
 }
 
-TEST_CASE("AFC segment: fallback scans all lanes for loaded_to_hub", "[ams][afc][segment]") {
+TEST_CASE("AFC segment: fallback scans all lanes for load sensor on the last lane",
+          "[ams][afc][segment]") {
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes(4);
-    // No current lane set, but lane4 has loaded_to_hub
-    helper.set_lane_loaded_to_hub(3, true); // lane4 is index 3
+    // No current lane set, but lane4 (the last lane scanned) has load triggered
+    helper.set_lane_load_sensor(3, true); // lane4 is index 3
 
-    REQUIRE(helper.test_compute_filament_segment() == PathSegment::HUB);
+    REQUIRE(helper.test_compute_filament_segment() == PathSegment::LANE);
 }
 
 TEST_CASE("AFC segment: hub sensor takes priority over lane sensors", "[ams][afc][segment]") {
@@ -623,6 +613,31 @@ TEST_CASE("AFC segment: toolhead sensors take priority over hub", "[ams][afc][se
 
     // tool_start_sensor should return TOOLHEAD even with hub sensor triggered
     REQUIRE(helper.test_compute_filament_segment() == PathSegment::TOOLHEAD);
+}
+
+TEST_CASE("AFC segment ignores the latched loaded_to_hub field", "[ams][afc][segment]") {
+    // loaded_to_hub reads true on every prepped lane forever, so deriving HUB from
+    // it reported filament at the hub for lanes holding nothing in the bowden.
+    // On AFC there is no observable "at hub" state distinct from OUTPUT: the hub
+    // sensor is the transition, and below it the lane load sensor is authoritative.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_hub_sensor("Turtle_1", false);
+    helper.set_lane_loaded_to_hub(0, true);
+    helper.set_lane_load_sensor(0, true);
+    helper.set_lane_prep_sensor(0, true);
+
+    REQUIRE(helper.test_compute_filament_segment() == PathSegment::LANE);
+}
+
+TEST_CASE("AFC segment reports OUTPUT when the hub sensor is triggered",
+          "[ams][afc][segment]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_lane_loaded_to_hub(0, false);
+    helper.set_hub_sensor("Turtle_1", true);
+
+    REQUIRE(helper.test_compute_filament_segment() == PathSegment::OUTPUT);
 }
 
 // ============================================================================
@@ -651,31 +666,27 @@ TEST_CASE("AFC segment: multiple lanes with sensors uses first match in order",
           "[ams][afc][segment]") {
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes(4);
-    // Multiple lanes have sensors triggered, but no current lane set
-    // The algorithm iterates through lanes in order and returns on first sensor found
+    // Multiple lanes have sensors triggered, but no current lane set.
+    // The algorithm iterates through lanes in index order and returns on the
+    // first sensor found, not the furthest segment across all lanes.
     helper.set_lane_prep_sensor(0, true);
     helper.set_lane_load_sensor(1, true);
-    helper.set_lane_loaded_to_hub(2, true);
 
-    // Fallback iterates by lane, checking loaded_to_hub > load > prep for each lane
-    // Lane 0: loaded_to_hub=false, load=false, prep=true -> returns PREP
-    // The algorithm returns the first sensor state found, not the furthest overall
+    // Lane 0: load=false, prep=true -> returns PREP immediately, even though
+    // lane 1 holds LANE, a segment further along the path.
     REQUIRE(helper.test_compute_filament_segment() == PathSegment::PREP);
 }
 
-TEST_CASE("AFC segment: fallback prioritizes hub over lane sensors per-lane",
+TEST_CASE("AFC segment: fallback prioritizes load over prep per-lane",
           "[ams][afc][segment]") {
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes(4);
-    // Lane 2 has all sensors including loaded_to_hub, lane 0 only has prep
-    // Since the algorithm checks loaded_to_hub first for each lane,
-    // lane 0's loaded_to_hub=false means it continues to check load, then prep
-    // But loaded_to_hub IS checked before load/prep for each individual lane
-    helper.set_lane_loaded_to_hub(0, true);
-    helper.set_lane_prep_sensor(1, true);
+    // Lane 0 has both load and prep triggered. load is checked before prep for
+    // each individual lane, so it must win even though prep is also true.
+    helper.set_lane_load_sensor(0, true);
+    helper.set_lane_prep_sensor(0, true);
 
-    // Lane 0 has loaded_to_hub=true, so it returns HUB
-    REQUIRE(helper.test_compute_filament_segment() == PathSegment::HUB);
+    REQUIRE(helper.test_compute_filament_segment() == PathSegment::LANE);
 }
 
 // ============================================================================

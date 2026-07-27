@@ -659,10 +659,14 @@ PathSegment AmsBackendAfc::compute_filament_segment_unlocked() const {
     //   tool_end_sensor   → NOZZLE (filament at nozzle tip)
     //   tool_start_sensor → TOOLHEAD (filament entered toolhead)
     //   hub_sensor        → OUTPUT (filament past hub, heading to toolhead)
-    //   loaded_to_hub     → HUB (filament reached hub merger)
     //   load              → LANE (filament in lane between prep and hub)
     //   prep              → PREP (filament at prep sensor, past spool)
     //   (no sensors)      → NONE or SPOOL depending on context
+    //
+    // PathSegment::HUB is deliberately unreachable here. AFC's per-lane
+    // loaded_to_hub is latched at prep and never updated, so it cannot
+    // distinguish "at hub" from "prepped once"; the hub sensor already covers
+    // the real transition as OUTPUT. HUB stays in the enum for Happy Hare.
 
     // Check toolhead sensors first (furthest along path)
     if (tool_end_sensor_) {
@@ -693,10 +697,6 @@ PathSegment AmsBackendAfc::compute_filament_segment_unlocked() const {
         if (entry) {
             const auto& sensors = entry->sensors;
 
-            if (sensors.loaded_to_hub) {
-                return PathSegment::HUB;
-            }
-
             if (sensors.load) {
                 return PathSegment::LANE;
             }
@@ -713,10 +713,6 @@ PathSegment AmsBackendAfc::compute_filament_segment_unlocked() const {
         if (!entry)
             continue;
         const auto& sensors = entry->sensors;
-
-        if (sensors.loaded_to_hub) {
-            return PathSegment::HUB;
-        }
 
         if (sensors.load) {
             return PathSegment::LANE;
