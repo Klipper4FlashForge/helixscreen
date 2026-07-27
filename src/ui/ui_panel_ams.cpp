@@ -38,6 +38,7 @@
 #include "printer_state.h"
 #include "spoolman_manager.h"
 #include "static_panel_registry.h"
+#include "system/crash_handler.h"
 #include "theme_manager.h"
 #include "ui/ams_drawing_utils.h"
 #include "wizard_config_paths.h"
@@ -1652,6 +1653,15 @@ void AmsPanel::show_loading_error_modal() {
 static std::unique_ptr<AmsPanel> g_ams_panel;
 static lv_obj_t* s_ams_panel_obj = nullptr;
 
+// NOTE: this deliberately does NOT call OverlayBase::destroy_overlay_ui().
+// AmsPanel derives from PanelBase, not OverlayBase — the two are sibling
+// IPanelLifecycle implementations, so the helper is not reachable from here
+// (there is no overlay_root_ and no on_ui_destroyed() on this hierarchy).
+// The sequence below mirrors the helper's, with two required deviations:
+//   1. clear_panel_reference() runs BEFORE deletion (the helper's
+//      on_ui_destroyed() runs after), because it destroys the sidebar /
+//      context-menu / modal sub-objects that own widgets in this subtree.
+//   2. safe_delete_subtree() instead of safe_delete_deferred() — see #983.
 void destroy_ams_panel_ui() {
     if (s_ams_panel_obj) {
         spdlog::info("[AMS Panel] Destroying panel UI to free memory");
@@ -1666,6 +1676,11 @@ void destroy_ams_panel_ui() {
         // (e.g., if destroy called manually while panel is in overlay stack)
         NavigationManager::instance().unregister_overlay_close_callback(s_ams_panel_obj);
         NavigationManager::instance().unregister_overlay_instance(s_ams_panel_obj);
+
+        // Breadcrumb the destroy so crashes in the close path can be pinned to
+        // which overlay was being torn down. Pairs with the "overlay+" crumb on
+        // push, and matches OverlayBase::destroy_overlay_ui().
+        crash_handler::breadcrumb::note("ovrl_dst", "AmsPanel");
 
         // Clear the panel_ reference in AmsPanel before deleting
         if (g_ams_panel) {

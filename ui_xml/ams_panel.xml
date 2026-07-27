@@ -85,12 +85,6 @@
                     width="100%" height="content" style_pad_all="0" scrollable="false">
               <!-- Shared spool grid + tray + labels component -->
               <ams_unit_detail name="unit_detail"/>
-              <!-- Endless Spool Arrows - overlapping labels area
-                   Uses absolute positioning relative to slots_wrapper -->
-              <endless_spool_arrows name="endless_arrows"
-                                    width="100%" height="50" align="top_mid"
-                                    clickable="false" scrollable="false"
-                                    style_bg_opa="0"/>
             </lv_obj>
           </lv_obj>
         </ui_card>

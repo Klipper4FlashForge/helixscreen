@@ -34,6 +34,7 @@
 #include "observer_factory.h"
 #include "printer_detector.h"
 #include "static_panel_registry.h"
+#include "system/crash_handler.h"
 #include "theme_manager.h"
 #include "ui/ams_drawing_utils.h"
 
@@ -328,10 +329,10 @@ void AmsOverviewPanel::create_unit_cards(const AmsSystemInfo& info) {
         snprintf(s_vis, sizeof(s_vis), "ams_env_ind_%d_visible", i);
         snprintf(s_dry, sizeof(s_dry), "ams_env_ind_%d_drying_active", i);
         snprintf(s_drytxt, sizeof(s_drytxt), "ams_env_ind_%d_drying_text", i);
-        const char* attrs[] = {"temp_text",        s_temp,    "humidity_text",   s_hum,
-                               "humidity_status",  s_humstat, "humidity_visible", s_humvis,
-                               "visible",          s_vis,     "drying_active",    s_dry,
-                               "drying_text",      s_drytxt,  nullptr,            nullptr};
+        const char* attrs[] = {
+            "temp_text",        s_temp,   "humidity_text", s_hum,  "humidity_status", s_humstat,
+            "humidity_visible", s_humvis, "visible",       s_vis,  "drying_active",   s_dry,
+            "drying_text",      s_drytxt, nullptr,         nullptr};
         uc.card = static_cast<lv_obj_t*>(lv_xml_create(cards_row_, "ams_unit_card", attrs));
         if (!uc.card) {
             spdlog::error("[{}] Failed to create ams_unit_card XML for unit {}", get_name(), i);
@@ -1054,6 +1055,15 @@ static void ensure_overview_registered() {
     spdlog::debug("[AMS Overview] XML registration complete");
 }
 
+// NOTE: this deliberately does NOT call OverlayBase::destroy_overlay_ui().
+// AmsOverviewPanel derives from PanelBase, not OverlayBase — the two are
+// sibling IPanelLifecycle implementations, so the helper is not reachable from
+// here (there is no overlay_root_ and no on_ui_destroyed() on this hierarchy).
+// The sequence below mirrors the helper's, with two required deviations:
+//   1. clear_panel_reference() runs BEFORE deletion (the helper's
+//      on_ui_destroyed() runs after), because it destroys sub-objects that own
+//      widgets in this subtree.
+//   2. safe_delete_subtree() instead of safe_delete_deferred() — see #983.
 void destroy_ams_overview_panel_ui() {
     if (s_ams_overview_panel_obj) {
         spdlog::info("[AMS Overview] Destroying panel UI to free memory");
@@ -1068,6 +1078,11 @@ void destroy_ams_overview_panel_ui() {
 
         NavigationManager::instance().unregister_overlay_close_callback(s_ams_overview_panel_obj);
         NavigationManager::instance().unregister_overlay_instance(s_ams_overview_panel_obj);
+
+        // Breadcrumb the destroy so crashes in the close path can be pinned to
+        // which overlay was being torn down. Pairs with the "overlay+" crumb on
+        // push, and matches OverlayBase::destroy_overlay_ui().
+        crash_handler::breadcrumb::note("ovrl_dst", "AmsOverviewPanel");
 
         if (g_ams_overview_panel) {
             g_ams_overview_panel->clear_panel_reference();
