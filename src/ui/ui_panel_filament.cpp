@@ -209,9 +209,9 @@ FilamentPanel::FilamentPanel(PrinterState& printer_state, MoonrakerAPI* api)
 }
 
 FilamentPanel::~FilamentPanel() {
+    // Also cancels op_revert_timer_ — see deinit_subjects(), which does it first
+    // so the timer can't write the subjects it targets after they are gone.
     deinit_subjects();
-
-    // Guard destructor handles timer cleanup automatically
 
     // Clean up warning dialogs if open (prevents memory leak and use-after-free)
     if (lv_is_initialized()) {

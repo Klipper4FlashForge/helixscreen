@@ -20,6 +20,7 @@
 #include "ui_notification.h"
 #include "ui_panel_settings.h"
 #include "ui_settings_about.h"
+#include "ui_timer_guard.h"
 #include "ui_update_queue.h"
 
 #include "app_constants.h"
@@ -635,6 +636,11 @@ UpdateChecker::~UpdateChecker() {
     cancelled_ = true;
     download_cancelled_ = true;
     shutting_down_ = true;
+
+    // Application shutdown calls stop_auto_check() explicitly, so this only
+    // matters on a path that skips it. Silent (no spdlog) and self-guarding on
+    // lv_is_initialized(), which is what makes it safe from a static's destructor.
+    cancel_auto_check_timer();
 
     // MUST join threads if joinable, regardless of status.
     // A completed check still has a joinable thread.
@@ -2588,10 +2594,20 @@ void UpdateChecker::start_auto_check() {
     lv_timer_set_repeat_count(auto_check_timer_, -1); // infinite repeats
 }
 
+void UpdateChecker::cancel_auto_check_timer() {
+    // Neuter rather than delete: the timer's own callback runs inside
+    // lv_timer_handler, where deleting a timer can corrupt the list (#750, #751).
+    // lv_timer_cancel_safe() also no-ops once LVGL is gone, which is what makes
+    // this callable from the destructor.
+    if (auto_check_timer_ && lv_is_initialized()) {
+        helix::ui::lv_timer_cancel_safe(auto_check_timer_);
+    }
+    auto_check_timer_ = nullptr;
+}
+
 void UpdateChecker::stop_auto_check() {
     if (auto_check_timer_) {
-        lv_timer_delete(auto_check_timer_);
-        auto_check_timer_ = nullptr;
+        cancel_auto_check_timer();
         spdlog::debug("[UpdateChecker] Auto-check timer stopped");
     }
 }

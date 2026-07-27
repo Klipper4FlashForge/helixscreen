@@ -454,6 +454,10 @@ class UpdateChecker {
     /** @brief Validate downloaded tarball contains binary for correct architecture */
     bool validate_elf_architecture(const std::string& tarball_path);
 
+    /// Cancel the auto-check timer without logging. Split out of stop_auto_check()
+    /// so the destructor can share it — spdlog may already be gone by then.
+    void cancel_auto_check_timer();
+
     // Auto-check timer
     lv_timer_t* auto_check_timer_{nullptr};
 
