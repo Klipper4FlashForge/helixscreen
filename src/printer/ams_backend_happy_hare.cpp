@@ -1295,6 +1295,20 @@ void AmsBackendHappyHare::query_tip_method_from_config() {
             token.defer("AmsBackendHappyHare::tip_method_apply", [this, response =
                                                                             std::move(response)]() {
                 try {
+                    // Guard every level before indexing. `response` is const in
+                    // this non-mutable lambda, so operator[] resolves to the
+                    // const overload — on a missing key that is a live
+                    // assert(), an uncatchable SIGABRT, NOT the json exception
+                    // the catch below is written for.
+                    if (!response.contains("result") || !response["result"].contains("status") ||
+                        !response["result"]["status"].contains("configfile") ||
+                        !response["result"]["status"]["configfile"].contains("settings") ||
+                        !response["result"]["status"]["configfile"]["settings"].is_object()) {
+                        spdlog::warn("[AMS HappyHare] configfile settings unavailable for tip "
+                                     "method query");
+                        return;
+                    }
+
                     const auto& settings = response["result"]["status"]["configfile"]["settings"];
 
                     if (!settings.contains("mmu") || !settings["mmu"].is_object()) {
@@ -1369,6 +1383,18 @@ void AmsBackendHappyHare::query_selector_type_from_config() {
             token.defer("AmsBackendHappyHare::selector_type_apply", [this, response = std::move(
                                                                                response)]() {
                 try {
+                    // See query_tip_method_from_config: const operator[] on a
+                    // missing key asserts rather than throws, so the chain must
+                    // be guarded level by level.
+                    if (!response.contains("result") || !response["result"].contains("status") ||
+                        !response["result"]["status"].contains("configfile") ||
+                        !response["result"]["status"]["configfile"].contains("settings") ||
+                        !response["result"]["status"]["configfile"]["settings"].is_object()) {
+                        spdlog::warn("[AMS HappyHare] configfile settings unavailable for selector "
+                                     "type query");
+                        return;
+                    }
+
                     const auto& settings = response["result"]["status"]["configfile"]["settings"];
 
                     if (!settings.contains("mmu_machine") || !settings["mmu_machine"].is_object()) {
@@ -1655,6 +1681,18 @@ void AmsBackendHappyHare::query_heater_config_from_config() {
             token.defer("AmsBackendHappyHare::heater_config_apply", [this, response = std::move(
                                                                                response)]() {
                 try {
+                    // See query_tip_method_from_config: const operator[] on a
+                    // missing key asserts rather than throws, so the chain must
+                    // be guarded level by level.
+                    if (!response.contains("result") || !response["result"].contains("status") ||
+                        !response["result"]["status"].contains("configfile") ||
+                        !response["result"]["status"]["configfile"].contains("settings") ||
+                        !response["result"]["status"]["configfile"]["settings"].is_object()) {
+                        spdlog::warn(
+                            "[AMS HappyHare] configfile settings unavailable for heater query");
+                        return;
+                    }
+
                     const auto& settings = response["result"]["status"]["configfile"]["settings"];
                     apply_heater_config(settings);
                     emit_event(EVENT_STATE_CHANGED);
@@ -1691,6 +1729,18 @@ void AmsBackendHappyHare::query_config_defaults() {
             token.defer("AmsBackendHappyHare::config_defaults_apply", [this, response = std::move(
                                                                                  response)]() {
                 try {
+                    // See query_tip_method_from_config: const operator[] on a
+                    // missing key asserts rather than throws, so the chain must
+                    // be guarded level by level.
+                    if (!response.contains("result") || !response["result"].contains("status") ||
+                        !response["result"]["status"].contains("configfile") ||
+                        !response["result"]["status"]["configfile"].contains("settings") ||
+                        !response["result"]["status"]["configfile"]["settings"].is_object()) {
+                        spdlog::warn(
+                            "[AMS HappyHare] configfile settings unavailable for config defaults");
+                        return;
+                    }
+
                     const auto& settings = response["result"]["status"]["configfile"]["settings"];
 
                     if (!settings.contains("mmu") || !settings["mmu"].is_object()) {

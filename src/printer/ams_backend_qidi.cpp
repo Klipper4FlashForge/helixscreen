@@ -244,18 +244,33 @@ void AmsBackendQidi::on_started() {
         client_->send_jsonrpc(
             "printer.objects.query", cfg_params,
             [this, cfg_token](nlohmann::json response) {
-                cfg_token.defer("AmsBackendQidi::apply_config_settings",
-                                [this, response = std::move(response)]() {
-                                    try {
-                                        const auto& settings =
-                                            response["result"]["status"]["configfile"]["settings"];
-                                        apply_config_settings(settings);
-                                        emit_event(EVENT_STATE_CHANGED);
-                                    } catch (const nlohmann::json::exception& e) {
-                                        spdlog::warn("{} configfile parse failed: {}",
-                                                     backend_log_tag(), e.what());
-                                    }
-                                });
+                cfg_token.defer("AmsBackendQidi::apply_config_settings", [this,
+                                                                          response = std::move(
+                                                                              response)]() {
+                    try {
+                        // Guard every level before indexing.
+                        // `response` is const in this
+                        // non-mutable lambda, so operator[]
+                        // resolves to the const overload — on a
+                        // missing key that is a live assert(),
+                        // an uncatchable SIGABRT, not the json
+                        // exception this catch is written for.
+                        if (!response.contains("result") ||
+                            !response["result"].contains("status") ||
+                            !response["result"]["status"].contains("configfile") ||
+                            !response["result"]["status"]["configfile"].contains("settings") ||
+                            !response["result"]["status"]["configfile"]["settings"].is_object()) {
+                            spdlog::warn("{} configfile settings unavailable", backend_log_tag());
+                            return;
+                        }
+                        const auto& settings =
+                            response["result"]["status"]["configfile"]["settings"];
+                        apply_config_settings(settings);
+                        emit_event(EVENT_STATE_CHANGED);
+                    } catch (const nlohmann::json::exception& e) {
+                        spdlog::warn("{} configfile parse failed: {}", backend_log_tag(), e.what());
+                    }
+                });
             },
             [this](const MoonrakerError& err) {
                 spdlog::warn("{} configfile query failed: {}", backend_log_tag(), err.message);
@@ -371,8 +386,7 @@ void AmsBackendQidi::apply_config_settings(const nlohmann::json& settings) {
         const std::string& key = it.key();
         // Max 4 dialect marker: a "[multi_color_controller]" section (bare or
         // instanced, e.g. "multi_color_controller box0") is Max 4-only. #1083
-        if (key == "multi_color_controller" ||
-            key.rfind("multi_color_controller ", 0) == 0) {
+        if (key == "multi_color_controller" || key.rfind("multi_color_controller ", 0) == 0) {
             has_multi_color = true;
         }
         if (!it->is_object()) {
@@ -605,16 +619,16 @@ void AmsBackendQidi::parse_save_variables(const nlohmann::json& variables) {
     if (has_slot_or_action_key) {
         bool any_blocked = false;
         for (const auto& unit : system_info_.units) {
-            any_blocked = any_blocked || std::any_of(unit.slots.begin(), unit.slots.end(),
-                                                     [](const SlotInfo& s) {
-                                                         return s.status == SlotStatus::BLOCKED;
-                                                     });
+            any_blocked = any_blocked ||
+                          std::any_of(unit.slots.begin(), unit.slots.end(), [](const SlotInfo& s) {
+                              return s.status == SlotStatus::BLOCKED;
+                          });
         }
         const bool is_loading = tool_change_it != variables.end() &&
                                 tool_change_it->is_number_integer() &&
                                 tool_change_it->get<int>() != 0;
-        system_info_.action = any_blocked ? AmsAction::ERROR
-                                          : (is_loading ? AmsAction::LOADING : AmsAction::IDLE);
+        system_info_.action =
+            any_blocked ? AmsAction::ERROR : (is_loading ? AmsAction::LOADING : AmsAction::IDLE);
     }
 
     auto load_it = variables.find("last_load_slot");
