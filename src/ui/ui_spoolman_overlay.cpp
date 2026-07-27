@@ -241,11 +241,7 @@ void SpoolmanOverlay::load_from_database() {
     auto apply_sync = [this](bool enabled) {
         lv_subject_set_int(&sync_enabled_subject_, enabled ? 1 : 0);
         spdlog::debug("[{}] Loaded sync_enabled={} from database", get_name(), enabled);
-        if (enabled) {
-            SpoolmanManager::instance().start_spoolman_polling();
-        } else {
-            SpoolmanManager::instance().stop_spoolman_polling();
-        }
+        set_poll_ref(enabled);
     };
 
     auto parse_sync = [](const nlohmann::json& value, bool default_val) {
@@ -405,6 +401,22 @@ void SpoolmanOverlay::update_ui_from_subjects() {
     // Toggle state is handled by subject binding in XML
 }
 
+void SpoolmanOverlay::set_poll_ref(bool want_ref) {
+    if (want_ref == holds_poll_ref_) {
+        return;
+    }
+
+    if (want_ref) {
+        SpoolmanManager::instance().start_spoolman_polling();
+    } else {
+        SpoolmanManager::instance().stop_spoolman_polling();
+    }
+    holds_poll_ref_ = want_ref;
+
+    spdlog::debug("[{}] Spoolman poll reference {}", get_name(),
+                  want_ref ? "acquired" : "released");
+}
+
 void SpoolmanOverlay::on_ui_destroyed() {
     sync_toggle_ = nullptr;
     interval_dropdown_ = nullptr;
@@ -421,6 +433,22 @@ void SpoolmanOverlay::on_activate() {
     OverlayBase::on_activate();
     // Scanner selection may have changed in the child overlay; re-sync the row.
     update_scanner_status_text();
+
+    // Re-take the poll reference on_deactivate() gave back. Pushing a child
+    // overlay (barcode scanner, label printer) deactivates this one, and the
+    // async load_from_database() that first took the reference does not re-run
+    // on the way back.
+    if (subjects_initialized_) {
+        set_poll_ref(lv_subject_get_int(&sync_enabled_subject_) != 0);
+    }
+}
+
+void SpoolmanOverlay::on_deactivate() {
+    // Give back the poll reference load_from_database() took. The panel underneath
+    // takes its own on activation, so dropping ours here does not starve it of data.
+    set_poll_ref(false);
+
+    OverlayBase::on_deactivate();
 }
 
 // ============================================================================
@@ -446,11 +474,7 @@ void SpoolmanOverlay::on_sync_toggled(lv_event_t* e) {
         overlay.save_sync_enabled(is_checked);
 
         // Update Spoolman polling
-        if (is_checked) {
-            SpoolmanManager::instance().start_spoolman_polling();
-        } else {
-            SpoolmanManager::instance().stop_spoolman_polling();
-        }
+        overlay.set_poll_ref(is_checked);
     }
 
     LVGL_SAFE_EVENT_CB_END();
