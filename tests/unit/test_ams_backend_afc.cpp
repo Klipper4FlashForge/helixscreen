@@ -56,6 +56,11 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         }
     }
 
+    // Lane → hub routing, as parsed from AFC_stepper.hub ("Turtle_1" or "direct").
+    void set_lane_hub_routing(const std::string& lane_name, const std::string& hub_name) {
+        lane_hub_routing_[lane_name] = hub_name;
+    }
+
     void set_current_lane(const std::string& lane_name) {
         current_lane_name_ = lane_name;
     }
@@ -2016,6 +2021,54 @@ TEST_CASE("AFC reset_lane validates negative index", "[ams][afc][recovery][phase
 
     REQUIRE_FALSE(result.success());
     REQUIRE(result.result == AmsResult::INVALID_SLOT);
+}
+
+TEST_CASE("AFC lane reset is offered only when that lane's hub sensor is triggered",
+          "[ams][afc][recovery]") {
+    // Measured on a live BoxTurtle 2026-07-27: loaded_to_hub is latched at prep and
+    // never updates, reading true on all four lanes at once while the hub is clear.
+    // AFC_hub.state is the only signal that tracks an actual hub transit.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+    helper.set_lane_hub_routing("lane1", "Turtle_1");
+
+    // The latched field says "at hub" on every lane. It must not be believed.
+    helper.set_lane_loaded_to_hub(0, true);
+    helper.set_hub_sensor("Turtle_1", false);
+    REQUIRE_FALSE(helper.can_reset_lane(0));
+
+    // Hub sensor triggered → the retract has somewhere to retract from.
+    helper.set_hub_sensor("Turtle_1", true);
+    REQUIRE(helper.can_reset_lane(0));
+}
+
+TEST_CASE("AFC lane reset is refused while the toolhead holds filament",
+          "[ams][afc][recovery]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+    helper.set_lane_hub_routing("lane1", "Turtle_1");
+    helper.set_hub_sensor("Turtle_1", true);
+
+    helper.set_filament_loaded(true);
+    REQUIRE_FALSE(helper.can_reset_lane(0));
+
+    helper.set_filament_loaded(false);
+    REQUIRE(helper.can_reset_lane(0));
+}
+
+TEST_CASE("AFC lane reset is refused for a lane routed direct (no hub)",
+          "[ams][afc][recovery]") {
+    // "direct" routing means the lane bypasses the hub entirely, so there is no
+    // hub sensor to consult and no hub-retract to perform.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+    helper.set_lane_hub_routing("lane1", "direct");
+    helper.set_hub_sensor("Turtle_1", true);
+
+    REQUIRE_FALSE(helper.can_reset_lane(0));
 }
 
 TEST_CASE("AFC reset_lane fails when not running", "[ams][afc][recovery][phase4]") {
@@ -4769,25 +4822,29 @@ TEST_CASE("AFC can_reset_lane requires filament at the hub", "[ams][afc][reset]"
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes(4);
     helper.initialize_slots_from_discovery();
+    helper.set_discovered_lanes({}, {"Turtle_1"}); // so AFC_hub status updates route
+    helper.feed_afc_stepper("lane1", {{"hub", "Turtle_1"}});
 
-    SECTION("filament at the hub, toolhead free -> reset is possible") {
-        helper.feed_afc_stepper("lane1", {{"loaded_to_hub", true}, {"prep", true}, {"load", true}});
+    // loaded_to_hub is latched at prep and never updated (see the [recovery]
+    // cases above), so this now drives the real signal: AFC_hub.state.
+    SECTION("hub sensor triggered, toolhead free -> reset is possible") {
+        helper.feed_afc_hub("Turtle_1", {{"state", true}});
         CHECK(helper.can_reset_lane(0));
     }
 
-    SECTION("ejected lane (nothing at the hub) -> reset refused") {
-        helper.feed_afc_stepper("lane1",
-                                {{"loaded_to_hub", false}, {"prep", false}, {"load", false}});
+    SECTION("hub sensor clear -> reset refused") {
+        helper.feed_afc_hub("Turtle_1", {{"state", false}});
         CHECK_FALSE(helper.can_reset_lane(0));
     }
 
-    SECTION("toolhead loaded -> reset refused even with filament at the hub") {
-        helper.feed_afc_stepper("lane1", {{"loaded_to_hub", true}, {"prep", true}, {"load", true}});
+    SECTION("toolhead loaded -> reset refused even with hub sensor triggered") {
+        helper.feed_afc_hub("Turtle_1", {{"state", true}});
         helper.feed_afc_state({{"filament_loaded", true}, {"current_load", "lane1"}});
         CHECK_FALSE(helper.can_reset_lane(0));
     }
 
     SECTION("out-of-range slot is never resettable") {
+        helper.feed_afc_hub("Turtle_1", {{"state", true}});
         CHECK_FALSE(helper.can_reset_lane(99));
         CHECK_FALSE(helper.can_reset_lane(-1));
     }

@@ -2800,21 +2800,31 @@ bool AmsBackendAfc::can_reset_lane(int slot_index) const {
     std::lock_guard<std::mutex> lock(mutex_);
 
     // Mirrors cmd_AFC_LANE_RESET's own guards (AFC_functions.py). It retracts
-    // filament from the bowden back to the hub, so it needs something AT the
-    // hub — upstream rejects with "Hub is already clear while trying to reset
+    // filament from the bowden back to the hub, so it needs the hub occupied —
+    // upstream rejects with "Hub is already clear while trying to reset
     // '<lane>'" otherwise — and it refuses while the toolhead is loaded.
     //
-    // loaded_to_hub is our per-lane view of that hub state. Gating on it stops
-    // us offering a reset the firmware will refuse, which is what left a latched
-    // error in printer.AFC.message re-firing toasts for a whole session.
-    const helix::printer::SlotEntry* entry = slots_.get(slot_index);
-    if (!entry) {
-        return false;
-    }
+    // The hub sensor is the only signal that tracks hub occupancy. The per-lane
+    // loaded_to_hub field is latched at prep and never updated: it reads true on
+    // every lane at once, including while the hub is demonstrably clear.
     if (system_info_.filament_loaded) {
         return false;
     }
-    return entry->sensors.loaded_to_hub;
+
+    const std::string lane_name = slots_.name_of(slot_index);
+    if (lane_name.empty()) {
+        return false;
+    }
+
+    auto route = lane_hub_routing_.find(lane_name);
+    if (route == lane_hub_routing_.end() || route->second.empty() ||
+        route->second == "direct") {
+        // No hub in this lane's path — nothing to retract to.
+        return false;
+    }
+
+    auto hub = hub_sensors_.find(route->second);
+    return hub != hub_sensors_.end() && hub->second;
 }
 
 AmsError AmsBackendAfc::reset_lane(int slot_index) {
