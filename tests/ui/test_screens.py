@@ -26,9 +26,12 @@ from __future__ import annotations
 
 import shlex
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
+
+from helix.app import HelixCtlError
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RECIPES_SCRIPT = REPO_ROOT / "scripts" / "screenshot-recipes.sh"
@@ -95,42 +98,75 @@ _RECIPES = _load_recipes()
 #     the same category of issue the design spec flags for the print-select
 #     loading spinner), so `freeze()` catches it at a different arc position
 #     each time — confirmed as a small (~15px) but real diff across runs.
-#   - `print-select`: was in this list and briefly golden'd, then pulled after
-#     discovering it isn't safe under normal full-suite execution.
-#     `UsbBackendMock::start()` (usb_backend_mock.cpp) spawns a background
-#     thread that inserts a demo USB drive exactly 1.5s after boot — a fixed
-#     delay, not open-ended jitter, but one with no subject to `wait_for`:
-#     `PrintSelectUsbSource::on_drive_inserted()` shows the Printer/USB source
-#     selector row via a bare `lv_obj_remove_flag(..., LV_OBJ_FLAG_HIDDEN)`,
-#     invisible to both `wait_idle()` and `freeze()`. A capture taken before
-#     1.5s has elapsed since boot shows the plain file grid (no selector row,
-#     content starts higher); one taken after shows the full selector row
-#     (content shifted down) with correct full-color thumbnails. Isolated runs
-#     of just this file reliably land before the 1.5s mark; a full `pytest
-#     tests/ui/` run reliably lands after it (other files' setup alone burns
-#     >1.5s). Confirmed with matching log lines ("Source selector configured
-#     (hidden until USB drive inserted)" at boot, "USB drive inserted -
-#     showing source selector" ~1.5s later) and byte-for-byte comparison of
-#     both states. Needs a real decision (wait on a fixed, bounded delay vs.
-#     exposing a subject vs. deferring) before it can be golden'd again.
 #
 # Kept: every base panel except the temp-bearing ones above, a representative
 # handful of overlays reached through their real click handlers (each a
-# full-screen replacement with no backdrop bleed-through), and the one `demo`
-# screen (`ams`) that renders no live telemetry.
+# full-screen replacement with no backdrop bleed-through), the one `demo`
+# screen (`ams`) that renders no live telemetry, and `print-select` (see
+# `_POST_NAV_WAIT_WIDGET` below for why it needs an extra step the others
+# don't).
 _SUBSET = [
-    "settings", "advanced",
+    "settings", "advanced", "print-select",
     "motion", "bed-mesh", "zoffset", "macros",
     "ams",
 ]
 
 SCREENS = [(name, _steps_for(_RECIPES[name])) for name in _SUBSET]
 
+# Screens whose correct rendering depends on a one-time async event that
+# `wait_idle()`/`freeze()` cannot see, keyed to a widget whose `hidden` flag
+# flips once that event has landed.
+#
+# `print-select`: `UsbBackendMock::start()` (usb_backend_mock.cpp) spawns a
+# background thread that inserts a demo USB drive exactly 1.5s after boot — a
+# fixed delay, not open-ended jitter, but with no subject exposed for
+# `wait_for()`: `PrintSelectUsbSource::on_drive_inserted()` shows the
+# Printer/USB source-selector row via a bare
+# `lv_obj_remove_flag(..., LV_OBJ_FLAG_HIDDEN)`, invisible to both
+# `wait_idle()` and `freeze()`. A capture taken before 1.5s has elapsed since
+# boot catches the row still hidden (content occupies the space instead,
+# shifted up); one taken after shows the row. The row-visible state is the
+# correct, final one — the mock USB drive is present from boot in every real
+# sense, just reported with a startup latency — and is what got reviewed and
+# approved; the row-hidden state is a race loss, not an alternate rendering.
+# Confirmed via matching log lines ("Source selector configured (hidden
+# until USB drive inserted)" at boot, "USB drive inserted - showing source
+# selector" ~1.5s later) and by polling `geom(widget)["hidden"]` — a real,
+# already-exposed observable — rather than guessing a sleep duration: 6
+# independent boots, each captured only once the poll confirms the row is
+# visible, produced byte-identical images, matching (byte-for-byte) the
+# original human-approved candidate.
+_POST_NAV_WAIT_WIDGET = {
+    "print-select": "source_selector",
+}
+
+
+def _wait_for_widget_visible(app, widget_name: str, timeout: float = 5.0) -> None:
+    """Poll a real widget flag instead of sleeping a guessed duration.
+
+    The widget may not exist yet immediately after navigation (panel still
+    building), so a lookup failure is treated the same as "still hidden" and
+    retried rather than raised.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            widgets = app.geom(widget_name)["widgets"]
+        except HelixCtlError:
+            widgets = []
+        if widgets and not widgets[0]["hidden"]:
+            return
+        time.sleep(0.05)
+    raise TimeoutError(f"{widget_name} never became visible within {timeout}s")
+
 
 @pytest.mark.parametrize("name,steps", SCREENS, ids=[s[0] for s in SCREENS])
 def test_screen_matches_golden(helix_app, golden, name, steps):
     for method, *args in steps:
         getattr(helix_app, method)(*args)
+    wait_widget = _POST_NAV_WAIT_WIDGET.get(name)
+    if wait_widget:
+        _wait_for_widget_visible(helix_app, wait_widget)
     helix_app.wait_idle()
     helix_app.freeze()
     try:
