@@ -832,11 +832,18 @@ static void print_describe_grouped(const nlohmann::json& result) {
     for (const char* verb : verbs) {
         std::vector<std::string> items;
         for (const auto& w : widgets) {
+            // find(), not w["actions"]: w is const, so operator[] on a widget
+            // entry without an "actions" key hits JSON_ASSERT — an uncatchable
+            // abort, not a throw. The dump comes from the server, which may be a
+            // different build than this client.
             bool has = false;
-            for (const auto& a : w["actions"]) {
-                if (a == verb) {
-                    has = true;
-                    break;
+            const auto actions_it = w.find("actions");
+            if (actions_it != w.end() && actions_it->is_array()) {
+                for (const auto& a : *actions_it) {
+                    if (a == verb) {
+                        has = true;
+                        break;
+                    }
                 }
             }
             if (!has) {
