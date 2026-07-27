@@ -26,6 +26,7 @@
 #include "../../include/moonraker_api.h"
 #include "../../include/moonraker_client_mock.h"
 #include "../../include/printer_state.h"
+#include "../../include/ui_update_queue.h"
 #include "../../lvgl/lvgl.h"
 #include "../ui_test_utils.h"
 
@@ -67,6 +68,11 @@ class SafetyLimitsFixture {
         mock_client_.set_extruder_max_temp(kProbeExtruderMaxTemp);
     }
     ~SafetyLimitsFixture() {
+        // MoonrakerAPI::notify_build_volume_changed() queues a lambda capturing
+        // `this` and &build_volume_version_. Draining while api_ is still alive
+        // is what keeps that callback from running against freed memory in a
+        // later test's HelixTestFixture::reset_all().
+        helix::ui::UpdateQueue::instance().drain();
         api_.reset();
     }
 
@@ -89,8 +95,8 @@ class SafetyLimitsFixture {
 
 } // namespace
 
-TEST_CASE_METHOD(SafetyLimitsFixture,
-                 "numeric position_endstop parses the temperature limits", "[safety_limits]") {
+TEST_CASE_METHOD(SafetyLimitsFixture, "numeric position_endstop parses the temperature limits",
+                 "[safety_limits]") {
     // Baseline: with a numeric endstop the parse always reached the temperature
     // loop, so this passed before the fix too. It exists to prove the assertion
     // below is measuring the null case specifically and not a broken harness.
