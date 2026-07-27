@@ -73,10 +73,40 @@ std::optional<ErrorEvent> classify(const std::string& raw_line, const ClassifyCo
         } else {
             e.severity = ErrorSeverity::WARNING;
         }
-    } else { // uncoded `!!` — AFC-jam case
+    } else { // uncoded `!!` — no Klipper error code to key off
         e.source = ErrorSource::GENERIC;
         e.severity =
             (ctx.is_paused || ctx.is_printing) ? ErrorSeverity::CRITICAL : ErrorSeverity::WARNING;
+
+        // A CRITICAL event with no recovery action renders as a text-only modal
+        // over a stopped job -- the user reads the error and has nothing to tap
+        // (#1152). Offer the one action that is always meaningful on a paused
+        // printer. It attributes NOTHING: source stays GENERIC and the title
+        // stays empty, so the modal reads "Printer Error". A filament backend
+        // that recognizes the fault has already returned its own richer event
+        // before the router falls through to this classifier, so this only ever
+        // fills the hole nobody claimed.
+        //
+        // Paused only, deliberately. RESUME needs something to resume; while the
+        // print is still running there is no safe generic action to offer, and
+        // no filament move belongs on a line whose cause is unknown. is_paused
+        // already implies CRITICAL above -- the severity is spelled out because
+        // WARNING + an action routes to TOAST_WITH_RECOVER, whose presenter is
+        // hard-wired to the key298 recovery service and ignores this vector.
+        if (e.severity == ErrorSeverity::CRITICAL && ctx.is_paused) {
+            // BOTH neutral: the cause of this line is unknown by definition --
+            // this is the arm nobody claimed -- so the UI must not nudge toward
+            // resuming a print that may not be safe to resume.
+            e.recovery_actions.push_back({"Resume", "RESUME", "error_classify::resume"});
+            // Without this the modal has exactly one way out and a user who does
+            // NOT want to resume is trapped: ActionPromptModal builds its buttons
+            // solely from this vector and has no intrinsic close affordance (same
+            // trap as #1041). The gcode is a Klipper comment so the tap executes
+            // nothing -- and it must stay non-empty, because create_buttons()
+            // falls back to sending the LABEL as gcode when it is blank
+            // (action_prompt_modal.cpp:282).
+            e.recovery_actions.push_back({"OK", "; error-dismiss", "error_classify::dismiss"});
+        }
     }
 
     // Sticky is uniform across sources: any CRITICAL stays on screen until the

@@ -45,6 +45,88 @@ TEST_CASE("uncoded !! while idle is WARNING", "[error-center][classify]") {
     REQUIRE(e->severity == helix::ErrorSeverity::WARNING);
 }
 
+// ---- #1152: a paused job must never get a text-only, button-less modal ----
+
+TEST_CASE("uncoded !! while paused carries Resume plus a dismiss", "[error-center][classify]") {
+    ClassifyContext ctx;
+    ctx.is_paused = true;
+    auto e = classify("!! Some fault nobody classified", ctx);
+    REQUIRE(e.has_value());
+    REQUIRE(e->severity == helix::ErrorSeverity::CRITICAL);
+    // Attribution is unchanged: these actions belong to no backend. Source stays
+    // GENERIC and the title stays empty so modal_title_for() reads "Printer Error".
+    REQUIRE(e->source == helix::ErrorSource::GENERIC);
+    REQUIRE(e->title.empty());
+
+    REQUIRE(e->recovery_actions.size() == 2);
+    REQUIRE(e->recovery_actions[0].label == "Resume");
+    REQUIRE(e->recovery_actions[0].gcode == "RESUME");
+    // The second action is the way OUT. ActionPromptModal has no intrinsic close
+    // affordance, so a lone Resume would trap a user who does not want to resume.
+    REQUIRE(e->recovery_actions[1].label == "OK");
+    // Non-empty checked FIRST: front() on an empty string is UB, and a blank
+    // gcode would make create_buttons() send the LABEL as gcode instead.
+    REQUIRE_FALSE(e->recovery_actions[1].gcode.empty());
+    REQUIRE(e->recovery_actions[1].gcode.front() == ';'); // comment: executes nothing
+
+    // Neither button is styled primary: the cause is unknown, so the UI must not
+    // visually push the user toward resuming.
+    for (const auto& a : e->recovery_actions) {
+        REQUIRE(a.style != "primary");
+        REQUIRE(a.style.empty()); // neutral, not danger either
+    }
+}
+
+TEST_CASE("uncoded !! while printing but not paused offers nothing",
+          "[error-center][classify]") {
+    // There is nothing to resume while the print is still running, and no
+    // filament move belongs on a line whose cause is unknown. Severity is
+    // unchanged from the pre-#1152 rule.
+    ClassifyContext ctx;
+    ctx.is_printing = true;
+    auto e = classify("!! Some fault nobody classified", ctx);
+    REQUIRE(e.has_value());
+    REQUIRE(e->severity == helix::ErrorSeverity::CRITICAL);
+    REQUIRE(e->recovery_actions.empty());
+}
+
+TEST_CASE("uncoded !! while idle is unchanged by the Resume affordance",
+          "[error-center][classify]") {
+    ClassifyContext ctx; // neither paused nor printing
+    auto e = classify("!! Timer too close", ctx);
+    REQUIRE(e.has_value());
+    REQUIRE(e->severity == helix::ErrorSeverity::WARNING); // no escalation
+    REQUIRE(e->recovery_actions.empty());
+    REQUIRE_FALSE(e->sticky);
+}
+
+TEST_CASE("coded !! while paused keeps its code-derived action", "[error-center][classify]") {
+    // The generic Resume lives on the uncoded arm only: a coded error still
+    // takes the code branch, keeps its own recovery and its CFS attribution.
+    // Nothing is appended and nothing is displaced.
+    ClassifyContext ctx;
+    ctx.is_paused = true;
+    auto e = classify(R"(!! {"code":"key840","msg":"box switch state error"})", ctx);
+    REQUIRE(e.has_value());
+    REQUIRE(e->code == "key840");
+    REQUIRE(e->source == helix::ErrorSource::CFS);
+    REQUIRE(e->recovery_actions.size() == 1);
+    REQUIRE(e->recovery_actions[0].gcode == "BOX_ERROR_CLEAR");
+}
+
+TEST_CASE("Error: command error while paused gets no Resume", "[error-center][classify]") {
+    // The affordance is scoped to the uncoded `!!` arm. A rejected command is a
+    // WARNING toast; giving it an action would route it to TOAST_WITH_RECOVER,
+    // whose presenter is hard-wired to the key298 recovery service.
+    ClassifyContext ctx;
+    ctx.is_paused = true;
+    auto e = classify("Error: Must home axis first", ctx);
+    REQUIRE(e.has_value());
+    REQUIRE(e->source == helix::ErrorSource::KLIPPER);
+    REQUIRE(e->severity == helix::ErrorSeverity::WARNING);
+    REQUIRE(e->recovery_actions.empty());
+}
+
 TEST_CASE("CFS key8xx is CRITICAL", "[error-center][classify]") {
     ClassifyContext ctx;
     auto e = classify(R"(!! {"code":"key849","msg":"retract failed","values":[1]})", ctx);
