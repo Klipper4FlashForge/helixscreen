@@ -148,12 +148,11 @@ bool AmsEditOverlay::show_for_slot(lv_obj_t* parent, int slot_index, const SlotI
     // It has to be ONE combined callback: NavigationManager keeps a single close
     // callback per widget, so a separate destroy_on_close registration would
     // just overwrite this one (or be overwritten by it).
-    NavigationManager::instance().register_overlay_close_callback(
-        cached_overlay_widget_, []() {
-            auto& overlay = get_ams_edit_overlay();
-            overlay.fire_completion(false);
-            overlay.destroy_overlay_ui(overlay.cached_overlay_widget_);
-        });
+    NavigationManager::instance().register_overlay_close_callback(cached_overlay_widget_, []() {
+        auto& overlay = get_ams_edit_overlay();
+        overlay.fire_completion(false);
+        overlay.destroy_overlay_ui(overlay.cached_overlay_widget_);
+    });
 
     // Reset per-session view state HERE (covered-safe — on_deactivate must not
     // touch it, since it also fires when the QR scanner merely covers us).
@@ -930,8 +929,8 @@ void AmsEditOverlay::handle_spool_edit_save(bool finish) {
     // Reject negative numerics (same rule as SpoolEditModal::validate_fields).
     if (detail_working_.remaining_weight_g < 0 || detail_working_.spool_weight_g < 0 ||
         detail_working_.price < 0) {
-        ToastManager::instance().show(ToastSeverity::ERROR,
-                                      lv_tr("Values must not be negative"), 3000);
+        ToastManager::instance().show(ToastSeverity::ERROR, lv_tr("Values must not be negative"),
+                                      3000);
         return; // stay on the spool-edit view so the user can fix it
     }
 
@@ -1048,25 +1047,26 @@ void AmsEditOverlay::handle_spool_edit_save(bool finish) {
         // untouched: this both keeps an untouched unknown-weight slot from
         // going spuriously dirty (-1 -> 0) and preserves the sentinel.
         //
-        // Guard: only a GENUINE untracked slot commits these. If this Save
-        // just unlinked a formerly-tracked slot (toggle off above), the
-        // logistics fields on screen came from the async Spoolman fetch —
-        // detail_working_.spool_weight_g is the empty-spool CORE weight, not
-        // the filament total — so staging it would clobber the correct
-        // total_weight_g. The unlinked slot's weights are already right; skip
-        // the staging entirely (Finding 1).
-        if (!spool_edit_entered_tracked_) {
-            lv_obj_t* remaining_w = find_widget("detail_field_remaining");
-            lv_obj_t* spool_wt_w = find_widget("detail_field_spool_weight");
-            const char* remaining_t = remaining_w ? lv_textarea_get_text(remaining_w) : nullptr;
-            const char* spool_wt_t = spool_wt_w ? lv_textarea_get_text(spool_wt_w) : nullptr;
-            if (remaining_t && remaining_t[0] != '\0') {
-                working_info_.remaining_weight_g =
-                    static_cast<float>(detail_working_.remaining_weight_g);
-            }
-            if (spool_wt_t && spool_wt_t[0] != '\0') {
-                working_info_.total_weight_g = static_cast<float>(detail_working_.spool_weight_g);
-            }
+        // Per-field decision (decide_weight_staging): remaining always stages
+        // when filled, because it means the same thing linked or not. Only
+        // total_weight_g is withheld on an unlink-in-place, where the on-screen
+        // "Spool wt" came from Spoolman's spool_weight (empty-spool CORE weight)
+        // and would clobber a correct filament total.
+        lv_obj_t* remaining_w = find_widget("detail_field_remaining");
+        lv_obj_t* spool_wt_w = find_widget("detail_field_spool_weight");
+        const char* remaining_t = remaining_w ? lv_textarea_get_text(remaining_w) : nullptr;
+        const char* spool_wt_t = spool_wt_w ? lv_textarea_get_text(spool_wt_w) : nullptr;
+
+        const WeightStaging staging = decide_weight_staging(spool_edit_entered_tracked_,
+                                                            remaining_t && remaining_t[0] != '\0',
+                                                            spool_wt_t && spool_wt_t[0] != '\0');
+
+        if (staging.stage_remaining) {
+            working_info_.remaining_weight_g =
+                static_cast<float>(detail_working_.remaining_weight_g);
+        }
+        if (staging.stage_total) {
+            working_info_.total_weight_g = static_cast<float>(detail_working_.spool_weight_g);
         }
     }
 
@@ -1833,6 +1833,15 @@ void AmsEditOverlay::do_spoolman_save() {
         });
 }
 
+AmsEditOverlay::WeightStaging AmsEditOverlay::decide_weight_staging(bool entered_tracked,
+                                                                    bool remaining_filled,
+                                                                    bool total_filled) {
+    WeightStaging staging;
+    staging.stage_remaining = remaining_filled;
+    staging.stage_total = total_filled && !entered_tracked;
+    return staging;
+}
+
 bool AmsEditOverlay::is_material_identity_change(const SlotInfo& original, const SlotInfo& edited) {
     if (!helix::FilamentMapper::materials_match(original.material, edited.material)) {
         return true;
@@ -1916,9 +1925,9 @@ bool AmsEditOverlay::setup_details_selector() {
     // Save round-trips it (the selector otherwise snaps vendor to Generic and
     // preselect_first() would then paint a Generic product over the user's
     // saved brand). Empty brand -> nullopt -> Generic default, unchanged.
-    std::optional<std::string> vendor_seed =
-        working_info_.brand.empty() ? std::nullopt
-                                    : std::optional<std::string>(working_info_.brand);
+    std::optional<std::string> vendor_seed = working_info_.brand.empty()
+                                                 ? std::nullopt
+                                                 : std::optional<std::string>(working_info_.brand);
     details_selector_.attach(fragment);
     details_selector_.configure(std::move(seed), std::move(allowed), std::move(vendor_seed));
     // A vendor/type dropdown change must always leave a product checked so a

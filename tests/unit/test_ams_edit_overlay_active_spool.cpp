@@ -72,6 +72,11 @@ class AmsEditOverlayTestAccess {
     static bool needs_identity_confirmation(const SlotInfo& original, const SlotInfo& edited) {
         return AmsEditOverlay::needs_identity_confirmation(original, edited);
     }
+    static AmsEditOverlay::WeightStaging
+    decide_weight_staging(bool entered_tracked, bool remaining_filled, bool total_filled) {
+        return AmsEditOverlay::decide_weight_staging(entered_tracked, remaining_filled,
+                                                     total_filled);
+    }
 
   private:
     AmsEditOverlay& overlay_;
@@ -315,6 +320,51 @@ TEST_CASE("AmsEditOverlay::should_create_new_spool is gated by the Save-to-Spool
     incomplete.material = "PLA"; // no brand, default color
     REQUIRE_FALSE(helix::SpoolmanSlotSaver::is_filament_complete(incomplete));
     CHECK_FALSE(AmsEditOverlayTestAccess::should_create_new_spool(incomplete, true));
+}
+
+// Weight staging on the untracked branch of handle_spool_edit_save.
+//
+// The original guard skipped staging entirely when the editor was OPENED on a
+// linked slot, because detail_working_.spool_weight_g is then Spoolman's
+// empty-spool CORE weight (~190g), not the filament total — staging it would
+// clobber a correct 1000g total_weight_g.
+//
+// But that guard threw out remaining_weight_g too, and remaining is NOT
+// ambiguous: it means the same thing whether or not the slot arrived linked.
+// Since AFC's SET_WEIGHT is gated on remaining_weight_g > 0, dropping it meant
+// unlinking-and-entering-a-weight in one save emitted no SET_WEIGHT at all, and
+// the user had to reopen and save a second time. Observed on the .112 BoxTurtle:
+// save at 19:13:24 emitted SET_COLOR + SET_MATERIAL and no SET_WEIGHT; the
+// weight only landed on the following save at 19:13:40.
+TEST_CASE("AmsEditOverlay::decide_weight_staging stages remaining even when unlinking in place",
+          "[ams][edit_overlay][spoolman]") {
+    SECTION("genuinely untracked slot stages both fields") {
+        auto s = AmsEditOverlayTestAccess::decide_weight_staging(
+            /*entered_tracked=*/false, /*remaining_filled=*/true, /*total_filled=*/true);
+        CHECK(s.stage_remaining);
+        CHECK(s.stage_total);
+    }
+
+    SECTION("unlinked-in-place stages remaining but NOT total (core-weight ambiguity)") {
+        auto s = AmsEditOverlayTestAccess::decide_weight_staging(
+            /*entered_tracked=*/true, /*remaining_filled=*/true, /*total_filled=*/true);
+        CHECK(s.stage_remaining); // the bug: this was false, so SET_WEIGHT never fired
+        CHECK_FALSE(s.stage_total);
+    }
+
+    SECTION("blank fields stage nothing (blank means unchanged)") {
+        auto s = AmsEditOverlayTestAccess::decide_weight_staging(
+            /*entered_tracked=*/false, /*remaining_filled=*/false, /*total_filled=*/false);
+        CHECK_FALSE(s.stage_remaining);
+        CHECK_FALSE(s.stage_total);
+    }
+
+    SECTION("blank remaining is not staged even on a genuinely untracked slot") {
+        auto s = AmsEditOverlayTestAccess::decide_weight_staging(
+            /*entered_tracked=*/false, /*remaining_filled=*/false, /*total_filled=*/true);
+        CHECK_FALSE(s.stage_remaining);
+        CHECK(s.stage_total);
+    }
 }
 
 TEST_CASE("AmsEditOverlay::needs_identity_confirmation applies to ALL Spoolman backends (§6)",
