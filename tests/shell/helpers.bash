@@ -146,6 +146,45 @@ stat_mtime() {
     stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"
 }
 
+# Put a GNU-compatible `stat` on PATH when the host stat is BSD (macOS).
+#
+# Installer code uses `stat -c '%d'` (device id, for mountpoint detection).
+# BSD stat rejects -c outright, so on macOS the substitution fails, the branch
+# silently takes its "unknown" path, and under bats' errexit the test body
+# aborts before it can assert anything. Call this from setup() in any test that
+# sources installer code doing `stat -c`.
+install_gnu_stat_shim() {
+    [ -n "${_HELIX_GNU_STAT_SHIM:-}" ] && return 0
+
+    local real
+    real=$(command -v stat) || return 1
+    # Probe the REAL stat before the shim can shadow it on PATH.
+    if "$real" -c '%d' . >/dev/null 2>&1; then
+        _HELIX_GNU_STAT_SHIM=gnu   # already GNU, nothing to do
+        return 0
+    fi
+
+    mkdir -p "$BATS_TEST_TMPDIR/gnubin"
+    cat > "$BATS_TEST_TMPDIR/gnubin/stat" <<SHIM
+#!/bin/sh
+# Translate the GNU format specifiers the installer uses into BSD ones.
+if [ "\$1" = "-c" ]; then
+    fmt="\$2"; shift 2
+    case "\$fmt" in
+        '%d') bfmt='%d' ;;
+        '%Y') bfmt='%m' ;;
+        '%s') bfmt='%z' ;;
+        *)    bfmt="\$fmt" ;;
+    esac
+    exec $real -f "\$bfmt" "\$@"
+fi
+exec $real "\$@"
+SHIM
+    chmod +x "$BATS_TEST_TMPDIR/gnubin/stat"
+    export PATH="$BATS_TEST_TMPDIR/gnubin:$PATH"
+    _HELIX_GNU_STAT_SHIM=shim
+}
+
 # Last element of bats' $lines array. bash 3.2 (macOS) has no negative
 # subscripts, so ${lines[-1]} is a "bad array subscript" error there.
 last_line() {
@@ -168,6 +207,15 @@ last_line() {
 # other shell syntax, and `refute_grep` for the common file case (it dumps the
 # file on failure, which is usually what you want to see).
 # ---------------------------------------------------------------------------
+
+# Abort the current test with a message. bats-core does not ship `fail` (it
+# comes from the optional bats-assert library), so a test body calling it dies
+# with "fail: command not found" — which still fails the test, but reports the
+# wrong reason and hides the assertion's own message.
+fail() {
+    printf '%s\n' "$*" >&2
+    return 1
+}
 
 # Assert that a command FAILS. Returns non-zero if it unexpectedly succeeds.
 refute() {

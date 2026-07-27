@@ -27,6 +27,9 @@ usage() {
     echo "  --uninstall    Remove HelixScreen"
     echo "  --clean        Clean install: remove old installation completely,"
     echo "                 including config and caches (asks for confirmation)"
+    echo "  --yes, -y      Confirm destructive prompts non-interactively."
+    echo "                 Required for --clean when stdin is not a terminal"
+    echo "                 (e.g. curl ... | sh -s -- --clean --yes)"
     echo "  --version VER  Install specific version (default: latest)"
     echo "  --local FILE   Install from local archive (.zip or .tar.gz, skip download)"
     echo "  --skip-kiauh-registration"
@@ -37,6 +40,7 @@ usage() {
     echo "  $0                    # Fresh install, latest version"
     echo "  $0 --update           # Update existing installation"
     echo "  $0 --clean            # Remove old install completely, then install"
+    echo "  $0 --clean --yes      # Same, without the interactive confirmation"
     echo "  $0 --version v1.1.0   # Install specific version"
     echo "  $0 --local /tmp/helixscreen-ad5m.tar.gz  # Install from local file"
 }
@@ -191,6 +195,7 @@ main() {
     update_mode=false
     uninstall_mode=false
     clean_mode=false
+    ASSUME_YES=false
     version=""
     local_tarball=""
     skip_kiauh_registration=false
@@ -208,6 +213,14 @@ main() {
                 ;;
             --clean)
                 clean_mode=true
+                shift
+                ;;
+            --yes|-y|--force)
+                # Explicit non-interactive consent for destructive prompts.
+                # ASSUME_YES is read by clean_old_installation (uninstall.sh);
+                # it is deliberately NOT inferred from a non-TTY stdin, since
+                # the documented `curl ... | sh` invocation always has one.
+                ASSUME_YES=true
                 shift
                 ;;
             --version)

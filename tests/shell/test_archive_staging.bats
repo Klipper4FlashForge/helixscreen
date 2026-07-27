@@ -23,6 +23,11 @@ setup() {
     export SUDO=""
     export CLEANUP_TMP=""
     export _R2_MANIFEST=""          # skip manifest URL parsing
+    # download_release() refetches the channel manifest for its SHA256s when the
+    # cache is empty (get_latest_version's copy dies in its own subshell). These
+    # tests are about staged filenames, not integrity, and must not hit the
+    # network — stub the refetch to "no manifest available".
+    _ensure_manifest() { return 1; }
     export R2_BASE_URL="https://cdn.example"
     export HTTP_BASE_URL="http://mirror.example"
     export _DOWNLOAD_HTTP_CODE=""

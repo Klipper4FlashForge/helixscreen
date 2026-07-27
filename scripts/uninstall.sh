@@ -227,16 +227,103 @@ error_handler() {
     exit $exit_code
 }
 
-# Safely remove the installer's temp dir. REFUSES to delete the filesystem root
-# or a mountpoint — a user-supplied TMP_DIR pointing at a mount root (e.g.
-# `TMP_DIR=/mnt/UDISK`) once caused `rm -rf "$TMP_DIR"` to wipe a live data
-# partition (printer_data + device userdata). Only ever removes a normal,
-# non-mountpoint directory.
+# ---------------------------------------------------------------------------
+# User-supplied path guards
+#
+# TMP_DIR and INSTALL_DIR are both documented, user-settable overrides — the
+# installer itself prints "Try: TMP_DIR=/path/with/space sh install.sh" — and
+# both feed destructive operations:
+#
+#   TMP_DIR      rm -rf "$TMP_DIR"                 (cleanup_on_success, error_handler)
+#   INSTALL_DIR  mv "$INSTALL_DIR" "$INSTALL_BACKUP", rm -rf "$INSTALL_DIR",
+#                and a sweep of every config/ sibling               (release.sh, uninstall.sh)
+#
+# Pointing either at an ordinary data directory therefore erases it.
+# `TMP_DIR=/mnt/UDISK` once wiped a K2's whole user partition; the mountpoint
+# check in _safe_remove_tmp_dir below catches only that exact shape, not
+# `TMP_DIR=/home/pi`.
+#
+# The guard is the same one HELIX_OFFSITE_ROLLBACK_DIR already uses in
+# release.sh: a `case` on the FINAL path component with an explicit refusal
+# branch. If the last component isn't recognisably ours, we refuse loudly and
+# the caller exits rather than silently falling back to a default.
+# ---------------------------------------------------------------------------
+
+# _user_dir_name_ok DIR PATTERN [PATTERN...]
+# Returns 0 when DIR is absolute, traversal-free, and its final component
+# matches one of the shell patterns. Patterns are intentionally unquoted in the
+# `case` so globs apply.
+_user_dir_name_ok() {
+    local d="${1%/}"
+    shift
+    # Absolute only — a relative override resolves against an unknown $PWD.
+    case "$d" in
+        /*) ;;
+        *) return 1 ;;
+    esac
+    # "/data/helixscreen-install/../.." is not the directory it claims to be.
+    case "$d" in
+        *..*) return 1 ;;
+    esac
+    local base="${d##*/}"
+    # Empty base means d was "/" (or collapsed to it).
+    [ -n "$base" ] || return 1
+    local pat
+    for pat in "$@"; do
+        case "$base" in
+            $pat) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+# Accept only scratch directories the installer created, or the staging dir the
+# in-app updater hands over via TMP_DIR (update_checker.cpp kStagingName).
+validate_tmp_dir() {
+    local d="$1"
+    if _user_dir_name_ok "$d" '*helixscreen-install*' '.helix-update-staging'; then
+        return 0
+    fi
+    log_error "Refusing to use TMP_DIR='$d'"
+    log_error "TMP_DIR is removed with 'rm -rf' when the installer finishes, so it"
+    log_error "must be a scratch directory of ours — not an existing data directory."
+    log_error "Its last path component must contain 'helixscreen-install'."
+    log_error "Try: TMP_DIR=${d%/}/helixscreen-install sh install.sh"
+    return 1
+}
+
+# Accept only install directories that name themselves after us. Every
+# auto-detected value already does (/opt/helixscreen, $HOME/helixscreen,
+# /usr/data/helixscreen, /srv/helixscreen, /user-resource/helixscreen, ...).
+validate_install_dir() {
+    local d="$1"
+    if _user_dir_name_ok "$d" '*helixscreen*'; then
+        return 0
+    fi
+    log_error "Refusing to use INSTALL_DIR='$d'"
+    log_error "INSTALL_DIR is moved aside and 'rm -rf'd on update and uninstall, so"
+    log_error "it must be a directory of ours — not an existing data directory."
+    log_error "Its last path component must contain 'helixscreen'."
+    log_error "Try: INSTALL_DIR=${d%/}/helixscreen sh install.sh"
+    return 1
+}
+
+# Safely remove the installer's temp dir. REFUSES to delete the filesystem root,
+# a mountpoint, or anything whose name isn't one of ours — a user-supplied
+# TMP_DIR pointing at a mount root (e.g. `TMP_DIR=/mnt/UDISK`) once caused
+# `rm -rf "$TMP_DIR"` to wipe a live data partition (printer_data + device
+# userdata). Only ever removes a normal, non-mountpoint scratch directory.
 _safe_remove_tmp_dir() {
     local d="$1"
     [ -n "$d" ] && [ -d "$d" ] || return 0
     if [ "$d" = "/" ]; then
         log_warn "Refusing to remove TMP_DIR='/'"
+        return 0
+    fi
+    # Last line of defence: even if a caller skipped validate_tmp_dir, never
+    # rm -rf a directory that isn't recognisably the installer's scratch space.
+    if ! _user_dir_name_ok "$d" '*helixscreen-install*' '.helix-update-staging'; then
+        log_warn "Refusing to rm -rf TMP_DIR='$d' (name is not an installer scratch dir); leaving it in place."
         return 0
     fi
     # Mountpoint detection: prefer mountpoint(1); else compare the device id of
@@ -938,8 +1025,11 @@ detect_k1_firmware() {
 # Requires: KLIPPER_HOME to be set (by detect_klipper_user)
 # Sets: INSTALL_DIR
 detect_pi_install_dir() {
-    # 1. User explicitly set INSTALL_DIR — respect their choice
+    # 1. User explicitly set INSTALL_DIR — respect their choice, once the name
+    #    guard has cleared it. INSTALL_DIR is mv'd aside and rm -rf'd on update
+    #    and uninstall, so an unvalidated override destroys its target.
     if [ -n "$_USER_INSTALL_DIR" ]; then
+        validate_install_dir "$_USER_INSTALL_DIR" || exit 1
         INSTALL_DIR="$_USER_INSTALL_DIR"
         log_info "Install directory (user override): $INSTALL_DIR"
         return 0
@@ -986,8 +1076,12 @@ detect_pi_install_dir() {
 # User can override via TMP_DIR env var.
 # Sets: TMP_DIR
 detect_tmp_dir() {
-    # User already set TMP_DIR — respect it
+    # User already set TMP_DIR — respect it, but only after the name guard.
+    # TMP_DIR is rm -rf'd on both the success and the failure path, so an
+    # unvalidated override erases whatever it points at (validate_tmp_dir in
+    # common.sh; the /mnt/UDISK incident).
     if [ -n "${TMP_DIR:-}" ]; then
+        validate_tmp_dir "$TMP_DIR" || exit 1
         log_info "Temp directory (user override): $TMP_DIR"
         return 0
     fi
@@ -1189,6 +1283,12 @@ set_install_paths() {
         detect_klipper_user
         detect_pi_install_dir
     fi
+
+    # Final gate on whatever INSTALL_DIR we ended up with. Every hard-coded
+    # platform path above already satisfies it; this catches a future branch
+    # (or an override route added later) that would hand a bare data directory
+    # to the mv/rm -rf in release.sh and uninstall.sh.
+    validate_install_dir "$INSTALL_DIR" || exit 1
 
     # Auto-detect best temp directory (all platforms)
     detect_tmp_dir
@@ -4839,6 +4939,43 @@ uninstall() {
     fi
 }
 
+# Gate --clean's irreversible sweep on explicit consent.
+#
+# "stdin is not a terminal" is NOT consent. The documented invocation is
+# `curl … | sh -s -- --clean`, where stdin is the pipe carrying the script, so
+# a bare `[ -t 0 ]` guard skipped the "PERMANENTLY DELETE your configuration"
+# prompt on exactly the path users actually take. Non-interactive runs must opt
+# in with --yes (ASSUME_YES, set by main.sh's argument parser).
+#
+# Returns 0 to proceed; otherwise exits (0 = user declined, 1 = no consent).
+confirm_clean_install() {
+    if [ "${ASSUME_YES:-false}" = true ]; then
+        log_warn "--yes given: proceeding without confirmation."
+        return 0
+    fi
+
+    if [ -t 0 ]; then
+        printf "Are you sure? [y/N] "
+        read -r response
+        case "$response" in
+            [yY][eE][sS]|[yY])
+                return 0
+                ;;
+            *)
+                log_info "Clean install cancelled."
+                exit 0
+                ;;
+        esac
+    fi
+
+    log_error "Refusing to run --clean without confirmation."
+    log_error "stdin is not a terminal (a piped 'curl ... | sh' has the script on"
+    log_error "stdin), so the y/N prompt cannot be answered."
+    log_error "Re-run with --yes to confirm the deletions listed above:"
+    log_error "  curl -sSL https://releases.helixscreen.org/install.sh | sh -s -- --clean --yes"
+    exit 1
+}
+
 # Clean up old installation completely (for --clean flag)
 # Removes all files, config, and caches without backup
 # Args: platform
@@ -4856,19 +4993,7 @@ clean_old_installation() {
     log_warn "  - Thumbnail cache files"
     log_warn ""
 
-    # Interactive confirmation if stdin is a terminal
-    if [ -t 0 ]; then
-        printf "Are you sure? [y/N] "
-        read -r response
-        case "$response" in
-            [yY][eE][sS]|[yY])
-                ;;
-            *)
-                log_info "Clean install cancelled."
-                exit 0
-                ;;
-        esac
-    fi
+    confirm_clean_install
 
     log_info "Cleaning old installation..."
 

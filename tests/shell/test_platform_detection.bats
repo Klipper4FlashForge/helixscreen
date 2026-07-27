@@ -19,9 +19,15 @@ setup() {
     INSTALL_DIR="/opt/helixscreen"
     TMP_DIR=""
 
-    # Source platform.sh (skip source guard by unsetting it)
-    unset _HELIX_PLATFORM_SOURCED
+    # Source common.sh + platform.sh (skip source guards by unsetting them).
+    # platform.sh calls common.sh's validate_install_dir/validate_tmp_dir; the
+    # bundled installer always carries both.
+    unset _HELIX_PLATFORM_SOURCED _HELIX_COMMON_SOURCED
+    . "$WORKTREE_ROOT/scripts/lib/installer/common.sh"
     . "$WORKTREE_ROOT/scripts/lib/installer/platform.sh"
+    # common.sh defines the real log_* (they print to stderr, which bats folds
+    # into $output). Restore helpers.bash's silent stubs.
+    load helpers
 
     # Create a fake /etc/os-release indicating Debian (Pi-like system)
     mkdir -p "$BATS_TEST_TMPDIR/etc"
