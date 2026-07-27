@@ -56,6 +56,52 @@ bool wizard_preset_applied_this_session();
 /// Clear the process-local flag. Tests only — no production caller.
 void wizard_reset_preset_session_state();
 
+/// Config key (appended to Config::df()) recording that this printer's wizard
+/// finished without ever reaching Klipper, so the hardware pickers had nothing
+/// to offer and hardware/expected was never populated.
+///
+/// Per-printer from the start, alongside `preset` and kWizardPresetProvisional.
+/// A root-level flag would make a second printer inherit — or clear — the first
+/// one's debt (#1162 for the preset marker; the same trap).
+inline constexpr const char* kWizardHardwareSetupDeferred = "hardware_setup_deferred";
+
+/// Whether a finishing wizard run owes its expected-hardware snapshot to a
+/// later boot.
+///
+/// b73781ca8 made it possible to finish setup while Klipper is in `error` —
+/// necessary, because that state was previously an inescapable dead end. But
+/// discovery never ran, so the heater/fan/LED/sensor pickers had empty lists
+/// and the user selected nothing. Committing that as the expected-hardware
+/// snapshot makes the first boot where Klipper does come up report every fan,
+/// filament sensor and LED as newly appeared (#1160).
+///
+/// A preset-seeded run is NOT deferred even with Klipper down: the preset
+/// supplies real hardware names, so the snapshot it produces is meaningful.
+///
+/// @param discovery_succeeded Klipper answered and hardware discovery ran
+/// @param snapshot_has_entries The run produced at least one hardware name
+bool wizard_hardware_snapshot_is_deferred(bool discovery_succeeded, bool snapshot_has_entries);
+
+class Config;
+
+/// Record (or settle) the deferred-snapshot debt for @p config's ACTIVE printer.
+///
+/// Writes kWizardHardwareSetupDeferred under Config::df() when the finishing run
+/// owes a snapshot, and clears a debt an earlier Klipper-down run recorded when
+/// it does not — a `--wizard` re-run that reaches Klipper settles it. Does not
+/// save; the caller batches this with its other completion writes.
+///
+/// @return true if the snapshot was deferred
+bool wizard_apply_hardware_snapshot_decision(Config* config, bool discovery_succeeded,
+                                             bool snapshot_has_entries);
+
+/// Whether @p config's ACTIVE printer still owes a deferred hardware snapshot.
+bool wizard_hardware_setup_deferred(Config* config);
+
+/// Clear @p config's ACTIVE printer's deferred-snapshot debt. Does not save.
+/// @return true if a debt was present and cleared
+bool wizard_clear_hardware_setup_deferred(Config* config);
+
 // ============================================================================
 // Id-based pure navigation over the step registry. Operates on a vector of
 // {StepId, skipped} entries — the registry-driven representation. No LVGL;
@@ -72,6 +118,16 @@ struct StepSkip {
     wizard::StepId id;
     bool skipped;
 };
+
+/// The hardware steps a deferred setup re-run should show, in wizard order,
+/// filtered against @p skips so the re-run never presents a step the printer
+/// has nothing for (no AMS, no LEDs, sparse filament sensors) and never
+/// re-asks what a preset already answered.
+///
+/// A targeted session runs its list verbatim — ui_wizard_create_targeted() does
+/// no skip filtering of its own — so the filtering has to happen here. An empty
+/// result means there is nothing to offer and the prompt must not be shown.
+std::vector<wizard::StepId> wizard_deferred_hardware_steps(const std::vector<StepSkip>& skips);
 
 /// Count of non-skipped entries.
 int wizard_visible_count(const std::vector<StepSkip>&);

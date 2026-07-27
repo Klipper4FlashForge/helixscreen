@@ -862,6 +862,78 @@ static void dismiss_wizard_container() {
     set_wizard_active(false);
 }
 
+std::vector<helix::wizard::StepId> ui_wizard_deferred_hardware_steps() {
+    // Populate the filament manager first — the filament step's skip decision
+    // reads it, and an unpopulated manager would drop the step from the offer.
+    ui_wizard_ensure_filament_sensors_discovered();
+    auto ctx = helix::wizard::build_context();
+    return helix::wizard_deferred_hardware_steps(helix::wizard::skip_vector(ctx));
+}
+
+size_t ui_wizard_record_expected_hardware(helix::Config* config) {
+    if (!config) {
+        return 0;
+    }
+
+    // Heater / fan / LED roles the user picked (or a preset supplied).
+    const char* hardware_suffixes[] = {
+        helix::wizard::BED_HEATER,    // "heaters/bed"
+        helix::wizard::HOTEND_HEATER, // "heaters/hotend"
+        helix::wizard::PART_FAN,      // "fans/part"
+        helix::wizard::HOTEND_FAN,    // "fans/hotend"
+        helix::wizard::LED_STRIP      // "leds/strip"
+    };
+
+    std::vector<std::string> names;
+    for (const auto* suffix : hardware_suffixes) {
+        std::string hw_name = config->get<std::string>(config->df() + suffix, "");
+        if (!hw_name.empty() && hw_name != "None") {
+            names.push_back(std::move(hw_name));
+        }
+    }
+
+    // User-selected runout sensor.
+    {
+        auto& sensor_mgr = helix::FilamentSensorManager::instance();
+        auto sensors = sensor_mgr.get_sensors();
+        for (const auto& sensor : sensors) {
+            if (sensor.role == helix::FilamentSensorRole::RUNOUT && !sensor.klipper_name.empty()) {
+                names.push_back(sensor.klipper_name);
+                break;
+            }
+        }
+    }
+
+    // AMS, if detected. This lets the hardware validator warn if the AMS
+    // disappears between sessions. Gate on the AMS step's hardware check
+    // (no-arg should_skip() == "no AMS detected") rather than a tracked skip
+    // flag — a preset printer that physically has an AMS still has hardware
+    // worth recording.
+    if (!get_wizard_ams_identify_step()->should_skip()) {
+        auto& ams = AmsState::instance();
+        AmsBackend* backend = ams.get_backend();
+        if (backend) {
+            std::string ams_hw_name = backend->get_klipper_object_name();
+            if (!ams_hw_name.empty()) {
+                names.push_back(std::move(ams_hw_name));
+            }
+
+            // Enable AMS widget on home panel since AMS hardware was detected
+            auto& wc = PanelWidgetManager::instance().get_widget_config("home");
+            if (wc.set_enabled_by_id("ams", true)) {
+                wc.save();
+                spdlog::info("[Wizard] Enabled AMS widget on home panel");
+            }
+        }
+    }
+
+    for (const auto& name : names) {
+        HardwareValidator::add_expected_hardware(config, name);
+        spdlog::debug("[Wizard] Added '{}' to expected_hardware", name);
+    }
+    return names.size();
+}
+
 void ui_wizard_complete() {
     spdlog::info("[Wizard] Completing wizard and transitioning to main UI");
 
@@ -878,62 +950,23 @@ void ui_wizard_complete() {
         // Also set root-level for backward compat
         config->set<bool>("/wizard_completed", true);
 
-        // 1b. Populate expected_hardware from wizard selections
-        // This prevents "new hardware detected" warnings on subsequent runs
-        const char* hardware_suffixes[] = {
-            helix::wizard::BED_HEATER,    // "heaters/bed"
-            helix::wizard::HOTEND_HEATER, // "heaters/hotend"
-            helix::wizard::PART_FAN,      // "fans/part"
-            helix::wizard::HOTEND_FAN,    // "fans/hotend"
-            helix::wizard::LED_STRIP      // "leds/strip"
-        };
+        // 1b. Populate expected_hardware from wizard selections so later
+        // discoveries don't report already-present hardware as newly appeared.
+        const size_t recorded = ui_wizard_record_expected_hardware(config);
 
-        for (const auto* suffix : hardware_suffixes) {
-            std::string hw_name = config->get<std::string>(config->df() + suffix, "");
-            if (!hw_name.empty() && hw_name != "None") {
-                HardwareValidator::add_expected_hardware(config, hw_name);
-                spdlog::debug("[Wizard] Added '{}' to expected_hardware", hw_name);
-            }
-        }
-
-        // 1c. Add user-selected runout sensor to expected hardware
-        {
-            auto& sensor_mgr = helix::FilamentSensorManager::instance();
-            auto sensors = sensor_mgr.get_sensors();
-            for (const auto& sensor : sensors) {
-                if (sensor.role == helix::FilamentSensorRole::RUNOUT &&
-                    !sensor.klipper_name.empty()) {
-                    HardwareValidator::add_expected_hardware(config, sensor.klipper_name);
-                    spdlog::info("[Wizard] Added runout sensor '{}' to expected_hardware",
-                                 sensor.klipper_name);
-                    break;
-                }
-            }
-        }
-
-        // 1d. Add AMS to expected hardware if detected.
-        // This allows the hardware validator to warn if AMS disappears between
-        // sessions. Gate on the AMS step's hardware check (no-arg should_skip()
-        // == "no AMS detected") rather than a tracked skip flag — a preset
-        // printer that physically has an AMS still has hardware worth recording.
-        if (!get_wizard_ams_identify_step()->should_skip()) {
-            auto& ams = AmsState::instance();
-            AmsBackend* backend = ams.get_backend();
-            if (backend) {
-                std::string ams_hw_name = backend->get_klipper_object_name();
-                if (!ams_hw_name.empty()) {
-                    HardwareValidator::add_expected_hardware(config, ams_hw_name);
-                    spdlog::info("[Wizard] Added '{}' to expected hardware", ams_hw_name);
-                }
-
-                // Enable AMS widget on home panel since AMS hardware was detected
-                auto& wc = PanelWidgetManager::instance().get_widget_config("home");
-                if (wc.set_enabled_by_id("ams", true)) {
-                    wc.save();
-                    spdlog::info("[Wizard] Enabled AMS widget on home panel");
-                }
-            }
-        }
+        // 1c. A run that never reached Klipper had empty pickers and recorded
+        // nothing. Committing that emptiness as the final snapshot makes the
+        // first boot where Klipper does come up flag every fan, filament sensor
+        // and LED as new (#1160). Record the debt instead; the first successful
+        // discovery pays it and offers the skipped hardware steps.
+        //
+        // Discovery success is read from the live hardware rather than a wizard
+        // flag: Klipper always reports at least an [extruder], so an empty heater
+        // list is the one unambiguous "discovery never ran" signal available at
+        // completion, and it stays correct no matter which path reached Finish.
+        MoonrakerAPI* api = get_moonraker_api();
+        const bool discovery_succeeded = api != nullptr && !api->hardware().heaters().empty();
+        helix::wizard_apply_hardware_snapshot_decision(config, discovery_succeeded, recorded > 0);
 
         if (!config->save()) {
             NOTIFY_ERROR(lv_tr("Failed to save setup completion"));

@@ -315,6 +315,31 @@ class HardwareValidator {
      */
     static void add_expected_hardware(helix::Config* config, const std::string& hardware_name);
 
+    /**
+     * @brief Accept everything currently discovered as expected for this printer
+     *
+     * Pays off a wizard hardware snapshot deferred because Klipper was down
+     * during setup (#1160). Everything present at the first successful
+     * discovery was there all along — the printer was simply unreachable while
+     * the user ran the wizard — so reporting it as newly appeared is noise.
+     *
+     * Records only what validate_new_hardware() consults: fans, LEDs and
+     * standalone filament sensors. Heaters are validated through their role
+     * keys rather than this list. AMS/MMU capability names are deliberately
+     * excluded — validate_expected_hardware() treats those as must-be-present
+     * and would warn every boot if the system were later removed; only the
+     * wizard's own AMS step, where the user confirms the hardware, adds them.
+     *
+     * Idempotent: names already present are left alone, and config is saved
+     * once, only if something was added.
+     *
+     * @param config   Config instance to modify
+     * @param hardware Discovery result to accept
+     * @return Number of names added
+     */
+    static size_t acknowledge_discovered_hardware(helix::Config* config,
+                                                  const helix::PrinterDiscovery& hardware);
+
   private:
     /**
      * @brief Validate critical hardware exists (extruder, heater_bed)

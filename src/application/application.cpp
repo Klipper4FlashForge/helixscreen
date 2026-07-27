@@ -79,6 +79,7 @@
 #include "ui_dialog.h"
 #include "ui_emergency_stop.h"
 #include "ui_error_reporting.h"
+#include "ui_event_safety.h"
 #include "ui_fan_control_overlay.h"
 #include "ui_gcode_viewer.h"
 #include "ui_gradient_canvas.h"
@@ -2313,6 +2314,97 @@ void Application::reapply_hardware_roles() {
     });
 }
 
+void Application::settle_deferred_hardware_setup() {
+    Config* config = Config::get_instance();
+    if (!helix::wizard_clear_hardware_setup_deferred(config)) {
+        return;
+    }
+    if (!config->save()) {
+        spdlog::warn("[Application] Failed to persist deferred hardware setup decision");
+    }
+}
+
+void Application::launch_deferred_hardware_setup() {
+    auto steps = std::move(m_pending_hardware_setup_steps);
+    m_pending_hardware_setup_steps.clear();
+    if (steps.empty()) {
+        return;
+    }
+    spdlog::info("[Application] Launching deferred hardware setup ({} step(s))", steps.size());
+
+    ui_wizard_register_event_callbacks();
+    ui_wizard_container_register_responsive_constants();
+    ui_wizard_init_subjects();
+    // Back on the first targeted step has nothing to retreat to, so give it the
+    // same dismiss semantics as the reconfig wizard.
+    set_wizard_cancel_callback([]() {
+        ui_wizard_complete_targeted();
+        set_wizard_cancel_callback(nullptr);
+    });
+    Application* app = this;
+    ui_wizard_create_targeted(m_screen, std::move(steps), [app]() {
+        set_wizard_cancel_callback(nullptr);
+        // ui_wizard_complete_targeted() deliberately skips the expected-hardware
+        // population, so record the user's fresh picks here.
+        ui_wizard_record_expected_hardware(Config::get_instance());
+        app->reapply_hardware_roles();
+    });
+}
+
+void Application::prompt_deferred_hardware_setup(std::vector<helix::wizard::StepId> steps) {
+    // The steps to run are captured for the confirm callback. modal_show_confirmation
+    // takes a single void* user_data, so park them on the Application instance the
+    // callbacks already receive rather than heap-allocating a context.
+    m_pending_hardware_setup_steps = std::move(steps);
+    spdlog::info("[Application] Offering deferred hardware setup ({} step(s))",
+                 m_pending_hardware_setup_steps.size());
+
+    helix::ui::modal_show_confirmation(
+        lv_tr("Printer hardware detected"),
+        lv_tr("Your printer was offline during setup, so hardware options were skipped. "
+              "Set them up now?"),
+        ModalSeverity::Info, lv_tr("Set up"),
+        [](lv_event_t* e) {
+            LVGL_SAFE_EVENT_CB_BEGIN("[Application] deferred_hardware_setup_confirm");
+            auto* app = static_cast<Application*>(lv_event_get_user_data(e));
+            Modal::hide(Modal::get_top());
+            // Settle first: the wizard tears itself down asynchronously, and a
+            // crash mid-run must not leave the offer pending forever.
+            app->settle_deferred_hardware_setup();
+            // Build the wizard AFTER the modal's exit animation, not inside the
+            // click that started it: Modal::hide() only marks the backdrop
+            // exiting, so creating the full-screen wizard here would put it
+            // underneath a still-fading backdrop. The pending step list lives on
+            // the Application instance until the timer consumes it.
+            lv_timer_t* launch = lv_timer_create(
+                [](lv_timer_t* t) {
+                    auto* self = static_cast<Application*>(lv_timer_get_user_data(t));
+                    lv_timer_delete(t);
+                    self->launch_deferred_hardware_setup();
+                },
+                300, app);
+            lv_timer_set_repeat_count(launch, 1);
+            LVGL_SAFE_EVENT_CB_END();
+        },
+        [](lv_event_t* e) {
+            LVGL_SAFE_EVENT_CB_BEGIN("[Application] deferred_hardware_setup_decline");
+            auto* app = static_cast<Application*>(lv_event_get_user_data(e));
+            Modal::hide(Modal::get_top());
+            app->m_pending_hardware_setup_steps.clear();
+            // Declining is final for this printer. The offer is for optional
+            // role assignments the app already has working defaults for, the
+            // snapshot was written regardless so nothing is flagged either way,
+            // and re-asking on every boot is the exact nag the surrounding
+            // reconfig-wizard code records declines to avoid. `--wizard` still
+            // re-runs setup, and a saved role that later breaks still routes to
+            // the targeted reconfig wizard on its own.
+            app->settle_deferred_hardware_setup();
+            spdlog::info("[Application] Deferred hardware setup declined");
+            LVGL_SAFE_EVENT_CB_END();
+        },
+        this, lv_tr("Not now"));
+}
+
 void Application::setup_discovery_callbacks() {
     MoonrakerClient* client = m_moonraker->client();
     MoonrakerAPI* api = m_moonraker->api();
@@ -2618,6 +2710,24 @@ void Application::setup_discovery_callbacks() {
                 }
             }
 
+            // Pay off a hardware snapshot the wizard deferred because Klipper was
+            // down during setup (#1160). Everything discovered now was present all
+            // along, so accepting it BEFORE validate() keeps this first successful
+            // discovery clean instead of reporting every fan, filament sensor and
+            // LED as newly appeared. The marker itself is cleared only once the
+            // user answers the offer below, so a session killed before answering
+            // still gets asked next boot.
+            const bool hardware_setup_deferred =
+                helix::wizard_hardware_setup_deferred(Config::get_instance());
+            if (hardware_setup_deferred && !Config::get_instance()->is_wizard_required() &&
+                !is_wizard_active()) {
+                size_t accepted = HardwareValidator::acknowledge_discovered_hardware(
+                    Config::get_instance(), api->hardware());
+                spdlog::info("[Application] Deferred wizard hardware snapshot written "
+                             "({} object(s) accepted)",
+                             accepted);
+            }
+
             // Hardware validation: check config expectations vs discovered hardware.
             // Now uses the post-preset config so preset-mapped fan/heater names are
             // checked against discovery, not the pre-preset scaffolded defaults.
@@ -2693,6 +2803,29 @@ void Application::setup_discovery_callbacks() {
                     set_wizard_cancel_callback(nullptr);
                     app->reapply_hardware_roles();
                 });
+            }
+
+            // Offer the hardware steps the Klipper-down wizard could not show
+            // (#1160). The user skipped them because their printer was broken,
+            // not because they had nothing to choose. Gated exactly like the
+            // reconfig wizard above (idle, no wizard running, once per session),
+            // plus reconfig_steps.empty() so the two never stack — if a reconfig
+            // session just launched, the offer waits for the next boot.
+            if (hardware_setup_deferred && hw_changed && !print_active &&
+                !Config::get_instance()->is_wizard_required() && !is_wizard_active() &&
+                reconfig_steps.empty() && !app->m_hardware_setup_prompt_shown) {
+                auto steps = ui_wizard_deferred_hardware_steps();
+                app->m_hardware_setup_prompt_shown = true;
+                if (steps.empty()) {
+                    // Nothing left to ask about (a preset already answers these,
+                    // or the printer has none of the optional hardware). Settle
+                    // the debt silently rather than showing a dead-end dialog.
+                    spdlog::info("[Application] Deferred hardware setup has no steps to offer; "
+                                 "settling silently");
+                    app->settle_deferred_hardware_setup();
+                } else {
+                    app->prompt_deferred_hardware_setup(std::move(steps));
+                }
             }
 
             // Save session snapshot for next comparison (even if no issues)
