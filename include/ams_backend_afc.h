@@ -187,14 +187,10 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     AmsError recover() override;
     AmsError reset() override;
     AmsError clear_fault(int slot_index) override;
-    AmsError reset_lane(int slot_index) override;
-    [[nodiscard]] bool supports_lane_reset() const override {
-        return true;
-    }
-    /// AFC_LANE_RESET retracts filament from the bowden back to the hub, so it
-    /// needs the lane's filament to actually be at the hub and the toolhead
-    /// free. See can_reset_lane() in the base class.
-    [[nodiscard]] bool can_reset_lane(int slot_index) const override;
+    /// AFC_LANE_RESET retracts from the bowden to the hub. Needs the lane's hub
+    /// sensor triggered and a free toolhead. See can_recover_lane_position().
+    [[nodiscard]] bool can_recover_lane_position(int slot_index) const override;
+    AmsError recover_lane_position(int slot_index) override;
 
     /// Delete this slot's user override ("Clear Spool"). AFC previously
     /// inherited the no-op default, so the button did nothing here.

@@ -693,6 +693,36 @@ class AmsBackend {
     }
 
     /**
+     * @brief Retract a lane's filament back to its lane from the bowden
+     *
+     * A physical filament move, not a fault clear. Recovers a lane left stranded
+     * mid-path by a failed load or unload — filament past the lane but not at the
+     * toolhead, which plain unload() cannot address because it assumes the head.
+     *
+     * AFC: AFC_LANE_RESET LANE={name}, which retracts until the hub clears.
+     * Default implementation returns NOT_SUPPORTED.
+     *
+     * @param slot_index Lane to recover (0-based)
+     * @return AmsError indicating if the operation was started
+     */
+    virtual AmsError recover_lane_position(int slot_index) {
+        (void)slot_index;
+        return AmsErrorHelper::not_supported("Lane position recovery not supported");
+    }
+
+    /**
+     * @brief Whether a lane-position recovery is possible for this slot right now
+     *
+     * Per-slot and per-state, not a static capability: offering a recovery the
+     * firmware will refuse produces an error the user cannot act on, and on AFC
+     * that error latches in printer.AFC.message and keeps re-firing toasts.
+     */
+    [[nodiscard]] virtual bool can_recover_lane_position(int slot_index) const {
+        (void)slot_index;
+        return false;
+    }
+
+    /**
      * @brief Eject filament from a specific lane (async)
      *
      * Reverses the lane's extruder motor to release filament so the spool

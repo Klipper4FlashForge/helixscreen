@@ -270,8 +270,8 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         AmsBackendAfc::clear_slot_override(slot_index);
     }
 
-    bool can_reset_lane(int slot_index) const {
-        return AmsBackendAfc::can_reset_lane(slot_index);
+    bool can_recover_lane_position(int slot_index) const {
+        return AmsBackendAfc::can_recover_lane_position(slot_index);
     }
 
     bool has_gcode(const std::string& expected) const {
@@ -2022,12 +2022,12 @@ TEST_CASE("AFC reset sends AFC_RESET command", "[ams][afc][recovery]") {
     REQUIRE(helper.has_gcode("AFC_RESET"));
 }
 
-TEST_CASE("AFC reset_lane sends per-lane reset command", "[ams][afc][recovery][phase4]") {
+TEST_CASE("AFC recover_lane_position sends AFC_LANE_RESET", "[ams][afc][recovery][phase4]") {
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
     helper.set_running(true);
 
-    auto result = helper.reset_lane(0);
+    auto result = helper.recover_lane_position(0);
 
     REQUIRE(result.success());
     REQUIRE(helper.has_gcode("AFC_LANE_RESET LANE=lane1"));
@@ -2038,7 +2038,7 @@ TEST_CASE("AFC reset_lane second lane", "[ams][afc][recovery][phase4]") {
     helper.initialize_test_lanes_with_slots(4);
     helper.set_running(true);
 
-    auto result = helper.reset_lane(2);
+    auto result = helper.recover_lane_position(2);
 
     REQUIRE(result.success());
     REQUIRE(helper.has_gcode("AFC_LANE_RESET LANE=lane3"));
@@ -2049,7 +2049,7 @@ TEST_CASE("AFC reset_lane validates slot index", "[ams][afc][recovery][phase4]")
     helper.initialize_test_lanes_with_slots(4);
     helper.set_running(true);
 
-    auto result = helper.reset_lane(99);
+    auto result = helper.recover_lane_position(99);
 
     REQUIRE_FALSE(result.success());
     REQUIRE(result.result == AmsResult::INVALID_SLOT);
@@ -2060,7 +2060,7 @@ TEST_CASE("AFC reset_lane validates negative index", "[ams][afc][recovery][phase
     helper.initialize_test_lanes_with_slots(4);
     helper.set_running(true);
 
-    auto result = helper.reset_lane(-1);
+    auto result = helper.recover_lane_position(-1);
 
     REQUIRE_FALSE(result.success());
     REQUIRE(result.result == AmsResult::INVALID_SLOT);
@@ -2079,11 +2079,11 @@ TEST_CASE("AFC lane reset is offered only when that lane's hub sensor is trigger
     // The latched field says "at hub" on every lane. It must not be believed.
     helper.set_lane_loaded_to_hub(0, true);
     helper.set_hub_sensor("Turtle_1", false);
-    REQUIRE_FALSE(helper.can_reset_lane(0));
+    REQUIRE_FALSE(helper.can_recover_lane_position(0));
 
     // Hub sensor triggered → the retract has somewhere to retract from.
     helper.set_hub_sensor("Turtle_1", true);
-    REQUIRE(helper.can_reset_lane(0));
+    REQUIRE(helper.can_recover_lane_position(0));
 }
 
 TEST_CASE("AFC lane reset is refused while the toolhead holds filament",
@@ -2095,10 +2095,10 @@ TEST_CASE("AFC lane reset is refused while the toolhead holds filament",
     helper.set_hub_sensor("Turtle_1", true);
 
     helper.set_filament_loaded(true);
-    REQUIRE_FALSE(helper.can_reset_lane(0));
+    REQUIRE_FALSE(helper.can_recover_lane_position(0));
 
     helper.set_filament_loaded(false);
-    REQUIRE(helper.can_reset_lane(0));
+    REQUIRE(helper.can_recover_lane_position(0));
 }
 
 TEST_CASE("AFC lane reset is refused for a lane routed direct (no hub)",
@@ -2116,7 +2116,7 @@ TEST_CASE("AFC lane reset is refused for a lane routed direct (no hub)",
     // false default makes old and new code agree, and the test proves nothing.
     helper.set_lane_loaded_to_hub(0, true);
 
-    REQUIRE_FALSE(helper.can_reset_lane(0));
+    REQUIRE_FALSE(helper.can_recover_lane_position(0));
 }
 
 TEST_CASE("AFC reset_lane fails when not running", "[ams][afc][recovery][phase4]") {
@@ -2124,7 +2124,7 @@ TEST_CASE("AFC reset_lane fails when not running", "[ams][afc][recovery][phase4]
     helper.initialize_test_lanes_with_slots(4);
     // running_ defaults to false
 
-    auto result = helper.reset_lane(0);
+    auto result = helper.recover_lane_position(0);
 
     REQUIRE_FALSE(result.success());
     REQUIRE(result.result == AmsResult::NOT_CONNECTED);
@@ -3344,9 +3344,15 @@ TEST_CASE("AFC supports_lane_eject returns true", "[ams][afc][capability]") {
     REQUIRE(helper.supports_lane_eject());
 }
 
-TEST_CASE("AFC supports_lane_reset returns true", "[ams][afc][capability]") {
+TEST_CASE("AFC supports_lane_reset returns false now that recovery moved off it",
+          "[ams][afc][capability]") {
+    // AFC no longer overrides supports_lane_reset()/can_reset_lane()/reset_lane() —
+    // the lane-position recovery those named lives at recover_lane_position() now.
+    // This falls through to the base default (false), which hides the AFC "Reset"
+    // menu entry until a later task folds the recovery into Unload and removes
+    // this capability query from ui_ams_context_menu.cpp entirely.
     AmsBackendAfcTestHelper helper;
-    REQUIRE(helper.supports_lane_reset());
+    REQUIRE_FALSE(helper.supports_lane_reset());
 }
 
 // ============================================================================
@@ -4982,24 +4988,24 @@ TEST_CASE("AFC can_reset_lane requires filament at the hub", "[ams][afc][reset]"
     // cases above), so this now drives the real signal: AFC_hub.state.
     SECTION("hub sensor triggered, toolhead free -> reset is possible") {
         helper.feed_afc_hub("Turtle_1", {{"state", true}});
-        CHECK(helper.can_reset_lane(0));
+        CHECK(helper.can_recover_lane_position(0));
     }
 
     SECTION("hub sensor clear -> reset refused") {
         helper.feed_afc_hub("Turtle_1", {{"state", false}});
-        CHECK_FALSE(helper.can_reset_lane(0));
+        CHECK_FALSE(helper.can_recover_lane_position(0));
     }
 
     SECTION("toolhead loaded -> reset refused even with hub sensor triggered") {
         helper.feed_afc_hub("Turtle_1", {{"state", true}});
         helper.feed_afc_state({{"filament_loaded", true}, {"current_load", "lane1"}});
-        CHECK_FALSE(helper.can_reset_lane(0));
+        CHECK_FALSE(helper.can_recover_lane_position(0));
     }
 
     SECTION("out-of-range slot is never resettable") {
         helper.feed_afc_hub("Turtle_1", {{"state", true}});
-        CHECK_FALSE(helper.can_reset_lane(99));
-        CHECK_FALSE(helper.can_reset_lane(-1));
+        CHECK_FALSE(helper.can_recover_lane_position(99));
+        CHECK_FALSE(helper.can_recover_lane_position(-1));
     }
 }
 

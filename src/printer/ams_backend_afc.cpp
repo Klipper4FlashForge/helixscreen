@@ -2870,7 +2870,7 @@ void AmsBackendAfc::clear_slot_override(int slot_index) {
     }
 }
 
-bool AmsBackendAfc::can_reset_lane(int slot_index) const {
+bool AmsBackendAfc::can_recover_lane_position(int slot_index) const {
     std::lock_guard<std::mutex> lock(mutex_);
 
     // Mirrors cmd_AFC_LANE_RESET's own guards (AFC_functions.py). It retracts
@@ -2901,7 +2901,7 @@ bool AmsBackendAfc::can_reset_lane(int slot_index) const {
     return hub != hub_sensors_.end() && hub->second;
 }
 
-AmsError AmsBackendAfc::reset_lane(int slot_index) {
+AmsError AmsBackendAfc::recover_lane_position(int slot_index) {
     std::string lane_name;
     {
         std::lock_guard<std::mutex> lock(mutex_);
