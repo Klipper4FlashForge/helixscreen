@@ -2068,6 +2068,11 @@ TEST_CASE("AFC lane reset is refused for a lane routed direct (no hub)",
     helper.set_lane_hub_routing("lane1", "direct");
     helper.set_hub_sensor("Turtle_1", true);
 
+    // Force the latched field true so this case discriminates: the pre-fix body
+    // returned it directly and would answer true here. Without this the sensor's
+    // false default makes old and new code agree, and the test proves nothing.
+    helper.set_lane_loaded_to_hub(0, true);
+
     REQUIRE_FALSE(helper.can_reset_lane(0));
 }
 
