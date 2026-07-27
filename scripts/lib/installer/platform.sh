@@ -826,7 +826,162 @@ set_install_paths() {
 # These are the files users may want to edit from Fluidd/Mainsail, and that
 # the app writes to at runtime. All other files in INSTALL_DIR/config/ are
 # static assets reinstalled on each update.
-HELIX_USER_CONFIG_FILES="settings.json helixscreen.env .disabled_services tool_spools.json"
+HELIX_USER_CONFIG_FILES="settings.json helixscreen.env .disabled_services tool_spools.json crash_history.json"
+
+# User-writable config DIRECTORIES that live in printer_data/config/helixscreen/.
+#
+# Same contract as HELIX_USER_CONFIG_FILES, one level up: the install dir gets a
+# symlink and the real directory lives in printer_data. This matters because
+# Moonraker's type:web update_manager does shutil.rmtree(INSTALL_DIR) before
+# extracting the new ZIP, and rmtree UNLINKS a symlink it meets as a child entry
+# rather than descending through it — so the real data on the far side survives.
+# A real directory here is destroyed outright, which is exactly how users lost
+# their custom printer images, themes and printer-DB extensions.
+#
+#   custom_images     PrinterImageManager::init()  (config_dir + "/custom_images/")
+#   themes            writable_path("themes")      (user themes; defaults ship
+#                                                   separately in assets/config/themes/defaults)
+#   printer_database.d  writable_path("printer_database.d")  (user DB extensions)
+HELIX_USER_CONFIG_DIRS="custom_images themes printer_database.d"
+
+# Default content for runtime-created state files that have no packaged default.
+#
+# The file loop below refuses to create a symlink when the file exists in neither
+# place (a dangling symlink is worse than none). For a file the app only ever
+# writes AFTER the install completes, that rule means the very first Moonraker
+# update still destroys it — there was nothing to link on install day. Seeding an
+# empty-but-valid file at setup time closes that window.
+#
+# Echoes the seed content and returns 0 for a known file; returns 1 otherwise,
+# which leaves the "no dangling symlink" behaviour untouched for everything else.
+_helix_config_file_seed() {
+    case "$1" in
+        crash_history.json) printf '[]\n' ;;   # CrashHistory::load() expects a JSON array
+        *) return 1 ;;
+    esac
+}
+
+# Copy every entry under SRC that is missing from DST, never overwriting.
+#
+# Used to fold the shipped contents of a config directory (a fresh ZIP's
+# themes/, printer_database.d/README.md) into the user's printer_data copy
+# before the install-dir original is replaced by a symlink. Sorting guarantees
+# a parent is created before its children.
+# Args: SRC DST [SUDO_PREFIX]
+# Returns: 0 if every entry now exists at DST, 1 on the first failure.
+_helix_merge_config_dir() {
+    local src="$1" dst="$2" sudo_prefix="${3:-}"
+    local rel
+
+    [ -d "$src" ] || return 0
+
+    while IFS= read -r rel; do
+        [ -n "$rel" ] && [ "$rel" != "." ] || continue
+        rel="${rel#./}"
+        if [ -d "${src}/${rel}" ] && [ ! -L "${src}/${rel}" ]; then
+            [ -d "${dst}/${rel}" ] || $sudo_prefix mkdir -p "${dst}/${rel}" 2>/dev/null || return 1
+        elif [ ! -e "${dst}/${rel}" ] && [ ! -L "${dst}/${rel}" ]; then
+            $sudo_prefix cp -pR "${src}/${rel}" "${dst}/${rel}" 2>/dev/null || return 1
+        fi
+    done <<EOF
+$(cd "$src" 2>/dev/null && find . 2>/dev/null | LC_ALL=C sort)
+EOF
+    return 0
+}
+
+# True when DIR holds at least one entry (including dotfiles).
+# Used to cross-check the find(1) walk: a walk that reports nothing about a
+# directory that demonstrably has contents means the walk failed, and a failed
+# walk must never be read as "everything copied".
+_helix_dir_has_entries() {
+    local d="$1" e
+    [ -d "$d" ] || return 1
+    for e in "$d"/* "$d"/.[!.]* "$d"/..?*; do
+        [ -e "$e" ] || [ -L "$e" ] || continue
+        return 0
+    done
+    return 1
+}
+
+# True when every entry under SRC has a counterpart under DST.
+#
+# The precondition for deleting SRC. Deliberately independent of
+# _helix_merge_config_dir's own return code: a `cp` that reports success but
+# produces nothing (full filesystem, silently-dropped write) must not be
+# allowed to authorise the delete.
+# Args: SRC DST
+_helix_config_dir_fully_merged() {
+    local src="$1" dst="$2" rel seen=""
+
+    [ -d "$dst" ] || return 1
+
+    while IFS= read -r rel; do
+        [ -n "$rel" ] && [ "$rel" != "." ] || continue
+        seen=1
+        rel="${rel#./}"
+        [ -e "${dst}/${rel}" ] || [ -L "${dst}/${rel}" ] || return 1
+    done <<EOF
+$(cd "$src" 2>/dev/null && find . 2>/dev/null)
+EOF
+
+    # The walk found nothing. That is only trustworthy if the directory really
+    # is empty; otherwise find failed and we know nothing about what was copied.
+    if [ -z "$seen" ] && _helix_dir_has_entries "$src"; then
+        return 1
+    fi
+    return 0
+}
+
+# Delete a user-config directory in the install dir after its contents have been
+# copied into printer_data. Last line of defence on the only rm -rf this feature
+# performs — same shape as _safe_remove_tmp_dir in common.sh.
+#
+# Refuses unless ALL of:
+#   - SRC is exactly "${install_config}/${name}" for a name in HELIX_USER_CONFIG_DIRS
+#   - SRC is a real directory, not a symlink (a symlink is unlinked elsewhere)
+#   - DST holds a counterpart for every entry under SRC
+# Args: INSTALL_CONFIG NAME DST [SUDO_PREFIX]
+# Returns: 0 on success, 1 when it refuses (caller must then keep the real dir).
+_safe_remove_migrated_config_dir() {
+    local install_config="$1" name="$2" dst="$3" sudo_prefix="${4:-}"
+    local src="${install_config}/${name}"
+
+    # Name must be one we manage — never a path handed in from elsewhere.
+    local known="" d
+    for d in $HELIX_USER_CONFIG_DIRS; do
+        [ "$d" = "$name" ] && known=1
+    done
+    if [ -z "$known" ]; then
+        log_warn "Refusing to remove '$src' (not a managed user config directory)"
+        return 1
+    fi
+
+    # Absolute, traversal-free, and sitting directly under a config/ directory.
+    case "$install_config" in
+        /*) ;;
+        *) log_warn "Refusing to remove '$src' (install config path is not absolute)"; return 1 ;;
+    esac
+    case "$install_config" in
+        *..*) log_warn "Refusing to remove '$src' (install config path contains '..')"; return 1 ;;
+    esac
+    if [ "${install_config##*/}" != "config" ]; then
+        log_warn "Refusing to remove '$src' (parent is not a config/ directory)"
+        return 1
+    fi
+
+    if [ -L "$src" ] || [ ! -d "$src" ]; then
+        log_warn "Refusing to remove '$src' (not a real directory)"
+        return 1
+    fi
+
+    if ! _helix_config_dir_fully_merged "$src" "$dst"; then
+        log_warn "Not every file under $src reached $dst — keeping the original"
+        return 1
+    fi
+
+    $sudo_prefix rm -rf "$src" 2>/dev/null || return 1
+    return 0
+}
 
 # Set up editable config directory in printer_data/config/helixscreen/.
 #
@@ -917,11 +1072,21 @@ setup_config_symlink() {
         fi
 
         # If pd_file still doesn't exist (e.g. runtime-created file like tool_spools.json
-        # or .disabled_services that isn't packaged and hasn't been written yet), skip
-        # symlink creation.  A dangling symlink is worse than no symlink: reads return
-        # ENOENT and writes may fail depending on the OS/filesystem.  The app will
-        # create the file at pd_file naturally; setup_config_symlink will wire it up
-        # correctly on the next update or reinstall.
+        # or .disabled_services that isn't packaged and hasn't been written yet), seed it
+        # when we know a safe default, else skip symlink creation.  A dangling symlink is
+        # worse than no symlink: reads return ENOENT and writes may fail depending on the
+        # OS/filesystem.  The app will create the file at pd_file naturally;
+        # setup_config_symlink will wire it up correctly on the next update or reinstall.
+        if [ ! -f "$pd_file" ] && [ ! -L "$pd_file" ]; then
+            local seed
+            if seed=$(_helix_config_file_seed "$file"); then
+                if printf '%s' "$seed" | $(file_sudo "$pd_helix") tee "$pd_file" >/dev/null 2>&1; then
+                    log_info "Seeded $file in printer_data"
+                else
+                    log_warn "Could not seed $file in printer_data"
+                fi
+            fi
+        fi
         if [ ! -f "$pd_file" ] && [ ! -L "$pd_file" ]; then
             # Only skip if install_file also doesn't exist or isn't already a symlink
             if [ ! -L "$install_file" ]; then
@@ -943,6 +1108,63 @@ setup_config_symlink() {
             : # Symlink created
         else
             log_warn "Could not create symlink for $file"
+        fi
+    done
+
+    # --- Set up per-directory symlinks ---
+    #
+    # Migration order matters: copy first, verify, only then delete. Every exit
+    # before the delete leaves the user's real directory untouched in the install
+    # dir, which is the pre-fix status quo — worse than protected, never lost.
+    local dir
+    for dir in $HELIX_USER_CONFIG_DIRS; do
+        local pd_dir="${pd_helix}/${dir}"
+        local install_dir_path="${install_config}/${dir}"
+
+        # Already a symlink: fix it if it points somewhere stale, else leave it.
+        if [ -L "$install_dir_path" ]; then
+            local current_dir_target
+            current_dir_target=$(readlink "$install_dir_path" 2>/dev/null || echo "")
+            if [ "$current_dir_target" = "$pd_dir" ]; then
+                # Re-run of a completed migration. The target may still be missing
+                # if printer_data was reset out from under us — recreate it so the
+                # link is never dangling.
+                [ -d "$pd_dir" ] || $(file_sudo "$pd_helix") mkdir -p "$pd_dir" 2>/dev/null || true
+                continue
+            fi
+            $(file_sudo "$install_config") rm -f "$install_dir_path" 2>/dev/null
+        fi
+
+        # Ensure the printer_data side exists before anything is copied into it.
+        if [ ! -d "$pd_dir" ]; then
+            if ! $(file_sudo "$pd_helix") mkdir -p "$pd_dir" 2>/dev/null; then
+                log_warn "Could not create $pd_dir — leaving $dir in the install dir"
+                continue
+            fi
+        fi
+
+        # Real directory in the install dir: fold its contents into printer_data
+        # (never overwriting the user's copy), verify, then replace with a symlink.
+        if [ -d "$install_dir_path" ] && [ ! -L "$install_dir_path" ]; then
+            if ! _helix_merge_config_dir "$install_dir_path" "$pd_dir" "$(file_sudo "$pd_helix")"; then
+                log_warn "Could not migrate $dir/ to printer_data — keeping it in the install dir"
+                continue
+            fi
+            if ! _safe_remove_migrated_config_dir "$install_config" "$dir" "$pd_dir" \
+                    "$(file_sudo "$install_config")"; then
+                continue   # helper already logged why; original left intact
+            fi
+            log_info "Migrated $dir/ to printer_data"
+        elif [ -e "$install_dir_path" ]; then
+            # A plain file where we expect a directory. Not ours to delete.
+            log_warn "$install_dir_path is not a directory — skipping"
+            continue
+        fi
+
+        if $(file_sudo "$install_config") ln -s "$pd_dir" "$install_dir_path" 2>/dev/null; then
+            : # Symlink created
+        else
+            log_warn "Could not create symlink for $dir/"
         fi
     done
 
@@ -968,6 +1190,16 @@ remove_config_symlink() {
         local install_file="${install_config}/${file}"
         if [ -L "$install_file" ]; then
             rm -f "$install_file" 2>/dev/null
+        fi
+    done
+
+    # Remove per-directory symlinks. rm -f on a symlink-to-directory unlinks the
+    # link itself, so the user's real data in printer_data is untouched.
+    local dir
+    for dir in $HELIX_USER_CONFIG_DIRS; do
+        local install_dir_path="${install_config}/${dir}"
+        if [ -L "$install_dir_path" ]; then
+            rm -f "$install_dir_path" 2>/dev/null
         fi
     done
 
