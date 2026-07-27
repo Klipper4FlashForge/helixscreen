@@ -2707,6 +2707,22 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
             }
             std::string lane_name = slots_.name_of(slot_index);
             if (!lane_name.empty()) {
+                // Spoolman ID FIRST — both branches of AFC's set_spoolID() rewrite the
+                // lane's material/color/weight/temps, so this must precede our own
+                // writes or it clobbers them:
+                //   valid id  -> AFC fetches the spool from Spoolman and overwrites
+                //               material, color, weight, temps, density, diameter
+                //   empty id  -> AFC runs clear_values() and wipes all of the above
+                // Emitting it last made a single save set the data and then destroy it,
+                // which is why an edit needed two passes to stick.
+                if (info.spoolman_id > 0) {
+                    execute_gcode(fmt::format("SET_SPOOL_ID LANE={} SPOOL_ID={}", lane_name,
+                                              info.spoolman_id));
+                } else if (info.spoolman_id == 0 && old_spoolman_id > 0) {
+                    // Clear Spoolman link with empty string (not -1)
+                    execute_gcode(fmt::format("SET_SPOOL_ID LANE={} SPOOL_ID=", lane_name));
+                }
+
                 // Color (only if changed and valid - not 0 or default grey)
                 if (info.color_rgb != 0 && info.color_rgb != AMS_DEFAULT_SLOT_COLOR) {
                     char color_hex[8];
@@ -2727,15 +2743,6 @@ AmsError AmsBackendAfc::set_slot_info(int slot_index, const SlotInfo& info, bool
                 if (info.remaining_weight_g > 0) {
                     execute_gcode(fmt::format("SET_WEIGHT LANE={} WEIGHT={:.0f}", lane_name,
                                               info.remaining_weight_g));
-                }
-
-                // Spoolman ID
-                if (info.spoolman_id > 0) {
-                    execute_gcode(fmt::format("SET_SPOOL_ID LANE={} SPOOL_ID={}", lane_name,
-                                              info.spoolman_id));
-                } else if (info.spoolman_id == 0 && old_spoolman_id > 0) {
-                    // Clear Spoolman link with empty string (not -1)
-                    execute_gcode(fmt::format("SET_SPOOL_ID LANE={} SPOOL_ID=", lane_name));
                 }
 
                 // Tool mapping (lane → tool number) via SET_MAP.

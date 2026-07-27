@@ -257,6 +257,17 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         return false;
     }
 
+    // Position of the first gcode starting with `prefix`, or -1 if absent.
+    // Emission order matters on AFC: SET_SPOOL_ID with an empty value runs
+    // AFC's clear_values(), which wipes material/color/weight/temps.
+    int gcode_index_of(const std::string& prefix) const {
+        for (size_t i = 0; i < captured_gcodes.size(); ++i) {
+            if (captured_gcodes[i].rfind(prefix, 0) == 0)
+                return static_cast<int>(i);
+        }
+        return -1;
+    }
+
     // Feed a Moonraker notify_status_update notification through the backend
     void feed_status_update(const nlohmann::json& params_inner) {
         // Build the full notification format: { "params": [ { ... }, timestamp ] }
@@ -929,6 +940,85 @@ TEST_CASE("AFC persistence: SET_SPOOL_ID clear with empty string", "[ams][afc][p
     REQUIRE(helper.has_gcode("SET_SPOOL_ID LANE=lane1 SPOOL_ID="));
 }
 
+// On AFC, SET_SPOOL_ID with an empty value is not a narrow unlink: AFC_spool.py's
+// set_spoolID() routes an empty/None id into clear_values(), which wipes material,
+// color, weight and both temps (and calls clear_lane_data()). Emitting it LAST
+// therefore destroys the SET_COLOR / SET_MATERIAL / SET_WEIGHT sent earlier in the
+// same save. Observed on the .112 BoxTurtle: a save emitted COLOR/MATERIAL/WEIGHT
+// then SPOOL_ID=, and the editor reopened 3s later with material empty.
+TEST_CASE("AFC persistence: spool-link clear is emitted before the data writes",
+          "[ams][afc][persistence]") {
+    AmsBackendAfcTestHelper helper;
+
+    helper.set_afc_version("1.0.20");
+    helper.initialize_test_lanes_with_slots(4);
+
+    // Lane starts linked to a Spoolman spool.
+    SlotInfo* existing_slot = helper.get_mutable_slot(0);
+    REQUIRE(existing_slot != nullptr);
+    existing_slot->spoolman_id = 86;
+
+    // Unlink and set fresh identity in the SAME save — the exact shape of the
+    // real-world failure.
+    SlotInfo info;
+    info.spoolman_id = 0;
+    info.material = "PLA";
+    info.color_rgb = 0xE53935;
+    info.remaining_weight_g = 500.0f;
+
+    helper.set_slot_info(0, info);
+
+    const int clear_idx = helper.gcode_index_of("SET_SPOOL_ID LANE=lane1 SPOOL_ID=");
+    const int color_idx = helper.gcode_index_of("SET_COLOR LANE=lane1");
+    const int material_idx = helper.gcode_index_of("SET_MATERIAL LANE=lane1");
+    const int weight_idx = helper.gcode_index_of("SET_WEIGHT LANE=lane1");
+
+    REQUIRE(clear_idx >= 0);
+    REQUIRE(color_idx >= 0);
+    REQUIRE(material_idx >= 0);
+    REQUIRE(weight_idx >= 0);
+
+    // The clear must precede every data write, or AFC wipes what we just set.
+    REQUIRE(clear_idx < color_idx);
+    REQUIRE(clear_idx < material_idx);
+    REQUIRE(clear_idx < weight_idx);
+}
+
+// The link branch is destructive in the opposite direction: AFC_spool.py's
+// set_spoolID() with a valid id fetches the spool from Spoolman and overwrites
+// material, color, weight, both temps, density, diameter and empty_spool_weight
+// from that record. Emitting it after our own writes replaces them with
+// Spoolman's values, so it must precede them too.
+TEST_CASE("AFC persistence: spool-link set is emitted before the data writes",
+          "[ams][afc][persistence]") {
+    AmsBackendAfcTestHelper helper;
+
+    helper.set_afc_version("1.0.20");
+    helper.initialize_test_lanes_with_slots(4);
+
+    SlotInfo info;
+    info.spoolman_id = 86;
+    info.material = "PLA";
+    info.color_rgb = 0xE53935;
+    info.remaining_weight_g = 500.0f;
+
+    helper.set_slot_info(0, info);
+
+    const int link_idx = helper.gcode_index_of("SET_SPOOL_ID LANE=lane1 SPOOL_ID=86");
+    const int color_idx = helper.gcode_index_of("SET_COLOR LANE=lane1");
+    const int material_idx = helper.gcode_index_of("SET_MATERIAL LANE=lane1");
+    const int weight_idx = helper.gcode_index_of("SET_WEIGHT LANE=lane1");
+
+    REQUIRE(link_idx >= 0);
+    REQUIRE(color_idx >= 0);
+    REQUIRE(material_idx >= 0);
+    REQUIRE(weight_idx >= 0);
+
+    REQUIRE(link_idx < color_idx);
+    REQUIRE(link_idx < material_idx);
+    REQUIRE(link_idx < weight_idx);
+}
+
 TEST_CASE("AFC persistence: SET_MAP fires when mapped_tool changes via set_slot_info",
           "[ams][afc][persistence]") {
     AmsBackendAfcTestHelper helper;
@@ -1413,8 +1503,7 @@ TEST_CASE("AFC tool mapping resets when map transitions string to null",
     REQUIRE(helper.get_tool_mapping()[2] == -1);
 }
 
-TEST_CASE("AFC tool mapping survives an update with no map field",
-          "[ams][afc][tool_mapping]") {
+TEST_CASE("AFC tool mapping survives an update with no map field", "[ams][afc][tool_mapping]") {
     // parse_afc_stepper receives Moonraker notify_status_update DELTAS: a partial
     // update (e.g. weight-only) that omits "map" means "unchanged", NOT "unmapped".
     // Clearing on absent would wipe a live tool mapping mid-print — the mapping must
