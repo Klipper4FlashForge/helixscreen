@@ -781,7 +781,7 @@ AmsError AmsBackendMock::cancel() {
     return AmsErrorHelper::success();
 }
 
-AmsError AmsBackendMock::reset_lane(int slot_index) {
+AmsError AmsBackendMock::clear_fault(int slot_index) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
@@ -800,7 +800,7 @@ AmsError AmsBackendMock::reset_lane(int slot_index) {
             entry->info.status = SlotStatus::AVAILABLE;
         }
 
-        spdlog::info("[AmsBackendMock] Reset lane {} - cleared error state", slot_index);
+        spdlog::info("[AmsBackendMock] Cleared fault on lane {}", slot_index);
     }
 
     emit_event(EVENT_STATE_CHANGED);

@@ -655,44 +655,6 @@ class AmsBackend {
     }
 
     /**
-     * @brief Reset a specific lane/slot
-     *
-     * Resets an individual lane to a known good state without affecting others.
-     * Default implementation returns NOT_SUPPORTED.
-     *
-     * @param slot_index Lane to reset (0-based)
-     * @return AmsError indicating if operation was started
-     */
-    virtual AmsError reset_lane(int slot_index) {
-        (void)slot_index;
-        return AmsErrorHelper::not_supported("Per-lane reset not supported");
-    }
-
-    /**
-     * @brief Check if per-lane reset is supported
-     * @return true if reset_lane() is implemented
-     */
-    /**
-     * @brief Whether a lane reset is possible for this slot RIGHT NOW
-     *
-     * supports_lane_reset() is a static capability. This is the per-slot,
-     * per-state question, and it is what UI should gate on: offering a reset the
-     * firmware will refuse produces an error the user cannot act on, and on AFC
-     * that error latches in printer.AFC.message and keeps re-firing toasts.
-     *
-     * Defaults to the static capability so backends that have no extra
-     * precondition need not override.
-     */
-    [[nodiscard]] virtual bool can_reset_lane(int slot_index) const {
-        (void)slot_index;
-        return supports_lane_reset();
-    }
-
-    [[nodiscard]] virtual bool supports_lane_reset() const {
-        return false;
-    }
-
-    /**
      * @brief Retract a lane's filament back to its lane from the bowden
      *
      * A physical filament move, not a fault clear. Recovers a lane left stranded

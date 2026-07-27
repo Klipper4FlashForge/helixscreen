@@ -2063,7 +2063,7 @@ TEST_CASE("AFC recover_lane_position sends AFC_LANE_RESET", "[ams][afc][recovery
     REQUIRE(helper.has_gcode("AFC_LANE_RESET LANE=lane1"));
 }
 
-TEST_CASE("AFC reset_lane second lane", "[ams][afc][recovery][phase4]") {
+TEST_CASE("AFC recover_lane_position second lane", "[ams][afc][recovery][phase4]") {
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
     helper.set_running(true);
@@ -2074,7 +2074,7 @@ TEST_CASE("AFC reset_lane second lane", "[ams][afc][recovery][phase4]") {
     REQUIRE(helper.has_gcode("AFC_LANE_RESET LANE=lane3"));
 }
 
-TEST_CASE("AFC reset_lane validates slot index", "[ams][afc][recovery][phase4]") {
+TEST_CASE("AFC recover_lane_position validates slot index", "[ams][afc][recovery][phase4]") {
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
     helper.set_running(true);
@@ -2085,7 +2085,7 @@ TEST_CASE("AFC reset_lane validates slot index", "[ams][afc][recovery][phase4]")
     REQUIRE(result.result == AmsResult::INVALID_SLOT);
 }
 
-TEST_CASE("AFC reset_lane validates negative index", "[ams][afc][recovery][phase4]") {
+TEST_CASE("AFC recover_lane_position validates negative index", "[ams][afc][recovery][phase4]") {
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
     helper.set_running(true);
@@ -2236,7 +2236,7 @@ TEST_CASE("AFC active_load_lane_ survives a delta that omits both lane keys",
     REQUIRE(helper.get_active_load_lane() == "lane1");
 }
 
-TEST_CASE("AFC reset_lane fails when not running", "[ams][afc][recovery][phase4]") {
+TEST_CASE("AFC recover_lane_position fails when not running", "[ams][afc][recovery][phase4]") {
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
     // running_ defaults to false
@@ -3459,17 +3459,6 @@ TEST_CASE("AFC cancel drops queued ejects but lets in-flight complete",
 TEST_CASE("AFC supports_lane_eject returns true", "[ams][afc][capability]") {
     AmsBackendAfcTestHelper helper;
     REQUIRE(helper.supports_lane_eject());
-}
-
-TEST_CASE("AFC supports_lane_reset returns false now that recovery moved off it",
-          "[ams][afc][capability]") {
-    // AFC no longer overrides supports_lane_reset()/can_reset_lane()/reset_lane() —
-    // the lane-position recovery those named lives at recover_lane_position() now.
-    // This falls through to the base default (false), which hides the AFC "Reset"
-    // menu entry until a later task folds the recovery into Unload and removes
-    // this capability query from ui_ams_context_menu.cpp entirely.
-    AmsBackendAfcTestHelper helper;
-    REQUIRE_FALSE(helper.supports_lane_reset());
 }
 
 // ============================================================================
@@ -5080,11 +5069,11 @@ TEST_CASE("AFC parse: absent fields are retained (deltas, not snapshots)", "[ams
 }
 
 // ============================================================================
-// can_reset_lane — AFC_LANE_RESET has real preconditions
+// can_recover_lane_position — AFC_LANE_RESET has real preconditions
 // ============================================================================
 //
-// supports_lane_reset() is a static capability, so the "Reset" menu entry was
-// offered on every AFC lane regardless of state. But AFC_LANE_RESET means
+// Lane-position recovery has no static capability gate, so the "Reset" menu
+// entry was once offered on every AFC lane regardless of state. But AFC_LANE_RESET means
 // "retract filament from the bowden back to the hub" (AFC_functions.py), and it
 // refuses unless the lane's filament is actually at the hub:
 //     if not CUR_HUB.state: AFC_error("Hub is already clear while trying to
@@ -5094,7 +5083,7 @@ TEST_CASE("AFC parse: absent fields are retained (deltas, not snapshots)", "[ams
 // kept re-firing error toasts for the rest of the session (seen on the .112
 // BoxTurtle). Reported upstream as AFCProject/AFC-Klipper-Add-On#803.
 
-TEST_CASE("AFC can_reset_lane requires filament at the hub", "[ams][afc][reset]") {
+TEST_CASE("AFC can_recover_lane_position requires filament at the hub", "[ams][afc][reset]") {
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes(4);
     helper.initialize_slots_from_discovery();

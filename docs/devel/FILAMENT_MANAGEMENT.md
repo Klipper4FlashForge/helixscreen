@@ -1056,15 +1056,28 @@ The LED toggle sends `TURN_ON_AFC_LED` or `TURN_OFF_AFC_LED` based on the curren
 
 Quiet mode reduces motor noise at the cost of speed. Toggled via `AFC_QUIET_MODE` G-code. The current state is tracked via `afc_quiet_mode_` from the `AFC.quiet_mode` printer object field.
 
-#### Per-Lane Reset
+#### Fault Clear vs Lane-Position Recovery
 
-AFC supports resetting individual lanes via `reset_lane(slot_index)`, which sends `AFC_RESET LANE={name}`. This resets a single lane to a known good state without affecting others.
+AFC does not have a genuine per-lane reset. What used to be called `reset_lane()` was
+actually two unrelated operations that happened to share one name:
 
-#### Reset vs Recover
+- **Fault clear** (`clear_fault(slot_index)`) is bookkeeping only — it never moves
+  filament. AFC has no per-lane fault clear, so `slot_index` is ignored: it sends
+  `RESET_FAILURE` followed by `AFC_CLEAR_MESSAGE` and arms a bounded drain of
+  `printer.AFC.message`, which is a FIFO queue — a second queued error is not visible
+  until the first is popped, so a single clear only pops one entry.
+- **Lane-position recovery** (`recover_lane_position(slot_index)`) is a physical
+  retract: it sends `AFC_LANE_RESET LANE={name}` to pull filament stranded in the
+  bowden back to its lane. AFC's firmware refuses this unless that lane's hub sensor
+  is actually triggered, so `can_recover_lane_position(slot_index)` gates the UI on
+  the live `AFC_hub.<hub>.state` field — **not** `AFC_stepper.<lane>.loaded_to_hub`,
+  which is latched once at prep time and never updated afterward, so it cannot be
+  used as a hub-occupancy signal.
 
-- **Reset** (`reset()`) sends `AFC_HOME` to home the entire AFC system.
-- **Recover** (`recover()`) sends `AFC_RESET` to recover from error state. Less disruptive than a full home.
-- **Per-lane reset** (`reset_lane()`) targets a single lane with `AFC_RESET LANE={name}`.
+Separately, **Reset** (`reset()`) and **Recover** (`recover()`) both send `AFC_RESET`
+today — `reset()` after the usual busy-state preconditions, `recover()` skipping them
+so it still works while the system is stuck. Neither homes the system; `AFC_HOME` is
+not sent by either.
 
 ### Capabilities
 
@@ -1785,7 +1798,7 @@ The `AmsDeviceOperationsOverlay` (`ui_ams_device_operations_overlay.h`) consolid
 
 | Action | G-code (varies by backend) | Description |
 |--------|---------------------------|-------------|
-| Home | `MMU_HOME` / `AFC_HOME` | Reset to home position |
+| Home | `MMU_HOME` / `AFC_RESET` | Reset to home position (label follows `reset_button_label()`; AFC sends `AFC_RESET`, not `AFC_HOME`) |
 | Recover | `MMU_RECOVER` / `AFC_RESET` | Attempt error recovery |
 | Abort | `cancel()` | Cancel current operation |
 | Bypass Toggle | `enable_bypass()` / `disable_bypass()` | Toggle bypass mode (if supported) |
@@ -1946,7 +1959,8 @@ Create `include/ams_backend_mysystem.h` and `src/printer/ams_backend_mysystem.cp
 
 **Optional overrides (with default implementations):**
 
-- `reset_lane()` -- Per-lane reset (default: NOT_SUPPORTED)
+- `clear_fault()` -- Clear a latched fault, bookkeeping only (default: forwards to `cancel()`)
+- `recover_lane_position()` -- Physical retract of a stranded lane (default: NOT_SUPPORTED)
 - `get_dryer_info()`, `start_drying()`, `stop_drying()`, `update_drying()` -- Dryer control
 - `get_endless_spool_capabilities()`, `get_endless_spool_config()`, `set_endless_spool_backup()` -- Endless spool
 - `get_tool_mapping_capabilities()`, `get_tool_mapping()` -- Tool mapping

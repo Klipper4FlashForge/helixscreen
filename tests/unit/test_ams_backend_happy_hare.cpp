@@ -755,47 +755,51 @@ TEST_CASE("Happy Hare eject_lane fails when not running", "[ams][happy_hare][eje
 }
 
 // ============================================================================
-// reset_lane() Tests
+// clear_fault() Tests
 // ============================================================================
 
-TEST_CASE("Happy Hare reset_lane sends MMU_RECOVER with gate", "[ams][happy_hare][reset]") {
+TEST_CASE("Happy Hare clear_fault re-syncs the gate via MMU_RECOVER",
+          "[ams][happy_hare][recovery]") {
+    // MMU_RECOVER is bookkeeping, not a filament move, so it is a fault clear
+    // rather than a position recovery. The gate index must be honoured — HH's
+    // fault clear is genuinely per-gate, unlike AFC's.
     AmsBackendHappyHareTestHelper helper;
     helper.initialize_test_gates(4);
     helper.set_running(true);
 
-    auto result = helper.reset_lane(0);
+    auto result = helper.clear_fault(2);
 
     REQUIRE(result.success());
-    REQUIRE(helper.has_gcode("MMU_RECOVER GATE=0"));
+    REQUIRE(helper.has_gcode("MMU_RECOVER GATE=2"));
 }
 
-TEST_CASE("Happy Hare reset_lane targets correct gate", "[ams][happy_hare][reset]") {
+TEST_CASE("Happy Hare clear_fault targets correct gate", "[ams][happy_hare][recovery]") {
     AmsBackendHappyHareTestHelper helper;
     helper.initialize_test_gates(4);
     helper.set_running(true);
 
-    auto result = helper.reset_lane(3);
+    auto result = helper.clear_fault(3);
 
     REQUIRE(result.success());
     REQUIRE(helper.has_gcode("MMU_RECOVER GATE=3"));
 }
 
-TEST_CASE("Happy Hare reset_lane validates slot index", "[ams][happy_hare][reset]") {
+TEST_CASE("Happy Hare clear_fault validates slot index", "[ams][happy_hare][recovery]") {
     AmsBackendHappyHareTestHelper helper;
     helper.initialize_test_gates(4);
     helper.set_running(true);
 
-    auto result = helper.reset_lane(-1);
+    auto result = helper.clear_fault(-1);
 
     REQUIRE_FALSE(result.success());
     REQUIRE(result.result == AmsResult::INVALID_SLOT);
 }
 
-TEST_CASE("Happy Hare reset_lane fails when not running", "[ams][happy_hare][reset]") {
+TEST_CASE("Happy Hare clear_fault fails when not running", "[ams][happy_hare][recovery]") {
     AmsBackendHappyHareTestHelper helper;
     helper.initialize_test_gates(4);
 
-    auto result = helper.reset_lane(0);
+    auto result = helper.clear_fault(0);
 
     REQUIRE_FALSE(result.success());
 }
@@ -809,11 +813,6 @@ TEST_CASE("Happy Hare supports_lane_eject returns true", "[ams][happy_hare][capa
     REQUIRE(helper.supports_lane_eject());
 }
 
-TEST_CASE("Happy Hare supports_lane_reset returns true", "[ams][happy_hare][capability]") {
-    AmsBackendHappyHareTestHelper helper;
-    REQUIRE(helper.supports_lane_reset());
-}
-
 // ============================================================================
 // Default AmsBackend capability tests (not supported)
 // ============================================================================
@@ -825,7 +824,6 @@ TEST_CASE("Default AmsBackend eject_lane returns not_supported", "[ams][capabili
     // This is tested via the HH-specific tests above; the base class default
     // is implicitly tested by backends that don't override it
     REQUIRE(helper.supports_lane_eject() == true);
-    REQUIRE(helper.supports_lane_reset() == true);
 }
 
 TEST_CASE("Happy Hare reset button is labeled 'Home'", "[ams][happy_hare][capability]") {

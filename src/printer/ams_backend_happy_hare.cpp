@@ -2182,7 +2182,9 @@ AmsError AmsBackendHappyHare::reset() {
     return execute_gcode("MMU_HOME");
 }
 
-AmsError AmsBackendHappyHare::reset_lane(int slot_index) {
+// MMU_RECOVER re-syncs Happy Hare's idea of gate state. It moves no filament, so
+// it is a fault clear rather than a position recovery.
+AmsError AmsBackendHappyHare::clear_fault(int slot_index) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
