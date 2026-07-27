@@ -4661,3 +4661,91 @@ TEST_CASE("AFC get_operation_step_index_subject is the narration toolchange-step
     CHECK(afc.get_operation_step_index_subject(StepOperationType::LOAD_SWAP) ==
           AmsState::instance().get_toolchange_step_subject());
 }
+
+// ============================================================================
+// parse_afc_stepper must represent AFC's CLEARS, not just its values
+// ============================================================================
+//
+// AFC clears a lane's identity itself. LANE_UNLOAD ends with
+// set_spoolID(lane, None), which (when remember_spool is false, the default)
+// runs clear_values(): spool_id=None, material='', color='', weight=0.
+//
+// Helix could not represent any of that. `spool_id: null` fails
+// is_number_integer() and kept the old id; `color: ""` threw inside std::stoul
+// and was caught as "keep existing colour"; AFC's SET_COLOR with an empty value
+// stores the literal '#', which stripped to "" and threw the same way. Only
+// `material: ""` actually cleared. So an ejected lane kept showing the previous
+// spool's identity and, worse, kept its Spoolman link — which is what aimed a
+// later edit at the wrong spool.
+//
+// The parser's job is firmware truth, including absence. Retention across an
+// eject is a policy decision that belongs one layer up, in the override store.
+
+TEST_CASE("AFC parse: null spool_id clears the Spoolman link", "[ams][afc][status]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    helper.feed_afc_stepper("lane1", {{"spool_id", 86}});
+    REQUIRE(helper.get_system_info().get_slot_global(0)->spoolman_id == 86);
+
+    // AFC's clear_values() emits spool_id: null
+    helper.feed_afc_stepper("lane1", {{"spool_id", nullptr}});
+    REQUIRE(helper.get_system_info().get_slot_global(0)->spoolman_id == 0);
+}
+
+TEST_CASE("AFC parse: empty colour clears rather than sticking", "[ams][afc][status]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    helper.feed_afc_stepper("lane1", {{"color", "#E53935"}});
+    REQUIRE(helper.get_system_info().get_slot_global(0)->color_rgb == 0xE53935);
+
+    helper.feed_afc_stepper("lane1", {{"color", ""}});
+    REQUIRE(helper.get_system_info().get_slot_global(0)->color_rgb == AMS_DEFAULT_SLOT_COLOR);
+}
+
+TEST_CASE("AFC parse: bare '#' colour clears (AFC SET_COLOR with empty value)",
+          "[ams][afc][status]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    helper.feed_afc_stepper("lane1", {{"color", "#E53935"}});
+    REQUIRE(helper.get_system_info().get_slot_global(0)->color_rgb == 0xE53935);
+
+    // SET_COLOR LANE=x COLOR=  ->  cur_lane.color = '#'
+    helper.feed_afc_stepper("lane1", {{"color", "#"}});
+    REQUIRE(helper.get_system_info().get_slot_global(0)->color_rgb == AMS_DEFAULT_SLOT_COLOR);
+}
+
+TEST_CASE("AFC parse: a malformed colour still keeps the previous value",
+          "[ams][afc][status]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    helper.feed_afc_stepper("lane1", {{"color", "#E53935"}});
+    // Garbage is a parse failure, NOT a clear — only empty means cleared.
+    helper.feed_afc_stepper("lane1", {{"color", "#zzzzzz"}});
+    REQUIRE(helper.get_system_info().get_slot_global(0)->color_rgb == 0xE53935);
+}
+
+TEST_CASE("AFC parse: absent fields are retained (deltas, not snapshots)",
+          "[ams][afc][status]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes(4);
+    helper.initialize_slots_from_discovery();
+
+    helper.feed_afc_stepper("lane1", {{"spool_id", 86}, {"material", "ASA"}, {"color", "#E53935"}});
+
+    // A weight-only delta must not disturb identity.
+    helper.feed_afc_stepper("lane1", {{"weight", 500.0}});
+
+    const auto* slot = helper.get_system_info().get_slot_global(0);
+    REQUIRE(slot->spoolman_id == 86);
+    REQUIRE(slot->material == "ASA");
+    REQUIRE(slot->color_rgb == 0xE53935);
+    REQUIRE(slot->remaining_weight_g == Catch::Approx(500.0));
+}

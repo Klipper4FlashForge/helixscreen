@@ -914,8 +914,7 @@ void AmsEditOverlay::handle_spool_edit_save(bool finish) {
         // is the single unlink path (the picker's unlink entry was retired).
         spdlog::info("[AmsEditOverlay] Save-to-Spoolman off — unlinking spool {}",
                      working_info_.spoolman_id);
-        working_info_.spoolman_id = 0;
-        working_info_.spool_name.clear();
+        working_info_.clear_spoolman_link();
     }
 
     // --- Read + validate quantity/logistics fields BEFORE detaching the

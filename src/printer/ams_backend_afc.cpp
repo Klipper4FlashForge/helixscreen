@@ -1264,17 +1264,28 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
     // Get slot info for filament data update
     auto& slot = entry->info;
 
-    // Parse color
+    // Parse color.
+    //
+    // An EMPTY value is a deliberate clear, not a parse failure. AFC's
+    // clear_values() sets color='' on eject, and SET_COLOR with an empty value
+    // stores the literal '#'. Both strip to "" here. Previously std::stoul("")
+    // threw and was swallowed as "keep existing", so an ejected lane kept
+    // painting the previous spool's colour. Genuinely malformed input still
+    // keeps the old value — only emptiness clears.
     if (data.contains("color") && data["color"].is_string()) {
         std::string color_str = data["color"].get<std::string>();
         // Remove '#' prefix if present
         if (!color_str.empty() && color_str[0] == '#') {
             color_str = color_str.substr(1);
         }
-        try {
-            slot.color_rgb = std::stoul(color_str, nullptr, 16);
-        } catch (...) {
-            // Keep existing color on parse failure
+        if (color_str.empty()) {
+            slot.color_rgb = AMS_DEFAULT_SLOT_COLOR;
+        } else {
+            try {
+                slot.color_rgb = std::stoul(color_str, nullptr, 16);
+            } catch (...) {
+                // Keep existing color on parse failure
+            }
         }
     }
 
@@ -1283,9 +1294,19 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
         slot.material = data["material"].get<std::string>();
     }
 
-    // Parse Spoolman ID
-    if (data.contains("spool_id") && data["spool_id"].is_number_integer()) {
-        slot.spoolman_id = data["spool_id"].get<int>();
+    // Parse Spoolman ID.
+    //
+    // JSON null is AFC telling us the link is GONE — clear_values() sets
+    // spool_id=None on eject. is_number_integer() is false for null, so this
+    // previously retained the old id and an ejected lane stayed "linked",
+    // which is what later aimed an edit's Spoolman write at the wrong spool.
+    // An ABSENT key still means "unchanged": these are deltas, not snapshots.
+    if (data.contains("spool_id")) {
+        if (data["spool_id"].is_number_integer()) {
+            slot.spoolman_id = data["spool_id"].get<int>();
+        } else if (data["spool_id"].is_null()) {
+            slot.spoolman_id = 0;
+        }
     }
 
     // Parse weight

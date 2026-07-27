@@ -1473,8 +1473,10 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
                 cleared.color_name.clear();
                 cleared.multi_color_hexes.clear();
                 cleared.brand.clear();
-                cleared.spool_name.clear();
-                cleared.spoolman_id = 0;
+                // Drops spoolman_id AND the filament/vendor handles — leaving
+                // those behind fed a later repoint comparison against a spool
+                // this lane is no longer linked to.
+                cleared.clear_spoolman_link();
                 cleared.remaining_weight_g = -1;
                 cleared.total_weight_g = -1;
                 auto error = backend->set_slot_info(slot, cleared);

@@ -426,6 +426,38 @@ TEST_CASE("AmsEditOverlay::may_write_spoolman_now withholds writes until identit
     }
 }
 
+// Unlink zeroed only spoolman_id, leaving spoolman_filament_id and
+// spoolman_vendor_id behind. Those stale ids then fed the repoint decision in
+// SpoolmanSlotSaver (`filament_id == original_filament_id` -> skip repoint), so
+// a later edit could compare against a filament belonging to a spool the lane
+// is no longer linked to.
+TEST_CASE("SlotInfo::clear_spoolman_link clears the whole Spoolman identity",
+          "[ams][edit_overlay][spoolman]") {
+    SlotInfo slot;
+    slot.spoolman_id = 86;
+    slot.spoolman_filament_id = 79;
+    slot.spoolman_vendor_id = 22;
+    slot.spool_name = "Black ASA";
+    slot.brand = "Likesilk";
+    slot.material = "ASA";
+    slot.color_rgb = 0x1A1A1A;
+    slot.remaining_weight_g = 509.0f;
+
+    slot.clear_spoolman_link();
+
+    CHECK(slot.spoolman_id == 0);
+    CHECK(slot.spoolman_filament_id == 0);
+    CHECK(slot.spoolman_vendor_id == 0);
+    CHECK(slot.spool_name.empty());
+
+    // Identity the user can still see and edit locally is deliberately KEPT —
+    // unlinking is "stop tracking this in Spoolman", not "forget the filament".
+    CHECK(slot.brand == "Likesilk");
+    CHECK(slot.material == "ASA");
+    CHECK(slot.color_rgb == 0x1A1A1A);
+    CHECK(slot.remaining_weight_g == Catch::Approx(509.0f));
+}
+
 TEST_CASE("AmsEditOverlay::needs_identity_confirmation applies to ALL Spoolman backends (§6)",
           "[ams_edit_overlay][spoolman][identity_confirm]") {
     SlotInfo original;

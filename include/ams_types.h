@@ -710,6 +710,25 @@ struct SlotInfo {
     }
 
     /**
+     * @brief Drop every Spoolman handle from this slot
+     *
+     * Unlink used to zero only spoolman_id, leaving spoolman_filament_id and
+     * spoolman_vendor_id behind. Those stale handles then fed
+     * SpoolmanSlotSaver's repoint comparison against a filament belonging to a
+     * spool this lane is no longer linked to.
+     *
+     * Locally-editable identity (brand / material / colour / weights) is
+     * deliberately KEPT: unlinking means "stop tracking this in Spoolman", not
+     * "forget what is in the lane".
+     */
+    void clear_spoolman_link() {
+        spoolman_id = 0;
+        spoolman_filament_id = 0;
+        spoolman_vendor_id = 0;
+        spool_name.clear();
+    }
+
+    /**
      * @brief Fill-bar level for the slot UI, or nullopt to leave the bar as-is.
      *
      * EMPTY/UNKNOWN lanes render empty (0.0) — even when a Spoolman link and
