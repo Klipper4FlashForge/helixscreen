@@ -16,12 +16,15 @@
 # The ceiling below catches an EXTRA untagged callback appearing inside a test
 # that is already listed, which the key set alone would miss. Untagged callbacks
 # totalled exactly 717 across four identical runs; the tagged total flapped.
-max-untagged-callbacks: 717
+max-untagged-callbacks: 428
 tag:Ad5xIfsBackend::reread_apply
 tag:Ad5xIfsBackend::zcolor_debounce_apply
 tag:AmsState::on_backend_event
 tag:AmsState::set_active_tool_port_present
 tag:LedController::led_cmd_settled
+tag:PrinterCapabilitiesState::set_power_device_count
+tag:PrinterCapabilitiesState::set_spoolman_available
+tag:PrinterCapabilitiesState::set_webcam_available
 tag:PrinterPrintState::set_estimated_print_time
 tag:PrinterState::on_status_update
 test:All panels are accessible
@@ -53,15 +56,6 @@ test:Frame time: samples are recorded in ring buffer
 test:Frame time: snapshot includes per-panel breakdown in panels object
 test:Frame time: snapshot with no active frames produces no event
 test:Frame time: worst panel is identified by p95
-test:Full stack: API error callbacks work correctly
-test:Full stack: All printer types work correctly
-test:Full stack: Bed mesh access through API
-test:Full stack: Concurrent access to shared state
-test:Full stack: Event emission and handling
-test:Full stack: Print workflow with object exclusion
-test:Full stack: PrinterHardware guessing
-test:Full stack: State reset and cleanup
-test:Full stack: Temperature control cycle
 test:Invalid panel handling
 test:LedAutoState init loads persisted config from per-printer path
 test:LedAutoState observer fires after init and applies action
@@ -126,18 +120,6 @@ test:LedController: turn_off_all sets light_is_on false
 test:LedController: valid selected strips preserved on discovery
 test:LedController: version observer fires on bump
 test:LedController: version subject accessible after init
-test:MoonrakerAPI hardware() accessor provides const access
-test:MoonrakerAPI hardware() returns discovery data after discovery completes
-test:MoonrakerAPI::get_active_bed_mesh returns nullptr when no mesh
-test:MoonrakerAPI::get_available_objects handles empty response
-test:MoonrakerAPI::get_bed_mesh_profiles returns profile list
-test:MoonrakerAPI::get_excluded_objects handles empty response
-test:MoonrakerAPI::has_bed_mesh returns correct state
-test:MoonrakerClient identification state tracking
-test:MoonrakerClientMock discover_printer doesn't fail due to identify
-test:MoonrakerClientMock hardware discovery
-test:MoonrakerClientMock: discover_printer error callback
-test:MoonrakerClientMock: discover_printer regression tests
 test:Multi-backend: active backend resets on clear
 test:Multi-backend: deinit then re-init is safe
 test:Multi-backend: full lifecycle
@@ -158,7 +140,6 @@ test:PrePrint adaptive: disabled emits SKIP_LEVELING=1 and no ADAPTIVE
 test:PrePrint adaptive: enabled + active emits SKIP_LEVELING=0 and ADAPTIVE=1
 test:PrePrint adaptive: honors custom adaptive param name + value
 test:PrePrint adaptive: non-adaptive printer enabled emits no params
-test:Print characterization: slicer estimated_print_time used as fallback
 test:Print outcome event has empty filament_type by default
 test:Print outcome event includes filament_type when set
 test:Print outcome event: captures duration and filament
@@ -180,16 +161,7 @@ test:PrintPreparationManager: collect_pre_start_gcode_lines empty for printer w/
 test:PrintPreparationManager: collect_pre_start_gcode_lines skips NOT_APPLICABLE
 test:PrintPreparationManager: get_option_state(id) falls back to DB default_enabled
 test:PrintPreparationManager: timelapse option synthesized when plugin available
-test:PrinterHardware and MoonrakerAPI domain methods work for all printer types
-test:PrinterHardware guessing methods work with mock hardware data
-test:PrinterHardware guessing works for multiple printer types
 test:PrinterHardware with MoonrakerClientMock data
-test:PrinterHardware::guess_bed_heater returns correct heater
-test:PrinterHardware::guess_bed_sensor returns correct sensor
-test:PrinterHardware::guess_hotend_heater returns correct heater
-test:PrinterHardware::guess_hotend_sensor returns correct sensor
-test:PrinterHardware::guess_main_led_strip returns LED
-test:PrinterHardware::guess_part_cooling_fan returns correct fan
 test:Queue: clear removes all events
 test:Queue: enqueue adds events
 test:Queue: respects max capacity and drops oldest
@@ -251,26 +223,12 @@ test:UpdateChecker callback is optional
 test:UpdateChecker download requires cached update
 test:UpdateChecker report_download_status transitions to Restarting
 test:Write update success flag: creates valid JSON file
-test:database_get_item sends correct JSON-RPC
-test:database_get_item with null error callback doesn't crash
-test:database_post_item sends correct JSON-RPC
-test:database_post_item with null callbacks doesn't crash
 test:disabling_option_requires_plugin: K2 regression — MacroParam + setup_gcode stays visible
 test:disabling_option_requires_plugin: MacroParam disable dropped when a PreStartGcode sibling short-circuits
 test:disabling_option_requires_plugin: PreStartGcode and RuntimeCommand never require plugin
 test:disabling_option_requires_plugin: Voron — MacroParam, no pre-start mechanism, hidden
 test:disabling_option_requires_plugin: file-embedded term isolated
-test:get_connection_state mirrors client state
-test:get_file_metadata calls success callback with valid file
-test:get_file_metadata with silent flag compiles correctly
-test:get_websocket_url returns client URL
-test:is_connected returns false after disconnect
-test:is_connected returns true when client is connected
-test:list_files for usb path returns empty when no symlink
-test:list_files for usb path returns files when symlink active
 test:lv_indev_reset(NULL, NULL) clears in-flight press
-test:metascan_file calls success callback with metadata
-test:metascan_file is silent by default
 test:new events are no-op when disabled
 test:print_start_context file size bucketing
 test:record_connection_stability creates valid event
@@ -282,11 +240,4 @@ test:record_memory_snapshot creates valid event
 test:record_panel_usage creates valid event
 test:record_print_start_context creates valid event
 test:record_settings_snapshot creates valid event
-test:register/unregister method callback
 test:registry: step_by_id stays valid after panel teardown (3rd-printer UAF)
-test:subscribe/unsubscribe roundtrip works
-test:subscribe_notifications returns valid ID
-test:suppress_disconnect_modal forwards to client
-test:unregister nonexistent method callback returns false
-test:unsubscribe_notifications returns false for invalid ID
-test:unsubscribe_notifications returns true for valid ID

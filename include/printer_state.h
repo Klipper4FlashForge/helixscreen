@@ -4,6 +4,7 @@
 #pragma once
 
 #include "app_motion_activity.h"
+#include "async_lifetime_guard.h"
 #include "capability_overrides.h"
 #include "hardware_validator.h"
 #include "lvgl/lvgl.h"
@@ -1941,7 +1942,9 @@ class PrinterState {
      *
      * @return true if the firmware re-echoes received G-code; false otherwise
      */
-    bool firmware_echoes_gcode() const { return firmware_echoes_gcode_.load(); }
+    bool firmware_echoes_gcode() const {
+        return firmware_echoes_gcode_.load();
+    }
 
     /**
      * @brief Get the pre-print option set for the current printer type
@@ -2119,6 +2122,14 @@ class PrinterState {
 
     // Initialization guard to prevent multiple subject initializations
     bool subjects_initialized_ = false;
+
+    /// Generation guard for the setters that defer their work to the main
+    /// thread. Invalidated by `deinit_subjects()` and by destruction, so a
+    /// callback still queued when the subjects go away is dropped instead of
+    /// running against a torn-down subject tree (#1165, #1146). Distinct from
+    /// the `SubjectLifetime` tokens handed to observers, which are
+    /// `shared_ptr<bool>` death signals and carry no deferral machinery.
+    AsyncLifetimeGuard async_lifetime_;
 
     // Cached display pointer to detect LVGL reinitialization (for test isolation)
     lv_display_t* cached_display_ = nullptr;

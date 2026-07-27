@@ -21,8 +21,10 @@
 
 #include "../lvgl_test_fixture.h"
 #include "app_globals.h"
+#include "moonraker_api.h"
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
+#include "printer_capabilities_state.h"
 #include "printer_print_state.h"
 #include "printer_state.h"
 
@@ -165,4 +167,152 @@ TEST_CASE_METHOD(LVGLTestFixture, "SpoolWizard vendor load applies while the ove
     // Counterpart to the case above: the guard must not swallow the callback
     // when the overlay is still active, or the drop test would pass vacuously.
     CHECK_FALSE(wizard.all_vendors().empty());
+}
+
+// ============================================================================
+// PrinterCapabilitiesState — async capability setters
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "PrinterCapabilitiesState drops queued setters once subjects are deinited",
+                 "[capabilities][lifetime][queue_update]") {
+    UpdateQueue::instance().drain();
+
+    PrinterCapabilitiesState caps;
+    caps.init_subjects(false);
+
+    // Every deferring setter on the class, so a regression on any one is caught.
+    caps.set_spoolman_available(true);
+    caps.set_timelapse_available(true);
+    caps.set_webcam_available(true, "http://cam/stream", "http://cam/snap", true, true, 30);
+    caps.set_power_device_count(3);
+    caps.set_sensor_count(4);
+
+    REQUIRE(UpdateQueue::instance().pending_count() > 0);
+    REQUIRE(lv_subject_get_int(caps.get_printer_has_spoolman_subject()) == 0);
+
+    // Tear down and stand back up on the same live object, which is what the
+    // test-isolation and reconnect paths do — and the shape a destructor-only
+    // hook would never catch.
+    caps.deinit_subjects();
+    caps.init_subjects(false);
+
+    UpdateQueue::instance().drain();
+
+    // Pre-fix each of these writes into a subject that was deinited underneath
+    // it, and lv_subject_notify walks the freed observer list.
+    CHECK(lv_subject_get_int(caps.get_printer_has_spoolman_subject()) == 0);
+    CHECK(lv_subject_get_int(caps.get_printer_has_timelapse_subject()) == 0);
+    CHECK(lv_subject_get_int(caps.get_printer_has_webcam_subject()) == 0);
+    CHECK(lv_subject_get_int(caps.get_power_device_count_subject()) == 0);
+    CHECK(lv_subject_get_int(caps.get_sensor_count_subject()) == 0);
+    CHECK(caps.get_webcam_stream_url().empty());
+    CHECK(UpdateQueue::instance().pending_count() == 0);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "PrinterCapabilitiesState applies setters while subjects are live",
+                 "[capabilities][lifetime][queue_update]") {
+    UpdateQueue::instance().drain();
+
+    PrinterCapabilitiesState caps;
+    caps.init_subjects(false);
+
+    caps.set_spoolman_available(true);
+    caps.set_power_device_count(3);
+    UpdateQueue::instance().drain();
+
+    // Without this the drop case above would pass vacuously — a guard that
+    // swallowed everything would satisfy it just as well.
+    CHECK(lv_subject_get_int(caps.get_printer_has_spoolman_subject()) == 1);
+    CHECK(lv_subject_get_int(caps.get_power_device_count_subject()) == 3);
+}
+
+// ============================================================================
+// PrinterState — setters that defer aggregate recomputation
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLTestFixture, "PrinterState drops queued setters once subjects are deinited",
+                 "[printer_state][lifetime][queue_update]") {
+    UpdateQueue::instance().drain();
+
+    PrinterState state;
+    state.init_subjects(false);
+
+    REQUIRE_FALSE(state.service_has_helix_plugin());
+
+    state.set_helix_plugin_installed(true);
+    state.set_timelapse_available(true);
+    state.set_timelapse_default_enabled(true);
+
+    REQUIRE(UpdateQueue::instance().pending_count() > 0);
+    REQUIRE_FALSE(state.service_has_helix_plugin());
+
+    state.deinit_subjects();
+    state.init_subjects(false);
+
+    UpdateQueue::instance().drain();
+
+    // The plugin flag is the readable proxy: the queued body calls
+    // plugin_status_state_.set_installed(true) plus the aggregate recompute,
+    // all against subjects that no longer exist in the generation that queued it.
+    CHECK_FALSE(state.service_has_helix_plugin());
+    CHECK(UpdateQueue::instance().pending_count() == 0);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "PrinterState applies setters while subjects are live",
+                 "[printer_state][lifetime][queue_update]") {
+    UpdateQueue::instance().drain();
+
+    PrinterState state;
+    state.init_subjects(false);
+
+    state.set_helix_plugin_installed(true);
+    UpdateQueue::instance().drain();
+
+    CHECK(state.service_has_helix_plugin());
+}
+
+// ============================================================================
+// MoonrakerAPI — the literal #1146 culprit
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLTestFixture, "MoonrakerAPI build-volume notify survives destruction",
+                 "[moonraker_api][lifetime][queue_update]") {
+    UpdateQueue::instance().drain();
+
+    MoonrakerClientMock client;
+    PrinterState state;
+
+    {
+        MoonrakerAPI api(client, state);
+        api.notify_build_volume_changed();
+        REQUIRE(UpdateQueue::instance().pending_count() > 0);
+    } // ~MoonrakerAPI invalidates the guard, then lv_subject_deinit()s the subject
+
+    // Honest limits: this asserts only that the drain completed and emptied the
+    // queue. Pre-fix the queued lambda called lv_subject_set_int() on the freed
+    // build_volume_version_, which is UB that does not reliably detonate in a
+    // normal build — an ASAN run of this case is what reports the use-after-free.
+    // #1146's SIGSEGV landed on whichever unrelated test drained next, not here.
+    UpdateQueue::instance().drain();
+    CHECK(UpdateQueue::instance().pending_count() == 0);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "MoonrakerAPI build-volume notify applies while the API is alive",
+                 "[moonraker_api][lifetime][queue_update]") {
+    UpdateQueue::instance().drain();
+
+    MoonrakerClientMock client;
+    PrinterState state;
+    MoonrakerAPI api(client, state);
+
+    REQUIRE(lv_subject_get_int(api.get_build_volume_version_subject()) == 0);
+
+    api.notify_build_volume_changed();
+    UpdateQueue::instance().drain();
+
+    // The guard must not swallow the notification on a live API, or observers
+    // of the build volume would silently stop updating.
+    CHECK(lv_subject_get_int(api.get_build_volume_version_subject()) == 1);
 }
