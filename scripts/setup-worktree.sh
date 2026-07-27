@@ -239,7 +239,6 @@ link_lib_from_main() {
 
     # Symlink each submodule directory
     for submod in $SUBMODULES; do
-        SUBMOD_NAME=$(basename "$submod")
         MAIN_SUBMOD="$MAIN_TREE/$submod"
         WORKTREE_SUBMOD="$WORKTREE_PATH/$submod"
 
