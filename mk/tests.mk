@@ -385,6 +385,33 @@ test-shell:
 	fi
 
 # ============================================================================
+# Out-of-Process UI Tests (pytest, tests/ui/)
+# ============================================================================
+# Named test-ui-pytest, not test-ui: that name is already taken by the
+# in-process Catch2 convenience target above ([navigation],[theme],[wizard]).
+# Renaming the existing one to make room was out of scope for wiring this
+# suite in -- see docs/devel/UI_TESTING.md for what each covers.
+
+# Run the out-of-process pytest suite (tests/ui/) against the real binary via
+# `helix-screen ctl`. This is the FULL suite including the 8 golden-image
+# tests -- locally, that's the point; CI runs a narrower slice (see
+# .github/workflows/build.yml) because goldens are sensitive to renderer/font
+# rasterization across machines.
+test-ui-pytest:
+	$(ECHO) "$(CYAN)$(BOLD)Running out-of-process UI tests (pytest, tests/ui/)...$(RESET)"
+	@if [ ! -x "$(VENV_PYTHON)" ]; then \
+		echo "$(RED)$(BOLD)✗ Python venv not found — run 'make venv-setup' first$(RESET)"; \
+		exit 1; \
+	fi
+	@if [ ! -x "$(BIN_DIR)/helix-screen" ]; then \
+		echo "$(RED)$(BOLD)✗ $(BIN_DIR)/helix-screen not built — run 'make -j' first$(RESET)"; \
+		exit 1; \
+	fi
+	@START_TIME=$$(date +%s); \
+	$(VENV_PYTHON) -m pytest tests/ui/ -v; \
+	$(call report_test_result,Out-of-process UI tests)
+
+# ============================================================================
 # Convenience Test Targets - Run tests by component
 # ============================================================================
 
@@ -965,7 +992,7 @@ clean-sanitizers:
 # Test Help
 # ============================================================================
 
-.PHONY: help-test test-kiauh test-shell test-serial test-asan test-tsan test-asan-one test-tsan-one clean-sanitizers
+.PHONY: help-test test-kiauh test-shell test-ui-pytest test-serial test-asan test-tsan test-asan-one test-tsan-one clean-sanitizers
 help-test:
 	@if [ -t 1 ] && [ -n "$(TERM)" ] && [ "$(TERM)" != "dumb" ]; then \
 		B='$(BOLD)'; G='$(GREEN)'; Y='$(YELLOW)'; C='$(CYAN)'; X='$(RESET)'; \

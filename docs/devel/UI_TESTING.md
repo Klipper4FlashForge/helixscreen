@@ -380,9 +380,16 @@ Run with the repo's venv, not bare `python3` (it lacks pytest):
 
 ```bash
 make -j                                        # build the binary tests/ui/ drives
+make test-ui-pytest                            # full suite (incl. goldens), via .venv
+# or directly:
 ./.venv/bin/python -m pytest tests/ui/ -v
 ./.venv/bin/python -m pytest tests/ui/ --accept-goldens   # after reviewing a diff
 ```
+
+`make test-ui-pytest` (not `make test-ui` — that name is already the in-process
+Catch2 `[navigation],[theme],[wizard]` convenience target, see `mk/tests.mk`) fails
+with a clear message pointing at `make venv-setup` or `make -j` if the venv or the
+binary is missing, rather than an opaque pytest error.
 
 `HelixApp` boots the same way `scripts/screenshot.sh` does — `--test --skip-wizard
 --skip-splash --remote --remote-socket <private>`. **By default it runs headless**
@@ -449,6 +456,38 @@ seeds each private config dir with `config/settings-test.json` before boot, so e
 instance gets the intended test defaults *and* lock isolation — no per-test
 workaround needed. If a future screen animates unexpectedly, check whether that
 seeding step is still wired up before adding a local fixture to paper over it again.
+
+### CI coverage: what runs, what doesn't, and why
+
+`.github/workflows/build.yml`'s `test-ubuntu` job runs the out-of-process suite
+**with the 8 golden-image tests excluded**
+(`pytest tests/ui/ -v --ignore=tests/ui/test_screens.py`) after the existing
+in-process Catch2 run, using `actions/setup-python` + `pip install pytest` +
+`requirements.txt` — not `make test-ui-pytest`, since that target's `.venv` check
+exists for a local dev who forgot `make venv-setup`, which doesn't apply to a
+runner provisioned by `actions/setup-python`.
+
+The 38 excluded-golden tests assert on behavior (navigation, `wait_idle`, text
+reading, capture mechanics, screen state, reset semantics) and are portable across
+machines. Verified they have zero coupling to the golden files themselves: they
+pass with `tests/ui/goldens/` removed entirely, not just with `test_screens.py`
+skipped. The golden tests compare pixels, and cross-machine font rasterization is
+exactly the golden-portability risk called out above and in the design spec's
+Risks section — they stay a **local-only** gate until someone deliberately captures
+them inside a fixed container with pinned fonts. If a future contributor sees 8
+tests missing from a CI run and "fixes" it by dropping `--ignore`, that trades a
+green build for pixel diffs unrelated to whatever change actually broke it — don't.
+
+**Relationship to `scripts/smoke-headless.sh`** (also run in `compile-ubuntu`):
+mostly, but not entirely, subsumed. The out-of-process suite exceeds the smoke
+test's boot/navigate/screenshot checks in every dimension (many more panels, golden
+comparisons, `wait_idle`, text reading, widget geometry) — but the smoke test does
+one thing the suite's teardown doesn't replicate: it explicitly inspects the exit
+status after a clean shutdown request and fails on `139`/`134` (SIGSEGV/SIGABRT) or
+a crash signature in the log. `HelixApp.stop()` waits for the process to exit but
+never checks *how* it exited, so a segfault during shutdown cleanup would currently
+go unnoticed by the pytest teardown path. Not acted on here — flagging it as a real,
+narrow gap rather than a reason to drop the smoke test.
 
 ## Known Limitations & Workarounds
 

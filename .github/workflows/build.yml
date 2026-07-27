@@ -188,6 +188,36 @@ jobs:
         fi
         echo "All tests passed"
 
+    - name: Setup Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+
+    - name: Install Python test dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    # Invoked directly rather than through `make test-ui-pytest`: that target's
+    # .venv check exists to catch a local dev who forgot `make venv-setup`, which
+    # doesn't apply here — this runner's Python comes from actions/setup-python,
+    # not a repo-local .venv, so requiring one would just be a false failure.
+    #
+    # --ignore=tests/ui/test_screens.py excludes the 8 golden-image tests. The
+    # other 38 tests assert on behavior (navigation, wait_idle, text reading,
+    # capture mechanics, screen state) and are portable across machines; the
+    # goldens compare pixels, and cross-machine font rasterization is exactly the
+    # golden-portability risk the design spec calls out (see
+    # docs/devel/UI_TESTING.md § "Out-of-Process Tests" / the design spec's Risks
+    # section). Goldens stay a local-only gate until someone deliberately captures
+    # them inside a fixed container with pinned fonts — don't "fix" this by
+    # dropping the --ignore; that trades a green build for flaky pixel diffs
+    # unrelated to whatever change actually broke it.
+    - name: Run out-of-process UI tests (pytest, excluding goldens)
+      timeout-minutes: 5
+      run: pytest tests/ui/ -v --ignore=tests/ui/test_screens.py
+
   build-macos:
     name: Build (macOS 14)
     runs-on: macos-14
