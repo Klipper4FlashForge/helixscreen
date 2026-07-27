@@ -37,6 +37,7 @@ translations:
   -- kWh: -- kWh
   --°C: --°C
   -0.5 Hz: -0.5 Hz
+  '...': ''
   0 = computed: 0 = 自动计算
   0 events queued: 0 个事件已排队
   0 slots: '{0} 个料仓'
@@ -465,6 +466,10 @@ translations:
   Connected Time: 已连接时长
   Connected to: 已连接到
   'Connected to ': '已连接到 '
+  ? Connected to Moonraker, but Klipper is not running. You can continue — HelixScreen will show the Klipper error, and hardware detection stays limited until Klipper starts.
+  : ''
+  ? Connected to Moonraker, but printer discovery did not finish. You can continue — hardware detection stays limited until the printer responds.
+  : ''
   Connected to {}: 已连接到 {}
   Connected! Discovering printer...: 已连接！正在发现打印机...
   Connected, discovering...: 已连接，正在发现...
@@ -1076,6 +1081,7 @@ translations:
   'Invalid sheet template index: {} (have {})': '标签纸模板索引无效: {} (实际有 {})'
   Invalid status response from printer: 打印机返回的状态响应无效
   Issue description: 问题描述
+  It's a new spool: ''
   Job Queue: 任务队列
   'Jog failed: {}': '移动失败: {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: 加入
@@ -1389,6 +1395,7 @@ translations:
   Not found (strobe only): 未找到 (仅频闪)
   Not found (use phone app): 未找到 (使用手机应用)
   'Not in your spools? Set it up': 不在您的料盘中？立即设置
+  Not now: ''
   Not yet calibrated: 尚未校准
   Notes: 备注
   Notes (optional): 备注（可选）
@@ -1616,6 +1623,7 @@ translations:
   Printer database is corrupt: 打印机数据库已损坏
   Printer didn't respond — make sure it's on and in range: 打印机无响应 — 请确保已开机且在范围内
   Printer doesn't expose the expected service — wrong device?: 打印机未提供预期的服务 — 设备是否有误？
+  Printer hardware detected: ''
   Printer image set to auto-detect: 打印机图片已设为自动检测
   Printer is not paired — pair it first: 打印机未配对 — 请先进行配对
   Printer name: 打印机名称
@@ -1925,6 +1933,7 @@ translations:
     Light\n  iOS: Strobe Light Tachometer, myStroboscope'
   Set local timezone for time display: 设置本地时区以显示时间
   Set logging verbosity for troubleshooting: 设置日志详细级别以便故障排除
+  Set up: ''
   Set up your label printer in Settings: 在设置中配置标签打印机
   Settings: 设置
   Settings Snapshot: 设置快照
@@ -2157,6 +2166,7 @@ translations:
   : 此设备仅有 {} MB 内存。共振校准会占用大量内存，可能导致打印机固件报告 \"Timer Too Close\" 错误或在测试中途重启。仍要继续吗？
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
   : 此设备内存极少。共振校准会占用大量内存，可能导致 \"Timer Too Close\" 错误。仍要继续吗？
+  This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: ''
   This file was sliced for {} but {} is loaded.: 此文件为 {} 切片，但当前加载的是 {}。
   This is exactly the data that will be sent: 这正是将要发送的数据
   This is what data would be sent if enabled: 这是启用后将发送的数据
@@ -2415,6 +2425,7 @@ translations:
   Your completed prints will appear here: 您完成的打印将显示在此处
   Your print start is already fully configured!: 您的打印启动已完全配置！
   Your printer has an automatic filament changer: 您的打印机配有自动换色系统
+  Your printer was offline during setup, so hardware options were skipped. Set them up now?: ''
   Z: Z
   Z Calibration: Z 轴校准
   Z Movement: Z 轴移动

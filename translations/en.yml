@@ -37,6 +37,7 @@ translations:
   -- kWh: -- kWh
   --°C: --°C
   -0.5 Hz: -0.5 Hz
+  '...': '...'
   0 = computed: 0 = computed
   0 events queued: 0 events queued
   0 slots: 0 slots
@@ -514,6 +515,10 @@ translations:
   Connected Time: Connected Time
   Connected to: Connected to
   'Connected to ': 'Connected to '
+  ? Connected to Moonraker, but Klipper is not running. You can continue — HelixScreen will show the Klipper error, and hardware detection stays limited until Klipper starts.
+  : Connected to Moonraker, but Klipper is not running. You can continue — HelixScreen will show the Klipper error, and hardware detection stays limited until Klipper starts.
+  ? Connected to Moonraker, but printer discovery did not finish. You can continue — hardware detection stays limited until the printer responds.
+  : Connected to Moonraker, but printer discovery did not finish. You can continue — hardware detection stays limited until the printer responds.
   Connected to {}: Connected to {}
   Connected! Discovering printer...: Connected! Discovering printer...
   Connected, discovering...: Connected, discovering...
@@ -1170,6 +1175,7 @@ translations:
     (have {})'
   Invalid status response from printer: Invalid status response from printer
   Issue description: Issue description
+  It's a new spool: It's a new spool
   Job Queue: Job Queue
   'Jog failed: {}': 'Jog failed: {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: Join
@@ -1508,6 +1514,7 @@ translations:
   Not found (strobe only): Not found (strobe only)
   Not found (use phone app): Not found (use phone app)
   Not in your spools? Set it up: Not in your spools? Set it up
+  Not now: Not now
   Not yet calibrated: Not yet calibrated
   Notes: Notes
   Notes (optional): Notes (optional)
@@ -1747,6 +1754,7 @@ translations:
     — make sure it's on and in range
   Printer doesn't expose the expected service — wrong device?: Printer doesn't expose
     the expected service — wrong device?
+  Printer hardware detected: Printer hardware detected
   Printer image set to auto-detect: Printer image set to auto-detect
   Printer is not paired — pair it first: Printer is not paired — pair it first
   Printer name: Printer name
@@ -2088,6 +2096,7 @@ translations:
     Strobe Light Tachometer, myStroboscope'
   Set local timezone for time display: Set local timezone for time display
   Set logging verbosity for troubleshooting: Set logging verbosity for troubleshooting
+  Set up: Set up
   Set up your label printer in Settings: Set up your label printer in Settings
   Settings: Settings
   Settings Snapshot: Settings Snapshot
@@ -2352,6 +2361,7 @@ translations:
   : This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
   : This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
+  This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?
   This file was sliced for {} but {} is loaded.: This file was sliced for {} but {}
     is loaded.
   This is exactly the data that will be sent: This is exactly the data that will be
@@ -2645,6 +2655,7 @@ translations:
     configured!
   Your printer has an automatic filament changer: Your printer has an automatic filament
     changer
+  Your printer was offline during setup, so hardware options were skipped. Set them up now?: Your printer was offline during setup, so hardware options were skipped. Set them up now?
   Z: Z
   Z Calibration: Z Calibration
   Z Movement: Z Movement

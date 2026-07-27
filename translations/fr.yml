@@ -39,6 +39,7 @@ translations:
   -- kWh: -- kWh
   --°C: --°C
   -0.5 Hz: -0,5 Hz
+  '...': ''
   0 = computed: 0 = calculé
   0 events queued: 0 événement en file
   0 slots: 0 emplacements
@@ -547,6 +548,10 @@ translations:
   Connected Time: Temps de connexion
   Connected to: Connecté à
   'Connected to ': 'Connecté à '
+  ? Connected to Moonraker, but Klipper is not running. You can continue — HelixScreen will show the Klipper error, and hardware detection stays limited until Klipper starts.
+  : ''
+  ? Connected to Moonraker, but printer discovery did not finish. You can continue — hardware detection stays limited until the printer responds.
+  : ''
   Connected to {}: Connecté à {}
   Connected! Discovering printer...: Connecté ! Découverte de l'imprimante...
   Connected, discovering...: Connecté, découverte...
@@ -1226,6 +1231,7 @@ translations:
     : {} (sur {})'
   Invalid status response from printer: Réponse détat invalide de limprimante
   Issue description: Description du problème
+  It's a new spool: ''
   Job Queue: File d'impression
   'Jog failed: {}': 'Échec du déplacement : {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: Rejoignez
@@ -1574,6 +1580,7 @@ translations:
   Not found (strobe only): Introuvable (stroboscope uniquement)
   Not found (use phone app): Introuvable (utilisez lapplication mobile)
   Not in your spools? Set it up: Pas dans vos bobines ? Configurez-la
+  Not now: ''
   Not yet calibrated: Pas encore calibré
   Notes: Notes
   Notes (optional): Notes (facultatif)
@@ -1822,6 +1829,7 @@ translations:
     — vérifiez qu'elle est allumée et à portée
   Printer doesn't expose the expected service — wrong device?: L'imprimante n'expose
     pas le service attendu — mauvais appareil ?
+  Printer hardware detected: ''
   Printer image set to auto-detect: Image de l'imprimante en auto-détection
   Printer is not paired — pair it first: L'imprimante n'est pas appairée — appairez-la
     d'abord
@@ -2174,6 +2182,7 @@ translations:
   Set local timezone for time display: Définir le fuseau horaire local pour l'affichage
   Set logging verbosity for troubleshooting: Définir le niveau de détail des logs
     pour le dépannage
+  Set up: ''
   Set up your label printer in Settings: Configurez votre imprimante d'étiquettes
     dans les Paramètres
   Settings: Paramètres
@@ -2462,6 +2471,7 @@ translations:
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
   : Cet appareil dispose de très peu de RAM. La calibration de résonance est gourmande
     en mémoire et peut provoquer une erreur \"Timer Too Close\". Continuer quand même ?
+  This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: ''
   This file was sliced for {} but {} is loaded.: Ce fichier a été tranché pour {}
     mais {} est chargé.
   This is exactly the data that will be sent: Voici exactement les données qui seront
@@ -2770,6 +2780,7 @@ translations:
     déjà entièrement configuré !
   Your printer has an automatic filament changer: Votre imprimante dispose d'un changeur
     de filament automatique
+  Your printer was offline during setup, so hardware options were skipped. Set them up now?: ''
   Z: Z
   Z Calibration: Calibration Z
   Z Movement: Mouvement Z
