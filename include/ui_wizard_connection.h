@@ -272,9 +272,21 @@ class WizardConnectionStep : public helix::wizard::Step {
         discovery_watchdog_ms_ = ms;
     }
 
+    /// Test-only: arm the one-shot auto-probe timer without building the screen,
+    /// so the teardown paths that must cancel it can be exercised directly.
+    void arm_auto_probe_timer_for_test();
+
+    /// Test-only: the armed auto-probe timer, or nullptr when none is armed.
+    lv_timer_t* auto_probe_timer_for_test() const {
+        return auto_probe_timer_;
+    }
+
   private:
     /// Cancel an armed watchdog. Safe to call when none is armed.
     void cancel_discovery_watchdog();
+
+    /// Cancel a pending auto-probe timer. Safe to call when none is armed.
+    void cancel_auto_probe_timer();
 
     /// Shared tail of allow_continue_without_klipper() / discovery_watchdog_expired()
     void unblock_after_incomplete_discovery(const char* message);

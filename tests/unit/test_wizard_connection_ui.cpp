@@ -9,6 +9,7 @@
 #include "../test_helpers/update_queue_test_access.h"
 #include "../ui_test_utils.h"
 #include "lvgl/lvgl.h"
+#include "misc/lv_timer_private.h" // timer_cb — assert the cancel neutered it
 #include "moonraker_client.h"
 
 #include <spdlog/spdlog.h>
@@ -576,4 +577,35 @@ TEST_CASE_METHOD(WizardConnectionGateFixture,
     // lv_timer_handler pass that cancelled it; that must not touch the gate.
     step->discovery_watchdog_expired();
     REQUIRE(lv_subject_get_int(&connection_test_passed) == 0);
+}
+
+// ============================================================================
+// Auto-probe timer must not outlive the step (#1173)
+// ============================================================================
+// cleanup() cancels the one-shot, so the normal navigation path is covered. A
+// teardown that destroys the step WITHOUT calling cleanup() first left it armed
+// on a freed `this` — and StaticPanelRegistry::destroy_all() runs before
+// lv_deinit() (application.cpp), so at destructor time the timer really is still
+// in LVGL's list. Same shape as the discovery watchdog's destructor cancel
+// (#1161), and the same UAF that auto_probe_timer_cb's own comment documents.
+
+TEST_CASE_METHOD(LVGLTestFixture, "Connection step: destructor cancels the auto-probe timer",
+                 "[wizard][connection][timer][regression]") {
+    auto step = std::make_unique<WizardConnectionStep>();
+    step->arm_auto_probe_timer_for_test();
+
+    lv_timer_t* timer = step->auto_probe_timer_for_test();
+    REQUIRE(timer != nullptr);
+    REQUIRE(timer->timer_cb != nullptr);
+
+    // Destroy without cleanup() — the path that used to leave it armed.
+    step.reset();
+
+    // Neutered, not deleted: lv_timer_cancel_safe() nulls the callback and lets
+    // lv_timer_handler reap the timer on its next pass. Reading it here is safe
+    // because the timer is LVGL-owned memory, not the step's.
+    REQUIRE(timer->timer_cb == nullptr);
+
+    // A still-armed one-shot would dispatch into the freed step here.
+    process_lvgl(150);
 }

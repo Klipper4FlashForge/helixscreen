@@ -85,8 +85,12 @@ WizardConnectionStep::~WizardConnectionStep() {
 
     // Exception to the NOTE above: shutdown runs StaticPanelRegistry::destroy_all()
     // BEFORE lv_deinit(), so a watchdog armed at this point is still in LVGL's timer
-    // list holding a freed `this`. The cancel goes through lv_timer_cancel_safe(),
-    // which no-ops when lv_is_initialized() is false, so it is safe either way.
+    // list holding a freed `this`. Both cancels go through lv_timer_cancel_safe(),
+    // which no-ops when lv_is_initialized() is false, so they are safe either way.
+    // The auto-probe timer needs this too: cleanup() cancels it, but a teardown
+    // path that destroys the step without calling cleanup() first leaves the
+    // one-shot armed on a freed `this` (the UAF auto_probe_timer_cb documents).
+    cancel_auto_probe_timer();
     cancel_discovery_watchdog();
 
     screen_root_ = nullptr;
@@ -865,13 +869,7 @@ void WizardConnectionStep::cleanup() {
         mdns_discovery_->stop_discovery();
     }
 
-    // Cancel any pending auto-probe timer.
-    // Use lv_timer_cancel_safe to avoid corrupting LVGL's timer linked list
-    // when cleanup is called from within lv_timer_handler (via click event).
-    if (auto_probe_timer_ && lv_is_initialized()) {
-        helix::ui::lv_timer_cancel_safe(auto_probe_timer_);
-        auto_probe_timer_ = nullptr;
-    }
+    cancel_auto_probe_timer();
 
     // Same for the discovery watchdog — it holds `this` and outliving the step
     // would fire into a torn-down screen.
@@ -1085,6 +1083,22 @@ void WizardConnectionStep::start_discovery_watchdog() {
     lv_timer_set_repeat_count(discovery_watchdog_timer_, 1); // One-shot timer
 
     spdlog::debug("[{}] Discovery watchdog armed ({} ms)", get_name(), discovery_watchdog_ms_);
+}
+
+void WizardConnectionStep::arm_auto_probe_timer_for_test() {
+    cancel_auto_probe_timer();
+    auto_probe_timer_ = lv_timer_create(auto_probe_timer_cb, 100, this);
+    lv_timer_set_repeat_count(auto_probe_timer_, 1);
+}
+
+void WizardConnectionStep::cancel_auto_probe_timer() {
+    // Neuter rather than delete: cleanup() can run from inside lv_timer_handler
+    // (via a click event), where deleting a timer corrupts LVGL's timer list.
+    // lv_timer_cancel_safe() also no-ops when LVGL is already gone.
+    if (auto_probe_timer_ && lv_is_initialized()) {
+        helix::ui::lv_timer_cancel_safe(auto_probe_timer_);
+    }
+    auto_probe_timer_ = nullptr;
 }
 
 void WizardConnectionStep::cancel_discovery_watchdog() {
