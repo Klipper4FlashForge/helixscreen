@@ -27,6 +27,7 @@
 #include "app_globals.h"
 #include "config.h"
 #include "hv/requests.h"
+#include "json_utils.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "printer_state.h"
 #include "spdlog/spdlog.h"
@@ -44,7 +45,9 @@
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fcntl.h>
+#include <filesystem>
 #include <fstream>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
@@ -677,6 +680,12 @@ void UpdateChecker::init() {
     // failed to remove it (e.g., NoNewPrivileges blocked sudo rm).
     cleanup_stale_old_install();
 
+    // Repair a stale/missing asset_name in release_info.json before anything can
+    // ask Moonraker to update us. Self-healing is the point: an install with a
+    // bad asset_name cannot receive the fix through the channel it breaks
+    // (prestonbrown/helixscreen#993).
+    repair_release_info(app_get_install_root());
+
     spdlog::debug("[UpdateChecker] Initialized");
     initialized_ = true;
 }
@@ -996,10 +1005,156 @@ std::string UpdateChecker::get_download_path(DownloadPathDiag* diag,
     return best_dir + DOWNLOAD_FILENAME;
 }
 
-std::string UpdateChecker::get_platform_asset_name() const {
+std::string UpdateChecker::platform_asset_name() {
     // Unversioned zip matches the release.yml upload layout and the name
     // Moonraker Update Manager looks up via release_info.json's asset_name.
+    //
+    // Static and single-sourced on purpose. #993 was caused by this name being
+    // encoded in three places that drifted; repair_release_info() must compare
+    // against the same expression the rest of the code means by "our asset",
+    // not a copy of it.
     return "helixscreen-" + get_platform_key() + ".zip";
+}
+
+std::string UpdateChecker::get_platform_asset_name() const {
+    return platform_asset_name();
+}
+
+UpdateChecker::ReleaseInfoRepair
+UpdateChecker::repair_release_info(const std::string& install_root) {
+    if (install_root.empty()) {
+        return ReleaseInfoRepair::Absent;
+    }
+
+    const std::string path = install_root + "/release_info.json";
+    const std::string want = platform_asset_name();
+
+    // Parse defensively: this is on-disk, user-facing JSON that may be absent,
+    // empty, truncated, or not an object.
+    json existing = json::object();
+    bool have_file = false;
+    {
+        std::ifstream in(path);
+        if (in.is_open()) {
+            have_file = true;
+            json parsed = json::parse(in, nullptr, /*allow_exceptions=*/false);
+            if (parsed.is_discarded()) {
+                spdlog::info("[UpdateChecker] {} is not valid JSON — rewriting", path);
+            } else if (!parsed.is_object()) {
+                spdlog::info("[UpdateChecker] {} is not a JSON object — rewriting", path);
+            } else {
+                existing = std::move(parsed);
+            }
+        }
+    }
+
+    if (!have_file) {
+        // A dev build resolves its install root to the source checkout (the
+        // resolver accepts .../build/bin too), so creating the file whenever it
+        // is missing would drop an untracked release_info.json into the repo.
+        // Only a deployed layout — binary directly under <root>/bin — gets one.
+        const std::string deployed_bin = install_root + "/bin/helix-screen";
+        struct stat st {};
+        if (stat(deployed_bin.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
+            spdlog::debug("[UpdateChecker] No release_info.json at {} and no deployed "
+                          "install layout — nothing to repair",
+                          path);
+            return ReleaseInfoRepair::Absent;
+        }
+    }
+
+    std::string current;
+    if (auto it = existing.find("asset_name"); it != existing.end() && it->is_string()) {
+        current = it->get<std::string>();
+    }
+    if (current == want) {
+        // Already correct — do not touch the file. No boot-time disk churn, and
+        // it keeps the repair log line below meaningful when it does appear.
+        spdlog::debug("[UpdateChecker] release_info.json asset_name is correct ({})", want);
+        return ReleaseInfoRepair::NotNeeded;
+    }
+
+    // Preserve every other key (Moonraker tolerates extras), replacing only the
+    // fields that are missing or unusable.
+    auto sane_field = [&existing](const char* key, const std::string& fallback) {
+        const std::string v = helix::json_util::safe_string(existing, key, fallback);
+        return v.empty() ? fallback : v;
+    };
+    json repaired = existing;
+    repaired["project_name"] = sane_field("project_name", "helixscreen");
+    repaired["project_owner"] = sane_field("project_owner", "prestonbrown");
+    repaired["version"] = sane_field("version", std::string("v") + HELIX_VERSION);
+    repaired["asset_name"] = want;
+
+    spdlog::info("[UpdateChecker] Repairing release_info.json asset_name: '{}' -> '{}' ({})",
+                 current.empty() ? "<missing>" : current, want, path);
+
+    // Resolve symlinks BEFORE renaming. The installer symlinks install-dir files
+    // out to printer_data, and rename(2) onto a symlink replaces the symlink
+    // itself rather than writing through it (prestonbrown/helixscreen#1176).
+    std::string target_path = path;
+    {
+        std::error_code ec;
+        if (std::filesystem::is_symlink(path, ec)) {
+            auto real = std::filesystem::canonical(path, ec);
+            if (!ec) {
+                spdlog::debug("[UpdateChecker] Resolved symlink {} -> {}", path, real.string());
+                target_path = real.string();
+            }
+        }
+    }
+
+    const std::string tmp_path = target_path + ".tmp";
+    {
+        std::ofstream o(tmp_path);
+        if (!o.is_open()) {
+            // Read-only rootfs or a root-owned install dir. Never fatal: the app
+            // boots fine, self-update just stays broken until the installer runs.
+            spdlog::warn("[UpdateChecker] Cannot repair release_info.json — open {} failed: {}",
+                         tmp_path, strerror(errno));
+            return ReleaseInfoRepair::Failed;
+        }
+        o << repaired.dump() << std::endl;
+        o.flush();
+        if (!o.good()) {
+            spdlog::warn("[UpdateChecker] Cannot repair release_info.json — write {} failed: {}",
+                         tmp_path, strerror(errno));
+            o.close();
+            std::remove(tmp_path.c_str());
+            return ReleaseInfoRepair::Failed;
+        }
+    }
+
+    // fsync the temp file before the rename, and the parent dir after, so a
+    // power cut on flash-backed storage cannot leave a zero-length file (#943).
+    {
+        int fd = ::open(tmp_path.c_str(), O_RDONLY);
+        if (fd >= 0) {
+            (void)::fsync(fd);
+            ::close(fd);
+        }
+    }
+
+    if (std::rename(tmp_path.c_str(), target_path.c_str()) != 0) {
+        spdlog::warn("[UpdateChecker] Cannot repair release_info.json — rename {} -> {} failed: {}",
+                     tmp_path, target_path, strerror(errno));
+        std::remove(tmp_path.c_str());
+        return ReleaseInfoRepair::Failed;
+    }
+
+    {
+        const std::string dir = std::filesystem::path(target_path).parent_path().string();
+        if (!dir.empty()) {
+            int dfd = ::open(dir.c_str(), O_RDONLY | O_DIRECTORY);
+            if (dfd >= 0) {
+                (void)::fsync(dfd);
+                ::close(dfd);
+            }
+        }
+    }
+
+    spdlog::info("[UpdateChecker] Repaired release_info.json at {}", target_path);
+    return ReleaseInfoRepair::Repaired;
 }
 
 void UpdateChecker::report_download_status(DownloadStatus status, int progress,

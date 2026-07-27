@@ -26,6 +26,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <optional>
@@ -1802,4 +1803,297 @@ TEST_CASE("extract_zip_member fails for a member that isn't in the archive",
 
     std::system(("rm -rf '" + dir + "'").c_str());
     std::remove(zip.c_str());
+}
+
+// ============================================================================
+// release_info.json self-repair (prestonbrown/helixscreen#993)
+// ============================================================================
+//
+// Moonraker's type:web updater downloads the release asset named by
+// release_info.json's asset_name. A missing or stale name makes Moonraker fall
+// back to the alphabetically-FIRST asset on the release -- never a zip -- and
+// extraction dies with "File is not a zip file". The file was written once at
+// install time and never revalidated, so a bad value permanently blocked the
+// very update that would have repaired it. UpdateChecker::repair_release_info()
+// re-derives asset_name from the platform key at every boot.
+
+namespace {
+
+std::string expected_asset_name() {
+    return "helixscreen-" + UpdateChecker::get_platform_key() + ".zip";
+}
+
+// Read a whole file; returns "" when it cannot be opened.
+std::string read_all(const std::string& path) {
+    std::ifstream in(path);
+    if (!in.is_open())
+        return "";
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
+
+nlohmann::json read_json(const std::string& path) {
+    std::ifstream in(path);
+    REQUIRE(in.is_open());
+    return nlohmann::json::parse(in, nullptr, /*allow_exceptions=*/false);
+}
+
+// Make <root> look like a deployed install so repair_release_info() is willing
+// to CREATE a missing release_info.json there.
+void make_deployed_layout(const std::string& root) {
+    REQUIRE(mkdir((root + "/bin").c_str(), 0755) == 0);
+    create_file(root + "/bin/helix-screen", "#!/bin/sh\nexit 0\n", true);
+}
+
+} // anonymous namespace
+
+TEST_CASE("repair_release_info: empty install root is a no-op", "[update_checker][release_info]") {
+    // Bind-mounted layouts resolve to "". Must not crash, must not guess a path.
+    REQUIRE(UpdateChecker::repair_release_info("") == UpdateChecker::ReleaseInfoRepair::Absent);
+}
+
+TEST_CASE("repair_release_info: missing file in a non-deployed tree is left alone",
+          "[update_checker][release_info]") {
+    // A dev build resolves its install root to the SOURCE CHECKOUT. Creating the
+    // file whenever it is absent would drop an untracked release_info.json into
+    // the repo on every run.
+    auto tmp = make_temp_dir("helix_relinfo_nodeploy");
+    REQUIRE(!tmp.empty());
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Absent);
+    REQUIRE_FALSE(std::filesystem::exists(tmp + "/release_info.json"));
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: missing file in a deployed install is created",
+          "[update_checker][release_info]") {
+    auto tmp = make_temp_dir("helix_relinfo_missing");
+    REQUIRE(!tmp.empty());
+    make_deployed_layout(tmp);
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Repaired);
+
+    auto j = read_json(tmp + "/release_info.json");
+    REQUIRE(j.is_object());
+    CHECK(j["asset_name"].get<std::string>() == expected_asset_name());
+    CHECK(j["project_name"].get<std::string>() == "helixscreen");
+    CHECK(j["project_owner"].get<std::string>() == "prestonbrown");
+    // No prior version to preserve -- reconstructed from the running build.
+    REQUIRE(j.contains("version"));
+    CHECK(j["version"].get<std::string>().rfind("v", 0) == 0);
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: empty file is rewritten", "[update_checker][release_info]") {
+    auto tmp = make_temp_dir("helix_relinfo_empty");
+    REQUIRE(!tmp.empty());
+    const std::string path = tmp + "/release_info.json";
+    create_file(path, "");
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Repaired);
+
+    auto j = read_json(path);
+    REQUIRE(j.is_object());
+    CHECK(j["asset_name"].get<std::string>() == expected_asset_name());
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: truncated/malformed JSON is rewritten",
+          "[update_checker][release_info]") {
+    auto tmp = make_temp_dir("helix_relinfo_malformed");
+    REQUIRE(!tmp.empty());
+    const std::string path = tmp + "/release_info.json";
+    // Power-cut mid-write: a real half-object, not just garbage bytes.
+    create_file(path, "{\"project_name\":\"helixscreen\",\"asset_na");
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Repaired);
+
+    auto j = read_json(path);
+    REQUIRE(j.is_object());
+    CHECK(j["asset_name"].get<std::string>() == expected_asset_name());
+    CHECK(j["project_name"].get<std::string>() == "helixscreen");
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: valid JSON that is not an object is rewritten",
+          "[update_checker][release_info]") {
+    auto tmp = make_temp_dir("helix_relinfo_array");
+    REQUIRE(!tmp.empty());
+    const std::string path = tmp + "/release_info.json";
+    // Parses fine, but every field lookup on it would be a type error.
+    create_file(path, "[\"helixscreen\"]");
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Repaired);
+
+    auto j = read_json(path);
+    REQUIRE(j.is_object());
+    CHECK(j["asset_name"].get<std::string>() == expected_asset_name());
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: asset_name absent is filled in, other fields preserved",
+          "[update_checker][release_info]") {
+    auto tmp = make_temp_dir("helix_relinfo_noasset");
+    REQUIRE(!tmp.empty());
+    const std::string path = tmp + "/release_info.json";
+    create_file(path, R"({"project_name":"helixscreen","project_owner":"prestonbrown",)"
+                      R"("version":"v0.99.84","extra_key":"keep me"})");
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Repaired);
+
+    auto j = read_json(path);
+    REQUIRE(j.is_object());
+    CHECK(j["asset_name"].get<std::string>() == expected_asset_name());
+    CHECK(j["version"].get<std::string>() == "v0.99.84");
+    CHECK(j["project_name"].get<std::string>() == "helixscreen");
+    CHECK(j["project_owner"].get<std::string>() == "prestonbrown");
+    // Unknown keys survive -- we repair one field, we do not reset the file.
+    CHECK(j["extra_key"].get<std::string>() == "keep me");
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: asset_name for the wrong platform is corrected",
+          "[update_checker][release_info]") {
+    auto tmp = make_temp_dir("helix_relinfo_wrong");
+    REQUIRE(!tmp.empty());
+    const std::string path = tmp + "/release_info.json";
+    // The reported field case: a name that matches no asset on this release, so
+    // Moonraker grabs ad5m.sym.zst instead.
+    const std::string wrong = expected_asset_name() == "helixscreen-ad5m.zip"
+                                  ? "helixscreen-k1.zip"
+                                  : "helixscreen-ad5m.zip";
+    create_file(path, R"({"project_name":"helixscreen","project_owner":"prestonbrown",)"
+                      R"("version":"v0.99.84","asset_name":")" +
+                          wrong + R"("})");
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Repaired);
+
+    auto j = read_json(path);
+    CHECK(j["asset_name"].get<std::string>() == expected_asset_name());
+    CHECK(j["version"].get<std::string>() == "v0.99.84");
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: empty and non-string asset_name are both repaired",
+          "[update_checker][release_info]") {
+    auto tmp = make_temp_dir("helix_relinfo_badtype");
+    REQUIRE(!tmp.empty());
+    const std::string path = tmp + "/release_info.json";
+
+    SECTION("empty string") {
+        create_file(path, R"({"asset_name":""})");
+    }
+    SECTION("null") {
+        create_file(path, R"({"asset_name":null})");
+    }
+    SECTION("number") {
+        create_file(path, R"({"asset_name":42})");
+    }
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Repaired);
+    auto j = read_json(path);
+    CHECK(j["asset_name"].get<std::string>() == expected_asset_name());
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: a correct file is not rewritten",
+          "[update_checker][release_info]") {
+    // No boot-time disk churn, and it keeps the repair log line diagnostic:
+    // if it appears in a field log, something really was wrong.
+    auto tmp = make_temp_dir("helix_relinfo_correct");
+    REQUIRE(!tmp.empty());
+    const std::string path = tmp + "/release_info.json";
+
+    // Deliberately pretty-printed with a trailing newline: a rewrite emits a
+    // compact dump, so byte-identity alone would catch a stray write.
+    const std::string original = "{\n    \"asset_name\": \"" + expected_asset_name() +
+                                 "\",\n    \"project_name\": \"helixscreen\",\n"
+                                 "    \"project_owner\": \"prestonbrown\",\n"
+                                 "    \"version\": \"v0.99.103\"\n}\n";
+    create_file(path, original);
+
+    // Backdate the mtime an hour so any rewrite is unmistakable regardless of
+    // filesystem timestamp granularity.
+    const auto backdated = std::filesystem::last_write_time(path) - std::chrono::hours(1);
+    std::filesystem::last_write_time(path, backdated);
+
+    REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::NotNeeded);
+
+    CHECK(std::filesystem::last_write_time(path) == backdated);
+    CHECK(read_all(path) == original);
+    // And no temp file was left lying next to it.
+    CHECK_FALSE(std::filesystem::exists(path + ".tmp"));
+
+    remove_dir(tmp);
+}
+
+TEST_CASE("repair_release_info: writing through a symlink preserves the link (#1176)",
+          "[update_checker][release_info][regression]") {
+    // The installer symlinks install-dir files out to printer_data, and that
+    // link is the only thing keeping them alive through a Moonraker one-click
+    // update (rmtree unlinks a symlink rather than following it). rename(2) onto
+    // a symlink replaces THE SYMLINK -- so an atomic write that skips
+    // canonicalisation silently converts the link into a regular file and
+    // strands it in the doomed directory. Content assertions cannot see this:
+    // the JSON round-trips perfectly either way.
+    auto install = make_temp_dir("helix_relinfo_link_install");
+    auto real = make_temp_dir("helix_relinfo_link_real");
+    REQUIRE(!install.empty());
+    REQUIRE(!real.empty());
+
+    const std::string real_file = real + "/release_info.json";
+    const std::string link_path = install + "/release_info.json";
+    create_file(real_file, R"({"project_name":"helixscreen","version":"v0.99.84"})");
+
+    std::error_code ec;
+    std::filesystem::create_symlink(real_file, link_path, ec);
+    REQUIRE_FALSE(ec);
+    REQUIRE(std::filesystem::is_symlink(link_path));
+
+    REQUIRE(UpdateChecker::repair_release_info(install) ==
+            UpdateChecker::ReleaseInfoRepair::Repaired);
+
+    // The link must survive. Without symlink resolution this is a regular file.
+    CHECK(std::filesystem::is_symlink(link_path));
+    // ...and the write must have landed on the far side of it, not beside it.
+    auto j = read_json(real_file);
+    REQUIRE(j.is_object());
+    CHECK(j["asset_name"].get<std::string>() == expected_asset_name());
+    CHECK(j["version"].get<std::string>() == "v0.99.84");
+
+    CHECK_FALSE(std::filesystem::exists(link_path + ".tmp"));
+    CHECK_FALSE(std::filesystem::exists(real_file + ".tmp"));
+
+    remove_dir(install);
+    remove_dir(real);
+}
+
+TEST_CASE("repair_release_info: an unwritable install dir fails softly",
+          "[update_checker][release_info]") {
+    // Read-only rootfs / root-owned install dir. A failed repair must never be
+    // fatal -- the app boots, self-update just stays broken until the installer
+    // is re-run.
+    if (geteuid() == 0) {
+        SKIP("running as root: directory permissions are not enforced");
+    }
+    auto tmp = make_temp_dir("helix_relinfo_ro");
+    REQUIRE(!tmp.empty());
+    const std::string path = tmp + "/release_info.json";
+    const std::string original = R"({"asset_name":"helixscreen-wrong.zip"})";
+    create_file(path, original);
+    REQUIRE(chmod(tmp.c_str(), 0555) == 0);
+
+    CHECK(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::Failed);
+    // The original is left intact rather than truncated.
+    CHECK(read_all(path) == original);
+
+    REQUIRE(chmod(tmp.c_str(), 0755) == 0);
+    remove_dir(tmp);
 }

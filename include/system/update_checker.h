@@ -230,6 +230,51 @@ class UpdateChecker {
 
     std::string get_platform_asset_name() const;
 
+    /// Single source of truth for the release asset name Moonraker's update
+    /// manager resolves via release_info.json's asset_name. Static so
+    /// repair_release_info() compares against the same expression rather than a
+    /// copy of it — #993 was caused by exactly that name drifting between
+    /// duplicates.
+    static std::string platform_asset_name();
+
+    /**
+     * @brief Outcome of a release_info.json validate-and-repair pass.
+     */
+    enum class ReleaseInfoRepair {
+        NotNeeded, ///< asset_name already matches the platform asset — nothing written
+        Repaired,  ///< file rewritten with the correct asset_name
+        Absent,    ///< no release_info.json to repair (and no deployed layout to create one in)
+        Failed     ///< a repair was needed but could not be written (read-only / permissions)
+    };
+
+    /**
+     * @brief Validate and, if needed, repair the installed release_info.json.
+     *
+     * Moonraker's `type: web` updater downloads the release asset named by this
+     * file's `asset_name`. When that name is missing or matches no asset on the
+     * release, Moonraker silently falls back to the alphabetically-FIRST asset —
+     * never a zip — and extraction dies with "File is not a zip file"
+     * (prestonbrown/helixscreen#993). The file is written once at install time
+     * and was never revalidated, so a stale or wrong value permanently blocked
+     * the very update that would have fixed it; SSH was the only escape.
+     *
+     * This runs at startup and rewrites the file when `asset_name` is absent,
+     * empty, non-string, or != get_platform_asset_name(), preserving the other
+     * fields. It never writes when the value is already correct, and a failure
+     * is never fatal — a bad release_info.json must not stop the app booting.
+     *
+     * A MISSING file is only created when @p install_root looks like a deployed
+     * install (`bin/helix-screen` present). A dev tree resolves its install root
+     * to the source checkout, and creating the file there would litter the repo.
+     *
+     * Static and install-root-parameterised so it is unit-testable against a
+     * temp directory.
+     *
+     * @param install_root Resolved install root (app_get_install_root()), or ""
+     *        if unknown (bind-mounted layout) — then nothing is done.
+     */
+    static ReleaseInfoRepair repair_release_info(const std::string& install_root);
+
     /** @brief Get the configured update channel */
     UpdateChannel get_channel() const;
 
