@@ -1351,3 +1351,67 @@ TEST_CASE("ToolState: sync_from_backend does not overwrite existing tool assignm
     ams.deinit_subjects();
     ts.deinit_subjects();
 }
+
+// Regression for prestonbrown/helixscreen#1176.
+//
+// The installer symlinks tool_spools.json out to printer_data
+// (HELIX_USER_CONFIG_FILES), and that link is the only thing keeping the file
+// alive through a Moonraker one-click update, which rmtree()s the install dir --
+// rmtree unlinks a symlink instead of following it. save_spool_json() does an
+// atomic write, and rename(2) onto a symlink replaces THE SYMLINK, not its
+// target. So before the fix the first spool save silently converted the link
+// into a regular file and stranded it in the doomed directory. Observed in the
+// field on the Pi: a real tool_spools.json in the install dir with an orphaned
+// copy three months stale in printer_data.
+//
+// Content-only assertions cannot see this -- the data round-trips perfectly
+// either way. The property under test is that the path is STILL A SYMLINK after
+// saving, and that the bytes landed on the far side of it.
+TEST_CASE("ToolState: saving through a symlink preserves the link (#1176)",
+          "[tool][tool-state][spool][regression]") {
+    lv_init_safe();
+    auto& ts = ToolState::instance();
+    ts.deinit_subjects();
+    ts.init_subjects(false);
+
+    TempDir install; // stands in for ~/helixscreen/config
+    TempDir real;    // stands in for printer_data/config/helixscreen
+
+    auto real_file = std::filesystem::path(real.str()) / "tool_spools.json";
+    auto link_path = std::filesystem::path(install.str()) / "tool_spools.json";
+    {
+        std::ofstream seed(real_file);
+        seed << "{}";
+    }
+    std::error_code ec;
+    std::filesystem::create_symlink(real_file, link_path, ec);
+    REQUIRE_FALSE(ec);
+    REQUIRE(std::filesystem::is_symlink(link_path));
+
+    ts.set_config_dir(install.str());
+
+    PrinterDiscovery hw;
+    nlohmann::json objects = nlohmann::json::array({"extruder", "extruder1"});
+    hw.parse_objects(objects);
+    ts.init_tools(hw);
+    ts.assign_spool(0, 4242, "Symlink PLA", 750.0f, 1000.0f);
+    ts.save_spool_assignments(nullptr);
+
+    // The link must survive. Pre-fix this is a regular file and the test fails here.
+    CHECK(std::filesystem::is_symlink(link_path));
+
+    // ...and the write must have gone through it to the real file, not beside it.
+    // Shape is a flat object keyed by tool index: {"0": {"spoolman_id": ...}}
+    std::ifstream in(real_file);
+    nlohmann::json written;
+    in >> written;
+    REQUIRE(written.contains("0"));
+    CHECK(written["0"]["spoolman_id"].get<int>() == 4242);
+    CHECK(written["0"]["spool_name"].get<std::string>() == "Symlink PLA");
+
+    // No stray temp file left behind next to either path.
+    CHECK_FALSE(std::filesystem::exists(link_path.string() + ".tmp"));
+    CHECK_FALSE(std::filesystem::exists(real_file.string() + ".tmp"));
+
+    ts.deinit_subjects();
+}
