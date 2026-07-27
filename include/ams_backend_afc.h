@@ -7,6 +7,7 @@
 #include "ams_subscription_backend.h"
 #include "async_lifetime_guard.h"
 #include "error_event.h"
+#include "filament_slot_override_store.h"
 #include "slot_registry.h"
 
 #include <deque>
@@ -61,6 +62,23 @@ struct AfcExtruderInfo {
     float tool_stn = 72.0f;                   ///< Sensor-to-nozzle distance (mm)
     float tool_stn_unload = 100.0f;           ///< Unload retraction distance (mm)
     float tool_sensor_after_extruder = 0.0f;  ///< Post-sensor clear distance (mm)
+};
+
+/**
+ * @brief Per-tool toolchanger state from the AFC_extruder Klipper object
+ *
+ * AFC v1.2.0 (#768) added these so UIs can show which toolhead is being docked
+ * versus picked up during a swap. Absent on older AFC, so the defaults must read
+ * as "nothing special happening".
+ *
+ * Kept in a name-keyed map rather than on AfcExtruderInfo because that vector is
+ * indexed POSITIONALLY as a tool number and is rebuilt from AFC.system.extruders
+ * on every status update.
+ */
+struct AfcToolState {
+    std::string status;         ///< Per-tool AFC State ("ToolDock", "ToolPickup", "Idle", …)
+    bool next_pickup = false;   ///< True on the tool about to be picked up
+    bool is_standalone = false; ///< Standalone toolhead (own lane) vs lane-fed
 };
 
 /**
@@ -172,6 +190,14 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     [[nodiscard]] bool supports_lane_reset() const override {
         return true;
     }
+    /// AFC_LANE_RESET retracts filament from the bowden back to the hub, so it
+    /// needs the lane's filament to actually be at the hub and the toolhead
+    /// free. See can_reset_lane() in the base class.
+    [[nodiscard]] bool can_reset_lane(int slot_index) const override;
+
+    /// Delete this slot's user override ("Clear Spool"). AFC previously
+    /// inherited the no-op default, so the button did nothing here.
+    void clear_slot_override(int slot_index) override;
     AmsError eject_lane(int slot_index) override;
     [[nodiscard]] bool supports_lane_eject() const override {
         return true;
@@ -350,6 +376,8 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcCharHelper;
     friend class AfcToolchangeTestHelper;
     friend class AfcToolchangerLaneHelper;
+    friend class AfcStateStringHelper;
+    friend class AfcDatabaseResponseHelper;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;
@@ -359,6 +387,28 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     }
 
   private:
+    // === User-attached slot identity (FilamentSlotOverrideStore) =============
+    //
+    // AFC firmware cannot hold brand, spool_name, total_weight_g, color_name or
+    // the Spoolman filament/vendor ids — verified against a live lane payload
+    // and its lane_data record — so those live only here.
+    //
+    // The namespace is PRIVATE, deliberately NOT the shared "lane_data": AFC's
+    // own plugin owns that one, deletes the whole namespace on every Klipper
+    // boot and full-POSTs each lane record, so our data would not survive and
+    // AFC's records would be ingested as if the user had authored them.
+    //
+    // This is also what restores retention across an eject now that
+    // parse_afc_stepper honours AFC's clears: firmware truth clears, and the
+    // override re-supplies the identity the user attached.
+    static constexpr const char* kOverrideNamespace = "helix-screen-afc-overrides";
+    std::unique_ptr<helix::ams::FilamentSlotOverrideStore> override_store_;
+    std::unordered_map<int, helix::ams::FilamentSlotOverride> overrides_;
+    /// Layer the user override over firmware values. Callers hold mutex_.
+    void apply_overrides(SlotInfo& slot, int slot_index);
+    /// Build + persist an override from a user edit. Callers hold mutex_.
+    void persist_override(int slot_index, const SlotInfo& info);
+
     /// Async callback safety guard. Tokens shared with AfcConfigManager instances.
     helix::AsyncLifetimeGuard lifetime_;
 
@@ -372,6 +422,20 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
      */
     void parse_afc_state(const nlohmann::json& afc_data, std::string& deferred_error_event,
                          bool& current_slot_set_by_afc_state);
+
+    /**
+     * @brief Apply an AFC state string to action + operation_detail
+     *
+     * Maps the raw firmware string to an AmsAction via normalized matching and
+     * sets a human, translated detail string (never the raw wire token — AFC
+     * emits camelCase since v1.2.0 and operation_detail reaches the UI
+     * verbatim). Warns once per distinct unrecognized string so a rewording
+     * upstream surfaces in logs instead of silently reading as IDLE.
+     *
+     * @param raw    Raw state string from AFC
+     * @param source Field it came from ("status" / "current_state"), for logs
+     */
+    void apply_state_string(const std::string& raw, const char* source);
 
     /**
      * @brief Query current AFC state from Moonraker
@@ -411,12 +475,35 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     void detect_afc_version();
 
     /**
-     * @brief Check if installed AFC version meets minimum requirement
+     * @brief Extract the payload of a server.database.get_item reply
      *
-     * @param required Minimum version string (e.g., "1.0.32")
-     * @return true if installed version >= required version
+     * send_jsonrpc delivers the full JSON-RPC envelope, so the payload lives at
+     * result.value. Strict about that shape: a payload is an arbitrary object,
+     * so it cannot be told apart from an envelope in general. Replies obtained
+     * via MoonrakerAPI::database_get_item are already unwrapped and must not be
+     * passed here.
+     *
+     * @return the payload, or a null json when absent
      */
-    bool version_at_least(const std::string& required) const;
+    static const nlohmann::json& database_item_value(const nlohmann::json& response);
+
+    /**
+     * @brief Apply an afc-install database reply (sets version + capability flags)
+     *
+     * Split out from the RPC callback so the parse is testable without a live
+     * client. Does not raise the version-warning modal or trigger the lane_data
+     * query — the caller does both, keyed off the members this sets.
+     *
+     * @return true when a version string was found and applied
+     */
+    bool apply_afc_version_response(const nlohmann::json& response);
+
+    /**
+     * @brief Apply an AFC/lane_data database reply
+     *
+     * @return true when a lane_data object was found and parsed
+     */
+    bool apply_lane_data_response(const nlohmann::json& response);
 
     /**
      * @brief Parse AFC_stepper lane object for sensor states and filament info
@@ -551,9 +638,11 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // Key: unit name, Value: lane names belonging to that unit
     std::unordered_map<std::string, std::vector<std::string>> unit_lane_map_;
 
-    // Version detection
-    std::string afc_version_{"unknown"}; ///< Detected AFC version (e.g., "1.0.0")
-    bool has_lane_data_db_{false};       ///< v1.0.32+ has lane_data in Moonraker DB
+    // Reported AFC version. DISPLAY AND DIAGNOSTICS ONLY — never gate behavior on
+    // it. AFC removed the code that writes the afc-install namespace (its commit
+    // 7d20db7, #451, 2025-06-16), so this is either "unknown" or a value frozen
+    // before that date. Detect capabilities from the data instead.
+    std::string afc_version_{"unknown"};
 
     // Per-lane hub routing: lane_name → hub name ("direct" for direct lanes)
     std::unordered_map<std::string, std::string> lane_hub_routing_;
@@ -561,6 +650,13 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // Lanes whose "map" field arrived as a non-string (array/object) — dedupes the
     // multi-tool tripwire warning so it fires once per lane, not per update.
     std::set<std::string> map_non_string_warned_lanes_;
+
+    // AFC state strings outside our known vocabulary — dedupes the schema-drift
+    // warning so it fires once per distinct string, not once per status update.
+    std::set<std::string> unknown_state_warned_;
+
+    // Per-tool toolchanger state, keyed by AFC_extruder name (AFC v1.2.0 #768).
+    std::unordered_map<std::string, AfcToolState> tool_states_;
 
     // Hub and toolhead sensors (from AFC_hub and AFC_extruder objects)
     std::unordered_map<std::string, bool> hub_sensors_; ///< Per-hub sensor state, keyed by hub name

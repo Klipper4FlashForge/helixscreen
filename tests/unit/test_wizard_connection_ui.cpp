@@ -459,3 +459,63 @@ TEST_CASE_METHOD(WizardConnectionLifetimeFixture,
     helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
     REQUIRE(callback_ran);
 }
+
+// ============================================================================
+// Klipper-down dead end (Moonraker up, Klippy in `error`)
+// ============================================================================
+// The connection step never skips, the Next/Finish buttons bind to
+// connection_test_passed, and this step raises no Skip button — so gating the
+// gate on hardware discovery made the single most common first-boot state
+// (Moonraker running, Klipper down on a bad printer.cfg) an unbypassable
+// full-screen wall: no Next, no Skip, Back hidden at the first visible step,
+// and no way into the app's own Klipper error surface. Only --skip-wizard or
+// hand-editing settings.json got the user out.
+
+extern lv_subject_t connection_test_passed;
+
+class WizardConnectionGateFixture : public LVGLTestFixture {
+  public:
+    WizardConnectionGateFixture() {
+        ui_wizard_init_subjects(); // defines connection_test_passed (idempotent)
+        step = get_wizard_connection_step();
+        step->init_subjects();
+    }
+    ~WizardConnectionGateFixture() override {
+        step->cleanup();
+    }
+    WizardConnectionStep* step = nullptr;
+};
+
+TEST_CASE_METHOD(WizardConnectionGateFixture, "Connection step: entering the step gates Next off",
+                 "[wizard][connection][gate]") {
+    REQUIRE(lv_subject_get_int(&connection_test_passed) == 0);
+}
+
+TEST_CASE_METHOD(WizardConnectionGateFixture,
+                 "Connection step: Moonraker up + Klipper down still allows Next",
+                 "[wizard][connection][gate][regression]") {
+    REQUIRE(lv_subject_get_int(&connection_test_passed) == 0);
+
+    // Reached only after the WebSocket connected, i.e. Moonraker answered on
+    // the entered address; discovery then aborted because klippy_state was
+    // "error"/"startup".
+    step->allow_continue_without_klipper();
+
+    REQUIRE(lv_subject_get_int(&connection_test_passed) == 1);
+
+    // Still explicitly NOT a full validation — discovery never ran, so the
+    // hardware lists are empty and nothing downstream should assume otherwise.
+    REQUIRE_FALSE(step->is_validated());
+}
+
+TEST_CASE_METHOD(WizardConnectionGateFixture, "Connection step: re-entering the step re-gates Next",
+                 "[wizard][connection][gate]") {
+    step->allow_continue_without_klipper();
+    REQUIRE(lv_subject_get_int(&connection_test_passed) == 1);
+
+    // Navigating away and back must not inherit the previous pass (same
+    // cleanup/re-init sequence the wizard framework runs on a revisit).
+    step->cleanup();
+    step->init_subjects();
+    REQUIRE(lv_subject_get_int(&connection_test_passed) == 0);
+}

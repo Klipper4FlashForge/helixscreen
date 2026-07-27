@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <any>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <optional>
@@ -291,40 +292,135 @@ inline const char* ams_action_to_string(AmsAction action) {
 }
 
 /**
- * @brief Parse AMS action from Happy Hare action string
- * @param action_str Action string from printer.mmu.action
+ * @brief Normalize a firmware state string to a comparison token
+ *
+ * Lowercases and drops every non-alphanumeric character, so "Tool swap",
+ * "ToolSwap", "TOOL_SWAP" and "tool-swap" all collapse to "toolswap".
+ *
+ * Firmware state vocabularies get reworded without notice — AFC renamed its
+ * TOOL_SWAP value from "Tool swap" to "ToolSwap" in v1.2.0. Comparing
+ * normalized tokens makes that entire class of rename a non-event instead of a
+ * silent fall-through to IDLE.
+ */
+inline std::string ams_normalize_state_token(std::string_view s) {
+    std::string out;
+    out.reserve(s.size());
+    for (unsigned char c : s) {
+        if (std::isalnum(c) != 0) {
+            out.push_back(static_cast<char>(std::tolower(c)));
+        }
+    }
+    return out;
+}
+
+/**
+ * @brief Parse AMS action from a firmware action/state string
+ *
+ * Handles both Happy Hare (`printer.mmu.action`) and AFC
+ * (`printer.AFC.current_state`) vocabularies. Matching is done on the
+ * normalized token (see ams_normalize_state_token), then falls back to ordered
+ * substring matching so a reworded or previously-unseen state still resolves to
+ * a sensible action rather than silently reading as IDLE.
+ *
+ * @param action_str    Raw state string from the firmware
+ * @param out_recognized Optional; set true when the exact token is in our known
+ *                       vocabulary, false when the result came from the fuzzy
+ *                       fallback or no rule matched. Callers use this to log
+ *                       schema drift once per unseen string. An empty input
+ *                       reports true — "no state" is normal, not drift.
  * @return Corresponding AmsAction enum value
  */
-inline AmsAction ams_action_from_string(std::string_view action_str) {
-    if (action_str == "Idle")
+inline AmsAction ams_action_from_string(std::string_view action_str,
+                                        bool* out_recognized = nullptr) {
+    auto recognize = [&](bool ok) {
+        if (out_recognized != nullptr)
+            *out_recognized = ok;
+    };
+
+    const std::string t = ams_normalize_state_token(action_str);
+    if (t.empty()) {
+        recognize(true);
         return AmsAction::IDLE;
-    if (action_str == "Loading")
-        return AmsAction::LOADING;
-    if (action_str == "Unloading")
-        return AmsAction::UNLOADING;
-    if (action_str == "Selecting")
-        return AmsAction::SELECTING;
-    if (action_str == "Homing" || action_str == "Resetting")
-        return AmsAction::RESETTING;
-    if (action_str == "Cutting" || action_str == "Cutting Tip" || action_str == "Cutting Filament")
-        return AmsAction::CUTTING;
-    if (action_str == "Loading Ext")
-        return AmsAction::LOADING;
-    if (action_str == "Exiting Ext")
-        return AmsAction::UNLOADING;
-    if (action_str == "Forming Tip")
-        return AmsAction::FORMING_TIP;
-    if (action_str == "Heating")
-        return AmsAction::HEATING;
-    if (action_str == "Checking")
-        return AmsAction::CHECKING;
-    if (action_str == "Purging")
-        return AmsAction::PURGING;
-    // Happy Hare uses "Paused" for attention-required states
-    if (action_str.find("Pause") != std::string_view::npos)
-        return AmsAction::PAUSED;
-    if (action_str.find("Error") != std::string_view::npos)
+    }
+
+    struct Entry {
+        const char* token;
+        AmsAction action;
+    };
+    // Known vocabulary, normalized. Happy Hare and AFC share this table; a
+    // token appearing in only one firmware is harmless to the other.
+    static constexpr Entry kExact[] = {
+        {"idle", AmsAction::IDLE},
+        {"initialized", AmsAction::IDLE},
+        {"loading", AmsAction::LOADING},
+        {"loadingext", AmsAction::LOADING},
+        {"unloading", AmsAction::UNLOADING},
+        {"exitingext", AmsAction::UNLOADING},
+        {"ejecting", AmsAction::UNLOADING},
+        {"selecting", AmsAction::SELECTING},
+        // AFC toolchanger states (v1.2.0 #768). "Tool swap" was the pre-1.2.0
+        // spelling; both normalize to "toolswap".
+        {"toolswap", AmsAction::SELECTING},
+        {"tooldock", AmsAction::SELECTING},
+        {"toolpickup", AmsAction::SELECTING},
+        {"moving", AmsAction::SELECTING},
+        {"restoring", AmsAction::SELECTING},
+        {"homing", AmsAction::RESETTING},
+        {"resetting", AmsAction::RESETTING},
+        {"formingtip", AmsAction::FORMING_TIP},
+        {"cutting", AmsAction::CUTTING},
+        {"cuttingtip", AmsAction::CUTTING},
+        {"cuttingfilament", AmsAction::CUTTING},
+        {"heating", AmsAction::HEATING},
+        {"checking", AmsAction::CHECKING},
+        {"purging", AmsAction::PURGING},
+        {"paused", AmsAction::PAUSED},
+        {"error", AmsAction::ERROR},
+    };
+    for (const auto& e : kExact) {
+        if (t == e.token) {
+            recognize(true);
+            return e.action;
+        }
+    }
+
+    // Fuzzy fallback. Reaching here means the exact string is new to us, so
+    // report it as unrecognized even when a rule below matches — the caller
+    // logs it once and we still behave sensibly in the meantime.
+    recognize(false);
+    auto has = [&](const char* needle) { return t.find(needle) != std::string::npos; };
+
+    // Order is load-bearing: "unloading" contains "loading", so unload-ish
+    // words must be tested first. Error and pause outrank motion words because
+    // an errored move is an error, not a move.
+    if (has("error"))
         return AmsAction::ERROR;
+    if (has("pause"))
+        return AmsAction::PAUSED;
+    if (has("unload") || has("eject") || has("exiting"))
+        return AmsAction::UNLOADING;
+    if (has("toolswap") || has("tooldock") || has("toolpickup") || has("toolchange") || has("swap"))
+        return AmsAction::SELECTING;
+    if (has("load"))
+        return AmsAction::LOADING;
+    if (has("select"))
+        return AmsAction::SELECTING;
+    if (has("purg"))
+        return AmsAction::PURGING;
+    if (has("cut"))
+        return AmsAction::CUTTING;
+    if (has("heat"))
+        return AmsAction::HEATING;
+    if (has("tip"))
+        return AmsAction::FORMING_TIP;
+    if (has("home") || has("reset"))
+        return AmsAction::RESETTING;
+    if (has("restor") || has("moving"))
+        return AmsAction::SELECTING;
+    if (has("check"))
+        return AmsAction::CHECKING;
+    if (has("idle") || has("initial"))
+        return AmsAction::IDLE;
     return AmsAction::IDLE;
 }
 
@@ -707,6 +803,25 @@ struct SlotInfo {
      */
     [[nodiscard]] bool is_present() const {
         return status != SlotStatus::EMPTY && status != SlotStatus::UNKNOWN;
+    }
+
+    /**
+     * @brief Drop every Spoolman handle from this slot
+     *
+     * Unlink used to zero only spoolman_id, leaving spoolman_filament_id and
+     * spoolman_vendor_id behind. Those stale handles then fed
+     * SpoolmanSlotSaver's repoint comparison against a filament belonging to a
+     * spool this lane is no longer linked to.
+     *
+     * Locally-editable identity (brand / material / colour / weights) is
+     * deliberately KEPT: unlinking means "stop tracking this in Spoolman", not
+     * "forget what is in the lane".
+     */
+    void clear_spoolman_link() {
+        spoolman_id = 0;
+        spoolman_filament_id = 0;
+        spoolman_vendor_id = 0;
+        spool_name.clear();
     }
 
     /**

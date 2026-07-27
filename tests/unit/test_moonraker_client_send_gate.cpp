@@ -36,9 +36,13 @@ struct UnconnectedClient {
         client_ = std::make_unique<MoonrakerClient>(loop_->loop());
     }
     ~UnconnectedClient() {
-        client_.reset();
+        // JOIN the loop thread BEFORE destroying the client. With an external loop
+        // is_loop_owner is false, so ~WebSocketClient's stop() skips the join and
+        // the client's std::function members would be freed under a live thread
+        // (#1146).
         loop_->stop();
         loop_->join();
+        client_.reset();
     }
 
     std::shared_ptr<hv::EventLoopThread> loop_;

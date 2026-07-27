@@ -335,6 +335,16 @@ config-manager ui screen_ui grumpyscreen   # or atomscreen, guppyscreen, helixsc
 
 The Creality Sonic Pad is a standalone 7" touchscreen that can run Klipper. It uses a 32-bit ARM userspace (armhf) despite having a 64-bit capable processor (Allwinner H616).
 
+> **Tested firmware: [SonicPad-Debian](https://github.com/Jpe230/SonicPad-Debian) only.**
+> This is the only Sonic Pad firmware HelixScreen has been tested on. It replaces
+> Creality's stock OpenWrt image with Debian 11 (bullseye), which is what gives the
+> Pad a normal systemd + GNU userspace for HelixScreen to install into.
+>
+> HelixScreen is **not** tested on Creality's stock Sonic Pad firmware. The stock
+> image is a heavily cut-down OpenWrt build, so the installer's assumptions about
+> systemd, package tooling, and archive utilities do not hold there. If you are on
+> stock firmware, flash SonicPad-Debian first.
+
 HelixScreen requires Klipper and Moonraker to already be installed and working on the Sonic Pad. This is typically done via [KIAUH](https://github.com/dw-0/kiauh) or a similar tool. HelixScreen replaces whatever touchscreen UI you're currently using (e.g., KlipperScreen).
 
 - **Hardware:**
@@ -342,6 +352,7 @@ HelixScreen requires Klipper and Moonraker to already be installed and working o
   - Network connection (Ethernet)
 
 - **Software:**
+  - [SonicPad-Debian](https://github.com/Jpe230/SonicPad-Debian) (Debian 11 bullseye) — see the note above
   - Klipper and Moonraker installed and working (via KIAUH or similar)
   - SSH access (`sonic@<pad-ip>`)
   - About 100MB free disk space

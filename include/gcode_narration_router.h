@@ -5,6 +5,7 @@
 
 #include "async_lifetime_guard.h"
 
+#include <set>
 #include <string>
 
 #include "hv/json.hpp"
@@ -50,6 +51,12 @@ class GcodeNarrationRouter {
 
     MoonrakerAPI* api_;
     MoonrakerClient* client_;
+
+    /// Narration bodies that mentioned the active backend but matched no phase,
+    /// deduped so the drift hint logs once per distinct line. The step bar fails
+    /// silently when upstream rewords a narration string, so this is the only
+    /// signal that a rename happened.
+    std::set<std::string> unmatched_logged_;
 
     /// [L072] Generation guard for the callback captured by MoonrakerClient.
     /// Declared last so it destructs FIRST — outstanding tokens are invalidated

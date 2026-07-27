@@ -571,7 +571,7 @@ echo "tmpfs       51200     48640  2560       95% /tmp"
     # Test that the tarball default is NOT what's left behind:
     if [ -f "$INSTALL_DIR/config/settings.json" ]; then
         # If file exists, it must be from .old backup, not the tarball default
-        ! grep -q '"default_preset"' "$INSTALL_DIR/config/settings.json"
+        refute grep -q '"default_preset"' "$INSTALL_DIR/config/settings.json"
     fi
 }
 

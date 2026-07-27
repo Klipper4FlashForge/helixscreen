@@ -158,7 +158,7 @@ The **Anycubic ACE Pro** filament system is integrated on the Kobra 2 Pro, Kobra
 
 | Printer | What's special | Status |
 |---|---|---|
-| **Creality Sonic Pad** | Dedicated 32-bit ARM build for the Sonic Pad's screen | Supported |
+| **Creality Sonic Pad** | Dedicated 32-bit ARM build for the Sonic Pad's screen. Requires [SonicPad-Debian](https://github.com/Jpe230/SonicPad-Debian) — the only firmware tested; stock Creality OpenWrt is untested | Supported |
 | **Elegoo Centauri Carbon** | Runs on-device with [OpenCentauri COSMOS](https://docs.opencentauri.cc/klipper-conversion/cosmos/cosmos/) firmware; ships with factory white-balance camera calibration | Tested |
 | **Creality Hi** | Auto-detected Cartesian bedslinger with optional CFS | Preliminary |
 

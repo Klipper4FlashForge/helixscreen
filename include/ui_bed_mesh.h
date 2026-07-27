@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "bed_mesh_renderer.h" // For camera angle constants
+#include "bed_mesh_renderer.h" // For BedMeshRenderMode and the renderer-owned camera state
 #include "lvgl/lvgl.h"
 
 #ifdef __cplusplus
@@ -14,15 +14,8 @@ extern "C" {
 #define BED_MESH_CANVAS_WIDTH 600
 #define BED_MESH_CANVAS_HEIGHT 400
 
-// Rotation angle ranges - use constants from bed_mesh_renderer.h
-// These are integer versions for the widget's int-based rotation tracking
-#define BED_MESH_ROTATION_X_MIN ((int)BED_MESH_ANGLE_X_MIN)
-#define BED_MESH_ROTATION_X_MAX ((int)BED_MESH_ANGLE_X_MAX)
-#define BED_MESH_ROTATION_X_DEFAULT ((int)BED_MESH_DEFAULT_ANGLE_X)
-#define BED_MESH_ROTATION_Z_MIN 0
-#define BED_MESH_ROTATION_Z_MAX 360
-// Convert negative angle to positive (0-360 range): -40 -> 320
-#define BED_MESH_ROTATION_Z_DEFAULT (360 + (int)BED_MESH_DEFAULT_ANGLE_Z)
+// Camera angle limits and defaults live with the renderer that owns them:
+// BED_MESH_ANGLE_X_MIN/MAX and BED_MESH_DEFAULT_ANGLE_X/Z in bed_mesh_renderer.h
 
 /**
  * @brief Register <bed_mesh> widget with LVGL XML system
@@ -77,15 +70,6 @@ void ui_bed_mesh_set_bounds(lv_obj_t* canvas, double bed_x_min, double bed_x_max
                             double mesh_y_min, double mesh_y_max);
 
 /**
- * @brief Set camera rotation angles
- *
- * @param canvas The bed_mesh canvas widget
- * @param angle_x Tilt angle in degrees (typically -85 to -10, negative = looking down)
- * @param angle_z Spin angle in degrees (horizontal rotation around vertical axis)
- */
-void ui_bed_mesh_set_rotation(lv_obj_t* canvas, int angle_x, int angle_z);
-
-/**
  * @brief Force redraw of mesh visualization
  *
  * Clears the canvas and re-renders the mesh with current rotation angles.
@@ -104,14 +88,6 @@ void ui_bed_mesh_redraw(lv_obj_t* canvas);
  * @param canvas The bed_mesh canvas widget
  */
 void ui_bed_mesh_evaluate_render_mode(lv_obj_t* canvas);
-
-/**
- * @brief Get current render mode
- *
- * @param canvas The bed_mesh canvas widget
- * @return Current render mode (AUTO, FORCE_3D, or FORCE_2D)
- */
-helix::BedMeshRenderMode ui_bed_mesh_get_render_mode(lv_obj_t* canvas);
 
 /**
  * @brief Set render mode

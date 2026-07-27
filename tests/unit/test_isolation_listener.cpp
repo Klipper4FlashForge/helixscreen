@@ -31,6 +31,10 @@
 #include <string>
 #include <unistd.h>
 
+#if defined(__APPLE__)
+#include <libproc.h>
+#endif
+
 #include "../catch_amalgamated.hpp"
 
 namespace {
@@ -46,13 +50,27 @@ std::string env_or(const char* name) {
     return v ? std::string(v) : std::string("<unset>");
 }
 
-// Live thread count from /proc/self/status ("Threads:"). A test that spawns a
-// background thread (e.g. an hv::EventLoopThread) and does not join it before
-// returning leaks it; the loop later fires a callback on freed state and crashes
-// a *different* test (UAF in hio_get / a freed observer). This count can't be
-// auto-healed (we can't safely kill a thread), but naming the leaking test makes
-// the otherwise-nondeterministic crash diagnosable in one run.
+// Live thread count for this process. A test that spawns a background thread
+// (e.g. an hv::EventLoopThread) and does not join it before returning leaks it;
+// the loop later fires a callback on freed state and crashes a *different* test
+// (UAF in hio_get / a freed observer). This count can't be auto-healed (we can't
+// safely kill a thread), but naming the leaking test makes the otherwise-
+// nondeterministic crash diagnosable in one run.
+//
+// macOS has no /proc, so the Linux path returned -1 there and the `threads_ >= 0`
+// guard in testCaseEnded silently disabled the tripwire on the primary dev
+// machine — exactly where the leak class it was written to catch was biting
+// (prestonbrown/helixscreen#1146). proc_pidinfo/PROC_PIDTASKINFO is the
+// equivalent: pti_threadnum is the live Mach thread count for the task.
 int live_thread_count() {
+#if defined(__APPLE__)
+    struct proc_taskinfo ti;
+    const int rc = proc_pidinfo(getpid(), PROC_PIDTASKINFO, 0, &ti, sizeof(ti));
+    if (rc == static_cast<int>(sizeof(ti))) {
+        return static_cast<int>(ti.pti_threadnum);
+    }
+    return -1;
+#else
     std::ifstream st("/proc/self/status");
     std::string line;
     while (std::getline(st, line)) {
@@ -61,6 +79,7 @@ int live_thread_count() {
         }
     }
     return -1;
+#endif
 }
 
 class IsolationListener : public Catch::EventListenerBase {

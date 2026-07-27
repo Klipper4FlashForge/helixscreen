@@ -48,7 +48,10 @@ function mapEventToDataPointInternal(
         String(app.locale ?? event.locale ?? ""),
         String(app.theme ?? event.theme ?? ""),
         String(host.arch ?? event.arch ?? ""),
-        "",
+        // blob10: zip-extraction capability ("unzip" | "python" | "none").
+        // Empty for clients older than the field. Gates the .tar.gz retirement
+        // (#993) — see build_session_event() in src/system/telemetry_manager.cpp.
+        String(app.zip_tool ?? event.zip_tool ?? ""),
         "",
         "",
       ],
@@ -125,6 +128,53 @@ function mapEventToDataPointInternal(
         0,
         0,
       ],
+    };
+  }
+
+  // Update outcome events. Both carry a version PAIR: `version` is the release
+  // being moved to and `from_version` is the release it moved from.
+  //
+  // blob2 is "the version the device is RUNNING", matching every other event
+  // type so the default filter blob map (version=blob2, platform=blob3) means
+  // the same thing everywhere. That differs per event:
+  //   update_failed  -> from_version (the install did not happen)
+  //   update_success -> version      (the device is now on the new release)
+  // Getting this wrong on update_failed makes the default version filter
+  // useless: the target is always the newest release, so every failure row
+  // collapses into one bucket. The question we need answered is which
+  // DEPLOYED versions are failing (prestonbrown/helixscreen#993), which is
+  // exactly from_version.
+  if (eventType === "update_failed") {
+    return {
+      indexes: ["update_failed"],
+      blobs: [
+        deviceId,                                                           // blob1
+        String(event.from_version ?? ""),                                   // blob2 RUNNING
+        String(app.platform ?? event.app_platform ?? event.platform ?? ""), // blob3
+        String(event.reason ?? ""),                                         // blob4
+        String(app.version ?? event.app_version ?? event.version ?? ""),    // blob5 target
+        "", "", "", "", "", "", "",
+      ],
+      doubles: [
+        Number(event.http_code ?? 0),  // double1
+        Number(event.file_size ?? 0),  // double2
+        Number(event.exit_code ?? 0),  // double3
+        0, 0, 0, 0, 0,
+      ],
+    };
+  }
+
+  if (eventType === "update_success") {
+    return {
+      indexes: ["update_success"],
+      blobs: [
+        deviceId,                                                           // blob1
+        String(app.version ?? event.app_version ?? event.version ?? ""),    // blob2 new
+        String(app.platform ?? event.app_platform ?? event.platform ?? ""), // blob3
+        String(event.from_version ?? ""),                                   // blob4
+        "", "", "", "", "", "", "", "",
+      ],
+      doubles: [0, 0, 0, 0, 0, 0, 0, 0],
     };
   }
 

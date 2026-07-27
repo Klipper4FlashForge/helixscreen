@@ -66,7 +66,6 @@ setup() {
 #
 # Excluded paths are legitimately historical or out-of-scope:
 #   CHANGELOG.md          - records the old name as part of release history
-#   .claude/ .claude-recall/ - assistant memory/lesson logs, not shipped code
 #   docs/superpowers/     - archived planning docs
 #   src/generated/        - generated code (regenerated from templates)
 #   lib/                  - vendored submodules (LVGL, libhv, etc.)
@@ -75,8 +74,6 @@ setup() {
 @test "no 'centidegree' misnomer in code or docs" {
     run bash -c "git grep -iIln 'centidegree' -- \
         ':!CHANGELOG.md' \
-        ':(glob)!.claude/**' \
-        ':(glob)!.claude-recall/**' \
         ':(glob)!docs/superpowers/**' \
         ':(glob)!src/generated/**' \
         ':(glob)!lib/**' \

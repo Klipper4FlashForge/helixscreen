@@ -344,10 +344,36 @@ jobs:
     - name: Run shell tests
       run: bats tests/shell/
 
+  test-telemetry-worker:
+    name: Telemetry Worker Tests (vitest)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+        submodules: false
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    # `npm install`, not `npm ci`: package-lock.json is gitignored repo-wide
+    # (.gitignore "Dependencies" block), so there is no lockfile to install
+    # from and nothing to key a cache on.
+    - name: Install dependencies
+      working-directory: server/telemetry-worker
+      run: npm install
+
+    - name: Run worker tests
+      working-directory: server/telemetry-worker
+      run: npm test
+
   build-status:
     name: Build Status
     runs-on: ubuntu-latest
-    needs: [compile-ubuntu, test-ubuntu, build-macos, build-android, test-shell]
+    needs: [compile-ubuntu, test-ubuntu, build-macos, build-android, test-shell, test-telemetry-worker]
     if: always()
 
     steps:
@@ -371,6 +397,10 @@ jobs:
         fi
         if [ "${{ needs.test-shell.result }}" != "success" ]; then
           echo "Shell tests failed"
+          exit 1
+        fi
+        if [ "${{ needs.test-telemetry-worker.result }}" != "success" ]; then
+          echo "Telemetry worker tests failed"
           exit 1
         fi
         echo "All builds passed"

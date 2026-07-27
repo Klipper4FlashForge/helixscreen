@@ -231,29 +231,25 @@ Reference: lesson **L064**.
 
 ### The app crashes on reconnect, or on panel rebuild, in an observer callback.
 
-**Cause:** You're observing a **dynamic** subject (per-fan, per-sensor, per-extruder) without a `SubjectLifetime` token — or with a local `SubjectLifetime` that dies before the observer.
+**Cause:** You're observing a **dynamic** subject (per-fan, per-sensor, per-extruder) and its `SubjectLifetime` token never reached the `observe_*` factory. The factory's `lifetime` parameter defaults to `{}`, so fetching a token and forgetting to pass it compiles silently — and then the guard has no way to learn the subject was freed, so `reset()` calls `lv_observer_remove()` on freed memory.
 
 **Fix:**
 
-- Pair your member `ObserverGuard` with a **member** `SubjectLifetime`. Never use a local.
-- When clearing, reset the lifetime **before** the observer (observer's `weak_ptr` only expires if the `shared_ptr` is destroyed first).
-- For per-item collections (carousels, slot lists), use parallel vectors: `std::vector<ObserverGuard>` and `std::vector<SubjectLifetime>`, kept aligned.
+- Pass the token as the factory's last argument. That is the part that makes it safe.
+- Whether the token lives in a local or a member does *not* decide correctness: the accessors hand you a **copy** of a `shared_ptr` the owner keeps, and the owner signals death by writing `*token = false`, not by dropping the refcount. Members are still the recommended shape — self-documenting, and correct under either ownership model.
+- For per-item collections (carousels, slot lists), use parallel vectors: `std::vector<ObserverGuard>` and `std::vector<SubjectLifetime>`, kept index-aligned.
 
 ```cpp
 // Header
-ObserverGuard temp_observer_;
 SubjectLifetime temp_lifetime_;
-
-// Clear
-temp_lifetime_.reset();    // FIRST
-temp_observer_.reset();    // SECOND
+ObserverGuard   temp_observer_;
 
 // Rebind
 auto* s = tsm.get_temp_subject(name, temp_lifetime_);
-temp_observer_ = observe_int_sync(s, ..., temp_lifetime_);
+temp_observer_ = observe_int_sync<Panel>(s, this, handler, temp_lifetime_);  // <- token, not omitted
 ```
 
-Reference: lessons **L077**, **L084**, and `include/ui_observer_guard.h`.
+Reference: lessons **L077**, **L084**, `include/ui_observer_guard.h`, and `docs/devel/THREADING.md` § 5 (which explains why the older "local lifetime = UAF" phrasing was wrong).
 
 ---
 
@@ -326,7 +322,7 @@ Run through this before opening a PR:
 - [ ] **Any hardcoded colors or pixel values?** Swap for design tokens.
 - [ ] **Any new user-visible strings?** Wrapped for translation — `lv_tr()` in C++, or `translation_tag` in XML (the path most first contributions use) — *except* product names, URLs, material codes.
 - [ ] **Modified translation YAML?** Rebuild, then `git add` the regenerated `ui_xml/translations/translations.xml`.
-- [ ] **Added an observer on a dynamic subject?** Paired with a member `SubjectLifetime`, not a local.
+- [ ] **Added an observer on a dynamic subject?** The `SubjectLifetime` you fetched is passed to the `observe_*` factory, not left at its `{}` default.
 - [ ] **Tested at multiple sizes?** At minimum: `480x320`, `800x480`, `1024x600`. See `docs/devel/UI_CONTRIBUTOR_GUIDE.md` § Screen Breakpoints.
 - [ ] **`make test-run` passes.**
 

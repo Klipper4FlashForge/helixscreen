@@ -403,6 +403,21 @@ class Config {
     void remove_printer(const std::string& printer_id);
 
     /**
+     * @brief Move a printer configuration out of the active list, preserving it
+     *
+     * Used by automatic recovery paths, which remove printers the user never
+     * asked to delete. The node is copied to /removed_printers/<id> before it is
+     * erased, so a mistaken recovery costs the user a support round-trip rather
+     * than their heaters, fans, sensors, macros and Moonraker host.
+     *
+     * Prefer this over remove_printer() anywhere the removal is not an explicit
+     * user action.
+     *
+     * @param printer_id Slug ID of the printer to archive
+     */
+    void archive_printer(const std::string& printer_id);
+
+    /**
      * @brief Get singleton instance
      *
      * @return Pointer to global Config instance

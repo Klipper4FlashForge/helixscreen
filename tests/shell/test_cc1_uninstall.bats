@@ -30,6 +30,9 @@ EOF
 
 setup() {
     load helpers
+    # This test rewrites paths with `sed -i` and sources uninstall.sh, which
+    # does the same. Both need GNU -i semantics.
+    install_gnu_sed_shim
 
     log_info() { echo "INFO: $*"; }
     log_warn() { echo "WARN: $*"; }
@@ -109,7 +112,7 @@ SH_EOF
         [ -f "$MOCK_ROOT/etc/init.d/$s" ]
         [ ! -f "$MOCK_ROOT/etc/init.d/$s.helix-bak" ]
         grep -q "Stock COSMOS $s" "$MOCK_ROOT/etc/init.d/$s"
-        ! grep -q "HELIXSCREEN_WRAPPER" "$MOCK_ROOT/etc/init.d/$s"
+        refute grep -q "HELIXSCREEN_WRAPPER" "$MOCK_ROOT/etc/init.d/$s"
     done
 }
 

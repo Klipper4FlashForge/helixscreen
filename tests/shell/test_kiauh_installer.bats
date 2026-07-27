@@ -79,7 +79,7 @@ setup() {
     cp "$INSTALL_DIR/scripts/kiauh/helixscreen/helixscreen_extension.py" "$kiauh_ext/helixscreen/"
     cp "$INSTALL_DIR/scripts/kiauh/helixscreen/metadata.json" "$kiauh_ext/helixscreen/"
     local before_init_mtime
-    before_init_mtime=$(stat -c %Y "$kiauh_ext/helixscreen/__init__.py")
+    before_init_mtime=$(stat_mtime "$kiauh_ext/helixscreen/__init__.py")
 
     sleep 1  # mtime resolution is 1s on most filesystems
     HOME="$BATS_TEST_TMPDIR/fakehome" run install_kiauh_extension ""
@@ -88,7 +88,7 @@ setup() {
 
     # mtime unchanged → file was not rewritten
     local after_init_mtime
-    after_init_mtime=$(stat -c %Y "$kiauh_ext/helixscreen/__init__.py")
+    after_init_mtime=$(stat_mtime "$kiauh_ext/helixscreen/__init__.py")
     [ "$before_init_mtime" = "$after_init_mtime" ]
 }
 

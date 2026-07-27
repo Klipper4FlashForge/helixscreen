@@ -7,13 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.99.103] - 2026-07-26
+
 ### Added
 
-- **Post-operation nozzle cooldown can be switched off** — **Settings > Safety & Notifications > Cool nozzle after filament ops**, on by default and set per printer. AFC runs its own cooldown after a swap, so on those machines you can hand the job to AFC and keep a single timer in charge of the heater.
+- **Speed, flow, message and LED-effect commands go through while the printer is busy (#1129)** — `M220`, `M221`, `M117`, `SET_LED_EFFECT` and `SET_PIN` are treated as discretionary now, so they are not held behind a long-running operation, and nudging an `output_pin` fan is no longer announced as an "LED change".
 
 ### Fixed
 
+- **AFC lane colors and materials from the AFC database were silently unused (#1148)** — the reply to AFC's database query was read from the wrong level of the JSON-RPC envelope, so the guard was false on every successful response: the version stayed "unknown", the per-lane query was never issued, and every lane fell back to default grey. The query also asked for the wrong namespace and could not parse the `#RRGGBB` colors AFC writes there.
+- **A current AFC install could be nagged to upgrade** — AFC stopped writing its version to Moonraker in June 2025, so the string we read is either absent or frozen: a live BoxTurtle reports "1.0.0" while its payload proves 1.0.32-era. Nothing keys off that string any more — capabilities are feature-detected — and the version stays only for display and debug bundles.
+- **AFC 1.2.0 toolchanges showed a raw state token and lost their toasts** — upstream renamed "Tool swap" to "ToolSwap" and added ToolDock and ToolPickup; none were recognized, so the camelCase token reached the screen verbatim and the swap reported as idle, which also defeated toast suppression. Matching now ignores case, spacing and separators, and an unrecognized state is humanized rather than passed through. Per-extruder status, next pickup and standalone flags are parsed for toolchangers.
+- **In-app updates could not bootstrap the fix that repairs them (#993)** — BusyBox and OpenWrt printers (K1, AD5M, K2) verify a download with `unzip -t`, which their BusyBox is too old to have or which is missing entirely, so they rejected a byte-perfect zip as a corrupt download — including the release that fixes the verifier. Those platforms are served the `tar.gz` now, which they can verify with `gunzip -t`.
+- **Pressing update in Mainsail could delete a HelixScreen install (#993)** — Moonraker versions before v0.10.0 ignore `asset_name` and download the first release asset by name, after deleting the install directory, which meant a symbol archive rather than the release. Symbol assets are renamed so a real release sorts first, and the installer no longer writes the Moonraker update stanza on a Moonraker that cannot honor it, removing any stanza an earlier install left behind.
+- **Moonraker went undetected on Creality's nested layout (#993)** — on a K1/K2 the repo is cloned a level below the install dir, so the probe missed and returned undetermined on exactly the platforms the check exists for. Verified on a K1C.
+- **Belt-tension hardware was never detected (#1137)** — the objects list was read from the wrong level of the JSON-RPC envelope and returned its empty default with no error and no log line, so belted-Z and PWM-LED detection was dead code on every printer.
+- **Two malformed replies aborted the app rather than failing (#1139)** — a `/printer/info` response with no hostname killed printer detection outright, and a non-object `error` member in a remote-control reply reached `std::terminate`.
+- **Klipper-derived busy state survived a Klipper restart (#1129)** — idle-timeout and manual-probe state carried over across a Klippy transition because Moonraker only sends deltas; those subjects are cleared on the transition now.
+
+### Changed
+
+- **The jog pad's diagonal dividers read as gaps cut through the pad** instead of lines drawn over it.
+- **Release packages no longer ship the four developer showcase panels (#1135)** — their code was already excluded from release builds; the XML was not.
+- **Update telemetry reports self-update success per running version, and whether a device can read a zip at all (#993)** — the signal needed to tell when a platform is safe to serve zip-only. Update events previously had no handler, so the dashboard showed bare counts with no version or reason.
+- **Contributor docs and gates** — threading rules are consolidated into `docs/devel/THREADING.md`, the review bar is written down as a rubric, and new lint gates ratchet imperative-UI, logging and design-token debt so it can shrink but not grow.
+
+## [0.99.102] - 2026-07-26
+
+### Fixed
+
+- **In-app updates failed on printers with older BusyBox (#993)** — release zips were verified with `unzip -tqq`, but BusyBox only gained `unzip -t` in 1.32, so the AD5M (1.29.3) and K1 (1.31.1) rejected an intact download outright and every in-app update and Moonraker install failed. Validation now tries `python3 zipfile.testzip()` first, gated on zlib since the AD5M's Python 3.7 has none, and degrades to a structural `unzip -l` probe rather than declaring a good archive corrupt. Verified on K1, AD5M and CC1 hardware.
+- **The K2 could not install a zip release at all** — its OpenWrt firmware ships no `unzip` binary and no BusyBox applet, only `python3`, so the pre-download check rejected every update with an `apt-get` hint that does not apply there. The check now asks whether the system can read a zip by any means, extraction gained a Python fallback, and both paths force the exec bit on `install.sh` and `bin/` members so the extracted installer can actually run. Verified on K2 hardware.
+
+### Changed
+
+- **Sonic Pad documentation now states that SonicPad-Debian is the only tested firmware.**
+
+## [0.99.101] - 2026-07-25
+
+LED control gets a round of correctness work, the 3D G-code preview costs noticeably less
+memory on small boards, and a batch of null-tolerance fixes stop malformed config or
+printer data from taking out a whole screen.
+
+### Added
+
+- **The theme editor has its own preset palette** — picking colors no longer means starting from the active theme's swatches every time.
+- **Tap a sent command in the console to paste it back** — reruns and small edits no longer mean retyping. The composer's actions also moved inside the input field.
+- **Spoolman mark and spool number in the spool editor header** — you can tell at a glance which physical spool a slot is bound to.
+- **Post-operation nozzle cooldown can be switched off** — **Settings > Safety & Notifications > Cool nozzle after filament ops**, on by default and set per printer. AFC runs its own cooldown after a swap, so on those machines you can hand the job to AFC and keep a single timer in charge of the heater.
+- **Keyboard long-press and slide-to-select** — the accent/alternate hint now appears in the right place, and sliding onto a hint selects it instead of dismissing the popup.
+- **Side-by-side welcome text and language picker** in the setup wizard.
+- **`helixscreen ctl` gained screenshots, log tail, shutdown, subtree listing, glob widget targets, geometry and constant introspection, and a synthetic pointer for gesture testing** — the remote-control CLI used for driving and debugging a running instance.
+
+### Fixed
+
+- **LED strips (#1129)** — white-only strips read the W channel instead of showing nothing; a command queued while Klippy is busy now settles its caller callback instead of hanging; in-flight LED state is cleared when Klippy leaves READY; and the startup LED preference is applied once per session rather than re-firing on every rediscovery. Multi-strip selection is no longer collapsed by the overlay, and a macro card whose layout fails to build is skipped instead of taking the row with it.
+- **A metadata miss blanked an already-loaded 3D preview** — the preview went blank for the rest of the print whenever G-code metadata was unavailable but the file itself was not (a cached copy, a local path Moonraker cannot resolve, or a scan still in progress). The error is silent, so nothing explained the blank panel.
+- **The pre-print overlay never dismissed when layer 0 was never observed** — prints that skipped straight past the first layer left the overlay up.
+- **Streaming layer parses lost the extrusion mode (#1127)** — relative-extrusion files could render wrong when parsed incrementally.
+- **Spool editing on AMS units** — the filament type selector went missing in spool edit (#1128), the slot editor lost its contents after a rebuild, and `color_rgb` was dropped from in-memory records (#1138). A null sensor reading no longer aborts the whole AMS status frame.
+- **Malformed data no longer takes out a screen** — nulls in the config version, printer database and job history are survived rather than fatal; a loader failure is scoped to the offending item instead of discarding the file; read-only probes stopped writing null keys into `settings.json`; temperature limits keep loading when `position_endstop` is null; and the dashboard guards its widget rebuild against config exceptions.
+- **Crashes on shutdown and rebuild** — the update queue discards instead of draining in its destructor (#1132), subject deinit can no longer resurrect panel singletons, a rebuild condemns the old subtree before creating its replacement, and an empty size string no longer reads one byte out of bounds in the XML parser (#1121).
+- **Desktop/SDL builds** — no more segfault when no accelerated renderer is available, window decorations stop stealing resolution from the emulated panel, Wayland client-side-decoration compensation is bounded, and the SDL audio subsystem is released on shutdown.
 - **A cooldown delay of `0` cooled the nozzle immediately** — `filament/cooldown_delay_seconds` is documented as "0 disables auto-cooldown", but a zero delay instead cut the heater on the next tick. It now means off, as written.
+- **Smaller UI defects** — an accidental flex gap between the navbar and content, the home panel skipping its finalize pass after a rebuild, key press/release positions read from the wrong input device, and page-scroll setup silently succeeding with no gutter buttons.
+
+### Changed
+
+- **The 3D G-code preview uses less memory** — vertex positions upload as quantized int16 (20 bytes to 12), `RibbonVertex` shrank from 10 bytes to 8 with the normal palette dropped, and enhanced shading now defaults off on constrained devices, where its full-canvas cache was a third large buffer. `HELIX_SSAO=1` forces it back on.
+- **43 previously undocumented environment variables are now documented**, along with what a hot reload does and does not restore.
 
 ## [0.99.100] - 2026-07-24
 
@@ -4504,6 +4566,9 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.103]: https://github.com/prestonbrown/helixscreen/compare/v0.99.102...v0.99.103
+[0.99.102]: https://github.com/prestonbrown/helixscreen/compare/v0.99.101...v0.99.102
+[0.99.101]: https://github.com/prestonbrown/helixscreen/compare/v0.99.100...v0.99.101
 [0.99.100]: https://github.com/prestonbrown/helixscreen/compare/v0.99.99...v0.99.100
 [0.99.99]: https://github.com/prestonbrown/helixscreen/compare/v0.99.98...v0.99.99
 [0.99.98]: https://github.com/prestonbrown/helixscreen/compare/v0.99.97...v0.99.98

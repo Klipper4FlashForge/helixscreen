@@ -21,6 +21,7 @@
 #include "system/crash_handler.h"
 #include "theme_manager.h"
 #include "wizard_config_paths.h"
+#include "wizard_step_logic.h"
 
 #include <spdlog/spdlog.h>
 
@@ -531,6 +532,16 @@ void WizardPrinterIdentifyStep::cleanup() {
                 if (!applied.empty()) {
                     spdlog::info("[{}] Applied preset '{}' for printer '{}'", get_name(), applied,
                                  type_name);
+                    // apply_preset_with_variants() persists the top-level "preset"
+                    // marker, and Config::has_preset() is what collapses this step
+                    // plus every hardware picker and the summary. cleanup() runs on
+                    // Back as well as Next, so an interrupted run (crash, power cut,
+                    // user quits) previously came back with all of them gone and no
+                    // in-app way to revisit a mis-detected pick. Mark it provisional;
+                    // it becomes authoritative only when wizard_completed flips.
+                    config->set<bool>(config->df() + helix::kWizardPresetProvisional, true);
+                    // Keep the current run collapsing the now-redundant steps.
+                    helix::wizard_mark_preset_applied_this_session();
                 }
             }
         }

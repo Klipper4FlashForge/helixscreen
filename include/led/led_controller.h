@@ -136,12 +136,15 @@ class LedEffectBackend {
 
     void activate_effect(const std::string& effect_name,
                          NativeBackend::SuccessCallback on_success = nullptr,
-                         NativeBackend::ErrorCallback on_error = nullptr);
+                         NativeBackend::ErrorCallback on_error = nullptr,
+                         NativeBackend::SuccessCallback on_queued = nullptr);
     void stop_all_effects(NativeBackend::SuccessCallback on_success = nullptr,
-                          NativeBackend::ErrorCallback on_error = nullptr);
+                          NativeBackend::ErrorCallback on_error = nullptr,
+                          NativeBackend::SuccessCallback on_queued = nullptr);
     void stop_effect(const std::string& effect_name,
                      NativeBackend::SuccessCallback on_success = nullptr,
-                     NativeBackend::ErrorCallback on_error = nullptr);
+                     NativeBackend::ErrorCallback on_error = nullptr,
+                     NativeBackend::SuccessCallback on_queued = nullptr);
 
     // Set target LEDs for a specific effect by name
     void set_effect_targets(const std::string& effect_name,
@@ -300,17 +303,25 @@ class OutputPinBackend {
     void add_pin(const LedStripInfo& pin);
     void clear();
 
-    // Control methods
+    // Control methods. `on_queued` mirrors NativeBackend: when the emitted G-code is
+    // discretionary and an external blocking op holds Klipper's gcode lock, the
+    // command is queued fire-and-forget and its RPC response is dropped — neither
+    // on_success nor on_error will ever fire. Callers holding an in-flight counter
+    // MUST pass it or the counter wedges (#1129).
     void set_value(const std::string& pin_id, double value,
                    NativeBackend::SuccessCallback on_success = nullptr,
-                   NativeBackend::ErrorCallback on_error = nullptr);
+                   NativeBackend::ErrorCallback on_error = nullptr,
+                   NativeBackend::SuccessCallback on_queued = nullptr);
     void turn_on(const std::string& pin_id, NativeBackend::SuccessCallback on_success = nullptr,
-                 NativeBackend::ErrorCallback on_error = nullptr);
+                 NativeBackend::ErrorCallback on_error = nullptr,
+                 NativeBackend::SuccessCallback on_queued = nullptr);
     void turn_off(const std::string& pin_id, NativeBackend::SuccessCallback on_success = nullptr,
-                  NativeBackend::ErrorCallback on_error = nullptr);
+                  NativeBackend::ErrorCallback on_error = nullptr,
+                  NativeBackend::SuccessCallback on_queued = nullptr);
     void set_brightness(const std::string& pin_id, int brightness_pct,
                         NativeBackend::SuccessCallback on_success = nullptr,
-                        NativeBackend::ErrorCallback on_error = nullptr);
+                        NativeBackend::ErrorCallback on_error = nullptr,
+                        NativeBackend::SuccessCallback on_queued = nullptr);
 
     /// Update pin values from Moonraker status JSON
     void update_from_status(const nlohmann::json& status);

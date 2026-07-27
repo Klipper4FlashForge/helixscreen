@@ -107,6 +107,35 @@ TEST_CASE("SpoolmanSlotSaver detect_changes: weight within threshold is not a ch
     REQUIRE_FALSE(changes.any());
 }
 
+// A user-entered change to the spool's TOTAL weight is a real spool-level change.
+// Without this, the header Save button lights up (is_dirty() includes total_weight_g)
+// and the value is stored locally, while Spoolman keeps its old initial_weight forever
+// — total_weight_g was only ever sent to Spoolman at spool-creation time.
+TEST_CASE("SpoolmanSlotSaver detect_changes: total weight changed sets spool_level",
+          "[spoolman][slot_saver]") {
+    SlotInfo original = make_test_slot();
+    SlotInfo edited = original;
+    edited.total_weight_g = 750.0f; // was 1000g
+
+    auto changes = SpoolmanSlotSaver::detect_changes(original, edited);
+
+    REQUIRE_FALSE(changes.filament_level);
+    REQUIRE(changes.spool_level);
+    REQUIRE(changes.any());
+}
+
+TEST_CASE("SpoolmanSlotSaver detect_changes: total weight within threshold is not a change",
+          "[spoolman][slot_saver]") {
+    SlotInfo original = make_test_slot();
+    SlotInfo edited = original;
+    edited.total_weight_g = original.total_weight_g + 0.05f; // within 0.1 threshold
+
+    auto changes = SpoolmanSlotSaver::detect_changes(original, edited);
+
+    REQUIRE_FALSE(changes.spool_level);
+    REQUIRE_FALSE(changes.any());
+}
+
 TEST_CASE("SpoolmanSlotSaver detect_changes: both filament and weight changed sets both",
           "[spoolman][slot_saver]") {
     SlotInfo original = make_test_slot();
@@ -1125,4 +1154,97 @@ TEST_CASE("SpoolmanSlotSaver save: linked spool + filament resolves to existing 
             break;
         }
     }
+}
+
+// ============================================================================
+// LinkIntent — the create-vs-update decision must be EXPLICIT
+// ============================================================================
+//
+// save() inferred it from state: `if (!edited.spoolman_id)`. That single line is
+// why a lane could never create a new spool once it carried a link — and a lane
+// keeps its link across an eject by design. So a user who put a genuinely
+// different spool in that lane had no way to say so: the save PATCHed the OLD
+// spool instead, which is exactly the corruption reported.
+//
+// The three outcomes the maintainer specified are now first-class:
+//   UpdateLinked      — correcting the linked spool's details
+//   CreateAndRebind   — different physical spool; create a new one, leave the old alone
+//   UnlinkLocalOnly   — stop tracking this in Spoolman; keep values lane-local
+
+TEST_CASE("SpoolmanSlotSaver CreateAndRebind creates even when a link exists",
+          "[spoolman][slot_saver][intent]") {
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    SlotInfo original = make_test_slot(); // spoolman_id = 42
+    SlotInfo edited = original;
+    edited.brand = "Creality";
+    edited.material = "PLA";
+    edited.color_rgb = 0xE53935;
+
+    SpoolmanSlotSaver saver(&api);
+    bool done = false;
+    SaveResult captured;
+    saver.save(original, edited, SpoolmanSlotSaver::LinkIntent::CreateAndRebind,
+               [&](const SaveResult& r) {
+                   done = true;
+                   captured = r;
+               });
+
+    REQUIRE(done);
+    CHECK(captured.success);
+    // A NEW spool must exist, and the previously linked one must be untouched.
+    CHECK(captured.created_new_spool);
+    CHECK(captured.new_spool_id != 0);
+    CHECK(captured.new_spool_id != original.spoolman_id);
+    for (const auto& rec : api.spoolman_mock().spool_updates) {
+        CHECK(rec.spool_id != original.spoolman_id);
+    }
+}
+
+TEST_CASE("SpoolmanSlotSaver UnlinkLocalOnly writes nothing to Spoolman",
+          "[spoolman][slot_saver][intent]") {
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    SlotInfo original = make_test_slot();
+    SlotInfo edited = original;
+    edited.material = "PETG";
+    edited.remaining_weight_g = 111.0f;
+
+    SpoolmanSlotSaver saver(&api);
+    bool done = false;
+    saver.save(original, edited, SpoolmanSlotSaver::LinkIntent::UnlinkLocalOnly,
+               [&](const SaveResult& r) {
+                   done = true;
+                   CHECK(r.success);
+               });
+
+    REQUIRE(done);
+    CHECK(api.spoolman_mock().spool_updates.empty());
+    CHECK(api.spoolman_mock().weight_updates.empty());
+}
+
+TEST_CASE("SpoolmanSlotSaver UpdateLinked still patches the linked spool",
+          "[spoolman][slot_saver][intent]") {
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    SlotInfo original = make_test_slot();
+    SlotInfo edited = original;
+    edited.remaining_weight_g = original.remaining_weight_g - 100.0f;
+
+    SpoolmanSlotSaver saver(&api);
+    bool done = false;
+    saver.save(original, edited, SpoolmanSlotSaver::LinkIntent::UpdateLinked,
+               [&](const SaveResult& r) {
+                   done = true;
+                   CHECK(r.success);
+               });
+
+    REQUIRE(done);
+    CHECK_FALSE(api.spoolman_mock().weight_updates.empty());
 }

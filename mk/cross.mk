@@ -1003,7 +1003,7 @@ pi-docker: ensure-docker
 	fi
 	$(call ensure-ccache-dir,pi)
 	$(Q)scripts/cross-compile-lock.sh docker run --rm --user $$(id -u):$$(id -g) -v "$(PWD)":/src $(DOCKER_WORKTREE_MOUNT) -w /src $(call docker-ccache-args,pi) helixscreen/toolchain-pi \
-		make PLATFORM_TARGET=pi SKIP_OPTIONAL_DEPS=1 -j$(NPROC_DOCKER_RUN)
+		make PLATFORM_TARGET=pi SKIP_OPTIONAL_DEPS=1 $(if $(ENABLE_REMOTE_CONTROL),ENABLE_REMOTE_CONTROL=$(ENABLE_REMOTE_CONTROL)) -j$(NPROC_DOCKER_RUN)
 	@$(MAKE) --no-print-directory maybe-stop-colima
 
 # AddressSanitizer build for the Pi (DRM). Output lands in build/pi-asan/.
@@ -2475,6 +2475,25 @@ define release-strip-pii
 	       2>/dev/null || true
 endef
 
+# Developer showcase panels (see ENABLE_DEV_PANELS in Makefile). Their .cpp files
+# are filtered out of APP_SRCS and their XML registrations compiled out for every
+# cross target, so these layouts are unreachable in a release build — nothing
+# registers or instantiates them. Ship the asset half gated the same way the code
+# half is.
+#
+# Unconditional on purpose: release-* recipes run in the top-level (native) make,
+# where ENABLE_DEV_PANELS defaults to yes, while the binaries they package come
+# from separate cross sub-makes where it defaults to no. Keying the strip off the
+# ambient $(ENABLE_DEV_PANELS) would therefore never fire.
+DEV_PANEL_XML := gcode_test_panel.xml glyphs_panel.xml step_test_panel.xml test_panel.xml
+
+# Stage ui_xml/ + config/ into a release tree, minus the dev-panel layouts.
+# Args: $(1) = staged release root (e.g. $(RELEASE_DIR)/helixscreen)
+define release-copy-xml-config
+	@cp -r ui_xml config $(1)/
+	@rm -f $(addprefix $(1)/ui_xml/,$(DEV_PANEL_XML))
+endef
+
 # Bake release_info.json (consumed by Moonraker's type:web self-update) into the
 # staged release tree at $(RELEASE_DIR)/helixscreen. The asset_name is resolved
 # through helix_self_update_asset() in scripts/lib/installer/platform.sh — the
@@ -2499,7 +2518,7 @@ release-pi: | build/pi/bin/helix-screen build/pi/bin/helix-splash build/pi-fbdev
 	@if [ -f build/pi/lib/libhelix-bluetooth.so ]; then cp build/pi/lib/libhelix-bluetooth.so $(RELEASE_DIR)/helixscreen/bin/; fi
 	@if [ -f build/pi-fbdev/bin/helix-screen ]; then cp build/pi-fbdev/bin/helix-screen $(RELEASE_DIR)/helixscreen/bin/helix-screen-fbdev; fi
 	@cp scripts/helix-launcher.sh $(RELEASE_DIR)/helixscreen/bin/
-	@cp -r ui_xml config $(RELEASE_DIR)/helixscreen/
+	$(call release-copy-xml-config,$(RELEASE_DIR)/helixscreen)
 	@# Remove any personal config — release ships template only (installer copies it on first run)
 	@rm -f $(RELEASE_DIR)/helixscreen/config/settings.json $(RELEASE_DIR)/helixscreen/config/settings-test.json $(RELEASE_DIR)/helixscreen/config/helixconfig.json $(RELEASE_DIR)/helixscreen/config/helixconfig-test.json
 	$(call release-strip-pii,$(RELEASE_DIR)/helixscreen)
@@ -2543,7 +2562,7 @@ release-pi32: | build/pi32/bin/helix-screen build/pi32/bin/helix-splash build/pi
 	@if [ -f build/pi32/lib/libhelix-bluetooth.so ]; then cp build/pi32/lib/libhelix-bluetooth.so $(RELEASE_DIR)/helixscreen/bin/; fi
 	@if [ -f build/pi32-fbdev/bin/helix-screen ]; then cp build/pi32-fbdev/bin/helix-screen $(RELEASE_DIR)/helixscreen/bin/helix-screen-fbdev; fi
 	@cp scripts/helix-launcher.sh $(RELEASE_DIR)/helixscreen/bin/
-	@cp -r ui_xml config $(RELEASE_DIR)/helixscreen/
+	$(call release-copy-xml-config,$(RELEASE_DIR)/helixscreen)
 	@# Remove any personal config — release ships template only (installer copies it on first run)
 	@rm -f $(RELEASE_DIR)/helixscreen/config/settings.json $(RELEASE_DIR)/helixscreen/config/settings-test.json $(RELEASE_DIR)/helixscreen/config/helixconfig.json $(RELEASE_DIR)/helixscreen/config/helixconfig-test.json
 	$(call release-strip-pii,$(RELEASE_DIR)/helixscreen)
@@ -2587,7 +2606,7 @@ release-ad5m: | build/ad5m/bin/helix-screen build/ad5m/bin/helix-splash
 	@cp build/ad5m/bin/helix-screen build/ad5m/bin/helix-splash $(RELEASE_DIR)/helixscreen/bin/
 	@if [ -f build/ad5m/bin/helix-watchdog ]; then cp build/ad5m/bin/helix-watchdog $(RELEASE_DIR)/helixscreen/bin/; fi
 	@cp scripts/helix-launcher.sh $(RELEASE_DIR)/helixscreen/bin/
-	@cp -r ui_xml config $(RELEASE_DIR)/helixscreen/
+	$(call release-copy-xml-config,$(RELEASE_DIR)/helixscreen)
 	$(call release-strip-pii,$(RELEASE_DIR)/helixscreen)
 	@# Copy AD5M Pro default config as config/settings.json (skips wizard on first run)
 	@cp assets/config/presets/ad5m.json $(RELEASE_DIR)/helixscreen/config/settings.json
@@ -2636,7 +2655,7 @@ release-ad5x: | build/ad5x/bin/helix-screen build/ad5x/bin/helix-splash
 	@cp build/ad5x/bin/helix-screen build/ad5x/bin/helix-splash $(RELEASE_DIR)/helixscreen/bin/
 	@if [ -f build/ad5x/bin/helix-watchdog ]; then cp build/ad5x/bin/helix-watchdog $(RELEASE_DIR)/helixscreen/bin/; fi
 	@cp scripts/helix-launcher.sh $(RELEASE_DIR)/helixscreen/bin/
-	@cp -r ui_xml config $(RELEASE_DIR)/helixscreen/
+	$(call release-copy-xml-config,$(RELEASE_DIR)/helixscreen)
 	@# Install AD5X preset as default config (skips hardware wizard on first run)
 	@rm -f $(RELEASE_DIR)/helixscreen/config/settings-test.json $(RELEASE_DIR)/helixscreen/config/helixconfig.json $(RELEASE_DIR)/helixscreen/config/helixconfig-test.json
 	$(call release-strip-pii,$(RELEASE_DIR)/helixscreen)
@@ -2686,7 +2705,7 @@ release-cc1: | build/cc1/bin/helix-screen build/cc1/bin/helix-splash
 	@cp build/cc1/bin/helix-screen build/cc1/bin/helix-splash $(RELEASE_DIR)/helixscreen/bin/
 	@if [ -f build/cc1/bin/helix-watchdog ]; then cp build/cc1/bin/helix-watchdog $(RELEASE_DIR)/helixscreen/bin/; fi
 	@cp scripts/helix-launcher.sh $(RELEASE_DIR)/helixscreen/bin/
-	@cp -r ui_xml config $(RELEASE_DIR)/helixscreen/
+	$(call release-copy-xml-config,$(RELEASE_DIR)/helixscreen)
 	@# Install CC1 preset as default config (skips hardware wizard on first run)
 	@rm -f $(RELEASE_DIR)/helixscreen/config/settings-test.json $(RELEASE_DIR)/helixscreen/config/helixconfig.json $(RELEASE_DIR)/helixscreen/config/helixconfig-test.json
 	$(call release-strip-pii,$(RELEASE_DIR)/helixscreen)
@@ -2736,7 +2755,7 @@ release-k1: | build/mips/bin/helix-screen build/mips/bin/helix-splash
 	@cp build/mips/bin/helix-screen build/mips/bin/helix-splash $(RELEASE_DIR)/helixscreen/bin/
 	@if [ -f build/mips/bin/helix-watchdog ]; then cp build/mips/bin/helix-watchdog $(RELEASE_DIR)/helixscreen/bin/; fi
 	@cp scripts/helix-launcher.sh $(RELEASE_DIR)/helixscreen/bin/
-	@cp -r ui_xml config $(RELEASE_DIR)/helixscreen/
+	$(call release-copy-xml-config,$(RELEASE_DIR)/helixscreen)
 	@# Install K1 preset as default config (skips hardware wizard on first run)
 	@rm -f $(RELEASE_DIR)/helixscreen/config/settings-test.json $(RELEASE_DIR)/helixscreen/config/helixconfig.json $(RELEASE_DIR)/helixscreen/config/helixconfig-test.json
 	$(call release-strip-pii,$(RELEASE_DIR)/helixscreen)
@@ -2786,7 +2805,7 @@ release-k1-dynamic: | build/k1-dynamic/bin/helix-screen build/k1-dynamic/bin/hel
 	@cp build/k1-dynamic/bin/helix-screen build/k1-dynamic/bin/helix-splash $(RELEASE_DIR)/helixscreen/bin/
 	@if [ -f build/k1-dynamic/bin/helix-watchdog ]; then cp build/k1-dynamic/bin/helix-watchdog $(RELEASE_DIR)/helixscreen/bin/; fi
 	@cp scripts/helix-launcher.sh $(RELEASE_DIR)/helixscreen/bin/
-	@cp -r ui_xml config $(RELEASE_DIR)/helixscreen/
+	$(call release-copy-xml-config,$(RELEASE_DIR)/helixscreen)
 	@# Remove any personal config — release ships template only (installer copies it on first run)
 	@rm -f $(RELEASE_DIR)/helixscreen/config/settings.json $(RELEASE_DIR)/helixscreen/config/settings-test.json $(RELEASE_DIR)/helixscreen/config/helixconfig.json $(RELEASE_DIR)/helixscreen/config/helixconfig-test.json
 	$(call release-strip-pii,$(RELEASE_DIR)/helixscreen)
@@ -2836,7 +2855,7 @@ release-k2: | build/k2/bin/helix-screen build/k2/bin/helix-splash
 		echo "$(YELLOW)  WARNING: build/k2/bin/ustreamer missing — release will not include the camera server$(RESET)"; \
 	fi
 	@cp scripts/helix-launcher.sh $(RELEASE_DIR)/helixscreen/bin/
-	@cp -r ui_xml config $(RELEASE_DIR)/helixscreen/
+	$(call release-copy-xml-config,$(RELEASE_DIR)/helixscreen)
 	@# Install K2 preset as default config (skips hardware wizard on first run)
 	@rm -f $(RELEASE_DIR)/helixscreen/config/settings-test.json $(RELEASE_DIR)/helixscreen/config/helixconfig.json $(RELEASE_DIR)/helixscreen/config/helixconfig-test.json
 	$(call release-strip-pii,$(RELEASE_DIR)/helixscreen)
@@ -2879,7 +2898,7 @@ release-snapmaker-u1: | build/snapmaker-u1/bin/helix-screen
 	@cp build/snapmaker-u1/bin/helix-screen $(RELEASE_DIR)/helixscreen/bin/
 	@if [ -f build/snapmaker-u1/bin/helix-splash ]; then cp build/snapmaker-u1/bin/helix-splash $(RELEASE_DIR)/helixscreen/bin/; fi
 	@cp scripts/helix-launcher.sh $(RELEASE_DIR)/helixscreen/bin/ 2>/dev/null || true
-	@cp -r ui_xml config $(RELEASE_DIR)/helixscreen/
+	$(call release-copy-xml-config,$(RELEASE_DIR)/helixscreen)
 	@# Install Snapmaker U1 preset as default config (skips hardware wizard on first run)
 	@rm -f $(RELEASE_DIR)/helixscreen/config/settings-test.json $(RELEASE_DIR)/helixscreen/config/helixconfig.json $(RELEASE_DIR)/helixscreen/config/helixconfig-test.json
 	$(call release-strip-pii,$(RELEASE_DIR)/helixscreen)
@@ -2922,7 +2941,7 @@ release-x86: | build/x86/bin/helix-screen build/x86/bin/helix-splash build/x86-f
 	@if [ -f build/x86/lib/libhelix-bluetooth.so ]; then cp build/x86/lib/libhelix-bluetooth.so $(RELEASE_DIR)/helixscreen/bin/; fi
 	@if [ -f build/x86-fbdev/bin/helix-screen ]; then cp build/x86-fbdev/bin/helix-screen $(RELEASE_DIR)/helixscreen/bin/helix-screen-fbdev; fi
 	@cp scripts/helix-launcher.sh $(RELEASE_DIR)/helixscreen/bin/
-	@cp -r ui_xml config $(RELEASE_DIR)/helixscreen/
+	$(call release-copy-xml-config,$(RELEASE_DIR)/helixscreen)
 	@# Remove any personal config — release ships template only (installer copies it on first run)
 	@rm -f $(RELEASE_DIR)/helixscreen/config/settings.json $(RELEASE_DIR)/helixscreen/config/settings-test.json $(RELEASE_DIR)/helixscreen/config/helixconfig.json $(RELEASE_DIR)/helixscreen/config/helixconfig-test.json
 	$(call release-strip-pii,$(RELEASE_DIR)/helixscreen)

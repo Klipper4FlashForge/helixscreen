@@ -825,9 +825,11 @@ TEST_CASE("MoonrakerClient stress test - sustained load",
         CHECK(completed >= NUM_REQUESTS * 0.95); // At least 95% complete
 
         client->disconnect();
-        client.reset();
+        // Join BEFORE destroying the client — external loop means is_loop_owner is
+        // false, so ~WebSocketClient does not join for us (#1146).
         loop->stop();
         loop->join();
+        client.reset();
     }
 }
 
@@ -847,11 +849,12 @@ TEST_CASE("MoonrakerClient memory safety", "[connection][edge][memory][eventloop
             client->send_jsonrpc("printer.info", json(), [](json) {}, [](const MoonrakerError&) {});
             client->send_jsonrpc("server.info", json(), [](json) {}, [](const MoonrakerError&) {});
 
-            // Destroy immediately
-            client.reset();
-
+            // Join BEFORE destroying — with an external loop is_loop_owner is
+            // false, so ~WebSocketClient skips the join and would free the
+            // client's std::function members under a live thread (#1146).
             loop->stop();
             loop->join();
+            client.reset();
         }
 
         // No leaks, no crashes
@@ -872,8 +875,10 @@ TEST_CASE("MoonrakerClient memory safety", "[connection][edge][memory][eventloop
 
         REQUIRE_NOTHROW(client->send_jsonrpc("test.method", large_params));
 
-        client.reset();
+        // Join BEFORE destroying the client (external loop → is_loop_owner is
+        // false → ~WebSocketClient does not join) (#1146).
         loop->stop();
         loop->join();
+        client.reset();
     }
 }

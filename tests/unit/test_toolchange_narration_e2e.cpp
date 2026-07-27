@@ -83,19 +83,24 @@ TEST_CASE_METHOD(LVGLTestFixture,
     GcodeNarrationRouter router(nullptr, nullptr); // null client => no real subscription
 
     // LOAD_SWAP template indices:
-    //   heat=0, cut=1, poop=2, kick=3, feed=4, purge=5, brush=6, clean=7, load=8
+    //   heat=0, cut=1, unload=2, feed=3, poop=4, kick=5, brush=6, load=7
     struct Step {
         const char* line;
         int expected_index;
         const char* expected_detail;
     };
+    // Mirrors a real AFC CHANGE_TOOL on the wire: TOOL_UNLOAD heats, cuts and
+    // pulls the old filament back to its lane, then TOOL_LOAD feeds the new one
+    // and only afterwards poops, kicks and brushes.
     const Step sequence[] = {
         {"// Heat nozzle", 0, "Heat nozzle"},
         {"// Cutting tip", 1, "Cut tip"},
-        {"// Feed filament", 4, "Feed filament"},
-        {"// Purge", 5, "Purge"}, // S1: NOT 4 ("Feed filament")
-        {"// Move to Brush", 6, "Brush nozzle"},
-        {"// AFC_Brush: Clean Nozzle", 7, "Clean nozzle"},
+        {"// Unloading lane1", 2, "Unload filament"},
+        {"// Loading lane2", 3, "Feed filament"},
+        {"// AFC_Poop: Starting poop", 4, "Purge to bucket"},
+        {"// AFC_Kick: Starting Filament Kick", 5, "Kick away"},
+        {"// AFC_Brush: Clean Nozzle", 6, "Brush nozzle"},
+        {"// lane2 is now loaded in toolhead", 7, "Load complete"},
     };
 
     for (const auto& step : sequence) {
@@ -117,16 +122,16 @@ TEST_CASE_METHOD(LVGLTestFixture,
         REQUIRE(current_detail() == std::string(step.expected_detail));
     }
 
-    // S1 acceptance, stated explicitly: "// Purge" resolves to the dedicated
-    // purge phase (index 5 / "Purge"), NEVER the preceding "Feed filament"
-    // phase (index 4). Re-feed in isolation to make the invariant unmistakable.
+    // S1 acceptance, restated for the corrected model: purge wording resolves to
+    // the poop phase (index 4 / "Purge to bucket") and never to the preceding
+    // "Feed filament" phase. Re-feed in isolation to make the invariant plain.
     GcodeNarrationRouterTestAccess::feed(router, "// Purging filament");
-    REQUIRE(current_detail() == std::string("Purge"));
+    REQUIRE(current_detail() == std::string("Purge to bucket"));
     REQUIRE(current_detail() != std::string("Feed filament"));
     helix::ui::UpdateQueue::instance().drain();
-    REQUIRE(current_step() == 5);
+    REQUIRE(current_step() == 4);
     // Single-writer guarantee: the precise phase label is stable post-drain.
-    REQUIRE(current_detail() == std::string("Purge"));
+    REQUIRE(current_detail() == std::string("Purge to bucket"));
 }
 
 // ---------------------------------------------------------------------------
@@ -141,7 +146,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
     AmsState::instance().set_active_step_operation(StepOperationType::UNLOAD);
     GcodeNarrationRouter router(nullptr, nullptr);
 
-    // UNLOAD template indices: heat=0, cut=1, retract=2
+    // UNLOAD template indices: heat=0, cut=1, unload=2
     GcodeNarrationRouterTestAccess::feed(router, "// Heat nozzle");
     helix::ui::UpdateQueue::instance().drain();
     REQUIRE(current_step() == 0);
@@ -151,7 +156,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
     REQUIRE(current_step() == 1);
 
     GcodeNarrationRouterTestAccess::feed(router, "// Retracting filament");
-    REQUIRE(current_detail() == std::string("Retract"));
+    REQUIRE(current_detail() == std::string("Retract filament"));
     helix::ui::UpdateQueue::instance().drain();
     REQUIRE(current_step() == 2);
 }
@@ -169,7 +174,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
     nlohmann::json flat = {{"params", nlohmann::json::array({"// AFC_Brush: Clean Nozzle"})}};
     GcodeNarrationRouterTestAccess::notify(router, flat);
     helix::ui::UpdateQueue::instance().drain();
-    REQUIRE(current_step() == 7); // clean
+    REQUIRE(current_step() == 6); // brush
 
     // Reset, then the nested params form: {"params": [["// Purge"]]}
     AmsState::instance().set_narration_phase(-1, "");
@@ -179,18 +184,18 @@ TEST_CASE_METHOD(LVGLTestFixture,
     nlohmann::json nested = {
         {"params", nlohmann::json::array({nlohmann::json::array({"// Purge"})})}};
     GcodeNarrationRouterTestAccess::notify(router, nested);
-    REQUIRE(current_detail() == std::string("Purge"));
+    REQUIRE(current_detail() == std::string("Purge to bucket"));
     helix::ui::UpdateQueue::instance().drain();
-    REQUIRE(current_step() == 5); // S1: purge, not feed (4)
+    REQUIRE(current_step() == 4); // poop, not feed (3)
     // Single-writer guarantee: the phase label survives the drain.
-    REQUIRE(current_detail() == std::string("Purge"));
+    REQUIRE(current_detail() == std::string("Purge to bucket"));
 }
 
 // ---------------------------------------------------------------------------
 // 3. Template-derived labels (the data the sidebar renders) -- S2 + S1.
 // ---------------------------------------------------------------------------
 TEST_CASE_METHOD(LVGLTestFixture,
-                 "Toolchange narration E2E - LOAD_SWAP step template carries brush/clean/purge",
+                 "Toolchange narration E2E - LOAD_SWAP step template carries brush/poop/kick",
                  "[narration][ui_integration]") {
     reset_step_baseline();
     auto* backend = dynamic_cast<AmsBackendAfc*>(AmsState::instance().get_backend());
@@ -220,18 +225,21 @@ TEST_CASE_METHOD(LVGLTestFixture,
         return false;
     };
 
-    // S2: the swap template the sidebar renders must include brush + clean.
+    // S2: the swap template the sidebar renders must include the wipe and the
+    // purge-to-bucket. "Clean nozzle" was a duplicate of the brush and is gone.
     REQUIRE(has_label("Brush nozzle"));
-    REQUIRE(has_label("Clean nozzle"));
+    REQUIRE(has_label("Purge to bucket"));
+    REQUIRE_FALSE(has_label("Clean nozzle"));
+    REQUIRE_FALSE(has_label("Purge"));
 
-    // S1: the phase "// Purge" resolves to is labeled "Purge" (its own phase),
-    // and sits AFTER "feed" so it is never conflated with "Feed filament".
-    const int purge_idx = index_of("purge");
+    // S1: the phase "// Purge" resolves to is the poop, labeled "Purge to
+    // bucket", and sits AFTER "feed" so it is never conflated with the feed.
+    const int poop_idx = index_of("poop");
     const int feed_idx = index_of("feed");
-    REQUIRE(purge_idx == 5);
-    REQUIRE(feed_idx == 4);
-    REQUIRE(purge_idx > feed_idx);
-    REQUIRE(label_at("purge") == std::string("Purge"));
+    REQUIRE(feed_idx == 3);
+    REQUIRE(poop_idx == 4);
+    REQUIRE(poop_idx > feed_idx);
+    REQUIRE(label_at("poop") == std::string("Purge to bucket"));
 
     // Build the step bar exactly as the sidebar does, from the same template,
     // and confirm the rendered widget mirrors the template labels. This is the

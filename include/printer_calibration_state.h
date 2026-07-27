@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include "state/volatile_subjects.h"
 #include "subject_managed_panel.h"
 
+#include <atomic>
 #include <lvgl.h>
 
 #include "hv/json.hpp"
-
-#include <atomic>
 
 namespace helix {
 
@@ -168,10 +168,23 @@ class PrinterCalibrationState {
         busy_queue_toast_shown_.store(false, std::memory_order_relaxed);
     }
 
+    /**
+     * @brief Restore subjects invalidated by a Klipper restart to their defaults.
+     *
+     * Called by PrinterState on any Klippy state transition. Klipper reports these
+     * as DELTA-only fields, so a value cached before a restart otherwise persists
+     * until the field next changes — which made a freshly-restarted idle printer
+     * look busy and wedged discretionary G-code (#1129).
+     */
+    void reset_klippy_volatile() {
+        volatile_.reset_all();
+    }
+
   private:
     friend class PrinterCalibrationStateTestAccess;
 
     SubjectManager subjects_;
+    helix::subjects::VolatileSubjects volatile_;
     bool subjects_initialized_ = false;
 
     // Firmware retraction settings (from firmware_retraction Klipper module)

@@ -63,8 +63,10 @@ inline void settle() {
 
 TEST_CASE("MoonrakerClient install-once: callbacks installed on first connect, not before",
           "[moonraker][connection][reconnect][eventloop][slow]") {
-    auto loop = std::make_shared<hv::EventLoop>();
-    MoonrakerClient client(loop);
+    // Default-construct: supplying a loop sets is_loop_owner=false, so the
+    // connect() below spawns an event-loop thread that ~WebSocketClient never
+    // joins, freeing the client's members under it (#1146).
+    MoonrakerClient client;
 
     // No callbacks installed until the first connect().
     REQUIRE(MoonrakerClientTestAccess::callbacks_installed(client) == false);
@@ -80,8 +82,8 @@ TEST_CASE("MoonrakerClient install-once: callbacks installed on first connect, n
 
 TEST_CASE("MoonrakerClient install-once: repeated connect/disconnect never reinstalls or crashes",
           "[moonraker][connection][reconnect][eventloop][slow]") {
-    auto loop = std::make_shared<hv::EventLoop>();
-    MoonrakerClient client(loop);
+    // Default-construct — see the note in the previous TEST_CASE (#1146).
+    MoonrakerClient client;
 
     // Repeated connect/disconnect against unreachable hosts, alternating URLs to mimic a
     // change-host reconnect. Pre-fix, each connect() reassigned the inherited onclose/

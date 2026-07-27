@@ -255,6 +255,17 @@ void bed_mesh_renderer_set_rotation(bed_mesh_renderer_t* renderer, double angle_
         return;
     }
 
+    // Tilt is clamped to the supported pitch range; beyond it the camera passes
+    // through the bed plane and the painter's-algorithm depth sort inverts.
+    angle_x = std::clamp(angle_x, BED_MESH_ANGLE_X_MIN, BED_MESH_ANGLE_X_MAX);
+
+    // Spin is periodic - normalize to [0, 360) so repeated orbiting cannot walk
+    // the stored angle off toward large magnitudes.
+    angle_z = std::fmod(angle_z, 360.0);
+    if (angle_z < 0.0) {
+        angle_z += 360.0;
+    }
+
     renderer->view_state.angle_x = angle_x;
     renderer->view_state.angle_z = angle_z;
 
@@ -327,19 +338,6 @@ const bed_mesh_view_state_t* bed_mesh_renderer_get_view_state(bed_mesh_renderer_
         return nullptr;
     }
     return &renderer->view_state;
-}
-
-void bed_mesh_renderer_set_view_state(bed_mesh_renderer_t* renderer,
-                                      const bed_mesh_view_state_t* state) {
-    if (!renderer || !state) {
-        return;
-    }
-    renderer->view_state = *state;
-
-    // View state changes invalidate cached projections (READY_TO_RENDER → MESH_LOADED)
-    if (renderer->state == RendererState::READY_TO_RENDER) {
-        renderer->state = RendererState::MESH_LOADED;
-    }
 }
 
 void bed_mesh_renderer_set_dragging(bed_mesh_renderer_t* renderer, bool is_dragging) {

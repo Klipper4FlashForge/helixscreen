@@ -205,16 +205,103 @@ error_handler() {
     exit $exit_code
 }
 
-# Safely remove the installer's temp dir. REFUSES to delete the filesystem root
-# or a mountpoint — a user-supplied TMP_DIR pointing at a mount root (e.g.
-# `TMP_DIR=/mnt/UDISK`) once caused `rm -rf "$TMP_DIR"` to wipe a live data
-# partition (printer_data + device userdata). Only ever removes a normal,
-# non-mountpoint directory.
+# ---------------------------------------------------------------------------
+# User-supplied path guards
+#
+# TMP_DIR and INSTALL_DIR are both documented, user-settable overrides — the
+# installer itself prints "Try: TMP_DIR=/path/with/space sh install.sh" — and
+# both feed destructive operations:
+#
+#   TMP_DIR      rm -rf "$TMP_DIR"                 (cleanup_on_success, error_handler)
+#   INSTALL_DIR  mv "$INSTALL_DIR" "$INSTALL_BACKUP", rm -rf "$INSTALL_DIR",
+#                and a sweep of every config/ sibling               (release.sh, uninstall.sh)
+#
+# Pointing either at an ordinary data directory therefore erases it.
+# `TMP_DIR=/mnt/UDISK` once wiped a K2's whole user partition; the mountpoint
+# check in _safe_remove_tmp_dir below catches only that exact shape, not
+# `TMP_DIR=/home/pi`.
+#
+# The guard is the same one HELIX_OFFSITE_ROLLBACK_DIR already uses in
+# release.sh: a `case` on the FINAL path component with an explicit refusal
+# branch. If the last component isn't recognisably ours, we refuse loudly and
+# the caller exits rather than silently falling back to a default.
+# ---------------------------------------------------------------------------
+
+# _user_dir_name_ok DIR PATTERN [PATTERN...]
+# Returns 0 when DIR is absolute, traversal-free, and its final component
+# matches one of the shell patterns. Patterns are intentionally unquoted in the
+# `case` so globs apply.
+_user_dir_name_ok() {
+    local d="${1%/}"
+    shift
+    # Absolute only — a relative override resolves against an unknown $PWD.
+    case "$d" in
+        /*) ;;
+        *) return 1 ;;
+    esac
+    # "/data/helixscreen-install/../.." is not the directory it claims to be.
+    case "$d" in
+        *..*) return 1 ;;
+    esac
+    local base="${d##*/}"
+    # Empty base means d was "/" (or collapsed to it).
+    [ -n "$base" ] || return 1
+    local pat
+    for pat in "$@"; do
+        case "$base" in
+            $pat) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+# Accept only scratch directories the installer created, or the staging dir the
+# in-app updater hands over via TMP_DIR (update_checker.cpp kStagingName).
+validate_tmp_dir() {
+    local d="$1"
+    if _user_dir_name_ok "$d" '*helixscreen-install*' '.helix-update-staging'; then
+        return 0
+    fi
+    log_error "Refusing to use TMP_DIR='$d'"
+    log_error "TMP_DIR is removed with 'rm -rf' when the installer finishes, so it"
+    log_error "must be a scratch directory of ours — not an existing data directory."
+    log_error "Its last path component must contain 'helixscreen-install'."
+    log_error "Try: TMP_DIR=${d%/}/helixscreen-install sh install.sh"
+    return 1
+}
+
+# Accept only install directories that name themselves after us. Every
+# auto-detected value already does (/opt/helixscreen, $HOME/helixscreen,
+# /usr/data/helixscreen, /srv/helixscreen, /user-resource/helixscreen, ...).
+validate_install_dir() {
+    local d="$1"
+    if _user_dir_name_ok "$d" '*helixscreen*'; then
+        return 0
+    fi
+    log_error "Refusing to use INSTALL_DIR='$d'"
+    log_error "INSTALL_DIR is moved aside and 'rm -rf'd on update and uninstall, so"
+    log_error "it must be a directory of ours — not an existing data directory."
+    log_error "Its last path component must contain 'helixscreen'."
+    log_error "Try: INSTALL_DIR=${d%/}/helixscreen sh install.sh"
+    return 1
+}
+
+# Safely remove the installer's temp dir. REFUSES to delete the filesystem root,
+# a mountpoint, or anything whose name isn't one of ours — a user-supplied
+# TMP_DIR pointing at a mount root (e.g. `TMP_DIR=/mnt/UDISK`) once caused
+# `rm -rf "$TMP_DIR"` to wipe a live data partition (printer_data + device
+# userdata). Only ever removes a normal, non-mountpoint scratch directory.
 _safe_remove_tmp_dir() {
     local d="$1"
     [ -n "$d" ] && [ -d "$d" ] || return 0
     if [ "$d" = "/" ]; then
         log_warn "Refusing to remove TMP_DIR='/'"
+        return 0
+    fi
+    # Last line of defence: even if a caller skipped validate_tmp_dir, never
+    # rm -rf a directory that isn't recognisably the installer's scratch space.
+    if ! _user_dir_name_ok "$d" '*helixscreen-install*' '.helix-update-staging'; then
+        log_warn "Refusing to rm -rf TMP_DIR='$d' (name is not an installer scratch dir); leaving it in place."
         return 0
     fi
     # Mountpoint detection: prefer mountpoint(1); else compare the device id of

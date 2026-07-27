@@ -3236,9 +3236,11 @@ void PrintStatusPanel::load_gcode_for_viewing(const std::string& filename) {
                     // Metadata only decides whether we need to DOWNLOAD the file.
                     // If the viewer already has geometry — loaded from the cached
                     // copy, or from a local path that Moonraker cannot resolve —
-                    // a metadata miss must not tear down a working render. This
-                    // error is silent (no toast), so hiding the viewer here just
-                    // left a blank preview for the rest of the print.
+                    // a metadata miss must not tear down a working render. Also
+                    // reachable on a transient failure while the file is still
+                    // being scanned. This error is silent (no toast), so hiding
+                    // the viewer here just left a blank preview for the rest of
+                    // the print.
                     if (gcode_viewer_ && ui_gcode_viewer_has_content(gcode_viewer_)) {
                         spdlog::debug("[{}] G-code metadata unavailable for '{}': {} - keeping "
                                       "already-loaded render",

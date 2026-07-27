@@ -9,6 +9,8 @@ SERVICE_TEMPLATE="$WORKTREE_ROOT/config/helixscreen.service"
 
 setup() {
     load helpers
+    # These tests substitute template placeholders with GNU-style `sed -i EXPR`.
+    install_gnu_sed_shim
 }
 
 # --- Template placeholder tests ---
@@ -77,14 +79,12 @@ setup() {
 
 @test "substitution replaces all @@HELIX_USER@@ with biqu" {
     cp "$SERVICE_TEMPLATE" "$BATS_TEST_TMPDIR/test.service"
-    sed -i '' "s|@@HELIX_USER@@|biqu|g" "$BATS_TEST_TMPDIR/test.service" 2>/dev/null || \
     sed -i "s|@@HELIX_USER@@|biqu|g" "$BATS_TEST_TMPDIR/test.service"
     grep -q 'User=biqu' "$BATS_TEST_TMPDIR/test.service"
 }
 
 @test "substitution replaces all @@INSTALL_DIR@@ with /opt/helixscreen" {
     cp "$SERVICE_TEMPLATE" "$BATS_TEST_TMPDIR/test.service"
-    sed -i '' "s|@@INSTALL_DIR@@|/opt/helixscreen|g" "$BATS_TEST_TMPDIR/test.service" 2>/dev/null || \
     sed -i "s|@@INSTALL_DIR@@|/opt/helixscreen|g" "$BATS_TEST_TMPDIR/test.service"
     grep -q 'WorkingDirectory=/opt/helixscreen' "$BATS_TEST_TMPDIR/test.service"
     grep -q 'ExecStart=/opt/helixscreen/bin/helix-launcher.sh' "$BATS_TEST_TMPDIR/test.service"
@@ -106,7 +106,6 @@ setup() {
         fi
     done
     [ -n "$existing_groups" ]
-    sed -i '' "s|^SupplementaryGroups=.*|SupplementaryGroups=$existing_groups|" "$BATS_TEST_TMPDIR/test.service" 2>/dev/null || \
     sed -i "s|^SupplementaryGroups=.*|SupplementaryGroups=$existing_groups|" "$BATS_TEST_TMPDIR/test.service"
     grep -q "^SupplementaryGroups=$existing_groups" "$BATS_TEST_TMPDIR/test.service"
 }
@@ -114,7 +113,6 @@ setup() {
 @test "SupplementaryGroups line removed when no groups exist" {
     cp "$SERVICE_TEMPLATE" "$BATS_TEST_TMPDIR/test.service"
     # Replace with groups that definitely don't exist
-    sed -i '' 's|^SupplementaryGroups=.*|SupplementaryGroups=fakegrp1 fakegrp2|' "$BATS_TEST_TMPDIR/test.service" 2>/dev/null || \
     sed -i 's|^SupplementaryGroups=.*|SupplementaryGroups=fakegrp1 fakegrp2|' "$BATS_TEST_TMPDIR/test.service"
     # Now simulate the filtering logic
     desired_groups=$(grep '^SupplementaryGroups=' "$BATS_TEST_TMPDIR/test.service" | sed 's/^SupplementaryGroups=//')
@@ -126,14 +124,12 @@ setup() {
     done
     # No groups matched — remove the directive
     [ -z "$existing_groups" ]
-    sed -i '' '/^SupplementaryGroups=/d' "$BATS_TEST_TMPDIR/test.service" 2>/dev/null || \
     sed -i '/^SupplementaryGroups=/d' "$BATS_TEST_TMPDIR/test.service"
     ! grep -q '^SupplementaryGroups=' "$BATS_TEST_TMPDIR/test.service"
 }
 
 @test "no @@ markers remain after full substitution" {
     cp "$SERVICE_TEMPLATE" "$BATS_TEST_TMPDIR/test.service"
-    sed -i '' "s|@@HELIX_USER@@|biqu|g;s|@@HELIX_GROUP@@|biqu|g;s|@@INSTALL_DIR@@|/opt/helixscreen|g;s|@@INSTALL_PARENT@@|/opt|g" "$BATS_TEST_TMPDIR/test.service" 2>/dev/null || \
     sed -i "s|@@HELIX_USER@@|biqu|g;s|@@HELIX_GROUP@@|biqu|g;s|@@INSTALL_DIR@@|/opt/helixscreen|g;s|@@INSTALL_PARENT@@|/opt|g" "$BATS_TEST_TMPDIR/test.service"
     # Line 47 intentionally preserves @@HELIX_USER@@ in a runtime self-heal command
     # using quote-splitting (@@""HELIX_USER""@@) to survive the installer's sed pass.
@@ -212,7 +208,6 @@ setup() {
 
 @test "substitution replaces @@INSTALL_PARENT@@ with parent of install dir" {
     cp "$SERVICE_TEMPLATE" "$BATS_TEST_TMPDIR/test.service"
-    sed -i '' "s|@@INSTALL_DIR@@|/opt/helixscreen|g;s|@@INSTALL_PARENT@@|/opt|g" "$BATS_TEST_TMPDIR/test.service" 2>/dev/null || \
     sed -i "s|@@INSTALL_DIR@@|/opt/helixscreen|g;s|@@INSTALL_PARENT@@|/opt|g" "$BATS_TEST_TMPDIR/test.service"
     grep -q 'ReadWritePaths=/opt/helixscreen /opt /var/log' "$BATS_TEST_TMPDIR/test.service"
 }

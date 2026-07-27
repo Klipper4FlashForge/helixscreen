@@ -44,8 +44,8 @@ setup() {
     undo_klipper_includes
 
     # Include line + marker comment stripped; snippet removed.
-    ! grep -q "include helixscreen/demo.cfg" "$PRINTER_CFG"
-    ! grep -q "Added by HelixScreen installer" "$PRINTER_CFG"
+    refute grep -q "include helixscreen/demo.cfg" "$PRINTER_CFG"
+    refute grep -q "Added by HelixScreen installer" "$PRINTER_CFG"
     [ ! -f "$KLIPPER_HOME/printer_data/config/helixscreen/demo.cfg" ]
 
     # Original user content preserved.

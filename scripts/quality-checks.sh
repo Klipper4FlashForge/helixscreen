@@ -623,6 +623,138 @@ fi
 echo ""
 
 # ====================================================================
+# Declarative UI: no XML-owned widget driven imperatively from C++
+# ====================================================================
+SECTION_START=$(date +%s)
+echo -n "🎨 Checking declarative UI (imperative XML-widget mutation)..."
+
+if [ -f "scripts/check_imperative_ui.py" ]; then
+  # Ratcheting baseline. These are XML widgets fetched with lv_obj_find_by_name()
+  # and then mutated from C++ instead of bound to a subject. Some predate the gate
+  # as deliberate pragmatism (the XML engine couldn't express it at the time), some
+  # are plain mistakes — both are debt. The number may go DOWN (port a site, then
+  # lower this baseline) but must never go up.
+  if python3 scripts/check_imperative_ui.py --max-allowed 389 --summary >/tmp/imperative_ui.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/imperative_ui.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/imperative_ui.out
+    echo "   Run: python3 scripts/check_imperative_ui.py --list"
+    echo "   Bind subjects in XML; see CLAUDE.md § CRITICAL RULES - Declarative UI."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_imperative_ui.py not found — skipping"
+fi
+
+echo ""
+
+# ====================================================================
+# spdlog only: no printf/cout/cerr/LV_LOG_ outside CLI subcommands
+# ====================================================================
+SECTION_START=$(date +%s)
+echo -n "📢 Checking spdlog-only logging..."
+
+# stdout IS the product in these files (CLI subcommands, splash, demo, ctl client),
+# so printing there is correct. Everywhere else, logging goes through spdlog.
+LOG_ALLOW='src/system/cli_args.cpp|src/application/detect_printer_cmd.cpp|src/helix_splash.cpp|src/lvgl-demo/|src/remote/remote_client.cpp'
+LOG_HITS=$(grep -rnE '\bprintf\(|std::cout|std::cerr|\bLV_LOG_[A-Z]+\(' src include 2>/dev/null \
+             | grep -vE "$LOG_ALLOW" || true)
+if [ -z "$LOG_HITS" ]; then
+  section_time $SECTION_START
+  echo ""
+  echo "✅ spdlog-only: no stray printf/cout/LV_LOG_"
+else
+  section_time $SECTION_START
+  echo ""
+  echo "$LOG_HITS"
+  echo "❌ Use spdlog::info/debug/warn/error instead (docs/devel/LOGGING.md)."
+  echo "   stdout printing belongs only in CLI subcommands."
+  EXIT_CODE=1
+fi
+
+echo ""
+
+# ====================================================================
+# Design tokens + no private LVGL APIs
+# ====================================================================
+SECTION_START=$(date +%s)
+echo -n "🎨 Checking design tokens and LVGL API surface..."
+
+TOKEN_EXIT=0
+
+# Private LVGL internals. remote_control_server.cpp walks LVGL's XML subject
+# linked list for `ctl list_subjects` — there is no public API for that.
+PRIV=$(grep -rnoE '\b_lv_[a-z_]+\(' src include 2>/dev/null \
+         | grep -v 'src/remote/remote_control_server.cpp' || true)
+if [ -n "$PRIV" ]; then
+  echo ""
+  echo "$PRIV"
+  echo "❌ Private LVGL API (_lv_*) — use the public API."
+  TOKEN_EXIT=1
+fi
+
+# Hardcoded colors. Exempt: theme_manager (it parses hex into tokens, definitional),
+# procedural canvas renderers, and helix-splash (a separate binary that does not
+# link ThemeManager). Ratcheting baseline — port these to theme_manager_get_color().
+HEX_ALLOW='theme_manager|src/rendering/|canvas|confetti|glyph|src/helix_splash.cpp'
+HEX_BASELINE=34
+HEX_COUNT=$(grep -rn 'lv_color_hex(0x' src include 2>/dev/null | grep -vcE "$HEX_ALLOW" || true)
+if [ "$HEX_COUNT" -gt "$HEX_BASELINE" ]; then
+  echo ""
+  grep -rn 'lv_color_hex(0x' src include 2>/dev/null | grep -vE "$HEX_ALLOW" || true
+  echo "❌ Hardcoded colors: $HEX_COUNT exceeds baseline ($HEX_BASELINE)."
+  echo "   Use theme_manager_get_color(\"token\") or an XML design token."
+  TOKEN_EXIT=1
+fi
+
+section_time $SECTION_START
+if [ "$TOKEN_EXIT" -eq 0 ]; then
+  echo ""
+  if [ "$HEX_COUNT" -lt "$HEX_BASELINE" ]; then
+    echo "✅ Design tokens: $HEX_COUNT hardcoded colors (baseline $HEX_BASELINE — ratchet down)"
+  else
+    echo "✅ Design tokens: $HEX_COUNT == baseline ($HEX_BASELINE), no private LVGL APIs"
+  fi
+else
+  echo ""
+  EXIT_CODE=1
+fi
+
+echo ""
+
+# ====================================================================
+# Agent-facing docs: references resolve, doc index is complete
+# ====================================================================
+SECTION_START=$(date +%s)
+echo -n "📚 Checking doc references and index..."
+
+if [ -f "scripts/check_doc_refs.py" ]; then
+  if python3 scripts/check_doc_refs.py >/tmp/doc_refs.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/doc_refs.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/doc_refs.out
+    echo "   Run: python3 scripts/check_doc_refs.py"
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_doc_refs.py not found — skipping"
+fi
+
+echo ""
+
+# ====================================================================
 # Translation format-specifier parity (crash #1073)
 # ====================================================================
 # Background: format strings passed to snprintf/fmt::format via lv_tr() are

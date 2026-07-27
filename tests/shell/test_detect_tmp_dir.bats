@@ -9,19 +9,23 @@ WORKTREE_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 setup() {
     load helpers
 
-    # Override log stubs to capture output
+    # Reset source guards and globals
+    unset _HELIX_PLATFORM_SOURCED _HELIX_COMMON_SOURCED
+    export SUDO=""
+    export TMP_DIR=""
+
+    # common.sh owns validate_tmp_dir, which detect_tmp_dir calls on a user
+    # override; the bundled installer always carries both modules.
+    . "$WORKTREE_ROOT/scripts/lib/installer/common.sh"
+    . "$WORKTREE_ROOT/scripts/lib/installer/platform.sh"
+
+    # Override log stubs to capture output (after common.sh, which defines the
+    # real ones).
     log_info()    { echo "INFO: $*"; }
     log_warn()    { echo "WARN: $*"; }
     log_error()   { echo "ERROR: $*"; }
     log_success() { echo "OK: $*"; }
     export -f log_info log_warn log_error log_success
-
-    # Reset source guard and globals
-    unset _HELIX_PLATFORM_SOURCED
-    export SUDO=""
-    export TMP_DIR=""
-
-    . "$WORKTREE_ROOT/scripts/lib/installer/platform.sh"
 }
 
 # ===========================================================================
@@ -29,9 +33,11 @@ setup() {
 # ===========================================================================
 
 @test "detect_tmp_dir: respects user-set TMP_DIR" {
-    export TMP_DIR="/my/custom/tmp"
+    # Must still be a name validate_tmp_dir recognises as ours: TMP_DIR is
+    # rm -rf'd on exit (see test_destructive_path_guards.bats).
+    export TMP_DIR="/my/custom/helixscreen-install"
     detect_tmp_dir
-    [ "$TMP_DIR" = "/my/custom/tmp" ]
+    [ "$TMP_DIR" = "/my/custom/helixscreen-install" ]
 }
 
 @test "detect_tmp_dir: picks first candidate with enough space" {

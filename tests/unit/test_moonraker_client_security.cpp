@@ -39,18 +39,19 @@ using namespace helix;
 class MoonrakerClientSecurityFixture {
   public:
     MoonrakerClientSecurityFixture() {
-        // Create isolated event loop for testing
-        loop = std::make_shared<hv::EventLoop>();
-
-        // Create client with isolated loop
-        client = std::make_unique<MoonrakerClient>(loop);
+        // Default-construct (no external loop) so libhv's TcpClientTmpl sets
+        // is_loop_owner=true. That is what makes ~WebSocketClient's stop(true)
+        // actually join the event-loop thread before any member is freed —
+        // supplying a loop makes stop() skip the join and frees http_req_ and the
+        // onConnection/onMessage std::functions out from under a live thread.
+        // Matches production topology (MoonrakerManager::create_client()).
+        client = std::make_unique<MoonrakerClient>();
 
         reset_callbacks();
     }
 
     ~MoonrakerClientSecurityFixture() {
         client.reset();
-        loop.reset();
     }
 
     void reset_callbacks() {
@@ -74,7 +75,6 @@ class MoonrakerClientSecurityFixture {
     }
 
     // Test objects
-    hv::EventLoopPtr loop;
     std::unique_ptr<MoonrakerClient> client;
 
     // Callback tracking
@@ -89,17 +89,21 @@ class MoonrakerClientSecurityFixture {
 // Issue #4: Use-After-Free - Destructor Cleanup
 // ============================================================================
 
-// [slow] tag: the "Multiple rapid create/destroy cycles" SECTION exercises a
-// known race in libhv's WebSocketClient teardown when the loop is externally
-// owned (is_loop_owner=false). startConnect() can be mid-flight when
-// EventLoopThread::stop() nulls EventLoop::loop_, causing SEGV in hio_get().
-// Production uses default-constructed clients (is_loop_owner=true) and isn't
-// affected. Keeping the test in the dedicated test-eventloop CI lane per L052.
+// [slow] tag: the create/destroy SECTIONs churn real libhv connect attempts
+// against a dead port, so they belong in the dedicated test-eventloop CI lane
+// per L052.
+//
+// Every client here is default-constructed. Supplying an hv::EventLoop makes
+// libhv's TcpClientTmpl set is_loop_owner=false, which makes stop() skip
+// EventLoopThread::stop(wait); ~WebSocketClient then returns without joining and
+// frees http_req_/http_parser_ and the onConnection/onMessage std::functions
+// while the loop thread is still running the failing connect — heap corruption
+// that surfaced as a SIGSEGV in an unrelated test thousands of cases later
+// (prestonbrown/helixscreen#1146).
 TEST_CASE("MoonrakerClient destructor clears callbacks (UAF prevention)",
           "[connection][security][uaf][issue4][eventloop][slow]") {
     SECTION("Destroy client before connection completes") {
-        auto loop = std::make_shared<hv::EventLoop>();
-        auto client = std::make_unique<MoonrakerClient>(loop);
+        auto client = std::make_unique<MoonrakerClient>();
 
         bool connected_called = false;
         bool disconnected_called = false;
@@ -121,8 +125,7 @@ TEST_CASE("MoonrakerClient destructor clears callbacks (UAF prevention)",
     }
 
     SECTION("Destroy client with pending requests") {
-        auto loop = std::make_shared<hv::EventLoop>();
-        auto client = std::make_unique<MoonrakerClient>(loop);
+        auto client = std::make_unique<MoonrakerClient>();
 
         bool error_callback_invoked = false;
 
@@ -146,8 +149,7 @@ TEST_CASE("MoonrakerClient destructor clears callbacks (UAF prevention)",
         int cycles_completed = 0;
 
         for (int i = 0; i < 20; i++) {
-            auto loop = std::make_shared<hv::EventLoop>();
-            auto client = std::make_unique<MoonrakerClient>(loop);
+            auto client = std::make_unique<MoonrakerClient>();
 
             // Start connection
             client->connect(
@@ -167,8 +169,7 @@ TEST_CASE("MoonrakerClient destructor clears callbacks (UAF prevention)",
     }
 
     SECTION("Destroy client with registered persistent callbacks") {
-        auto loop = std::make_shared<hv::EventLoop>();
-        auto client = std::make_unique<MoonrakerClient>(loop);
+        auto client = std::make_unique<MoonrakerClient>();
 
         bool notify_callback_invoked = false;
 
@@ -452,8 +453,7 @@ TEST_CASE_METHOD(MoonrakerClientSecurityFixture,
 TEST_CASE("MoonrakerClient all callback types exception-safe (comprehensive)",
           "[connection][security][exception][issue9][eventloop][slow]") {
     SECTION("Exception in every callback type doesn't crash") {
-        auto loop = std::make_shared<hv::EventLoop>();
-        auto client = std::make_unique<MoonrakerClient>(loop);
+        auto client = std::make_unique<MoonrakerClient>();
 
         // Connection callbacks
         REQUIRE_NOTHROW(client->connect(
@@ -495,8 +495,7 @@ TEST_CASE("MoonrakerClient destructor waits for in-flight callbacks (issue #357)
         // The callback_lifecycle_mutex_ ensures the destructor waits for any
         // in-flight callbacks before proceeding with member destruction.
         for (int i = 0; i < 50; i++) {
-            auto loop = std::make_shared<hv::EventLoop>();
-            auto client = std::make_unique<MoonrakerClient>(loop);
+            auto client = std::make_unique<MoonrakerClient>();
 
             std::atomic<int> callback_count{0};
 
@@ -522,8 +521,7 @@ TEST_CASE("MoonrakerClient destructor waits for in-flight callbacks (issue #357)
     }
 
     SECTION("is_destroying flag prevents new callback execution during destruction") {
-        auto loop = std::make_shared<hv::EventLoop>();
-        auto client = std::make_unique<MoonrakerClient>(loop);
+        auto client = std::make_unique<MoonrakerClient>();
 
         std::atomic<bool> state_cb_called{false};
 
@@ -561,8 +559,7 @@ TEST_CASE("MoonrakerClient destructor waits for in-flight callbacks (issue #357)
 TEST_CASE("MoonrakerClient security properties work together correctly",
           "[connection][security][integration][eventloop][slow]") {
     SECTION("Cleanup with exceptions, large IDs, and nested requests") {
-        auto loop = std::make_shared<hv::EventLoop>();
-        auto client = std::make_unique<MoonrakerClient>(loop);
+        auto client = std::make_unique<MoonrakerClient>();
 
         std::atomic<int> cleanup_callbacks_invoked{0};
 

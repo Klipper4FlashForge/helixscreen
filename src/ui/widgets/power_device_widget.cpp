@@ -1109,8 +1109,9 @@ void PowerDeviceWidget::setup_carousel() {
         for (auto* child : existing_children) {
             lv_obj_set_parent(child, widget_obj_);
         }
-        lv_obj_delete(carousel_);
-        carousel_ = nullptr;
+        // Same indev-dispatch constraint as teardown_carousel(): setup_carousel()
+        // also runs from the sensor-chip click handler.
+        helix::ui::safe_delete_deferred(carousel_);
         return;
     }
 
@@ -1156,7 +1157,12 @@ void PowerDeviceWidget::teardown_carousel() {
             }
         }
 
-        lv_obj_delete(carousel_);
+        // Reached from the sensor-chip LV_EVENT_CLICKED handler, i.e. from inside
+        // LVGL's indev dispatch — a synchronous delete corrupts the parent's child
+        // iteration. safe_delete_deferred() detaches the carousel to lv_layer_top()
+        // right now (so the setup_carousel() that follows never sees it among
+        // widget_obj_'s children) and async-deletes it on the next tick.
+        helix::ui::safe_delete_deferred(carousel_);
     }
 
     energy_page_ = nullptr;

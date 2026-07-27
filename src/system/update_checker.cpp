@@ -556,23 +556,26 @@ int extract_tar_member(const std::string& tarball_path, const std::string& extra
     return ret;
 }
 
-/**
- * @brief Extract a single member from a .zip archive.
- *
- * Uses the `unzip` binary (present on every BusyBox build we target).
- * Args: -q for quiet, -o to overwrite without prompting (no TTY in
- * systemd/in-app update contexts).
- *
- * @param zip_path    Path to the .zip file
- * @param extract_dir Directory to extract into
- * @param member      Archive member path (e.g., "helixscreen/install.sh")
- * @return 0 on success, non-zero on failure
- */
-int extract_zip_member(const std::string& zip_path, const std::string& extract_dir,
-                       const std::string& member) {
-    const std::string unzip_bin = resolve_tool("unzip");
-    return safe_exec({unzip_bin, "-q", "-o", zip_path, member, "-d", extract_dir});
-}
+/// python3 snippet: extract argv[2] from zip argv[1] into argv[3], restoring the
+/// member's unix mode bits (zipfile.extract() drops them) and forcing the exec
+/// bit on bin/* and *.sh so an extracted installer or binary is runnable.
+constexpr const char* kPyExtractScript =
+    "import os, stat, sys, zipfile\n"
+    "zip_path, member, destdir = sys.argv[1], sys.argv[2], sys.argv[3]\n"
+    "try:\n"
+    "    with zipfile.ZipFile(zip_path) as zf:\n"
+    "        info = zf.getinfo(member)\n"
+    "        zf.extract(info, destdir)\n"
+    "        target = os.path.join(destdir, info.filename)\n"
+    "        mode = (info.external_attr >> 16) & 0o777\n"
+    "        if mode:\n"
+    "            os.chmod(target, mode)\n"
+    "        parts = info.filename.split('/')\n"
+    "        if member.endswith('.sh') or (len(parts) > 1 and parts[0] == 'bin'):\n"
+    "            st = os.stat(target).st_mode\n"
+    "            os.chmod(target, st | stat.S_IXUSR)\n"
+    "except Exception:\n"
+    "    sys.exit(1)\n";
 
 /// True if path ends with ".zip" (case-sensitive — we only produce lowercase).
 bool path_is_zip(const std::string& path) {
@@ -1101,16 +1104,15 @@ void UpdateChecker::do_download() {
         download_bytes = cached_info_->download_bytes;
     }
 
-    // `unzip` is required to install zip releases. Hard-fail with an actionable
-    // message instead of letting the verify step emit a misleading "Corrupt
-    // download" error. The shell installer apt-installs unzip on first run, so
-    // this should only fire on systems where apt isn't available or the user
-    // manually removed it.
-    if (path_is_zip(url) && !tool_available("unzip")) {
-        spdlog::error("[UpdateChecker] `unzip` is required to install updates "
-                      "but is not installed on this system");
+    // Installing a zip release needs *some* way to read a zip. `unzip` is the
+    // usual one, but the K2's OpenWrt firmware ships no unzip binary and no
+    // BusyBox unzip applet — only python3, which can do the job. Fail solely
+    // when neither exists, rather than demanding unzip specifically.
+    if (path_is_zip(url) && available_zip_tool() == ZipTool::None) {
+        spdlog::error("[UpdateChecker] Neither `unzip` nor a python3 with zipfile+zlib is "
+                      "available — cannot install zip releases on this system");
         report_download_status(DownloadStatus::Error, 0, lv_tr("Error: `unzip` not installed"),
-                               "Run: sudo apt-get install unzip — then retry the update");
+                               "Install unzip (or a python3 with zlib), then retry the update");
         TelemetryManager::instance().record_update_failure("missing_unzip", version,
                                                            get_platform_key());
         return;
@@ -1214,13 +1216,26 @@ void UpdateChecker::do_download() {
     report_download_status(DownloadStatus::Verifying, 100, lv_tr("Verifying download..."));
 
     // Verify archive integrity (fork/exec to avoid shell injection)
-    int ret;
+    bool corrupt = false;
     if (path_is_zip(download_path)) {
-        ret = safe_exec({resolve_tool("unzip"), "-tqq", download_path});
+        switch (verify_zip_integrity(download_path)) {
+        case ZipIntegrity::Ok:
+            break;
+        case ZipIntegrity::Corrupt:
+            corrupt = true;
+            break;
+        case ZipIntegrity::Unverifiable:
+            // Nothing on this system can test the archive. Don't fail the
+            // update on a missing tool — the SHA256 check below is the real
+            // integrity gate whenever the manifest supplies a hash.
+            spdlog::warn("[UpdateChecker] No tool available to test zip integrity; "
+                         "relying on SHA256 verification");
+            break;
+        }
     } else {
-        ret = safe_exec({resolve_tool("gunzip"), "-t", download_path});
+        corrupt = safe_exec({resolve_tool("gunzip"), "-t", download_path}) != 0;
     }
-    if (ret != 0) {
+    if (corrupt) {
         spdlog::error("[UpdateChecker] Archive verification failed");
         std::remove(download_path.c_str());
         report_download_status(DownloadStatus::Error, 0, lv_tr("Error: Corrupt download"),
@@ -1285,6 +1300,106 @@ void UpdateChecker::do_download() {
     }
 
     do_install(download_path);
+}
+
+UpdateChecker::ZipTool UpdateChecker::available_zip_tool() {
+    if (!find_tool_path("unzip").empty()) {
+        return ZipTool::Unzip;
+    }
+    // No unzip binary (K2's OpenWrt firmware). python3 can read zips itself,
+    // but only with zipfile AND zlib — release archives are deflated.
+    const std::string py_bin = find_tool_path("python3");
+    if (!py_bin.empty() && safe_exec({py_bin, "-c", "import zipfile, zlib"}) == 0) {
+        return ZipTool::Python;
+    }
+    return ZipTool::None;
+}
+
+namespace {
+
+/// Force the owner-exec bit on an extracted installer or binary. do_install()
+/// runs the extracted install.sh via execv(), which fails with EACCES if the
+/// archive stored the member without mode bits — so neither extraction path may
+/// rely on the zip carrying them.
+void ensure_member_executable(const std::string& extract_dir, const std::string& member) {
+    const bool is_script = member.size() >= 3 && member.compare(member.size() - 3, 3, ".sh") == 0;
+    const bool in_bin = member.rfind("bin/", 0) == 0 || member.find("/bin/") != std::string::npos;
+    if (!is_script && !in_bin) {
+        return;
+    }
+    const std::string path = extract_dir + "/" + member;
+    struct stat st {};
+    if (stat(path.c_str(), &st) == 0) {
+        chmod(path.c_str(), st.st_mode | S_IXUSR);
+    }
+}
+
+} // namespace
+
+int UpdateChecker::extract_zip_member(const std::string& zip_path, const std::string& extract_dir,
+                                      const std::string& member) {
+    // -q quiet, -o overwrite without prompting (no TTY during in-app updates).
+    const std::string unzip_bin = find_tool_path("unzip");
+    if (!unzip_bin.empty()) {
+        int ret = safe_exec({unzip_bin, "-q", "-o", zip_path, member, "-d", extract_dir});
+        if (ret == 0) {
+            ensure_member_executable(extract_dir, member);
+        }
+        return ret;
+    }
+
+    const std::string py_bin = find_tool_path("python3");
+    if (!py_bin.empty()) {
+        return safe_exec({py_bin, "-c", kPyExtractScript, zip_path, member, extract_dir});
+    }
+
+    spdlog::error("[UpdateChecker] No unzip binary and no python3 — cannot extract '{}'", member);
+    return -1;
+}
+
+UpdateChecker::ZipIntegrity UpdateChecker::verify_zip_integrity(const std::string& zip_path) {
+    // python3's zipfile does a real per-entry CRC test. Prefer it over
+    // `unzip -t`, which is either rejected outright or a silent no-op on the
+    // BusyBox builds we ship to (see the header comment for the specifics).
+    const std::string py_bin = find_tool_path("python3");
+    if (!py_bin.empty()) {
+        // Exit codes: 0 = intact, 1 = corrupt, 2 = this python cannot test zips.
+        // Code 2 matters on the AD5M, whose python3.7 is built without zlib:
+        // ZipFile() raises "Compression requires the (missing) zlib module" for
+        // a deflated release zip, which must NOT be read as corruption.
+        static constexpr const char* kTestScript =
+            "import sys\n"
+            "try:\n"
+            "    import zipfile, zlib\n"
+            "except Exception:\n"
+            "    sys.exit(2)\n"
+            "try:\n"
+            "    with zipfile.ZipFile(sys.argv[1]) as zf:\n"
+            "        sys.exit(1 if zf.testzip() is not None else 0)\n"
+            "except RuntimeError:\n"
+            "    sys.exit(2)\n"
+            "except Exception:\n"
+            "    sys.exit(1)\n";
+        int ret = safe_exec({py_bin, "-c", kTestScript, zip_path});
+        if (ret == 0) {
+            return ZipIntegrity::Ok;
+        }
+        if (ret == 1) {
+            return ZipIntegrity::Corrupt;
+        }
+        // ret == 2 (or a crashed interpreter): fall through to the unzip probe.
+    }
+
+    // No usable python zipfile. Fall back to `unzip -l`, which reads the central
+    // directory on both BusyBox and info-zip: it catches truncation and garbage
+    // without false-failing a valid archive the way `-t` does on BusyBox 1.31.
+    const std::string unzip_bin = find_tool_path("unzip");
+    if (!unzip_bin.empty()) {
+        int ret = safe_exec({unzip_bin, "-l", zip_path});
+        return (ret == 0) ? ZipIntegrity::Ok : ZipIntegrity::Corrupt;
+    }
+
+    return ZipIntegrity::Unverifiable;
 }
 
 bool UpdateChecker::validate_elf_architecture(const std::string& tarball_path) {

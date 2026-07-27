@@ -1404,6 +1404,29 @@ nlohmann::json TelemetryManager::build_session_event() const {
     app["theme"] = DisplaySettingsManager::instance().get_dark_mode() ? "dark" : "light";
     app["locale"] = SystemSettingsManager::instance().get_language();
 
+    // Which tool (if any) this system can use to read a .zip release archive.
+    // Paired with app.version this answers "can this platform go zip-only?":
+    // a platform is safe to un-gate once ~100% of its active devices report
+    // both a new enough version and zip_tool != "none".
+    //
+    // Probed at most once per process: available_zip_tool() may exec
+    // `python3 -c "import zipfile, zlib"` when no unzip binary exists, which is
+    // slow on MIPS hardware, and the answer cannot change while we run.
+    // Deliberately OUTSIDE the DisplayManager guard above — this is not a
+    // display property, and would silently vanish on headless/early-init.
+    static const char* const zip_tool = []() -> const char* {
+        switch (UpdateChecker::available_zip_tool()) {
+        case UpdateChecker::ZipTool::Unzip:
+            return "unzip";
+        case UpdateChecker::ZipTool::Python:
+            return "python";
+        case UpdateChecker::ZipTool::None:
+            break;
+        }
+        return "none";
+    }();
+    app["zip_tool"] = zip_tool;
+
     event["app"] = app;
 
     // ---- host section (always available, doesn't require printer connection) ----

@@ -830,13 +830,16 @@ void LedControlOverlay::handle_wled_toggle() {
     const auto& selected = controller.selected_strips();
     if (!selected.empty() && selected_backend_type_ == LedBackendType::WLED) {
         spdlog::info("[{}] WLED toggle: {}", get_name(), selected[0]);
-        controller.wled().toggle(
-            selected[0],
-            [this]() {
-                update_wled_toggle_button();
-                refresh_wled_status();
-            },
-            nullptr);
+        // toggle() completes on an HttpExecutor worker thread, and both helpers
+        // touch subjects/widgets — bg_cb marshals the whole body to the main
+        // thread behind the overlay's generation guard.
+        controller.wled().toggle(selected[0],
+                                 lifetime_.bg_cb("LedControlOverlay::wled_toggle",
+                                                 [this]() {
+                                                     update_wled_toggle_button();
+                                                     refresh_wled_status();
+                                                 }),
+                                 nullptr);
     }
 }
 

@@ -5,6 +5,8 @@
 # Verifies the hook contract (all required functions defined),
 # shellcheck compliance, and basic syntax validity.
 
+load helpers
+
 HOOKS_DIR="assets/config/platform"
 HOOK_FILES="hooks-ad5m-forgex.sh hooks-ad5m-kmod.sh hooks-ad5m-zmod.sh hooks-pi.sh hooks-k1.sh hooks-k2.sh hooks-snapmaker-u1.sh"
 REQUIRED_FUNCTIONS="platform_stop_competing_uis platform_enable_backlight platform_wait_for_services platform_pre_start platform_post_stop"
@@ -287,8 +289,8 @@ INIT_SCRIPT="config/helixscreen.init"
 @test "parity: Pi branch in install.sh matches platform.sh" {
     # Both files should call detect_pi_install_dir (not hardcode /opt/helixscreen)
     # in their Pi/else branch of set_install_paths
-    ! grep -A3 'Pi and other platforms' scripts/install.sh | grep -q 'INSTALL_DIR="/opt/helixscreen"'
-    ! grep -A3 'Pi and other platforms' scripts/lib/installer/platform.sh | grep -q 'INSTALL_DIR="/opt/helixscreen"'
+    refute_sh "grep -A3 'Pi and other platforms' scripts/install.sh | grep -q 'INSTALL_DIR=\"/opt/helixscreen\"'"
+    refute_sh "grep -A3 'Pi and other platforms' scripts/lib/installer/platform.sh | grep -q 'INSTALL_DIR=\"/opt/helixscreen\"'"
 }
 
 # --- Snapmaker U1 remote screen (fb-http) ---
@@ -341,7 +343,7 @@ INIT_SCRIPT="config/helixscreen.init"
     # so its request log is unbounded. On the U1 /tmp is tmpfs, and an unbounded
     # log there starves Klipper (the 498 MB tmpfs-fill failure). The launch must
     # discard output to /dev/null, never redirect into a growable /tmp file.
-    ! grep -q '/tmp/fb-http\.log' "$HOOKS_DIR/hooks-snapmaker-u1.sh"
+    refute grep -q '/tmp/fb-http\.log' "$HOOKS_DIR/hooks-snapmaker-u1.sh"
     grep -A2 '^    start-stop-daemon -S' "$HOOKS_DIR/hooks-snapmaker-u1.sh" | grep -q '>/dev/null 2>&1'
 }
 

@@ -48,14 +48,20 @@ void MoonrakerFileAPI::list_files(const std::string& root, const std::string& pa
     client_.send_jsonrpc(
         "server.files.list", params,
         [this, on_success, on_error](json response) {
+            // Only the parse belongs in the try. Leaving on_success() inside it
+            // misattributes a throw from the caller's own UI handler to
+            // Moonraker: on_error would fire after on_success already ran, and a
+            // bogus moonraker_api/parse_error telemetry event would be recorded.
+            std::vector<FileInfo> files;
             try {
-                std::vector<FileInfo> files = parse_file_list(response);
-                spdlog::trace("[FileAPI] Found {} files", files.size());
-                on_success(files);
+                files = parse_file_list(response);
             } catch (const std::exception& e) {
                 LOG_ERROR_INTERNAL("Failed to parse file list: {}", e.what());
                 report_parse_error(on_error, "server.files.list", e.what());
+                return;
             }
+            spdlog::trace("[FileAPI] Found {} files", files.size());
+            on_success(files);
         },
         on_error);
 }
@@ -83,15 +89,18 @@ void MoonrakerFileAPI::get_directory(const std::string& root, const std::string&
     client_.send_jsonrpc(
         "server.files.get_directory", params,
         [this, full_path, on_success, on_error](json response) {
+            // Parse inside the try, deliver outside it — see list_files above.
+            std::vector<FileInfo> files;
             try {
-                std::vector<FileInfo> files = parse_file_list(response);
-                spdlog::debug("[FileAPI] get_directory response for '{}': {} items", full_path,
-                              files.size());
-                on_success(files);
+                files = parse_file_list(response);
             } catch (const std::exception& e) {
                 LOG_ERROR_INTERNAL("Failed to parse directory '{}': {}", full_path, e.what());
                 report_parse_error(on_error, "server.files.get_directory", e.what());
+                return;
             }
+            spdlog::debug("[FileAPI] get_directory response for '{}': {} items", full_path,
+                          files.size());
+            on_success(files);
         },
         [full_path, on_error](const MoonrakerError& error) {
             spdlog::error("[FileAPI] get_directory FAILED for '{}': {} ({})", full_path,
@@ -116,13 +125,16 @@ void MoonrakerFileAPI::get_file_metadata(const std::string& filename,
     client_.send_jsonrpc(
         "server.files.metadata", params,
         [this, on_success, on_error](json response) {
+            // Parse inside the try, deliver outside it — see list_files above.
+            FileMetadata metadata;
             try {
-                FileMetadata metadata = parse_file_metadata(response);
-                on_success(metadata);
+                metadata = parse_file_metadata(response);
             } catch (const std::exception& e) {
                 LOG_ERROR_INTERNAL("Failed to parse file metadata: {}", e.what());
                 report_parse_error(on_error, "server.files.metadata", e.what());
+                return;
             }
+            on_success(metadata);
         },
         on_error,
         0,     // timeout_ms: use default
@@ -143,14 +155,17 @@ void MoonrakerFileAPI::metascan_file(const std::string& filename, FileMetadataCa
     client_.send_jsonrpc(
         "server.files.metascan", params,
         [this, on_success, on_error, filename](json response) {
+            // Parse inside the try, deliver outside it — see list_files above.
+            FileMetadata metadata;
             try {
-                FileMetadata metadata = parse_file_metadata(response);
-                spdlog::debug("[FileAPI] Metascan successful for: {}", filename);
-                on_success(metadata);
+                metadata = parse_file_metadata(response);
             } catch (const std::exception& e) {
                 LOG_ERROR_INTERNAL("Failed to parse metascan response: {}", e.what());
                 report_parse_error(on_error, "server.files.metascan", e.what());
+                return;
             }
+            spdlog::debug("[FileAPI] Metascan successful for: {}", filename);
+            on_success(metadata);
         },
         on_error,
         0,     // timeout_ms: use default
@@ -274,30 +289,53 @@ std::vector<FileInfo> MoonrakerFileAPI::parse_file_list(const json& response) {
 
     const json& result = response["result"];
 
+    // Helper lambdas to safely extract values, mirroring parse_file_metadata below
+    // (Moonraker returns null for missing metadata). Type-checking each field
+    // matters more here than there: this loop builds the whole file browser, so a
+    // single wrong-typed entry from a Moonraker fork would otherwise throw and
+    // abort the entire listing rather than degrading that one row.
+    auto get_string = [](const json& obj, const char* key) -> std::string {
+        if (obj.contains(key) && obj[key].is_string()) {
+            return obj[key].get<std::string>();
+        }
+        return {};
+    };
+
+    auto get_double = [](const json& obj, const char* key) -> double {
+        if (obj.contains(key) && obj[key].is_number()) {
+            return obj[key].get<double>();
+        }
+        return 0.0;
+    };
+
+    auto get_uint64 = [](const json& obj, const char* key) -> uint64_t {
+        if (obj.contains(key) && obj[key].is_number()) {
+            return obj[key].get<uint64_t>();
+        }
+        return 0;
+    };
+
     // Moonraker returns a flat array of file/directory objects in "result"
     // Each object has: path, modified, size, permissions
     // Directories are NOT returned by server.files.list - only by server.files.get_directory
     if (result.is_array()) {
         for (const auto& item : result) {
+            if (!item.is_object()) {
+                continue; // a scalar in the array is not a file entry
+            }
             FileInfo info;
-            if (item.contains("path")) {
-                info.path = item["path"].get<std::string>();
+            info.path = get_string(item, "path");
+            if (!info.path.empty()) {
                 // filename is the last component of the path
                 size_t last_slash = info.path.rfind('/');
                 info.filename = (last_slash != std::string::npos) ? info.path.substr(last_slash + 1)
                                                                   : info.path;
-            } else if (item.contains("filename")) {
-                info.filename = item["filename"].get<std::string>();
+            } else {
+                info.filename = get_string(item, "filename");
             }
-            if (item.contains("size")) {
-                info.size = item["size"].get<uint64_t>();
-            }
-            if (item.contains("modified")) {
-                info.modified = item["modified"].get<double>();
-            }
-            if (item.contains("permissions")) {
-                info.permissions = item["permissions"].get<std::string>();
-            }
+            info.size = get_uint64(item, "size");
+            info.modified = get_double(item, "modified");
+            info.permissions = get_string(item, "permissions");
             info.is_dir = false; // server.files.list only returns files
             files.push_back(info);
         }
@@ -306,48 +344,41 @@ std::vector<FileInfo> MoonrakerFileAPI::parse_file_list(const json& response) {
 
     // Legacy format: result is an object with "dirs" and "files" arrays
     // (may be used by server.files.get_directory or older Moonraker versions)
-    if (result.contains("dirs")) {
+    if (result.contains("dirs") && result["dirs"].is_array()) {
         for (const auto& dir : result["dirs"]) {
+            if (!dir.is_object()) {
+                continue;
+            }
             FileInfo info;
-            if (dir.contains("dirname")) {
+            const std::string dirname = get_string(dir, "dirname");
+            if (!dirname.empty()) {
                 // FlashForge's Moonraker fork returns a root-relative path here
                 // ("Feinkost/Gridfinity") where stock Moonraker returns a leaf;
                 // normalize so the path navigator doesn't double the parent
                 // segment ("Feinkost/Feinkost/Gridfinity", bundle TJVQDCZ6).
-                info.filename = moonraker_path_leaf(dir["dirname"].get<std::string>());
+                info.filename = moonraker_path_leaf(dirname);
                 info.is_dir = true;
             }
-            if (dir.contains("modified")) {
-                info.modified = dir["modified"].get<double>();
-            }
-            if (dir.contains("permissions")) {
-                info.permissions = dir["permissions"].get<std::string>();
-            }
+            info.modified = get_double(dir, "modified");
+            info.permissions = get_string(dir, "permissions");
             files.push_back(info);
         }
     }
 
-    if (result.contains("files")) {
+    if (result.contains("files") && result["files"].is_array()) {
         for (const auto& file : result["files"]) {
+            if (!file.is_object()) {
+                continue;
+            }
             FileInfo info;
-            if (file.contains("filename")) {
-                // See dirs branch above: FlashForge prefixes the folder path onto
-                // this field; normalize to the leaf so the per-file path the panel
-                // builds (current_path + "/" + filename) doesn't double.
-                info.filename = moonraker_path_leaf(file["filename"].get<std::string>());
-            }
-            if (file.contains("path")) {
-                info.path = file["path"].get<std::string>();
-            }
-            if (file.contains("size")) {
-                info.size = file["size"].get<uint64_t>();
-            }
-            if (file.contains("modified")) {
-                info.modified = file["modified"].get<double>();
-            }
-            if (file.contains("permissions")) {
-                info.permissions = file["permissions"].get<std::string>();
-            }
+            // See dirs branch above: FlashForge prefixes the folder path onto
+            // this field; normalize to the leaf so the per-file path the panel
+            // builds (current_path + "/" + filename) doesn't double.
+            info.filename = moonraker_path_leaf(get_string(file, "filename"));
+            info.path = get_string(file, "path");
+            info.size = get_uint64(file, "size");
+            info.modified = get_double(file, "modified");
+            info.permissions = get_string(file, "permissions");
             info.is_dir = false;
             files.push_back(info);
         }

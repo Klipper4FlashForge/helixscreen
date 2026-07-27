@@ -275,13 +275,29 @@ static int handle_response(const std::string& raw_response, nlohmann::json* out_
         auto response = nlohmann::json::parse(raw_response);
 
         if (response.contains("error")) {
-            auto& error = response["error"];
+            const auto& error = response["error"];
             if (g_json_output) {
+                // dump() is safe for any JSON type, including the non-object
+                // errors the human path guards against below.
                 fprintf(stderr, "%s\n", error.dump().c_str());
             } else {
-                fprintf(stderr, "Error: %s (code %d)\n",
-                        error.value("message", "Unknown error").c_str(),
-                        error.value("code", -1));
+                // A server is free to send a non-object error ("error": null, or a bare
+                // string). value() throws type_error.306 on those, so probe the type
+                // first. The message is held in a named string because c_str() on the
+                // value() temporary only survives to the end of the full expression.
+                std::string message = "Unknown error";
+                int code = -1;
+                if (error.is_object()) {
+                    const auto it = error.find("message");
+                    if (it != error.end() && it->is_string())
+                        message = it->get<std::string>();
+                    const auto ic = error.find("code");
+                    if (ic != error.end() && ic->is_number_integer())
+                        code = ic->get<int>();
+                } else if (error.is_string()) {
+                    message = error.get<std::string>();
+                }
+                fprintf(stderr, "Error: %s (code %d)\n", message.c_str(), code);
             }
             return 1;
         }
@@ -317,6 +333,12 @@ static int handle_response(const std::string& raw_response, nlohmann::json* out_
 
     } catch (const nlohmann::json::parse_error& e) {
         fprintf(stderr, "Error: Failed to parse response: %s\n", e.what());
+        return 1;
+    } catch (const nlohmann::json::exception& e) {
+        // Backstop for type_error/out_of_range from a well-formed but
+        // unexpectedly shaped response. This runs on a main() path, so an
+        // escaping exception is std::terminate rather than a usable message.
+        fprintf(stderr, "Error: Unexpected response content: %s\n", e.what());
         return 1;
     }
 }
@@ -890,11 +912,18 @@ static void print_describe_grouped(const nlohmann::json& result) {
     for (const char* verb : verbs) {
         std::vector<std::string> items;
         for (const auto& w : widgets) {
+            // find(), not w["actions"]: w is const, so operator[] on a widget
+            // entry without an "actions" key hits JSON_ASSERT — an uncatchable
+            // abort, not a throw. The dump comes from the server, which may be a
+            // different build than this client.
             bool has = false;
-            for (const auto& a : w["actions"]) {
-                if (a == verb) {
-                    has = true;
-                    break;
+            const auto actions_it = w.find("actions");
+            if (actions_it != w.end() && actions_it->is_array()) {
+                for (const auto& a : *actions_it) {
+                    if (a == verb) {
+                        has = true;
+                        break;
+                    }
                 }
             }
             if (!has) {

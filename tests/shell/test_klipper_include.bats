@@ -71,7 +71,7 @@ write_cfg() {
     [ "$status" -eq 0 ]
 
     # printer.cfg untouched (no include line, original lines intact).
-    ! grep -q "include helixscreen" "$PRINTER_CFG"
+    refute grep -q "include helixscreen" "$PRINTER_CFG"
     grep -q "serial: /dev/ttyS0" "$PRINTER_CFG"
 }
 

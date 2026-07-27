@@ -992,7 +992,8 @@ std::string LedEffectBackend::parse_klipper_led_target(const std::string& klippe
 
 void LedEffectBackend::activate_effect(const std::string& effect_name,
                                        NativeBackend::SuccessCallback on_success,
-                                       NativeBackend::ErrorCallback on_error) {
+                                       NativeBackend::ErrorCallback on_error,
+                                       NativeBackend::SuccessCallback on_queued) {
     if (!api_) {
         spdlog::warn("[LedEffectBackend] activate_effect called with no API (effect={})",
                      effect_name);
@@ -1012,15 +1013,20 @@ void LedEffectBackend::activate_effect(const std::string& effect_name,
     std::string gcode = "SET_LED_EFFECT EFFECT=" + bare_name;
     spdlog::debug("[LedEffectBackend] activate_effect: {} -> gcode: {}", effect_name, gcode);
 
-    api_->execute_gcode(gcode, on_success, [on_error](const MoonrakerError& err) {
-        if (on_error) {
-            on_error(err.message);
-        }
-    });
+    api_->execute_gcode(
+        gcode, std::move(on_success),
+        [on_error](const MoonrakerError& err) {
+            if (on_error) {
+                on_error(err.message);
+            }
+        },
+        /*timeout_ms=*/0, /*silent=*/false, MoonrakerAPI::GcodeSource::Internal,
+        std::move(on_queued));
 }
 
 void LedEffectBackend::stop_all_effects(NativeBackend::SuccessCallback on_success,
-                                        NativeBackend::ErrorCallback on_error) {
+                                        NativeBackend::ErrorCallback on_error,
+                                        NativeBackend::SuccessCallback on_queued) {
     if (!api_) {
         spdlog::warn("[LedEffectBackend] stop_all_effects called with no API");
         if (on_error) {
@@ -1031,16 +1037,21 @@ void LedEffectBackend::stop_all_effects(NativeBackend::SuccessCallback on_succes
 
     spdlog::debug("[LedEffectBackend] stop_all_effects: gcode: STOP_LED_EFFECTS");
 
-    api_->execute_gcode("STOP_LED_EFFECTS", on_success, [on_error](const MoonrakerError& err) {
-        if (on_error) {
-            on_error(err.message);
-        }
-    });
+    api_->execute_gcode(
+        "STOP_LED_EFFECTS", std::move(on_success),
+        [on_error](const MoonrakerError& err) {
+            if (on_error) {
+                on_error(err.message);
+            }
+        },
+        /*timeout_ms=*/0, /*silent=*/false, MoonrakerAPI::GcodeSource::Internal,
+        std::move(on_queued));
 }
 
 void LedEffectBackend::stop_effect(const std::string& effect_name,
                                    NativeBackend::SuccessCallback on_success,
-                                   NativeBackend::ErrorCallback on_error) {
+                                   NativeBackend::ErrorCallback on_error,
+                                   NativeBackend::SuccessCallback on_queued) {
     if (!api_) {
         spdlog::warn("[LedEffectBackend] stop_effect called with no API (effect={})", effect_name);
         if (on_error) {
@@ -1059,11 +1070,15 @@ void LedEffectBackend::stop_effect(const std::string& effect_name,
     std::string gcode = "SET_LED_EFFECT EFFECT=" + bare_name + " STOP=1";
     spdlog::debug("[LedEffectBackend] stop_effect: {} -> gcode: {}", effect_name, gcode);
 
-    api_->execute_gcode(gcode, on_success, [on_error](const MoonrakerError& err) {
-        if (on_error) {
-            on_error(err.message);
-        }
-    });
+    api_->execute_gcode(
+        gcode, std::move(on_success),
+        [on_error](const MoonrakerError& err) {
+            if (on_error) {
+                on_error(err.message);
+            }
+        },
+        /*timeout_ms=*/0, /*silent=*/false, MoonrakerAPI::GcodeSource::Internal,
+        std::move(on_queued));
 }
 
 std::string LedEffectBackend::icon_hint_for_effect(const std::string& effect_name) {
@@ -1536,7 +1551,8 @@ void OutputPinBackend::clear() {
 
 void OutputPinBackend::set_value(const std::string& pin_id, double value,
                                  NativeBackend::SuccessCallback on_success,
-                                 NativeBackend::ErrorCallback on_error) {
+                                 NativeBackend::ErrorCallback on_error,
+                                 NativeBackend::SuccessCallback on_queued) {
     if (!api_) {
         spdlog::warn("[OutputPinBackend] set_value called with no API (pin={})", pin_id);
         if (on_error) {
@@ -1555,33 +1571,40 @@ void OutputPinBackend::set_value(const std::string& pin_id, double value,
 
     // Use spdlog's bundled fmt for locale-independent float formatting
     std::string gcode = fmt::format("SET_PIN PIN={} VALUE={:.4f}", pin_name, value);
-    api_->execute_gcode(gcode, on_success, [on_error](const MoonrakerError& err) {
-        if (on_error) {
-            on_error(err.message);
-        }
-    });
+    api_->execute_gcode(
+        gcode, std::move(on_success),
+        [on_error](const MoonrakerError& err) {
+            if (on_error) {
+                on_error(err.message);
+            }
+        },
+        /*timeout_ms=*/0, /*silent=*/false, MoonrakerAPI::GcodeSource::Internal,
+        std::move(on_queued));
 }
 
 void OutputPinBackend::turn_on(const std::string& pin_id, NativeBackend::SuccessCallback on_success,
-                               NativeBackend::ErrorCallback on_error) {
-    set_value(pin_id, 1.0, on_success, on_error);
+                               NativeBackend::ErrorCallback on_error,
+                               NativeBackend::SuccessCallback on_queued) {
+    set_value(pin_id, 1.0, std::move(on_success), std::move(on_error), std::move(on_queued));
 }
 
 void OutputPinBackend::turn_off(const std::string& pin_id,
                                 NativeBackend::SuccessCallback on_success,
-                                NativeBackend::ErrorCallback on_error) {
-    set_value(pin_id, 0.0, on_success, on_error);
+                                NativeBackend::ErrorCallback on_error,
+                                NativeBackend::SuccessCallback on_queued) {
+    set_value(pin_id, 0.0, std::move(on_success), std::move(on_error), std::move(on_queued));
 }
 
 void OutputPinBackend::set_brightness(const std::string& pin_id, int brightness_pct,
                                       NativeBackend::SuccessCallback on_success,
-                                      NativeBackend::ErrorCallback on_error) {
+                                      NativeBackend::ErrorCallback on_error,
+                                      NativeBackend::SuccessCallback on_queued) {
     double value = std::clamp(brightness_pct, 0, 100) / 100.0;
     // Non-PWM pins only accept 0 or 1 — clamp to avoid Klipper errors
     if (!is_pwm(pin_id)) {
         value = (value > 0.0) ? 1.0 : 0.0;
     }
-    set_value(pin_id, value, on_success, on_error);
+    set_value(pin_id, value, std::move(on_success), std::move(on_error), std::move(on_queued));
 }
 
 // Called from UI thread (via UpdateQueue dispatch in printer_state.cpp)
@@ -1951,11 +1974,12 @@ void LedController::toggle_all(bool on) {
     // counter would stay pinned, greying both light buttons out for the whole
     // session (#1129). on_queued is the only settle signal on that path.
     //
-    // Only the NATIVE branch below passes it, and that is not an oversight:
-    // is_discretionary_gcode() lists SET_LED and nothing else the LED backends
-    // emit. output_pin sends SET_PIN, macro devices send user macros (both
-    // non-discretionary, so they pass the guard and get a real response), and WLED
-    // goes over HTTP without touching the gcode lock at all.
+    // NATIVE and OUTPUT_PIN emit discretionary gcode (SET_LED, SET_PIN) below and
+    // pass cbs.queued. MACRO emits user-defined macros, which stay non-discretionary
+    // under the default-allow rule and get a real response; WLED goes over HTTP
+    // without touching the gcode lock at all. LED_EFFECT's case in this switch is a
+    // no-op — it emits nothing and bumps no counter here. Effects are driven
+    // separately via activate/stop, none of which hold this in-flight counter.
     struct Settle {
         NativeBackend::SuccessCallback done;
         NativeBackend::ErrorCallback fail;
@@ -1990,8 +2014,7 @@ void LedController::toggle_all(bool on) {
                 // brightness==0-but-color-nonzero restore-at-100% semantics.
                 auto c = compute_scaled_last_color(last_brightness_);
                 auto cbs = make_settle();
-                native_.set_color(strip_id, c.r, c.g, c.b, c.w, cbs.done, cbs.fail,
-                                  cbs.queued);
+                native_.set_color(strip_id, c.r, c.g, c.b, c.w, cbs.done, cbs.fail, cbs.queued);
             } else {
                 auto cbs = make_settle();
                 native_.turn_off(strip_id, cbs.done, cbs.fail, cbs.queued);
@@ -2050,9 +2073,9 @@ void LedController::toggle_all(bool on) {
         case LedBackendType::OUTPUT_PIN: {
             auto cbs = make_settle();
             if (on) {
-                output_pin_.turn_on(strip_id, cbs.done, cbs.fail);
+                output_pin_.turn_on(strip_id, cbs.done, cbs.fail, cbs.queued);
             } else {
-                output_pin_.turn_off(strip_id, cbs.done, cbs.fail);
+                output_pin_.turn_off(strip_id, cbs.done, cbs.fail, cbs.queued);
             }
             break;
         }

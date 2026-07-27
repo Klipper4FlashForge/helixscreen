@@ -701,6 +701,7 @@ translations:
   Do not power off your printer.: Não desligue sua impressora.
   Do not touch the printer during calibration: Não toque na impressora durante a calibração
   Dock: Encaixar
+  Docking tool: ''
   Documentation: Documentação
   Don't Save: Não Salvar
   Don't ask again: Não perguntar novamente
@@ -740,6 +741,7 @@ translations:
   'Eject failed: {}': 'Falha ao ejetar: {}'
   Eject needs [force_move] enabled in printer config: A ejeção precisa de [force_move]
     habilitado na configuração da impressora
+  Ejecting: ''
   Elegoo Centauri Carbon: Elegoo Centauri Carbon
   Emergency Stop: Parada de Emergência
   Emergency Stop?: Parada de Emergência?
@@ -1157,6 +1159,7 @@ translations:
     {} não pode usar {} como reserva'
   Indexing G-code...: Indexando G-code...
   Info: Info
+  Initialized: ''
   Initializing...: Inicializando...
   Input: Entrada
   Input Shaper: Input Shaper
@@ -1432,6 +1435,7 @@ translations:
     minutes. The printer will make noise — this is normal.
   : Move o cabeçote para medir frequências de vibração em cada eixo. Leva 2-3 minutos.
     A impressora fará barulho — isso é normal.
+  Moving lane: ''
   Multi-Filament: Multi-Filamento
   Multi-Filament Overview: Visão geral multi-filamento
   Multi-Filament System: Sistema multi-filamento
@@ -1673,6 +1677,7 @@ translations:
   Phomemo M110: Phomemo M110
   Pick: Escolher
   Pick Color: Escolher Cor
+  Picking up tool: ''
   Pill: Pílula
   Pixels before a press becomes a scroll (lower = scrolls engage sooner): Pixels antes
     de uma pressão se tornar rolagem (menor = ativa mais cedo)
@@ -1962,6 +1967,7 @@ translations:
   Restarting with the new version...: Reiniciando com a nova versão...
   Restarting...: Reiniciando...
   Restore Defaults: Restaurar Padrões
+  Restoring position: ''
   Resume: Retomar
   Resume Print: Retomar Impressão
   Resume interrupted print?: Retomar impressão interrompida?
@@ -2505,6 +2511,7 @@ translations:
   Tool: Ferramenta
   Tool Changer: Trocador de Ferramentas
   'Tool change failed: {}': 'Falha ao trocar ferramenta: {}'
+  Tool swap: ''
   'Tool {} → Lane {}: no filament loaded.': 'Ferramenta {} → Lane {}: nenhum filamento
     carregado.'
   Toolhead: 'Cabeçote'

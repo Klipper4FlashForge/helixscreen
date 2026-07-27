@@ -589,8 +589,7 @@ TEST_CASE("FilamentSlotOverrideStore save_async reports error on MR DB failure",
     CHECK(stored.is_null());
 }
 
-TEST_CASE("FilamentSlotOverrideStore clear_async removes single slot",
-          "[filament_slot_override]") {
+TEST_CASE("FilamentSlotOverrideStore clear_async removes single slot", "[filament_slot_override]") {
     TmpCacheDir tmp("clear_single");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -911,8 +910,9 @@ TEST_CASE("FilamentSlotOverrideStore load_blocking handles non-object namespace 
     CHECK(overrides.empty());
 }
 
-TEST_CASE("FilamentSlotOverrideStore load_blocking skips namespace siblings that are not lane records",
-          "[filament_slot_override]") {
+TEST_CASE(
+    "FilamentSlotOverrideStore load_blocking skips namespace siblings that are not lane records",
+    "[filament_slot_override]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -2009,8 +2009,7 @@ TEST_CASE("load_blocking: legacy lane_data record (no helix_locked_*) loads as u
     CHECK_FALSE(s1.user_locked_material);
 }
 
-TEST_CASE("save + load round-trip preserves explicit lock state",
-          "[filament_slot_override]") {
+TEST_CASE("save + load round-trip preserves explicit lock state", "[filament_slot_override]") {
     // Auto-mirror records (locks=false) must reload as locks=false so
     // subsequent firmware changes still propagate. The explicit-emission rule
     // in to_lane_data_record distinguishes "explicit false" from "missing".
@@ -2199,9 +2198,15 @@ TEST_CASE("FilamentSlotOverrideStore save_async writes a T-keyed record on Tool 
 TEST_CASE("FilamentSlotOverrideStore save_async writes a lane-keyed record on Lane key style",
           "[filament_slot_override][lane_key_style]") {
     std::string backend;
-    SECTION("ace") { backend = "ace"; }
-    SECTION("cfs") { backend = "cfs"; }
-    SECTION("ifs") { backend = "ifs"; }
+    SECTION("ace") {
+        backend = "ace";
+    }
+    SECTION("cfs") {
+        backend = "cfs";
+    }
+    SECTION("ifs") {
+        backend = "ifs";
+    }
 
     TmpCacheDir tmp("lane_save_" + backend);
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
@@ -2307,7 +2312,8 @@ TEST_CASE("FilamentSlotOverrideStore clear_async deletes the T-key on Tool key s
     CHECK(api.mock_get_db_value("lane_data", "T0").is_null());
 }
 
-TEST_CASE("lane_key_style_for maps AmsType to key style", "[filament_slot_override][lane_key_style]") {
+TEST_CASE("lane_key_style_for maps AmsType to key style",
+          "[filament_slot_override][lane_key_style]") {
     using helix::ams::lane_key_style_for;
     // Tool changers → Tool. This is the fence against ever using
     // !is_filament_system() as the discriminator: SNAPMAKER is in BOTH lists
@@ -2555,7 +2561,7 @@ TEST_CASE("Key migration: idempotent (second load is a no-op)",
     FilamentSlotOverrideStore store2(&api, "snapmaker", LaneKeyStyle::Tool);
     (void)store2.load_blocking(); // sees only T0 → no migration writes
 
-    CHECK(api.mock_db_post_count() == posts); // no further writes
+    CHECK(api.mock_db_post_count() == posts);  // no further writes
     CHECK(api.mock_db_delete_count() == dels); // no further deletes
     auto t0 = api.mock_get_db_value("lane_data", "T0");
     REQUIRE(!t0.is_null());
@@ -2648,10 +2654,10 @@ TEST_CASE("Key migration: drops a stale laneN when the canonical T-key already e
     CHECK(api.mock_get_db_value("lane_data", "lane1").is_null()); // dropped
     auto t0 = api.mock_get_db_value("lane_data", "T0");
     REQUIRE(!t0.is_null());
-    CHECK(t0["material"] == "PETG");            // NOT overwritten by lane1's PLA
-    CHECK(api.mock_db_post_count() == 0);       // pure drop — no write at all
+    CHECK(t0["material"] == "PETG");      // NOT overwritten by lane1's PLA
+    CHECK(api.mock_db_post_count() == 0); // pure drop — no write at all
     REQUIRE(overrides.count(0) == 1);
-    CHECK(overrides[0].material == "PETG");      // reader agrees with the DB
+    CHECK(overrides[0].material == "PETG"); // reader agrees with the DB
 }
 
 TEST_CASE("Key migration: leaves third-party keys alone",
@@ -2763,9 +2769,7 @@ TEST_CASE("Anomaly scan: consistent keys and foreign keys are NOT mismatches",
     using helix::ams::scan_lane_data_anomalies;
     // lane1/T0 agree with their inner index; gate_0 is a foreign key that does
     // not resemble ours, so it is a valid record, not an inconsistency.
-    json doc = {{"lane1", {{"lane", "0"}}},
-                {"T3", {{"lane", "3"}}},
-                {"gate_0", {{"lane", "5"}}}};
+    json doc = {{"lane1", {{"lane", "0"}}}, {"T3", {{"lane", "3"}}}, {"gate_0", {{"lane", "5"}}}};
     auto a = scan_lane_data_anomalies(doc);
     CHECK(a.key_inner_mismatch == 0);
     CHECK(a.total() == 0);
@@ -2847,7 +2851,8 @@ TEST_CASE("material is omitted when nothing is safely matchable",
     CHECK(written["helix_material"] == "PPS-CF");
 }
 
-TEST_CASE("round-trip preserves the precise display material", "[filament_slot_override][orca_match]") {
+TEST_CASE("round-trip preserves the precise display material",
+          "[filament_slot_override][orca_match]") {
     json rec;
     rec["lane"] = "1";
     rec["material"] = "ASA";
@@ -2860,7 +2865,8 @@ TEST_CASE("round-trip preserves the precise display material", "[filament_slot_o
     CHECK(parsed->second.material == "ASA-GF");
 }
 
-TEST_CASE("foreign records without helix_material still read", "[filament_slot_override][orca_match]") {
+TEST_CASE("foreign records without helix_material still read",
+          "[filament_slot_override][orca_match]") {
     // Mainsail / AFC / Happy Hare write `material` only.
     json rec;
     rec["lane"] = "0";
@@ -2922,7 +2928,7 @@ TEST_CASE("load never rewrites a foreign record",
 
     auto after = api.mock_get_db_value("lane_data", "lane2");
     REQUIRE(after.is_object());
-    CHECK(after["material"] == "ASA-GF");        // untouched
+    CHECK(after["material"] == "ASA-GF"); // untouched
     CHECK_FALSE(after.contains("helix_material"));
 }
 
@@ -2987,7 +2993,9 @@ TEST_CASE("load skips the heal entirely when Orca tables are unavailable",
     // a stale/missing asset produces.
     filament::FilamentVariantsTestAccess::set_orca_tables({}, {{"__test_sentinel__", "PLA"}});
     struct RestoreTables {
-        ~RestoreTables() { filament::FilamentVariantsTestAccess::set_orca_tables({}, {}); }
+        ~RestoreTables() {
+            filament::FilamentVariantsTestAccess::set_orca_tables({}, {});
+        }
     } restore_tables;
 
     TmpCacheDir tmp("orca_heal_unavailable");
@@ -3077,7 +3085,9 @@ TEST_CASE("drift: heal repairs an already-healed record whose match no longer ex
     // boot when "ASA" was still matchable.
     filament::FilamentVariantsTestAccess::set_orca_tables({"PLA"}, {});
     struct RestoreTables {
-        ~RestoreTables() { filament::FilamentVariantsTestAccess::set_orca_tables({}, {}); }
+        ~RestoreTables() {
+            filament::FilamentVariantsTestAccess::set_orca_tables({}, {});
+        }
     } restore_tables;
 
     TmpCacheDir tmp("orca_heal_drift");
@@ -3109,4 +3119,44 @@ TEST_CASE("drift: heal repairs an already-healed record whose match no longer ex
     REQUIRE(after.is_object());
     CHECK_FALSE(after.contains("material"));
     CHECK(after["helix_material"] == "ASA-GF");
+}
+
+// ============================================================================
+// Private namespace — AFC / Happy Hare must NOT share lane_data
+// ============================================================================
+//
+// AFC and Happy Hare own the Moonraker `lane_data` namespace. AFC's plugin
+// deletes that whole namespace on every Klipper boot (AFC.py calls
+// moonraker.delete_lane_data(), which enumerates and removes every key) and
+// send_lane_data() full-POSTs a freshly built dict, so anything HelixScreen
+// wrote there survives only until the next reboot or lane event. Worse,
+// load_blocking() applies no authorship filter and from_lane_data_record() is
+// deliberately foreign-record tolerant, so sharing the namespace would ingest
+// AFC's own live lane records as if they were user overrides and then repaint
+// that boot snapshot over firmware truth forever.
+//
+// So these backends get a private namespace, and the store must honour it.
+
+TEST_CASE("FilamentSlotOverrideStore uses the namespace it was given",
+          "[filament_slot_override][store]") {
+    helix::PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    SECTION("defaults to lane_data for the backends that legitimately share it") {
+        FilamentSlotOverrideStore store(&api, "ifs");
+        CHECK(store.namespace_for_test() == "lane_data");
+    }
+
+    SECTION("honours a private namespace for AFC") {
+        FilamentSlotOverrideStore store(&api, "afc", LaneKeyStyle::Lane,
+                                        "helix-screen-afc-overrides");
+        CHECK(store.namespace_for_test() == "helix-screen-afc-overrides");
+    }
+
+    SECTION("a private namespace is never the shared one") {
+        FilamentSlotOverrideStore store(&api, "happy_hare", LaneKeyStyle::Lane,
+                                        "helix-screen-hh-overrides");
+        CHECK(store.namespace_for_test() != "lane_data");
+    }
 }

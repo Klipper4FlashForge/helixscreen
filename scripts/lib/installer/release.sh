@@ -20,6 +20,11 @@ _HELIX_RELEASE_SOURCED=1
 # Cached manifest from R2 (set by get_latest_version, consumed by download_release)
 _R2_MANIFEST=""
 
+# Which transport delivered _R2_MANIFEST ("https" or "http"). A hash read from
+# the plain-HTTP mirror is integrity-only — it travelled the same channel the
+# archive will — so download_release warns instead of claiming authenticity.
+_R2_MANIFEST_TRANSPORT=""
+
 # Which archive format is in use for this install. Set by download_release() or
 # use_local_tarball() based on what was found/provided. Consumed by
 # extract_release() and validate_tarball() to dispatch to the right tooling.
@@ -283,9 +288,205 @@ parse_manifest_platform_url() {
         sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
 }
 
+# Extract a platform's SHA256 from manifest JSON on stdin.
+# Args: platform [zip]   — "zip" reads zip_sha256, anything else reads sha256.
+# Prints the hex digest, or nothing when the manifest has no hash for it.
+#
+# Splitting each line on '"' and comparing whole fields (rather than regex) is
+# what keeps "sha256" from also matching "zip_sha256", and "pi" from matching
+# "pi32". Works on both the pretty-printed manifest jq emits and a compact
+# one-line variant. awk is present on every target (BusyBox included).
+parse_manifest_platform_sha256() {
+    local platform=$1 kind=${2:-tar}
+    local key="sha256"
+    [ "$kind" = "zip" ] && key="zip_sha256"
+    awk -v plat="$platform" -v key="$key" '
+        {
+            n = split($0, p, "\"")
+            hit = 0
+            for (i = 1; i <= n; i++) {
+                if (p[i] == plat) { inblk = 1; hit = 1; continue }
+                if (inblk && p[i] == key) { print p[i+2]; exit }
+            }
+            # Left the platform object without finding the key.
+            if (inblk && !hit && index($0, "}")) inblk = 0
+        }
+    '
+}
+
+# Print the lowercase SHA256 of a file, or nothing when this system has no way
+# to hash. Callers MUST treat empty as "unverifiable", never as "verified".
+# BusyBox ships sha256sum on every platform we support, but old/minimal builds
+# can omit the applet, hence the openssl and python fallbacks.
+_sha256_file() {
+    local f=$1 out=""
+    if command -v sha256sum >/dev/null 2>&1; then
+        out=$(sha256sum "$f" 2>/dev/null | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+        out=$(shasum -a 256 "$f" 2>/dev/null | awk '{print $1}')
+    elif command -v openssl >/dev/null 2>&1; then
+        out=$(openssl dgst -sha256 "$f" 2>/dev/null | awk '{print $NF}')
+    elif _py_has_module hashlib; then
+        out=$("$_PY_BIN" -c 'import hashlib,sys
+h = hashlib.sha256()
+with open(sys.argv[1], "rb") as fh:
+    for chunk in iter(lambda: fh.read(1 << 20), b""):
+        h.update(chunk)
+print(h.hexdigest())' "$f" 2>/dev/null)
+    fi
+    printf '%s' "$out" | tr 'A-Z' 'a-z'
+}
+
+# Set by _verify_archive_hash when a candidate was dropped purely for lack of a
+# hash on the plain-HTTP transport. download_release reads it to decide whether
+# the "everything failed" message should explain the override.
+_UNVERIFIED_HTTP_REFUSED=false
+
+# Gate a staged download on its manifest SHA256.
+# Args: file expected_sha transport("https"|"http")
+# Returns 0 to accept the file, 1 to reject it.
+#
+# Policy:
+#   - hash present + match          -> accept
+#   - hash present + mismatch       -> REJECT (always, both transports)
+#   - hash present, no hash tool    -> falls through to the transport rule
+#   - no hash, transport=https      -> accept; TLS authenticated the bytes
+#   - no hash, transport=http       -> REJECT. An unauthenticated download
+#     extracted over a live install is remote root on a printer. Overridable
+#     with HELIX_ALLOW_UNVERIFIED_HTTP=1 for pinned-version installs on
+#     HTTPS-incapable firmware, where no manifest hash exists to check.
+#
+# The no-hash-over-HTTP rejection is a WARNING, not an error, because it fires
+# mid-cascade in the normal case: generate-manifest.sh withholds zip_url /
+# zip_sha256 from the BusyBox platforms in ZIP_EXCLUDE_PLATFORMS (ad5m, ad5x,
+# cc1, k1, k2, snapmaker-u1 — helixscreen#993), so on exactly the HTTP-only
+# devices the zip candidate has no hash and must be skipped before the tar.gz
+# candidate, which does have one, succeeds. Only download_release's final
+# all-candidates-exhausted message spells out the override.
+_verify_archive_hash() {
+    local file=$1 expected=$2 transport=$3
+    local actual
+
+    if [ -n "$expected" ]; then
+        actual=$(_sha256_file "$file")
+        if [ "$actual" = "$expected" ]; then
+            log_info "SHA256 verified ($(basename "$file"))"
+            return 0
+        fi
+        if [ -z "$actual" ]; then
+            log_warn "No sha256sum/openssl/python on this system — cannot verify $(basename "$file")."
+        else
+            log_error "SHA256 MISMATCH for $(basename "$file")"
+            log_error "  expected: $expected"
+            log_error "  actual:   $actual"
+            log_error "The download does not match the release manifest. Refusing to install it."
+            return 1
+        fi
+    fi
+
+    [ "$transport" = "https" ] && return 0
+
+    if [ "${HELIX_ALLOW_UNVERIFIED_HTTP:-0}" = "1" ]; then
+        log_warn "Installing an UNVERIFIED plain-HTTP download (HELIX_ALLOW_UNVERIFIED_HTTP=1)."
+        return 0
+    fi
+    _UNVERIFIED_HTTP_REFUSED=true
+    log_warn "Refusing an unverified plain-HTTP download: $(basename "$file")"
+    log_warn "No SHA256 was published for this artifact, and plain HTTP cannot"
+    log_warn "authenticate what it delivered — the archive is extracted over the"
+    log_warn "live install as root."
+    return 1
+}
+
+# Populate _R2_MANIFEST if it isn't already. HTTPS first, plain-HTTP mirror
+# second (matching get_latest_version's own source order), so an HTTPS-capable
+# box gets an authenticated set of hashes even when it later has to fall back
+# to the HTTP mirror for the much larger archive.
+# Returns 0 when a manifest is in hand.
+_ensure_manifest() {
+    [ -n "$_R2_MANIFEST" ] && return 0
+
+    if check_https_capability; then
+        _R2_MANIFEST=$(fetch_url "${R2_BASE_URL}/${R2_CHANNEL}/manifest.json") || true
+        if [ -n "$_R2_MANIFEST" ]; then
+            _R2_MANIFEST_TRANSPORT="https"
+            return 0
+        fi
+    fi
+
+    _R2_MANIFEST=$(fetch_url_http "${HTTP_BASE_URL}/${R2_CHANNEL}/manifest.json") || true
+    if [ -n "$_R2_MANIFEST" ]; then
+        _R2_MANIFEST_TRANSPORT="http"
+        return 0
+    fi
+    _R2_MANIFEST_TRANSPORT=""
+    return 1
+}
+
+# True when the cached manifest describes the exact version being downloaded.
+# The channel manifest only ever describes the LATEST release, so an explicit
+# `--version vOLD` must not be checked against it — the hashes would be for a
+# different build and every candidate would "mismatch".
+_manifest_covers_version() {
+    local want=$1 mver
+    [ -n "$_R2_MANIFEST" ] || return 1
+    mver=$(echo "$_R2_MANIFEST" | parse_manifest_version)
+    [ -n "$mver" ] || return 1
+    case "$mver" in
+        v*) ;;
+        *) mver="v${mver}" ;;
+    esac
+    [ "$mver" = "$want" ]
+}
+
+# Test a zip archive's integrity with whatever tool can actually do it.
+# Echoes "ok" / "corrupt" / "unverifiable" and always returns 0, so callers
+# can distinguish "this archive is bad" from "nothing here can check it".
+#
+# `unzip -t` cannot be the first choice because support for it varies by
+# firmware vintage (prestonbrown/helixscreen#993):
+#   - BusyBox 1.31.1 (Creality K1, verified on-device) has no -t at all:
+#     "unzip: invalid option -- 't'", exit 1. An intact download is then
+#     reported as a corrupt archive and every update fails.
+#   - BusyBox 1.32+ (verified on 1.36.1, Elegoo Centauri Carbon) does support
+#     -t and reports CRC errors correctly.
+#   - info-zip (Debian/Pi/desktop) supports -t correctly.
+# python3's zipfile.testzip() does a real per-entry CRC check and behaves
+# identically everywhere, so it goes first and we never have to probe unzip's
+# feature set. It needs zlib as well as zipfile: release zips are deflated, and
+# the AD5M's python3.7 is built without zlib, where ZipFile() raises
+# "Compression requires the (missing) zlib module" on a perfectly good archive.
+_zip_integrity() {
+    local archive=$1
+
+    if _py_has_module zipfile zlib; then
+        if _py_unzip_test "$archive"; then
+            echo "ok"
+        else
+            echo "corrupt"
+        fi
+        return 0
+    fi
+
+    # No usable python zipfile (absent, or built without zlib -- AD5M).
+    # `unzip -l` reads the central directory on both BusyBox and info-zip, so it
+    # catches truncation and garbage without ever false-failing a valid archive
+    # the way -t does on BusyBox 1.31 and older.
+    if command -v unzip >/dev/null 2>&1; then
+        if unzip -l "$archive" >/dev/null 2>&1; then
+            echo "ok"
+        else
+            echo "corrupt"
+        fi
+        return 0
+    fi
+
+    echo "unverifiable"
+}
+
 # Validate an archive is readable and not truncated.
-# Dispatches on the archive's filename extension: *.zip uses `unzip -tqq`,
-# everything else uses `gunzip -t`. Exits on failure.
+# Dispatches on the archive's filename extension: *.zip uses the portable
+# integrity check above, everything else uses `gunzip -t`. Exits on failure.
 # Args: archive_path, context (e.g., "Downloaded " or "Local ")
 validate_archive() {
     local archive=$1
@@ -293,22 +494,17 @@ validate_archive() {
 
     case "$archive" in
         *.zip)
-            if command -v unzip >/dev/null 2>&1; then
-                if ! unzip -tqq "$archive" >/dev/null 2>&1; then
+            case "$(_zip_integrity "$archive")" in
+                corrupt)
                     log_error "${context}file is not a valid zip archive."
                     [ -n "$context" ] && log_error "The ${context}may have been corrupted or incomplete."
                     exit 1
-                fi
-            elif _has_python; then
-                if ! _py_unzip_test "$archive"; then
-                    log_error "${context}file is not a valid zip archive."
-                    [ -n "$context" ] && log_error "The ${context}may have been corrupted or incomplete."
+                    ;;
+                unverifiable)
+                    log_error "${context}file is a zip but neither unzip nor python3 is available to validate it."
                     exit 1
-                fi
-            else
-                log_error "${context}file is a zip but neither unzip nor python3 is available to validate it."
-                exit 1
-            fi
+                    ;;
+            esac
             ;;
         *)
             if ! gunzip -t "$archive" 2>/dev/null; then
@@ -425,6 +621,7 @@ get_latest_version() {
         log_info "Fetching latest version from CDN..."
 
         _R2_MANIFEST=$(fetch_url "$manifest_url") || true
+        _R2_MANIFEST_TRANSPORT="https"
         if [ -n "$_R2_MANIFEST" ]; then
             version=$(echo "$_R2_MANIFEST" | parse_manifest_version)
             if [ -n "$version" ]; then
@@ -436,6 +633,7 @@ get_latest_version() {
             fi
             log_warn "CDN manifest found but version could not be parsed, trying GitHub..."
             _R2_MANIFEST=""
+            _R2_MANIFEST_TRANSPORT=""
         else
             log_warn "CDN unavailable, trying GitHub..."
         fi
@@ -461,6 +659,7 @@ get_latest_version() {
     log_info "Fetching latest version via HTTP..."
 
     _R2_MANIFEST=$(fetch_url_http "$http_manifest_url") || true
+    _R2_MANIFEST_TRANSPORT="http"
     if [ -n "$_R2_MANIFEST" ]; then
         version=$(echo "$_R2_MANIFEST" | parse_manifest_version)
         if [ -n "$version" ]; then
@@ -490,11 +689,13 @@ get_release_platform() {
 }
 
 # Try to download + validate a single candidate URL.
-# Args: url dest transport  ("https" | "http")
+# Args: url dest transport ("https" | "http") [expected_sha256]
 # Returns 0 on success (archive staged at dest), 1 otherwise.
-# Validation is format-aware based on dest's filename extension.
+# Validation is format-aware based on dest's filename extension, and is
+# followed by the integrity gate in _verify_archive_hash — a gzip/zip CRC only
+# proves the bytes arrived intact, not that they are the bytes we published.
 _try_download_candidate() {
-    local url=$1 dest=$2 transport=$3
+    local url=$1 dest=$2 transport=$3 expected_sha=${4:-}
     case "$transport" in
         https)
             download_file "$url" "$dest" 300 51200 || return 1 ;;
@@ -520,6 +721,8 @@ _try_download_candidate() {
             gunzip -t "$dest" 2>/dev/null || return 1
             ;;
     esac
+
+    _verify_archive_hash "$dest" "$expected_sha" "$transport" || return 1
     return 0
 }
 
@@ -561,10 +764,25 @@ download_release() {
     local tar_filename="helixscreen-${platform}-${version}.tar.gz"
     local tar_dest="${TMP_DIR}/helixscreen-${platform}-${version}.tar.gz"
 
+    # Make sure we have a manifest to check against. get_latest_version() is
+    # invoked as `version=$(get_latest_version ...)`, so the _R2_MANIFEST it
+    # caches lives and dies in that command substitution's subshell and never
+    # reaches here — without this refetch every download is unverifiable.
+    _ensure_manifest || true
+
+    # The channel manifest only ever describes the LATEST release. Anything it
+    # says (asset URLs *and* hashes) is off-limits when the caller pinned an
+    # older --version, or we would download the newest build under the old
+    # version's name and then fail its hash.
+    local manifest_ok=false
+    if _manifest_covers_version "$version"; then
+        manifest_ok=true
+    fi
+
     # Build candidate URL lists. Zip gets tried before tar at every transport.
     local zip_r2="${R2_BASE_URL}/releases/${version}/${zip_filename}"
     local tar_r2=""
-    if [ -n "$_R2_MANIFEST" ]; then
+    if [ "$manifest_ok" = true ]; then
         tar_r2=$(echo "$_R2_MANIFEST" | parse_manifest_platform_url "$platform")
     fi
     if [ -z "$tar_r2" ]; then
@@ -576,7 +794,7 @@ download_release() {
 
     local zip_http="${HTTP_BASE_URL}/releases/${version}/${zip_filename}"
     local tar_http="${HTTP_BASE_URL}/releases/${version}/${tar_filename}"
-    if [ -n "$_R2_MANIFEST" ]; then
+    if [ "$manifest_ok" = true ]; then
         local http_manifest_url
         http_manifest_url=$(echo "$_R2_MANIFEST" | parse_manifest_platform_url "$platform")
         if [ -n "$http_manifest_url" ]; then
@@ -584,12 +802,32 @@ download_release() {
         fi
     fi
 
+    # Expected SHA256s. All three transports serve byte-identical artifacts
+    # (one CI job uploads the same files to the GitHub release and to R2, and
+    # generates the manifest from them), so one pair of hashes covers every
+    # candidate.
+    local zip_sha="" tar_sha=""
+    if [ "$manifest_ok" = true ]; then
+        zip_sha=$(echo "$_R2_MANIFEST" | parse_manifest_platform_sha256 "$platform" zip)
+        tar_sha=$(echo "$_R2_MANIFEST" | parse_manifest_platform_sha256 "$platform")
+        # A hash fetched over the plain-HTTP mirror travelled the same
+        # unauthenticated channel as the archive will, so it proves integrity
+        # (truncation, a stale mirror) but not authenticity. Say so rather than
+        # letting "SHA256 verified" imply more than it does.
+        if [ "${_R2_MANIFEST_TRANSPORT:-}" = "http" ]; then
+            log_warn "Release hashes came from the plain-HTTP mirror: they detect corruption,"
+            log_warn "but cannot prove the release is genuine. Prefer an HTTPS-capable system."
+        fi
+    else
+        log_warn "No release manifest for ${version} — SHA256 verification unavailable."
+    fi
+
     log_info "Downloading HelixScreen ${version} for ${platform}..."
 
     local size
     # --- Attempt 1: R2 CDN, zip preferred ---
     log_info "URL: $zip_r2"
-    if _try_download_candidate "$zip_r2" "$zip_dest" https; then
+    if _try_download_candidate "$zip_r2" "$zip_dest" https "$zip_sha"; then
         _ARCHIVE_FORMAT="zip"
         size=$(ls -lh "$zip_dest" | awk '{print $5}')
         log_success "Downloaded ${zip_filename} (${size}) from CDN"
@@ -597,7 +835,7 @@ download_release() {
     fi
     rm -f "$zip_dest"
     log_info "URL: $tar_r2"
-    if _try_download_candidate "$tar_r2" "$tar_dest" https; then
+    if _try_download_candidate "$tar_r2" "$tar_dest" https "$tar_sha"; then
         _ARCHIVE_FORMAT="tar.gz"
         size=$(ls -lh "$tar_dest" | awk '{print $5}')
         log_success "Downloaded ${tar_filename} (${size}) from CDN"
@@ -608,7 +846,7 @@ download_release() {
 
     # --- Attempt 2: GitHub Releases ---
     log_info "URL: $zip_gh"
-    if _try_download_candidate "$zip_gh" "$zip_dest" https; then
+    if _try_download_candidate "$zip_gh" "$zip_dest" https "$zip_sha"; then
         _ARCHIVE_FORMAT="zip"
         size=$(ls -lh "$zip_dest" | awk '{print $5}')
         log_success "Downloaded ${zip_filename} (${size}) from GitHub"
@@ -616,7 +854,7 @@ download_release() {
     fi
     rm -f "$zip_dest"
     log_info "URL: $tar_gh"
-    if _try_download_candidate "$tar_gh" "$tar_dest" https; then
+    if _try_download_candidate "$tar_gh" "$tar_dest" https "$tar_sha"; then
         _ARCHIVE_FORMAT="tar.gz"
         size=$(ls -lh "$tar_dest" | awk '{print $5}')
         log_success "Downloaded ${tar_filename} (${size}) from GitHub"
@@ -627,7 +865,7 @@ download_release() {
     # --- Attempt 3: plain-HTTP mirror (BusyBox wget fallback) ---
     log_info "Trying HTTP fallback..."
     log_info "URL: $zip_http"
-    if _try_download_candidate "$zip_http" "$zip_dest" http; then
+    if _try_download_candidate "$zip_http" "$zip_dest" http "$zip_sha"; then
         _ARCHIVE_FORMAT="zip"
         size=$(ls -lh "$zip_dest" | awk '{print $5}')
         log_success "Downloaded ${zip_filename} (${size}) via HTTP"
@@ -635,7 +873,7 @@ download_release() {
     fi
     rm -f "$zip_dest"
     log_info "URL: $tar_http"
-    if _try_download_candidate "$tar_http" "$tar_dest" http; then
+    if _try_download_candidate "$tar_http" "$tar_dest" http "$tar_sha"; then
         _ARCHIVE_FORMAT="tar.gz"
         size=$(ls -lh "$tar_dest" | awk '{print $5}')
         log_success "Downloaded ${tar_filename} (${size}) via HTTP"
@@ -658,9 +896,21 @@ download_release() {
     log_error "  - Version ${version} may not exist for platform ${platform}"
     log_error "  - Network connectivity issues"
     log_error "  - CDN, GitHub, and HTTP mirror may be unavailable"
+    if [ "$_UNVERIFIED_HTTP_REFUSED" = true ]; then
+        log_error "  - Every remaining candidate was a plain-HTTP download with no"
+        log_error "    published SHA256, which this installer will not extract over"
+        log_error "    your install unverified."
+    fi
     log_error ""
     log_error "To install manually, download on another machine and use:"
     log_error "  ./install.sh --local /path/to/${zip_filename}"
+    if [ "$_UNVERIFIED_HTTP_REFUSED" = true ]; then
+        log_error ""
+        log_error "Installing the CURRENT release instead usually fixes this — its"
+        log_error "manifest carries hashes for every artifact. To accept an"
+        log_error "unverified download anyway (not recommended):"
+        log_error "  HELIX_ALLOW_UNVERIFIED_HTTP=1 sh install.sh ..."
+    fi
     exit 1
 }
 

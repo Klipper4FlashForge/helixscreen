@@ -38,6 +38,7 @@
 #include "printer_state.h"
 #include "spoolman_manager.h"
 #include "static_panel_registry.h"
+#include "system/crash_handler.h"
 #include "theme_manager.h"
 #include "ui/ams_drawing_utils.h"
 #include "wizard_config_paths.h"
@@ -412,8 +413,13 @@ void AmsPanel::on_activate() {
     // Sync Spoolman active spool with currently loaded slot
     sync_spoolman_active_spool();
 
-    // Start Spoolman polling for slot weight updates
-    SpoolmanManager::instance().start_spoolman_polling();
+    // Start Spoolman polling for slot weight updates. Guarded: on_activate()
+    // can fire more than once per visit, and each unguarded call took another
+    // reference that on_deactivate() never gave back.
+    if (!holds_poll_ref_) {
+        SpoolmanManager::instance().start_spoolman_polling();
+        holds_poll_ref_ = true;
+    }
 }
 
 void AmsPanel::sync_spoolman_active_spool() {
@@ -444,7 +450,10 @@ void AmsPanel::sync_spoolman_active_spool() {
 }
 
 void AmsPanel::on_deactivate() {
-    SpoolmanManager::instance().stop_spoolman_polling();
+    if (holds_poll_ref_) {
+        SpoolmanManager::instance().stop_spoolman_polling();
+        holds_poll_ref_ = false;
+    }
 
     // Stop filament path animations to avoid burning CPU in the background
     if (path_canvas_) {
@@ -1473,8 +1482,10 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
                 cleared.color_name.clear();
                 cleared.multi_color_hexes.clear();
                 cleared.brand.clear();
-                cleared.spool_name.clear();
-                cleared.spoolman_id = 0;
+                // Drops spoolman_id AND the filament/vendor handles — leaving
+                // those behind fed a later repoint comparison against a spool
+                // this lane is no longer linked to.
+                cleared.clear_spoolman_link();
                 cleared.remaining_weight_g = -1;
                 cleared.total_weight_g = -1;
                 auto error = backend->set_slot_info(slot, cleared);
@@ -1652,6 +1663,15 @@ void AmsPanel::show_loading_error_modal() {
 static std::unique_ptr<AmsPanel> g_ams_panel;
 static lv_obj_t* s_ams_panel_obj = nullptr;
 
+// NOTE: this deliberately does NOT call OverlayBase::destroy_overlay_ui().
+// AmsPanel derives from PanelBase, not OverlayBase — the two are sibling
+// IPanelLifecycle implementations, so the helper is not reachable from here
+// (there is no overlay_root_ and no on_ui_destroyed() on this hierarchy).
+// The sequence below mirrors the helper's, with two required deviations:
+//   1. clear_panel_reference() runs BEFORE deletion (the helper's
+//      on_ui_destroyed() runs after), because it destroys the sidebar /
+//      context-menu / modal sub-objects that own widgets in this subtree.
+//   2. safe_delete_subtree() instead of safe_delete_deferred() — see #983.
 void destroy_ams_panel_ui() {
     if (s_ams_panel_obj) {
         spdlog::info("[AMS Panel] Destroying panel UI to free memory");
@@ -1666,6 +1686,11 @@ void destroy_ams_panel_ui() {
         // (e.g., if destroy called manually while panel is in overlay stack)
         NavigationManager::instance().unregister_overlay_close_callback(s_ams_panel_obj);
         NavigationManager::instance().unregister_overlay_instance(s_ams_panel_obj);
+
+        // Breadcrumb the destroy so crashes in the close path can be pinned to
+        // which overlay was being torn down. Pairs with the "overlay+" crumb on
+        // push, and matches OverlayBase::destroy_overlay_ui().
+        crash_handler::breadcrumb::note("ovrl_dst", "AmsPanel");
 
         // Clear the panel_ reference in AmsPanel before deleting
         if (g_ams_panel) {

@@ -5,12 +5,15 @@
 
 #include "ui_context_menu.h"
 
+#include "ams_types.h"
+
 #include <functional>
 #include <lvgl.h>
 #include <string>
 
 // Forward declaration
 class AmsBackend;
+class AmsContextMenuTestAccess;
 
 namespace helix::ui {
 
@@ -42,6 +45,8 @@ namespace helix::ui {
  * @endcode
  */
 class AmsContextMenu : public ContextMenu {
+    friend class ::AmsContextMenuTestAccess;
+
   public:
     enum class MenuAction {
         CANCELLED,   ///< User dismissed menu without action
@@ -170,6 +175,15 @@ class AmsContextMenu : public ContextMenu {
 
     // === Static Callback Registration ===
     static void register_callbacks();
+    // Pure: whether the context menu should offer "Clear Spool" for this slot.
+    //
+    // Deliberately independent of whether filament is physically present. The
+    // affordance was previously gated on an EMPTY slot, so it disappeared as soon
+    // as a spool went in — exactly when a stale assignment does damage, since that
+    // is when the wrong metadata is printed with and when an edit aims a Spoolman
+    // write at the previous spool. An empty lane's stale metadata is cosmetic.
+    static bool should_show_clear_spool(const SlotInfo& slot);
+
     static bool callbacks_registered_;
 
     // === Static Callbacks ===

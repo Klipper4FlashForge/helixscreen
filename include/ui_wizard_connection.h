@@ -215,6 +215,21 @@ class WizardConnectionStep : public helix::wizard::Step {
     enum class StatusVariant { None, Success, Warning, Danger };
     void set_status(const char* icon_name, StatusVariant variant, const char* text);
 
+  public:
+    /**
+     * @brief Hardware discovery failed even though Moonraker answered
+     *
+     * Reached only from the connected path, so the address the user entered is
+     * correct and only Klipper is unusable (bad printer.cfg, MCU fault, or
+     * still starting). Enables Next with an explicit warning instead of
+     * blocking: the wizard is a full-screen overlay with no Skip button on
+     * this step, so gating here left the single most common first-boot state
+     * (Moonraker up, Klipper in `error`) with no way forward, backward, or
+     * into the app's own Klipper error surface.
+     */
+    void allow_continue_without_klipper();
+
+  private:
     // Auto-probe methods for localhost detection
     bool should_auto_probe() const;
     void attempt_auto_probe();

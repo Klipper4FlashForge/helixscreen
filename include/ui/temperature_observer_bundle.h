@@ -183,8 +183,10 @@ template <typename Panel> class TemperatureObserverBundle {
      * Safe to call multiple times. Observers are released via RAII.
      */
     void clear() {
-        // Lifetime MUST be reset BEFORE observer — observer's weak_ptr only
-        // expires after the shared_ptr (SubjectLifetime) is destroyed.
+        // Reset order between token and observer is not load-bearing here: these
+        // tokens are copies of a shared_ptr PrinterTemperatureState keeps, so this
+        // reset() does not expire the guard's weak_ptr. The guard still sees the
+        // live subject and removes itself normally.
         nozzle_temp_lifetime_.reset();
         nozzle_target_lifetime_.reset();
         nozzle_temp_observer_ = ObserverGuard();
@@ -203,9 +205,16 @@ template <typename Panel> class TemperatureObserverBundle {
     }
 
   private:
-    // Lifetimes MUST be declared before observers — C++ destroys members in
-    // reverse declaration order, so observers are destroyed first (removing
-    // themselves from the subject's list) while the lifetime token is still alive.
+    // Lifetimes declared before observers: C++ destroys members in reverse
+    // declaration order, so the observers are destroyed first (removing themselves
+    // from the subject's list) while the tokens are still alive.
+    //
+    // With the tokens these accessors hand out, order is not load-bearing — they are
+    // copies of a shared_ptr the owner (PrinterTemperatureState) keeps, so dropping
+    // this copy neither expires the guard's weak_ptr nor changes what reset() does.
+    // Subject death is signalled by the owner writing *token = false, independent of
+    // refcount. This order is the one that also stays correct if a token ever becomes
+    // exclusively owned here; see docs/devel/THREADING.md § 5.
     SubjectLifetime nozzle_temp_lifetime_;
     SubjectLifetime nozzle_target_lifetime_;
     ObserverGuard nozzle_temp_observer_;

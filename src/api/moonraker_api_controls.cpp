@@ -11,6 +11,7 @@
 #include "gcode_homing.h"
 #include "http_executor.h"
 #include "hv/requests.h"
+#include "json_utils.h"
 #include "macro_param_cache.h"
 #include "moonraker_api.h"
 #include "moonraker_api_internal.h"
@@ -174,27 +175,33 @@ void MoonrakerAPI::get_power_devices(PowerDevicesCallback on_success, ErrorCallb
             return;
         }
 
-        // Parse JSON response
+        // Parse JSON response. Only the parse belongs in the try: with
+        // on_success() inside it, a throw from the caller's own handler would be
+        // reported back through on_error as if Moonraker had sent us garbage,
+        // firing on_error after on_success already ran.
+        std::vector<PowerDevice> devices;
         try {
             json j = json::parse(resp->body);
-            std::vector<PowerDevice> devices;
 
-            if (j.contains("result") && j["result"].contains("devices")) {
+            if (j.contains("result") && j["result"].contains("devices") &&
+                j["result"]["devices"].is_array()) {
                 for (const auto& info : j["result"]["devices"]) {
+                    if (!info.is_object()) {
+                        continue;
+                    }
+                    // json_util::safe_* rather than .value(): nlohmann's .value()
+                    // throws type_error.302 on a JSON null, and one null field
+                    // would drop the whole device list.
                     PowerDevice dev;
-                    dev.device = info.value("device", "");
-                    dev.type = info.value("type", "unknown");
-                    dev.status = info.value("status", "off");
-                    dev.locked_while_printing = info.value("locked_while_printing", false);
+                    dev.device = helix::json_util::safe_string(info, "device");
+                    dev.type = helix::json_util::safe_string(info, "type", "unknown");
+                    dev.status = helix::json_util::safe_string(info, "status", "off");
+                    dev.locked_while_printing =
+                        helix::json_util::safe_bool(info, "locked_while_printing", false);
                     if (!dev.device.empty()) {
                         devices.push_back(dev);
                     }
                 }
-            }
-
-            spdlog::info("[Moonraker API] Found {} power devices", devices.size());
-            if (on_success) {
-                on_success(devices);
             }
         } catch (const std::exception& e) {
             spdlog::error("[Moonraker API] Failed to parse power devices: {}", e.what());
@@ -202,6 +209,12 @@ void MoonrakerAPI::get_power_devices(PowerDevicesCallback on_success, ErrorCallb
                 MoonrakerError err = MoonrakerError::unknown(e.what(), "get_power_devices");
                 on_error(err);
             }
+            return;
+        }
+
+        spdlog::info("[Moonraker API] Found {} power devices", devices.size());
+        if (on_success) {
+            on_success(devices);
         }
     });
 }
@@ -362,8 +375,7 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
     // traceable in Klipper logs, but never tag user-typed console input, and
     // never tag anything when the printer's firmware re-echoes received G-code
     // (AD5X: the echoed quoted RESPOND MSG="..." would be mis-parsed by Klipper).
-    const bool add_comment =
-        (source == GcodeSource::Internal) && !state_.firmware_echoes_gcode();
+    const bool add_comment = (source == GcodeSource::Internal) && !state_.firmware_echoes_gcode();
     // Refuse to ship gcode while Klipper is halted. The user-visible bug this
     // closes: dragging the fan slider on a K2 with `key298` produced a stream
     // of M106 commands that Klipper rejected on each tick (see /server/gcode_store

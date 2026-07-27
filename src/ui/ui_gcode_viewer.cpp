@@ -13,6 +13,8 @@
 #include "gcode_camera.h"
 #include "gcode_layer_renderer.h"
 #include "gcode_parser.h"
+#include "gcode_render_mode_policy.h"
+#include "gcode_ssao_policy.h"
 #include "gcode_streaming_config.h"
 #include "gcode_streaming_controller.h"
 #include "gcode_viewer_watchdog.h"
@@ -78,29 +80,33 @@ class GCodeViewerState {
         spdlog::debug("[GCode Viewer] Using LVGL 2D renderer (3D disabled)");
 #endif
 
-        // Check HELIX_GCODE_MODE env var for render mode override
-        const char* mode_env = std::getenv("HELIX_GCODE_MODE");
-        if (mode_env) {
-            if (std::strcmp(mode_env, "3D") == 0) {
+        // HELIX_GCODE_MODE handling lives in decide_render_mode() (pure, unit
+        // tested); this only applies the result and logs why.
 #ifdef ENABLE_3D_RENDERER
-                render_mode_ = GcodeViewerRenderMode::Render3D;
-                spdlog::info("[GCode Viewer] HELIX_GCODE_MODE=3D: forcing 3D renderer");
+        constexpr bool kHave3DRenderer = true;
 #else
-                spdlog::warn(
-                    "[GCode Viewer] HELIX_GCODE_MODE=3D ignored: 3D renderer not available");
-                render_mode_ = GcodeViewerRenderMode::Layer2D;
+        constexpr bool kHave3DRenderer = false;
 #endif
-            } else if (std::strcmp(mode_env, "2D") == 0) {
-                render_mode_ = GcodeViewerRenderMode::Layer2D;
-                spdlog::info("[GCode Viewer] HELIX_GCODE_MODE=2D: using 2D layer renderer");
-            } else {
-                spdlog::warn("[GCode Viewer] Unknown HELIX_GCODE_MODE='{}', using 2D", mode_env);
-                render_mode_ = GcodeViewerRenderMode::Layer2D;
-            }
-        } else {
-            // Default: Auto (uses 3D if GLES available, 2D otherwise)
-            render_mode_ = GcodeViewerRenderMode::Auto;
+        const char* mode_env = std::getenv("HELIX_GCODE_MODE");
+        const auto rm = helix::gcode_viewer::decide_render_mode(mode_env, kHave3DRenderer);
+        render_mode_ = rm.mode;
+        switch (rm.reason) {
+        case helix::gcode_viewer::RenderModeReason::EnvForced3D:
+            spdlog::info("[GCode Viewer] HELIX_GCODE_MODE=3D: forcing 3D renderer");
+            break;
+        case helix::gcode_viewer::RenderModeReason::Env3DUnavailable:
+            spdlog::warn("[GCode Viewer] HELIX_GCODE_MODE=3D ignored: 3D renderer not available");
+            break;
+        case helix::gcode_viewer::RenderModeReason::EnvForced2D:
+            spdlog::info("[GCode Viewer] HELIX_GCODE_MODE=2D: using 2D layer renderer");
+            break;
+        case helix::gcode_viewer::RenderModeReason::EnvUnrecognized:
+            spdlog::warn("[GCode Viewer] Unknown HELIX_GCODE_MODE='{}', using 2D", mode_env);
+            break;
+        case helix::gcode_viewer::RenderModeReason::DefaultAuto:
+            // Auto: uses 3D if GLES available, 2D otherwise.
             spdlog::debug("[GCode Viewer] Default render mode: Auto");
+            break;
         }
 
         // Layer 2 backstop: a prior session that hard-faulted inside the GPU
@@ -114,25 +120,24 @@ class GCodeViewerState {
                          "driver crash) — using 2D renderer");
         }
 
-        // Enhanced shading is ON by default, but OFF on constrained devices: the
-        // SSAO cache is a full-canvas ARGB8888 buffer (~592KB at 368x402, more at
-        // larger sizes) held for the life of the viewer, and it is the third such
-        // buffer alongside cache_buf_ and ghost_buf_. On a 47MB AD5M that is real
-        // money for a shading nicety. HELIX_SSAO overrides in either direction so
-        // the effect can still be forced on for comparison.
-        const bool constrained = helix::get_system_memory_info().is_constrained_device();
-        ssao_enabled_at_init_ = !constrained;
-        if (constrained) {
+        // Enhanced shading tiering lives in decide_ssao_enabled() (pure, unit
+        // tested); this only applies the result and logs why.
+        const auto ssao = helix::gcode_viewer::decide_ssao_enabled(
+            helix::get_system_memory_info().is_constrained_device(), std::getenv("HELIX_SSAO"));
+        ssao_enabled_at_init_ = ssao.enabled;
+        switch (ssao.reason) {
+        case helix::gcode_viewer::SsaoReason::ConstrainedOff:
             spdlog::info("[GCode Viewer] Constrained device - enhanced shading off by default "
                          "(HELIX_SSAO=1 to force on)");
-        }
-        const char* ssao_env = std::getenv("HELIX_SSAO");
-        if (ssao_env && std::strcmp(ssao_env, "0") == 0) {
-            ssao_enabled_at_init_ = false;
+            break;
+        case helix::gcode_viewer::SsaoReason::EnvForcedOff:
             spdlog::info("[GCode Viewer] HELIX_SSAO=0: enhanced shading disabled");
-        } else if (ssao_env && std::strcmp(ssao_env, "1") == 0) {
-            ssao_enabled_at_init_ = true;
+            break;
+        case helix::gcode_viewer::SsaoReason::EnvForcedOn:
             spdlog::info("[GCode Viewer] HELIX_SSAO=1: enhanced shading forced on");
+            break;
+        case helix::gcode_viewer::SsaoReason::DefaultOn:
+            break;
         }
     }
 

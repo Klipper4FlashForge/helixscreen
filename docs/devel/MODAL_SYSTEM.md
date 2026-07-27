@@ -46,7 +46,7 @@ Backdrops are always created in C++ -- never in XML. This avoids the old pattern
 
 **Rules of thumb:**
 - If the user must respond before continuing, use a **Modal**
-- If it replaces the current screen but can be "backed out" of, use an **Overlay** (`ui_nav_push_overlay()`)
+- If it replaces the current screen but can be "backed out" of, use an **Overlay** (`NavigationManager::instance().push_overlay()`)
 - If it's a primary navigation destination, use a **Panel**
 
 ---

@@ -121,7 +121,7 @@ run_autostart() {
     # Stock launcher preserved.
     [ -f "$MOCK_ROOT/etc/init.d/S99screen.stock" ]
     grep -q "start-stop-daemon" "$MOCK_ROOT/etc/init.d/S99screen.stock"
-    ! grep -q HelixScreen "$MOCK_ROOT/etc/init.d/S99screen.stock"
+    refute grep -q HelixScreen "$MOCK_ROOT/etc/init.d/S99screen.stock"
 
     # Live launcher now ours.
     grep -q HelixScreen "$MOCK_ROOT/etc/init.d/S99screen"
@@ -180,7 +180,7 @@ run_autostart() {
     # Stock fb-http preserved.
     [ -f "$MOCK_ROOT/etc/init.d/S99fb-http.stock" ]
     grep -q "fb-http.py" "$MOCK_ROOT/etc/init.d/S99fb-http.stock"
-    ! grep -q HelixScreen "$MOCK_ROOT/etc/init.d/S99fb-http.stock"
+    refute grep -q HelixScreen "$MOCK_ROOT/etc/init.d/S99fb-http.stock"
 
     # Live S99fb-http now delegates to HelixScreen's init and falls back to .stock.
     grep -q HelixScreen "$MOCK_ROOT/etc/init.d/S99fb-http"
@@ -235,7 +235,7 @@ run_autostart() {
     # Stock script preserved without our marker.
     [ -f "$MOCK_ROOT/etc/init.d/S99input-event-daemon.stock" ]
     grep -q "input-event-daemon" "$MOCK_ROOT/etc/init.d/S99input-event-daemon.stock"
-    ! grep -q HelixScreen "$MOCK_ROOT/etc/init.d/S99input-event-daemon.stock"
+    refute grep -q HelixScreen "$MOCK_ROOT/etc/init.d/S99input-event-daemon.stock"
 
     # Live launcher: carries marker, calls helixscreen.init, AND preserves the
     # stock daemon via the .stock delegate (we keep input-event-daemon running).

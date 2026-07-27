@@ -1006,11 +1006,10 @@ TEST_CASE_METHOD(MoonrakerAPITestFixture, "No G-code sent when validation fails"
 TEST_CASE("MoonrakerClient destructor clears callbacks",
           "[eventloop][api][security][lifecycle][slow]") {
     SECTION("Destroy client before connection completes") {
-        // Create event loop
-        auto loop = std::make_shared<hv::EventLoop>();
-
-        // Create client and start connecting
-        auto client = std::make_unique<MoonrakerClient>(loop);
+        // Default-construct (no external loop): libhv only joins its event-loop
+        // thread in ~WebSocketClient when is_loop_owner is true, which requires a
+        // null loop. See the note in test_moonraker_client_security.cpp.
+        auto client = std::make_unique<MoonrakerClient>();
 
         bool connected_called = false;
         bool disconnected_called = false;
@@ -1032,8 +1031,7 @@ TEST_CASE("MoonrakerClient destructor clears callbacks",
     }
 
     SECTION("Destroy client with pending requests") {
-        auto loop = std::make_shared<hv::EventLoop>();
-        auto client = std::make_unique<MoonrakerClient>(loop);
+        auto client = std::make_unique<MoonrakerClient>();
 
         bool error_callback_called = false;
 
@@ -1055,8 +1053,7 @@ TEST_CASE("MoonrakerClient destructor clears callbacks",
     SECTION("Multiple rapid create/destroy cycles") {
         // Stress test: rapid allocation and deallocation
         for (int i = 0; i < 10; i++) {
-            auto loop = std::make_shared<hv::EventLoop>();
-            auto client = std::make_unique<MoonrakerClient>(loop);
+            auto client = std::make_unique<MoonrakerClient>();
 
             // Start connection
             client->connect(
@@ -1072,8 +1069,7 @@ TEST_CASE("MoonrakerClient destructor clears callbacks",
     }
 
     SECTION("Destroy client during active connection (mock)") {
-        auto loop = std::make_shared<hv::EventLoop>();
-        auto client = std::make_unique<MoonrakerClient>(loop);
+        auto client = std::make_unique<MoonrakerClient>();
 
         // Register a persistent callback
         bool notify_callback_called = false;
@@ -1095,8 +1091,7 @@ TEST_CASE("MoonrakerClient destructor clears callbacks",
 TEST_CASE("MoonrakerClient cleanup_pending_requests is exception-safe",
           "[api][security][lifecycle][eventloop][slow]") {
     SECTION("Cleanup with error callbacks that throw exceptions") {
-        auto loop = std::make_shared<hv::EventLoop>();
-        auto client = std::make_unique<MoonrakerClient>(loop);
+        auto client = std::make_unique<MoonrakerClient>();
 
         bool first_callback_called = false;
         bool second_callback_called = false;

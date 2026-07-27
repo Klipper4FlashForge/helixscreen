@@ -25,9 +25,16 @@ setup() {
     TMP_DIR="/tmp/helixscreen-install"
     _USER_INSTALL_DIR=""
 
-    # Source platform.sh (skip source guard by unsetting it)
-    unset _HELIX_PLATFORM_SOURCED
+    # Source common.sh + platform.sh (skip source guards by unsetting them).
+    # common.sh owns validate_install_dir/validate_tmp_dir, which platform.sh
+    # calls; the bundled installer always carries both, so loading platform.sh
+    # alone would test a shape that never ships.
+    unset _HELIX_PLATFORM_SOURCED _HELIX_COMMON_SOURCED
+    . "$WORKTREE_ROOT/scripts/lib/installer/common.sh"
     . "$WORKTREE_ROOT/scripts/lib/installer/platform.sh"
+    # common.sh defines the real log_* (they print to stderr, which bats folds
+    # into $output). Restore helpers.bash's silent stubs.
+    load helpers
 }
 
 # --- Cascade priority tests ---
@@ -93,14 +100,17 @@ setup() {
 # --- Override tests ---
 
 @test "explicit INSTALL_DIR env var preserved" {
-    # Simulate user setting INSTALL_DIR before sourcing
-    _USER_INSTALL_DIR="/custom/path"
-    INSTALL_DIR="/custom/path"
+    # Simulate user setting INSTALL_DIR before sourcing. The final path
+    # component must name us — INSTALL_DIR is mv'd aside and rm -rf'd, so
+    # validate_install_dir refuses a bare data directory (see
+    # test_destructive_path_guards.bats).
+    _USER_INSTALL_DIR="/custom/path/helixscreen"
+    INSTALL_DIR="/custom/path/helixscreen"
     KLIPPER_HOME="$BATS_TEST_TMPDIR/home/testuser"
     mkdir -p "$KLIPPER_HOME/klipper"
 
     detect_pi_install_dir
-    [ "$INSTALL_DIR" = "/custom/path" ]
+    [ "$INSTALL_DIR" = "/custom/path/helixscreen" ]
 }
 
 @test "default INSTALL_DIR is not treated as user override" {

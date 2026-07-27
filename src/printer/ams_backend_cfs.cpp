@@ -8,6 +8,7 @@
 #include "filament_catalog.h"
 #include "filament_slot_override.h"
 #include "filament_slot_override_store.h"
+#include "json_utils.h"
 #include "moonraker_error.h"
 #include "post_op_cooldown_manager.h"
 #include "printer_detector.h"
@@ -472,8 +473,19 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
     info.supports_purge = true;
     info.supports_bypass = false;
 
-    // Parse auto_refill → endless spool support
-    info.supports_endless_spool = box_json.value("auto_refill", 0) != 0;
+    // Parse auto_refill → endless spool support.
+    //
+    // Top-level box fields (auto_refill, filament, enable, filament_useup) are
+    // documented as JSON ints, unlike the per-unit scalars further down, which are
+    // documented as strings (CREALITY_K2_SUPPORT.md § "Moonraker Object: box").
+    // safe_int is therefore belt-and-braces here rather than a known-shape fix:
+    // .value("auto_refill", 0) still throws type_error.302 on a null or a string,
+    // and that throw escapes parse_box_status and drops the entire box frame.
+    //
+    // Test for an explicit 1 rather than != 0 because safe_int parses numeric
+    // strings: were the box to ever report the "-1" sentinel here (the documented
+    // absence marker everywhere else in this object), != 0 would read it as TRUE.
+    info.supports_endless_spool = helix::json_util::safe_int(box_json, "auto_refill", 0) == 1;
     info.supports_tool_mapping = true;
 
     // box.filament is a stale active-lane SELECTION index, NOT a "filament
@@ -486,7 +498,10 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
     // Runout signal: box.filament_useup == 1 means no filament at the box gate.
     // Raw firmware value here; ams_state gates display on print-paused state to
     // avoid false positives at pre-load print start (see filament_useup decode).
-    info.filament_runout = box_json.value("filament_useup", 0) != 0;
+    // safe_int + "== 1" for the same reasons as auto_refill above: a null or
+    // wrong-typed value must not throw, and a "-1" must not read as a runout.
+    // "== 1" also matches this field's decode exactly, per the line above.
+    info.filament_runout = helix::json_util::safe_int(box_json, "filament_useup", 0) == 1;
 
     // Parse tool mapping from "map" object
     if (box_json.contains("map") && box_json["map"].is_object()) {
@@ -501,6 +516,14 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
         if (max_tool >= 0) {
             info.tool_to_slot_map.resize(max_tool + 1, -1);
             for (auto& [tnn_key, tnn_val] : box_json["map"].items()) {
+                // The map value is a "TnnA" string; anything else (null for an
+                // unmapped tool, or a number) would make get<std::string>()
+                // throw type_error.302 out of parse_box_status and drop the
+                // whole box frame. Skip the entry instead — same is_string()
+                // discipline as the same_material group parse below.
+                if (!tnn_val.is_string()) {
+                    continue;
+                }
                 int src = CfsMaterialDb::tnn_to_slot(tnn_key);
                 int dst = CfsMaterialDb::tnn_to_slot(tnn_val.get<std::string>());
                 if (src >= 0 && dst >= 0 && src < static_cast<int>(info.tool_to_slot_map.size())) {
@@ -535,7 +558,14 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
         }
 
         const auto& unit_json = box_json[key];
-        std::string state = unit_json.value("state", "None");
+        // safe_string, not .value(): the per-unit scalars below are documented as
+        // strings (CREALITY_K2_SUPPORT.md § "Per-Unit Fields"), but .value() with a
+        // string default THROWS type_error.302 on a JSON null or a numeric value,
+        // and that throw escapes parse_box_status and drops the whole box frame.
+        // safe_string returns the supplied default for null/wrong-type WITHOUT
+        // stringifying, so a numeric -1 yields the literal default rather than the
+        // string "-1" — the sentinel comparisons below stay exact either way.
+        std::string state = helix::json_util::safe_string(unit_json, "state", "None");
         if (state == "None" || state == "-1") {
             spdlog::debug("[AMS CFS] {} disconnected (state={})", key, state);
             continue; // Disconnected unit
@@ -553,18 +583,24 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
         unit.topology = PathTopology::HUB;
 
         // Firmware version and serial
-        std::string ver = unit_json.value("version", "-1");
+        std::string ver = helix::json_util::safe_string(unit_json, "version", "-1");
         if (ver != "-1" && ver != "None") {
             unit.firmware_version = ver;
         }
-        std::string sn = unit_json.value("sn", "-1");
+        std::string sn = helix::json_util::safe_string(unit_json, "sn", "-1");
         if (sn != "-1" && sn != "None") {
             unit.serial_number = sn;
         }
 
-        // Environment: temperature and humidity
-        std::string temp_str = unit_json.value("temperature", "None");
-        std::string humid_str = unit_json.value("dry_and_humidity", "None");
+        // Environment: temperature and humidity. Both are documented as STRINGS
+        // ("27", "48"), so safe_string is the faithful read. Note the residual: if
+        // a firmware variant ever sent these as numbers, safe_string yields "None"
+        // and the unit silently reports no environment data — better than today's
+        // throw, which discards every other field on the box too, but it is a
+        // silent loss. Switch to safe_float here if a numeric variant is ever seen.
+        std::string temp_str = helix::json_util::safe_string(unit_json, "temperature", "None");
+        std::string humid_str =
+            helix::json_util::safe_string(unit_json, "dry_and_humidity", "None");
         if (temp_str != "None" && temp_str != "-1" && humid_str != "None" && humid_str != "-1") {
             EnvironmentData env;
             try {
@@ -581,11 +617,30 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
             unit.environment = env;
         }
 
-        // Parse the 4 slots within this unit
-        auto color_arr = unit_json.value("color_value", nlohmann::json::array());
-        auto material_arr = unit_json.value("material_type", nlohmann::json::array());
-        auto remain_arr = unit_json.value("remain_len", nlohmann::json::array());
-        auto vender_arr = unit_json.value("vender", nlohmann::json::array());
+        // Parse the 4 slots within this unit.
+        //
+        // These four keys are array[4] on a connected unit, but a unit that drops
+        // out reports the SCALAR sentinel "-1"/"None" for the very same keys
+        // (CREALITY_K2_SUPPORT.md § "Disconnected Units"; the sibling
+        // `filament_rack` object is documented with exactly that scalar form).
+        // .value(key, json::array()) does not throw on a scalar — it round-trips
+        // through get<json> and hands back the string — but a string json has
+        // size() == 1, so the `i < size()` bounds check in the loop below passes
+        // for i == 0 and then operator[](size_type) throws type_error.305, BEFORE
+        // the .is_string() guard on that same line can run. Normalizing a
+        // non-array to an empty array makes every slot fall back to its sentinel
+        // default instead. Same is_array() discipline as build_cfs_slot_uid's
+        // `pick` lambda below.
+        auto array_field = [&unit_json](const char* field) -> nlohmann::json {
+            auto it = unit_json.find(field);
+            if (it == unit_json.end() || !it->is_array())
+                return nlohmann::json::array();
+            return *it;
+        };
+        auto color_arr = array_field("color_value");
+        auto material_arr = array_field("material_type");
+        auto remain_arr = array_field("remain_len");
+        auto vender_arr = array_field("vender");
 
         for (int i = 0; i < 4; ++i) {
             SlotInfo slot;
@@ -722,7 +777,7 @@ AmsSystemInfo AmsBackendCfs::parse_box_status(const nlohmann::json& box_json) {
 
         // Parse active filament slot within this unit.
         // T1.filament = "A"/"B"/"C"/"D" when a slot is loaded, "None" otherwise.
-        std::string fil_letter = unit_json.value("filament", "None");
+        std::string fil_letter = helix::json_util::safe_string(unit_json, "filament", "None");
         if (fil_letter.size() == 1 && fil_letter[0] >= 'A' && fil_letter[0] <= 'D') {
             int active_local = fil_letter[0] - 'A';
             info.current_slot = (n - 1) * 4 + active_local;
@@ -815,10 +870,18 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
         if (box.contains("filament_useup") && box["filament_useup"].is_number()) {
             int useup = box["filament_useup"].get<int>();
             if (useup != last_filament_useup_) {
+                // safe_int, not .value(): spdlog evaluates its arguments before it
+                // consults the log level, so a null or wrong-typed "filament"/
+                // "auto_refill"/"enable" would throw type_error.302 out of
+                // handle_status_update in a release build too, not just under -vv.
+                // NB these are the TOP-LEVEL box fields, documented as ints — not
+                // the same-named per-unit "filament" letter, which is a string.
                 spdlog::debug("[AMS CFS] filament_useup {} -> {} (box.filament={}, "
                               "auto_refill={}, enable={})",
-                              last_filament_useup_, useup, box.value("filament", -1),
-                              box.value("auto_refill", -1), box.value("enable", -1));
+                              last_filament_useup_, useup,
+                              helix::json_util::safe_int(box, "filament", -1),
+                              helix::json_util::safe_int(box, "auto_refill", -1),
+                              helix::json_util::safe_int(box, "enable", -1));
                 last_filament_useup_ = useup;
             }
         }
@@ -845,7 +908,10 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
                 if (!box.contains(key) || !box[key].is_object())
                     continue;
                 const auto& unit_json = box[key];
-                std::string state = unit_json.value("state", "None");
+                // safe_string for the same reason as the parse_box_status unit
+                // loop: a null/wrong-typed `state` must degrade to "disconnected",
+                // not throw out of handle_status_update.
+                std::string state = helix::json_util::safe_string(unit_json, "state", "None");
                 if (state == "None" || state == "-1")
                     continue;
                 for (int i = 0; i < 4; ++i) {

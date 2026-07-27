@@ -216,7 +216,7 @@ BUGEOF
     install_service_sysv
 
     # Bad substring replaced
-    ! grep -q 'assets/config/platform/hooks\.sh' "$INIT_SCRIPT_DEST"
+    refute grep -q 'assets/config/platform/hooks\.sh' "$INIT_SCRIPT_DEST"
     # Correct path written
     grep -q 'PLATFORM_HOOKS="\${DAEMON_DIR}/platform/hooks.sh"' "$INIT_SCRIPT_DEST"
 }

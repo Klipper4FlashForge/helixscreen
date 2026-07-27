@@ -189,7 +189,7 @@ EOF
 
     # Nothing recorded for the binary.
     if [ -f "$DISABLED_SERVICES_FILE" ]; then
-        ! grep -q "mksclient" "$DISABLED_SERVICES_FILE"
+        refute grep -q "mksclient" "$DISABLED_SERVICES_FILE"
     fi
 }
 

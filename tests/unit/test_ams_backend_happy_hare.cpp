@@ -30,6 +30,21 @@ class AmsBackendHappyHareTestHelper : public AmsBackendHappyHare {
      * @brief Initialize test gates with default SlotInfo
      * @param count Number of gates to create
      */
+    /// Feed a printer.mmu gate_spool_id array, as a v4 status update would.
+    void feed_mmu_gate_spool_ids(const std::vector<int>& ids) {
+        nlohmann::json mmu;
+        mmu["gate_spool_id"] = ids;
+        nlohmann::json params;
+        params["mmu"] = mmu;
+        nlohmann::json notification;
+        notification["params"] = nlohmann::json::array({params, 0.0});
+        handle_status_update(notification);
+    }
+
+    void clear_slot_override(int slot_index) {
+        AmsBackendHappyHare::clear_slot_override(slot_index);
+    }
+
     void initialize_test_gates(int count) {
         system_info_.units.clear();
 
@@ -3524,4 +3539,56 @@ TEST_CASE_METHOD(LVGLTestFixture,
     CHECK(lv_subject_get_int(ams.get_toolchange_step_subject()) == 6); // "purge" = index 6
 
     ams.set_backend(nullptr);
+}
+
+// ============================================================================
+// Override store — user identity Happy Hare's gate map cannot hold
+// ============================================================================
+//
+// Same rationale as AFC (see test_ams_backend_afc.cpp): Happy Hare's gate map
+// carries spool_id / material / colour, but not brand, spool_name,
+// total_weight_g, colour name or the Spoolman filament+vendor ids. Those live
+// only in the override store, and the store must use a PRIVATE namespace
+// because lane_data belongs to the Happy Hare plugin itself.
+//
+// NOTE: written blind — there is no Happy Hare hardware on hand. It deliberately
+// mirrors the AFC integration rather than inventing anything.
+
+TEST_CASE("HappyHare override survives a gate-map update that omits identity",
+          "[ams][happyhare][override]") {
+    AmsBackendHappyHareTestHelper helper;
+    helper.initialize_test_gates(4);
+
+    SlotInfo info;
+    info.brand = "Polymaker";
+    info.spool_name = "PolyLite Grey";
+    info.spoolman_id = 42;
+    info.total_weight_g = 1000.0f;
+    helper.set_slot_info(0, info);
+
+    // A gate-map refresh that clears the spool id upstream.
+    helper.feed_mmu_gate_spool_ids({0, 0, 0, 0});
+
+    const SlotInfo after = helper.get_slot_info(0);
+    CHECK(after.brand == "Polymaker");
+    CHECK(after.spool_name == "PolyLite Grey");
+    CHECK(after.spoolman_id == 42);
+    CHECK(after.total_weight_g == Catch::Approx(1000.0f));
+}
+
+TEST_CASE("HappyHare clear_slot_override drops the retained identity",
+          "[ams][happyhare][override]") {
+    AmsBackendHappyHareTestHelper helper;
+    helper.initialize_test_gates(4);
+
+    SlotInfo info;
+    info.brand = "Polymaker";
+    info.spoolman_id = 42;
+    helper.set_slot_info(0, info);
+
+    helper.clear_slot_override(0);
+
+    const SlotInfo after = helper.get_slot_info(0);
+    CHECK(after.brand.empty());
+    CHECK(after.spoolman_id == 0);
 }

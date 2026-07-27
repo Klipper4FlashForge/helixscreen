@@ -376,6 +376,53 @@ TEST_CASE_METHOD(TelemetryTestFixture, "Session event: has app section with vers
     REQUIRE(event["app"]["platform"].is_string());
 }
 
+TEST_CASE_METHOD(TelemetryTestFixture, "Session event: app.zip_tool reports zip capability",
+                 "[telemetry][session]") {
+    auto& tm = TelemetryManager::instance();
+    tm.set_enabled(true);
+
+    tm.record_session();
+    REQUIRE(tm.queue_size() == 1);
+    auto event = tm.get_queue_snapshot()[0];
+
+    // Gates the .tar.gz retirement (#993): combined with app.version this says
+    // whether a device could survive a zip-only release. Must be present even
+    // in this test binary, which has no DisplayManager -- the field lives
+    // outside that guard on purpose.
+    REQUIRE(event.contains("app"));
+    REQUIRE(event["app"].contains("zip_tool"));
+    REQUIRE(event["app"]["zip_tool"].is_string());
+
+    const std::string zip_tool = event["app"]["zip_tool"];
+    const std::set<std::string> legal_values{"unzip", "python", "none"};
+    INFO("zip_tool was: " << zip_tool);
+    REQUIRE(legal_values.count(zip_tool) == 1);
+}
+
+TEST_CASE_METHOD(TelemetryTestFixture, "Session event: app.zip_tool is on EVERY session event",
+                 "[telemetry][session]") {
+    auto& tm = TelemetryManager::instance();
+    tm.set_enabled(true);
+
+    // The probe is cached in a function-local static so it runs at most once
+    // per process (it can exec python3, which is slow on MIPS). Caching must
+    // not turn the field into a first-session-only field, and both sessions
+    // must agree on the answer.
+    tm.record_session();
+    tm.record_session();
+
+    auto snapshot = tm.get_queue_snapshot();
+    REQUIRE(snapshot.size() == 2);
+
+    const std::set<std::string> legal_values{"unzip", "python", "none"};
+    for (const auto& event : snapshot) {
+        REQUIRE(event["app"].contains("zip_tool"));
+        const std::string zip_tool = event["app"]["zip_tool"];
+        REQUIRE(legal_values.count(zip_tool) == 1);
+    }
+    REQUIRE(snapshot[0]["app"]["zip_tool"] == snapshot[1]["app"]["zip_tool"]);
+}
+
 TEST_CASE_METHOD(TelemetryTestFixture, "Session event: does NOT contain PII fields",
                  "[telemetry][session]") {
     auto& tm = TelemetryManager::instance();

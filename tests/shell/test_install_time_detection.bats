@@ -64,3 +64,70 @@ SH
     [ "$status" -eq 0 ]
     [ ! -f "$SETTINGS_FILE" ]
 }
+
+# --- Re-run safety -----------------------------------------------------------
+# Seeding also runs on `install.sh --update`, after the user's settings.json has
+# been restored. Clearing wizard_completed there sends a configured user back
+# through first-boot setup; on a multi-printer config the app's stale-entry
+# recovery then archives the active printer out of the list entirely.
+
+# Write a settings.json that looks like a user who finished the wizard.
+_seed_configured_settings() {
+    cat > "$SETTINGS_FILE" <<'JSON'
+{
+  "active_printer_id": "default",
+  "preset": "voron_v24",
+  "printers": {
+    "default": {
+      "wizard_completed": true,
+      "moonraker_host": "192.168.1.50",
+      "heaters": {"bed": "heater_bed", "hotend": "extruder"}
+    }
+  }
+}
+JSON
+}
+
+@test "tier2 B re-run: preserves wizard_completed on an already-configured install" {
+    _seed_configured_settings
+    export FAKE_VERDICT='{"model":"Qidi Q2","preset":"qidi_q2","confidence":92,"runner_up_preset":"qidi_q1_pro","runner_up_confidence":70}'
+    run seed_from_moonraker_detection
+    [ "$status" -eq 0 ]
+    python3 -c "
+import json
+d = json.load(open('$SETTINGS_FILE'))
+p = d['printers']['default']
+assert p['wizard_completed'] is True, 'wizard_completed was clobbered: %r' % p.get('wizard_completed')
+assert d['preset'] == 'voron_v24', 'preset was clobbered: %r' % d.get('preset')
+assert p['moonraker_host'] == '192.168.1.50', p
+assert p['heaters']['bed'] == 'heater_bed', p
+"
+}
+
+@test "tier2 B fresh: still marks a brand-new install as needing the wizard" {
+    rm -f "$SETTINGS_FILE"
+    export FAKE_VERDICT='{"model":"Qidi Q2","preset":"qidi_q2","confidence":92,"runner_up_preset":"qidi_q1_pro","runner_up_confidence":70}'
+    run seed_from_moonraker_detection
+    [ "$status" -eq 0 ]
+    python3 -c "
+import json
+d = json.load(open('$SETTINGS_FILE'))
+assert d['printers']['default']['wizard_completed'] is False, d
+assert d['preset'] == 'qidi_q2', d
+"
+}
+
+@test "tier2 B re-run: an existing incomplete wizard stays incomplete" {
+    cat > "$SETTINGS_FILE" <<'JSON'
+{"active_printer_id": "default", "printers": {"default": {"wizard_completed": false}}}
+JSON
+    export FAKE_VERDICT='{"model":"Qidi Q2","preset":"qidi_q2","confidence":92,"runner_up_preset":"qidi_q1_pro","runner_up_confidence":70}'
+    run seed_from_moonraker_detection
+    [ "$status" -eq 0 ]
+    python3 -c "
+import json
+d = json.load(open('$SETTINGS_FILE'))
+assert d['printers']['default']['wizard_completed'] is False, d
+assert d['preset'] == 'qidi_q2', d
+"
+}

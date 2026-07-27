@@ -88,8 +88,8 @@ json get_default_printer_config(const std::string& moonraker_host) {
 /// Default display configuration section
 /// Used for both new configs and ensuring display section exists with defaults
 json get_default_display_config() {
-    return {{"sleep_sec", 1200},      {"dim_sec", 600},          {"dim_brightness", 30},
-            {"drm_device", ""},       {"gcode_render_mode", 0},  {"bed_mesh_render_mode", 0},
+    return {{"sleep_sec", 1200},       {"dim_sec", 600},           {"dim_brightness", 30},
+            {"drm_device", ""},        {"gcode_render_mode", 0},   {"bed_mesh_render_mode", 0},
             {"gpu_3d_blocked", false}, {"gpu_blur_blocked", false}};
 }
 
@@ -946,14 +946,13 @@ static void migrate_v19_to_v20(json& config) {
     if (have_target && config.contains("led") && config["led"].is_object()) {
         const std::string base = "/printers/" + active + "/leds";
         std::vector<std::pair<std::string, std::string>> moves;
-        for (const char* key : {"selected_strips", "last_color", "last_brightness", "last_white",
-                                "color_presets", "macro_devices", "led_on_at_start",
-                                "startup_brightness"}) {
+        for (const char* key :
+             {"selected_strips", "last_color", "last_brightness", "last_white", "color_presets",
+              "macro_devices", "led_on_at_start", "startup_brightness"}) {
             moves.emplace_back(std::string("/led/") + key, base + "/" + key);
         }
         for (const char* key : {"enabled", "mappings"}) {
-            moves.emplace_back(std::string("/led/auto_state/") + key,
-                               base + "/auto_state/" + key);
+            moves.emplace_back(std::string("/led/auto_state/") + key, base + "/auto_state/" + key);
         }
         // migrate_config_keys() skips (and drops) sources whose target already
         // holds a REAL value, so per-printer values already in place are never
@@ -1097,7 +1096,6 @@ json get_default_config(const std::string& moonraker_host, bool include_user_pre
 
 using helix::config_backup::find_backup;
 using helix::config_backup::restore_from_backup;
-using helix::config_backup::write_backup_file;
 using helix::config_backup::write_rolling_backup;
 
 /// Whether the rolling-backup tiers apply to this run.
@@ -1274,7 +1272,12 @@ void Config::init(const std::string& config_path) {
         // Load existing config
         spdlog::info("[Config] Loading config from {}", path);
         try {
-            data = json::parse(std::fstream(path));
+            // ifstream, not fstream: fstream's default openmode is in|out, so a
+            // read-only settings.json (root-owned, or mode 0444) fails to open,
+            // parses as empty input, and lands in the catch below — which renames
+            // it .corrupt and resets to factory defaults, destroying a config that
+            // was merely unwritable.
+            data = json::parse(std::ifstream(path));
 
             // Detect tarball default that replaced user config during a Moonraker
             // web update.  Moonraker type:web does rmtree() on the install dir and
@@ -1289,7 +1292,7 @@ void Config::init(const std::string& config_path) {
                 std::string backup_src = find_backup(config_backup_search_paths());
                 if (!backup_src.empty()) {
                     try {
-                        auto backup_data = json::parse(std::fstream(backup_src));
+                        auto backup_data = json::parse(std::ifstream(backup_src));
                         if (helix::json_util::safe_int(backup_data, "config_version", 0) > 0) {
                             spdlog::warn("[Config] Loaded config is a tarball default "
                                          "(no config_version) — restoring from backup: {}",
@@ -1320,7 +1323,7 @@ void Config::init(const std::string& config_path) {
             bool restored = false;
             if (!backup_src.empty()) {
                 try {
-                    data = json::parse(std::fstream(backup_src));
+                    data = json::parse(std::ifstream(backup_src));
                     restored = true;
                     spdlog::info("[Config] Restored from backup: {}", backup_src);
                     NOTIFY_WARNING("Settings were corrupted — restored from backup");
@@ -1590,11 +1593,16 @@ void Config::init(const std::string& config_path) {
         }
     }
 
-    // Save updated config with any new defaults or migrations
+    // Save updated config with any new defaults or migrations.
+    // Goes through save() for the temp-file + fsync + rename path: this runs on
+    // first boot and on the first boot after any upgrade that adds a migration,
+    // so a power cut here would otherwise truncate the live settings.json.
     if (config_modified && !read_only_mode_) {
-        std::ofstream o(path);
-        o << std::setw(2) << data << std::endl;
-        spdlog::debug("[Config] Saved updated config to {}", path);
+        if (save()) {
+            spdlog::debug("[Config] Saved updated config to {}", path);
+        } else {
+            spdlog::error("[Config] Failed to persist migrated config to {}", path);
+        }
     }
 
     // Maintain a rolling backup on startup — ensures backup freshness even if
@@ -1688,6 +1696,25 @@ void Config::remove_printer(const std::string& printer_id) {
         spdlog::info("[Config] Auto-switched to printer '{}' after removing '{}'", remaining_id,
                      printer_id);
     }
+}
+
+void Config::archive_printer(const std::string& printer_id) {
+    if (!data.contains("printers") || !data["printers"].contains(printer_id)) {
+        spdlog::warn("[Config] Cannot archive non-existent printer '{}'", printer_id);
+        return;
+    }
+
+    // Snapshot before remove_printer() erases it. remove_printer() may decline
+    // (last printer standing), so only keep the archive if the erase happened.
+    json snapshot = data["printers"][printer_id];
+    remove_printer(printer_id);
+
+    if (data["printers"].contains(printer_id)) {
+        return;
+    }
+
+    data["removed_printers"][printer_id] = std::move(snapshot);
+    spdlog::info("[Config] Archived printer '{}' to /removed_printers", printer_id);
 }
 
 std::string Config::slugify(const std::string& name) {
@@ -1858,8 +1885,11 @@ bool Config::save() {
 
         spdlog::trace("[Config] saved successfully to {}", path);
 
-        // Maintain rolling backup outside install dir (survives Moonraker wipes)
-        if (backups_enabled()) {
+        // Maintain rolling backup outside install dir (survives Moonraker wipes).
+        // Same guard as the startup backup in init(): a wizard-incomplete config
+        // holds preset defaults, not user data, and must never overwrite the one
+        // good recovery copy.
+        if (backups_enabled() && !is_wizard_required()) {
             write_rolling_backup(path, config_backup_primary(), config_backup_fallback());
         }
 
@@ -1938,7 +1968,7 @@ bool Config::apply_preset_file(const std::string& preset_name) {
         }
         json preset_json;
         try {
-            preset_json = json::parse(std::fstream(preset_path));
+            preset_json = json::parse(std::ifstream(preset_path));
         } catch (const json::exception&) {
             spdlog::info("[Config] Wizard completed, skipping preset '{}' merge", preset_name);
             return false;
@@ -2036,7 +2066,7 @@ bool Config::apply_preset_file(const std::string& preset_name) {
     // Load and parse preset JSON
     json preset_json;
     try {
-        preset_json = json::parse(std::fstream(preset_path));
+        preset_json = json::parse(std::ifstream(preset_path));
     } catch (const json::exception& e) {
         spdlog::error("[Config] Failed to parse preset '{}': {}", preset_path, e.what());
         return false;

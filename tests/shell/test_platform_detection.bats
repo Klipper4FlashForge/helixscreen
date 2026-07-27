@@ -19,9 +19,15 @@ setup() {
     INSTALL_DIR="/opt/helixscreen"
     TMP_DIR=""
 
-    # Source platform.sh (skip source guard by unsetting it)
-    unset _HELIX_PLATFORM_SOURCED
+    # Source common.sh + platform.sh (skip source guards by unsetting them).
+    # platform.sh calls common.sh's validate_install_dir/validate_tmp_dir; the
+    # bundled installer always carries both.
+    unset _HELIX_PLATFORM_SOURCED _HELIX_COMMON_SOURCED
+    . "$WORKTREE_ROOT/scripts/lib/installer/common.sh"
     . "$WORKTREE_ROOT/scripts/lib/installer/platform.sh"
+    # common.sh defines the real log_* (they print to stderr, which bats folds
+    # into $output). Restore helpers.bash's silent stubs.
+    load helpers
 
     # Create a fake /etc/os-release indicating Debian (Pi-like system)
     mkdir -p "$BATS_TEST_TMPDIR/etc"
@@ -565,12 +571,12 @@ _mock_u1_detect_platform() {
 @test "platform.sh does NOT treat makerbase-client as an M1 marker (#1027)" {
     # makerbase-client may still appear in comments, but must not gate detection
     # via a file existence check or a systemctl unit-file match.
-    ! grep -qE '\[ -f [^]]*makerbase-client' "$WORKTREE_ROOT/scripts/lib/installer/platform.sh"
+    refute grep -qE '\[ -f [^]]*makerbase-client' "$WORKTREE_ROOT/scripts/lib/installer/platform.sh"
     ! grep -qE 'list-unit-files.*makerbase-client' "$WORKTREE_ROOT/scripts/lib/installer/platform.sh"
 }
 
 @test "install.sh (bundled) does NOT treat makerbase-client as an M1 marker (#1027)" {
-    ! grep -qE '\[ -f [^]]*makerbase-client' "$WORKTREE_ROOT/scripts/install.sh"
+    refute grep -qE '\[ -f [^]]*makerbase-client' "$WORKTREE_ROOT/scripts/install.sh"
     ! grep -qE 'list-unit-files.*makerbase-client' "$WORKTREE_ROOT/scripts/install.sh"
 }
 
@@ -737,8 +743,8 @@ _mock_m1_gate() {
     # binary, never a non-existent helixscreen-m1.zip (which 404s on Moonraker
     # update). The asset is resolved by helix_self_update_asset() in platform.sh,
     # the single source of truth shared by moonraker.sh and mk/cross.mk.
-    ! grep -q 'helixscreen-m1\.zip' "$WORKTREE_ROOT/scripts/lib/installer/moonraker.sh"
-    ! grep -q 'helixscreen-m1\.zip' "$WORKTREE_ROOT/scripts/lib/installer/platform.sh"
+    refute grep -q 'helixscreen-m1\.zip' "$WORKTREE_ROOT/scripts/lib/installer/moonraker.sh"
+    refute grep -q 'helixscreen-m1\.zip' "$WORKTREE_ROOT/scripts/lib/installer/platform.sh"
 
     # The m1 dispatch must resolve to pi or pi32 (by userspace bitness).
     local asset

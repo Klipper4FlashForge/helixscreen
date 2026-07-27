@@ -561,8 +561,14 @@ else
         REPO="${HELIX_GITHUB_REPO:-prestonbrown/helixscreen}"
         SYM_ZST_URL="${R2_BASE_URL}/v${VERSION}/${PLATFORM}.sym.zst"
         SYM_URL="${R2_BASE_URL}/v${VERSION}/${PLATFORM}.sym"
-        GH_SYM_ZST_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${PLATFORM}.sym.zst"
-        GH_SYM_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${PLATFORM}.sym"
+        # GitHub-release symbol assets gained a `symbols-` prefix so they stop
+        # sorting ahead of the helixscreen-* artifacts (helixscreen#993 — Moonraker
+        # falls back to assets[0]). Try the prefixed name first, then the legacy
+        # unprefixed one for releases published before the rename.
+        GH_SYM_ZST_URL="https://github.com/${REPO}/releases/download/v${VERSION}/symbols-${PLATFORM}.sym.zst"
+        GH_SYM_URL="https://github.com/${REPO}/releases/download/v${VERSION}/symbols-${PLATFORM}.sym"
+        GH_SYM_ZST_URL_LEGACY="https://github.com/${REPO}/releases/download/v${VERSION}/${PLATFORM}.sym.zst"
+        GH_SYM_URL_LEGACY="https://github.com/${REPO}/releases/download/v${VERSION}/${PLATFORM}.sym"
         have_zstd=0
         command -v zstd >/dev/null 2>&1 && have_zstd=1
 
@@ -575,11 +581,16 @@ else
             zstd -d --rm -q "${SYM_FILE}.zst"
         elif curl -fsSL -L -o "$SYM_FILE" "$GH_SYM_URL" 2>/dev/null; then
             echo "Downloaded from GitHub release (R2 version was pruned)" >&2
+        elif [[ "$have_zstd" == 1 ]] && curl -fsSL -L -o "${SYM_FILE}.zst" "$GH_SYM_ZST_URL_LEGACY" 2>/dev/null; then
+            echo "Downloaded legacy unprefixed compressed map from GitHub release..." >&2
+            zstd -d --rm -q "${SYM_FILE}.zst"
+        elif curl -fsSL -L -o "$SYM_FILE" "$GH_SYM_URL_LEGACY" 2>/dev/null; then
+            echo "Downloaded legacy unprefixed map from GitHub release (R2 version was pruned)" >&2
         else
             rm -f "$SYM_FILE" "${SYM_FILE}.zst"
             echo "Error: Failed to download symbol map from R2 or GitHub:" >&2
             echo "  R2:     $SYM_ZST_URL (and .sym)" >&2
-            echo "  GitHub: $GH_SYM_ZST_URL (and .sym)" >&2
+            echo "  GitHub: $GH_SYM_ZST_URL (and .sym, and legacy unprefixed)" >&2
             echo "  Check version/platform or set HELIX_SYM_FILE for a local file." >&2
             [[ "$have_zstd" == 0 ]] && \
                 echo "  Note: zstd not installed — only uncompressed .sym was attempted. Install: brew install zstd / apt install zstd" >&2

@@ -11,6 +11,17 @@
 // rather than asserted. malloc_trim(0) runs before every sample so glibc has
 // actually returned freed pages before the reading is taken — without it the
 // arena holds them and every "after free" number is meaningless.
+//
+// Linux/glibc only: the readings come from /proc/self/status and the arena is
+// released with glibc's malloc_trim(). Neither exists on macOS, so the probe
+// compiles away there rather than reporting numbers it cannot measure.
+
+// __GLIBC__ comes from <features.h>, not the compiler, so a libc header has to
+// be seen before the guard can test it — without this include the guard reads
+// false on glibc too and the probe silently vanishes from the Linux build.
+#include <cstdlib>
+
+#if defined(__linux__) && defined(__GLIBC__)
 
 #include "gcode_geometry_builder.h"
 #include "gcode_layer_index.h"
@@ -58,8 +69,7 @@ class Probe {
                     static_cast<double>(bytes) / (1024.0 * 1024.0));
         std::printf("           malloc_trim(0) before every sample\n");
         std::printf("================================================================\n");
-        std::printf("%-44s %9s %9s %9s %9s\n", "phase", "VmHWM(MB)", "VmRSS(MB)", "dRSS(MB)",
-                    "ms");
+        std::printf("%-44s %9s %9s %9s %9s\n", "phase", "VmHWM(MB)", "VmRSS(MB)", "dRSS(MB)", "ms");
         std::printf("---------------------------------------------------------------"
                     "-------------------------\n");
         start_ = std::chrono::steady_clock::now();
@@ -186,3 +196,5 @@ TEST_CASE("gcode memory probe", "[.memprobe]") {
     std::printf("sizeof        : RibbonVertex=%zu PackedVertex=%zu ToolpathSegment=%zu\n",
                 sizeof(RibbonVertex), sizeof(PackedVertex), sizeof(ToolpathSegment));
 }
+
+#endif // __linux__ && __GLIBC__

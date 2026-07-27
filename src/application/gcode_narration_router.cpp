@@ -9,6 +9,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <vector>
@@ -72,8 +73,21 @@ void GcodeNarrationRouter::process_line(const std::string& line) {
         return;
 
     auto id = backend->match_narration_phase(body);
-    if (!id)
+    if (!id) {
+        // Drift hint: a line that names the filament system but matches no phase
+        // is the fingerprint of an upstream rewording. Debug level because a
+        // print emits plenty of unrelated `//` chatter; deduped so the
+        // interesting lines are greppable rather than buried.
+        std::string lowered = body;
+        std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (lowered.find("afc") != std::string::npos && unmatched_logged_.insert(body).second) {
+            spdlog::debug("[GcodeNarration] no phase matched for '{}' — narration wording may "
+                          "have changed upstream; check match_narration_phase()",
+                          body);
+        }
         return;
+    }
 
     const auto op = AmsState::instance().get_active_step_operation();
     const auto tmpl = backend->toolchange_phase_template(op);

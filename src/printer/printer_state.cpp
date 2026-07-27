@@ -456,7 +456,7 @@ void PrinterState::update_from_status(const json& state) {
                 new_state = KlippyState::ERROR;
             }
 
-            network_state_.set_klippy_state_internal(new_state);
+            set_klippy_state_internal(new_state);
         }
 
         // Capture state_message (error/shutdown reason text)
@@ -537,8 +537,20 @@ void PrinterState::set_klippy_state_sync(KlippyState state) {
 }
 
 void PrinterState::set_klippy_state_internal(KlippyState state) {
-    // Delegate to network_state_ component
-    network_state_.set_klippy_state_internal(state);
+    // Single chokepoint for every Klippy state change: the webhooks JSON parse, the
+    // helix::async::call_method wrapper, and set_klippy_state_sync all land here.
+    const bool changed = network_state_.set_klippy_state_internal(state);
+    if (!changed) {
+        return;
+    }
+
+    // Any transition invalidates state cached from Klipper's DELTA-only status
+    // fields. Both directions matter: READY -> dead means nothing it was doing
+    // survives; dead -> READY means a fresh Klipper with nothing blocking yet.
+    // Without this, an idle_timeout captured mid-G28 outlived the restart and made
+    // the app queue discretionary G-code fire-and-forget against an idle printer,
+    // wedging the LED in-flight counter for the whole session (#1129).
+    calibration_state_.reset_klippy_volatile();
 }
 
 void PrinterState::update_nav_buttons_enabled() {

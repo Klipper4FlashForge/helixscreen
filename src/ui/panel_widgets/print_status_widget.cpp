@@ -1780,10 +1780,15 @@ bool PrintStatusWidget::DetailedFormatter::set_nozzle_tool_override(
     }
 
     current_nozzle_override_ = override_name;
+    // Per-extruder subjects are dynamic — the lifetime token must be handed to the
+    // observer too, or its guard never learns the subject was deinitialized when
+    // PrinterTemperatureState::init_extruders() re-runs on heater rediscovery (#705).
     nozzle_temp_observer_ = observe_int_sync<DetailedFormatter>(
-        temp_sub, this, [](DetailedFormatter* self, int) { self->update_nozzle_text(); });
+        temp_sub, this, [](DetailedFormatter* self, int) { self->update_nozzle_text(); },
+        nozzle_temp_lifetime_);
     nozzle_target_observer_ = observe_int_sync<DetailedFormatter>(
-        tgt_sub, this, [](DetailedFormatter* self, int) { self->update_nozzle_text(); });
+        tgt_sub, this, [](DetailedFormatter* self, int) { self->update_nozzle_text(); },
+        nozzle_target_lifetime_);
     update_nozzle_text();
     update_tool_label();
     return true;

@@ -6,6 +6,7 @@
 #include "ams_subscription_backend.h"
 #include "async_lifetime_guard.h"
 #include "error_event.h"
+#include "filament_slot_override_store.h"
 #include "slot_registry.h"
 
 #include <ctime>
@@ -186,6 +187,10 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
         return true; // Live temp/target read from heater_generic via Moonraker subscriptions
     }
 
+    /// Delete this gate's user override ("Clear Spool"). Happy Hare previously
+    /// inherited the no-op default, so the button did nothing here.
+    void clear_slot_override(int slot_index) override;
+
     [[nodiscard]] bool has_firmware_spool_persistence() const override {
         return true; // Happy Hare persists via MMU_GATE_MAP SPOOLID
     }
@@ -237,6 +242,22 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     }
 
   private:
+    // === User-attached slot identity (FilamentSlotOverrideStore) =============
+    //
+    // Happy Hare's gate map carries spool_id / material / colour, but not brand,
+    // spool_name, total_weight_g, colour name or the Spoolman filament+vendor
+    // ids. Those live only here.
+    //
+    // PRIVATE namespace: lane_data belongs to the Happy Hare plugin, same as
+    // AFC. See AmsBackendAfc for the full rationale.
+    //
+    // Written blind — no Happy Hare hardware on hand; mirrors AFC exactly.
+    static constexpr const char* kOverrideNamespace = "helix-screen-hh-overrides";
+    std::unique_ptr<helix::ams::FilamentSlotOverrideStore> override_store_;
+    std::unordered_map<int, helix::ams::FilamentSlotOverride> overrides_;
+    void apply_overrides(SlotInfo& slot, int slot_index);
+    void persist_override(int slot_index, const SlotInfo& info);
+
     // Build a " GATES=g0,g1,..." suffix targeting a specific unit's gates for
     // MMU_HEATER on multi-unit (EMU) rigs. Returns "" for a single-unit MMU or
     // unit<0 so the command omits GATES and HH defaults to all non-empty gates.

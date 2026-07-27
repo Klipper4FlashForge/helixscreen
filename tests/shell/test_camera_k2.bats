@@ -347,7 +347,7 @@ teardown() {
     grep -q 'POST /server/webcams/item' "$MR_REQUESTS"
     grep -q '/webcam/?action=stream' "$MR_REQUESTS"
     grep -q '/webcam/?action=snapshot' "$MR_REQUESTS"
-    ! grep -q 'http://[0-9].*:8080/stream' "$MR_REQUESTS"
+    refute grep -q 'http://[0-9].*:8080/stream' "$MR_REQUESTS"
     grep -q '"service": "mjpegstreamer-adaptive"' "$MR_REQUESTS"
 }
 
@@ -537,7 +537,7 @@ EOF
     [ "$status" -eq 0 ]
 
     # The disable prefix is gone; content matches the original.
-    ! grep -q 'helix-k2cam-disabled' "$conf"
+    refute grep -q 'helix-k2cam-disabled' "$conf"
     [ "$(cat "$conf")" = "$original" ]
     # Marker cleaned up.
     [ ! -f "$(_k2cam_marker_file)" ]
@@ -618,8 +618,8 @@ EOF
     run install_camera_k2 "k2"
     [ "$status" -eq 0 ]
     # No webcam REST mutation (only the GETs from the two detect probes).
-    ! grep -q 'POST /server/webcams/item' "$MR_REQUESTS"
-    ! grep -q 'DELETE /server/webcams/item' "$MR_REQUESTS"
+    refute grep -q 'POST /server/webcams/item' "$MR_REQUESTS"
+    refute grep -q 'DELETE /server/webcams/item' "$MR_REQUESTS"
     # No install side effects.
     [ ! -f "$DISABLED_SERVICES_FILE" ]
     [ ! -f "$WEBCAM_BACKUP" ]

@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "../catch_amalgamated.hpp"
 
@@ -2311,6 +2312,111 @@ TEST_CASE_METHOD(ConfigTestFixture, "Config: remove_printer prevents removing la
     REQUIRE(config.get_active_printer_id() == "voron");
 }
 
+// ---------------------------------------------------------------------------
+// archive_printer(): the non-destructive removal used by automatic recovery.
+// Phase 11b stale-printer recovery used to call remove_printer() directly, which
+// erased a fully configured printer — host, heaters, macros, sensors — with no
+// way back. archive_printer() must keep a verbatim copy under /removed_printers.
+// ---------------------------------------------------------------------------
+
+TEST_CASE_METHOD(ConfigTestFixture,
+                 "Config: archive_printer preserves the full printer node under /removed_printers",
+                 "[core][config][multi-printer]") {
+    const json voron = {
+        {"moonraker_host", "192.168.1.10"},
+        {"moonraker_port", 7125},
+        {"wizard_completed", false},
+        {"printer_type", "voron-2-4"},
+        {"nozzle_diameter", 0.4},
+        {"favorite_macros", {"HOME_ALL", "PURGE_LINE"}},
+        {"heaters", {{"extruder", {{"max_temp", 300}}}, {"bed", {{"max_temp", 120}}}}}};
+
+    set_data_for_plural_test(
+        {{"active_printer_id", "voron"},
+         {"printers", {{"voron", voron}, {"ender3", {{"moonraker_host", "192.168.1.20"}}}}}});
+    config.set_active_printer("voron");
+
+    config.archive_printer("voron");
+
+    // Gone from the active list...
+    auto ids = config.get_printer_ids();
+    REQUIRE(ids.size() == 1);
+    REQUIRE(std::find(ids.begin(), ids.end(), "voron") == ids.end());
+
+    // ...but preserved byte-for-byte under /removed_printers.
+    REQUIRE(data_contains("removed_printers"));
+    REQUIRE(get_data()["removed_printers"].contains("voron"));
+    REQUIRE(get_data()["removed_printers"]["voron"] == voron);
+}
+
+TEST_CASE_METHOD(ConfigTestFixture, "Config: archive_printer auto-switches the active printer",
+                 "[core][config][multi-printer]") {
+    set_data_for_plural_test({{"active_printer_id", "voron"},
+                              {"printers",
+                               {{"voron", {{"moonraker_host", "192.168.1.10"}}},
+                                {"ender3", {{"moonraker_host", "192.168.1.20"}}}}}});
+    config.set_active_printer("voron");
+
+    config.archive_printer("voron");
+
+    // Same contract as remove_printer(): archiving the active printer must leave
+    // a valid active selection behind, or df() routes at a missing node.
+    REQUIRE(config.get_active_printer_id() == "ender3");
+    REQUIRE(config.get<std::string>("/active_printer_id", "") == "ender3");
+    REQUIRE(config.df() == "/printers/ender3/");
+}
+
+TEST_CASE_METHOD(ConfigTestFixture,
+                 "Config: archive_printer archives nothing when it is the last printer",
+                 "[core][config][multi-printer]") {
+    set_data_for_plural_test({{"active_printer_id", "voron"},
+                              {"printers", {{"voron", {{"moonraker_host", "192.168.1.10"}}}}}});
+    config.set_active_printer("voron");
+
+    config.archive_printer("voron");
+
+    // remove_printer() declines to remove the last printer, so the archive must
+    // not happen either — otherwise the config grows a phantom duplicate that
+    // recovery UI would offer to "restore" over a printer that never left.
+    REQUIRE(config.get_printer_ids().size() == 1);
+    REQUIRE(config.get_active_printer_id() == "voron");
+    REQUIRE(config.get<std::string>("/printers/voron/moonraker_host", "") == "192.168.1.10");
+    REQUIRE_FALSE(data_contains("removed_printers"));
+}
+
+TEST_CASE_METHOD(ConfigTestFixture, "Config: archive_printer accumulates instead of clobbering",
+                 "[core][config][multi-printer]") {
+    set_data_for_plural_test({{"active_printer_id", "voron"},
+                              {"printers",
+                               {{"voron", {{"moonraker_host", "192.168.1.10"}}},
+                                {"ender3", {{"moonraker_host", "192.168.1.20"}}},
+                                {"prusa", {{"moonraker_host", "192.168.1.30"}}}}}});
+    config.set_active_printer("voron");
+
+    config.archive_printer("voron");
+    config.archive_printer("ender3");
+
+    REQUIRE(config.get_printer_ids().size() == 1);
+    REQUIRE(get_data()["removed_printers"].size() == 2);
+    REQUIRE(get_data()["removed_printers"]["voron"]["moonraker_host"] == "192.168.1.10");
+    REQUIRE(get_data()["removed_printers"]["ender3"]["moonraker_host"] == "192.168.1.20");
+}
+
+TEST_CASE_METHOD(ConfigTestFixture, "Config: archive_printer on an unknown id is a no-op",
+                 "[core][config][multi-printer]") {
+    set_data_for_plural_test({{"active_printer_id", "voron"},
+                              {"printers",
+                               {{"voron", {{"moonraker_host", "192.168.1.10"}}},
+                                {"ender3", {{"moonraker_host", "192.168.1.20"}}}}}});
+    config.set_active_printer("voron");
+
+    config.archive_printer("does-not-exist");
+
+    REQUIRE(config.get_printer_ids().size() == 2);
+    REQUIRE(config.get_active_printer_id() == "voron");
+    REQUIRE_FALSE(data_contains("removed_printers"));
+}
+
 TEST_CASE_METHOD(ConfigTestFixture, "Config: df() routes to active printer path",
                  "[core][config][multi-printer]") {
     set_data_for_plural_test({{"active_printer_id", "my-printer"},
@@ -3458,4 +3564,234 @@ TEST_CASE("Config::save() outside test mode still writes a rolling backup",
 
     REQUIRE(env.primary_backup_exists());
     REQUIRE(env.read_primary_backup().value("brightness", 0) == 9);
+}
+
+// ============================================================================
+// save() must not refresh the rolling backup while the wizard is incomplete.
+//
+// The single-slot rolling backup is the only recovery copy of the user's real
+// config. A wizard-incomplete config holds preset defaults, not user data, so
+// letting save() copy it over the backup destroys the recovery copy. init()
+// already carried this guard on the startup backup; save() did not, so the
+// first setting touched during setup wiped it.
+// ============================================================================
+
+namespace {
+
+/// A config whose only meaningful variable is whether setup ever completed.
+/// config_version is CURRENT so tarball detection (which triggers on
+/// config_version == 0) cannot adopt the backup over it.
+json wizard_state_config_json(bool wizard_completed) {
+    return json{
+        {"config_version", CURRENT_CONFIG_VERSION},
+        {"active_printer_id", "fresh"},
+        {"wizard_completed", wizard_completed},
+        {"brightness", 7},
+        {"printers",
+         {{"fresh", {{"moonraker_host", "127.0.0.1"}, {"wizard_completed", wizard_completed}}}}}};
+}
+
+/// RAII: neutralize a HELIX_CONFIG_DIR leaked by another test in the shard,
+/// which would silently redirect Config::path away from the sandbox.
+struct ConfigDirEnvGuard {
+    std::string prev;
+    bool had;
+    ConfigDirEnvGuard() : had(std::getenv("HELIX_CONFIG_DIR") != nullptr) {
+        if (had) {
+            prev = std::getenv("HELIX_CONFIG_DIR");
+            unsetenv("HELIX_CONFIG_DIR");
+        }
+    }
+    ~ConfigDirEnvGuard() {
+        if (had)
+            setenv("HELIX_CONFIG_DIR", prev.c_str(), 1);
+    }
+};
+
+} // namespace
+
+TEST_CASE("Config::save() does not overwrite the rolling backup while the wizard is incomplete",
+          "[core][config][backup-isolation][wizard]") {
+    BackupSandbox env("wizard_incomplete_no_backup_write");
+    ConfigDirEnvGuard config_dir_guard;
+
+    // A good recovery copy from a fully configured install already exists.
+    env.write_primary_backup(production_backup_json());
+    REQUIRE(env.read_primary_backup().value("brightness", 0) == 42);
+
+    {
+        std::ofstream o(env.config_path());
+        o << wizard_state_config_json(false).dump(2);
+    }
+
+    ConfigTestModeGuard test_mode(false);
+
+    Config test_config;
+    test_config.init(env.config_path());
+    REQUIRE(test_config.is_wizard_required()); // precondition the guard keys off
+
+    test_config.set("/brightness", 9);
+    REQUIRE(test_config.save());
+
+    // The backup must still be the user's real config, untouched.
+    REQUIRE(env.primary_backup_exists());
+    REQUIRE(env.read_primary_backup().value("brightness", 0) == 42);
+    REQUIRE(env.read_primary_backup().value("active_printer_id", "") == "real-production-printer");
+    // ...and the setup-in-progress config must not have leaked into the fallback tier either.
+    REQUIRE_FALSE(std::filesystem::exists(AppConstants::Update::config_backup_fallback()));
+}
+
+TEST_CASE("Config::save() does refresh the rolling backup once the wizard is complete",
+          "[core][config][backup-isolation][wizard]") {
+    // Paired with the test above and differing in exactly one bit, so the guard
+    // cannot be "fixed" by disabling rolling backups altogether.
+    BackupSandbox env("wizard_complete_backup_write");
+    ConfigDirEnvGuard config_dir_guard;
+
+    env.write_primary_backup(production_backup_json());
+
+    {
+        std::ofstream o(env.config_path());
+        o << wizard_state_config_json(true).dump(2);
+    }
+
+    ConfigTestModeGuard test_mode(false);
+
+    Config test_config;
+    test_config.init(env.config_path());
+    REQUIRE_FALSE(test_config.is_wizard_required());
+
+    test_config.set("/brightness", 9);
+    REQUIRE(test_config.save());
+
+    REQUIRE(env.primary_backup_exists());
+    REQUIRE(env.read_primary_backup().value("brightness", 0) == 9);
+    REQUIRE(env.read_primary_backup().value("active_printer_id", "") == "fresh");
+}
+
+// ============================================================================
+// init() must persist migrations through save()'s atomic temp-file + rename
+// path, not a bare truncate-in-place ofstream.
+//
+// Content alone cannot tell the two apart — both end up writing the same JSON.
+// What distinguishes them is HOW the bytes land: save() writes a sibling .tmp,
+// fsyncs it, and rename()s it over the config, so settings.json is a brand new
+// inode and the old one keeps its complete pre-migration contents until the
+// instant it is replaced. `std::ofstream o(path)` truncates the live file and
+// streams into it, so the same inode passes through a zero-length state — which
+// is exactly what a power cut during first-boot migration used to freeze in
+// place. The inode/hard-link assertions below are the ones that discriminate;
+// the content assertions state what the user actually cares about.
+// ============================================================================
+
+TEST_CASE("Config::init() persists migrations by atomic replace, not truncate-in-place",
+          "[core][config][migration][atomic-save]") {
+    BackupSandbox env("migration_atomic_persist");
+    ConfigDirEnvGuard config_dir_guard;
+    // Test mode keeps the production backup tiers out of this entirely — the
+    // assertion here is about the config file, not about backups.
+    ConfigTestModeGuard test_mode(true);
+
+    namespace fs = std::filesystem;
+    const fs::path cfg = env.dir / "settings.json";
+
+    // Root-level display_rotate is the pre-/display/ layout: loading it sets
+    // config_modified, which is what drives the persist-migrations branch.
+    {
+        std::ofstream o(cfg);
+        o << json{{"config_version", CURRENT_CONFIG_VERSION},
+                  {"active_printer_id", "voron"},
+                  {"wizard_completed", true},
+                  {"display_rotate", 90},
+                  {"brightness", 55},
+                  {"printers", {{"voron", {{"moonraker_host", "192.168.1.10"}}}}}}
+                 .dump(2);
+    }
+
+    // A second name for the pre-migration inode. Whatever init() does to the
+    // settings.json name, this one keeps pointing at the original file.
+    const fs::path witness = env.dir / "witness.json";
+    fs::create_hard_link(cfg, witness);
+
+    struct stat before {};
+    REQUIRE(::stat(cfg.c_str(), &before) == 0);
+
+    Config test_config;
+    test_config.init(cfg.string());
+
+    // In memory the migration ran...
+    REQUIRE(test_config.get<int>("/display/rotate", -1) == 90);
+
+    // ...and it reached the disk, whole and parseable.
+    json on_disk;
+    REQUIRE_NOTHROW(on_disk = json::parse(std::ifstream(cfg)));
+    REQUIRE(on_disk.contains("display"));
+    REQUIRE(on_disk["display"].value("rotate", -1) == 90);
+    REQUIRE_FALSE(on_disk.contains("display_rotate"));
+    // Unrelated settings survived the rewrite — a partial write would lose these.
+    REQUIRE(on_disk.value("brightness", 0) == 55);
+    REQUIRE(on_disk.value("config_version", 0) == CURRENT_CONFIG_VERSION);
+    REQUIRE(on_disk["printers"]["voron"].value("moonraker_host", "") == "192.168.1.10");
+
+    // settings.json is a DIFFERENT file than the one we started with: rename()
+    // moved a fully-written temp file into place. A truncate-in-place write
+    // would have kept the same inode.
+    struct stat after {};
+    REQUIRE(::stat(cfg.c_str(), &after) == 0);
+    REQUIRE(before.st_ino != after.st_ino);
+
+    // The original inode was never edited — it still holds the complete,
+    // un-migrated config. That is the property that makes a power cut here
+    // survivable: at no point is there a half-written settings.json.
+    json witness_json;
+    REQUIRE_NOTHROW(witness_json = json::parse(std::ifstream(witness)));
+    REQUIRE(witness_json.value("display_rotate", -1) == 90);
+    REQUIRE(witness_json.value("brightness", 0) == 55);
+
+    // The atomic path must not leave its scratch file behind.
+    REQUIRE_FALSE(fs::exists(cfg.string() + ".tmp"));
+}
+
+TEST_CASE("Config::init() loads a read-only settings.json instead of condemning it as corrupt",
+          "[core][config][read-only][data-loss]") {
+    if (::geteuid() == 0) {
+        SKIP("running as root: mode 0444 does not block open(O_WRONLY)");
+    }
+
+    BackupSandbox env("read_only_config_load");
+    ConfigDirEnvGuard config_dir_guard;
+    ConfigTestModeGuard test_mode(true);
+
+    namespace fs = std::filesystem;
+    const fs::path cfg = env.dir / "settings.json";
+
+    // A complete, already-migrated config: nothing here should trigger a rewrite,
+    // so the only thing under test is whether init() can READ an unwritable file.
+    {
+        std::ofstream o(cfg);
+        o << json{{"config_version", CURRENT_CONFIG_VERSION},
+                  {"active_printer_id", "voron"},
+                  {"wizard_completed", true},
+                  {"brightness", 55},
+                  {"printers", {{"voron", {{"moonraker_host", "192.168.1.10"}}}}}}
+                 .dump(2);
+    }
+    fs::permissions(cfg, fs::perms::owner_read);
+
+    Config test_config;
+    test_config.init(cfg.string());
+
+    // The user's settings are intact. Reading with std::fstream (default openmode
+    // in|out) fails to open a 0444 file, yields an empty parse, and sends init()
+    // down the corrupt-file path — which renames settings.json to .corrupt and
+    // resets to factory defaults. That silently destroys the config of any user
+    // whose settings.json ends up root-owned or read-only.
+    REQUIRE(test_config.get<int>("/brightness", -1) == 55);
+    REQUIRE(test_config.get<std::string>("/printers/voron/moonraker_host", "") == "192.168.1.10");
+    REQUIRE_FALSE(test_config.is_wizard_required());
+
+    // ...and it was not condemned.
+    fs::permissions(cfg, fs::perms::owner_all);
+    REQUIRE_FALSE(fs::exists(cfg.string() + ".corrupt"));
+    REQUIRE(fs::exists(cfg));
 }

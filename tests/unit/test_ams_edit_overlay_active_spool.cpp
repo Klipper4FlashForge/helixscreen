@@ -72,6 +72,14 @@ class AmsEditOverlayTestAccess {
     static bool needs_identity_confirmation(const SlotInfo& original, const SlotInfo& edited) {
         return AmsEditOverlay::needs_identity_confirmation(original, edited);
     }
+    static AmsEditOverlay::WeightStaging
+    decide_weight_staging(bool entered_tracked, bool remaining_filled, bool total_filled) {
+        return AmsEditOverlay::decide_weight_staging(entered_tracked, remaining_filled,
+                                                     total_filled);
+    }
+    static bool may_write_spoolman_now(const SlotInfo& original, const SlotInfo& edited) {
+        return AmsEditOverlay::may_write_spoolman_now(original, edited);
+    }
 
   private:
     AmsEditOverlay& overlay_;
@@ -315,6 +323,139 @@ TEST_CASE("AmsEditOverlay::should_create_new_spool is gated by the Save-to-Spool
     incomplete.material = "PLA"; // no brand, default color
     REQUIRE_FALSE(helix::SpoolmanSlotSaver::is_filament_complete(incomplete));
     CHECK_FALSE(AmsEditOverlayTestAccess::should_create_new_spool(incomplete, true));
+}
+
+// Weight staging on the untracked branch of handle_spool_edit_save.
+//
+// The original guard skipped staging entirely when the editor was OPENED on a
+// linked slot, because detail_working_.spool_weight_g is then Spoolman's
+// empty-spool CORE weight (~190g), not the filament total — staging it would
+// clobber a correct 1000g total_weight_g.
+//
+// But that guard threw out remaining_weight_g too, and remaining is NOT
+// ambiguous: it means the same thing whether or not the slot arrived linked.
+// Since AFC's SET_WEIGHT is gated on remaining_weight_g > 0, dropping it meant
+// unlinking-and-entering-a-weight in one save emitted no SET_WEIGHT at all, and
+// the user had to reopen and save a second time. Observed on the .112 BoxTurtle:
+// save at 19:13:24 emitted SET_COLOR + SET_MATERIAL and no SET_WEIGHT; the
+// weight only landed on the following save at 19:13:40.
+TEST_CASE("AmsEditOverlay::decide_weight_staging stages remaining even when unlinking in place",
+          "[ams][edit_overlay][spoolman]") {
+    SECTION("genuinely untracked slot stages both fields") {
+        auto s = AmsEditOverlayTestAccess::decide_weight_staging(
+            /*entered_tracked=*/false, /*remaining_filled=*/true, /*total_filled=*/true);
+        CHECK(s.stage_remaining);
+        CHECK(s.stage_total);
+    }
+
+    SECTION("unlinked-in-place stages remaining but NOT total (core-weight ambiguity)") {
+        auto s = AmsEditOverlayTestAccess::decide_weight_staging(
+            /*entered_tracked=*/true, /*remaining_filled=*/true, /*total_filled=*/true);
+        CHECK(s.stage_remaining); // the bug: this was false, so SET_WEIGHT never fired
+        CHECK_FALSE(s.stage_total);
+    }
+
+    SECTION("blank fields stage nothing (blank means unchanged)") {
+        auto s = AmsEditOverlayTestAccess::decide_weight_staging(
+            /*entered_tracked=*/false, /*remaining_filled=*/false, /*total_filled=*/false);
+        CHECK_FALSE(s.stage_remaining);
+        CHECK_FALSE(s.stage_total);
+    }
+
+    SECTION("blank remaining is not staged even on a genuinely untracked slot") {
+        auto s = AmsEditOverlayTestAccess::decide_weight_staging(
+            /*entered_tracked=*/false, /*remaining_filled=*/false, /*total_filled=*/true);
+        CHECK_FALSE(s.stage_remaining);
+        CHECK(s.stage_total);
+    }
+}
+
+// The logistics two-PATCH in handle_spool_edit_save() ran BEFORE
+// commit_and_close() evaluated needs_identity_confirmation(), so a save that was
+// about to ask "Different filament?" had already written to Spoolman by the time
+// the dialog appeared — and Cancel, documented as a true abort, could not take it
+// back. Observed on the .112 BoxTurtle:
+//
+//   19:11:55  Updating spool 86 with 1 fields
+//   19:11:55  Spool 86 updated successfully
+//   19:11:55  set_active_spool(86)
+//   19:11:56  Confirmation dialog shown: 'Different filament?'
+//   19:12:17  fire_completion saved=false        <- user cancelled
+//
+// Invariant: if the edit will prompt, nothing may be written first.
+TEST_CASE("AmsEditOverlay::may_write_spoolman_now withholds writes until identity is confirmed",
+          "[ams][edit_overlay][spoolman]") {
+    SlotInfo linked;
+    linked.spoolman_id = 86;
+    linked.brand = "Likesilk";
+    linked.material = "ASA";
+    linked.color_rgb = 0x1A1A1A;
+    linked.remaining_weight_g = 509.0f;
+
+    SECTION("materially different identity must not write before the prompt") {
+        SlotInfo edited = linked;
+        edited.material = "PLA";
+        edited.color_rgb = 0xE53935;
+
+        REQUIRE(AmsEditOverlayTestAccess::needs_identity_confirmation(linked, edited));
+        CHECK_FALSE(AmsEditOverlayTestAccess::may_write_spoolman_now(linked, edited));
+    }
+
+    SECTION("weight-only edit on a linked spool writes immediately, no prompt") {
+        SlotInfo edited = linked;
+        edited.remaining_weight_g = 400.0f;
+
+        REQUIRE_FALSE(AmsEditOverlayTestAccess::needs_identity_confirmation(linked, edited));
+        CHECK(AmsEditOverlayTestAccess::may_write_spoolman_now(linked, edited));
+    }
+
+    SECTION("unlinked slot has no spool to clobber, so writes are always allowed") {
+        SlotInfo untracked;
+        untracked.spoolman_id = 0;
+        untracked.material = "PLA";
+        untracked.color_rgb = 0xE53935;
+
+        SlotInfo edited = untracked;
+        edited.material = "PETG";
+
+        CHECK(AmsEditOverlayTestAccess::may_write_spoolman_now(untracked, edited));
+    }
+
+    SECTION("unchanged linked spool writes immediately") {
+        CHECK(AmsEditOverlayTestAccess::may_write_spoolman_now(linked, linked));
+    }
+}
+
+// Unlink zeroed only spoolman_id, leaving spoolman_filament_id and
+// spoolman_vendor_id behind. Those stale ids then fed the repoint decision in
+// SpoolmanSlotSaver (`filament_id == original_filament_id` -> skip repoint), so
+// a later edit could compare against a filament belonging to a spool the lane
+// is no longer linked to.
+TEST_CASE("SlotInfo::clear_spoolman_link clears the whole Spoolman identity",
+          "[ams][edit_overlay][spoolman]") {
+    SlotInfo slot;
+    slot.spoolman_id = 86;
+    slot.spoolman_filament_id = 79;
+    slot.spoolman_vendor_id = 22;
+    slot.spool_name = "Black ASA";
+    slot.brand = "Likesilk";
+    slot.material = "ASA";
+    slot.color_rgb = 0x1A1A1A;
+    slot.remaining_weight_g = 509.0f;
+
+    slot.clear_spoolman_link();
+
+    CHECK(slot.spoolman_id == 0);
+    CHECK(slot.spoolman_filament_id == 0);
+    CHECK(slot.spoolman_vendor_id == 0);
+    CHECK(slot.spool_name.empty());
+
+    // Identity the user can still see and edit locally is deliberately KEPT —
+    // unlinking is "stop tracking this in Spoolman", not "forget the filament".
+    CHECK(slot.brand == "Likesilk");
+    CHECK(slot.material == "ASA");
+    CHECK(slot.color_rgb == 0x1A1A1A);
+    CHECK(slot.remaining_weight_g == Catch::Approx(509.0f));
 }
 
 TEST_CASE("AmsEditOverlay::needs_identity_confirmation applies to ALL Spoolman backends (§6)",

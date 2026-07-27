@@ -553,8 +553,11 @@ detect_k1_firmware() {
 # Requires: KLIPPER_HOME to be set (by detect_klipper_user)
 # Sets: INSTALL_DIR
 detect_pi_install_dir() {
-    # 1. User explicitly set INSTALL_DIR — respect their choice
+    # 1. User explicitly set INSTALL_DIR — respect their choice, once the name
+    #    guard has cleared it. INSTALL_DIR is mv'd aside and rm -rf'd on update
+    #    and uninstall, so an unvalidated override destroys its target.
     if [ -n "$_USER_INSTALL_DIR" ]; then
+        validate_install_dir "$_USER_INSTALL_DIR" || exit 1
         INSTALL_DIR="$_USER_INSTALL_DIR"
         log_info "Install directory (user override): $INSTALL_DIR"
         return 0
@@ -601,8 +604,12 @@ detect_pi_install_dir() {
 # User can override via TMP_DIR env var.
 # Sets: TMP_DIR
 detect_tmp_dir() {
-    # User already set TMP_DIR — respect it
+    # User already set TMP_DIR — respect it, but only after the name guard.
+    # TMP_DIR is rm -rf'd on both the success and the failure path, so an
+    # unvalidated override erases whatever it points at (validate_tmp_dir in
+    # common.sh; the /mnt/UDISK incident).
     if [ -n "${TMP_DIR:-}" ]; then
+        validate_tmp_dir "$TMP_DIR" || exit 1
         log_info "Temp directory (user override): $TMP_DIR"
         return 0
     fi
@@ -804,6 +811,12 @@ set_install_paths() {
         detect_klipper_user
         detect_pi_install_dir
     fi
+
+    # Final gate on whatever INSTALL_DIR we ended up with. Every hard-coded
+    # platform path above already satisfies it; this catches a future branch
+    # (or an override route added later) that would hand a bare data directory
+    # to the mv/rm -rf in release.sh and uninstall.sh.
+    validate_install_dir "$INSTALL_DIR" || exit 1
 
     # Auto-detect best temp directory (all platforms)
     detect_tmp_dir

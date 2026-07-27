@@ -1571,6 +1571,118 @@ which sdl2-config
 sdl2-config --version
 ```
 
+## Makefile Variable & Target Reference
+
+Absorbed from the `helix-build` skill so there is one home for it. Values verified against
+`Makefile` and `mk/*.mk`.
+
+### Compiler and flags
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `CC` | clang > gcc | Auto-detected, with a stdlib test for clang |
+| `CXX` | clang++ > g++ | Auto-falls back on a broken libstdc++ |
+| `OPT` | `2` | Optimization level: 0 (dev), 1, 2 (release) |
+| `CXXFLAGS` | `-std=c++17 -Wall -Wextra -O{OPT} -g` | Extended per platform |
+| `SUBMODULE_CFLAGS` | `-std=c11 -O2 -g -D_GNU_SOURCE -w` | Third-party code, warnings suppressed |
+| `DEPFLAGS` | `-MMD -MP` | Header dependency tracking |
+
+### Version
+
+Read from `VERSION.txt` (MAJOR.MINOR.PATCH) and injected as `-DHELIX_VERSION="..."`:
+`HELIX_VERSION`, `HELIX_VERSION_MAJOR` / `_MINOR` / `_PATCH`, and `HELIX_GIT_HASH` (short hash).
+
+### Build directories
+
+| Variable | Default | Per-platform override |
+|----------|---------|-----------------------|
+| `BUILD_DIR` | `build` | `mk/cross.mk` sets per platform |
+| `BIN_DIR` | `build/bin` | e.g. `build/pi/bin` |
+| `OBJ_DIR` | `build/obj` | e.g. `build/pi/obj` |
+| `BUILD_SUBDIR` | (none) | Platform name: `pi`, `ad5m`, `k1` |
+
+### Cross-compile variables
+
+| Variable | Purpose |
+|----------|---------|
+| `TARGET_ARCH` | Target architecture for the active cross target |
+| `TARGET_TRIPLE` | Toolchain triple (e.g. `aarch64-linux-gnu`) |
+| `STRIP_BINARY` | Whether to strip the output binary for size |
+| `FONT_TIERS` | Which font size tiers to embed for the target |
+
+### Feature gates
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ENABLE_SDL` | yes (native) | SDL2 desktop display |
+| `ENABLE_OPENGLES` | per target | EGL/GLES GPU rendering |
+| `ENABLE_GLES_3D` | yes (Linux) | 3D gcode rendering |
+| `ENABLE_SCREENSAVER` | yes (desktop/Pi) | Flying toasters |
+| `ENABLE_MOCKS` | yes | Mock backends for development |
+| `ENABLE_SSL` | per target | OpenSSL for HTTPS/WSS |
+| `HELIX_HAS_LABEL_PRINTER` | 1 | Label printer feature |
+| `HELIX_HAS_CFS` | 1 | CFS feature |
+| `HELIX_HAS_IFS` | 1 | IFS feature |
+
+### Linker flags by platform
+
+```
+macOS          -lSDL2 -lhv -lz -lm -lpthread -liconv
+               -framework Foundation -framework CoreWLAN -framework CoreLocation …
+Linux native   -lSDL2 -lhv -lwpa_client -lusb-1.0 -lssl -lcrypto -ldl -lstdc++fs -lGLESv2
+Pi (aarch64)   -L/usr/lib/aarch64-linux-gnu -lhv -lwpa_client -lnl-genl-3 -lnl-3
+               -ldrm -linput -lEGL -lGLESv2 -lgbm -lusb-1.0 -lssl -lcrypto -lasound …
+K1 static      -lhv -lwpa_client -lnl-genl-3 -lnl-3 -latomic -ldl -lz -lm -lpthread
+K1 dynamic     -Wl,-Bstatic -lhv -lwpa_client -lnl-genl-3 -lnl-3 -lstdc++fs
+               -Wl,-Bdynamic -lstdc++ -lz -lm -lpthread -lrt -ldl -latomic -lgcc_s
+K2 (ARM musl)  -lhv -lwpa_client -lnl-genl-3 -lnl-3 -ldl -lz -lm -lpthread
+Yocto          preserves bitbake LDFLAGS, appends the project libs
+```
+
+### Source organization
+
+Application sources are `src/*.cpp` at up to three directory levels, plus `src/*.mm` for the
+macOS Objective-C++ WiFi code. `src/tools/*.cpp` and `src/bluetooth/*.cpp` build under separate
+rules.
+
+Excluded from the main binary: `test_*.cpp`, `src/helix_splash.cpp` and
+`src/helix_watchdog.cpp` (separate binaries), and `src/lvgl-demo/main.cpp`.
+
+Bundled libraries: `lib/lvgl/` (XML and expat sources excluded — those live in
+`lib/helix-xml/`), `lib/helix-xml/`, `lib/lv_markdown/`, `lib/quirc/`, `lib/cpp-terminal/`.
+LVGL's thorvg `.cpp` files compile separately.
+
+### Targets
+
+| Build | |
+|-------|-|
+| `all` | Default: main binary with dependency checks |
+| `build` | Clean parallel build with timing |
+| `dev` | `OPT=0 -j` fast development build |
+| `strict` | Build with `-Werror` |
+| `clean` | Remove all build artifacts |
+| `install` | Stage to `DESTDIR/opt/helixscreen/` |
+
+| Code quality | |
+|--------------|-|
+| `format` / `format-staged` | clang-format + xmllint, all or staged files |
+| `quality` | Run `scripts/quality-checks.sh` |
+| `check-deps` / `install-deps` | Verify, then interactively install dependencies |
+
+| Assets | |
+|--------|-|
+| `regen-fonts` / `generate-fonts` | Regenerate MDI icon fonts |
+| `validate-fonts` | Verify icons are present in the compiled fonts |
+| `icon` | Generate the app icon from the logo |
+| `apply-patches` / `reset-patches` | Apply or revert submodule patches |
+
+| Tools and debug | |
+|-----------------|-|
+| `compile_commands` / `compile_commands_full` | Merge `.ccj` fragments (~1-2s) or fully regenerate |
+| `moonraker-inspector` / `tools` | Diagnostic tools |
+| `symbols` / `strip` | Extract `.sym` + `.debug`, or strip for size (cross-compile only) |
+| `print-ldflags` / `print-target-cflags` / `print-cxxflags` / `print-strip` | Print computed values |
+
 ## Best Practices
 
 ### Development Workflow

@@ -227,16 +227,103 @@ error_handler() {
     exit $exit_code
 }
 
-# Safely remove the installer's temp dir. REFUSES to delete the filesystem root
-# or a mountpoint — a user-supplied TMP_DIR pointing at a mount root (e.g.
-# `TMP_DIR=/mnt/UDISK`) once caused `rm -rf "$TMP_DIR"` to wipe a live data
-# partition (printer_data + device userdata). Only ever removes a normal,
-# non-mountpoint directory.
+# ---------------------------------------------------------------------------
+# User-supplied path guards
+#
+# TMP_DIR and INSTALL_DIR are both documented, user-settable overrides — the
+# installer itself prints "Try: TMP_DIR=/path/with/space sh install.sh" — and
+# both feed destructive operations:
+#
+#   TMP_DIR      rm -rf "$TMP_DIR"                 (cleanup_on_success, error_handler)
+#   INSTALL_DIR  mv "$INSTALL_DIR" "$INSTALL_BACKUP", rm -rf "$INSTALL_DIR",
+#                and a sweep of every config/ sibling               (release.sh, uninstall.sh)
+#
+# Pointing either at an ordinary data directory therefore erases it.
+# `TMP_DIR=/mnt/UDISK` once wiped a K2's whole user partition; the mountpoint
+# check in _safe_remove_tmp_dir below catches only that exact shape, not
+# `TMP_DIR=/home/pi`.
+#
+# The guard is the same one HELIX_OFFSITE_ROLLBACK_DIR already uses in
+# release.sh: a `case` on the FINAL path component with an explicit refusal
+# branch. If the last component isn't recognisably ours, we refuse loudly and
+# the caller exits rather than silently falling back to a default.
+# ---------------------------------------------------------------------------
+
+# _user_dir_name_ok DIR PATTERN [PATTERN...]
+# Returns 0 when DIR is absolute, traversal-free, and its final component
+# matches one of the shell patterns. Patterns are intentionally unquoted in the
+# `case` so globs apply.
+_user_dir_name_ok() {
+    local d="${1%/}"
+    shift
+    # Absolute only — a relative override resolves against an unknown $PWD.
+    case "$d" in
+        /*) ;;
+        *) return 1 ;;
+    esac
+    # "/data/helixscreen-install/../.." is not the directory it claims to be.
+    case "$d" in
+        *..*) return 1 ;;
+    esac
+    local base="${d##*/}"
+    # Empty base means d was "/" (or collapsed to it).
+    [ -n "$base" ] || return 1
+    local pat
+    for pat in "$@"; do
+        case "$base" in
+            $pat) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+# Accept only scratch directories the installer created, or the staging dir the
+# in-app updater hands over via TMP_DIR (update_checker.cpp kStagingName).
+validate_tmp_dir() {
+    local d="$1"
+    if _user_dir_name_ok "$d" '*helixscreen-install*' '.helix-update-staging'; then
+        return 0
+    fi
+    log_error "Refusing to use TMP_DIR='$d'"
+    log_error "TMP_DIR is removed with 'rm -rf' when the installer finishes, so it"
+    log_error "must be a scratch directory of ours — not an existing data directory."
+    log_error "Its last path component must contain 'helixscreen-install'."
+    log_error "Try: TMP_DIR=${d%/}/helixscreen-install sh install.sh"
+    return 1
+}
+
+# Accept only install directories that name themselves after us. Every
+# auto-detected value already does (/opt/helixscreen, $HOME/helixscreen,
+# /usr/data/helixscreen, /srv/helixscreen, /user-resource/helixscreen, ...).
+validate_install_dir() {
+    local d="$1"
+    if _user_dir_name_ok "$d" '*helixscreen*'; then
+        return 0
+    fi
+    log_error "Refusing to use INSTALL_DIR='$d'"
+    log_error "INSTALL_DIR is moved aside and 'rm -rf'd on update and uninstall, so"
+    log_error "it must be a directory of ours — not an existing data directory."
+    log_error "Its last path component must contain 'helixscreen'."
+    log_error "Try: INSTALL_DIR=${d%/}/helixscreen sh install.sh"
+    return 1
+}
+
+# Safely remove the installer's temp dir. REFUSES to delete the filesystem root,
+# a mountpoint, or anything whose name isn't one of ours — a user-supplied
+# TMP_DIR pointing at a mount root (e.g. `TMP_DIR=/mnt/UDISK`) once caused
+# `rm -rf "$TMP_DIR"` to wipe a live data partition (printer_data + device
+# userdata). Only ever removes a normal, non-mountpoint scratch directory.
 _safe_remove_tmp_dir() {
     local d="$1"
     [ -n "$d" ] && [ -d "$d" ] || return 0
     if [ "$d" = "/" ]; then
         log_warn "Refusing to remove TMP_DIR='/'"
+        return 0
+    fi
+    # Last line of defence: even if a caller skipped validate_tmp_dir, never
+    # rm -rf a directory that isn't recognisably the installer's scratch space.
+    if ! _user_dir_name_ok "$d" '*helixscreen-install*' '.helix-update-staging'; then
+        log_warn "Refusing to rm -rf TMP_DIR='$d' (name is not an installer scratch dir); leaving it in place."
         return 0
     fi
     # Mountpoint detection: prefer mountpoint(1); else compare the device id of
@@ -938,8 +1025,11 @@ detect_k1_firmware() {
 # Requires: KLIPPER_HOME to be set (by detect_klipper_user)
 # Sets: INSTALL_DIR
 detect_pi_install_dir() {
-    # 1. User explicitly set INSTALL_DIR — respect their choice
+    # 1. User explicitly set INSTALL_DIR — respect their choice, once the name
+    #    guard has cleared it. INSTALL_DIR is mv'd aside and rm -rf'd on update
+    #    and uninstall, so an unvalidated override destroys its target.
     if [ -n "$_USER_INSTALL_DIR" ]; then
+        validate_install_dir "$_USER_INSTALL_DIR" || exit 1
         INSTALL_DIR="$_USER_INSTALL_DIR"
         log_info "Install directory (user override): $INSTALL_DIR"
         return 0
@@ -986,8 +1076,12 @@ detect_pi_install_dir() {
 # User can override via TMP_DIR env var.
 # Sets: TMP_DIR
 detect_tmp_dir() {
-    # User already set TMP_DIR — respect it
+    # User already set TMP_DIR — respect it, but only after the name guard.
+    # TMP_DIR is rm -rf'd on both the success and the failure path, so an
+    # unvalidated override erases whatever it points at (validate_tmp_dir in
+    # common.sh; the /mnt/UDISK incident).
     if [ -n "${TMP_DIR:-}" ]; then
+        validate_tmp_dir "$TMP_DIR" || exit 1
         log_info "Temp directory (user override): $TMP_DIR"
         return 0
     fi
@@ -1189,6 +1283,12 @@ set_install_paths() {
         detect_klipper_user
         detect_pi_install_dir
     fi
+
+    # Final gate on whatever INSTALL_DIR we ended up with. Every hard-coded
+    # platform path above already satisfies it; this catches a future branch
+    # (or an override route added later) that would hand a bare data directory
+    # to the mv/rm -rf in release.sh and uninstall.sh.
+    validate_install_dir "$INSTALL_DIR" || exit 1
 
     # Auto-detect best temp directory (all platforms)
     detect_tmp_dir
@@ -3062,6 +3162,114 @@ MOONRAKER_CONF_PATHS="
 /usr/data/printer_data/config/moonraker.conf
 "
 
+# Common Moonraker SOURCE roots (the checkout/package that holds the Python
+# code, NOT printer_data). Mirrors the discovery list in
+# moonraker-plugin/install.sh, extended with the buildroot vendor layouts:
+#   /home/lava/moonraker        Snapmaker U1 (klipper runs as 'lava')
+#   /usr/data/moonraker         Creality K1 series
+#   /mnt/UDISK/moonraker        Creality K2 series
+#   /usr/share/moonraker        Creality stock (vendor-installed package)
+#   /root/printer_software/...  FlashForge AD5M Klipper Mod
+# Overridable so tests can point at a fixture tree, same as MOONRAKER_CONF_PATHS.
+MOONRAKER_SRC_PATHS="
+/home/pi/moonraker
+/home/biqu/moonraker
+/home/mks/moonraker
+/home/qidi/moonraker
+/home/klipper/moonraker
+/home/lava/moonraker
+/root/moonraker
+/root/printer_software/moonraker
+/usr/data/moonraker
+/usr/share/moonraker
+/mnt/UDISK/moonraker
+/userdata/moonraker
+/opt/moonraker
+"
+
+# Locate Moonraker's update_manager component package.
+# Three on-disk layouts are covered:
+#   <root>/moonraker/components/update_manager            -- git checkout (~/moonraker)
+#   <root>/components/update_manager                      -- the package dir itself
+#   <root>/moonraker/moonraker/components/update_manager  -- repo nested in an install dir
+#
+# The third form is Creality's. Measured on a K1C (192.168.30.182) running
+# Moonraker v0.10.0-10: the install dir is /usr/data/moonraker, the git repo is
+# cloned to /usr/data/moonraker/moonraker, and the python package is a further
+# level down, so the real path is
+#   /usr/data/moonraker/moonraker/moonraker/components/update_manager
+# Both of the first two forms miss that, which would have made the probe return
+# "undetermined" on every K1/K2 -- exactly the platforms the gate exists for.
+# Returns: path to the update_manager directory, or empty string.
+find_moonraker_update_manager_dir() {
+    local root
+    local sub
+
+    # Dynamic: the detected Klipper user's home first (same precedence as
+    # find_moonraker_conf), then the static fallback list.
+    for root in ${KLIPPER_HOME:+"${KLIPPER_HOME}/moonraker"} $MOONRAKER_SRC_PATHS; do
+        [ -n "$root" ] || continue
+        for sub in "$root/moonraker/components/update_manager" \
+                   "$root/components/update_manager" \
+                   "$root/moonraker/moonraker/components/update_manager"; do
+            if [ -d "$sub" ]; then
+                echo "$sub"
+                return 0
+            fi
+        done
+    done
+
+    echo ""
+}
+
+# Probe whether the installed Moonraker honours release_info.json's asset_name.
+#
+# Why a source probe and not a version string: Moonraker reports versions like
+# "v0.9.3-73-gfab6c5c1", which cannot be ordered reliably across branches and
+# vendor forks. The file layout is decisive instead. Moonraker commit
+# 530f1c2016 (2025-01-19, first tagged in v0.10.0) added asset_name support AND
+# renamed zip_deploy.py -> net_deploy.py, so the two facts travel together.
+#
+# Without asset_name support, NetDeploy/ZipDeploy seeds release_asset =
+# assets[0]. GitHub sorts release assets by name, so assets[0] for
+# prestonbrown/helixscreen is "ad5m.sym.zst" -- a zstd symbol file.
+# _extract_release() then does shutil.rmtree(self.path) + mkdir BEFORE opening
+# the zip, so pressing Update in Mainsail/Fluidd DELETES the install directory
+# and dies with "File is not a zip file" (prestonbrown/helixscreen#993).
+#
+# Echoes exactly one of: supported | unsupported | undetermined
+moonraker_asset_name_support() {
+    local um
+    um=$(find_moonraker_update_manager_dir)
+
+    if [ -z "$um" ]; then
+        # No Moonraker source anywhere we know to look (vendor layout we don't
+        # recognise, container, remote Moonraker...). Can't reason about it.
+        echo "undetermined"
+        return 0
+    fi
+
+    if [ -f "$um/net_deploy.py" ]; then
+        if grep -q 'asset_name' "$um/net_deploy.py" 2>/dev/null; then
+            echo "supported"
+        else
+            # Renamed but asset_name stripped/absent -- a fork we must not trust.
+            echo "unsupported"
+        fi
+        return 0
+    fi
+
+    # Pre-530f1c2016 module names: zip_deploy.py (2024-01-20 onward) and
+    # web_deploy.py (earlier still). Neither reads asset_name.
+    if [ -f "$um/zip_deploy.py" ] || [ -f "$um/web_deploy.py" ]; then
+        echo "unsupported"
+        return 0
+    fi
+
+    # Found the package but none of the modules we know. Don't guess.
+    echo "undetermined"
+}
+
 # Find moonraker.conf
 # Returns: path to moonraker.conf or empty string
 find_moonraker_conf() {
@@ -3440,6 +3648,58 @@ configure_moonraker_updates() {
     fi
 
     log_info "Using moonraker.conf at: $conf"
+
+    # Gate on Moonraker's asset_name support before arming the one-click
+    # updater (prestonbrown/helixscreen#993). On a Moonraker that ignores
+    # asset_name, the Update button in Mainsail/Fluidd rmtree()s the install
+    # directory and then fails on a non-zip asset -- strictly worse than no
+    # button at all.
+    local mr_support
+    mr_support=$(moonraker_asset_name_support)
+
+    if [ "$mr_support" = "unsupported" ]; then
+        log_warn "This Moonraker predates release_info.json asset_name support."
+        log_warn "Its update_manager would download the WRONG release asset and"
+        log_warn "DELETE ${INSTALL_DIR} before failing. Skipping the"
+        log_warn "[update_manager helixscreen] section for your own safety."
+        log_warn "To get the in-UI update button: upgrade Moonraker to v0.10.0 or"
+        log_warn "newer, then re-run this installer."
+        log_warn "Either way, HelixScreen's built-in updater is unaffected:"
+        log_warn "  Settings -> Updates, inside HelixScreen."
+
+        # The gun may already be loaded from an earlier install that ran before
+        # this gate existed -- unload it.
+        local removed_stale=0
+        if has_update_manager_section "$conf"; then
+            log_warn "Removing the existing [update_manager helixscreen] section."
+            remove_update_manager_section
+            removed_stale=1
+        fi
+
+        # These two are orthogonal to the updater and must not regress just
+        # because we skipped the stanza: the buildroot key silences a warning
+        # caused by ANY update_manager section (mainsail/fluidd have their own),
+        # and the asvc allowlist is what lets a user restart HelixScreen from
+        # Mainsail's service list.
+        disable_system_updates_on_buildroot "$conf"
+        ensure_moonraker_asvc "$conf"
+
+        if [ "$removed_stale" -eq 1 ]; then
+            restart_moonraker
+        fi
+        return 0
+    fi
+
+    # undetermined: no recognisable Moonraker source on disk (vendor layout we
+    # don't know, remote/containerised Moonraker). Deliberately preserve the
+    # pre-gate behaviour and write the stanza -- refusing here would regress
+    # every install we simply can't reason about.
+    if [ "$mr_support" = "undetermined" ]; then
+        log_warn "Could not locate the Moonraker source to verify asset_name support."
+        log_warn "Configuring the updater anyway. If Moonraker is older than v0.10.0,"
+        log_warn "use HelixScreen's built-in updater (Settings -> Updates) instead of"
+        log_warn "the Update button in Mainsail/Fluidd."
+    fi
 
     # Migrate old git_repo or zip config to type: web
     # (type: zip shows perpetual UP-TO-DATE in Mainsail — see mainsail-crew/mainsail#2444)
@@ -4679,6 +4939,43 @@ uninstall() {
     fi
 }
 
+# Gate --clean's irreversible sweep on explicit consent.
+#
+# "stdin is not a terminal" is NOT consent. The documented invocation is
+# `curl … | sh -s -- --clean`, where stdin is the pipe carrying the script, so
+# a bare `[ -t 0 ]` guard skipped the "PERMANENTLY DELETE your configuration"
+# prompt on exactly the path users actually take. Non-interactive runs must opt
+# in with --yes (ASSUME_YES, set by main.sh's argument parser).
+#
+# Returns 0 to proceed; otherwise exits (0 = user declined, 1 = no consent).
+confirm_clean_install() {
+    if [ "${ASSUME_YES:-false}" = true ]; then
+        log_warn "--yes given: proceeding without confirmation."
+        return 0
+    fi
+
+    if [ -t 0 ]; then
+        printf "Are you sure? [y/N] "
+        read -r response
+        case "$response" in
+            [yY][eE][sS]|[yY])
+                return 0
+                ;;
+            *)
+                log_info "Clean install cancelled."
+                exit 0
+                ;;
+        esac
+    fi
+
+    log_error "Refusing to run --clean without confirmation."
+    log_error "stdin is not a terminal (a piped 'curl ... | sh' has the script on"
+    log_error "stdin), so the y/N prompt cannot be answered."
+    log_error "Re-run with --yes to confirm the deletions listed above:"
+    log_error "  curl -sSL https://releases.helixscreen.org/install.sh | sh -s -- --clean --yes"
+    exit 1
+}
+
 # Clean up old installation completely (for --clean flag)
 # Removes all files, config, and caches without backup
 # Args: platform
@@ -4696,19 +4993,7 @@ clean_old_installation() {
     log_warn "  - Thumbnail cache files"
     log_warn ""
 
-    # Interactive confirmation if stdin is a terminal
-    if [ -t 0 ]; then
-        printf "Are you sure? [y/N] "
-        read -r response
-        case "$response" in
-            [yY][eE][sS]|[yY])
-                ;;
-            *)
-                log_info "Clean install cancelled."
-                exit 0
-                ;;
-        esac
-    fi
+    confirm_clean_install
 
     log_info "Cleaning old installation..."
 

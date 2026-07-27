@@ -23,7 +23,6 @@
 
 #include "ams_state.h"
 #include "http_executor.h"
-#include "hv/json.hpp"
 #include "hv/requests.h"
 #include "moonraker_api.h"
 #include "moonraker_config_manager.h"
@@ -36,6 +35,8 @@
 #include <spdlog/spdlog.h>
 
 #include <memory>
+
+#include "hv/json.hpp"
 
 namespace helix::ui {
 
@@ -255,26 +256,35 @@ void SpoolmanOverlay::load_from_database() {
         return default_val;
     };
 
-    // Load sync enabled — try new key, fall back to legacy key
+    // Load sync enabled — try new key, fall back to legacy key.
+    // database_get_item() callbacks fire inline on the libhv WebSocket thread, and
+    // apply_sync() touches subjects plus SpoolmanManager's LVGL poll timer — every
+    // callback below must be marshalled to the main thread.
     api_->database_get_item(
         DB_NAMESPACE, DB_KEY_SYNC_ENABLED,
-        [this, apply_sync, parse_sync](const nlohmann::json& value) {
-            apply_sync(parse_sync(value, DEFAULT_SYNC_ENABLED));
-        },
-        [this, apply_sync, parse_sync](const MoonrakerError&) {
+        lifetime_.bg_cb("SpoolmanOverlay::load_sync",
+                        [this, apply_sync, parse_sync](const nlohmann::json& value) {
+                            apply_sync(parse_sync(value, DEFAULT_SYNC_ENABLED));
+                        }),
+        lifetime_.bg_cb("SpoolmanOverlay::load_sync_missing", [this, apply_sync,
+                                                               parse_sync](const MoonrakerError&) {
             // New key not found — try legacy key
             api_->database_get_item(
                 DB_NAMESPACE, LEGACY_DB_KEY_SYNC_ENABLED,
-                [this, apply_sync, parse_sync](const nlohmann::json& value) {
-                    bool enabled = parse_sync(value, DEFAULT_SYNC_ENABLED);
-                    apply_sync(enabled);
-                    // Migrate to new key
-                    save_sync_enabled(enabled);
-                    spdlog::info("[{}] Migrated {} -> {}", get_name(), LEGACY_DB_KEY_SYNC_ENABLED,
-                                 DB_KEY_SYNC_ENABLED);
-                },
-                [this, apply_sync](const MoonrakerError&) { apply_sync(DEFAULT_SYNC_ENABLED); });
-        });
+                lifetime_.bg_cb("SpoolmanOverlay::load_sync_legacy",
+                                [this, apply_sync, parse_sync](const nlohmann::json& value) {
+                                    bool enabled = parse_sync(value, DEFAULT_SYNC_ENABLED);
+                                    apply_sync(enabled);
+                                    // Migrate to new key
+                                    save_sync_enabled(enabled);
+                                    spdlog::info("[{}] Migrated {} -> {}", get_name(),
+                                                 LEGACY_DB_KEY_SYNC_ENABLED, DB_KEY_SYNC_ENABLED);
+                                }),
+                lifetime_.bg_cb("SpoolmanOverlay::load_sync_default",
+                                [this, apply_sync](const MoonrakerError&) {
+                                    apply_sync(DEFAULT_SYNC_ENABLED);
+                                }));
+        }));
 
     // Helper: apply refresh interval
     auto apply_interval = [this](int interval) {
@@ -289,25 +299,31 @@ void SpoolmanOverlay::load_from_database() {
     // Load refresh interval — try new key, fall back to legacy key
     api_->database_get_item(
         DB_NAMESPACE, DB_KEY_REFRESH_INTERVAL,
-        [this, apply_interval, parse_interval](const nlohmann::json& value) {
-            apply_interval(parse_interval(value, DEFAULT_REFRESH_INTERVAL_SECONDS));
-        },
-        [this, apply_interval, parse_interval](const MoonrakerError&) {
-            // New key not found — try legacy key
-            api_->database_get_item(
-                DB_NAMESPACE, LEGACY_DB_KEY_REFRESH_INTERVAL,
-                [this, apply_interval, parse_interval](const nlohmann::json& value) {
-                    int interval = parse_interval(value, DEFAULT_REFRESH_INTERVAL_SECONDS);
-                    apply_interval(interval);
-                    // Migrate to new key
-                    save_refresh_interval(interval);
-                    spdlog::info("[{}] Migrated {} -> {}", get_name(),
-                                 LEGACY_DB_KEY_REFRESH_INTERVAL, DB_KEY_REFRESH_INTERVAL);
-                },
-                [this, apply_interval](const MoonrakerError&) {
-                    apply_interval(DEFAULT_REFRESH_INTERVAL_SECONDS);
-                });
-        });
+        lifetime_.bg_cb("SpoolmanOverlay::load_interval",
+                        [this, apply_interval, parse_interval](const nlohmann::json& value) {
+                            apply_interval(parse_interval(value, DEFAULT_REFRESH_INTERVAL_SECONDS));
+                        }),
+        lifetime_.bg_cb(
+            "SpoolmanOverlay::load_interval_missing",
+            [this, apply_interval, parse_interval](const MoonrakerError&) {
+                // New key not found — try legacy key
+                api_->database_get_item(
+                    DB_NAMESPACE, LEGACY_DB_KEY_REFRESH_INTERVAL,
+                    lifetime_.bg_cb(
+                        "SpoolmanOverlay::load_interval_legacy",
+                        [this, apply_interval, parse_interval](const nlohmann::json& value) {
+                            int interval = parse_interval(value, DEFAULT_REFRESH_INTERVAL_SECONDS);
+                            apply_interval(interval);
+                            // Migrate to new key
+                            save_refresh_interval(interval);
+                            spdlog::info("[{}] Migrated {} -> {}", get_name(),
+                                         LEGACY_DB_KEY_REFRESH_INTERVAL, DB_KEY_REFRESH_INTERVAL);
+                        }),
+                    lifetime_.bg_cb("SpoolmanOverlay::load_interval_default",
+                                    [this, apply_interval](const MoonrakerError&) {
+                                        apply_interval(DEFAULT_REFRESH_INTERVAL_SECONDS);
+                                    }));
+            }));
 }
 
 void SpoolmanOverlay::save_sync_enabled(bool enabled) {
@@ -789,52 +805,51 @@ void SpoolmanOverlay::resolve_spoolman_target(SpoolmanTargetCallback on_done) {
                 target_info = helix::MoonrakerConfigManager::config_path_from_relative(target_path);
 
             // === MAIN THREAD: apply the resolution, then verify by content ===
-            token.defer(
-                "SpoolmanOverlay::resolve_target",
-                [this, info, target_info, target_path, required, in_place, path_authoritative,
-                 on_done]() {
-                    SpoolmanConfigTarget res;
+            token.defer("SpoolmanOverlay::resolve_target", [this, info, target_info, target_path,
+                                                            required, in_place, path_authoritative,
+                                                            on_done]() {
+                SpoolmanConfigTarget res;
 
-                    if (!info.uploadable) {
-                        res.status = SpoolmanConfigTarget::Status::Unreachable;
-                        res.detail = info.error;
-                        on_done(res);
-                        return;
-                    }
-                    if (!target_path.empty() && !target_info.uploadable) {
-                        res.status = SpoolmanConfigTarget::Status::Unreachable;
-                        res.detail = target_info.error;
-                        on_done(res);
-                        return;
-                    }
+                if (!info.uploadable) {
+                    res.status = SpoolmanConfigTarget::Status::Unreachable;
+                    res.detail = info.error;
+                    on_done(res);
+                    return;
+                }
+                if (!target_path.empty() && !target_info.uploadable) {
+                    res.status = SpoolmanConfigTarget::Status::Unreachable;
+                    res.detail = target_info.error;
+                    on_done(res);
+                    return;
+                }
 
-                    config_paths_ = info;
-                    write_mode_ =
-                        in_place ? SpoolmanWriteMode::InPlace : SpoolmanWriteMode::IncludeFile;
-                    spoolman_config_path_ =
-                        in_place ? target_path : config_paths_.path_for("helixscreen.conf");
+                config_paths_ = info;
+                write_mode_ =
+                    in_place ? SpoolmanWriteMode::InPlace : SpoolmanWriteMode::IncludeFile;
+                spoolman_config_path_ =
+                    in_place ? target_path : config_paths_.path_for("helixscreen.conf");
 
-                    // Absolute paths already proved reachability and there is nothing to
-                    // cross-check against; anything else is verified by content.
-                    if (path_authoritative && required.empty()) {
-                        res.status = in_place ? SpoolmanConfigTarget::Status::Defined
-                                              : SpoolmanConfigTarget::Status::Undefined;
-                        res.path = spoolman_config_path_;
-                        on_done(res);
-                        return;
-                    }
+                // Absolute paths already proved reachability and there is nothing to
+                // cross-check against; anything else is verified by content.
+                if (path_authoritative && required.empty()) {
+                    res.status = in_place ? SpoolmanConfigTarget::Status::Defined
+                                          : SpoolmanConfigTarget::Status::Undefined;
+                    res.path = spoolman_config_path_;
+                    on_done(res);
+                    return;
+                }
 
-                    if (required.empty()) {
-                        res.status = SpoolmanConfigTarget::Status::Unreachable;
-                        res.detail = "Moonraker reported config file '" + info.config_filename +
-                                     "' with no section list, so HelixScreen cannot confirm it "
-                                     "is the config actually in use.";
-                        on_done(res);
-                        return;
-                    }
+                if (required.empty()) {
+                    res.status = SpoolmanConfigTarget::Status::Unreachable;
+                    res.detail = "Moonraker reported config file '" + info.config_filename +
+                                 "' with no section list, so HelixScreen cannot confirm it "
+                                 "is the config actually in use.";
+                    on_done(res);
+                    return;
+                }
 
-                    verify_config_reachable(target_path, required, in_place, on_done);
-                });
+                verify_config_reachable(target_path, required, in_place, on_done);
+            });
         },
         [this, token, on_done](const MoonrakerError& err) {
             auto msg = err.message;
@@ -903,22 +918,21 @@ void SpoolmanOverlay::verify_config_reachable(const std::string& target_path,
         [this, token, target_path, on_done](const MoonrakerError& err) {
             auto msg = err.message;
             bool not_found = (err.type == MoonrakerErrorType::FILE_NOT_FOUND);
-            token.defer("SpoolmanOverlay::verify_config_error",
-                        [msg, not_found, target_path, on_done]() {
-                            SpoolmanConfigTarget res;
-                            res.status = SpoolmanConfigTarget::Status::Unreachable;
-                            if (not_found) {
-                                res.detail =
-                                    "Moonraker loaded '" + target_path +
-                                    "' but no such file exists under the writable config folder, "
-                                    "so its real config lives outside the area HelixScreen can "
-                                    "write.";
-                            } else {
-                                res.detail = "could not read '" + target_path +
-                                             "' from the config folder (" + msg + ")";
-                            }
-                            on_done(res);
-                        });
+            token.defer("SpoolmanOverlay::verify_config_error", [msg, not_found, target_path,
+                                                                 on_done]() {
+                SpoolmanConfigTarget res;
+                res.status = SpoolmanConfigTarget::Status::Unreachable;
+                if (not_found) {
+                    res.detail = "Moonraker loaded '" + target_path +
+                                 "' but no such file exists under the writable config folder, "
+                                 "so its real config lives outside the area HelixScreen can "
+                                 "write.";
+                } else {
+                    res.detail =
+                        "could not read '" + target_path + "' from the config folder (" + msg + ")";
+                }
+                on_done(res);
+            });
         });
 }
 
@@ -947,24 +961,23 @@ void SpoolmanOverlay::check_stale_helix_conf(const std::string& target_path,
         [this, token, ready, helix_path, target_path, on_done](const std::string& helix) {
             // === BG THREAD: pure check ===
             bool stale = helix::MoonrakerConfigManager::has_section(helix, "spoolman");
-            token.defer("SpoolmanOverlay::stale_helix_check",
-                        [stale, ready, helix_path, target_path, on_done]() {
-                            if (stale) {
-                                // Invisible to files[] because Moonraker has not loaded it,
-                                // but acting on the native config now would duplicate as
-                                // soon as the include takes effect.
-                                SpoolmanConfigTarget res;
-                                res.status = SpoolmanConfigTarget::Status::Ambiguous;
-                                res.detail = "'" + target_path + "' defines [spoolman] and '" +
-                                             helix_path +
-                                             "' also contains one from an earlier HelixScreen "
-                                             "run. Remove the [spoolman] section from " +
-                                             helix_path + " and retry.";
-                                on_done(res);
-                                return;
-                            }
-                            ready(on_done);
-                        });
+            token.defer("SpoolmanOverlay::stale_helix_check", [stale, ready, helix_path,
+                                                               target_path, on_done]() {
+                if (stale) {
+                    // Invisible to files[] because Moonraker has not loaded it,
+                    // but acting on the native config now would duplicate as
+                    // soon as the include takes effect.
+                    SpoolmanConfigTarget res;
+                    res.status = SpoolmanConfigTarget::Status::Ambiguous;
+                    res.detail = "'" + target_path + "' defines [spoolman] and '" + helix_path +
+                                 "' also contains one from an earlier HelixScreen "
+                                 "run. Remove the [spoolman] section from " +
+                                 helix_path + " and retry.";
+                    on_done(res);
+                    return;
+                }
+                ready(on_done);
+            });
         },
         [this, token, ready, helix_path, on_done](const MoonrakerError& err) {
             auto msg = err.message;
@@ -1123,14 +1136,13 @@ void SpoolmanOverlay::ensure_moonraker_include() {
                     },
                     [this, token2, moonraker_path](const MoonrakerError& err) {
                         auto msg = err.message;
-                        token2.defer("SpoolmanOverlay::include_upload_error",
-                                     [this, msg, moonraker_path]() {
-                                         spdlog::error("[{}] Failed to upload {}: {}", get_name(),
-                                                       moonraker_path, msg);
-                                         set_setup_status(
-                                             lv_tr("Failed to update moonraker.conf."), true);
-                                         set_connecting(false);
-                                     });
+                        token2.defer(
+                            "SpoolmanOverlay::include_upload_error", [this, msg, moonraker_path]() {
+                                spdlog::error("[{}] Failed to upload {}: {}", get_name(),
+                                              moonraker_path, msg);
+                                set_setup_status(lv_tr("Failed to update moonraker.conf."), true);
+                                set_connecting(false);
+                            });
                     });
             });
         },
@@ -1283,8 +1295,8 @@ void SpoolmanOverlay::on_change_clicked(lv_event_t* /*e*/) {
         overlay.resolve_spoolman_target([&overlay](const SpoolmanConfigTarget& res) {
             if (res.status != SpoolmanConfigTarget::Status::Defined)
                 return;
-            auto url = helix::MoonrakerConfigManager::get_section_value(res.content, "spoolman",
-                                                                        "server");
+            auto url =
+                helix::MoonrakerConfigManager::get_section_value(res.content, "spoolman", "server");
             auto parsed = SpoolmanSetup::parse_url_components(url);
             if (overlay.host_input_)
                 lv_textarea_set_text(overlay.host_input_, parsed.first.c_str());
