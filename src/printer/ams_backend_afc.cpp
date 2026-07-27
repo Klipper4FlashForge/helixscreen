@@ -386,6 +386,20 @@ AmsError AmsBackendAfc::clear_fault(int slot_index) {
     // AFC has no per-lane fault clear; both commands are system-scoped.
     (void)slot_index;
 
+    // Drop any queued LANE_UNLOAD requests, exactly as cancel() does. Clearing a
+    // fault means the user wants to stop, not to chain through a pile of pending
+    // ejects afterwards. eject_in_flight_ is deliberately NOT cleared — the
+    // in-flight LANE_UNLOAD's completion callback still fires and clears it once
+    // it sees the empty queue.
+    {
+        std::lock_guard<std::mutex> lock(eject_queue_mutex_);
+        if (!pending_eject_lanes_.empty()) {
+            spdlog::info("[AMS AFC] Clear fault: discarding {} queued LANE_UNLOAD request(s)",
+                         pending_eject_lanes_.size());
+            pending_eject_lanes_.clear();
+        }
+    }
+
     {
         std::lock_guard<std::mutex> lock(mutex_);
         // Arm the drain. printer.AFC.message is a FIFO head — one clear pops one
@@ -400,7 +414,11 @@ AmsError AmsBackendAfc::clear_fault(int slot_index) {
     // keeps printer.AFC.message populated long after current_state returns to
     // Idle, and AFC_RESET does not touch it.
     spdlog::info("[AMS AFC] Clearing fault (drain budget {})", kMessageDrainBudget);
-    AmsError failure_reset = execute_gcode("RESET_FAILURE");
+    // execute_gcode_notify, matching cancel(): the user pressed a button, so a
+    // failed RESET_FAILURE must surface rather than being logged silently.
+    AmsError failure_reset = execute_gcode_notify("RESET_FAILURE",
+                                                  lv_tr("AFC failure reset complete"),
+                                                  lv_tr("AFC failure reset failed"));
     AmsError message_clear = clear_message_queue();
     {
         std::lock_guard<std::mutex> lock(mutex_);

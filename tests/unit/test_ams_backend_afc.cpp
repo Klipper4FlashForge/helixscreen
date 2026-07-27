@@ -250,6 +250,18 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         on_lane_unload_done();
     }
 
+    // Directly seed pending_eject_lanes_ for clear_fault()'s discard test, taking
+    // eject_queue_mutex_ the same way production code does.
+    void test_queue_pending_eject(const std::string& lane_name) {
+        std::lock_guard<std::mutex> lock(eject_queue_mutex_);
+        pending_eject_lanes_.push_back(lane_name);
+    }
+
+    int test_pending_eject_count() {
+        std::lock_guard<std::mutex> lock(eject_queue_mutex_);
+        return static_cast<int>(pending_eject_lanes_.size());
+    }
+
     void clear_captured_gcodes() {
         captured_gcodes.clear();
     }
@@ -2204,6 +2216,23 @@ TEST_CASE("AFC message drain is bounded", "[ams][afc][recovery]") {
 
     REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") <=
             AmsBackendAfcTestHelper::kMessageDrainBudget);
+}
+
+TEST_CASE("AFC clear_fault discards queued lane ejects", "[ams][afc][recovery]") {
+    // cancel() flushes pending_eject_lanes_ before its IDLE check. clear_fault()
+    // replaced cancel() at the error-modal dismiss site, so it must flush too —
+    // otherwise dismissing an error leaves a LANE_UNLOAD chain queued to run.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+
+    helper.test_queue_pending_eject("lane2");
+    helper.test_queue_pending_eject("lane3");
+    REQUIRE(helper.test_pending_eject_count() == 2);
+
+    helper.clear_fault(0);
+
+    REQUIRE(helper.test_pending_eject_count() == 0);
 }
 
 TEST_CASE("AFC drain does not fire without a preceding clear_fault",

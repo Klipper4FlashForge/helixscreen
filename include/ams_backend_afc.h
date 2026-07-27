@@ -677,7 +677,14 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
 
     /// Caps total clears per clear_fault() so a fault that re-enqueues as fast as
     /// we pop cannot spin. Overshoot is safe: clearing an empty queue is a no-op.
-    static constexpr int kMessageDrainBudget = 10;
+    ///
+    /// Deliberately small. The re-arm check cannot distinguish a backlogged
+    /// message from one generated *after* the clear — AFC exposes only the queue
+    /// head — so every unit of budget is a delta in which an error caused by the
+    /// caller's own follow-up action (the sidebar sends AFC_RESET right after
+    /// clear_fault()) could be swallowed unseen. Two covers the realistic backlog
+    /// while bounding that window to about one delta.
+    static constexpr int kMessageDrainBudget = 2;
 
     /// Sends one queued AFC_CLEAR_MESSAGE if the drain is armed and a message is
     /// still present. Must be called WITHOUT mutex_ held.
