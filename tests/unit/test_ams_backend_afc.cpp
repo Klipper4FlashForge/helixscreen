@@ -61,6 +61,16 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         lane_hub_routing_[lane_name] = hub_name;
     }
 
+    // Lane AFC currently names as active (AFC.current_load / AFC.current_lane),
+    // as tracked by parse_afc_state() — used to attribute a shared hub sensor.
+    void set_active_load_lane(const std::string& lane_name) {
+        active_load_lane_ = lane_name;
+    }
+
+    std::string get_active_load_lane() const {
+        return active_load_lane_;
+    }
+
     void set_current_lane(const std::string& lane_name) {
         current_lane_name_ = lane_name;
     }
@@ -2137,6 +2147,67 @@ TEST_CASE("AFC lane reset is refused for a lane routed direct (no hub)",
     helper.set_lane_loaded_to_hub(0, true);
 
     REQUIRE_FALSE(helper.can_recover_lane_position(0));
+}
+
+TEST_CASE("AFC attributes a triggered hub to the lane AFC names as active",
+          "[ams][afc][recovery]") {
+    // AFC_hub is one sensor shared by every lane on the unit, so a triggered hub
+    // alone would offer recovery on all of them at once (observed on a live
+    // BoxTurtle 2026-07-27). AFC.current_load names the lane it was working.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+    for (const char* lane : {"lane1", "lane2", "lane3", "lane4"}) {
+        helper.set_lane_hub_routing(lane, "Turtle_1");
+    }
+    helper.set_hub_sensor("Turtle_1", true);
+
+    helper.set_active_load_lane("lane2");
+
+    REQUIRE_FALSE(helper.can_recover_lane_position(0));
+    REQUIRE(helper.can_recover_lane_position(1));
+    REQUIRE_FALSE(helper.can_recover_lane_position(2));
+    REQUIRE_FALSE(helper.can_recover_lane_position(3));
+}
+
+TEST_CASE("AFC offers recovery on every lane on the hub when it names none",
+          "[ams][afc][recovery]") {
+    // Showing nothing would strand the user with no way out, so an unattributed
+    // hub falls back to offering the action wherever it could plausibly apply.
+    // The firmware refuses harmlessly on a wrong guess.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+    for (const char* lane : {"lane1", "lane2", "lane3", "lane4"}) {
+        helper.set_lane_hub_routing(lane, "Turtle_1");
+    }
+    helper.set_hub_sensor("Turtle_1", true);
+    helper.set_active_load_lane("");
+
+    REQUIRE(helper.can_recover_lane_position(0));
+    REQUIRE(helper.can_recover_lane_position(3));
+}
+
+TEST_CASE("AFC active_load_lane_ is populated from a current_load delta and "
+          "cleared when it goes null",
+          "[ams][afc][recovery]") {
+    // A setter-only test would pass even if parse_afc_state() never assigned
+    // active_load_lane_ at all — this drives it through the real status-update
+    // path (feed_afc_state -> parse_afc_state) to prove the parse actually runs.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    REQUIRE(helper.get_active_load_lane().empty());
+
+    helper.feed_afc_state({{"current_load", "lane2"},
+                           {"current_state", "Idle"},
+                           {"lanes", {"lane1", "lane2", "lane3", "lane4"}}});
+    REQUIRE(helper.get_active_load_lane() == "lane2");
+
+    helper.feed_afc_state({{"current_load", nullptr},
+                           {"current_state", "Idle"},
+                           {"lanes", {"lane1", "lane2", "lane3", "lane4"}}});
+    REQUIRE(helper.get_active_load_lane().empty());
 }
 
 TEST_CASE("AFC reset_lane fails when not running", "[ams][afc][recovery][phase4]") {

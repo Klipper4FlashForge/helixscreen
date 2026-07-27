@@ -660,6 +660,12 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     bool tool_start_sensor_{false};                     ///< Toolhead entry sensor
     bool tool_end_sensor_{false};                       ///< Toolhead exit/nozzle sensor
 
+    /// Lane AFC currently names as active, verbatim from AFC.current_load or
+    /// AFC.current_lane; empty when AFC names neither. Distinct from
+    /// system_info_.current_slot, which is derived from several sources and may
+    /// be stale. Used only to attribute the shared hub sensor to a lane.
+    std::string active_load_lane_;
+
     /// Remaining AFC_CLEAR_MESSAGE sends allowed for the in-flight clear_fault().
     /// printer.AFC.message is a FIFO head and each clear pops one entry, so a
     /// single send leaves the next queued error on screen. Armed by clear_fault(),

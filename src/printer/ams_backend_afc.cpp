@@ -1050,6 +1050,10 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
         loaded_lane = afc_data["current_load"].get<std::string>();
     }
 
+    // Track the lane AFC names as active, independent of slots_ lookup below —
+    // used only to attribute the shared hub sensor in can_recover_lane_position().
+    active_load_lane_ = loaded_lane;
+
     if (!loaded_lane.empty()) {
         int slot_index = slots_.index_of(loaded_lane);
         if (slot_index >= 0) {
@@ -2900,7 +2904,20 @@ bool AmsBackendAfc::can_recover_lane_position(int slot_index) const {
     }
 
     auto hub = hub_sensors_.find(route->second);
-    return hub != hub_sensors_.end() && hub->second;
+    const bool hub_occupied = hub != hub_sensors_.end() && hub->second;
+    if (!hub_occupied) {
+        return false;
+    }
+
+    // The hub sensor is shared by every lane on the unit, so it cannot say whose
+    // filament is past it. When AFC names an active lane, trust that. When it
+    // names none, offer the recovery on every lane routed to this hub rather
+    // than on none: a wrong guess costs one harmless refusal from the firmware,
+    // while showing nothing costs the user their only way out of a stranded lane.
+    if (!active_load_lane_.empty()) {
+        return lane_name == active_load_lane_;
+    }
+    return true;
 }
 
 AmsError AmsBackendAfc::recover_lane_position(int slot_index) {
