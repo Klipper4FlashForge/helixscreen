@@ -37,8 +37,12 @@ usage() {
     echo ""
     echo "  # Merging or rebasing inside a worktree (git cannot scan symlinked submodules):"
     echo "  $0 --unlink                    # from inside the worktree"
-    echo "  git merge origin/main"
-    echo "  $0 --relink                    # REQUIRED — builds break until you do"
+    echo "  git merge origin/main           # resolve any conflicts now"
+    echo "  $0 --relink                    # REQUIRED before committing, and to build"
+    echo "  git commit                      # hook compiles, so relink must come first"
+    echo ""
+    echo "  Commits do NOT need --unlink; only whole-tree ops (status/merge/rebase/stash) do."
+    echo "  Never run --unlink/--relink while a build is in flight."
     echo ""
     echo "Strategy:"
     echo "  - Configures ccache for cross-worktree reuse (no cold rebuild per worktree)"
@@ -58,13 +62,19 @@ usage() {
 #
 # The cost is that git refuses to scan a tree where a gitlink path is a symlink:
 #   error: expected submodule path 'lib/cpp-terminal' not to be a symbolic link
-# which aborts `git status`, `merge`, `rebase` and `stash` outright. Committing
-# still works because it can be driven with explicit pathspecs, but anything
-# that walks the whole tree cannot.
+# which aborts `git status`, `merge`, `rebase` and `stash` outright.
 #
 # So: --unlink before a merge/rebase, --relink after. Relinking is NOT optional;
 # the empty submodule dirs left by --unlink have no headers, so the build fails
 # with 'lvgl.h file not found' until the symlinks are back.
+#
+# Do NOT unlink to commit. `git add <paths>` and `git commit` both work fine with
+# the symlinks in place, and the pre-commit hook compiles the tree — so committing
+# while unlinked fails with "Build failed - fix compilation errors". That includes
+# concluding a merge: resolve conflicts unlinked, then --relink, THEN commit.
+#
+# Nothing here may run while a build is in flight: pulling lib/ out from under a
+# compile fails it with missing headers, and re-linking mid-compile is no better.
 LIB_NON_SUBMODULE_ITEMS=("tuibox.h" "mdns")
 
 lib_submodule_paths() {
