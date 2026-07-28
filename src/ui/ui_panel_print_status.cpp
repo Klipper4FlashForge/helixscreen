@@ -1001,11 +1001,13 @@ void PrintStatusPanel::on_activate() {
     // non-zero widths for the row. Deferred so layout has at least one tick to
     // settle after on_activate() un-hides the panel.
     {
-        // Re-seed fan displays from live subjects — the compact row's observers
-        // only fire on subject CHANGE, so if a rediscovery reset a subject
-        // without a subsequent change, the labels are stale until the next
-        // speed change arrives (#1181).
-        seed_fan_displays();
+        // Re-resolve which fan owns each slot and re-seed the labels. Seeding
+        // alone is not enough: the compact row can be stale because the *name* is
+        // stale, not just the value — classify_primary_fans() is runtime-adaptive
+        // (#1124), so re-reading part_fan_name_'s subject would faithfully
+        // re-display the wrong fan. bind_fan_observers() refreshes the names and
+        // ends each rebind with a seed, which covers both (#1181).
+        bind_fan_observers();
 
         auto token = lifetime_.token();
         token.defer("PrintStatusPanel::on_activate_fan_row_recompute", [this]() {
@@ -1981,28 +1983,6 @@ void PrintStatusPanel::rebind_single_fan(ObserverGuard& guard, SubjectLifetime& 
 
     // Seed initial value — observer fires only on change
     update_fan_speed_display(speed_label_widget_name, icon_widget_name, lv_subject_get_int(subj));
-}
-
-void PrintStatusPanel::seed_fan_displays() {
-    // Re-read current per-fan subject values into the compact fan row.
-    // The observers registered in rebind_single_fan only fire on subject
-    // CHANGE; if a rediscovery reset the subject and no subsequent change
-    // re-fired it, the labels are frozen at a stale value. Calling this on
-    // panel activation guarantees the displayed value matches the live
-    // subject regardless of observer state (#1181).
-    auto seed_one = [this](const std::string& name, const char* label, const char* icon) {
-        if (name.empty()) {
-            update_fan_speed_display(label, icon, 0);
-            return;
-        }
-        lv_subject_t* subj = printer_state_.get_fan_speed_subject(name);
-        if (!subj)
-            return;
-        update_fan_speed_display(label, icon, lv_subject_get_int(subj));
-    };
-    seed_one(part_fan_name_, "part_fan_speed", "part_fan_icon");
-    seed_one(hotend_fan_name_, "hotend_fan_speed", "hotend_fan_icon");
-    seed_one(aux_fan_name_, "aux_fan_speed", "aux_fan_icon");
 }
 
 void PrintStatusPanel::update_fan_speed_display(const char* label_name, const char* icon_name,

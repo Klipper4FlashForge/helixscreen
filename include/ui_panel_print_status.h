@@ -524,7 +524,6 @@ class PrintStatusPanel : public OverlayBase {
     void rebind_single_fan(ObserverGuard& guard, SubjectLifetime& lt,
                            const std::string& object_name, const char* speed_label_widget_name,
                            const char* icon_widget_name);
-    void seed_fan_displays(); ///< Re-read current subject values into compact row (#1181)
     void update_fan_speed_display(const char* label_name, const char* icon_name, int speed);
     void refresh_fan_animations();
     void recompute_fans_fit();       ///< Height-based row visibility (fans_fit_subject_)

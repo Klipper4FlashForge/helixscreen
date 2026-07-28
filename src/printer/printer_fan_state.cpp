@@ -381,6 +381,19 @@ void PrinterFanState::init_fans(const std::vector<std::string>& fan_objects,
                   roles_.part_fan, roles_.hotend_fan, roles_.chamber_fan, roles_.exhaust_fan,
                   role_display_names_.size());
 
+    // Carry live telemetry across the rebuild for fans that persist, exactly as
+    // the subject map below does. init_fans() re-runs on every
+    // reapply_hardware_roles() while the subscription stays live, and Moonraker's
+    // notify_status_update is DIFFERENTIAL: a fan holding a steady speed reports
+    // nothing afterwards, so anything zeroed here has no event that would ever
+    // restore it. Losing speed_percent freezes the readout; losing ever_ran also
+    // drops the part slot back to the front-most commandable fan, stranding it on
+    // a dead [fan] at 0% while All Fans stays correct (#1181).
+    std::unordered_map<std::string, FanInfo> previous;
+    previous.reserve(fans_.size());
+    for (auto& fan : fans_)
+        previous.emplace(fan.object_name, std::move(fan));
+
     fans_.clear();
     fans_.reserve(fan_objects.size());
 
@@ -403,6 +416,17 @@ void PrinterFanState::init_fans(const std::vector<std::string>& fan_objects,
         info.is_controllable = is_fan_controllable(info.type);
         info.speed_percent = 0;
 
+        // Same object name = same physical fan, the assumption the subject reuse
+        // below already makes. Identity fields (type, controllability, display
+        // name) are recomputed from the fresh config; only the live readings ride
+        // along (#1181).
+        auto prior = previous.find(obj_name);
+        if (prior != previous.end()) {
+            info.speed_percent = prior->second.speed_percent;
+            info.ever_ran = prior->second.ever_ran;
+            info.rpm = prior->second.rpm;
+        }
+
         // Name priority: custom name > role name > auto-generated
         auto* config = Config::get_instance();
         std::string custom_name;
@@ -422,13 +446,17 @@ void PrinterFanState::init_fans(const std::vector<std::string>& fan_objects,
         spdlog::trace("[PrinterFanState] Registered fan: {} -> \"{}\" (type={}, controllable={})",
                       obj_name, info.display_name, static_cast<int>(info.type),
                       info.is_controllable);
+        const int carried_speed = info.speed_percent;
         fans_.push_back(std::move(info));
 
         // Reuse existing subject if this fan was already tracked, otherwise create new
         auto existing = fan_speed_subjects_.find(obj_name);
         if (existing != fan_speed_subjects_.end() && existing->second) {
-            // Reuse — reset value but keep subject alive (observers remain valid)
-            lv_subject_set_int(existing->second.get(), 0);
+            // Reuse — keep the subject alive so observers stay valid, and hold it
+            // to the same value the struct carried forward. Writing 0 here would
+            // re-open the struct/subject split that update_fan_speed's
+            // unconditional write exists to absorb (#1181).
+            lv_subject_set_int(existing->second.get(), carried_speed);
             new_subjects.emplace(obj_name, std::move(existing->second));
             // Reuse existing lifetime token too (observers still hold valid weak_ptrs)
             auto lifetime_it = fan_speed_lifetimes_.find(obj_name);
@@ -497,12 +525,15 @@ void PrinterFanState::update_fan_speed(const std::string& object_name, double sp
             // Always fire the per-fan subject — lv_subject_set_int no-ops
             // internally when the value hasn't changed (lv_observer.c
             // lv_subject_notify_if_changed), so there is no perf cost when
-            // struct and subject agree.  Decoupling the subject write from the
-            // struct-change gate protects against divergence after
-            // rediscovery: init_fans() resets both to 0, but if a
-            // differential status update arrives whose value already matches
-            // the struct (e.g. a steady-speed fan), the old gate would skip
-            // the subject write, permanently wedging it at 0 (#1181).
+            // struct and subject agree.
+            //
+            // The write is deliberately NOT gated on the struct comparison. A
+            // gated write can only ever restore the subject when the struct also
+            // moves, so any divergence becomes permanent: the subject waits for a
+            // change that, on a differential feed, may never come. Nothing in the
+            // tree is known to diverge them today — init_fans() carries struct and
+            // subject forward together — and this write is what keeps that true
+            // cheaply rather than by argument (#1181).
             auto it = fan_speed_subjects_.find(object_name);
             if (it != fan_speed_subjects_.end() && it->second) {
                 lv_subject_set_int(it->second.get(), speed_pct);

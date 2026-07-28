@@ -566,10 +566,11 @@ TEST_CASE("Fan characterization: per-fan subjects cleared on reset",
     REQUIRE(state.get_fan_speed_subject("fan") == nullptr);
     REQUIRE(state.get_fan_speed_subject("heater_fan hotend_fan") == nullptr);
 
-    // NOTE: Current behavior - fans_ vector is NOT cleared by reset_for_testing()
-    // Only fan_speed_subjects_ map is cleared. This documents the current behavior.
-    // If fans_ should be cleared, that would be a refactor change, not captured here.
-    REQUIRE(state.get_fans().size() == 2); // Fans vector persists
+    // fans_ is cleared too. It used to survive reset() — the characterization
+    // note here called that out and left the refactor for later. It stopped being
+    // cosmetic once init_fans() began carrying speed_percent/ever_ran/rpm across a
+    // re-init (#1181): a surviving fans_ leaks live readings into the next test.
+    REQUIRE(state.get_fans().empty());
 }
 
 TEST_CASE("Fan characterization: static subjects reset to defaults",
@@ -1477,14 +1478,18 @@ TEST_CASE("init_fans keeps [fan] when part role points to an absent object",
 }
 
 // ============================================================================
-// #1181 regression: subject must always be written, even when the struct
-// already holds the incoming value. The old change-gate compared against the
-// struct (fan.speed_percent != speed_pct); if the subject was reset to 0 by
-// init_fans while the struct retained the old value (e.g. a steady-speed fan
-// whose differential update was swallowed), the subject could never catch up.
+// #1181: update_fan_speed() must write the per-fan subject unconditionally,
+// never gated on the struct comparison.
+//
+// These two force a struct/subject split by hand. No supported path produces
+// one — init_fans() carries both forward together — so read them as locking the
+// property, not as reproducing a field scenario: a gated write can only restore
+// the subject when the struct also moves, so any divergence that did arise
+// would be permanent on a differential feed. The re-apply scenario that
+// actually caused #1181 is covered further down.
 // ============================================================================
 
-TEST_CASE("Fan subject recovers after rediscovery with steady-speed fan (#1181)",
+TEST_CASE("Fan subject is not gated on the struct comparison (#1181)",
           "[fan][reinit][subject_sync]") {
     lv_init_safe();
 
@@ -1498,9 +1503,7 @@ TEST_CASE("Fan subject recovers after rediscovery with steady-speed fan (#1181)"
     state.update_from_status({{"fan", {{"speed", 1.0}}}});
     REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("fan")) == 100);
 
-    // Simulate the divergence: reset the subject to 0 (as init_fans does on
-    // rediscovery) while keeping the struct at 100. This is the exact state
-    // after init_fans if no full status snapshot follows.
+    // Force a split no production path creates: subject to 0, struct still 100.
     lv_subject_set_int(state.get_fan_speed_subject("fan"), 0);
     REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("fan")) == 0);
 
@@ -1528,8 +1531,8 @@ TEST_CASE("Fan subject always reflects latest update even when struct unchanged 
     REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("fan")) == 80);
     REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("heater_fan hotend_fan")) == 60);
 
-    // Diverge: manually zero the "fan" subject (simulating init_fans reset)
-    // while the struct retains 80%.
+    // Same forced split as above, with a second fan present to prove the
+    // unconditional write stays scoped to the fan that was updated.
     lv_subject_set_int(state.get_fan_speed_subject("fan"), 0);
 
     // Push the same 80% again. Old code: struct(80) != 80 → false → subject
@@ -1539,4 +1542,55 @@ TEST_CASE("Fan subject always reflects latest update even when struct unchanged 
 
     // heater_fan should be unaffected.
     REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("heater_fan hotend_fan")) == 60);
+}
+
+// ============================================================================
+// #1181: a re-init must not amnesia a fan that is still spinning.
+//
+// reapply_hardware_roles() calls init_fans() with the subscription already
+// live, and Moonraker's notify_status_update is DIFFERENTIAL — a fan holding a
+// steady speed reports nothing afterwards. If init_fans() zeroes speed_percent
+// and ever_ran, there is no event that ever restores them, so both the speed
+// readout and the part-fan classification stay wrong indefinitely.
+// ============================================================================
+
+TEST_CASE("Steady-speed fan survives a role re-apply with no new status update (#1181)",
+          "[fan][reinit][subject_sync]") {
+    lv_init_safe();
+
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    state.init_fans({"fan"});
+    state.update_from_status({{"fan", {{"speed", 0.6}}}});
+    REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("fan")) == 60);
+
+    // Same fan list, same physical fan — this is reapply_hardware_roles(), not a
+    // new printer. Nothing follows it, because 60% is unchanged and the feed is
+    // differential.
+    state.init_fans({"fan"});
+
+    REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("fan")) == 60);
+}
+
+TEST_CASE("Promoted part fan survives a role re-apply (#1181)", "[fan][reinit][classification]") {
+    lv_init_safe();
+
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    // The "stale [fan]" shape #1124 was about: bare [fan] exists but never
+    // reports, and the real part cooler is a named generic fan.
+    state.init_fans({"fan", "fan_generic part_cooling"});
+    state.update_from_status({{"fan_generic part_cooling", {{"speed", 0.6}}}});
+    REQUIRE(state.get_fan_state().classify_primary_fans().part == "fan_generic part_cooling");
+
+    // After a re-apply the promotion must hold. Losing ever_ran drops the slot
+    // back to the front-most commandable fan — the dead [fan], sitting at 0% —
+    // which is the compact row frozen at 0% while All Fans stays correct.
+    state.init_fans({"fan", "fan_generic part_cooling"});
+
+    REQUIRE(state.get_fan_state().classify_primary_fans().part == "fan_generic part_cooling");
 }
