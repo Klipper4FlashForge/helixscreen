@@ -154,10 +154,16 @@ jobs:
     - name: Initialize submodules
       uses: ./.github/actions/init-submodules
 
+    # This job only ever gets the -dev-free runtime closure, so every library the
+    # compile job picked up transitively via a -dev package has to be named here.
+    # libgles2 is the one that is easy to miss: ENABLE_GLES_3D links -lGLESv2 for
+    # the 3D G-code renderer, and on the compile runner libsdl2-dev drags it in.
+    # Without it helix-screen never reaches main() — ld.so exits 127 before the
+    # first log line, which surfaces as every pytest UI test erroring in setup.
     - name: Install runtime dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libsdl2-2.0-0 libfmt-dev libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libpng16-16 libjpeg8
+        sudo apt-get install -y libsdl2-2.0-0 libgles2 libfmt-dev libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libpng16-16 libjpeg8
 
     - name: Download build artifacts
       uses: actions/download-artifact@v8
@@ -167,6 +173,18 @@ jobs:
 
     - name: Make binaries executable
       run: chmod +x build/bin/helix-screen build/bin/helix-tests
+
+    # Fail here, with the library name, rather than 200 lines into a pytest run
+    # that reports 38 identical "exited with 127 during boot" setup errors.
+    - name: Verify the runtime library closure is complete
+      run: |
+        missing=$(ldd build/bin/helix-screen build/bin/helix-tests | grep 'not found' | sort -u || true)
+        if [ -n "$missing" ]; then
+          echo "::error::Missing runtime libraries — add the providing packages to 'Install runtime dependencies'"
+          echo "$missing"
+          exit 1
+        fi
+        echo "All shared libraries resolve"
 
     - name: Run unit tests
       timeout-minutes: 10
