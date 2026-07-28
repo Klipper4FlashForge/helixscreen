@@ -688,14 +688,14 @@ fi
 echo ""
 
 if [ -f "scripts/check_raw_this_queue_update.py" ]; then
-  # Ratcheting baseline. queue_update([this, ...]) runs at the next drain whether or
-  # not the owner is still alive; if the body touches a member lv_subject_t,
-  # lv_subject_notify walks a freed observer list (#1146, #1165). Most survivors are
-  # owned by process-lifetime singletons, which is why this ratchets instead of
-  # failing outright — the gate counts the debt, it does not adjudicate which sites
-  # are lethal. The number may go DOWN (guard a site with lifetime_.bg_cb /
-  # tok.defer, then lower this) but must never go up.
-  if python3 scripts/check_raw_this_queue_update.py --max-allowed 26 --summary >/tmp/raw_this_qu.out 2>&1; then
+  # The ratchet has reached zero (#1165) — every queue_update() in src/ now routes
+  # through an AsyncLifetimeGuard, so this is a hard gate, not a baseline.
+  # queue_update([this, ...]) runs at the next drain whether or not the owner is
+  # still alive; if the body touches a member lv_subject_t, lv_subject_notify walks
+  # a freed observer list (#1146, #1165). Keep it at 0: guard new sites with
+  # lifetime_.bg_cb() / tok.defer(), or annotate a genuine exception with
+  # // QUEUE_RAW_THIS_OK: <reason>.
+  if python3 scripts/check_raw_this_queue_update.py --max-allowed 0 --summary >/tmp/raw_this_qu.out 2>&1; then
     section_time $SECTION_START
     echo ""
     tail -1 /tmp/raw_this_qu.out

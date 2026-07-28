@@ -16,7 +16,7 @@
 # The ceiling below catches an EXTRA untagged callback appearing inside a test
 # that is already listed, which the key set alone would miss. Untagged callbacks
 # totalled exactly 717 across four identical runs; the tagged total flapped.
-max-untagged-callbacks: 428
+max-untagged-callbacks: 239
 tag:Ad5xIfsBackend::reread_apply
 tag:Ad5xIfsBackend::zcolor_debounce_apply
 tag:AmsState::on_backend_event
@@ -27,6 +27,9 @@ tag:PrinterCapabilitiesState::set_spoolman_available
 tag:PrinterCapabilitiesState::set_webcam_available
 tag:PrinterPrintState::set_estimated_print_time
 tag:PrinterState::on_status_update
+tag:TelemetryManager::set_enabled
+tag:UpdateChecker::check_for_updates
+tag:UpdateChecker::set_download_status
 test:All panels are accessible
 test:AmsState: add_backend stores multiple backends
 test:AmsState: clear_backends removes all
@@ -38,24 +41,9 @@ test:AmsState: secondary backend gets separate slot subjects
 test:AmsState: set_backend replaces all backends
 test:AmsState: sync_backend updates correct subjects
 test:AmsState: update_slot_for_backend delegates to primary
-test:Bundle consent: crash event enqueued even when telemetry disabled
-test:Bundle consent: no double-enqueue when telemetry already captured the crash
-test:Bundle consent: no event when no crash file is present
-test:Bundle consent: suppressed for post-update restart crash
-test:Clean update: no crash flag when update_success.json exists without crash.txt
-test:Device ID: consistent across session and print outcome events
-test:Feature adoption: event contains feature flags
 test:FirstRunTour: advance past last step finishes
 test:FirstRunTour: skip writes tour.completed
 test:FirstRunTour: start() sets is_running
-test:Frame time: dropped frames detected above 33ms threshold
-test:Frame time: frames at idle threshold boundary are recorded
-test:Frame time: idle frames below threshold are not recorded
-test:Frame time: panels with unknown panel_id are excluded from breakdown
-test:Frame time: samples are recorded in ring buffer
-test:Frame time: snapshot includes per-panel breakdown in panels object
-test:Frame time: snapshot with no active frames produces no event
-test:Frame time: worst panel is identified by p95
 test:Invalid panel handling
 test:LedAutoState init loads persisted config from per-printer path
 test:LedAutoState observer fires after init and applies action
@@ -124,29 +112,11 @@ test:Multi-backend: active backend resets on clear
 test:Multi-backend: deinit then re-init is safe
 test:Multi-backend: full lifecycle
 test:Navigation initialization
-test:New events do not leak PII
-test:Normal crash: crash event enqueued when no update_success.json
 test:Panel switching
-test:Persistence: empty queue produces empty JSON array
-test:Persistence: load from corrupt file produces empty queue (graceful degradation)
-test:Persistence: load from missing file produces empty queue
-test:Persistence: queue survives multiple write/read cycles
-test:Persistence: saved file is valid JSON
-test:Persistence: write queue to file and read back
-test:Post-update crash: crash.txt preserved when update_success.json present
-test:Post-update crash: had_update_restart is false by default
-test:Post-update crash: update_success.json preserved for check_previous_update
 test:PrePrint adaptive: disabled emits SKIP_LEVELING=1 and no ADAPTIVE
 test:PrePrint adaptive: enabled + active emits SKIP_LEVELING=0 and ADAPTIVE=1
 test:PrePrint adaptive: honors custom adaptive param name + value
 test:PrePrint adaptive: non-adaptive printer enabled emits no params
-test:Print outcome event has empty filament_type by default
-test:Print outcome event includes filament_type when set
-test:Print outcome event: captures duration and filament
-test:Print outcome event: captures temperature and phase info
-test:Print outcome event: does NOT contain filename or gcode
-test:Print outcome event: has required fields
-test:Print outcome event: preserves filament type across material types
 test:PrintPreparationManager: K2 Plus DB-driven bed_mesh emits PREPARE=1 when disabled
 test:PrintPreparationManager: build_capability_matrix
 test:PrintPreparationManager: capabilities come from PrinterState
@@ -162,82 +132,16 @@ test:PrintPreparationManager: collect_pre_start_gcode_lines skips NOT_APPLICABLE
 test:PrintPreparationManager: get_option_state(id) falls back to DB default_enabled
 test:PrintPreparationManager: timelapse option synthesized when plugin available
 test:PrinterHardware with MoonrakerClientMock data
-test:Queue: clear removes all events
-test:Queue: enqueue adds events
-test:Queue: respects max capacity and drops oldest
-test:Queue: snapshot is a copy (not a reference)
-test:Queue: starts empty after init
 test:Repeated panel selection
-test:Scheduler: shutdown stops auto-send
-test:Scheduler: start_auto_send creates timer
-test:Scheduler: stop_auto_send is safe when no timer
-test:Session event v2: app has theme and locale
-test:Session event v2: app section has display backend fields
-test:Session event v2: features is an array when present
-test:Session event v2: host section has hardware info
-test:Session event v2: no PII in printer/features/host sections
-test:Session event v2: schema_version is 2
-test:Session event: app.zip_tool is on EVERY session event
-test:Session event: app.zip_tool reports zip capability
-test:Session event: does NOT contain PII fields
-test:Session event: has all required fields
-test:Session event: has app section with version and platform
-test:Session event: timestamp is ISO 8601 format
-test:Settings changes: batches changes and builds event
-test:Settings changes: no event if no changes pending
-test:Snapshot: panel_usage includes snapshot_seq and is_shutdown fields
-test:Snapshot: snapshot_seq increments on each periodic fire
-test:Snapshot: state persisted to disk and recovered
-test:Toggle: disable does not clear existing queue
-test:Toggle: disabled by default
-test:Toggle: mid-session toggle respects new state
-test:Toggle: when disabled, record_print_outcome does not add events
-test:Toggle: when disabled, record_session does not add events
-test:Toggle: when enabled, events are added normally
 test:ToolState: assign_spool + sync_from_backend populates toolchanger slot
 test:ToolState: request_tool_change delegates to AMS backend when it manages the tool
 test:ToolState: request_tool_change falls back to gcode when AMS backend has no tool map
 test:ToolState: request_tool_change for toolchanger with no AMS backend uses gcode fallback
 test:ToolState: sync_from_backend does not overwrite existing tool assignment
-test:Transmission: batch payload contains valid event JSON
-test:Transmission: build_batch does not modify the queue
-test:Transmission: build_batch returns all events when fewer than limit
-test:Transmission: build_batch returns empty array when queue is empty
-test:Transmission: build_batch takes at most MAX_BATCH_SIZE events
-test:Transmission: remove_sent_events removes from front of queue
-test:Transmission: remove_sent_events with 0 does nothing
-test:Transmission: remove_sent_events with count > queue size removes all
-test:Transmission: try_send is no-op when disabled
-test:Transmission: try_send is no-op when queue is empty
-test:Update failed event: from_version included when available
-test:Update failed event: has required envelope fields
-test:Update failed event: includes exit_code for install failures
-test:Update failed event: includes optional fields when provided
-test:Update failed event: not recorded when telemetry disabled
-test:Update success: check_previous_update enqueues event from flag file
-test:Update success: discarded when telemetry disabled
-test:Update success: flag file deleted after reading
-test:Update success: malformed flag file handled gracefully
-test:Update success: no-op when no flag file exists
-test:UpdateChecker callback is optional
-test:UpdateChecker download requires cached update
-test:UpdateChecker report_download_status transitions to Restarting
-test:Write update success flag: creates valid JSON file
 test:disabling_option_requires_plugin: K2 regression — MacroParam + setup_gcode stays visible
 test:disabling_option_requires_plugin: MacroParam disable dropped when a PreStartGcode sibling short-circuits
 test:disabling_option_requires_plugin: PreStartGcode and RuntimeCommand never require plugin
 test:disabling_option_requires_plugin: Voron — MacroParam, no pre-start mechanism, hidden
 test:disabling_option_requires_plugin: file-embedded term isolated
 test:lv_indev_reset(NULL, NULL) clears in-flight press
-test:new events are no-op when disabled
-test:print_start_context file size bucketing
-test:record_connection_stability creates valid event
-test:record_error creates valid event
-test:record_error rate limits by category
-test:record_error rejects unknown categories
-test:record_hardware_profile creates valid event
-test:record_memory_snapshot creates valid event
-test:record_panel_usage creates valid event
-test:record_print_start_context creates valid event
-test:record_settings_snapshot creates valid event
 test:registry: step_by_id stays valid after panel teardown (3rd-printer UAF)
