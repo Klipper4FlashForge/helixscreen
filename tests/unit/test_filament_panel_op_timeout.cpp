@@ -1,0 +1,290 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * @file test_filament_panel_op_timeout.cpp
+ * @brief Regression guard (#1183): a filament operation that never reports back
+ *        must not leave its button spinning forever.
+ *
+ * Run with: ./build/bin/helix-tests "[ui_integration][filament][regression][1183]"
+ *
+ * Two defects, both reproduced against a real FilamentPanel built from
+ * filament_panel.xml over a recording AMS backend:
+ *
+ *   1. Every operation_guard_.begin() callsite used to pass a capture-nothing
+ *      lambda that only raised a toast. OperationTimeoutGuard clears its own
+ *      filament_operation_in_progress subject, so the buttons re-enabled at 120s,
+ *      but the per-op state subject (filament_op_*_state: 0 idle / 1 busy / 2 done)
+ *      stayed at 1 for the rest of the session and backend_op_active_ /
+ *      op_in_flight_ stayed set. The shared handle_operation_timeout() now fails
+ *      whichever op is showing busy.
+ *
+ *   2. The AMS completion observer accepted only AmsAction::IDLE. AFC's
+ *      stuck-action backstop resolves a wedged operation to AmsAction::ERROR and
+ *      nothing else, so on this panel it did nothing at all and the spinner ran
+ *      until the timeout. ERROR now terminates the op via op_failed().
+ *
+ * The timeout is driven by re-arming the guard's REAL timer (period 1ms +
+ * lv_timer_ready) rather than waiting out the 120s budget, so the handler under
+ * test is the one the production callsite installed — a callsite that regresses to
+ * the old lambda fails these tests.
+ *
+ * Mutation checks (each must break exactly the listed test):
+ *   - restore the capture-nothing lambda at a begin() callsite  -> "times out"
+ *     tests for that path fail
+ *   - make handle_operation_timeout() clear the flags but not the op state
+ *     -> "spinner stops" tests fail, "starts clean" still passes
+ *   - drop the ERROR branch in ams_action_observer_ -> the ERROR test fails
+ *   - make the ERROR branch call op_succeeded() -> the ERROR test fails (state
+ *     lands on 2/done, not 0/idle)
+ */
+
+#include "../lvgl_ui_test_fixture.h"
+#include "../test_helpers/filament_panel_test_access.h"
+#include "../ui_test_utils.h"
+
+#include "ams_backend_mock.h"
+#include "ams_state.h"
+#include "ams_types.h"
+#include "tool_state.h"
+#include "ui_panel_filament.h"
+#include "ui_update_queue.h"
+
+#include <lvgl.h>
+#include <memory>
+
+#include "../catch_amalgamated.hpp"
+
+using helix::ToolState;
+using helix::ToolTopology;
+using TA = helix::ui::FilamentPanelTestAccess;
+
+namespace {
+
+// Minimal AFC-shaped backend: the panel's op path needs a slot-selecting system
+// whose load/unload succeed synchronously and then stay silent, which is exactly
+// the fire-and-forget shape that makes a stall observable.
+class StubBackend : public AmsBackendMock {
+  public:
+    StubBackend() : AmsBackendMock(4) {}
+
+    AmsSystemInfo sys_{};
+    int loaded_slot_ = -1;
+
+    [[nodiscard]] AmsSystemInfo get_system_info() const override {
+        return sys_;
+    }
+    [[nodiscard]] PathTopology get_topology() const override {
+        return PathTopology::HUB;
+    }
+    [[nodiscard]] AmsType get_type() const override {
+        return sys_.type;
+    }
+    [[nodiscard]] bool requires_slot_selection_for_load() const override {
+        return true;
+    }
+    [[nodiscard]] bool slot_is_actively_loaded(int slot) const override {
+        return slot == loaded_slot_;
+    }
+    [[nodiscard]] bool slot_has_filament_at_toolhead(int slot) const override {
+        return slot == loaded_slot_;
+    }
+    AmsError load_filament(int) override {
+        return AmsErrorHelper::success();
+    }
+    AmsError unload_filament(int) override {
+        return AmsErrorHelper::success();
+    }
+};
+
+AmsSystemInfo afc_sys() {
+    AmsSystemInfo sys;
+    sys.type = AmsType::AFC;
+    sys.total_slots = 4;
+    sys.current_slot = 3;
+    sys.filament_loaded = true;
+    sys.tool_to_slot_map = {0, 1, 2, 3};
+    return sys;
+}
+
+ToolTopology identity_topo() {
+    ToolTopology topo;
+    topo.tool_count = 4;
+    topo.active_tool = 0;
+    topo.tool_to_slot = {0, 1, 2, 3};
+    return topo;
+}
+
+// Real FilamentPanel over the stub backend, torn down in the order the singletons
+// require (UI subtree, panel, then the shared AMS/Tool state).
+struct TimeoutHarness {
+    LVGLUITestFixture& fx;
+    StubBackend* mock = nullptr;
+    std::unique_ptr<FilamentPanel> panel;
+    lv_obj_t* root = nullptr;
+
+    explicit TimeoutHarness(LVGLUITestFixture& f) : fx(f) {
+        ToolState::instance().init_subjects(true);
+        AmsState::instance().init_subjects(true);
+
+        auto owned = std::make_unique<StubBackend>();
+        owned->sys_ = afc_sys();
+        owned->loaded_slot_ = 3; // slot 0 stays free so a Load can proceed
+        mock = owned.get();
+        AmsState::instance().set_backend(std::move(owned));
+        AmsState::instance().sync_from_backend();
+        ToolState::instance().set_ams_topology(identity_topo());
+
+        panel = std::make_unique<FilamentPanel>(fx.state(), fx.api());
+        panel->init_subjects();
+
+        root = static_cast<lv_obj_t*>(lv_xml_create(fx.test_screen(), "filament_panel", nullptr));
+        REQUIRE(root != nullptr);
+        panel->setup(root, fx.test_screen());
+        fx.process_lvgl(30);
+
+        TA::populate_extruder_dropdown(*panel);
+        select_tool(0);
+    }
+
+    void select_tool(int idx) {
+        lv_obj_t* dd = TA::extruder_dropdown(*panel);
+        REQUIRE(dd != nullptr);
+        REQUIRE(lv_dropdown_get_option_count(dd) >= static_cast<uint32_t>(idx + 1));
+        lv_dropdown_set_selected(dd, static_cast<uint32_t>(idx));
+    }
+
+    /// Fire the guard's armed timer now instead of at the 120s budget.
+    void fire_operation_timeout() {
+        lv_timer_t* t = TA::operation_timer(*panel);
+        REQUIRE(t != nullptr);
+        lv_timer_set_period(t, 1);
+        lv_timer_ready(t);
+        fx.process_lvgl(20);
+    }
+
+    void publish_action(AmsAction a, int settle_ms) {
+        lv_subject_set_int(AmsState::instance().get_ams_action_subject(), static_cast<int>(a));
+        fx.process_lvgl(settle_ms);
+    }
+
+    ~TimeoutHarness() {
+        if (root) {
+            lv_obj_delete(root);
+        }
+        fx.process_lvgl(10);
+        panel.reset();
+        AmsState::instance().set_backend(nullptr);
+        ToolState::instance().clear_ams_topology();
+        AmsState::instance().deinit_subjects();
+        ToolState::instance().deinit_subjects();
+    }
+};
+
+} // namespace
+
+TEST_CASE_METHOD(LVGLUITestFixture, "#1183: a timed-out backend load stops the spinner",
+                 "[ui_integration][filament][regression][1183]") {
+    // The reported hang: AFC no-op'd the Load and never moved its action, so the
+    // only thing that could ever end the op was the guard's timeout. It has to put
+    // the Load button back to idle, not just raise a toast.
+    TimeoutHarness h(*this);
+
+    TA::execute_load(*h.panel);
+    REQUIRE(TA::operation_active(*h.panel));
+    REQUIRE(TA::op_load_state(*h.panel) == 1); // spinner running
+
+    h.fire_operation_timeout();
+
+    CHECK(TA::op_load_state(*h.panel) == 0); // spinner cleared
+    CHECK_FALSE(TA::operation_active(*h.panel));
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "#1183: a timed-out backend op clears the in-flight bookkeeping",
+                 "[ui_integration][filament][regression][1183]") {
+    // backend_op_active_ / op_in_flight_ gate the AMS completion observer. Left set
+    // after a stall they mis-attribute the NEXT operation's completion, so the
+    // timeout must reset both.
+    TimeoutHarness h(*this);
+
+    TA::execute_load(*h.panel);
+    REQUIRE(TA::backend_op_active(*h.panel));
+    REQUIRE(TA::op_in_flight(*h.panel));
+
+    h.fire_operation_timeout();
+
+    CHECK_FALSE(TA::backend_op_active(*h.panel));
+    CHECK_FALSE(TA::op_in_flight(*h.panel));
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "#1183: AmsAction::ERROR ends the operation and fails the op",
+                 "[ui_integration][filament][regression][1183]") {
+    // AmsBackendAfc::check_action_timeout()'s entire output is a flip to ERROR.
+    // Before the fix the observer accepted only IDLE, so that backstop changed
+    // nothing on this panel and the spinner ran to the 120s timeout.
+    TimeoutHarness h(*this);
+
+    TA::execute_load(*h.panel);
+    REQUIRE(TA::operation_active(*h.panel));
+
+    h.publish_action(AmsAction::LOADING, 10);
+    h.publish_action(AmsAction::ERROR, 600); // > MIN_SPINNER_VISIBLE_MS, so a
+                                             // mistaken op_succeeded() would have
+                                             // reached the done state by now
+
+    CHECK_FALSE(TA::operation_active(*h.panel));
+    CHECK(TA::op_load_state(*h.panel) == 0); // idle, NOT 2/done
+    CHECK_FALSE(TA::backend_op_active(*h.panel));
+    CHECK_FALSE(TA::op_in_flight(*h.panel));
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "#1183: AmsAction::IDLE still completes the op as a success",
+                 "[ui_integration][filament][regression][1183]") {
+    // Happy path must not regress into the failure path: success shows the
+    // checkmark (state 2), which is what distinguishes it from op_failed().
+    TimeoutHarness h(*this);
+
+    TA::execute_load(*h.panel);
+    REQUIRE(TA::operation_active(*h.panel));
+
+    h.publish_action(AmsAction::LOADING, 10);
+    h.publish_action(AmsAction::IDLE, 600); // clears the min-spinner floor
+
+    CHECK_FALSE(TA::operation_active(*h.panel));
+    CHECK(TA::op_load_state(*h.panel) == 2); // done/checkmark, not merely non-busy
+    CHECK_FALSE(TA::backend_op_active(*h.panel));
+    CHECK_FALSE(TA::op_in_flight(*h.panel));
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "#1183: a timed-out gcode op stops its spinner too",
+                 "[ui_integration][filament][regression][1183]") {
+    // Extrude is one of the six non-backend begin() callsites (raw gcode, no AMS
+    // completion observer involved). It proves the shared handler reached every
+    // callsite, not just the two backend ones.
+    //
+    // The test API is disconnected, so execute_gcode's error callback fires
+    // synchronously and queues an op_failed via async_call. Freezing the update
+    // queue parks that callback so the ONLY thing that can clear the spinner is
+    // the timeout handler — otherwise the assertion would pass on the error path
+    // and survive every mutation.
+    TimeoutHarness h(*this);
+
+    {
+        auto freeze = helix::ui::UpdateQueue::instance().scoped_freeze("op-timeout-test");
+
+        TA::execute_extrude(*h.panel);
+        REQUIRE(TA::operation_active(*h.panel));
+        REQUIRE(TA::op_extrude_state(*h.panel) == 1);
+
+        lv_timer_t* t = TA::operation_timer(*h.panel);
+        REQUIRE(t != nullptr);
+        lv_timer_set_period(t, 1);
+        lv_timer_ready(t);
+        // The frozen callback sits in the freeze buffer, which drain() does not
+        // touch, so this only runs the timeout timer.
+        lv_timer_handler_safe();
+
+        CHECK(TA::op_extrude_state(*h.panel) == 0);
+        CHECK_FALSE(TA::operation_active(*h.panel));
+    }
+
+    process_lvgl(20); // let the thawed error callback drain before teardown
+}

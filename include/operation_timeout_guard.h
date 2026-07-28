@@ -82,6 +82,17 @@ class OperationTimeoutGuard {
         return has_subject_ ? &subject_ : nullptr;
     }
 
+    /**
+     * @brief The armed timeout timer, or nullptr when no operation is pending
+     *
+     * Test-observability only: lets a test fire the timeout immediately
+     * (lv_timer_set_period + lv_timer_ready) instead of waiting out the real
+     * budget, while still running the handler the production callsite installed.
+     */
+    [[nodiscard]] lv_timer_t* pending_timer() const noexcept {
+        return timer_;
+    }
+
   private:
     bool active_ = false;
     bool has_subject_ = false;

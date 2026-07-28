@@ -273,7 +273,12 @@ class FilamentPanel : public PanelBase {
     lv_timer_t* op_revert_timer_ = nullptr; ///< shared one-shot timer (min-spinner delay / revert)
     FilamentOp op_revert_target_ = FilamentOp::Load; ///< which op the timer resets
     std::optional<FilamentOp> op_in_flight_; ///< op driven by run_filament_macro (one at a time)
-    uint32_t op_busy_started_tick_ = 0;      ///< lv_tick when busy began (min-spinner floor)
+    /// Op currently showing the spinner. Set by op_started() — the one funnel every
+    /// path uses — so the timeout handler can clear the right button no matter which
+    /// of the guard's callsites armed it. op_in_flight_ is not enough: the gcode and
+    /// inline-macro paths never set it.
+    std::optional<FilamentOp> op_showing_busy_;
+    uint32_t op_busy_started_tick_ = 0; ///< lv_tick when busy began (min-spinner floor)
     bool backend_op_active_ = false; ///< true while an AMS-backend op awaits ams_action IDLE
 
     lv_subject_t* op_state_subject(FilamentOp op);
@@ -284,6 +289,8 @@ class FilamentPanel : public PanelBase {
     void enter_op_done_state(FilamentOp op);     ///< main-thread: → done + arm revert timer
     void schedule_op_timer(uint32_t delay_ms, lv_timer_cb_t cb); ///< (re)arm shared op timer
     void cancel_op_revert_timer();
+    void begin_operation_guard();     ///< arm operation_guard_ with the shared timeout handler
+    void handle_operation_timeout();  ///< main-thread: toast + tear down the stalled op
 
     // Purge amount state
     int purge_amount_ = 10; // Default 10mm

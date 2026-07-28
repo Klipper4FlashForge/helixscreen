@@ -316,10 +316,15 @@ void FilamentPanel::init_subjects() {
 }
 
 void FilamentPanel::deinit_subjects() {
-    // Cancel the op-state timer before the subjects it writes go away.
+    // Cancel the op-state timer before the subjects it writes go away. The
+    // operation guard owns a timer of its own whose handler writes the same
+    // subjects, so it has to stop here too — deinit_subjects() runs from
+    // StaticPanelRegistry::destroy_all(), well before lv_deinit().
     cancel_op_revert_timer();
+    operation_guard_.end();
     backend_op_active_ = false;
     op_in_flight_.reset();
+    op_showing_busy_.reset();
 
     // Cancel any pending preheat without notification (panel is being torn down)
     if (pending_preheat_op_ != PreheatOp::NONE) {
@@ -425,28 +430,45 @@ void FilamentPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
                                             self->update_multi_filament_card_visibility();
                                         });
 
-    // End operation guard when AMS action returns to idle (load/unload complete)
+    // End the operation guard when the AMS action reaches a terminal state. IDLE
+    // means the backend finished; ERROR means it gave up — AFC's stuck-action
+    // backstop resolves to ERROR and nothing else, so accepting only IDLE left the
+    // guard armed and the button spinning until the 120s timeout (#1183).
     ams_action_observer_ = observe_int_sync<FilamentPanel>(
         AmsState::instance().get_ams_action_subject(), this, [](FilamentPanel* self, int action) {
-            if (action == static_cast<int>(AmsAction::IDLE) && self->operation_guard_.is_active()) {
-                spdlog::debug("[{}] AMS action returned to idle, ending operation guard",
-                              self->get_name());
-                self->operation_guard_.end();
-                // Complete on-button feedback for fire-and-forget AMS-backend ops.
-                // Gated on backend_op_active_ so gcode/macro ops (which drive
-                // op_succeeded from their own execute_gcode callback) are never
-                // double-completed here.
-                if (self->backend_op_active_ && self->op_in_flight_) {
-                    FilamentOp op = *self->op_in_flight_;
-                    self->backend_op_active_ = false;
-                    self->op_in_flight_.reset();
-                    self->op_succeeded(op);
-                    // Backend (AFC/etc.) ops complete HERE, not via the gcode/macro
-                    // success callbacks that call restore_heater_after_preheat().
-                    // Without this the post-op cooldown is never scheduled and the
-                    // nozzle holds the material temp indefinitely after a swap.
-                    self->restore_heater_after_preheat();
+            const bool idle = (action == static_cast<int>(AmsAction::IDLE));
+            const bool failed = (action == static_cast<int>(AmsAction::ERROR));
+            if ((!idle && !failed) || !self->operation_guard_.is_active()) {
+                return;
+            }
+            spdlog::debug("[{}] AMS action reached {}, ending operation guard", self->get_name(),
+                          idle ? "IDLE" : "ERROR");
+            self->operation_guard_.end();
+            // Complete on-button feedback for fire-and-forget AMS-backend ops.
+            // Gated on backend_op_active_ so gcode/macro ops (which drive
+            // op_succeeded from their own execute_gcode callback) are never
+            // double-completed here.
+            if (self->backend_op_active_ && self->op_in_flight_) {
+                FilamentOp op = *self->op_in_flight_;
+                self->backend_op_active_ = false;
+                self->op_in_flight_.reset();
+                if (failed) {
+                    // Spinner off, no checkmark, no toast: AmsErrorBridge presents a
+                    // recovery dialog on the same ERROR edge and a second surface
+                    // would just stack on it. The heater is deliberately left alone —
+                    // ERROR can mean "we stopped waiting", not "the backend stopped",
+                    // and cutting heat under a live AFC move would jam the toolhead
+                    // (recovery from the dialog needs it hot anyway). This matches
+                    // every other op_failed() path, none of which restore the heater.
+                    self->op_failed(op);
+                    return;
                 }
+                self->op_succeeded(op);
+                // Backend (AFC/etc.) ops complete HERE, not via the gcode/macro
+                // success callbacks that call restore_heater_after_preheat().
+                // Without this the post-op cooldown is never scheduled and the
+                // nozzle holds the material temp indefinitely after a swap.
+                self->restore_heater_after_preheat();
             }
         });
 
@@ -1078,10 +1100,12 @@ void FilamentPanel::op_started(FilamentOp op) {
         }
     }
     op_busy_started_tick_ = lv_tick_get();
+    op_showing_busy_ = op;
     set_op_state(op, 1); // busy → spinner
 }
 
 void FilamentPanel::op_succeeded(FilamentOp op) {
+    op_showing_busy_.reset();
     // Instant-completing ops (mock gcode fires success synchronously; fast real
     // ops too) would flip spinner→check within a frame. Hold the spinner for a
     // minimum visible duration before showing the checkmark.
@@ -1099,8 +1123,32 @@ void FilamentPanel::op_succeeded(FilamentOp op) {
 }
 
 void FilamentPanel::op_failed(FilamentOp op) {
+    op_showing_busy_.reset();
     cancel_op_revert_timer(); // also clears any pending min-spinner delay
     set_op_state(op, 0);      // back to idle; the error/timeout toast still fires
+}
+
+// Every filament operation arms the guard the same way. Routing all callsites
+// through one entry point is what keeps the timeout handler from silently
+// diverging per path — it used to be an inlined capture-nothing lambda copied
+// eight times, and none of the copies cleared any of the op state.
+void FilamentPanel::begin_operation_guard() {
+    // Capturing `this` is safe: operation_guard_ is a member and ~OperationTimeoutGuard
+    // cancels the timer, so the callback cannot outlive the panel.
+    operation_guard_.begin(OPERATION_TIMEOUT_MS, [this] { handle_operation_timeout(); });
+}
+
+// Runs on the main thread from the guard's one-shot timer. OperationTimeoutGuard
+// clears only its own filament_operation_in_progress subject, so a stalled op left
+// its button spinning at state 1 for the rest of the session and left the in-flight
+// bookkeeping set, which blocked the next op from ever completing (#1183).
+void FilamentPanel::handle_operation_timeout() {
+    NOTIFY_WARNING(lv_tr("Filament operation timed out"));
+    backend_op_active_ = false;
+    op_in_flight_.reset();
+    if (op_showing_busy_) {
+        op_failed(*op_showing_busy_);
+    }
 }
 
 void FilamentPanel::handle_load_button() {
@@ -1201,8 +1249,7 @@ void FilamentPanel::execute_extrude() {
     }
 
     // Inline G-code: M83 = relative extrusion, G1 E{amount} F{speed}
-    operation_guard_.begin(OPERATION_TIMEOUT_MS,
-                           [] { NOTIFY_WARNING(lv_tr("Filament operation timed out")); });
+    begin_operation_guard();
     int speed_mm_min = helix::SettingsManager::instance().get_extrude_speed() * 60;
     spdlog::info("[{}] Extruding {}mm at F{}", get_name(), purge_amount_, speed_mm_min);
     std::string gcode = fmt::format("M83\nG1 E{} F{}", purge_amount_, speed_mm_min);
@@ -1324,8 +1371,7 @@ void FilamentPanel::execute_purge() {
     // Fallback: extrude a fixed 50mm at 10mm/s (M83 = relative extrusion)
     constexpr int PURGE_FALLBACK_MM = 50;
     constexpr int PURGE_FALLBACK_SPEED_MM_MIN = 10 * 60; // 10 mm/s → 600 mm/min
-    operation_guard_.begin(OPERATION_TIMEOUT_MS,
-                           [] { NOTIFY_WARNING(lv_tr("Filament operation timed out")); });
+    begin_operation_guard();
     spdlog::info("[{}] Purge fallback: extruding {}mm at F{}", get_name(), PURGE_FALLBACK_MM,
                  PURGE_FALLBACK_SPEED_MM_MIN);
     std::string gcode =
@@ -1389,8 +1435,7 @@ void FilamentPanel::execute_retract() {
     }
 
     // Inline G-code: M83 = relative extrusion, negative E = retract
-    operation_guard_.begin(OPERATION_TIMEOUT_MS,
-                           [] { NOTIFY_WARNING(lv_tr("Filament operation timed out")); });
+    begin_operation_guard();
     int speed_mm_min = helix::SettingsManager::instance().get_extrude_speed() * 60;
     spdlog::info("[{}] Retracting {}mm at F{}", get_name(), purge_amount_, speed_mm_min);
     std::string gcode = fmt::format("M83\nG1 E-{} F{}", purge_amount_, speed_mm_min);
@@ -2398,11 +2443,10 @@ void FilamentPanel::execute_load() {
             spdlog::info("[{}] Loading filament directly into selected slot {} (no redirect)",
                          get_name(), slot);
             // Backend load is fire-and-forget: completion is signaled by
-            // ams_action_observer_ when AmsAction returns to IDLE. Start the guard
-            // + on-button spinner here; backend_op_active_ gates the observer so it
-            // only completes backend ops (never gcode/macro ops).
-            operation_guard_.begin(OPERATION_TIMEOUT_MS,
-                                   [] { NOTIFY_WARNING(lv_tr("Filament operation timed out")); });
+            // ams_action_observer_ when AmsAction reaches IDLE or ERROR. Start the
+            // guard + on-button spinner here; backend_op_active_ gates the observer
+            // so it only completes backend ops (never gcode/macro ops).
+            begin_operation_guard();
             backend_op_active_ = true;
             op_in_flight_ = FilamentOp::Load;
             op_started(FilamentOp::Load);
@@ -2459,8 +2503,7 @@ void FilamentPanel::execute_load() {
     constexpr int LOAD_FAST_SPEED = 20 * 60; // 20 mm/s → 1200 mm/min
     constexpr int LOAD_SLOW_MM = 24;
     constexpr int LOAD_SLOW_SPEED = 5 * 60; // 5 mm/s → 300 mm/min
-    operation_guard_.begin(OPERATION_TIMEOUT_MS,
-                           [] { NOTIFY_WARNING(lv_tr("Filament operation timed out")); });
+    begin_operation_guard();
     spdlog::info("[{}] Load fallback: {}mm fast + {}mm slow", get_name(), LOAD_FAST_MM,
                  LOAD_SLOW_MM);
     std::string gcode = fmt::format("M83\nG1 E{} F{}\nG1 E{} F{}", LOAD_FAST_MM, LOAD_FAST_SPEED,
@@ -2518,13 +2561,12 @@ void FilamentPanel::execute_unload() {
             return;
         }
 
-        operation_guard_.begin(OPERATION_TIMEOUT_MS,
-                               [] { NOTIFY_WARNING(lv_tr("Filament operation timed out")); });
+        begin_operation_guard();
         spdlog::info("[{}] Unloading filament from selected slot {} via AMS backend ({})",
                      get_name(), slot, ams_type_to_string(backend->get_type()));
         // On-button spinner replaces the start toast. Completion is signaled by
-        // ams_action_observer_ when AmsAction returns to IDLE; backend_op_active_
-        // gates that observer to backend ops only.
+        // ams_action_observer_ when AmsAction reaches IDLE or ERROR;
+        // backend_op_active_ gates that observer to backend ops only.
         backend_op_active_ = true;
         op_in_flight_ = FilamentOp::Unload;
         op_started(FilamentOp::Unload);
@@ -2541,7 +2583,7 @@ void FilamentPanel::execute_unload() {
             op_failed(FilamentOp::Unload);
             NOTIFY_ERROR(lv_tr("Unload failed: {}"), err.user_msg);
         }
-        // Guard ends via ams_action_observer_ (AmsAction IDLE) or timeout.
+        // Guard ends via ams_action_observer_ (AmsAction IDLE/ERROR) or timeout.
         return;
     }
 
@@ -2582,8 +2624,7 @@ void FilamentPanel::execute_unload() {
     constexpr int UNLOAD_SPEED = 20 * 60;   // 20 mm/s → 1200 mm/min
     constexpr int TIP_PUSH_SPEED = 5 * 60;  // 5 mm/s → 300 mm/min
     constexpr int TIP_PULL_SPEED = 60 * 60; // 60 mm/s → 3600 mm/min
-    operation_guard_.begin(OPERATION_TIMEOUT_MS,
-                           [] { NOTIFY_WARNING(lv_tr("Filament operation timed out")); });
+    begin_operation_guard();
     spdlog::info("[{}] Unload fallback: tip-shape + {}mm retract", get_name(), UNLOAD_MM);
     std::string gcode = fmt::format("M83\nG1 E3 F{}\nG1 E-5 F{}\nG4 P500\nG1 E-{} F{}",
                                     TIP_PUSH_SPEED, TIP_PULL_SPEED, UNLOAD_MM, UNLOAD_SPEED);
@@ -2624,8 +2665,7 @@ void FilamentPanel::run_filament_macro(const std::string& macro_name, const std:
         return;
     }
 
-    operation_guard_.begin(OPERATION_TIMEOUT_MS,
-                           [] { NOTIFY_WARNING(lv_tr("Filament operation timed out")); });
+    begin_operation_guard();
     spdlog::info("[{}] Running '{}' ({})", get_name(), macro_name, op_label);
 
     // Map the op label ("Load"/"Unload"/"Purg") to the triggering button so the
