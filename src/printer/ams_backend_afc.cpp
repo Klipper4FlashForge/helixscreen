@@ -48,6 +48,37 @@ bool natural_less(const std::string& a, const std::string& b) {
     return a < b;
 }
 
+// Read AFC's spool-vendor field into `out`, accepting every spelling the
+// ecosystem uses. Returns true when a value was found.
+//
+// Upstream settled on `vendor_name` (AFCProject/AFC-Klipper-Add-On #808) to match
+// Happy Hare's mmu_server.py, so a single spelling covers both backends. `vendor`
+// is the name we originally proposed, and the key our own to_lane_data_record()
+// still emits alongside vendor_name — that record lands in a PRIVATE namespace for
+// AFC today (#1158), so this reader does not meet it yet, but it will the moment
+// #1158 migrates AFC's overrides into lane_data proper. `brand` is a defensive
+// third spelling.
+//
+// Empty values are IGNORED rather than treated as a clear. That is deliberate and
+// differs from the color/material handling above: #808 is unimplemented, so we do
+// not know whether an unlinked lane will omit the key or publish "". Guessing
+// wrong in the clearing direction silently wipes a user's brand override — and on
+// the lane_data path nothing re-covers it, because parse_lane_data() does not call
+// apply_overrides(). Revisit once #808 ships and the real payload is observable.
+bool read_vendor(const nlohmann::json& src, std::string& out) {
+    for (const char* key : {"vendor_name", "vendor", "brand"}) {
+        auto it = src.find(key);
+        if (it != src.end() && it->is_string()) {
+            std::string v = it->get<std::string>();
+            if (!v.empty()) {
+                out = std::move(v);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 // Split a firmware state token into sentence-case words:
 //   "ToolSwap"        → "Tool swap"
 //   "SOME_LOUD_STATE" → "Some loud state"
@@ -1597,10 +1628,25 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
         }
     }
 
-    // Parse weight
+    // Parse weight.
+    //
+    // This is the ONLY weight source for AFC. AFC_lane.get_status() has carried a
+    // live `weight` since v1.1.0, on every release, so no version gate is needed
+    // and none of the lane_data staleness (see parse_lane_data) can reach us here.
     if (data.contains("weight") && data["weight"].is_number()) {
         slot.remaining_weight_g = data["weight"].get<float>();
     }
+
+    // Vendor/brand — see read_vendor().
+    //
+    // Upstream #808 asked for the vendor on BOTH surfaces; jimmyjon711 accepted it
+    // as `vendor_name`. The status half is the one that matters to us: it is live
+    // and version-independent, where lane_data is a DB snapshot that only refreshes
+    // when AFC decides to push. Inert until #808 ships; harmless before then.
+    //
+    // Unlike the lane_data path, apply_overrides() runs directly below, so a user's
+    // brand override still wins over whatever firmware reports.
+    read_vendor(data, slot.brand);
 
     // Re-supply the user's attached identity on top of firmware truth. This is
     // what keeps a lane's spool across an eject now that the parser honours
@@ -2406,24 +2452,40 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
             slot.spoolman_id = lane["spool_id"].get<int>();
         }
 
-        // Vendor/brand. Upstream is adding this as `vendor_name`, NOT `vendor`
-        // (AFCProject/AFC-Klipper-Add-On #808) — jimmyjon711 chose the name to match
-        // Happy Hare's mmu_server.py so both backends share one spelling. `brand` is
-        // kept as a fallback for any payload that already uses it; neither key is
-        // present in current releases, so this is inert until #808 ships.
-        if (lane.contains("vendor_name") && lane["vendor_name"].is_string()) {
-            slot.brand = lane["vendor_name"].get<std::string>();
-        } else if (lane.contains("brand") && lane["brand"].is_string()) {
-            slot.brand = lane["brand"].get<std::string>();
-        }
+        // Vendor/brand — see read_vendor(). Inert until #808 ships.
+        read_vendor(lane, slot.brand);
 
-        if (lane.contains("remaining_weight") && lane["remaining_weight"].is_number()) {
-            slot.remaining_weight_g = lane["remaining_weight"].get<float>();
-        }
-
-        if (lane.contains("total_weight") && lane["total_weight"].is_number()) {
-            slot.total_weight_g = lane["total_weight"].get<float>();
-        }
+        // NO WEIGHT IS READ FROM lane_data, on any AFC version. This is deliberate.
+        //
+        // AFC's lane_data record carries exactly one weight key, `weight`, and it is
+        // never the best source:
+        //
+        //   v1.1.x     key absent entirely (added to send_lane_data in v1.2.0)
+        //   v1.2.0     present but STALE — cmd_SET_WEIGHT updated the lane object
+        //              without publishing, so the record only refreshed when an
+        //              unrelated command (SET_COLOR/SET_MATERIAL/SET_MAP/set_spoolID)
+        //              happened to push afterwards. clear_lane_data() also omitted
+        //              weight, so a cleared lane kept the old value forever.
+        //   post-#812  fixed upstream (AFCProject/AFC-Klipper-Add-On#805): SET_WEIGHT
+        //              publishes, and clearing writes weight: 0.
+        //
+        // The AFC_stepper subscription has carried a live `weight` since v1.1.0, and
+        // parse_afc_stepper() already reads it — so lane_data is redundant on every
+        // release and actively wrong on v1.2.0. Crucially, the stale and fixed forms
+        // are byte-identical on the wire, so no feature detection can tell them apart;
+        // it is a freshness problem, not a shape one, and AFC_VERSION is a hand-bumped
+        // literal that cannot support a floor (it sat at 1.1.37 through all of v1.2.0).
+        //
+        // Reading it here would also race: query_lane_data() and the subscription are
+        // independent async replies with no ordering guarantee, so a slow DB response
+        // can land after the first status snapshot and overwrite fresh with stale.
+        //
+        // Same reasoning the status block above uses — lane_data must not clobber
+        // AFC_stepper truth.
+        //
+        // (Two readers for `remaining_weight` / `total_weight` used to sit here. No AFC
+        // version ever emitted either key, and our own to_lane_data_record() writes
+        // them with a `_g` suffix, so they matched nothing and never fired.)
     }
 
     // Update filament_loaded from lane scan results.

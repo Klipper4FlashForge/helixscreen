@@ -5325,6 +5325,112 @@ TEST_CASE("AFC lane_data reads vendor_name for the brand, with brand as fallback
     CHECK(helper.get_slot_info(3).brand.empty());
 }
 
+TEST_CASE("AFC lane_data also reads the `vendor` spelling we write ourselves (#808)",
+          "[ams][afc][lane_data]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_zero_based(4);
+    helper.initialize_slots_from_discovery();
+
+    // `vendor` is the name we originally proposed upstream AND the key our own
+    // FilamentSlotOverrideStore::to_lane_data_record() emits alongside vendor_name.
+    //
+    // For AFC that record currently lands in a PRIVATE namespace (#1158), so this
+    // reader does not meet it yet — but it will the moment #1158 migrates AFC's
+    // overrides into lane_data proper, and a record written by any other producer
+    // using the originally-proposed spelling reads correctly today.
+    nlohmann::json lanes;
+    lanes["lane0"] = {{"vendor", "Hatchbox"}};
+    lanes["lane1"] = {{"vendor_name", "Polymaker"}, {"vendor", "Hatchbox"}}; // upstream wins
+    lanes["lane2"] = {{"vendor", "Hatchbox"}, {"brand", "Prusament"}}; // vendor outranks brand
+    lanes["lane3"] = {{"material", "PLA"}};
+    helper.feed_afc_state({{"lanes", lanes}});
+
+    CHECK(helper.get_slot_info(0).brand == "Hatchbox");
+    CHECK(helper.get_slot_info(1).brand == "Polymaker");
+    CHECK(helper.get_slot_info(2).brand == "Hatchbox");
+    CHECK(helper.get_slot_info(3).brand.empty());
+}
+
+TEST_CASE("AFC an empty vendor never clears an existing brand (#808)", "[ams][afc][lane_data]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_zero_based(4);
+    helper.initialize_slots_from_discovery();
+
+    nlohmann::json lanes;
+    for (int i = 0; i < 4; ++i)
+        lanes["lane" + std::to_string(i)] = {{"vendor_name", "Polymaker"}};
+    helper.feed_afc_state({{"lanes", lanes}});
+    REQUIRE(helper.get_slot_info(0).brand == "Polymaker");
+
+    // #808 is unimplemented, so we do not know whether an unlinked lane will omit
+    // the key or publish "". Treating "" as a clear would silently wipe a user's
+    // brand override, and parse_lane_data does NOT call apply_overrides() to put it
+    // back. Ignoring empties is the recoverable direction.
+    for (int i = 0; i < 4; ++i)
+        lanes["lane" + std::to_string(i)] = {{"vendor_name", ""}};
+    helper.feed_afc_state({{"lanes", lanes}});
+    CHECK(helper.get_slot_info(0).brand == "Polymaker");
+
+    // Absent behaves the same as empty.
+    for (int i = 0; i < 4; ++i)
+        lanes["lane" + std::to_string(i)] = {{"material", "PLA"}};
+    helper.feed_afc_state({{"lanes", lanes}});
+    CHECK(helper.get_slot_info(0).brand == "Polymaker");
+}
+
+TEST_CASE("AFC reads vendor_name from the AFC_stepper status object (#808)", "[ams][afc][vendor]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_zero_based(4);
+    helper.initialize_slots_from_discovery();
+
+    // Upstream #808 asked for the vendor on BOTH lane_data and get_status(), and
+    // jimmyjon711 accepted. The status surface is the one that matters: it is live
+    // and present on every AFC version, where lane_data is a DB snapshot that only
+    // refreshes when AFC happens to push.
+    helper.feed_afc_stepper("lane0", {{"vendor_name", "Polymaker"}});
+    CHECK(helper.get_slot_info(0).brand == "Polymaker");
+
+    // Deltas: an update without the key must not clobber what we already have.
+    helper.feed_afc_stepper("lane0", {{"material", "PLA"}});
+    CHECK(helper.get_slot_info(0).brand == "Polymaker");
+}
+
+TEST_CASE("AFC takes no weight from lane_data on any version (#805)", "[ams][afc][lane_data]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_zero_based(4);
+    helper.initialize_slots_from_discovery();
+
+    // The AFC_stepper subscription is the sole weight authority — live since v1.1.0.
+    helper.feed_afc_stepper("lane0", {{"weight", 750.0}});
+    REQUIRE(helper.get_slot_info(0).remaining_weight_g == Catch::Approx(750.0f));
+
+    // Now deliver a lane_data payload the way a v1.2.0 box does: `weight` present
+    // but STALE, because cmd_SET_WEIGHT updated the lane object without publishing
+    // (AFCProject/AFC-Klipper-Add-On#805, fixed only after v1.2.0 in PR #812). The
+    // stale and fixed payloads are byte-identical, so no feature detection can tell
+    // them apart — the only safe rule is to never source weight here.
+    //
+    // `remaining_weight` / `total_weight` are included too: no AFC version ever
+    // emitted either key, and readers for them used to sit in parse_lane_data.
+    // Deleting those readers must not be undone by someone "restoring" them.
+    nlohmann::json lanes;
+    for (int i = 0; i < 4; ++i) {
+        lanes["lane" + std::to_string(i)] = {
+            {"weight", 12.0}, {"remaining_weight", 34.0}, {"total_weight", 56.0}};
+    }
+    helper.feed_afc_state({{"lanes", lanes}});
+
+    CHECK(helper.get_slot_info(0).remaining_weight_g == Catch::Approx(750.0f));
+    CHECK(helper.get_slot_info(0).total_weight_g == Catch::Approx(-1.0f));
+
+    // A cleared lane_data record (post-#812 writes weight: 0) must not zero a live
+    // reading either.
+    for (int i = 0; i < 4; ++i)
+        lanes["lane" + std::to_string(i)] = {{"weight", 0}, {"spool_id", nullptr}};
+    helper.feed_afc_state({{"lanes", lanes}});
+    CHECK(helper.get_slot_info(0).remaining_weight_g == Catch::Approx(750.0f));
+}
+
 TEST_CASE("AFC clears the operation detail when its message empties",
           "[ams][afc][recovery]") {
     // operation_detail outranks the action- and print-state-derived strings in
