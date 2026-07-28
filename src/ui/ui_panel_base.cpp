@@ -102,15 +102,6 @@ void PanelBase::cleanup_observers() {
     observers_.clear();
 }
 
-void PanelBase::set_overlay_width() {
-    if (!panel_ || !parent_screen_) {
-        spdlog::warn("[{}] set_overlay_width() called before setup()", get_name());
-        return;
-    }
-
-    ui_set_overlay_width(panel_, parent_screen_);
-}
-
 // ============================================================================
 // HOT-RELOAD REBUILD
 // ============================================================================

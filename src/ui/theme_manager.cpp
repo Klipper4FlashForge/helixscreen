@@ -1017,21 +1017,27 @@ void theme_manager_register_responsive_spacing(lv_display_t* display) {
     const char* space_lg_str = lv_xml_get_const(nullptr, "space_lg");
     int32_t gap = space_lg_str ? std::atoi(space_lg_str) : 16; // fallback to 16px
 
-    // Calculate overlay widths
-    int32_t overlay_width = hor_res - nav_width - gap; // Standard: screen - nav - gap
-    int32_t overlay_width_full = hor_res - nav_width;  // Full: screen - nav (no gap)
+    // Two overlay widths, distinguished by what they mean rather than by how
+    // much space they leave. See include/overlay_class.h and
+    // prestonbrown/helixscreen#1178.
+    //   transient layer — the backdrop shows at the leading edge: you opened
+    //                     this over something and will return from it.
+    //   destination     — occludes the backdrop: a place you park, and whose
+    //                     drill-downs are part of it.
+    int32_t overlay_width_transient = hor_res - nav_width - gap;
+    int32_t overlay_width_destination = hor_res - nav_width;
 
-    char overlay_width_str[16];
-    char overlay_width_full_str[16];
-    snprintf(overlay_width_str, sizeof(overlay_width_str), "%d", overlay_width);
-    snprintf(overlay_width_full_str, sizeof(overlay_width_full_str), "%d", overlay_width_full);
+    char transient_str[16];
+    char destination_str[16];
+    snprintf(transient_str, sizeof(transient_str), "%d", overlay_width_transient);
+    snprintf(destination_str, sizeof(destination_str), "%d", overlay_width_destination);
 
-    lv_xml_register_const(scope, "overlay_panel_width", overlay_width_str);
-    lv_xml_register_const(scope, "overlay_panel_width_full", overlay_width_full_str);
+    lv_xml_register_const(scope, "overlay_width_transient", transient_str);
+    lv_xml_register_const(scope, "overlay_width_destination", destination_str);
 
-    spdlog::trace(
-        "[Theme] Layout: nav_width={}px, gap={}px, overlay_width={}px, overlay_width_full={}px",
-        nav_width, gap, overlay_width, overlay_width_full);
+    spdlog::trace("[Theme] Layout: nav_width={}px, gap={}px, overlay transient={}px "
+                  "destination={}px",
+                  nav_width, gap, overlay_width_transient, overlay_width_destination);
 }
 
 void theme_manager_refresh_layout_constants(lv_display_t* display) {
@@ -1123,16 +1129,16 @@ void theme_manager_refresh_layout_constants(lv_display_t* display) {
     const char* space_lg_str = lv_xml_get_const(nullptr, "space_lg");
     int32_t gap = space_lg_str ? std::atoi(space_lg_str) : 16;
 
-    int32_t overlay_width = hor_res - nav_width - gap;
-    int32_t overlay_width_full = hor_res - nav_width;
+    int32_t overlay_width_transient = hor_res - nav_width - gap;
+    int32_t overlay_width_destination = hor_res - nav_width;
 
-    char overlay_width_str[16];
-    char overlay_width_full_str[16];
-    snprintf(overlay_width_str, sizeof(overlay_width_str), "%d", overlay_width);
-    snprintf(overlay_width_full_str, sizeof(overlay_width_full_str), "%d", overlay_width_full);
+    char transient_str[16];
+    char destination_str[16];
+    snprintf(transient_str, sizeof(transient_str), "%d", overlay_width_transient);
+    snprintf(destination_str, sizeof(destination_str), "%d", overlay_width_destination);
 
-    lv_xml_update_const(scope, "overlay_panel_width", overlay_width_str);
-    lv_xml_update_const(scope, "overlay_panel_width_full", overlay_width_full_str);
+    lv_xml_update_const(scope, "overlay_width_transient", transient_str);
+    lv_xml_update_const(scope, "overlay_width_destination", destination_str);
 
     // Update breakpoint subject — use shared helper so rotation never
     // downgrades XXLarge to XLarge (previous bug: missing XLARGE_MAX check).
@@ -1144,8 +1150,9 @@ void theme_manager_refresh_layout_constants(lv_display_t* display) {
     }
 
     spdlog::info("[Theme] Layout refreshed after rotation: {}x{} → nav={}px, "
-                 "overlay={}px, overlay_full={}px (breakpoint={})",
-                 hor_res, ver_res, nav_width, overlay_width, overlay_width_full, to_int(bp));
+                 "overlay transient={}px destination={}px (breakpoint={})",
+                 hor_res, ver_res, nav_width, overlay_width_transient, overlay_width_destination,
+                 to_int(bp));
 }
 
 /**
@@ -1413,7 +1420,8 @@ static void theme_manager_register_semantic_colors(lv_xml_component_scope_t* sco
  * @param theme Theme data with properties
  */
 static void theme_manager_register_theme_properties(lv_xml_component_scope_t* scope,
-                                                    const helix::ThemeData& theme) {
+                                                    const helix::ThemeData& theme,
+                                                    bool dark_mode) {
     char buf[32];
 
     // Register border_radius and button_radius from size table + current breakpoint
@@ -1440,6 +1448,19 @@ static void theme_manager_register_theme_properties(lv_xml_component_scope_t* sc
 
     snprintf(buf, sizeof(buf), "%d", theme.properties.shadow_offset_y);
     lv_xml_register_const(scope, "shadow_offset_y", buf);
+
+    // The colour a cast shadow is drawn in. Fixed, not part of the themeable
+    // palette: a shadow is the absence of light in both light and dark themes,
+    // and the palette's 16 semantic slots are surfaces/text/accents. Exists so
+    // XML never has to hardcode a hex (see ui_xml/overlay_panel.xml).
+    lv_xml_register_const(scope, "shadow_cast", "0x000000");
+
+    // Opacity for the transient-overlay cast shadow (#1178). Mode-dependent
+    // because the same alpha reads very differently against the surface behind
+    // it: on dark themes the strip is already near-black and the shadow needs
+    // weight to register at all, while on light themes it lands on a white
+    // panel and the same value reads as a heavy black band.
+    lv_xml_register_const(scope, "overlay_shadow_opa", dark_mode ? "200" : "100");
 
     spdlog::debug("[Theme] Registered properties: border_radius={}px (size={}, {}), "
                   "border_width={}, border_opacity={}, shadow=({},{},{})",
@@ -1553,7 +1574,7 @@ void theme_manager_init(lv_display_t* display, bool use_dark_mode_param) {
 
     // Register theme properties (border_radius, etc.) - must be before static constants
     // so theme values override globals.xml defaults (first registration wins in LVGL)
-    theme_manager_register_theme_properties(scope, active_theme);
+    theme_manager_register_theme_properties(scope, active_theme, use_dark_mode);
 
     // Register static constants (colors, px, strings without dynamic suffixes)
     theme_manager_register_static_constants(scope);
@@ -1754,7 +1775,7 @@ void theme_manager_apply_theme(const helix::ThemeData& theme, bool dark_mode) {
 
     // Re-register XML constants: semantic colors, theme properties, and color pairs
     theme_manager_register_semantic_colors(nullptr, active_theme, effective_dark);
-    theme_manager_register_theme_properties(nullptr, active_theme);
+    theme_manager_register_theme_properties(nullptr, active_theme, effective_dark);
 
     // Update border_radius constant for live preview (register_const is first-wins,
     // so we need update_const for subsequent changes)
@@ -1767,6 +1788,10 @@ void theme_manager_apply_theme(const helix::ThemeData& theme, bool dark_mode) {
         snprintf(radius_buf, sizeof(radius_buf), "%d", radius_px);
         lv_xml_update_const(nullptr, "border_radius", radius_buf);
     }
+
+    // Same first-wins caveat as border_radius above: the shadow opacity differs
+    // between light and dark, so a live mode flip has to update it. #1178
+    lv_xml_update_const(nullptr, "overlay_shadow_opa", effective_dark ? "200" : "100");
 
     theme_manager_register_color_pairs(nullptr, effective_dark);
 
@@ -2412,22 +2437,26 @@ int32_t theme_manager_get_font_height(const lv_font_t* font) {
     return lv_font_get_line_height(font);
 }
 
-void ui_set_overlay_width(lv_obj_t* obj, lv_obj_t* screen) {
-    if (!obj || !screen) {
+void ui_set_overlay_width(lv_obj_t* obj, bool is_destination) {
+    if (!obj) {
         spdlog::warn("[Theme] ui_set_overlay_width: NULL pointer");
         return;
     }
 
-    // Use registered overlay_panel_width constant (consistent with XML overlays)
-    const char* width_str = lv_xml_get_const(nullptr, "overlay_panel_width");
+    const char* name = is_destination ? "overlay_width_destination" : "overlay_width_transient";
+    const char* width_str = lv_xml_get_const(nullptr, name);
     if (width_str) {
         lv_obj_set_width(obj, std::atoi(width_str));
-    } else {
-        // Fallback if theme not initialized: estimate from screen size
-        lv_coord_t screen_width = lv_obj_get_width(screen);
-        lv_obj_set_width(obj, screen_width - 94 - 16); // nav_width medium + gap fallback
-        spdlog::warn("[Theme] overlay_panel_width not registered, using fallback");
+        return;
     }
+
+    // Theme not initialized yet — estimate from the screen. Same derivation as
+    // theme_manager_register_responsive_spacing(), with medium-breakpoint
+    // fallbacks for nav_width and the gap.
+    lv_obj_t* screen = lv_obj_get_screen(obj);
+    lv_coord_t screen_width = screen ? lv_obj_get_width(screen) : 800;
+    lv_obj_set_width(obj, screen_width - 94 - (is_destination ? 0 : 16));
+    spdlog::warn("[Theme] {} not registered, using fallback", name);
 }
 
 /**
@@ -2956,8 +2985,8 @@ std::vector<std::string> theme_manager_validate_constant_sets(const char* direct
         static const std::unordered_set<std::string> cpp_registered_constants = {
             // Registered dynamically in theme_manager_register_responsive_spacing()
             "nav_width",
-            "overlay_panel_width",
-            "overlay_panel_width_full",
+            "overlay_width_transient",
+            "overlay_width_destination",
             // WIP wizard constants (user actively working on these)
             "wizard_footer_height",
             "wizard_button_width",

@@ -3,7 +3,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <component>
   <view name="performance_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full"
+        extends="overlay_panel"
         title="Performance" title_tag="Performance" bg_color="#screen_bg">
     <lv_obj name="overlay_content"
             width="100%" flex_grow="1" style_pad_top="0"

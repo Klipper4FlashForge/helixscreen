@@ -91,6 +91,14 @@ class PrintStatusPanel : public OverlayBase {
         return "Print Status";
     }
 
+    /// The longest-dwell screen in the app — users watch it for hours. A
+    /// "you will be leaving shortly" gap against the nav dock is wrong here, so
+    /// it renders full width and its drill-downs (fan control, temp graph,
+    /// exclude object, gcode viewer) inherit that. #1178
+    [[nodiscard]] bool is_destination() const override {
+        return true;
+    }
+
     /**
      * @brief Called when panel becomes visible
      *

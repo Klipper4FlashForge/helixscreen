@@ -337,6 +337,11 @@ void WidgetCatalogOverlay::show(lv_obj_t* parent_screen, const PanelWidgetConfig
         return;
     }
 
+    // 70% by design — the home grid stays visible behind the list while you drag
+    // a widget out of it. Neither navigation width class applies, so opt out of
+    // push-time width management (#1178).
+    NavigationManager::instance().set_overlay_width_unmanaged(overlay);
+
     // Initially hidden (NavigationManager will unhide during push)
     lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
 

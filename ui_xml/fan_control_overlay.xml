@@ -8,7 +8,7 @@
     <prop name="title" type="string" default="All Fans"/>
   </api>
   <view name="fan_control_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="$title" bg_color="#screen_bg">
+        extends="overlay_panel" title="$title" bg_color="#screen_bg">
     <!-- Main Content Area - minimal padding for maximum card space -->
     <lv_obj name="content_area"
             width="100%" flex_grow="1" style_pad_left="#space_md" style_pad_right="#space_md" style_pad_top="0"

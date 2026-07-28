@@ -4,7 +4,7 @@
 <!-- Notification History Panel - Review past notifications -->
 <component>
   <view name="notification_history_panel"
-        extends="lv_obj" width="#overlay_panel_width" height="100%" align="right_mid" style_bg_opa="255"
+        extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_bg_opa="255"
         style_bg_color="#screen_bg" style_border_width="0" style_pad_all="0" flex_flow="column">
     <!-- Header Bar (uses improved header_bar component) -->
     <header_bar name="overlay_header"

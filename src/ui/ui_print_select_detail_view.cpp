@@ -195,9 +195,6 @@ lv_obj_t* PrintSelectDetailView::create(lv_obj_t* parent_screen) {
         return nullptr;
     }
 
-    // Set width to fill space after nav bar
-    ui_set_overlay_width(overlay_root_, parent_screen_);
-
     // Set responsive padding for content area
     lv_obj_t* content_container = lv_obj_find_by_name(overlay_root_, "content_container");
     if (content_container) {

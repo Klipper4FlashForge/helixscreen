@@ -21,9 +21,9 @@
     <style name="invisible" opa="0"/>
   </styles>
   <!-- Print Status Panel - Active print monitoring with G-code 3D viewer -->
-  <!-- Uses same sizing as print_file_detail: overlay_panel_width_large, 5:4 flex ratio -->
+  <!-- Uses same sizing as print_file_detail: overlay_width_transient_large, 5:4 flex ratio -->
   <view name="print_status_panel"
-        extends="lv_obj" width="#overlay_panel_width" height="100%" align="right_mid" style_bg_opa="255"
+        extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_bg_opa="255"
         style_bg_color="#card_bg" style_pad_all="0" style_border_width="0" flex_flow="column" clickable="true">
     <!-- Header Bar with E-stop action button -->
     <header_bar name="overlay_header"

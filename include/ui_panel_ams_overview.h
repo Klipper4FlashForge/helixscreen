@@ -44,6 +44,12 @@ class AmsOverviewPanel : public PanelBase {
     [[nodiscard]] const char* get_name() const override {
         return "AMS Overview";
     }
+
+    /// Multi-unit filament overview — same reasoning as AmsPanel: a place
+    /// users park, so full width, and its drill-downs inherit that. #1178
+    [[nodiscard]] bool is_destination() const override {
+        return true;
+    }
     [[nodiscard]] const char* get_xml_component_name() const override {
         return "ams_overview_panel";
     }

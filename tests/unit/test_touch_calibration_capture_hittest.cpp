@@ -97,7 +97,7 @@ TEST_CASE_METHOD(XMLTestFixture,
     REQUIRE(root != nullptr);
     lv_obj_remove_flag(root, LV_OBJ_FLAG_HIDDEN);
 
-    // Force full-screen geometry (the runtime overlay_panel_width token is not
+    // Force full-screen geometry (the runtime overlay_width_transient token is not
     // registered in the unit-test XML scope; pin it deterministically).
     lv_obj_set_align(root, LV_ALIGN_TOP_LEFT);
     lv_obj_set_pos(root, 0, 0);

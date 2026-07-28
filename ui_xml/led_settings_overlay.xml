@@ -6,7 +6,7 @@
 <!-- Uses setting_* components for consistency with main settings panel -->
 <component>
   <view name="led_settings_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="LED Settings" title_tag="LED Settings"
+        extends="overlay_panel" title="LED Settings" title_tag="LED Settings"
         bg_color="#screen_bg">
     <!-- Content Area -->
     <lv_obj name="overlay_content"

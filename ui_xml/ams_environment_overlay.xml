@@ -14,7 +14,7 @@
 -->
 <component>
   <view name="ams_environment_overlay"
-        extends="overlay_panel" width="#overlay_panel_width" title="Filament Environment" title_tag="Filament Environment"
+        extends="overlay_panel" title="Filament Environment" title_tag="Filament Environment"
         bg_color="#screen_bg">
 
     <!-- Content area — no scroll, everything must fit -->

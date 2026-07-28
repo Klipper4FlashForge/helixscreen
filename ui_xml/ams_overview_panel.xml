@@ -9,7 +9,7 @@
        source of truth, can't drift. -->
   <!-- Overlay panel - right-aligned, row layout so right column spans full height -->
   <view name="ams_overview_panel"
-        extends="lv_obj" width="#overlay_panel_width" height="100%" align="right_mid" style_pad_all="0"
+        extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_pad_all="0"
         style_border_width="0" style_bg_opa="255" style_bg_color="#card_bg" scrollable="false"
         flex_flow="row" style_pad_gap="0">
     <!-- Left section: header + content (column) -->

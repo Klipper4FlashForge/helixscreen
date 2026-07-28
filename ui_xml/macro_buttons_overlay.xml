@@ -13,7 +13,7 @@
     <px name="macro_dropdown_width_large" value="330"/>
   </consts>
   <view name="macro_buttons_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="Macro Buttons" title_tag="Macro Buttons" bg_color="#screen_bg">
+        extends="overlay_panel" title="Macro Buttons" title_tag="Macro Buttons" bg_color="#screen_bg">
     <!-- Content Area - scrollable column of settings -->
     <lv_obj name="overlay_content"
             width="100%" flex_grow="1" style_pad_top="0" style_pad_left="#space_lg" style_pad_right="#space_lg" style_pad_bottom="#space_lg" scrollable="true" flex_flow="column">
