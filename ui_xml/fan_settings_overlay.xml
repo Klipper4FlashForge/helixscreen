@@ -6,7 +6,7 @@
 <!-- XML-First Design: Layout/styling here; C++ populates fan lists dynamically -->
 <component>
   <view name="fan_settings_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="Fans" title_tag="Fans"
+        extends="overlay_panel" title="Fans" title_tag="Fans"
         bg_color="#screen_bg">
     <!-- Content Area (cards own the horizontal inset via their side margins) -->
     <lv_obj name="overlay_content"

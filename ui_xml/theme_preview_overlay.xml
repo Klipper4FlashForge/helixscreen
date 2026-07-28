@@ -5,7 +5,7 @@
 <!-- Navigation: Settings → Display → Theme → (this) → Edit Colors (optional) -->
 <component>
   <view name="theme_preview_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="Theme" title_tag="Theme" bg_color="#screen_bg"
+        extends="overlay_panel" title="Theme" title_tag="Theme" bg_color="#screen_bg"
         hide_action_button="false" action_button_text="Apply" action_button_text_tag="Apply" action_button_callback="on_apply_theme_clicked"
         action_button_height="#button_height_sm" action_button_pad="#space_sm"
         action_button_disabled_subject="theme_apply_disabled" hide_action_button_2="false" action_button_2_text="Edit" action_button_2_text_tag="Edit"

@@ -5,7 +5,7 @@
 <!-- Step-progress wizard guiding users through moonraker-timelapse installation -->
 <component>
   <view name="timelapse_install_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="Setup Timelapse" bg_color="#screen_bg">
+        extends="overlay_panel" title="Setup Timelapse" bg_color="#screen_bg">
 
     <lv_obj name="overlay_content"
             width="100%" flex_grow="1" style_pad_all="#space_md" scrollable="true" flex_flow="column"

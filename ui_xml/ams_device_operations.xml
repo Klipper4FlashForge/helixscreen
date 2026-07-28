@@ -5,7 +5,7 @@
 <!-- Quick Actions, system info, and progressive disclosure sections -->
 <component>
   <view name="ams_device_operations"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="Multi-Filament System Management" title_tag="Multi-Filament System Management"
+        extends="overlay_panel" title="Multi-Filament System Management" title_tag="Multi-Filament System Management"
         bg_color="#screen_bg">
     <!-- Content Area (scrollable) -->
     <lv_obj name="overlay_content"

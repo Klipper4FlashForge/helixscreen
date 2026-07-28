@@ -523,6 +523,46 @@ Our theme makes `lv_obj` a pure layout container by default: transparent backgro
 | Hardcoded `style_pad_all="12"` | `style_pad_all="#space_lg"` | Always use design tokens |
 | Hardcoded `style_text_font="..."` | `<text_body>` | Use semantic typography components |
 | `style_bg_color="#2e3440"` | `style_bg_color="#screen_bg"` | Use color tokens, not hex values |
+| `width="#overlay_width_destination"` | *(no width attribute)* | Overlay width is resolved at push time |
+
+### Overlay width — don't set it
+
+An overlay is one of two things, and the difference is visible against the nav
+dock:
+
+| | width | looks like |
+|---|---|---|
+| **Destination** | `screen - nav` | flush against the dock; a place you park |
+| **Transient layer** | `screen - nav - space_lg` | a gap showing the dimmed backdrop; you'll go back |
+
+Settings is a destination, so everything you reach *inside* Settings is flush —
+Settings › Network is a sub-screen of Settings, not a layer over it. AMS and
+Print Status are destinations too: people live on those screens. Console, Bed
+Mesh, Motion and the calibration panels are transient layers — tools you open
+and return from.
+
+**Which one you get is not yours to choose in XML.** It depends on how the user
+reached the overlay, and the same overlay can be reached both ways: Fan Control
+opened from Controls is a transient layer, and opened from Settings › Fans it's
+a drill-down. `NavigationManager::push_overlay()` resolves it against the live
+navigation stack on every push, so just leave `width` off:
+
+```xml
+<view name="my_overlay" extends="overlay_panel" title="My Overlay" title_tag="My Overlay">
+```
+
+Two things you *can* declare, both in C++:
+
+- **A long-dwell screen** that should be a destination from every entry point:
+  override `IPanelLifecycle::is_destination()` to return `true`. See
+  `include/ui_panel_ams.h`.
+- **A deliberately odd width** that is neither class — `widget_catalog_overlay`
+  is `width="70%"` so the home grid stays visible behind it. Set the width in
+  XML and call `NavigationManager::set_overlay_width_unmanaged()` once after
+  creating the widget, or push will overwrite it.
+
+`scripts/check_overlay_width.py` fails the build if XML names a width class.
+Background: `include/overlay_class.h` and prestonbrown/helixscreen#1178.
 
 ---
 

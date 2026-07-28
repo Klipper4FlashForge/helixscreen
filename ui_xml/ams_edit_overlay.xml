@@ -50,7 +50,7 @@
     <px name="swatch_col_height_xxlarge" value="230"/>
   </consts>
   <view name="ams_edit_overlay"
-        extends="overlay_panel" width="#overlay_panel_width"
+        extends="overlay_panel"
         title="Edit Slot" title_tag="Edit Slot"
         hide_action_button="false"
         action_button_text="Save" action_button_text_tag="Save"

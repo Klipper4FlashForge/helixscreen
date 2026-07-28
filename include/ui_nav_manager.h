@@ -40,6 +40,20 @@ enum class PanelId {
     Advanced,    ///< Panel 5: Advanced
     Count        ///< Total number of panels
 };
+
+/**
+ * @brief Whether overlays pushed from a nav root are destinations by default.
+ *
+ * Settings is the one root users navigate *within* rather than launch things
+ * from: Settings > Network is a sub-screen of Settings, not a layer over it, so
+ * it renders at destination width (iOS push semantics). Every other root
+ * launches tools you return from, which get the gapped transient width.
+ *
+ * See include/overlay_class.h and prestonbrown/helixscreen#1178.
+ */
+constexpr bool nav_root_is_destination(PanelId id) {
+    return id == PanelId::Settings;
+}
 } // namespace helix
 
 // Legacy aliases for backward compatibility
@@ -340,6 +354,29 @@ class NavigationManager {
     void push_overlay_zoom_from(lv_obj_t* overlay_panel, lv_area_t source_rect);
 
     /**
+     * @brief Re-apply every live overlay's width after a resolution change
+     *
+     * Overlays cache their root widget across show/hide cycles, so a width
+     * applied at push time goes stale when the canvas resizes (rotation, or an
+     * Android navigation bar insetting the LVGL surface — #941). Each overlay's
+     * resolved class is remembered, so this re-derives the pixel width from the
+     * freshly-registered constants rather than guessing it back from the
+     * current width. Call after theme_manager_refresh_layout_constants(). #1178
+     */
+    void reapply_overlay_widths();
+
+    /**
+     * @brief Exempt an overlay from push-time width management
+     *
+     * For overlays whose width is a deliberate design choice rather than one of
+     * the two navigation classes — widget_catalog_overlay is 70% so the grid
+     * stays visible behind it while you drag a widget out of the list. Call
+     * once after creating the widget; push_overlay() then leaves its width
+     * alone. #1178
+     */
+    void set_overlay_width_unmanaged(lv_obj_t* overlay);
+
+    /**
      * @brief Register a callback to be called when an overlay is closed
      *
      * The callback is invoked when the overlay is popped from the stack
@@ -516,6 +553,26 @@ class NavigationManager {
 
     // Event callbacks
     static void backdrop_click_event_cb(lv_event_t* e);
+
+    /**
+     * @brief Resolve and apply an overlay's width class at push time
+     *
+     * Destinations render full width, transient layers render gapped. Which one
+     * an overlay gets depends on how the user reached it — the same
+     * fan_control_overlay is a transient layer from Controls and a drill-down
+     * from Settings > Fans — so this cannot live in XML. See
+     * include/overlay_class.h and prestonbrown/helixscreen#1178.
+     *
+     * Must be called BEFORE the overlay is pushed onto panel_stack_, while
+     * panel_stack_.back() is still the widget beneath it.
+     *
+     * @param overlay          Widget being pushed.
+     * @param is_first_overlay True when nothing but the root panel is on the
+     *                         stack, so the class comes from the nav root.
+     * @return resolved class (true = destination), also stored in
+     *         overlay_is_destination_.
+     */
+    bool apply_overlay_width(lv_obj_t* overlay, bool is_first_overlay);
     static void nav_button_clicked_cb(lv_event_t* event);
 
     // Active panel tracking
@@ -562,6 +619,16 @@ class NavigationManager {
 
     // Zoom animation source rects (overlay → source rect for reverse animation)
     std::unordered_map<lv_obj_t*, lv_area_t> zoom_source_rects_;
+
+    // Resolved width class per overlay (overlay → is_destination). Written by
+    // apply_overlay_width() on every push, read by the next push to inherit and
+    // by Application's resize handler to re-apply the right width without
+    // guessing from the current pixel width. #1178
+    std::unordered_map<lv_obj_t*, bool> overlay_is_destination_;
+
+    // Overlays exempt from push-time width management (deliberate custom
+    // widths, e.g. the 70% widget catalog). #1178
+    std::unordered_set<lv_obj_t*> overlay_width_unmanaged_;
 
     // Widgets that already have the LV_EVENT_DELETE scrub hook attached.
     // Prevents double-registering the callback and is itself scrubbed on delete.

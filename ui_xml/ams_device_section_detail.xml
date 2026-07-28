@@ -5,7 +5,7 @@
 <!-- Shows detailed controls for a specific device section (e.g., Speed Settings, Calibration) -->
 <component>
   <view name="ams_device_section_detail"
-        extends="overlay_panel" width="#overlay_panel_width_full"
+        extends="overlay_panel"
         title="Section Detail" title_tag="Device Section" bg_color="#screen_bg">
     <!-- Content Area (scrollable) -->
     <lv_obj name="overlay_content"

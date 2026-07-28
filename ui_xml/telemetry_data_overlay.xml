@@ -5,7 +5,7 @@
 <!-- Lets users see exactly what anonymous data would be sent -->
 <component>
   <view name="telemetry_data_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="Telemetry Data" title_tag="Telemetry Data"
+        extends="overlay_panel" title="Telemetry Data" title_tag="Telemetry Data"
         bg_color="#screen_bg">
     <!-- Content Area -->
     <lv_obj name="overlay_content"

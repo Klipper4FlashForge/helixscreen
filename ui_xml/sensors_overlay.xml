@@ -6,7 +6,7 @@
 <!-- XML-First Design: Layout/styling here; C++ populates sensor lists dynamically -->
 <component>
   <view name="sensors_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="Sensors" title_tag="Sensors"
+        extends="overlay_panel" title="Sensors" title_tag="Sensors"
         bg_color="#screen_bg">
     <!-- Content Area -->
     <lv_obj name="overlay_content"

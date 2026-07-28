@@ -85,6 +85,15 @@ class AmsPanel : public PanelBase {
         return "AMS Panel";
     }
 
+    /// Filament management is a place users park, not a tool they dip into —
+    /// full width, and its drill-downs (edit spool, environment, device
+    /// operations) inherit that. Declared here rather than at the push sites
+    /// because this panel is reachable from Home, the Printer Manager overlay
+    /// and the AMS Overview. #1178
+    [[nodiscard]] bool is_destination() const override {
+        return true;
+    }
+
     [[nodiscard]] const char* get_xml_component_name() const override {
         return "ams_panel";
     }

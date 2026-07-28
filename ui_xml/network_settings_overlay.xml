@@ -7,7 +7,7 @@
   <!-- NOTE: All subjects for this overlay are managed by C++ (NetworkSettingsOverlay::init_subjects).
        Do NOT declare subjects here - XML declarations shadow C++ subjects [L046]. -->
   <view name="network_settings_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="Network Settings" title_tag="Network Settings" bg_color="#screen_bg">
+        extends="overlay_panel" title="Network Settings" title_tag="Network Settings" bg_color="#screen_bg">
     <!-- Two-Column Content Area -->
     <lv_obj name="content_area"
             width="100%" flex_grow="1" style_pad_all="#space_lg" style_pad_gap="#space_lg" scrollable="false"

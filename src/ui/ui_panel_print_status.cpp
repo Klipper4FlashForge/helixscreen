@@ -705,7 +705,8 @@ lv_obj_t* PrintStatusPanel::create(lv_obj_t* parent) {
 
     spdlog::debug("[{}] Setting up panel...", get_name());
 
-    // Panel width is set via XML using #overlay_panel_width_large (same as print_file_detail)
+    // Width comes from NavigationManager::push_overlay() — this panel declares
+    // is_destination() so it renders full width from every entry point (#1178).
     // Use standard overlay panel setup for header/content/back button
     ui_overlay_panel_setup_standard(overlay_root_, parent_screen_, "overlay_header",
                                     "overlay_content");

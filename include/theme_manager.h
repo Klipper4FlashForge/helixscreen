@@ -609,15 +609,21 @@ void theme_manager_apply_bg_color(lv_obj_t* obj, const char* base_name,
 int32_t theme_manager_get_font_height(const lv_font_t* font);
 
 /**
- * @brief Set overlay widget width to fill space after nav bar
+ * @brief Set an overlay's width from its resolved class
  *
- * Utility for overlay panels/widgets that use x="#nav_width" positioning.
- * Sets width to (screen_width - nav_width).
+ * Destinations fill the space beside the nav dock (screen - nav); transient
+ * layers leave a space_lg gap so the dimmed backdrop shows at the leading edge.
+ * See include/overlay_class.h for what the two mean and
+ * prestonbrown/helixscreen#1178 for why the choice is not an XML attribute.
+ *
+ * NavigationManager::apply_overlay_width() is the normal caller — it resolves
+ * the class on every push. Call this directly only for overlays created outside
+ * the push path.
  *
  * @param obj Widget to resize (typically an overlay panel or detail view)
- * @param screen Parent screen to calculate width from
+ * @param is_destination true for destination width, false for transient
  */
-void ui_set_overlay_width(lv_obj_t* obj, lv_obj_t* screen);
+void ui_set_overlay_width(lv_obj_t* obj, bool is_destination);
 
 /**
  * @brief Get spacing value from unified space_* system

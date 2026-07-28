@@ -6,7 +6,7 @@
 <component>
   <!-- overlay_bg is a theme-aware pair defined in globals.xml -->
   <view name="timelapse_settings_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="Timelapse Settings" title_tag="Timelapse Settings" bg_color="#screen_bg">
+        extends="overlay_panel" title="Timelapse Settings" title_tag="Timelapse Settings" bg_color="#screen_bg">
     <!-- Content Area - no padding, rows handle their own -->
     <lv_obj name="overlay_content"
             width="100%" flex_grow="1" style_pad_top="0" style_pad_left="0" style_pad_right="0" style_pad_bottom="#space_lg" scrollable="true" flex_flow="column">

@@ -5,7 +5,7 @@
 <!-- Shows branding, version info, update controls, and system details -->
 <component>
   <view name="about_settings_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="About" title_tag="About"
+        extends="overlay_panel" title="About" title_tag="About"
         bg_color="#screen_bg">
     <!-- Content Area -->
     <lv_obj name="overlay_content"
