@@ -44,6 +44,20 @@ bool AmsLoadingErrorModal::show(lv_obj_t* parent, const std::string& error_messa
     return true;
 }
 
+void AmsLoadingErrorModal::dismiss_silently() {
+    if (!is_visible()) {
+        return;
+    }
+
+    spdlog::debug("[AmsLoadingErrorModal] Programmatic dismiss - suppressing dismiss callback");
+    silent_dismiss_ = true;
+    hide();
+    // hide() can return before reaching on_hide() (e.g. an exit animation is
+    // already running), so clear here too: a flag left armed would swallow the
+    // next user dismissal and its fault-clearing gcode.
+    silent_dismiss_ = false;
+}
+
 // ============================================================================
 // Modal Hooks
 // ============================================================================
@@ -73,11 +87,14 @@ void AmsLoadingErrorModal::on_hide() {
     // This catches: Close button, X button, Cancel, backdrop click, ESC key.
     // The dismiss callback clears AFC error state (RESET_FAILURE + AFC_CLEAR_MESSAGE)
     // so the error dialog doesn't reappear immediately.
-    if (!retry_in_progress_ && dismiss_callback_) {
+    // dismiss_silently() suppresses the same way Retry does: the error resolved
+    // on its own, so there is no backend fault left to clear.
+    if (!retry_in_progress_ && !silent_dismiss_ && dismiss_callback_) {
         spdlog::debug("[AmsLoadingErrorModal] Firing dismiss callback");
         dismiss_callback_();
     }
     retry_in_progress_ = false;
+    silent_dismiss_ = false;
     spdlog::debug("[AmsLoadingErrorModal] on_hide()");
 }
 

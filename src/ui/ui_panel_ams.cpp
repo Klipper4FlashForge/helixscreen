@@ -173,6 +173,11 @@ void AmsPanel::init_subjects() {
     // (path canvas heat glow and error modal). Step progress is handled by sidebar_.
     action_observer_ = observe_int_sync<AmsPanel>(
         AmsState::instance().get_ams_action_subject(), this, [](AmsPanel* self, int action_int) {
+            // Record the previous value before any early return so the
+            // ERROR-exit edge below stays accurate across ticks that bail out.
+            const int prev_action = self->prev_ams_action_;
+            self->prev_ams_action_ = action_int;
+
             if (!self->subjects_initialized_ || !self->panel_)
                 return;
             auto action = static_cast<AmsAction>(action_int);
@@ -197,8 +202,53 @@ void AmsPanel::init_subjects() {
             } else {
                 // Error cleared — reset cooldown so next error shows immediately
                 self->error_modal_dismiss_time_ = {};
+
+                // The fault resolved without the dialog being touched (recovered
+                // from the console, another client, or a macro), so its
+                // Resume/Eject/Recover buttons no longer describe anything real
+                // (#1185). Edge only: prev_ams_action_ starts at -1, which never
+                // equals ERROR, so the observer's first tick can't trigger this.
+                if (prev_action == static_cast<int>(AmsAction::ERROR)) {
+                    self->dismiss_error_modal_silently("AMS action left ERROR");
+                }
             }
         });
+
+    // A resumed print is the second signal that a filament fault is over. The
+    // user may have recovered by a route this panel never observes, leaving the
+    // dialog up for the rest of the job (#1185).
+    //
+    // Edge INTO PRINTING, never a level: an error raised while the print is
+    // already running must stay on screen. helix::is_active_print_state() and
+    // print_start_nav_should_navigate() are deliberately not used here — they
+    // count PAUSED as active, so a PAUSED -> PRINTING resume is not an edge
+    // under them, and an AFC fault normally pauses the print, which makes that
+    // resume the exact transition this needs to catch.
+    //
+    // The lifetime token is mandatory: PrinterState is a separate singleton and
+    // its subjects can be torn down while this guard is still alive (#705).
+    print_state_observer_ = observe_int_sync<AmsPanel>(
+        printer_state_.get_print_state_enum_subject(), this,
+        [](AmsPanel* self, int print_state) {
+            // Record before the teardown guard so the edge stays accurate
+            // across ticks that bail out, matching the action observer above.
+            const int prev_state = self->prev_print_state_;
+            self->prev_print_state_ = print_state;
+
+            if (!self->subjects_initialized_)
+                return;
+
+            // First tick is the observer syncing the current value, not a change.
+            if (prev_state < 0)
+                return;
+
+            constexpr int printing = static_cast<int>(helix::PrintJobState::PRINTING);
+            if (print_state != printing || prev_state == printing)
+                return;
+
+            self->dismiss_error_modal_silently("print resumed");
+        },
+        printer_state_.get_static_print_subjects_lifetime());
 
     current_slot_observer_ = observe_int_sync<AmsPanel>(
         AmsState::instance().get_current_slot_subject(), this, [](AmsPanel* self, int slot) {
@@ -499,8 +549,13 @@ void AmsPanel::clear_panel_reference() {
     path_segment_observer_.reset();
     path_topology_observer_.reset();
     slot_path_observers_.clear();
+    print_state_observer_.reset();
     backend_count_observer_.reset();
     external_spool_observer_.reset();
+
+    // Re-arm the edge sentinels: a rebuilt panel has observed nothing yet.
+    prev_ams_action_ = -1;
+    prev_print_state_ = -1;
 
     spdlog::debug("[AMS Panel] Cleared all widget references");
 }
@@ -1651,6 +1706,18 @@ void AmsPanel::show_loading_error_modal() {
             }
         }
     });
+}
+
+void AmsPanel::dismiss_error_modal_silently(const char* reason) {
+    if (!error_modal_ || !error_modal_->is_visible()) {
+        return;
+    }
+
+    spdlog::info("[{}] Auto-dismissing filament error dialog: {}", get_name(), reason);
+    // dismiss_silently() skips the dismiss callback, which would send
+    // fault-clearing gcode for a fault that is already gone and arm the 3s
+    // re-show cooldown against a genuinely new error (#1185).
+    error_modal_->dismiss_silently();
 }
 
 // ============================================================================
