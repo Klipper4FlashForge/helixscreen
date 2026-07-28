@@ -1027,6 +1027,26 @@ its next load with "LOAD TRIGGER NOT TRIGGERED" until advanced forward again. Th
 the retract ran the full bowden without clearing — most likely a snapped fragment in the hub,
 which no lane reset can ever clear.
 
+**`AFC_LANE_RESET`'s toolhead guard does not actually stop it.** In v1.2.0 (`a06f14d`) the
+hub-clear guard has a `return`; the toolhead guard does not:
+
+```python
+if not CUR_HUB.state:
+    ...AFC_error("Hub is already clear while trying to reset '{lane}'")
+    return                                  # returns
+
+if (tool_load := self.get_current_lane_obj()) is not None:
+    ...AFC_error("Toolhead is loaded with '{name}'...")
+                                            # NO return — falls through and moves filament
+```
+
+So AFC logs the refusal and then retracts the lane anyway, while the extruder still grips the
+filament. Reported as [AFCProject/AFC-Klipper-Add-On#803](https://github.com/AFCProject/AFC-Klipper-Add-On/issues/803),
+open as of 2026-07-28.
+
+*`can_recover_lane_position()`'s `filament_loaded` check is therefore load-bearing safety, not a
+politeness mirror of an upstream guard.* Do not remove it as redundant.
+
 **A filament swap resets lane identity when `remember_spool` is false.** AFC re-applies
 `[afc] default_material_type` and `full_weight`, discarding material, colour and weight. Lanes
 carrying a Spoolman `spool_id` survive; lanes without one silently revert. HelixScreen's

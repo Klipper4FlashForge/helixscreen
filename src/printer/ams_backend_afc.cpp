@@ -2897,10 +2897,17 @@ void AmsBackendAfc::clear_slot_override(int slot_index) {
 bool AmsBackendAfc::can_recover_lane_position(int slot_index) const {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    // Mirrors cmd_AFC_LANE_RESET's own guards (AFC_functions.py). It retracts
-    // filament from the bowden back to the hub, so it needs the hub occupied —
-    // upstream rejects with "Hub is already clear while trying to reset
-    // '<lane>'" otherwise — and it refuses while the toolhead is loaded.
+    // cmd_AFC_LANE_RESET (AFC_functions.py) retracts filament from the bowden
+    // back to the hub, so it needs the hub occupied — upstream rejects with
+    // "Hub is already clear while trying to reset '<lane>'" otherwise.
+    //
+    // SAFETY, NOT POLITENESS: the toolhead check below is NOT mirroring an
+    // upstream guard. Upstream's toolhead guard is missing its `return` — it
+    // logs "Toolhead is loaded with '<lane>'" and then performs the reset moves
+    // anyway, retracting the lane while the extruder still grips the filament.
+    // Confirmed present in v1.2.0 (a06f14d); reported as
+    // AFCProject/AFC-Klipper-Add-On#803, still open. Do not remove this check as
+    // redundant with the firmware's — the firmware does not actually stop.
     //
     // The hub sensor is the only signal that tracks hub occupancy. The per-lane
     // loaded_to_hub field is latched at prep and never updated: it reads true on
