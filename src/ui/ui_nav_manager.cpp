@@ -1402,6 +1402,17 @@ bool NavigationManager::apply_overlay_width(lv_obj_t* overlay, bool is_first_ove
     // next.
     ui_set_overlay_width(overlay, is_destination);
 
+    // LV_STATE_USER_1 == "this is a transient layer". overlay_panel.xml hangs a
+    // leading-edge treatment off it so the panel reads as something sitting ON
+    // TOP of what is behind it, rather than as a seam between two pieces of
+    // chrome — the reporter's actual objection in #1178. Only the state bit is
+    // set here; what it looks like stays in XML.
+    if (is_destination) {
+        lv_obj_remove_state(overlay, LV_STATE_USER_1);
+    } else {
+        lv_obj_add_state(overlay, LV_STATE_USER_1);
+    }
+
     spdlog::trace("[NavigationManager] Overlay {} width class: {}", (void*)overlay,
                   is_destination ? "destination" : "transient");
     return is_destination;

@@ -44,9 +44,29 @@
        when the navigation says so. Born-gapped rather than unset because
        setup() runs before the push and several panels measure their own layout
        there. See include/overlay_class.h and prestonbrown/helixscreen#1178. -->
+  <!-- A transient layer casts a shadow to its LEFT so it reads as sitting ON TOP
+       of what is behind it, rather than as a seam between the nav dock and the
+       panel (prestonbrown/helixscreen#1178). Applied only in LV_STATE_USER_1,
+       which NavigationManager::apply_overlay_width() sets for transient layers
+       and clears for destinations — a destination is flush with the dock and has
+       nothing to cast onto.
+
+       offset_x pushes the blur left; spread stays 0 so it does not bleed under
+       the dock at narrower breakpoints. opa 200 stops short of full black on
+       purpose: bottoming out reads as a hard edge on a light theme, where the
+       panel behind is pale.
+
+       Deliberately NOT bound to the theme's #shadow_opa — that token governs
+       decorative elevation and is 0 in themes that switch shadows off. This is a
+       navigation affordance: without it the gap reads as a rendering artifact. -->
+  <styles>
+    <style name="transient_edge" shadow_width="20" shadow_offset_x="-10" shadow_spread="0"
+           shadow_color="#shadow_cast" shadow_opa="200"/>
+  </styles>
   <view extends="lv_obj"
         width="#overlay_width_transient" height="100%" align="right_mid" style_pad_all="0" style_border_width="0" style_bg_opa="255"
         style_bg_color="$bg_color" scrollable="false" flex_flow="column">
+    <style name="transient_edge" selector="user_1"/>
     <!-- Header Bar -->
     <header_bar name="overlay_header"
                 title="$title" title_tag="$title_tag" action_button_text="$action_button_text" action_button_text_tag="$action_button_text_tag" hide_action_button="$hide_action_button"

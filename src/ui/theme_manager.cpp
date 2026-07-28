@@ -1448,6 +1448,12 @@ static void theme_manager_register_theme_properties(lv_xml_component_scope_t* sc
     snprintf(buf, sizeof(buf), "%d", theme.properties.shadow_offset_y);
     lv_xml_register_const(scope, "shadow_offset_y", buf);
 
+    // The colour a cast shadow is drawn in. Fixed, not part of the themeable
+    // palette: a shadow is the absence of light in both light and dark themes,
+    // and the palette's 16 semantic slots are surfaces/text/accents. Exists so
+    // XML never has to hardcode a hex (see ui_xml/overlay_panel.xml).
+    lv_xml_register_const(scope, "shadow_cast", "0x000000");
+
     spdlog::debug("[Theme] Registered properties: border_radius={}px (size={}, {}), "
                   "border_width={}, border_opacity={}, shadow=({},{},{})",
                   radius_px, theme.properties.border_radius_size,
