@@ -357,9 +357,19 @@ void A::f() {
     # The strongest test in the file: a real file, a real fix, a known count.
     # Synthetic fixtures only prove the detector matches what its author
     # imagined; this proves it matches what actually shipped broken.
-    run git show 'd54a943e5^:src/ui/ui_spool_wizard.cpp'
-    [ "$status" -eq 0 ]
-    printf '%s\n' "$output" > "$FIXTURE_DIR/spool_wizard_pre.cpp"
+    #
+    # The pre-fix source is vendored rather than read back with
+    # `git show d54a943e5^:src/ui/ui_spool_wizard.cpp`: CI checks out at
+    # fetch-depth 1, so that object does not exist on the runner and the test
+    # failed on the fetch, never reaching the detector. Vendoring also keeps it
+    # working in worktrees, archive exports, and any shallow clone.
+    #
+    # Stored .cpp.txt and copied to .cpp here on purpose. The gate filters
+    # explicit paths by extension, so scanning the fixture in place would report
+    # zero sites and exit 0 — a silent pass. The .txt suffix also keeps a
+    # deliberately-broken file out of clang-format and the src/ tree scans.
+    cp "$BATS_TEST_DIRNAME/fixtures/ui_spool_wizard_pre_d54a943e5.cpp.txt" \
+       "$FIXTURE_DIR/spool_wizard_pre.cpp"
     run python3 "$GATE" --list "$FIXTURE_DIR/spool_wizard_pre.cpp"
     [ "$status" -eq 1 ]
     [[ "$output" == *'TOTAL       9'* ]]
