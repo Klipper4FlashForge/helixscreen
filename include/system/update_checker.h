@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include "async_lifetime_guard.h"
 #include "lvgl.h"
 #include "subject_managed_panel.h"
 
@@ -516,4 +517,13 @@ class UpdateChecker {
 
     SubjectManager subjects_;
     bool subjects_initialized_{false};
+
+    /// Expires the status/progress callbacks queued from the check and download
+    /// worker threads. Declared after `subjects_` so reverse-order member
+    /// destruction invalidates it before the subjects it protects; also
+    /// invalidated by shutdown(), which is where this class tears its subjects
+    /// down (it has no deinit_subjects()). The in-lambda `subjects_initialized_`
+    /// tests are not a substitute — reading that flag is itself a member access
+    /// on a possibly-freed `this` (#1165, #1146).
+    helix::AsyncLifetimeGuard async_lifetime_;
 };

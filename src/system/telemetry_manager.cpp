@@ -446,6 +446,11 @@ void TelemetryManager::shutdown() {
         send_thread_.join();
     }
 
+    // Expire the deferred subject write before the subject goes away (#1165).
+    // Unconditional: the callback must be dropped even on the LVGL-already-torn-
+    // down path, where deinit_all() is skipped but the subject is just as dead.
+    async_lifetime_.invalidate();
+
     // Deinitialize LVGL subjects (skip if LVGL already torn down)
     if (subjects_initialized_ && lv_is_initialized()) {
         subjects_.deinit_all();
@@ -480,8 +485,9 @@ void TelemetryManager::set_enabled(bool enabled) {
     // creates/deletes LVGL timers above. enabled_ is atomic for safe reads
     // from any thread, but the function itself is LVGL-thread-only.
     if (subjects_initialized_) {
-        helix::ui::queue_update(
-            [this, enabled]() { lv_subject_set_int(&enabled_subject_, enabled ? 1 : 0); });
+        async_lifetime_.defer("TelemetryManager::set_enabled", [this, enabled]() {
+            lv_subject_set_int(&enabled_subject_, enabled ? 1 : 0);
+        });
     }
 
     // Persist to settings.json via Config (single source of truth).

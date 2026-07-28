@@ -224,6 +224,14 @@ class WiFiManager {
 
     std::unique_ptr<WifiBackend> backend_;
 
+    /// Expires the backend-swap callback deferred out of the NetworkManager init
+    /// worker thread. Declared after `backend_` so reverse-order member
+    /// destruction expires the guard before the backend that callback touches.
+    /// Like MoonrakerAPI, this class has no deinit_subjects() — it owns no
+    /// subjects — so the destructor really is the only teardown point, and the
+    /// guard's own dtor covers it (#1165).
+    helix::AsyncLifetimeGuard async_lifetime_;
+
     // Self-reference for async callback safety
     // Weak pointers in async callbacks can safely check if manager still exists
     std::shared_ptr<WiFiManager> self_;

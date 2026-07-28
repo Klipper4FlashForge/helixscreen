@@ -725,6 +725,9 @@ void UpdateChecker::shutdown() {
 
     // Cleanup subjects
     if (subjects_initialized_) {
+        // Expire any worker-thread callback still queued on the UpdateQueue
+        // before the subjects it writes are torn down (#1165, #1146).
+        async_lifetime_.invalidate();
         subjects_.deinit_all();
         subjects_initialized_ = false;
     }
@@ -1169,7 +1172,7 @@ void UpdateChecker::report_download_status(DownloadStatus status, int progress,
         download_error_ = error;
     }
 
-    helix::ui::queue_update([this, status, progress, text]() {
+    async_lifetime_.defer("UpdateChecker::set_download_status", [this, status, progress, text]() {
         if (subjects_initialized_) {
             lv_subject_set_int(&download_status_subject_, static_cast<int>(status));
             lv_subject_set_int(&download_progress_subject_, progress);
@@ -2403,7 +2406,7 @@ void UpdateChecker::check_for_updates(Callback callback) {
 
     // Update subjects on LVGL thread (check_for_updates is public, could be called from any thread)
     if (subjects_initialized_) {
-        helix::ui::queue_update([this]() {
+        async_lifetime_.defer("UpdateChecker::check_for_updates", [this]() {
             lv_subject_set_int(&status_subject_, static_cast<int>(Status::Checking));
             lv_subject_copy_string(&version_text_subject_, lv_tr("Checking..."));
         });
@@ -2424,7 +2427,7 @@ void UpdateChecker::check_for_updates(Callback callback) {
         status_ = Status::Error;
         error_message_ = "system busy";
         if (subjects_initialized_) {
-            helix::ui::queue_update([this]() {
+            async_lifetime_.defer("UpdateChecker::check_for_updates_spawn_failed", [this]() {
                 lv_subject_set_int(&status_subject_, static_cast<int>(Status::Error));
             });
         }
@@ -3102,7 +3105,8 @@ void UpdateChecker::report_result(Status status, std::optional<ReleaseInfo> info
 
     // Dispatch to LVGL thread for subject updates and callback
     spdlog::debug("[UpdateChecker] Dispatching to LVGL thread");
-    helix::ui::queue_update([this, callback, status, info, error]() {
+    async_lifetime_.defer("UpdateChecker::do_check_complete", [this, callback, status, info,
+                                                               error]() {
         spdlog::debug("[UpdateChecker] Executing on LVGL thread");
 
         // Update LVGL subjects

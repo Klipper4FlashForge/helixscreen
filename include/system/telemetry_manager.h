@@ -58,6 +58,7 @@
 
 #include "ui_observer_guard.h"
 
+#include "async_lifetime_guard.h"
 #include "lvgl.h"
 #include "memory_monitor.h"
 #include "subject_managed_panel.h"
@@ -1044,6 +1045,12 @@ class TelemetryManager {
 
     /// RAII cleanup for the enabled subject
     SubjectManager subjects_;
+
+    /// Expires the deferred `enabled_subject_` write. Declared after `subjects_`
+    /// so reverse-order member destruction invalidates it before the subject it
+    /// protects; also invalidated by shutdown(), which is where the subject is
+    /// actually torn down (#1165, #1146).
+    helix::AsyncLifetimeGuard async_lifetime_;
 
     /// Guards against double-initialization of subjects
     bool subjects_initialized_{false};

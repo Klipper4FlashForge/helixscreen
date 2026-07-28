@@ -112,9 +112,11 @@ void WiFiManager::handle_init_failed(bool silent, const std::string& msg) {
         // init_thread_.join() on the currently-executing thread, producing
         // std::system_error(resource_deadlock_would_occur). Defer the swap to
         // the main/UI thread via UpdateQueue so the init thread can unwind
-        // before stop() joins it. WiFiManager is a process singleton owned by
-        // g_shared_wifi_manager, so capturing `this` is safe.
-        helix::ui::queue_update("WiFiManager::fallback_to_wpa_supplicant", [this, silent]() {
+        // before stop() joins it. The shared instance is owned by
+        // g_shared_wifi_manager for the life of the process, but tests build
+        // their own on the stack, so the swap is routed through the guard rather
+        // than relying on that (#1165).
+        async_lifetime_.defer("WiFiManager::fallback_to_wpa_supplicant", [this, silent]() {
             if (!backend_) {
                 return;
             }
