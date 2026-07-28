@@ -2026,7 +2026,12 @@ TEST_CASE("repair_release_info: a correct file is not rewritten",
 
     REQUIRE(UpdateChecker::repair_release_info(tmp) == UpdateChecker::ReleaseInfoRepair::NotNeeded);
 
-    CHECK(std::filesystem::last_write_time(path) == backdated);
+    // Extra parens on purpose: they suppress Catch2's expression decomposition,
+    // which would otherwise try to stream a file_time_type. libc++ gives that
+    // clock an __int128 rep, and ostream has no unambiguous operator<< for it —
+    // the macOS build fails to compile, not to assert. Comparing as a plain bool
+    // keeps the check and costs only the operand values in the failure message.
+    CHECK((std::filesystem::last_write_time(path) == backdated));
     CHECK(read_all(path) == original);
     // And no temp file was left lying next to it.
     CHECK_FALSE(std::filesystem::exists(path + ".tmp"));
