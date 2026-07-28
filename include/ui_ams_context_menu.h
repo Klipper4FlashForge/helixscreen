@@ -191,6 +191,28 @@ class AmsContextMenu : public ContextMenu {
     // write at the previous spool. An empty lane's stale metadata is cosmetic.
     static bool should_show_clear_spool(const SlotInfo& slot);
 
+    // Pure: selects the Unload button's operation for the open slot.
+    //
+    // Order encodes a deliberate priority ruling (see call site in on_created()):
+    // a confidently-attributed stranded lane outranks Eject, but an unattributed
+    // one (some backends share one physical sensor across every lane on a unit,
+    // so "can recover" can be true for every lane at once with no way to say
+    // whose filament tripped it) defers to Eject so a seated lane keeps its
+    // Eject button — the unattributed Recover only catches lanes with nothing
+    // left to eject.
+    //
+    // @param toolhead_unload      Slot unloads via the heated toolhead path
+    // @param can_recover          backend_->can_recover_lane_position(slot_index)
+    // @param recovery_attributed  backend_->lane_recovery_is_attributed()
+    // @param supports_eject       backend_->supports_lane_eject()
+    // @param slot_has_filament    SlotInfo::is_present() for this slot
+    // @param supports_force_eject backend_->supports_force_eject()
+    // @param slot_empty           !slot_has_filament
+    static UnloadMode decide_unload_mode(bool toolhead_unload, bool can_recover,
+                                         bool recovery_attributed, bool supports_eject,
+                                         bool slot_has_filament, bool supports_force_eject,
+                                         bool slot_empty);
+
     static bool callbacks_registered_;
 
     // === Static Callbacks ===

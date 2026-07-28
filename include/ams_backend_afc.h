@@ -10,6 +10,7 @@
 #include "filament_slot_override_store.h"
 #include "slot_registry.h"
 
+#include <chrono>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -191,6 +192,12 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// sensor triggered and a free toolhead. See can_recover_lane_position().
     [[nodiscard]] bool can_recover_lane_position(int slot_index) const override;
     AmsError recover_lane_position(int slot_index) override;
+    /// True when AFC names a specific lane as active (AFC.current_load /
+    /// current_lane), i.e. active_load_lane_ is non-empty. The BoxTurtle hub
+    /// sensor is shared across every lane on the unit, so an unattributed
+    /// trigger cannot say whose filament caused it — see
+    /// can_recover_lane_position()'s deliberate all-lanes fallback.
+    [[nodiscard]] bool lane_recovery_is_attributed() const override;
 
     /// Delete this slot's user override ("Clear Spool"). AFC previously
     /// inherited the no-op default, so the button did nothing here.
@@ -676,6 +683,13 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// handle_status_update() after the lock is released. parse_afc_state() must
     /// never send gcode itself — same reason deferred_error_event exists.
     bool message_drain_pending_ = false;
+
+    /// When the current drain arm expires. printer.AFC.message is a delta field:
+    /// if the queue was already empty at clear_fault() time, no later delta will
+    /// carry `message` at all, so the empty-message disarm never fires and the
+    /// budget would otherwise persist indefinitely — silently popping the user's
+    /// next unrelated error. A wall-clock bound is what "window" actually means.
+    std::chrono::steady_clock::time_point message_drain_deadline_{};
 
     /// Caps total clears per clear_fault() so a fault that re-enqueues as fast as
     /// we pop cannot spin. Overshoot is safe: clearing an empty queue is a no-op.

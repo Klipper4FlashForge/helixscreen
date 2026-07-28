@@ -11,6 +11,7 @@
 #include "settings_manager.h"
 
 #include <algorithm>
+#include <chrono>
 #include <optional>
 #include <string>
 #include <vector>
@@ -120,6 +121,13 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
 
     void set_current_slot(int slot) {
         system_info_.current_slot = slot;
+    }
+
+    // Backdate the drain arm's deadline so tests can simulate "the window has
+    // expired" without a real sleep. Pass a negative offset to expire it.
+    void set_message_drain_deadline_offset(std::chrono::seconds offset) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        message_drain_deadline_ = std::chrono::steady_clock::now() + offset;
     }
 
     PathSegment test_compute_filament_segment() const {
@@ -2365,6 +2373,34 @@ TEST_CASE("AFC drain does not fire without a preceding clear_fault",
     helper.test_maybe_drain_message_queue();
 
     REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") == 0);
+}
+
+TEST_CASE("AFC drain arm expires so a stale budget cannot eat a later unrelated error",
+          "[ams][afc][recovery]") {
+    // Pressing Reset when AFC.message is already empty leaves message_drain_budget_
+    // armed. printer.AFC.message is a delta field, so if the queue was already
+    // empty at clear_fault() time, no later delta will ever carry a `message` key
+    // at all — the empty-message disarm in parse_afc_state() never fires, and
+    // without a wall-clock bound the budget would sit armed until a genuinely new,
+    // unrelated error rolls in and gets silently acknowledged. The deadline is what
+    // actually bounds the arm's lifetime.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+
+    helper.clear_fault(0);
+    REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") == 1);
+
+    // Simulate the window having passed with no intervening deltas.
+    helper.set_message_drain_deadline_offset(std::chrono::seconds(-1));
+
+    // A brand-new, unrelated error arrives. It must surface to the user, not be
+    // silently popped by the stale residual budget.
+    helper.test_parse_afc_state(nlohmann::json{
+        {"message", {{"message", "filament jam detected"}, {"type", "error"}}}});
+    helper.test_maybe_drain_message_queue();
+
+    REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") == 1);
 }
 
 // ============================================================================

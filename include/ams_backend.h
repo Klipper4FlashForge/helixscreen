@@ -685,6 +685,26 @@ class AmsBackend {
     }
 
     /**
+     * @brief Whether this backend currently knows WHICH lane needs recovery
+     *
+     * Distinct from can_recover_lane_position(), which answers "is recovery
+     * possible" per slot. This answers "do we know whose fault it is" — some
+     * backends share one physical sensor across every lane on a unit (AFC's hub
+     * sensor), so can_recover_lane_position() can return true for every lane on
+     * that unit at once when nothing attributes the strand to one of them.
+     * Callers use this to decide whether RecoverPosition should outrank Eject
+     * (attributed: confident, single lane) or defer to it (unattributed: a
+     * last-resort offer, since showing Recover on every lane would otherwise
+     * hide Eject from lanes that are simply seated, not stranded).
+     *
+     * Default false: backends with a genuinely per-lane fault signal (or no
+     * lane-position recovery at all) have nothing to attribute.
+     */
+    [[nodiscard]] virtual bool lane_recovery_is_attributed() const {
+        return false;
+    }
+
+    /**
      * @brief Eject filament from a specific lane (async)
      *
      * Reverses the lane's extruder motor to release filament so the spool

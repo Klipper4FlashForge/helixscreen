@@ -268,25 +268,16 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
         backend_ ? backend_->slot_unloads_to_toolhead(slot_index, is_loaded) : is_loaded;
 
     // Select the Unload button's operation, most specific first. Each mode has a
-    // distinct label and a distinct dispatch; see UnloadMode.
+    // distinct label and a distinct dispatch; see UnloadMode and decide_unload_mode().
     const bool slot_empty = !slot_has_filament;
     const bool supports_eject = backend_ && backend_->supports_lane_eject();
+    const bool can_recover = backend_ && backend_->can_recover_lane_position(slot_index);
+    const bool recovery_attributed = backend_ && backend_->lane_recovery_is_attributed();
+    const bool supports_force_eject = backend_ && backend_->supports_force_eject();
 
-    if (toolhead_unload) {
-        unload_mode_ = UnloadMode::Unload;
-    } else if (backend_ && backend_->can_recover_lane_position(slot_index)) {
-        // Filament stranded past the hub — a failed load or unload left it in the
-        // bowden, where plain unload() cannot reach it.
-        unload_mode_ = UnloadMode::RecoverPosition;
-    } else if (supports_eject && slot_has_filament) {
-        unload_mode_ = UnloadMode::Eject;
-    } else if (backend_ && backend_->supports_force_eject() && slot_empty) {
-        // Empty/runout lane: a cold presence-ignoring retract can clear a snapped
-        // chunk the sensor cannot see (#996).
-        unload_mode_ = UnloadMode::ForceEject;
-    } else {
-        unload_mode_ = UnloadMode::Unavailable;
-    }
+    unload_mode_ = decide_unload_mode(toolhead_unload, can_recover, recovery_attributed,
+                                      supports_eject, slot_has_filament, supports_force_eject,
+                                      slot_empty);
 
     const bool unload_enabled = !system_busy && unload_mode_ != UnloadMode::Unavailable;
     lv_subject_set_int(&slot_is_loaded_subject_, unload_enabled ? 1 : 0);
@@ -467,6 +458,39 @@ void AmsContextMenu::handle_edit() {
 
 bool AmsContextMenu::should_show_clear_spool(const SlotInfo& slot) {
     return slot.spoolman_id > 0 || !slot.material.empty();
+}
+
+AmsContextMenu::UnloadMode AmsContextMenu::decide_unload_mode(
+    bool toolhead_unload, bool can_recover, bool recovery_attributed, bool supports_eject,
+    bool slot_has_filament, bool supports_force_eject, bool slot_empty) {
+    if (toolhead_unload) {
+        return UnloadMode::Unload;
+    }
+    if (can_recover && recovery_attributed) {
+        // Filament stranded past the hub — a failed load or unload left it in the
+        // bowden, where plain unload() cannot reach it. The backend named this
+        // exact lane as the one needing recovery, so this is a confident
+        // diagnosis: outrank Eject.
+        return UnloadMode::RecoverPosition;
+    }
+    if (supports_eject && slot_has_filament) {
+        return UnloadMode::Eject;
+    }
+    if (can_recover) {
+        // Unattributed strand: some backends (AFC) share one hub sensor across
+        // every lane on a unit, so can_recover can read true for every lane at
+        // once with no way to say whose filament tripped it. Ranking this below
+        // Eject means a seated lane (slot_has_filament above) keeps its Eject
+        // button; this arm only catches lanes with nothing to eject, offering
+        // Recover as a last resort rather than hiding it entirely.
+        return UnloadMode::RecoverPosition;
+    }
+    if (supports_force_eject && slot_empty) {
+        // Empty/runout lane: a cold presence-ignoring retract can clear a snapped
+        // chunk the sensor cannot see (#996).
+        return UnloadMode::ForceEject;
+    }
+    return UnloadMode::Unavailable;
 }
 
 void AmsContextMenu::handle_clear_spool() {

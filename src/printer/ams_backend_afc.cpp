@@ -407,6 +407,10 @@ AmsError AmsBackendAfc::clear_fault(int slot_index) {
         // exactly like the Reset having done nothing.
         message_drain_budget_ = kMessageDrainBudget;
         message_drain_pending_ = false;
+        // Bound the arm in wall-clock time. If the queue was already empty, no
+        // later delta will carry `message` at all, so the empty-message disarm
+        // below never fires and the budget would otherwise persist indefinitely.
+        message_drain_deadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     }
 
     // Deliberately does NOT route through cancel(): cancel() returns early when
@@ -433,6 +437,14 @@ void AmsBackendAfc::maybe_drain_message_queue() {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!message_drain_pending_ || message_drain_budget_ <= 0) {
+            return;
+        }
+        // Mirrors the expiry check in parse_afc_state(): a drain armed long ago
+        // (stale, never disarmed because no later delta carried `message`) must
+        // not fire against a message the arm was never meant to see.
+        if (std::chrono::steady_clock::now() > message_drain_deadline_) {
+            message_drain_budget_ = 0;
+            message_drain_pending_ = false;
             return;
         }
         message_drain_pending_ = false;
@@ -2924,6 +2936,11 @@ bool AmsBackendAfc::can_recover_lane_position(int slot_index) const {
         return lane_name == active_load_lane_;
     }
     return true;
+}
+
+bool AmsBackendAfc::lane_recovery_is_attributed() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return !active_load_lane_.empty();
 }
 
 AmsError AmsBackendAfc::recover_lane_position(int slot_index) {
