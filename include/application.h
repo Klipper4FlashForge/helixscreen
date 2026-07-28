@@ -5,6 +5,7 @@
 
 #include "ui_observer_guard.h"
 
+#include "async_lifetime_guard.h"
 #include "cli_args.h"
 #include "lvgl/lvgl.h"
 #include "main_loop_handler.h"
@@ -142,6 +143,18 @@ class Application {
     void restore_flush_callback();
 
     // Owned managers (in initialization order)
+    /// Expires the callbacks Application defers to the main thread — the
+    /// hardware-role reapply, the two ActionPrompt modal hops off the WebSocket
+    /// thread, and the wizard-cancel soft restart. Invalidated explicitly at the
+    /// top of shutdown() rather than relying on member destruction order: the
+    /// owned subsystems below are what those callbacks touch, and a guard that
+    /// only expired via its own destructor would still read as live while those
+    /// members were being torn down. Application is a stack local in main() with
+    /// no deinit_subjects(), so shutdown()/destruction is the only teardown
+    /// point — this is debt migrated to the sanctioned form, not a live
+    /// use-after-free (#1165).
+    helix::AsyncLifetimeGuard m_async_lifetime;
+
     std::unique_ptr<DisplayManager> m_display;
     std::unique_ptr<SubjectInitializer> m_subjects;
     std::unique_ptr<MoonrakerManager> m_moonraker;

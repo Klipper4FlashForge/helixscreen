@@ -2296,7 +2296,7 @@ bool show_demo_overlay(const std::string& name) {
 #endif // HELIX_ENABLE_REMOTE_CONTROL
 
 void Application::reapply_hardware_roles() {
-    helix::ui::queue_update("Application::reapply_hardware_roles", [this]() {
+    m_async_lifetime.defer("Application::reapply_hardware_roles", [this]() {
         MoonrakerAPI* api = m_moonraker ? m_moonraker->api() : nullptr;
         if (!api) {
             return;
@@ -3191,7 +3191,7 @@ void Application::init_action_prompt() {
     m_action_prompt_manager->set_on_show([this](const helix::PromptData& data) {
         spdlog::info("[ActionPrompt] Showing prompt: {}", data.title);
         // WebSocket callbacks run on background thread - must use ui_queue_update
-        helix::ui::queue_update([this, data]() {
+        m_async_lifetime.defer("Application::action_prompt_show", [this, data]() {
             lv_obj_t* screen = lv_screen_active();
             if (m_action_prompt_modal && screen) {
                 m_action_prompt_modal->show_prompt(screen, data);
@@ -3202,7 +3202,7 @@ void Application::init_action_prompt() {
     // Wire on_close callback to hide modal
     m_action_prompt_manager->set_on_close([this]() {
         spdlog::info("[ActionPrompt] Closing prompt");
-        helix::ui::queue_update([this]() {
+        m_async_lifetime.defer("Application::action_prompt_close", [this]() {
             if (m_action_prompt_modal) {
                 m_action_prompt_modal->hide();
             }
@@ -4107,7 +4107,7 @@ void Application::cancel_add_printer_wizard() {
 
     // Defer wizard teardown + soft restart — we're called from a wizard button click handler,
     // so the wizard_container must survive until the event callback returns.
-    helix::ui::queue_update([this]() {
+    m_async_lifetime.defer("Application::cancel_add_printer_wizard", [this]() {
         m_soft_restart_in_progress = true;
 
         set_wizard_active(false);
@@ -4392,6 +4392,10 @@ void Application::shutdown() {
         return;
     }
     m_shutdown_complete = true;
+
+    // Expire the callbacks this object deferred to the main thread before any of
+    // the subsystems they touch are torn down below (#1165).
+    m_async_lifetime.invalidate();
 
     // Clean shutdown means no crash loop -- remove the marker file
     std::filesystem::remove(crash_marker_path());
