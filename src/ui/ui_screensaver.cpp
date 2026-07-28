@@ -4,6 +4,7 @@
 
 #include "ui_screensaver.h"
 
+#include "ui_timer_guard.h" // lv_timer_cancel_safe
 #include "ui_utils.h"
 
 #include "platform_capabilities.h"
@@ -170,6 +171,23 @@ void FlyingToasterScreensaver::start() {
     m_active = true;
 }
 
+FlyingToasterScreensaver::~FlyingToasterScreensaver() {
+    // ScreensaverManager owns these in a unique_ptr and does not stop the active
+    // one before destroying it, so a screensaver torn down while running would
+    // otherwise leave tick_cb armed on a freed `this`. lv_timer_cancel_safe()
+    // self-guards on lv_is_initialized() and neuters rather than unlinking, which
+    // is what makes it safe from a destructor and after lv_deinit has already
+    // reclaimed the timer (#750, #751, #1173).
+    cancel_timer();
+}
+
+void FlyingToasterScreensaver::cancel_timer() {
+    if (m_tick_timer) {
+        helix::ui::lv_timer_cancel_safe(m_tick_timer);
+        m_tick_timer = nullptr;
+    }
+}
+
 void FlyingToasterScreensaver::stop() {
     if (!m_active) {
         return;
@@ -177,10 +195,7 @@ void FlyingToasterScreensaver::stop() {
 
     spdlog::info("[Screensaver] Stopping flying toasters");
 
-    if (m_tick_timer) {
-        lv_timer_delete(m_tick_timer);
-        m_tick_timer = nullptr;
-    }
+    cancel_timer();
 
     // Clear object list (LVGL objects are children of overlay, deleted with it)
     m_objects.clear();

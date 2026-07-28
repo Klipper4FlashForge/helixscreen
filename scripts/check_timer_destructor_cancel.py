@@ -56,9 +56,15 @@ from pathlib import Path
 
 OPT_OUT = "TIMER_DTOR_OK"
 
-# `some_timer_ = lv_timer_create(...)` — a member (trailing underscore), not a
-# local. `lv_timer_t* t = lv_timer_create(...)` is excluded by the type check.
-ARM_RE = re.compile(r'(?:^|[^\w>.])(?:self->|this->)?(\w+_)\s*=\s*lv_timer_create\s*\(')
+# `some_timer_ = lv_timer_create(...)` — a member, not a local. Both member
+# spellings in this tree count: the `trailing_underscore_` convention and the
+# older `m_prefix` one. Matching only the former silently exempted
+# FlyingToasterScreensaver::m_tick_timer, which had the identical
+# cancel-only-in-stop() shape as the two screensavers this gate did flag.
+# `lv_timer_t* t = lv_timer_create(...)` is still excluded by the type check.
+ARM_RE = re.compile(
+    r'(?:^|[^\w>.])(?:self->|this->)?(\w+_|m_\w+)\s*=\s*lv_timer_create\s*\('
+)
 
 # Cancelling a specific member. Both the raw delete and the safe neuter count —
 # the gate is about WHERE the cancel happens, not which primitive it uses.

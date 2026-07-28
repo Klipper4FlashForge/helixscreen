@@ -52,9 +52,16 @@ class PrintControlButtons {
   private:
     PrintControlButtons() = default;
 
+    ~PrintControlButtons();
+
     void recompute();
     void start_pending_action(PendingAction action);
     void clear_pending_action();
+
+    /// Shared by clear_pending_action(), the StaticSubjectRegistry teardown and
+    /// the destructor — a timer cancelled on only some of those paths stays armed
+    /// on a freed `this` on the others.
+    void cancel_pending_action_timer();
 
     static void on_primary_clicked(lv_event_t* e);
     static void on_stop_clicked(lv_event_t* e);
