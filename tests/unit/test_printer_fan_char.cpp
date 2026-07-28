@@ -1475,3 +1475,68 @@ TEST_CASE("init_fans keeps [fan] when part role points to an absent object",
 
     REQUIRE(state.get_fan_speed_subject("fan") != nullptr); // not skipped
 }
+
+// ============================================================================
+// #1181 regression: subject must always be written, even when the struct
+// already holds the incoming value. The old change-gate compared against the
+// struct (fan.speed_percent != speed_pct); if the subject was reset to 0 by
+// init_fans while the struct retained the old value (e.g. a steady-speed fan
+// whose differential update was swallowed), the subject could never catch up.
+// ============================================================================
+
+TEST_CASE("Fan subject recovers after rediscovery with steady-speed fan (#1181)",
+          "[fan][reinit][subject_sync]") {
+    lv_init_safe();
+
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    state.init_fans({"fan"});
+
+    // Fan ramps to 100% — struct and subject agree.
+    state.update_from_status({{"fan", {{"speed", 1.0}}}});
+    REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("fan")) == 100);
+
+    // Simulate the divergence: reset the subject to 0 (as init_fans does on
+    // rediscovery) while keeping the struct at 100. This is the exact state
+    // after init_fans if no full status snapshot follows.
+    lv_subject_set_int(state.get_fan_speed_subject("fan"), 0);
+    REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("fan")) == 0);
+
+    // Now push the SAME speed. With the old struct-gated code, the gate
+    // (fan.speed_percent(100) != 100) would be FALSE and the subject would
+    // stay at 0 forever. The fix writes the subject unconditionally.
+    state.update_from_status({{"fan", {{"speed", 1.0}}}});
+    REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("fan")) == 100);
+}
+
+TEST_CASE("Fan subject always reflects latest update even when struct unchanged (#1181)",
+          "[fan][update][subject_sync]") {
+    lv_init_safe();
+
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    state.init_fans({"fan", "heater_fan hotend_fan"});
+
+    // Set both fans to known values.
+    state.update_from_status({{"fan", {{"speed", 0.8}}}});
+    state.update_from_status({{"heater_fan hotend_fan", {{"speed", 0.6}}}});
+
+    REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("fan")) == 80);
+    REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("heater_fan hotend_fan")) == 60);
+
+    // Diverge: manually zero the "fan" subject (simulating init_fans reset)
+    // while the struct retains 80%.
+    lv_subject_set_int(state.get_fan_speed_subject("fan"), 0);
+
+    // Push the same 80% again. Old code: struct(80) != 80 → false → subject
+    // stays 0. New code: subject written unconditionally → 80.
+    state.update_from_status({{"fan", {{"speed", 0.8}}}});
+    REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("fan")) == 80);
+
+    // heater_fan should be unaffected.
+    REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("heater_fan hotend_fan")) == 60);
+}

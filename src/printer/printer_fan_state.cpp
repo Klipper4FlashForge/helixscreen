@@ -485,30 +485,42 @@ void PrinterFanState::update_fan_speed(const std::string& object_name, double sp
 
     for (auto& fan : fans_) {
         if (fan.object_name == object_name) {
-            if (fan.speed_percent != speed_pct) {
-                bool was_running = fan.speed_percent > 0;
+            bool changed = fan.speed_percent != speed_pct;
+            bool was_running = fan.speed_percent > 0;
+
+            if (changed) {
                 fan.speed_percent = speed_pct;
                 if (speed_pct > 0)
                     fan.ever_ran = true;
+            }
 
-                // Fire per-fan subject for reactive UI updates
-                auto it = fan_speed_subjects_.find(object_name);
-                if (it != fan_speed_subjects_.end() && it->second) {
-                    lv_subject_set_int(it->second.get(), speed_pct);
+            // Always fire the per-fan subject — lv_subject_set_int no-ops
+            // internally when the value hasn't changed (lv_observer.c
+            // lv_subject_notify_if_changed), so there is no perf cost when
+            // struct and subject agree.  Decoupling the subject write from the
+            // struct-change gate protects against divergence after
+            // rediscovery: init_fans() resets both to 0, but if a
+            // differential status update arrives whose value already matches
+            // the struct (e.g. a steady-speed fan), the old gate would skip
+            // the subject write, permanently wedging it at 0 (#1181).
+            auto it = fan_speed_subjects_.find(object_name);
+            if (it != fan_speed_subjects_.end() && it->second) {
+                lv_subject_set_int(it->second.get(), speed_pct);
+                if (changed) {
                     spdlog::trace("[PrinterFanState] Fan {} speed updated to {}%", object_name,
                                   speed_pct);
-                } else {
-                    spdlog::debug("[PrinterFanState] Dropping speed update for '{}' — subject "
-                                  "not initialized",
-                                  object_name);
                 }
+            } else if (changed) {
+                spdlog::debug("[PrinterFanState] Dropping speed update for '{}' — subject "
+                              "not initialized",
+                              object_name);
+            }
 
-                // A fan starting or stopping can change which fan owns the part
-                // slot (runtime-adaptive selection). Only a zero-crossing can flip
-                // it, so skip the recompute for same-running-state changes (#1124).
-                if (was_running != (speed_pct > 0)) {
-                    refresh_primary_fans_selection();
-                }
+            // A fan starting or stopping can change which fan owns the part
+            // slot (runtime-adaptive selection). Only a zero-crossing can flip
+            // it, so skip the recompute for same-running-state changes (#1124).
+            if (changed && was_running != (speed_pct > 0)) {
+                refresh_primary_fans_selection();
             }
             return;
         }
