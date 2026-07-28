@@ -98,6 +98,23 @@ class FilamentPanel : public PanelBase {
     void deinit_subjects();
 
     /**
+     * @brief Fail the visibly-running filament operation because Klipper does not
+     *        know @p command.
+     *
+     * A user macro that references an undefined command (a `STATUS_*` LED macro is
+     * the common case) aborts mid-body, but Moonraker still returns `ok` for the
+     * script — so the op's success callback fires and the button shows a green
+     * checkmark for a macro that did nothing. Called from GcodeNarrationRouter,
+     * which is the only component that sees the `// Unknown command:"X"` response.
+     *
+     * No-op when no operation is showing its spinner. Main thread only.
+     *
+     * @param command The command name Klipper reported as unknown; it is the
+     *                actionable part of the message, so it reaches the toast.
+     */
+    void fail_op_on_unknown_command(const std::string& command);
+
+    /**
      * @brief Setup button handlers and initial visual state
      *
      * - Wires preset buttons (PLA, PETG, ABS, Custom)
@@ -278,6 +295,12 @@ class FilamentPanel : public PanelBase {
     /// of the guard's callsites armed it. op_in_flight_ is not enough: the gcode and
     /// inline-macro paths never set it.
     std::optional<FilamentOp> op_showing_busy_;
+    /// Op torn down out-of-band while its RPC was still outstanding. Klipper aborts
+    /// a macro at an unknown command but Moonraker still answers `ok`, so the
+    /// success callback arrives anyway; this swallows exactly one such callback so
+    /// the checkmark cannot contradict the error toast. See
+    /// fail_op_on_unknown_command().
+    std::optional<FilamentOp> op_aborted_;
     uint32_t op_busy_started_tick_ = 0; ///< lv_tick when busy began (min-spinner floor)
     bool backend_op_active_ = false; ///< true while an AMS-backend op awaits ams_action IDLE
 
@@ -536,3 +559,10 @@ class FilamentPanel : public PanelBase {
 
 // Global instance accessor (needed by main.cpp)
 FilamentPanel& get_global_filament_panel();
+
+/// Route a `// Unknown command:"X"` response to the filament panel, failing
+/// whichever operation is visibly running. No-op when the panel has not been
+/// created yet — deliberately does NOT construct it, because the caller is a
+/// gcode-response path that must not bring a panel into existence as a side
+/// effect. Main thread only. @see FilamentPanel::fail_op_on_unknown_command
+void filament_panel_report_unknown_command(const std::string& command);

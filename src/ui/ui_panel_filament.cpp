@@ -1106,12 +1106,20 @@ void FilamentPanel::op_started(FilamentOp op) {
             lv_subject_set_int(op_state_subject(o), 0);
         }
     }
+    op_aborted_.reset(); // a fresh op is never pre-aborted
     op_busy_started_tick_ = lv_tick_get();
     op_showing_busy_ = op;
     set_op_state(op, 1); // busy → spinner
 }
 
 void FilamentPanel::op_succeeded(FilamentOp op) {
+    // This op was already torn down out-of-band (see fail_op_on_unknown_command)
+    // and the RPC's `ok` is only now catching up. Swallow it once, or the
+    // checkmark lands on top of the error toast.
+    if (op_aborted_ && *op_aborted_ == op) {
+        op_aborted_.reset();
+        return;
+    }
     op_showing_busy_.reset();
     // Instant-completing ops (mock gcode fires success synchronously; fast real
     // ops too) would flip spinner→check within a frame. Hold the spinner for a
@@ -1156,6 +1164,33 @@ void FilamentPanel::handle_operation_timeout() {
     if (op_showing_busy_) {
         op_failed(*op_showing_busy_);
     }
+}
+
+// Klipper aborts a macro body at an unknown command and reports it through
+// respond_info (a `//` line, not `!!`), while Moonraker still answers `ok` for
+// the script — so every success callback below fires for a macro that did
+// nothing. The only correlation available is "an operation is visibly running":
+// Klipper does not tie a response line to the RPC that provoked it, so an
+// unknown-command line raised by some other client while a filament op happens to
+// be spinning will fail that op. Failing a live op on a stale line is the lesser
+// harm — a green checkmark for a macro that never ran is what sends users
+// hunting the wrong problem.
+void FilamentPanel::fail_op_on_unknown_command(const std::string& command) {
+    if (!op_showing_busy_) {
+        return; // nothing on screen to invalidate
+    }
+    const FilamentOp op = *op_showing_busy_;
+
+    op_aborted_ = op; // swallow the `ok` that is still coming
+    operation_guard_.end();
+    backend_op_active_ = false;
+    op_in_flight_.reset();
+    op_failed(op);
+
+    // The command name IS the actionable part — it names the macro the user has
+    // to define (or remove) in their config. A bare "operation failed" leaves
+    // them with nothing to act on.
+    NOTIFY_ERROR(lv_tr("Macro stopped: printer has no '{}' command"), command);
 }
 
 void FilamentPanel::handle_load_button() {
@@ -2837,4 +2872,14 @@ FilamentPanel& get_global_filament_panel() {
                                                          []() { g_filament_panel.reset(); });
     }
     return *g_filament_panel;
+}
+
+void filament_panel_report_unknown_command(const std::string& command) {
+    // Reads g_filament_panel directly rather than going through
+    // get_global_filament_panel(): the caller is GcodeNarrationRouter on a
+    // gcode-response line, and a console message must not be what causes a panel
+    // to be constructed.
+    if (g_filament_panel) {
+        g_filament_panel->fail_op_on_unknown_command(command);
+    }
 }

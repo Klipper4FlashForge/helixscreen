@@ -2,7 +2,9 @@
 /**
  * @file test_filament_panel_op_timeout.cpp
  * @brief Regression guard (#1183): a filament operation that never reports back
- *        must not leave its button spinning forever.
+ *        must not leave its button spinning forever. A second section at the
+ *        bottom covers the mirror-image defect — an operation that reports back
+ *        `ok` for a macro that aborted part-way through.
  *
  * Run with: ./build/bin/helix-tests "[ui_integration][filament][regression][1183]"
  *
@@ -287,4 +289,142 @@ TEST_CASE_METHOD(LVGLUITestFixture, "#1183: a timed-out gcode op stops its spinn
     }
 
     process_lvgl(20); // let the thawed error callback drain before teardown
+}
+
+// ============================================================================
+// Unknown-command abort
+//
+// Run with: ./build/bin/helix-tests "[ui_integration][filament][unknown_command]"
+//
+// Captured verbatim from a live BoxTurtle rig; see test_afc_console_corpus.cpp
+// and docs/devel/FILAMENT_MANAGEMENT.md § "AFC console response contract".
+//
+//     PURGE_FILAMENT ; from helixscreen
+//     // Unknown command:"STATUS_PURGING"
+//
+// The user's purge_filament macro aborts on line 4 of its own body because their
+// LED config has no STATUS_PURGING. Klipper reports that through respond_info —
+// a `//` line, NOT `!!` — and Moonraker still returns `ok` for the script, so the
+// success callback fires and the button shows a green checkmark for a macro that
+// did nothing. It happened four times in the captured window.
+//
+// Mutation checks (each must break the listed test):
+//   - make fail_op_on_unknown_command() ignore op_showing_busy_ -> "with no op in
+//     flight is inert" fails (it fires a toast and arms op_aborted_, which then
+//     eats the next op's success)
+//   - drop the op_aborted_ check in op_succeeded() -> "survives the macro's late
+//     ok" fails (state lands on 2/done)
+//   - drop the command name from the toast -> "fails the running op" fails
+//   - remove the op_aborted_.reset() in op_started() -> "a later operation is
+//     not eaten by a stale abort" fails
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLUITestFixture, "unknown-command response fails the running filament op",
+                 "[ui_integration][filament][unknown_command]") {
+    TimeoutHarness h(*this);
+
+    std::string toast;
+    helix::ui::set_test_notification_error_hook([&](const std::string& m) { toast = m; });
+
+    {
+        // The test API is disconnected, so execute_gcode's error callback fires
+        // synchronously and queues its own op_failed. Freezing the queue parks
+        // that callback, leaving the unknown-command path as the only thing that
+        // can clear the spinner.
+        auto freeze = helix::ui::UpdateQueue::instance().scoped_freeze("unknown-command-test");
+
+        TA::execute_extrude(*h.panel);
+        REQUIRE(TA::operation_active(*h.panel));
+        REQUIRE(TA::op_extrude_state(*h.panel) == 1);
+
+        h.panel->fail_op_on_unknown_command("STATUS_PURGING");
+
+        CHECK(TA::op_extrude_state(*h.panel) == 0); // spinner cleared, no checkmark
+        CHECK_FALSE(TA::operation_active(*h.panel));
+        CHECK_FALSE(TA::backend_op_active(*h.panel));
+        CHECK_FALSE(TA::op_in_flight(*h.panel));
+        // The missing command is the only actionable part of the message.
+        CHECK(toast.find("STATUS_PURGING") != std::string::npos);
+    }
+
+    helix::ui::set_test_notification_error_hook(nullptr);
+    process_lvgl(20); // let the thawed error callback drain before teardown
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "unknown-command abort survives the macro's late ok",
+                 "[ui_integration][filament][unknown_command]") {
+    TimeoutHarness h(*this);
+
+    {
+        auto freeze = helix::ui::UpdateQueue::instance().scoped_freeze("unknown-command-late-ok");
+
+        TA::execute_extrude(*h.panel);
+        REQUIRE(TA::op_extrude_state(*h.panel) == 1);
+
+        h.panel->fail_op_on_unknown_command("STATUS_PURGING");
+        REQUIRE(TA::op_extrude_state(*h.panel) == 0);
+    }
+
+    // Drain the thawed gcode-error callback FIRST. It calls op_failed(), which
+    // cancels the shared op timer — run it after the late success and it would
+    // clear the very checkmark this test is trying to observe, masking a
+    // regression in the suppression.
+    process_lvgl(20);
+
+    // Moonraker acknowledges the script regardless of the aborted body, so the
+    // op's success callback still arrives.
+    TA::op_succeeded_extrude(*h.panel);
+
+    // Past MIN_SPINNER_VISIBLE_MS, so a success that got through would have
+    // reached the done state by now.
+    process_lvgl(700);
+    CHECK(TA::op_extrude_state(*h.panel) == 0); // still idle, never 2/done
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "unknown-command response with no op in flight is inert",
+                 "[ui_integration][filament][unknown_command]") {
+    // An unknown-command line can come from any client on the same printer. With
+    // nothing running there is no operation to invalidate, so it must not toast
+    // and must not leave the abort marker armed for the next operation.
+    TimeoutHarness h(*this);
+
+    int errors = 0;
+    helix::ui::set_test_notification_error_hook([&](const std::string&) { ++errors; });
+    h.panel->fail_op_on_unknown_command("STATUS_PURGING");
+    helix::ui::set_test_notification_error_hook(nullptr);
+
+    CHECK(errors == 0);
+    CHECK(TA::op_extrude_state(*h.panel) == 0);
+    CHECK(TA::op_load_state(*h.panel) == 0);
+    CHECK_FALSE(TA::operation_active(*h.panel));
+
+    // The next real operation must still be able to succeed.
+    TA::execute_load(*h.panel);
+    REQUIRE(TA::op_load_state(*h.panel) == 1);
+    h.publish_action(AmsAction::LOADING, 10);
+    h.publish_action(AmsAction::IDLE, 600);
+    CHECK(TA::op_load_state(*h.panel) == 2); // done/checkmark
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture, "a later operation is not eaten by a stale abort",
+                 "[ui_integration][filament][unknown_command]") {
+    // The abort marker exists to swallow ONE late success. If the aborted op's
+    // RPC never delivers that success — it errored, or the connection dropped —
+    // the marker is still armed, and the next operation of the same kind would
+    // have its own success swallowed instead: no checkmark, forever.
+    TimeoutHarness h(*this);
+
+    TA::execute_load(*h.panel);
+    REQUIRE(TA::op_load_state(*h.panel) == 1);
+    h.panel->fail_op_on_unknown_command("STATUS_LOADING");
+    REQUIRE(TA::op_load_state(*h.panel) == 0);
+
+    // No `ok` for that first Load ever arrives. Start a fresh one and let it
+    // complete normally.
+    TA::execute_load(*h.panel);
+    REQUIRE(TA::op_load_state(*h.panel) == 1);
+    h.publish_action(AmsAction::LOADING, 10);
+    h.publish_action(AmsAction::IDLE, 600);
+
+    CHECK(TA::op_load_state(*h.panel) == 2); // done/checkmark
 }

@@ -75,6 +75,16 @@ struct FilamentPanelTestAccess {
     static bool op_in_flight(const FilamentPanel& p) {
         return p.op_in_flight_.has_value();
     }
+
+    // --- Unknown-command abort -------------------------------------------
+    // op_succeeded() is the callback a macro's `ok` lands on. Reaching it
+    // directly is the only way to reproduce the ordering that matters: Klipper
+    // reports the abort DURING the script, Moonraker acknowledges the script
+    // afterwards.
+
+    static void op_succeeded_extrude(FilamentPanel& p) {
+        p.op_succeeded(FilamentPanel::FilamentOp::Extrude);
+    }
 };
 
 } // namespace helix::ui

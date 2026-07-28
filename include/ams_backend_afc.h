@@ -176,6 +176,19 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     [[nodiscard]] std::optional<std::string>
     match_narration_phase(const std::string& narration) const override;
 
+    /// AFC emits its load/unload narration with NO `//` prefix (`Loading lane3`,
+    /// `lane3 is now loaded in toolhead t:0`, ...), so the semantically important
+    /// half of the step model arrives on the bare console channel. Matched by
+    /// anchored shape rather than substring — see the .cpp for the shape table
+    /// and docs/devel/FILAMENT_MANAGEMENT.md § "AFC console response contract".
+    [[nodiscard]] std::optional<std::string>
+    match_bare_narration_phase(const std::string& line) const override;
+
+    /// A line naming AFC or a lane that matched no phase, minus AFC's known
+    /// phase-less lines (tool-change banners, `already loaded`, buffer
+    /// bookkeeping), which would otherwise log on every single toolchange.
+    [[nodiscard]] bool is_narration_drift_candidate(const std::string& line) const override;
+
     // Operations
     AmsError load_filament(int slot_index) override;
     AmsError unload_filament(int slot_index) override;

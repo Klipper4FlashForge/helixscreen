@@ -784,6 +784,107 @@ AmsBackendAfc::match_narration_phase(const std::string& narration) const {
     return std::nullopt;
 }
 
+namespace {
+
+/// Lowercase the line and split it on whitespace. Punctuation stays attached, so
+/// AFC's `t:0` and `lane3` each stay a single token and the token COUNT is a
+/// usable anchor.
+std::vector<std::string> split_lower_words(const std::string& line) {
+    std::vector<std::string> out;
+    std::string cur;
+    for (unsigned char c : line) {
+        if (std::isspace(c) != 0) {
+            if (!cur.empty()) {
+                out.push_back(cur);
+                cur.clear();
+            }
+        } else {
+            cur.push_back(static_cast<char>(std::tolower(c)));
+        }
+    }
+    if (!cur.empty())
+        out.push_back(cur);
+    return out;
+}
+
+std::string to_lower_copy(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (unsigned char c : s)
+        out.push_back(static_cast<char>(std::tolower(c)));
+    return out;
+}
+
+} // namespace
+
+std::optional<std::string>
+AmsBackendAfc::match_bare_narration_phase(const std::string& line) const {
+    // Unlike match_narration_phase(), this runs on the printer's OPEN console —
+    // M105 reports, `echo:` chatter and the gcode filename all land here, and the
+    // filename is user-controlled. So each shape below is anchored on fixed words
+    // AND on position/count; nothing is a free substring test. `File opened:
+    // haircut.gcode` must not read as a Cut-tip step.
+    //
+    // Shapes are verbatim from AFC's own logger calls, captured in
+    // tests/unit/test_afc_console_corpus.cpp, captured from a live BoxTurtle:
+    //
+    //   Loading lane3                          -> feed
+    //   Unloading lane1                        -> unload
+    //   lane3 is now loaded in toolhead t:0    -> load
+    //   Lane lane1 unload done t:0             -> unload
+    //
+    // Deliberately NOT mapped, because the step template has no phase for them:
+    // `Tool Change - lane1 -> lane3`, `Total change time: t:0`, and the #1183
+    // no-op `lane1 already loaded` — the last of which must especially not read
+    // as a completed load.
+    const std::vector<std::string> t = split_lower_words(line);
+    if (t.size() < 2)
+        return std::nullopt;
+
+    // Exactly the verb plus the lane name. AFC emits `'Loading ' + lane.name`,
+    // so any trailing words mean this is somebody else's line.
+    if (t.size() == 2) {
+        if (t[0] == "loading")
+            return "feed";
+        if (t[0] == "unloading")
+            return "unload";
+    }
+
+    // Five fixed words in fixed positions after the lane name. The trailing
+    // `t:<n>` is optional so pre-toolchanger AFC builds still match.
+    if (t.size() >= 6 && t[1] == "is" && t[2] == "now" && t[3] == "loaded" && t[4] == "in" &&
+        t[5] == "toolhead")
+        return "load";
+
+    if (t.size() >= 4 && t[0] == "lane" && t[2] == "unload" && t[3] == "done")
+        return "unload";
+
+    return std::nullopt;
+}
+
+bool AmsBackendAfc::is_narration_drift_candidate(const std::string& line) const {
+    const std::string s = to_lower_copy(line);
+
+    // Every AFC narration line either names the system (`AFC_Cut:`, `AFC_Brush:`)
+    // or names a lane. Looser than the matchers on purpose: the hint exists to
+    // catch upstream REWORDING, which by definition no matcher recognizes. A
+    // false positive costs one deduped debug line.
+    if (s.find("afc") == std::string::npos && s.find("lane") == std::string::npos)
+        return false;
+
+    // ...minus the lines AFC emits every toolchange that have no phase by design.
+    // Without this the log would report them as drift forever.
+    static constexpr const char* kKnownPhaseless[] = {
+        "tool change", "toolchange", "already loaded", "total change time",
+        "rotation distance reset",
+    };
+    for (const char* known : kKnownPhaseless) {
+        if (s.find(known) != std::string::npos)
+            return false;
+    }
+    return true;
+}
+
 PathSegment AmsBackendAfc::compute_filament_segment_unlocked() const {
     // Must be called with mutex_ held!
     // Returns the furthest point filament has reached based on sensor states.
