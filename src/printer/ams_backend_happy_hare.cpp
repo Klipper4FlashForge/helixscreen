@@ -2182,7 +2182,15 @@ AmsError AmsBackendHappyHare::reset() {
     return execute_gcode("MMU_HOME");
 }
 
-AmsError AmsBackendHappyHare::reset_lane(int slot_index) {
+// MMU_RECOVER re-syncs Happy Hare's idea of gate state. It moves no filament, so
+// it is a fault clear rather than a position recovery.
+AmsError AmsBackendHappyHare::clear_fault(int slot_index) {
+    // -1 means "no particular gate". MMU_RECOVER without GATE re-syncs the whole
+    // selector, the natural system-scoped analogue of AFC's RESET_FAILURE, and
+    // the base contract documents -1 as valid. Both UI callers pass current_slot,
+    // which is -1 whenever nothing is loaded — the state Reset is pressed in.
+    const bool all_gates = (slot_index < 0);
+
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
@@ -2190,10 +2198,17 @@ AmsError AmsBackendHappyHare::reset_lane(int slot_index) {
             return AmsErrorHelper::not_connected("Happy Hare backend not started");
         }
 
-        AmsError slot_err = validate_slot_index(slot_index);
-        if (!slot_err) {
-            return slot_err;
+        if (!all_gates) {
+            AmsError slot_err = validate_slot_index(slot_index);
+            if (!slot_err) {
+                return slot_err;
+            }
         }
+    }
+
+    if (all_gates) {
+        spdlog::info("[AMS HappyHare] Recovering all gates");
+        return execute_gcode("MMU_RECOVER");
     }
 
     // MMU_RECOVER with GATE parameter recovers a specific gate's state

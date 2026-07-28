@@ -937,8 +937,8 @@ AFC state comes from multiple Klipper objects:
 | Field | Type | Description |
 |-------|------|-------------|
 | `prep` | bool | Prep sensor triggered |
-| `load` | bool | Load sensor triggered |
-| `loaded_to_hub` | bool | Filament reached hub |
+| `load` | bool | Load sensor triggered (AFC calls this `raw_load_state` internally) |
+| `loaded_to_hub` | bool | **DO NOT USE — see "Fields that do not mean what they say"** |
 | `tool_loaded` | bool | Filament loaded to toolhead |
 | `status` | string | "Loaded", "Tooled", "Ready", "None", "Error" |
 | `color` | string | Filament color hex (`#RRGGBB`) |
@@ -953,7 +953,7 @@ AFC state comes from multiple Klipper objects:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `state` | bool | Hub sensor triggered |
+| `state` | bool | Hub sensor triggered. **One sensor per UNIT, shared by every lane on it** — it cannot say whose filament tripped it. Trustworthy, unlike `loaded_to_hub`. |
 | `afc_bowden_length` | float | Bowden tube length from hub to toolhead (mm) |
 
 **Extruder state** (`AFC_extruder extruder`):
@@ -968,12 +968,89 @@ AFC state comes from multiple Klipper objects:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `current_lane` | string | Active lane name (or null) |
-| `current_state` | string | "Idle", "Loading", "Unloading", etc. |
-| `error_state` | bool | AFC error flag |
+| `current_lane` | string | Lane AFC is working (or null). Null after a crash-interrupted toolchange — see below. |
+| `current_load` | string | Lane being loaded (or null). Fallback when `current_lane` is null. |
+| `current_state` | string | "Idle", "Loading", "Unloading", "Error", etc. |
+| `error_state` | bool | **Not the error signal.** Measured `false` for an entire session while an error was queued. Use `message.type == "error"`. |
+| `message` | object | `{message, type}` — **the HEAD of a FIFO queue, not a scalar.** See below. |
 | `lanes[]` | string[] | List of lane names |
 | `quiet_mode` | bool | Quiet mode state |
 | `led_state` | bool | LED strip on/off |
+
+### Fields that do not mean what they say
+
+Established by measurement on a live BoxTurtle (2026-07-27) and by reading
+`AFC-Klipper-Add-On` v1.2.0. Every one of these cost real debugging time; do not re-derive them.
+
+**`AFC_stepper.<lane>.loaded_to_hub` is latched and inert.** It is set once at prep and never
+updated. On a 4-lane unit it reads `true` on **all four lanes simultaneously** while the shared
+hub sensor reads clear — physically impossible for one hub. It does not change when filament
+actually transits the hub. Verified by pushing a lane 250 mm past the hub and retracting it:
+`AFC_hub.state` tracked the move exactly, `loaded_to_hub` never moved.
+
+*Use `AFC_hub.<hub>.state` for hub occupancy.* Resolve a lane's hub through the per-lane `hub`
+field (`"Turtle_1"`, or the literal `"direct"` meaning no hub in that lane's path).
+
+**`AFC.message` is a FIFO queue head.** Each `AFC_CLEAR_MESSAGE` pops exactly one entry;
+Klipper's own help string reads *"clear error and warning message from AFC message queue"*. A
+new error raised while an older one is unacknowledged is enqueued **behind** it and cannot
+display until the earlier entry is popped. Observed depth 4 during one real failure, with a
+slicer-deprecation warning at the head hiding the actionable load error behind it. Clearing an
+already-empty queue is a harmless no-op.
+
+*A single clear is not enough.* `AmsBackendAfc::clear_fault()` drains with a bounded budget and
+a wall-clock deadline; see `message_drain_budget_` / `message_drain_deadline_`.
+
+**`AFC.error_state` is not the error signal.** It stayed `false` for a whole session while
+`message` held an error. It drives only `error_segment_` and a `classify_error` catch-all.
+`message.type == "error"` is the real signal.
+
+**The hub sensor cannot attribute a strand to a lane.** One sensor per unit, shared. When a
+strand is stuck past the hub, every lane on that unit looks identical — during a live failure
+lanes 1 and 4 both read `prep=True load=True loaded_to_hub=True` and only lane 4's filament was
+actually in the hub. `AFC.current_lane` is the only attribution signal, and it is null after a
+Klipper crash mid-toolchange. **Software cannot determine this from sensors.** See
+`active_load_lane_` and `can_recover_lane_position()`.
+
+**A failed `AFC_LANE_RESET` names the wrong lane, it does not report a failure.**
+`cmd_AFC_LANE_RESET` retracts the named lane until the hub clears, bailing if *that lane's* own
+switch opens first:
+
+```
+"'{lane}' failed to reset to hub, load switch became false during reset"   → wrong lane
+"'{lane}' failed to reset to hub, prep switch became false during reset"   → wrong lane
+"'{lane}' failed to reset to hub"  (no switch named)                       → nothing owns it
+```
+
+The first two also mean **that lane has now been retracted past its own switch** and will fail
+its next load with "LOAD TRIGGER NOT TRIGGERED" until advanced forward again. The third means
+the retract ran the full bowden without clearing — most likely a snapped fragment in the hub,
+which no lane reset can ever clear.
+
+**`AFC_LANE_RESET`'s toolhead guard does not actually stop it.** In v1.2.0 (`a06f14d`) the
+hub-clear guard has a `return`; the toolhead guard does not:
+
+```python
+if not CUR_HUB.state:
+    ...AFC_error("Hub is already clear while trying to reset '{lane}'")
+    return                                  # returns
+
+if (tool_load := self.get_current_lane_obj()) is not None:
+    ...AFC_error("Toolhead is loaded with '{name}'...")
+                                            # NO return — falls through and moves filament
+```
+
+So AFC logs the refusal and then retracts the lane anyway, while the extruder still grips the
+filament. Reported as [AFCProject/AFC-Klipper-Add-On#803](https://github.com/AFCProject/AFC-Klipper-Add-On/issues/803),
+open as of 2026-07-28.
+
+*`can_recover_lane_position()`'s `filament_loaded` check is therefore load-bearing safety, not a
+politeness mirror of an upstream guard.* Do not remove it as redundant.
+
+**A filament swap resets lane identity when `remember_spool` is false.** AFC re-applies
+`[afc] default_material_type` and `full_weight`, discarding material, colour and weight. Lanes
+carrying a Spoolman `spool_id` survive; lanes without one silently revert. HelixScreen's
+`FilamentSlotOverrideStore` (private AFC namespace) exists to preserve identity across this.
 
 **Moonraker database** (AFC namespace, `lane_data` key -- v1.0.32+):
 
@@ -986,24 +1063,61 @@ AFC state comes from multiple Klipper objects:
 
 ### G-code Commands
 
-| Command | Action |
-|---------|--------|
-| `AFC_LOAD LANE={name}` | Load filament from lane |
-| `AFC_UNLOAD` | Unload current filament |
-| `AFC_CUT LANE={name}` | Cut filament (if cutter installed) |
-| `AFC_HOME` | Home the AFC system (reset) |
-| `AFC_RESET` | Reset from error state (recover) |
-| `T{n}` | Tool change (unload + load) |
-| `SET_MAP LANE={name} MAP=T{n}` | Set lane-to-tool mapping |
-| `SET_BOWDEN_LENGTH UNIT={unit_name} LENGTH={mm}` | Set bowden tube length for a unit |
-| `SET_RUNOUT LANE={name} RUNOUT={backup_lane}` | Set endless spool backup |
-| `RESET_AFC_MAPPING RUNOUT=no` | Reset tool mappings only |
-| `AFC_CALIBRATION` | Run calibration wizard |
-| `AFC_PARK` | Park the AFC system |
-| `AFC_BRUSH` | Run brush cleaning sequence |
-| `AFC_RESET_MOTOR_TIME` | Reset motor run-time counter |
-| `TURN_ON_AFC_LED` / `TURN_OFF_AFC_LED` | Toggle LED strip |
-| `AFC_QUIET_MODE` | Toggle quiet mode |
+Verified against `AFC-Klipper-Add-On` v1.2.0. Two kinds exist and the distinction matters:
+**Python** commands are registered by AFC's extras modules and are always present; **config
+macro** entries ship in AFC's `config/` templates and can be absent, renamed or edited on a
+given machine. `BT_*` macros are BoxTurtle-specific and do not exist on other unit types.
+
+| Command | Kind | Action |
+|---------|------|--------|
+| `CHANGE_TOOL LANE={name}` / `T{n}` | Python | Tool change (unload + load) |
+| `TOOL_LOAD LANE={name}` | Python | Load a lane into the toolhead |
+| `TOOL_UNLOAD` | Python | Unload the toolhead |
+| `LANE_UNLOAD LANE={name}` | Python | Eject a lane's filament back to the spool |
+| `LANE_MOVE LANE={name} DISTANCE={float}` | Python | Manual lane move. Negative retracts. **Refuses while printing** unless `FORCE=1`. Zero distance is an error. See the note below on `DISTANCE`'s type. |
+| `HUB_LOAD LANE={name}` | Python | Advance a lane to its hub |
+| `AFC_LANE_RESET LANE={name}` | Python | Retract a lane from the bowden back to its hub. Requires hub occupied + toolhead free. |
+| `AFC_RESET` | Python | **Opens a lane-picker prompt**, not a system reset. Lists lanes with `raw_load_state` true and dispatches `AFC_LANE_RESET` for the chosen one. With no candidates: *"No lanes are loaded, a lane must be loaded to be reset"*. |
+| `RESET_FAILURE` | Python | Clear AFC's failure state |
+| `AFC_CLEAR_MESSAGE` | Python | Pop **one** entry from the message queue |
+| `SET_LANE_LOADED LANE={name}` | Python | Mark a lane as toolhead-loaded without moving filament |
+| `UNSET_LANE_LOADED` | Python | Clear the toolhead-loaded marker |
+| `SET_MAP LANE={name} MAP=T{n}` | Python | Set lane-to-tool mapping |
+| `SET_MATERIAL LANE={name} MATERIAL={type}` | Python | Set a lane's material |
+| `SET_COLOR LANE={name} COLOR={hex}` | Python | Set a lane's colour |
+| `SET_WEIGHT LANE={name} WEIGHT={g}` | Python | Set a lane's remaining weight |
+| `SET_SPOOL_ID LANE={name} SPOOL_ID={id}` | Python | Link a lane to a Spoolman spool |
+| `SET_BOWDEN_LENGTH HUB={hub} LENGTH={mm}` | Python | Set bowden length (mux keyed on `HUB`) |
+| `SET_RUNOUT LANE={name} RUNOUT={backup_lane}` | Python | Set endless spool backup |
+| `RESET_AFC_MAPPING RUNOUT=no` | Python | Reset tool mappings only |
+| `AFC_CALIBRATION` | Python | Run calibration wizard |
+| `AFC_RESET_MOTOR_TIME LANE={name}` | Python | Reset motor run-time counter |
+| `AFC_QUIET_MODE` | Python | Toggle quiet mode |
+| `TURN_ON_AFC_LED` / `TURN_OFF_AFC_LED` | Python | Toggle LED strip |
+| `AFC_CUT` / `AFC_PARK` / `AFC_BRUSH` / `AFC_POOP` / `AFC_KICK` | config macro | Toolhead servicing. Ship in AFC's config templates; may be absent or edited. |
+| `BT_LANE_MOVE` / `BT_LANE_EJECT` / `BT_TOOL_UNLOAD` / `BT_CHANGE_TOOL` / `BT_PREP` | config macro | **BoxTurtle only.** Thin wrappers over the Python commands above — prefer the Python command. |
+
+**`LANE_MOVE`'s `DISTANCE` is a float, and AFC's own metadata says otherwise.** The
+`cmd_LANE_MOVE_options` dict (`extras/AFC.py:1010`) labels it `{"type": "int"}`, but nothing
+consumes that dict for parsing — the command body does `gcmd.get_float('DISTANCE', 0)`. Read the
+function body, not the options metadata, when documenting any AFC command; the metadata is
+descriptive and can be wrong about its own command. (This exact mistake was made and caught
+while writing this section.)
+
+`LANE_MOVE` also returns early with *"Cannot move lane while printer is printing"* unless
+`FORCE=1`, and rejects a zero distance. Anything automating a lane move during a paused print
+needs to account for both.
+
+**Commands that do NOT exist.** These appeared in earlier revisions of this document and were
+never real — verified absent from both AFC's Python registrations and its shipped config macros.
+Do not reintroduce them:
+
+| Fiction | Use instead |
+|---------|-------------|
+| `AFC_HOME` | Nothing homes AFC. `AFC_RESET` opens a lane picker; `reset()`/`recover()` both send `AFC_RESET`. |
+| `AFC_LOAD` | `TOOL_LOAD LANE={name}` or `CHANGE_TOOL LANE={name}` |
+| `AFC_UNLOAD` | `TOOL_UNLOAD` (toolhead) or `LANE_UNLOAD LANE={name}` (lane to spool) |
+| `AFC_LANE_MOVE` | `LANE_MOVE` — the `AFC_` prefix is not real |
 
 ### Path Topology
 
@@ -1056,15 +1170,28 @@ The LED toggle sends `TURN_ON_AFC_LED` or `TURN_OFF_AFC_LED` based on the curren
 
 Quiet mode reduces motor noise at the cost of speed. Toggled via `AFC_QUIET_MODE` G-code. The current state is tracked via `afc_quiet_mode_` from the `AFC.quiet_mode` printer object field.
 
-#### Per-Lane Reset
+#### Fault Clear vs Lane-Position Recovery
 
-AFC supports resetting individual lanes via `reset_lane(slot_index)`, which sends `AFC_RESET LANE={name}`. This resets a single lane to a known good state without affecting others.
+AFC does not have a genuine per-lane reset. What used to be called `reset_lane()` was
+actually two unrelated operations that happened to share one name:
 
-#### Reset vs Recover
+- **Fault clear** (`clear_fault(slot_index)`) is bookkeeping only — it never moves
+  filament. AFC has no per-lane fault clear, so `slot_index` is ignored: it sends
+  `RESET_FAILURE` followed by `AFC_CLEAR_MESSAGE` and arms a bounded drain of
+  `printer.AFC.message`, which is a FIFO queue — a second queued error is not visible
+  until the first is popped, so a single clear only pops one entry.
+- **Lane-position recovery** (`recover_lane_position(slot_index)`) is a physical
+  retract: it sends `AFC_LANE_RESET LANE={name}` to pull filament stranded in the
+  bowden back to its lane. AFC's firmware refuses this unless that lane's hub sensor
+  is actually triggered, so `can_recover_lane_position(slot_index)` gates the UI on
+  the live `AFC_hub.<hub>.state` field — **not** `AFC_stepper.<lane>.loaded_to_hub`,
+  which is latched once at prep time and never updated afterward, so it cannot be
+  used as a hub-occupancy signal.
 
-- **Reset** (`reset()`) sends `AFC_HOME` to home the entire AFC system.
-- **Recover** (`recover()`) sends `AFC_RESET` to recover from error state. Less disruptive than a full home.
-- **Per-lane reset** (`reset_lane()`) targets a single lane with `AFC_RESET LANE={name}`.
+Separately, **Reset** (`reset()`) and **Recover** (`recover()`) both send `AFC_RESET`
+today — `reset()` after the usual busy-state preconditions, `recover()` skipping them
+so it still works while the system is stuck. Neither homes the system; `AFC_HOME` is
+not sent by either.
 
 ### Capabilities
 
@@ -1785,7 +1912,7 @@ The `AmsDeviceOperationsOverlay` (`ui_ams_device_operations_overlay.h`) consolid
 
 | Action | G-code (varies by backend) | Description |
 |--------|---------------------------|-------------|
-| Home | `MMU_HOME` / `AFC_HOME` | Reset to home position |
+| Home | `MMU_HOME` / `AFC_RESET` | Reset to home position (label follows `reset_button_label()`; AFC sends `AFC_RESET`, not `AFC_HOME`) |
 | Recover | `MMU_RECOVER` / `AFC_RESET` | Attempt error recovery |
 | Abort | `cancel()` | Cancel current operation |
 | Bypass Toggle | `enable_bypass()` / `disable_bypass()` | Toggle bypass mode (if supported) |
@@ -1946,7 +2073,8 @@ Create `include/ams_backend_mysystem.h` and `src/printer/ams_backend_mysystem.cp
 
 **Optional overrides (with default implementations):**
 
-- `reset_lane()` -- Per-lane reset (default: NOT_SUPPORTED)
+- `clear_fault()` -- Clear a latched fault, bookkeeping only (default: forwards to `cancel()`)
+- `recover_lane_position()` -- Physical retract of a stranded lane (default: NOT_SUPPORTED)
 - `get_dryer_info()`, `start_drying()`, `stop_drying()`, `update_drying()` -- Dryer control
 - `get_endless_spool_capabilities()`, `get_endless_spool_config()`, `set_endless_spool_backup()` -- Endless spool
 - `get_tool_mapping_capabilities()`, `get_tool_mapping()` -- Tool mapping

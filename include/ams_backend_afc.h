@@ -10,6 +10,7 @@
 #include "filament_slot_override_store.h"
 #include "slot_registry.h"
 
+#include <chrono>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -141,9 +142,6 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     [[nodiscard]] const char* get_klipper_object_name() const override {
         return "AFC"; // Matches the Klipper object name (uppercase)
     }
-    [[nodiscard]] bool supports_clear_message_queue() const override {
-        return true;
-    }
     AmsError clear_message_queue() override;
     [[nodiscard]] bool manages_active_spool() const override {
         return true;
@@ -186,14 +184,17 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // Recovery
     AmsError recover() override;
     AmsError reset() override;
-    AmsError reset_lane(int slot_index) override;
-    [[nodiscard]] bool supports_lane_reset() const override {
-        return true;
-    }
-    /// AFC_LANE_RESET retracts filament from the bowden back to the hub, so it
-    /// needs the lane's filament to actually be at the hub and the toolhead
-    /// free. See can_reset_lane() in the base class.
-    [[nodiscard]] bool can_reset_lane(int slot_index) const override;
+    AmsError clear_fault(int slot_index) override;
+    /// AFC_LANE_RESET retracts from the bowden to the hub. Needs the lane's hub
+    /// sensor triggered and a free toolhead. See can_recover_lane_position().
+    [[nodiscard]] bool can_recover_lane_position(int slot_index) const override;
+    AmsError recover_lane_position(int slot_index) override;
+    /// True when AFC names a specific lane as active (AFC.current_load /
+    /// current_lane), i.e. active_load_lane_ is non-empty. The BoxTurtle hub
+    /// sensor is shared across every lane on the unit, so an unattributed
+    /// trigger cannot say whose filament caused it — see
+    /// can_recover_lane_position()'s deliberate all-lanes fallback.
+    [[nodiscard]] bool lane_recovery_is_attributed() const override;
 
     /// Delete this slot's user override ("Clear Spool"). AFC previously
     /// inherited the no-op default, so the button did nothing here.
@@ -662,6 +663,45 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     std::unordered_map<std::string, bool> hub_sensors_; ///< Per-hub sensor state, keyed by hub name
     bool tool_start_sensor_{false};                     ///< Toolhead entry sensor
     bool tool_end_sensor_{false};                       ///< Toolhead exit/nozzle sensor
+
+    /// Lane AFC currently names as active, verbatim from AFC.current_load or
+    /// AFC.current_lane; empty when AFC names neither. Distinct from
+    /// system_info_.current_slot, which is derived from several sources and may
+    /// be stale. Used only to attribute the shared hub sensor to a lane.
+    std::string active_load_lane_;
+
+    /// Remaining AFC_CLEAR_MESSAGE sends allowed for the in-flight clear_fault().
+    /// printer.AFC.message is a FIFO head and each clear pops one entry, so a
+    /// single send leaves the next queued error on screen. Armed by clear_fault(),
+    /// spent one per status delta that still carries a message.
+    int message_drain_budget_ = 0;
+
+    /// Set by parse_afc_state() while holding mutex_; consumed by
+    /// handle_status_update() after the lock is released. parse_afc_state() must
+    /// never send gcode itself — same reason deferred_error_event exists.
+    bool message_drain_pending_ = false;
+
+    /// When the current drain arm expires. printer.AFC.message is a delta field:
+    /// if the queue was already empty at clear_fault() time, no later delta will
+    /// carry `message` at all, so the empty-message disarm never fires and the
+    /// budget would otherwise persist indefinitely — silently popping the user's
+    /// next unrelated error. A wall-clock bound is what "window" actually means.
+    std::chrono::steady_clock::time_point message_drain_deadline_{};
+
+    /// Caps total clears per clear_fault() so a fault that re-enqueues as fast as
+    /// we pop cannot spin. Overshoot is safe: clearing an empty queue is a no-op.
+    ///
+    /// Deliberately small. The re-arm check cannot distinguish a backlogged
+    /// message from one generated *after* the clear — AFC exposes only the queue
+    /// head — so every unit of budget is a delta in which an error caused by the
+    /// caller's own follow-up action (the sidebar sends AFC_RESET right after
+    /// clear_fault()) could be swallowed unseen. Two covers the realistic backlog
+    /// while bounding that window to about one delta.
+    static constexpr int kMessageDrainBudget = 2;
+
+    /// Sends one queued AFC_CLEAR_MESSAGE if the drain is armed and a message is
+    /// still present. Must be called WITHOUT mutex_ held.
+    void maybe_drain_message_queue();
 
     // Global state
     bool error_state_{false};       ///< AFC error state

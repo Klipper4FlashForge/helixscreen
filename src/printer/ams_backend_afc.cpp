@@ -382,6 +382,83 @@ AmsError AmsBackendAfc::clear_message_queue() {
     return execute_gcode("AFC_CLEAR_MESSAGE");
 }
 
+AmsError AmsBackendAfc::clear_fault(int slot_index) {
+    // AFC has no per-lane fault clear; both commands are system-scoped.
+    (void)slot_index;
+
+    // Drop any queued LANE_UNLOAD requests, exactly as cancel() does. Clearing a
+    // fault means the user wants to stop, not to chain through a pile of pending
+    // ejects afterwards. eject_in_flight_ is deliberately NOT cleared — the
+    // in-flight LANE_UNLOAD's completion callback still fires and clears it once
+    // it sees the empty queue.
+    {
+        std::lock_guard<std::mutex> lock(eject_queue_mutex_);
+        if (!pending_eject_lanes_.empty()) {
+            spdlog::info("[AMS AFC] Clear fault: discarding {} queued LANE_UNLOAD request(s)",
+                         pending_eject_lanes_.size());
+            pending_eject_lanes_.clear();
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Arm the drain. printer.AFC.message is a FIFO head — one clear pops one
+        // entry, so a second queued error would otherwise stay on screen and look
+        // exactly like the Reset having done nothing.
+        message_drain_budget_ = kMessageDrainBudget;
+        message_drain_pending_ = false;
+        // Bound the arm in wall-clock time. If the queue was already empty, no
+        // later delta will carry `message` at all, so the empty-message disarm
+        // below never fires and the budget would otherwise persist indefinitely.
+        message_drain_deadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    }
+
+    // Deliberately does NOT route through cancel(): cancel() returns early when
+    // the action is IDLE, which is the common case for a queued message — AFC
+    // keeps printer.AFC.message populated long after current_state returns to
+    // Idle, and AFC_RESET does not touch it.
+    spdlog::info("[AMS AFC] Clearing fault (drain budget {})", kMessageDrainBudget);
+    // execute_gcode_notify, matching cancel(): the user pressed a button, so a
+    // failed RESET_FAILURE must surface rather than being logged silently.
+    AmsError failure_reset = execute_gcode_notify("RESET_FAILURE",
+                                                  lv_tr("AFC failure reset complete"),
+                                                  lv_tr("AFC failure reset failed"));
+    AmsError message_clear = clear_message_queue();
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (message_drain_budget_ > 0) {
+            --message_drain_budget_;
+        }
+    }
+    return failure_reset.success() ? message_clear : failure_reset;
+}
+
+void AmsBackendAfc::maybe_drain_message_queue() {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!message_drain_pending_ || message_drain_budget_ <= 0) {
+            return;
+        }
+        // This is the ONLY place a stale arm is retired — parse_afc_state()'s
+        // re-arm has no expiry check of its own. It cannot: an arm goes stale
+        // precisely when the queue was already empty at clear_fault() time, and
+        // AFC then omits the unchanged `message` key forever, so the
+        // empty-message disarm there never runs. The firing decision therefore
+        // has to be made here, against the wall clock, or a months-old arm would
+        // pop the user's next unrelated error.
+        if (std::chrono::steady_clock::now() > message_drain_deadline_) {
+            message_drain_budget_ = 0;
+            message_drain_pending_ = false;
+            return;
+        }
+        message_drain_pending_ = false;
+        --message_drain_budget_;
+    }
+
+    spdlog::debug("[AMS AFC] Draining next queued message");
+    clear_message_queue();
+}
+
 SlotInfo AmsBackendAfc::get_slot_info(int slot_index) const {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -443,10 +520,12 @@ PathSegment AmsBackendAfc::get_slot_filament_segment(int slot_index) const {
 
     const auto& sensors = entry->sensors;
 
-    // Check sensors from furthest to nearest
-    if (sensors.loaded_to_hub) {
-        return PathSegment::HUB; // Filament reached hub sensor
-    }
+    // Check sensors from furthest to nearest. PathSegment::HUB is deliberately
+    // unreachable here: AFC's per-lane loaded_to_hub is latched at prep and
+    // never updated, so it cannot distinguish "at hub" from "prepped once" —
+    // it read true on every prepped lane while the shared hub sensor read
+    // clear. There is no per-slot hub sensor to fall back on for a non-active
+    // slot, so below load/prep is the furthest this can honestly report.
     if (sensors.load) {
         return PathSegment::LANE; // Filament in lane (load sensor triggered)
     }
@@ -659,10 +738,14 @@ PathSegment AmsBackendAfc::compute_filament_segment_unlocked() const {
     //   tool_end_sensor   → NOZZLE (filament at nozzle tip)
     //   tool_start_sensor → TOOLHEAD (filament entered toolhead)
     //   hub_sensor        → OUTPUT (filament past hub, heading to toolhead)
-    //   loaded_to_hub     → HUB (filament reached hub merger)
     //   load              → LANE (filament in lane between prep and hub)
     //   prep              → PREP (filament at prep sensor, past spool)
     //   (no sensors)      → NONE or SPOOL depending on context
+    //
+    // PathSegment::HUB is deliberately unreachable here. AFC's per-lane
+    // loaded_to_hub is latched at prep and never updated, so it cannot
+    // distinguish "at hub" from "prepped once"; the hub sensor already covers
+    // the real transition as OUTPUT. HUB stays in the enum for Happy Hare.
 
     // Check toolhead sensors first (furthest along path)
     if (tool_end_sensor_) {
@@ -693,10 +776,6 @@ PathSegment AmsBackendAfc::compute_filament_segment_unlocked() const {
         if (entry) {
             const auto& sensors = entry->sensors;
 
-            if (sensors.loaded_to_hub) {
-                return PathSegment::HUB;
-            }
-
             if (sensors.load) {
                 return PathSegment::LANE;
             }
@@ -713,10 +792,6 @@ PathSegment AmsBackendAfc::compute_filament_segment_unlocked() const {
         if (!entry)
             continue;
         const auto& sensors = entry->sensors;
-
-        if (sensors.loaded_to_hub) {
-            return PathSegment::HUB;
-        }
 
         if (sensors.load) {
             return PathSegment::LANE;
@@ -947,6 +1022,11 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
     if (!deferred_error_event.empty()) {
         emit_event(EVENT_ERROR, deferred_error_event);
     }
+
+    // Pop the next queued AFC message if a clear_fault() drain is in flight.
+    // Must be outside the lock — clear_message_queue() sends gcode.
+    maybe_drain_message_queue();
+
     if (state_changed) {
         emit_event(EVENT_STATE_CHANGED);
     }
@@ -1006,6 +1086,16 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
     if (loaded_lane.empty() && afc_data.contains("current_load") &&
         afc_data["current_load"].is_string()) {
         loaded_lane = afc_data["current_load"].get<std::string>();
+    }
+
+    // Delta semantics: only reconsider the active lane when AFC actually mentions
+    // it. A present string sets it, a present null clears it, and absence leaves
+    // it alone — AFC omits unchanged keys, and clearing on absence would drop the
+    // attribution on the next unrelated delta (message, state, toolchange count).
+    const bool mentions_lane = afc_data.contains("current_lane");
+    const bool mentions_load = afc_data.contains("current_load");
+    if (mentions_lane || mentions_load) {
+        active_load_lane_ = loaded_lane;
     }
 
     if (!loaded_lane.empty()) {
@@ -1100,6 +1190,12 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
             std::string msg_text = msg["message"].get<std::string>();
             if (!msg_text.empty()) {
                 system_info_.operation_detail = msg_text;
+
+                // A message is still queued behind the one we just cleared. Ask
+                // the caller to pop another once it has released mutex_.
+                if (message_drain_budget_ > 0) {
+                    message_drain_pending_ = true;
+                }
             }
 
             // Get message type (error, warning, or empty)
@@ -1113,10 +1209,16 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
 
             // Handle message text changes for toast/notification dispatch
             if (msg_text.empty()) {
-                // Error cleared - reset dedup tracking
+                // Error cleared - reset dedup tracking and the visible detail.
+                // operation_detail outranks the action-derived string in
+                // AmsState::recompute_action_detail(), so leaving it set pins the
+                // sidebar status label to a stale error indefinitely.
+                system_info_.operation_detail.clear();
                 last_seen_message_.clear();
                 last_error_msg_.clear();
                 last_message_type_.clear();
+                message_drain_budget_ = 0;
+                message_drain_pending_ = false;
             } else if (msg_text != last_seen_message_) {
                 // New or changed message - update dedup tracker
                 last_seen_message_ = msg_text;
@@ -2825,28 +2927,71 @@ void AmsBackendAfc::clear_slot_override(int slot_index) {
     }
 }
 
-bool AmsBackendAfc::can_reset_lane(int slot_index) const {
+bool AmsBackendAfc::can_recover_lane_position(int slot_index) const {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    // Mirrors cmd_AFC_LANE_RESET's own guards (AFC_functions.py). It retracts
-    // filament from the bowden back to the hub, so it needs something AT the
-    // hub — upstream rejects with "Hub is already clear while trying to reset
-    // '<lane>'" otherwise — and it refuses while the toolhead is loaded.
+    // cmd_AFC_LANE_RESET (AFC_functions.py) retracts filament from the bowden
+    // back to the hub, so it needs the hub occupied — upstream rejects with
+    // "Hub is already clear while trying to reset '<lane>'" otherwise.
     //
-    // loaded_to_hub is our per-lane view of that hub state. Gating on it stops
-    // us offering a reset the firmware will refuse, which is what left a latched
-    // error in printer.AFC.message re-firing toasts for a whole session.
-    const helix::printer::SlotEntry* entry = slots_.get(slot_index);
-    if (!entry) {
-        return false;
-    }
+    // SAFETY, NOT POLITENESS: the toolhead check below is NOT mirroring an
+    // upstream guard. Upstream's toolhead guard is missing its `return` — it
+    // logs "Toolhead is loaded with '<lane>'" and then performs the reset moves
+    // anyway, retracting the lane while the extruder still grips the filament.
+    // Confirmed present in v1.2.0 (a06f14d); reported as
+    // AFCProject/AFC-Klipper-Add-On#803, still open. Do not remove this check as
+    // redundant with the firmware's — the firmware does not actually stop.
+    //
+    // The hub sensor is the only signal that tracks hub occupancy. The per-lane
+    // loaded_to_hub field is latched at prep and never updated: it reads true on
+    // every lane at once, including while the hub is demonstrably clear.
     if (system_info_.filament_loaded) {
         return false;
     }
-    return entry->sensors.loaded_to_hub;
+
+    const std::string lane_name = slots_.name_of(slot_index);
+    if (lane_name.empty()) {
+        return false;
+    }
+
+    auto route = lane_hub_routing_.find(lane_name);
+    if (route == lane_hub_routing_.end() || route->second.empty() ||
+        route->second == "direct") {
+        // No hub in this lane's path — nothing to retract to.
+        return false;
+    }
+
+    auto hub = hub_sensors_.find(route->second);
+    const bool hub_occupied = hub != hub_sensors_.end() && hub->second;
+    if (!hub_occupied) {
+        return false;
+    }
+
+    // The hub sensor is shared by every lane on the unit, so it cannot say whose
+    // filament is past it. When AFC names an active lane, trust that. When it
+    // names none, offer the recovery on every lane routed to this hub rather
+    // than on none: a wrong guess costs one harmless refusal from the firmware,
+    // while showing nothing costs the user their only way out of a stranded lane.
+    //
+    // A lane rename or unit re-init can leave active_load_lane_ naming a lane
+    // that no longer exists. Treat that as unattributed rather than matching
+    // nothing — otherwise a triggered hub would offer recovery on no lane at all.
+    if (!active_load_lane_.empty() && slots_.index_of(active_load_lane_) >= 0) {
+        return lane_name == active_load_lane_;
+    }
+    return true;
 }
 
-AmsError AmsBackendAfc::reset_lane(int slot_index) {
+bool AmsBackendAfc::lane_recovery_is_attributed() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    // Kept consistent with can_recover_lane_position()'s staleness guard above —
+    // otherwise this could report "attributed" while that predicate falls back
+    // to unattributed, leaving the UI's attributed-vs-unattributed ranking and
+    // the actual recovery gate disagreeing about the same lane.
+    return !active_load_lane_.empty() && slots_.index_of(active_load_lane_) >= 0;
+}
+
+AmsError AmsBackendAfc::recover_lane_position(int slot_index) {
     std::string lane_name;
     {
         std::lock_guard<std::mutex> lock(mutex_);

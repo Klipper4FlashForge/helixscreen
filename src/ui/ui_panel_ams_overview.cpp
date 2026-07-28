@@ -1225,6 +1225,19 @@ void AmsOverviewPanel::show_detail_context_menu(int slot_index, lv_obj_t* near_w
             show_edit_modal(slot, /*open_on_picker=*/true);
             break;
 
+        case helix::ui::AmsContextMenu::MenuAction::RECOVER_POSITION:
+            if (!backend) {
+                NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
+                return;
+            }
+            {
+                AmsError error = backend->recover_lane_position(slot);
+                if (error.result != AmsResult::SUCCESS) {
+                    NOTIFY_ERROR(lv_tr("Recovery failed: {}"), error.user_msg);
+                }
+            }
+            break;
+
         case helix::ui::AmsContextMenu::MenuAction::SCAN_QR: {
             spdlog::info("[AmsOverview] SCAN_QR action for slot {}", slot);
             auto& scanner = helix::ui::get_qr_scanner_overlay();

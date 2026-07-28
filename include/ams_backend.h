@@ -633,40 +633,74 @@ class AmsBackend {
     virtual AmsError reset() = 0;
 
     /**
-     * @brief Reset a specific lane/slot
+     * @brief Clear a latched fault so the system stops reporting an error
      *
-     * Resets an individual lane to a known good state without affecting others.
+     * Bookkeeping only — this never moves filament. Distinct from
+     * recover_lane_position(), which is a physical retract.
+     *
+     * Scope is backend-defined. AFC has no per-lane fault clear, so it ignores
+     * slot_index and clears system-wide (RESET_FAILURE + AFC_CLEAR_MESSAGE).
+     * Happy Hare clears per-gate (MMU_RECOVER GATE=n). Callers always pass the
+     * slot they mean and let the backend decide what it can honour.
+     *
+     * Must be safe to call from IDLE: a latched fault routinely outlives the
+     * operation that produced it, which is precisely when clearing matters.
+     *
+     * @param slot_index Slot the user acted on, or -1 for "no particular slot"
+     * @return AmsError indicating if the operation was started
+     */
+    virtual AmsError clear_fault(int slot_index) {
+        (void)slot_index;
+        return cancel();
+    }
+
+    /**
+     * @brief Retract a lane's filament back to its lane from the bowden
+     *
+     * A physical filament move, not a fault clear. Recovers a lane left stranded
+     * mid-path by a failed load or unload — filament past the lane but not at the
+     * toolhead, which plain unload() cannot address because it assumes the head.
+     *
+     * AFC: AFC_LANE_RESET LANE={name}, which retracts until the hub clears.
      * Default implementation returns NOT_SUPPORTED.
      *
-     * @param slot_index Lane to reset (0-based)
-     * @return AmsError indicating if operation was started
+     * @param slot_index Lane to recover (0-based)
+     * @return AmsError indicating if the operation was started
      */
-    virtual AmsError reset_lane(int slot_index) {
+    virtual AmsError recover_lane_position(int slot_index) {
         (void)slot_index;
-        return AmsErrorHelper::not_supported("Per-lane reset not supported");
+        return AmsErrorHelper::not_supported("Lane position recovery not supported");
     }
 
     /**
-     * @brief Check if per-lane reset is supported
-     * @return true if reset_lane() is implemented
-     */
-    /**
-     * @brief Whether a lane reset is possible for this slot RIGHT NOW
+     * @brief Whether a lane-position recovery is possible for this slot right now
      *
-     * supports_lane_reset() is a static capability. This is the per-slot,
-     * per-state question, and it is what UI should gate on: offering a reset the
+     * Per-slot and per-state, not a static capability: offering a recovery the
      * firmware will refuse produces an error the user cannot act on, and on AFC
      * that error latches in printer.AFC.message and keeps re-firing toasts.
-     *
-     * Defaults to the static capability so backends that have no extra
-     * precondition need not override.
      */
-    [[nodiscard]] virtual bool can_reset_lane(int slot_index) const {
+    [[nodiscard]] virtual bool can_recover_lane_position(int slot_index) const {
         (void)slot_index;
-        return supports_lane_reset();
+        return false;
     }
 
-    [[nodiscard]] virtual bool supports_lane_reset() const {
+    /**
+     * @brief Whether this backend currently knows WHICH lane needs recovery
+     *
+     * Distinct from can_recover_lane_position(), which answers "is recovery
+     * possible" per slot. This answers "do we know whose fault it is" — some
+     * backends share one physical sensor across every lane on a unit (AFC's hub
+     * sensor), so can_recover_lane_position() can return true for every lane on
+     * that unit at once when nothing attributes the strand to one of them.
+     * Callers use this to decide whether RecoverPosition should outrank Eject
+     * (attributed: confident, single lane) or defer to it (unattributed: a
+     * last-resort offer, since showing Recover on every lane would otherwise
+     * hide Eject from lanes that are simply seated, not stranded).
+     *
+     * Default false: backends with a genuinely per-lane fault signal (or no
+     * lane-position recovery at all) have nothing to attribute.
+     */
+    [[nodiscard]] virtual bool lane_recovery_is_attributed() const {
         return false;
     }
 
@@ -1316,25 +1350,17 @@ class AmsBackend {
     }
 
     /**
-     * @brief Whether the backend maintains a persistent message/error queue that the
-     *        UI must explicitly clear when the user dismisses an error.
-     *
-     * AFC keeps a persistent message_queue + error_state that won't clear until
-     * AFC_CLEAR_MESSAGE is sent; without it the error dialog reappears immediately
-     * because AFC keeps reporting ERROR (#497). Other backends have no such queue.
-     *
-     * @return true if clear_message_queue() does meaningful work
-     */
-    [[nodiscard]] virtual bool supports_clear_message_queue() const {
-        return false;
-    }
-
-    /**
      * @brief Clear the backend's persistent message/error queue.
      *
-     * Called by the UI when the user dismisses a backend error so the error does
-     * not immediately re-fire. Default is a no-op (NOT_SUPPORTED); backends with a
-     * persistent queue (AFC) override to send the clearing command.
+     * AFC keeps a persistent message queue that will not clear until
+     * AFC_CLEAR_MESSAGE is sent; without it the error dialog re-fires immediately
+     * because AFC keeps reporting ERROR (#497). Default is a no-op
+     * (NOT_SUPPORTED); backends with such a queue override it.
+     *
+     * Callers do not need to ask whether a backend has a queue first — the
+     * default is already a harmless no-op, which is why the former
+     * supports_clear_message_queue() capability query was removed once
+     * clear_fault() took over the dismiss path.
      *
      * @return AmsError indicating success/failure
      */
