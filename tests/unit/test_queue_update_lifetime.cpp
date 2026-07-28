@@ -31,6 +31,7 @@
 #include "printer_plugin_status_state.h"
 #include "printer_print_state.h"
 #include "printer_state.h"
+#include "static_subject_registry.h"
 
 #include "../catch_amalgamated.hpp"
 
@@ -441,8 +442,8 @@ TEST_CASE_METHOD(LVGLTestFixture, "InputShaperPanel drops the config query once 
     lv_subject_t* configured = lv_xml_get_subject(nullptr, "is_shaper_configured");
     REQUIRE(configured != nullptr);
 
-    // The panel has no deinit_subjects(), so establish the "configured" state
-    // through the panel itself rather than assuming what an earlier test left.
+    // Establish the "configured" state through the panel itself rather than
+    // assuming what an earlier test left behind.
     client.set_input_shaper_configured(true);
     panel.on_activate();
     UpdateQueue::instance().drain();
@@ -575,4 +576,53 @@ TEST_CASE_METHOD(LVGLTestFixture, "AmsState applies the pending-slot setter whil
     UpdateQueue::instance().drain();
 
     CHECK(lv_subject_get_int(ams.get_pending_target_slot_subject()) == 5);
+}
+
+// ============================================================================
+// InputShaperPanel — subject teardown joins the ordered shutdown pass (#1180)
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "InputShaperPanel registers its subject teardown with StaticSubjectRegistry",
+                 "[input_shaper][lifetime][queue_update]") {
+    PrinterState state;
+    MoonrakerClientMock client;
+    MoonrakerAPIMock api(client, state);
+
+    auto& panel = get_global_input_shaper_panel();
+    panel.init_subjects();
+    ScopedPanelApi<InputShaperPanel> wired(panel, &client, &api);
+
+    UpdateQueue::instance().drain();
+
+    lv_subject_t* configured = lv_xml_get_subject(nullptr, "is_shaper_configured");
+    REQUIRE(configured != nullptr);
+
+    // Settle on the NOT-configured answer, so the stale reply queued below is the
+    // opposite value and a leaked write is distinguishable from the default.
+    client.set_input_shaper_configured(false);
+    panel.on_activate();
+    UpdateQueue::instance().drain();
+    REQUIRE(lv_subject_get_int(configured) == 0);
+
+    // Queue the "configured" reply, then run the registered teardown rather than
+    // closing the overlay. Pre-#1180 there was no entry to run at all, which is
+    // what the return value below pins.
+    client.set_input_shaper_configured(true);
+    panel.on_activate();
+    REQUIRE(UpdateQueue::instance().pending_count() > 0);
+
+    CHECK(StaticSubjectRegistry::instance().deinit_one("InputShaperPanel"));
+
+    // Stand the subjects back up, as a reconnect or the next test would.
+    panel.init_subjects();
+    UpdateQueue::instance().drain();
+
+    lv_subject_t* reborn = lv_xml_get_subject(nullptr, "is_shaper_configured");
+    REQUIRE(reborn != nullptr);
+
+    // Without the invalidate in deinit_subjects() the stale reply writes 1 into
+    // the reborn subject; with it, the callback is dropped.
+    CHECK(lv_subject_get_int(reborn) == 0);
+    CHECK(UpdateQueue::instance().pending_count() == 0);
 }

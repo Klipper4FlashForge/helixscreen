@@ -80,6 +80,18 @@ class InputShaperPanel : public OverlayBase {
     void init_subjects() override;
 
     /**
+     * @brief Tear down the owned subjects and expire outstanding async tokens
+     *
+     * Registered with StaticSubjectRegistry from init_subjects(), so it runs in
+     * the ordered subject-shutdown pass rather than waiting for the panel
+     * registry to destroy this object. Invalidating both generation guards here
+     * — not only in the destructor — is the load-bearing half: subjects can be
+     * torn down and re-inited on a LIVE panel, which no destructor hook would
+     * catch (prestonbrown/helixscreen#1180, #1146).
+     */
+    void deinit_subjects();
+
+    /**
      * @brief Create overlay UI from XML
      *
      * @param parent Parent screen widget to attach overlay to

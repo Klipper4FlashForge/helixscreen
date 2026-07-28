@@ -21,6 +21,7 @@
 #include "moonraker_client.h"
 #include "platform_capabilities.h"
 #include "static_panel_registry.h"
+#include "static_subject_registry.h"
 
 #include <spdlog/spdlog.h>
 
@@ -72,14 +73,12 @@ InputShaperPanel& get_global_input_shaper_panel() {
 }
 
 InputShaperPanel::~InputShaperPanel() {
-    // lifetime_ and calibration_lifetime_ destructors auto-invalidate all outstanding tokens
-
-    // Deinitialize subjects to disconnect observers before we're destroyed
-    // This prevents use-after-free when lv_deinit() later deletes widgets
-    if (subjects_initialized_) {
-        subjects_.deinit_all();
-        subjects_initialized_ = false;
-    }
+    // Share one implementation with the registry path. Normally the registry has
+    // already run this and deinit_subjects_base() no-ops on subjects_initialized_;
+    // this call covers the teardown that destroys the panel without it. The
+    // guards' own destructors would invalidate the tokens anyway, but doing it
+    // through deinit_subjects() keeps the two paths from drifting.
+    deinit_subjects();
 
     // Clear widget pointers (owned by LVGL)
     overlay_root_ = nullptr;
@@ -329,7 +328,29 @@ void InputShaperPanel::init_subjects() {
     }
 
     subjects_initialized_ = true;
+
+    // Join the ordered subject-shutdown pass. Without this the subjects went away
+    // only when StaticPanelRegistry later destroyed the panel, so their teardown
+    // ordering was decided by panel-registry destruction rather than by the one
+    // registry that exists to sequence it (#1180).
+    StaticSubjectRegistry::instance().register_deinit("InputShaperPanel", []() {
+        if (g_input_shaper_panel) {
+            g_input_shaper_panel->deinit_subjects();
+        }
+    });
+
     spdlog::debug("[InputShaper] Subjects initialized and registered");
+}
+
+void InputShaperPanel::deinit_subjects() {
+    // Expire outstanding async tokens here, not only in the destructor: subjects
+    // can be torn down and re-inited on a LIVE panel (shutdown registry, test
+    // isolation), and a queued callback would otherwise write into a subject that
+    // was deinited underneath it (#1180, #1146).
+    lifetime_.invalidate();
+    calibration_lifetime_.invalidate();
+
+    deinit_subjects_base(subjects_);
 }
 
 // ============================================================================
