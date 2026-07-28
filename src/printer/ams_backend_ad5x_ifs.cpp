@@ -2944,6 +2944,33 @@ bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
     // reaches this function on heavy-print response streams.
     if (line.find("RUN_ZCOLOR") != std::string::npos ||
         line.find("CHANGE_ZCOLOR") != std::string::npos) {
+        // Menu-definition echo vs. executed command (#1065, bundle 482NB943).
+        // zmod renders every COLOR dialog by echoing its buttons down the
+        // console as `// action:prompt_button <label>|<gcode>|<style>[|<hex>]`.
+        // Those payloads are the menu's OFFER LIST, not a record of anything
+        // the firmware did — the "Select color" grid alone carries 24 distinct
+        // CHANGE_ZCOLOR candidates. Running them through the extractor below
+        // applied all 24 in sequence, so the slot ended up on the LAST swatch
+        // (#161616) and the last material in the whitelist (PETG-CF) until the
+        // confirming GET_ZCOLOR corrected it ~1s later — a visible flicker,
+        // a false "external edit detected" delta, and a lane_data write per
+        // phantom apply (25 server.database.post_item requests queued in 300ms
+        // on a 473MB MIPS AD5X). 87 echoed buttons produced 162 phantom applies
+        // in a two-minute session.
+        //
+        // A real edit — the AD5X LCD, Mainsail, zmod's own macro, or the native
+        // screen's RESPOND MSG="…" re-echo — never carries the action:prompt_
+        // prefix, so the synchronous extraction added in v0.99.94 is untouched.
+        if (line.find("action:prompt_") != std::string::npos) {
+            // One shape IS load-bearing: the root menu's per-slot rows are a
+            // four-slot firmware snapshot, and the freshest one in the stream.
+            apply_color_menu_slot_row(line);
+            ++external_change_burst_count_;
+            schedule_json_reread();
+            schedule_zcolor_query("color_menu_render");
+            return false;
+        }
+
         // A CHANGE_ZCOLOR in the gcode stream is always a DELIBERATE external
         // edit: HelixScreen persists colors by writing Adventurer5M.json directly
         // and never emits CHANGE_ZCOLOR, so this command can only originate from
@@ -3180,6 +3207,79 @@ bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
         return false;
     }
     return false;
+}
+
+bool AmsBackendAd5xIfs::apply_color_menu_slot_row(const std::string& line) {
+    // Shape (zmod _ZCOLOR_MENU render, one per slot):
+    //   // action:prompt_button 1: SILK|RUN_ZCOLOR SLOT=1 HEX=F330F9 TYPE=SILK|primary|F330F9
+    // The `<n>: ` label prefix is what separates a slot row from the action
+    // submenu's buttons (Load|IN_ZCOLOR …, Change color|CHANGE_ZCOLOR …), and
+    // RUN_ZCOLOR is display-only — it never mutates firmware state, so a row
+    // can be read as a snapshot with no risk of confusing it for a command.
+    static const std::regex slot_row_re(R"(action:prompt_button\s+(\d+)\s*:[^|]*\|\s*RUN_ZCOLOR\b)");
+    std::smatch rm;
+    if (!std::regex_search(line, rm, slot_row_re))
+        return false;
+
+    // Same token grammar as the CHANGE_ZCOLOR extractor: TYPE stops at the '|'
+    // that begins the button's style/hex suffix, HEX is 6 digits.
+    static const std::regex slot_re(R"(SLOT=(\d+))");
+    static const std::regex type_re(R"(TYPE=([^\s|]+))");
+    static const std::regex hex_re(R"(HEX=([0-9A-Fa-f]{6}))");
+    std::smatch sm;
+    if (!std::regex_search(line, sm, slot_re))
+        return false;
+    // The label index and SLOT= must agree, or this isn't the row we think it
+    // is (a localized or restyled menu, a future zmod layout). Bail rather than
+    // write firmware-truth arrays from a line we don't actually understand.
+    if (rm[1].str() != sm[1].str())
+        return false;
+
+    const int slot0 = std::atoi(sm[1].str().c_str()) - 1; // zmod SLOT is 1-based
+    if (slot0 < 0 || slot0 >= NUM_PORTS)
+        return false;
+
+    std::smatch tm;
+    std::smatch hm;
+    const bool has_type = std::regex_search(line, tm, type_re);
+    const bool has_hex = std::regex_search(line, hm, hex_re);
+    if (!has_type && !has_hex)
+        return false;
+
+    std::string hex;
+    if (has_hex) {
+        hex = hm[1].str();
+        for (auto& c : hex) {
+            c = static_cast<char>(toupper(c));
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto idx = static_cast<size_t>(slot0);
+        const bool same = (!has_type || materials_[idx] == tm[1].str()) &&
+                          (!has_hex || colors_[idx] == hex);
+        if (same)
+            return false; // Nothing moved — the common case on a re-render.
+
+        if (has_type)
+            materials_[idx] = tm[1].str();
+        if (has_hex)
+            colors_[idx] = hex;
+
+        spdlog::info("{} Slot {} refreshed from COLOR-menu row (material='{}' color='{}')",
+                     backend_log_tag(), slot0, materials_[idx], colors_[idx]);
+
+        // Deliberately does NOT pre-advance last_firmware_* the way the
+        // CHANGE_ZCOLOR path does: this is a firmware READING, so it must flow
+        // through check_external_*_change exactly as a GET_ZCOLOR response
+        // would — refreshing a non-locked auto-mirror override and mirroring to
+        // lane_data, while honouring a user-locked one. It is the same data the
+        // debounced query returns, only ~500ms sooner.
+        update_slot_from_state(slot0);
+    }
+    emit_event(EVENT_SLOT_CHANGED, std::to_string(slot0));
+    return true;
 }
 
 void AmsBackendAd5xIfs::register_zcolor_listener() {

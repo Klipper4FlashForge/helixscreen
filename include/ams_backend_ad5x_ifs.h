@@ -484,6 +484,16 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // echoes RUN_ZCOLOR/CHANGE_ZCOLOR tokens which would otherwise re-arm
     // schedule_zcolor_query() at ~2-4 Hz).
     bool on_gcode_response_line(const std::string& line);
+    // Apply a zmod COLOR-menu per-slot row as firmware truth. The root "Select
+    // print materials" dialog renders one row per slot carrying that slot's
+    // CURRENT color/material:
+    //   // action:prompt_button 1: SILK|RUN_ZCOLOR SLOT=1 HEX=F330F9 TYPE=SILK|primary|F330F9
+    // zmod re-renders it after every edit, so the row lands ~100ms after the
+    // user's tap — well ahead of the debounced GET_ZCOLOR, which can race the
+    // firmware write and return the pre-edit value (#1065, bundle 482NB943:
+    // a type change stayed stale on screen for 40s). Returns true if a row was
+    // recognised and applied. Caller must NOT hold mutex_.
+    bool apply_color_menu_slot_row(const std::string& line);
     void register_klippy_ready_listener();
     // Re-query `gcode_macro _ifs_vars` and update the latch + has_ifs_vars_.
     // Fired from notify_klippy_ready so a FIRMWARE_RESTART that adds or
