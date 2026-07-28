@@ -2304,8 +2304,11 @@ void Application::reapply_hardware_roles() {
         const auto& fans = api->hardware().fans();
         const auto& heaters = api->hardware().heaters();
         // Re-resolve + persist fan roles, then rebind fan UI to the new mapping.
+        // apply_roles, not init_fans: the wizard changed which fan plays which
+        // role, not which fans exist, so the discovered list comes from what
+        // discovery actually stored rather than being re-passed from here.
         auto roles = helix::FanRoleConfig::from_config(Config::get_instance(), fans);
-        get_printer_state().init_fans(fans, roles, api->hardware().fan_max_power());
+        get_printer_state().apply_fan_roles(roles);
         // Heater roles persist back to config (no dedicated runtime fan-style consumer).
         helix::resolve_role_from_config(helix::HardwareRoleId::HotendHeater, Config::get_instance(),
                                         heaters, /*persist_autoheal=*/true);

@@ -282,6 +282,16 @@ std::string PrinterFanState::resolve_aux_fan(const std::string& part,
     return !commandable.empty() ? commandable : auto_controlled;
 }
 
+void PrinterFanState::apply_roles(const FanRoleConfig& roles) {
+    // Copy both out first: init_fans assigns straight into the members these
+    // alias, and passing a member as a const& argument to the call that
+    // overwrites it is the kind of self-assignment that works until someone
+    // reorders two lines inside init_fans.
+    const std::vector<std::string> objects = discovered_objects_;
+    const std::unordered_map<std::string, double> max_power = fan_max_power_;
+    init_fans(objects, roles, max_power);
+}
+
 void PrinterFanState::refresh_primary_fans_selection() {
     PrimaryFans now = classify_primary_fans();
     if (now != primary_fans_cache_) {
@@ -349,6 +359,7 @@ void PrinterFanState::init_fans(const std::vector<std::string>& fan_objects,
                                 const FanRoleConfig& roles,
                                 const std::unordered_map<std::string, double>& max_power) {
     fan_max_power_ = max_power;
+    discovered_objects_ = fan_objects;
 
     // Build new subject map, reusing existing subjects for fans that persist
     // across reconnections. Only deinit subjects for fans that disappeared.

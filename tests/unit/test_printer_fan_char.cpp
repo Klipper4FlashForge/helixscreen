@@ -1574,6 +1574,63 @@ TEST_CASE("Steady-speed fan survives a role re-apply with no new status update (
     REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("fan")) == 60);
 }
 
+TEST_CASE("apply_roles re-shadows and un-shadows bare [fan] from the discovered list",
+          "[fan][reinit][roles]") {
+    lv_init_safe();
+
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    auto names = [&state]() {
+        std::vector<std::string> out;
+        for (const auto& f : state.get_fans())
+            out.push_back(f.object_name);
+        return out;
+    };
+    auto has = [&names](const std::string& n) {
+        auto v = names();
+        return std::find(v.begin(), v.end(), n) != v.end();
+    };
+
+    state.init_fans({"fan", "fan_generic part_cooling"});
+    REQUIRE(has("fan"));
+
+    // Naming the generic fan as part cooling shadows the bare [fan].
+    helix::FanRoleConfig roles;
+    roles.part_fan = "fan_generic part_cooling";
+    state.apply_fan_roles(roles);
+    REQUIRE_FALSE(has("fan"));
+    REQUIRE(has("fan_generic part_cooling"));
+
+    // Handing the role back must bring it home. This is the assertion that needs
+    // the retained discovery list: [fan] is no longer in fans_, so nothing else
+    // remembers it was ever there.
+    helix::FanRoleConfig back;
+    back.part_fan = "fan";
+    state.apply_fan_roles(back);
+    REQUIRE(has("fan"));
+}
+
+TEST_CASE("apply_roles carries live readings, like any other re-init (#1181)",
+          "[fan][reinit][roles]") {
+    lv_init_safe();
+
+    PrinterState& state = get_printer_state();
+    PrinterStateTestAccess::reset(state);
+    state.init_subjects(false);
+
+    state.init_fans({"fan", "fan_generic aux"});
+    state.update_from_status({{"fan_generic aux", {{"speed", 0.4}}}});
+    REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("fan_generic aux")) == 40);
+
+    helix::FanRoleConfig roles;
+    roles.chamber_fan = "fan_generic aux";
+    state.apply_fan_roles(roles);
+
+    REQUIRE(lv_subject_get_int(state.get_fan_speed_subject("fan_generic aux")) == 40);
+}
+
 TEST_CASE("Promoted part fan survives a role re-apply (#1181)", "[fan][reinit][classification]") {
     lv_init_safe();
 

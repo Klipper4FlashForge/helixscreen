@@ -991,6 +991,13 @@ class PrinterState {
         fan_state_.init_fans(fan_objects, roles, max_power);
     }
 
+    /// Re-apply fan roles to the already-discovered fans. See
+    /// PrinterFanState::apply_roles — use this, not init_fans, when the hardware
+    /// has not changed and only the role mapping has.
+    void apply_fan_roles(const helix::FanRoleConfig& roles) {
+        fan_state_.apply_roles(roles);
+    }
+
     /**
      * @brief Update speed for a specific fan (optimistic UI updates)
      * @param object_name Moonraker object name (e.g., "fan_generic chamber_fan")
