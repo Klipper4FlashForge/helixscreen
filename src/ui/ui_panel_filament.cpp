@@ -453,13 +453,20 @@ void FilamentPanel::setup(lv_obj_t* panel, lv_obj_t* parent_screen) {
                 self->backend_op_active_ = false;
                 self->op_in_flight_.reset();
                 if (failed) {
-                    // Spinner off, no checkmark, no toast: AmsErrorBridge presents a
-                    // recovery dialog on the same ERROR edge and a second surface
-                    // would just stack on it. The heater is deliberately left alone —
-                    // ERROR can mean "we stopped waiting", not "the backend stopped",
-                    // and cutting heat under a live AFC move would jam the toolhead
-                    // (recovery from the dialog needs it hot anyway). This matches
-                    // every other op_failed() path, none of which restore the heater.
+                    // Spinner off, no checkmark, no toast. The ERROR edge already
+                    // owns a surface, but which one depends on the backend:
+                    // AmsErrorBridge only presents when current_error() returns an
+                    // event, which AD5X IFS and QIDI override and AFC does not.
+                    // AFC's own error dialog is AmsPanel::show_loading_error_modal()
+                    // (Retry/Close) off the same subject, plus the Resume/Unload/
+                    // Recover modal GcodeErrorRouter builds when it classifies the
+                    // `!!` line. A toast here would stack on whichever fired.
+                    //
+                    // The heater is deliberately left alone — ERROR can mean "we
+                    // stopped waiting", not "the backend stopped", and cutting heat
+                    // under a live AFC move would jam the toolhead (recovery from
+                    // the dialog needs it hot anyway). This matches every other
+                    // op_failed() path, none of which restore the heater.
                     self->op_failed(op);
                     return;
                 }

@@ -607,20 +607,27 @@ std::vector<helix::RecoveryAction> AmsBackendAfc::build_recovery_actions() const
     // Caller holds mutex_.
     std::vector<helix::RecoveryAction> actions;
 
-    // Resume after the user clears the jam (always offered).
-    actions.push_back({lv_tr("Resume"), "RESUME", "afc::resume", "primary"});
+    // Resume after the user clears the jam (always offered). Resuming a paused
+    // print extrudes on the next move, so it needs the hotend up.
+    actions.push_back({lv_tr("Resume"), "RESUME", "afc::resume", "primary",
+                       /*needs_hot_nozzle=*/true});
 
     const bool toolhead_loaded = tool_start_sensor_ || system_info_.filament_loaded;
     if (toolhead_loaded) {
         // Closes R1: unload from the toolhead before any eject is possible.
-        actions.push_back({lv_tr("Unload"), "TOOL_UNLOAD", "afc::tool_unload", ""});
+        // Retracts filament back out through the melt zone — cold, it snaps or
+        // leaves the plug behind.
+        actions.push_back({lv_tr("Unload"), "TOOL_UNLOAD", "afc::tool_unload", "",
+                           /*needs_hot_nozzle=*/true});
     } else if (!current_lane_name_.empty()) {
-        // Empty toolhead but a lane is selected — eject that lane.
+        // Empty toolhead but a lane is selected — eject that lane. Lane to spool
+        // only; the filament never reaches the nozzle, so no heat is required.
         actions.push_back(
             {lv_tr("Eject"), "LANE_UNLOAD LANE=" + current_lane_name_, "afc::lane_unload", ""});
     }
 
-    // Reset/re-prep all lanes (last resort).
+    // Reset/re-prep all lanes (last resort). Re-prep runs the lane motors up to
+    // the hub, not through the toolhead.
     actions.push_back({lv_tr("Recover"), "AFC_RESET", "afc::reset", "danger"});
     return actions;
 }

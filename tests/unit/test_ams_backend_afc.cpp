@@ -4886,6 +4886,52 @@ TEST_CASE("AFC jam with empty toolhead offers Eject not Unload", "[ams][afc][cla
     REQUIRE(has("Recover"));
 }
 
+// RecoveryModalPresenter refuses to send a needs_hot_nozzle action into a nozzle
+// below min_extrude_temp, so the flag decides whether a tapped recovery runs now
+// or after a preheat. Getting it wrong is silent in both directions: false on a
+// filament-moving action re-creates the cold-extrude failure, true on a
+// state-only action makes a recovery wait on heat it does not need.
+TEST_CASE("AFC recovery actions flag only the ones that move filament through the nozzle",
+          "[ams][afc][classify]") {
+    auto flag_of = [](const std::optional<helix::ErrorEvent>& e, const std::string& label) {
+        for (const auto& a : e->recovery_actions) {
+            if (a.label == label)
+                return a.needs_hot_nozzle ? 1 : 0;
+        }
+        return -1; // absent
+    };
+
+    SECTION("toolhead loaded: Resume and Unload need heat, Recover does not") {
+        AmsBackendAfcTestHelper helper;
+        helper.initialize_test_lanes_with_slots(4);
+        helper.feed_afc_extruder("extruder",
+                                 {{"tool_start_status", true}, {"lane_loaded", "lane2"}});
+        helix::ClassifyContext ctx;
+        ctx.is_paused = true;
+        auto e = helper.classify_error(kJamLine, ctx);
+        REQUIRE(e.has_value());
+
+        CHECK(flag_of(e, "Resume") == 1);  // resuming the print extrudes
+        CHECK(flag_of(e, "Unload") == 1);  // pulls filament back out of the melt zone
+        CHECK(flag_of(e, "Recover") == 0); // AFC_RESET re-preps lanes, no nozzle
+    }
+
+    SECTION("empty toolhead: Eject is lane-to-spool and needs no heat") {
+        AmsBackendAfcTestHelper helper;
+        helper.initialize_test_lanes_with_slots(4);
+        helper.feed_afc_extruder("extruder",
+                                 {{"tool_start_status", false}, {"lane_loaded", "lane2"}});
+        helix::ClassifyContext ctx;
+        ctx.is_paused = true;
+        auto e = helper.classify_error(kJamLine, ctx);
+        REQUIRE(e.has_value());
+
+        CHECK(flag_of(e, "Eject") == 0);
+        CHECK(flag_of(e, "Resume") == 1);
+        CHECK(flag_of(e, "Recover") == 0);
+    }
+}
+
 TEST_CASE("AFC catch-all: paused + error_state + unknown !! is CRITICAL AFC",
           "[ams][afc][classify]") {
     AmsBackendAfcTestHelper helper;
