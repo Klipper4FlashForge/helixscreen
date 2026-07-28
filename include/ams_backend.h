@@ -1350,25 +1350,17 @@ class AmsBackend {
     }
 
     /**
-     * @brief Whether the backend maintains a persistent message/error queue that the
-     *        UI must explicitly clear when the user dismisses an error.
-     *
-     * AFC keeps a persistent message_queue + error_state that won't clear until
-     * AFC_CLEAR_MESSAGE is sent; without it the error dialog reappears immediately
-     * because AFC keeps reporting ERROR (#497). Other backends have no such queue.
-     *
-     * @return true if clear_message_queue() does meaningful work
-     */
-    [[nodiscard]] virtual bool supports_clear_message_queue() const {
-        return false;
-    }
-
-    /**
      * @brief Clear the backend's persistent message/error queue.
      *
-     * Called by the UI when the user dismisses a backend error so the error does
-     * not immediately re-fire. Default is a no-op (NOT_SUPPORTED); backends with a
-     * persistent queue (AFC) override to send the clearing command.
+     * AFC keeps a persistent message queue that will not clear until
+     * AFC_CLEAR_MESSAGE is sent; without it the error dialog re-fires immediately
+     * because AFC keeps reporting ERROR (#497). Default is a no-op
+     * (NOT_SUPPORTED); backends with such a queue override it.
+     *
+     * Callers do not need to ask whether a backend has a queue first — the
+     * default is already a harmless no-op, which is why the former
+     * supports_clear_message_queue() capability query was removed once
+     * clear_fault() took over the dismiss path.
      *
      * @return AmsError indicating success/failure
      */

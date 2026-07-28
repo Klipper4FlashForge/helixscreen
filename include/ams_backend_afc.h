@@ -142,9 +142,6 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     [[nodiscard]] const char* get_klipper_object_name() const override {
         return "AFC"; // Matches the Klipper object name (uppercase)
     }
-    [[nodiscard]] bool supports_clear_message_queue() const override {
-        return true;
-    }
     AmsError clear_message_queue() override;
     [[nodiscard]] bool manages_active_spool() const override {
         return true;
