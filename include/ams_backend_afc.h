@@ -405,9 +405,11 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
   private:
     // === User-attached slot identity (FilamentSlotOverrideStore) =============
     //
-    // AFC firmware cannot hold brand, spool_name, total_weight_g, color_name or
-    // the Spoolman filament/vendor ids — verified against a live lane payload
-    // and its lane_data record — so those live only here.
+    // AFC firmware cannot hold brand, color_name or the Spoolman filament/vendor
+    // ids — verified against a live lane payload and its lane_data record — so
+    // those live only here. spool_name and total_weight_g are partial exceptions
+    // from AFC v1.2.0, which publishes filament_name and initial_weight, but only
+    // for a lane with a live Spoolman link; a user's override still outranks both.
     //
     // The namespace is PRIVATE, deliberately NOT the shared "lane_data": AFC's
     // own plugin owns that one, deletes the whole namespace on every Klipper
@@ -796,6 +798,27 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     std::vector<std::string> hub_names_; ///< Discovered hub names
     std::vector<std::string> buffer_names_; ///< Discovered buffer names
     float bowden_length_{450.0f};           ///< Bowden tube length from hub (default 450mm)
+
+    /// T-commands AFC has actually registered with Klipper (AFC.maps, v1.2.0+).
+    /// Kept as a cross-check against the mapping we derive from each lane's
+    /// `map` field: a lane claiming T3 that AFC never registered means the
+    /// gcode we would send does not exist.
+    std::vector<std::string> afc_tool_cmds_;
+
+    /// Tool numbers already reported as unregistered — dedupes the cross-check
+    /// warning so it fires once per tool, not once per status frame.
+    std::set<int> tool_cmd_missing_warned_;
+
+    /// Per-lane `remember_spool`: when true AFC keeps the lane's spool metadata
+    /// across an eject instead of running clear_values(). Tells us whether the
+    /// firmware or our own override store is the thing preserving identity.
+    std::unordered_map<std::string, bool> lane_remember_spool_;
+
+    /// Lanes last seen on each buffer, keyed by buffer name. AFC's buffer status
+    /// arrives as a Moonraker delta, so a frame that changes only `state` omits
+    /// `lanes` — without this cache the health update could not be routed to a
+    /// unit and would be dropped.
+    std::unordered_map<std::string, std::vector<std::string>> buffer_lane_names_;
 
     // Multi-extruder (toolchanger) state
     int num_extruders_{1}; ///< Number of extruders (1 = standard, 2+ = toolchanger)

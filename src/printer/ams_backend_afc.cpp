@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cctype>
 #include <climits>
+#include <cmath>
 #include <optional>
 #include <sstream>
 #include <vector>
@@ -380,6 +381,9 @@ AmsSystemInfo AmsBackendAfc::get_system_info() const {
     info.pending_target_slot = system_info_.pending_target_slot;
     info.current_toolchange = system_info_.current_toolchange;
     info.number_of_toolchanges = system_info_.number_of_toolchanges;
+    info.next_slot = system_info_.next_slot;
+    info.position_saved = system_info_.position_saved;
+    info.spoolman_url = system_info_.spoolman_url;
     info.filament_loaded = system_info_.filament_loaded;
     info.supports_endless_spool = system_info_.supports_endless_spool;
     info.supports_tool_mapping = system_info_.supports_tool_mapping;
@@ -1652,6 +1656,51 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
                       extruder_names_.size());
     }
 
+    // Lane AFC has pre-staged for the NEXT toolchange (AFC.next_lane). Same
+    // delta rule as current_lane: a string resolves it, an explicit null clears
+    // it, and absence leaves the previous value alone. Resolution can fail while
+    // the slot registry is still empty; next_slot then stays -1 and the next
+    // frame that mentions the lane fixes it.
+    if (afc_data.contains("next_lane")) {
+        if (afc_data["next_lane"].is_string()) {
+            std::string next = afc_data["next_lane"].get<std::string>();
+            int next_idx = next.empty() ? -1 : slots_.index_of(next);
+            system_info_.next_slot = next_idx;
+            spdlog::trace("[AMS AFC] Next lane: '{}' (slot {})", next, next_idx);
+        } else if (afc_data["next_lane"].is_null()) {
+            system_info_.next_slot = -1;
+        }
+    }
+
+    // Firmware holds a restorable toolhead position (set when an error
+    // interrupted a print mid-move).
+    if (afc_data.contains("position_saved") && afc_data["position_saved"].is_boolean()) {
+        system_info_.position_saved = afc_data["position_saved"].get<bool>();
+    }
+
+    // Spoolman base URL the firmware is configured against. AFC publishes false
+    // (not null) when Spoolman is off, so only a string is meaningful.
+    if (afc_data.contains("spoolman") && afc_data["spoolman"].is_string()) {
+        system_info_.spoolman_url = afc_data["spoolman"].get<std::string>();
+    }
+
+    // T-commands AFC registered with Klipper (v1.2.0+). Consumed by the per-lane
+    // map cross-check in parse_afc_stepper; re-arm its dedup whenever the set
+    // changes so a genuinely new mismatch is not swallowed by an earlier warning.
+    if (afc_data.contains("maps") && afc_data["maps"].is_array()) {
+        std::vector<std::string> cmds;
+        for (const auto& m : afc_data["maps"]) {
+            if (m.is_string()) {
+                cmds.push_back(m.get<std::string>());
+            }
+        }
+        if (cmds != afc_tool_cmds_) {
+            afc_tool_cmds_ = std::move(cmds);
+            tool_cmd_missing_warned_.clear();
+            spdlog::debug("[AMS AFC] AFC registered {} tool commands", afc_tool_cmds_.size());
+        }
+    }
+
     // Parse global quiet_mode and LED state
     if (afc_data.contains("quiet_mode") && afc_data["quiet_mode"].is_boolean()) {
         afc_quiet_mode_ = afc_data["quiet_mode"].get<bool>();
@@ -1813,8 +1862,26 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
     if (data.contains("filament_status") && data["filament_status"].is_string()) {
         sensors.filament_status = data["filament_status"].get<std::string>();
     }
+    // Severity colour for the lane's status LED. Firmware splits one
+    // get_filament_status() string into filament_status + this hex, so the two
+    // always describe the same condition and are parsed together.
+    if (data.contains("filament_status_led") && data["filament_status_led"].is_string()) {
+        sensors.filament_status_led = data["filament_status_led"].get<std::string>();
+    }
     if (data.contains("dist_hub") && data["dist_hub"].is_number()) {
         sensors.dist_hub = data["dist_hub"].get<float>();
+    }
+    // Selector sensor, published only by units that have one (HTLF, QuattroBox).
+    // Presence is latched: a lane that once reported a selector still has one,
+    // and a delta that omits the key must not read as "selector cleared".
+    if (data.contains("selector") && data["selector"].is_boolean()) {
+        sensors.has_selector = true;
+        sensors.selector = data["selector"].get<bool>();
+    }
+    // Homing endstops configured on this lane, comma-separated. A capability
+    // list, not a reading — AFC omits the key entirely on lanes with none.
+    if (data.contains("endstops") && data["endstops"].is_string()) {
+        sensors.endstops = data["endstops"].get<std::string>();
     }
 
     // Get slot info for filament data update
@@ -1850,6 +1917,50 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
         slot.material = data["material"].get<std::string>();
     }
 
+    // Filament name, as AFC copied it out of Spoolman's filament record
+    // (AFC v1.2.0+). Empty is a deliberate clear — clear_values() sets
+    // filament_name="" on eject — matching how `color` is handled above.
+    // apply_overrides() runs below, so a user-entered name still wins.
+    if (data.contains("filament_name") && data["filament_name"].is_string()) {
+        slot.spool_name = data["filament_name"].get<std::string>();
+    }
+
+    // Multi-colour hexes (AFC v1.2.0+). Firmware carries these as a list of BARE
+    // hex strings, having split Spoolman's comma-joined `multi_color_hexes` and
+    // then re-prefixed only the first one into `color`. Normalise back to the
+    // '#'-prefixed comma-joined form the swatch renderer and every other backend
+    // use. An empty list clears, which is what clear_values() does on eject.
+    if (data.contains("multi_color_hexes") && data["multi_color_hexes"].is_array()) {
+        std::string joined;
+        for (const auto& hex : data["multi_color_hexes"]) {
+            if (!hex.is_string()) {
+                continue;
+            }
+            std::string h = hex.get<std::string>();
+            if (h.empty()) {
+                continue;
+            }
+            if (!joined.empty()) {
+                joined += ',';
+            }
+            if (h[0] != '#') {
+                joined += '#';
+            }
+            joined += h;
+        }
+        slot.multi_color_hexes = joined;
+    }
+
+    // Recommended bed temperature (AFC v1.2.0+; v1.1.x carries it in lane_data
+    // only). Null is the eject clear, same rule as spool_id below.
+    if (data.contains("bed_temp")) {
+        if (data["bed_temp"].is_number()) {
+            slot.bed_temp = static_cast<int>(std::lround(data["bed_temp"].get<double>()));
+        } else if (data["bed_temp"].is_null()) {
+            slot.bed_temp = 0;
+        }
+    }
+
     // Parse Spoolman ID.
     //
     // JSON null is AFC telling us the link is GONE — clear_values() sets
@@ -1872,6 +1983,34 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
     // and none of the lane_data staleness (see parse_lane_data) can reach us here.
     if (data.contains("weight") && data["weight"].is_number()) {
         slot.remaining_weight_g = data["weight"].get<float>();
+    }
+
+    // Full-spool weight (AFC v1.2.0+), ONLY for lanes with a Spoolman link.
+    //
+    // The field is espooler_values.full_weight, which is a configured unit-level
+    // constant (config `full_weight`, else the unit's) that Spoolman overwrites
+    // with the spool's real initial_weight when a spool is linked. Every lane
+    // reports it, empty ones included, so adopting it ungated would give an
+    // ejected lane a total_weight_g of 1000 and render it as "0 / 1000 g" —
+    // total_weight_g's convention is -1 for unknown. spool_id was parsed just
+    // above, so slot.spoolman_id is this frame's value.
+    //
+    // Deliberately does NOT clear on unlink: total_weight_g also comes from the
+    // Spoolman weight poll and from user overrides, and neither should be wiped
+    // because AFC dropped its own link.
+    if (slot.spoolman_id > 0 && data.contains("initial_weight") &&
+        data["initial_weight"].is_number()) {
+        float full = data["initial_weight"].get<float>();
+        if (full > 0.0f) {
+            slot.total_weight_g = full;
+        }
+    }
+
+    // Whether AFC itself retains this lane's spool metadata across an eject.
+    // When false, clear_values() wipes colour/material/weight in firmware and
+    // our override store is the only thing that puts the user's identity back.
+    if (data.contains("remember_spool") && data["remember_spool"].is_boolean()) {
+        lane_remember_spool_[lane_name] = data["remember_spool"].get<bool>();
     }
 
     // Vendor/brand — see read_vendor().
@@ -1963,6 +2102,22 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
                         slots_.set_tool_mapping(slot_index, tool_num);
                         spdlog::trace("[AMS AFC] Lane {} mapped to tool T{}", lane_name, tool_num);
                         mapped = true;
+
+                        // Cross-check against the T-commands AFC actually registered
+                        // with Klipper (AFC.maps, v1.2.0+). A lane claiming a tool
+                        // that has no registered command means change_tool() would
+                        // send gcode the firmware does not know. Diagnostic only —
+                        // the lane's own map field stays authoritative, since maps
+                        // is absent entirely before v1.2.0.
+                        if (!afc_tool_cmds_.empty() &&
+                            std::find(afc_tool_cmds_.begin(), afc_tool_cmds_.end(), map_str) ==
+                                afc_tool_cmds_.end() &&
+                            tool_cmd_missing_warned_.insert(tool_num).second) {
+                            spdlog::warn("[AMS AFC] Lane {} maps to {} but AFC registered no such "
+                                         "command ({} registered) — a tool change to T{} would "
+                                         "fail",
+                                         lane_name, map_str, afc_tool_cmds_.size(), tool_num);
+                        }
                     }
                 } catch (...) {
                     // Invalid tool number format — fall through to reset
@@ -2083,10 +2238,53 @@ void AmsBackendAfc::parse_afc_buffer(const std::string& buffer_name, const nlohm
     //   "distance_to_fault": 25.5,
     //   "error_sensitivity": 7,
     //   "state": "Advancing",
-    //   "lanes": ["lane1", "lane2", "lane3", "lane4"]
+    //   "lanes": ["lane1", "lane2", "lane3", "lane4"],
+    //   "fault_timer": 1.5,
+    //   "rotation_distance": 22.67,
+    //   "active_lane": "lane2",                 // v1.2.0+
+    //   "multiplier": 1.1, "multiplier_high": 1.1, "multiplier_low": 0.9  // v1.2.0+
     // }
 
-    BufferHealth health;
+    // Remember which lanes this buffer serves. AFC rebuilds the whole status
+    // dict every poll but Moonraker forwards only the CHANGED keys, so a frame
+    // that moves `state` alone carries no `lanes` and could not otherwise be
+    // routed to a unit.
+    if (data.contains("lanes") && data["lanes"].is_array()) {
+        std::vector<std::string> lanes;
+        for (const auto& lane_json : data["lanes"]) {
+            if (lane_json.is_string()) {
+                lanes.push_back(lane_json.get<std::string>());
+            }
+        }
+        buffer_lane_names_[buffer_name] = std::move(lanes);
+    }
+
+    // Locate the owning unit first so the update is a read-modify-write. Building
+    // a fresh BufferHealth and assigning it wholesale would zero every field the
+    // delta happens not to mention.
+    AmsUnit* unit = nullptr;
+    std::string matched_lane;
+    auto lanes_it = buffer_lane_names_.find(buffer_name);
+    if (lanes_it != buffer_lane_names_.end()) {
+        for (const auto& lane_name : lanes_it->second) {
+            int lane_idx = slots_.index_of(lane_name);
+            if (lane_idx < 0) {
+                continue;
+            }
+            // One buffer per unit — first lane that resolves decides.
+            unit = system_info_.get_unit_for_slot(lane_idx);
+            if (unit) {
+                matched_lane = lane_name;
+                break;
+            }
+        }
+    }
+    if (!unit) {
+        spdlog::trace("[AMS AFC] Buffer {}: no unit resolved yet, dropping frame", buffer_name);
+        return;
+    }
+
+    BufferHealth health = unit->buffer_health.value_or(BufferHealth{});
 
     if (data.contains("fault_detection_enabled") && data["fault_detection_enabled"].is_boolean()) {
         health.fault_detection_enabled = data["fault_detection_enabled"].get<bool>();
@@ -2104,33 +2302,60 @@ void AmsBackendAfc::parse_afc_buffer(const std::string& buffer_name, const nlohm
         health.state = data["state"].get<std::string>();
     }
 
-    spdlog::trace("[AMS AFC] Buffer {}: fault_detect={} dist={} sensitivity={} state={}",
-                  buffer_name, health.fault_detection_enabled, health.distance_to_fault,
-                  health.error_sensitivity, health.state);
-
-    // Store buffer health at unit level (buffer sits between hub and toolhead, not per-lane)
-    // Find which unit this buffer belongs to by checking its lane list
-    if (data.contains("lanes") && data["lanes"].is_array()) {
-        for (const auto& lane_json : data["lanes"]) {
-            if (!lane_json.is_string()) {
-                continue;
-            }
-            std::string lane_name = lane_json.get<std::string>();
-            int lane_idx = slots_.index_of(lane_name);
-            if (lane_idx < 0) {
-                continue;
-            }
-
-            // Find the unit containing this lane and set buffer health on the unit
-            AmsUnit* unit = system_info_.get_unit_for_slot(lane_idx);
-            if (unit) {
-                unit->buffer_health = health;
-                spdlog::debug("[AMS AFC] Buffer {} health set on unit {} (via lane {})",
-                              buffer_name, unit->unit_index, lane_name);
-                break; // One buffer per unit — set once and done
-            }
+    // Lane the buffer is regulating (v1.2.0+). AFC publishes null whenever the
+    // buffer is disabled or no lane is loaded, which is a real transition to
+    // "none" rather than a missing field.
+    if (data.contains("active_lane")) {
+        if (data["active_lane"].is_string()) {
+            health.active_lane = data["active_lane"].get<std::string>();
+        } else if (data["active_lane"].is_null()) {
+            health.active_lane.clear();
         }
     }
+
+    // rotation_distance and fault_timer both go null when AFC has nothing to
+    // report (buffer disabled / no lane loaded / fault detection off). -1 is the
+    // struct's "not reported" sentinel, so map null onto it rather than keeping
+    // a stale reading.
+    if (data.contains("rotation_distance")) {
+        if (data["rotation_distance"].is_number()) {
+            health.rotation_distance = data["rotation_distance"].get<float>();
+        } else if (data["rotation_distance"].is_null()) {
+            health.rotation_distance = -1.0f;
+        }
+    }
+    if (data.contains("fault_timer")) {
+        if (data["fault_timer"].is_number()) {
+            health.fault_timer = data["fault_timer"].get<float>();
+        } else if (data["fault_timer"].is_null()) {
+            health.fault_timer = -1.0f;
+        }
+    }
+
+    // Rotation-distance multipliers (v1.2.0+). `multiplier` is the value last
+    // applied; the high/low pair is the configured swing it moves between.
+    // AFC seeds _last_multiplier with an int 1, so accept any number.
+    if (data.contains("multiplier") && data["multiplier"].is_number()) {
+        health.multiplier = data["multiplier"].get<float>();
+    }
+    if (data.contains("multiplier_high") && data["multiplier_high"].is_number()) {
+        health.multiplier_high = data["multiplier_high"].get<float>();
+    }
+    if (data.contains("multiplier_low") && data["multiplier_low"].is_number()) {
+        health.multiplier_low = data["multiplier_low"].get<float>();
+    }
+
+    spdlog::trace("[AMS AFC] Buffer {}: fault_detect={} dist={} sensitivity={} state={} "
+                  "active_lane={} mult={} rot_dist={} fault_timer={}",
+                  buffer_name, health.fault_detection_enabled, health.distance_to_fault,
+                  health.error_sensitivity, health.state, health.active_lane, health.multiplier,
+                  health.rotation_distance, health.fault_timer);
+
+    // Buffer health lives at unit level — the buffer sits between hub and
+    // toolhead, not per-lane.
+    unit->buffer_health = health;
+    spdlog::debug("[AMS AFC] Buffer {} health set on unit {} (via lane {})", buffer_name,
+                  unit->unit_index, matched_lane);
 }
 
 void AmsBackendAfc::parse_afc_extruder(const std::string& ext_name, const nlohmann::json& data) {

@@ -695,6 +695,26 @@ struct BufferHealth {
     float error_sensitivity = 0.0f;       ///< AFC sensitivity (1-10), 0 = not reported
     std::string state;                    ///< Buffer state (e.g., "Advancing", "Trailing")
 
+    /// Lane the buffer is currently regulating. AFC only names one while the
+    /// buffer is enabled AND a lane is loaded; empty otherwise (AFC v1.2.0+).
+    std::string active_lane;
+
+    /// Rotation-distance trim the buffer is driving on the active lane's stepper.
+    /// AFC reports this only while enabled with a lane loaded; -1 = not reported.
+    float rotation_distance = -1.0f;
+
+    /// Rotation-distance multiplier the buffer last applied, and the configured
+    /// bounds it swings between (`multiplier_high`/`multiplier_low` in the AFC
+    /// buffer config). -1 = not reported. multiplier is AFC v1.2.0+; on older
+    /// firmware all three stay at -1.
+    float multiplier = -1.0f;
+    float multiplier_high = -1.0f;
+    float multiplier_low = -1.0f;
+
+    /// Seconds AFC waits after a buffer switch before declaring a fault.
+    /// -1 = not reported (fault detection off, or older firmware).
+    float fault_timer = -1.0f;
+
     /// Compute fault threshold from error_sensitivity: (11 - sensitivity) * 10 mm
     /// Returns 60mm fallback when sensitivity is 0 (not reported)
     /// Clamps sensitivity to 10 max to ensure threshold >= 10mm
@@ -1047,6 +1067,12 @@ struct AmsSystemInfo {
     int current_toolchange = -1;   ///< Current tool change number (-1=none yet, 0-based)
     int number_of_toolchanges = 0; ///< Total expected tool changes this print
     bool filament_loaded = false;  ///< Filament at extruder
+
+    /// Slot the firmware has pre-staged for the NEXT toolchange (-1 = none).
+    /// AFC publishes this as `AFC.next_lane` during a multicolor print; resolved
+    /// to a slot index here. Distinct from pending_target_slot, which is the
+    /// destination of the toolchange already under way.
+    int next_slot = -1;
     bool filament_runout =
         false; ///< CFS: active path empty (box.filament_useup); UI gates display on paused state
     AmsAction action = AmsAction::IDLE; ///< Current operation
@@ -1091,6 +1117,16 @@ struct AmsSystemInfo {
     // Happy Hare v4 extended status fields
     SpoolmanMode spoolman_mode = SpoolmanMode::OFF; ///< Spoolman integration mode
     int pending_spool_id = -1;                      ///< Pending spool assignment (v4)
+
+    /// Spoolman base URL the firmware itself is configured against, when it
+    /// publishes one (AFC `AFC.spoolman`). Empty = not reported / not configured.
+    /// Informational: HelixScreen resolves Spoolman through Moonraker, not this.
+    std::string spoolman_url;
+
+    /// Firmware has a saved toolhead position it can restore (AFC
+    /// `AFC.position_saved`). Set while an error interrupted a print mid-move.
+    bool position_saved = false;
+
     std::string espooler_state;                     ///< eSpooler state: "rewind"/"assist"/""
     std::string sync_feedback_state; ///< Sync feedback: "compressed"/"tension"/"neutral"/"disabled"
     bool sync_drive = false;         ///< Gear synced to extruder motor

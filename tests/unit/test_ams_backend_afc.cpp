@@ -431,6 +431,18 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
     bool get_quiet_mode() const {
         return afc_quiet_mode_;
     }
+    // AFC.maps — the T-commands AFC registered with Klipper (v1.2.0+)
+    const std::vector<std::string>& get_afc_tool_cmds() const {
+        return afc_tool_cmds_;
+    }
+    // Per-lane AFC_stepper.remember_spool. nullopt = never reported for this lane.
+    std::optional<bool> get_lane_remember_spool(const std::string& lane_name) const {
+        auto it = lane_remember_spool_.find(lane_name);
+        if (it == lane_remember_spool_.end()) {
+            return std::nullopt;
+        }
+        return it->second;
+    }
     bool get_led_state() const {
         return afc_led_state_;
     }
@@ -5496,4 +5508,454 @@ TEST_CASE("AFC clears the operation detail when its message empties",
     helper.test_parse_afc_state(nlohmann::json{
         {"message", {{"message", ""}, {"type", ""}}}});
     REQUIRE(helper.get_system_info().operation_detail.empty());
+}
+
+// ============================================================================
+// AFC v1.2.0 status fields (prestonbrown/helixscreen#1149)
+//
+// Payloads marked "observed" are verbatim captures from a live BoxTurtle
+// running AFC v1.1.0 (the `spoolman` URL is redacted). That box predates
+// v1.2.0, so payloads marked "source-derived" are built from
+// AFC_lane.get_status() / AFC_buffer.get_status() / AFC.get_status() at tag
+// v1.2.0 instead — same key names, same types, not observed on hardware.
+// ============================================================================
+
+// Observed: AFC_stepper lane1, AFC v1.1.0, unlinked lane.
+static nlohmann::json observed_lane1_v110() {
+    return nlohmann::json{{"name", "lane1"},
+                          {"unit", "Turtle_1"},
+                          {"hub", "Turtle_1"},
+                          {"extruder", "extruder"},
+                          {"buffer", "Turtle_1"},
+                          {"buffer_status", "Advancing"},
+                          {"lane", 1},
+                          {"map", "T0"},
+                          {"load", true},
+                          {"prep", true},
+                          {"tool_loaded", false},
+                          {"loaded_to_hub", true},
+                          {"material", "PLA"},
+                          {"remember_spool", false},
+                          {"spool_id", nullptr},
+                          {"color", "#E53935"},
+                          {"weight", 505.8077510382372},
+                          {"extruder_temp", nullptr},
+                          {"runout_lane", nullptr},
+                          {"filament_status", "Ready"},
+                          {"filament_status_led", "#00cc00"},
+                          {"status", "None"},
+                          {"dist_hub", 194.57},
+                          {"td1_td", ""},
+                          {"td1_color", ""},
+                          {"td1_scan_time", ""},
+                          {"endstops",
+                           "load,hub,tool_start,tool_end,buffer_advance,buffer_trailing"}};
+}
+
+TEST_CASE("AFC lane parses the v1.1.0 fields we used to drop", "[ams][afc][status_fields][1149]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_stepper("lane1", observed_lane1_v110());
+
+    auto sensors = helper.get_lane_sensors(0);
+    REQUIRE(sensors.filament_status == "Ready");
+    REQUIRE(sensors.filament_status_led == "#00cc00");
+    REQUIRE(sensors.endstops == "load,hub,tool_start,tool_end,buffer_advance,buffer_trailing");
+
+    // A Box Turtle has no selector, so AFC omits the key entirely. That must
+    // read as "no selector on this lane", not "selector clear".
+    REQUIRE(sensors.has_selector == false);
+    REQUIRE(sensors.selector == false);
+
+    REQUIRE(helper.get_lane_remember_spool("lane1") == std::optional<bool>{false});
+    REQUIRE(helper.get_lane_remember_spool("lane4") == std::nullopt);
+}
+
+TEST_CASE("AFC lane parses the v1.2.0-only spool fields", "[ams][afc][status_fields][1149]") {
+    // Source-derived: AFC_lane.get_status() at v1.2.0 adds filament_name,
+    // multi_color_hexes, initial_weight and bed_temp to the observed shape.
+    // multi_color_hexes is a list of BARE hexes — AFC splits Spoolman's
+    // comma-joined string and re-prefixes only the first into `color`.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    nlohmann::json lane = observed_lane1_v110();
+    lane["spool_id"] = 42;
+    lane["filament_name"] = "Galaxy Black";
+    lane["initial_weight"] = 1000.0;
+    lane["bed_temp"] = 60.0;
+    lane["multi_color_hexes"] = nlohmann::json::array({"D4AF37", "C0C0C0", "B87333"});
+    lane["selector"] = true;
+
+    helper.feed_afc_stepper("lane1", lane);
+
+    auto info = helper.get_system_info();
+    const auto& slot = info.units[0].slots[0];
+    REQUIRE(slot.spool_name == "Galaxy Black");
+    REQUIRE(slot.bed_temp == 60);
+    REQUIRE(slot.multi_color_hexes == "#D4AF37,#C0C0C0,#B87333");
+    REQUIRE(slot.is_multi_color());
+    REQUIRE(slot.total_weight_g == Catch::Approx(1000.0f));
+
+    auto sensors = helper.get_lane_sensors(0);
+    REQUIRE(sensors.has_selector == true);
+    REQUIRE(sensors.selector == true);
+}
+
+TEST_CASE("AFC initial_weight is ignored on a lane with no Spoolman link",
+          "[ams][afc][status_fields][1149]") {
+    // espooler_values.full_weight is a CONFIGURED unit constant (typically
+    // 1000 g) that every lane reports, empty ones included; Spoolman only
+    // overwrites it when a spool is linked. Adopting it ungated would render an
+    // ejected lane as "0 / 1000 g" instead of unknown.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    nlohmann::json lane = observed_lane1_v110(); // spool_id: null
+    lane["initial_weight"] = 1000.0;
+    lane["weight"] = 0.0;
+    helper.feed_afc_stepper("lane1", lane);
+
+    auto info = helper.get_system_info();
+    REQUIRE(info.units[0].slots[0].total_weight_g == Catch::Approx(-1.0f));
+    REQUIRE(info.units[0].slots[0].get_remaining_percent() == Catch::Approx(-1.0f));
+}
+
+TEST_CASE("AFC lane delta omitting the new fields leaves them intact",
+          "[ams][afc][status_fields][1149]") {
+    // Moonraker forwards only CHANGED keys, so a frame carrying nothing but a
+    // sensor flip must not zero everything parsed from the previous frame.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    nlohmann::json lane = observed_lane1_v110();
+    lane["spool_id"] = 42;
+    lane["filament_name"] = "Galaxy Black";
+    lane["initial_weight"] = 750.0;
+    lane["bed_temp"] = 60.0;
+    lane["multi_color_hexes"] = nlohmann::json::array({"D4AF37", "C0C0C0"});
+    lane["selector"] = true;
+    helper.feed_afc_stepper("lane1", lane);
+
+    // The delta a real buffer switch produces: one key.
+    helper.feed_afc_stepper("lane1", nlohmann::json{{"buffer_status", "Trailing"}});
+
+    auto info = helper.get_system_info();
+    const auto& slot = info.units[0].slots[0];
+    REQUIRE(slot.spool_name == "Galaxy Black");
+    REQUIRE(slot.bed_temp == 60);
+    REQUIRE(slot.multi_color_hexes == "#D4AF37,#C0C0C0");
+    REQUIRE(slot.total_weight_g == Catch::Approx(750.0f));
+
+    auto sensors = helper.get_lane_sensors(0);
+    REQUIRE(sensors.buffer_status == "Trailing");
+    REQUIRE(sensors.filament_status_led == "#00cc00");
+    REQUIRE(sensors.endstops == "load,hub,tool_start,tool_end,buffer_advance,buffer_trailing");
+    REQUIRE(sensors.has_selector == true);
+    REQUIRE(sensors.selector == true);
+    REQUIRE(helper.get_lane_remember_spool("lane1") == std::optional<bool>{false});
+}
+
+TEST_CASE("AFC lane clears filament identity when firmware clears it",
+          "[ams][afc][status_fields][1149]") {
+    // clear_values() on eject sets filament_name="", multi_color=[] and
+    // bed_temp=None. Those are deliberate clears, not missing fields.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    nlohmann::json lane = observed_lane1_v110();
+    lane["spool_id"] = 42;
+    lane["filament_name"] = "Galaxy Black";
+    lane["bed_temp"] = 60.0;
+    lane["multi_color_hexes"] = nlohmann::json::array({"D4AF37"});
+    helper.feed_afc_stepper("lane1", lane);
+
+    helper.feed_afc_stepper("lane1", nlohmann::json{{"filament_name", ""},
+                                                   {"bed_temp", nullptr},
+                                                   {"multi_color_hexes", nlohmann::json::array()},
+                                                   {"spool_id", nullptr}});
+
+    auto info = helper.get_system_info();
+    const auto& slot = info.units[0].slots[0];
+    REQUIRE(slot.spool_name.empty());
+    REQUIRE(slot.bed_temp == 0);
+    REQUIRE(slot.multi_color_hexes.empty());
+    REQUIRE_FALSE(slot.is_multi_color());
+}
+
+TEST_CASE("AFC top-level next_lane resolves, clears and survives deltas",
+          "[ams][afc][status_fields][1149]") {
+    // Observed on the live box: "next_lane": "lane4" with no toolchange running.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_state({{"next_lane", "lane4"}});
+    REQUIRE(helper.get_system_info().next_slot == 3);
+
+    // An unrelated delta must not drop the staging.
+    helper.feed_afc_state({{"current_toolchange", 12}});
+    REQUIRE(helper.get_system_info().next_slot == 3);
+
+    // AFC naming no lane is a real transition to "none".
+    helper.feed_afc_state({{"next_lane", nullptr}});
+    REQUIRE(helper.get_system_info().next_slot == -1);
+}
+
+TEST_CASE("AFC top-level position_saved, spoolman and maps are read",
+          "[ams][afc][status_fields][1149]") {
+    // Observed shape (spoolman URL redacted); `maps` is source-derived — it is
+    // the one top-level key v1.1.0 does not emit.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_state({{"position_saved", true},
+                           {"spoolman", "http://spoolman.invalid:7912"},
+                           {"maps", nlohmann::json::array({"T0", "T1", "T2", "T3"})}});
+
+    auto info = helper.get_system_info();
+    REQUIRE(info.position_saved == true);
+    REQUIRE(info.spoolman_url == "http://spoolman.invalid:7912");
+    REQUIRE(helper.get_afc_tool_cmds() == std::vector<std::string>{"T0", "T1", "T2", "T3"});
+
+    // A later delta that mentions none of them leaves all three alone.
+    helper.feed_afc_state({{"led_state", true}});
+    info = helper.get_system_info();
+    REQUIRE(info.position_saved == true);
+    REQUIRE(info.spoolman_url == "http://spoolman.invalid:7912");
+    REQUIRE(helper.get_afc_tool_cmds().size() == 4);
+
+    // AFC publishes `false`, not null, when Spoolman is unconfigured — a
+    // non-string must not be coerced into the URL.
+    helper.feed_afc_state({{"spoolman", false}, {"position_saved", false}});
+    info = helper.get_system_info();
+    REQUIRE(info.spoolman_url == "http://spoolman.invalid:7912");
+    REQUIRE(info.position_saved == false);
+}
+
+TEST_CASE("AFC maps cross-check does not override the per-lane tool mapping",
+          "[ams][afc][status_fields][1149]") {
+    // maps is diagnostic: a lane claiming a T-command AFC never registered still
+    // maps, because maps is absent entirely before v1.2.0 and cannot be trusted
+    // as an authority.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_state({{"maps", nlohmann::json::array({"T0", "T1"})}});
+    helper.feed_afc_stepper("lane3", nlohmann::json{{"map", "T7"}});
+
+    REQUIRE(helper.get_slot_mapped_tool(2) == 7);
+}
+
+TEST_CASE("AFC buffer parses the observed v1.1.0 frame", "[ams][afc][status_fields][1149]") {
+    // Observed: AFC_buffer Turtle_1 on the live box, buffer disabled.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    // AFC_buffer frames are only dispatched for buffers AFC has named.
+    helper.feed_afc_state({{"buffers", {"Turtle_1"}}});
+
+    helper.feed_afc_buffer("Turtle_1",
+                           nlohmann::json{{"state", "Advancing"},
+                                          {"lanes", {"lane1", "lane2", "lane3", "lane4"}},
+                                          {"enabled", false},
+                                          {"rotation_distance", nullptr},
+                                          {"fault_detection_enabled", false},
+                                          {"error_sensitivity", 0},
+                                          {"fault_timer", nullptr},
+                                          {"distance_to_fault", nullptr}});
+
+    auto info = helper.get_system_info();
+    REQUIRE(info.units[0].buffer_health.has_value());
+    const auto& bh = info.units[0].buffer_health.value();
+    REQUIRE(bh.state == "Advancing");
+    REQUIRE(bh.fault_detection_enabled == false);
+    // AFC nulls both while the buffer is idle — that maps to the not-reported
+    // sentinel, not to zero.
+    REQUIRE(bh.rotation_distance == Catch::Approx(-1.0f));
+    REQUIRE(bh.fault_timer == Catch::Approx(-1.0f));
+    // v1.1.0 emits no multipliers at all.
+    REQUIRE(bh.multiplier == Catch::Approx(-1.0f));
+    REQUIRE(bh.active_lane.empty());
+}
+
+TEST_CASE("AFC buffer parses the v1.2.0 multiplier and active-lane fields",
+          "[ams][afc][status_fields][1149]") {
+    // Source-derived: AFC_buffer.get_status() at v1.2.0 adds active_lane and the
+    // multiplier trio. `multiplier` is _last_multiplier, seeded as an int 1 in
+    // the base trigger, so it can arrive as either an int or a float.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    // AFC_buffer frames are only dispatched for buffers AFC has named.
+    helper.feed_afc_state({{"buffers", {"Turtle_1"}}});
+
+    helper.feed_afc_buffer("Turtle_1",
+                           nlohmann::json{{"state", "Trailing"},
+                                          {"lanes", {"lane1", "lane2", "lane3", "lane4"}},
+                                          {"enabled", true},
+                                          {"rotation_distance", 22.678},
+                                          {"active_lane", "lane2"},
+                                          {"multiplier_high", 1.1},
+                                          {"multiplier_low", 0.9},
+                                          {"multiplier", 1},
+                                          {"fault_detection_enabled", true},
+                                          {"error_sensitivity", 7},
+                                          {"fault_timer", 1.5},
+                                          {"distance_to_fault", 25.5}});
+
+    auto info = helper.get_system_info();
+    REQUIRE(info.units[0].buffer_health.has_value());
+    const auto& bh = info.units[0].buffer_health.value();
+    REQUIRE(bh.active_lane == "lane2");
+    REQUIRE(bh.rotation_distance == Catch::Approx(22.678f));
+    REQUIRE(bh.multiplier == Catch::Approx(1.0f));
+    REQUIRE(bh.multiplier_high == Catch::Approx(1.1f));
+    REQUIRE(bh.multiplier_low == Catch::Approx(0.9f));
+    REQUIRE(bh.fault_timer == Catch::Approx(1.5f));
+    REQUIRE(bh.distance_to_fault == Catch::Approx(25.5f));
+    REQUIRE(bh.error_sensitivity == Catch::Approx(7.0f));
+}
+
+TEST_CASE("AFC buffer delta omitting fields leaves the prior health intact",
+          "[ams][afc][status_fields][1149]") {
+    // The buffer parser used to build a fresh BufferHealth per frame and assign
+    // it wholesale, so a state-only delta wiped the configured multipliers,
+    // sensitivity and fault distance. It also carries no `lanes`, so the routing
+    // has to come from what an earlier frame said.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    // AFC_buffer frames are only dispatched for buffers AFC has named.
+    helper.feed_afc_state({{"buffers", {"Turtle_1"}}});
+
+    helper.feed_afc_buffer("Turtle_1",
+                           nlohmann::json{{"state", "Trailing"},
+                                          {"lanes", {"lane1", "lane2", "lane3", "lane4"}},
+                                          {"enabled", true},
+                                          {"rotation_distance", 22.678},
+                                          {"active_lane", "lane2"},
+                                          {"multiplier_high", 1.1},
+                                          {"multiplier_low", 0.9},
+                                          {"multiplier", 1.1},
+                                          {"fault_detection_enabled", true},
+                                          {"error_sensitivity", 7},
+                                          {"fault_timer", 1.5},
+                                          {"distance_to_fault", 25.5}});
+
+    helper.feed_afc_buffer("Turtle_1", nlohmann::json{{"state", "Advancing"}});
+
+    auto info = helper.get_system_info();
+    REQUIRE(info.units[0].buffer_health.has_value());
+    const auto& bh = info.units[0].buffer_health.value();
+    REQUIRE(bh.state == "Advancing");
+    REQUIRE(bh.active_lane == "lane2");
+    REQUIRE(bh.rotation_distance == Catch::Approx(22.678f));
+    REQUIRE(bh.multiplier == Catch::Approx(1.1f));
+    REQUIRE(bh.multiplier_high == Catch::Approx(1.1f));
+    REQUIRE(bh.multiplier_low == Catch::Approx(0.9f));
+    REQUIRE(bh.fault_timer == Catch::Approx(1.5f));
+    REQUIRE(bh.distance_to_fault == Catch::Approx(25.5f));
+    REQUIRE(bh.error_sensitivity == Catch::Approx(7.0f));
+    REQUIRE(bh.fault_detection_enabled == true);
+}
+
+TEST_CASE("AFC full multi-lane v1.2.0 frame lands on every slot",
+          "[ams][afc][status_fields][1149]") {
+    // Observed four-lane BoxTurtle frame with the v1.2.0-only keys added from
+    // AFC_lane.get_status() at tag v1.2.0. Colours, weights, maps, dist_hub and
+    // the endstop list are the live values.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_state({{"current_lane", nullptr},
+                           {"next_lane", "lane4"},
+                           {"current_state", "Idle"},
+                           {"current_toolchange", 12},
+                           {"number_of_toolchanges", 12},
+                           {"spoolman", "http://spoolman.invalid:7912"},
+                           {"position_saved", false},
+                           {"error_state", false},
+                           {"bypass_state", false},
+                           {"quiet_mode", false},
+                           {"maps", nlohmann::json::array({"T0", "T1", "T2", "T3"})},
+                           {"lanes", {"lane1", "lane2", "lane3", "lane4"}},
+                           {"extruders", {"extruder"}},
+                           {"hubs", {"Turtle_1"}},
+                           {"buffers", {"Turtle_1"}},
+                           {"led_state", true}});
+
+    struct LaneFixture {
+        const char* name;
+        const char* map;
+        const char* color;
+        double weight;
+        double dist_hub;
+        int spool_id;
+        const char* filament_name;
+        int bed_temp;
+    };
+    const LaneFixture lanes[] = {
+        {"lane1", "T0", "#E53935", 505.8077510382372, 194.57, 42, "Galaxy Black", 60},
+        {"lane2", "T1", "#536DFE", 497.0348845693303, 122.73, 43, "Sky Blue", 62},
+        {"lane3", "T2", "#43A047", 812.5, 150.0, 44, "Leaf Green", 60},
+        {"lane4", "T3", "#FDD835", 233.25, 175.5, 45, "Sunflower", 65},
+    };
+
+    for (const auto& lf : lanes) {
+        nlohmann::json lane = observed_lane1_v110();
+        lane["name"] = lf.name;
+        lane["map"] = lf.map;
+        lane["color"] = lf.color;
+        lane["weight"] = lf.weight;
+        lane["dist_hub"] = lf.dist_hub;
+        lane["spool_id"] = lf.spool_id;
+        lane["filament_name"] = lf.filament_name;
+        lane["bed_temp"] = lf.bed_temp;
+        lane["initial_weight"] = 1000.0;
+        lane["remember_spool"] = true;
+        lane["status"] = "Ready";
+        helper.feed_afc_stepper(lf.name, lane);
+    }
+
+    helper.feed_afc_buffer("Turtle_1",
+                           nlohmann::json{{"state", "Advancing"},
+                                          {"lanes", {"lane1", "lane2", "lane3", "lane4"}},
+                                          {"enabled", true},
+                                          {"rotation_distance", 22.678},
+                                          {"active_lane", nullptr},
+                                          {"multiplier_high", 1.1},
+                                          {"multiplier_low", 0.9},
+                                          {"multiplier", 1.0},
+                                          {"fault_detection_enabled", true},
+                                          {"error_sensitivity", 7},
+                                          {"fault_timer", 1.5},
+                                          {"distance_to_fault", nullptr}});
+
+    auto info = helper.get_system_info();
+    REQUIRE(info.next_slot == 3);
+    REQUIRE(info.spoolman_url == "http://spoolman.invalid:7912");
+    REQUIRE(info.position_saved == false);
+    REQUIRE(helper.get_afc_tool_cmds().size() == 4);
+
+    REQUIRE(info.units.size() == 1);
+    REQUIRE(info.units[0].slots.size() == 4);
+    for (int i = 0; i < 4; ++i) {
+        const auto& slot = info.units[0].slots[i];
+        INFO("slot " << i);
+        REQUIRE(slot.spool_name == lanes[i].filament_name);
+        REQUIRE(slot.bed_temp == lanes[i].bed_temp);
+        REQUIRE(slot.spoolman_id == lanes[i].spool_id);
+        REQUIRE(slot.total_weight_g == Catch::Approx(1000.0f));
+        REQUIRE(slot.remaining_weight_g == Catch::Approx(lanes[i].weight));
+        REQUIRE(slot.mapped_tool == i);
+        REQUIRE(helper.get_lane_remember_spool(lanes[i].name) == std::optional<bool>{true});
+        REQUIRE(helper.get_lane_sensors(i).endstops ==
+                "load,hub,tool_start,tool_end,buffer_advance,buffer_trailing");
+        REQUIRE(helper.get_lane_sensors(i).filament_status_led == "#00cc00");
+    }
+
+    REQUIRE(info.units[0].buffer_health.has_value());
+    const auto& bh = info.units[0].buffer_health.value();
+    REQUIRE(bh.active_lane.empty());
+    REQUIRE(bh.multiplier == Catch::Approx(1.0f));
+    REQUIRE(bh.fault_timer == Catch::Approx(1.5f));
+    REQUIRE(bh.distance_to_fault == Catch::Approx(-1.0f));
 }
