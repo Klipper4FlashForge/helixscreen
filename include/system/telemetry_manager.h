@@ -428,6 +428,20 @@ class TelemetryManager {
     void record_feature_adoption();
 
     /**
+     * @brief Record an AsyncLifetimeGuard skip-rate snapshot
+     *
+     * Drains `helix::async_lifetime::take_snapshot()` and emits an
+     * `async_lifetime_skips` event with the per-tag breakdown. A hot producer
+     * in this event is the early signal that an owner is repeatedly dying with
+     * pending work — the shape of bug 5KNWUEKY before it crashed. Fires on the
+     * periodic snapshot timer and once at shutdown. No-op if telemetry is
+     * disabled.
+     *
+     * Must be called from the LVGL/main thread only.
+     */
+    void record_async_lifetime_snapshot();
+
+    /**
      * @brief Notify that a user setting was changed
      *
      * Accumulates setting changes with debouncing. After SETTINGS_DEBOUNCE_MS of
@@ -900,6 +914,15 @@ class TelemetryManager {
      * @return JSON event with list of setting name/old/new value triples
      */
     nlohmann::json build_settings_changes_event() const;
+
+    /**
+     * @brief Shape an already-drained skip snapshot as an event JSON
+     *
+     * Pure with respect to the counters — the caller owns the drain, so
+     * suppressing an event can never also swallow a window.
+     */
+    nlohmann::json
+    build_async_lifetime_snapshot_event(const helix::async_lifetime::SkipSnapshot& snap) const;
 
     /// Create and arm the periodic snapshot LVGL timer
     void start_snapshot_timer();

@@ -36,13 +36,24 @@
 #include <spdlog/spdlog.h>
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
+#include <string>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 namespace helix {
 
 class AsyncLifetimeGuard;
+
+// Forward declaration so the skip paths inside AsyncLifetimeGuard's template
+// methods can call into the counter module. Full declarations (SkipEntry,
+// SkipSnapshot, take_snapshot, reset_for_testing, note_skipped's signature)
+// live at the bottom of this file.
+namespace async_lifetime {
+void note_skipped(const char* tag) noexcept;
+} // namespace async_lifetime
 
 namespace internal {
 
@@ -145,6 +156,7 @@ class LifetimeToken {
         auto snapshot = snapshot_;
         helix::ui::queue_update(tag, [gen, snapshot, tag, f = std::forward<F>(fn)]() mutable {
             if (gen->load(std::memory_order_acquire) != snapshot) {
+                helix::async_lifetime::note_skipped(tag);
                 spdlog::trace("[LifetimeToken] Skipped expired callback: {}",
                               tag ? tag : "unknown");
                 return;
@@ -242,6 +254,7 @@ class AsyncLifetimeGuard {
         auto snapshot = gen_->load(std::memory_order_acquire);
         helix::ui::queue_update(tag, [gen, snapshot, tag, f = std::forward<F>(fn)]() mutable {
             if (gen->load(std::memory_order_acquire) != snapshot) {
+                helix::async_lifetime::note_skipped(tag);
                 spdlog::trace("[AsyncLifetimeGuard] Skipped expired callback: {}",
                               tag ? tag : "unknown");
                 return;
@@ -295,6 +308,7 @@ class AsyncLifetimeGuard {
             helix::ui::queue_update(
                 tag, [gen, snapshot, tag, fn, t = std::move(args_tuple)]() mutable {
                     if (gen->load(std::memory_order_acquire) != snapshot) {
+                        helix::async_lifetime::note_skipped(tag);
                         spdlog::trace("[AsyncLifetimeGuard] Skipped expired bg_cb: {}",
                                       tag ? tag : "unknown");
                         return;
@@ -310,3 +324,70 @@ class AsyncLifetimeGuard {
 };
 
 } // namespace helix
+
+// ============================================================================
+// Skip-rate telemetry — declared in this header because the three skip paths
+// below are the only producers. See `src/system/async_lifetime_guard.cpp` for
+// the implementation.
+//
+// Every deferred callback that fires with an invalidated generation counter
+// increments a per-tag counter via `note_skipped(tag)`. `TelemetryManager`
+// drains the counters on its periodic snapshot timer and emits an
+// `async_lifetime_skips` event with the per-tag breakdown. A hot producer in
+// that breakdown is the early signal that an owner is repeatedly dying with
+// pending work — the shape of bug 5KNWUEKY before it crashes (#1165 close
+// commentary).
+//
+// Tags are string-literal pointers (per `UpdateQueue::TaggedCallback`'s
+// contract), so the counter interns by pointer equality — no hashing, no
+// allocation, no string-lifetime concerns. Bounded at `kMaxTrackedTags` slots;
+// overflow rolls into an "(other)" bucket. Slots are released again whenever a
+// window drains them to zero, so the bound is on tags active *per window*, not
+// on tags seen over the life of the process.
+// ============================================================================
+
+namespace helix::async_lifetime {
+
+/// Number of distinct producer tags tracked within one snapshot window before
+/// overflow rolls into the "(other)" bucket. 64 keeps the counter store under
+/// 1 KB and the linear-scan hot path cache-friendly. Slot count is the only
+/// knob — tune if a real device shows >64 distinct producers skipping inside a
+/// single window (which would itself be a signal).
+constexpr size_t kMaxTrackedTags = 64;
+
+/// Increment the skip counter for `tag`. Lock-free on the repeating-tag hot
+/// path (linear scan over cache-friendly slots); the first sighting of a tag
+/// within a window claims a free slot by CAS. `nullptr` is normalised to
+/// "(null)". Safe from any thread, though in practice all three skip paths fire
+/// on the LVGL main thread inside `UpdateQueue::process_pending()`.
+void note_skipped(const char* tag) noexcept;
+
+struct SkipEntry {
+    std::string tag;
+    uint64_t count;
+};
+
+struct SkipSnapshot {
+    /// Per-tag counts, sorted descending. Includes the synthetic "(other)"
+    /// entry when the counter store has overflowed.
+    std::vector<SkipEntry> entries;
+    /// Sum of every count observed in this window, including the "(other)"
+    /// bucket — the headline rate number.
+    uint64_t total = 0;
+    /// Count rolled into the "(other)" bucket (also present in `entries`).
+    uint64_t other_count = 0;
+};
+
+/// Main-thread-only. Returns the current counters sorted by count descending
+/// and atomically resets each slot to zero — the returned deltas represent
+/// the window since the previous call. Every slot is released on drain, so the
+/// table only ever holds tags that skipped in the current window and a producer
+/// that turns hot late can always be named. Call from `TelemetryManager`'s
+/// periodic snapshot timer.
+SkipSnapshot take_snapshot() noexcept;
+
+/// Test-only: zero every slot and forget every tracked tag so the next test
+/// starts from a clean counter store.
+void reset_for_testing() noexcept;
+
+} // namespace helix::async_lifetime
