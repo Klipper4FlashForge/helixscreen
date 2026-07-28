@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "async_lifetime_guard.h"
 #include "ui_heater_config.h"
 #include "ui_heating_animator.h"
 #include "ui_observer_guard.h"
@@ -327,6 +328,13 @@ class TemperatureService {
     // ── Subject management ──────────────────────────────────────────────
     SubjectManager subjects_;
     bool subjects_initialized_ = false;
+
+    /// Expires the deferred segment rebuild. Declared after `subjects_` so
+    /// reverse-order member destruction invalidates it before the subjects it
+    /// protects; also invalidated by deinit_subjects(). The in-lambda
+    /// `subjects_initialized_` test is not a substitute — reading that flag is
+    /// itself a member access on a possibly-freed `this` (#1165, #1146).
+    helix::AsyncLifetimeGuard async_lifetime_;
 
     // ── Lifecycle wrappers (owned by this object) ───────────────────────
     HeaterTempPanelLifecycle nozzle_lifecycle_{this, helix::HeaterType::Nozzle,

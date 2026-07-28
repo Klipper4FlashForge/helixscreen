@@ -887,7 +887,7 @@ void ProbeOverlay::load_config_values() {
                 lv_subject_copy_string(subject, buf);
             };
 
-            helix::ui::queue_update([this, section, set_cfg]() {
+            lifetime_.defer("ProbeOverlay::load_probe_config", [this, section, set_cfg]() {
                 set_cfg(section, "x_offset", probe_cfg_x_offset_buf_,
                         sizeof(probe_cfg_x_offset_buf_), &probe_cfg_x_offset_);
                 set_cfg(section, "y_offset", probe_cfg_y_offset_buf_,
