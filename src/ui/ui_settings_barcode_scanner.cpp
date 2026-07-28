@@ -13,6 +13,7 @@
 #include "bluetooth_loader.h"
 #include "bt_scanner_discovery_utils.h"
 #include "input_device_scanner.h"
+#include "log_redact.h"
 #include "settings_manager.h"
 #include "static_panel_registry.h"
 #include "usb_scanner_monitor.h"
@@ -458,7 +459,7 @@ void BarcodeScannerSettingsOverlay::handle_device_selected(const std::string& ve
 
     spdlog::info("[{}] Selected: '{}' ({}{})", get_name(), device_name,
                  vendor_product.empty() ? "auto-detect" : vendor_product,
-                 bt_mac.empty() ? "" : " bt:" + bt_mac);
+                 bt_mac.empty() ? "" : " bt:" + helix::redact::mac(bt_mac));
 
     s.set_scanner_device_id(vendor_product);
     s.set_scanner_device_name(vendor_product.empty() && bt_mac.empty() ? std::string{}
@@ -571,7 +572,7 @@ void BarcodeScannerSettingsOverlay::start_bt_discovery() {
                         if (!found) {
                             overlay->bt_devices_.push_back(info);
                             spdlog::debug("[BarcodeScannerSettings] BT discovered: {} ({})",
-                                          info.name, info.mac);
+                                          info.name, helix::redact::mac(info.mac));
                             overlay->populate_bt_dropdown();
                         }
                     });
@@ -644,7 +645,7 @@ void BarcodeScannerSettingsOverlay::pair_bt_device(const std::string& mac,
 }
 
 void BarcodeScannerSettingsOverlay::handle_bt_forget(const std::string& mac) {
-    spdlog::info("[{}] Forgetting BT scanner {}", get_name(), mac);
+    spdlog::info("[{}] Forgetting BT scanner {}", get_name(), helix::redact::mac(mac));
 
     auto tok = lifetime_.token();
     // Wrap spawn in try/catch per feedback_no_bare_threads_arm.md (#724).
@@ -667,10 +668,11 @@ void BarcodeScannerSettingsOverlay::handle_bt_forget(const std::string& mac) {
                         const char* err = loader.last_error ? loader.last_error(ctx) : "unknown";
                         spdlog::error(
                             "[BarcodeScannerSettings] remove_device failed for {}: r={} err={}",
-                            mac, r, err);
+                            helix::redact::mac(mac), r, err);
                         // Fall through — clear settings so UI doesn't show a stale entry
                     } else {
-                        spdlog::info("[BarcodeScannerSettings] BlueZ unpair succeeded for {}", mac);
+                        spdlog::info("[BarcodeScannerSettings] BlueZ unpair succeeded for {}",
+                                     helix::redact::mac(mac));
                     }
                 }
             }
@@ -780,7 +782,7 @@ void BarcodeScannerSettingsOverlay::on_bs_bt_scanner_selected(lv_event_t*) {
             auto& s = helix::SettingsManager::instance();
             if (s.get_scanner_bt_address() != dev.mac) {
                 spdlog::info("[BarcodeScannerSettings] Active BT scanner -> {} ({})", dev.name,
-                             dev.mac);
+                             helix::redact::mac(dev.mac));
                 s.set_scanner_device_id(""); // BT path supersedes USB VID:PID match
                 s.set_scanner_device_name(dev.name);
                 s.set_scanner_bt_address(dev.mac);
@@ -889,7 +891,7 @@ void BarcodeScannerSettingsOverlay::on_bs_pair_confirm(lv_event_t* e) {
                     if (ret >= 0 && !hid_ok && bonded_r != 1) {
                         spdlog::info("[BarcodeScannerSettings] Removing unbonded device {} "
                                      "to allow clean re-pair",
-                                     mac);
+                                     helix::redact::mac(mac));
                         if (ldr.remove_device) {
                             ldr.remove_device(bt_ctx, mac.c_str());
                         }

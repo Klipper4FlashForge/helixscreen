@@ -7,6 +7,7 @@
 #include "ui_update_queue.h"
 
 #include "bluetooth_loader.h"
+#include "log_redact.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "niimbot_protocol.h"
 
@@ -190,7 +191,7 @@ void NiimbotBluetoothPrinter::print(const LabelBitmap& bitmap, const LabelSize& 
 
     auto job = niimbot_build_print_job(bitmap, size);
     spdlog::warn("Niimbot BT: {} packets, {} rows to {} via BLE", job.packets.size(),
-                 job.total_rows, mac_);
+                 job.total_rows, helix::redact::mac(mac_));
 
     std::string mac = mac_;
 

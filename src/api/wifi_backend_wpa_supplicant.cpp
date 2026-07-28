@@ -5,6 +5,7 @@
 
 #include "ui_error_reporting.h"
 
+#include "log_redact.h"
 #include "spdlog/spdlog.h"
 #include "wifi_5ghz_detection.h"
 
@@ -1097,7 +1098,7 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
                                                       " (password contains invalid characters)");
     }
 
-    spdlog::info("[WifiBackend] Connecting to network '{}'", clean_ssid);
+    spdlog::info("[WifiBackend] Connecting to network '{}'", helix::redact::ssid(clean_ssid));
 
     // Step 1: Add new network (get network ID)
     std::string add_result = send_command("ADD_NETWORK");
@@ -1193,7 +1194,8 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
         spdlog::warn("[WifiBackend] SAVE_CONFIG failed (non-fatal): {}", save_result);
     }
 
-    spdlog::info("[WifiBackend] Network configuration complete, connecting to '{}'", ssid);
+    spdlog::info("[WifiBackend] Network configuration complete, connecting to '{}'",
+                 helix::redact::ssid(ssid));
     return WiFiErrorHelper::success();
 }
 
@@ -1301,7 +1303,7 @@ WifiBackend::ConnectionStatus WifiBackendWpaSupplicant::get_status() {
          std::abs(status.signal_strength - last_logged_status_.signal_strength) > 5);
 
     if (status_changed) {
-        spdlog::debug("[WifiBackend] Status: connected={} ssid='{}' ip='{}' signal={}%",
+        spdlog::trace("[WifiBackend] Status: connected={} ssid='{}' ip='{}' signal={}%",
                       status.connected, status.ssid, status.ip_address, status.signal_strength);
         last_logged_status_ = status;
     }

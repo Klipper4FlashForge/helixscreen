@@ -13,6 +13,7 @@
 
 #include "config.h"
 #include "ethernet_manager.h"
+#include "log_redact.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "network_tester.h"
 #include "static_panel_registry.h"
@@ -455,7 +456,8 @@ void NetworkSettingsOverlay::update_wifi_status() {
         mac_buffer_[sizeof(mac_buffer_) - 1] = '\0';
         lv_subject_notify(&mac_address_);
 
-        spdlog::debug("[NetworkSettingsOverlay] WiFi connected: {} ({})", ssid, ip);
+        spdlog::debug("[NetworkSettingsOverlay] WiFi connected: {} ({})", helix::redact::ssid(ssid),
+                      ip);
     } else {
         ssid_buffer_[0] = '\0';
         ip_buffer_[0] = '\0';
@@ -594,7 +596,7 @@ void NetworkSettingsOverlay::populate_network_list(const std::vector<WiFiNetwork
             static_cast<lv_obj_t*>(lv_xml_create(networks_list_, "wifi_network_item", nullptr));
         if (!item) {
             spdlog::error("[NetworkSettingsOverlay] Failed to create network item for SSID: {}",
-                          network.ssid);
+                          helix::redact::ssid(network.ssid));
             continue;
         }
 
@@ -627,7 +629,8 @@ void NetworkSettingsOverlay::populate_network_list(const std::vector<WiFiNetwork
         bool is_connected = (!connected_ssid.empty() && network.ssid == connected_ssid);
         if (is_connected) {
             lv_obj_add_state(item, LV_STATE_CHECKED);
-            spdlog::debug("[NetworkSettingsOverlay] Marked connected network: {}", network.ssid);
+            spdlog::debug("[NetworkSettingsOverlay] Marked connected network: {}",
+                          helix::redact::ssid(network.ssid));
         }
 
         // Store network data for click handler
@@ -637,8 +640,9 @@ void NetworkSettingsOverlay::populate_network_list(const std::vector<WiFiNetwork
         // Register DELETE handler for automatic cleanup
         lv_obj_add_event_cb(item, network_item_delete_cb, LV_EVENT_DELETE, nullptr);
 
-        spdlog::debug("[NetworkSettingsOverlay] Added network: {} ({}%, {})", network.ssid,
-                      network.signal_strength, network.is_secured ? "secured" : "open");
+        spdlog::debug("[NetworkSettingsOverlay] Added network: {} ({}%, {})",
+                      helix::redact::ssid(network.ssid), network.signal_strength,
+                      network.is_secured ? "secured" : "open");
     }
 
     // Restore scroll position
@@ -1067,8 +1071,8 @@ void NetworkSettingsOverlay::handle_hidden_connect_clicked() {
         return;
     }
 
-    spdlog::info("[NetworkSettingsOverlay] Connecting to hidden network: {} (security: {})", ssid,
-                 security_idx);
+    spdlog::info("[NetworkSettingsOverlay] Connecting to hidden network: {} (security: {})",
+                 helix::redact::ssid(ssid), security_idx);
 
     lv_subject_t* connecting_subject = lv_xml_get_subject(nullptr, "hidden_connecting");
     if (connecting_subject) {
@@ -1090,7 +1094,7 @@ void NetworkSettingsOverlay::handle_hidden_connect_clicked() {
 
                 if (success) {
                     spdlog::info("[NetworkSettingsOverlay] Connected to hidden network: {}",
-                                 ssid_str);
+                                 helix::redact::ssid(ssid_str));
                     handle_hidden_cancel_clicked();
                     update_wifi_status();
                     update_any_network_connected();
@@ -1151,8 +1155,8 @@ void NetworkSettingsOverlay::handle_network_item_clicked(lv_event_t* e) {
         return;
     }
 
-    spdlog::info("[NetworkSettingsOverlay] Network clicked: {} ({})", item_data->ssid,
-                 item_data->is_secured ? "secured" : "open");
+    spdlog::info("[NetworkSettingsOverlay] Network clicked: {} ({})",
+                 helix::redact::ssid(item_data->ssid), item_data->is_secured ? "secured" : "open");
 
     strncpy(current_ssid_, item_data->ssid.c_str(), sizeof(current_ssid_) - 1);
     current_ssid_[sizeof(current_ssid_) - 1] = '\0';
@@ -1175,7 +1179,8 @@ void NetworkSettingsOverlay::handle_network_item_clicked(lv_event_t* e) {
                     return;
                 token.defer([this, success, error]() {
                     if (success) {
-                        spdlog::info("[NetworkSettingsOverlay] Connected to {}", current_ssid_);
+                        spdlog::info("[NetworkSettingsOverlay] Connected to {}",
+                                     helix::redact::ssid(current_ssid_));
                         update_wifi_status();
                         update_any_network_connected();
                     } else {
@@ -1246,7 +1251,8 @@ void NetworkSettingsOverlay::on_security_changed(lv_event_t* e) {
 // ============================================================================
 
 void NetworkSettingsOverlay::show_password_modal(const char* ssid) {
-    spdlog::debug("[NetworkSettingsOverlay] Showing password modal for: {}", ssid);
+    spdlog::debug("[NetworkSettingsOverlay] Showing password modal for: {}",
+                  helix::redact::ssid(ssid));
 
     // Update SSID subject for modal display
     strncpy(password_modal_ssid_buffer_, ssid, sizeof(password_modal_ssid_buffer_) - 1);
@@ -1332,7 +1338,8 @@ void NetworkSettingsOverlay::handle_password_connect_clicked() {
     // Show connecting state (hides form, shows spinner)
     lv_subject_set_int(&wifi_connecting_, 1);
 
-    spdlog::info("[NetworkSettingsOverlay] Connecting to secured network: {}", current_ssid_);
+    spdlog::info("[NetworkSettingsOverlay] Connecting to secured network: {}",
+                 helix::redact::ssid(current_ssid_));
 
     // Capture password for lambda
     std::string pwd(password);
@@ -1347,7 +1354,7 @@ void NetworkSettingsOverlay::handle_password_connect_clicked() {
             lv_subject_set_int(&wifi_connecting_, 0);
 
             if (success) {
-                spdlog::info("[NetworkSettingsOverlay] Connected to {}", ssid);
+                spdlog::info("[NetworkSettingsOverlay] Connected to {}", helix::redact::ssid(ssid));
                 hide_password_modal();
                 update_wifi_status();
                 update_any_network_connected();

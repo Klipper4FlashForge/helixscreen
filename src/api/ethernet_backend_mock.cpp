@@ -4,6 +4,7 @@
 #include "ethernet_backend_mock.h"
 
 #include "ifconfig.h" // libhv's cross-platform ifconfig utility
+#include "log_redact.h"
 
 #include <spdlog/spdlog.h>
 
@@ -23,7 +24,8 @@ EthernetBackendMock::EthernetBackendMock() {
             // iface.mac is a char array, check if it's non-empty and not all zeros
             if (iface.mac[0] != '\0' && strcmp(iface.mac, "00:00:00:00:00:00") != 0) {
                 real_mac_ = iface.mac;
-                spdlog::debug("[EthernetMock] Using real MAC from {}: {}", iface.name, real_mac_);
+                spdlog::debug("[EthernetMock] Using real MAC from {}: {}", iface.name,
+                              helix::redact::mac(real_mac_));
                 break;
             }
         }
@@ -32,7 +34,7 @@ EthernetBackendMock::EthernetBackendMock() {
     if (real_mac_.empty()) {
         // Fallback to realistic-looking fake MAC (locally administered)
         real_mac_ = "02:42:ac:11:00:02";
-        spdlog::debug("[EthernetMock] Using fallback MAC: {}", real_mac_);
+        spdlog::debug("[EthernetMock] Using fallback MAC: {}", helix::redact::mac(real_mac_));
     }
 }
 

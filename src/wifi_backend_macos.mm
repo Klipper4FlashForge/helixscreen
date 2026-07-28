@@ -4,6 +4,7 @@
 
 #include "wifi_backend_macos.h"
 
+#include "log_redact.h"
 #include "safe_log.h"
 
 #include <spdlog/spdlog.h>
@@ -270,7 +271,7 @@ WiFiError WifiBackendMacOS::connect_network(const std::string& ssid, const std::
                          "Please wait for current connection to complete", "");
     }
 
-    spdlog::info("[WiFiMacOS] Connecting to network: {}", ssid);
+    spdlog::info("[WiFiMacOS] Connecting to network: {}", helix::redact::ssid(ssid));
 
     connecting_ssid_ = ssid;
     connecting_password_ = password;
@@ -320,7 +321,8 @@ void WifiBackendMacOS::connect_timer_callback([[maybe_unused]] lv_timer_t* timer
         NSSet<CWNetwork*>* networks = [iface scanForNetworksWithSSID:ssidData error:&error];
 
         if (error || !networks || [networks count] == 0) {
-            spdlog::error("[WiFiMacOS] Network not found: {}", connecting_ssid_);
+            spdlog::error("[WiFiMacOS] Network not found: {}",
+                          helix::redact::ssid(connecting_ssid_));
             connection_in_progress_ = false;
             fire_event("DISCONNECTED", connecting_ssid_);
             return;
@@ -339,7 +341,8 @@ void WifiBackendMacOS::connect_timer_callback([[maybe_unused]] lv_timer_t* timer
         BOOL success = [iface associateToNetwork:network password:password_ns error:&error];
 
         if (success) {
-            spdlog::info("[WiFiMacOS] Successfully connected to: {}", connecting_ssid_);
+            spdlog::info("[WiFiMacOS] Successfully connected to: {}",
+                         helix::redact::ssid(connecting_ssid_));
             fire_event("CONNECTED", connecting_ssid_);
         } else {
             spdlog::error("[WiFiMacOS] Connection failed: {}",

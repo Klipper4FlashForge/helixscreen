@@ -81,6 +81,19 @@ class DebugBundleCollector {
     /// Recursively strip sensitive keys from JSON (public for integration testing)
     static nlohmann::json sanitize_json(const nlohmann::json& input, int depth = 0);
 
+    /**
+     * @brief Run sanitize_value() over each line of a multi-line body.
+     *
+     * Applied to every text section that leaves the machine. Line-at-a-time so
+     * sanitize_value()'s 4 KB ReDoS guard does not redact a whole log as one
+     * oversized value.
+     *
+     * Catches MACs, tokens, credentials and emails. It cannot catch an SSID —
+     * that is an arbitrary user-chosen string with no pattern — so SSIDs are
+     * kept out of the logs at the call site instead (include/log_redact.h).
+     */
+    static std::string sanitize_text_block(const std::string& body);
+
     /// Gzip compression using zlib
     static std::vector<uint8_t> gzip_compress(const std::string& data);
 

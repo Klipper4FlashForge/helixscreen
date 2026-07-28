@@ -11,6 +11,7 @@
 #include "bt_print_utils.h"
 #include "label_printer_settings.h"
 #include "label_renderer.h"
+#include "log_redact.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "spoolman_types.h"
 
@@ -77,7 +78,7 @@ void BrotherPTBluetoothPrinter::print(const LabelBitmap& bitmap, const LabelSize
     }
 
     spdlog::warn("[Brother PT BT] Sending {} bytes to {} (channel resolved at send time)",
-                 commands.size(), mac_);
+                 commands.size(), helix::redact::mac(mac_));
 
     std::string mac = mac_;
 
@@ -145,7 +146,8 @@ void BrotherPTBluetoothPrinter::print_spool(const SpoolInfo& spool, LabelPreset 
             // historical SPP channel for builds without a working SDP symbol.
             int channel = helix::label::resolve_label_printer_channel(mac, 1);
             if (channel <= 0) {
-                spdlog::error("[Brother PT BT] No RFCOMM channel resolved for {}", mac);
+                spdlog::error("[Brother PT BT] No RFCOMM channel resolved for {}",
+                              helix::redact::mac(mac));
                 helix::ui::queue_update([callback]() {
                     if (callback)
                         callback(false, lv_tr("Could not resolve printer RFCOMM channel"));
@@ -154,7 +156,7 @@ void BrotherPTBluetoothPrinter::print_spool(const SpoolInfo& spool, LabelPreset 
             }
 
             // Single RFCOMM connection for both status query and raster send
-            spdlog::info("[Brother PT BT] Connecting to {} ch{}", mac, channel);
+            spdlog::info("[Brother PT BT] Connecting to {} ch{}", helix::redact::mac(mac), channel);
             int fd = loader.connect_rfcomm(ctx, mac.c_str(), channel);
             if (fd < 0) {
                 // If we used a cached channel, invalidate it so the next print retries

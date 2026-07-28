@@ -16,6 +16,7 @@
 #include "ui_error_reporting.h"
 #include "ui_update_queue.h"
 
+#include "log_redact.h"
 #include "lvgl/lvgl.h"
 #include "safe_log.h"
 #include "spdlog/spdlog.h"
@@ -309,7 +310,7 @@ void WiFiManager::connect(const std::string& ssid, const std::string& password,
         return;
     }
 
-    spdlog::info("[WiFiManager] Connecting to '{}'", ssid);
+    spdlog::info("[WiFiManager] Connecting to '{}'", helix::redact::ssid(ssid));
 
     // Drop any grace timer left over from a prior attempt so it can't deliver a stale
     // failure against this new connect (helixscreen#1050).
@@ -320,7 +321,7 @@ void WiFiManager::connect(const std::string& ssid, const std::string& password,
         connect_callback_ = on_complete;
         connecting_in_progress_ = true; // Ignore DISCONNECTED events during connection attempt
     }
-    spdlog::debug("[WiFiManager] Connect callback registered for '{}'", ssid);
+    spdlog::debug("[WiFiManager] Connect callback registered for '{}'", helix::redact::ssid(ssid));
 
     // Use backend's connect method
     WiFiError result = backend_->connect_network(ssid, password);
