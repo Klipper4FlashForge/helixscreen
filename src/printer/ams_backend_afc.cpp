@@ -2932,7 +2932,11 @@ bool AmsBackendAfc::can_recover_lane_position(int slot_index) const {
     // names none, offer the recovery on every lane routed to this hub rather
     // than on none: a wrong guess costs one harmless refusal from the firmware,
     // while showing nothing costs the user their only way out of a stranded lane.
-    if (!active_load_lane_.empty()) {
+    //
+    // A lane rename or unit re-init can leave active_load_lane_ naming a lane
+    // that no longer exists. Treat that as unattributed rather than matching
+    // nothing — otherwise a triggered hub would offer recovery on no lane at all.
+    if (!active_load_lane_.empty() && slots_.index_of(active_load_lane_) >= 0) {
         return lane_name == active_load_lane_;
     }
     return true;
@@ -2940,7 +2944,11 @@ bool AmsBackendAfc::can_recover_lane_position(int slot_index) const {
 
 bool AmsBackendAfc::lane_recovery_is_attributed() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return !active_load_lane_.empty();
+    // Kept consistent with can_recover_lane_position()'s staleness guard above —
+    // otherwise this could report "attributed" while that predicate falls back
+    // to unattributed, leaving the UI's attributed-vs-unattributed ranking and
+    // the actual recovery gate disagreeing about the same lane.
+    return !active_load_lane_.empty() && slots_.index_of(active_load_lane_) >= 0;
 }
 
 AmsError AmsBackendAfc::recover_lane_position(int slot_index) {

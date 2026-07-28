@@ -2196,6 +2196,39 @@ TEST_CASE("AFC offers recovery on every lane on the hub when it names none",
     REQUIRE(helper.can_recover_lane_position(3));
 }
 
+TEST_CASE("AFC treats a stale active_load_lane_ as unattributed rather than "
+          "matching no lane",
+          "[ams][afc][recovery]") {
+    // initialize_slots() (re-)runs whenever the lane count changes but never
+    // touches active_load_lane_. If a unit re-init or lane rename leaves it
+    // naming a lane that no longer exists in the registry, `lane_name ==
+    // active_load_lane_` is false for every lane at once — the exact all-lanes
+    // fallback this file's "names none" test exists to provide would be
+    // defeated by a name nobody can ever match.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+    for (const char* lane : {"lane1", "lane2", "lane3", "lane4"}) {
+        helper.set_lane_hub_routing(lane, "Turtle_1");
+    }
+    helper.set_hub_sensor("Turtle_1", true);
+
+    // Attribute to a real lane first, to prove the stale case is what changes
+    // behavior here (not simply an always-empty active_load_lane_).
+    helper.set_active_load_lane("lane2");
+    REQUIRE(helper.lane_recovery_is_attributed());
+
+    // Re-init drops lane2..lane4 from the registry. active_load_lane_ still
+    // says "lane2", but lane2 no longer exists.
+    helper.initialize_test_lanes_with_slots(1);
+    REQUIRE(helper.get_active_load_lane() == "lane2");
+
+    // Both the gate and the UI-facing attribution flag must fall back to
+    // unattributed rather than disagree with each other.
+    REQUIRE_FALSE(helper.lane_recovery_is_attributed());
+    REQUIRE(helper.can_recover_lane_position(0));
+}
+
 TEST_CASE("AFC active_load_lane_ is populated from a current_load delta and "
           "cleared when it goes null",
           "[ams][afc][recovery]") {
