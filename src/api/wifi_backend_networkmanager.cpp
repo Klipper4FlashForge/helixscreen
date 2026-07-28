@@ -4,6 +4,7 @@
 #include "wifi_backend_networkmanager.h"
 
 #include "app_globals.h"
+#include "log_redact.h"
 #include "spdlog/spdlog.h"
 
 #if !defined(__APPLE__) && !defined(__ANDROID__)
@@ -691,7 +692,7 @@ WiFiError WifiBackendNetworkManager::connect_network(const std::string& ssid,
         }
     }
 
-    spdlog::info("[WifiBackend] NM: Connecting to network '{}'", clean_ssid);
+    spdlog::info("[WifiBackend] NM: Connecting to network '{}'", helix::redact::ssid(clean_ssid));
 
     // Clean up existing connect thread
     connect_active_ = false;
@@ -836,7 +837,7 @@ bool WifiBackendNetworkManager::delete_connection_profile(const std::string& pro
 }
 
 void WifiBackendNetworkManager::connect_thread_func(std::string ssid, std::string password) {
-    spdlog::debug("[WifiBackend] NM: Connect thread started for '{}'", ssid);
+    spdlog::debug("[WifiBackend] NM: Connect thread started for '{}'", helix::redact::ssid(ssid));
 
     ConnectAttempt attempt = try_nmcli_connect(ssid, password);
 
@@ -859,10 +860,10 @@ void WifiBackendNetworkManager::connect_thread_func(std::string ssid, std::strin
         looks_like_stale_profile(attempt.stderr_out)) {
         spdlog::warn("[WifiBackend] NM: '{}' has a stale/malformed saved profile "
                      "(key-mgmt missing); deleting and retrying",
-                     ssid);
+                     helix::redact::ssid(ssid));
         if (delete_connection_profile(ssid)) {
             spdlog::info("[WifiBackend] NM: Deleted stale profile for '{}', retrying connect",
-                         ssid);
+                         helix::redact::ssid(ssid));
             attempt = try_nmcli_connect(ssid, password);
             if (!connect_active_) {
                 return;
@@ -870,19 +871,19 @@ void WifiBackendNetworkManager::connect_thread_func(std::string ssid, std::strin
         } else {
             spdlog::warn("[WifiBackend] NM: Could not delete stale profile for '{}' "
                          "(nmcli connection delete failed)",
-                         ssid);
+                         helix::redact::ssid(ssid));
         }
     }
 
     if (attempt.timed_out) {
-        spdlog::warn("[WifiBackend] NM: Connection to '{}' timed out", ssid);
+        spdlog::warn("[WifiBackend] NM: Connection to '{}' timed out", helix::redact::ssid(ssid));
         fire_event("DISCONNECTED", "Connection timed out");
         request_status_refresh();
         return;
     }
 
     if (attempt.exit_code == 0) {
-        spdlog::info("[WifiBackend] NM: Connected to '{}'", ssid);
+        spdlog::info("[WifiBackend] NM: Connected to '{}'", helix::redact::ssid(ssid));
         fire_event("CONNECTED");
         request_status_refresh();
         return;
@@ -890,8 +891,8 @@ void WifiBackendNetworkManager::connect_thread_func(std::string ssid, std::strin
 
     // Failure path
     if (is_polkit_permission_error(attempt.stderr_out)) {
-        spdlog::warn("[WifiBackend] NM: Permission denied connecting to '{}': {}", ssid,
-                     attempt.stderr_out);
+        spdlog::warn("[WifiBackend] NM: Permission denied connecting to '{}': {}",
+                     helix::redact::ssid(ssid), attempt.stderr_out);
         fire_event("AUTH_FAILED",
                    "Permission denied - check WiFi permissions. Re-run the HelixScreen "
                    "installer, or see Troubleshooting docs");
@@ -899,8 +900,8 @@ void WifiBackendNetworkManager::connect_thread_func(std::string ssid, std::strin
         return;
     }
 
-    spdlog::warn("[WifiBackend] NM: Connection to '{}' failed (exit code {}{})", ssid,
-                 attempt.exit_code,
+    spdlog::warn("[WifiBackend] NM: Connection to '{}' failed (exit code {}{})",
+                 helix::redact::ssid(ssid), attempt.exit_code,
                  attempt.stderr_out.empty() ? "" : ", stderr: " + attempt.stderr_out);
     // nmcli exit code 10 = connection timeout; doesn't cleanly distinguish auth
     // failure. Fire AUTH_FAILED as the best guess for secured networks.

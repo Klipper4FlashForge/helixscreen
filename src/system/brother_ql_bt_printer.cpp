@@ -10,6 +10,7 @@
 #include "brother_ql_printer.h"
 #include "brother_ql_protocol.h"
 #include "bt_print_utils.h"
+#include "log_redact.h"
 
 #include <spdlog/spdlog.h>
 
@@ -52,7 +53,8 @@ void BrotherQLBluetoothPrinter::print(const LabelBitmap& bitmap, const LabelSize
     }
 
     auto commands = brother_ql_build_raster(bitmap, size);
-    spdlog::warn("Brother QL BT: sending {} bytes to {} ch{}", commands.size(), mac_, channel_);
+    spdlog::warn("Brother QL BT: sending {} bytes to {} ch{}", commands.size(),
+                 helix::redact::mac(mac_), channel_);
 
     std::string mac = mac_;
     int channel = channel_;

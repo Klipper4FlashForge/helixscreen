@@ -186,20 +186,22 @@ WiFiError WifiBackendMock::connect_network(const std::string& ssid, const std::s
         [&ssid](const MockWiFiNetwork& mock_net) { return mock_net.network.ssid == ssid; });
 
     if (it == mock_networks_.end()) {
-        LOG_WARN_INTERNAL("[WifiBackend] Mock: Network '{}' not found in scan results", ssid);
+        LOG_WARN_INTERNAL("[WifiBackend] Mock: Network '{}' not found in scan results",
+                          ssid); // PII_OK: mock backend, fixture SSIDs
         return WiFiErrorHelper::network_not_found(ssid);
     }
 
     // Validate password for secured networks
     if (it->network.is_secured && password.empty()) {
         LOG_WARN_INTERNAL("[WifiBackend] Mock: No password provided for secured network '{}'",
-                          ssid);
+                          ssid); // PII_OK: mock backend, fixture SSIDs
         return WiFiError(
             WiFiResult::INVALID_PARAMETERS, "Password required for secured network: " + ssid,
             "This network requires a password", "Enter the network password and try again");
     }
 
-    spdlog::info("[WifiBackend] Mock: Connecting to '{}'...", ssid);
+    spdlog::info("[WifiBackend] Mock: Connecting to '{}'...",
+                 ssid); // PII_OK: mock backend, fixture SSIDs
 
     connecting_ssid_ = ssid;
     connecting_password_ = password;
@@ -224,7 +226,8 @@ WiFiError WifiBackendMock::disconnect_network() {
         return WiFiErrorHelper::success(); // Not an error - idempotent operation
     }
 
-    spdlog::info("[WifiBackend] Mock: Disconnecting from '{}'", connected_ssid_);
+    spdlog::info("[WifiBackend] Mock: Disconnecting from '{}'",
+                 connected_ssid_); // PII_OK: mock backend, fixture SSIDs
 
     connected_ = false;
     std::string old_ssid = connected_ssid_;
@@ -270,7 +273,7 @@ void WifiBackendMock::connect_thread_func() {
 
     if (it == mock_networks_.end()) {
         LOG_ERROR_INTERNAL("[WifiBackend] Mock: Network '{}' disappeared during connection",
-                           connecting_ssid_);
+                           connecting_ssid_); // PII_OK: mock backend, fixture SSIDs
         fire_event("DISCONNECTED", "reason=network_not_found");
         return;
     }
@@ -279,7 +282,7 @@ void WifiBackendMock::connect_thread_func() {
     if (it->network.is_secured) {
         if (connecting_password_.empty()) {
             spdlog::info("[WifiBackend] Mock: Auth failed - no password for secured network '{}'",
-                         connecting_ssid_);
+                         connecting_ssid_); // PII_OK: mock backend, fixture SSIDs
             fire_event("AUTH_FAILED", "reason=no_password");
             return;
         }
@@ -287,12 +290,13 @@ void WifiBackendMock::connect_thread_func() {
         // Check if password matches expected password
         if (connecting_password_ != it->password) {
             spdlog::debug("[WifiBackend] Mock: Auth failed - wrong password for '{}'",
-                          connecting_ssid_);
+                          connecting_ssid_); // PII_OK: mock backend, fixture SSIDs
             fire_event("AUTH_FAILED", "reason=wrong_password");
             return;
         }
 
-        spdlog::debug("[WifiBackend] Mock: Password correct for '{}'", connecting_ssid_);
+        spdlog::debug("[WifiBackend] Mock: Password correct for '{}'",
+                      connecting_ssid_); // PII_OK: mock backend, fixture SSIDs
     }
 
     // Connection successful!
@@ -304,7 +308,8 @@ void WifiBackendMock::connect_thread_func() {
     int subnet = 100 + (rng_() % 155); // 192.168.1.100-255
     connected_ip_ = "192.168.1." + std::to_string(subnet);
 
-    spdlog::info("[WifiBackend] Mock: Connected to '{}', IP: {}", connected_ssid_, connected_ip_);
+    spdlog::info("[WifiBackend] Mock: Connected to '{}', IP: {}", connected_ssid_,
+                 connected_ip_); // PII_OK: mock backend, fixture SSIDs
 
     fire_event("CONNECTED", "ip=" + connected_ip_);
 }

@@ -9,6 +9,7 @@
 #include "bluetooth_loader.h"
 #include "bt_print_utils.h"
 #include "label_printer_settings.h"
+#include "log_redact.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "makeid_protocol.h"
 
@@ -135,10 +136,10 @@ static int ensure_connected(helix::bluetooth::BluetoothLoader& loader, const std
 
     int channel = helix::label::resolve_label_printer_channel(mac, 1);
     if (channel <= 0) {
-        spdlog::error("MakeID BT: no RFCOMM channel resolved for {}", mac);
+        spdlog::error("MakeID BT: no RFCOMM channel resolved for {}", helix::redact::mac(mac));
         return -1;
     }
-    spdlog::info("MakeID BT: RFCOMM connect to {} ch{}", mac, channel);
+    spdlog::info("MakeID BT: RFCOMM connect to {} ch{}", helix::redact::mac(mac), channel);
     int fd = loader.connect_rfcomm(ctx, mac.c_str(), channel);
     if (fd < 0) {
         spdlog::error("MakeID BT: RFCOMM connect failed ({})", fd);
@@ -226,7 +227,8 @@ void MakeIdBluetoothPrinter::print(const LabelBitmap& bitmap, const LabelSize& s
     config.max_rows_per_chunk = 170;
 
     auto job = makeid_build_print_job(bitmap, size, config);
-    spdlog::warn("MakeID BT: {} chunks to {} via RFCOMM", job.chunks.size(), mac_);
+    spdlog::warn("MakeID BT: {} chunks to {} via RFCOMM", job.chunks.size(),
+                 helix::redact::mac(mac_));
 
     std::string mac = mac_;
     // Wrap thread spawn in try/catch — pthread_create EAGAIN on resource-constrained

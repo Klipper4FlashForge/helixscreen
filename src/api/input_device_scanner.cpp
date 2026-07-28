@@ -3,6 +3,7 @@
 #include "input_device_scanner.h"
 
 #include "config.h"
+#include "log_redact.h"
 #include "touch_calibration.h"
 
 #include <spdlog/spdlog.h>
@@ -562,11 +563,11 @@ std::optional<ScannedDevice> find_bt_hid_device_by_mac(const std::string& dev_ba
 
         std::string name = read_device_name(sysfs_base, event_num);
         spdlog::info("[InputScanner] Found paired BT HID scanner: {} ({}) mac={}", device_path,
-                     name, mac);
+                     name, helix::redact::mac(mac));
         return ScannedDevice{device_path, name, event_num};
     }
 
-    spdlog::debug("[InputScanner] No BT HID evdev found for mac={}", mac);
+    spdlog::debug("[InputScanner] No BT HID evdev found for mac={}", helix::redact::mac(mac));
     return std::nullopt;
 }
 

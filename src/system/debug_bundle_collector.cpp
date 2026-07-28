@@ -67,6 +67,10 @@ json DebugBundleCollector::collect(const BundleOptions& options) {
         bundle["printer"] = json{{"error", e.what()}};
     }
 
+    // Sanitized like klipper_log/moonraker_log below. This is defence in depth,
+    // not the primary control: it catches MACs, tokens and emails, but an SSID
+    // is an arbitrary string no regex can recognise, so SSIDs are kept out of
+    // the ring at the log call site instead (see include/log_redact.h).
     try {
         auto log_tail = collect_log_tail();
         if (!log_tail.empty()) {
@@ -117,7 +121,7 @@ json DebugBundleCollector::collect(const BundleOptions& options) {
 
         auto crash_history = CrashHistory::instance().to_json();
         if (!crash_history.empty()) {
-            bundle["crash_history"] = crash_history;
+            bundle["crash_history"] = sanitize_json(crash_history);
         }
 
         auto device_id = collect_device_id(config_dir);
@@ -301,7 +305,10 @@ json DebugBundleCollector::collect_printer_info() {
 // =============================================================================
 
 std::string DebugBundleCollector::collect_log_tail(int num_lines) {
-    return helix::logs::tail_best(num_lines);
+    // Sanitized here rather than at the call site so every consumer of the log
+    // tail is covered. The ring captures at debug regardless of the user's
+    // configured verbosity, so this text leaves the machine on every bundle.
+    return sanitize_text_block(helix::logs::tail_best(num_lines));
 }
 
 // =============================================================================
@@ -364,7 +371,7 @@ std::string DebugBundleCollector::collect_crash_txt() {
 
             if (!result.empty()) {
                 spdlog::debug("[DebugBundle] Read {} from {}", suffix, path);
-                return result;
+                return sanitize_text_block(result);
             }
         }
     }
@@ -561,10 +568,12 @@ RawHttpResult http_get_raw(const std::string& base_url, const std::string& endpo
     return result;
 }
 
+} // namespace
+
 // Sanitize a multi-line text block by sanitize_value()-ing each line. Avoids
 // sanitize_value()'s 4 KB ReDoS guard kicking in on whole-file inputs (which
 // would redact the entire content as [REDACTED_LONG_VALUE]).
-std::string sanitize_text_block(const std::string& body) {
+std::string DebugBundleCollector::sanitize_text_block(const std::string& body) {
     std::string result;
     result.reserve(body.size());
     size_t pos = 0;
@@ -580,8 +589,6 @@ std::string sanitize_text_block(const std::string& body) {
     }
     return result;
 }
-
-} // namespace
 
 json DebugBundleCollector::moonraker_get(const std::string& base_url, const std::string& endpoint,
                                          int timeout_sec) {
@@ -1007,7 +1014,7 @@ std::string DebugBundleCollector::collect_crash_report_txt(const std::string& co
         if (!result.empty()) {
             spdlog::debug("[DebugBundle] Read crash_report.txt from {}", path);
         }
-        return result;
+        return sanitize_text_block(result);
     } catch (const std::exception& e) {
         spdlog::debug("[DebugBundle] Failed to read crash_report.txt: {}", e.what());
         return {};
@@ -1032,7 +1039,7 @@ std::string DebugBundleCollector::collect_crash_txt(const std::string& config_di
         if (!result.empty()) {
             spdlog::debug("[DebugBundle] Read crash.txt from {}", path);
         }
-        return result;
+        return sanitize_text_block(result);
     } catch (const std::exception& e) {
         spdlog::debug("[DebugBundle] Failed to read crash.txt: {}", e.what());
         return {};

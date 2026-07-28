@@ -656,6 +656,44 @@ fi
 echo ""
 
 # ====================================================================
+# Network PII: no SSID/BSSID/MAC logged above trace level
+# ====================================================================
+# Background: the in-memory log ring is captured at debug regardless of the
+# user's configured verbosity, and leaves the machine three ways — the debug
+# bundle, the crash reporter's automatic upload, and the `ctl log` RPC. A set
+# of nearby SSIDs with signal strengths is a geolocation fingerprint, and a
+# scan enumerates the neighbours' networks too. No downstream regex can catch
+# an SSID, so the control has to be at the log call site (#1191).
+SECTION_START=$(date +%s)
+echo -n "🔒 Checking network PII in log calls..."
+
+if [ -f "scripts/check_wifi_pii_logging.py" ]; then
+  if [ "$STAGED_ONLY" = true ]; then
+    PII_ARGS="--staged-only"
+  else
+    PII_ARGS=""
+  fi
+  if python3 scripts/check_wifi_pii_logging.py $PII_ARGS >/tmp/wifi_pii_check.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    echo "✅ No network identifiers logged above trace"
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/wifi_pii_check.out
+    echo "   Run: python3 scripts/check_wifi_pii_logging.py"
+    echo "   See include/log_redact.h for the redaction helpers."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_wifi_pii_logging.py not found — skipping"
+fi
+
+echo ""
+
+# ====================================================================
 # Declarative UI: no XML-owned widget driven imperatively from C++
 # ====================================================================
 SECTION_START=$(date +%s)
