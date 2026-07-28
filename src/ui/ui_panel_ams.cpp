@@ -1823,3 +1823,7 @@ AmsPanel& get_global_ams_panel() {
 
     return *g_ams_panel;
 }
+
+AmsPanel* get_existing_ams_panel() {
+    return g_ams_panel.get();
+}
