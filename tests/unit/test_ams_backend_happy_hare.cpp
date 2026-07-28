@@ -784,15 +784,37 @@ TEST_CASE("Happy Hare clear_fault targets correct gate", "[ams][happy_hare][reco
     REQUIRE(helper.has_gcode("MMU_RECOVER GATE=3"));
 }
 
-TEST_CASE("Happy Hare clear_fault validates slot index", "[ams][happy_hare][recovery]") {
+TEST_CASE("Happy Hare clear_fault validates a genuinely out-of-range slot index",
+          "[ams][happy_hare][recovery]") {
+    // -1 is a documented sentinel ("no particular gate"), not an invalid index —
+    // see the dedicated -1 test below. An out-of-range positive index is still
+    // rejected.
+    AmsBackendHappyHareTestHelper helper;
+    helper.initialize_test_gates(4);
+    helper.set_running(true);
+
+    auto result = helper.clear_fault(99);
+
+    REQUIRE_FALSE(result.success());
+    REQUIRE(result.result == AmsResult::INVALID_SLOT);
+}
+
+TEST_CASE("Happy Hare clear_fault honours -1 as \"no particular gate\"",
+          "[ams][happy_hare][recovery]") {
+    // The base contract (ams_backend.h) documents -1 as valid, and both UI
+    // callers (sidebar Reset, error-modal dismiss) pass current_slot, which is
+    // -1 whenever nothing is loaded — exactly the state Reset is pressed in.
+    // Bare MMU_RECOVER (no GATE=) re-syncs the whole selector, the system-scoped
+    // analogue of AFC's RESET_FAILURE.
     AmsBackendHappyHareTestHelper helper;
     helper.initialize_test_gates(4);
     helper.set_running(true);
 
     auto result = helper.clear_fault(-1);
 
-    REQUIRE_FALSE(result.success());
-    REQUIRE(result.result == AmsResult::INVALID_SLOT);
+    REQUIRE(result.success());
+    REQUIRE(helper.has_gcode("MMU_RECOVER"));
+    REQUIRE_FALSE(helper.has_gcode_starting_with("MMU_RECOVER GATE="));
 }
 
 TEST_CASE("Happy Hare clear_fault fails when not running", "[ams][happy_hare][recovery]") {
