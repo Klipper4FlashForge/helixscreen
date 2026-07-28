@@ -11,6 +11,7 @@
  * - PrintSelectUsbSource symlink detection and tab hiding
  */
 
+#include "ui_update_queue.h"
 #include "../../include/moonraker_api.h"
 #include "../../include/moonraker_client.h"
 #include "../../include/moonraker_client_mock.h"
@@ -70,6 +71,10 @@ class MetadataAPITestFixture {
     }
 
     ~MetadataAPITestFixture() {
+        // Drain while `state` is still alive — discover_printer() in the ctor
+        // leaves PrinterCapabilitiesState's deferred setters queued (#1166).
+        helix::ui::UpdateQueue::instance().drain();
+
         mock_client.stop_temperature_simulation();
         mock_client.disconnect();
         api.reset();

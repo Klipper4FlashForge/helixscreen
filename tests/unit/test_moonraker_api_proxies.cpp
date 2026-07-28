@@ -7,6 +7,7 @@
  * Tests that proxy methods correctly delegate to MoonrakerClient.
  */
 
+#include "ui_update_queue.h"
 #include "../../include/moonraker_api.h"
 #include "../../include/moonraker_client_mock.h"
 #include "../../lvgl/lvgl.h"
@@ -50,6 +51,12 @@ class ProxyTestFixture {
     }
 
     ~ProxyTestFixture() {
+        // Drain while `state` is still alive. discover_printer() in the ctor
+        // routes hardware results into PrinterCapabilitiesState's deferred
+        // setters; without this they sit in the queue for whichever test drains
+        // next, which is what the cross-test leak report keys on (#1166).
+        helix::ui::UpdateQueue::instance().drain();
+
         mock_client.stop_temperature_simulation();
         mock_client.disconnect();
         api.reset();

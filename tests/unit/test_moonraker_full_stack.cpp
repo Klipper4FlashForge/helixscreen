@@ -22,6 +22,7 @@
  *   ./build/bin/helix-tests "[integration]"
  */
 
+#include "ui_update_queue.h"
 #include "../../include/moonraker_api.h"
 #include "../../include/moonraker_api_mock.h"
 #include "../../include/moonraker_client_mock.h"
@@ -109,6 +110,10 @@ class FullStackTestFixture {
     }
 
     ~FullStackTestFixture() {
+        // Drain while printer_state_ is still alive — discover_printer() in the
+        // ctor leaves PrinterCapabilitiesState's deferred setters queued (#1166).
+        helix::ui::UpdateQueue::instance().drain();
+
         client_.stop_temperature_simulation();
         client_.disconnect();
         api_.reset();
@@ -323,6 +328,10 @@ class EventIntegrationFixture {
     }
 
     ~EventIntegrationFixture() {
+        // Drain while printer_state_ is still alive — discover_printer() in the
+        // ctor leaves PrinterCapabilitiesState's deferred setters queued (#1166).
+        helix::ui::UpdateQueue::instance().drain();
+
         client_.stop_temperature_simulation();
         client_.disconnect();
     }

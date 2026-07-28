@@ -90,6 +90,15 @@ class TelemetryTestFixture {
     }
 
     ~TelemetryTestFixture() {
+        // Drain BEFORE shutdown(), while the subject these callbacks write is
+        // still alive. set_enabled() defers its subject write, so the ctor's
+        // set_enabled(false) — plus any set_enabled() in the test body — is
+        // still queued at this point. Leaving them for whichever fixture
+        // drained next is what made TelemetryManager::set_enabled the single
+        // largest producer in the cross-test leak report: 185 callbacks across
+        // 96 tests, 21% of the suite total (#1166).
+        helix::ui::UpdateQueue::instance().drain();
+
         TelemetryManager::instance().shutdown();
 
         // Clean up temp directory - best effort
