@@ -355,6 +355,13 @@ void AmsBackendAfc::set_discovered_sensors(const std::vector<std::string>& senso
 AmsSystemInfo AmsBackendAfc::get_system_info() const {
     std::lock_guard<std::mutex> lock(mutex_);
 
+    // Check for stuck operations on every UI poll, not just on status updates.
+    // The sidebar's stall watchdog polls this whenever the action is non-IDLE,
+    // which is the only clock AFC has left when the printer goes silent
+    // mid-operation (network drop, Klipper shutdown). Must run BEFORE the
+    // uninitialized-registry early return below or that path skips it.
+    const_cast<AmsBackendAfc*>(this)->check_action_timeout();
+
     if (!slots_.is_initialized()) {
         return system_info_;
     }
@@ -442,6 +449,18 @@ AmsError AmsBackendAfc::clear_fault(int slot_index) {
         // later delta will carry `message` at all, so the empty-message disarm
         // below never fires and the budget would otherwise persist indefinitely.
         message_drain_deadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+
+        // Drop the stuck-action latch: the user dismissed the error, so AFC's
+        // own state string drives the action again. If AFC is genuinely still
+        // stuck the clock restarts from here and re-fires after a full budget,
+        // which is bounded and correct.
+        if (timed_out_state_.has_value()) {
+            spdlog::debug("[AMS AFC] Clear fault: releasing stuck-action latch on '{}'",
+                          *timed_out_state_);
+            timed_out_state_.reset();
+            timed_out_detail_.clear();
+        }
+        action_start_time_ = std::chrono::steady_clock::now();
     }
 
     // Deliberately does NOT route through cancel(): cancel() returns early when
@@ -1047,6 +1066,16 @@ void AmsBackendAfc::handle_status_update(const nlohmann::json& notification) {
                 system_info_.filament_loaded = true;
             }
         }
+
+        // Backstop for a frame that never terminates the operation. Runs with
+        // mutex_ held; the emit happens below, outside it. A flip to ERROR is
+        // itself a state change worth publishing even on a frame that touched
+        // nothing else.
+        const AmsAction action_before_timeout = system_info_.action;
+        check_action_timeout();
+        if (system_info_.action != action_before_timeout) {
+            state_changed = true;
+        }
     }
 
     // Emit events OUTSIDE the lock to avoid deadlock with callbacks
@@ -1067,6 +1096,9 @@ void AmsBackendAfc::apply_state_string(const std::string& raw, const char* sourc
     bool recognized = true;
     system_info_.action = ams_action_from_string(raw, &recognized);
     system_info_.operation_detail = afc_state_detail(raw);
+    // Keys the stuck-action latch. Deliberately the raw wire token, not the
+    // humanized detail: two different states can share a display label.
+    last_raw_state_ = raw;
 
     if (!recognized && !raw.empty() && unknown_state_warned_.insert(raw).second) {
         // Schema drift: AFC reported a state outside our known vocabulary. The
@@ -1083,9 +1115,86 @@ void AmsBackendAfc::apply_state_string(const std::string& raw, const char* sourc
                   ams_action_to_string(system_info_.action), raw, system_info_.operation_detail);
 }
 
+void AmsBackendAfc::apply_action_timeout_latch_locked() {
+    if (!timed_out_state_.has_value()) {
+        return;
+    }
+
+    if (*timed_out_state_ != last_raw_state_) {
+        // AFC moved on to a genuinely different state: the stuck operation
+        // resolved, or something replaced it. Stop overriding and let the
+        // firmware drive the action again.
+        spdlog::info("[AMS AFC] Stuck-action latch released: '{}' -> '{}'", *timed_out_state_,
+                     last_raw_state_);
+        timed_out_state_.reset();
+        timed_out_detail_.clear();
+        return;
+    }
+
+    // Same stuck string as when the budget blew. AFC re-derives the action from
+    // that string on every frame, so without this override the normal mapping
+    // would put the backend straight back into the busy action, the frame-level
+    // change would restart the clock, and the whole thing would flap between
+    // busy and ERROR for as long as AFC stays stuck.
+    system_info_.action = AmsAction::ERROR;
+    system_info_.operation_detail = timed_out_detail_;
+}
+
+void AmsBackendAfc::check_action_timeout() {
+    // Already latched: the budget has fired for this state string and the clock
+    // means nothing until AFC reports something else. apply_action_timeout_
+    // latch_locked() owns the state from here.
+    if (timed_out_state_.has_value()) {
+        return;
+    }
+
+    const AmsAction a = system_info_.action;
+    // IDLE has no operation to time out and ERROR is already the terminal state
+    // this would produce. PAUSED is legitimately indefinite — AFC is waiting on
+    // the user to clear a jam or swap a spool, and failing that into ERROR would
+    // discard a prompt they are in the middle of answering.
+    if (a == AmsAction::IDLE || a == AmsAction::ERROR || a == AmsAction::PAUSED) {
+        return;
+    }
+
+    int limit = ACTION_TIMEOUT_SECONDS;
+    if (a == AmsAction::SELECTING) {
+        limit = SELECTING_TIMEOUT_SECONDS;
+    } else if (a == AmsAction::HEATING) {
+        limit = HEATING_TIMEOUT_SECONDS;
+    } else if (a == AmsAction::PURGING) {
+        limit = PURGING_TIMEOUT_SECONDS;
+    } else if (a == AmsAction::LOADING || a == AmsAction::UNLOADING) {
+        limit = LOAD_UNLOAD_TIMEOUT_SECONDS;
+    }
+
+    const auto elapsed = std::chrono::steady_clock::now() - action_start_time_;
+    if (elapsed < std::chrono::seconds(limit)) {
+        return;
+    }
+
+    spdlog::warn("[AMS AFC] {} (state '{}') timed out after {}s of a {}s budget, surfacing ERROR",
+                 ams_action_to_string(a), last_raw_state_,
+                 std::chrono::duration_cast<std::chrono::seconds>(elapsed).count(), limit);
+
+    // Preserve what was happening as the error description so the error-center
+    // bridge shows more than a bare failure.
+    const std::string timeout_detail = system_info_.operation_detail.empty()
+                                           ? lv_tr("Filament operation timed out")
+                                           : system_info_.operation_detail + lv_tr(" (timed out)");
+    system_info_.action = AmsAction::ERROR;
+    system_info_.operation_detail = timeout_detail;
+    timed_out_state_ = last_raw_state_;
+    timed_out_detail_ = timeout_detail;
+}
+
 void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
                                     std::string& deferred_error_event,
                                     bool& current_slot_set_by_afc_state) {
+    // Stuck-action clock: captured here and compared at the very bottom of this
+    // function. See the tail block for why the comparison is frame-scoped.
+    const AmsAction action_at_frame_start = system_info_.action;
+
     // Version, when upstream supplies it here. AFC is moving the signal into the
     // status object (AFCProject/AFC-Klipper-Add-On PR #807 adds AFC.version to
     // get_status()); the old afc-install DB namespace has been dead since their
@@ -1531,6 +1640,26 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
             system_info_.filament_loaded = true;
             spdlog::trace("[AMS AFC] Bypass mode active");
         }
+    }
+
+    // --- Stuck-action bookkeeping (see check_action_timeout) ----------------
+    //
+    // Re-assert the latch last so it outranks both the state->action mapping
+    // above and the AFC.message block, which also writes operation_detail.
+    apply_action_timeout_latch_locked();
+
+    // Stamp the action clock once per status frame, and only when the action
+    // actually changed across the WHOLE frame.
+    //
+    // This deliberately does NOT live in apply_state_string(). That helper runs
+    // on every frame AFC sends and up to twice within one (the legacy "status"
+    // field, then the authoritative "current_state"). An unconditional stamp
+    // there would restart the budget on every delta so it could never elapse;
+    // an "action changed" stamp there would misfire whenever those two fields
+    // disagree inside a single frame. Either way the timeout would never fire,
+    // which is the bug this whole mechanism exists to prevent.
+    if (system_info_.action != action_at_frame_start) {
+        action_start_time_ = std::chrono::steady_clock::now();
     }
 }
 

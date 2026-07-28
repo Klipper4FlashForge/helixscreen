@@ -14,6 +14,7 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -379,6 +380,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcToolchangerLaneHelper;
     friend class AfcStateStringHelper;
     friend class AfcDatabaseResponseHelper;
+    friend class AfcActionTimeoutHelper;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;
@@ -437,6 +439,69 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
      * @param source Field it came from ("status" / "current_state"), for logs
      */
     void apply_state_string(const std::string& raw, const char* source);
+
+    // === Stuck-action timeout ==============================================
+    //
+    // AFC's busy state is re-derived from the firmware-echoed state string on
+    // every status frame. When the terminating frame never arrives — a macro
+    // that silently never completes, a WebSocket bounce mid-toolchange, a
+    // Klipper shutdown — the UI stays pinned busy forever with nothing to
+    // release it (#1188). These budgets flip a genuinely stuck operation to
+    // ERROR, which is what the AmsPanel ams_action observer and the sidebar
+    // both key off.
+    //
+    // Every value is a UI backstop, not a progress tracker: AFC operations are
+    // legitimately long (a measured BoxTurtle toolchange including cut, poop,
+    // kick, brush and purge ran 67s) and a false timeout is far worse than a
+    // late one, so all of them are generous.
+
+    /// Everything busy that has no dedicated budget: RESETTING, FORMING_TIP,
+    /// CUTTING, CHECKING. These are short, bounded macro steps.
+    static constexpr int ACTION_TIMEOUT_SECONDS = 120;
+    /// AFC's toolchanger states (ToolSwap, ToolDock, ToolPickup, Moving,
+    /// Restoring) all map to SELECTING, and a full toolchange is the longest
+    /// thing AFC does — dock, pick up, load, cut, purge, brush, restore
+    /// position. AD5X's busy list omits SELECTING entirely (its firmware never
+    /// reports it); AFC needs it and needs it long.
+    static constexpr int SELECTING_TIMEOUT_SECONDS = 300;
+    /// Cold nozzle to 300°C for high-temp materials. Klipper's own
+    /// verify_heater aborts a genuinely dead heater well inside this.
+    static constexpr int HEATING_TIMEOUT_SECONDS = 300;
+    /// A multi-colour purge legitimately runs minutes on a large purge volume.
+    static constexpr int PURGING_TIMEOUT_SECONDS = 240;
+    /// Lane-to-toolhead feed over a long bowden, plus AFC's per-lane speed
+    /// ramps. Shared by LOADING and UNLOADING — the paths are symmetric.
+    static constexpr int LOAD_UNLOAD_TIMEOUT_SECONDS = 180;
+
+    /// Start of the current action, stamped once per status frame in
+    /// parse_afc_state() when the action changed across the whole frame.
+    std::chrono::steady_clock::time_point action_start_time_{std::chrono::steady_clock::now()};
+
+    /// Raw AFC state string most recently applied by apply_state_string().
+    /// Keys the timeout latch; NOT a display value.
+    std::string last_raw_state_;
+
+    /// Raw AFC state string that blew its budget, and the detail composed when
+    /// it did. While set, the normal state->action mapping is overridden with
+    /// ERROR.
+    ///
+    /// The latch exists because AFC — unlike AD5X, which drives its own action
+    /// state machine — re-derives the action from the firmware string every
+    /// frame. Setting ERROR alone would be undone by the very next frame, whose
+    /// unchanged "Loading" maps straight back to LOADING and restarts the
+    /// clock, flapping between busy and ERROR indefinitely. Released the moment
+    /// AFC reports a genuinely different string, and by clear_fault().
+    std::optional<std::string> timed_out_state_;
+    std::string timed_out_detail_;
+
+    /// Flip a busy action that has outlived its budget to ERROR and latch it.
+    /// No-op while already latched, and for IDLE / ERROR / PAUSED. Caller holds
+    /// mutex_.
+    void check_action_timeout();
+
+    /// Re-assert (or release) the timeout latch after the frame's state strings
+    /// have been applied. Caller holds mutex_.
+    void apply_action_timeout_latch_locked();
 
     /**
      * @brief Query current AFC state from Moonraker
