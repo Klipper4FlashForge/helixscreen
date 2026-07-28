@@ -6,9 +6,14 @@
  * @brief Unit tests for helix::redact — SSID/MAC tokens for log output.
  *
  * The property under test is containment: nothing derived from the input may
- * appear in the output. These tests are written against real-world SSIDs
- * (including ones taken from an actual user bundle) because the failure mode
- * is a substring surviving, not a crash.
+ * appear in the output, because the failure mode is a substring surviving
+ * rather than a crash.
+ *
+ * Fixtures are invented, deliberately. Testing a privacy helper against network
+ * names copied out of somebody's bug report would put those names in a public
+ * repository forever — which is the exact disclosure this file exists to
+ * prevent. They still cover the shapes that matter: embedded spaces, ASCII
+ * punctuation, a vendor-style name with a hex suffix, and non-ASCII bytes.
  */
 
 #include "../../include/log_redact.h"
@@ -42,14 +47,14 @@ bool leaks(const std::string& token, const std::string& secret) {
 // =============================================================================
 
 TEST_CASE("redact::ssid does not leak the network name", "[redact][privacy]") {
-    // Real SSIDs from user bundle LJZQF92F. The connected network and, more
-    // importantly, the neighbours' — third parties who never consented.
-    const std::vector<std::string> real_ssids = {
-        "The Scary House",        "(o)Y(o)", "FBI Surveillance Van", "Zombie Zone",
-        "DIRECT-roku-828-4B65C6",
+    // Shapes a real scan produces: spaces, punctuation, a vendor default with a
+    // hex suffix. Invented names -- see the file comment.
+    const std::vector<std::string> sample_ssids = {
+        "Pretzel Logic Cafe",        "((o))", "Basement Lab 5G", "tin can and string",
+        "DIRECT-xy-ExamplePrn-1A2B",
     };
 
-    for (const auto& s : real_ssids) {
+    for (const auto& s : sample_ssids) {
         const std::string token = ssid(s);
         INFO("ssid=" << s << " token=" << token);
         REQUIRE_FALSE(leaks(token, s));
@@ -59,8 +64,8 @@ TEST_CASE("redact::ssid does not leak the network name", "[redact][privacy]") {
 TEST_CASE("redact::ssid does not leak any word of a multi-word name", "[redact][privacy]") {
     // A redactor that kept "the first word" or "the last word" would pass a
     // whole-string containment check. Pin each word separately.
-    const std::string token = ssid("The Scary House");
-    for (const std::string word : {"scary", "house"}) {
+    const std::string token = ssid("Pretzel Logic Cafe");
+    for (const std::string word : {"pretzel", "logic", "cafe"}) {
         INFO("word=" << word << " token=" << token);
         REQUIRE_FALSE(leaks(token, word));
     }
@@ -108,7 +113,7 @@ TEST_CASE("redact::mac emits a fixed-width token that cannot embed an address",
 TEST_CASE("redact::ssid is stable within a process", "[redact]") {
     // This is the whole reason for hashing rather than dropping the field:
     // "connect attempt to X failed, then X succeeded" must remain readable.
-    REQUIRE(ssid("The Scary House") == ssid("The Scary House"));
+    REQUIRE(ssid("Pretzel Logic Cafe") == ssid("Pretzel Logic Cafe"));
     REQUIRE(mac("a4:83:e7:1f:2b:9c") == mac("a4:83:e7:1f:2b:9c"));
 }
 
@@ -119,7 +124,7 @@ TEST_CASE("redact::ssid distinguishes different networks", "[redact]") {
 
     std::set<std::string> tokens;
     for (const std::string s :
-         {"The Scary House", "Zombie Zone", "FBI Surveillance Van", "(o)Y(o)"}) {
+         {"Pretzel Logic Cafe", "Basement Lab 5G", "tin can and string", "((o))"}) {
         tokens.insert(helix::redact::ssid_with_salt(s, kSalt));
     }
     // A redactor returning a constant would leak nothing but tell you nothing.
@@ -145,11 +150,11 @@ TEST_CASE("redact tokens are short and bounded", "[redact]") {
     // These land in a 2000-line ring on a 473MB device; they must not bloat it.
     const std::string long_ssid(4096, 'x');
     REQUIRE(ssid(long_ssid).size() <= 16);
-    REQUIRE(ssid("The Scary House").size() <= 16);
+    REQUIRE(ssid("Pretzel Logic Cafe").size() <= 16);
 }
 
 TEST_CASE("redact tokens are prefixed so bundle readers know what was dropped", "[redact]") {
-    REQUIRE(ssid("The Scary House").rfind("net#", 0) == 0);
+    REQUIRE(ssid("Pretzel Logic Cafe").rfind("net#", 0) == 0);
     REQUIRE(mac("a4:83:e7:1f:2b:9c").rfind("mac#", 0) == 0);
 }
 
@@ -171,11 +176,11 @@ TEST_CASE("redact::ssid changes token when the salt changes", "[redact][privacy]
     // matched against a precomputed table of common SSIDs.
     using helix::redact::ssid_with_salt;
 
-    const std::string a = ssid_with_salt("The Scary House", 0x1111111111111111ULL);
-    const std::string b = ssid_with_salt("The Scary House", 0x2222222222222222ULL);
+    const std::string a = ssid_with_salt("Pretzel Logic Cafe", 0x1111111111111111ULL);
+    const std::string b = ssid_with_salt("Pretzel Logic Cafe", 0x2222222222222222ULL);
     REQUIRE(a != b);
 
     // Same salt, same token — proves the salt is the only varying input, i.e.
     // the hash itself is deterministic.
-    REQUIRE(ssid_with_salt("The Scary House", 0x1111111111111111ULL) == a);
+    REQUIRE(ssid_with_salt("Pretzel Logic Cafe", 0x1111111111111111ULL) == a);
 }

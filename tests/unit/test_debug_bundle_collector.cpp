@@ -607,7 +607,7 @@ TEST_CASE("DebugBundleCollector: sanitize_value leaves an SSID-shaped string alo
     // the sanitizer cannot be the control for it. If someone later "fixes"
     // this by adding an SSID regex, that regex will eat real log content and
     // this test should make them think twice.
-    const std::string ssid_line = "Status: connected=true ssid='The Scary House' signal=66%";
+    const std::string ssid_line = "Status: connected=true ssid='Pretzel Logic Cafe' signal=66%";
     REQUIRE(helix::DebugBundleCollector::sanitize_value(ssid_line) == ssid_line);
 }
 
