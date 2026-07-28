@@ -27,7 +27,6 @@ tag:PrinterCapabilitiesState::set_spoolman_available
 tag:PrinterCapabilitiesState::set_webcam_available
 tag:PrinterPrintState::set_estimated_print_time
 tag:PrinterState::on_status_update
-tag:TelemetryManager::set_enabled
 tag:UpdateChecker::check_for_updates
 tag:UpdateChecker::set_download_status
 test:All panels are accessible
