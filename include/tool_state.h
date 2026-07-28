@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "async_lifetime_guard.h"
 #include "subject_managed_panel.h"
 
 #include <functional>
@@ -181,6 +182,12 @@ class ToolState {
     ToolState() = default;
     SubjectManager subjects_;
     bool subjects_initialized_ = false;
+
+    /// Expires the Moonraker-DB spool-assignment callbacks, which fire from the
+    /// WebSocket thread long after the request was issued. Declared after
+    /// `subjects_` so reverse-order member destruction invalidates it before the
+    /// subjects it protects; also invalidated by deinit_subjects() (#1165, #1146).
+    helix::AsyncLifetimeGuard async_lifetime_;
     lv_subject_t active_tool_{};
     lv_subject_t tool_count_{};
     lv_subject_t tools_version_{};

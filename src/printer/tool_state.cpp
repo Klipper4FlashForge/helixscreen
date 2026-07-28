@@ -77,6 +77,10 @@ void ToolState::deinit_subjects() {
 
     spdlog::debug("[ToolState] Deinitializing subjects");
 
+    // Expire the in-flight Moonraker-DB callbacks before the subjects they
+    // ultimately notify go away (#1165, #1146).
+    async_lifetime_.invalidate();
+
     tools_.clear();
     active_tool_index_ = 0;
     spool_assignments_loaded_ = false;
@@ -761,33 +765,34 @@ void ToolState::load_spool_assignments(MoonrakerAPI* api) {
 
     // Try Moonraker DB first. Callbacks fire from WebSocket thread,
     // so we marshal back to UI thread via queue_update().
+    // bg_cb decays the callback argument into the deferred lambda by value, so
+    // it both marshals to the main thread and drops the body if the subjects
+    // were torn down while the request was in flight (#1165). That subsumes the
+    // manual unique_ptr payload copy this used to do by hand.
     api->database_get_item(
         MOONRAKER_DB_NAMESPACE, MOONRAKER_DB_KEY,
-        [this](const nlohmann::json& data) {
-            // Copy data for thread-safe transfer to UI thread
-            auto data_copy = std::make_unique<nlohmann::json>(data);
-            helix::ui::queue_update<nlohmann::json>(
-                std::move(data_copy), [this](nlohmann::json* d) {
-                    apply_spool_assignments(*d);
-                    save_spool_json();
-                    spool_assignments_loaded_ = true;
-                    // Re-sync AmsState so slot UI subjects reflect loaded assignments
-                    AmsState::instance().sync_from_backend();
-                    spdlog::info("[ToolState] Loaded spool assignments from Moonraker DB");
-                });
-        },
-        [this, api](const MoonrakerError& err) {
-            spdlog::debug("[ToolState] Moonraker DB load failed ({}), trying local JSON",
-                          err.user_message());
-            helix::ui::queue_update<int>(std::make_unique<int>(0), [this, api](int*) {
+        async_lifetime_.bg_cb("ToolState::load_spool_assignments",
+                              [this](const nlohmann::json& data) {
+                                  apply_spool_assignments(data);
+                                  save_spool_json();
+                                  spool_assignments_loaded_ = true;
+                                  // Re-sync AmsState so slot UI subjects reflect loaded assignments
+                                  AmsState::instance().sync_from_backend();
+                                  spdlog::info(
+                                      "[ToolState] Loaded spool assignments from Moonraker DB");
+                              }),
+        async_lifetime_.bg_cb(
+            "ToolState::load_spool_assignments_error",
+            [this, api](const MoonrakerError& err) {
+                spdlog::debug("[ToolState] Moonraker DB load failed ({}), trying local JSON",
+                              err.user_message());
                 load_spool_json();
                 spool_assignments_loaded_ = true;
                 // Seed Moonraker DB so subsequent connections don't hit 404
                 save_spool_assignments(api);
                 // Re-sync AmsState so slot UI subjects reflect loaded assignments
                 AmsState::instance().sync_from_backend();
-            });
-        });
+            }));
 }
 
 } // namespace helix

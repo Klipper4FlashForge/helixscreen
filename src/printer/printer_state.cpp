@@ -307,7 +307,7 @@ void PrinterState::update_from_notification(const json& notification) {
     // when subject updates trigger lv_obj_invalidate() during rendering
     auto params = notification["params"];
     if (params.is_array() && !params.empty()) {
-        helix::ui::queue_update("PrinterState::on_status_update", [this, state_json = params[0]]() {
+        async_lifetime_.defer("PrinterState::on_status_update", [this, state_json = params[0]]() {
             // Debug check: log if we're somehow in render phase (should never happen)
             if (lvgl_is_rendering()) {
                 spdlog::error("[PrinterState] async status update running during render phase!");
@@ -518,7 +518,8 @@ void PrinterState::reset_for_new_print() {
 void PrinterState::set_printer_connection_state(int state, const char* message) {
     // Thread-safe wrapper: defer LVGL subject updates to main thread
     std::string msg = message ? message : "";
-    helix::ui::queue_update(
+    async_lifetime_.defer(
+        "PrinterState::set_printer_connection_state",
         [this, state, msg]() { set_printer_connection_state_internal(state, msg.c_str()); });
 }
 

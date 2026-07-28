@@ -22,11 +22,13 @@
 #include "ui_update_queue.h"
 
 #include "../lvgl_test_fixture.h"
+#include "ams_state.h"
 #include "app_globals.h"
 #include "moonraker_api.h"
 #include "moonraker_api_mock.h"
 #include "moonraker_client_mock.h"
 #include "printer_capabilities_state.h"
+#include "printer_plugin_status_state.h"
 #include "printer_print_state.h"
 #include "printer_state.h"
 
@@ -486,4 +488,91 @@ TEST_CASE_METHOD(LVGLTestFixture,
     panel.on_activate();
     UpdateQueue::instance().drain();
     CHECK(lv_subject_get_int(configured) == 0);
+}
+
+// ============================================================================
+// PrinterPluginStatusState — a sub-component with its own guard
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "PrinterPluginStatusState drops the phase-tracking setter after deinit",
+                 "[plugin_status][lifetime][queue_update]") {
+    UpdateQueue::instance().drain();
+
+    PrinterPluginStatusState plugin_status;
+    plugin_status.init_subjects(false);
+
+    REQUIRE_FALSE(plugin_status.is_phase_tracking_enabled());
+
+    plugin_status.set_phase_tracking_enabled(true);
+    REQUIRE(UpdateQueue::instance().pending_count() > 0);
+    REQUIRE_FALSE(plugin_status.is_phase_tracking_enabled());
+
+    // The #1146 shape: subjects torn down and re-inited on a LIVE object, so the
+    // destructor is never the hook that saves us. The generation must advance in
+    // deinit_subjects() or the queued body writes the re-inited subject.
+    plugin_status.deinit_subjects();
+    plugin_status.init_subjects(false);
+
+    UpdateQueue::instance().drain();
+
+    CHECK_FALSE(plugin_status.is_phase_tracking_enabled());
+    CHECK(UpdateQueue::instance().pending_count() == 0);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "PrinterPluginStatusState applies the phase-tracking setter while live",
+                 "[plugin_status][lifetime][queue_update]") {
+    UpdateQueue::instance().drain();
+
+    PrinterPluginStatusState plugin_status;
+    plugin_status.init_subjects(false);
+
+    plugin_status.set_phase_tracking_enabled(true);
+    UpdateQueue::instance().drain();
+
+    // The guard must not swallow a setter issued against the live generation.
+    CHECK(plugin_status.is_phase_tracking_enabled());
+}
+
+// ============================================================================
+// AmsState — deferred slot setters
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLTestFixture, "AmsState drops the pending-slot setter after deinit",
+                 "[ams][lifetime][queue_update]") {
+    UpdateQueue::instance().drain();
+
+    auto& ams = AmsState::instance();
+    ams.init_subjects(false);
+
+    lv_subject_t* pending = ams.get_pending_target_slot_subject();
+    REQUIRE(pending != nullptr);
+    lv_subject_set_int(pending, 0);
+
+    ams.set_pending_target_slot(7);
+    REQUIRE(UpdateQueue::instance().pending_count() > 0);
+
+    ams.deinit_subjects();
+    ams.init_subjects(false);
+
+    UpdateQueue::instance().drain();
+
+    // Re-read through the accessor: init_subjects() rebuilt the subject, and the
+    // callback queued against the previous generation must not have written it.
+    CHECK(lv_subject_get_int(ams.get_pending_target_slot_subject()) != 7);
+    CHECK(UpdateQueue::instance().pending_count() == 0);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "AmsState applies the pending-slot setter while live",
+                 "[ams][lifetime][queue_update]") {
+    UpdateQueue::instance().drain();
+
+    auto& ams = AmsState::instance();
+    ams.init_subjects(false);
+
+    ams.set_pending_target_slot(5);
+    UpdateQueue::instance().drain();
+
+    CHECK(lv_subject_get_int(ams.get_pending_target_slot_subject()) == 5);
 }

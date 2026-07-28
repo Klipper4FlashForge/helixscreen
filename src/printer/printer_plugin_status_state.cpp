@@ -44,6 +44,11 @@ void PrinterPluginStatusState::deinit_subjects() {
     }
 
     spdlog::debug("[PrinterPluginStatusState] Deinitializing subjects");
+
+    // Expire any setter callback still queued on the UpdateQueue — it captures
+    // `this` and writes the subjects torn down immediately below (#1165, #1146).
+    async_lifetime_.invalidate();
+
     subjects_.deinit_all();
     subjects_initialized_ = false;
 }
@@ -55,7 +60,8 @@ void PrinterPluginStatusState::set_installed(bool installed) {
 
 void PrinterPluginStatusState::set_phase_tracking_enabled(bool enabled) {
     // Thread-safe: Use ui_queue_update to update LVGL subject from any thread
-    helix::ui::queue_update([this, enabled]() {
+    async_lifetime_.defer("PrinterPluginStatusState::set_phase_tracking_enabled", [this,
+                                                                                  enabled]() {
         lv_subject_set_int(&phase_tracking_enabled_, enabled ? 1 : 0);
         spdlog::info("[PrinterPluginStatusState] Phase tracking enabled: {}", enabled);
     });

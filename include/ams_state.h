@@ -8,6 +8,7 @@
 #include "ams_backend.h"
 #include "ams_step_operation.h"
 #include "ams_types.h"
+#include "async_lifetime_guard.h"
 #include "filament_consumption_tracker.h"
 #include "filament_mapper.h"
 #include "lvgl/lvgl.h"
@@ -1286,6 +1287,13 @@ class AmsState {
 
     // Subject manager for automatic cleanup
     SubjectManager subjects_;
+
+    /// Expires the setters that marshal themselves to the main thread. Declared
+    /// after `subjects_` so reverse-order member destruction invalidates it
+    /// before the subjects it protects; also invalidated by deinit_subjects(),
+    /// which is the teardown that actually happens on a live instance between
+    /// tests (#1165, #1146).
+    helix::AsyncLifetimeGuard async_lifetime_;
 
     // Backend selector subjects
     lv_subject_t backend_count_;

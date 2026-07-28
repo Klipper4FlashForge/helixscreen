@@ -592,6 +592,11 @@ void AmsState::deinit_subjects() {
 
     spdlog::trace("[AMS State] Deinitializing subjects");
 
+    // Expire the deferred setters still queued on the UpdateQueue. They capture
+    // `this` and write the subjects torn down below, so without this the next
+    // drain notifies a freed observer list (#1165, #1146).
+    async_lifetime_.invalidate();
+
     // Clear dangling API pointer — the MoonrakerAPI is destroyed during teardown
     // before AmsState re-initializes. Without this, sync_from_backend() would
     // dereference a freed pointer on the next init_subjects() cycle.
@@ -2295,7 +2300,7 @@ void AmsState::set_narration_phase(int index, const std::string& label) {
 }
 
 void AmsState::set_pending_target_slot(int slot) {
-    helix::ui::queue_update("AmsState::set_pending_target_slot", [this, slot]() {
+    async_lifetime_.defer("AmsState::set_pending_target_slot", [this, slot]() {
         if (lv_subject_get_int(&pending_target_slot_) != slot) {
             lv_subject_set_int(&pending_target_slot_, slot);
         }
@@ -2304,7 +2309,7 @@ void AmsState::set_pending_target_slot(int slot) {
 
 void AmsState::set_active_tool_port_present(bool present) {
     // Marshal to the main thread — callable from the backend's WS status handler.
-    helix::ui::queue_update("AmsState::set_active_tool_port_present", [this, present]() {
+    async_lifetime_.defer("AmsState::set_active_tool_port_present", [this, present]() {
         int v = present ? 1 : 0;
         if (lv_subject_get_int(&active_tool_port_present_) != v) {
             lv_subject_set_int(&active_tool_port_present_, v);
