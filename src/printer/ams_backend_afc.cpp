@@ -1212,6 +1212,20 @@ void AmsBackendAfc::apply_state_string(const std::string& raw, const char* sourc
     // humanized detail: two different states can share a display label.
     last_raw_state_ = raw;
 
+    // AFC reporting anything busy means it has taken the operation over, so its
+    // own state machine owns completion from here and the pending macro ack must
+    // keep its hands off — forcing IDLE underneath a live 67s toolchange would
+    // truncate it. A re-echoed "Idle" is deliberately NOT taking over: that is
+    // exactly the no-op this mechanism exists to catch (#1183), so it leaves the
+    // pending dispatch alone. (The ack's own value guard makes that case a
+    // no-op anyway, since the frame already produced the IDLE transition the UI
+    // needed.)
+    if (pending_dispatch_action_.has_value() && system_info_.action != AmsAction::IDLE) {
+        spdlog::debug("[AMS AFC] AFC took over the dispatched operation ({} from {} '{}')",
+                      ams_action_to_string(system_info_.action), source, raw);
+        pending_dispatch_action_.reset();
+    }
+
     if (!recognized && !raw.empty() && unknown_state_warned_.insert(raw).second) {
         // Schema drift: AFC reported a state outside our known vocabulary. The
         // fuzzy fallback picked an action, but the mapping is a guess and the
@@ -1296,8 +1310,148 @@ void AmsBackendAfc::check_action_timeout() {
                                            : system_info_.operation_detail + lv_tr(" (timed out)");
     system_info_.action = AmsAction::ERROR;
     system_info_.operation_detail = timeout_detail;
+
+    // Only latch when AFC itself is driving the action. The latch keys on
+    // last_raw_state_, and for an action this backend set optimistically at
+    // dispatch that token is still AFC's previous state — usually "Idle".
+    // Latching it would have apply_action_timeout_latch_locked() re-force ERROR
+    // on every subsequent "Idle" frame for the rest of the session. There is
+    // nothing to flap against in that case anyway: AFC is not re-deriving this
+    // action from a string, so the next frame simply maps "Idle" to IDLE and
+    // the operation ends.
+    if (pending_dispatch_action_.has_value() && a == *pending_dispatch_action_) {
+        pending_dispatch_action_.reset();
+        return;
+    }
     timed_out_state_ = last_raw_state_;
     timed_out_detail_ = timeout_detail;
+}
+
+uint64_t AmsBackendAfc::begin_dispatch_locked(AmsAction action) {
+    // A newer dispatch supersedes any older one whose ack is still in flight:
+    // that ack presents a stale generation and finalize_dispatch_after_macro()
+    // drops it, so it can never resolve the operation now running.
+    const uint64_t generation = ++dispatch_generation_;
+    pending_dispatch_action_ = action;
+
+    // The user starting a new operation supersedes the previous one's stuck
+    // state, exactly as clear_fault() does. Leaving the latch armed would have
+    // the next status frame re-force ERROR over the action just set and the new
+    // operation would never be visible at all. If AFC really is still wedged,
+    // the clock restarts here and the budget re-fires — bounded and correct.
+    if (timed_out_state_.has_value()) {
+        spdlog::debug("[AMS AFC] New dispatch: releasing stuck-action latch on '{}'",
+                      *timed_out_state_);
+        timed_out_state_.reset();
+        timed_out_detail_.clear();
+    }
+
+    system_info_.action = action;
+    // Otherwise the sidebar keeps showing the finished operation's detail until
+    // AFC's first frame, which for a no-op never comes.
+    switch (action) {
+    case AmsAction::UNLOADING:
+        system_info_.operation_detail = lv_tr("Unloading");
+        break;
+    case AmsAction::SELECTING:
+        system_info_.operation_detail = lv_tr("Tool swap");
+        break;
+    default:
+        system_info_.operation_detail = lv_tr("Loading");
+        break;
+    }
+
+    // parse_afc_state() stamps the action clock once per status frame; a
+    // dispatch happens outside any frame, so it has to stamp its own. Without
+    // this the new action inherits however long the previous one had already
+    // been running and check_action_timeout() can fire on its first poll.
+    action_start_time_ = std::chrono::steady_clock::now();
+
+    spdlog::debug("[AMS AFC] Dispatch #{}: action set optimistically to {}", generation,
+                  ams_action_to_string(action));
+    return generation;
+}
+
+void AmsBackendAfc::abandon_dispatch(uint64_t generation) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (generation != dispatch_generation_ || !pending_dispatch_action_.has_value()) {
+            return;
+        }
+        pending_dispatch_action_.reset();
+        system_info_.action = AmsAction::IDLE;
+        system_info_.operation_detail.clear();
+        action_start_time_ = std::chrono::steady_clock::now();
+    }
+    emit_event(EVENT_STATE_CHANGED);
+}
+
+void AmsBackendAfc::finalize_dispatch_after_macro(uint64_t generation) {
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        // "Is the action still mine?" — three ways it can be someone else's:
+        //   * a newer dispatch bumped the generation;
+        //   * AFC reported a busy state, so apply_state_string() handed the
+        //     operation to AFC's own state machine and cleared the pending mark;
+        //   * something moved the action off the value this dispatch set —
+        //     AFC echoing "Idle" (which already produced the transition the UI
+        //     needed), or the stuck-action timeout latching ERROR.
+        // In all three the operation is already resolved or is still legitimately
+        // running, and forcing IDLE would either lie or truncate it.
+        if (generation != dispatch_generation_ || !pending_dispatch_action_.has_value() ||
+            system_info_.action != *pending_dispatch_action_) {
+            spdlog::debug("[AMS AFC] Macro ack for dispatch #{} resolves nothing (current action "
+                          "{}, generation {})",
+                          generation, ams_action_to_string(system_info_.action),
+                          dispatch_generation_);
+            return;
+        }
+
+        // The macro ran to completion and AFC never reported doing anything —
+        // the "lane3 already loaded" no-op. The gcode ack is the only completion
+        // signal that exists for it (#1183).
+        spdlog::info("[AMS AFC] Macro complete (gcode ack) with no AFC state change -> IDLE");
+        pending_dispatch_action_.reset();
+        system_info_.action = AmsAction::IDLE;
+        system_info_.operation_detail.clear();
+        action_start_time_ = std::chrono::steady_clock::now();
+        changed = true;
+    }
+    if (changed) {
+        emit_event(EVENT_STATE_CHANGED);
+    }
+}
+
+AmsError AmsBackendAfc::dispatch_operation(std::string gcode, AmsAction action) {
+    uint64_t generation;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        generation = begin_dispatch_locked(action);
+    }
+    // Publish the optimistic action immediately: this is the transition the
+    // filament panel's completion observer needs to see start before it can
+    // ever see one end.
+    emit_event(EVENT_STATE_CHANGED);
+
+    auto token = lifetime_.token();
+    AmsError result = ensure_homed_then(std::move(gcode), [this, token, generation]() {
+        // L081 Mechanism C: the gcode ack lands on a background thread and the
+        // handler writes system_info_ under mutex_. Marshal to main.
+        token.defer("AmsBackendAfc::dispatch_macro_complete",
+                    [this, generation]() { finalize_dispatch_after_macro(generation); });
+    });
+
+    if (!result) {
+        // The gcode never left: no MoonrakerAPI, or the send was refused. No ack
+        // will ever arrive, so undo the optimistic action instead of leaving the
+        // UI busy until the stuck-action budget expires.
+        spdlog::warn("[AMS AFC] Dispatch #{} failed to send ({}), reverting optimistic action",
+                     generation, result.technical_msg);
+        abandon_dispatch(generation);
+    }
+    return result;
 }
 
 void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
@@ -3223,7 +3377,7 @@ AmsError AmsBackendAfc::load_filament(int slot_index) {
         if (tool >= 0 && tool < static_cast<int>(extruders_.size())) {
             std::string cmd = "AFC_SELECT_TOOL TOOL=" + extruders_[tool].name;
             spdlog::info("[AMS AFC] Loading slot {} via toolchanger: {}", slot_index, cmd);
-            return ensure_homed_then(std::move(cmd));
+            return dispatch_operation(std::move(cmd), AmsAction::LOADING);
         }
     }
 
@@ -3232,7 +3386,7 @@ AmsError AmsBackendAfc::load_filament(int slot_index) {
     cmd << "CHANGE_TOOL LANE=" << lane_name;
 
     spdlog::info("[AMS AFC] Loading from lane {} (slot {})", lane_name, slot_index);
-    return ensure_homed_then(cmd.str());
+    return dispatch_operation(cmd.str(), AmsAction::LOADING);
 }
 
 AmsError AmsBackendAfc::unload_filament(int slot_index) {
@@ -3269,7 +3423,7 @@ AmsError AmsBackendAfc::unload_filament(int slot_index) {
     }
 
     spdlog::info("[AMS AFC] Unloading: {}", cmd);
-    return ensure_homed_then(std::move(cmd));
+    return dispatch_operation(std::move(cmd), AmsAction::UNLOADING);
 }
 
 AmsError AmsBackendAfc::select_slot(int slot_index) {
@@ -3325,7 +3479,11 @@ AmsError AmsBackendAfc::change_tool(int tool_number) {
     }
 
     spdlog::info("[AMS AFC] Tool change: {}", cmd);
-    return ensure_homed_then(std::move(cmd));
+    // SELECTING, not LOADING: every AFC toolchanger state (ToolSwap, ToolDock,
+    // ToolPickup, Moving, Restoring) maps to SELECTING, so the optimistic value
+    // matches what AFC is about to echo and the operation carries the 300s
+    // toolchange budget rather than the 180s load one.
+    return dispatch_operation(std::move(cmd), AmsAction::SELECTING);
 }
 
 // ============================================================================

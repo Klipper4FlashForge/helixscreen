@@ -11,6 +11,7 @@
 #include "slot_registry.h"
 
 #include <chrono>
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -394,6 +395,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcStateStringHelper;
     friend class AfcDatabaseResponseHelper;
     friend class AfcActionTimeoutHelper;
+    friend class AfcDispatchAckHelper;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;
@@ -517,6 +519,46 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// Re-assert (or release) the timeout latch after the frame's state strings
     /// have been applied. Caller holds mutex_.
     void apply_action_timeout_latch_locked();
+
+    // === Optimistic dispatch + macro-ack resolution ========================
+    //
+    // AFC answers a command it has nothing to do about — "lane3 already
+    // loaded" — by acking in 4ms without ever entering a toolchange, so
+    // current_state never leaves "Idle" (#1183). The UI's completion path keys
+    // entirely on an ams_action transition and AmsState::sync_from_backend()
+    // short-circuits on an unchanged value, so a no-op produced no notify at
+    // all and nothing could end the operation.
+    //
+    // Two halves, both of which other backends already have: set the action
+    // optimistically at dispatch so there is a transition to complete, and
+    // resolve it on the macro's own gcode ack (the same signal AD5X IFS uses in
+    // finalize_op_after_macro()).
+
+    /// Action the most recent dispatch set optimistically, cleared once that
+    /// dispatch has been resolved — by its ack, by AFC taking the operation
+    /// over, or by a newer dispatch superseding it.
+    std::optional<AmsAction> pending_dispatch_action_;
+
+    /// Monotonic dispatch counter. The ack carries the generation it was issued
+    /// under, so an ack that lands after a newer dispatch resolves nothing.
+    uint64_t dispatch_generation_{0};
+
+    /// Set @p action optimistically for a dispatch that is about to go out and
+    /// return the generation its ack must present. Caller holds mutex_.
+    uint64_t begin_dispatch_locked(AmsAction action);
+
+    /// Undo an optimistic set whose gcode never left the building. Caller must
+    /// NOT hold mutex_.
+    void abandon_dispatch(uint64_t generation);
+
+    /// Resolve a dispatch to IDLE on its macro's gcode ack, but only when AFC
+    /// never took the operation over. Main thread; must NOT hold mutex_.
+    void finalize_dispatch_after_macro(uint64_t generation);
+
+    /// Send a filament operation: set @p action optimistically, dispatch
+    /// @p gcode through ensure_homed_then(), and resolve on the macro's ack.
+    /// Caller must NOT hold mutex_ and must have passed check_preconditions().
+    AmsError dispatch_operation(std::string gcode, AmsAction action);
 
     /**
      * @brief Query current AFC state from Moonraker

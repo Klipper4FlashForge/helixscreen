@@ -230,6 +230,17 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         return AmsErrorHelper::success();
     }
 
+    // Filament operations dispatch through the completion-callback form so the
+    // macro's gcode ack can resolve the optimistic action (#1183). Capture it
+    // too, and hold the callback so a test can fire the ack when it wants one.
+    AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+        captured_gcodes.push_back(gcode);
+        pending_macro_ack = std::move(on_complete);
+        return AmsErrorHelper::success();
+    }
+
+    std::function<void()> pending_macro_ack;
+
     // Override execute_gcode_notify to capture commands (avoids real API call)
     AmsError execute_gcode_notify(const std::string& gcode, const std::string& /*success_msg*/,
                                   const std::string& /*error_prefix*/) override {
@@ -5958,4 +5969,279 @@ TEST_CASE("AFC full multi-lane v1.2.0 frame lands on every slot",
     REQUIRE(bh.multiplier == Catch::Approx(1.0f));
     REQUIRE(bh.fault_timer == Catch::Approx(1.5f));
     REQUIRE(bh.distance_to_fault == Catch::Approx(-1.0f));
+}
+
+// ============================================================================
+// Optimistic dispatch + macro-ack resolution (#1183)
+// ============================================================================
+//
+// AFC answers a command it has nothing to do about — "lane3 already loaded" —
+// by acking in 4ms without ever entering a toolchange, so current_state never
+// leaves "Idle". The UI's completion path keys entirely on an ams_action
+// transition, so a no-op produced no notify at all and nothing could end the
+// operation. AFC now sets the action optimistically at dispatch and resolves it
+// on the macro's own gcode ack, but only while AFC has not taken the operation
+// over — forcing IDLE underneath a live toolchange would truncate it.
+
+class AfcDispatchAckHelper : public AmsBackendAfc {
+  public:
+    AfcDispatchAckHelper() : AmsBackendAfc(nullptr, nullptr) {
+        std::vector<std::string> lanes{"lane1", "lane2", "lane3", "lane4"};
+        initialize_slots(lanes);
+        for (int i = 0; i < 4; ++i) {
+            auto* entry = slots_.get_mut(i);
+            if (entry)
+                entry->info.status = SlotStatus::AVAILABLE;
+        }
+        // check_preconditions() refuses everything while the backend is stopped.
+        running_ = true;
+        set_event_callback([this](const std::string& event, const std::string&) {
+            if (event == EVENT_STATE_CHANGED) {
+                action_trace_.push_back(get_current_action());
+            }
+        });
+    }
+
+    // client_ is null, so ensure_homed_then() routes straight here. Capture the
+    // completion callback instead of dispatching, so the test decides when the
+    // macro "acks".
+    AmsError execute_gcode(const std::string& gcode) override {
+        sent_.push_back(gcode);
+        pending_acks_.emplace_back(nullptr);
+        return AmsErrorHelper::success();
+    }
+
+    AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+        sent_.push_back(gcode);
+        pending_acks_.push_back(std::move(on_complete));
+        return AmsErrorHelper::success();
+    }
+
+    /// Fire the ack for the Nth dispatched gcode, then drain the UpdateQueue —
+    /// the production callback arrives on a background thread and hops to the
+    /// main thread via LifetimeToken::defer, so the work lands in the queue, not
+    /// inline.
+    void ack(size_t index) {
+        REQUIRE(index < pending_acks_.size());
+        REQUIRE(pending_acks_[index] != nullptr);
+        pending_acks_[index]();
+        helix::ui::UpdateQueue::instance().drain();
+    }
+
+    void feed_state(const std::string& current_state) {
+        nlohmann::json afc;
+        afc["current_state"] = current_state;
+        nlohmann::json params;
+        params["AFC"] = afc;
+        nlohmann::json notification;
+        notification["params"] = nlohmann::json::array({params, 0.0});
+        handle_status_update(notification);
+    }
+
+    void age_action(std::chrono::seconds elapsed) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        action_start_time_ = std::chrono::steady_clock::now() - elapsed;
+    }
+
+    void mark_filament_loaded(bool loaded) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        system_info_.filament_loaded = loaded;
+    }
+
+    [[nodiscard]] AmsAction action() const {
+        return get_current_action();
+    }
+
+    [[nodiscard]] bool latched() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return timed_out_state_.has_value();
+    }
+
+    [[nodiscard]] const std::vector<std::string>& sent() const {
+        return sent_;
+    }
+
+    /// Every action published via EVENT_STATE_CHANGED, in order. This is what
+    /// AmsState::sync_from_backend() sees, and the transitions in it are the
+    /// only thing the filament panel can complete an operation on.
+    [[nodiscard]] const std::vector<AmsAction>& trace() const {
+        return action_trace_;
+    }
+
+  private:
+    std::vector<std::string> sent_;
+    std::vector<std::function<void()>> pending_acks_;
+    std::vector<AmsAction> action_trace_;
+};
+
+namespace {
+
+bool trace_contains(const std::vector<AmsAction>& trace, AmsAction a) {
+    return std::find(trace.begin(), trace.end(), a) != trace.end();
+}
+
+} // namespace
+
+TEST_CASE("AFC no-op load resolves on the macro ack", "[ams][afc][dispatch][1183]") {
+    AfcDispatchAckHelper h;
+
+    REQUIRE(h.load_filament(2).success());
+    REQUIRE(h.sent().size() == 1);
+    REQUIRE(h.sent()[0] == "CHANGE_TOOL LANE=lane3");
+
+    // The optimistic set is the transition that makes an operation completable.
+    REQUIRE(h.action() == AmsAction::LOADING);
+
+    // AFC says "lane3 already loaded", never enters a toolchange and reports
+    // nothing at all. The macro acks in 4ms.
+    h.ack(0);
+
+    REQUIRE(h.action() == AmsAction::IDLE);
+    // Asserting the end value alone would pass without the fix — IDLE is where
+    // this started. The busy leg is the load-bearing half.
+    REQUIRE(trace_contains(h.trace(), AmsAction::LOADING));
+    REQUIRE(h.trace().back() == AmsAction::IDLE);
+}
+
+TEST_CASE("AFC unload and tool change dispatch their own actions",
+          "[ams][afc][dispatch][1183]") {
+    SECTION("unload") {
+        AfcDispatchAckHelper h;
+        h.mark_filament_loaded(true);
+
+        REQUIRE(h.unload_filament(1).success());
+        REQUIRE(h.sent()[0] == "TOOL_UNLOAD LANE=lane2");
+        REQUIRE(h.action() == AmsAction::UNLOADING);
+
+        h.ack(0);
+        REQUIRE(h.action() == AmsAction::IDLE);
+        REQUIRE(trace_contains(h.trace(), AmsAction::UNLOADING));
+    }
+
+    SECTION("tool change") {
+        AfcDispatchAckHelper h;
+
+        REQUIRE(h.change_tool(1).success());
+        REQUIRE(h.sent()[0] == "T1");
+        // SELECTING, not LOADING: AFC's toolchanger states all map to SELECTING
+        // and the operation carries the 300s toolchange budget.
+        REQUIRE(h.action() == AmsAction::SELECTING);
+
+        h.ack(0);
+        REQUIRE(h.action() == AmsAction::IDLE);
+        REQUIRE(trace_contains(h.trace(), AmsAction::SELECTING));
+    }
+}
+
+TEST_CASE("AFC macro ack does not truncate a toolchange AFC took over",
+          "[ams][afc][dispatch][1183]") {
+    AfcDispatchAckHelper h;
+
+    REQUIRE(h.load_filament(0).success());
+    REQUIRE(h.action() == AmsAction::LOADING);
+
+    // AFC entered the toolchange for real and is driving its own state machine.
+    h.feed_state("ToolSwap");
+    REQUIRE(h.action() == AmsAction::SELECTING);
+
+    // The macro's ack lands while AFC is still cutting. Forcing IDLE here would
+    // end the operation in the UI 60 seconds early.
+    h.ack(0);
+    REQUIRE(h.action() == AmsAction::SELECTING);
+
+    h.feed_state("Cutting");
+    REQUIRE(h.action() == AmsAction::CUTTING);
+
+    // AFC's own terminating frame is what resolves it.
+    h.feed_state("Idle");
+    REQUIRE(h.action() == AmsAction::IDLE);
+}
+
+TEST_CASE("AFC Idle re-echo between dispatch and ack still ends the operation",
+          "[ams][afc][dispatch][1183]") {
+    AfcDispatchAckHelper h;
+
+    REQUIRE(h.load_filament(2).success());
+    REQUIRE(h.action() == AmsAction::LOADING);
+
+    // AFC re-echoes the state it was already in. That is NOT AFC taking over —
+    // it is the no-op — but the frame itself already produced the LOADING ->
+    // IDLE transition the UI needs, so the later ack has nothing left to do.
+    h.feed_state("Idle");
+    REQUIRE(h.action() == AmsAction::IDLE);
+    REQUIRE(trace_contains(h.trace(), AmsAction::LOADING));
+
+    h.ack(0);
+    REQUIRE(h.action() == AmsAction::IDLE);
+}
+
+TEST_CASE("AFC second dispatch invalidates the first dispatch's pending ack",
+          "[ams][afc][dispatch][1183]") {
+    AfcDispatchAckHelper h;
+
+    REQUIRE(h.load_filament(0).success());
+    REQUIRE(h.action() == AmsAction::LOADING);
+
+    // AFC re-echoes Idle, so the action is no longer busy and the next operation
+    // passes check_preconditions() — but the first dispatch's ack is still out
+    // there, unfired.
+    h.feed_state("Idle");
+    REQUIRE(h.action() == AmsAction::IDLE);
+
+    h.mark_filament_loaded(true);
+    REQUIRE(h.unload_filament(1).success());
+    REQUIRE(h.action() == AmsAction::UNLOADING);
+
+    // The stale ack must not resolve the unload that is now in flight.
+    h.ack(0);
+    REQUIRE(h.action() == AmsAction::UNLOADING);
+
+    // The current dispatch's own ack still works.
+    h.ack(1);
+    REQUIRE(h.action() == AmsAction::IDLE);
+}
+
+TEST_CASE("AFC optimistic dispatch stamps the stuck-action clock",
+          "[ams][afc][dispatch][timeout][1183]") {
+    AfcDispatchAckHelper h;
+
+    // Age the clock before dispatching. Without its own stamp the new action
+    // would inherit this elapsed time and blow the 180s LOADING budget on its
+    // very first poll.
+    h.age_action(std::chrono::seconds(1000));
+    REQUIRE(h.load_filament(0).success());
+
+    h.age_action(std::chrono::seconds(170));
+    (void)h.get_system_info(); // the sidebar's stall-watchdog poll
+    REQUIRE(h.action() == AmsAction::LOADING);
+
+    h.age_action(std::chrono::seconds(200));
+    (void)h.get_system_info();
+    REQUIRE(h.action() == AmsAction::ERROR);
+    // A timeout on an action AFC never acknowledged must not latch: the latch
+    // keys on last_raw_state_, which here is still AFC's idle token, and would
+    // re-force ERROR on every subsequent Idle frame.
+    REQUIRE_FALSE(h.latched());
+    h.feed_state("Idle");
+    REQUIRE(h.action() == AmsAction::IDLE);
+}
+
+TEST_CASE("AFC stuck-action timeout still fires for an op AFC took over",
+          "[ams][afc][dispatch][timeout][1183]") {
+    AfcDispatchAckHelper h;
+
+    REQUIRE(h.load_filament(0).success());
+    h.feed_state("Loading");
+    REQUIRE(h.action() == AmsAction::LOADING);
+
+    // AFC reports the same busy state forever and no ack ever arrives.
+    h.age_action(std::chrono::seconds(200));
+    h.feed_state("Loading");
+
+    REQUIRE(h.action() == AmsAction::ERROR);
+    // AFC owns this action, so the latch DOES arm — otherwise the next frame's
+    // "Loading" would map straight back to LOADING and flap.
+    REQUIRE(h.latched());
+    h.feed_state("Loading");
+    REQUIRE(h.action() == AmsAction::ERROR);
 }
