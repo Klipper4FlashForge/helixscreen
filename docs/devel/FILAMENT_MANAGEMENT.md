@@ -1074,7 +1074,7 @@ given machine. `BT_*` macros are BoxTurtle-specific and do not exist on other un
 | `TOOL_LOAD LANE={name}` | Python | Load a lane into the toolhead |
 | `TOOL_UNLOAD` | Python | Unload the toolhead |
 | `LANE_UNLOAD LANE={name}` | Python | Eject a lane's filament back to the spool |
-| `LANE_MOVE LANE={name} DISTANCE={int}` | Python | Manual lane move. **`DISTANCE` is an int.** Negative retracts. |
+| `LANE_MOVE LANE={name} DISTANCE={float}` | Python | Manual lane move. Negative retracts. **Refuses while printing** unless `FORCE=1`. Zero distance is an error. See the note below on `DISTANCE`'s type. |
 | `HUB_LOAD LANE={name}` | Python | Advance a lane to its hub |
 | `AFC_LANE_RESET LANE={name}` | Python | Retract a lane from the bowden back to its hub. Requires hub occupied + toolhead free. |
 | `AFC_RESET` | Python | **Opens a lane-picker prompt**, not a system reset. Lists lanes with `raw_load_state` true and dispatches `AFC_LANE_RESET` for the chosen one. With no candidates: *"No lanes are loaded, a lane must be loaded to be reset"*. |
@@ -1096,6 +1096,17 @@ given machine. `BT_*` macros are BoxTurtle-specific and do not exist on other un
 | `TURN_ON_AFC_LED` / `TURN_OFF_AFC_LED` | Python | Toggle LED strip |
 | `AFC_CUT` / `AFC_PARK` / `AFC_BRUSH` / `AFC_POOP` / `AFC_KICK` | config macro | Toolhead servicing. Ship in AFC's config templates; may be absent or edited. |
 | `BT_LANE_MOVE` / `BT_LANE_EJECT` / `BT_TOOL_UNLOAD` / `BT_CHANGE_TOOL` / `BT_PREP` | config macro | **BoxTurtle only.** Thin wrappers over the Python commands above — prefer the Python command. |
+
+**`LANE_MOVE`'s `DISTANCE` is a float, and AFC's own metadata says otherwise.** The
+`cmd_LANE_MOVE_options` dict (`extras/AFC.py:1010`) labels it `{"type": "int"}`, but nothing
+consumes that dict for parsing — the command body does `gcmd.get_float('DISTANCE', 0)`. Read the
+function body, not the options metadata, when documenting any AFC command; the metadata is
+descriptive and can be wrong about its own command. (This exact mistake was made and caught
+while writing this section.)
+
+`LANE_MOVE` also returns early with *"Cannot move lane while printer is printing"* unless
+`FORCE=1`, and rejects a zero distance. Anything automating a lane move during a paused print
+needs to account for both.
 
 **Commands that do NOT exist.** These appeared in earlier revisions of this document and were
 never real — verified absent from both AFC's Python registrations and its shipped config macros.

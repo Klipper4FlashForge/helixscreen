@@ -439,9 +439,13 @@ void AmsBackendAfc::maybe_drain_message_queue() {
         if (!message_drain_pending_ || message_drain_budget_ <= 0) {
             return;
         }
-        // Mirrors the expiry check in parse_afc_state(): a drain armed long ago
-        // (stale, never disarmed because no later delta carried `message`) must
-        // not fire against a message the arm was never meant to see.
+        // This is the ONLY place a stale arm is retired — parse_afc_state()'s
+        // re-arm has no expiry check of its own. It cannot: an arm goes stale
+        // precisely when the queue was already empty at clear_fault() time, and
+        // AFC then omits the unchanged `message` key forever, so the
+        // empty-message disarm there never runs. The firing decision therefore
+        // has to be made here, against the wall clock, or a months-old arm would
+        // pop the user's next unrelated error.
         if (std::chrono::steady_clock::now() > message_drain_deadline_) {
             message_drain_budget_ = 0;
             message_drain_pending_ = false;
