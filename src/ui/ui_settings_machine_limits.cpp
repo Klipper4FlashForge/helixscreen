@@ -393,25 +393,22 @@ void MachineLimitsOverlay::apply_limits() {
         return;
     }
 
-    auto token = lifetime_.token();
+    // bg_cb, like query_and_show above: the whole body runs on the main thread
+    // after a generation re-check, so no liveness test belongs on the bg side.
+    // The hand-rolled guards these replaced re-checked on the background thread
+    // before deferring, which was dead code and tripped the runtime L081
+    // detector on every reply (#1165).
     api_->advanced().set_machine_limits(
         current_limits_,
-        [this, token]() {
-            if (token.expired())
-                return;
-            token.defer([this]() {
-                spdlog::debug("[{}] Machine limits applied successfully", get_name());
-            });
-        },
-        [this, token](const MoonrakerError& err) {
-            if (token.expired())
-                return;
-            token.defer([this, err]() {
+        lifetime_.bg_cb(
+            "MachineLimitsOverlay::apply_limits",
+            [this]() { spdlog::debug("[{}] Machine limits applied successfully", get_name()); }),
+        lifetime_.bg_cb(
+            "MachineLimitsOverlay::apply_limits_error", [this](const MoonrakerError& err) {
                 spdlog::error("[{}] Failed to apply machine limits: {}", get_name(), err.message);
                 ToastManager::instance().show(ToastSeverity::ERROR, lv_tr("Failed to apply limits"),
                                               2000);
-            });
-        });
+            }));
 }
 
 // ============================================================================
