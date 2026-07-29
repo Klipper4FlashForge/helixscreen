@@ -154,7 +154,7 @@ aggregate, and add a test that fails if it stops.
 | CFS | `true` | `T{n}.filament` letter + toolhead switch (#1199) |
 | ACE | `true` | arbitrated seated slot, stamped every parse path (#1199) |
 | Happy Hare | `false` | `mmu.gate` / `mmu.filament` *are* the firmware truth |
-| Toolchanger | `false` | `PARALLEL`; `mounted` means docked, not "has filament" |
+| Toolchanger | `false` | `toolchanger.tool_number` *is* the firmware truth; no per-tool filament signal exists |
 
 Every backend that opted in derives its stamp from the same inputs the aggregate pair is
 assigned from, so the per-slot and aggregate rules cannot disagree. That is deliberate: it
@@ -191,6 +191,36 @@ drop the highlight on a gate that ran out (`gate_status 0`) while its filament i
 the toolhead. The stamp itself is re-derived on every `printer.mmu` frame
 (`refresh_gate_statuses_locked()`) because `gate_status`, `gate` and `filament` arrive in
 independent deltas — a toolchange typically carries the latter two alone.
+
+Toolchanger stays on the aggregate rule too, and for a reason none of the others have: it
+carries **no filament signal at all**. `get_slot_filament_segment()` returns `NOZZLE`
+unconditionally, no per-tool switch is read, and `is_filament_loaded()` is nothing more than
+`tool_number >= 0`. The only fact the parse can state is *which tool is on the carriage*,
+which is single-valued — precisely what the aggregate pair encodes, assigned verbatim from
+klipper-toolchanger's own `toolchanger.tool_number`. Being `PARALLEL` does not change that:
+the topology describes independent filament paths, but this backend cannot see filament in
+any of them, and its load/unload verbs are `SELECT_TOOL` / `UNSELECT_TOOL` — mount and
+unmount, of which exactly one tool at a time is the subject.
+
+`tool <name>.mounted` is emphatically *not* that authority. It arrives on a separate
+Moonraker object from the one that writes the aggregate, and an all-tools-mounted payload is
+a shape HelixScreen emits itself in mock mode (`moonraker_client_mock_objects.cpp` gives
+every `tool T<n>` `mounted: true`). The parse used to write `mounted ? LOADED : AVAILABLE`
+straight into `slot.status` from that object alone, so such a payload marked every tool
+`LOADED` — the exact state that would make an opt-in report every tool as the active one.
+`refresh_slot_statuses_locked()` now derives the stamp from the carriage tool on every parse
+path, so the two writers cannot disagree; opting in afterwards would be safe but pointless,
+since the stamp is derived *from* the aggregate.
+
+The `PARALLEL` arm of `can_unload_from_toolhead()` is the part that did need fixing.
+`is_present()` is true for every toolchanger slot forever — a slot here is a physical
+toolhead, never `EMPTY` or `UNKNOWN` — so it read true everywhere. Through
+`decide_can_load()`'s inverted `!toolhead_unload` factor that left **Load disabled on every
+tool**, and through `decide_unload_mode()` it offered Unload (`UNSELECT_TOOL T=<n>`) on
+tools parked in their docks. The backend overrides it with `slot_index == current_tool`.
+`slot_unloads_to_toolhead()` stays on the base rule: an unmount *is* a toolhead operation,
+and with no lane eject or lane recovery a docked tool correctly lands on
+`UnloadMode::Unavailable`.
 
 CFS earns it differently, and the difference is worth naming: its firmware publishes no
 per-slot loaded flag at all. The seated bay is the intersection of two signals that arrive

@@ -112,6 +112,39 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
     AmsError select_slot(int slot_index) override;
     AmsError change_tool(int tool_number) override;
 
+    /**
+     * @brief Offer Unload only for the tool currently on the carriage.
+     *
+     * The base rule's PARALLEL arm keys on is_present(), which holds for every
+     * slot on this backend forever — a slot here is a physical toolhead, never
+     * EMPTY or UNKNOWN. That read true everywhere, so the context menu offered
+     * Unload (UNSELECT_TOOL) on tools parked in their docks and, through
+     * decide_can_load()'s inverted `!toolhead_unload` factor, kept Load disabled
+     * on all of them (prestonbrown/helixscreen#1199).
+     *
+     * A klipper-toolchanger carries exactly one tool at a time, and unload_filament()
+     * is an unmount rather than a filament retraction, so `toolchanger.tool_number`
+     * is the whole answer. Load stays offered on every docked tool, which is what
+     * mounting one means here.
+     */
+    [[nodiscard]] bool can_unload_from_toolhead(int slot_index) const override;
+
+    // NOTE: has_per_slot_loaded_authority() is deliberately NOT overridden, and
+    // this backend has a reason none of the others do: it carries no filament
+    // signal at all. get_slot_filament_segment() returns NOZZLE unconditionally,
+    // no per-tool switch is read, and is_filament_loaded() is just
+    // `tool_number >= 0`. The only fact the parse can state is which tool is on
+    // the carriage — single-valued, which is exactly what the aggregate
+    // current_slot + filament_loaded pair encodes, assigned verbatim from
+    // klipper-toolchanger's own toolchanger.tool_number. The per-slot LOADED
+    // stamp is derived FROM that pair (refresh_slot_statuses_locked), so
+    // believing it back would only add staleness — the same argument that keeps
+    // Happy Hare on the aggregate rule (prestonbrown/helixscreen#1199).
+    //
+    // In particular `tool <name>.mounted` is NOT that authority: it arrives on a
+    // separate Moonraker object, and an all-tools-mounted payload is a shape we
+    // emit ourselves in mock mode.
+
     // Recovery
     AmsError recover() override;
     AmsError reset() override;
@@ -168,6 +201,17 @@ class AmsBackendToolChanger : public AmsSubscriptionBackend {
      * @param tool_data JSON object containing tool data
      */
     void parse_tool_state(const std::string& tool_name, const nlohmann::json& tool_data);
+
+    /**
+     * @brief Re-derive every slot's LOADED stamp from the carriage tool.
+     *
+     * Called from both parse paths so the per-slot status and the aggregate pair
+     * are always computed from the same value and cannot disagree. Only
+     * AVAILABLE and LOADED occur on this backend — a toolhead is always present.
+     *
+     * @note Must be called while holding mutex_.
+     */
+    void refresh_slot_statuses_locked();
 
     /**
      * @brief Convert toolchanger status string to AmsAction
