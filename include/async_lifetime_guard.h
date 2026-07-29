@@ -49,7 +49,7 @@ class AsyncLifetimeGuard;
 
 // Forward declaration so the skip paths inside AsyncLifetimeGuard's template
 // methods can call into the counter module. Full declarations (SkipEntry,
-// SkipSnapshot, take_snapshot, reset_for_testing, note_skipped's signature)
+// SkipSnapshot, take_snapshot, note_skipped's signature)
 // live at the bottom of this file.
 namespace async_lifetime {
 void note_skipped(const char* tag) noexcept;
@@ -383,11 +383,9 @@ struct SkipSnapshot {
 /// the window since the previous call. Every slot is released on drain, so the
 /// table only ever holds tags that skipped in the current window and a producer
 /// that turns hot late can always be named. Call from `TelemetryManager`'s
-/// periodic snapshot timer.
+/// periodic snapshot timer. Discarding the result is also how a caller clears
+/// the store outright — the drain is unconditional, so there is no separate
+/// reset entry point to keep in sync with it.
 SkipSnapshot take_snapshot() noexcept;
-
-/// Test-only: zero every slot and forget every tracked tag so the next test
-/// starts from a clean counter store.
-void reset_for_testing() noexcept;
 
 } // namespace helix::async_lifetime

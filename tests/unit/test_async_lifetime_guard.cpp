@@ -17,6 +17,17 @@
 
 using namespace helix;
 
+namespace {
+
+/// Drop whatever a previous test left in the skip-counter store. take_snapshot()
+/// releases every slot unconditionally, so discarding its result *is* the reset —
+/// there is no separate entry point that could drift from the drain it mirrors.
+void drain_skip_counters() {
+    (void)helix::async_lifetime::take_snapshot();
+}
+
+} // namespace
+
 // ============================================================================
 // Pure token tests (no LVGL needed)
 // ============================================================================
@@ -377,7 +388,7 @@ TEST_CASE_METHOD(BgDetectorFixture, "Thread safety — concurrent token and inva
 // ============================================================================
 
 TEST_CASE("async_lifetime counters start empty after reset", "[lifetime_guard][telemetry]") {
-    helix::async_lifetime::reset_for_testing();
+    drain_skip_counters();
     auto snap = helix::async_lifetime::take_snapshot();
     REQUIRE(snap.entries.empty());
     REQUIRE(snap.total == 0);
@@ -385,7 +396,7 @@ TEST_CASE("async_lifetime counters start empty after reset", "[lifetime_guard][t
 }
 
 TEST_CASE("async_lifetime note_skipped increments per tag", "[lifetime_guard][telemetry]") {
-    helix::async_lifetime::reset_for_testing();
+    drain_skip_counters();
 
     helix::async_lifetime::note_skipped("TagA");
     helix::async_lifetime::note_skipped("TagA");
@@ -404,7 +415,7 @@ TEST_CASE("async_lifetime note_skipped increments per tag", "[lifetime_guard][te
 }
 
 TEST_CASE("async_lifetime take_snapshot resets counters", "[lifetime_guard][telemetry]") {
-    helix::async_lifetime::reset_for_testing();
+    drain_skip_counters();
 
     helix::async_lifetime::note_skipped("TagA");
     helix::async_lifetime::note_skipped("TagA");
@@ -420,7 +431,7 @@ TEST_CASE("async_lifetime take_snapshot resets counters", "[lifetime_guard][tele
 
 TEST_CASE("async_lifetime nullptr tag normalised to (null)",
          "[lifetime_guard][telemetry]") {
-    helix::async_lifetime::reset_for_testing();
+    drain_skip_counters();
 
     helix::async_lifetime::note_skipped(nullptr);
     helix::async_lifetime::note_skipped(nullptr);
@@ -433,7 +444,7 @@ TEST_CASE("async_lifetime nullptr tag normalised to (null)",
 }
 
 TEST_CASE("async_lifetime overflow rolls into (other)", "[lifetime_guard][telemetry]") {
-    helix::async_lifetime::reset_for_testing();
+    drain_skip_counters();
 
     // kMaxTrackedTags is 64. Generate 128 distinct stable tag pointers so the
     // first 64 claim tracked slots and the next 64 roll into "(other)". The
@@ -461,7 +472,7 @@ TEST_CASE("async_lifetime overflow rolls into (other)", "[lifetime_guard][teleme
 }
 
 TEST_CASE("async_lifetime quiet tags release their slots", "[lifetime_guard][telemetry]") {
-    helix::async_lifetime::reset_for_testing();
+    drain_skip_counters();
 
     // Saturate every tracked slot, then drain. All of them go quiet, so the
     // drain must hand their slots back.
@@ -490,7 +501,7 @@ TEST_CASE("async_lifetime quiet tags release their slots", "[lifetime_guard][tel
 
 TEST_CASE("async_lifetime a producer hot in consecutive windows stays named",
           "[lifetime_guard][telemetry]") {
-    helix::async_lifetime::reset_for_testing();
+    drain_skip_counters();
 
     // Fill every slot but keep ONE producer hot across both windows. Slots are
     // released on every drain, so the hot tag re-claims one — what matters is
@@ -519,7 +530,7 @@ TEST_CASE("async_lifetime a producer hot in consecutive windows stays named",
 
 TEST_CASE("async_lifetime repeated tags after snapshot count fresh",
          "[lifetime_guard][telemetry]") {
-    helix::async_lifetime::reset_for_testing();
+    drain_skip_counters();
 
     helix::async_lifetime::note_skipped("TagA");
     helix::async_lifetime::note_skipped("TagA");
@@ -541,7 +552,7 @@ TEST_CASE("async_lifetime repeated tags after snapshot count fresh",
 
 TEST_CASE_METHOD(LVGLTestFixture, "AsyncLifetimeGuard::defer skip path increments counter",
                  "[lifetime_guard][telemetry]") {
-    helix::async_lifetime::reset_for_testing();
+    drain_skip_counters();
 
     {
         AsyncLifetimeGuard guard;
@@ -560,7 +571,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "AsyncLifetimeGuard::defer skip path increment
 
 TEST_CASE_METHOD(LVGLTestFixture, "LifetimeToken::defer skip path increments counter",
                  "[lifetime_guard][telemetry]") {
-    helix::async_lifetime::reset_for_testing();
+    drain_skip_counters();
 
     AsyncLifetimeGuard guard;
     auto tok = guard.token();
@@ -576,7 +587,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "LifetimeToken::defer skip path increments cou
 
 TEST_CASE_METHOD(LVGLTestFixture, "AsyncLifetimeGuard::bg_cb skip path increments counter",
                  "[lifetime_guard][telemetry]") {
-    helix::async_lifetime::reset_for_testing();
+    drain_skip_counters();
 
     {
         AsyncLifetimeGuard guard;
@@ -594,7 +605,7 @@ TEST_CASE_METHOD(LVGLTestFixture, "AsyncLifetimeGuard::bg_cb skip path increment
 
 TEST_CASE_METHOD(LVGLTestFixture, "Non-skipped callbacks do NOT increment counter",
                  "[lifetime_guard][telemetry]") {
-    helix::async_lifetime::reset_for_testing();
+    drain_skip_counters();
 
     bool ran = false;
     {

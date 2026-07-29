@@ -305,11 +305,4 @@ SkipSnapshot take_snapshot() noexcept {
     return snap;
 }
 
-void reset_for_testing() noexcept {
-    for (size_t i = 0; i <= kMaxTrackedTags; ++i) {
-        g_counters[i].tag.store(nullptr, std::memory_order_release);
-        g_counters[i].count.store(0, std::memory_order_release);
-    }
-}
-
 } // namespace helix::async_lifetime

@@ -2248,7 +2248,9 @@ TEST_CASE_METHOD(TelemetryTestFixture, "AsyncLifetime snapshot: empty window is 
     auto& tm = TelemetryManager::instance();
     tm.set_enabled(true);
     tm.clear_queue();
-    helix::async_lifetime::reset_for_testing();
+    // Drain whatever a prior test left in the counter store; take_snapshot()
+    // releases every slot, so discarding the result is the reset.
+    (void)helix::async_lifetime::take_snapshot();
 
     tm.record_async_lifetime_snapshot();
 
@@ -2263,7 +2265,9 @@ TEST_CASE_METHOD(TelemetryTestFixture,
     auto& tm = TelemetryManager::instance();
     tm.set_enabled(true);
     tm.clear_queue();
-    helix::async_lifetime::reset_for_testing();
+    // Drain whatever a prior test left in the counter store; take_snapshot()
+    // releases every slot, so discarding the result is the reset.
+    (void)helix::async_lifetime::take_snapshot();
 
     helix::async_lifetime::note_skipped("HotProducer::cb");
     helix::async_lifetime::note_skipped("HotProducer::cb");
@@ -2291,7 +2295,9 @@ TEST_CASE_METHOD(TelemetryTestFixture,
     auto& tm = TelemetryManager::instance();
     tm.set_enabled(false);
     tm.clear_queue();
-    helix::async_lifetime::reset_for_testing();
+    // Drain whatever a prior test left in the counter store; take_snapshot()
+    // releases every slot, so discarding the result is the reset.
+    (void)helix::async_lifetime::take_snapshot();
 
     helix::async_lifetime::note_skipped("WhileDisabled::cb");
     tm.record_async_lifetime_snapshot();
