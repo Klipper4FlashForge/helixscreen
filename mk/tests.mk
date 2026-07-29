@@ -659,18 +659,32 @@ test-assets: test-build
 # Phase 1: No deps - check for unlimited -j and re-invoke if needed
 # Phase 2: Normal deps and linking (when _PARALLEL_GUARD is set)
 #
-# IMPORTANT: Phase 1 always passes explicit -j to Phase 2. Without it,
-# `exec $(MAKE)` loses the parent's jobserver (exec replaces the process)
-# and Phase 2 falls back to -j1, compiling hundreds of files serially.
+# Same three-way handling as the main build (mk/rules.mk `all:`), and for the
+# same reason. Phase 1 used to ALWAYS force -j$(NPROC), which silently discarded
+# an explicit bound: `make test -j6` still ran -j32 here. That is invisible until
+# several sessions share one checkout, at which point it multiplies — four
+# concurrent `make test` runs produced 103 cc1plus and drove a 123G box into
+# swap.
+#
+# A bounded -jN puts a --jobserver-auth entry in MAKEFLAGS. `exec` replaces the
+# process image but KEEPS open file descriptors, so the jobserver FDs survive and
+# re-invoking without -j inherits the caller's limit instead of overriding it.
+# An explicit -j$(NPROC) is only correct for the other two cases: unlimited `-j`
+# (a 'j' in MAKEFLAGS with no jobserver), and no -j at all — the latter because
+# exec'ing with neither would leave Phase 2 at -j1, building hundreds of files
+# serially.
 ifndef _PARALLEL_GUARD
 $(TEST_BIN): FORCE
-	@NPROC=$$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4); \
-	if echo "$(MAKEFLAGS)" | grep -q 'j' && ! echo "$(MAKEFLAGS)" | grep -q 'jobserver'; then \
-		echo ""; \
-		printf '\033[1;33m⚠️  make -j (unlimited) detected - auto-fixing to -j%s\033[0m\n' "$$NPROC"; \
-		echo ""; \
-	fi; \
-	exec $(MAKE) _PARALLEL_GUARD=1 --no-print-directory -j$$NPROC $@
+	@if echo "$(MAKEFLAGS)" | grep -q 'jobserver'; then \
+		exec $(MAKE) _PARALLEL_GUARD=1 --no-print-directory $@; \
+	else \
+		if echo "$(MAKEFLAGS)" | grep -q 'j'; then \
+			echo ""; \
+			printf '\033[1;33m⚠️  make -j (unlimited) detected - auto-fixing to -j%s\033[0m\n' "$(NPROC)"; \
+			echo ""; \
+		fi; \
+		exec $(MAKE) _PARALLEL_GUARD=1 --no-print-directory -j$(NPROC) $@; \
+	fi
 else
 $(TEST_BIN): $(TEST_CORE_DEPS) \
              $(TEST_LVGL_DEPS) \
