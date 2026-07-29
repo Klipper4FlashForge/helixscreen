@@ -217,6 +217,16 @@ void PrintControlButtons::clear_pending_action() {
     recompute();
 }
 
+void PrintControlButtons::notify_printer_error(const std::string& detail) {
+    if (pending_action_ == PendingAction::None) {
+        return;
+    }
+    const char* verb = (pending_action_ == PendingAction::Resuming) ? "Resume" : "Pause";
+    spdlog::warn("[PrintControl] Klipper error while {} pending — releasing the button: {}", verb,
+                 detail);
+    clear_pending_action();
+}
+
 void PrintControlButtons::on_primary_clicked(lv_event_t* e) {
     LVGL_SAFE_EVENT_CB_BEGIN("[PrintControl] on_primary_clicked");
     (void)e;

@@ -9,6 +9,7 @@
 #include "subject_managed_panel.h"
 
 #include <lvgl.h>
+#include <string>
 
 class MoonrakerAPI;
 
@@ -48,6 +49,23 @@ class PrintControlButtons {
     /// the runout guidance dialog's Resume button (#991), so both produce the
     /// same pending-UI + recovery behavior. Safe to call only on the main thread.
     void request_resume();
+
+    /// Klipper broadcast a `!!` error while a Pause/Resume was in flight.
+    ///
+    /// The optimistic spinner is cleared only by the real print-state transition
+    /// or by a 150s backstop, and neither fires when Klipper *aborts* the macro:
+    /// RESUME's own runout check prints `!! ... has detected that the filament
+    /// has run out` and returns, yet `printer.gcode.script` still answers `ok`,
+    /// so the RPC error path never runs. The button then reads "Resuming..." and
+    /// stays DISABLED for the full 150s — the user cannot retry even after
+    /// fixing the filament (bundle JX2FVRB9).
+    ///
+    /// Clearing on the error is safe in the other direction too: if the command
+    /// did land despite an unrelated error, the state observer clears the same
+    /// pending action a moment later and the clear is idempotent.
+    ///
+    /// Main thread only. No-op when nothing is pending.
+    void notify_printer_error(const std::string& detail);
 
   private:
     PrintControlButtons() = default;
