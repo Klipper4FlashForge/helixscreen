@@ -195,6 +195,14 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// being blamed on an arbitrary lane.
     [[nodiscard]] bool slot_has_filament_at_toolhead(int slot_index) const override;
 
+    /// Status-driven fault, surfaced by AmsErrorBridge on the AmsAction::ERROR
+    /// edge. Keyed on AFC's error_state, which upstream sets in lockstep with
+    /// current_state = State.ERROR — the same transition that produced the edge.
+    /// Complements classify_error(): the `!!` line arrives BEFORE AFC pauses, so
+    /// the classifier's paused catch-all misses the fault that this catches when
+    /// the status update lands (prestonbrown/helixscreen#1171).
+    [[nodiscard]] std::optional<helix::ErrorEvent> current_error() const override;
+
     /// L1: recognize AFC toolhead jam / lane / hub faults and emit a CRITICAL
     /// ErrorEvent with context-aware recovery actions. Falls back to a catch-all
     /// for any pausing !! while error_state_ is set. Returns nullopt otherwise so
@@ -417,6 +425,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     // Allow test helper access to private members
     friend class AmsBackendAfcTestHelper;
     friend class AfcPerSlotLoadedHelper;
+    friend class AfcCurrentErrorHelper;
     friend class AmsBackendAfcEndlessSpoolHelper;
     friend class AmsBackendAfcMultiUnitHelper;
     friend class HubSensorTestHelper;
