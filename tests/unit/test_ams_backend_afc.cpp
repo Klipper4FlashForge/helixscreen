@@ -4446,7 +4446,7 @@ TEST_CASE("AFC tool changer reconciliation preserves current_load slot",
                        {"tool_loaded", true},
                        {"color", "FF0000"},
                        {"material", "PLA"},
-                       {"spool_id", std::to_string(100 + i)},
+                       {"spool_id", 100 + i},
                        {"weight", 750}};
     }
 
@@ -4474,7 +4474,7 @@ TEST_CASE("AFC parse_lane_data does not overwrite valid current_slot", "[ams][af
         lane_data[name] = {{"tool_loaded", true},
                            {"color", "00FF00"},
                            {"material", "PETG"},
-                           {"spool_id", std::to_string(200 + i)}};
+                           {"spool_id", 200 + i}};
     }
     helper.feed_afc_state({{"lanes", lane_data}});
 
@@ -4511,7 +4511,7 @@ TEST_CASE("AFC 3-unit incremental arrival preserves all unit lanes",
         nlohmann::json stepper_data = {
             {"color", "FF" + std::to_string(1000 + i).substr(1)},
             {"material", "PLA"},
-            {"spool_id", std::to_string(300 + i)},
+            {"spool_id", 300 + i},
             {"weight", 800},
             {"tool_loaded", (i >= 8)} // Turtle lanes are direct-feed
         };
@@ -4609,7 +4609,7 @@ TEST_CASE("AFC 4-unit ordering by lane number not unit name", "[ams][afc][mixed]
         std::string lane = "lane" + std::to_string(i);
         helper.feed_afc_stepper(lane, {{"color", "FF0000"},
                                        {"material", "PLA"},
-                                       {"spool_id", std::to_string(i)},
+                                       {"spool_id", i},
                                        {"weight", 800}});
     }
 
@@ -4673,7 +4673,7 @@ TEST_CASE("AFC stepper-only updates do not overwrite current_slot set by AFC sta
         params["AFC"] = {{"current_load", "lane9"}, {"filament_loaded", true}};
         params["AFC_stepper lane9"] = {{"status", "Tooled"}, {"tool_loaded", true},
                                        {"color", "00AEFF"},  {"material", "ASA"},
-                                       {"spool_id", "42"},   {"weight", 800}};
+                                       {"spool_id", 42},   {"weight", 800}};
         helper.feed_status_update(params);
     }
     REQUIRE(helper.get_system_info().current_slot == 9);

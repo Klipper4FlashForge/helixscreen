@@ -427,6 +427,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcPerSlotLoadedHelper;
     friend class AfcCurrentErrorHelper;
     friend class AfcLaneDataClearHelper;
+    friend class AfcFixtureHelper;
     friend class AmsBackendAfcEndlessSpoolHelper;
     friend class AmsBackendAfcMultiUnitHelper;
     friend class HubSensorTestHelper;
