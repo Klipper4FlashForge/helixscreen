@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.99.104] - 2026-07-28
+
+Filament systems get a deep correctness pass — AFC and Spoolman especially, most of it verified
+against live BoxTurtle hardware — alongside a sweep through the crash class where a background
+callback outlives the thing it was going to update, and several paths where an update or a file
+permission could quietly destroy a working configuration.
+
+### Added
+
+- **A lane keeps its spool identity across an eject** — brand, spool name, total weight, color name and the Spoolman IDs have nowhere to live in AFC's or Happy Hare's own records, so they are stored separately now. Pulling a spool for maintenance and putting the same one back no longer loses what you entered. (Happy Hare's half was written without hardware to test on and wants validation from an MMU owner.)
+- **"It's a new spool" is the primary answer when saving into a lane that is already linked** — putting a different physical spool in a linked lane could previously only overwrite the old spool's identity in Spoolman. It now creates a new spool and rebinds the lane, leaving the linked one untouched. Cancel stays a true abort.
+- **Clear Spool is offered whenever a slot carries an assignment**, not only when the lane is empty — a stale assignment does the most damage right after new filament goes in, which is exactly when the affordance used to disappear.
+- **Lane position recovery is a mode of the Unload button** — the per-lane Reset entry sent a physical filament move on AFC and a bookkeeping fix on Happy Hare, sharing one word and one icon with the system-wide sidebar Reset. Recovery is now picked from live state like Eject already was, and fault clearing lives on the sidebar.
+- **AFC's lane-fault messages get a readable filament-position diagram (#1184)** — AFC welds monospace bar art onto five of its fault messages, and in a proportional font the bars stop lining up with their labels, so the most diagnostic part of the message reads as noise. The art is stripped and the position drawn properly; an unrecognized message is passed through byte-for-byte and the graphic hides, so upstream rewording degrades to plain text.
+- **AFC v1.2.0's richer status is read directly (#1149)** — spool name, fill level, preheat bed target and multi-color swatches now come from AFC itself instead of a Spoolman round-trip, alongside the buffer's health fields and each lane's endstop and selector state.
+- **Transient overlays cast a shadow (#1178)** — the gap beside a stacked overlay showed the dimmed panel underneath with nothing to explain it, so it read as a rendering artifact rather than as a layer.
+
+### Fixed
+
+- **Uploaded logs carried network names and MAC addresses (#1191)** — the log ring is captured at debug regardless of your configured verbosity and leaves the machine three ways: the debug bundle, the crash reporter's automatic upload, and the `ctl` log RPC. It held the connected SSID, every neighbouring SSID in range with signal strengths, and the adapter MAC in cleartext. A set of nearby network names is a geolocation fingerprint, and a scan enumerates networks belonging to people who never consented to being in a bug report. Those values are now replaced at the log call site with a per-boot token that still correlates one network across lines.
+- **Moonraker one-click updates destroyed custom images, themes, per-printer database overrides and crash history (#1164)** — Moonraker deletes the install directory before extracting, and only the four symlinked config files survived it. Those directories get the same protection now, and existing installs are migrated into place.
+- **The first spool save after install stranded every per-tool spool assignment (#1176)** — the atomic save replaced the symlink instead of writing through it, so each later update destroyed the assignments while the relink afterwards made nothing look wrong. Found on a Pi where the surviving copy was three months stale.
+- **A read-only settings.json was treated as corrupt and reset to factory defaults** — config reads were opened for read/write, so a root-owned or `0444` file destroyed the entire setup while being perfectly readable.
+- **In-app updates marked configured users as needing first-boot setup again** — and on a multi-printer config that was silent data loss: stale-entry recovery then erased the active printer's heaters, fans, sensors, macros and Moonraker host with no prompt.
+- **An install with a stale asset name could never update again (#993)** — Moonraker resolves which asset to download from the installed `release_info.json` and falls back to the alphabetically-first asset when it matches nothing, so the fix could only ever arrive through the channel it had broken. That file is validated and repaired at startup now.
+- **Installer path overrides were fed to `rm -rf` and `mv` verbatim** — a mount root passed as `TMP_DIR` once wiped a device's `/mnt/UDISK`. Overrides are validated now, downloads are checked against the published SHA256 rather than a CRC alone, and the documented `curl | sh -s -- --clean` invocation no longer skips its delete-your-configuration prompt.
+- **First boot was a dead end when Moonraker was up and Klipper was in error** — one of the most common first-boot states. The step had no Skip, Back is hidden when it is first, and the gate stayed closed, so the only exits were `--skip-wizard` or hand-editing settings.json. You could not even reach the app to see the Klipper error.
+- **An interrupted wizard collapsed eight later steps on the next boot** — printer identification persisted its preset on Back too, and that marker was trusted as authoritative, with no in-app way back if the preset was wrong.
+- **Printer discovery could spin forever (#1161)** — a WebSocket drop mid-discovery left the spinner running and Next disabled with no path out. A 30-second watchdog now unblocks it with a distinct warning.
+- **Finishing the wizard with Klipper down flagged every fan, LED and filament sensor as newly appeared hardware on the next healthy boot (#1160)**, with no route back to the steps that were skipped. The snapshot is deferred until the first successful discovery, which then offers to re-run just those steps.
+- **Configuring a second printer overwrote the first one's preset marker (#1162)** — it lived at the root of the config rather than under the printer, so widget seeding and wizard step collapsing read a marker belonging to the wrong machine.
+- **A filament operation could spin forever (#1183)** — AFC answers a command it has nothing to do about ("lane3 already loaded") in 4ms without ever entering a toolchange, and the completion path keyed entirely on a state transition that therefore never happened. AFC now marks the operation at dispatch and resolves it on the macro's own acknowledgement.
+- **A stalled operation left its button stuck for the rest of the session (#1183)** — all eight operation guards shared a timeout that re-enabled the buttons without ever failing the operation, so the per-button spinner state never cleared and the next operation could not complete.
+- **An AFC operation that never finished hung the UI with no way out (#1188)** — AD5X was the only backend with a stuck-action timeout, so a silently hung macro, a WebSocket bounce mid-operation, or a Klipper shutdown mid-toolchange left the interface busy indefinitely.
+- **Filament recovery ran into a cold nozzle (#1193)** — Resume and Unload dispatched their gcode with no temperature check, so they failed the same way the operation that raised the error did. A post-op cooldown, a print error's heater shutoff, or Klipper's idle timeout can each zero the heater between the fault and the tap; the actions that push filament through the melt zone now preheat and wait.
+- **The filament error dialog outlived its fault (#1185)** — it was only ever torn down when the panel was destroyed. On a live printer a lane-reset failure from 19:23 was still offering Resume, Eject and Recover at 19:39 with the print recovered and running at 30%, none of the three buttons correct.
+- **A fault could stop the spinner while putting nothing on screen** — a backend can raise an error carrying no event and no `!!` line, which reads as success. A last-resort check now surfaces the backend's own description when no dialog took ownership of the fault.
+- **The toolchange step bar never advanced past cut and brush (#1183)** — AFC emits its load and unload narration with no `//` prefix while only the decorative steps carry one, so the most important progress marker could never fire. Separately, a macro that aborts on an undefined command is reported through a channel that still answers "ok", so a purge dying on line 4 of its own body finished with a green checkmark; those now fail the operation and name the missing command.
+- **AFC offered Reset on lanes where it could not work, and the refusal latched on screen** — `AFC_LANE_RESET` retracts filament from the bowden back to the hub and refuses unless the filament is at the hub with a free toolhead, but the entry appeared on every lane. Firing it on an ejected lane produced "Hub is already clear", which latched in AFC's message and kept re-firing error toasts hours later.
+- **AFC's hub sensor was attributed to every lane at once** — one sensor is shared across a unit, so a triggered hub proves filament is past it but says nothing about whose. Recovery now follows the lane AFC names as active, and falls back to every lane routed to that hub when AFC names none.
+- **A latched AFC field drove the filament path graphic and the reset gate** — `loaded_to_hub` is set when a lane is prepped and never clears, so it reads true on all four lanes at once. Both now read the real hub sensor.
+- **Pressing Reset left the error text on screen** — AFC's message is a queue and each clear pops a single entry, so clearing once could leave the next queued error showing, indistinguishable from Reset having done nothing. Reset now clears the fault and drains the queue.
+- **An ejected AFC lane kept showing the old spool and kept its Spoolman link** — AFC clears a lane itself on eject, but the parser could not express a clear at all, so only material ever went away. A later edit then aimed a Spoolman write at the wrong spool.
+- **Saving a spool needed two passes to stick on AFC** — the link write was emitted last, and AFC rewrites lane material, color, weight and temperatures from the linked spool, so one save set the data and then destroyed it.
+- **Spool edits were silently dropped on AFC installs reporting an old version** — the version was read from a database namespace nothing in AFC writes, so a current BoxTurtle reports 1.0.0 and every color, material, weight and spool-ID write was skipped with only a log hint.
+- **Spoolman was written before you answered the "different filament?" prompt** — the update ran ahead of the confirmation, so Cancel, documented as a true abort, could not retract it.
+- **A spool's total weight never reached Spoolman** — only remaining weight and the spool ID were compared, so the edit lit up Save, persisted locally, and Spoolman kept its old value indefinitely.
+- **Unlinking a spool and entering a weight in the same save emitted no weight at all**, forcing a second edit.
+- **Stale per-tool spool assignments were never cleared** — a lane that lost its spool left its old assignment behind, and those persist to disk and to Moonraker, so they outlived restarts.
+- **Turning Spoolman sync off left its poll timer running** — the Spoolman overlay took a polling reference every time it opened and never gave one back, so the toggle was largely decorative.
+- **The clog configuration modal sent a Happy Hare command on every backend (#1155)** — AFC's buffer fault detection also offers the clog widget, so an AFC user could pick a mode, press Save and get "Unknown command". ACE, CFS, QIDI Box and the tool changers had the same exposure; the controls are now hidden where they cannot work.
+- **Recover did nothing on the AMS overview panel** — the button rendered enabled and its action fell through to nothing.
+- **Happy Hare's system-wide fault clear sent nothing** — Reset is pressed when nothing is loaded, and exactly that state was rejected as an invalid slot.
+- **The AD5X color picker applied all 24 swatches in turn (#1065)** — zmod echoes every dialog button down the gcode console, and each one was read as an executed edit. One bundle showed 87 echoed buttons producing 162 phantom applies and a 40-second stale material label.
+- **Malformed filament-system data could abort the app outright** — a missing key read from a const JSON object is an uncatchable abort in this build, not a catchable error, so five guarded-looking chains could kill the process; on CFS a disconnected unit reports scalars where slot arrays are expected, which killed the whole frame every poll and left the AMS panel silently empty.
+- **One malformed field could take out a whole Moonraker response** — a null in file metadata aborted the entire listing, a null among power devices or timelapse settings emptied the list, and a wrongly-typed error field leaked the request until its 60-second timeout and surfaced as a bogus timeout toast.
+- **Background callbacks could run against a destroyed owner (#1165, #1146)** — a queued UI update runs at the next drain whether or not the object that queued it still exists, and the crash then lands somewhere unrelated. Every such site in the codebase now carries a lifetime guard, including a genuine one in the QR scanner and the build-volume notification behind #1146.
+- **Timers stayed armed on freed objects (#1173)** — the screensavers, print controls, PID calibration, the wizard's auto-probe and the update checker each cancelled their timer only on the normal teardown path, so any teardown that skipped it left the callback pointing at freed memory.
+- **Settings > Spoolman touched the UI from a network thread every time it opened**, including creating and deleting timers while LVGL might have been walking its timer list.
+- **The input shaper panel's subjects outlived the ordered shutdown pass (#1180)** — it was the one panel that never registered its teardown, so ordering was decided by panel destruction instead.
+- **The fan row could freeze at 0% and the wrong fan could be treated as the part fan (#1181)** — re-assigning fan roles zeroed every fan's live reading, and Moonraker only reports changes, so a fan holding a steady speed never restored what was zeroed. Recovery needed a speed change that a steady fan never produces.
+- **A paused printer showing an uncoded error had nothing to press (#1152)** — the modal offered no recovery actions at all. It now offers Resume plus a dismiss when the job is genuinely paused.
+- **Slow drags did nothing on the bed mesh (#1133)** — rotation accumulated as an integer and threw the remainder away, so a 1px-per-event drag over 200 events moved the mesh zero degrees. The tilt clamp also moved into the renderer, so the view can no longer be driven past the point where the depth sort inverts.
+- **Four error-recovery button labels were never translated (#1174).**
+- **A widget name repeated inside one layout file left the later one built but never configured (#1136)** — the AMS panel had exactly that, and a gate now catches it.
+- **`border_side="left|bottom"` silently removed the border** instead of drawing both sides — the combined form fell through to the unknown-value branch, which returns "no border".
+
+### Changed
+
+- **Overlay width is decided by how you reached the overlay (#1178)** — a destination overlay is full width, a transient layer leaves the backdrop showing at its leading edge, and the same overlay can be either depending on where it was pushed from. Console Settings no longer renders wider than the Console it was pushed from.
+- **The transient-layer shadow is lighter on light themes**, where the same alpha rendered as a heavy black band rather than a gradient.
+- **AFC's version is read from its status object and lane vendor from `vendor_name`**, tracking changes agreed with upstream; both are inert until that firmware ships.
+- **`helixscreen ctl` gained freeze/unfreeze, `wait_idle`, `text`, `reset`, stable and widget-cropped screenshots and JSON output**, its two help listings are generated from one table so neither can drift, and every cross-compiled target can now build it in — the flag was silently dropped by all but one.
+- **An out-of-process UI test suite drives a live instance through `ctl` and compares screens against approved golden images**, wired into CI alongside the existing tests.
+- **Contributor gates and threading docs** — a wrong rule about lifetime tokens is corrected across five documents, and new gates catch background-thread anti-patterns, timers not cancelled in destructors, duplicate widget names, uncatchable const JSON reads and UI callbacks leaked between tests.
+
 ## [0.99.103] - 2026-07-26
 
 ### Added
@@ -4566,6 +4642,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.104]: https://github.com/prestonbrown/helixscreen/compare/v0.99.103...v0.99.104
 [0.99.103]: https://github.com/prestonbrown/helixscreen/compare/v0.99.102...v0.99.103
 [0.99.102]: https://github.com/prestonbrown/helixscreen/compare/v0.99.101...v0.99.102
 [0.99.101]: https://github.com/prestonbrown/helixscreen/compare/v0.99.100...v0.99.101
