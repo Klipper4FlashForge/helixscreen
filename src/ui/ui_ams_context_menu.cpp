@@ -10,7 +10,9 @@
 #include "ams_backend.h"
 #include "ams_state.h"
 #include "ams_types.h"
+#include "app_globals.h"
 #include "filament_database.h"
+#include "printer_state.h"
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
@@ -228,6 +230,12 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
         return;
     }
 
+    // A print job still owns the toolhead while PRINTING *or* PAUSED, and the
+    // backend refuses toolhead-motion filament ops in both. Read the same signal
+    // here so the menu never offers an action that is certain to be refused.
+    auto* print_active_subj = get_printer_state().get_print_active_subject();
+    const bool print_active = print_active_subj && lv_subject_get_int(print_active_subj) == 1;
+
     // Check if system is busy (operation in progress)
     bool system_busy = false;
     if (backend_) {
@@ -279,7 +287,7 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
                                       supports_eject, slot_has_filament, supports_force_eject,
                                       slot_empty);
 
-    const bool unload_enabled = !system_busy && unload_mode_ != UnloadMode::Unavailable;
+    const bool unload_enabled = decide_unload_enabled(system_busy, unload_mode_, print_active);
     lv_subject_set_int(&slot_is_loaded_subject_, unload_enabled ? 1 : 0);
 
     lv_obj_t* btn_unload = lv_obj_find_by_name(menu_obj, "btn_unload");
@@ -322,12 +330,13 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
     // enabled. For non-AD5X backends slot_unloads_to_toolhead() returns the hint
     // unchanged, so !toolhead_unload == !is_loaded and behavior is unaffected.
     // Disable Load if: system busy, slot empty, OR filament is already at the head.
-    bool can_load = !system_busy && !toolhead_unload && slot_has_filament;
+    bool can_load = decide_can_load(system_busy, toolhead_unload, slot_has_filament, print_active);
     lv_subject_set_int(&slot_can_load_subject_, can_load ? 1 : 0);
     if (!can_load) {
         spdlog::debug("[AmsContextMenu] Load disabled for slot {}: busy={}, loaded={} "
-                      "(live={}), has_filament={}",
-                      slot_index, system_busy, is_loaded, slot_is_loaded_live, slot_has_filament);
+                      "(live={}), has_filament={}, print_active={}",
+                      slot_index, system_busy, is_loaded, slot_is_loaded_live, slot_has_filament,
+                      print_active);
     }
 
     // Show Select Gate button if backend supports it (e.g. Happy Hare)
@@ -491,6 +500,22 @@ AmsContextMenu::UnloadMode AmsContextMenu::decide_unload_mode(
         return UnloadMode::ForceEject;
     }
     return UnloadMode::Unavailable;
+}
+
+bool AmsContextMenu::decide_can_load(bool system_busy, bool toolhead_unload, bool slot_has_filament,
+                                     bool print_active) {
+    return !system_busy && !print_active && !toolhead_unload && slot_has_filament;
+}
+
+bool AmsContextMenu::decide_unload_enabled(bool system_busy, UnloadMode mode, bool print_active) {
+    if (system_busy || mode == UnloadMode::Unavailable) {
+        return false;
+    }
+    // Unload is the only mode that runs the heated toolhead path (and, on AD5X,
+    // a self-homing firmware macro). Eject / RecoverPosition / ForceEject are
+    // cold lane-side retracts that leave the toolhead where the print left it,
+    // so they stay available for clearing a snapped strand mid-pause.
+    return !(print_active && mode == UnloadMode::Unload);
 }
 
 void AmsContextMenu::handle_clear_spool() {

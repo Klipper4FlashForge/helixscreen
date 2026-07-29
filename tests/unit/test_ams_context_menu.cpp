@@ -27,6 +27,16 @@ class AmsContextMenuTestAccess {
                                                   slot_has_filament, supports_force_eject,
                                                   slot_empty);
     }
+
+    static bool decide_can_load(bool system_busy, bool toolhead_unload, bool slot_has_filament,
+                                bool print_active) {
+        return AmsContextMenu::decide_can_load(system_busy, toolhead_unload, slot_has_filament,
+                                               print_active);
+    }
+
+    static bool decide_unload_enabled(bool system_busy, UnloadMode mode, bool print_active) {
+        return AmsContextMenu::decide_unload_enabled(system_busy, mode, print_active);
+    }
 };
 
 // "Clear Spool" was revealed only when `!slot_has_filament`, so it vanished the
@@ -163,4 +173,60 @@ TEST_CASE("AmsContextMenu::decide_unload_mode falls through to ForceEject and Un
         /*supports_eject=*/false, /*slot_has_filament=*/false, /*supports_force_eject=*/false,
         /*slot_empty=*/true);
     CHECK(unavailable == UnloadMode::Unavailable);
+}
+
+// AmsSubscriptionBackend::refuse_if_printing() rejects load/unload while a print
+// is PRINTING *or* PAUSED, because the macros home the toolhead. The menu offered
+// Load anyway, so a runout-paused AD5X user tapped it — following Klipper's own
+// "load it and press RESUME" instruction — and got "Cannot run filament operation
+// while printing" (bundle JX2FVRB9). The affordance has to agree with the guard.
+//
+// Mutation check: drop the `!print_active` term from decide_can_load() and
+// "Load is refused while a print owns the toolhead" fails.
+TEST_CASE("AmsContextMenu::decide_can_load agrees with the backend print guard",
+          "[ams][context_menu][print_guard]") {
+    SECTION("Load is offered for a filled, non-seated lane when no print is running") {
+        CHECK(AmsContextMenuTestAccess::decide_can_load(
+            /*system_busy=*/false, /*toolhead_unload=*/false, /*slot_has_filament=*/true,
+            /*print_active=*/false));
+    }
+
+    SECTION("Load is refused while a print owns the toolhead") {
+        CHECK_FALSE(AmsContextMenuTestAccess::decide_can_load(
+            /*system_busy=*/false, /*toolhead_unload=*/false, /*slot_has_filament=*/true,
+            /*print_active=*/true));
+    }
+
+    SECTION("The pre-existing terms still hold") {
+        CHECK_FALSE(AmsContextMenuTestAccess::decide_can_load(true, false, true, false)); // busy
+        CHECK_FALSE(AmsContextMenuTestAccess::decide_can_load(false, true, true, false)); // seated
+        CHECK_FALSE(AmsContextMenuTestAccess::decide_can_load(false, false, false, false)); // empty
+    }
+}
+
+// Only the heated toolhead unload is blocked mid-print. The cold lane ops leave
+// the toolhead parked where the print left it and the backend permits them via
+// check_preconditions(false), so blocking the whole button would strand filament
+// a paused user could legitimately eject.
+TEST_CASE("AmsContextMenu::decide_unload_enabled blocks only the toolhead unload mid-print",
+          "[ams][context_menu][print_guard]") {
+    SECTION("Toolhead unload is refused while a print owns the toolhead") {
+        CHECK(AmsContextMenuTestAccess::decide_unload_enabled(false, UnloadMode::Unload, false));
+        CHECK_FALSE(
+            AmsContextMenuTestAccess::decide_unload_enabled(false, UnloadMode::Unload, true));
+    }
+
+    SECTION("Cold lane ops stay available mid-print") {
+        CHECK(AmsContextMenuTestAccess::decide_unload_enabled(false, UnloadMode::Eject, true));
+        CHECK(AmsContextMenuTestAccess::decide_unload_enabled(false, UnloadMode::RecoverPosition,
+                                                              true));
+        CHECK(AmsContextMenuTestAccess::decide_unload_enabled(false, UnloadMode::ForceEject, true));
+    }
+
+    SECTION("Busy and Unavailable still win over everything") {
+        CHECK_FALSE(
+            AmsContextMenuTestAccess::decide_unload_enabled(true, UnloadMode::Eject, false));
+        CHECK_FALSE(
+            AmsContextMenuTestAccess::decide_unload_enabled(false, UnloadMode::Unavailable, false));
+    }
 }

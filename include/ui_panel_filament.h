@@ -260,6 +260,7 @@ class FilamentPanel : public PanelBase {
     lv_subject_t unload_disabled_subject_;    ///< 1 = Unload/Purge buttons disabled
     ObserverGuard ams_loaded_observer_;       ///< Re-eval gating on live load change
     ObserverGuard ams_current_slot_observer_; ///< Re-eval gating on active-slot change
+    ObserverGuard print_active_observer_;     ///< Re-eval gating on print start/pause/end
     void update_filament_op_buttons(); ///< Recompute Load/Unload/Purge gating from live state
 
     // Single source of truth for which global AMS slot the Load/Unload/gating

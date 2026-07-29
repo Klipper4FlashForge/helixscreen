@@ -202,6 +202,13 @@ FilamentPanel::FilamentPanel(PrinterState& printer_state, MoonrakerAPI* api)
         AmsState::instance().get_current_slot_subject(), this,
         [](FilamentPanel* self, int) { self->update_filament_op_buttons(); });
 
+    // The same gating depends on print state: a runout pause arrives while the
+    // panel is already open, so without this the buttons keep the pre-pause
+    // enablement until some unrelated AMS signal happens to fire.
+    print_active_observer_ = observe_int_sync<FilamentPanel>(
+        printer_state_.get_print_active_subject(), this,
+        [](FilamentPanel* self, int) { self->update_filament_op_buttons(); });
+
     // Note: Chamber temperature display is initialized by observer callbacks
     // and refresh_all_displays() on panel activation.
     // We don't call update_chamber_temp_display() here because subjects
@@ -1771,6 +1778,11 @@ void FilamentPanel::update_filament_op_buttons() {
     // state (Task 5). Without an AMS backend (single-extruder / external-spool
     // mode) we have no per-slot load signal, so leave both enabled — the only
     // disablers there are the safety-warning / operation-in-progress XML binds.
+    //
+    // The no-backend path below keeps its "leave both enabled" behavior even
+    // mid-print: those printers drive load/unload through plain macros rather
+    // than the AMS precondition guard, so a manual mid-pause feed is legitimate
+    // there and nothing would refuse it.
     AmsBackend* backend = AmsState::instance().get_backend();
     if (!backend) {
         lv_subject_set_int(&load_disabled_subject_, 0);
@@ -1782,6 +1794,12 @@ void FilamentPanel::update_filament_op_buttons() {
     // Load/Unload executors use, so gating can never diverge from the op.
     int slot = selected_op_slot();
 
+    // A print job owns the toolhead while PRINTING or PAUSED, and
+    // check_preconditions(true) refuses load/unload in both (the macros home).
+    // Gate here too so the button greys out instead of being tapped-then-refused.
+    auto* print_active_subj = printer_state_.get_print_active_subject();
+    const bool print_active = print_active_subj && lv_subject_get_int(print_active_subj) == 1;
+
     bool is_loaded = false;
     if (slot >= 0) {
         is_loaded =
@@ -1789,11 +1807,13 @@ void FilamentPanel::update_filament_op_buttons() {
     }
 
     // Load disabled when already loaded; Unload/Purge disabled when NOT loaded.
-    lv_subject_set_int(&load_disabled_subject_, is_loaded ? 1 : 0);
-    lv_subject_set_int(&unload_disabled_subject_, is_loaded ? 0 : 1);
-    spdlog::debug("[FilamentPanel] Op buttons: slot={} loaded={} "
+    // Both additionally disabled while a print owns the toolhead.
+    const auto gating = helix::ui::compute_op_button_gating(is_loaded, print_active);
+    lv_subject_set_int(&load_disabled_subject_, gating.load_disabled ? 1 : 0);
+    lv_subject_set_int(&unload_disabled_subject_, gating.unload_disabled ? 1 : 0);
+    spdlog::debug("[FilamentPanel] Op buttons: slot={} loaded={} print_active={} "
                   "(load_disabled={}, unload_disabled={})",
-                  slot, is_loaded, is_loaded ? 1 : 0, is_loaded ? 0 : 1);
+                  slot, is_loaded, print_active, gating.load_disabled, gating.unload_disabled);
 }
 
 void FilamentPanel::handle_extruder_changed() {

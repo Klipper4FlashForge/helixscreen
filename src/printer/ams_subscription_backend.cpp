@@ -168,10 +168,10 @@ AmsError AmsSubscriptionBackend::refuse_if_printing() const {
         return AmsErrorHelper::success();
     }
     const helix::PrintJobState pstate = api_->printer_state().get_print_job_state();
-    if (pstate == helix::PrintJobState::PRINTING || pstate == helix::PrintJobState::PAUSED) {
+    if (helix::print_occupies_toolhead(pstate)) {
         spdlog::warn("{} Refusing filament operation while a print is active (state={})",
                      backend_log_tag(), static_cast<int>(pstate));
-        return AmsErrorHelper::print_active();
+        return AmsErrorHelper::print_active(pstate == helix::PrintJobState::PAUSED);
     }
     return AmsErrorHelper::success();
 }

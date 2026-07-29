@@ -9051,7 +9051,14 @@ TEST_CASE_METHOD(Ad5xHomingGuardFixture,
 
     SECTION("PAUSED refuses motion ops (head parked over the print)") {
         set_print_state(helix::PrintJobState::PAUSED);
-        CHECK_FALSE(backend->check_preconditions(true).success());
+        AmsError motion = backend->check_preconditions(true);
+        CHECK_FALSE(motion.success());
+        // A runout pause is the case users actually hit: Klipper prints "load it
+        // and press RESUME", so they reach for Load. "while printing" reads as a
+        // bug and "finish or cancel the print" is the opposite of what they want.
+        // Point them at the recovery that works instead (bundle JX2FVRB9).
+        CHECK(motion.user_msg == "Can't move filament while the print is paused");
+        CHECK(motion.suggestion.find("Resume") != std::string::npos);
     }
 
     SECTION("STANDBY allows motion ops") {

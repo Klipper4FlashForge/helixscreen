@@ -502,3 +502,49 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     cd.cancel();
     process_lvgl(10);
 }
+
+// The pure gating rule is pinned in test_filament_op_slot_resolver.cpp. This
+// drives the REAL panel: it asserts that update_filament_op_buttons() actually
+// consults print state, and that the print_active observer re-runs the gating on
+// a panel that is already open — which is how the failure reached the user. The
+// AD5X reporter was sitting on the filament screen when the runout pause fired,
+// tapped a still-lit Load, and got "Cannot run filament operation while
+// printing" from the backend guard (bundle JX2FVRB9).
+//
+// Mutation check: drop `print_active` from the compute_op_button_gating() call
+// in update_filament_op_buttons(), OR delete the print_active_observer_
+// registration, and this test fails at the post-pause assertions.
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "Filament panel greys Load/Unload when a print owns the toolhead",
+                 "[filament][op_slot][panel][print_guard]") {
+    auto read = [](const char* name) {
+        lv_subject_t* s = lv_xml_get_subject(nullptr, name);
+        REQUIRE(s != nullptr);
+        return lv_subject_get_int(s);
+    };
+
+    OpSlotHarness h(*this, boxturtle_sys(), /*loaded_slot=*/3, identity_topo());
+    h.select_tool(3); // T3 == the loaded lane
+    TA::handle_extruder_changed(*h.panel);
+    process_lvgl(10);
+
+    // Baseline, no print: slot 3 is loaded, so Load is greyed and Unload is live.
+    REQUIRE(read("filament_load_disabled") == 1);
+    REQUIRE(read("filament_unload_disabled") == 0);
+
+    // A runout pause arrives while the panel is open. print_active is the derived
+    // subject PrinterState publishes for PRINTING||PAUSED; setting it must drive
+    // the observer and re-gate BOTH buttons with no other interaction.
+    lv_subject_set_int(state().get_print_active_subject(), 1);
+    process_lvgl(10);
+
+    CHECK(read("filament_load_disabled") == 1);
+    CHECK(read("filament_unload_disabled") == 1); // the regression: was 0
+
+    // Cancelling/finishing the print hands the buttons back.
+    lv_subject_set_int(state().get_print_active_subject(), 0);
+    process_lvgl(10);
+
+    CHECK(read("filament_load_disabled") == 1); // still loaded
+    CHECK(read("filament_unload_disabled") == 0);
+}

@@ -213,6 +213,25 @@ class AmsContextMenu : public ContextMenu {
                                          bool slot_has_filament, bool supports_force_eject,
                                          bool slot_empty);
 
+    // Pure: whether the Load button is offered for the open slot.
+    //
+    // `print_active` mirrors AmsSubscriptionBackend::refuse_if_printing() — the
+    // load path runs a firmware macro that homes (AD5X INSERT_PRUTOK_IFS: home →
+    // heat → feed → purge), so the backend refuses it while PRINTING or PAUSED.
+    // Without this term the menu offers a button that is guaranteed to fail, and
+    // a runout-paused user taps it expecting the recovery Klipper just told them
+    // to perform (bundle JX2FVRB9).
+    static bool decide_can_load(bool system_busy, bool toolhead_unload, bool slot_has_filament,
+                                bool print_active);
+
+    // Pure: whether the Unload button is offered for the open slot.
+    //
+    // Only the heated toolhead unload is blocked mid-print; the cold lane ops
+    // (Eject / RecoverPosition / ForceEject) do not move the toolhead and the
+    // backend permits them via check_preconditions(false). Blocking the whole
+    // button would over-refuse and strand filament the user could have ejected.
+    static bool decide_unload_enabled(bool system_busy, UnloadMode mode, bool print_active);
+
     static bool callbacks_registered_;
 
     // === Static Callbacks ===

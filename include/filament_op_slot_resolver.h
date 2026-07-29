@@ -40,4 +40,28 @@ namespace helix::ui {
     return slot;
 }
 
+/// Enabled/disabled state of the filament panel's Load and Unload/Purge buttons.
+struct OpButtonGating {
+    bool load_disabled = false;
+    bool unload_disabled = false;
+};
+
+/**
+ * @brief Gate the panel's Load / Unload buttons on load state AND print state.
+ *
+ * Load state alone is not enough: both operations run through
+ * AmsSubscriptionBackend::check_preconditions(true), which refuses while a print
+ * is PRINTING or PAUSED because the load/unload macros home the toolhead. A
+ * button offered in that window is a guaranteed-failure dead end — which is
+ * exactly what a runout-paused user hits, since Klipper's own message tells them
+ * to load filament (bundle JX2FVRB9).
+ *
+ * @param is_loaded    Selected slot has filament at the toolhead.
+ * @param print_active A print job owns the toolhead (see print_occupies_toolhead).
+ */
+[[nodiscard]] inline OpButtonGating compute_op_button_gating(bool is_loaded, bool print_active) {
+    return {/*load_disabled=*/is_loaded || print_active,
+            /*unload_disabled=*/!is_loaded || print_active};
+}
+
 } // namespace helix::ui
