@@ -11,6 +11,7 @@
 #include "app_globals.h"
 #include "error_classify.h"
 #include "error_event.h"
+#include "fault_surface_correlation.h"
 #include "moonraker_api.h"
 #include "moonraker_client.h"
 #include "moonraker_error.h"
@@ -288,14 +289,14 @@ void GcodeErrorRouter::present_recovery_modal(const ErrorEvent& e) {
     presenter_.present(e);
 }
 
-void GcodeErrorRouter::present_recover_toast(const ErrorEvent& e) {
+bool GcodeErrorRouter::present_recover_toast(const ErrorEvent& e) {
     // key298 -- rpi MCU bridge daemon shutdown. firmware_restart alone
     // can't recover; PrinterRecoveryService bounces klipper_mcu via
     // the platform recovery script. The recovery action carries an EMPTY
     // gcode (log_tag error_classify::key298_recover) -- recovery runs
     // through PrinterRecoveryService, not execute_gcode.
     if (!api_)
-        return; // No API client -> recovery would be a no-op; nothing actionable to show.
+        return false; // No API client -> recovery would be a no-op; nothing actionable to show.
     MoonrakerAPI* api = api_;
     ToastManager::instance().show_with_action(
         ToastSeverity::ERROR, truncate_for_toast(e.detail).c_str(), lv_tr("Recover"),
@@ -316,6 +317,7 @@ void GcodeErrorRouter::present_recover_toast(const ErrorEvent& e) {
                 });
         },
         api, /*duration_ms=*/15000);
+    return true;
 }
 
 void GcodeErrorRouter::present_deferred_toast(const std::string& text,
@@ -392,22 +394,65 @@ void GcodeErrorRouter::process_line(const std::string& line) {
         return;
     }
 
-    switch (decide_presentation(*ev)) {
+    const PresentAs how = decide_presentation(*ev);
+    if (how == PresentAs::NONE) {
+        // INFO is not surfaced in L0. Returning here rather than falling into
+        // the switch keeps record_surfaced() below meaning "the user saw this"
+        // -- recording an event we never showed would make the bridge stand
+        // down on a fault that is genuinely on nobody's screen.
+        return;
+    }
+
+    // AmsErrorBridge's last-resort fallback may already have toasted this exact
+    // fault off the AmsAction::ERROR edge -- the reverse of the ordering the
+    // bridge itself guards against. Only the toast arms defer to it: a modal
+    // carries the recovery actions, so standing it down because a transient
+    // toast got there first would drop the only actionable thing on screen.
+    // Checked BEFORE record_surfaced() below, so our own record can never
+    // suppress the presentation that wrote it.
+    if ((how == PresentAs::TOAST || how == PresentAs::TOAST_WITH_RECOVER) &&
+        (fault_surface_correlation::was_recently_surfaced(ev->detail) ||
+         fault_surface_correlation::was_recently_surfaced(ev->raw_detail))) {
+        spdlog::info("[GcodeError] Suppressing duplicate toast (already surfaced): {}",
+                     ev->detail);
+        return;
+    }
+
+    bool surfaced = true;
+    switch (how) {
     case PresentAs::MODAL:
         // CRITICAL without a recovery action -- see modal_title_for().
         ui_notification_error(modal_title_for(*ev), ev->detail.c_str(), /*modal=*/true);
-        return;
+        break;
     case PresentAs::MODAL_WITH_RECOVER:
         present_recovery_modal(*ev);
-        return;
+        break;
     case PresentAs::TOAST_WITH_RECOVER:
-        present_recover_toast(*ev);
-        return;
+        surfaced = present_recover_toast(*ev);
+        break;
     case PresentAs::TOAST:
+        // Claimed here, not when the 150ms timer fires: AmsErrorBridge's
+        // deferred re-check runs one UpdateQueue tick after the ERROR edge and
+        // would otherwise find nothing recorded and toast on top of a toast
+        // that is already scheduled.
         present_deferred_toast(ev->detail, ev->raw_detail);
-        return;
+        break;
     case PresentAs::NONE:
+        return; // unreachable -- handled above; kept for switch exhaustiveness
+    }
+
+    if (!surfaced)
         return;
+
+    // Claim this fault. AmsErrorBridge's fallback cannot see a toast, nor the
+    // plain modal above -- neither goes through RecoveryModalPresenter -- so
+    // this record is the only signal that stops it adding a second
+    // notification for the fault just shown. Both spellings are recorded: the
+    // bridge holds the backend's operation_detail, which matches Klipper's raw
+    // wording, while clean_error_text() may have rewritten `detail`.
+    fault_surface_correlation::record_surfaced(ev->detail);
+    if (ev->raw_detail != ev->detail) {
+        fault_surface_correlation::record_surfaced(ev->raw_detail);
     }
 }
 

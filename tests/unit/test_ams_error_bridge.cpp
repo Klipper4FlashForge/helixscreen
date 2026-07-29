@@ -2,15 +2,20 @@
 #include "ui_update_queue.h"
 
 #include "../lvgl_ui_test_fixture.h"
+#include "../test_helpers/gcode_error_router_test_access.h"
 #include "../ui_test_utils.h"
 #include "ams_backend_mock.h"
 #include "ams_error_bridge.h"
 #include "ams_state.h"
+#include "app_globals.h"
+#include "gcode_error_router.h"
 #include "post_op_cooldown_manager.h"
+#include "printer_state.h"
 #include "recovery_modal_presenter.h"
 
 #include "../catch_amalgamated.hpp"
 
+#include <string>
 #include <vector>
 
 namespace {
@@ -397,5 +402,189 @@ TEST_CASE_METHOD(LVGLUITestFixture, "AmsErrorBridge does not toast on non-ERROR 
 
     CHECK(toasts.empty());
 
+    ams.set_backend(nullptr);
+}
+
+// ============================================================================
+// #1197: the fallback's "is this already visible" guard was modal-shaped only.
+// A fault GcodeErrorRouter classified to a TOAST goes through neither
+// presenter_ nor AmsPanel's dialog, so the bridge saw an empty screen and
+// added a second notification for the same fault. Toasts carry no identity of
+// their own — ToastManager::is_visible() is blanket and using it would let an
+// unrelated toast silence a genuine fault — so the correlation runs on the
+// fault text via fault_surface_correlation.
+//
+// These drive the REAL router through GcodeErrorRouterTestAccess rather than
+// seeding the registry by hand: the recording site is half the fix.
+// ============================================================================
+
+namespace {
+/// Not paused, not printing — error_classify makes an uncoded `!!` a WARNING,
+/// which decide_presentation maps to PresentAs::TOAST. This is the only
+/// classification that reaches the router's toast arms.
+void park_printer_idle() {
+    get_printer_state().update_from_status(
+        nlohmann::json{{"pause_resume", {{"is_paused", false}}}});
+}
+
+/// AFC emits `!! <msg>` and AFC_logger.error() queues the byte-identical
+/// string, so the router's detail and the backend's operation_detail are the
+/// same string. That equality is what the correlation matches on.
+constexpr const char* kAfcFault = "lane1 filament failed to trigger toolhead sensor";
+} // namespace
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "AmsErrorBridge does not double-toast a fault the router already toasted",
+                 "[error-center][ams-bridge][1197]") {
+    park_printer_idle();
+    REQUIRE_FALSE(get_printer_state().is_paused());
+
+    auto& ams = AmsState::instance();
+    ams.init_subjects(true);
+    auto backend = std::make_unique<ErrorReportingBackend>(4); // current_error() == nullopt
+    backend->set_operation_detail(kAfcFault);
+    ams.set_backend(std::move(backend));
+
+    park_action_idle(*this);
+
+    helix::ui::RecoveryModalPresenter presenter(nullptr);
+    helix::AmsErrorBridge bridge(presenter);
+    bridge.start();
+
+    ToastCapture toasts;
+
+    // Klipper's broadcast lands first — AFC emits `!!` before it calls
+    // pause_print(), so this is the real ordering on hardware.
+    helix::GcodeErrorRouter router(nullptr, nullptr, presenter);
+    GcodeErrorRouterTestAccess::process_line(router, std::string("!! ") + kAfcFault);
+
+    // Then AFC's status delta raises error_state and the action edges to ERROR.
+    ams.set_action(AmsAction::ERROR);
+    helix::ui::UpdateQueue::instance().drain();
+    process_lvgl(300); // past present_deferred_toast's 150ms timer
+
+    REQUIRE_FALSE(presenter.is_visible()); // toast path: no modal to see
+    CHECK(toasts.messages().size() == 1);  // the router's, not two
+    CHECK(toasts.messages()[0].find(kAfcFault) != std::string::npos);
+
+    ams.set_backend(nullptr);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "AmsErrorBridge still toasts a fault the router's toast was not about",
+                 "[error-center][ams-bridge][1197]") {
+    // The whole point of keying on the fault text: a blanket "a toast happened
+    // recently" guard would swallow this second, genuinely different fault and
+    // leave the user with a stopped spinner and no explanation.
+    park_printer_idle();
+
+    auto& ams = AmsState::instance();
+    ams.init_subjects(true);
+    auto backend = std::make_unique<ErrorReportingBackend>(4);
+    backend->set_operation_detail("Unloading lane 2 (timed out)");
+    ams.set_backend(std::move(backend));
+
+    park_action_idle(*this);
+
+    helix::ui::RecoveryModalPresenter presenter(nullptr);
+    helix::AmsErrorBridge bridge(presenter);
+    bridge.start();
+
+    ToastCapture toasts;
+
+    helix::GcodeErrorRouter router(nullptr, nullptr, presenter);
+    GcodeErrorRouterTestAccess::process_line(router, std::string("!! ") + kAfcFault);
+
+    ams.set_action(AmsAction::ERROR);
+    helix::ui::UpdateQueue::instance().drain();
+    process_lvgl(300);
+
+    REQUIRE(toasts.messages().size() == 2);
+    bool saw_router = false;
+    bool saw_bridge = false;
+    for (const auto& m : toasts.messages()) {
+        saw_router |= m.find(kAfcFault) != std::string::npos;
+        saw_bridge |= m.find("Unloading lane 2 (timed out)") != std::string::npos;
+    }
+    CHECK(saw_router);
+    CHECK(saw_bridge);
+
+    ams.set_backend(nullptr);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "The router stands its toast down when the bridge's fallback got there first",
+                 "[error-center][ams-bridge][1197]") {
+    // Reverse ordering: a backend raises ERROR locally before Klipper's
+    // broadcast arrives (AFC's stuck-action timeout shape). The bridge toasts,
+    // then the same fault arrives as a `!!` — the router must not stack a
+    // second transient notification on top of it.
+    park_printer_idle();
+
+    auto& ams = AmsState::instance();
+    ams.init_subjects(true);
+    auto backend = std::make_unique<ErrorReportingBackend>(4);
+    backend->set_operation_detail(kAfcFault);
+    ams.set_backend(std::move(backend));
+
+    park_action_idle(*this);
+
+    helix::ui::RecoveryModalPresenter presenter(nullptr);
+    helix::AmsErrorBridge bridge(presenter);
+    bridge.start();
+
+    ToastCapture toasts;
+    ams.set_action(AmsAction::ERROR);
+    helix::ui::UpdateQueue::instance().drain();
+    process_lvgl(50);
+    REQUIRE(toasts.messages().size() == 1); // the fallback fired
+
+    helix::GcodeErrorRouter router(nullptr, nullptr, presenter);
+    GcodeErrorRouterTestAccess::process_line(router, std::string("!! ") + kAfcFault);
+    process_lvgl(300);
+
+    CHECK(toasts.messages().size() == 1);
+
+    ams.set_backend(nullptr);
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "A prior fallback toast never stands the router's recovery modal down",
+                 "[error-center][ams-bridge][1197]") {
+    // The asymmetry that keeps the suppression honest. A modal carries the
+    // recovery actions; a toast carries none. Treating "already surfaced as a
+    // toast" as reason enough to skip the modal would drop the only thing the
+    // user can act on. Paused + uncoded `!!` classifies CRITICAL and, since
+    // #1152, carries a generic Resume action -> MODAL_WITH_RECOVER.
+    get_printer_state().update_from_status(
+        nlohmann::json{{"pause_resume", {{"is_paused", true}}}});
+    REQUIRE(get_printer_state().is_paused());
+
+    auto& ams = AmsState::instance();
+    ams.init_subjects(true);
+    auto backend = std::make_unique<ErrorReportingBackend>(4);
+    backend->set_operation_detail(kAfcFault);
+    ams.set_backend(std::move(backend));
+
+    park_action_idle(*this);
+
+    helix::ui::RecoveryModalPresenter presenter(nullptr);
+    helix::AmsErrorBridge bridge(presenter);
+    bridge.start();
+
+    ToastCapture toasts;
+    ams.set_action(AmsAction::ERROR);
+    helix::ui::UpdateQueue::instance().drain();
+    process_lvgl(50);
+    REQUIRE(toasts.messages().size() == 1); // fallback claimed the fault
+
+    helix::GcodeErrorRouter router(nullptr, nullptr, presenter);
+    GcodeErrorRouterTestAccess::process_line(router, std::string("!! ") + kAfcFault);
+    process_lvgl(300);
+
+    CHECK(presenter.is_visible()); // modal still shown despite the prior claim
+
+    presenter.dismiss();
+    process_lvgl(20);
     ams.set_backend(nullptr);
 }
