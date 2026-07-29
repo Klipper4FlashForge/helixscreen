@@ -10,8 +10,9 @@
  * @brief Publishes an AFC fault's stop point to the `afc_fault_segment` subject.
  *
  * The graphic itself lives in `ui_xml/components/afc_fault_path.xml` — four labelled
- * stops (Spool, Lane, Hub, Toolhead) whose fill and marker are bound to this one int
- * subject. C++ only decides *where* the filament stopped; XML owns how it looks.
+ * stops (Spool, Lane, Hub, Toolhead), the three gaps between them, and a caption naming
+ * the failing gap in words, all bound to this one int subject. C++ only decides *where*
+ * the filament stopped; XML owns how it looks.
  *
  * Subject values are `PathSegment` (`include/ams_types.h`), with 0 (`NONE`) meaning
  * "no recognised position" — the component binds `hidden` to that, so an unrecognised

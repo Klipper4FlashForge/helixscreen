@@ -1314,11 +1314,15 @@ checkpoint red would tell the user the hub failed, about a hub the filament pass
 exception is `post extruder gear toolhead sensor`, which genuinely fails *at* the toolhead — the
 filament cleared the sensor and jammed in the extruder gears — so `TOOLHEAD` marks the node itself.
 
-A consequence worth keeping: because the failing gap sits between two named checkpoints its
-position is self-describing, so the graphic needs no caret and no "stopped here" caption. Every
-caller must go through
-`afc_fault_path_apply()` even when the message is not AFC's, or a previous fault's marker stays on
-screen.
+Position alone is not enough on its own, though: it says which element differs from its
+neighbours, not that the difference means failure, and red-against-green is precisely the pair a
+colourblind user cannot separate (#1196). So the component also renders one of four captions —
+*Stopped between Hub and Toolhead*, and so on — bound to the same subject and mutually exclusive
+on it. The caption is also the only thing that can express `TOOLHEAD`, which fails at a node
+rather than in a gap.
+
+Every caller must go through `afc_fault_path_apply()` even when the message is not AFC's, or a
+previous fault's marker stays on screen.
 
 ### Path Topology
 
