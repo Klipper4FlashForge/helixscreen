@@ -141,17 +141,49 @@ reached the hub.
 
 **Opting a backend in is not free.** The per-slot rule believes `get_slot_info(i).status`,
 so a backend that never stamps `LOADED` on its seated slot would report *every* slot
-unloaded and blank the active-lane highlight. As of this writing only AFC and Snapmaker
-have parses that earn it — CFS only ever writes `AVAILABLE`/`EMPTY`, and ACE maps the
-firmware's own `"loaded"` string to `AVAILABLE`. Before flipping a backend to `true`,
-confirm its parse sets `SlotStatus::LOADED` on the seated slot on **every** path that also
-sets the aggregate, and add a test that fails if it stops.
+unloaded and blank the active-lane highlight. Before flipping a backend to `true`, confirm
+its parse sets `SlotStatus::LOADED` on the seated slot on **every** path that also sets the
+aggregate, and add a test that fails if it stops.
+
+| Backend | Authority | Basis |
+|---------|-----------|-------|
+| AFC | `true` | `AFC_stepper.<lane>.tool_loaded` |
+| Snapmaker | overrides outright | returns `status == LOADED` verbatim |
+| AD5X IFS | `true` | firmware active-lane pointer + head sensor (#1199) |
+| QIDI Box | `true` | `save_variables slot<N> == 2` (#1199) |
+| Happy Hare | `false` | `mmu.gate` / `mmu.filament` *are* the firmware truth |
+| CFS | `false` | only ever writes `AVAILABLE`/`EMPTY` |
+| ACE | `false` | maps the firmware's own `"loaded"` string to `AVAILABLE` |
+| Toolchanger | `false` | `PARALLEL`; `mounted` means docked, not "has filament" |
 
 AFC's opt-in rests on `AFC_stepper.<lane>.tool_loaded`, which upstream's `set_loaded()` /
 `set_unloaded()` assign in lockstep with `AFC.current_load` and
 `AFC_extruder.lane_loaded`. Note that AFC's lane `status == "Loaded"` means *loaded to
 hub*, not to the toolhead — only `tool_loaded` answers the toolhead question, which is why
 `parse_afc_stepper` maps `"Loaded"` to `AVAILABLE`.
+
+AD5X IFS derives its stamp from the same two inputs `system_info_.filament_loaded` is
+assigned from, so the two cannot disagree — but only after dropping the lane's own port
+sensor from the condition. A runout clears `port_presence_` while the filament that lane
+fed is still at the toolhead (#995, the state `can_unload_from_toolhead()` keeps the unload
+gate open for); requiring the port sensor demoted the lane to `EMPTY` at exactly the moment
+the user needs to recover it.
+
+QIDI Box is the opposite shape: `slot<N> == 2` is the Box's own per-slot statement and
+needs no active-slot pointer, while the aggregate pair is written *only* from
+`last_load_slot` — so a Box that never writes that variable reported nothing loaded at all.
+`parse_save_variables()` reconciles the stamp against the aggregate at the end of every
+pass, since the `slot<N>` loop runs before the `last_load_slot` block and would otherwise
+demote the seated slot on a payload that repeated one without the other.
+
+Happy Hare deliberately stays on the aggregate rule. `mmu.gate` and `mmu.filament` are
+Happy Hare's own values parsed verbatim from one object, so the aggregate is already
+firmware truth; `gate_status` carries fill state, not seating, so the per-gate stamp is
+derived *from* the aggregate and believing it back would only add staleness. It would also
+drop the highlight on a gate that ran out (`gate_status 0`) while its filament is still at
+the toolhead. The stamp itself is re-derived on every `printer.mmu` frame
+(`refresh_gate_statuses_locked()`) because `gate_status`, `gate` and `filament` arrive in
+independent deltas — a toolchange typically carries the latter two alone.
 
 `slot_has_filament_at_toolhead()` stays at its `false` default unless the sensor genuinely
 exists *and* is attributable to one slot. AFC's `AFC_extruder` carries

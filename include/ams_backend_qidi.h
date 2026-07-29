@@ -85,6 +85,18 @@ class AmsBackendQidi : public AmsSubscriptionBackend {
     [[nodiscard]] SlotInfo get_slot_info(int slot_index) const override;
     [[nodiscard]] bool is_bypass_active() const override;
 
+    /// The Box publishes a per-slot state word (save_variables slot<N>, where 2
+    /// means loaded), which is its own statement about that slot and needs no
+    /// active-slot pointer to interpret. The aggregate pair by contrast is
+    /// written only from last_load_slot, so on a Box that never writes that
+    /// variable nothing would ever read as loaded despite slot<N>: 2 on the
+    /// wire. parse_save_variables() reconciles the two at the end of every pass
+    /// so the stamp cannot fall behind the aggregate either
+    /// (prestonbrown/helixscreen#1199).
+    [[nodiscard]] bool has_per_slot_loaded_authority() const override {
+        return true;
+    }
+
     // The box exposes a PTC dryer heater (heater_generic heater_box<N>) plus an
     // aht20_f humidity/temperature chip, so the per-unit environment indicator
     // (temp/humidity + drying controls) must be reachable. Without this override
