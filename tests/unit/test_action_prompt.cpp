@@ -153,6 +153,91 @@ TEST_CASE("parse_action_line: Whitespace handling", "[action_prompt][parser]") {
     }
 }
 
+// FlashForge/ZMOD emits its runout abort with no space after the command:
+//   `// action:prompt_beginResumption interrupted!!!`
+// The parser used to hand "prompt_beginResumption" to the dispatcher, which fell
+// through to `unknown command` — so prompt_begin never ran, the state machine
+// never opened, and the following prompt_text/prompt_show landed on nothing
+// (bundle JX2FVRB9, AD5X v0.99.103).
+//
+// Mutation check: delete the glued_command_length() call in parse_action_line and
+// the first SECTION fails with command == "prompt_beginResumption".
+TEST_CASE("parse_action_line: Recovers a command glued to its payload",
+          "[action_prompt][parser][malformed]") {
+    SECTION("prompt_begin with the title glued on — the observed AD5X line") {
+        auto result = ActionPromptManager::parse_action_line(
+            "// action:prompt_beginResumption interrupted!!!");
+        REQUIRE(result.has_value());
+        REQUIRE(result->command == "prompt_begin");
+        REQUIRE(result->payload == "Resumption interrupted!!!");
+    }
+
+    SECTION("Glued with no trailing payload keeps just the recovered text") {
+        auto result = ActionPromptManager::parse_action_line("// action:prompt_textOnly");
+        REQUIRE(result.has_value());
+        REQUIRE(result->command == "prompt_text");
+        REQUIRE(result->payload == "Only");
+    }
+
+    SECTION("Longest command wins — prompt_button must not eat the group commands") {
+        auto result =
+            ActionPromptManager::parse_action_line("// action:prompt_button_group_startX");
+        REQUIRE(result.has_value());
+        REQUIRE(result->command == "prompt_button_group_start");
+        REQUIRE(result->payload == "X");
+    }
+
+    SECTION("Well-formed lines are untouched") {
+        auto result = ActionPromptManager::parse_action_line("// action:prompt_begin Title");
+        REQUIRE(result.has_value());
+        REQUIRE(result->command == "prompt_begin");
+        REQUIRE(result->payload == "Title");
+
+        auto group = ActionPromptManager::parse_action_line("// action:prompt_button_group_start");
+        REQUIRE(group.has_value());
+        REQUIRE(group->command == "prompt_button_group_start");
+        REQUIRE(group->payload.empty());
+    }
+
+    SECTION("A snake_case extension is NOT split — it may be a newer protocol command") {
+        auto result = ActionPromptManager::parse_action_line("// action:prompt_begin_v2 Title");
+        REQUIRE(result.has_value());
+        REQUIRE(result->command == "prompt_begin_v2");
+        REQUIRE(result->payload == "Title");
+    }
+
+    SECTION("An unrelated command is left alone") {
+        auto result = ActionPromptManager::parse_action_line("// action:frobnicate arg");
+        REQUIRE(result.has_value());
+        REQUIRE(result->command == "frobnicate");
+        REQUIRE(result->payload == "arg");
+    }
+}
+
+// The whole point of recovering the command is that the state machine actually
+// opens, so the text and buttons that follow have somewhere to land.
+TEST_CASE("ActionPromptManager: A glued prompt_begin still builds a prompt",
+          "[action_prompt][malformed][integration]") {
+    ActionPromptManager mgr;
+    std::optional<PromptData> shown;
+    mgr.set_on_show([&](const PromptData& d) { shown = d; });
+
+    mgr.process_line("// action:prompt_beginResumption interrupted!!!");
+    mgr.process_line(
+        "// action:prompt_text \"head_switch_sensor\" has detected that the filament has run out");
+    mgr.process_line("// action:prompt_footer_button Ok|RESPOND TYPE=command "
+                     "MSG=action:prompt_end|info");
+    mgr.process_line("// action:prompt_show");
+
+    REQUIRE(shown.has_value());
+    CHECK(shown->title == "Resumption interrupted!!!");
+    REQUIRE(shown->text_lines.size() == 1);
+    CHECK(shown->text_lines[0] ==
+          "\"head_switch_sensor\" has detected that the filament has run out");
+    REQUIRE(shown->buttons.size() == 1);
+    CHECK(shown->buttons[0].is_footer);
+}
+
 // ============================================================================
 // Button Spec Parsing Tests
 // ============================================================================

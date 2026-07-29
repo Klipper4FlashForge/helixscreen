@@ -10,7 +10,50 @@
 
 #include <spdlog/spdlog.h>
 
+#include <cstddef>
+#include <string_view>
+
 namespace helix {
+
+namespace {
+
+// Every command the protocol defines, LONGEST FIRST so that a prefix match can
+// never pick "prompt_button" out of "prompt_button_group_start".
+constexpr std::string_view kActionCommands[] = {
+    "prompt_button_group_start",
+    "prompt_button_group_end",
+    "prompt_footer_button",
+    "prompt_button",
+    "prompt_begin",
+    "prompt_text",
+    "prompt_show",
+    "prompt_end",
+    "notify",
+};
+
+/// Recover the command from a firmware line that forgot the separating space,
+/// e.g. FlashForge/ZMOD emits `// action:prompt_beginResumption interrupted!!!`
+/// for its runout abort. Returns the matched command length, or 0 when `token`
+/// is not a known command with something glued onto it.
+///
+/// A remainder starting with `_` is NOT split: real command names are lowercase
+/// snake_case, so `prompt_begin_something` is far more likely to be a protocol
+/// command this build does not know yet than a glued title, and mis-splitting it
+/// would silently route it to the wrong handler.
+size_t glued_command_length(std::string_view token) {
+    for (std::string_view cmd : kActionCommands) {
+        if (token.size() <= cmd.size() || token.compare(0, cmd.size(), cmd) != 0) {
+            continue;
+        }
+        if (token[cmd.size()] == '_') {
+            return 0;
+        }
+        return cmd.size();
+    }
+    return 0;
+}
+
+} // namespace
 
 // Static instance pointer for cross-TU access (atomic for thread-safe reads from websocket thread)
 std::atomic<ActionPromptManager*> ActionPromptManager::s_instance{nullptr};
@@ -60,6 +103,18 @@ std::optional<ActionLineResult> ActionPromptManager::parse_action_line(const std
     if (command_end < line.size()) {
         // Skip exactly one space after the command
         payload = line.substr(command_end + 1);
+    }
+
+    // Un-glue a missing separator before the payload is handed on. The glued
+    // text belongs at the FRONT of the payload — it is the start of the title
+    // the firmware meant to send.
+    if (size_t cmd_len = glued_command_length(command); cmd_len > 0) {
+        std::string glued = command.substr(cmd_len);
+        command.resize(cmd_len);
+        payload = payload.empty() ? glued : glued + " " + payload;
+        spdlog::warn("[ActionPrompt] Malformed action line (missing space after '{}'): '{}' — "
+                     "recovered payload '{}'",
+                     command, line, payload);
     }
 
     return ActionLineResult{command, payload};
