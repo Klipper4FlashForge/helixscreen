@@ -847,7 +847,8 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// Remaining AFC_CLEAR_MESSAGE sends allowed for the in-flight clear_fault().
     /// printer.AFC.message is a FIFO head and each clear pops one entry, so a
     /// single send leaves the next queued error on screen. Armed by clear_fault(),
-    /// spent one per status delta that still carries a message.
+    /// spent one per status delta that still carries a message. Hitting zero is
+    /// the abnormal exit — see kMessageDrainMaxClears.
     int message_drain_budget_ = 0;
 
     /// Set by parse_afc_state() while holding mutex_; consumed by
@@ -862,16 +863,30 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// next unrelated error. A wall-clock bound is what "window" actually means.
     std::chrono::steady_clock::time_point message_drain_deadline_{};
 
-    /// Caps total clears per clear_fault() so a fault that re-enqueues as fast as
-    /// we pop cannot spin. Overshoot is safe: clearing an empty queue is a no-op.
+    /// Runaway guard, NOT the expected stopping point. The drain terminates on
+    /// an empty `AFC.message.message` (parse_afc_state()) or on the wall-clock
+    /// deadline above; this cap only stops a fault that re-enqueues as fast as
+    /// we pop from spinning. Overshoot is safe — clearing an empty queue is a
+    /// no-op.
     ///
-    /// Deliberately small. The re-arm check cannot distinguish a backlogged
-    /// message from one generated *after* the clear — AFC exposes only the queue
-    /// head — so every unit of budget is a delta in which an error caused by the
-    /// caller's own follow-up action (the sidebar sends AFC_RESET right after
-    /// clear_fault()) could be swallowed unseen. Two covers the realistic backlog
-    /// while bounding that window to about one delta.
-    static constexpr int kMessageDrainBudget = 2;
+    /// Sized off observed queue depth, not off one fault. Every
+    /// AFC_logger.error() and .warning() call appends an entry (one per call —
+    /// the per-line loop in AFC_logger.py writes the log file, not the queue,
+    /// verified against the add-on source 2026-07-29), and nothing pops them
+    /// implicitly: reset_failure() and AFC_RESUME both leave message_queue
+    /// untouched. Entries therefore accumulate across a whole session — one
+    /// real failure reached depth 4 with a per-print-start SET_AFC_TOOLCHANGES
+    /// deprecation warning sitting at the head, hiding the actionable error
+    /// behind it. A cap of two stopped mid-queue and left the residue to
+    /// surface as the next session's stale error (#1186).
+    ///
+    /// The cost of a larger cap is bounded by the deadline, not by this number.
+    /// The re-arm check cannot distinguish a backlogged message from one
+    /// generated *after* the clear — AFC exposes only the queue head via
+    /// _get_message(clear=False) — so an error raised by the caller's own
+    /// follow-up action (the sidebar sends AFC_RESET right after clear_fault())
+    /// can be swallowed unseen anywhere inside the 5 s window.
+    static constexpr int kMessageDrainMaxClears = 10;
 
     /// Sends one queued AFC_CLEAR_MESSAGE if the drain is armed and a message is
     /// still present. Must be called WITHOUT mutex_ held.

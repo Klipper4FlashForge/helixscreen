@@ -446,8 +446,9 @@ AmsError AmsBackendAfc::clear_fault(int slot_index) {
         std::lock_guard<std::mutex> lock(mutex_);
         // Arm the drain. printer.AFC.message is a FIFO head — one clear pops one
         // entry, so a second queued error would otherwise stay on screen and look
-        // exactly like the Reset having done nothing.
-        message_drain_budget_ = kMessageDrainBudget;
+        // exactly like the Reset having done nothing. The drain runs until the
+        // queue reports empty; kMessageDrainMaxClears is only the runaway guard.
+        message_drain_budget_ = kMessageDrainMaxClears;
         message_drain_pending_ = false;
         // Bound the arm in wall-clock time. If the queue was already empty, no
         // later delta will carry `message` at all, so the empty-message disarm
@@ -471,7 +472,8 @@ AmsError AmsBackendAfc::clear_fault(int slot_index) {
     // the action is IDLE, which is the common case for a queued message — AFC
     // keeps printer.AFC.message populated long after current_state returns to
     // Idle, and AFC_RESET does not touch it.
-    spdlog::info("[AMS AFC] Clearing fault (drain budget {})", kMessageDrainBudget);
+    spdlog::info("[AMS AFC] Clearing fault (draining message queue, max {} clears)",
+                 kMessageDrainMaxClears);
     // execute_gcode_notify, matching cancel(): the user pressed a button, so a
     // failed RESET_FAILURE must surface rather than being logged silently.
     AmsError failure_reset = execute_gcode_notify("RESET_FAILURE",
@@ -507,6 +509,15 @@ void AmsBackendAfc::maybe_drain_message_queue() {
         }
         message_drain_pending_ = false;
         --message_drain_budget_;
+        if (message_drain_budget_ == 0) {
+            // Last permitted clear. If the queue is still non-empty after it,
+            // whatever the user sees next is residue we gave up on and this is
+            // the only trace of why — parse_afc_state() stops re-arming once
+            // the budget is spent, so nothing downstream records it.
+            spdlog::warn("[AMS AFC] Message drain reached its {}-clear cap; sending the "
+                         "last clear and stopping",
+                         kMessageDrainMaxClears);
+        }
     }
 
     spdlog::debug("[AMS AFC] Draining next queued message");
