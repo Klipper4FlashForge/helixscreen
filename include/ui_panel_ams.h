@@ -329,6 +329,18 @@ class AmsPanel : public PanelBase {
 AmsPanel& get_global_ams_panel();
 
 /**
+ * @brief Get the global AMS panel only if it already exists
+ *
+ * Never constructs the panel or its UI, unlike get_global_ams_panel(). For
+ * callers that merely interrogate panel state (e.g. "is the loading-error
+ * dialog on screen?") and must not build the whole AMS UI as a side effect of
+ * asking.
+ *
+ * @return Pointer to the global AmsPanel, or nullptr if none has been created
+ */
+AmsPanel* get_existing_ams_panel();
+
+/**
  * @brief Destroy the AMS panel UI to free memory
  *
  * Deletes the LVGL panel object and canvas buffers. The C++ AmsPanel
