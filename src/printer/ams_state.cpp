@@ -144,10 +144,10 @@ const char* AmsState::get_logo_path(const std::string& type_name) {
         {"vivid", "A:assets/images/ams/btt_vivid_64.png"},
         {"kms", "A:assets/images/ams/kms_64.png"},
 
-        // AFC unit types with no artwork of their own (HTLF and OpenAMS have
-        // been supported for a while; Claymore and EMU arrived in AFC v1.2.0).
-        // They fall back to the AFC mark: wrong-but-related beats a blank slot,
-        // and the alternative is silently rendering nothing.
+        // AFC unit types with no artwork of their own (Claymore is new in AFC
+        // v1.2.0; the rest predate it). They fall back to the AFC mark:
+        // wrong-but-related beats a blank slot, and the alternative is
+        // silently rendering nothing.
         {"htlf", "A:assets/images/ams/afc_64.png"},
         {"open ams", "A:assets/images/ams/afc_64.png"},
         {"open_ams", "A:assets/images/ams/afc_64.png"},
