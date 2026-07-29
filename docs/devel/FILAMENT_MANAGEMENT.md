@@ -1338,17 +1338,17 @@ index. A phase id the running operation's template does not contain is matched a
 `GcodeNarrationRouter::process_line()` leaves the step subject untouched — so a needle is only ever
 as useful as the template it feeds:
 
-| Operation | Phase ids, in order (`*` = optional: stays Pending when never narrated) |
+| Operation | Phase ids, in order (opt = optional: stays Pending when never narrated) |
 |---|---|
-| `LOAD_SWAP` (toolchange) | `heat`, `cut`*, `unload`, `feed`, `poop`*, `kick`*, `brush`*, `load` |
-| `LOAD_FRESH` | `heat`, `feed`, `poop`*, `kick`*, `brush`*, `load` |
-| `UNLOAD` | `heat`, `cut`*, `unload` |
+| `LOAD_SWAP` (toolchange) | `heat`, `cut` (opt), `unload`, `feed`, `poop` (opt), `kick` (opt), `brush` (opt), `load` |
+| `LOAD_FRESH` | `heat`, `feed`, `poop` (opt), `kick` (opt), `brush` (opt), `load` |
+| `UNLOAD` | `heat`, `cut` (opt), `unload` |
 
 There is no `park` and no `clean` distinct from `brush` — AFC has exactly one purge macro and one
 wipe macro, so adding either needle without first adding the phase would be dead code.
 
-**Our whole side of the contract is four files.** Nothing else needs touching when upstream
-rewords:
+**Our whole side of the contract is four matchers, in two files.** Nothing else needs touching
+when upstream rewords:
 
 | File | Owns |
 |---|---|
