@@ -1046,7 +1046,11 @@ TEST_CASE("ACE parses native filament_hub schema (slots, dryer, current_filament
     CHECK(backend.get_slot_info(3).status == SlotStatus::EMPTY);
 
     auto slot1 = backend.get_slot_info(1);
-    CHECK(slot1.status == SlotStatus::AVAILABLE); // native "ready" -> AVAILABLE
+    // Native "ready" maps to AVAILABLE via the vocabulary map, then the seat
+    // derived from current_filament "0-1" promotes this one slot to LOADED
+    // (#1199). A "ready" slot the seat does NOT name stays AVAILABLE — see
+    // test_ams_ace_per_slot_loaded.cpp.
+    CHECK(slot1.status == SlotStatus::LOADED);
     CHECK(slot1.material == "PLA");
     CHECK(slot1.color_rgb == 0xFF5500u); // [255,85,0] -> 0xFF5500
 
@@ -1135,10 +1139,32 @@ TEST_CASE("ACE maps native runout slot status to EMPTY", "[ams][ace][native][par
 
     json p = make_native_filament_hub_payload();
     p["slots"][1]["status"] = "runout";
-    AceTestAccess::parse_ace(backend, p);
 
-    // runout = ran dry mid-print; mapped to EMPTY (no dedicated RUNOUT status).
-    CHECK(backend.get_slot_info(1).status == SlotStatus::EMPTY);
+    SECTION("an unseated slot reads EMPTY straight from the vocabulary map") {
+        // Clear the seat so nothing layers on top of the parsed status.
+        p["current_filament"] = "";
+        AceTestAccess::parse_ace(backend, p);
+
+        // runout = ran dry mid-print; mapped to EMPTY (no dedicated RUNOUT status).
+        CHECK(backend.get_slot_info(1).status == SlotStatus::EMPTY);
+    }
+
+    SECTION("the seated slot stays LOADED through a runout (#1199)") {
+        // current_filament still names slot 1: the spool ran dry but filament
+        // is still threaded to the toolhead, and the user has to be able to
+        // unload it. Refusing to stamp here would blank the active-lane
+        // highlight and disable Unload in exactly the case that needs it.
+        AceTestAccess::parse_ace(backend, p);
+
+        CHECK(backend.get_slot_info(1).status == SlotStatus::LOADED);
+        CHECK(backend.can_unload_from_toolhead(1));
+
+        // ...and the EMPTY the parse wrote comes back once nothing is seated.
+        p["current_filament"] = "";
+        p["loaded_slot"] = -1;
+        AceTestAccess::parse_ace(backend, p);
+        CHECK(backend.get_slot_info(1).status == SlotStatus::EMPTY);
+    }
 }
 
 // ============================================================================

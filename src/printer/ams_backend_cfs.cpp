@@ -858,6 +858,15 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
 
     bool changed = false;
 
+    // Drop the previous frame's derived LOADED stamp before anything below
+    // reads or rebuilds the slot vector, so the override/clear/mirror pass sees
+    // firmware truth. apply_seated_slot_stamp_locked() at the bottom re-derives
+    // it once both the box branch and the toolhead-sensor branch have run.
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        clear_seated_slot_stamp_locked();
+    }
+
     if (params.contains("box") && params["box"].is_object()) {
         const auto& box = params["box"];
         spdlog::debug("[AMS CFS] Received box data with {} keys", box.size());
@@ -1074,9 +1083,56 @@ void AmsBackendCfs::handle_status_update(const nlohmann::json& notification) {
         changed = true;
     }
 
+    // The lane letter and the toolhead switch arrive on independent branches
+    // above (and often on independent notifications), so the seated bay can
+    // only be resolved once both have been applied.
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        apply_seated_slot_stamp_locked();
+    }
+
     if (changed) {
         emit_event(EVENT_STATE_CHANGED);
     }
+}
+
+void AmsBackendCfs::clear_seated_slot_stamp_locked() {
+    // Caller holds mutex_.
+    if (seated_stamp_slot_ < 0) {
+        return;
+    }
+
+    SlotInfo* slot = system_info_.get_slot_global(seated_stamp_slot_);
+    // A rebuilt slot vector has already written firmware truth here, so the
+    // saved status is stale — only restore over a stamp we can still see.
+    if (slot != nullptr && slot->status == SlotStatus::LOADED) {
+        slot->status = seated_stamp_prev_;
+    }
+
+    seated_stamp_slot_ = -1;
+    seated_stamp_prev_ = SlotStatus::UNKNOWN;
+}
+
+void AmsBackendCfs::apply_seated_slot_stamp_locked() {
+    // Caller holds mutex_.
+    clear_seated_slot_stamp_locked();
+
+    // Both halves are required. The T{n}.filament letter alone is a lane
+    // SELECTION — CFS reports it through a load that has not yet reached the
+    // extruder, and on K1 for a merely cassette-staged slot (#968) — so only
+    // the toolhead filament_switch_sensor makes it a seat.
+    if (!system_info_.filament_loaded || system_info_.current_slot < 0) {
+        return;
+    }
+
+    SlotInfo* slot = system_info_.get_slot_global(system_info_.current_slot);
+    if (slot == nullptr) {
+        return;
+    }
+
+    seated_stamp_slot_ = system_info_.current_slot;
+    seated_stamp_prev_ = slot->status;
+    slot->status = SlotStatus::LOADED;
 }
 
 // --- State queries ---
@@ -1159,6 +1215,9 @@ AmsError AmsBackendCfs::load_filament(int slot_index) {
         system_info_.current_slot = slot_index;
         begin_phase_tracking();
         apply_synthesized_action_locked();
+        // Optimistic current_slot move with no status frame behind it — keep
+        // the stamp on the same bay the aggregate now names.
+        apply_seated_slot_stamp_locked();
     }
     return dispatch_action_script(std::move(gcode));
 }
@@ -1209,6 +1268,8 @@ AmsError AmsBackendCfs::change_tool(int tool) {
         system_info_.current_slot = tool;
         begin_phase_tracking();
         apply_synthesized_action_locked();
+        // Same as load_filament: the aggregate moved without a status frame.
+        apply_seated_slot_stamp_locked();
     }
     return dispatch_action_script(std::move(gcode));
 }

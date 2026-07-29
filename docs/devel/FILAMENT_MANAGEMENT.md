@@ -147,14 +147,21 @@ aggregate, and add a test that fails if it stops.
 
 | Backend | Authority | Basis |
 |---------|-----------|-------|
-| AFC | `true` | `AFC_stepper.<lane>.tool_loaded` |
+| AFC | `true` | `AFC_stepper.<lane>.tool_loaded` (#1194) |
 | Snapmaker | overrides outright | returns `status == LOADED` verbatim |
 | AD5X IFS | `true` | firmware active-lane pointer + head sensor (#1199) |
 | QIDI Box | `true` | `save_variables slot<N> == 2` (#1199) |
+| CFS | `true` | `T{n}.filament` letter + toolhead switch (#1199) |
+| ACE | `true` | arbitrated seated slot, stamped every parse path (#1199) |
 | Happy Hare | `false` | `mmu.gate` / `mmu.filament` *are* the firmware truth |
-| CFS | `false` | only ever writes `AVAILABLE`/`EMPTY` |
-| ACE | `false` | maps the firmware's own `"loaded"` string to `AVAILABLE` |
 | Toolchanger | `false` | `PARALLEL`; `mounted` means docked, not "has filament" |
+
+Every backend that opted in derives its stamp from the same inputs the aggregate pair is
+assigned from, so the per-slot and aggregate rules cannot disagree. That is deliberate: it
+makes "believing the per-slot status blanks the highlight" structurally impossible rather
+than merely tested against. The value of opting in is not divergence-fixing but that
+`can_unload_from_toolhead()` — which keys on `status == LOADED` for serial topologies —
+finally reads true on a seated slot.
 
 AFC's opt-in rests on `AFC_stepper.<lane>.tool_loaded`, which upstream's `set_loaded()` /
 `set_unloaded()` assign in lockstep with `AFC.current_load` and
@@ -184,6 +191,33 @@ drop the highlight on a gate that ran out (`gate_status 0`) while its filament i
 the toolhead. The stamp itself is re-derived on every `printer.mmu` frame
 (`refresh_gate_statuses_locked()`) because `gate_status`, `gate` and `filament` arrive in
 independent deltas — a toolchange typically carries the latter two alone.
+
+CFS earns it differently, and the difference is worth naming: its firmware publishes no
+per-slot loaded flag at all. The seated bay is the intersection of two signals that arrive
+on separate notifications — the per-unit `T{n}.filament` letter ("A".."D") naming the
+engaged lane, and `filament_switch_sensor filament_sensor.filament_detected` at the
+toolhead. `handle_status_update()` derives `SlotStatus::LOADED` from that pair at the end
+of every frame, so the per-slot status can never disagree with the aggregate rather than
+being independently authoritative. That still buys the real fix: before it, CFS wrote only
+`AVAILABLE`/`EMPTY`, so `can_unload_from_toolhead()` — `status == LOADED` on a HUB
+backend — was false on every CFS slot and the panel never offered Unload (#1199). The
+stamp is applied even over a bay firmware calls `EMPTY`: a spool pulled while still
+threaded leaves filament at the toolhead the user has to be able to unload. Removing it
+restores the status the parse wrote, not a guessed `AVAILABLE`.
+
+ACE derives it the same way, and its opt-in is a case study in *not* believing a firmware
+string. The per-slot `"loaded"` token that its `slot_status_from_string()` maps to
+`AVAILABLE` exists only in the community ValgACE dialect, where it sits in the same
+enumeration as `"available"` and `"ready"` — the same slot-local trap as AFC's `"Loaded"`
+meaning loaded-to-hub. Native Anycubic GoKlipper has no per-slot `"loaded"` at all; its
+vocabulary is `empty`/`ready`/`preload`/`running`/`runout` and it answers the seated
+question with the separate top-level `current_filament` (`"<unitId>-<localIndex>"`). So the
+vocabulary map is left alone. Instead `apply_seated_slot_stamp_locked()` stamps whichever
+slot the parse *arbitrated* to — from the ValgACE `"loaded"` scan, `loaded_slot`, or
+`current_filament`, in that precedence — and a HUB backend has exactly one. The REST
+fallback needs both ends of the stamp because `/status` owns `loaded_slot` while `/slots`
+owns the slot vector: without it, each `/slots` poll would demote the seated slot and
+report a spurious change every 500 ms.
 
 `slot_has_filament_at_toolhead()` stays at its `false` default unless the sensor genuinely
 exists *and* is attributable to one slot. AFC's `AFC_extruder` carries
