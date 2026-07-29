@@ -143,11 +143,35 @@ const char* AmsState::get_logo_path(const std::string& type_name) {
         {"bttvivid", "A:assets/images/ams/btt_vivid_64.png"},
         {"vivid", "A:assets/images/ams/btt_vivid_64.png"},
         {"kms", "A:assets/images/ams/kms_64.png"},
+
+        // AFC unit types with no artwork of their own (HTLF and OpenAMS have
+        // been supported for a while; Claymore and EMU arrived in AFC v1.2.0).
+        // They fall back to the AFC mark: wrong-but-related beats a blank slot,
+        // and the alternative is silently rendering nothing.
+        {"htlf", "A:assets/images/ams/afc_64.png"},
+        {"open ams", "A:assets/images/ams/afc_64.png"},
+        {"open_ams", "A:assets/images/ams/afc_64.png"},
+        {"openams", "A:assets/images/ams/afc_64.png"},
+        {"claymore", "A:assets/images/ams/afc_64.png"},
+        {"emu", "A:assets/images/ams/afc_64.png"},
     };
 
     auto it = logo_map.find(lower_name);
     if (it != logo_map.end()) {
         return it->second;
+    }
+
+    // AFC names a unit by type AND instance — "Box_Turtle Turtle_1" — so the
+    // whole string never matches a type key and every AFC unit fell through to
+    // the generic AFC mark, Box Turtles included. Retry on the leading token,
+    // which is the type. Only reached once the exact lookup has failed, so
+    // multi-word system names ("happy hare") keep their own entry.
+    const size_t space_pos = lower_name.find(' ');
+    if (space_pos != std::string::npos && space_pos > 0) {
+        it = logo_map.find(lower_name.substr(0, space_pos));
+        if (it != logo_map.end()) {
+            return it->second;
+        }
     }
     return nullptr;
 }
