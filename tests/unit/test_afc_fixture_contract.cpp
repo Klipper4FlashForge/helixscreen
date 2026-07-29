@@ -119,10 +119,13 @@ TEST_CASE("AFC fixtures carry every field our parsers read", "[ams][afc][1154][f
         // NB: the wire key is "extruder", which parse_afc_stepper reads into our
         // slot.extruder_name member (AFC_lane.py: response['extruder']). Assert
         // the key AFC sends, never our C++ field name.
+        // extruder_temp is the spool's recommended print temperature (#1149);
+        // AFC has published it since v1.1.0 and it is null until a Spoolman
+        // spool is linked, so assert the key, not a value.
         require_keys(j, "AFC_stepper",
                      {"tool_loaded", "status", "prep", "load", "loaded_to_hub", "spool_id",
                       "material", "color", "weight", "hub", "lane", "map", "extruder", "unit",
-                      "name", "runout_lane", "remember_spool"});
+                      "name", "runout_lane", "remember_spool", "extruder_temp"});
     }
 
     SECTION("AFC_extruder") {
@@ -231,5 +234,16 @@ TEST_CASE("AFC parses its real captured payloads into the expected state",
 
     SECTION("topology is derived, not defaulted") {
         CHECK(afc.get_topology() == PathTopology::HUB);
+    }
+
+    SECTION("a lane with no Spoolman link contributes no nozzle temperature") {
+        // The capture has extruder_temp null on every lane — AFC only fills it
+        // from a linked spool's settings_extruder_temp. Null is the clear, so
+        // the slot must stay at 0 and let the filament DB supply the preheat
+        // rather than inheriting a stale or invented number (#1149).
+        auto lane1 = load_fixture("afc_stepper_lane1.json");
+        REQUIRE(lane1["extruder_temp"].is_null()); // guard: capture has no link
+        CHECK(afc.get_slot_info(0).nozzle_temp_min == 0);
+        CHECK(afc.get_slot_info(0).nozzle_temp_max == 0);
     }
 }

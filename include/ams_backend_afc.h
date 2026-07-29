@@ -440,6 +440,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcToolchangerLaneHelper;
     friend class AfcStateStringHelper;
     friend class AfcDatabaseResponseHelper;
+    friend class AfcStatusFieldHelper;
     friend class AfcActionTimeoutHelper;
     friend class AfcDispatchAckHelper;
 

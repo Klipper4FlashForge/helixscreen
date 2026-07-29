@@ -2183,6 +2183,33 @@ void AmsBackendAfc::parse_afc_stepper(int slot_index, const std::string& lane_na
         }
     }
 
+    // Recommended nozzle temperature. AFC_lane.get_status() has carried this on
+    // every release since v1.1.0, and AFC_spool.py fills it from the linked
+    // spool's Spoolman `settings_extruder_temp` — so it is a single recommended
+    // print temperature, not a range, and it is None until a spool is linked.
+    //
+    // Both ends of the pair get it. SlotInfo models the nozzle as min/max because
+    // that is what RFID and the filament DB supply, and active_material_provider
+    // layers the pair over the DB as the tier-2 vendor preset. The value the UI
+    // then preheats to is MaterialInfo::nozzle_recommended(), the midpoint —
+    // so writing only the low end would target (spool + DB max) / 2, a
+    // temperature neither source asked for, and could invert the range whenever
+    // the spool prints hotter than its material's generic maximum.
+    //
+    // Null is the eject clear, same rule as bed_temp above: AFC_spool's
+    // clear_values() sets extruder_temp = None, and letting a stale value ride
+    // would preheat the next spool to the last one's temperature.
+    if (data.contains("extruder_temp")) {
+        if (data["extruder_temp"].is_number()) {
+            int temp = static_cast<int>(std::lround(data["extruder_temp"].get<double>()));
+            slot.nozzle_temp_min = temp;
+            slot.nozzle_temp_max = temp;
+        } else if (data["extruder_temp"].is_null()) {
+            slot.nozzle_temp_min = 0;
+            slot.nozzle_temp_max = 0;
+        }
+    }
+
     // Parse Spoolman ID.
     //
     // JSON null is AFC telling us the link is GONE — clear_values() sets
