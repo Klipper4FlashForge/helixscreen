@@ -3,6 +3,8 @@
 
 #include "wifi_backend_wpa_supplicant.h"
 
+#include "wifi_saved_config.h"
+
 #include "ui_error_reporting.h"
 
 #include "log_redact.h"
@@ -387,6 +389,7 @@ WiFiError WifiBackendWpaSupplicant::start() {
     }
 
     spdlog::info("[WifiBackend] Backend initialized successfully");
+    helix::wifi::remember_persistent_target(detect_wpa_conf_path_from_proc());
     return WiFiErrorHelper::success();
 }
 
@@ -1284,14 +1287,22 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
     if (helix::wifi::detail::classify_save_result(save_result, conf_contents, clean_ssid) ==
         helix::wifi::detail::SavePersistence::Persisted) {
         spdlog::debug("[WifiBackend] Credentials verified on disk at {}", conf_path);
+
+        // Verified present is not the same as verified durable: wpa_supplicant
+        // writes its config with a temp file + rename(), and that rename
+        // replaces a persistence symlink with a regular file. On such a
+        // platform the credentials we just confirmed are sitting in RAM.
+        if (helix::wifi::detail::is_volatile_path(conf_path) &&
+            !helix::wifi::persistent_target().empty()) {
+            helix::wifi::mirror_to_persistent(conf_path);
+        }
     } else if (conf_path.empty()) {
         spdlog::warn("[WifiBackend] Cannot verify credential persistence: no -c config path "
                      "found for the running wpa_supplicant (SAVE_CONFIG replied '{}')",
                      save_result);
     } else {
-        // Not a warning. The user's WiFi will be gone after the next power-off.
-        spdlog::error("[WifiBackend] Credentials did NOT persist to {} (SAVE_CONFIG replied "
-                      "'{}'). This network will be lost on reboot.",
+        spdlog::error("[WifiBackend] Credentials did NOT reach {} (SAVE_CONFIG replied '{}'). "
+                      "This network will be lost on reboot.",
                       conf_path, save_result);
     }
 
