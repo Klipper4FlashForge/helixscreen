@@ -3406,11 +3406,24 @@ void Application::restore_flush_callback() {
 }
 
 void Application::check_wifi_availability() {
+    // Bring WiFi up at startup instead of waiting for a UI screen to construct
+    // the manager. get_wifi_manager() creates the silent global instance, whose
+    // constructor builds the backend (null when there is no hardware) and
+    // start_async()es it — which is also where credentials are re-applied on
+    // firmwares whose wpa_supplicant discards them.
+    //
+    // This used to be gated on is_wifi_expected(), which defaults to false and
+    // is absent from settings.json on a Snapmaker U1 — so that device never
+    // started WiFi at boot at all, and only ever connected once the user opened
+    // a WiFi screen. Bringup is not a user-intent question.
+    auto wifi = get_wifi_manager();
+
+    // wifi_expected keeps its original meaning: the user configured WiFi, so
+    // tell them if the hardware has since disappeared.
     if (!m_config || !m_config->is_wifi_expected()) {
-        return; // WiFi not expected, no need to check
+        return;
     }
 
-    auto wifi = get_wifi_manager();
     if (wifi && !wifi->has_hardware()) {
         NOTIFY_ERROR_MODAL(lv_tr("WiFi Unavailable"),
                            lv_tr("WiFi was configured but hardware is not available. "
