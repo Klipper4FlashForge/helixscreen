@@ -375,6 +375,102 @@ jobs:
   # Runs per-PR/push so installer & lint regressions block merge instead of
   # surfacing in nightly hours later.
   # =========================================================================
+  # helix-splash and helix-watchdog link DISPLAY_LIB with -Wl,--whole-archive, so
+  # every object in that archive is a hard link dependency of both binaries even
+  # though neither calls into most of it. The embedded targets build -flto
+  # -ffunction-sections and drop the unreachable callers before symbol resolution;
+  # pi, pi32 and x86 do not, so a new call added to any DISPLAY_LIB source breaks
+  # exactly those three and nothing else. Nothing else in this workflow links
+  # either binary — the desktop build is SDL, which skips them outright — so
+  # before this job the release workflow was the first place they were ever
+  # linked, i.e. on tag push. v0.99.104 died that way (redact::mac, #1191).
+  #
+  # x86-fbdev is the cheapest configuration that reproduces it: native x86_64,
+  # no LTO, DISPLAY_BACKEND=fbdev so both binaries build, and no EGL/GLES/DRM
+  # packages needed. This is a link check, not a release artifact — the runner's
+  # glibc is newer than the Bullseye container the real x86 build uses.
+  link-aux-binaries:
+    name: Link splash + watchdog (non-LTO)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+        submodules: false
+
+    - name: Initialize submodules
+      uses: ./.github/actions/init-submodules
+
+    - name: Install dependencies
+      uses: nick-fields/retry@v4
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        command: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            make \
+            python3 \
+            python3-venv \
+            npm \
+            libssl-dev \
+            pkg-config \
+            libfmt-dev \
+            libnl-3-dev \
+            libnl-genl-3-dev \
+            libusb-1.0-0-dev \
+            libsystemd-dev \
+            libbluetooth-dev \
+            ccache
+
+    - name: Cache ccache
+      uses: actions/cache@v5
+      with:
+        path: ~/.cache/ccache
+        key: ccache-x86-fbdev-${{ github.sha }}
+        restore-keys: |
+          ccache-x86-fbdev-
+
+    - name: Install Node.js dependencies
+      uses: nick-fields/retry@v4
+      with:
+        timeout_minutes: 2
+        max_attempts: 3
+        command: npm install
+
+    - name: Configure ccache
+      run: |
+        ccache --set-config=max_size=2G
+        ccache --set-config=compression=true
+
+    - name: Setup Python venv for translations
+      run: make venv-setup
+
+    - name: Link helix-splash and helix-watchdog
+      timeout-minutes: 45
+      env:
+        CC: ccache clang
+        CXX: ccache clang++
+      run: |
+        make PLATFORM_TARGET=x86-fbdev SKIP_OPTIONAL_DEPS=1 -j$(nproc) splash watchdog
+
+    - name: Verify both binaries were actually produced
+      run: |
+        # The splash/watchdog targets print "not built (SDL/desktop build)" and
+        # exit 0 when DISPLAY_BACKEND is neither drm nor fbdev. Without this
+        # check a misconfigured target would make the job pass by doing nothing.
+        for bin in helix-splash helix-watchdog; do
+          path="build/x86-fbdev/bin/$bin"
+          if [ ! -x "$path" ]; then
+            echo "::error::$path missing — the link check did not link anything"
+            exit 1
+          fi
+          echo "OK: $path ($(stat -c%s "$path") bytes)"
+        done
+
   test-shell:
     name: Shell Tests (BATS)
     runs-on: ubuntu-22.04
@@ -421,7 +517,7 @@ jobs:
   build-status:
     name: Build Status
     runs-on: ubuntu-latest
-    needs: [compile-ubuntu, test-ubuntu, build-macos, build-android, test-shell, test-telemetry-worker]
+    needs: [compile-ubuntu, test-ubuntu, build-macos, build-android, link-aux-binaries, test-shell, test-telemetry-worker]
     if: always()
 
     steps:
@@ -449,6 +545,10 @@ jobs:
         fi
         if [ "${{ needs.test-telemetry-worker.result }}" != "success" ]; then
           echo "Telemetry worker tests failed"
+          exit 1
+        fi
+        if [ "${{ needs.link-aux-binaries.result }}" != "success" ]; then
+          echo "splash/watchdog link check failed"
           exit 1
         fi
         echo "All builds passed"
