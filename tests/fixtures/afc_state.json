@@ -1,36 +1,38 @@
 {
-    "current_load": null,
-    "current_lane": null,
-    "next_lane": null,
-    "current_state": "Idle",
-    "current_toolchange": 2,
-    "number_of_toolchanges": 5,
-    "spoolman": "http://192.168.1.56:7912",
-    "error_state": false,
-    "bypass_state": false,
-    "quiet_mode": false,
-    "position_saved": false,
-    "units": [
-        "Box_Turtle Turtle_1"
-    ],
-    "lanes": [
-        "lane1",
-        "lane2",
-        "lane3",
-        "lane4"
-    ],
-    "extruders": [
-        "extruder"
-    ],
-    "hubs": [
-        "Turtle_1"
-    ],
-    "buffers": [
-        "Turtle_1"
-    ],
-    "message": {
-        "message": "",
-        "type": ""
-    },
-    "led_state": true
+  "buffers": [
+    "Turtle_1"
+  ],
+  "bypass_state": false,
+  "current_lane": null,
+  "current_load": "lane1",
+  "current_state": "Idle",
+  "current_toolchange": 12,
+  "error_state": false,
+  "extruders": [
+    "extruder"
+  ],
+  "hubs": [
+    "Turtle_1"
+  ],
+  "lane_data_enabled": false,
+  "lanes": [
+    "lane1",
+    "lane2",
+    "lane3",
+    "lane4"
+  ],
+  "led_state": true,
+  "message": {
+    "message": "",
+    "type": ""
+  },
+  "next_lane": null,
+  "number_of_toolchanges": 12,
+  "position_saved": false,
+  "quiet_mode": false,
+  "spoolman": "http://192.168.1.56:7912",
+  "td1_present": false,
+  "units": [
+    "Box_Turtle Turtle_1"
+  ]
 }
