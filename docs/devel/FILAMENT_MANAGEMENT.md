@@ -1211,6 +1211,71 @@ recognizes) minus the lines it emits every toolchange that have no phase by desi
 `already loaded`, `total change time`, `rotation distance reset`). Grep `[GcodeNarration] no phase
 matched` after an AFC upgrade.
 
+#### Channel 3 — `!!` lane faults, and the position diagram welded to them
+
+Five AFC error sites append a monospace position diagram to their sentence. Verbatim, exhaustively
+(read off a live BoxTurtle, #1184):
+
+```python
+AFC.py:1294  'filament did not trigger hub sensor, CHECK FILAMENT PATH\n||=====||==>--||-----||\nTRG   LOAD   HUB   TOOL.'
+AFC.py:1345  'filament failed to trigger pre extruder gear toolhead sensor, CHECK FILAMENT PATH\n||=====||====||==>--||\nTRG   LOAD   HUB   TOOL'
+AFC.py:1370  'filament failed to trigger post extruder gear toolhead sensor, CHECK FILAMENT PATH\n||=====||====||==>--||\nTRG   LOAD   HUB   TOOL'
+AFC.py:1469  'Current lane not loaded, LOAD TRIGGER NOT TRIGGERED\n||==>--||----||-----||\nTRG   LOAD   HUB   TOOL'
+AFC_BoxTurtle.py:527  ' FAILED TO LOAD, CHECK FILAMENT AT TRIGGER\n||==>--||----||------||\nTRG   LOAD   HUB    TOOL'
+```
+
+**The art is a hardcoded literal per error site, not a rendering of live sensor state**, so
+parsing it buys nothing and costs precision: `:1345` (**pre** extruder gear) and `:1370` (**post**
+extruder gear) emit byte-identical bars for two faults with different remedies, and
+`AFC_BoxTurtle.py` writes `||------||` where `AFC.py` writes `||-----||`. We therefore map the
+**message text**, and strip the art.
+
+`helix::afc::afc_fault_position()` (`include/afc_fault_position.h`) — a pure function, no LVGL, no
+printer state:
+
+| Message fragment | Filament reached | `PathSegment` |
+|---|---|---|
+| `LOAD TRIGGER NOT TRIGGERED` | short of the lane trigger | `SPOOL` |
+| `CHECK FILAMENT AT TRIGGER` | short of the lane trigger | `SPOOL` |
+| `did not trigger hub sensor` | past lane, short of the hub | `HUB` |
+| `pre extruder gear toolhead sensor` | past hub, short of the toolhead | `OUTPUT` |
+| `post extruder gear toolhead sensor` | at toolhead, short of the extruder gears | `TOOLHEAD` |
+
+Matching is case-insensitive and **anchored on word boundaries** — the same open-console hazard as
+Channel 1 applies, and `File opened: check filament at triggering.gcode` must not resolve to a
+position. Anything else returns `std::nullopt`, and `afc_strip_position_diagram()` is gated on that
+optional: an unrecognised message is returned byte-for-byte, so upstream rewording degrades to the
+plain-text rendering we had before rather than mangling the sentence. Tests drive the exact strings:
+`tests/unit/test_afc_fault_position.cpp`.
+
+**Where it surfaces.** Both modals that can show an AFC lane fault route their text through
+`helix::ui::afc_fault_path_apply()` (`include/ui_afc_fault_path.h`), which publishes the stop point
+to the int subject `afc_fault_segment` and returns the stripped text:
+
+| Path | Modal | Call site |
+|---|---|---|
+| `!!` -> `GcodeErrorRouter` -> `RecoveryModalPresenter` | `ActionPromptModal` | `recovery_modal_presenter.cpp` `present()` |
+| `printer.AFC.message` -> `AmsAction::ERROR` -> `AmsPanel` | `AmsLoadingErrorModal` | `ui_panel_ams.cpp` `show_loading_error_modal()` |
+
+Both can fire for the same fault. The graphic itself is `ui_xml/components/afc_fault_path.xml` —
+four labelled checkpoints joined by the three **gaps** between them, all bound to
+`afc_fault_segment` alone; 0 (`PathSegment::NONE`) hides the whole component.
+
+**The gap, not the checkpoint, is what gets marked**, and that is not cosmetic. AFC's own art is
+three sections under four labels (`Spool`→`Lane`, `Lane`→`Hub`, `Hub`→`Toolhead`), which is why it
+is so often misread as being off by one. The source settles it: `did not trigger hub sensor` fires
+*after* `cur_lane.loaded_to_hub = True`, and `pre extruder gear toolhead sensor` fires while homing
+down the bowden past an already-cleared hub. Both are failures *between* checkpoints. Colouring the
+checkpoint red would tell the user the hub failed, about a hub the filament passed cleanly. The one
+exception is `post extruder gear toolhead sensor`, which genuinely fails *at* the toolhead — the
+filament cleared the sensor and jammed in the extruder gears — so `TOOLHEAD` marks the node itself.
+
+A consequence worth keeping: because the failing gap sits between two named checkpoints its
+position is self-describing, so the graphic needs no caret and no "stopped here" caption. Every
+caller must go through
+`afc_fault_path_apply()` even when the message is not AFC's, or a previous fault's marker stays on
+screen.
+
 ### Path Topology
 
 `PathTopology::HUB` -- Multiple lanes merge into a common hub/merger. Sensor-based position inference:

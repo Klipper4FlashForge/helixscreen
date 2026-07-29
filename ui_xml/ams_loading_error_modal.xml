@@ -20,6 +20,9 @@
       <text_body name="error_message"
                  width="100%" text="An error occurred while loading filament."
                  translation_tag="An error occurred while loading filament." long_mode="wrap"/>
+      <!-- AFC filament position diagram — self-hides unless AmsPanel recognised
+           the fault message (prestonbrown/helixscreen#1184). -->
+      <afc_fault_path name="fault_path"/>
       <!-- Hint text -->
       <text_small name="error_hint"
                   width="100%" text="Check the filament path and try again."

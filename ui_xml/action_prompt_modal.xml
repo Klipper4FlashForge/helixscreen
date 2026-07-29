@@ -27,6 +27,15 @@
             style_pad_gap="#space_xs" scrollable="true" scroll_snap_y="none">
       <!-- Text lines will be added dynamically -->
     </lv_obj>
+    <!-- AFC filament position diagram — self-hides unless RecoveryModalPresenter
+         recognised the fault message (prestonbrown/helixscreen#1184). Outside the
+         scrollable text area so the graphic never scrolls out of view. -->
+    <lv_obj width="100%"
+            height="content" style_pad_left="#space_lg" style_pad_right="#space_lg" style_pad_top="0"
+            style_pad_bottom="#space_md" style_bg_opa="0" style_border_width="0" scrollable="false">
+      <afc_fault_path name="fault_path"/>
+      <bind_flag_if_eq subject="afc_fault_segment" flag="hidden" ref_value="0"/>
+    </lv_obj>
     <!-- Regular button container (row_wrap for grouped action buttons) -->
     <lv_obj name="button_container"
             width="100%" height="content" style_pad_left="#space_md" style_pad_right="#space_md"
