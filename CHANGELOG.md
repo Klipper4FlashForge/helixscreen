@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.99.104] - 2026-07-28
+## [0.99.104] - 2026-07-29
 
 Filament systems get a deep correctness pass — AFC and Spoolman especially, most of it verified
 against live BoxTurtle hardware — alongside a sweep through the crash class where a background
@@ -16,6 +16,9 @@ permission could quietly destroy a working configuration.
 
 ### Added
 
+- **A stalled AFC fault now offers the recovery that fits it (#1171)** — AFC was the only filament system whose faults reached you as a bare error with nothing to tap. It now gets the same Resume / Unload-or-Eject / Recover set the other backends have, chosen from where the filament actually is: a heated toolhead unload when filament is at the head, a cold lane eject when it is not.
+- **A lane's preheat target comes from the spool you linked to it (#1149)** — AFC has always published the recommended print temperature from the linked Spoolman spool, and it was the last field going unread. Preheat now uses it instead of falling back to the generic figure for the material.
+- **The fault-position diagram says where the filament stopped in words, not only in colour (#1196)** — the failing section was distinguished by red alone, which is exactly the red-against-green pairing a colour-blind user cannot separate, and which washes out on a printer screen in daylight. A caption names the failing gap outright, and it also carries the one case position cannot show: a jam at the toolhead rather than between two points.
 - **A lane keeps its spool identity across an eject** — brand, spool name, total weight, color name and the Spoolman IDs have nowhere to live in AFC's or Happy Hare's own records, so they are stored separately now. Pulling a spool for maintenance and putting the same one back no longer loses what you entered. (Happy Hare's half was written without hardware to test on and wants validation from an MMU owner.)
 - **"It's a new spool" is the primary answer when saving into a lane that is already linked** — putting a different physical spool in a linked lane could previously only overwrite the old spool's identity in Spoolman. It now creates a new spool and rebinds the lane, leaving the linked one untouched. Cancel stays a true abort.
 - **Clear Spool is offered whenever a slot carries an assignment**, not only when the lane is empty — a stale assignment does the most damage right after new filament goes in, which is exactly when the affordance used to disappear.
@@ -26,6 +29,21 @@ permission could quietly destroy a working configuration.
 
 ### Fixed
 
+- **Load stayed available on a lane AFC already considered loaded, and the tap did nothing (#1194, #1183)** — the button read one aggregate "which lane is active" pointer instead of AFC's own per-lane state, so any disagreement between the two left Load enabled on a lane the firmware would refuse. Every affordance built on that reading was affected, including the active-lane highlight and the context menu offering Recover on a lane that had only reached the hub.
+- **Lane recovery could physically de-seat a working lane** — when AFC named no specific lane, recovery was offered on every lane sharing the hub, on the reasoning that a wrong guess costs one harmless refusal. It does not: the lane reset begins with an unconditional 50mm retract before it checks whether that lane's filament is even there, the hub-clear guard has already passed by the time we offer it, and the firmware's own toolhead guard logs its objection and then performs the moves anyway. A wrong guess dragged a seated lane back toward its drive gears. Recovery is now offered only on a lane AFC itself names, and only when that lane's load switch is actually triggered. (#1182, #1187)
+- **Tool selection was never sent on an AFC toolchanger** — the extruder list was read from a field AFC only publishes over an HTTP endpoint we never call, so multi-extruder machines looked like single-extruder ones and the tool-select command was silently skipped. It is now read from the list AFC does send.
+- **An ejected lane kept its old Spoolman spool when its record was re-read (#1195)** — the two code paths that read lane data disagreed about what a cleared spool means, so depending on which ran last a lane could keep showing the previous spool's name, colour and remaining weight, and a later edit would have written to it. Your own overrides were also being dropped on that path.
+- **Several queued AFC messages left a resolved error on screen (#1186)** — clearing a fault sent a fixed number of clears rather than draining until the queue was empty, and nothing else pops those entries, so warnings and already-resolved errors accumulated across a session and the oldest one stayed visible.
+- **One fault could produce two notifications (#1197)** — the same fault arrives through two independent observers, and the backstop that exists to catch faults nothing else surfaced could not see that the other had already shown a toast.
+- **Load and Unload were offered while a print owned the toolhead** — both are toolhead-motion operations and had no business being tappable mid-print.
+- **Per-slot load state is now believed on five more filament systems (#1199)** — AD5X, QIDI Box, CFS and ACE were deciding "is this slot loaded" from a single active-slot pointer. On CFS the consequence was concrete: because no slot was ever marked loaded, the AMS panel never offered Unload on a bay that had filament in it. On AD5X the fix also keeps the active-lane highlight through a runout, which previously dropped it at the moment you needed to recover. (Happy Hare deliberately keeps the existing rule — its own values already are the firmware's truth.)
+- **WiFi did not come up until you opened a screen that needed it** — it is now brought up at startup.
+- **Saved WiFi credentials could silently fail to persist** — the save was trusted rather than verified, and on devices where wpa_supplicant's config lands on a RAM-backed filesystem it was lost on reboot. The write is now confirmed to have reached disk, and a config that lands on tmpfs is restored.
+- **Shutdown did nothing when Moonraker could not reboot the host** — it now falls back to powering down locally.
+- **A pending Resume could stay stuck when Klipper rejected the macro** — the button stayed in its in-flight state with no way out.
+- **An `action:prompt` command arriving glued to its payload was dropped** — it is now recovered rather than ignored.
+- **`--version` failed when another instance was running** — the instance lock was claimed before arguments were parsed.
+- **Crash reports could arrive with no reason attached (#960)** — glibc's abort message was read as the wrong type, so the most useful line in a blank abort was missing.
 - **Uploaded logs carried network names and MAC addresses (#1191)** — the log ring is captured at debug regardless of your configured verbosity and leaves the machine three ways: the debug bundle, the crash reporter's automatic upload, and the `ctl` log RPC. It held the connected SSID, every neighbouring SSID in range with signal strengths, and the adapter MAC in cleartext. A set of nearby network names is a geolocation fingerprint, and a scan enumerates networks belonging to people who never consented to being in a bug report. Those values are now replaced at the log call site with a per-boot token that still correlates one network across lines.
 - **Moonraker one-click updates destroyed custom images, themes, per-printer database overrides and crash history (#1164)** — Moonraker deletes the install directory before extracting, and only the four symlinked config files survived it. Those directories get the same protection now, and existing installs are migrated into place.
 - **The first spool save after install stranded every per-tool spool assignment (#1176)** — the atomic save replaced the symlink instead of writing through it, so each later update destroyed the assignments while the relink afterwards made nothing look wrong. Found on a Pi where the surviving copy was three months stale.
@@ -76,6 +94,7 @@ permission could quietly destroy a working configuration.
 
 ### Changed
 
+- **Backends now declare whether they carry per-slot load truth**, and the AMS layer believes that over its aggregate pointer where they do. Each backend that opted in derives its per-slot answer from the same signals the aggregate is built from, so the two cannot disagree — the benefit is that "can this slot be unloaded" finally reads correctly rather than any behaviour changing underneath you.
 - **Overlay width is decided by how you reached the overlay (#1178)** — a destination overlay is full width, a transient layer leaves the backdrop showing at its leading edge, and the same overlay can be either depending on where it was pushed from. Console Settings no longer renders wider than the Console it was pushed from.
 - **The transient-layer shadow is lighter on light themes**, where the same alpha rendered as a heavy black band rather than a gradient.
 - **AFC's version is read from its status object and lane vendor from `vendor_name`**, tracking changes agreed with upstream; both are inert until that firmware ships.
