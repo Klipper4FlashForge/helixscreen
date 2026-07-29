@@ -90,6 +90,25 @@ bool RecoveryModalPresenter::is_visible() const {
     return modal_ && modal_->is_visible();
 }
 
+namespace {
+/// Whether two recovery sets offer the user the same choices. Compares what the
+/// modal actually renders and dispatches — label and gcode — so a set that
+/// merely restyles a button is still "the same", while one that adds or changes
+/// an affordance is not. log_tag is deliberately excluded: it is diagnostics.
+bool same_actions(const std::vector<helix::RecoveryAction>& a,
+                  const std::vector<helix::RecoveryAction>& b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (a[i].label != b[i].label || a[i].gcode != b[i].gcode) {
+            return false;
+        }
+    }
+    return true;
+}
+} // namespace
+
 void RecoveryModalPresenter::dismiss() {
     if (modal_ && modal_->is_visible()) {
         modal_->hide();
@@ -98,9 +117,21 @@ void RecoveryModalPresenter::dismiss() {
 }
 
 void RecoveryModalPresenter::present(const helix::ErrorEvent& e) {
-    // Dedup: if the same detail is still on screen, do not re-show.
-    // A dismissed-but-ongoing fault clears shown_detail_ so it can re-show.
-    if (modal_ && modal_->is_visible() && e.detail == shown_detail_) {
+    // Dedup: if the same detail AND the same action set are still on screen, do
+    // not re-show. A dismissed-but-ongoing fault clears shown_detail_ so it can
+    // re-show.
+    //
+    // The action set is part of the identity, not decoration. One fault legally
+    // reaches here twice from two sources carrying the SAME text but different
+    // affordances: AFC emits `!! <msg>` and queues that identical string
+    // (AFC_logger.error sends "!! {msg}" then appends msg to message_queue), so
+    // the line-arrival event and the later status-driven current_error() event
+    // are byte-identical in detail while only the second carries AFC's
+    // Unload/Eject/Recover set. Comparing detail alone would pin whichever
+    // arrived first — always the poorer one, since the `!!` lands before AFC
+    // pauses (prestonbrown/helixscreen#1171).
+    if (modal_ && modal_->is_visible() && e.detail == shown_detail_ &&
+        same_actions(active_actions_, e.recovery_actions)) {
         spdlog::debug("[RecoveryModalPresenter] Skipping duplicate (still visible): {}", e.detail);
         return;
     }

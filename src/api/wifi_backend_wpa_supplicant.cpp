@@ -99,6 +99,46 @@ std::string read_ctrl_interface_from_conf(const std::string& conf_path) {
     }
     return {};
 }
+
+bool wpa_config_has_network(const std::string& config_contents, const std::string& ssid) {
+    if (ssid.empty())
+        return false;
+
+    // wpa_supplicant writes `\tssid="name"` inside each network block. Match the
+    // quoted form exactly so a partial name ("Home" vs "HomeGuest") can't pass.
+    const std::string needle = "ssid=\"" + ssid + "\"";
+
+    size_t pos = 0;
+    while ((pos = config_contents.find(needle, pos)) != std::string::npos) {
+        const size_t after = pos + needle.size();
+        // Reject a prefix match on a longer SSID (ssid="Home" vs ssid="Home2"):
+        // the closing quote must be the final char of the token.
+        const bool ends_clean =
+            after >= config_contents.size() || config_contents[after] == '\n' ||
+            config_contents[after] == '\r' || config_contents[after] == ' ' ||
+            config_contents[after] == '\t';
+        // `bssid=` and `scan_ssid=` end in the same characters, so require the
+        // match to start a token rather than continue one.
+        const bool starts_clean =
+            pos == 0 || config_contents[pos - 1] == '\n' || config_contents[pos - 1] == '\r' ||
+            config_contents[pos - 1] == ' ' || config_contents[pos - 1] == '\t';
+        if (ends_clean && starts_clean)
+            return true;
+        pos = after;
+    }
+    return false;
+}
+
+SavePersistence classify_save_result(const std::string& save_reply,
+                                     const std::string& config_contents, const std::string& ssid) {
+    // A failed reply is unambiguous.
+    if (save_reply.compare(0, 2, "OK") != 0)
+        return SavePersistence::NotPersisted;
+
+    // "OK" only means the command was accepted. The file is the authority.
+    return wpa_config_has_network(config_contents, ssid) ? SavePersistence::Persisted
+                                                         : SavePersistence::NotPersisted;
+}
 } // namespace helix::wifi::detail
 
 /// Inspect running processes for a `wpa_supplicant` daemon and return the
@@ -111,6 +151,45 @@ std::string read_ctrl_interface_from_conf(const std::string& conf_path) {
 /// directory; otherwise the `ctrl_interface` in the `-c <conf>` config file;
 /// otherwise a `-C <ctrl>` value (used only when no -c is given).
 /// Returns "" when not found (no daemon, no usable arg, or /proc unavailable).
+/// Return the `-c <conf>` path of the running wpa_supplicant ("" if none).
+///
+/// Deliberately a separate walk rather than a shared scan with
+/// detect_wpa_ctrl_dir_from_proc(): that function ships on every device and
+/// its per-PID precedence/fallthrough is load-bearing, so it is left alone.
+static std::string detect_wpa_conf_path_from_proc() {
+    std::error_code ec;
+    if (!fs::is_directory("/proc", ec))
+        return {};
+
+    for (const auto& entry : fs::directory_iterator("/proc", ec)) {
+        if (ec)
+            break;
+        const std::string name = entry.path().filename().string();
+        if (name.empty() ||
+            !std::all_of(name.begin(), name.end(), [](unsigned char c) { return std::isdigit(c); }))
+            continue;
+
+        std::ifstream cmd(entry.path() / "cmdline", std::ios::binary);
+        if (!cmd.is_open())
+            continue;
+        std::vector<std::string> argv;
+        std::string arg;
+        while (std::getline(cmd, arg, '\0'))
+            argv.push_back(arg);
+        if (argv.empty() || fs::path(argv[0]).filename().string() != "wpa_supplicant")
+            continue;
+
+        for (size_t i = 1; i < argv.size(); ++i) {
+            const std::string& a = argv[i];
+            if (a == "-c" && i + 1 < argv.size())
+                return argv[i + 1];
+            if (a.rfind("-c", 0) == 0 && a.size() > 2)
+                return a.substr(2);
+        }
+    }
+    return {};
+}
+
 static std::string detect_wpa_ctrl_dir_from_proc() {
     std::error_code ec;
     if (!fs::is_directory("/proc", ec))
@@ -1187,11 +1266,33 @@ WiFiError WifiBackendWpaSupplicant::connect_network(const std::string& ssid,
     // wpa_supplicant writes to its -c config file (which may be symlinked to
     // persistent storage by platform-specific scripts, e.g. Snapmaker U1's
     // /etc/network/if-pre-up.d/wpa-conf.sh)
-    std::string save_result = send_command("SAVE_CONFIG");
-    if (save_result == "OK\n") {
-        spdlog::debug("[WifiBackend] Configuration saved to disk");
+    //
+    // The reply is not trusted: the U1's wpa_supplicant answers OK and never
+    // writes the file, so the old `save_result == "OK\n"` check logged
+    // "saved to disk" while the credentials existed only in daemon memory and
+    // died at the next power-off. Re-read the config and look for the SSID.
+    const std::string save_result = send_command("SAVE_CONFIG");
+    const std::string conf_path = detect_wpa_conf_path_from_proc();
+    std::string conf_contents;
+    if (!conf_path.empty()) {
+        std::ifstream conf(conf_path, std::ios::binary);
+        if (conf.is_open())
+            conf_contents.assign(std::istreambuf_iterator<char>(conf),
+                                 std::istreambuf_iterator<char>());
+    }
+
+    if (helix::wifi::detail::classify_save_result(save_result, conf_contents, clean_ssid) ==
+        helix::wifi::detail::SavePersistence::Persisted) {
+        spdlog::debug("[WifiBackend] Credentials verified on disk at {}", conf_path);
+    } else if (conf_path.empty()) {
+        spdlog::warn("[WifiBackend] Cannot verify credential persistence: no -c config path "
+                     "found for the running wpa_supplicant (SAVE_CONFIG replied '{}')",
+                     save_result);
     } else {
-        spdlog::warn("[WifiBackend] SAVE_CONFIG failed (non-fatal): {}", save_result);
+        // Not a warning. The user's WiFi will be gone after the next power-off.
+        spdlog::error("[WifiBackend] Credentials did NOT persist to {} (SAVE_CONFIG replied "
+                      "'{}'). This network will be lost on reboot.",
+                      conf_path, save_result);
     }
 
     spdlog::info("[WifiBackend] Network configuration complete, connecting to '{}'",

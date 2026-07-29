@@ -35,6 +35,13 @@ struct RecoveryModalPresenterTestAccess {
     static void set_preheat_budget_ms(helix::ui::RecoveryModalPresenter& p, uint32_t ms) {
         p.preheat_budget_ms_ = ms;
     }
+    /// The action set currently wired to the on-screen modal. present() assigns
+    /// this only when it does NOT dedup, so it is the observable that
+    /// distinguishes "replaced" from "suppressed".
+    static const std::vector<helix::RecoveryAction>&
+    active_actions(const helix::ui::RecoveryModalPresenter& p) {
+        return p.active_actions_;
+    }
 };
 
 namespace {
@@ -160,6 +167,49 @@ TEST_CASE_METHOD(LVGLUITestFixture, "RecoveryModalPresenter dedup allows re-show
     presenter.present(e);
     process_lvgl(20);
     CHECK(presenter.is_visible());
+}
+
+TEST_CASE_METHOD(LVGLUITestFixture,
+                 "RecoveryModalPresenter replaces a poorer action set with the same detail",
+                 "[error-center][recovery-presenter][1171]") {
+    // One AFC fault reaches the presenter twice with byte-identical text:
+    // AFC_logger.error() sends "!! {msg}" and appends that same msg to the
+    // message queue, so the `!!` line-arrival event and the later status-driven
+    // current_error() event share a detail string. Only the second carries
+    // AFC's recovery set, and the `!!` always lands first — AFC emits it before
+    // pausing. Deduping on detail alone would pin the poorer set forever.
+    helix::ui::RecoveryModalPresenter presenter(nullptr);
+    const std::string shared_detail = "Lane 1 jam detected";
+
+    helix::ErrorEvent generic;
+    generic.severity = helix::ErrorSeverity::CRITICAL;
+    generic.detail = shared_detail;
+    generic.recovery_actions = {{"Resume", "RESUME", "error_classify::resume", ""},
+                                {"OK", "; error-dismiss", "error_classify::dismiss", ""}};
+
+    presenter.present(generic);
+    process_lvgl(20);
+    REQUIRE(presenter.is_visible());
+    REQUIRE(TA::active_actions(presenter).size() == 2);
+
+    helix::ErrorEvent afc = make_afc_jam();
+    afc.detail = shared_detail; // identical text, richer affordances
+
+    presenter.present(afc);
+    process_lvgl(20);
+    CHECK(presenter.is_visible());
+
+    const auto& active = TA::active_actions(presenter);
+    REQUIRE(active.size() == 3);
+    CHECK(active[1].gcode == "TOOL_UNLOAD");
+    CHECK(active[2].gcode == "AFC_RESET");
+
+    SECTION("but a genuine repeat of the same set still dedups") {
+        presenter.present(afc);
+        process_lvgl(20);
+        CHECK(presenter.is_visible());
+        CHECK(TA::active_actions(presenter).size() == 3);
+    }
 }
 
 // ============================================================================

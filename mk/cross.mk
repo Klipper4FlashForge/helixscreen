@@ -2036,7 +2036,19 @@ define snapmaker-u1-deploy-common
 	COPYFILE_DISABLE=1 tar -cf - $(DEPLOY_TAR_EXCLUDES) $(DEPLOY_TAR_NO_TRACKER) $(DEPLOY_ASSET_DIRS) | ssh $(SNAPMAKER_U1_SSH_TARGET) "cd $(SNAPMAKER_U1_DEPLOY_DIR) && tar -xf -"
 	cat assets/config/platform/hooks-snapmaker-u1.sh | ssh $(SNAPMAKER_U1_SSH_TARGET) "cat > $(SNAPMAKER_U1_DEPLOY_DIR)/platform/hooks.sh && chmod +x $(SNAPMAKER_U1_DEPLOY_DIR)/platform/hooks.sh"
 	scp scripts/helix-launcher.sh $(SNAPMAKER_U1_SSH_TARGET):$(SNAPMAKER_U1_DEPLOY_DIR)/bin/ && ssh $(SNAPMAKER_U1_SSH_TARGET) "chmod +x $(SNAPMAKER_U1_DEPLOY_DIR)/bin/helix-launcher.sh"
-	cat config/helixscreen.init | ssh $(SNAPMAKER_U1_SSH_TARGET) "sed 's|DAEMON_DIR=\"/opt/helixscreen\"|DAEMON_DIR=\"$(SNAPMAKER_U1_DEPLOY_DIR)\"|' > $(SNAPMAKER_U1_DEPLOY_DIR)/helixscreen.init && chmod +x $(SNAPMAKER_U1_DEPLOY_DIR)/helixscreen.init"
+	@# Patch the init script AT THE PATH THE INSTALLER USES — config/helixscreen.init.
+	@# install_service_snapmaker_u1() (scripts/install.sh) patches that copy, and
+	@# snapmaker-u1-setup-autostart.sh points the S99 boot hooks at it. Deploy used
+	@# to patch a top-level $(SNAPMAKER_U1_DEPLOY_DIR)/helixscreen.init instead, so
+	@# the tar's UNPATCHED config/ copy (DAEMON_DIR="/opt/helixscreen") was what ran
+	@# at boot: `make deploy` worked, every reboot came up dark, and the device sat
+	@# on the stock splash with no WiFi. Same sed pattern as the installer
+	@# (DAEMON_DIR=.* not a literal /opt match) so an already-patched copy is
+	@# re-pointed rather than silently skipped.
+	cat config/helixscreen.init | ssh $(SNAPMAKER_U1_SSH_TARGET) "sed 's|DAEMON_DIR=.*|DAEMON_DIR=\"$(SNAPMAKER_U1_DEPLOY_DIR)\"  # Updated by installer for different firmware|' > $(SNAPMAKER_U1_DEPLOY_DIR)/config/helixscreen.init && chmod +x $(SNAPMAKER_U1_DEPLOY_DIR)/config/helixscreen.init"
+	@# Remove the legacy top-level copy this target used to write, so a stale
+	@# divergent init can't be started by hand or by an older habit.
+	ssh $(SNAPMAKER_U1_SSH_TARGET) "rm -f $(SNAPMAKER_U1_DEPLOY_DIR)/helixscreen.init"
 	@if [ -f "build/snapmaker-u1/certs/ca-certificates.crt" ]; then \
 		echo "  $(DIM)Deploying CA certificates...$(RESET)"; \
 		ssh $(SNAPMAKER_U1_SSH_TARGET) "mkdir -p $(SNAPMAKER_U1_DEPLOY_DIR)/certs"; \
@@ -2060,7 +2072,7 @@ deploy-snapmaker-u1:
 	$(call snapmaker-u1-deploy-common)
 	@echo "$(GREEN)✓ Deployed to $(SNAPMAKER_U1_HOST):$(SNAPMAKER_U1_DEPLOY_DIR)$(RESET)"
 	@echo "$(CYAN)Starting helix-screen on $(SNAPMAKER_U1_HOST)...$(RESET)"
-	ssh $(SNAPMAKER_U1_SSH_TARGET) "$(SNAPMAKER_U1_DEPLOY_DIR)/helixscreen.init start"
+	ssh $(SNAPMAKER_U1_SSH_TARGET) "$(SNAPMAKER_U1_DEPLOY_DIR)/config/helixscreen.init start"
 
 deploy-snapmaker-u1-fg:
 	@test -f build/snapmaker-u1/bin/helix-screen || { echo "$(RED)Error: build/snapmaker-u1/bin/helix-screen not found. Run 'make snapmaker-u1-docker' first.$(RESET)"; exit 1; }
@@ -2078,7 +2090,7 @@ deploy-snapmaker-u1-bin:
 	ssh $(SNAPMAKER_U1_SSH_TARGET) "chmod +x $(SNAPMAKER_U1_DEPLOY_DIR)/bin/helix-screen"
 	@echo "$(GREEN)✓ Binary deployed$(RESET)"
 	@echo "$(CYAN)Restarting helix-screen on $(SNAPMAKER_U1_HOST)...$(RESET)"
-	ssh $(SNAPMAKER_U1_SSH_TARGET) "$(SNAPMAKER_U1_DEPLOY_DIR)/helixscreen.init restart"
+	ssh $(SNAPMAKER_U1_SSH_TARGET) "$(SNAPMAKER_U1_DEPLOY_DIR)/config/helixscreen.init restart"
 
 snapmaker-u1-ssh:
 	ssh $(SNAPMAKER_U1_SSH_TARGET)

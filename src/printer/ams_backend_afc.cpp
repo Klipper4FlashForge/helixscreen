@@ -657,6 +657,53 @@ std::vector<helix::RecoveryAction> AmsBackendAfc::build_recovery_actions() const
     return actions;
 }
 
+std::optional<helix::ErrorEvent> AmsBackendAfc::current_error() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // error_state_ is the exact condition that produced the AmsAction::ERROR
+    // edge the bridge fired on. Upstream's AFC_error.py set_error_state() is the
+    // ONLY writer of afc.error_state, and it assigns current_state = State.ERROR
+    // on the very next line, so the two cannot diverge — "Error" reaching
+    // ams_action_from_string() and error_state_ being true are the same event.
+    //
+    // The stuck-action latch (apply_action_timeout_latch_locked) also drives the
+    // action to ERROR without AFC ever setting error_state. Returning nullopt
+    // there is deliberate: that fault is ours, not AFC's, and it keeps its
+    // existing last-resort toast rather than claiming a recovery set for a
+    // condition the firmware does not agree is an error.
+    if (!error_state_) {
+        return std::nullopt;
+    }
+
+    helix::ErrorEvent e;
+    e.source = helix::ErrorSource::AFC;
+    e.severity = helix::ErrorSeverity::CRITICAL;
+    e.title = lv_tr("Filament System Error");
+    e.sticky = true;
+
+    // AFC.message is a FIFO *peek* (_get_message(clear=False)) that
+    // RESET_FAILURE does not pop, so it can still hold the text of an
+    // already-resolved fault. Only trust it while AFC itself still types the
+    // queued message as an error; otherwise fall back to the action mapping's
+    // detail, which at minimum names what was being attempted.
+    if (last_message_type_ == "error" && !last_seen_message_.empty()) {
+        e.detail = last_seen_message_;
+    } else if (!system_info_.operation_detail.empty() &&
+               system_info_.operation_detail != last_seen_message_) {
+        // operation_detail is only a useful fallback when it describes the
+        // OPERATION. parse_afc_state overwrites it with the queued message text
+        // for any message type, so without this inequality the branch above
+        // would reject a warning-typed message and this one would hand the same
+        // string straight back.
+        e.detail = system_info_.operation_detail;
+    } else {
+        e.detail = lv_tr("The filament system reported an error");
+    }
+
+    e.recovery_actions = build_recovery_actions();
+    return e;
+}
+
 std::optional<helix::ErrorEvent>
 AmsBackendAfc::classify_error(const std::string& raw_line,
                               const helix::ClassifyContext& ctx) const {
