@@ -117,6 +117,16 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     [[nodiscard]] PathSegment get_slot_filament_segment(int slot_index) const override;
     [[nodiscard]] PathSegment infer_error_segment() const override;
 
+    /// handle_status_update() stamps SlotStatus::LOADED on the seated bay —
+    /// the lane a unit names in T{n}.filament, once the toolhead switch says
+    /// filament actually arrived — so the per-slot status carries the answer
+    /// the aggregate pair used to hold alone. Before that stamp existed the
+    /// parse wrote only AVAILABLE/EMPTY, which left the inherited
+    /// can_unload_from_toolhead() false on every CFS slot (#1199).
+    [[nodiscard]] bool has_per_slot_loaded_authority() const override {
+        return true;
+    }
+
     // Operations
     AmsError load_filament(int slot_index) override;
     AmsError unload_filament(int slot_index) override;
@@ -259,6 +269,36 @@ class AmsBackendCfs : public AmsSubscriptionBackend {
     /// unload script (and the WITH/WITHOUT-material selection that produced it)
     /// without a live Moonraker connection.
     virtual AmsError dispatch_action_script(std::string gcode);
+
+    /// Undo the derived LOADED stamp, putting back whatever the last parse
+    /// wrote there. Caller must hold mutex_. Runs at the TOP of
+    /// handle_status_update so check_hardware_event_clear, the lane_data mirror
+    /// and apply_overrides all see firmware truth rather than a synthesized
+    /// seat; restoring the saved status (rather than assuming AVAILABLE) is
+    /// what keeps a bay firmware called EMPTY from acquiring a phantom spool
+    /// when the toolhead clears. A no-op when the slot vector was rebuilt
+    /// underneath the stamp, since the fresh parse already wrote truth there.
+    void clear_seated_slot_stamp_locked();
+
+    /// Re-derive the LOADED stamp from the aggregate pair and apply it. Caller
+    /// must hold mutex_. CFS publishes the seated bay across two signals that
+    /// arrive on separate frames — the per-unit T{n}.filament letter names the
+    /// lane, the toolhead filament_switch_sensor says whether anything reached
+    /// the nozzle — so this runs at the END of handle_status_update, after both
+    /// branches have had their say, and again after the optimistic current_slot
+    /// writes in load_filament()/change_tool().
+    ///
+    /// The stamp is applied even over an EMPTY bay: a spool pulled while still
+    /// threaded leaves filament at the toolhead that the user must be able to
+    /// unload, and refusing to stamp there would blank the active-lane
+    /// highlight in exactly that case.
+    void apply_seated_slot_stamp_locked();
+
+    /// Global index the LOADED stamp currently sits on, and the status the
+    /// parse had written there before it was overwritten. -1 / UNKNOWN when no
+    /// stamp is outstanding.
+    int seated_stamp_slot_ = -1;
+    SlotStatus seated_stamp_prev_ = SlotStatus::UNKNOWN;
 
     /// Layer a configured FilamentSlotOverride for `slot_index` over `slot`,
     /// mutating `slot` in place. Override wins for every non-default field;

@@ -459,19 +459,19 @@ class AmsBackend {
     /**
      * @brief Whether this backend's parse carries per-slot loaded truth.
      *
-     * Answers "does the firmware tell us, slot by slot, which one is seated at
-     * the toolhead?" — as opposed to publishing a single active-slot pointer we
-     * have to derive the per-slot answer from. Backends that answer true have
-     * their per-slot status believed over the aggregate pair; see
-     * slot_is_actively_loaded().
+     * Answers "does get_slot_info(i).status carry the seated answer for slot
+     * i?" — either because the firmware publishes it per slot (AFC's
+     * tool_loaded) or because the parse derives it there on every frame (CFS,
+     * from the T{n}.filament letter plus the toolhead switch). Backends that
+     * answer true have their per-slot status believed over the aggregate pair;
+     * see slot_is_actively_loaded().
      *
-     * Default false, and deliberately so. Most backends never mark the active
-     * slot LOADED at all — CFS only ever writes AVAILABLE/EMPTY, and ACE maps
-     * firmware "loaded" to AVAILABLE on the parse path — so believing their
-     * per-slot status would report every slot unloaded and blank the active-lane
-     * highlight. Opt in only once the backend's parse genuinely sets
-     * SlotStatus::LOADED on the seated slot, and cover it with a test that fails
-     * if the parse stops doing so.
+     * Default false, and deliberately so. Several backends never mark the
+     * active slot LOADED at all — ACE maps firmware "loaded" to AVAILABLE on
+     * the parse path — so believing their per-slot status would report every
+     * slot unloaded and blank the active-lane highlight. Opt in only once the
+     * backend's parse genuinely sets SlotStatus::LOADED on the seated slot, and
+     * cover it with a test that fails if the parse stops doing so.
      *
      * @return true if get_slot_info(i).status is authoritative for "loaded"
      */

@@ -141,17 +141,30 @@ reached the hub.
 
 **Opting a backend in is not free.** The per-slot rule believes `get_slot_info(i).status`,
 so a backend that never stamps `LOADED` on its seated slot would report *every* slot
-unloaded and blank the active-lane highlight. As of this writing only AFC and Snapmaker
-have parses that earn it — CFS only ever writes `AVAILABLE`/`EMPTY`, and ACE maps the
-firmware's own `"loaded"` string to `AVAILABLE`. Before flipping a backend to `true`,
-confirm its parse sets `SlotStatus::LOADED` on the seated slot on **every** path that also
-sets the aggregate, and add a test that fails if it stops.
+unloaded and blank the active-lane highlight. As of this writing AFC, Snapmaker and CFS
+have parses that earn it; ACE maps the firmware's own `"loaded"` string to `AVAILABLE` and
+does not. Before flipping a backend to `true`, confirm its parse sets `SlotStatus::LOADED`
+on the seated slot on **every** path that also sets the aggregate, and add a test that
+fails if it stops.
 
 AFC's opt-in rests on `AFC_stepper.<lane>.tool_loaded`, which upstream's `set_loaded()` /
 `set_unloaded()` assign in lockstep with `AFC.current_load` and
 `AFC_extruder.lane_loaded`. Note that AFC's lane `status == "Loaded"` means *loaded to
 hub*, not to the toolhead — only `tool_loaded` answers the toolhead question, which is why
 `parse_afc_stepper` maps `"Loaded"` to `AVAILABLE`.
+
+CFS earns it differently, and the difference is worth naming: its firmware publishes no
+per-slot loaded flag at all. The seated bay is the intersection of two signals that arrive
+on separate notifications — the per-unit `T{n}.filament` letter ("A".."D") naming the
+engaged lane, and `filament_switch_sensor filament_sensor.filament_detected` at the
+toolhead. `handle_status_update()` derives `SlotStatus::LOADED` from that pair at the end
+of every frame, so the per-slot status can never disagree with the aggregate rather than
+being independently authoritative. That still buys the real fix: before it, CFS wrote only
+`AVAILABLE`/`EMPTY`, so `can_unload_from_toolhead()` — `status == LOADED` on a HUB
+backend — was false on every CFS slot and the panel never offered Unload (#1199). The
+stamp is applied even over a bay firmware calls `EMPTY`: a spool pulled while still
+threaded leaves filament at the toolhead the user has to be able to unload. Removing it
+restores the status the parse wrote, not a guessed `AVAILABLE`.
 
 `slot_has_filament_at_toolhead()` stays at its `false` default unless the sensor genuinely
 exists *and* is attributable to one slot. AFC's `AFC_extruder` carries
