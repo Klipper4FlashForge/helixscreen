@@ -466,14 +466,20 @@ class AmsBackend {
      * answer true have their per-slot status believed over the aggregate pair;
      * see slot_is_actively_loaded().
      *
-     * Default false, and deliberately so. Several backends never mark the
-     * active slot LOADED at all — Happy Hare's upgrade guard skips a
-     * FROM_BUFFER gate, Toolchanger leaves every slot at AVAILABLE when the
-     * per-tool objects aren't published — so believing their per-slot status
-     * would report every slot unloaded and blank the active-lane highlight.
+     * Default false, and deliberately so. A backend that never marks the active
+     * slot LOADED would report every slot unloaded and blank the active-lane
+     * highlight — worse than the aggregate staleness this seam exists to fix.
      * Opt in only once the backend's parse genuinely sets SlotStatus::LOADED on
      * the seated slot, and cover it with a test that fails if the parse stops
      * doing so.
+     *
+     * Staying false is a legitimate answer, not a gap. Happy Hare's mmu.gate /
+     * mmu.filament and Toolchanger's toolchanger.tool_number are firmware's own
+     * single-valued statements, parsed verbatim into the aggregate pair; their
+     * per-slot stamps are derived FROM it, so believing those back would only add
+     * staleness. Toolchanger has no filament signal of any kind for a per-slot
+     * rule to be authoritative about. See docs/devel/FILAMENT_MANAGEMENT.md
+     * § "Per-Slot Load Authority".
      *
      * @return true if get_slot_info(i).status is authoritative for "loaded"
      */
@@ -826,15 +832,23 @@ class AmsBackend {
      * The default rule is topology-aware so every backend behaves consistently
      * without per-backend duplication:
      *
-     *  - PARALLEL toolchangers (Snapmaker U1, generic ToolChanger) give each tool
-     *    its own independent toolhead, so any tool that currently holds filament
-     *    is independently unloadable. We key on is_present() — the same presence
-     *    signal the menu's Load button uses — so Load and Unload always agree.
+     *  - PARALLEL toolchangers give each tool its own independent toolhead, so
+     *    any tool that currently holds filament is independently unloadable. We
+     *    key on is_present() — the same presence signal the menu's Load button
+     *    uses — so Load and Unload always agree.
      *  - Selector / hub MMUs (Happy Hare, AFC, ACE, CFS, AD5X, QIDI) share one
      *    extruder, so only the slot actually seated at the toolhead (LOADED) can
      *    be unloaded.
      *
-     * AD5X IFS still overrides this so a runout that clears the head sensor
+     * Note that BOTH PARALLEL backends override the first arm, for opposite
+     * reasons, so it is a fallback rather than a rule in force today. Snapmaker
+     * U1 needs its channel_state latch because the per-tool motion sensor stays
+     * true after an unload. Generic ToolChanger needs the narrower
+     * `slot_index == current_tool`: its slots are physical toolheads that are
+     * never EMPTY, so is_present() read true everywhere, which suppressed Load on
+     * every tool and offered an unmount on tools sitting in their docks (#1199).
+     *
+     * AD5X IFS also overrides this so a runout that clears the head sensor
      * doesn't disable Unload on the slot the firmware reports as active — the
      * exact moment the user needs to recover (#995). Its base fallback is
      * unchanged: AD5X is a serial topology, so the rule below still yields
