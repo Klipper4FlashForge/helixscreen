@@ -467,11 +467,13 @@ class AmsBackend {
      * see slot_is_actively_loaded().
      *
      * Default false, and deliberately so. Several backends never mark the
-     * active slot LOADED at all — ACE maps firmware "loaded" to AVAILABLE on
-     * the parse path — so believing their per-slot status would report every
-     * slot unloaded and blank the active-lane highlight. Opt in only once the
-     * backend's parse genuinely sets SlotStatus::LOADED on the seated slot, and
-     * cover it with a test that fails if the parse stops doing so.
+     * active slot LOADED at all — Happy Hare's upgrade guard skips a
+     * FROM_BUFFER gate, Toolchanger leaves every slot at AVAILABLE when the
+     * per-tool objects aren't published — so believing their per-slot status
+     * would report every slot unloaded and blank the active-lane highlight.
+     * Opt in only once the backend's parse genuinely sets SlotStatus::LOADED on
+     * the seated slot, and cover it with a test that fails if the parse stops
+     * doing so.
      *
      * @return true if get_slot_info(i).status is authoritative for "loaded"
      */

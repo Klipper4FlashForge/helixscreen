@@ -141,11 +141,11 @@ reached the hub.
 
 **Opting a backend in is not free.** The per-slot rule believes `get_slot_info(i).status`,
 so a backend that never stamps `LOADED` on its seated slot would report *every* slot
-unloaded and blank the active-lane highlight. As of this writing AFC, Snapmaker and CFS
-have parses that earn it; ACE maps the firmware's own `"loaded"` string to `AVAILABLE` and
-does not. Before flipping a backend to `true`, confirm its parse sets `SlotStatus::LOADED`
-on the seated slot on **every** path that also sets the aggregate, and add a test that
-fails if it stops.
+unloaded and blank the active-lane highlight. As of this writing AFC, Snapmaker, CFS and
+ACE have parses that earn it; Happy Hare, QIDI, AD5X IFS and Toolchanger do not yet.
+Before flipping a backend to `true`, confirm its parse sets `SlotStatus::LOADED` on the
+seated slot on **every** path that also sets the aggregate, and add a test that fails if
+it stops.
 
 AFC's opt-in rests on `AFC_stepper.<lane>.tool_loaded`, which upstream's `set_loaded()` /
 `set_unloaded()` assign in lockstep with `AFC.current_load` and
@@ -165,6 +165,20 @@ backend — was false on every CFS slot and the panel never offered Unload (#119
 stamp is applied even over a bay firmware calls `EMPTY`: a spool pulled while still
 threaded leaves filament at the toolhead the user has to be able to unload. Removing it
 restores the status the parse wrote, not a guessed `AVAILABLE`.
+
+ACE derives it the same way, and its opt-in is a case study in *not* believing a firmware
+string. The per-slot `"loaded"` token that its `slot_status_from_string()` maps to
+`AVAILABLE` exists only in the community ValgACE dialect, where it sits in the same
+enumeration as `"available"` and `"ready"` — the same slot-local trap as AFC's `"Loaded"`
+meaning loaded-to-hub. Native Anycubic GoKlipper has no per-slot `"loaded"` at all; its
+vocabulary is `empty`/`ready`/`preload`/`running`/`runout` and it answers the seated
+question with the separate top-level `current_filament` (`"<unitId>-<localIndex>"`). So the
+vocabulary map is left alone. Instead `apply_seated_slot_stamp_locked()` stamps whichever
+slot the parse *arbitrated* to — from the ValgACE `"loaded"` scan, `loaded_slot`, or
+`current_filament`, in that precedence — and a HUB backend has exactly one. The REST
+fallback needs both ends of the stamp because `/status` owns `loaded_slot` while `/slots`
+owns the slot vector: without it, each `/slots` poll would demote the seated slot and
+report a spurious change every 500 ms.
 
 `slot_has_filament_at_toolhead()` stays at its `false` default unless the sensor genuinely
 exists *and* is attributable to one slot. AFC's `AFC_extruder` carries
