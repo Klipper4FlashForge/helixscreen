@@ -457,18 +457,55 @@ class AmsBackend {
     }
 
     /**
+     * @brief Whether this backend's parse carries per-slot loaded truth.
+     *
+     * Answers "does the firmware tell us, slot by slot, which one is seated at
+     * the toolhead?" — as opposed to publishing a single active-slot pointer we
+     * have to derive the per-slot answer from. Backends that answer true have
+     * their per-slot status believed over the aggregate pair; see
+     * slot_is_actively_loaded().
+     *
+     * Default false, and deliberately so. Most backends never mark the active
+     * slot LOADED at all — CFS only ever writes AVAILABLE/EMPTY, and ACE maps
+     * firmware "loaded" to AVAILABLE on the parse path — so believing their
+     * per-slot status would report every slot unloaded and blank the active-lane
+     * highlight. Opt in only once the backend's parse genuinely sets
+     * SlotStatus::LOADED on the seated slot, and cover it with a test that fails
+     * if the parse stops doing so.
+     *
+     * @return true if get_slot_info(i).status is authoritative for "loaded"
+     */
+    [[nodiscard]] virtual bool has_per_slot_loaded_authority() const {
+        return false;
+    }
+
+    /**
      * @brief Firmware "seated & loaded" for this slot.
      *
      * The single source of truth for the active-lane highlight, replacing the
-     * divergent badge/top-right reads. Default derives from the aggregate
-     * current_slot + filament_loaded state; per-slot-aware backends (e.g. a
-     * toolchanger with per-tool LOADED status) override to report each slot
-     * independently.
+     * divergent badge/top-right reads, and (with
+     * slot_has_filament_at_toolhead()) the gate on the Load/Unload affordances.
+     *
+     * Two rules, selected by has_per_slot_loaded_authority():
+     *
+     *  - Per-slot backends read the slot's own LOADED status. This is the
+     *    truthful answer to a per-slot question and cannot disagree with itself
+     *    across slots.
+     *  - Everyone else derives it from the aggregate current_slot +
+     *    filament_loaded pair. That derivation is only as good as our tracking
+     *    of the active-slot pointer: when it names the wrong slot, or lags a
+     *    toolchange, every affordance built on this predicate inherits the wrong
+     *    answer (#1194 — Load stayed enabled on a lane AFC had already seated).
+     *
+     * Backends may still override outright where neither rule fits.
      *
      * @param slot_index Slot index (0 to total_slots-1)
      * @return true if firmware considers this slot seated and loaded
      */
     [[nodiscard]] virtual bool slot_is_actively_loaded(int slot_index) const {
+        if (has_per_slot_loaded_authority()) {
+            return get_slot_info(slot_index).status == SlotStatus::LOADED;
+        }
         return slot_index == get_current_slot() && is_filament_loaded();
     }
 

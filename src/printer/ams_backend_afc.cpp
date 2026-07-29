@@ -607,6 +607,27 @@ bool AmsBackendAfc::slot_has_prep_sensor(int slot_index) const {
     return slot_index >= 0 && slot_index < system_info_.total_slots;
 }
 
+bool AmsBackendAfc::slot_has_filament_at_toolhead(int slot_index) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    const std::string lane_name = slots_.name_of(slot_index);
+    if (lane_name.empty()) {
+        return false;
+    }
+
+    // The extruder sensors say something is at a toolhead; lane_loaded says
+    // whose. Without that pairing the trip is unattributable, and the base
+    // contract is explicit that an unknown signal reads false rather than being
+    // fabricated onto a lane. Scanning the map rather than indexing by tool
+    // number keeps this right when a lane feeds a non-default extruder.
+    for (const auto& [ext_name, sensors] : extruder_sensors_) {
+        if (sensors.lane_loaded == lane_name) {
+            return sensors.tool_start || sensors.tool_end;
+        }
+    }
+    return false;
+}
+
 std::vector<helix::RecoveryAction> AmsBackendAfc::build_recovery_actions() const {
     // Caller holds mutex_.
     std::vector<helix::RecoveryAction> actions;
@@ -2520,12 +2541,30 @@ void AmsBackendAfc::parse_afc_extruder(const std::string& ext_name, const nlohma
     //   "lane_loaded": "lane1"       // Currently loaded lane
     // }
 
+    // Per-extruder copy, keyed so slot_has_filament_at_toolhead() can attribute a
+    // trip to the lane this extruder holds. Absent fields leave the previous
+    // value alone — Moonraker sends deltas, and a frame that carries only
+    // lane_loaded must not silently clear the sensors.
+    AfcExtruderSensors& sensors = extruder_sensors_[ext_name];
+
     if (data.contains("tool_start_status") && data["tool_start_status"].is_boolean()) {
         tool_start_sensor_ = data["tool_start_status"].get<bool>();
+        sensors.tool_start = tool_start_sensor_;
     }
 
     if (data.contains("tool_end_status") && data["tool_end_status"].is_boolean()) {
         tool_end_sensor_ = data["tool_end_status"].get<bool>();
+        sensors.tool_end = tool_end_sensor_;
+    }
+
+    // Explicit null is AFC saying "nothing seated here" (set_unloaded assigns
+    // ""), which is information — clear the attribution. Absent is silence.
+    if (data.contains("lane_loaded")) {
+        if (data["lane_loaded"].is_string()) {
+            sensors.lane_loaded = data["lane_loaded"].get<std::string>();
+        } else if (data["lane_loaded"].is_null()) {
+            sensors.lane_loaded.clear();
+        }
     }
 
     // Toolchanger state (AFC v1.2.0 #768). An entry is created for every

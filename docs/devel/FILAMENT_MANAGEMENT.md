@@ -114,6 +114,50 @@ slots_.reorganize(unit_lane_map);           // Preserves slot data across layout
 - `reorganize()` takes an ordered vector of unit/lane pairs — caller controls unit ordering
 - Slot names remain backend-specific ("lane1" for AFC, "Gate 0" for Happy Hare) -- SlotRegistry is agnostic
 
+### Per-Slot Load Authority
+
+Two `AmsBackend` predicates answer "is *this* slot loaded?" and everything the user can
+tap about a slot is derived from them: the active-lane highlight, the Load/Unload gate on
+the filament panel, and the context menu's Unload/Eject/Recover choice.
+
+| Predicate | Question | Default |
+|-----------|----------|---------|
+| `slot_is_actively_loaded(i)` | Firmware considers this slot seated at the toolhead | see below |
+| `slot_has_filament_at_toolhead(i)` | A per-slot toolhead sensor is tripped | `false` |
+| `can_unload_from_toolhead(i)` | Offer Unload (and suppress Load) | `status == LOADED`, or `is_present()` on PARALLEL |
+| `slot_unloads_to_toolhead(i, hint)` | The unload is a heated toolhead unload, not a cold eject | `hint` |
+
+`slot_is_actively_loaded()` has **two** rules, chosen by
+`has_per_slot_loaded_authority()` (default `false`):
+
+- **`false`** — derive from the aggregate pair `get_current_slot() + is_filament_loaded()`.
+- **`true`** — read the slot's own `SlotStatus::LOADED`.
+
+The aggregate rule is only as good as our tracking of a single active-slot pointer. When
+that pointer names the wrong slot or lags a toolchange, every affordance above inherits
+the wrong answer — that was #1194, which surfaced as Load staying enabled on an AFC lane
+the firmware had already seated (#1183) and as Recover being offered on a lane that only
+reached the hub.
+
+**Opting a backend in is not free.** The per-slot rule believes `get_slot_info(i).status`,
+so a backend that never stamps `LOADED` on its seated slot would report *every* slot
+unloaded and blank the active-lane highlight. As of this writing only AFC and Snapmaker
+have parses that earn it — CFS only ever writes `AVAILABLE`/`EMPTY`, and ACE maps the
+firmware's own `"loaded"` string to `AVAILABLE`. Before flipping a backend to `true`,
+confirm its parse sets `SlotStatus::LOADED` on the seated slot on **every** path that also
+sets the aggregate, and add a test that fails if it stops.
+
+AFC's opt-in rests on `AFC_stepper.<lane>.tool_loaded`, which upstream's `set_loaded()` /
+`set_unloaded()` assign in lockstep with `AFC.current_load` and
+`AFC_extruder.lane_loaded`. Note that AFC's lane `status == "Loaded"` means *loaded to
+hub*, not to the toolhead — only `tool_loaded` answers the toolhead question, which is why
+`parse_afc_stepper` maps `"Loaded"` to `AVAILABLE`.
+
+`slot_has_filament_at_toolhead()` stays at its `false` default unless the sensor genuinely
+exists *and* is attributable to one slot. AFC's `AFC_extruder` carries
+`tool_start_status` / `tool_end_status` plus the `lane_loaded` that owns them; a trip with
+no owning lane reads `false` rather than being blamed on an arbitrary lane.
+
 ### Threading Model
 
 All Moonraker/libhv callbacks arrive on a background thread. Backends update internal state under mutex, then `AmsState` posts subject updates to the LVGL thread via `lv_async_call()`. The UI never directly accesses backend state.

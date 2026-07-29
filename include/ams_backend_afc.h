@@ -85,6 +85,25 @@ struct AfcToolState {
 };
 
 /**
+ * @brief Toolhead sensor state for one AFC_extruder, with the lane that owns it
+ *
+ * tool_start / tool_end are the extruder's own filament switches, so they say
+ * "something is at this toolhead" without saying whose. lane_loaded is AFC's
+ * answer to that second question: set_loaded() assigns tool_loaded, afc.current
+ * and extruder_obj.lane_loaded together, and set_unloaded() clears them
+ * together, so the pairing is atomic upstream.
+ *
+ * Kept per extruder rather than folded into the single tool_start_sensor_ /
+ * tool_end_sensor_ pair because a toolchanger has one set per toolhead, and
+ * attribution is only meaningful alongside the sensors it attributes.
+ */
+struct AfcExtruderSensors {
+    bool tool_start = false;  ///< Toolhead entry sensor (tool_start_status)
+    bool tool_end = false;    ///< Toolhead exit/nozzle sensor (tool_end_status)
+    std::string lane_loaded;  ///< Lane seated at this extruder; empty when none
+};
+
+/**
  * @brief Per-unit info parsed from flat string units and unit-level Klipper objects
  *
  * When AFC reports units as flat strings (e.g., "OpenAMS AMS_1", "Box_Turtle Turtle_1"),
@@ -160,6 +179,21 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     [[nodiscard]] PathSegment get_slot_filament_segment(int slot_index) const override;
     [[nodiscard]] PathSegment infer_error_segment() const override;
     [[nodiscard]] bool slot_has_prep_sensor(int slot_index) const override;
+
+    /// AFC reports load state per lane (AFC_stepper.<lane>.tool_loaded), which
+    /// parse_afc_stepper() turns into SlotStatus::LOADED. That beats deriving a
+    /// per-lane answer from the aggregate current_slot pointer, which we resolve
+    /// from several sources and which goes null mid-toolchange (#1194).
+    [[nodiscard]] bool has_per_slot_loaded_authority() const override {
+        return true;
+    }
+
+    /// True when the extruder that names this lane as loaded has filament at
+    /// either of its sensors. AFC_extruder carries tool_start_status /
+    /// tool_end_status plus the lane_loaded that owns them, so the signal is
+    /// real and attributable — an unattributed trip stays false rather than
+    /// being blamed on an arbitrary lane.
+    [[nodiscard]] bool slot_has_filament_at_toolhead(int slot_index) const override;
 
     /// L1: recognize AFC toolhead jam / lane / hub faults and emit a CRITICAL
     /// ErrorEvent with context-aware recovery actions. Falls back to a catch-all
@@ -382,6 +416,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
   protected:
     // Allow test helper access to private members
     friend class AmsBackendAfcTestHelper;
+    friend class AfcPerSlotLoadedHelper;
     friend class AmsBackendAfcEndlessSpoolHelper;
     friend class AmsBackendAfcMultiUnitHelper;
     friend class HubSensorTestHelper;
@@ -785,6 +820,12 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     std::unordered_map<std::string, bool> hub_sensors_; ///< Per-hub sensor state, keyed by hub name
     bool tool_start_sensor_{false};                     ///< Toolhead entry sensor
     bool tool_end_sensor_{false};                       ///< Toolhead exit/nozzle sensor
+
+    /// Per-extruder toolhead sensors + the lane each names as loaded, keyed by
+    /// AFC_extruder name. tool_start_sensor_ / tool_end_sensor_ above stay as
+    /// the whole-system view every other caller wants; this map is what lets
+    /// slot_has_filament_at_toolhead() answer per lane.
+    std::unordered_map<std::string, AfcExtruderSensors> extruder_sensors_;
 
     /// Lane AFC currently names as active, verbatim from AFC.current_load or
     /// AFC.current_lane; empty when AFC names neither. Distinct from
