@@ -1216,6 +1216,7 @@ translations:
   Invalid status response from printer: Risposta di stato non valida dalla stampante
   Issue description: Descrizione problema
   It's a new spool: ''
+  Jammed at the Toolhead: ''
   Job Queue: Coda lavori
   'Jog failed: {}': 'Movimento fallito: {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: Unisciti
@@ -2301,6 +2302,9 @@ translations:
   Stop Print?: Fermare stampa?
   Stop failed: Arresto fallito
   Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds.: 'Interrompere la stampa di \"{}\"?\n\nNon sarà possibile annullare dopo 5 secondi.'
+  Stopped between Hub and Toolhead: ''
+  Stopped between Lane and Hub: ''
+  Stopped between Spool and Lane: ''
   Stops all motion. Requires firmware restart.: Ferma tutto il movimento. Richiede
     riavvio firmware.
   Stow: Ritrai

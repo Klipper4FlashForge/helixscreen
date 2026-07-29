@@ -1088,6 +1088,7 @@ translations:
   Invalid status response from printer: プリンターからの無効なステータス応答
   Issue description: 問題の説明
   It's a new spool: ''
+  Jammed at the Toolhead: ''
   Job Queue: ジョブキュー
   'Jog failed: {}': 'ジョグに失敗しました: {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: Discord
@@ -2070,6 +2071,9 @@ translations:
   Stop Print?: 印刷を停止しますか？
   Stop failed: 停止に失敗
   Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds.: '\"{}\" の印刷を停止しますか？\n\n5秒後は取り消せません。'
+  Stopped between Hub and Toolhead: ''
+  Stopped between Lane and Hub: ''
+  Stopped between Spool and Lane: ''
   Stops all motion. Requires firmware restart.: すべての動作を停止します。ファームウェアの再起動が必要です。
   Stow: 格納
   Strobe LED: ストロボLED

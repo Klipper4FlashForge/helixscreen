@@ -1324,11 +1324,94 @@ checkpoint red would tell the user the hub failed, about a hub the filament pass
 exception is `post extruder gear toolhead sensor`, which genuinely fails *at* the toolhead — the
 filament cleared the sensor and jammed in the extruder gears — so `TOOLHEAD` marks the node itself.
 
-A consequence worth keeping: because the failing gap sits between two named checkpoints its
-position is self-describing, so the graphic needs no caret and no "stopped here" caption. Every
-caller must go through
-`afc_fault_path_apply()` even when the message is not AFC's, or a previous fault's marker stays on
-screen.
+Position alone is not enough on its own, though: it says which element differs from its
+neighbours, not that the difference means failure, and red-against-green is precisely the pair a
+colourblind user cannot separate (#1196). So the component also renders one of four captions —
+*Stopped between Hub and Toolhead*, and so on — bound to the same subject and mutually exclusive
+on it. The caption is also the only thing that can express `TOOLHEAD`, which fails at a node
+rather than in a gap.
+
+Every caller must go through `afc_fault_path_apply()` even when the message is not AFC's, or a
+previous fault's marker stays on screen.
+
+#### Maintaining the contract across AFC versions
+
+Everything above is a contract with a project that never agreed to one. AFC's console wording is
+not an API, is not versioned, and moves when a maintainer improves a sentence. Neither side breaks
+loudly when it does: the step bar simply stops advancing, or a lane fault renders as plain text.
+This subsection is the maintenance half of #1153 — what we depend on, where it lives on our side,
+and what to do on an AFC version bump.
+
+**What the narration actually drives.** A matched phase id is looked up in the *active operation's*
+phase template (`AmsBackendAfc::toolchange_phase_template()`), and the step bar advances to that
+index. A phase id the running operation's template does not contain is matched and then dropped —
+`GcodeNarrationRouter::process_line()` leaves the step subject untouched — so a needle is only ever
+as useful as the template it feeds:
+
+| Operation | Phase ids, in order (opt = optional: stays Pending when never narrated) |
+|---|---|
+| `LOAD_SWAP` (toolchange) | `heat`, `cut` (opt), `unload`, `feed`, `poop` (opt), `kick` (opt), `brush` (opt), `load` |
+| `LOAD_FRESH` | `heat`, `feed`, `poop` (opt), `kick` (opt), `brush` (opt), `load` |
+| `UNLOAD` | `heat`, `cut` (opt), `unload` |
+
+There is no `park` and no `clean` distinct from `brush` — AFC has exactly one purge macro and one
+wipe macro, so adding either needle without first adding the phase would be dead code.
+
+**Our whole side of the contract is four matchers, in two files.** Nothing else needs touching
+when upstream rewords:
+
+| File | Owns |
+|---|---|
+| `src/printer/ams_backend_afc.cpp` `match_narration_phase()` | Channel 2 needles — loose, normalized substring |
+| `src/printer/ams_backend_afc.cpp` `match_bare_narration_phase()` | Channel 1 shapes — anchored words plus token count |
+| `include/afc_fault_position.h` (impl in `src/printer/afc_fault_position.cpp`) | Channel 3 fault-position fragments |
+| `src/printer/ams_backend_afc.cpp` `is_narration_drift_candidate()` | which unmatched lines are worth a drift hint |
+
+The literals to grep upstream for, exhaustively. Channel 2 is matched after collapsing everything
+non-alphanumeric to single spaces and lowercasing, so grep case-insensitively and ignore
+punctuation:
+
+| Needle(s) | Phase | Emitted by |
+|---|---|---|
+| `is now loaded in toolhead`, `load complete`, `loaded in toolhead` | `load` | `extras/AFC.py` |
+| `unload` | `unload` | `extras/AFC.py` |
+| `clean nozzle`, `cleaning nozzle`, `brush` | `brush` | `config/macros/Brush.cfg` (`AFC_BRUSH`) |
+| `purg`, `poop` | `poop` | `AFC_POOP`, in AFC's shipped `config/macros/` |
+| `kick` | `kick` | `AFC_KICK`, same |
+| `cut` | `cut` | `AFC_CUT`, same |
+| `retract` | `unload` | `AFC_CUT`'s retract step (#1046) |
+| `to hub`, `feed`, `loading lane` | `feed` | `extras/AFC_functions.py`, `extras/AFC_BoxTurtle.py` |
+| `heat` | `heat` | toolhead heat-up narration |
+
+**Order is load-bearing in both matchers** and is not an implementation detail: `unload` must be
+tested before the `feed` needles, because normalized `unloading lane1` contains `loading lane`;
+`cut` must be tested before `retract`, because `AFC_Cut` says *Retract Filament for Cut*. Reordering
+the `if` chain silently reassigns phases.
+
+**Channel 2's sources are config macros, not Python.** `AFC_BRUSH`, `AFC_POOP`, `AFC_CUT` and
+`AFC_KICK` ship as templates under AFC's `config/macros/` and the user's copy is theirs to edit. A user who
+renames a `RESPOND` in their own macro breaks their own step bar and no upstream release is
+involved. That is also why Channel 2 is deliberately loose while Channel 1, which runs on the open
+console, is anchored.
+
+**On an AFC version bump:**
+
+1. Grep the new AFC tree for each literal in the table above. Anything that has moved needs the
+   needle updated *and* the verbatim new string added to `tests/unit/test_afc_console_corpus.cpp`.
+2. Re-check Channel 3's five error sites in `extras/AFC.py` and `extras/AFC_BoxTurtle.py`; those
+   are matched on message text, not on the position art, so a reworded *sentence* is what breaks
+   them, not a redrawn bar.
+3. Run `./build/bin/helix-tests "[afc][narration][corpus]" "[narration][router]" "[afc][fault]"`.
+4. Drive a real toolchange with `-vv` and grep the log for `[GcodeNarration] no phase matched`.
+   That line is deduped and is the only automatic signal that a string moved; a *silent* log with
+   a stalled step bar means the wording changed to something `is_narration_drift_candidate()`
+   does not recognise as AFC's either, which is the worst case and needs the hint widened too.
+
+**The permanent fix is upstream, not here.** AFC's macros already know which step they are on —
+they are the ones emitting the `RESPOND` — so publishing that step as a status field would let
+every UI drop string scraping. Until then, this section is load-bearing: four separate features
+(step bar, terminating responses #1183, position art #1184, failure classification #1182) all
+scrape the same console because there is no structured channel to read.
 
 ### Path Topology
 

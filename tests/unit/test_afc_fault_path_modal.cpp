@@ -22,6 +22,8 @@
  *     -> "an unrecognised fault leaves no graphic behind" fails
  *   - remove <afc_fault_path/> from ams_loading_error_modal.xml
  *     -> "the loading-error modal carries the graphic" fails
+ *   - drop a caption's bind_flag_if_not_eq, or point it at the wrong ref_value
+ *     -> "the fault position is named in words, not only in colour" fails
  */
 
 #include "ui_afc_fault_path.h"
@@ -64,6 +66,14 @@ bool graphic_visible(lv_obj_t* root) {
     return g != nullptr && !lv_obj_has_flag(g, LV_OBJ_FLAG_HIDDEN);
 }
 
+/// Every caption in afc_fault_path.xml, so "exactly one is visible" is checkable.
+const char* const kAllCaptions[] = {
+    "afc_stop_caption_spool",
+    "afc_stop_caption_hub",
+    "afc_stop_caption_output",
+    "afc_stop_caption_toolhead",
+};
+
 helix::ErrorEvent make_event(const std::string& detail) {
     helix::ErrorEvent e;
     e.source = helix::ErrorSource::AFC;
@@ -102,6 +112,68 @@ TEST_CASE_METHOD(LVGLUITestFixture, "afc_fault_path_apply publishes and clears t
     const std::string passthrough = helix::ui::afc_fault_path_apply(kUnknownFault);
     CHECK(fault_segment() == 0);
     CHECK(passthrough == kUnknownFault);
+}
+
+// ============================================================================
+// The caption — the non-colour channel (#1196)
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLUITestFixture, "the fault position is named in words, not only in colour",
+                 "[afc][fault][modal][1196]") {
+    auto* graphic = static_cast<lv_obj_t*>(lv_xml_create(lv_screen_active(), "afc_fault_path",
+                                                         nullptr));
+    REQUIRE(graphic != nullptr);
+
+    struct Case {
+        const char* message;
+        PathSegment segment;
+        const char* caption_name;
+        const char* caption_text;
+    };
+
+    // One per AFC fault position, message text as afc_fault_position() sees it.
+    const Case cases[] = {
+        {"lane1 FAILED TO LOAD, CHECK FILAMENT AT TRIGGER", PathSegment::SPOOL,
+         "afc_stop_caption_spool", "Stopped between Spool and Lane"},
+        {"lane1 filament did not trigger hub sensor, CHECK FILAMENT PATH", PathSegment::HUB,
+         "afc_stop_caption_hub", "Stopped between Lane and Hub"},
+        {"lane1 filament failed to trigger pre extruder gear toolhead sensor, CHECK FILAMENT PATH",
+         PathSegment::OUTPUT, "afc_stop_caption_output", "Stopped between Hub and Toolhead"},
+        {"lane1 filament failed to trigger post extruder gear toolhead sensor, CHECK FILAMENT PATH",
+         PathSegment::TOOLHEAD, "afc_stop_caption_toolhead", "Jammed at the Toolhead"},
+    };
+
+    for (const auto& c : cases) {
+        INFO(c.message);
+        helix::ui::afc_fault_path_apply(c.message);
+        process_lvgl(10);
+        REQUIRE(fault_segment() == static_cast<int>(c.segment));
+        REQUIRE_FALSE(lv_obj_has_flag(graphic, LV_OBJ_FLAG_HIDDEN));
+
+        int visible = 0;
+        for (const char* name : kAllCaptions) {
+            lv_obj_t* caption = lv_obj_find_by_name(graphic, name);
+            REQUIRE(caption != nullptr);
+            if (lv_obj_has_flag(caption, LV_OBJ_FLAG_HIDDEN)) {
+                continue;
+            }
+            ++visible;
+            CHECK(std::string(name) == c.caption_name);
+            CHECK(std::string(lv_label_get_text(caption)) == c.caption_text);
+        }
+        // Two visible captions would contradict each other; none leaves the fault
+        // legible in colour alone, which is the whole complaint.
+        CHECK(visible == 1);
+    }
+
+    // Unrecognised message: the component hides, so no caption speaks for a fault
+    // whose position we could not place.
+    helix::ui::afc_fault_path_apply(kUnknownFault);
+    process_lvgl(10);
+    CHECK(lv_obj_has_flag(graphic, LV_OBJ_FLAG_HIDDEN));
+
+    lv_obj_delete(graphic);
+    process_lvgl(10);
 }
 
 // ============================================================================

@@ -1059,6 +1059,7 @@
   <translation tag="Invalid status response from printer" zh="打印机返回的状态响应无效"/>
   <translation tag="Issue description" zh="问题描述"/>
   <translation tag="It&apos;s a new spool"/>
+  <translation tag="Jammed at the Toolhead"/>
   <translation tag="Job Queue" zh="任务队列"/>
   <translation tag="Jog failed: {}" zh="移动失败: {}"/>
   <translation tag="Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests." zh="加入 HelixScreen 的 Discord 社区，参与讨论、获取技巧、故障排除帮助和功能请求。"/>
@@ -2008,6 +2009,9 @@
   <translation tag="Stop Print?" zh="停止打印？"/>
   <translation tag="Stop failed" zh="停止失败"/>
   <translation tag="Stop printing \&quot;{}\&quot;?\n\nThis cannot be undone after 5 seconds." zh="停止打印 \&quot;{}\&quot;？\n\n5秒后将无法撤销。"/>
+  <translation tag="Stopped between Hub and Toolhead"/>
+  <translation tag="Stopped between Lane and Hub"/>
+  <translation tag="Stopped between Spool and Lane"/>
   <translation tag="Stops all motion. Requires firmware restart." zh="停止所有运动。需要固件重启。"/>
   <translation tag="Stow" zh="收回"/>
   <translation tag="Strobe LED" zh="频闪LED"/>

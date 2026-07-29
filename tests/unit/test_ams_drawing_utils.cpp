@@ -423,6 +423,27 @@ TEST_CASE_METHOD(LVGLTestFixture, "ams_draw::apply_logo hides image when no logo
     REQUIRE(lv_obj_has_flag(img, LV_OBJ_FLAG_HIDDEN));
 }
 
+TEST_CASE("AmsState::get_logo_path resolves AFC's composite unit names", "[ams][logo][1156]") {
+    // AFC hands the UI "<Type> <Instance>"; only the type carries a logo, so
+    // without the leading-token retry every AFC unit fell through to the
+    // generic AFC mark — Box Turtles included.
+    const char* box_turtle = AmsState::get_logo_path("Box_Turtle Turtle_1");
+    REQUIRE(box_turtle != nullptr);
+    CHECK(std::string(box_turtle).find("box_turtle_64") != std::string::npos);
+
+    // Unit types with no artwork of their own still resolve, to the AFC mark.
+    for (const char* unit_name :
+         {"HTLF HTLF_1", "OpenAMS OAMS_1", "Claymore Clay_1", "EMU EMU_1"}) {
+        INFO(unit_name);
+        const char* path = AmsState::get_logo_path(unit_name);
+        REQUIRE(path != nullptr);
+        CHECK(std::string(path).find("afc_64") != std::string::npos);
+    }
+
+    // A leading token that means nothing still yields no logo at all.
+    CHECK(AmsState::get_logo_path("Nonexistent Thing") == nullptr);
+}
+
 TEST_CASE_METHOD(LVGLTestFixture, "ams_draw::apply_logo with unit fallback", "[ams_draw][logo]") {
     lv_obj_t* img = lv_image_create(test_screen());
 
