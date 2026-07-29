@@ -1103,6 +1103,7 @@ translations:
   Heating Bed...: Chauffe du plateau...
   Heating Nozzle...: Chauffe de la buse...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Chauffe à %d\xC2\xB0C... %.0f\xC2\xB0C
+  Heating to {}°C before {}...: ''
   Heating to {}°C for {}...: Chauffe à {}°C pendant {}...
   Heating to {}°C...: Chauffe à {}°C...
   Heating...: Chauffage...
@@ -1152,6 +1153,7 @@ translations:
     filament est repoussé dans la boîte lors de l'éjection (mm)
   How many labels to print: Combien d'étiquettes imprimer
   How the toolhead icon appears: Apparence de l'icône de tête d'outil
+  Hub: ''
   Humidity: Humidité
   Hyperlapse: Hyperlapse
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: Lhyperlapse
@@ -1373,6 +1375,7 @@ translations:
   Macro handles heating: La macro gère le chauffage
   Macro may still be running — response timed out: La macro est peut-être encore en
     cours — délai dépassé
+  "Macro stopped: printer has no '{}' command": ''
   Macro to cancel an active print: Macro pour annuler une impression active
   Macro to clean/wipe the nozzle: Macro pour nettoyer/essuyer la buse
   Macro to load filament into extruder: Macro pour charger le filament dans l'extrudeur
@@ -1601,6 +1604,7 @@ translations:
   Nozzle Temp: Temp. de la buse
   Nozzle Temperature: Température de la buse
   Nozzle Temps: Temp. des buses
+  Nozzle did not reach {}°C — {} cancelled: ''
   Nozzle min cannot exceed max: Le minimum de la buse ne peut pas dépasser le maximum
   Nozzle target set to {}°C: Cible buse réglée à {}°C
   Nozzle temp must be 100-500°C: La température de la buse doit être entre 100 et
@@ -2419,6 +2423,7 @@ translations:
   : L'économiseur d'écran animé a été désactivé sur cet appareil pour éviter qu'il
     n'interfère avec les impressions. Vous pouvez le réactiver dans Paramètres > Affichage
     et son.
+  The filament system reported an error: ''
   The heater will cycle on and off several times.: Le chauffage s'allumera et s'éteindra
     plusieurs fois.
   ? The motor vibrates the belt while a strobe light flashes at the same frequency.

@@ -953,6 +953,7 @@
   <translation tag="Heating Bed..." fr="Chauffe du plateau..."/>
   <translation tag="Heating Nozzle..." fr="Chauffe de la buse..."/>
   <translation tag="Heating to %d\xC2\xB0C... %.0f\xC2\xB0C" fr="Chauffe à %d\xC2\xB0C... %.0f\xC2\xB0C"/>
+  <translation tag="Heating to {}°C before {}..."/>
   <translation tag="Heating to {}°C for {}..." fr="Chauffe à {}°C pendant {}..."/>
   <translation tag="Heating to {}°C..." fr="Chauffe à {}°C..."/>
   <translation tag="Heating..." fr="Chauffage..."/>
@@ -995,6 +996,7 @@
   <translation tag="How far filament is pushed back into the box on eject (mm)" fr="À quelle distance le filament est repoussé dans la boîte lors de l&apos;éjection (mm)"/>
   <translation tag="How many labels to print" fr="Combien d&apos;étiquettes imprimer"/>
   <translation tag="How the toolhead icon appears" fr="Apparence de l&apos;icône de tête d&apos;outil"/>
+  <translation tag="Hub"/>
   <translation tag="Humidity" fr="Humidité"/>
   <translation tag="Hyperlapse" fr="Hyperlapse"/>
   <translation tag="Hyperlapse captures frames at fixed time intervals. Good for very long prints." fr="Lhyperlapse capture des images à intervalles de temps fixes. Idéal pour les impressions très longues."/>
@@ -1176,6 +1178,7 @@
   <translation tag="Macro for physical bed leveling (QGL/Z-Tilt)" fr="Macro pour la mise à niveau physique du plateau (QGL/Z-Tilt)"/>
   <translation tag="Macro handles heating" fr="La macro gère le chauffage"/>
   <translation tag="Macro may still be running — response timed out" fr="La macro est peut-être encore en cours — délai dépassé"/>
+  <translation tag="Macro stopped: printer has no &apos;{}&apos; command"/>
   <translation tag="Macro to cancel an active print" fr="Macro pour annuler une impression active"/>
   <translation tag="Macro to clean/wipe the nozzle" fr="Macro pour nettoyer/essuyer la buse"/>
   <translation tag="Macro to load filament into extruder" fr="Macro pour charger le filament dans l&apos;extrudeur"/>
@@ -1382,6 +1385,7 @@
   <translation tag="Nozzle Temp" fr="Temp. de la buse"/>
   <translation tag="Nozzle Temperature" fr="Température de la buse"/>
   <translation tag="Nozzle Temps" fr="Temp. des buses"/>
+  <translation tag="Nozzle did not reach {}°C — {} cancelled"/>
   <translation tag="Nozzle min cannot exceed max" fr="Le minimum de la buse ne peut pas dépasser le maximum"/>
   <translation tag="Nozzle target set to {}°C" fr="Cible buse réglée à {}°C"/>
   <translation tag="Nozzle temp must be 100-500°C" fr="La température de la buse doit être entre 100 et 500°C"/>
@@ -2075,6 +2079,7 @@
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." fr="Merci ! Les données d&apos;utilisation TOTALEMENT anonymes aident à améliorer HelixScreen."/>
   <translation tag="The HelixPrint plugin enables fast G-code modifications directly on your printer—like skipping bed mesh for quick reprints." fr="Le plugin HelixPrint permet des modifications rapides du G-code directement sur votre imprimante—comme ignorer le maillage du plateau pour des réimpressions rapides."/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." fr="L&apos;économiseur d&apos;écran animé a été désactivé sur cet appareil pour éviter qu&apos;il n&apos;interfère avec les impressions. Vous pouvez le réactiver dans Paramètres &gt; Affichage et son."/>
+  <translation tag="The filament system reported an error"/>
   <translation tag="The heater will cycle on and off several times." fr="Le chauffage s&apos;allumera et s&apos;éteindra plusieurs fois."/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." fr="Le moteur fait vibrer la courroie tandis qu&apos;un stroboscope clignote à la même fréquence. Lorsque la courroie semble immobile (figée), vous avez trouvé la fréquence de résonance.\n\nUtilisez les boutons de fréquence pour balayer les valeurs jusqu&apos;à ce que la courroie paraisse immobile, puis verrouillez la lecture."/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" fr="L&apos;imprimante a arrêté cette impression et ne peut pas la reprendre. Redémarrer depuis le début ?"/>

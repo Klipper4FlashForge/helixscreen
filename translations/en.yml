@@ -1050,6 +1050,7 @@ translations:
   Heating Bed...: Heating Bed...
   Heating Nozzle...: Heating Nozzle...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Heating to %d\xC2\xB0C... %.0f\xC2\xB0C
+  Heating to {}°C before {}...: Heating to {}°C before {}...
   Heating to {}°C for {}...: Heating to {}°C for {}...
   Heating to {}°C...: Heating to {}°C...
   Heating...: Heating...
@@ -1097,6 +1098,7 @@ translations:
     pushed back into the box on eject (mm)
   How many labels to print: How many labels to print
   How the toolhead icon appears: How the toolhead icon appears
+  Hub: Hub
   Humidity: Humidity
   Hyperlapse: Hyperlapse
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: Hyperlapse
@@ -1312,6 +1314,7 @@ translations:
   Macro handles heating: Macro handles heating
   Macro may still be running — response timed out: Macro may still be running — response
     timed out
+  "Macro stopped: printer has no '{}' command": "Macro stopped: printer has no '{}' command"
   Macro to cancel an active print: Macro to cancel an active print
   Macro to clean/wipe the nozzle: Macro to clean/wipe the nozzle
   Macro to load filament into extruder: Macro to load filament into extruder
@@ -1535,6 +1538,7 @@ translations:
   Nozzle Temp: Nozzle Temp
   Nozzle Temperature: Nozzle Temperature
   Nozzle Temps: Nozzle Temps
+  Nozzle did not reach {}°C — {} cancelled: Nozzle did not reach {}°C — {} cancelled
   Nozzle min cannot exceed max: Nozzle min cannot exceed max
   Nozzle target set to {}°C: Nozzle target set to {}°C
   Nozzle temp must be 100-500°C: Nozzle temp must be 100-500°C
@@ -2322,6 +2326,7 @@ translations:
     interfering with prints. You can re-enable it in Settings > Display.
   : The animated screensaver has been turned off on this device to prevent it from
     interfering with prints. You can re-enable it in Settings > Display.
+  The filament system reported an error: The filament system reported an error
   The heater will cycle on and off several times.: The heater will cycle on and off
     several times.
   ? The motor vibrates the belt while a strobe light flashes at the same frequency.

@@ -1070,6 +1070,7 @@ translations:
   Heating Bed...: Нагрев стола...
   Heating Nozzle...: Нагрев сопла...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Нагрев до %d\xC2\xB0C... %.0f\xC2\xB0C
+  Heating to {}°C before {}...: ''
   Heating to {}°C for {}...: Нагрев до {}°C в течение {}...
   Heating to {}°C...: Нагрев до {}°C...
   Heating...: Нагрев...
@@ -1117,6 +1118,7 @@ translations:
     задвигается обратно в коробку при извлечении (мм)
   How many labels to print: Сколько этикеток напечатать
   How the toolhead icon appears: Как отображается значок печатающей головки
+  Hub: ''
   Humidity: Влажность
   Hyperlapse: Гиперлапс
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: Гиперлапс
@@ -1338,6 +1340,7 @@ translations:
   Macro handles heating: Макрос управляет нагревом
   Macro may still be running — response timed out: Макрос может ещё выполняться —
     время ожидания истекло
+  "Macro stopped: printer has no '{}' command": ''
   Macro to cancel an active print: Макрос для отмены текущей печати
   Macro to clean/wipe the nozzle: Макрос для очистки/протирки сопла
   Macro to load filament into extruder: Макрос для загрузки филамента в экструдер
@@ -1562,6 +1565,7 @@ translations:
   Nozzle Temp: Темп. сопла
   Nozzle Temperature: Температура сопла
   Nozzle Temps: Темп. сопел
+  Nozzle did not reach {}°C — {} cancelled: ''
   Nozzle min cannot exceed max: Минимум сопла не может превышать максимум
   Nozzle target set to {}°C: Целевая температура сопла {}°C
   Nozzle temp must be 100-500°C: Температура сопла должна быть 100-500°C
@@ -2358,6 +2362,7 @@ translations:
     interfering with prints. You can re-enable it in Settings > Display.
   : Анимированная заставка была отключена на данном устройстве, чтобы она не мешала
     печати. Вы можете снова включить её в Настройки > Дисплей.
+  The filament system reported an error: ''
   The heater will cycle on and off several times.: Нагреватель будет несколько раз
     включаться и выключаться.
   ? The motor vibrates the belt while a strobe light flashes at the same frequency.

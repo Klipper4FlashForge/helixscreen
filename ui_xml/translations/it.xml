@@ -953,6 +953,7 @@
   <translation tag="Heating Bed..." it="Riscaldamento piatto..."/>
   <translation tag="Heating Nozzle..." it="Riscaldamento ugello..."/>
   <translation tag="Heating to %d\xC2\xB0C... %.0f\xC2\xB0C" it="Riscaldamento a %d\xC2\xB0C... %.0f\xC2\xB0C"/>
+  <translation tag="Heating to {}°C before {}..."/>
   <translation tag="Heating to {}°C for {}..." it="Riscaldamento a {}°C per {}..."/>
   <translation tag="Heating to {}°C..." it="Riscaldamento a {}°C..."/>
   <translation tag="Heating..." it="Riscaldamento..."/>
@@ -995,6 +996,7 @@
   <translation tag="How far filament is pushed back into the box on eject (mm)" it="Quanto il filamento viene spinto indietro nella scatola durante l&apos;espulsione (mm)"/>
   <translation tag="How many labels to print" it="Quante etichette stampare"/>
   <translation tag="How the toolhead icon appears" it="Aspetto dell&apos;icona della testina"/>
+  <translation tag="Hub"/>
   <translation tag="Humidity" it="Umidità"/>
   <translation tag="Hyperlapse" it="Hyperlapse"/>
   <translation tag="Hyperlapse captures frames at fixed time intervals. Good for very long prints." it="Hyperlapse cattura i fotogrammi a intervalli di tempo fissi. Ideale per stampe molto lunghe."/>
@@ -1176,6 +1178,7 @@
   <translation tag="Macro for physical bed leveling (QGL/Z-Tilt)" it="Macro per livellamento fisico piano (QGL/Z-Tilt)"/>
   <translation tag="Macro handles heating" it="La macro gestisce il riscaldamento"/>
   <translation tag="Macro may still be running — response timed out" it="La macro potrebbe essere ancora in esecuzione — tempo scaduto"/>
+  <translation tag="Macro stopped: printer has no &apos;{}&apos; command"/>
   <translation tag="Macro to cancel an active print" it="Macro per annullare una stampa attiva"/>
   <translation tag="Macro to clean/wipe the nozzle" it="Macro per pulire l&apos;ugello"/>
   <translation tag="Macro to load filament into extruder" it="Macro per caricare filamento nell&apos;estrusore"/>
@@ -1382,6 +1385,7 @@
   <translation tag="Nozzle Temp" it="Temp. ugello"/>
   <translation tag="Nozzle Temperature" it="Temperatura ugello"/>
   <translation tag="Nozzle Temps" it="Temp. ugelli"/>
+  <translation tag="Nozzle did not reach {}°C — {} cancelled"/>
   <translation tag="Nozzle min cannot exceed max" it="Il minimo dell’ugello non può superare il massimo"/>
   <translation tag="Nozzle target set to {}°C" it="Obiettivo ugello impostato a {}°C"/>
   <translation tag="Nozzle temp must be 100-500°C" it="La temperatura dell’ugello deve essere 100-500°C"/>
@@ -2075,6 +2079,7 @@
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." it="Grazie! I dati di utilizzo TOTALMENTE anonimi aiutano a migliorare HelixScreen."/>
   <translation tag="The HelixPrint plugin enables fast G-code modifications directly on your printer—like skipping bed mesh for quick reprints." it="Il plugin HelixPrint abilita modifiche G-code rapide direttamente sulla stampante, come saltare la mesh piano per ristampe veloci."/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." it="Il salvaschermo animato è stato disattivato su questo dispositivo per evitare che interferisca con le stampe. Puoi riattivarlo in Impostazioni &gt; Schermo."/>
+  <translation tag="The filament system reported an error"/>
   <translation tag="The heater will cycle on and off several times." it="Il riscaldatore si accenderà e spegnerà diverse volte."/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." it="Il motore fa vibrare la cinghia mentre una luce stroboscopica lampeggia alla stessa frequenza. Quando la cinghia sembra ferma (immobile), hai trovato la frequenza di risonanza.\n\nUsa i pulsanti della frequenza per scorrere i valori finché la cinghia non appare ferma, poi blocca la lettura."/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" it="La stampante ha interrotto questa stampa e non può riprenderla. Riavviare dall&apos;inizio?"/>

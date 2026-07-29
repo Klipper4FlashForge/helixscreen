@@ -1100,6 +1100,7 @@ translations:
   Heating Bed...: Bett aufheizen...
   Heating Nozzle...: Düse aufheizen...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Aufheizen auf %d\xC2\xB0C... %.0f\xC2\xB0C
+  Heating to {}°C before {}...: ''
   Heating to {}°C for {}...: Aufheizen auf {}°C für {}...
   Heating to {}°C...: Aufheizen auf {}°C...
   Heating...: Heizt...
@@ -1148,6 +1149,7 @@ translations:
     beim Auswerfen in die Box zurückgeschoben wird (mm)
   How many labels to print: Wie viele Etiketten drucken
   How the toolhead icon appears: Darstellung des Toolhead-Symbols
+  Hub: ''
   Humidity: Feuchtigkeit
   Hyperlapse: Hyperlapse
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: Hyperlapse
@@ -1368,6 +1370,7 @@ translations:
   Macro handles heating: Makro übernimmt Heizen
   Macro may still be running — response timed out: Makro läuft möglicherweise noch
     — Zeitüberschreitung
+  "Macro stopped: printer has no '{}' command": ''
   Macro to cancel an active print: Makro zum Abbrechen eines aktiven Drucks
   Macro to clean/wipe the nozzle: Makro zum Reinigen/Wischen der Düse
   Macro to load filament into extruder: Makro zum Laden von Filament in den Extruder
@@ -1594,6 +1597,7 @@ translations:
   Nozzle Temp: Düsentemperatur
   Nozzle Temperature: Düsentemperatur
   Nozzle Temps: Düsentemperaturen
+  Nozzle did not reach {}°C — {} cancelled: ''
   Nozzle min cannot exceed max: Düse min darf max nicht überschreiten
   Nozzle target set to {}°C: Düsen-Zieltemperatur auf {}°C gesetzt
   Nozzle temp must be 100-500°C: Düsentemperatur muss 100-500°C betragen
@@ -2396,6 +2400,7 @@ translations:
     interfering with prints. You can re-enable it in Settings > Display.
   : Der animierte Bildschirmschoner wurde auf diesem Gerät ausgeschaltet, um zu verhindern,
     dass er Drucke stört. Sie können ihn unter Einstellungen > Anzeige wieder aktivieren.
+  The filament system reported an error: ''
   The heater will cycle on and off several times.: Die Heizung wird mehrmals ein-
     und ausschalten.
   ? The motor vibrates the belt while a strobe light flashes at the same frequency.

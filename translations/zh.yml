@@ -974,6 +974,7 @@ translations:
   Heating Bed...: 正在加热热床...
   Heating Nozzle...: 正在加热喷嘴...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: 加热至 %d\xC2\xB0C... %.0f\xC2\xB0C
+  Heating to {}°C before {}...: ''
   Heating to {}°C for {}...: 正在加热至{}°C，持续{}...
   Heating to {}°C...: 正在加热至{}°C...
   Heating...: 正在加热...
@@ -1017,6 +1018,7 @@ translations:
   How far filament is pushed back into the box on eject (mm): 弹出时耗材被推回料盒的距离（mm）
   How many labels to print: 打印多少张标签
   How the toolhead icon appears: 工具头图标的显示方式
+  Hub: ''
   Humidity: 湿度
   Hyperlapse: 延时摄影
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: 延时拍摄以固定时间间隔捕获帧。适合超长时间打印。
@@ -1206,6 +1208,7 @@ translations:
   Macro for physical bed leveling (QGL/Z-Tilt): 物理热床调平宏（QGL/Z-Tilt）
   Macro handles heating: 宏控制加热
   Macro may still be running — response timed out: 宏可能仍在运行 — 响应超时
+  "Macro stopped: printer has no '{}' command": ''
   Macro to cancel an active print: 取消当前打印的宏
   Macro to clean/wipe the nozzle: 清洁/擦拭喷嘴的宏
   Macro to load filament into extruder: 将耗材加载到挤出机的宏
@@ -1416,6 +1419,7 @@ translations:
   Nozzle Temp: 喷嘴温度
   Nozzle Temperature: 喷嘴温度
   Nozzle Temps: 喷嘴温度
+  Nozzle did not reach {}°C — {} cancelled: ''
   Nozzle min cannot exceed max: 喷嘴最低温度不能超过最高温度
   Nozzle target set to {}°C: 喷嘴目标已设为 {}°C
   Nozzle temp must be 100-500°C: 喷嘴温度必须为 100-500°C
@@ -2138,6 +2142,7 @@ translations:
   ? The animated screensaver has been turned off on this device to prevent it from
     interfering with prints. You can re-enable it in Settings > Display.
   : 为防止动画屏保干扰打印，已在此设备上将其关闭。您可以在设置 > 显示中重新启用。
+  The filament system reported an error: ''
   The heater will cycle on and off several times.: 加热器将多次开关循环。
   ? The motor vibrates the belt while a strobe light flashes at the same frequency.
     When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse

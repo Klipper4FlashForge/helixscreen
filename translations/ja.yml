@@ -978,6 +978,7 @@ translations:
   Heating Bed...: ベッド加熱中...
   Heating Nozzle...: ノズル加熱中...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: '%d\xC2\xB0Cに加熱中... %.0f\xC2\xB0C'
+  Heating to {}°C before {}...: ''
   Heating to {}°C for {}...: '{}°Cに加熱中（{}）...'
   Heating to {}°C...: '{}°Cに加熱中...'
   Heating...: 加熱中...
@@ -1022,6 +1023,7 @@ translations:
     (mm)
   How many labels to print: 印刷するラベル枚数
   How the toolhead icon appears: ツールヘッドアイコンの表示スタイル
+  Hub: ''
   Humidity: 湿度
   Hyperlapse: ハイパーラプス
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: ハイパーラプスは一定の時間間隔でフレームを撮影します。非常に長い印刷に適しています。
@@ -1211,6 +1213,7 @@ translations:
   Macro for physical bed leveling (QGL/Z-Tilt): 物理的ベッドレベリング用マクロ (QGL/Z-Tilt)
   Macro handles heating: マクロが加熱を制御
   Macro may still be running — response timed out: マクロがまだ実行中の可能性があります — 応答タイムアウト
+  "Macro stopped: printer has no '{}' command": ''
   Macro to cancel an active print: アクティブな印刷をキャンセルするマクロ
   Macro to clean/wipe the nozzle: ノズルを清掃/ワイプするマクロ
   Macro to load filament into extruder: フィラメントをエクストルーダーに装填するマクロ
@@ -1422,6 +1425,7 @@ translations:
   Nozzle Temp: ノズル温度
   Nozzle Temperature: ノズル温度
   Nozzle Temps: ノズル温度
+  Nozzle did not reach {}°C — {} cancelled: ''
   Nozzle min cannot exceed max: ノズル温度の最小値は最大値を超えられません
   Nozzle target set to {}°C: ノズル目標温度を {}°C に設定しました
   Nozzle temp must be 100-500°C: ノズル温度は 100〜500°C にしてください
@@ -2146,6 +2150,7 @@ translations:
   ? The animated screensaver has been turned off on this device to prevent it from
     interfering with prints. You can re-enable it in Settings > Display.
   : アニメーション付きスクリーンセーバーが印刷に干渉しないよう、このデバイスではオフになっています。設定 > ディスプレイで再度有効にできます。
+  The filament system reported an error: ''
   The heater will cycle on and off several times.: ヒーターは数回オン/オフを繰り返します。
   ? The motor vibrates the belt while a strobe light flashes at the same frequency.
     When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse

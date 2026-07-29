@@ -1088,6 +1088,7 @@ translations:
   Heating Bed...: Calentando cama...
   Heating Nozzle...: Calentando boquilla...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Calentando a %d\xC2\xB0C... %.0f\xC2\xB0C
+  Heating to {}°C before {}...: ''
   Heating to {}°C for {}...: Calentando a {}°C durante {}...
   Heating to {}°C...: Calentando a {}°C...
   Heating...: Calentando...
@@ -1137,6 +1138,7 @@ translations:
     filamento de vuelta a la caja al expulsar (mm)
   How many labels to print: Cuántas etiquetas imprimir
   How the toolhead icon appears: Cómo se muestra el icono del cabezal
+  Hub: ''
   Humidity: Humedad
   Hyperlapse: Hyperlapse
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: Hyperlapse
@@ -1356,6 +1358,7 @@ translations:
   Macro handles heating: El macro controla el calentamiento
   Macro may still be running — response timed out: El macro puede seguir en curso
     — tiempo de espera agotado
+  "Macro stopped: printer has no '{}' command": ''
   Macro to cancel an active print: Macro para cancelar una impresión activa
   Macro to clean/wipe the nozzle: Macro para limpiar la boquilla
   Macro to load filament into extruder: Macro para cargar filamento en el extrusor
@@ -1584,6 +1587,7 @@ translations:
   Nozzle Temp: Temp. Boquilla
   Nozzle Temperature: Temperatura de Boquilla
   Nozzle Temps: Temps de boquilla
+  Nozzle did not reach {}°C — {} cancelled: ''
   Nozzle min cannot exceed max: El mínimo de la boquilla no puede superar el máximo
   Nozzle target set to {}°C: Boquilla configurada a {}°C
   Nozzle temp must be 100-500°C: La temperatura de la boquilla debe ser 100-500°C
@@ -2390,6 +2394,7 @@ translations:
     interfering with prints. You can re-enable it in Settings > Display.
   : El salvapantallas animado se ha desactivado en este dispositivo para evitar que
     interfiera con las impresiones. Puede volver a activarlo en Ajustes > Pantalla.
+  The filament system reported an error: ''
   The heater will cycle on and off several times.: El calentador se encenderá y apagará
     varias veces.
   ? The motor vibrates the belt while a strobe light flashes at the same frequency.

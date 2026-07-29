@@ -1086,6 +1086,7 @@ translations:
   Heating Bed...: Riscaldamento piatto...
   Heating Nozzle...: Riscaldamento ugello...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Riscaldamento a %d\xC2\xB0C... %.0f\xC2\xB0C
+  Heating to {}°C before {}...: ''
   Heating to {}°C for {}...: Riscaldamento a {}°C per {}...
   Heating to {}°C...: Riscaldamento a {}°C...
   Heating...: Riscaldamento...
@@ -1135,6 +1136,7 @@ translations:
     viene spinto indietro nella scatola durante l'espulsione (mm)
   How many labels to print: Quante etichette stampare
   How the toolhead icon appears: Aspetto dell'icona della testina
+  Hub: ''
   Humidity: Umidità
   Hyperlapse: Hyperlapse
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: Hyperlapse
@@ -1357,6 +1359,7 @@ translations:
   Macro handles heating: La macro gestisce il riscaldamento
   Macro may still be running — response timed out: La macro potrebbe essere ancora
     in esecuzione — tempo scaduto
+  "Macro stopped: printer has no '{}' command": ''
   Macro to cancel an active print: Macro per annullare una stampa attiva
   Macro to clean/wipe the nozzle: Macro per pulire l'ugello
   Macro to load filament into extruder: Macro per caricare filamento nell'estrusore
@@ -1584,6 +1587,7 @@ translations:
   Nozzle Temp: Temp. ugello
   Nozzle Temperature: Temperatura ugello
   Nozzle Temps: Temp. ugelli
+  Nozzle did not reach {}°C — {} cancelled: ''
   Nozzle min cannot exceed max: Il minimo dell’ugello non può superare il massimo
   Nozzle target set to {}°C: Obiettivo ugello impostato a {}°C
   Nozzle temp must be 100-500°C: La temperatura dell’ugello deve essere 100-500°C
@@ -2387,6 +2391,7 @@ translations:
     interfering with prints. You can re-enable it in Settings > Display.
   : Il salvaschermo animato è stato disattivato su questo dispositivo per evitare
     che interferisca con le stampe. Puoi riattivarlo in Impostazioni > Schermo.
+  The filament system reported an error: ''
   The heater will cycle on and off several times.: Il riscaldatore si accenderà e
     spegnerà diverse volte.
   ? The motor vibrates the belt while a strobe light flashes at the same frequency.
