@@ -1234,6 +1234,7 @@ translations:
   Invalid status response from printer: Réponse détat invalide de limprimante
   Issue description: Description du problème
   It's a new spool: ''
+  Jammed at the Toolhead: ''
   Job Queue: File d'impression
   'Jog failed: {}': 'Échec du déplacement : {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: Rejoignez
@@ -2331,6 +2332,9 @@ translations:
   Stop Print?: Arrêter l'impression ?
   Stop failed: Échec de l'arrêt
   Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds.: 'Arrêter l''impression de \"{}\" ?\n\nCette action sera irréversible après 5 secondes.'
+  Stopped between Hub and Toolhead: ''
+  Stopped between Lane and Hub: ''
+  Stopped between Spool and Lane: ''
   Stops all motion. Requires firmware restart.: Arrête tout mouvement. Nécessite un
     redémarrage du firmware.
   Stow: Ranger

@@ -1059,6 +1059,7 @@
   <translation tag="Invalid status response from printer" es="Respuesta de estado inválida de la impresora"/>
   <translation tag="Issue description" es="Descripción del problema"/>
   <translation tag="It&apos;s a new spool"/>
+  <translation tag="Jammed at the Toolhead"/>
   <translation tag="Job Queue" es="Cola de trabajos"/>
   <translation tag="Jog failed: {}" es="Error en movimiento: {}"/>
   <translation tag="Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests." es="Únase a la comunidad de HelixScreen en Discord para discusión, consejos, ayuda con la solución de problemas y solicitudes de funciones."/>
@@ -2008,6 +2009,9 @@
   <translation tag="Stop Print?" es="¿Detener Impresión?"/>
   <translation tag="Stop failed" es="Detención fallida"/>
   <translation tag="Stop printing \&quot;{}\&quot;?\n\nThis cannot be undone after 5 seconds." es="¿Detener la impresión de \&quot;{}\&quot;?\n\nEsto no se puede deshacer después de 5 segundos."/>
+  <translation tag="Stopped between Hub and Toolhead"/>
+  <translation tag="Stopped between Lane and Hub"/>
+  <translation tag="Stopped between Spool and Lane"/>
   <translation tag="Stops all motion. Requires firmware restart." es="Detiene todo movimiento. Requiere reinicio de firmware."/>
   <translation tag="Stow" es="Guardar"/>
   <translation tag="Strobe LED" es="LED estroboscópico"/>

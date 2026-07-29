@@ -1084,6 +1084,7 @@ translations:
   Invalid status response from printer: 打印机返回的状态响应无效
   Issue description: 问题描述
   It's a new spool: ''
+  Jammed at the Toolhead: ''
   Job Queue: 任务队列
   'Jog failed: {}': '移动失败: {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: 加入
@@ -2062,6 +2063,9 @@ translations:
   Stop Print?: 停止打印？
   Stop failed: 停止失败
   Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds.: '停止打印 \"{}\"？\n\n5秒后将无法撤销。'
+  Stopped between Hub and Toolhead: ''
+  Stopped between Lane and Hub: ''
+  Stopped between Spool and Lane: ''
   Stops all motion. Requires firmware restart.: 停止所有运动。需要固件重启。
   Stow: 收回
   Strobe LED: 频闪LED

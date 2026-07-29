@@ -1059,6 +1059,7 @@
   <translation tag="Invalid status response from printer" ja="プリンターからの無効なステータス応答"/>
   <translation tag="Issue description" ja="問題の説明"/>
   <translation tag="It&apos;s a new spool"/>
+  <translation tag="Jammed at the Toolhead"/>
   <translation tag="Job Queue" ja="ジョブキュー"/>
   <translation tag="Jog failed: {}" ja="ジョグに失敗しました: {}"/>
   <translation tag="Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests." ja="Discord で HelixScreen コミュニティに参加して、ディスカッション、ヒント、トラブルシューティング支援、機能リクエストを共有しましょう。"/>
@@ -2008,6 +2009,9 @@
   <translation tag="Stop Print?" ja="印刷を停止しますか？"/>
   <translation tag="Stop failed" ja="停止に失敗"/>
   <translation tag="Stop printing \&quot;{}\&quot;?\n\nThis cannot be undone after 5 seconds." ja="\&quot;{}\&quot; の印刷を停止しますか？\n\n5秒後は取り消せません。"/>
+  <translation tag="Stopped between Hub and Toolhead"/>
+  <translation tag="Stopped between Lane and Hub"/>
+  <translation tag="Stopped between Spool and Lane"/>
   <translation tag="Stops all motion. Requires firmware restart." ja="すべての動作を停止します。ファームウェアの再起動が必要です。"/>
   <translation tag="Stow" ja="格納"/>
   <translation tag="Strobe LED" ja="ストロボLED"/>

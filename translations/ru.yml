@@ -1199,6 +1199,7 @@ translations:
   Invalid status response from printer: Недопустимый ответ статуса от принтера
   Issue description: Описание проблемы
   It's a new spool: ''
+  Jammed at the Toolhead: ''
   Job Queue: Очередь заданий
   'Jog failed: {}': 'Перемещение не удалось: {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: Присоединяйтесь
@@ -2270,6 +2271,9 @@ translations:
   Stop Print?: Остановить печать?
   Stop failed: Ошибка остановки
   Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds.: 'Остановить печать \"{}\"?\n\nЭто нельзя будет отменить через 5 секунд.'
+  Stopped between Hub and Toolhead: ''
+  Stopped between Lane and Hub: ''
+  Stopped between Spool and Lane: ''
   Stops all motion. Requires firmware restart.: Останавливает всё движение. Требуется
     перезапуск прошивки.
   Stow: Убрать
