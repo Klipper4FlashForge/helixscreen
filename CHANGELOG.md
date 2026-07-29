@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.99.104] - 2026-07-29
+## [0.99.105] - 2026-07-29
+
+> **0.99.104 was skipped.** It was tagged but its release build failed on three
+> platforms, so no artifacts were ever published — 0.99.103 remained the latest
+> release. Everything intended for 0.99.104 ships here, plus the fixes for what
+> broke that build.
 
 Filament systems get a deep correctness pass — AFC and Spoolman especially, most of it verified
 against live BoxTurtle hardware — alongside a sweep through the crash class where a background
@@ -4661,7 +4666,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
-[0.99.104]: https://github.com/prestonbrown/helixscreen/compare/v0.99.103...v0.99.104
+[0.99.105]: https://github.com/prestonbrown/helixscreen/compare/v0.99.103...v0.99.105
 [0.99.103]: https://github.com/prestonbrown/helixscreen/compare/v0.99.102...v0.99.103
 [0.99.102]: https://github.com/prestonbrown/helixscreen/compare/v0.99.101...v0.99.102
 [0.99.101]: https://github.com/prestonbrown/helixscreen/compare/v0.99.100...v0.99.101
