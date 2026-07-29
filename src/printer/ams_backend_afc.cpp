@@ -1572,6 +1572,27 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
         active_load_lane_ = loaded_lane;
     }
 
+    // Track current_load on its own, in addition to folding it into
+    // active_load_lane_ above. The two answer different questions and AFC
+    // publishes them from different variables:
+    //
+    //   current_load  = AFC.current          — set by set_loaded(), cleared by
+    //                                          set_unloaded(). The lane the
+    //                                          extruder is actually gripping.
+    //   current_lane  = AFC.current_loading  — set at the top of TOOL_LOAD and
+    //                                          TOOL_UNLOAD, cleared only on
+    //                                          success. The lane a toolchange
+    //                                          is WORKING ON, loaded or not.
+    //
+    // active_load_lane_ prefers current_lane because attribution wants the lane
+    // being worked. "Is the toolhead occupied" wants current_load and only
+    // current_load — see can_recover_lane_position()'s toolhead guard.
+    if (mentions_load) {
+        toolhead_lane_ = afc_data["current_load"].is_string()
+                             ? afc_data["current_load"].get<std::string>()
+                             : std::string();
+    }
+
     if (!loaded_lane.empty()) {
         int slot_index = slots_.index_of(loaded_lane);
         if (slot_index >= 0) {
@@ -3726,11 +3747,8 @@ bool AmsBackendAfc::can_recover_lane_position(int slot_index) const {
     // Confirmed present in v1.2.0 (a06f14d); reported as
     // AFCProject/AFC-Klipper-Add-On#803, still open. Do not remove this check as
     // redundant with the firmware's — the firmware does not actually stop.
-    //
-    // The hub sensor is the only signal that tracks hub occupancy. The per-lane
-    // loaded_to_hub field is latched at prep and never updated: it reads true on
-    // every lane at once, including while the hub is demonstrably clear.
-    if (system_info_.filament_loaded) {
+    // Still confirmed on the .112 BoxTurtle's installed copy, 2026-07-29.
+    if (!toolhead_is_free_unlocked()) {
         return false;
     }
 
@@ -3746,34 +3764,103 @@ bool AmsBackendAfc::can_recover_lane_position(int slot_index) const {
         return false;
     }
 
+    // AFC_hub.state is the only signal that tracks hub occupancy. The per-lane
+    // loaded_to_hub field is latched at prep and never updated: it reads true on
+    // every lane at once, including while the hub is demonstrably clear.
     auto hub = hub_sensors_.find(route->second);
     const bool hub_occupied = hub != hub_sensors_.end() && hub->second;
     if (!hub_occupied) {
         return false;
     }
 
+    // The lane's own load switch must be triggered (#1187).
+    //
+    // cmd_AFC_LANE_RESET does NOT check this up front. It opens with an
+    // unconditional move_to_hub(cur_lane, DISTANCE, MoveDirection.NEG, ...) —
+    // DISTANCE defaults to 50 — and only tests raw_load_state after that move
+    // plus one further short move inside the retract loop. Dispatching it at a
+    // lane whose filament already sits behind its load switch therefore drags
+    // that lane a further ~50mm back toward its prep sensor and drive gears
+    // before erroring out, which is real damage the in-loop guard runs too late
+    // to prevent. That is precisely the state a lane is left in by a failed
+    // reset, so without this gate the obvious follow-up — tapping Recover again
+    // on the lane that just failed — compounds it.
+    //
+    // It also matches cmd_AFC_RESET's own picker, which builds its candidate
+    // list from lanes with raw_load_state true. AFC publishes that as `load`.
+    const helix::printer::SlotEntry* entry = slots_.get(slot_index);
+    if (!entry || !entry->sensors.load) {
+        return false;
+    }
+
     // The hub sensor is shared by every lane on the unit, so it cannot say whose
-    // filament is past it. When AFC names an active lane, trust that. When it
-    // names none, offer the recovery on every lane routed to this hub rather
-    // than on none: a wrong guess costs one harmless refusal from the firmware,
-    // while showing nothing costs the user their only way out of a stranded lane.
+    // filament is past it. Only offer the recovery on a lane AFC itself names.
+    //
+    // This deliberately offers NOTHING when AFC names no lane (#1182). The older
+    // all-lanes fallback assumed a wrong guess cost one harmless refusal; the
+    // blind opening retract documented above is why that was wrong. Nor does
+    // refusing strand the user: the sidebar Reset dispatches AFC_RESET, which is
+    // AFC's own lane picker (cmd_AFC_RESET), and its candidate list is a better
+    // answer than anything we could guess from a shared sensor.
+    return lane_name == active_load_lane_ && recovery_attribution_valid_unlocked();
+}
+
+bool AmsBackendAfc::toolhead_is_free_unlocked() const {
+    // Callers hold mutex_.
+    //
+    // Deliberately does NOT read system_info_.filament_loaded. On every AFC
+    // build shipped so far the AFC object carries no "filament_loaded" key, so
+    // parse_afc_state() derives it from `loaded_lane` — which prefers
+    // current_lane (AFC.current_loading). That makes filament_loaded true for
+    // the entire duration of a toolchange, including a TOOL_LOAD that has not
+    // put anything in the extruder yet. Gating on it therefore reads "toolhead
+    // busy" across exactly the window where a lane can be stranded past the hub
+    // with the toolhead empty, which is the only window this predicate exists
+    // to serve. Three narrower signals say what filament_loaded only approximates.
+    //
+    // 1. The physical toolhead sensors. Strongest evidence and independent of
+    //    any AFC bookkeeping a restart or a desync could lose.
+    if (tool_start_sensor_ || tool_end_sensor_) {
+        return false;
+    }
+
+    // 2. AFC.current, published as current_load. This is precisely what
+    //    upstream's own toolhead guard reads — cmd_AFC_LANE_RESET does
+    //    `if (tool_load := self.get_current_lane_obj()) is not None`, and
+    //    get_current_lane_obj() resolves self.current. Matching it keeps us
+    //    aligned with the check the firmware means to make: the one missing its
+    //    `return` (AFCProject/AFC-Klipper-Add-On#803), which is why ours is the
+    //    only one that actually stops anything.
+    if (!toolhead_lane_.empty()) {
+        return false;
+    }
+
+    // 3. Per-lane tool_loaded, surfaced as SlotStatus::LOADED. AFC persists it
+    //    through save_vars, so it still reads true after a restart that leaves
+    //    AFC.current null — covering the desync case signal 2 would miss.
+    for (int i = 0; i < slots_.slot_count(); ++i) {
+        const helix::printer::SlotEntry* entry = slots_.get(i);
+        if (entry && entry->info.status == SlotStatus::LOADED) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool AmsBackendAfc::recovery_attribution_valid_unlocked() const {
+    // Callers hold mutex_.
     //
     // A lane rename or unit re-init can leave active_load_lane_ naming a lane
-    // that no longer exists. Treat that as unattributed rather than matching
-    // nothing — otherwise a triggered hub would offer recovery on no lane at all.
-    if (!active_load_lane_.empty() && slots_.index_of(active_load_lane_) >= 0) {
-        return lane_name == active_load_lane_;
-    }
-    return true;
+    // that no longer exists — initialize_slots() never touches it. A stale name
+    // is not attribution, and both the recovery gate and the UI-facing flag must
+    // read it that way or they disagree about the same lane.
+    return !active_load_lane_.empty() && slots_.index_of(active_load_lane_) >= 0;
 }
 
 bool AmsBackendAfc::lane_recovery_is_attributed() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    // Kept consistent with can_recover_lane_position()'s staleness guard above —
-    // otherwise this could report "attributed" while that predicate falls back
-    // to unattributed, leaving the UI's attributed-vs-unattributed ranking and
-    // the actual recovery gate disagreeing about the same lane.
-    return !active_load_lane_.empty() && slots_.index_of(active_load_lane_) >= 0;
+    return recovery_attribution_valid_unlocked();
 }
 
 AmsError AmsBackendAfc::recover_lane_position(int slot_index) {
