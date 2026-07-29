@@ -19,6 +19,9 @@
 #include <spdlog/spdlog.h>
 
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -343,6 +346,46 @@ TEST_CASE_METHOD(CrashTestFixture, "Crash: parse crash file groups recent_error 
 #if defined(__linux__) && defined(__GLIBC__)
 #include <dlfcn.h>
 #include <sys/wait.h>
+
+// glibc does NOT store the abort reason as a bare string. `__abort_msg` is a
+// pointer to `struct abort_msg_s { unsigned int size; char msg[]; }`, so the
+// text starts at offsetof(msg) — not at the pointer itself. `size` is the
+// mmap length rounded up to a page, so its low byte is always 0x00 on
+// little-endian: a reader that treats the pointer as `char*` sees a NUL first
+// byte and reports "no message" for every real glibc abort. That is exactly
+// what shipped (bundle VP623KVU, v0.99.100 — a heap-corruption SIGABRT whose
+// reason was discarded as `abort_msg_state:empty`), and the original tests
+// missed it because they published a bare `char*` that glibc never produces.
+//
+// These helpers publish the REAL layout, so the tests fail if the handler
+// stops honouring the struct offset.
+namespace {
+
+struct TestAbortMsg {
+    unsigned int size;
+    char msg[1024];
+};
+
+/// Publish `text` into `__abort_msg` using glibc's real struct layout.
+/// Static storage so it stays valid through raise(SIGABRT). Child-process use
+/// only. Returns false if the symbol is unresolvable.
+bool publish_abort_msg(const char* text) {
+    static TestAbortMsg buf;
+    // Page-rounded, exactly as glibc's ROUND_UP(sizeof + len + 1, pagesize)
+    // produces — this is what makes byte 0 a NUL and hides the message from a
+    // char*-style read.
+    buf.size = 4096;
+    std::snprintf(buf.msg, sizeof(buf.msg), "%s", text);
+    void** slot = static_cast<void**>(dlsym(RTLD_DEFAULT, "__abort_msg"));
+    if (slot == nullptr) {
+        return false;
+    }
+    *slot = &buf;
+    return true;
+}
+
+} // namespace
+
 TEST_CASE_METHOD(CrashTestFixture,
                  "Crash: SIGABRT signal handler captures __abort_msg into crash file",
                  "[telemetry][crash][subprocess]") {
@@ -357,19 +400,17 @@ TEST_CASE_METHOD(CrashTestFixture,
     REQUIRE(pid >= 0);
 
     if (pid == 0) {
-        // Child. Pre-populate __abort_msg the same way glibc's __libc_message
-        // would for a real abort (free(): invalid pointer / double free /
-        // assertion failure), then raise SIGABRT directly. This exercises the
-        // crash_handler capture path without depending on the real heap-
-        // corruption code path actually firing through Catch2's harness
-        // (Catch2 v3 installs its own SIGABRT handlers that interfere with
-        // letting glibc abort() drive the test child's termination).
-        void** abort_msg_slot = static_cast<void**>(dlsym(RTLD_DEFAULT, "__abort_msg"));
-        if (abort_msg_slot == nullptr) {
+        // Child. Pre-populate __abort_msg in glibc's real struct layout, the
+        // same way __libc_message would for an actual abort (free(): invalid
+        // pointer / double free / assertion failure), then raise SIGABRT
+        // directly. This exercises the crash_handler capture path without
+        // depending on the real heap-corruption code path firing through
+        // Catch2's harness (Catch2 v3 installs its own SIGABRT handlers that
+        // interfere with letting glibc abort() drive the child's termination).
+        // The real-glibc-abort case is covered end-to-end below.
+        if (!publish_abort_msg("helixscreen abort_msg capture test (synthetic)")) {
             _exit(98);
         }
-        static const char synthetic_msg[] = "helixscreen abort_msg capture test (synthetic)";
-        *abort_msg_slot = const_cast<char*>(synthetic_msg);
 
         crash_handler::install(crash_path());
         raise(SIGABRT);
@@ -410,15 +451,12 @@ TEST_CASE_METHOD(CrashTestFixture,
     REQUIRE(pid >= 0);
 
     if (pid == 0) {
-        void** abort_msg_slot = static_cast<void**>(dlsym(RTLD_DEFAULT, "__abort_msg"));
-        if (abort_msg_slot == nullptr) {
-            _exit(98);
-        }
         // Embedded \n and \r must flatten to spaces — the crash file format
         // is "key:value\n", and a raw newline inside the value would split
         // the line at the parser and break the single-field invariant.
-        static const char synthetic_msg[] = "line one\nline two\rline three";
-        *abort_msg_slot = const_cast<char*>(synthetic_msg);
+        if (!publish_abort_msg("line one\nline two\rline three")) {
+            _exit(98);
+        }
 
         crash_handler::install(crash_path());
         raise(SIGABRT);
@@ -447,13 +485,9 @@ TEST_CASE_METHOD(CrashTestFixture, "Crash: SIGABRT handler truncates oversized _
     REQUIRE(pid >= 0);
 
     if (pid == 0) {
-        void** abort_msg_slot = static_cast<void**>(dlsym(RTLD_DEFAULT, "__abort_msg"));
-        if (abort_msg_slot == nullptr) {
-            _exit(98);
-        }
         // 500 'a's followed by a tail marker the bounded copy MUST NOT
         // capture — handler buffer is 256 bytes, max content 255 chars.
-        static char long_msg[600] = {};
+        char long_msg[600] = {};
         for (size_t i = 0; i < 500; ++i) {
             long_msg[i] = 'a';
         }
@@ -461,7 +495,9 @@ TEST_CASE_METHOD(CrashTestFixture, "Crash: SIGABRT handler truncates oversized _
         for (size_t j = 0; j < sizeof(tail); ++j) {
             long_msg[500 + j] = tail[j];
         }
-        *abort_msg_slot = long_msg;
+        if (!publish_abort_msg(long_msg)) {
+            _exit(98);
+        }
 
         crash_handler::install(crash_path());
         raise(SIGABRT);
@@ -521,7 +557,165 @@ TEST_CASE_METHOD(CrashTestFixture,
     REQUIRE(result["abort_msg_state"] == "empty");
     REQUIRE_FALSE(result.contains("abort_msg"));
 }
+
+// A non-null abort_msg_s whose message is the empty string is still "no reason"
+// — distinct from the nullptr case above, and the branch that used to swallow
+// every real message. Pins that `empty` is decided on the message text, not on
+// the first byte of the struct's `size` field.
+TEST_CASE_METHOD(CrashTestFixture,
+                 "Crash: SIGABRT with zero-length abort_msg_s message records empty",
+                 "[telemetry][crash][subprocess]") {
+    if (dlsym(RTLD_DEFAULT, "__abort_msg") == nullptr) {
+        SKIP("__abort_msg not resolvable on this libc");
+    }
+
+    pid_t pid = fork();
+    REQUIRE(pid >= 0);
+
+    if (pid == 0) {
+        if (!publish_abort_msg("")) {
+            _exit(98);
+        }
+        crash_handler::install(crash_path());
+        raise(SIGABRT);
+        _exit(99);
+    }
+
+    int status = 0;
+    REQUIRE(waitpid(pid, &status, 0) == pid);
+    REQUIRE(WIFEXITED(status));
+    REQUIRE(WEXITSTATUS(status) == 128 + SIGABRT);
+
+    auto result = crash_handler::read_crash_file(crash_path());
+    REQUIRE_FALSE(result.is_null());
+    REQUIRE(result["abort_msg_state"] == "empty");
+    REQUIRE_FALSE(result.contains("abort_msg"));
+}
+
+// The one that matters: let REAL glibc populate __abort_msg via its own
+// __libc_message path, rather than modelling the layout ourselves. Every
+// synthetic test above shares our understanding of the struct, so all of them
+// would keep passing if that understanding were wrong — which is exactly how
+// the char*-read shipped. This test has no such blind spot.
+//
+// Skipped under ASan/TSan/Valgrind: those intercept the double free and
+// terminate the child themselves, so glibc never runs and our handler never
+// sees the signal.
+#if !defined(__SANITIZE_ADDRESS__) && !defined(__SANITIZE_THREAD__) &&                             \
+    !(defined(__has_feature) && __has_feature(address_sanitizer))
+TEST_CASE_METHOD(CrashTestFixture,
+                 "Crash: real glibc heap-corruption abort reason reaches the crash file",
+                 "[telemetry][crash][subprocess][960]") {
+    if (dlsym(RTLD_DEFAULT, "__abort_msg") == nullptr) {
+        SKIP("__abort_msg not resolvable on this libc");
+    }
+    if (getenv("VALGRIND") != nullptr || getenv("LD_PRELOAD") != nullptr) {
+        SKIP("allocator interposed — glibc's own corruption check would not fire");
+    }
+
+    pid_t pid = fork();
+    REQUIRE(pid >= 0);
+
+    if (pid == 0) {
+        crash_handler::install(crash_path());
+        // Double free: glibc's malloc_printerr -> __libc_message writes the
+        // reason into __abort_msg and calls abort(). Reason text varies by
+        // glibc version ("free(): double free detected in tcache 2",
+        // "double free or corruption (!prev)"), so the assertion below only
+        // pins the substring every variant shares.
+        //
+        // The pointer MUST be volatile. At -O2 (this build's setting) GCC
+        // recognises the redundant free/free pair as UB and deletes the second
+        // call outright, so the child sails past and _exit(99)s — verified,
+        // that is exactly how this test first failed. volatile forces both
+        // calls to reach glibc.
+        void* volatile p = malloc(64);
+        free(const_cast<void*>(p));
+        free(const_cast<void*>(p)); // NOLINT — deliberate corruption, this is the test
+        _exit(99);                  // glibc failed to detect it — parent's exit-code check fails
+    }
+
+    int status = 0;
+    REQUIRE(waitpid(pid, &status, 0) == pid);
+    INFO("raw status = " << status << ", WIFEXITED=" << WIFEXITED(status) << ", WEXITSTATUS="
+                         << WEXITSTATUS(status) << ", WIFSIGNALED=" << WIFSIGNALED(status));
+    REQUIRE(WIFEXITED(status));
+    REQUIRE(WEXITSTATUS(status) == 128 + SIGABRT);
+
+    auto result = crash_handler::read_crash_file(crash_path());
+    REQUIRE_FALSE(result.is_null());
+    REQUIRE(result["signal"] == 6);
+    REQUIRE(result["abort_msg_state"] == "present");
+    REQUIRE(result.contains("abort_msg"));
+    std::string msg = result["abort_msg"];
+    INFO("abort_msg = " << msg);
+    REQUIRE(msg.find("free") != std::string::npos);
+}
+#endif // sanitizers
 #endif // __linux__ && __GLIBC__
+
+// ============================================================================
+// Wrap-safe monotonic durations (uptime, heap-snapshot age)
+// ============================================================================
+
+TEST_CASE("Crash: elapsed_ms computes wrap-safe monotonic deltas", "[telemetry][crash]") {
+    using crash_handler::detail::elapsed_ms;
+
+    SECTION("ordinary forward delta") {
+        REQUIRE(elapsed_ms(1000, 6000) == 5000);
+    }
+    SECTION("zero delta") {
+        REQUIRE(elapsed_ms(12345, 12345) == 0);
+    }
+    SECTION("crosses the 32-bit wrap at ~49.7 days") {
+        // start near the top of the counter, now just past the fold
+        REQUIRE(elapsed_ms(0xFFFFF000u, 0x00001000u) == 0x2000u);
+    }
+    SECTION("full-range wrap stays exact") {
+        REQUIRE(elapsed_ms(0xFFFFFFFFu, 0u) == 1u);
+    }
+}
+
+// heap_snapshot_age_ms must be an AGE. It previously emitted the snapshot's raw
+// monotonic timestamp under an "age" label, so a snapshot taken 17 ms before the
+// crash was reported as "snapshot age 144712ms" in the auto-filed issue (bundle
+// VP623KVU) — reading as a badly stale snapshot when it was in fact fresh.
+#if defined(__linux__)
+TEST_CASE_METHOD(CrashTestFixture, "Crash: heap_snapshot_age_ms is an age, not a timestamp",
+                 "[telemetry][crash][subprocess]") {
+    struct timespec ts {};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    const uint64_t boot_ms = static_cast<uint64_t>(ts.tv_sec) * 1000;
+    if (boot_ms < 10000) {
+        SKIP("host booted <10s ago — cannot distinguish an age from a timestamp");
+    }
+
+    pid_t pid = fork();
+    REQUIRE(pid >= 0);
+
+    if (pid == 0) {
+        crash_handler::install(crash_path());
+        crash_handler::refresh_heap_snapshot();
+        raise(SIGABRT);
+        _exit(99);
+    }
+
+    int status = 0;
+    REQUIRE(waitpid(pid, &status, 0) == pid);
+    REQUIRE(WIFEXITED(status));
+    REQUIRE(WEXITSTATUS(status) == 128 + SIGABRT);
+
+    auto result = crash_handler::read_crash_file(crash_path());
+    REQUIRE_FALSE(result.is_null());
+    REQUIRE(result.contains("heap_snapshot_age_ms"));
+    long age = result["heap_snapshot_age_ms"];
+    INFO("age = " << age << ", monotonic-since-boot = " << boot_ms);
+    // The snapshot was taken microseconds before the raise, so the age is tiny.
+    // Emitting the timestamp instead would yield >= boot_ms (>= 10000).
+    REQUIRE(age >= 0);
+    REQUIRE(age < 1000);
+}
+#endif // __linux__
 
 // End-to-end (#987 last-ditch capture): ERROR log lines flow through
 // CrashErrorLogSink into the crash file as recent_error: entries, newest-first,

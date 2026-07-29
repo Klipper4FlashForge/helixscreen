@@ -110,7 +110,7 @@ class CrashReporter {
 
         // Cached heap snapshot (refreshed every ~10s from main loop)
         struct HeapSnapshot {
-            long age_ms = 0; // monotonic-ms timestamp when captured
+            long age_ms = 0; // ms between snapshot capture and the crash
             long rss_kb = 0;
             long vsz_kb = 0;
             long arena_kb = 0;    // glibc mallinfo total arena
