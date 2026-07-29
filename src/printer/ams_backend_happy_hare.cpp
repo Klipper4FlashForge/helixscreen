@@ -562,23 +562,16 @@ void AmsBackendHappyHare::parse_mmu_state(const nlohmann::json& mmu_data) {
             initialize_slots(gate_count);
         }
 
-        // Update gate status values via SlotRegistry
+        // Cache the raw values. The LOADED stamp is applied by
+        // refresh_gate_statuses_locked() at the end of this function rather than
+        // here, because it depends on gate/filament — which arrive in their own
+        // deltas, without gate_status (#1199).
+        if (gate_status_raw_.size() != gate_status.size()) {
+            gate_status_raw_.assign(gate_status.size(), -1);
+        }
         for (size_t i = 0; i < gate_status.size(); ++i) {
             if (gate_status[i].is_number_integer()) {
-                int hh_status = gate_status[i].get<int>();
-                SlotStatus status = slot_status_from_happy_hare(hh_status);
-
-                // Mark the currently loaded slot as LOADED instead of AVAILABLE
-                if (system_info_.filament_loaded &&
-                    static_cast<int>(i) == system_info_.current_slot &&
-                    status == SlotStatus::AVAILABLE) {
-                    status = SlotStatus::LOADED;
-                }
-
-                auto* entry = slots_.get_mut(static_cast<int>(i));
-                if (entry) {
-                    entry->info.status = status;
-                }
+                gate_status_raw_[i] = gate_status[i].get<int>();
             }
         }
     }
@@ -1029,6 +1022,40 @@ void AmsBackendHappyHare::parse_mmu_state(const nlohmann::json& mmu_data) {
                 }
             }
         }
+    }
+
+    // Re-derive every gate's status from the cached gate_status array plus the
+    // gate/filament pair this frame may have moved. Unconditional, and last, so
+    // no ordering between the three keys can leave a stale stamp behind.
+    refresh_gate_statuses_locked();
+}
+
+void AmsBackendHappyHare::refresh_gate_statuses_locked() {
+    for (size_t i = 0; i < gate_status_raw_.size(); ++i) {
+        auto* entry = slots_.get_mut(static_cast<int>(i));
+        if (!entry) {
+            continue;
+        }
+
+        SlotStatus status = slot_status_from_happy_hare(gate_status_raw_[i]);
+
+        // The gate Happy Hare reports loaded reads LOADED whatever its fill
+        // state is — including gate_status 2 (from_buffer), which the old
+        // `status == AVAILABLE` precondition silently excluded, so a buffered
+        // gate never showed as seated while it was feeding the toolhead.
+        //
+        // gate_status 0 is the deliberate exception. An empty gate that Happy
+        // Hare still names as loaded is a runout: the filament it already fed is
+        // at the toolhead, but the gate has nothing left, and load_filament()'s
+        // "slot not available" refusal keys on EMPTY. That disagreement with the
+        // aggregate pair is also why this backend does not claim
+        // has_per_slot_loaded_authority() — see the comment there.
+        if (system_info_.filament_loaded && static_cast<int>(i) == system_info_.current_slot &&
+            status != SlotStatus::EMPTY) {
+            status = SlotStatus::LOADED;
+        }
+
+        entry->info.status = status;
     }
 }
 

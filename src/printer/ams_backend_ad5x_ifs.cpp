@@ -711,14 +711,22 @@ void AmsBackendAd5xIfs::update_slot_from_state(int slot_index) {
     bool is_active_slot = (system_info_.current_slot == slot_index);
     bool has_filament = port_presence_[idx];
 
-    // Native ZMOD IFS has no per-port sensors. For the active slot, infer
-    // presence from the head sensor so the UI doesn't show all slots as EMPTY.
-    if (!has_per_port_sensors_ && is_active_slot && head_filament_) {
-        has_filament = true;
-    }
-
     SlotStatus prev_status = entry->info.status;
-    if (has_filament && is_active_slot && head_filament_) {
+    // The seated lane is LOADED whenever the head sensor sees filament,
+    // WITHOUT requiring the lane's own port sensor. Two reasons:
+    //
+    //  - A runout drops port_presence_ while the filament that lane already fed
+    //    is still in the toolhead (#995) — the state can_unload_from_toolhead()
+    //    keeps the unload gate open for. Requiring the port sensor demoted the
+    //    lane to EMPTY at exactly the moment the user needs to recover it.
+    //  - Native ZMOD publishes no per-port sensors at all, so port_presence_ is
+    //    false for every lane; this is what keeps the seated one off EMPTY
+    //    (previously done by forcing has_filament true for that one case).
+    //
+    // head_filament_ is also what system_info_.filament_loaded is assigned from,
+    // so the per-slot status and the aggregate pair now agree by construction —
+    // the precondition for has_per_slot_loaded_authority().
+    if (is_active_slot && head_filament_) {
         entry->info.status = SlotStatus::LOADED;
     } else if (has_filament) {
         entry->info.status = SlotStatus::AVAILABLE;
@@ -4482,6 +4490,7 @@ void AmsBackendAd5xIfs::parse_adventurer_json(const std::string& content) {
         // the next IFS_STATUS frame.
         auto chan_it = ffm.find("channel");
         if (chan_it != ffm.end() && chan_it->is_number_integer()) {
+            const int prev_current_slot = system_info_.current_slot;
             const int fw_chan = chan_it->get<int>();
             ffm_channel_ = (fw_chan >= 1 && fw_chan <= NUM_PORTS) ? fw_chan : 0;
             // Head-gate (#1065 row 28): the file's FFMInfo.channel is sticky and
@@ -4518,6 +4527,17 @@ void AmsBackendAd5xIfs::parse_adventurer_json(const std::string& content) {
                     persist_seated_slot_locked(seated_slot0);
                 }
                 log_seated_state_locked("adventurer_json");
+            }
+
+            // The per-slot loop above ran BEFORE this block moved the seated
+            // lane, so every slot's LOADED stamp is now keyed on the old
+            // current_slot. Re-derive them here rather than waiting for the next
+            // status frame: the stamp is what slot_is_actively_loaded() reads,
+            // and a stale one paints the highlight on the lane we just left.
+            if (system_info_.current_slot != prev_current_slot) {
+                for (int i = 0; i < NUM_PORTS; ++i) {
+                    update_slot_from_state(i);
+                }
             }
         }
 

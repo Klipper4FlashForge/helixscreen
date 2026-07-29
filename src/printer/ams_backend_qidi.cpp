@@ -701,6 +701,25 @@ void AmsBackendQidi::parse_save_variables(const nlohmann::json& variables) {
             }
         }
     }
+
+    // Reconcile the LOADED stamp with the aggregate pair, after both writers.
+    // The slot<N> loop runs first and derives status from the per-slot state
+    // word alone, which carries no notion of "seated at the extruder"; only the
+    // last_load_slot block below it writes current_slot / filament_loaded. A
+    // payload that repeats slot<M> without repeating last_load_slot therefore
+    // demoted the seated slot to AVAILABLE while the aggregate still named it,
+    // which is the disagreement has_per_slot_loaded_authority() cannot tolerate
+    // (#1199).
+    //
+    // A negative state word (BLOCKED) wins: a slot the Box has faulted must not
+    // be painted healthy just because it is the seated one.
+    if (system_info_.filament_loaded && system_info_.current_slot >= 0) {
+        if (auto* seated = system_info_.get_slot_global(system_info_.current_slot)) {
+            if (seated->status != SlotStatus::BLOCKED) {
+                seated->status = SlotStatus::LOADED;
+            }
+        }
+    }
 }
 
 void AmsBackendQidi::apply_filas_list(const std::string& content) {

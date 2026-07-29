@@ -135,6 +135,18 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // the firmware still considers seated.
     [[nodiscard]] bool can_unload_from_toolhead(int slot_index) const override;
 
+    /// update_slot_from_state() stamps SlotStatus::LOADED on the seated lane
+    /// from the firmware's own active-lane pointer plus the head sensor — the
+    /// same two inputs system_info_.filament_loaded is assigned from — and it
+    /// re-runs on every path that moves either one, including the
+    /// FFMInfo.channel adoption in parse_adventurer_json. Reading that stamp
+    /// therefore never contradicts the aggregate pair, and it survives the #995
+    /// runout that drops a lane's port sensor while its filament is still at the
+    /// toolhead (prestonbrown/helixscreen#1199).
+    [[nodiscard]] bool has_per_slot_loaded_authority() const override {
+        return true;
+    }
+
     // Seated-channel-aware: a non-seated lane cold-ejects, so the menu reads
     // "Eject" even when the firmware dropped its active pointer. Mirrors
     // unload_filament()'s eject-vs-toolhead routing (drift-guarded by test).
@@ -332,6 +344,7 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
 
   private:
     friend class Ad5xIfsTestAccess;
+    friend class Ad5xPerSlotLoadedHelper;
 
     void parse_save_variables(const nlohmann::json& vars);
     void parse_port_sensor(int port_1based, bool detected);
