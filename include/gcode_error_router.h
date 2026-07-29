@@ -127,7 +127,10 @@ class GcodeErrorRouter {
     /// WARNING error that carries a recovery action: toast with a "Recover"
     /// button (the key298 flow -- bounces klipper_mcu via
     /// PrinterRecoveryService rather than running a gcode).
-    void present_recover_toast(const ErrorEvent& e);
+    /// @return false when no API client exists, so nothing was shown — the
+    ///         caller must not then claim the fault in
+    ///         fault_surface_correlation and stand AmsErrorBridge down.
+    bool present_recover_toast(const ErrorEvent& e);
 
     /// Plain unclassified toast: deferred 150ms so a late-arriving RPC
     /// error response can populate the correlation buffer first.

@@ -1042,8 +1042,18 @@ display until the earlier entry is popped. Observed depth 4 during one real fail
 slicer-deprecation warning at the head hiding the actionable load error behind it. Clearing an
 already-empty queue is a harmless no-op.
 
-*A single clear is not enough.* `AmsBackendAfc::clear_fault()` drains with a bounded budget and
-a wall-clock deadline; see `message_drain_budget_` / `message_drain_deadline_`.
+*The queue only ever grows on its own.* One entry per `AFC_logger.error()` / `.warning()`
+call — **not** one per line; the per-line loop in `AFC_logger.py` writes the log file, and the
+`message_queue.append((message, ...))` that follows it sits outside that loop, so a five-line
+`TOOL_LOAD` diagnostic is a single entry carrying embedded newlines. Nothing pops entries
+implicitly: `reset_failure()` (`AFC_error.py`) and `AFC_RESUME` both leave `message_queue`
+untouched, so entries accumulate across a whole session and anything left behind resurfaces as
+the next session's stale error. (Verified against the add-on source on a live BoxTurtle,
+2026-07-29.)
+
+*A single clear is not enough.* `AmsBackendAfc::clear_fault()` drains **until the queue reports
+empty**, bounded by a wall-clock deadline and by `kMessageDrainMaxClears` as a runaway guard
+(not as the expected stopping point); see `message_drain_budget_` / `message_drain_deadline_`.
 
 **`AFC.error_state` is not the error signal.** It stayed `false` for a whole session while
 `message` held an error. It drives only `error_segment_` and a `classify_error` catch-all.
@@ -1378,9 +1388,11 @@ actually two unrelated operations that happened to share one name:
 
 - **Fault clear** (`clear_fault(slot_index)`) is bookkeeping only — it never moves
   filament. AFC has no per-lane fault clear, so `slot_index` is ignored: it sends
-  `RESET_FAILURE` followed by `AFC_CLEAR_MESSAGE` and arms a bounded drain of
+  `RESET_FAILURE` followed by `AFC_CLEAR_MESSAGE` and arms a drain of
   `printer.AFC.message`, which is a FIFO queue — a second queued error is not visible
-  until the first is popped, so a single clear only pops one entry.
+  until the first is popped, so a single clear only pops one entry. The drain runs until
+  the queue empties rather than for a fixed count — nothing but `AFC_CLEAR_MESSAGE` ever
+  pops an entry, so depth is a function of the whole session, not of the current fault.
 - **Lane-position recovery** (`recover_lane_position(slot_index)`) is a physical
   retract: it sends `AFC_LANE_RESET LANE={name}` to pull filament stranded in the
   bowden back to its lane. AFC's firmware refuses this unless that lane's hub sensor

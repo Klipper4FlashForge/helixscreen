@@ -334,7 +334,7 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
             std::count(captured_gcodes.begin(), captured_gcodes.end(), expected));
     }
 
-    static constexpr int kMessageDrainBudget = AmsBackendAfc::kMessageDrainBudget;
+    static constexpr int kMessageDrainMaxClears = AmsBackendAfc::kMessageDrainMaxClears;
 
     void test_maybe_drain_message_queue() {
         maybe_drain_message_queue();
@@ -2534,9 +2534,51 @@ TEST_CASE("AFC drains the message queue until it empties", "[ams][afc][recovery]
     REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") == 2);
 }
 
+TEST_CASE("AFC drains a session's worth of accumulated messages", "[ams][afc][recovery]") {
+    // AFC's message_queue only ever grows on its own: one entry per
+    // AFC_logger.error()/.warning() call, and neither reset_failure() nor
+    // AFC_RESUME pops anything. A session therefore accumulates warnings and
+    // resolved errors ahead of the actionable one — the reported case was depth
+    // 4 behind a per-print-start SET_AFC_TOOLCHANGES deprecation warning
+    // (#1186). The stopping condition must be an empty queue, not a fixed
+    // count: whatever a short budget truncates survives to become the next
+    // session's stale error.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+
+    // Entry 0 is the head clear_fault() pops; the rest surface one at a time.
+    const std::vector<std::string> queued = {
+        "SET_AFC_TOOLCHANGES is deprecated",
+        "lane1 Current lane not loaded, LOAD TRIGGER NOT TRIGGERED\n"
+        "||==>--||----||-----||\nTRG   LOAD   HUB   TOOL",
+        "'lane1' failed to reset to hub, load switch became false during reset",
+        "'lane2' failed to reset to hub, load switch became false during reset",
+        "lane3 filament failed to trigger pre extruder gear toolhead sensor",
+    };
+
+    helper.clear_fault(0);
+    REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") == 1); // popped queued[0]
+
+    // Each pop exposes the next head. Four deltas, four more clears.
+    for (size_t i = 1; i < queued.size(); ++i) {
+        helper.test_parse_afc_state(nlohmann::json{
+            {"message", {{"message", queued[i]}, {"type", "error"}}}});
+        helper.test_maybe_drain_message_queue();
+    }
+    REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") == static_cast<int>(queued.size()));
+
+    // Queue empty: stop, and stay stopped.
+    helper.test_parse_afc_state(nlohmann::json{
+        {"message", {{"message", ""}, {"type", ""}}}});
+    helper.test_maybe_drain_message_queue();
+    REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") == static_cast<int>(queued.size()));
+}
+
 TEST_CASE("AFC message drain is bounded", "[ams][afc][recovery]") {
-    // A fault that re-enqueues as fast as we pop must not spin forever. The
-    // budget caps total clears per clear_fault() at kMessageDrainBudget.
+    // A fault that re-enqueues as fast as we pop must not spin forever.
+    // kMessageDrainMaxClears is the runaway guard, not the expected exit — the
+    // preceding test covers the normal drain-until-empty path.
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
     helper.set_running(true);
@@ -2548,8 +2590,8 @@ TEST_CASE("AFC message drain is bounded", "[ams][afc][recovery]") {
         helper.test_maybe_drain_message_queue();
     }
 
-    REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") <=
-            AmsBackendAfcTestHelper::kMessageDrainBudget);
+    REQUIRE(helper.gcode_count("AFC_CLEAR_MESSAGE") ==
+            AmsBackendAfcTestHelper::kMessageDrainMaxClears);
 }
 
 TEST_CASE("AFC clear_fault discards queued lane ejects", "[ams][afc][recovery]") {
