@@ -3,6 +3,7 @@
 
 #include "ui_panel_ams.h"
 
+#include "ui_afc_fault_path.h"
 #include "ui_ams_detail.h"
 #include "ui_ams_device_operations_overlay.h"
 #include "ui_ams_environment_overlay.h"
@@ -1668,6 +1669,14 @@ void AmsPanel::show_loading_error_modal() {
     if (error_message.empty()) {
         error_message = lv_tr("An error occurred during filament loading.");
     }
+
+    // AFC welds a monospace position diagram onto its lane faults, which our
+    // proportional font renders as noise (#1184). Publish the stop point to the
+    // modal's <afc_fault_path> graphic and drop the art rows from the text. An
+    // unrecognised message sets the subject to 0 (graphic hidden) and comes back
+    // unchanged — including the non-AFC backends, which must clear a previous
+    // AFC fault's marker rather than inherit it.
+    error_message = helix::ui::afc_fault_path_apply(error_message);
 
     // Store slot for retry
     int retry_slot = info.current_slot;

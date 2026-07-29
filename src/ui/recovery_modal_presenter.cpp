@@ -3,6 +3,7 @@
 
 #include "recovery_modal_presenter.h"
 
+#include "ui_afc_fault_path.h"
 #include "ui_error_reporting.h"
 #include "ui_modal.h"
 #include "ui_notification.h"
@@ -117,8 +118,15 @@ void RecoveryModalPresenter::present(const helix::ErrorEvent& e) {
     // leaves empty for CFS events.
     helix::PromptData prompt;
     prompt.title = modal_title_for(e);
-    if (!e.detail.empty())
-        prompt.text_lines.push_back(e.detail);
+    // AFC welds a monospace position diagram onto its lane faults, which our
+    // proportional font renders as noise (#1184). Publish the stop point to the
+    // modal's <afc_fault_path> graphic and drop the art rows from the text. Every
+    // event goes through here, not just AFC's: an unrecognised detail sets the
+    // subject to 0 (graphic hidden) and comes back unchanged, which is also what
+    // clears a previous fault's marker off a reused modal instance.
+    const std::string detail = afc_fault_path_apply(e.detail);
+    if (!detail.empty())
+        prompt.text_lines.push_back(detail);
     for (const auto& a : e.recovery_actions) {
         helix::PromptButton b;
         b.label = a.label;
