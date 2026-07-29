@@ -20,6 +20,12 @@
 setup() {
     REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
     BIN="$REPO_ROOT/build/bin/helix-screen"
+    # Private config dir, mirroring tests/ui/helix/app.py. bats runs FILES in
+    # parallel (--jobs), and the single-instance lock lives in the config dir —
+    # so sharing the default one makes this file and test_helixctl_json.bats
+    # race for it, and the loser dies with "Another instance is already running".
+    export HELIX_CONFIG_DIR="$BATS_TEST_TMPDIR/config"
+    mkdir -p "$HELIX_CONFIG_DIR"
     WINDOW_PATCH="$REPO_ROOT/patches/lvgl_sdl_window.patch"
     SW_PATCH="$REPO_ROOT/patches/lvgl_sdl_sw_android_debug.patch"
     WINDOW_SRC="$REPO_ROOT/lib/lvgl/src/drivers/sdl/lv_sdl_window.c"

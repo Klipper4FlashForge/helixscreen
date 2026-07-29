@@ -17,6 +17,12 @@ setup_file() {
 
     export SOCK="${BATS_FILE_TMPDIR}/helix-ctl.sock"
     export APP_LOG="${BATS_FILE_TMPDIR}/app.log"
+    # Private config dir, mirroring tests/ui/helix/app.py. bats runs FILES in
+    # parallel (--jobs), and the single-instance lock lives in the config dir —
+    # so sharing the default one makes this file and test_headless_display.bats
+    # race for it, and the loser dies with "Another instance is already running".
+    export HELIX_CONFIG_DIR="${BATS_FILE_TMPDIR}/config"
+    mkdir -p "$HELIX_CONFIG_DIR"
     # Mirror scripts/screenshot.sh's launch: Wayland needs SDL's native driver.
     if [ -n "$WAYLAND_DISPLAY" ] && [ -z "$SDL_VIDEODRIVER" ]; then
         export SDL_VIDEODRIVER=wayland
