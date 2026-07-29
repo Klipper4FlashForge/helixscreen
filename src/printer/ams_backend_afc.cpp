@@ -3149,13 +3149,30 @@ void AmsBackendAfc::parse_lane_data(const nlohmann::json& lane_data) {
             }
         }
 
-        // Parse spool information if available
-        if (lane.contains("spool_id") && lane["spool_id"].is_number_integer()) {
-            slot.spoolman_id = lane["spool_id"].get<int>();
+        // Parse spool information if available.
+        //
+        // Mirrors parse_afc_stepper(): AFC writes spool_id=None on eject, and
+        // is_number_integer() is false for null, so guarding on that alone
+        // retained the old id and left an ejected lane looking linked — which is
+        // what aims a later edit's Spoolman write at the wrong spool. An ABSENT
+        // key still means "unchanged"; these are deltas, not snapshots.
+        if (lane.contains("spool_id")) {
+            if (lane["spool_id"].is_number_integer()) {
+                slot.spoolman_id = lane["spool_id"].get<int>();
+            } else if (lane["spool_id"].is_null()) {
+                slot.spoolman_id = 0;
+            }
         }
 
         // Vendor/brand — see read_vendor(). Inert until #808 ships.
         read_vendor(lane, slot.brand);
+
+        // Re-supply the user's attached identity on top of firmware truth, the
+        // same way parse_afc_stepper() does. Without this, which parser ran last
+        // decided whether an override was visible: the status path applied it,
+        // the DB path silently dropped it. Must follow every firmware read above
+        // so the override still wins.
+        apply_overrides(slot, slot.global_index >= 0 ? slot.global_index : slot.slot_index);
 
         // NO WEIGHT IS READ FROM lane_data, on any AFC version. This is deliberate.
         //
