@@ -445,6 +445,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcStatusFieldHelper;
     friend class AfcActionTimeoutHelper;
     friend class AfcDispatchAckHelper;
+    friend class AfcToolchangerStatusHelper;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;

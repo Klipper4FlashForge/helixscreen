@@ -1908,6 +1908,39 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
         }
         spdlog::debug("[AMS AFC] Discovered {} extruder names from AFC state",
                       extruder_names_.size());
+
+        // Derive the toolchanger shape from the names, because the status
+        // subscription is the ONLY surface that reaches us and it does not carry
+        // AFC.system. Upstream writes str["system"]['num_extruders'] in exactly
+        // two places — _webhooks_status() (the /printer/afc/status HTTP endpoint,
+        // which we never call) and save_vars() (the vars file) — while
+        // get_status() publishes current_load/current_lane/next_lane/
+        // current_state/spoolman/error_state/units/lanes and no system key.
+        //
+        // Without this, num_extruders_ stayed at its default 1 on every real
+        // printer, so `if (num_extruders_ > 1)` in load_filament() and
+        // select_tool() was never true and AFC_SELECT_TOOL was never dispatched
+        // on an actual AFC toolchanger. extruders_ stayed empty too, which the
+        // bounds checks turned into silence rather than a crash.
+        //
+        // Order is preserved verbatim: extruders_ is indexed POSITIONALLY as a
+        // tool number, and AFC emits the array in tool order.
+        if (!extruder_names_.empty()) {
+            num_extruders_ = static_cast<int>(extruder_names_.size());
+
+            // Seed only what is missing. A system-sourced record carries
+            // per-extruder lane_loaded and tool_stn distances that a bare name
+            // cannot, so never overwrite one that is already populated.
+            for (const auto& ext_name : extruder_names_) {
+                auto it = std::find_if(extruders_.begin(), extruders_.end(),
+                                       [&](const AfcExtruderInfo& e) { return e.name == ext_name; });
+                if (it == extruders_.end()) {
+                    AfcExtruderInfo info;
+                    info.name = ext_name;
+                    extruders_.push_back(std::move(info));
+                }
+            }
+        }
     }
 
     // Lane AFC has pre-staged for the NEXT toolchange (AFC.next_lane). Same
