@@ -242,15 +242,17 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     AmsError recover() override;
     AmsError reset() override;
     AmsError clear_fault(int slot_index) override;
-    /// AFC_LANE_RESET retracts from the bowden to the hub. Needs the lane's hub
-    /// sensor triggered and a free toolhead. See can_recover_lane_position().
+    /// AFC_LANE_RESET retracts from the bowden to the hub. Needs the lane routed
+    /// to a hub, that hub's sensor triggered, a free toolhead, the lane's own
+    /// load switch triggered, and AFC naming this exact lane as active. See
+    /// can_recover_lane_position() for why each is load-bearing.
     [[nodiscard]] bool can_recover_lane_position(int slot_index) const override;
     AmsError recover_lane_position(int slot_index) override;
-    /// True when AFC names a specific lane as active (AFC.current_load /
-    /// current_lane), i.e. active_load_lane_ is non-empty. The BoxTurtle hub
-    /// sensor is shared across every lane on the unit, so an unattributed
-    /// trigger cannot say whose filament caused it — see
-    /// can_recover_lane_position()'s deliberate all-lanes fallback.
+    /// True when AFC names a still-existing lane as active (AFC.current_lane /
+    /// current_load). The BoxTurtle hub sensor is shared across every lane on
+    /// the unit, so an unattributed trigger cannot say whose filament caused it
+    /// — and can_recover_lane_position() now offers nothing at all in that case,
+    /// so this is implied by it rather than merely ranking it.
     [[nodiscard]] bool lane_recovery_is_attributed() const override;
 
     /// Delete this slot's user override ("Clear Spool"). AFC previously
@@ -770,6 +772,18 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
      */
     [[nodiscard]] PathSegment compute_filament_segment_unlocked() const;
 
+    /// Whether the extruder is free of filament. Caller holds mutex_.
+    /// Combines the physical toolhead sensors, AFC.current (current_load) and
+    /// per-lane tool_loaded rather than system_info_.filament_loaded, which is
+    /// derived from current_lane and so reads true for the whole of a toolchange.
+    [[nodiscard]] bool toolhead_is_free_unlocked() const;
+
+    /// Whether active_load_lane_ names a lane that still exists in slots_.
+    /// Caller holds mutex_. Shared by can_recover_lane_position() and
+    /// lane_recovery_is_attributed() so the recovery gate and the UI-facing
+    /// attribution flag cannot drift apart on a stale lane name.
+    [[nodiscard]] bool recovery_attribution_valid_unlocked() const;
+
     /// Build the applicable recovery actions for an AFC pause/jam, reading live
     /// toolhead state. Caller holds mutex_. Offers Unload only when the toolhead
     /// is loaded; Eject only when empty and a lane is selected.
@@ -844,6 +858,14 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     /// system_info_.current_slot, which is derived from several sources and may
     /// be stale. Used only to attribute the shared hub sensor to a lane.
     std::string active_load_lane_;
+
+    /// Lane AFC reports as gripped by the extruder, verbatim from
+    /// AFC.current_load (= AFC.current, maintained by set_loaded() /
+    /// set_unloaded()); empty when none. Narrower than active_load_lane_ above,
+    /// which prefers AFC.current_lane (= AFC.current_loading) and so names the
+    /// lane a toolchange is WORKING ON whether or not it reached the toolhead.
+    /// Used by toolhead_is_free_unlocked() to mirror upstream's own guard.
+    std::string toolhead_lane_;
 
     /// Remaining AFC_CLEAR_MESSAGE sends allowed for the in-flight clear_fault().
     /// printer.AFC.message is a FIFO head and each clear pops one entry, so a

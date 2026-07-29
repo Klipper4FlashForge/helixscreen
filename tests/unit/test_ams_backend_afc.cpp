@@ -72,6 +72,17 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         return active_load_lane_;
     }
 
+    // Lane AFC reports as gripped by the extruder (AFC.current_load only), as
+    // tracked by parse_afc_state() — distinct from active_load_lane_, which
+    // prefers the transient AFC.current_lane.
+    void set_toolhead_lane(const std::string& lane_name) {
+        toolhead_lane_ = lane_name;
+    }
+
+    std::string get_toolhead_lane() const {
+        return toolhead_lane_;
+    }
+
     void set_current_lane(const std::string& lane_name) {
         current_lane_name_ = lane_name;
     }
@@ -2137,6 +2148,10 @@ TEST_CASE("AFC lane reset is offered only when that lane's hub sensor is trigger
     helper.set_running(true);
     helper.set_lane_hub_routing("lane1", "Turtle_1");
 
+    // Satisfy the other gates so the hub sensor is the only discriminator.
+    helper.set_active_load_lane("lane1");
+    helper.set_lane_load_sensor(0, true);
+
     // The latched field says "at hub" on every lane. It must not be believed.
     helper.set_lane_loaded_to_hub(0, true);
     helper.set_hub_sensor("Turtle_1", false);
@@ -2149,17 +2164,85 @@ TEST_CASE("AFC lane reset is offered only when that lane's hub sensor is trigger
 
 TEST_CASE("AFC lane reset is refused while the toolhead holds filament",
           "[ams][afc][recovery]") {
+    // Upstream's own toolhead guard logs and then falls through — it is missing
+    // its `return` (AFCProject/AFC-Klipper-Add-On#803), so cmd_AFC_LANE_RESET
+    // retracts the lane while the extruder still grips the filament. Ours is the
+    // only check that actually stops that, so each of the three signals it reads
+    // has to hold on its own.
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
     helper.set_running(true);
     helper.set_lane_hub_routing("lane1", "Turtle_1");
     helper.set_hub_sensor("Turtle_1", true);
+    helper.set_active_load_lane("lane1");
+    helper.set_lane_load_sensor(0, true);
 
-    helper.set_filament_loaded(true);
-    REQUIRE_FALSE(helper.can_recover_lane_position(0));
-
-    helper.set_filament_loaded(false);
+    // Baseline: toolhead genuinely free.
     REQUIRE(helper.can_recover_lane_position(0));
+
+    SECTION("tool_start sensor triggered") {
+        helper.set_tool_start_sensor(true);
+        REQUIRE_FALSE(helper.can_recover_lane_position(0));
+        helper.set_tool_start_sensor(false);
+        REQUIRE(helper.can_recover_lane_position(0));
+    }
+
+    SECTION("tool_end sensor triggered") {
+        helper.set_tool_end_sensor(true);
+        REQUIRE_FALSE(helper.can_recover_lane_position(0));
+        helper.set_tool_end_sensor(false);
+        REQUIRE(helper.can_recover_lane_position(0));
+    }
+
+    SECTION("AFC.current_load names a lane") {
+        // This is the exact condition upstream's guard tests.
+        helper.set_toolhead_lane("lane1");
+        REQUIRE_FALSE(helper.can_recover_lane_position(0));
+        helper.set_toolhead_lane("");
+        REQUIRE(helper.can_recover_lane_position(0));
+    }
+
+    SECTION("a lane reports tool_loaded even with AFC.current_load empty") {
+        // The desync case: AFC persists per-lane tool_loaded through save_vars,
+        // so it survives a restart that leaves AFC.current null.
+        helper.set_toolhead_lane("");
+        helper.get_mutable_slot(2)->status = SlotStatus::LOADED;
+        REQUIRE_FALSE(helper.can_recover_lane_position(0));
+        helper.get_mutable_slot(2)->status = SlotStatus::AVAILABLE;
+        REQUIRE(helper.can_recover_lane_position(0));
+    }
+}
+
+TEST_CASE("AFC attribution survives the filament_loaded derivation",
+          "[ams][afc][recovery]") {
+    // The bug this pins: parse_afc_state() derives filament_loaded from
+    // `loaded_lane`, which PREFERS current_lane (= AFC.current_loading). No
+    // shipped AFC build publishes an explicit filament_loaded key, so naming a
+    // lane in current_lane sets filament_loaded true as a side effect.
+    //
+    // A toolhead guard reading filament_loaded is therefore mutually exclusive
+    // with attribution: the attributed arm could never fire, and recovery was
+    // only ever reachable through the unattributed all-lanes fallback #1182
+    // removes. Removing that fallback while the guard still read filament_loaded
+    // would have deleted per-lane recovery outright rather than narrowing it.
+    //
+    // Driven through feed_afc_state() on purpose — with set_active_load_lane()
+    // the derivation never runs and this test cannot fail.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+    helper.set_lane_hub_routing("lane1", "Turtle_1");
+    helper.set_hub_sensor("Turtle_1", true);
+    helper.set_lane_load_sensor(0, true);
+
+    // A failed TOOL_LOAD: AFC names the lane it was working, the toolhead never
+    // received anything, so current_load stays null.
+    helper.feed_afc_state({{"current_lane", "lane1"}, {"current_load", nullptr}});
+
+    REQUIRE(helper.get_active_load_lane() == "lane1");
+    REQUIRE(helper.get_toolhead_lane().empty());
+    REQUIRE(helper.get_system_info().filament_loaded); // the derivation, unchanged
+    REQUIRE(helper.can_recover_lane_position(0));      // and recovery still offered
 }
 
 TEST_CASE("AFC lane reset is refused for a lane routed direct (no hub)",
@@ -2177,6 +2260,11 @@ TEST_CASE("AFC lane reset is refused for a lane routed direct (no hub)",
     // false default makes old and new code agree, and the test proves nothing.
     helper.set_lane_loaded_to_hub(0, true);
 
+    // Every other gate satisfied, so "direct" routing is the sole reason for the
+    // refusal — otherwise this passes for the wrong reason once more gates exist.
+    helper.set_active_load_lane("lane1");
+    helper.set_lane_load_sensor(0, true);
+
     REQUIRE_FALSE(helper.can_recover_lane_position(0));
 }
 
@@ -2184,7 +2272,7 @@ TEST_CASE("AFC attributes a triggered hub to the lane AFC names as active",
           "[ams][afc][recovery]") {
     // AFC_hub is one sensor shared by every lane on the unit, so a triggered hub
     // alone would offer recovery on all of them at once (observed on a live
-    // BoxTurtle 2026-07-27). AFC.current_load names the lane it was working.
+    // BoxTurtle 2026-07-27). AFC.current_lane names the lane it was working.
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
     helper.set_running(true);
@@ -2192,6 +2280,13 @@ TEST_CASE("AFC attributes a triggered hub to the lane AFC names as active",
         helper.set_lane_hub_routing(lane, "Turtle_1");
     }
     helper.set_hub_sensor("Turtle_1", true);
+
+    // All four lanes are seated identically — the live BoxTurtle reads
+    // prep/load/loaded_to_hub true on every lane at once. Attribution must be
+    // what separates them, not any per-lane sensor.
+    for (int i = 0; i < 4; ++i) {
+        helper.set_lane_load_sensor(i, true);
+    }
 
     helper.set_active_load_lane("lane2");
 
@@ -2201,11 +2296,22 @@ TEST_CASE("AFC attributes a triggered hub to the lane AFC names as active",
     REQUIRE_FALSE(helper.can_recover_lane_position(3));
 }
 
-TEST_CASE("AFC offers recovery on every lane on the hub when it names none",
+TEST_CASE("AFC offers recovery on no lane at all when it names none",
           "[ams][afc][recovery]") {
-    // Showing nothing would strand the user with no way out, so an unattributed
-    // hub falls back to offering the action wherever it could plausibly apply.
-    // The firmware refuses harmlessly on a wrong guess.
+    // This inverts the previous all-lanes fallback (prestonbrown/helixscreen#1182).
+    //
+    // The fallback rested on "a wrong guess costs one harmless refusal from the
+    // firmware". That is false. cmd_AFC_LANE_RESET opens with an unconditional
+    // move_to_hub(DISTANCE, NEG) — DISTANCE defaults to 50 — before any per-lane
+    // state check, so a wrong guess physically retracts a correctly-seated lane
+    // past its own load switch. Observed on the live BoxTurtle 2026-07-27: a
+    // guess at lane1 left it load=False, which then failed T0 with "LOAD TRIGGER
+    // NOT TRIGGERED" and needed a manual forward move to restore.
+    //
+    // Offering nothing does not strand the user: the sidebar Reset dispatches
+    // AFC_RESET, which is AFC's OWN lane picker (cmd_AFC_RESET lists every lane
+    // with raw_load_state true and dispatches AFC_LANE_RESET for the chosen
+    // one). The firmware's candidate list beats anything we would guess.
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
     helper.set_running(true);
@@ -2213,10 +2319,52 @@ TEST_CASE("AFC offers recovery on every lane on the hub when it names none",
         helper.set_lane_hub_routing(lane, "Turtle_1");
     }
     helper.set_hub_sensor("Turtle_1", true);
+
+    // Every lane fully seated and the hub triggered: the ONLY thing missing is
+    // attribution. Without these the lanes would be refused for lacking a load
+    // switch and the test would not exercise the attribution gate at all.
+    for (int i = 0; i < 4; ++i) {
+        helper.set_lane_load_sensor(i, true);
+    }
     helper.set_active_load_lane("");
 
+    REQUIRE_FALSE(helper.lane_recovery_is_attributed());
+    for (int i = 0; i < 4; ++i) {
+        REQUIRE_FALSE(helper.can_recover_lane_position(i));
+    }
+}
+
+TEST_CASE("AFC lane reset is refused while the lane's own load switch is clear",
+          "[ams][afc][recovery]") {
+    // prestonbrown/helixscreen#1187. cmd_AFC_LANE_RESET does not guard on the
+    // lane's load state up front — it opens with an unconditional
+    //     move_to_hub(cur_lane, DISTANCE, MoveDirection.NEG, ...)   # DISTANCE=50
+    // and only checks `if not cur_lane.raw_load_state` AFTER that move plus one
+    // further short move inside the retract loop. So invoking it on a lane whose
+    // filament already sits behind its load switch retracts that lane a further
+    // ~50mm toward (and potentially out of) its prep sensor and drive gears
+    // before erroring out.
+    //
+    // That is exactly the state a lane is left in by a previous wrong guess, so
+    // without this gate the most natural follow-up interaction — tapping Recover
+    // again on the lane that just failed — compounds the damage.
+    //
+    // It also matches cmd_AFC_RESET's own picker, which lists only lanes with
+    // raw_load_state true. AFC.get_status publishes that as `load`.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    helper.set_running(true);
+    helper.set_lane_hub_routing("lane1", "Turtle_1");
+    helper.set_hub_sensor("Turtle_1", true);
+    helper.set_active_load_lane("lane1");
+
+    // Hub occupied, toolhead free, AFC names this exact lane — every other gate
+    // passes, so the load switch is the sole discriminator.
+    helper.set_lane_load_sensor(0, false);
+    REQUIRE_FALSE(helper.can_recover_lane_position(0));
+
+    helper.set_lane_load_sensor(0, true);
     REQUIRE(helper.can_recover_lane_position(0));
-    REQUIRE(helper.can_recover_lane_position(3));
 }
 
 TEST_CASE("AFC treats a stale active_load_lane_ as unattributed rather than "
@@ -2225,9 +2373,9 @@ TEST_CASE("AFC treats a stale active_load_lane_ as unattributed rather than "
     // initialize_slots() (re-)runs whenever the lane count changes but never
     // touches active_load_lane_. If a unit re-init or lane rename leaves it
     // naming a lane that no longer exists in the registry, `lane_name ==
-    // active_load_lane_` is false for every lane at once — the exact all-lanes
-    // fallback this file's "names none" test exists to provide would be
-    // defeated by a name nobody can ever match.
+    // active_load_lane_` is false for every lane at once. Both the gate and the
+    // UI-facing attribution flag must read that the same way — a stale name is
+    // NOT attribution, so neither may treat it as one.
     AmsBackendAfcTestHelper helper;
     helper.initialize_test_lanes_with_slots(4);
     helper.set_running(true);
@@ -2235,21 +2383,26 @@ TEST_CASE("AFC treats a stale active_load_lane_ as unattributed rather than "
         helper.set_lane_hub_routing(lane, "Turtle_1");
     }
     helper.set_hub_sensor("Turtle_1", true);
+    for (int i = 0; i < 4; ++i) {
+        helper.set_lane_load_sensor(i, true);
+    }
 
     // Attribute to a real lane first, to prove the stale case is what changes
     // behavior here (not simply an always-empty active_load_lane_).
     helper.set_active_load_lane("lane2");
     REQUIRE(helper.lane_recovery_is_attributed());
+    REQUIRE(helper.can_recover_lane_position(1));
 
     // Re-init drops lane2..lane4 from the registry. active_load_lane_ still
     // says "lane2", but lane2 no longer exists.
     helper.initialize_test_lanes_with_slots(1);
+    helper.set_lane_load_sensor(0, true);
     REQUIRE(helper.get_active_load_lane() == "lane2");
 
     // Both the gate and the UI-facing attribution flag must fall back to
     // unattributed rather than disagree with each other.
     REQUIRE_FALSE(helper.lane_recovery_is_attributed());
-    REQUIRE(helper.can_recover_lane_position(0));
+    REQUIRE_FALSE(helper.can_recover_lane_position(0));
 }
 
 TEST_CASE("AFC active_load_lane_ is populated from a current_load delta and "
@@ -5226,11 +5379,20 @@ TEST_CASE("AFC can_recover_lane_position requires filament at the hub", "[ams][a
     helper.initialize_test_lanes(4);
     helper.initialize_slots_from_discovery();
     helper.set_discovered_lanes({}, {"Turtle_1"}); // so AFC_hub status updates route
-    helper.feed_afc_stepper("lane1", {{"hub", "Turtle_1"}});
+    helper.feed_afc_stepper("lane1", {{"hub", "Turtle_1"}, {"load", true}});
+
+    // Attribution comes from AFC.current_lane, which get_status() populates from
+    // AFC.current_loading — set at the top of TOOL_LOAD/TOOL_UNLOAD and cleared
+    // only by set_loaded()/set_unloaded() on success. A toolchange that strands
+    // filament past the hub therefore leaves this naming the guilty lane, which
+    // is what makes the attributed case reachable with the toolhead free.
+    // Driving it through feed_afc_state() (rather than the setter) proves
+    // parse_afc_state() actually wires the field.
+    helper.feed_afc_state({{"current_lane", "lane1"}});
 
     // loaded_to_hub is latched at prep and never updated (see the [recovery]
     // cases above), so this now drives the real signal: AFC_hub.state.
-    SECTION("hub sensor triggered, toolhead free -> reset is possible") {
+    SECTION("hub sensor triggered, toolhead free, lane attributed -> reset is possible") {
         helper.feed_afc_hub("Turtle_1", {{"state", true}});
         CHECK(helper.can_recover_lane_position(0));
     }
@@ -5243,6 +5405,18 @@ TEST_CASE("AFC can_recover_lane_position requires filament at the hub", "[ams][a
     SECTION("toolhead loaded -> reset refused even with hub sensor triggered") {
         helper.feed_afc_hub("Turtle_1", {{"state", true}});
         helper.feed_afc_state({{"filament_loaded", true}, {"current_load", "lane1"}});
+        CHECK_FALSE(helper.can_recover_lane_position(0));
+    }
+
+    SECTION("AFC names no lane -> reset refused despite a triggered hub") {
+        helper.feed_afc_hub("Turtle_1", {{"state", true}});
+        helper.feed_afc_state({{"current_lane", nullptr}});
+        CHECK_FALSE(helper.can_recover_lane_position(0));
+    }
+
+    SECTION("lane's own load switch clear -> reset refused") {
+        helper.feed_afc_hub("Turtle_1", {{"state", true}});
+        helper.feed_afc_stepper("lane1", {{"load", false}});
         CHECK_FALSE(helper.can_recover_lane_position(0));
     }
 
