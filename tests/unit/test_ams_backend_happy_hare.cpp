@@ -1836,7 +1836,11 @@ TEST_CASE("Happy Hare v3 data with no v4 fields works normally", "[ams][happy_ha
     auto slot2 = helper.get_slot_info(2);
     REQUIRE(slot2.color_rgb == 0x0000FF);
     REQUIRE(slot2.material == "ABS");
-    REQUIRE(slot2.status == SlotStatus::FROM_BUFFER); // gate_status=2 maps to FROM_BUFFER
+    // gate_status=2 maps to FROM_BUFFER, but gate 2 is also the gate Happy Hare
+    // reports loaded, and the loaded gate outranks its fill state (#1199). See
+    // test_ams_happy_hare_per_slot_loaded.cpp for the unloaded from_buffer case,
+    // which still reads FROM_BUFFER.
+    REQUIRE(slot2.status == SlotStatus::LOADED);
 }
 
 // --- v3+v4 mixed: some v4 fields with v3 base ---
