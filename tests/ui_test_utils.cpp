@@ -455,12 +455,16 @@ helix::TemperatureController* get_temperature_controller() {
 // out in the test build, so warnings would otherwise be invisible).
 namespace {
 std::function<void(const std::string&)> g_test_warning_hook;
-}
+std::function<void(const std::string&)> g_test_error_hook;
+} // namespace
 
 namespace helix {
 namespace ui {
 void set_test_notification_warning_hook(std::function<void(const std::string&)> hook) {
     g_test_warning_hook = std::move(hook);
+}
+void set_test_notification_error_hook(std::function<void(const std::string&)> hook) {
+    g_test_error_hook = std::move(hook);
 }
 } // namespace ui
 } // namespace helix
@@ -512,6 +516,9 @@ void ui_notification_warning(const char* title, const char* message) {
 void ui_notification_error(const char* title, const char* message, bool modal) {
     spdlog::debug("[Test Stub] ui_notification_error: {} - {} (modal={})", title ? title : "(null)",
                   message ? message : "(null)", modal);
+    if (g_test_error_hook) {
+        g_test_error_hook(message ? message : "");
+    }
 }
 
 // Stub ToastManager class for tests

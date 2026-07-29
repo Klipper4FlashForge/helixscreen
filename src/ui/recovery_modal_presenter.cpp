@@ -3,20 +3,48 @@
 
 #include "recovery_modal_presenter.h"
 
+#include "ui_error_reporting.h"
 #include "ui_modal.h"
 #include "ui_notification.h"
+#include "ui_temperature_utils.h"
+#include "ui_timer_guard.h"
 #include "ui_toast_manager.h"
 
 #include "action_prompt_manager.h"
+#include "active_material_provider.h"
+#include "ams_state.h"
+#include "app_constants.h"
+#include "app_globals.h"
 #include "error_event.h"
 #include "lvgl.h"
 #include "moonraker_api.h"
 #include "moonraker_error.h"
 #include "moonraker_types.h"
+#include "printer_state.h"
+#include "safety_settings_manager.h"
+#include "temperature_controller.h"
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+#include <cmath>
+
 namespace {
+
+/// Poll cadence while waiting for the nozzle. Fast enough that the recovery
+/// fires within a frame of reaching temperature, slow enough to cost nothing.
+constexpr uint32_t PREHEAT_POLL_MS = 250;
+
+/// How long to wait for the nozzle before giving up. Same 300s budget the AFC
+/// and AD5X backends give their own heating phases (HEATING_TIMEOUT_SECONDS),
+/// so a recovery preheat abandons a dead heater on the same schedule the
+/// backends do. MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS is numerically identical
+/// but means "how long may an RPC take"; this is a physical heating budget.
+constexpr uint32_t PREHEAT_TIMEOUT_MS = 300000;
+
+/// Treat "within 5°C of target" as arrived — the same slack FilamentPanel and
+/// AmsOperationSidebar use, so all three preheats release at the same point.
+constexpr int TEMP_THRESHOLD_C = 5;
 
 /// Maps RecoveryAction.style to PromptButton.color.
 /// "primary" -> "primary", "danger" -> "error", anything else -> "" (neutral).
@@ -39,11 +67,23 @@ const char* modal_title_for(const helix::ErrorEvent& e) {
     return e.title.empty() ? lv_tr("Printer Error") : e.title.c_str();
 }
 
+int nozzle_current_c() {
+    auto* subj = get_printer_state().get_active_extruder_temp_subject();
+    return subj ? helix::ui::temperature::deci_to_degrees(lv_subject_get_int(subj)) : 0;
+}
+
 } // namespace
 
 namespace helix::ui {
 
-RecoveryModalPresenter::RecoveryModalPresenter(MoonrakerAPI* api) : api_(api) {}
+RecoveryModalPresenter::RecoveryModalPresenter(MoonrakerAPI* api)
+    : api_(api), preheat_budget_ms_(PREHEAT_TIMEOUT_MS) {}
+
+RecoveryModalPresenter::~RecoveryModalPresenter() {
+    // The poll timer outlives the modal that started it, so nothing else can
+    // stop it on the way down.
+    cancel_preheat_timer();
+}
 
 bool RecoveryModalPresenter::is_visible() const {
     return modal_ && modal_->is_visible();
@@ -66,32 +106,7 @@ void RecoveryModalPresenter::present(const helix::ErrorEvent& e) {
 
     if (!modal_) {
         modal_ = std::make_unique<helix::ui::ActionPromptModal>();
-        modal_->set_gcode_callback([this](const std::string& gcode) {
-            // Runs on the main thread (button tap). Find the action for its log_tag.
-            std::string tag = "RecoveryModalPresenter::recovery";
-            for (const auto& a : active_actions_) {
-                if (a.gcode == gcode) {
-                    tag = a.log_tag;
-                    break;
-                }
-            }
-            shown_detail_.clear(); // user acted; allow re-show on a new fault
-            spdlog::info("[RecoveryModal] User tapped recovery: {} ({})", tag, gcode);
-
-            if (!api_) {
-                spdlog::warn("[RecoveryModal] No API client; cannot execute gcode: {}", gcode);
-                return;
-            }
-            api_->execute_gcode(
-                gcode, [tag]() { spdlog::info("[Recovery] {} completed", tag); },
-                [tag](const MoonrakerError& err) {
-                    spdlog::error("[Recovery] {} failed: {}", tag, err.message);
-                    ToastManager::instance().show(
-                        ToastSeverity::ERROR, ("Recovery failed: " + err.user_message()).c_str(),
-                        6000);
-                },
-                MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
-        });
+        modal_->set_gcode_callback([this](const std::string& gcode) { on_recovery_tapped(gcode); });
     }
 
     active_actions_ = e.recovery_actions;
@@ -119,6 +134,184 @@ void RecoveryModalPresenter::present(const helix::ErrorEvent& e) {
         spdlog::warn("[RecoveryModal] show_prompt failed; falling back to alert");
         shown_detail_.clear();
         ui_notification_error(modal_title_for(e), e.detail.c_str(), /*modal=*/true);
+    }
+}
+
+void RecoveryModalPresenter::on_recovery_tapped(const std::string& gcode) {
+    // Runs on the main thread (button tap). Find the action for its metadata.
+    const helix::RecoveryAction* action = nullptr;
+    for (const auto& a : active_actions_) {
+        if (a.gcode == gcode) {
+            action = &a;
+            break;
+        }
+    }
+    const std::string tag = action ? action->log_tag : "RecoveryModalPresenter::recovery";
+    const std::string label = action ? action->label : gcode;
+
+    shown_detail_.clear(); // user acted; allow re-show on a new fault
+    spdlog::info("[RecoveryModal] User tapped recovery: {} ({})", tag, gcode);
+
+    if (!api_) {
+        spdlog::warn("[RecoveryModal] No API client; cannot execute gcode: {}", gcode);
+        return;
+    }
+
+    // Filament-moving recovery on a cold hotend: heat first, send on arrival.
+    // The heater is routinely off by now — the post-op cooldown armed by the
+    // operation that failed, TURN_OFF_HEATERS on a print ERROR, or idle_timeout.
+    if (action && action->needs_hot_nozzle && !nozzle_ready_for_extrusion()) {
+        begin_preheat(gcode, tag, label);
+        return;
+    }
+
+    dispatch_recovery(gcode, tag);
+}
+
+void RecoveryModalPresenter::dispatch_recovery(const std::string& gcode, const std::string& tag) {
+    if (!api_)
+        return;
+    api_->execute_gcode(
+        gcode, [tag]() { spdlog::info("[Recovery] {} completed", tag); },
+        [tag](const MoonrakerError& err) {
+            spdlog::error("[Recovery] {} failed: {}", tag, err.message);
+            ToastManager::instance().show(
+                ToastSeverity::ERROR, ("Recovery failed: " + err.user_message()).c_str(), 6000);
+        },
+        MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
+}
+
+bool RecoveryModalPresenter::nozzle_ready_for_extrusion() const {
+    // #978 opt-out: users whose macros heat the nozzle themselves, or who are
+    // deliberately cold-pulling, already bypass this gate on the filament panel.
+    // The recovery modal must not re-impose it.
+    if (helix::SafetySettingsManager::instance().get_allow_cold_extrude()) {
+        return true;
+    }
+    const int min_extrude = static_cast<int>(api_->get_safety_limits().min_extrude_temp_celsius);
+    return helix::ui::temperature::is_extrusion_safe(nozzle_current_c(), min_extrude);
+}
+
+int RecoveryModalPresenter::resolve_preheat_target() const {
+    const int floor_c = static_cast<int>(api_->get_safety_limits().min_extrude_temp_celsius);
+
+    // 1. What this printer was last told to hold. A filament fault interrupts an
+    //    operation that had already chosen a material temperature, and the latch
+    //    survives the heater being zeroed afterwards — which is the whole window
+    //    this gate covers. Same value TemperatureController floors against for
+    //    keep_previous_hot, so a deferred recovery reheats to where the failed
+    //    operation was running rather than to a guess.
+    int target =
+        static_cast<int>(std::lround(get_printer_state().get_active_extruder_last_nonzero_target()));
+
+    // 2. Nothing latched (the operation failed before it ever heated, or this is
+    //    a fresh session): ask the loaded filament. get_active_material() is the
+    //    shared active-slot -> external-spool chain the sidebar's preheat uses;
+    //    the presenter has no slot context of its own to key off.
+    if (target <= 0) {
+        if (auto material = helix::get_active_material();
+            material && material->material_info.nozzle_min > 0) {
+            target = material->material_info.nozzle_min;
+        }
+    }
+
+    // 3. Still nothing known: the shared load-preheat default rather than a new
+    //    number invented here.
+    if (target <= 0) {
+        target = AppConstants::Ams::DEFAULT_LOAD_PREHEAT_TEMP;
+    }
+
+    // A latch or material temp below min_extrude_temp would heat to a nozzle
+    // Klipper still refuses to extrude from, and the poll would then dispatch
+    // into a rejection.
+    return std::max(target, floor_c);
+}
+
+void RecoveryModalPresenter::begin_preheat(const std::string& gcode, const std::string& tag,
+                                           const std::string& label) {
+    const int target = resolve_preheat_target();
+
+    // A second tap replaces the first: only one recovery may be in flight, and
+    // the newest choice is the one the user meant.
+    clear_preheat();
+
+    pending_gcode_ = gcode;
+    pending_tag_ = tag;
+    pending_label_ = label;
+    pending_target_c_ = target;
+    polls_remaining_ = std::max<int32_t>(1, static_cast<int32_t>(preheat_budget_ms_ /
+                                                                PREHEAT_POLL_MS));
+
+    if (auto* c = get_temperature_controller()) {
+        c->set_target(helix::HeaterType::Nozzle, static_cast<double>(target),
+                      {.toast = false, .keep_previous_hot = true});
+    }
+
+    preheat_timer_ = lv_timer_create(preheat_timer_cb, PREHEAT_POLL_MS, this);
+    // The wait is bounded by counting polls rather than by wall clock, so the
+    // budget cannot be stretched by a stalled main loop. One repeat MORE than
+    // polls_remaining_ so poll_preheat() always ends the wait itself — were LVGL
+    // to exhaust the count first it would delete the timer under preheat_timer_.
+    lv_timer_set_repeat_count(preheat_timer_, polls_remaining_ + 1);
+
+    // The modal closed on the tap, so this is the only acknowledgement the user
+    // gets that their choice was accepted rather than ignored.
+    NOTIFY_INFO(lv_tr("Heating to {}°C before {}..."), target, label);
+    spdlog::info("[RecoveryModal] Nozzle at {}C is below min_extrude; preheating to {}C "
+                 "before {} ({})",
+                 nozzle_current_c(), target, tag, gcode);
+}
+
+void RecoveryModalPresenter::poll_preheat() {
+    if (nozzle_current_c() >= (pending_target_c_ - TEMP_THRESHOLD_C)) {
+        const std::string gcode = pending_gcode_;
+        const std::string tag = pending_tag_;
+        const int reached = nozzle_current_c();
+        clear_preheat();
+        spdlog::info("[RecoveryModal] Nozzle reached {}C; running deferred recovery {} ({})",
+                     reached, tag, gcode);
+        dispatch_recovery(gcode, tag);
+        return;
+    }
+
+    if (--polls_remaining_ > 0) {
+        return;
+    }
+
+    // Bounded: a heater that never arrives (thermistor fault, MCU shutdown, the
+    // user cancelling the heat elsewhere) must not leave a recovery armed
+    // forever, and must not fire it cold either.
+    const std::string tag = pending_tag_;
+    const std::string label = pending_label_;
+    const int target = pending_target_c_;
+    const int current = nozzle_current_c();
+    clear_preheat();
+
+    spdlog::error("[RecoveryModal] Preheat to {}C timed out at {}C after {}s; abandoning {}",
+                  target, current, preheat_budget_ms_ / 1000, tag);
+    NOTIFY_ERROR(lv_tr("Nozzle did not reach {}°C — {} cancelled"), target, label);
+}
+
+void RecoveryModalPresenter::cancel_preheat_timer() {
+    if (preheat_timer_ && lv_is_initialized()) {
+        helix::ui::lv_timer_cancel_safe(preheat_timer_);
+    }
+    preheat_timer_ = nullptr;
+}
+
+void RecoveryModalPresenter::clear_preheat() {
+    cancel_preheat_timer();
+    pending_gcode_.clear();
+    pending_tag_.clear();
+    pending_label_.clear();
+    pending_target_c_ = 0;
+    polls_remaining_ = 0;
+}
+
+void RecoveryModalPresenter::preheat_timer_cb(lv_timer_t* timer) {
+    auto* self = static_cast<RecoveryModalPresenter*>(lv_timer_get_user_data(timer));
+    if (self) {
+        self->poll_preheat();
     }
 }
 

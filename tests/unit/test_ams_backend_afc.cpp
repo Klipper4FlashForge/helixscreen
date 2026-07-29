@@ -230,6 +230,17 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
         return AmsErrorHelper::success();
     }
 
+    // Filament operations dispatch through the completion-callback form so the
+    // macro's gcode ack can resolve the optimistic action (#1183). Capture it
+    // too, and hold the callback so a test can fire the ack when it wants one.
+    AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+        captured_gcodes.push_back(gcode);
+        pending_macro_ack = std::move(on_complete);
+        return AmsErrorHelper::success();
+    }
+
+    std::function<void()> pending_macro_ack;
+
     // Override execute_gcode_notify to capture commands (avoids real API call)
     AmsError execute_gcode_notify(const std::string& gcode, const std::string& /*success_msg*/,
                                   const std::string& /*error_prefix*/) override {
@@ -430,6 +441,18 @@ class AmsBackendAfcTestHelper : public AmsBackendAfc {
     }
     bool get_quiet_mode() const {
         return afc_quiet_mode_;
+    }
+    // AFC.maps — the T-commands AFC registered with Klipper (v1.2.0+)
+    const std::vector<std::string>& get_afc_tool_cmds() const {
+        return afc_tool_cmds_;
+    }
+    // Per-lane AFC_stepper.remember_spool. nullopt = never reported for this lane.
+    std::optional<bool> get_lane_remember_spool(const std::string& lane_name) const {
+        auto it = lane_remember_spool_.find(lane_name);
+        if (it == lane_remember_spool_.end()) {
+            return std::nullopt;
+        }
+        return it->second;
     }
     bool get_led_state() const {
         return afc_led_state_;
@@ -4886,6 +4909,52 @@ TEST_CASE("AFC jam with empty toolhead offers Eject not Unload", "[ams][afc][cla
     REQUIRE(has("Recover"));
 }
 
+// RecoveryModalPresenter refuses to send a needs_hot_nozzle action into a nozzle
+// below min_extrude_temp, so the flag decides whether a tapped recovery runs now
+// or after a preheat. Getting it wrong is silent in both directions: false on a
+// filament-moving action re-creates the cold-extrude failure, true on a
+// state-only action makes a recovery wait on heat it does not need.
+TEST_CASE("AFC recovery actions flag only the ones that move filament through the nozzle",
+          "[ams][afc][classify]") {
+    auto flag_of = [](const std::optional<helix::ErrorEvent>& e, const std::string& label) {
+        for (const auto& a : e->recovery_actions) {
+            if (a.label == label)
+                return a.needs_hot_nozzle ? 1 : 0;
+        }
+        return -1; // absent
+    };
+
+    SECTION("toolhead loaded: Resume and Unload need heat, Recover does not") {
+        AmsBackendAfcTestHelper helper;
+        helper.initialize_test_lanes_with_slots(4);
+        helper.feed_afc_extruder("extruder",
+                                 {{"tool_start_status", true}, {"lane_loaded", "lane2"}});
+        helix::ClassifyContext ctx;
+        ctx.is_paused = true;
+        auto e = helper.classify_error(kJamLine, ctx);
+        REQUIRE(e.has_value());
+
+        CHECK(flag_of(e, "Resume") == 1);  // resuming the print extrudes
+        CHECK(flag_of(e, "Unload") == 1);  // pulls filament back out of the melt zone
+        CHECK(flag_of(e, "Recover") == 0); // AFC_RESET re-preps lanes, no nozzle
+    }
+
+    SECTION("empty toolhead: Eject is lane-to-spool and needs no heat") {
+        AmsBackendAfcTestHelper helper;
+        helper.initialize_test_lanes_with_slots(4);
+        helper.feed_afc_extruder("extruder",
+                                 {{"tool_start_status", false}, {"lane_loaded", "lane2"}});
+        helix::ClassifyContext ctx;
+        ctx.is_paused = true;
+        auto e = helper.classify_error(kJamLine, ctx);
+        REQUIRE(e.has_value());
+
+        CHECK(flag_of(e, "Eject") == 0);
+        CHECK(flag_of(e, "Resume") == 1);
+        CHECK(flag_of(e, "Recover") == 0);
+    }
+}
+
 TEST_CASE("AFC catch-all: paused + error_state + unknown !! is CRITICAL AFC",
           "[ams][afc][classify]") {
     AmsBackendAfcTestHelper helper;
@@ -5450,4 +5519,729 @@ TEST_CASE("AFC clears the operation detail when its message empties",
     helper.test_parse_afc_state(nlohmann::json{
         {"message", {{"message", ""}, {"type", ""}}}});
     REQUIRE(helper.get_system_info().operation_detail.empty());
+}
+
+// ============================================================================
+// AFC v1.2.0 status fields (prestonbrown/helixscreen#1149)
+//
+// Payloads marked "observed" are verbatim captures from a live BoxTurtle
+// running AFC v1.1.0 (the `spoolman` URL is redacted). That box predates
+// v1.2.0, so payloads marked "source-derived" are built from
+// AFC_lane.get_status() / AFC_buffer.get_status() / AFC.get_status() at tag
+// v1.2.0 instead — same key names, same types, not observed on hardware.
+// ============================================================================
+
+// Observed: AFC_stepper lane1, AFC v1.1.0, unlinked lane.
+static nlohmann::json observed_lane1_v110() {
+    return nlohmann::json{{"name", "lane1"},
+                          {"unit", "Turtle_1"},
+                          {"hub", "Turtle_1"},
+                          {"extruder", "extruder"},
+                          {"buffer", "Turtle_1"},
+                          {"buffer_status", "Advancing"},
+                          {"lane", 1},
+                          {"map", "T0"},
+                          {"load", true},
+                          {"prep", true},
+                          {"tool_loaded", false},
+                          {"loaded_to_hub", true},
+                          {"material", "PLA"},
+                          {"remember_spool", false},
+                          {"spool_id", nullptr},
+                          {"color", "#E53935"},
+                          {"weight", 505.8077510382372},
+                          {"extruder_temp", nullptr},
+                          {"runout_lane", nullptr},
+                          {"filament_status", "Ready"},
+                          {"filament_status_led", "#00cc00"},
+                          {"status", "None"},
+                          {"dist_hub", 194.57},
+                          {"td1_td", ""},
+                          {"td1_color", ""},
+                          {"td1_scan_time", ""},
+                          {"endstops",
+                           "load,hub,tool_start,tool_end,buffer_advance,buffer_trailing"}};
+}
+
+TEST_CASE("AFC lane parses the v1.1.0 fields we used to drop", "[ams][afc][status_fields][1149]") {
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_stepper("lane1", observed_lane1_v110());
+
+    auto sensors = helper.get_lane_sensors(0);
+    REQUIRE(sensors.filament_status == "Ready");
+    REQUIRE(sensors.filament_status_led == "#00cc00");
+    REQUIRE(sensors.endstops == "load,hub,tool_start,tool_end,buffer_advance,buffer_trailing");
+
+    // A Box Turtle has no selector, so AFC omits the key entirely. That must
+    // read as "no selector on this lane", not "selector clear".
+    REQUIRE(sensors.has_selector == false);
+    REQUIRE(sensors.selector == false);
+
+    REQUIRE(helper.get_lane_remember_spool("lane1") == std::optional<bool>{false});
+    REQUIRE(helper.get_lane_remember_spool("lane4") == std::nullopt);
+}
+
+TEST_CASE("AFC lane parses the v1.2.0-only spool fields", "[ams][afc][status_fields][1149]") {
+    // Source-derived: AFC_lane.get_status() at v1.2.0 adds filament_name,
+    // multi_color_hexes, initial_weight and bed_temp to the observed shape.
+    // multi_color_hexes is a list of BARE hexes — AFC splits Spoolman's
+    // comma-joined string and re-prefixes only the first into `color`.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    nlohmann::json lane = observed_lane1_v110();
+    lane["spool_id"] = 42;
+    lane["filament_name"] = "Galaxy Black";
+    lane["initial_weight"] = 1000.0;
+    lane["bed_temp"] = 60.0;
+    lane["multi_color_hexes"] = nlohmann::json::array({"D4AF37", "C0C0C0", "B87333"});
+    lane["selector"] = true;
+
+    helper.feed_afc_stepper("lane1", lane);
+
+    auto info = helper.get_system_info();
+    const auto& slot = info.units[0].slots[0];
+    REQUIRE(slot.spool_name == "Galaxy Black");
+    REQUIRE(slot.bed_temp == 60);
+    REQUIRE(slot.multi_color_hexes == "#D4AF37,#C0C0C0,#B87333");
+    REQUIRE(slot.is_multi_color());
+    REQUIRE(slot.total_weight_g == Catch::Approx(1000.0f));
+
+    auto sensors = helper.get_lane_sensors(0);
+    REQUIRE(sensors.has_selector == true);
+    REQUIRE(sensors.selector == true);
+}
+
+TEST_CASE("AFC initial_weight is ignored on a lane with no Spoolman link",
+          "[ams][afc][status_fields][1149]") {
+    // espooler_values.full_weight is a CONFIGURED unit constant (typically
+    // 1000 g) that every lane reports, empty ones included; Spoolman only
+    // overwrites it when a spool is linked. Adopting it ungated would render an
+    // ejected lane as "0 / 1000 g" instead of unknown.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    nlohmann::json lane = observed_lane1_v110(); // spool_id: null
+    lane["initial_weight"] = 1000.0;
+    lane["weight"] = 0.0;
+    helper.feed_afc_stepper("lane1", lane);
+
+    auto info = helper.get_system_info();
+    REQUIRE(info.units[0].slots[0].total_weight_g == Catch::Approx(-1.0f));
+    REQUIRE(info.units[0].slots[0].get_remaining_percent() == Catch::Approx(-1.0f));
+}
+
+TEST_CASE("AFC lane delta omitting the new fields leaves them intact",
+          "[ams][afc][status_fields][1149]") {
+    // Moonraker forwards only CHANGED keys, so a frame carrying nothing but a
+    // sensor flip must not zero everything parsed from the previous frame.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    nlohmann::json lane = observed_lane1_v110();
+    lane["spool_id"] = 42;
+    lane["filament_name"] = "Galaxy Black";
+    lane["initial_weight"] = 750.0;
+    lane["bed_temp"] = 60.0;
+    lane["multi_color_hexes"] = nlohmann::json::array({"D4AF37", "C0C0C0"});
+    lane["selector"] = true;
+    helper.feed_afc_stepper("lane1", lane);
+
+    // The delta a real buffer switch produces: one key.
+    helper.feed_afc_stepper("lane1", nlohmann::json{{"buffer_status", "Trailing"}});
+
+    auto info = helper.get_system_info();
+    const auto& slot = info.units[0].slots[0];
+    REQUIRE(slot.spool_name == "Galaxy Black");
+    REQUIRE(slot.bed_temp == 60);
+    REQUIRE(slot.multi_color_hexes == "#D4AF37,#C0C0C0");
+    REQUIRE(slot.total_weight_g == Catch::Approx(750.0f));
+
+    auto sensors = helper.get_lane_sensors(0);
+    REQUIRE(sensors.buffer_status == "Trailing");
+    REQUIRE(sensors.filament_status_led == "#00cc00");
+    REQUIRE(sensors.endstops == "load,hub,tool_start,tool_end,buffer_advance,buffer_trailing");
+    REQUIRE(sensors.has_selector == true);
+    REQUIRE(sensors.selector == true);
+    REQUIRE(helper.get_lane_remember_spool("lane1") == std::optional<bool>{false});
+}
+
+TEST_CASE("AFC lane clears filament identity when firmware clears it",
+          "[ams][afc][status_fields][1149]") {
+    // clear_values() on eject sets filament_name="", multi_color=[] and
+    // bed_temp=None. Those are deliberate clears, not missing fields.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    nlohmann::json lane = observed_lane1_v110();
+    lane["spool_id"] = 42;
+    lane["filament_name"] = "Galaxy Black";
+    lane["bed_temp"] = 60.0;
+    lane["multi_color_hexes"] = nlohmann::json::array({"D4AF37"});
+    helper.feed_afc_stepper("lane1", lane);
+
+    helper.feed_afc_stepper("lane1", nlohmann::json{{"filament_name", ""},
+                                                   {"bed_temp", nullptr},
+                                                   {"multi_color_hexes", nlohmann::json::array()},
+                                                   {"spool_id", nullptr}});
+
+    auto info = helper.get_system_info();
+    const auto& slot = info.units[0].slots[0];
+    REQUIRE(slot.spool_name.empty());
+    REQUIRE(slot.bed_temp == 0);
+    REQUIRE(slot.multi_color_hexes.empty());
+    REQUIRE_FALSE(slot.is_multi_color());
+}
+
+TEST_CASE("AFC top-level next_lane resolves, clears and survives deltas",
+          "[ams][afc][status_fields][1149]") {
+    // Observed on the live box: "next_lane": "lane4" with no toolchange running.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_state({{"next_lane", "lane4"}});
+    REQUIRE(helper.get_system_info().next_slot == 3);
+
+    // An unrelated delta must not drop the staging.
+    helper.feed_afc_state({{"current_toolchange", 12}});
+    REQUIRE(helper.get_system_info().next_slot == 3);
+
+    // AFC naming no lane is a real transition to "none".
+    helper.feed_afc_state({{"next_lane", nullptr}});
+    REQUIRE(helper.get_system_info().next_slot == -1);
+}
+
+TEST_CASE("AFC top-level position_saved, spoolman and maps are read",
+          "[ams][afc][status_fields][1149]") {
+    // Observed shape (spoolman URL redacted); `maps` is source-derived — it is
+    // the one top-level key v1.1.0 does not emit.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_state({{"position_saved", true},
+                           {"spoolman", "http://spoolman.invalid:7912"},
+                           {"maps", nlohmann::json::array({"T0", "T1", "T2", "T3"})}});
+
+    auto info = helper.get_system_info();
+    REQUIRE(info.position_saved == true);
+    REQUIRE(info.spoolman_url == "http://spoolman.invalid:7912");
+    REQUIRE(helper.get_afc_tool_cmds() == std::vector<std::string>{"T0", "T1", "T2", "T3"});
+
+    // A later delta that mentions none of them leaves all three alone.
+    helper.feed_afc_state({{"led_state", true}});
+    info = helper.get_system_info();
+    REQUIRE(info.position_saved == true);
+    REQUIRE(info.spoolman_url == "http://spoolman.invalid:7912");
+    REQUIRE(helper.get_afc_tool_cmds().size() == 4);
+
+    // AFC publishes `false`, not null, when Spoolman is unconfigured — a
+    // non-string must not be coerced into the URL.
+    helper.feed_afc_state({{"spoolman", false}, {"position_saved", false}});
+    info = helper.get_system_info();
+    REQUIRE(info.spoolman_url == "http://spoolman.invalid:7912");
+    REQUIRE(info.position_saved == false);
+}
+
+TEST_CASE("AFC maps cross-check does not override the per-lane tool mapping",
+          "[ams][afc][status_fields][1149]") {
+    // maps is diagnostic: a lane claiming a T-command AFC never registered still
+    // maps, because maps is absent entirely before v1.2.0 and cannot be trusted
+    // as an authority.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_state({{"maps", nlohmann::json::array({"T0", "T1"})}});
+    helper.feed_afc_stepper("lane3", nlohmann::json{{"map", "T7"}});
+
+    REQUIRE(helper.get_slot_mapped_tool(2) == 7);
+}
+
+TEST_CASE("AFC buffer parses the observed v1.1.0 frame", "[ams][afc][status_fields][1149]") {
+    // Observed: AFC_buffer Turtle_1 on the live box, buffer disabled.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    // AFC_buffer frames are only dispatched for buffers AFC has named.
+    helper.feed_afc_state({{"buffers", {"Turtle_1"}}});
+
+    helper.feed_afc_buffer("Turtle_1",
+                           nlohmann::json{{"state", "Advancing"},
+                                          {"lanes", {"lane1", "lane2", "lane3", "lane4"}},
+                                          {"enabled", false},
+                                          {"rotation_distance", nullptr},
+                                          {"fault_detection_enabled", false},
+                                          {"error_sensitivity", 0},
+                                          {"fault_timer", nullptr},
+                                          {"distance_to_fault", nullptr}});
+
+    auto info = helper.get_system_info();
+    REQUIRE(info.units[0].buffer_health.has_value());
+    const auto& bh = info.units[0].buffer_health.value();
+    REQUIRE(bh.state == "Advancing");
+    REQUIRE(bh.fault_detection_enabled == false);
+    // AFC nulls both while the buffer is idle — that maps to the not-reported
+    // sentinel, not to zero.
+    REQUIRE(bh.rotation_distance == Catch::Approx(-1.0f));
+    REQUIRE(bh.fault_timer == Catch::Approx(-1.0f));
+    // v1.1.0 emits no multipliers at all.
+    REQUIRE(bh.multiplier == Catch::Approx(-1.0f));
+    REQUIRE(bh.active_lane.empty());
+}
+
+TEST_CASE("AFC buffer parses the v1.2.0 multiplier and active-lane fields",
+          "[ams][afc][status_fields][1149]") {
+    // Source-derived: AFC_buffer.get_status() at v1.2.0 adds active_lane and the
+    // multiplier trio. `multiplier` is _last_multiplier, seeded as an int 1 in
+    // the base trigger, so it can arrive as either an int or a float.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    // AFC_buffer frames are only dispatched for buffers AFC has named.
+    helper.feed_afc_state({{"buffers", {"Turtle_1"}}});
+
+    helper.feed_afc_buffer("Turtle_1",
+                           nlohmann::json{{"state", "Trailing"},
+                                          {"lanes", {"lane1", "lane2", "lane3", "lane4"}},
+                                          {"enabled", true},
+                                          {"rotation_distance", 22.678},
+                                          {"active_lane", "lane2"},
+                                          {"multiplier_high", 1.1},
+                                          {"multiplier_low", 0.9},
+                                          {"multiplier", 1},
+                                          {"fault_detection_enabled", true},
+                                          {"error_sensitivity", 7},
+                                          {"fault_timer", 1.5},
+                                          {"distance_to_fault", 25.5}});
+
+    auto info = helper.get_system_info();
+    REQUIRE(info.units[0].buffer_health.has_value());
+    const auto& bh = info.units[0].buffer_health.value();
+    REQUIRE(bh.active_lane == "lane2");
+    REQUIRE(bh.rotation_distance == Catch::Approx(22.678f));
+    REQUIRE(bh.multiplier == Catch::Approx(1.0f));
+    REQUIRE(bh.multiplier_high == Catch::Approx(1.1f));
+    REQUIRE(bh.multiplier_low == Catch::Approx(0.9f));
+    REQUIRE(bh.fault_timer == Catch::Approx(1.5f));
+    REQUIRE(bh.distance_to_fault == Catch::Approx(25.5f));
+    REQUIRE(bh.error_sensitivity == Catch::Approx(7.0f));
+}
+
+TEST_CASE("AFC buffer delta omitting fields leaves the prior health intact",
+          "[ams][afc][status_fields][1149]") {
+    // The buffer parser used to build a fresh BufferHealth per frame and assign
+    // it wholesale, so a state-only delta wiped the configured multipliers,
+    // sensitivity and fault distance. It also carries no `lanes`, so the routing
+    // has to come from what an earlier frame said.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+    // AFC_buffer frames are only dispatched for buffers AFC has named.
+    helper.feed_afc_state({{"buffers", {"Turtle_1"}}});
+
+    helper.feed_afc_buffer("Turtle_1",
+                           nlohmann::json{{"state", "Trailing"},
+                                          {"lanes", {"lane1", "lane2", "lane3", "lane4"}},
+                                          {"enabled", true},
+                                          {"rotation_distance", 22.678},
+                                          {"active_lane", "lane2"},
+                                          {"multiplier_high", 1.1},
+                                          {"multiplier_low", 0.9},
+                                          {"multiplier", 1.1},
+                                          {"fault_detection_enabled", true},
+                                          {"error_sensitivity", 7},
+                                          {"fault_timer", 1.5},
+                                          {"distance_to_fault", 25.5}});
+
+    helper.feed_afc_buffer("Turtle_1", nlohmann::json{{"state", "Advancing"}});
+
+    auto info = helper.get_system_info();
+    REQUIRE(info.units[0].buffer_health.has_value());
+    const auto& bh = info.units[0].buffer_health.value();
+    REQUIRE(bh.state == "Advancing");
+    REQUIRE(bh.active_lane == "lane2");
+    REQUIRE(bh.rotation_distance == Catch::Approx(22.678f));
+    REQUIRE(bh.multiplier == Catch::Approx(1.1f));
+    REQUIRE(bh.multiplier_high == Catch::Approx(1.1f));
+    REQUIRE(bh.multiplier_low == Catch::Approx(0.9f));
+    REQUIRE(bh.fault_timer == Catch::Approx(1.5f));
+    REQUIRE(bh.distance_to_fault == Catch::Approx(25.5f));
+    REQUIRE(bh.error_sensitivity == Catch::Approx(7.0f));
+    REQUIRE(bh.fault_detection_enabled == true);
+}
+
+TEST_CASE("AFC full multi-lane v1.2.0 frame lands on every slot",
+          "[ams][afc][status_fields][1149]") {
+    // Observed four-lane BoxTurtle frame with the v1.2.0-only keys added from
+    // AFC_lane.get_status() at tag v1.2.0. Colours, weights, maps, dist_hub and
+    // the endstop list are the live values.
+    AmsBackendAfcTestHelper helper;
+    helper.initialize_test_lanes_with_slots(4);
+
+    helper.feed_afc_state({{"current_lane", nullptr},
+                           {"next_lane", "lane4"},
+                           {"current_state", "Idle"},
+                           {"current_toolchange", 12},
+                           {"number_of_toolchanges", 12},
+                           {"spoolman", "http://spoolman.invalid:7912"},
+                           {"position_saved", false},
+                           {"error_state", false},
+                           {"bypass_state", false},
+                           {"quiet_mode", false},
+                           {"maps", nlohmann::json::array({"T0", "T1", "T2", "T3"})},
+                           {"lanes", {"lane1", "lane2", "lane3", "lane4"}},
+                           {"extruders", {"extruder"}},
+                           {"hubs", {"Turtle_1"}},
+                           {"buffers", {"Turtle_1"}},
+                           {"led_state", true}});
+
+    struct LaneFixture {
+        const char* name;
+        const char* map;
+        const char* color;
+        double weight;
+        double dist_hub;
+        int spool_id;
+        const char* filament_name;
+        int bed_temp;
+    };
+    const LaneFixture lanes[] = {
+        {"lane1", "T0", "#E53935", 505.8077510382372, 194.57, 42, "Galaxy Black", 60},
+        {"lane2", "T1", "#536DFE", 497.0348845693303, 122.73, 43, "Sky Blue", 62},
+        {"lane3", "T2", "#43A047", 812.5, 150.0, 44, "Leaf Green", 60},
+        {"lane4", "T3", "#FDD835", 233.25, 175.5, 45, "Sunflower", 65},
+    };
+
+    for (const auto& lf : lanes) {
+        nlohmann::json lane = observed_lane1_v110();
+        lane["name"] = lf.name;
+        lane["map"] = lf.map;
+        lane["color"] = lf.color;
+        lane["weight"] = lf.weight;
+        lane["dist_hub"] = lf.dist_hub;
+        lane["spool_id"] = lf.spool_id;
+        lane["filament_name"] = lf.filament_name;
+        lane["bed_temp"] = lf.bed_temp;
+        lane["initial_weight"] = 1000.0;
+        lane["remember_spool"] = true;
+        lane["status"] = "Ready";
+        helper.feed_afc_stepper(lf.name, lane);
+    }
+
+    helper.feed_afc_buffer("Turtle_1",
+                           nlohmann::json{{"state", "Advancing"},
+                                          {"lanes", {"lane1", "lane2", "lane3", "lane4"}},
+                                          {"enabled", true},
+                                          {"rotation_distance", 22.678},
+                                          {"active_lane", nullptr},
+                                          {"multiplier_high", 1.1},
+                                          {"multiplier_low", 0.9},
+                                          {"multiplier", 1.0},
+                                          {"fault_detection_enabled", true},
+                                          {"error_sensitivity", 7},
+                                          {"fault_timer", 1.5},
+                                          {"distance_to_fault", nullptr}});
+
+    auto info = helper.get_system_info();
+    REQUIRE(info.next_slot == 3);
+    REQUIRE(info.spoolman_url == "http://spoolman.invalid:7912");
+    REQUIRE(info.position_saved == false);
+    REQUIRE(helper.get_afc_tool_cmds().size() == 4);
+
+    REQUIRE(info.units.size() == 1);
+    REQUIRE(info.units[0].slots.size() == 4);
+    for (int i = 0; i < 4; ++i) {
+        const auto& slot = info.units[0].slots[i];
+        INFO("slot " << i);
+        REQUIRE(slot.spool_name == lanes[i].filament_name);
+        REQUIRE(slot.bed_temp == lanes[i].bed_temp);
+        REQUIRE(slot.spoolman_id == lanes[i].spool_id);
+        REQUIRE(slot.total_weight_g == Catch::Approx(1000.0f));
+        REQUIRE(slot.remaining_weight_g == Catch::Approx(lanes[i].weight));
+        REQUIRE(slot.mapped_tool == i);
+        REQUIRE(helper.get_lane_remember_spool(lanes[i].name) == std::optional<bool>{true});
+        REQUIRE(helper.get_lane_sensors(i).endstops ==
+                "load,hub,tool_start,tool_end,buffer_advance,buffer_trailing");
+        REQUIRE(helper.get_lane_sensors(i).filament_status_led == "#00cc00");
+    }
+
+    REQUIRE(info.units[0].buffer_health.has_value());
+    const auto& bh = info.units[0].buffer_health.value();
+    REQUIRE(bh.active_lane.empty());
+    REQUIRE(bh.multiplier == Catch::Approx(1.0f));
+    REQUIRE(bh.fault_timer == Catch::Approx(1.5f));
+    REQUIRE(bh.distance_to_fault == Catch::Approx(-1.0f));
+}
+
+// ============================================================================
+// Optimistic dispatch + macro-ack resolution (#1183)
+// ============================================================================
+//
+// AFC answers a command it has nothing to do about — "lane3 already loaded" —
+// by acking in 4ms without ever entering a toolchange, so current_state never
+// leaves "Idle". The UI's completion path keys entirely on an ams_action
+// transition, so a no-op produced no notify at all and nothing could end the
+// operation. AFC now sets the action optimistically at dispatch and resolves it
+// on the macro's own gcode ack, but only while AFC has not taken the operation
+// over — forcing IDLE underneath a live toolchange would truncate it.
+
+class AfcDispatchAckHelper : public AmsBackendAfc {
+  public:
+    AfcDispatchAckHelper() : AmsBackendAfc(nullptr, nullptr) {
+        std::vector<std::string> lanes{"lane1", "lane2", "lane3", "lane4"};
+        initialize_slots(lanes);
+        for (int i = 0; i < 4; ++i) {
+            auto* entry = slots_.get_mut(i);
+            if (entry)
+                entry->info.status = SlotStatus::AVAILABLE;
+        }
+        // check_preconditions() refuses everything while the backend is stopped.
+        running_ = true;
+        set_event_callback([this](const std::string& event, const std::string&) {
+            if (event == EVENT_STATE_CHANGED) {
+                action_trace_.push_back(get_current_action());
+            }
+        });
+    }
+
+    // client_ is null, so ensure_homed_then() routes straight here. Capture the
+    // completion callback instead of dispatching, so the test decides when the
+    // macro "acks".
+    AmsError execute_gcode(const std::string& gcode) override {
+        sent_.push_back(gcode);
+        pending_acks_.emplace_back(nullptr);
+        return AmsErrorHelper::success();
+    }
+
+    AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+        sent_.push_back(gcode);
+        pending_acks_.push_back(std::move(on_complete));
+        return AmsErrorHelper::success();
+    }
+
+    /// Fire the ack for the Nth dispatched gcode, then drain the UpdateQueue —
+    /// the production callback arrives on a background thread and hops to the
+    /// main thread via LifetimeToken::defer, so the work lands in the queue, not
+    /// inline.
+    void ack(size_t index) {
+        REQUIRE(index < pending_acks_.size());
+        REQUIRE(pending_acks_[index] != nullptr);
+        pending_acks_[index]();
+        helix::ui::UpdateQueue::instance().drain();
+    }
+
+    void feed_state(const std::string& current_state) {
+        nlohmann::json afc;
+        afc["current_state"] = current_state;
+        nlohmann::json params;
+        params["AFC"] = afc;
+        nlohmann::json notification;
+        notification["params"] = nlohmann::json::array({params, 0.0});
+        handle_status_update(notification);
+    }
+
+    void age_action(std::chrono::seconds elapsed) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        action_start_time_ = std::chrono::steady_clock::now() - elapsed;
+    }
+
+    void mark_filament_loaded(bool loaded) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        system_info_.filament_loaded = loaded;
+    }
+
+    [[nodiscard]] AmsAction action() const {
+        return get_current_action();
+    }
+
+    [[nodiscard]] bool latched() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return timed_out_state_.has_value();
+    }
+
+    [[nodiscard]] const std::vector<std::string>& sent() const {
+        return sent_;
+    }
+
+    /// Every action published via EVENT_STATE_CHANGED, in order. This is what
+    /// AmsState::sync_from_backend() sees, and the transitions in it are the
+    /// only thing the filament panel can complete an operation on.
+    [[nodiscard]] const std::vector<AmsAction>& trace() const {
+        return action_trace_;
+    }
+
+  private:
+    std::vector<std::string> sent_;
+    std::vector<std::function<void()>> pending_acks_;
+    std::vector<AmsAction> action_trace_;
+};
+
+namespace {
+
+bool trace_contains(const std::vector<AmsAction>& trace, AmsAction a) {
+    return std::find(trace.begin(), trace.end(), a) != trace.end();
+}
+
+} // namespace
+
+TEST_CASE("AFC no-op load resolves on the macro ack", "[ams][afc][dispatch][1183]") {
+    AfcDispatchAckHelper h;
+
+    REQUIRE(h.load_filament(2).success());
+    REQUIRE(h.sent().size() == 1);
+    REQUIRE(h.sent()[0] == "CHANGE_TOOL LANE=lane3");
+
+    // The optimistic set is the transition that makes an operation completable.
+    REQUIRE(h.action() == AmsAction::LOADING);
+
+    // AFC says "lane3 already loaded", never enters a toolchange and reports
+    // nothing at all. The macro acks in 4ms.
+    h.ack(0);
+
+    REQUIRE(h.action() == AmsAction::IDLE);
+    // Asserting the end value alone would pass without the fix — IDLE is where
+    // this started. The busy leg is the load-bearing half.
+    REQUIRE(trace_contains(h.trace(), AmsAction::LOADING));
+    REQUIRE(h.trace().back() == AmsAction::IDLE);
+}
+
+TEST_CASE("AFC unload and tool change dispatch their own actions",
+          "[ams][afc][dispatch][1183]") {
+    SECTION("unload") {
+        AfcDispatchAckHelper h;
+        h.mark_filament_loaded(true);
+
+        REQUIRE(h.unload_filament(1).success());
+        REQUIRE(h.sent()[0] == "TOOL_UNLOAD LANE=lane2");
+        REQUIRE(h.action() == AmsAction::UNLOADING);
+
+        h.ack(0);
+        REQUIRE(h.action() == AmsAction::IDLE);
+        REQUIRE(trace_contains(h.trace(), AmsAction::UNLOADING));
+    }
+
+    SECTION("tool change") {
+        AfcDispatchAckHelper h;
+
+        REQUIRE(h.change_tool(1).success());
+        REQUIRE(h.sent()[0] == "T1");
+        // SELECTING, not LOADING: AFC's toolchanger states all map to SELECTING
+        // and the operation carries the 300s toolchange budget.
+        REQUIRE(h.action() == AmsAction::SELECTING);
+
+        h.ack(0);
+        REQUIRE(h.action() == AmsAction::IDLE);
+        REQUIRE(trace_contains(h.trace(), AmsAction::SELECTING));
+    }
+}
+
+TEST_CASE("AFC macro ack does not truncate a toolchange AFC took over",
+          "[ams][afc][dispatch][1183]") {
+    AfcDispatchAckHelper h;
+
+    REQUIRE(h.load_filament(0).success());
+    REQUIRE(h.action() == AmsAction::LOADING);
+
+    // AFC entered the toolchange for real and is driving its own state machine.
+    h.feed_state("ToolSwap");
+    REQUIRE(h.action() == AmsAction::SELECTING);
+
+    // The macro's ack lands while AFC is still cutting. Forcing IDLE here would
+    // end the operation in the UI 60 seconds early.
+    h.ack(0);
+    REQUIRE(h.action() == AmsAction::SELECTING);
+
+    h.feed_state("Cutting");
+    REQUIRE(h.action() == AmsAction::CUTTING);
+
+    // AFC's own terminating frame is what resolves it.
+    h.feed_state("Idle");
+    REQUIRE(h.action() == AmsAction::IDLE);
+}
+
+TEST_CASE("AFC Idle re-echo between dispatch and ack still ends the operation",
+          "[ams][afc][dispatch][1183]") {
+    AfcDispatchAckHelper h;
+
+    REQUIRE(h.load_filament(2).success());
+    REQUIRE(h.action() == AmsAction::LOADING);
+
+    // AFC re-echoes the state it was already in. That is NOT AFC taking over —
+    // it is the no-op — but the frame itself already produced the LOADING ->
+    // IDLE transition the UI needs, so the later ack has nothing left to do.
+    h.feed_state("Idle");
+    REQUIRE(h.action() == AmsAction::IDLE);
+    REQUIRE(trace_contains(h.trace(), AmsAction::LOADING));
+
+    h.ack(0);
+    REQUIRE(h.action() == AmsAction::IDLE);
+}
+
+TEST_CASE("AFC second dispatch invalidates the first dispatch's pending ack",
+          "[ams][afc][dispatch][1183]") {
+    AfcDispatchAckHelper h;
+
+    REQUIRE(h.load_filament(0).success());
+    REQUIRE(h.action() == AmsAction::LOADING);
+
+    // AFC re-echoes Idle, so the action is no longer busy and the next operation
+    // passes check_preconditions() — but the first dispatch's ack is still out
+    // there, unfired.
+    h.feed_state("Idle");
+    REQUIRE(h.action() == AmsAction::IDLE);
+
+    h.mark_filament_loaded(true);
+    REQUIRE(h.unload_filament(1).success());
+    REQUIRE(h.action() == AmsAction::UNLOADING);
+
+    // The stale ack must not resolve the unload that is now in flight.
+    h.ack(0);
+    REQUIRE(h.action() == AmsAction::UNLOADING);
+
+    // The current dispatch's own ack still works.
+    h.ack(1);
+    REQUIRE(h.action() == AmsAction::IDLE);
+}
+
+TEST_CASE("AFC optimistic dispatch stamps the stuck-action clock",
+          "[ams][afc][dispatch][timeout][1183]") {
+    AfcDispatchAckHelper h;
+
+    // Age the clock before dispatching. Without its own stamp the new action
+    // would inherit this elapsed time and blow the 180s LOADING budget on its
+    // very first poll.
+    h.age_action(std::chrono::seconds(1000));
+    REQUIRE(h.load_filament(0).success());
+
+    h.age_action(std::chrono::seconds(170));
+    (void)h.get_system_info(); // the sidebar's stall-watchdog poll
+    REQUIRE(h.action() == AmsAction::LOADING);
+
+    h.age_action(std::chrono::seconds(200));
+    (void)h.get_system_info();
+    REQUIRE(h.action() == AmsAction::ERROR);
+    // A timeout on an action AFC never acknowledged must not latch: the latch
+    // keys on last_raw_state_, which here is still AFC's idle token, and would
+    // re-force ERROR on every subsequent Idle frame.
+    REQUIRE_FALSE(h.latched());
+    h.feed_state("Idle");
+    REQUIRE(h.action() == AmsAction::IDLE);
+}
+
+TEST_CASE("AFC stuck-action timeout still fires for an op AFC took over",
+          "[ams][afc][dispatch][timeout][1183]") {
+    AfcDispatchAckHelper h;
+
+    REQUIRE(h.load_filament(0).success());
+    h.feed_state("Loading");
+    REQUIRE(h.action() == AmsAction::LOADING);
+
+    // AFC reports the same busy state forever and no ack ever arrives.
+    h.age_action(std::chrono::seconds(200));
+    h.feed_state("Loading");
+
+    REQUIRE(h.action() == AmsAction::ERROR);
+    // AFC owns this action, so the latch DOES arm — otherwise the next frame's
+    // "Loading" would map straight back to LOADING and flap.
+    REQUIRE(h.latched());
+    h.feed_state("Loading");
+    REQUIRE(h.action() == AmsAction::ERROR);
 }

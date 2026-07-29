@@ -98,7 +98,13 @@ std::optional<ErrorEvent> classify(const std::string& raw_line, const ClassifyCo
             // BOTH neutral: the cause of this line is unknown by definition --
             // this is the arm nobody claimed -- so the UI must not nudge toward
             // resuming a print that may not be safe to resume.
-            e.recovery_actions.push_back({lv_tr("Resume"), "RESUME", "error_classify::resume"});
+            // Flagged hot: RESUME restarts a paused print, whose very next move
+            // extrudes. is_paused is what got us here, and a print can sit paused
+            // long enough for idle_timeout to drop the heater, so the presenter
+            // reheats before sending rather than handing Klipper a cold extrude.
+            e.recovery_actions.push_back(
+                {lv_tr("Resume"), "RESUME", "error_classify::resume", "",
+                 /*needs_hot_nozzle=*/true});
             // Without this the modal has exactly one way out and a user who does
             // NOT want to resume is trapped: ActionPromptModal builds its buttons
             // solely from this vector and has no intrinsic close affordance (same

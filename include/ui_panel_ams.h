@@ -109,6 +109,13 @@ class AmsPanel : public PanelBase {
     }
 
     /**
+     * @brief Whether the filament loading-error dialog is currently on screen
+     */
+    [[nodiscard]] bool is_error_modal_visible() const {
+        return error_modal_ && error_modal_->is_visible();
+    }
+
+    /**
      * @brief Refresh slot display from backend state
      *
      * Call this after backend operations complete to update UI.
@@ -155,6 +162,18 @@ class AmsPanel : public PanelBase {
     /// Cooldown after user dismissal to prevent immediate re-trigger from stale AFC state
     std::chrono::steady_clock::time_point error_modal_dismiss_time_{};
 
+    /// Last observed AmsAction, -1 until the action observer's first tick.
+    /// Lets that observer act on the ERROR -> non-ERROR *edge*; -1 can never
+    /// compare equal to ERROR, so the first tick is a baseline, not a
+    /// transition.
+    int prev_ams_action_ = -1;
+
+    /// Last observed helix::PrintJobState, -1 until the print-state observer's
+    /// first tick (which is a baseline, not a transition). The error dialog is
+    /// dismissed only on the edge INTO PRINTING — a level check would hide an
+    /// error raised mid-print the instant it appeared.
+    int prev_print_state_ = -1;
+
     // === Observers (RAII cleanup via ObserverGuard) ===
 
     ObserverGuard slots_version_observer_;
@@ -168,6 +187,7 @@ class AmsPanel : public PanelBase {
     /// these fire and redraw that lane's path in real time. Static-array subjects
     /// (singleton lifetime) — no SubjectLifetime token needed.
     std::vector<ObserverGuard> slot_path_observers_;
+    ObserverGuard print_state_observer_;    ///< Dismisses a stale error dialog when a print resumes
     ObserverGuard backend_count_observer_;  ///< For backend selector visibility
     ObserverGuard external_spool_observer_; ///< Reactive updates when external spool color changes
     helix::AsyncLifetimeGuard
@@ -283,6 +303,15 @@ class AmsPanel : public PanelBase {
     void show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point_t click_pt);
     void show_edit_modal(int slot_index, bool open_on_picker = false);
     void show_loading_error_modal();
+
+    /**
+     * @brief Take the loading-error dialog down without running its dismiss callback
+     *
+     * For dismissals the user did not initiate. No-op when the dialog is not up.
+     *
+     * @param reason Logged so the field can tell the two triggers apart
+     */
+    void dismiss_error_modal_silently(const char* reason);
 
     // === Action Handlers (public for XML event callbacks) ===
   public:

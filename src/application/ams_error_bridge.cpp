@@ -3,6 +3,7 @@
 
 #include "ams_state.h"
 #include "observer_factory.h"
+#include "post_op_cooldown_manager.h"
 
 #include <spdlog/spdlog.h>
 
@@ -24,6 +25,17 @@ void AmsErrorBridge::on_action_changed(int action) {
     const bool was_error = (prev_action_ == static_cast<int>(AmsAction::ERROR));
     prev_action_ = action;
     if (now_error && !was_error) {
+        // Disarm the post-op cooldown an EARLIER operation left running. Nothing
+        // else cancels it on a fault, so ~120s after the error it zeroes the
+        // extruder and whichever recovery the user taps next runs into a cold
+        // nozzle — failing exactly the way the operation that faulted did.
+        //
+        // Before the early returns below, deliberately: AmsBackendAfc does not
+        // override current_error(), so for AFC `ev` is always nullopt and
+        // anything placed after that check never runs on the one backend whose
+        // recovery dialog reaches the user through a different path.
+        PostOpCooldownManager::instance().cancel();
+
         auto* backend = AmsState::instance().get_backend();
         if (!backend)
             return;

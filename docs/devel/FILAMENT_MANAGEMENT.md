@@ -1119,6 +1119,98 @@ Do not reintroduce them:
 | `AFC_UNLOAD` | `TOOL_UNLOAD` (toolhead) or `LANE_UNLOAD LANE={name}` (lane to spool) |
 | `AFC_LANE_MOVE` | `LANE_MOVE` — the `AFC_` prefix is not real |
 
+### AFC console response contract
+
+AFC narrates its operations over `notify_gcode_response`, and the toolchange step bar is driven
+entirely by matching those strings — there is no structured field for "which phase am I in". This
+is the undocumented string contract of #1153; the shapes below were captured verbatim from a live
+12-toolchange print on the BoxTurtle rig via `server/gcode_store`
+(`N` = a digit run; the verbatim strings live in `tests/unit/test_afc_console_corpus.cpp`). Tests drive the exact
+strings: `tests/unit/test_afc_console_corpus.cpp`.
+
+**AFC emits narration on two different channels, and they need different matchers.**
+
+#### Channel 1 — bare lines (no `//`, no `!!`)
+
+`AmsBackendAfc::match_bare_narration_phase()`. These carry the *semantically important* half of a
+toolchange. Klipper's `respond_raw` gives them no prefix at all, so before this was split out the
+router's `//`-only filter discarded every one of them and the step bar could only ever advance on
+the decorative cut/brush lines.
+
+| Shape | Phase | Source |
+|-------|-------|--------|
+| `Loading laneN` | `feed` | `AFC.py` `TOOL_LOAD` |
+| `Unloading laneN` | `unload` | `AFC.py` `TOOL_UNLOAD` |
+| `laneN is now loaded in toolhead t:N` | `load` | load complete (`t:N` absent on pre-toolchanger builds) |
+| `Lane laneN unload done t:N` | `unload` | unload complete |
+| `Tool Change - laneN -> laneN`, `Tool Change - None -> laneN` | *(none)* | toolchange banner — no phase in the template |
+| `Total change time: t:N` | *(none)* | toolchange end — no phase in the template |
+| `laneN already loaded` | *(none)* | CHANGE_TOOL no-op (#1183). Must **not** read as a completed load |
+
+**Bare lines are matched by anchored shape, never by substring.** The unprefixed channel is the
+printer's open console: the same stream carries `B:N /N TN:N /N` temperature reports, `echo:` output
+from user macros, `Rotation distance reset : N`, an HTML `<span class=warning--text>…</span>`
+deprecation notice — and `File opened: <name>.gcode Size: N`, where the filename is
+**user-controlled**. A loose `has("cut")` needle turns anyone's `haircut.gcode` into a Cut-tip step.
+So each shape is pinned on fixed words in fixed positions plus a token count: `Loading laneN` matches
+only as exactly two whitespace-separated tokens, and the load-complete line needs all five of
+`is now loaded in toolhead` in sequence.
+
+> **Residual exposure.** `Loading <one-word>` is the weakest shape — a user macro doing
+> `M118 Loading mesh` during an active toolchange would advance the bar one step. Tightening it
+> further would mean validating the second token against the configured lane names, which the
+> matcher deliberately avoids: it is a pure function today, and reading the lane registry would put
+> a lock into a per-console-line path for a cosmetic-only gain.
+
+#### Channel 2 — `//` lines
+
+`AmsBackendAfc::match_narration_phase()`. A `//` body came from a macro's own `respond_info`, so
+upstream owns the wording and the matcher is deliberately loose: it normalizes to lowercase words
+and substring-matches, so `AFC_Brush: Clean Nozzle`, `AFC Brush - Clean nozzle` and
+`[AFC_Brush] Clean Nozzle!` all land on `brush`.
+
+| Shape | Phase |
+|-------|-------|
+| `// AFC_Cut: …` (`Cut Filament`, `Moving to cutter pin`, `Retract Filament for Cut`, `Cut Move…`, `Final Cut…`, `Push cut tip back into hotend`, `Clearing cutter pin`) | `cut` |
+| `// AFC_Brush: …` (`Clean Nozzle`, `Move to Brush.`, `Y Brush Moves`, `X Brush Moves`) | `brush` |
+| `// AFC_Poop: …` (`Starting poop`, `Move To Purge Location`) | `poop` |
+| `// AFC_Kick: …` | `kick` |
+| `// AFC_Park: Park Toolhead` | *(none)* — AFC's park has no step in the template, so it stays unmatched rather than borrowing a neighbour. Adding it would mean adding a real phase. |
+| `// Smart Park location: N,N.`, `// Moving filament tip N.Nmms`, `// DESCRIBE_COLOR: …`, `// TOOLCHANGE: filament …`, `// Run Current: …`, `// pressure_advance: N`, `//      Change N out of N` | *(none)* |
+
+`// KAMP purge is not using firmware retraction…` does match `poop` via the loose `purg` needle.
+That is accepted: KAMP's advisory only appears around the purge anyway, so the phase it lands on is
+the right one.
+
+#### `// Unknown command:"X"` — an aborted macro that still returns `ok`
+
+Klipper reports a macro referencing an undefined command through `respond_info` as
+`// Unknown command:"STATUS_PURGING"` — **not** `!!` — and Moonraker still returns `ok` for the
+enclosing script. Nothing else in the stack can distinguish "the macro ran" from "the macro died on
+line 4", so the operation's success callback fires and the button shows a green checkmark for a
+macro that did nothing. (Observed four times in the captured window: a `purge_filament` macro
+aborting because the user's LED config has no `STATUS_PURGING`.)
+
+`GcodeNarrationRouter` claims the line before either matcher sees it — `parse_unknown_command()`,
+anchored at the start of the body — and hands the command name to
+`FilamentPanel::fail_op_on_unknown_command()`, which fails the visibly-running operation and names
+the missing command in the toast. Claiming it early also stops the error message itself from driving
+the step bar: `has("purg")` reads `STATUS_PURGING` as a real purge phase.
+
+**Correlation is best-effort.** Klipper does not tie a response line to the RPC that provoked it, so
+the only handle is "an operation is showing its spinner". An unknown-command line raised by another
+client while a filament op happens to be running will fail that op. That is the lesser harm — a
+checkmark for a macro that never ran is what sends users hunting the wrong problem.
+
+#### Drift hints
+
+When neither matcher claims a line, `AmsBackend::is_narration_drift_candidate()` decides whether it
+is worth a deduped `debug` log. AFC's answer is deliberately looser than its matchers (any line
+naming `afc` or a `lane` — the hint exists to catch *rewording*, which by definition no matcher
+recognizes) minus the lines it emits every toolchange that have no phase by design (`tool change`,
+`already loaded`, `total change time`, `rotation distance reset`). Grep `[GcodeNarration] no phase
+matched` after an AFC upgrade.
+
 ### Path Topology
 
 `PathTopology::HUB` -- Multiple lanes merge into a common hub/merger. Sensor-based position inference:

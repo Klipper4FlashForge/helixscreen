@@ -11,9 +11,11 @@
 #include "slot_registry.h"
 
 #include <chrono>
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -174,6 +176,19 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     toolchange_phase_template(StepOperationType op) const override;
     [[nodiscard]] std::optional<std::string>
     match_narration_phase(const std::string& narration) const override;
+
+    /// AFC emits its load/unload narration with NO `//` prefix (`Loading lane3`,
+    /// `lane3 is now loaded in toolhead t:0`, ...), so the semantically important
+    /// half of the step model arrives on the bare console channel. Matched by
+    /// anchored shape rather than substring — see the .cpp for the shape table
+    /// and docs/devel/FILAMENT_MANAGEMENT.md § "AFC console response contract".
+    [[nodiscard]] std::optional<std::string>
+    match_bare_narration_phase(const std::string& line) const override;
+
+    /// A line naming AFC or a lane that matched no phase, minus AFC's known
+    /// phase-less lines (tool-change banners, `already loaded`, buffer
+    /// bookkeeping), which would otherwise log on every single toolchange.
+    [[nodiscard]] bool is_narration_drift_candidate(const std::string& line) const override;
 
     // Operations
     AmsError load_filament(int slot_index) override;
@@ -379,6 +394,8 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcToolchangerLaneHelper;
     friend class AfcStateStringHelper;
     friend class AfcDatabaseResponseHelper;
+    friend class AfcActionTimeoutHelper;
+    friend class AfcDispatchAckHelper;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;
@@ -390,9 +407,11 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
   private:
     // === User-attached slot identity (FilamentSlotOverrideStore) =============
     //
-    // AFC firmware cannot hold brand, spool_name, total_weight_g, color_name or
-    // the Spoolman filament/vendor ids — verified against a live lane payload
-    // and its lane_data record — so those live only here.
+    // AFC firmware cannot hold brand, color_name or the Spoolman filament/vendor
+    // ids — verified against a live lane payload and its lane_data record — so
+    // those live only here. spool_name and total_weight_g are partial exceptions
+    // from AFC v1.2.0, which publishes filament_name and initial_weight, but only
+    // for a lane with a live Spoolman link; a user's override still outranks both.
     //
     // The namespace is PRIVATE, deliberately NOT the shared "lane_data": AFC's
     // own plugin owns that one, deletes the whole namespace on every Klipper
@@ -437,6 +456,109 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
      * @param source Field it came from ("status" / "current_state"), for logs
      */
     void apply_state_string(const std::string& raw, const char* source);
+
+    // === Stuck-action timeout ==============================================
+    //
+    // AFC's busy state is re-derived from the firmware-echoed state string on
+    // every status frame. When the terminating frame never arrives — a macro
+    // that silently never completes, a WebSocket bounce mid-toolchange, a
+    // Klipper shutdown — the UI stays pinned busy forever with nothing to
+    // release it (#1188). These budgets flip a genuinely stuck operation to
+    // ERROR, which is what the AmsPanel ams_action observer and the sidebar
+    // both key off.
+    //
+    // Every value is a UI backstop, not a progress tracker: AFC operations are
+    // legitimately long (a measured BoxTurtle toolchange including cut, poop,
+    // kick, brush and purge ran 67s) and a false timeout is far worse than a
+    // late one, so all of them are generous.
+
+    /// Everything busy that has no dedicated budget: RESETTING, FORMING_TIP,
+    /// CUTTING, CHECKING. These are short, bounded macro steps.
+    static constexpr int ACTION_TIMEOUT_SECONDS = 120;
+    /// AFC's toolchanger states (ToolSwap, ToolDock, ToolPickup, Moving,
+    /// Restoring) all map to SELECTING, and a full toolchange is the longest
+    /// thing AFC does — dock, pick up, load, cut, purge, brush, restore
+    /// position. AD5X's busy list omits SELECTING entirely (its firmware never
+    /// reports it); AFC needs it and needs it long.
+    static constexpr int SELECTING_TIMEOUT_SECONDS = 300;
+    /// Cold nozzle to 300°C for high-temp materials. Klipper's own
+    /// verify_heater aborts a genuinely dead heater well inside this.
+    static constexpr int HEATING_TIMEOUT_SECONDS = 300;
+    /// A multi-colour purge legitimately runs minutes on a large purge volume.
+    static constexpr int PURGING_TIMEOUT_SECONDS = 240;
+    /// Lane-to-toolhead feed over a long bowden, plus AFC's per-lane speed
+    /// ramps. Shared by LOADING and UNLOADING — the paths are symmetric.
+    static constexpr int LOAD_UNLOAD_TIMEOUT_SECONDS = 180;
+
+    /// Start of the current action, stamped once per status frame in
+    /// parse_afc_state() when the action changed across the whole frame.
+    std::chrono::steady_clock::time_point action_start_time_{std::chrono::steady_clock::now()};
+
+    /// Raw AFC state string most recently applied by apply_state_string().
+    /// Keys the timeout latch; NOT a display value.
+    std::string last_raw_state_;
+
+    /// Raw AFC state string that blew its budget, and the detail composed when
+    /// it did. While set, the normal state->action mapping is overridden with
+    /// ERROR.
+    ///
+    /// The latch exists because AFC — unlike AD5X, which drives its own action
+    /// state machine — re-derives the action from the firmware string every
+    /// frame. Setting ERROR alone would be undone by the very next frame, whose
+    /// unchanged "Loading" maps straight back to LOADING and restarts the
+    /// clock, flapping between busy and ERROR indefinitely. Released the moment
+    /// AFC reports a genuinely different string, and by clear_fault().
+    std::optional<std::string> timed_out_state_;
+    std::string timed_out_detail_;
+
+    /// Flip a busy action that has outlived its budget to ERROR and latch it.
+    /// No-op while already latched, and for IDLE / ERROR / PAUSED. Caller holds
+    /// mutex_.
+    void check_action_timeout();
+
+    /// Re-assert (or release) the timeout latch after the frame's state strings
+    /// have been applied. Caller holds mutex_.
+    void apply_action_timeout_latch_locked();
+
+    // === Optimistic dispatch + macro-ack resolution ========================
+    //
+    // AFC answers a command it has nothing to do about — "lane3 already
+    // loaded" — by acking in 4ms without ever entering a toolchange, so
+    // current_state never leaves "Idle" (#1183). The UI's completion path keys
+    // entirely on an ams_action transition and AmsState::sync_from_backend()
+    // short-circuits on an unchanged value, so a no-op produced no notify at
+    // all and nothing could end the operation.
+    //
+    // Two halves, both of which other backends already have: set the action
+    // optimistically at dispatch so there is a transition to complete, and
+    // resolve it on the macro's own gcode ack (the same signal AD5X IFS uses in
+    // finalize_op_after_macro()).
+
+    /// Action the most recent dispatch set optimistically, cleared once that
+    /// dispatch has been resolved — by its ack, by AFC taking the operation
+    /// over, or by a newer dispatch superseding it.
+    std::optional<AmsAction> pending_dispatch_action_;
+
+    /// Monotonic dispatch counter. The ack carries the generation it was issued
+    /// under, so an ack that lands after a newer dispatch resolves nothing.
+    uint64_t dispatch_generation_{0};
+
+    /// Set @p action optimistically for a dispatch that is about to go out and
+    /// return the generation its ack must present. Caller holds mutex_.
+    uint64_t begin_dispatch_locked(AmsAction action);
+
+    /// Undo an optimistic set whose gcode never left the building. Caller must
+    /// NOT hold mutex_.
+    void abandon_dispatch(uint64_t generation);
+
+    /// Resolve a dispatch to IDLE on its macro's gcode ack, but only when AFC
+    /// never took the operation over. Main thread; must NOT hold mutex_.
+    void finalize_dispatch_after_macro(uint64_t generation);
+
+    /// Send a filament operation: set @p action optimistically, dispatch
+    /// @p gcode through ensure_homed_then(), and resolve on the macro's ack.
+    /// Caller must NOT hold mutex_ and must have passed check_preconditions().
+    AmsError dispatch_operation(std::string gcode, AmsAction action);
 
     /**
      * @brief Query current AFC state from Moonraker
@@ -718,6 +840,27 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     std::vector<std::string> hub_names_; ///< Discovered hub names
     std::vector<std::string> buffer_names_; ///< Discovered buffer names
     float bowden_length_{450.0f};           ///< Bowden tube length from hub (default 450mm)
+
+    /// T-commands AFC has actually registered with Klipper (AFC.maps, v1.2.0+).
+    /// Kept as a cross-check against the mapping we derive from each lane's
+    /// `map` field: a lane claiming T3 that AFC never registered means the
+    /// gcode we would send does not exist.
+    std::vector<std::string> afc_tool_cmds_;
+
+    /// Tool numbers already reported as unregistered — dedupes the cross-check
+    /// warning so it fires once per tool, not once per status frame.
+    std::set<int> tool_cmd_missing_warned_;
+
+    /// Per-lane `remember_spool`: when true AFC keeps the lane's spool metadata
+    /// across an eject instead of running clear_values(). Tells us whether the
+    /// firmware or our own override store is the thing preserving identity.
+    std::unordered_map<std::string, bool> lane_remember_spool_;
+
+    /// Lanes last seen on each buffer, keyed by buffer name. AFC's buffer status
+    /// arrives as a Moonraker delta, so a frame that changes only `state` omits
+    /// `lanes` — without this cache the health update could not be routed to a
+    /// unit and would be dropped.
+    std::unordered_map<std::string, std::vector<std::string>> buffer_lane_names_;
 
     // Multi-extruder (toolchanger) state
     int num_extruders_{1}; ///< Number of extruders (1 = standard, 2+ = toolchanger)

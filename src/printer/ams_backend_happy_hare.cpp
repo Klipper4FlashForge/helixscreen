@@ -1040,21 +1040,26 @@ std::vector<helix::RecoveryAction> AmsBackendHappyHare::build_recovery_actions()
     // Caller holds mutex_.
     std::vector<helix::RecoveryAction> actions;
 
-    // Resume after the user clears the fault (always offered, primary).
-    actions.push_back({lv_tr("Resume"), "RESUME", "hh::resume", "primary"});
+    // Resume after the user clears the fault (always offered, primary). Resuming
+    // a paused print extrudes on the next move, so it needs the hotend up.
+    actions.push_back({lv_tr("Resume"), "RESUME", "hh::resume", "primary",
+                       /*needs_hot_nozzle=*/true});
 
     // MMU_RECOVER re-syncs HH's filament state; the LOADED/UNLOADED arg must match
-    // reality (HH issue #729). Derive from the live loaded flag.
+    // reality (HH issue #729). Derive from the live loaded flag. State-only — it
+    // moves nothing, so it stays available on a cold nozzle.
     const bool loaded = system_info_.filament_loaded;
     actions.push_back({lv_tr("Recover"), loaded ? "MMU_RECOVER LOADED=1" : "MMU_RECOVER UNLOADED=1",
                        "hh::recover", ""});
 
-    // If filament is at the toolhead, offer an explicit unload.
+    // If filament is at the toolhead, offer an explicit unload. Pulls filament
+    // back out through the melt zone, so it needs heat.
     if (loaded) {
-        actions.push_back({lv_tr("Unload"), "MMU_UNLOAD", "hh::unload", ""});
+        actions.push_back({lv_tr("Unload"), "MMU_UNLOAD", "hh::unload", "",
+                           /*needs_hot_nozzle=*/true});
     }
 
-    // Force-clear the MMU pause lock (last resort).
+    // Force-clear the MMU pause lock (last resort). Lock state only, no motion.
     actions.push_back({lv_tr("Unlock"), "MMU_UNLOCK", "hh::unlock", "danger"});
     return actions;
 }

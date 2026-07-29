@@ -1790,6 +1790,8 @@ std::optional<helix::ErrorEvent> AmsBackendAd5xIfs::current_error() const {
                    ? std::string(lv_tr("Filament operation failed"))
                    : system_info_.operation_detail;
     e.sticky = true;
+    // IFS_UNLOCK releases the firmware's operation lock; it moves no filament,
+    // so it stays tappable on a cold nozzle (needs_hot_nozzle defaults false).
     e.recovery_actions = {{lv_tr("Recover"), "IFS_UNLOCK", "ifs::unlock", "primary"}};
     return e;
 }
