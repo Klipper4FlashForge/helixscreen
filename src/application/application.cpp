@@ -469,15 +469,20 @@ int Application::run(int argc, char** argv) {
     // Ensure we're running from the project root
     ensure_project_root_cwd();
 
-    // Prevent multiple instances from running simultaneously.
-    // Two instances fighting for DRM causes 100% CPU (flush retry loop) and segfaults.
-    if (!acquire_instance_lock()) {
-        return 1;
-    }
-
     // Phase 1: Parse command line args
     if (!parse_args(argc, argv)) {
         return 0; // Help shown or parse error
+    }
+
+    // Prevent multiple instances from running simultaneously.
+    // Two instances fighting for DRM causes 100% CPU (flush retry loop) and segfaults.
+    //
+    // Claimed after arg parsing so the flags that print and exit (-V/--version,
+    // -h/--help) still work on a device where helix-screen is already running —
+    // taking the lock first made them fail with "another instance is running",
+    // which is exactly when you most want to ask the binary its version.
+    if (!acquire_instance_lock()) {
+        return 1;
     }
 
     // Install crash handler early (before other init that could crash)
