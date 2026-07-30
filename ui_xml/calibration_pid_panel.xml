@@ -7,6 +7,38 @@
   <styles>
     <style name="pid_heater_selected" bg_color="#tertiary" bg_opa="255"/>
     <style name="pid_heater_unselected" bg_color="#elevated_bg" bg_opa="255"/>
+
+    <!-- Material preset row.
+
+         Four equal-width buttons cannot hold an arbitrary material name: the
+         names come from subjects (preset_material_N_name), so their length is
+         data, not layout. At MICRO a button is 46px and "Generic TPU" measures
+         57px, which clipped to "eneric TP" — chopped at BOTH ends, because the
+         label is centred and wider than the button that clips it
+         (prestonbrown/helixscreen#1204). 800x480 clipped too (99px label, 73px button).
+
+         Up to and including MEDIUM the row wraps to 2x2, which roughly doubles
+         each button's width so the name fits on one line. MEDIUM needs it as
+         much as MICRO does: font_small scales with the breakpoint (10px at
+         MICRO, 16px at MEDIUM) while the button only reaches 73px, so a single
+         row of four cannot hold a long name at any size below LARGE.
+
+         layout="flex" must accompany flex_flow in a style — flex_flow alone is
+         inert, since it is lv_obj_set_flex_flow() that sets both. -->
+    <style name="presets_wrapped" layout="flex" flex_flow="row_wrap" flex_main_place="space_between"/>
+    <style name="presets_single_row" layout="flex" flex_flow="row" flex_main_place="start"/>
+    <!-- 48% (not 50%) leaves room for the inter-column gap.
+
+         The tight horizontal padding matters: ui_button's default padding ate
+         26px of an 87px button at TINY, leaving the label only 61px. "Generic
+         TPU" needs ~63px at the TINY font (noto_sans_light_11), so it wrapped to
+         a second line and the wrapped label — 30px in a 28px button — had "TPU"
+         clipped off the bottom. Note long_mode="dots" does NOT save this case:
+         LVGL only draws the ellipsis when the label's HEIGHT is bounded, and an
+         auto-height label wraps instead. Reclaiming the padding keeps the name
+         on one line and costs no vertical space. -->
+    <style name="preset_btn_half" width="48%" flex_grow="0" pad_left="4" pad_right="4"/>
+    <style name="preset_btn_grow" flex_grow="1" pad_left="4" pad_right="4"/>
   </styles>
   <view name="calibration_pid_panel"
         extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_bg_opa="255"
@@ -91,37 +123,57 @@
               <text_body text="Target Temperature" translation_tag="Target Temperature"/>
               <!-- Material Presets (Extruder) -->
               <lv_obj name="extruder_presets"
-                      width="100%" height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs"
-                      style_flex_main_place="start" scrollable="false">
+                      width="100%" height="content" style_pad_all="0" style_pad_gap="#space_xs"
+                      scrollable="false">
+                <bind_style_if_le name="presets_wrapped" subject="ui_breakpoint" ref_value="3"/>
+                <bind_style_if_ge name="presets_single_row" subject="ui_breakpoint" ref_value="4"/>
                 <bind_flag_if_eq subject="pid_heater_is_extruder" flag="hidden" ref_value="0"/>
-                <ui_button name="btn_preset_m0" flex_grow="1" height="#button_height_sm" bind_text="preset_material_0_name" style_text_font="#font_small">
+                <ui_button name="btn_preset_m0" height="#button_height_sm" bind_text="preset_material_0_name" style_text_font="#font_small" long_mode="dots">
+                  <bind_style_if_le name="preset_btn_half" subject="ui_breakpoint" ref_value="3"/>
+                  <bind_style_if_ge name="preset_btn_grow" subject="ui_breakpoint" ref_value="4"/>
                   <event_cb trigger="clicked" callback="on_pid_preset_material"/>
                 </ui_button>
-                <ui_button name="btn_preset_m1" flex_grow="1" height="#button_height_sm" bind_text="preset_material_1_name" style_text_font="#font_small">
+                <ui_button name="btn_preset_m1" height="#button_height_sm" bind_text="preset_material_1_name" style_text_font="#font_small" long_mode="dots">
+                  <bind_style_if_le name="preset_btn_half" subject="ui_breakpoint" ref_value="3"/>
+                  <bind_style_if_ge name="preset_btn_grow" subject="ui_breakpoint" ref_value="4"/>
                   <event_cb trigger="clicked" callback="on_pid_preset_material"/>
                 </ui_button>
-                <ui_button name="btn_preset_m2" flex_grow="1" height="#button_height_sm" bind_text="preset_material_2_name" style_text_font="#font_small">
+                <ui_button name="btn_preset_m2" height="#button_height_sm" bind_text="preset_material_2_name" style_text_font="#font_small" long_mode="dots">
+                  <bind_style_if_le name="preset_btn_half" subject="ui_breakpoint" ref_value="3"/>
+                  <bind_style_if_ge name="preset_btn_grow" subject="ui_breakpoint" ref_value="4"/>
                   <event_cb trigger="clicked" callback="on_pid_preset_material"/>
                 </ui_button>
-                <ui_button name="btn_preset_m3" flex_grow="1" height="#button_height_sm" bind_text="preset_material_3_name" style_text_font="#font_small">
+                <ui_button name="btn_preset_m3" height="#button_height_sm" bind_text="preset_material_3_name" style_text_font="#font_small" long_mode="dots">
+                  <bind_style_if_le name="preset_btn_half" subject="ui_breakpoint" ref_value="3"/>
+                  <bind_style_if_ge name="preset_btn_grow" subject="ui_breakpoint" ref_value="4"/>
                   <event_cb trigger="clicked" callback="on_pid_preset_material"/>
                 </ui_button>
               </lv_obj>
               <!-- Material Presets (Bed) -->
               <lv_obj name="bed_presets"
-                      width="100%" height="content" style_pad_all="0" flex_flow="row" style_pad_gap="#space_xs"
-                      style_flex_main_place="start" scrollable="false">
+                      width="100%" height="content" style_pad_all="0" style_pad_gap="#space_xs"
+                      scrollable="false">
+                <bind_style_if_le name="presets_wrapped" subject="ui_breakpoint" ref_value="3"/>
+                <bind_style_if_ge name="presets_single_row" subject="ui_breakpoint" ref_value="4"/>
                 <bind_flag_if_not_eq subject="pid_heater_is_extruder" flag="hidden" ref_value="0"/>
-                <ui_button name="btn_preset_bed_m0" flex_grow="1" height="#button_height_sm" bind_text="preset_material_0_name" style_text_font="#font_small">
+                <ui_button name="btn_preset_bed_m0" height="#button_height_sm" bind_text="preset_material_0_name" style_text_font="#font_small" long_mode="dots">
+                  <bind_style_if_le name="preset_btn_half" subject="ui_breakpoint" ref_value="3"/>
+                  <bind_style_if_ge name="preset_btn_grow" subject="ui_breakpoint" ref_value="4"/>
                   <event_cb trigger="clicked" callback="on_pid_preset_bed_material"/>
                 </ui_button>
-                <ui_button name="btn_preset_bed_m1" flex_grow="1" height="#button_height_sm" bind_text="preset_material_1_name" style_text_font="#font_small">
+                <ui_button name="btn_preset_bed_m1" height="#button_height_sm" bind_text="preset_material_1_name" style_text_font="#font_small" long_mode="dots">
+                  <bind_style_if_le name="preset_btn_half" subject="ui_breakpoint" ref_value="3"/>
+                  <bind_style_if_ge name="preset_btn_grow" subject="ui_breakpoint" ref_value="4"/>
                   <event_cb trigger="clicked" callback="on_pid_preset_bed_material"/>
                 </ui_button>
-                <ui_button name="btn_preset_bed_m2" flex_grow="1" height="#button_height_sm" bind_text="preset_material_2_name" style_text_font="#font_small">
+                <ui_button name="btn_preset_bed_m2" height="#button_height_sm" bind_text="preset_material_2_name" style_text_font="#font_small" long_mode="dots">
+                  <bind_style_if_le name="preset_btn_half" subject="ui_breakpoint" ref_value="3"/>
+                  <bind_style_if_ge name="preset_btn_grow" subject="ui_breakpoint" ref_value="4"/>
                   <event_cb trigger="clicked" callback="on_pid_preset_bed_material"/>
                 </ui_button>
-                <ui_button name="btn_preset_bed_m3" flex_grow="1" height="#button_height_sm" bind_text="preset_material_3_name" style_text_font="#font_small">
+                <ui_button name="btn_preset_bed_m3" height="#button_height_sm" bind_text="preset_material_3_name" style_text_font="#font_small" long_mode="dots">
+                  <bind_style_if_le name="preset_btn_half" subject="ui_breakpoint" ref_value="3"/>
+                  <bind_style_if_ge name="preset_btn_grow" subject="ui_breakpoint" ref_value="4"/>
                   <event_cb trigger="clicked" callback="on_pid_preset_bed_material"/>
                 </ui_button>
               </lv_obj>

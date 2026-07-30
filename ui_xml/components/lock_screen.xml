@@ -12,7 +12,9 @@
   <consts>
     <!-- Dot indicator size for PIN entry feedback -->
     <px name="dot_size" value="20"/>
-    <!-- Keypad button height — fixed for 320px-wide card -->
+    <!-- Keypad button height. Held constant across every breakpoint: this is a
+         PIN pad, so the touch target is the one dimension that must not shrink.
+         The card reflows instead — see the card_* styles below. -->
     <px name="lock_btn_height" value="52"/>
   </consts>
 
@@ -30,6 +32,36 @@
            border_color="#text_muted"
            border_opa="255"
            radius="99"/>
+
+    <!-- Card orientation.
+
+         Four keypad rows at 52px plus gaps is 220px of vertical space before the
+         icon, heading and dots are counted. Stacked, that card is 340px tall,
+         which does not fit MICRO (272) or TINY (320) — the bottom row lands off
+         the screen and the confirm button becomes untappable.
+
+         MICRO/TINY therefore put the info block beside the keypad rather than
+         above it, spending the width these screens have instead of the height
+         they don't: 220 + 16 padding = 236, inside both budgets.
+
+         Width and flex_flow live here (not as inline attributes) because an
+         inline attribute wins over bind_style. -->
+    <style name="card_compact"
+           width="440"
+           layout="flex"
+           flex_flow="row"
+           pad_column="#space_lg"/>
+    <style name="card_stacked"
+           width="320"
+           layout="flex"
+           flex_flow="column"
+           pad_row="#space_md"/>
+
+    <!-- Info block (icon, heading, dots, error) and keypad track the card. -->
+    <style name="info_compact" width="168"/>
+    <style name="info_stacked" width="100%"/>
+    <style name="keypad_compact" width="250"/>
+    <style name="keypad_stacked" width="100%"/>
   </styles>
 
   <!-- Root: full-screen semi-transparent overlay, absorbs all touch -->
@@ -55,72 +87,90 @@
       <event_cb trigger="clicked" callback="emergency_stop_clicked"/>
     </lv_button>
 
-    <!-- Centered card containing PIN entry UI -->
+    <!-- Centered card containing PIN entry UI.
+         width + flex_flow come from card_compact / card_stacked. -->
     <lv_obj name="lock_card"
-            width="320" height="content"
+            height="content"
             style_bg_color="#card_bg" style_bg_opa="255"
             style_border_width="1"
             style_border_color="#text_muted"
             style_border_opa="64"
             style_radius="#border_radius"
             style_pad_all="#space_lg"
-            style_pad_row="#space_md"
             align="center"
-            flex_flow="column"
             style_flex_main_place="center"
             style_flex_cross_place="center"
             style_flex_track_place="center"
-            style_pad_gap="#space_md"
             scrollable="false">
 
-      <!-- Lock icon -->
-      <icon src="lock" size="lg" variant="secondary" align="center"/>
+      <bind_style_if_le name="card_compact" subject="ui_breakpoint" ref_value="1"/>
+      <bind_style_if_ge name="card_stacked" subject="ui_breakpoint" ref_value="2"/>
 
-      <!-- "Enter PIN" heading -->
-      <text_heading text="Enter PIN"
-                    style_text_align="center"
-                    width="100%"/>
-
-      <!-- 6 dot PIN indicators -->
-      <lv_obj name="lock_dots_container"
-              width="content" height="content"
-              flex_flow="row"
-              style_pad_gap="#space_sm"
+      <!-- Info block: lock icon, heading, dots, error line.
+           Sits above the keypad when stacked, left of it when compact. -->
+      <lv_obj name="lock_info_column"
+              height="content"
+              flex_flow="column"
               style_pad_all="0"
+              style_pad_gap="#space_md"
+              style_flex_main_place="center"
+              style_flex_cross_place="center"
               style_bg_opa="0"
               style_border_width="0"
-              align="center">
-        <lv_obj name="lock_dot_0" width="#dot_size" height="#dot_size">
-          <style name="dot_empty"/>
-        </lv_obj>
-        <lv_obj name="lock_dot_1" width="#dot_size" height="#dot_size">
-          <style name="dot_empty"/>
-        </lv_obj>
-        <lv_obj name="lock_dot_2" width="#dot_size" height="#dot_size">
-          <style name="dot_empty"/>
-        </lv_obj>
-        <lv_obj name="lock_dot_3" width="#dot_size" height="#dot_size">
-          <style name="dot_empty"/>
-        </lv_obj>
-        <lv_obj name="lock_dot_4" width="#dot_size" height="#dot_size">
-          <style name="dot_empty"/>
-        </lv_obj>
-        <lv_obj name="lock_dot_5" width="#dot_size" height="#dot_size">
-          <style name="dot_empty"/>
-        </lv_obj>
-      </lv_obj>
+              scrollable="false">
 
-      <!-- Error label — invisible by default, space reserved -->
-      <text_small name="lock_error_label"
-                  text=" "
-                  style_text_color="#warning"
-                  style_text_align="center"
-                  width="100%"
-                  style_opa="0"/>
+        <bind_style_if_le name="info_compact" subject="ui_breakpoint" ref_value="1"/>
+        <bind_style_if_ge name="info_stacked" subject="ui_breakpoint" ref_value="2"/>
+
+        <!-- Lock icon -->
+        <icon src="lock" size="lg" variant="secondary" align="center"/>
+
+        <!-- "Enter PIN" heading -->
+        <text_heading text="Enter PIN"
+                      style_text_align="center"
+                      width="100%"/>
+
+        <!-- 6 dot PIN indicators -->
+        <lv_obj name="lock_dots_container"
+                width="content" height="content"
+                flex_flow="row"
+                style_pad_gap="#space_sm"
+                style_pad_all="0"
+                style_bg_opa="0"
+                style_border_width="0"
+                align="center">
+          <lv_obj name="lock_dot_0" width="#dot_size" height="#dot_size">
+            <style name="dot_empty"/>
+          </lv_obj>
+          <lv_obj name="lock_dot_1" width="#dot_size" height="#dot_size">
+            <style name="dot_empty"/>
+          </lv_obj>
+          <lv_obj name="lock_dot_2" width="#dot_size" height="#dot_size">
+            <style name="dot_empty"/>
+          </lv_obj>
+          <lv_obj name="lock_dot_3" width="#dot_size" height="#dot_size">
+            <style name="dot_empty"/>
+          </lv_obj>
+          <lv_obj name="lock_dot_4" width="#dot_size" height="#dot_size">
+            <style name="dot_empty"/>
+          </lv_obj>
+          <lv_obj name="lock_dot_5" width="#dot_size" height="#dot_size">
+            <style name="dot_empty"/>
+          </lv_obj>
+        </lv_obj>
+
+        <!-- Error label — invisible by default, space reserved -->
+        <text_small name="lock_error_label"
+                    text=" "
+                    style_text_color="#warning"
+                    style_text_align="center"
+                    width="100%"
+                    style_opa="0"/>
+      </lv_obj>
 
       <!-- Keypad: 4x3 grid using row_wrap -->
       <lv_obj name="lock_keypad"
-              width="100%" height="content"
+              height="content"
               flex_flow="row_wrap"
               style_flex_main_place="center"
               style_flex_track_place="center"
@@ -129,6 +179,9 @@
               style_bg_opa="0"
               style_border_width="0"
               scrollable="false">
+
+        <bind_style_if_le name="keypad_compact" subject="ui_breakpoint" ref_value="1"/>
+        <bind_style_if_ge name="keypad_stacked" subject="ui_breakpoint" ref_value="2"/>
 
         <!-- Row 1: 1 2 3 -->
         <ui_button name="lock_digit_1"

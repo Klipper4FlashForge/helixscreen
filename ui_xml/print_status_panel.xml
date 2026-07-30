@@ -25,13 +25,14 @@
   <view name="print_status_panel"
         extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_bg_opa="255"
         style_bg_color="#card_bg" style_pad_all="0" style_border_width="0" flex_flow="column" clickable="true">
-    <!-- Header Bar with E-stop action button -->
+    <!-- Header Bar. The E-stop is NOT a header child: header_height is responsive
+         (28 at MICRO, 32 at TINY) and a 44px circle does not fit inside it — it
+         centred at y=-2 and got clipped top and bottom (prestonbrown/helixscreen#1204). The
+         control that must never be unreachable does not get to depend on the
+         header's height, so it floats over the top-right corner instead, the same
+         way lock_screen.xml positions its estop_fab. -->
     <header_bar name="overlay_header"
-                title="Print Status" title_tag="Print Status" hide_action_button="false"
-                action_button_icon="alert_octagon" action_button_icon_size="md"
-                action_button_bg_color="#danger" action_button_radius="9999"
-                action_button_width="44" action_button_height="44" action_button_pad="0" hide_action_button_text="true"
-                action_button_callback="emergency_stop_clicked"/>
+                title="Print Status" title_tag="Print Status"/>
     <!-- Content Area (two columns: viewer left, controls right) -->
     <lv_obj name="overlay_content"
             width="100%" flex_grow="1" style_pad_left="#space_lg" style_pad_right="#space_lg" style_pad_top="0"
@@ -400,5 +401,25 @@
                 flex_flow="column" style_pad_gap="#space_md"/>
       </lv_obj>
     </lv_obj>
+
+    <!-- E-Stop FAB — floats over the top-right corner, outside the flex column.
+         ignore_layout keeps the column layout from positioning it, so align
+         applies and the button keeps a full 44px touch target at every
+         breakpoint regardless of how short the header is. Declared last so it
+         draws above the content it overlaps. -->
+    <lv_button name="estop_fab"
+               width="44" height="44"
+               ignore_layout="true"
+               align="top_right"
+               style_translate_x="-#space_sm" style_translate_y="#space_sm"
+               style_radius="9999"
+               style_bg_color="#danger"
+               style_pad_all="0">
+      <!-- Explicit color, not variant="primary": a variant resolves to the theme
+           primary (blue), which is near-invisible on the danger-red circle. The
+           header_bar this replaced defaulted its icon to #text. -->
+      <icon src="alert_octagon" size="md" color="#text" align="center"/>
+      <event_cb trigger="clicked" callback="emergency_stop_clicked"/>
+    </lv_button>
   </view>
 </component>
