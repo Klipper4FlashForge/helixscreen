@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -147,6 +148,29 @@ class WiFiErrorHelper {
 };
 
 /**
+ * @brief Radio bands an SSID can be seen on, as bit flags
+ *
+ * A single SSID is routinely broadcast by several BSSes on different bands.
+ * Collapsing those into one list row must not throw the band away, so the row
+ * carries the OR of every band it was observed on.
+ */
+enum WiFiBandFlag : uint8_t {
+    WIFI_BAND_NONE = 0,         ///< Band unknown (frequency not reported by the backend)
+    WIFI_BAND_2_4GHZ = 1u << 0, ///< 2.4 GHz (channels 1-14)
+    WIFI_BAND_5GHZ = 1u << 1,   ///< 5 GHz (UNII-1 through UNII-4)
+    WIFI_BAND_6GHZ = 1u << 2,   ///< 6 GHz (Wi-Fi 6E)
+};
+
+/**
+ * @brief Classify a channel centre frequency into a band flag
+ *
+ * @param frequency_mhz Centre frequency in MHz (0 or out-of-range = unknown)
+ * @return One of WIFI_BAND_2_4GHZ / WIFI_BAND_5GHZ / WIFI_BAND_6GHZ, or
+ *         WIFI_BAND_NONE when the frequency is unknown or not a WiFi band.
+ */
+uint8_t wifi_band_flag_from_frequency(int frequency_mhz);
+
+/**
  * @brief WiFi network information
  */
 struct WiFiNetwork {
@@ -154,15 +178,31 @@ struct WiFiNetwork {
     int signal_strength;       ///< Signal strength (0-100 percentage)
     bool is_secured;           ///< True if network requires password
     std::string security_type; ///< Security type ("WPA2", "WPA3", "WEP", "Open")
-    int frequency_mhz{0};      ///< Frequency in MHz (0 = unknown)
+    int frequency_mhz{0};      ///< Frequency of the strongest BSS in MHz (0 = unknown)
+    uint8_t band_mask{0};      ///< OR of WiFiBandFlag for every band this SSID was seen on
 
     WiFiNetwork() : signal_strength(0), is_secured(false) {}
 
     WiFiNetwork(const std::string& ssid_, int strength, bool secured,
                 const std::string& security = "", int freq_mhz = 0)
         : ssid(ssid_), signal_strength(strength), is_secured(secured), security_type(security),
-          frequency_mhz(freq_mhz) {}
+          frequency_mhz(freq_mhz), band_mask(wifi_band_flag_from_frequency(freq_mhz)) {}
 };
+
+/**
+ * @brief Collapse per-BSS scan results into one row per SSID, preserving bands
+ *
+ * Mesh systems and ordinary dual-band routers broadcast one SSID from several
+ * BSSes. The picker shows one row per SSID, keeping the strongest signal — but
+ * the surviving row inherits the union of every band the SSID was seen on, so a
+ * 5 GHz BSS that loses on RSSI is still represented (helixscreen#1189).
+ *
+ * Result order is first-seen, making the output deterministic.
+ *
+ * @param networks Raw per-BSS scan results
+ * @return One entry per unique SSID: strongest signal, merged band_mask
+ */
+std::vector<WiFiNetwork> wifi_merge_networks_by_ssid(const std::vector<WiFiNetwork>& networks);
 
 /**
  * @brief Abstract WiFi backend interface

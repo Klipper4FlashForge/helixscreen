@@ -23,8 +23,8 @@ struct MockWiFiNetwork {
     std::string password; ///< Expected password for authentication (empty for open networks)
 
     MockWiFiNetwork(const std::string& ssid, int strength, bool secured,
-                    const std::string& security, const std::string& pass = "")
-        : network(ssid, strength, secured, security), password(pass) {}
+                    const std::string& security, const std::string& pass = "", int freq_mhz = 0)
+        : network(ssid, strength, secured, security, freq_mhz), password(pass) {}
 };
 
 /**

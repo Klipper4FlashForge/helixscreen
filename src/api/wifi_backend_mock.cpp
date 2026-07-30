@@ -140,12 +140,15 @@ WiFiError WifiBackendMock::get_scan_results(std::vector<WiFiNetwork>& networks) 
     // Add some realism - vary signal strengths slightly
     vary_signal_strengths();
 
-    // Extract public WiFiNetwork objects (without passwords) and sort by signal strength
-    networks.clear();
-    networks.reserve(mock_networks_.size());
+    // Extract public WiFiNetwork objects (without passwords), collapse per-BSS
+    // rows to one per SSID, then sort by signal strength
+    std::vector<WiFiNetwork> raw;
+    raw.reserve(mock_networks_.size());
     for (const auto& mock_net : mock_networks_) {
-        networks.push_back(mock_net.network);
+        raw.push_back(mock_net.network);
     }
+
+    networks = wifi_merge_networks_by_ssid(raw);
 
     std::sort(networks.begin(), networks.end(), [](const WiFiNetwork& a, const WiFiNetwork& b) {
         return a.signal_strength > b.signal_strength;
@@ -343,8 +346,9 @@ void WifiBackendMock::set_connected_state(bool connected, const std::string& ssi
 }
 
 bool WifiBackendMock::supports_5ghz() const {
-    // Mock simulates typical embedded hardware which is 2.4GHz only
-    return false;
+    // Mock simulates a dual-band adapter (AD5X, K2 Plus, Pi 4+): its scan list
+    // contains 5GHz BSSes, which a 2.4GHz-only radio could not have seen.
+    return true;
 }
 
 // ============================================================================
@@ -352,17 +356,22 @@ bool WifiBackendMock::supports_5ghz() const {
 // ============================================================================
 
 void WifiBackendMock::init_mock_networks() {
+    // Frequencies model a realistic mixed-band neighbourhood. "Office-Main"
+    // deliberately appears twice — once per band, the 5GHz BSS weaker — which is
+    // the dual-band-single-SSID case that used to erase the 5GHz AP entirely
+    // (helixscreen#1189). get_scan_results() merges it back to one row.
     mock_networks_ = {
-        MockWiFiNetwork("HomeNetwork-5G", 92, true, "WPA2", "12345678"), // Strong, encrypted
-        MockWiFiNetwork("Office-Main", 78, true, "WPA2", "12345678"),    // Strong, encrypted
-        MockWiFiNetwork("Printers-WiFi", 85, true, "WPA2", "12345678"),  // Strong, encrypted
-        MockWiFiNetwork("CoffeeShop_Free", 68, false, "Open", ""),   // Medium, open (no password)
-        MockWiFiNetwork("IoT-Devices", 55, true, "WPA", "12345678"), // Medium, encrypted
-        MockWiFiNetwork("Guest-Access", 48, false, "Open", ""),      // Medium, open (no password)
-        MockWiFiNetwork("Neighbor-Network", 38, true, "WPA3", "12345678"), // Weak, encrypted
-        MockWiFiNetwork("Public-Hotspot", 25, false, "Open", ""),       // Weak, open (no password)
-        MockWiFiNetwork("SmartHome-Net", 32, true, "WPA3", "12345678"), // Weak, encrypted
-        MockWiFiNetwork("Distant-Router", 18, true, "WPA2", "12345678") // Weak, encrypted
+        MockWiFiNetwork("HomeNetwork-5G", 92, true, "WPA2", "12345678", 5180), // Strong, encrypted
+        MockWiFiNetwork("Office-Main", 78, true, "WPA2", "12345678", 2437),    // Strong, encrypted
+        MockWiFiNetwork("Office-Main", 61, true, "WPA2", "12345678", 5745),    // Same SSID, 5GHz
+        MockWiFiNetwork("Printers-WiFi", 85, true, "WPA2", "12345678", 2412),  // Strong, encrypted
+        MockWiFiNetwork("CoffeeShop_Free", 68, false, "Open", "", 2462),       // Medium, open
+        MockWiFiNetwork("IoT-Devices", 55, true, "WPA", "12345678", 2412),     // Medium, encrypted
+        MockWiFiNetwork("Guest-Access", 48, false, "Open", "", 5200),          // Medium, open
+        MockWiFiNetwork("Neighbor-Network", 38, true, "WPA3", "12345678", 2432), // Weak, encrypted
+        MockWiFiNetwork("Public-Hotspot", 25, false, "Open", "", 2417),          // Weak, open
+        MockWiFiNetwork("SmartHome-Net", 32, true, "WPA3", "12345678", 2452),    // Weak, encrypted
+        MockWiFiNetwork("Distant-Router", 18, true, "WPA2", "12345678", 5220)    // Weak, encrypted
     };
 
     spdlog::debug("[WifiBackend] Mock: Initialized {} mock networks", mock_networks_.size());

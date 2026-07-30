@@ -147,6 +147,40 @@ int wifi_compute_signal_icon_state(int strength_percent, bool secured) {
     return secured ? base_state + 4 : base_state;
 }
 
+std::string wifi_format_band_label(uint8_t band_mask) {
+    std::string label;
+    auto append = [&label](const char* part) {
+        if (!label.empty()) {
+            label += "/";
+        }
+        label += part;
+    };
+
+    if (band_mask & WIFI_BAND_2_4GHZ) {
+        append("2.4");
+    }
+    if (band_mask & WIFI_BAND_5GHZ) {
+        append("5");
+    }
+    if (band_mask & WIFI_BAND_6GHZ) {
+        append("6");
+    }
+
+    if (label.empty()) {
+        return label;
+    }
+    return label + "G";
+}
+
+bool wifi_scan_spans_multiple_bands(const std::vector<WiFiNetwork>& networks) {
+    uint8_t seen = 0;
+    for (const auto& net : networks) {
+        seen = static_cast<uint8_t>(seen | net.band_mask);
+    }
+    // More than one bit set.
+    return seen != 0 && (seen & (seen - 1)) != 0;
+}
+
 std::string wifi_get_device_mac(const std::string& interface) {
 #ifdef __APPLE__
     // macOS: Parse ifconfig output for ether line

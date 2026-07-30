@@ -25,6 +25,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <memory>
 
@@ -83,10 +84,15 @@ struct WifiWizardNetworkItemData {
     lv_subject_t signal_strength;   // Stack-allocated subject
     lv_subject_t is_secured;        // Stack-allocated subject
     lv_subject_t signal_icon_state; // Combined state 1-8 for icon visibility binding
+    lv_subject_t band_text;         // Band badge text ("2.4G" / "5G" / "2.4/5G")
+    lv_subject_t band_visible;      // 1 when the badge should be shown, else 0
     char ssid_buffer[64];
+    char band_buffer[16];
     WizardWifiStep* parent; // Back-reference for callbacks
 
-    WifiWizardNetworkItemData(const WiFiNetwork& net, WizardWifiStep* p) : network(net), parent(p) {
+    WifiWizardNetworkItemData(const WiFiNetwork& net, WizardWifiStep* p,
+                              const std::string& band_label)
+        : network(net), parent(p) {
         strncpy(ssid_buffer, network.ssid.c_str(), sizeof(ssid_buffer) - 1);
         ssid_buffer[sizeof(ssid_buffer) - 1] = '\0';
         lv_subject_init_string(&ssid, ssid_buffer, nullptr, sizeof(ssid_buffer), ssid_buffer);
@@ -96,6 +102,10 @@ struct WifiWizardNetworkItemData {
         // Compute combined icon state (1-8)
         int icon_state = compute_signal_icon_state(network.signal_strength, network.is_secured);
         lv_subject_init_int(&signal_icon_state, icon_state);
+
+        snprintf(band_buffer, sizeof(band_buffer), "%s", band_label.c_str());
+        lv_subject_init_string(&band_text, band_buffer, nullptr, sizeof(band_buffer), band_buffer);
+        lv_subject_init_int(&band_visible, band_label.empty() ? 0 : 1);
     }
 
     ~WifiWizardNetworkItemData() {
@@ -104,6 +114,8 @@ struct WifiWizardNetworkItemData {
         lv_subject_deinit(&signal_strength);
         lv_subject_deinit(&is_secured);
         lv_subject_deinit(&signal_icon_state);
+        lv_subject_deinit(&band_text);
+        lv_subject_deinit(&band_visible);
     }
 };
 
@@ -303,6 +315,10 @@ void WizardWifiStep::populate_network_list(const std::vector<WiFiNetwork>& netwo
         }
     }
 
+    // Band badges only earn their pixels when the scan actually spans bands —
+    // on a 2.4GHz-only radio every row would read "2.4G" (helixscreen#1189).
+    const bool show_bands = helix::ui::wifi::wifi_scan_spans_multiple_bands(sorted_networks);
+
     // Create network items
     static int item_counter = 0;
     for (const auto& network : sorted_networks) {
@@ -319,12 +335,22 @@ void WizardWifiStep::populate_network_list(const std::vector<WiFiNetwork>& netwo
         lv_obj_set_name(item, item_name);
 
         // Create per-instance data with back-reference to this step
-        WifiWizardNetworkItemData* item_data = new WifiWizardNetworkItemData(network, this);
+        std::string band_label_text =
+            show_bands ? helix::ui::wifi::wifi_format_band_label(network.band_mask) : std::string();
+        WifiWizardNetworkItemData* item_data =
+            new WifiWizardNetworkItemData(network, this, band_label_text);
 
         // Bind SSID label to subject (LVGL auto-cleans observers when widget is deleted)
         lv_obj_t* ssid_label = lv_obj_find_by_name(item, "ssid_label");
         if (ssid_label) {
             lv_label_bind_text(ssid_label, &item_data->ssid, nullptr);
+        }
+
+        // Bind the band badge to this row's own subjects
+        lv_obj_t* band_label = lv_obj_find_by_name(item, "band_label");
+        if (band_label) {
+            lv_label_bind_text(band_label, &item_data->band_text, nullptr);
+            lv_obj_bind_flag_if_eq(band_label, &item_data->band_visible, LV_OBJ_FLAG_HIDDEN, 0);
         }
 
         // Set security type text
