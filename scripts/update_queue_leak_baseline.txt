@@ -16,12 +16,9 @@
 # The ceiling below catches an EXTRA untagged callback appearing inside a test
 # that is already listed, which the key set alone would miss. Untagged callbacks
 # totalled exactly 717 across four identical runs; the tagged total flapped.
-max-untagged-callbacks: 239
+max-untagged-callbacks: 85
 tag:Ad5xIfsBackend::reread_apply
 tag:Ad5xIfsBackend::zcolor_debounce_apply
-tag:AmsState::on_backend_event
-tag:AmsState::set_active_tool_port_present
-tag:LedController::led_cmd_settled
 tag:PrinterCapabilitiesState::set_power_device_count
 tag:PrinterCapabilitiesState::set_spoolman_available
 tag:PrinterCapabilitiesState::set_webcam_available
@@ -30,86 +27,10 @@ tag:PrinterState::on_status_update
 tag:UpdateChecker::check_for_updates
 tag:UpdateChecker::set_download_status
 test:All panels are accessible
-test:AmsState: add_backend stores multiple backends
-test:AmsState: clear_backends removes all
-test:AmsState: get_backend negative index returns nullptr
-test:AmsState: init_backends skips when no systems detected
-test:AmsState: init_backends_from_hardware with single system
-test:AmsState: primary backend uses flat slot subjects
-test:AmsState: secondary backend gets separate slot subjects
-test:AmsState: set_backend replaces all backends
-test:AmsState: sync_backend updates correct subjects
-test:AmsState: update_slot_for_backend delegates to primary
 test:FirstRunTour: advance past last step finishes
 test:FirstRunTour: skip writes tour.completed
 test:FirstRunTour: start() sets is_running
 test:Invalid panel handling
-test:LedAutoState init loads persisted config from per-printer path
-test:LedAutoState observer fires after init and applies action
-test:LedController config: configured macros round-trip
-test:LedController config: default presets have correct values
-test:LedController config: default values after init
-test:LedController config: deinit resets config state to defaults
-test:LedController config: hex string colors saved to config
-test:LedController config: led_on_at_start save/load round-trip
-test:LedController config: legacy /printer/leds/selected migration
-test:LedController config: legacy /printer/leds/strip string migration
-test:LedController config: loads hex string colors from config
-test:LedController config: loads legacy integer colors from config
-test:LedController config: macro_devices save/load at new path
-test:LedController config: mixed integer and hex string presets
-test:LedController config: paths use df() + leds/ prefix
-test:LedController config: per-printer selected_strips wins over legacy formats
-test:LedController config: selected_strips takes priority over legacy strip
-test:LedController config: set and get color_presets
-test:LedController config: set and get last_brightness
-test:LedController config: set and get last_color
-test:LedController config: set and get selected_strips
-test:LedController config: wizard None selection saves empty array
-test:LedController config: wizard saves both strip and selected_strips
-test:LedController deinit clears all backends
-test:LedController discover_from_hardware populates native backend
-test:LedController discover_from_hardware with effects and macros
-test:LedController has_any_backend empty
-test:LedController init and deinit
-test:LedController: all strips stale triggers auto-select
-test:LedController: all_selectable_strips empty when no backends
-test:LedController: all_selectable_strips includes native + WLED + macros
-test:LedController: apply_startup_preference does nothing when disabled
-test:LedController: apply_startup_preference sets light_is_on true
-test:LedController: apply_startup_preference with no strips is a no-op
-test:LedController: auto-select picks all selectable strips across backends
-test:LedController: auto-select picks output_pin LED when no native present
-test:LedController: backend_for_strip identifies macro backend
-test:LedController: backend_for_strip returns correct type
-test:LedController: backend_for_strip with macro: prefix
-test:LedController: configfile RGB pins upgrade a generic [led] to color
-test:LedController: first_available_strip priority order
-test:LedController: first_available_strip skips PRESET macros
-test:LedController: generic [led] discovery defaults to white-only (fail-closed)
-test:LedController: get/set_led_on_at_start
-test:LedController: led_controllable subject reflects selected_strips emptiness
-test:LedController: light_set dispatches macro: prefixed strips
-test:LedController: light_set turns on all selected native strips
-test:LedController: light_set updates light_is_on
-test:LedController: light_set with empty selected_strips is a no-op
-test:LedController: light_set with mixed backend types
-test:LedController: light_set(false) stops LED effects when available
-test:LedController: light_set(false) without effects skips stop_all_effects
-test:LedController: light_state_trackable with various selections
-test:LedController: light_toggle and light_is_on
-test:LedController: mixed valid and stale strips pruned correctly
-test:LedController: set_brightness_all updates light_is_on
-test:LedController: set_color_all updates light_is_on
-test:LedController: set_selected_strips bumps version
-test:LedController: stale selected strips pruned on discovery
-test:LedController: turn_off_all sets light_is_on false
-test:LedController: valid selected strips preserved on discovery
-test:LedController: version observer fires on bump
-test:LedController: version subject accessible after init
-test:Multi-backend: active backend resets on clear
-test:Multi-backend: deinit then re-init is safe
-test:Multi-backend: full lifecycle
 test:Navigation initialization
 test:Panel switching
 test:PrePrint adaptive: disabled emits SKIP_LEVELING=1 and no ADAPTIVE
@@ -132,11 +53,6 @@ test:PrintPreparationManager: get_option_state(id) falls back to DB default_enab
 test:PrintPreparationManager: timelapse option synthesized when plugin available
 test:PrinterHardware with MoonrakerClientMock data
 test:Repeated panel selection
-test:ToolState: assign_spool + sync_from_backend populates toolchanger slot
-test:ToolState: request_tool_change delegates to AMS backend when it manages the tool
-test:ToolState: request_tool_change falls back to gcode when AMS backend has no tool map
-test:ToolState: request_tool_change for toolchanger with no AMS backend uses gcode fallback
-test:ToolState: sync_from_backend does not overwrite existing tool assignment
 test:disabling_option_requires_plugin: K2 regression — MacroParam + setup_gcode stays visible
 test:disabling_option_requires_plugin: MacroParam disable dropped when a PreStartGcode sibling short-circuits
 test:disabling_option_requires_plugin: PreStartGcode and RuntimeCommand never require plugin
