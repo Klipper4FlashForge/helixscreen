@@ -3,12 +3,14 @@
 
 #include "wifi_saved_config.h"
 
-#include "../catch_amalgamated.hpp"
-
+#include <climits>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <sys/stat.h>
 #include <unistd.h>
+
+#include "../catch_amalgamated.hpp"
 
 /**
  * Keeping wpa_supplicant's saved config off volatile storage.
@@ -115,7 +117,12 @@ TEST_CASE("A symlink to persistent storage is remembered and mirrored",
     helix::wifi::remember_persistent_target(link);
 
     SECTION("the link's target is captured") {
-        CHECK(helix::wifi::persistent_target() == durable);
+        // remember_persistent_target() stores the realpath(), which also resolves
+        // symlinked *prefixes* — macOS has /tmp -> /private/tmp. Resolve the
+        // expectation the same way instead of comparing to the literal we wrote.
+        char resolved[PATH_MAX];
+        REQUIRE(::realpath(durable.c_str(), resolved) != nullptr);
+        CHECK(helix::wifi::persistent_target() == std::string(resolved));
     }
 
     SECTION("mirroring copies the saved config onto the durable file") {
