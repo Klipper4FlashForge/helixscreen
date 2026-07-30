@@ -504,6 +504,9 @@ void TemperatureService::deinit_subjects() {
     // Set flag BEFORE deinit to prevent deferred callbacks from accessing
     // torn-down subjects during cleanup
     subjects_initialized_ = false;
+    // Expire the queued rebuild as well — the flag above stops it dereferencing
+    // torn-down subjects, but only while `this` is still alive to be read (#1165).
+    async_lifetime_.invalidate();
     subjects_.deinit_all();
     spdlog::debug("[TempPanel] Subjects deinitialized");
 }
@@ -1141,7 +1144,7 @@ void TemperatureService::select_extruder(const std::string& name) {
 }
 
 void TemperatureService::rebuild_extruder_segments() {
-    helix::ui::queue_update([this]() {
+    async_lifetime_.defer("TemperatureService::rebuild_extruder_segments", [this]() {
         if (!subjects_initialized_)
             return;
         rebuild_extruder_segments_impl();

@@ -382,6 +382,60 @@ void HardwareValidator::add_expected_hardware(Config* config, const std::string&
     }
 }
 
+size_t HardwareValidator::acknowledge_discovered_hardware(Config* config,
+                                                          const helix::PrinterDiscovery& hardware) {
+    if (!config) {
+        return 0;
+    }
+
+    // Exactly the categories validate_new_hardware() reports on. AMS-managed
+    // sensors are excluded there too, so recording them would be dead weight.
+    std::vector<std::string> names;
+    for (const auto& fan : hardware.fans()) {
+        names.push_back(fan);
+    }
+    for (const auto& led : hardware.leds()) {
+        names.push_back(led);
+    }
+    for (const auto& sensor : hardware.filament_sensor_names()) {
+        if (PrinterHardware::is_ams_sensor(sensor, hardware)) {
+            continue;
+        }
+        names.push_back(sensor);
+    }
+
+    try {
+        json& expected_list = config->get_json(config->df() + "hardware/expected");
+        if (expected_list.is_null() || !expected_list.is_array()) {
+            expected_list = json::array();
+        }
+
+        size_t added = 0;
+        for (const auto& name : names) {
+            if (name.empty()) {
+                continue;
+            }
+            if (std::find(expected_list.begin(), expected_list.end(), name) != expected_list.end()) {
+                continue;
+            }
+            expected_list.push_back(name);
+            ++added;
+        }
+
+        if (added > 0) {
+            spdlog::info("[HardwareValidator] Accepted {} discovered object(s) as expected", added);
+            if (!config->save()) {
+                spdlog::warn("[HardwareValidator] Failed to save accepted hardware");
+            }
+        }
+        return added;
+
+    } catch (const std::exception& e) {
+        spdlog::warn("[HardwareValidator] Failed to accept discovered hardware: {}", e.what());
+        return 0;
+    }
+}
+
 // =============================================================================
 // Private Validation Helpers
 // =============================================================================

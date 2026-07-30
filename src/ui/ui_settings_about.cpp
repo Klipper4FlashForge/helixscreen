@@ -321,19 +321,26 @@ void AboutSettingsOverlay::fetch_print_hours() {
     if (!api)
         return;
 
+    // Both callbacks fire on the HTTP thread and touch members (`get_name()` in
+    // the error path as much as the subject write in the success path), so both
+    // go through bg_cb — it marshals to the main thread and drops the body if the
+    // overlay was torn down while the request was in flight (#1165).
     api->history().get_history_totals(
-        [this](const PrintHistoryTotals& totals) {
-            std::string formatted = helix::format::duration(static_cast<int>(totals.total_time));
-            helix::ui::queue_update([this, formatted]() {
-                if (subjects_initialized_) {
-                    lv_subject_copy_string(&print_hours_value_subject_, formatted.c_str());
-                    spdlog::trace("[{}] Print hours updated: {}", get_name(), formatted);
-                }
-            });
-        },
-        [this](const MoonrakerError& err) {
-            spdlog::warn("[{}] Failed to fetch print hours: {}", get_name(), err.message);
-        });
+        lifetime_.bg_cb("AboutSettingsOverlay::get_history_totals",
+                        [this](const PrintHistoryTotals& totals) {
+                            if (!subjects_initialized_) {
+                                return;
+                            }
+                            std::string formatted =
+                                helix::format::duration(static_cast<int>(totals.total_time));
+                            lv_subject_copy_string(&print_hours_value_subject_, formatted.c_str());
+                            spdlog::trace("[{}] Print hours updated: {}", get_name(), formatted);
+                        }),
+        lifetime_.bg_cb("AboutSettingsOverlay::get_history_totals_error",
+                        [this](const MoonrakerError& err) {
+                            spdlog::warn("[{}] Failed to fetch print hours: {}", get_name(),
+                                         err.message);
+                        }));
 }
 
 // ============================================================================

@@ -10,7 +10,9 @@
 #include "ams_backend.h"
 #include "ams_state.h"
 #include "ams_types.h"
+#include "app_globals.h"
 #include "filament_database.h"
+#include "printer_state.h"
 
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
@@ -181,14 +183,13 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
 
     // External spool mode: hide backend-related buttons, show only EDIT/CLEAR
     if (external_spool_mode_) {
-        // Hide Load, Unload, Reset buttons (not applicable to external spool)
+        // Hide Load/Unload buttons (not applicable to external spool)
         lv_obj_t* btn_load = lv_obj_find_by_name(menu_obj, "btn_load");
         if (btn_load)
             lv_obj_add_flag(btn_load, LV_OBJ_FLAG_HIDDEN);
         lv_obj_t* btn_unload = lv_obj_find_by_name(menu_obj, "btn_unload");
         if (btn_unload)
             lv_obj_add_flag(btn_unload, LV_OBJ_FLAG_HIDDEN);
-        // btn_reset_lane is already hidden by default in XML
 
         // Disable subject-driven states so hidden buttons stay hidden
         lv_subject_set_int(&slot_is_loaded_subject_, 0);
@@ -229,6 +230,12 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
         return;
     }
 
+    // A print job still owns the toolhead while PRINTING *or* PAUSED, and the
+    // backend refuses toolhead-motion filament ops in both. Read the same signal
+    // here so the menu never offers an action that is certain to be refused.
+    auto* print_active_subj = get_printer_state().get_print_active_subject();
+    const bool print_active = print_active_subj && lv_subject_get_int(print_active_subj) == 1;
+
     // Check if system is busy (operation in progress)
     bool system_busy = false;
     if (backend_) {
@@ -268,46 +275,36 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
     const bool toolhead_unload =
         backend_ ? backend_->slot_unloads_to_toolhead(slot_index, is_loaded) : is_loaded;
 
-    // Determine eject mode: not a toolhead unload, but filament is in the lane,
-    // and backend supports per-lane eject (AFC, Happy Hare, AD5X IFS)
-    bool supports_eject = backend_ && backend_->supports_lane_eject();
-    eject_mode_ = supports_eject && !toolhead_unload && slot_has_filament;
+    // Select the Unload button's operation, most specific first. Each mode has a
+    // distinct label and a distinct dispatch; see UnloadMode and decide_unload_mode().
+    const bool slot_empty = !slot_has_filament;
+    const bool supports_eject = backend_ && backend_->supports_lane_eject();
+    const bool can_recover = backend_ && backend_->can_recover_lane_position(slot_index);
+    const bool recovery_attributed = backend_ && backend_->lane_recovery_is_attributed();
+    const bool supports_force_eject = backend_ && backend_->supports_force_eject();
 
-    // Determine force-eject/recover mode: idle lane reporting EMPTY, but backend
-    // supports a cold presence-ignoring retract (AD5X IFS only) to recover a
-    // snapped chunk stuck in the lane (#996). Mutually exclusive with eject_mode_:
-    // eject requires filament present, force-eject requires the lane empty.
-    bool slot_empty = !slot_has_filament;
-    force_eject_mode_ =
-        backend_ && backend_->supports_force_eject() && !toolhead_unload && slot_empty;
+    unload_mode_ = decide_unload_mode(toolhead_unload, can_recover, recovery_attributed,
+                                      supports_eject, slot_has_filament, supports_force_eject,
+                                      slot_empty);
 
-    // Update the unload/eject button label and state
-    bool unload_eject_enabled = false;
-    if (toolhead_unload) {
-        // Loaded to toolhead → "Unload" enabled (disabled when NOT loaded)
-        unload_eject_enabled = !system_busy;
-    } else if (eject_mode_ || force_eject_mode_) {
-        // Filament-in-lane eject, or empty-lane recover → enabled when idle
-        unload_eject_enabled = !system_busy;
-    }
-    // else: no filament or eject not supported → disabled
+    const bool unload_enabled = decide_unload_enabled(system_busy, unload_mode_, print_active);
+    lv_subject_set_int(&slot_is_loaded_subject_, unload_enabled ? 1 : 0);
 
-    lv_subject_set_int(&slot_is_loaded_subject_, unload_eject_enabled ? 1 : 0);
-
-    // Swap button label and icon to "Eject" when in eject mode
-    if (eject_mode_) {
-        lv_obj_t* btn_unload = lv_obj_find_by_name(menu_obj, "btn_unload");
-        if (btn_unload) {
-            ui_button_set_text(btn_unload, lv_tr("Eject"));
-            ui_button_set_icon(btn_unload, "eject");
-        }
-    } else if (force_eject_mode_) {
-        // Empty/runout lane: offer "Recover" (cold IFS_F11 retract) to clear a
-        // snapped chunk the presence sensor can't see.
-        lv_obj_t* btn_unload = lv_obj_find_by_name(menu_obj, "btn_unload");
-        if (btn_unload) {
+    lv_obj_t* btn_unload = lv_obj_find_by_name(menu_obj, "btn_unload");
+    if (btn_unload) {
+        switch (unload_mode_) {
+        case UnloadMode::RecoverPosition:
+        case UnloadMode::ForceEject:
             ui_button_set_text(btn_unload, lv_tr("Recover"));
             ui_button_set_icon(btn_unload, "eject");
+            break;
+        case UnloadMode::Eject:
+            ui_button_set_text(btn_unload, lv_tr("Eject"));
+            ui_button_set_icon(btn_unload, "eject");
+            break;
+        case UnloadMode::Unload:
+        case UnloadMode::Unavailable:
+            break; // XML defaults: "Unload"
         }
     }
 
@@ -333,26 +330,13 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
     // enabled. For non-AD5X backends slot_unloads_to_toolhead() returns the hint
     // unchanged, so !toolhead_unload == !is_loaded and behavior is unaffected.
     // Disable Load if: system busy, slot empty, OR filament is already at the head.
-    bool can_load = !system_busy && !toolhead_unload && slot_has_filament;
+    bool can_load = decide_can_load(system_busy, toolhead_unload, slot_has_filament, print_active);
     lv_subject_set_int(&slot_can_load_subject_, can_load ? 1 : 0);
     if (!can_load) {
         spdlog::debug("[AmsContextMenu] Load disabled for slot {}: busy={}, loaded={} "
-                      "(live={}), has_filament={}",
-                      slot_index, system_busy, is_loaded, slot_is_loaded_live, slot_has_filament);
-    }
-
-    // Show Reset Lane only when a reset is actually possible for THIS slot right
-    // now. Gating on the static supports_lane_reset() offered it on every AFC
-    // lane, and AFC_LANE_RESET then refused with an error that latches in
-    // printer.AFC.message and keeps re-firing toasts.
-    if (backend_ && backend_->can_reset_lane(slot_index)) {
-        lv_obj_t* btn_reset = lv_obj_find_by_name(menu_obj, "btn_reset_lane");
-        if (btn_reset) {
-            lv_obj_remove_flag(btn_reset, LV_OBJ_FLAG_HIDDEN);
-            if (system_busy) {
-                lv_obj_add_state(btn_reset, LV_STATE_DISABLED);
-            }
-        }
+                      "(live={}), has_filament={}, print_active={}",
+                      slot_index, system_busy, is_loaded, slot_is_loaded_live, slot_has_filament,
+                      print_active);
     }
 
     // Show Select Gate button if backend supports it (e.g. Happy Hare)
@@ -443,19 +427,27 @@ void AmsContextMenu::handle_load() {
 }
 
 void AmsContextMenu::handle_unload() {
-    if (eject_mode_ || force_eject_mode_) {
-        spdlog::info("[AmsContextMenu] {} requested for slot {}",
-                     force_eject_mode_ ? "Recover/force-eject" : "Eject", get_item_index());
+    switch (unload_mode_) {
+    case UnloadMode::RecoverPosition:
+        spdlog::info("[AmsContextMenu] Position recovery requested for slot {}",
+                     get_item_index());
+        dispatch_ams_action(MenuAction::RECOVER_POSITION);
+        break;
+    case UnloadMode::Eject:
+        spdlog::info("[AmsContextMenu] Eject requested for slot {}", get_item_index());
         dispatch_ams_action(MenuAction::EJECT);
-    } else {
+        break;
+    case UnloadMode::ForceEject:
+        spdlog::info("[AmsContextMenu] Recover/force-eject requested for slot {}",
+                     get_item_index());
+        dispatch_ams_action(MenuAction::EJECT);
+        break;
+    case UnloadMode::Unload:
+    case UnloadMode::Unavailable:
         spdlog::info("[AmsContextMenu] Unload requested for slot {}", get_item_index());
         dispatch_ams_action(MenuAction::UNLOAD);
+        break;
     }
-}
-
-void AmsContextMenu::handle_reset_lane() {
-    spdlog::info("[AmsContextMenu] Reset lane requested for slot {}", get_item_index());
-    dispatch_ams_action(MenuAction::RESET_LANE);
 }
 
 void AmsContextMenu::handle_gate_select() {
@@ -475,6 +467,55 @@ void AmsContextMenu::handle_edit() {
 
 bool AmsContextMenu::should_show_clear_spool(const SlotInfo& slot) {
     return slot.spoolman_id > 0 || !slot.material.empty();
+}
+
+AmsContextMenu::UnloadMode AmsContextMenu::decide_unload_mode(
+    bool toolhead_unload, bool can_recover, bool recovery_attributed, bool supports_eject,
+    bool slot_has_filament, bool supports_force_eject, bool slot_empty) {
+    if (toolhead_unload) {
+        return UnloadMode::Unload;
+    }
+    if (can_recover && recovery_attributed) {
+        // Filament stranded past the hub — a failed load or unload left it in the
+        // bowden, where plain unload() cannot reach it. The backend named this
+        // exact lane as the one needing recovery, so this is a confident
+        // diagnosis: outrank Eject.
+        return UnloadMode::RecoverPosition;
+    }
+    if (supports_eject && slot_has_filament) {
+        return UnloadMode::Eject;
+    }
+    if (can_recover) {
+        // Unattributed strand: some backends (AFC) share one hub sensor across
+        // every lane on a unit, so can_recover can read true for every lane at
+        // once with no way to say whose filament tripped it. Ranking this below
+        // Eject means a seated lane (slot_has_filament above) keeps its Eject
+        // button; this arm only catches lanes with nothing to eject, offering
+        // Recover as a last resort rather than hiding it entirely.
+        return UnloadMode::RecoverPosition;
+    }
+    if (supports_force_eject && slot_empty) {
+        // Empty/runout lane: a cold presence-ignoring retract can clear a snapped
+        // chunk the sensor cannot see (#996).
+        return UnloadMode::ForceEject;
+    }
+    return UnloadMode::Unavailable;
+}
+
+bool AmsContextMenu::decide_can_load(bool system_busy, bool toolhead_unload, bool slot_has_filament,
+                                     bool print_active) {
+    return !system_busy && !print_active && !toolhead_unload && slot_has_filament;
+}
+
+bool AmsContextMenu::decide_unload_enabled(bool system_busy, UnloadMode mode, bool print_active) {
+    if (system_busy || mode == UnloadMode::Unavailable) {
+        return false;
+    }
+    // Unload is the only mode that runs the heated toolhead path (and, on AD5X,
+    // a self-homing firmware macro). Eject / RecoverPosition / ForceEject are
+    // cold lane-side retracts that leave the toolhead where the print left it,
+    // so they stay available for clearing a snapped strand mid-pause.
+    return !(print_active && mode == UnloadMode::Unload);
 }
 
 void AmsContextMenu::handle_clear_spool() {
@@ -505,7 +546,6 @@ void AmsContextMenu::register_callbacks() {
         {"ams_context_backdrop_cb", on_backdrop_cb},
         {"ams_context_load_cb", on_load_cb},
         {"ams_context_unload_cb", on_unload_cb},
-        {"ams_context_reset_lane_cb", on_reset_lane_cb},
         {"ams_context_gate_select_cb", on_gate_select_cb},
         {"ams_context_gate_check_cb", on_gate_check_cb},
         {"ams_context_edit_cb", on_edit_cb},
@@ -549,13 +589,6 @@ void AmsContextMenu::on_unload_cb(lv_event_t* /*e*/) {
     auto* self = get_active_instance();
     if (self) {
         self->handle_unload();
-    }
-}
-
-void AmsContextMenu::on_reset_lane_cb(lv_event_t* /*e*/) {
-    auto* self = get_active_instance();
-    if (self) {
-        self->handle_reset_lane();
     }
 }
 

@@ -330,14 +330,9 @@ AmsError AmsBackendAce::load_filament(int slot_index) {
                     system_info_.current_tool = slot_index;
                     system_info_.filament_loaded = true;
 
-                    // Update individual slot status so the UI shows it as loaded
-                    if (!system_info_.units.empty()) {
-                        auto& unit = system_info_.units[0];
-                        auto si = static_cast<size_t>(slot_index);
-                        if (si < unit.slots.size()) {
-                            unit.slots[si].status = SlotStatus::LOADED;
-                        }
-                    }
+                    // Same derivation the parse paths use, so the next status
+                    // frame re-applies this stamp instead of erasing it.
+                    apply_seated_slot_stamp_locked();
                 }
                 PostOpCooldownManager::instance().schedule();
                 emit_event(EVENT_STATE_CHANGED);
@@ -389,19 +384,15 @@ AmsError AmsBackendAce::unload_filament(int /*slot_index*/) {
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
 
-                    // Revert previously loaded slot to AVAILABLE
-                    if (!system_info_.units.empty() && system_info_.current_slot >= 0) {
-                        auto& unit = system_info_.units[0];
-                        auto si = static_cast<size_t>(system_info_.current_slot);
-                        if (si < unit.slots.size() && unit.slots[si].status == SlotStatus::LOADED) {
-                            unit.slots[si].status = SlotStatus::AVAILABLE;
-                        }
-                    }
-
                     system_info_.action = AmsAction::IDLE;
                     system_info_.current_slot = -1;
                     system_info_.current_tool = -1;
                     system_info_.filament_loaded = false;
+
+                    // Releases the stamp back to the status the parse wrote,
+                    // rather than assuming AVAILABLE for a slot firmware may
+                    // have called EMPTY.
+                    apply_seated_slot_stamp_locked();
                 }
                 PostOpCooldownManager::instance().schedule();
                 emit_event(EVENT_STATE_CHANGED);
@@ -662,8 +653,60 @@ std::vector<DryingPreset> AmsBackendAce::get_drying_presets() const {
 // Combined ACE Object Parsing (WebSocket subscription path)
 // ============================================================================
 
+SlotInfo* AmsBackendAce::mutable_slot_locked(int slot_index) {
+    // Caller holds mutex_.
+    if (system_info_.units.empty() || slot_index < 0) {
+        return nullptr;
+    }
+    auto& slots = system_info_.units[0].slots;
+    if (static_cast<size_t>(slot_index) >= slots.size()) {
+        return nullptr;
+    }
+    return &slots[static_cast<size_t>(slot_index)];
+}
+
+void AmsBackendAce::clear_seated_slot_stamp_locked() {
+    // Caller holds mutex_.
+    if (seated_stamp_slot_ < 0) {
+        return;
+    }
+
+    SlotInfo* slot = mutable_slot_locked(seated_stamp_slot_);
+    // A resized/rebuilt slot vector has already written firmware truth here,
+    // so the saved status is stale — only restore over a stamp still visible.
+    if (slot != nullptr && slot->status == SlotStatus::LOADED) {
+        slot->status = seated_stamp_prev_;
+    }
+
+    seated_stamp_slot_ = -1;
+    seated_stamp_prev_ = SlotStatus::UNKNOWN;
+}
+
+void AmsBackendAce::apply_seated_slot_stamp_locked() {
+    // Caller holds mutex_.
+    clear_seated_slot_stamp_locked();
+
+    if (!system_info_.filament_loaded || system_info_.current_slot < 0) {
+        return;
+    }
+
+    SlotInfo* slot = mutable_slot_locked(system_info_.current_slot);
+    if (slot == nullptr) {
+        return;
+    }
+
+    seated_stamp_slot_ = system_info_.current_slot;
+    seated_stamp_prev_ = slot->status;
+    slot->status = SlotStatus::LOADED;
+}
+
 void AmsBackendAce::parse_ace_object(const json& data) {
     std::lock_guard<std::mutex> lock(mutex_);
+
+    // Drop the previous frame's derived seat before the slot loop rewrites
+    // statuses, so check_hardware_event_clear and prev_slot_status_ compare
+    // firmware against firmware. Re-derived at the bottom of this function.
+    clear_seated_slot_stamp_locked();
 
     // Parse system info (model, firmware)
     if (data.contains("model") && data["model"].is_string()) {
@@ -910,6 +953,11 @@ void AmsBackendAce::parse_ace_object(const json& data) {
             }
         }
     }
+
+    // All three seated signals (the ValgACE "loaded" scan, loaded_slot, and
+    // native current_filament) have now had their say and arbitrated to one
+    // slot; publish that as the slot's own status.
+    apply_seated_slot_stamp_locked();
 }
 
 const json* AmsBackendAce::select_slot_bearing_object(const json& status,
@@ -1335,6 +1383,11 @@ bool AmsBackendAce::parse_status_response(const json& data) {
         }
     }
 
+    // /status owns loaded_slot but never touches the slot vector; /slots owns
+    // the slot vector but carries no seated field. Both ends re-derive the
+    // stamp so whichever polled last leaves the two consistent.
+    apply_seated_slot_stamp_locked();
+
     return changed;
 }
 
@@ -1368,6 +1421,11 @@ bool AmsBackendAce::parse_slots_response(const json& data) {
         system_info_.total_slots = static_cast<int>(slots_data.size());
         changed = true;
     }
+
+    // Un-stamp before the per-slot compare below, or a seated slot would read
+    // as changed against firmware's "ready" on every 500 ms poll and emit a
+    // STATE_CHANGED event forever.
+    clear_seated_slot_stamp_locked();
 
     for (size_t i = 0; i < slots_data.size(); ++i) {
         const auto& slot_json = slots_data[i];
@@ -1423,6 +1481,11 @@ bool AmsBackendAce::parse_slots_response(const json& data) {
             slot.nozzle_temp_max = slot_json["temp_max"].get<int>();
         }
     }
+
+    // /slots carries no seated field, so re-apply what /status last resolved —
+    // otherwise this poll would silently demote the loaded slot to AVAILABLE
+    // and take can_unload_from_toolhead() with it.
+    apply_seated_slot_stamp_locked();
 
     return changed;
 }

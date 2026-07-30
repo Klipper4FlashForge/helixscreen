@@ -1906,14 +1906,6 @@
       "ver",
       "all"
     ],
-    "border_side": [
-      "none",
-      "top",
-      "bottom",
-      "left",
-      "right",
-      "full"
-    ],
     "grad_dir": [
       "none",
       "hor",
@@ -3278,10 +3270,11 @@
     "overlay_bg",
     "overlay_bg_dark",
     "overlay_bg_light",
-    "overlay_panel_width",
-    "overlay_panel_width_full",
+    "overlay_shadow_opa",
     "overlay_text_dark",
     "overlay_text_light",
+    "overlay_width_destination",
+    "overlay_width_transient",
     "panel_button_width",
     "pill_dot_sz",
     "pin_btn_height",
@@ -3306,6 +3299,7 @@
     "screw_indicator_width_small",
     "secondary",
     "section_bg_color",
+    "shadow_cast",
     "shadow_intensity",
     "shadow_offset_y",
     "shadow_opa",

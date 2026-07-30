@@ -419,6 +419,10 @@ void TelemetryManager::shutdown() {
     record_panel_usage();
     record_connection_stability();
     record_performance_snapshot();
+    // Drain the final AsyncLifetime skip window. is_shutdown_snapshot_ is true
+    // so record_async_lifetime_snapshot emits even if this window's count is
+    // zero — that zero confirms no orphan work survived to shutdown.
+    record_async_lifetime_snapshot();
 
     shutting_down_.store(true);
 
@@ -445,6 +449,11 @@ void TelemetryManager::shutdown() {
         spdlog::debug("[TelemetryManager] Joining send thread...");
         send_thread_.join();
     }
+
+    // Expire the deferred subject write before the subject goes away (#1165).
+    // Unconditional: the callback must be dropped even on the LVGL-already-torn-
+    // down path, where deinit_all() is skipped but the subject is just as dead.
+    async_lifetime_.invalidate();
 
     // Deinitialize LVGL subjects (skip if LVGL already torn down)
     if (subjects_initialized_ && lv_is_initialized()) {
@@ -480,8 +489,9 @@ void TelemetryManager::set_enabled(bool enabled) {
     // creates/deletes LVGL timers above. enabled_ is atomic for safe reads
     // from any thread, but the function itself is LVGL-thread-only.
     if (subjects_initialized_) {
-        helix::ui::queue_update(
-            [this, enabled]() { lv_subject_set_int(&enabled_subject_, enabled ? 1 : 0); });
+        async_lifetime_.defer("TelemetryManager::set_enabled", [this, enabled]() {
+            lv_subject_set_int(&enabled_subject_, enabled ? 1 : 0);
+        });
     }
 
     // Persist to settings.json via Config (single source of truth).
@@ -2714,6 +2724,74 @@ void TelemetryManager::stop_settings_debounce_timer() {
 }
 
 // =============================================================================
+// AsyncLifetimeGuard skip-rate telemetry
+//
+// `helix::async_lifetime::note_skipped` is called from the three skip paths in
+// include/async_lifetime_guard.h. The counters accumulate per-tag and are
+// drained here on the periodic snapshot timer (and once at shutdown) so each
+// event represents the delta window since the previous flush. A hot producer
+// in this event is the early signal that an owner is repeatedly dying with
+// pending work — the shape of bug 5KNWUEKY before it crashed (#1165).
+// =============================================================================
+
+void TelemetryManager::record_async_lifetime_snapshot() {
+    // Drain first, unconditionally. The counters are global and always
+    // accumulating, so an early return that skipped the drain would let a
+    // telemetry-disabled span pile up and the next opt-in
+    // (`set_enabled(true)`) would report a whole-session total as if it were
+    // one window.
+    auto snap = helix::async_lifetime::take_snapshot();
+
+    if (shutting_down_.load() || !initialized_.load() || !enabled_.load()) {
+        return;
+    }
+
+    // Skip empty windows: no deferred callbacks were dropped since the last
+    // flush, so the event carries no signal and only burns an enqueue slot.
+    // The shutdown flush is exempt — a zero-count shutdown event confirms the
+    // session ended cleanly with no orphan work.
+    if (snap.total == 0 && !is_shutdown_snapshot_) {
+        return;
+    }
+
+    enqueue_event(build_async_lifetime_snapshot_event(snap));
+}
+
+nlohmann::json TelemetryManager::build_async_lifetime_snapshot_event(
+    const helix::async_lifetime::SkipSnapshot& snap) const {
+    json event;
+    event["schema_version"] = SCHEMA_VERSION;
+    event["event"] = "async_lifetime_skips";
+    event["device_id"] = get_hashed_device_id();
+    event["timestamp"] = get_timestamp();
+    event["app_version"] = HELIX_VERSION;
+    event["app_platform"] = UpdateChecker::get_platform_key();
+
+    auto now = std::chrono::steady_clock::now();
+    auto uptime = std::chrono::duration_cast<std::chrono::seconds>(now - init_time_);
+    event["uptime_sec"] = static_cast<int>(uptime.count());
+    event["is_shutdown"] = is_shutdown_snapshot_;
+
+    event["total_skips"] = snap.total;
+    event["other_count"] = snap.other_count;
+
+    json tags = json::array();
+    for (const auto& entry : snap.entries) {
+        tags.push_back({{"tag", entry.tag}, {"count", entry.count}});
+    }
+    event["tags"] = std::move(tags);
+
+    if (snap.total > 0) {
+        spdlog::info("[TelemetryManager] AsyncLifetime skip snapshot: total={} distinct={}",
+                     snap.total, snap.entries.size());
+    } else {
+        spdlog::debug("[TelemetryManager] AsyncLifetime skip snapshot: zero skips in window");
+    }
+
+    return event;
+}
+
+// =============================================================================
 // Periodic Snapshot
 // =============================================================================
 
@@ -2725,6 +2803,7 @@ void TelemetryManager::fire_periodic_snapshot() {
 
     record_panel_usage();
     record_connection_stability();
+    record_async_lifetime_snapshot();
 
     snapshot_seq_++;
     save_snapshot_state();

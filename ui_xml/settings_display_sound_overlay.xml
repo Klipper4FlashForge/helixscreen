@@ -19,7 +19,7 @@
     <style name="spacer_micro" height="#space_md"/>
   </styles>
   <view name="settings_display_sound_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="Display &amp; Sound" title_tag="Display &amp; Sound"
+        extends="overlay_panel" title="Display &amp; Sound" title_tag="Display &amp; Sound"
         bg_color="#screen_bg">
     <!-- Content Area - no padding, rows handle their own -->
     <lv_obj name="overlay_content" width="100%" flex_grow="1" scrollable="true" flex_flow="column">

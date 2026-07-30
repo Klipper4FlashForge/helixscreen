@@ -3,8 +3,9 @@
 #include "print_control_buttons.h"
 
 #include "ui_error_reporting.h" // NOTIFY_WARNING / NOTIFY_ERROR
-#include "ui_event_safety.h"    // LVGL_SAFE_EVENT_CB_BEGIN / END
+#include "ui_event_safety.h" // LVGL_SAFE_EVENT_CB_BEGIN / END
 #include "ui_resume_dispatch.h"
+#include "ui_timer_guard.h" // lv_timer_cancel_safe
 
 #include "abort_manager.h"
 #include "app_globals.h"                                // get_printer_state()
@@ -61,10 +62,7 @@ void PrintControlButtons::init_subjects() {
         // release() (NOT reset()) is correct here: this runs pre-lv_deinit when
         // the observed subject is already being destroyed by its own owner.
         self.print_state_observer_.release();
-        if (self.pending_action_timeout_) {
-            lv_timer_delete(self.pending_action_timeout_);
-            self.pending_action_timeout_ = nullptr;
-        }
+        self.cancel_pending_action_timer();
         self.subjects_.deinit_all();
         self.subjects_initialized_ = false;
     });
@@ -197,13 +195,36 @@ void PrintControlButtons::start_pending_action(PendingAction action) {
     recompute();
 }
 
-void PrintControlButtons::clear_pending_action() {
+PrintControlButtons::~PrintControlButtons() {
+    // The StaticSubjectRegistry teardown below cancels this timer pre-lv_deinit,
+    // but only on a shutdown that actually runs the registry. Cancelling here too
+    // means no teardown path leaves pending_action_timeout_ armed on a freed
+    // `this`. lv_timer_cancel_safe() self-guards on lv_is_initialized(), which is
+    // what makes it safe from a static's destructor (#750, #751, #1173).
+    cancel_pending_action_timer();
+}
+
+void PrintControlButtons::cancel_pending_action_timer() {
     if (pending_action_timeout_) {
-        lv_timer_delete(pending_action_timeout_);
+        helix::ui::lv_timer_cancel_safe(pending_action_timeout_);
         pending_action_timeout_ = nullptr;
     }
+}
+
+void PrintControlButtons::clear_pending_action() {
+    cancel_pending_action_timer();
     pending_action_ = PendingAction::None;
     recompute();
+}
+
+void PrintControlButtons::notify_printer_error(const std::string& detail) {
+    if (pending_action_ == PendingAction::None) {
+        return;
+    }
+    const char* verb = (pending_action_ == PendingAction::Resuming) ? "Resume" : "Pause";
+    spdlog::warn("[PrintControl] Klipper error while {} pending — releasing the button: {}", verb,
+                 detail);
+    clear_pending_action();
 }
 
 void PrintControlButtons::on_primary_clicked(lv_event_t* e) {

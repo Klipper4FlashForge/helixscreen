@@ -52,7 +52,6 @@ The top of every overlay XML looks like this:
 <component>
   <view name="retraction_settings_overlay"
         extends="overlay_panel"
-        width="#overlay_panel_width_full"
         title="Retraction Settings"
         title_tag="Retraction Settings"
         bg_color="#screen_bg">
@@ -69,7 +68,8 @@ Notes:
 
 - **`extends="overlay_panel"`** — inherits the standard overlay chrome: title bar, back button, backdrop. You almost always want this.
 - **`title_tag="..."`** — the translation key. `title` is the English source; `title_tag` is what gets looked up in other languages. Both must be present for user-visible strings.
-- **`#overlay_panel_width_full`, `#space_lg`, `#screen_bg`** — design tokens. Never hardcode pixel widths or hex colors.
+- **No `width`** — overlay width is not yours to set. `NavigationManager::push_overlay()` decides it from how the user reached the overlay: full width inside Settings, gapped when it is a tool opened over something else. See `include/overlay_class.h`.
+- **`#space_lg`, `#screen_bg`** — design tokens. Never hardcode pixel spacing or hex colors.
 - **Inner `<lv_obj name="overlay_content">`** — the scrollable content area. The `overlay_panel` base provides the frame; you provide what's inside.
 
 Inside the content area, each setting is structured consistently (lines 37–66 of the real file, slightly abbreviated):

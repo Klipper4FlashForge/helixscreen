@@ -119,6 +119,75 @@ TEST_CASE_METHOD(ControlButtonsFixture, "pending action set then cleared on stat
     REQUIRE(read_str("print_control_primary_label") == "Resume");
 }
 
+// Klipper rejects a RESUME by broadcasting `!!` and returning normally — the
+// gcode.script RPC still answers `ok`, so dispatch_prepared_resume's error path
+// never runs and the optimistic spinner is left to the 150s backstop. For 150s
+// the button reads "Resuming..." AND is disabled, so the user cannot retry even
+// after clearing the runout (bundle JX2FVRB9: RESUME at 07:33:29 rejected for
+// filament-out, pending finally cleared at 07:35:59).
+//
+// Mutation check: make notify_printer_error() a no-op and the first REQUIRE in
+// "klipper error releases a pending resume" fails with pending == Resuming.
+TEST_CASE_METHOD(ControlButtonsFixture, "klipper error releases a pending resume",
+                 "[print_control][slow]") {
+    using helix::ui::PendingAction;
+    using helix::ui::PrintControlButtons;
+    using helix::ui::PrintControlButtonsTestAccess;
+
+    set_print_state(helix::PrintJobState::PAUSED);
+    PrintControlButtonsTestAccess::set_pending(PendingAction::Resuming);
+    REQUIRE(read_str("print_control_primary_label") == "Resuming...");
+    REQUIRE(read_int("print_control_primary_enabled") == 0);
+
+    // The `!!` line Klipper actually emitted on the reporter's AD5X.
+    PrintControlButtons::instance().notify_printer_error(
+        "\"head_switch_sensor\" has detected that the filament has run out, "
+        "please load it and press RESUME");
+
+    REQUIRE(PrintControlButtonsTestAccess::pending() == PendingAction::None);
+    REQUIRE(read_int("print_pending_action") == static_cast<int>(PendingAction::None));
+    // Back to the actionable label. primary_enabled is NOT asserted here: this
+    // harness runs no printer discovery, so the Resume macro slot is empty and
+    // the enable term is pinned to 0 regardless (see "primary disabled when
+    // macro slots empty"). The pending->enabled half lives in
+    // [print_control_view], where the slot availability is an input.
+    REQUIRE(read_str("print_control_primary_label") == "Resume");
+}
+
+TEST_CASE_METHOD(ControlButtonsFixture, "klipper error also releases a pending pause",
+                 "[print_control][slow]") {
+    using helix::ui::PendingAction;
+    using helix::ui::PrintControlButtons;
+    using helix::ui::PrintControlButtonsTestAccess;
+
+    set_print_state(helix::PrintJobState::PRINTING);
+    PrintControlButtonsTestAccess::set_pending(PendingAction::Pausing);
+    REQUIRE(read_str("print_control_primary_label") == "Pausing...");
+
+    PrintControlButtons::instance().notify_printer_error("Move out of range");
+
+    REQUIRE(PrintControlButtonsTestAccess::pending() == PendingAction::None);
+    REQUIRE(read_str("print_control_primary_label") == "Pause");
+}
+
+// Klipper broadcasts `!!` for plenty of things that have nothing to do with the
+// print-control buttons. With nothing pending there is no state to disturb.
+TEST_CASE_METHOD(ControlButtonsFixture, "klipper error with nothing pending is inert",
+                 "[print_control][slow]") {
+    using helix::ui::PendingAction;
+    using helix::ui::PrintControlButtons;
+    using helix::ui::PrintControlButtonsTestAccess;
+
+    set_print_state(helix::PrintJobState::PRINTING);
+    REQUIRE(PrintControlButtonsTestAccess::pending() == PendingAction::None);
+
+    PrintControlButtons::instance().notify_printer_error("Heater extruder not heating at expected "
+                                                         "rate");
+
+    REQUIRE(PrintControlButtonsTestAccess::pending() == PendingAction::None);
+    REQUIRE(read_str("print_control_primary_label") == "Pause");
+}
+
 // Regression test for the nightly [slow] crash (segfault in lv_observer_remove
 // during ~PrintControlButtons at process exit, plus mid-run
 // "malloc(): unaligned tcache chunk detected" aborts).

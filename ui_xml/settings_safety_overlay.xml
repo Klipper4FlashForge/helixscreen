@@ -5,7 +5,7 @@
 <!-- E-Stop confirmation, cancel escalation, escalation timeout, print completion alert -->
 <component>
   <view name="settings_safety_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="Safety &amp; Notifications" title_tag="Safety &amp; Notifications"
+        extends="overlay_panel" title="Safety &amp; Notifications" title_tag="Safety &amp; Notifications"
         bg_color="#screen_bg">
     <!-- Content Area - no padding, rows handle their own -->
     <lv_obj name="overlay_content" width="100%" flex_grow="1" style_pad_top="0" style_pad_left="0" style_pad_right="0" style_pad_bottom="#space_lg" scrollable="true" flex_flow="column">

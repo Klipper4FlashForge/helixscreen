@@ -49,14 +49,19 @@ void PostOpCooldownManager::schedule() {
 
     spdlog::info("[PostOpCooldown] Scheduling cooldown in {}s", delay_seconds);
 
-    helix::ui::queue_update([this, delay_seconds]() {
+    // Reach the manager through instance() rather than a captured `this`, for the
+    // same reason the timer callback below does: it keeps the queued lambda from
+    // holding a pointer whose validity it cannot check (#1165).
+    helix::ui::queue_update("PostOpCooldownManager::schedule", [delay_seconds]() {
+        auto& self = PostOpCooldownManager::instance();
+
         // Delete existing timer if any
-        if (timer_) {
-            lv_timer_delete(timer_);
-            timer_ = nullptr;
+        if (self.timer_) {
+            lv_timer_delete(self.timer_);
+            self.timer_ = nullptr;
         }
 
-        timer_ = lv_timer_create(
+        self.timer_ = lv_timer_create(
             [](lv_timer_t* /*t*/) {
                 auto& self = PostOpCooldownManager::instance();
                 self.timer_ = nullptr;
@@ -85,7 +90,7 @@ void PostOpCooldownManager::schedule() {
                 }
             },
             static_cast<uint32_t>(delay_seconds) * 1000, nullptr);
-        lv_timer_set_repeat_count(timer_, 1);
+        lv_timer_set_repeat_count(self.timer_, 1);
     });
 }
 
@@ -95,10 +100,11 @@ void PostOpCooldownManager::cancel() {
 
     spdlog::debug("[PostOpCooldown] Cancelling pending cooldown");
 
-    helix::ui::queue_update([this]() {
-        if (timer_) {
-            lv_timer_delete(timer_);
-            timer_ = nullptr;
+    helix::ui::queue_update("PostOpCooldownManager::cancel", []() {
+        auto& self = PostOpCooldownManager::instance();
+        if (self.timer_) {
+            lv_timer_delete(self.timer_);
+            self.timer_ = nullptr;
         }
     });
 }

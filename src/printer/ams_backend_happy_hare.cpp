@@ -562,23 +562,16 @@ void AmsBackendHappyHare::parse_mmu_state(const nlohmann::json& mmu_data) {
             initialize_slots(gate_count);
         }
 
-        // Update gate status values via SlotRegistry
+        // Cache the raw values. The LOADED stamp is applied by
+        // refresh_gate_statuses_locked() at the end of this function rather than
+        // here, because it depends on gate/filament — which arrive in their own
+        // deltas, without gate_status (#1199).
+        if (gate_status_raw_.size() != gate_status.size()) {
+            gate_status_raw_.assign(gate_status.size(), -1);
+        }
         for (size_t i = 0; i < gate_status.size(); ++i) {
             if (gate_status[i].is_number_integer()) {
-                int hh_status = gate_status[i].get<int>();
-                SlotStatus status = slot_status_from_happy_hare(hh_status);
-
-                // Mark the currently loaded slot as LOADED instead of AVAILABLE
-                if (system_info_.filament_loaded &&
-                    static_cast<int>(i) == system_info_.current_slot &&
-                    status == SlotStatus::AVAILABLE) {
-                    status = SlotStatus::LOADED;
-                }
-
-                auto* entry = slots_.get_mut(static_cast<int>(i));
-                if (entry) {
-                    entry->info.status = status;
-                }
+                gate_status_raw_[i] = gate_status[i].get<int>();
             }
         }
     }
@@ -1030,6 +1023,40 @@ void AmsBackendHappyHare::parse_mmu_state(const nlohmann::json& mmu_data) {
             }
         }
     }
+
+    // Re-derive every gate's status from the cached gate_status array plus the
+    // gate/filament pair this frame may have moved. Unconditional, and last, so
+    // no ordering between the three keys can leave a stale stamp behind.
+    refresh_gate_statuses_locked();
+}
+
+void AmsBackendHappyHare::refresh_gate_statuses_locked() {
+    for (size_t i = 0; i < gate_status_raw_.size(); ++i) {
+        auto* entry = slots_.get_mut(static_cast<int>(i));
+        if (!entry) {
+            continue;
+        }
+
+        SlotStatus status = slot_status_from_happy_hare(gate_status_raw_[i]);
+
+        // The gate Happy Hare reports loaded reads LOADED whatever its fill
+        // state is — including gate_status 2 (from_buffer), which the old
+        // `status == AVAILABLE` precondition silently excluded, so a buffered
+        // gate never showed as seated while it was feeding the toolhead.
+        //
+        // gate_status 0 is the deliberate exception. An empty gate that Happy
+        // Hare still names as loaded is a runout: the filament it already fed is
+        // at the toolhead, but the gate has nothing left, and load_filament()'s
+        // "slot not available" refusal keys on EMPTY. That disagreement with the
+        // aggregate pair is also why this backend does not claim
+        // has_per_slot_loaded_authority() — see the comment there.
+        if (system_info_.filament_loaded && static_cast<int>(i) == system_info_.current_slot &&
+            status != SlotStatus::EMPTY) {
+            status = SlotStatus::LOADED;
+        }
+
+        entry->info.status = status;
+    }
 }
 
 // ============================================================================
@@ -1040,21 +1067,26 @@ std::vector<helix::RecoveryAction> AmsBackendHappyHare::build_recovery_actions()
     // Caller holds mutex_.
     std::vector<helix::RecoveryAction> actions;
 
-    // Resume after the user clears the fault (always offered, primary).
-    actions.push_back({lv_tr("Resume"), "RESUME", "hh::resume", "primary"});
+    // Resume after the user clears the fault (always offered, primary). Resuming
+    // a paused print extrudes on the next move, so it needs the hotend up.
+    actions.push_back({lv_tr("Resume"), "RESUME", "hh::resume", "primary",
+                       /*needs_hot_nozzle=*/true});
 
     // MMU_RECOVER re-syncs HH's filament state; the LOADED/UNLOADED arg must match
-    // reality (HH issue #729). Derive from the live loaded flag.
+    // reality (HH issue #729). Derive from the live loaded flag. State-only — it
+    // moves nothing, so it stays available on a cold nozzle.
     const bool loaded = system_info_.filament_loaded;
     actions.push_back({lv_tr("Recover"), loaded ? "MMU_RECOVER LOADED=1" : "MMU_RECOVER UNLOADED=1",
                        "hh::recover", ""});
 
-    // If filament is at the toolhead, offer an explicit unload.
+    // If filament is at the toolhead, offer an explicit unload. Pulls filament
+    // back out through the melt zone, so it needs heat.
     if (loaded) {
-        actions.push_back({lv_tr("Unload"), "MMU_UNLOAD", "hh::unload", ""});
+        actions.push_back({lv_tr("Unload"), "MMU_UNLOAD", "hh::unload", "",
+                           /*needs_hot_nozzle=*/true});
     }
 
-    // Force-clear the MMU pause lock (last resort).
+    // Force-clear the MMU pause lock (last resort). Lock state only, no motion.
     actions.push_back({lv_tr("Unlock"), "MMU_UNLOCK", "hh::unlock", "danger"});
     return actions;
 }
@@ -2182,7 +2214,15 @@ AmsError AmsBackendHappyHare::reset() {
     return execute_gcode("MMU_HOME");
 }
 
-AmsError AmsBackendHappyHare::reset_lane(int slot_index) {
+// MMU_RECOVER re-syncs Happy Hare's idea of gate state. It moves no filament, so
+// it is a fault clear rather than a position recovery.
+AmsError AmsBackendHappyHare::clear_fault(int slot_index) {
+    // -1 means "no particular gate". MMU_RECOVER without GATE re-syncs the whole
+    // selector, the natural system-scoped analogue of AFC's RESET_FAILURE, and
+    // the base contract documents -1 as valid. Both UI callers pass current_slot,
+    // which is -1 whenever nothing is loaded — the state Reset is pressed in.
+    const bool all_gates = (slot_index < 0);
+
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
@@ -2190,10 +2230,17 @@ AmsError AmsBackendHappyHare::reset_lane(int slot_index) {
             return AmsErrorHelper::not_connected("Happy Hare backend not started");
         }
 
-        AmsError slot_err = validate_slot_index(slot_index);
-        if (!slot_err) {
-            return slot_err;
+        if (!all_gates) {
+            AmsError slot_err = validate_slot_index(slot_index);
+            if (!slot_err) {
+                return slot_err;
+            }
         }
+    }
+
+    if (all_gates) {
+        spdlog::info("[AMS HappyHare] Recovering all gates");
+        return execute_gcode("MMU_RECOVER");
     }
 
     // MMU_RECOVER with GATE parameter recovers a specific gate's state

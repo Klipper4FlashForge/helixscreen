@@ -3,6 +3,7 @@
 
 #include "test_fixtures.h"
 
+#include "ui_afc_fault_path.h"
 #include "ui_button.h"
 #include "ui_card.h"
 #include "ui_dialog.h"
@@ -231,6 +232,11 @@ void XMLTestFixture::setup_global_xml_registrations_once() {
     lv_xml_register_component_from_file("A:ui_xml/modal_button_row.xml");
     lv_xml_register_component_from_file("A:ui_xml/components/filament_catalog_selector.xml");
     lv_xml_register_component_from_file("A:ui_xml/components/filament_catalog_picker.xml");
+
+    // <afc_fault_path> + the afc_fault_segment subject it binds. Embedded by
+    // ams_loading_error_modal.xml and action_prompt_modal.xml, both of which
+    // tests register directly (#1184).
+    helix::ui::afc_fault_path_register();
 
     s_global_registered = true;
 }

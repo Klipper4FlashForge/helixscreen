@@ -44,6 +44,7 @@
 
 #pragma once
 
+#include "async_lifetime_guard.h"
 #include "i_moonraker_api.h"
 #include "moonraker_advanced_api.h"
 #include "moonraker_client.h"
@@ -796,6 +797,15 @@ class MoonrakerAPI : public IMoonrakerAPI {
     /// Subject for notifying when build_volume changes (version counter)
     lv_subject_t build_volume_version_;
     std::atomic<int> build_volume_version_counter_{0};
+
+    /// Generation guard for the subject writes this class defers to the main
+    /// thread. Invalidated by the destructor *before* `build_volume_version_` is
+    /// deinited, so a callback still sitting in the UpdateQueue is dropped
+    /// instead of notifying a freed observer list — the exact failure that took
+    /// down the unsharded suite (#1165, #1146). Unlike the subject-owning state
+    /// classes there is no `deinit_subjects()` here: the subject is created in
+    /// the constructor and torn down only at destruction.
+    helix::AsyncLifetimeGuard async_lifetime_;
 
     SafetyLimits safety_limits_;
     bool limits_explicitly_set_ = false;

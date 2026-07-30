@@ -118,6 +118,11 @@ void PrinterPrintState::deinit_subjects() {
 
     spdlog::trace("[PrinterPrintState] Deinitializing subjects");
 
+    // Expire any setter callbacks still queued on the UpdateQueue. They capture
+    // `this` and write the subjects being torn down below; without this the next
+    // drain notifies a freed observer list (#1165, #1146).
+    async_lifetime_.invalidate();
+
     // Signal death of the "static" subjects (print_state_enum, etc.) BEFORE
     // calling deinit_all() — observers in other singletons (AmsState) check
     // this token in their guard's reset() path and skip lv_observer_remove()
@@ -925,7 +930,7 @@ void PrinterPrintState::set_print_display_filename(const std::string& name) {
 }
 
 void PrinterPrintState::set_print_layer_total(int total) {
-    helix::ui::queue_update([this, total]() {
+    async_lifetime_.defer("PrinterPrintState::set_print_layer_total", [this, total]() {
         if (lv_subject_get_int(&print_layer_total_) != total) {
             lv_subject_set_int(&print_layer_total_, total);
         }
@@ -933,15 +938,16 @@ void PrinterPrintState::set_print_layer_total(int total) {
 }
 
 void PrinterPrintState::set_print_layer_heights(double layer_height, double first_layer_height) {
-    helix::ui::queue_update([this, layer_height, first_layer_height]() {
-        layer_height_ = layer_height;
-        first_layer_height_ = (first_layer_height > 0.0) ? first_layer_height : layer_height;
-    });
+    async_lifetime_.defer(
+        "PrinterPrintState::set_print_layer_heights", [this, layer_height, first_layer_height]() {
+            layer_height_ = layer_height;
+            first_layer_height_ = (first_layer_height > 0.0) ? first_layer_height : layer_height;
+        });
 }
 
 void PrinterPrintState::set_print_layer_current(int layer) {
     spdlog::debug("[LayerTracker] set_print_layer_current({}) via gcode fallback", layer);
-    helix::ui::queue_update([this, layer]() {
+    async_lifetime_.defer("PrinterPrintState::set_print_layer_current", [this, layer]() {
         if (!has_real_layer_data_) {
             spdlog::info("[LayerTracker] Receiving real layer data from gcode response");
             has_real_layer_data_ = true;
@@ -963,7 +969,8 @@ void PrinterPrintState::set_print_start_state(PrintStartPhase phase, const char*
     // This is called from WebSocket callbacks (background thread).
     std::string msg = message ? message : "";
     int clamped_progress = std::clamp(progress, 0, 100);
-    helix::ui::queue_update([this, phase, msg, clamped_progress]() {
+    async_lifetime_.defer("PrinterPrintState::set_print_start_state", [this, phase, msg,
+                                                                       clamped_progress]() {
         // Guard: reject non-IDLE phase updates when print is no longer active,
         // UNLESS this is a new print starting (transitioning from IDLE phase).
         // This prevents a deferred COMPLETE callback from arriving after the print
@@ -1009,7 +1016,7 @@ void PrinterPrintState::set_print_start_state(PrintStartPhase phase, const char*
 
 void PrinterPrintState::reset_print_start_state() {
     // CRITICAL: Defer to main thread via ui_queue_update
-    helix::ui::queue_update([this]() {
+    async_lifetime_.defer("PrinterPrintState::reset_print_start_state", [this]() {
         int phase = lv_subject_get_int(&print_start_phase_);
         if (phase != static_cast<int>(PrintStartPhase::IDLE)) {
             spdlog::debug("[PrinterPrintState] Resetting print start state to IDLE");
@@ -1024,7 +1031,8 @@ void PrinterPrintState::reset_print_start_state() {
 
 void PrinterPrintState::set_print_in_progress(bool in_progress) {
     // Thread-safe wrapper: defer LVGL subject updates to main thread
-    helix::ui::queue_update([this, in_progress]() { set_print_in_progress_internal(in_progress); });
+    async_lifetime_.defer("PrinterPrintState::set_print_in_progress",
+                          [this, in_progress]() { set_print_in_progress_internal(in_progress); });
 }
 
 void PrinterPrintState::set_print_start_time_left(const char* text) {
@@ -1067,7 +1075,7 @@ void PrinterPrintState::set_estimated_print_time(int seconds) {
     // Defer subject update to main thread: called from metadata callback (background thread).
     // lv_subject_set_int triggers observer chain which touches LVGL objects.
     int est = estimated_print_time_;
-    helix::ui::queue_update([this, est]() {
+    async_lifetime_.defer("PrinterPrintState::set_estimated_print_time", [this, est]() {
         // Seed/update time_left with slicer estimate when progress is still 0%.
         // Once progress-based calculation kicks in (>=1%), it takes over.
         if (est > 0 && lv_subject_get_int(&print_progress_) == 0) {

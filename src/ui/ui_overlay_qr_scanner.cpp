@@ -470,9 +470,8 @@ void QrScannerOverlay::on_camera_frame(lv_draw_buf_t* frame) {
     }
 
     // Display the frame on the UI thread.
-    auto tok = lifetime_.token();
-    helix::ui::queue_update([this, tok, frame]() {
-        if (!tok.expired() && scan_active_.load() && viewfinder_ && lv_obj_is_valid(viewfinder_)) {
+    lifetime_.token().defer("QrScannerOverlay::on_camera_frame", [this, frame]() {
+        if (scan_active_.load() && viewfinder_ && lv_obj_is_valid(viewfinder_)) {
             lv_image_set_src(viewfinder_, frame);
         }
     });
@@ -518,9 +517,12 @@ void QrScannerOverlay::on_snapshot_frame(lv_draw_buf_t* frame) {
         return;
     }
 
-    auto tok = lifetime_.token();
-    helix::ui::queue_update([this, tok, frame]() {
-        if (!tok.expired() && scan_active_.load() && viewfinder_) {
+    // The frame_consumed() call used to sit outside the token check, so it read
+    // snapshot_scanner_ off `this` whether or not the overlay was still alive.
+    // Inside the guard is correct: if the overlay is gone the scanner it owns is
+    // gone too, and there is nothing left to tell to continue (#1165).
+    lifetime_.token().defer("QrScannerOverlay::on_snapshot_frame", [this, frame]() {
+        if (scan_active_.load() && viewfinder_) {
             lv_image_set_src(viewfinder_, frame);
         }
         if (snapshot_scanner_) {

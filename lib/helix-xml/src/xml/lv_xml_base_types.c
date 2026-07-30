@@ -106,17 +106,56 @@ lv_dir_t lv_xml_dir_to_enum(const char * txt)
     return 0; /*Return 0 in lack of a better option. */
 }
 
+static lv_border_side_t border_side_token_to_enum(const char * txt, size_t len)
+{
+    if(len == 4 && lv_memcmp("none", txt, 4) == 0) return LV_BORDER_SIDE_NONE;
+    if(len == 3 && lv_memcmp("top", txt, 3) == 0) return LV_BORDER_SIDE_TOP;
+    if(len == 6 && lv_memcmp("bottom", txt, 6) == 0) return LV_BORDER_SIDE_BOTTOM;
+    if(len == 4 && lv_memcmp("left", txt, 4) == 0) return LV_BORDER_SIDE_LEFT;
+    if(len == 5 && lv_memcmp("right", txt, 5) == 0) return LV_BORDER_SIDE_RIGHT;
+    if(len == 4 && lv_memcmp("full", txt, 4) == 0) return LV_BORDER_SIDE_FULL;
+    return LV_BORDER_SIDE_NONE; /*caller reports the unknown token*/
+}
+
+/**
+ * Parse a border_side value: one side, or several OR'd together.
+ *
+ * LV_BORDER_SIDE_* are bit flags, so "left|bottom" is a legitimate thing to
+ * want and CSS-shaped markup invites writing it. Single-token parsing used to
+ * fall through to the unknown-value branch and return 0 — which is
+ * LV_BORDER_SIDE_NONE, i.e. the border silently vanished instead of the parse
+ * failing loudly. Accept `|`, `,` and whitespace as separators.
+ */
 lv_border_side_t lv_xml_border_side_to_enum(const char * txt)
 {
-    if(lv_streq("none", txt)) return LV_BORDER_SIDE_NONE;
-    if(lv_streq("top", txt)) return LV_BORDER_SIDE_TOP;
-    if(lv_streq("bottom", txt)) return LV_BORDER_SIDE_BOTTOM;
-    if(lv_streq("left", txt)) return LV_BORDER_SIDE_LEFT;
-    if(lv_streq("right", txt)) return LV_BORDER_SIDE_RIGHT;
-    if(lv_streq("full", txt)) return LV_BORDER_SIDE_FULL;
+    lv_border_side_t out = LV_BORDER_SIDE_NONE;
+    bool any = false;
 
-    LV_LOG_WARN("%s is an unknown value for border_side", txt);
-    return 0; /*Return 0 in lack of a better option. */
+    const char * p = txt;
+    while(*p) {
+        while(*p == '|' || *p == ',' || *p == ' ' || *p == '\t') p++;
+        if(*p == '\0') break;
+
+        const char * start = p;
+        while(*p && *p != '|' && *p != ',' && *p != ' ' && *p != '\t') p++;
+        size_t len = (size_t)(p - start);
+
+        lv_border_side_t one = border_side_token_to_enum(start, len);
+        /*"none" parses to 0, so a zero result is only an error when the token
+          was not literally "none".*/
+        if(one == LV_BORDER_SIDE_NONE && !(len == 4 && lv_memcmp("none", start, 4) == 0)) {
+            LV_LOG_WARN("%s is an unknown value for border_side", txt);
+            return 0; /*Return 0 in lack of a better option. */
+        }
+        out |= one;
+        any = true;
+    }
+
+    if(!any) {
+        LV_LOG_WARN("%s is an unknown value for border_side", txt);
+        return 0; /*Return 0 in lack of a better option. */
+    }
+    return out;
 }
 
 lv_grad_dir_t lv_xml_grad_dir_to_enum(const char * txt)

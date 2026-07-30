@@ -33,6 +33,30 @@ namespace helix::wifi::detail {
 // to honour `wpa_supplicant -c <conf>` launches whose ctrl_interface lives in
 // the config file rather than on the command line.
 std::string read_ctrl_interface_from_conf(const std::string& conf_path);
+
+/// True if @p config_contents declares a `network={...}` block whose `ssid=`
+/// matches @p ssid. Used to confirm a SAVE_CONFIG actually landed on disk.
+/// Exposed for unit testing.
+bool wpa_config_has_network(const std::string& config_contents, const std::string& ssid);
+
+enum class SavePersistence {
+    Persisted,    ///< Credentials are on disk; they will survive a reboot.
+    NotPersisted, ///< They are not. The user's WiFi dies at the next power-off.
+};
+
+/// Decide whether a SAVE_CONFIG actually persisted @p ssid.
+///
+/// An "OK" reply is NOT proof. The Snapmaker U1's wpa_supplicant answers OK to
+/// SAVE_CONFIG and never writes the file — device-verified 2026-07-29: reply
+/// "OK", config mtime unchanged, zero `network={` blocks, path provably
+/// writable. Trusting the reply is why WiFi there dies on every power-off.
+/// Only the config file's actual contents settle it.
+///
+/// @param save_reply       Raw SAVE_CONFIG reply ("OK\n", "FAIL\n", …).
+/// @param config_contents  The wpa config file re-read AFTER the save.
+/// @param ssid             The SSID that was supposed to be written.
+SavePersistence classify_save_result(const std::string& save_reply,
+                                     const std::string& config_contents, const std::string& ssid);
 } // namespace helix::wifi::detail
 
 /**

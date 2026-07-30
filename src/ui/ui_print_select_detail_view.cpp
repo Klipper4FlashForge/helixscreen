@@ -195,9 +195,6 @@ lv_obj_t* PrintSelectDetailView::create(lv_obj_t* parent_screen) {
         return nullptr;
     }
 
-    // Set width to fill space after nav bar
-    ui_set_overlay_width(overlay_root_, parent_screen_);
-
     // Set responsive padding for content area
     lv_obj_t* content_container = lv_obj_find_by_name(overlay_root_, "content_container");
     if (content_container) {
@@ -1560,12 +1557,9 @@ void PrintSelectDetailView::load_gcode_for_preview() {
                     "gcodes", file_path, temp_path,
                     [this, tok, temp_path](const std::string& path) {
                         // Runs on HTTP thread — no bg-thread tok.expired() check (L081 Mechanism
-                        // C). The inner main-thread guard below is what gates this (queue_update is
-                        // not lifetime-aware).
-                        helix::ui::queue_update([this, tok, path]() {
-                            if (tok.expired()) {
-                                return;
-                            }
+                        // C). tok.defer() marshals the body to the main thread and re-checks the
+                        // generation there, which is what gates the member access below.
+                        tok.defer("DetailView::gcode_downloaded", [this, path]() {
                             temp_gcode_path_ = path;
 
                             spdlog::debug("[DetailView] G-code downloaded, loading into viewer: {}",
@@ -1619,13 +1613,10 @@ void PrintSelectDetailView::load_gcode_for_preview() {
                     },
                     [this, tok](const MoonrakerError& err) {
                         // Runs on HTTP thread — no bg-thread tok.expired() check (L081 Mechanism
-                        // C).
+                        // C); tok.defer() re-checks on the main thread instead.
                         spdlog::warn("[DetailView] Failed to download G-code: {}", err.message);
-                        helix::ui::queue_update([this, tok]() {
-                            if (tok.expired())
-                                return;
-                            show_gcode_viewer(false);
-                        });
+                        tok.defer("DetailView::gcode_download_error",
+                                  [this]() { show_gcode_viewer(false); });
                     });
             });
         },

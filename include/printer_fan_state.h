@@ -135,6 +135,23 @@ class PrinterFanState {
                    const std::unordered_map<std::string, double>& max_power = {});
 
     /**
+     * @brief Re-apply a role mapping to the fans already discovered.
+     *
+     * For the targeted-roles wizard, where the hardware did not change — only
+     * which discovered fan plays which role. Callers used to reach for
+     * init_fans() because it was the only entry point that accepted a
+     * FanRoleConfig, which meant re-passing a fan list on a config change and
+     * hoping it matched what was discovered. This re-uses the retained list, so
+     * the two cannot drift apart.
+     *
+     * Note this is NOT list-preserving: roles decide whether the bare [fan]
+     * object is shadowed by a named part fan, so a role change can legitimately
+     * add or drop that one entry. Everything else — live speeds, ever_ran, rpm,
+     * and the per-fan subjects — rides through, as it does for any re-init.
+     */
+    void apply_roles(const FanRoleConfig& roles);
+
+    /**
      * @brief Update speed for a specific fan (called during status updates)
      * @param object_name Moonraker object name (e.g., "heater_fan hotend_fan")
      * @param speed Speed as 0.0-1.0 (Moonraker format)
@@ -253,6 +270,12 @@ class PrinterFanState {
     lv_subject_t fan_speed_{};             ///< Main part-cooling fan, 0-100%
     lv_subject_t fans_version_{};          ///< Increments on fan list (structural) changes
     lv_subject_t primary_fans_version_{};  ///< Increments on primary-role reassignment (#1124)
+
+    /// Object names exactly as discovery handed them over — before the bare-[fan]
+    /// shadowing rule filters them into fans_. apply_roles() re-runs that filter,
+    /// which needs the unfiltered list: once [fan] is shadowed it is gone from
+    /// fans_, so nothing else remembers it existed to un-shadow it later.
+    std::vector<std::string> discovered_objects_;
 
     /// Last resolved primary roles — compared in refresh_primary_fans_selection()
     /// so primary_fans_version_ only ticks on an actual change.

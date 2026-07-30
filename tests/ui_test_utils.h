@@ -51,6 +51,15 @@ namespace ui {
  */
 void set_test_notification_warning_hook(std::function<void(const std::string&)> hook);
 
+/**
+ * @brief Install a hook invoked by the test ui_notification_error() stub.
+ *
+ * Same purpose as the warning hook: user-facing error toasts are compiled out
+ * of the test build, so this is the only way a test can observe that one was
+ * raised. Pass nullptr to clear.
+ */
+void set_test_notification_error_hook(std::function<void(const std::string&)> hook);
+
 } // namespace ui
 } // namespace helix
 

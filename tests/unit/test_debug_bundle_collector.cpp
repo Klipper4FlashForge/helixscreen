@@ -2,6 +2,9 @@
 
 #include "system/debug_bundle_collector.h"
 
+#include <spdlog/spdlog.h>
+
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -586,4 +589,74 @@ TEST_CASE_METHOD(DebugBundleTestFixture,
     auto result = helix::DebugBundleCollector::collect_log_tail_from_paths(
         {"/nonexistent/a.log", "/nonexistent/b.log"}, 10);
     REQUIRE(result.empty());
+}
+
+// ============================================================================
+// log_tail / crash section sanitization [debug-bundle][privacy]
+//
+// These sections used to be inserted into the bundle verbatim while every
+// other text section went through the sanitizer — and log_tail is the section
+// densest in identifying data, because the ring captures at debug regardless
+// of the user's configured verbosity (#1191).
+// ============================================================================
+
+TEST_CASE("DebugBundleCollector: sanitize_value leaves an SSID-shaped string alone",
+          "[debug-bundle][privacy]") {
+    // Pins WHY the call-site redaction exists. An SSID is an arbitrary
+    // user-chosen string; no regex distinguishes it from ordinary log text, so
+    // the sanitizer cannot be the control for it. If someone later "fixes"
+    // this by adding an SSID regex, that regex will eat real log content and
+    // this test should make them think twice.
+    const std::string ssid_line = "Status: connected=true ssid='Pretzel Logic Cafe' signal=66%";
+    REQUIRE(helix::DebugBundleCollector::sanitize_value(ssid_line) == ssid_line);
+}
+
+TEST_CASE("DebugBundleCollector: sanitize_text_block redacts per line", "[debug-bundle][privacy]") {
+    // The 4 KB ReDoS guard in sanitize_value() would swallow a whole log as one
+    // [REDACTED_LONG_VALUE]; splitting per line is what keeps the log readable
+    // while still scrubbing each line.
+    const std::string body = "[10:04:30.373] [debug] iface=wlan0 mac=aa:bb:cc:dd:ee:ff\n"
+                             "[10:04:30.374] [debug] nothing sensitive here\n"
+                             "[10:04:30.375] [debug] peer AA-BB-CC-DD-EE-FF seen\n";
+
+    const auto out = helix::DebugBundleCollector::sanitize_text_block(body);
+
+    INFO("out=" << out);
+    REQUIRE(out.find("aa:bb:cc:dd:ee:ff") == std::string::npos);
+    REQUIRE(out.find("AA-BB-CC-DD-EE-FF") == std::string::npos);
+    // Surrounding content survives — a sanitizer that nuked the whole block
+    // would pass the two checks above and destroy the log's usefulness.
+    REQUIRE(out.find("nothing sensitive here") != std::string::npos);
+    REQUIRE(out.find("iface=wlan0") != std::string::npos);
+    REQUIRE(std::count(out.begin(), out.end(), '\n') == std::count(body.begin(), body.end(), '\n'));
+}
+
+TEST_CASE_METHOD(DebugBundleTestFixture,
+                 "DebugBundleCollector: collect_crash_report_txt sanitizes what it returns",
+                 "[debug-bundle][privacy]") {
+    // Crash text reaches the network twice: through the bundle and through the
+    // crash reporter's automatic upload. It used to be returned verbatim.
+    write_file("crash_report.txt", "=== HelixScreen Crash Report ===\nSignal: 11 (SIGSEGV)\n"
+                                   "wlan0 mac=aa:bb:cc:dd:ee:ff\n");
+
+    auto result = helix::DebugBundleCollector::collect_crash_report_txt(temp_dir_.string());
+
+    REQUIRE_FALSE(result.empty());
+    INFO("result=" << result);
+    REQUIRE(result.find("aa:bb:cc:dd:ee:ff") == std::string::npos);
+    REQUIRE(result.find("[REDACTED_MAC]") != std::string::npos);
+    REQUIRE(result.find("SIGSEGV") != std::string::npos);
+}
+
+TEST_CASE_METHOD(DebugBundleTestFixture,
+                 "DebugBundleCollector: collect_crash_txt sanitizes what it returns",
+                 "[debug-bundle][privacy]") {
+    write_file("crash.txt", "{\"signal\":11,\"iface\":\"wlan0\",\"mac\":\"aa:bb:cc:dd:ee:ff\"}\n");
+
+    auto result = helix::DebugBundleCollector::collect_crash_txt(temp_dir_.string());
+
+    REQUIRE_FALSE(result.empty());
+    INFO("result=" << result);
+    REQUIRE(result.find("aa:bb:cc:dd:ee:ff") == std::string::npos);
+    REQUIRE(result.find("[REDACTED_MAC]") != std::string::npos);
 }

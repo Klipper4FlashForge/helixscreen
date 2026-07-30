@@ -1801,25 +1801,32 @@ struct QidiHomingGuardFixture : public LVGLTestFixture {
 TEST_CASE_METHOD(QidiHomingGuardFixture,
                  "QIDI load/unload/change_tool refuse and emit nothing while printing",
                  "[ams][qidi_box][homing_guard]") {
-    auto check_refused = [](AmsError err, const std::vector<std::string>& sent) {
+    // The refusal copy differs by state: a PAUSED print is the case a user
+    // actually reaches (Klipper's runout handler pauses and says "load it and
+    // press RESUME"), so it names the recovery that works instead of telling
+    // them to finish or cancel the print. See AmsErrorHelper::print_active().
+    auto check_refused = [](AmsError err, const std::vector<std::string>& sent,
+                            const std::string& expected_msg) {
         CHECK_FALSE(err.success());
         CHECK(err.result == AmsResult::WRONG_STATE);
-        CHECK(err.user_msg == "Cannot run filament operation while printing");
+        CHECK(err.user_msg == expected_msg);
         CHECK(sent.empty());
     };
 
     SECTION("PRINTING blocks all three ops") {
+        const std::string msg = "Cannot run filament operation while printing";
         set_print_state(helix::PrintJobState::PRINTING);
-        check_refused(backend->load_filament(2), backend->sent);
-        check_refused(backend->unload_filament(1), backend->sent);
-        check_refused(backend->change_tool(0), backend->sent);
+        check_refused(backend->load_filament(2), backend->sent, msg);
+        check_refused(backend->unload_filament(1), backend->sent, msg);
+        check_refused(backend->change_tool(0), backend->sent, msg);
     }
 
     SECTION("PAUSED blocks all three ops") {
+        const std::string msg = "Can't move filament while the print is paused";
         set_print_state(helix::PrintJobState::PAUSED);
-        check_refused(backend->load_filament(2), backend->sent);
-        check_refused(backend->unload_filament(1), backend->sent);
-        check_refused(backend->change_tool(0), backend->sent);
+        check_refused(backend->load_filament(2), backend->sent, msg);
+        check_refused(backend->unload_filament(1), backend->sent, msg);
+        check_refused(backend->change_tool(0), backend->sent, msg);
     }
 }
 

@@ -7,7 +7,7 @@
 <!-- Subjects are registered in C++ (init_subjects) - do not define here to avoid shadowing -->
 <component>
   <view name="touch_calibration_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="Touch Calibration"
+        extends="overlay_panel" title="Touch Calibration"
         title_tag="Touch Calibration" bg_color="#screen_bg" back_button_callback="on_touch_cal_back_clicked">
 
     <!-- Main content area - full screen for touch capture -->

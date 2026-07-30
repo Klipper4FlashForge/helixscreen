@@ -17,6 +17,17 @@
 
 using namespace helix;
 
+namespace {
+
+/// Drop whatever a previous test left in the skip-counter store. take_snapshot()
+/// releases every slot unconditionally, so discarding its result *is* the reset —
+/// there is no separate entry point that could drift from the drain it mirrors.
+void drain_skip_counters() {
+    (void)helix::async_lifetime::take_snapshot();
+}
+
+} // namespace
+
 // ============================================================================
 // Pure token tests (no LVGL needed)
 // ============================================================================
@@ -370,4 +381,244 @@ TEST_CASE_METHOD(BgDetectorFixture, "Thread safety — concurrent token and inva
     // If we got here without crashing, the test passed
     REQUIRE(token_count.load() > 0);
     REQUIRE(invalidate_count.load() > 0);
+}
+
+// ============================================================================
+// Skip-rate telemetry tests — helix::async_lifetime counter module
+// ============================================================================
+
+TEST_CASE("async_lifetime counters start empty after reset", "[lifetime_guard][telemetry]") {
+    drain_skip_counters();
+    auto snap = helix::async_lifetime::take_snapshot();
+    REQUIRE(snap.entries.empty());
+    REQUIRE(snap.total == 0);
+    REQUIRE(snap.other_count == 0);
+}
+
+TEST_CASE("async_lifetime note_skipped increments per tag", "[lifetime_guard][telemetry]") {
+    drain_skip_counters();
+
+    helix::async_lifetime::note_skipped("TagA");
+    helix::async_lifetime::note_skipped("TagA");
+    helix::async_lifetime::note_skipped("TagA");
+    helix::async_lifetime::note_skipped("TagB");
+
+    auto snap = helix::async_lifetime::take_snapshot();
+    REQUIRE(snap.total == 4);
+    REQUIRE(snap.entries.size() == 2);
+    // Sorted descending by count
+    REQUIRE(snap.entries[0].tag == "TagA");
+    REQUIRE(snap.entries[0].count == 3);
+    REQUIRE(snap.entries[1].tag == "TagB");
+    REQUIRE(snap.entries[1].count == 1);
+    REQUIRE(snap.other_count == 0);
+}
+
+TEST_CASE("async_lifetime take_snapshot resets counters", "[lifetime_guard][telemetry]") {
+    drain_skip_counters();
+
+    helix::async_lifetime::note_skipped("TagA");
+    helix::async_lifetime::note_skipped("TagA");
+
+    auto first = helix::async_lifetime::take_snapshot();
+    REQUIRE(first.total == 2);
+
+    // Second snapshot should be empty — counters were drained
+    auto second = helix::async_lifetime::take_snapshot();
+    REQUIRE(second.total == 0);
+    REQUIRE(second.entries.empty());
+}
+
+TEST_CASE("async_lifetime nullptr tag normalised to (null)",
+         "[lifetime_guard][telemetry]") {
+    drain_skip_counters();
+
+    helix::async_lifetime::note_skipped(nullptr);
+    helix::async_lifetime::note_skipped(nullptr);
+
+    auto snap = helix::async_lifetime::take_snapshot();
+    REQUIRE(snap.total == 2);
+    REQUIRE(snap.entries.size() == 1);
+    REQUIRE(snap.entries[0].tag == "(null)");
+    REQUIRE(snap.entries[0].count == 2);
+}
+
+TEST_CASE("async_lifetime overflow rolls into (other)", "[lifetime_guard][telemetry]") {
+    drain_skip_counters();
+
+    // kMaxTrackedTags is 64. Generate 128 distinct stable tag pointers so the
+    // first 64 claim tracked slots and the next 64 roll into "(other)". The
+    // counter interns by pointer equality, so each call hits the cold path
+    // and claims (or overflows) a slot.
+    std::vector<std::string> owners(128);
+    std::vector<const char*> tags(128);
+    for (int i = 0; i < 128; ++i) {
+        owners[i] = std::string("overflow_tag_") + std::to_string(i);
+        tags[i] = owners[i].c_str();
+    }
+
+    for (int i = 0; i < 128; ++i) {
+        helix::async_lifetime::note_skipped(tags[i]);
+    }
+
+    auto snap = helix::async_lifetime::take_snapshot();
+    REQUIRE(snap.total == 128);
+    REQUIRE(snap.other_count == 64);
+    // 64 tracked + 1 "(other)" entry
+    REQUIRE(snap.entries.size() == 65);
+    // "(other)" should be the largest entry (64 vs 1 each for the tracked tags)
+    REQUIRE(snap.entries.front().tag == "(other)");
+    REQUIRE(snap.entries.front().count == 64);
+}
+
+TEST_CASE("async_lifetime quiet tags release their slots", "[lifetime_guard][telemetry]") {
+    drain_skip_counters();
+
+    // Saturate every tracked slot, then drain. All of them go quiet, so the
+    // drain must hand their slots back.
+    const size_t kSlots = helix::async_lifetime::kMaxTrackedTags;
+    std::vector<std::string> owners(kSlots);
+    for (size_t i = 0; i < kSlots; ++i) {
+        owners[i] = "saturating_tag_" + std::to_string(i);
+        helix::async_lifetime::note_skipped(owners[i].c_str());
+    }
+
+    auto first = helix::async_lifetime::take_snapshot();
+    REQUIRE(first.total == kSlots);
+    REQUIRE(first.other_count == 0);
+
+    // A producer that only turns hot in a later window must still be named.
+    // Without slot release it lands in "(other)" and the tag — the one field
+    // that identifies which owner is dying with pending work — is lost.
+    helix::async_lifetime::note_skipped("late_producer");
+    auto second = helix::async_lifetime::take_snapshot();
+
+    REQUIRE(second.other_count == 0);
+    REQUIRE(second.entries.size() == 1);
+    REQUIRE(second.entries[0].tag == "late_producer");
+    REQUIRE(second.entries[0].count == 1);
+}
+
+TEST_CASE("async_lifetime a producer hot in consecutive windows stays named",
+          "[lifetime_guard][telemetry]") {
+    drain_skip_counters();
+
+    // Fill every slot but keep ONE producer hot across both windows. Slots are
+    // released on every drain, so the hot tag re-claims one — what matters is
+    // that it is still reported by name, never rolled into "(other)".
+    const size_t kSlots = helix::async_lifetime::kMaxTrackedTags;
+    std::vector<std::string> owners(kSlots - 1);
+    for (size_t i = 0; i < kSlots - 1; ++i) {
+        owners[i] = "filler_tag_" + std::to_string(i);
+        helix::async_lifetime::note_skipped(owners[i].c_str());
+    }
+    helix::async_lifetime::note_skipped("persistent_producer");
+
+    auto first = helix::async_lifetime::take_snapshot();
+    REQUIRE(first.total == kSlots);
+    REQUIRE(first.other_count == 0);
+
+    helix::async_lifetime::note_skipped("persistent_producer");
+    auto second = helix::async_lifetime::take_snapshot();
+
+    REQUIRE(second.total == 1);
+    REQUIRE(second.other_count == 0);
+    REQUIRE(second.entries.size() == 1);
+    REQUIRE(second.entries[0].tag == "persistent_producer");
+    REQUIRE(second.entries[0].count == 1);
+}
+
+TEST_CASE("async_lifetime repeated tags after snapshot count fresh",
+         "[lifetime_guard][telemetry]") {
+    drain_skip_counters();
+
+    helix::async_lifetime::note_skipped("TagA");
+    helix::async_lifetime::note_skipped("TagA");
+    auto first = helix::async_lifetime::take_snapshot();
+    REQUIRE(first.total == 2);
+
+    // Same tag again after the snapshot — should count as 1, not 3
+    helix::async_lifetime::note_skipped("TagA");
+    auto second = helix::async_lifetime::take_snapshot();
+    REQUIRE(second.total == 1);
+    REQUIRE(second.entries.size() == 1);
+    REQUIRE(second.entries[0].tag == "TagA");
+    REQUIRE(second.entries[0].count == 1);
+}
+
+// ============================================================================
+// Integration: skip paths actually invoke note_skipped
+// ============================================================================
+
+TEST_CASE_METHOD(LVGLTestFixture, "AsyncLifetimeGuard::defer skip path increments counter",
+                 "[lifetime_guard][telemetry]") {
+    drain_skip_counters();
+
+    {
+        AsyncLifetimeGuard guard;
+        guard.defer("TestProducer::guarded_callback", []() { /* never runs */ });
+        // guard destroyed here — invalidate() called in destructor
+    }
+
+    helix::ui::UpdateQueue::instance().drain();
+
+    auto snap = helix::async_lifetime::take_snapshot();
+    REQUIRE(snap.total == 1);
+    REQUIRE(snap.entries.size() == 1);
+    REQUIRE(snap.entries[0].tag == "TestProducer::guarded_callback");
+    REQUIRE(snap.entries[0].count == 1);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "LifetimeToken::defer skip path increments counter",
+                 "[lifetime_guard][telemetry]") {
+    drain_skip_counters();
+
+    AsyncLifetimeGuard guard;
+    auto tok = guard.token();
+    guard.invalidate();
+    tok.defer("TestProducer::token_defer", []() { /* never runs */ });
+
+    helix::ui::UpdateQueue::instance().drain();
+
+    auto snap = helix::async_lifetime::take_snapshot();
+    REQUIRE(snap.total == 1);
+    REQUIRE(snap.entries[0].tag == "TestProducer::token_defer");
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "AsyncLifetimeGuard::bg_cb skip path increments counter",
+                 "[lifetime_guard][telemetry]") {
+    drain_skip_counters();
+
+    {
+        AsyncLifetimeGuard guard;
+        auto cb = guard.bg_cb("TestProducer::bg_cb", [](int /*v*/) { /* never runs */ });
+        guard.invalidate();
+        cb(42); // queues via queue_update; will skip on drain
+    }
+
+    helix::ui::UpdateQueue::instance().drain();
+
+    auto snap = helix::async_lifetime::take_snapshot();
+    REQUIRE(snap.total == 1);
+    REQUIRE(snap.entries[0].tag == "TestProducer::bg_cb");
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "Non-skipped callbacks do NOT increment counter",
+                 "[lifetime_guard][telemetry]") {
+    drain_skip_counters();
+
+    bool ran = false;
+    {
+        AsyncLifetimeGuard guard;
+        guard.defer("TestProducer::runs", [&ran]() { ran = true; });
+        helix::ui::UpdateQueue::instance().drain(); // runs while guard still alive
+        REQUIRE(ran);
+        // guard destroyed here
+    }
+
+    helix::ui::UpdateQueue::instance().drain(); // nothing queued
+
+    auto snap = helix::async_lifetime::take_snapshot();
+    REQUIRE(snap.total == 0);
+    REQUIRE(snap.entries.empty());
 }

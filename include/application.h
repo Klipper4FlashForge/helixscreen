@@ -5,13 +5,17 @@
 
 #include "ui_observer_guard.h"
 
+#include "async_lifetime_guard.h"
 #include "cli_args.h"
 #include "lvgl/lvgl.h"
 #include "main_loop_handler.h"
 #include "splash_screen_manager.h"
 #include "xml_hot_reloader.h"
 
+#include "wizard_step.h" // helix::wizard::StepId
+
 #include <memory>
+#include <vector>
 
 // Forward declarations
 namespace helix {
@@ -123,6 +127,15 @@ class Application {
     // rebinds after a targeted hardware-reconfig wizard page finishes. Marshals to
     // the main thread internally; safe to call from a main-thread on_complete.
     void reapply_hardware_roles();
+    // Offer to run the hardware wizard steps a Klipper-down setup could not show
+    // (#1160). Main thread only — shows a modal. Both answers settle the debt.
+    void prompt_deferred_hardware_setup(std::vector<helix::wizard::StepId> steps);
+    // Run the accepted offer as a targeted wizard session, fired by a one-shot
+    // timer so the wizard is built after the modal's exit animation rather than
+    // underneath it. Consumes m_pending_hardware_setup_steps.
+    void launch_deferred_hardware_setup();
+    // Clear this printer's deferred-hardware-setup marker and persist it.
+    void settle_deferred_hardware_setup();
     lv_obj_t* create_overlay_panel(lv_obj_t* screen, const char* component_name,
                                    const char* display_name);
     void init_action_prompt();
@@ -130,6 +143,18 @@ class Application {
     void restore_flush_callback();
 
     // Owned managers (in initialization order)
+    /// Expires the callbacks Application defers to the main thread — the
+    /// hardware-role reapply, the two ActionPrompt modal hops off the WebSocket
+    /// thread, and the wizard-cancel soft restart. Invalidated explicitly at the
+    /// top of shutdown() rather than relying on member destruction order: the
+    /// owned subsystems below are what those callbacks touch, and a guard that
+    /// only expired via its own destructor would still read as live while those
+    /// members were being torn down. Application is a stack local in main() with
+    /// no deinit_subjects(), so shutdown()/destruction is the only teardown
+    /// point — this is debt migrated to the sanctioned form, not a live
+    /// use-after-free (#1165).
+    helix::AsyncLifetimeGuard m_async_lifetime;
+
     std::unique_ptr<DisplayManager> m_display;
     std::unique_ptr<SubjectInitializer> m_subjects;
     std::unique_ptr<MoonrakerManager> m_moonraker;
@@ -214,6 +239,13 @@ class Application {
     // Guards the discovery-triggered targeted hardware-reconfig wizard so it launches
     // at most once per connection. Reset when a new hardware discovery begins.
     bool m_targeted_reconfig_shown = false;
+    // Guards the deferred hardware-setup offer (#1160) so a reconnect within one
+    // session cannot re-ask. The persisted per-printer marker is what stops it
+    // across sessions — cleared as soon as the user answers either way.
+    bool m_hardware_setup_prompt_shown = false;
+    // Steps the deferred hardware-setup offer will run if accepted. Held here
+    // because modal_show_confirmation() carries a single void* user_data.
+    std::vector<helix::wizard::StepId> m_pending_hardware_setup_steps;
     // Guards the ZMOD persistent-z-offset enablement (SAVE_ZMOD_DATA LOAD_ZOFFSET=1)
     // so it is sent at most once per app session. Intentionally NOT reset on reconnect.
     bool m_zmod_zoffset_enabled = false;

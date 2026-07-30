@@ -6,7 +6,7 @@
 <!-- Patterns for the firmware-noise filter ship per-printer in printer_database.json -->
 <component>
   <view name="console_settings_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="Console Settings" title_tag="Console Settings"
+        extends="overlay_panel" title="Console Settings" title_tag="Console Settings"
         bg_color="#screen_bg">
     <!-- Content Area - rows handle their own padding -->
     <lv_obj name="overlay_content" width="100%" flex_grow="1" style_pad_top="0" scrollable="true" flex_flow="column">

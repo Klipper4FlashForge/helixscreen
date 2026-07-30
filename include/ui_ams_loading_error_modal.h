@@ -47,6 +47,20 @@ class AmsLoadingErrorModal : public Modal {
         dismiss_callback_ = std::move(callback);
     }
 
+    /**
+     * @brief Hide the modal WITHOUT firing the dismiss callback
+     *
+     * For dismissals the user did not ask for: the condition that raised the
+     * error resolved on its own (the AMS left ERROR, the print resumed), so the
+     * dialog no longer describes reality. The dismiss callback is the wrong
+     * thing to run here — it clears backend fault state that is already clear
+     * and arms the re-show cooldown, which would swallow a genuinely new error
+     * arriving in the next few seconds.
+     *
+     * No-op when the modal is not visible.
+     */
+    void dismiss_silently();
+
     // Modal interface
     [[nodiscard]] const char* get_name() const override {
         return "AMS Loading Error Modal";
@@ -67,6 +81,7 @@ class AmsLoadingErrorModal : public Modal {
     RetryCallback retry_callback_;
     DismissCallback dismiss_callback_;
     bool retry_in_progress_ = false; ///< Suppresses dismiss callback during retry
+    bool silent_dismiss_ = false;    ///< Suppresses dismiss callback for a programmatic hide
 };
 
 } // namespace helix::ui

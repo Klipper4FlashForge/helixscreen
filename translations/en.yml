@@ -37,6 +37,7 @@ translations:
   -- kWh: -- kWh
   --°C: --°C
   -0.5 Hz: -0.5 Hz
+  '...': '...'
   0 = computed: 0 = computed
   0 events queued: 0 events queued
   0 slots: 0 slots
@@ -514,6 +515,10 @@ translations:
   Connected Time: Connected Time
   Connected to: Connected to
   'Connected to ': 'Connected to '
+  ? Connected to Moonraker, but Klipper is not running. You can continue — HelixScreen will show the Klipper error, and hardware detection stays limited until Klipper starts.
+  : Connected to Moonraker, but Klipper is not running. You can continue — HelixScreen will show the Klipper error, and hardware detection stays limited until Klipper starts.
+  ? Connected to Moonraker, but printer discovery did not finish. You can continue — hardware detection stays limited until the printer responds.
+  : Connected to Moonraker, but printer discovery did not finish. You can continue — hardware detection stays limited until the printer responds.
   Connected to {}: Connected to {}
   Connected! Discovering printer...: Connected! Discovering printer...
   Connected, discovering...: Connected, discovering...
@@ -1045,6 +1050,7 @@ translations:
   Heating Bed...: Heating Bed...
   Heating Nozzle...: Heating Nozzle...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Heating to %d\xC2\xB0C... %.0f\xC2\xB0C
+  Heating to {}°C before {}...: Heating to {}°C before {}...
   Heating to {}°C for {}...: Heating to {}°C for {}...
   Heating to {}°C...: Heating to {}°C...
   Heating...: Heating...
@@ -1092,6 +1098,7 @@ translations:
     pushed back into the box on eject (mm)
   How many labels to print: How many labels to print
   How the toolhead icon appears: How the toolhead icon appears
+  Hub: Hub
   Humidity: Humidity
   Hyperlapse: Hyperlapse
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: Hyperlapse
@@ -1170,6 +1177,8 @@ translations:
     (have {})'
   Invalid status response from printer: Invalid status response from printer
   Issue description: Issue description
+  It's a new spool: It's a new spool
+  Jammed at the Toolhead: Jammed at the Toolhead
   Job Queue: Job Queue
   'Jog failed: {}': 'Jog failed: {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: Join
@@ -1306,6 +1315,7 @@ translations:
   Macro handles heating: Macro handles heating
   Macro may still be running — response timed out: Macro may still be running — response
     timed out
+  "Macro stopped: printer has no '{}' command": "Macro stopped: printer has no '{}' command"
   Macro to cancel an active print: Macro to cancel an active print
   Macro to clean/wipe the nozzle: Macro to clean/wipe the nozzle
   Macro to load filament into extruder: Macro to load filament into extruder
@@ -1508,6 +1518,7 @@ translations:
   Not found (strobe only): Not found (strobe only)
   Not found (use phone app): Not found (use phone app)
   Not in your spools? Set it up: Not in your spools? Set it up
+  Not now: Not now
   Not yet calibrated: Not yet calibrated
   Notes: Notes
   Notes (optional): Notes (optional)
@@ -1528,6 +1539,7 @@ translations:
   Nozzle Temp: Nozzle Temp
   Nozzle Temperature: Nozzle Temperature
   Nozzle Temps: Nozzle Temps
+  Nozzle did not reach {}°C — {} cancelled: Nozzle did not reach {}°C — {} cancelled
   Nozzle min cannot exceed max: Nozzle min cannot exceed max
   Nozzle target set to {}°C: Nozzle target set to {}°C
   Nozzle temp must be 100-500°C: Nozzle temp must be 100-500°C
@@ -1747,6 +1759,7 @@ translations:
     — make sure it's on and in range
   Printer doesn't expose the expected service — wrong device?: Printer doesn't expose
     the expected service — wrong device?
+  Printer hardware detected: Printer hardware detected
   Printer image set to auto-detect: Printer image set to auto-detect
   Printer is not paired — pair it first: Printer is not paired — pair it first
   Printer name: Printer name
@@ -1880,6 +1893,7 @@ translations:
   Requires Moonraker-Timelapse plugin: Requires Moonraker-Timelapse plugin
   Resend write failed at chunk {}: Resend write failed at chunk {}
   Reset: Reset
+  Reset CFS: Reset CFS
   Reset Home Screen?: Reset Home Screen?
   Reset Speed & Flow to 100%: Reset Speed & Flow to 100%
   Reset all settings and restart wizard: Reset all settings and restart wizard
@@ -2088,6 +2102,7 @@ translations:
     Strobe Light Tachometer, myStroboscope'
   Set local timezone for time display: Set local timezone for time display
   Set logging verbosity for troubleshooting: Set logging verbosity for troubleshooting
+  Set up: Set up
   Set up your label printer in Settings: Set up your label printer in Settings
   Settings: Settings
   Settings Snapshot: Settings Snapshot
@@ -2221,6 +2236,9 @@ translations:
   Stop failed: Stop failed
   Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds.: Stop printing \"{}\"?\n\nThis
     cannot be undone after 5 seconds.
+  Stopped between Hub and Toolhead: Stopped between Hub and Toolhead
+  Stopped between Lane and Hub: Stopped between Lane and Hub
+  Stopped between Spool and Lane: Stopped between Spool and Lane
   Stops all motion. Requires firmware restart.: Stops all motion. Requires firmware
     restart.
   Stow: Stow
@@ -2312,6 +2330,7 @@ translations:
     interfering with prints. You can re-enable it in Settings > Display.
   : The animated screensaver has been turned off on this device to prevent it from
     interfering with prints. You can re-enable it in Settings > Display.
+  The filament system reported an error: The filament system reported an error
   The heater will cycle on and off several times.: The heater will cycle on and off
     several times.
   ? The motor vibrates the belt while a strobe light flashes at the same frequency.
@@ -2352,6 +2371,7 @@ translations:
   : This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \"Timer Too Close\" error or restart mid-test. Continue anyway?
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
   : This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
+  This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?
   This file was sliced for {} but {} is loaded.: This file was sliced for {} but {}
     is loaded.
   This is exactly the data that will be sent: This is exactly the data that will be
@@ -2645,6 +2665,7 @@ translations:
     configured!
   Your printer has an automatic filament changer: Your printer has an automatic filament
     changer
+  Your printer was offline during setup, so hardware options were skipped. Set them up now?: Your printer was offline during setup, so hardware options were skipped. Set them up now?
   Z: Z
   Z Calibration: Z Calibration
   Z Movement: Z Movement

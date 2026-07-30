@@ -30,6 +30,7 @@
 
 // Forward declarations
 class MoonrakerAPI;
+class SpoolmanOverlayTestAccess;
 
 namespace helix::ui {
 
@@ -118,6 +119,15 @@ class SpoolmanOverlay : public OverlayBase {
      */
     void on_activate() override;
 
+    /**
+     * @brief Release this overlay's Spoolman poll reference when it is dismissed
+     *
+     * The overlay takes a reference while sync is enabled; without giving it
+     * back on dismissal the manager's refcount can never reach zero and the
+     * poll timer runs for the life of the process.
+     */
+    void on_deactivate() override;
+
     //
     // === Public API ===
     //
@@ -200,6 +210,22 @@ class SpoolmanOverlay : public OverlayBase {
      */
     void update_ui_from_subjects();
 
+    /**
+     * @brief Take or release this overlay's single SpoolmanManager poll reference
+     *
+     * SpoolmanManager's polling is refcounted, so every start must be matched by
+     * exactly one stop. The sync setting is applied more than once per visit —
+     * load_from_database() re-runs on every show()/refresh() and its key-fallback
+     * chain can call apply_sync() again — so the calls have to be idempotent.
+     * Tracking ownership here means a repeated apply cannot take a second
+     * reference and a repeated release cannot steal another panel's.
+     *
+     * Mirrors AmsPanel's holds_poll_ref_ guard.
+     *
+     * @param want_ref true to hold a poll reference, false to release it
+     */
+    void set_poll_ref(bool want_ref);
+
     //
     // === Static Callbacks ===
     //
@@ -241,6 +267,9 @@ class SpoolmanOverlay : public OverlayBase {
 
     /// MoonrakerAPI for database access (not owned)
     MoonrakerAPI* api_ = nullptr;
+
+    /// True while this overlay holds one SpoolmanManager poll reference
+    bool holds_poll_ref_ = false;
 
     /// Where Moonraker's loaded config lives, resolved from server.config before each
     /// write. Defaults to the config root, which is correct on stock Klipper installs.
@@ -397,6 +426,8 @@ class SpoolmanOverlay : public OverlayBase {
     lv_obj_t* connect_btn_ = nullptr;
     lv_obj_t* setup_card_ = nullptr;
     lv_obj_t* status_card_ = nullptr;
+
+    friend class ::SpoolmanOverlayTestAccess;
 };
 
 /**

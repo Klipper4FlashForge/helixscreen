@@ -40,6 +40,12 @@ class PrinterStateTestAccess {
   public:
     static void reset(PrinterState& ps) {
         helix::ui::UpdateQueueTestAccess::drain(helix::ui::UpdateQueue::instance());
+        // Drop the discovered fan list before the subjects go away. init_fans()
+        // carries live readings across a re-init for fans that persist (#1181),
+        // so a leaked fans_ now leaks speed_percent/ever_ran/rpm into the next
+        // test instead of being silently zeroed. Re-initing with an empty list is
+        // the public way to clear the list and expire every per-fan subject.
+        ps.fan_state_.init_fans({});
         ps.deinit_subjects();
         ps.printer_type_.clear();
         ps.pre_print_option_set_ = PrePrintOptionSet();

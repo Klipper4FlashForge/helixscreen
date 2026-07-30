@@ -4,6 +4,7 @@
 #pragma once
 
 #include "app_motion_activity.h"
+#include "async_lifetime_guard.h"
 #include "capability_overrides.h"
 #include "hardware_validator.h"
 #include "lvgl/lvgl.h"
@@ -87,6 +88,29 @@ enum class PrintJobState {
     CANCELLED = 4, ///< Print cancelled by user (Moonraker: "cancelled")
     ERROR = 5      ///< Print failed with error (Moonraker: "error")
 };
+
+/**
+ * @brief True while a print job still owns the toolhead — PRINTING or PAUSED.
+ *
+ * A paused print is NOT a safe state for toolhead motion: the nozzle is parked
+ * over (or in) the part and the job resumes from wherever it is left. On
+ * loadcell-Z printers a G28 probes the nozzle DOWN into the bed, so a homing
+ * move issued while paused collides with the print exactly as it would
+ * mid-print (bundle XWPBR2DX, commit 329e731e9).
+ *
+ * Single source of truth for the AMS backend guard AND the UI affordances that
+ * must agree with it — a button that is offered but always refused is a dead
+ * end for the user (bundle JX2FVRB9).
+ *
+ * The `print_active` subject (get_print_active_subject()) is the subject-shaped
+ * equivalent, derived from the raw print_stats.state string by
+ * PrinterPrintState::status_indicates_active_print(). The two agree by
+ * construction; UI code that already has a subject should read that instead of
+ * reaching for the enum.
+ */
+[[nodiscard]] constexpr bool print_occupies_toolhead(PrintJobState state) {
+    return state == PrintJobState::PRINTING || state == PrintJobState::PAUSED;
+}
 
 /**
  * @brief Terminal outcome of a print job (for UI persistence)
@@ -988,6 +1012,13 @@ class PrinterState {
                    const helix::FanRoleConfig& roles = {},
                    const std::unordered_map<std::string, double>& max_power = {}) {
         fan_state_.init_fans(fan_objects, roles, max_power);
+    }
+
+    /// Re-apply fan roles to the already-discovered fans. See
+    /// PrinterFanState::apply_roles — use this, not init_fans, when the hardware
+    /// has not changed and only the role mapping has.
+    void apply_fan_roles(const helix::FanRoleConfig& roles) {
+        fan_state_.apply_roles(roles);
     }
 
     /**
@@ -1941,7 +1972,9 @@ class PrinterState {
      *
      * @return true if the firmware re-echoes received G-code; false otherwise
      */
-    bool firmware_echoes_gcode() const { return firmware_echoes_gcode_.load(); }
+    bool firmware_echoes_gcode() const {
+        return firmware_echoes_gcode_.load();
+    }
 
     /**
      * @brief Get the pre-print option set for the current printer type
@@ -2119,6 +2152,14 @@ class PrinterState {
 
     // Initialization guard to prevent multiple subject initializations
     bool subjects_initialized_ = false;
+
+    /// Generation guard for the setters that defer their work to the main
+    /// thread. Invalidated by `deinit_subjects()` and by destruction, so a
+    /// callback still queued when the subjects go away is dropped instead of
+    /// running against a torn-down subject tree (#1165, #1146). Distinct from
+    /// the `SubjectLifetime` tokens handed to observers, which are
+    /// `shared_ptr<bool>` death signals and carry no deferral machinery.
+    AsyncLifetimeGuard async_lifetime_;
 
     // Cached display pointer to detect LVGL reinitialization (for test isolation)
     lv_display_t* cached_display_ = nullptr;

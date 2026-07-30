@@ -198,57 +198,57 @@ void MachineLimitsOverlay::on_deactivate() {
 
 void MachineLimitsOverlay::query_and_show(lv_obj_t* /*parent_screen*/) {
     if (api_) {
+        // bg_cb marshals the response onto the main thread and drops it if the
+        // overlay has since been deactivated or torn down, so the body below can
+        // touch members and LVGL freely (#1165).
         api_->advanced().get_machine_limits(
-            [this](const MachineLimits& limits) {
-                // Capture limits by value and defer to main thread for LVGL calls
-                helix::ui::queue_update([this, limits]() {
-                    spdlog::info("[{}] Got machine limits: vel={}, accel={}, a2d={}, scv={}",
-                                 get_name(), limits.max_velocity, limits.max_accel,
-                                 limits.max_accel_to_decel, limits.square_corner_velocity);
+            lifetime_.bg_cb("MachineLimitsOverlay::query_and_show",
+                            [this](const MachineLimits& limits) {
+                                spdlog::info(
+                                    "[{}] Got machine limits: vel={}, accel={}, a2d={}, scv={}",
+                                    get_name(), limits.max_velocity, limits.max_accel,
+                                    limits.max_accel_to_decel, limits.square_corner_velocity);
 
-                    // Store both current and original for reset
-                    current_limits_ = limits;
-                    original_limits_ = limits;
+                                // Store both current and original for reset
+                                current_limits_ = limits;
+                                original_limits_ = limits;
 
-                    // Update display and sliders
-                    update_display();
-                    update_sliders();
+                                // Update display and sliders
+                                update_display();
+                                update_sliders();
 
-                    // Update read-only Z values
-                    if (overlay_root_) {
-                        lv_obj_t* z_vel_row =
-                            lv_obj_find_by_name(overlay_root_, "row_max_z_velocity");
-                        if (z_vel_row) {
-                            lv_obj_t* value = lv_obj_find_by_name(z_vel_row, "value");
-                            if (value) {
-                                char buf[32];
-                                helix::format::format_speed_mm_s(limits.max_z_velocity, buf,
-                                                                 sizeof(buf));
-                                lv_label_set_text(value, buf);
-                            }
-                        }
-                        lv_obj_t* z_accel_row =
-                            lv_obj_find_by_name(overlay_root_, "row_max_z_accel");
-                        if (z_accel_row) {
-                            lv_obj_t* value = lv_obj_find_by_name(z_accel_row, "value");
-                            if (value) {
-                                char buf[32];
-                                helix::format::format_accel_mm_s2(limits.max_z_accel, buf,
-                                                                  sizeof(buf));
-                                lv_label_set_text(value, buf);
-                            }
-                        }
-                    }
-                });
-            },
-            [this](const MoonrakerError& err) {
-                // Capture error by value and defer to main thread for LVGL calls
-                helix::ui::queue_update([this, err]() {
+                                // Update read-only Z values
+                                if (overlay_root_) {
+                                    lv_obj_t* z_vel_row =
+                                        lv_obj_find_by_name(overlay_root_, "row_max_z_velocity");
+                                    if (z_vel_row) {
+                                        lv_obj_t* value = lv_obj_find_by_name(z_vel_row, "value");
+                                        if (value) {
+                                            char buf[32];
+                                            helix::format::format_speed_mm_s(limits.max_z_velocity,
+                                                                             buf, sizeof(buf));
+                                            lv_label_set_text(value, buf);
+                                        }
+                                    }
+                                    lv_obj_t* z_accel_row =
+                                        lv_obj_find_by_name(overlay_root_, "row_max_z_accel");
+                                    if (z_accel_row) {
+                                        lv_obj_t* value = lv_obj_find_by_name(z_accel_row, "value");
+                                        if (value) {
+                                            char buf[32];
+                                            helix::format::format_accel_mm_s2(limits.max_z_accel,
+                                                                              buf, sizeof(buf));
+                                            lv_label_set_text(value, buf);
+                                        }
+                                    }
+                                }
+                            }),
+            lifetime_.bg_cb(
+                "MachineLimitsOverlay::query_and_show_error", [this](const MoonrakerError& err) {
                     spdlog::error("[{}] Failed to get machine limits: {}", get_name(), err.message);
                     ToastManager::instance().show(ToastSeverity::ERROR,
                                                   lv_tr("Failed to get limits"), 2000);
-                });
-            });
+                }));
     } else {
         // No API - overlay is already shown via push_overlay
         spdlog::warn("[{}] No API available, showing defaults", get_name());
@@ -393,25 +393,22 @@ void MachineLimitsOverlay::apply_limits() {
         return;
     }
 
-    auto token = lifetime_.token();
+    // bg_cb, like query_and_show above: the whole body runs on the main thread
+    // after a generation re-check, so no liveness test belongs on the bg side.
+    // The hand-rolled guards these replaced re-checked on the background thread
+    // before deferring, which was dead code and tripped the runtime L081
+    // detector on every reply (#1165).
     api_->advanced().set_machine_limits(
         current_limits_,
-        [this, token]() {
-            if (token.expired())
-                return;
-            token.defer([this]() {
-                spdlog::debug("[{}] Machine limits applied successfully", get_name());
-            });
-        },
-        [this, token](const MoonrakerError& err) {
-            if (token.expired())
-                return;
-            token.defer([this, err]() {
+        lifetime_.bg_cb(
+            "MachineLimitsOverlay::apply_limits",
+            [this]() { spdlog::debug("[{}] Machine limits applied successfully", get_name()); }),
+        lifetime_.bg_cb(
+            "MachineLimitsOverlay::apply_limits_error", [this](const MoonrakerError& err) {
                 spdlog::error("[{}] Failed to apply machine limits: {}", get_name(), err.message);
                 ToastManager::instance().show(ToastSeverity::ERROR, lv_tr("Failed to apply limits"),
                                               2000);
-            });
-        });
+            }));
 }
 
 // ============================================================================

@@ -1,18 +1,18 @@
 {
-    "state": false,
-    "cut": false,
-    "cut_cmd": "AFC",
-    "cut_dist": 50.0,
-    "cut_clear": 120.0,
-    "cut_min_length": 300.0,
-    "cut_servo_pass_angle": 10.0,
-    "cut_servo_clip_angle": 180.0,
-    "cut_servo_prep_angle": 80.0,
-    "lanes": [
-        "lane1",
-        "lane2",
-        "lane3",
-        "lane4"
-    ],
-    "afc_bowden_length": 1285.0
+  "afc_bowden_length": 1285.0,
+  "cut": false,
+  "cut_clear": 120.0,
+  "cut_cmd": "AFC",
+  "cut_dist": 50.0,
+  "cut_min_length": 300.0,
+  "cut_servo_clip_angle": 180.0,
+  "cut_servo_pass_angle": 10.0,
+  "cut_servo_prep_angle": 80.0,
+  "lanes": [
+    "lane1",
+    "lane2",
+    "lane3",
+    "lane4"
+  ],
+  "state": true
 }

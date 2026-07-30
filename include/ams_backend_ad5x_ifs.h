@@ -135,6 +135,18 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // the firmware still considers seated.
     [[nodiscard]] bool can_unload_from_toolhead(int slot_index) const override;
 
+    /// update_slot_from_state() stamps SlotStatus::LOADED on the seated lane
+    /// from the firmware's own active-lane pointer plus the head sensor — the
+    /// same two inputs system_info_.filament_loaded is assigned from — and it
+    /// re-runs on every path that moves either one, including the
+    /// FFMInfo.channel adoption in parse_adventurer_json. Reading that stamp
+    /// therefore never contradicts the aggregate pair, and it survives the #995
+    /// runout that drops a lane's port sensor while its filament is still at the
+    /// toolhead (prestonbrown/helixscreen#1199).
+    [[nodiscard]] bool has_per_slot_loaded_authority() const override {
+        return true;
+    }
+
     // Seated-channel-aware: a non-seated lane cold-ejects, so the menu reads
     // "Eject" even when the firmware dropped its active pointer. Mirrors
     // unload_filament()'s eject-vs-toolhead routing (drift-guarded by test).
@@ -332,6 +344,7 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
 
   private:
     friend class Ad5xIfsTestAccess;
+    friend class Ad5xPerSlotLoadedHelper;
 
     void parse_save_variables(const nlohmann::json& vars);
     void parse_port_sensor(int port_1based, bool detected);
@@ -484,6 +497,16 @@ class AmsBackendAd5xIfs : public AmsSubscriptionBackend {
     // echoes RUN_ZCOLOR/CHANGE_ZCOLOR tokens which would otherwise re-arm
     // schedule_zcolor_query() at ~2-4 Hz).
     bool on_gcode_response_line(const std::string& line);
+    // Apply a zmod COLOR-menu per-slot row as firmware truth. The root "Select
+    // print materials" dialog renders one row per slot carrying that slot's
+    // CURRENT color/material:
+    //   // action:prompt_button 1: SILK|RUN_ZCOLOR SLOT=1 HEX=F330F9 TYPE=SILK|primary|F330F9
+    // zmod re-renders it after every edit, so the row lands ~100ms after the
+    // user's tap — well ahead of the debounced GET_ZCOLOR, which can race the
+    // firmware write and return the pre-edit value (#1065, bundle 482NB943:
+    // a type change stayed stale on screen for 40s). Returns true if a row was
+    // recognised and applied. Caller must NOT hold mutex_.
+    bool apply_color_menu_slot_row(const std::string& line);
     void register_klippy_ready_listener();
     // Re-query `gcode_macro _ifs_vars` and update the latch + has_ifs_vars_.
     // Fired from notify_klippy_ready so a FIRMWARE_RESTART that adds or

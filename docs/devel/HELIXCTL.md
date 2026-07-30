@@ -30,6 +30,19 @@ helix-screen ctl                      # no command → also drops into the REPL
 > builds it; to put it in a device dev image, build with
 > `make PLATFORM_TARGET=<t> ENABLE_REMOTE_CONTROL=yes`.
 
+### Machine-readable output — `--json`
+
+`helix-screen ctl --json <command>` prints the raw JSON-RPC `result` on one line and
+exits 0. A **server** error prints the raw `error` object to stderr and exits non-zero;
+a **client-side** usage error (unknown command, missing argument, no instance at the
+socket) stays human-readable on stderr and also exits non-zero. This split means a
+script can trust the exit code without inspecting the payload, while a typo still
+produces a sentence rather than a protocol object.
+
+The REPL ignores `--json` — formatted output is the reason the REPL exists.
+
+    helix-screen ctl --json current | jq -r .panel
+
 ## Enabling the server
 
 The control server runs as a background thread inside `helix-screen`.
@@ -168,6 +181,7 @@ live breadcrumb of the navigation stack, e.g. `controls / motion_panel_0 > `.
 | `set_value <target> <v>` | Set a value (slider, switch, dropdown, textarea) |
 | `scroll <target> [dx dy]` | Scroll a widget into view, or by a delta |
 | `focus <target>` | Focus a widget through its input group. Fires the real `LV_EVENT_FOCUSED`, so a registered textarea raises the on-screen keyboard — `click` does not, and leaves it hidden. Fails if the widget is not in an input group |
+| `text <target>` | Read a widget's text: `lv_label`, `lv_textarea`, or `lv_dropdown` (its selected option). Descends into a composite (e.g. a button wrapping a label) the same way `click` descends to a value-control. Raises rather than returning `""` if the widget has no text concept at all — an empty label and "not a text widget" are different facts |
 | `geom <target> [depth]` | Measured geometry: position, size, declared-vs-computed size, flex/scroll state |
 | `get_const [scope] <name>` | Resolve an XML `#const` to the value the renderer actually sees |
 
@@ -322,7 +336,7 @@ reads the resolved value, so it shows which one is really in effect.
 ### Screenshots & sample-data screens
 | Command | Meaning |
 |---------|---------|
-| `screenshot [path]` | Capture a screenshot. With no path, a timestamped `.bmp` in the runtime dir; a path ending in `.png` is encoded as PNG (in-app, via lodepng). The response reports the file actually written under `path` |
+| `screenshot [path] [--target W] [--stable]` | Capture a screenshot. With no path, a timestamped `.bmp` in the runtime dir; a path ending in `.png` is encoded as PNG (in-app, via lodepng). `--target` crops to a named widget's bounds; `--stable` polls until the pixels stop changing before capturing. The response reports the file actually written under `path`, plus `w`/`h` and `stable_frames` |
 | `demo <name>` | Bring up a screen that can't be reached by navigation in mock mode |
 
 `demo` covers screens that only appear on a real printer event or configured
@@ -333,17 +347,205 @@ state, constructed with representative sample data and the real lifecycle:
 ### Diagnostics & lifecycle
 | Command | Meaning |
 |---------|---------|
+| `wait_idle [--timeout N]` | Block until `UpdateQueue` and `HttpExecutor` are both quiet (default 10s), so a script can gate on real async work instead of a fixed `sleep` |
+| `freeze` | Stop the moving parts for a reproducible capture: `lv_anim_delete_all()` plus `animations_enabled = 0`, and pause every periodic `lv_timer` except two (see below). Returns `{"frozen": true, "timers_paused": N}` |
+| `unfreeze` | Reverse `freeze`: resume exactly the timers it paused, re-enable animations. Returns `{"frozen": false, "timers_resumed": N}` |
 | `log [-n N]` | Tail the app's in-memory log ring buffer (default 50 lines). Printed as raw lines, so it pipes to `grep` |
 | `shutdown` | Ask the app to exit its main loop (`app_request_quit`), running the normal shutdown path |
+| `reset` | Return to the home panel with no overlays or modals open. Returns `{"panel": "home", "overlays_popped": N, "modals_cleared": N, "toasts_cleared": N}` |
 
 `log` reads the same ring buffer the debug bundle's `log_tail` uses — capacity
 is `HELIX_LOG_RING_LINES` (default 2000). It means a scripted run can read the
 app's own log without redirecting stdout to a file first.
 
+#### `reset` — a cheap alternative to rebooting between tests
+
+Booting `helix-screen` costs about two seconds, so a full test corpus shares
+one instance (`tests/ui/conftest.py`'s session-scoped `helix_app` fixture) and
+resets it between tests instead of restarting it. `reset` pops every overlay
+off the navigation stack, dismisses every modal, dismisses every toast, and
+switches the base panel to `home` — all through the same live-safe paths the
+UI itself uses (`NavigationManager::go_back()`, `Modal::hide()`,
+`ToastManager::hide()`), never the synchronous, teardown-only
+`ModalStack::clear()` (its only other caller is `Application::shutdown()`,
+where deleting everything synchronously is fine because nothing else is
+running).
+
+`overlays_popped` and `modals_cleared` are exact counts. The overlay count is
+sampled once before any popping starts — rereading it mid-loop wouldn't
+reflect anything, since `go_back()` defers its actual work to the next
+`UpdateQueue` tick even when called from the UI thread. The modal count is
+re-checked per iteration instead, since `Modal::hide()`'s own bookkeeping
+(marking the entry "exiting") *is* synchronous — only the widget deletion is
+deferred. Both loops are capped (overlays at 32, modals at 16): a stack that
+will not drain is a bug, and looping unboundedly on the UI thread would turn
+it into a hang instead of a report. Hitting either cap logs a `spdlog::warn`
+so it doesn't pass silently as "reset just didn't have much to do."
+
+`toasts_cleared` is 0 or 1 — "were there any" — not an exact count.
+`ToastManager` exposes a dismiss-all (`hide()`) but its visible-toast counter
+is private, and adding a public accessor was out of scope for this change; a
+real count is a follow-up for whichever future `toasts` command Tier 2 adds.
+
+`reset()` does not touch mock printer/backend state (`scenario`, subject
+values set via `set`) — only navigation, modals, and toasts. A test that
+leaves the mock in a particular scenario still needs to clean that up itself
+(e.g. in a `try/finally`, so a scenario doesn't leak into whichever test runs
+next in a shared session regardless of how the current one exits).
+
+**`reset` itself is asynchronous — pair it with `wait_idle`.** As noted above,
+`overlays_popped` counts `go_back()` *calls*, each of which only enqueues its
+pop onto the next `UpdateQueue` tick; the RPC returns as soon as those calls
+are issued, not once the pops have actually landed. Calling `reset()` and
+immediately trusting the screen is at `home` with no overlays is exactly the
+race `wait_idle()` exists to close — `tests/ui/conftest.py`'s autouse fixture
+does `reset(); wait_idle()` as a pair for this reason, not `reset()` alone.
+
 From the one-shot client, `quit` and `exit` are accepted as aliases for
 `shutdown`. **In the REPL they are not** — there, `quit`/`exit`/Ctrl-D leave the
 REPL and `shutdown` stops the app, which is the only reading that keeps both
 meanings available.
+
+#### `wait_idle` — what it can and cannot see
+
+`wait_idle` polls two counters from the transport thread — `UpdateQueue` pending
+work (including anything buffered by a `ScopedFreeze` held internally) and `HttpExecutor` in-flight
+items on both lanes — and returns once both read zero on two consecutive
+samples (a single zero reading can land in the gap between one callback
+finishing and the next being enqueued by the work it just completed). A
+timeout names the nonzero counter(s) rather than just saying time ran out.
+
+**Animations are deliberately not one of the counters.** An earlier version of
+this design also counted `lv_anim_count_running()`, but a real UI has
+legitimately perpetual animations, so "zero animations running" is not a
+reachable idle state in general — it is a property of one screen in one
+settings configuration, not of the app having finished its work. Concretely:
+`print_file_detail`'s loading spinner lives inside the eagerly-built
+`print_select_panel`, so its animations run from boot onward regardless of
+which screen is displayed — counting them made `wait_idle` succeed only when
+the `animations_enabled` setting happened to be off. Animation-driven pixel
+churn is covered instead by the frame-hash screenshot gate, which measures
+whether pixels actually stopped changing rather than inferring it from a
+counter. (Separately, that spinner burning three animation timers forever
+while invisible is a real, still-open performance defect, independent of the
+`wait_idle` contract — see the design spec's "Determinism model" for two
+attempted fixes, both reverted, and why.)
+
+It is **best-effort by design**, not a hard guarantee: the enumeration surface is
+large and grows. Known gaps:
+
+| Source | Where | Note |
+|---|---|---|
+| Raw `lv_async_call` | `panel_widget_manager.cpp` (home-panel widget-gate rebuild), `ui_nav_manager.cpp` (overlay-close), `ui_filament_path_layers.cpp`, `grid_edit_mode.cpp` | LVGL exposes only call/cancel — no count API |
+| Thumbnail render thread | `gcode_object_thumbnail_renderer.cpp` | Own `std::thread`, not `HttpExecutor` |
+| GCode geometry build | `ui_gcode_viewer.cpp` (`build_thread_`) | Same |
+| GCode layer/streaming | `gcode_layer_renderer.h`, `gcode_streaming_controller.h` | Same |
+| Mock backends | `moonraker_client_mock.cpp` (`simulation_thread_` + 3 timers), `moonraker_client_mock_print.cpp` (2 timers), `ams_backend_mock.cpp` (6 threads), `wifi_backend_mock.cpp` (2) | Mock mode **adds** nondeterminism |
+| Deferred deletion | `safe_delete_deferred` / `lv_obj_delete_async` / `safe_clean_children` sites | Escapes the queue by design — `pending == 0` does not mean the old subtree is gone |
+
+#### `freeze` / `unfreeze` — the other half of determinism
+
+`freeze` pairs with `wait_idle` for screenshot-quality stability: `wait_idle`
+waits for async work to *land*, `freeze` stops the moving parts so a captured
+frame doesn't change again a moment later. It combines three things:
+
+- `lv_anim_delete_all()` — stop animations already running.
+- Flipping the existing `animations_enabled` **subject** to `0` to prevent new
+  animations from starting (honored at ~51 call sites) — but **not** via
+  `DisplaySettingsManager::set_animations_enabled()`. That setter calls
+  `Config::save()` on every call, so going through it would persist the
+  change to `settings.json` on every `freeze` and write it back on every
+  `unfreeze`. `freeze` is a transient test-mode toggle; a `--remote` dev
+  instance killed or crashed between the two would otherwise leave a real
+  user's config with animations permanently disabled — automated tests never
+  see this because `--test` uses `settings-test.json`. The handler instead
+  reads and writes `DisplaySettingsManager::subject_animations_enabled()`
+  directly (an accessor already public and already used by several widgets to
+  observe this setting), and remembers the real pre-freeze value so `unfreeze`
+  restores it exactly rather than assuming "on".
+- Pausing every periodic `lv_timer` one at a time via `lv_timer_pause()`,
+  **with a two-entry skip list**.
+
+**The skip list, and why a global `lv_timer_enable(false)` cannot be used
+instead:** `UpdateQueue`'s processor is itself an `lv_timer`
+(`include/ui_update_queue.h`), and `RemoteControlServer::execute_on_ui_thread`
+dispatches every handler — including `unfreeze` itself — through
+`helix::ui::queue_update()`. A global timer disable stops that processor along
+with everything else, so the very next command blocks for the 10s UI-thread
+timeout and throws. `freeze` would brick the control channel it arrived on.
+Two timers are therefore left running by identity:
+
+1. `UpdateQueue`'s own timer (exposed via a `timer()` accessor), or the
+   control server can never dispatch another command, `unfreeze` included.
+2. The display refresh timer (`lv_display_get_refr_timer()`), or nothing
+   renders and a frame-hash screenshot gate never observes a new frame.
+
+`unfreeze` resumes exactly the set of timers `freeze` paused — tracked as a
+`std::vector<lv_timer_t*>` on the server — and restores `animations_enabled`
+to its captured pre-freeze value (not unconditionally "on"). A timer
+legitimately deleted while frozen (e.g. panel teardown) is skipped rather than
+dereferenced: `unfreeze` walks the live timer list to confirm each tracked
+pointer still exists before resuming it.
+
+Both ends are idempotent: a `freeze` while already frozen returns the existing
+`timers_paused` count rather than re-scanning (every timer would already read
+paused, so a naive re-scan would track none of them and orphan the original
+set); an `unfreeze` with no prior `freeze` is a no-op returning
+`timers_resumed: 0`, so a defensive `try/finally: unfreeze()` never needs to
+guard whether `freeze` actually ran first.
+
+**Issue `freeze` from a settled screen, not mid-transition.**
+`lv_anim_delete_all()` fires each animation's `deleted_cb`, not its
+`completed_cb` — and overlay teardown (`NavigationManager::overlay_slide_out_complete_cb`,
+`ui_nav_manager.cpp`) is wired to `completed_cb`, since that's what marks the
+close as genuinely finished rather than merely interrupted. Freezing while an
+overlay's close animation is still in flight therefore deletes the animation
+without ever running its completion logic, stranding the overlay: never
+popped, its close callback never invoked. Not reachable from this harness's
+own automated tests (they force `animations_enabled=0` before boot, so overlay
+transitions never animate to begin with — see "Golden corpus scope" in
+`UI_TESTING.md`), but real for a `--remote` dev instance with animations left
+on. Wait for a transition to finish (or don't fight it — freeze right after a
+`navigate`/`click` rather than while one is still resolving) before freezing.
+
+See `docs/devel/specs/2026-07-25-helixctl-ui-test-harness-design.md`
+§ "Determinism model" for the full design rationale.
+
+#### `screenshot --stable` / `--target` — the frame-hash gate
+
+`wait_idle` and `freeze` are both best-effort: neither one can see raw
+`lv_async_call` work, the gcode/thumbnail build threads, or the mock
+backends' own threads (see the gap table above). `--stable` is the black-box
+backstop — it hashes the actual captured pixels (FNV-1a over the composited
+RGBA buffer) and polls, at most 180 samples 16ms apart (~3s), until three
+consecutive frames hash identically. It throws rather than returning a
+possibly-mid-repaint frame if the screen never settles in that window, naming
+the likely fix:
+
+```
+Screen never stabilized: no 3 identical consecutive frames within 3s. Try `freeze` first.
+```
+
+`--stable` measures pixels, not timers — it complements `freeze` (which stops
+the *known* movers) rather than replacing it. The common pattern is both
+together: `freeze` first to kill animations and pause timers, then
+`screenshot --stable` to also rule out whatever `freeze` doesn't enumerate.
+
+`--target <widget>` crops the capture to that widget's bounding box instead of
+the whole screen, clamped to the captured buffer (a widget can extend past the
+screen edge). This is what keeps a golden corpus maintainable: a widget-scoped
+golden only changes when that widget's own pixels change, instead of going red
+every time anything else on screen moves. The crop's `w`/`h` in the response
+match `geom <widget>`'s reported `w`/`h` exactly.
+
+Internally, the server exposes this as three C++ pieces so capture and
+encoding are independent: `helix::capture_frame(CapturedFrame&, lv_obj_t*
+crop_to = nullptr)` (snapshot + top-layer composite + optional crop, no disk
+I/O), `helix::frame_hash(const CapturedFrame&)` (the FNV-1a hash the stability
+loop compares), and `helix::write_frame(const CapturedFrame&, out_path)`
+(encode + write). `save_screenshot()` — still the entry point its three
+`application.cpp` callers use (SIGUSR1, the 'S' key, the auto-screenshot loop
+handler) — is now a thin wrapper over the two.
 
 ### Subjects & scenarios
 | Command | Meaning |

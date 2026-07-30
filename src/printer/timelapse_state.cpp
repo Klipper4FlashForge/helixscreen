@@ -55,6 +55,13 @@ void TimelapseState::deinit_subjects() {
     }
 
     spdlog::trace("[TimelapseState] Deinitializing subjects");
+
+    // Expire any event/reset callbacks still queued on the UpdateQueue. They
+    // capture `this` and write the subjects torn down below; without this the
+    // next drain writes into a deinited subject and lv_subject_notify walks a
+    // stale observer list (#1165, #1146).
+    async_lifetime_.invalidate();
+
     subjects_.deinit_all();
     subjects_initialized_ = false;
     last_notified_progress_ = -1;
@@ -78,7 +85,7 @@ void TimelapseState::handle_timelapse_event(const nlohmann::json& event) {
     if (action == "newframe") {
         // Increment frame count — read+write both inside ui_queue_update
         // since lv_subject_get_int must be called from the UI thread
-        helix::ui::queue_update([this]() {
+        async_lifetime_.defer("TimelapseState::newframe", [this]() {
             int current = lv_subject_get_int(&timelapse_frame_count_);
             lv_subject_set_int(&timelapse_frame_count_, current + 1);
 
@@ -127,7 +134,7 @@ void TimelapseState::handle_timelapse_event(const nlohmann::json& event) {
             }
             last_notified_progress_ = progress;
 
-            helix::ui::queue_update([this, progress]() {
+            async_lifetime_.defer("TimelapseState::render_progress", [this, progress]() {
                 lv_subject_set_int(&timelapse_render_progress_, progress);
                 lv_subject_copy_string(&timelapse_render_status_, lv_tr("rendering"));
             });
@@ -142,15 +149,16 @@ void TimelapseState::handle_timelapse_event(const nlohmann::json& event) {
                 cb = on_render_complete_;
             }
 
-            helix::ui::queue_update([this, filename, cb = std::move(cb)]() {
-                lv_subject_set_int(&timelapse_render_progress_, 0);
-                lv_subject_set_int(&timelapse_frame_count_, 0);
-                lv_subject_copy_string(&timelapse_render_status_, lv_tr("complete"));
-                lv_subject_copy_string(&timelapse_capture_info_, "");
-                if (cb) {
-                    cb(filename);
-                }
-            });
+            async_lifetime_.defer(
+                "TimelapseState::render_complete", [this, filename, cb = std::move(cb)]() {
+                    lv_subject_set_int(&timelapse_render_progress_, 0);
+                    lv_subject_set_int(&timelapse_frame_count_, 0);
+                    lv_subject_copy_string(&timelapse_render_status_, lv_tr("complete"));
+                    lv_subject_copy_string(&timelapse_capture_info_, "");
+                    if (cb) {
+                        cb(filename);
+                    }
+                });
 
             last_notified_progress_ = -1;
             ToastManager::instance().show(ToastSeverity::SUCCESS,
@@ -159,8 +167,9 @@ void TimelapseState::handle_timelapse_event(const nlohmann::json& event) {
             spdlog::info("[TimelapseState] Render complete: {}", filename);
 
         } else if (status == "error") {
-            helix::ui::queue_update(
-                [this]() { lv_subject_copy_string(&timelapse_render_status_, lv_tr("error")); });
+            async_lifetime_.defer("TimelapseState::render_error", [this]() {
+                lv_subject_copy_string(&timelapse_render_status_, lv_tr("error"));
+            });
 
             last_notified_progress_ = -1;
             if (!error_msg.empty()) {
@@ -182,7 +191,7 @@ void TimelapseState::reset() {
         return;
     }
 
-    helix::ui::queue_update([this]() {
+    async_lifetime_.defer("TimelapseState::reset", [this]() {
         lv_subject_set_int(&timelapse_frame_count_, 0);
         lv_subject_set_int(&timelapse_render_progress_, 0);
         lv_subject_copy_string(&timelapse_render_status_, lv_tr("idle"));

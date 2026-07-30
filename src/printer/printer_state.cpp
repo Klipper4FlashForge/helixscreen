@@ -123,6 +123,12 @@ void PrinterState::deinit_subjects() {
 
     spdlog::trace("[PrinterState] deinit_subjects: Deinitializing all subjects");
 
+    // Expire any setter callbacks still queued on the UpdateQueue. They capture
+    // `this` and touch the subjects torn down below (directly or through
+    // apply_dynamic_options()); without this the next drain notifies a freed
+    // observer list (#1165, #1146).
+    async_lifetime_.invalidate();
+
     // Deinit all sub-component subjects
     temperature_state_.deinit_subjects();
     motion_state_.deinit_subjects();
@@ -301,7 +307,7 @@ void PrinterState::update_from_notification(const json& notification) {
     // when subject updates trigger lv_obj_invalidate() during rendering
     auto params = notification["params"];
     if (params.is_array() && !params.empty()) {
-        helix::ui::queue_update([this, state_json = params[0]]() {
+        async_lifetime_.defer("PrinterState::on_status_update", [this, state_json = params[0]]() {
             // Debug check: log if we're somehow in render phase (should never happen)
             if (lvgl_is_rendering()) {
                 spdlog::error("[PrinterState] async status update running during render phase!");
@@ -512,7 +518,8 @@ void PrinterState::reset_for_new_print() {
 void PrinterState::set_printer_connection_state(int state, const char* message) {
     // Thread-safe wrapper: defer LVGL subject updates to main thread
     std::string msg = message ? message : "";
-    helix::ui::queue_update(
+    async_lifetime_.defer(
+        "PrinterState::set_printer_connection_state",
         [this, state, msg]() { set_printer_connection_state_internal(state, msg.c_str()); });
 }
 
@@ -707,7 +714,7 @@ void PrinterState::set_timelapse_available(bool available) {
     // Resynthesize the option set (timelapse is appended dynamically when
     // available) and recompute aggregate visibility — both must run on the
     // main thread.
-    helix::ui::queue_update([this]() {
+    async_lifetime_.defer("PrinterState::set_timelapse_available", [this]() {
         apply_dynamic_options();
         update_gcode_modification_visibility();
     });
@@ -717,7 +724,7 @@ void PrinterState::set_timelapse_default_enabled(bool enabled) {
     // Seed the timelapse pre-print option's default from the global
     // moonraker-timelapse `enabled` setting. Both the member write and the
     // resynthesis must run on the main thread (#1094).
-    helix::ui::queue_update([this, enabled]() {
+    async_lifetime_.defer("PrinterState::set_timelapse_default_enabled", [this, enabled]() {
         timelapse_default_enabled_ = enabled;
         apply_dynamic_options();
         update_gcode_modification_visibility();
@@ -727,7 +734,7 @@ void PrinterState::set_timelapse_default_enabled(bool enabled) {
 void PrinterState::set_helix_plugin_installed(bool installed) {
     // Thread-safe: Use ui_queue_update to update LVGL subject from any thread
     // We handle the async dispatch here because we need to update composite subjects after
-    helix::ui::queue_update([this, installed]() {
+    async_lifetime_.defer("PrinterState::set_helix_plugin_installed", [this, installed]() {
         plugin_status_state_.set_installed(installed);
 
         // Update composite subjects for G-code modification options

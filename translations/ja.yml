@@ -38,6 +38,7 @@ translations:
   -- kWh: -- kWh
   --°C: --°C
   -0.5 Hz: -0.5 Hz
+  '...': ''
   0 = computed: 0 = 自動計算
   0 events queued: 待機中のイベントなし
   0 slots: '{0} スロット'
@@ -469,6 +470,10 @@ translations:
   Connected Time: 接続時間
   Connected to: 接続先
   'Connected to ': '接続先: '
+  ? Connected to Moonraker, but Klipper is not running. You can continue — HelixScreen will show the Klipper error, and hardware detection stays limited until Klipper starts.
+  : ''
+  ? Connected to Moonraker, but printer discovery did not finish. You can continue — hardware detection stays limited until the printer responds.
+  : ''
   Connected to {}: '{} に接続しました'
   Connected! Discovering printer...: 接続完了！プリンターを検出中...
   Connected, discovering...: 接続済み、検出中...
@@ -973,6 +978,7 @@ translations:
   Heating Bed...: ベッド加熱中...
   Heating Nozzle...: ノズル加熱中...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: '%d\xC2\xB0Cに加熱中... %.0f\xC2\xB0C'
+  Heating to {}°C before {}...: ''
   Heating to {}°C for {}...: '{}°Cに加熱中（{}）...'
   Heating to {}°C...: '{}°Cに加熱中...'
   Heating...: 加熱中...
@@ -1017,6 +1023,7 @@ translations:
     (mm)
   How many labels to print: 印刷するラベル枚数
   How the toolhead icon appears: ツールヘッドアイコンの表示スタイル
+  Hub: ''
   Humidity: 湿度
   Hyperlapse: ハイパーラプス
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: ハイパーラプスは一定の時間間隔でフレームを撮影します。非常に長い印刷に適しています。
@@ -1080,6 +1087,8 @@ translations:
   'Invalid sheet template index: {} (have {})': '無効なシートテンプレートインデックス: {} (現在 {})'
   Invalid status response from printer: プリンターからの無効なステータス応答
   Issue description: 問題の説明
+  It's a new spool: ''
+  Jammed at the Toolhead: ''
   Job Queue: ジョブキュー
   'Jog failed: {}': 'ジョグに失敗しました: {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: Discord
@@ -1205,6 +1214,7 @@ translations:
   Macro for physical bed leveling (QGL/Z-Tilt): 物理的ベッドレベリング用マクロ (QGL/Z-Tilt)
   Macro handles heating: マクロが加熱を制御
   Macro may still be running — response timed out: マクロがまだ実行中の可能性があります — 応答タイムアウト
+  "Macro stopped: printer has no '{}' command": ''
   Macro to cancel an active print: アクティブな印刷をキャンセルするマクロ
   Macro to clean/wipe the nozzle: ノズルを清掃/ワイプするマクロ
   Macro to load filament into extruder: フィラメントをエクストルーダーに装填するマクロ
@@ -1395,6 +1405,7 @@ translations:
   Not found (strobe only): 見つかりません (ストロボのみ)
   Not found (use phone app): 見つかりません (スマホアプリを使用)
   Not in your spools? Set it up: スプールにない？登録する
+  Not now: ''
   Not yet calibrated: 未キャリブレーション
   Notes: メモ
   Notes (optional): メモ（オプション）
@@ -1415,6 +1426,7 @@ translations:
   Nozzle Temp: ノズル温度
   Nozzle Temperature: ノズル温度
   Nozzle Temps: ノズル温度
+  Nozzle did not reach {}°C — {} cancelled: ''
   Nozzle min cannot exceed max: ノズル温度の最小値は最大値を超えられません
   Nozzle target set to {}°C: ノズル目標温度を {}°C に設定しました
   Nozzle temp must be 100-500°C: ノズル温度は 100〜500°C にしてください
@@ -1623,6 +1635,7 @@ translations:
   Printer didn't respond — make sure it's on and in range: プリンターが応答しません — 電源が入っており通信範囲内にあることを確認してください
   Printer doesn't expose the expected service — wrong device?: プリンターが想定されるサービスを公開していません
     — デバイスが違う可能性があります
+  Printer hardware detected: ''
   Printer image set to auto-detect: プリンター画像を自動検出に設定しました
   Printer is not paired — pair it first: プリンターがペアリングされていません — 先にペアリングしてください
   Printer name: プリンター名
@@ -1745,6 +1758,7 @@ translations:
   Requires Moonraker-Timelapse plugin: Moonraker-Timelapse プラグインが必要です
   Resend write failed at chunk {}: チャンク {} で再送信の書き込みに失敗しました
   Reset: リセット
+  Reset CFS: CFSをリセット
   Reset Home Screen?: ホーム画面をリセットしますか？
   Reset Speed & Flow to 100%: 速度とフローを100%にリセット
   Reset all settings and restart wizard: すべての設定をリセットしてウィザードを再開
@@ -1933,6 +1947,7 @@ translations:
     Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope'
   Set local timezone for time display: 時刻表示用のローカルタイムゾーンを設定
   Set logging verbosity for troubleshooting: トラブルシューティング用のログの詳細レベルを設定
+  Set up: ''
   Set up your label printer in Settings: 設定でラベルプリンターをセットアップしてください
   Settings: 設定
   Settings Snapshot: 設定スナップショット
@@ -2056,6 +2071,9 @@ translations:
   Stop Print?: 印刷を停止しますか？
   Stop failed: 停止に失敗
   Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds.: '\"{}\" の印刷を停止しますか？\n\n5秒後は取り消せません。'
+  Stopped between Hub and Toolhead: ''
+  Stopped between Lane and Hub: ''
+  Stopped between Spool and Lane: ''
   Stops all motion. Requires firmware restart.: すべての動作を停止します。ファームウェアの再起動が必要です。
   Stow: 格納
   Strobe LED: ストロボLED
@@ -2136,6 +2154,7 @@ translations:
   ? The animated screensaver has been turned off on this device to prevent it from
     interfering with prints. You can re-enable it in Settings > Display.
   : アニメーション付きスクリーンセーバーが印刷に干渉しないよう、このデバイスではオフになっています。設定 > ディスプレイで再度有効にできます。
+  The filament system reported an error: ''
   The heater will cycle on and off several times.: ヒーターは数回オン/オフを繰り返します。
   ? The motor vibrates the belt while a strobe light flashes at the same frequency.
     When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse
@@ -2165,6 +2184,7 @@ translations:
   : このデバイスの RAM は {} MB しかありません。共振キャリブレーションはメモリを大量に消費し、プリンターのファームウェアが \"Timer Too Close\" エラーを報告したり、テスト中に再起動したりする可能性があります。それでも続行しますか？
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
   : このデバイスの RAM は非常に少ないです。共振キャリブレーションはメモリを大量に消費し、\"Timer Too Close\" エラーを引き起こす可能性があります。それでも続行しますか？
+  This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: ''
   This file was sliced for {} but {} is loaded.: このファイルは {} 用にスライスされていますが、{} がロードされています。
   This is exactly the data that will be sent: これが送信されるデータです
   This is what data would be sent if enabled: これは有効にした場合に送信されるデータです
@@ -2424,6 +2444,7 @@ translations:
   Your completed prints will appear here: 完了した印刷がここに表示されます
   Your print start is already fully configured!: 印刷開始設定はすでに完全に構成されています！
   Your printer has an automatic filament changer: プリンターに自動フィラメントチェンジャーが搭載されています
+  Your printer was offline during setup, so hardware options were skipped. Set them up now?: ''
   Z: Z
   Z Calibration: Z キャリブレーション
   Z Movement: Z移動

@@ -5,7 +5,7 @@
 <!-- Debug bundle upload, Discord, documentation, and about/version info -->
 <component>
   <view name="settings_help_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="Help &amp; About" title_tag="Help &amp; About"
+        extends="overlay_panel" title="Help &amp; About" title_tag="Help &amp; About"
         bg_color="#screen_bg">
     <!-- Content Area - no padding, rows handle their own -->
     <lv_obj name="overlay_content" width="100%" flex_grow="1" style_pad_top="0" style_pad_left="0" style_pad_right="0" style_pad_bottom="#space_lg" scrollable="true" flex_flow="column">

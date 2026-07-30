@@ -68,8 +68,28 @@ the local cache file can round-trip all four without collision.
 | Method | Threading | Purpose |
 |--------|-----------|---------|
 | `load_blocking()` | Called once from backend init, blocks the backend thread | Fetch `lane_data` from MR DB; on error/timeout, fall back to the local JSON cache. Returns `unordered_map<int, FilamentSlotOverride>`. Also triggers `try_migrate_legacy` if `lane_data` is empty and legacy namespaces have data, and runs the one-shot **material heal** (below). |
-| `save_async(slot, override, cb)` | Main thread → HttpExecutor | POST the record to `lane_data/laneN`, refresh the local cache on success. Retries are the caller's responsibility. |
+| `save_async(slot, override, cb)` | Main thread → HttpExecutor | POST the record to `lane_data/<key>` (see **Outer key style** below), refresh the local cache on success. Retries are the caller's responsibility. |
 | `clear_async(slot, cb)` | Main thread → HttpExecutor | DELETE the slot's `lane_data` entry and drop it from the local cache. |
+
+### Outer key style
+
+The outer Moonraker DB key is **not** always `laneN`. `format_lane_key()` picks
+between two shapes with **different bases**, and the store's style comes from
+`lane_key_style_for(AmsType)` (`include/filament_slot_override_store.h`):
+
+| Style | Key | Base | Used by |
+|-------|-----|------|---------|
+| `LaneKeyStyle::Lane` | `laneN` | **1-based** (`lane1` is slot 0) | every filament-switching system — AFC, Happy Hare, ACE, CFS, IFS |
+| `LaneKeyStyle::Tool` | `T<n>` | **0-based** (`T0` is slot 0) | tool changers — Snapmaker, generic `TOOL_CHANGER` |
+
+The inner `"lane"` field is 0-based in **both**, so the offset between the outer
+key and the inner field is deliberate for `laneN` and absent for `T<n>`. Changing
+one base without the other silently breaks interop with every other reader.
+
+Tool-changer backends that predate the `T<n>` style carry a one-shot
+`try_migrate_lane_keys_to_tool_keys()` at load: any `laneN` record HelixScreen
+itself authored is rewritten as `T<n>` (or dropped when the canonical `T<n>`
+already exists). Records it cannot prove it wrote are left alone.
 | `cache_path()` | Pure | Returns `helix::get_user_config_dir() / "filament_slot_overrides.json"`. |
 
 ### Load behavior

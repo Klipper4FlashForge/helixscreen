@@ -4,7 +4,7 @@
 <!-- Printer Image Selection Overlay: left list + right preview layout -->
 <component>
   <view name="printer_image_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="Printer Image" title_tag="Printer Image"
+        extends="overlay_panel" title="Printer Image" title_tag="Printer Image"
         bg_color="#card_bg">
     <!-- Main content: left list + right preview in a ROW -->
     <lv_obj name="overlay_content"

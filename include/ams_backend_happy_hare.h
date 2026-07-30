@@ -101,10 +101,7 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     // Recovery
     AmsError recover() override;
     AmsError reset() override;
-    AmsError reset_lane(int slot_index) override;
-    [[nodiscard]] bool supports_lane_reset() const override {
-        return true;
-    }
+    AmsError clear_fault(int slot_index) override;
     AmsError eject_lane(int slot_index) override;
     [[nodiscard]] bool supports_lane_eject() const override {
         return true;
@@ -219,6 +216,16 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
      */
     [[nodiscard]] std::vector<int> get_tool_mapping() const override;
 
+    // NOTE: has_per_slot_loaded_authority() is deliberately NOT overridden.
+    // printer.mmu.gate and printer.mmu.filament are Happy Hare's own values,
+    // parsed verbatim from one object into the aggregate pair, so the aggregate
+    // rule already answers with firmware truth here — unlike AFC, whose
+    // current_slot we derive from several sources. gate_status carries fill
+    // state, not seating, so the per-gate LOADED stamp is derived FROM that
+    // aggregate; believing it back would add staleness and would drop the
+    // highlight on a gate that ran out (gate_status 0) while its filament is
+    // still at the toolhead (prestonbrown/helixscreen#1199).
+
     // Device Management
     [[nodiscard]] std::vector<helix::printer::DeviceSection> get_device_sections() const override;
     [[nodiscard]] std::vector<helix::printer::DeviceAction> get_device_actions() const override;
@@ -280,6 +287,20 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
      * @param mmu_data JSON object containing printer.mmu data
      */
     void parse_mmu_state(const nlohmann::json& mmu_data);
+
+    /**
+     * @brief Re-derive every gate's SlotStatus from gate_status + the loaded gate
+     *
+     * printer.mmu arrives as a delta: `gate_status`, `gate` and `filament` each
+     * turn up in whatever frame changed them, and a toolchange typically carries
+     * the latter two alone. Deriving the LOADED stamp inside the gate_status
+     * branch therefore pinned it to whichever gate was loaded the last time a
+     * gate's fill state happened to change (#1199). Called at the end of every
+     * parse_mmu_state() instead, off the cached gate_status_raw_.
+     *
+     * Caller must hold mutex_.
+     */
+    void refresh_gate_statuses_locked();
 
     /**
      * @brief Initialize slot structures based on gate_status array size
@@ -377,6 +398,12 @@ class AmsBackendHappyHare : public AmsSubscriptionBackend {
     int num_units_{1};                      ///< Number of physical units (default 1)
     std::vector<int> per_unit_gate_counts_; ///< Per-unit gate counts for dissimilar multi-MMU (v4)
     int active_unit_{0};                    ///< Currently active MMU unit (v4)
+
+    /// Last printer.mmu.gate_status array, raw Happy Hare values (-1 unknown,
+    /// 0 empty, 1 available, 2 from_buffer). Kept because the array and the
+    /// gate/filament pair arrive in independent deltas and
+    /// refresh_gate_statuses_locked() needs both to derive a status.
+    std::vector<int> gate_status_raw_;
 
     // Path visualization state
     int filament_pos_{0};     ///< Happy Hare filament_pos value

@@ -23,7 +23,7 @@
 class StarfieldScreensaver : public Screensaver {
   public:
     StarfieldScreensaver() = default;
-    ~StarfieldScreensaver() override = default;
+    ~StarfieldScreensaver() override;
 
     void start() override;
     void stop() override;
@@ -54,6 +54,10 @@ class StarfieldScreensaver : public Screensaver {
 
     static void frame_timer_cb(lv_timer_t* timer);
     void render_frame();
+
+    /// Shared by stop() and the destructor — a timer cancelled only in stop()
+    /// stays armed on a freed `this` on any teardown that skips it.
+    void cancel_timer();
 
     bool active_ = false;
     lv_obj_t* overlay_ = nullptr;

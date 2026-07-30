@@ -37,6 +37,7 @@
   <translation tag="-- kWh" it="-- kWh"/>
   <translation tag="--°C" it="--°C"/>
   <translation tag="-0.5 Hz" it="-0,5 Hz"/>
+  <translation tag="..."/>
   <translation tag="0 = computed" it="0 = calcolato"/>
   <translation tag="0 events queued" it="0 eventi in coda"/>
   <translation tag="0 slots" it="{0} Slot"/>
@@ -460,6 +461,8 @@
   <translation tag="Connected Time" it="Tempo connesso"/>
   <translation tag="Connected to" it="Connesso a"/>
   <translation tag="Connected to " it="Connesso a "/>
+  <translation tag="Connected to Moonraker, but Klipper is not running. You can continue — HelixScreen will show the Klipper error, and hardware detection stays limited until Klipper starts."/>
+  <translation tag="Connected to Moonraker, but printer discovery did not finish. You can continue — hardware detection stays limited until the printer responds."/>
   <translation tag="Connected to {}" it="Connesso a {}"/>
   <translation tag="Connected! Discovering printer..." it="Connesso! Rilevamento stampante..."/>
   <translation tag="Connected, discovering..." it="Connesso, rilevamento..."/>
@@ -950,6 +953,7 @@
   <translation tag="Heating Bed..." it="Riscaldamento piatto..."/>
   <translation tag="Heating Nozzle..." it="Riscaldamento ugello..."/>
   <translation tag="Heating to %d\xC2\xB0C... %.0f\xC2\xB0C" it="Riscaldamento a %d\xC2\xB0C... %.0f\xC2\xB0C"/>
+  <translation tag="Heating to {}°C before {}..."/>
   <translation tag="Heating to {}°C for {}..." it="Riscaldamento a {}°C per {}..."/>
   <translation tag="Heating to {}°C..." it="Riscaldamento a {}°C..."/>
   <translation tag="Heating..." it="Riscaldamento..."/>
@@ -992,6 +996,7 @@
   <translation tag="How far filament is pushed back into the box on eject (mm)" it="Quanto il filamento viene spinto indietro nella scatola durante l&apos;espulsione (mm)"/>
   <translation tag="How many labels to print" it="Quante etichette stampare"/>
   <translation tag="How the toolhead icon appears" it="Aspetto dell&apos;icona della testina"/>
+  <translation tag="Hub"/>
   <translation tag="Humidity" it="Umidità"/>
   <translation tag="Hyperlapse" it="Hyperlapse"/>
   <translation tag="Hyperlapse captures frames at fixed time intervals. Good for very long prints." it="Hyperlapse cattura i fotogrammi a intervalli di tempo fissi. Ideale per stampe molto lunghe."/>
@@ -1053,6 +1058,8 @@
   <translation tag="Invalid sheet template index: {} (have {})" it="Indice template foglio non valido: {} (disponibili {})"/>
   <translation tag="Invalid status response from printer" it="Risposta di stato non valida dalla stampante"/>
   <translation tag="Issue description" it="Descrizione problema"/>
+  <translation tag="It&apos;s a new spool"/>
+  <translation tag="Jammed at the Toolhead"/>
   <translation tag="Job Queue" it="Coda lavori"/>
   <translation tag="Jog failed: {}" it="Movimento fallito: {}"/>
   <translation tag="Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests." it="Unisciti alla community di HelixScreen su Discord per discussioni, consigli, aiuto nella risoluzione dei problemi e richieste di funzionalità."/>
@@ -1172,6 +1179,7 @@
   <translation tag="Macro for physical bed leveling (QGL/Z-Tilt)" it="Macro per livellamento fisico piano (QGL/Z-Tilt)"/>
   <translation tag="Macro handles heating" it="La macro gestisce il riscaldamento"/>
   <translation tag="Macro may still be running — response timed out" it="La macro potrebbe essere ancora in esecuzione — tempo scaduto"/>
+  <translation tag="Macro stopped: printer has no &apos;{}&apos; command"/>
   <translation tag="Macro to cancel an active print" it="Macro per annullare una stampa attiva"/>
   <translation tag="Macro to clean/wipe the nozzle" it="Macro per pulire l&apos;ugello"/>
   <translation tag="Macro to load filament into extruder" it="Macro per caricare filamento nell&apos;estrusore"/>
@@ -1357,6 +1365,7 @@
   <translation tag="Not found (strobe only)" it="Non trovato (solo stroboscopio)"/>
   <translation tag="Not found (use phone app)" it="Non trovato (usa l’app del telefono)"/>
   <translation tag="Not in your spools? Set it up" it="Non è tra le tue bobine? Configuralo"/>
+  <translation tag="Not now"/>
   <translation tag="Not yet calibrated" it="Non ancora calibrato"/>
   <translation tag="Notes" it="Note"/>
   <translation tag="Notes (optional)" it="Note (facoltativo)"/>
@@ -1377,6 +1386,7 @@
   <translation tag="Nozzle Temp" it="Temp. ugello"/>
   <translation tag="Nozzle Temperature" it="Temperatura ugello"/>
   <translation tag="Nozzle Temps" it="Temp. ugelli"/>
+  <translation tag="Nozzle did not reach {}°C — {} cancelled"/>
   <translation tag="Nozzle min cannot exceed max" it="Il minimo dell’ugello non può superare il massimo"/>
   <translation tag="Nozzle target set to {}°C" it="Obiettivo ugello impostato a {}°C"/>
   <translation tag="Nozzle temp must be 100-500°C" it="La temperatura dell’ugello deve essere 100-500°C"/>
@@ -1576,6 +1586,7 @@
   <translation tag="Printer database is corrupt" it="Il database della stampante è corrotto"/>
   <translation tag="Printer didn&apos;t respond — make sure it&apos;s on and in range" it="La stampante non ha risposto — assicurati che sia accesa e nel raggio d&apos;azione"/>
   <translation tag="Printer doesn&apos;t expose the expected service — wrong device?" it="La stampante non espone il servizio previsto — dispositivo errato?"/>
+  <translation tag="Printer hardware detected"/>
   <translation tag="Printer image set to auto-detect" it="Immagine stampante impostata su rilevamento auto"/>
   <translation tag="Printer is not paired — pair it first" it="La stampante non è associata — associala prima"/>
   <translation tag="Printer name" it="Nome stampante"/>
@@ -1697,6 +1708,7 @@
   <translation tag="Requires Moonraker-Timelapse plugin" it="Richiede plugin Moonraker-Timelapse"/>
   <translation tag="Resend write failed at chunk {}" it="Reinvio scrittura fallito al chunk {}"/>
   <translation tag="Reset" it="Ripristina"/>
+  <translation tag="Reset CFS" it="Ripristina CFS"/>
   <translation tag="Reset Home Screen?" it="Ripristinare la schermata iniziale?"/>
   <translation tag="Reset Speed &amp; Flow to 100%" it="Ripristina velocità e flusso al 100%"/>
   <translation tag="Reset all settings and restart wizard" it="Ripristina tutte le impostazioni e riavvia procedura guidata"/>
@@ -1875,6 +1887,7 @@
   <translation tag="Set a phone strobe app to %.1f Hz and aim at the belt. Adjust until the belt appears stationary.\n\nRecommended apps:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope" it="Imposta un&apos;app stroboscopica del telefono a %.1f Hz e puntala sulla cinghia. Regola finché la cinghia non appare ferma.\n\nApp consigliate:\n  Android: Strobily, Strobe Light\n  iOS: Strobe Light Tachometer, myStroboscope"/>
   <translation tag="Set local timezone for time display" it="Imposta fuso orario locale per l&apos;ora"/>
   <translation tag="Set logging verbosity for troubleshooting" it="Imposta il livello di dettaglio del log per la risoluzione dei problemi"/>
+  <translation tag="Set up"/>
   <translation tag="Set up your label printer in Settings" it="Configura la stampante etichette nelle Impostazioni"/>
   <translation tag="Settings" it="Impostazioni"/>
   <translation tag="Settings Snapshot" it="Istantanea delle impostazioni"/>
@@ -1996,6 +2009,9 @@
   <translation tag="Stop Print?" it="Fermare stampa?"/>
   <translation tag="Stop failed" it="Arresto fallito"/>
   <translation tag="Stop printing \&quot;{}\&quot;?\n\nThis cannot be undone after 5 seconds." it="Interrompere la stampa di \&quot;{}\&quot;?\n\nNon sarà possibile annullare dopo 5 secondi."/>
+  <translation tag="Stopped between Hub and Toolhead"/>
+  <translation tag="Stopped between Lane and Hub"/>
+  <translation tag="Stopped between Spool and Lane"/>
   <translation tag="Stops all motion. Requires firmware restart." it="Ferma tutto il movimento. Richiede riavvio firmware."/>
   <translation tag="Stow" it="Ritrai"/>
   <translation tag="Strobe LED" it="LED stroboscopico"/>
@@ -2067,6 +2083,7 @@
   <translation tag="Thanks! TOTALLY anonymous usage data helps improve HelixScreen." it="Grazie! I dati di utilizzo TOTALMENTE anonimi aiutano a migliorare HelixScreen."/>
   <translation tag="The HelixPrint plugin enables fast G-code modifications directly on your printer—like skipping bed mesh for quick reprints." it="Il plugin HelixPrint abilita modifiche G-code rapide direttamente sulla stampante, come saltare la mesh piano per ristampe veloci."/>
   <translation tag="The animated screensaver has been turned off on this device to prevent it from interfering with prints. You can re-enable it in Settings &gt; Display." it="Il salvaschermo animato è stato disattivato su questo dispositivo per evitare che interferisca con le stampe. Puoi riattivarlo in Impostazioni &gt; Schermo."/>
+  <translation tag="The filament system reported an error"/>
   <translation tag="The heater will cycle on and off several times." it="Il riscaldatore si accenderà e spegnerà diverse volte."/>
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." it="Il motore fa vibrare la cinghia mentre una luce stroboscopica lampeggia alla stessa frequenza. Quando la cinghia sembra ferma (immobile), hai trovato la frequenza di risonanza.\n\nUsa i pulsanti della frequenza per scorrere i valori finché la cinghia non appare ferma, poi blocca la lettura."/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" it="La stampante ha interrotto questa stampa e non può riprenderla. Riavviare dall&apos;inizio?"/>
@@ -2089,6 +2106,7 @@
   <translation tag="This cannot be undone." it="Questa azione non può essere annullata."/>
   <translation tag="This device has only {} MB of RAM. Resonance calibration is memory-intensive and can make the printer firmware report a \&quot;Timer Too Close\&quot; error or restart mid-test. Continue anyway?" it="Questo dispositivo ha solo {} MB di RAM. La calibrazione della risonanza usa molta memoria e può causare un errore \&quot;Timer Too Close\&quot; nel firmware della stampante o un riavvio a metà test. Continuare comunque?"/>
   <translation tag="This device has very little RAM. Resonance calibration is memory-intensive and may cause a \&quot;Timer Too Close\&quot; error. Continue anyway?" it="Questo dispositivo ha pochissima RAM. La calibrazione della risonanza usa molta memoria e può causare un errore \&quot;Timer Too Close\&quot;. Continuare comunque?"/>
+  <translation tag="This doesn&apos;t match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?"/>
   <translation tag="This file was sliced for {} but {} is loaded." it="Questo file è stato sezionato per {} ma è caricato {}."/>
   <translation tag="This is exactly the data that will be sent" it="Questi sono esattamente i dati che verranno inviati"/>
   <translation tag="This is what data would be sent if enabled" it="Questi sono i dati che verrebbero inviati se abilitato"/>
@@ -2320,6 +2338,7 @@
   <translation tag="Your completed prints will appear here" it="Le stampe completate appariranno qui"/>
   <translation tag="Your print start is already fully configured!" it="Il tuo avvio stampa è già completamente configurato!"/>
   <translation tag="Your printer has an automatic filament changer" it="La stampante ha un cambio filamento automatico"/>
+  <translation tag="Your printer was offline during setup, so hardware options were skipped. Set them up now?"/>
   <translation tag="Z" it="Z"/>
   <translation tag="Z Calibration" it="Calibrazione Z"/>
   <translation tag="Z Movement" it="Movimento Z"/>

@@ -279,9 +279,36 @@ class AmsBackend {
 
     /// Map one `//` narration body (prefix already stripped) to a phase id.
     /// nullopt (default) => not a recognized phase line.
+    ///
+    /// A `//` body came from a macro's own respond_info, so implementations may
+    /// use loose substring needles here and tolerate upstream rewording. Do NOT
+    /// route bare console lines through this — see match_bare_narration_phase().
     [[nodiscard]] virtual std::optional<std::string>
     match_narration_phase(const std::string& /*narration*/) const {
         return std::nullopt;
+    }
+
+    /// Map one console line that arrived WITHOUT the `//` prefix to a phase id.
+    /// nullopt (default) => backend narrates nothing outside `//`.
+    ///
+    /// Separate from match_narration_phase() because the input is a different
+    /// kind of text: unprefixed responses are the printer's open console, mixing
+    /// M105 reports, `echo:` output and USER-CONTROLLED gcode filenames in with
+    /// any narration. Implementations must match anchored line shapes, never
+    /// loose substrings — a needle like `cut` would fire on `haircut.gcode`.
+    [[nodiscard]] virtual std::optional<std::string>
+    match_bare_narration_phase(const std::string& /*line*/) const {
+        return std::nullopt;
+    }
+
+    /// True when an UNMATCHED console line looks like this backend's narration,
+    /// i.e. is worth a drift hint in the log. Deliberately looser than the two
+    /// matchers — its whole job is catching wording this backend used to emit —
+    /// but it must exclude the lines the backend emits that have no phase by
+    /// design, or every operation reports itself as drift.
+    /// false (default) => backend opts out of drift hints.
+    [[nodiscard]] virtual bool is_narration_drift_candidate(const std::string& /*line*/) const {
+        return false;
     }
 
     // ========================================================================
@@ -430,18 +457,63 @@ class AmsBackend {
     }
 
     /**
+     * @brief Whether this backend's parse carries per-slot loaded truth.
+     *
+     * Answers "does get_slot_info(i).status carry the seated answer for slot
+     * i?" — either because the firmware publishes it per slot (AFC's
+     * tool_loaded) or because the parse derives it there on every frame (CFS,
+     * from the T{n}.filament letter plus the toolhead switch). Backends that
+     * answer true have their per-slot status believed over the aggregate pair;
+     * see slot_is_actively_loaded().
+     *
+     * Default false, and deliberately so. A backend that never marks the active
+     * slot LOADED would report every slot unloaded and blank the active-lane
+     * highlight — worse than the aggregate staleness this seam exists to fix.
+     * Opt in only once the backend's parse genuinely sets SlotStatus::LOADED on
+     * the seated slot, and cover it with a test that fails if the parse stops
+     * doing so.
+     *
+     * Staying false is a legitimate answer, not a gap. Happy Hare's mmu.gate /
+     * mmu.filament and Toolchanger's toolchanger.tool_number are firmware's own
+     * single-valued statements, parsed verbatim into the aggregate pair; their
+     * per-slot stamps are derived FROM it, so believing those back would only add
+     * staleness. Toolchanger has no filament signal of any kind for a per-slot
+     * rule to be authoritative about. See docs/devel/FILAMENT_MANAGEMENT.md
+     * § "Per-Slot Load Authority".
+     *
+     * @return true if get_slot_info(i).status is authoritative for "loaded"
+     */
+    [[nodiscard]] virtual bool has_per_slot_loaded_authority() const {
+        return false;
+    }
+
+    /**
      * @brief Firmware "seated & loaded" for this slot.
      *
      * The single source of truth for the active-lane highlight, replacing the
-     * divergent badge/top-right reads. Default derives from the aggregate
-     * current_slot + filament_loaded state; per-slot-aware backends (e.g. a
-     * toolchanger with per-tool LOADED status) override to report each slot
-     * independently.
+     * divergent badge/top-right reads, and (with
+     * slot_has_filament_at_toolhead()) the gate on the Load/Unload affordances.
+     *
+     * Two rules, selected by has_per_slot_loaded_authority():
+     *
+     *  - Per-slot backends read the slot's own LOADED status. This is the
+     *    truthful answer to a per-slot question and cannot disagree with itself
+     *    across slots.
+     *  - Everyone else derives it from the aggregate current_slot +
+     *    filament_loaded pair. That derivation is only as good as our tracking
+     *    of the active-slot pointer: when it names the wrong slot, or lags a
+     *    toolchange, every affordance built on this predicate inherits the wrong
+     *    answer (#1194 — Load stayed enabled on a lane AFC had already seated).
+     *
+     * Backends may still override outright where neither rule fits.
      *
      * @param slot_index Slot index (0 to total_slots-1)
      * @return true if firmware considers this slot seated and loaded
      */
     [[nodiscard]] virtual bool slot_is_actively_loaded(int slot_index) const {
+        if (has_per_slot_loaded_authority()) {
+            return get_slot_info(slot_index).status == SlotStatus::LOADED;
+        }
         return slot_index == get_current_slot() && is_filament_loaded();
     }
 
@@ -633,40 +705,80 @@ class AmsBackend {
     virtual AmsError reset() = 0;
 
     /**
-     * @brief Reset a specific lane/slot
+     * @brief Clear a latched fault so the system stops reporting an error
      *
-     * Resets an individual lane to a known good state without affecting others.
+     * Bookkeeping only — this never moves filament. Distinct from
+     * recover_lane_position(), which is a physical retract.
+     *
+     * Scope is backend-defined. AFC has no per-lane fault clear, so it ignores
+     * slot_index and clears system-wide (RESET_FAILURE + AFC_CLEAR_MESSAGE).
+     * Happy Hare clears per-gate (MMU_RECOVER GATE=n). Callers always pass the
+     * slot they mean and let the backend decide what it can honour.
+     *
+     * Must be safe to call from IDLE: a latched fault routinely outlives the
+     * operation that produced it, which is precisely when clearing matters.
+     *
+     * @param slot_index Slot the user acted on, or -1 for "no particular slot"
+     * @return AmsError indicating if the operation was started
+     */
+    virtual AmsError clear_fault(int slot_index) {
+        (void)slot_index;
+        return cancel();
+    }
+
+    /**
+     * @brief Retract a lane's filament back to its lane from the bowden
+     *
+     * A physical filament move, not a fault clear. Recovers a lane left stranded
+     * mid-path by a failed load or unload — filament past the lane but not at the
+     * toolhead, which plain unload() cannot address because it assumes the head.
+     *
+     * AFC: AFC_LANE_RESET LANE={name}, which retracts until the hub clears.
      * Default implementation returns NOT_SUPPORTED.
      *
-     * @param slot_index Lane to reset (0-based)
-     * @return AmsError indicating if operation was started
+     * @param slot_index Lane to recover (0-based)
+     * @return AmsError indicating if the operation was started
      */
-    virtual AmsError reset_lane(int slot_index) {
+    virtual AmsError recover_lane_position(int slot_index) {
         (void)slot_index;
-        return AmsErrorHelper::not_supported("Per-lane reset not supported");
+        return AmsErrorHelper::not_supported("Lane position recovery not supported");
     }
 
     /**
-     * @brief Check if per-lane reset is supported
-     * @return true if reset_lane() is implemented
-     */
-    /**
-     * @brief Whether a lane reset is possible for this slot RIGHT NOW
+     * @brief Whether a lane-position recovery is possible for this slot right now
      *
-     * supports_lane_reset() is a static capability. This is the per-slot,
-     * per-state question, and it is what UI should gate on: offering a reset the
+     * Per-slot and per-state, not a static capability: offering a recovery the
      * firmware will refuse produces an error the user cannot act on, and on AFC
      * that error latches in printer.AFC.message and keeps re-firing toasts.
-     *
-     * Defaults to the static capability so backends that have no extra
-     * precondition need not override.
      */
-    [[nodiscard]] virtual bool can_reset_lane(int slot_index) const {
+    [[nodiscard]] virtual bool can_recover_lane_position(int slot_index) const {
         (void)slot_index;
-        return supports_lane_reset();
+        return false;
     }
 
-    [[nodiscard]] virtual bool supports_lane_reset() const {
+    /**
+     * @brief Whether this backend currently knows WHICH lane needs recovery
+     *
+     * Distinct from can_recover_lane_position(), which answers "is recovery
+     * possible" per slot. This answers "do we know whose fault it is" — some
+     * backends share one physical sensor across every lane on a unit (AFC's hub
+     * sensor), so an unattributed trigger cannot say whose filament caused it.
+     * Callers use this to decide whether RecoverPosition should outrank Eject
+     * (attributed: confident, single lane) or defer to it (unattributed: a
+     * last-resort offer, since showing Recover on every lane would otherwise
+     * hide Eject from lanes that are simply seated, not stranded).
+     *
+     * A backend MAY choose to make can_recover_lane_position() imply this, by
+     * refusing recovery outright where it cannot attribute the strand. AFC does
+     * (prestonbrown/helixscreen#1182): its lane reset opens with a blind retract,
+     * so a wrong guess de-seats a working lane rather than refusing harmlessly.
+     * The unattributed arm in the caller's ranking stays valid for backends
+     * whose recovery is genuinely free to attempt.
+     *
+     * Default false: backends with a genuinely per-lane fault signal (or no
+     * lane-position recovery at all) have nothing to attribute.
+     */
+    [[nodiscard]] virtual bool lane_recovery_is_attributed() const {
         return false;
     }
 
@@ -720,15 +832,23 @@ class AmsBackend {
      * The default rule is topology-aware so every backend behaves consistently
      * without per-backend duplication:
      *
-     *  - PARALLEL toolchangers (Snapmaker U1, generic ToolChanger) give each tool
-     *    its own independent toolhead, so any tool that currently holds filament
-     *    is independently unloadable. We key on is_present() — the same presence
-     *    signal the menu's Load button uses — so Load and Unload always agree.
+     *  - PARALLEL toolchangers give each tool its own independent toolhead, so
+     *    any tool that currently holds filament is independently unloadable. We
+     *    key on is_present() — the same presence signal the menu's Load button
+     *    uses — so Load and Unload always agree.
      *  - Selector / hub MMUs (Happy Hare, AFC, ACE, CFS, AD5X, QIDI) share one
      *    extruder, so only the slot actually seated at the toolhead (LOADED) can
      *    be unloaded.
      *
-     * AD5X IFS still overrides this so a runout that clears the head sensor
+     * Note that BOTH PARALLEL backends override the first arm, for opposite
+     * reasons, so it is a fallback rather than a rule in force today. Snapmaker
+     * U1 needs its channel_state latch because the per-tool motion sensor stays
+     * true after an unload. Generic ToolChanger needs the narrower
+     * `slot_index == current_tool`: its slots are physical toolheads that are
+     * never EMPTY, so is_present() read true everywhere, which suppressed Load on
+     * every tool and offered an unmount on tools sitting in their docks (#1199).
+     *
+     * AD5X IFS also overrides this so a runout that clears the head sensor
      * doesn't disable Unload on the slot the firmware reports as active — the
      * exact moment the user needs to recover (#995). Its base fallback is
      * unchanged: AD5X is a serial topology, so the rule below still yields
@@ -1316,25 +1436,17 @@ class AmsBackend {
     }
 
     /**
-     * @brief Whether the backend maintains a persistent message/error queue that the
-     *        UI must explicitly clear when the user dismisses an error.
-     *
-     * AFC keeps a persistent message_queue + error_state that won't clear until
-     * AFC_CLEAR_MESSAGE is sent; without it the error dialog reappears immediately
-     * because AFC keeps reporting ERROR (#497). Other backends have no such queue.
-     *
-     * @return true if clear_message_queue() does meaningful work
-     */
-    [[nodiscard]] virtual bool supports_clear_message_queue() const {
-        return false;
-    }
-
-    /**
      * @brief Clear the backend's persistent message/error queue.
      *
-     * Called by the UI when the user dismisses a backend error so the error does
-     * not immediately re-fire. Default is a no-op (NOT_SUPPORTED); backends with a
-     * persistent queue (AFC) override to send the clearing command.
+     * AFC keeps a persistent message queue that will not clear until
+     * AFC_CLEAR_MESSAGE is sent; without it the error dialog re-fires immediately
+     * because AFC keeps reporting ERROR (#497). Default is a no-op
+     * (NOT_SUPPORTED); backends with such a queue override it.
+     *
+     * Callers do not need to ask whether a backend has a queue first — the
+     * default is already a harmless no-op, which is why the former
+     * supports_clear_message_queue() capability query was removed once
+     * clear_fault() took over the dismiss path.
      *
      * @return AmsError indicating success/failure
      */

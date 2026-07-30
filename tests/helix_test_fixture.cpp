@@ -11,6 +11,7 @@
 #include "app_constants.h"
 #include "async_lifetime_guard.h"
 #include "config.h"
+#include "fault_surface_correlation.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "src/ui/panel_widgets/print_status_widget.h"
 #include "system_settings_manager.h"
@@ -252,6 +253,11 @@ void HelixTestFixture::reset_all() {
     if (lv_subject_t* anim = lv_xml_get_subject(nullptr, "settings_animations_enabled")) {
         lv_subject_set_int(anim, 0);
     }
+
+    // fault_surface_correlation entries live for 3s of wall clock, which spans
+    // dozens of tests in a fast suite. A record left by an error-routing test
+    // would silence AmsErrorBridge's fallback toast in an unrelated later one.
+    helix::fault_surface_correlation::clear_for_test();
 
     // NOTE: NavigationManager has no public reset API (clear_overlay_stack is
     // private; shutdown() is a one-way teardown for app exit). Add a reset

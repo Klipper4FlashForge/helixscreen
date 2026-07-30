@@ -11,6 +11,7 @@
  * - PrintSelectUsbSource symlink detection and tab hiding
  */
 
+#include "ui_update_queue.h"
 #include "../../include/moonraker_api.h"
 #include "../../include/moonraker_client.h"
 #include "../../include/moonraker_client_mock.h"
@@ -70,6 +71,10 @@ class MetadataAPITestFixture {
     }
 
     ~MetadataAPITestFixture() {
+        // Drain while `state` is still alive — discover_printer() in the ctor
+        // leaves PrinterCapabilitiesState's deferred setters queued (#1166).
+        helix::ui::UpdateQueue::instance().drain();
+
         mock_client.stop_temperature_simulation();
         mock_client.disconnect();
         api.reset();
@@ -144,6 +149,17 @@ TEST_CASE_METHOD(MetadataAPITestFixture, "metascan_file is silent by default",
 // USB Source Symlink Detection Tests
 // ============================================================================
 
+namespace {
+// Read a registered subject's current int value by name. Fails the calling
+// test immediately if the subject isn't registered — a missing subject and a
+// subject stuck at its default both need to be distinguishable failures.
+int subject_int_value(const char* name) {
+    lv_subject_t* s = lv_xml_get_subject(nullptr, name);
+    REQUIRE(s != nullptr);
+    return lv_subject_get_int(s);
+}
+} // namespace
+
 TEST_CASE("PrintSelectUsbSource initial state has Moonraker access false", "[usb][symlink]") {
     helix::ui::PrintSelectUsbSource usb_source;
 
@@ -159,6 +175,47 @@ TEST_CASE("PrintSelectUsbSource::set_moonraker_has_usb_access sets flag correctl
 
     usb_source.set_moonraker_has_usb_access(false);
     REQUIRE_FALSE(usb_source.moonraker_has_usb_access());
+}
+
+TEST_CASE("PrintSelectUsbSource::on_drive_inserted / on_drive_removed write "
+          "print_source_usb_present",
+          "[usb][symlink]") {
+    // Regression coverage for the Rule #2 fix (imperative lv_obj_add_flag/
+    // remove_flag on source_selector -> a subject + XML bind_flag_if). This
+    // reads the subject the XML binding actually observes, not just the C++
+    // member state — deleting either lv_subject_set_int call in
+    // on_drive_inserted()/on_drive_removed() must fail this test.
+    helix::ui::PrintSelectUsbSource::init_subjects();
+    helix::ui::PrintSelectUsbSource usb_source;
+
+    // print_source_usb_present is a process-wide static; an earlier test case
+    // may have already written it. Drive to a known state via the real API
+    // rather than assume a pristine default.
+    usb_source.on_drive_removed();
+    REQUIRE(subject_int_value("print_source_usb_present") == 0);
+
+    usb_source.on_drive_inserted();
+    REQUIRE(subject_int_value("print_source_usb_present") == 1);
+
+    usb_source.on_drive_removed();
+    REQUIRE(subject_int_value("print_source_usb_present") == 0);
+
+    // Re-insert to confirm it isn't a one-shot latch.
+    usb_source.on_drive_inserted();
+    REQUIRE(subject_int_value("print_source_usb_present") == 1);
+}
+
+TEST_CASE("PrintSelectUsbSource::set_usb_manager writes print_source_usb_present for the "
+          "startup-race case",
+          "[usb][symlink]") {
+    // set_usb_manager(nullptr) exercises the "no manager yet" branch — has_drives
+    // is false, so this also confirms the subject is written (to 0) even when
+    // there's nothing to report, not just left at its default by omission.
+    helix::ui::PrintSelectUsbSource::init_subjects();
+    helix::ui::PrintSelectUsbSource usb_source;
+
+    usb_source.set_usb_manager(nullptr);
+    REQUIRE(subject_int_value("print_source_usb_present") == 0);
 }
 
 TEST_CASE("PrintSelectUsbSource with symlink access stays on PRINTER source", "[usb][symlink]") {
@@ -184,6 +241,76 @@ TEST_CASE("PrintSelectUsbSource on_drive_inserted does nothing when symlink acti
 
     // Should still be on PRINTER source
     REQUIRE(usb_source.get_current_source() == FileSource::PRINTER);
+}
+
+TEST_CASE("PrintSelectUsbSource on_drive_removed switches from USB to PRINTER",
+          "[usb][symlink]") {
+    helix::ui::PrintSelectUsbSource usb_source;
+
+    FileSource last_source = FileSource::PRINTER;
+    bool callback_fired = false;
+    usb_source.set_on_source_changed([&](FileSource source) {
+        last_source = source;
+        callback_fired = true;
+    });
+
+    // select_usb_source() calls refresh_files(), which is a safe no-op with
+    // no UsbManager attached (warns, reports an empty file list).
+    usb_source.select_usb_source();
+    REQUIRE(usb_source.is_usb_active());
+
+    usb_source.on_drive_removed();
+
+    REQUIRE(usb_source.get_current_source() == FileSource::PRINTER);
+    REQUIRE_FALSE(usb_source.is_usb_active());
+    REQUIRE(callback_fired);
+    REQUIRE(last_source == FileSource::PRINTER);
+}
+
+TEST_CASE("PrintSelectUsbSource on_drive_removed while already on PRINTER does not fire the "
+          "source-changed callback",
+          "[usb][symlink]") {
+    helix::ui::PrintSelectUsbSource usb_source;
+
+    bool callback_fired = false;
+    usb_source.set_on_source_changed([&](FileSource) { callback_fired = true; });
+
+    // Already on PRINTER (the default) — removal has nothing to switch away from.
+    usb_source.on_drive_removed();
+
+    REQUIRE(usb_source.get_current_source() == FileSource::PRINTER);
+    REQUIRE_FALSE(callback_fired);
+}
+
+TEST_CASE("PrintSelectUsbSource::set_moonraker_has_usb_access writes "
+          "print_source_moonraker_usb_access in both directions",
+          "[usb][symlink]") {
+    // Pre-existing gap this change fixes: the old imperative version only ever
+    // hid the selector when has_access became true, with no code path to show
+    // it again if access were later revoked. Reading the subject the XML
+    // binding observes (not just the member getter) is what actually proves
+    // the fix — a stub that skipped the false-branch write would still pass
+    // the getter-only assertions below but fail these subject reads.
+    helix::ui::PrintSelectUsbSource::init_subjects();
+    helix::ui::PrintSelectUsbSource usb_source;
+
+    // print_source_moonraker_usb_access is a process-wide static; an earlier
+    // test case may have already written it. Drive to a known state via the
+    // real API rather than assume a pristine default.
+    usb_source.set_moonraker_has_usb_access(false);
+    REQUIRE(subject_int_value("print_source_moonraker_usb_access") == 0);
+
+    usb_source.set_moonraker_has_usb_access(true);
+    REQUIRE(usb_source.moonraker_has_usb_access());
+    REQUIRE(subject_int_value("print_source_moonraker_usb_access") == 1);
+
+    usb_source.set_moonraker_has_usb_access(false);
+    REQUIRE_FALSE(usb_source.moonraker_has_usb_access());
+    REQUIRE(subject_int_value("print_source_moonraker_usb_access") == 0);
+
+    usb_source.set_moonraker_has_usb_access(true);
+    REQUIRE(usb_source.moonraker_has_usb_access());
+    REQUIRE(subject_int_value("print_source_moonraker_usb_access") == 1);
 }
 
 TEST_CASE("PrintSelectUsbSource switches from USB to PRINTER when symlink detected",

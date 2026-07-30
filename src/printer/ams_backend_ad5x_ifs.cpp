@@ -711,14 +711,22 @@ void AmsBackendAd5xIfs::update_slot_from_state(int slot_index) {
     bool is_active_slot = (system_info_.current_slot == slot_index);
     bool has_filament = port_presence_[idx];
 
-    // Native ZMOD IFS has no per-port sensors. For the active slot, infer
-    // presence from the head sensor so the UI doesn't show all slots as EMPTY.
-    if (!has_per_port_sensors_ && is_active_slot && head_filament_) {
-        has_filament = true;
-    }
-
     SlotStatus prev_status = entry->info.status;
-    if (has_filament && is_active_slot && head_filament_) {
+    // The seated lane is LOADED whenever the head sensor sees filament,
+    // WITHOUT requiring the lane's own port sensor. Two reasons:
+    //
+    //  - A runout drops port_presence_ while the filament that lane already fed
+    //    is still in the toolhead (#995) — the state can_unload_from_toolhead()
+    //    keeps the unload gate open for. Requiring the port sensor demoted the
+    //    lane to EMPTY at exactly the moment the user needs to recover it.
+    //  - Native ZMOD publishes no per-port sensors at all, so port_presence_ is
+    //    false for every lane; this is what keeps the seated one off EMPTY
+    //    (previously done by forcing has_filament true for that one case).
+    //
+    // head_filament_ is also what system_info_.filament_loaded is assigned from,
+    // so the per-slot status and the aggregate pair now agree by construction —
+    // the precondition for has_per_slot_loaded_authority().
+    if (is_active_slot && head_filament_) {
         entry->info.status = SlotStatus::LOADED;
     } else if (has_filament) {
         entry->info.status = SlotStatus::AVAILABLE;
@@ -1790,6 +1798,8 @@ std::optional<helix::ErrorEvent> AmsBackendAd5xIfs::current_error() const {
                    ? std::string(lv_tr("Filament operation failed"))
                    : system_info_.operation_detail;
     e.sticky = true;
+    // IFS_UNLOCK releases the firmware's operation lock; it moves no filament,
+    // so it stays tappable on a cold nozzle (needs_hot_nozzle defaults false).
     e.recovery_actions = {{lv_tr("Recover"), "IFS_UNLOCK", "ifs::unlock", "primary"}};
     return e;
 }
@@ -2944,6 +2954,33 @@ bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
     // reaches this function on heavy-print response streams.
     if (line.find("RUN_ZCOLOR") != std::string::npos ||
         line.find("CHANGE_ZCOLOR") != std::string::npos) {
+        // Menu-definition echo vs. executed command (#1065, bundle 482NB943).
+        // zmod renders every COLOR dialog by echoing its buttons down the
+        // console as `// action:prompt_button <label>|<gcode>|<style>[|<hex>]`.
+        // Those payloads are the menu's OFFER LIST, not a record of anything
+        // the firmware did — the "Select color" grid alone carries 24 distinct
+        // CHANGE_ZCOLOR candidates. Running them through the extractor below
+        // applied all 24 in sequence, so the slot ended up on the LAST swatch
+        // (#161616) and the last material in the whitelist (PETG-CF) until the
+        // confirming GET_ZCOLOR corrected it ~1s later — a visible flicker,
+        // a false "external edit detected" delta, and a lane_data write per
+        // phantom apply (25 server.database.post_item requests queued in 300ms
+        // on a 473MB MIPS AD5X). 87 echoed buttons produced 162 phantom applies
+        // in a two-minute session.
+        //
+        // A real edit — the AD5X LCD, Mainsail, zmod's own macro, or the native
+        // screen's RESPOND MSG="…" re-echo — never carries the action:prompt_
+        // prefix, so the synchronous extraction added in v0.99.94 is untouched.
+        if (line.find("action:prompt_") != std::string::npos) {
+            // One shape IS load-bearing: the root menu's per-slot rows are a
+            // four-slot firmware snapshot, and the freshest one in the stream.
+            apply_color_menu_slot_row(line);
+            ++external_change_burst_count_;
+            schedule_json_reread();
+            schedule_zcolor_query("color_menu_render");
+            return false;
+        }
+
         // A CHANGE_ZCOLOR in the gcode stream is always a DELIBERATE external
         // edit: HelixScreen persists colors by writing Adventurer5M.json directly
         // and never emits CHANGE_ZCOLOR, so this command can only originate from
@@ -3180,6 +3217,79 @@ bool AmsBackendAd5xIfs::on_gcode_response_line(const std::string& line) {
         return false;
     }
     return false;
+}
+
+bool AmsBackendAd5xIfs::apply_color_menu_slot_row(const std::string& line) {
+    // Shape (zmod _ZCOLOR_MENU render, one per slot):
+    //   // action:prompt_button 1: SILK|RUN_ZCOLOR SLOT=1 HEX=F330F9 TYPE=SILK|primary|F330F9
+    // The `<n>: ` label prefix is what separates a slot row from the action
+    // submenu's buttons (Load|IN_ZCOLOR …, Change color|CHANGE_ZCOLOR …), and
+    // RUN_ZCOLOR is display-only — it never mutates firmware state, so a row
+    // can be read as a snapshot with no risk of confusing it for a command.
+    static const std::regex slot_row_re(R"(action:prompt_button\s+(\d+)\s*:[^|]*\|\s*RUN_ZCOLOR\b)");
+    std::smatch rm;
+    if (!std::regex_search(line, rm, slot_row_re))
+        return false;
+
+    // Same token grammar as the CHANGE_ZCOLOR extractor: TYPE stops at the '|'
+    // that begins the button's style/hex suffix, HEX is 6 digits.
+    static const std::regex slot_re(R"(SLOT=(\d+))");
+    static const std::regex type_re(R"(TYPE=([^\s|]+))");
+    static const std::regex hex_re(R"(HEX=([0-9A-Fa-f]{6}))");
+    std::smatch sm;
+    if (!std::regex_search(line, sm, slot_re))
+        return false;
+    // The label index and SLOT= must agree, or this isn't the row we think it
+    // is (a localized or restyled menu, a future zmod layout). Bail rather than
+    // write firmware-truth arrays from a line we don't actually understand.
+    if (rm[1].str() != sm[1].str())
+        return false;
+
+    const int slot0 = std::atoi(sm[1].str().c_str()) - 1; // zmod SLOT is 1-based
+    if (slot0 < 0 || slot0 >= NUM_PORTS)
+        return false;
+
+    std::smatch tm;
+    std::smatch hm;
+    const bool has_type = std::regex_search(line, tm, type_re);
+    const bool has_hex = std::regex_search(line, hm, hex_re);
+    if (!has_type && !has_hex)
+        return false;
+
+    std::string hex;
+    if (has_hex) {
+        hex = hm[1].str();
+        for (auto& c : hex) {
+            c = static_cast<char>(toupper(c));
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto idx = static_cast<size_t>(slot0);
+        const bool same = (!has_type || materials_[idx] == tm[1].str()) &&
+                          (!has_hex || colors_[idx] == hex);
+        if (same)
+            return false; // Nothing moved — the common case on a re-render.
+
+        if (has_type)
+            materials_[idx] = tm[1].str();
+        if (has_hex)
+            colors_[idx] = hex;
+
+        spdlog::info("{} Slot {} refreshed from COLOR-menu row (material='{}' color='{}')",
+                     backend_log_tag(), slot0, materials_[idx], colors_[idx]);
+
+        // Deliberately does NOT pre-advance last_firmware_* the way the
+        // CHANGE_ZCOLOR path does: this is a firmware READING, so it must flow
+        // through check_external_*_change exactly as a GET_ZCOLOR response
+        // would — refreshing a non-locked auto-mirror override and mirroring to
+        // lane_data, while honouring a user-locked one. It is the same data the
+        // debounced query returns, only ~500ms sooner.
+        update_slot_from_state(slot0);
+    }
+    emit_event(EVENT_SLOT_CHANGED, std::to_string(slot0));
+    return true;
 }
 
 void AmsBackendAd5xIfs::register_zcolor_listener() {
@@ -4380,6 +4490,7 @@ void AmsBackendAd5xIfs::parse_adventurer_json(const std::string& content) {
         // the next IFS_STATUS frame.
         auto chan_it = ffm.find("channel");
         if (chan_it != ffm.end() && chan_it->is_number_integer()) {
+            const int prev_current_slot = system_info_.current_slot;
             const int fw_chan = chan_it->get<int>();
             ffm_channel_ = (fw_chan >= 1 && fw_chan <= NUM_PORTS) ? fw_chan : 0;
             // Head-gate (#1065 row 28): the file's FFMInfo.channel is sticky and
@@ -4416,6 +4527,17 @@ void AmsBackendAd5xIfs::parse_adventurer_json(const std::string& content) {
                     persist_seated_slot_locked(seated_slot0);
                 }
                 log_seated_state_locked("adventurer_json");
+            }
+
+            // The per-slot loop above ran BEFORE this block moved the seated
+            // lane, so every slot's LOADED stamp is now keyed on the old
+            // current_slot. Re-derive them here rather than waiting for the next
+            // status frame: the stamp is what slot_is_actively_loaded() reads,
+            // and a stale one paints the highlight on the lane we just left.
+            if (system_info_.current_slot != prev_current_slot) {
+                for (int i = 0; i < NUM_PORTS; ++i) {
+                    update_slot_from_state(i);
+                }
             }
         }
 

@@ -141,8 +141,13 @@ class QrScannerOverlay : public OverlayBase {
     lv_obj_t* success_flash_ = nullptr;
 
     // Timers (tracked for cleanup)
-    lv_timer_t* success_timer_ = nullptr;
-    lv_timer_t* timeout_timer_ = nullptr;
+    // Neither callback touches `this`. Each owns a LifetimeToken and reaches the
+    // overlay through get_qr_scanner_overlay(), so once the AsyncLifetimeGuard
+    // member is destroyed the token reports expired and the callback deletes its
+    // payload and returns. on_deactivate() still cancels them eagerly; the
+    // destructor does not need to.
+    lv_timer_t* success_timer_ = nullptr; // TIMER_DTOR_OK: token-guarded, see above
+    lv_timer_t* timeout_timer_ = nullptr; // TIMER_DTOR_OK: token-guarded, see above
 };
 
 /**

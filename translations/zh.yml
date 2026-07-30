@@ -37,6 +37,7 @@ translations:
   -- kWh: -- kWh
   --°C: --°C
   -0.5 Hz: -0.5 Hz
+  '...': ''
   0 = computed: 0 = 自动计算
   0 events queued: 0 个事件已排队
   0 slots: '{0} 个料仓'
@@ -465,6 +466,10 @@ translations:
   Connected Time: 已连接时长
   Connected to: 已连接到
   'Connected to ': '已连接到 '
+  ? Connected to Moonraker, but Klipper is not running. You can continue — HelixScreen will show the Klipper error, and hardware detection stays limited until Klipper starts.
+  : ''
+  ? Connected to Moonraker, but printer discovery did not finish. You can continue — hardware detection stays limited until the printer responds.
+  : ''
   Connected to {}: 已连接到 {}
   Connected! Discovering printer...: 已连接！正在发现打印机...
   Connected, discovering...: 已连接，正在发现...
@@ -969,6 +974,7 @@ translations:
   Heating Bed...: 正在加热热床...
   Heating Nozzle...: 正在加热喷嘴...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: 加热至 %d\xC2\xB0C... %.0f\xC2\xB0C
+  Heating to {}°C before {}...: ''
   Heating to {}°C for {}...: 正在加热至{}°C，持续{}...
   Heating to {}°C...: 正在加热至{}°C...
   Heating...: 正在加热...
@@ -1012,6 +1018,7 @@ translations:
   How far filament is pushed back into the box on eject (mm): 弹出时耗材被推回料盒的距离（mm）
   How many labels to print: 打印多少张标签
   How the toolhead icon appears: 工具头图标的显示方式
+  Hub: ''
   Humidity: 湿度
   Hyperlapse: 延时摄影
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: 延时拍摄以固定时间间隔捕获帧。适合超长时间打印。
@@ -1076,6 +1083,8 @@ translations:
   'Invalid sheet template index: {} (have {})': '标签纸模板索引无效: {} (实际有 {})'
   Invalid status response from printer: 打印机返回的状态响应无效
   Issue description: 问题描述
+  It's a new spool: ''
+  Jammed at the Toolhead: ''
   Job Queue: 任务队列
   'Jog failed: {}': '移动失败: {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: 加入
@@ -1200,6 +1209,7 @@ translations:
   Macro for physical bed leveling (QGL/Z-Tilt): 物理热床调平宏（QGL/Z-Tilt）
   Macro handles heating: 宏控制加热
   Macro may still be running — response timed out: 宏可能仍在运行 — 响应超时
+  "Macro stopped: printer has no '{}' command": ''
   Macro to cancel an active print: 取消当前打印的宏
   Macro to clean/wipe the nozzle: 清洁/擦拭喷嘴的宏
   Macro to load filament into extruder: 将耗材加载到挤出机的宏
@@ -1389,6 +1399,7 @@ translations:
   Not found (strobe only): 未找到 (仅频闪)
   Not found (use phone app): 未找到 (使用手机应用)
   'Not in your spools? Set it up': 不在您的料盘中？立即设置
+  Not now: ''
   Not yet calibrated: 尚未校准
   Notes: 备注
   Notes (optional): 备注（可选）
@@ -1409,6 +1420,7 @@ translations:
   Nozzle Temp: 喷嘴温度
   Nozzle Temperature: 喷嘴温度
   Nozzle Temps: 喷嘴温度
+  Nozzle did not reach {}°C — {} cancelled: ''
   Nozzle min cannot exceed max: 喷嘴最低温度不能超过最高温度
   Nozzle target set to {}°C: 喷嘴目标已设为 {}°C
   Nozzle temp must be 100-500°C: 喷嘴温度必须为 100-500°C
@@ -1616,6 +1628,7 @@ translations:
   Printer database is corrupt: 打印机数据库已损坏
   Printer didn't respond — make sure it's on and in range: 打印机无响应 — 请确保已开机且在范围内
   Printer doesn't expose the expected service — wrong device?: 打印机未提供预期的服务 — 设备是否有误？
+  Printer hardware detected: ''
   Printer image set to auto-detect: 打印机图片已设为自动检测
   Printer is not paired — pair it first: 打印机未配对 — 请先进行配对
   Printer name: 打印机名称
@@ -1737,6 +1750,7 @@ translations:
   Requires Moonraker-Timelapse plugin: 需要 Moonraker-Timelapse 插件
   Resend write failed at chunk {}: 区块 {} 重发写入失败
   Reset: 重置
+  Reset CFS: 重置 CFS
   Reset Home Screen?: 重置主屏幕？
   Reset Speed & Flow to 100%: 重置速度和流量为 100%
   Reset all settings and restart wizard: 重置所有设置并重新启动向导
@@ -1925,6 +1939,7 @@ translations:
     Light\n  iOS: Strobe Light Tachometer, myStroboscope'
   Set local timezone for time display: 设置本地时区以显示时间
   Set logging verbosity for troubleshooting: 设置日志详细级别以便故障排除
+  Set up: ''
   Set up your label printer in Settings: 在设置中配置标签打印机
   Settings: 设置
   Settings Snapshot: 设置快照
@@ -2048,6 +2063,9 @@ translations:
   Stop Print?: 停止打印？
   Stop failed: 停止失败
   Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds.: '停止打印 \"{}\"？\n\n5秒后将无法撤销。'
+  Stopped between Hub and Toolhead: ''
+  Stopped between Lane and Hub: ''
+  Stopped between Spool and Lane: ''
   Stops all motion. Requires firmware restart.: 停止所有运动。需要固件重启。
   Stow: 收回
   Strobe LED: 频闪LED
@@ -2128,6 +2146,7 @@ translations:
   ? The animated screensaver has been turned off on this device to prevent it from
     interfering with prints. You can re-enable it in Settings > Display.
   : 为防止动画屏保干扰打印，已在此设备上将其关闭。您可以在设置 > 显示中重新启用。
+  The filament system reported an error: ''
   The heater will cycle on and off several times.: 加热器将多次开关循环。
   ? The motor vibrates the belt while a strobe light flashes at the same frequency.
     When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse
@@ -2157,6 +2176,7 @@ translations:
   : 此设备仅有 {} MB 内存。共振校准会占用大量内存，可能导致打印机固件报告 \"Timer Too Close\" 错误或在测试中途重启。仍要继续吗？
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
   : 此设备内存极少。共振校准会占用大量内存，可能导致 \"Timer Too Close\" 错误。仍要继续吗？
+  This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: ''
   This file was sliced for {} but {} is loaded.: 此文件为 {} 切片，但当前加载的是 {}。
   This is exactly the data that will be sent: 这正是将要发送的数据
   This is what data would be sent if enabled: 这是启用后将发送的数据
@@ -2415,6 +2435,7 @@ translations:
   Your completed prints will appear here: 您完成的打印将显示在此处
   Your print start is already fully configured!: 您的打印启动已完全配置！
   Your printer has an automatic filament changer: 您的打印机配有自动换色系统
+  Your printer was offline during setup, so hardware options were skipped. Set them up now?: ''
   Z: Z
   Z Calibration: Z 轴校准
   Z Movement: Z 轴移动

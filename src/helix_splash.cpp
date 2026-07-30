@@ -172,7 +172,7 @@ static bool read_config_dark_mode(bool default_value = true) {
         if (std::regex_search(content, match, dark_mode_regex) && match.size() > 1) {
             bool result = (match[1].str() == "true");
             fprintf(stderr, "helix-splash: dark_mode=%s (from %s)\n", result ? "true" : "false",
-                    path);
+                    path.c_str());
             return result;
         }
     }

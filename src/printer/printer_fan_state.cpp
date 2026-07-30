@@ -282,6 +282,16 @@ std::string PrinterFanState::resolve_aux_fan(const std::string& part,
     return !commandable.empty() ? commandable : auto_controlled;
 }
 
+void PrinterFanState::apply_roles(const FanRoleConfig& roles) {
+    // Copy both out first: init_fans assigns straight into the members these
+    // alias, and passing a member as a const& argument to the call that
+    // overwrites it is the kind of self-assignment that works until someone
+    // reorders two lines inside init_fans.
+    const std::vector<std::string> objects = discovered_objects_;
+    const std::unordered_map<std::string, double> max_power = fan_max_power_;
+    init_fans(objects, roles, max_power);
+}
+
 void PrinterFanState::refresh_primary_fans_selection() {
     PrimaryFans now = classify_primary_fans();
     if (now != primary_fans_cache_) {
@@ -349,6 +359,7 @@ void PrinterFanState::init_fans(const std::vector<std::string>& fan_objects,
                                 const FanRoleConfig& roles,
                                 const std::unordered_map<std::string, double>& max_power) {
     fan_max_power_ = max_power;
+    discovered_objects_ = fan_objects;
 
     // Build new subject map, reusing existing subjects for fans that persist
     // across reconnections. Only deinit subjects for fans that disappeared.
@@ -381,6 +392,19 @@ void PrinterFanState::init_fans(const std::vector<std::string>& fan_objects,
                   roles_.part_fan, roles_.hotend_fan, roles_.chamber_fan, roles_.exhaust_fan,
                   role_display_names_.size());
 
+    // Carry live telemetry across the rebuild for fans that persist, exactly as
+    // the subject map below does. init_fans() re-runs on every
+    // reapply_hardware_roles() while the subscription stays live, and Moonraker's
+    // notify_status_update is DIFFERENTIAL: a fan holding a steady speed reports
+    // nothing afterwards, so anything zeroed here has no event that would ever
+    // restore it. Losing speed_percent freezes the readout; losing ever_ran also
+    // drops the part slot back to the front-most commandable fan, stranding it on
+    // a dead [fan] at 0% while All Fans stays correct (#1181).
+    std::unordered_map<std::string, FanInfo> previous;
+    previous.reserve(fans_.size());
+    for (auto& fan : fans_)
+        previous.emplace(fan.object_name, std::move(fan));
+
     fans_.clear();
     fans_.reserve(fan_objects.size());
 
@@ -403,6 +427,17 @@ void PrinterFanState::init_fans(const std::vector<std::string>& fan_objects,
         info.is_controllable = is_fan_controllable(info.type);
         info.speed_percent = 0;
 
+        // Same object name = same physical fan, the assumption the subject reuse
+        // below already makes. Identity fields (type, controllability, display
+        // name) are recomputed from the fresh config; only the live readings ride
+        // along (#1181).
+        auto prior = previous.find(obj_name);
+        if (prior != previous.end()) {
+            info.speed_percent = prior->second.speed_percent;
+            info.ever_ran = prior->second.ever_ran;
+            info.rpm = prior->second.rpm;
+        }
+
         // Name priority: custom name > role name > auto-generated
         auto* config = Config::get_instance();
         std::string custom_name;
@@ -422,13 +457,17 @@ void PrinterFanState::init_fans(const std::vector<std::string>& fan_objects,
         spdlog::trace("[PrinterFanState] Registered fan: {} -> \"{}\" (type={}, controllable={})",
                       obj_name, info.display_name, static_cast<int>(info.type),
                       info.is_controllable);
+        const int carried_speed = info.speed_percent;
         fans_.push_back(std::move(info));
 
         // Reuse existing subject if this fan was already tracked, otherwise create new
         auto existing = fan_speed_subjects_.find(obj_name);
         if (existing != fan_speed_subjects_.end() && existing->second) {
-            // Reuse — reset value but keep subject alive (observers remain valid)
-            lv_subject_set_int(existing->second.get(), 0);
+            // Reuse — keep the subject alive so observers stay valid, and hold it
+            // to the same value the struct carried forward. Writing 0 here would
+            // re-open the struct/subject split that update_fan_speed's
+            // unconditional write exists to absorb (#1181).
+            lv_subject_set_int(existing->second.get(), carried_speed);
             new_subjects.emplace(obj_name, std::move(existing->second));
             // Reuse existing lifetime token too (observers still hold valid weak_ptrs)
             auto lifetime_it = fan_speed_lifetimes_.find(obj_name);
@@ -485,30 +524,45 @@ void PrinterFanState::update_fan_speed(const std::string& object_name, double sp
 
     for (auto& fan : fans_) {
         if (fan.object_name == object_name) {
-            if (fan.speed_percent != speed_pct) {
-                bool was_running = fan.speed_percent > 0;
+            bool changed = fan.speed_percent != speed_pct;
+            bool was_running = fan.speed_percent > 0;
+
+            if (changed) {
                 fan.speed_percent = speed_pct;
                 if (speed_pct > 0)
                     fan.ever_ran = true;
+            }
 
-                // Fire per-fan subject for reactive UI updates
-                auto it = fan_speed_subjects_.find(object_name);
-                if (it != fan_speed_subjects_.end() && it->second) {
-                    lv_subject_set_int(it->second.get(), speed_pct);
+            // Always fire the per-fan subject — lv_subject_set_int no-ops
+            // internally when the value hasn't changed (lv_observer.c
+            // lv_subject_notify_if_changed), so there is no perf cost when
+            // struct and subject agree.
+            //
+            // The write is deliberately NOT gated on the struct comparison. A
+            // gated write can only ever restore the subject when the struct also
+            // moves, so any divergence becomes permanent: the subject waits for a
+            // change that, on a differential feed, may never come. Nothing in the
+            // tree is known to diverge them today — init_fans() carries struct and
+            // subject forward together — and this write is what keeps that true
+            // cheaply rather than by argument (#1181).
+            auto it = fan_speed_subjects_.find(object_name);
+            if (it != fan_speed_subjects_.end() && it->second) {
+                lv_subject_set_int(it->second.get(), speed_pct);
+                if (changed) {
                     spdlog::trace("[PrinterFanState] Fan {} speed updated to {}%", object_name,
                                   speed_pct);
-                } else {
-                    spdlog::debug("[PrinterFanState] Dropping speed update for '{}' — subject "
-                                  "not initialized",
-                                  object_name);
                 }
+            } else if (changed) {
+                spdlog::debug("[PrinterFanState] Dropping speed update for '{}' — subject "
+                              "not initialized",
+                              object_name);
+            }
 
-                // A fan starting or stopping can change which fan owns the part
-                // slot (runtime-adaptive selection). Only a zero-crossing can flip
-                // it, so skip the recompute for same-running-state changes (#1124).
-                if (was_running != (speed_pct > 0)) {
-                    refresh_primary_fans_selection();
-                }
+            // A fan starting or stopping can change which fan owns the part
+            // slot (runtime-adaptive selection). Only a zero-crossing can flip
+            // it, so skip the recompute for same-running-state changes (#1124).
+            if (changed && was_running != (speed_pct > 0)) {
+                refresh_primary_fans_selection();
             }
             return;
         }

@@ -6,12 +6,14 @@
 #include "ams_backend.h"
 #include "ams_state.h"
 #include "moonraker_client.h"
+#include "ui_panel_filament.h"
 
 #include <spdlog/spdlog.h>
 
-#include <algorithm>
+#include <cctype>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace helix {
@@ -51,20 +53,67 @@ GcodeNarrationRouter::~GcodeNarrationRouter() {
     }
 }
 
+std::optional<std::string> parse_unknown_command(const std::string& body) {
+    // Klipper reports a macro that hit an undefined command as
+    // `// Unknown command:"STATUS_PURGING"` — respond_info, NOT `!!` — and
+    // Moonraker still answers `ok` for the enclosing script. Anchored at the
+    // start of the body so an ordinary narration line that happens to mention
+    // the phrase cannot claim to be one.
+    static constexpr std::string_view kPrefix = "unknown command";
+    if (body.size() <= kPrefix.size())
+        return std::nullopt;
+    for (size_t i = 0; i < kPrefix.size(); ++i) {
+        if (static_cast<char>(std::tolower(static_cast<unsigned char>(body[i]))) != kPrefix[i])
+            return std::nullopt;
+    }
+
+    // Only a colon and whitespace may separate the phrase from the quoted name.
+    size_t i = kPrefix.size();
+    while (i < body.size() && (body[i] == ':' || body[i] == ' ' || body[i] == '\t'))
+        ++i;
+    if (i >= body.size() || body[i] != '"')
+        return std::nullopt;
+
+    size_t close = body.find('"', i + 1);
+    if (close == std::string::npos || close == i + 1)
+        return std::nullopt;
+    return body.substr(i + 1, close - i - 1);
+}
+
 void GcodeNarrationRouter::process_line(const std::string& line) {
-    // Trim leading whitespace, then require the `//` narration prefix. Errors
-    // (`!!` / `Error:`), `ok`, and status lines are ignored outright.
     size_t start = line.find_first_not_of(" \t");
     if (start == std::string::npos)
         return;
-    if (line.compare(start, 2, "//") != 0)
+
+    // `!!` is GcodeErrorRouter's contract and is never narration.
+    if (line.compare(start, 2, "!!") == 0)
         return;
 
-    // Strip the `//` prefix and any following whitespace.
-    size_t body_start = line.find_first_not_of(" \t", start + 2);
-    if (body_start == std::string::npos)
+    // Two channels, two matchers. A `//` body is a macro's own respond_info, so
+    // the loose needles in match_narration_phase() are appropriate there. An
+    // unprefixed line is the open console — M105 reports, `echo:` chatter and the
+    // user's gcode filename — and goes to the shape-anchored bare matcher, which
+    // is where AFC happens to put its load/unload narration.
+    const bool prefixed = line.compare(start, 2, "//") == 0;
+    std::string body;
+    if (prefixed) {
+        size_t body_start = line.find_first_not_of(" \t", start + 2);
+        if (body_start == std::string::npos)
+            return;
+        body = line.substr(body_start);
+    } else {
+        body = line.substr(start);
+    }
+
+    // An aborted macro reports its missing command here rather than through
+    // `!!`, so this router is the only place that sees it. Claim the line before
+    // any matcher does — the command name carries whatever verb the macro was
+    // named after, and `Unknown command:"STATUS_PURGING"` otherwise reads as a
+    // real purge phase and drives the step bar forwards on an error.
+    if (auto missing = parse_unknown_command(body)) {
+        filament_panel_report_unknown_command(*missing);
         return;
-    std::string body = line.substr(body_start);
+    }
 
     // Runs on the main thread (the ctor's lifetime_.bg_cb wrapper defers the
     // notify body to main), so these synchronous AmsState accesses are safe.
@@ -72,18 +121,18 @@ void GcodeNarrationRouter::process_line(const std::string& line) {
     if (!backend)
         return;
 
-    auto id = backend->match_narration_phase(body);
+    auto id = prefixed ? backend->match_narration_phase(body)
+                       : backend->match_bare_narration_phase(body);
     if (!id) {
-        // Drift hint: a line that names the filament system but matches no phase
-        // is the fingerprint of an upstream rewording. Debug level because a
-        // print emits plenty of unrelated `//` chatter; deduped so the
-        // interesting lines are greppable rather than buried.
-        std::string lowered = body;
-        std::transform(lowered.begin(), lowered.end(), lowered.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (lowered.find("afc") != std::string::npos && unmatched_logged_.insert(body).second) {
-            spdlog::debug("[GcodeNarration] no phase matched for '{}' — narration wording may "
-                          "have changed upstream; check match_narration_phase()",
+        // Drift hint: a line the backend recognizes as its own but that matches
+        // no phase is the fingerprint of an upstream rewording. The backend
+        // decides what "its own" means — asking it is what makes the hint reach
+        // the unprefixed lines, none of which contain the string "afc". Debug
+        // level, and deduped so the interesting lines are greppable.
+        if (backend->is_narration_drift_candidate(body) && unmatched_logged_.insert(body).second) {
+            spdlog::debug("[GcodeNarration] no phase matched for '{}' — either the narration "
+                          "wording changed upstream or this line has no phase in the template; "
+                          "check match_narration_phase()/match_bare_narration_phase()",
                           body);
         }
         return;

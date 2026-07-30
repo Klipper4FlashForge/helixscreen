@@ -143,11 +143,35 @@ const char* AmsState::get_logo_path(const std::string& type_name) {
         {"bttvivid", "A:assets/images/ams/btt_vivid_64.png"},
         {"vivid", "A:assets/images/ams/btt_vivid_64.png"},
         {"kms", "A:assets/images/ams/kms_64.png"},
+
+        // AFC unit types with no artwork of their own (Claymore is new in AFC
+        // v1.2.0; the rest predate it). They fall back to the AFC mark:
+        // wrong-but-related beats a blank slot, and the alternative is
+        // silently rendering nothing.
+        {"htlf", "A:assets/images/ams/afc_64.png"},
+        {"open ams", "A:assets/images/ams/afc_64.png"},
+        {"open_ams", "A:assets/images/ams/afc_64.png"},
+        {"openams", "A:assets/images/ams/afc_64.png"},
+        {"claymore", "A:assets/images/ams/afc_64.png"},
+        {"emu", "A:assets/images/ams/afc_64.png"},
     };
 
     auto it = logo_map.find(lower_name);
     if (it != logo_map.end()) {
         return it->second;
+    }
+
+    // AFC names a unit by type AND instance — "Box_Turtle Turtle_1" — so the
+    // whole string never matches a type key and every AFC unit fell through to
+    // the generic AFC mark, Box Turtles included. Retry on the leading token,
+    // which is the type. Only reached once the exact lookup has failed, so
+    // multi-word system names ("happy hare") keep their own entry.
+    const size_t space_pos = lower_name.find(' ');
+    if (space_pos != std::string::npos && space_pos > 0) {
+        it = logo_map.find(lower_name.substr(0, space_pos));
+        if (it != logo_map.end()) {
+            return it->second;
+        }
     }
     return nullptr;
 }
@@ -591,6 +615,11 @@ void AmsState::deinit_subjects() {
     }
 
     spdlog::trace("[AMS State] Deinitializing subjects");
+
+    // Expire the deferred setters still queued on the UpdateQueue. They capture
+    // `this` and write the subjects torn down below, so without this the next
+    // drain notifies a freed observer list (#1165, #1146).
+    async_lifetime_.invalidate();
 
     // Clear dangling API pointer — the MoonrakerAPI is destroyed during teardown
     // before AmsState re-initializes. Without this, sync_from_backend() would
@@ -2295,7 +2324,7 @@ void AmsState::set_narration_phase(int index, const std::string& label) {
 }
 
 void AmsState::set_pending_target_slot(int slot) {
-    helix::ui::queue_update([this, slot]() {
+    async_lifetime_.defer("AmsState::set_pending_target_slot", [this, slot]() {
         if (lv_subject_get_int(&pending_target_slot_) != slot) {
             lv_subject_set_int(&pending_target_slot_, slot);
         }
@@ -2304,7 +2333,7 @@ void AmsState::set_pending_target_slot(int slot) {
 
 void AmsState::set_active_tool_port_present(bool present) {
     // Marshal to the main thread — callable from the backend's WS status handler.
-    helix::ui::queue_update([this, present]() {
+    async_lifetime_.defer("AmsState::set_active_tool_port_present", [this, present]() {
         int v = present ? 1 : 0;
         if (lv_subject_get_int(&active_tool_port_present_) != v) {
             lv_subject_set_int(&active_tool_port_present_, v);

@@ -5,7 +5,7 @@
 <!-- States: 0=START, 1=PROGRESS, 2=RESULTS, 3=STROBE, 4=ERROR -->
 <component>
   <view name="panel_belt_tension"
-        extends="lv_obj" width="#overlay_panel_width" height="100%" align="right_mid" style_border_width="0"
+        extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_border_width="0"
         style_pad_all="0" style_bg_opa="255" style_bg_color="#card_bg" scrollable="false" flex_flow="column">
     <!-- Header Bar -->
     <header_bar name="overlay_header" title="Belt Tension" title_tag="Belt Tension"

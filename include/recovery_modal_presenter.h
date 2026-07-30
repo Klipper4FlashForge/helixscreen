@@ -6,12 +6,16 @@
 #include "action_prompt_manager.h" // PromptData / PromptButton
 #include "action_prompt_modal.h"   // helix::ui::ActionPromptModal
 #include "error_event.h"
+#include "lvgl.h"
 
 #include <memory>
 #include <string>
 #include <vector>
 
 class MoonrakerAPI;
+
+// Forward declaration so the presenter can grant white-box test access.
+struct RecoveryModalPresenterTestAccess;
 
 namespace helix::ui {
 
@@ -25,11 +29,19 @@ namespace helix::ui {
 /// fires when the user taps a recovery button. This makes the presenter fully
 /// testable with api_==nullptr.
 ///
+/// Cold-nozzle gate: an action flagged RecoveryAction::needs_hot_nozzle is not
+/// sent while the hotend is below Klipper's min_extrude_temp. The presenter
+/// commands a preheat and polls until the nozzle arrives, then sends — bounded,
+/// so a hotend that never heats gives up instead of waiting forever.
+///
 /// Lifetime: must outlive any GcodeErrorRouter that holds a reference to it.
+/// The presenter outlives individual modals, and the preheat poll timer outlives
+/// the modal that started it (the modal closes on the tap), so the destructor
+/// cancels the timer.
 class RecoveryModalPresenter {
   public:
     explicit RecoveryModalPresenter(MoonrakerAPI* api);
-    ~RecoveryModalPresenter() = default;
+    ~RecoveryModalPresenter();
 
     RecoveryModalPresenter(const RecoveryModalPresenter&) = delete;
     RecoveryModalPresenter& operator=(const RecoveryModalPresenter&) = delete;
@@ -41,15 +53,63 @@ class RecoveryModalPresenter {
 
     /// Hide the modal if visible and clear shown-detail state so a subsequent
     /// present() with the same detail is not suppressed.
+    ///
+    /// Deliberately does NOT abort a preheat already running for a tapped
+    /// action. dismiss() fires on the AMS action leaving ERROR, which is also
+    /// what a preheat's own heater command can provoke; cancelling there would
+    /// discard the recovery the user explicitly asked for. Only the bounded
+    /// wait, a later tap, or destruction ends a preheat.
     void dismiss();
 
     [[nodiscard]] bool is_visible() const;
 
   private:
+    friend struct ::RecoveryModalPresenterTestAccess;
+
+    /// Body of the modal's gcode callback: runs on the main thread when the user
+    /// taps a recovery button.
+    void on_recovery_tapped(const std::string& gcode);
+
+    /// Send @p gcode to the printer with the recovery error/toast handling.
+    void dispatch_recovery(const std::string& gcode, const std::string& tag);
+
+    /// True when the hotend may extrude right now.
+    [[nodiscard]] bool nozzle_ready_for_extrusion() const;
+
+    /// Temperature to preheat to before a deferred recovery.
+    [[nodiscard]] int resolve_preheat_target() const;
+
+    /// Command the heater and start polling for arrival.
+    void begin_preheat(const std::string& gcode, const std::string& tag, const std::string& label);
+
+    /// One poll tick: dispatch on arrival, give up once the budget is spent.
+    void poll_preheat();
+
+    /// Cancel the poll timer. Safe from the destructor and from inside the
+    /// timer's own callback.
+    void cancel_preheat_timer();
+
+    /// Cancel the timer and forget the deferred action.
+    void clear_preheat();
+
+    static void preheat_timer_cb(lv_timer_t* timer);
+
     MoonrakerAPI* api_;
     std::unique_ptr<helix::ui::ActionPromptModal> modal_;
     std::string shown_detail_;
     std::vector<helix::RecoveryAction> active_actions_;
+
+    // Deferred (preheating) recovery. preheat_timer_ != nullptr is the "a tap is
+    // waiting on the nozzle" state.
+    lv_timer_t* preheat_timer_ = nullptr;
+    std::string pending_gcode_;
+    std::string pending_tag_;
+    std::string pending_label_;
+    int pending_target_c_ = 0;
+    /// Polls left before the wait is abandoned. Counting ticks rather than wall
+    /// clock keeps the bound honest when the main loop stalls.
+    int32_t polls_remaining_ = 0;
+    uint32_t preheat_budget_ms_;
 };
 
 } // namespace helix::ui

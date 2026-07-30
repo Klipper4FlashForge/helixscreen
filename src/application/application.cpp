@@ -79,6 +79,7 @@
 #include "ui_dialog.h"
 #include "ui_emergency_stop.h"
 #include "ui_error_reporting.h"
+#include "ui_event_safety.h"
 #include "ui_fan_control_overlay.h"
 #include "ui_gcode_viewer.h"
 #include "ui_gradient_canvas.h"
@@ -468,15 +469,20 @@ int Application::run(int argc, char** argv) {
     // Ensure we're running from the project root
     ensure_project_root_cwd();
 
-    // Prevent multiple instances from running simultaneously.
-    // Two instances fighting for DRM causes 100% CPU (flush retry loop) and segfaults.
-    if (!acquire_instance_lock()) {
-        return 1;
-    }
-
     // Phase 1: Parse command line args
     if (!parse_args(argc, argv)) {
         return 0; // Help shown or parse error
+    }
+
+    // Prevent multiple instances from running simultaneously.
+    // Two instances fighting for DRM causes 100% CPU (flush retry loop) and segfaults.
+    //
+    // Claimed after arg parsing so the flags that print and exit (-V/--version,
+    // -h/--help) still work on a device where helix-screen is already running —
+    // taking the lock first made them fail with "another instance is running",
+    // which is exactly when you most want to ask the binary its version.
+    if (!acquire_instance_lock()) {
+        return 1;
     }
 
     // Install crash handler early (before other init that could crash)
@@ -1344,41 +1350,13 @@ bool Application::init_display() {
         theme_manager_refresh_layout_constants(disp);
         layout.init(w, h);
 
-        // OverlayBase-derived overlays cache their root widget across show/hide
-        // cycles, so the width baked in at creation time stays stale when the
-        // canvas shrinks (e.g., Android Keep Navigation Bar pins a side bar
-        // that insets the LVGL surface). Walk the screen children and re-apply
-        // the current overlay_panel_width_full / overlay_panel_width to any
-        // widget named *_overlay so existing overlays reflow without needing
-        // to be destroyed and recreated.
-        const char* width_full_str = lv_xml_get_const(nullptr, "overlay_panel_width_full");
-        const char* width_str = lv_xml_get_const(nullptr, "overlay_panel_width");
-        if (width_full_str && width_str) {
-            int32_t width_full = std::atoi(width_full_str);
-            int32_t width_std = std::atoi(width_str);
-            lv_obj_t* screen = lv_screen_active();
-            if (screen) {
-                uint32_t n = lv_obj_get_child_count(screen);
-                for (uint32_t i = 0; i < n; i++) {
-                    lv_obj_t* child = lv_obj_get_child(screen, i);
-                    const char* name = lv_obj_get_name(child);
-                    if (!name)
-                        continue;
-                    size_t len = std::strlen(name);
-                    if (len < 8)
-                        continue;
-                    if (std::strcmp(name + len - 8, "_overlay") != 0)
-                        continue;
-                    int32_t cur = lv_obj_get_width(child);
-                    // Most overlays use _full; some narrower panels use the
-                    // standard variant. Decide by which is closer to current.
-                    int32_t target = std::abs(cur - width_std) < std::abs(cur - width_full)
-                                         ? width_std
-                                         : width_full;
-                    lv_obj_set_width(child, target);
-                }
-            }
-        }
+        // Overlays cache their root widget across show/hide cycles, so the
+        // width applied at push time goes stale when the canvas changes size
+        // (e.g., Android Keep Navigation Bar pins a side bar that insets the
+        // LVGL surface). NavigationManager remembers each live overlay's
+        // resolved width class, so this re-derives the pixel width from the
+        // constants just refreshed above (#941, #1178).
+        NavigationManager::instance().reapply_overlay_widths();
 
         spdlog::info("[Application] Resize: refreshed theme + layout for {}x{} ({})", w, h,
                      layout.name());
@@ -2295,7 +2273,7 @@ bool show_demo_overlay(const std::string& name) {
 #endif // HELIX_ENABLE_REMOTE_CONTROL
 
 void Application::reapply_hardware_roles() {
-    helix::ui::queue_update("Application::reapply_hardware_roles", [this]() {
+    m_async_lifetime.defer("Application::reapply_hardware_roles", [this]() {
         MoonrakerAPI* api = m_moonraker ? m_moonraker->api() : nullptr;
         if (!api) {
             return;
@@ -2303,14 +2281,108 @@ void Application::reapply_hardware_roles() {
         const auto& fans = api->hardware().fans();
         const auto& heaters = api->hardware().heaters();
         // Re-resolve + persist fan roles, then rebind fan UI to the new mapping.
+        // apply_roles, not init_fans: the wizard changed which fan plays which
+        // role, not which fans exist, so the discovered list comes from what
+        // discovery actually stored rather than being re-passed from here.
         auto roles = helix::FanRoleConfig::from_config(Config::get_instance(), fans);
-        get_printer_state().init_fans(fans, roles, api->hardware().fan_max_power());
+        get_printer_state().apply_fan_roles(roles);
         // Heater roles persist back to config (no dedicated runtime fan-style consumer).
         helix::resolve_role_from_config(helix::HardwareRoleId::HotendHeater, Config::get_instance(),
                                         heaters, /*persist_autoheal=*/true);
         helix::resolve_role_from_config(helix::HardwareRoleId::BedHeater, Config::get_instance(),
                                         heaters, /*persist_autoheal=*/true);
     });
+}
+
+void Application::settle_deferred_hardware_setup() {
+    Config* config = Config::get_instance();
+    if (!helix::wizard_clear_hardware_setup_deferred(config)) {
+        return;
+    }
+    if (!config->save()) {
+        spdlog::warn("[Application] Failed to persist deferred hardware setup decision");
+    }
+}
+
+void Application::launch_deferred_hardware_setup() {
+    auto steps = std::move(m_pending_hardware_setup_steps);
+    m_pending_hardware_setup_steps.clear();
+    if (steps.empty()) {
+        return;
+    }
+    spdlog::info("[Application] Launching deferred hardware setup ({} step(s))", steps.size());
+
+    ui_wizard_register_event_callbacks();
+    ui_wizard_container_register_responsive_constants();
+    ui_wizard_init_subjects();
+    // Back on the first targeted step has nothing to retreat to, so give it the
+    // same dismiss semantics as the reconfig wizard.
+    set_wizard_cancel_callback([]() {
+        ui_wizard_complete_targeted();
+        set_wizard_cancel_callback(nullptr);
+    });
+    Application* app = this;
+    ui_wizard_create_targeted(m_screen, std::move(steps), [app]() {
+        set_wizard_cancel_callback(nullptr);
+        // ui_wizard_complete_targeted() deliberately skips the expected-hardware
+        // population, so record the user's fresh picks here.
+        ui_wizard_record_expected_hardware(Config::get_instance());
+        app->reapply_hardware_roles();
+    });
+}
+
+void Application::prompt_deferred_hardware_setup(std::vector<helix::wizard::StepId> steps) {
+    // The steps to run are captured for the confirm callback. modal_show_confirmation
+    // takes a single void* user_data, so park them on the Application instance the
+    // callbacks already receive rather than heap-allocating a context.
+    m_pending_hardware_setup_steps = std::move(steps);
+    spdlog::info("[Application] Offering deferred hardware setup ({} step(s))",
+                 m_pending_hardware_setup_steps.size());
+
+    helix::ui::modal_show_confirmation(
+        lv_tr("Printer hardware detected"),
+        lv_tr("Your printer was offline during setup, so hardware options were skipped. "
+              "Set them up now?"),
+        ModalSeverity::Info, lv_tr("Set up"),
+        [](lv_event_t* e) {
+            LVGL_SAFE_EVENT_CB_BEGIN("[Application] deferred_hardware_setup_confirm");
+            auto* app = static_cast<Application*>(lv_event_get_user_data(e));
+            Modal::hide(Modal::get_top());
+            // Settle first: the wizard tears itself down asynchronously, and a
+            // crash mid-run must not leave the offer pending forever.
+            app->settle_deferred_hardware_setup();
+            // Build the wizard AFTER the modal's exit animation, not inside the
+            // click that started it: Modal::hide() only marks the backdrop
+            // exiting, so creating the full-screen wizard here would put it
+            // underneath a still-fading backdrop. The pending step list lives on
+            // the Application instance until the timer consumes it.
+            lv_timer_t* launch = lv_timer_create(
+                [](lv_timer_t* t) {
+                    auto* self = static_cast<Application*>(lv_timer_get_user_data(t));
+                    lv_timer_delete(t);
+                    self->launch_deferred_hardware_setup();
+                },
+                300, app);
+            lv_timer_set_repeat_count(launch, 1);
+            LVGL_SAFE_EVENT_CB_END();
+        },
+        [](lv_event_t* e) {
+            LVGL_SAFE_EVENT_CB_BEGIN("[Application] deferred_hardware_setup_decline");
+            auto* app = static_cast<Application*>(lv_event_get_user_data(e));
+            Modal::hide(Modal::get_top());
+            app->m_pending_hardware_setup_steps.clear();
+            // Declining is final for this printer. The offer is for optional
+            // role assignments the app already has working defaults for, the
+            // snapshot was written regardless so nothing is flagged either way,
+            // and re-asking on every boot is the exact nag the surrounding
+            // reconfig-wizard code records declines to avoid. `--wizard` still
+            // re-runs setup, and a saved role that later breaks still routes to
+            // the targeted reconfig wizard on its own.
+            app->settle_deferred_hardware_setup();
+            spdlog::info("[Application] Deferred hardware setup declined");
+            LVGL_SAFE_EVENT_CB_END();
+        },
+        this, lv_tr("Not now"));
 }
 
 void Application::setup_discovery_callbacks() {
@@ -2618,6 +2690,24 @@ void Application::setup_discovery_callbacks() {
                 }
             }
 
+            // Pay off a hardware snapshot the wizard deferred because Klipper was
+            // down during setup (#1160). Everything discovered now was present all
+            // along, so accepting it BEFORE validate() keeps this first successful
+            // discovery clean instead of reporting every fan, filament sensor and
+            // LED as newly appeared. The marker itself is cleared only once the
+            // user answers the offer below, so a session killed before answering
+            // still gets asked next boot.
+            const bool hardware_setup_deferred =
+                helix::wizard_hardware_setup_deferred(Config::get_instance());
+            if (hardware_setup_deferred && !Config::get_instance()->is_wizard_required() &&
+                !is_wizard_active()) {
+                size_t accepted = HardwareValidator::acknowledge_discovered_hardware(
+                    Config::get_instance(), api->hardware());
+                spdlog::info("[Application] Deferred wizard hardware snapshot written "
+                             "({} object(s) accepted)",
+                             accepted);
+            }
+
             // Hardware validation: check config expectations vs discovered hardware.
             // Now uses the post-preset config so preset-mapped fan/heater names are
             // checked against discovery, not the pre-preset scaffolded defaults.
@@ -2693,6 +2783,29 @@ void Application::setup_discovery_callbacks() {
                     set_wizard_cancel_callback(nullptr);
                     app->reapply_hardware_roles();
                 });
+            }
+
+            // Offer the hardware steps the Klipper-down wizard could not show
+            // (#1160). The user skipped them because their printer was broken,
+            // not because they had nothing to choose. Gated exactly like the
+            // reconfig wizard above (idle, no wizard running, once per session),
+            // plus reconfig_steps.empty() so the two never stack — if a reconfig
+            // session just launched, the offer waits for the next boot.
+            if (hardware_setup_deferred && hw_changed && !print_active &&
+                !Config::get_instance()->is_wizard_required() && !is_wizard_active() &&
+                reconfig_steps.empty() && !app->m_hardware_setup_prompt_shown) {
+                auto steps = ui_wizard_deferred_hardware_steps();
+                app->m_hardware_setup_prompt_shown = true;
+                if (steps.empty()) {
+                    // Nothing left to ask about (a preset already answers these,
+                    // or the printer has none of the optional hardware). Settle
+                    // the debt silently rather than showing a dead-end dialog.
+                    spdlog::info("[Application] Deferred hardware setup has no steps to offer; "
+                                 "settling silently");
+                    app->settle_deferred_hardware_setup();
+                } else {
+                    app->prompt_deferred_hardware_setup(std::move(steps));
+                }
             }
 
             // Save session snapshot for next comparison (even if no issues)
@@ -3058,7 +3171,7 @@ void Application::init_action_prompt() {
     m_action_prompt_manager->set_on_show([this](const helix::PromptData& data) {
         spdlog::info("[ActionPrompt] Showing prompt: {}", data.title);
         // WebSocket callbacks run on background thread - must use ui_queue_update
-        helix::ui::queue_update([this, data]() {
+        m_async_lifetime.defer("Application::action_prompt_show", [this, data]() {
             lv_obj_t* screen = lv_screen_active();
             if (m_action_prompt_modal && screen) {
                 m_action_prompt_modal->show_prompt(screen, data);
@@ -3069,7 +3182,7 @@ void Application::init_action_prompt() {
     // Wire on_close callback to hide modal
     m_action_prompt_manager->set_on_close([this]() {
         spdlog::info("[ActionPrompt] Closing prompt");
-        helix::ui::queue_update([this]() {
+        m_async_lifetime.defer("Application::action_prompt_close", [this]() {
             if (m_action_prompt_modal) {
                 m_action_prompt_modal->hide();
             }
@@ -3293,11 +3406,24 @@ void Application::restore_flush_callback() {
 }
 
 void Application::check_wifi_availability() {
+    // Bring WiFi up at startup instead of waiting for a UI screen to construct
+    // the manager. get_wifi_manager() creates the silent global instance, whose
+    // constructor builds the backend (null when there is no hardware) and
+    // start_async()es it — which is also where credentials are re-applied on
+    // firmwares whose wpa_supplicant discards them.
+    //
+    // This used to be gated on is_wifi_expected(), which defaults to false and
+    // is absent from settings.json on a Snapmaker U1 — so that device never
+    // started WiFi at boot at all, and only ever connected once the user opened
+    // a WiFi screen. Bringup is not a user-intent question.
+    auto wifi = get_wifi_manager();
+
+    // wifi_expected keeps its original meaning: the user configured WiFi, so
+    // tell them if the hardware has since disappeared.
     if (!m_config || !m_config->is_wifi_expected()) {
-        return; // WiFi not expected, no need to check
+        return;
     }
 
-    auto wifi = get_wifi_manager();
     if (wifi && !wifi->has_hardware()) {
         NOTIFY_ERROR_MODAL(lv_tr("WiFi Unavailable"),
                            lv_tr("WiFi was configured but hardware is not available. "
@@ -3974,7 +4100,7 @@ void Application::cancel_add_printer_wizard() {
 
     // Defer wizard teardown + soft restart — we're called from a wizard button click handler,
     // so the wizard_container must survive until the event callback returns.
-    helix::ui::queue_update([this]() {
+    m_async_lifetime.defer("Application::cancel_add_printer_wizard", [this]() {
         m_soft_restart_in_progress = true;
 
         set_wizard_active(false);
@@ -4259,6 +4385,10 @@ void Application::shutdown() {
         return;
     }
     m_shutdown_complete = true;
+
+    // Expire the callbacks this object deferred to the main thread before any of
+    // the subsystems they touch are torn down below (#1165).
+    m_async_lifetime.invalidate();
 
     // Clean shutdown means no crash loop -- remove the marker file
     std::filesystem::remove(crash_marker_path());

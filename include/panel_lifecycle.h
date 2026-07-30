@@ -63,6 +63,28 @@ class IPanelLifecycle {
     }
 
     /**
+     * @brief Whether this view is a destination rather than a transient layer
+     *
+     * Destinations render full width (screen - nav) and occlude the backdrop;
+     * their drill-downs inherit that. Transient layers render gapped
+     * (screen - nav - space_lg) so the backdrop shows at the leading edge,
+     * signalling "you opened this and will return."
+     *
+     * Default false — most overlays are tools you return from. Override to true
+     * only for screens users park on for long stretches (AMS, AMS Overview,
+     * Print Status). Declaring it here rather than at the push site means the
+     * promotion travels with the panel: AmsPanel is reachable from Home, the
+     * Printer Manager overlay and the AMS Overview, and must be full width from
+     * all three.
+     *
+     * NavigationManager::push_overlay() reads this. See include/overlay_class.h
+     * and prestonbrown/helixscreen#1178.
+     */
+    virtual bool is_destination() const {
+        return false;
+    }
+
+    /**
      * @brief Re-apply C++-side content to a freshly rebuilt widget tree
      *
      * rebuild() re-runs setup()/create() and nothing else, so it reproduces

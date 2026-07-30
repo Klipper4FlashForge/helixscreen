@@ -187,6 +187,15 @@ class PIDCalibrationPanel : public OverlayBase {
     void on_calibration_result(bool success, float kp = 0, float ki = 0, float kd = 0,
                                const std::string& error_message = "");
 
+    /// Test-only: arm the ETA refresh timer without running a calibration, so the
+    /// teardown paths that must cancel it can be exercised directly.
+    void arm_eta_timer_for_test();
+
+    /// Test-only: the armed ETA timer, or nullptr when none is armed.
+    lv_timer_t* eta_timer_for_test() const {
+        return eta_update_timer_;
+    }
+
   private:
     // Client/API references
     // Note: overlay_root_ inherited from OverlayBase
@@ -337,6 +346,11 @@ class PIDCalibrationPanel : public OverlayBase {
 
     void start_progress_tracking();
     void stop_progress_tracking();
+
+    /// Cancel the ETA refresh timer. Safe to call when none is armed, and safe
+    /// from the destructor — unlike stop_progress_tracking(), it touches only
+    /// the timer, not the observer guards.
+    void cancel_eta_timer();
     void on_progress_temperature(int temp_tenths);
     void update_progress_display();
     static void on_eta_timer_tick(lv_timer_t* timer);

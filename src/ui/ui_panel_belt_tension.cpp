@@ -234,6 +234,12 @@ void BeltTensionPanel::init_subjects() {
 }
 
 void BeltTensionPanel::deinit_subjects() {
+    // Expire outstanding async tokens here, not only in cleanup()/on_deactivate():
+    // subjects can be torn down and re-inited on a LIVE panel (shutdown registry,
+    // test isolation), and a queued callback would otherwise write into a subject
+    // that was deinited underneath it (prestonbrown/helixscreen#1146).
+    lifetime_.invalidate();
+
     if (subjects_initialized_) {
         subjects_.deinit_all();
         subjects_initialized_ = false;
@@ -339,30 +345,21 @@ void BeltTensionPanel::on_activate() {
 
     // Detect hardware capabilities
     if (calibrator_) {
-        auto tok = lifetime_.token();
         calibrator_->detect_hardware(
-            [this, tok](const helix::calibration::BeltTensionHardware& hw) {
-                ui::queue_update([this, tok, hw]() {
-                    if (tok.expired())
-                        return;
-                    on_hardware_detected(hw);
-                });
-            },
-            [this, tok](const std::string& msg) {
-                ui::queue_update([this, tok, msg]() {
-                    if (tok.expired())
-                        return;
-                    spdlog::warn("[BeltTension] Hardware detection failed: {}", msg);
-                    // Show defaults, user can still try
-                    snprintf(hw_kinematics_buf_, sizeof(hw_kinematics_buf_), "%s",
-                             lv_tr("Unknown"));
-                    lv_subject_notify(&hw_kinematics_subject_);
-                    snprintf(hw_adxl_buf_, sizeof(hw_adxl_buf_), "%s", lv_tr("Not detected"));
-                    lv_subject_notify(&hw_adxl_subject_);
-                    snprintf(hw_led_buf_, sizeof(hw_led_buf_), "%s", lv_tr("Not detected"));
-                    lv_subject_notify(&hw_led_subject_);
-                });
-            });
+            lifetime_.bg_cb("BeltTensionPanel::detect_hardware",
+                            [this](const helix::calibration::BeltTensionHardware& hw) {
+                                on_hardware_detected(hw);
+                            }),
+            lifetime_.bg_cb("BeltTensionPanel::detect_hw_error", [this](const std::string& msg) {
+                spdlog::warn("[BeltTension] Hardware detection failed: {}", msg);
+                // Show defaults, user can still try
+                snprintf(hw_kinematics_buf_, sizeof(hw_kinematics_buf_), "%s", lv_tr("Unknown"));
+                lv_subject_notify(&hw_kinematics_subject_);
+                snprintf(hw_adxl_buf_, sizeof(hw_adxl_buf_), "%s", lv_tr("Not detected"));
+                lv_subject_notify(&hw_adxl_subject_);
+                snprintf(hw_led_buf_, sizeof(hw_led_buf_), "%s", lv_tr("Not detected"));
+                lv_subject_notify(&hw_led_subject_);
+            }));
     }
 }
 
@@ -465,41 +462,29 @@ void BeltTensionPanel::handle_start_clicked() {
              lv_tr("Starting measurement..."));
     lv_subject_notify(&progress_label_subject_);
 
-    auto tok = lifetime_.token();
     calibrator_->run_auto_sweep(
         // Progress callback
-        [this, tok](int percent) {
-            ui::queue_update([this, tok, percent]() {
-                if (tok.expired())
-                    return;
-                lv_subject_set_int(&progress_subject_, percent);
+        lifetime_.bg_cb("BeltTensionPanel::sweep_progress",
+                        [this](int percent) {
+                            lv_subject_set_int(&progress_subject_, percent);
 
-                if (percent < 50) {
-                    snprintf(progress_label_buf_, sizeof(progress_label_buf_),
-                             lv_tr("Measuring Path A... %d%%"), percent * 2);
-                } else {
-                    snprintf(progress_label_buf_, sizeof(progress_label_buf_),
-                             lv_tr("Measuring Path B... %d%%"), (percent - 50) * 2);
-                }
-                lv_subject_notify(&progress_label_subject_);
-            });
-        },
+                            if (percent < 50) {
+                                snprintf(progress_label_buf_, sizeof(progress_label_buf_),
+                                         lv_tr("Measuring Path A... %d%%"), percent * 2);
+                            } else {
+                                snprintf(progress_label_buf_, sizeof(progress_label_buf_),
+                                         lv_tr("Measuring Path B... %d%%"), (percent - 50) * 2);
+                            }
+                            lv_subject_notify(&progress_label_subject_);
+                        }),
         // Complete callback
-        [this, tok](const helix::calibration::BeltTensionResult& result) {
-            ui::queue_update([this, tok, result]() {
-                if (tok.expired())
-                    return;
-                on_sweep_complete(result);
-            });
-        },
+        lifetime_.bg_cb("BeltTensionPanel::sweep_complete",
+                        [this](const helix::calibration::BeltTensionResult& result) {
+                            on_sweep_complete(result);
+                        }),
         // Error callback
-        [this, tok](const std::string& msg) {
-            ui::queue_update([this, tok, msg]() {
-                if (tok.expired())
-                    return;
-                on_error(msg);
-            });
-        });
+        lifetime_.bg_cb("BeltTensionPanel::sweep_error",
+                        [this](const std::string& msg) { on_error(msg); }));
 }
 
 void BeltTensionPanel::handle_cancel_clicked() {

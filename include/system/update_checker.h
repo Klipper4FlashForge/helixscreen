@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include "async_lifetime_guard.h"
 #include "lvgl.h"
 #include "subject_managed_panel.h"
 
@@ -229,6 +230,51 @@ class UpdateChecker {
                                                   const std::string& install_root);
 
     std::string get_platform_asset_name() const;
+
+    /// Single source of truth for the release asset name Moonraker's update
+    /// manager resolves via release_info.json's asset_name. Static so
+    /// repair_release_info() compares against the same expression rather than a
+    /// copy of it — #993 was caused by exactly that name drifting between
+    /// duplicates.
+    static std::string platform_asset_name();
+
+    /**
+     * @brief Outcome of a release_info.json validate-and-repair pass.
+     */
+    enum class ReleaseInfoRepair {
+        NotNeeded, ///< asset_name already matches the platform asset — nothing written
+        Repaired,  ///< file rewritten with the correct asset_name
+        Absent,    ///< no release_info.json to repair (and no deployed layout to create one in)
+        Failed     ///< a repair was needed but could not be written (read-only / permissions)
+    };
+
+    /**
+     * @brief Validate and, if needed, repair the installed release_info.json.
+     *
+     * Moonraker's `type: web` updater downloads the release asset named by this
+     * file's `asset_name`. When that name is missing or matches no asset on the
+     * release, Moonraker silently falls back to the alphabetically-FIRST asset —
+     * never a zip — and extraction dies with "File is not a zip file"
+     * (prestonbrown/helixscreen#993). The file is written once at install time
+     * and was never revalidated, so a stale or wrong value permanently blocked
+     * the very update that would have fixed it; SSH was the only escape.
+     *
+     * This runs at startup and rewrites the file when `asset_name` is absent,
+     * empty, non-string, or != get_platform_asset_name(), preserving the other
+     * fields. It never writes when the value is already correct, and a failure
+     * is never fatal — a bad release_info.json must not stop the app booting.
+     *
+     * A MISSING file is only created when @p install_root looks like a deployed
+     * install (`bin/helix-screen` present). A dev tree resolves its install root
+     * to the source checkout, and creating the file there would litter the repo.
+     *
+     * Static and install-root-parameterised so it is unit-testable against a
+     * temp directory.
+     *
+     * @param install_root Resolved install root (app_get_install_root()), or ""
+     *        if unknown (bind-mounted layout) — then nothing is done.
+     */
+    static ReleaseInfoRepair repair_release_info(const std::string& install_root);
 
     /** @brief Get the configured update channel */
     UpdateChannel get_channel() const;
@@ -454,6 +500,10 @@ class UpdateChecker {
     /** @brief Validate downloaded tarball contains binary for correct architecture */
     bool validate_elf_architecture(const std::string& tarball_path);
 
+    /// Cancel the auto-check timer without logging. Split out of stop_auto_check()
+    /// so the destructor can share it — spdlog may already be gone by then.
+    void cancel_auto_check_timer();
+
     // Auto-check timer
     lv_timer_t* auto_check_timer_{nullptr};
 
@@ -467,4 +517,13 @@ class UpdateChecker {
 
     SubjectManager subjects_;
     bool subjects_initialized_{false};
+
+    /// Expires the status/progress callbacks queued from the check and download
+    /// worker threads. Declared after `subjects_` so reverse-order member
+    /// destruction invalidates it before the subjects it protects; also
+    /// invalidated by shutdown(), which is where this class tears its subjects
+    /// down (it has no deinit_subjects()). The in-lambda `subjects_initialized_`
+    /// tests are not a substitute — reading that flag is itself a member access
+    /// on a possibly-freed `this` (#1165, #1146).
+    helix::AsyncLifetimeGuard async_lifetime_;
 };

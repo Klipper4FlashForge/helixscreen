@@ -5,7 +5,7 @@
 <!-- Two-view overlay: scrollable material list → edit form for a selected material -->
 <component>
   <view name="material_temps_overlay"
-        extends="overlay_panel" width="#overlay_panel_width_full" title="Material Temperatures"
+        extends="overlay_panel" title="Material Temperatures"
         title_tag="Material Temperatures" bg_color="#screen_bg">
     <!-- Content Area -->
     <lv_obj name="overlay_content"

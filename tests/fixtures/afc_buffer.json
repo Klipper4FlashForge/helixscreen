@@ -1,10 +1,15 @@
 {
-    "state": "Advancing",
-    "lanes": [
-        "lane1",
-        "lane2",
-        "lane3",
-        "lane4"
-    ],
-    "enabled": false
+  "distance_to_fault": null,
+  "enabled": true,
+  "error_sensitivity": 0,
+  "fault_detection_enabled": false,
+  "fault_timer": null,
+  "lanes": [
+    "lane1",
+    "lane2",
+    "lane3",
+    "lane4"
+  ],
+  "rotation_distance": 57.43584031578948,
+  "state": "Trailing"
 }

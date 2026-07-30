@@ -8067,10 +8067,10 @@ TEST_CASE("AD5X IFS CHANGE_ZCOLOR does NOT create an override for an auto-tracke
 TEST_CASE("AD5X IFS CHANGE_ZCOLOR TYPE= stops at '|' so echoed button payloads don't poison "
           "the material (#1065 raza616)",
           "[ams][ad5x_ifs][1065]") {
-    // zmod's prompt-render echoes the per-slot buttons as
-    //   action:prompt_button Change color|CHANGE_ZCOLOR SLOT=4 TYPE=SILK|primary|F72224
-    // The payload's `|color|hex` suffix rides right up against TYPE=. A greedy
-    // TYPE=(\S+) captured "SILK|primary|F72224" into materials_ +
+    // The AD5X's native screen re-echoes received commands into a quoted
+    // RESPOND MSG="…", so a button payload's `|style|hex` suffix can ride right
+    // up against TYPE= on a line that is NOT an action:prompt_ definition. A
+    // greedy TYPE=(\S+) captured "SILK|primary|F72224" into materials_ +
     // last_firmware_material_ — the pollution seen in bundle H2X5QMCU as
     // "firmware material changed SILK|primary|F72224 -> SILK". The extractor
     // must stop the TYPE token at the '|'.
@@ -8082,13 +8082,304 @@ TEST_CASE("AD5X IFS CHANGE_ZCOLOR TYPE= stops at '|' so echoed button payloads d
     Ad5xIfsTestAccess::set_material(backend, 3, "SILK");
 
     REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
-        backend, "// action:prompt_button Change color|CHANGE_ZCOLOR SLOT=4 TYPE=SILK|primary|F72224"));
+        backend, "RESPOND MSG=\"CHANGE_ZCOLOR SLOT=4 TYPE=SILK|primary|F72224\""));
 
     // Material is the clean token, not the button descriptor — both the
     // UI-visible value and the change-detection baseline.
     SlotInfo info = backend.get_slot_info(3);
     REQUIRE(info.material == "SILK");
     REQUIRE(Ad5xIfsTestAccess::last_firmware_material(backend, 3).value_or("") == "SILK");
+}
+
+// ==========================================================================
+// COLOR-menu echo classification (#1065, raza616 bundle 482NB943).
+//
+// zmod renders every COLOR-macro dialog by echoing its buttons down the gcode
+// console as `// action:prompt_button <label>|<gcode>|<style>[|<hex>]`. Those
+// lines are the menu's OFFER LIST — the 24-swatch palette, the material
+// whitelist — not a record of anything the firmware did. Feeding them to the
+// CHANGE_ZCOLOR extractor applied all 24 candidates in sequence, so the slot
+// landed on the LAST swatch (#161616) / the last type (PETG-CF) until the
+// confirming GET_ZCOLOR corrected it ~1s later, and each phantom apply pushed
+// a lane_data write (25 server.database.post_item requests queued in 300ms on
+// a 473MB MIPS AD5X).
+//
+// The root "Select print materials" render is the opposite case: its per-slot
+// rows carry a genuine four-slot firmware snapshot, emitted ~100ms after the
+// user's tap — the freshest truth available anywhere in the stream.
+// ==========================================================================
+
+TEST_CASE("AD5X IFS echoed CHANGE_ZCOLOR menu buttons are offers, not edits "
+          "(#1065 bundle 482NB943)",
+          "[ams][ad5x_ifs][1065]") {
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    Ad5xIfsTestAccess::set_port_presence(backend, 0, true);
+    Ad5xIfsTestAccess::set_color(backend, 0, "F330F9");
+    Ad5xIfsTestAccess::set_material(backend, 0, "SILK");
+
+    // "Select color": the swatch grid, ending on black.
+    for (const char* hex : {"ffffff", "fef043", "75d9f3", "161616"}) {
+        REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
+            backend, std::string("// action:prompt_button _ |CHANGE_ZCOLOR SLOT=1 TYPE=SILK HEX=") +
+                         hex + "|primary|" + hex));
+    }
+    // "Select material type": the whitelist, ending on PETG-CF.
+    for (const char* type : {"PLA", "TPU", "PETG-CF"}) {
+        REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
+            backend, std::string("// action:prompt_button ") + type +
+                         "|CHANGE_ZCOLOR SLOT=1 TYPE=" + type + " HEX=F330F9|primary|F330F9"));
+    }
+
+    // The slot still shows firmware truth, not the last candidate in either list.
+    SlotInfo info = backend.get_slot_info(0);
+    CHECK(info.color_rgb == 0xF330F9);
+    CHECK(info.material == "SILK");
+    // Baselines held too — a moved baseline makes the next clean GET_ZCOLOR read
+    // look like an external edit and fires a spurious lane_data write.
+    CHECK(Ad5xIfsTestAccess::last_firmware_color(backend, 0).value_or(0) == 0xF330F9);
+    CHECK(Ad5xIfsTestAccess::last_firmware_material(backend, 0).value_or("") == "SILK");
+    // And nothing was fabricated on a slot the user never committed a change to.
+    CHECK_FALSE(Ad5xIfsTestAccess::get_override(backend, 0).has_value());
+}
+
+TEST_CASE("AD5X IFS COLOR-menu slot row is a firmware snapshot (#1065 bundle 482NB943)",
+          "[ams][ad5x_ifs][1065]") {
+    // The user taps SILK; zmod applies it and re-renders the root menu with the
+    // new value ~100ms later. Before this, HelixScreen ignored that row and
+    // waited on GET_ZCOLOR — which in bundle 482NB943 raced the firmware write
+    // and returned the OLD type, leaving the multi-filament menu showing PETG
+    // for 40 seconds (17:34:37.765 tap -> 17:35:17.342 label catch-up).
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    Ad5xIfsTestAccess::set_port_presence(backend, 0, true);
+    Ad5xIfsTestAccess::set_color(backend, 0, "F330F9");
+    Ad5xIfsTestAccess::set_material(backend, 0, "PETG");
+
+    REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
+        backend,
+        "// action:prompt_button 1: SILK|RUN_ZCOLOR SLOT=1 HEX=F330F9 TYPE=SILK|primary|F330F9"));
+
+    SlotInfo info = backend.get_slot_info(0);
+    CHECK(info.material == "SILK");
+    CHECK(info.color_rgb == 0xF330F9);
+    // Baseline advanced, so the GET_ZCOLOR that lands moments later is the
+    // confirming no-op it was always meant to be.
+    CHECK(Ad5xIfsTestAccess::last_firmware_material(backend, 0).value_or("") == "SILK");
+}
+
+namespace {
+
+// The exact swatch grid zmod renders for "Select color" (bundle 482NB943,
+// 17:34:19.0-19.2 and 17:35:29.6-29.9). Order matters: the bug landed the slot
+// on whichever entry came LAST, so #161616 is the value that showed on screen.
+const std::vector<std::string> kZmodPalette = {
+    "ffffff", "fef043", "dcf478", "0acc38", "067749", "0c6283", "0de2a0", "75d9f3",
+    "45a8f9", "2750e0", "46328e", "a03cf7", "f330f9", "d4b0dc", "f95d73", "f72224",
+    "7c4b00", "f98d33", "fdebd5", "d3c4a3", "af7836", "898989", "bcbcbc", "161616"};
+
+// zmod's stock material whitelist, in render order (17:34:35.849-35.886).
+// PETG-CF is last, so that is the type the slot ended up displaying.
+const std::vector<std::string> kZmodMaterials = {"PLA", "PLA-CF",  "SILK",   "TPU",
+                                                 "ABS", "PETG",    "PETG-CF"};
+
+std::string palette_button(int slot1, const std::string& type, const std::string& hex) {
+    return "// action:prompt_button _ |CHANGE_ZCOLOR SLOT=" + std::to_string(slot1) +
+           " TYPE=" + type + " HEX=" + hex + "|primary|" + hex;
+}
+
+std::string material_button(int slot1, const std::string& type, const std::string& hex) {
+    return "// action:prompt_button " + type + "|CHANGE_ZCOLOR SLOT=" + std::to_string(slot1) +
+           " TYPE=" + type + " HEX=" + hex + "|primary|" + hex;
+}
+
+std::string slot_row(int slot1, const std::string& type, const std::string& hex) {
+    return "// action:prompt_button " + std::to_string(slot1) + ": " + type +
+           "|RUN_ZCOLOR SLOT=" + std::to_string(slot1) + " HEX=" + hex + " TYPE=" + type +
+           "|primary|" + hex;
+}
+
+} // namespace
+
+TEST_CASE("AD5X IFS regression: COLOR palette render never moves the slot (#1065 bundle 482NB943)",
+          "[ams][ad5x_ifs][1065][regression]") {
+    // Field repro. raza616 opened the COLOR macro's colour picker on slot 1 and
+    // the swatch flickered to black before snapping back, over and over —
+    // "multi-filament menu failed to keep up". Every one of the 24 echoed
+    // candidates was applied in sequence, so the state MID-storm is the bug,
+    // not just the end state. Assert after every single line.
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    Ad5xIfsTestAccess::set_port_presence(backend, 0, true);
+    Ad5xIfsTestAccess::set_color(backend, 0, "898989");
+    Ad5xIfsTestAccess::set_material(backend, 0, "PETG");
+    const size_t syncs_before = Ad5xIfsTestAccess::external_sync_count(backend);
+
+    for (const auto& hex : kZmodPalette) {
+        REQUIRE_FALSE(
+            Ad5xIfsTestAccess::on_gcode_response_line(backend, palette_button(1, "PETG", hex)));
+        // Not just "ends correct" — never moves at all.
+        REQUIRE(backend.get_slot_info(0).color_rgb == 0x898989);
+        REQUIRE(backend.get_slot_info(0).material == "PETG");
+    }
+
+    for (const auto& type : kZmodMaterials) {
+        REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
+            backend, material_button(1, type, "898989")));
+        REQUIRE(backend.get_slot_info(0).material == "PETG");
+    }
+
+    // Baselines held, so the confirming GET_ZCOLOR arriving ~1s later reads as
+    // "unchanged" instead of firing a phantom "firmware color changed
+    // #161616 -> #898989" the log was full of.
+    CHECK(Ad5xIfsTestAccess::last_firmware_color(backend, 0).value_or(0) == 0x898989);
+    CHECK(Ad5xIfsTestAccess::last_firmware_material(backend, 0).value_or("") == "PETG");
+    // And zero lane_data writes: 31 echoed buttons produced 31 Moonraker DB
+    // round-trips before this (25 server.database.post_item requests queued in
+    // a 300ms window on a 473MB MIPS AD5X, oldest aging to 1.15s).
+    CHECK(Ad5xIfsTestAccess::external_sync_count(backend) == syncs_before);
+    CHECK_FALSE(Ad5xIfsTestAccess::get_override(backend, 0).has_value());
+}
+
+TEST_CASE("AD5X IFS regression: type change surfaces on the menu re-render, not 40s later "
+          "(#1065 bundle 482NB943)",
+          "[ams][ad5x_ifs][1065][regression]") {
+    // The user tapped SILK at 17:34:37.765. zmod applied it and re-rendered the
+    // root menu 70ms later carrying "1: SILK". HelixScreen ignored that row,
+    // waited on the debounced GET_ZCOLOR — which raced the firmware write and
+    // returned the OLD type — and then had no trigger left, so the AMS panel
+    // showed PETG until 17:35:17.342. Forty seconds of a wrong label.
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    for (size_t i = 0; i < 4; ++i) {
+        Ad5xIfsTestAccess::set_port_presence(backend, i, true);
+    }
+    Ad5xIfsTestAccess::set_color(backend, 0, "F330F9");
+    Ad5xIfsTestAccess::set_material(backend, 0, "PETG");
+    Ad5xIfsTestAccess::set_color(backend, 1, "FFFFFF");
+    Ad5xIfsTestAccess::set_material(backend, 1, "PETG");
+
+    // "Select material type" renders; every entry is a candidate, PETG-CF last.
+    for (const auto& type : kZmodMaterials) {
+        REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
+            backend, material_button(1, type, "F330F9")));
+    }
+    REQUIRE(backend.get_slot_info(0).material == "PETG"); // no phantom PETG-CF
+
+    // User taps SILK. HelixScreen sends the gcode itself, so nothing about the
+    // tap comes back down the response stream — the ONLY evidence is zmod's
+    // re-render of the root menu with the new value.
+    REQUIRE_FALSE(
+        Ad5xIfsTestAccess::on_gcode_response_line(backend, slot_row(1, "SILK", "F330F9")));
+    REQUIRE_FALSE(
+        Ad5xIfsTestAccess::on_gcode_response_line(backend, slot_row(2, "PETG", "FFFFFF")));
+
+    // Label tracks on the re-render, ~100ms after the tap.
+    CHECK(backend.get_slot_info(0).material == "SILK");
+    CHECK(backend.get_slot_info(0).color_rgb == 0xF330F9);
+    // The untouched slot stays untouched — a menu render covers all four rows,
+    // so it must not churn the ones that didn't change.
+    CHECK(backend.get_slot_info(1).material == "PETG");
+    CHECK(backend.get_slot_info(1).color_rgb == 0xFFFFFF);
+    CHECK_FALSE(Ad5xIfsTestAccess::get_override(backend, 1).has_value());
+}
+
+TEST_CASE("AD5X IFS regression: repeated COLOR-menu renders are idempotent (#1065 bundle 482NB943)",
+          "[ams][ad5x_ifs][1065][regression]") {
+    // The COLOR macro re-renders its root menu on every open and after every
+    // edit — bundle 482NB943 has six renders in 80 seconds. A row that resynced
+    // unconditionally would write lane_data each time; only a real delta may.
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    Ad5xIfsTestAccess::set_port_presence(backend, 0, true);
+    Ad5xIfsTestAccess::set_color(backend, 0, "F330F9");
+    Ad5xIfsTestAccess::set_material(backend, 0, "PETG");
+
+    const size_t before = Ad5xIfsTestAccess::external_sync_count(backend);
+    // First render carries a real change (PETG -> SILK): one sync.
+    REQUIRE_FALSE(
+        Ad5xIfsTestAccess::on_gcode_response_line(backend, slot_row(1, "SILK", "F330F9")));
+    const size_t after_first = Ad5xIfsTestAccess::external_sync_count(backend);
+    CHECK(after_first > before);
+
+    // Three more identical renders: nothing new to say, nothing written.
+    for (int i = 0; i < 3; ++i) {
+        REQUIRE_FALSE(
+            Ad5xIfsTestAccess::on_gcode_response_line(backend, slot_row(1, "SILK", "F330F9")));
+    }
+    CHECK(Ad5xIfsTestAccess::external_sync_count(backend) == after_first);
+    CHECK(backend.get_slot_info(0).material == "SILK");
+}
+
+TEST_CASE("AD5X IFS regression: action-submenu buttons are not slot rows (#1065 bundle 482NB943)",
+          "[ams][ad5x_ifs][1065][regression]") {
+    // The per-slot action submenu ("Spool 1: SILK/magenta") renders Load/Unload
+    // buttons alongside Change color/Change type. None of them is a `<n>: `
+    // labelled row, so none may be read as a firmware snapshot — and IN_ZCOLOR
+    // button definitions in particular fire at prompt-render time, not when the
+    // load actually runs.
+    //
+    // The buttons below deliberately carry values that DISAGREE with our cached
+    // firmware state. In the field they'd agree, but then "ignored the line" and
+    // "applied a value that happened to match" are indistinguishable — and the
+    // assertion has to be able to tell those apart to be worth anything.
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    Ad5xIfsTestAccess::set_port_presence(backend, 0, true);
+    Ad5xIfsTestAccess::set_color(backend, 0, "898989");
+    Ad5xIfsTestAccess::set_material(backend, 0, "PETG");
+    const size_t syncs_before = Ad5xIfsTestAccess::external_sync_count(backend);
+
+    for (const char* button :
+         {"// action:prompt_button Change color|CHANGE_ZCOLOR SLOT=1 TYPE=SILK|primary|F330F9",
+          "// action:prompt_button Change type|CHANGE_ZCOLOR SLOT=1 HEX=F330F9|primary",
+          "// action:prompt_button Load|IN_ZCOLOR SLOT=1 NAPR=0|primary",
+          "// action:prompt_button Unload|IN_ZCOLOR SLOT=1 NAPR=1|primary",
+          "// action:prompt_footer_button Reset colors|RESET_ZCOLOR"}) {
+        REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(backend, button));
+    }
+
+    CHECK(backend.get_slot_info(0).material == "PETG");
+    CHECK(backend.get_slot_info(0).color_rgb == 0x898989);
+    CHECK(Ad5xIfsTestAccess::external_sync_count(backend) == syncs_before);
+    CHECK_FALSE(Ad5xIfsTestAccess::get_override(backend, 0).has_value());
+}
+
+TEST_CASE("AD5X IFS COLOR-menu slot row does not clear a user-locked override "
+          "(#1065 bundle 482NB943)",
+          "[ams][ad5x_ifs][1065]") {
+    // The #981 lock-clear is gated on a DELIBERATE external CHANGE_ZCOLOR. A
+    // menu render is not an edit — every COLOR macro invocation emits four of
+    // these rows, so honouring them there would drop a user's locked material
+    // just for opening the dialog.
+    TestableAd5xIfsBackend backend;
+    Ad5xIfsTestAccess::set_running(backend, true);
+    Ad5xIfsTestAccess::set_zcolor_supported(backend, false);
+    Ad5xIfsTestAccess::set_port_presence(backend, 0, true);
+    Ad5xIfsTestAccess::set_color(backend, 0, "F330F9");
+    Ad5xIfsTestAccess::set_material(backend, 0, "PETG");
+
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.material = "PLA";
+    ovr.user_locked_material = true;
+    Ad5xIfsTestAccess::seed_override(backend, 0, ovr);
+
+    REQUIRE_FALSE(Ad5xIfsTestAccess::on_gcode_response_line(
+        backend,
+        "// action:prompt_button 1: SILK|RUN_ZCOLOR SLOT=1 HEX=F330F9 TYPE=SILK|primary|F330F9"));
+
+    auto staged = Ad5xIfsTestAccess::get_override(backend, 0);
+    REQUIRE(staged.has_value());
+    CHECK(staged->user_locked_material);
+    CHECK(staged->material == "PLA");
+    // The user's locked choice still wins on screen.
+    CHECK(backend.get_slot_info(0).material == "PLA");
 }
 
 // ==========================================================================
@@ -8760,7 +9051,14 @@ TEST_CASE_METHOD(Ad5xHomingGuardFixture,
 
     SECTION("PAUSED refuses motion ops (head parked over the print)") {
         set_print_state(helix::PrintJobState::PAUSED);
-        CHECK_FALSE(backend->check_preconditions(true).success());
+        AmsError motion = backend->check_preconditions(true);
+        CHECK_FALSE(motion.success());
+        // A runout pause is the case users actually hit: Klipper prints "load it
+        // and press RESUME", so they reach for Load. "while printing" reads as a
+        // bug and "finish or cancel the print" is the opposite of what they want.
+        // Point them at the recovery that works instead (bundle JX2FVRB9).
+        CHECK(motion.user_msg == "Can't move filament while the print is paused");
+        CHECK(motion.suggestion.find("Resume") != std::string::npos);
     }
 
     SECTION("STANDBY allows motion ops") {

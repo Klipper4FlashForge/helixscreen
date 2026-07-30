@@ -85,6 +85,15 @@ class AmsPanel : public PanelBase {
         return "AMS Panel";
     }
 
+    /// Filament management is a place users park, not a tool they dip into —
+    /// full width, and its drill-downs (edit spool, environment, device
+    /// operations) inherit that. Declared here rather than at the push sites
+    /// because this panel is reachable from Home, the Printer Manager overlay
+    /// and the AMS Overview. #1178
+    [[nodiscard]] bool is_destination() const override {
+        return true;
+    }
+
     [[nodiscard]] const char* get_xml_component_name() const override {
         return "ams_panel";
     }
@@ -97,6 +106,13 @@ class AmsPanel : public PanelBase {
      */
     [[nodiscard]] lv_obj_t* get_panel() const {
         return panel_;
+    }
+
+    /**
+     * @brief Whether the filament loading-error dialog is currently on screen
+     */
+    [[nodiscard]] bool is_error_modal_visible() const {
+        return error_modal_ && error_modal_->is_visible();
     }
 
     /**
@@ -146,6 +162,18 @@ class AmsPanel : public PanelBase {
     /// Cooldown after user dismissal to prevent immediate re-trigger from stale AFC state
     std::chrono::steady_clock::time_point error_modal_dismiss_time_{};
 
+    /// Last observed AmsAction, -1 until the action observer's first tick.
+    /// Lets that observer act on the ERROR -> non-ERROR *edge*; -1 can never
+    /// compare equal to ERROR, so the first tick is a baseline, not a
+    /// transition.
+    int prev_ams_action_ = -1;
+
+    /// Last observed helix::PrintJobState, -1 until the print-state observer's
+    /// first tick (which is a baseline, not a transition). The error dialog is
+    /// dismissed only on the edge INTO PRINTING — a level check would hide an
+    /// error raised mid-print the instant it appeared.
+    int prev_print_state_ = -1;
+
     // === Observers (RAII cleanup via ObserverGuard) ===
 
     ObserverGuard slots_version_observer_;
@@ -159,6 +187,7 @@ class AmsPanel : public PanelBase {
     /// these fire and redraw that lane's path in real time. Static-array subjects
     /// (singleton lifetime) — no SubjectLifetime token needed.
     std::vector<ObserverGuard> slot_path_observers_;
+    ObserverGuard print_state_observer_;    ///< Dismisses a stale error dialog when a print resumes
     ObserverGuard backend_count_observer_;  ///< For backend selector visibility
     ObserverGuard external_spool_observer_; ///< Reactive updates when external spool color changes
     helix::AsyncLifetimeGuard
@@ -275,6 +304,15 @@ class AmsPanel : public PanelBase {
     void show_edit_modal(int slot_index, bool open_on_picker = false);
     void show_loading_error_modal();
 
+    /**
+     * @brief Take the loading-error dialog down without running its dismiss callback
+     *
+     * For dismissals the user did not initiate. No-op when the dialog is not up.
+     *
+     * @param reason Logged so the field can tell the two triggers apart
+     */
+    void dismiss_error_modal_silently(const char* reason);
+
     // === Action Handlers (public for XML event callbacks) ===
   public:
     void handle_slot_tap(int slot_index, lv_point_t click_pt);
@@ -289,6 +327,18 @@ class AmsPanel : public PanelBase {
  * @return Reference to global AmsPanel instance
  */
 AmsPanel& get_global_ams_panel();
+
+/**
+ * @brief Get the global AMS panel only if it already exists
+ *
+ * Never constructs the panel or its UI, unlike get_global_ams_panel(). For
+ * callers that merely interrogate panel state (e.g. "is the loading-error
+ * dialog on screen?") and must not build the whole AMS UI as a side effect of
+ * asking.
+ *
+ * @return Pointer to the global AmsPanel, or nullptr if none has been created
+ */
+AmsPanel* get_existing_ams_panel();
 
 /**
  * @brief Destroy the AMS panel UI to free memory

@@ -39,6 +39,7 @@ translations:
   -- kWh: -- kWh
   --°C: --°C
   -0.5 Hz: -0,5 Hz
+  '...': ''
   0 = computed: 0 = calculado
   0 events queued: 0 eventos na fila
   0 slots: '{0} Slots'
@@ -541,6 +542,10 @@ translations:
   Connected Time: Tempo Conectado
   Connected to: Conectado a
   'Connected to ': 'Conectado a '
+  ? Connected to Moonraker, but Klipper is not running. You can continue — HelixScreen will show the Klipper error, and hardware detection stays limited until Klipper starts.
+  : ''
+  ? Connected to Moonraker, but printer discovery did not finish. You can continue — hardware detection stays limited until the printer responds.
+  : ''
   Connected to {}: Conectado a {}
   Connected! Discovering printer...: Conectado! Descobrindo impressora...
   Connected, discovering...: Conectado, descobrindo...
@@ -1082,6 +1087,7 @@ translations:
   Heating Bed...: Aquecendo mesa...
   Heating Nozzle...: Aquecendo bocal...
   Heating to %d\xC2\xB0C... %.0f\xC2\xB0C: Aquecendo a %d\xC2\xB0C... %.0f\xC2\xB0C
+  Heating to {}°C before {}...: ''
   Heating to {}°C for {}...: Aquecendo a {}°C por {}...
   Heating to {}°C...: Aquecendo a {}°C...
   Heating...: Aquecendo...
@@ -1132,6 +1138,7 @@ translations:
     é empurrado de volta para a caixa na ejeção (mm)
   How many labels to print: Quantas etiquetas imprimir
   How the toolhead icon appears: Como o ícone do cabeçote aparece
+  Hub: ''
   Humidity: Umidade
   Hyperlapse: Hyperlapse
   Hyperlapse captures frames at fixed time intervals. Good for very long prints.: O
@@ -1211,6 +1218,8 @@ translations:
     {} (tem {})'
   Invalid status response from printer: Resposta de status inválida da impressora
   Issue description: Descrição do problema
+  It's a new spool: ''
+  Jammed at the Toolhead: ''
   Job Queue: Fila de Trabalhos
   'Jog failed: {}': 'Falha ao mover: {}'
   Join the HelixScreen community on Discord for discussion, tips, troubleshooting help, and feature requests.: Participe
@@ -1353,6 +1362,7 @@ translations:
   Macro handles heating: Macro controla aquecimento
   Macro may still be running — response timed out: A macro pode ainda estar em execução
     — tempo esgotado
+  "Macro stopped: printer has no '{}' command": ''
   Macro to cancel an active print: Macro para cancelar uma impressão ativa
   Macro to clean/wipe the nozzle: Macro para limpar o bico
   Macro to load filament into extruder: Macro para carregar filamento no extrusor
@@ -1559,6 +1569,7 @@ translations:
   Not found (strobe only): Não encontrado (apenas estroboscópico)
   Not found (use phone app): Não encontrado (use o app do celular)
   Not in your spools? Set it up: Não está nos seus carretéis? Configure aqui
+  Not now: ''
   Not yet calibrated: Ainda não calibrado
   Notes: Notas
   Notes (optional): Notas (opcional)
@@ -1579,6 +1590,7 @@ translations:
   Nozzle Temp: Temp. Bico
   Nozzle Temperature: Temperatura do Bico
   Nozzle Temps: Temps do bico
+  Nozzle did not reach {}°C — {} cancelled: ''
   Nozzle min cannot exceed max: O mínimo do bico não pode exceder o máximo
   Nozzle target set to {}°C: Bico configurado para {}°C
   Nozzle temp must be 100-500°C: A temperatura do bico deve ser 100-500°C
@@ -1803,6 +1815,7 @@ translations:
     — certifique-se de que está ligada e ao alcance
   Printer doesn't expose the expected service — wrong device?: A impressora não expõe
     o serviço esperado — dispositivo incorreto?
+  Printer hardware detected: ''
   Printer image set to auto-detect: Imagem da impressora configurada para auto-detectar
   Printer is not paired — pair it first: A impressora não está pareada — pareie-a
     primeiro
@@ -1938,6 +1951,7 @@ translations:
   Requires Moonraker-Timelapse plugin: Requer plugin Moonraker-Timelapse
   Resend write failed at chunk {}: Falha ao reenviar a escrita no fragmento {}
   Reset: Resetar
+  Reset CFS: Resetar CFS
   Reset Home Screen?: Redefinir tela inicial?
   Reset Speed & Flow to 100%: Resetar Velocidade & Fluxo para 100%
   Reset all settings and restart wizard: Resetar todas as configurações e reiniciar
@@ -2152,6 +2166,7 @@ translations:
   Set local timezone for time display: Definir fuso horário local para exibição
   Set logging verbosity for troubleshooting: Definir nível de detalhe do log para
     solução de problemas
+  Set up: ''
   Set up your label printer in Settings: Configure sua impressora de etiquetas em
     Configurações
   Settings: Configurações
@@ -2293,6 +2308,9 @@ translations:
   Stop Print?: Parar Impressão?
   Stop failed: Falha ao parar
   Stop printing \"{}\"?\n\nThis cannot be undone after 5 seconds.: 'Parar a impressão de \"{}\"?\n\nIsso não pode ser desfeito após 5 segundos.'
+  Stopped between Hub and Toolhead: ''
+  Stopped between Lane and Hub: ''
+  Stopped between Spool and Lane: ''
   Stops all motion. Requires firmware restart.: Para todo movimento. Requer reinício
     do firmware.
   Stow: Guardar
@@ -2385,6 +2403,7 @@ translations:
     interfering with prints. You can re-enable it in Settings > Display.
   : O protetor de tela animado foi desativado neste dispositivo para evitar que interfira
     nas impressões. Você pode reativá-lo em Configurações > Tela.
+  The filament system reported an error: ''
   The heater will cycle on and off several times.: O aquecedor ligará e desligará
     várias vezes.
   ? The motor vibrates the belt while a strobe light flashes at the same frequency.
@@ -2433,6 +2452,7 @@ translations:
   ? This device has very little RAM. Resonance calibration is memory-intensive and may cause a \"Timer Too Close\" error. Continue anyway?
   : 'Este dispositivo tem muito pouca RAM. A calibração de ressonância consome muita
     memória e pode causar um erro \"Timer Too Close\". Continuar mesmo assim?'
+  This doesn't match the linked Spoolman spool. Add it as a new spool, or update the linked one to match?: ''
   This file was sliced for {} but {} is loaded.: Este arquivo foi fatiado para {}
     mas {} está carregado.
   This is exactly the data that will be sent: Estes são exatamente os dados que serão
@@ -2735,6 +2755,7 @@ translations:
     configurado!
   Your printer has an automatic filament changer: Sua impressora possui um trocador
     automático de filamento
+  Your printer was offline during setup, so hardware options were skipped. Set them up now?: ''
   Z: Z
   Z Calibration: Calibração Z
   Z Movement: Movimento Z

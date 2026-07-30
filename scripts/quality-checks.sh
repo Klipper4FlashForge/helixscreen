@@ -244,6 +244,69 @@ fi
 echo ""
 
 # ====================================================================
+# Duplicate XML widget names
+# ====================================================================
+# Background: lv_obj_find_by_name() returns the FIRST depth-first match and
+# warns about nothing, so a name declared twice in one file makes the second
+# element unreachable — built, then silently never configured (#1136,
+# ams_panel.xml name="endless_arrows" twice).
+#
+# Per-name ratcheting baseline lives in the script (DUPLICATE_NAME_BASELINE).
+# The pre-existing entries are settings/about rows whose label/value names are
+# only ever looked up with the ROW as search parent.
+echo "🏷️  Checking for duplicate XML widget names..."
+
+if [ -f "scripts/check_duplicate_xml_names.py" ]; then
+  if [ "$STAGED_ONLY" = true ]; then
+    DUP_NAME_ARGS="--staged-only"
+  else
+    DUP_NAME_ARGS=""
+  fi
+  # shellcheck disable=SC2086
+  if python3 scripts/check_duplicate_xml_names.py $DUP_NAME_ARGS --summary >/tmp/duplicate_xml_names.out 2>&1; then
+    cat /tmp/duplicate_xml_names.out
+  else
+    cat /tmp/duplicate_xml_names.out
+    echo "   Run: python3 scripts/check_duplicate_xml_names.py --list"
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  check_duplicate_xml_names.py not found — skipping"
+fi
+
+echo ""
+
+# ====================================================================
+# Overlay width is decided at push time, never in XML (#1178)
+# ====================================================================
+# The two width constants encode destination-vs-transient-layer, and which one
+# an overlay gets depends on how the user reached it — the same
+# fan_control_overlay is a transient layer from Controls and a drill-down from
+# Settings > Fans. Hand-picking a constant in XML is what left 20 panels gapped
+# and 36 full with no rule, and made console_settings_overlay render wider than
+# the console_panel it was pushed from.
+echo "📐 Checking overlay width declarations..."
+
+if [ -f "scripts/check_overlay_width.py" ]; then
+  if [ "$STAGED_ONLY" = true ]; then
+    OVERLAY_WIDTH_ARGS="--staged-only"
+  else
+    OVERLAY_WIDTH_ARGS=""
+  fi
+  # shellcheck disable=SC2086
+  if python3 scripts/check_overlay_width.py $OVERLAY_WIDTH_ARGS >/tmp/overlay_width.out 2>&1; then
+    echo "✅ No hand-picked overlay widths"
+  else
+    cat /tmp/overlay_width.out
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  check_overlay_width.py not found — skipping"
+fi
+
+echo ""
+
+# ====================================================================
 # Phase 2: Code Quality Checks
 # ====================================================================
 
@@ -623,6 +686,44 @@ fi
 echo ""
 
 # ====================================================================
+# Network PII: no SSID/BSSID/MAC logged above trace level
+# ====================================================================
+# Background: the in-memory log ring is captured at debug regardless of the
+# user's configured verbosity, and leaves the machine three ways — the debug
+# bundle, the crash reporter's automatic upload, and the `ctl log` RPC. A set
+# of nearby SSIDs with signal strengths is a geolocation fingerprint, and a
+# scan enumerates the neighbours' networks too. No downstream regex can catch
+# an SSID, so the control has to be at the log call site (#1191).
+SECTION_START=$(date +%s)
+echo -n "🔒 Checking network PII in log calls..."
+
+if [ -f "scripts/check_wifi_pii_logging.py" ]; then
+  if [ "$STAGED_ONLY" = true ]; then
+    PII_ARGS="--staged-only"
+  else
+    PII_ARGS=""
+  fi
+  if python3 scripts/check_wifi_pii_logging.py $PII_ARGS >/tmp/wifi_pii_check.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    echo "✅ No network identifiers logged above trace"
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/wifi_pii_check.out
+    echo "   Run: python3 scripts/check_wifi_pii_logging.py"
+    echo "   See include/log_redact.h for the redaction helpers."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_wifi_pii_logging.py not found — skipping"
+fi
+
+echo ""
+
+# ====================================================================
 # Declarative UI: no XML-owned widget driven imperatively from C++
 # ====================================================================
 SECTION_START=$(date +%s)
@@ -634,7 +735,7 @@ if [ -f "scripts/check_imperative_ui.py" ]; then
   # as deliberate pragmatism (the XML engine couldn't express it at the time), some
   # are plain mistakes — both are debt. The number may go DOWN (port a site, then
   # lower this baseline) but must never go up.
-  if python3 scripts/check_imperative_ui.py --max-allowed 389 --summary >/tmp/imperative_ui.out 2>&1; then
+  if python3 scripts/check_imperative_ui.py --max-allowed 387 --summary >/tmp/imperative_ui.out 2>&1; then
     section_time $SECTION_START
     echo ""
     tail -1 /tmp/imperative_ui.out
@@ -650,6 +751,66 @@ else
   section_time $SECTION_START
   echo ""
   echo "⚠️  check_imperative_ui.py not found — skipping"
+fi
+
+echo ""
+
+if [ -f "scripts/check_raw_this_queue_update.py" ]; then
+  # The ratchet has reached zero (#1165) — every queue_update() in src/ now routes
+  # through an AsyncLifetimeGuard, so this is a hard gate, not a baseline.
+  # queue_update([this, ...]) runs at the next drain whether or not the owner is
+  # still alive; if the body touches a member lv_subject_t, lv_subject_notify walks
+  # a freed observer list (#1146, #1165). Keep it at 0: guard new sites with
+  # lifetime_.bg_cb() / tok.defer(), or annotate a genuine exception with
+  # // QUEUE_RAW_THIS_OK: <reason>.
+  if python3 scripts/check_raw_this_queue_update.py --max-allowed 0 --summary >/tmp/raw_this_qu.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/raw_this_qu.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/raw_this_qu.out
+    echo "   Run: python3 scripts/check_raw_this_queue_update.py --list"
+    echo "   Guard with lifetime_.bg_cb() / tok.defer(); see docs/devel/THREADING.md §2."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_raw_this_queue_update.py not found — skipping"
+fi
+
+echo ""
+
+SECTION_START=$(date +%s)
+echo -n "⏱️  Checking timer destructor cancels..."
+
+if [ -f "scripts/check_timer_destructor_cancel.py" ]; then
+  # Ratcheting baseline. A raw lv_timer_t* cancelled only in cleanup()/stop_*()
+  # stays armed on any teardown that destroys the owner without that call, and
+  # StaticPanelRegistry::destroy_all() runs BEFORE lv_deinit() — so the callback
+  # fires into a freed `this` (#1173, twice: the wizard auto-probe timer and the
+  # PID ETA tick). The check is transitive, so a destructor that reaches the
+  # cancel through cleanup()/detach()/deinit_subjects() passes. Timers whose
+  # callback is LifetimeToken-guarded or routed through a singleton accessor are
+  # safe by another mechanism — annotate those `// TIMER_DTOR_OK: <reason>`.
+  if python3 scripts/check_timer_destructor_cancel.py --max-allowed 3 >/tmp/timer_dtor.out 2>&1; then
+    section_time $SECTION_START
+    echo ""
+    tail -1 /tmp/timer_dtor.out
+  else
+    section_time $SECTION_START
+    echo ""
+    cat /tmp/timer_dtor.out
+    echo "   Run: python3 scripts/check_timer_destructor_cancel.py --list"
+    echo "   Cancel from the destructor via lv_timer_cancel_safe(); see CLAUDE.md § Threading."
+    EXIT_CODE=1
+  fi
+else
+  section_time $SECTION_START
+  echo ""
+  echo "⚠️  check_timer_destructor_cancel.py not found — skipping"
 fi
 
 echo ""

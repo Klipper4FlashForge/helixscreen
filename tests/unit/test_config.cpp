@@ -2493,14 +2493,28 @@ TEST_CASE_METHOD(ConfigTestFixture, "has_preset returns false for default config
 
 TEST_CASE_METHOD(ConfigTestFixture, "has_preset returns true when preset field is set",
                  "[config][preset]") {
-    get_data() = {{"preset", "ad5m"}};
+    // Per-printer storage: the marker lives under the active printer, not at the
+    // config root. See test_config_preset_per_printer.cpp for the multi-printer
+    // isolation and the legacy root-key lift.
+    setup_printer_data(config, {{"preset", "ad5m"}});
     REQUIRE(config.has_preset() == true);
     REQUIRE(config.get_preset() == "ad5m");
 }
 
 TEST_CASE_METHOD(ConfigTestFixture, "has_preset returns false for empty preset string",
                  "[config][preset]") {
-    get_data() = {{"preset", ""}};
+    setup_printer_data(config, {{"preset", ""}});
+    REQUIRE(config.has_preset() == false);
+    REQUIRE(config.get_preset().empty());
+}
+
+TEST_CASE_METHOD(ConfigTestFixture, "has_preset ignores a stray root-level preset key",
+                 "[config][preset]") {
+    // A root-level marker belongs to no printer in particular. init() lifts it
+    // (see lift_root_preset); reading it here would let one printer's preset leak
+    // into a printer that has none of its own — the #1162 bug.
+    setup_printer_data(config, json::object());
+    get_data()["preset"] = "ad5m";
     REQUIRE(config.has_preset() == false);
     REQUIRE(config.get_preset().empty());
 }

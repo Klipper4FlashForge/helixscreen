@@ -277,7 +277,19 @@ class AmsErrorHelper {
      * while PRINTING or PAUSED.
      * @return AmsError configured for UI display
      */
-    static AmsError print_active() {
+    static AmsError print_active(bool is_paused = false) {
+        // A paused print is the case that actually reaches a user: Klipper's
+        // runout handler pauses and prints "load it and press RESUME", so the
+        // obvious next move is the Load button. Saying "while printing" there
+        // reads as a bug, and "finish or cancel the print" is the opposite of
+        // what they want. Give the recovery that does work (bundle JX2FVRB9).
+        if (is_paused) {
+            return AmsError(AmsResult::WRONG_STATE,
+                            "Filament operation blocked: print paused mid-job",
+                            "Can't move filament while the print is paused",
+                            "Feed filament past the sensor by hand, then press Resume — or cancel "
+                            "the print to use Load/Unload");
+        }
         return AmsError(AmsResult::WRONG_STATE, "Filament operation blocked: print in progress",
                         "Cannot run filament operation while printing",
                         "Finish or cancel the print before loading, unloading, or changing "

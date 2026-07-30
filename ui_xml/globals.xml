@@ -8,7 +8,7 @@
     <!-- Runtime-Registered Layout Constants                                   -->
     <!-- ===================================================================== -->
     <!-- nav_width is defined in navigation_bar.xml and registered using
-         horizontal breakpoint. overlay_panel_width is computed at runtime as
+         horizontal breakpoint. overlay_width_transient is computed at runtime as
          screen - nav_width - space_lg gap. DO NOT define nav_width here. -->
     <!-- UI dimensions -->
     <px name="nav_padding" value="16"/>

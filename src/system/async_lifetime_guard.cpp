@@ -16,6 +16,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
@@ -169,3 +170,139 @@ bool on_main_thread() noexcept {
 }
 
 } // namespace helix::internal
+
+// ============================================================================
+// helix::async_lifetime — skip-rate telemetry for AsyncLifetimeGuard
+//
+// See the declaration block at the bottom of include/async_lifetime_guard.h
+// for the design rationale. Implementation notes:
+//
+//   * Slots are claimed by CAS on the `tag` pointer and released again by
+//     `take_snapshot` whenever a slot drains to zero. Releasing is what keeps
+//     the table a *per-window* view: without it the slots silt up with the
+//     first kMaxTrackedTags tags the process ever sees, and every producer
+//     that turns hot later is anonymised into "(other)" — losing exactly the
+//     tag this telemetry exists to surface.
+//   * All three skip paths fire on the LVGL main thread (they run inside
+//     UpdateQueue::process_pending's lambda dispatch). `take_snapshot` is
+//     also called from the main thread (TelemetryManager's periodic LVGL
+//     timer), so the increment-and-snapshot pair is single-threaded in
+//     practice. The atomics remain for documentation and for the rare case
+//     where a bg_cb's underlying queue_update fires outside the main thread
+//     (e.g. test fixtures driving process_pending manually).
+//   * Tag pointers are string literals per UpdateQueue::TaggedCallback's
+//     contract, so pointer-equality interning is sound and allocation-free.
+// ============================================================================
+
+namespace helix::async_lifetime {
+
+namespace {
+
+struct Counter {
+    std::atomic<const char*> tag{nullptr};
+    std::atomic<uint64_t> count{0};
+};
+
+// +1 slot for the synthetic "(other)" overflow bucket at index kMaxTrackedTags.
+Counter g_counters[kMaxTrackedTags + 1];
+
+constexpr const char* kOtherTag = "(other)";
+constexpr const char* kNullTag = "(null)";
+
+} // namespace
+
+void note_skipped(const char* tag) noexcept {
+    // nullptr is normalised once, up front, so the hot-path scan and the claim
+    // path agree on the key and two nullptr skips can never land in two slots.
+    const char* key = tag ? tag : kNullTag;
+
+    // Hot path: a tag already holding a slot this window. Cache-friendly linear
+    // scan over a 1 KB table. Acquire-load pairs with the CAS release below.
+    for (size_t i = 0; i < kMaxTrackedTags; ++i) {
+        if (g_counters[i].tag.load(std::memory_order_acquire) == key) {
+            g_counters[i].count.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+    }
+
+    // Cold path: first sighting this window. Claim a free slot by CAS. Slots
+    // are freed on drain, so "free" is common — this is not a once-per-process
+    // allocation. fetch_add (not store) publishes the count so a concurrent
+    // hot-path increment on the same slot cannot be clobbered.
+    for (size_t i = 0; i < kMaxTrackedTags; ++i) {
+        const char* expected = nullptr;
+        if (g_counters[i].tag.compare_exchange_strong(
+                expected, key, std::memory_order_acq_rel, std::memory_order_acquire)) {
+            g_counters[i].count.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        // Lost the CAS to a thread claiming this same slot for this same tag.
+        if (expected == key) {
+            g_counters[i].count.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+    }
+
+    // Every slot is held by a different tag. A non-zero `other_count` in a
+    // snapshot is itself a signal: more than kMaxTrackedTags distinct producers
+    // skipped within this one window.
+    g_counters[kMaxTrackedTags].count.fetch_add(1, std::memory_order_relaxed);
+}
+
+SkipSnapshot take_snapshot() noexcept {
+    SkipSnapshot snap;
+
+    // Drain the overflow bucket first so the per-tag loop below can early-exit
+    // on empty slots without worrying about ordering vs. the overflow read.
+    uint64_t other =
+        g_counters[kMaxTrackedTags].count.exchange(0, std::memory_order_acq_rel);
+
+    // Coalesce slots that may hold the same tag (two threads can each CAS a
+    // different free slot for the same first-sighting tag — see note_skipped).
+    for (size_t i = 0; i < kMaxTrackedTags; ++i) {
+        const char* tag = g_counters[i].tag.load(std::memory_order_acquire);
+        if (tag == nullptr)
+            continue;
+        uint64_t c = g_counters[i].count.exchange(0, std::memory_order_acq_rel);
+        // Release the slot unconditionally, so the table holds exactly the tags
+        // that skipped in the *current* window. Freeing only slots that were
+        // already quiet would lag by a window, and a producer turning hot in
+        // that gap would still be anonymised into "(other)" — the case this
+        // whole mechanism exists to catch. A producer that is still hot simply
+        // re-claims a slot on its next skip; skips are rare by construction, so
+        // one cold-path scan per active tag per window costs nothing.
+        //
+        // Both sides are main-thread-only. The worst a racing producer could do
+        // is land one increment in a slot mid-release, misattributing a single
+        // count to whichever tag claims that slot next. Negligible for a rate.
+        g_counters[i].tag.store(nullptr, std::memory_order_release);
+        if (c == 0)
+            continue;
+        // Linear-find; the slot population is bounded so this stays
+        // O(kMaxTrackedTags^2) worst case = 4096 compares, negligible.
+        bool merged = false;
+        for (auto& e : snap.entries) {
+            if (e.tag == tag) {
+                e.count += c;
+                merged = true;
+                break;
+            }
+        }
+        if (!merged) {
+            snap.entries.push_back({tag, c});
+        }
+        snap.total += c;
+    }
+
+    if (other > 0) {
+        snap.entries.push_back({kOtherTag, other});
+        snap.total += other;
+        snap.other_count = other;
+    }
+
+    std::sort(snap.entries.begin(), snap.entries.end(),
+              [](const SkipEntry& a, const SkipEntry& b) { return a.count > b.count; });
+    return snap;
+}
+
+} // namespace helix::async_lifetime

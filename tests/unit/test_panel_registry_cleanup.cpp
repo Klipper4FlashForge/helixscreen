@@ -17,6 +17,7 @@
 #include "ui_panel_macros.h"
 
 #include "../lvgl_test_fixture.h"
+#include "misc/lv_timer_private.h" // timer_cb — assert the cancel neutered it
 #include "static_panel_registry.h"
 #include "static_subject_registry.h"
 
@@ -266,6 +267,31 @@ TEST_CASE_METHOD(LVGLTestFixture,
     REQUIRE(StaticSubjectRegistry::instance().deinit_one("PIDCalibrationPanel"));
 
     REQUIRE(panels.count() == 0);
+}
+
+// A panel destroyed mid-calibration never runs stop_progress_tracking(), and
+// StaticPanelRegistry::destroy_all() runs BEFORE lv_deinit() — so a live ETA tick
+// would dispatch into a freed `this`. Same shape as the wizard's auto-probe timer
+// (#1173); the destructor has to cancel it itself.
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "Panel registry: PIDCalibrationPanel destructor cancels the ETA timer",
+                 "[shutdown][registry][panel-lifecycle][timer][regression]") {
+    auto panel = std::make_unique<PIDCalibrationPanel>();
+    panel->arm_eta_timer_for_test();
+
+    lv_timer_t* timer = panel->eta_timer_for_test();
+    REQUIRE(timer != nullptr);
+    REQUIRE(timer->timer_cb != nullptr);
+
+    panel.reset();
+
+    // Neutered, not deleted: lv_timer_cancel_safe() nulls the callback and lets
+    // lv_timer_handler reap the timer on its next pass. Reading it here is safe
+    // because the timer is LVGL-owned memory, not the panel's.
+    REQUIRE(timer->timer_cb == nullptr);
+
+    // A still-armed tick would dispatch into the freed panel here.
+    process_lvgl(50);
 }
 
 TEST_CASE_METHOD(LVGLTestFixture, "Panel registry: clear does not run callbacks",

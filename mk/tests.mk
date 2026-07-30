@@ -31,6 +31,15 @@ SHARD_TIMEOUT := 300
 # in CI so the logs are inside the workspace and get uploaded.
 SHARD_ARTIFACT_ROOT ?= /tmp
 
+# How many times diagnose_shards re-runs a suspect shard sequentially.
+#
+# Must be >1: a single re-run cannot tell a real fault from an intermittent one
+# in either direction. A ~10% crash passes one retry ~90% of the time and used
+# to be reported as a confirmed FLAKE; conversely one reproduction was reported
+# as "a real fault, not a flake" on a single sample. Repeating turns the verdict
+# into an observed rate. Raise it when chasing something rare.
+SHARD_RETRIES ?= 3
+
 # Run tests in parallel using Catch2 sharding
 # Args: $(1) = test filter (e.g., "~[.] ~[slow]")
 # Collects PIDs and waits for all, failing if any shard fails
@@ -118,16 +127,32 @@ define diagnose_shards
 		fi; \
 		printf '  reproduce: %s %s --shard-count %s --shard-index %s\n' \
 			"$(TEST_BIN)" '$(3)' "$(NPROCS)" "$$s"; \
-		echo "  $(CYAN)re-running alone…$(RESET)"; \
-		if $(if $(TIMEOUT_CMD),$(TIMEOUT_CMD) $(SHARD_TIMEOUT)) $(TEST_BIN) $(3) \
-				--shard-count $(NPROCS) --shard-index $$s > "$(1)/$$s.retry.log" 2>&1; then \
-			echo "  $(YELLOW)→ passed in isolation: load/timing FLAKE, not the diff$(RESET)"; \
+		echo "  $(CYAN)re-running this shard sequentially x$(SHARD_RETRIES)…$(RESET)"; \
+		hits=0; last_rc=0; \
+		for attempt in $$(seq 1 $(SHARD_RETRIES)); do \
+			if $(if $(TIMEOUT_CMD),$(TIMEOUT_CMD) $(SHARD_TIMEOUT)) $(TEST_BIN) $(3) \
+					--shard-count $(NPROCS) --shard-index $$s > "$(1)/$$s.retry.log" 2>&1; then \
+				: ; \
+			else \
+				last_rc=$$?; hits=$$((hits+1)); \
+				cp -f "$(1)/$$s.retry.log" "$(1)/$$s.repro.log" 2>/dev/null || true; \
+			fi; \
+		done; \
+		if [ $$hits -eq 0 ]; then \
+			echo "  $(YELLOW)→ did not reproduce in $(SHARD_RETRIES) sequential re-runs$(RESET)"; \
+			echo "     Consistent with a load/timing flake under parallel shards, but an"; \
+			echo "     intermittent fault can also pass $(SHARD_RETRIES) times — this does not"; \
+			echo "     prove the diff is clean. Raise SHARD_RETRIES to sample harder."; \
 			echo "     (shard composition shifts whenever tests are added or removed)"; \
 		else \
-			rc=$$?; \
-			echo "  $(RED)$(BOLD)→ REPRODUCED alone (exit $$rc): a real fault, not a flake$(RESET)"; \
-			echo "     retry log: $(1)/$$s.retry.log"; \
-			tail -25 "$(1)/$$s.retry.log" | sed 's/^/     | /'; \
+			echo "  $(RED)$(BOLD)→ reproduced $$hits/$(SHARD_RETRIES) sequential re-runs (last exit $$last_rc)$(RESET)"; \
+			echo "     Sequential means no sibling shards ran concurrently. The shard still"; \
+			echo "     ran ALL $${n:-?} of its test cases in one process, so this does NOT"; \
+			echo "     isolate the named test — a leak from an earlier test in the same"; \
+			echo "     shard lands on whichever test runs next. Confirm by running the"; \
+			echo "     named test on its own before blaming it."; \
+			echo "     repro log: $(1)/$$s.repro.log"; \
+			tail -25 "$(1)/$$s.repro.log" | sed 's/^/     | /'; \
 		fi; \
 	done; \
 	echo ""
@@ -247,18 +272,14 @@ TEST_APP_OBJS := $(filter-out \
 # prior sanitizer runs, reordered test sources, or removed test files
 # don't linger and pollute the link.
 #
-# Also removes the PCH ($(PCH)). The sanitizer targets (test-asan,
-# test-tsan) recurse with CXXFLAGS+=ASAN_FLAGS but reuse the same PCH
-# path, so the PCH gets compiled with -fsanitize=address. Without
-# removing it here, a subsequent `make test-run` reuses the tainted
-# PCH and produces a binary that needs libasan to start (every shard
-# fails on startup with "ASan runtime does not come first").
+# Also removes the PCH ($(PCH)).
 #
-# Note: app objects in $(OBJ_DIR)/*.o linked into the test binary are
-# NOT cleaned here. test-asan/test-tsan also compile those with
-# sanitizer flags into the same paths. If a sanitizer run contaminated
-# the tree, run `make clean` to fully recover, and consider
-# CCACHE_DISABLE=1 if ccache is serving stale instrumented objects.
+# Sanitizer cross-contamination is no longer a concern here: test-asan
+# and test-tsan build into $(ASAN_OBJ_DIR)/$(TSAN_OBJ_DIR) with their
+# own PCH, so they cannot leave instrumented objects or a tainted PCH
+# in this build's paths. Use `make clean-sanitizers` to drop those
+# trees. (Historically they shared $(OBJ_DIR) and a plain `make test`
+# would then fail to link with "undefined reference to __asan_init".)
 clean-tests:
 	$(ECHO) "$(YELLOW)Cleaning test artifacts...$(RESET)"
 	$(Q)rm -rf $(OBJ_DIR)/tests
@@ -383,6 +404,33 @@ test-shell:
 		echo "$(YELLOW)⚠ bats not found - skipping shell tests$(RESET)"; \
 		echo "  Install with: brew install bats-core (macOS) or apt install bats (Linux)"; \
 	fi
+
+# ============================================================================
+# Out-of-Process UI Tests (pytest, tests/ui/)
+# ============================================================================
+# Named test-ui-pytest, not test-ui: that name is already taken by the
+# in-process Catch2 convenience target above ([navigation],[theme],[wizard]).
+# Renaming the existing one to make room was out of scope for wiring this
+# suite in -- see docs/devel/UI_TESTING.md for what each covers.
+
+# Run the out-of-process pytest suite (tests/ui/) against the real binary via
+# `helix-screen ctl`. This is the FULL suite including the 8 golden-image
+# tests -- locally, that's the point; CI runs a narrower slice (see
+# .github/workflows/build.yml) because goldens are sensitive to renderer/font
+# rasterization across machines.
+test-ui-pytest:
+	$(ECHO) "$(CYAN)$(BOLD)Running out-of-process UI tests (pytest, tests/ui/)...$(RESET)"
+	@if [ ! -x "$(VENV_PYTHON)" ]; then \
+		echo "$(RED)$(BOLD)✗ Python venv not found — run 'make venv-setup' first$(RESET)"; \
+		exit 1; \
+	fi
+	@if [ ! -x "$(BIN_DIR)/helix-screen" ]; then \
+		echo "$(RED)$(BOLD)✗ $(BIN_DIR)/helix-screen not built — run 'make -j' first$(RESET)"; \
+		exit 1; \
+	fi
+	@START_TIME=$$(date +%s); \
+	$(VENV_PYTHON) -m pytest tests/ui/ -v; \
+	$(call report_test_result,Out-of-process UI tests)
 
 # ============================================================================
 # Convenience Test Targets - Run tests by component
@@ -611,18 +659,32 @@ test-assets: test-build
 # Phase 1: No deps - check for unlimited -j and re-invoke if needed
 # Phase 2: Normal deps and linking (when _PARALLEL_GUARD is set)
 #
-# IMPORTANT: Phase 1 always passes explicit -j to Phase 2. Without it,
-# `exec $(MAKE)` loses the parent's jobserver (exec replaces the process)
-# and Phase 2 falls back to -j1, compiling hundreds of files serially.
+# Same three-way handling as the main build (mk/rules.mk `all:`), and for the
+# same reason. Phase 1 used to ALWAYS force -j$(NPROC), which silently discarded
+# an explicit bound: `make test -j6` still ran -j32 here. That is invisible until
+# several sessions share one checkout, at which point it multiplies — four
+# concurrent `make test` runs produced 103 cc1plus and drove a 123G box into
+# swap.
+#
+# A bounded -jN puts a --jobserver-auth entry in MAKEFLAGS. `exec` replaces the
+# process image but KEEPS open file descriptors, so the jobserver FDs survive and
+# re-invoking without -j inherits the caller's limit instead of overriding it.
+# An explicit -j$(NPROC) is only correct for the other two cases: unlimited `-j`
+# (a 'j' in MAKEFLAGS with no jobserver), and no -j at all — the latter because
+# exec'ing with neither would leave Phase 2 at -j1, building hundreds of files
+# serially.
 ifndef _PARALLEL_GUARD
 $(TEST_BIN): FORCE
-	@NPROC=$$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4); \
-	if echo "$(MAKEFLAGS)" | grep -q 'j' && ! echo "$(MAKEFLAGS)" | grep -q 'jobserver'; then \
-		echo ""; \
-		printf '\033[1;33m⚠️  make -j (unlimited) detected - auto-fixing to -j%s\033[0m\n' "$$NPROC"; \
-		echo ""; \
-	fi; \
-	exec $(MAKE) _PARALLEL_GUARD=1 --no-print-directory -j$$NPROC $@
+	@if echo "$(MAKEFLAGS)" | grep -q 'jobserver'; then \
+		exec $(MAKE) _PARALLEL_GUARD=1 --no-print-directory $@; \
+	else \
+		if echo "$(MAKEFLAGS)" | grep -q 'j'; then \
+			echo ""; \
+			printf '\033[1;33m⚠️  make -j (unlimited) detected - auto-fixing to -j%s\033[0m\n' "$(NPROC)"; \
+			echo ""; \
+		fi; \
+		exec $(MAKE) _PARALLEL_GUARD=1 --no-print-directory -j$(NPROC) $@; \
+	fi
 else
 $(TEST_BIN): $(TEST_CORE_DEPS) \
              $(TEST_LVGL_DEPS) \
@@ -917,6 +979,32 @@ $(TEST_PARTIAL_EXTRACTION_OBJ): $(SRC_DIR)/test_partial_extraction.cpp
 ASAN_FLAGS := -fsanitize=address -fno-omit-frame-pointer -g
 TSAN_FLAGS := -fsanitize=thread -fno-omit-frame-pointer -g
 
+# Sanitizer builds get their own object tree and PCH.
+#
+# They used to compile into $(OBJ_DIR) alongside the normal build, which made
+# `make test-asan` a trap: instrumented .o files landed on top of the ordinary
+# ones, so the next plain `make test` died at link with "undefined reference to
+# __asan_init" — from files the user never touched. The documented recovery was
+# a full `make clean`, i.e. a from-scratch rebuild, and the failure gave no hint
+# that a sanitizer run was the cause. Recovering by hand cost an evening once.
+#
+# Separate trees make the collision impossible instead of recoverable, and the
+# two builds no longer invalidate each other, so switching between them is
+# incremental rather than a full rebuild each way.
+ASAN_OBJ_DIR := $(BUILD_DIR)/obj-asan
+TSAN_OBJ_DIR := $(BUILD_DIR)/obj-tsan
+ASAN_PCH := $(BUILD_DIR)/asan-lvgl_pch.h.gch
+TSAN_PCH := $(BUILD_DIR)/tsan-lvgl_pch.h.gch
+
+# Overrides handed to the sanitizer sub-makes. Passed as command-line variables
+# so they beat the `:=` assignments in the top-level Makefile. BIN_DIR is left
+# shared deliberately — the binaries already have distinct names, and keeping it
+# stable means $(TEST_ASAN_BIN) resolves to the same path in both makes.
+ASAN_MAKE_OVERRIDES := OBJ_DIR=$(ASAN_OBJ_DIR) PCH=$(ASAN_PCH) \
+	CXXFLAGS='$(CXXFLAGS) $(ASAN_FLAGS)' LDFLAGS='$(LDFLAGS) $(ASAN_FLAGS)'
+TSAN_MAKE_OVERRIDES := OBJ_DIR=$(TSAN_OBJ_DIR) PCH=$(TSAN_PCH) \
+	CXXFLAGS='$(CXXFLAGS) $(TSAN_FLAGS)' LDFLAGS='$(LDFLAGS) $(TSAN_FLAGS)'
+
 # AddressSanitizer test binary
 TEST_ASAN_BIN := $(BIN_DIR)/helix-tests-asan
 
@@ -924,9 +1012,9 @@ TEST_ASAN_BIN := $(BIN_DIR)/helix-tests-asan
 TEST_TSAN_BIN := $(BIN_DIR)/helix-tests-tsan
 
 # Build and run tests with AddressSanitizer
-test-asan: clean-tests
+test-asan:
 	$(ECHO) "$(CYAN)$(BOLD)Building tests with AddressSanitizer...$(RESET)"
-	@$(MAKE) CXXFLAGS='$(CXXFLAGS) $(ASAN_FLAGS)' LDFLAGS='$(LDFLAGS) $(ASAN_FLAGS)' TEST_BIN=$(TEST_ASAN_BIN) $(TEST_ASAN_BIN)
+	@$(MAKE) $(ASAN_MAKE_OVERRIDES) TEST_BIN=$(TEST_ASAN_BIN) $(TEST_ASAN_BIN)
 	$(ECHO) "$(CYAN)$(BOLD)Running tests with AddressSanitizer...$(RESET)"
 	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=0 $(TEST_ASAN_BIN) "~[.]" 2>&1 | tee /tmp/asan_output.txt
 	$(ECHO) "$(GREEN)✓ ASAN test complete - check /tmp/asan_output.txt for issues$(RESET)"
@@ -934,38 +1022,40 @@ test-asan: clean-tests
 # Build and run tests with ThreadSanitizer
 # Override TSAN_FILTER to change which tests run (default: all non-hidden)
 TSAN_FILTER ?= ~[.]
-test-tsan: clean-tests
+test-tsan:
 	$(ECHO) "$(CYAN)$(BOLD)Building tests with ThreadSanitizer...$(RESET)"
-	@$(MAKE) CXXFLAGS='$(CXXFLAGS) $(TSAN_FLAGS)' LDFLAGS='$(LDFLAGS) $(TSAN_FLAGS)' TEST_BIN=$(TEST_TSAN_BIN) $(TEST_TSAN_BIN)
+	@$(MAKE) $(TSAN_MAKE_OVERRIDES) TEST_BIN=$(TEST_TSAN_BIN) $(TEST_TSAN_BIN)
 	$(ECHO) "$(CYAN)$(BOLD)Running tests with ThreadSanitizer (filter: $(TSAN_FILTER))...$(RESET)"
 	@TSAN_OPTIONS="halt_on_error=0 suppressions=$(CURDIR)/tests/tsan_suppressions.txt" $(TEST_TSAN_BIN) "$(TSAN_FILTER)" 2>&1 | tee /tmp/tsan_output.txt
 	$(ECHO) "$(GREEN)✓ TSAN test complete - check /tmp/tsan_output.txt for issues$(RESET)"
 
 # Run specific test with ASAN (usage: make test-asan-one TEST="[streaming]")
-test-asan-one: clean-tests
+test-asan-one:
 	$(ECHO) "$(CYAN)$(BOLD)Building tests with AddressSanitizer...$(RESET)"
-	@$(MAKE) CXXFLAGS='$(CXXFLAGS) $(ASAN_FLAGS)' LDFLAGS='$(LDFLAGS) $(ASAN_FLAGS)' TEST_BIN=$(TEST_ASAN_BIN) $(TEST_ASAN_BIN)
+	@$(MAKE) $(ASAN_MAKE_OVERRIDES) TEST_BIN=$(TEST_ASAN_BIN) $(TEST_ASAN_BIN)
 	$(ECHO) "$(CYAN)$(BOLD)Running test '$(TEST)' with AddressSanitizer...$(RESET)"
 	@ASAN_OPTIONS=detect_leaks=1:halt_on_error=0 $(TEST_ASAN_BIN) "$(TEST)" 2>&1 | tee /tmp/asan_output.txt
 
 # Run specific test with TSAN (usage: make test-tsan-one TEST="[streaming]")
-test-tsan-one: clean-tests
+test-tsan-one:
 	$(ECHO) "$(CYAN)$(BOLD)Building tests with ThreadSanitizer...$(RESET)"
-	@$(MAKE) CXXFLAGS='$(CXXFLAGS) $(TSAN_FLAGS)' LDFLAGS='$(LDFLAGS) $(TSAN_FLAGS)' TEST_BIN=$(TEST_TSAN_BIN) $(TEST_TSAN_BIN)
+	@$(MAKE) $(TSAN_MAKE_OVERRIDES) TEST_BIN=$(TEST_TSAN_BIN) $(TEST_TSAN_BIN)
 	$(ECHO) "$(CYAN)$(BOLD)Running test '$(TEST)' with ThreadSanitizer...$(RESET)"
 	@TSAN_OPTIONS=halt_on_error=0 $(TEST_TSAN_BIN) "$(TEST)" 2>&1 | tee /tmp/tsan_output.txt
 
 # Clean sanitizer binaries
 clean-sanitizers:
-	$(ECHO) "$(YELLOW)Cleaning sanitizer binaries...$(RESET)"
+	$(ECHO) "$(YELLOW)Cleaning sanitizer binaries and object trees...$(RESET)"
 	$(Q)rm -f $(TEST_ASAN_BIN) $(TEST_TSAN_BIN)
-	$(ECHO) "$(GREEN)✓ Sanitizer binaries cleaned$(RESET)"
+	$(Q)rm -f $(ASAN_PCH) $(TSAN_PCH)
+	$(Q)rm -rf $(ASAN_OBJ_DIR) $(TSAN_OBJ_DIR)
+	$(ECHO) "$(GREEN)✓ Sanitizer artifacts cleaned (normal build untouched)$(RESET)"
 
 # ============================================================================
 # Test Help
 # ============================================================================
 
-.PHONY: help-test test-kiauh test-shell test-serial test-asan test-tsan test-asan-one test-tsan-one clean-sanitizers
+.PHONY: help-test test-kiauh test-shell test-ui-pytest test-serial test-asan test-tsan test-asan-one test-tsan-one clean-sanitizers
 help-test:
 	@if [ -t 1 ] && [ -n "$(TERM)" ] && [ "$(TERM)" != "dumb" ]; then \
 		B='$(BOLD)'; G='$(GREEN)'; Y='$(YELLOW)'; C='$(CYAN)'; X='$(RESET)'; \

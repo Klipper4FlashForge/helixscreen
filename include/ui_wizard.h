@@ -6,8 +6,13 @@
 #include "subject_managed_panel.h"
 #include "wizard_step.h" // helix::wizard::StepId
 
+#include <cstddef>
 #include <functional>
 #include <vector>
+
+namespace helix {
+class Config;
+}
 
 // Forward declaration: SubjectManager for wizard subjects (defined in ui_wizard.cpp)
 // Wizard is function-based rather than class-based, so we use a static manager
@@ -121,6 +126,35 @@ void ui_wizard_set_title(const char* title);
  * newly translated text.
  */
 void ui_wizard_refresh_header_translations();
+
+/**
+ * Record the hardware the current selections imply into hardware/expected
+ *
+ * Reads the heater/fan/LED role keys, the runout sensor chosen in the filament
+ * step, and the live AMS backend's Klipper object, and adds each to this
+ * printer's hardware/expected list. Also enables the home panel's AMS widget
+ * when an AMS is present.
+ *
+ * Called by ui_wizard_complete() and again when a deferred hardware setup is
+ * re-run as a targeted session (#1160) — ui_wizard_complete_targeted()
+ * deliberately does no expected-hardware population of its own.
+ *
+ * @param config Config to read selections from and write the snapshot to
+ * @return Number of hardware names recorded (0 = nothing was selected)
+ */
+size_t ui_wizard_record_expected_hardware(helix::Config* config);
+
+/**
+ * Hardware steps to re-run for a deferred setup (#1160)
+ *
+ * Evaluates the live skip vector (preset collapsing, "no AMS", "no LEDs",
+ * sparse filament sensors) and returns the hardware steps that still have
+ * something to ask, in wizard order. Empty means there is nothing to offer.
+ *
+ * A targeted session runs its list verbatim, so this filtering has to happen
+ * before ui_wizard_create_targeted() is called.
+ */
+std::vector<helix::wizard::StepId> ui_wizard_deferred_hardware_steps();
 
 /**
  * Complete wizard and transition to main UI

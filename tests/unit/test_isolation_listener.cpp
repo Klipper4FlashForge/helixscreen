@@ -21,15 +21,20 @@
 #include "ui_observer_guard.h"
 
 #include "../helix_test_fixture.h"
+#include "../test_helpers/update_queue_test_access.h"
 #include "http_executor.h"
 #include "thumbnail_processor.h"
+#include "ui_update_queue.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <string>
 #include <unistd.h>
+#include <utility>
+#include <vector>
 
 #if defined(__APPLE__)
 #include <libproc.h>
@@ -149,6 +154,58 @@ class IsolationListener : public Catch::EventListenerBase {
         }
         heal_env("HELIX_DATA_DIR", data_dir_);
         heal_env("HELIX_CONFIG_DIR", config_dir_);
+
+        // A test that returns with callbacks still queued hands them to the NEXT
+        // test: HelixTestFixture's ctor drains the queue before the new test
+        // body runs. Any subject or observer that died with the leaking test is
+        // then walked as freed memory — SIGSEGV in lv_subject_notify /
+        // lv_ll_get_next, blamed on whichever innocent test happened to
+        // construct a fixture next. Naming the leaker here turns that
+        // shard-order-dependent crash into a deterministic report.
+        //
+        // Report AND auto-heal, like the cwd/env checks above. Heal by DISCARDING,
+        // never by draining: this hook runs after the test's fixture has already
+        // been destroyed, so executing the callbacks here would be the very
+        // use-after-free we are preventing. Draining is only correct inside the
+        // owning fixture's destructor body, while its subjects are still alive.
+        //
+        // Discarding makes the failure class structurally impossible — no test
+        // can hand queued work to the next one — while the warning ensures the
+        // leaking test still gets fixed at the source.
+        // The tags name the producers, which is what makes a report actionable:
+        // a tag pointing at a process singleton is benign unflushed work, while
+        // one closing over a per-test object is a real UAF awaiting the next drain.
+        if (std::vector<const char*> tags = helix::ui::UpdateQueueTestAccess::discard_pending(
+                helix::ui::UpdateQueue::instance());
+            !tags.empty()) {
+            // Collapse repeats — a loop-driven test queues the same tag N times —
+            // but match tags EXACTLY. A substring test would hide any producer
+            // whose tag is a prefix of one already listed.
+            std::vector<std::pair<std::string, size_t>> counts;
+            for (const char* t : tags) {
+                auto it = std::find_if(counts.begin(), counts.end(),
+                                       [t](const auto& e) { return e.first == t; });
+                if (it == counts.end()) {
+                    counts.emplace_back(t, 1);
+                } else {
+                    ++it->second;
+                }
+            }
+            std::string detail;
+            for (const auto& [tag, n] : counts) {
+                if (!detail.empty()) {
+                    detail += ", ";
+                }
+                detail += tag;
+                if (n > 1) {
+                    detail += " x" + std::to_string(n);
+                }
+            }
+            std::fprintf(stderr,
+                         "\n[ISOLATION-LEAK] test \"%s\" left %zu queued UpdateQueue "
+                         "callback(s); discarded. Producers: %s\n",
+                         name_.c_str(), tags.size(), detail.c_str());
+        }
 
         // Thread leaks can't be healed; settle briefly to avoid flagging a thread
         // that is mid-exit, then report a genuine increase.

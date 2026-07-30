@@ -249,3 +249,7 @@
 - **Learned**: 2026-07-24 | **Category**: gotcha
 > StaticSubjectRegistry::deinit_all() runs AFTER StaticPanelRegistry::destroy_all(), so a deinit lambda calling get_global_X_panel() RESURRECTS the singleton. The replacement is never destroyed while LVGL/spdlog are alive — its dtor runs in __run_exit_handlers and reads the freed spdlog registry (43 valgrind invalid accesses in ~Modal, MacrosPanel + PIDCalibrationPanel). Test the pointer instead: register_deinit("X", []{ if (g_x_panel) g_x_panel->deinit_subjects(); }). Same rule for any teardown callback reaching a lazy getter.
 
+### [L102] bats '! cmd' is exempt from errexit — mid-test negative assertions are no-ops
+- **Learned**: 2026-07-26 | **Category**: gotcha
+> POSIX exempts the '!' reserved word from errexit, and bats runs each @test body under 'set -e'. So a bare '! grep -q X file' that is NOT the final statement of the body is a SILENT NO-OP: its non-zero status is swallowed and only the last command decides the test result. A trailing one is fine. Found 2026-07-26: 65 such assertions across 25 files in tests/shell/ were proving nothing; the suite was green either way, so a passing run is NOT evidence the fix worked. Use refute / refute_sh / refute_grep from tests/shell/helpers.bash instead. Detect: parse @test bodies, flag /^\s*!\s/ lines that are not the last statement (skip '! cmd || { ...; return 1; }' and 'if ! ...; then' — those work). Verify any fix by A/B: refute a pattern that IS present must fail the test, where the old '!' form passes.
+

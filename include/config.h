@@ -245,7 +245,7 @@ class Config {
      *
      * @return JSON pointer prefix ("/printer/")
      */
-    std::string df();
+    std::string df() const;
 
     /**
      * @brief Get configuration file path
@@ -265,16 +265,20 @@ class Config {
      */
     bool is_read_only() const;
 
-    /// Check if this config was loaded from a platform preset
+    /// Check if the ACTIVE PRINTER was configured from a platform preset
     bool has_preset() const;
 
-    /// Get the preset name (e.g., "ad5m"), or empty string if no preset
+    /// Get the active printer's preset name (e.g., "ad5m"), or empty if none.
+    /// Stored at df() + "preset"; a legacy root-level marker is lifted here by
+    /// init() and is never read directly, so each printer keeps its own value.
     std::string get_preset() const;
 
-    /// Set the preset name (written during auto-detection from printer database)
+    /// Set the active printer's preset name (written during auto-detection from
+    /// printer database)
     void set_preset(const std::string& preset_name);
 
-    /// Erase the top-level "preset" marker (set_preset("") is a no-op and cannot clear it)
+    /// Erase the active printer's preset marker, plus any legacy root-level one
+    /// (set_preset("") is a no-op and cannot clear it)
     void clear_preset();
 
     /**

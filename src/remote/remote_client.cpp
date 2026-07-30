@@ -47,58 +47,127 @@ static const char* PROGRAM_NAME = "helix-screen ctl";
 // ---------------------------------------------------------------------------
 // Help text
 // ---------------------------------------------------------------------------
+//
+// ONE table drives both `ctl help` and the REPL's `help`. They used to be two
+// hand-maintained printf blocks and had already drifted: `geom` and `get_const`
+// were absent from the CLI listing, and the REPL listing was missing those plus
+// cd/pwd/back/demo/focus/scroll/text/wake/press/move/release. A command you
+// cannot discover is a command nobody uses.
+//
+// `detail` is the extra context the CLI prints under the summary; the REPL
+// prints the summary alone to keep the in-session listing scannable.
+
+struct HelpEntry {
+    const char* section; ///< nullptr continues the previous section
+    const char* usage;   ///< invocation, as typed
+    const char* summary; ///< one line, shown everywhere
+    const char* detail;  ///< extra CLI-only lines ("\n"-separated), or nullptr
+};
+
+static const HelpEntry kHelp[] = {
+    {"Navigation (fs metaphor)", "help, ?", "Show this help", nullptr},
+    {nullptr, "ping", "Health check", nullptr},
+    {nullptr, "navigate, cd <target>", "Go to a panel, or click a widget to descend", nullptr},
+    {nullptr, "go_back, back, cd ..", "Pop the current overlay/level", nullptr},
+    {nullptr, "current, pwd", "Show current panel and overlay stack", nullptr},
+    {nullptr, "list_panels", "List available panels", nullptr},
+    {nullptr, "list_components", "List every registered XML component (live registry)", nullptr},
+    {nullptr, "list_callbacks", "List every registered event-callback name", nullptr},
+    {nullptr, "screenshot [path] [--target W] [--stable]", "Capture the screen",
+     "a .png path encodes PNG; default is a timestamped .bmp in the\n"
+     "runtime dir. --target crops to a widget's bounds; --stable polls\n"
+     "until pixels stop changing (see `freeze`)"},
+    {nullptr, "status", "Show panel, connection state, printer status", nullptr},
+    {nullptr, "wake", "Reset idle timer / dismiss the screensaver", nullptr},
+    {nullptr, "demo <name>", "Show a sample-data overlay unreachable in mock mode",
+     "preflight-check, runout-modal, lock-screen, print-status,\n"
+     "print-tune, ams, camera"},
+
+    {"Subjects", "get <subject>", "Read current value of named subject", nullptr},
+    {nullptr, "set <subject> <value>", "Set subject value", nullptr},
+    {nullptr, "list_subjects", "List all registered subjects", nullptr},
+    {nullptr, "wait_for <subject> <value> [--timeout N]", "Block until subject matches value",
+     "default 30s"},
+
+    {"Widgets (targets: a name, a 'glob*' pattern, or @path from `ls`)",
+     "ls, describe_screen [target]", "List on-screen widgets: name, path, type, actions",
+     "With a target, list only that widget's subtree; with a pattern\n"
+     "('row_*'), every match. Quote it."},
+    {nullptr, "geom <target> [depth]", "Why a widget is the size it is",
+     "Absolute x/y/w/h, content box, DECLARED vs computed size, flex\n"
+     "grow, hidden/scrollable state. [depth] recurses into children.\n"
+     "Use this instead of measuring pixels off a screenshot."},
+    {nullptr, "get_const [scope] [name]", "Read XML design-token constants",
+     "#space_lg, #nav_width, ... No name lists the whole scope;\n"
+     "scope defaults to 'globals'."},
+    {nullptr, "text <target>", "Read a widget's text (label/textarea/dropdown)",
+     "Descends into a composite (e.g. a button) to find it."},
+    {nullptr, "click <target>", "Click (toggles switches/checkboxes)",
+     "On a composite row, descends to the control inside it."},
+    {nullptr, "set_value <target> <v>", "Set value (slider, switch, dropdown, textarea)", nullptr},
+    {nullptr, "scroll <target> [dx dy]", "Scroll into view, or by a delta", nullptr},
+    {nullptr, "focus <target>", "Focus a widget through its input group",
+     "Raises the on-screen keyboard for a textarea (click does not)."},
+
+    {"Synthetic pointer (drives LVGL's real input pipeline — gestures, long-press,\n"
+     "scroll-vs-tap — unlike `click`, which sends a bare widget event)",
+     "press <x> <y>", "Put the pointer down at x,y", nullptr},
+    {nullptr, "move <x> <y>", "Move it (a drag while pressed, a hover while not)", nullptr},
+    {nullptr, "release [x y]", "Lift it, at x,y if given, else where it is",
+     "e.g. long-press: press 100 300; sleep 0.6; release"},
+
+    {"Diagnostics & lifecycle", "wait_idle [--timeout N]",
+     "Block until UpdateQueue and HttpExecutor are both quiet",
+     "default 10s. Best-effort — see docs/devel/HELIXCTL.md for what\n"
+     "it cannot see"},
+    {nullptr, "freeze", "Stop animations + pause periodic timers for a reproducible capture",
+     "skips the update-queue and display-refresh timers so the channel\n"
+     "stays alive"},
+    {nullptr, "unfreeze", "Reverse freeze: resume paused timers, re-enable animations", nullptr},
+    {nullptr, "log [-n N]", "Tail the app's in-memory log ring", "default 50 lines"},
+    {nullptr, "shutdown, quit", "Ask the running app to exit", nullptr},
+    {nullptr, "reset", "Return to home with no overlays/modals",
+     "cheaper than a reboot — see docs/devel/HELIXCTL.md"},
+
+    {"Scenarios", "scenario <name>", "Apply named mock scenario", nullptr},
+    {nullptr, "list_scenarios", "List available mock scenarios", nullptr},
+
+    {"Interactive", "repl", "Interactive REPL with line editing and history", nullptr},
+};
+
+static constexpr int kHelpUsageWidth = 26;
+
+/// Render the shared table. `verbose` adds each entry's `detail` lines, which
+/// the REPL omits so its in-session listing stays scannable.
+static void print_help_table(bool verbose) {
+    for (const HelpEntry& e : kHelp) {
+        if (e.section) {
+            printf("\n%s:\n", e.section);
+        }
+        int pad = kHelpUsageWidth - 2 - static_cast<int>(strlen(e.usage));
+        if (pad > 0) {
+            printf("  %s%*s%s\n", e.usage, pad, "", e.summary);
+        } else {
+            // Usage too long to share a line — summary goes underneath.
+            printf("  %s\n%*s%s\n", e.usage, kHelpUsageWidth, "", e.summary);
+        }
+        if (verbose && e.detail) {
+            for (const char* p = e.detail; p; ) {
+                const char* nl = strchr(p, '\n');
+                int len = nl ? static_cast<int>(nl - p) : static_cast<int>(strlen(p));
+                printf("%*s%.*s\n", kHelpUsageWidth, "", len, p);
+                p = nl ? nl + 1 : nullptr;
+            }
+        }
+    }
+}
 
 static void print_usage() {
     printf("Usage: %s [options] <command> [args...]\n", PROGRAM_NAME);
-    printf("\nNavigation (fs metaphor):\n");
-    printf("  help, ?                 Show this help\n");
-    printf("  ping                    Health check\n");
-    printf("  navigate, cd <target>   Go to a panel, or click a widget to descend\n");
-    printf("  go_back, back, cd ..     Pop the current overlay/level\n");
-    printf("  current, pwd            Show current panel and overlay stack\n");
-    printf("  list_panels             List available panels\n");
-    printf("  list_components         List every registered XML component (live registry)\n");
-    printf("  list_callbacks          List every registered event-callback name\n");
-    printf("  screenshot [path]       Capture the screen (a .png path encodes PNG;\n");
-    printf("                          default: timestamped .bmp in the runtime dir)\n");
-    printf("  status                  Show panel, connection state, printer status\n");
-    printf("  wake                    Reset idle timer / dismiss the screensaver\n");
-    printf("  demo <name>             Show a sample-data overlay unreachable in mock mode\n");
-    printf("                          (preflight-check, runout-modal, lock-screen,\n");
-    printf("                           print-status, print-tune, ams, camera)\n");
-    printf("\nSubjects:\n");
-    printf("  get <subject>           Read current value of named subject\n");
-    printf("  set <subject> <value>   Set subject value\n");
-    printf("  list_subjects           List all registered subjects\n");
-    printf("  wait_for <subject> <value> [--timeout N]\n");
-    printf("                          Block until subject matches value (default 30s)\n");
-    printf("\nWidgets (targets: a name, a 'glob*' pattern, or @path from `ls`):\n");
-    printf("  ls, describe_screen [target]\n");
-    printf("                          List on-screen widgets: name, path, type, actions.\n");
-    printf("                          With a target, list only that widget's subtree;\n");
-    printf("                          with a pattern ('row_*'), every match. Quote it.\n");
-    printf("  click <target>          Click (toggles switches/checkboxes). On a composite\n");
-    printf("                          row, descends to the control inside it.\n");
-    printf("  set_value <target> <v>  Set value (slider, switch, dropdown, textarea)\n");
-    printf("  scroll <target> [dx dy] Scroll into view, or by a delta\n");
-    printf("  focus <target>          Focus a widget through its input group. Raises the\n");
-    printf("                          on-screen keyboard for a textarea (click does not).\n");
-    printf("\nSynthetic pointer (drives LVGL's real input pipeline — gestures, long-press,\n");
-    printf("scroll-vs-tap — unlike `click`, which sends a bare widget event):\n");
-    printf("  press <x> <y>           Put the pointer down at x,y\n");
-    printf("  move <x> <y>            Move it (a drag while pressed, a hover while not)\n");
-    printf("  release [x y]           Lift it, at x,y if given, else where it is\n");
-    printf("                          e.g. long-press: press 100 300; sleep 0.6; release\n");
-    printf("\nDiagnostics & lifecycle:\n");
-    printf("  log [-n N]              Tail the app's in-memory log ring (default 50 lines)\n");
-    printf("  shutdown, quit          Ask the running app to exit\n");
-    printf("\nScenarios:\n");
-    printf("  scenario <name>         Apply named mock scenario\n");
-    printf("  list_scenarios          List available mock scenarios\n");
-    printf("\nInteractive:\n");
-    printf("  repl                    Interactive REPL with line editing and history\n");
+    print_help_table(/*verbose=*/true);
     printf("\nOptions:\n");
     printf("  -s, --socket <path>     Socket path (default: auto-detect)\n");
+    printf("  --json                  Emit the raw JSON-RPC result/error (one-shot only)\n");
     printf("  -h, --help              Show this help\n");
     printf("\nSocket path resolution:\n");
     printf("  1. --socket <path>  (explicit)\n");
@@ -236,6 +305,12 @@ static std::string read_response(int fd, int timeout_sec = 30) {
 
 static int g_request_id = 1;
 
+/// When set, the one-shot client emits the raw JSON-RPC `result` instead of the
+/// human-formatted rendering. Errors from the server go to stderr as the raw
+/// `error` object. Client-side usage errors stay human-readable — a caller that
+/// mistyped a command name needs prose, not a protocol object.
+static bool g_json_output = false;
+
 static nlohmann::json build_request(const std::string& method,
                                     const nlohmann::json& params = nlohmann::json::object()) {
     return {{"jsonrpc", "2.0"}, {"method", method}, {"params", params}, {"id", g_request_id++}};
@@ -254,29 +329,38 @@ static int handle_response(const std::string& raw_response, nlohmann::json* out_
 
         if (response.contains("error")) {
             const auto& error = response["error"];
-            // A server is free to send a non-object error ("error": null, or a bare
-            // string). value() throws type_error.306 on those, so probe the type
-            // first. The message is held in a named string because c_str() on the
-            // value() temporary only survives to the end of the full expression.
-            std::string message = "Unknown error";
-            int code = -1;
-            if (error.is_object()) {
-                const auto it = error.find("message");
-                if (it != error.end() && it->is_string())
-                    message = it->get<std::string>();
-                const auto ic = error.find("code");
-                if (ic != error.end() && ic->is_number_integer())
-                    code = ic->get<int>();
-            } else if (error.is_string()) {
-                message = error.get<std::string>();
+            if (g_json_output) {
+                // dump() is safe for any JSON type, including the non-object
+                // errors the human path guards against below.
+                fprintf(stderr, "%s\n", error.dump().c_str());
+            } else {
+                // A server is free to send a non-object error ("error": null, or a bare
+                // string). value() throws type_error.306 on those, so probe the type
+                // first. The message is held in a named string because c_str() on the
+                // value() temporary only survives to the end of the full expression.
+                std::string message = "Unknown error";
+                int code = -1;
+                if (error.is_object()) {
+                    const auto it = error.find("message");
+                    if (it != error.end() && it->is_string())
+                        message = it->get<std::string>();
+                    const auto ic = error.find("code");
+                    if (ic != error.end() && ic->is_number_integer())
+                        code = ic->get<int>();
+                } else if (error.is_string()) {
+                    message = error.get<std::string>();
+                }
+                fprintf(stderr, "Error: %s (code %d)\n", message.c_str(), code);
             }
-            fprintf(stderr, "Error: %s (code %d)\n", message.c_str(), code);
             return 1;
         }
 
         if (response.contains("result")) {
             if (out_result) {
                 *out_result = response["result"];
+            } else if (g_json_output) {
+                // Raw, single-line. Callers pipe this to jq or json.loads.
+                printf("%s\n", response["result"].dump().c_str());
             } else {
                 auto& result = response["result"];
                 if (result.is_string()) {
@@ -382,10 +466,22 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
         return build_request("get_current");
     } else if (cmd == "screenshot") {
         // Optional destination; a .png suffix asks the app to encode PNG.
-        if (tokens.size() >= 2) {
-            return build_request("screenshot", {{"path", tokens[1]}});
+        // Optional --target <widget> crops to its bounds; --stable polls
+        // until the pixels stop changing before capturing (see `freeze`).
+        nlohmann::json params = nlohmann::json::object();
+        size_t i = 1;
+        if (i < tokens.size() && tokens[i].compare(0, 2, "--") != 0) {
+            params["path"] = tokens[i];
+            i++;
         }
-        return build_request("screenshot");
+        for (; i < tokens.size(); i++) {
+            if (tokens[i] == "--stable") {
+                params["stable"] = true;
+            } else if (tokens[i] == "--target" && i + 1 < tokens.size()) {
+                params["target"] = tokens[++i];
+            }
+        }
+        return build_request("screenshot", params);
     } else if (cmd == "shutdown" || cmd == "quit" || cmd == "exit") {
         // In the REPL, quit/exit are intercepted before dispatch (they leave the
         // REPL); reaching here means the one-shot client, where stopping the app
@@ -438,6 +534,19 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
             }
         }
         return build_request("wait_for", params);
+    } else if (cmd == "wait_idle") {
+        nlohmann::json params = nlohmann::json::object();
+        for (size_t i = 1; i < tokens.size(); i++) {
+            if ((tokens[i] == "--timeout" || tokens[i] == "-t") && i + 1 < tokens.size()) {
+                params["timeout"] = std::atof(tokens[i + 1].c_str());
+                i++;
+            }
+        }
+        return build_request("wait_idle", params);
+    } else if (cmd == "freeze") {
+        return build_request("freeze");
+    } else if (cmd == "unfreeze") {
+        return build_request("unfreeze");
     } else if (cmd == "click") {
         if (tokens.size() < 2) {
             fprintf(stderr, "Error: click requires a widget name or @path\n");
@@ -503,6 +612,12 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
             params["dy"] = std::atoi(tokens[3].c_str());
         }
         return build_request("scroll", params);
+    } else if (cmd == "text") {
+        if (tokens.size() < 2) {
+            fprintf(stderr, "Error: text requires a widget name/@path\n");
+            return {};
+        }
+        return build_request("text", target_param(tokens[1]));
     } else if (cmd == "geom") {
         if (tokens.size() < 2) {
             fprintf(stderr, "Error: geom requires a widget name/@path [depth]\n");
@@ -529,6 +644,8 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
             params["name"] = tokens[1];
         }
         return build_request("get_const", params);
+    } else if (cmd == "reset") {
+        return build_request("reset");
     }
 
     fprintf(stderr, "Unknown command: %s\n", cmd.c_str());
@@ -558,6 +675,9 @@ static const char* REPL_COMMANDS[] = {"ping",
                                       "set",
                                       "list_subjects",
                                       "wait_for",
+                                      "wait_idle",
+                                      "freeze",
+                                      "unfreeze",
                                       "ls",
                                       "describe_screen",
                                       "click",
@@ -573,7 +693,9 @@ static const char* REPL_COMMANDS[] = {"ping",
                                       "refresh",
                                       "log",
                                       "shutdown",
+                                      "reset",
                                       "geom",
+                                      "text",
                                       "get_const",
                                       "quit",
                                       "exit",
@@ -640,12 +762,18 @@ static char* repl_hints(const char* buf, int* color, int* bold) {
         return strdup(" <subject> <value>");
     if (input == "click")
         return strdup(" <widget>");
+    if (input == "text")
+        return strdup(" <widget>");
     if (input == "set_value")
         return strdup(" <widget> <value>");
     if (input == "scenario")
         return strdup(" <name>");
     if (input == "wait_for")
         return strdup(" <subject> <value> [--timeout N]");
+    if (input == "wait_idle")
+        return strdup(" [--timeout N]");
+    if (input == "screenshot")
+        return strdup(" [path] [--target W] [--stable]");
 
     return nullptr;
 }
@@ -734,31 +862,10 @@ static void repl_populate_caches(int fd) {
 }
 
 static void repl_print_help() {
-    printf("Commands:\n");
-    printf("  ping                      Health check\n");
-    printf("  navigate <panel>          Switch to panel/overlay\n");
-    printf("  go_back                   Pop current overlay\n");
-    printf("  list_panels               List available panels\n");
-    printf("  list_components           List every registered XML component\n");
-    printf("  list_callbacks            List every registered event-callback name\n");
-    printf("  current                   Show current panel and overlay stack\n");
-    printf("  screenshot [path]         Capture the screen (.png path encodes PNG)\n");
-    printf("  status                    Full status summary\n");
-    printf("  get <subject>             Read subject value\n");
-    printf("  set <subject> <value>     Set subject value\n");
-    printf("  list_subjects             List all subjects\n");
-    printf("  wait_for <s> <v> [-t N]   Wait for subject to match value\n");
-    printf("  ls [target]               List widgets here, or one widget's subtree\n");
-    printf("  click <widget>            Click a widget (descends into composite rows)\n");
-    printf("  set_value <widget> <v>    Set widget value\n");
-    printf("  scenario <name>           Apply mock scenario\n");
-    printf("  list_scenarios            List available scenarios\n");
-    printf("  log [-n N]                Tail the app's in-memory log ring\n");
-    printf("\n");
-    printf("  refresh                   Reload tab-completion caches\n");
-    printf("  help                      Show this help\n");
-    printf("  shutdown                  Stop the running app (not just this REPL)\n");
-    printf("  quit, exit, Ctrl-D        Exit REPL\n");
+    printf("Commands:");
+    print_help_table(/*verbose=*/false);
+    printf("\n  quit, exit, Ctrl-D      Exit REPL\n");
+    printf("  refresh                 Reload tab-completion caches\n");
     printf("\nTab completion works for commands, subjects, panels, and scenarios.\n");
     printf("Emacs keybindings: Ctrl-A/E, Ctrl-B/F, Ctrl-K/U, Ctrl-W, Ctrl-D, etc.\n");
 }
@@ -961,8 +1068,9 @@ static int run_repl(const std::string& socket_path) {
             continue;
         }
 
-        // Use longer timeout for wait_for
-        int timeout = (tokens[0] == "wait_for") ? 120 : 30;
+        // Use longer timeout for the blocking commands — the caller's own
+        // --timeout can exceed the default socket read window otherwise.
+        int timeout = (tokens[0] == "wait_for" || tokens[0] == "wait_idle") ? 120 : 30;
         auto raw = read_response(fd, timeout);
         close(fd);
 
@@ -1002,6 +1110,11 @@ int helix::remote_client_main(int argc, char** argv) {
             print_usage();
             return 0;
         }
+        if (strcmp(argv[arg_start], "--json") == 0) {
+            g_json_output = true;
+            arg_start++;
+            continue;
+        }
         if (strcmp(argv[arg_start], "-s") == 0 || strcmp(argv[arg_start], "--socket") == 0) {
             if (arg_start + 1 >= argc) {
                 fprintf(stderr, "Error: --socket requires a path argument\n");
@@ -1016,6 +1129,7 @@ int helix::remote_client_main(int argc, char** argv) {
 
     // No command → drop into the interactive fs-style REPL.
     if (arg_start >= argc) {
+        g_json_output = false; // --json is a one-shot flag; the REPL always formats
         return run_repl(resolve_socket_path(socket_path));
     }
 
@@ -1030,6 +1144,7 @@ int helix::remote_client_main(int argc, char** argv) {
 
     // Explicit REPL mode
     if (command == "repl") {
+        g_json_output = false; // --json is a one-shot flag; the REPL always formats
         std::string resolved_path = resolve_socket_path(socket_path);
         return run_repl(resolved_path);
     }
@@ -1057,8 +1172,9 @@ int helix::remote_client_main(int argc, char** argv) {
         return 1;
     }
 
-    // Use longer timeout for wait_for
-    int timeout = (command == "wait_for") ? 120 : 30;
+    // Use longer timeout for the blocking commands — the caller's own
+    // --timeout can exceed the default socket read window otherwise.
+    int timeout = (command == "wait_for" || command == "wait_idle") ? 120 : 30;
     std::string response = read_response(fd, timeout);
     close(fd);
 

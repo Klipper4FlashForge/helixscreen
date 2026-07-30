@@ -19,6 +19,7 @@
 #include "moonraker_client.h" // For ConnectionState enum
 #include "observer_factory.h"
 #include "overlay_base.h"
+#include "overlay_class.h"
 #include "page_scroll_auto_inject.h"
 #include "printer_state.h" // For KlippyState enum
 #include "sound_manager.h"
@@ -180,6 +181,8 @@ void NavigationManager::clear_overlay_stack() {
 
     // Clear zoom source rects for any cleared overlays
     zoom_source_rects_.clear();
+    overlay_is_destination_.clear();
+    overlay_width_unmanaged_.clear();
 
     // Destroy primary backdrop snapshot
     if (overlay_backdrop_) {
@@ -1332,6 +1335,13 @@ void NavigationManager::rekey_overlay_widget(lv_obj_t* old_widget, lv_obj_t* new
         overlay_close_callbacks_[new_widget] = std::move(cb);
     }
 
+    auto wc_it = overlay_is_destination_.find(old_widget);
+    if (wc_it != overlay_is_destination_.end()) {
+        bool cls = wc_it->second;
+        overlay_is_destination_.erase(wc_it);
+        overlay_is_destination_[new_widget] = cls;
+    }
+
     auto zs_it = zoom_source_rects_.find(old_widget);
     if (zs_it != zoom_source_rects_.end()) {
         auto rect = zs_it->second;
@@ -1349,6 +1359,78 @@ void NavigationManager::rekey_overlay_widget(lv_obj_t* old_widget, lv_obj_t* new
                   (void*)new_widget);
 }
 
+void NavigationManager::set_overlay_width_unmanaged(lv_obj_t* overlay) {
+    if (overlay) {
+        overlay_width_unmanaged_.insert(overlay);
+    }
+}
+
+bool NavigationManager::apply_overlay_width(lv_obj_t* overlay, bool is_first_overlay) {
+    // Deliberate custom width — not one of the two navigation classes.
+    if (overlay_width_unmanaged_.count(overlay)) {
+        return false;
+    }
+
+    // A promotion declared on the panel class travels with the panel, so a
+    // long-dwell screen reachable from several places (AmsPanel: Home, Printer
+    // Manager, AMS Overview) is full width from all of them.
+    auto* lifecycle = resolve_overlay_lifecycle(overlay);
+    const helix::OverlayClass requested = (lifecycle && lifecycle->is_destination())
+                                              ? helix::OverlayClass::Destination
+                                              : helix::OverlayClass::Inherit;
+
+    // panel_stack_.back() is still the widget beneath this one — the caller has
+    // not pushed yet. is_first_overlay guards the empty/root-only cases where
+    // back() is the main panel rather than an overlay.
+    bool parent_is_destination = false;
+    if (!is_first_overlay && !panel_stack_.empty()) {
+        auto it = overlay_is_destination_.find(panel_stack_.back());
+        if (it != overlay_is_destination_.end()) {
+            parent_is_destination = it->second;
+        }
+    }
+
+    const bool is_destination = helix::resolve_overlay_is_destination(
+        requested, !is_first_overlay, parent_is_destination,
+        helix::nav_root_is_destination(active_panel_));
+
+    overlay_is_destination_[overlay] = is_destination;
+
+    // Re-applied on EVERY push, not just at creation: OverlayBase caches its
+    // root widget across show/hide cycles, and the same cached widget can be
+    // reached from a transient parent one time and a destination parent the
+    // next.
+    ui_set_overlay_width(overlay, is_destination);
+
+    // LV_STATE_USER_1 == "this is a transient layer". overlay_panel.xml hangs a
+    // leading-edge treatment off it so the panel reads as something sitting ON
+    // TOP of what is behind it, rather than as a seam between two pieces of
+    // chrome — the reporter's actual objection in #1178. Only the state bit is
+    // set here; what it looks like stays in XML.
+    if (is_destination) {
+        lv_obj_remove_state(overlay, LV_STATE_USER_1);
+    } else {
+        lv_obj_add_state(overlay, LV_STATE_USER_1);
+    }
+
+    spdlog::trace("[NavigationManager] Overlay {} width class: {}", (void*)overlay,
+                  is_destination ? "destination" : "transient");
+    return is_destination;
+}
+
+void NavigationManager::reapply_overlay_widths() {
+    for (const auto& [overlay, is_destination] : overlay_is_destination_) {
+        // Entries are erased on widget delete (scrub_deleted_widget), but guard
+        // anyway — this runs from a display resize callback, outside the normal
+        // push/pop ordering.
+        if (lv_obj_is_valid(overlay)) {
+            ui_set_overlay_width(overlay, is_destination);
+        }
+    }
+    spdlog::debug("[NavigationManager] Re-applied width to {} overlay(s)",
+                  overlay_is_destination_.size());
+}
+
 void NavigationManager::scrub_deleted_widget(lv_obj_t* widget) {
     if (!widget)
         return;
@@ -1364,6 +1446,8 @@ void NavigationManager::scrub_deleted_widget(lv_obj_t* widget) {
     overlay_backdrops_.erase(widget);
     overlay_close_callbacks_.erase(widget);
     zoom_source_rects_.erase(widget);
+    overlay_is_destination_.erase(widget);
+    overlay_width_unmanaged_.erase(widget);
     panel_stack_.erase(std::remove(panel_stack_.begin(), panel_stack_.end(), widget),
                        panel_stack_.end());
     delete_hooked_.erase(widget);
@@ -1642,6 +1726,10 @@ void NavigationManager::push_overlay(lv_obj_t* overlay_panel, bool hide_previous
             lv_obj_add_flag(current_top, LV_OBJ_FLAG_HIDDEN);
         }
 
+        // Resolve and apply the width class before the overlay becomes visible,
+        // while panel_stack_.back() is still the widget beneath it. #1178
+        mgr.apply_overlay_width(overlay_panel, is_first_overlay);
+
         // Show overlay
         lv_obj_remove_flag(overlay_panel, LV_OBJ_FLAG_HIDDEN);
         lv_obj_move_foreground(overlay_panel);
@@ -1757,6 +1845,10 @@ void NavigationManager::push_overlay_zoom_from(lv_obj_t* overlay_panel, lv_area_
             lv_obj_t* current_top = mgr.panel_stack_.back();
             lv_obj_add_flag(current_top, LV_OBJ_FLAG_HIDDEN);
         }
+
+        // Resolve and apply the width class before the overlay becomes visible,
+        // while panel_stack_.back() is still the widget beneath it. #1178
+        mgr.apply_overlay_width(overlay_panel, is_first_overlay);
 
         // Show overlay with zoom animation instead of slide
         lv_obj_remove_flag(overlay_panel, LV_OBJ_FLAG_HIDDEN);
@@ -2025,6 +2117,8 @@ void NavigationManager::shutdown() {
     // Clear panel stack and zoom state
     panel_stack_.clear();
     zoom_source_rects_.clear();
+    overlay_is_destination_.clear();
+    overlay_width_unmanaged_.clear();
 
     // Clear printer callbacks — they capture Application pointers that become
     // invalid after soft restart tears down and rebuilds printer state
@@ -2126,6 +2220,8 @@ void NavigationManager::deinit_subjects() {
     overlay_close_callbacks_.clear();
     overlay_backdrops_.clear();
     zoom_source_rects_.clear();
+    overlay_is_destination_.clear();
+    overlay_width_unmanaged_.clear();
     delete_hooked_.clear();
     panel_stack_.clear();
     app_layout_widget_ = nullptr;

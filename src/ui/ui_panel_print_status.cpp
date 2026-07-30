@@ -705,7 +705,8 @@ lv_obj_t* PrintStatusPanel::create(lv_obj_t* parent) {
 
     spdlog::debug("[{}] Setting up panel...", get_name());
 
-    // Panel width is set via XML using #overlay_panel_width_large (same as print_file_detail)
+    // Width comes from NavigationManager::push_overlay() — this panel declares
+    // is_destination() so it renders full width from every entry point (#1178).
     // Use standard overlay panel setup for header/content/back button
     ui_overlay_panel_setup_standard(overlay_root_, parent_screen_, "overlay_header",
                                     "overlay_content");
@@ -1001,6 +1002,14 @@ void PrintStatusPanel::on_activate() {
     // non-zero widths for the row. Deferred so layout has at least one tick to
     // settle after on_activate() un-hides the panel.
     {
+        // Re-resolve which fan owns each slot and re-seed the labels. Seeding
+        // alone is not enough: the compact row can be stale because the *name* is
+        // stale, not just the value — classify_primary_fans() is runtime-adaptive
+        // (#1124), so re-reading part_fan_name_'s subject would faithfully
+        // re-display the wrong fan. bind_fan_observers() refreshes the names and
+        // ends each rebind with a seed, which covers both (#1181).
+        bind_fan_observers();
+
         auto token = lifetime_.token();
         token.defer("PrintStatusPanel::on_activate_fan_row_recompute", [this]() {
             recompute_fans_density();

@@ -2,7 +2,7 @@
 <!-- Copyright (C) 2025-2026 356C LLC -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <component>
-  <view name="power_panel" extends="overlay_panel" width="#overlay_panel_width_full"
+  <view name="power_panel" extends="overlay_panel"
         title="Power Devices" title_tag="Power Devices" bg_color="#screen_bg">
     <!-- Content Area -->
     <lv_obj name="overlay_content"

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include "async_lifetime_guard.h"
 #include "capability_overrides.h"
 #include "printer_discovery.h"
 #include "subject_managed_panel.h"
@@ -333,6 +334,14 @@ class PrinterCapabilitiesState {
 
     SubjectManager subjects_;
     bool subjects_initialized_ = false;
+
+    /// Generation guard for the async setters that defer their subject writes to
+    /// the main thread. Invalidated by `deinit_subjects()` and by destruction, so
+    /// a callback still queued when the subjects go away is dropped instead of
+    /// notifying a freed observer list (#1165, #1146). Declared after
+    /// `subjects_` so it is destroyed first, ahead of the SubjectManager that
+    /// deinits what those callbacks write.
+    AsyncLifetimeGuard async_lifetime_;
 
     /// stepper_z position_endstop from configfile.settings (microns)
     int stepper_z_endstop_microns_ = 0;

@@ -3,6 +3,8 @@
 
 #include "wifi_ui_utils.h"
 
+#include "log_redact.h"
+
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -187,7 +189,7 @@ std::string wifi_get_device_mac(const std::string& interface) {
             .base(),
         mac.end());
 
-    spdlog::debug("[wifi_ui] Found MAC address for '{}': {}", interface, mac);
+    spdlog::debug("[wifi_ui] Found MAC address for '{}': {}", interface, helix::redact::mac(mac));
     return mac;
 
 #else
@@ -214,7 +216,7 @@ std::string wifi_get_device_mac(const std::string& interface) {
         return "";
     }
 
-    spdlog::debug("[wifi_ui] Found MAC address for '{}': {}", interface, mac);
+    spdlog::debug("[wifi_ui] Found MAC address for '{}': {}", interface, helix::redact::mac(mac));
     return mac;
 #endif
 }

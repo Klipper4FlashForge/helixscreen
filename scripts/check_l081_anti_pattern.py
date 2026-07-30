@@ -159,6 +159,65 @@ def file_lines(path: Path) -> list[str]:
         return []
 
 
+def _blank_noise(src: str) -> str:
+    """Blank out comments and string/char literals, preserving every offset and
+    newline so line numbers still map back to the original source.
+
+    Same helper as check_raw_this_queue_update.py. Without it a comment that
+    merely *describes* the anti-pattern — including the fix advice this script
+    prints — is reported as a violation.
+    """
+    out = list(src)
+    n = len(src)
+    i = 0
+    while i < n:
+        c = src[i]
+        if c == '/' and i + 1 < n and src[i + 1] == '/':
+            j = src.find('\n', i)
+            j = n if j < 0 else j
+            for k in range(i, j):
+                out[k] = ' '
+            i = j
+            continue
+        if c == '/' and i + 1 < n and src[i + 1] == '*':
+            j = src.find('*/', i + 2)
+            j = n if j < 0 else j + 2
+            for k in range(i, j):
+                if out[k] != '\n':
+                    out[k] = ' '
+            i = j
+            continue
+        if c in '"\'':
+            j = i + 1
+            while j < n:
+                if src[j] == '\\':
+                    j += 2
+                    continue
+                if src[j] == c or src[j] == '\n':
+                    j += 1
+                    break
+                j += 1
+            for k in range(i, min(j, n)):
+                if out[k] != '\n':
+                    out[k] = ' '
+            i = j
+            continue
+        i += 1
+    return ''.join(out)
+
+
+def code_lines(path: Path) -> list[str]:
+    """`file_lines` with comments and literals blanked, line-for-line aligned.
+
+    Match patterns against these; keep using the raw lines for the `L081_OK`
+    opt-out (which lives in a comment) and for the snippet shown to the user.
+    """
+    try:
+        return _blank_noise(path.read_text(encoding='utf-8', errors='replace')).splitlines()
+    except OSError:
+        return []
+
+
 def is_only_return(line: str) -> bool:
     """True if the line after the expired-check predicate is just `return;` (with optional braces)."""
     s = line.strip()
@@ -207,27 +266,30 @@ def scan_file(path: Path) -> list[tuple[int, str, str]]:
     lines = file_lines(path)
     if not lines:
         return []
+    # Patterns match against `code` (comments/literals blanked); `lines` stays
+    # raw so the L081_OK opt-out and the reported snippet still read correctly.
+    code = code_lines(path)
     hits: list[tuple[int, str, str]] = []
     for i, line in enumerate(lines):
         if OPT_OUT in line:
             continue
-        m = EXPIRED_CHECK_RE.search(line)
+        m = EXPIRED_CHECK_RE.search(code[i])
         if not m:
             continue
         # If the rest of the same line is just `return;`, the lambda body
         # is a no-op past the gate — neither UAF nor redundant-with-defer.
         # The check might still trip the runtime detector, but the lint
         # only flags forms that have a clearer fix path.
-        same_line_after = trailing_after_paren(line)
+        same_line_after = trailing_after_paren(code[i])
         if same_line_after.startswith('return'):
             continue
         # Look ahead a few lines INSIDE the lambda for either a `.defer(`
         # call (REDUNDANT) or a `this`/member access (UAF). Stop at obvious
         # block-end markers so we don't bleed into the enclosing scope.
         for j in range(i + 1, min(i + 1 + LOOKAHEAD_LINES, len(lines))):
-            look = lines[j]
-            if OPT_OUT in look:
+            if OPT_OUT in lines[j]:
                 break
+            look = code[j]
             stripped = look.strip()
             if stripped == '':
                 continue

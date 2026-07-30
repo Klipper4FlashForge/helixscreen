@@ -3,6 +3,7 @@
 
 #include "xml_registration.h"
 
+#include "ui_afc_fault_path.h"
 #include "ui_ams_current_tool.h"
 #include "ui_ams_device_operations_overlay.h"
 #include "ui_ams_device_section_detail_overlay.h"
@@ -315,6 +316,10 @@ void register_xml_components() {
     ui_hsv_picker_register();         // HSV color picker for edit filament modal
     ui_z_offset_indicator_register(); // Z-offset nozzle indicator
     ui_ams_current_tool_init();       // AMS current tool indicator callbacks
+    // <afc_fault_path> + its afc_fault_segment subject. Both modals that can show
+    // an AFC lane fault embed it, and one of them (ams_loading_error_modal.xml) is
+    // registered lazily by AmsPanel — so this has to come first.
+    helix::ui::afc_fault_path_register();
     // NOTE: Other AMS widgets (ams_slot, filament_path_canvas) are
     // registered lazily in ui_panel_ams.cpp when the AMS panel is first accessed
 

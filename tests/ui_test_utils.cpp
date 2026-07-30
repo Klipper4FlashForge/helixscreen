@@ -428,8 +428,18 @@ void set_moonraker_client(MoonrakerClient* client) {
     g_test_moonraker_client = client;
 }
 
+// Settable for the same reason as the client above: code under test reaches the
+// API through this global, so a test that needs it to answer installs its own and
+// restores the previous value in a dtor. Defaults to nullptr, which is what every
+// test that does not care has always seen.
+static MoonrakerAPI* g_test_moonraker_api = nullptr;
+
 MoonrakerAPI* get_moonraker_api() {
-    return nullptr;
+    return g_test_moonraker_api;
+}
+
+void set_moonraker_api(MoonrakerAPI* api) {
+    g_test_moonraker_api = api;
 }
 
 PrinterState& get_printer_state() {
@@ -445,12 +455,16 @@ helix::TemperatureController* get_temperature_controller() {
 // out in the test build, so warnings would otherwise be invisible).
 namespace {
 std::function<void(const std::string&)> g_test_warning_hook;
-}
+std::function<void(const std::string&)> g_test_error_hook;
+} // namespace
 
 namespace helix {
 namespace ui {
 void set_test_notification_warning_hook(std::function<void(const std::string&)> hook) {
     g_test_warning_hook = std::move(hook);
+}
+void set_test_notification_error_hook(std::function<void(const std::string&)> hook) {
+    g_test_error_hook = std::move(hook);
 }
 } // namespace ui
 } // namespace helix
@@ -502,6 +516,9 @@ void ui_notification_warning(const char* title, const char* message) {
 void ui_notification_error(const char* title, const char* message, bool modal) {
     spdlog::debug("[Test Stub] ui_notification_error: {} - {} (modal={})", title ? title : "(null)",
                   message ? message : "(null)", modal);
+    if (g_test_error_hook) {
+        g_test_error_hook(message ? message : "");
+    }
 }
 
 // Stub ToastManager class for tests

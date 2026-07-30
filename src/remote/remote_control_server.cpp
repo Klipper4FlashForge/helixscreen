@@ -3,16 +3,22 @@
 
 #include "remote_control_server.h"
 
+#include "http_executor.h"
+#include "panel_factory.h"
 #include "ui_keyboard_manager.h"
+#include "ui_modal.h"
 #include "ui_nav_manager.h"
+#include "ui_toast_manager.h"
 #include "ui_update_queue.h"
 
 #include "app_globals.h"
 #include "demo_overlays.h"
+#include "display_settings_manager.h"
 #include "logging_init.h"
 #include "mock_scenarios.h"
 #include "panel_factory.h"
 #include "printer_state.h"
+#include "remote_client.h"
 #include "remote_pointer.h"
 #include "screenshot.h"
 #include "subject_debug_registry.h"
@@ -266,6 +272,11 @@ nlohmann::json RemoteControlServer::execute_on_ui_thread(std::function<nlohmann:
     throw std::runtime_error("UI thread timeout (10s)");
 }
 
+// Forward declaration: the widget-resolution helpers live further down in this
+// file, alongside the other widget-interaction handlers, but handle_screenshot
+// (below) needs to resolve its --target before that point.
+static lv_obj_t* resolve_widget(const nlohmann::json& params);
+
 // =============================================================================
 // Built-in handlers
 // =============================================================================
@@ -293,6 +304,9 @@ void RemoteControlServer::register_builtin_handlers() {
         return handle_list_subjects(p);
     };
     handlers_["wait_for"] = [this](const nlohmann::json& p) { return handle_wait_for(p); };
+    handlers_["wait_idle"] = [this](const nlohmann::json& p) { return handle_wait_idle(p); };
+    handlers_["freeze"] = [this](const nlohmann::json& p) { return handle_freeze(p); };
+    handlers_["unfreeze"] = [this](const nlohmann::json& p) { return handle_unfreeze(p); };
 
     // Phase 3: Widget interaction + scenarios
     handlers_["click"] = [this](const nlohmann::json& p) { return handle_click(p); };
@@ -318,11 +332,13 @@ void RemoteControlServer::register_builtin_handlers() {
         return handle_pointer_release(p);
     };
     handlers_["geom"] = [this](const nlohmann::json& p) { return handle_geom(p); };
+    handlers_["text"] = [this](const nlohmann::json& p) { return handle_text(p); };
     handlers_["get_const"] = [this](const nlohmann::json& p) { return handle_get_const(p); };
     handlers_["wake"] = [this](const nlohmann::json& p) { return handle_wake(p); };
 
     // Lifecycle + diagnostics
     handlers_["shutdown"] = [this](const nlohmann::json& p) { return handle_shutdown(p); };
+    handlers_["reset"] = [this](const nlohmann::json& p) { return handle_reset(p); };
     handlers_["log"] = [this](const nlohmann::json& p) { return handle_log(p); };
 }
 
@@ -381,6 +397,78 @@ nlohmann::json RemoteControlServer::handle_shutdown(const nlohmann::json& /*para
     spdlog::info("[RemoteControl] shutdown requested");
     app_request_quit();
     return {{"shutting_down", true}};
+}
+
+nlohmann::json RemoteControlServer::handle_reset(const nlohmann::json& /*params*/) {
+    return execute_on_ui_thread([]() -> nlohmann::json {
+        wake_display();
+
+        // Modals first: Modal::hide() is the live-safe dismiss path (marks the
+        // stack entry "exiting" synchronously, then always finishes with
+        // safe_delete_deferred_raw() -- never a synchronous lv_obj_delete()).
+        // ModalStack::clear() looked tempting but is a teardown-only helper
+        // (its only caller is Application::shutdown()): it calls lv_obj_delete()
+        // directly in a loop, which is exactly the "multiple sync deletions in
+        // one UpdateQueue batch" pattern that corrupts LVGL's event list from
+        // inside a queued callback (this handler runs via execute_on_ui_thread,
+        // itself dispatched through UpdateQueue). empty() only counts
+        // non-exiting entries, so it flips to true as soon as every modal has
+        // been marked -- no need to wait out the exit animation here.
+        int modals_cleared = 0;
+        constexpr int kMaxModalDepth = 16; // matching kMaxDepth's reasoning below
+        while (!ModalStack::instance().empty() && modals_cleared < kMaxModalDepth) {
+            lv_obj_t* top = Modal::get_top();
+            if (!top) {
+                break;
+            }
+            Modal::hide(top);
+            modals_cleared++;
+        }
+        if (modals_cleared == kMaxModalDepth && !ModalStack::instance().empty()) {
+            spdlog::warn("[RemoteControlServer] reset: modal stack still non-empty after "
+                        "{} dismissals -- hit the safety cap, something isn't draining",
+                        kMaxModalDepth);
+        }
+
+        // Toasts: ToastManager::hide() dismisses every visible toast (also via
+        // safe_delete_deferred_raw internally). There is no public exact count --
+        // visible_count() is private and the brief for this task says not to add
+        // a ToastManager API here -- so toasts_cleared is presence-only (0 or 1),
+        // not an exact count. See HELIXCTL.md for the caveat.
+        auto& toasts = ToastManager::instance();
+        int toasts_cleared = toasts.is_visible() ? 1 : 0;
+        toasts.hide();
+
+        // Overlays: NavigationManager::go_back() defers its actual work via
+        // queue_update() -- even called from the UI thread, it does not pop
+        // panel_stack_ synchronously, it enqueues a callback for the *next*
+        // UpdateQueue::process_pending() tick. So overlay_stack_names() must be
+        // read exactly once, before any go_back() call, to get the true depth --
+        // rereading it in a loop condition would never observe a decrease within
+        // this same callback and would just spin to kMaxDepth every time.
+        // Bounded rather than unbounded: a nav stack that will not drain is a
+        // bug, and spinning forever here would hang the UI thread.
+        auto& nav = NavigationManager::instance();
+        constexpr int kMaxDepth = 32;
+        int actual_depth = static_cast<int>(nav.overlay_stack_names().size());
+        int overlays_popped = std::min(actual_depth, kMaxDepth);
+        if (actual_depth > kMaxDepth) {
+            spdlog::warn("[RemoteControlServer] reset: overlay stack depth {} exceeds the "
+                        "safety cap of {} -- popping {} and leaving the rest, something "
+                        "isn't draining",
+                        actual_depth, kMaxDepth, kMaxDepth);
+        }
+        for (int i = 0; i < overlays_popped; ++i) {
+            nav.go_back();
+        }
+
+        nav.set_active(helix::PanelId::Home);
+
+        return {{"panel", panel_id_to_name(nav.get_active())},
+                {"overlays_popped", overlays_popped},
+                {"modals_cleared", modals_cleared},
+                {"toasts_cleared", toasts_cleared}};
+    });
 }
 
 nlohmann::json RemoteControlServer::handle_log(const nlohmann::json& params) {
@@ -489,22 +577,93 @@ nlohmann::json RemoteControlServer::handle_get_current(const nlohmann::json& /*p
     });
 }
 
+// Build resolve_widget()-compatible params from a plain locator string, the
+// same rule the ctl client's target_param() applies before it ever reaches
+// the wire for click/set_value/scroll: "@s/3/1" (or a bare "s/3/1") addresses
+// a describe_screen path, anything else is a widget name.
+static nlohmann::json widget_target_params(const std::string& target) {
+    if (!target.empty() && target[0] == '@') {
+        return {{"path", target.substr(1)}};
+    }
+    if (helix::is_bare_path(target)) {
+        return {{"path", target}};
+    }
+    return {{"name", target}};
+}
+
 nlohmann::json RemoteControlServer::handle_screenshot(const nlohmann::json& params) {
     // Optional destination. A ".png" suffix selects PNG encoding; the default
     // (no path) stays a timestamped BMP in the runtime dir.
-    std::string out_path;
-    if (params.contains("path") && params["path"].is_string()) {
-        out_path = params["path"].get<std::string>();
+    std::string out_path = params.value("path", "");
+    std::string target = params.value("target", "");
+    bool stable = params.value("stable", false);
+
+    // Resolved fresh on the UI thread every time it's needed (once per
+    // stability sample, then once more for the final capture) rather than
+    // resolved once up front — a widget pointer must never cross the
+    // transport/UI thread boundary or outlive the UI-thread call that found it.
+    auto resolve_crop = [target]() -> lv_obj_t* {
+        if (target.empty()) {
+            return nullptr;
+        }
+        lv_obj_t* w = resolve_widget(widget_target_params(target));
+        if (!w) {
+            throw std::invalid_argument("Widget not found: " + target);
+        }
+        return w;
+    };
+
+    // Stability is sampled across frames, so this loop must live on the
+    // transport thread and hop to the UI thread per sample — a loop *on* the
+    // UI thread would block the very redraws it is waiting to observe.
+    int stable_frames = 0;
+    if (stable) {
+        constexpr int kRequired = 3;
+        constexpr int kMaxSamples = 180; // ~3s at 16ms
+        uint64_t last = 0;
+        int run = 0;
+        for (int i = 0; i < kMaxSamples; i++) {
+            uint64_t h = execute_on_ui_thread([resolve_crop]() -> nlohmann::json {
+                                  lv_obj_t* crop = resolve_crop();
+                                  helix::CapturedFrame f;
+                                  if (!helix::capture_frame(f, crop)) {
+                                      throw std::runtime_error("Frame capture failed");
+                                  }
+                                  return helix::frame_hash(f);
+                              })
+                             .get<uint64_t>();
+
+            run = (i > 0 && h == last) ? run + 1 : 1;
+            last = h;
+            if (run >= kRequired) {
+                stable_frames = run;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
+        if (stable_frames < kRequired) {
+            throw std::runtime_error(
+                "Screen never stabilized: no " + std::to_string(kRequired) +
+                " identical consecutive frames within 3s. Try `freeze` first.");
+        }
     }
-    return execute_on_ui_thread([out_path]() -> nlohmann::json {
-        std::string written = helix::save_screenshot(out_path);
+
+    return execute_on_ui_thread([out_path, resolve_crop, stable_frames]() -> nlohmann::json {
+        lv_obj_t* crop = resolve_crop();
+        helix::CapturedFrame f;
+        if (!helix::capture_frame(f, crop)) {
+            throw std::runtime_error("Frame capture failed");
+        }
+        std::string written = helix::write_frame(f, out_path);
         if (written.empty()) {
             throw std::runtime_error("Screenshot failed" +
                                      (out_path.empty() ? std::string() : ": " + out_path));
         }
         // Report where it actually landed — callers scripting a capture should
         // never have to guess the filename.
-        return {{"saved", true}, {"path", written}};
+        return {{"saved", true}, {"path", written},
+                {"w", f.width}, {"h", f.height},
+                {"stable_frames", stable_frames}};
     });
 }
 
@@ -1195,6 +1354,167 @@ static std::string target_label(const nlohmann::json& params) {
     return "?";
 }
 
+nlohmann::json RemoteControlServer::handle_wait_idle(const nlohmann::json& params) {
+    // Default generous enough for a gcode preview to land, short enough that a
+    // wedged test fails inside a coffee break.
+    double timeout_s = params.value("timeout", 10.0);
+
+    // Sampled on the UI thread; compared on this (transport) thread. Polling
+    // rather than blocking is deliberate — a handler that spun on the UI thread
+    // would prevent the very work it is waiting for from running.
+    //
+    // Animations are deliberately NOT counted here. A real UI has legitimately
+    // perpetual animations (a heater icon pulsing while genuinely heating, a
+    // fan icon spinning while genuinely spinning), so "zero animations
+    // running" is not a reachable idle state in general — it is a property of
+    // one screen in one settings configuration, not of the app having
+    // finished its work. See the design spec's "Determinism model" for the
+    // concrete case that proved this (print_file_detail's loading spinner).
+    // Animation-driven pixel churn is the frame-hash screenshot gate's job,
+    // which measures whether pixels actually stopped changing instead of
+    // inferring it from a counter.
+    struct Counters {
+        size_t queue = 0;
+        size_t http = 0;
+        bool idle() const { return queue == 0 && http == 0; }
+    };
+
+    auto sample = [this]() -> Counters {
+        auto j = execute_on_ui_thread([]() -> nlohmann::json {
+            // Read http before queue (list-init evaluates left-to-right): a
+            // worker decrements its inflight count only after the job body
+            // returns, and any UI work that job posted via queue_update() is
+            // already sitting in pending_ by then. Reading http first means
+            // "http already dropped to 0" implies "its queued follow-up work,
+            // if any, is already visible in queue" — reading queue first
+            // could catch it empty a moment before the worker's own
+            // queue_update() call lands, then see http already decremented
+            // too, missing both signals in one sample.
+            return {{"http", helix::http::HttpExecutor::fast().inflight() +
+                                 helix::http::HttpExecutor::slow().inflight()},
+                    {"queue", helix::ui::UpdateQueue::instance().pending_count()}};
+        });
+        return Counters{j["queue"].get<size_t>(), j["http"].get<size_t>()};
+    };
+
+    const auto start = std::chrono::steady_clock::now();
+    const auto deadline = start + std::chrono::duration<double>(timeout_s);
+    Counters last{1, 1}; // force at least two samples before declaring idle
+
+    while (true) {
+        Counters now = sample();
+        // Require idle on two consecutive samples: a single zero reading can
+        // land in the gap between one callback finishing and the next being
+        // enqueued by the work it just completed.
+        if (now.idle() && last.idle()) {
+            auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - start);
+            return {{"idle", true}, {"waited_ms", waited.count()}};
+        }
+        if (std::chrono::steady_clock::now() >= deadline) {
+            // fmt::format, not std::to_string(double) — the latter renders
+            // "0.000000s", unreadable in the log someone reads at 2am.
+            throw std::runtime_error(fmt::format(
+                "wait_idle timed out after {:.1f}s — update_queue={} http={}", timeout_s,
+                now.queue, now.http));
+        }
+        last = now;
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+    }
+}
+
+nlohmann::json RemoteControlServer::handle_freeze(const nlohmann::json& /*params*/) {
+    return execute_on_ui_thread([this]() -> nlohmann::json {
+        // Stop animations already in flight.
+        lv_anim_delete_all();
+
+        // Idempotent: a second freeze() while already frozen must not
+        // re-scan and clobber paused_timers_ — every timer would already be
+        // paused, so the scan would track none of them and unfreeze() would
+        // forget the original set, leaving it paused forever.
+        if (frozen_) {
+            return {{"frozen", true}, {"timers_paused", static_cast<int>(paused_timers_.size())}};
+        }
+
+        // Prevent new animations from starting by flipping the subject
+        // directly rather than through DisplaySettingsManager::set_animations_enabled(),
+        // which calls Config::save() on every call. freeze is a transient
+        // test-mode toggle — persisting it would mean a --remote dev
+        // instance killed or crashed between freeze and unfreeze leaves the
+        // user's real settings.json with animations permanently disabled.
+        // Remember the real value so unfreeze restores it exactly, not "on".
+        pre_freeze_animations_enabled_ = DisplaySettingsManager::instance().get_animations_enabled();
+        lv_subject_set_int(DisplaySettingsManager::instance().subject_animations_enabled(), 0);
+
+        // Pause periodic timers one at a time rather than lv_timer_enable(false):
+        // UpdateQueue's processor is itself an lv_timer, and this very handler
+        // was dispatched through it via execute_on_ui_thread(). A global disable
+        // would stop the queue that delivers unfreeze, wedging the channel.
+        lv_timer_t* const queue_timer = helix::ui::UpdateQueue::instance().timer();
+        lv_timer_t* const refr_timer = lv_display_get_refr_timer(lv_display_get_default());
+
+        paused_timers_.clear();
+        lv_timer_t* t = lv_timer_get_next(nullptr);
+        while (t) {
+            lv_timer_t* next = lv_timer_get_next(t);
+            const bool skip = (t == queue_timer) || (t == refr_timer);
+            // A no-op lv_timer_pause() on an already-paused timer is harmless,
+            // but resuming it later would not be — only track timers we
+            // actually changed, so unfreeze never touches one paused by its
+            // own owner for an unrelated reason.
+            if (!skip && !lv_timer_get_paused(t)) {
+                lv_timer_pause(t);
+                paused_timers_.push_back(t);
+            }
+            t = next;
+        }
+        frozen_ = true;
+
+        spdlog::debug("[RemoteControl] freeze: paused {} timers (skipped queue+refresh)",
+                      paused_timers_.size());
+        return {{"frozen", true}, {"timers_paused", static_cast<int>(paused_timers_.size())}};
+    });
+}
+
+nlohmann::json RemoteControlServer::handle_unfreeze(const nlohmann::json& /*params*/) {
+    return execute_on_ui_thread([this]() -> nlohmann::json {
+        // Not frozen: a no-op rather than an error, so a defensive `finally:
+        // unfreeze()` never needs its own guard around whether freeze ran.
+        if (!frozen_) {
+            return {{"frozen", false}, {"timers_resumed", 0}};
+        }
+
+        int resumed = 0;
+        for (lv_timer_t* t : paused_timers_) {
+            // A tracked timer may have been deleted while frozen (e.g. panel
+            // teardown), so confirm it is still in LVGL's live list before
+            // touching what would otherwise be a dangling pointer.
+            bool still_live = false;
+            for (lv_timer_t* live = lv_timer_get_next(nullptr); live;
+                 live = lv_timer_get_next(live)) {
+                if (live == t) {
+                    still_live = true;
+                    break;
+                }
+            }
+            if (still_live) {
+                lv_timer_resume(t);
+                resumed++;
+            }
+        }
+        paused_timers_.clear();
+        frozen_ = false;
+        // Restore the exact pre-freeze value (not a hardcoded "on") via the
+        // subject directly — see handle_freeze() for why set_animations_enabled()
+        // (which persists to settings.json) must not be used here.
+        lv_subject_set_int(DisplaySettingsManager::instance().subject_animations_enabled(),
+                            pre_freeze_animations_enabled_ ? 1 : 0);
+
+        spdlog::debug("[RemoteControl] unfreeze: resumed {} timers", resumed);
+        return {{"frozen", false}, {"timers_resumed", resumed}};
+    });
+}
+
 nlohmann::json RemoteControlServer::handle_click(const nlohmann::json& params) {
     if (!params.contains("name") && !params.contains("path")) {
         throw std::invalid_argument("Missing required parameter: name or path");
@@ -1513,6 +1833,77 @@ nlohmann::json RemoteControlServer::handle_focus(const nlohmann::json& params) {
         return {{"focused", target_label(params)},
                 {"keyboard_visible", KeyboardManager::instance().is_visible()},
                 {"active_screen", active_screen_label()}};
+    });
+}
+
+namespace {
+
+// Read text out of whichever widget type carries it. Returns false when the
+// widget has no text concept at all — distinct from having empty text, which
+// is why this can't just return an empty string for both cases.
+bool read_widget_text(lv_obj_t* o, std::string& out, std::string& source) {
+    if (lv_obj_check_type(o, &lv_label_class)) {
+        const char* t = lv_label_get_text(o);
+        out = t ? t : "";
+        source = "label";
+        return true;
+    }
+    if (lv_obj_check_type(o, &lv_textarea_class)) {
+        const char* t = lv_textarea_get_text(o);
+        out = t ? t : "";
+        source = "textarea";
+        return true;
+    }
+    if (lv_obj_check_type(o, &lv_dropdown_class)) {
+        char buf[128];
+        lv_dropdown_get_selected_str(o, buf, sizeof(buf));
+        out = buf;
+        source = "dropdown";
+        return true;
+    }
+    return false;
+}
+
+// Depth-first search for the first descendant carrying text. Mirrors how
+// resolve_actionable() descends a composite row to its value-control — a
+// button (ui_button) carries no text of its own; the text lives on the
+// lv_label it creates internally.
+lv_obj_t* find_text_descendant(lv_obj_t* root) {
+    uint32_t n = lv_obj_get_child_count(root);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t* child = lv_obj_get_child(root, i);
+        std::string ignored_text, ignored_source;
+        if (read_widget_text(child, ignored_text, ignored_source)) {
+            return child;
+        }
+        if (lv_obj_t* deeper = find_text_descendant(child)) {
+            return deeper;
+        }
+    }
+    return nullptr;
+}
+
+} // namespace
+
+nlohmann::json RemoteControlServer::handle_text(const nlohmann::json& params) {
+    if (!params.contains("name") && !params.contains("path")) {
+        throw std::invalid_argument("Missing required parameter: name or path");
+    }
+
+    return execute_on_ui_thread([params]() -> nlohmann::json {
+        lv_obj_t* widget = resolve_widget(params);
+        if (!widget) {
+            throw std::invalid_argument("Widget not found: " + target_label(params));
+        }
+        std::string value, source;
+        lv_obj_t* holder = widget;
+        if (!read_widget_text(holder, value, source)) {
+            holder = find_text_descendant(widget);
+            if (!holder || !read_widget_text(holder, value, source)) {
+                throw std::invalid_argument("Widget has no text: " + target_label(params));
+            }
+        }
+        return {{"text", value}, {"path", path_of(holder)}, {"source", source}};
     });
 }
 

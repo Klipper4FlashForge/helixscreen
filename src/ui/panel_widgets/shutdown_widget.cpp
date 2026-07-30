@@ -103,7 +103,37 @@ ShutdownModal* find_shutdown_modal(lv_event_t* e) {
 // including the dual-host async ordering for "both shutdown" / "both reboot",
 // where the local SystemPower call is deferred until the printer-side ack.
 
-void execute_printer_shutdown(MoonrakerAPI* api) {
+// Powers this host down. Returns true if the action was initiated. Test mode
+// reports success without touching the dev machine.
+bool invoke_local_power(bool is_reboot) {
+    if (auto* rc = get_runtime_config(); rc && rc->test_mode) {
+        spdlog::warn("[ShutdownDialog] TEST MODE: skipping SystemPower::{}_local() — "
+                     "would have {} the dev host",
+                     is_reboot ? "reboot" : "shutdown", is_reboot ? "rebooted" : "powered off");
+        ToastManager::instance().show(
+            ToastSeverity::INFO, is_reboot ? "TEST: would reboot screen" : "TEST: would shut down screen",
+            4000);
+        return true;
+    }
+    return is_reboot ? helix::SystemPower::reboot_local() : helix::SystemPower::shutdown_local();
+}
+
+// Moonraker error callbacks arrive on the WebSocket thread; SystemPower's
+// std::system() call and the fallback's logging belong on the main thread,
+// matching the tok.defer() hop the "both" flows already use.
+void queue_machine_power_failure(const MoonrakerError& err, bool is_reboot,
+                                 bool allow_local_fallback) {
+    const std::string message = err.message;
+    helix::ui::queue_update("ShutdownDialog::power_failed", [message, is_reboot,
+                                                             allow_local_fallback]() {
+        helix::handle_machine_power_failure(message, is_reboot, allow_local_fallback,
+                                            [is_reboot]() { return invoke_local_power(is_reboot); });
+    });
+}
+
+// @p allow_local_fallback is set only when Moonraker runs on this same host —
+// see handle_machine_power_failure().
+void execute_printer_shutdown(MoonrakerAPI* api, bool allow_local_fallback = false) {
     if (!api)
         return;
     spdlog::info("[ShutdownDialog] Executing machine shutdown");
@@ -112,13 +142,12 @@ void execute_printer_shutdown(MoonrakerAPI* api) {
             spdlog::info("[ShutdownDialog] Machine shutdown command sent successfully");
             schedule_host_down_verification(api, /*is_reboot=*/false);
         },
-        [](const MoonrakerError& err) {
-            spdlog::error("[ShutdownDialog] Machine shutdown failed: {}", err.message);
-            ToastManager::instance().show(ToastSeverity::ERROR, lv_tr("Shutdown failed"), 6000);
+        [allow_local_fallback](const MoonrakerError& err) {
+            queue_machine_power_failure(err, /*is_reboot=*/false, allow_local_fallback);
         });
 }
 
-void execute_printer_reboot(MoonrakerAPI* api) {
+void execute_printer_reboot(MoonrakerAPI* api, bool allow_local_fallback = false) {
     if (!api)
         return;
     spdlog::info("[ShutdownDialog] Executing machine reboot");
@@ -127,34 +156,21 @@ void execute_printer_reboot(MoonrakerAPI* api) {
             spdlog::info("[ShutdownDialog] Machine reboot command sent successfully");
             schedule_host_down_verification(api, /*is_reboot=*/true);
         },
-        [](const MoonrakerError& err) {
-            spdlog::error("[ShutdownDialog] Machine reboot failed: {}", err.message);
-            ToastManager::instance().show(ToastSeverity::ERROR, lv_tr("Reboot failed"), 6000);
+        [allow_local_fallback](const MoonrakerError& err) {
+            queue_machine_power_failure(err, /*is_reboot=*/true, allow_local_fallback);
         });
 }
 
 void execute_screen_shutdown() {
     spdlog::info("[ShutdownDialog] Executing local screen shutdown");
-    if (auto* rc = get_runtime_config(); rc && rc->test_mode) {
-        spdlog::warn("[ShutdownDialog] TEST MODE: skipping SystemPower::shutdown_local() — "
-                     "would have powered off the dev host");
-        ToastManager::instance().show(ToastSeverity::INFO, "TEST: would shut down screen", 4000);
-        return;
-    }
-    if (!helix::SystemPower::shutdown_local()) {
+    if (!invoke_local_power(/*is_reboot=*/false)) {
         ToastManager::instance().show(ToastSeverity::ERROR, lv_tr("Screen shutdown failed"), 6000);
     }
 }
 
 void execute_screen_reboot() {
     spdlog::info("[ShutdownDialog] Executing local screen reboot");
-    if (auto* rc = get_runtime_config(); rc && rc->test_mode) {
-        spdlog::warn("[ShutdownDialog] TEST MODE: skipping SystemPower::reboot_local() — "
-                     "would have rebooted the dev host");
-        ToastManager::instance().show(ToastSeverity::INFO, "TEST: would reboot screen", 4000);
-        return;
-    }
-    if (!helix::SystemPower::reboot_local()) {
+    if (!invoke_local_power(/*is_reboot=*/true)) {
         ToastManager::instance().show(ToastSeverity::ERROR, lv_tr("Screen reboot failed"), 6000);
     }
 }
@@ -326,6 +342,31 @@ void ShutdownWidget::handle_click() {
     show_shutdown_dialog(api_, shutdown_modal_, lifetime_, lv_screen_active());
 }
 
+bool handle_machine_power_failure(const std::string& err_message, bool is_reboot,
+                                  bool allow_local_fallback,
+                                  const std::function<bool()>& local_action) {
+    const char* action = is_reboot ? "reboot" : "shutdown";
+    spdlog::error("[ShutdownDialog] Machine {} failed: {}", action, err_message);
+
+    if (allow_local_fallback && local_action) {
+        // Moonraker is on this host, so its machine.reboot and our local power
+        // action mean the same thing. Moonraker's `provider: none` path shells
+        // out to sudo/systemctl, which non-systemd firmwares don't have;
+        // SystemPower falls through to busybox /sbin/reboot, which they do.
+        spdlog::info("[ShutdownDialog] Moonraker cannot {} this host — falling back to SystemPower",
+                     action);
+        if (local_action()) {
+            return true;
+        }
+        spdlog::error("[ShutdownDialog] Local {} fallback also failed", action);
+    }
+
+    ToastManager::instance().show(ToastSeverity::ERROR,
+                                  is_reboot ? lv_tr("Reboot failed") : lv_tr("Shutdown failed"),
+                                  6000);
+    return false;
+}
+
 void show_shutdown_dialog(MoonrakerAPI* api, ShutdownModal& modal, AsyncLifetimeGuard& lifetime,
                           lv_obj_t* parent_screen) {
     if (!api) {
@@ -344,9 +385,16 @@ void show_shutdown_dialog(MoonrakerAPI* api, ShutdownModal& modal, AsyncLifetime
         // failed to boot, or the user runs SonicPad as a screen-only with the
         // local Moonraker disabled), fall back to SystemPower so the user
         // isn't forced to use the hardware switch.
+        //
+        // Connected but incapable is the other half of the same problem:
+        // Moonraker with `provider: none` answers machine.shutdown by shelling
+        // out to sudo/systemctl, which OpenWrt/procd firmwares don't ship. Pass
+        // allow_local_fallback so a rejected RPC retries through SystemPower
+        // instead of dead-ending in a toast.
         if (api->is_connected()) {
-            modal.set_single_callbacks([api]() { execute_printer_shutdown(api); },
-                                       [api]() { execute_printer_reboot(api); });
+            modal.set_single_callbacks(
+                [api]() { execute_printer_shutdown(api, /*allow_local_fallback=*/true); },
+                [api]() { execute_printer_reboot(api, /*allow_local_fallback=*/true); });
         } else {
             spdlog::info(
                 "[ShutdownDialog] Moonraker not connected — using local SystemPower fallback");

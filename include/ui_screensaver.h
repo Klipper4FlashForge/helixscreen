@@ -28,7 +28,7 @@
 class FlyingToasterScreensaver : public Screensaver {
   public:
     FlyingToasterScreensaver() = default;
-    ~FlyingToasterScreensaver() override = default;
+    ~FlyingToasterScreensaver() override;
 
     FlyingToasterScreensaver(const FlyingToasterScreensaver&) = delete;
     FlyingToasterScreensaver& operator=(const FlyingToasterScreensaver&) = delete;
@@ -88,6 +88,14 @@ class FlyingToasterScreensaver : public Screensaver {
 
     /** @brief Free pre-decoded sprite buffers */
     void free_sprites();
+
+    /**
+     * @brief Cancel the tick timer — shared by stop() and the destructor
+     *
+     * A timer cancelled only in stop() stays armed on a freed `this` on any
+     * teardown that skips it.
+     */
+    void cancel_timer();
 
     bool m_active = false;
     lv_obj_t* m_overlay = nullptr;

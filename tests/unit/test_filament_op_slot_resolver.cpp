@@ -154,3 +154,40 @@ TEST_CASE("Panel op-target contract: Load follows the dropdown, Unload gated on 
     // Load target is -1 → the panel redirects to the AMS slot picker.
     CHECK(panel_load_target(make_sys(/*tool_map=*/{}, /*current_slot=*/-1), /*T0=*/0, 1) == -1);
 }
+
+// ---------------------------------------------------------------------------
+// Print-state gating (bundle JX2FVRB9)
+// ---------------------------------------------------------------------------
+//
+// Load/Unload both run through AmsSubscriptionBackend::check_preconditions(true),
+// which refuses while a print is PRINTING *or* PAUSED because the macros home the
+// toolhead. The panel gated on load state alone, so during a runout pause the
+// Load button stayed lit and every tap produced a "Cannot run filament operation
+// while printing" toast.
+//
+// Mutation check: drop `|| print_active` from compute_op_button_gating's
+// load_disabled term and "a print owning the toolhead disables both" fails.
+TEST_CASE("compute_op_button_gating: print state gates Load and Unload",
+          "[filament][op_slot][print_guard]") {
+    using helix::ui::compute_op_button_gating;
+
+    SECTION("no print: load state alone decides, as before") {
+        auto empty = compute_op_button_gating(/*is_loaded=*/false, /*print_active=*/false);
+        CHECK_FALSE(empty.load_disabled); // can load
+        CHECK(empty.unload_disabled);     // nothing to unload
+
+        auto loaded = compute_op_button_gating(/*is_loaded=*/true, /*print_active=*/false);
+        CHECK(loaded.load_disabled);         // already loaded
+        CHECK_FALSE(loaded.unload_disabled); // can unload
+    }
+
+    SECTION("a print owning the toolhead disables both") {
+        auto empty = compute_op_button_gating(/*is_loaded=*/false, /*print_active=*/true);
+        CHECK(empty.load_disabled);
+        CHECK(empty.unload_disabled);
+
+        auto loaded = compute_op_button_gating(/*is_loaded=*/true, /*print_active=*/true);
+        CHECK(loaded.load_disabled);
+        CHECK(loaded.unload_disabled);
+    }
+}

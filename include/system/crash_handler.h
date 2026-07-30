@@ -232,6 +232,26 @@ void set_current_event(const void* target, const void* original_target, unsigned
  */
 void refresh_heap_snapshot() noexcept;
 
+namespace detail {
+
+/**
+ * @brief Wrap-safe elapsed milliseconds between two 32-bit monotonic samples.
+ *
+ * All crash-record durations (process uptime, heap-snapshot age) are derived
+ * from the low 32 bits of CLOCK_MONOTONIC, which wraps every ~49.7 days.
+ * Unsigned subtraction gives the correct delta across the wrap; a signed or
+ * clamped subtraction would report 0 (or a ~49-day value) on any device up
+ * that long. Exposed for test only — callers inside the handler use it via
+ * the monotonic helpers.
+ *
+ * @param start_ms Earlier monotonic sample.
+ * @param now_ms   Later monotonic sample.
+ * @return now_ms - start_ms, modulo 2^32.
+ */
+uint32_t elapsed_ms(uint32_t start_ms, uint32_t now_ms) noexcept;
+
+} // namespace detail
+
 /**
  * @brief Breadcrumb ring buffer for crash-time activity context
  *

@@ -98,6 +98,19 @@ SlotInfo AmsBackendToolChanger::get_slot_info(int slot_index) const {
 // get_current_action(), get_current_tool(), get_current_slot(), is_filament_loaded()
 // provided by AmsSubscriptionBackend
 
+bool AmsBackendToolChanger::can_unload_from_toolhead(int slot_index) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // One tool on the carriage at a time, and "unload" here means UNSELECT_TOOL —
+    // an unmount, not a filament retraction. Unmounting a docked tool is
+    // meaningless, so only the carriage tool qualifies. See the header note for
+    // why the inherited is_present() rule cannot express this.
+    if (slot_index < 0 || slot_index >= system_info_.total_slots) {
+        return false;
+    }
+    return system_info_.current_tool >= 0 && slot_index == system_info_.current_tool;
+}
+
 // ============================================================================
 // Path Visualization
 // ============================================================================
@@ -209,6 +222,7 @@ void AmsBackendToolChanger::parse_toolchanger_state(const nlohmann::json& tc_dat
         system_info_.current_tool = tool_num;
         system_info_.current_slot = tool_num; // For tool changers, slot == tool
         system_info_.filament_loaded = (tool_num >= 0);
+        refresh_slot_statuses_locked();
         spdlog::trace("[AMS ToolChanger] Current tool: {}", tool_num);
     }
 
@@ -228,18 +242,19 @@ void AmsBackendToolChanger::parse_tool_state(const std::string& tool_name,
     }
 
     // Parse mounted state: tool.mounted
+    //
+    // Recorded, but deliberately NOT the source of the slot's LOADED stamp. This
+    // is a different Moonraker object from the toolchanger one that assigns the
+    // aggregate pair, and an all-tools-mounted payload is a shape we emit
+    // ourselves in mock mode — writing `mounted ? LOADED : AVAILABLE` straight
+    // into slot.status marked every tool loaded at once (#1199). The stamp is
+    // re-derived from the carriage tool instead, so the two writers agree.
     if (tool_data.contains("mounted") && tool_data["mounted"].is_boolean()) {
         bool mounted = tool_data["mounted"].get<bool>();
         if (slot_idx < static_cast<int>(tool_mounted_.size())) {
             tool_mounted_[slot_idx] = mounted;
         }
-
-        // Update slot status based on mounted state
-        if (!system_info_.units.empty() &&
-            slot_idx < static_cast<int>(system_info_.units[0].slots.size())) {
-            system_info_.units[0].slots[slot_idx].status =
-                mounted ? SlotStatus::LOADED : SlotStatus::AVAILABLE;
-        }
+        refresh_slot_statuses_locked();
         spdlog::trace("[AMS ToolChanger] Tool {} mounted: {}", tool_name, mounted);
     }
 
@@ -253,6 +268,21 @@ void AmsBackendToolChanger::parse_tool_state(const std::string& tool_name,
     if (tool_data.contains("gcode_x_offset") || tool_data.contains("gcode_y_offset") ||
         tool_data.contains("gcode_z_offset")) {
         spdlog::trace("[AMS ToolChanger] Tool {} has offset data", tool_name);
+    }
+}
+
+void AmsBackendToolChanger::refresh_slot_statuses_locked() {
+    if (system_info_.units.empty()) {
+        return;
+    }
+
+    // A toolhead is always physically there, so EMPTY/UNKNOWN never occur here:
+    // the stamp is a straight two-way split on the carriage tool.
+    auto& slots = system_info_.units[0].slots;
+    for (int i = 0; i < static_cast<int>(slots.size()); ++i) {
+        slots[i].status = (system_info_.current_tool >= 0 && i == system_info_.current_tool)
+                              ? SlotStatus::LOADED
+                              : SlotStatus::AVAILABLE;
     }
 }
 
@@ -311,6 +341,10 @@ void AmsBackendToolChanger::initialize_tools() {
     for (int i = 0; i < tool_count; ++i) {
         system_info_.tool_to_slot_map.push_back(i);
     }
+
+    // A toolchanger frame may already have named the carriage tool before the
+    // tool list arrived; re-derive so the fresh slots match it.
+    refresh_slot_statuses_locked();
 
     tools_initialized_ = true;
     spdlog::info("[AMS ToolChanger] Initialized {} tools", tool_count);
