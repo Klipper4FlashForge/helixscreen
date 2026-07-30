@@ -9,7 +9,7 @@ Your printer's touchscreen should show you more than temperatures and a progress
 - **Multi-material that works** — AFC, Happy Hare, ACE, CFS, AD5X IFS, Snapmaker U1, tool changers. Seven backends, tested on real hardware. Per-unit dryer controls, environment monitoring, Spoolman integration.
 - **Exclude objects** — Tap the failing part on an overhead map to exclude it mid-print. No more scrapping an entire plate for one bad object.
 - **Runs on hardware you already own** — ~15MB RAM on embedded targets (a few times more on 64-bit Pi, still well under what other touchscreen UIs need). No X11, no browser, no desktop environment. Directly on the framebuffer. From a Creality K1 to a Pi Zero 2 W to a random mini-ITX box with an HDMI touchscreen.
-- **Looks good** — 17 theme presets with a live editor, responsive layouts from 480x320 to ultrawide, GPU-accelerated blur. Light and dark modes.
+- **Looks good** — 17 theme presets with a live editor, responsive layouts from 480x320 to 1024x600, GPU-accelerated blur. Light and dark modes. (Ultrawide and portrait screens are alpha — see [Which displays are supported?](FAQ.md#which-displays-are-supported).)
 - **Smart setup** — A first-run wizard auto-detects your printer from a database of 80+ models and configures everything. 9 languages.
 
 ![Home Panel](../images/screenshot-home-panel.png)

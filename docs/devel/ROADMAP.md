@@ -20,7 +20,7 @@
 | **Printer Database** | 82 printer models with auto-detection |
 | **Filament Database** | 48 materials with temp/drying/compatibility data |
 | **Theme System** | Dynamic JSON themes with live preview |
-| **Layout System** | Auto-detection for ultrawide (1920x480) and small (480x320) displays |
+| **Layout System** | Auto-detection for small (480x320) displays; ultrawide (1920x480) and portrait detection exists but the layouts themselves are alpha |
 | **Sound System** | Multi-backend synthesizer (SDL, ALSA, PWM, M300), JSON themes |
 | **Telemetry** | Opt-in crash reporting + session analytics + debug bundle upload |
 
@@ -131,7 +131,7 @@ Remaining items for production readiness:
 - Design token system (no hardcoded colors/spacing)
 - RAII lifecycle management (PanelBase, ObserverGuard, SubscriptionGuard)
 - **Dynamic theme system** with JSON themes, live preview, and theme editor
-- **Layout system** with auto-detection for ultrawide and small displays
+- **Layout system** with auto-detection for ultrawide, portrait, and small displays (the ultrawide and portrait *layouts* are alpha — detection and grid sizing only, no panel overrides)
 - Responsive breakpoints (small/medium/large displays)
 - Observer factory pattern (`observe_int_sync`, `observe_string_async`, etc.)
 - **Versioned config migration** for seamless upgrades between releases

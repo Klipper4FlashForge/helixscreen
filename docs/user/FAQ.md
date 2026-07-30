@@ -17,7 +17,7 @@ HelixScreen is a touchscreen interface for Klipper 3D printers. It connects to y
 - First-run wizard with auto-detection of 80+ printer models
 - Theme editor with 17 presets (dark and light), 9 languages
 - Sound system, timelapse integration, label printing, exclude objects
-- Auto-detecting layout system for displays from 480x320 to 1920x480
+- Auto-detecting layout system for displays from 480x320 to 1024x600 (ultrawide and portrait orientations are alpha)
 - ~15MB RAM on embedded targets — designed for the modest hardware most people already own, no desktop required
 
 ### Which printers are supported?
@@ -63,13 +63,19 @@ Point it at Moonraker (port `7125`), not the Mainsail/Fluidd web interface — y
 
 **Should work but not yet tested:**
 - Official Raspberry Pi 7" DSI touchscreen
-- Creality K2 built-in 4.3" display (480x800, portrait — may need rotation)
+- Creality K2 built-in 4.3" display (480x800 — the panel is software-rotated to landscape; running it as portrait is alpha)
 - Other HDMI displays
 - SPI displays (with proper configuration)
 
-**Display sizes:** HelixScreen auto-detects the best layout for your display. 800x480, 1024x600, and 1920x480 (ultrawide) are fully supported. 480x320 displays will run but may have layout overlap issues — improved small-screen support is ongoing.
+**Display sizes:** HelixScreen auto-detects the best layout for your display. 800x480 and 1024x600 are fully supported. 480x320 displays will run but may have layout overlap issues — improved small-screen support is ongoing.
 
-**Display rotation:** All three binaries (main, splash, watchdog) support 0°, 90°, 180°, and 270° rotation via config or command line.
+**Ultrawide and portrait screens are alpha at best.** The layout engine detects an ultrawide screen (wider than about 2.5:1, e.g. 1920x480) or a portrait screen (narrower than about 0.8:1, e.g. 480x800) and adjusts the navigation bar and grid sizing accordingly. What does *not* exist yet is the per-panel artwork: there are no ultrawide panel layouts at all, and portrait has only the app shell and navigation bar. Everything else falls back to the standard landscape layout, so expect stretched, cramped, or clipped panels.
+
+Treat both as "it boots and you can drive it", not "it looks right". Neither is tested on real hardware in those orientations. If you want to help, both are wide open for contributions and only need XML, not C++ — see the [UI Contributor Guide](../devel/UI_CONTRIBUTOR_GUIDE.md).
+
+You can force either mode to try it: `helix-screen --layout ultrawide` or `--layout portrait`, or set `"layout": "ultrawide"` in the `display` section of `settings.json`.
+
+**Display rotation:** All three binaries (main, splash, watchdog) support 0°, 90°, 180°, and 270° rotation via config or command line. Rotating a portrait panel to landscape (what the Creality K2 does) is well-trodden; leaving it in portrait and using the portrait layout is the alpha path described above.
 
 If you test on hardware not listed above, please let us know your results!
 

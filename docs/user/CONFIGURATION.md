@@ -371,6 +371,14 @@ Located in the `display` section:
 **Default:** `"nord"`
 **Description:** Active color theme by name (e.g., `"nord"`, `"dracula"`, `"gruvbox"`). This is the string that actually determines the effective theme — the numeric `theme.preset` index is a legacy field. **Requires restart to take effect.** Easiest to change via **Settings > Appearance > Display Settings > Theme Colors**, which writes this value for you.
 
+### `layout`
+**Type:** string
+**Default:** `"auto"`
+**Values:** `auto`, `standard`, `ultrawide`, `portrait`, `micro`, `micro-portrait`, `tiny`, `tiny-portrait`
+**Description:** Override the auto-detected screen layout. Leave this at `auto` unless you are testing — HelixScreen picks the layout from your display's aspect ratio: wider than about 2.5:1 is `ultrawide`, narrower than about 0.8:1 is `portrait`, and anything in between is `standard`. Displays whose longest side is 480px or less get `micro` (480x272 class) or `tiny` instead, with `-portrait` variants when the screen is taller than wide.
+
+> **Ultrawide and portrait are alpha at best.** Detection, navigation-bar sizing, and grid sizing work, but there are no ultrawide panel layouts yet and portrait has only the app shell and navigation bar. The `micro-portrait` and `tiny-portrait` variants are placeholders with no layouts at all. Every panel without an override falls back to the standard landscape layout, so expect stretched, cramped, or clipped screens. Neither orientation has been tested on real hardware. Forcing one of these is useful for contributing layouts, not for daily use.
+
 ### `rotate`
 **Type:** integer
 **Default:** `0`
@@ -1648,6 +1656,7 @@ HelixScreen accepts command-line options for overriding configuration and debugg
 | Option | Description |
 |--------|-------------|
 | `-s, --size <size>` | Screen size: `tiny` (480×320), `small` (480×400), `medium` (800×480), `large` (1024×600) |
+| `--layout <type>` | Override auto-detected layout: `auto`, `standard`, `ultrawide`, `portrait`, `micro`, `micro-portrait`, `tiny`, `tiny-portrait`. **`ultrawide` and all portrait variants are alpha** — see the [`layout`](#layout) setting |
 | `--dpi <n>` | Display DPI (50-500, default: 160) |
 | `--dark` | Use dark theme |
 | `--light` | Use light theme |

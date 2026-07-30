@@ -581,6 +581,26 @@ Adjust in steps (e.g. 110, 100, 90 or 160, 200, 240) until the interface looks r
 
 ---
 
+### Ultrawide or portrait screen looks stretched, cramped, or clipped
+
+**Symptoms:**
+- On a very wide screen (e.g. 1920x480), panels look stretched with large empty gaps
+- On a taller-than-wide screen (e.g. 480x800), content is cramped, clipped, or runs off the bottom
+
+**This is expected — ultrawide and portrait layouts are alpha at best.**
+
+HelixScreen detects both orientations and adjusts the navigation bar and grid sizing, but the per-panel layouts do not exist yet: there are no ultrawide panel layouts at all, and portrait has only the app shell and navigation bar. Every other panel falls back to the standard landscape layout, which is what you are seeing. Neither orientation has been tested on real hardware.
+
+**What you can do:**
+
+- **On a portrait panel, rotate it to landscape.** This is the well-tested path and what the Creality K2 does out of the box. Set `"rotate": 90` (or `270`) in the `display` section of your config — see [Display upside down or rotated](#display-upside-down-or-rotated).
+- **On an ultrawide screen,** there is no better fallback today. Reducing DPI (`HELIX_DPI`) can claw back some usable density, but the layout will still be a landscape layout stretched wide.
+- **Force the standard layout** if the alpha layout is worse than the fallback: `--layout standard`, or `"layout": "standard"` in the `display` section.
+
+Contributions are very welcome here and only need XML, not C++ — see the [UI Contributor Guide](../devel/UI_CONTRIBUTOR_GUIDE.md).
+
+---
+
 ### Display upside down or rotated
 
 **Symptoms:**
