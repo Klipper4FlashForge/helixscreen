@@ -32,6 +32,9 @@
 #include "ams_backend_afc.h"
 #include "ams_types.h"
 
+#include <algorithm>
+#include <any>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -84,7 +87,8 @@ nlohmann::json status_payload(const std::vector<std::string>& extruders) {
 
 } // namespace
 
-TEST_CASE("AFC discovers toolchanger extruders from the status payload", "[ams][afc][toolchanger]") {
+TEST_CASE("AFC discovers toolchanger extruders from the status payload",
+          "[ams][afc][toolchanger]") {
     SECTION("a single extruder is not a toolchanger") {
         AfcToolchangerStatusHelper afc;
         afc.feed_afc(status_payload({"extruder"}));
@@ -148,4 +152,213 @@ TEST_CASE("AFC.system still wins when present — it carries strictly more",
     afc.feed_afc(payload);
     CHECK(afc.extruder_count() == 2);
     CHECK(afc.extruder_infos() == std::vector<std::string>{"extruder", "extruder1"});
+}
+
+// ============================================================================
+// End-to-end: status payload in, toolchanger G-code out (#1200)
+// ============================================================================
+//
+// The discovery tests above stop at `num_extruders_`. Everything that CONSUMES
+// it is covered elsewhere by two shapes that a real printer never produces:
+//
+//  * `AmsBackendAfcTestHelper::setup_toolchanger(n)` in test_ams_backend_afc.cpp
+//    assigns `num_extruders_` and `extruders_` directly, skipping the parser
+//    entirely.
+//  * The `AFC.system` fixtures in test_ams_afc_multi_extruder.cpp feed the
+//    /printer/afc/status webhook shape, which the status subscription we
+//    actually subscribe to does not carry.
+//
+// Both were green for the entire time `AFC_SELECT_TOOL` was dead on hardware,
+// because neither one asks the question that matters: does the payload the
+// firmware really sends reach the dispatch? These do — nothing here touches a
+// member, the only input is a status frame.
+
+/// Four lanes, gcode captured, driven only by fed status frames.
+class AfcStatusDispatchHelper : public AmsBackendAfc {
+  public:
+    AfcStatusDispatchHelper() : AmsBackendAfc(nullptr, nullptr) {
+        // initialize_slots() gives every lane mapped_tool == slot_index and
+        // status UNKNOWN, which is what a freshly subscribed backend holds
+        // before the per-lane AFC_stepper frames land.
+        std::vector<std::string> names{"lane1", "lane2", "lane3", "lane4"};
+        initialize_slots(names);
+        running_ = true;
+    }
+
+    void feed_afc(const nlohmann::json& afc) {
+        nlohmann::json params;
+        params["AFC"] = afc;
+        nlohmann::json notification;
+        notification["params"] = nlohmann::json::array({params, 0.0});
+        handle_status_update(notification);
+    }
+
+    AmsError execute_gcode(const std::string& gcode) override {
+        captured.push_back(gcode);
+        return AmsErrorHelper::success();
+    }
+
+    // Filament operations reach the wire through the completion-callback form
+    // (dispatch_operation -> ensure_homed_then -> execute_gcode(gcode, cb)).
+    // Overriding only the 1-arg form captures nothing and the dispatch fails
+    // with "MoonrakerAPI not available".
+    AmsError execute_gcode(const std::string& gcode, std::function<void()> on_complete) override {
+        captured.push_back(gcode);
+        pending_macro_ack = std::move(on_complete);
+        return AmsErrorHelper::success();
+    }
+
+    std::function<void()> pending_macro_ack;
+
+    [[nodiscard]] bool sent(const std::string& gcode) const {
+        return std::find(captured.begin(), captured.end(), gcode) != captured.end();
+    }
+
+    [[nodiscard]] bool sent_starting_with(const std::string& prefix) const {
+        return std::any_of(captured.begin(), captured.end(),
+                           [&](const std::string& g) { return g.rfind(prefix, 0) == 0; });
+    }
+
+    [[nodiscard]] bool has_action(const std::string& id) const {
+        auto actions = get_device_actions();
+        return std::any_of(actions.begin(), actions.end(),
+                           [&](const helix::printer::DeviceAction& a) { return a.id == id; });
+    }
+
+    std::vector<std::string> captured;
+};
+
+namespace {
+
+/// The status frame a two-extruder AFC toolchanger publishes. No `system` key,
+/// because get_status() does not emit one.
+nlohmann::json toolchanger_status() {
+    return nlohmann::json{{"current_state", "Idle"},
+                          {"lanes", nlohmann::json::array({"lane1", "lane2", "lane3", "lane4"})},
+                          {"extruders", nlohmann::json::array({"extruder", "extruder1"})},
+                          {"hubs", nlohmann::json::array({"Turtle_1"})}};
+}
+
+/// The same frame from a plain single-extruder BoxTurtle.
+nlohmann::json single_extruder_status() {
+    nlohmann::json j = toolchanger_status();
+    j["extruders"] = nlohmann::json::array({"extruder"});
+    return j;
+}
+
+} // namespace
+
+TEST_CASE("AFC_SELECT_TOOL dispatches from the status payload alone (#1200)",
+          "[ams][afc][toolchanger][status][1200]") {
+    SECTION("load_filament routes through the toolchanger on a two-extruder frame") {
+        AfcStatusDispatchHelper afc;
+        afc.feed_afc(toolchanger_status());
+
+        REQUIRE(afc.load_filament(1));
+        CHECK(afc.sent("AFC_SELECT_TOOL TOOL=extruder1"));
+        CHECK_FALSE(afc.sent_starting_with("CHANGE_TOOL"));
+    }
+
+    SECTION("load_filament falls back to CHANGE_TOOL on a single-extruder frame") {
+        // Both halves of the branch: a one-extruder frame must NOT be mistaken
+        // for a toolchanger, or every BoxTurtle load turns into a tool select.
+        AfcStatusDispatchHelper afc;
+        afc.feed_afc(single_extruder_status());
+
+        REQUIRE(afc.load_filament(1));
+        CHECK(afc.sent("CHANGE_TOOL LANE=lane2"));
+        CHECK_FALSE(afc.sent_starting_with("AFC_SELECT_TOOL"));
+    }
+
+    SECTION("change_tool routes through the toolchanger on a two-extruder frame") {
+        AfcStatusDispatchHelper afc;
+        afc.feed_afc(toolchanger_status());
+
+        REQUIRE(afc.change_tool(1));
+        CHECK(afc.sent("AFC_SELECT_TOOL TOOL=extruder1"));
+        CHECK_FALSE(afc.sent("T1"));
+    }
+
+    SECTION("change_tool falls back to T{n} on a single-extruder frame") {
+        AfcStatusDispatchHelper afc;
+        afc.feed_afc(single_extruder_status());
+
+        REQUIRE(afc.change_tool(1));
+        CHECK(afc.sent("T1"));
+        CHECK_FALSE(afc.sent_starting_with("AFC_SELECT_TOOL"));
+    }
+
+    SECTION("tool number indexes extruders_ positionally, not by name order") {
+        // AFC emits the array in tool order and extruders_ is indexed as a tool
+        // number, so T0 must be the FIRST name in the frame even when a later
+        // name sorts ahead of it. The webhook parse sorts its map keys; the
+        // status parse must not, or T0 and T1 silently swap.
+        AfcStatusDispatchHelper afc;
+        nlohmann::json frame = toolchanger_status();
+        frame["extruders"] = nlohmann::json::array({"extruder_b", "extruder_a"});
+        afc.feed_afc(frame);
+
+        REQUIRE(afc.change_tool(0));
+        CHECK(afc.sent("AFC_SELECT_TOOL TOOL=extruder_b"));
+    }
+}
+
+TEST_CASE("Per-extruder device actions materialise from the status payload alone (#1200)",
+          "[ams][afc][toolchanger][status][1200]") {
+    AfcStatusDispatchHelper afc;
+    afc.feed_afc(toolchanger_status());
+    REQUIRE(afc.get_device_actions().size() > 0);
+
+    SECTION("bowden sliders split per tool") {
+        CHECK(afc.has_action("bowden_T0"));
+        CHECK(afc.has_action("bowden_T1"));
+        CHECK_FALSE(afc.has_action("bowden_length"));
+    }
+
+    SECTION("toolhead distance sliders split per tool") {
+        CHECK(afc.has_action("tool_stn_T0"));
+        CHECK(afc.has_action("tool_stn_T1"));
+        CHECK(afc.has_action("tool_stn_unload_T0"));
+        CHECK(afc.has_action("tool_stn_unload_T1"));
+        CHECK_FALSE(afc.has_action("tool_stn"));
+        CHECK_FALSE(afc.has_action("tool_stn_unload"));
+    }
+
+    SECTION("toolhead LED toggles split per tool") {
+        CHECK(afc.has_action("led_extruder_T0"));
+        CHECK(afc.has_action("led_extruder_T1"));
+        CHECK_FALSE(afc.has_action("led_extruder"));
+    }
+
+    SECTION("a single-extruder frame keeps the generic actions") {
+        AfcStatusDispatchHelper single;
+        single.feed_afc(single_extruder_status());
+        CHECK(single.has_action("bowden_length"));
+        CHECK_FALSE(single.has_action("bowden_T0"));
+        CHECK_FALSE(single.has_action("led_extruder_T0"));
+    }
+}
+
+TEST_CASE("Per-extruder actions resolve names discovered from the status payload (#1200)",
+          "[ams][afc][toolchanger][status][1200]") {
+    // execute_device_action() indexes extruders_ to build the G-code. With the
+    // vector empty — which is what the status subscription used to leave behind
+    // — every one of these returns "Invalid extruder index" instead of sending.
+    AfcStatusDispatchHelper afc;
+    afc.feed_afc(toolchanger_status());
+
+    SECTION("led_extruder_T1 names the second extruder from the frame") {
+        REQUIRE(afc.execute_device_action("led_extruder_T1"));
+        CHECK(afc.sent("AFC_SET_EXTRUDER_LED EXTRUDER=extruder1 TURN_ON=1"));
+    }
+
+    SECTION("bowden_T1 resolves the hub from the same frame") {
+        REQUIRE(afc.execute_device_action("bowden_T1", std::any(500.0f)));
+        CHECK(afc.sent("SET_BOWDEN_LENGTH HUB=Turtle_1 LENGTH=500"));
+    }
+
+    SECTION("an index past the discovered extruders is refused, not sent") {
+        CHECK_FALSE(afc.execute_device_action("led_extruder_T7"));
+        CHECK(afc.captured.empty());
+    }
 }
