@@ -2681,6 +2681,33 @@ TEST_CASE("MoonrakerClientMock fan control", "[slow][mock][fan]") {
 // Z Offset Tracking Tests
 // ============================================================================
 
+namespace {
+/// True when `n` is a gcode_move notification whose Z homing_origin equals `want`.
+///
+/// These sections used to call wait_for_callback(), which returns on the FIRST
+/// notification of any kind, and then scanned for the first notification carrying
+/// homing_origin and broke on it. The mock emits more than one notification per
+/// command and the gcode_move snapshot is not necessarily the one that woke the
+/// wait, so a pre-update snapshot could be the first match and the assertion read
+/// 0.0 against the expected offset — roughly 3 runs in 40. Waiting on the VALUE
+/// removes the race instead of widening a timeout.
+bool has_z_offset(const nlohmann::json& n, double want) {
+    if (!n.contains("params") || !n["params"].is_array() || n["params"].empty()) {
+        return false;
+    }
+    const auto& p0 = n["params"][0];
+    if (!p0.is_object() || !p0.contains("gcode_move")) {
+        return false;
+    }
+    const auto& gm = p0["gcode_move"];
+    if (!gm.contains("homing_origin") || !gm["homing_origin"].is_array() ||
+        gm["homing_origin"].size() < 3 || !gm["homing_origin"][2].is_number()) {
+        return false;
+    }
+    return gm["homing_origin"][2].get<double>() == Catch::Approx(want);
+}
+} // namespace
+
 TEST_CASE("MoonrakerClientMock Z offset tracking", "[slow][mock][offset]") {
     // fixture must be declared BEFORE mock for correct destruction order
     MockBehaviorTestFixture fixture;
@@ -2692,66 +2719,29 @@ TEST_CASE("MoonrakerClientMock Z offset tracking", "[slow][mock][offset]") {
 
     SECTION("SET_GCODE_OFFSET Z sets absolute offset") {
         mock.gcode_script("SET_GCODE_OFFSET Z=0.15");
-        fixture.wait_for_callback();
-
-        auto notifications = fixture.get_notifications();
-        bool found = false;
-        for (const auto& n : notifications) {
-            if (n.contains("params") && n["params"][0].contains("gcode_move")) {
-                const auto& gcode_move = n["params"][0]["gcode_move"];
-                if (gcode_move.contains("homing_origin")) {
-                    double z_offset = gcode_move["homing_origin"][2].get<double>();
-                    REQUIRE(z_offset == Catch::Approx(0.15));
-                    found = true;
-                    break;
-                }
-            }
-        }
-        REQUIRE(found);
+        REQUIRE(fixture.wait_for_matching(
+            [](const nlohmann::json& n) { return has_z_offset(n, 0.15); }, 2000));
     }
 
     SECTION("SET_GCODE_OFFSET Z_ADJUST adds to current offset") {
+        // Wait for the base offset to actually land before adjusting off it —
+        // wait_for_callback() could return first, and reset() would then discard
+        // the notification that would have proved it, leaving Z_ADJUST to apply
+        // to 0.0 and yield -0.05.
         mock.gcode_script("SET_GCODE_OFFSET Z=0.1");
-        fixture.wait_for_callback();
+        REQUIRE(fixture.wait_for_matching(
+            [](const nlohmann::json& n) { return has_z_offset(n, 0.1); }, 2000));
         fixture.reset();
 
         mock.gcode_script("SET_GCODE_OFFSET Z_ADJUST=-0.05");
-        fixture.wait_for_callback();
-
-        auto notifications = fixture.get_notifications();
-        bool found = false;
-        for (const auto& n : notifications) {
-            if (n.contains("params") && n["params"][0].contains("gcode_move")) {
-                const auto& gcode_move = n["params"][0]["gcode_move"];
-                if (gcode_move.contains("homing_origin")) {
-                    double z_offset = gcode_move["homing_origin"][2].get<double>();
-                    REQUIRE(z_offset == Catch::Approx(0.05));
-                    found = true;
-                    break;
-                }
-            }
-        }
-        REQUIRE(found);
+        REQUIRE(fixture.wait_for_matching(
+            [](const nlohmann::json& n) { return has_z_offset(n, 0.05); }, 2000));
     }
 
     SECTION("Negative Z offset supported") {
         mock.gcode_script("SET_GCODE_OFFSET Z=-0.2");
-        fixture.wait_for_callback();
-
-        auto notifications = fixture.get_notifications();
-        bool found = false;
-        for (const auto& n : notifications) {
-            if (n.contains("params") && n["params"][0].contains("gcode_move")) {
-                const auto& gcode_move = n["params"][0]["gcode_move"];
-                if (gcode_move.contains("homing_origin")) {
-                    double z_offset = gcode_move["homing_origin"][2].get<double>();
-                    REQUIRE(z_offset == Catch::Approx(-0.2));
-                    found = true;
-                    break;
-                }
-            }
-        }
-        REQUIRE(found);
+        REQUIRE(fixture.wait_for_matching(
+            [](const nlohmann::json& n) { return has_z_offset(n, -0.2); }, 2000));
     }
 
     (void)sub_id; // Callback auto-unregisters when mock destructs
