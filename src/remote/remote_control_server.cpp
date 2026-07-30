@@ -3,8 +3,6 @@
 
 #include "remote_control_server.h"
 
-#include "http_executor.h"
-#include "panel_factory.h"
 #include "ui_keyboard_manager.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
@@ -14,6 +12,7 @@
 #include "app_globals.h"
 #include "demo_overlays.h"
 #include "display_settings_manager.h"
+#include "http_executor.h"
 #include "logging_init.h"
 #include "mock_scenarios.h"
 #include "panel_factory.h"
@@ -22,6 +21,7 @@
 #include "remote_pointer.h"
 #include "screenshot.h"
 #include "subject_debug_registry.h"
+#include "widget_resolution.h"
 
 // LVGL XML subject lookup
 #include "helix-xml/src/xml/lv_xml.h"
@@ -426,8 +426,8 @@ nlohmann::json RemoteControlServer::handle_reset(const nlohmann::json& /*params*
         }
         if (modals_cleared == kMaxModalDepth && !ModalStack::instance().empty()) {
             spdlog::warn("[RemoteControlServer] reset: modal stack still non-empty after "
-                        "{} dismissals -- hit the safety cap, something isn't draining",
-                        kMaxModalDepth);
+                         "{} dismissals -- hit the safety cap, something isn't draining",
+                         kMaxModalDepth);
         }
 
         // Toasts: ToastManager::hide() dismisses every visible toast (also via
@@ -454,9 +454,9 @@ nlohmann::json RemoteControlServer::handle_reset(const nlohmann::json& /*params*
         int overlays_popped = std::min(actual_depth, kMaxDepth);
         if (actual_depth > kMaxDepth) {
             spdlog::warn("[RemoteControlServer] reset: overlay stack depth {} exceeds the "
-                        "safety cap of {} -- popping {} and leaving the rest, something "
-                        "isn't draining",
-                        actual_depth, kMaxDepth, kMaxDepth);
+                         "safety cap of {} -- popping {} and leaving the rest, something "
+                         "isn't draining",
+                         actual_depth, kMaxDepth, kMaxDepth);
         }
         for (int i = 0; i < overlays_popped; ++i) {
             nav.go_back();
@@ -624,14 +624,13 @@ nlohmann::json RemoteControlServer::handle_screenshot(const nlohmann::json& para
         int run = 0;
         for (int i = 0; i < kMaxSamples; i++) {
             uint64_t h = execute_on_ui_thread([resolve_crop]() -> nlohmann::json {
-                                  lv_obj_t* crop = resolve_crop();
-                                  helix::CapturedFrame f;
-                                  if (!helix::capture_frame(f, crop)) {
-                                      throw std::runtime_error("Frame capture failed");
-                                  }
-                                  return helix::frame_hash(f);
-                              })
-                             .get<uint64_t>();
+                             lv_obj_t* crop = resolve_crop();
+                             helix::CapturedFrame f;
+                             if (!helix::capture_frame(f, crop)) {
+                                 throw std::runtime_error("Frame capture failed");
+                             }
+                             return helix::frame_hash(f);
+                         }).get<uint64_t>();
 
             run = (i > 0 && h == last) ? run + 1 : 1;
             last = h;
@@ -661,8 +660,10 @@ nlohmann::json RemoteControlServer::handle_screenshot(const nlohmann::json& para
         }
         // Report where it actually landed — callers scripting a capture should
         // never have to guess the filename.
-        return {{"saved", true}, {"path", written},
-                {"w", f.width}, {"h", f.height},
+        return {{"saved", true},
+                {"path", written},
+                {"w", f.width},
+                {"h", f.height},
                 {"stable_frames", stable_frames}};
     });
 }
@@ -1282,67 +1283,6 @@ static lv_obj_t* resolve_widget(const nlohmann::json& params) {
     return nullptr;
 }
 
-// A widget that carries a value the user manipulates directly, as opposed to a
-// container that merely happens to be clickable. Composite rows (a settings
-// toggle row, a dropdown row) are clickable shells wrapping one of these.
-static bool is_value_control(lv_obj_t* o) {
-    return lv_obj_check_type(o, &lv_switch_class) || lv_obj_check_type(o, &lv_checkbox_class) ||
-           lv_obj_check_type(o, &lv_slider_class) || lv_obj_check_type(o, &lv_arc_class) ||
-           lv_obj_check_type(o, &lv_dropdown_class) || lv_obj_check_type(o, &lv_textarea_class);
-}
-
-// Collect visible value-controls in a subtree (excluding the root itself).
-// Hidden subtrees are skipped for the same reason describe_screen skips them:
-// they are not on screen, so they are not targets.
-static void collect_value_controls(lv_obj_t* parent, std::vector<lv_obj_t*>& out) {
-    if (!parent) {
-        return;
-    }
-    uint32_t count = lv_obj_get_child_count(parent);
-    for (uint32_t i = 0; i < count; ++i) {
-        lv_obj_t* child = lv_obj_get_child(parent, i);
-        if (!child || lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN)) {
-            continue;
-        }
-        if (is_value_control(child)) {
-            out.push_back(child);
-        }
-        collect_value_controls(child, out);
-    }
-}
-
-// Resolve the widget a click/set should actually land on.
-//
-// `click row_foo` on a composite settings row used to send CLICKED to the row
-// container — which does nothing, because the control the user meant is the
-// switch nested inside it. Prefer a value-control descendant when the target
-// itself isn't one; fall back to the literal target (a category row that opens
-// an overlay is clickable and has no value-control, and must stay that way).
-//
-// `descended_to` is set to the resolved child when it differs from the target.
-// `ambiguous` is filled when several candidates exist, so the caller can report
-// them instead of silently picking one.
-static lv_obj_t* resolve_actionable(lv_obj_t* target, lv_obj_t** descended_to,
-                                    std::vector<lv_obj_t*>* ambiguous) {
-    *descended_to = nullptr;
-    if (!target || is_value_control(target)) {
-        return target;
-    }
-    std::vector<lv_obj_t*> found;
-    collect_value_controls(target, found);
-    if (found.size() == 1) {
-        *descended_to = found[0];
-        return found[0];
-    }
-    if (found.size() > 1 && ambiguous) {
-        *ambiguous = found;
-    }
-    // Zero candidates, or too many to choose between: act on the target itself
-    // if it is clickable at all, so buttons and overlay-opening rows are
-    // unaffected by this resolution step.
-    return target;
-}
-
 // Human-readable label for a target (path or name), for result messages.
 static std::string target_label(const nlohmann::json& params) {
     if (params.contains("path") && params["path"].is_string()) {
@@ -1376,7 +1316,9 @@ nlohmann::json RemoteControlServer::handle_wait_idle(const nlohmann::json& param
     struct Counters {
         size_t queue = 0;
         size_t http = 0;
-        bool idle() const { return queue == 0 && http == 0; }
+        bool idle() const {
+            return queue == 0 && http == 0;
+        }
     };
 
     auto sample = [this]() -> Counters {
@@ -1414,9 +1356,9 @@ nlohmann::json RemoteControlServer::handle_wait_idle(const nlohmann::json& param
         if (std::chrono::steady_clock::now() >= deadline) {
             // fmt::format, not std::to_string(double) — the latter renders
             // "0.000000s", unreadable in the log someone reads at 2am.
-            throw std::runtime_error(fmt::format(
-                "wait_idle timed out after {:.1f}s — update_queue={} http={}", timeout_s,
-                now.queue, now.http));
+            throw std::runtime_error(
+                fmt::format("wait_idle timed out after {:.1f}s — update_queue={} http={}",
+                            timeout_s, now.queue, now.http));
         }
         last = now;
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
@@ -1443,7 +1385,8 @@ nlohmann::json RemoteControlServer::handle_freeze(const nlohmann::json& /*params
         // instance killed or crashed between freeze and unfreeze leaves the
         // user's real settings.json with animations permanently disabled.
         // Remember the real value so unfreeze restores it exactly, not "on".
-        pre_freeze_animations_enabled_ = DisplaySettingsManager::instance().get_animations_enabled();
+        pre_freeze_animations_enabled_ =
+            DisplaySettingsManager::instance().get_animations_enabled();
         lv_subject_set_int(DisplaySettingsManager::instance().subject_animations_enabled(), 0);
 
         // Pause periodic timers one at a time rather than lv_timer_enable(false):
@@ -1508,7 +1451,7 @@ nlohmann::json RemoteControlServer::handle_unfreeze(const nlohmann::json& /*para
         // subject directly — see handle_freeze() for why set_animations_enabled()
         // (which persists to settings.json) must not be used here.
         lv_subject_set_int(DisplaySettingsManager::instance().subject_animations_enabled(),
-                            pre_freeze_animations_enabled_ ? 1 : 0);
+                           pre_freeze_animations_enabled_ ? 1 : 0);
 
         spdlog::debug("[RemoteControl] unfreeze: resumed {} timers", resumed);
         return {{"frozen", false}, {"timers_resumed", resumed}};
