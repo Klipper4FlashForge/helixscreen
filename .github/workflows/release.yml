@@ -511,8 +511,17 @@ jobs:
     - name: Generate release notes
       id: notes
       run: |
-        # Try to get annotated tag message, fall back to auto-generated notes
-        TAG_MESSAGE=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME" 2>/dev/null | head -50)
+        # Try to get annotated tag message, fall back to auto-generated notes.
+        #
+        # The cap is a runaway guard, NOT an expected limit. It used to be
+        # `head -50`, which silently truncated v0.99.105's notes to 51 of 99
+        # lines — the tail of ### Fixed and the whole of ### Changed vanished
+        # from the release page while the job still reported success. The tag
+        # annotation is authored deliberately at release time (the /release
+        # workflow writes the changelog entry into it), so a short cap discards
+        # exactly the content someone chose to publish. GitHub's own limit is
+        # 125,000 characters; 500 lines stays well inside it.
+        TAG_MESSAGE=$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME" 2>/dev/null | head -500)
 
         if [ -n "$TAG_MESSAGE" ] && [ "$TAG_MESSAGE" != "" ]; then
           echo "Using tag annotation for release notes"
