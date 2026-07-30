@@ -1,24 +1,5 @@
 # docs/CLAUDE.md — Documentation Hub
 
-## Structure
-
-```
-docs/
-├── README.md          # Full index with links (browsable)
-├── CLAUDE.md          # This file — routing guide
-├── user/              # End-user docs (install, usage, config, troubleshooting)
-│   └── CLAUDE.md      # Style guide for user-facing docs
-├── devel/             # Developer docs (architecture, features, platforms, plans)
-│   └── CLAUDE.md      # Full developer doc index by topic
-├── specs/             # Public, vendor-neutral convention specs (third-party adopters)
-│   └── CLAUDE.md      # Specs subtree routing
-├── audits/            # Security reviews, memory analysis, test coverage
-├── archive/           # Historical implementation plans
-└── images/            # Screenshots and diagrams
-```
-
-Each subdirectory has its own `CLAUDE.md` with context-specific guidance.
-
 ## Quick Routing
 
 | I need to... | Go to |
