@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "../helix_test_fixture.h"
+#include "../test_helpers/update_queue_test_access.h"
 #include "config.h"
 #include "led/led_controller.h"
 #include "printer_discovery.h"
@@ -7,7 +9,19 @@
 #include "../catch_amalgamated.hpp"
 #include "hv/json.hpp"
 
-TEST_CASE("PrinterDiscovery detects led_effect objects", "[led][discovery]") {
+/// Same fixture-less leak as the rest of the LED files: the discovery tests that
+/// drive LedController::init() leave its deferred connection-state notification
+/// queued for whichever test drains next (prestonbrown/helixscreen#1167). The
+/// drain runs while the controller and its subjects are still alive, before
+/// HelixTestFixture's own teardown.
+struct LedDiscoveryFixture : public HelixTestFixture {
+    ~LedDiscoveryFixture() override {
+        helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+    }
+};
+
+TEST_CASE_METHOD(LedDiscoveryFixture, "PrinterDiscovery detects led_effect objects",
+                 "[led][discovery]") {
     helix::PrinterDiscovery discovery;
     nlohmann::json objects =
         nlohmann::json::array({"led_effect breathing", "led_effect fire_comet",
@@ -26,7 +40,9 @@ TEST_CASE("PrinterDiscovery detects led_effect objects", "[led][discovery]") {
     REQUIRE(discovery.leds()[0] == "neopixel chamber_light");
 }
 
-TEST_CASE("PrinterDiscovery: led_effect does not get caught by led prefix", "[led][discovery]") {
+TEST_CASE_METHOD(LedDiscoveryFixture,
+                 "PrinterDiscovery: led_effect does not get caught by led prefix",
+                 "[led][discovery]") {
     helix::PrinterDiscovery discovery;
     nlohmann::json objects = nlohmann::json::array({"led_effect status_effect", "led case_light"});
     discovery.parse_objects(objects);
@@ -41,7 +57,8 @@ TEST_CASE("PrinterDiscovery: led_effect does not get caught by led prefix", "[le
     REQUIRE(discovery.leds()[0] == "led case_light");
 }
 
-TEST_CASE("PrinterDiscovery detects LED-related macros", "[led][discovery]") {
+TEST_CASE_METHOD(LedDiscoveryFixture, "PrinterDiscovery detects LED-related macros",
+                 "[led][discovery]") {
     helix::PrinterDiscovery discovery;
     nlohmann::json objects = nlohmann::json::array(
         {"gcode_macro LIGHTS_ON", "gcode_macro LIGHTS_OFF", "gcode_macro LED_PARTY",
@@ -69,7 +86,8 @@ TEST_CASE("PrinterDiscovery detects LED-related macros", "[led][discovery]") {
     REQUIRE(std::find(led_macros.begin(), led_macros.end(), "HOME_ALL") == led_macros.end());
 }
 
-TEST_CASE("PrinterDiscovery: non-LED macros not detected", "[led][discovery]") {
+TEST_CASE_METHOD(LedDiscoveryFixture, "PrinterDiscovery: non-LED macros not detected",
+                 "[led][discovery]") {
     helix::PrinterDiscovery discovery;
     nlohmann::json objects = nlohmann::json::array(
         {"gcode_macro PARK_TOOLHEAD", "gcode_macro SET_VELOCITY", "gcode_macro START_PRINT"});
@@ -79,7 +97,9 @@ TEST_CASE("PrinterDiscovery: non-LED macros not detected", "[led][discovery]") {
     REQUIRE(discovery.led_macros().empty());
 }
 
-TEST_CASE("LedController discover_from_hardware with effects and macros", "[led][discovery]") {
+TEST_CASE_METHOD(LedDiscoveryFixture,
+                 "LedController discover_from_hardware with effects and macros",
+                 "[led][discovery]") {
     helix::PrinterDiscovery discovery;
     nlohmann::json objects = nlohmann::json::array(
         {"neopixel chamber_light", "led_effect breathing", "led_effect fire_comet",
@@ -119,7 +139,8 @@ TEST_CASE("LedController discover_from_hardware with effects and macros", "[led]
     ctrl.deinit();
 }
 
-TEST_CASE("PrinterDiscovery clear resets LED effects and macros", "[led][discovery]") {
+TEST_CASE_METHOD(LedDiscoveryFixture, "PrinterDiscovery clear resets LED effects and macros",
+                 "[led][discovery]") {
     helix::PrinterDiscovery discovery;
     nlohmann::json objects = nlohmann::json::array({"led_effect test", "gcode_macro LIGHTS_ON"});
     discovery.parse_objects(objects);

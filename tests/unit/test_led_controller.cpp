@@ -15,13 +15,28 @@
 #include "hv/json.hpp"
 
 using namespace helix;
-TEST_CASE("LedController singleton access", "[led]") {
+
+/// The fixture-less TEST_CASEs below drive LedController::init(), whose
+/// connection-state observer defers its first notification through the
+/// UpdateQueue, and light_set()/toggle paths that defer
+/// LedController::led_cmd_settled. With no fixture they returned with that work
+/// still queued and handed it to whichever test drained next
+/// (prestonbrown/helixscreen#1167). The drain sits in the derived destructor body
+/// so it runs while the controller and its subjects are still alive, before
+/// HelixTestFixture's own teardown.
+struct LedControllerFixture : public HelixTestFixture {
+    ~LedControllerFixture() override {
+        helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+    }
+};
+
+TEST_CASE_METHOD(LedControllerFixture, "LedController singleton access", "[led]") {
     auto& ctrl = helix::led::LedController::instance();
     auto& ctrl2 = helix::led::LedController::instance();
     REQUIRE(&ctrl == &ctrl2);
 }
 
-TEST_CASE("LedController init and deinit", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController init and deinit", "[led]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit(); // Clean state
 
@@ -32,7 +47,7 @@ TEST_CASE("LedController init and deinit", "[led]") {
     REQUIRE(!ctrl.is_initialized());
 }
 
-TEST_CASE("LedController has_any_backend empty", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController has_any_backend empty", "[led]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -43,7 +58,8 @@ TEST_CASE("LedController has_any_backend empty", "[led]") {
     ctrl.deinit();
 }
 
-TEST_CASE("LedController discover_from_hardware populates native backend", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController discover_from_hardware populates native backend", "[led]") {
     // Use PrinterDiscovery to populate
     helix::PrinterDiscovery discovery;
     nlohmann::json objects = nlohmann::json::array(
@@ -92,8 +108,9 @@ TEST_CASE("LedController discover_from_hardware populates native backend", "[led
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: generic [led] discovery defaults to white-only (fail-closed)",
-          "[led][discovery]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: generic [led] discovery defaults to white-only (fail-closed)",
+                 "[led][discovery]") {
     // A generic "[led]" section (e.g. AD5M [led chamber_light], white_pin only) must
     // NOT advertise color before the configfile parse proves RGB pins. This closes the
     // window where a white-only chamber light shows a meaningless color picker.
@@ -133,8 +150,9 @@ TEST_CASE("LedController: generic [led] discovery defaults to white-only (fail-c
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: configfile RGB pins upgrade a generic [led] to color",
-          "[led][discovery][pin_config]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: configfile RGB pins upgrade a generic [led] to color",
+                 "[led][discovery][pin_config]") {
     // A real RGB [led] strip starts white-only at discovery, then gets upgraded once
     // the configfile reveals red/green/blue pins (the connect-flow upgrade path).
     helix::PrinterDiscovery discovery;
@@ -177,14 +195,14 @@ TEST_CASE("LedController: configfile RGB pins upgrade a generic [led] to color",
     ctrl.deinit();
 }
 
-TEST_CASE("LedBackendType enum values", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedBackendType enum values", "[led]") {
     REQUIRE(static_cast<int>(helix::led::LedBackendType::NATIVE) == 0);
     REQUIRE(static_cast<int>(helix::led::LedBackendType::LED_EFFECT) == 1);
     REQUIRE(static_cast<int>(helix::led::LedBackendType::WLED) == 2);
     REQUIRE(static_cast<int>(helix::led::LedBackendType::MACRO) == 3);
 }
 
-TEST_CASE("LedStripInfo struct", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedStripInfo struct", "[led]") {
     helix::led::LedStripInfo info;
     info.name = "Chamber Light";
     info.id = "neopixel chamber_light";
@@ -199,7 +217,7 @@ TEST_CASE("LedStripInfo struct", "[led]") {
     REQUIRE(info.supports_white);
 }
 
-TEST_CASE("LedEffectBackend icon hint mapping", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedEffectBackend icon hint mapping", "[led]") {
     using helix::led::LedEffectBackend;
 
     REQUIRE(LedEffectBackend::icon_hint_for_effect("breathing") == "air");
@@ -213,7 +231,7 @@ TEST_CASE("LedEffectBackend icon hint mapping", "[led]") {
     REQUIRE(LedEffectBackend::icon_hint_for_effect("my_custom_effect") == "auto_awesome");
 }
 
-TEST_CASE("LedEffectBackend display name conversion", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedEffectBackend display name conversion", "[led]") {
     using helix::led::LedEffectBackend;
 
     REQUIRE(LedEffectBackend::display_name_for_effect("led_effect breathing") == "Breathing");
@@ -222,7 +240,7 @@ TEST_CASE("LedEffectBackend display name conversion", "[led]") {
     REQUIRE(LedEffectBackend::display_name_for_effect("") == "");
 }
 
-TEST_CASE("NativeBackend strip management", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "NativeBackend strip management", "[led]") {
     helix::led::NativeBackend backend;
 
     REQUIRE(!backend.is_available());
@@ -243,7 +261,7 @@ TEST_CASE("NativeBackend strip management", "[led]") {
     REQUIRE(!backend.is_available());
 }
 
-TEST_CASE("MacroBackend macro management", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "MacroBackend macro management", "[led]") {
     helix::led::MacroBackend backend;
 
     REQUIRE(!backend.is_available());
@@ -264,7 +282,7 @@ TEST_CASE("MacroBackend macro management", "[led]") {
     REQUIRE(!backend.is_available());
 }
 
-TEST_CASE("LedController deinit clears all backends", "[led]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController deinit clears all backends", "[led]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -293,7 +311,8 @@ TEST_CASE("LedController deinit clears all backends", "[led]") {
     REQUIRE(ctrl.effects().effects().empty());
 }
 
-TEST_CASE("LedController: selected_strips can hold WLED strip IDs", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: selected_strips can hold WLED strip IDs",
+                 "[led][controller]") {
     auto& controller = helix::led::LedController::instance();
     controller.deinit();
 
@@ -307,7 +326,9 @@ TEST_CASE("LedController: selected_strips can hold WLED strip IDs", "[led][contr
     REQUIRE(controller.selected_strips()[0] == "neopixel chamber_light");
 }
 
-TEST_CASE("LedController: light_set turns on all selected native strips", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: light_set turns on all selected native strips",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -334,7 +355,9 @@ TEST_CASE("LedController: light_set turns on all selected native strips", "[led]
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: light_set with empty selected_strips is a no-op", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: light_set with empty selected_strips is a no-op",
+                 "[led][controller]") {
     // Clear any auto-selected strips persisted by prior tests
     auto* cfg = Config::get_instance();
     if (cfg) {
@@ -356,7 +379,8 @@ TEST_CASE("LedController: light_set with empty selected_strips is a no-op", "[le
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: light_set with mixed backend types", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: light_set with mixed backend types",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -392,7 +416,8 @@ TEST_CASE("LedController: light_set with mixed backend types", "[led][controller
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: backend_for_strip returns correct type", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: backend_for_strip returns correct type",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -425,7 +450,8 @@ TEST_CASE("LedController: backend_for_strip returns correct type", "[led][contro
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: backend_for_strip identifies macro backend", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: backend_for_strip identifies macro backend",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -445,7 +471,8 @@ TEST_CASE("LedController: backend_for_strip identifies macro backend", "[led][co
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: get/set_led_on_at_start", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: get/set_led_on_at_start",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -462,8 +489,9 @@ TEST_CASE("LedController: get/set_led_on_at_start", "[led][controller]") {
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: apply_startup_preference does nothing when disabled",
-          "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: apply_startup_preference does nothing when disabled",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -476,8 +504,9 @@ TEST_CASE("LedController: apply_startup_preference does nothing when disabled",
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: apply_startup_preference with no strips is a no-op",
-          "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: apply_startup_preference with no strips is a no-op",
+                 "[led][controller]") {
     // Clear any auto-selected strips persisted by prior tests
     auto* cfg = Config::get_instance();
     if (cfg) {
@@ -502,7 +531,8 @@ TEST_CASE("LedController: apply_startup_preference with no strips is a no-op",
 // Phase 1: macro: prefix handling
 // ============================================================================
 
-TEST_CASE("LedController: backend_for_strip with macro: prefix", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: backend_for_strip with macro: prefix",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -522,7 +552,8 @@ TEST_CASE("LedController: backend_for_strip with macro: prefix", "[led][controll
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: light_set dispatches macro: prefixed strips", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: light_set dispatches macro: prefixed strips",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -552,8 +583,9 @@ TEST_CASE("LedController: light_set dispatches macro: prefixed strips", "[led][c
 // Phase 2: all_selectable_strips
 // ============================================================================
 
-TEST_CASE("LedController: all_selectable_strips includes native + WLED + macros",
-          "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: all_selectable_strips includes native + WLED + macros",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -609,7 +641,9 @@ TEST_CASE("LedController: all_selectable_strips includes native + WLED + macros"
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: all_selectable_strips empty when no backends", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: all_selectable_strips empty when no backends",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -624,7 +658,8 @@ TEST_CASE("LedController: all_selectable_strips empty when no backends", "[led][
 // Phase 3: first_available_strip
 // ============================================================================
 
-TEST_CASE("LedController: first_available_strip priority order", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: first_available_strip priority order",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -671,7 +706,8 @@ TEST_CASE("LedController: first_available_strip priority order", "[led][controll
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: first_available_strip skips PRESET macros", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: first_available_strip skips PRESET macros",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -697,7 +733,7 @@ TEST_CASE("LedController: first_available_strip skips PRESET macros", "[led][con
 // Phase 4: MacroBackend state tracking + abstract API
 // ============================================================================
 
-TEST_CASE("MacroBackend: ON_OFF has known state", "[led][macro]") {
+TEST_CASE_METHOD(LedControllerFixture, "MacroBackend: ON_OFF has known state", "[led][macro]") {
     helix::led::MacroBackend backend;
 
     helix::led::LedMacroInfo on_off;
@@ -717,7 +753,7 @@ TEST_CASE("MacroBackend: ON_OFF has known state", "[led][macro]") {
     REQUIRE(!backend.has_known_state("Cabinet Light"));
 }
 
-TEST_CASE("MacroBackend: TOGGLE has unknown state", "[led][macro]") {
+TEST_CASE_METHOD(LedControllerFixture, "MacroBackend: TOGGLE has unknown state", "[led][macro]") {
     helix::led::MacroBackend backend;
 
     helix::led::LedMacroInfo toggle;
@@ -730,7 +766,9 @@ TEST_CASE("MacroBackend: TOGGLE has unknown state", "[led][macro]") {
     REQUIRE(!backend.has_known_state("Desk Lamp"));
 }
 
-TEST_CASE("LedController: light_state_trackable with various selections", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: light_state_trackable with various selections",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -770,7 +808,8 @@ TEST_CASE("LedController: light_state_trackable with various selections", "[led]
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: light_toggle and light_is_on", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: light_toggle and light_is_on",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -803,7 +842,8 @@ TEST_CASE("LedController: light_toggle and light_is_on", "[led][controller]") {
 // OutputPinBackend tests
 // ============================================================================
 
-TEST_CASE("OutputPinBackend: enum value and is_pwm field", "[led][output_pin]") {
+TEST_CASE_METHOD(LedControllerFixture, "OutputPinBackend: enum value and is_pwm field",
+                 "[led][output_pin]") {
     helix::led::LedStripInfo info;
     info.backend = helix::led::LedBackendType::OUTPUT_PIN;
     REQUIRE(info.backend == helix::led::LedBackendType::OUTPUT_PIN);
@@ -812,7 +852,7 @@ TEST_CASE("OutputPinBackend: enum value and is_pwm field", "[led][output_pin]") 
     REQUIRE(info.is_pwm == true);
 }
 
-TEST_CASE("OutputPinBackend: strip management", "[led][output_pin]") {
+TEST_CASE_METHOD(LedControllerFixture, "OutputPinBackend: strip management", "[led][output_pin]") {
     helix::led::OutputPinBackend backend;
     REQUIRE_FALSE(backend.is_available());
     REQUIRE(backend.pins().empty());
@@ -834,7 +874,8 @@ TEST_CASE("OutputPinBackend: strip management", "[led][output_pin]") {
     REQUIRE_FALSE(backend.is_available());
 }
 
-TEST_CASE("OutputPinBackend: cached value from status", "[led][output_pin]") {
+TEST_CASE_METHOD(LedControllerFixture, "OutputPinBackend: cached value from status",
+                 "[led][output_pin]") {
     helix::led::OutputPinBackend backend;
     helix::led::LedStripInfo pin;
     pin.id = "output_pin test_led";
@@ -849,7 +890,9 @@ TEST_CASE("OutputPinBackend: cached value from status", "[led][output_pin]") {
     REQUIRE(backend.get_value("output_pin test_led") == Catch::Approx(0.75));
 }
 
-TEST_CASE("OutputPinBackend: status updates overwrite the cached value", "[led][output_pin]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "OutputPinBackend: status updates overwrite the cached value",
+                 "[led][output_pin]") {
     helix::led::OutputPinBackend backend;
     helix::led::LedStripInfo pin;
     pin.id = "output_pin test_led";
@@ -866,7 +909,7 @@ TEST_CASE("OutputPinBackend: status updates overwrite the cached value", "[led][
     REQUIRE(backend.get_value("output_pin test_led") == Catch::Approx(0.0));
 }
 
-TEST_CASE("OutputPinBackend: brightness_pct", "[led][output_pin]") {
+TEST_CASE_METHOD(LedControllerFixture, "OutputPinBackend: brightness_pct", "[led][output_pin]") {
     helix::led::OutputPinBackend backend;
     helix::led::LedStripInfo pin;
     pin.id = "output_pin test_led";
@@ -877,7 +920,7 @@ TEST_CASE("OutputPinBackend: brightness_pct", "[led][output_pin]") {
     REQUIRE(backend.brightness_pct("output_pin test_led") == 75);
 }
 
-TEST_CASE("OutputPinBackend: is_pwm check", "[led][output_pin]") {
+TEST_CASE_METHOD(LedControllerFixture, "OutputPinBackend: is_pwm check", "[led][output_pin]") {
     helix::led::OutputPinBackend backend;
     helix::led::LedStripInfo pin;
     pin.id = "output_pin test_led";
@@ -890,7 +933,8 @@ TEST_CASE("OutputPinBackend: is_pwm check", "[led][output_pin]") {
     REQUIRE_FALSE(backend.is_pwm("output_pin test_led"));
 }
 
-TEST_CASE("OutputPinBackend: status for an unknown pin is ignored", "[led][output_pin]") {
+TEST_CASE_METHOD(LedControllerFixture, "OutputPinBackend: status for an unknown pin is ignored",
+                 "[led][output_pin]") {
     helix::led::OutputPinBackend backend;
     helix::led::LedStripInfo pin;
     pin.id = "output_pin test_led";
@@ -903,7 +947,7 @@ TEST_CASE("OutputPinBackend: status for an unknown pin is ignored", "[led][outpu
     REQUIRE(backend.get_value("output_pin other_led") == Catch::Approx(0.0));
 }
 
-TEST_CASE("OutputPinBackend: no API safety", "[led][output_pin]") {
+TEST_CASE_METHOD(LedControllerFixture, "OutputPinBackend: no API safety", "[led][output_pin]") {
     helix::led::OutputPinBackend backend;
     // Should not crash when API is null
     backend.set_value("output_pin test", 0.5);
@@ -916,7 +960,8 @@ TEST_CASE("OutputPinBackend: no API safety", "[led][output_pin]") {
 // LED Config Version Subject Tests
 // ============================================================================
 
-TEST_CASE("LedController: version subject accessible after init", "[led][version]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: version subject accessible after init",
+                 "[led][version]") {
     lv_init_safe();
 
     auto& ctrl = helix::led::LedController::instance();
@@ -932,7 +977,8 @@ TEST_CASE("LedController: version subject accessible after init", "[led][version
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: set_selected_strips bumps version", "[led][version]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: set_selected_strips bumps version",
+                 "[led][version]") {
     lv_init_safe();
 
     auto& ctrl = helix::led::LedController::instance();
@@ -950,7 +996,8 @@ TEST_CASE("LedController: set_selected_strips bumps version", "[led][version]") 
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: version observer fires on bump", "[led][version]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: version observer fires on bump",
+                 "[led][version]") {
     lv_init_safe();
 
     auto& ctrl = helix::led::LedController::instance();
@@ -986,7 +1033,8 @@ TEST_CASE("LedController: version observer fires on bump", "[led][version]") {
 // Regression tests: light_set / turn_off_all / apply_startup_preference state
 // ============================================================================
 
-TEST_CASE("LedController: light_set updates light_is_on", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: light_set updates light_is_on",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1002,7 +1050,8 @@ TEST_CASE("LedController: light_set updates light_is_on", "[led][controller]") {
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: turn_off_all sets light_is_on false", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: turn_off_all sets light_is_on false",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1016,7 +1065,8 @@ TEST_CASE("LedController: turn_off_all sets light_is_on false", "[led][controlle
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: set_color_all updates light_is_on", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: set_color_all updates light_is_on",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1032,7 +1082,8 @@ TEST_CASE("LedController: set_color_all updates light_is_on", "[led][controller]
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: set_brightness_all updates light_is_on", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: set_brightness_all updates light_is_on",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1046,7 +1097,9 @@ TEST_CASE("LedController: set_brightness_all updates light_is_on", "[led][contro
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: apply_startup_preference sets light_is_on true", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: apply_startup_preference sets light_is_on true",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1074,7 +1127,9 @@ TEST_CASE("LedController: apply_startup_preference sets light_is_on true", "[led
 // Regression: toggle off must stop LED effects before SET_LED
 // ============================================================================
 
-TEST_CASE("LedController: light_set(false) stops LED effects when available", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: light_set(false) stops LED effects when available",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1115,8 +1170,9 @@ TEST_CASE("LedController: light_set(false) stops LED effects when available", "[
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: light_set(false) without effects skips stop_all_effects",
-          "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: light_set(false) without effects skips stop_all_effects",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1147,7 +1203,8 @@ TEST_CASE("LedController: light_set(false) without effects skips stop_all_effect
 // Stale strip pruning (issue #360: preset LED name vs firmware mismatch)
 // ============================================================================
 
-TEST_CASE("LedController: stale selected strips pruned on discovery", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: stale selected strips pruned on discovery",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1171,7 +1228,9 @@ TEST_CASE("LedController: stale selected strips pruned on discovery", "[led][con
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: valid selected strips preserved on discovery", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: valid selected strips preserved on discovery",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1192,7 +1251,9 @@ TEST_CASE("LedController: valid selected strips preserved on discovery", "[led][
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: mixed valid and stale strips pruned correctly", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: mixed valid and stale strips pruned correctly",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1213,7 +1274,8 @@ TEST_CASE("LedController: mixed valid and stale strips pruned correctly", "[led]
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: all strips stale triggers auto-select", "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture, "LedController: all strips stale triggers auto-select",
+                 "[led][controller]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -1235,8 +1297,9 @@ TEST_CASE("LedController: all strips stale triggers auto-select", "[led][control
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: auto-select picks output_pin LED when no native present",
-          "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: auto-select picks output_pin LED when no native present",
+                 "[led][controller]") {
     // Regression for K2 Plus / K1C: their only LED is `[output_pin LED]`. Auto-select
     // used to only fire for native strips, leaving the print-status light toggle to
     // bail out with "No light configured". Auto-select must also cover output_pin.
@@ -1261,8 +1324,9 @@ TEST_CASE("LedController: auto-select picks output_pin LED when no native presen
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: auto-select picks all selectable strips across backends",
-          "[led][controller]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: auto-select picks all selectable strips across backends",
+                 "[led][controller]") {
     auto* cfg = Config::get_instance();
     if (cfg) {
         cfg->set(cfg->df() + "leds/selected_strips", nlohmann::json::array());
@@ -1296,8 +1360,9 @@ TEST_CASE("LedController: auto-select picks all selectable strips across backend
     ctrl.deinit();
 }
 
-TEST_CASE("LedController: led_controllable subject reflects selected_strips emptiness",
-          "[led][controller][led_controllable]") {
+TEST_CASE_METHOD(LedControllerFixture,
+                 "LedController: led_controllable subject reflects selected_strips emptiness",
+                 "[led][controller][led_controllable]") {
     auto* cfg = Config::get_instance();
     if (cfg) {
         cfg->set(cfg->df() + "leds/selected_strips", nlohmann::json::array());

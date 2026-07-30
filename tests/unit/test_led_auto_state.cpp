@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "../helix_test_fixture.h"
 #include "../test_helpers/update_queue_test_access.h"
 #include "../ui_test_utils.h"
 #include "app_globals.h"
@@ -11,6 +12,19 @@
 #include "../catch_amalgamated.hpp"
 
 using namespace helix::led;
+
+/// LedAutoState::init() registers a print-state observer whose first
+/// notification is deferred through the UpdateQueue, and apply_action() routes
+/// through LedController. With no fixture these TEST_CASEs returned with that
+/// work still queued and handed it to whichever test drained next
+/// (prestonbrown/helixscreen#1167). The drain sits in the derived destructor body
+/// so it runs while the subjects are still alive, before HelixTestFixture's own
+/// teardown.
+struct LedAutoStateFixture : public HelixTestFixture {
+    ~LedAutoStateFixture() override {
+        helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+    }
+};
 
 namespace {
 
@@ -55,20 +69,22 @@ void clear_persisted_auto_state() {
 
 } // namespace
 
-TEST_CASE("LedAutoState singleton access", "[led][autostate]") {
+TEST_CASE_METHOD(LedAutoStateFixture, "LedAutoState singleton access", "[led][autostate]") {
     auto& state1 = LedAutoState::instance();
     auto& state2 = LedAutoState::instance();
     REQUIRE(&state1 == &state2);
 }
 
-TEST_CASE("LedAutoState default disabled after deinit", "[led][autostate]") {
+TEST_CASE_METHOD(LedAutoStateFixture, "LedAutoState default disabled after deinit",
+                 "[led][autostate]") {
     auto& state = LedAutoState::instance();
     state.deinit();
     REQUIRE_FALSE(state.is_enabled());
     REQUIRE_FALSE(state.is_initialized());
 }
 
-TEST_CASE("LedAutoState enable/disable without printer state", "[led][autostate]") {
+TEST_CASE_METHOD(LedAutoStateFixture, "LedAutoState enable/disable without printer state",
+                 "[led][autostate]") {
     auto& state = LedAutoState::instance();
     state.deinit();
 
@@ -86,7 +102,7 @@ TEST_CASE("LedAutoState enable/disable without printer state", "[led][autostate]
     state.deinit();
 }
 
-TEST_CASE("LedAutoState set and get mapping", "[led][autostate]") {
+TEST_CASE_METHOD(LedAutoStateFixture, "LedAutoState set and get mapping", "[led][autostate]") {
     auto& state = LedAutoState::instance();
     state.deinit();
 
@@ -109,7 +125,8 @@ TEST_CASE("LedAutoState set and get mapping", "[led][autostate]") {
     state.deinit();
 }
 
-TEST_CASE("LedAutoState mappings() returns all mappings", "[led][autostate]") {
+TEST_CASE_METHOD(LedAutoStateFixture, "LedAutoState mappings() returns all mappings",
+                 "[led][autostate]") {
     auto& state = LedAutoState::instance();
     state.deinit();
 
@@ -131,7 +148,7 @@ TEST_CASE("LedAutoState mappings() returns all mappings", "[led][autostate]") {
     state.deinit();
 }
 
-TEST_CASE("LedStateAction struct defaults", "[led][autostate]") {
+TEST_CASE_METHOD(LedAutoStateFixture, "LedStateAction struct defaults", "[led][autostate]") {
     LedStateAction action;
     REQUIRE(action.action_type.empty());
     REQUIRE(action.color == 0xFFFFFF);
@@ -141,7 +158,7 @@ TEST_CASE("LedStateAction struct defaults", "[led][autostate]") {
     REQUIRE(action.macro_gcode.empty());
 }
 
-TEST_CASE("LedAutoState mapping overwrite", "[led][autostate]") {
+TEST_CASE_METHOD(LedAutoStateFixture, "LedAutoState mapping overwrite", "[led][autostate]") {
     auto& state = LedAutoState::instance();
     state.deinit();
 
@@ -164,7 +181,7 @@ TEST_CASE("LedAutoState mapping overwrite", "[led][autostate]") {
     state.deinit();
 }
 
-TEST_CASE("LedAutoState deinit clears all state", "[led][autostate]") {
+TEST_CASE_METHOD(LedAutoStateFixture, "LedAutoState deinit clears all state", "[led][autostate]") {
     auto& state = LedAutoState::instance();
     state.deinit();
 
@@ -185,7 +202,8 @@ TEST_CASE("LedAutoState deinit clears all state", "[led][autostate]") {
     REQUIRE(state.mappings().empty());
 }
 
-TEST_CASE("LedStateAction supports brightness action type", "[led][auto_state]") {
+TEST_CASE_METHOD(LedAutoStateFixture, "LedStateAction supports brightness action type",
+                 "[led][auto_state]") {
     auto& state = LedAutoState::instance();
     state.deinit();
 
@@ -208,7 +226,8 @@ TEST_CASE("LedStateAction supports brightness action type", "[led][auto_state]")
     state.deinit();
 }
 
-TEST_CASE("brightness action type stored in mapping", "[led][auto_state]") {
+TEST_CASE_METHOD(LedAutoStateFixture, "brightness action type stored in mapping",
+                 "[led][auto_state]") {
     auto& state = LedAutoState::instance();
     state.deinit();
 
@@ -236,7 +255,8 @@ TEST_CASE("brightness action type stored in mapping", "[led][auto_state]") {
     state.deinit();
 }
 
-TEST_CASE("setup_default_mappings includes all 6 state keys", "[led][auto_state]") {
+TEST_CASE_METHOD(LedAutoStateFixture, "setup_default_mappings includes all 6 state keys",
+                 "[led][auto_state]") {
     auto& state = LedAutoState::instance();
     state.deinit();
 
@@ -296,7 +316,8 @@ static void teardown_auto_state() {
     LedController::instance().deinit();
 }
 
-TEST_CASE("LedAutoState apply_action 'off' sets light_is_on false", "[led][autostate]") {
+TEST_CASE_METHOD(LedAutoStateFixture, "LedAutoState apply_action 'off' sets light_is_on false",
+                 "[led][autostate]") {
     lv_init_safe();
     setup_auto_state_with_strip();
     auto& ctrl = LedController::instance();
@@ -328,7 +349,8 @@ TEST_CASE("LedAutoState apply_action 'off' sets light_is_on false", "[led][autos
     teardown_auto_state();
 }
 
-TEST_CASE("LedAutoState apply_action 'color' sets light_is_on true", "[led][autostate]") {
+TEST_CASE_METHOD(LedAutoStateFixture, "LedAutoState apply_action 'color' sets light_is_on true",
+                 "[led][autostate]") {
     lv_init_safe();
     setup_auto_state_with_strip();
     auto& ctrl = LedController::instance();
@@ -347,8 +369,9 @@ TEST_CASE("LedAutoState apply_action 'color' sets light_is_on true", "[led][auto
     teardown_auto_state();
 }
 
-TEST_CASE("LedAutoState apply_action 'brightness' sets light_is_on based on value",
-          "[led][autostate]") {
+TEST_CASE_METHOD(LedAutoStateFixture,
+                 "LedAutoState apply_action 'brightness' sets light_is_on based on value",
+                 "[led][autostate]") {
     lv_init_safe();
     setup_auto_state_with_strip();
     auto& ctrl = LedController::instance();
@@ -398,7 +421,9 @@ TEST_CASE("LedAutoState apply_action 'brightness' sets light_is_on based on valu
 // init() must load the persisted per-printer config (enabled flag + mappings).
 // This is the core value the production wiring relies on: when printer_discovery
 // calls init(printer_state), saved auto-state config becomes live.
-TEST_CASE("LedAutoState init loads persisted config from per-printer path", "[led][autostate]") {
+TEST_CASE_METHOD(LedAutoStateFixture,
+                 "LedAutoState init loads persisted config from per-printer path",
+                 "[led][autostate]") {
     auto& state = LedAutoState::instance();
     state.deinit();
 
@@ -425,7 +450,9 @@ TEST_CASE("LedAutoState init loads persisted config from per-printer path", "[le
 // deinit()->init() soft-restart cycle (mirrors switch_printer: teardown then
 // re-init on the new printer). Must not crash and must end in a consistent,
 // re-subscribed state reflecting the (re)loaded config.
-TEST_CASE("LedAutoState deinit/init soft-restart cycle stays consistent", "[led][autostate]") {
+TEST_CASE_METHOD(LedAutoStateFixture,
+                 "LedAutoState deinit/init soft-restart cycle stays consistent",
+                 "[led][autostate]") {
     auto& state = LedAutoState::instance();
     state.deinit();
 
@@ -466,7 +493,8 @@ TEST_CASE("LedAutoState deinit/init soft-restart cycle stays consistent", "[led]
 // After init() subscribes observers, a change to an observed PrinterState
 // subject must drive LedController via apply_action (the end-to-end auto-state
 // path that production now activates).
-TEST_CASE("LedAutoState observer fires after init and applies action", "[led][autostate]") {
+TEST_CASE_METHOD(LedAutoStateFixture, "LedAutoState observer fires after init and applies action",
+                 "[led][autostate]") {
     lv_init_safe();
     setup_auto_state_with_strip();
     auto& ctrl = LedController::instance();
