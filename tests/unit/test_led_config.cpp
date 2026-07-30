@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "ui_update_queue.h"
+
+#include "../helix_test_fixture.h"
+#include "../test_helpers/update_queue_test_access.h"
 #include "color_utils.h"
 #include "config.h"
 #include "led/led_controller.h"
@@ -7,6 +11,18 @@
 #include "../catch_amalgamated.hpp"
 
 using namespace helix;
+
+/// Every TEST_CASE here drives LedController::init(), whose connection-state
+/// observer defers its first notification through the UpdateQueue. With no
+/// fixture at all these files returned with that work still queued and handed it
+/// to whichever test drained next (prestonbrown/helixscreen#1167). The drain sits
+/// in the derived destructor body so it runs while the controller and its
+/// subjects are still alive, before HelixTestFixture's own teardown.
+struct LedConfigFixture : public HelixTestFixture {
+    ~LedConfigFixture() override {
+        helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+    }
+};
 
 /// Clear all LED-related Config paths to prevent cross-test contamination.
 /// Tests run in random order and the Config singleton persists between tests.
@@ -24,7 +40,8 @@ static void clear_led_config_paths() {
     cfg->set(cfg->df() + "leds/led_on_at_start", nlohmann::json());
     cfg->save();
 }
-TEST_CASE("LedController config: default values after init", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture, "LedController config: default values after init",
+                 "[led][config]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     clear_led_config_paths();
@@ -42,7 +59,8 @@ TEST_CASE("LedController config: default values after init", "[led][config]") {
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: set and get last_color", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture, "LedController config: set and get last_color",
+                 "[led][config]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -56,7 +74,8 @@ TEST_CASE("LedController config: set and get last_color", "[led][config]") {
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: set and get last_brightness", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture, "LedController config: set and get last_brightness",
+                 "[led][config]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -70,7 +89,8 @@ TEST_CASE("LedController config: set and get last_brightness", "[led][config]") 
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: set and get selected_strips", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture, "LedController config: set and get selected_strips",
+                 "[led][config]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -84,7 +104,8 @@ TEST_CASE("LedController config: set and get selected_strips", "[led][config]") 
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: set and get color_presets", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture, "LedController config: set and get color_presets",
+                 "[led][config]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -98,7 +119,8 @@ TEST_CASE("LedController config: set and get color_presets", "[led][config]") {
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: configured macros round-trip", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture, "LedController config: configured macros round-trip",
+                 "[led][config]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -135,7 +157,8 @@ TEST_CASE("LedController config: configured macros round-trip", "[led][config]")
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: deinit resets config state to defaults", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture, "LedController config: deinit resets config state to defaults",
+                 "[led][config]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     clear_led_config_paths();
@@ -172,7 +195,8 @@ TEST_CASE("LedController config: deinit resets config state to defaults", "[led]
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: default presets have correct values", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture, "LedController config: default presets have correct values",
+                 "[led][config]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -191,7 +215,8 @@ TEST_CASE("LedController config: default presets have correct values", "[led][co
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: paths use df() + leds/ prefix", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture, "LedController config: paths use df() + leds/ prefix",
+                 "[led][config]") {
     // This test verifies that after save + reload, data persists under the new paths
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
@@ -232,7 +257,8 @@ TEST_CASE("LedController config: paths use df() + leds/ prefix", "[led][config]"
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: legacy /printer/leds/selected migration", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture, "LedController config: legacy /printer/leds/selected migration",
+                 "[led][config]") {
     auto* cfg = Config::get_instance();
     REQUIRE(cfg != nullptr);
 
@@ -260,7 +286,9 @@ TEST_CASE("LedController config: legacy /printer/leds/selected migration", "[led
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: legacy /printer/leds/strip string migration", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture,
+                 "LedController config: legacy /printer/leds/strip string migration",
+                 "[led][config]") {
     auto* cfg = Config::get_instance();
     REQUIRE(cfg != nullptr);
 
@@ -288,7 +316,9 @@ TEST_CASE("LedController config: legacy /printer/leds/strip string migration", "
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: wizard saves both strip and selected_strips", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture,
+                 "LedController config: wizard saves both strip and selected_strips",
+                 "[led][config]") {
     auto* cfg = Config::get_instance();
     REQUIRE(cfg != nullptr);
 
@@ -317,8 +347,9 @@ TEST_CASE("LedController config: wizard saves both strip and selected_strips", "
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: selected_strips takes priority over legacy strip",
-          "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture,
+                 "LedController config: selected_strips takes priority over legacy strip",
+                 "[led][config]") {
     auto* cfg = Config::get_instance();
     REQUIRE(cfg != nullptr);
 
@@ -346,7 +377,8 @@ TEST_CASE("LedController config: selected_strips takes priority over legacy stri
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: wizard None selection saves empty array", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture, "LedController config: wizard None selection saves empty array",
+                 "[led][config]") {
     auto* cfg = Config::get_instance();
     REQUIRE(cfg != nullptr);
 
@@ -365,7 +397,8 @@ TEST_CASE("LedController config: wizard None selection saves empty array", "[led
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: led_on_at_start save/load round-trip", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture, "LedController config: led_on_at_start save/load round-trip",
+                 "[led][config]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -389,7 +422,8 @@ TEST_CASE("LedController config: led_on_at_start save/load round-trip", "[led][c
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: macro_devices save/load at new path", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture, "LedController config: macro_devices save/load at new path",
+                 "[led][config]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -422,7 +456,8 @@ TEST_CASE("LedController config: macro_devices save/load at new path", "[led][co
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: hex string colors saved to config", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture, "LedController config: hex string colors saved to config",
+                 "[led][config]") {
     auto& ctrl = helix::led::LedController::instance();
     ctrl.deinit();
     ctrl.init(nullptr, nullptr);
@@ -453,7 +488,8 @@ TEST_CASE("LedController config: hex string colors saved to config", "[led][conf
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: loads hex string colors from config", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture, "LedController config: loads hex string colors from config",
+                 "[led][config]") {
     auto* cfg = Config::get_instance();
     REQUIRE(cfg != nullptr);
 
@@ -481,7 +517,8 @@ TEST_CASE("LedController config: loads hex string colors from config", "[led][co
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: loads legacy integer colors from config", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture, "LedController config: loads legacy integer colors from config",
+                 "[led][config]") {
     auto* cfg = Config::get_instance();
     REQUIRE(cfg != nullptr);
 
@@ -509,7 +546,8 @@ TEST_CASE("LedController config: loads legacy integer colors from config", "[led
     ctrl.deinit();
 }
 
-TEST_CASE("LedController config: mixed integer and hex string presets", "[led][config]") {
+TEST_CASE_METHOD(LedConfigFixture, "LedController config: mixed integer and hex string presets",
+                 "[led][config]") {
     auto* cfg = Config::get_instance();
     REQUIRE(cfg != nullptr);
 
@@ -537,7 +575,8 @@ TEST_CASE("LedController config: mixed integer and hex string presets", "[led][c
     ctrl.deinit();
 }
 
-TEST_CASE("color_to_hex_string produces correct output", "[color][utils]") {
+TEST_CASE_METHOD(LedConfigFixture, "color_to_hex_string produces correct output",
+                 "[color][utils]") {
     REQUIRE(helix::color_to_hex_string(0xFFFFFF) == "#FFFFFF");
     REQUIRE(helix::color_to_hex_string(0xFF0000) == "#FF0000");
     REQUIRE(helix::color_to_hex_string(0x00FF00) == "#00FF00");
@@ -551,8 +590,9 @@ TEST_CASE("color_to_hex_string produces correct output", "[color][utils]") {
 // runs once instead of on every boot — see tests/unit/test_config_null_pollution.cpp
 // for its coverage. What stays LedController's job is preferring the per-printer
 // path over the older per-printer legacy formats.
-TEST_CASE("LedController config: per-printer selected_strips wins over legacy formats",
-          "[led][config][integration]") {
+TEST_CASE_METHOD(LedConfigFixture,
+                 "LedController config: per-printer selected_strips wins over legacy formats",
+                 "[led][config][integration]") {
     auto* cfg = Config::get_instance();
     REQUIRE(cfg != nullptr);
 
