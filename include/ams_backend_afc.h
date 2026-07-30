@@ -98,9 +98,9 @@ struct AfcToolState {
  * attribution is only meaningful alongside the sensors it attributes.
  */
 struct AfcExtruderSensors {
-    bool tool_start = false;  ///< Toolhead entry sensor (tool_start_status)
-    bool tool_end = false;    ///< Toolhead exit/nozzle sensor (tool_end_status)
-    std::string lane_loaded;  ///< Lane seated at this extruder; empty when none
+    bool tool_start = false; ///< Toolhead entry sensor (tool_start_status)
+    bool tool_end = false;   ///< Toolhead exit/nozzle sensor (tool_end_status)
+    std::string lane_loaded; ///< Lane seated at this extruder; empty when none
 };
 
 /**
@@ -446,6 +446,7 @@ class AmsBackendAfc : public AmsSubscriptionBackend {
     friend class AfcActionTimeoutHelper;
     friend class AfcDispatchAckHelper;
     friend class AfcToolchangerStatusHelper;
+    friend class AfcStatusDispatchHelper;
 
     // --- AmsSubscriptionBackend hooks ---
     void on_started() override;

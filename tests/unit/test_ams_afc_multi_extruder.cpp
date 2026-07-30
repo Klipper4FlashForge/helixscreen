@@ -3,13 +3,31 @@
 
 /**
  * @file test_ams_afc_multi_extruder.cpp
- * @brief Unit tests for AFC toolchanger multi-extruder data layer
+ * @brief Parsing of the AFC.system WEBHOOK payload — NOT what the wire sends.
  *
- * When AFC detects a toolchanger, the webhook status at /printer/afc/status
- * includes system.num_extruders and per-extruder info in system.extruders.
- * This file tests parsing, storage, and device action generation for that data.
+ * Every test here tagged [webhook] feeds `AFC.system`, the object AFC publishes
+ * from `_webhooks_status()` at `GET /printer/afc/status`. **HelixScreen does not
+ * call that endpoint.** `AFC.py get_status()` — the status subscription we do
+ * consume — publishes current_load / current_lane / next_lane / current_state /
+ * spoolman / error_state / units / lanes and no `system` key, verified against
+ * the add-on source on a live BoxTurtle (v1.1.0-4-g2921371).
  *
- * Test tags: [ams][afc][multi_extruder]
+ * So these tests exercise a shape production never receives. They are kept
+ * because `parse_afc_state()` still parses `system` and that parse is genuine on
+ * the webhook surface — it carries per-extruder `lane_loaded`, `lanes` and
+ * `tool_stn` distances a bare name array cannot — and because it stays
+ * authoritative whenever it IS present. But nothing in this file is evidence
+ * that a real printer reaches the code it covers.
+ *
+ * The counterpart is what matters: **test_afc_toolchanger_from_status.cpp**
+ * drives the same behaviours from the flat top-level `AFC.extruders` array the
+ * firmware actually sends. That file is where toolchanger coverage lives; when
+ * `AFC_SELECT_TOOL` was dead on hardware (fixed in 6bcfb067b), every test in
+ * THIS file was green. See prestonbrown/helixscreen#1200 and #1154 for the
+ * fixture-fidelity class of bug.
+ *
+ * Test tags: [ams][afc][multi_extruder], plus [webhook] on the AFC.system tests
+ * and [status] on the ones fed a real status frame.
  */
 
 #include "ams_backend_afc.h"
@@ -174,12 +192,12 @@ TEST_CASE("AFC single extruder: num_extruders defaults to 1", "[ams][afc][multi_
     CHECK(helper.get_num_extruders() == 1);
 }
 
-TEST_CASE("AFC single extruder: explicit num_extruders=1 in AFC state",
-          "[ams][afc][multi_extruder]") {
+TEST_CASE("AFC.system webhook: explicit num_extruders=1 populates one extruder",
+          "[ams][afc][multi_extruder][webhook]") {
     AmsBackendAfcMultiExtruderHelper helper;
     helper.initialize_test_lanes_with_slots(4);
 
-    // AFC reports a single extruder explicitly
+    // AFC reports a single extruder explicitly (webhook shape — never on the wire)
     nlohmann::json afc_data = {
         {"system",
          {{"num_extruders", 1},
@@ -195,8 +213,8 @@ TEST_CASE("AFC single extruder: explicit num_extruders=1 in AFC state",
     CHECK(helper.get_extruders()[0].available_lanes.size() == 4);
 }
 
-TEST_CASE("AFC single extruder: extruders_ populated with all lanes",
-          "[ams][afc][multi_extruder]") {
+TEST_CASE("AFC.system webhook: single extruder carries its whole lane list",
+          "[ams][afc][multi_extruder][webhook]") {
     AmsBackendAfcMultiExtruderHelper helper;
     helper.initialize_test_lanes_with_slots(4);
 
@@ -218,8 +236,8 @@ TEST_CASE("AFC single extruder: extruders_ populated with all lanes",
 // Multi-extruder (toolchanger with AFC)
 // ============================================================================
 
-TEST_CASE("AFC multi-extruder: num_extruders=2 with two extruder entries",
-          "[ams][afc][multi_extruder]") {
+TEST_CASE("AFC.system webhook: num_extruders=2 with two extruder entries",
+          "[ams][afc][multi_extruder][webhook]") {
     AmsBackendAfcMultiExtruderHelper helper;
     helper.initialize_test_lanes_with_slots(4);
 
@@ -235,8 +253,8 @@ TEST_CASE("AFC multi-extruder: num_extruders=2 with two extruder entries",
     REQUIRE(helper.get_extruders().size() == 2);
 }
 
-TEST_CASE("AFC multi-extruder: extruder entries have correct names and lanes",
-          "[ams][afc][multi_extruder]") {
+TEST_CASE("AFC.system webhook: extruder entries have correct names and lanes",
+          "[ams][afc][multi_extruder][webhook]") {
     AmsBackendAfcMultiExtruderHelper helper;
     helper.initialize_test_lanes_with_slots(4);
 
@@ -248,7 +266,11 @@ TEST_CASE("AFC multi-extruder: extruder entries have correct names and lanes",
             {"extruder1", {{"lane_loaded", ""}, {"lanes", {"lane3", "lane4"}}}}}}}}};
     helper.feed_afc_state(afc_data);
 
-    // Extruders should be sorted by name for deterministic ordering
+    // The webhook shape is a JSON OBJECT, so it has no inherent order and the
+    // parse sorts the keys to make tool indices deterministic. The status shape
+    // is an array in tool order and must NOT be sorted — that half is pinned by
+    // "tool number indexes extruders_ positionally" in
+    // test_afc_toolchanger_from_status.cpp.
     const auto& extruders = helper.get_extruders();
 
     // "extruder" sorts before "extruder1"
@@ -261,8 +283,8 @@ TEST_CASE("AFC multi-extruder: extruder entries have correct names and lanes",
     CHECK(extruders[1].available_lanes == std::vector<std::string>{"lane3", "lane4"});
 }
 
-TEST_CASE("AFC multi-extruder: lane_loaded tracks which lane feeds each extruder",
-          "[ams][afc][multi_extruder]") {
+TEST_CASE("AFC.system webhook: lane_loaded tracks which lane feeds each extruder",
+          "[ams][afc][multi_extruder][webhook]") {
     AmsBackendAfcMultiExtruderHelper helper;
     helper.initialize_test_lanes_with_slots(4);
 
@@ -280,8 +302,8 @@ TEST_CASE("AFC multi-extruder: lane_loaded tracks which lane feeds each extruder
     CHECK(extruders[1].lane_loaded == "lane4");
 }
 
-TEST_CASE("AFC multi-extruder: lane_loaded can be empty (no filament loaded)",
-          "[ams][afc][multi_extruder]") {
+TEST_CASE("AFC.system webhook: lane_loaded can be empty (no filament loaded)",
+          "[ams][afc][multi_extruder][webhook]") {
     AmsBackendAfcMultiExtruderHelper helper;
     helper.initialize_test_lanes_with_slots(4);
 
@@ -302,8 +324,8 @@ TEST_CASE("AFC multi-extruder: lane_loaded can be empty (no filament loaded)",
 // Lane-to-extruder mapping
 // ============================================================================
 
-TEST_CASE("AFC multi-extruder: each extruder tracks its available lanes",
-          "[ams][afc][multi_extruder]") {
+TEST_CASE("AFC.system webhook: each extruder tracks its available lanes",
+          "[ams][afc][multi_extruder][webhook]") {
     AmsBackendAfcMultiExtruderHelper helper;
     helper.initialize_test_lanes_with_slots(8);
 
@@ -346,7 +368,13 @@ TEST_CASE("AFC single extruder: single bowden_length action", "[ams][afc][multi_
     CHECK(bowden_count == 1);
 }
 
-TEST_CASE("AFC multi-extruder: per-extruder bowden_length actions", "[ams][afc][multi_extruder]") {
+// The status-shaped twin of the next two cases lives in
+// test_afc_toolchanger_from_status.cpp ("Per-extruder device actions
+// materialise from the status payload alone"). Do not let this be the only
+// coverage of the split — it proves the split works given a populated
+// extruders_, not that a real printer ever populates it.
+TEST_CASE("AFC.system webhook: per-extruder bowden_length actions",
+          "[ams][afc][multi_extruder][webhook]") {
     AmsBackendAfcMultiExtruderHelper helper;
     helper.initialize_test_lanes_with_slots(4);
 
@@ -381,7 +409,8 @@ TEST_CASE("AFC multi-extruder: per-extruder bowden_length actions", "[ams][afc][
     CHECK_FALSE(has_generic_bowden);
 }
 
-TEST_CASE("AFC multi-extruder: bowden actions have correct labels", "[ams][afc][multi_extruder]") {
+TEST_CASE("AFC.system webhook: bowden actions have correct labels",
+          "[ams][afc][multi_extruder][webhook]") {
     AmsBackendAfcMultiExtruderHelper helper;
     helper.initialize_test_lanes_with_slots(4);
 
@@ -415,7 +444,8 @@ TEST_CASE("AFC multi-extruder: bowden actions have correct labels", "[ams][afc][
 // State update: extruder data updates on subsequent AFC state messages
 // ============================================================================
 
-TEST_CASE("AFC multi-extruder: state updates replace extruder data", "[ams][afc][multi_extruder]") {
+TEST_CASE("AFC.system webhook: state updates replace extruder data",
+          "[ams][afc][multi_extruder][webhook]") {
     AmsBackendAfcMultiExtruderHelper helper;
     helper.initialize_test_lanes_with_slots(4);
 
@@ -448,11 +478,14 @@ TEST_CASE("AFC multi-extruder: state updates replace extruder data", "[ams][afc]
 // Edge cases
 // ============================================================================
 
-TEST_CASE("AFC multi-extruder: missing system object is no-op", "[ams][afc][multi_extruder]") {
+// Status shape: a real frame with neither `system` nor `extruders`. This is what
+// a delta update looks like, and it must not disturb what discovery already
+// found.
+TEST_CASE("AFC status frame: neither system nor extruders leaves the defaults alone",
+          "[ams][afc][multi_extruder][status]") {
     AmsBackendAfcMultiExtruderHelper helper;
     helper.initialize_test_lanes_with_slots(4);
 
-    // Feed AFC state with no system key
     nlohmann::json afc_data = {{"current_state", "Idle"}};
     helper.feed_afc_state(afc_data);
 
@@ -461,8 +494,8 @@ TEST_CASE("AFC multi-extruder: missing system object is no-op", "[ams][afc][mult
     CHECK(helper.get_extruders().empty());
 }
 
-TEST_CASE("AFC multi-extruder: system with no extruders key is no-op",
-          "[ams][afc][multi_extruder]") {
+TEST_CASE("AFC.system webhook: system with no extruders key is no-op",
+          "[ams][afc][multi_extruder][webhook]") {
     AmsBackendAfcMultiExtruderHelper helper;
     helper.initialize_test_lanes_with_slots(4);
 
@@ -475,7 +508,8 @@ TEST_CASE("AFC multi-extruder: system with no extruders key is no-op",
     CHECK(helper.get_extruders().empty());
 }
 
-TEST_CASE("AFC multi-extruder: extruder with missing lanes array", "[ams][afc][multi_extruder]") {
+TEST_CASE("AFC.system webhook: extruder with missing lanes array",
+          "[ams][afc][multi_extruder][webhook]") {
     AmsBackendAfcMultiExtruderHelper helper;
     helper.initialize_test_lanes_with_slots(4);
 
@@ -491,7 +525,8 @@ TEST_CASE("AFC multi-extruder: extruder with missing lanes array", "[ams][afc][m
     CHECK(helper.get_extruders()[0].available_lanes.empty());
 }
 
-TEST_CASE("AFC multi-extruder: extruder with null lane_loaded", "[ams][afc][multi_extruder]") {
+TEST_CASE("AFC.system webhook: extruder with null lane_loaded",
+          "[ams][afc][multi_extruder][webhook]") {
     AmsBackendAfcMultiExtruderHelper helper;
     helper.initialize_test_lanes_with_slots(4);
 

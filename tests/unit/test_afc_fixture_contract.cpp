@@ -105,11 +105,31 @@ TEST_CASE("AFC fixtures carry every field our parsers read", "[ams][afc][1154][f
         // parse_afc_state reads these; current_load/current_lane drive the
         // aggregate slot pointer, error_state gates current_error() (#1171),
         // message drives fault text and the drain budget (#1186).
-        require_keys(j, "AFC", {"current_load", "current_lane", "current_state", "error_state",
-                                "bypass_state", "message", "lanes", "units", "extruders", "hubs",
-                                "buffers", "current_toolchange", "number_of_toolchanges"});
+        require_keys(j, "AFC",
+                     {"current_load", "current_lane", "current_state", "error_state",
+                      "bypass_state", "message", "lanes", "units", "extruders", "hubs", "buffers",
+                      "current_toolchange", "number_of_toolchanges"});
         REQUIRE(j["message"].is_object());
         require_keys(j["message"], "AFC.message", {"message", "type"});
+
+        // ABSENCE is part of the contract here (#1200). parse_afc_state() still
+        // reads AFC.system for num_extruders and per-extruder tool_stn, but
+        // get_status() has never published it — the only writers upstream are
+        // _webhooks_status() (GET /printer/afc/status, which we do not call) and
+        // save_vars(). Toolchanger discovery therefore has to come from the flat
+        // `extruders` array, and it silently did not until 6bcfb067b.
+        //
+        // If a refreshed capture makes this fail, upstream started publishing
+        // `system` on the status object: keep the flat-array derivation as the
+        // floor, decide deliberately whether the richer block should now win,
+        // and promote the [webhook]-tagged tests in
+        // test_ams_afc_multi_extruder.cpp to real wire coverage.
+        INFO("AFC.system appeared on the status object — see #1200 before relaxing this");
+        CHECK_FALSE(j.contains("system"));
+
+        // The array that must carry the toolchanger shape in its place.
+        REQUIRE(j["extruders"].is_array());
+        CHECK_FALSE(j["extruders"].empty());
     }
 
     SECTION("AFC_stepper lane") {
