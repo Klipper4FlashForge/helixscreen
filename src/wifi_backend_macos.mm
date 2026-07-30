@@ -223,8 +223,23 @@ void WifiBackendMacOS::scan_timer_callback([[maybe_unused]] lv_timer_t* timer) {
             wifi_net.security_type = extract_security_type((__bridge void*)network, is_secured);
             wifi_net.is_secured = is_secured;
 
+            // CoreWLAN reports the band directly; there is no centre frequency
+            // on CWChannel, so frequency_mhz stays 0 and only the band is known.
+            CWChannel* channel = [network wlanChannel];
+            if (channel) {
+                if ([channel channelBand] == kCWChannelBand5GHz) {
+                    wifi_net.band_mask = WIFI_BAND_5GHZ;
+                } else if ([channel channelBand] == kCWChannelBand2GHz) {
+                    wifi_net.band_mask = WIFI_BAND_2_4GHZ;
+                }
+            }
+
             discovered.push_back(wifi_net);
         }
+
+        // Collapse per-BSS rows to one per SSID, merging their bands, so the
+        // dev host behaves like a device (helixscreen#1189).
+        discovered = wifi_merge_networks_by_ssid(discovered);
 
         // Sort by signal strength (strongest first)
         std::sort(discovered.begin(), discovered.end(),

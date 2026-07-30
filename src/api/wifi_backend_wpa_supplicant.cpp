@@ -3,13 +3,12 @@
 
 #include "wifi_backend_wpa_supplicant.h"
 
-#include "wifi_saved_config.h"
-
 #include "ui_error_reporting.h"
 
 #include "log_redact.h"
 #include "spdlog/spdlog.h"
 #include "wifi_5ghz_detection.h"
+#include "wifi_saved_config.h"
 
 #if !defined(__APPLE__) && !defined(__ANDROID__)
 // ============================================================================
@@ -115,10 +114,9 @@ bool wpa_config_has_network(const std::string& config_contents, const std::strin
         const size_t after = pos + needle.size();
         // Reject a prefix match on a longer SSID (ssid="Home" vs ssid="Home2"):
         // the closing quote must be the final char of the token.
-        const bool ends_clean =
-            after >= config_contents.size() || config_contents[after] == '\n' ||
-            config_contents[after] == '\r' || config_contents[after] == ' ' ||
-            config_contents[after] == '\t';
+        const bool ends_clean = after >= config_contents.size() || config_contents[after] == '\n' ||
+                                config_contents[after] == '\r' || config_contents[after] == ' ' ||
+                                config_contents[after] == '\t';
         // `bssid=` and `scan_ssid=` end in the same characters, so require the
         // match to start a token rather than continue one.
         const bool starts_clean =
@@ -1082,33 +1080,16 @@ WiFiError WifiBackendWpaSupplicant::trigger_scan() {
     }
 }
 
-// Deduplicate networks by SSID, keeping the strongest signal for each.
-// In mesh WiFi systems, multiple APs broadcast the same SSID - show only the best one.
-static std::vector<WiFiNetwork> deduplicate_by_ssid(std::vector<WiFiNetwork>& networks) {
-    std::unordered_map<std::string, size_t> best_index_by_ssid;
-
-    for (size_t i = 0; i < networks.size(); ++i) {
-        const auto& net = networks[i];
-        auto it = best_index_by_ssid.find(net.ssid);
-        if (it == best_index_by_ssid.end()) {
-            best_index_by_ssid[net.ssid] = i;
-        } else if (net.signal_strength > networks[it->second].signal_strength) {
-            it->second = i;
+// Count SSIDs that were observed on more than one band. Logged (as a count, never
+// as names) so a band problem leaves a breadcrumb in the log.
+static size_t count_multi_band(const std::vector<WiFiNetwork>& networks) {
+    size_t n = 0;
+    for (const auto& net : networks) {
+        if (net.band_mask != 0 && (net.band_mask & (net.band_mask - 1)) != 0) {
+            ++n;
         }
     }
-
-    std::vector<WiFiNetwork> result;
-    result.reserve(best_index_by_ssid.size());
-    for (const auto& [ssid, idx] : best_index_by_ssid) {
-        result.push_back(networks[idx]);
-    }
-
-    if (result.size() < networks.size()) {
-        spdlog::debug("[WifiBackend] Deduplicated {} networks to {} unique SSIDs", networks.size(),
-                      result.size());
-    }
-
-    return result;
+    return n;
 }
 
 WiFiError WifiBackendWpaSupplicant::get_scan_results(std::vector<WiFiNetwork>& networks) {
@@ -1129,9 +1110,14 @@ WiFiError WifiBackendWpaSupplicant::get_scan_results(std::vector<WiFiNetwork>& n
     }
 
     try {
-        networks = parse_scan_results(raw);
-        networks = deduplicate_by_ssid(networks);
-        spdlog::debug("[WifiBackend] Retrieved {} unique networks", networks.size());
+        std::vector<WiFiNetwork> parsed = parse_scan_results(raw);
+        networks = wifi_merge_networks_by_ssid(parsed);
+        if (networks.size() < parsed.size()) {
+            spdlog::debug("[WifiBackend] Deduplicated {} networks to {} unique SSIDs",
+                          parsed.size(), networks.size());
+        }
+        spdlog::debug("[WifiBackend] Retrieved {} unique networks ({} on multiple bands)",
+                      networks.size(), count_multi_band(networks));
         return WiFiErrorHelper::success();
     } catch (const std::exception& e) {
         return WiFiError(WiFiResult::BACKEND_ERROR,

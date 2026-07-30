@@ -465,7 +465,10 @@ void WifiBackendNetworkManager::scan_thread_func() {
 
     // Get scan results
     std::string output =
-        exec_nmcli("-t -f IN-USE,SSID,SIGNAL,SECURITY device wifi list ifname " + wifi_interface_);
+        // FREQ is appended last so a build of nmcli that does not know the field
+        // simply yields a shorter row, which parse_scan_output still accepts.
+        exec_nmcli("-t -f IN-USE,SSID,SIGNAL,SECURITY,FREQ device wifi list ifname " +
+                   wifi_interface_);
 
     if (!scan_active_) {
         spdlog::debug("[WifiBackend] NM: Scan cancelled after fetch");
@@ -551,9 +554,9 @@ std::vector<WiFiNetwork> WifiBackendNetworkManager::parse_scan_output(const std:
             continue;
         }
 
-        // nmcli -t -f IN-USE,SSID,SIGNAL,SECURITY device wifi list
-        // Format: IN-USE:SSID:SIGNAL:SECURITY
-        // IN-USE is " " or "*"
+        // nmcli -t -f IN-USE,SSID,SIGNAL,SECURITY,FREQ device wifi list
+        // Format: IN-USE:SSID:SIGNAL:SECURITY:FREQ
+        // IN-USE is " " or "*"; FREQ looks like "2412 MHz" and may be absent.
         auto fields = split_nmcli_fields(line);
         if (fields.size() < 4) {
             spdlog::trace("[WifiBackend] NM: Skipping malformed scan line ({} fields): {}",
@@ -565,6 +568,7 @@ std::vector<WiFiNetwork> WifiBackendNetworkManager::parse_scan_output(const std:
         std::string ssid = fields[1];
         std::string signal_str = fields[2];
         std::string security = fields[3];
+        std::string freq_str = (fields.size() >= 5) ? fields[4] : "";
 
         // Skip hidden networks (empty SSID)
         if (ssid.empty()) {
@@ -605,30 +609,27 @@ std::vector<WiFiNetwork> WifiBackendNetworkManager::parse_scan_output(const std:
             security_type = security;
         }
 
-        networks.emplace_back(ssid, signal, is_secured, security_type);
-    }
-
-    // Deduplicate by SSID (keep strongest signal) - same as wpa_supplicant backend
-    if (networks.size() > 1) {
-        std::unordered_map<std::string, size_t> best_by_ssid;
-        for (size_t i = 0; i < networks.size(); ++i) {
-            auto it = best_by_ssid.find(networks[i].ssid);
-            if (it == best_by_ssid.end()) {
-                best_by_ssid[networks[i].ssid] = i;
-            } else if (networks[i].signal_strength > networks[it->second].signal_strength) {
-                it->second = i;
+        // nmcli renders FREQ as "<n> MHz"; stoi stops at the space.
+        int freq_mhz = 0;
+        if (!freq_str.empty()) {
+            try {
+                freq_mhz = std::stoi(freq_str);
+            } catch (const std::exception&) {
+                spdlog::trace("[WifiBackend] NM: Invalid frequency '{}'", freq_str);
             }
         }
 
-        if (best_by_ssid.size() < networks.size()) {
-            std::vector<WiFiNetwork> deduped;
-            deduped.reserve(best_by_ssid.size());
-            for (const auto& [ssid, idx] : best_by_ssid) {
-                deduped.push_back(networks[idx]);
-            }
+        networks.emplace_back(ssid, signal, is_secured, security_type, freq_mhz);
+    }
+
+    // Collapse per-BSS rows into one per SSID, keeping the union of their bands
+    // so a 5GHz twin that loses on RSSI is still advertised (helixscreen#1189).
+    if (networks.size() > 1) {
+        size_t raw_count = networks.size();
+        networks = wifi_merge_networks_by_ssid(networks);
+        if (networks.size() < raw_count) {
             spdlog::debug("[WifiBackend] NM: Deduplicated {} networks to {} unique SSIDs",
-                          networks.size(), deduped.size());
-            networks = std::move(deduped);
+                          raw_count, networks.size());
         }
     }
 

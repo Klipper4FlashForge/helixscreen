@@ -46,7 +46,9 @@ class TestableNMBackend : public WifiBackendNetworkManager {
     /// reused backend (wifi_backend_networkmanager.cpp) so the next poll re-fires
     /// CONNECTED even if the system was already connected (#1059). Exposed as a
     /// public hook because free TEST_CASE bodies aren't covered by friendship.
-    void reset_prev_connected() { prev_connected_.store(false); }
+    void reset_prev_connected() {
+        prev_connected_.store(false);
+    }
 
     /// Simulate one status-poll cycle: update the cached status, then detect
     /// and fire the CONNECTED / DISCONNECTED event if the connection state
@@ -300,6 +302,60 @@ TEST_CASE("NM backend: parse_scan_output", "[network][nm][parsing]") {
         auto networks = backend.parse_scan_output(output);
         REQUIRE(networks.size() == 1);
         CHECK(networks[0].ssid == "GoodNet");
+    }
+}
+
+// ============================================================================
+// Band Parsing (helixscreen#1189)
+//
+// The NM backend used to request only IN-USE,SSID,SIGNAL,SECURITY, so every
+// network arrived with frequency 0 and its band unknowable. FREQ is now the
+// fifth field, rendered by nmcli as "<n> MHz".
+// ============================================================================
+
+TEST_CASE("NM backend: parse_scan_output reads the FREQ field", "[network][nm][band][1189]") {
+    TestableNMBackend backend;
+
+    SECTION("Frequency populates band_mask") {
+        std::string output = " :TwoFour:70:WPA2:2437 MHz\n"
+                             " :FiveGig:60:WPA2:5745 MHz\n";
+
+        auto networks = backend.parse_scan_output(output);
+        REQUIRE(networks.size() == 2);
+        CHECK(networks[0].frequency_mhz == 2437);
+        CHECK(networks[0].band_mask == WIFI_BAND_2_4GHZ);
+        CHECK(networks[1].frequency_mhz == 5745);
+        CHECK(networks[1].band_mask == WIFI_BAND_5GHZ);
+    }
+
+    SECTION("Dual-band SSID collapses to one row advertising both bands") {
+        // The 2.4GHz BSS is stronger, so the 5GHz twin used to vanish entirely.
+        std::string output = " :HomeNet:82:WPA2:2437 MHz\n"
+                             " :HomeNet:54:WPA2:5745 MHz\n";
+
+        auto networks = backend.parse_scan_output(output);
+        REQUIRE(networks.size() == 1);
+        CHECK(networks[0].signal_strength == 82);
+        CHECK((networks[0].band_mask & WIFI_BAND_5GHZ) != 0);
+        CHECK((networks[0].band_mask & WIFI_BAND_2_4GHZ) != 0);
+    }
+
+    SECTION("Missing FREQ field leaves the band unknown, not wrong") {
+        std::string output = " :LegacyNmcli:75:WPA2\n";
+
+        auto networks = backend.parse_scan_output(output);
+        REQUIRE(networks.size() == 1);
+        CHECK(networks[0].frequency_mhz == 0);
+        CHECK(networks[0].band_mask == WIFI_BAND_NONE);
+    }
+
+    SECTION("Unparseable FREQ is ignored") {
+        std::string output = " :WeirdFreq:75:WPA2:not-a-number\n";
+
+        auto networks = backend.parse_scan_output(output);
+        REQUIRE(networks.size() == 1);
+        CHECK(networks[0].frequency_mhz == 0);
+        CHECK(networks[0].band_mask == WIFI_BAND_NONE);
     }
 }
 
@@ -567,10 +623,14 @@ TEST_CASE("NM backend: status poll fires CONNECTED/DISCONNECTED on transitions",
     int disconnect_count = 0;
     std::string last_event_data;
 
-    backend.register_event_callback("CONNECTED",
-                                    [&](const std::string& d) { connect_count++; last_event_data = d; });
-    backend.register_event_callback("DISCONNECTED",
-                                    [&](const std::string& d) { disconnect_count++; last_event_data = d; });
+    backend.register_event_callback("CONNECTED", [&](const std::string& d) {
+        connect_count++;
+        last_event_data = d;
+    });
+    backend.register_event_callback("DISCONNECTED", [&](const std::string& d) {
+        disconnect_count++;
+        last_event_data = d;
+    });
 
     SECTION("First poll with connected=false fires nothing") {
         std::string ev = backend.simulate_status_poll(false);
@@ -606,33 +666,33 @@ TEST_CASE("NM backend: status poll fires CONNECTED/DISCONNECTED on transitions",
         backend.simulate_status_poll(true);
         std::string ev = backend.simulate_status_poll(false);
         CHECK(ev == "DISCONNECTED");
-        CHECK(connect_count == 1);   // first poll true → CONNECTED
+        CHECK(connect_count == 1); // first poll true → CONNECTED
         CHECK(disconnect_count == 1);
     }
 
     SECTION("Full cycle fires correct sequence") {
         // Initial: prev=false (default)
-        backend.simulate_status_poll(false);   // no change
+        backend.simulate_status_poll(false); // no change
         CHECK(connect_count == 0);
         CHECK(disconnect_count == 0);
 
-        backend.simulate_status_poll(true);    // false→true: CONNECTED
+        backend.simulate_status_poll(true); // false→true: CONNECTED
         CHECK(connect_count == 1);
         CHECK(disconnect_count == 0);
 
-        backend.simulate_status_poll(true);    // same: no event
+        backend.simulate_status_poll(true); // same: no event
         CHECK(connect_count == 1);
         CHECK(disconnect_count == 0);
 
-        backend.simulate_status_poll(false);   // true→false: DISCONNECTED
+        backend.simulate_status_poll(false); // true→false: DISCONNECTED
         CHECK(connect_count == 1);
         CHECK(disconnect_count == 1);
 
-        backend.simulate_status_poll(false);   // same: no event
+        backend.simulate_status_poll(false); // same: no event
         CHECK(connect_count == 1);
         CHECK(disconnect_count == 1);
 
-        backend.simulate_status_poll(true);    // false→true: CONNECTED
+        backend.simulate_status_poll(true); // false→true: CONNECTED
         CHECK(connect_count == 2);
         CHECK(disconnect_count == 1);
     }
@@ -665,17 +725,16 @@ TEST_CASE("NM backend: start() resets prev_connected_ so next poll re-detects",
     TestableNMBackend backend;
 
     int connect_count = 0;
-    backend.register_event_callback("CONNECTED",
-                                    [&](const std::string&) { connect_count++; });
+    backend.register_event_callback("CONNECTED", [&](const std::string&) { connect_count++; });
 
     SECTION("reset + simulate_poll fires CONNECTED on next disconnected->connected") {
-        backend.simulate_status_poll(true);  // CONNECTED fires, prev_=true
+        backend.simulate_status_poll(true); // CONNECTED fires, prev_=true
         connect_count = 0;
 
         // Reproduce what start() does on the reused object after a stop/start.
         backend.reset_prev_connected();
 
-        backend.simulate_status_poll(true);  // false→true: CONNECTED fires again
+        backend.simulate_status_poll(true); // false→true: CONNECTED fires again
         CHECK(connect_count == 1);
     }
 }

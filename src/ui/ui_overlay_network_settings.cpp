@@ -24,6 +24,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <memory>
 
@@ -50,11 +51,31 @@ NetworkSettingsOverlay& get_network_settings_overlay() {
 
 /**
  * @brief Per-instance network item data for click handling
+ *
+ * Also owns the per-row subjects that drive the band badge: a list row is built
+ * from scan data, so there is no global subject to bind to and the row must
+ * carry its own (same pattern as WifiWizardNetworkItemData).
+ *
  * @note Named distinctly to avoid ODR conflicts with WifiWizardNetworkSettingsItemData
  */
 struct NetworkSettingsItemData {
     std::string ssid;
     bool is_secured;
+    char band_buffer[16];
+    lv_subject_t band_text;    ///< String subject bound to band_label's text
+    lv_subject_t band_visible; ///< 1 when the badge should be shown, else 0
+
+    NetworkSettingsItemData(const std::string& ssid_, bool secured, const std::string& band)
+        : ssid(ssid_), is_secured(secured) {
+        std::snprintf(band_buffer, sizeof(band_buffer), "%s", band.c_str());
+        lv_subject_init_string(&band_text, band_buffer, nullptr, sizeof(band_buffer), band_buffer);
+        lv_subject_init_int(&band_visible, band.empty() ? 0 : 1);
+    }
+
+    ~NetworkSettingsItemData() {
+        lv_subject_deinit(&band_text);
+        lv_subject_deinit(&band_visible);
+    }
 };
 
 /**
@@ -589,6 +610,10 @@ void NetworkSettingsOverlay::populate_network_list(const std::vector<WiFiNetwork
         connected_ssid = wifi_manager_->get_connected_ssid();
     }
 
+    // Band badges only earn their pixels when the scan actually spans bands —
+    // on a 2.4GHz-only radio every row would read "2.4G" (helixscreen#1189).
+    const bool show_bands = helix::ui::wifi::wifi_scan_spans_multiple_bands(sorted_networks);
+
     // Create network items
     static int item_counter = 0;
     for (const auto& network : sorted_networks) {
@@ -633,16 +658,26 @@ void NetworkSettingsOverlay::populate_network_list(const std::vector<WiFiNetwork
                           helix::redact::ssid(network.ssid));
         }
 
-        // Store network data for click handler
-        auto* data = new NetworkSettingsItemData{network.ssid, network.is_secured};
+        // Store network data for click handler; also owns the band subjects
+        std::string band_text =
+            show_bands ? helix::ui::wifi::wifi_format_band_label(network.band_mask) : std::string();
+        auto* data = new NetworkSettingsItemData(network.ssid, network.is_secured, band_text);
         lv_obj_set_user_data(item, data);
+
+        // Bind the band badge to this row's own subjects
+        lv_obj_t* band_label = lv_obj_find_by_name(item, "band_label");
+        if (band_label) {
+            lv_label_bind_text(band_label, &data->band_text, nullptr);
+            lv_obj_bind_flag_if_eq(band_label, &data->band_visible, LV_OBJ_FLAG_HIDDEN, 0);
+        }
 
         // Register DELETE handler for automatic cleanup
         lv_obj_add_event_cb(item, network_item_delete_cb, LV_EVENT_DELETE, nullptr);
 
-        spdlog::debug("[NetworkSettingsOverlay] Added network: {} ({}%, {})",
+        spdlog::debug("[NetworkSettingsOverlay] Added network: {} ({}%, {}, band {})",
                       helix::redact::ssid(network.ssid), network.signal_strength,
-                      network.is_secured ? "secured" : "open");
+                      network.is_secured ? "secured" : "open",
+                      helix::ui::wifi::wifi_format_band_label(network.band_mask));
     }
 
     // Restore scroll position
