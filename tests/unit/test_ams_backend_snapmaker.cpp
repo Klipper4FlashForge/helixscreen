@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "../helix_test_fixture.h"
 #include "../test_helpers/printer_state_test_access.h"
 #include "../test_helpers/update_queue_test_access.h"
 #include "../ui_test_utils.h"
@@ -28,6 +29,19 @@ using namespace helix::printer;
 using namespace helix;
 
 using json = nlohmann::json;
+
+/// This file had no fixture at all, so nothing ever drained the UpdateQueue.
+/// handle_status_update() publishes first-gate port presence through
+/// AmsState::set_active_tool_port_present, which marshals to the main thread via
+/// AsyncLifetimeGuard::defer — the single largest named producer in the
+/// cross-test leak report (prestonbrown/helixscreen#1169). The drain sits in the
+/// derived destructor body so it runs while AmsState's subjects and the test's
+/// backend are still alive, before HelixTestFixture's own teardown.
+struct SnapmakerFixture : public HelixTestFixture {
+    ~SnapmakerFixture() override {
+        helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+    }
+};
 
 // Friend-class shim for FilamentSlotOverrideStore — same idiom as IFS tests
 // and test_filament_slot_override_store.cpp. Lets us redirect the store's
@@ -111,10 +125,9 @@ static json make_feed_status(int extruder_idx, const std::string& channel_state,
                              const std::string& channel_error = "ok") {
     const char* feed_key = (extruder_idx <= 1) ? "filament_feed left" : "filament_feed right";
     std::string ext_key = "extruder" + std::to_string(extruder_idx);
-    return json{{feed_key,
-                 json{{ext_key, json{{"filament_detected", filament_detected},
-                                     {"channel_state", channel_state},
-                                     {"channel_error", channel_error}}}}}};
+    return json{{feed_key, json{{ext_key, json{{"filament_detected", filament_detected},
+                                               {"channel_state", channel_state},
+                                               {"channel_error", channel_error}}}}}};
 }
 
 namespace {
@@ -179,7 +192,7 @@ class CapturingSnapmakerBackend : public AmsBackendSnapmaker {
 };
 } // namespace
 
-TEST_CASE("Snapmaker type enum", "[ams][snapmaker]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker type enum", "[ams][snapmaker]") {
     SECTION("SNAPMAKER is a valid AmsType") {
         auto t = AmsType::SNAPMAKER;
         REQUIRE(t != AmsType::NONE);
@@ -202,7 +215,7 @@ TEST_CASE("Snapmaker type enum", "[ams][snapmaker]") {
     }
 }
 
-TEST_CASE("Snapmaker detection via filament_detect", "[ams][snapmaker]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker detection via filament_detect", "[ams][snapmaker]") {
     PrinterDiscovery discovery;
 
     SECTION("filament_detect triggers SNAPMAKER detection") {
@@ -231,7 +244,7 @@ TEST_CASE("Snapmaker detection via filament_detect", "[ams][snapmaker]") {
 
 #include "hv/json.hpp"
 
-TEST_CASE("AmsBackendSnapmaker construction", "[ams][snapmaker]") {
+TEST_CASE_METHOD(SnapmakerFixture, "AmsBackendSnapmaker construction", "[ams][snapmaker]") {
     SECTION("type returns SNAPMAKER") {
         AmsBackendSnapmaker backend(nullptr, nullptr);
         REQUIRE(backend.get_type() == AmsType::SNAPMAKER);
@@ -279,8 +292,9 @@ TEST_CASE("AmsBackendSnapmaker construction", "[ams][snapmaker]") {
 // Operation Step Model Tests
 // ============================================================================
 
-TEST_CASE("Snapmaker get_operation_step_model is the per-direction firmware sequence",
-          "[ams][snapmaker][stepmodel]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker get_operation_step_model is the per-direction firmware sequence",
+                 "[ams][snapmaker][stepmodel]") {
     AmsBackendSnapmaker backend(nullptr, nullptr);
 
     SECTION("LOAD is a 5-step model ending in Purge with a live-temp Heat step") {
@@ -324,8 +338,9 @@ TEST_CASE("Snapmaker get_operation_step_model is the per-direction firmware sequ
     }
 }
 
-TEST_CASE("Snapmaker get_operation_step_index_subject is the firmware phase subject",
-          "[ams][snapmaker][stepmodel]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker get_operation_step_index_subject is the firmware phase subject",
+                 "[ams][snapmaker][stepmodel]") {
     AmsBackendSnapmaker backend(nullptr, nullptr);
     // The U1 drives the current step from the firmware Home/Select/Heat/Move
     // phase, surfaced via AmsState's operation_phase subject (static singleton).
@@ -340,7 +355,8 @@ TEST_CASE("Snapmaker get_operation_step_index_subject is the firmware phase subj
 // Filament Operation Command Tests
 // ============================================================================
 
-TEST_CASE("Snapmaker unload routes through AUTO_FEEDING UNLOAD=1", "[ams][snapmaker][unload]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker unload routes through AUTO_FEEDING UNLOAD=1",
+                 "[ams][snapmaker][unload]") {
     // INNER_FILAMENT_UNLOAD is the leaf macro the firmware's feed state machine
     // calls internally; emitting it directly skips the state transitions that
     // aftermarket feeders (e.g. the U1-Ace ACE Pro mod) hook to retract their
@@ -403,8 +419,9 @@ TEST_CASE("Snapmaker unload routes through AUTO_FEEDING UNLOAD=1", "[ams][snapma
 // which hid the per-slot Unload action for toolheads 2/3/4 and forced users
 // onto the sidebar's active-slot Unload button — which always unloads toolhead
 // 0. (U1 multi-toolhead field report.)
-TEST_CASE("Snapmaker can_unload_from_toolhead offers unload for every loaded toolhead",
-          "[ams][snapmaker][unload]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker can_unload_from_toolhead offers unload for every loaded toolhead",
+                 "[ams][snapmaker][unload]") {
     AmsBackendSnapmaker backend(nullptr, nullptr);
 
     // Slot 0 active (LOADED), slots 1 & 3 hold filament (AVAILABLE), slot 2 empty.
@@ -448,8 +465,10 @@ TEST_CASE("Snapmaker can_unload_from_toolhead offers unload for every loaded too
 // targets — the motion sensor e{N}_filament even stays true, but channel_state
 // reports unload_finish. Keying off the channel_state latch (not is_present or
 // the motion sensor) stops offering Unload for an already-unloaded tool.
-TEST_CASE("Snapmaker can_unload_from_toolhead requires filament at the toolhead, not just buffer",
-          "[ams][snapmaker][unload]") {
+TEST_CASE_METHOD(
+    SnapmakerFixture,
+    "Snapmaker can_unload_from_toolhead requires filament at the toolhead, not just buffer",
+    "[ams][snapmaker][unload]") {
     AmsBackendSnapmaker backend(nullptr, nullptr);
 
     // All four tools loaded to their toolhead (channel_state load_finish).
@@ -467,8 +486,7 @@ TEST_CASE("Snapmaker can_unload_from_toolhead requires filament at the toolhead,
     SECTION("a tool unloaded to the buffer (channel_state unload_finish) is NOT unloadable") {
         // Post-unload: filament parked in the buffer (still detected=true, the
         // firmware bug), channel_state unload_finish → the loaded latch clears.
-        SnapmakerTestAccess::handle_status(backend,
-                                           make_feed_status(2, "unload_finish", true));
+        SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "unload_finish", true));
         CHECK_FALSE(backend.can_unload_from_toolhead(2));
         // Tools still loaded at their toolhead remain unloadable.
         CHECK(backend.can_unload_from_toolhead(1));
@@ -482,7 +500,9 @@ TEST_CASE("Snapmaker can_unload_from_toolhead requires filament at the toolhead,
 // lane must NOT latch the whole backend into action=Error and pop a spurious
 // AMS loading-error modal. A genuine load FAILURE (during/after a load attempt,
 // or on a present/active lane) MUST still raise Error. (Snapmaker U1 false-alarm.)
-TEST_CASE("Snapmaker channel_error on idle empty lane does NOT raise Error", "[ams][snapmaker]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker channel_error on idle empty lane does NOT raise Error",
+                 "[ams][snapmaker]") {
     AmsBackendSnapmaker backend(nullptr, nullptr);
 
     // Heads 0 and 2 present, head 1 left empty. Head 1 reports the firmware's
@@ -506,7 +526,8 @@ TEST_CASE("Snapmaker channel_error on idle empty lane does NOT raise Error", "[a
     CHECK(backend.get_system_info().operation_detail.empty());
 }
 
-TEST_CASE("Snapmaker channel_error during an active load DOES raise Error", "[ams][snapmaker]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker channel_error during an active load DOES raise Error",
+                 "[ams][snapmaker]") {
     AmsBackendSnapmaker backend(nullptr, nullptr);
 
     // A real load FAILURE: lane 1 is mid-load (channel_state "load_heating") when
@@ -523,7 +544,8 @@ TEST_CASE("Snapmaker channel_error during an active load DOES raise Error", "[am
           std::string::npos);
 }
 
-TEST_CASE("Snapmaker channel_error on the ACTIVE lane DOES raise Error", "[ams][snapmaker]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker channel_error on the ACTIVE lane DOES raise Error",
+                 "[ams][snapmaker]") {
     AmsBackendSnapmaker backend(nullptr, nullptr);
 
     // Make lane 0 the active/current lane, then have it report an error while
@@ -541,8 +563,8 @@ TEST_CASE("Snapmaker channel_error on the ACTIVE lane DOES raise Error", "[ams][
     CHECK(backend.get_system_info().operation_detail == "some_fault");
 }
 
-TEST_CASE("Snapmaker granular unload sub-states drive UNLOADING action",
-          "[ams][snapmaker][unload]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker granular unload sub-states drive UNLOADING action",
+                 "[ams][snapmaker][unload]") {
     // The U1 firmware NEVER sends a flat "unloading" — it emits granular
     // sub-states unload_homing/picking/heating/doing. Each must set action to
     // UNLOADING so the on-screen step bar stays visible during the unload.
@@ -559,7 +581,8 @@ TEST_CASE("Snapmaker granular unload sub-states drive UNLOADING action",
     }
 }
 
-TEST_CASE("Snapmaker granular load sub-states drive LOADING action", "[ams][snapmaker][load]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker granular load sub-states drive LOADING action",
+                 "[ams][snapmaker][load]") {
     // Symmetric to the unload case: every granular load sub-state → LOADING.
     for (const char* state : {"load_prepare", "load_homing", "load_picking", "load_heating",
                               "load_feeding", "load_extruding", "load_flushing"}) {
@@ -574,7 +597,8 @@ TEST_CASE("Snapmaker granular load sub-states drive LOADING action", "[ams][snap
     }
 }
 
-TEST_CASE("Snapmaker channel_state maps to granular operation_phase", "[ams][snapmaker][phase]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker channel_state maps to granular operation_phase",
+                 "[ams][snapmaker][phase]") {
     // The U1 firmware emits four sequential sub-phases per direction
     // (<load|unload>_<homing|picking|heating|doing>), each many seconds long.
     // operation_phase mirrors these into a 0..3 index that drives the sidebar's
@@ -585,10 +609,9 @@ TEST_CASE("Snapmaker channel_state maps to granular operation_phase", "[ams][sna
         int expected_phase;
     };
     const Case cases[] = {
-        {"unload_homing", 0},  {"unload_picking", 1},  {"unload_heating", 2},
-        {"unload_doing", 3},   {"load_homing", 0},     {"load_picking", 1},
-        {"load_heating", 2},   {"load_feeding", 3},    {"unload_finish", -1},
-        {"load_finish", -1},   {"preload_finish", -1}, {"inited", -1},
+        {"unload_homing", 0},  {"unload_picking", 1}, {"unload_heating", 2},  {"unload_doing", 3},
+        {"load_homing", 0},    {"load_picking", 1},   {"load_heating", 2},    {"load_feeding", 3},
+        {"unload_finish", -1}, {"load_finish", -1},   {"preload_finish", -1}, {"inited", -1},
     };
 
     for (const auto& c : cases) {
@@ -605,7 +628,8 @@ TEST_CASE("Snapmaker channel_state maps to granular operation_phase", "[ams][sna
     }
 }
 
-TEST_CASE("Snapmaker unload_finish resolves UNLOADING to IDLE", "[ams][snapmaker][unload]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker unload_finish resolves UNLOADING to IDLE",
+                 "[ams][snapmaker][unload]") {
     AmsBackendSnapmaker backend(nullptr, nullptr);
 
     // Mid-unload: action becomes UNLOADING.
@@ -625,8 +649,9 @@ TEST_CASE("Snapmaker unload_finish resolves UNLOADING to IDLE", "[ams][snapmaker
     CHECK(backend.get_system_info().action == AmsAction::IDLE);
 }
 
-TEST_CASE("Snapmaker preload_finish is NOT matched by the load_ prefix branch",
-          "[ams][snapmaker][unload]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker preload_finish is NOT matched by the load_ prefix branch",
+                 "[ams][snapmaker][unload]") {
     // preload_finish starts with "preload_", NOT "load_" — it must reach the
     // existing preload_finish handler (which leaves the action alone) rather than
     // being misread as a granular load sub-state.
@@ -658,8 +683,9 @@ TEST_CASE("Snapmaker preload_finish is NOT matched by the load_ prefix branch",
 // leave unloaded lanes rendering as fully loaded. A tool that is present in the
 // buffer but not loaded renders OUTPUT (line to the toolhead entry dot, hollow);
 // an empty lane renders nothing.
-TEST_CASE("Snapmaker get_slot_filament_segment renders NOZZLE for every loaded tool",
-          "[ams][snapmaker][path]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker get_slot_filament_segment renders NOZZLE for every loaded tool",
+                 "[ams][snapmaker][path]") {
     AmsBackendSnapmaker backend(nullptr, nullptr);
 
     SECTION("active loaded tool renders into the toolhead") {
@@ -676,7 +702,7 @@ TEST_CASE("Snapmaker get_slot_filament_segment renders NOZZLE for every loaded t
         SnapmakerTestAccess::set_sensor_present(backend, 2, false);
         SnapmakerTestAccess::set_port_sensor_present(backend, 2, false);
         SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "wait_insert",
-                                                                    /*filament_detected=*/false));
+                                                                     /*filament_detected=*/false));
         CHECK(backend.get_slot_filament_segment(2) == PathSegment::NONE);
     }
     SECTION("a tool with neither sensor present (real runout) renders no line") {
@@ -707,7 +733,8 @@ TEST_CASE("Snapmaker get_slot_filament_segment renders NOZZLE for every loaded t
 // wait_insert / preload_finish mean not-loaded. The backend derives a per-slot
 // latch from those transitions and the toolhead-load queries key off it.
 
-TEST_CASE("Snapmaker load_finish latches loaded + offers unload", "[ams][snapmaker][channel_state]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker load_finish latches loaded + offers unload",
+                 "[ams][snapmaker][channel_state]") {
     AmsBackendSnapmaker backend(nullptr, nullptr);
     SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "load_finish"));
 
@@ -716,8 +743,10 @@ TEST_CASE("Snapmaker load_finish latches loaded + offers unload", "[ams][snapmak
     CHECK(backend.can_unload_from_toolhead(2));
 }
 
-TEST_CASE("Snapmaker unload_finish clears the loaded latch even while motion sensor stays true",
-          "[ams][snapmaker][channel_state]") {
+TEST_CASE_METHOD(
+    SnapmakerFixture,
+    "Snapmaker unload_finish clears the loaded latch even while motion sensor stays true",
+    "[ams][snapmaker][channel_state]") {
     // The exact live-captured condition (U1 firmware 20260608, lanes 3&4 just
     // unloaded): channel_state=unload_finish but the motion sensor still reads
     // filament_detected=true. Before the fix the toolhead-load queries keyed off
@@ -733,7 +762,7 @@ TEST_CASE("Snapmaker unload_finish clears the loaded latch even while motion sen
     SnapmakerTestAccess::set_sensor_present(backend, 2, true);
     // Now the lane reports unload_finish while filament_detected is still true.
     SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "unload_finish",
-                                                                /*filament_detected=*/true));
+                                                                 /*filament_detected=*/true));
 
     CHECK_FALSE(SnapmakerTestAccess::loaded_at_toolhead(backend, 2));
     CHECK_FALSE(backend.slot_has_filament_at_toolhead(2));
@@ -743,8 +772,9 @@ TEST_CASE("Snapmaker unload_finish clears the loaded latch even while motion sen
     CHECK(backend.get_slot_info(2).status == SlotStatus::AVAILABLE);
 }
 
-TEST_CASE("Snapmaker unload_finish preserves current_slot for the picked-up tool",
-          "[ams][snapmaker][channel_state][unload]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker unload_finish preserves current_slot for the picked-up tool",
+                 "[ams][snapmaker][channel_state][unload]") {
     // Bart's U1 field report (Discord 2026-07-20): T3 picked up on the carriage,
     // channel_state=unload_finish (TPU loaded directly into the toolhead, bypassing
     // the feeder state machine). With current_slot=-1 reset on every unload_finish,
@@ -766,37 +796,39 @@ TEST_CASE("Snapmaker unload_finish preserves current_slot for the picked-up tool
     // T2's feeder channel reaches unload_finish (filament retracted from nozzle,
     // but toolhead still mounted). filament_loaded must clear; current_slot must NOT.
     SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "unload_finish",
-                                                                /*filament_detected=*/true));
+                                                                 /*filament_detected=*/true));
 
     CHECK(backend.get_system_info().current_slot == 2);
     CHECK(backend.get_system_info().current_tool == 2);
     CHECK_FALSE(backend.get_system_info().filament_loaded);
 }
 
-TEST_CASE("Snapmaker wait_insert means not loaded", "[ams][snapmaker][channel_state]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker wait_insert means not loaded",
+                 "[ams][snapmaker][channel_state]") {
     AmsBackendSnapmaker backend(nullptr, nullptr);
     // Seed a loaded latch, then a wait_insert (channel empty) must clear it.
     SnapmakerTestAccess::set_loaded_at_toolhead(backend, 1, true);
     SnapmakerTestAccess::handle_status(backend, make_feed_status(1, "wait_insert",
-                                                                /*filament_detected=*/false));
+                                                                 /*filament_detected=*/false));
     CHECK_FALSE(SnapmakerTestAccess::loaded_at_toolhead(backend, 1));
     CHECK_FALSE(backend.slot_has_filament_at_toolhead(1));
 }
 
-TEST_CASE("Snapmaker preload_finish is present-but-not-loaded", "[ams][snapmaker][channel_state]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker preload_finish is present-but-not-loaded",
+                 "[ams][snapmaker][channel_state]") {
     // preload stages filament into the buffer, NOT to the nozzle. Present
     // (detected=true → slot AVAILABLE) but the loaded latch must be clear.
     AmsBackendSnapmaker backend(nullptr, nullptr);
     SnapmakerTestAccess::set_loaded_at_toolhead(backend, 0, true);
     SnapmakerTestAccess::handle_status(backend, make_feed_status(0, "preload_finish",
-                                                                /*filament_detected=*/true));
+                                                                 /*filament_detected=*/true));
     CHECK_FALSE(SnapmakerTestAccess::loaded_at_toolhead(backend, 0));
     CHECK(backend.get_slot_info(0).status == SlotStatus::AVAILABLE);
     CHECK_FALSE(backend.can_unload_from_toolhead(0));
 }
 
-TEST_CASE("Snapmaker loaded latch is KEPT across transient states",
-          "[ams][snapmaker][channel_state]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker loaded latch is KEPT across transient states",
+                 "[ams][snapmaker][channel_state]") {
     // Only terminal transitions move the latch. Every in-progress state leaves
     // it untouched, so a mid-unload sequence keeps "loaded" true until the
     // actual unload_finish lands.
@@ -804,9 +836,8 @@ TEST_CASE("Snapmaker loaded latch is KEPT across transient states",
     SnapmakerTestAccess::handle_status(backend, make_feed_status(3, "load_finish"));
     REQUIRE(SnapmakerTestAccess::loaded_at_toolhead(backend, 3));
 
-    for (const char* transient :
-         {"unload_prepare", "unload_homing", "unload_picking", "unload_heating",
-          "unload_heat_finish", "unload_doing"}) {
+    for (const char* transient : {"unload_prepare", "unload_homing", "unload_picking",
+                                  "unload_heating", "unload_heat_finish", "unload_doing"}) {
         SnapmakerTestAccess::handle_status(backend, make_feed_status(3, transient));
         INFO("transient=" << transient);
         CHECK(SnapmakerTestAccess::loaded_at_toolhead(backend, 3));
@@ -816,8 +847,8 @@ TEST_CASE("Snapmaker loaded latch is KEPT across transient states",
     CHECK_FALSE(SnapmakerTestAccess::loaded_at_toolhead(backend, 3));
 }
 
-TEST_CASE("Snapmaker fail channel_state does NOT flip the loaded latch",
-          "[ams][snapmaker][channel_state]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker fail channel_state does NOT flip the loaded latch",
+                 "[ams][snapmaker][channel_state]") {
     AmsBackendSnapmaker backend(nullptr, nullptr);
     SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "load_finish"));
     REQUIRE(SnapmakerTestAccess::loaded_at_toolhead(backend, 2));
@@ -834,8 +865,9 @@ TEST_CASE("Snapmaker fail channel_state does NOT flip the loaded latch",
 // to the correct AmsAction and 4-phase step index. Driven off the single
 // classify_channel_state() table in the backend.
 
-TEST_CASE("Snapmaker every channel_state maps to the right action and phase",
-          "[ams][snapmaker][channel_state]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker every channel_state maps to the right action and phase",
+                 "[ams][snapmaker][channel_state]") {
     struct Case {
         const char* state;
         AmsAction action;
@@ -902,8 +934,8 @@ TEST_CASE("Snapmaker every channel_state maps to the right action and phase",
     }
 }
 
-TEST_CASE("Snapmaker fail channel_state raises ERROR with detail",
-          "[ams][snapmaker][channel_state]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker fail channel_state raises ERROR with detail",
+                 "[ams][snapmaker][channel_state]") {
     // A *_fail channel_state alone (channel_error still "ok") must surface an
     // error — Change 2 adds this on top of the existing channel_error handling.
     for (const char* fail : {"load_fail", "unload_fail", "preload_fail", "manual_sta_fail"}) {
@@ -916,29 +948,29 @@ TEST_CASE("Snapmaker fail channel_state raises ERROR with detail",
     }
 }
 
-TEST_CASE("Snapmaker fail on an idle empty non-active lane stays quiet",
-          "[ams][snapmaker][channel_state]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker fail on an idle empty non-active lane stays quiet",
+                 "[ams][snapmaker][channel_state]") {
     // The multi-color false-alarm guard must still hold: a fail on a lane that
     // is empty, idle, and not active should not pop a spurious error modal.
     AmsBackendSnapmaker backend(nullptr, nullptr);
     SnapmakerTestAccess::set_current_slot(backend, 0); // active lane is 0, not 2
     SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "preload_fail",
-                                                                /*filament_detected=*/false));
+                                                                 /*filament_detected=*/false));
     CHECK(backend.get_system_info().action != AmsAction::ERROR);
 }
 
-TEST_CASE("Snapmaker full load progression walks the phase bar",
-          "[ams][snapmaker][channel_state][phase]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker full load progression walks the phase bar",
+                 "[ams][snapmaker][channel_state][phase]") {
     struct Step {
         const char* state;
         AmsAction action;
         int phase;
     };
     const Step seq[] = {
-        {"load_prepare", AmsAction::LOADING, 0},   {"load_homing", AmsAction::LOADING, 0},
-        {"load_picking", AmsAction::LOADING, 1},   {"load_heating", AmsAction::LOADING, 2},
-        {"load_feeding", AmsAction::LOADING, 3},   {"load_extruding", AmsAction::LOADING, 3},
-        {"load_flushing", AmsAction::LOADING, 4},  {"load_finish", AmsAction::IDLE, -1},
+        {"load_prepare", AmsAction::LOADING, 0},  {"load_homing", AmsAction::LOADING, 0},
+        {"load_picking", AmsAction::LOADING, 1},  {"load_heating", AmsAction::LOADING, 2},
+        {"load_feeding", AmsAction::LOADING, 3},  {"load_extruding", AmsAction::LOADING, 3},
+        {"load_flushing", AmsAction::LOADING, 4}, {"load_finish", AmsAction::IDLE, -1},
     };
     AmsBackendSnapmaker backend(nullptr, nullptr);
     for (const auto& s : seq) {
@@ -950,11 +982,12 @@ TEST_CASE("Snapmaker full load progression walks the phase bar",
     CHECK(SnapmakerTestAccess::loaded_at_toolhead(backend, 2));
 }
 
-TEST_CASE("Snapmaker full manual-feed progression is visible", "[ams][snapmaker][channel_state]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker full manual-feed progression is visible",
+                 "[ams][snapmaker][channel_state]") {
     // Before the fix the entire manual_sta_* family was unhandled, so manual
     // feed left the action at IDLE and the step bar dead. Now each phase shows.
-    const char* seq[] = {"manual_sta_prepare",  "manual_sta_homing",  "manual_sta_picking",
-                         "manual_sta_heating",  "manual_sta_extruding"};
+    const char* seq[] = {"manual_sta_prepare", "manual_sta_homing", "manual_sta_picking",
+                         "manual_sta_heating", "manual_sta_extruding"};
     AmsBackendSnapmaker backend(nullptr, nullptr);
     for (const char* state : seq) {
         SnapmakerTestAccess::handle_status(backend, make_feed_status(2, state));
@@ -965,8 +998,9 @@ TEST_CASE("Snapmaker full manual-feed progression is visible", "[ams][snapmaker]
     CHECK(backend.get_system_info().action == AmsAction::IDLE);
 }
 
-TEST_CASE("Snapmaker motion-sensor runout path is independent of the loaded latch",
-          "[ams][snapmaker][channel_state][runout]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker motion-sensor runout path is independent of the loaded latch",
+                 "[ams][snapmaker][channel_state][runout]") {
     // No regression: mid-print runout is still driven by the per-tool motion
     // sensor (e{N}_filament), a different question from "is the lane loaded".
     // The loaded latch must NOT be touched by a motion-sensor runout — filament
@@ -983,8 +1017,7 @@ TEST_CASE("Snapmaker motion-sensor runout path is independent of the loaded latc
     SnapmakerTestAccess::set_loaded_at_toolhead(backend, 0, true);
 
     // Active lane's motion sensor drops during extrusion → runout.
-    json runout =
-        json{{"filament_motion_sensor e0_filament", json{{"filament_detected", false}}}};
+    json runout = json{{"filament_motion_sensor e0_filament", json{{"filament_detected", false}}}};
     SnapmakerTestAccess::handle_status(backend, runout);
 
     // Runout path fired: the global loaded flag reflects the motion sensor.
@@ -993,8 +1026,9 @@ TEST_CASE("Snapmaker motion-sensor runout path is independent of the loaded latc
     CHECK(SnapmakerTestAccess::loaded_at_toolhead(backend, 0));
 }
 
-TEST_CASE("Snapmaker filament path segment follows the loaded latch, not the motion sensor",
-          "[ams][snapmaker][channel_state]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker filament path segment follows the loaded latch, not the motion sensor",
+                 "[ams][snapmaker][channel_state]") {
     // The canvas draws NOZZLE (filament threaded to the hotend) only when the
     // lane is actually loaded. The live bug: an unloaded lane kept its motion
     // sensor present, so the segment rendered NOZZLE and the lane looked fully
@@ -1012,9 +1046,8 @@ TEST_CASE("Snapmaker filament path segment follows the loaded latch, not the mot
         SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "load_finish"));
         SnapmakerTestAccess::set_sensor_present(backend, 2, true);
         SnapmakerTestAccess::set_port_sensor_present(backend, 2, true);
-        SnapmakerTestAccess::handle_status(backend,
-                                           make_feed_status(2, "unload_finish",
-                                                            /*filament_detected=*/true));
+        SnapmakerTestAccess::handle_status(backend, make_feed_status(2, "unload_finish",
+                                                                     /*filament_detected=*/true));
         CHECK_FALSE(SnapmakerTestAccess::loaded_at_toolhead(backend, 2));
         // Filament is staged in the buffer but NOT at the nozzle.
         CHECK(backend.get_slot_filament_segment(2) == PathSegment::OUTPUT);
@@ -1024,7 +1057,7 @@ TEST_CASE("Snapmaker filament path segment follows the loaded latch, not the mot
         SnapmakerTestAccess::set_sensor_present(backend, 1, false);
         SnapmakerTestAccess::set_port_sensor_present(backend, 1, false);
         SnapmakerTestAccess::handle_status(backend, make_feed_status(1, "wait_insert",
-                                                                    /*filament_detected=*/false));
+                                                                     /*filament_detected=*/false));
         CHECK(backend.get_slot_filament_segment(1) == PathSegment::NONE);
     }
 }
@@ -1033,7 +1066,7 @@ TEST_CASE("Snapmaker filament path segment follows the loaded latch, not the mot
 // Extruder State Parser Tests
 // ============================================================================
 
-TEST_CASE("Snapmaker extruder state parsing", "[ams][snapmaker]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker extruder state parsing", "[ams][snapmaker]") {
     SECTION("parses parked extruder") {
         auto j = nlohmann::json::parse(R"({
             "state": "PARKED",
@@ -1127,7 +1160,7 @@ TEST_CASE("Snapmaker extruder state parsing", "[ams][snapmaker]") {
 // RFID Info Parser Tests
 // ============================================================================
 
-TEST_CASE("Snapmaker RFID info parsing", "[ams][snapmaker]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker RFID info parsing", "[ams][snapmaker]") {
     SECTION("parses full RFID tag data") {
         // ARGB 0xFF080A0D -> RGB 0x080A0D
         auto j = nlohmann::json::parse(R"({
@@ -1229,8 +1262,9 @@ TEST_CASE("Snapmaker RFID info parsing", "[ams][snapmaker]") {
 // Task 12: filament slot override integration
 // ============================================================================
 
-TEST_CASE("Snapmaker override loaded at init is applied over firmware data",
-          "[ams][snapmaker][filament_slot_override]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker override loaded at init is applied over firmware data",
+                 "[ams][snapmaker][filament_slot_override]") {
     // Seed lane_data in the mock Moonraker DB with a slot 0 override.
     // Inject the pre-loaded override into the backend directly (skipping
     // on_started() since the backend is built with api=nullptr for simplicity —
@@ -1275,8 +1309,9 @@ TEST_CASE("Snapmaker override loaded at init is applied over firmware data",
     CHECK(info.color_rgb == 0xFF5500u);
 }
 
-TEST_CASE("Snapmaker set_slot_info(persist=true) writes override and survives status update",
-          "[ams][snapmaker][filament_slot_override]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker set_slot_info(persist=true) writes override and survives status update",
+                 "[ams][snapmaker][filament_slot_override]") {
     // This is the core behavior that was BROKEN before Task 12: set_slot_info
     // ignored its persist parameter and the next firmware status update
     // wiped user edits. The override must now survive subsequent parses.
@@ -1324,8 +1359,9 @@ TEST_CASE("Snapmaker set_slot_info(persist=true) writes override and survives st
     CHECK(info.color_rgb == 0xFF5500u);              // override color wins
 }
 
-TEST_CASE("Snapmaker set_slot_info(persist=false) preview does NOT write store",
-          "[ams][snapmaker][filament_slot_override]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker set_slot_info(persist=false) preview does NOT write store",
+                 "[ams][snapmaker][filament_slot_override]") {
     SnapmakerTmpCacheDir tmp("task12_no_persist");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1357,8 +1393,9 @@ TEST_CASE("Snapmaker set_slot_info(persist=false) preview does NOT write store",
     CHECK(info.color_rgb == 0x123456u);
 }
 
-TEST_CASE("Snapmaker RFID UID change clears override (hardware swap detected)",
-          "[ams][snapmaker][filament_slot_override]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker RFID UID change clears override (hardware swap detected)",
+                 "[ams][snapmaker][filament_slot_override]") {
     SnapmakerTmpCacheDir tmp("task12_uid_swap_clears");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1416,8 +1453,8 @@ TEST_CASE("Snapmaker RFID UID change clears override (hardware swap detected)",
     CHECK(info.material == "PETG"); // firmware's new material
 }
 
-TEST_CASE("Snapmaker first RFID UID observation does NOT clear override",
-          "[ams][snapmaker][filament_slot_override]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker first RFID UID observation does NOT clear override",
+                 "[ams][snapmaker][filament_slot_override]") {
     // Even when the override was saved against a different (now-stale) UID,
     // the very first observation is a BASELINE and must never fire a clear.
     SnapmakerTmpCacheDir tmp("task12_first_uid_baseline");
@@ -1462,8 +1499,8 @@ TEST_CASE("Snapmaker first RFID UID observation does NOT clear override",
     CHECK(!api.mock_get_db_value("lane_data", "T0").is_null());
 }
 
-TEST_CASE("Snapmaker empty RFID UID does not update baseline or clear",
-          "[ams][snapmaker][filament_slot_override]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker empty RFID UID does not update baseline or clear",
+                 "[ams][snapmaker][filament_slot_override]") {
     // Empty UID = no tag / reader disabled / unreadable. Must not update
     // the baseline and must not clear. This is the contract that keeps
     // transient tag-read failures from masking a genuine hardware swap
@@ -1514,8 +1551,9 @@ TEST_CASE("Snapmaker empty RFID UID does not update baseline or clear",
 // Firmware writeback (paxx12 Extended Firmware POST /printer/filament_detect/set)
 // ============================================================================
 
-TEST_CASE("Snapmaker set_slot_info(persist=true) POSTs to /printer/filament_detect/set",
-          "[ams][snapmaker][firmware_writeback]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker set_slot_info(persist=true) POSTs to /printer/filament_detect/set",
+                 "[ams][snapmaker][firmware_writeback]") {
     SnapmakerTmpCacheDir tmp("firmware_writeback_post");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1564,8 +1602,8 @@ TEST_CASE("Snapmaker set_slot_info(persist=true) POSTs to /printer/filament_dete
     CHECK_FALSE(info_obj.contains("SKU"));
 }
 
-TEST_CASE("Snapmaker firmware POST omits unknown SUB_TYPE strings",
-          "[ams][snapmaker][firmware_writeback]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker firmware POST omits unknown SUB_TYPE strings",
+                 "[ams][snapmaker][firmware_writeback]") {
     // spool_name is a free-form user field. Only round-trip to firmware when
     // it matches one of the known Snapmaker product lines; otherwise omit it
     // and let firmware keep whatever it had. The free-form string still
@@ -1601,8 +1639,8 @@ TEST_CASE("Snapmaker firmware POST omits unknown SUB_TYPE strings",
     CHECK_FALSE(info_obj.contains("SUB_TYPE"));
 }
 
-TEST_CASE("Snapmaker firmware POST omits zero temperatures",
-          "[ams][snapmaker][firmware_writeback]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker firmware POST omits zero temperatures",
+                 "[ams][snapmaker][firmware_writeback]") {
     SnapmakerTmpCacheDir tmp("firmware_writeback_zero_temps");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1634,8 +1672,9 @@ TEST_CASE("Snapmaker firmware POST omits zero temperatures",
     CHECK_FALSE(info_obj.contains("BED_TEMP"));
 }
 
-TEST_CASE("Snapmaker set_slot_info(persist=false) does NOT POST to firmware",
-          "[ams][snapmaker][firmware_writeback]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker set_slot_info(persist=false) does NOT POST to firmware",
+                 "[ams][snapmaker][firmware_writeback]") {
     // Preview edits (persist=false) are in-memory only and must not write to
     // firmware OR the override store. Mirrors the existing "no DB write" test
     // for the override-store path.
@@ -1664,8 +1703,9 @@ TEST_CASE("Snapmaker set_slot_info(persist=false) does NOT POST to firmware",
     CHECK(api.rest_mock().mock_get_post_history().empty());
 }
 
-TEST_CASE("Snapmaker firmware POST 404 on stock firmware does not fail set_slot_info",
-          "[ams][snapmaker][firmware_writeback]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker firmware POST 404 on stock firmware does not fail set_slot_info",
+                 "[ams][snapmaker][firmware_writeback]") {
     // Stock firmware (no Extended Firmware extension) returns 404 for the
     // endpoint. The override is still persisted to lane_data, so the user's
     // edit isn't lost — set_slot_info must report success regardless.
@@ -1705,8 +1745,9 @@ TEST_CASE("Snapmaker firmware POST 404 on stock firmware does not fail set_slot_
     CHECK(!api.mock_get_db_value("lane_data", "T0").is_null());
 }
 
-TEST_CASE("Snapmaker auto-mirror uses OverwriteAlways policy after firmware writeback",
-          "[ams][snapmaker][firmware_writeback]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker auto-mirror uses OverwriteAlways policy after firmware writeback",
+                 "[ams][snapmaker][firmware_writeback]") {
     // With the firmware-writeback path live, user edits round-trip to firmware
     // (paxx12 endpoint) and firmware-truth converges with user-truth on the
     // very next status update. The auto-mirror tail in handle_status_update
@@ -1774,7 +1815,8 @@ TEST_CASE("Snapmaker auto-mirror uses OverwriteAlways policy after firmware writ
 // through the RESUME gcode callback, handled by the dispatch layer.
 // ============================================================================
 
-TEST_CASE(
+TEST_CASE_METHOD(
+    SnapmakerFixture,
     "Snapmaker prepare_for_resume: sdcard inactive + no matchers → not terminal (Recoverable)",
     "[ams][snapmaker][resume]") {
     lv_init_safe();
@@ -1804,8 +1846,8 @@ TEST_CASE(
     REQUIRE(captured.result == AmsResult::SUCCESS);
 }
 
-TEST_CASE("Snapmaker prepare_for_resume proceeds normally when SD active",
-          "[ams][snapmaker][resume]") {
+TEST_CASE_METHOD(SnapmakerFixture, "Snapmaker prepare_for_resume proceeds normally when SD active",
+                 "[ams][snapmaker][resume]") {
     lv_init_safe();
     PrinterState& ps = get_printer_state();
     PrinterStateTestAccess::reset(ps);
@@ -1831,8 +1873,9 @@ TEST_CASE("Snapmaker prepare_for_resume proceeds normally when SD active",
     REQUIRE(captured.result != AmsResult::RESUME_REQUIRES_RESTART);
 }
 
-TEST_CASE("Snapmaker prepare_for_resume skips recovery when sensor reports filament present",
-          "[ams][snapmaker][resume]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker prepare_for_resume skips recovery when sensor reports filament present",
+                 "[ams][snapmaker][resume]") {
     lv_init_safe();
     PrinterState& ps = get_printer_state();
     PrinterStateTestAccess::reset(ps);
@@ -1859,7 +1902,8 @@ TEST_CASE("Snapmaker prepare_for_resume skips recovery when sensor reports filam
     REQUIRE(captured.result == AmsResult::SUCCESS);
 }
 
-TEST_CASE(
+TEST_CASE_METHOD(
+    SnapmakerFixture,
     "Snapmaker prepare_for_resume reports NOT_CONNECTED when api unavailable + runout latched",
     "[ams][snapmaker][resume]") {
     lv_init_safe();
@@ -1948,8 +1992,9 @@ bool any_script_contains(const std::vector<std::string>& history, const std::str
 }
 } // namespace
 
-TEST_CASE("Snapmaker prepare_for_resume drives AUTO_FEEDING load before RESUME",
-          "[ams][snapmaker][resume]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker prepare_for_resume drives AUTO_FEEDING load before RESUME",
+                 "[ams][snapmaker][resume]") {
     lv_init_safe();
     helix::ui::UpdateQueue::instance().init();
 
@@ -1982,8 +2027,9 @@ TEST_CASE("Snapmaker prepare_for_resume drives AUTO_FEEDING load before RESUME",
     REQUIRE(captured.success());
 }
 
-TEST_CASE("Snapmaker prepare_for_resume: AMS load failure reports COMMAND_FAILED",
-          "[ams][snapmaker][resume]") {
+TEST_CASE_METHOD(SnapmakerFixture,
+                 "Snapmaker prepare_for_resume: AMS load failure reports COMMAND_FAILED",
+                 "[ams][snapmaker][resume]") {
     lv_init_safe();
     helix::ui::UpdateQueue::instance().init();
 

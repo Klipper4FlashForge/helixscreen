@@ -55,8 +55,9 @@ void drain() {
 // Part 1 — Backend per-slot LIVE accessors
 // ============================================================================
 
-TEST_CASE("AmsBackend base defaults: slot LIVE accessors degrade gracefully",
-          "[ams][realtime][backend]") {
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "AmsBackend base defaults: slot LIVE accessors degrade gracefully",
+                 "[ams][realtime][backend]") {
     // The mock backend does NOT override the new virtuals, so it exercises the
     // base-class defaults.
     AmsBackendMock backend;
@@ -98,8 +99,9 @@ TEST_CASE("AmsBackend base defaults: slot LIVE accessors degrade gracefully",
     backend.stop();
 }
 
-TEST_CASE("Snapmaker overrides slot LIVE accessors from sensor + LOADED status",
-          "[ams][realtime][snapmaker]") {
+TEST_CASE_METHOD(LVGLTestFixture,
+                 "Snapmaker overrides slot LIVE accessors from sensor + LOADED status",
+                 "[ams][realtime][snapmaker]") {
     AmsBackendSnapmaker backend(nullptr, nullptr);
 
     // Slot 0 active (LOADED), slots 1 & 3 hold filament (AVAILABLE), slot 2 empty.
@@ -123,22 +125,20 @@ TEST_CASE("Snapmaker overrides slot LIVE accessors from sensor + LOADED status",
         // (which fails to clear after an unload on current firmware). Latch
         // tools 0 and 1 loaded via load_finish.
         SnapmakerRealtimeTestAccess::handle_status(
-            backend,
-            json{{"filament_feed left",
-                  json{{"extruder0",
-                        json{{"filament_detected", true}, {"channel_state", "load_finish"}}},
-                       {"extruder1", json{{"filament_detected", true},
-                                          {"channel_state", "load_finish"}}}}}});
+            backend, json{{"filament_feed left",
+                           json{{"extruder0", json{{"filament_detected", true},
+                                                   {"channel_state", "load_finish"}}},
+                                {"extruder1", json{{"filament_detected", true},
+                                                   {"channel_state", "load_finish"}}}}}});
         CHECK(backend.slot_has_filament_at_toolhead(0));
         CHECK(backend.slot_has_filament_at_toolhead(1));
 
         // Unload tool 1 (channel_state unload_finish). The latch clears even
         // though filament_detected stays true — the exact firmware condition.
         SnapmakerRealtimeTestAccess::handle_status(
-            backend,
-            json{{"filament_feed left",
-                  json{{"extruder1", json{{"filament_detected", true},
-                                          {"channel_state", "unload_finish"}}}}}});
+            backend, json{{"filament_feed left",
+                           json{{"extruder1", json{{"filament_detected", true},
+                                                   {"channel_state", "unload_finish"}}}}}});
         CHECK_FALSE(backend.slot_has_filament_at_toolhead(1));
         // Other tools unaffected.
         CHECK(backend.slot_has_filament_at_toolhead(0));
@@ -191,10 +191,9 @@ TEST_CASE_METHOD(LVGLTestFixture, "AmsState publishes per-slot LIVE subjects on 
     SECTION("toolhead-present subject reflects the channel_state load latch") {
         // Latch tool 0 loaded via channel_state (the authoritative signal).
         SnapmakerRealtimeTestAccess::handle_status(
-            *backend_ptr,
-            json{{"filament_feed left",
-                  json{{"extruder0", json{{"filament_detected", true},
-                                          {"channel_state", "load_finish"}}}}}});
+            *backend_ptr, json{{"filament_feed left",
+                                json{{"extruder0", json{{"filament_detected", true},
+                                                        {"channel_state", "load_finish"}}}}}});
         ams.sync_from_backend();
         drain();
         CHECK(lv_subject_get_int(ams.get_slot_toolhead_present_subject(0)) == 1);
@@ -202,10 +201,9 @@ TEST_CASE_METHOD(LVGLTestFixture, "AmsState publishes per-slot LIVE subjects on 
         // Unload tool 0 (channel_state unload_finish) → latch clears → subject
         // updates on next sync, even though the motion sensor never dropped.
         SnapmakerRealtimeTestAccess::handle_status(
-            *backend_ptr,
-            json{{"filament_feed left",
-                  json{{"extruder0", json{{"filament_detected", true},
-                                          {"channel_state", "unload_finish"}}}}}});
+            *backend_ptr, json{{"filament_feed left",
+                                json{{"extruder0", json{{"filament_detected", true},
+                                                        {"channel_state", "unload_finish"}}}}}});
         ams.sync_from_backend();
         drain();
         CHECK(lv_subject_get_int(ams.get_slot_toolhead_present_subject(0)) == 0);
@@ -254,9 +252,8 @@ TEST_CASE_METHOD(LVGLTestFixture, "Per-slot LIVE subjects notify observers on se
     // now drives the toolhead-present subject).
     SnapmakerRealtimeTestAccess::handle_status(
         *backend_ptr,
-        json{{"filament_feed left",
-              json{{"extruder1",
-                    json{{"filament_detected", true}, {"channel_state", "load_finish"}}}}}});
+        json{{"filament_feed left", json{{"extruder1", json{{"filament_detected", true},
+                                                            {"channel_state", "load_finish"}}}}}});
     ams.sync_from_backend();
     drain();
 
@@ -284,10 +281,9 @@ TEST_CASE_METHOD(LVGLTestFixture, "Per-slot LIVE subjects notify observers on se
 
     // Unload tool 1 (channel_state unload_finish) → the load latch clears.
     SnapmakerRealtimeTestAccess::handle_status(
-        *backend_ptr,
-        json{{"filament_feed left",
-              json{{"extruder1",
-                    json{{"filament_detected", true}, {"channel_state", "unload_finish"}}}}}});
+        *backend_ptr, json{{"filament_feed left",
+                            json{{"extruder1", json{{"filament_detected", true},
+                                                    {"channel_state", "unload_finish"}}}}}});
     ams.sync_from_backend();
     drain();
 
