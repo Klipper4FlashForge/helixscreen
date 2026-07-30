@@ -290,6 +290,16 @@ overlay) are clicked as-is, so navigation is unaffected. If several candidates
 exist the container is clicked and they are listed under `candidates`, so you
 can re-issue against a specific `@path`.
 
+The descent is **bounded to scaffolding**, in two ways. A target that already
+carries a click handler of its own is acted on literally — never descended
+into — and the search never tunnels past a descendant that carries one either.
+Without those bounds a full-screen context-menu backdrop resolved onto whatever
+single visible control the menu happened to contain and dispatched its event:
+`click` on the AMS slot menu's backdrop reached the backup-slot dropdown and
+sent `SET_RUNOUT` to the printer, from a click whose only intent was to dismiss
+(#1179). To close a menu or overlay, clicking its backdrop now dismisses it;
+`go_back` remains equivalent and is clearer about intent.
+
 #### `geom` — why a widget is the size it is
 
 `ls` tells you a widget exists; `geom` tells you how big it ended up and what it
