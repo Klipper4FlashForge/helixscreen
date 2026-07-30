@@ -12,14 +12,24 @@
 #include <mutex>
 #include <sstream>
 #include <sys/stat.h>
-#include <sys/vfs.h>
 #include <unistd.h>
+
+// Filesystem-type probing is not portable. Linux reports a numeric magic in
+// statfs::f_type and declares statfs in <sys/vfs.h>; the BSDs (macOS included,
+// which is where this builds during development) have no such magic and
+// instead name the type in statfs::f_fstypename, declared in <sys/mount.h>.
+#if defined(__linux__)
+#include <sys/vfs.h>
 
 #ifndef TMPFS_MAGIC
 #define TMPFS_MAGIC 0x01021994
 #endif
 #ifndef RAMFS_MAGIC
 #define RAMFS_MAGIC 0x858458f6
+#endif
+#else
+#include <sys/mount.h>
+#include <sys/param.h>
 #endif
 
 namespace helix::wifi {
@@ -31,9 +41,17 @@ bool is_volatile_path(const std::string& path) {
     if (::statfs(path.c_str(), &sfs) != 0)
         return false; // unknown — assume persistent rather than churn files
 
+#if defined(__linux__)
     const auto type = static_cast<unsigned long>(sfs.f_type);
     return type == static_cast<unsigned long>(TMPFS_MAGIC) ||
            type == static_cast<unsigned long>(RAMFS_MAGIC);
+#else
+    // BSD/macOS name the type instead of numbering it. Matching by name keeps
+    // the predicate meaningful on a dev machine rather than hardcoding false,
+    // which would make the tmpfs branch untestable anywhere but a printer.
+    const std::string type = sfs.f_fstypename;
+    return type == "tmpfs" || type == "ramfs" || type == "devtmpfs";
+#endif
 }
 
 } // namespace detail
