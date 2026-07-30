@@ -28,6 +28,10 @@ class HThreadPool;
  * @see docs/THUMBNAIL_OPTIMIZATION_PLAN.md for full architecture
  */
 
+/// Test-only accessor for the private constructor (tests/unit/). Forward
+/// declared so the friend declaration below has something to name.
+struct ThumbnailProcessorTestAccess;
+
 namespace helix {
 
 /**
@@ -270,10 +274,21 @@ class ThumbnailProcessor {
     bool write_lvbin(const std::string& path, int width, int height, uint8_t color_format,
                      const uint8_t* pixel_data, size_t data_size);
 
-    std::unique_ptr<HThreadPool> thread_pool_;
+    /// shared_ptr, not unique_ptr: wait_for_completion() must keep the pool
+    /// alive while it blocks OUTSIDE the lock, because shutdown() resets this
+    /// member under that same lock. Everything else uses it only while holding
+    /// mutex_ — see process_async() for why a strong reference alone is not
+    /// sufficient there (#1202).
+    std::shared_ptr<HThreadPool> thread_pool_;
     std::string cache_dir_;
     mutable std::mutex mutex_;
     bool shutdown_ = false;
+
+    /// Lets tests construct a private, non-singleton instance so a
+    /// shutdown-race test does not tear down the process-wide one out from
+    /// under every other test. Lives in the global namespace (tests/), hence
+    /// the leading `::` — same convention as GcodeErrorRouterTestAccess.
+    friend struct ::ThumbnailProcessorTestAccess;
 };
 
 } // namespace helix

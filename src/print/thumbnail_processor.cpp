@@ -7,9 +7,9 @@
 
 #include "thumbnail_processor.h"
 
-#include "app_globals.h"
 #include "ui_update_queue.h"
 
+#include "app_globals.h"
 #include "lvgl_image_writer.h"
 #include "memory_monitor.h"
 
@@ -55,7 +55,7 @@ ThumbnailProcessor& ThumbnailProcessor::instance() {
 }
 
 ThumbnailProcessor::ThumbnailProcessor()
-    : thread_pool_(std::make_unique<HThreadPool>(MIN_WORKER_THREADS, MAX_WORKER_THREADS)),
+    : thread_pool_(std::make_shared<HThreadPool>(MIN_WORKER_THREADS, MAX_WORKER_THREADS)),
       cache_dir_(get_helix_cache_dir("helix_thumbs")) {
     if (cache_dir_.empty()) {
         cache_dir_ = DEFAULT_CACHE_DIR; // last-resort; ThumbnailCache re-points later
@@ -101,59 +101,80 @@ void ThumbnailProcessor::process_async(const std::vector<uint8_t>& png_data,
                                        const ThumbnailTarget& target,
                                        ProcessSuccessCallback on_success,
                                        ProcessErrorCallback on_error) {
-    // Copy cache_dir under lock to avoid race with set_cache_dir()
-    std::string cache_dir_copy;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (shutdown_ || !thread_pool_) {
-            if (on_error) {
-                on_error("ThumbnailProcessor is shutdown");
-            }
-            return;
-        }
-        cache_dir_copy = cache_dir_;
-    }
-
-    // Capture by value for thread safety
+    // Copy the inputs BEFORE the critical section: commit() captures them by
+    // value and a multi-megabyte PNG copy has no business inside a lock that
+    // shutdown() needs to acquire.
     auto png_copy = png_data;
     auto source_copy = source_path;
 
-    thread_pool_->commit([this, png_copy = std::move(png_copy),
-                          source_copy = std::move(source_copy),
-                          cache_dir_copy = std::move(cache_dir_copy), target, on_success,
-                          on_error]() {
-        ProcessResult result = do_process(png_copy, source_copy, target, cache_dir_copy);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!shutdown_ && thread_pool_) {
+            std::string cache_dir_copy = cache_dir_; // guard against set_cache_dir()
 
-        if (result.success) {
-            spdlog::debug("[ThumbnailProcessor] Processed {} -> {} ({}x{})", source_copy,
-                          result.output_path, result.output_width, result.output_height);
-            if (on_success) {
-                // CRITICAL: Defer callback to main UI thread to avoid LVGL threading issues.
-                // Without this, callbacks can trigger widget operations from worker thread,
-                // causing "lv_inv_area() rendering_in_progress" assertion on slow devices.
-                struct SuccessCtx {
-                    ProcessSuccessCallback callback;
-                    std::string path;
-                };
-                auto ctx = std::make_unique<SuccessCtx>(SuccessCtx{on_success, result.output_path});
-                helix::ui::queue_update<SuccessCtx>(std::move(ctx),
-                                                    [](SuccessCtx* c) { c->callback(c->path); });
-            }
-        } else {
-            spdlog::warn("[ThumbnailProcessor] Failed to process {}: {}", source_copy,
-                         result.error);
-            if (on_error) {
-                // CRITICAL: Defer callback to main UI thread (same reason as on_success)
-                struct ErrorCtx {
-                    ProcessErrorCallback callback;
-                    std::string error;
-                };
-                auto ctx = std::make_unique<ErrorCtx>(ErrorCtx{on_error, result.error});
-                helix::ui::queue_update<ErrorCtx>(std::move(ctx),
-                                                  [](ErrorCtx* c) { c->callback(c->error); });
-            }
+            // commit() MUST run while the lock is held, not merely be reached
+            // after a null-check. Two reasons, both load-bearing (#1202):
+            //
+            //  1. shutdown() resets thread_pool_ under this same mutex, so a
+            //     check-then-unlock-then-dereference is a use-after-free
+            //     window on the pool object. That is the race ThreadSanitizer
+            //     reported here.
+            //  2. HThreadPool::commit() is not a passive dereference — it
+            //     opens with `if (status == STOP) start();`, so a commit
+            //     racing shutdown() would RESURRECT the pool and spawn worker
+            //     threads after teardown, which is exactly the static
+            //     destruction hazard shutdown() exists to avoid.
+            //
+            // Holding the lock is cheap here: commit() takes its own
+            // task_mutex briefly, emplaces into an unbounded queue and
+            // notifies. It does not block.
+            thread_pool_->commit([this, png_copy = std::move(png_copy),
+                                  source_copy = std::move(source_copy),
+                                  cache_dir_copy = std::move(cache_dir_copy), target, on_success,
+                                  on_error]() {
+                ProcessResult result = do_process(png_copy, source_copy, target, cache_dir_copy);
+
+                if (result.success) {
+                    spdlog::debug("[ThumbnailProcessor] Processed {} -> {} ({}x{})", source_copy,
+                                  result.output_path, result.output_width, result.output_height);
+                    if (on_success) {
+                        // CRITICAL: Defer callback to main UI thread to avoid LVGL threading
+                        // issues. Without this, callbacks can trigger widget operations from worker
+                        // thread, causing "lv_inv_area() rendering_in_progress" assertion on slow
+                        // devices.
+                        struct SuccessCtx {
+                            ProcessSuccessCallback callback;
+                            std::string path;
+                        };
+                        auto ctx = std::make_unique<SuccessCtx>(
+                            SuccessCtx{on_success, result.output_path});
+                        helix::ui::queue_update<SuccessCtx>(
+                            std::move(ctx), [](SuccessCtx* c) { c->callback(c->path); });
+                    }
+                } else {
+                    spdlog::warn("[ThumbnailProcessor] Failed to process {}: {}", source_copy,
+                                 result.error);
+                    if (on_error) {
+                        // CRITICAL: Defer callback to main UI thread (same reason as on_success)
+                        struct ErrorCtx {
+                            ProcessErrorCallback callback;
+                            std::string error;
+                        };
+                        auto ctx = std::make_unique<ErrorCtx>(ErrorCtx{on_error, result.error});
+                        helix::ui::queue_update<ErrorCtx>(
+                            std::move(ctx), [](ErrorCtx* c) { c->callback(c->error); });
+                    }
+                }
+            });
+            return;
         }
-    });
+    }
+
+    // Shut down. Reported OUTSIDE the lock so a caller's error handler cannot
+    // re-enter this object and deadlock on mutex_.
+    if (on_error) {
+        on_error("ThumbnailProcessor is shutdown");
+    }
 }
 
 ProcessResult ThumbnailProcessor::process_sync(const std::vector<uint8_t>& png_data,
@@ -287,6 +308,10 @@ void ThumbnailProcessor::clear_cache() {
 }
 
 size_t ThumbnailProcessor::pending_tasks() const {
+    // Was an unlocked null-check followed by an unlocked dereference — the same
+    // use-after-free window as process_async(), against shutdown()'s reset
+    // (#1202). taskNum() is a cheap read, so the whole thing goes under the lock.
+    std::lock_guard<std::mutex> lock(mutex_);
     if (!thread_pool_) {
         return 0;
     }
@@ -294,8 +319,18 @@ size_t ThumbnailProcessor::pending_tasks() const {
 }
 
 void ThumbnailProcessor::wait_for_completion() {
-    if (thread_pool_) {
-        thread_pool_->wait();
+    // Same defect as pending_tasks(), but wait() BLOCKS until the queue drains,
+    // so it must not be called with mutex_ held — shutdown() would be stuck
+    // behind it. Take a strong reference under the lock instead and wait on
+    // that: the pool then outlives a concurrent shutdown() reset, and wait()
+    // (unlike commit()) will not restart a stopped pool.
+    std::shared_ptr<HThreadPool> pool;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pool = thread_pool_;
+    }
+    if (pool) {
+        pool->wait();
     }
 }
 
