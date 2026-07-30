@@ -13,6 +13,19 @@
       appears below the row (full width, under the vertical divider).
 -->
 <component>
+  <styles>
+    <!-- Material Comfort list orientation. At Micro the card cannot afford a
+         4-tall column: it leaves the dryer stack 94px for 120px of controls,
+         which centers its overflow and slices both the preset dropdown and the
+         Start/Stop button (#1192). Wrapping to 2x2 halves the strip and buys
+         back the 26px the controls need. Set via style, not inline, because an
+         inline attribute would override the bind (CRITICAL RULE #6).
+         `layout` is spelled out in both: flex_flow alone sets FLEX_FLOW but not
+         LAYOUT, and a container with a flow and no layout runs no layout at all
+         — every child lands stacked on the origin. -->
+    <style name="comfort_list_micro" layout="flex" flex_flow="row_wrap" flex_grow="1"/>
+    <style name="comfort_list_wide" layout="flex" flex_flow="column" flex_grow="0"/>
+  </styles>
   <view name="ams_environment_overlay"
         extends="overlay_panel" title="Filament Environment" title_tag="Filament Environment"
         bg_color="#screen_bg">
@@ -133,8 +146,12 @@
                 </lv_obj>
               </lv_obj>
 
-              <!-- Start/Stop button -->
-              <ui_button name="btn_start_stop" width="100%" height="44"
+              <!-- Start/Stop button. Height is the responsive token, not a
+                   fixed 44: this section is height="100%" and centers its
+                   overflow, so 18 too-tall pixels at Micro get split evenly
+                   and slice both the dropdown above and this button's own
+                   label (#1192). -->
+              <ui_button name="btn_start_stop" width="100%" height="#button_height"
                          bind_text="ams_env_overlay_start_stop_text">
                 <event_cb trigger="clicked" callback="on_ams_env_start_stop_clicked"/>
               </ui_button>
@@ -175,11 +192,14 @@
                   style_pad_gap="#space_md" scrollable="false">
             <text_body text="Material Comfort:" translation_tag="Material Comfort:"/>
 
-            <!-- Per-material items as a left-aligned vertical list.
+            <!-- Per-material items as a left-aligned list — a column where
+                 there is height for it, wrapped to 2x2 at Micro (see styles).
                  status: 0=OK (check_circle/success), 1=Marginal (alert_circle/warning), 2=Too humid (close_circle/error) -->
             <lv_obj width="content" height="content" style_pad_all="0"
-                    flex_flow="column" style_flex_cross_place="start"
-                    style_pad_row="#space_xs" scrollable="false">
+                    style_flex_cross_place="start"
+                    style_pad_row="#space_xs" style_pad_column="#space_md" scrollable="false">
+              <bind_style_if_eq name="comfort_list_micro" subject="ui_breakpoint" ref_value="0"/>
+              <bind_style_if_ge name="comfort_list_wide" subject="ui_breakpoint" ref_value="1"/>
 
               <lv_obj name="comfort_row_0" width="content" height="content" style_pad_all="0"
                       flex_flow="row" style_flex_cross_place="center" style_pad_gap="#space_xs"
