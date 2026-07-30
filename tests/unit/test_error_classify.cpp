@@ -64,10 +64,11 @@ TEST_CASE("uncoded !! while paused carries Resume plus a dismiss", "[error-cente
     // The second action is the way OUT. ActionPromptModal has no intrinsic close
     // affordance, so a lone Resume would trap a user who does not want to resume.
     REQUIRE(e->recovery_actions[1].label == "OK");
-    // Non-empty checked FIRST: front() on an empty string is UB, and a blank
-    // gcode would make create_buttons() send the LABEL as gcode instead.
-    REQUIRE_FALSE(e->recovery_actions[1].gcode.empty());
-    REQUIRE(e->recovery_actions[1].gcode.front() == ';'); // comment: executes nothing
+    // An EMPTY gcode is the dismiss spelling: the modal closes and sends
+    // nothing. This used to have to be a Klipper comment, because a blank
+    // gcode made create_buttons() send the LABEL as a command — so "OK" went
+    // to Klipper. That fallback is gone (#1172).
+    REQUIRE(e->recovery_actions[1].gcode.empty());
 
     // Neither button is styled primary: the cause is unknown, so the UI must not
     // visually push the user toward resuming.
@@ -77,8 +78,7 @@ TEST_CASE("uncoded !! while paused carries Resume plus a dismiss", "[error-cente
     }
 }
 
-TEST_CASE("uncoded !! while printing but not paused offers nothing",
-          "[error-center][classify]") {
+TEST_CASE("uncoded !! while printing but not paused offers nothing", "[error-center][classify]") {
     // There is nothing to resume while the print is still running, and no
     // filament move belongs on a line whose cause is unknown. Severity is
     // unchanged from the pre-#1152 rule.

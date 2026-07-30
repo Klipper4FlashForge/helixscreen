@@ -275,11 +275,20 @@ void ActionPromptModal::create_button(const PromptButton& btn, lv_obj_t* contain
     lv_obj_set_style_text_font(label, theme_manager_get_font("font_body"), LV_PART_MAIN);
     lv_obj_set_style_text_color(label, theme_manager_get_contrast_color(bg_color), LV_PART_MAIN);
 
-    // Create callback data with owned copy of gcode string and lifetime token
+    // Create callback data with owned copy of gcode string and lifetime token.
+    //
+    // An empty gcode means DO NOTHING — the button closes the modal and sends
+    // no command. This used to fall back to sending the *label*, so a button
+    // marked "OK" or "Dismiss" transmitted `OK` to Klipper (#1172). Nothing
+    // relies on that fallback: Klipper's own `action_prompt_button` protocol
+    // already applies the label-as-gcode convention explicitly in
+    // ActionPromptManager::parse_button_spec(), so prompts arriving over the
+    // wire are unaffected. Only programmatically built PromptData reaches here
+    // with a blank gcode, and there it always meant "no command".
     auto cbd = std::make_unique<ButtonCallbackData>();
     cbd->modal = this;
     cbd->token = lifetime_.token();
-    cbd->gcode = btn.gcode.empty() ? btn.label : btn.gcode;
+    cbd->gcode = btn.gcode;
 
     // Add click callback with ButtonCallbackData as user_data
     lv_obj_add_event_cb(button, on_button_cb, LV_EVENT_CLICKED, cbd.get());
@@ -290,7 +299,7 @@ void ActionPromptModal::create_button(const PromptButton& btn, lv_obj_t* contain
     created_buttons_.push_back(button);
 
     spdlog::debug("[ActionPromptModal] Created button: {} (gcode: {}, color: {})", btn.label,
-                  btn.gcode.empty() ? btn.label : btn.gcode,
+                  btn.gcode.empty() ? "<none>" : btn.gcode,
                   btn.color.empty() ? "primary" : btn.color);
 }
 
@@ -334,6 +343,15 @@ void ActionPromptModal::clear_dynamic_content() {
 // ============================================================================
 
 void ActionPromptModal::handle_button_click(const std::string& gcode) {
+    // An empty gcode is a dismiss affordance: close, send nothing. Callers no
+    // longer have to smuggle a Klipper comment ("; error-dismiss") through to
+    // get a button that does nothing (#1172).
+    if (gcode.empty()) {
+        spdlog::info("[ActionPromptModal] Dismiss button clicked (no gcode)");
+        hide();
+        return;
+    }
+
     spdlog::info("[ActionPromptModal] Button clicked, gcode: {}", gcode);
 
     // Call the gcode callback if set

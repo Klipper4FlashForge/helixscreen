@@ -40,6 +40,25 @@ namespace {
 constexpr const char* kNotifyHandlerName = "gcode_error_notifier";
 constexpr const char* kReplayObserverName = "gcode_store_replay";
 
+/// The one recovery action that does NOT run through execute_gcode: key298's
+/// rpi-MCU-bridge bounce goes via PrinterRecoveryService and so carries an
+/// empty gcode. Matched on the tag error_classify.cpp:73 stamps, because an
+/// empty gcode alone is not a reliable signal — see present_recover_toast().
+constexpr const char* kKey298RecoverTag = "error_classify::key298_recover";
+
+/// How long a recover toast stays tappable. Longer than a plain toast: the
+/// user has to read the fault and decide, not just notice it.
+constexpr uint32_t kRecoverToastMs = 15000;
+
+/// Owns one recover toast's action for as long as the toast can be tapped.
+/// See present_recover_toast() for why this is heap-allocated with a timer
+/// reaper rather than parked on the router.
+struct RecoverToastCtx {
+    MoonrakerAPI* api = nullptr;
+    std::string gcode;
+    std::string log_tag;
+};
+
 /// Maps RecoveryAction.style to PromptButton.color.
 /// "primary" -> "primary", "danger" -> "error", anything else -> "" (neutral).
 std::string color_for_style(const std::string& style) {
@@ -289,34 +308,119 @@ void GcodeErrorRouter::present_recovery_modal(const ErrorEvent& e) {
     presenter_.present(e);
 }
 
+RecoverDispatch decide_recover_dispatch(const ErrorEvent& e) {
+    if (e.recovery_actions.empty())
+        return RecoverDispatch::PLAIN_TOAST;
+
+    const RecoveryAction& action = e.recovery_actions.front();
+
+    // A toast carries exactly ONE action button and has no preheat gate. Two
+    // shapes therefore cannot be rendered faithfully here and go to the
+    // recovery modal instead, which builds a button per action and owns the
+    // preheat-then-send path (#1193):
+    //   - several actions: a toast would silently drop all but the first
+    //   - an action needing a hot nozzle: firing it cold fails exactly the way
+    //     the operation that raised the error did
+    if (e.recovery_actions.size() > 1 || action.needs_hot_nozzle)
+        return RecoverDispatch::ESCALATE_TO_MODAL;
+
+    // key298 -- rpi MCU bridge daemon shutdown. firmware_restart alone can't
+    // recover; PrinterRecoveryService bounces klipper_mcu via the platform
+    // recovery script. Recognised by its log_tag rather than by its empty
+    // gcode, because an empty gcode now legitimately means "dismiss".
+    if (action.log_tag == kKey298RecoverTag)
+        return RecoverDispatch::RECOVERY_SERVICE;
+
+    // No gcode and no service behind it: nothing to run, so no button.
+    if (action.gcode.empty())
+        return RecoverDispatch::PLAIN_TOAST;
+
+    return RecoverDispatch::GCODE;
+}
+
 bool GcodeErrorRouter::present_recover_toast(const ErrorEvent& e) {
-    // key298 -- rpi MCU bridge daemon shutdown. firmware_restart alone
-    // can't recover; PrinterRecoveryService bounces klipper_mcu via
-    // the platform recovery script. The recovery action carries an EMPTY
-    // gcode (log_tag error_classify::key298_recover) -- recovery runs
-    // through PrinterRecoveryService, not execute_gcode.
+    const RecoverDispatch how = decide_recover_dispatch(e);
+
+    if (how == RecoverDispatch::ESCALATE_TO_MODAL) {
+        spdlog::debug("[GcodeError] Escalating WARNING+recover to modal ({} actions)",
+                      e.recovery_actions.size());
+        present_recovery_modal(e);
+        return true;
+    }
+
+    // Nothing runnable, or no actions at all: surface the fault as a plain
+    // toast rather than a button that silently does nothing. Deliberately NOT
+    // returning false, which would leave the WARNING unshown entirely.
+    if (how == RecoverDispatch::PLAIN_TOAST) {
+        spdlog::warn("[GcodeError] Recovery action has nothing to run; plain toast for: {}",
+                     e.detail);
+        present_deferred_toast(e.detail, e.raw_detail);
+        return true;
+    }
+
     if (!api_)
         return false; // No API client -> recovery would be a no-op; nothing actionable to show.
-    MoonrakerAPI* api = api_;
+
+    const RecoveryAction& action = e.recovery_actions.front();
+
+    if (how == RecoverDispatch::RECOVERY_SERVICE) {
+        MoonrakerAPI* api = api_;
+        ToastManager::instance().show_with_action(
+            ToastSeverity::ERROR, truncate_for_toast(e.detail).c_str(), action.label.c_str(),
+            [](void* ud) {
+                auto* a = static_cast<MoonrakerAPI*>(ud);
+                if (!a)
+                    return;
+                spdlog::info("[GcodeError] User tapped Recover for key298");
+                PrinterRecoveryService recovery(a);
+                recovery.recover(
+                    []() { spdlog::info("[Recovery] Auto-recovery initiated"); },
+                    [](const MoonrakerError& err) {
+                        spdlog::error("[Recovery] Auto-recovery failed: {}", err.message);
+                        ToastManager::instance().show(
+                            ToastSeverity::ERROR,
+                            (std::string(lv_tr("Recovery failed: ")) + err.user_message()).c_str(),
+                            6000);
+                    });
+            },
+            api, /*duration_ms=*/kRecoverToastMs);
+        return true;
+    }
+
+    // ToastManager's action callback takes a bare void* and never frees it,
+    // and it only runs if the user taps -- so a per-toast heap context needs
+    // its own reaper or every toast that simply expires leaks one. A one-shot
+    // timer outliving the toast frees it exactly once. Both run on the main
+    // thread, so the tap and the reaper cannot race.
+    auto* ctx = new RecoverToastCtx{api_, action.gcode, action.log_tag};
     ToastManager::instance().show_with_action(
-        ToastSeverity::ERROR, truncate_for_toast(e.detail).c_str(), lv_tr("Recover"),
+        ToastSeverity::ERROR, truncate_for_toast(e.detail).c_str(), action.label.c_str(),
         [](void* ud) {
-            auto* a = static_cast<MoonrakerAPI*>(ud);
-            if (!a)
+            auto* c = static_cast<RecoverToastCtx*>(ud);
+            if (!c || !c->api)
                 return;
-            spdlog::info("[GcodeError] User tapped Recover for key298");
-            PrinterRecoveryService recovery(a);
-            recovery.recover(
-                []() { spdlog::info("[Recovery] Auto-recovery initiated"); },
-                [](const MoonrakerError& err) {
-                    spdlog::error("[Recovery] Auto-recovery failed: {}", err.message);
+            spdlog::info("[GcodeError] User tapped recovery '{}' -> {}", c->log_tag, c->gcode);
+            const std::string tag = c->log_tag;
+            c->api->execute_gcode(
+                c->gcode, [tag]() { spdlog::info("[Recovery] {} completed", tag); },
+                [tag](const MoonrakerError& err) {
+                    spdlog::error("[Recovery] {} failed: {}", tag, err.message);
                     ToastManager::instance().show(
                         ToastSeverity::ERROR,
                         (std::string(lv_tr("Recovery failed: ")) + err.user_message()).c_str(),
                         6000);
-                });
+                },
+                MoonrakerAPI::AMS_OPERATION_TIMEOUT_MS);
         },
-        api, /*duration_ms=*/15000);
+        ctx, /*duration_ms=*/kRecoverToastMs);
+
+    auto* reaper = lv_timer_create(
+        [](lv_timer_t* t) {
+            delete static_cast<RecoverToastCtx*>(lv_timer_get_user_data(t));
+            lv_timer_delete(t);
+        },
+        kRecoverToastMs + 5000, ctx);
+    lv_timer_set_repeat_count(reaper, 1);
     return true;
 }
 
@@ -413,8 +517,7 @@ void GcodeErrorRouter::process_line(const std::string& line) {
     if ((how == PresentAs::TOAST || how == PresentAs::TOAST_WITH_RECOVER) &&
         (fault_surface_correlation::was_recently_surfaced(ev->detail) ||
          fault_surface_correlation::was_recently_surfaced(ev->raw_detail))) {
-        spdlog::info("[GcodeError] Suppressing duplicate toast (already surfaced): {}",
-                     ev->detail);
+        spdlog::info("[GcodeError] Suppressing duplicate toast (already surfaced): {}", ev->detail);
         return;
     }
 

@@ -41,6 +41,25 @@ PresentAs decide_presentation(const ErrorEvent& e);
 /// LVGL-free; style maps to PromptButton.color. Title falls back to a default.
 PromptData build_recovery_prompt(const ErrorEvent& e);
 
+/// How a TOAST_WITH_RECOVER event's single action button should dispatch.
+enum class RecoverDispatch {
+    ESCALATE_TO_MODAL, ///< A toast cannot render it faithfully; use the modal.
+    RECOVERY_SERVICE,  ///< key298: PrinterRecoveryService, not execute_gcode.
+    GCODE,             ///< Run the action's own gcode.
+    PLAIN_TOAST,       ///< Nothing runnable; surface the fault without a button.
+};
+
+/// Pure: decide how present_recover_toast() should honour @p e's actions.
+///
+/// A toast carries exactly one button and has no preheat gate, so an event
+/// with several actions — or one needing a hot nozzle (#1193) — escalates to
+/// the recovery modal rather than silently dropping affordances or firing into
+/// a cold nozzle. Everything else runs the action's own gcode; only key298
+/// routes through PrinterRecoveryService, which is why it alone carries an
+/// empty gcode. Before #1172 this decision did not exist and every WARNING
+/// with an action was offered a klipper_mcu bounce.
+RecoverDispatch decide_recover_dispatch(const ErrorEvent& e);
+
 /// Centralizes Klipper/Moonraker gcode-error surfacing for HelixScreen.
 ///
 /// Two input paths feed in:

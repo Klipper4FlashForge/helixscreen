@@ -3,14 +3,13 @@
 
 #include "../lvgl_ui_test_fixture.h"
 #include "../ui_test_utils.h"
-#include "recovery_modal_presenter.h"
-
 #include "ams_state.h"
 #include "app_constants.h"
 #include "app_globals.h"
 #include "moonraker_api.h"
 #include "moonraker_client_mock.h"
 #include "printer_state.h"
+#include "recovery_modal_presenter.h"
 #include "safety_settings_manager.h"
 
 #include <memory>
@@ -184,8 +183,11 @@ TEST_CASE_METHOD(LVGLUITestFixture,
     helix::ErrorEvent generic;
     generic.severity = helix::ErrorSeverity::CRITICAL;
     generic.detail = shared_detail;
+    // Empty gcode is the dismiss spelling — matches what error_classify.cpp
+    // now emits, rather than the Klipper-comment workaround it used to need
+    // (#1172).
     generic.recovery_actions = {{"Resume", "RESUME", "error_classify::resume", ""},
-                                {"OK", "; error-dismiss", "error_classify::dismiss", ""}};
+                                {"OK", "", "error_classify::dismiss", ""}};
 
     presenter.present(generic);
     process_lvgl(20);

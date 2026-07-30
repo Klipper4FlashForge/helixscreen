@@ -102,18 +102,14 @@ std::optional<ErrorEvent> classify(const std::string& raw_line, const ClassifyCo
             // extrudes. is_paused is what got us here, and a print can sit paused
             // long enough for idle_timeout to drop the heater, so the presenter
             // reheats before sending rather than handing Klipper a cold extrude.
-            e.recovery_actions.push_back(
-                {lv_tr("Resume"), "RESUME", "error_classify::resume", "",
-                 /*needs_hot_nozzle=*/true});
+            e.recovery_actions.push_back({lv_tr("Resume"), "RESUME", "error_classify::resume", "",
+                                          /*needs_hot_nozzle=*/true});
             // Without this the modal has exactly one way out and a user who does
             // NOT want to resume is trapped: ActionPromptModal builds its buttons
             // solely from this vector and has no intrinsic close affordance (same
-            // trap as #1041). The gcode is a Klipper comment so the tap executes
-            // nothing -- and it must stay non-empty, because create_buttons()
-            // falls back to sending the LABEL as gcode when it is blank
-            // (action_prompt_modal.cpp:282).
-            e.recovery_actions.push_back(
-                {lv_tr("OK"), "; error-dismiss", "error_classify::dismiss"});
+            // trap as #1041). An empty gcode is the dismiss spelling -- the modal
+            // closes and sends nothing (#1172).
+            e.recovery_actions.push_back({lv_tr("OK"), "", "error_classify::dismiss"});
         }
     }
 

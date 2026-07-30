@@ -1176,10 +1176,11 @@ std::optional<helix::ErrorEvent> AmsBackendQidi::current_error() const {
     e.sticky = true;
     // A CRITICAL event with empty recovery_actions renders via RecoveryModalPresenter
     // as a button-less ActionPromptModal — non-dismissible UI trap. Provide one
-    // dismiss affordance. The gcode is a Klipper comment (no-op on execute_gcode).
+    // dismiss affordance. An empty gcode is the dismiss spelling: the modal
+    // closes and sends nothing (#1172; this used to need a Klipper comment).
     // Recovery gcode is absent: QIDI BLOCKED slot clearance is unknown; ships blind
     // (no QIDI hardware). (prestonbrown/helixscreen#1041)
-    e.recovery_actions = {{lv_tr("OK"), "; qidi-blocked-dismiss", "qidi::dismiss", ""}};
+    e.recovery_actions = {{lv_tr("OK"), "", "qidi::dismiss", ""}};
     return e;
 }
 

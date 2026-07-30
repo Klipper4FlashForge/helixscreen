@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "../lvgl_test_fixture.h"
 #include "ams_backend_qidi.h"
 #include "ams_error.h"
 #include "ams_types.h"
@@ -9,8 +10,6 @@
 #include "settings_manager.h"
 #include "test_helpers/qidi_box_test_access.h"
 #include "test_helpers/update_queue_test_access.h"
-
-#include "../lvgl_test_fixture.h"
 
 #include <cstdint>
 #include <map>
@@ -107,8 +106,8 @@ TEST_CASE("QIDI Box parse_save_variables: box_count=2 expands to two 4-slot unit
     for (const auto& unit : info.units) {
         for (size_t i = 0; i < unit.slots.size(); ++i) {
             REQUIRE(unit.slots[i].slot_index == static_cast<int>(i));
-            REQUIRE(unit.slots[i].global_index == unit.first_slot_global_index +
-                                                    static_cast<int>(i));
+            REQUIRE(unit.slots[i].global_index ==
+                    unit.first_slot_global_index + static_cast<int>(i));
         }
     }
 }
@@ -812,8 +811,8 @@ TEST_CASE("QIDI Box Max 4 dialect is detected from an instanced section key",
           "[ams][qidi_box][write_path][max4]") {
     RecordingQidiBackend backend;
     // Some configs instance the section (e.g. "[multi_color_controller box0]").
-    QidiBoxTestAccess::apply_config_settings(
-        backend, json{{"multi_color_controller box0", json::object()}});
+    QidiBoxTestAccess::apply_config_settings(backend,
+                                             json{{"multi_color_controller box0", json::object()}});
 
     REQUIRE(backend.supports_lane_eject());
     auto err = backend.eject_lane(0);
@@ -827,9 +826,9 @@ TEST_CASE("QIDI Box Max 4 dialect takes precedence over box_stepper FORCE_MOVE",
     RecordingQidiBackend backend;
     // Even if force_move is also enabled, a multi_color_controller printer must
     // use MULTI_COLOR_BOX_UNLOAD, never the FORCE_MOVE that errors on the Max 4.
-    QidiBoxTestAccess::apply_config_settings(
-        backend, json{{"multi_color_controller", json::object()},
-                      {"force_move", {{"enable_force_move", true}}}});
+    QidiBoxTestAccess::apply_config_settings(backend,
+                                             json{{"multi_color_controller", json::object()},
+                                                  {"force_move", {{"enable_force_move", true}}}});
 
     auto err = backend.eject_lane(2);
     REQUIRE(err.success());
@@ -1169,14 +1168,14 @@ TEST_CASE("QIDI Box per-unit dryer: box1 drying, box2 idle -> distinct DryerInfo
 
     // Box1 heating to 55C @ 48C now; box2 idle heater.
     QidiBoxTestAccess::handle_status(
-        backend, json{{"heater_generic heater_box1", json{{"temperature", 48.0}, {"target", 55.0}}},
-                      {"heater_generic heater_box2", json{{"temperature", 24.0}, {"target", 0.0}}}});
+        backend,
+        json{{"heater_generic heater_box1", json{{"temperature", 48.0}, {"target", 55.0}}},
+             {"heater_generic heater_box2", json{{"temperature", 24.0}, {"target", 0.0}}}});
 
     // Box1 has an active drying end_time 30 min out; box2 none.
     QidiBoxTestAccess::apply_box_extras(
-        backend, json{{"box_drying_state",
-                       json{{"box1", json{{"end_time", 1'000'000 + 30 * 60}}},
-                            {"box2", json{{"end_time", 0}}}}}});
+        backend, json{{"box_drying_state", json{{"box1", json{{"end_time", 1'000'000 + 30 * 60}}},
+                                                {"box2", json{{"end_time", 0}}}}}});
 
     DryerInfo d0 = QidiBoxTestAccess::get_dryer(backend, 0);
     DryerInfo d1 = QidiBoxTestAccess::get_dryer(backend, 1);
@@ -1656,16 +1655,18 @@ TEST_CASE("QIDI Box current_error returns CRITICAL event for first blocked slot"
     // Recovery has one dismiss affordance — a button-less modal is a non-dismissible
     // UI trap (RecoveryModalPresenter with 0 buttons hides the button container).
     CHECK(ev->recovery_actions.size() == 1);
-    CHECK(ev->recovery_actions[0].gcode.find(';') != std::string::npos); // comment/no-op gcode
+    // Empty gcode == dismiss: closes the modal, sends nothing. Previously this
+    // had to be a Klipper comment because a blank gcode was sent as the LABEL
+    // ("OK" to Klipper); that fallback is gone (#1172).
+    CHECK(ev->recovery_actions[0].gcode.empty());
 }
 
 TEST_CASE("QIDI Box current_error scans slots from later boxes", "[ams][qidi_box][error-center]") {
     RecordingQidiBackend backend;
-    QidiBoxTestAccess::parse_vars(backend, json{
-                                               {"enable_box", 1},
-                                               {"box_count", 2},
-                                               {"slot5", -3}, // BLOCKED
-                                           });
+    QidiBoxTestAccess::parse_vars(backend,
+                                  json{
+                                      {"enable_box", 1}, {"box_count", 2}, {"slot5", -3}, // BLOCKED
+                                  });
 
     auto ev = backend.current_error();
     REQUIRE(ev.has_value());
