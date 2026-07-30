@@ -374,6 +374,28 @@ Inline style attributes (e.g., `style_bg_color="#card_bg"`) have **higher priori
 
 **Rule:** When using `bind_style` for reactive visual changes, do NOT set inline style attributes for the properties you want to change reactively.
 
+**⚠️ Moving `flex_flow` into a style? Set `layout="flex"` there too.**
+
+The inline `flex_flow="column"` attribute sets *two* things — `LV_STYLE_FLEX_FLOW` **and**
+`LV_STYLE_LAYOUT`. A `<style>` sets only the property you name. So obeying the rule above and
+lifting `flex_flow` out of the element into two bound styles silently removes the layout, and
+a flex container with a flow but no layout runs **no layout at all**: every child lands
+stacked on the container's origin, same x, same y. Nothing warns.
+
+```xml
+<!-- ❌ WRONG - children all pile up at the origin -->
+<style name="list_micro" flex_flow="row_wrap"/>
+<style name="list_wide"  flex_flow="column"/>
+
+<!-- ✅ CORRECT -->
+<style name="list_micro" layout="flex" flex_flow="row_wrap"/>
+<style name="list_wide"  layout="flex" flex_flow="column"/>
+```
+
+Symptom to recognise: `helix-screen ctl geom <container> 3` reports every child at identical
+`x`/`y`, and the container's height collapses to one row. See
+`ui_xml/ams_environment_overlay.xml` for a worked example (#1192).
+
 #### Applying One Style to Multiple Parts (`parts=...`)
 
 For widgets with several parts that should share the same reactive style — arc background+indicator at the same stroke width, slider track+indicator+knob at the same color — `bind_style` and every `bind_style_if_*` variant accept a `parts="..."` attribute that takes a comma-separated list of part names:
