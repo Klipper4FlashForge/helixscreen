@@ -229,6 +229,21 @@ ifeq ($(SANITIZE),address)
     CXXFLAGS := $(filter-out -D_FORTIFY_SOURCE=2,$(CXXFLAGS))
 endif
 
+# Thread Sanitizer, for the other half of the problem space: ASAN finds the
+# corruption, TSAN finds the unsynchronized access that caused it. Added while
+# chasing #1198, whose glibc abort is detected during a ThumbnailCache eviction
+# that runs on both the main thread and HttpExecutor workers (#1202).
+#
+# Usage: make SANITIZE=thread
+#
+# NOT combinable with SANITIZE=address — the two runtimes are mutually
+# exclusive, and asking for both silently gets you neither.
+ifeq ($(SANITIZE),thread)
+    SANITIZE_FLAGS := -fsanitize=thread -fno-omit-frame-pointer
+    CFLAGS := $(filter-out -D_FORTIFY_SOURCE=2,$(CFLAGS))
+    CXXFLAGS := $(filter-out -D_FORTIFY_SOURCE=2,$(CXXFLAGS))
+endif
+
 # Submodule flags - suppress warnings from third-party code we don't control
 # Uses -w to completely silence warnings (cleaner build output)
 # Note: No DEPFLAGS for submodules - we don't track their internal dependencies
@@ -832,6 +847,15 @@ ifeq ($(SANITIZE),address)
     LDFLAGS += $(SANITIZE_FLAGS)
     ifneq ($(CROSS_COMPILE),)
         LDFLAGS += -static-libasan
+    endif
+endif
+
+# Same re-application for TSAN, and for the same reason: the per-platform
+# `LDFLAGS :=` above clobbers anything injected earlier.
+ifeq ($(SANITIZE),thread)
+    LDFLAGS += $(SANITIZE_FLAGS)
+    ifneq ($(CROSS_COMPILE),)
+        LDFLAGS += -static-libtsan
     endif
 endif
 

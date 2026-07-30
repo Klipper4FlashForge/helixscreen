@@ -691,6 +691,9 @@ ifneq ($(BUILD_SUBDIR),)
     ifeq ($(SANITIZE),address)
         BUILD_SUBDIR := $(BUILD_SUBDIR)-asan
     endif
+    ifeq ($(SANITIZE),thread)
+        BUILD_SUBDIR := $(BUILD_SUBDIR)-tsan
+    endif
     BUILD_DIR := build/$(BUILD_SUBDIR)
     BIN_DIR := $(BUILD_DIR)/bin
     OBJ_DIR := $(BUILD_DIR)/obj
@@ -806,6 +809,21 @@ ifeq ($(SANITIZE),address)
     LDFLAGS += $(SANITIZE_FLAGS)
     ifneq ($(CROSS_COMPILE),)
         LDFLAGS += -static-libasan
+    endif
+    STRIP_BINARY := no
+endif
+
+# Same treatment for ThreadSanitizer. Instrumenting the submodules matters here
+# as much as it does for ASAN: a race is only reported when TSAN sees BOTH
+# accesses, so an uninstrumented LVGL or libhv turns a real race into silence.
+ifeq ($(SANITIZE),thread)
+    CFLAGS += $(SANITIZE_FLAGS)
+    CXXFLAGS += $(SANITIZE_FLAGS)
+    SUBMODULE_CFLAGS += $(SANITIZE_FLAGS)
+    SUBMODULE_CXXFLAGS += $(SANITIZE_FLAGS)
+    LDFLAGS += $(SANITIZE_FLAGS)
+    ifneq ($(CROSS_COMPILE),)
+        LDFLAGS += -static-libtsan
     endif
     STRIP_BINARY := no
 endif
