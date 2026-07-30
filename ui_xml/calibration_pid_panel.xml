@@ -37,8 +37,8 @@
          LVGL only draws the ellipsis when the label's HEIGHT is bounded, and an
          auto-height label wraps instead. Reclaiming the padding keeps the name
          on one line and costs no vertical space. -->
-    <style name="preset_btn_half" width="48%" flex_grow="0" pad_left="4" pad_right="4"/>
-    <style name="preset_btn_grow" flex_grow="1" pad_left="4" pad_right="4"/>
+    <style name="preset_btn_half" width="48%" flex_grow="0" pad_left="#space_xs" pad_right="#space_xs"/>
+    <style name="preset_btn_grow" flex_grow="1" pad_left="#space_xs" pad_right="#space_xs"/>
   </styles>
   <view name="calibration_pid_panel"
         extends="lv_obj" width="#overlay_width_transient" height="100%" align="right_mid" style_bg_opa="255"
