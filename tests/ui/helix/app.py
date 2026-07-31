@@ -11,12 +11,39 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
 from typing import Any
+
+# A unix socket path is capped by sockaddr_un.sun_path — 104 bytes on macOS,
+# 108 on Linux — and helix-screen refuses to bind past it
+# (src/remote/unix_socket_transport.cpp). pytest's per-test tmp dirs live under
+# /var/folders/<...>/T/pytest-of-<user>/pytest-N/<fixture>N on macOS, which is
+# already ~110 characters before the filename, so every socket path this
+# harness generated was over the limit.
+#
+# The failure was invisible: the app boots normally and logs one error line,
+# the socket file simply never appears, and the only symptom is _await_ready()
+# timing out after 30s with a log tail full of unrelated chatter. Keep the
+# caller's directory for config and logs; move only the socket somewhere short.
+_SUN_PATH_MAX = 104 if sys.platform == "darwin" else 108
+
+# Not tempfile.mkdtemp()'s default: TMPDIR on macOS *is* the long
+# /var/folders path, which is the thing being avoided.
+_SHORT_TMP = "/tmp"
+
+
+def _short_socket_path(path: Path) -> tuple[Path, str | None]:
+    """(socket path, temp dir to clean up) — relocated only if it must be."""
+    if len(str(path).encode()) < _SUN_PATH_MAX:
+        return path, None
+    short_dir = tempfile.mkdtemp(prefix="hx-", dir=_SHORT_TMP)
+    return Path(short_dir) / "c.sock", short_dir
 
 # Seed written into every private HELIX_CONFIG_DIR at boot, as
 # "<HELIX_CONFIG_DIR>/settings-test.json". This used to be a copy of the
@@ -85,7 +112,11 @@ class HelixApp:
     def __init__(self, binary: Path, socket_path: Path, log_path: Path,
                  extra_args: list[str] | None = None):
         self.binary = Path(binary)
-        self.socket_path = Path(socket_path)
+        # The instance's own directory, for config and anything else that
+        # wants to sit beside the caller's files — kept even when the socket
+        # itself has to move somewhere shorter (see _short_socket_path).
+        self.workdir = Path(socket_path).parent
+        self.socket_path, self._socket_tmpdir = _short_socket_path(Path(socket_path))
         self.log_path = Path(log_path)
         self.extra_args = list(extra_args or [])
         self.proc: subprocess.Popen | None = None
@@ -137,12 +168,13 @@ class HelixApp:
         # to create the directory). Without an override every HelixApp
         # spawned from the same CWD (the shared instance, a fresh_helix_app,
         # and test_diagnostics.py's pytester sub-process) shares one lock
-        # file and only one can ever hold it. socket_path already lives under
-        # a private tmp_path per instance, so anchor the config dir there too
-        # — it's unique for free — and create it ourselves; open(O_CREAT)
-        # makes the lock file but not its parent directory.
+        # file and only one can ever hold it. workdir is already a private
+        # tmp_path per instance, so anchor the config dir there — it's unique
+        # for free — and create it ourselves; open(O_CREAT) makes the lock
+        # file but not its parent directory. (workdir, not socket_path.parent:
+        # the socket may have been relocated out from under it.)
         if not env.get("HELIX_CONFIG_DIR"):
-            config_dir = self.socket_path.parent / "helix-config"
+            config_dir = self.workdir / "helix-config"
             config_dir.mkdir(parents=True, exist_ok=True)
             env["HELIX_CONFIG_DIR"] = str(config_dir)
 
@@ -186,8 +218,21 @@ class HelixApp:
             if self.proc is not None and self.proc.poll() is None:
                 self.proc.kill()
                 self.proc.wait(timeout=5)
+            self._discard_socket_tmpdir()
             raise
         return self
+
+    def _bind_refusal(self) -> str | None:
+        """The transport's own reason for having no socket, if it logged one."""
+        try:
+            text = self.log_path.read_text(errors="replace")
+        except OSError:
+            return None
+        for line in text.splitlines():
+            if "[RemoteControl]" in line and (
+                    "Socket path too long" in line or "Failed to bind" in line):
+                return line.strip()
+        return None
 
     def _await_ready(self) -> None:
         deadline = time.monotonic() + self.BOOT_TIMEOUT
@@ -203,6 +248,12 @@ class HelixApp:
                         return
                 except (HelixCtlError, HelixAppError):
                     pass  # server thread not up yet
+            # A refused bind never produces a socket, so waiting out the full
+            # timeout only buries the one log line that says why. Surface it.
+            refusal = self._bind_refusal()
+            if refusal:
+                raise HelixAppError(
+                    f"helix-screen refused to bind its control socket: {refusal}")
             time.sleep(0.1)
         raise HelixAppError(
             f"helix-screen never answered ping within {self.BOOT_TIMEOUT}s\n"
@@ -250,6 +301,7 @@ class HelixApp:
             finally:
                 if hasattr(self, "log_file"):
                     self.log_file.close()
+                self._discard_socket_tmpdir()
             return
         try:
             self.ctl("shutdown")
@@ -278,6 +330,14 @@ class HelixApp:
         finally:
             if hasattr(self, "log_file"):
                 self.log_file.close()
+            self._discard_socket_tmpdir()
+
+    def _discard_socket_tmpdir(self) -> None:
+        """pytest cleans up its own tmp dirs; a relocated socket sits outside
+        them, so it is ours to remove. Idempotent — every exit path calls it."""
+        if self._socket_tmpdir:
+            shutil.rmtree(self._socket_tmpdir, ignore_errors=True)
+            self._socket_tmpdir = None
 
     def __enter__(self) -> "HelixApp":
         return self.start()

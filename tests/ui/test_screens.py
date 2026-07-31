@@ -39,11 +39,17 @@ RECIPES_SCRIPT = REPO_ROOT / "scripts" / "screenshot-recipes.sh"
 
 
 def _load_recipes() -> dict[str, str]:
-    """Source screenshot-recipes.sh and dump its SCREENSHOT_RECIPE table."""
+    """Source screenshot-recipes.sh and dump its recipe table.
+
+    Goes through the script's own two accessors rather than reading its data
+    variable, so the storage stays the script's business. It used to poke
+    ``${!SCREENSHOT_RECIPE[@]}`` directly, which meant this broke the moment
+    that array did.
+    """
     script = (
         f"source {shlex.quote(str(RECIPES_SCRIPT))}; "
-        'for k in "${!SCREENSHOT_RECIPE[@]}"; do '
-        'printf "%s\\t%s\\n" "$k" "${SCREENSHOT_RECIPE[$k]}"; done'
+        'for k in $(screenshot_recipe_tokens); do '
+        'printf "%s\\t%s\\n" "$k" "$(screenshot_recipe_for "$k")"; done'
     )
     result = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
                             check=True, cwd=REPO_ROOT)
@@ -51,6 +57,14 @@ def _load_recipes() -> dict[str, str]:
     for line in result.stdout.splitlines():
         token, _, recipe = line.partition("\t")
         recipes[token] = recipe
+    # An empty table is always a harness fault, never a real state — and it
+    # used to surface as `KeyError: 'settings'` at module scope, a hundred
+    # lines from the cause. (bash 3.2 on macOS hit `declare -gA`, wrote an
+    # error to stderr and still exited 0, so check=True saw success.)
+    if not recipes:
+        raise RuntimeError(
+            f"{RECIPES_SCRIPT} yielded no recipes — sourcing it produced nothing.\n"
+            f"bash: {result.stderr.strip() or '(no stderr)'}")
     return recipes
 
 

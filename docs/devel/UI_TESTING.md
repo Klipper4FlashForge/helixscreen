@@ -416,12 +416,32 @@ Golden images are **local-only** for now. They are sensitive to renderer and fon
 rasterization, so a golden captured on a desktop will not match a CI runner; see the
 design spec's Risks section.
 
+**Treat the golden corpus as pinned to one environment — Linux, with the toolchain
+the goldens were captured under.** The rest of `tests/ui/` (navigation, text,
+geometry, reset, wait_idle, screenshot mechanics) is environment-agnostic and runs
+anywhere; only the `test_screen_matches_golden[*]` cases carry this constraint.
+Measured on macOS: `bed-mesh` differs by a few dozen pixels of text antialiasing,
+`macros` by ~8200 in the soft-edged band where the overlay's drop shadow falls —
+both identical with an unmodified binary, so they are rasterization, not
+regressions. Do not `--accept-goldens` to make those green; it pins the corpus to
+whichever machine last ran it and turns the intended environment red instead.
+
 ### Golden corpus scope (`tests/ui/test_screens.py`)
 
 The screen list is *sourced from*, not hand-copied from,
-`scripts/screenshot-recipes.sh`'s `SCREENSHOT_RECIPE` table: the test shells out to
-`bash -c 'source scripts/screenshot-recipes.sh; ...'` and dumps the array, so a
-recipe added or renamed there shows up here without a second edit to keep in sync.
+`scripts/screenshot-recipes.sh`: the test shells out to
+`bash -c 'source scripts/screenshot-recipes.sh; ...'` and walks the table through
+that script's own two accessors — `screenshot_recipe_tokens` to enumerate and
+`screenshot_recipe_for` to resolve — so a recipe added or renamed there shows up
+here without a second edit to keep in sync.
+
+Going through the accessors rather than reading the data variable is deliberate:
+this used to expand `${!SCREENSHOT_RECIPE[@]}` directly, which broke the moment
+that array did. (It was an associative array; macOS ships bash 3.2, which
+supports neither `declare -A` nor `declare -g` and *still exits 0* after
+refusing them, so the table read as empty on macOS and the failure surfaced as a
+`KeyError` at module scope. `_load_recipes()` now raises with bash's stderr if
+the table comes back empty.)
 
 Only 8 of the ~38 known recipe tokens are golden'd so far — deliberately, because
 `freeze()` cannot pin down everything a screen might show:
