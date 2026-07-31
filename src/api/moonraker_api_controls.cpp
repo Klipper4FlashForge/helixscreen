@@ -478,7 +478,15 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
         }
         std::string queued = helix::api::annotate_gcode(gcode, add_comment);
         json queued_params = {{"script", queued}};
-        spdlog::debug("[Moonraker API] Queuing discretionary G-code behind blocking op: {}",
+        // "Sending", not "queuing": the command goes to Klipper NOW and Klipper runs
+        // it when its gcode lock frees. HelixScreen holds no queue of its own, and
+        // there is nothing here to drain later. The old wording read as though one
+        // existed, which sent a reporter hunting for the flush that never comes
+        // (prestonbrown/helixscreen#1206). What IS dropped is the RPC *response* —
+        // see the on_queued rationale above — so a late rejection by Klipper is
+        // invisible from this side.
+        spdlog::debug("[Moonraker API] Sending discretionary G-code for Klipper to run when the "
+                      "blocking op releases the gcode lock: {}",
                       queued);
         client_.send_jsonrpc("printer.gcode.script", queued_params, nullptr, nullptr, timeout_ms,
                              /*silent=*/true);
