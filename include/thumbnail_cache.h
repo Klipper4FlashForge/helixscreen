@@ -9,7 +9,9 @@
 
 #include <filesystem>
 #include <functional>
+#include <mutex>
 #include <string>
+#include <vector>
 
 /**
  * @file thumbnail_cache.h
@@ -321,9 +323,7 @@ class ThumbnailCache {
      *
      * @return Maximum cache size in bytes
      */
-    [[nodiscard]] size_t get_max_size() const {
-        return max_size_;
-    }
+    [[nodiscard]] size_t get_max_size() const;
 
     /**
      * @brief Set maximum cache size
@@ -370,11 +370,54 @@ class ThumbnailCache {
     [[nodiscard]] bool is_caching_allowed() const;
 
   private:
-    std::string cache_dir_; ///< Absolute path to cache directory
-    size_t max_size_;       ///< Maximum cache size before LRU eviction
-    size_t disk_critical_;  ///< Stop caching below this available space
-    size_t disk_low_;       ///< Evict aggressively below this available space
-    size_t configured_max_; ///< Max size from config (before dynamic sizing)
+    std::string cache_dir_; ///< Absolute path to cache directory (const after construction)
+    size_t max_size_;       ///< Maximum cache size before LRU eviction — guarded by mutex_
+    size_t disk_critical_;  ///< Stop caching below this available space (const after construction)
+    size_t disk_low_;       ///< Evict aggressively below this available space (const after ctor)
+    size_t configured_max_; ///< Max size from config, before dynamic sizing (const after ctor)
+
+    /// Serializes cache accounting: the directory scan, the eviction pass, and
+    /// max_size_.
+    ///
+    /// evict_if_needed() runs on the main thread AND on every HttpExecutor worker
+    /// — MoonrakerFileTransferAPI invokes download_thumbnail's success callback on
+    /// the pool thread, unmarshalled. Measured: 104 eviction events across 5
+    /// threads in 90s, up to 4 in the same millisecond, each independently
+    /// stat'ing every file and selecting the same victims
+    /// (prestonbrown/helixscreen#1207).
+    ///
+    /// Held across scan-sort-remove, so a scan cannot observe a directory another
+    /// thread is halfway through unlinking. That is what made the walks throw
+    /// mid-iteration and silently abandon the pass.
+    mutable std::mutex mutex_;
+
+    /// One cached file, as seen by a directory scan.
+    struct CacheEntry {
+        std::filesystem::path path;
+        std::filesystem::file_time_type mtime;
+        std::uintmax_t size; ///< Matches std::filesystem::file_size()'s return type
+    };
+
+    /**
+     * @brief Walk the cache directory once, collecting every readable entry.
+     *
+     * Per-entry failures are skipped rather than fatal. A single un-stat'able
+     * file (concurrently unlinked, a broken link, a permission change) must cost
+     * only that file — wrapping the whole loop in one try/catch returned the
+     * partial sum accumulated before the throw, which reads as "the cache is
+     * smaller than it is" and silently disables eviction.
+     *
+     * @param total_out Receives the summed size of all readable entries.
+     * @return Entries in directory order (unsorted).
+     * @pre mutex_ is held.
+     */
+    [[nodiscard]] std::vector<CacheEntry> scan_locked(size_t* total_out) const;
+
+    /**
+     * @brief Eviction pass proper.
+     * @pre mutex_ is held.
+     */
+    void evict_locked();
 
     /**
      * @brief Determine the optimal cache base directory

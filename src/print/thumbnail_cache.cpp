@@ -205,8 +205,14 @@ std::string ThumbnailCache::get_if_cached(const std::string& relative_path,
 }
 
 void ThumbnailCache::set_max_size(size_t max_size) {
+    std::lock_guard<std::mutex> lock(mutex_);
     max_size_ = max_size;
-    evict_if_needed();
+    evict_locked();
+}
+
+size_t ThumbnailCache::get_max_size() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return max_size_;
 }
 
 size_t ThumbnailCache::get_available_disk_space() const {
@@ -234,8 +240,85 @@ bool ThumbnailCache::is_caching_allowed() const {
     return get_disk_pressure() != DiskPressure::Critical;
 }
 
+std::vector<ThumbnailCache::CacheEntry> ThumbnailCache::scan_locked(size_t* total_out) const {
+    std::vector<CacheEntry> entries;
+    size_t total = 0;
+
+    std::error_code ec;
+    std::filesystem::directory_iterator it(cache_dir_, ec);
+    if (ec) {
+        spdlog::warn("[ThumbnailCache] Error opening cache dir {}: {}", cache_dir_, ec.message());
+        if (total_out) {
+            *total_out = 0;
+        }
+        return entries;
+    }
+
+    // Advance with increment(ec), not a range-for: the throwing operator++ would
+    // escape this function entirely now that the blanket try/catch is gone, and
+    // this runs on HttpExecutor worker threads where an exception crossing back
+    // into libhv's callback is not survivable.
+    //
+    // Every per-entry query likewise uses the error_code overload. A file that
+    // vanishes between readdir and stat — the normal case when another thread is
+    // evicting, and the reason one try/catch around the whole loop discarded the
+    // entire result — costs only its own entry.
+    const std::filesystem::directory_iterator end;
+    for (; it != end; it.increment(ec)) {
+        if (ec) {
+            spdlog::warn("[ThumbnailCache] Stopping cache scan after read error: {}", ec.message());
+            break;
+        }
+        const auto& path = it->path();
+
+        std::error_code entry_ec;
+        if (!std::filesystem::is_regular_file(path, entry_ec) || entry_ec) {
+            if (entry_ec) {
+                spdlog::debug("[ThumbnailCache] Skipping unreadable cache entry {}: {}",
+                              path.string(), entry_ec.message());
+            }
+            continue;
+        }
+
+        const auto mtime = std::filesystem::last_write_time(path, entry_ec);
+        if (entry_ec) {
+            spdlog::debug("[ThumbnailCache] Skipping entry with no mtime {}: {}", path.string(),
+                          entry_ec.message());
+            continue;
+        }
+
+        const auto size = std::filesystem::file_size(path, entry_ec);
+        if (entry_ec) {
+            spdlog::debug("[ThumbnailCache] Skipping entry with no size {}: {}", path.string(),
+                          entry_ec.message());
+            continue;
+        }
+
+        entries.push_back({path, mtime, size});
+        total += size;
+    }
+
+    if (total_out) {
+        *total_out = total;
+    }
+    return entries;
+}
+
 void ThumbnailCache::evict_if_needed() {
-    size_t current_size = get_cache_size();
+    std::lock_guard<std::mutex> lock(mutex_);
+    evict_locked();
+}
+
+void ThumbnailCache::evict_locked() {
+    // ONE directory walk, not two. The previous shape called get_cache_size()
+    // (a full walk with a stat per file) and then, if it decided to evict, walked
+    // the directory a second time to build the entry list. Every thumbnail fetch
+    // paid at least one walk whether or not anything was evicted.
+    size_t current_size = 0;
+    std::vector<CacheEntry> entries = scan_locked(&current_size);
+
+    // Reads only construction-time state (cache_dir_, disk_*), so it does not
+    // re-enter the lock.
     DiskPressure pressure = get_disk_pressure();
 
     // Determine effective limit based on disk pressure
@@ -266,26 +349,6 @@ void ThumbnailCache::evict_if_needed() {
             current_size / (1024 * 1024), effective_limit / (1024 * 1024));
     }
 
-    // Collect files with their modification times
-    struct CacheEntry {
-        std::filesystem::path path;
-        std::filesystem::file_time_type mtime;
-        std::uintmax_t size; // Match std::filesystem::file_size() return type
-    };
-    std::vector<CacheEntry> entries;
-
-    try {
-        for (const auto& entry : std::filesystem::directory_iterator(cache_dir_)) {
-            if (std::filesystem::is_regular_file(entry.path())) {
-                entries.push_back({entry.path(), std::filesystem::last_write_time(entry.path()),
-                                   std::filesystem::file_size(entry.path())});
-            }
-        }
-    } catch (const std::filesystem::filesystem_error& e) {
-        spdlog::warn("[ThumbnailCache] Error scanning cache for eviction: {}", e.what());
-        return;
-    }
-
     // Sort by modification time (oldest first)
     std::sort(entries.begin(), entries.end(),
               [](const CacheEntry& a, const CacheEntry& b) { return a.mtime < b.mtime; });
@@ -298,14 +361,23 @@ void ThumbnailCache::evict_if_needed() {
             break;
         }
 
-        try {
-            std::filesystem::remove(entry.path);
-            current_size -= entry.size;
-            evicted_bytes += entry.size;
-            ++evicted_count;
-        } catch (const std::filesystem::filesystem_error& e) {
-            spdlog::warn("[ThumbnailCache] Failed to evict {}: {}", entry.path.string(), e.what());
+        // Count bytes only when the file actually went away. remove() reports
+        // false (not an error) for a path that is already gone, and crediting
+        // ourselves for that would stop the loop believing it freed space it
+        // did not — leaving the cache over its limit.
+        std::error_code rm_ec;
+        const bool removed = std::filesystem::remove(entry.path, rm_ec);
+        if (rm_ec) {
+            spdlog::warn("[ThumbnailCache] Failed to evict {}: {}", entry.path.string(),
+                         rm_ec.message());
+            continue;
         }
+        if (!removed) {
+            continue;
+        }
+        current_size -= entry.size;
+        evicted_bytes += entry.size;
+        ++evicted_count;
     }
 
     if (evicted_count > 0) {
@@ -458,6 +530,9 @@ std::string ThumbnailCache::save_raw_png(const std::string& source_identifier,
 }
 
 size_t ThumbnailCache::clear_cache() {
+    // Shares mutex_ with eviction: both unlink from the same directory, and a
+    // concurrent eviction scan would otherwise trip over files this removes.
+    std::lock_guard<std::mutex> lock(mutex_);
     size_t count = 0;
     try {
         for (const auto& entry : std::filesystem::directory_iterator(cache_dir_)) {
@@ -478,6 +553,8 @@ size_t ThumbnailCache::invalidate(const std::string& relative_path) {
         return 0;
     }
 
+    // Same directory, same reason as clear_cache().
+    std::lock_guard<std::mutex> lock(mutex_);
     size_t count = 0;
     std::string hash = compute_hash(relative_path);
 
@@ -522,16 +599,9 @@ size_t ThumbnailCache::invalidate(const std::string& relative_path) {
 }
 
 size_t ThumbnailCache::get_cache_size() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     size_t total = 0;
-    try {
-        for (const auto& entry : std::filesystem::directory_iterator(cache_dir_)) {
-            if (std::filesystem::is_regular_file(entry.path())) {
-                total += std::filesystem::file_size(entry.path());
-            }
-        }
-    } catch (const std::filesystem::filesystem_error& e) {
-        spdlog::warn("[ThumbnailCache] Error calculating cache size: {}", e.what());
-    }
+    (void)scan_locked(&total);
     return total;
 }
 
