@@ -1,9 +1,10 @@
 /**
  * @file lv_xml_globals.c
  *
- * SPDX-License-Identifier: MIT
- *
  * Storage for helix-xml global state.
+ *
+ * SPDX-License-Identifier: MIT
+ * SPDX-FileCopyrightText: 2026 356C LLC
  */
 
 #include "lv_xml_globals.h"

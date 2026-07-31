@@ -1,10 +1,11 @@
 /**
  * @file lv_xml_globals.h
  *
- * SPDX-License-Identifier: MIT
- *
  * Global state for the helix-xml engine.
  * These variables lived in LVGL's lv_global_t until v9.5 removed XML support.
+ *
+ * SPDX-License-Identifier: MIT
+ * SPDX-FileCopyrightText: 2026 356C LLC
  */
 
 #ifndef LV_XML_GLOBALS_H

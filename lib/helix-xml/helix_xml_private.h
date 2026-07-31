@@ -1,10 +1,11 @@
 /**
  * @file helix_xml_private.h
  *
- * SPDX-License-Identifier: MIT
- *
  * Helix XML Engine private/internal header.
  * Include this after lvgl_private.h to get XML internal APIs.
+ *
+ * SPDX-License-Identifier: MIT
+ * SPDX-FileCopyrightText: 2026 356C LLC
  */
 
 #ifndef HELIX_XML_PRIVATE_H

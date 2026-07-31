@@ -1,5 +1,9 @@
-// Copyright (C) 2025-2026 356C LLC
-// SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * @file lv_xml_expr.c
+ *
+ * SPDX-License-Identifier: MIT
+ * SPDX-FileCopyrightText: 2026 356C LLC
+ */
 #include "lv_xml_expr.h"
 #if LV_USE_XML
 #include <lvgl.h>

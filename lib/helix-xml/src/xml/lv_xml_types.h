@@ -1,11 +1,12 @@
 /**
  * @file lv_xml_types.h
  *
- * SPDX-License-Identifier: MIT
- *
  * Forward declarations for helix-xml types.
  * These lived in LVGL's lv_types.h until v9.5 dropped XML support.
  * All XML headers should include this instead of relying on lv_types.h.
+ *
+ * SPDX-License-Identifier: MIT
+ * SPDX-FileCopyrightText: 2026 356C LLC
  */
 
 #ifndef LV_XML_TYPES_H
