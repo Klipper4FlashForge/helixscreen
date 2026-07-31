@@ -66,6 +66,30 @@ bool is_usable_snapshot_url(const std::string& snapshot_url) {
     return true;
 }
 
+bool probe_snapshot_reachable(const std::string& snapshot_url) {
+    auto req = std::make_shared<HttpRequest>();
+    req->method = HTTP_GET;
+    req->url = snapshot_url;
+    req->connect_timeout = kSnapshotProbeConnectTimeoutSec;
+    req->timeout = kSnapshotProbeTotalTimeoutSec;
+    auto resp = requests::request(req);
+    if (resp && resp->status_code == 200) {
+        return true;
+    }
+    // Distinguish the two failure shapes in the log: a status code means something
+    // answered and said no; "no response" means connect or the response budget ran
+    // out. The second is the one worth re-reading if a working camera is dropped.
+    if (resp) {
+        spdlog::debug("[Discovery] Snapshot probe of {} answered {}", snapshot_url,
+                      static_cast<int>(resp->status_code));
+    } else {
+        spdlog::debug("[Discovery] Snapshot probe of {} got no response within {}s "
+                      "(connect budget {}s)",
+                      snapshot_url, kSnapshotProbeTotalTimeoutSec, kSnapshotProbeConnectTimeoutSec);
+    }
+    return false;
+}
+
 MoonrakerDiscoverySequence::MoonrakerDiscoverySequence(MoonrakerClient& client) : client_(client) {}
 
 void MoonrakerDiscoverySequence::clear_cache() {
@@ -419,8 +443,8 @@ void MoonrakerDiscoverySequence::continue_discovery_objects(uint64_t seq) {
                                     if (response.contains("result")) {
                                         enabled = response["result"].value("enabled", false);
                                     }
-                                    spdlog::info(
-                                        "[Moonraker Client] Timelapse global enabled={}", enabled);
+                                    spdlog::info("[Moonraker Client] Timelapse global enabled={}",
+                                                 enabled);
                                     get_printer_state().set_timelapse_default_enabled(enabled);
                                 },
                                 [](const MoonrakerError& err) {
@@ -541,28 +565,20 @@ void MoonrakerDiscoverySequence::continue_discovery_objects(uint64_t seq) {
                         // suppresses) the localhost probe below, leaving the camera
                         // silently broken. Probe the SNAPSHOT url only — it returns
                         // and closes, unlike an MJPEG stream that would hang until
-                        // the 2s timeout and read as a false negative. Relative URLs
+                        // the timeout and read as a false negative. Relative URLs
                         // are skipped: they resolve against the Moonraker base and
                         // are the churn-immune case we don't need to second-guess.
                         if (has_webcam && !snapshot_url.empty()) {
                             auto is_absolute = [](const std::string& u) {
-                                return u.rfind("http://", 0) == 0 ||
-                                       u.rfind("https://", 0) == 0;
+                                return u.rfind("http://", 0) == 0 || u.rfind("https://", 0) == 0;
                             };
-                            if (is_absolute(snapshot_url)) {
-                                auto req = std::make_shared<HttpRequest>();
-                                req->method = HTTP_GET;
-                                req->url = snapshot_url;
-                                req->timeout = 2;
-                                auto resp = requests::request(req);
-                                if (!resp || resp->status_code != 200) {
-                                    spdlog::warn(
-                                        "[Discovery] Configured webcam '{}' unreachable at {} "
-                                        "(status {}) — falling back to local camera probe",
-                                        chosen_name.empty() ? "<unnamed>" : chosen_name,
-                                        snapshot_url, resp ? resp->status_code : -1);
-                                    has_webcam = false;
-                                }
+                            if (is_absolute(snapshot_url) &&
+                                !probe_snapshot_reachable(snapshot_url)) {
+                                spdlog::warn(
+                                    "[Discovery] Configured webcam '{}' unreachable at {} — "
+                                    "falling back to local camera probe",
+                                    chosen_name.empty() ? "<unnamed>" : chosen_name, snapshot_url);
+                                has_webcam = false;
                             }
                         }
                         if (has_webcam) {
@@ -580,8 +596,10 @@ void MoonrakerDiscoverySequence::continue_discovery_objects(uint64_t seq) {
                             // detached std::thread. Thread creation crashes on resource-
                             // constrained ARM devices (AD5M #724) — std::terminate is
                             // called even with try/catch, likely a GCC 10.3/ARM TLS bug.
-                            // Synchronous probing blocks the WS thread for up to 6s (3
-                            // URLs × 2s timeout) but only runs once during discovery.
+                            // Synchronous probing blocks the WS thread, but these are all
+                            // loopback addresses: an unbound port is refused immediately,
+                            // so the common "no local camera" path costs milliseconds, not
+                            // the full per-URL budget. Runs once during discovery.
                             spdlog::info(
                                 "[Discovery] No Moonraker webcam, probing local camera...");
                             bool found = false;
@@ -592,12 +610,11 @@ void MoonrakerDiscoverySequence::continue_discovery_objects(uint64_t seq) {
                             };
                             for (const char* url : probe_urls) {
                                 spdlog::info("[Discovery] Probing camera at {}", url);
-                                auto req = std::make_shared<HttpRequest>();
-                                req->method = HTTP_GET;
-                                req->url = url;
-                                req->timeout = 2;
-                                auto resp = requests::request(req);
-                                if (resp && resp->status_code == 200) {
+                                // Same two-budget probe as the configured-webcam case above.
+                                // A local go2rtc is just as capable of needing a keyframe
+                                // wait, and an unbound loopback port is refused instantly,
+                                // so the longer response budget costs nothing here.
+                                if (probe_snapshot_reachable(url)) {
                                     spdlog::info("[Discovery] Local camera found at {}", url);
                                     get_printer_state().set_webcam_available(true, "", url, false,
                                                                              false);
