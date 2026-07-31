@@ -1,13 +1,6 @@
 <?xml version="1.0"?>
 <!-- Copyright (C) 2025-2026 356C LLC -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!--
-  Lock Screen Component — full-screen PIN entry overlay.
-
-  Instantiated on lv_layer_top() by LockScreenOverlay::show().
-  The 6 dot indicators (lock_dot_0..5) are updated imperatively from C++
-  (allowed exception: transient input animation state, not subject-driven data).
--->
 <component>
   <consts>
     <!-- Dot indicator size for PIN entry feedback -->
@@ -20,18 +13,9 @@
 
   <styles>
     <!-- Filled dot: digit entered -->
-    <style name="dot_filled"
-           bg_opa="255"
-           bg_color="#text"
-           border_width="0"
-           radius="99"/>
+    <style name="dot_filled" bg_opa="255" bg_color="#text" border_width="0" radius="99"/>
     <!-- Empty dot: digit not yet entered -->
-    <style name="dot_empty"
-           bg_opa="0"
-           border_width="2"
-           border_color="#text_muted"
-           border_opa="255"
-           radius="99"/>
+    <style name="dot_empty" bg_opa="0" border_width="2" border_color="#text_muted" border_opa="255" radius="99"/>
 
     <!-- Card orientation.
 
@@ -46,16 +30,8 @@
 
          Width and flex_flow live here (not as inline attributes) because an
          inline attribute wins over bind_style. -->
-    <style name="card_compact"
-           width="440"
-           layout="flex"
-           flex_flow="row"
-           pad_column="#space_lg"/>
-    <style name="card_stacked"
-           width="320"
-           layout="flex"
-           flex_flow="column"
-           pad_row="#space_md"/>
+    <style name="card_compact" width="440" layout="flex" flex_flow="row" pad_column="#space_lg"/>
+    <style name="card_stacked" width="320" layout="flex" flex_flow="column" pad_row="#space_md"/>
 
     <!-- Info block (icon, heading, dots, error) and keypad track the card. -->
     <style name="info_compact" width="168"/>
@@ -66,22 +42,13 @@
 
   <!-- Root: full-screen semi-transparent overlay, absorbs all touch -->
   <view extends="lv_obj"
-        width="100%" height="100%"
-        style_bg_color="#screen_bg" style_bg_opa="230"
-        style_border_width="0" style_pad_all="0"
-        style_radius="0"
-        scrollable="false"
-        clickable="true">
+        width="100%" height="100%" style_bg_color="#screen_bg" style_bg_opa="230" style_border_width="0"
+        style_pad_all="0" style_radius="0" scrollable="false" clickable="true">
 
     <!-- E-Stop FAB — top-right, only visible while printing -->
     <lv_button name="estop_fab"
-               width="56" height="56"
-               style_radius="99"
-               style_bg_color="#danger"
-               style_pad_all="0"
-               align="top_right"
-               x="-16" y="16"
-              >
+               width="56" height="56" style_radius="99" style_bg_color="#danger" style_pad_all="0" align="top_right"
+               x="-16" y="16">
       <bind_flag_if_eq subject="estop_visible" flag="hidden" ref_value="0"/>
       <icon src="power" size="md" variant="primary" align="center"/>
       <event_cb trigger="clicked" callback="emergency_stop_clicked"/>
@@ -90,18 +57,10 @@
     <!-- Centered card containing PIN entry UI.
          width + flex_flow come from card_compact / card_stacked. -->
     <lv_obj name="lock_card"
-            height="content"
-            style_bg_color="#card_bg" style_bg_opa="255"
-            style_border_width="1"
-            style_border_color="#text_muted"
-            style_border_opa="64"
-            style_radius="#border_radius"
-            style_pad_all="#space_lg"
-            align="center"
-            style_flex_main_place="center"
-            style_flex_cross_place="center"
-            style_flex_track_place="center"
-            scrollable="false">
+            height="content" style_bg_color="#card_bg" style_bg_opa="255" style_border_width="1"
+            style_border_color="#text_muted" style_border_opa="64" style_radius="#border_radius"
+            style_pad_all="#space_lg" align="center" style_flex_main_place="center" style_flex_cross_place="center"
+            style_flex_track_place="center" scrollable="false">
 
       <bind_style_if_le name="card_compact" subject="ui_breakpoint" ref_value="1"/>
       <bind_style_if_ge name="card_stacked" subject="ui_breakpoint" ref_value="2"/>
@@ -109,14 +68,8 @@
       <!-- Info block: lock icon, heading, dots, error line.
            Sits above the keypad when stacked, left of it when compact. -->
       <lv_obj name="lock_info_column"
-              height="content"
-              flex_flow="column"
-              style_pad_all="0"
-              style_pad_gap="#space_md"
-              style_flex_main_place="center"
-              style_flex_cross_place="center"
-              style_bg_opa="0"
-              style_border_width="0"
+              height="content" flex_flow="column" style_pad_all="0" style_pad_gap="#space_md"
+              style_flex_main_place="center" style_flex_cross_place="center" style_bg_opa="0" style_border_width="0"
               scrollable="false">
 
         <bind_style_if_le name="info_compact" subject="ui_breakpoint" ref_value="1"/>
@@ -126,19 +79,12 @@
         <icon src="lock" size="lg" variant="secondary" align="center"/>
 
         <!-- "Enter PIN" heading -->
-        <text_heading text="Enter PIN"
-                      style_text_align="center"
-                      width="100%"/>
+        <text_heading width="100%" text="Enter PIN" style_text_align="center"/>
 
         <!-- 6 dot PIN indicators -->
         <lv_obj name="lock_dots_container"
-                width="content" height="content"
-                flex_flow="row"
-                style_pad_gap="#space_sm"
-                style_pad_all="0"
-                style_bg_opa="0"
-                style_border_width="0"
-                align="center">
+                width="content" height="content" flex_flow="row" style_pad_gap="#space_sm" style_pad_all="0"
+                style_bg_opa="0" style_border_width="0" align="center">
           <lv_obj name="lock_dot_0" width="#dot_size" height="#dot_size">
             <style name="dot_empty"/>
           </lv_obj>
@@ -161,95 +107,58 @@
 
         <!-- Error label — invisible by default, space reserved -->
         <text_small name="lock_error_label"
-                    text=" "
-                    style_text_color="#warning"
-                    style_text_align="center"
-                    width="100%"
-                    style_opa="0"/>
+                    width="100%" text=" " style_text_color="#warning" style_text_align="center" style_opa="0"/>
       </lv_obj>
 
       <!-- Keypad: 4x3 grid using row_wrap -->
       <lv_obj name="lock_keypad"
-              height="content"
-              flex_flow="row_wrap"
-              style_flex_main_place="center"
-              style_flex_track_place="center"
-              style_pad_all="0"
-              style_pad_gap="#space_sm"
-              style_bg_opa="0"
-              style_border_width="0"
-              scrollable="false">
+              height="content" flex_flow="row_wrap" style_flex_main_place="center" style_flex_track_place="center"
+              style_pad_all="0" style_pad_gap="#space_sm" style_bg_opa="0" style_border_width="0" scrollable="false">
 
         <bind_style_if_le name="keypad_compact" subject="ui_breakpoint" ref_value="1"/>
         <bind_style_if_ge name="keypad_stacked" subject="ui_breakpoint" ref_value="2"/>
 
         <!-- Row 1: 1 2 3 -->
-        <ui_button name="lock_digit_1"
-                   width="30%" height="#lock_btn_height"
-                   text="1" variant="secondary">
+        <ui_button name="lock_digit_1" width="30%" height="#lock_btn_height" text="1" variant="secondary">
           <event_cb trigger="clicked" callback="lock_digit_clicked"/>
         </ui_button>
-        <ui_button name="lock_digit_2"
-                   width="30%" height="#lock_btn_height"
-                   text="2" variant="secondary">
+        <ui_button name="lock_digit_2" width="30%" height="#lock_btn_height" text="2" variant="secondary">
           <event_cb trigger="clicked" callback="lock_digit_clicked"/>
         </ui_button>
-        <ui_button name="lock_digit_3"
-                   width="30%" height="#lock_btn_height"
-                   text="3" variant="secondary">
+        <ui_button name="lock_digit_3" width="30%" height="#lock_btn_height" text="3" variant="secondary">
           <event_cb trigger="clicked" callback="lock_digit_clicked"/>
         </ui_button>
 
         <!-- Row 2: 4 5 6 -->
-        <ui_button name="lock_digit_4"
-                   width="30%" height="#lock_btn_height"
-                   text="4" variant="secondary">
+        <ui_button name="lock_digit_4" width="30%" height="#lock_btn_height" text="4" variant="secondary">
           <event_cb trigger="clicked" callback="lock_digit_clicked"/>
         </ui_button>
-        <ui_button name="lock_digit_5"
-                   width="30%" height="#lock_btn_height"
-                   text="5" variant="secondary">
+        <ui_button name="lock_digit_5" width="30%" height="#lock_btn_height" text="5" variant="secondary">
           <event_cb trigger="clicked" callback="lock_digit_clicked"/>
         </ui_button>
-        <ui_button name="lock_digit_6"
-                   width="30%" height="#lock_btn_height"
-                   text="6" variant="secondary">
+        <ui_button name="lock_digit_6" width="30%" height="#lock_btn_height" text="6" variant="secondary">
           <event_cb trigger="clicked" callback="lock_digit_clicked"/>
         </ui_button>
 
         <!-- Row 3: 7 8 9 -->
-        <ui_button name="lock_digit_7"
-                   width="30%" height="#lock_btn_height"
-                   text="7" variant="secondary">
+        <ui_button name="lock_digit_7" width="30%" height="#lock_btn_height" text="7" variant="secondary">
           <event_cb trigger="clicked" callback="lock_digit_clicked"/>
         </ui_button>
-        <ui_button name="lock_digit_8"
-                   width="30%" height="#lock_btn_height"
-                   text="8" variant="secondary">
+        <ui_button name="lock_digit_8" width="30%" height="#lock_btn_height" text="8" variant="secondary">
           <event_cb trigger="clicked" callback="lock_digit_clicked"/>
         </ui_button>
-        <ui_button name="lock_digit_9"
-                   width="30%" height="#lock_btn_height"
-                   text="9" variant="secondary">
+        <ui_button name="lock_digit_9" width="30%" height="#lock_btn_height" text="9" variant="secondary">
           <event_cb trigger="clicked" callback="lock_digit_clicked"/>
         </ui_button>
 
         <!-- Row 4: backspace 0 confirm -->
-        <ui_button name="lock_backspace"
-                   width="30%" height="#lock_btn_height"
-                   icon="backspace" text=""
-                   variant="ghost">
+        <ui_button name="lock_backspace" width="30%" height="#lock_btn_height" icon="backspace" text="" variant="ghost">
           <event_cb trigger="clicked" callback="lock_backspace_clicked"/>
         </ui_button>
-        <ui_button name="lock_digit_0"
-                   width="30%" height="#lock_btn_height"
-                   text="0" variant="secondary">
+        <ui_button name="lock_digit_0" width="30%" height="#lock_btn_height" text="0" variant="secondary">
           <event_cb trigger="clicked" callback="lock_digit_clicked"/>
         </ui_button>
-        <ui_button name="lock_confirm"
-                   width="30%" height="#lock_btn_height"
-                   icon="check" text=""
-                   variant="primary">
+        <ui_button name="lock_confirm" width="30%" height="#lock_btn_height" icon="check" text="" variant="primary">
           <event_cb trigger="clicked" callback="lock_confirm_clicked"/>
         </ui_button>
 

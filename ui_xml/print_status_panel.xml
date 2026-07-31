@@ -31,8 +31,7 @@
          control that must never be unreachable does not get to depend on the
          header's height, so it floats over the top-right corner instead, the same
          way lock_screen.xml positions its estop_fab. -->
-    <header_bar name="overlay_header"
-                title="Print Status" title_tag="Print Status"/>
+    <header_bar name="overlay_header" title="Print Status" title_tag="Print Status"/>
     <!-- Content Area (two columns: viewer left, controls right) -->
     <lv_obj name="overlay_content"
             width="100%" flex_grow="1" style_pad_left="#space_lg" style_pad_right="#space_lg" style_pad_top="0"
@@ -82,9 +81,9 @@
         <!-- with the Layer/Filename/ETA rows that metadata_overlay draws on top. -->
         <lv_obj name="preparing_overlay"
                 width="100%" height="100%" align="center" style_bg_color="#overlay_bg" style_bg_opa="220"
-                style_radius="0" style_pad_all="#space_lg" style_pad_bottom="#metadata_clip_height"
-                flex_flow="column" style_flex_main_place="center"
-                style_flex_cross_place="center" style_pad_gap="#space_md" scrollable="false">
+                style_radius="0" style_pad_all="#space_lg" style_pad_bottom="#metadata_clip_height" flex_flow="column"
+                style_flex_main_place="center" style_flex_cross_place="center" style_pad_gap="#space_md"
+                scrollable="false">
           <bind_flag_if_eq subject="preparing_visible" flag="hidden" ref_value="0"/>
           <spinner name="preparing_spinner" size="lg"/>
           <text_heading name="preparing_operation_label"
@@ -108,14 +107,13 @@
         <!-- View mode toggle: switches between progress (ghost layers) and complete view -->
         <!-- Position shifts right when objects button is visible (managed in C++) -->
         <lv_obj name="btn_view_toggle"
-                width="36" height="36" align="top_left"
-                style_translate_x="#space_md" style_translate_y="#space_md"
-                style_bg_color="#card_bg" style_bg_opa="180" style_radius="18"
-                clickable="true" style_pad_all="0" scrollable="false">
+                width="36" height="36" align="top_left" style_translate_x="#space_md" style_translate_y="#space_md"
+                style_bg_color="#card_bg" style_bg_opa="180" style_radius="18" clickable="true" style_pad_all="0"
+                scrollable="false">
           <bind_flag_if_eq subject="gcode_viewer_mode" flag="hidden" ref_value="0"/>
           <lv_label name="btn_view_toggle_icon"
-                    bind_text="view_toggle_icon" style_text_font="mdi_icons_24"
-                    style_text_color="#text_muted" align="center"/>
+                    bind_text="view_toggle_icon" style_text_font="mdi_icons_24" style_text_color="#text_muted"
+                    align="center"/>
           <event_cb trigger="clicked" callback="on_view_toggle"/>
         </lv_obj>
 
@@ -182,8 +180,8 @@
         <lv_obj name="print_paused_overlay"
                 width="100%" height="100%" align="top_mid" style_radius="0" style_pad_all="#space_lg"
                 style_pad_bottom="#metadata_clip_height" flex_flow="column" style_flex_main_place="center"
-                style_flex_cross_place="center" style_flex_track_place="center"
-                scrollable="false" clickable="false" hidden="true">
+                style_flex_cross_place="center" style_flex_track_place="center" scrollable="false" clickable="false"
+                hidden="true">
           <bind_flag_if_eq subject="show_paused_overlay" flag="hidden" ref_value="0"/>
           <!-- ui_button styled container (variant="primary" applies bg + auto-contrast on  -->
           <!-- child labels). Two stacked labels inside: a title that's always shown and a  -->
@@ -192,20 +190,16 @@
           <!-- avoiding the dynamic LV_SIZE_CONTENT cascade issue we hit with a single       -->
           <!-- multi-line label that changes line count after the badge was already laid out.-->
           <ui_button name="paused_badge"
-                     variant="primary" layout="row"
-                     width="content" height="content" style_min_height="0"
-                     clickable="false" focusable="false" style_radius="#space_lg"
-                     style_pad_left="#space_md" style_pad_right="#space_md"
-                     style_pad_top="#space_sm" style_pad_bottom="#space_sm"
+                     width="content" height="content" variant="primary" layout="row" style_min_height="0"
+                     clickable="false" focusable="false" style_radius="#space_lg" style_pad_left="#space_md"
+                     style_pad_right="#space_md" style_pad_top="#space_sm" style_pad_bottom="#space_sm"
                      style_pad_gap="#space_sm">
             <lv_label text="#icon_pause" style_text_font="mdi_icons_24"/>
-            <lv_obj width="content" height="content" style_pad_all="0" style_pad_gap="0"
-                    style_border_width="0" style_bg_opa="0" flex_flow="column"
-                    style_flex_cross_place="center" scrollable="false">
-              <lv_label text="Print Paused" translation_tag="Print Paused"
-                        style_text_align="center"/>
-              <lv_label name="paused_badge_reason" bind_text="print_pause_reason"
-                        style_text_align="center">
+            <lv_obj width="content"
+                    height="content" style_pad_all="0" style_pad_gap="0" style_border_width="0" style_bg_opa="0"
+                    flex_flow="column" style_flex_cross_place="center" scrollable="false">
+              <lv_label text="Print Paused" translation_tag="Print Paused" style_text_align="center"/>
+              <lv_label name="paused_badge_reason" bind_text="print_pause_reason" style_text_align="center">
                 <bind_flag_if_eq subject="print_pause_reason_visible" flag="hidden" ref_value="0"/>
               </lv_label>
             </lv_obj>
@@ -215,14 +209,12 @@
         <!-- Metadata container - content-sized at bottom, overlaying thumbnail. -->
         <!-- Grows when the optional M117 (display_message) row becomes visible. -->
         <lv_obj name="metadata_clip"
-                width="100%" height="content" style_radius="0" style_pad_all="0" align="bottom_mid"
-                scrollable="false">
+                width="100%" height="content" style_radius="0" style_pad_all="0" align="bottom_mid" scrollable="false">
           <!-- Inner overlay with semi-transparent background and rounded corners -->
           <lv_obj name="metadata_overlay"
-                  width="100%" height="content" align="bottom_mid" style_bg_opa="160"
-                  style_radius="#border_radius" style_pad_left="#space_sm" style_pad_right="#space_sm"
-                  style_pad_top="#space_md" style_pad_bottom="#space_md" style_pad_gap="#space_xs" flex_flow="column"
-                  scrollable="false">
+                  width="100%" height="content" align="bottom_mid" style_bg_opa="160" style_radius="#border_radius"
+                  style_pad_left="#space_sm" style_pad_right="#space_sm" style_pad_top="#space_md"
+                  style_pad_bottom="#space_md" style_pad_gap="#space_xs" flex_flow="column" scrollable="false">
             <!-- Print Progress Bar (invisible during pre-print operations, but keeps layout space) -->
             <progress_bar name="print_progress" bind_value="print_progress">
               <bind_style name="invisible" subject="preparing_visible" ref_value="1"/>
@@ -247,15 +239,14 @@
                     height="content" style_pad_all="0" flex_flow="row" style_flex_main_place="space_between"
                     style_flex_cross_place="center" scrollable="false">
               <!-- Time display: elapsed / remaining with labels -->
-              <lv_obj height="content" flex_grow="1"
-                      style_pad_all="0" flex_flow="row" style_flex_main_place="start" style_flex_cross_place="center"
-                      scrollable="false">
+              <lv_obj height="content"
+                      flex_grow="1" style_pad_all="0" flex_flow="row" style_flex_main_place="start"
+                      style_flex_cross_place="center" scrollable="false">
                 <text_small name="print_elapsed" text="0m" bind_text="print_elapsed"/>
                 <text_small text=" elapsed · " translation_tag=" elapsed · "/>
                 <text_small name="print_remaining" text="0m" bind_text="print_remaining"/>
                 <text_small text=" left" translation_tag=" left"/>
-                <text_small name="print_eta" text="" bind_text="print_eta"
-                            style_pad_left="#space_xs"/>
+                <text_small name="print_eta" text="" bind_text="print_eta" style_pad_left="#space_xs"/>
               </lv_obj>
               <text_small name="print_percent" text="0%" bind_text="print_progress_text"/>
             </lv_obj>
@@ -264,8 +255,8 @@
             <!-- label is a separate subject (print_start_message) rendered by -->
             <!-- preparing_overlay above, so the two do not duplicate. -->
             <text_small name="display_message"
-                        width="100%" bind_text="display_message" style_text_align="left"
-                        long_mode="scroll_circular" style_text_color="#text_muted" hidden="true">
+                        width="100%" bind_text="display_message" style_text_align="left" long_mode="scroll_circular"
+                        style_text_color="#text_muted" hidden="true">
               <bind_flag_if_eq subject="display_message_visible" flag="hidden" ref_value="0"/>
             </text_small>
           </lv_obj>
@@ -288,9 +279,9 @@
         <!-- Speed / Flow indicators (hidden on TINY and SMALL breakpoints) -->
         <!-- Tap opens Tune overlay (same as Tune button) -->
         <lv_obj name="speed_flow_row"
-                width="100%" height="content" style_pad_left="#space_md" style_pad_right="#space_md"
-                style_pad_top="0" flex_flow="row" style_flex_cross_place="center"
-                style_pad_gap="#space_sm" scrollable="false" clickable="true">
+                width="100%" height="content" style_pad_left="#space_md" style_pad_right="#space_md" style_pad_top="0"
+                flex_flow="row" style_flex_cross_place="center" style_pad_gap="#space_sm" scrollable="false"
+                clickable="true">
           <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="1"/>
           <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="2"/>
           <event_cb trigger="clicked" callback="on_print_status_tune"/>
@@ -337,9 +328,8 @@
 
         <!-- Control Buttons (flex_grow pushes to bottom via main_place=end) -->
         <lv_obj name="button_grid"
-                width="100%" flex_grow="1" style_pad_all="0"
-                scrollable="false" flex_flow="column" style_flex_main_place="end"
-                style_flex_cross_place="center" style_pad_gap="#space_sm">
+                width="100%" flex_grow="1" style_pad_all="0" scrollable="false" flex_flow="column"
+                style_flex_main_place="end" style_flex_cross_place="center" style_pad_gap="#space_sm">
           <!-- Row 1: Light, Timelapse (conditional), Pause -->
           <lv_obj width="100%"
                   height="content" style_pad_all="0" scrollable="false" flex_flow="row" style_flex_main_place="center"
@@ -360,8 +350,9 @@
               <bind_state_if_eq subject="print_controls_enabled" state="disabled" ref_value="0"/>
             </ui_button>
             <ui_button name="btn_pause"
-                       height="#button_height_lg" flex_grow="1" style_max_width="50%" bind_icon="print_control_primary_icon"
-                       bind_text="print_control_primary_label" label_hidden_if_bp_eq="1">
+                       height="#button_height_lg" flex_grow="1" style_max_width="50%"
+                       bind_icon="print_control_primary_icon" bind_text="print_control_primary_label"
+                       label_hidden_if_bp_eq="1">
               <event_cb trigger="clicked" callback="on_print_control_primary"/>
               <bind_state_if_eq subject="print_control_primary_enabled" state="disabled" ref_value="0"/>
             </ui_button>
@@ -397,8 +388,7 @@
         <!-- Plugin injection point: widgets from plugins appear here -->
         <!-- Plugins can inject print monitoring widgets, sensor readouts, etc. -->
         <lv_obj name="print_status_extras"
-                width="100%" height="content" style_pad_all="0"
-                flex_flow="column" style_pad_gap="#space_md"/>
+                width="100%" height="content" style_pad_all="0" flex_flow="column" style_pad_gap="#space_md"/>
       </lv_obj>
     </lv_obj>
 
@@ -408,13 +398,8 @@
          breakpoint regardless of how short the header is. Declared last so it
          draws above the content it overlaps. -->
     <lv_button name="estop_fab"
-               width="44" height="44"
-               ignore_layout="true"
-               align="top_right"
-               style_translate_x="-#space_sm" style_translate_y="#space_sm"
-               style_radius="9999"
-               style_bg_color="#danger"
-               style_pad_all="0">
+               width="44" height="44" ignore_layout="true" align="top_right" style_translate_x="-#space_sm"
+               style_translate_y="#space_sm" style_radius="9999" style_bg_color="#danger" style_pad_all="0">
       <!-- Explicit color, not variant="primary": a variant resolves to the theme
            primary (blue), which is near-invisible on the danger-red circle. The
            header_bar this replaced defaulted its icon to #text. -->
