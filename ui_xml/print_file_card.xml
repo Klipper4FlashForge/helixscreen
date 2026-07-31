@@ -36,7 +36,11 @@
               width="100%" height="100%" inner_align="stretch"/>
     <!-- Thumbnail image - pre-scaled to exact display size via ThumbnailProcessor.
          Widget dimensions set by C++ to match .bin target (e.g. 160x160 for 800px),
-         ensuring 1:1 blit with zero per-frame scaling overhead -->
+         ensuring 1:1 blit with zero per-frame scaling overhead. Every source that
+         reaches this widget goes through that pre-scaler — Moonraker downloads and
+         USB-extracted thumbnails alike — so do NOT add inner_align="contain" here as
+         a safety net: it would put a mis-sized source on LVGL's transform path and
+         scale it on every frame, which the weakest devices cannot afford. -->
     <lv_image name="thumbnail"
               src="$thumbnail_src" align="center"
               style_translate_y="#preview_offset_y"/>
@@ -65,15 +69,17 @@
       <lv_obj name="metadata_row"
               width="100%" height="content" style_pad_all="0" style_pad_top="#metadata_top_pad" flex_flow="row"
               style_pad_gap="#space_xs" clickable="false" event_bubble="true">
-        <!-- Print time (icon + text) -->
-        <lv_obj height="100%"
+        <!-- Print time (icon + text).
+             height="content", NOT a percentage: metadata_row is itself content-sized, so
+             height="100%" makes the two depend on each other and both collapse to zero. -->
+        <lv_obj height="content"
                 flex_grow="1" style_pad_all="0" flex_flow="row" style_pad_gap="#icon_text_gap"
                 style_flex_cross_place="center" clickable="false" event_bubble="true">
           <icon src="clock" size="xs" variant="primary"/>
           <text_xs name="time_label" text="$print_time" flex_grow="1" style_translate_y="2"/>
         </lv_obj>
         <!-- Filament weight (icon + text) -->
-        <lv_obj height="100%"
+        <lv_obj height="content"
                 flex_grow="1" style_pad_all="0" flex_flow="row" style_pad_gap="#icon_text_gap"
                 style_flex_cross_place="center" clickable="false" event_bubble="true">
           <icon src="weight" size="xs" variant="primary"/>

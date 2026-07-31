@@ -16,6 +16,8 @@
 #include <hv/hthreadpool.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <filesystem>
 #include <functional>
@@ -209,6 +211,48 @@ std::string ThumbnailProcessor::get_if_processed(const std::string& source_path,
     return "";
 }
 
+namespace {
+
+// Card size measured by PrintSelectPanel, or 0 when no card grid has reported one.
+// Read from the thumbnail worker threads while a fetch picks its target.
+std::atomic<int> g_card_hint_width{0};
+std::atomic<int> g_card_hint_height{0};
+
+} // namespace
+
+void ThumbnailProcessor::set_card_size_hint(int card_width, int card_height) {
+    if (card_width <= 0 || card_height <= 0) {
+        g_card_hint_width.store(0, std::memory_order_relaxed);
+        g_card_hint_height.store(0, std::memory_order_relaxed);
+        return;
+    }
+    g_card_hint_width.store(card_width, std::memory_order_relaxed);
+    g_card_hint_height.store(card_height, std::memory_order_relaxed);
+}
+
+ThumbnailTarget ThumbnailProcessor::get_target_for_card(int card_width, int card_height) {
+    ThumbnailTarget target;
+    target.color_format = COLOR_FORMAT_ARGB8888;
+
+    if (card_width <= 0 || card_height <= 0) {
+        target.width = 120;
+        target.height = 120;
+        return target;
+    }
+
+    // preview_offset_y in globals.xml lifts the art by 12% of its own height, so a
+    // square of side N clears the card's top edge only while (H - N)/2 >= 0.12N.
+    int height_bound = static_cast<int>(card_height / 1.24);
+    int side = std::min(card_width, height_bound);
+
+    side -= side % 4; // bound the number of distinct .bin cache entries
+    side = std::clamp(side, 64, 220);
+
+    target.width = side;
+    target.height = side;
+    return target;
+}
+
 ThumbnailTarget ThumbnailProcessor::get_target_for_resolution(int width, int height,
                                                               ThumbnailSize size) {
     ThumbnailTarget target;
@@ -256,6 +300,19 @@ ThumbnailTarget ThumbnailProcessor::get_target_for_resolution(int width, int hei
 }
 
 ThumbnailTarget ThumbnailProcessor::get_target_for_display(ThumbnailSize size) {
+    // A measured card beats guessing one from the display resolution. Card art has to
+    // fit the box the grid actually built, or LVGL crops the model (#1208).
+    if (size == ThumbnailSize::Card) {
+        int hint_w = g_card_hint_width.load(std::memory_order_relaxed);
+        int hint_h = g_card_hint_height.load(std::memory_order_relaxed);
+        if (hint_w > 0 && hint_h > 0) {
+            ThumbnailTarget target = get_target_for_card(hint_w, hint_h);
+            spdlog::trace("[ThumbnailProcessor] Card {}x{} → target {}x{} (measured)", hint_w,
+                          hint_h, target.width, target.height);
+            return target;
+        }
+    }
+
     // Get the default display
     lv_display_t* display = lv_display_get_default();
     if (!display) {

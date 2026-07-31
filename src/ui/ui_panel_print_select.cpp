@@ -57,6 +57,7 @@
 #include <algorithm>
 #include <cmath>
 #include <ctime>
+#include <fstream>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -75,6 +76,26 @@ using helix::ui::format_print_time;
 // ============================================================================
 // Global Instance
 // ============================================================================
+
+// Slurp a file into memory. Used to hand an on-disk thumbnail to the prescaler,
+// which takes PNG bytes rather than a path. Returns empty on any failure — every
+// caller treats that as "no thumbnail" rather than an error worth surfacing.
+static std::vector<uint8_t> read_file_bytes(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+        return {};
+    }
+    std::streamsize size = file.tellg();
+    if (size <= 0) {
+        return {};
+    }
+    file.seekg(0, std::ios::beg);
+    std::vector<uint8_t> data(static_cast<size_t>(size));
+    if (!file.read(reinterpret_cast<char*>(data.data()), size)) {
+        return {};
+    }
+    return data;
+}
 
 static std::unique_ptr<PrintSelectPanel> g_print_select_panel;
 
@@ -1252,10 +1273,75 @@ void PrintSelectPanel::process_metadata_result(size_t i, const std::string& file
                 self->file_list_[d->index].original_thumbnail_url = d->thumb_path;
 
                 if (d->thumb_is_local) {
-                    // Local file exists - use directly (mock mode)
-                    self->file_list_[d->index].thumbnail_path = "A:" + d->thumb_path;
-                    spdlog::debug("[{}] Using local thumbnail for {}: {}", self->get_name(),
-                                  d->filename, self->file_list_[d->index].thumbnail_path);
+                    // Local file (mock mode). Feed it through the same prescale pipeline
+                    // the remote and USB paths use rather than pointing the widget at the
+                    // raw PNG: the card sizes its image widget to the .bin target, so a
+                    // native-size 300x300 source gets drawn at 300x300 and cropped to the
+                    // widget box, showing a fragment of the model (#1208). Routing it
+                    // through the prescaler also keeps --test faithful to a real printer.
+                    ThumbnailLoadContext ctx;
+                    ctx.alive = self->thumbnail_alive_;
+                    ctx.generation = &self->nav_generation_;
+                    ctx.captured_gen = self->nav_generation_.load();
+
+                    size_t file_idx = d->index;
+                    std::string filename_copy = d->filename;
+                    std::string cache_key = d->thumb_path + "_local";
+
+                    // A refresh re-runs this for files that already have their .bin, and
+                    // re-reading plus re-staging every PNG to rediscover that is wasted IO.
+                    const std::string& existing = self->file_list_[d->index].thumbnail_path;
+                    bool already_prescaled = existing.size() > 4 &&
+                                             existing.compare(existing.size() - 4, 4, ".bin") == 0;
+
+                    std::vector<uint8_t> png_data =
+                        already_prescaled ? std::vector<uint8_t>{} : read_file_bytes(d->thumb_path);
+                    std::string cached_png =
+                        png_data.empty() ? std::string()
+                                         : get_thumbnail_cache().save_raw_png(cache_key, png_data);
+
+                    if (cached_png.empty()) {
+                        // Could not stage it for prescaling — the raw PNG still beats no
+                        // thumbnail at all, even though the card will crop it.
+                        self->file_list_[d->index].thumbnail_path = "A:" + d->thumb_path;
+                        spdlog::debug("[{}] Using local thumbnail unscaled for {}: {}",
+                                      self->get_name(), d->filename,
+                                      self->file_list_[d->index].thumbnail_path);
+                    } else {
+                        get_thumbnail_cache().fetch_for_card_view(
+                            self->api_, cache_key, ctx,
+                            [self, panel_tok, file_idx,
+                             filename_copy](const std::string& optimized) {
+                                struct LocalThumbUpdate {
+                                    PrintSelectPanel* panel;
+                                    helix::LifetimeToken token;
+                                    size_t index;
+                                    std::string filename;
+                                    std::string lvgl_path;
+                                };
+                                helix::ui::queue_update<LocalThumbUpdate>(
+                                    std::make_unique<LocalThumbUpdate>(LocalThumbUpdate{
+                                        self, panel_tok, file_idx, filename_copy, optimized}),
+                                    [](LocalThumbUpdate* t) {
+                                        if (t->token.expired()) {
+                                            return;
+                                        }
+                                        if (t->index < t->panel->file_list_.size() &&
+                                            t->panel->file_list_[t->index].filename ==
+                                                t->filename) {
+                                            t->panel->file_list_[t->index].thumbnail_path =
+                                                t->lvgl_path;
+                                            t->panel->schedule_view_refresh();
+                                        }
+                                    });
+                            },
+                            [self, filename_copy, ctx](const std::string& error) {
+                                if (!ctx.is_valid())
+                                    return;
+                                spdlog::warn("[{}] Failed to prescale local thumbnail for {}: {}",
+                                             self->get_name(), filename_copy, error);
+                            });
+                    }
                 } else {
                     // Remote path - use semantic API for card view thumbnails
                     spdlog::debug("[{}] Fetching card thumbnail for {}: {}", self->get_name(),
@@ -1913,9 +1999,17 @@ void PrintSelectPanel::set_print_status_panel(lv_obj_t* panel) {
 // ============================================================================
 
 CardDimensions PrintSelectPanel::calculate_card_dimensions() {
+    // Card thumbnails are pre-scaled to a fixed .bin size, so the processor has to know
+    // how big a card really is — its own resolution ladder guessed too large and LVGL
+    // cropped the art (#1208). Publish on every exit path, including the fallbacks.
+    auto publish = [](const CardDimensions& d) {
+        helix::ThumbnailProcessor::set_card_size_hint(d.card_width, d.card_height);
+        return d;
+    };
+
     if (!card_view_container_) {
         spdlog::error("[{}] Cannot calculate dimensions: container is null", get_name());
-        return {4, 2, CARD_MIN_WIDTH, CARD_DEFAULT_HEIGHT};
+        return publish({4, 2, CARD_MIN_WIDTH, CARD_DEFAULT_HEIGHT});
     }
 
     lv_coord_t container_width = lv_obj_get_content_width(card_view_container_);
@@ -1930,7 +2024,7 @@ CardDimensions PrintSelectPanel::calculate_card_dimensions() {
     lv_obj_t* panel_root = lv_obj_get_parent(card_view_container_);
     if (!panel_root) {
         spdlog::error("[{}] Cannot find panel root", get_name());
-        return {4, 2, CARD_MIN_WIDTH, CARD_DEFAULT_HEIGHT};
+        return publish({4, 2, CARD_MIN_WIDTH, CARD_DEFAULT_HEIGHT});
     }
 
     lv_coord_t panel_height = lv_obj_get_height(panel_root);
@@ -1978,7 +2072,7 @@ CardDimensions PrintSelectPanel::calculate_card_dimensions() {
             spdlog::trace("[{}] Calculated card layout: {} rows x {} columns, card={}x{}",
                           get_name(), dims.num_rows, dims.num_columns, dims.card_width,
                           dims.card_height);
-            return dims;
+            return publish(dims);
         }
     }
 
@@ -1990,7 +2084,7 @@ CardDimensions PrintSelectPanel::calculate_card_dimensions() {
 
     spdlog::warn("[{}] No optimal card layout found, using fallback: {} columns", get_name(),
                  dims.num_columns);
-    return dims;
+    return publish(dims);
 }
 
 void PrintSelectPanel::schedule_view_refresh() {

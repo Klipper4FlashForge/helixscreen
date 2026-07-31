@@ -194,6 +194,45 @@ class ThumbnailProcessor {
                                                      ThumbnailSize size = ThumbnailSize::Card);
 
     /**
+     * @brief Get the card thumbnail target that fits a card of the given size
+     *
+     * The resolution ladder in get_target_for_resolution() infers a card size from
+     * the display, and those guesses drifted from what the grid actually lays out —
+     * a 480x272 screen builds 138x115 cards, not the ~107px the ladder assumed, so a
+     * 120x120 .bin overhung the card and LVGL cropped the top off every model.
+     * This derives the target from the real card box instead.
+     *
+     * The card art is centred and then lifted by `preview_offset_y` (-12% of its own
+     * height) to clear the metadata overlay, so a square of side N needs
+     * (H - N)/2 - 0.12N >= 0 to stay inside a card of height H. Width is the other
+     * bound. The result is snapped down to a multiple of 4 to keep the number of
+     * distinct `{hash}_{w}x{h}_ARGB8888.bin` cache entries small.
+     *
+     * Pure function — no LVGL access, safe from any thread.
+     *
+     * @param card_width  Card width in pixels
+     * @param card_height Card height in pixels
+     * @return ThumbnailTarget that fits inside the card, clamped to [64, 220]
+     */
+    static ThumbnailTarget get_target_for_card(int card_width, int card_height);
+
+    /**
+     * @brief Publish the card grid's measured card size for Card-size lookups
+     *
+     * PrintSelectPanel calls this whenever it recomputes CardDimensions. Once set,
+     * get_target_for_display(ThumbnailSize::Card) returns get_target_for_card() for
+     * that size instead of the resolution ladder, so the pre-scaled .bin and the
+     * image widget agree on a size the card can actually hold. Passing 0,0 restores
+     * the ladder (used by callers with no card grid, e.g. the timelapse overlay).
+     *
+     * Thread-safe: the thumbnail worker threads read the hint while fetching.
+     *
+     * @param card_width  Card width in pixels, or 0 to clear the hint
+     * @param card_height Card height in pixels, or 0 to clear the hint
+     */
+    static void set_card_size_hint(int card_width, int card_height);
+
+    /**
      * @brief Get the cache directory path (thread-safe)
      * @return Path to thumbnail cache directory (e.g., /tmp/helix_thumbs)
      */
