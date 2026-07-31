@@ -306,6 +306,25 @@ fi
 
 echo ""
 
+echo "🪟 Checking layout-variant parity..."
+
+# A ui_xml/<variant>/ file replaces its base wholesale, so nothing else notices
+# when the base grows a binding the variant never gets. Those failures are
+# silent at runtime (prestonbrown/helixscreen#1203). Always whole-tree: parity
+# is a property of a file PAIR, so staging only one half still has to be checked.
+if [ -f "scripts/check_variant_parity.py" ]; then
+  if python3 scripts/check_variant_parity.py >/tmp/variant_parity.out 2>&1; then
+    echo "✅ Layout variants match their base wiring"
+  else
+    cat /tmp/variant_parity.out
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  check_variant_parity.py not found — skipping"
+fi
+
+echo ""
+
 # ====================================================================
 # Phase 2: Code Quality Checks
 # ====================================================================
