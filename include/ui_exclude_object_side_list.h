@@ -4,6 +4,7 @@
 #include "ui_observer_guard.h"
 
 #include "async_lifetime_guard.h"
+#include "print_status_layout_decision.h"
 
 #include <functional>
 #include <lvgl.h>
@@ -33,11 +34,12 @@ class ExcludeObjectSideList {
     ExcludeObjectSideList(const ExcludeObjectSideList&) = delete;
     ExcludeObjectSideList& operator=(const ExcludeObjectSideList&) = delete;
 
-    /// Create the panel as a child of `parent` (the print-status thumbnail
-    /// card). Width is set to `width_pct` percent of the parent, height fills
-    /// 100%, aligned right_mid. Animates in from off-screen-right.
+    /// Create the panel as a floating child of `parent` (overlay_content).
+    /// `geom` says which edge to cover and how much of it — the controls are the
+    /// right-hand column in landscape and the bottom of the stack in portrait,
+    /// so the list anchors and slides in along the matching axis.
     void create(lv_obj_t* parent, PrinterState* printer_state, PrintExcludeObjectManager* manager,
-                int width_pct);
+                SideListGeometry geom);
 
     /// Animate out and destroy.
     void destroy();

@@ -10,13 +10,13 @@
 #include "ui_event_safety.h"
 #include "ui_exclude_object_map_view.h"
 #include "ui_fan_control_overlay.h"
+#include "ui_filament_mapping_card.h"
 #include "ui_filename_utils.h"
 #include "ui_gcode_viewer.h"
 #include "ui_modal.h"
 #include "ui_nav_manager.h"
 #include "ui_overlay_temp_graph.h"
 #include "ui_panel_common.h"
-#include "ui_filament_mapping_card.h"
 #include "ui_panel_print_select.h"
 #include "ui_print_start_controller.h"
 #include "ui_subject_registry.h"
@@ -32,10 +32,11 @@
 #include "display_settings_manager.h"
 #include "filament_mapper.h"
 #include "filament_sensor_manager.h"
-#include "gcode_parser.h"
 #include "format_utils.h"
+#include "gcode_parser.h"
 #include "helix-xml/src/xml/lv_xml.h"
 #include "injection_point_manager.h"
+#include "layout_manager.h"
 #include "led/led_controller.h"
 #include "lvgl/src/others/translation/lv_translation.h"
 #include "memory_monitor.h"
@@ -43,6 +44,7 @@
 #include "moonraker_api.h"
 #include "observer_factory.h"
 #include "preprint_predictor.h"
+#include "print_status_layout_decision.h"
 #include "print_status_preview_decision.h"
 #include "printer_state.h"
 #include "runtime_config.h"
@@ -440,13 +442,13 @@ void PrintStatusPanel::init_subjects() {
     }
     {
         auto token = lifetime_.token();
-        primary_fans_version_observer_ = observe_int_sync<PrintStatusPanel>(
-            printer_state_.get_primary_fans_version_subject(), this,
-            [token](PrintStatusPanel* self, int /*v*/) {
-                if (token.expired())
-                    return;
-                self->bind_fan_observers();
-            });
+        primary_fans_version_observer_ =
+            observe_int_sync<PrintStatusPanel>(printer_state_.get_primary_fans_version_subject(),
+                                               this, [token](PrintStatusPanel* self, int /*v*/) {
+                                                   if (token.expired())
+                                                       return;
+                                                   self->bind_fan_observers();
+                                               });
     }
 
     // Density + fit recompute on breakpoint change
@@ -1339,14 +1341,16 @@ void PrintStatusPanel::show_exclude_map_view() {
         }
     }
 
-    // right_section is 4/9 ≈ 44% of overlay_content; side list at the same
-    // percentage exactly covers the controls column.
-    constexpr int kSideListWidthPct = 44;
+    // Which edge the list covers depends on where the controls are: the right
+    // column in landscape, the bottom of the stack in portrait. See
+    // helix::ui::exclude_side_list_geometry().
+    const auto list_geom = helix::ui::exclude_side_list_geometry(
+        helix::is_portrait_layout(helix::LayoutManager::instance().type()));
 
     side_list_ = std::make_unique<helix::ui::ExcludeObjectSideList>();
     side_list_->set_close_callback([this]() { hide_exclude_map_view(); });
     side_list_->set_gcode_viewer(gcode_viewer_);
-    side_list_->create(overlay_content, &printer_state_, exclude_manager_.get(), kSideListWidthPct);
+    side_list_->create(overlay_content, &printer_state_, exclude_manager_.get(), list_geom);
 
     // Tapping an object in the viewer should request exclude, mirroring the
     // side list's row taps. Installed regardless of current view mode so that
@@ -2159,7 +2163,17 @@ void PrintStatusPanel::recompute_fans_fit() {
         }
     }
 
+    // Portrait stacks overlay_content into a column and sizes controls_section
+    // to its content, which removes the slack the landscape formula measures
+    // against. See helix::ui::fan_row_budget().
+    const bool portrait = helix::is_portrait_layout(helix::LayoutManager::instance().type());
+    lv_obj_t* content = lv_obj_find_by_name(overlay_root_, "overlay_content");
+    if (portrait && content) {
+        lv_obj_update_layout(content);
+    }
+
     int controls_h = lv_obj_get_height(controls);
+    int content_h = content ? lv_obj_get_height(content) : 0;
     int used = 0;
     int visible_count = 0;
 
@@ -2204,7 +2218,7 @@ void PrintStatusPanel::recompute_fans_fit() {
     if (visible_count >= 1)
         used += visible_count * space_md; // (visible_count - 1) for existing + 1 for fan row
 
-    int available = controls_h - used;
+    int available = helix::ui::fan_row_budget(portrait, controls_h, content_h, used);
     int current = lv_subject_get_int(&fans_fit_subject_);
     int next = current;
     if (current == 1) {
@@ -2215,8 +2229,9 @@ void PrintStatusPanel::recompute_fans_fit() {
             next = 1;
     }
     if (next != current) {
-        spdlog::debug("[{}] fans_fit {} -> {} (controls_h={}, used={}, available={}, needed={})",
-                      get_name(), current, next, controls_h, used, available,
+        spdlog::debug("[{}] fans_fit {} -> {} (portrait={}, controls_h={}, content_h={}, used={}, "
+                      "available={}, needed={})",
+                      get_name(), current, next, portrait, controls_h, content_h, used, available,
                       fan_row_natural_height_);
         lv_subject_set_int(&fans_fit_subject_, next);
     }
@@ -3225,10 +3240,9 @@ void PrintStatusPanel::load_gcode_for_viewing(const std::string& filename) {
         download_to_viewer(root, download_target);
     };
 
-    auto load_existing_gcode_path = [this, token, filename,
-                                     stream_if_safe](const std::string& metadata_target,
-                                                     const std::string& root,
-                                                     const std::string& download_target) {
+    auto load_existing_gcode_path = [this, token, filename, stream_if_safe](
+                                        const std::string& metadata_target, const std::string& root,
+                                        const std::string& download_target) {
         api_->files().get_file_metadata(
             metadata_target,
             [this, token, root, download_target, stream_if_safe](const FileMetadata& metadata) {
@@ -3266,8 +3280,7 @@ void PrintStatusPanel::load_gcode_for_viewing(const std::string& filename) {
         );
     };
 
-    auto use_existing_download_path = [metadata_filename, filename,
-                                       load_existing_gcode_path]() {
+    auto use_existing_download_path = [metadata_filename, filename, load_existing_gcode_path]() {
         load_existing_gcode_path(metadata_filename, "gcodes", filename);
     };
 
@@ -3318,10 +3331,9 @@ void PrintStatusPanel::load_gcode_for_viewing(const std::string& filename) {
                                     return;
                                 }
 
-                                spdlog::debug(
-                                    "[{}] No QIDI native 3MF shadow G-code found; "
-                                    "falling back to active filename",
-                                    get_name());
+                                spdlog::debug("[{}] No QIDI native 3MF shadow G-code found; "
+                                              "falling back to active filename",
+                                              get_name());
                                 use_existing_download_path();
                             });
             },

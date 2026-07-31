@@ -39,7 +39,7 @@ ExcludeObjectSideList::~ExcludeObjectSideList() {
 }
 
 void ExcludeObjectSideList::create(lv_obj_t* parent, PrinterState* printer_state,
-                                   PrintExcludeObjectManager* manager, int width_pct) {
+                                   PrintExcludeObjectManager* manager, SideListGeometry geom) {
     if (root_) {
         spdlog::warn("[ExcludeObjectSideList] create() called but already active");
         return;
@@ -68,9 +68,9 @@ void ExcludeObjectSideList::create(lv_obj_t* parent, PrinterState* printer_state
         return;
     }
 
-    lv_obj_set_width(root_, lv_pct(width_pct));
-    lv_obj_set_height(root_, lv_pct(100));
-    lv_obj_set_align(root_, LV_ALIGN_RIGHT_MID);
+    lv_obj_set_width(root_, lv_pct(geom.width_pct));
+    lv_obj_set_height(root_, lv_pct(geom.height_pct));
+    lv_obj_set_align(root_, geom.anchor_bottom ? LV_ALIGN_BOTTOM_MID : LV_ALIGN_RIGHT_MID);
     // FLOATING removes us from the parent's flex/layout calculations so we
     // sit on top of sibling columns rather than displacing them.
     lv_obj_add_flag(root_, LV_OBJ_FLAG_FLOATING);
@@ -82,16 +82,20 @@ void ExcludeObjectSideList::create(lv_obj_t* parent, PrinterState* printer_state
         spdlog::error("[ExcludeObjectSideList] rows_container not found");
     }
 
-    // Force layout so we know the pixel width for the slide animation.
+    // Force layout so we know the pixel extent to travel for the slide.
     lv_obj_update_layout(parent);
-    int slide_distance = lv_obj_get_width(root_);
+    int slide_distance = geom.anchor_bottom ? lv_obj_get_height(root_) : lv_obj_get_width(root_);
     if (slide_distance <= 0) {
         slide_distance = 200; // fallback for unsized parent
     }
 
-    // Start off-screen right (positive x relative to LV_ALIGN_RIGHT_MID), then
-    // tween to x=0 (flush right).
-    lv_obj_set_x(root_, slide_distance);
+    // Start off-screen past the anchored edge (positive offset relative to
+    // RIGHT_MID or BOTTOM_MID), then tween to 0 to sit flush against it.
+    if (geom.anchor_bottom) {
+        lv_obj_set_y(root_, slide_distance);
+    } else {
+        lv_obj_set_x(root_, slide_distance);
+    }
 
     populate_rows();
 
@@ -110,12 +114,15 @@ void ExcludeObjectSideList::create(lv_obj_t* parent, PrinterState* printer_state
     lv_anim_set_var(&a, root_);
     lv_anim_set_values(&a, slide_distance, 0);
     lv_anim_set_duration(&a, kSlideInDurationMs);
-    lv_anim_set_exec_cb(&a,
-                        [](void* obj, int32_t v) { lv_obj_set_x(static_cast<lv_obj_t*>(obj), v); });
+    lv_anim_set_exec_cb(
+        &a, geom.anchor_bottom
+                ? [](void* obj, int32_t v) { lv_obj_set_y(static_cast<lv_obj_t*>(obj), v); }
+                : [](void* obj, int32_t v) { lv_obj_set_x(static_cast<lv_obj_t*>(obj), v); });
     lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
     lv_anim_start(&a);
 
-    spdlog::debug("[ExcludeObjectSideList] Created (width_pct={}, slide_distance={}px)", width_pct,
+    spdlog::debug("[ExcludeObjectSideList] Created ({}x{}%, anchor={}, slide_distance={}px)",
+                  geom.width_pct, geom.height_pct, geom.anchor_bottom ? "bottom" : "right",
                   slide_distance);
 }
 
