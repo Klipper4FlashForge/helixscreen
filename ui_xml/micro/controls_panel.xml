@@ -230,7 +230,12 @@
               <event_cb trigger="value_changed" callback="on_controls_fan_slider"/>
             </lv_slider>
             <text_body name="fan_speed_display" width="80%" bind_text="controls_fan_speed" style_text_align="right">
-              <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="0"/>
+              <!-- ref_value matches the base file's "hide at TINY". This file only
+                   ever loads on the MICRO layout, where ui_breakpoint is pinned to
+                   0, so the condition never fires and the readout stays visible —
+                   which is the point: the slider position is the only other fan
+                   feedback on a 480x272 panel. -->
+              <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="1"/>
             </text_body>
             <!-- Secondary fans list (populated dynamically) -->
             <lv_obj name="secondary_fans_list"
