@@ -885,6 +885,34 @@ const char* theme_manager_get_breakpoint_suffix(int32_t resolution) {
  */
 namespace helix {
 
+const char* nav_width_suffix(int32_t hor_res, int32_t ver_res) {
+    // Nav width is primarily a horizontal concern, but VERTICAL resolution
+    // distinguishes micro (480x272) from tiny (480x320), which share a width.
+    //
+    // Ultrawide displays (e.g. 1920x480) are very wide but short. The nav bar is
+    // a full-height vertical strip, so its width must track the short vertical
+    // extent — not the horizontal resolution, which would otherwise select the
+    // widest 'large' bar and waste the horizontal space the grid wants. Detect
+    // ultrawide from the aspect ratio directly (the >2.5:1 threshold mirrors
+    // LayoutManager::detect) rather than via LayoutManager, which is not yet
+    // initialised when this runs at startup.
+    const bool ultrawide = ver_res > 0 && hor_res > ver_res * 5 / 2;
+    if (ver_res <= UI_BREAKPOINT_MICRO_MAX)
+        return "_micro";
+    if (ultrawide)
+        // Ultrawide prioritises horizontal content space, so keep the vertical
+        // nav strip slim: cap at 'small' and only go narrower on very short
+        // panels. (Icons stay legible — they are centred in the strip.)
+        return (ver_res <= UI_BREAKPOINT_TINY_MAX) ? "_tiny" : "_small";
+    if (hor_res <= 520)
+        return "_tiny";
+    if (hor_res <= 900)
+        return "_small";
+    if (hor_res <= 1100)
+        return "_medium";
+    return "_large";
+}
+
 OverlayWidths compute_overlay_widths(int32_t hor_res, int32_t ver_res, int32_t nav_width,
                                      int32_t gap) {
     // Classified from raw dimensions rather than LayoutManager::type(): this
@@ -925,31 +953,7 @@ void theme_manager_register_responsive_spacing(lv_display_t* display) {
     // to distinguish micro (480x272) from tiny (480x320) since they share the same
     // horizontal resolution. Register first so auto-discovery silently skips duplicates.
     {
-        // Ultrawide displays (e.g. 1920x480) are very wide but short. The nav bar
-        // is a full-height vertical strip, so its width must track the short
-        // vertical extent — not the horizontal resolution, which would otherwise
-        // select the widest 'large' bar and waste the horizontal space the grid
-        // wants. Detect ultrawide from the aspect ratio directly (the >2.5:1
-        // threshold mirrors LayoutManager::detect) rather than via LayoutManager,
-        // which is not yet initialized when this runs at startup. Mirrors the
-        // height-based selection used for every other responsive token.
-        const bool ultrawide = ver_res > 0 && hor_res > ver_res * 5 / 2;
-        const char* nav_suffix;
-        if (ver_res <= UI_BREAKPOINT_MICRO_MAX)
-            nav_suffix = "_micro";
-        else if (ultrawide)
-            // Ultrawide prioritizes horizontal content space, so keep the vertical
-            // nav strip slim: cap at 'small' and only go narrower on very short
-            // panels. (Icons stay legible — they are centered in the strip.)
-            nav_suffix = (ver_res <= UI_BREAKPOINT_TINY_MAX) ? "_tiny" : "_small";
-        else if (hor_res <= 520)
-            nav_suffix = "_tiny";
-        else if (hor_res <= 900)
-            nav_suffix = "_small";
-        else if (hor_res <= 1100)
-            nav_suffix = "_medium";
-        else
-            nav_suffix = "_large";
+        const char* nav_suffix = helix::nav_width_suffix(hor_res, ver_res);
 
         // Read nav_width values from navigation_bar.xml consts
         auto nav_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", nav_suffix);
@@ -1066,18 +1070,10 @@ void theme_manager_refresh_layout_constants(lv_display_t* display) {
     if (!scope)
         return;
 
-    // Update nav_width for new resolution — use vertical to distinguish micro from tiny
-    const char* nav_suffix;
-    if (ver_res <= UI_BREAKPOINT_MICRO_MAX)
-        nav_suffix = "_micro";
-    else if (hor_res <= 520)
-        nav_suffix = "_tiny";
-    else if (hor_res <= 900)
-        nav_suffix = "_small";
-    else if (hor_res <= 1100)
-        nav_suffix = "_medium";
-    else
-        nav_suffix = "_large";
+    // Same selection as startup. This used to be a second copy that had never
+    // grown the ultrawide branch, so a resize on a 1920x480 panel picked the
+    // 132px '_large' bar where boot had picked the 76px '_small' one.
+    const char* nav_suffix = helix::nav_width_suffix(hor_res, ver_res);
 
     auto nav_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", nav_suffix);
     auto nav_it = nav_tokens.find("nav_width");

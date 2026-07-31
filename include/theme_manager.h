@@ -102,6 +102,19 @@ namespace helix {
 /// Style configure function type - applies palette colors to a style.
 using StyleConfigureFn = void (*)(lv_style_t* style, const ThemePalette& palette);
 
+/**
+ * @brief Breakpoint suffix for the nav_width token, e.g. "_small".
+ *
+ * Not the general breakpoint ladder: the nav bar is a full-height vertical strip
+ * whose width tracks horizontal resolution, with two exceptions — vertical
+ * resolution distinguishes micro from tiny (they share a width), and ultrawide
+ * panels cap the strip so it does not eat the horizontal space the grid wants.
+ *
+ * Shared by startup registration and the resize refresh; they were separate
+ * copies and the refresh one lacked the ultrawide branch.
+ */
+const char* nav_width_suffix(int32_t hor_res, int32_t ver_res);
+
 /// The two overlay widths registered as XML consts (#1178).
 struct OverlayWidths {
     int32_t transient;   ///< A layer you will return from — leaves the leading-edge gap.
