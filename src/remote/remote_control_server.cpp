@@ -293,6 +293,7 @@ void RemoteControlServer::register_builtin_handlers() {
         return handle_list_callbacks(p);
     };
     handlers_["get_current"] = [this](const nlohmann::json& p) { return handle_get_current(p); };
+    handlers_["resolve"] = [this](const nlohmann::json& p) { return handle_resolve(p); };
     handlers_["screenshot"] = [this](const nlohmann::json& p) { return handle_screenshot(p); };
     handlers_["status"] = [this](const nlohmann::json& p) { return handle_status(p); };
     handlers_["demo"] = [this](const nlohmann::json& p) { return handle_demo(p); };
@@ -569,11 +570,19 @@ nlohmann::json RemoteControlServer::handle_list_callbacks(const nlohmann::json& 
     });
 }
 
+static std::string topmost_layer(); // defined with the other locator helpers
+
 nlohmann::json RemoteControlServer::handle_get_current(const nlohmann::json& /*params*/) {
     return execute_on_ui_thread([]() -> nlohmann::json {
         auto& nav = NavigationManager::instance();
         std::string current_panel = panel_id_to_name(nav.get_active());
-        return {{"panel", current_panel}, {"overlays", nav.overlay_stack_names()}};
+        // root_path is where a client's working directory sits when it has not
+        // cd'd anywhere: the frontmost thing on screen. The client also watches
+        // it for change — when a navigate/click swaps the active root out, a cwd
+        // pointing into the old subtree is stale and gets dropped.
+        return {{"panel", current_panel},
+                {"overlays", nav.overlay_stack_names()},
+                {"root_path", topmost_layer()}};
     });
 }
 
@@ -602,11 +611,19 @@ nlohmann::json RemoteControlServer::handle_screenshot(const nlohmann::json& para
     // stability sample, then once more for the final capture) rather than
     // resolved once up front — a widget pointer must never cross the
     // transport/UI thread boundary or outlive the UI-thread call that found it.
-    auto resolve_crop = [target]() -> lv_obj_t* {
+    // The caller's working directory scopes --target the same way it scopes
+    // every other widget command; without this, `cd`-ing to a card and then
+    // cropping to a name inside it would search the whole screen instead.
+    const std::string scope = params.value("scope", "");
+    auto resolve_crop = [target, scope]() -> lv_obj_t* {
         if (target.empty()) {
             return nullptr;
         }
-        lv_obj_t* w = resolve_widget(widget_target_params(target));
+        nlohmann::json tp = widget_target_params(target);
+        if (!scope.empty()) {
+            tp["scope"] = scope;
+        }
+        lv_obj_t* w = resolve_widget(tp);
         if (!w) {
             throw std::invalid_argument("Widget not found: " + target);
         }
@@ -1052,9 +1069,14 @@ static void collect_glob_matches(lv_obj_t* parent, const std::string& pattern,
     }
 }
 
-// Match a name pattern across the active screen and the top layer (modals).
-static std::vector<lv_obj_t*> glob_widgets(const std::string& pattern) {
+// Match a name pattern within @p scope, or across the active screen and the top
+// layer (modals) when no scope is given.
+static std::vector<lv_obj_t*> glob_widgets(const std::string& pattern, lv_obj_t* scope = nullptr) {
     std::vector<lv_obj_t*> out;
+    if (scope) {
+        collect_glob_matches(scope, pattern, out);
+        return out;
+    }
     collect_glob_matches(lv_screen_active(), pattern, out);
     collect_glob_matches(lv_layer_top(), pattern, out);
     return out;
@@ -1082,49 +1104,9 @@ static std::vector<lv_obj_t*> drop_nested_matches(const std::vector<lv_obj_t*>& 
     return out;
 }
 
-// Report a resolved widget's describe_screen-style path, so a caller that got
-// descended into a child can address it directly next time.
-static std::string path_of(lv_obj_t* o) {
-    if (!o) {
-        return {};
-    }
-    std::string suffix;
-    lv_obj_t* cur = o;
-    while (lv_obj_t* parent = lv_obj_get_parent(cur)) {
-        uint32_t idx = lv_obj_get_index(cur);
-        suffix = "/" + std::to_string(idx) + suffix;
-        cur = parent;
-    }
-    // cur is now a screen root: the active screen ("s") or the top layer ("t").
-    return (cur == lv_layer_top() ? "t" : "s") + suffix;
-}
-
-// Resolve a path locator like "s/3/1/4" (s = active screen, t = top layer) to a
-// live widget by following child indices. Paths come from describe_screen and
-// uniquely address any widget, including duplicate-named ones. UI thread only.
-static lv_obj_t* resolve_path(const std::string& path) {
-    if (path.empty()) {
-        return nullptr;
-    }
-    size_t pos = path.find('/');
-    std::string root = path.substr(0, pos);
-    lv_obj_t* cur = (root == "t") ? lv_layer_top() : lv_screen_active();
-    while (cur && pos != std::string::npos) {
-        size_t next = path.find('/', pos + 1);
-        std::string tok =
-            path.substr(pos + 1, next == std::string::npos ? std::string::npos : next - pos - 1);
-        pos = next;
-        if (tok.empty()) {
-            continue;
-        }
-        uint32_t idx = static_cast<uint32_t>(std::stoul(tok));
-        if (idx >= lv_obj_get_child_count(cur)) {
-            return nullptr;
-        }
-        cur = lv_obj_get_child(cur, idx);
-    }
-    return cur;
-}
+// path_of() and resolve_path() live in widget_resolution.{h,cpp} — this object
+// is excluded from the test link (it drags in the transports and the toast
+// manager), and the locator format is where the interesting mistakes live.
 
 // Resolve a target widget from command params: an explicit "path" wins, else
 // fall back to "name" (searched on the active screen then the top layer).
@@ -1239,14 +1221,63 @@ static lv_obj_t* topmost_visible(const std::vector<lv_obj_t*>& matches) {
     return best;
 }
 
-static lv_obj_t* resolve_widget(const nlohmann::json& params) {
-    if (params.contains("path") && params["path"].is_string()) {
-        return resolve_path(params["path"].get<std::string>());
+// The subtree a search is confined to — the caller's working directory, sent as
+// an absolute locator in "scope". Absent or unresolvable means the whole active
+// screen plus the top layer, which is what every caller got before `cd` existed.
+//
+// An unresolvable scope is deliberately not an error: the client's cwd can go
+// stale under it (the panel rebuilt, the overlay closed), and falling back to a
+// screen-wide search is far better than refusing every subsequent command.
+static lv_obj_t* scope_root(const nlohmann::json& params) {
+    if (!params.contains("scope") || !params["scope"].is_string()) {
+        return nullptr;
     }
+    const std::string scope = params["scope"].get<std::string>();
+    return scope.empty() ? nullptr : resolve_path(scope);
+}
+
+// Every visible widget matching @p name, confined to @p scope when given.
+static std::vector<lv_obj_t*> matches_for_name(const std::string& name, lv_obj_t* scope) {
+    std::vector<lv_obj_t*> matches;
+    if (scope) {
+        collect_by_name(scope, name, matches);
+        return matches;
+    }
+    // lv_obj_find_by_name() returns the first depth-first hit, which on a
+    // screen with stacked overlays is the one in the *bottom* overlay — a
+    // widget the user cannot see. Clicking it looks like a successful no-op.
+    // Collect every match instead so the caller can prefer the visible one.
+    if (lv_obj_t* screen = lv_screen_active()) {
+        collect_by_name(screen, name, matches);
+    }
+    collect_by_name(lv_layer_top(), name, matches);
+    return matches;
+}
+
+static lv_obj_t* resolve_widget(const nlohmann::json& params) {
+    lv_obj_t* scope = scope_root(params);
+
+    if (params.contains("path") && params["path"].is_string()) {
+        // A locator starting "s/" or "t/" is absolute and ignores the scope, so
+        // a path pasted out of `ls` means the same thing wherever you are cd'd.
+        std::vector<lv_obj_t*> ambiguous;
+        lv_obj_t* found = resolve_path(params["path"].get<std::string>(), scope, &ambiguous);
+        if (!found && !ambiguous.empty()) {
+            std::string msg = "Ambiguous path segment — " + std::to_string(ambiguous.size()) +
+                              " siblings share that name: ";
+            for (size_t i = 0; i < ambiguous.size() && i < 8; i++) {
+                msg += (i ? ", " : "") + path_of(ambiguous[i]);
+            }
+            msg += " — add an index, e.g. name[0]";
+            throw std::invalid_argument(msg);
+        }
+        return found;
+    }
+
     if (params.contains("name") && params["name"].is_string()) {
         std::string name = params["name"];
         if (is_glob(name)) {
-            std::vector<lv_obj_t*> matches = glob_widgets(name);
+            std::vector<lv_obj_t*> matches = glob_widgets(name, scope);
             if (matches.empty()) {
                 return nullptr; // caller reports "not found" with the pattern
             }
@@ -1266,17 +1297,27 @@ static lv_obj_t* resolve_widget(const nlohmann::json& params) {
             }
             return matches[0];
         }
-        // lv_obj_find_by_name() returns the first depth-first hit, which on a
-        // screen with stacked overlays is the one in the *bottom* overlay — a
-        // widget the user cannot see. Clicking it looks like a successful no-op.
-        // Collect every match instead and prefer the topmost visible one.
-        std::vector<lv_obj_t*> matches;
-        if (lv_obj_t* screen = lv_screen_active()) {
-            collect_by_name(screen, name, matches);
-        }
-        collect_by_name(lv_layer_top(), name, matches);
+
+        // "toggle[3]" — the 4th match in document order within the search
+        // scope. The ordinal only means something relative to a scope, which is
+        // exactly what `cd` gives it; unscoped it counts across the whole
+        // screen, where an opening overlay can shift it. Both are honest, and
+        // the scoped form is the one people use.
+        std::string base_name;
+        int wanted = -1;
+        const bool indexed = parse_indexed_name(name, base_name, wanted);
+
+        std::vector<lv_obj_t*> matches = matches_for_name(indexed ? base_name : name, scope);
         if (matches.empty()) {
             return nullptr;
+        }
+        if (indexed) {
+            if (wanted < 0 || static_cast<size_t>(wanted) >= matches.size()) {
+                throw std::invalid_argument("'" + name + "' is out of range — " +
+                                            std::to_string(matches.size()) + " match" +
+                                            (matches.size() == 1 ? "" : "es") + " here");
+            }
+            return matches[static_cast<size_t>(wanted)];
         }
         return topmost_visible(matches);
     }
@@ -1678,9 +1719,12 @@ static void describe_walk(lv_obj_t* parent, const std::string& path_prefix, nloh
         if (lv_obj_has_flag(child, LV_OBJ_FLAG_HIDDEN)) {
             continue; // hidden subtree — not on screen
         }
-        // Path uses real child indices (not the filtered emit order) so it stays
-        // resolvable regardless of hidden/unnamed siblings.
-        std::string child_path = path_prefix + "/" + std::to_string(i);
+        // Segments are names where a name uniquely identifies the child among
+        // its siblings, "name[k]" where it does not, and a real child index
+        // (not the filtered emit order) where the child has no name — so a path
+        // stays resolvable regardless of hidden or unnamed siblings, and stays
+        // readable enough that a person can retype it.
+        std::string child_path = path_prefix + "/" + path_segment_for(child);
         const char* raw = lv_obj_get_name(child);
         if (raw && raw[0] != '\0') {
             // Resolve "foo_#" index placeholders to the concrete "foo_2" name
@@ -1707,7 +1751,8 @@ nlohmann::json RemoteControlServer::handle_describe_screen(const nlohmann::json&
             std::vector<lv_obj_t*> roots;
             if (params.contains("name") && params["name"].is_string() &&
                 is_glob(params["name"].get<std::string>())) {
-                roots = drop_nested_matches(glob_widgets(params["name"].get<std::string>()));
+                roots = drop_nested_matches(
+                    glob_widgets(params["name"].get<std::string>(), scope_root(params)));
             } else if (lv_obj_t* one = resolve_widget(params)) {
                 roots.push_back(one);
             }
@@ -1739,12 +1784,45 @@ nlohmann::json RemoteControlServer::handle_describe_screen(const nlohmann::json&
                     {"topmost_layer", topmost_layer()},
                     {"active_screen", active_screen_label()}};
         }
+        // No explicit target: list the caller's working directory. `cd` into a
+        // container and a bare `ls` shows what is in front of you rather than
+        // the whole screen — the reason a cwd exists at all.
+        if (lv_obj_t* cwd = scope_root(params)) {
+            const std::string cwd_path = path_of(cwd);
+            describe_walk(cwd, cwd_path, widgets);
+            return {{"widgets", widgets},
+                    {"scope", cwd_path},
+                    {"topmost_layer", topmost_layer()},
+                    {"active_screen", active_screen_label()}};
+        }
         // Active screen ("s") holds panels + pushed overlays; the top layer ("t")
         // holds modals and their backdrops. Walk both so nothing on screen is missed.
         describe_walk(lv_screen_active(), "s", widgets);
         describe_walk(lv_layer_top(), "t", widgets);
         return {{"widgets", widgets},
                 {"topmost_layer", topmost_layer()},
+                {"active_screen", active_screen_label()}};
+    });
+}
+
+// `cd <target>` needs the absolute locator of wherever it landed, so the client
+// can hold it as a working directory. Read-only — unlike the old `cd`, which
+// reached its destination by clicking.
+nlohmann::json RemoteControlServer::handle_resolve(const nlohmann::json& params) {
+    if (!params.contains("name") && !params.contains("path")) {
+        throw std::invalid_argument("Missing required parameter: name or path");
+    }
+
+    return execute_on_ui_thread([params]() -> nlohmann::json {
+        lv_obj_t* obj = resolve_widget(params);
+        if (!obj) {
+            throw std::invalid_argument("Widget not found: " + target_label(params));
+        }
+        char resolved[128];
+        lv_obj_get_name_resolved(obj, resolved, sizeof(resolved));
+        return {{"path", path_of(obj)},
+                {"name", resolved},
+                {"children", lv_obj_get_child_count(obj)},
                 {"active_screen", active_screen_label()}};
     });
 }

@@ -26,6 +26,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -67,9 +68,16 @@ struct HelpEntry {
 static const HelpEntry kHelp[] = {
     {"Navigation (fs metaphor)", "help, ?", "Show this help", nullptr},
     {nullptr, "ping", "Health check", nullptr},
-    {nullptr, "navigate, cd <target>", "Go to a panel, or click a widget to descend", nullptr},
-    {nullptr, "go_back, back, cd ..", "Pop the current overlay/level", nullptr},
-    {nullptr, "current, pwd", "Show current panel and overlay stack", nullptr},
+    {nullptr, "navigate <panel>", "Go to a base panel", nullptr},
+    {nullptr, "cd <container>", "Move the working directory (REPL only, no UI side effect)",
+     "Targets resolve relative to it, so `cd` to a row and then type\n"
+     "short names. `cd ..` goes up one container, or pops the overlay\n"
+     "at its root; `cd` alone returns to whatever is frontmost.\n"
+     "To make something HAPPEN, use click — cd never fires an event.\n"
+     "One-shot: scope a single command with -C <path>."},
+    {nullptr, "go_back, back", "Pop the current overlay/level", nullptr},
+    {nullptr, "current, pwd", "Show the panel, overlay stack, and working directory", nullptr},
+    {nullptr, "resolve <target>", "Print the absolute locator a target resolves to", nullptr},
     {nullptr, "list_panels", "List available panels", nullptr},
     {nullptr, "list_components", "List every registered XML component (live registry)", nullptr},
     {nullptr, "list_callbacks", "List every registered event-callback name", nullptr},
@@ -89,10 +97,11 @@ static const HelpEntry kHelp[] = {
     {nullptr, "wait_for <subject> <value> [--timeout N]", "Block until subject matches value",
      "default 30s"},
 
-    {"Widgets (targets: a name, a 'glob*' pattern, or @path from `ls`)",
+    {"Widgets (targets: a name, 'name[k]' for the k-th match, a 'glob*' pattern,\n"
+     "  a path relative to the cwd, or an absolute @path from `ls`)",
      "ls, describe_screen [target]", "List on-screen widgets: name, path, type, actions",
-     "With a target, list only that widget's subtree; with a pattern\n"
-     "('row_*'), every match. Quote it."},
+     "No target lists the working directory. With a target, only that\n"
+     "widget's subtree; with a pattern ('row_*'), every match. Quote it."},
     {nullptr, "geom <target> [depth]", "Why a widget is the size it is",
      "Absolute x/y/w/h, content box, DECLARED vs computed size, flex\n"
      "grow, hidden/scrollable state. [depth] recurses into children.\n"
@@ -152,7 +161,7 @@ static void print_help_table(bool verbose) {
             printf("  %s\n%*s%s\n", e.usage, kHelpUsageWidth, "", e.summary);
         }
         if (verbose && e.detail) {
-            for (const char* p = e.detail; p; ) {
+            for (const char* p = e.detail; p;) {
                 const char* nl = strchr(p, '\n');
                 int len = nl ? static_cast<int>(nl - p) : static_cast<int>(strlen(p));
                 printf("%*s%.*s\n", kHelpUsageWidth, "", len, p);
@@ -167,6 +176,8 @@ static void print_usage() {
     print_help_table(/*verbose=*/true);
     printf("\nOptions:\n");
     printf("  -s, --socket <path>     Socket path (default: auto-detect)\n");
+    printf("  -C, --cwd <path>        Resolve this command's target inside <path>\n");
+    printf("                          (the one-shot equivalent of the REPL's cd)\n");
     printf("  --json                  Emit the raw JSON-RPC result/error (one-shot only)\n");
     printf("  -h, --help              Show this help\n");
     printf("\nSocket path resolution:\n");
@@ -311,6 +322,20 @@ static int g_request_id = 1;
 /// mistyped a command name needs prose, not a protocol object.
 static bool g_json_output = false;
 
+/// The working directory every target resolves against: an absolute locator, or
+/// empty for "wherever the app currently is" (the server's reported root_path —
+/// the frontmost panel, overlay or modal).
+///
+/// The REPL builds this up with `cd`. A one-shot `ctl` invocation has nowhere to
+/// persist one between processes, so it takes `-C <path>` instead.
+static std::string g_cwd;
+
+/// The root_path last reported by the server. When a navigate/click swaps the
+/// frontmost thing on screen, any cwd pointing into the old subtree is stale —
+/// watching this is how the cwd follows navigation without the client having to
+/// know which commands navigate.
+static std::string g_last_root;
+
 static nlohmann::json build_request(const std::string& method,
                                     const nlohmann::json& params = nlohmann::json::object()) {
     return {{"jsonrpc", "2.0"}, {"method", method}, {"params", params}, {"id", g_request_id++}};
@@ -420,17 +445,30 @@ static nlohmann::json parse_value(const std::string& val_str) {
 /// Build a target param object for click/set/scroll. "@s/3/1" (or a bare
 /// "s/3/1") addresses a widget by its describe_screen path, unique even for
 /// duplicate names; anything else is treated as a widget name.
+///
+/// The current working directory rides along as "scope": a plain name is looked
+/// up inside it rather than across the whole screen, which is what makes
+/// `cd`-ing to a row and then typing short names work.
 static nlohmann::json target_param(const std::string& t) {
+    nlohmann::json params;
     if (!t.empty() && t[0] == '@') {
-        return {{"path", t.substr(1)}};
+        params = {{"path", t.substr(1)}};
+    } else if (helix::is_bare_path(t)) {
+        // Accept a bare absolute path too, so a locator pasted straight out of
+        // `ls` works without remembering the '@'. Widget names never contain
+        // '/', so the "s/1/2" / "t/0" shape is unambiguous.
+        params = {{"path", t}};
+    } else if (t.find('/') != std::string::npos) {
+        // Same reasoning, one level down: a name cannot contain '/', so
+        // "row_theme/toggle" is a locator relative to the cwd.
+        params = {{"path", t}};
+    } else {
+        params = {{"name", t}};
     }
-    // Accept a bare path too, so a locator pasted straight out of `ls` works
-    // without remembering the '@'. Widget names never contain '/', so the
-    // "s/1/2" / "t/0" shape is unambiguous.
-    if (helix::is_bare_path(t)) {
-        return {{"path", t}};
+    if (!g_cwd.empty()) {
+        params["scope"] = g_cwd;
     }
-    return {{"name", t}};
+    return params;
 }
 
 /// Build a JSON-RPC request from a command + args vector.
@@ -443,17 +481,28 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
 
     if (cmd == "ping") {
         return build_request("ping");
-    } else if (cmd == "navigate" || cmd == "cd") {
-        // fs metaphor: `cd ..` pops a level, `cd <name>` descends into a panel
-        // or a clickable widget (overlay/modal trigger).
-        if (cmd == "cd" && tokens.size() >= 2 && tokens[1] == "..") {
-            return build_request("go_back");
-        }
+    } else if (cmd == "cd") {
+        // `cd` moves the working directory, which only a REPL session can hold
+        // between commands. The REPL intercepts it before this point; reaching
+        // here means the one-shot client, where there is nowhere to put it.
+        fprintf(stderr, "Error: cd only means something in the REPL, which keeps a working "
+                        "directory between commands.\n"
+                        "       One-shot: scope a single command with -C <path>, e.g.\n"
+                        "         helix-screen ctl -C s/settings_list click 'toggle[1]'\n"
+                        "       To change what is on screen, use navigate or click.\n");
+        return {};
+    } else if (cmd == "navigate") {
         if (tokens.size() < 2) {
-            fprintf(stderr, "Error: %s requires a target (panel or widget name)\n", cmd.c_str());
+            fprintf(stderr, "Error: navigate requires a panel name\n");
             return {};
         }
         return build_request("navigate", {{"panel", tokens[1]}});
+    } else if (cmd == "resolve") {
+        if (tokens.size() < 2) {
+            fprintf(stderr, "Error: resolve requires a widget name or @path\n");
+            return {};
+        }
+        return build_request("resolve", target_param(tokens[1]));
     } else if (cmd == "go_back" || cmd == "back") {
         return build_request("go_back");
     } else if (cmd == "list_panels") {
@@ -480,6 +529,11 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
             } else if (tokens[i] == "--target" && i + 1 < tokens.size()) {
                 params["target"] = tokens[++i];
             }
+        }
+        // --target names a widget, so it resolves inside the cwd like any other
+        // target. (params["path"] here is the output FILE, not a locator.)
+        if (params.contains("target") && !g_cwd.empty()) {
+            params["scope"] = g_cwd;
         }
         return build_request("screenshot", params);
     } else if (cmd == "shutdown" || cmd == "quit" || cmd == "exit") {
@@ -596,11 +650,16 @@ static nlohmann::json build_request_from_tokens(const std::vector<std::string>& 
         // `wake` or `screensaver off` — reset the idle timer / dismiss the saver.
         return build_request("wake");
     } else if (cmd == "describe_screen" || cmd == "ls") {
-        // `ls` lists the whole screen; `ls <name|@path>` scopes to a subtree.
+        // `ls` lists the working directory (the whole screen when there is
+        // none); `ls <name|@path>` scopes to a subtree.
         if (tokens.size() >= 2) {
             return build_request("describe_screen", target_param(tokens[1]));
         }
-        return build_request("describe_screen");
+        nlohmann::json params = nlohmann::json::object();
+        if (!g_cwd.empty()) {
+            params["scope"] = g_cwd;
+        }
+        return build_request("describe_screen", params);
     } else if (cmd == "scroll") {
         if (tokens.size() < 2) {
             fprintf(stderr, "Error: scroll requires a widget name/@path [dx dy]\n");
@@ -667,6 +726,7 @@ static const char* REPL_COMMANDS[] = {"ping",
                                       "list_callbacks",
                                       "current",
                                       "pwd",
+                                      "resolve",
                                       "screenshot",
                                       "status",
                                       "wake",
@@ -706,6 +766,43 @@ static std::vector<std::string> g_cached_subjects;
 static std::vector<std::string> g_cached_scenarios;
 static std::vector<std::string> g_cached_panels;
 
+/// Socket the REPL session is attached to, so tab completion can ask the app
+/// what is currently on screen. Empty outside a REPL.
+static std::string g_repl_socket;
+
+// Defined below with the other transport helpers; completion needs it here.
+static bool query_result(const std::string& socket_path, const nlohmann::json& request,
+                         nlohmann::json& out);
+
+// Distinct widget names in the working directory, for completing a target.
+// Duplicates are collapsed: offering the same word three times is noise, and
+// the index suffix that tells them apart comes from `ls`, not from here.
+static std::vector<std::string> widget_names_here() {
+    std::vector<std::string> names;
+    if (g_repl_socket.empty()) {
+        return names;
+    }
+    nlohmann::json params = nlohmann::json::object();
+    if (!g_cwd.empty()) {
+        params["scope"] = g_cwd;
+    }
+    nlohmann::json r;
+    if (!query_result(g_repl_socket, build_request("describe_screen", params), r)) {
+        return names;
+    }
+    if (!r.contains("widgets") || !r["widgets"].is_array()) {
+        return names;
+    }
+    std::set<std::string> seen;
+    for (const auto& w : r["widgets"]) {
+        const std::string name = w.value("name", std::string());
+        if (!name.empty() && seen.insert(name).second) {
+            names.push_back(name);
+        }
+    }
+    return names;
+}
+
 static void repl_completion(const char* buf, linenoiseCompletions* lc) {
     std::string input(buf);
 
@@ -729,6 +826,7 @@ static void repl_completion(const char* buf, linenoiseCompletions* lc) {
             partial.erase(0, 1);
 
         const std::vector<std::string>* candidates = nullptr;
+        std::vector<std::string> live; // widget names, which no cache can hold
 
         if (cmd == "get" || cmd == "set" || cmd == "wait_for") {
             candidates = &g_cached_subjects;
@@ -736,6 +834,15 @@ static void repl_completion(const char* buf, linenoiseCompletions* lc) {
             candidates = &g_cached_scenarios;
         } else if (cmd == "navigate") {
             candidates = &g_cached_panels;
+        } else if (cmd == "cd" || cmd == "ls" || cmd == "click" || cmd == "focus" ||
+                   cmd == "text" || cmd == "geom" || cmd == "set_value" || cmd == "scroll" ||
+                   cmd == "resolve") {
+            // Widget names are re-read every time rather than cached: the tree
+            // changes under the REPL constantly (navigation, hot reload, the
+            // printer's own state), so a cache would offer completions for
+            // widgets that are no longer on screen.
+            live = widget_names_here();
+            candidates = &live;
         }
 
         if (candidates) {
@@ -904,13 +1011,38 @@ static bool query_result(const std::string& socket_path, const nlohmann::json& r
     return ok;
 }
 
-// Filesystem-style breadcrumb prompt from the server's current location,
-// e.g. "controls / fan_control_overlay > ".
+// The cwd with the active root trimmed off, which is how the prompt shows it:
+// the overlay is already named in the breadcrumb, so repeating its whole
+// locator is noise. Returns the cwd unchanged when it sits outside the root.
+static std::string cwd_below_root(const std::string& root) {
+    if (g_cwd.empty() || root.empty()) {
+        return g_cwd;
+    }
+    if (g_cwd.rfind(root + "/", 0) == 0) {
+        return g_cwd.substr(root.size() + 1);
+    }
+    return g_cwd;
+}
+
+// Filesystem-style breadcrumb prompt from the server's current location plus
+// the working directory, e.g. "controls / motion_overlay / jog_grid > ".
 static std::string build_prompt(const std::string& socket_path) {
     nlohmann::json r;
     if (!query_result(socket_path, build_request("get_current"), r)) {
         return "helixctl(offline)> ";
     }
+
+    // A navigate/click that swapped the frontmost thing on screen leaves any
+    // cwd pointing into a subtree that no longer exists. Dropping it here is
+    // what makes the cwd follow navigation without the client needing to know
+    // which commands navigate — including a click that turned out to open an
+    // overlay, which is not knowable in advance.
+    const std::string root = r.value("root_path", std::string());
+    if (root != g_last_root) {
+        g_last_root = root;
+        g_cwd.clear();
+    }
+
     std::string crumb = r.value("panel", std::string("?"));
     if (r.contains("overlays") && r["overlays"].is_array()) {
         for (auto& o : r["overlays"]) {
@@ -919,7 +1051,55 @@ static std::string build_prompt(const std::string& socket_path) {
             }
         }
     }
+    const std::string descent = cwd_below_root(root);
+    if (!descent.empty()) {
+        crumb += " / " + descent;
+    }
     return crumb + " > ";
+}
+
+// `cd` is a pure move: it changes where later commands resolve from and never
+// touches the UI. Reaching an overlay is `click` — a different act, so a
+// different verb. (It used to be spelled `cd <widget>`, which meant a mistyped
+// destination could dispatch a real event on a live printer.)
+static void repl_cd(const std::string& socket_path, const std::vector<std::string>& tokens) {
+    const std::string target = tokens.size() >= 2 ? tokens[1] : "/";
+
+    // Bare `cd`, `cd /`: back to whatever is frontmost on screen.
+    if (target == "/" || target == "~") {
+        g_cwd.clear();
+        return;
+    }
+
+    if (target == "..") {
+        if (g_cwd.empty()) {
+            // Already at the active root. Up from here means leaving it, which
+            // is the navigation stack's business rather than the widget tree's
+            // — the one place the two hierarchies meet.
+            nlohmann::json r;
+            if (query_result(socket_path, build_request("go_back"), r)) {
+                g_cwd.clear();
+            }
+            return;
+        }
+        const size_t slash = g_cwd.rfind('/');
+        std::string parent = (slash == std::string::npos) ? std::string() : g_cwd.substr(0, slash);
+        // Arriving back at the active root is spelled "no cwd", so that a later
+        // navigate still retargets it instead of pinning a stale locator.
+        g_cwd = (parent == g_last_root) ? std::string() : parent;
+        return;
+    }
+
+    nlohmann::json r;
+    if (!query_result(socket_path, build_request("resolve", target_param(target)), r)) {
+        return; // the server's error has already gone to stderr
+    }
+    const std::string path = r.value("path", std::string());
+    if (path.empty()) {
+        fprintf(stderr, "Error: could not resolve '%s'\n", target.c_str());
+        return;
+    }
+    g_cwd = (path == g_last_root) ? std::string() : path;
 }
 
 // Pretty-print describe_screen output (`ls`) grouped by what you can do to each
@@ -976,7 +1156,44 @@ static void print_describe_grouped(const nlohmann::json& result) {
         }
         printf("\n");
     }
-    printf("  (%zu widgets — `ls` shows all; @path targets any one)\n", widgets.size());
+
+    // Everything else: labels, icons, containers. They carry no verb, so the
+    // grouped listing above skips them — which reads as an empty result when
+    // you have scoped down to a row that happens to contain only text.
+    // Repeats are collapsed to "name x6": a settings list holds one row_icon
+    // per row, and printing the word six times says nothing the count doesn't.
+    std::vector<std::string> inert;
+    std::map<std::string, int> inert_count;
+    for (const auto& w : widgets) {
+        const auto actions_it = w.find("actions");
+        const bool has_any =
+            actions_it != w.end() && actions_it->is_array() && !actions_it->empty();
+        if (!has_any) {
+            const std::string name = w.value("name", std::string("?"));
+            if (inert_count[name]++ == 0) {
+                inert.push_back(name);
+            }
+        }
+    }
+    if (!inert.empty()) {
+        printf("  %-7s", "(inert)");
+        for (const auto& n : inert) {
+            const int n_seen = inert_count[n];
+            if (n_seen > 1) {
+                printf(" %s x%d", n.c_str(), n_seen);
+            } else {
+                printf(" %s", n.c_str());
+            }
+        }
+        printf("\n");
+    }
+
+    if (result.contains("scope") && result["scope"].is_string()) {
+        printf("  (%zu widgets under %s)\n", widgets.size(),
+               result["scope"].get<std::string>().c_str());
+    } else {
+        printf("  (%zu widgets — `ls` shows all; @path targets any one)\n", widgets.size());
+    }
 }
 
 static int run_repl(const std::string& socket_path) {
@@ -986,6 +1203,9 @@ static int run_repl(const std::string& socket_path) {
 
     printf("helix-screen control REPL — type 'help' for commands, Tab for completion, "
            "Ctrl-D to quit\n");
+
+    // Tab completion reaches the app on its own to list what is on screen.
+    g_repl_socket = socket_path;
 
     // Set up linenoise
     linenoiseSetCompletionCallback(repl_completion);
@@ -1043,10 +1263,48 @@ static int run_repl(const std::string& socket_path) {
             continue;
         }
 
-        // `ls` gets a grouped, human-readable rendering instead of raw JSON.
-        if (tokens[0] == "ls" || tokens[0] == "describe_screen") {
+        // `cd` moves the working directory and never reaches the wire as a
+        // command of its own, so it is handled here rather than in
+        // build_request_from_tokens.
+        if (tokens[0] == "cd") {
+            repl_cd(socket_path, tokens);
+            continue;
+        }
+
+        // `pwd` answers both halves of "where am I": the navigation stack, and
+        // the working directory targets resolve against.
+        if (tokens[0] == "pwd" || tokens[0] == "current") {
             nlohmann::json r;
-            if (query_result(socket_path, build_request("describe_screen"), r)) {
+            if (query_result(socket_path, build_request("get_current"), r)) {
+                printf("  panel:   %s\n", r.value("panel", std::string("?")).c_str());
+                std::string overlays;
+                if (r.contains("overlays") && r["overlays"].is_array()) {
+                    for (const auto& o : r["overlays"]) {
+                        if (o.is_string()) {
+                            overlays += (overlays.empty() ? "" : ", ") + o.get<std::string>();
+                        }
+                    }
+                }
+                printf("  overlays: [%s]\n", overlays.c_str());
+                const std::string root = r.value("root_path", std::string());
+                printf("  cwd:     %s%s\n", g_cwd.empty() ? root.c_str() : g_cwd.c_str(),
+                       g_cwd.empty() ? "  (active root)" : "");
+            }
+            continue;
+        }
+
+        // `ls` gets a grouped, human-readable rendering instead of raw JSON.
+        // Its argument scopes the listing, and with no argument it lists the
+        // working directory.
+        if (tokens[0] == "ls" || tokens[0] == "describe_screen") {
+            nlohmann::json params = nlohmann::json::object();
+            if (tokens.size() >= 2) {
+                params = target_param(tokens[1]);
+            } else if (!g_cwd.empty()) {
+                params["scope"] = g_cwd;
+            }
+            nlohmann::json r;
+            if (query_result(socket_path, build_request("describe_screen", params), r)) {
                 print_describe_grouped(r);
             }
             continue;
@@ -1121,6 +1379,16 @@ int helix::remote_client_main(int argc, char** argv) {
                 return 1;
             }
             socket_path = argv[++arg_start];
+            arg_start++;
+        } else if (strcmp(argv[arg_start], "-C") == 0 || strcmp(argv[arg_start], "--cwd") == 0) {
+            // A one-shot process cannot carry a working directory between
+            // invocations the way the REPL does, so a script scopes each
+            // command explicitly instead.
+            if (arg_start + 1 >= argc) {
+                fprintf(stderr, "Error: -C requires a path argument (e.g. -C s/settings_list)\n");
+                return 1;
+            }
+            g_cwd = argv[++arg_start];
             arg_start++;
         } else {
             break; // Start of command

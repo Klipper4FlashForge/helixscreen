@@ -19,6 +19,7 @@ app/display initialization, so they start instantly and never touch the UI):
 ```bash
 helix-screen ctl <command> [args]     # one-shot command
 helix-screen ctl -s <socket> <cmd>    # against an explicit socket
+helix-screen ctl -C <path> <cmd>      # resolve this command's target inside <path>
 helix-screen repl                     # interactive REPL
 helix-screen ctl                      # no command → also drops into the REPL
 ```
@@ -42,6 +43,10 @@ produces a sentence rather than a protocol object.
 The REPL ignores `--json` — formatted output is the reason the REPL exists.
 
     helix-screen ctl --json current | jq -r .panel
+    helix-screen ctl --json resolve row_hardware | jq -r .path
+
+Options are the same in both modes: `-s/--socket <path>` picks the instance,
+`-C/--cwd <path>` scopes the command (see [the working directory](#the-working-directory)).
 
 ## Enabling the server
 
@@ -164,17 +169,83 @@ live breadcrumb of the navigation stack, e.g. `controls / motion_panel_0 > `.
 ### Navigation (filesystem metaphor)
 | Command | Meaning |
 |---------|---------|
-| `navigate`, `cd <target>` | Go to a base panel, or click a named widget to descend into an overlay |
-| `go_back`, `back`, `cd ..` | Pop the current overlay |
+| `ping` | Health check — answers `pong` once the control server is accepting |
+| `status` | Panel, connection state, and printer status in one response |
+| `navigate <panel>` | Go to a base panel |
+| `cd <container>` | Move the working directory — see below. **No UI side effect** |
+| `go_back`, `back` | Pop the current overlay |
 | `help`, `?` | Print the command list (same as `-h`/`--help`) |
-| `current`, `pwd` | Show the current panel + overlay stack |
+| `current`, `pwd` | Show the panel, overlay stack, and working directory |
+| `resolve <target>` | Print the absolute locator a target resolves to |
 | `list_panels` | List the registered base panels (the fixed `PanelId` set) |
 | `wake`, `screensaver` | Reset the idle timer / dismiss the screensaver |
+
+### The working directory
+
+The REPL keeps a **cwd**, and every target resolves relative to it. `cd` into
+the row you are working on and then type short names instead of long ones:
+
+```text
+controls > cd settings_list
+controls / settings_list > ls              # just this subtree, not the screen
+controls / settings_list > click 'toggle[1]'
+controls / settings_list > cd ..
+controls >
+```
+
+`cd` is a **pure move**. It changes where later commands resolve from and never
+touches the UI — unlike the old `cd <widget>`, which reached its destination by
+*clicking* it, so a mistyped destination could dispatch a real event on a live
+printer. To make something happen, use `click`; to go somewhere, use `cd`. The
+two hierarchies meet at exactly one point: `cd ..` goes up one container, and at
+an overlay's root it pops the overlay, because an overlay *is* just a widget in
+that tree.
+
+`cd` alone (or `cd /`) returns to the active root — whatever is frontmost on
+screen.
+
+**The cwd follows navigation.** Anything that swaps the frontmost thing on
+screen — `navigate`, a `click` that opens an overlay, `go_back`, a modal
+appearing — resets the cwd to the new root. The client watches the `root_path`
+that `get_current` reports rather than guessing which commands navigate, so a
+click that *turned out* to open an overlay is handled the same as an explicit
+`navigate`. A cwd can therefore never address a subtree that has been torn down.
+
+The cwd lives in the **client**, as a path string re-resolved on every command.
+Caching a widget pointer across commands would be a use-after-free the first
+time an overlay closed or hot reload rebuilt the panel underneath it.
+
+One-shot `ctl` has nowhere to keep a cwd between processes, so it takes `-C`:
+
+```bash
+helix-screen ctl -C s/settings_list click 'toggle[1]'
+helix-screen ctl -C s/settings_list ls
+```
+
+#### On the wire
+
+The cwd is purely a client-side convenience; the server stays stateless. Anything
+speaking JSON-RPC directly (the HTTP transport, a script) gets the same behaviour
+from two additions:
+
+| Field | Where | Meaning |
+|-------|-------|---------|
+| `scope` | request param on any widget command | Absolute locator to resolve `name`/relative `path` inside. Omitted or unresolvable means the whole active screen plus the top layer, exactly as before |
+| `root_path` | `get_current` response | Absolute locator of the frontmost panel, overlay or modal |
+
+An **unresolvable `scope` is deliberately not an error** — a client's cwd can go
+stale under it, and falling back to a screen-wide search beats refusing every
+subsequent command.
+
+```bash
+curl -s -X POST http://127.0.0.1:7130/rpc -d '{"jsonrpc":"2.0","id":1,
+  "method":"click","params":{"name":"toggle[1]","scope":"s/main/settings_list"}}'
+```
 
 ### Introspection & widget interaction
 | Command | Meaning |
 |---------|---------|
-| `ls`, `describe_screen` `[target]` | List on-screen widgets: name, `path`, `layer`, type, available actions. With a target, list only that widget's subtree (plus the widget itself). The response also carries `topmost_layer` and `active_screen` — compare an entry's `layer` against `topmost_layer` to tell a frontmost widget from one stacked behind it |
+| `ls`, `describe_screen` `[target]` | List on-screen widgets: name, `path`, `layer`, type, available actions. With a target, list only that widget's subtree (plus the widget itself); with no target, the working directory. The response also carries `topmost_layer` and `active_screen` — compare an entry's `layer` against `topmost_layer` to tell a frontmost widget from one stacked behind it — and `scope` whenever the listing was confined to a subtree. The REPL's rendering groups widgets by what you can do to them, with a final `(inert)` line for labels, icons and containers that carry no action (repeats collapsed as `name x6`) |
 | `list_components` | List **every** registered XML component (live registry): panels, overlays, modals, cards, rows — the full introspectable surface |
 | `list_callbacks` | List every registered event-callback name (overlay/modal open-handlers, button callbacks). Names only — nothing is fired |
 | `click <target>` | Click a widget (also toggles switches/checkboxes) |
@@ -232,10 +303,37 @@ The device is created lazily on the first pointer command and coexists with the
 real SDL/evdev pointer; LVGL supports multiple pointer indevs. Instances that never
 receive a pointer command never register it.
 
-A **target** is either a widget `name` or a path locator taken from `ls`
-(e.g. `@s/15/1/1/2`, or bare `s/15/1/1/2` — the `@` is optional, since widget
-names never contain `/`). Use a path when a name is duplicated on screen
-(reusable components share names — a settings page can have six `toggle`s).
+A **target** is one of:
+
+| Form | Example | Means |
+|------|---------|-------|
+| name | `row_theme` | The widget of that name, searched inside the cwd |
+| indexed name | `toggle[1]` | The 2nd `toggle` in the cwd, in document order (0-based) |
+| glob | `'row_*'` | Every matching name — see below |
+| relative path | `row_theme/toggle` | Walked down from the cwd |
+| absolute path | `@s/main/settings_list` | From the screen root, ignoring the cwd |
+
+Paths are written in **names**, not child indices: `s/main_content/settings_list/row_theme`
+rather than `s/15/1/1/2`. Each segment is the widget's name where that name is
+unique among its siblings, `name[k]` where it is not, and a bare child index
+only where the widget has no name at all. The `@` on an absolute path is
+optional, since widget names never contain `/`.
+
+Name segments are also the stable ones. Inserting a row above the target shifts
+every child index after it, but not a name — which matters because a locator is
+something a person copies out of `ls` and retypes later.
+
+An **all-numeric locator still resolves** exactly as it did before names were
+introduced, so anything holding an older path keeps working.
+
+`toggle[1]` counts matches *within the cwd*, which is what gives the ordinal a
+meaning you can predict. Unscoped, it counts across the whole screen, where an
+opening overlay can shift it — so `cd` first when you intend to use one.
+
+A name segment that matches several siblings with no ordinal to pick between
+them resolves to **nothing**, and the error names the candidates. Silently
+taking the first is the same failure mode as #1179: a command that reports
+success while acting on a widget the caller never addressed.
 
 Name lookup resolves to the **topmost visible** match: hidden subtrees are
 skipped, and among what remains the widget in the frontmost overlay wins
@@ -253,7 +351,8 @@ success.
 
 A full-screen `ls` on a settings page runs to hundreds of entries. Scope it once
 you know the row you want — `ls row_filament_auto_cooldown` returns that row and
-its handful of children, `scope` in the response echoing the subtree root.
+its handful of children, `scope` in the response echoing the subtree root. With
+a cwd set, a bare `ls` is already scoped to it.
 
 **Wildcards.** A target name containing `*` (any run of characters, including
 none) or `?` (exactly one) is matched as a glob against every visible named
@@ -543,7 +642,9 @@ together: `freeze` first to kill animations and pause timers, then
 
 `--target <widget>` crops the capture to that widget's bounding box instead of
 the whole screen, clamped to the captured buffer (a widget can extend past the
-screen edge). This is what keeps a golden corpus maintainable: a widget-scoped
+screen edge). It is a widget target like any other, so it resolves inside the
+working directory — `cd` to a card and `screenshot --target` a name within it
+means the name inside that card, not the first one on screen. This is what keeps a golden corpus maintainable: a widget-scoped
 golden only changes when that widget's own pixels change, instead of going red
 every time anything else on screen moves. The crop's `w`/`h` in the response
 match `geom <widget>`'s reported `w`/`h` exactly.
@@ -572,36 +673,50 @@ session with line editing, persistent history, and Tab completion (over commands
 subject names, panels, and scenarios). It reconnects per command, so it survives
 the app restarting mid-session — handy while iterating on XML with hot reload.
 
-The prompt is a **live breadcrumb of the navigation stack**, so you always know
-where you are. It uses the filesystem metaphor — `cd` to descend, `cd ..`
-(`back`) to pop, `pwd` (`current`) to show the stack, `ls` to list what's here:
+The prompt is a **live breadcrumb of the navigation stack plus the working
+directory**, so you always know where you are and what a bare name will resolve
+against. `pwd` (`current`) spells both out, `ls` lists what is here:
 
 ```text
 $ helix-screen repl
 helix-screen control REPL — type 'help' for commands, Tab for completion, Ctrl-D to quit
 
-> cd controls
+> navigate controls
 controls > ls
-  navigate  btn_motion btn_nozzle_temp btn_extrusion btn_fan btn_bed_mesh ...
+  click   btn_motion btn_nozzle_temp btn_extrusion btn_fan btn_bed_mesh ...
   (42 widgets — `ls` shows all; @path targets any one)
-controls > cd btn_motion
-controls / motion_panel_0 > set_value jog_distance 10
-controls / motion_panel_0 > back
-controls > pwd
-  panel: controls, overlays: []
+controls > click btn_motion            # opens the overlay; cwd follows it
+controls / motion_panel_0 > cd jog_grid
+controls / motion_panel_0 / jog_grid > set_value jog_distance 10
+controls / motion_panel_0 / jog_grid > cd ..
+controls / motion_panel_0 > pwd
+  panel:   controls
+  overlays: [motion_panel_0]
+  cwd:     s/motion_panel_0  (active root)
+controls / motion_panel_0 > cd ..      # at the root, up pops the overlay
 controls > quit
 ```
+
+Tab completion covers commands, subject names, panels and scenarios — and, for
+any command that takes a target (`cd`, `ls`, `click`, `focus`, `text`, `geom`,
+`set_value`, `scroll`, `resolve`), the **widget names in the current cwd**.
+Those are re-read on every keypress rather than cached: the tree changes under
+the REPL constantly, and a cache would offer widgets that have left the screen.
 
 Every command from the tables above works at the prompt. A handful are
 REPL-only:
 
 | Command | Meaning |
 |---------|---------|
+| `cd` | The working directory only persists within a session (one-shot uses `-C`) |
 | `help` | Show the in-REPL command summary |
 | `refresh` | Reload the Tab-completion caches (subjects/scenarios/panels) after state changes |
 | `quit`, `exit`, `Ctrl-D` | Leave the REPL |
 
 ## Bringing up a panel or overlay (replaces `-p`)
+
+> Note: `cd <widget>` used to be a way to *reach* an overlay — it clicked the
+> widget. It no longer does anything to the UI; use `click` for that.
 
 | Old | New |
 |-----|-----|
@@ -642,9 +757,20 @@ See `scripts/screenshot-recipes.sh` for every recognized token.
   shared accept loop in `src/remote/socket_server_base.cpp`; two backends:
   `unix_socket_transport.cpp` (default) and `http_transport.cpp` (minimal
   self-contained HTTP/1.1, no libhv HttpServer dependency).
+- **Locators & target resolution** — `src/remote/widget_resolution.cpp`
+  (`include/widget_resolution.h`): `path_of()` / `path_segment_for()` emit a
+  locator, `resolve_path()` reads one back, `parse_indexed_name()` splits a
+  `name[k]` token, `resolve_actionable()` decides what a click lands on. Split
+  out of the server because `mk/tests.mk` excludes `remote_control_server.o`
+  from the test link (it drags in the transports and the toast manager), and
+  this is where the interesting mistakes live — see
+  `tests/unit/test_remote_target_resolution.cpp`.
 - **Client** — `src/remote/remote_client.cpp` (`helix::remote_client_main`,
   dispatched from `src/main.cpp` on the `ctl`/`repl` subcommand). Bundles
-  `lib/linenoise` for the REPL. No standalone binary.
+  `lib/linenoise` for the REPL. No standalone binary. Owns the working
+  directory: a path string, sent as `scope` and re-resolved server-side on every
+  command. Never a cached `lv_obj_t*` — that would be a use-after-free the first
+  time an overlay closed or hot reload rebuilt the panel underneath it.
 - **Sample-data screens** — `helix::show_demo_overlay()` in
   `src/application/application.cpp`.
 - **Compile gate** — the whole subsystem is filtered out of the build unless

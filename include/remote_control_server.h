@@ -16,6 +16,8 @@
  *   RemoteControlServer::instance().stop();
  */
 
+#include "remote_transport.h"
+
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -24,7 +26,6 @@
 #include <vector>
 
 #include "hv/json.hpp"
-#include "remote_transport.h"
 
 struct _lv_timer_t;
 
@@ -41,9 +42,9 @@ struct RemoteConfig {
     enum class Transport { UnixSocket, Http };
 
     Transport transport = Transport::UnixSocket;
-    std::string socket_path;              // UnixSocket: resolved socket path.
-    std::string http_bind = "127.0.0.1";  // Http: bind address.
-    int http_port = 7130;                 // Http: TCP port.
+    std::string socket_path;             // UnixSocket: resolved socket path.
+    std::string http_bind = "127.0.0.1"; // Http: bind address.
+    int http_port = 7130;                // Http: TCP port.
 };
 
 /**
@@ -125,6 +126,8 @@ class RemoteControlServer {
     nlohmann::json handle_list_components(const nlohmann::json& params);
     nlohmann::json handle_list_callbacks(const nlohmann::json& params);
     nlohmann::json handle_get_current(const nlohmann::json& params);
+    /// Absolute locator for a target, so `cd` can record where it landed.
+    nlohmann::json handle_resolve(const nlohmann::json& params);
     nlohmann::json handle_screenshot(const nlohmann::json& params);
     nlohmann::json handle_status(const nlohmann::json& params);
     nlohmann::json handle_demo(const nlohmann::json& params);
