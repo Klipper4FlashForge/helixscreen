@@ -36,14 +36,219 @@ TEST_CASE("ctl target: widget names are not mistaken for paths", "[remote][ctl]"
     REQUIRE_FALSE(helix::is_bare_path("theme_swatch_grid"));
 }
 
+TEST_CASE("ctl target: name segments are recognised as locators", "[remote][ctl]") {
+    // path_of() emits names where it can, so a locator pasted out of `ls` is
+    // mostly words now. The root prefix is what makes it a path, not the
+    // segment contents — widget names never contain '/'.
+    REQUIRE(helix::is_bare_path("s/main_content/settings_list"));
+    REQUIRE(helix::is_bare_path("s/15/toggle[1]"));
+    REQUIRE(helix::is_bare_path("t/0/dialog"));
+    REQUIRE(helix::is_bare_path("s/main/list/row_theme/toggle"));
+}
+
 TEST_CASE("ctl target: malformed locators are rejected", "[remote][ctl]") {
     REQUIRE_FALSE(helix::is_bare_path("s/"));     // no segment
     REQUIRE_FALSE(helix::is_bare_path("s//1"));   // empty segment
     REQUIRE_FALSE(helix::is_bare_path("s/1/"));   // trailing slash
-    REQUIRE_FALSE(helix::is_bare_path("s/1/x"));  // non-numeric segment
     REQUIRE_FALSE(helix::is_bare_path("x/1"));    // unknown root
     REQUIRE_FALSE(helix::is_bare_path("s/1 /2")); // stray space
     REQUIRE_FALSE(helix::is_bare_path("row_*"));  // glob stays a glob
+}
+
+// --- indexed-name tokens ------------------------------------------------
+
+TEST_CASE("ctl target: indexed name tokens split", "[remote][ctl]") {
+    std::string name;
+    int index = -1;
+
+    REQUIRE(helix::parse_indexed_name("toggle[3]", name, index));
+    REQUIRE(name == "toggle");
+    REQUIRE(index == 3);
+
+    REQUIRE(helix::parse_indexed_name("row_a[0]", name, index));
+    REQUIRE(name == "row_a");
+    REQUIRE(index == 0);
+}
+
+TEST_CASE("ctl target: plain and malformed names are not indexed", "[remote][ctl]") {
+    std::string name = "untouched";
+    int index = -1;
+
+    // A plain name is the common case and must not be mistaken for an ordinal.
+    REQUIRE_FALSE(helix::parse_indexed_name("toggle", name, index));
+    REQUIRE(name == "untouched"); // outputs left alone on a false return
+
+    // Malformed suffixes stay whole names: no widget name contains a bracket,
+    // so these simply fail to resolve rather than silently addressing index 0.
+    REQUIRE_FALSE(helix::parse_indexed_name("toggle[", name, index));
+    REQUIRE_FALSE(helix::parse_indexed_name("toggle[]", name, index));
+    REQUIRE_FALSE(helix::parse_indexed_name("toggle[x]", name, index));
+    REQUIRE_FALSE(helix::parse_indexed_name("toggle[-1]", name, index));
+    REQUIRE_FALSE(helix::parse_indexed_name("toggle[1", name, index));
+    REQUIRE_FALSE(helix::parse_indexed_name("[1]", name, index)); // no name
+    REQUIRE_FALSE(helix::parse_indexed_name("", name, index));
+}
+
+// --- readable paths: emit and resolve -----------------------------------
+//
+// The locator `ls` prints is the only thing a human retypes, so it emits names
+// rather than child indices. These pin both halves: what path_of() writes, and
+// that resolve_path() reads its own output back to the same widget.
+
+namespace {
+
+// A settings-page shape: named scaffolding, two same-named toggles under one
+// parent (the case an index suffix exists for), and an unnamed container that
+// has to fall back to a numeric segment.
+struct PathTree {
+    lv_obj_t* main_content;
+    lv_obj_t* settings_list;
+    lv_obj_t* row_theme;
+    lv_obj_t* theme_toggle;
+    lv_obj_t* toggle_a;
+    lv_obj_t* toggle_b;
+    lv_obj_t* unnamed_box;
+    lv_obj_t* deep_label;
+};
+
+PathTree build_path_tree(lv_obj_t* screen) {
+    PathTree t{};
+    t.main_content = lv_obj_create(screen);
+    lv_obj_set_name(t.main_content, "main_content");
+
+    t.settings_list = lv_obj_create(t.main_content);
+    lv_obj_set_name(t.settings_list, "settings_list");
+
+    t.row_theme = lv_obj_create(t.settings_list);
+    lv_obj_set_name(t.row_theme, "row_theme");
+    t.theme_toggle = lv_switch_create(t.row_theme);
+    lv_obj_set_name(t.theme_toggle, "toggle");
+
+    // Siblings sharing a name: LVGL only auto-indexes names ending in '#', so
+    // both of these resolve to "toggle" and need an ordinal to tell apart.
+    t.toggle_a = lv_switch_create(t.settings_list);
+    lv_obj_set_name(t.toggle_a, "toggle");
+    t.toggle_b = lv_switch_create(t.settings_list);
+    lv_obj_set_name(t.toggle_b, "toggle");
+
+    t.unnamed_box = lv_obj_create(t.settings_list); // deliberately nameless
+    t.deep_label = lv_label_create(t.unnamed_box);
+    lv_obj_set_name(t.deep_label, "deep_label");
+    return t;
+}
+
+} // namespace
+
+TEST_CASE_METHOD(LVGLTestFixture, "ctl path: unique names are emitted as words", "[remote][ctl]") {
+    PathTree t = build_path_tree(lv_screen_active());
+
+    // The whole point: readable, and no child index in sight.
+    REQUIRE(helix::path_of(t.settings_list) == "s/main_content/settings_list");
+    REQUIRE(helix::path_of(t.row_theme) == "s/main_content/settings_list/row_theme");
+
+    // Unique among ITS siblings (it is row_theme's only child) — so no ordinal,
+    // even though other widgets elsewhere on screen are also called "toggle".
+    REQUIRE(helix::path_of(t.theme_toggle) == "s/main_content/settings_list/row_theme/toggle");
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "ctl path: same-named siblings get an ordinal", "[remote][ctl]") {
+    PathTree t = build_path_tree(lv_screen_active());
+
+    // theme_toggle is not a sibling of these two, so the ordinal counts only
+    // the same-named children of settings_list, in child order.
+    REQUIRE(helix::path_of(t.toggle_a) == "s/main_content/settings_list/toggle[0]");
+    REQUIRE(helix::path_of(t.toggle_b) == "s/main_content/settings_list/toggle[1]");
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "ctl path: unnamed widgets fall back to an index",
+                 "[remote][ctl]") {
+    PathTree t = build_path_tree(lv_screen_active());
+
+    // unnamed_box is settings_list's 4th child (row_theme, toggle, toggle, box).
+    REQUIRE(lv_obj_get_index(t.unnamed_box) == 3);
+    REQUIRE(helix::path_of(t.deep_label) == "s/main_content/settings_list/3/deep_label");
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "ctl path: every emitted path resolves back", "[remote][ctl]") {
+    PathTree t = build_path_tree(lv_screen_active());
+
+    // Round-trip is the real contract: whatever `ls` prints must be retypeable.
+    for (lv_obj_t* w : {t.main_content, t.settings_list, t.row_theme, t.theme_toggle, t.toggle_a,
+                        t.toggle_b, t.unnamed_box, t.deep_label}) {
+        CAPTURE(helix::path_of(w));
+        REQUIRE(helix::resolve_path(helix::path_of(w)) == w);
+    }
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "ctl path: numeric locators still resolve", "[remote][ctl]") {
+    PathTree t = build_path_tree(lv_screen_active());
+
+    // Back-compat. path_of() no longer emits this shape, but anything holding
+    // an older locator — a saved script, a stale terminal buffer — must keep
+    // working, so resolve_path still walks pure child indices.
+    REQUIRE(helix::resolve_path("s/0/0/0") == t.row_theme);
+    REQUIRE(helix::resolve_path("s/0/0/3/0") == t.deep_label);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "ctl path: a name survives sibling insertion, an index does not",
+                 "[remote][ctl]") {
+    PathTree t = build_path_tree(lv_screen_active());
+
+    const std::string by_name = helix::path_of(t.row_theme);
+    const std::string by_index = "s/0/0/0";
+    REQUIRE(helix::resolve_path(by_name) == t.row_theme);
+    REQUIRE(helix::resolve_path(by_index) == t.row_theme);
+
+    // A new row lands at the front, shifting every later child index by one.
+    // This is the reason the readable form is also the stable one.
+    lv_obj_t* inserted = lv_obj_create(t.settings_list);
+    lv_obj_set_name(inserted, "row_new");
+    lv_obj_move_to_index(inserted, 0);
+
+    REQUIRE(helix::resolve_path(by_name) == t.row_theme); // still the same widget
+    REQUIRE(helix::resolve_path(by_index) == inserted);   // now points elsewhere
+    REQUIRE(helix::resolve_path(by_index) != t.row_theme);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "ctl path: relative locators resolve against a base",
+                 "[remote][ctl]") {
+    PathTree t = build_path_tree(lv_screen_active());
+
+    // What `cd settings_list` buys: short targets from where you are.
+    REQUIRE(helix::resolve_path("row_theme", t.settings_list) == t.row_theme);
+    REQUIRE(helix::resolve_path("row_theme/toggle", t.settings_list) == t.theme_toggle);
+    REQUIRE(helix::resolve_path("toggle[1]", t.settings_list) == t.toggle_b);
+
+    // An absolute locator ignores the base entirely, so a full path pasted from
+    // `ls` behaves the same wherever you happen to be cd'd.
+    REQUIRE(helix::resolve_path("s/main_content/settings_list/row_theme", t.row_theme) ==
+            t.row_theme);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "ctl path: an ambiguous name reports candidates",
+                 "[remote][ctl]") {
+    PathTree t = build_path_tree(lv_screen_active());
+
+    // "toggle" alone under settings_list matches two children. Resolving to the
+    // first would click a switch the caller never addressed — the same failure
+    // the #1179 descent bound exists to prevent — so it resolves to nothing and
+    // hands back both candidates for the error message.
+    std::vector<lv_obj_t*> ambiguous;
+    REQUIRE(helix::resolve_path("toggle", t.settings_list, &ambiguous) == nullptr);
+    REQUIRE(ambiguous.size() == 2);
+    REQUIRE(ambiguous[0] == t.toggle_a);
+    REQUIRE(ambiguous[1] == t.toggle_b);
+}
+
+TEST_CASE_METHOD(LVGLTestFixture, "ctl path: unresolvable segments yield nothing",
+                 "[remote][ctl]") {
+    PathTree t = build_path_tree(lv_screen_active());
+    (void)t;
+
+    REQUIRE(helix::resolve_path("s/main_content/nope") == nullptr);
+    REQUIRE(helix::resolve_path("s/main_content/settings_list/toggle[9]") == nullptr);
+    REQUIRE(helix::resolve_path("s/99") == nullptr);
+    REQUIRE(helix::resolve_path("") == nullptr);
 }
 
 // --- topmost-visible name resolution ------------------------------------
