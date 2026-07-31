@@ -11,6 +11,7 @@
 #include "config.h"
 #include "helix-xml/src/libs/expat/expat.h"
 #include "helix-xml/src/xml/lv_xml.h"
+#include "layout_manager.h"
 #include "lvgl/lvgl.h"
 #include "lvgl/src/themes/lv_theme_private.h"
 #include "settings_manager.h"
@@ -409,8 +410,7 @@ static void update_handle_styles(const theme_palette_t* palette, int border_radi
     } else {
         // Responsive knob padding: smaller at tiny/micro to avoid clipping in compact cards
         auto* display = lv_display_get_default();
-        auto bp =
-            display ? breakpoint_for(responsive_dimension(display)) : UiBreakpoint::Medium;
+        auto bp = display ? breakpoint_for(responsive_dimension(display)) : UiBreakpoint::Medium;
         int32_t knob_pad = (bp <= UiBreakpoint::Tiny) ? LV_DPX(4) : LV_DPX(6);
         lv_style_set_pad_left(&slider_knob_style, knob_pad);
         lv_style_set_pad_right(&slider_knob_style, knob_pad);
@@ -883,6 +883,24 @@ const char* theme_manager_get_breakpoint_suffix(int32_t resolution) {
  *
  * @param display The LVGL display to get resolution from
  */
+namespace helix {
+
+OverlayWidths compute_overlay_widths(int32_t hor_res, int32_t ver_res, int32_t nav_width,
+                                     int32_t gap) {
+    // Classified from raw dimensions rather than LayoutManager::type(): this
+    // runs in Application phase 6 and the layout manager is not initialised
+    // until phase 8b. detect_layout_type() is the same function the variant
+    // chain uses, so the sizing and the choice of ui_xml/portrait/ cannot
+    // disagree. A LayoutManager::set_override() forcing a portrait *layout*
+    // onto landscape hardware is deliberately not honoured here — the physical
+    // nav bar geometry is what the arithmetic is about.
+    const bool portrait = is_portrait_layout(detect_layout_type(hor_res, ver_res));
+    const int32_t nav_reserve = portrait ? 0 : nav_width;
+    return {hor_res - nav_reserve - gap, hor_res - nav_reserve};
+}
+
+} // namespace helix
+
 void theme_manager_register_responsive_spacing(lv_display_t* display) {
     int32_t hor_res = lv_display_get_horizontal_resolution(display);
     int32_t ver_res = lv_display_get_vertical_resolution(display);
@@ -1024,20 +1042,20 @@ void theme_manager_register_responsive_spacing(lv_display_t* display) {
     //                     this over something and will return from it.
     //   destination     — occludes the backdrop: a place you park, and whose
     //                     drill-downs are part of it.
-    int32_t overlay_width_transient = hor_res - nav_width - gap;
-    int32_t overlay_width_destination = hor_res - nav_width;
+    const helix::OverlayWidths widths =
+        helix::compute_overlay_widths(hor_res, ver_res, nav_width, gap);
 
     char transient_str[16];
     char destination_str[16];
-    snprintf(transient_str, sizeof(transient_str), "%d", overlay_width_transient);
-    snprintf(destination_str, sizeof(destination_str), "%d", overlay_width_destination);
+    snprintf(transient_str, sizeof(transient_str), "%d", widths.transient);
+    snprintf(destination_str, sizeof(destination_str), "%d", widths.destination);
 
     lv_xml_register_const(scope, "overlay_width_transient", transient_str);
     lv_xml_register_const(scope, "overlay_width_destination", destination_str);
 
     spdlog::trace("[Theme] Layout: nav_width={}px, gap={}px, overlay transient={}px "
                   "destination={}px",
-                  nav_width, gap, overlay_width_transient, overlay_width_destination);
+                  nav_width, gap, widths.transient, widths.destination);
 }
 
 void theme_manager_refresh_layout_constants(lv_display_t* display) {
@@ -1129,13 +1147,13 @@ void theme_manager_refresh_layout_constants(lv_display_t* display) {
     const char* space_lg_str = lv_xml_get_const(nullptr, "space_lg");
     int32_t gap = space_lg_str ? std::atoi(space_lg_str) : 16;
 
-    int32_t overlay_width_transient = hor_res - nav_width - gap;
-    int32_t overlay_width_destination = hor_res - nav_width;
+    const helix::OverlayWidths widths =
+        helix::compute_overlay_widths(hor_res, ver_res, nav_width, gap);
 
     char transient_str[16];
     char destination_str[16];
-    snprintf(transient_str, sizeof(transient_str), "%d", overlay_width_transient);
-    snprintf(destination_str, sizeof(destination_str), "%d", overlay_width_destination);
+    snprintf(transient_str, sizeof(transient_str), "%d", widths.transient);
+    snprintf(destination_str, sizeof(destination_str), "%d", widths.destination);
 
     lv_xml_update_const(scope, "overlay_width_transient", transient_str);
     lv_xml_update_const(scope, "overlay_width_destination", destination_str);
@@ -1151,8 +1169,7 @@ void theme_manager_refresh_layout_constants(lv_display_t* display) {
 
     spdlog::info("[Theme] Layout refreshed after rotation: {}x{} → nav={}px, "
                  "overlay transient={}px destination={}px (breakpoint={})",
-                 hor_res, ver_res, nav_width, overlay_width_transient, overlay_width_destination,
-                 to_int(bp));
+                 hor_res, ver_res, nav_width, widths.transient, widths.destination, to_int(bp));
 }
 
 /**
@@ -1420,8 +1437,7 @@ static void theme_manager_register_semantic_colors(lv_xml_component_scope_t* sco
  * @param theme Theme data with properties
  */
 static void theme_manager_register_theme_properties(lv_xml_component_scope_t* scope,
-                                                    const helix::ThemeData& theme,
-                                                    bool dark_mode) {
+                                                    const helix::ThemeData& theme, bool dark_mode) {
     char buf[32];
 
     // Register border_radius and button_radius from size table + current breakpoint
@@ -2455,7 +2471,10 @@ void ui_set_overlay_width(lv_obj_t* obj, bool is_destination) {
     // fallbacks for nav_width and the gap.
     lv_obj_t* screen = lv_obj_get_screen(obj);
     lv_coord_t screen_width = screen ? lv_obj_get_width(screen) : 800;
-    lv_obj_set_width(obj, screen_width - 94 - (is_destination ? 0 : 16));
+    lv_coord_t screen_height = screen ? lv_obj_get_height(screen) : 480;
+    const helix::OverlayWidths widths =
+        helix::compute_overlay_widths(screen_width, screen_height, 94, 16);
+    lv_obj_set_width(obj, is_destination ? widths.destination : widths.transient);
     spdlog::warn("[Theme] {} not registered, using fallback", name);
 }
 

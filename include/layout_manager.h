@@ -17,6 +17,20 @@ enum class LayoutType {
     TINY_PORTRAIT   // portrait, max dim <=480
 };
 
+/// Classify a screen geometry into a layout variant.
+///
+/// Free-standing because callers that run before LayoutManager::init() need the
+/// same answer. Application initialises the theme (phase 6) well before the
+/// layout manager (phase 8b), and the overlay-width constants computed there
+/// have to know whether the nav bar is a vertical strip or a bottom bar. Sharing
+/// one implementation keeps the threshold that selects ui_xml/portrait/ and the
+/// threshold that sizes overlays from ever disagreeing.
+LayoutType detect_layout_type(int width, int height);
+
+/// True for every portrait class, i.e. every geometry whose navigation bar is
+/// the horizontal bottom strip built by ui_xml/portrait/navigation_bar.xml.
+bool is_portrait_layout(LayoutType type);
+
 class LayoutManager {
   public:
     static LayoutManager& instance();

@@ -101,6 +101,34 @@ struct ThemePalette {
 namespace helix {
 /// Style configure function type - applies palette colors to a style.
 using StyleConfigureFn = void (*)(lv_style_t* style, const ThemePalette& palette);
+
+/// The two overlay widths registered as XML consts (#1178).
+struct OverlayWidths {
+    int32_t transient;   ///< A layer you will return from — leaves the leading-edge gap.
+    int32_t destination; ///< A place you park — occludes the backdrop entirely.
+};
+
+/**
+ * @brief Compute overlay widths for a screen geometry.
+ *
+ * Both widths give up the horizontal extent the navigation bar occupies.
+ * Landscape puts the bar on the leading edge as a full-height vertical strip,
+ * so that is nav_width px. Portrait puts it along the bottom at width="100%"
+ * (ui_xml/portrait/navigation_bar.xml), where it costs an overlay nothing
+ * horizontally — reserving nav_width there strands a column of dead backdrop
+ * beside every overlay, 54px of 320 on the Waveshare 11.9".
+ *
+ * Pure so the formula can be tested without the XML const registry, which
+ * ignores duplicate registrations and therefore cannot be re-registered at a
+ * second resolution within one process.
+ *
+ * @param hor_res   Display width in px
+ * @param ver_res   Display height in px
+ * @param nav_width Registered nav_width const for this breakpoint
+ * @param gap       Leading-edge gap for the transient class (space_lg)
+ */
+OverlayWidths compute_overlay_widths(int32_t hor_res, int32_t ver_res, int32_t nav_width,
+                                     int32_t gap);
 } // namespace helix
 
 /// Style entry - binds a role to its style and configure function.
