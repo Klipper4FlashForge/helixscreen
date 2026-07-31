@@ -278,12 +278,19 @@ If you're interested, join the [Discord](https://discord.gg/RZCT2StKhr) and intr
 
 ## License
 
-GPL v3 — See [LICENSE](LICENSE) for details.
+GPL v3 — See [LICENSE](LICENSE) for details. Third-party components and their licenses are listed
+in [COPYRIGHT](COPYRIGHT).
+
+One exception: **[`lib/helix-xml/`](lib/helix-xml/) is MIT**, not GPL. It is a permanent fork of the
+declarative XML UI engine that shipped inside LVGL core until v9.5 removed it and moved it to the
+commercial LVGL Pro. We forked from the last MIT commit (`a15dcbeb5`, 2026-01-26) and keep our own
+contributions to it under MIT so the engine stays usable as a standalone library. See
+[`lib/helix-xml/README.md`](lib/helix-xml/README.md).
 
 ## Acknowledgments
 
 **Inspired by:** [GuppyScreen](https://github.com/ballaswag/guppyscreen) (general architecture, LVGL-based approach), [KlipperScreen](https://github.com/KlipperScreen/KlipperScreen) (feature inspiration)
 
-**Built with:** [LVGL 9.5](https://lvgl.io/), [Klipper](https://www.klipper3d.org/), [Moonraker](https://github.com/Arksine/moonraker), [libhv](https://github.com/ithewei/libhv), [spdlog](https://github.com/gabime/spdlog), [SDL2](https://www.libsdl.org/)
+**Built with:** [LVGL 9.5](https://lvgl.io/), [Klipper](https://www.klipper3d.org/), [Moonraker](https://github.com/Arksine/moonraker), [libhv](https://github.com/ithewei/libhv), [spdlog](https://github.com/gabime/spdlog), [SDL2](https://www.libsdl.org/), and `helix-xml` (our MIT fork of LVGL's XML engine)
 
 **AI-Assisted Development:** Built with [Claude Code](https://github.com/anthropics/claude-code) by [Anthropic](https://www.anthropic.com/)
