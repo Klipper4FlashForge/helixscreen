@@ -277,6 +277,115 @@ fi
 echo ""
 
 # ====================================================================
+# helix-xml-linter (mirrors the "XML Lint" CI gate)
+# ====================================================================
+# The linter resolves every #const reference against a committed snapshot,
+# tools/xml-linter/schema/schema.json. Adding a <px>/<color>/<string> to an XML
+# file without regenerating that snapshot leaves the new name unknown, so every
+# reference to it is an unknown-const-ref on CI while the commit sails through
+# locally — three times now (#1204 most recently).
+#
+# Kept cheap (~0.7s) three ways, because this runs on every commit:
+#   - Triggers on staged ui_xml/ and tools/xml-linter/ only. src/ui/,
+#     lib/helix-xml/ and the theme JSON reach the linter ONLY through the
+#     schema, which the fast path does not regenerate — so for a commit that
+#     touches none of the XML, re-linting would just replay the previous
+#     result. CI's XML Lint job still covers the wider path set.
+#   - Lints against the COMMITTED snapshot first. That is precisely what CI
+#     does, so a pass here means CI passes and no regen is owed. It also stops
+#     schema.json churning on commits where staleness changes no outcome.
+#   - Regenerates only on the paths where the snapshot can actually be at
+#     fault: a failing lint, or a staged edit that deletes a const definition
+#     (which would otherwise leave dangling refs resolving against a stale
+#     snapshot). Only that rare path pays the 0.5s `make` startup.
+echo "🧩 Running helix-xml-linter..."
+
+XML_LINTER_SCHEMA_PATH="tools/xml-linter/schema/schema.json"
+
+# Mirrors `make lint-xml` (mk/tools.mk) but skips make's ~0.5s startup. Always
+# lints all of ui_xml/, never just the staged files: the linter builds its
+# cross-file component registry from the paths it is handed, so a staged-only
+# run reports every component defined in an unstaged file as unknown.
+run_xml_linter() {
+  PYTHONPATH=tools/xml-linter/src python3 -m helix_xml_linter.cli \
+    --schema "$XML_LINTER_SCHEMA_PATH" --severity error ui_xml/
+}
+
+if [ "$STAGED_ONLY" = true ]; then
+  XML_LINT_TRIGGERS=$(git diff --cached --name-only --diff-filter=ACM | \
+    grep -E '^(ui_xml/.*\.xml$|tools/xml-linter/)' || true)
+else
+  XML_LINT_TRIGGERS="all"
+fi
+
+if [ -z "$XML_LINT_TRIGGERS" ]; then
+  echo "ℹ️  No XML linter inputs staged"
+elif ! command -v python3 >/dev/null 2>&1; then
+  echo "⚠️  python3 not found — skipping XML lint"
+else
+  # A deleted const can leave a dangling ref that still resolves against the
+  # stale snapshot — the one staleness a passing lint cannot rule out.
+  XML_CONST_DELETED=false
+  if [ "$STAGED_ONLY" = true ]; then
+    if git diff --cached -U0 -- 'ui_xml/*.xml' | \
+       grep -qE '^-[[:space:]]*<(px|color|string|int|percentage|font|tiny_ttf|bin|const)[[:space:]][^>]*name='; then
+      XML_CONST_DELETED=true
+    fi
+  fi
+
+  if [ "$XML_CONST_DELETED" = false ] && run_xml_linter >/tmp/lint_xml.out 2>&1; then
+    echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+  else
+    # Either the lint failed or a const was deleted. Refresh the snapshot and
+    # retry — `make` here (not the raw extractor) keeps mk/tools.mk the single
+    # source of truth for the extractor's argument list.
+    SCHEMA_DIRTY_BEFORE=false
+    git diff --quiet -- "$XML_LINTER_SCHEMA_PATH" || SCHEMA_DIRTY_BEFORE=true
+
+    if make regen-xml-schema >/tmp/regen_xml_schema.out 2>&1; then
+      SCHEMA_WAS_STALE=false
+      git diff --quiet -- "$XML_LINTER_SCHEMA_PATH" || SCHEMA_WAS_STALE=true
+
+      if run_xml_linter >/tmp/lint_xml.out 2>&1; then
+        if [ "$SCHEMA_WAS_STALE" = false ]; then
+          echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+        # The snapshot was the problem. Stage it with the XML that made it
+        # stale — unless it was already dirty, in which case it belongs to
+        # unrelated WIP and is not ours to stage.
+        elif [ "$AUTO_FIX" = true ] && [ "$STAGED_ONLY" = true ] && [ "$SCHEMA_DIRTY_BEFORE" = false ]; then
+          git add "$XML_LINTER_SCHEMA_PATH"
+          echo "   ✓ Regenerated and staged $XML_LINTER_SCHEMA_PATH"
+          echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+        else
+          echo "⚠️  $XML_LINTER_SCHEMA_PATH was stale — regenerated in place"
+          echo "   Commit it or CI's XML Lint job will fail:"
+          echo "   git add $XML_LINTER_SCHEMA_PATH"
+          EXIT_CODE=1
+        fi
+      else
+        cat /tmp/lint_xml.out
+        echo "   Run 'make lint-xml-all' to see warnings too"
+        EXIT_CODE=1
+      fi
+    else
+      # Regeneration is best-effort — fall back to the committed snapshot so a
+      # broken extractor can't block every commit, and fail only on real lint errors.
+      cat /tmp/regen_xml_schema.out
+      echo "⚠️  Schema regeneration failed — linting against the committed snapshot"
+      if run_xml_linter >/tmp/lint_xml.out 2>&1; then
+        echo "✅ helix-xml-linter passed ($(tail -1 /tmp/lint_xml.out))"
+      else
+        cat /tmp/lint_xml.out
+        echo "   Run 'make lint-xml-all' to see warnings too"
+        EXIT_CODE=1
+      fi
+    fi
+  fi
+fi
+
+echo ""
+
+# ====================================================================
 # Overlay width is decided at push time, never in XML (#1178)
 # ====================================================================
 # The two width constants encode destination-vs-transient-layer, and which one
