@@ -108,6 +108,16 @@ This is the most common mistake. Do NOT do this:
 
 LVGL ignores duplicate variable registrations. If the base name `space_lg` is already registered (from the first line), the responsive override from `theme_manager` is silently discarded. Only define the suffixed variants.
 
+### CRITICAL: Responsive tokens only work at the top level of `ui_xml/`
+
+Token discovery does not recurse. `theme_manager_find_xml_files()` skips subdirectories, so only `ui_xml/*.xml` is ever scanned for suffixed tokens. A `<px name="nav_width_small">` declared in `ui_xml/components/`, `ui_xml/portrait/`, `ui_xml/micro/` or any other subdirectory is never registered, and every `#nav_width` that reads it silently resolves to nothing.
+
+That is deliberate. Discovery is alphabetical last-wins, so if variant directories were scanned a portrait-only token would shadow its base token *globally* — including while the standard layout is active — rather than only when that variant is in use.
+
+So declare responsive tokens in `ui_xml/globals.xml` (or another top-level token file such as `ams_tokens.xml`) and reference them with `#token` from the variant file. Non-responsive component-local `<consts>` are fine inside `ui_xml/components/`; they resolve through the component's own scope and never reach discovery.
+
+`scripts/check_responsive_token_scope.py` fails the build if a suffixed token is declared below the top level. Background: prestonbrown/helixscreen#1211.
+
 ---
 
 ## 3. Design Tokens
