@@ -472,7 +472,24 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
         // genuinely dropped either way is the RPC *response* — a late rejection
         // (e.g. a macro emitting an out-of-range target) surfaces no error, same as
         // the silent-queue frontends.
-        if (state_.claim_busy_queue_toast()) {
+        //
+        // ...but only when the blocking op did NOT come from HelixScreen itself.
+        // If the user just pressed Unload on the filament panel, they know the
+        // printer is busy — they made it busy — and being told so is noise
+        // (prestonbrown/helixscreen#1206). An externally-initiated blocking op
+        // (a bed mesh started from Mainsail, a macro typed into another
+        // frontend's console) is worth announcing precisely because, from this
+        // panel's point of view, it came out of nowhere.
+        //
+        // The short-circuit ordering is load-bearing: when suppressed,
+        // claim_busy_queue_toast() must NOT be called, so the once-per-episode
+        // latch stays armed and a genuinely external op later in the same
+        // episode can still announce itself.
+        //
+        // This is the ONLY consumer of app_macro_activity(). The blocking-op
+        // predicates deliberately do not read it — narrowing them would let a
+        // late jog through during a filament op (#1108).
+        if (!state_.app_macro_activity().recently_active() && state_.claim_busy_queue_toast()) {
             NOTIFY_INFO("Printer is busy — your {} will run when it's ready.",
                         helix::discretionary_gcode_noun(gcode));
         }
@@ -507,15 +524,57 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
 
     spdlog::trace("[Moonraker API] Executing G-code: {}", annotated);
 
+    // Stamp app-initiated macro activity so the busy-queue toast above can tell
+    // "the user just pressed Unload here" from "something else started a bed
+    // mesh" (#1206). The complement of the discretionary set is exactly the
+    // macro / homing / calibration / filament-op family that takes Klipper's
+    // gcode lock and flips idle_timeout to "Printing". Stamped regardless of
+    // GcodeSource: a macro the user typed into HelixScreen's own console is
+    // still something they just did themselves.
+    //
+    // Every early return above (klippy halted, homing-during-print, the whole
+    // discretionary branch) is behind us, so a refused send never leaks a stamp.
+    const bool stamp = !helix::is_discretionary_gcode(gcode);
+    helix::PrinterState* ps = &state_;
+    if (stamp) {
+        ps->app_macro_activity().note_sent();
+    }
+
     // Guard: only wrap on_success in lambda if non-null, otherwise pass nullptr.
     // A lambda wrapping a null std::function would bypass send_jsonrpc's null check
     // and throw bad_function_call when invoked.
+    //
+    // But when we stamped, BOTH callbacks must be wrapped even if the caller
+    // supplied neither — most macro sends pass nullptr for both, and an
+    // `if (on_success)`-only wrapper would install no settle at all there,
+    // leaking the counter and suppressing the busy toast for the rest of the
+    // session (the silent-wedge shape of #1129). The request tracker settles a
+    // registered request exactly once — success, JSON-RPC error, timeout, send
+    // failure, or connection loss — so one of the two wrappers runs. The
+    // AppMacroActivity in-flight age ceiling covers the residual paths that
+    // settle nothing at all (client destructor, cancel_request).
     std::function<void(const json&)> success_wrapper;
-    if (on_success) {
-        success_wrapper = [on_success](json) { on_success(); };
+    if (on_success || stamp) {
+        success_wrapper = [on_success, ps, stamp](json) {
+            if (stamp) {
+                ps->app_macro_activity().note_done();
+            }
+            if (on_success) {
+                on_success();
+            }
+        };
     }
-    client_.send_jsonrpc("printer.gcode.script", params, std::move(success_wrapper), on_error,
-                         timeout_ms, silent);
+    ErrorCallback error_wrapper = on_error;
+    if (stamp) {
+        error_wrapper = [on_error, ps](const MoonrakerError& err) {
+            ps->app_macro_activity().note_done();
+            if (on_error) {
+                on_error(err);
+            }
+        };
+    }
+    client_.send_jsonrpc("printer.gcode.script", params, std::move(success_wrapper),
+                         std::move(error_wrapper), timeout_ms, silent);
 }
 
 bool MoonrakerAPI::is_safe_gcode_param(const std::string& str) {
