@@ -105,7 +105,7 @@ bool LayoutManager::has_override(const std::string& filename) const {
     return !active_variant_dir(filename).empty();
 }
 
-LayoutType LayoutManager::detect(int width, int height) const {
+LayoutType detect_layout_type(int width, int height) {
     float ratio = static_cast<float>(width) / static_cast<float>(height);
     int max_dim = std::max(width, height);
     int min_dim = std::min(width, height);
@@ -124,6 +124,15 @@ LayoutType LayoutManager::detect(int width, int height) const {
         return LayoutType::PORTRAIT;
     }
     return LayoutType::STANDARD;
+}
+
+bool is_portrait_layout(LayoutType type) {
+    return type == LayoutType::PORTRAIT || type == LayoutType::TINY_PORTRAIT ||
+           type == LayoutType::MICRO_PORTRAIT;
+}
+
+LayoutType LayoutManager::detect(int width, int height) const {
+    return detect_layout_type(width, height);
 }
 
 const char* LayoutManager::type_to_name(LayoutType type) {

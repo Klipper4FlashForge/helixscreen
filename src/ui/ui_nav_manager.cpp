@@ -734,7 +734,8 @@ void NavigationManager::backdrop_click_event_cb(lv_event_t* e) {
     // also dismiss (or navigate away from) the overlay behind it. Consume this
     // tap for the keyboard dismiss only; a second tap dismisses the overlay.
     if (mgr.take_backdrop_keyboard_dismiss()) {
-        spdlog::trace("[NavigationManager] Backdrop tap dismissed on-screen keyboard; overlay kept");
+        spdlog::trace(
+            "[NavigationManager] Backdrop tap dismissed on-screen keyboard; overlay kept");
         return;
     }
 
@@ -747,11 +748,19 @@ void NavigationManager::backdrop_click_event_cb(lv_event_t* e) {
     lv_point_t click_point;
     lv_indev_get_point(lv_indev_active(), &click_point);
 
-    // Check if click is in navbar area and find which button was clicked
+    // Check if click is in navbar area and find which button was clicked.
+    //
+    // Tested against the bar's own coordinates rather than "x < navbar_width".
+    // The width comparison assumed the bar is a full-height strip pinned to the
+    // leading edge, which is only true of ui_xml/navigation_bar.xml. Portrait
+    // lays the bar along the bottom at width="100%", where that test is true for
+    // every point on the screen.
     if (mgr.navbar_widget_) {
-        int32_t navbar_width = lv_obj_get_width(mgr.navbar_widget_);
+        lv_area_t navbar_area;
+        lv_obj_get_coords(mgr.navbar_widget_, &navbar_area);
 
-        if (click_point.x < navbar_width) {
+        if (click_point.x >= navbar_area.x1 && click_point.x <= navbar_area.x2 &&
+            click_point.y >= navbar_area.y1 && click_point.y <= navbar_area.y2) {
             // Click is in navbar area - find which button and trigger navigation
             const char* button_names[] = {"nav_btn_home",     "nav_btn_print_select",
                                           "nav_btn_controls", "nav_btn_filament",
@@ -1390,9 +1399,9 @@ bool NavigationManager::apply_overlay_width(lv_obj_t* overlay, bool is_first_ove
         }
     }
 
-    const bool is_destination = helix::resolve_overlay_is_destination(
-        requested, !is_first_overlay, parent_is_destination,
-        helix::nav_root_is_destination(active_panel_));
+    const bool is_destination =
+        helix::resolve_overlay_is_destination(requested, !is_first_overlay, parent_is_destination,
+                                              helix::nav_root_is_destination(active_panel_));
 
     overlay_is_destination_[overlay] = is_destination;
 

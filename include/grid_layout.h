@@ -49,6 +49,15 @@ class GridLayout {
     static constexpr int MIN_DYNAMIC_ROWS = 3;
     static constexpr int MAX_DYNAMIC_ROWS = 12;
 
+    /// Column floor for portrait, below the landscape floor of 4.
+    ///
+    /// A portrait panel is narrow by definition: 320px against MIN_DYNAMIC_COLS
+    /// would give 80px cells, half of TARGET_CELL_PX, and every widget that
+    /// branches on `colspan >= 2` would read as compact no matter how much of
+    /// the screen it actually covers. Two columns keeps cells at their intended
+    /// size and lets a full-width widget genuinely be full width.
+    static constexpr int MIN_PORTRAIT_COLS = 2;
+
     /// Get grid dimensions for a given breakpoint
     static GridDimensions get_dimensions(UiBreakpoint bp);
 
