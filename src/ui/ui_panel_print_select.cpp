@@ -2060,20 +2060,16 @@ CardDimensions PrintSelectPanel::calculate_card_dimensions() {
                   get_name(), row_height, card_gap, dims.card_height, total_used,
                   available_height - total_used);
 
-    // Try different column counts
-    for (int cols = 10; cols >= 1; cols--) {
-        int total_gaps = (cols - 1) * card_gap;
-        int card_width = (container_width - total_gaps) / cols;
+    // Pick the column count whose card width lands nearest the size the card component
+    // was designed for, rather than the count that fits the most columns.
+    int best_cols = choose_card_columns(container_width, card_gap);
+    if (best_cols > 0) {
+        dims.num_columns = best_cols;
+        dims.card_width = card_width_for_columns(container_width, card_gap, best_cols);
 
-        if (card_width >= CARD_MIN_WIDTH && card_width <= CARD_MAX_WIDTH) {
-            dims.num_columns = cols;
-            dims.card_width = card_width;
-
-            spdlog::trace("[{}] Calculated card layout: {} rows x {} columns, card={}x{}",
-                          get_name(), dims.num_rows, dims.num_columns, dims.card_width,
-                          dims.card_height);
-            return publish(dims);
-        }
+        spdlog::trace("[{}] Calculated card layout: {} rows x {} columns, card={}x{}", get_name(),
+                      dims.num_rows, dims.num_columns, dims.card_width, dims.card_height);
+        return publish(dims);
     }
 
     // Fallback

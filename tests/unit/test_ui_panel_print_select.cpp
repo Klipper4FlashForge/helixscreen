@@ -829,3 +829,93 @@ TEST_CASE("thumbnail_subject_value never publishes an empty buffer",
         REQUIRE(thumbnail_subject_value(buf) == buf);
     }
 }
+
+// ============================================================================
+// Card column selection (#1208 follow-up)
+//
+// The rule used to walk column counts downward and take the first that fit,
+// which always maximized columns and so always produced the narrowest legal
+// card. choose_card_columns() keeps the count landing nearest CARD_WIDTH_TARGET.
+// ============================================================================
+
+TEST_CASE("choose_card_columns prefers the designed card width", "[print_select][layout]") {
+    SECTION("800x480 gets 4 cards of 167px, not 5 of 132px") {
+        // Measured from a live 800x480 run: card_view_container content width 704, gap 11.
+        int cols = choose_card_columns(704, 11);
+        REQUIRE(cols == 4);
+        REQUIRE(card_width_for_columns(704, 11, cols) == 167);
+
+        // 5 columns still *fits* the bounds — the old rule took it precisely because
+        // it fit. Pin that we now reject it.
+        int five_wide = card_width_for_columns(704, 11, 5);
+        REQUIRE(five_wide >= CARD_WIDTH_MIN);
+        REQUIRE(five_wide <= CARD_WIDTH_MAX);
+        REQUIRE(cols != 5);
+    }
+
+    SECTION("480x272 is unchanged at 3 cards of 138px") {
+        int cols = choose_card_columns(436, 11);
+        REQUIRE(cols == 3);
+        REQUIRE(card_width_for_columns(436, 11, cols) == 138);
+    }
+
+    SECTION("The chosen width is never beaten by another legal column count") {
+        for (int width = 300; width <= 1600; width += 7) {
+            int cols = choose_card_columns(width, 11);
+            if (cols == 0) {
+                continue;
+            }
+
+            int chosen = card_width_for_columns(width, 11, cols);
+            int chosen_distance = std::abs(chosen - CARD_WIDTH_TARGET);
+
+            for (int other = 1; other <= 10; other++) {
+                int other_width = card_width_for_columns(width, 11, other);
+                if (other_width < CARD_WIDTH_MIN || other_width > CARD_WIDTH_MAX) {
+                    continue;
+                }
+                INFO("container " << width << ": chose " << cols << " cols (" << chosen
+                                  << "px), alternative " << other << " cols (" << other_width
+                                  << "px)");
+                REQUIRE(chosen_distance <= std::abs(other_width - CARD_WIDTH_TARGET));
+            }
+        }
+    }
+
+    SECTION("Chosen width always lands inside the card bounds") {
+        for (int width = 300; width <= 1600; width += 7) {
+            int cols = choose_card_columns(width, 11);
+            if (cols == 0) {
+                continue;
+            }
+            int card = card_width_for_columns(width, 11, cols);
+            INFO("container " << width << " -> " << cols << " cols, " << card << "px");
+            REQUIRE(card >= CARD_WIDTH_MIN);
+            REQUIRE(card <= CARD_WIDTH_MAX);
+        }
+    }
+
+    SECTION("Ties keep the wider card") {
+        // Contrived container where two counts sit equidistant from the target.
+        // Whichever way the tie falls, it must be the lower column count.
+        for (int width = 300; width <= 1600; width += 1) {
+            int cols = choose_card_columns(width, 0);
+            if (cols <= 1) {
+                continue;
+            }
+            int chosen = card_width_for_columns(width, 0, cols);
+            int wider = card_width_for_columns(width, 0, cols - 1);
+            if (wider >= CARD_WIDTH_MIN && wider <= CARD_WIDTH_MAX) {
+                INFO("container " << width << ": " << cols << " cols");
+                REQUIRE(std::abs(chosen - CARD_WIDTH_TARGET) < std::abs(wider - CARD_WIDTH_TARGET));
+            }
+        }
+    }
+
+    SECTION("No legal column count reports zero rather than guessing") {
+        REQUIRE(choose_card_columns(40, 11) == 0); // narrower than one min-width card
+        REQUIRE(choose_card_columns(0, 11) == 0);
+        REQUIRE(choose_card_columns(-704, 11) == 0);
+        REQUIRE(choose_card_columns(704, -1) == 0);
+    }
+}
