@@ -732,6 +732,52 @@ Best for 1D layouts (single row/column or wrapping).
 <lv_obj flex_flow="column_wrap"/>   <!-- Wrap to new columns -->
 ```
 
+#### `flex_grow` does NOT compose with `*_wrap`
+
+An item with `flex_grow` contributes a base size of **zero** when LVGL decides
+which track an item belongs to. So `flex_grow="1"` on wrapping children means
+everything fits one track and **nothing ever wraps** — the wrap silently stops
+happening and the items just shrink.
+
+```xml
+<!-- ❌ never wraps: grow zeroes the base width used for track fitting -->
+<lv_obj flex_flow="row_wrap">
+  <ui_button width="48%" flex_grow="1"/>   <!-- x4 -> all on one row -->
+</lv_obj>
+
+<!-- ✅ wraps 2x2; the container distributes the leftover instead -->
+<lv_obj flex_flow="row_wrap" style_flex_main_place="space_between">
+  <ui_button width="48%"/>                 <!-- x4 -> two rows of two -->
+</lv_obj>
+```
+
+To wrap *and* fill the row edge to edge, size the items with a percentage that
+forces the wrap (two at 48% fit, three don't) and let
+`style_flex_main_place="space_between"` absorb the remainder into the gap.
+See `ui_xml/calibration_pid_panel.xml` (material presets).
+
+#### Percentage height inside a content-sized parent collapses
+
+`height="100%"` on a child of a `height="content"` parent is circular — the
+parent sizes to the child, the child sizes to the parent, and **both resolve to
+zero**. The children still lay out, at zero height, usually outside the parent's
+box where they get clipped away and look like they were never created.
+
+```xml
+<!-- ❌ both collapse; the labels render outside the card and vanish -->
+<lv_obj height="content" flex_flow="row">
+  <lv_obj height="100%" flex_grow="1"><text_xs text="$print_time"/></lv_obj>
+</lv_obj>
+
+<!-- ✅ -->
+<lv_obj height="content" flex_flow="row">
+  <lv_obj height="content" flex_grow="1"><text_xs text="$print_time"/></lv_obj>
+</lv_obj>
+```
+
+Symptom to recognise: `ctl geom` reports the row at a few px (its padding alone)
+and the children at `h=0`. Real example: prestonbrown/helixscreen#1208.
+
 #### Flex Alignment (Three Properties — You Need ALL THREE to Center!)
 
 | Property | Controls | CSS Equivalent |
@@ -1108,6 +1154,25 @@ Quick summary for reference:
     <style name="bad_style" style_bg_color="0x111"/>
 </styles>
 ```
+
+**`flex_flow` in a `<style>` is inert without `layout="flex"`.** Setting the flow
+alone is a no-op: `lv_obj_set_flex_flow()` sets *both* `LAYOUT` and `FLEX_FLOW`,
+but a `<style>` only applies the properties you name. A container with a flow and
+no layout runs no layout at all — every child stacks at the content origin, on
+top of each other.
+
+```xml
+<!-- ❌ no layout runs; children pile up at the top-left -->
+<style name="card_row" flex_flow="row"/>
+
+<!-- ✅ -->
+<style name="card_row" layout="flex" flex_flow="row"/>
+```
+
+This matters whenever a layout is switched per breakpoint via `bind_style_if_*`,
+since the flow can only live in the style — an inline `flex_flow` attribute would
+beat the bound style (see Rule 6). Examples:
+`ui_xml/components/lock_screen.xml`, `ui_xml/ams_environment_overlay.xml`.
 
 ### Applying Styles
 
