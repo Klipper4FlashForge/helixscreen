@@ -476,9 +476,8 @@ AmsError AmsBackendAfc::clear_fault(int slot_index) {
                  kMessageDrainMaxClears);
     // execute_gcode_notify, matching cancel(): the user pressed a button, so a
     // failed RESET_FAILURE must surface rather than being logged silently.
-    AmsError failure_reset = execute_gcode_notify("RESET_FAILURE",
-                                                  lv_tr("AFC failure reset complete"),
-                                                  lv_tr("AFC failure reset failed"));
+    AmsError failure_reset = execute_gcode_notify(
+        "RESET_FAILURE", lv_tr("AFC failure reset complete"), lv_tr("AFC failure reset failed"));
     AmsError message_clear = clear_message_queue();
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -958,7 +957,10 @@ bool AmsBackendAfc::is_narration_drift_candidate(const std::string& line) const 
     // ...minus the lines AFC emits every toolchange that have no phase by design.
     // Without this the log would report them as drift forever.
     static constexpr const char* kKnownPhaseless[] = {
-        "tool change", "toolchange", "already loaded", "total change time",
+        "tool change",
+        "toolchange",
+        "already loaded",
+        "total change time",
         "rotation distance reset",
     };
     for (const char* known : kKnownPhaseless) {
@@ -1932,8 +1934,9 @@ void AmsBackendAfc::parse_afc_state(const nlohmann::json& afc_data,
             // per-extruder lane_loaded and tool_stn distances that a bare name
             // cannot, so never overwrite one that is already populated.
             for (const auto& ext_name : extruder_names_) {
-                auto it = std::find_if(extruders_.begin(), extruders_.end(),
-                                       [&](const AfcExtruderInfo& e) { return e.name == ext_name; });
+                auto it =
+                    std::find_if(extruders_.begin(), extruders_.end(),
+                                 [&](const AfcExtruderInfo& e) { return e.name == ext_name; });
                 if (it == extruders_.end()) {
                     AfcExtruderInfo info;
                     info.name = ext_name;
@@ -3811,14 +3814,20 @@ bool AmsBackendAfc::can_recover_lane_position(int slot_index) const {
     // back to the hub, so it needs the hub occupied — upstream rejects with
     // "Hub is already clear while trying to reset '<lane>'" otherwise.
     //
-    // SAFETY, NOT POLITENESS: the toolhead check below is NOT mirroring an
-    // upstream guard. Upstream's toolhead guard is missing its `return` — it
-    // logs "Toolhead is loaded with '<lane>'" and then performs the reset moves
-    // anyway, retracting the lane while the extruder still grips the filament.
-    // Confirmed present in v1.2.0 (a06f14d); reported as
-    // AFCProject/AFC-Klipper-Add-On#803, still open. Do not remove this check as
-    // redundant with the firmware's — the firmware does not actually stop.
-    // Still confirmed on the .112 BoxTurtle's installed copy, 2026-07-29.
+    // SAFETY, NOT POLITENESS: the toolhead check below is broader than the
+    // upstream guard, and is not redundant with it on any version.
+    //
+    // Through v1.2.0 (a06f14d) upstream's toolhead guard was missing its
+    // `return`: it logged "Toolhead is loaded with '<lane>'" and then performed
+    // the reset moves anyway, retracting the lane while the extruder still
+    // gripped the filament. Reported as AFCProject/AFC-Klipper-Add-On#803,
+    // fixed by their PR #814 and shipping in 1.3.0. Installs predating that —
+    // including the .112 BoxTurtle as of 2026-07-29 — still fall through.
+    //
+    // Even against 1.3.0 this stays: upstream reads one signal (AFC.current),
+    // while toolhead_is_free_unlocked() reads three, and two of them catch the
+    // post-restart desync where AFC.current is null but the extruder still
+    // grips filament. See that function for the breakdown.
     if (!toolhead_is_free_unlocked()) {
         return false;
     }
@@ -3829,8 +3838,7 @@ bool AmsBackendAfc::can_recover_lane_position(int slot_index) const {
     }
 
     auto route = lane_hub_routing_.find(lane_name);
-    if (route == lane_hub_routing_.end() || route->second.empty() ||
-        route->second == "direct") {
+    if (route == lane_hub_routing_.end() || route->second.empty() || route->second == "direct") {
         // No hub in this lane's path — nothing to retract to.
         return false;
     }
@@ -3873,6 +3881,12 @@ bool AmsBackendAfc::can_recover_lane_position(int slot_index) const {
     // refusing strand the user: the sidebar Reset dispatches AFC_RESET, which is
     // AFC's own lane picker (cmd_AFC_RESET), and its candidate list is a better
     // answer than anything we could guess from a shared sensor.
+    //
+    // That picker is still not self-consistent, though, and #803 closing did not
+    // change it: cmd_AFC_RESET filters on raw_load_state while cmd_AFC_LANE_RESET
+    // requires hub_obj.state, so a lane at prep with a clear hub gets offered and
+    // then errors "Hub is already clear while trying to reset '<lane>'". That
+    // error latches in printer.AFC.message and re-fires for the session.
     return lane_name == active_load_lane_ && recovery_attribution_valid_unlocked();
 }
 
@@ -3899,9 +3913,10 @@ bool AmsBackendAfc::toolhead_is_free_unlocked() const {
     //    upstream's own toolhead guard reads — cmd_AFC_LANE_RESET does
     //    `if (tool_load := self.get_current_lane_obj()) is not None`, and
     //    get_current_lane_obj() resolves self.current. Matching it keeps us
-    //    aligned with the check the firmware means to make: the one missing its
-    //    `return` (AFCProject/AFC-Klipper-Add-On#803), which is why ours is the
-    //    only one that actually stops anything.
+    //    aligned with the check the firmware means to make — the one that only
+    //    began to actually stop anything in 1.3.0
+    //    (AFCProject/AFC-Klipper-Add-On#803, their PR #814). Signals 1 and 3 are
+    //    what make this predicate broader than upstream's on every version.
     if (!toolhead_lane_.empty()) {
         return false;
     }
