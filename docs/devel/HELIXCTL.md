@@ -10,6 +10,32 @@ line — with the **real widget lifecycle** (`init_subjects` / `create` /
 This is the tool the screenshot pipeline uses, and the way to bring up any
 panel/overlay/modal for debugging.
 
+> ### ⚠️ Always pass an explicit socket
+>
+> A bare `helix-screen ctl` resolves to a **fixed per-user path**
+> (`$XDG_RUNTIME_DIR/helixscreen-control.sock`, else `/tmp/helixscreen-control.sock`).
+> With two instances up it silently drives **whichever started first** — and a command
+> that lands on the wrong instance still reports success. That is how you end up
+> "verifying" a change against someone else's app.
+>
+> Anyone running in a worktree, or alongside another agent or terminal session, must
+> pick a unique path on **both** sides:
+>
+> ```bash
+> # Derive one from the worktree so it is stable across restarts and unique per tree
+> export HELIX_SOCK=/tmp/helix-$(basename "$(git rev-parse --show-toplevel)").sock
+>
+> ./build/bin/helix-screen --test -vv --remote-socket "$HELIX_SOCK" &
+> ./build/bin/helix-screen ctl -s "$HELIX_SOCK" navigate settings
+> ```
+>
+> **A private socket is not full isolation.** `--remote-socket` moves the control
+> socket; it does not move the config-dir flock, so a second instance still collides
+> on config. For a genuinely independent instance set `HELIX_CONFIG_DIR` as well —
+> see [Running a fully isolated second instance](#running-a-fully-isolated-second-instance).
+>
+> Before trusting any UI result, confirm what is running: `pgrep -x helix-screen`.
+
 ## One binary — `ctl` / `repl` subcommands
 
 There is **no separate `helixctl` binary**. The client is folded into
@@ -159,6 +185,40 @@ start sweeps `helixscreen-control-<pid>.sock` files whose pid is gone. The
 sweep keys on that pid rather than a `connect()` probe — a probe cannot tell a
 crashed instance from one that has called `bind()` but not yet `listen()`, and
 unlinking that one would strand it.
+
+### Running a fully isolated second instance
+
+The auto-fallback above keeps two instances *reachable*, but it does not make them
+*independent* — and it only kicks in by accident, after the collision. If you are
+deliberately running a second app (a worktree, a parallel agent session, an
+experiment against a different config), pin both axes up front:
+
+| Axis | Flag / env | Without it |
+|------|-----------|------------|
+| Control socket | `--remote-socket <path>` (and `ctl -s <path>`) | Second instance parks on a pid-suffixed path; a bare `ctl` drives whichever started first |
+| Config dir + flock | `HELIX_CONFIG_DIR=<dir>` | Second instance contends for the same settings.json and single-instance lock |
+
+You need **both**. `--remote-socket` alone still collides on config.
+
+```bash
+# One block, per worktree — stable across restarts, unique per tree
+TREE=$(basename "$(git rev-parse --show-toplevel)")
+export HELIX_SOCK="/tmp/helix-$TREE.sock"
+export HELIX_CONFIG_DIR="/tmp/helix-config-$TREE"
+
+HELIX_CONFIG_DIR="$HELIX_CONFIG_DIR" \
+  ./build/bin/helix-screen --test -vv --remote-socket "$HELIX_SOCK" \
+  > "/tmp/helix-$TREE.log" 2>&1 &
+
+./build/bin/helix-screen ctl -s "$HELIX_SOCK" navigate settings
+./build/bin/helix-screen ctl -s "$HELIX_SOCK" screenshot "/tmp/$TREE.png"
+```
+
+Deriving both names from the worktree basename means two agents in two trees never
+collide, and re-running in the same tree reuses the same paths instead of littering
+`/tmp` with pid-suffixed sockets.
+
+`HELIX_CONFIG_DIR` is documented in `ENVIRONMENT_VARIABLES.md`.
 
 ## Commands
 

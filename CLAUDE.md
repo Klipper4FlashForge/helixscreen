@@ -33,7 +33,22 @@ scripts/setup-worktree.sh feature/my-branch  # Symlinks deps, builds fast
 
 **Screenshots:** Press 'S' in UI, or `./scripts/screenshot.sh helix-screen output-name [token]` (drives a fresh instance via `helix-screen ctl`; token = panel/overlay/`demo` screen from `scripts/screenshot-recipes.sh`).
 
-**Driving the UI (screenshots, debugging, bringing up any panel/overlay/modal):** `helix-screen ctl` remote-controls a running instance — `navigate`/`click`/`ls`/`set_value`/`scroll`/`demo`/`screenshot`, or a `helix-screen repl` REPL. The server auto-starts in `--test` (or `--remote`). See `docs/devel/HELIXCTL.md`. (Replaces the removed `-p`/`--panel` flags.)
+**Driving the UI (screenshots, debugging, bringing up any panel/overlay/modal):** `helix-screen ctl` remote-controls a running instance — `navigate`/`click`/`ls`/`text`/`geom`/`set_value`/`scroll`/`demo`/`screenshot`, or a `helix-screen repl` REPL. The server auto-starts in `--test` (or `--remote`). See `docs/devel/HELIXCTL.md`. (Replaces the removed `-p`/`--panel` flags.)
+
+> **Always pin the socket — never run a bare `ctl`.** The default path is per-user and
+> fixed, so with two instances up, `ctl` silently drives **whichever started first** and
+> still reports success. That is how you "verify" a change against another session's app.
+> Derive both the socket and the config dir from the worktree so parallel agents can't
+> collide — and you need *both*, since `--remote-socket` alone still contends on the
+> config flock:
+> ```bash
+> TREE=$(basename "$(git rev-parse --show-toplevel)")
+> export HELIX_SOCK="/tmp/helix-$TREE.sock" HELIX_CONFIG_DIR="/tmp/helix-config-$TREE"
+> ./build/bin/helix-screen --test -vv --remote-socket "$HELIX_SOCK" > /tmp/helix-$TREE.log 2>&1 &
+> ./build/bin/helix-screen ctl -s "$HELIX_SOCK" navigate settings
+> ```
+> Prefer `ctl text <name>` / `ctl geom <name>` over reading a screenshot — they are exact,
+> and a screenshot only proves what a scroll position happened to expose.
 
 ---
 

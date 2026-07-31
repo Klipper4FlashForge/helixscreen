@@ -635,5 +635,17 @@ echo ""
 echo -e "Git status should be clean. To verify:"
 echo -e "  ${CYAN}cd $WORKTREE_PATH && git status${RESET}"
 echo ""
+# Running the app from a worktree collides with the main tree on two fixed
+# per-user paths: the ctl socket and the config-dir flock. Hand over both
+# overrides so parallel sessions don't drive each other's instance.
+WT_NAME="$(basename "$WORKTREE_PATH")"
+echo -e "${BOLD}To run and drive the app from this worktree${RESET} (both are required —"
+echo -e "a bare ${CYAN}helix-screen ctl${RESET} drives whichever instance started first):"
+echo -e "  ${CYAN}export HELIX_SOCK=/tmp/helix-${WT_NAME}.sock${RESET}"
+echo -e "  ${CYAN}export HELIX_CONFIG_DIR=/tmp/helix-config-${WT_NAME}${RESET}"
+echo -e "  ${CYAN}./build/bin/helix-screen --test -vv --remote-socket \"\$HELIX_SOCK\" &${RESET}"
+echo -e "  ${CYAN}./build/bin/helix-screen ctl -s \"\$HELIX_SOCK\" navigate settings${RESET}"
+echo -e "See ${CYAN}docs/devel/HELIXCTL.md${RESET} § \"Running a fully isolated second instance\"."
+echo ""
 echo -e "${YELLOW}Note: lib/ is symlinked from main tree. If you need to modify"
 echo -e "library code, un-symlink that specific directory first.${RESET}"
