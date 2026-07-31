@@ -41,6 +41,30 @@ constexpr int Z_AXIS_SEGMENT_COUNT = 5;
 // Axis label offset from edge (world units)
 constexpr double AXIS_LABEL_OFFSET = 50.0; // Distance from grid edge to axis letter labels
 
+// Small-canvas handling.
+//
+// The separation between the numeric tick labels (TICK_LABEL_OUTWARD_OFFSET, 20
+// world units) and the X/Y axis letters (AXIS_LABEL_OFFSET, 50) is expressed in
+// WORLD units, so it shrinks with the canvas — while the labels themselves are
+// fixed pixel boxes drawn in a fixed-size font. Below roughly 300px the 30 world
+// units between them project to only a few pixels and the axis letter lands on
+// top of the tick number: at 232x212 (the bed-mesh canvas at 480x272) "X" is
+// drawn over "100" (prestonbrown/helixscreen#1204).
+//
+// Keyed on canvas size rather than the UI breakpoint on purpose: this canvas is
+// flex-sized, so it can be small on a large display too, and render_axis_labels()
+// is already handed canvas_width/canvas_height.
+constexpr int SMALL_CANVAS_MAX_PX = 300;
+constexpr double AXIS_LABEL_OFFSET_SMALL = 110.0; // Clears the tick row when projected small
+constexpr int AXIS_LABEL_HALF_SIZE_SMALL = 5;     // 5px half-size to match the 10px font
+
+/// True when the canvas is too small for world-unit label separation to survive
+/// projection. Uses the smaller dimension: the mesh is drawn isometrically, so a
+/// short canvas crowds the labels just as much as a narrow one.
+static bool is_small_canvas(int canvas_width, int canvas_height) {
+    return std::min(canvas_width, canvas_height) < SMALL_CANVAS_MAX_PX;
+}
+
 // Tick label dimensions (pixels)
 constexpr int TICK_LABEL_WIDTH_DECIMAL = 40; // Wider for decimal values (e.g., "-0.25")
 constexpr int TICK_LABEL_WIDTH_INTEGER = 30; // Narrower for integers (e.g., "100")
@@ -370,18 +394,24 @@ void render_axis_labels(lv_layer_t* layer, const bed_mesh_renderer_t* renderer, 
         helix::mesh::compute_wall_bounds(z_min_world, z_max_world, bed_half_width, bed_half_height);
     double floor_z = bounds.floor_z;
 
-    // Configure label drawing style
+    // Configure label drawing style. On a small canvas the letters drop to the
+    // same 10px font the tick numbers use and are pushed further out, so the
+    // projected gap between the two rows stays larger than the glyphs.
+    const bool small_canvas = is_small_canvas(canvas_width, canvas_height);
+    const double axis_label_offset = small_canvas ? AXIS_LABEL_OFFSET_SMALL : AXIS_LABEL_OFFSET;
+    const int axis_label_half = small_canvas ? AXIS_LABEL_HALF_SIZE_SMALL : AXIS_LABEL_HALF_SIZE;
+
     lv_draw_label_dsc_t label_dsc;
     lv_draw_label_dsc_init(&label_dsc);
     label_dsc.color = lv_color_white();
-    label_dsc.font = &noto_sans_14;
+    label_dsc.font = small_canvas ? &noto_sans_10 : &noto_sans_14;
     label_dsc.opa = LV_OPA_90;
     label_dsc.align = LV_TEXT_ALIGN_CENTER;
 
     // X label: At the CENTER of the front edge, pushed OUTWARD (away from grid)
     // Positioned beyond the tick labels in the Y direction
     double x_label_x = 0.0;                             // Center of X axis
-    double x_label_y = y_max_world + AXIS_LABEL_OFFSET; // Pushed outward from front edge
+    double x_label_y = y_max_world + axis_label_offset; // Pushed outward from front edge
     double x_label_z = floor_z;                         // At floor grid level (base of walls)
     bed_mesh_point_3d_t x_pos = bed_mesh_projection_project_3d_to_2d(
         x_label_x, x_label_y, x_label_z, canvas_width, canvas_height, &renderer->view_state);
@@ -390,16 +420,16 @@ void render_axis_labels(lv_layer_t* layer, const bed_mesh_renderer_t* renderer, 
     {
         label_dsc.text = "X";
         lv_area_t x_area;
-        x_area.x1 = x_pos.screen_x - AXIS_LABEL_HALF_SIZE;
-        x_area.y1 = x_pos.screen_y - AXIS_LABEL_HALF_SIZE;
-        x_area.x2 = x_area.x1 + 2 * AXIS_LABEL_HALF_SIZE;
-        x_area.y2 = x_area.y1 + 2 * AXIS_LABEL_HALF_SIZE;
+        x_area.x1 = x_pos.screen_x - axis_label_half;
+        x_area.y1 = x_pos.screen_y - axis_label_half;
+        x_area.x2 = x_area.x1 + 2 * axis_label_half;
+        x_area.y2 = x_area.y1 + 2 * axis_label_half;
         lv_draw_label(layer, &label_dsc, &x_area);
     }
 
     // Y label: At the CENTER of the right edge, pushed OUTWARD (away from grid)
     // Positioned beyond the tick labels in the X direction
-    double y_label_x = x_max_world + AXIS_LABEL_OFFSET; // Pushed outward from right edge
+    double y_label_x = x_max_world + axis_label_offset; // Pushed outward from right edge
     double y_label_y = 0.0;                             // Center of Y axis
     double y_label_z = floor_z;                         // At floor grid level (base of walls)
     bed_mesh_point_3d_t y_pos = bed_mesh_projection_project_3d_to_2d(
@@ -409,10 +439,10 @@ void render_axis_labels(lv_layer_t* layer, const bed_mesh_renderer_t* renderer, 
     {
         label_dsc.text = "Y";
         lv_area_t y_area;
-        y_area.x1 = y_pos.screen_x - AXIS_LABEL_HALF_SIZE;
-        y_area.y1 = y_pos.screen_y - AXIS_LABEL_HALF_SIZE;
-        y_area.x2 = y_area.x1 + 2 * AXIS_LABEL_HALF_SIZE;
-        y_area.y2 = y_area.y1 + 2 * AXIS_LABEL_HALF_SIZE;
+        y_area.x1 = y_pos.screen_x - axis_label_half;
+        y_area.y1 = y_pos.screen_y - axis_label_half;
+        y_area.x2 = y_area.x1 + 2 * axis_label_half;
+        y_area.y2 = y_area.y1 + 2 * axis_label_half;
         lv_draw_label(layer, &label_dsc, &y_area);
     }
 
@@ -426,10 +456,10 @@ void render_axis_labels(lv_layer_t* layer, const bed_mesh_renderer_t* renderer, 
     {
         label_dsc.text = "Z";
         lv_area_t z_area;
-        z_area.x1 = z_pos.screen_x - AXIS_LABEL_HALF_SIZE - 5; // Offset left of the axis
-        z_area.y1 = z_pos.screen_y - AXIS_LABEL_HALF_SIZE;
-        z_area.x2 = z_area.x1 + 2 * AXIS_LABEL_HALF_SIZE;
-        z_area.y2 = z_area.y1 + 2 * AXIS_LABEL_HALF_SIZE;
+        z_area.x1 = z_pos.screen_x - axis_label_half - 5; // Offset left of the axis
+        z_area.y1 = z_pos.screen_y - axis_label_half;
+        z_area.x2 = z_area.x1 + 2 * axis_label_half;
+        z_area.y2 = z_area.y1 + 2 * axis_label_half;
         lv_draw_label(layer, &label_dsc, &z_area);
     }
 }
