@@ -20,6 +20,22 @@
     <px name="bed_mesh_info_column_width_small" value="280"/>
     <px name="bed_mesh_info_column_width_medium" value="280"/>
     <px name="bed_mesh_info_column_width_large" value="280"/>
+
+    <!-- Profile row height per breakpoint.
+
+         This was a hardcoded 44 at all five row sites. At MICRO the info column
+         is 212px, the current-mesh card takes 134 of it, and the profiles list
+         is left with a 33px viewport — so a 44px row never showed in full and
+         the list was a slit you could not read (prestonbrown/helixscreen#1204).
+         44 is kept from SMALL up, where it is a comfortable touch target; the
+         smaller tiers trade some target size for actually being able to see a
+         row. Paired with hiding the Max/Min stat rows at MICRO (below), which
+         is what frees the vertical room for two rows instead of none. -->
+    <px name="bed_mesh_profile_row_height_micro" value="28"/>
+    <px name="bed_mesh_profile_row_height_tiny" value="32"/>
+    <px name="bed_mesh_profile_row_height_small" value="44"/>
+    <px name="bed_mesh_profile_row_height_medium" value="44"/>
+    <px name="bed_mesh_profile_row_height_large" value="44"/>
   </consts>
   <styles>
     <!-- Highlight for the currently loaded/active profile row. Applied via
@@ -91,15 +107,21 @@
                           bind_text="bed_mesh_dimensions" flex_grow="1" style_text_align="right"
                           style_pad_left="#space_sm" style_text_color="#text"/>
             </lv_obj>
-            <!-- Max row -->
+            <!-- Max row. Hidden at MICRO: Z Range already conveys the spread, and
+                 the 212px info column cannot afford five stat rows and a readable
+                 profiles list at the same time (prestonbrown/helixscreen#1204). -->
             <lv_obj width="100%" flex_flow="row" style_pad_all="0" scrollable="false">
+              <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="0"/>
               <text_small name="mesh_max_label" bind_text="bed_mesh_max_label"/>
               <text_small name="mesh_max_value"
                           bind_text="bed_mesh_max_value" flex_grow="1" style_text_align="right"
                           style_pad_left="#space_sm" style_text_color="#text"/>
             </lv_obj>
-            <!-- Min row -->
+            <!-- Min row. Hidden at MICRO: Z Range already conveys the spread, and
+                 the 212px info column cannot afford five stat rows and a readable
+                 profiles list at the same time (prestonbrown/helixscreen#1204). -->
             <lv_obj width="100%" flex_flow="row" style_pad_all="0" scrollable="false">
+              <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="0"/>
               <text_small name="mesh_min_label" bind_text="bed_mesh_min_label"/>
               <text_small name="mesh_min_value"
                           bind_text="bed_mesh_min_value" flex_grow="1" style_text_align="right"
@@ -136,7 +158,7 @@
                   scrollable="true">
             <!-- Profile Row 0 -->
             <ui_card name="profile_row_0"
-                     width="100%" height="44" flex_flow="row" style_flex_cross_place="center" style_border_width="0"
+                     width="100%" height="#bed_mesh_profile_row_height" flex_flow="row" style_flex_cross_place="center" style_border_width="0"
                      style_pad_left="#space_sm" style_pad_right="#space_sm" style_pad_top="0" style_pad_bottom="0"
                      style_pad_gap="#space_xs" clickable="true" scrollable="false">
               <bind_flag_if_lt subject="bed_mesh_profile_count" flag="hidden" ref_value="1"/>
@@ -170,7 +192,7 @@
             </ui_card>
             <!-- Profile Row 1 -->
             <ui_card name="profile_row_1"
-                     width="100%" height="44" flex_flow="row" style_flex_cross_place="center" style_border_width="0"
+                     width="100%" height="#bed_mesh_profile_row_height" flex_flow="row" style_flex_cross_place="center" style_border_width="0"
                      style_pad_left="#space_sm" style_pad_right="#space_sm" style_pad_top="0" style_pad_bottom="0"
                      style_pad_gap="#space_xs" clickable="true" scrollable="false">
               <bind_flag_if_lt subject="bed_mesh_profile_count" flag="hidden" ref_value="2"/>
@@ -199,7 +221,7 @@
             </ui_card>
             <!-- Profile Row 2 -->
             <ui_card name="profile_row_2"
-                     width="100%" height="44" flex_flow="row" style_flex_cross_place="center" style_border_width="0"
+                     width="100%" height="#bed_mesh_profile_row_height" flex_flow="row" style_flex_cross_place="center" style_border_width="0"
                      style_pad_left="#space_sm" style_pad_right="#space_sm" style_pad_top="0" style_pad_bottom="0"
                      style_pad_gap="#space_xs" clickable="true" scrollable="false">
               <bind_flag_if_lt subject="bed_mesh_profile_count" flag="hidden" ref_value="3"/>
@@ -228,7 +250,7 @@
             </ui_card>
             <!-- Profile Row 3 -->
             <ui_card name="profile_row_3"
-                     width="100%" height="44" flex_flow="row" style_flex_cross_place="center" style_border_width="0"
+                     width="100%" height="#bed_mesh_profile_row_height" flex_flow="row" style_flex_cross_place="center" style_border_width="0"
                      style_pad_left="#space_sm" style_pad_right="#space_sm" style_pad_top="0" style_pad_bottom="0"
                      style_pad_gap="#space_xs" clickable="true" scrollable="false">
               <bind_flag_if_lt subject="bed_mesh_profile_count" flag="hidden" ref_value="4"/>
@@ -257,7 +279,7 @@
             </ui_card>
             <!-- Profile Row 4 -->
             <ui_card name="profile_row_4"
-                     width="100%" height="44" flex_flow="row" style_flex_cross_place="center" style_border_width="0"
+                     width="100%" height="#bed_mesh_profile_row_height" flex_flow="row" style_flex_cross_place="center" style_border_width="0"
                      style_pad_left="#space_sm" style_pad_right="#space_sm" style_pad_top="0" style_pad_bottom="0"
                      style_pad_gap="#space_xs" clickable="true" scrollable="false">
               <bind_flag_if_lt subject="bed_mesh_profile_count" flag="hidden" ref_value="5"/>
