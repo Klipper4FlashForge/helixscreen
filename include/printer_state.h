@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "app_macro_activity.h"
 #include "app_motion_activity.h"
 #include "async_lifetime_guard.h"
 #include "capability_overrides.h"
@@ -1790,6 +1791,21 @@ class PrinterState {
         return app_motion_activity_;
     }
 
+    /// App-initiated macro/homing/calibration/filament-op activity tracker.
+    ///
+    /// Consulted ONLY by the busy-queue toast decision in
+    /// MoonrakerAPI::execute_gcode, which suppresses the "printer is busy"
+    /// notification when the blocking op is one the user just started here
+    /// (prestonbrown/helixscreen#1206).
+    ///
+    /// Deliberately NOT read by is_blocking_operation_active() or
+    /// is_external_blocking_operation_active(). Those predicates also gate
+    /// motion, and subtracting app-initiated macros there would let a late jog
+    /// through during a filament op — a toolhead-collision hazard (#1108).
+    helix::AppMacroActivity& app_macro_activity() {
+        return app_macro_activity_;
+    }
+
     /// Claim the once-per-episode "busy — your change will queue" toast. True for
     /// the first benign discretionary command queued behind a blocking op, false
     /// thereafter until the op ends. Delegates to the calibration state, which
@@ -2064,6 +2080,10 @@ class PrinterState {
 
     /// App-initiated motion (jog) activity tracker for busy-guard attribution
     helix::AppMotionActivity app_motion_activity_;
+
+    /// App-initiated macro/filament-op activity tracker for busy-TOAST attribution
+    /// only — never consulted by the blocking-op predicates (see accessor).
+    helix::AppMacroActivity app_macro_activity_;
 
     /// Hardware validation state component (issue counts, severity, status text)
     helix::PrinterHardwareValidationState hardware_validation_state_;
