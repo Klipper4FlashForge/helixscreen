@@ -53,10 +53,20 @@ GridDimensions GridLayout::get_dimensions(UiBreakpoint bp) {
         }
         break;
     }
-    case LayoutType::PORTRAIT: {
+    case LayoutType::PORTRAIT:
+    case LayoutType::TINY_PORTRAIT:
+    case LayoutType::MICRO_PORTRAIT: {
+        // Both axes, not just rows. Leaving cols at the breakpoint default gave
+        // a 320px-wide panel the landscape count of 6, i.e. 53px cells — so a
+        // widget authored 3-of-6 for landscape rendered at half the screen and
+        // the rest of the row stayed empty.
         int h = lm.height();
         if (h > 0) {
             base.rows = std::clamp(h / TARGET_CELL_PX, MIN_DYNAMIC_ROWS, MAX_DYNAMIC_ROWS);
+        }
+        int w = lm.width();
+        if (w > 0) {
+            base.cols = std::clamp(w / TARGET_CELL_PX, MIN_PORTRAIT_COLS, MAX_DYNAMIC_COLS);
         }
         break;
     }

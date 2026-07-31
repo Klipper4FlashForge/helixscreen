@@ -502,34 +502,70 @@ TEST_CASE_METHOD(GridLayoutFixture, "GridLayout dimensions: ULTRAWIDE scales col
     }
 }
 
-TEST_CASE_METHOD(GridLayoutFixture, "GridLayout dimensions: PORTRAIT scales rows from height",
+TEST_CASE_METHOD(GridLayoutFixture, "GridLayout dimensions: PORTRAIT scales BOTH axes",
                  "[grid_layout][dimensions][portrait]") {
+    // Columns used to stay at the breakpoint default while only rows tracked the
+    // screen. On a 320px-wide panel that left the landscape count of 6 — 53px
+    // cells — so a widget authored 3-of-6 for landscape covered half the screen
+    // and the rest of the row sat empty. Both axes now derive from TARGET_CELL_PX.
     auto& lm = helix::LayoutManager::instance();
 
-    SECTION("480x1600 -> base cols, 10 rows") {
+    SECTION("480x1600 -> 3 cols, 10 rows") {
         lm.init(480, 1600);                                          // PORTRAIT, XLARGE breakpoint
         auto dims = GridLayout::get_dimensions(UiBreakpoint::Large); // XLARGE
-        CHECK(dims.cols == 8);                                       // XLARGE base cols (unchanged)
+        CHECK(dims.cols == 3);                                       // 480 / 160 = 3
         CHECK(dims.rows == 10);                                      // 1600 / 160 = 10
     }
-    SECTION("480x800 -> base cols, 5 rows (same as table)") {
+    SECTION("480x800 -> 3 cols, 5 rows") {
         lm.init(480, 800);                                           // PORTRAIT
         auto dims = GridLayout::get_dimensions(UiBreakpoint::Large); // XLARGE
-        CHECK(dims.cols == 8);                                       // XLARGE base cols
+        CHECK(dims.cols == 3);                                       // 480 / 160 = 3
         CHECK(dims.rows == 5);                                       // 800 / 160 = 5
     }
     SECTION("480x1920 -> 12 rows (max clamp)") {
         lm.init(480, 1920);                                          // PORTRAIT
         auto dims = GridLayout::get_dimensions(UiBreakpoint::Large); // XLARGE
-        CHECK(dims.cols == 8);
+        CHECK(dims.cols == 3);
         CHECK(dims.rows == 12); // 1920 / 160 = 12, at max clamp
     }
-    SECTION("320x480 -> 3 rows (min clamp)") {
-        lm.init(320, 480); // MICRO_PORTRAIT (max_dim <=480), not PORTRAIT
-        // MICRO_PORTRAIT uses table, not dynamic
-        auto dims = GridLayout::get_dimensions(UiBreakpoint::Micro); // MICRO
-        CHECK(dims.cols == 6);                                       // MICRO base
-        CHECK(dims.rows == 4); // MICRO base (table, not dynamic)
+    SECTION("320x1480 (Waveshare 11.9) -> 2 cols (min clamp), 9 rows") {
+        lm.init(320, 1480);                                         // PORTRAIT
+        auto dims = GridLayout::get_dimensions(UiBreakpoint::Tiny); // TINY
+        CHECK(dims.cols == 2); // 320/160 = 2, at portrait floor
+        CHECK(dims.rows == 9); // 1480 / 160 = 9
+    }
+    SECTION("320x480 -> portrait floor applies to TINY_PORTRAIT too") {
+        lm.init(320, 480); // TINY_PORTRAIT (max_dim <= 480, taller than wide)
+        auto dims = GridLayout::get_dimensions(UiBreakpoint::Micro);
+        CHECK(dims.cols == 2); // 320 / 160 = 2
+        CHECK(dims.rows == 3); // 480 / 160 = 3
+    }
+    SECTION("272x480 -> MICRO_PORTRAIT also scales") {
+        lm.init(272, 480); // MICRO_PORTRAIT (min_dim <= 272)
+        auto dims = GridLayout::get_dimensions(UiBreakpoint::Micro);
+        CHECK(dims.cols == 2); // 272/160 = 1, lifted to the portrait floor
+        CHECK(dims.rows == 3); // 480 / 160 = 3
+    }
+}
+
+TEST_CASE_METHOD(GridLayoutFixture, "GridLayout: landscape column counts are untouched",
+                 "[grid_layout][dimensions][portrait]") {
+    // The portrait floor must not leak into any landscape class — those keep the
+    // breakpoint table (or, for ultrawide, the width-derived count with the
+    // landscape floor of 4).
+    auto& lm = helix::LayoutManager::instance();
+
+    SECTION("800x480 STANDARD keeps its table cols") {
+        lm.init(800, 480);
+        auto dims = GridLayout::get_dimensions(UiBreakpoint::Tiny);
+        CHECK(dims.cols == GridLayout::get_dimensions(UiBreakpoint::Tiny).cols);
+        CHECK(dims.cols >= GridLayout::MIN_DYNAMIC_COLS);
+    }
+    SECTION("480x272 MICRO keeps its table cols") {
+        lm.init(480, 272); // landscape, wider than tall
+        auto dims = GridLayout::get_dimensions(UiBreakpoint::Micro);
+        CHECK(dims.cols == 6); // MICRO base, unchanged by the portrait branch
+        CHECK(dims.rows == 4);
     }
 }
 
