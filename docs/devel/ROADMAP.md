@@ -272,6 +272,26 @@ See `docs/devel/IDEAS.md` for additional ideas and design rationale.
 
 ---
 
+## helix-xml Engine
+
+The XML engine lives in its own repository and keeps its roadmap there, on GitHub:
+
+**https://github.com/prestonbrown/helix-xml/issues**
+
+`lib/helix-xml/` in this tree is the same code, vendored and direct-edit. It is MIT — a permanent
+fork of the engine LVGL removed from core in v9.5 — and it has no upstream. Anything LVGL Pro also
+has must be built clean-room from published docs; see `LVGL_XML_SITUATION.md`.
+
+Currently open:
+
+| Item | Why |
+|------|-----|
+| [#1 Real `<slot>` declarations](https://github.com/prestonbrown/helix-xml/issues/1) | The current slot support is a name-lookup lookalike whose failure mode reports a misleading "STALE BINARY" error. Blocks `SLOT_COMPONENT_DESIGNS.md` |
+| [#2 Multi-argument props (`<param>`)](https://github.com/prestonbrown/helix-xml/issues/2) | Already faked once as the hardcoded `bind_text-fmt`. Gives custom widgets real signatures |
+| [#3 `<enumdef>`](https://github.com/prestonbrown/helix-xml/issues/3) | Validates enum attributes on the 37 C++-registered widgets, and gives `tools/xml-linter` something to check |
+
+---
+
 ## Known Technical Debt
 
 **Resolved (2026-01):**

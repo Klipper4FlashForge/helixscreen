@@ -7,7 +7,7 @@ All developer documentation lives here. When working on features, look up the re
 | Doc | When to read |
 |-----|-------------|
 | `DEVELOPMENT.md` | Build setup, dev environment, contributing |
-| `HELIXCTL.md` | Driving the UI / screenshots via `helix-screen ctl` (replaces the old `-p`/`--panel` flags) |
+| `HELIXCTL.md` | Driving the UI / screenshots via `helix-screen ctl` (replaces the old `-p`/`--panel` flags). **Read the socket-isolation box first** — a bare `ctl` drives whichever instance started first and still reports success |
 | `ARCHITECTURE.md` | System design, component relationships, extended systems |
 | `THREADING.md` | **Single source of truth** for threading, async-callback, and object-lifetime rules. Read before any code that crosses a thread boundary, observes a subject, or destroys a widget |
 | `BUILD_SYSTEM.md` | Makefile internals, make target reference, cross-compilation, worktree workflow, ccache, patches |
@@ -117,7 +117,7 @@ All developer documentation lives here. When working on features, look up the re
 |-----|-------------|
 | `LVGL9_XML_ATTRIBUTES_REFERENCE.md` | Complete XML attribute reference |
 | `LVGL9_XML_CHEATSHEET.html` | Quick XML cheatsheet (HTML) |
-| `LVGL_XML_SITUATION.md` | LVGL XML licensing history and resolution (extracted to helix-xml) |
-| `SLOT_COMPONENT_DESIGNS.md` | Slot component design patterns (ready to implement) |
+| `LVGL_XML_SITUATION.md` | **Read before touching `lib/helix-xml/`** — fork origin (`a15dcbeb5`), MIT licensing position, why there is no upstream, the clean-room rule for anything LVGL Pro also has, and the upstream feature gap analysis |
+| `SLOT_COMPONENT_DESIGNS.md` | Slot component design patterns — **blocked**: helix-xml has no real slot system, only a name-lookup lookalike. Read the correction banner first |
 | `FLAG_ICONS_SOURCE.md` | Flag icon asset sources |
 | `480x320_UI_AUDIT.md` | Small display UI audit |
