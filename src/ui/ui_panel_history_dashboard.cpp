@@ -31,6 +31,27 @@
 using namespace helix;
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+namespace {
+
+/// Filament-by-type bar row: share of the row width taken by each element.
+///
+/// These must sum to less than 100 so the row cannot overflow its card at any
+/// width — the three inter-element gaps and the right-aligning spacer live in
+/// the remainder. They replaced fixed pixel widths (50px type, 60px amount) that
+/// needed 207px on the 170px card this chart gets at 480x272, which clipped the
+/// amount label (prestonbrown/helixscreen#1204).
+constexpr int FILAMENT_ROW_TYPE_PCT = 22;
+constexpr int FILAMENT_ROW_BAR_MAX_PCT = 30;
+constexpr int FILAMENT_ROW_AMOUNT_PCT = 36;
+static_assert(FILAMENT_ROW_TYPE_PCT + FILAMENT_ROW_BAR_MAX_PCT + FILAMENT_ROW_AMOUNT_PCT < 100,
+              "filament bar row shares must leave room for gaps and the spacer");
+
+} // namespace
+
+// ============================================================================
 // Global Instance
 // ============================================================================
 
@@ -867,10 +888,17 @@ void HistoryDashboardPanel::update_filament_chart(const std::vector<PrintHistory
             font_small = lv_xml_get_font(nullptr, "montserrat_12");
         }
 
-        // Type label (fixed width for alignment)
+        // Type label.
+        //
+        // Proportional, not a fixed pixel width. The row used to be 50px (type) +
+        // up to 50% (bar) + 60px (amount) + 12px of gaps, which needs 207px on the
+        // 170px-wide card this chart gets at 480x272 — so the amount label was
+        // pushed past the card edge and rendered clipped ("10" showing as "1(").
+        // Percentages that sum under 100 cannot overflow at any card width; the
+        // three shares below total 88%, leaving the gaps and the spacer room.
         lv_obj_t* type_label = lv_label_create(row);
         lv_label_set_text(type_label, type.c_str());
-        lv_obj_set_width(type_label, 50); // Fixed width for type names
+        lv_obj_set_width(type_label, LV_PCT(FILAMENT_ROW_TYPE_PCT));
         lv_obj_set_style_text_color(type_label, text, 0);
         if (font_small) {
             lv_obj_set_style_text_font(type_label, font_small, 0);
@@ -879,9 +907,10 @@ void HistoryDashboardPanel::update_filament_chart(const std::vector<PrintHistory
         // Get line height from font to match text size
         int32_t line_height = font_small ? lv_font_get_line_height(font_small) : 16;
 
-        // Colored bar - width proportional to value (max 50% of available space)
-        // Using percentage width ensures bars are proportional across all rows
-        int bar_width_pct = (bar_pct * 50) / 100; // Scale to max 50% of row
+        // Colored bar - width proportional to value (max FILAMENT_ROW_BAR_MAX_PCT
+        // of the row). Using percentage width ensures bars are proportional across
+        // all rows.
+        int bar_width_pct = (bar_pct * FILAMENT_ROW_BAR_MAX_PCT) / 100;
         if (bar_width_pct < 3)
             bar_width_pct = 3; // Minimum visibility
 
@@ -908,7 +937,7 @@ void HistoryDashboardPanel::update_filament_chart(const std::vector<PrintHistory
         lv_obj_t* amount_label = lv_label_create(row);
         std::string amount_str = format_filament(amount);
         lv_label_set_text(amount_label, amount_str.c_str());
-        lv_obj_set_width(amount_label, 60);
+        lv_obj_set_width(amount_label, LV_PCT(FILAMENT_ROW_AMOUNT_PCT));
         lv_obj_set_style_text_color(amount_label, text, 0);
         lv_obj_set_style_text_align(amount_label, LV_TEXT_ALIGN_RIGHT, 0);
         if (font_small) {
