@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "thumbnail_write_journal.h"
+
 #include <cstdint>
 #include <functional>
 #include <future>
@@ -251,6 +253,26 @@ class ThumbnailProcessor {
     void set_cache_dir(const std::string& path);
 
     /**
+     * @brief Register the listener told about every .bin this processor writes
+     *
+     * The processor writes its pre-scaled `.bin` files into ThumbnailCache's
+     * directory but has no reference to the cache, so the cache's in-memory
+     * eviction index cannot see them. Left unreported the index under-counts by
+     * most of the cache and eviction silently stops
+     * (prestonbrown/helixscreen#1207).
+     *
+     * Held weakly: a destroyed cache leaves nothing dangling, and an in-flight
+     * write simply finds no listener. Last registration wins, mirroring
+     * set_cache_dir() — the two are set together by ThumbnailCache's
+     * constructor and only ever describe the most recently constructed cache.
+     *
+     * Thread-safe. Pass an empty weak_ptr to unregister.
+     *
+     * @param journal Listener to notify after each successful write
+     */
+    void set_write_journal(std::weak_ptr<ThumbnailWriteJournal> journal);
+
+    /**
      * @brief Clear all cached pre-scaled thumbnails
      *
      * Removes all .bin files from cache directory.
@@ -301,9 +323,16 @@ class ThumbnailProcessor {
      * 5. Write LVGL binary header + pixel data
      *
      * @param cache_dir Cache directory path (passed explicitly for thread safety)
+     * @param journal Write listener, or nullptr. Snapshotted by the caller
+     *        alongside @p cache_dir for the same reason: the pair must describe
+     *        one consistent destination even if set_cache_dir() /
+     *        set_write_journal() run before a queued task gets to execute.
+     *        Passing it in also keeps do_process() free of mutex_, so a pool
+     *        task can never contend with a shutdown() that is waiting on it.
      */
     ProcessResult do_process(const std::vector<uint8_t>& png_data, const std::string& source_path,
-                             const ThumbnailTarget& target, const std::string& cache_dir);
+                             const ThumbnailTarget& target, const std::string& cache_dir,
+                             const std::shared_ptr<ThumbnailWriteJournal>& journal);
 
     /**
      * @brief Write LVGL binary file
@@ -320,6 +349,11 @@ class ThumbnailProcessor {
     /// sufficient there (#1202).
     std::shared_ptr<HThreadPool> thread_pool_;
     std::string cache_dir_;
+
+    /// Weak by design — see set_write_journal(). Guarded by mutex_ and
+    /// snapshotted into each task alongside cache_dir_.
+    std::weak_ptr<ThumbnailWriteJournal> write_journal_;
+
     mutable std::mutex mutex_;
     bool shutdown_ = false;
 

@@ -6,9 +6,13 @@
 #include "moonraker_api.h"
 #include "thumbnail_load_context.h"
 #include "thumbnail_processor.h"
+#include "thumbnail_write_journal.h"
 
+#include <atomic>
 #include <filesystem>
 #include <functional>
+#include <map>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -369,6 +373,34 @@ class ThumbnailCache {
      */
     [[nodiscard]] bool is_caching_allowed() const;
 
+    /**
+     * @brief Diagnostics: full cache-directory walks performed by this instance
+     *
+     * Every walk is O(files in cache) `readdir` + `stat` syscalls, so this is the
+     * quantity the in-memory index exists to keep flat. It was the missing signal
+     * in prestonbrown/helixscreen#1207 — the per-fetch cost was invisible because
+     * nothing counted it.
+     *
+     * @return Monotonic count of directory walks since construction
+     */
+    [[nodiscard]] size_t get_full_scan_count() const {
+        return full_scans_.load(std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Diagnostics: per-file metadata queries issued by this instance
+     *
+     * One per file examined, whether during a full walk or a single-file index
+     * update. (Each examined file costs up to three `stat`-family calls —
+     * `is_regular_file`, `last_write_time`, `file_size` — so this is a lower
+     * bound on syscalls, not an exact one.)
+     *
+     * @return Monotonic count of files stat'd since construction
+     */
+    [[nodiscard]] size_t get_stat_count() const {
+        return stat_calls_.load(std::memory_order_relaxed);
+    }
+
   private:
     std::string cache_dir_; ///< Absolute path to cache directory (const after construction)
     size_t max_size_;       ///< Maximum cache size before LRU eviction — guarded by mutex_
@@ -413,11 +445,98 @@ class ThumbnailCache {
      */
     [[nodiscard]] std::vector<CacheEntry> scan_locked(size_t* total_out) const;
 
+    // =========================================================================
+    // In-memory index (prestonbrown/helixscreen#1207, defect 2)
+    // =========================================================================
+    //
+    // Before this, every fetch()/fetch_optimized()/save_raw_png() walked the
+    // whole cache directory with a stat per file, whether or not anything got
+    // evicted. Scrolling 850 files x 3 thumbnails made that a per-scroll-tick
+    // cost, much of it on the main thread.
+    //
+    // The index turns the steady-state check into arithmetic. What makes it
+    // *honest* rather than merely fast is having an answer for each way it can
+    // drift from the directory it describes:
+    //
+    //   1. Files this cache writes itself (downloaded PNGs, save_raw_png) —
+    //      recorded at the point of writing, one stat each.
+    //   2. Files ThumbnailProcessor writes (the pre-scaled .bin variants) —
+    //      reported through journal_, one stat each. This is the case that made
+    //      an index non-trivial: the processor writes into this directory and
+    //      holds no reference to this class.
+    //   3. Files that vanish behind our back — the eviction loop already
+    //      distinguishes "removed" from "was already gone", so a ghost costs no
+    //      credited bytes, and seeing one triggers a resync.
+    //   4. Anything else, including a directory populated by a previous run —
+    //      covered by the cold-start scan and by a periodic reconcile.
+    //
+    // The index is allowed to over-count (it evicts too eagerly, which is
+    // survivable) but must never under-count, because an under-counting cache
+    // reads as "well under the limit" and stops evicting altogether.
+
+    /// One indexed file. Same fields a directory walk would produce.
+    struct IndexEntry {
+        std::filesystem::file_time_type mtime;
+        std::uintmax_t size;
+    };
+
+    /// Eviction checks between forced full rescans.
+    ///
+    /// The backstop for drift this class cannot observe — a future writer that
+    /// forgets to report, an external delete, a shell. Bounds how long the index
+    /// may disagree with the directory, at a cost of one walk per this many
+    /// checks instead of one per check. Ordered map, so a rescan is also what
+    /// re-establishes exact totals after any anomaly.
+    static constexpr size_t INDEX_RECONCILE_INTERVAL = 64;
+
+    /// Rebuild the index from the filesystem. The only O(cache) path left.
+    /// @pre mutex_ is held.
+    void rescan_locked() const;
+
+    /// Bring the index up to date cheaply: absorb journalled writes, or rescan
+    /// if the index is cold, overflowed, or due for reconciliation.
+    /// @pre mutex_ is held.
+    void refresh_index_locked() const;
+
+    /// Stat one file and fold it into the index. Rejects paths outside
+    /// cache_dir_ — set_cache_dir() on the processor can retarget it while a
+    /// write is in flight, and a stale journal entry must not add a foreign
+    /// file to this cache's accounting.
+    /// @pre mutex_ is held.
+    void index_file_locked(const std::filesystem::path& raw_path) const;
+
+    /// Drop a path from the index, crediting its bytes back.
+    /// @pre mutex_ is held.
+    void forget_file_locked(const std::filesystem::path& path) const;
+
+    /// Record a file this cache just wrote, then run an eviction check. The
+    /// shape every write site uses so no write can reach eviction unindexed.
+    void note_write_and_evict(const std::string& path);
+
     /**
      * @brief Eviction pass proper.
      * @pre mutex_ is held.
      */
     void evict_locked();
+
+    /// Diagnostics — see get_full_scan_count() / get_stat_count(). Atomic rather
+    /// than mutex_-guarded so the accessors stay lock-free and cannot deadlock a
+    /// caller that already holds the lock.
+    mutable std::atomic<size_t> full_scans_{0};
+    mutable std::atomic<size_t> stat_calls_{0};
+
+    /// The index and its bookkeeping. All guarded by mutex_; mutable because
+    /// get_cache_size() is const and still has to prime and reconcile.
+    mutable std::map<std::filesystem::path, IndexEntry> index_;
+    mutable size_t index_total_ = 0;
+    mutable bool index_primed_ = false;
+    mutable size_t checks_since_scan_ = 0;
+
+    /// Owned here, observed weakly by ThumbnailProcessor, so destroying this
+    /// cache cannot leave the processor holding a dangling pointer. Created
+    /// eagerly: refresh_index_locked() must never have to null-check it.
+    std::shared_ptr<helix::ThumbnailWriteJournal> journal_{
+        std::make_shared<helix::ThumbnailWriteJournal>()};
 
     /**
      * @brief Determine the optimal cache base directory
