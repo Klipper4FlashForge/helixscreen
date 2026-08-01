@@ -206,6 +206,10 @@ TREE=$(basename "$(git rev-parse --show-toplevel)")
 export HELIX_SOCK="/tmp/helix-$TREE.sock"
 export HELIX_CONFIG_DIR="/tmp/helix-config-$TREE"
 
+# The config dir must already exist. The app does not create it — it fails with
+# "Cannot open lock file .../.helix-screen.lock: No such file or directory".
+mkdir -p "$HELIX_CONFIG_DIR"
+
 HELIX_CONFIG_DIR="$HELIX_CONFIG_DIR" \
   ./build/bin/helix-screen --test -vv --remote-socket "$HELIX_SOCK" \
   > "/tmp/helix-$TREE.log" 2>&1 &

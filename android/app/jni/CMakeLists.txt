@@ -43,6 +43,10 @@ target_include_directories(lvgl PUBLIC
     "${PROJECT_ROOT}"              # For lv_conf.h at project root
     "${PROJECT_ROOT}/include"      # For lvgl_assert_handler.h
     "${PROJECT_ROOT}/lib/lvgl"     # For lvgl.h
+    "${PROJECT_ROOT}/lib/lvgl/src" # For <misc/lv_types.h> etc. — helix-xml's
+                                   # public headers include LVGL this way, so
+                                   # it must be PUBLIC, not private to lvgl.
+                                   # Mirrors -isystem $(LVGL_DIR)/src in LVGL_INC.
 )
 target_compile_definitions(lvgl PUBLIC LV_CONF_INCLUDE_SIMPLE HELIX_DISPLAY_SDL)
 # LVGL's SDL driver needs SDL headers
@@ -65,9 +69,10 @@ target_include_directories(helix_xml PUBLIC
 target_include_directories(helix_xml PRIVATE
     "${PROJECT_ROOT}"              # For lv_conf.h
     "${PROJECT_ROOT}/include"      # For lvgl_assert_handler.h
-    "${PROJECT_ROOT}/lib/lvgl"     # For lvgl.h
-    "${PROJECT_ROOT}/lib/lvgl/src" # For internal LVGL headers
 )
+# lib/lvgl and lib/lvgl/src arrive transitively as PUBLIC includes of the lvgl
+# target linked below — helix-xml's own headers need them, so they cannot be
+# private here.
 target_compile_definitions(helix_xml PUBLIC LV_CONF_INCLUDE_SIMPLE)
 target_link_libraries(helix_xml PUBLIC lvgl)
 
