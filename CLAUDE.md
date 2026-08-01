@@ -48,6 +48,15 @@ scripts/setup-worktree.sh feature/my-branch  # Symlinks deps, builds fast
 > ./build/bin/helix-screen --test -vv --remote-socket "$HELIX_SOCK" > /tmp/helix-$TREE.log 2>&1 &
 > ./build/bin/helix-screen ctl -s "$HELIX_SOCK" navigate settings
 > ```
+> **An empty `HELIX_CONFIG_DIR` is isolated for the lock and socket, not for the printer
+> address.** Finding no `settings.json` there, `Config` bootstraps one from
+> `~/.helixscreen/settings.json.backup` — look for `[Config] Config missing — restoring
+> from backup:` in the log. That inherits the real `moonraker_host`, so a run **without**
+> `--test` opens a WebSocket to the actual printer. `--moonraker-url` does *not* override
+> the saved host. Keep `--test` (the mock client ignores the host entirely), or rewrite
+> `printers/<id>/moonraker_host` in the seeded `settings.json` before relying on the
+> instance being offline.
+>
 > Prefer `ctl text <name>` / `ctl geom <name>` over reading a screenshot — they are exact,
 > and a screenshot only proves what a scroll position happened to expose.
 
