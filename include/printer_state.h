@@ -1413,6 +1413,16 @@ class PrinterState {
     }
 
     /**
+     * @brief Re-read the user capability overrides from the ACTIVE printer's config
+     *
+     * capability_overrides_ is populated from `Config::df() + "capability_overrides/…"` in
+     * the constructor, and PrinterState is a process-lifetime singleton — so without this
+     * the map keeps whatever the printer that was active at startup had configured.
+     * Registered with PrinterCacheRegistry from init_subjects().
+     */
+    void reload_capability_overrides();
+
+    /**
      * @brief Get cached hardware discovery result
      *
      * Provides access to the full list of heaters and sensors discovered

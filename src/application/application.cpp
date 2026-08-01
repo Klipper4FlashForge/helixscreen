@@ -48,6 +48,7 @@
 #include "post_op_cooldown_manager.h"
 #include "power_device_state.h"
 #include "print_history_manager.h"
+#include "printer_cache_registry.h"
 #include "printer_recovery_service.h"
 #include "recovery_modal_presenter.h"
 #ifdef HELIX_ENABLE_REMOTE_CONTROL
@@ -3993,29 +3994,60 @@ void Application::check_timeouts() {
 // SOFT RESTART (printer switching)
 // ============================================================================
 
+namespace {
+
+/**
+ * @brief RAII latch for Application::m_soft_restart_in_progress.
+ *
+ * Every soft-restart path runs tear_down_printer_state() + init_printer_state(),
+ * a 16-step rebuild that includes a Moonraker connect and can throw. Clearing the
+ * re-entrancy flag by hand on each exit path leaves it stuck true whenever an exit
+ * is not the one that was hand-coded, and a stuck flag makes every later printer
+ * switch or add a silent no-op until the process restarts.
+ */
+class SoftRestartLatch {
+  public:
+    explicit SoftRestartLatch(bool& flag) : m_flag(flag) {
+        m_flag = true;
+    }
+    ~SoftRestartLatch() {
+        m_flag = false;
+    }
+
+    SoftRestartLatch(const SoftRestartLatch&) = delete;
+    SoftRestartLatch& operator=(const SoftRestartLatch&) = delete;
+    SoftRestartLatch(SoftRestartLatch&&) = delete;
+    SoftRestartLatch& operator=(SoftRestartLatch&&) = delete;
+
+  private:
+    bool& m_flag;
+};
+
+} // namespace
+
 void Application::switch_printer(const std::string& printer_id) {
     if (m_soft_restart_in_progress) {
         spdlog::warn("[Application] Ignoring switch_printer during active soft restart");
         return;
     }
-    m_soft_restart_in_progress = true;
+    SoftRestartLatch soft_restart(m_soft_restart_in_progress);
 
     spdlog::info("[Application] Switching to printer '{}'...", printer_id);
 
     // Validate printer exists in config
     if (!m_config->set_active_printer(printer_id)) {
         spdlog::error("[Application] Failed to switch — unknown printer '{}'", printer_id);
-        m_soft_restart_in_progress = false;
         return;
     }
     m_config->save();
 
-    // Per-printer widget layouts live at /printers/<active>/panel_widgets/<panel>.
-    // The active printer just changed, so Config::df() now points at the new
-    // printer — invalidate every cached PanelWidgetConfig (and the per-page
-    // derived caches) so Home re-reads the new printer's layout instead of
-    // serving the previous printer's cached one (#804 load() guard regression).
-    PanelWidgetManager::instance().clear_all_panel_configs();
+    // Per-printer state lives at /printers/<active>/… and is reached via Config::df().
+    // The active printer just changed, so df() now points at the new printer — fire every
+    // registered per-printer cache invalidator BEFORE teardown, while df() is already
+    // correct, so nothing keeps serving the previous printer's values. PanelWidgetManager's
+    // cached layouts (#804) were the first instance of this; the registry is what stops the
+    // next one from being a latent bug nobody remembers to wire up.
+    helix::PrinterCacheRegistry::instance().invalidate_all();
 
     tear_down_printer_state();
     init_printer_state();
@@ -4029,7 +4061,6 @@ void Application::switch_printer(const std::string& printer_id) {
     std::string toast_msg = fmt::format(fmt::runtime(lv_tr("Connected to {}")), printer_name);
     ToastManager::instance().show(ToastSeverity::INFO, toast_msg.c_str());
 
-    m_soft_restart_in_progress = false;
     spdlog::info("[Application] Switched to printer '{}'", printer_id);
 }
 
@@ -4038,7 +4069,7 @@ void Application::add_printer_via_wizard() {
         spdlog::warn("[Application] Ignoring add_printer_via_wizard during active soft restart");
         return;
     }
-    m_soft_restart_in_progress = true;
+    SoftRestartLatch soft_restart(m_soft_restart_in_progress);
 
     // Generate a unique ID for the new printer entry (loop to avoid collisions after deletes)
     auto existing_ids = m_config->get_printer_ids();
@@ -4062,6 +4093,10 @@ void Application::add_printer_via_wizard() {
     spdlog::info("[Application] Adding new printer '{}' via wizard (previous: '{}')", new_id,
                  previous_id);
 
+    // Same active-printer change as switch_printer(): Config::df() has moved to the new
+    // entry, so every per-printer cache must be dropped before teardown.
+    helix::PrinterCacheRegistry::instance().invalidate_all();
+
     // Soft restart and launch wizard for the new printer.
     // init_printer_state() calls run_wizard() internally when is_wizard_required() returns true
     // (which it does for the new empty printer entry with wizard_completed=false).
@@ -4073,8 +4108,6 @@ void Application::add_printer_via_wizard() {
     set_wizard_cancel_callback([this]() { cancel_add_printer_wizard(); });
 
     init_printer_state();
-
-    m_soft_restart_in_progress = false;
 }
 
 void Application::cancel_add_printer_wizard() {
@@ -4101,16 +4134,18 @@ void Application::cancel_add_printer_wizard() {
     // Defer wizard teardown + soft restart — we're called from a wizard button click handler,
     // so the wizard_container must survive until the event callback returns.
     m_async_lifetime.defer("Application::cancel_add_printer_wizard", [this]() {
-        m_soft_restart_in_progress = true;
+        SoftRestartLatch soft_restart(m_soft_restart_in_progress);
 
         set_wizard_active(false);
         ui_wizard_deinit_subjects();
 
+        // set_active_printer() above restored the previous printer, so Config::df() moved
+        // again — drop every per-printer cache before teardown.
+        helix::PrinterCacheRegistry::instance().invalidate_all();
+
         tear_down_printer_state();
         init_printer_state();
         NavigationManager::instance().set_active(PanelId::Home);
-
-        m_soft_restart_in_progress = false;
     });
 }
 
