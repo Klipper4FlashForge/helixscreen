@@ -45,10 +45,13 @@ usage() {
     echo "  Never run --unlink/--relink while a build is in flight."
     echo ""
     echo "Strategy:"
+    echo "  - Adopts the main tree's mtimes for byte-identical files (so the cloned"
+    echo "    objects are not all invalidated by the fresh checkout timestamp)"
     echo "  - Configures ccache for cross-worktree reuse (no cold rebuild per worktree)"
     echo "  - Clones build/obj/ from main tree (APFS copy-on-write — instant, zero disk)"
     echo "  - Symlinks lib/ from main tree (all submodule sources + generated headers)"
-    echo "  - Symlinks compiled libraries (libhv.a) and PCH"
+    echo "  - Clones compiled libraries (libhv.a) and the PCH — copies, not symlinks,"
+    echo "    so a rebuild here can never write back into the main tree"
     echo "  - Copies compile_commands.json with rewritten paths for clangd"
     echo "  - Symlinks node_modules and .venv for font/python tools"
     echo "  - Uses .git/info/exclude for clean git status"
@@ -76,6 +79,19 @@ usage() {
 # Nothing here may run while a build is in flight: pulling lib/ out from under a
 # compile fails it with missing headers, and re-linking mid-compile is no better.
 LIB_NON_SUBMODULE_ITEMS=("tuibox.h" "mdns")
+
+# Copy a build artifact into the worktree as cheaply as the filesystem allows,
+# preserving mtime — make's up-to-date decisions depend on it.
+#   macOS/APFS:  cp -c            -> clonefile(2), instant, zero disk until diverged
+#   Linux/btrfs+xfs: --reflink=auto -> same idea, silently falls back to a full copy
+#   anything else: a plain copy
+clone_file() {
+    local src="$1" dst="$2"
+    cp -c "$src" "$dst" 2>/dev/null \
+        || cp --reflink=auto "$src" "$dst" 2>/dev/null \
+        || cp "$src" "$dst"
+    touch -r "$src" "$dst"
+}
 
 lib_submodule_paths() {
     git -C "$MAIN_TREE" config --file .gitmodules --get-regexp path \
@@ -289,6 +305,34 @@ fi
 
 link_lib_from_main
 
+# Step 2b: Adopt the main tree's mtimes for byte-identical files
+#
+# Without this, everything below is nearly worthless. `git worktree add` writes
+# every file fresh, so the whole checkout is newer than the artifacts we are
+# about to clone, and make rebuilds essentially all of them — twice over:
+#
+#   - $(PCH) lists include/lvgl_pch.h and lv_conf.h as prerequisites, and EVERY
+#     C++ object lists $(PCH), so one fresh header invalidates the entire tree;
+#   - the .d files list include/*.h per object, and those are fresh too, so
+#     fixing only the PCH would still leave every object out of date.
+#
+# Measured on a fresh worktree of an up-to-date main tree: 1945 of 1967 cloned
+# objects recompiled (~6.5 min) purely because of checkout timestamps.
+#
+# This is NOT blanket back-dating. A file's mtime is changed only when its
+# content is byte-identical to the main tree's file at the same path, and the
+# value adopted is that same file's mtime. The invariant is that for matching
+# content the (source, object) mtime ordering in the worktree equals the
+# ordering in the main tree — so make reaches the same up-to-date decision here
+# that it reached there, against objects cloned from there. Anything that
+# differs (a branch with real changes, a later edit) keeps its fresh mtime and
+# rebuilds normally. See scripts/sync-worktree-mtimes.py.
+echo -e "${CYAN}Aligning file timestamps with main tree...${RESET}"
+if ! python3 "$MAIN_TREE/scripts/sync-worktree-mtimes.py" \
+        --main "$MAIN_TREE" --worktree "$WORKTREE_PATH"; then
+    echo -e "  ${YELLOW}mtime sync failed — build will be correct but slow${RESET}"
+fi
+
 # Step 3: Create build directory structure and clone object files
 echo -e "${CYAN}Setting up build directory...${RESET}"
 mkdir -p build/lib build/obj build/bin
@@ -321,15 +365,39 @@ if [[ -d "$MAIN_OBJ" ]]; then
         # Validate object file architecture — cross-compilation leaves wrong-arch .o files
         SAMPLE_OBJ=$(find "$WORKTREE_OBJ" -name "*.o" -print -quit 2>/dev/null)
         if [[ -n "$SAMPLE_OBJ" ]]; then
-            SAMPLE_ARCH=$(objdump -f "$SAMPLE_OBJ" 2>/dev/null | grep -m1 "architecture:" | awk -F',' '{print $1}' | awk '{print $NF}')
+            # Probe with `file`, not `objdump -f`. Apple's objdump cannot emit the
+            # GNU "architecture:" line for Mach-O at all, so under `set -euo
+            # pipefail` the grep found nothing, the pipeline exited 1, and the
+            # whole setup aborted HERE — leaving the worktree with cloned objects
+            # but no PCH, no build markers, no git excludes and no initial build.
+            # (Re-running the script "fixed" it only because the second run skips
+            # this branch entirely.) `file -b` answers on both toolchains:
+            #   macOS: "Mach-O 64-bit object arm64"
+            #   Linux: "ELF 64-bit LSB relocatable, x86-64, ..."
+            SAMPLE_ARCH=$(file -b "$SAMPLE_OBJ" 2>/dev/null || true)
             HOST_ARCH_CHECK=$(uname -m)
+            # macOS reports Apple Silicon as arm64, Linux as aarch64. Without this
+            # the aarch64 branch below never matched on a Mac and the check was dead.
+            [[ "$HOST_ARCH_CHECK" == "arm64" ]] && HOST_ARCH_CHECK=aarch64
             ARCH_MISMATCH=false
+            # Only a POSITIVE identification of the wrong architecture may set this.
+            # An empty or unrecognized probe must fall through untouched: this flag
+            # gates an `rm -rf` of the object cache, so failing open costs one slow
+            # build while failing closed silently deletes a good cache on every
+            # setup. That is exactly what a bare `|| true` on the old objdump
+            # pipeline would have done on an Intel Mac — empty SAMPLE_ARCH matched
+            # neither "x86-64" nor "i386", so both negated tests passed.
             case "$HOST_ARCH_CHECK" in
                 x86_64)
-                    [[ "$SAMPLE_ARCH" != *"x86-64"* && "$SAMPLE_ARCH" != *"i386"* ]] && ARCH_MISMATCH=true
+                    if [[ "$SAMPLE_ARCH" == *arm64* || "$SAMPLE_ARCH" == *aarch64* ]]; then
+                        ARCH_MISMATCH=true
+                    fi
                     ;;
                 aarch64)
-                    [[ "$SAMPLE_ARCH" != *"aarch64"* ]] && ARCH_MISMATCH=true
+                    if [[ "$SAMPLE_ARCH" == *x86-64* || "$SAMPLE_ARCH" == *x86_64* ||
+                          "$SAMPLE_ARCH" == *i386* ]]; then
+                        ARCH_MISMATCH=true
+                    fi
                     ;;
             esac
             if [[ "$ARCH_MISMATCH" == "true" ]]; then
@@ -343,6 +411,16 @@ else
     echo -e "  build/obj: ${YELLOW}main tree not built yet (will build from scratch)${RESET}"
 fi
 
+# Step 3b2: Clone generated headers (build/generated/contributors.h)
+# Small, but a missing one puts the objects that include it — and therefore the
+# link — back on the critical path of an otherwise no-op build.
+MAIN_GEN="$MAIN_TREE/build/generated"
+if [[ -d "$MAIN_GEN" && ! -d "$WORKTREE_PATH/build/generated" ]]; then
+    cp -Rc "$MAIN_GEN" "$WORKTREE_PATH/build/generated" 2>/dev/null \
+        || cp -a "$MAIN_GEN" "$WORKTREE_PATH/build/generated"
+    echo -e "  build/generated: ${GREEN}cloned${RESET}"
+fi
+
 # Step 3c: Copy compile_commands.json for clangd support
 if [[ -f "$MAIN_TREE/compile_commands.json" ]]; then
     # Use sed to rewrite paths from main tree to worktree
@@ -350,9 +428,20 @@ if [[ -f "$MAIN_TREE/compile_commands.json" ]]; then
     echo -e "  compile_commands.json: ${GREEN}copied and paths rewritten${RESET}"
 fi
 
-# Step 4: Symlink compiled libraries from main tree
-# These are expensive to build and rarely change
-echo -e "${CYAN}Symlinking compiled libraries from main tree...${RESET}"
+# Step 4: Clone compiled libraries from the main tree
+#
+# Copies, not symlinks, for the same reason as the PCH below: these are build
+# OUTPUTS. `make libhv-build` ends by copying the freshly-ar'd archive to
+# build/lib/libhv.a, and cp follows a symlink — so a worktree that rebuilds
+# libhv writes into the MAIN TREE's build/lib. Observed: a single fresh-worktree
+# build moved the main tree's libhv.a mtime forward by five days, which left the
+# main tree's own PCH older than it and put ~1900 objects back on the main
+# tree's next build. One worktree setup, and the main tree rebuilds the world.
+#
+# The old `touch -h` here was also load-bearing in the wrong direction: it
+# stamped the archive `now` to look "newer than source files", which is exactly
+# the kind of invented timestamp that hides real work.
+echo -e "${CYAN}Cloning compiled libraries from main tree...${RESET}"
 
 MAIN_LIBS=("libhv.a" "libwpa_client.a")
 for lib in "${MAIN_LIBS[@]}"; do
@@ -361,38 +450,48 @@ for lib in "${MAIN_LIBS[@]}"; do
 
     if [[ -f "$MAIN_LIB" ]]; then
         if [[ -L "$WORKTREE_LIB" ]]; then
-            echo -e "  $lib: ${GREEN}already symlinked${RESET}"
-        elif [[ -f "$WORKTREE_LIB" ]]; then
-            echo -e "  $lib: ${YELLOW}exists as regular file, replacing with symlink${RESET}"
             rm -f "$WORKTREE_LIB"
-            ln -s "$MAIN_LIB" "$WORKTREE_LIB"
+            clone_file "$MAIN_LIB" "$WORKTREE_LIB"
+            echo -e "  $lib: ${YELLOW}was a symlink into the main tree, replaced with a private clone${RESET}"
+        elif [[ -f "$WORKTREE_LIB" ]]; then
+            echo -e "  $lib: ${GREEN}already present (worktree-local)${RESET}"
         else
-            ln -s "$MAIN_LIB" "$WORKTREE_LIB"
-            echo -e "  $lib: ${GREEN}symlinked${RESET}"
+            clone_file "$MAIN_LIB" "$WORKTREE_LIB"
+            echo -e "  $lib: ${GREEN}cloned${RESET}"
         fi
-        # Touch the symlink so it appears newer than source files
-        # This prevents make from trying to rebuild based on source timestamps
-        touch -h "$WORKTREE_LIB" 2>/dev/null || true
     else
         echo -e "  $lib: ${YELLOW}not found in main tree (will build from scratch)${RESET}"
     fi
 done
 
-# Step 5: Symlink the precompiled header if it exists
+# Step 5: Clone the precompiled header if it exists
+#
+# Deliberately a COPY, not a symlink. The PCH is a build OUTPUT: make rebuilds it
+# whenever lv_conf.h / include/lvgl_pch.h / the patch stamp move, and clang opens
+# the output path with O_CREAT|O_TRUNC, which follows a symlink. A symlinked PCH
+# therefore lets a worktree write its own PCH straight into the main tree — and a
+# worktree that changed lv_conf.h would leave the main tree, and every other
+# worktree sharing that symlink, linking against a PCH built for someone else's
+# feature flags. On APFS `cp -c` is a clonefile: instant, zero disk until one
+# side diverges, and independent. mtime is preserved so make still sees it as
+# up to date relative to the (now mtime-synced) prerequisites.
 MAIN_PCH="$MAIN_TREE/build/lvgl_pch.h.gch"
 WORKTREE_PCH="$WORKTREE_PATH/build/lvgl_pch.h.gch"
 if [[ -f "$MAIN_PCH" ]]; then
     if [[ -L "$WORKTREE_PCH" ]]; then
-        echo -e "  lvgl_pch.h.gch: ${GREEN}already symlinked${RESET}"
-    elif [[ -f "$WORKTREE_PCH" ]]; then
-        echo -e "  lvgl_pch.h.gch: ${YELLOW}exists as regular file, replacing with symlink${RESET}"
+        # Legacy worktree from an older setup run — swap the symlink for a clone
+        # before a build can write through it.
         rm -f "$WORKTREE_PCH"
-        ln -s "$MAIN_PCH" "$WORKTREE_PCH"
+        clone_file "$MAIN_PCH" "$WORKTREE_PCH"
+        echo -e "  lvgl_pch.h.gch: ${YELLOW}was a symlink into the main tree, replaced with a private clone${RESET}"
+    elif [[ -f "$WORKTREE_PCH" ]]; then
+        # This worktree already has its own PCH. It may have been built here from
+        # locally-modified prerequisites, so leave it alone and let make decide.
+        echo -e "  lvgl_pch.h.gch: ${GREEN}already present (worktree-local)${RESET}"
     else
-        ln -s "$MAIN_PCH" "$WORKTREE_PCH"
-        echo -e "  lvgl_pch.h.gch: ${GREEN}symlinked${RESET}"
+        clone_file "$MAIN_PCH" "$WORKTREE_PCH"
+        echo -e "  lvgl_pch.h.gch: ${GREEN}cloned${RESET}"
     fi
-    touch -h "$WORKTREE_PCH" 2>/dev/null || true
 else
     echo -e "  lvgl_pch.h.gch: ${YELLOW}not found in main tree (will build from scratch)${RESET}"
 fi
@@ -407,7 +506,9 @@ for lib_file in "$WORKTREE_PATH/build/lib/"*.a; do
     [[ -L "$lib_file" ]] && continue  # Skip symlinks — they point to main tree
     LIB_NAME=$(basename "$lib_file")
     # Check first object file's architecture
-    LIB_ARCH=$(objdump -f "$lib_file" 2>/dev/null | grep -m1 "architecture:" | awk -F',' '{print $1}' | awk '{print $NF}')
+    # `|| true`: see the objdump note in step 3b — a probe that cannot read the
+    # file must yield "unknown", not abort the script under `set -e`.
+    LIB_ARCH=$(objdump -f "$lib_file" 2>/dev/null | grep -m1 "architecture:" | awk -F',' '{print $1}' | awk '{print $NF}' || true)
     if [[ -n "$LIB_ARCH" ]]; then
         case "$HOST_ARCH" in
             x86_64)
@@ -513,11 +614,30 @@ git update-index --skip-worktree lib/mdns/mdns.h 2>/dev/null || true
 echo -e "${GREEN}✓ Git excludes configured${RESET}"
 
 # Step 9: Create build marker files to skip redundant checks
+#
+# .patches-applied and .fonts.stamp are prerequisites, not just markers, so a
+# fresh `now` timestamp on them is not free:
+#   - $(PATCHES_STAMP) is a prerequisite of $(PCH), every LVGL/helix-xml/font
+#     object and libhv.a — stamping it `now` invalidates all of them;
+#   - .fonts.stamp is a prerequisite of assets/fonts/*.c, which have no recipe,
+#     so make marks them updated and recompiles all 46 font objects.
+# Adopt the main tree's timestamps when it has them, for the same reason the
+# source mtimes are synced above: reproduce the main tree's state rather than
+# invent a newer one. .deps-checked is only ever compared against
+# scripts/check-deps.sh, so `now` is both correct and what we want there.
 echo -e "${CYAN}Creating build markers...${RESET}"
 touch "$WORKTREE_PATH/build/.deps-checked"
-touch "$WORKTREE_PATH/build/.patches-applied"
+copy_marker_mtime() {
+    # $1 = path relative to tree root
+    local main_marker="$MAIN_TREE/$1" wt_marker="$WORKTREE_PATH/$1"
+    touch "$wt_marker"
+    if [[ -f "$main_marker" ]]; then
+        touch -r "$main_marker" "$wt_marker"
+    fi
+}
+copy_marker_mtime "build/.patches-applied"
+copy_marker_mtime ".fonts.stamp"
 echo "native" > "$WORKTREE_PATH/build/.build-target"
-touch "$WORKTREE_PATH/.fonts.stamp"
 echo -e "${GREEN}✓ Build markers created${RESET}"
 
 # Step 9c: Seed runtime config from the main tree

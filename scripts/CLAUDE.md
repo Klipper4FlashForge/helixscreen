@@ -117,6 +117,7 @@ navigation recipe in `screenshot-recipes.sh` (the single source of truth).
 | Script | Purpose |
 |--------|---------|
 | `setup-worktree.sh` | Create/configure git worktrees in `.worktrees/`. Symlinks deps, builds fast |
+| `sync-worktree-mtimes.py` | Give worktree files the main tree's mtime **when the content is byte-identical**, so the cloned `build/obj/` is actually usable. Without it a fresh worktree recompiles 1945 of 1967 objects purely because `git worktree add` stamps the whole checkout `now` — the PCH prerequisite chain and the `.d` header lists invalidate everything independently, so fixing either one alone buys nothing. Content-conditional by design: files that differ keep their fresh mtime and rebuild. Called from `setup-worktree.sh` |
 | `git-stats.sh` | Comprehensive repo statistics with effort estimation |
 | `benchmark_hosts.sh` | Benchmark host performance for build optimization |
 | `benchmark_neon.sh` | NEON SIMD performance benchmarks |
