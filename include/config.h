@@ -15,6 +15,8 @@
 
 #include "json_fwd.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -55,7 +57,7 @@ struct MacroConfig {
  * ```
  */
 /// Current config schema version — bump when adding new migrations
-static constexpr int CURRENT_CONFIG_VERSION = 20;
+static constexpr int CURRENT_CONFIG_VERSION = 21;
 
 class Config {
   private:
@@ -63,6 +65,25 @@ class Config {
     std::string path;
     std::string active_printer_id_; ///< Currently active printer slug ID
     bool read_only_mode_ = false;   ///< Config directory is on a read-only filesystem
+
+    /**
+     * @brief Point active_printer_id_ at a printer that actually exists
+     *
+     * Reads /active_printer_id and falls back to the first entry of /printers
+     * that is an object (the map also holds plain settings keys). Leaves
+     * /active_printer_id untouched when no printer object exists at all.
+     *
+     * @return true if /active_printer_id was rewritten (config needs saving)
+     */
+    bool refresh_active_printer_id();
+
+    /// Epoch-seconds stamp for a new /removed_printers entry, forced strictly
+    /// newer than every existing stamp so ordering survives a coarse or
+    /// backwards-stepping clock.
+    int64_t next_archive_stamp() const;
+
+    /// Drop the oldest /removed_printers entries beyond MAX_ARCHIVED_PRINTERS
+    void prune_archived_printers();
 
   protected:
     json data;
@@ -417,9 +438,21 @@ class Config {
      * Prefer this over remove_printer() anywhere the removal is not an explicit
      * user action.
      *
+     * Each snapshot is stamped with ARCHIVED_AT_KEY and the archive is trimmed
+     * to the MAX_ARCHIVED_PRINTERS most recent entries.
+     *
      * @param printer_id Slug ID of the printer to archive
      */
     void archive_printer(const std::string& printer_id);
+
+    /// How many archived printers /removed_printers keeps. Nothing reads the
+    /// archive back yet, so it is pure insurance — an unbounded one would grow
+    /// settings.json (and every rolling backup of it) without limit.
+    static constexpr size_t MAX_ARCHIVED_PRINTERS = 5;
+
+    /// Epoch-seconds field stamped into each /removed_printers entry, used to
+    /// decide which entries are the oldest when pruning.
+    static constexpr const char* ARCHIVED_AT_KEY = "archived_at";
 
     /**
      * @brief Get singleton instance

@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <fcntl.h>
@@ -896,6 +897,41 @@ static bool has_any_value(const json& node) {
     return true;
 }
 
+/// Resolve which entry of /printers the config's /active_printer_id refers to,
+/// applying the "empty or dangling → first printer object" fallback.
+///
+/// The printers map is MIXED: alongside the printer objects it holds plain
+/// settings keys (`show_printer_switcher` is a bool, and the shipped template
+/// adds a `_show_printer_switcher_comment` string), so an entry only counts as
+/// a printer when it is an object. Every resolution site must apply that test,
+/// which is why it lives here rather than being open-coded per caller.
+///
+/// @param preferred id to consider when /active_printer_id is absent or is not
+///        a string — callers that already hold a resolved id keep it rather
+///        than sliding to whichever printer happens to sort first.
+/// @return the resolved printer id, or "" when the map holds no printer object.
+static std::string find_active_printer_key(const json& config, const std::string& preferred = "") {
+    if (!config.contains("printers") || !config["printers"].is_object()) {
+        return "";
+    }
+    const json& printers = config["printers"];
+
+    std::string active = preferred;
+    if (config.contains("active_printer_id") && config["active_printer_id"].is_string()) {
+        active = config["active_printer_id"].get<std::string>();
+    }
+    if (!active.empty() && printers.contains(active) && printers[active].is_object()) {
+        return active;
+    }
+
+    for (const auto& [key, val] : printers.items()) {
+        if (val.is_object()) {
+            return key;
+        }
+    }
+    return "";
+}
+
 /// Migration v19→v20: purge the null-node garbage that read-only probes through
 /// Config::get_json() vivified into settings.json (#1129), and retire the
 /// legacy top-level /led block for good.
@@ -916,31 +952,12 @@ static void migrate_v19_to_v20(json& config) {
     //
     // Resolve the fold target exactly the way Config::init() resolves the active
     // printer, INCLUDING its "active_printer_id is empty or dangling → take the
-    // first printer object" fallback. We cannot lean on init()'s own copy of that
-    // fallback: it runs after run_versioned_migrations(), by which point
-    // config_version is already 20 and this migration will never run again.
-    std::string active;
-    if (config.contains("active_printer_id") && config["active_printer_id"].is_string()) {
-        active = config["active_printer_id"].get<std::string>();
-    }
-
-    const bool printers_ok = config.contains("printers") && config["printers"].is_object();
-    const bool active_resolves = printers_ok && !active.empty() &&
-                                 config["printers"].contains(active) &&
-                                 config["printers"][active].is_object();
-    if (printers_ok && !active_resolves) {
-        active.clear();
-        for (auto& [key, val] : config["printers"].items()) {
-            // The printers map can hold non-printer keys (show_printer_switcher
-            // is a bool), so require an object — same test init() applies.
-            if (val.is_object()) {
-                active = key;
-                break;
-            }
-        }
-    }
-
-    const bool have_target = printers_ok && !active.empty();
+    // first printer object" fallback — hence the shared helper. The migration
+    // cannot defer to init()'s own resolution: that runs after
+    // run_versioned_migrations(), by which point config_version is already 20
+    // and this migration will never run again.
+    const std::string active = find_active_printer_key(config);
+    const bool have_target = !active.empty();
     bool folded = false;
 
     if (have_target && config.contains("led") && config["led"].is_object()) {
@@ -999,6 +1016,220 @@ static void migrate_v19_to_v20(json& config) {
     if (removed > 0) {
         spdlog::info("[Config] Migration v20: removed {} null config leaf/leaves", removed);
     }
+}
+
+/// Split a '/'-separated relative config path into its segments.
+static std::vector<std::string> split_config_path(const std::string& path) {
+    std::vector<std::string> parts;
+    size_t start = 0;
+    while (true) {
+        const size_t slash = path.find('/', start);
+        if (slash == std::string::npos) {
+            parts.push_back(path.substr(start));
+            return parts;
+        }
+        parts.push_back(path.substr(start, slash - start));
+        start = slash + 1;
+    }
+}
+
+/// Walk a relative path without vivifying anything.
+/// @return pointer to the node, or nullptr when any segment is missing or a
+///         non-object stands where an object is needed.
+static json* find_relative(json& node, const std::string& path) {
+    json* cur = &node;
+    for (const auto& segment : split_config_path(path)) {
+        if (!cur->is_object()) {
+            return nullptr;
+        }
+        const auto it = cur->find(segment);
+        if (it == cur->end()) {
+            return nullptr;
+        }
+        cur = &(*it);
+    }
+    return cur;
+}
+
+/// Walk a relative path, creating the intermediate objects. A non-object
+/// standing in the way is replaced, since nothing can be stored beneath it.
+static json& ensure_relative(json& node, const std::string& path) {
+    const auto parts = split_config_path(path);
+    json* cur = &node;
+    for (size_t i = 0; i + 1 < parts.size(); ++i) {
+        if (!cur->contains(parts[i]) || !(*cur)[parts[i]].is_object()) {
+            (*cur)[parts[i]] = json::object();
+        }
+        cur = &(*cur)[parts[i]];
+    }
+    return (*cur)[parts.back()];
+}
+
+/// Erase the leaf at a relative path, then unwind any intermediate object the
+/// erase left empty — so retiring /appearance/toolhead_style does not leave an
+/// empty /appearance behind, while /detection survives because /detection/enabled
+/// is still in it.
+static void erase_relative(json& node, const std::string& path) {
+    const auto parts = split_config_path(path);
+    std::vector<json*> chain{&node};
+    json* cur = &node;
+    for (size_t i = 0; i + 1 < parts.size(); ++i) {
+        if (!cur->is_object() || !cur->contains(parts[i])) {
+            return;
+        }
+        cur = &(*cur)[parts[i]];
+        chain.push_back(cur);
+    }
+    if (!cur->is_object()) {
+        return;
+    }
+    cur->erase(parts.back());
+    for (size_t i = chain.size(); i-- > 1;) {
+        if (!chain[i]->is_object() || !chain[i]->empty()) {
+            break;
+        }
+        chain[i - 1]->erase(parts[i - 1]);
+    }
+}
+
+/// Copy a root-level value into every printer object, then retire the root key.
+///
+/// Used by migrate_v20_to_v21 for settings that were install-wide but describe
+/// one machine. Giving every printer the old value is what keeps an upgraded
+/// install behaving exactly as it did; printers the setting is meaningless on
+/// simply carry an inert copy. A per-printer value already in place is never
+/// overwritten.
+///
+/// @return number of printer objects that received a copy
+static int fan_out_to_printers(json& config, const std::string& root_path,
+                               const std::string& printer_path) {
+    json* source = find_relative(config, root_path);
+    if (source == nullptr || source->is_null()) {
+        return 0;
+    }
+    if (!config.contains("printers") || !config["printers"].is_object()) {
+        // No printers map: leave the root key alone rather than deleting the
+        // value with nowhere to put it (cf. migrate_v19_to_v20's /led).
+        return 0;
+    }
+
+    const json value = *source;
+    int copied = 0;
+    int printers_seen = 0;
+    for (auto& [key, printer] : config["printers"].items()) {
+        // The printers map is MIXED — `show_printer_switcher` is a plain bool
+        // sibling of the printer objects, so only objects count as printers.
+        if (!printer.is_object()) {
+            continue;
+        }
+        ++printers_seen;
+        json* existing = find_relative(printer, printer_path);
+        if (existing != nullptr && !existing->is_null()) {
+            continue;
+        }
+        ensure_relative(printer, printer_path) = value;
+        ++copied;
+    }
+
+    // Only retire the root key once it has somewhere to live. The shipped
+    // template's printers map holds nothing but `show_printer_switcher`, so a
+    // fresh install really can reach here with no printer to fan out into;
+    // erasing then would destroy the setting outright.
+    if (printers_seen == 0) {
+        return 0;
+    }
+    erase_relative(config, root_path);
+    return copied;
+}
+
+/// The four leaves of a printer's legacy scanner/ node.
+static constexpr const char* SCANNER_LEAVES[] = {"usb_vendor_product", "usb_device_name",
+                                                 "bt_address", "keymap"};
+
+/// Collapse the per-printer scanner/ nodes into one root-level /scanner.
+///
+/// The active printer's values are the ones kept — a barcode scanner is plugged
+/// into the host, so at most one of the stored copies ever described real
+/// hardware, and the active printer's is the copy the user last configured.
+/// Every printer's node is then dropped, including the ones whose values were
+/// not taken. That loss is intended: N divergent copies cannot become one
+/// without discarding N-1 of them.
+static void collapse_scanner_to_root(json& config) {
+    const std::string active = find_active_printer_key(config);
+
+    std::vector<std::string> taken;
+    if (!active.empty()) {
+        json* source = find_relative(config, "printers/" + active + "/scanner");
+        if (source != nullptr && source->is_object()) {
+            for (const char* leaf : SCANNER_LEAVES) {
+                const auto it = source->find(leaf);
+                if (it == source->end() || it->is_null()) {
+                    continue;
+                }
+                const json value = *it;
+                json& destination = ensure_relative(config, std::string("scanner/") + leaf);
+                if (destination.is_null()) {
+                    destination = value;
+                    taken.emplace_back(leaf);
+                }
+            }
+        }
+    }
+
+    int dropped = 0;
+    if (config.contains("printers") && config["printers"].is_object()) {
+        for (auto& [key, printer] : config["printers"].items()) {
+            if (!printer.is_object()) {
+                continue;
+            }
+            if (printer.erase("scanner") > 0) {
+                ++dropped;
+            }
+        }
+    }
+
+    if (!taken.empty()) {
+        std::string list;
+        for (const auto& leaf : taken) {
+            list += (list.empty() ? "" : ", ") + leaf;
+        }
+        spdlog::info("[Config] Migration v21: took scanner settings from active printer '{}' ({})",
+                     active, list);
+    }
+    if (dropped > 0) {
+        spdlog::info("[Config] Migration v21: dropped per-printer scanner node from {} printer(s)",
+                     dropped);
+    }
+}
+
+/// Migration v20→v21: store four settings in the scope that matches what they
+/// actually describe.
+///
+/// * /appearance/toolhead_style and /detection/policy_u1 describe one machine,
+///   so they move under /printers/<id>/ and fan out to EVERY printer — that is
+///   what keeps an existing install looking and behaving identically after the
+///   upgrade.
+/// * scanner/* describes a USB or Bluetooth device attached to the host running
+///   HelixScreen, not to any printer, so it moves to the root.
+/// * /console/filter_user_{add,remove} stay exactly where they are. They became
+///   the global layer of a two-layer read (a per-printer layer now sits beside
+///   them), so no data moves.
+static void migrate_v20_to_v21(json& config) {
+    const int toolhead_copies =
+        fan_out_to_printers(config, "appearance/toolhead_style", "appearance/toolhead_style");
+    if (toolhead_copies > 0) {
+        spdlog::info("[Config] Migration v21: copied /appearance/toolhead_style to {} printer(s)",
+                     toolhead_copies);
+    }
+
+    const int policy_copies =
+        fan_out_to_printers(config, "detection/policy_u1", "detection/policy_u1");
+    if (policy_copies > 0) {
+        spdlog::info("[Config] Migration v21: copied /detection/policy_u1 to {} printer(s)",
+                     policy_copies);
+    }
+
+    collapse_scanner_to_root(config);
 }
 
 /// Lift a legacy root-level "preset" marker into the active printer's node.
@@ -1104,6 +1335,8 @@ static void run_versioned_migrations(json& config, const std::string& config_pat
         migrate_v18_to_v19(config);
     if (version < 20)
         migrate_v19_to_v20(config);
+    if (version < 21)
+        migrate_v20_to_v21(config);
 
     config["config_version"] = CURRENT_CONFIG_VERSION;
 }
@@ -1444,36 +1677,18 @@ void Config::init(const std::string& config_path) {
         config_modified = true;
     }
 
-    // Load active printer ID from config (must happen before df() is used)
-    if (data.contains("active_printer_id") && data["active_printer_id"].is_string()) {
-        active_printer_id_ = data["active_printer_id"].get<std::string>();
-    }
-
     // Ensure printers map exists
     if (!data.contains("printers") || !data["printers"].is_object()) {
         data["printers"] = {{"default", get_default_printer_config("127.0.0.1")}};
         data["active_printer_id"] = "default";
-        active_printer_id_ = "default";
         config_modified = true;
     }
 
-    // If active_printer_id is empty or doesn't point to a valid printer object, pick first one.
-    // The printers map may contain non-printer keys (e.g. show_printer_switcher as a bool),
-    // so we must verify the value is an object, not just that the key exists.
-    if (active_printer_id_.empty() || !data["printers"].contains(active_printer_id_) ||
-        !data["printers"][active_printer_id_].is_object()) {
-        active_printer_id_.clear();
-        for (auto& [key, val] : data["printers"].items()) {
-            if (val.is_object()) {
-                active_printer_id_ = key;
-                break;
-            }
-        }
-        if (!active_printer_id_.empty()) {
-            data["active_printer_id"] = active_printer_id_;
-            config_modified = true;
-            spdlog::info("[Config] Auto-selected active printer: {}", active_printer_id_);
-        }
+    // Load the active printer ID from config (must happen before df() is used),
+    // falling back to the first real printer when the stored id is empty or
+    // dangling.
+    if (refresh_active_printer_id()) {
+        config_modified = true;
     }
 
     // Ensure active printer has required fields with defaults
@@ -1703,6 +1918,25 @@ std::string Config::get_active_printer_id() const {
     return active_printer_id_;
 }
 
+bool Config::refresh_active_printer_id() {
+    const std::string resolved = find_active_printer_key(data, active_printer_id_);
+    active_printer_id_ = resolved;
+
+    if (resolved.empty()) {
+        // No printer object anywhere in the map — leave /active_printer_id as
+        // it stands rather than persisting a value df() cannot route to.
+        return false;
+    }
+    if (data.contains("active_printer_id") && data["active_printer_id"].is_string() &&
+        data["active_printer_id"].get<std::string>() == resolved) {
+        return false;
+    }
+
+    data["active_printer_id"] = resolved;
+    spdlog::info("[Config] Auto-selected active printer: {}", resolved);
+    return true;
+}
+
 bool Config::set_active_printer(const std::string& printer_id) {
     if (!data.contains("printers") || !data["printers"].contains(printer_id) ||
         !data["printers"][printer_id].is_object()) {
@@ -1736,13 +1970,25 @@ void Config::add_printer(const std::string& printer_id, const json& printer_data
 }
 
 void Config::remove_printer(const std::string& printer_id) {
-    if (!data.contains("printers") || !data["printers"].contains(printer_id)) {
+    // is_object(), not just contains(): the printers map also holds plain
+    // settings keys (show_printer_switcher, _show_printer_switcher_comment),
+    // and erasing one of those on a mistyped id would silently drop a setting.
+    if (!data.contains("printers") || !data["printers"].is_object() ||
+        !data["printers"].contains(printer_id) || !data["printers"][printer_id].is_object()) {
         spdlog::warn("[Config] Cannot remove non-existent printer '{}'", printer_id);
         return;
     }
 
-    // Prevent removing the last printer
-    if (data["printers"].size() <= 1) {
+    // Prevent removing the last printer. Count printer objects rather than
+    // map entries — with a single printer plus show_printer_switcher, size()
+    // reports 2 and this guard would wave the last printer through.
+    size_t printer_count = 0;
+    for (const auto& [key, val] : data["printers"].items()) {
+        if (val.is_object()) {
+            printer_count++;
+        }
+    }
+    if (printer_count <= 1) {
         spdlog::error("[Config] Cannot remove last printer '{}' — at least one printer must exist",
                       printer_id);
         return;
@@ -1751,9 +1997,19 @@ void Config::remove_printer(const std::string& printer_id) {
     data["printers"].erase(printer_id);
     spdlog::info("[Config] Removed printer '{}'", printer_id);
 
-    // If we just removed the active printer, switch to the first remaining one
+    // If we just removed the active printer, switch to the first remaining one.
+    // find_active_printer_key() skips the non-printer keys; taking
+    // data["printers"].begin() instead would hand back "show_printer_switcher"
+    // for any printer id sorting after it, and df() would then index a bool.
     if (active_printer_id_ == printer_id) {
-        auto remaining_id = data["printers"].begin().key();
+        const std::string remaining_id = find_active_printer_key(data);
+        if (remaining_id.empty()) {
+            // Unreachable while the count guard above holds; keep the stale id
+            // rather than persisting an empty one if it ever is reached.
+            spdlog::error("[Config] Removed active printer '{}' with no printer left to switch to",
+                          printer_id);
+            return;
+        }
         active_printer_id_ = remaining_id;
         data["active_printer_id"] = remaining_id;
         spdlog::info("[Config] Auto-switched to printer '{}' after removing '{}'", remaining_id,
@@ -1762,7 +2018,8 @@ void Config::remove_printer(const std::string& printer_id) {
 }
 
 void Config::archive_printer(const std::string& printer_id) {
-    if (!data.contains("printers") || !data["printers"].contains(printer_id)) {
+    if (!data.contains("printers") || !data["printers"].is_object() ||
+        !data["printers"].contains(printer_id) || !data["printers"][printer_id].is_object()) {
         spdlog::warn("[Config] Cannot archive non-existent printer '{}'", printer_id);
         return;
     }
@@ -1776,8 +2033,57 @@ void Config::archive_printer(const std::string& printer_id) {
         return;
     }
 
+    snapshot[ARCHIVED_AT_KEY] = next_archive_stamp();
     data["removed_printers"][printer_id] = std::move(snapshot);
     spdlog::info("[Config] Archived printer '{}' to /removed_printers", printer_id);
+    prune_archived_printers();
+}
+
+int64_t Config::next_archive_stamp() const {
+    int64_t stamp = static_cast<int64_t>(std::chrono::duration_cast<std::chrono::seconds>(
+                                             std::chrono::system_clock::now().time_since_epoch())
+                                             .count());
+
+    // Force the stamp strictly past every existing one. Wall-clock seconds are
+    // too coarse to order two archives in the same second, and a device whose
+    // clock steps backwards (no RTC until NTP lands — common on these boards)
+    // would otherwise stamp a new entry older than the ones it must outlive.
+    if (data.contains("removed_printers") && data["removed_printers"].is_object()) {
+        for (const auto& [key, val] : data["removed_printers"].items()) {
+            const int64_t existing = helix::json_util::safe_int64(val, ARCHIVED_AT_KEY, 0);
+            if (existing >= stamp) {
+                stamp = existing + 1;
+            }
+        }
+    }
+    return stamp;
+}
+
+void Config::prune_archived_printers() {
+    if (!data.contains("removed_printers") || !data["removed_printers"].is_object()) {
+        return;
+    }
+    json& archive = data["removed_printers"];
+    if (archive.size() <= MAX_ARCHIVED_PRINTERS) {
+        return;
+    }
+
+    // Oldest first. Entries written before the stamp existed read as 0 and so
+    // are pruned ahead of any stamped entry; the key breaks ties between them
+    // so the order is deterministic rather than dependent on map layout.
+    std::vector<std::pair<int64_t, std::string>> by_age;
+    by_age.reserve(archive.size());
+    for (const auto& [key, val] : archive.items()) {
+        by_age.emplace_back(helix::json_util::safe_int64(val, ARCHIVED_AT_KEY, 0), key);
+    }
+    std::sort(by_age.begin(), by_age.end());
+
+    const size_t drop_count = by_age.size() - MAX_ARCHIVED_PRINTERS;
+    for (size_t i = 0; i < drop_count; i++) {
+        spdlog::info("[Config] Pruned archived printer '{}' (keeping {} most recent)",
+                     by_age[i].second, MAX_ARCHIVED_PRINTERS);
+        archive.erase(by_age[i].second);
+    }
 }
 
 std::string Config::slugify(const std::string& name) {
@@ -2287,6 +2593,12 @@ void Config::reset_to_defaults() {
     // Reset to default configuration with empty moonraker_host (requires reconfiguration)
     // and include user preferences (brightness, sounds, etc.) with wizard_completed=false
     data = get_default_config("", true);
+
+    // The defaults carry their own printer map (keyed "default"), so any
+    // previously active id is now dangling — df() would route at a node that
+    // does not exist and vivify it on the next set(). Callers that schedule a
+    // restart never notice; the ones that stay live would.
+    refresh_active_printer_id();
 
     spdlog::info("[Config] Configuration reset to defaults. Wizard will run on next startup.");
 }

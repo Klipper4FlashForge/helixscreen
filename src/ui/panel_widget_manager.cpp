@@ -14,6 +14,7 @@
 #include "panel_widget.h"
 #include "panel_widget_config.h"
 #include "panel_widget_registry.h"
+#include "printer_cache_registry.h"
 #include "system/crash_handler.h"
 #include "system/telemetry_manager.h"
 #include "theme_manager.h"
@@ -54,6 +55,14 @@ void PanelWidgetManager::init_widget_subjects() {
     }
 
     widget_subjects_initialized_ = true;
+
+    // Self-register per-printer cache invalidation. panel_configs_ / active_configs_ /
+    // grid_descriptors_ all derive from /printers/<active>/panel_widgets/<panel>, so an
+    // active-printer change must drop them (#804). This manager is a process-lifetime
+    // singleton, so there is no matching unregister().
+    PrinterCacheRegistry::instance().register_invalidator(
+        "PanelWidgetManager", []() { PanelWidgetManager::instance().clear_all_panel_configs(); });
+
     spdlog::debug("[PanelWidgetManager] Widget subjects initialized");
 }
 

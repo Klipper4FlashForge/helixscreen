@@ -15,7 +15,6 @@
 
 #include "material_settings_manager.h"
 #include "preset_materials.h"
-
 #include "spdlog/spdlog.h"
 
 // Forward declaration — defined in favorite_macro_widget.cpp, not exported in any header.
@@ -279,12 +278,7 @@ void app_request_quit() {
     spdlog::debug("[TestStub] app_request_quit() called - no-op in tests");
 }
 
-// Stubs for app lifecycle notifications called from lv_sdl_window.c.
-// The real implementations live in application.cpp which is excluded from the test build.
-extern "C" void helix_notify_app_backgrounded() {
-    spdlog::debug("[TestStub] helix_notify_app_backgrounded() called - no-op in tests");
-}
-
-extern "C" void helix_notify_app_foregrounded() {
-    spdlog::debug("[TestStub] helix_notify_app_foregrounded() called - no-op in tests");
-}
+// NOTE: helix_notify_app_backgrounded() / helix_notify_app_foregrounded() used to be
+// stubbed here because application.o was excluded from the test link. It no longer is
+// (see mk/tests.mk), so the real implementations are linked and these stubs are gone —
+// they would be duplicate definitions. Both real functions only flip an atomic and log.

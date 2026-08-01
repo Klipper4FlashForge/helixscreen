@@ -10,9 +10,8 @@
 #include "lvgl/lvgl.h"
 #include "main_loop_handler.h"
 #include "splash_screen_manager.h"
-#include "xml_hot_reloader.h"
-
 #include "wizard_step.h" // helix::wizard::StepId
+#include "xml_hot_reloader.h"
 
 #include <memory>
 #include <vector>
@@ -81,6 +80,9 @@ class Application {
     int run(int argc, char** argv);
 
   private:
+    /// Allow test-only accessor to reach protected/private members
+    friend class ApplicationTestAccess;
+
     // Initialization phases
     bool parse_args(int argc, char** argv);
     bool init_config();

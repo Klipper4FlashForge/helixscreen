@@ -133,6 +133,112 @@ setup() {
     [ "$status" -ne 0 ]  # non-zero == no inline decidegree conversion found
 }
 
+# --- switch_printer must invalidate every per-printer cache ---
+# Per-printer state lives under /printers/<id>/ and is reached via Config::df().
+# Any component that memoizes a df()-derived value serves the PREVIOUS printer's
+# data after a switch — PanelWidgetConfig was the first case (#804), and the fix
+# used to be a single hardcoded clear_all_panel_configs() call here. Components
+# now self-register with PrinterCacheRegistry and switch_printer() fires them all,
+# so this gate pins the registry walk rather than any one component.
+#
+# The registry's own behavior is pinned by tests/unit/test_printer_cache_registry.cpp,
+# and clear_all_panel_configs() by the unit test "PanelWidgetManager:
+# clear_all_panel_configs reloads after printer switch". What no unit test can
+# reach is the success path: switch_printer() ends in a full teardown and
+# display + Moonraker rebuild, which cannot run inside a shared Catch2 shard
+# without handing every later test rebuilt global singletons.
+# tests/unit/application/test_application_printer_switch.cpp covers the branches
+# on the near side of teardown. This gate pins the wiring beyond them — that
+# switch_printer() actually makes the call, and makes it BEFORE teardown, while
+# Config::df() has already moved to the new printer.
+
+# Print the body of Application::switch_printer() from the file given in $1.
+switch_printer_body() {
+    awk '
+        /^void Application::switch_printer\(/ { inside = 1 }
+        inside { print }
+        inside && /^\}/ { exit }
+    ' "$1"
+}
+
+# Emit a diagnostic and return non-zero if $1 does not wire up the invalidation.
+check_switch_printer_clears_caches() {
+    local body clear_line teardown_line
+    body=$(switch_printer_body "$1")
+    if [ -z "$body" ]; then
+        echo "could not locate Application::switch_printer() in $1"
+        return 1
+    fi
+
+    clear_line=$(printf '%s\n' "$body" | grep -n 'PrinterCacheRegistry::instance().invalidate_all()' | head -1 | cut -d: -f1)
+    if [ -z "$clear_line" ]; then
+        echo "switch_printer() does not call PrinterCacheRegistry::instance().invalidate_all() (#804)"
+        return 1
+    fi
+
+    teardown_line=$(printf '%s\n' "$body" | grep -n 'tear_down_printer_state()' | head -1 | cut -d: -f1)
+    if [ -z "$teardown_line" ]; then
+        echo "switch_printer() does not call tear_down_printer_state()"
+        return 1
+    fi
+
+    if [ "$clear_line" -ge "$teardown_line" ]; then
+        echo "PrinterCacheRegistry::invalidate_all() must precede tear_down_printer_state()"
+        return 1
+    fi
+    return 0
+}
+
+@test "switch_printer invalidates every registered per-printer cache before teardown" {
+    run check_switch_printer_clears_caches src/application/application.cpp
+    [ "$status" -eq 0 ]
+}
+
+@test "the switch_printer cache-invalidation gate fails when the call is removed" {
+    # Meta-test: a gate that cannot fail is not a gate. Strip the call from a
+    # copy and confirm the check reports the #804 regression.
+    local mutated="${BATS_TEST_TMPDIR}/application_no_clear.cpp"
+    grep -v 'PrinterCacheRegistry::instance().invalidate_all()' src/application/application.cpp > "$mutated"
+
+    run check_switch_printer_clears_caches "$mutated"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"#804"* ]]
+}
+
+@test "the switch_printer cache-invalidation gate fails when the call moves after teardown" {
+    # The ordering half: invalidating after teardown re-reads the OLD printer's
+    # values on the way down, so position matters as much as presence.
+    local mutated="${BATS_TEST_TMPDIR}/application_late_clear.cpp"
+    sed -e 's@^    helix::PrinterCacheRegistry::instance().invalidate_all();@@' \
+        -e 's@^    tear_down_printer_state();@    tear_down_printer_state();\n    helix::PrinterCacheRegistry::instance().invalidate_all();@' \
+        src/application/application.cpp > "$mutated"
+
+    run check_switch_printer_clears_caches "$mutated"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"must precede"* ]]
+}
+
+@test "the switch_printer cache-invalidation gate fails when the function cannot be located" {
+    # Fail-closed: a rename or signature change must break the gate loudly rather
+    # than silently pass on an empty body.
+    local mutated="${BATS_TEST_TMPDIR}/application_no_fn.cpp"
+    sed -e 's@^void Application::switch_printer(@void Application::switch_printer_renamed(@' \
+        src/application/application.cpp > "$mutated"
+
+    run check_switch_printer_clears_caches "$mutated"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"could not locate"* ]]
+}
+
+@test "the switch_printer cache-invalidation gate fails when teardown is missing" {
+    local mutated="${BATS_TEST_TMPDIR}/application_no_teardown.cpp"
+    grep -v '^    tear_down_printer_state();' src/application/application.cpp > "$mutated"
+
+    run check_switch_printer_clears_caches "$mutated"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"tear_down_printer_state"* ]]
+}
+
 @test "filaments.json android mirror matches when present" {
   # The Android mirror is gitignored (generated by `make regen-filaments`, not
   # tracked), so it may be absent on a fresh checkout / CI clone. Only assert

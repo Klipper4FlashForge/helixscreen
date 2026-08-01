@@ -28,6 +28,7 @@
 #include "lvgl/src/display/lv_display_private.h" // For rendering_in_progress check
 #include "lvgl_debug_invalidate.h"
 #include "moonraker_client.h" // For ConnectionState enum
+#include "printer_cache_registry.h"
 #include "probe_sensor_manager.h"
 #include "runtime_config.h"
 #include "settings_manager.h"
@@ -128,6 +129,11 @@ void PrinterState::deinit_subjects() {
     // apply_dynamic_options()); without this the next drain notifies a freed
     // observer list (#1165, #1146).
     async_lifetime_.invalidate();
+
+    // Drop the per-printer cache invalidator registered by init_subjects(). It captures
+    // `this`, and the registry outlives non-singleton instances (test fixtures own their
+    // own PrinterState), so leaving it registered would hold a callback over freed memory.
+    helix::PrinterCacheRegistry::instance().unregister("PrinterState");
 
     // Deinit all sub-component subjects
     temperature_state_.deinit_subjects();
@@ -284,7 +290,21 @@ void PrinterState::init_subjects(bool register_xml) {
     StaticSubjectRegistry::instance().register_deinit("PrinterState",
                                                       [this]() { deinit_subjects(); });
 
+    // Self-register per-printer cache invalidation. capability_overrides_ is loaded from
+    // Config::df() in the constructor only, and this object outlives every printer switch,
+    // so without this the map keeps the startup printer's enable/disable choices.
+    helix::PrinterCacheRegistry::instance().register_invalidator(
+        "PrinterState", [this]() { reload_capability_overrides(); });
+
     spdlog::trace("[PrinterState] Subjects initialized and registered successfully");
+}
+
+void PrinterState::reload_capability_overrides() {
+    // Only the override map is refreshed. The effective capability subjects are re-derived
+    // from set_hardware(discovery_, capability_overrides_) when the new printer's discovery
+    // lands; deriving them here would pair the new printer's overrides with the OLD
+    // printer's still-cached discovery_.
+    capability_overrides_.load_from_config();
 }
 
 void PrinterState::update_from_notification(const json& notification) {
@@ -518,9 +538,9 @@ void PrinterState::reset_for_new_print() {
 void PrinterState::set_printer_connection_state(int state, const char* message) {
     // Thread-safe wrapper: defer LVGL subject updates to main thread
     std::string msg = message ? message : "";
-    async_lifetime_.defer(
-        "PrinterState::set_printer_connection_state",
-        [this, state, msg]() { set_printer_connection_state_internal(state, msg.c_str()); });
+    async_lifetime_.defer("PrinterState::set_printer_connection_state", [this, state, msg]() {
+        set_printer_connection_state_internal(state, msg.c_str());
+    });
 }
 
 void PrinterState::set_printer_connection_state_internal(int state, const char* message) {
