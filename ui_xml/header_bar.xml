@@ -52,6 +52,14 @@
     <prop name="action_button_callback" type="string" default=""/>
     <!-- Subject name for reactive disabled state binding (empty = no binding) -->
     <prop name="action_button_disabled_subject" type="string" default=""/>
+    <!-- Expression form of the above, for buttons whose disabled state depends on
+         more than one subject (e.g. "busy OR printer not reachable"). Use EITHER
+         this or action_button_disabled_subject, never both: two bindings on the
+         same LVGL state clobber each other, since each observer asserts both
+         polarities on every fire. Default "0" is a constant (no subjects), so it
+         fires once at bind and never again — which is why the binding below is
+         ordered BEFORE the subject binding, letting the subject form win. -->
+    <prop name="action_button_disabled_cond" type="string" default="0"/>
     <!-- Optional int subject: 1 hides the action button entirely (per-view Save) -->
     <prop name="action_button_hidden_subject" type="string" default=""/>
     <!-- Second action button (appears to LEFT of primary action button) -->
@@ -103,6 +111,9 @@
                style_bg_color="$action_button_bg_color" hidden="$hide_action_button" icon="$action_button_icon"
                icon_size="$action_button_icon_size"
                text="$action_button_text" translation_tag="$action_button_text_tag">
+      <!-- Expression-driven disabled binding. Must precede the subject binding below;
+           see the action_button_disabled_cond prop comment for why. -->
+      <bind_state_if cond="$action_button_disabled_cond" state="disabled"/>
       <!-- Reactive disabled state binding (enabled when subject exists and is non-empty) -->
       <bind_state_if_eq subject="$action_button_disabled_subject" state="disabled" ref_value="1"/>
       <!-- Reactive hidden binding: 1 hides the action button entirely (per-view Save) -->

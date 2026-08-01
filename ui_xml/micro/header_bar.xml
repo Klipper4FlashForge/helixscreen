@@ -47,6 +47,10 @@
     <prop name="action_button_callback" type="string" default=""/>
     <!-- Subject name for reactive disabled state binding (empty = no binding) -->
     <prop name="action_button_disabled_subject" type="string" default=""/>
+    <!-- Expression form of the above, for buttons whose disabled state depends on
+         more than one subject. Mirrors the base header_bar; see its comment for
+         why the two forms are mutually exclusive and why ordering matters. -->
+    <prop name="action_button_disabled_cond" type="string" default="0"/>
     <!-- Optional int subject: 1 hides the action button entirely (per-view Save) -->
     <prop name="action_button_hidden_subject" type="string" default=""/>
     <!-- Second action button (appears to LEFT of primary action button) -->
@@ -97,6 +101,9 @@
                style_bg_color="$action_button_bg_color" hidden="$hide_action_button" icon="$action_button_icon"
                icon_size="$action_button_icon_size"
                text="$action_button_text" translation_tag="$action_button_text_tag">
+      <!-- Expression-driven disabled binding. Must precede the subject binding below;
+           see the action_button_disabled_cond prop comment in the base header_bar. -->
+      <bind_state_if cond="$action_button_disabled_cond" state="disabled"/>
       <!-- Reactive disabled state binding (enabled when subject exists and is non-empty) -->
       <bind_state_if_eq subject="$action_button_disabled_subject" state="disabled" ref_value="1"/>
       <!-- Reactive hidden binding: 1 hides the action button entirely (per-view Save) -->

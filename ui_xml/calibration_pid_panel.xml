@@ -47,7 +47,8 @@
     <header_bar name="overlay_header"
                 title="Automatic Heater Control Calibration" title_tag="Automatic Heater Control Calibration"
                 hide_action_button="false" action_button_text="Start" action_button_text_tag="Start"
-                action_button_callback="on_pid_start" action_button_disabled_subject="pid_cal_not_idle"/>
+                action_button_callback="on_pid_start"
+                action_button_disabled_cond="pid_cal_not_idle or nav_buttons_enabled eq 0"/>
     <!-- Content Area -->
     <lv_obj name="overlay_content"
             width="100%" flex_grow="1" style_pad_all="#space_lg" flex_flow="column" style_pad_gap="#space_lg"

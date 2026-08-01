@@ -8,7 +8,7 @@
     <header_bar name="overlay_header" title="Input Shaper" title_tag="Input Shaper"
                 hide_action_button="false" action_button_text="Calibrate All" action_button_text_tag="Calibrate All"
                 action_button_callback="input_shaper_calibrate_all_cb"
-                action_button_disabled_subject="is_calibrate_all_disabled"/>
+                action_button_disabled_cond="is_calibrate_all_disabled or nav_buttons_enabled eq 0"/>
     <!-- Content Area -->
     <lv_obj name="panel_content"
             width="100%" flex_grow="1" style_pad_all="#space_lg" style_pad_gap="#space_md" scrollable="true"
