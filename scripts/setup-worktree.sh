@@ -763,6 +763,7 @@ echo -e "${BOLD}To run and drive the app from this worktree${RESET} (both are re
 echo -e "a bare ${CYAN}helix-screen ctl${RESET} drives whichever instance started first):"
 echo -e "  ${CYAN}export HELIX_SOCK=/tmp/helix-${WT_NAME}.sock${RESET}"
 echo -e "  ${CYAN}export HELIX_CONFIG_DIR=/tmp/helix-config-${WT_NAME}${RESET}"
+echo -e "  ${CYAN}mkdir -p \"\$HELIX_CONFIG_DIR\"${RESET}  # required — the app aborts if it is missing"
 echo -e "  ${CYAN}./build/bin/helix-screen --test -vv --remote-socket \"\$HELIX_SOCK\" &${RESET}"
 echo -e "  ${CYAN}./build/bin/helix-screen ctl -s \"\$HELIX_SOCK\" navigate settings${RESET}"
 echo -e "See ${CYAN}docs/devel/HELIXCTL.md${RESET} § \"Running a fully isolated second instance\"."

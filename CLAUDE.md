@@ -44,6 +44,7 @@ scripts/setup-worktree.sh feature/my-branch  # Symlinks deps, builds fast
 > ```bash
 > TREE=$(basename "$(git rev-parse --show-toplevel)")
 > export HELIX_SOCK="/tmp/helix-$TREE.sock" HELIX_CONFIG_DIR="/tmp/helix-config-$TREE"
+> mkdir -p "$HELIX_CONFIG_DIR"   # must exist — the app does not create it, it aborts
 > ./build/bin/helix-screen --test -vv --remote-socket "$HELIX_SOCK" > /tmp/helix-$TREE.log 2>&1 &
 > ./build/bin/helix-screen ctl -s "$HELIX_SOCK" navigate settings
 > ```
