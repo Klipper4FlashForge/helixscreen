@@ -728,7 +728,32 @@ if [[ -n "$CCACHE_BIN" ]]; then
     export CCACHE_NOHASHDIR=1
     echo -e "  this build: ${GREEN}CCACHE_BASEDIR=$BUILD_BASEDIR CCACHE_NOHASHDIR=1${RESET}"
 else
-    echo -e "${YELLOW}ccache not found — worktree builds will not reuse the main tree cache${RESET}"
+    # Loud on purpose. The mtime sync keeps an UNCHANGED worktree fast on its
+    # own, which makes a missing ccache easy to not notice — right up until the
+    # first build that genuinely has to recompile, which then costs minutes
+    # instead of seconds. The old one-line yellow note got lost in the setup
+    # output and the build-system doc even credited ccache for a speedup it was
+    # not delivering, because it was never installed here.
+    echo ""
+    echo -e "${RED}${BOLD}================================================================${RESET}"
+    echo -e "${RED}${BOLD}  ccache is NOT installed — recompiles will be SLOW${RESET}"
+    echo -e "${RED}${BOLD}================================================================${RESET}"
+    echo -e "${YELLOW}A clean worktree still builds fast (timestamps are aligned above)."
+    echo -e "But any build that has to recompile — you edit lv_conf.h, or another"
+    echo -e "tree rebuilds libhv and re-invalidates the shared PCH — pays full"
+    echo -e "price with no cache to fall back on: ~400s instead of ~10s.${RESET}"
+    echo ""
+    case "$(uname -s)" in
+        Darwin) echo -e "  Install:  ${CYAN}${BOLD}brew install ccache${RESET}" ;;
+        Linux)
+            echo -e "  Install:  ${CYAN}${BOLD}sudo apt install ccache${RESET}"
+            echo -e "            ${CYAN}sudo dnf install ccache${RESET}  /  ${CYAN}sudo pacman -S ccache${RESET}"
+            ;;
+        *) echo -e "  Install ccache with your platform's package manager." ;;
+    esac
+    echo -e "  Then re-run: ${CYAN}${BOLD}$0 --setup-only ${BRANCH:-<branch>}${RESET}"
+    echo -e "  (ccache is optional — the worktree works fine without it.)"
+    echo ""
 fi
 
 # Step 10: Build (optional)
