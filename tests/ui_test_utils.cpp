@@ -11,6 +11,7 @@
 #include "test_helpers/update_queue_test_access.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
@@ -780,6 +781,16 @@ void helix::ui::notification_update_count(size_t /* count */) {
     // No-op in tests
 }
 
+// Application::tear_down_printer_state() calls both of these; ui_notification.o and
+// ui_notification_manager.o stay out of the test link (see mk/tests.mk Group 2).
+void ui_notification_deinit() {
+    spdlog::debug("[Test Stub] ui_notification_deinit: no-op in tests");
+}
+
+void helix::ui::notification_refresh_from_history() {
+    // No-op in tests
+}
+
 // Text input widget create callback
 static void* ui_text_input_create(lv_xml_parser_state_t* state, const char** attrs) {
     LV_UNUSED(attrs);
@@ -940,24 +951,38 @@ bool in_app_updates_suppressed() {
     return updates_externally_managed() || !self_update_supported();
 }
 
-// Stub for get_moonraker_manager (tests don't have manager)
+// Stubs for the manager accessors in app_globals.h. Each getter reads a file-static
+// that its matching setter writes, so a test (or production code linked into the test
+// binary, e.g. Application::tear_down_printer_state()) sees the value it installed.
+// Nothing installs one by default, so the default remains nullptr.
+#include "moonraker_manager.h"
+
+static MoonrakerManager* g_test_moonraker_manager = nullptr;
 MoonrakerManager* get_moonraker_manager() {
-    return nullptr;
+    return g_test_moonraker_manager;
+}
+void set_moonraker_manager(MoonrakerManager* manager) {
+    g_test_moonraker_manager = manager;
 }
 
-// Stub for get_print_history_manager (tests don't have manager)
 class PrintHistoryManager;
+static PrintHistoryManager* g_test_print_history_manager = nullptr;
 PrintHistoryManager* get_print_history_manager() {
-    return nullptr;
+    return g_test_print_history_manager;
+}
+void set_print_history_manager(PrintHistoryManager* manager) {
+    g_test_print_history_manager = manager;
 }
 
-// Stub for get_temperature_history_manager. Tests default to no manager, but a
-// test can install a real one via set_test_temperature_history_manager() to
-// exercise history backfill paths (e.g. #1124).
+// Tests default to no temperature history manager, but a test can install a real one
+// via set_test_temperature_history_manager() to exercise history backfill paths (#1124).
 class TemperatureHistoryManager;
 static TemperatureHistoryManager* g_test_history_manager = nullptr;
 TemperatureHistoryManager* get_temperature_history_manager() {
     return g_test_history_manager;
+}
+void set_temperature_history_manager(TemperatureHistoryManager* manager) {
+    g_test_history_manager = manager;
 }
 void set_test_temperature_history_manager(TemperatureHistoryManager* mgr) {
     g_test_history_manager = mgr;
@@ -970,19 +995,19 @@ JobQueueState* get_job_queue_state() {
 }
 void set_job_queue_state(JobQueueState*) {}
 
-// Stub for MoonrakerManager::macro_analysis (never called since get_moonraker_manager returns null)
-#include "moonraker_manager.h"
-namespace helix {
-class MacroModificationManager;
+// Restart/quit plumbing from app_globals.h. main.o owns the real implementations and
+// stays out of the test link, so tests get an in-process equivalent: the quit flag is
+// real (app_request_quit_signal_safe() sets what app_quit_requested() reads) and
+// app_store_argv() is a no-op because nothing in the test binary re-execs.
+static std::atomic<bool> g_test_quit_requested{false};
+bool app_quit_requested() {
+    return g_test_quit_requested.load();
 }
-helix::MacroModificationManager* MoonrakerManager::macro_analysis() const {
-    return nullptr;
+void app_request_quit_signal_safe() {
+    g_test_quit_requested.store(true);
 }
-
-// Stub for MoonrakerManager::connect (never called since get_moonraker_manager returns null)
-int MoonrakerManager::connect(const std::string& /*websocket_url*/,
-                              const std::string& /*http_base_url*/) {
-    return -1;
+void app_store_argv(int /*argc*/, char** /*argv*/) {
+    // No-op in tests - nothing here re-execs the binary
 }
 
 // ============================================================================

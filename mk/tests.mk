@@ -240,6 +240,42 @@ DNS_RESOLV_OBJ := $(OBJ_DIR)/tests/dns_resolv.o
 # - ui_button.o: test_ui_button_defer_reuse.cpp includes the .cpp directly to
 #   reach anonymous-namespace internals (defer_button_contrast_update, #924)
 #
+# Group 4: remote_client.o — undocumented, and no conflict was found
+#   `nm -g --defined-only` over remote_client.o intersected against every object
+#   under $(OBJ_DIR)/tests/ yields the empty set, and nothing in the test link
+#   references it, so it is inert either way. Left excluded only because nothing
+#   needs it; it is NOT load-bearing. Drop it from this list the moment a test
+#   wants helix::RemoteClient.
+#
+# NOT excluded any more — application.o and its four link-time dependencies.
+#   These were listed here with no rationale, which left Application (app
+#   lifecycle, shutdown, teardown, printer-state init — four of the five
+#   "Critical Paths" in CLAUDE.md) structurally untestable: nothing in the test
+#   binary could even name it. The stated rule for this list is "ONLY if they
+#   cause linker conflicts", so the claim was checked symbol by symbol:
+#
+#     object                    strong symbols also defined by a test object
+#     ------------------------  -------------------------------------------
+#     application.o             helix_notify_app_backgrounded/_foregrounded
+#     moonraker_manager.o       MoonrakerManager::connect, ::macro_analysis
+#     subject_initializer.o     (none)
+#     panel_factory.o           (none)
+#     remote_control_server.o   (none)
+#
+#   Four real duplicates, all of them test-side stubs standing in for the
+#   production code that is now linked, so all four stubs were deleted
+#   (tests/test_fixtures.cpp, tests/ui_test_utils.cpp). The other three objects
+#   had no conflict at all — they are here because application.o references
+#   SubjectInitializer, PanelFactory and RemoteControlServer and the link needs
+#   their definitions.
+#
+#   Un-excluding them leaves 8 symbols that application.o pulls in from objects
+#   still on this list (app_globals.o, ui_notification.o); ui_test_utils.cpp now
+#   stubs those alongside its existing app_globals stubs.
+#
+#   lvgl_initializer.o was also removed: no such source or object has ever
+#   existed in the tree, so the entry filtered nothing.
+#
 # Everything else is automatically included - new files just work!
 
 TEST_APP_OBJS := $(filter-out \
@@ -253,13 +289,7 @@ TEST_APP_OBJS := $(filter-out \
     $(OBJ_DIR)/ui/ui_emergency_stop.o \
     $(OBJ_DIR)/ui/ui_switch.o \
     $(OBJ_DIR)/ui/ui_button.o \
-    $(OBJ_DIR)/application/application.o \
-    $(OBJ_DIR)/remote/remote_control_server.o \
     $(OBJ_DIR)/remote/remote_client.o \
-    $(OBJ_DIR)/application/lvgl_initializer.o \
-    $(OBJ_DIR)/application/subject_initializer.o \
-    $(OBJ_DIR)/application/moonraker_manager.o \
-    $(OBJ_DIR)/application/panel_factory.o \
     ,$(APP_OBJS) $(APP_C_OBJS))
 
 # ============================================================================
