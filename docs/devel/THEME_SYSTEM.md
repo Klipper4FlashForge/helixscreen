@@ -165,9 +165,9 @@ lv_color_t bg = theme_manager_get_color("card_bg");
 
 Every responsive value requires three core variants: `_small`, `_medium`, `_large`. Optional `_micro`, `_tiny`, `_xlarge` and `_xxlarge` variants can be added where values differ. The system selects a tier automatically.
 
-**Breakpoints (7-tier, narrow-axis):**
-| Suffix | Narrow axis | Target Devices | Fallback |
-|--------|-------------|----------------|----------|
+**Breakpoints (7 tiers, shared by both axis ladders):**
+| Suffix | Axis range | Target Devices | Fallback |
+|--------|------------|----------------|----------|
 | `_micro` | ≤272px | 480×272 | → `_tiny` → `_small` |
 | `_tiny` | 273-390px | 480×320 | → `_small` |
 | `_small` | 391-460px | 480×400, 1920×440 | required |
@@ -176,7 +176,18 @@ Every responsive value requires three core variants: `_small`, `_medium`, `_larg
 | `_xlarge` | 701-1000px | 1280×720, 1024×768 | → `_large` |
 | `_xxlarge` | >1000px | 1440p, 4K | → `_xlarge` → `_large` |
 
-The tier comes from `responsive_dimension()` = `min(width, height)` — the narrow, cramped axis, not the height (`src/ui/theme_manager.cpp`). On a landscape display the narrow axis usually *is* the height, which is why "height-based" looked right for years. On a portrait panel it is the width: a 320×1480 screen resolves to `_tiny` from its 320px width. Tier boundaries live in `breakpoint_for()` (`include/ui_breakpoint.h`).
+**Two ladders feed that one table** (`src/ui/theme_manager.cpp`):
+
+| Ladder | Scalar | Used by |
+|--------|--------|---------|
+| Cramped axis (default) | `responsive_dimension()` = `min(width, height)` | Fonts, spacing, widths, everything axis-neutral |
+| Vertical axis | `responsive_vertical_dimension()` = `height` | The height tokens listed in `VERTICAL_AXIS_TOKENS` |
+
+On a landscape display the narrow axis usually *is* the height, which is why "height-based" looked right for years; on a portrait panel it is the width. Because `min(w, h) == h` on landscape and square displays, the two ladders only diverge in portrait. A 320×1480 panel resolves `#space_lg` from 320 (`_tiny`, 8px) and `#button_height` from 1480 (`_xxlarge`, 96px).
+
+`theme_manager_resolve_px_tokens()` is the single place that applies this policy; startup registration and the resize path both apply its output, so the two can never disagree. The `ui_breakpoint` subject keeps holding the **cramped** tier — all XML `ref_value` bindings are written against it. Tier boundaries live in `breakpoint_for()` (`include/ui_breakpoint.h`).
+
+Full explanation, worked example, and the rule for classifying a new token: [UI_CONTRIBUTOR_GUIDE.md § Screen Breakpoints](UI_CONTRIBUTOR_GUIDE.md#2-screen-breakpoints). Background: prestonbrown/helixscreen#1209.
 
 ### Spacing Tokens
 
@@ -624,9 +635,11 @@ file-static pattern in `theme_manager.cpp` instead — add an `lv_style_t`, conf
 
    The declaration MUST be at the top level of `ui_xml/` — discovery does not recurse into `ui_xml/components/`, `ui_xml/portrait/` or any other subdirectory, so a suffixed token declared there is never registered and every `#reference` to it silently resolves to nothing. Enforced by `scripts/check_responsive_token_scope.py` (prestonbrown/helixscreen#1211).
 
-2. Use in XML: `style_pad_all="#my_space"`
+2. Classify the axis. Heights, top/bottom padding and vertical maxima go in `VERTICAL_AXIS_TOKENS` (`src/ui/theme_manager.cpp`); widths and anything axis-neutral (all `space_*`) need no change. If in doubt, neutral.
 
-3. Use in C++: `theme_manager_get_spacing("my_space")`
+3. Use in XML: `style_pad_all="#my_space"`
+
+4. Use in C++: `theme_manager_get_spacing("my_space")`
 
 ---
 

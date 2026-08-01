@@ -62,10 +62,21 @@ int32_t responsive_dimension(lv_display_t* display) {
     return hor < ver ? hor : ver;
 }
 
+// Returns the vertical resolution — the second responsive ladder (#1209).
+// responsive_dimension() answers "how much room does the cramped axis have";
+// this answers "how much room is there to stack things". Landscape and square
+// displays have min(w,h) == h, so the two only diverge in portrait.
+int32_t responsive_vertical_dimension(lv_display_t* display) {
+    lv_display_t* d = display ? display : lv_display_get_default();
+    if (!d)
+        return 600; // safe fallback when no display is available
+    int32_t ver = lv_display_get_vertical_resolution(d);
+    return ver > 0 ? ver : 600;
+}
+
 // Breakpoint classification lives in ui_breakpoint.h as breakpoint_for() — the
 // single canonical ladder shared with theme_manager_get_breakpoint_suffix() and
-// FONT_TIERS ordering. Pass responsive_dimension(display) so both orientations
-// pick a breakpoint matched to the cramped axis.
+// FONT_TIERS ordering. Both axes feed the same ladder; only the scalar differs.
 
 #include <algorithm>
 #include <cctype>
@@ -931,14 +942,135 @@ OverlayWidths compute_overlay_widths(int32_t hor_res, int32_t ver_res, int32_t n
 
 } // namespace helix
 
+// ============================================================================
+// Responsive px token resolution — one implementation, two callers
+// ============================================================================
+// Startup (theme_manager_register_responsive_spacing) and resize
+// (theme_manager_refresh_layout_constants) used to carry two copies of the tier
+// selection chain. They must never disagree: a token that gets one tier at boot
+// and another after a rotation is worse than no responsiveness at all.
+
+// The tokens that size a box vertically, and so must be chosen from how much
+// height there is rather than from the cramped axis (#1209). Exact base names,
+// deliberately not a `*_height` convention: dialog_content_max is a vertical
+// maximum that does not end in _height, and a convention would have to
+// understand the _sm/_lg modifiers too.
+//
+// Adding to this list is how a new height token opts in — see
+// docs/devel/UI_CONTRIBUTOR_GUIDE.md § "Adding New Tokens". Horizontal and
+// axis-neutral tokens (space_*, widths, square icon/badge sizes) stay on the
+// cramped ladder and belong nowhere near here.
+static constexpr const char* VERTICAL_AXIS_TOKENS[] = {
+    "button_height", "button_height_sm", "button_height_lg",   "header_height",
+    "input_height",  "temp_card_height", "dialog_content_max",
+};
+
+bool theme_manager_token_uses_vertical_axis(const char* base_name) {
+    if (!base_name || base_name[0] == '\0')
+        return false;
+    for (const char* name : VERTICAL_AXIS_TOKENS) {
+        if (strcmp(base_name, name) == 0)
+            return true;
+    }
+    return false;
+}
+
+namespace {
+
+/// The seven per-tier value tables, parsed once per resolve.
+struct PxTierTables {
+    std::unordered_map<std::string, std::string> micro, tiny, small, medium, large, xlarge, xxlarge;
+};
+
+/// Pick a token's value for one tier suffix, applying the declared fallbacks:
+/// the optional tiers (_micro, _tiny, _xlarge, _xxlarge) fall back inwards to
+/// the required _small/_medium/_large triplet. Caller guarantees the triplet.
+const std::string& pick_tier(const PxTierTables& t, const std::string& base, const char* suffix) {
+    const auto& small_val = t.small.at(base);
+
+    if (strcmp(suffix, "_micro") == 0) {
+        auto it = t.micro.find(base);
+        if (it != t.micro.end())
+            return it->second;
+        auto tiny_it = t.tiny.find(base);
+        return (tiny_it != t.tiny.end()) ? tiny_it->second : small_val;
+    }
+    if (strcmp(suffix, "_tiny") == 0) {
+        auto it = t.tiny.find(base);
+        return (it != t.tiny.end()) ? it->second : small_val;
+    }
+    if (strcmp(suffix, "_small") == 0)
+        return small_val;
+    if (strcmp(suffix, "_medium") == 0)
+        return t.medium.at(base);
+    if (strcmp(suffix, "_large") == 0)
+        return t.large.at(base);
+    if (strcmp(suffix, "_xlarge") == 0) {
+        auto it = t.xlarge.find(base);
+        return (it != t.xlarge.end()) ? it->second : t.large.at(base);
+    }
+    // _xxlarge: fall back to _xlarge, then _large.
+    auto it = t.xxlarge.find(base);
+    if (it != t.xxlarge.end())
+        return it->second;
+    auto xl_it = t.xlarge.find(base);
+    return (xl_it != t.xlarge.end()) ? xl_it->second : t.large.at(base);
+}
+
+} // namespace
+
+std::unordered_map<std::string, std::string>
+theme_manager_resolve_px_tokens(lv_display_t* display) {
+    PxTierTables t{
+        theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_micro"),
+        theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_tiny"),
+        theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_small"),
+        theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_medium"),
+        theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_large"),
+        theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_xlarge"),
+        theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_xxlarge"),
+    };
+
+    // Two ladders, one classification function. Landscape and square displays
+    // have min(w,h) == h, so these two suffixes are equal there and nothing
+    // moves; only portrait geometry sees a difference.
+    const char* cramped_suffix = theme_manager_get_breakpoint_suffix(responsive_dimension(display));
+    const char* vertical_suffix =
+        theme_manager_get_breakpoint_suffix(responsive_vertical_dimension(display));
+
+    // nav_width is the one token with its own ladder: primarily horizontal, but
+    // it uses the vertical resolution to separate 480x272 from 480x320 and to
+    // keep the strip slim on ultrawide panels.
+    lv_display_t* d = display ? display : lv_display_get_default();
+    const char* nav_suffix = d ? helix::nav_width_suffix(lv_display_get_horizontal_resolution(d),
+                                                         lv_display_get_vertical_resolution(d))
+                               : "_medium";
+
+    std::unordered_map<std::string, std::string> resolved;
+    for (const auto& [base_name, small_val] : t.small) {
+        // _small/_medium/_large is the required triplet; anything short of it is
+        // an incomplete set (theme_manager_validate_constant_sets warns) and is
+        // left unregistered rather than guessed at.
+        if (t.medium.find(base_name) == t.medium.end() || t.large.find(base_name) == t.large.end())
+            continue;
+
+        const char* suffix = base_name == "nav_width" ? nav_suffix
+                             : theme_manager_token_uses_vertical_axis(base_name.c_str())
+                                 ? vertical_suffix
+                                 : cramped_suffix;
+
+        resolved[base_name] = pick_tier(t, base_name, suffix);
+    }
+    return resolved;
+}
+
 void theme_manager_register_responsive_spacing(lv_display_t* display) {
     int32_t hor_res = lv_display_get_horizontal_resolution(display);
     int32_t ver_res = lv_display_get_vertical_resolution(display);
 
-    // Use the smaller dimension — the cramped axis is the design constraint
-    // regardless of orientation (landscape: usually height; portrait: width).
+    // Logging only — the per-token axis choice lives in the resolver below. The
+    // cramped axis is what most tokens follow, so it is what the summary reports.
     int32_t resp_res = responsive_dimension(display);
-    const char* size_suffix = theme_manager_get_breakpoint_suffix(resp_res);
     const char* size_label = responsive_pick(breakpoint_for(resp_res), "MICRO", "TINY", "SMALL",
                                              "MEDIUM", "LARGE", "XLARGE", "XXLARGE");
 
@@ -948,83 +1080,14 @@ void theme_manager_register_responsive_spacing(lv_display_t* display) {
         return;
     }
 
-    // ========================================================================
-    // Pre-register nav_width using HORIZONTAL breakpoint (before auto-discovery)
-    // ========================================================================
-    // Nav width is primarily a horizontal concern, but we use VERTICAL resolution
-    // to distinguish micro (480x272) from tiny (480x320) since they share the same
-    // horizontal resolution. Register first so auto-discovery silently skips duplicates.
-    {
-        const char* nav_suffix = helix::nav_width_suffix(hor_res, ver_res);
-
-        // Read nav_width values from navigation_bar.xml consts
-        auto nav_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", nav_suffix);
-        auto nav_it = nav_tokens.find("nav_width");
-        if (nav_it != nav_tokens.end()) {
-            lv_xml_register_const(scope, "nav_width", nav_it->second.c_str());
-            spdlog::trace("[Theme] nav_width: {}px (hor_res={}, ver_res={}, suffix={})",
-                          nav_it->second, hor_res, ver_res, nav_suffix);
-        }
-    }
-
-    // Auto-discover all px tokens from all XML files (including optional _micro, _tiny, _xlarge,
-    // and _xxlarge)
-    auto micro_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_micro");
-    auto tiny_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_tiny");
-    auto small_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_small");
-    auto medium_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_medium");
-    auto large_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_large");
-    auto xlarge_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_xlarge");
-    auto xxlarge_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_xxlarge");
-
+    // Auto-discover and resolve every px token — including nav_width, which the
+    // resolver gives its own horizontal ladder. Shared with the resize path so
+    // the two can never pick different tiers for the same token.
     int registered = 0;
-    for (const auto& [base_name, small_val] : small_tokens) {
-        // Verify _small/_medium/_large triplet exists (required)
-        auto medium_it = medium_tokens.find(base_name);
-        auto large_it = large_tokens.find(base_name);
-
-        if (medium_it != medium_tokens.end() && large_it != large_tokens.end()) {
-            // Select appropriate variant based on breakpoint
-            const char* value = nullptr;
-            if (strcmp(size_suffix, "_micro") == 0) {
-                auto micro_it = micro_tokens.find(base_name);
-                if (micro_it != micro_tokens.end()) {
-                    value = micro_it->second.c_str();
-                } else {
-                    auto tiny_it = tiny_tokens.find(base_name);
-                    value = (tiny_it != tiny_tokens.end()) ? tiny_it->second.c_str()
-                                                           : small_val.c_str();
-                }
-            } else if (strcmp(size_suffix, "_tiny") == 0) {
-                // Use _tiny if available, otherwise fall back to _small
-                auto tiny_it = tiny_tokens.find(base_name);
-                value =
-                    (tiny_it != tiny_tokens.end()) ? tiny_it->second.c_str() : small_val.c_str();
-            } else if (strcmp(size_suffix, "_small") == 0) {
-                value = small_val.c_str();
-            } else if (strcmp(size_suffix, "_medium") == 0) {
-                value = medium_it->second.c_str();
-            } else if (strcmp(size_suffix, "_large") == 0) {
-                value = large_it->second.c_str();
-            } else if (strcmp(size_suffix, "_xlarge") == 0) {
-                auto xlarge_it = xlarge_tokens.find(base_name);
-                value = (xlarge_it != xlarge_tokens.end()) ? xlarge_it->second.c_str()
-                                                           : large_it->second.c_str();
-            } else {
-                // _xxlarge: use xxlarge if available, fall back to _xlarge, then _large
-                auto xxlarge_it = xxlarge_tokens.find(base_name);
-                if (xxlarge_it != xxlarge_tokens.end()) {
-                    value = xxlarge_it->second.c_str();
-                } else {
-                    auto xlarge_it = xlarge_tokens.find(base_name);
-                    value = (xlarge_it != xlarge_tokens.end()) ? xlarge_it->second.c_str()
-                                                               : large_it->second.c_str();
-                }
-            }
-            spdlog::trace("[Theme] Registering spacing {}: selected={}", base_name, value);
-            lv_xml_register_const(scope, base_name.c_str(), value);
-            registered++;
-        }
+    for (const auto& [base_name, value] : theme_manager_resolve_px_tokens(display)) {
+        spdlog::trace("[Theme] Registering spacing {}: selected={}", base_name, value);
+        lv_xml_register_const(scope, base_name.c_str(), value.c_str());
+        registered++;
     }
 
     spdlog::trace("[Theme] Responsive spacing: {} (min_dim={}px) - auto-registered {} tokens",
@@ -1033,8 +1096,8 @@ void theme_manager_register_responsive_spacing(lv_display_t* display) {
     // ========================================================================
     // Register computed overlay widths (derived from nav_width + gap)
     // ========================================================================
-    // nav_width was pre-registered above using horizontal breakpoint.
-    // Read it back to compute overlay panel widths.
+    // nav_width was registered above from its own horizontal ladder. Read it
+    // back to compute overlay panel widths.
     const char* nav_width_str = lv_xml_get_const(nullptr, "nav_width");
     int32_t nav_width = nav_width_str ? std::atoi(nav_width_str) : 94; // fallback
 
@@ -1072,70 +1135,14 @@ void theme_manager_refresh_layout_constants(lv_display_t* display) {
     if (!scope)
         return;
 
-    // Same selection as startup. This used to be a second copy that had never
-    // grown the ultrawide branch, so a resize on a 1920x480 panel picked the
-    // 132px '_large' bar where boot had picked the 76px '_small' one.
-    const char* nav_suffix = helix::nav_width_suffix(hor_res, ver_res);
-
-    auto nav_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", nav_suffix);
-    auto nav_it = nav_tokens.find("nav_width");
-    if (nav_it != nav_tokens.end()) {
-        lv_xml_update_const(scope, "nav_width", nav_it->second.c_str());
-    }
-
-    // Update all responsive spacing tokens for new breakpoint (use min dimension
-    // so portrait orientations pick a breakpoint suited to the cramped axis)
+    // Update every responsive px token for the new size — nav_width included.
+    // Same resolver as startup, which is the point: this path used to carry its
+    // own copy of the selection chain, and its nav_width write was then
+    // overwritten a few lines later by a generic loop that knew nothing about
+    // the ultrawide ladder. See theme_manager_resolve_px_tokens().
     int32_t resp_res = responsive_dimension(display);
-    const char* size_suffix = theme_manager_get_breakpoint_suffix(resp_res);
-    auto micro_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_micro");
-    auto small_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_small");
-    auto medium_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_medium");
-    auto large_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_large");
-    auto tiny_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_tiny");
-    auto xlarge_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_xlarge");
-    auto xxlarge_tokens = theme_manager_parse_all_xml_for_suffix("ui_xml", "px", "_xxlarge");
-
-    for (const auto& [base_name, small_val] : small_tokens) {
-        auto medium_it = medium_tokens.find(base_name);
-        auto large_it = large_tokens.find(base_name);
-        if (medium_it == medium_tokens.end() || large_it == large_tokens.end())
-            continue;
-
-        const char* value = nullptr;
-        if (strcmp(size_suffix, "_micro") == 0) {
-            auto micro_it = micro_tokens.find(base_name);
-            if (micro_it != micro_tokens.end()) {
-                value = micro_it->second.c_str();
-            } else {
-                auto tiny_it = tiny_tokens.find(base_name);
-                value =
-                    (tiny_it != tiny_tokens.end()) ? tiny_it->second.c_str() : small_val.c_str();
-            }
-        } else if (strcmp(size_suffix, "_tiny") == 0) {
-            auto tiny_it = tiny_tokens.find(base_name);
-            value = (tiny_it != tiny_tokens.end()) ? tiny_it->second.c_str() : small_val.c_str();
-        } else if (strcmp(size_suffix, "_small") == 0) {
-            value = small_val.c_str();
-        } else if (strcmp(size_suffix, "_medium") == 0) {
-            value = medium_it->second.c_str();
-        } else if (strcmp(size_suffix, "_large") == 0) {
-            value = large_it->second.c_str();
-        } else if (strcmp(size_suffix, "_xlarge") == 0) {
-            auto xlarge_it = xlarge_tokens.find(base_name);
-            value = (xlarge_it != xlarge_tokens.end()) ? xlarge_it->second.c_str()
-                                                       : large_it->second.c_str();
-        } else {
-            // _xxlarge: use xxlarge if available, fall back to _xlarge, then _large
-            auto xxlarge_it = xxlarge_tokens.find(base_name);
-            if (xxlarge_it != xxlarge_tokens.end()) {
-                value = xxlarge_it->second.c_str();
-            } else {
-                auto xlarge_it = xlarge_tokens.find(base_name);
-                value = (xlarge_it != xlarge_tokens.end()) ? xlarge_it->second.c_str()
-                                                           : large_it->second.c_str();
-            }
-        }
-        lv_xml_update_const(scope, base_name.c_str(), value);
+    for (const auto& [base_name, value] : theme_manager_resolve_px_tokens(display)) {
+        lv_xml_update_const(scope, base_name.c_str(), value.c_str());
     }
 
     // Recalculate overlay widths from updated nav_width and space_lg
