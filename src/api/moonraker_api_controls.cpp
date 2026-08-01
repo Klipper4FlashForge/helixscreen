@@ -384,10 +384,23 @@ void MoonrakerAPI::execute_gcode(const std::string& gcode, SuccessCallback on_su
     // plus local fork+exec of helix-recover.sh, all of which bypass this gate
     // naturally. STARTUP is allowed through — it's brief and Klipper queues
     // incoming commands.
+    //
+    // The gate may only speak for a printer we are actually connected to.
+    // klippy_state defaults to SHUTDOWN at startup ("default to SHUTDOWN until
+    // confirmed ready", printer_network_state.cpp) and there is no UNKNOWN value,
+    // so a session that never opened a WebSocket is indistinguishable from a
+    // genuine halt by that subject alone. Bundle XRK8KPTF (K2 Plus, v0.99.98):
+    // the socket never opened once, and every G-code came back "Klipper is halted
+    // — restart firmware to continue", which the PID screen printed verbatim. The
+    // reporter was told to restart firmware on a printer that was merely
+    // unreachable. When disconnected we fall through instead, and
+    // client_.send_jsonrpc's own ready_to_send() gate reports the truthful
+    // CONNECTION_LOST (#909).
     {
+        const bool connected = client_.get_connection_state() == helix::ConnectionState::CONNECTED;
         const int klippy = lv_subject_get_int(state_.get_klippy_state_subject());
-        if (klippy == static_cast<int>(helix::KlippyState::SHUTDOWN) ||
-            klippy == static_cast<int>(helix::KlippyState::ERROR)) {
+        if (connected && (klippy == static_cast<int>(helix::KlippyState::SHUTDOWN) ||
+                          klippy == static_cast<int>(helix::KlippyState::ERROR))) {
             if (!silent) {
                 spdlog::warn("[Moonraker API] Refusing G-code while Klipper is halted "
                              "(state={}): '{}'",
