@@ -13,6 +13,7 @@
 
 #include "moonraker_manager.h"
 
+#include "ui_change_host_modal.h"
 #include "ui_emergency_stop.h"
 #include "ui_error_reporting.h"
 #include "ui_modal.h"
@@ -448,7 +449,13 @@ void MoonrakerManager::register_callbacks() {
 
             bool is_critical = (evt.type == MoonrakerEventType::CONNECTION_FAILED);
             if (is_critical) {
-                NOTIFY_ERROR_MODAL(title, "{}", evt.message);
+                // Not NOTIFY_ERROR_MODAL: that builds an OK-only alert, and OK on
+                // an unreachable-address error returns the user to the same dead
+                // end. This prompt carries a "Change Address" action straight to
+                // the host setting. It marshals to the main thread itself, which
+                // matters because we are on the libhv event-loop thread here.
+                spdlog::error("[CRITICAL] {}: {}", title, evt.message);
+                helix::ui::show_connection_failed_modal(title, evt.message);
             } else {
                 NOTIFY_ERROR_T(title, "{}", evt.message);
             }
@@ -710,8 +717,7 @@ void MoonrakerManager::init_print_start_collector() {
                              "(current_layer={}, printer_reports_layers={}, seen_zero={}, "
                              "advanced={}), completing pre-print phase",
                              current_layer, printer_reports_layers,
-                             collector->has_seen_layer_zero(),
-                             collector->has_seen_layer_advance());
+                             collector->has_seen_layer_zero(), collector->has_seen_layer_advance());
                 collector->complete_from_external_signal("first layer");
             }
         },

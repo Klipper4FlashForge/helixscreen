@@ -12,6 +12,7 @@
 #include "lvgl/lvgl.h"
 #include "moonraker_api.h"
 #include "moonraker_client.h"
+#include "moonraker_manager.h"
 #include "theme_manager.h"
 #include "utils/network_validation.h"
 
@@ -383,3 +384,76 @@ void ChangeHostModal::on_cancel_cb(lv_event_t* /*e*/) {
         active_instance_->handle_cancel();
     }
 }
+
+// ============================================================================
+// Free entry points
+// ============================================================================
+
+namespace helix::ui {
+
+void show_change_host_modal(std::function<void(bool changed)> extra_on_complete) {
+    // Function-local static: ChangeHostModal's active_instance_ is a static
+    // singleton, so a second owner elsewhere would fight this one. The instance
+    // must also outlive the dialog it shows.
+    static std::unique_ptr<ChangeHostModal> modal;
+    if (!modal) {
+        modal = std::make_unique<ChangeHostModal>();
+    }
+
+    modal->set_completion_callback([extra = std::move(extra_on_complete)](bool changed) {
+        if (!changed) {
+            return;
+        }
+
+        Config* config = Config::get_instance();
+        const std::string host = config->get<std::string>(config->df() + "moonraker_host", "");
+        const int port = config->get<int>(config->df() + "moonraker_port", 7125);
+
+        if (extra) {
+            extra(true);
+        }
+
+        MoonrakerClient* client = get_moonraker_client();
+        MoonrakerManager* manager = get_moonraker_manager();
+        if (!client || !manager) {
+            spdlog::error("[ChangeHostModal] Cannot reconnect - client or manager unavailable");
+            return;
+        }
+
+        // The teardown below looks exactly like an unexpected drop; suppress the
+        // recovery dialog so an intentional switch doesn't raise one.
+        EmergencyStopOverlay::instance().suppress_recovery_dialog(RecoverySuppression::SHORT);
+        client->disconnect();
+
+        const std::string ws_url = "ws://" + host + ":" + std::to_string(port) + "/websocket";
+        const std::string http_url = "http://" + host + ":" + std::to_string(port);
+
+        spdlog::info("[ChangeHostModal] Reconnecting to {}:{}", host, port);
+        manager->connect(ws_url, http_url);
+    });
+
+    modal->show_modal(lv_screen_active());
+}
+
+void show_connection_failed_modal(const std::string& title, const std::string& message) {
+    // Callers include MoonrakerClient::on_ws_close on the libhv event-loop
+    // thread. Everything below touches LVGL, so hop to the main thread first —
+    // this mirrors what ui_notification_error() does internally for the
+    // OK-only path this replaces.
+    helix::ui::queue_update([title, message]() {
+        helix::ui::modal_show_confirmation(
+            title.c_str(), message.c_str(), ModalSeverity::Error, lv_tr("Change Address"),
+            [](lv_event_t*) {
+                // Dismiss this prompt before opening the next dialog. Stacking
+                // works, but leaving a live error modal underneath means its
+                // buttons stay pressable behind the host form.
+                if (lv_obj_t* top = Modal::get_top()) {
+                    Modal::hide(top);
+                }
+                show_change_host_modal();
+            },
+            nullptr, nullptr, lv_tr("OK"));
+    });
+}
+
+} // namespace helix::ui

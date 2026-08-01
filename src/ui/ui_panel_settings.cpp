@@ -346,8 +346,7 @@ void SettingsPanel::init_subjects() {
     lv_xml_register_subject(nullptr, "updates_firmware_managed",
                             &updates_firmware_managed_subject_);
 
-    lv_subject_init_int(&updates_unavailable_subject_,
-                        (suppressed && !externally_managed) ? 1 : 0);
+    lv_subject_init_int(&updates_unavailable_subject_, (suppressed && !externally_managed) ? 1 : 0);
     subjects_.register_subject(&updates_unavailable_subject_);
     lv_xml_register_subject(nullptr, "updates_unavailable", &updates_unavailable_subject_);
 
@@ -996,45 +995,20 @@ void SettingsPanel::handle_material_temps_clicked() {
 void SettingsPanel::handle_change_host_clicked() {
     spdlog::debug("[{}] Change Host clicked", get_name());
 
-    if (!change_host_modal_) {
-        change_host_modal_ = std::make_unique<ChangeHostModal>();
-    }
-
-    change_host_modal_->set_completion_callback([this](bool changed) {
-        if (!changed)
-            return;
-
-        // Update host display subject from config
-        Config* config = Config::get_instance();
-        std::string host = config->get<std::string>(config->df() + "moonraker_host", "");
-        int port = config->get<int>(config->df() + "moonraker_port", 7125);
-        std::string host_display = host + ":" + std::to_string(port);
-        lv_subject_copy_string(&printer_host_value_subject_, host_display.c_str());
-
-        // Reconnect to the new host
-        MoonrakerClient* client = get_moonraker_client();
-        MoonrakerManager* manager = get_moonraker_manager();
-
-        if (!client || !manager) {
-            spdlog::error("[{}] Cannot reconnect - client or manager not available", get_name());
+    // Ownership and the reconnect sequence live in show_change_host_modal();
+    // this panel contributes only its own host label refresh. The connection-
+    // failed prompt reaches the same modal, and duplicating the reconnect here
+    // is how the two would drift.
+    helix::ui::show_change_host_modal([this](bool changed) {
+        if (!changed) {
             return;
         }
-
-        // Suppress recovery modal during intentional switch
-        EmergencyStopOverlay::instance().suppress_recovery_dialog(RecoverySuppression::SHORT);
-
-        // Disconnect current connection
-        client->disconnect();
-
-        // Build new URLs and connect with full discovery pipeline
-        std::string ws_url = "ws://" + host + ":" + std::to_string(port) + "/websocket";
-        std::string http_url = "http://" + host + ":" + std::to_string(port);
-
-        spdlog::info("[{}] Reconnecting to {}:{}", get_name(), host, port);
-        manager->connect(ws_url, http_url);
+        Config* config = Config::get_instance();
+        const std::string host = config->get<std::string>(config->df() + "moonraker_host", "");
+        const int port = config->get<int>(config->df() + "moonraker_port", 7125);
+        const std::string host_display = host + ":" + std::to_string(port);
+        lv_subject_copy_string(&printer_host_value_subject_, host_display.c_str());
     });
-
-    change_host_modal_->show_modal(lv_screen_active());
 }
 
 void SettingsPanel::handle_network_clicked() {

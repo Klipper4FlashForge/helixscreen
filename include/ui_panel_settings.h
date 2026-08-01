@@ -111,8 +111,9 @@ class SettingsPanel : public PanelBase {
     lv_obj_t* network_row_ = nullptr;
     lv_obj_t* factory_reset_row_ = nullptr;
 
-    // Change host modal (lazy-created)
-    std::unique_ptr<ChangeHostModal> change_host_modal_;
+    // Change host modal is owned by helix::ui::show_change_host_modal(); the
+    // connection-failed prompt reaches the same dialog, and ChangeHostModal keeps
+    // a static active_instance_, so a second owner here would fight it.
 
     // LED state observer (syncs toggle with printer LED state)
     ObserverGuard led_state_observer_;
