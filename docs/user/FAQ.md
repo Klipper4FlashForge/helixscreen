@@ -71,6 +71,8 @@ Point it at Moonraker (port `7125`), not the Mainsail/Fluidd web interface — y
 
 **Ultrawide and portrait screens are alpha at best.** The layout engine detects an ultrawide screen (wider than about 2.5:1, e.g. 1920x480) or a portrait screen (narrower than about 0.8:1, e.g. 480x800) and adjusts the navigation bar and grid sizing accordingly. What does *not* exist yet is the per-panel artwork: there are no ultrawide panel layouts at all, and portrait has only the app shell and navigation bar. Everything else falls back to the standard landscape layout, so expect stretched, cramped, or clipped panels.
 
+The one part that does adapt is the **home dashboard**. Its widget grid is sized from the actual screen rather than a fixed table, so a 480x800 portrait panel gets a 3x6 grid and a 320x1480 one gets 2x12 — more usable cells than before. Portrait also has its own set of default widgets (Tips is left out, since it is too wide to be worth a row on a narrow grid), and buttons, inputs, and headers are sized from the screen's height, so a tall panel gets taller controls instead of cramped ones. Nothing outside the home dashboard changes.
+
 Treat both as "it boots and you can drive it", not "it looks right". Neither is tested on real hardware in those orientations. If you want to help, both are wide open for contributions and only need XML, not C++ — see the [UI Contributor Guide](../devel/UI_CONTRIBUTOR_GUIDE.md).
 
 You can force either mode to try it: `helix-screen --layout ultrawide` or `--layout portrait`, or set `"layout": "ultrawide"` in the `display` section of `settings.json`.

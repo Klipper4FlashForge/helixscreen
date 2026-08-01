@@ -19,6 +19,19 @@ Your dashboard is built from **widgets** — individual cards that display print
 
 When you first launch HelixScreen, a default layout is created with your printer image, print status, tips, and commonly used widgets. From there, you can customize everything.
 
+### On ultrawide and portrait screens
+
+Unusually shaped screens don't use the fixed grid above — HelixScreen works out the column and row counts from the screen itself, aiming for cells roughly 160px wide and 120px tall.
+
+- **Ultrawide** (e.g. 1920x480): extra columns, same number of rows — a 1920x480 panel gets 12 columns by 4 rows instead of 6x4.
+- **Portrait** (e.g. 480x800, 320x1480): both directions are recalculated. A 480x800 panel gets 3 columns by 6 rows; a tall, narrow 320x1480 panel gets 2 columns by 12 rows.
+
+Portrait screens also start from **their own default widget set**, not the landscape one. **Tips** is not one of them: it is a wide widget, and on a 2- or 3-column grid it would eat a third to a half of a row for rotating hints. You can still add it yourself from the Widget Catalog if you want it.
+
+Buttons, input fields, and headers are sized from the screen's *height* on portrait panels, so a tall screen gets taller, easier-to-hit controls rather than the cramped ones its narrow width would otherwise imply.
+
+> Portrait overall is still alpha — only the home dashboard adapts this way. Other panels still fall back to the landscape layout. See [Ultrawide or portrait screen looks stretched, cramped, or clipped](../TROUBLESHOOTING.md#ultrawide-or-portrait-screen-looks-stretched-cramped-or-clipped).
+
 ---
 
 ## Multiple Pages
@@ -177,6 +190,8 @@ The default layout places:
 - **Print Status** below it (2x2)
 - **Tips** across the top-right (4x2)
 - Remaining enabled widgets auto-fill the rest of the grid
+
+On a portrait screen the defaults differ: Printer Image and Print Status stack full-width down the top of the grid, Tips is left out, and the rest auto-fill below.
 
 ### Exiting Edit Mode
 

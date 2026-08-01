@@ -591,6 +591,8 @@ Adjust in steps (e.g. 110, 100, 90 or 160, 200, 240) until the interface looks r
 
 HelixScreen detects both orientations and adjusts the navigation bar and grid sizing, but the per-panel layouts do not exist yet: there are no ultrawide panel layouts at all, and portrait has only the app shell and navigation bar. Every other panel falls back to the standard landscape layout, which is what you are seeing. Neither orientation has been tested on real hardware.
 
+**The home dashboard is the exception.** Its widget grid is sized from the actual screen — a 480x800 portrait panel gets a 3x6 grid, a 320x1480 one gets 2x12 — and portrait has its own default widget set (Tips is left out; it is too wide to earn a row on a narrow grid). Buttons, inputs, and headers on a portrait panel are sized from the screen's height, so they come out taller rather than cramped. Every other panel is still the landscape fallback.
+
 **What you can do:**
 
 - **On a portrait panel, rotate it to landscape.** This is the well-tested path and what the Creality K2 does out of the box. Set `"rotate": 90` (or `270`) in the `display` section of your config — see [Display upside down or rotated](#display-upside-down-or-rotated).
@@ -598,6 +600,35 @@ HelixScreen detects both orientations and adjusts the navigation bar and grid si
 - **Force the standard layout** if the alpha layout is worse than the fallback: `--layout standard`, or `"layout": "standard"` in the `display` section.
 
 Contributions are very welcome here and only need XML, not C++ — see the [UI Contributor Guide](../devel/UI_CONTRIBUTOR_GUIDE.md).
+
+---
+
+### A widget disappeared from the home screen (portrait screens)
+
+**Symptoms:**
+
+- A widget vanished from the home screen and did not come back after a restart or an update
+- **Tips** in particular is missing on a portrait-mounted screen
+- You saw a message like *"'Tips' removed — grid full"* even though the grid looked far from full
+
+**Cause:** on older versions, a widget that was wider than a portrait screen's grid could not be placed anywhere, so HelixScreen switched it off — and *saved* that off state to your settings. Fixing the placement logic does not undo the saved setting, so the widget stays off until you put it back yourself. It is not lost: it is sitting in the Widget Catalog as an available widget.
+
+Note that **Tips is now deliberately off by default on portrait screens** — it is a wide widget and takes a third to a half of a row on a narrow grid. If Tips is the only thing missing, that may simply be the new default rather than the old bug.
+
+**Fix — put back a single widget:**
+
+1. **Long-press the widget grid** to enter Edit Mode
+2. **Long-press an empty area** of the grid — the Widget Catalog opens
+3. Tap the widget you want. Widgets already on your dashboard are dimmed and labelled "Placed"; the ones you lost will not be
+4. Tap **Done** to leave Edit Mode
+
+**Fix — put back everything at once:**
+
+Enter Edit Mode and tap **Reset**. This restores the default layout *and* the default set of enabled widgets, and because the defaults are now portrait-aware you get the corrected portrait layout. Your per-widget settings (display mode preferences and so on) are preserved.
+
+Reset is not free, though: it collapses **all pages back to a single page**, so any extra pages you created are removed, and every widget position and size goes back to default. If you have a layout you like and only lost one or two widgets, re-add them from the catalog instead.
+
+See [Home Panel](guide/home-panel.md) for the full Edit Mode walkthrough.
 
 ---
 

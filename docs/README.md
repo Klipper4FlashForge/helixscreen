@@ -49,7 +49,7 @@ Welcome to the HelixScreen documentation. Choose your path:
 | [**Moonraker Architecture**](devel/MOONRAKER_ARCHITECTURE.md) | Moonraker integration details |
 | [**Theme System**](devel/THEME_SYSTEM.md) | Reactive theming, color tokens, responsive sizing |
 | [**Theme Contributor Guide**](devel/THEME_CONTRIBUTOR_GUIDE.md) | For people creating themes — JSON schema, palette design, no C++ needed |
-| [**Layout System**](devel/LAYOUT_SYSTEM.md) | Alternative layouts, auto-detection, CLI override |
+| [**Layout System**](devel/LAYOUT_SYSTEM.md) | Alternative layouts, auto-detection, CLI override, home widget grid |
 | [**Translation System**](devel/TRANSLATION_SYSTEM.md) | i18n: YAML → code generation, runtime lookups |
 | [**Translation Contributor Guide**](devel/TRANSLATION_CONTRIBUTOR_GUIDE.md) | For translators — improve existing languages or add a new one, no code needed |
 | [**UI Testing**](devel/UI_TESTING.md) | Headless LVGL testing, UITest utilities |
