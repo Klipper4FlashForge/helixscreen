@@ -466,21 +466,78 @@ cd .worktrees/my-feature
 The script optimizes for **fast builds** by sharing artifacts from the main tree:
 
 1. **Symlinks lib/** — all submodules symlinked (no clone/configure time)
-2. **Symlinks compiled libraries** — `libhv.a`, `libwpa_client.a` from main tree
-3. **Symlinks precompiled header** — `lvgl_pch.h.gch` (22MB saved)
-4. **Symlinks tools** — `node_modules/`, `.venv/`
-5. **Clones build objects** — copies `build/obj/` from the main tree (APFS clonefile on macOS; plain copy on Linux)
-6. **Configures ccache for cross-worktree reuse** — so the worktree builds against the *same* ccache the main tree populated (see below)
-7. **Validates architecture** — wrong-arch `.o`/`.a` files (left by a prior cross-compile) are detected and cleared so `make` rebuilds them correctly
-8. **Configures git** — `.git/info/exclude` + `--skip-worktree` keep `git status` clean despite the symlinks
+2. **Adopts the main tree's mtimes** for every byte-identical file — without this, nothing below actually saves you anything (see next section)
+3. **Clones compiled libraries** — `libhv.a`, `libwpa_client.a` from main tree
+4. **Clones the precompiled header** — `lvgl_pch.h.gch` (27MB)
+5. **Symlinks tools** — `node_modules/`, `.venv/`
+6. **Clones build objects** — copies `build/obj/` and `build/generated/` from the main tree (APFS clonefile on macOS; plain copy on Linux)
+7. **Configures ccache for cross-worktree reuse** — so the worktree builds against the *same* ccache the main tree populated, when ccache is installed (see below)
+8. **Validates architecture** — wrong-arch `.o`/`.a` files (left by a prior cross-compile) are detected and cleared so `make` rebuilds them correctly
+9. **Configures git** — `.git/info/exclude` + `--skip-worktree` keep `git status` clean despite the symlinks
 
 **Trade-off**: If you need to modify library code (`lib/`), un-symlink that specific directory first (`rm lib/<name> && cp -a $MAIN/lib/<name> lib/`).
 
-### Why worktree builds are fast (and the ccache config the script sets)
+> **Build outputs are cloned, never symlinked.** `libhv.a` and `lvgl_pch.h.gch` used to be
+> symlinks into the main tree. They are build *outputs*, so make rewrites them — and both `cp`
+> (the tail of `make libhv-build`) and `clang -o` follow a symlink, writing straight into the
+> main tree. Measured: one fresh-worktree build moved the main tree's `libhv.a` mtime forward
+> five days, which left the main tree's own PCH older than it and put ~1900 objects back on the
+> main tree's next build. On APFS `cp -c` is a clonefile, so a private copy costs nothing.
 
-A fresh `git worktree add` stamps **every** source file with the current mtime, so `make` sees all sources as newer than the cloned objects and wants to recompile the whole tree. The cloned `build/obj/` therefore does *not*, by itself, save you on Linux — the real speedup comes from **ccache**: those "recompiles" become near-instant cache hits instead of cold compiles.
+### Why worktree builds are fast
 
-But ccache only helps across worktrees if it's configured for it. The native build compiles with `-g` (debug info), and ccache's default `hash_dir=true` folds the absolute working directory into the cache key — so an object cached while building in the main tree never matches the same source compiled under `.worktrees/<name>/`. Every worktree would start stone cold.
+A fresh `git worktree add` stamps **every** file with the checkout mtime, so make sees the whole
+tree as newer than the cloned objects. It bites twice over:
+
+- `$(PCH)` lists `include/lvgl_pch.h` and `lv_conf.h` as prerequisites, and *every* C++ object
+  lists `$(PCH)` — one fresh header invalidates all ~1970 objects;
+- the `.d` files list `include/*.h` per object, and those are fresh too — so fixing only the PCH
+  would still leave every object out of date.
+
+Measured on a fresh worktree of an up-to-date main tree: **1945 of 1967 cloned objects
+recompiled**, 396s of wall clock, for a tree where nothing had changed.
+
+`setup-worktree.sh` fixes this by walking the checkout and, **for each file whose content is
+byte-identical to the main tree's file at the same path**, adopting that file's mtime
+(`scripts/sync-worktree-mtimes.py`, ~1s for the 3900-file tree). The build markers
+`build/.patches-applied` and `.fonts.stamp` get the same treatment — they are prerequisites of
+the PCH, libhv, and all 46 font objects, so stamping them `now` was on its own worth ~560
+recompiles *and* was what made every fresh worktree rebuild libhv over the main tree's copy.
+
+This is deliberately **not** blanket mtime back-dating, which is how you ship a stale build. The
+invariant is that for matching content the (source, object) mtime ordering in the worktree equals
+the ordering in the main tree, so make reaches the same up-to-date decision here that it reached
+there, against objects cloned from there. Anything that differs — a branch with real changes, an
+edit made after setup — keeps its fresh mtime and rebuilds normally:
+
+| Scenario | Objects rebuilt |
+|----------|-----------------|
+| Worktree at the same commit, clean | 0 (`make test -j` = 3.2s, link only) |
+| Worktree at an older commit (1 source differs) | 1 — and the binary carries the *old* code |
+| Source edited after setup | 1 |
+| `lv_conf.h` edited | PCH + 1888 |
+
+What it inherits rather than fixes: if the main tree's own build is stale, the worktree
+reproduces that staleness. The object clone always had that property.
+
+> **If a fresh worktree still takes minutes, this is almost always why.** `lib/` is symlinked
+> from the main tree, so the libhv submodule is *shared by every tree*. Rebuilding libhv anywhere
+> regenerates `lib/libhv/include/hv/json.hpp`, which is a `$(PCH)` prerequisite — so the PCH, and
+> with it all ~1970 objects, goes out of date in the main tree and in every worktree at once. The
+> mtime sync cannot repair it: the script deliberately never follows the `lib/` symlinks, and
+> `git ls-files` does not reach inside a submodule. Observed during this work: a worktree that
+> should have built in 5s took 462s (680 objects + PCH) purely because an unrelated tree had
+> rebuilt libhv twenty minutes earlier. The fix is to let one tree rebuild once — after that
+> every tree is fast again. Un-sharing `lib/` would remove the coupling entirely, but that is the
+> core of the current worktree design.
+
+### The ccache config the script sets
+
+ccache is optional (it is not installed on every dev box — check with `command -v ccache`), and
+with the mtime sync in place it is no longer what makes a worktree fast. It still helps when a
+worktree genuinely does have to recompile a lot, e.g. after touching `lv_conf.h`.
+
+But it only helps across worktrees if it is configured for it. The native build compiles with `-g` (debug info), and ccache's default `hash_dir=true` folds the absolute working directory into the cache key — so an object cached while building in the main tree never matches the same source compiled under `.worktrees/<name>/`. Every worktree would start stone cold.
 
 `setup-worktree.sh` fixes this once, by writing global ccache config (only when unset, so it never clobbers a value you chose):
 
