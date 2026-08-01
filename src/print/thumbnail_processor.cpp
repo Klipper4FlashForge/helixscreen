@@ -114,6 +114,13 @@ void ThumbnailProcessor::process_async(const std::vector<uint8_t>& png_data,
         if (!shutdown_ && thread_pool_) {
             std::string cache_dir_copy = cache_dir_; // guard against set_cache_dir()
 
+            // Snapshotted with the directory, not looked up when the task runs:
+            // the write lands in cache_dir_copy, so it must be reported to the
+            // journal that was watching cache_dir_copy. Taking a strong
+            // reference here also means do_process() never touches mutex_,
+            // which shutdown() may be holding while it waits for this task.
+            std::shared_ptr<ThumbnailWriteJournal> journal_copy = write_journal_.lock();
+
             // commit() MUST run while the lock is held, not merely be reached
             // after a null-check. Two reasons, both load-bearing (#1202):
             //
@@ -130,44 +137,47 @@ void ThumbnailProcessor::process_async(const std::vector<uint8_t>& png_data,
             // Holding the lock is cheap here: commit() takes its own
             // task_mutex briefly, emplaces into an unbounded queue and
             // notifies. It does not block.
-            thread_pool_->commit([this, png_copy = std::move(png_copy),
-                                  source_copy = std::move(source_copy),
-                                  cache_dir_copy = std::move(cache_dir_copy), target, on_success,
-                                  on_error]() {
-                ProcessResult result = do_process(png_copy, source_copy, target, cache_dir_copy);
+            thread_pool_->commit(
+                [this, png_copy = std::move(png_copy), source_copy = std::move(source_copy),
+                 cache_dir_copy = std::move(cache_dir_copy), journal_copy = std::move(journal_copy),
+                 target, on_success, on_error]() {
+                    ProcessResult result =
+                        do_process(png_copy, source_copy, target, cache_dir_copy, journal_copy);
 
-                if (result.success) {
-                    spdlog::debug("[ThumbnailProcessor] Processed {} -> {} ({}x{})", source_copy,
-                                  result.output_path, result.output_width, result.output_height);
-                    if (on_success) {
-                        // CRITICAL: Defer callback to main UI thread to avoid LVGL threading
-                        // issues. Without this, callbacks can trigger widget operations from worker
-                        // thread, causing "lv_inv_area() rendering_in_progress" assertion on slow
-                        // devices.
-                        struct SuccessCtx {
-                            ProcessSuccessCallback callback;
-                            std::string path;
-                        };
-                        auto ctx = std::make_unique<SuccessCtx>(
-                            SuccessCtx{on_success, result.output_path});
-                        helix::ui::queue_update<SuccessCtx>(
-                            std::move(ctx), [](SuccessCtx* c) { c->callback(c->path); });
+                    if (result.success) {
+                        spdlog::debug("[ThumbnailProcessor] Processed {} -> {} ({}x{})",
+                                      source_copy, result.output_path, result.output_width,
+                                      result.output_height);
+                        if (on_success) {
+                            // CRITICAL: Defer callback to main UI thread to avoid LVGL threading
+                            // issues. Without this, callbacks can trigger widget operations from
+                            // worker thread, causing "lv_inv_area() rendering_in_progress"
+                            // assertion on slow devices.
+                            struct SuccessCtx {
+                                ProcessSuccessCallback callback;
+                                std::string path;
+                            };
+                            auto ctx = std::make_unique<SuccessCtx>(
+                                SuccessCtx{on_success, result.output_path});
+                            helix::ui::queue_update<SuccessCtx>(
+                                std::move(ctx), [](SuccessCtx* c) { c->callback(c->path); });
+                        }
+                    } else {
+                        spdlog::warn("[ThumbnailProcessor] Failed to process {}: {}", source_copy,
+                                     result.error);
+                        if (on_error) {
+                            // CRITICAL: Defer callback to main UI thread (same reason as
+                            // on_success)
+                            struct ErrorCtx {
+                                ProcessErrorCallback callback;
+                                std::string error;
+                            };
+                            auto ctx = std::make_unique<ErrorCtx>(ErrorCtx{on_error, result.error});
+                            helix::ui::queue_update<ErrorCtx>(
+                                std::move(ctx), [](ErrorCtx* c) { c->callback(c->error); });
+                        }
                     }
-                } else {
-                    spdlog::warn("[ThumbnailProcessor] Failed to process {}: {}", source_copy,
-                                 result.error);
-                    if (on_error) {
-                        // CRITICAL: Defer callback to main UI thread (same reason as on_success)
-                        struct ErrorCtx {
-                            ProcessErrorCallback callback;
-                            std::string error;
-                        };
-                        auto ctx = std::make_unique<ErrorCtx>(ErrorCtx{on_error, result.error});
-                        helix::ui::queue_update<ErrorCtx>(
-                            std::move(ctx), [](ErrorCtx* c) { c->callback(c->error); });
-                    }
-                }
-            });
+                });
             return;
         }
     }
@@ -182,13 +192,15 @@ void ThumbnailProcessor::process_async(const std::vector<uint8_t>& png_data,
 ProcessResult ThumbnailProcessor::process_sync(const std::vector<uint8_t>& png_data,
                                                const std::string& source_path,
                                                const ThumbnailTarget& target) {
-    // Get cache_dir under lock for thread safety
+    // Get cache_dir and its matching write listener under lock for thread safety
     std::string cache_dir_copy;
+    std::shared_ptr<ThumbnailWriteJournal> journal_copy;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         cache_dir_copy = cache_dir_;
+        journal_copy = write_journal_.lock();
     }
-    return do_process(png_data, source_path, target, cache_dir_copy);
+    return do_process(png_data, source_path, target, cache_dir_copy, journal_copy);
 }
 
 std::string ThumbnailProcessor::get_if_processed(const std::string& source_path,
@@ -349,6 +361,11 @@ void ThumbnailProcessor::set_cache_dir(const std::string& path) {
     }
 }
 
+void ThumbnailProcessor::set_write_journal(std::weak_ptr<ThumbnailWriteJournal> journal) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    write_journal_ = std::move(journal);
+}
+
 void ThumbnailProcessor::clear_cache() {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -442,10 +459,10 @@ static bool is_complete_png(const std::vector<uint8_t>& data) {
     return false; // no IEND near the end → truncated/corrupt
 }
 
-ProcessResult ThumbnailProcessor::do_process(const std::vector<uint8_t>& png_data,
-                                             const std::string& source_path,
-                                             const ThumbnailTarget& target,
-                                             const std::string& cache_dir) {
+ProcessResult
+ThumbnailProcessor::do_process(const std::vector<uint8_t>& png_data, const std::string& source_path,
+                               const ThumbnailTarget& target, const std::string& cache_dir,
+                               const std::shared_ptr<ThumbnailWriteJournal>& journal) {
     ProcessResult result;
 
     if (png_data.empty()) {
@@ -568,6 +585,15 @@ ProcessResult ThumbnailProcessor::do_process(const std::vector<uint8_t>& png_dat
                      resized_pixels.size())) {
         result.error = "Failed to write .bin file";
         return result;
+    }
+
+    // Tell ThumbnailCache about the bytes we just put in its directory. It has
+    // no other way to find out short of re-walking the whole cache, which is
+    // the cost its index exists to avoid (prestonbrown/helixscreen#1207).
+    // Reported only on success, so the index never learns about a file that was
+    // not written.
+    if (journal) {
+        journal->note_write(output_path);
     }
 
     result.success = true;

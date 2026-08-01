@@ -80,8 +80,12 @@ ThumbnailCache::ThumbnailCache()
     // Now that directory exists and config is loaded, calculate dynamic size
     max_size_ = calculate_dynamic_max_size(cache_dir_, configured_max_);
 
-    // Sync ThumbnailProcessor's cache dir with ours
+    // Sync ThumbnailProcessor's cache dir with ours, and subscribe to the
+    // .bin writes it will make there. Directory first: the journal is only
+    // meaningful for writes aimed at cache_dir_, and index_file_locked()
+    // discards anything that lands elsewhere.
     helix::ThumbnailProcessor::instance().set_cache_dir(cache_dir_);
+    helix::ThumbnailProcessor::instance().set_write_journal(journal_);
 }
 
 ThumbnailCache::ThumbnailCache(size_t max_size)
@@ -90,8 +94,10 @@ ThumbnailCache::ThumbnailCache(size_t max_size)
     ensure_cache_dir();
     spdlog::debug("[ThumbnailCache] Using explicit max size: {} MB", max_size_ / (1024 * 1024));
 
-    // Sync ThumbnailProcessor's cache dir with ours
+    // Sync ThumbnailProcessor's cache dir with ours, and subscribe to its
+    // .bin writes — see the default constructor.
     helix::ThumbnailProcessor::instance().set_cache_dir(cache_dir_);
+    helix::ThumbnailProcessor::instance().set_write_journal(journal_);
 }
 
 void ThumbnailCache::ensure_cache_dir() const {
@@ -244,6 +250,8 @@ std::vector<ThumbnailCache::CacheEntry> ThumbnailCache::scan_locked(size_t* tota
     std::vector<CacheEntry> entries;
     size_t total = 0;
 
+    full_scans_.fetch_add(1, std::memory_order_relaxed);
+
     std::error_code ec;
     std::filesystem::directory_iterator it(cache_dir_, ec);
     if (ec) {
@@ -270,6 +278,8 @@ std::vector<ThumbnailCache::CacheEntry> ThumbnailCache::scan_locked(size_t* tota
             break;
         }
         const auto& path = it->path();
+
+        stat_calls_.fetch_add(1, std::memory_order_relaxed);
 
         std::error_code entry_ec;
         if (!std::filesystem::is_regular_file(path, entry_ec) || entry_ec) {
@@ -304,18 +314,125 @@ std::vector<ThumbnailCache::CacheEntry> ThumbnailCache::scan_locked(size_t* tota
     return entries;
 }
 
+void ThumbnailCache::rescan_locked() const {
+    size_t total = 0;
+    std::vector<CacheEntry> entries = scan_locked(&total);
+
+    index_.clear();
+    for (const auto& entry : entries) {
+        // Normalised on the way in, as in index_file_locked() / forget_file_locked().
+        // The index is keyed by path, and "dir/x.png" vs "dir//x.png" arriving from
+        // two different call sites would read as two files and double-count.
+        index_.emplace(entry.path.lexically_normal(), IndexEntry{entry.mtime, entry.size});
+    }
+    index_total_ = total;
+    index_primed_ = true;
+    checks_since_scan_ = 0;
+
+    // Anything queued while we were walking is already reflected in what we
+    // just read off the filesystem. Keeping it would double-count.
+    journal_->reset();
+}
+
+void ThumbnailCache::index_file_locked(const std::filesystem::path& raw_path) const {
+    const std::filesystem::path path = raw_path.lexically_normal();
+
+    // A journal entry can name a file in a directory this cache no longer owns:
+    // ThumbnailProcessor::set_cache_dir() is allowed to move while a write is in
+    // flight, and each task reports to the journal that matched its destination.
+    // Counting a foreign file here would corrupt the total in the one direction
+    // that matters.
+    if (path.parent_path() != std::filesystem::path(cache_dir_).lexically_normal()) {
+        spdlog::debug("[ThumbnailCache] Ignoring write outside cache dir: {}", path.string());
+        return;
+    }
+
+    stat_calls_.fetch_add(1, std::memory_order_relaxed);
+
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(path, ec);
+    if (ec) {
+        // Written then immediately removed, or never really there. Drop any
+        // stale belief rather than inventing a size.
+        forget_file_locked(path);
+        return;
+    }
+
+    std::error_code mtime_ec;
+    const auto mtime = std::filesystem::last_write_time(path, mtime_ec);
+    if (mtime_ec) {
+        forget_file_locked(path);
+        return;
+    }
+
+    const auto [it, inserted] = index_.try_emplace(path, IndexEntry{mtime, size});
+    if (!inserted) {
+        // Overwrite of a file we already index — a re-download, or the same
+        // pre-scale target regenerated. Replace its contribution, don't add to it.
+        index_total_ -= it->second.size;
+        it->second = IndexEntry{mtime, size};
+    }
+    index_total_ += size;
+}
+
+void ThumbnailCache::forget_file_locked(const std::filesystem::path& path) const {
+    const auto it = index_.find(path.lexically_normal());
+    if (it == index_.end()) {
+        return;
+    }
+    index_total_ -= it->second.size;
+    index_.erase(it);
+}
+
+void ThumbnailCache::refresh_index_locked() const {
+    if (!index_primed_) {
+        // Cold start. The directory is normally populated by a previous run and
+        // nothing in memory has ever seen it.
+        rescan_locked();
+        return;
+    }
+
+    if (++checks_since_scan_ >= INDEX_RECONCILE_INTERVAL) {
+        rescan_locked();
+        return;
+    }
+
+    bool overflowed = false;
+    const std::vector<std::string> written = journal_->drain(&overflowed);
+    if (overflowed) {
+        // More unread writes than the journal will hold, so the list is
+        // incomplete and folding it in would leave a permanent shortfall.
+        rescan_locked();
+        return;
+    }
+
+    for (const auto& path : written) {
+        index_file_locked(path);
+    }
+}
+
 void ThumbnailCache::evict_if_needed() {
     std::lock_guard<std::mutex> lock(mutex_);
     evict_locked();
 }
 
+void ThumbnailCache::note_write_and_evict(const std::string& path) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    // Index first: a file that reaches the eviction check unindexed is a file
+    // the cache is over its limit by without knowing it.
+    index_file_locked(path);
+    evict_locked();
+}
+
 void ThumbnailCache::evict_locked() {
-    // ONE directory walk, not two. The previous shape called get_cache_size()
-    // (a full walk with a stat per file) and then, if it decided to evict, walked
-    // the directory a second time to build the entry list. Every thumbnail fetch
-    // paid at least one walk whether or not anything was evicted.
-    size_t current_size = 0;
-    std::vector<CacheEntry> entries = scan_locked(&current_size);
+    // No directory walk in the steady state. This used to scan the whole cache
+    // — a stat per file — on every fetch(), fetch_optimized() and
+    // save_raw_png(), whether or not anything was evicted
+    // (prestonbrown/helixscreen#1207). It is now arithmetic over an index kept
+    // current by the write sites, plus a reconcile every
+    // INDEX_RECONCILE_INTERVAL checks.
+    refresh_index_locked();
+    size_t current_size = index_total_;
 
     // Reads only construction-time state (cache_dir_, disk_*), so it does not
     // re-enter the lock.
@@ -349,14 +466,18 @@ void ThumbnailCache::evict_locked() {
             current_size / (1024 * 1024), effective_limit / (1024 * 1024));
     }
 
-    // Sort by modification time (oldest first)
-    std::sort(entries.begin(), entries.end(),
-              [](const CacheEntry& a, const CacheEntry& b) { return a.mtime < b.mtime; });
+    // Oldest first, off the index rather than off a fresh directory listing.
+    // Sorting is the only O(n log n) left, and unlike the walk it is memory,
+    // not syscalls — and it happens only when eviction actually fires.
+    std::vector<std::pair<std::filesystem::path, IndexEntry>> victims(index_.begin(), index_.end());
+    std::sort(victims.begin(), victims.end(),
+              [](const auto& a, const auto& b) { return a.second.mtime < b.second.mtime; });
 
     // Remove oldest files until under limit
     size_t evicted_count = 0;
     size_t evicted_bytes = 0;
-    for (const auto& entry : entries) {
+    bool saw_ghost = false;
+    for (const auto& [path, entry] : victims) {
         if (current_size <= effective_limit) {
             break;
         }
@@ -366,16 +487,25 @@ void ThumbnailCache::evict_locked() {
         // ourselves for that would stop the loop believing it freed space it
         // did not — leaving the cache over its limit.
         std::error_code rm_ec;
-        const bool removed = std::filesystem::remove(entry.path, rm_ec);
+        const bool removed = std::filesystem::remove(path, rm_ec);
         if (rm_ec) {
-            spdlog::warn("[ThumbnailCache] Failed to evict {}: {}", entry.path.string(),
-                         rm_ec.message());
+            spdlog::warn("[ThumbnailCache] Failed to evict {}: {}", path.string(), rm_ec.message());
             continue;
         }
-        if (!removed) {
-            continue;
-        }
+
+        // Either way the file is not on disk, so it must leave the index. The
+        // difference is whether we may credit its bytes as freed: a ghost —
+        // something deleted behind the cache's back — frees nothing, it only
+        // corrects an over-count. Treating the two the same is what would turn
+        // an over-count into over-eviction, and over-eviction is
+        // self-reinforcing: everything discarded past the limit gets
+        // re-downloaded on the next scroll.
+        forget_file_locked(path);
         current_size -= entry.size;
+        if (!removed) {
+            saw_ghost = true;
+            continue;
+        }
         evicted_bytes += entry.size;
         ++evicted_count;
     }
@@ -383,6 +513,15 @@ void ThumbnailCache::evict_locked() {
     if (evicted_count > 0) {
         spdlog::info("[ThumbnailCache] Evicted {} files ({} KB) to stay under limit", evicted_count,
                      evicted_bytes / 1024);
+    }
+
+    if (saw_ghost) {
+        // Something is deleting from this directory that we do not know about.
+        // The arithmetic above already removed the ghosts, but a source of
+        // surprise deletes is also a plausible source of surprise writes, so
+        // re-establish the total from the filesystem rather than trusting it.
+        spdlog::debug("[ThumbnailCache] Index held entries already gone from disk, resyncing");
+        rescan_locked();
     }
 }
 
@@ -456,8 +595,11 @@ void ThumbnailCache::fetch(MoonrakerAPI* api, const std::string& relative_path,
         // Success callback
         [this, on_success, relative_path](const std::string& local_path) {
             spdlog::debug("[ThumbnailCache] Downloaded {} to {}", relative_path, local_path);
-            // Check if we need eviction after download
-            evict_if_needed();
+            // Runs on an HttpExecutor worker — MoonrakerFileTransferAPI invokes
+            // this unmarshalled. Index the byte we just added before deciding
+            // whether to evict, or the cache is over its limit by a file it
+            // does not know it has.
+            note_write_and_evict(local_path);
             if (on_success) {
                 on_success(to_lvgl_path(local_path));
             }
@@ -523,8 +665,8 @@ std::string ThumbnailCache::save_raw_png(const std::string& source_identifier,
     spdlog::debug("[ThumbnailCache] Saved {} bytes from gcode extraction: {}", png_data.size(),
                   cache_path);
 
-    // Check if we need eviction after save
-    evict_if_needed();
+    // Index the file we just wrote, then check whether it pushed us over.
+    note_write_and_evict(cache_path);
 
     return to_lvgl_path(cache_path);
 }
@@ -542,8 +684,20 @@ size_t ThumbnailCache::clear_cache() {
             }
         }
         spdlog::info("[ThumbnailCache] Cleared {} cached thumbnails", count);
+
+        // We just enumerated and emptied the directory, so an empty index is
+        // exact — no rescan needed to establish it.
+        index_.clear();
+        index_total_ = 0;
+        index_primed_ = true;
+        checks_since_scan_ = 0;
+        journal_->reset();
     } catch (const std::filesystem::filesystem_error& e) {
         spdlog::warn("[ThumbnailCache] Error clearing cache: {}", e.what());
+        // Enumeration stopped partway, so we do not know what survived. Force
+        // the next accounting pass to find out rather than assert an empty cache
+        // it cannot back up.
+        index_primed_ = false;
     }
     return count;
 }
@@ -563,6 +717,7 @@ size_t ThumbnailCache::invalidate(const std::string& relative_path) {
         std::string png_path = cache_dir_ + "/" + hash + ".png";
         if (std::filesystem::exists(png_path)) {
             std::filesystem::remove(png_path);
+            forget_file_locked(png_path);
             ++count;
             spdlog::debug("[ThumbnailCache] Invalidated PNG: {}", png_path);
         }
@@ -581,6 +736,7 @@ size_t ThumbnailCache::invalidate(const std::string& relative_path) {
                 filename.size() >= 4 && filename.compare(filename.size() - 4, 4, ".bin") == 0;
             if (has_prefix && has_suffix) {
                 std::filesystem::remove(entry.path());
+                forget_file_locked(entry.path());
                 ++count;
                 spdlog::debug("[ThumbnailCache] Invalidated BIN: {}", entry.path().string());
             }
@@ -593,6 +749,9 @@ size_t ThumbnailCache::invalidate(const std::string& relative_path) {
     } catch (const std::filesystem::filesystem_error& e) {
         spdlog::warn("[ThumbnailCache] Error invalidating cache for {}: {}", relative_path,
                      e.what());
+        // Removed an unknown subset before throwing. Over-counting until the
+        // next reconcile is safe; asserting a total we cannot justify is not.
+        index_primed_ = false;
     }
 
     return count;
@@ -600,9 +759,8 @@ size_t ThumbnailCache::invalidate(const std::string& relative_path) {
 
 size_t ThumbnailCache::get_cache_size() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    size_t total = 0;
-    (void)scan_locked(&total);
-    return total;
+    refresh_index_locked();
+    return index_total_;
 }
 
 // ============================================================================
@@ -716,7 +874,9 @@ void ThumbnailCache::fetch_optimized(MoonrakerAPI* api, const std::string& relat
         // Success callback - PNG downloaded, now pre-scale it
         [this, on_success, on_error, relative_path, target](const std::string& local_path) {
             spdlog::debug("[ThumbnailCache] Downloaded, now pre-scaling: {}", local_path);
-            evict_if_needed();
+            // HttpExecutor worker thread — see fetch() for why the write is
+            // indexed before the eviction check rather than after it.
+            note_write_and_evict(local_path);
 
             // Process the downloaded PNG
             std::string lvgl_path = to_lvgl_path(local_path);
