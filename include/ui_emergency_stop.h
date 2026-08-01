@@ -42,7 +42,7 @@ static constexpr uint32_t NORMAL = 10000; ///< Standard restarts (firmware resta
 /// SAVE_CONFIG, which a 60s window would have hidden from the user entirely.
 /// Prefer a spurious dialog over a silently-eaten shutdown.
 static constexpr uint32_t LONG = 15000;
-static constexpr uint32_t EXTRA = 30000;  ///< Multi-step operations (PID→MPC migration)
+static constexpr uint32_t EXTRA = 30000; ///< Multi-step operations (PID→MPC migration)
 } // namespace RecoverySuppression
 
 /**
@@ -139,6 +139,10 @@ class EmergencyStopOverlay {
      * Called for both SHUTDOWN state and KLIPPY_DISCONNECTED events.
      * If the dialog is already showing, updates the content to reflect
      * the combined error state (e.g., SHUTDOWN + DISCONNECTED).
+     *
+     * Safe to call from any thread — callers include MoonrakerClient's event
+     * handler on the libhv event-loop thread and AbortManager. Only the atomic
+     * suppression check runs on the caller's thread; the rest is marshalled.
      *
      * @param reason Why the recovery dialog is being shown
      */
@@ -238,6 +242,10 @@ class EmergencyStopOverlay {
     void show_confirmation_dialog();
     void dismiss_confirmation_dialog();
     void show_recovery_dialog();
+    /// Main-thread half of show_recovery_for(). Reads and writes
+    /// recovery_dialog_/recovery_reason_ and queries ModalStack, none of which
+    /// may be touched from the libhv thread.
+    void show_recovery_for_main(RecoveryReason reason);
     void dismiss_recovery_dialog();
     void update_recovery_dialog_content();
     void restart_klipper();

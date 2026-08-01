@@ -420,8 +420,9 @@ void MoonrakerManager::register_callbacks() {
         if (evt.type == MoonrakerEventType::CONNECTION_FAILED) {
             title = lv_tr("Connection Failed");
         } else if (evt.type == MoonrakerEventType::KLIPPY_DISCONNECTED) {
-            // Route through unified recovery dialog (same dialog as SHUTDOWN state)
-            // Suppression checks are handled inside show_recovery_for()
+            // Route through unified recovery dialog (same dialog as SHUTDOWN state).
+            // Suppression checks and the hop to the main thread both happen inside
+            // show_recovery_for() — we are on the libhv event-loop thread here.
             EmergencyStopOverlay::instance().show_recovery_for(RecoveryReason::DISCONNECTED);
             return;
         } else if (evt.type == MoonrakerEventType::KLIPPY_SHUTDOWN) {

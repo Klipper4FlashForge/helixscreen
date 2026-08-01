@@ -334,12 +334,24 @@ void EmergencyStopOverlay::dismiss_recovery_dialog() {
 }
 
 void EmergencyStopOverlay::show_recovery_for(RecoveryReason reason) {
-    // Check suppression
+    // Suppression is checked here rather than on the main thread because the
+    // deadline is atomic and a suppressed event should cost nothing — an
+    // intentional restart bursts these, and queueing each one only to drop it
+    // later is waste.
     if (is_recovery_suppressed()) {
         spdlog::info("[KlipperRecovery] Suppressing recovery dialog (suppression active)");
         return;
     }
 
+    // Everything below reads or writes recovery_dialog_ and recovery_reason_ and
+    // queries ModalStack — main-thread state with no locking. Callers reach this
+    // from the libhv event-loop thread (MoonrakerClient's event handler) and from
+    // AbortManager, both of which already rely on this deferring for them, so the
+    // hop belongs here where every caller gets it.
+    helix::ui::queue_update([reason]() { instance().show_recovery_for_main(reason); });
+}
+
+void EmergencyStopOverlay::show_recovery_for_main(RecoveryReason reason) {
     // Don't show during wizard
     if (is_wizard_active()) {
         spdlog::debug("[KlipperRecovery] Ignoring {} during setup wizard",
@@ -386,7 +398,10 @@ void EmergencyStopOverlay::show_recovery_for(RecoveryReason reason) {
 
     recovery_reason_ = reason;
 
-    // Defer to main thread - may be called from WebSocket thread
+    // Already on the main thread (show_recovery_for marshalled us here), so this
+    // is no longer the thread hop it once was — it is kept because the dialog is
+    // built one tick later, after any modal currently mid-teardown has finished
+    // leaving the stack. The re-entrancy guard below covers the gap.
     helix::ui::async_call(
         [](void*) {
             auto& inst = EmergencyStopOverlay::instance();

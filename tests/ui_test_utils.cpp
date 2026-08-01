@@ -580,6 +580,15 @@ bool ToastManager::is_visible() const {
 // The real EmergencyStopOverlay singleton is used - all methods are provided
 // as stubs that satisfy the linker. Tests that need real behavior should
 // call the methods directly (they're safe with LVGL initialized).
+//
+// CAUTION: show_recovery_for() below is a hand-written COPY of the production
+// logic in src/ui/ui_emergency_stop.cpp, not the production code — the real
+// object is filtered out of the test link (mk/tests.mk, "Group 2"). Anything
+// asserted against it validates this copy. The two have already diverged:
+// production marshals its whole body to the main thread via queue_update()
+// because callers reach it from the libhv event-loop thread, while this copy
+// still mutates recovery_reason_/recovery_dialog_ inline. Do not read the
+// "unified recovery dialog" tests as coverage of that behaviour.
 
 EmergencyStopOverlay& EmergencyStopOverlay::instance() {
     static EmergencyStopOverlay inst;
