@@ -1367,7 +1367,7 @@ Spoolman is now decoupled from AMS backends — spool assignments are tracked pe
 
 ### Config Migration System
 
-Versioned schema migration for `settings.json` that automatically upgrades configuration between releases. The `Config` class tracks a `config_version` integer (currently `CURRENT_CONFIG_VERSION = 19`) and applies migrations sequentially on load:
+Versioned schema migration for `settings.json` that automatically upgrades configuration between releases. The `Config` class tracks a `config_version` integer (currently `CURRENT_CONFIG_VERSION = 21`) and applies migrations sequentially on load:
 
 - **Version tracking** - Each config file stores its schema version; missing version implies v0
 - **Sequential migrations** - Migrations run in order (each version step transforms the JSON structure) on startup

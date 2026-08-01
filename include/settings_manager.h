@@ -30,6 +30,18 @@ enum class ToolheadStyle {
 };
 
 /**
+ * @brief Storage layer for the user-supplied console filter lists.
+ *
+ * The two layers are read together (the console applies their union) but are
+ * written independently, so a pattern the user only ever wants muted on one
+ * machine does not follow them to the next one.
+ */
+enum class ConsoleFilterScope {
+    Global,  ///< /console/filter_user_* — in force on every printer
+    Printer, ///< /printers/<active>/console/filter_user_* — active printer only
+};
+
+/**
  * @brief Application settings manager with reactive UI binding
  *
  * Coordinates persistence (Config), reactive subjects (lv_subject_t), immediate
@@ -351,21 +363,38 @@ class SettingsManager {
     }
 
     /**
-     * @brief Get user-supplied extra patterns to add to the active printer's preset.
+     * @brief Get every user-supplied extra pattern that applies to the active
+     *        printer's preset — the union of the global layer and the active
+     *        printer's own layer, global entries first, duplicates collapsed.
      *        Each entry is a `<type>:<text>` spec (`prefix:`, `substring:`, `regex:`).
      */
     std::vector<std::string> get_console_filter_user_add() const;
 
     /**
-     * @brief Get user-supplied patterns to drop from the active printer's preset.
-     *        Each entry must match a preset spec verbatim to take effect.
+     * @brief Get every user-supplied pattern to drop from the active printer's
+     *        preset — the union of the global and per-printer layers, global
+     *        entries first, duplicates collapsed. Each entry must match a preset
+     *        spec verbatim to take effect.
      */
     std::vector<std::string> get_console_filter_user_remove() const;
 
-    /** @brief Replace the additive user patterns. Persists immediately. */
-    void set_console_filter_user_add(const std::vector<std::string>& patterns);
-    /** @brief Replace the suppress-from-preset user patterns. Persists immediately. */
-    void set_console_filter_user_remove(const std::vector<std::string>& patterns);
+    /** @brief Read one storage layer of the additive user patterns, unmerged. */
+    std::vector<std::string> get_console_filter_user_add(ConsoleFilterScope scope) const;
+    /** @brief Read one storage layer of the suppress-from-preset patterns, unmerged. */
+    std::vector<std::string> get_console_filter_user_remove(ConsoleFilterScope scope) const;
+
+    /**
+     * @brief Replace the additive user patterns in one layer. Persists immediately.
+     *        The other layer is left as it is; the console sees both.
+     */
+    void set_console_filter_user_add(const std::vector<std::string>& patterns,
+                                     ConsoleFilterScope scope = ConsoleFilterScope::Global);
+    /**
+     * @brief Replace the suppress-from-preset patterns in one layer. Persists
+     *        immediately. The other layer is left as it is; the console sees both.
+     */
+    void set_console_filter_user_remove(const std::vector<std::string>& patterns,
+                                        ConsoleFilterScope scope = ConsoleFilterScope::Global);
 
     // =========================================================================
     // MACRO PANEL (owned by SettingsManager — per-printer hidden macro set)

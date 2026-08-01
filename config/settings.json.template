@@ -207,8 +207,6 @@
     "_spool_style_comment": "Filament spool visualization style. Options: '3d' (Bambu-style pseudo-3D canvas with gradients), 'flat' (concentric rings). Default is '3d'."
   },
   "appearance": {
-    "toolhead_style": 0,
-    "_toolhead_style_comment": "Toolhead visualization style on temperature panel. 0=Default, 1=Creality K1, 2=Creality K2. Auto-detected from printer type.",
     "show_widget_labels": false,
     "_show_widget_labels_comment": "Show text labels below home panel widget icons. Default: false."
   },
@@ -265,7 +263,8 @@
   },
   "printers": {
     "show_printer_switcher": false,
-    "_show_printer_switcher_comment": "Show the printer switcher button on the home panel. Default: false."
+    "_show_printer_switcher_comment": "Show the printer switcher button on the home panel. Default: false.",
+    "_per_printer_comment": "Each configured printer is an object here keyed by id (e.g. 'default', 'printer-2'), holding that machine's own moonraker_host/port, heaters, temp_sensors, fans, leds, hardware, panel_widgets, preset, toolhead_style, and detection/policy_u1. 'active_printer_id' at the root selects which one is live. Keys directly under 'printers' that are not objects (like show_printer_switcher) are install-wide settings, not printers."
   },
   "security": {
     "pin_hash": "",

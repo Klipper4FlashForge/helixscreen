@@ -2343,10 +2343,16 @@ TEST_CASE_METHOD(ConfigTestFixture,
     REQUIRE(ids.size() == 1);
     REQUIRE(std::find(ids.begin(), ids.end(), "voron") == ids.end());
 
-    // ...but preserved byte-for-byte under /removed_printers.
+    // ...but preserved under /removed_printers, plus the archive-order stamp
+    // the retention cap sorts on.
     REQUIRE(data_contains("removed_printers"));
     REQUIRE(get_data()["removed_printers"].contains("voron"));
-    REQUIRE(get_data()["removed_printers"]["voron"] == voron);
+
+    json archived = get_data()["removed_printers"]["voron"];
+    REQUIRE(archived.contains(Config::ARCHIVED_AT_KEY));
+    REQUIRE(archived[Config::ARCHIVED_AT_KEY].is_number_integer());
+    archived.erase(Config::ARCHIVED_AT_KEY);
+    REQUIRE(archived == voron);
 }
 
 TEST_CASE_METHOD(ConfigTestFixture, "Config: archive_printer auto-switches the active printer",
@@ -2415,6 +2421,247 @@ TEST_CASE_METHOD(ConfigTestFixture, "Config: archive_printer on an unknown id is
     REQUIRE(config.get_printer_ids().size() == 2);
     REQUIRE(config.get_active_printer_id() == "voron");
     REQUIRE_FALSE(data_contains("removed_printers"));
+}
+
+// ---------------------------------------------------------------------------
+// The /printers map is MIXED. Alongside the printer objects it holds plain
+// settings keys: show_printer_switcher (a bool, seeded by get_default_config())
+// and _show_printer_switcher_comment (a string, shipped in
+// config/settings.json.template). EVERY real config has at least the bool, so
+// code that treats the map as printers-only misbehaves on every device while
+// passing tests built from a hand-written printers-only map — which is exactly
+// how the cases below went missing.
+// ---------------------------------------------------------------------------
+
+TEST_CASE_METHOD(ConfigTestFixture,
+                 "Config: remove_printer counts printers, not map entries, for the last-printer "
+                 "guard",
+                 "[core][config][multi-printer][1210]") {
+    set_data_for_plural_test(
+        {{"active_printer_id", "voron"},
+         {"printers",
+          {{"show_printer_switcher", false}, {"voron", {{"moonraker_host", "192.168.1.10"}}}}}});
+    REQUIRE(config.set_active_printer("voron"));
+
+    config.remove_printer("voron");
+
+    // printers.size() is 2 here, but only one entry is a printer: refusing must
+    // still happen, or the user's only printer is erased.
+    REQUIRE(config.get_printer_ids().size() == 1);
+    REQUIRE(config.get<std::string>("/printers/voron/moonraker_host", "") == "192.168.1.10");
+    REQUIRE(config.get_active_printer_id() == "voron");
+}
+
+TEST_CASE_METHOD(ConfigTestFixture,
+                 "Config: remove_printer last-printer guard ignores the comment string key",
+                 "[core][config][multi-printer][1210]") {
+    set_data_for_plural_test(
+        {{"active_printer_id", "voron"},
+         {"printers",
+          {{"_show_printer_switcher_comment", "Show the printer switcher in the header."},
+           {"show_printer_switcher", true},
+           {"voron", {{"moonraker_host", "192.168.1.10"}}}}}});
+    REQUIRE(config.set_active_printer("voron"));
+
+    config.remove_printer("voron");
+
+    REQUIRE(config.get_printer_ids().size() == 1);
+    REQUIRE(config.get<std::string>("/printers/voron/moonraker_host", "") == "192.168.1.10");
+    // The settings keys themselves are untouched.
+    REQUIRE(get_data()["printers"]["show_printer_switcher"].get<bool>() == true);
+    REQUIRE(get_data()["printers"]["_show_printer_switcher_comment"].is_string());
+}
+
+TEST_CASE_METHOD(ConfigTestFixture, "Config: remove_printer refuses to erase a non-printer key",
+                 "[core][config][multi-printer][1210]") {
+    set_data_for_plural_test({{"active_printer_id", "voron"},
+                              {"printers",
+                               {{"show_printer_switcher", true},
+                                {"voron", {{"moonraker_host", "192.168.1.10"}}},
+                                {"zortrax", {{"moonraker_host", "192.168.1.30"}}}}}});
+    REQUIRE(config.set_active_printer("voron"));
+
+    config.remove_printer("show_printer_switcher");
+
+    // A mistyped/stale id that happens to name a settings key must not delete
+    // the setting.
+    REQUIRE(get_data()["printers"].contains("show_printer_switcher"));
+    REQUIRE(get_data()["printers"]["show_printer_switcher"].get<bool>() == true);
+    REQUIRE(config.get_printer_ids().size() == 2);
+    REQUIRE(config.get_active_printer_id() == "voron");
+}
+
+TEST_CASE_METHOD(ConfigTestFixture, "Config: remove_printer auto-switch skips non-printer keys",
+                 "[core][config][multi-printer][1210]") {
+    // nlohmann orders object keys lexicographically, so "show_printer_switcher"
+    // is the FIRST entry when every printer id sorts after it — the exact shape
+    // that made an unfiltered begin() hand back the bool.
+    set_data_for_plural_test({{"active_printer_id", "voron"},
+                              {"printers",
+                               {{"show_printer_switcher", false},
+                                {"voron", {{"moonraker_host", "192.168.1.10"}}},
+                                {"zortrax", {{"moonraker_host", "192.168.1.30"}}}}}});
+    REQUIRE(config.set_active_printer("voron"));
+
+    config.remove_printer("voron");
+
+    REQUIRE(config.get_active_printer_id() == "zortrax");
+    REQUIRE(config.get<std::string>("/active_printer_id", "") == "zortrax");
+    REQUIRE(config.df() == "/printers/zortrax/");
+
+    // The consequence of getting this wrong: df() addressed a boolean and the
+    // next write through it threw json::type_error.
+    config.set<std::string>(config.df() + "moonraker_host", "10.0.0.9");
+    REQUIRE(config.get<std::string>("/printers/zortrax/moonraker_host", "") == "10.0.0.9");
+    REQUIRE(get_data()["printers"]["show_printer_switcher"].is_boolean());
+}
+
+TEST_CASE_METHOD(ConfigTestFixture,
+                 "Config: remove_printer auto-switch skips the comment string key",
+                 "[core][config][multi-printer][1210]") {
+    // "_..." sorts ahead of everything, so the first map entry is a string.
+    set_data_for_plural_test(
+        {{"active_printer_id", "voron"},
+         {"printers",
+          {{"_show_printer_switcher_comment", "Show the printer switcher in the header."},
+           {"voron", {{"moonraker_host", "192.168.1.10"}}},
+           {"zortrax", {{"moonraker_host", "192.168.1.30"}}}}}});
+    REQUIRE(config.set_active_printer("voron"));
+
+    config.remove_printer("voron");
+
+    REQUIRE(config.get_active_printer_id() == "zortrax");
+    REQUIRE(config.df() == "/printers/zortrax/");
+    REQUIRE(get_data()["printers"]["_show_printer_switcher_comment"].is_string());
+}
+
+TEST_CASE_METHOD(ConfigTestFixture, "Config: archive_printer auto-switch skips non-printer keys",
+                 "[core][config][multi-printer][1210]") {
+    set_data_for_plural_test({{"active_printer_id", "voron"},
+                              {"printers",
+                               {{"show_printer_switcher", false},
+                                {"voron", {{"moonraker_host", "192.168.1.10"}}},
+                                {"zortrax", {{"moonraker_host", "192.168.1.30"}}}}}});
+    REQUIRE(config.set_active_printer("voron"));
+
+    config.archive_printer("voron");
+
+    // archive_printer() delegates the switch to remove_printer(), so it inherits
+    // the same contract.
+    REQUIRE(config.get_active_printer_id() == "zortrax");
+    REQUIRE(config.df() == "/printers/zortrax/");
+    REQUIRE(get_data()["removed_printers"].contains("voron"));
+}
+
+TEST_CASE_METHOD(ConfigTestFixture,
+                 "Config: reset_to_defaults re-points the active printer at the fresh defaults",
+                 "[core][config][multi-printer][1210]") {
+    set_data_for_plural_test(
+        {{"active_printer_id", "voron"},
+         {"printers",
+          {{"show_printer_switcher", false}, {"voron", {{"moonraker_host", "192.168.1.10"}}}}}});
+    REQUIRE(config.set_active_printer("voron"));
+
+    config.reset_to_defaults();
+
+    // The defaults ship one printer keyed "default". A stale active id leaves
+    // df() addressing a node that no longer exists — harmless until something
+    // writes through it, which vivifies the ghost.
+    REQUIRE(config.get_active_printer_id() == "default");
+    REQUIRE(config.df() == "/printers/default/");
+    REQUIRE(get_data()["printers"].contains("default"));
+
+    config.set<int>(config.df() + "moonraker_port", 7126);
+    REQUIRE(get_data()["printers"]["default"]["moonraker_port"].get<int>() == 7126);
+    REQUIRE_FALSE(get_data()["printers"].contains("voron"));
+}
+
+// ---------------------------------------------------------------------------
+// /removed_printers retention. Nothing reads the archive back yet, so an
+// unbounded one is pure growth in settings.json and in every rolling backup of
+// it.
+// ---------------------------------------------------------------------------
+
+TEST_CASE_METHOD(ConfigTestFixture,
+                 "Config: archive_printer keeps only the most recently archived printers",
+                 "[core][config][multi-printer][1210]") {
+    const size_t total = Config::MAX_ARCHIVED_PRINTERS + 3;
+
+    json printers = {{"show_printer_switcher", false},
+                     // Never archived — keeps remove_printer()'s last-printer
+                     // guard from firing partway through.
+                     {"keeper", {{"moonraker_host", "10.0.0.1"}}}};
+    std::vector<std::string> ids;
+    for (size_t i = 0; i < total; i++) {
+        std::string id = "printer-" + std::to_string(i);
+        printers[id] = json{{"moonraker_host", "192.168.1." + std::to_string(i)}};
+        ids.push_back(id);
+    }
+    set_data_for_plural_test({{"active_printer_id", "keeper"}, {"printers", printers}});
+    REQUIRE(config.set_active_printer("keeper"));
+
+    // Archive HIGHEST id first, so archive order is the reverse of key order:
+    // a prune that sorted on the key rather than the stamp keeps the wrong set.
+    for (size_t i = total; i-- > 0;) {
+        config.archive_printer(ids[i]);
+    }
+
+    const json& archive = get_data()["removed_printers"];
+    REQUIRE(archive.size() == Config::MAX_ARCHIVED_PRINTERS);
+
+    for (size_t i = 0; i < total; i++) {
+        INFO("printer index " << i);
+        // printer-0 was archived last, so the survivors are the LOW indices.
+        REQUIRE(archive.contains(ids[i]) == (i < Config::MAX_ARCHIVED_PRINTERS));
+    }
+
+    // Stamps are strictly ordered by archive order even though every archive
+    // happened within the same wall-clock second.
+    int64_t newer = 0;
+    for (size_t i = 0; i < Config::MAX_ARCHIVED_PRINTERS; i++) {
+        INFO("printer index " << i);
+        REQUIRE(archive.at(ids[i]).contains(Config::ARCHIVED_AT_KEY));
+        const int64_t stamp = archive.at(ids[i]).at(Config::ARCHIVED_AT_KEY).get<int64_t>();
+        if (i > 0) {
+            REQUIRE(stamp < newer);
+        }
+        newer = stamp;
+    }
+}
+
+TEST_CASE_METHOD(ConfigTestFixture,
+                 "Config: archive_printer prunes unstamped and malformed entries first",
+                 "[core][config][multi-printer][1210]") {
+    set_data_for_plural_test({{"active_printer_id", "zortrax"},
+                              {"printers",
+                               {{"show_printer_switcher", false},
+                                {"voron", {{"moonraker_host", "192.168.1.10"}}},
+                                {"zortrax", {{"moonraker_host", "192.168.1.30"}}}}}});
+    REQUIRE(config.set_active_printer("zortrax"));
+
+    // An archive written before entries carried a stamp, plus one whose stamp
+    // is garbage. Neither may crash the prune, and both must sort as older than
+    // anything stamped.
+    json legacy = json::object();
+    for (size_t i = 0; i < Config::MAX_ARCHIVED_PRINTERS; i++) {
+        legacy["legacy-" + std::to_string(i)] = {{"moonraker_host", "172.16.0.1"}};
+    }
+    legacy["legacy-2"][Config::ARCHIVED_AT_KEY] = "not-a-number";
+    legacy["legacy-3"][Config::ARCHIVED_AT_KEY] = nullptr;
+    get_data()["removed_printers"] = legacy;
+
+    config.archive_printer("voron");
+
+    const json& archive = get_data()["removed_printers"];
+    REQUIRE(archive.size() == Config::MAX_ARCHIVED_PRINTERS);
+    // The stamped newcomer survives; the unstamped entry whose key sorts first
+    // is the one dropped.
+    REQUIRE(archive.contains("voron"));
+    REQUIRE_FALSE(archive.contains("legacy-0"));
+    for (size_t i = 1; i < Config::MAX_ARCHIVED_PRINTERS; i++) {
+        INFO("legacy index " << i);
+        REQUIRE(archive.contains("legacy-" + std::to_string(i)));
+    }
 }
 
 TEST_CASE_METHOD(ConfigTestFixture, "Config: df() routes to active printer path",

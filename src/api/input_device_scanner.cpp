@@ -348,7 +348,7 @@ std::optional<ScannedDevice> find_keyboard_device() {
     try {
         Config* config = Config::get_instance();
         if (config) {
-            exclude_id = config->get<std::string>(config->df() + "scanner/usb_vendor_product", "");
+            exclude_id = config->get<std::string>("/scanner/usb_vendor_product", "");
         }
     } catch (...) {
         // Config may not be initialized yet during very early startup
