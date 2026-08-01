@@ -132,7 +132,7 @@ Remaining items for production readiness:
 - RAII lifecycle management (PanelBase, ObserverGuard, SubscriptionGuard)
 - **Dynamic theme system** with JSON themes, live preview, and theme editor
 - **Layout system** with auto-detection for ultrawide, portrait, and small displays (the ultrawide and portrait *layouts* are alpha — detection and grid sizing only, no panel overrides)
-- Responsive breakpoints (small/medium/large displays)
+- Seven responsive breakpoint tiers (micro through xxlarge)
 - Observer factory pattern (`observe_int_sync`, `observe_string_async`, etc.)
 - **Versioned config migration** for seamless upgrades between releases
 - **Moonraker API abstraction boundary** — 116 methods, UI decoupled from WebSocket layer

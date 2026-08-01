@@ -298,7 +298,7 @@ Named presets and their resolutions:
 | `large` | 1024 | 600 |
 | `xlarge` | 1280 | 720 |
 
-Custom `WxH` values are automatically classified into the nearest breakpoint based on height.
+Custom `WxH` values are automatically classified into the nearest breakpoint based on the narrow axis, `min(W, H)` — the height on a landscape size, the width on a portrait one.
 
 ```bash
 # Force small screen layout

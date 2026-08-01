@@ -457,7 +457,7 @@ Attributes are the same as `bind_style`: `name` (style name), `subject` (subject
 </lv_obj>
 ```
 
-**Why use `bind_style_if_*` instead of `bind_style`?** The `bind_style` element only matches exact values, so you need one `bind_style` per possible value. With `bind_style_if_ge`, a single element covers all breakpoints above a threshold. This is essential for responsive styling where you have 6 breakpoint tiers.
+**Why use `bind_style_if_*` instead of `bind_style`?** The `bind_style` element only matches exact values, so you need one `bind_style` per possible value. With `bind_style_if_ge`, a single element covers all breakpoints above a threshold. This is essential for responsive styling where you have 7 breakpoint tiers.
 
 **CRITICAL: Remove inline styles when using `bind_style_if_*`.** The same priority rule applies as with `bind_style` -- inline `style_*` attributes always win over added styles. When switching padding responsively, do NOT set `style_pad_left` on the element; use two `bind_style_if_*` elements instead.
 
@@ -1129,10 +1129,10 @@ The widget is registered via `ui_markdown_init()` in `xml_registration.cpp`. Thi
 
 ## Responsive Design
 
-HelixScreen has a comprehensive responsive design token system with 5 breakpoints, semantic spacing, responsive fonts, and more. See the **[UI Contributor Guide](UI_CONTRIBUTOR_GUIDE.md)** for the complete reference — it covers breakpoints, spacing tokens, font tokens, component tokens, color system, and how to add new tokens.
+HelixScreen has a responsive design token system with 7 breakpoints, semantic spacing, responsive fonts, and more. See the **[UI Contributor Guide](UI_CONTRIBUTOR_GUIDE.md)** for the complete reference — it covers breakpoints, spacing tokens, font tokens, component tokens, color system, and how to add new tokens.
 
 Quick summary for reference:
-- **Breakpoints** are height-based: TINY (≤390), SMALL (391-460), MEDIUM (461-550), LARGE (551-700), XLARGE (>700)
+- **Breakpoints** are selected from the narrow axis, `min(width, height)`, not the height: MICRO (≤272), TINY (273-390), SMALL (391-460), MEDIUM (461-550), LARGE (551-700), XLARGE (701-1000), XXLARGE (>1000)
 - **Spacing:** `#space_xxs` through `#space_2xl` — always use tokens, never hardcoded pixels
 - **Fonts:** Use `<text_heading>`, `<text_body>`, `<text_small>`, `<text_xs>` components
 - **Colors:** Use `#token_name` in XML (e.g., `style_bg_color="#card_bg"`)

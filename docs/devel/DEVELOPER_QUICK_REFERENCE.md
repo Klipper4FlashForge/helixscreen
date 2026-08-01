@@ -304,12 +304,16 @@ Screen-responsive switch with semantic sizes:
 <ui_switch size="medium" checked="true"/>
 ```
 
-| Size | SMALL screen | MEDIUM screen | LARGE screen |
-|------|--------------|---------------|--------------|
-| `tiny` | 32×16px | 48×24px | 64×32px |
-| `small` | 40×20px | 64×32px | 88×44px |
-| `medium` | 48×24px | 80×40px | 112×56px |
-| `large` | 56×28px | 88×44px | 128×64px |
+The preset tier comes from the narrow axis, `min(width, height)`, not the height.
+
+| Size | MICRO (≤272) | TINY/SMALL (273-460) | MEDIUM (461-550) | LARGE+ (>550) |
+|------|--------------|----------------------|------------------|---------------|
+| `tiny` | 24×12px | 32×16px | 48×24px | 64×32px |
+| `small` | 32×16px | 40×20px | 64×32px | 88×40px |
+| `medium` | 40×20px | 48×24px | 80×40px | 112×48px |
+| `large` | 48×24px | 56×28px | 88×44px | 128×56px |
+
+Only four preset tiers exist for seven breakpoints, deliberately: Tiny and Small share one preset (switches are too small to benefit from separate tiers), and Large, XLarge and XXLarge all share the widest one. See `ui_switch_init_size_presets()` in `src/ui/ui_switch.cpp`.
 
 ---
 

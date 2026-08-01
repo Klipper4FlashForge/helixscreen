@@ -204,10 +204,17 @@ Event callbacks (`<event_cb trigger="clicked" callback="..."/>`) connect buttons
 Every callback in the standard file must appear in your override, attached to the appropriate
 widget.
 
-**4. Don't modify `globals.xml`**
+**4. Don't change existing values in `globals.xml`**
 
 Design tokens (colors, spacing, typography) are defined in `globals.xml` and shared across
-all layouts. Your layout XML should use these tokens — not hardcoded values:
+all layouts, so retuning an existing token changes every layout at once. *Adding* a new
+suffixed responsive token there is a different matter: it is correct, and it is the only
+place the declaration can live. Token discovery is top-level-only, so a `<px name="foo_small">`
+declared in `ui_xml/portrait/` is never registered and every `#foo` referencing it silently
+resolves to nothing. Declare in `globals.xml`, reference from the variant file. See
+[UI Contributor Guide](UI_CONTRIBUTOR_GUIDE.md) §2 and `scripts/check_responsive_token_scope.py`.
+
+Your layout XML should use these tokens — not hardcoded values:
 
 ```xml
 <!-- Good: uses design tokens -->
@@ -244,6 +251,10 @@ all layouts. Your layout XML should use these tokens — not hardcoded values:
 - Navigation bar probably needs to move to the bottom (override `navigation_bar.xml`)
 - Content stacks vertically naturally
 - Consider which elements can be stacked vs. side-by-side
+- Portrait is where narrow-axis breakpoint selection bites hardest: the tier comes from
+  `min(width, height)`, so a 320x1480 panel resolves to the Tiny tier from its 320px width,
+  not from its 1480px of height. Prefer height tokens over hardcoded pixels so vertical
+  sizes scale with the tier you actually land in.
 
 **Micro (480x272):**
 - Extremely height-constrained — only 272px vertical space
@@ -407,5 +418,6 @@ else
 | Naming | "Layouts" | Distinct from "themes" (colors) and "profiles" (print start) |
 | Detection | Auto with override | Users shouldn't need to configure, but can |
 | Fallback | Per-file to standard | New layouts start empty, override incrementally |
-| globals.xml | Never overridden | Design tokens are universal across all layouts |
-| Runtime switching | Not supported | Would require full widget tree rebuild; startup-only is fine |
+| globals.xml | Never overridden; new responsive tokens still go there | Design tokens are universal across all layouts, and discovery only reads the top level of `ui_xml/` |
+| Runtime layout-variant switching | Not supported | Would require full widget tree rebuild; startup-only is fine |
+| Runtime breakpoint/token refresh | Supported on resize | `theme_manager_refresh_layout_constants()` re-registers tokens and moves the `ui_breakpoint` subject; driven by the resize callback in `src/application/application.cpp` (desktop SDL, Android fold/unfold). On-device rotation is fixed at startup, so nothing fires there |

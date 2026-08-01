@@ -163,18 +163,20 @@ lv_color_t bg = theme_manager_get_color("card_bg");
 
 ### The Breakpoint System
 
-Every responsive value requires three core variants: `_small`, `_medium`, `_large`. Optional `_tiny` and `_xlarge` variants can be added where values differ. The system automatically selects based on screen height.
+Every responsive value requires three core variants: `_small`, `_medium`, `_large`. Optional `_micro`, `_tiny`, `_xlarge` and `_xxlarge` variants can be added where values differ. The system selects a tier automatically.
 
-**Breakpoints (5-tier, height-based):**
-| Suffix | Height | Target Devices | Fallback |
-|--------|--------|----------------|----------|
-| `_tiny` | ≤390px | 480×320 | → `_small` |
+**Breakpoints (7-tier, narrow-axis):**
+| Suffix | Narrow axis | Target Devices | Fallback |
+|--------|-------------|----------------|----------|
+| `_micro` | ≤272px | 480×272 | → `_tiny` → `_small` |
+| `_tiny` | 273-390px | 480×320 | → `_small` |
 | `_small` | 391-460px | 480×400, 1920×440 | required |
 | `_medium` | 461-550px | 800×480 | required |
 | `_large` | 551-700px | 1024×600 | required |
-| `_xlarge` | >700px | 1280×720+ | → `_large` |
+| `_xlarge` | 701-1000px | 1280×720, 1024×768 | → `_large` |
+| `_xxlarge` | >1000px | 1440p, 4K | → `_xlarge` → `_large` |
 
-Height = vertical resolution (the real constraint for layout).
+The tier comes from `responsive_dimension()` = `min(width, height)` — the narrow, cramped axis, not the height (`src/ui/theme_manager.cpp`). On a landscape display the narrow axis usually *is* the height, which is why "height-based" looked right for years. On a portrait panel it is the width: a 320×1480 screen resolves to `_tiny` from its 320px width. Tier boundaries live in `breakpoint_for()` (`include/ui_breakpoint.h`).
 
 ### Spacing Tokens
 
@@ -215,6 +217,39 @@ lv_xml_register_const(scope, "space_lg", "16");  // On 800x480 screen
 | `#font_body` | noto_sans_14 | noto_sans_18 | noto_sans_20 |
 | `#font_small` | noto_sans_light_12 | noto_sans_light_16 | noto_sans_light_18 |
 | `#font_xs` | noto_sans_light_10 | noto_sans_light_12 | noto_sans_light_14 |
+
+### Font tier registration
+
+Font tokens differ from `px` tokens in one way that matters: the face a token names
+has to have been registered with LVGL before the token can point at it, and not every
+tier is registered at once.
+
+- **Build time** — `FONT_TIERS` (`mk/cross.mk`) decides which faces are linked at all,
+  and `HELIX_MAX_FONT_TIER` is derived from it. `theme_manager` uses that ceiling to
+  tell a font pruned by tier from a font missing because of a build bug. See
+  `BUILD_SYSTEM.md`.
+- **Startup** — `AssetManager::register_fonts()` registers the current tier and below,
+  skipping larger tiers to save `.rodata`.
+- **Runtime** — `AssetManager::register_fonts_for_tier()` is re-entrant. A rising tier
+  registers the delta; a same-or-lower tier is a no-op; nothing is ever unregistered,
+  because live widgets hold pointers into those static faces.
+
+**Ordering invariant.** `theme_manager_refresh_layout_constants()` must register the
+tier *before* re-pointing the font tokens. Reversed, every raised token names a face
+that was never registered and the existence check in
+`theme_manager_register_responsive_fonts()` silently bounces it back down to `_large`.
+
+Font token registration uses `lv_xml_update_const()`, not `lv_xml_register_const()`.
+Const registration is first-write-wins, so on a second pass -- a runtime breakpoint
+change or a theme reload -- registration would keep the startup value and the refresh
+would be inert. These base tokens have no `globals.xml` declaration to protect; they
+exist only because that function derives them.
+
+Note what this does **not** do: `style_text_font` is resolved to a concrete
+`lv_font_t*` at parse time and baked into the widget's style, so re-pointing a token
+does not restyle widgets that already exist. The same has always been true of `px`
+tokens. Widgets built after the refresh pick up the new tier; the eagerly-built root
+panels do not, short of `NavigationManager::rebuild_active_views()`.
 
 ---
 
@@ -329,7 +364,7 @@ Icon sizes map directly to fixed-size icon fonts (not responsive):
 | `lg` | mdi_icons_48 | Status indicators |
 | `xl` | mdi_icons_64 | Navigation, hero icons |
 
-> **Note:** For responsive icon sizing, use the `icon_size` token (`size="#icon_size"`) which selects sm/md/lg/xl based on breakpoint (tiny/small/medium/large/xlarge).
+> **Note:** For responsive icon sizing, use the `icon_size` token (`size="#icon_size"`) which selects one of these named sizes per breakpoint (`icon_size_*` in `globals.xml`): `md` for micro, tiny and small; `lg` for medium; `xl` for large, xlarge and xxlarge. `sm` is never selected automatically — 24px is illegible on a 272px screen.
 
 **Attributes:**
 - `src` - MDI icon name ("home", "settings", "wifi")
@@ -355,16 +390,16 @@ ui_icon_set_variant(icon, "success");
 #### ui_spinner
 Indeterminate loading spinner with themed arc color.
 
-Spinner sizes are **responsive** - the pixel values vary by screen height breakpoint:
+Spinner sizes are **responsive** - the pixel values vary by breakpoint (narrow axis):
 
-| Size | Small (391-460) | Medium (461-550) | Large (551-700) | XLarge (>700) |
-|------|-----------------|-------------------|-----------------|---------------|
-| `xs` | 12px / 2px arc | 14px / 2px arc | 16px / 2px arc | 16px / 2px arc |
-| `sm` | 16px / 2px arc | 18px / 2px arc | 20px / 2px arc | 20px / 2px arc |
-| `md` | 24px / 2px arc | 28px / 3px arc | 32px / 3px arc | 32px / 3px arc |
-| `lg` | 48px / 3px arc | 56px / 4px arc | 64px / 4px arc | 64px / 4px arc |
+| Size | Small (391-460) | Medium (461-550) | Large (551-700) | XLarge (701-1000) | XXLarge (>1000) |
+|------|-----------------|-------------------|-----------------|-------------------|-----------------|
+| `xs` | 12px / 2px arc | 14px / 2px arc | 16px / 2px arc | 18px / 2px arc | 20px / 2px arc |
+| `sm` | 16px / 2px arc | 18px / 2px arc | 20px / 2px arc | 24px / 2px arc | 28px / 2px arc |
+| `md` | 24px / 2px arc | 28px / 3px arc | 32px / 3px arc | 40px / 4px arc | 48px / 4px arc |
+| `lg` | 48px / 3px arc | 56px / 4px arc | 64px / 4px arc | 80px / 5px arc | 96px / 6px arc |
 
-> Note: _xlarge falls back to _large unless explicitly defined. _tiny falls back to _small.
+> Note: no `_micro` or `_tiny` spinner variants are defined, so Micro and Tiny both resolve to the Small column. The `xs`/`sm` arc widths (`spinner_arc_xs`, `spinner_arc_sm`) are plain constants with no variants — 2px on every tier.
 
 ```xml
 <spinner size="lg"/>
@@ -586,6 +621,8 @@ file-static pattern in `theme_manager.cpp` instead — add an `lv_style_t`, conf
    <px name="my_space_medium" value="12"/>
    <px name="my_space_large" value="16"/>
    ```
+
+   The declaration MUST be at the top level of `ui_xml/` — discovery does not recurse into `ui_xml/components/`, `ui_xml/portrait/` or any other subdirectory, so a suffixed token declared there is never registered and every `#reference` to it silently resolves to nothing. Enforced by `scripts/check_responsive_token_scope.py` (prestonbrown/helixscreen#1211).
 
 2. Use in XML: `style_pad_all="#my_space"`
 

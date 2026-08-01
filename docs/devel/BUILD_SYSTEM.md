@@ -1608,7 +1608,34 @@ Read from `VERSION.txt` (MAJOR.MINOR.PATCH) and injected as `-DHELIX_VERSION="..
 | `TARGET_ARCH` | Target architecture for the active cross target |
 | `TARGET_TRIPLE` | Toolchain triple (e.g. `aarch64-linux-gnu`) |
 | `STRIP_BINARY` | Whether to strip the output binary for size |
-| `FONT_TIERS` | Which font size tiers to embed for the target |
+| `FONT_TIERS` | Which font size tiers to embed for the target — see below |
+
+#### FONT_TIERS
+
+Font faces are the largest single chunk of `.rodata`, so each target links only the
+tiers it can actually display. Legal values are `all` (the default, `mk/fonts.mk:107`)
+or any subset of `micro tiny small medium large xlarge xxlarge`. Assignments live per
+target in `mk/cross.mk`:
+
+| `PLATFORM_TARGET` | Tiers |
+|-------------------|-------|
+| `pi`, `pi-fbdev`, `pi-both`, `pi32`, `pi32-fbdev`, `pi32-both` | `all` |
+| `x86`, `x86-fbdev`, `x86-both`, `native` | `all` |
+| `ad5m`, `ad5m-br`, `ad5x` | `medium large` |
+| `mips` / `k1`, `k1-dynamic` | `small medium` |
+| `k2` | `large xlarge` |
+| `snapmaker-u1` | `tiny small` |
+| `cc1`, `yocto` | `micro tiny` |
+
+`HELIX_MAX_FONT_TIER` is derived from this (`mk/cross.mk:728-750`; `micro=0` …
+`xxlarge=6`). Two consumers read it: `theme_manager` uses it to distinguish an
+expected-missing font (pruned by tier) from an unexpected-missing one (a build bug),
+and `cjk_font_manager` uses it to pick its CJK face.
+
+The consequence for layout work: a `<string>` token naming a face outside the
+target's tiers silently fails to register on that target, and the token falls back
+down the ladder. If you add a font token for a large tier, check it against the
+tier list of the smallest device that will run it.
 
 ### Feature gates
 

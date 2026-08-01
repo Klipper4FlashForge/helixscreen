@@ -434,10 +434,14 @@ lv_subject_t* theme_manager_get_changed_subject();
  * @brief Get the breakpoint index subject for reactive responsive visibility
  *
  * Returns an LVGL int subject holding the current breakpoint index:
- *   0=TINY, 1=SMALL, 2=MEDIUM, 3=LARGE, 4=XLARGE
+ *   0=MICRO, 1=TINY, 2=SMALL, 3=MEDIUM, 4=LARGE, 5=XLARGE, 6=XXLARGE
+ *
+ * These are the UiBreakpoint enum values (ui_breakpoint.h) — XML ref_values are
+ * written against them, so they must not be renumbered.
  *
  * Use with bind_flag_if_eq in XML to reactively show/hide elements based on
- * screen size. Example: <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="0"/>
+ * screen size. Example, hiding an element on the smallest tier only:
+ *   <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="0"/>
  *
  * @return Pointer to the breakpoint subject (valid after theme_manager_init)
  */
