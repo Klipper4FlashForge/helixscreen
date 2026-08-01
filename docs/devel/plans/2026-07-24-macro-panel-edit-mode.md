@@ -6,14 +6,14 @@
 
 **Architecture:** Bottom-up. Land the reusable primitives first (an engine `lv_xml_unregister_subject`, then an `IndexedSubjectPool` that name-registers dynamically-sized subjects and reclaims them on close), then persistence, then the declarative XML row template, then the panel controller that ties them together. Each layer is independently tested before the next consumes it.
 
-**Tech Stack:** C++17, LVGL 9.5, helix-xml engine (`lib/helix-xml/`, direct-edit), Catch2 tests, pure Makefile build.
+**Tech Stack:** C++17, LVGL 9.5, helix-xml engine (`lib/helix-xml/`, our own submodule), Catch2 tests, pure Makefile build.
 
 ## Global Constraints
 
 - Spec: `docs/devel/specs/2026-07-24-macro-panel-edit-mode-design.md` (authoritative).
 - Build the program: `make -j`. Build tests: `make test`. Run: `make test-run` or `./build/bin/helix-tests "[tag]"`. Never run `helix-tests` without `make test` first (stale binary).
 - XML files load at runtime — no rebuild for XML-only edits; relaunch (or `HELIX_HOT_RELOAD=1`).
-- `lib/helix-xml/` is direct-edit (NOT a submodule). LVGL/libhv changes would need patches; not touched here.
+- `lib/helix-xml/` is our own submodule — edit in place, push from inside it, bump the pointer here. LVGL/libhv changes would need patches; not touched here.
 - Declarative-UI rules apply: no `lv_obj_add_event_cb` (use XML `<event_cb>`), no `lv_label_set_text` on bound labels, design tokens only, no hardcoded colors/spacing.
 - Threading: all pool populate/reclaim and subject sets run on the **main thread**.
 - New XML components must be registered in `main.cpp` ([L014]); after adding/registering a widget run `make regen-xml-schema` and commit the schema ([L089]).
@@ -92,8 +92,19 @@ Declare in `lv_xml.h` beside `lv_xml_register_subject`, with a doc comment stati
 
 - [ ] **Step 6: Commit** (explicit paths):
 
+`lib/helix-xml` is a separate repo, so the engine change and the test commit separately —
+the engine inside the submodule, then the bumped pointer plus the test here:
+
 ```bash
-git add lib/helix-xml/src/xml/lv_xml.c lib/helix-xml/src/xml/lv_xml.h tests/unit/test_xml_unregister_subject.cpp
+# 1. the engine change, inside the submodule
+cd lib/helix-xml
+git add src/xml/lv_xml.c src/xml/lv_xml.h
+git commit -m "Add lv_xml_unregister_subject (non-owning registry removal)"
+git push
+cd ../..
+
+# 2. the bumped pointer and the test, in helixscreen
+git add lib/helix-xml tests/unit/test_xml_unregister_subject.cpp
 git commit -m "feat(helix-xml): add lv_xml_unregister_subject (non-owning registry removal)"
 ```
 

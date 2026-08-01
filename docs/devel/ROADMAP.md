@@ -278,7 +278,8 @@ The XML engine lives in its own repository and keeps its roadmap there, on GitHu
 
 **https://github.com/prestonbrown/helix-xml/issues**
 
-`lib/helix-xml/` in this tree is the same code, vendored and direct-edit. It is MIT — a permanent
+`lib/helix-xml/` in this tree is a submodule pointing at that repo — edit it in place, push from
+inside the submodule, then commit the bumped pointer here. It is MIT — a permanent
 fork of the engine LVGL removed from core in v9.5 — and it has no upstream. Anything LVGL Pro also
 has must be built clean-room from published docs; see `LVGL_XML_SITUATION.md`.
 

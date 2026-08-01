@@ -54,7 +54,7 @@ expose C++ pointer getters instead, precisely because there was **no unregister 
 A dynamically-sized, name-registered pool that reclaims when a panel closes is new
 ground and is worth a reusable abstraction.
 
-**Engine addition (`lib/helix-xml/` — direct-edit, not a submodule).**
+**Engine addition (`lib/helix-xml/` — our own submodule; edit in place, push from inside it, bump the pointer here).**
 Add `lv_xml_unregister_subject(scope, name)` mirroring `lv_xml_get_subject`
 (`lv_xml.c:637`). It walks `scope->subjects_ll`, `lv_ll_remove`s the matching
 `lv_xml_subject_t` record, and frees **only** the strdup'd name string:
