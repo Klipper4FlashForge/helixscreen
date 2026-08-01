@@ -1,0 +1,69 @@
+diff --git a/http/client/WebSocketClient.cpp b/http/client/WebSocketClient.cpp
+index aa4c7d5..45f2a64 100644
+--- a/http/client/WebSocketClient.cpp
++++ b/http/client/WebSocketClient.cpp
+@@ -13,6 +13,9 @@ WebSocketClient::WebSocketClient(EventLoopPtr loop)
+     state = WS_CLOSED;
+     ping_interval = DEFAULT_WS_PING_INTERVAL;
+     ping_cnt = 0;
++    saved_reconn_cur_delay_ = 0;
++    saved_reconn_cur_retry_cnt_ = 0;
++    saved_reconn_valid_ = false;
+ }
+ 
+ WebSocketClient::~WebSocketClient() {
+@@ -63,6 +66,19 @@ int WebSocketClient::open(const char* _url, const http_headers& headers) {
+ 
+     onConnection = [this](const WebSocketChannelPtr& channel) {
+         if (channel->isConnected()) {
++            // TcpClient resets the reconnect backoff in its own onconnect, right
++            // after this handler returns — i.e. on TCP connect, before the WS
++            // upgrade has happened. For a plain TCP client that is correct, but a
++            // peer that accepts TCP and then fails the upgrade (proxy up with
++            // Moonraker down, 404 on the WS path, Sec-WebSocket-Accept mismatch)
++            // would reset the delay to min_delay every cycle, pinning the client
++            // in a 5Hz reconnect loop that never backs off. Snapshot here and
++            // restore below unless the upgrade actually completed.
++            if (reconn_setting) {
++                saved_reconn_cur_delay_ = reconn_setting->cur_delay;
++                saved_reconn_cur_retry_cnt_ = reconn_setting->cur_retry_cnt;
++                saved_reconn_valid_ = true;
++            }
+             state = CONNECTED;
+             // websocket_handshake
+             http_req_->headers["Connection"] = "Upgrade";
+@@ -91,6 +107,17 @@ int WebSocketClient::open(const char* _url, const http_headers& headers) {
+             http_resp_ = std::make_shared<HttpResponse>();
+             http_parser_->InitResponse(http_resp_.get());
+         } else {
++            // Undo the premature reset described above: if we never reached
++            // WS_OPENED, this attempt did not really succeed, so the backoff must
++            // keep growing. Runs before TcpClient's onclose calls startReconnect(),
++            // so the restored delay is what the next retry uses. A session that DID
++            // open keeps the reset — a previously-working printer deserves a fast
++            // reconnect.
++            if (reconn_setting && saved_reconn_valid_ && state != WS_OPENED) {
++                reconn_setting->cur_delay = saved_reconn_cur_delay_;
++                reconn_setting->cur_retry_cnt = saved_reconn_cur_retry_cnt_;
++            }
++            saved_reconn_valid_ = false;
+             state = WS_CLOSED;
+             if (onclose) onclose();
+         }
+diff --git a/http/client/WebSocketClient.h b/http/client/WebSocketClient.h
+index da0a4af..69fe0f9 100644
+--- a/http/client/WebSocketClient.h
++++ b/http/client/WebSocketClient.h
+@@ -64,6 +64,12 @@ private:
+     // ping/pong
+     int                 ping_interval;
+     int                 ping_cnt;
++    // PATCH: reconnect backoff snapshot taken at TCP connect and restored on close
++    // unless the WS upgrade completed, so a peer that accepts TCP but fails the
++    // upgrade does not reset the backoff to min_delay on every cycle.
++    uint32_t            saved_reconn_cur_delay_;
++    uint32_t            saved_reconn_cur_retry_cnt_;
++    bool                saved_reconn_valid_;
+ };
+ 
+ }

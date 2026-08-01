@@ -1,0 +1,20 @@
+diff --git a/evpp/TcpClient.h b/evpp/TcpClient.h
+index e355b61..77225a2 100644
+--- a/evpp/TcpClient.h
++++ b/evpp/TcpClient.h
+@@ -108,6 +108,15 @@ public:
+             int connfd = createsocket(&remote_addr.sa);
+             if (connfd < 0) {
+                 hloge("createsocket %s:%d return %d!\n", remote_host.c_str(), remote_port, connfd);
++                // Reschedule instead of dropping the chain. Only channel->onclose
++                // re-arms the retry timer, and it is installed further down this
++                // function, so returning here leaves nothing to restart the client:
++                // one transient ::socket() failure (EMFILE/ENFILE, ENOBUFS under
++                // memory pressure) killed auto-reconnect permanently. Respects
++                // max_retry_cnt via reconn_setting_can_retry().
++                if (reconn_setting) {
++                    startReconnect();
++                }
+                 return connfd;
+             }
+         }

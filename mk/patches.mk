@@ -77,7 +77,10 @@ LIBHV_PATCHED_FILES := \
 	http/client/requests.h \
 	base/hsocket.c \
 	base/dns_resolv.c \
-	base/dns_resolv.h
+	base/dns_resolv.h \
+	evpp/TcpClient.h \
+	http/client/WebSocketClient.h \
+	http/client/WebSocketClient.cpp
 
 # ============================================================================
 # PATCH STAMP FILE - Skip checking if patches haven't changed
@@ -293,16 +296,15 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 	else \
 		echo "$(GREEN)✓ LVGL blend color NULL guard patch already applied$(RESET)"; \
 	fi
-	$(Q)if git -C $(LVGL_DIR) diff --quiet src/draw/lv_draw.c 2>/dev/null; then \
-		echo "$(YELLOW)→ Applying LVGL signed draw coords patch...$(RESET)"; \
-		if git -C $(LVGL_DIR) apply --check ../../patches/lvgl-fix-signed-unsigned-draw-coords.patch 2>/dev/null; then \
-			git -C $(LVGL_DIR) apply ../../patches/lvgl-fix-signed-unsigned-draw-coords.patch && \
-			echo "$(GREEN)✓ Signed draw coords patch applied$(RESET)"; \
-		else \
-			echo "$(YELLOW)⚠ Cannot apply patch (already applied or conflicts)$(RESET)"; \
-		fi \
+	# Sentinel is `apply --check` rather than "is lv_draw.c dirty?": this patch no
+	# longer touches lv_draw.c (see patches/README.md), and lvgl_draw_render_thread_acquire
+	# does, so a file-dirty test here would report "already applied" when it is not.
+	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl-fix-signed-unsigned-draw-coords.patch 2>/dev/null; then \
+		echo "$(YELLOW)→ Applying LVGL draw-area clip patch...$(RESET)"; \
+		git -C $(LVGL_DIR) apply ../../patches/lvgl-fix-signed-unsigned-draw-coords.patch && \
+		echo "$(GREEN)✓ Draw-area clip patch applied$(RESET)"; \
 	else \
-		echo "$(GREEN)✓ LVGL signed draw coords patch already applied$(RESET)"; \
+		echo "$(GREEN)✓ LVGL draw-area clip patch already applied$(RESET)"; \
 	fi
 	$(Q)if git -C $(LVGL_DIR) apply --check ../../patches/lvgl_draw_render_thread_acquire.patch 2>/dev/null; then \
 		echo "$(YELLOW)→ Applying LVGL render-thread acquire/release barrier patch (ARM64 layer-buffer UAF)...$(RESET)"; \
@@ -672,5 +674,37 @@ $(PATCHES_STAMP): $(PATCH_FILES) $(LVGL_HEAD) $(LIBHV_HEAD)
 		fi \
 	else \
 		echo "$(GREEN)✓ libhv DNS resolver fallback patch already applied$(RESET)"; \
+	fi
+	$(Q)if ! grep -q "Reschedule instead of dropping the chain" "$(LIBHV_DIR)/evpp/TcpClient.h" 2>/dev/null; then \
+		echo "$(YELLOW)→ Applying libhv TcpClient reconnect resilience patch...$(RESET)"; \
+		if git -C $(LIBHV_DIR) apply --check ../../patches/libhv-tcpclient-reconnect-resilience.patch 2>/dev/null; then \
+			git -C $(LIBHV_DIR) apply ../../patches/libhv-tcpclient-reconnect-resilience.patch && \
+			echo "$(GREEN)✓ libhv TcpClient reconnect resilience patch applied$(RESET)"; \
+		else \
+			echo "$(RED)✗ Cannot apply TcpClient reconnect patch (conflicts) — a transient socket() failure will kill auto-reconnect$(RESET)"; \
+		fi \
+	else \
+		echo "$(GREEN)✓ libhv TcpClient reconnect resilience patch already applied$(RESET)"; \
+	fi
+	$(Q)if ! grep -q "saved_reconn_valid_" "$(LIBHV_DIR)/http/client/WebSocketClient.cpp" 2>/dev/null; then \
+		echo "$(YELLOW)→ Applying libhv WebSocket backoff patch...$(RESET)"; \
+		if git -C $(LIBHV_DIR) apply --check ../../patches/libhv-websocket-backoff-on-upgrade.patch 2>/dev/null; then \
+			git -C $(LIBHV_DIR) apply ../../patches/libhv-websocket-backoff-on-upgrade.patch && \
+			echo "$(GREEN)✓ libhv WebSocket backoff patch applied$(RESET)"; \
+		else \
+			echo "$(RED)✗ Cannot apply WebSocket backoff patch (conflicts) — a failed WS upgrade will reconnect at 5Hz$(RESET)"; \
+		fi \
+	else \
+		echo "$(GREEN)✓ libhv WebSocket backoff patch already applied$(RESET)"; \
+	fi
+	$(Q)if [ -d "$(LIBHV_DIR)/include/hv" ]; then \
+		for h in evpp/TcpClient.h http/client/WebSocketClient.h; do \
+			base=$$(basename $$h); \
+			if ! diff -q "$(LIBHV_DIR)/$$h" "$(LIBHV_DIR)/include/hv/$$base" >/dev/null 2>&1; then \
+				echo "$(YELLOW)→ Syncing patched $$base to include/hv/$(RESET)"; \
+				cp "$(LIBHV_DIR)/$$h" "$(LIBHV_DIR)/include/hv/$$base" && \
+				echo "$(GREEN)✓ Patched $$base synced$(RESET)"; \
+			fi; \
+		done; \
 	fi
 	@touch $@
