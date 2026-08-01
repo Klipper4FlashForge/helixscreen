@@ -118,9 +118,15 @@ Practical consequences:
   all; that gap is ours to fill or not.
 - Upstream XML documentation links are dead. `docs.lvgl.io/master/details/xml/` now redirects to
   Pro docs describing a different, closed engine. Do not cite it as authoritative for our syntax.
-- `lib/helix-xml/` is **direct-edit**, not a submodule and not patched. Edit the files. It is also
-  excluded from clang-format, so match surrounding style by hand.
+- `lib/helix-xml/` is a submodule pointing at
+  [prestonbrown/helix-xml](https://github.com/prestonbrown/helix-xml) — **ours**, so it inverts
+  this repo's usual submodule rule. Edit the files in place, commit and push *inside*
+  `lib/helix-xml/`, then commit the bumped pointer here. Never write a `patches/*.patch` for it.
+  It is also excluded from clang-format, so match surrounding style by hand.
 - It is pure C and must not include or call app-layer C++.
+- In a worktree, `lib/` is symlinked to the main tree — so editing `lib/helix-xml/` from a
+  worktree edits the main checkout, exactly as for `lib/lvgl/`. Make engine changes in the main
+  tree, or unlink first (`scripts/setup-worktree.sh --unlink`).
 
 ### Clean-room rule
 

@@ -42,3 +42,6 @@
 [submodule "lib/linenoise"]
 	path = lib/linenoise
 	url = https://github.com/antirez/linenoise.git
+[submodule "lib/helix-xml"]
+	path = lib/helix-xml
+	url = https://github.com/prestonbrown/helix-xml.git

@@ -15,6 +15,15 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v6
+      with:
+        submodules: false
+
+    # lib/helix-xml is a submodule, and quality-checks.sh regenerates the XML
+    # linter schema from lib/helix-xml/src/xml on its failing-lint path. An
+    # uninitialized submodule yields a schema with no widgets rather than an
+    # error, so every ui_xml reference then looks unknown.
+    - name: Initialize submodules
+      uses: ./.github/actions/init-submodules
 
     - name: Install pinned tooling (clang-format) into .venv
       uses: nick-fields/retry@v4

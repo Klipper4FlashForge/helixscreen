@@ -5,7 +5,8 @@
 # Handles automatic application of patches to LVGL and other dependencies
 
 # Files modified by LVGL patches (used by reset-patches)
-# XML patches are no longer needed — those sources are in lib/helix-xml with patches baked in
+# XML patches are no longer needed — that engine is lib/helix-xml, our own
+# submodule, edited and pushed directly rather than patched.
 LVGL_PATCHED_FILES := \
 	src/drivers/sdl/lv_sdl_window.c \
 	src/themes/default/lv_theme_default.c \

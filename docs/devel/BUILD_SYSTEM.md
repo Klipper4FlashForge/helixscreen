@@ -1476,7 +1476,7 @@ The project uses git submodules for external dependencies:
 - `spdlog` - Logging library
 - `wpa_supplicant` - WiFi control (Linux only, auto-built)
 
-Additionally, `lib/helix-xml/` contains the extracted XML engine — a permanent fork taken from LVGL at `a15dcbeb5` (`v9.4.0-358`), the last commit before v9.5 removed XML from core, MIT licensed at that tree. This is **not** a submodule and has no upstream — it lives directly in the repository with XML patches baked in permanently, and is direct-edit (also excluded from clang-format). See `LVGL_XML_SITUATION.md`.
+Additionally, `lib/helix-xml/` is the XML engine — a permanent MIT fork taken from LVGL at `a15dcbeb5` (`v9.4.0-358`), the last commit before v9.5 removed XML from core. It is a submodule, but **ours**: [prestonbrown/helix-xml](https://github.com/prestonbrown/helix-xml). That makes its workflow the opposite of every other submodule here — edit the files directly, commit and push inside `lib/helix-xml/`, then commit the bumped pointer in this repo. It gets no `patches/*.patch` entry, and it is excluded from clang-format. See `LVGL_XML_SITUATION.md`.
 
 **Automatic handling**: Submodule dependencies are built automatically when missing. Patches are applied automatically before builds. Never commit changes directly to submodules - always create patches instead.
 
