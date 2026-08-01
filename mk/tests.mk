@@ -233,7 +233,13 @@ DNS_RESOLV_OBJ := $(OBJ_DIR)/tests/dns_resolv.o
 # - ui_toast.o, ui_toast_manager.o: ui_test_utils.o provides stub toast functions
 # - ui_notification_manager.o: ui_test_utils.o stubs notification functions
 # - ui_text_input.o: ui_test_utils.o stubs ui_text_input_get_keyboard_hint()
-# - ui_emergency_stop.o: ui_test_utils.o stubs EmergencyStopOverlay
+#
+# ui_emergency_stop.o WAS here, stubbed by a hand-written copy in
+# ui_test_utils.cpp. That copy silently drifted from production — it kept
+# mutating recovery state inline after show_recovery_for() was changed to
+# marshal to the main thread — so the "unified recovery dialog" tests were
+# asserting against the duplicate rather than the shipped code. The real object
+# is linked now and the copy is gone.
 #
 # Group 3: Test-specific conflicts
 # - ui_switch.o: test_ui_switch.cpp includes the .cpp directly for unit testing
@@ -286,7 +292,6 @@ TEST_APP_OBJS := $(filter-out \
     $(OBJ_DIR)/ui/ui_toast_manager.o \
     $(OBJ_DIR)/ui/ui_notification_manager.o \
     $(OBJ_DIR)/ui/ui_text_input.o \
-    $(OBJ_DIR)/ui/ui_emergency_stop.o \
     $(OBJ_DIR)/ui/ui_switch.o \
     $(OBJ_DIR)/ui/ui_button.o \
     $(OBJ_DIR)/remote/remote_client.o \

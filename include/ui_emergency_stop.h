@@ -241,6 +241,8 @@ class EmergencyStopOverlay {
     void execute_emergency_stop();
     void show_confirmation_dialog();
     void dismiss_confirmation_dialog();
+    friend class EmergencyStopOverlayTestAccess;
+
     void show_recovery_dialog();
     /// Main-thread half of show_recovery_for(). Reads and writes
     /// recovery_dialog_/recovery_reason_ and queries ModalStack, none of which
