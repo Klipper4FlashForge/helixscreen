@@ -6,7 +6,9 @@
 #include "ui_error_reporting.h"
 #include "ui_fonts.h"
 #include "ui_gradient_canvas.h"
+#include "ui_switch.h"
 
+#include "asset_manager.h"
 #include "border_radius_sizes.h"
 #include "config.h"
 #include "helix-xml/src/libs/expat/expat.h"
@@ -123,7 +125,7 @@ static lv_subject_t theme_changed_subject;
 static int32_t theme_generation = 0;
 static bool theme_subject_initialized = false;
 
-// Breakpoint index subject for reactive responsive visibility (0=TINY..4=XLARGE)
+// Breakpoint index subject for reactive responsive visibility (0=MICRO..6=XXLARGE)
 static lv_subject_t ui_breakpoint_subject;
 static bool breakpoint_subject_initialized = false;
 
@@ -1163,6 +1165,22 @@ void theme_manager_refresh_layout_constants(lv_display_t* display) {
         lv_subject_set_int(bp_subject, to_int(bp));
     }
 
+    // Type has to follow the breakpoint too. The px tokens above moved the
+    // boxes; without the two calls below the fonts stayed sized for the startup
+    // breakpoint, so a resize rescaled layout but not type (#1210).
+    //
+    // Order is load-bearing: AssetManager decides which font tiers exist in
+    // memory at all, and startup deliberately skips the tiers above its own. If
+    // the tokens were re-pointed first, every raised one would name a face that
+    // is not registered and get bounced back down to the _large tier by the
+    // existence check in theme_manager_register_responsive_fonts().
+    AssetManager::register_fonts_for_tier(to_int(bp));
+    theme_manager_register_responsive_fonts(display);
+
+    // Switch size presets are the same ladder expressed as plain C++ values,
+    // and were likewise chosen once at startup (#1210, Notes).
+    ui_switch_init_size_presets(display);
+
     spdlog::info("[Theme] Layout refreshed after rotation: {}x{} → nav={}px, "
                  "overlay transient={}px destination={}px (breakpoint={})",
                  hor_res, ver_res, nav_width, widths.transient, widths.destination, to_int(bp));
@@ -1309,7 +1327,14 @@ void theme_manager_register_responsive_fonts(lv_display_t* display) {
 
             spdlog::trace("[Theme] Registering font {}: selected={} ({})", base_name, value,
                           selected_suffix);
-            lv_xml_register_const(scope, base_name.c_str(), value);
+            // update, not register: lv_xml_register_const() is first-write-wins,
+            // so on the second pass (a runtime breakpoint change, or a theme
+            // reload) it silently keeps the startup value. These base tokens
+            // have no globals.xml declaration to protect — they exist only
+            // because this function derives them — so overwriting is correct,
+            // and lv_xml_update_const() falls back to registering on the first
+            // pass (#1210).
+            lv_xml_update_const(scope, base_name.c_str(), value);
             registered++;
         }
     }

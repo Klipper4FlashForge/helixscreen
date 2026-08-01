@@ -16,6 +16,15 @@ extern "C" {
 void ui_switch_register_responsive_constants(void);
 
 /**
+ * Recompute the switch size presets (tiny/small/medium/large) for a display
+ *
+ * Called at startup from ui_switch_register() and again from
+ * theme_manager_refresh_layout_constants() so the presets follow a breakpoint
+ * that changes at runtime (#1210). Pass NULL for the default display.
+ */
+void ui_switch_init_size_presets(lv_display_t* display);
+
+/**
  * Register the ui_switch component with the LVGL XML system
  * Must be called before any XML files using <ui_switch> are registered
  */
