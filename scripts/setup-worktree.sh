@@ -707,6 +707,28 @@ if [[ -n "$CCACHE_BIN" ]]; then
         echo -e "  hash_dir: ${GREEN}already disabled${RESET}"
     fi
 
+    # WITHOUT THIS, ccache CACHES NOTHING. Every native build compiles with
+    # -include $(PCH), and ccache refuses to cache any compilation using a
+    # precompiled header unless sloppiness allows it. Measured before/after on
+    # a single -include compile: "Uncacheable calls: 1/1 (100%)" -> "Cacheable
+    # calls: 1/1 (100%)", with the repeat compile hitting. base_dir and hash_dir
+    # were set here for a long time while the cache stayed empty for this reason.
+    #
+    # BOTH flags are required — pch_defines alone still measured 0% cacheable.
+    #
+    # The cost of time_macros is that ccache stops hashing __DATE__/__TIME__.
+    # Exactly one site uses them: ui_settings_about.cpp reads __DATE__ + 7 for
+    # the About screen's copyright year, so across a New Year that screen can
+    # show the previous year until the file is next recompiled. Cosmetic, and
+    # the only such site in src/, include/, lib/helix-xml/ or the build flags.
+    CUR_SLOPPY="$(ccache --get-config sloppiness 2>/dev/null || true)"
+    if [[ "$CUR_SLOPPY" != *pch_defines* || "$CUR_SLOPPY" != *time_macros* ]]; then
+        ccache --set-config sloppiness=pch_defines,time_macros 2>/dev/null \
+            && echo -e "  sloppiness: ${GREEN}pch_defines,time_macros (PCH builds are now cacheable)${RESET}"
+    else
+        echo -e "  sloppiness: ${GREEN}already allows PCH caching ($CUR_SLOPPY)${RESET}"
+    fi
+
     # The shared cache thrashes hard once a couple of worktrees + cross-compiles
     # pile in (default 5 GiB fills and evicts constantly, re-causing cold misses).
     # Raise the ceiling so objects survive between builds. Only ever raise it.
@@ -726,7 +748,9 @@ if [[ -n "$CCACHE_BIN" ]]; then
     # outside $HOME (e.g. /tmp/foo), which the global $HOME base_dir wouldn't cover.
     export CCACHE_BASEDIR="$BUILD_BASEDIR"
     export CCACHE_NOHASHDIR=1
+    export CCACHE_SLOPPINESS=pch_defines,time_macros
     echo -e "  this build: ${GREEN}CCACHE_BASEDIR=$BUILD_BASEDIR CCACHE_NOHASHDIR=1${RESET}"
+    echo -e "              ${GREEN}CCACHE_SLOPPINESS=pch_defines,time_macros${RESET}"
 else
     # Loud on purpose. The mtime sync keeps an UNCHANGED worktree fast on its
     # own, which makes a missing ccache easy to not notice — right up until the

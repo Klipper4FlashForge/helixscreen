@@ -534,8 +534,25 @@ reproduces that staleness. The object clone always had that property.
 ### The ccache config the script sets
 
 ccache is optional (it is not installed on every dev box — check with `command -v ccache`), and
-with the mtime sync in place it is no longer what makes a worktree fast. It still helps when a
-worktree genuinely does have to recompile a lot, e.g. after touching `lv_conf.h`.
+with the mtime sync in place it is no longer what makes a *clean* worktree fast. Where it matters
+is every build that genuinely has to recompile — after touching `lv_conf.h`, or after another tree
+rebuilds libhv and re-invalidates the shared PCH (see the box above). That is the difference
+between ~400s and a few tens of seconds.
+
+> **`sloppiness` is not optional — without it ccache caches nothing here.** Every native build
+> compiles with `-include $(PCH)`, and ccache refuses to cache *any* compilation that uses a
+> precompiled header unless `sloppiness` permits it. Measured on a single `-include` compile:
+> `Uncacheable calls: 1/1 (100%)` before, `Cacheable calls: 1/1 (100%)` after, with the repeat
+> compile hitting. This was silently true for a long time — `base_dir` and `hash_dir` were being
+> set while the cache stayed empty, which is why this doc used to credit ccache for a speedup it
+> was never delivering. **Both** flags are required; `pch_defines` alone still measures 0%
+> cacheable. If ccache has been installed on a machine for a while, check `ccache --get-config
+> sloppiness` before assuming it has been doing anything.
+>
+> The cost of `time_macros` is that ccache stops hashing `__DATE__`/`__TIME__`. Exactly one site
+> uses them — `ui_settings_about.cpp` reads `__DATE__ + 7` for the About screen's copyright year —
+> so across a New Year that screen can show the previous year until the file is next recompiled.
+> Cosmetic, and the only such site in `src/`, `include/`, `lib/helix-xml/`, or the build flags.
 
 But it only helps across worktrees if it is configured for it. The native build compiles with `-g` (debug info), and ccache's default `hash_dir=true` folds the absolute working directory into the cache key — so an object cached while building in the main tree never matches the same source compiled under `.worktrees/<name>/`. Every worktree would start stone cold.
 
@@ -545,9 +562,12 @@ But it only helps across worktrees if it is configured for it. The native build 
 |----------------|--------|-----|
 | `base_dir` | `$HOME` | Rewrites absolute paths under `$HOME` to relative before hashing, so main-tree and worktree paths collapse to the same key |
 | `hash_dir` | `false` | Stops folding the cwd (the `-g` debug-path component) into the key |
+| `sloppiness` | `pch_defines,time_macros` | Without it ccache refuses to cache any `-include $(PCH)` compile — i.e. all of them. See the box above for the `__DATE__` tradeoff |
 | `max_size` | `25G` (raised, never lowered) | The default 5 GiB thrashes once several worktrees + cross-compile caches share it, re-causing cold misses |
 
-For the script's own initial build it also exports `CCACHE_BASEDIR` (the longest common ancestor of the main tree and the worktree, so it works even for out-of-tree paths like `/tmp/foo`) and `CCACHE_NOHASHDIR=1`.
+For the script's own initial build it also exports `CCACHE_BASEDIR` (the longest common ancestor of the main tree and the worktree, so it works even for out-of-tree paths like `/tmp/foo`), `CCACHE_NOHASHDIR=1`, and `CCACHE_SLOPPINESS`.
+
+These are global ccache settings, so they apply to normal main-tree builds too, not just worktrees — running `setup-worktree.sh` once is enough to fix a whole machine. Worth doing on every machine you build on, including remote build hosts: an existing ccache install with `base_dir`/`hash_dir` already set can still be caching nothing if `sloppiness` was never configured.
 
 > **Caveat:** `hash_dir=false` is global, so cached objects carry whichever `DW_AT_comp_dir` (debug source path) compiled them first. For throwaway dev worktrees this is cosmetic, but gdb inside a worktree may point at the main-tree paths. If you do serious in-worktree debugging, build that target with `CCACHE_DISABLE=1`.
 
