@@ -17,6 +17,35 @@ constexpr int TEST_DISPLAY_WIDTH = 800;
 constexpr int TEST_DISPLAY_HEIGHT = 480;
 
 /**
+ * @brief Drive a display to a size for the duration of a scope, then put it back
+ *
+ * A resize is the only production path that reaches
+ * theme_manager_refresh_layout_constants(), and the rest of the suite assumes
+ * the fixture's TEST_DISPLAY_WIDTH x TEST_DISPLAY_HEIGHT. Restoring the
+ * resolution does NOT restore the XML constants the refresh rewrote — call the
+ * refresh once more after the scope ends if the test moved them.
+ */
+class ScopedResolution {
+  public:
+    ScopedResolution(lv_display_t* disp, int32_t w, int32_t h)
+        : disp_(disp), w0_(lv_display_get_horizontal_resolution(disp)),
+          h0_(lv_display_get_vertical_resolution(disp)) {
+        lv_display_set_resolution(disp_, w, h);
+    }
+    ~ScopedResolution() {
+        lv_display_set_resolution(disp_, w0_, h0_);
+    }
+
+    ScopedResolution(const ScopedResolution&) = delete;
+    ScopedResolution& operator=(const ScopedResolution&) = delete;
+
+  private:
+    lv_display_t* disp_;
+    int32_t w0_;
+    int32_t h0_;
+};
+
+/**
  * @brief Shared LVGL test fixture base class for Catch2 tests
  *
  * Provides thread-safe singleton LVGL initialization with automatic cleanup.

@@ -24,12 +24,14 @@ The `-s WIDTHxHEIGHT` flag sets the window size. The `--test` flag runs against 
 
 | Size | Category | Notes |
 |------|----------|-------|
-| `480x320` | Tiny | Smallest supported. Where most bugs live. |
+| `480x272` | Micro | Smallest supported. Has its own `ui_xml/micro/` overrides. |
+| `480x320` | Tiny | Where most bugs live. |
 | `800x480` | Standard / Medium | The "default" target. Most common screen. |
 | `1024x600` | Large | Waveshare 7" and similar. |
 | `1280x720` | XLarge | Larger desktop-class displays. |
 | `1920x480` | Ultrawide | Bar-style displays. Very wide, very short. |
 | `480x800` | Portrait | Rotated standard display. |
+| `320x1480` | Tall portrait | Waveshare 11.9". Narrow axis 320 picks a small tier while 1480px of height goes unspent. |
 
 ### Screenshots
 
@@ -64,11 +66,11 @@ This requires ImageMagick. You can also press **S** while the app is running for
 
 ## 2. Screen Breakpoints
 
-Breakpoints are based on screen **height**, because vertical space is always the constraint. Width varies wildly (480 to 1920+), but it's running out of vertical room that causes clipping, overlapping, and broken layouts.
+There is **one tier table and two ladders**. Both feed the same seven tiers below; they differ only in which screen dimension they measure. Most tokens resolve from the cramped axis; height tokens resolve from the vertical axis.
 
 ### The 7-tier system
 
-| Tier | Index | Suffix | Height Range | Target Devices | Fallback |
+| Tier | Index | Suffix | Axis range | Target Devices | Fallback |
 |------|-------|--------|-------------|----------------|----------|
 | MICRO | 0 | `_micro` | <= 272px | 480x272 | Falls back to `_tiny` |
 | TINY | 1 | `_tiny` | 273 -- 390px | 480x320 | Falls back to `_small` |
@@ -82,6 +84,30 @@ Every responsive value needs three core variants: `_small`, `_medium`, and `_lar
 
 The **index** column matters for XML reactive bindings. The `ui_breakpoint` subject holds the current breakpoint as an integer, and you can use `bind_flag_if_*` or `bind_style_if_*` with these values. For example, `ref_value="0"` means Micro, `ref_value="2"` means Small.
 
+### The two ladders
+
+| Ladder | Measures | Selects for | Function |
+|--------|----------|-------------|----------|
+| **Cramped axis** (default) | `min(width, height)` | Fonts, spacing, widths, column counts, everything axis-neutral | `responsive_dimension()` |
+| **Vertical axis** | `height` | Height tokens — how much room there is to stack things | `responsive_vertical_dimension()` |
+
+The cramped axis is the design constraint for anything that has to *fit across*: on a landscape panel it is usually the height, which is why this was long described as height-based; on a portrait panel it is the width. The vertical axis is the constraint for anything that *stacks*: a row height on a 1480px-tall panel has no reason to be sized as if the screen were 320px.
+
+On landscape and square displays `min(w, h) == h`, so the two ladders pick the same tier and nothing differs. **Only portrait geometry sees a difference.**
+
+Worked example — the 320x1480 Waveshare 11.9":
+
+| | Axis value | Tier | `#space_lg` | `#button_height` |
+|---|---|---|---|---|
+| Cramped | 320 | TINY | **8px** | — |
+| Vertical | 1480 | XXLARGE | — | **96px** |
+
+So padding stays tight (the panel really is only 320px wide) while buttons become credible touch targets instead of the 32px the cramped ladder alone would have given them.
+
+**Which subject holds which.** The `ui_breakpoint` LVGL subject holds the **cramped-axis** tier, and only that — every `bind_flag_if_eq` / `bind_style_if_*` `ref_value` in `ui_xml/` is written against it. There is no subject for the vertical tier; it exists only in C++, inside token resolution. If you need a *structural* portrait decision in XML, use `ui_breakpoint` plus the layout variant directories, not a second tier value.
+
+Background: prestonbrown/helixscreen#1209.
+
 ### How it works
 
 In `globals.xml`, you define the suffixed variants of each token:
@@ -92,7 +118,9 @@ In `globals.xml`, you define the suffixed variants of each token:
 <px name="space_lg_large" value="20"/>
 ```
 
-At startup, `theme_manager` detects the screen height, picks the matching suffix, and registers the **base name** (`space_lg`) pointing to the correct value. So when your XML says `style_pad_all="#space_lg"`, it resolves to 12, 16, or 20 depending on the screen.
+At startup, `theme_manager` measures the axis that token follows, picks the matching suffix, and registers the **base name** (`space_lg`) pointing to the correct value. So when your XML says `style_pad_all="#space_lg"`, it resolves to 12, 16, or 20 depending on the screen.
+
+One function does the choosing for every token: `theme_manager_resolve_px_tokens()` (`src/ui/theme_manager.cpp`). Both the startup registration and the resize path apply its output verbatim, so a token cannot get one tier at boot and another after a rotation.
 
 ### CRITICAL: Never define the base name in globals.xml
 
@@ -107,6 +135,28 @@ This is the most common mistake. Do NOT do this:
 ```
 
 LVGL ignores duplicate variable registrations. If the base name `space_lg` is already registered (from the first line), the responsive override from `theme_manager` is silently discarded. Only define the suffixed variants.
+
+### CRITICAL: Responsive tokens only work at the top level of `ui_xml/`
+
+Token discovery does not recurse. `theme_manager_find_xml_files()` skips subdirectories, so only `ui_xml/*.xml` is ever scanned for suffixed tokens. A `<px name="nav_width_small">` declared in `ui_xml/components/`, `ui_xml/portrait/`, `ui_xml/micro/` or any other subdirectory is never registered, and every `#nav_width` that reads it silently resolves to nothing.
+
+That is deliberate. Discovery is alphabetical last-wins, so if variant directories were scanned a portrait-only token would shadow its base token *globally* — including while the standard layout is active — rather than only when that variant is in use.
+
+So declare responsive tokens in `ui_xml/globals.xml` (or another top-level token file such as `ams_tokens.xml`) and reference them with `#token` from the variant file. Non-responsive component-local `<consts>` are fine inside `ui_xml/components/`; they resolve through the component's own scope and never reach discovery.
+
+`scripts/check_responsive_token_scope.py` fails the build if a suffixed token is declared below the top level. Background: prestonbrown/helixscreen#1211.
+
+### Which font tiers actually exist
+
+Not every font tier is present on every target, and not every present tier is registered at any given moment. Three separate layers decide whether `#font_heading` resolves to anything:
+
+**1. Build time.** `FONT_TIERS` (set per platform in `mk/cross.mk`, defaulting to `all` in `mk/fonts.mk`) decides which faces are linked into the binary at all. CC1 gets `micro tiny`; AD5M and K1 get `medium large`; pi32 gets `small medium`; desktop gets `all`. From that, `HELIX_MAX_FONT_TIER` is derived, and `theme_manager` uses it to tell an expected-missing font (pruned by tier) from an unexpected-missing one (a build bug). A `<string name="foo_xxlarge">` naming a face outside the target's tiers is dead on that target -- this is why the hero icon tokens are capped at `mdi_icons_64`.
+
+**2. Startup.** `AssetManager::register_fonts()` registers the faces for the current breakpoint and everything below it, deliberately skipping larger tiers to avoid ~500-800KB of `.rodata`.
+
+**3. Runtime.** `AssetManager::register_fonts_for_tier()` is the re-entrant form. A breakpoint that *rises* registers the additional tiers; a same-or-lower tier is a no-op. Fonts are **never unregistered** -- live widgets hold pointers into that static `.rodata`, so the set only ever grows, bounded by `HELIX_MAX_FONT_TIER`. On a resize, `theme_manager_refresh_layout_constants()` runs the tier registration first, then re-points the font tokens, then re-runs the switch size presets. That order is load-bearing: re-pointing tokens at tiers whose faces were never registered would silently bounce them back down.
+
+**The limitation, stated plainly:** updating a token does not restyle widgets that already exist. `style_text_font` is resolved to a concrete `lv_font_t*` at parse time and baked into the widget's style, and the same is true of every `px` token -- this is not new with the font work. So a runtime resize is picked up by anything built *afterwards* (overlays, modals, print-select cards, later-created switches) but **not** by the six root panels, which are built eagerly at startup and never rebuilt. Making those follow a resize needs `NavigationManager::rebuild_active_views()`, which is what hot reload uses. This only matters on desktop SDL and Android; on-device rotation is fixed at startup.
 
 ---
 
@@ -149,23 +199,50 @@ You almost never need to reference font tokens directly. Use the semantic `<text
 
 ### Component Tokens
 
-| Token | Small | Medium | Large | Purpose |
-|-------|-------|--------|-------|---------|
-| `#border_radius` | 4px | 9px | 12px | Corner radius for cards, buttons |
-| `#button_height` | 48px | 52px | 72px | Standard button height |
-| `#button_height_sm` | 36px | 40px | 48px | Small buttons (back, icon-only) |
-| `#button_height_lg` | 64px | 70px | 96px | Large buttons |
-| `#header_height` | 48px | 56px | 60px | Panel header height |
-| `#temp_card_height` | 64px | 72px | 80px | Temperature card in print status |
-| `#icon_size` | md | lg | xl | Responsive icon size string |
-| `#spinner_lg` | 48px | 56px | 64px | Large spinner |
-| `#spinner_md` | 24px | 28px | 32px | Standard spinner |
-| `#spinner_sm` | 16px | 18px | 20px | Small spinner |
-| `#spinner_xs` | 12px | 14px | 16px | Compact spinner |
+| Token | Axis | Small | Medium | Large | Purpose |
+|-------|------|-------|--------|-------|---------|
+| `#button_height` | vertical | 48px | 52px | 72px | Standard button height |
+| `#button_height_sm` | vertical | 40px | 40px | 40px | Small buttons (back, icon-only) |
+| `#button_height_lg` | vertical | 64px | 70px | 96px | Large buttons |
+| `#header_height` | vertical | 48px | 56px | 60px | Panel header height |
+| `#input_height` | vertical | 48px | 52px | 56px | Text input / dropdown height |
+| `#temp_card_height` | vertical | 64px | 72px | 80px | Temperature card in print status |
+| `#dialog_content_max` | vertical | 260px | 320px | 440px | Max height of a modal's scrollable body |
+| `#badge_size` | neutral | 16px | 18px | 20px | Status badge diameter |
+| `#nav_width` | horizontal | 76px | 104px | 132px | Nav bar width — see note below |
+| `#icon_size` | neutral | md | lg | xl | Responsive icon size string |
+| `#spinner_lg` | neutral | 48px | 56px | 64px | Large spinner |
+| `#spinner_md` | neutral | 24px | 28px | 32px | Standard spinner |
+| `#spinner_sm` | neutral | 16px | 18px | 20px | Small spinner |
+| `#spinner_xs` | neutral | 12px | 14px | 16px | Compact spinner |
+
+The **Axis** column says which ladder the token resolves from (see [The two ladders](#the-two-ladders)). `vertical` follows the screen height; `horizontal` and `neutral` both follow the cramped axis today — the distinction is documentation of intent, not yet two different code paths. All the `#space_*` tokens are neutral.
+
+Two tokens in that list do not follow the ordinary rules:
+
+- **`#nav_width`** is declared in `ui_xml/navigation_bar.xml`, not `globals.xml`, and resolves through its own ladder (`helix::nav_width_suffix()`) rather than the general one. The nav bar is a full-height vertical strip, so its width tracks the *horizontal* axis and has an extra ultrawide case.
+- **`#border_radius`** is not a `globals.xml` triplet at all and is deliberately absent from the table. The theme picks a size name (None / Minimal / Subtle / Soft / Rounded / Bold / Pill / Full) and `BorderRadiusSizes` (`include/border_radius_sizes.h`) resolves it per breakpoint in C++. Do not add `border_radius_*` variants to `globals.xml`. The fixed `#border_radius_small` / `#border_radius_sm` (both 4px) are separate — they exist for swatches and badges that always want 4px regardless of theme.
 
 ### Adding New Tokens
 
-Follow the triplet pattern in `globals.xml`:
+**First, classify the axis.** Do this before writing the triplet — it decides which ladder the token resolves from:
+
+| Axis | What it covers | Examples |
+|------|----------------|----------|
+| **vertical** | Heights, top/bottom padding, vertical maxima — anything sized by how much room there is to stack | `button_height`, `header_height`, `dialog_content_max` |
+| **horizontal** | Widths, left/right extents, column counts | `nav_width`, `field_w_num` |
+| **axis-neutral** | Applies to both axes, or to neither (square things, opacity-like scalars) | `space_*`, `icon_size`, `badge_size`, the spinner sizes |
+
+**If in doubt, neutral.** Neutral is the default and needs no code change at all.
+
+How the choice is expressed in code:
+
+- **vertical** — add the exact base name to `VERTICAL_AXIS_TOKENS` in `src/ui/theme_manager.cpp`. That array is the single classification list; `theme_manager_token_uses_vertical_axis()` reads it, and `theme_manager_resolve_px_tokens()` is the only thing that calls it, so both registration sites stay in step automatically. Exact names, not a `*_height` convention — `dialog_content_max` is a vertical maximum that does not end in `_height`.
+- **horizontal** and **axis-neutral** — nothing to do. Both resolve from the cramped axis, which is correct for widths (in portrait the cramped axis *is* the width) and is the deliberate compromise for neutrals.
+
+`space_*` stays neutral on purpose. It feeds `pad_top`/`pad_bottom` and `pad_left`/`pad_right` alike, so splitting it means classifying every `#space_*` reference site across `ui_xml/` — that reference count, not the declarations, is the cost driver.
+
+Then follow the triplet pattern in `globals.xml`:
 
 ```xml
 <!-- In globals.xml — define suffixed variants only -->
@@ -185,6 +262,12 @@ From C++:
 ```cpp
 int h = theme_manager_get_spacing("my_widget_height");
 ```
+
+### The limit: `height="content"` rows ignore height tokens
+
+A row declared `height="content"` is sized by its font and its padding. **No height token reaches it** — not `#button_height`, not any token you migrate to the vertical ladder.
+
+That covers the whole `setting_*_row` family (`setting_action_row.xml`, `setting_toggle_row.xml`, and friends), and therefore most of Settings. Migrating a token and then finding that Settings did not move is the expected result, not a broken migration. Moving those rows means moving the font/padding tier, which is a different mechanism — see [Which font tiers actually exist](#which-font-tiers-actually-exist) and prestonbrown/helixscreen#1210.
 
 ---
 
@@ -524,6 +607,12 @@ Our theme makes `lv_obj` a pure layout container by default: transparent backgro
 | Hardcoded `style_text_font="..."` | `<text_body>` | Use semantic typography components |
 | `style_bg_color="#2e3440"` | `style_bg_color="#screen_bg"` | Use color tokens, not hex values |
 | `width="#overlay_width_destination"` | *(no width attribute)* | Overlay width is resolved at push time |
+| `height="100%"` inside a `height="content"` parent | `height="content"` | The two depend on each other and both collapse to zero |
+| `flex_grow` on children of a `*_wrap` container | percentage widths + `style_flex_main_place="space_between"` | Grow items contribute zero base size, so nothing ever wraps |
+| `<style flex_flow="row"/>` | `<style layout="flex" flex_flow="row"/>` | `flex_flow` in a style is inert without `layout="flex"` |
+
+The last three are explained in full, with the `ctl geom` signatures that identify
+them, in `LVGL9_XML_GUIDE.md` under "Flex Layout".
 
 ### Overlay width — don't set it
 
@@ -641,7 +730,7 @@ When creating a layout override, you're rearranging the same content for a diffe
 
 4. **Use design tokens** for all colors, spacing, and fonts. No hardcoded values.
 
-5. **Don't modify globals.xml.** It's shared across all layouts.
+5. **Don't change existing values in globals.xml.** They're shared across all layouts. *Adding* a new suffixed token there is correct, and is the only place a variant-specific token can live -- token discovery never recurses into `ui_xml/` subdirectories, so a `<px name="foo_small">` declared next to your override is silently never registered (see section 2).
 
 You're free to rearrange the visual hierarchy, change flex directions, adjust sizes, hide optional decorative elements, or add new layout containers. Just preserve the functional widgets.
 
@@ -783,6 +872,9 @@ These panels work well and can serve as reference for how to do things right:
 ### Screenshot commands for each breakpoint
 
 ```bash
+# Micro (480x272)
+./scripts/screenshot.sh helix-screen micro-home home --test -s 480x272
+
 # Tiny (480x320)
 ./scripts/screenshot.sh helix-screen tiny-home home --test -s 480x320
 
@@ -800,6 +892,9 @@ These panels work well and can serve as reference for how to do things right:
 
 # Portrait (480x800)
 ./scripts/screenshot.sh helix-screen portrait-home home --test --layout portrait -s 480x800
+
+# Tall portrait (320x1480) -- the narrow-axis case
+./scripts/screenshot.sh helix-screen tall-portrait-home home --test --layout portrait -s 320x1480
 ```
 
 Screenshots save to `/tmp/ui-screenshot-<name>.png`.

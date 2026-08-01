@@ -152,7 +152,9 @@ struct StyleEntry {
 };
 
 #include <array>
+#include <string>
 #include <string_view>
+#include <unordered_map>
 
 /// Unified theme manager - singleton managing all styles and colors.
 /// Replaces theme_core.c + old theme_manager.cpp with table-driven approach.
@@ -323,6 +325,56 @@ const char* theme_manager_get_breakpoint_suffix(int32_t resolution);
 int32_t responsive_dimension(lv_display_t* display);
 
 /**
+ * @brief Return the vertical resolution of the display.
+ *
+ * The second responsive ladder. responsive_dimension() answers "how much room
+ * does the cramped axis have", which is what fonts, horizontal padding and
+ * column counts must fit into; this answers "how much room is there to stack
+ * things", which is what row heights must fit into. On landscape and square
+ * displays min(w,h) == h and the two agree exactly, so only portrait geometry
+ * sees a difference (#1209).
+ *
+ * Feed it to the same breakpoint_for() / theme_manager_get_breakpoint_suffix()
+ * the cramped axis uses — the ladder is shared, only the scalar differs.
+ *
+ * @param display LVGL display instance, or nullptr for the default display
+ * @return vertical_resolution, or 600 as a safe fallback
+ */
+int32_t responsive_vertical_dimension(lv_display_t* display);
+
+/**
+ * @brief Does this responsive px token resolve from the vertical axis?
+ *
+ * The single classification list for #1209 — every registration site consults
+ * this rather than keeping its own copy. Exact base names, not a naming
+ * convention: `dialog_content_max` is a vertical maximum but does not end in
+ * `_height`, and `button_height_lg` would need the convention to understand
+ * modifier suffixes.
+ *
+ * @param base_name Token base name with no tier suffix (e.g. "button_height")
+ * @return true for vertical tokens, false for horizontal and axis-neutral ones
+ */
+bool theme_manager_token_uses_vertical_axis(const char* base_name);
+
+/**
+ * @brief Resolve every responsive px token to its value for a given display
+ *
+ * The single source of truth for "what should each px token be at this size",
+ * shared by startup registration (theme_manager_register_responsive_spacing)
+ * and the resize path (theme_manager_refresh_layout_constants) so a token can
+ * never get one tier at boot and another after a rotation.
+ *
+ * Applies the per-token axis policy: nav_width follows its own horizontal
+ * ladder, the tokens theme_manager_token_uses_vertical_axis() names follow the
+ * vertical resolution, and everything else follows the cramped axis. Tokens
+ * without a complete _small/_medium/_large triplet are skipped.
+ *
+ * @param display LVGL display instance, or nullptr for the default display
+ * @return Map of base_name → value (decimal string, as XML consts are stored)
+ */
+std::unordered_map<std::string, std::string> theme_manager_resolve_px_tokens(lv_display_t* display);
+
+/**
  * @brief Register responsive spacing tokens (space_* system)
  *
  * Registers the unified spacing scale (space_xxs through space_xl) based on
@@ -434,10 +486,14 @@ lv_subject_t* theme_manager_get_changed_subject();
  * @brief Get the breakpoint index subject for reactive responsive visibility
  *
  * Returns an LVGL int subject holding the current breakpoint index:
- *   0=TINY, 1=SMALL, 2=MEDIUM, 3=LARGE, 4=XLARGE
+ *   0=MICRO, 1=TINY, 2=SMALL, 3=MEDIUM, 4=LARGE, 5=XLARGE, 6=XXLARGE
+ *
+ * These are the UiBreakpoint enum values (ui_breakpoint.h) — XML ref_values are
+ * written against them, so they must not be renumbered.
  *
  * Use with bind_flag_if_eq in XML to reactively show/hide elements based on
- * screen size. Example: <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="0"/>
+ * screen size. Example, hiding an element on the smallest tier only:
+ *   <bind_flag_if_eq subject="ui_breakpoint" flag="hidden" ref_value="0"/>
  *
  * @return Pointer to the breakpoint subject (valid after theme_manager_init)
  */

@@ -39,7 +39,7 @@ class SwitchTest {
             });
 
         // Initialize size presets now that display exists
-        ui_switch_init_size_presets();
+        ui_switch_init_size_presets(nullptr);
     }
 
     ~SwitchTest() {

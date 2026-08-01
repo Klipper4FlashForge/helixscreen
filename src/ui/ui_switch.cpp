@@ -38,14 +38,19 @@ static SwitchSizePreset SIZE_LARGE;
 
 /**
  * Initialize size presets based on screen dimensions
- * Called once at startup from ui_switch_register()
+ *
+ * Runs at startup from ui_switch_register() and again from
+ * theme_manager_refresh_layout_constants() on every debounced resize, so the
+ * presets track a breakpoint that moves at runtime (#1210). Re-entrant: the
+ * presets are plain values with no widget state behind them, so a later call
+ * simply overwrites them. Widgets already sized from the old presets keep their
+ * old size — only switches created after this call pick up the new tier.
  */
-static void ui_switch_init_size_presets() {
+void ui_switch_init_size_presets(lv_display_t* display) {
     // Select the preset tier from the constrained axis (min of width/height), so
     // portrait screens size switches to their narrow axis instead of their tall
     // one. Landscape is unchanged: there the min axis is already the height this
     // used before. Mirrors the responsive_dimension() convention in theme_manager.
-    lv_display_t* display = lv_display_get_default();
     int32_t resp_res = responsive_dimension(display);
 
     // Margin calculation: knob extends ~25% beyond track on each side
@@ -459,7 +464,7 @@ void ui_switch_register_responsive_constants() {
  * Register the ui_switch widget with LVGL's XML system
  */
 void ui_switch_register() {
-    ui_switch_init_size_presets();
+    ui_switch_init_size_presets(nullptr);
     lv_xml_register_widget("ui_switch", ui_switch_xml_create, ui_switch_xml_apply);
     spdlog::trace("[Switch] Registered ui_switch widget with XML system");
 }

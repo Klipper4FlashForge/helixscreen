@@ -17,28 +17,31 @@
 #include <cstring>
 
 /// Breakpoint tiers — used everywhere instead of magic integers.
-/// Selected based on screen height (vertical resolution).
+/// Selected from the NARROW axis — min(width, height), what responsive_dimension()
+/// returns — not from the height. On landscape the narrow axis is usually the
+/// height, which is why this was long described as height-based; on portrait it is
+/// the width, so a 320x1480 panel classifies from 320.
 /// Underlying integer values are stored in the ui_breakpoint LVGL subject
 /// and referenced from XML via bind_flag_if_eq ref_value — do not renumber.
 enum class UiBreakpoint : int32_t {
-    Micro = 0,   // height ≤ 272  — 480x272
-    Tiny = 1,    // height ≤ 390  — 480x320
-    Small = 2,   // height ≤ 460  — 480x400, 1920x440
-    Medium = 3,  // height ≤ 550  — 800x480
-    Large = 4,   // height ≤ 700  — 1024x600
-    XLarge = 5,  // height ≤ 1000 — 1280x720, 1024x768
-    XXLarge = 6, // height > 1000 — 1440p, 4K
+    Micro = 0,   // narrow axis ≤ 272  — 480x272
+    Tiny = 1,    // narrow axis ≤ 390  — 480x320
+    Small = 2,   // narrow axis ≤ 460  — 480x400, 1920x440
+    Medium = 3,  // narrow axis ≤ 550  — 800x480
+    Large = 4,   // narrow axis ≤ 700  — 1024x600
+    XLarge = 5,  // narrow axis ≤ 1000 — 1280x720, 1024x768
+    XXLarge = 6, // narrow axis > 1000 — 1440p, 4K
 };
 
-/// Screen height thresholds (max height inclusive for each breakpoint)
-#define UI_BREAKPOINT_MICRO_MAX 272  // height ≤272 → MICRO (480x272)
-#define UI_BREAKPOINT_TINY_MAX 390   // height 273-390 → TINY (480x320)
-#define UI_BREAKPOINT_SMALL_MAX 460  // height 391-460 → SMALL (480x400, 1920x440)
-#define UI_BREAKPOINT_MEDIUM_MAX 550 // height 461-550 → MEDIUM (800x480)
-#define UI_BREAKPOINT_LARGE_MAX 700  // height 551-700 → LARGE (1024x600)
+/// Narrow-axis thresholds (max inclusive for each breakpoint)
+#define UI_BREAKPOINT_MICRO_MAX 272  // ≤272 → MICRO (480x272)
+#define UI_BREAKPOINT_TINY_MAX 390   // 273-390 → TINY (480x320)
+#define UI_BREAKPOINT_SMALL_MAX 460  // 391-460 → SMALL (480x400, 1920x440)
+#define UI_BREAKPOINT_MEDIUM_MAX 550 // 461-550 → MEDIUM (800x480)
+#define UI_BREAKPOINT_LARGE_MAX 700  // 551-700 → LARGE (1024x600)
 #define UI_BREAKPOINT_XLARGE_MAX                                                                   \
-    1000 // height 701-1000 → XLARGE
-         // height >1000 → XXLARGE (1440p, 4K)
+    1000 // 701-1000 → XLARGE
+         // >1000 → XXLARGE (1440p, 4K)
 
 /// Convert a UiBreakpoint enum to its underlying integer index (for array access).
 constexpr inline int32_t to_int(UiBreakpoint bp) {

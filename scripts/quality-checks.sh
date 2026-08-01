@@ -434,6 +434,26 @@ fi
 
 echo ""
 
+echo "📏 Checking responsive token placement..."
+
+# theme_manager_find_xml_files() skips subdirectories, so a responsive token
+# declared below the top level of ui_xml/ is never registered and every #token
+# reading it resolves to nothing, silently (prestonbrown/helixscreen#1211).
+# Always whole-tree: the scan is a regex over ~330 small files, and the rule is
+# about where a file SITS, so a staged-only view buys nothing.
+if [ -f "scripts/check_responsive_token_scope.py" ]; then
+  if python3 scripts/check_responsive_token_scope.py >/tmp/responsive_token_scope.out 2>&1; then
+    echo "✅ Responsive tokens are all top-level"
+  else
+    cat /tmp/responsive_token_scope.out
+    EXIT_CODE=1
+  fi
+else
+  echo "⚠️  check_responsive_token_scope.py not found — skipping"
+fi
+
+echo ""
+
 # ====================================================================
 # Phase 2: Code Quality Checks
 # ====================================================================
