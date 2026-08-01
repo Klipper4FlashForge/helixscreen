@@ -8,7 +8,7 @@ Local patches applied to git submodules. Managed by `mk/patches.mk` — run `mak
 
 ## Upstream PR Status
 
-Several patches have been submitted upstream to [lvgl/lvgl](https://github.com/lvgl/lvgl), from the fork at [prestonbrown/lvgl-xml-fork](https://github.com/prestonbrown/lvgl-xml-fork) (misnamed — it is the LVGL PR fork, nothing to do with `lib/helix-xml`). **Do not delete that fork while any PR below is open; deleting it closes them.**
+Several patches have been submitted upstream to [lvgl/lvgl](https://github.com/lvgl/lvgl), from the fork at [prestonbrown/lvgl-fork](https://github.com/prestonbrown/lvgl-fork) (the LVGL PR fork — not to be confused with `lib/helix-xml`). **Do not delete that fork while any PR below is open; deleting it closes them.**
 
 A patch here is droppable only when its PR is *merged*. **Closed does not mean merged** — read the status cell before dropping anything on a version bump.
 
