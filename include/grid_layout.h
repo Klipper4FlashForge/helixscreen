@@ -38,21 +38,40 @@ class GridLayout {
     /// Number of defined breakpoints
     static constexpr int NUM_BREAKPOINTS = 6;
 
-    /// Target cell size in pixels for dynamic grid computation.
-    /// ULTRAWIDE/PORTRAIT layouts divide screen resolution by this to determine
-    /// cols/rows. Exposed for future features (half-width widgets, etc.).
-    static constexpr int TARGET_CELL_PX = 160;
+    /// Target cell WIDTH in pixels. ULTRAWIDE and PORTRAIT divide screen width
+    /// by this to derive a column count.
+    static constexpr int TARGET_CELL_W_PX = 160;
+
+    /// Target cell HEIGHT in pixels. PORTRAIT divides screen height by this to
+    /// derive a row count.
+    ///
+    /// 120, not 160: ultrawide has always kept the fixed 4-row table on a 480px
+    /// panel, i.e. a 120px row, so 120 is the row height the dashboard is
+    /// actually authored against. Portrait used to reuse the 160px WIDTH target
+    /// for both axes, which made its rows 164px tall — the tall screen got
+    /// fewer, chunkier cells than the wide one (#1215). A 320x1480 panel now
+    /// yields 12 rows instead of 9.
+    static constexpr int TARGET_CELL_H_PX = 120;
 
     /// Clamp range for dynamically computed grid dimensions
     static constexpr int MIN_DYNAMIC_COLS = 4;
     static constexpr int MAX_DYNAMIC_COLS = 16;
     static constexpr int MIN_DYNAMIC_ROWS = 3;
-    static constexpr int MAX_DYNAMIC_ROWS = 12;
+
+    /// Row cap for dynamically computed grids.
+    ///
+    /// 16 mirrors MAX_DYNAMIC_COLS and covers the tallest panels in the wild at
+    /// the 120px row target: 320x1480 lands on 12, and a 480x1920 ultratall
+    /// lands exactly on 16. Past that a taller screen gets taller cells rather
+    /// than more tracks — every extra row is a real LVGL grid track that costs
+    /// descriptor memory and a layout pass whether or not a widget occupies it,
+    /// and a 17th row on a 2-column grid buys cells no widget is authored for.
+    static constexpr int MAX_DYNAMIC_ROWS = 16;
 
     /// Column floor for portrait, below the landscape floor of 4.
     ///
     /// A portrait panel is narrow by definition: 320px against MIN_DYNAMIC_COLS
-    /// would give 80px cells, half of TARGET_CELL_PX, and every widget that
+    /// would give 80px cells, half of TARGET_CELL_W_PX, and every widget that
     /// branches on `colspan >= 2` would read as compact no matter how much of
     /// the screen it actually covers. Two columns keeps cells at their intended
     /// size and lets a full-width widget genuinely be full width.
@@ -106,6 +125,81 @@ class GridLayout {
     /// Used by auto-placement to pack widgets toward the bottom of the grid.
     std::optional<std::pair<int, int>> find_available_bottom(int colspan, int rowspan) const;
 
+    /// Why a flexible placement attempt failed.
+    enum class PlacementFailure {
+        None,            ///< Placed successfully
+        GridFull,        ///< Fits the grid, but no free run of cells is left
+        TooLargeForGrid, ///< Exceeds the grid even at the declared minimum span
+    };
+
+    /// Outcome of find_available_bottom_min(): position plus the span that was
+    /// actually granted, or the reason nothing could be granted.
+    struct SpanPlacement {
+        int col = -1;
+        int row = -1;
+        int colspan = 0;
+        int rowspan = 0;
+        PlacementFailure failure = PlacementFailure::TooLargeForGrid;
+
+        bool placed() const {
+            return failure == PlacementFailure::None;
+        }
+    };
+
+    /// Bottom-packed placement at a widget's DECLARED MINIMUM span.
+    ///
+    /// A widget authored for the 6-column landscape grid (tips: colspan 4)
+    /// cannot exist in a 2-column portrait grid, but it advertises a minimum it
+    /// *can* live at. Auto-placement asks for the minimum so widget count is
+    /// maximised, then grows survivors back with grow_to_targets(). Handing out
+    /// the largest span that fit instead let one widget eat the cells its
+    /// neighbours needed and disabled them with "grid full" (#1216).
+    ///
+    /// `failure` distinguishes "no space left" from "larger than the whole
+    /// grid" so the caller can say which condition actually failed.
+    SpanPlacement find_available_bottom_min(int min_colspan, int min_rowspan) const;
+
+    /// Short, user-facing phrase naming a placement failure. Kept next to the
+    /// enum so the toast and the log cannot drift apart.
+    static const char* failure_text(PlacementFailure reason);
+
+    /// A placed widget's growth goal — the span its definition authors, which
+    /// is where grow_to_targets() tries to get it back to.
+    struct GrowthTarget {
+        std::string widget_id;
+        int colspan;
+        int rowspan;
+    };
+
+    /// Expand one already-placed widget by a single row or column toward
+    /// `target_colspan` x `target_rowspan`. Returns true when the placement
+    /// changed.
+    ///
+    /// Directions are tried in a fixed order — RIGHT, DOWN, LEFT, UP. Right and
+    /// down come first because they keep the widget's (col,row) origin fixed,
+    /// so growth does not reshuffle the grid; left and up are the fallback for
+    /// a widget already against the right or bottom edge, which is where
+    /// bottom-packed minimum placement puts most of them. The whole new strip
+    /// must be free and in bounds, so a widget never overruns a neighbour.
+    ///
+    /// The target is a ceiling, never a floor: a widget already at or past its
+    /// target does not move.
+    bool grow_once(const std::string& widget_id, int target_colspan, int target_rowspan);
+
+    /// Round-robin expansion toward every target: each pass offers every widget
+    /// in `targets` ONE growth step, and passes repeat until one changes
+    /// nothing. Round-robin rather than one-widget-at-a-time so a single large
+    /// widget cannot absorb all the slack while the widget behind it stays at
+    /// its minimum. Returns the number of growth steps applied.
+    ///
+    /// Deterministic: the direction order is fixed and `targets` is walked in
+    /// the caller's order, so the same grid and the same list always produce the
+    /// same layout.
+    int grow_to_targets(const std::vector<GrowthTarget>& targets);
+
+    /// Current placement for a widget id, or nullptr when it is not placed.
+    const GridPlacement* find_placement(const std::string& widget_id) const;
+
     /// Get all current placements
     const std::vector<GridPlacement>& placements() const {
         return placements_;
@@ -123,6 +217,13 @@ class GridLayout {
     bool is_occupied(int col, int row) const;
 
   private:
+    /// True when every cell of the rectangle is in bounds and unoccupied.
+    /// Growth checks the strip it is about to swallow, which never overlaps the
+    /// growing widget's own cells, so no self-exclusion is needed.
+    bool strip_is_free(int col, int row, int colspan, int rowspan) const;
+
+    GridPlacement* find_placement_mut(const std::string& widget_id);
+
     UiBreakpoint breakpoint_;
     std::vector<GridPlacement> placements_;
 };

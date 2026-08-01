@@ -47,9 +47,11 @@ GridDimensions GridLayout::get_dimensions(UiBreakpoint bp) {
     auto& lm = LayoutManager::instance();
     switch (lm.type()) {
     case LayoutType::ULTRAWIDE: {
+        // Columns only. Rows stay on the breakpoint table, which on a 480px-tall
+        // panel works out to the 120px row that TARGET_CELL_H_PX encodes.
         int w = lm.width();
         if (w > 0) {
-            base.cols = std::clamp(w / TARGET_CELL_PX, MIN_DYNAMIC_COLS, MAX_DYNAMIC_COLS);
+            base.cols = std::clamp(w / TARGET_CELL_W_PX, MIN_DYNAMIC_COLS, MAX_DYNAMIC_COLS);
         }
         break;
     }
@@ -60,13 +62,17 @@ GridDimensions GridLayout::get_dimensions(UiBreakpoint bp) {
         // a 320px-wide panel the landscape count of 6, i.e. 53px cells — so a
         // widget authored 3-of-6 for landscape rendered at half the screen and
         // the rest of the row stayed empty.
+        //
+        // Each axis uses its own target: width against TARGET_CELL_W_PX, height
+        // against TARGET_CELL_H_PX. Driving both from the 160px width target
+        // rationed the axis with room to spare (#1215).
         int h = lm.height();
         if (h > 0) {
-            base.rows = std::clamp(h / TARGET_CELL_PX, MIN_DYNAMIC_ROWS, MAX_DYNAMIC_ROWS);
+            base.rows = std::clamp(h / TARGET_CELL_H_PX, MIN_DYNAMIC_ROWS, MAX_DYNAMIC_ROWS);
         }
         int w = lm.width();
         if (w > 0) {
-            base.cols = std::clamp(w / TARGET_CELL_PX, MIN_PORTRAIT_COLS, MAX_DYNAMIC_COLS);
+            base.cols = std::clamp(w / TARGET_CELL_W_PX, MIN_PORTRAIT_COLS, MAX_DYNAMIC_COLS);
         }
         break;
     }
@@ -203,6 +209,116 @@ std::optional<std::pair<int, int>> GridLayout::find_available_bottom(int colspan
         }
     }
     return std::nullopt;
+}
+
+GridLayout::SpanPlacement GridLayout::find_available_bottom_min(int min_colspan,
+                                                                int min_rowspan) const {
+    SpanPlacement out;
+
+    // A span of 0 means "unset" in PanelWidgetDef; treat it as 1 cell.
+    const int want_cols = std::max(1, min_colspan);
+    const int want_rows = std::max(1, min_rowspan);
+
+    // Larger than the whole grid even at the declared minimum: no arrangement of
+    // free cells could ever hold it, so this is not a "grid full" condition.
+    if (want_cols > cols() || want_rows > rows()) {
+        out.failure = PlacementFailure::TooLargeForGrid;
+        return out;
+    }
+
+    if (auto pos = find_available_bottom(want_cols, want_rows)) {
+        return {pos->first, pos->second, want_cols, want_rows, PlacementFailure::None};
+    }
+
+    // It fits the grid's dimensions; there is simply no free run of cells left.
+    out.failure = PlacementFailure::GridFull;
+    return out;
+}
+
+const GridPlacement* GridLayout::find_placement(const std::string& widget_id) const {
+    auto it = std::find_if(placements_.begin(), placements_.end(),
+                           [&](const GridPlacement& p) { return p.widget_id == widget_id; });
+    return it == placements_.end() ? nullptr : &*it;
+}
+
+GridPlacement* GridLayout::find_placement_mut(const std::string& widget_id) {
+    auto it = std::find_if(placements_.begin(), placements_.end(),
+                           [&](const GridPlacement& p) { return p.widget_id == widget_id; });
+    return it == placements_.end() ? nullptr : &*it;
+}
+
+bool GridLayout::strip_is_free(int col, int row, int colspan, int rowspan) const {
+    if (col < 0 || row < 0 || colspan <= 0 || rowspan <= 0)
+        return false;
+    if (col + colspan > cols() || row + rowspan > rows())
+        return false;
+    for (int c = col; c < col + colspan; ++c) {
+        for (int r = row; r < row + rowspan; ++r) {
+            if (is_occupied(c, r))
+                return false;
+        }
+    }
+    return true;
+}
+
+bool GridLayout::grow_once(const std::string& widget_id, int target_colspan, int target_rowspan) {
+    GridPlacement* p = find_placement_mut(widget_id);
+    if (!p)
+        return false;
+
+    // The grid is a hard ceiling on top of the widget's own target.
+    const int target_cols = std::min(std::max(1, target_colspan), cols());
+    const int target_rows = std::min(std::max(1, target_rowspan), rows());
+
+    // RIGHT then DOWN keep the origin fixed; LEFT then UP are the fallback for a
+    // widget already against an edge. See grow_once() in grid_layout.h.
+    if (p->colspan < target_cols && strip_is_free(p->col + p->colspan, p->row, 1, p->rowspan)) {
+        ++p->colspan;
+        return true;
+    }
+    if (p->rowspan < target_rows && strip_is_free(p->col, p->row + p->rowspan, p->colspan, 1)) {
+        ++p->rowspan;
+        return true;
+    }
+    if (p->colspan < target_cols && strip_is_free(p->col - 1, p->row, 1, p->rowspan)) {
+        --p->col;
+        ++p->colspan;
+        return true;
+    }
+    if (p->rowspan < target_rows && strip_is_free(p->col, p->row - 1, p->colspan, 1)) {
+        --p->row;
+        ++p->rowspan;
+        return true;
+    }
+    return false;
+}
+
+int GridLayout::grow_to_targets(const std::vector<GrowthTarget>& targets) {
+    int steps = 0;
+    // Terminates: every step consumes at least one previously-free cell, and the
+    // grid holds finitely many.
+    for (bool progress = true; progress;) {
+        progress = false;
+        for (const auto& t : targets) {
+            if (grow_once(t.widget_id, t.colspan, t.rowspan)) {
+                progress = true;
+                ++steps;
+            }
+        }
+    }
+    return steps;
+}
+
+const char* GridLayout::failure_text(PlacementFailure reason) {
+    switch (reason) {
+    case PlacementFailure::GridFull:
+        return "grid full";
+    case PlacementFailure::TooLargeForGrid:
+        return "too big for this screen";
+    case PlacementFailure::None:
+        break;
+    }
+    return "placed";
 }
 
 std::pair<std::vector<GridPlacement>, std::vector<GridPlacement>>

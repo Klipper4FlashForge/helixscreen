@@ -486,7 +486,16 @@ TEST_CASE_METHOD(GridLayoutFixture, "GridLayout dimensions: ULTRAWIDE scales col
         lm.init(1920, 440);                                         // ULTRAWIDE, SMALL breakpoint
         auto dims = GridLayout::get_dimensions(UiBreakpoint::Tiny); // SMALL
         CHECK(dims.cols == 12);                                     // 1920 / 160 = 12
-        CHECK(dims.rows == 4);                                      // SMALL base rows
+        // Rows come from the breakpoint table, NOT from TARGET_CELL_H_PX. 440/120
+        // would be 3; anything other than 4 means the portrait row target leaked
+        // into the ultrawide branch (#1215 must not change ultrawide).
+        CHECK(dims.rows == 4); // SMALL base rows
+    }
+    SECTION("1920x480 -> 12 x 4 (the #1215 reference geometry, unchanged)") {
+        lm.init(1920, 480);                                          // ULTRAWIDE
+        auto dims = GridLayout::get_dimensions(UiBreakpoint::Small); // MEDIUM-ish table row
+        CHECK(dims.cols == 12);
+        CHECK(dims.rows == 4);
     }
     SECTION("2560x600 -> 16 cols (clamped), rows from LARGE breakpoint (5)") {
         lm.init(2560, 600);                                          // ULTRAWIDE, LARGE breakpoint
@@ -507,45 +516,80 @@ TEST_CASE_METHOD(GridLayoutFixture, "GridLayout dimensions: PORTRAIT scales BOTH
     // Columns used to stay at the breakpoint default while only rows tracked the
     // screen. On a 320px-wide panel that left the landscape count of 6 — 53px
     // cells — so a widget authored 3-of-6 for landscape covered half the screen
-    // and the rest of the row sat empty. Both axes now derive from TARGET_CELL_PX.
+    // and the rest of the row sat empty. Both axes now derive from a target cell
+    // size: width from TARGET_CELL_W_PX (160), height from TARGET_CELL_H_PX (120,
+    // the row height ultrawide has always shipped — #1215).
     auto& lm = helix::LayoutManager::instance();
 
-    SECTION("480x1600 -> 3 cols, 10 rows") {
+    SECTION("480x1600 -> 3 cols, 13 rows") {
         lm.init(480, 1600);                                          // PORTRAIT, XLARGE breakpoint
         auto dims = GridLayout::get_dimensions(UiBreakpoint::Large); // XLARGE
         CHECK(dims.cols == 3);                                       // 480 / 160 = 3
-        CHECK(dims.rows == 10);                                      // 1600 / 160 = 10
+        CHECK(dims.rows == 13);                                      // 1600 / 120 = 13
     }
-    SECTION("480x800 -> 3 cols, 5 rows") {
+    SECTION("480x800 -> 3 cols, 6 rows") {
         lm.init(480, 800);                                           // PORTRAIT
         auto dims = GridLayout::get_dimensions(UiBreakpoint::Large); // XLARGE
         CHECK(dims.cols == 3);                                       // 480 / 160 = 3
-        CHECK(dims.rows == 5);                                       // 800 / 160 = 5
+        CHECK(dims.rows == 6);                                       // 800 / 120 = 6
     }
-    SECTION("480x1920 -> 12 rows (max clamp)") {
+    SECTION("480x1920 -> 16 rows (exactly at the cap)") {
         lm.init(480, 1920);                                          // PORTRAIT
         auto dims = GridLayout::get_dimensions(UiBreakpoint::Large); // XLARGE
         CHECK(dims.cols == 3);
-        CHECK(dims.rows == 12); // 1920 / 160 = 12, at max clamp
+        CHECK(dims.rows == 16); // 1920 / 120 = 16, exactly MAX_DYNAMIC_ROWS
     }
-    SECTION("320x1480 (Waveshare 11.9) -> 2 cols (min clamp), 9 rows") {
+    SECTION("480x2400 -> 16 rows (max clamp)") {
+        lm.init(480, 2400);                                          // PORTRAIT
+        auto dims = GridLayout::get_dimensions(UiBreakpoint::Large); // XLARGE
+        CHECK(dims.cols == 3);
+        CHECK(dims.rows == GridLayout::MAX_DYNAMIC_ROWS); // 2400 / 120 = 20, clamped
+    }
+    SECTION("320x1480 (Waveshare 11.9) -> 2 cols (min clamp), 12 rows") {
         lm.init(320, 1480);                                         // PORTRAIT
         auto dims = GridLayout::get_dimensions(UiBreakpoint::Tiny); // TINY
-        CHECK(dims.cols == 2); // 320/160 = 2, at portrait floor
-        CHECK(dims.rows == 9); // 1480 / 160 = 9
+        CHECK(dims.cols == 2);  // 320/160 = 2, at portrait floor
+        CHECK(dims.rows == 12); // 1480 / 120 = 12 (was 9 with a 160px row target)
     }
     SECTION("320x480 -> portrait floor applies to TINY_PORTRAIT too") {
         lm.init(320, 480); // TINY_PORTRAIT (max_dim <= 480, taller than wide)
         auto dims = GridLayout::get_dimensions(UiBreakpoint::Micro);
         CHECK(dims.cols == 2); // 320 / 160 = 2
-        CHECK(dims.rows == 3); // 480 / 160 = 3
+        CHECK(dims.rows == 4); // 480 / 120 = 4
     }
     SECTION("272x480 -> MICRO_PORTRAIT also scales") {
         lm.init(272, 480); // MICRO_PORTRAIT (min_dim <= 272)
         auto dims = GridLayout::get_dimensions(UiBreakpoint::Micro);
         CHECK(dims.cols == 2); // 272/160 = 1, lifted to the portrait floor
-        CHECK(dims.rows == 3); // 480 / 160 = 3
+        CHECK(dims.rows == 4); // 480 / 120 = 4
     }
+    SECTION("row floor still applies to a short portrait panel") {
+        lm.init(320, 340); // 340 / 120 = 2, below MIN_DYNAMIC_ROWS
+        auto dims = GridLayout::get_dimensions(UiBreakpoint::Micro);
+        CHECK(dims.rows == GridLayout::MIN_DYNAMIC_ROWS);
+    }
+}
+
+// #1215: the tall axis must not be rationed relative to the wide one. Pin the
+// cell *density* relationship directly — a 320x1480 portrait panel and a
+// 1920x480 ultrawide panel must agree on how many pixels a row is worth.
+TEST_CASE_METHOD(GridLayoutFixture, "GridLayout: portrait and ultrawide agree on row height",
+                 "[grid_layout][dimensions][portrait][ultrawide][1215]") {
+    auto& lm = helix::LayoutManager::instance();
+
+    lm.init(1920, 480);
+    auto ultrawide = GridLayout::get_dimensions(UiBreakpoint::Small);
+    int ultrawide_row_px = 480 / ultrawide.rows;
+
+    LayoutManagerTestAccess::reset(lm);
+    lm.init(320, 1480);
+    auto portrait = GridLayout::get_dimensions(UiBreakpoint::Tiny);
+    int portrait_row_px = 1480 / portrait.rows;
+
+    INFO("ultrawide row px: " << ultrawide_row_px << ", portrait row px: " << portrait_row_px);
+    CHECK(ultrawide_row_px == 120);
+    CHECK(portrait_row_px == 123); // 1480/12 — same 120px target, integer remainder
+    CHECK(portrait.cols * portrait.rows == 24);
 }
 
 TEST_CASE_METHOD(GridLayoutFixture, "GridLayout: landscape column counts are untouched",
@@ -609,14 +653,14 @@ TEST_CASE_METHOD(GridLayoutFixture,
                  "GridLayout make_row_dsc: portrait produces correct descriptor length",
                  "[grid_layout][descriptor][portrait]") {
     auto& lm = helix::LayoutManager::instance();
-    lm.init(480, 1600); // PORTRAIT -> 10 rows
+    lm.init(480, 1600); // PORTRAIT -> 13 rows (1600 / 120)
 
     auto dsc = GridLayout::make_row_dsc(UiBreakpoint::Large); // XLARGE breakpoint
-    REQUIRE(dsc.size() == 11);                                // 10 FR values + terminator
-    for (int i = 0; i < 10; ++i) {
+    REQUIRE(dsc.size() == 14);                                // 13 FR values + terminator
+    for (int i = 0; i < 13; ++i) {
         CHECK(dsc[static_cast<size_t>(i)] == LV_GRID_FR(1));
     }
-    CHECK(dsc[10] == LV_GRID_TEMPLATE_LAST);
+    CHECK(dsc[13] == LV_GRID_TEMPLATE_LAST);
 }
 
 TEST_CASE_METHOD(GridLayoutFixture,
@@ -630,4 +674,212 @@ TEST_CASE_METHOD(GridLayoutFixture,
     CHECK(grid.rows() == 4);
     CHECK(grid.cols() == GridLayout::get_cols(UiBreakpoint::Tiny));
     CHECK(grid.rows() == GridLayout::get_rows(UiBreakpoint::Tiny));
+}
+
+// =============================================================================
+// Minimum-first placement and growth (#1216)
+// =============================================================================
+//
+// Auto-placement used to ask for the largest span that fit and step down until
+// something took. On a 3-column portrait grid that let `tips` (authored 4x2)
+// claim a reduced 3x2 — 6 of 18 cells — and the three widgets behind it were
+// then disabled with "grid full". The policy is now: every auto-placed widget
+// gets its DECLARED MINIMUM first, so widget count is maximised, and only then
+// does anything grow back toward its authored default.
+
+TEST_CASE_METHOD(GridLayoutFixture,
+                 "GridLayout find_available_bottom_min: grants the minimum, not the largest fit",
+                 "[grid_layout][find][minfirst][1216]") {
+    GridLayout grid(UiBreakpoint::Micro); // 6x4 table, LayoutManager uninitialised
+    REQUIRE(grid.cols() == 6);
+
+    // tips: authored 4x2, minimum 2x1. A 6-column grid could hold the full 4x2,
+    // and the old greedy finder handed it over. Minimum-first must not.
+    auto fit = grid.find_available_bottom_min(2, 1);
+    CHECK(fit.failure == GridLayout::PlacementFailure::None);
+    CHECK(fit.colspan == 2);
+    CHECK(fit.rowspan == 1);
+    CHECK(fit.col == 4); // bottom-right packed
+    CHECK(fit.row == 3);
+}
+
+TEST_CASE_METHOD(GridLayoutFixture,
+                 "GridLayout find_available_bottom_min: reports TooLargeForGrid, not GridFull",
+                 "[grid_layout][find][minfirst][1216]") {
+    auto& lm = helix::LayoutManager::instance();
+    lm.init(320, 1480); // 2 cols x 12 rows, entirely empty
+    GridLayout grid(UiBreakpoint::Tiny);
+
+    // A 4-column minimum in a 2-column grid can never exist here. The grid is
+    // empty, so "grid full" would name the wrong condition.
+    auto fit = grid.find_available_bottom_min(4, 1);
+    CHECK(fit.failure == GridLayout::PlacementFailure::TooLargeForGrid);
+    CHECK_FALSE(fit.placed());
+}
+
+TEST_CASE_METHOD(GridLayoutFixture,
+                 "GridLayout find_available_bottom_min: reports GridFull when space runs out",
+                 "[grid_layout][find][minfirst][1216]") {
+    GridLayout grid(UiBreakpoint::Micro); // 6x4
+    for (int r = 0; r < 4; ++r) {
+        REQUIRE(grid.place({"filler" + std::to_string(r), 0, r, 6, 1}));
+    }
+
+    auto fit = grid.find_available_bottom_min(1, 1);
+    CHECK(fit.failure == GridLayout::PlacementFailure::GridFull);
+    CHECK_FALSE(fit.placed());
+}
+
+TEST_CASE("GridLayout failure_text names the condition that actually failed",
+          "[grid_layout][minfirst][1216]") {
+    // The toast said "grid full" for both causes. They must read differently.
+    std::string full = GridLayout::failure_text(GridLayout::PlacementFailure::GridFull);
+    std::string too_large = GridLayout::failure_text(GridLayout::PlacementFailure::TooLargeForGrid);
+    CHECK(full == "grid full");
+    CHECK(too_large != full);
+    CHECK_FALSE(too_large.empty());
+}
+
+// --- growth ------------------------------------------------------------------
+
+TEST_CASE_METHOD(GridLayoutFixture,
+                 "GridLayout grow_once: extends right before any other direction",
+                 "[grid_layout][grow][1216]") {
+    GridLayout grid(UiBreakpoint::Micro); // 6x4
+    REQUIRE(grid.place({"w", 2, 1, 1, 1}));
+
+    CHECK(grid.grow_once("w", 2, 2));
+    const auto* p = grid.find_placement("w");
+    REQUIRE(p);
+    CHECK(p->col == 2); // origin unchanged — right is tried first
+    CHECK(p->row == 1);
+    CHECK(p->colspan == 2);
+    CHECK(p->rowspan == 1);
+}
+
+TEST_CASE_METHOD(GridLayoutFixture, "GridLayout grow_once: falls back to left and up at the edge",
+                 "[grid_layout][grow][1216]") {
+    GridLayout grid(UiBreakpoint::Micro); // 6x4
+    // Bottom-right corner: exactly where minimum-first bottom-packing puts the
+    // first auto-placed widget, so left/up is the common growth path.
+    REQUIRE(grid.place({"w", 5, 3, 1, 1}));
+
+    REQUIRE(grid.grow_once("w", 2, 2));
+    const auto* p = grid.find_placement("w");
+    REQUIRE(p);
+    CHECK(p->col == 4); // grew left
+    CHECK(p->colspan == 2);
+    CHECK(p->row == 3);
+    CHECK(p->rowspan == 1);
+
+    REQUIRE(grid.grow_once("w", 2, 2));
+    p = grid.find_placement("w");
+    REQUIRE(p);
+    CHECK(p->row == 2); // then up
+    CHECK(p->rowspan == 2);
+    CHECK(p->col == 4);
+    CHECK(p->colspan == 2);
+}
+
+TEST_CASE_METHOD(GridLayoutFixture, "GridLayout grow_once: never overruns an occupied neighbour",
+                 "[grid_layout][grow][1216]") {
+    GridLayout grid(UiBreakpoint::Micro); // 6x4
+    REQUIRE(grid.place({"w", 0, 0, 1, 1}));
+    REQUIRE(grid.place({"right", 1, 0, 1, 1}));
+    REQUIRE(grid.place({"below", 0, 1, 1, 1}));
+
+    // Right and down are taken; left and up are off-grid.
+    CHECK_FALSE(grid.grow_once("w", 4, 4));
+    const auto* p = grid.find_placement("w");
+    REQUIRE(p);
+    CHECK(p->colspan == 1);
+    CHECK(p->rowspan == 1);
+    // …and the neighbours are untouched.
+    CHECK(grid.find_placement("right")->col == 1);
+    CHECK(grid.find_placement("below")->row == 1);
+}
+
+TEST_CASE_METHOD(GridLayoutFixture, "GridLayout grow_once: stops at the target span",
+                 "[grid_layout][grow][1216]") {
+    GridLayout grid(UiBreakpoint::Micro); // 6x4, otherwise empty
+    REQUIRE(grid.place({"w", 0, 0, 2, 2}));
+
+    // Already at the target: no growth even though the grid is mostly free.
+    CHECK_FALSE(grid.grow_once("w", 2, 2));
+    const auto* p = grid.find_placement("w");
+    CHECK(p->colspan == 2);
+    CHECK(p->rowspan == 2);
+}
+
+TEST_CASE_METHOD(GridLayoutFixture, "GridLayout grow_once: ignores an unknown widget",
+                 "[grid_layout][grow][1216]") {
+    GridLayout grid(UiBreakpoint::Micro);
+    CHECK_FALSE(grid.grow_once("nobody", 4, 4));
+}
+
+TEST_CASE_METHOD(GridLayoutFixture, "GridLayout grow_to_targets: expands into the free region",
+                 "[grid_layout][grow][1216]") {
+    GridLayout grid(UiBreakpoint::Micro); // 6x4 = 24 cells
+    // Two widgets parked at their minimum in the bottom-right corner.
+    REQUIRE(grid.place({"a", 5, 3, 1, 1}));
+    REQUIRE(grid.place({"b", 3, 3, 2, 1}));
+
+    int steps = grid.grow_to_targets({{"a", 2, 2}, {"b", 2, 2}});
+    CHECK(steps > 0);
+
+    const auto* a = grid.find_placement("a");
+    const auto* b = grid.find_placement("b");
+    REQUIRE(a);
+    REQUIRE(b);
+    INFO("a=" << a->col << "," << a->row << " " << a->colspan << "x" << a->rowspan
+              << "  b=" << b->col << "," << b->row << " " << b->colspan << "x" << b->rowspan);
+    CHECK(a->colspan * a->rowspan > 1); // both grew
+    CHECK(b->colspan * b->rowspan > 2);
+    CHECK(a->colspan <= 2); // …and neither passed its target
+    CHECK(a->rowspan <= 2);
+    CHECK(b->colspan <= 2);
+    CHECK(b->rowspan <= 2);
+}
+
+TEST_CASE_METHOD(GridLayoutFixture, "GridLayout grow_to_targets: round-robin, not first-come",
+                 "[grid_layout][grow][1216]") {
+    // One row of slack shared by two widgets that both want it. Round-robin
+    // hands one step to each in turn, so the first target cannot absorb the
+    // whole strip while the second stays at its minimum.
+    GridLayout grid(UiBreakpoint::Micro); // 6x4
+    // Fill rows 0-1 so only rows 2-3 are in play, then park two 1x1s on row 3.
+    REQUIRE(grid.place({"pad0", 0, 0, 6, 1}));
+    REQUIRE(grid.place({"pad1", 0, 1, 6, 1}));
+    REQUIRE(grid.place({"a", 0, 3, 1, 1}));
+    REQUIRE(grid.place({"b", 1, 3, 1, 1}));
+
+    grid.grow_to_targets({{"a", 1, 2}, {"b", 1, 2}});
+
+    const auto* a = grid.find_placement("a");
+    const auto* b = grid.find_placement("b");
+    REQUIRE(a);
+    REQUIRE(b);
+    CHECK(a->rowspan == 2);
+    CHECK(b->rowspan == 2);
+}
+
+TEST_CASE_METHOD(GridLayoutFixture, "GridLayout grow_to_targets: same input, same result",
+                 "[grid_layout][grow][determinism][1216]") {
+    auto run = [] {
+        GridLayout grid(UiBreakpoint::Micro); // 6x4
+        REQUIRE(grid.place({"a", 5, 3, 1, 1}));
+        REQUIRE(grid.place({"b", 3, 3, 2, 1}));
+        REQUIRE(grid.place({"c", 1, 3, 2, 1}));
+        grid.grow_to_targets({{"a", 2, 2}, {"b", 2, 2}, {"c", 4, 2}});
+        std::vector<std::tuple<std::string, int, int, int, int>> out;
+        for (const auto& p : grid.placements()) {
+            out.emplace_back(p.widget_id, p.col, p.row, p.colspan, p.rowspan);
+        }
+        return out;
+    };
+
+    auto first = run();
+    for (int i = 0; i < 5; ++i) {
+        CHECK(run() == first);
+    }
 }

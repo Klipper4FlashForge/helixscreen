@@ -50,6 +50,19 @@ class LayoutManager {
     /// opposed to a content subdirectory such as components/.
     static bool is_variant_dir(const std::string& dir);
     bool is_standard() const;
+
+    /// Variant directories to search for a layout override, most specific
+    /// first. The base (ui_xml/, and the top-level "anchors" table in
+    /// default_layout.json) is always the final fallback and is not included
+    /// here. Portrait sub-classes inherit the shared portrait/ layer, so
+    /// TINY_PORTRAIT yields {"tiny_portrait", "portrait"}.
+    ///
+    /// Public because the same search order keys more than XML files:
+    /// PanelWidgetConfig::build_default_grid() picks its anchor table this way,
+    /// so a portrait panel cannot end up on anchors authored for a 6-column
+    /// landscape grid (#1216).
+    std::vector<std::string> variant_chain() const;
+
     int width() const {
         return width_;
     }
@@ -63,11 +76,6 @@ class LayoutManager {
     LayoutType detect(int width, int height) const;
     static const char* type_to_name(LayoutType type);
     static LayoutType name_to_type(const std::string& name);
-
-    // Ordered list of variant directories to search for an XML override, most
-    // specific first (base ui_xml/ is always the final fallback and is not
-    // included here). Portrait sub-classes inherit the shared portrait/ layer.
-    std::vector<std::string> variant_chain() const;
 
     LayoutType type_{LayoutType::STANDARD};
     std::string name_{"standard"};
