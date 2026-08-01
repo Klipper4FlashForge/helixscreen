@@ -562,6 +562,19 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
     }
 
     /**
+     * @brief How long an initial connection may keep failing before escalating
+     *
+     * Applies only to a client that has NEVER opened a socket. Once a session
+     * has been established, staleness is owned by the health timer's
+     * MAX_RECONNECT_STALL_MS check instead. Default 60000ms, matching it.
+     *
+     * @param timeout_ms Window measured from the connect() call
+     */
+    void set_initial_connect_failure_timeout(uint32_t timeout_ms) {
+        initial_connect_failure_ms_ = timeout_ms;
+    }
+
+    /**
      * @brief Configure timeout and reconnection parameters
      *
      * Sets all timeout and reconnection parameters from config values.
@@ -784,6 +797,17 @@ class MoonrakerClient : public hv::WebSocketClient, public IMoonrakerClient {
     // Written/read only from the libhv event loop thread (onclose + health timer).
     std::chrono::steady_clock::time_point reconnect_started_at_{};
     static constexpr int MAX_RECONNECT_STALL_MS = 60000;
+
+    // Initial-connection staleness detection — the never-connected counterpart
+    // of the above. The health timer cannot own this: it is started from
+    // on_ws_open(), which by definition never runs here. Anchor is set by
+    // connect(); the check runs on the onclose path, which libhv already drives
+    // once per retry, so this needs no timer of its own.
+    // Written/read on the libhv event loop thread; connect() may set the anchor
+    // from another thread, hence the atomic latch.
+    std::chrono::steady_clock::time_point connect_started_at_{};
+    std::atomic<bool> initial_failure_notified_{false};
+    uint32_t initial_connect_failure_ms_{60000};
 
     // WebSocket callback cancellation guard. Reset on BOTH disconnect and
     // destruction so in-flight libhv callbacks (onopen/onmessage/onclose)

@@ -34,6 +34,23 @@ namespace {
 std::atomic<bool> g_already_notified_max_attempts{false};
 std::atomic<bool> g_already_notified_disconnect{false};
 
+// "ws://192.168.1.171:7125/websocket" -> "192.168.1.171:7125". The bare
+// host:port is what a user can act on: compare it against the printer, or find
+// it under Settings > System > Printer Host. Falls back to the input unchanged
+// if it does not look like a URL.
+std::string format_ws_endpoint(const std::string& url) {
+    std::string s = url;
+    const size_t scheme = s.find("://");
+    if (scheme != std::string::npos) {
+        s.erase(0, scheme + 3);
+    }
+    const size_t slash = s.find('/');
+    if (slash != std::string::npos) {
+        s.erase(slash);
+    }
+    return s.empty() ? url : s;
+}
+
 // Reset notification flags on successful connection
 void reset_notification_flags() {
     g_already_notified_max_attempts.store(false);
@@ -337,6 +354,13 @@ int MoonrakerClient::connect(const char* url, std::function<void()> on_connected
     set_connection_state(ConnectionState::CONNECTING);
     connection_generation_.fetch_add(1);
 
+    // Anchor the initial-connection window. libhv's auto-reconnect re-enters its
+    // own startConnect(), never this function, so this timestamp stays put for
+    // the whole never-connected streak — which is exactly what we want to
+    // measure. A fresh connect() (new host, wizard, force_reconnect) re-arms it.
+    connect_started_at_ = std::chrono::steady_clock::now();
+    initial_failure_notified_.store(false, std::memory_order_relaxed);
+
     // Install the inherited libhv callbacks exactly ONCE. Reassigning onopen/onmessage/
     // onclose per connect() races the libhv event-loop thread, which may be mid-invoke on
     // the old std::function — freeing its heap storage under the running lambda → UAF
@@ -463,6 +487,10 @@ void MoonrakerClient::on_ws_open() {
 
     // Reset notification flags on successful connection
     reset_notification_flags();
+    // Re-arm the initial-connection escalation. A session that came up and later
+    // dies is the health timer's problem, but if this client is pointed at a new
+    // host that never answers, that streak deserves its own notification.
+    initial_failure_notified_.store(false, std::memory_order_relaxed);
 
     invoke_connected_callback(on_connected, "WebSocket opened");
 }
@@ -733,6 +761,44 @@ void MoonrakerClient::on_ws_close() {
             // reconnect of a previously-established session).
             if (current == ConnectionState::CONNECTING) {
                 set_connection_state(ConnectionState::DISCONNECTED);
+            }
+
+            // Escalate a connection that has NEVER opened. Both existing
+            // escalations are unreachable here: the health timer that owns the
+            // stall check is started from on_ws_open(), and that check requires
+            // RECONNECTING while this path sets DISCONNECTED. So without this,
+            // a stale/wrong host retries silently forever — bundle XRK8KPTF sat
+            // in exactly that state, and the only feedback was a disconnected
+            // icon that never names the address being dialed.
+            //
+            // Latched: libhv retries roughly every 3s and re-opening the modal
+            // on each one would be unusable. Retries continue regardless, so
+            // the app still heals itself if the printer comes up later.
+            if (!initial_failure_notified_.load(std::memory_order_relaxed) &&
+                connect_started_at_.time_since_epoch().count() != 0) {
+                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                         std::chrono::steady_clock::now() - connect_started_at_)
+                                         .count();
+                if (elapsed > static_cast<long long>(initial_connect_failure_ms_)) {
+                    initial_failure_notified_.store(true, std::memory_order_relaxed);
+
+                    std::string endpoint;
+                    {
+                        std::lock_guard<std::mutex> lk(reconnect_mutex_);
+                        endpoint = last_url_;
+                    }
+                    endpoint = format_ws_endpoint(endpoint);
+
+                    spdlog::error("[Moonraker Client] Never reached {} after {}ms — giving up on "
+                                  "the initial connection (retries continue)",
+                                  endpoint, elapsed);
+                    set_connection_state(ConnectionState::FAILED);
+                    emit_event(MoonrakerEventType::CONNECTION_FAILED,
+                               fmt::format("Unable to reach printer at {}. Check that the printer "
+                                           "is powered on and that this address is correct.",
+                                           endpoint),
+                               true);
+                }
             }
 
             // Call on_disconnected() to notify about connection failure
