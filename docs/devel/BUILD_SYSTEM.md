@@ -927,12 +927,19 @@ apply-patches:
 To add a new submodule patch:
 
 1. **Make changes** in the submodule directory
-2. **Generate patch**:
+2. **Generate patch** — scope the diff to the files you touched, or you will capture every
+   other patch that is currently applied:
    ```bash
    cd lib/lvgl
-   git diff > ../../patches/my-new-patch.patch
+   git diff src/path/to/file.c > ../../patches/my-new-patch.patch
    ```
-3. **Update Makefile** to apply the patch in the `apply-patches` target
+   If more than one patch touches that file, even a scoped diff folds the others in. Sixteen
+   files are shared today (`src/misc/lv_event.c` by seven patches). Check with
+   `grep -l "diff --git a/<path>" patches/*.patch` and use the pristine-file method in
+   `patches/README.md` § "Regenerating a patch whose file is shared".
+3. **Update Makefile** to apply the patch in the `apply-patches` target. Use
+   `git -C $(LVGL_DIR) apply --check <patch>` as the apply condition rather than a
+   "is file X dirty?" test, which breaks as soon as another patch touches X.
 4. **Document** in `patches/README.md`
 
 ### Patch Gotchas (hard-won)

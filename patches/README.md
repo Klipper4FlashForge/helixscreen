@@ -102,6 +102,41 @@ make apply-patches
 # Force reset and reapply all
 make reapply-patches
 
-# Regenerate a patch after manual edits in lib/lvgl/
+# Regenerate a patch after manual edits in lib/lvgl/ — SEE THE WARNING BELOW FIRST
 git -C lib/lvgl diff src/path/to/file.c > patches/patch_name.patch
 ```
+
+### Regenerating a patch whose file is shared
+
+That `git diff` recipe is only safe when exactly one patch touches the file. **Sixteen files
+are touched by more than one patch**, so for those it silently folds every other patch's hunks
+into the one being regenerated. `src/misc/lv_event.c` has seven patches; `lv_obj_event.c`,
+`lv_obj_tree.c` and `lv_linux_fbdev.c` have four each.
+
+Check before regenerating:
+
+```bash
+# how many patches claim this file?
+grep -l "diff --git a/src/path/to/file.c" patches/*.patch
+```
+
+If more than one, do not use `git diff`. Take the pristine file, apply only this patch's own
+changes to it, and diff that:
+
+```bash
+git -C lib/lvgl show v9.5.0:src/path/to/file.c > /tmp/pristine.c
+cp /tmp/pristine.c /tmp/patched.c
+# edit /tmp/patched.c with only this patch's changes
+diff -u --label a/src/path/to/file.c --label b/src/path/to/file.c /tmp/pristine.c /tmp/patched.c \
+  | sed '1i\
+diff --git a/src/path/to/file.c b/src/path/to/file.c' > patches/patch_name.patch
+```
+
+Then `make reapply-patches` from clean and confirm every patch still reports as applied. A
+folded patch usually still applies on a clean tree, so the duplication only surfaces later as
+a conflict or a doubled hunk.
+
+**Apply-check sentinels:** each patch's block in `mk/patches.mk` decides whether to apply. Some
+older blocks test "is file X dirty?", which breaks when a patch stops touching X or when another
+patch dirties it first. Prefer `git -C $(LVGL_DIR) apply --check <patch>` as the condition — it
+asks the real question and does not depend on file ownership.
