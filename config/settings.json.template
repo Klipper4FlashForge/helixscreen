@@ -1,4 +1,6 @@
 {
+  "config_version": 21,
+  "_config_version_comment": "Config schema version. MUST be present and current: Config::init treats a missing version as 0, reads that as a tarball default, and will restore a rolling backup over this file. Pinned by tests/unit/test_settings_template_contract.cpp.",
   "dark_mode": true,
   "brightness": 80,
   "_brightness_comment": "Screen brightness percentage (1-100). Default: 80%.",
@@ -30,104 +32,6 @@
   "_log_path_comment": "Log file path when using file destination. Empty = auto (/var/log or ~/.local/share)",
   "log_level": "warn",
   "_log_level_comment": "Log verbosity: warn (quiet), info, debug, trace. CLI -v flags override this.",
-  "printer": {
-    "name": "Unnamed Printer",
-    "type": "Unknown",
-    "moonraker_host": "192.168.1.112",
-    "moonraker_port": 7125,
-    "moonraker_api_key": false,
-    "moonraker_connection_timeout_ms": 10000,
-    "moonraker_keepalive_interval_ms": 10000,
-    "moonraker_reconnect_max_delay_ms": 2000,
-    "moonraker_reconnect_min_delay_ms": 200,
-    "moonraker_request_timeout_ms": 30000,
-    "moonraker_timeout_check_interval_ms": 2000,
-    "heaters": {
-      "bed": "heater_bed",
-      "hotend": "extruder",
-      "_hotend_comment": "Primary extruder heater. Additional extruders (extruder1, extruder2, etc.) are auto-discovered from Klipper. Toolchangers and multi-backend AMS systems are also auto-detected. No manual configuration needed for multi-extruder or multi-tool setups."
-    },
-    "temp_sensors": {
-      "bed": "temperature_sensor bed",
-      "hotend": "temperature_sensor extruder"
-    },
-    "fans": {
-      "hotend": "heater_fan hotend_fan",
-      "part": "fan",
-      "chamber": "",
-      "exhaust": ""
-    },
-    "leds": {
-      "strip": "",
-      "_strip_comment": "Legacy single LED strip name. Superseded by selected_strips for multi-strip control.",
-      "selected_strips": [],
-      "_selected_strips_comment": "Klipper LED strip IDs to control (e.g., [\"neopixel caselight\"]). Configured via Settings > LED Settings.",
-      "led_on_at_start": false,
-      "_led_on_at_start_comment": "Automatically turn on selected LED strips when Klipper becomes ready. Default: false.",
-      "startup_brightness": 80,
-      "_startup_brightness_comment": "Brightness percentage (1-100) used when LEDs turn on at startup. Default: 80.",
-      "last_color": "#FFFFFF",
-      "_last_color_comment": "Last used LED color as #RRGGBB hex string (also accepts legacy integer RGB). Remembered between sessions.",
-      "last_brightness": 100,
-      "_last_brightness_comment": "Last used brightness percentage (0-100). Remembered between sessions.",
-      "color_presets": ["#FFFFFF", "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF"],
-      "_color_presets_comment": "Preset colors (#RRGGBB) shown in the color picker. Default: white, red, green, blue, yellow, magenta, cyan.",
-      "auto_state": {
-        "enabled": false,
-        "mappings": {
-          "idle": { "action": "brightness", "brightness": 50, "color": "#000000" },
-          "heating": { "action": "color", "color": "#FF0000", "brightness": 100 },
-          "printing": { "action": "brightness", "brightness": 100, "color": "#000000" },
-          "paused": { "action": "off" },
-          "error": { "action": "color", "color": "#FF0000", "brightness": 100 },
-          "complete": { "action": "color", "color": "#00FF00", "brightness": 100 }
-        },
-        "_comment": "Automatic state-based LED lighting. Actions: off, brightness, color, effect, wled_preset, macro."
-      },
-      "macro_devices": [],
-      "_macro_devices_comment": "Custom LED macro devices shown as cards in LED control overlay. Each: {name, type (on_off|toggle|preset), on_macro, off_macro, toggle_macro, presets}."
-    },
-    "extra_sensors": {},
-    "hardware": {
-      "optional": [],
-      "expected": [],
-      "last_snapshot": {}
-    },
-    "default_macros": {
-      "cooldown": "SET_HEATER_TEMPERATURE HEATER=extruder TARGET=0\nSET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=0",
-      "load_filament": { "label": "Load", "gcode": "LOAD_FILAMENT" },
-      "unload_filament": { "label": "Unload", "gcode": "UNLOAD_FILAMENT" },
-      "macro_1": { "label": "Clean Nozzle", "gcode": "HELIX_CLEAN_NOZZLE" },
-      "macro_2": { "label": "Bed Level", "gcode": "HELIX_BED_LEVEL_IF_NEEDED" }
-    },
-    "safety_limits": {
-      "max_temperature_celsius": 400.0,
-      "min_temperature_celsius": 0.0,
-      "max_fan_speed_percent": 100.0,
-      "min_fan_speed_percent": 0.0,
-      "max_feedrate_mm_min": 50000.0,
-      "min_feedrate_mm_min": 0.0,
-      "max_relative_distance_mm": 1000.0,
-      "min_relative_distance_mm": -1000.0,
-      "max_absolute_position_mm": 1000.0,
-      "min_absolute_position_mm": 0.0,
-      "_comment": "Safety limits for G-code generation. Explicit values override Moonraker auto-detection. Defaults are conservative for most FDM printers. High-temp printers may need max_temperature_celsius > 400. Leave unset to auto-detect from printer.cfg via Moonraker."
-    },
-    "chamber_heater": "auto",
-    "_chamber_heater_comment": "Chamber heater assignment. 'auto' (detect by name heuristics), 'none' (disable), or Klipper object name (e.g., 'heater_generic chamber'). Default: 'auto'.",
-    "chamber_sensor": "auto",
-    "_chamber_sensor_comment": "Chamber temperature sensor assignment. 'auto' (detect by name heuristics), 'none' (disable), or Klipper object name (e.g., 'temperature_sensor enclosure_bme'). Default: 'auto'.",
-    "capability_overrides": {
-      "bed_mesh": "auto",
-      "qgl": "auto",
-      "z_tilt": "auto",
-      "nozzle_clean": "auto",
-      "heat_soak": "auto",
-      "chamber": "auto",
-      "speaker": "auto",
-      "_comment": "Override auto-detected printer capabilities. Values: 'auto' (use detection), 'enable' (force on), 'disable' (force off). Use 'enable' for features that work but weren't detected (e.g., heat_soak without chamber heater)."
-    }
-  },
   "network": {
     "connection_type": "None",
     "wifi_ssid": "",
@@ -168,8 +72,8 @@
     "_time_format_comment": "Time display format. 0 = 12-hour (2:30 PM), 1 = 24-hour (14:30). Default is 12-hour.",
     "timezone": "UTC",
     "_timezone_comment": "IANA timezone ID (e.g., 'America/New_York', 'Europe/London'). Applied via setenv/tzset so all localtime_r() calls produce correct local times. Default: 'UTC'.",
-    "theme": "nord",
-    "_theme_comment": "Color theme. Options: 'nord' (default). Requires restart.",
+    "theme": "helixscreen",
+    "_theme_comment": "Color theme, loaded from assets/config/themes/defaults/<name>.json. Options: ayu, catppuccin, chatgpt, cupertino, dracula, everforest, gruvbox, helixscreen, kanagawa, material-design, midnight, nord, onedark, rose-pine, solarized, tokyonight, yami. Default: 'helixscreen'. Requires restart.",
     "rotate": 0,
     "backlight_enable_ioctl": true,
     "_backlight_enable_ioctl_comment": "Use BACKLIGHT_ENABLE/DISABLE ioctls for Allwinner display control. Some platforms (e.g. Elegoo CC1, AD5X) invert PWM polarity when these are called; set false for brightness-only control. Default: true.",
@@ -261,7 +165,149 @@
     "quick_button_4": "",
     "_comment": "Controls panel quick-action button assignments. Built-in options: 'clean_nozzle', 'bed_level', 'heat_soak', 'purge', 'bed_mesh'. Empty string hides the button."
   },
+  "active_printer_id": "default",
+  "_active_printer_id_comment": "Which entry under 'printers' is live. Must name an existing key there.",
   "printers": {
+    "default": {
+      "name": "Unnamed Printer",
+      "type": "Unknown",
+      "moonraker_host": "127.0.0.1",
+      "moonraker_port": 7125,
+      "moonraker_api_key": false,
+      "moonraker_connection_timeout_ms": 10000,
+      "moonraker_keepalive_interval_ms": 10000,
+      "moonraker_reconnect_max_delay_ms": 2000,
+      "moonraker_reconnect_min_delay_ms": 200,
+      "moonraker_request_timeout_ms": 30000,
+      "moonraker_timeout_check_interval_ms": 2000,
+      "heaters": {
+        "bed": "heater_bed",
+        "hotend": "extruder",
+        "_hotend_comment": "Primary extruder heater. Additional extruders (extruder1, extruder2, etc.) are auto-discovered from Klipper. Toolchangers and multi-backend AMS systems are also auto-detected. No manual configuration needed for multi-extruder or multi-tool setups."
+      },
+      "temp_sensors": {
+        "bed": "temperature_sensor bed",
+        "hotend": "temperature_sensor extruder"
+      },
+      "fans": {
+        "hotend": "heater_fan hotend_fan",
+        "part": "fan",
+        "chamber": "",
+        "exhaust": ""
+      },
+      "leds": {
+        "strip": "",
+        "_strip_comment": "Legacy single LED strip name. Superseded by selected_strips for multi-strip control.",
+        "selected_strips": [],
+        "_selected_strips_comment": "Klipper LED strip IDs to control (e.g., [\"neopixel caselight\"]). Configured via Settings > LED Settings.",
+        "led_on_at_start": false,
+        "_led_on_at_start_comment": "Automatically turn on selected LED strips when Klipper becomes ready. Default: false.",
+        "startup_brightness": 80,
+        "_startup_brightness_comment": "Brightness percentage (1-100) used when LEDs turn on at startup. Default: 80.",
+        "last_color": "#FFFFFF",
+        "_last_color_comment": "Last used LED color as #RRGGBB hex string (also accepts legacy integer RGB). Remembered between sessions.",
+        "last_brightness": 100,
+        "_last_brightness_comment": "Last used brightness percentage (0-100). Remembered between sessions.",
+        "color_presets": [
+          "#FFFFFF",
+          "#FF0000",
+          "#00FF00",
+          "#0000FF",
+          "#FFFF00",
+          "#FF00FF",
+          "#00FFFF"
+        ],
+        "_color_presets_comment": "Preset colors (#RRGGBB) shown in the color picker. Default: white, red, green, blue, yellow, magenta, cyan.",
+        "auto_state": {
+          "enabled": false,
+          "mappings": {
+            "idle": {
+              "action": "brightness",
+              "brightness": 50,
+              "color": "#000000"
+            },
+            "heating": {
+              "action": "color",
+              "color": "#FF0000",
+              "brightness": 100
+            },
+            "printing": {
+              "action": "brightness",
+              "brightness": 100,
+              "color": "#000000"
+            },
+            "paused": {
+              "action": "off"
+            },
+            "error": {
+              "action": "color",
+              "color": "#FF0000",
+              "brightness": 100
+            },
+            "complete": {
+              "action": "color",
+              "color": "#00FF00",
+              "brightness": 100
+            }
+          },
+          "_comment": "Automatic state-based LED lighting. Actions: off, brightness, color, effect, wled_preset, macro."
+        },
+        "macro_devices": [],
+        "_macro_devices_comment": "Custom LED macro devices shown as cards in LED control overlay. Each: {name, type (on_off|toggle|preset), on_macro, off_macro, toggle_macro, presets}."
+      },
+      "extra_sensors": {},
+      "hardware": {
+        "optional": [],
+        "expected": [],
+        "last_snapshot": {}
+      },
+      "default_macros": {
+        "cooldown": "SET_HEATER_TEMPERATURE HEATER=extruder TARGET=0\nSET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=0",
+        "load_filament": {
+          "label": "Load",
+          "gcode": "LOAD_FILAMENT"
+        },
+        "unload_filament": {
+          "label": "Unload",
+          "gcode": "UNLOAD_FILAMENT"
+        },
+        "macro_1": {
+          "label": "Clean Nozzle",
+          "gcode": "HELIX_CLEAN_NOZZLE"
+        },
+        "macro_2": {
+          "label": "Bed Level",
+          "gcode": "HELIX_BED_LEVEL_IF_NEEDED"
+        }
+      },
+      "safety_limits": {
+        "max_temperature_celsius": 400.0,
+        "min_temperature_celsius": 0.0,
+        "max_fan_speed_percent": 100.0,
+        "min_fan_speed_percent": 0.0,
+        "max_feedrate_mm_min": 50000.0,
+        "min_feedrate_mm_min": 0.0,
+        "max_relative_distance_mm": 1000.0,
+        "min_relative_distance_mm": -1000.0,
+        "max_absolute_position_mm": 1000.0,
+        "min_absolute_position_mm": 0.0,
+        "_comment": "Safety limits for G-code generation. Explicit values override Moonraker auto-detection. Defaults are conservative for most FDM printers. High-temp printers may need max_temperature_celsius > 400. Leave unset to auto-detect from printer.cfg via Moonraker."
+      },
+      "chamber_heater": "auto",
+      "_chamber_heater_comment": "Chamber heater assignment. 'auto' (detect by name heuristics), 'none' (disable), or Klipper object name (e.g., 'heater_generic chamber'). Default: 'auto'.",
+      "chamber_sensor": "auto",
+      "_chamber_sensor_comment": "Chamber temperature sensor assignment. 'auto' (detect by name heuristics), 'none' (disable), or Klipper object name (e.g., 'temperature_sensor enclosure_bme'). Default: 'auto'.",
+      "capability_overrides": {
+        "bed_mesh": "auto",
+        "qgl": "auto",
+        "z_tilt": "auto",
+        "nozzle_clean": "auto",
+        "heat_soak": "auto",
+        "chamber": "auto",
+        "speaker": "auto",
+        "_comment": "Override auto-detected printer capabilities. Values: 'auto' (use detection), 'enable' (force on), 'disable' (force off). Use 'enable' for features that work but weren't detected (e.g., heat_soak without chamber heater)."
+      }
+    },
     "show_printer_switcher": false,
     "_show_printer_switcher_comment": "Show the printer switcher button on the home panel. Default: false.",
     "_per_printer_comment": "Each configured printer is an object here keyed by id (e.g. 'default', 'printer-2'), holding that machine's own moonraker_host/port, heaters, temp_sensors, fans, leds, hardware, panel_widgets, preset, toolhead_style, and detection/policy_u1. 'active_printer_id' at the root selects which one is live. Keys directly under 'printers' that are not objects (like show_printer_switcher) are install-wide settings, not printers."
