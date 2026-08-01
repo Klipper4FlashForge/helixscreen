@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.99.106] - 2026-07-31
+
+Most of this release is about screens that are not 800x480. The 480x272 panels get a sweep
+through layouts that were drawing past their own edges — a PIN keypad whose bottom row was
+off-screen, a bed mesh list with no complete row in it, dryer controls and history amounts cut
+off at the card edge — and portrait gets grid sizing, pixel tokens and a default layout of its
+own instead of landscape's numbers rotated onto a taller screen. Alongside that, the print file
+browser stops cropping its thumbnails, and the thumbnail cache stops walking itself on every
+fetch.
+
+### Added
+
+- **An unreachable printer now offers Change Address** — a connection failure raised an OK-only alert, so acknowledging it returned you to the same dead end, and the setting itself is buried under Settings > System > Printer Host with nothing pointing there.
+- **Portrait overlays use the whole screen width** — overlay sizing subtracted the navigation bar from the horizontal axis, which only holds when the bar is a full-height strip down the side. In portrait it runs along the bottom, so a 320px Waveshare panel drew 266px overlays with a dead strip of backdrop beside them.
+- **The WiFi picker shows each network's band (#1189)** — a 2.4G / 5G / 2.4-5G badge, shown only when the scan actually spans bands.
+
+### Fixed
+
+- **Portrait dropped home widgets permanently on first open (#1215, #1216)** — auto-placement asked for each widget's authored column span unclamped, so anything wider than the grid failed a loop that never ran and was switched off and saved that way, with a toast blaming a grid that had free rows. Portrait also derived row heights from the width constant, rationing the axis with room to spare, and inherited landscape anchors authored for six columns. It now has its own default layout and falls back to a widget's minimum span rather than dropping it. (A widget the old bug switched off stays off — re-add it from the catalog.)
+- **Tall screens took their sizing from their narrow axis (#1209)** — every pixel token resolved from min(width, height), which is right for anything that has to fit across and wrong for anything that stacks, so a 1480px-tall panel inherited 32px buttons and 200px dialog bodies from its 320px width. Landscape and square displays are unchanged by construction.
+- **Type stayed sized for the startup screen size after a resize (#1210)** — font registration decided which tiers exist from the startup breakpoint and then early-returned forever after. The navigation bar had the same split brain: a 76px ultrawide strip became 132px after any resize.
+- **The PIN keypad could not be used at all on a 480x272 screen (#1204)** — it was a fixed 320x340 portrait card, so the bottom row sat off-screen and 0 and confirm were untappable. It now reflows to a landscape card, keeping the full-size touch targets.
+- **The bed mesh profile list showed no complete row at 480x272 (#1204)** — a hardcoded 44px row height left a 33px viewport. Axis letters also landed on top of the tick labels on a small canvas, because the gap between them is expressed in world units and shrinks with the plot while the labels do not.
+- **The print-status emergency stop was clipped top and bottom (#1204)** — a hardcoded 44px circle inside a header whose height is responsive.
+- **Filament-by-type amounts were clipped off the edge of history cards (#1204)** — the row needed 207px of fixed widths inside a card that is 170px wide at 480x272.
+- **The AMS dryer controls were clipped at 480x272 (#1192)** — 120px of controls in a 94px box, losing 13px off both the preset dropdown and the Start/Stop button.
+- **The fan percentage never appeared on 480x272** — the micro layout hid it on a condition that is always true there, on the one screen size where the slider position is the only other feedback.
+- **Print status did not fit in portrait** — the fan row measured its own container against its children, which only answers the fixed-budget question a landscape row poses, so it stayed hidden however much screen was free. The exclude-object list encoded its width as a fraction of a row that portrait does not have.
+- **Print file cards lost their metadata and cropped their thumbnails (#1208)** — the two metadata groups each sized themselves to the other, so both collapsed and the time and weight labels laid out past the bottom edge of the card at every screen size. Thumbnail targets also came from a resolution table that had drifted from what the grid lays out, so images overhung their cards and were cropped through the model.
+- **The print file grid always chose the narrowest card that would fit** — column count was maximized rather than fitted to the width cards are drawn for, so 800x480 showed 5 cards of 132px against a 170px design. It now shows 4 of 167px; 480x272 is unchanged.
+- **An AMS slot edit could be committed from a view that forbids it** — the micro header bar never declared the property that hides a per-view Save button, and an undeclared attribute is dropped in silence. The Macros header had the same permanently-visible dead Save.
+- **A crash on shutdown while thumbnails were still being processed (#1202)** — the thread pool was checked under a lock, the lock dropped, and only then used, racing the shutdown that clears it. Worse than a dangling read: a task landing after shutdown restarted the pool and spawned workers past teardown.
+- **One unreadable thumbnail could disable cache eviction entirely (#1207)** — eviction ran unsynchronized from the main thread and every download worker, and a single entry another thread had just deleted discarded the whole scan. The partial total then read as "nothing to evict", so the cache grew without bound.
+- **A working webcam was rejected as unreachable (#1205)** — the snapshot probe spent one 2s budget on both connecting and responding, so a go2rtc endpoint waiting for a keyframe before it can transcode (measured up to 2.9s on a Pi 5) failed exactly like a stale DHCP entry, and the reporter fell back to a local camera that does not exist. Connect still fails fast at 2s; the response now gets 6s.
+- **An unreachable printer reported itself as a halted Klipper** — the gate read only Klipper's state, which starts at SHUTDOWN and has no "unknown", so a session that never opened a WebSocket was indistinguishable from a genuine halt. Every command came back "Klipper is halted — restart firmware to continue", printed verbatim on the PID screen.
+- **A wrong or stale printer address retried silently forever** — both existing escalations only arm once you have connected at least once, so an address that never worked produced nothing but a disconnected icon that never names what it is dialing. After 60 seconds with no socket ever opening, the failure is surfaced with the host and port in it.
+- **Calibration Start buttons stayed live on a printer that could not be reached** — bed mesh, QGL, Z tilt and nozzle clean put Start in the header bar, which sits outside the container carrying the enable gate, so the body greyed out and the button did not.
+- **A dropped socket could kill reconnection permanently** — one transient failure to create a socket, under file-descriptor or memory pressure, left nothing to re-arm the retry. The backoff was also reset on the TCP connect rather than the WebSocket upgrade, so a proxy that answers with Moonraker down produced 25 reconnects in 2.5s where there should have been 5.
+- **A busy-printer toast appeared for filament operations you started yourself (#1206)** — the toast keyed on Klipper reporting activity, which an ordinary unload does. The safety gate that blocks late motion during a filament operation is untouched; only the toast changed.
+- **A recover prompt offered the wrong recovery (#1172)** — it never read the recovery actions the error itself carried, so every warning was offered the same MCU bounce whatever the fault. An action carrying gcode now runs its own, and a set of them escalates to the dialog that can show them. A button marked OK also no longer transmits "OK" to Klipper.
+- **Load was disabled on every tool of a generic toolchanger (#1199)** — the rule keyed on slot presence, which is true for every toolchanger slot forever since a slot there is a physical toolhead, and it offered unmount on tools sitting in their docks.
+- **Per-printer capability overrides survived a printer switch (#804)** — bed mesh, QGL, Z tilt, nozzle clean, heat soak, chamber and speaker settings were read once at startup and kept the first printer's values for the life of the process. The add-printer and cancel paths never invalidated anything at all.
+- **Removing a printer could delete the only one, or leave the app pointing at something that is not a printer** — the guard counted every key in the printers map, including the ones that are not printers. Toolhead style and U1 detection were also stored install-wide despite describing one machine, and scanner settings per-printer despite describing the host; a migration fans them out correctly.
+- **A rendering overflow on rounded-corner clipping** — the mask drawing never clipped its area to the layer buffer, so an overhang wrote past the end of a row.
+- **An emergency stop arriving from the network touched main-thread state from the wrong thread** — dialog creation was already deferred but the work in front of it was not.
+- **GitHub release notes were cut off partway through** — the release job piped the tag annotation through `head -50`, so anything longer lost its tail while the job still reported success. v0.99.105's notes were the first casualty and have been restored.
+- **A misleading log line for gcode held behind a blocking operation (#1206)** — it said the command was being queued, which cost a reporter a session hunting for a flush that never comes. HelixScreen keeps no such queue; what is dropped is the reply, not the request.
+
+### Changed
+
+- **Thumbnail fetches no longer scale with the size of the cache (#1207)** — eviction walked the whole directory with a stat per file on every fetch, from six call sites. Measured over a 40-file cache, 60 directory walks and 3300 stat calls become 0 and 30, and the numbers do not move at 400 files.
+- **The XML engine is now its own MIT-licensed project** — helix-xml, our fork of the engine LVGL removed in 9.5, has moved to github.com/prestonbrown/helix-xml and is consumed here as a submodule. Our contributions are relicensed MIT and every file carries per-file provenance against the fork point, so the library contains no GPL and is usable standalone. A fresh clone now needs `git submodule update --init --recursive`.
+- **Ultrawide and portrait layouts are documented as alpha** — the README, user guide and FAQ advertised 1920x480 as fully supported and said nothing about portrait. Detection, navigation bar sizing and grid tiers work; every other panel still falls back to the landscape layout.
+- **The Open Source Licenses list and COPYRIGHT agree again** — they had drifted apart five ways and both were wrong in places: OpenVDB is Apache-2.0, wpa_supplicant is BSD-3-Clause, and stb and GLM were understated.
+
 ## [0.99.105] - 2026-07-29
 
 > **0.99.104 was skipped.** It was tagged but its release build failed on three
@@ -4666,6 +4721,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.99.106]: https://github.com/prestonbrown/helixscreen/compare/v0.99.105...v0.99.106
 [0.99.105]: https://github.com/prestonbrown/helixscreen/compare/v0.99.103...v0.99.105
 [0.99.103]: https://github.com/prestonbrown/helixscreen/compare/v0.99.102...v0.99.103
 [0.99.102]: https://github.com/prestonbrown/helixscreen/compare/v0.99.101...v0.99.102
