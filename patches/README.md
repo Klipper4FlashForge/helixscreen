@@ -43,7 +43,7 @@ Applied in order by `mk/patches.mk`. Grouped by subsystem.
 | `lvgl_blend_null_guard.patch` | `lv_draw_sw_blend.c` | NULL check for layer/draw_buf at blend entry | PR #9831 |
 | `lvgl_blend_buf_bounds_clip.patch` | `lv_draw_sw_blend.c` | Clip blend_area to layer->buf_area | PR #9831 |
 | `lvgl_blend_color_null_guard.patch` | `lv_draw_sw_blend_to_*.c` (16 files) | NULL dest_buf checks in all per-format blend functions | PR #9831 |
-| `lvgl-fix-signed-unsigned-draw-coords.patch` | `lv_draw.c`, `lv_draw_buf.c`, `lv_draw_sw_mask_rect.c` | Fix signed→unsigned conversion in go_to_xy, downgrade OOB log to WARN | PR #9831 |
+| `lvgl-fix-signed-unsigned-draw-coords.patch` | `lv_draw_buf.c`, `lv_draw_sw_mask_rect.c` | Clip `draw_area` to the layer's `buf_area` in `lv_draw_sw_mask_rect`, so neither edge writes out of bounds; downgrade the OOB log to WARN | PR #9831 (proposed, awaiting agreement) |
 | `lvgl_draw_sw_label_null_guard.patch` | `lv_draw_sw_letter.c` | NULL check for font/glyph before all glyph format rendering | PR #9831 |
 | `lvgl_draw_buf_oom_guard.patch` | `lv_draw_buf.c` | Remove redundant LV_ASSERT_MALLOC before NULL check | PR #9831 |
 | `lvgl_refr_reshape_null_guard.patch` | `lv_refr.c` | NULL guard on draw_buf reshape failure, skip render gracefully | PR #9831 |
