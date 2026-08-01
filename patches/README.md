@@ -8,16 +8,18 @@ Local patches applied to git submodules. Managed by `mk/patches.mk` — run `mak
 
 ## Upstream PR Status
 
-Several patches have been submitted upstream to [lvgl/lvgl](https://github.com/lvgl/lvgl). If merged, the corresponding local patches can be dropped on the next LVGL version bump.
+Several patches have been submitted upstream to [lvgl/lvgl](https://github.com/lvgl/lvgl), from the fork at [prestonbrown/lvgl-xml-fork](https://github.com/prestonbrown/lvgl-xml-fork) (misnamed — it is the LVGL PR fork, nothing to do with `lib/helix-xml`). **Do not delete that fork while any PR below is open; deleting it closes them.**
 
-| PR | Title | Patches Included | CI |
-|----|-------|-----------------|-----|
-| [#9827](https://github.com/lvgl/lvgl/pull/9827) | fix(string): NULL guard for lv_strdup | `lvgl-strdup-null-guard` | All green |
-| [#9828](https://github.com/lvgl/lvgl/pull/9828) | fix(slider): block perpendicular scroll chain while dragging | `lvgl_slider_scroll_chain` | All green |
-| [#9829](https://github.com/lvgl/lvgl/pull/9829) | fix(evdev): Protocol-A multitouch release handling | `lvgl-evdev-protocol-a` | All green |
-| [#9830](https://github.com/lvgl/lvgl/pull/9830) | fix(arc): guard against negative inner radius | `lvgl_arc_draw_guard` | All green |
-| [#9831](https://github.com/lvgl/lvgl/pull/9831) | fix(draw): comprehensive NULL safety for SW draw pipeline | `lvgl_blend_null_guard`, `lvgl_blend_buf_bounds_clip`, `lvgl_blend_color_null_guard`, `lvgl-fix-signed-unsigned-draw-coords`, `lvgl_draw_sw_label_null_guard`, `lvgl_refr_reshape_null_guard`, `lvgl_img_null_guard`, `lvgl_blur_null_guard`, `lvgl_draw_buf_oom_guard` | All green |
-| [#9832](https://github.com/lvgl/lvgl/pull/9832) | fix(fbdev): stride-based bpp, BGR auto-detect, buffer alignment, skip-unblank | `lvgl_fbdev_stride_bpp`, `lvgl-fbdev-bgr-swap`, `lvgl-fbdev-buffer-align`, `lvgl_fbdev_skip_unblank` | All green |
+A patch here is droppable only when its PR is *merged*. **Closed does not mean merged** — read the status cell before dropping anything on a version bump.
+
+| PR | Title | Patches Included | Status |
+|----|-------|-----------------|--------|
+| [#9827](https://github.com/lvgl/lvgl/pull/9827) | fix(string): NULL guard for lv_strdup | `lvgl-strdup-null-guard` | **Closed, rejected.** LVGL keeps POSIX semantics (NULL to `strdup` is UB). Never droppable — keep permanently |
+| [#9828](https://github.com/lvgl/lvgl/pull/9828) | fix(slider): block perpendicular scroll chain while dragging | `lvgl_slider_scroll_chain` | **Closed, withdrawn** — upstream master grew an equivalent drag-scoped fix. Not in v9.5.0 though: its `LV_EVENT_PRESSING` has no scroll-chain removal, so the patch is still required at our pin. Re-check when bumping past v9.5.0 |
+| [#9829](https://github.com/lvgl/lvgl/pull/9829) | fix(evdev): Protocol-A multitouch release handling | `lvgl-evdev-protocol-a` | Open, CI green |
+| [#9830](https://github.com/lvgl/lvgl/pull/9830) | fix(arc): guard against negative inner radius | `lvgl_arc_draw_guard` | Open, CI green |
+| [#9831](https://github.com/lvgl/lvgl/pull/9831) | fix(draw): comprehensive NULL safety for SW draw pipeline | `lvgl_blend_null_guard`, `lvgl_blend_buf_bounds_clip`, `lvgl_blend_color_null_guard`, `lvgl-fix-signed-unsigned-draw-coords`, `lvgl_draw_sw_label_null_guard`, `lvgl_refr_reshape_null_guard`, `lvgl_img_null_guard`, `lvgl_blur_null_guard`, `lvgl_draw_buf_oom_guard` | Open, CI green |
+| [#9832](https://github.com/lvgl/lvgl/pull/9832) | fix(fbdev): stride-based bpp, BGR auto-detect, buffer alignment, skip-unblank | `lvgl_fbdev_stride_bpp`, `lvgl-fbdev-bgr-swap`, `lvgl-fbdev-buffer-align`, `lvgl_fbdev_skip_unblank` | Open, CI green |
 
 ## LVGL Patches
 
@@ -52,7 +54,7 @@ Applied in order by `mk/patches.mk`. Grouped by subsystem.
 
 | Patch | File(s) | Purpose | Upstream |
 |-------|---------|---------|----------|
-| `lvgl_slider_scroll_chain.patch` | `lv_slider.c` | Block perpendicular scroll chain during drag (touchscreen UX) | PR #9828 |
+| `lvgl_slider_scroll_chain.patch` | `lv_slider.c` | Block perpendicular scroll chain during drag (touchscreen UX) | PR #9828 closed — still needed at v9.5.0 |
 | `lvgl_arc_draw_guard.patch` | `lv_draw_arc.c`, `lv_arc.c` | Guard negative inner radius and zero-radius arc invalidation | PR #9830 |
 | `lvgl-evdev-protocol-a.patch` | `lv_evdev.c` | Protocol-A touch release synthesis for Goodix GT9xx | PR #9829 |
 
@@ -60,7 +62,7 @@ Applied in order by `mk/patches.mk`. Grouped by subsystem.
 
 | Patch | File(s) | Purpose | Upstream |
 |-------|---------|---------|----------|
-| `lvgl-strdup-null-guard.patch` | `lv_string_builtin.c`, `lv_string_clib.c` | NULL input guard for lv_strdup | PR #9827 |
+| `lvgl-strdup-null-guard.patch` | `lv_string_builtin.c`, `lv_string_clib.c` | NULL input guard for lv_strdup | PR #9827 rejected — permanent |
 | `lvgl_observer_debug.patch` | `lv_observer.c` | Enhanced error logging with pointer/type info | Project-specific |
 | `lvgl_observer_remove_null_guard.patch` | `lv_observer.c` | NULL guard for observer removal | Project-specific |
 | `lvgl_obj_delete_null_guards.patch` | `lv_global.h`, `lv_event.c`, `lv_obj.c`, `lv_obj_tree.c` | Event depth counter for corruption detection, NULL guards + alignment/depth-limit checks in event_mark_deleted, async cancel before child recursion in obj_delete_core | Pending |
