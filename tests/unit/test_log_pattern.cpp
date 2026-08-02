@@ -7,9 +7,18 @@
 // the system sinks must NOT add their own time token (they would double-stamp
 // the journal/syslog clock), and the console must keep its colored-level
 // tokens. No real sinks are constructed — pattern_for_sink() is pure.
+//
+// The [1218] cases additionally exercise the monotonic column end-to-end
+// through a real pattern_formatter, because a string-only assertion on "%*"
+// passes just as happily when the custom flag was never registered and spdlog
+// emits the two characters literally.
 
 #include "logging_init.h"
 
+#include <spdlog/details/log_msg.h>
+#include <spdlog/pattern_formatter.h>
+
+#include <chrono>
 #include <string>
 
 #include "../catch_amalgamated.hpp"
@@ -65,4 +74,145 @@ TEST_CASE("System sinks keep level text for grep-ability", "[logging][pattern]")
     // %l in syslog/journald is intentional (grep /var/log/messages by level).
     REQUIRE(contains(pattern_for_sink(SinkKind::Syslog), "%l"));
     REQUIRE(contains(pattern_for_sink(SinkKind::Journald), "%l"));
+}
+
+// ---------------------------------------------------------------------------
+// #1218 — monotonic column, date field, and clock-step annotation
+// ---------------------------------------------------------------------------
+
+using helix::logging::format_monotonic;
+using helix::logging::is_clock_step;
+using helix::logging::make_formatter;
+using helix::logging::monotonic_seconds;
+
+namespace {
+
+// Format one message through a real sink formatter and return the line.
+std::string render(SinkKind kind, spdlog::log_clock::time_point when, const char* text = "hello") {
+    auto fmt = make_formatter(kind);
+    spdlog::details::log_msg msg{when, spdlog::source_loc{}, "helix", spdlog::level::info, text};
+    spdlog::memory_buf_t buf;
+    fmt->format(msg, buf);
+    return std::string(buf.data(), buf.size());
+}
+
+spdlog::log_clock::time_point epoch_plus(double seconds) {
+    return spdlog::log_clock::time_point{} +
+           std::chrono::microseconds{static_cast<long long>(seconds * 1e6)};
+}
+
+} // namespace
+
+TEST_CASE("Every sink pattern carries the monotonic column", "[logging][pattern][1218]") {
+    // Wall clock alone is not enough: a clock step fabricates gaps in every
+    // stream we ask users to upload, including syslog on AD5M/AD5X.
+    for (auto kind : {SinkKind::Console, SinkKind::File, SinkKind::Journald, SinkKind::Syslog,
+                      SinkKind::Android, SinkKind::CrashBreadcrumb}) {
+        INFO("kind index = " << static_cast<int>(kind));
+        REQUIRE(contains(pattern_for_sink(kind), "%*"));
+    }
+}
+
+TEST_CASE("The File pattern carries a date so a midnight crossing is unambiguous",
+          "[logging][pattern][1218]") {
+    REQUIRE(contains(pattern_for_sink(SinkKind::File), "%Y-%m-%d"));
+}
+
+TEST_CASE("format_monotonic renders a fixed-width zero-padded offset", "[logging][pattern][1218]") {
+    // Fixed width is what makes a real gap visible by eye when scanning a
+    // bundle; the leading '+' marks it as an offset, not a clock reading.
+    REQUIRE(format_monotonic(57.398) == "+00057.398");
+    REQUIRE(format_monotonic(0.0) == "+00000.000");
+    REQUIRE(format_monotonic(35390.5) == "+35390.500");
+    // Past the padding width it grows rather than truncating.
+    REQUIRE(format_monotonic(123456.789) == "+123456.789");
+}
+
+TEST_CASE("is_clock_step separates a stepped clock from NTP slew", "[logging][pattern][1218]") {
+    // The XRK8KPTF bundle: wall advanced ~874 s more than monotonic did.
+    REQUIRE(is_clock_step(877.1, 3.1));
+    // Backwards steps are the dangerous ones — they interleave lines out of order.
+    REQUIRE(is_clock_step(-871.0, 3.1));
+    // Agreeing clocks, at both short and long intervals.
+    REQUIRE_FALSE(is_clock_step(3.1, 3.1));
+    REQUIRE_FALSE(is_clock_step(3600.0, 3600.0));
+    // adjtime slew is bounded at ~500 ppm — 0.5 s over a 1000 s interval.
+    REQUIRE_FALSE(is_clock_step(1000.5, 1000.0));
+}
+
+TEST_CASE("monotonic_seconds is monotonic and anchored at process start",
+          "[logging][pattern][1218]") {
+    const double a = monotonic_seconds();
+    const double b = monotonic_seconds();
+    REQUIRE(a >= 0.0);
+    REQUIRE(b >= a);
+    // Anchored at process start, not at the epoch — a raw CLOCK_MONOTONIC read
+    // on a machine up for a week would be ~600000.
+    REQUIRE(a < 86400.0);
+}
+
+TEST_CASE("A rendered line actually contains the monotonic offset", "[logging][pattern][1218]") {
+    // Guards the flag REGISTRATION, not just the pattern string: an unregistered
+    // custom flag makes spdlog emit "%*" verbatim, which the string tests above
+    // would happily accept.
+    const std::string line = render(SinkKind::File, spdlog::log_clock::now());
+    INFO(line);
+    REQUIRE(line.find("%*") == std::string::npos);
+    REQUIRE(line.find("+00") != std::string::npos);
+    REQUIRE(line.find("hello") != std::string::npos);
+}
+
+TEST_CASE("A clock step is annotated on the line where it happens", "[logging][pattern][1218]") {
+    // One formatter, two messages whose wall times are 874 s apart while real
+    // monotonic time barely moves — exactly the XRK8KPTF signature.
+    auto fmt = make_formatter(SinkKind::File);
+    spdlog::memory_buf_t buf;
+
+    spdlog::details::log_msg first{epoch_plus(100.0), spdlog::source_loc{}, "helix",
+                                   spdlog::level::info, "before"};
+    fmt->format(first, buf);
+    const std::string line1(buf.data(), buf.size());
+    INFO("line1=" << line1);
+    REQUIRE(line1.find("CLOCK_STEP") == std::string::npos); // nothing to compare against yet
+
+    buf.clear();
+    spdlog::details::log_msg second{epoch_plus(974.0), spdlog::source_loc{}, "helix",
+                                    spdlog::level::info, "after"};
+    fmt->format(second, buf);
+    const std::string line2(buf.data(), buf.size());
+    INFO("line2=" << line2);
+    REQUIRE(line2.find("CLOCK_STEP") != std::string::npos);
+
+    // And a well-behaved next line goes back to clean output.
+    buf.clear();
+    spdlog::details::log_msg third{epoch_plus(974.0), spdlog::source_loc{}, "helix",
+                                   spdlog::level::info, "settled"};
+    fmt->format(third, buf);
+    const std::string line3(buf.data(), buf.size());
+    INFO("line3=" << line3);
+    REQUIRE(line3.find("CLOCK_STEP") == std::string::npos);
+}
+
+TEST_CASE("Each sink formatter tracks its own clock-step state", "[logging][pattern][1218]") {
+    // Sinks format independently under their own mutexes; one sink seeing a step
+    // must not consume the annotation for another.
+    auto a = make_formatter(SinkKind::File);
+    auto b = make_formatter(SinkKind::File);
+
+    spdlog::memory_buf_t buf;
+    spdlog::details::log_msg first{epoch_plus(100.0), spdlog::source_loc{}, "helix",
+                                   spdlog::level::info, "x"};
+    spdlog::details::log_msg second{epoch_plus(974.0), spdlog::source_loc{}, "helix",
+                                    spdlog::level::info, "y"};
+
+    a->format(first, buf);
+    buf.clear();
+    b->format(first, buf);
+    buf.clear();
+
+    a->format(second, buf);
+    REQUIRE(std::string(buf.data(), buf.size()).find("CLOCK_STEP") != std::string::npos);
+    buf.clear();
+    b->format(second, buf);
+    REQUIRE(std::string(buf.data(), buf.size()).find("CLOCK_STEP") != std::string::npos);
 }

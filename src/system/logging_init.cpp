@@ -18,8 +18,12 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
+#include <iterator>
 #include <lvgl.h>
 #include <memory>
 #include <sstream>
@@ -44,31 +48,99 @@ helix_assert_callback_t g_helix_assert_cpp_callback = nullptr;
 namespace helix {
 namespace logging {
 
+// %* is our custom flag: the CLOCK_MONOTONIC offset since process start, plus a
+// CLOCK_STEP annotation on any line the wall clock jumped across. Every sink
+// carries it — a bundle may arrive from the ring buffer, the rotating file, or
+// /var/log/messages on a syslog-target device, and a wall-clock-only stamp is
+// untrustworthy in all three (#1218).
 const char* pattern_for_sink(SinkKind kind) {
     switch (kind) {
     case SinkKind::Console:
+        // ms timestamp, monotonic offset, colored level, thread id, message.
+        return "[%H:%M:%S.%e] [%*] [%^%l%$] [%t] %v";
     case SinkKind::File:
-        // ms timestamp, colored level (%^…%$ are no-ops on the non-color file
-        // sink, so the same string is safe for both), thread id, message.
-        return "[%H:%M:%S.%e] [%^%l%$] [%t] %v";
+        // As Console, plus the date: the file and the ring buffer are what a
+        // debug bundle carries, and a session crossing midnight is otherwise
+        // ambiguous. (%^…%$ are no-ops on the non-color file sink.)
+        return "[%Y-%m-%d %H:%M:%S.%e] [%*] [%^%l%$] [%t] %v";
     case SinkKind::Journald:
     case SinkKind::Syslog:
-        // No time token — journald/syslog stamp their own time. Keep the level
-        // text (grep-ability of /var/log/messages) and the thread id.
-        return "[%l] [%t] %v";
+        // No wall-clock token — journald/syslog stamp their own time, and a
+        // second one would double up. The monotonic offset is not a second
+        // clock reading, and it is the only field in these streams that a clock
+        // step cannot corrupt, so it stays.
+        return "[%*] [%l] [%t] %v";
     case SinkKind::Android:
         // logcat already prefixes its own timestamp/level/tag metadata.
-        return "[%t] %v";
+        return "[%*] [%t] %v";
     case SinkKind::CrashBreadcrumb:
         // Feeds crash context — keep a full line with thread id. The crash
         // ring reads msg.payload (the raw message), not this formatted output,
         // so the pattern is for any other consumer of this sink's stream.
-        return "[%H:%M:%S.%e] [%l] [%t] %v";
+        return "[%H:%M:%S.%e] [%*] [%l] [%t] %v";
     }
-    return "[%t] %v";
+    return "[%*] [%t] %v";
 }
 
 namespace {
+
+/// Raw CLOCK_MONOTONIC reading in seconds, or 0.0 if unavailable.
+double raw_monotonic_seconds() {
+#if defined(CLOCK_MONOTONIC)
+    struct timespec ts {};
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) {
+        return static_cast<double>(ts.tv_sec) + static_cast<double>(ts.tv_nsec) / 1e9;
+    }
+#endif
+    return 0.0;
+}
+
+/// The anchor monotonic_seconds() subtracts. A function-local static so it is
+/// immune to static-init order; init_early() touches it at the top of main() so
+/// the anchor really is process start and not first-log-line.
+double process_start_monotonic() {
+    static const double t = raw_monotonic_seconds();
+    return t;
+}
+
+/// spdlog custom flag `%*`: the monotonic column, plus a CLOCK_STEP annotation
+/// on the line across which the wall clock diverged from monotonic time.
+///
+/// State is per-instance and each sink holds its own formatter, so no sink
+/// consumes another's annotation. Safe without additional locking: every sink
+/// we install formats under its own mutex — the base_sink<std::mutex> family
+/// (file, ring, syslog, journald, android, crash breadcrumb) and ansicolor_sink,
+/// which takes the shared console mutex around formatter_->format().
+class MonotonicFlagFormatter : public spdlog::custom_flag_formatter {
+  public:
+    void format(const spdlog::details::log_msg& msg, const std::tm& /*tm*/,
+                spdlog::memory_buf_t& dest) override {
+        const double mono = monotonic_seconds();
+        const double wall = std::chrono::duration<double>(msg.time.time_since_epoch()).count();
+
+        std::string out = format_monotonic(mono);
+        if (have_prev_ && is_clock_step(wall - prev_wall_, mono - prev_mono_)) {
+            // The delta between the two deltas IS the step size — the amount of
+            // apparent elapsed time in this log that never actually elapsed.
+            fmt::format_to(std::back_inserter(out), " CLOCK_STEP{:+.3f}s",
+                           (wall - prev_wall_) - (mono - prev_mono_));
+        }
+        prev_wall_ = wall;
+        prev_mono_ = mono;
+        have_prev_ = true;
+
+        dest.append(out.data(), out.data() + out.size());
+    }
+
+    std::unique_ptr<spdlog::custom_flag_formatter> clone() const override {
+        return spdlog::details::make_unique<MonotonicFlagFormatter>();
+    }
+
+  private:
+    double prev_wall_ = 0.0;
+    double prev_mono_ = 0.0;
+    bool have_prev_ = false;
+};
 
 // Snapshot of the resolved log destination after init(), used by
 // effective_destination() to surface the active sink in the About panel.
@@ -131,7 +203,7 @@ bool is_path_writable(const std::string& path) {
 /// outlives every logger swap, keeping the crash-handler pointers valid).
 spdlog::sink_ptr crash_error_log_sink() {
     auto& sink = CrashErrorLogSink::instance();
-    sink.set_pattern(pattern_for_sink(SinkKind::CrashBreadcrumb));
+    sink.set_formatter(make_formatter(SinkKind::CrashBreadcrumb));
     return spdlog::sink_ptr(&sink, [](spdlog::sinks::sink*) {});
 }
 #endif
@@ -194,7 +266,7 @@ void add_system_sink(std::vector<spdlog::sink_ptr>& sinks, LogTarget target,
 #ifdef HELIX_HAS_SYSTEMD
     case LogTarget::Journal: {
         auto sink = std::make_shared<spdlog::sinks::systemd_sink_mt>("helix-screen");
-        sink->set_pattern(pattern_for_sink(SinkKind::Journald));
+        sink->set_formatter(make_formatter(SinkKind::Journald));
         sinks.push_back(std::move(sink));
         break;
     }
@@ -202,7 +274,7 @@ void add_system_sink(std::vector<spdlog::sink_ptr>& sinks, LogTarget target,
     case LogTarget::Syslog: {
         auto sink = std::make_shared<spdlog::sinks::syslog_sink_mt>("helix-screen", LOG_PID,
                                                                     LOG_USER, false);
-        sink->set_pattern(pattern_for_sink(SinkKind::Syslog));
+        sink->set_formatter(make_formatter(SinkKind::Syslog));
         sinks.push_back(std::move(sink));
         break;
     }
@@ -230,14 +302,14 @@ void add_system_sink(std::vector<spdlog::sink_ptr>& sinks, LogTarget target,
         }
         auto sink =
             std::make_shared<spdlog::sinks::rotating_file_sink_mt>(path, max_bytes, max_files);
-        sink->set_pattern(pattern_for_sink(SinkKind::File));
+        sink->set_formatter(make_formatter(SinkKind::File));
         sinks.push_back(std::move(sink));
         break;
     }
 #ifdef HELIX_PLATFORM_ANDROID
     case LogTarget::Android: {
         auto sink = std::make_shared<spdlog::sinks::android_sink_mt>("HelixScreen");
-        sink->set_pattern(pattern_for_sink(SinkKind::Android));
+        sink->set_formatter(make_formatter(SinkKind::Android));
         sinks.push_back(std::move(sink));
         break;
     }
@@ -254,7 +326,7 @@ void add_system_sink(std::vector<spdlog::sink_ptr>& sinks, LogTarget target,
         if (target == LogTarget::Journal) {
             auto sink = std::make_shared<spdlog::sinks::syslog_sink_mt>("helix-screen", LOG_PID,
                                                                         LOG_USER, false);
-            sink->set_pattern(pattern_for_sink(SinkKind::Syslog));
+            sink->set_formatter(make_formatter(SinkKind::Syslog));
             sinks.push_back(std::move(sink));
         }
         break;
@@ -293,14 +365,51 @@ void lvgl_assert_spdlog_callback(const char* file, int line, const char* func) {
 
 } // namespace
 
+double monotonic_seconds() {
+    const double now = raw_monotonic_seconds();
+    const double start = process_start_monotonic();
+    // Guard the no-CLOCK_MONOTONIC case: both reads are 0.0, so the offset is
+    // 0.0 rather than a nonsense negative.
+    return now > start ? now - start : 0.0;
+}
+
+std::string format_monotonic(double seconds) {
+    // Width 10 = '+' + 5 integer digits + '.' + 3 fractional. Past 99999.999 s
+    // (27 h) the integer field grows; alignment degrades gracefully rather than
+    // the value being truncated.
+    return fmt::format("+{:09.3f}", seconds);
+}
+
+bool is_clock_step(double wall_delta_s, double mono_delta_s) {
+    // adjtime() slews at most ~500 ppm, so over any interval the honest
+    // wall-vs-monotonic disagreement stays under 0.05% of the interval. One
+    // full second is orders of magnitude beyond that and cannot be slew.
+    constexpr double kStepThresholdSeconds = 1.0;
+    return std::fabs(wall_delta_s - mono_delta_s) > kStepThresholdSeconds;
+}
+
+std::unique_ptr<spdlog::formatter> make_formatter(SinkKind kind) {
+    auto formatter = std::make_unique<spdlog::pattern_formatter>();
+    // add_flag must precede set_pattern — the pattern is compiled against the
+    // custom-flag table as it is parsed, so registering afterwards leaves the
+    // already-compiled '%*' emitting itself literally.
+    formatter->add_flag<MonotonicFlagFormatter>('*').set_pattern(pattern_for_sink(kind));
+    return formatter;
+}
+
 void init_early() {
+    // Anchor the monotonic column here rather than on the first log line, so
+    // "+00000.000" means process start. init_early() is the first statement in
+    // Application::run(); the watchdog anchors in its own init() call below.
+    process_start_monotonic();
+
     // Create minimal console logger at WARN level so early startup code can log
     // without crashing. Attach the crash error-log sink too, so errors during
     // boot (before init()) are still captured for crash diagnostics (#987).
     std::vector<spdlog::sink_ptr> sinks;
     {
         auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-        console->set_pattern(pattern_for_sink(SinkKind::Console));
+        console->set_formatter(make_formatter(SinkKind::Console));
         sinks.push_back(std::move(console));
     }
 #ifndef HELIX_WATCHDOG
@@ -373,6 +482,10 @@ bool should_add_console(LogTarget effective_target, bool enable_console, bool fo
 }
 
 void init(const LogConfig& config) {
+    // No-op when init_early() already ran; anchors the watchdog build, which
+    // calls init() directly.
+    process_start_monotonic();
+
     std::vector<spdlog::sink_ptr> sinks;
 
     // Resolve auto-detection first so we can decide about console
@@ -393,7 +506,7 @@ void init(const LogConfig& config) {
                            config.test_mode, classify_stdout());
     if (add_console) {
         auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-        console->set_pattern(pattern_for_sink(SinkKind::Console));
+        console->set_formatter(make_formatter(SinkKind::Console));
         sinks.push_back(std::move(console));
     }
 
@@ -431,7 +544,7 @@ void init(const LogConfig& config) {
     const spdlog::level::level_enum ring_level =
         ring_captures_debug() ? spdlog::level::debug : config.level;
     g_ring_sink = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(resolve_ring_capacity());
-    g_ring_sink->set_pattern(pattern_for_sink(SinkKind::File));
+    g_ring_sink->set_formatter(make_formatter(SinkKind::File));
     g_ring_sink->set_level(ring_level);
     sinks.push_back(g_ring_sink);
 
