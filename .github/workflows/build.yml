@@ -193,7 +193,9 @@ jobs:
         echo "Running $NPROCS test shards in parallel..."
         pids=""
         for i in $(seq 0 $((NPROCS-1))); do
-          ./build/bin/helix-tests "~[.] ~[slow]" --shard-count $NPROCS --shard-index $i 2>&1 | sed "s/^/[shard $i] /" &
+          # Subshell + pipefail: without both, $! is the sed at the end of the
+          # pipeline and `wait` collects sed's status, so a failing shard exits 0.
+          (set -o pipefail; ./build/bin/helix-tests "~[.] ~[slow]" --shard-count $NPROCS --shard-index $i 2>&1 | sed "s/^/[shard $i] /") &
           pids="$pids $!"
         done
         failed=0
