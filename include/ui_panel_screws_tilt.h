@@ -157,6 +157,9 @@ class ScrewsTiltPanel : public OverlayBase {
     void handle_done_clicked();
     void handle_retry_clicked();
 
+    /// Open the share modal: full result set as text + QR for a phone.
+    void handle_share_clicked();
+
   private:
     // State management
     State state_ = State::IDLE;

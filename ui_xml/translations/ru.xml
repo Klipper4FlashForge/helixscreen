@@ -216,6 +216,7 @@
   <translation tag="Back to Results" ru="Назад к результатам"/>
   <translation tag="Backtrace: {} frames" ru="Трассировка: {} кадров"/>
   <translation tag="Barcode Scanner" ru="Сканер штрих-кодов"/>
+  <translation tag="Base" ru="Опорный"/>
   <translation tag="Beacon auto-calibrate sent" ru="Beacon автокалибровка отправлена"/>
   <translation tag="Beacon calibrate sent" ru="Beacon калибровка отправлена"/>
   <translation tag="Bed" ru="Стол"/>
@@ -227,6 +228,7 @@
   <translation tag="Bed Mesh..." ru="Сетка стола..."/>
   <translation tag="Bed Moves" ru="Стол движется"/>
   <translation tag="Bed Screw Adjustment" ru="Регулировка винтов стола"/>
+  <translation tag="Bed Screw Results" ru="Результаты по винтам стола"/>
   <translation tag="Bed Screws" ru="Винты стола"/>
   <translation tag="Bed Temp" ru="Темп. стола"/>
   <translation tag="Bed Temp (°C)" ru="Температура стола (°C)"/>
@@ -1814,6 +1816,7 @@
   <translation tag="Scan Spool QR Code" ru="Сканировать QR-код катушки"/>
   <translation tag="Scan and select a Bluetooth printer first" ru="Сначала найдите и выберите Bluetooth-принтер"/>
   <translation tag="Scan for Printers" ru="Поиск принтеров"/>
+  <translation tag="Scan with your phone to save these values" ru="Отсканируйте телефоном, чтобы сохранить эти значения"/>
   <translation tag="Scanner" ru="Сканер"/>
   <translation tag="Scanner bonded but didn&apos;t attach as a keyboard. Try turning the scanner off and on, then tap Pair again. If that fails, add ClassicBondedOnly=false to /etc/bluetooth/input.conf." ru="Сканер сопряжён, но не подключился как клавиатура. Попробуйте выключить и включить сканер, затем снова нажмите Pair. Если не поможет, добавьте ClassicBondedOnly=false в /etc/bluetooth/input.conf."/>
   <translation tag="Scanning for networks..." ru="Поиск сетей..."/>

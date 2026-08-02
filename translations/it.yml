@@ -248,6 +248,7 @@ translations:
   Back to Results: Torna ai risultati
   'Backtrace: {} frames': 'Backtrace: {} frame'
   Barcode Scanner: Scanner codici a barre
+  Base: Riferimento
   Beacon auto-calibrate sent: Beacon auto-calibrazione inviata
   Beacon calibrate sent: Beacon calibrazione inviata
   Bed: Piano
@@ -259,6 +260,7 @@ translations:
   Bed Mesh...: Mesh piano...
   Bed Moves: Piatto si muove
   Bed Screw Adjustment: Regolazione viti piano
+  Bed Screw Results: Risultati viti piano
   Bed Screws: Viti piano
   Bed Temp: Temp. piatto
   Bed Temp (°C): Temp. piatto (°C)
@@ -2070,6 +2072,7 @@ translations:
   Scan and select a Bluetooth printer first: Prima scansiona e seleziona una stampante
     Bluetooth
   Scan for Printers: Cerca stampanti
+  Scan with your phone to save these values: Scansiona con il telefono per salvare questi valori
   Scanner: Scanner
   ? Scanner bonded but didn't attach as a keyboard. Try turning the scanner off and
     on, then tap Pair again. If that fails, add ClassicBondedOnly=false to /etc/bluetooth/input.conf.

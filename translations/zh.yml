@@ -219,6 +219,7 @@ translations:
   Back to Results: 返回结果
   'Backtrace: {} frames': '回溯: {} 帧'
   Barcode Scanner: 条码扫描器
+  Base: 基准
   Beacon auto-calibrate sent: Beacon自动校准已发送
   Beacon calibrate sent: Beacon校准已发送
   Bed: 热床
@@ -230,6 +231,7 @@ translations:
   Bed Mesh...: 热床网格...
   Bed Moves: 热床移动
   Bed Screw Adjustment: 热床螺丝调整
+  Bed Screw Results: 热床螺丝结果
   Bed Screws: 热床螺丝
   Bed Temp: 热床温度
   Bed Temp (°C): 热床温度 (°C)
@@ -1859,6 +1861,7 @@ translations:
   Scan Spool QR Code: 扫描料盘 QR 码
   Scan and select a Bluetooth printer first: 请先扫描并选择蓝牙打印机
   Scan for Printers: 扫描打印机
+  Scan with your phone to save these values: 用手机扫描以保存这些数值
   Scanner: 扫描器
   ? Scanner bonded but didn't attach as a keyboard. Try turning the scanner off and
     on, then tap Pair again. If that fails, add ClassicBondedOnly=false to /etc/bluetooth/input.conf.

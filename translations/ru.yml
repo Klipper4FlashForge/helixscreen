@@ -242,6 +242,7 @@ translations:
   Back to Results: Назад к результатам
   'Backtrace: {} frames': 'Трассировка: {} кадров'
   Barcode Scanner: Сканер штрих-кодов
+  Base: Опорный
   Beacon auto-calibrate sent: Beacon автокалибровка отправлена
   Beacon calibrate sent: Beacon калибровка отправлена
   Bed: Стол
@@ -253,6 +254,7 @@ translations:
   Bed Mesh...: Сетка стола...
   Bed Moves: Стол движется
   Bed Screw Adjustment: Регулировка винтов стола
+  Bed Screw Results: Результаты по винтам стола
   Bed Screws: Винты стола
   Bed Temp: Темп. стола
   Bed Temp (°C): Температура стола (°C)
@@ -2043,6 +2045,7 @@ translations:
   Scan Spool QR Code: Сканировать QR-код катушки
   Scan and select a Bluetooth printer first: Сначала найдите и выберите Bluetooth-принтер
   Scan for Printers: Поиск принтеров
+  Scan with your phone to save these values: Отсканируйте телефоном, чтобы сохранить эти значения
   Scanner: Сканер
   ? Scanner bonded but didn't attach as a keyboard. Try turning the scanner off and
     on, then tap Pair again. If that fails, add ClassicBondedOnly=false to /etc/bluetooth/input.conf.
