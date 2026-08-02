@@ -605,6 +605,20 @@ class PrinterState {
 
     /// Clear the cached PLR recovery file path. Delegated to PrinterPrintState;
     /// see its accessor docs. Main-thread only.
+    /**
+     * @brief print_stats.power_loss presence — Creality-fork PLR capability.
+     *
+     * See PrinterPrintState::get_creality_plr_capable_subject().
+     */
+    lv_subject_t* get_creality_plr_capable_subject() {
+        return print_domain_.get_creality_plr_capable_subject();
+    }
+
+    /// True when print_stats.power_loss has been seen (Creality Klipper fork).
+    [[nodiscard]] bool is_creality_plr_capable() const {
+        return print_domain_.is_creality_plr_capable();
+    }
+
     void clear_pl_recovery_file() {
         print_domain_.clear_pl_recovery_file();
     }

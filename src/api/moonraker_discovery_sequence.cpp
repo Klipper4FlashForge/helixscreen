@@ -1062,9 +1062,14 @@ json MoonrakerDiscoverySequence::build_subscription_objects(
     // subscribed-field change, and several of these (toolhead, gcode_move,
     // motion_report) update on every motion step (~100Hz during a print) —
     // nullptr would have us receiving every internal field per step.
+    // power_loss: Creality-Klipper-fork-only Power-Loss-Recovery capability
+    // marker. Absent on mainline Klipper — Moonraker answers a subscribed field
+    // the firmware never populates with an explicit null, which the parser
+    // rejects (presence must mean present AND numeric). See
+    // docs/devel/POWER_LOSS_RECOVERY.md.
     subscription_objects["print_stats"] =
         json::array({"state", "filename", "filament_used", "print_duration", "total_duration",
-                     "estimated_time", "info", "message"});
+                     "estimated_time", "info", "message", "power_loss"});
     // virtual_sdcard.progress drives the progress bar. layer / layer_count
     // are the FALLBACK source for layer tracking — preferred source is
     // print_stats.info.{current_layer,total_layer} (slicer-supplied via
