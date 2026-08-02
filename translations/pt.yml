@@ -419,6 +419,7 @@ translations:
   Chamber heating to %d°C...: Aquecendo câmara a %d°C...
   Chamber target set to {}°C: Alvo da câmara definido para {}°C
   Change: Alterar
+  Change Address: ''
   Change Filament: Trocar Filamento
   Change LED color based on printer state: Alterar cor do LED baseado no estado da
     impressora
@@ -2418,8 +2419,10 @@ translations:
     impressora parou esta impressão e não pode retomá-la. Reiniciar do início?
   The printer lost power during a print. It can resume where it left off.: A impressora
     perdeu energia durante uma impressão. Ela pode retomar de onde parou.
+  The printer lost power during a print. The resumed layer may not line up exactly.: ''
   The printer lost power while printing {}. Resume where it left off?: A impressora perdeu
     energia ao imprimir {}. Retomar de onde parou?
+  The printer lost power while printing {}. The resumed layer may not line up exactly.: ''
   The printer rejected the filament configuration. The print was not started.: A impressora
     rejeitou a configuração do filamento. A impressão não foi iniciada.
   The runout sensor indicates no filament is loaded. Start print anyway?: O sensor

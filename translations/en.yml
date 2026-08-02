@@ -402,6 +402,7 @@ translations:
   Change LED color based on printer state: Change LED color based on printer state
   Change PIN: Change PIN
   Change Printer Host: Change Printer Host
+  Change Address: Change Address
   Change Filament: Change Filament
   Changes apply immediately. Adjust during print for tuning.: Changes apply immediately.
     Adjust during print for tuning.
@@ -2344,7 +2345,9 @@ translations:
   The printer halted this print and cannot resume it. Restart from the beginning?: The
     printer halted this print and cannot resume it. Restart from the beginning?
   The printer lost power during a print. It can resume where it left off.: The printer lost power during a print. It can resume where it left off.
+  The printer lost power during a print. The resumed layer may not line up exactly.: The printer lost power during a print. The resumed layer may not line up exactly.
   The printer lost power while printing {}. Resume where it left off?: The printer lost power while printing {}. Resume where it left off?
+  The printer lost power while printing {}. The resumed layer may not line up exactly.: The printer lost power while printing {}. The resumed layer may not line up exactly.
   The printer rejected the filament configuration. The print was not started.: The
     printer rejected the filament configuration. The print was not started.
   The runout sensor indicates no filament is loaded. Start print anyway?: The runout

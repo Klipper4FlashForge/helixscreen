@@ -360,6 +360,7 @@
   <translation tag="Chamber heating to %d°C..." zh="腔体加热至 %d°C..."/>
   <translation tag="Chamber target set to {}°C" zh="腔体目标温度设置为 {}°C"/>
   <translation tag="Change" zh="更改"/>
+  <translation tag="Change Address"/>
   <translation tag="Change Filament" zh="更换耗材"/>
   <translation tag="Change LED color based on printer state" zh="根据打印机状态更改 LED 颜色"/>
   <translation tag="Change PIN" zh="更改 PIN"/>
@@ -2088,7 +2089,9 @@
   <translation tag="The motor vibrates the belt while a strobe light flashes at the same frequency. When the belt appears to stand still (frozen), you have found the resonant frequency.\n\nUse the frequency buttons to sweep through values until the belt looks stationary, then lock the reading." zh="电机振动皮带的同时,频闪灯以相同频率闪烁。当皮带看起来静止不动(冻结)时,即找到了共振频率。\n\n使用频率按钮扫描各数值,直到皮带看起来静止,然后锁定读数。"/>
   <translation tag="The printer halted this print and cannot resume it. Restart from the beginning?" zh="打印机已停止此打印且无法恢复。从头重新开始？"/>
   <translation tag="The printer lost power during a print. It can resume where it left off." zh="打印机在打印过程中断电。可以从中断处继续。"/>
+  <translation tag="The printer lost power during a print. The resumed layer may not line up exactly."/>
   <translation tag="The printer lost power while printing {}. Resume where it left off?" zh="打印机在打印 {} 时断电。是否从中断处继续？"/>
+  <translation tag="The printer lost power while printing {}. The resumed layer may not line up exactly."/>
   <translation tag="The printer rejected the filament configuration. The print was not started." zh="打印机拒绝了该耗材配置。打印未启动。"/>
   <translation tag="The runout sensor indicates no filament is loaded. Start print anyway?" zh="断料传感器显示未装载耗材。仍要开始打印吗？"/>
   <translation tag="The toolhead sensor indicates filament is already loaded. Proceed with load anyway?" zh="工具头传感器显示耗材已装载。仍要继续装载吗？"/>
