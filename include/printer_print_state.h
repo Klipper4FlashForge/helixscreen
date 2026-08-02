@@ -295,6 +295,22 @@ class PrinterPrintState {
         pl_recovery_file_.clear();
     }
 
+    /// print_stats.power_loss PRESENCE — the Creality-Klipper-fork capability
+    /// marker for Power-Loss-Recovery. 1 once a status payload has carried the
+    /// key as a JSON number; mainline Klipper never emits it, and Moonraker's
+    /// explicit null for a subscribed-but-unpopulated field does not count.
+    /// Latches UP only (status arrives as deltas) and is reset by the offer
+    /// controller on the disconnect edge. See docs/devel/POWER_LOSS_RECOVERY.md.
+    lv_subject_t* get_creality_plr_capable_subject() {
+        return &creality_plr_capable_;
+    }
+
+    /// True when print_stats.power_loss has been seen. See
+    /// get_creality_plr_capable_subject().
+    [[nodiscard]] bool is_creality_plr_capable() const {
+        return lv_subject_get_int(const_cast<lv_subject_t*>(&creality_plr_capable_)) != 0;
+    }
+
     // ========================================================================
     // Setters
     // ========================================================================
@@ -660,6 +676,10 @@ class PrinterPrintState {
     // virtual_sdcard.file_path — companion to pl_env_valid_. Not a subject:
     // no XML binding needed, read on the main thread by the resume dispatcher.
     std::string pl_recovery_file_;
+
+    // print_stats.power_loss — Creality-fork PLR capability marker. Integer:
+    // 1 once the key has been seen as a JSON number (presence, not value).
+    lv_subject_t creality_plr_capable_{};
 
     // Slicer progress from display_status (M73 gcode command)
     // When active, preferred over virtual_sdcard file-position progress

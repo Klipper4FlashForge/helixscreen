@@ -368,6 +368,7 @@ translations:
   Chamber heating to %d°C...: チャンバーを%d°Cに加熱中...
   Chamber target set to {}°C: チャンバー目標温度を{}°C に設定
   Change: 変更
+  Change Address: ''
   Change Filament: フィラメント交換
   Change LED color based on printer state: プリンターの状態に応じて LED の色を変更
   Change PIN: PIN を変更
@@ -2163,7 +2164,9 @@ translations:
   : モーターがベルトを振動させ、ストロボライトが同じ周波数で点滅します。ベルトが静止して(止まって)見えたとき、共振周波数を見つけたことになります。\n\n周波数ボタンで値を変化させ、ベルトが静止して見えたらその値を固定してください。
   The printer halted this print and cannot resume it. Restart from the beginning?: プリンターはこの印刷を停止し、再開できません。最初からやり直しますか？
   The printer lost power during a print. It can resume where it left off.: 印刷中にプリンターの電源が失われました。中断した箇所から再開できます。
+  The printer lost power during a print. The resumed layer may not line up exactly.: ''
   The printer lost power while printing {}. Resume where it left off?: '{} の印刷中にプリンターの電源が失われました。中断した箇所から再開しますか？'
+  The printer lost power while printing {}. The resumed layer may not line up exactly.: ''
   The printer rejected the filament configuration. The print was not started.: プリンターがフィラメント設定を拒否しました。印刷は開始されませんでした。
   The runout sensor indicates no filament is loaded. Start print anyway?: フィラメント切れセンサーがフィラメント未装填を検出しました。それでも印刷を開始しますか？
   The toolhead sensor indicates filament is already loaded. Proceed with load anyway?: ツールヘッドセンサーがフィラメント装填済みを検出しました。それでも装填を続行しますか？

@@ -7,13 +7,14 @@
 //
 // A subject-driven smoke test (drive pl_env_valid -> assert a modal appears) is
 // intentionally NOT written here: show_plr_recovery_prompt() requires the XML
-// modal_dialog component to be loaded AND the offer path requires a mocked AMS
-// SNAPMAKER backend (AmsState::get_backend()->get_type() == SNAPMAKER). That is
-// heavy XMLTestFixture + HELIX_MOCK_AMS scaffolding with no existing lightweight
-// harness; a green test built on stubs would assert nothing real. The pure
-// pieces below are the parts with branching logic worth pinning down.
+// modal_dialog component to be loaded, which is heavy XMLTestFixture
+// scaffolding with no existing lightweight harness; a green test built on stubs
+// would assert nothing real. The pure pieces below are the parts with branching
+// logic worth pinning down. The backend strategy and the probe-before-resume
+// safety invariant are covered in test_plr_backend.cpp.
 
 #include "../../src/ui/ui_plr_prompt.h"
+#include "plr_backend.h"
 
 #include "../catch_amalgamated.hpp"
 
@@ -23,7 +24,8 @@ using helix::ui::show_plr_recovery_prompt;
 TEST_CASE("plr_prompt_body: filename is basename'd, extension stripped, substituted",
           "[plr][prompt]") {
     // Directory prefix stripped, .gcode removed -> "Benchy".
-    REQUIRE(plr_prompt_body("gcodes/sub/Benchy.gcode", "Resume {}?", "generic") == "Resume Benchy?");
+    REQUIRE(plr_prompt_body("gcodes/sub/Benchy.gcode", "Resume {}?", "generic") ==
+            "Resume Benchy?");
 }
 
 TEST_CASE("plr_prompt_body: bare filename with no directory", "[plr][prompt]") {
@@ -59,8 +61,52 @@ TEST_CASE("plr_prompt_body: filename that is only an extension is not over-strip
 }
 
 TEST_CASE("show_plr_recovery_prompt: null api is a safe no-op", "[plr][prompt]") {
-    // The controller calls show_plr_recovery_prompt(get_moonraker_api()), which
-    // can be null in a headless context. The null-guard must return before any
-    // LVGL / PrinterState access, so this must not crash.
-    REQUIRE_NOTHROW(show_plr_recovery_prompt(nullptr));
+    // The controller calls show_plr_recovery_prompt(get_moonraker_api(), plan),
+    // and the api can be null in a headless context. The null-guard must return
+    // before any LVGL / PrinterState access, so this must not crash.
+    helix::PlrRecoveryPlan plan = helix::plr_build_plan(helix::PlrBackendType::SNAPMAKER, "a.gcode",
+                                                        helix::PlrDetectResult{});
+    REQUIRE_NOTHROW(show_plr_recovery_prompt(nullptr, plan));
+}
+
+TEST_CASE("show_plr_recovery_prompt: refuses a plan with no authorized resume", "[plr][prompt]") {
+    // A Creality plan built without a completed probe carries no resume gcode.
+    // Showing a Resume button that must refuse is worse than showing nothing —
+    // and reaching modal creation here would need LVGL, so a crash-free return
+    // is itself the evidence the guard fired before any widget work.
+    helix::PlrDetectResult never_probed;
+    helix::PlrRecoveryPlan plan =
+        helix::plr_build_plan(helix::PlrBackendType::CREALITY, "a.gcode", never_probed);
+    REQUIRE(plan.resume_allowed() == false);
+    REQUIRE_NOTHROW(show_plr_recovery_prompt(nullptr, plan));
+}
+
+TEST_CASE("plr_prompt_strings: Creality gets its own copy, everything else gets the standard copy",
+          "[plr][prompt]") {
+    // Creality's restore re-homes X/Y sensorless and (on K1/KE) never re-probes
+    // Z, so the resumed layer lands a millimetre or two off. It must NOT inherit
+    // the Snapmaker wording, which promises an exact resume.
+    const helix::ui::PlrPromptStrings creality{"creality {}", "creality generic"};
+    const helix::ui::PlrPromptStrings standard{"standard {}", "standard generic"};
+
+    SECTION("CREALITY selects the caveated copy") {
+        auto got =
+            helix::ui::plr_prompt_strings(helix::PlrBackendType::CREALITY, creality, standard);
+        REQUIRE(std::string(got.with_file) == "creality {}");
+        REQUIRE(std::string(got.generic) == "creality generic");
+    }
+
+    SECTION("SNAPMAKER keeps the exact-resume copy") {
+        auto got =
+            helix::ui::plr_prompt_strings(helix::PlrBackendType::SNAPMAKER, creality, standard);
+        REQUIRE(std::string(got.with_file) == "standard {}");
+        REQUIRE(std::string(got.generic) == "standard generic");
+    }
+
+    SECTION("an unrecognised backend defaults to standard, not to Creality's caveat") {
+        // Guards the next backend added: defaulting into CREALITY's copy would
+        // silently attach a hardware-specific warning to unrelated firmware.
+        auto got = helix::ui::plr_prompt_strings(helix::PlrBackendType::NONE, creality, standard);
+        REQUIRE(std::string(got.with_file) == "standard {}");
+    }
 }

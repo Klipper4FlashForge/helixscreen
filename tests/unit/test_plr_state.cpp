@@ -61,6 +61,10 @@ class PlrStateTestFixture {
         return state_.pl_recovery_file();
     }
 
+    bool creality_plr_capable() {
+        return state_.is_creality_plr_capable();
+    }
+
   private:
     PrinterState state_;
     static lv_display_t* display_;
@@ -173,4 +177,65 @@ TEST_CASE_METHOD(PlrStateTestFixture, "PLR state: pl_env_valid flips true then b
         {"virtual_sdcard", {{"progress", 0.0}, {"is_active", false}, {"pl_env_valid", false}}}};
     state().update_from_status(cleared);
     REQUIRE(pl_env_valid() == false);
+}
+
+// ===========================================================================
+// Creality backend capability — print_stats.power_loss
+//
+// The key exists ONLY in Creality's Klipper fork; mainline has no such field.
+// PRESENCE (as a JSON number) is the capability marker, not the value — it
+// normally reads 0 and only becomes 1 after the side-effectful detect probe.
+// ===========================================================================
+
+TEST_CASE_METHOD(PlrStateTestFixture, "PLR capability: default is not Creality-capable",
+                 "[plr][state][creality]") {
+    REQUIRE(creality_plr_capable() == false);
+}
+
+TEST_CASE_METHOD(PlrStateTestFixture,
+                 "PLR capability: print_stats.power_loss==0 still marks Creality capable",
+                 "[plr][state][creality]") {
+    // This is the normal idle value on a K1C/K2. Gating on the VALUE would make
+    // the backend undetectable until after a probe we would never fire.
+    json status = {{"print_stats", {{"state", "standby"}, {"power_loss", 0}}}};
+    state().update_from_status(status);
+    REQUIRE(creality_plr_capable() == true);
+}
+
+TEST_CASE_METHOD(PlrStateTestFixture, "PLR capability: explicit null power_loss is NOT capability",
+                 "[plr][state][creality]") {
+    // Moonraker answers a subscribed-but-unpopulated field with an explicit
+    // null. Treating that as presence would fire the side-effectful Creality
+    // probe at every mainline-Klipper printer.
+    json status = {{"print_stats", {{"state", "standby"}, {"power_loss", nullptr}}}};
+    state().update_from_status(status);
+    REQUIRE(creality_plr_capable() == false);
+}
+
+TEST_CASE_METHOD(PlrStateTestFixture, "PLR capability: absent power_loss key is NOT capability",
+                 "[plr][state][creality]") {
+    json status = {{"print_stats", {{"state", "standby"}}}};
+    state().update_from_status(status);
+    REQUIRE(creality_plr_capable() == false);
+}
+
+TEST_CASE_METHOD(PlrStateTestFixture, "PLR capability: latches up, survives a status delta",
+                 "[plr][state][creality]") {
+    // Moonraker sends DELTAS: a later print_stats notification carrying only
+    // print_duration has no power_loss key. Capability must not flicker off, or
+    // the offer controller would see a spurious 1->0->1 edge and re-probe.
+    json first = {{"print_stats", {{"state", "standby"}, {"power_loss", 0}}}};
+    state().update_from_status(first);
+    REQUIRE(creality_plr_capable() == true);
+
+    json delta = {{"print_stats", {{"print_duration", 12.0}}}};
+    state().update_from_status(delta);
+    REQUIRE(creality_plr_capable() == true);
+}
+
+TEST_CASE_METHOD(PlrStateTestFixture, "PLR capability: power_loss==1 is also capability",
+                 "[plr][state][creality]") {
+    json status = {{"print_stats", {{"state", "standby"}, {"power_loss", 1}}}};
+    state().update_from_status(status);
+    REQUIRE(creality_plr_capable() == true);
 }
