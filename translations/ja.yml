@@ -220,6 +220,7 @@ translations:
   Back to Results: 結果に戻る
   'Backtrace: {} frames': 'バックトレース: {} フレーム'
   Barcode Scanner: バーコードスキャナー
+  Base: 基準
   Beacon auto-calibrate sent: Beacon自動キャリブレーション送信済み
   Beacon calibrate sent: Beaconキャリブレーション送信済み
   Bed: ベッド
@@ -231,6 +232,7 @@ translations:
   Bed Mesh...: ベッドメッシュ...
   Bed Moves: ベッド移動
   Bed Screw Adjustment: ベッドネジ調整
+  Bed Screw Results: ベッドネジ結果
   Bed Screws: ベッドネジ
   Bed Temp: ベッド温度
   Bed Temp (°C): ベッド温度 (°C)
@@ -1866,6 +1868,7 @@ translations:
   Scan Spool QR Code: スプール QR コードをスキャン
   Scan and select a Bluetooth printer first: 先に Bluetooth プリンターをスキャンして選択してください
   Scan for Printers: プリンターをスキャン
+  Scan with your phone to save these values: スマートフォンでスキャンして値を保存
   Scanner: スキャナー
   ? Scanner bonded but didn't attach as a keyboard. Try turning the scanner off and
     on, then tap Pair again. If that fails, add ClassicBondedOnly=false to /etc/bluetooth/input.conf.

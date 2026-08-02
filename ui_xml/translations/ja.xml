@@ -216,6 +216,7 @@
   <translation tag="Back to Results" ja="結果に戻る"/>
   <translation tag="Backtrace: {} frames" ja="バックトレース: {} フレーム"/>
   <translation tag="Barcode Scanner" ja="バーコードスキャナー"/>
+  <translation tag="Base" ja="基準"/>
   <translation tag="Beacon auto-calibrate sent" ja="Beacon自動キャリブレーション送信済み"/>
   <translation tag="Beacon calibrate sent" ja="Beaconキャリブレーション送信済み"/>
   <translation tag="Bed" ja="ベッド"/>
@@ -227,6 +228,7 @@
   <translation tag="Bed Mesh..." ja="ベッドメッシュ..."/>
   <translation tag="Bed Moves" ja="ベッド移動"/>
   <translation tag="Bed Screw Adjustment" ja="ベッドネジ調整"/>
+  <translation tag="Bed Screw Results" ja="ベッドネジ結果"/>
   <translation tag="Bed Screws" ja="ベッドネジ"/>
   <translation tag="Bed Temp" ja="ベッド温度"/>
   <translation tag="Bed Temp (°C)" ja="ベッド温度 (°C)"/>
@@ -1813,6 +1815,7 @@
   <translation tag="Scan Spool QR Code" ja="スプール QR コードをスキャン"/>
   <translation tag="Scan and select a Bluetooth printer first" ja="先に Bluetooth プリンターをスキャンして選択してください"/>
   <translation tag="Scan for Printers" ja="プリンターをスキャン"/>
+  <translation tag="Scan with your phone to save these values" ja="スマートフォンでスキャンして値を保存"/>
   <translation tag="Scanner" ja="スキャナー"/>
   <translation tag="Scanner bonded but didn&apos;t attach as a keyboard. Try turning the scanner off and on, then tap Pair again. If that fails, add ClassicBondedOnly=false to /etc/bluetooth/input.conf." ja="スキャナーはボンディングされましたが、キーボードとして接続されませんでした。スキャナーの電源を入れ直してから、もう一度 Pair をタップしてください。それでも失敗する場合は、/etc/bluetooth/input.conf に ClassicBondedOnly=false を追加してください。"/>
   <translation tag="Scanning for networks..." ja="ネットワークをスキャン中..."/>

@@ -6,6 +6,7 @@
 #include "ui_callback_helpers.h"
 #include "ui_fonts.h"
 #include "ui_nav_manager.h"
+#include "ui_screws_tilt_share_modal.h"
 #include "ui_update_queue.h"
 #include "ui_utils.h"
 
@@ -46,8 +47,8 @@ ScrewsTiltPanel& get_global_screws_tilt_panel() {
         // unregisters the overlay instance and sets the cleanup_called_ flag
         // that the panel's deferred probe callbacks check before touching
         // widgets.
-        StaticPanelRegistry::instance().register_destroy(
-            "ScrewsTiltPanel", []() { destroy_screws_tilt_panel(); });
+        StaticPanelRegistry::instance().register_destroy("ScrewsTiltPanel",
+                                                         []() { destroy_screws_tilt_panel(); });
     }
     return *s_screws_tilt_panel;
 }
@@ -122,6 +123,8 @@ void ui_panel_screws_tilt_register_callbacks() {
          [](lv_event_t* /*e*/) { get_global_screws_tilt_panel().handle_reprobe_clicked(); }},
         {"screws_tilt_retry_cb",
          [](lv_event_t* /*e*/) { get_global_screws_tilt_panel().handle_retry_clicked(); }},
+        {"screws_tilt_share_cb",
+         [](lv_event_t* /*e*/) { get_global_screws_tilt_panel().handle_share_clicked(); }},
     });
 
     // Initialize subjects BEFORE XML creation (bindings resolve at parse time)
@@ -800,4 +803,14 @@ void ScrewsTiltPanel::handle_done_clicked() {
 void ScrewsTiltPanel::handle_retry_clicked() {
     spdlog::debug("[ScrewsTilt] Retry clicked");
     start_probing();
+}
+
+void ScrewsTiltPanel::handle_share_clicked() {
+    spdlog::debug("[ScrewsTilt] Share clicked ({} results)", screw_results_.size());
+    if (screw_results_.empty()) {
+        return;
+    }
+    // Self-deleting modal — it removes itself on hide.
+    auto* modal = new helix::ui::ScrewsTiltShareModal(screw_results_);
+    modal->show_modal(nullptr);
 }

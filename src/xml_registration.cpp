@@ -569,6 +569,7 @@ void register_xml_components() {
     register_xml("power_device_row.xml");
     register_xml("power_panel.xml");
     register_xml("screws_tilt_panel.xml");
+    register_xml("screws_tilt_share_modal.xml");
     register_xml("input_shaper_panel.xml");
     register_xml("components/belt_result_card.xml");
     register_xml("panel_belt_tension.xml");

@@ -247,6 +247,7 @@ translations:
   Back to Results: Volver a resultados
   'Backtrace: {} frames': 'Traza inversa: {} marcos'
   Barcode Scanner: Escáner de Código de Barras
+  Base: Referencia
   Beacon auto-calibrate sent: Beacon auto-calibración enviada
   Beacon calibrate sent: Beacon calibración enviada
   Bed: Cama
@@ -258,6 +259,7 @@ translations:
   Bed Mesh...: Malla de Cama...
   Bed Moves: Cama se mueve
   Bed Screw Adjustment: Ajuste de Tornillos de Cama
+  Bed Screw Results: Resultados de Tornillos de Cama
   Bed Screws: Tornillos de Cama
   Bed Temp: Temp. Cama
   Bed Temp (°C): Temp. cama (°C)
@@ -2072,6 +2074,7 @@ translations:
   Scan and select a Bluetooth printer first: Escanee y seleccione una impresora Bluetooth
     primero
   Scan for Printers: Buscar Impresoras
+  Scan with your phone to save these values: Escanee con su teléfono para guardar estos valores
   Scanner: Escáner
   ? Scanner bonded but didn't attach as a keyboard. Try turning the scanner off and
     on, then tap Pair again. If that fails, add ClassicBondedOnly=false to /etc/bluetooth/input.conf.

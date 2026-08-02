@@ -216,6 +216,7 @@
   <translation tag="Back to Results" es="Volver a resultados"/>
   <translation tag="Backtrace: {} frames" es="Traza inversa: {} marcos"/>
   <translation tag="Barcode Scanner" es="Escáner de Código de Barras"/>
+  <translation tag="Base" es="Referencia"/>
   <translation tag="Beacon auto-calibrate sent" es="Beacon auto-calibración enviada"/>
   <translation tag="Beacon calibrate sent" es="Beacon calibración enviada"/>
   <translation tag="Bed" es="Cama"/>
@@ -227,6 +228,7 @@
   <translation tag="Bed Mesh..." es="Malla de Cama..."/>
   <translation tag="Bed Moves" es="Cama se mueve"/>
   <translation tag="Bed Screw Adjustment" es="Ajuste de Tornillos de Cama"/>
+  <translation tag="Bed Screw Results" es="Resultados de Tornillos de Cama"/>
   <translation tag="Bed Screws" es="Tornillos de Cama"/>
   <translation tag="Bed Temp" es="Temp. Cama"/>
   <translation tag="Bed Temp (°C)" es="Temp. cama (°C)"/>
@@ -1813,6 +1815,7 @@
   <translation tag="Scan Spool QR Code" es="Escanear Código QR de Bobina"/>
   <translation tag="Scan and select a Bluetooth printer first" es="Escanee y seleccione una impresora Bluetooth primero"/>
   <translation tag="Scan for Printers" es="Buscar Impresoras"/>
+  <translation tag="Scan with your phone to save these values" es="Escanee con su teléfono para guardar estos valores"/>
   <translation tag="Scanner" es="Escáner"/>
   <translation tag="Scanner bonded but didn&apos;t attach as a keyboard. Try turning the scanner off and on, then tap Pair again. If that fails, add ClassicBondedOnly=false to /etc/bluetooth/input.conf." es="El escáner está vinculado pero no se conectó como teclado. Intente apagar y encender el escáner, y luego toque Pair de nuevo. Si eso falla, agregue ClassicBondedOnly=false a /etc/bluetooth/input.conf."/>
   <translation tag="Scanning for networks..." es="Buscando redes..."/>
