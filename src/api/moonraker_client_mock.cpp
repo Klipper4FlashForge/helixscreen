@@ -507,6 +507,13 @@ void MoonrakerClientMock::populate_capabilities() {
     json mock_config;
     mock_config["adxl345"] = json::object();
     mock_config["resonance_tester"] = json::object();
+    // Bed screws — same story as the accelerometers: screws_tilt_adjust has no
+    // get_status(), so Klipper never lists it and the capability is detected
+    // from configfile.config. Without this the whole mock screws-tilt state
+    // machine is unreachable in --test.
+    mock_config["screws_tilt_adjust"] = {{"screw_thread", mock_internal::MOCK_SCREW_THREAD},
+                                         {"speed", "50"},
+                                         {"horizontal_move_z", "10"}};
     // Provide kinematics so bed_moves detection works
     // HELIX_MOCK_KINEMATICS overrides; otherwise default matches printer type
     const char* kin_env = std::getenv("HELIX_MOCK_KINEMATICS");
