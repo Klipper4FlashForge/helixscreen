@@ -7,8 +7,10 @@
 
 #include "../tests/mocks/mock_printer_state.h"
 #include "gcode_parser.h"
+#include "moonraker_client_mock_internal.h"
 #include "power_device_state.h"
 #include "runtime_config.h"
+#include "screws_tilt_parser.h"
 #include "sensor_state.h"
 #include "timelapse_state.h"
 
@@ -517,8 +519,8 @@ void MoonrakerFileTransferAPIMock::download_file_partial(const std::string& root
     if (local_path.empty()) {
         spdlog::warn("[MoonrakerAPIMock] File not found in test directories: {}", filename);
         if (on_error) {
-            MoonrakerError err = MoonrakerError::file_not_found(
-                "download_file_partial", "Mock file not found: " + filename);
+            MoonrakerError err = MoonrakerError::file_not_found("download_file_partial",
+                                                                "Mock file not found: " + filename);
             on_error(err);
         }
         return;
@@ -589,8 +591,8 @@ void MoonrakerFileTransferAPIMock::download_file_to_path(
         spdlog::warn("[MoonrakerAPIMock] File not found in test directories: {}", filename);
 
         if (on_error) {
-            MoonrakerError err = MoonrakerError::file_not_found(
-                "download_file_to_path", "Mock file not found: " + filename);
+            MoonrakerError err = MoonrakerError::file_not_found("download_file_to_path",
+                                                                "Mock file not found: " + filename);
             on_error(err);
         }
         return;
@@ -1074,43 +1076,44 @@ void MockScrewsTiltState::reset() {
     spdlog::debug("[MockScrewsTilt] Reset bed to initial out-of-level state");
 }
 
-std::vector<ScrewTiltResult> MockScrewsTiltState::probe() {
+std::vector<std::string> MockScrewsTiltState::probe_lines() {
     probe_count_++;
 
-    std::vector<ScrewTiltResult> results;
-    results.reserve(screws_.size());
+    std::vector<std::string> lines;
+    lines.reserve(screws_.size());
 
     // Reference Z height (simulated probe at reference screw)
     const float base_z = 2.50f;
-
+    // Klipper takes the FIRST screw in config order as the base, so its probed
+    // z is the reference every other screw's diff is measured against.
+    float z_base = base_z;
     for (const auto& screw : screws_) {
-        ScrewTiltResult result;
-        result.screw_name = screw.name;
-        result.x_pos = screw.x_pos;
-        result.y_pos = screw.y_pos;
-        result.z_height = base_z + screw.current_offset;
-        result.is_reference = screw.is_reference;
-
         if (screw.is_reference) {
-            // Reference screw shows no adjustment
-            result.adjustment = "";
-        } else {
-            result.adjustment = offset_to_adjustment(screw.current_offset);
-        }
-
-        results.push_back(result);
-    }
-
-    spdlog::info("[MockScrewsTilt] Probe #{}: {} screws measured", probe_count_, results.size());
-    for (const auto& r : results) {
-        if (r.is_reference) {
-            spdlog::debug("  {} (base): z={:.3f}", r.screw_name, r.z_height);
-        } else {
-            spdlog::debug("  {}: z={:.3f}, adjust {}", r.screw_name, r.z_height, r.adjustment);
+            z_base = base_z + screw.current_offset;
+            break;
         }
     }
 
-    return results;
+    char buf[160];
+    for (const auto& screw : screws_) {
+        const float z = base_z + screw.current_offset;
+        if (screw.is_reference) {
+            snprintf(buf, sizeof(buf), "// %s (base) : x=%.1f, y=%.1f, z=%.6f", screw.name.c_str(),
+                     screw.x_pos, screw.y_pos, z);
+        } else {
+            snprintf(buf, sizeof(buf), "// %s : x=%.1f, y=%.1f, z=%.6f : adjust %s",
+                     screw.name.c_str(), screw.x_pos, screw.y_pos, z,
+                     diff_to_adjustment(z_base - z).c_str());
+        }
+        lines.emplace_back(buf);
+    }
+
+    spdlog::info("[MockScrewsTilt] Probe #{}: {} screws measured", probe_count_, lines.size());
+    for (const auto& line : lines) {
+        spdlog::debug("  {}", line);
+    }
+
+    return lines;
 }
 
 void MockScrewsTiltState::simulate_user_adjustments() {
@@ -1151,20 +1154,23 @@ bool MockScrewsTiltState::is_level(float tolerance_mm) const {
     return true;
 }
 
-std::string MockScrewsTiltState::offset_to_adjustment(float offset_mm) {
-    // Standard bed screw: M3 with 0.5mm pitch
-    // 1 full turn = 0.5mm of Z change
-    // "Minutes" = 1/60 of a turn (like clock face)
-    const float MM_PER_TURN = 0.5f;
+std::string MockScrewsTiltState::diff_to_adjustment(float diff_mm) {
+    // Klipper (screws_tilt_adjust.py) computes diff = z_base - z and emits CW
+    // for a positive diff on a CW-M* thread, CCW for a negative one. The mock
+    // must match: emitting the opposite sign is what made --test unable to
+    // reproduce the level-verdict bug (prestonbrown/helixscreen#1225).
+    const float mm_per_turn = screw_thread_pitch_mm(mock_internal::MOCK_SCREW_THREAD);
 
-    float abs_offset = std::abs(offset_mm);
-    float turns = abs_offset / MM_PER_TURN;
-    int full_turns = static_cast<int>(turns);
-    int minutes = static_cast<int>((turns - full_turns) * 60.0f);
+    const char* direction = (diff_mm >= 0.0f) ? "CW" : "CCW";
 
-    // CW (clockwise) lowers the bed corner (reduces positive offset)
-    // CCW (counter-clockwise) raises the bed corner (reduces negative offset)
-    const char* direction = (offset_mm > 0) ? "CW" : "CCW";
+    float magnitude = std::abs(diff_mm);
+    int full_turns = static_cast<int>(magnitude / mm_per_turn);
+    int minutes =
+        static_cast<int>(std::lround((magnitude - full_turns * mm_per_turn) / mm_per_turn * 60.0f));
+    if (minutes >= 60) { // Rounding can push a near-full turn over the edge
+        full_turns++;
+        minutes -= 60;
+    }
 
     // Format as "CW 01:15" or "CCW 00:30"
     char buf[24];
@@ -1181,7 +1187,16 @@ void MoonrakerAdvancedAPIMock::calculate_screws_tilt(ScrewTiltCallback on_succes
     spdlog::info("[MoonrakerAdvancedAPIMock] calculate_screws_tilt called (probe #{})",
                  mock_bed_state_.get_probe_count() + 1);
 
-    auto results = mock_bed_state_.probe();
+    // Feed the simulated console output through the SAME parser the live
+    // collector uses, so --test exercises the line parser and the printer-database
+    // screws_tilt_direction override instead of bypassing both.
+    std::vector<ScrewTiltResult> results;
+    for (const auto& line : mock_bed_state_.probe_lines()) {
+        ScrewTiltResult result;
+        if (helix::parse_screws_tilt_line(line, result)) {
+            results.push_back(std::move(result));
+        }
+    }
 
     // After showing results, simulate user making adjustments
     mock_bed_state_.simulate_user_adjustments();

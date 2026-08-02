@@ -49,10 +49,17 @@ class MockScrewsTiltState {
     void reset();
 
     /**
-     * @brief Simulate probing the bed and return results
-     * @return Vector of screw results with current deviations
+     * @brief Simulate probing the bed and return raw Klipper console lines
+     *
+     * Returns the "// screw_name : x=… : adjust CW TT:MM" text Klipper would
+     * emit, so callers must run it through helix::parse_screws_tilt_line() —
+     * the same parser the live collector uses. Returning pre-built structs is
+     * what let the mock drift to the opposite sign convention from Klipper
+     * and hid the level-verdict bug (prestonbrown/helixscreen#1225).
+     *
+     * @return One console line per screw, base screw first
      */
-    std::vector<ScrewTiltResult> probe();
+    std::vector<std::string> probe_lines();
 
     /**
      * @brief Simulate user making adjustments based on probe results
@@ -81,11 +88,15 @@ class MockScrewsTiltState {
     int probe_count_ = 0;
 
     /**
-     * @brief Convert Z offset to turns:minutes adjustment string
-     * @param offset_mm Z deviation in mm (positive = too high, need CW)
+     * @brief Convert a Klipper base-relative diff to a turns:minutes string
+     *
+     * Mirrors Klipper's screws_tilt_adjust.py exactly: the diff is
+     * `z_base - z`, and a positive diff is CW on a CW-M* thread.
+     *
+     * @param diff_mm z_base minus this screw's probed z, in mm
      * @return Adjustment string like "CW 01:15" or "CCW 00:30"
      */
-    static std::string offset_to_adjustment(float offset_mm);
+    static std::string diff_to_adjustment(float diff_mm);
 };
 
 /**

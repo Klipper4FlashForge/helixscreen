@@ -2,8 +2,59 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "calibration_types.h"
+#include "screws_tilt_parser.h"
+
+#include <vector>
 
 #include "../catch_amalgamated.hpp"
+
+namespace {
+
+/// Parse a block of Klipper console lines the way ScrewsTiltCollector does.
+std::vector<ScrewTiltResult> parse_lines(const std::vector<std::string>& lines) {
+    std::vector<ScrewTiltResult> results;
+    for (const auto& line : lines) {
+        ScrewTiltResult result;
+        if (helix::parse_screws_tilt_line(line, result)) {
+            results.push_back(result);
+        }
+    }
+    return results;
+}
+
+/**
+ * The bed from prestonbrown/helixscreen#1225, verbatim.
+ *
+ * Probed Z, and the exact adjustments Klipper emitted for a CW-M4 thread
+ * (diff = z_base - z; front_left is the base because it is first in config
+ * order). Corner-to-corner error is 0.11125 mm — 8x what the reporter reached
+ * by levelling from the console — yet every screw is <= 5 minutes from the base.
+ */
+const std::vector<std::string> kOutOfLevelBed = {
+    "// front_left (base) : x=30.0, y=30.0, z=-0.055125",
+    "// front_right : x=200.0, y=30.0, z=-0.111375 : adjust CW 00:05",
+    "// rear_right : x=200.0, y=200.0, z=-0.000125 : adjust CCW 00:05",
+    "// rear_left : x=30.0, y=200.0, z=-0.022625 : adjust CCW 00:03",
+};
+
+/// The reporter's follow-up console run: 0.01375 mm spread, genuinely level.
+const std::vector<std::string> kLevelBed = {
+    "// front_left (base) : x=30.0, y=30.0, z=-0.067500",
+    "// front_right : x=200.0, y=30.0, z=-0.055000 : adjust CCW 00:01",
+    "// rear_right : x=200.0, y=200.0, z=-0.060000 : adjust CCW 00:01",
+    "// rear_left : x=30.0, y=200.0, z=-0.068750 : adjust CW 00:00",
+};
+
+ScrewTiltResult make_screw(const std::string& name, const std::string& adjustment,
+                           bool is_reference = false) {
+    ScrewTiltResult r;
+    r.screw_name = name;
+    r.adjustment = adjustment;
+    r.is_reference = is_reference;
+    return r;
+}
+
+} // namespace
 
 TEST_CASE("flip_screws_tilt_direction swaps CW and CCW tokens", "[calibration][screws_tilt]") {
     SECTION("CW becomes CCW") {
@@ -93,39 +144,248 @@ TEST_CASE("ScrewTiltResult::adjustment_minutes parses arc-minute totals",
     }
 }
 
-TEST_CASE("ScrewTiltResult::is_within_tolerance treats ≤5min screws as level",
-          "[calibration][screws_tilt]") {
-    ScrewTiltResult r;
-
-    SECTION("Reference screw is always within tolerance") {
-        r.is_reference = true;
-        r.adjustment = "CW 05:00"; // Ignored because is_reference
-        REQUIRE(r.is_within_tolerance());
+TEST_CASE("ScrewTiltResult::signed_adjustment_minutes keeps CW/CCW sign",
+          "[calibration][screws_tilt][1225]") {
+    SECTION("CW is positive") {
+        REQUIRE(make_screw("a", "CW 00:05").signed_adjustment_minutes() == 5);
     }
 
-    SECTION("CW 00:00 is within tolerance") {
-        r.adjustment = "CW 00:00";
-        REQUIRE(r.is_within_tolerance());
+    SECTION("CCW is negative") {
+        REQUIRE(make_screw("a", "CCW 00:05").signed_adjustment_minutes() == -5);
     }
 
-    SECTION("CW 00:05 is within tolerance (boundary)") {
-        r.adjustment = "CW 00:05";
-        REQUIRE(r.is_within_tolerance());
+    SECTION("Turns carry the sign too") {
+        REQUIRE(make_screw("a", "CCW 01:30").signed_adjustment_minutes() == -90);
     }
 
-    SECTION("CW 00:06 is out of tolerance") {
-        r.adjustment = "CW 00:06";
-        REQUIRE_FALSE(r.is_within_tolerance());
+    SECTION("Base screw is exactly zero") {
+        REQUIRE(make_screw("base", "", true).signed_adjustment_minutes() == 0);
     }
 
-    SECTION("CCW 00:04 is within tolerance") {
-        r.adjustment = "CCW 00:04";
-        REQUIRE(r.is_within_tolerance());
+    SECTION("Unknown direction token is a parse failure, not zero") {
+        REQUIRE_FALSE(make_screw("a", "XW 00:05").signed_adjustment_minutes().has_value());
     }
 
-    SECTION("Empty adjustment treated as level") {
-        r.adjustment = "";
-        REQUIRE(r.is_within_tolerance());
+    SECTION("Missing direction token is a parse failure") {
+        REQUIRE_FALSE(make_screw("a", "00:05").signed_adjustment_minutes().has_value());
+    }
+
+    SECTION("Empty adjustment on a non-base screw is a parse failure") {
+        REQUIRE_FALSE(make_screw("a", "").signed_adjustment_minutes().has_value());
+    }
+
+    SECTION("Garbage is a parse failure") {
+        REQUIRE_FALSE(make_screw("a", "garbage").signed_adjustment_minutes().has_value());
+    }
+}
+
+TEST_CASE("Screw tolerance follows the configured thread pitch",
+          "[calibration][screws_tilt][1225]") {
+    SECTION("Klipper screw_thread tokens map to their pitch") {
+        REQUIRE(screw_thread_pitch_mm("CW-M3") == Catch::Approx(0.5f));
+        REQUIRE(screw_thread_pitch_mm("CCW-M3") == Catch::Approx(0.5f));
+        REQUIRE(screw_thread_pitch_mm("CW-M4") == Catch::Approx(0.7f));
+        REQUIRE(screw_thread_pitch_mm("CCW-M4") == Catch::Approx(0.7f));
+        REQUIRE(screw_thread_pitch_mm("CW-M5") == Catch::Approx(0.8f));
+        REQUIRE(screw_thread_pitch_mm("CW-M6") == Catch::Approx(1.0f));
+    }
+
+    SECTION("Unknown or missing thread falls back to M3") {
+        REQUIRE(screw_thread_pitch_mm("") == Catch::Approx(SCREW_PITCH_M3_MM));
+        REQUIRE(screw_thread_pitch_mm("CW-M8") == Catch::Approx(SCREW_PITCH_M3_MM));
+        REQUIRE(screw_thread_pitch_mm("nonsense") == Catch::Approx(SCREW_PITCH_M3_MM));
+    }
+
+    SECTION("A 0.05mm level window is a different minute count per pitch") {
+        // 0.05mm / pitch * 60, rounded
+        REQUIRE(screw_level_tolerance_minutes(SCREW_PITCH_M3_MM) == 6);
+        REQUIRE(screw_level_tolerance_minutes(SCREW_PITCH_M4_MM) == 4);
+        REQUIRE(screw_level_tolerance_minutes(SCREW_PITCH_M5_MM) == 4);
+        REQUIRE(screw_level_tolerance_minutes(SCREW_PITCH_M6_MM) == 3);
+    }
+
+    SECTION("A coarser thread never gets a wider window than a finer one") {
+        REQUIRE(screw_level_tolerance_minutes(SCREW_PITCH_M3_MM) >=
+                screw_level_tolerance_minutes(SCREW_PITCH_M4_MM));
+        REQUIRE(screw_level_tolerance_minutes(SCREW_PITCH_M4_MM) >=
+                screw_level_tolerance_minutes(SCREW_PITCH_M6_MM));
+    }
+
+    SECTION("Tolerance never collapses to an exact-match test") {
+        REQUIRE(screw_minutes_for_mm(0.0f, SCREW_PITCH_M6_MM) == 1);
+        REQUIRE(screw_minutes_for_mm(SCREW_LEVEL_TOLERANCE_MM, 0.0f) ==
+                screw_level_tolerance_minutes(SCREW_PITCH_DEFAULT_MM));
+    }
+}
+
+TEST_CASE("parse_screws_tilt_line reads Klipper console output",
+          "[calibration][screws_tilt][1225]") {
+    SECTION("Base screw line") {
+        ScrewTiltResult r;
+        REQUIRE(helix::parse_screws_tilt_line(kOutOfLevelBed[0], r));
+        REQUIRE(r.screw_name == "front_left");
+        REQUIRE(r.is_reference);
+        REQUIRE(r.z_height == Catch::Approx(-0.055125f));
+        REQUIRE(r.signed_adjustment_minutes() == 0);
+    }
+
+    SECTION("Adjusted screw line") {
+        ScrewTiltResult r;
+        REQUIRE(helix::parse_screws_tilt_line(kOutOfLevelBed[1], r));
+        REQUIRE(r.screw_name == "front_right");
+        REQUIRE_FALSE(r.is_reference);
+        REQUIRE(r.x_pos == Catch::Approx(200.0f));
+        REQUIRE(r.y_pos == Catch::Approx(30.0f));
+        REQUIRE(r.z_height == Catch::Approx(-0.111375f));
+        REQUIRE(r.adjustment_minutes() == 5);
+    }
+
+    SECTION("Non-screw console chatter is rejected") {
+        ScrewTiltResult r;
+        REQUIRE_FALSE(helix::parse_screws_tilt_line("ok", r));
+        REQUIRE_FALSE(helix::parse_screws_tilt_line("// Klipper state: Ready", r));
+    }
+}
+
+TEST_CASE("evaluate_screw_level judges the spread, not each screw's magnitude",
+          "[calibration][screws_tilt][1225]") {
+    SECTION("The #1225 bed is NOT level on its real M4 thread") {
+        auto results = parse_lines(kOutOfLevelBed);
+        REQUIRE(results.size() == 4);
+
+        auto report = evaluate_screw_level(results, SCREW_PITCH_M4_MM);
+        // +5 (CW) and -5 (CCW) about a mid-range base: 10 minutes corner to
+        // corner even though no single screw exceeds 5.
+        REQUIRE_FALSE(report.is_level());
+        REQUIRE(report.verdict == ScrewLevelVerdict::NEEDS_ADJUSTMENT);
+        REQUIRE(report.spread_minutes == 10);
+        REQUIRE(report.tolerance_minutes == 4);
+    }
+
+    SECTION("The #1225 bed is NOT level on an M3 thread either") {
+        auto results = parse_lines(kOutOfLevelBed);
+        auto report = evaluate_screw_level(results, SCREW_PITCH_M3_MM);
+        REQUIRE_FALSE(report.is_level());
+        REQUIRE(report.spread_minutes == 10);
+        REQUIRE(report.tolerance_minutes == 6);
+    }
+
+    SECTION("Base mid-range with opposite signs is caught at every pitch") {
+        // Each screw is inside a 6-minute window of the base, but the outer two
+        // are 12 minutes apart from each other.
+        std::vector<ScrewTiltResult> results = {
+            make_screw("front_left", "", true),
+            make_screw("front_right", "CW 00:06"),
+            make_screw("rear_right", "CCW 00:06"),
+            make_screw("rear_left", "CW 00:00"),
+        };
+
+        for (float pitch :
+             {SCREW_PITCH_M3_MM, SCREW_PITCH_M4_MM, SCREW_PITCH_M5_MM, SCREW_PITCH_M6_MM}) {
+            auto report = evaluate_screw_level(results, pitch);
+            INFO("pitch " << pitch);
+            REQUIRE(report.spread_minutes == 12);
+            REQUIRE_FALSE(report.is_level());
+        }
+    }
+
+    SECTION("A genuinely level bed still reports level") {
+        auto results = parse_lines(kLevelBed);
+        REQUIRE(results.size() == 4);
+
+        auto report = evaluate_screw_level(results, SCREW_PITCH_M4_MM);
+        REQUIRE(report.spread_minutes == 1);
+        REQUIRE(report.verdict == ScrewLevelVerdict::LEVEL);
+        for (size_t i = 0; i < results.size(); i++) {
+            INFO("screw " << results[i].screw_name);
+            REQUIRE(report.in_spec[i]);
+        }
+    }
+
+    SECTION("All screws level on one side of the base is still level") {
+        // Everything within the window of the base and of each other.
+        std::vector<ScrewTiltResult> results = {
+            make_screw("front_left", "", true),
+            make_screw("front_right", "CW 00:02"),
+            make_screw("rear_right", "CW 00:03"),
+            make_screw("rear_left", "CW 00:01"),
+        };
+        auto report = evaluate_screw_level(results, SCREW_PITCH_M3_MM);
+        REQUIRE(report.spread_minutes == 3);
+        REQUIRE(report.is_level());
+    }
+
+    SECTION("All screws marked in-spec exactly when the bed is level") {
+        // The green-checkmark display must never disagree with the banner.
+        std::vector<ScrewTiltResult> results = {
+            make_screw("front_left", "", true),
+            make_screw("front_right", "CW 00:04"),
+            make_screw("rear_right", "CCW 00:04"),
+            make_screw("rear_left", "CW 00:00"),
+        };
+        auto report = evaluate_screw_level(results, SCREW_PITCH_M3_MM);
+        REQUIRE(report.spread_minutes == 8); // > 6-minute M3 window
+        REQUIRE_FALSE(report.is_level());
+
+        bool all_in_spec = true;
+        for (bool ok : report.in_spec) {
+            all_in_spec = all_in_spec && ok;
+        }
+        REQUIRE_FALSE(all_in_spec);
+    }
+
+    SECTION("Worst screw is the one furthest from the level plane") {
+        std::vector<ScrewTiltResult> results = {
+            make_screw("front_left", "", true),
+            make_screw("front_right", "CW 00:10"),
+            make_screw("rear_right", "CCW 00:40"),
+            make_screw("rear_left", "CW 00:02"),
+        };
+        auto report = evaluate_screw_level(results, SCREW_PITCH_M3_MM);
+        REQUIRE(report.worst_index == 2);
+        REQUIRE_FALSE(report.in_spec[2]);
+    }
+}
+
+TEST_CASE("evaluate_screw_level fails loudly instead of reading as level",
+          "[calibration][screws_tilt][1225]") {
+    SECTION("A malformed adjustment is a parse error, not a level bed") {
+        std::vector<ScrewTiltResult> results = {
+            make_screw("front_left", "", true),
+            make_screw("front_right", "CW 00:01"),
+            make_screw("rear_right", "adjust me"), // Klipper never emits this
+            make_screw("rear_left", "CW 00:00"),
+        };
+        auto report = evaluate_screw_level(results, SCREW_PITCH_M3_MM);
+        REQUIRE(report.verdict == ScrewLevelVerdict::PARSE_ERROR);
+        REQUIRE_FALSE(report.is_level());
+        REQUIRE(report.parse_error.find("rear_right") != std::string::npos);
+    }
+
+    SECTION("A missing adjustment on a non-base screw is a parse error") {
+        std::vector<ScrewTiltResult> results = {
+            make_screw("front_left", "", true),
+            make_screw("front_right", ""), // ": adjust ..." never arrived
+        };
+        auto report = evaluate_screw_level(results, SCREW_PITCH_M3_MM);
+        REQUIRE(report.verdict == ScrewLevelVerdict::PARSE_ERROR);
+        REQUIRE_FALSE(report.is_level());
+    }
+
+    SECTION("An empty result set is not a level bed") {
+        auto report = evaluate_screw_level({}, SCREW_PITCH_M3_MM);
+        REQUIRE_FALSE(report.is_level());
+    }
+
+    SECTION("A truncated console line does not silently read as level") {
+        // A line that lost its ": adjust CW 00:05" tail mid-transmission.
+        auto results = parse_lines({
+            "// front_left (base) : x=30.0, y=30.0, z=-0.055125",
+            "// front_right : x=200.0, y=30.0, z=-0.111375",
+        });
+        REQUIRE(results.size() == 2);
+        auto report = evaluate_screw_level(results, SCREW_PITCH_M4_MM);
+        REQUIRE(report.verdict == ScrewLevelVerdict::PARSE_ERROR);
     }
 }
 
@@ -136,26 +396,26 @@ TEST_CASE("ScrewTiltResult::friendly_adjustment maps direction to verb",
 
     SECTION("CW output becomes Tighten") {
         r.adjustment = "CW 00:18";
-        REQUIRE(r.friendly_adjustment() == "Tighten 1/4 turn");
+        REQUIRE(r.friendly_adjustment(false) == "Tighten 1/4 turn");
     }
 
     SECTION("CCW output becomes Loosen") {
         r.adjustment = "CCW 00:18";
-        REQUIRE(r.friendly_adjustment() == "Loosen 1/4 turn");
+        REQUIRE(r.friendly_adjustment(false) == "Loosen 1/4 turn");
     }
 
-    SECTION("Within-tolerance screw reports Level") {
+    SECTION("In-spec screw reports Level") {
         r.adjustment = "CW 00:03";
-        REQUIRE(r.friendly_adjustment() == "Level");
+        REQUIRE(r.friendly_adjustment(true) == "Level");
     }
 
     SECTION("Reference screw reports Reference") {
         r.is_reference = true;
-        REQUIRE(r.friendly_adjustment() == "Reference");
+        REQUIRE(r.friendly_adjustment(false) == "Reference");
     }
 
     SECTION("Multi-turn magnitudes are described") {
         r.adjustment = "CW 02:30";
-        REQUIRE(r.friendly_adjustment() == "Tighten 3 turns");
+        REQUIRE(r.friendly_adjustment(false) == "Tighten 3 turns");
     }
 }

@@ -10,7 +10,7 @@
 #include "bed_mesh_probe_parser.h"
 #include "json_utils.h"
 #include "moonraker_api.h"
-#include "printer_detector.h"
+#include "screws_tilt_parser.h"
 #include "shaper_csv_parser.h"
 #include "spdlog/spdlog.h"
 
@@ -789,99 +789,13 @@ class ScrewsTiltCollector : public std::enable_shared_from_this<ScrewsTiltCollec
 
   private:
     void parse_screw_line(const std::string& line) {
-        // Format: "// screw_name (base) : x=X, y=Y, z=Z" for reference
-        // Format: "// screw_name : x=X, y=Y, z=Z : adjust DIR TT:MM" for non-reference
-
+        // Shared with the mock printer and the unit tests — see
+        // screws_tilt_parser.h. Keep the parsing itself out of this collector so
+        // there is exactly one implementation of Klipper's sign convention.
         ScrewTiltResult result;
-
-        // Find the screw name (after "//" and any whitespace, before first " :" or " (")
-        size_t name_start = 2; // Skip "//"
-        // Skip any whitespace after "//"
-        while (name_start < line.length() && line[name_start] == ' ') {
-            name_start++;
+        if (parse_screws_tilt_line(line, result)) {
+            results_.push_back(std::move(result));
         }
-
-        size_t name_end = line.find(" :");
-        size_t base_pos = line.find(" (base)");
-
-        if (base_pos != std::string::npos &&
-            (name_end == std::string::npos || base_pos < name_end)) {
-            // Reference screw with "(base)" marker
-            result.screw_name = line.substr(name_start, base_pos - name_start);
-            result.is_reference = true;
-        } else if (name_end != std::string::npos) {
-            result.screw_name = line.substr(name_start, name_end - name_start);
-            result.is_reference = false;
-        } else {
-            // Can't parse - skip this line
-            spdlog::debug("[ScrewsTiltCollector] Could not parse line: {}", line);
-            return;
-        }
-
-        // Trim whitespace from screw name (leading and trailing)
-        while (!result.screw_name.empty() && result.screw_name.front() == ' ') {
-            result.screw_name.erase(0, 1);
-        }
-        while (!result.screw_name.empty() && result.screw_name.back() == ' ') {
-            result.screw_name.pop_back();
-        }
-
-        // Parse x, y, z values
-        // Look for "x=", "y=", "z="
-        auto parse_float = [&line](const std::string& prefix) -> float {
-            size_t pos = line.find(prefix);
-            if (pos == std::string::npos) {
-                return 0.0f;
-            }
-            pos += prefix.length();
-            // Find end of number (next comma, space, or end of line)
-            size_t end = line.find_first_of(", ", pos);
-            if (end == std::string::npos) {
-                end = line.length();
-            }
-            try {
-                return std::stof(line.substr(pos, end - pos));
-            } catch (...) {
-                return 0.0f;
-            }
-        };
-
-        result.x_pos = parse_float("x=");
-        result.y_pos = parse_float("y=");
-        result.z_height = parse_float("z=");
-
-        // Parse adjustment for non-reference screws
-        // Look for ": adjust CW 01:15" or ": adjust CCW 00:30"
-        if (!result.is_reference) {
-            size_t adjust_pos = line.find(": adjust ");
-            if (adjust_pos != std::string::npos) {
-                result.adjustment = line.substr(adjust_pos + 9); // Skip ": adjust "
-                // Trim any trailing whitespace
-                while (!result.adjustment.empty() &&
-                       std::isspace(static_cast<unsigned char>(result.adjustment.back()))) {
-                    result.adjustment.pop_back();
-                }
-
-                // The printer database may declare the correct physical
-                // tightening direction via `"screws_tilt_direction": "cw"` or
-                // `"ccw"`. When set to "ccw", it disagrees with Klipper's
-                // default CW-M* semantics, so flip CW↔CCW here to match
-                // the printer's physical reality. Used for vendors whose
-                // shipped screw_thread config disagrees with the actual
-                // screw response (e.g. FlashForge Adventurer 5M family).
-                // Raw Klipper output still appears in the klippy log; only
-                // the stored/display string is corrected.
-                if (PrinterDetector::screws_tilt_direction_override() == "ccw") {
-                    flip_screws_tilt_direction(result.adjustment);
-                }
-            }
-        }
-
-        spdlog::debug("[ScrewsTiltCollector] Parsed: {} at ({:.1f}, {:.1f}) z={:.3f} {}",
-                      result.screw_name, result.x_pos, result.y_pos, result.z_height,
-                      result.is_reference ? "(reference)" : result.adjustment);
-
-        results_.push_back(std::move(result));
     }
 
     void complete_success() {

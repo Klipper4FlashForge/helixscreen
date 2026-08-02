@@ -166,6 +166,15 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                         {"damping_ratio_x", "0.1"}, {"damping_ratio_y", "0.1"}};
                 }
 
+                // Bed screws. PrinterDiscovery detects the capability from
+                // `config` (the section has no get_status(), so it never appears
+                // in objects/list), while the screws-tilt panel reads the thread
+                // from `settings`. The mock needs both or --test can't reach the
+                // panel at all.
+                config_section["screws_tilt_adjust"] = {{"screw_thread", MOCK_SCREW_THREAD},
+                                                        {"speed", "50"},
+                                                        {"horizontal_move_z", "10"}};
+
                 // Add LED effect configs to config section
                 config_section["led_effect breathing"] = {{"leds", "neopixel:chamber_light"},
                                                           {"autostart", "false"},
@@ -200,8 +209,7 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                 // Probe-equipped printers (endstop_pin: probe:z_virtual_endstop)
                 // get a JSON null here rather than a number — see
                 // set_stepper_z_endstop_null().
-                json stepper_z_settings = {{"position_min", 0.0},
-                                           {"position_max", MOCK_BED_Z_MAX}};
+                json stepper_z_settings = {{"position_min", 0.0}, {"position_max", MOCK_BED_Z_MAX}};
                 if (self->is_stepper_z_endstop_null()) {
                     stepper_z_settings["position_endstop"] = nullptr;
                 } else {
@@ -217,6 +225,12 @@ void register_object_handlers(std::unordered_map<std::string, MethodHandler>& re
                        {{"position_min", MOCK_BED_Y_MIN}, {"position_max", MOCK_BED_Y_MAX}}},
                       {"stepper_z", stepper_z_settings},
                       {"extruder", extruder_settings},
+                      // Bed screw geometry — the screws-tilt panel reads
+                      // screw_thread from here to size its level tolerance.
+                      {"screws_tilt_adjust",
+                       {{"screw_thread", MOCK_SCREW_THREAD},
+                        {"speed", 50.0},
+                        {"horizontal_move_z", 10.0}}},
                       {"heater_bed",
                        {{"min_temp", 0.0},
                         {"max_temp", 120.0},
