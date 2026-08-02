@@ -180,6 +180,16 @@ void FilamentMappingCard::rebuild_compact_view() {
     // batch we have to escape. safe_clean_children async-deletes via LVGL.
     auto freeze = helix::ui::UpdateQueue::instance().scoped_freeze();
     helix::ui::UpdateQueue::instance().drain();
+
+    // drain() runs whatever was already queued, and NavigationManager::go_back()
+    // is fully deferred — so a pop queued before we got here executes right on
+    // that line. Popping the print-detail overlay reaches on_ui_destroyed(),
+    // which nulls rows_container_ underneath us. The check above is stale from
+    // this point on; every use below must come after a fresh read (#1221).
+    if (!rows_container_) {
+        spdlog::debug("[FilamentMapping] Container destroyed during drain — skipping rebuild");
+        return;
+    }
     helix::ui::safe_clean_children(rows_container_);
 
     // Pill layout, sizing, padding, fonts all live in

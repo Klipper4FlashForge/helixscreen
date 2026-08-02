@@ -305,14 +305,30 @@ void PrintStartController::execute_print_start() {
                                            error);
                         status_panel.end_preparing(false);
 
-                        // Navigate back to print detail overlay on failure
-                        spdlog::info(
-                            "[PrintStartController] Navigating back to print select after failure");
-                        NavigationManager::instance().go_back(); // Pop print status overlay
+                        // Only unwind the optimistic navigation if the print
+                        // status overlay is still what the user is looking at.
+                        // Preparation can fail a full minute after we pushed it
+                        // (upload/prep timeout), by which point they may have
+                        // navigated several overlays on — popping blind then
+                        // closes THEIR screen, and the re-show below rebuilds
+                        // widgets that same pop just destroyed (#1221).
+                        // get_cached_overlay() is the widget push_overlay()
+                        // actually put on the stack, and it goes null with
+                        // destroy-on-close — the same handle the auto-nav gate
+                        // checks membership with (print_start_navigation.cpp).
+                        auto& nav = NavigationManager::instance();
+                        if (nav.is_panel_on_top(PrintStatusPanel::get_cached_overlay())) {
+                            spdlog::info("[PrintStartController] Navigating back to print select "
+                                         "after failure");
+                            nav.go_back(); // Pop print status overlay
 
-                        // Re-show the detail view so user can retry
-                        if (show_detail) {
-                            show_detail();
+                            // Re-show the detail view so user can retry
+                            if (show_detail) {
+                                show_detail();
+                            }
+                        } else {
+                            spdlog::info("[PrintStartController] Print status no longer on top — "
+                                         "leaving navigation alone after failure");
                         }
 
                         // Re-enable button on failure

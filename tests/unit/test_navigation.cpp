@@ -575,3 +575,56 @@ TEST_CASE_METHOD(NavbarIconTestFixture, "push_overlay onto empty stack does not 
     lv_obj_delete(overlay);
     REQUIRE(nav.is_panel_in_stack(overlay) == false);
 }
+
+// ============================================================================
+// is_panel_on_top: "will go_back() pop THIS panel?" (#1221)
+// ============================================================================
+// A deferred callback that pushed an overlay earlier cannot assume it is still
+// the top when it finally runs. PrintStartController's failure handler pushed
+// print status, then called go_back() up to a minute later after a preparation
+// timeout — by which point the user had opened two more overlays, so the pop
+// closed THEIR screen and the follow-up re-show rebuilt widgets that same pop
+// had just destroyed (SIGSEGV, bundle SREQ5VQN). is_panel_in_stack() is not
+// enough to catch this: the pusher's panel is usually still IN the stack, just
+// buried.
+TEST_CASE_METHOD(NavbarIconTestFixture, "is_panel_on_top distinguishes top from merely-in-stack",
+                 "[navigation][overlay][1221]") {
+    auto& nav = NavigationManager::instance();
+
+    lv_obj_t* base = lv_obj_create(test_screen());
+    REQUIRE(base != nullptr);
+    lv_obj_t* panels[UI_PANEL_COUNT] = {nullptr};
+    panels[static_cast<int>(PanelId::Home)] = base;
+    nav.set_panels(panels);
+
+    REQUIRE(nav.is_panel_on_top(nullptr) == false);
+    REQUIRE(nav.is_panel_on_top(base) == true); // only entry
+
+    MockPanelLifecycle mock_first;
+    lv_obj_t* first = lv_obj_create(test_screen());
+    lv_obj_add_flag(first, LV_OBJ_FLAG_HIDDEN);
+    nav.register_overlay_instance(first, &mock_first);
+    nav.push_overlay(first);
+    helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+
+    REQUIRE(nav.is_panel_on_top(first) == true);
+    REQUIRE(nav.is_panel_on_top(base) == false); // in the stack, but buried
+
+    // The user navigates on — this is the state the timed-out callback wakes to.
+    MockPanelLifecycle mock_second;
+    lv_obj_t* second = lv_obj_create(test_screen());
+    lv_obj_add_flag(second, LV_OBJ_FLAG_HIDDEN);
+    nav.register_overlay_instance(second, &mock_second);
+    nav.push_overlay(second);
+    helix::ui::UpdateQueueTestAccess::drain_all(helix::ui::UpdateQueue::instance());
+
+    // The discrimination that matters: `first` is still in the stack, so an
+    // is_panel_in_stack() guard would wave the blind go_back() through.
+    REQUIRE(nav.is_panel_in_stack(first) == true);
+    REQUIRE(nav.is_panel_on_top(first) == false);
+    REQUIRE(nav.is_panel_on_top(second) == true);
+
+    lv_obj_delete(second);
+    lv_obj_delete(first);
+    lv_obj_delete(base);
+}
