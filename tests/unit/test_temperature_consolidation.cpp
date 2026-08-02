@@ -223,3 +223,77 @@ TEST_CASE("get_heating_state_variant: agrees with get_heating_state_color across
     REQUIRE(std::string(get_heating_state_variant(210, 200)) == "info");
     REQUIRE(same(210, 200, "info"));
 }
+
+// ============================================================================
+// classify_heat_state() - the single source of truth all three consumers share
+// ============================================================================
+
+TEST_CASE("classify_heat_state: off when target is zero", "[temperature][heat_state]") {
+    REQUIRE(classify_heat_state(25, 0) == HeatState::Off);
+}
+
+TEST_CASE("classify_heat_state: off when target is negative", "[temperature][heat_state]") {
+    // Previously get_heating_state_color() treated a negative target as "cooling"
+    // (blue) while get_heating_state_variant() treated it as off (muted).
+    REQUIRE(classify_heat_state(25, -5) == HeatState::Off);
+}
+
+TEST_CASE("classify_heat_state: heating below tolerance", "[temperature][heat_state]") {
+    REQUIRE(classify_heat_state(150, 200) == HeatState::Heating);
+}
+
+TEST_CASE("classify_heat_state: cooling above tolerance", "[temperature][heat_state]") {
+    REQUIRE(classify_heat_state(210, 200) == HeatState::Cooling);
+}
+
+TEST_CASE("classify_heat_state: tolerance boundaries are at-temp", "[temperature][heat_state]") {
+    REQUIRE(classify_heat_state(198, 200) == HeatState::AtTemp);
+    REQUIRE(classify_heat_state(200, 200) == HeatState::AtTemp);
+    REQUIRE(classify_heat_state(202, 200) == HeatState::AtTemp);
+    REQUIRE(classify_heat_state(197, 200) == HeatState::Heating);
+    REQUIRE(classify_heat_state(203, 200) == HeatState::Cooling);
+}
+
+TEST_CASE("classify_heat_state: honors a custom tolerance", "[temperature][heat_state]") {
+    // Decidegree callers pass tolerance=20 for the same 2 degrees.
+    REQUIRE(classify_heat_state(1980, 2000, 20) == HeatState::AtTemp);
+    REQUIRE(classify_heat_state(1970, 2000, 20) == HeatState::Heating);
+    REQUIRE(classify_heat_state(2030, 2000, 20) == HeatState::Cooling);
+}
+
+TEST_CASE("get_heating_state_color: negative target is off, not cooling",
+          "[temperature][heat_state]") {
+    // Regression: the color function used `target == 0`, so a negative target fell
+    // through to the cooling branch and rendered blue.
+    auto color = get_heating_state_color(25, -5);
+    auto expected = theme_manager_get_color("text_muted");
+    REQUIRE(color.red == expected.red);
+    REQUIRE(color.green == expected.green);
+    REQUIRE(color.blue == expected.blue);
+}
+
+TEST_CASE("classify_heat_state: color and variant both agree with it",
+          "[temperature][heat_state]") {
+    struct Case {
+        int current;
+        int target;
+        HeatState state;
+        const char* variant;
+        const char* token;
+    };
+    const Case cases[] = {
+        {25, 0, HeatState::Off, "muted", "text_muted"},
+        {150, 200, HeatState::Heating, "danger", "danger"},
+        {199, 200, HeatState::AtTemp, "success", "success"},
+        {210, 200, HeatState::Cooling, "info", "info"},
+    };
+    for (const auto& c : cases) {
+        REQUIRE(classify_heat_state(c.current, c.target) == c.state);
+        REQUIRE(std::string(get_heating_state_variant(c.current, c.target)) == c.variant);
+        auto color = get_heating_state_color(c.current, c.target);
+        auto expected = theme_manager_get_color(c.token);
+        REQUIRE(color.red == expected.red);
+        REQUIRE(color.green == expected.green);
+        REQUIRE(color.blue == expected.blue);
+    }
+}

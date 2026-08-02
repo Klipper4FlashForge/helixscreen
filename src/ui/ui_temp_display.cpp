@@ -97,9 +97,6 @@ static const lv_font_t* get_font_for_size(const char* size) {
     return font ? font : &noto_sans_18;
 }
 
-/** Tolerance for "at temperature" state (±degrees) */
-static constexpr int AT_TEMP_TOLERANCE = 2;
-
 /** Apply current breakpoint to separator+target visibility. Safe to call when
     those labels don't exist (no-op for show_target="false" widgets). */
 static void apply_target_visibility(TempDisplayData* data, int current_bp) {
@@ -156,7 +153,8 @@ static void update_heating_color(TempDisplayData* data) {
     // ceiling is idle/ok (neutral).
     if (data->has_mode_binding && data->current_mode == helix::ChamberMode::Maintaining) {
         lv_color_t color;
-        if (data->current_temp > data->target_temp + AT_TEMP_TOLERANCE) {
+        if (data->current_temp >
+            data->target_temp + helix::ui::temperature::DEFAULT_AT_TEMP_TOLERANCE) {
             color = theme_manager_get_color("info"); // above ceiling → actively cooling (blue)
         } else {
             color = theme_manager_get_color("text"); // at/below ceiling → idle/ok (neutral)
@@ -167,8 +165,7 @@ static void update_heating_color(TempDisplayData* data) {
 
     // Heating (or no mode binding): existing 4-state behavior. In Off mode the
     // effective target is 0, so get_heating_state_color(current, 0) → muted/gray.
-    lv_color_t color =
-        get_heating_state_color(data->current_temp, data->target_temp, AT_TEMP_TOLERANCE);
+    lv_color_t color = get_heating_state_color(data->current_temp, data->target_temp);
     lv_obj_set_style_text_color(data->current_label, color, LV_PART_MAIN);
 }
 
